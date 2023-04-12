@@ -1,3 +1,5 @@
+package heart;
+
 import util.Utility;
 
 import java.util.HashMap;
@@ -22,12 +24,12 @@ public class Flag {
          */
         validFlags = new Flag[]{
                 new Flag("input", new String[]{"file"}),
-                //new Flag("warn", new String[]{"none", "all"}),
-                //new Flag("optimize", new String[]{"none", "all"}),
-                //new Flag("run", new String[]{"false", "true"}),
-                //new Flag("typed", new String[]{"true", "false"}),
-                //new Flag("silenced", new String[]{"false", "true"}),
-                //new Flag("asm", new String[]{"discard", "keep"}),
+//                new Flag("warn", new String[]{"none", "all"}),
+//                new Flag("optimize", new String[]{"none", "all"}),
+//                new Flag("run", new String[]{"false", "true"}),
+//                new Flag("typed", new String[]{"true", "false"}),
+//                new Flag("silenced", new String[]{"false", "true"}),
+//                new Flag("asm", new String[]{"discard", "keep"}),
         };
     }
 
