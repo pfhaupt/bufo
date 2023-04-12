@@ -1,13 +1,9 @@
 import util.Utility;
 
-import java.util.Arrays;
 import java.util.HashMap;
-import java.util.Map;
 
 
 public class Flag {
-    private static Flag[] validFlags;
-
     private final String name;
     private final String[] options;
     private int selected = 0;
@@ -17,9 +13,11 @@ public class Flag {
         this.options = options;
     }
 
+    private static Flag[] validFlags;
+
     private static void initFlags() {
         /*
-        All those flags are taken from my other project "Haupt", no idea which I'll use this time around
+        All those flags are taken from my other project "HauptLang", no idea which I'll use this time around,
         so they're just commented out for now.
          */
         validFlags = new Flag[]{
@@ -36,6 +34,7 @@ public class Flag {
     private static void showHelp(String cmd) {
         String helpString = "";
         switch (cmd) {
+            /*
             case "flags":
                 Utility.printNotImplementedError("showing help for flags");
                 break;
@@ -60,6 +59,7 @@ public class Flag {
             case "asm":
                 Utility.printNotImplementedError("showing help for asm");
                 break;
+                */
             case "all":
                 Utility.printNotImplementedError("showing help for all flags");
                 break;
@@ -77,7 +77,7 @@ public class Flag {
         System.out.println(helpString);
     }
 
-    public static Map<String, String> parseFlags(String[] args) {
+    public static HashMap<String, String> parseFlags(String[] args) {
         if (validFlags == null) initFlags();
 
         if (args.length == 0) Utility.printCompilerError("Not enough arguments");
@@ -136,7 +136,7 @@ public class Flag {
                     "Please specify the input file with `input=file`."
             );
         }
-        Map<String, String> usedFlags = new HashMap<>();
+        HashMap<String, String> usedFlags = new HashMap<>();
         for (Flag flag : validFlags) {
             usedFlags.put(flag.name, flag.options[flag.selected]);
         }
