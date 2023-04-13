@@ -1,6 +1,10 @@
 package util;
 
 public class Utility {
+    public static void printCompilerWarning(String warning) {
+        System.out.println("WARNING: " + warning);
+    }
+
     public static void printCompilerError(String error) {
         System.err.println("ERROR: " + error);
         System.exit(1);

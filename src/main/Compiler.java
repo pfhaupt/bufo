@@ -10,6 +10,7 @@ import java.util.HashMap;
 
 public class Compiler {
     private static String filename;
+    private static String sourceCode;
     private static final String FILE_EXTENSION = ".bu";
     private static HashMap<String, String> flags;
 
@@ -21,11 +22,12 @@ public class Compiler {
                     String.format("File %s does not end with `%s`!", filename, FILE_EXTENSION),
                     "Aborting compilation!");
         }
+        sourceCode = loadFile(filename);
+        Lexer.initialize(sourceCode, flags);
     }
 
     public static void run() {
-        String sourceCode = loadFile(filename);
-        System.out.println(sourceCode);
+        Lexer.run();
         Utility.printNotImplementedError("actually compiling/running/parsing anything");
     }
 
@@ -45,6 +47,7 @@ public class Compiler {
         } catch (FileNotFoundException e) {
             Utility.printCompilerError(String.format("Could not find file `%s`!", filename));
         }
+        System.out.println(sourceCode);
         return sourceCode.toString();
     }
 }
