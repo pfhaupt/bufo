@@ -1,5 +1,7 @@
 package compiler;
 
+import compiler.parser.Parser;
+import compiler.token.Token;
 import util.Utility;
 
 import java.io.BufferedReader;
@@ -11,6 +13,7 @@ import java.util.HashMap;
 public class Compiler {
     private static String filename;
     private static String sourceCode;
+    private static Token[] lexedCode;
     private static final String FILE_EXTENSION = ".bu";
     private static HashMap<String, String> flags;
 
@@ -23,12 +26,15 @@ public class Compiler {
                     "Aborting compilation!");
         }
         sourceCode = loadFile(filename);
-        Lexer.initialize(sourceCode, flags);
+        Lexer.initialize(flags);
+        Parser.initialize(flags);
     }
 
     public static void run() {
-        Lexer.run();
-        Utility.printNotImplementedError("actually compiling/running/parsing anything");
+        Lexer.run(sourceCode);
+        lexedCode = Lexer.getTokens();
+        Parser.run(lexedCode);
+        Utility.printNotImplementedError("actually compiling anything");
     }
 
     private static String loadFile(String filename) {

@@ -15,10 +15,7 @@ public class Lexer {
     private static char currentChar;
     private static int charIndex = 0;
 
-    public static void initialize(String sourceCode, HashMap<String, String> flags) {
-        original = sourceCode;
-        currentChar = original.charAt(charIndex);
-        charIndex = 1;
+    public static void initialize(HashMap<String, String> flags) {
     }
 
     private static char nextCharacter() {
@@ -82,20 +79,18 @@ public class Lexer {
         }
     }
 
-    public static void run() {
+    public static void run(String sourceCode) {
+        original = sourceCode;
+        currentChar = nextCharacter();
         while (charIndex < original.length()) {
             Token token = nextToken();
             if (!token.isEmptyToken()) {
                 tokens.add(token);
             }
         }
-        for (Token token : tokens) {
-            System.out.println(token);
-        }
     }
 
     public static Token[] getTokens() {
-        Utility.printNotImplementedError("getting the lexer output");
-        return null;
+        return tokens.toArray(new Token[0]);
     }
 }
