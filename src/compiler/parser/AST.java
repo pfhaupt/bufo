@@ -1,10 +1,10 @@
 package compiler.parser;
 
-import compiler.token.IntrinsicToken;
+import compiler.token.types.IntrinsicToken;
 import compiler.token.Token;
 import compiler.token.types.BracketToken;
-import compiler.token.types.SymbolToken;
-import compiler.token.types.WordToken;
+import compiler.token.types.TypeToken;
+import util.TreePrinter;
 import util.Utility;
 
 import java.util.ArrayList;
@@ -17,7 +17,7 @@ public class AST {
     }
 
     public String toString() {
-        printTree(root, 0);
+        printTree(root);
         return "";
     }
 
@@ -33,8 +33,7 @@ public class AST {
         if (node.getRightChild().getToken() instanceof IntrinsicToken) {
             return false;
         }
-        if (node.getToken() instanceof WordToken && node.getToken().getWord().equals("int")) {
-            // TODO: Unhardcode int
+        if (node.getToken() instanceof TypeToken) {
             return false;
         }
         return true;
@@ -50,19 +49,20 @@ public class AST {
         return result;
     }
 
+    private static void printTree(TokenNode root) {
+        printTree(root, 0);
+    }
+
     private static void printTree(TokenNode root, int depth) {
-        if (root == null) {
-            return;
-        }
+        if (root == null) return;
         System.out.println(root.getToken());
         depth += 2;
-        String indent = " ".repeat(Math.max(0, depth));
         if (root.getLeftChild() != null) {
-            System.out.printf("%sL: ", indent);
+            System.out.print(" ".repeat(depth) + "L: ");
             printTree(root.getLeftChild(), depth);
         }
         if (root.getRightChild() != null) {
-            System.out.printf("%sR: ", indent);
+            System.out.print(" ".repeat(depth) + "R: ");
             printTree(root.getRightChild(), depth);
         }
     }
@@ -72,7 +72,7 @@ public class AST {
         int currentTokenIndex = 1;
         int openBrackets = 0;
         while (currentTokenIndex < code.size()) {
-            Token currentToken = code.get(currentTokenIndex);
+            Token currentToken = code.get(currentTokenIndex++);
             if (currentToken instanceof BracketToken) {
                 String bracket = currentToken.getWord();
                 if (bracket.equals("(")) {
@@ -85,8 +85,8 @@ public class AST {
                 }
             } else {
                 insertNode(currentNode, currentToken);
-                if (currentNode.getToken() instanceof SymbolToken) {
-                    System.out.println("Something something precedence of symbols");
+                if (currentNode.getToken() instanceof IntrinsicToken) {
+                    Utility.printCompilerWarning("Please think about precedence, why is this so difficult");
                 }
                 boolean validTree = checkNode(currentNode);
                 if (!validTree) {
@@ -95,11 +95,12 @@ public class AST {
                     currentNode = currentNode.getRightChild();
                 }
             }
-            currentTokenIndex++;
         }
-        while (currentNode.getParent() != null) {
-            currentNode = currentNode.getParent();
+        if (openBrackets > 0) {
+            Utility.printCompilerError("Please think of a good name for this error, too many opening brackets");
         }
+
+        while (currentNode.getParent() != null) currentNode = currentNode.getParent();
 
         return new AST(currentNode);
     }

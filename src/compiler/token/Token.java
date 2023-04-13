@@ -5,7 +5,7 @@ public class Token {
     private final Location location;
     public Token(int row, int col, String _word) {
         word = _word;
-        location = new Location(row, col);
+        location = new Location(row, col - _word.length());
     }
 
     public String toString() {

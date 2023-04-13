@@ -1,6 +1,6 @@
 package compiler;
 
-import compiler.token.IntrinsicToken;
+import compiler.token.types.IntrinsicToken;
 import compiler.token.types.*;
 import compiler.token.Token;
 import util.Utility;
@@ -9,14 +9,26 @@ import java.util.*;
 
 public class Lexer {
     private static final ArrayList<Token> tokens = new ArrayList<>();
-    private static final Character[] supportedCharArray = new Character[] {'=', '+'};
+
+    private static final Character[] supportedCharArray = new Character[] {'=', '+', '/', '*', '-'};
     private static final Set<Character> supportedChars = new HashSet<>(List.of(supportedCharArray));
+
+    private static final String[] supportedTypeArray = new String[] {"int", "float"};
+    private static final Set<String> supportedTypes = new HashSet<>(List.of(supportedTypeArray));
+
+    private static final HashMap<String, Integer> operatorPrecedence = new HashMap<>();
+
     private static String original;
-    private static int row = 1, col = 1;
+    private static int row = 1, col = 0;
     private static char currentChar;
     private static int charIndex = 0;
 
     public static void initialize(HashMap<String, String> flags) {
+        operatorPrecedence.put("+", 1);
+        operatorPrecedence.put("-", 1);
+        operatorPrecedence.put("*", 10);
+        operatorPrecedence.put("/", 10);
+        operatorPrecedence.put("=", 999999999);
     }
 
     private static char nextCharacter() {
@@ -50,6 +62,9 @@ public class Lexer {
                 buffer.append(currentChar);
                 currentChar = nextCharacter();
             }
+            if (supportedTypes.contains(buffer.toString())) {
+                return new TypeToken(row, col, buffer.toString());
+            }
             return new WordToken(row, col, buffer.toString());
         } else if (Character.isDigit(currentChar)) {
             while (charIndex < original.length() && Character.isDigit(currentChar)) {
@@ -68,7 +83,7 @@ public class Lexer {
             } else if (currentChar == ';') {
                 return new SeparatorToken(row, col, buffer.toString());
             } else if (supportedChars.contains(currentChar)) {
-                return new IntrinsicToken(row, col, buffer.toString());
+                return new IntrinsicToken(row, col, buffer.toString(), operatorPrecedence.get(currentChar + ""));
             } else {
                 Utility.printCompilerErrorWithMessage(
                         String.format("Can't lex `%s` yet!", currentChar),

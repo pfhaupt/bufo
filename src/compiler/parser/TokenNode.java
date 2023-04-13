@@ -43,6 +43,10 @@ public class TokenNode {
         return left;
     }
 
+    public void setLeftChild(TokenNode newLeft) {
+        left = newLeft;
+    }
+
     public Token getToken() {
         return token;
     }
