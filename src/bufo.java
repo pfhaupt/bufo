@@ -1,5 +1,5 @@
-import heart.Compiler;
-import heart.Flag;
+import main.Compiler;
+import main.Flag;
 
 import java.util.HashMap;
 
