@@ -1,6 +1,6 @@
-package main.tok.types;
+package compiler.token.types;
 
-import main.tok.Token;
+import compiler.token.Token;
 
 public class WordToken extends Token {
     public WordToken(int row, int col, String word) {

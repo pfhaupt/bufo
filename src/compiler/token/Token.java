@@ -1,4 +1,4 @@
-package main.tok;
+package compiler.token;
 
 public class Token {
     private final String word;

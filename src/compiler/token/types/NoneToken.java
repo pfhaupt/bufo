@@ -1,6 +1,6 @@
-package main.tok.types;
+package compiler.token.types;
 
-import main.tok.Token;
+import compiler.token.Token;
 
 public class NoneToken extends Token {
     public NoneToken(int row, int col, String word) {

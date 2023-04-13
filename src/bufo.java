@@ -1,5 +1,5 @@
-import main.Compiler;
-import main.Flag;
+import compiler.Compiler;
+import compiler.Flag;
 
 import java.util.HashMap;
 

@@ -1,4 +1,4 @@
-package main.tok;
+package compiler.token;
 
 public class Location {
     private final int col, row;

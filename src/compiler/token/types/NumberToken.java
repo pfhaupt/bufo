@@ -1,6 +1,6 @@
-package main.tok.types;
+package compiler.token.types;
 
-import main.tok.Token;
+import compiler.token.Token;
 
 public class NumberToken extends Token {
     public NumberToken(int row, int col, String word) {

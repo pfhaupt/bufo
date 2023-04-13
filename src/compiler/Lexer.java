@@ -1,10 +1,10 @@
-package main;
+package compiler;
 
-import main.tok.types.BracketToken;
-import main.tok.types.NoneToken;
-import main.tok.Token;
-import main.tok.types.NumberToken;
-import main.tok.types.WordToken;
+import compiler.token.types.BracketToken;
+import compiler.token.types.NoneToken;
+import compiler.token.Token;
+import compiler.token.types.NumberToken;
+import compiler.token.types.WordToken;
 import util.Utility;
 
 import java.util.ArrayList;

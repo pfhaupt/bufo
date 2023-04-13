@@ -1,6 +1,6 @@
-package main.tok.types;
+package compiler.token.types;
 
-import main.tok.Token;
+import compiler.token.Token;
 
 public class BracketToken extends Token {
     public BracketToken(int row, int col, String word) {
