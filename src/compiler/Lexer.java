@@ -1,5 +1,6 @@
 package compiler;
 
+import compiler.token.IntrinsicToken;
 import compiler.token.types.*;
 import compiler.token.Token;
 import util.Utility;
@@ -67,7 +68,7 @@ public class Lexer {
             } else if (currentChar == ';') {
                 return new SeparatorToken(row, col, buffer.toString());
             } else if (supportedChars.contains(currentChar)) {
-                return new SymbolToken(row, col, buffer.toString());
+                return new IntrinsicToken(row, col, buffer.toString());
             } else {
                 Utility.printCompilerErrorWithMessage(
                         String.format("Can't lex `%s` yet!", currentChar),

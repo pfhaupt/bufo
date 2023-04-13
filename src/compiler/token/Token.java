@@ -15,4 +15,8 @@ public class Token {
     public boolean isEmptyToken() {
         return word.equals("");
     }
+
+    public String getWord() {
+        return word;
+    }
 }
