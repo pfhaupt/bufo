@@ -16,9 +16,6 @@ public class Compiler {
     public static void initialize(HashMap<String, String> _flags) {
         flags = _flags;
         filename = flags.get("input");
-        if (!filename.startsWith("./")) {
-            filename = "./"+ filename;
-        }
         if (!filename.endsWith(FILE_EXTENSION)) {
             Utility.printCompilerErrorWithMessage(
                     String.format("File %s does not end with `%s`!", filename, FILE_EXTENSION),
