@@ -47,7 +47,6 @@ public class Compiler {
         } catch (FileNotFoundException e) {
             Utility.printCompilerError(String.format("Could not find file `%s`!", filename));
         }
-        System.out.println(sourceCode);
         return sourceCode.toString();
     }
 }

@@ -1,21 +1,20 @@
 package compiler;
 
-import compiler.token.types.BracketToken;
-import compiler.token.types.NoneToken;
+import compiler.token.types.*;
 import compiler.token.Token;
-import compiler.token.types.NumberToken;
-import compiler.token.types.WordToken;
 import util.Utility;
 
-import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.*;
 
 public class Lexer {
     private static final ArrayList<Token> tokens = new ArrayList<>();
+    private static final Character[] supportedCharArray = new Character[] {'=', '+'};
+    private static final Set<Character> supportedChars = new HashSet<>(List.of(supportedCharArray));
     private static String original;
     private static int row = 1, col = 1;
     private static char currentChar;
     private static int charIndex = 0;
+
     public static void initialize(String sourceCode, HashMap<String, String> flags) {
         original = sourceCode;
         currentChar = original.charAt(charIndex);
@@ -60,33 +59,39 @@ public class Lexer {
                 currentChar = nextCharacter();
             }
             return new NumberToken(row, col, buffer.toString());
-        } else if (currentChar == '{' || currentChar == '}') {
-            buffer.append(currentChar);
-            currentChar = nextCharacter();
-            return new BracketToken(row, col, buffer.toString());
-        } else if (currentChar == '(' || currentChar == ')') {
-            buffer.append(currentChar);
-            currentChar = nextCharacter();
-            return new BracketToken(row, col, buffer.toString());
         } else {
-            Utility.printCompilerWarning("Can't parse `" + currentChar + "` yet, it's ignored for now.");
-            currentChar = nextCharacter();
-            return new NoneToken(row, col, "");
+            char currentChar = Lexer.currentChar;
+            buffer.append(currentChar);
+            Lexer.currentChar = nextCharacter();
+            if (currentChar == '{' || currentChar == '}') {
+                return new BracketToken(row, col, buffer.toString());
+            } else if (currentChar == '(' || currentChar == ')') {
+                return new BracketToken(row, col, buffer.toString());
+            } else if (currentChar == ';') {
+                return new SeparatorToken(row, col, buffer.toString());
+            } else if (supportedChars.contains(currentChar)) {
+                return new SymbolToken(row, col, buffer.toString());
+            } else {
+                Utility.printCompilerErrorWithMessage(
+                        String.format("Can't lex `%s` yet!", currentChar),
+                        String.format("  Found here: row %d, col %d", row, col)
+                );
+                // Unreachable because the above function exits the program, but Java doesn't know that and I need to return *something*.
+                return new NoneToken(-1, -1, "");
+            }
         }
     }
 
     public static void run() {
-        Token token = nextToken();
         while (charIndex < original.length()) {
+            Token token = nextToken();
             if (!token.isEmptyToken()) {
                 tokens.add(token);
             }
-            token = nextToken();
         }
-        for (Token t : tokens) {
-            System.out.println(t);
+        for (Token token : tokens) {
+            System.out.println(token);
         }
-        Utility.printNotImplementedError("running the lexer");
     }
 
     public static Token[] getTokens() {

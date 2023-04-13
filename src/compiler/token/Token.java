@@ -8,11 +8,6 @@ public class Token {
         location = new Location(row, col);
     }
 
-    public Token() {
-        word = "";
-        location = new Location(0, 0);
-    }
-
     public String toString() {
         return String.format("%s: %s", location, word);
     }

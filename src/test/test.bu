@@ -1,5 +1,2 @@
-this is a test to see
-if
-loading the file
-works
-special char {}[] ? /
+int a = 5 + 3;
+print(a);
