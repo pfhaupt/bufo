@@ -42,13 +42,6 @@ public class Lexer {
     }
 
     private static Token nextToken() {
-        /*
-            Given a string of "word1 word2 word3 ...", next should return the following:
-            next() -> word1
-            next() -> word2
-            next() -> word3
-            next() -> ...
-         */
         StringBuilder buffer = new StringBuilder();
         if (Character.isWhitespace(currentChar)) {
             if (currentChar == '\n') {
@@ -56,7 +49,7 @@ public class Lexer {
                 row++;
             }
             currentChar = nextCharacter();
-            return new NoneToken(row, col, "");
+            return new NoneToken(row, col);
         } else if (Character.isAlphabetic(currentChar)) {
             while (charIndex < original.length() && Character.isAlphabetic(currentChar)) {
                 buffer.append(currentChar);
@@ -90,7 +83,7 @@ public class Lexer {
                         String.format("  Found here: row %d, col %d", row, col)
                 );
                 // Unreachable because the above function exits the program, but Java doesn't know that and I need to return *something*.
-                return new NoneToken(-1, -1, "");
+                return new NoneToken(-1, -1);
             }
         }
     }
