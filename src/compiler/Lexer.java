@@ -16,7 +16,7 @@ public class Lexer {
     private static final String[] supportedTypeArray = new String[] {"int", "float"};
     private static final Set<String> supportedTypes = new HashSet<>(List.of(supportedTypeArray));
 
-    private static final HashMap<String, Integer> operatorPrecedence = new HashMap<>();
+    private static final String[] operatorPrecedence = Compiler.getOperatorPrecedence();
 
     private static String original;
     private static int row = 1, col = 0;
@@ -24,11 +24,6 @@ public class Lexer {
     private static int charIndex = 0;
 
     public static void initialize(HashMap<String, String> flags) {
-        operatorPrecedence.put("+", 1);
-        operatorPrecedence.put("-", 1);
-        operatorPrecedence.put("*", 10);
-        operatorPrecedence.put("/", 10);
-        operatorPrecedence.put("=", 999999999);
     }
 
     private static char nextCharacter() {
@@ -76,7 +71,7 @@ public class Lexer {
             } else if (currentChar == ';') {
                 return new SeparatorToken(row, col, buffer.toString());
             } else if (supportedChars.contains(currentChar)) {
-                return new IntrinsicToken(row, col, buffer.toString(), operatorPrecedence.get(currentChar + ""));
+                return new IntrinsicToken(row, col, buffer.toString());
             } else {
                 Utility.printCompilerErrorWithMessage(
                         String.format("Can't lex `%s` yet!", currentChar),
@@ -91,11 +86,57 @@ public class Lexer {
     public static void run(String sourceCode) {
         original = sourceCode;
         currentChar = nextCharacter();
+        int curlyBracketCounter = 0;
+        int normalBracketCounter = 0;
         while (charIndex < original.length()) {
             Token token = nextToken();
             if (!token.isEmptyToken()) {
+                if (token instanceof BracketToken) {
+                    String bracket = token.getWord();
+                    switch (bracket) {
+                        case "{" -> {
+                            if (normalBracketCounter != 0) {
+                                Utility.printCompilerErrorWithMessage("Expected ), found {.",
+                                        "The previous ()-block has not been closed.");
+                            }
+                            curlyBracketCounter++;
+                        }
+                        case "}" -> {
+                            if (normalBracketCounter != 0) {
+                                Utility.printCompilerErrorWithMessage("Expected `)`, found `}`.",
+                                        "The previous `()`-block has not been closed.");
+                            }
+                            curlyBracketCounter--;
+                            if (curlyBracketCounter < 0) {
+                                Utility.printCompilerErrorWithMessage("Unmatched brackets.",
+                                        String.format("Can't find matching `{` for `}` at %s.", token.getLocation()));
+                            }
+                        }
+                        case "(" -> normalBracketCounter++;
+                        case ")" -> {
+                            normalBracketCounter--;
+                            if (normalBracketCounter < 0) {
+                                Utility.printCompilerErrorWithMessage("Unmatched brackets.",
+                                        String.format("Can't find matching `(` for `)` at %s.", token.getLocation()));
+                            }
+                        }
+                        default -> Utility.printNotImplementedError("handling other types of brackets");
+                    }
+                } else if (token instanceof SeparatorToken) {
+                    if (normalBracketCounter != 0) {
+                        Utility.printCompilerErrorWithMessage("Expected `)`, found `;`.",
+                                "The previous `()`-block has not been closed.");
+                    }
+                }
                 tokens.add(token);
             }
+        }
+        if (normalBracketCounter != 0) {
+            Utility.printCompilerErrorWithMessage("Expected `)`, found `;`.",
+                    "The previous `()`-block has not been closed.");
+        } else if (curlyBracketCounter != 0) {
+            Utility.printCompilerErrorWithMessage("Expected `}`, found `;`.",
+                    "The previous `{}`-block has not been closed.");
         }
     }
 

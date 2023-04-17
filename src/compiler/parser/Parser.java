@@ -1,5 +1,6 @@
 package compiler.parser;
 
+import compiler.Compiler;
 import compiler.token.Token;
 import compiler.token.types.SeparatorToken;
 import util.Utility;

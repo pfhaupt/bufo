@@ -1,5 +1,9 @@
 package util;
 
+import compiler.token.Token;
+
+import java.util.ArrayList;
+
 public class Utility {
     public static void printCompilerWarning(String warning) {
         System.out.println("WARNING: " + warning);
@@ -18,5 +22,13 @@ public class Utility {
     public static void printNotImplementedError(String msg) {
         System.err.println("Oops! I have not implemented " + msg + " yet.");
         System.exit(2);
+    }
+
+    public static ArrayList<Token> splitList(ArrayList<Token> list, int start, int end) {
+        ArrayList<Token> result = new ArrayList<>();
+        for (int i = start; i < end; i++) {
+            result.add(list.get(i));
+        }
+        return result;
     }
 }

@@ -19,4 +19,6 @@ public class Token {
     public String getWord() {
         return word;
     }
+
+    public Location getLocation() { return location; }
 }

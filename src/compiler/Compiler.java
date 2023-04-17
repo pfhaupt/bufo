@@ -17,6 +17,9 @@ public class Compiler {
     private static final String FILE_EXTENSION = ".bu";
     private static HashMap<String, String> flags;
 
+    private static final String[] operatorPrecedence = new String[] {"=", "+-", "*/"};
+
+
     public static void initialize(HashMap<String, String> _flags) {
         flags = _flags;
         filename = flags.get("input");
@@ -28,6 +31,10 @@ public class Compiler {
         sourceCode = loadFile(filename);
         Lexer.initialize(flags);
         Parser.initialize(flags);
+    }
+
+    public static String[] getOperatorPrecedence() {
+        return operatorPrecedence;
     }
 
     public static void run() {
