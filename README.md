@@ -1,6 +1,6 @@
 # Bufo
 ## Overview
-Bufo is a programming language that I created for my own personal exploration and experimentation.
+Bufo is a programming language that I created for my own personal exploration and experimentation.  
 It features a whacky syntax, with a focus on imperative and functional programming that encourages creativity and experimentation.
 
 It is not intended to be fast or special (this may be subject to change).
