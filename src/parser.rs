@@ -1,15 +1,16 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::lexer::{Token, TokenType};
 
 #[derive(Debug, Clone)]
-enum Ast {
+pub enum Ast {
     Const(u64),
     Var(usize),
     Block(Vec<Ast>),
     Assign(usize, Box<Ast>),
     Add(Box<Ast>, Box<Ast>),
     Sub(Box<Ast>, Box<Ast>),
+    Func(String, Box<Ast>)
 }
 
 #[derive(Debug)]
@@ -35,19 +36,29 @@ pub struct Parser {
     tokens: Vec<Token>,
     ast: Option<Ast>,
     memory_size: usize,
-    memory: Vec<usize>,
+    memory: Vec<u64>,
     memory_ptr: usize,
-    mem_lookup: HashMap<String, usize>
+    mem_lookup: HashMap<String, usize>,
+    intrinsics: HashSet<String>
 }
 
 impl Parser {
     pub fn new() -> Self {
         let mem_lookup = HashMap::new();
-        Self { tokens: vec![], memory_size: 32, memory: vec![0; 32], memory_ptr: 0, mem_lookup, ast: None }
+        let mut intrinsics = HashSet::new();
+        intrinsics.extend(vec!["print"].iter().map(|s| String::from(*s)).collect::<Vec<String>>());
+        Self { tokens: vec![], memory_size: 32, memory: vec![0; 32], intrinsics, memory_ptr: 0, mem_lookup, ast: None }
     }
 
     pub fn set_context(&mut self, tokens: Vec<Token>) {
         self.tokens = tokens;
+    }
+
+    pub fn get_program(&self) -> (Ast, Vec<u64>, HashMap<String, usize>, HashSet<String>) {
+        if self.ast.is_none() {
+            panic!("Attempted to fetch program before parsing!");
+        }
+        (self.ast.clone().unwrap(), self.memory.clone(), self.mem_lookup.clone(), self.intrinsics.clone())
     }
 
     fn get_mem_id(&mut self) -> usize {
@@ -158,6 +169,16 @@ impl Parser {
         }
     }
 
+    fn parse_function(&mut self, start_id: usize) -> Result<(usize, Ast), String> {
+        let name = &self.tokens[start_id];
+        if name.get_type() != TokenType::Name {
+            return Err(error_to_string(ParserError::InvalidToken));
+        }
+        let name = name.get_value();
+        let (id, ast) = self.parse_block(start_id + 1)?;
+        Ok((id + 1, Ast::Func(name, Box::new(ast))))
+    }
+
     fn parse_block(&mut self, start_id: usize) -> Result<(usize, Ast), String> {
         let end_id = self.get_matching(start_id)?;
         // println!("Parsing tokens from indices {} to {}", start_id, end_id);
@@ -178,6 +199,16 @@ impl Parser {
                             ast_vec.push(ast);
                             id = i;
                         },
+                        s if s == String::from("print") => {
+                            let (i, ast) = self.parse_function(id)?;
+                            ast_vec.push(ast);
+                            id = i;
+                        },
+                        v if self.mem_lookup.contains_key(&v) => {
+                            let mem_id = self.mem_lookup.get(&v).unwrap();
+                            ast_vec.push(Ast::Var(*mem_id));
+                            id += 1;
+                        }
                         v => { return Err(error_to_string(ParserError::InvalidToken) + &format!(" Got: `{}`", v)) }
                     }
                 },
