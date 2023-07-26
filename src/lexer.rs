@@ -141,7 +141,6 @@ impl Lexer {
         while !self.is_eof() {
             self.trim_whitespace()?;
             let t = self.next_token()?;
-            println!("{:?}", t);
             self.tokens.push(t);
         }
         Ok(())
