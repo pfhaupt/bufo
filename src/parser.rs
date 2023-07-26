@@ -47,7 +47,8 @@ impl Parser {
         let mem_lookup = HashMap::new();
         let mut intrinsics = HashSet::new();
         intrinsics.extend(vec!["print"].iter().map(|s| String::from(*s)).collect::<Vec<String>>());
-        Self { tokens: vec![], memory_size: 32, memory: vec![0; 32], intrinsics, memory_ptr: 0, mem_lookup, ast: None }
+        let memory_size = 128;
+        Self { tokens: vec![], memory_size, memory: vec![0; memory_size], intrinsics, memory_ptr: 0, mem_lookup, ast: None }
     }
 
     pub fn set_context(&mut self, tokens: Vec<Token>) {
