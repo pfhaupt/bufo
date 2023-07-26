@@ -12,30 +12,38 @@ fn error_to_string(err: LexerError) -> String {
     }
 }
 
-#[derive(Debug)]
-enum TokenType {
+#[derive(Debug, Clone, PartialEq)]
+pub enum TokenType {
     Invalid,
     Name,
     Number,
     OpenParenthesis,
     ClosingParenthesis,
-    OpenCurly,
-    ClosingCurly,
     Symbol
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Location {
     file: String,
     row: usize,
     col: usize,
 }
 
-#[derive(Debug)]
-struct Token {
-    typ: TokenType,
+#[derive(Debug, Clone)]
+pub struct Token {
+    typ: TokenType, // type is a reserved keyword in Rust :(
     value: String,
     loc: Location
+}
+
+impl Token {
+    pub fn get_type(&self) -> TokenType {
+        self.typ.clone()
+    }
+
+    pub fn get_value(&self) -> String {
+        self.value.clone()
+    }
 }
 
 #[derive(Debug)]
@@ -120,15 +128,9 @@ impl Lexer {
             ')' => {
                 Ok( Token { typ: TokenType::ClosingParenthesis, value: String::from(")"), loc: self.get_location() } )
             },
-            '{' => {
-                Ok( Token { typ: TokenType::OpenCurly, value: String::from("{"), loc: self.get_location() } )
-            },
-            '}' => {
-                Ok( Token { typ: TokenType::ClosingCurly, value: String::from("}"), loc: self.get_location() } )
-            },
-            '=' => {
+            '=' | '+' | '-' => {
                 Ok( Token { typ: TokenType::Symbol, value: String::from(c), loc: self.get_location() } )
-            }
+            },
             e => {
                 Ok( Token { typ: TokenType::Invalid, value: String::from(e), loc: self.get_location() } )
             }
@@ -143,5 +145,9 @@ impl Lexer {
             self.tokens.push(t);
         }
         Ok(())
+    }
+
+    pub fn get_tokens(&self) -> Vec<Token> {
+        self.tokens.clone()
     }
 }

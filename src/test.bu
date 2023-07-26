@@ -1,7 +1,5 @@
-  
-  a = 34+35
-b = 1    - 5   2
-i2 = b
-function test() {
-    
-}
+
+(defvar a 5)
+(defvar b (+ a 3))
+
+(defvar c (+ (- b a) 3))
