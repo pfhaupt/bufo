@@ -14,12 +14,12 @@ fn main() -> Result<(), String> {
 
     let mut lexer = Lexer::new(&path)?;
     lexer.tokenize()?;
-    println!("{:?}", lexer.get_tokens());
+    // println!("{:?}", lexer.get_tokens());
 
     let mut parser = Parser::new(lexer.get_tokens());
     parser.parse_file();
     let ast = parser.build_tree();
-    println!("{:#?}", ast);
+    // println!("{:#?}", ast);
 
     let mut generator = Generator::new(ast, 3);
     generator.interpret()?;

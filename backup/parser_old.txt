@@ -1,0 +1,226 @@
+
+#[derive(Debug)]
+enum ParserError {
+    InvalidToken,
+    UnmatchedBracket,
+    UnexpectedVarValue,
+}
+
+fn error_to_string(error: ParserError) -> String {
+    match error {
+        ParserError::InvalidToken => { String::from("Found invalid Token when parsing!") },
+        ParserError::UnexpectedVarValue => { String::from("Found invalid Token when assigning value to variable") },
+        ParserError::UnmatchedBracket => { String::from("Could not find matching bracket") },
+        e => { unimplemented!("no error message for {:?}", e) }
+    }
+}
+
+const TWO_OP: [&str; 4] = ["+", "-", "*", "/"];
+
+/* #[derive(Debug)]
+pub struct Parser {
+    tokens: Vec<Token>,
+    ast: Option<Ast>,
+    memory_size: usize,
+    memory: Vec<u64>,
+    memory_ptr: usize,
+    mem_lookup: HashMap<String, usize>,
+    intrinsics: HashSet<String>
+}
+
+impl Parser {
+    pub fn new() -> Self {
+        let mem_lookup = HashMap::new();
+        let mut intrinsics = HashSet::new();
+        intrinsics.extend(vec!["print"].iter().map(|s| String::from(*s)).collect::<Vec<String>>());
+        let memory_size = 128;
+        Self { tokens: vec![], memory_size, memory: vec![0; memory_size], intrinsics, memory_ptr: 0, mem_lookup, ast: None }
+    }
+
+    pub fn set_context(&mut self, tokens: Vec<Token>) {
+        self.tokens = tokens;
+    }
+
+    pub fn get_program(&self) -> (Ast, Vec<u64>, HashMap<String, usize>, HashSet<String>) {
+        if self.ast.is_none() {
+            panic!("Attempted to fetch program before parsing!");
+        }
+        (self.ast.clone().unwrap(), self.memory.clone(), self.mem_lookup.clone(), self.intrinsics.clone())
+    }
+
+    fn get_mem_id(&mut self) -> usize {
+        let m = self.memory_ptr;
+        self.memory_ptr += 1;
+        m
+    }
+
+    fn get_op_count(&self, token: &Token) -> Result<usize, String> {
+        match token.get_type() {
+            TokenType::Symbol => {
+                match token.get_value().as_str() {
+                    s if TWO_OP.contains(&s) => {
+                        Ok(2)
+                    },
+                    _ => { Err("uhh x2".to_uppercase() )}
+                }
+            },
+            _ => { Err("uhh".to_ascii_lowercase()) }
+        }
+    }
+
+    fn get_matching(&self, token_id: usize) -> Result<usize, String> {
+        let t = &self.tokens[token_id];
+        assert_eq!(t.get_type(), TokenType::OpenParenthesis);
+        let mut cnt = 1;
+        for i in (token_id+1)..self.tokens.len() {
+            let o = &self.tokens[i];
+            match o.get_type() {
+                TokenType::OpenParenthesis => { cnt += 1 },
+                TokenType::ClosingParenthesis => {
+                    cnt -= 1;
+                    if cnt == 0 {
+                        return Ok(i);
+                    }
+                },
+                _ => {}
+            }
+        }
+        Err(error_to_string(ParserError::UnmatchedBracket))
+    }
+
+    fn parse_number(&self, val: &String) -> Result<Ast, String> {
+        match val.parse() {
+            Ok(v) => { Ok(Ast::Const(v)) },
+            Err(e) => { return Err(e.to_string()); }
+        }
+    }
+
+    fn parse_variable(&mut self, start_id: usize) -> Result<(usize, Ast), String> {
+        let mem_id = self.get_mem_id();
+        let defvar = &self.tokens[start_id];
+        assert_eq!(defvar.get_value(), String::from("defvar"));
+        let varname = &self.tokens[start_id + 1];
+        let name_as_str = varname.get_value();
+        assert_eq!(varname.get_type(), TokenType::Name);
+        let varvalue = &self.tokens[start_id + 2];
+        let (i, r) = match varvalue.get_type() {
+            TokenType::OpenParenthesis => {
+                self.parse_block(start_id + 2)?
+            },
+            TokenType::Name => {
+                todo!("Assign other variable to variable")
+            },
+            TokenType::Number => {
+                (start_id + 3, self.parse_number(&self.tokens[start_id + 2].get_value())?)
+            },
+            e => {
+                return Err(format!("Error: {}: Found `{:?}`, expected String, Number or (.", error_to_string(ParserError::UnexpectedVarValue), e).to_string());
+            }
+        };
+        self.mem_lookup.insert(name_as_str, mem_id);
+        Ok((i, Ast::Assign(mem_id, Box::new(r))))
+    }
+
+    fn parse_symbol(&mut self, start_id: usize) -> Result<(usize, Ast), String> {
+        let symbol = &self.tokens[start_id].clone();
+        let operators = self.get_op_count(symbol)?;
+        assert_eq!(operators, 2, "There is currently no support for operations with more than 2 operands.");
+        let mut operands = vec![];
+        let mut id = start_id;
+        for _ in 0..operators {
+            let (i, ast) = match self.tokens[id + 1].get_type() {
+                TokenType::Name => {
+                    if let Some(mem_id) = self.mem_lookup.get(&self.tokens[id + 1].get_value()) {
+                        (id + 1, Ast::Var(*mem_id))
+                    } else {
+                        todo!("Handle this situation in parse_symbol: Could not find symbol in mem_lookup!")
+                    }
+                },
+                TokenType::OpenParenthesis => {
+                    self.parse_block(id + 1)?
+                },
+                TokenType::Number => {
+                    (id + 1, self.parse_number(&self.tokens[id + 1].get_value())?)
+                },
+                e => {
+                    return Err(error_to_string(ParserError::InvalidToken) + &format!(" Got: {:?}, expected String, Number or (.", e))
+                }
+            };
+            id = i;
+            operands.push(ast);
+        }
+        match symbol.get_value().as_str() {
+            "+" => { Ok((id, Ast::Add(Box::new(operands[0].clone()), Box::new(operands[1].clone())))) }
+            "-" => { Ok((id, Ast::Sub(Box::new(operands[0].clone()), Box::new(operands[1].clone())))) }
+            e => { todo!("parse_symbol() for Symbol {}", e) }
+        }
+    }
+
+    fn parse_function(&mut self, start_id: usize) -> Result<(usize, Ast), String> {
+        let name = &self.tokens[start_id];
+        if name.get_type() != TokenType::Name {
+            return Err(error_to_string(ParserError::InvalidToken));
+        }
+        let name = name.get_value();
+        let (id, ast) = self.parse_block(start_id + 1)?;
+        Ok((id + 1, Ast::Func(name, Box::new(ast))))
+    }
+
+    fn parse_block(&mut self, start_id: usize) -> Result<(usize, Ast), String> {
+        let end_id = self.get_matching(start_id)?;
+        // println!("Parsing tokens from indices {} to {}", start_id, end_id);
+        let mut id = start_id + 1;
+        let mut ast_vec = vec![];
+        while id < end_id {
+            let t = &self.tokens[id];
+            match t.get_type() {
+                TokenType::OpenParenthesis => {
+                    let (block_end, ast) = self.parse_block(id)?;
+                    ast_vec.push(ast);
+                    id = block_end;
+                },
+                TokenType::Name => {
+                    match t.get_value() {
+                        s if s == String::from("defvar") => {
+                            let (i, ast) = self.parse_variable(id)?;
+                            ast_vec.push(ast);
+                            id = i;
+                        },
+                        s if s == String::from("print") => {
+                            let (i, ast) = self.parse_function(id)?;
+                            ast_vec.push(ast);
+                            id = i;
+                        },
+                        v if self.mem_lookup.contains_key(&v) => {
+                            let mem_id = self.mem_lookup.get(&v).unwrap();
+                            ast_vec.push(Ast::Var(*mem_id));
+                            id += 1;
+                        }
+                        v => { return Err(error_to_string(ParserError::InvalidToken) + &format!(" Got: `{}`", v)) }
+                    }
+                },
+                TokenType::Symbol => {
+                    let (i, ast) = self.parse_symbol(id)?;
+                    ast_vec.push(ast);
+                    id = i;
+                },
+                _ => { return Err(error_to_string(ParserError::InvalidToken) + &format!(" Got: `{}`", t.get_value()))},
+            }
+            id += 1;
+        }
+        Ok((end_id, Ast::Block(ast_vec)))
+    }
+
+    pub fn parse(&mut self) -> Result<(), String> {
+        let mut id = 0;
+        let mut ast_vec = vec![];
+        while id < self.tokens.len() {
+            let (next_id, ast) = self.parse_block(id)?;
+            ast_vec.push(ast);
+            id = next_id + 1;
+        }
+        self.ast = Some(Ast::Block(ast_vec));
+        Ok(())
+    }
+}
+ */

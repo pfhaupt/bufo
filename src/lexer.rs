@@ -34,7 +34,7 @@ struct Location {
 
 #[derive(Debug, Clone)]
 pub struct Token {
-    pub typ: TokenType, // type is a reserved keyword in Rust :(
+    typ: TokenType, // type is a reserved keyword in Rust :(
     value: String,
     loc: Location
 }
