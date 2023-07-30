@@ -20,10 +20,9 @@ fn main() -> Result<(), String> {
     parser.parse_file();
     let ast = parser.build_tree();
     println!("{:#?}", ast);
-    // let program = parser.get_program();
 
-    // let mut generator = Generator::new(program, 3);
-    // generator.interpret()?;
+    let mut generator = Generator::new(ast, 3);
+    generator.interpret()?;
 
     println!("{:?}", now.elapsed());
     Ok(())

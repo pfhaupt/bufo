@@ -9,6 +9,11 @@ Stmt = StmtExpr | StmtLet;
 StmtExpr = Expr ";";
 StmtLet = "let" "name" "=" Expr ";";
 
-Expr = ExprName | ExprLiteral;
+Expr = ExprName
+     | ExprLiteral
+     | ExprBinary
+     | ExprParen;
 ExprName = "name";
 ExprLiteral = "int";
+ExprBinary = Expr ("+" | "-" | "*" | "/") Expr;
+ExprParen = "(" Expr ")";

@@ -14,24 +14,24 @@ pub enum Ast {
     Func(String, Box<Ast>)
 }
 
-#[derive(Debug)]
-enum TreeType {
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum TreeType {
     ErrorTree,
     File,
     Func,
     Block,
     Stmt, StmtExpr, StmtLet,
-    Expr, ExprName, ExprLiteral
+    Expr, ExprName, ExprLiteral, ExprBinary, ExprParen
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Tree {
-    typ: TreeType,
-    children: Vec<Node>,
+    pub typ: TreeType,
+    pub children: Vec<Node>,
 }
 
-#[derive(Debug)]
-enum Node {
+#[derive(Debug, Clone)]
+pub enum Node {
     Token(Token),
     Tree(Tree)
 }
@@ -42,8 +42,12 @@ enum Event {
     Advance,
 }
 
-struct MarkOpenend {
+struct MarkOpened {
     index: usize
+}
+
+struct MarkClosed {
+    index: usize,
 }
 
 #[derive(Debug)]
@@ -284,15 +288,25 @@ impl Parser {
         Self { tokens, ptr: 0, fuel: Cell::new(256), events: vec![] }
     }
 
-    fn open(&mut self) -> MarkOpenend {
-        let mark = MarkOpenend { index: self.events.len() };
+    fn open(&mut self) -> MarkOpened {
+        let mark = MarkOpened { index: self.events.len() };
         self.events.push(Event::Open { typ: TreeType::ErrorTree });
         mark
     }
 
-    fn close(&mut self, m: MarkOpenend, typ: TreeType) {
+    fn close(&mut self, m: MarkOpened, typ: TreeType) -> MarkClosed {
         self.events[m.index] = Event::Open { typ };
         self.events.push(Event::Close);
+        MarkClosed { index: m.index }
+    }
+
+    fn open_before(&mut self, m: MarkClosed) -> MarkOpened { 
+        let mark = MarkOpened { index: m.index };
+        self.events.insert(
+          m.index,
+          Event::Open { typ: TreeType::ErrorTree },
+        );
+        mark
     }
 
     fn advance(&mut self) {
@@ -343,24 +357,70 @@ impl Parser {
         self.close(m, TreeType::ErrorTree);
     }
 
-    fn parse_expr(&mut self) {
+    fn parse_expr_delim(&mut self) -> MarkClosed {
         let m = self.open();
         match self.nth(0) {
             TokenType::IntLiteral => {
                 self.advance();
-                self.close(m, TreeType::ExprLiteral);
+                self.close(m, TreeType::ExprLiteral)
             }
             TokenType::Name => {
                 self.advance();
-                self.close(m, TreeType::ExprName);
+                self.close(m, TreeType::ExprName)
             },
+            TokenType::OpenParenthesis => {
+                self.expect(TokenType::OpenParenthesis);
+                self.parse_expr();
+                self.expect(TokenType::ClosingParenthesis);
+                self.close(m, TreeType::ExprParen)
+            }
             _ => {
                 if !self.eof() {
                     self.advance();
                 }
-                self.close(m, TreeType::ErrorTree);
+                self.close(m, TreeType::ErrorTree)
             }
         }
+    }
+
+    fn parse_expr_rec(&mut self, left: TokenType) {
+        let mut lhs = self.parse_expr_delim();
+        
+        loop {
+            let right = self.nth(0);
+            if Self::right_binds_tighter(left, right) {
+                let m = self.open_before(lhs);
+                self.advance();
+                self.parse_expr_rec(right);
+                lhs = self.close(m, TreeType::ExprBinary);
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn right_binds_tighter(left: TokenType, right: TokenType) -> bool {
+        fn tightness(typ: TokenType) -> Option<usize> {
+            [
+                [TokenType::Plus, TokenType::Minus].as_slice(),
+                &[TokenType::Mult, TokenType::Div],
+            ]
+            .iter()
+            .position(|l|l.contains(&typ))
+        }
+        let Some(right_tight) = tightness(right) else {
+            return false
+        };
+        let Some(left_tight) = tightness(left) else {
+            assert!(left == TokenType::EOF);
+            return true;
+        };
+        right_tight > left_tight
+    }
+    
+
+    fn parse_expr(&mut self) {
+        self.parse_expr_rec(TokenType::EOF);
     }
     
     fn parse_let_expr(&mut self) {
@@ -438,7 +498,14 @@ impl Parser {
                 },
                 Event::Advance => {
                     let t = tokens.next().unwrap();
-                    stack.last_mut().unwrap().children.push(Node::Token(t))
+                    match t.typ {
+                        TokenType::ClosingBracket
+                        | TokenType::ClosingParenthesis
+                        | TokenType::OpenBracket
+                        | TokenType::OpenParenthesis
+                        | TokenType::Semi => {}, // There's no reason to clutter the AST with this
+                        _ => stack.last_mut().unwrap().children.push(Node::Token(t))
+                    }
                 }
             }
         }

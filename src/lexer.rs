@@ -19,7 +19,7 @@ pub enum TokenType {
     OpenParenthesis, ClosingParenthesis,
     OpenBracket, ClosingBracket,
     FnKeyword, LetKeyword,
-    Equal, Plus, Minus,
+    Equal, Plus, Minus, Mult, Div,
     Semi,
     Name,
     EOF
@@ -134,6 +134,8 @@ impl Lexer {
             '=' => Ok( Token { typ: TokenType::Equal, value: String::from(c), loc: self.get_location() } ),
             '+' => Ok( Token { typ: TokenType::Plus, value: String::from(c), loc: self.get_location() } ),
             '-' => Ok( Token { typ: TokenType::Minus, value: String::from(c), loc: self.get_location() } ),
+            '*' => Ok( Token { typ: TokenType::Mult, value: String::from(c), loc: self.get_location() } ),
+            '/' => Ok( Token { typ: TokenType::Div, value: String::from(c), loc: self.get_location() } ),
             e => Ok( Token { typ: TokenType::Invalid, value: String::from(e), loc: self.get_location() } )
         }
     }
