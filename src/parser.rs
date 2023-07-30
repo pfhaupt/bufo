@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::cell::Cell;
 
 use crate::lexer::{Token, TokenType};
 
@@ -11,6 +12,38 @@ pub enum Ast {
     Add(Box<Ast>, Box<Ast>),
     Sub(Box<Ast>, Box<Ast>),
     Func(String, Box<Ast>)
+}
+
+#[derive(Debug)]
+enum TreeType {
+    ErrorTree,
+    File,
+    Func,
+    Block,
+    Stmt, StmtExpr, StmtLet,
+    Expr, ExprName, ExprLiteral
+}
+
+#[derive(Debug)]
+pub struct Tree {
+    typ: TreeType,
+    children: Vec<Node>,
+}
+
+#[derive(Debug)]
+enum Node {
+    Token(Token),
+    Tree(Tree)
+}
+
+enum Event {
+    Open { typ: TreeType },
+    Close,
+    Advance,
+}
+
+struct MarkOpenend {
+    index: usize
 }
 
 #[derive(Debug)]
@@ -31,7 +64,7 @@ fn error_to_string(error: ParserError) -> String {
 
 const TWO_OP: [&str; 4] = ["+", "-", "*", "/"];
 
-#[derive(Debug)]
+/* #[derive(Debug)]
 pub struct Parser {
     tokens: Vec<Token>,
     ast: Option<Ast>,
@@ -235,5 +268,183 @@ impl Parser {
         }
         self.ast = Some(Ast::Block(ast_vec));
         Ok(())
+    }
+}
+ */
+
+pub struct Parser {
+    tokens: Vec<Token>,
+    ptr: usize,
+    fuel: Cell<u32>,
+    events: Vec<Event>
+}
+
+impl Parser {
+    pub fn new(tokens: Vec<Token>) -> Self {
+        Self { tokens, ptr: 0, fuel: Cell::new(256), events: vec![] }
+    }
+
+    fn open(&mut self) -> MarkOpenend {
+        let mark = MarkOpenend { index: self.events.len() };
+        self.events.push(Event::Open { typ: TreeType::ErrorTree });
+        mark
+    }
+
+    fn close(&mut self, m: MarkOpenend, typ: TreeType) {
+        self.events[m.index] = Event::Open { typ };
+        self.events.push(Event::Close);
+    }
+
+    fn advance(&mut self) {
+        assert!(!self.eof());
+        self.fuel.set(256);
+        self.events.push(Event::Advance);
+        self.ptr += 1;
+    }
+
+    fn eof(&self) -> bool {
+        self.ptr >= self.tokens.len()
+    }
+
+    fn nth(&self, lookahead: usize) -> TokenType {
+        if self.fuel.get() == 0 {
+            panic!("Parser is stuck at {}", self.ptr);
+        }
+        self.fuel.set(self.fuel.get() - 1);
+        self.tokens.get(self.ptr + lookahead).map_or(TokenType::EOF, |it|it.typ)
+    }
+
+    fn at(&self, typ: TokenType) -> bool {
+        self.nth(0) == typ
+    }
+
+    fn eat(&mut self, typ: TokenType) -> bool {
+        if self.at(typ) {
+            self.advance();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn expect(&mut self, typ: TokenType) {
+        let t = typ.clone();
+        if self.eat(typ) {
+            return;
+        }
+        // TODO: Improve error handling
+        eprintln!("expected {t:?}");
+    }
+
+    fn advance_with_error(&mut self, error: &str) {
+        let m = self.open();
+        eprintln!("{error}");
+        self.advance();
+        self.close(m, TreeType::ErrorTree);
+    }
+
+    fn parse_expr(&mut self) {
+        let m = self.open();
+        match self.nth(0) {
+            TokenType::IntLiteral => {
+                self.advance();
+                self.close(m, TreeType::ExprLiteral);
+            }
+            TokenType::Name => {
+                self.advance();
+                self.close(m, TreeType::ExprName);
+            },
+            _ => {
+                if !self.eof() {
+                    self.advance();
+                }
+                self.close(m, TreeType::ErrorTree);
+            }
+        }
+    }
+    
+    fn parse_let_expr(&mut self) {
+        assert!(self.at(TokenType::LetKeyword));
+        let m = self.open();
+        self.expect(TokenType::LetKeyword);
+        self.expect(TokenType::Name);
+        self.expect(TokenType::Equal);
+        self.parse_expr();
+        self.expect(TokenType::Semi);
+        self.close(m, TreeType::StmtLet);
+    }
+
+    fn parse_stmt_expr(&mut self) {
+        let m = self.open();
+        self.parse_expr();
+        self.expect(TokenType::Semi);
+        self.close(m, TreeType::StmtExpr);
+    }
+
+    fn parse_block(&mut self) {
+        assert!(self.at(TokenType::OpenBracket));
+        let m = self.open();
+        self.expect(TokenType::OpenBracket);
+        while !self.at(TokenType::ClosingBracket) && !self.eof() {
+            match self.nth(0) {
+                TokenType::LetKeyword => self.parse_let_expr(),
+                _ => self.parse_stmt_expr()
+            }
+        }
+        self.expect(TokenType::ClosingBracket);
+        self.close(m, TreeType::Block);
+    }
+
+    fn parse_func(&mut self) {
+        assert!(self.at(TokenType::FnKeyword));
+        let m = self.open();
+        self.expect(TokenType::FnKeyword);
+        self.expect(TokenType::Name);
+        self.expect(TokenType::OpenParenthesis);
+        self.expect(TokenType::ClosingParenthesis);
+        if self.at(TokenType::OpenBracket) {
+            self.parse_block();
+        }
+        self.close(m, TreeType::Func);
+    }
+
+    pub fn parse_file(&mut self) {
+        let m = self.open();
+        while !self.eof() {
+            if self.at(TokenType::FnKeyword) {
+                self.parse_func();
+            } else {
+                self.advance_with_error("expected a function");
+            }
+        }
+        self.close(m, TreeType::File);
+    }
+
+    pub fn build_tree(self) -> Tree {
+        let mut tokens = self.tokens.into_iter();
+        let mut events = self.events;
+        let mut stack = Vec::new();
+        
+        assert!(matches!(events.pop(), Some(Event::Close)));
+
+        for event in events {
+            match event {
+                Event::Open { typ } => {
+                    stack.push(Tree { typ, children: Vec::new() })
+                },
+                Event::Close => {
+                    let t = stack.pop().unwrap();
+                    stack.last_mut().unwrap().children.push(Node::Tree(t))
+                },
+                Event::Advance => {
+                    let t = tokens.next().unwrap();
+                    stack.last_mut().unwrap().children.push(Node::Token(t))
+                }
+            }
+        }
+        assert!(stack.len() == 1);
+        assert!(tokens.next().is_none(), "{:?}", tokens.next().unwrap());
+
+        stack.pop().unwrap()
     }
 }

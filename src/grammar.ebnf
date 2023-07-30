@@ -1,9 +1,14 @@
+File: Fn*;
 
-Block = ("(", Stmt*, ")");
+Fn = "func" "name" "(" ")" "{" Block "}";
 
-Stmt = Stmt_expr;
+Block = (Stmt*);
 
-Stmt_expr = Expr + ";";
+Stmt = StmtExpr | StmtLet;
 
-Expr = ExprName;
+StmtExpr = Expr ";";
+StmtLet = "let" "name" "=" Expr ";";
+
+Expr = ExprName | ExprLiteral;
 ExprName = "name";
+ExprLiteral = "int";

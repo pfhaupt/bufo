@@ -1,4 +1,3 @@
-(defvar a 34)
-(defvar b 35)
-(defvar c (+ a b))
-(print (c))
+func main() {
+    let a = 5;
+}
