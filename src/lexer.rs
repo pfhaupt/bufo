@@ -12,14 +12,17 @@ fn error_to_string(err: LexerError) -> String {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum TokenType {
     Invalid,
+    IntLiteral,
+    OpenParenthesis, ClosingParenthesis,
+    OpenBracket, ClosingBracket,
+    FnKeyword, LetKeyword,
+    Equal, Plus, Minus, Mult, Div,
+    Semi,
     Name,
-    Number,
-    OpenParenthesis,
-    ClosingParenthesis,
-    Symbol
+    EOF
 }
 
 #[derive(Debug, Clone)]
@@ -59,12 +62,8 @@ pub struct Lexer {
 impl Lexer {
     pub fn new(origin_path: &String) -> Result<Self, String> {
         match fs::read_to_string(origin_path) {
-            Ok(source) => {
-                Ok(Lexer { origin: origin_path.to_string(), source: source.chars().collect(), tokens: vec![], current_char: 0, current_line: 1, line_start: 0 })
-            },
-            Err(e) => {
-                Err(e.to_string())
-            }
+            Ok(source) => Ok(Lexer { origin: origin_path.to_string(), source: source.chars().collect(), tokens: vec![], current_char: 0, current_line: 1, line_start: 0 }),
+            Err(e) => Err(e.to_string())
         }
     }
 
@@ -109,7 +108,7 @@ impl Lexer {
                     }
                     value.push(nc);
                 }
-                Ok( Token { typ: TokenType::Number, value, loc: self.get_location() } )
+                Ok( Token { typ: TokenType::IntLiteral, value, loc: self.get_location() } )
             },
             'A'..='z' => {
                 let mut value = String::from(c);
@@ -120,20 +119,24 @@ impl Lexer {
                     }
                     value.push(nc);
                 }
-                Ok( Token { typ: TokenType::Name, value, loc: self.get_location() } )
+                let typ = match value.as_str() {
+                    "func" => TokenType::FnKeyword,
+                    "let" => TokenType::LetKeyword,
+                    _ => TokenType::Name
+                };
+                Ok( Token { typ, value, loc: self.get_location() } )
             },
-            '(' => {
-                Ok( Token { typ: TokenType::OpenParenthesis, value: String::from("("), loc: self.get_location() } )
-            },
-            ')' => {
-                Ok( Token { typ: TokenType::ClosingParenthesis, value: String::from(")"), loc: self.get_location() } )
-            },
-            '=' | '+' | '-' => {
-                Ok( Token { typ: TokenType::Symbol, value: String::from(c), loc: self.get_location() } )
-            },
-            e => {
-                Ok( Token { typ: TokenType::Invalid, value: String::from(e), loc: self.get_location() } )
-            }
+            '(' => Ok( Token { typ: TokenType::OpenParenthesis, value: String::from("("), loc: self.get_location() } ),
+            ')' => Ok( Token { typ: TokenType::ClosingParenthesis, value: String::from(")"), loc: self.get_location() } ),
+            '{' => Ok( Token { typ: TokenType::OpenBracket, value: String::from("{"), loc: self.get_location() } ),
+            '}' => Ok( Token { typ: TokenType::ClosingBracket, value: String::from("}"), loc: self.get_location() } ),
+            ';' => Ok( Token { typ: TokenType::Semi, value: String::from(";"), loc: self.get_location() } ),
+            '=' => Ok( Token { typ: TokenType::Equal, value: String::from(c), loc: self.get_location() } ),
+            '+' => Ok( Token { typ: TokenType::Plus, value: String::from(c), loc: self.get_location() } ),
+            '-' => Ok( Token { typ: TokenType::Minus, value: String::from(c), loc: self.get_location() } ),
+            '*' => Ok( Token { typ: TokenType::Mult, value: String::from(c), loc: self.get_location() } ),
+            '/' => Ok( Token { typ: TokenType::Div, value: String::from(c), loc: self.get_location() } ),
+            e => Ok( Token { typ: TokenType::Invalid, value: String::from(e), loc: self.get_location() } )
         }
     }
 

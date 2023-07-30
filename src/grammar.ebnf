@@ -1,0 +1,19 @@
+File: Fn*;
+
+Fn = "func" "name" "(" ")" "{" Block "}";
+
+Block = (Stmt*);
+
+Stmt = StmtExpr | StmtLet;
+
+StmtExpr = Expr ";";
+StmtLet = "let" "name" "=" Expr ";";
+
+Expr = ExprName
+     | ExprLiteral
+     | ExprBinary
+     | ExprParen;
+ExprName = "name";
+ExprLiteral = "int";
+ExprBinary = Expr ("+" | "-" | "*" | "/") Expr;
+ExprParen = "(" Expr ")";

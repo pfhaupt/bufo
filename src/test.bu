@@ -1,4 +1,9 @@
-(defvar a 34)
-(defvar b 35)
-(defvar c (+ a b))
-(print (c))
+func main() {
+    let a = 5;
+    let b = (a + 3) * a;
+    let c = 100 * a - b;
+}
+
+func otherFunc() {
+    let a = 5;
+}
