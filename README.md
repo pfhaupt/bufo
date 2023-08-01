@@ -12,7 +12,7 @@ This project is Part 2 of my journey, the first being [HauptLang](https://github
 ## Milestones/Roadmap
 - [ ] Compiled into a [Windows Executable](https://en.wikipedia.org/wiki/Portable_Executable)
 - [ ] Type System
-- [ ] Functions
+- [x] Functions
 - [ ] Self-hosting
 - [ ] Optimizations
 
