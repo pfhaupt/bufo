@@ -151,7 +151,18 @@ impl Generator {
         let assign_expr = &instr_children[2];
         let src = self.convert_expr(assign_expr);
         self.code.push(Instruction::Copy { dest, src });
-
+    }
+    
+    fn convert_stmt_call(&mut self, call_tree: &Tree) {
+        let instr_children = &call_tree.children;
+        let call_name = &instr_children[0];
+        assert!(call_name.tkn.as_ref().unwrap().get_type() == TokenType::Name);
+        let call_name = call_name.tkn.as_ref().unwrap().get_value();
+        println!("{:?}", call_name);
+        if !self.function_lookup.contains_key(&call_name) {
+            panic!("Undefined function call!");
+        }
+        self.code.push(Instruction::Call { func_name: call_name });
     }
 
     fn convert_fn(&mut self, func: &Tree) {
@@ -185,6 +196,7 @@ impl Generator {
                     match t {
                         TreeType::StmtLet => self.convert_stmt_let(instr),
                         TreeType::StmtAssign => self.convert_stmt_assign(instr),
+                        TreeType::StmtCall => self.convert_stmt_call(instr),
                         e => todo!("convert {:?} inside function", e)
                     }
                 },
@@ -223,14 +235,20 @@ impl Generator {
     pub fn interpret(&mut self) -> Result<(), String> {
         let entry_point = String::from("main");
         let mut return_stack = VecDeque::<usize>::new();
+        const RETURN_STACK_SIZE: usize = 4096;
+
         if !self.function_lookup.contains_key(&entry_point) {
             return Err(format!("Missing entry point - Could not find function {}()", entry_point));
         }
         let mut ip = *self.function_lookup.get(&entry_point).unwrap();
 
         while ip < self.code.len() {
+            if return_stack.len() > RETURN_STACK_SIZE {
+                panic!("Stack overflow!");
+            }
             let instr = &self.code[ip];
             println!("{} {:?}", ip, instr);
+            let mut add_ip = true;
             match instr {
                 Instruction::Add { dest, src1, src2 } => {
                     self.memory[*dest] = self.memory[*src1] + self.memory[*src2];
@@ -251,9 +269,10 @@ impl Generator {
                     self.memory[*dest] = *val;
                 },
                 Instruction::Call { func_name } => {
-                    // return_stack.push(ip);
-                    todo!()
-                    // ip = self.function_lookup.get(func_name);
+                    return_stack.push_back(ip);
+                    println!("Entering {}", func_name);
+                    ip = *self.function_lookup.get(func_name).unwrap();
+                    add_ip = false;
                 }
                 Instruction::Return {} => {
                     if return_stack.len() == 0 {
@@ -261,11 +280,12 @@ impl Generator {
                         break;
                     }
                     ip = return_stack.pop_back().unwrap();
-                    todo!()
                 }
                 Instruction::Print { src: _src } => todo!(),
             }
-            ip += 1;
+            if add_ip {
+                ip += 1;
+            }
         }
         for (fn_name, fn_local) in &self.local_lookup {
             println!("Local variables for `{}()`", fn_name);
