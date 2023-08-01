@@ -104,7 +104,7 @@ impl Parser {
             return;
         }
         // TODO: Improve error handling
-        eprintln!("expected {t:?}");
+        panic!("expected {t:?}");
     }
 
     fn advance_with_error(&mut self, error: &str) {
