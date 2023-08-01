@@ -1,15 +1,7 @@
 use std::fs;
+use std::fmt::{Debug, Formatter};
 
-#[derive(Debug)]
-enum LexerError {
-    EOF,
-}
-
-fn error_to_string(err: LexerError) -> String {
-    match err {
-        LexerError::EOF => { String::from("Reached End of File! ") }
-    }
-}
+use crate::codegen::ERR_STR;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum TokenType {
@@ -24,11 +16,17 @@ pub enum TokenType {
     EOF
 }
 
-#[derive(Debug, Clone)]
-struct Location {
+#[derive(Clone)]
+pub struct Location {
     file: String,
     row: usize,
     col: usize,
+}
+
+impl Debug for Location {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "{}:{}:{}", self.file, self.row, self.col)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -46,6 +44,10 @@ impl Token {
     pub fn get_value(&self) -> String {
         self.value.clone()
     }
+
+    pub fn get_loc(&self) -> Location {
+        self.loc.clone()
+    }
 }
 
 #[derive(Debug)]
@@ -62,7 +64,7 @@ impl Lexer {
     pub fn new(origin_path: &String) -> Result<Self, String> {
         match fs::read_to_string(origin_path) {
             Ok(source) => Ok(Lexer { origin: origin_path.to_string(), source: source.chars().collect(), tokens: vec![], current_char: 0, current_line: 1, line_start: 0 }),
-            Err(e) => Err(e.to_string())
+            Err(e) => Err(format!("{}: {}", ERR_STR, e))
         }
     }
 
@@ -76,7 +78,7 @@ impl Lexer {
 
     fn next_char(&mut self) -> Result<char, String> {
         if self.is_eof() {
-            Err(error_to_string(LexerError::EOF))
+            Err(format!("{}: Reached End Of File while lexing.", ERR_STR))
         } else {
             let c = self.source[self.current_char];
             self.current_char += 1;

@@ -1,6 +1,7 @@
 use std::cell::Cell;
 
 use crate::lexer::{Token, TokenType};
+use crate::codegen::ERR_STR;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum TreeType {
@@ -98,25 +99,19 @@ impl Parser {
         }
     }
 
-    fn expect(&mut self, typ: TokenType) {
+    fn expect(&mut self, typ: TokenType) -> Result<(), String> {
         let t = typ.clone();
         if self.eat(typ) {
-            return;
+            return Ok(());
         }
         // TODO: Improve error handling
-        panic!("expected {t:?}");
+        let prev = self.tokens.get(self.ptr).unwrap();
+        Err(format!("{}: {:?}: Expected {:?}, found {:?}", ERR_STR, prev.get_loc(), t, prev.get_type()))
     }
 
-    fn advance_with_error(&mut self, error: &str) {
+    fn parse_expr_delim(&mut self) -> Result<MarkClosed, String> {
         let m = self.open();
-        eprintln!("{error}");
-        self.advance();
-        self.close(m, TreeType::ErrorTree);
-    }
-
-    fn parse_expr_delim(&mut self) -> MarkClosed {
-        let m = self.open();
-        match self.nth(0) {
+        Ok(match self.nth(0) {
             TokenType::IntLiteral => {
                 self.advance();
                 self.close(m, TreeType::ExprLiteral)
@@ -126,9 +121,9 @@ impl Parser {
                 self.close(m, TreeType::ExprName)
             },
             TokenType::OpenParenthesis => {
-                self.expect(TokenType::OpenParenthesis);
-                self.parse_expr();
-                self.expect(TokenType::ClosingParenthesis);
+                self.expect(TokenType::OpenParenthesis)?;
+                self.parse_expr()?;
+                self.expect(TokenType::ClosingParenthesis)?;
                 self.close(m, TreeType::ExprParen)
             }
             _ => {
@@ -137,23 +132,24 @@ impl Parser {
                 }
                 self.close(m, TreeType::ErrorTree)
             }
-        }
+        })
     }
 
-    fn parse_expr_rec(&mut self, left: TokenType) {
-        let mut lhs = self.parse_expr_delim();
+    fn parse_expr_rec(&mut self, left: TokenType) -> Result<(), String> {
+        let mut lhs = self.parse_expr_delim()?;
         
         loop {
             let right = self.nth(0);
             if Self::right_binds_tighter(left, right) {
                 let m = self.open_before(lhs);
                 self.advance();
-                self.parse_expr_rec(right);
+                self.parse_expr_rec(right)?;
                 lhs = self.close(m, TreeType::ExprBinary);
             } else {
                 break;
             }
         }
+        Ok(())
     }
 
     fn right_binds_tighter(left: TokenType, right: TokenType) -> bool {
@@ -176,90 +172,98 @@ impl Parser {
     }
     
 
-    fn parse_expr(&mut self) {
-        self.parse_expr_rec(TokenType::EOF);
+    fn parse_expr(&mut self) -> Result<(), String> {
+        self.parse_expr_rec(TokenType::EOF)
     }
     
-    fn parse_stmt_let(&mut self) {
+    fn parse_stmt_let(&mut self) -> Result<(), String> {
         assert!(self.at(TokenType::LetKeyword));
         let m = self.open();
-        self.expect(TokenType::LetKeyword);
-        self.expect(TokenType::Name);
-        self.expect(TokenType::Equal);
-        self.parse_expr();
-        self.expect(TokenType::Semi);
+        self.expect(TokenType::LetKeyword)?;
+        self.expect(TokenType::Name)?;
+        self.expect(TokenType::Equal)?;
+        self.parse_expr()?;
+        self.expect(TokenType::Semi)?;
         self.close(m, TreeType::StmtLet);
+        Ok(())
     }
 
-    fn parse_stmt_assign(&mut self) {
+    fn parse_stmt_assign(&mut self) -> Result<(), String> {
         assert!(self.at(TokenType::Name));
         let m = self.open();
-        self.expect(TokenType::Name);
-        self.expect(TokenType::Equal);
-        self.parse_expr();
-        self.expect(TokenType::Semi);
+        self.expect(TokenType::Name)?;
+        self.expect(TokenType::Equal)?;
+        self.parse_expr()?;
+        self.expect(TokenType::Semi)?;
         self.close(m, TreeType::StmtAssign);
+        Ok(())
     }
 
-    fn parse_stmt_expr(&mut self) {
+    fn parse_stmt_expr(&mut self) -> Result<(), String> {
         let m = self.open();
-        self.parse_expr();
-        self.expect(TokenType::Semi);
+        self.parse_expr()?;
+        self.expect(TokenType::Semi)?;
         self.close(m, TreeType::StmtExpr);
+        Ok(())
     }
 
-    fn parse_stmt_call(&mut self) {
+    fn parse_stmt_call(&mut self) -> Result<(), String> {
         let m = self.open();
-        self.expect(TokenType::Name);
-        self.expect(TokenType::OpenParenthesis);
-        self.expect(TokenType::ClosingParenthesis);
-        self.expect(TokenType::Semi);
+        self.expect(TokenType::Name)?;
+        self.expect(TokenType::OpenParenthesis)?;
+        self.expect(TokenType::ClosingParenthesis)?;
+        self.expect(TokenType::Semi)?;
         self.close(m, TreeType::StmtCall);
+        Ok(())
     }
 
-    fn parse_block(&mut self) {
+    fn parse_block(&mut self) -> Result<(), String> {
         assert!(self.at(TokenType::OpenBracket));
         let m = self.open();
-        self.expect(TokenType::OpenBracket);
+        self.expect(TokenType::OpenBracket)?;
         while !self.at(TokenType::ClosingBracket) && !self.eof() {
             match self.nth(0) {
-                TokenType::LetKeyword => self.parse_stmt_let(),
+                TokenType::LetKeyword => self.parse_stmt_let()?,
                 TokenType::Name => {
                     match self.nth(1) {
-                        TokenType::OpenParenthesis => self.parse_stmt_call(),
-                        _ => self.parse_stmt_assign(),
+                        TokenType::OpenParenthesis => self.parse_stmt_call()?,
+                        _ => self.parse_stmt_assign()?,
                     }
                 },
-                _ => self.parse_stmt_expr()
+                _ => self.parse_stmt_expr()?
             }
         }
-        self.expect(TokenType::ClosingBracket);
+        self.expect(TokenType::ClosingBracket)?;
         self.close(m, TreeType::Block);
+        Ok(())
     }
 
-    fn parse_func(&mut self) {
+    fn parse_func(&mut self) -> Result<(), String> {
         assert!(self.at(TokenType::FnKeyword));
         let m = self.open();
-        self.expect(TokenType::FnKeyword);
-        self.expect(TokenType::Name);
-        self.expect(TokenType::OpenParenthesis);
-        self.expect(TokenType::ClosingParenthesis);
+        self.expect(TokenType::FnKeyword)?;
+        self.expect(TokenType::Name)?;
+        self.expect(TokenType::OpenParenthesis)?;
+        self.expect(TokenType::ClosingParenthesis)?;
         if self.at(TokenType::OpenBracket) {
-            self.parse_block();
+            self.parse_block()?;
         }
         self.close(m, TreeType::Func);
+        Ok(())
     }
 
-    pub fn parse_file(&mut self) {
+    pub fn parse_file(&mut self) -> Result<(), String> {
         let m = self.open();
         while !self.eof() {
             if self.at(TokenType::FnKeyword) {
-                self.parse_func();
+                self.parse_func()?;
             } else {
-                self.advance_with_error("expected a function");
+                let prev = self.tokens.get(self.ptr).unwrap();
+                return Err(format!("{}: {:?}: Expected Function, found {:?}", ERR_STR, prev.get_loc(), prev.get_type()))
             }
         }
         self.close(m, TreeType::File);
+        Ok(())
     }
 
     pub fn build_tree(self) -> Tree {

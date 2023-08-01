@@ -1,14 +1,10 @@
-
-
-
 func bla() {
     let b = 43;
-    let a = b + 1;
 }
+
 func otherFunc() {
     let a = 5;
     bla();
-    otherFunc();
 }
 func main() {
     let a = 5;
