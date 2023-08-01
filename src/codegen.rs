@@ -103,7 +103,9 @@ impl Generator {
             Some(t) => {
                 match t {
                     TreeType::ExprLiteral
-                    | TreeType::ExprBinary => {
+                    | TreeType::ExprBinary
+                    | TreeType::ExprName
+                    | TreeType::ExprParen => {
                         return self.convert_expr(rhs);
                     }
                     e => todo!("Handle {:?} in convert_assignment", e)
