@@ -8,7 +8,7 @@ pub enum TreeType {
     File,
     Func,
     Block,
-    Stmt, StmtExpr, StmtLet,
+    Stmt, StmtExpr, StmtLet, StmtAssign,
     Expr, ExprName, ExprLiteral, ExprBinary, ExprParen
 }
 
@@ -180,7 +180,7 @@ impl Parser {
         self.parse_expr_rec(TokenType::EOF);
     }
     
-    fn parse_let_expr(&mut self) {
+    fn parse_stmt_let(&mut self) {
         assert!(self.at(TokenType::LetKeyword));
         let m = self.open();
         self.expect(TokenType::LetKeyword);
@@ -189,6 +189,16 @@ impl Parser {
         self.parse_expr();
         self.expect(TokenType::Semi);
         self.close(m, TreeType::StmtLet);
+    }
+
+    fn parse_stmt_assign(&mut self) {
+        assert!(self.at(TokenType::Name));
+        let m = self.open();
+        self.expect(TokenType::Name);
+        self.expect(TokenType::Equal);
+        self.parse_expr();
+        self.expect(TokenType::Semi);
+        self.close(m, TreeType::StmtAssign);
     }
 
     fn parse_stmt_expr(&mut self) {
@@ -204,7 +214,8 @@ impl Parser {
         self.expect(TokenType::OpenBracket);
         while !self.at(TokenType::ClosingBracket) && !self.eof() {
             match self.nth(0) {
-                TokenType::LetKeyword => self.parse_let_expr(),
+                TokenType::LetKeyword => self.parse_stmt_let(),
+                TokenType::Name => self.parse_stmt_assign(),
                 _ => self.parse_stmt_expr()
             }
         }
