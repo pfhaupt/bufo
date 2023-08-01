@@ -4,6 +4,8 @@ func main() {
     let c = 100 * a - b;
     let d = c;
     let e = (d - d);
+    a = 42069;
+    e;
 }
 
 func otherFunc() {

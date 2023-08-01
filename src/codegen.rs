@@ -46,7 +46,7 @@ impl Generator {
         r
     }    
 
-    fn convert_expr(&mut self, instr: &Tree) -> usize {
+    fn convert_expr_atomic(&mut self, instr: &Tree) -> usize {
         match instr.typ.as_ref().unwrap() {
             TreeType::ExprLiteral => {
                 assert!(instr.children.len() == 1);
@@ -57,7 +57,7 @@ impl Generator {
             },
             TreeType::ExprParen => {
                 assert!(instr.children.len() == 1);
-                return self.convert_expr(&instr.children[0]);
+                return self.convert_expr_atomic(&instr.children[0]);
             }
             TreeType::ExprBinary => {
                 assert!(*instr.typ.as_ref().unwrap() == TreeType::ExprBinary);
@@ -65,15 +65,15 @@ impl Generator {
                 let lhs = instr.children[0].as_ref();
                 let op = instr.children[1].as_ref();
                 let rhs = instr.children[2].as_ref();
-                let lhs_src = self.convert_expr(lhs);
-                let rhs_src = self.convert_expr(rhs);
+                let lhs_src = self.convert_expr_atomic(lhs);
+                let rhs_src = self.convert_expr_atomic(rhs);
                 let dst = self.get_mem();
                 match op.tkn.as_ref().unwrap().get_type() {
                     TokenType::Plus => self.code.push(Instruction::Add { dest: dst, src1: lhs_src, src2: rhs_src }),
                     TokenType::Minus => self.code.push(Instruction::Sub { dest: dst, src1: lhs_src, src2: rhs_src }),
                     TokenType::Mult => self.code.push(Instruction::Mul { dest: dst, src1: lhs_src, src2: rhs_src }),
                     TokenType::Div => self.code.push(Instruction::Div { dest: dst, src1: lhs_src, src2: rhs_src }),
-                    e => todo!("Handle {:?} in convert_expr()", e)
+                    e => todo!("Handle {:?} in convert_expr_atomic()", e)
                 }
                 return dst;
             },
@@ -91,46 +91,67 @@ impl Generator {
                 }
                 panic!("Local lookup does not contain the variable!");
             },
-            e => todo!("Handle {:?} in convert_expr. Got:\n{:?}", e, instr)
+            e => todo!("Handle {:?} in convert_expr_atomic. Got:\n{:?}", e, instr)
         }
     }
 
-    fn convert_assignment(&mut self, instr: &Tree) -> usize {
-        let eq = &instr.children[2];
-        assert!(eq.tkn.as_ref().unwrap().get_type() == TokenType::Equal);
-        let rhs = &instr.children[3];
-        match &rhs.typ {
+    fn convert_expr(&mut self, expr_tree: &Tree) -> usize {
+        match &expr_tree.typ {
             Some(t) => {
                 match t {
                     TreeType::ExprLiteral
                     | TreeType::ExprBinary
                     | TreeType::ExprName
                     | TreeType::ExprParen => {
-                        return self.convert_expr(rhs);
+                        return self.convert_expr_atomic(expr_tree);
                     }
-                    e => todo!("Handle {:?} in convert_assignment", e)
+                    e => todo!("Handle {:?} in convert_expr", e)
                 }
             },
-            e => todo!("Handle {:?} in convert_assignment", e)
+            e => todo!("Handle {:?} in convert_expr", e)
         }
     }
 
 
-    fn convert_let(&mut self, instr: &Tree) {
-        let instr_children = &instr.children;
+    fn convert_stmt_let(&mut self, let_tree: &Tree) {
+        let instr_children = &let_tree.children;
         let let_keyword = &instr_children[0];
         assert!(let_keyword.tkn.as_ref().unwrap().get_type() == TokenType::LetKeyword);
         let let_name = &instr_children[1];
         assert!(let_name.tkn.as_ref().unwrap().get_type() == TokenType::Name);
+        let let_eq = &instr_children[2];
+        assert!(let_eq.tkn.as_ref().unwrap().get_type() == TokenType::Equal);
+        let let_expr = &instr_children[3];
+        
         let let_name = let_name.tkn.as_ref().unwrap();
-        if self.local_lookup.contains_key(&let_name.get_value()) {
+        let local_lookup = self.local_lookup.get(self.current_fn.as_ref().unwrap()).unwrap();
+        if local_lookup.contains_key(&let_name.get_value()) {
             panic!("Variable redefinition in function");
         }
+
         let dest = self.get_mem();
         let local_vars = self.local_lookup.get_mut(self.current_fn.as_ref().unwrap()).unwrap();
         local_vars.insert(let_name.get_value(), dest);
-        let src = self.convert_assignment(instr);
+        let src = self.convert_expr(&let_expr);
         self.code.push(Instruction::Copy { dest, src });
+    }
+
+    fn convert_stmt_assign(&mut self, assign_tree: &Tree) {
+        let instr_children = &assign_tree.children;
+        let assign_name = &instr_children[0];
+        assert!(assign_name.tkn.as_ref().unwrap().get_type() == TokenType::Name);
+        let var_name = assign_name.tkn.as_ref().unwrap().get_value();
+        let local_lookup = self.local_lookup.get(self.current_fn.as_ref().unwrap()).unwrap();
+        if !local_lookup.contains_key(&var_name) {
+            panic!("Undefined variable!");
+        }
+        let dest = *local_lookup.get(&var_name).unwrap();
+        let assign_eq = &instr_children[1];
+        assert!(assign_eq.tkn.as_ref().unwrap().get_type() == TokenType::Equal);
+        let assign_expr = &instr_children[2];
+        let src = self.convert_expr(assign_expr);
+        self.code.push(Instruction::Copy { dest, src });
+
     }
 
     fn convert_fn(&mut self, func: &Tree) {
@@ -145,15 +166,13 @@ impl Generator {
         }
         let block = fn_children[2].typ.as_ref().unwrap();
         let name = fn_name.get_value();
-        let mem_size = self.memory.len();
+
         self.current_fn = Some(name.clone());
         self.function_lookup.insert(name.clone(), self.code.len());
         self.local_lookup.insert(name.clone(), HashMap::new());
         self.convert_fn_helper(&fn_children[2]);
         self.current_fn = None;
-        // let local_mem_size = f.get_offset() - mem_size;
-        // for _ in 0..local_mem_size { self.memory.push(0); }
-        // self.functions.insert(fn_name.get_value(), f);
+
         assert!(*block == TreeType::Block);
     }
 
@@ -164,8 +183,9 @@ impl Generator {
             match &instr.typ {
                 Some(t) => {
                     match t {
-                        TreeType::StmtLet => self.convert_let(instr),
-                        e => todo!("convert {:?} to function", e)
+                        TreeType::StmtLet => self.convert_stmt_let(instr),
+                        TreeType::StmtAssign => self.convert_stmt_assign(instr),
+                        e => todo!("convert {:?} inside function", e)
                     }
                 },
                 _ => panic!()
