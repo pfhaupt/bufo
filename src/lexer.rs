@@ -111,7 +111,7 @@ impl Lexer {
                 }
                 Ok( Token { typ: TokenType::IntLiteral, value, loc: self.get_location() } )
             },
-            'A'..='z' => {
+            'A'..='Z' | 'a'..='z' => {
                 let mut value = String::from(c);
                 while let Ok(nc) = self.next_char() {
                     if !nc.is_alphanumeric() {
