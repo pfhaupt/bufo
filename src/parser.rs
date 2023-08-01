@@ -8,7 +8,7 @@ pub enum TreeType {
     File,
     Func,
     Block,
-    Stmt, StmtExpr, StmtLet, StmtAssign,
+    Stmt, StmtExpr, StmtLet, StmtAssign, StmtCall,
     Expr, ExprName, ExprLiteral, ExprBinary, ExprParen
 }
 
@@ -208,6 +208,15 @@ impl Parser {
         self.close(m, TreeType::StmtExpr);
     }
 
+    fn parse_stmt_call(&mut self) {
+        let m = self.open();
+        self.expect(TokenType::Name);
+        self.expect(TokenType::OpenParenthesis);
+        self.expect(TokenType::ClosingParenthesis);
+        self.expect(TokenType::Semi);
+        self.close(m, TreeType::StmtCall);
+    }
+
     fn parse_block(&mut self) {
         assert!(self.at(TokenType::OpenBracket));
         let m = self.open();
@@ -215,7 +224,12 @@ impl Parser {
         while !self.at(TokenType::ClosingBracket) && !self.eof() {
             match self.nth(0) {
                 TokenType::LetKeyword => self.parse_stmt_let(),
-                TokenType::Name => self.parse_stmt_assign(),
+                TokenType::Name => {
+                    match self.nth(1) {
+                        TokenType::OpenParenthesis => self.parse_stmt_call(),
+                        _ => self.parse_stmt_assign(),
+                    }
+                },
                 _ => self.parse_stmt_expr()
             }
         }

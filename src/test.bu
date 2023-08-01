@@ -5,10 +5,12 @@ func main() {
     let d = c;
     let e = (d - d);
     a = 42069;
+    otherFunc();
 }
 
 func otherFunc() {
     let a = 5;
+    bla();
 }
 
 func bla() {

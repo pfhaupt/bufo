@@ -4,11 +4,12 @@ Fn = "func" "name" "(" ")" "{" Block "}";
 
 Block = (Stmt*);
 
-Stmt = StmtExpr | StmtLet | StmtAssign;
+Stmt = StmtExpr | StmtLet | StmtAssign | StmtCall;
 
 StmtExpr = Expr ";";
 StmtLet = "let" "name" "=" Expr ";";
 StmtAssign = "name" "=" Expr ";";
+StmtCall = "name" "(" ")" ";";
 
 Expr = ExprName
      | ExprLiteral
