@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::parser::{Tree, TreeType};
 use crate::lexer::TokenType;
@@ -11,32 +11,40 @@ enum Instruction {
     Mul { dest: usize, src1: usize, src2: usize },
     Div { dest: usize, src1: usize, src2: usize },
     Copy { dest: usize, src: usize },
+    Return {},
+    Call { func_name: String },
     Print { src: usize }
 }
 
 #[derive(Debug)]
-struct Function {
+pub struct Generator {
+    ast: Tree,
+    memory: Vec<usize>,
+    function_lookup: HashMap<String, usize>,
+    local_lookup: HashMap<String, HashMap<String, usize>>,
     code: Vec<Instruction>,
-    mem_offset: usize,
-    local_lookup: HashMap<String, usize>
+    current_fn: Option<String>
 }
 
-impl Function {
-    fn new(block: &Tree, mem_offset: usize) -> Self {
-        let mut r = Self { code: vec![], mem_offset, local_lookup: HashMap::new() };
-        r.convert(block);
-        r
+impl Generator {
+    pub fn new(ast: Tree) -> Self {
+        let mut gen = Self {
+            ast,
+            memory: vec![],
+            function_lookup: HashMap::new(),
+            local_lookup: HashMap::new(),
+            code: vec![],
+            current_fn: None
+        };
+        gen.generate_code();
+        gen
     }
 
     fn get_mem(&mut self) -> usize {
-        let l = self.mem_offset;
-        self.mem_offset += 1;
-        l
-    }
-
-    fn get_offset(&self) -> usize {
-        self.mem_offset
-    }
+        let r = self.memory.len();
+        self.memory.push(0);
+        r
+    }    
 
     fn convert_expr(&mut self, instr: &Tree) -> usize {
         match instr.typ.as_ref().unwrap() {
@@ -73,9 +81,11 @@ impl Function {
                 assert!(instr.children.len() == 1);
                 let val_name = &instr.children[0];
                 let name = val_name.tkn.as_ref().unwrap().get_value();
-                if self.local_lookup.contains_key(&name) {
-                    let dst = self.get_mem();
-                    let src = *self.local_lookup.get(&name).unwrap();
+                
+                let dst = self.get_mem();
+                let local_vars = self.local_lookup.get_mut(self.current_fn.as_ref().unwrap()).unwrap();
+                if local_vars.contains_key(&name) {
+                    let src = *local_vars.get(&name).unwrap();
                     self.code.push(Instruction::Copy { dest: dst, src });
                     return dst;
                 }
@@ -103,6 +113,7 @@ impl Function {
         }
     }
 
+
     fn convert_let(&mut self, instr: &Tree) {
         let instr_children = &instr.children;
         let let_keyword = &instr_children[0];
@@ -114,12 +125,38 @@ impl Function {
             panic!("Variable redefinition in function");
         }
         let dest = self.get_mem();
-        self.local_lookup.insert(let_name.get_value(), dest);
+        let local_vars = self.local_lookup.get_mut(self.current_fn.as_ref().unwrap()).unwrap();
+        local_vars.insert(let_name.get_value(), dest);
         let src = self.convert_assignment(instr);
         self.code.push(Instruction::Copy { dest, src });
     }
 
-    fn convert(&mut self, block: &Tree) {
+    fn convert_fn(&mut self, func: &Tree) {
+        let fn_children = &func.children;
+        assert!(fn_children.len() == 3, "fnKeyword fnName {{block}} expected.");
+        let fn_keyword = fn_children[0].tkn.as_ref().unwrap();
+        assert!(fn_keyword.get_type() == TokenType::FnKeyword);
+        let fn_name = fn_children[1].tkn.as_ref().unwrap();
+        assert!(fn_name.get_type() == TokenType::Name);
+        if self.function_lookup.contains_key(&fn_name.get_value()) {
+            panic!("Function redefinition!!");
+        }
+        let block = fn_children[2].typ.as_ref().unwrap();
+        let name = fn_name.get_value();
+        let mem_size = self.memory.len();
+        self.current_fn = Some(name.clone());
+        self.function_lookup.insert(name.clone(), self.code.len());
+        self.local_lookup.insert(name.clone(), HashMap::new());
+        self.convert_fn_helper(&fn_children[2]);
+        self.current_fn = None;
+        // let local_mem_size = f.get_offset() - mem_size;
+        // for _ in 0..local_mem_size { self.memory.push(0); }
+        // self.functions.insert(fn_name.get_value(), f);
+        assert!(*block == TreeType::Block);
+    }
+
+    
+    fn convert_fn_helper(&mut self, block: &Tree) {
         assert!(*block.typ.as_ref().unwrap() == TreeType::Block);
         for instr in &block.children {
             match &instr.typ {
@@ -132,40 +169,7 @@ impl Function {
                 _ => panic!()
             }
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct Generator {
-    ast: Tree,
-    memory: Vec<usize>,
-    functions: HashMap<String, Function>
-}
-
-impl Generator {
-    pub fn new(ast: Tree) -> Self {
-        let mut gen = Self { ast, memory: vec![], functions: HashMap::new() };
-        gen.generate_code();
-        gen
-    }
-
-    fn convert_fn(&mut self, func: &Tree) {
-        let fn_children = &func.children;
-        assert!(fn_children.len() == 3, "fnKeyword fnName {{block}} expected.");
-        let fn_keyword = fn_children[0].tkn.as_ref().unwrap();
-        assert!(fn_keyword.get_type() == TokenType::FnKeyword);
-        let fn_name = fn_children[1].tkn.as_ref().unwrap();
-        assert!(fn_name.get_type() == TokenType::Name);
-        if self.functions.contains_key(&fn_name.get_value()) {
-            panic!("Function redefinition!!");
-        }
-        let block = fn_children[2].typ.as_ref().unwrap();
-        let mem_size = self.memory.len();
-        let f = Function::new(&fn_children[2], mem_size);
-        let local_mem_size = f.get_offset() - mem_size;
-        for _ in 0..local_mem_size { self.memory.push(0); }
-        self.functions.insert(fn_name.get_value(), f);
-        assert!(*block == TreeType::Block);
+        self.code.push(Instruction::Return {});
     }
 
     fn convert_ast(&mut self, ast: &Tree) {
@@ -194,11 +198,17 @@ impl Generator {
         self.convert_ast(&self.ast.clone());
     }
 
-    fn interpret_function(&mut self, fn_name: &String) {
-        assert!(self.functions.contains_key(fn_name));
-        let f = self.functions.get(fn_name).unwrap();
-        for instr in &f.code {
-            println!("{:?}", instr);
+    pub fn interpret(&mut self) -> Result<(), String> {
+        let entry_point = String::from("main");
+        let mut return_stack = VecDeque::<usize>::new();
+        if !self.function_lookup.contains_key(&entry_point) {
+            return Err(format!("Missing entry point - Could not find function {}()", entry_point));
+        }
+        let mut ip = *self.function_lookup.get(&entry_point).unwrap();
+
+        while ip < self.code.len() {
+            let instr = &self.code[ip];
+            println!("{} {:?}", ip, instr);
             match instr {
                 Instruction::Add { dest, src1, src2 } => {
                     self.memory[*dest] = self.memory[*src1] + self.memory[*src2];
@@ -217,22 +227,34 @@ impl Generator {
                 },
                 Instruction::Load { dest, val } => {
                     self.memory[*dest] = *val;
+                },
+                Instruction::Call { func_name } => {
+                    // return_stack.push(ip);
+                    todo!()
+                    // ip = self.function_lookup.get(func_name);
+                }
+                Instruction::Return {} => {
+                    if return_stack.len() == 0 {
+                        println!("Finished!");
+                        break;
+                    }
+                    ip = return_stack.pop_back().unwrap();
+                    todo!()
                 }
                 Instruction::Print { src: _src } => todo!(),
             }
+            ip += 1;
         }
-    }
-
-    pub fn interpret(&mut self) -> Result<(), String> {
-        let main = String::from("main");
-        if self.functions.contains_key(&main) {
-            self.interpret_function(&main);
-        }
-        for f in &self.functions {
-            for v in &f.1.local_lookup {
-                println!("{:10} - {} = {:3}", f.0, v.0, self.memory[*v.1]);
+        for (fn_name, fn_local) in &self.local_lookup {
+            println!("Local variables for `{}()`", fn_name);
+            for (name, ip) in fn_local {
+                println!("{:10} -> {}", name, self.memory[*ip]);
             }
         }
         Ok(())
+    }
+
+    pub fn compile(&mut self) -> Result<(), String> {
+        todo!("Restructure the program -> Functions should use the same instruction space, and same memory")
     }
 }

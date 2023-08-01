@@ -22,6 +22,7 @@ fn main() -> Result<(), String> {
     // println!("{:#?}", ast);
 
     let mut generator = Generator::new(ast);
+    // generator.compile()?;
     generator.interpret()?;
 
     println!("{:?}", now.elapsed());
