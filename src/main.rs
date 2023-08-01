@@ -21,7 +21,7 @@ fn main() -> Result<(), String> {
     let ast = parser.build_tree();
     // println!("{:#?}", ast);
 
-    let mut generator = Generator::new(ast, 3);
+    let mut generator = Generator::new(ast);
     generator.interpret()?;
 
     println!("{:?}", now.elapsed());

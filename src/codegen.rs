@@ -1,7 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::parser::{Tree, TreeType};
-use crate::lexer::{Token, TokenType};
+use crate::lexer::TokenType;
 
 #[derive(Debug)]
 enum Instruction {
@@ -101,7 +101,6 @@ impl Function {
             },
             e => todo!("Handle {:?} in convert_assignment", e)
         }
-        unreachable!()
     }
 
     fn convert_let(&mut self, instr: &Tree) {
@@ -140,13 +139,12 @@ impl Function {
 pub struct Generator {
     ast: Tree,
     memory: Vec<usize>,
-    functions: HashMap<String, Function>,
-    register_count: usize
+    functions: HashMap<String, Function>
 }
 
 impl Generator {
-    pub fn new(ast: Tree, local_count: usize) -> Self {
-        let mut gen = Self { ast, memory: vec![], functions: HashMap::new(), register_count: local_count };
+    pub fn new(ast: Tree) -> Self {
+        let mut gen = Self { ast, memory: vec![], functions: HashMap::new() };
         gen.generate_code();
         gen
     }
@@ -188,12 +186,6 @@ impl Generator {
         }
     }
 
-    fn allocate_register(&mut self) -> usize {
-        let result = self.register_count;
-        self.register_count += 1;
-        result
-    }
-
     // fn add_instruction(&mut self, instr: Instruction) {
     //     self.code.push(instr);
     // }
@@ -226,7 +218,7 @@ impl Generator {
                 Instruction::Load { dest, val } => {
                     self.memory[*dest] = *val;
                 }
-                Instruction::Print { src } => todo!(),
+                Instruction::Print { src: _src } => todo!(),
             }
         }
     }

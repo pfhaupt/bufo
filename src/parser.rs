@@ -1,18 +1,6 @@
-use std::collections::{HashMap, HashSet};
 use std::cell::Cell;
 
 use crate::lexer::{Token, TokenType};
-
-#[derive(Debug, Clone)]
-pub enum Ast {
-    Const(u64),
-    Var(usize),
-    Block(Vec<Ast>),
-    Assign(usize, Box<Ast>),
-    Add(Box<Ast>, Box<Ast>),
-    Sub(Box<Ast>, Box<Ast>),
-    Func(String, Box<Ast>)
-}
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum TreeType {

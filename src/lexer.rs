@@ -8,7 +8,6 @@ enum LexerError {
 fn error_to_string(err: LexerError) -> String {
     match err {
         LexerError::EOF => { String::from("Reached End of File! ") }
-        e =>  { unimplemented!("error_to_string() for {:?}", e) }
     }
 }
 
