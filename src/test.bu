@@ -4,6 +4,12 @@ func bla() {
 
 func otherFunc() {
     let a = 5;
+    a = 24;
+    let b = 5;
+    b = a;
+    let c = a - b;
+    let d = c + 1;
+    d = c + (a + b) * d;
     bla();
 }
 func main() {

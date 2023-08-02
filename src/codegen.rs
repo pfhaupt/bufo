@@ -13,6 +13,8 @@ enum Instruction {
     Mul { dest: usize, src1: usize, src2: usize },
     Div { dest: usize, src1: usize, src2: usize },
     Copy { dest: usize, src: usize },
+    LoadMem { mem: usize, reg: usize },
+    StoreMem { mem: usize, reg: usize },
     Return {},
     Call { func_name: String },
     Print { src: usize }
@@ -84,12 +86,12 @@ impl Generator {
                 let val_name = &instr.children[0];
                 let name = val_name.tkn.as_ref().unwrap().get_value();
                 
-                let dst = self.get_mem();
+                let reg = self.get_mem();
                 let local_vars = self.local_lookup.get_mut(self.current_fn.as_ref().unwrap()).unwrap();
                 if local_vars.contains_key(&name) {
-                    let src = *local_vars.get(&name).unwrap();
-                    self.code.push(Instruction::Copy { dest: dst, src });
-                    return Ok(dst);
+                    let mem = *local_vars.get(&name).unwrap();
+                    self.code.push(Instruction::LoadMem { reg, mem });
+                    return Ok(reg);
                 }
                 return Err(format!("{}: {:?}: Undefined variable `{}`", ERR_STR, val_name.tkn.as_ref().unwrap().get_loc(), name));
             },
@@ -131,11 +133,11 @@ impl Generator {
             return Err(format!("{}: {:?}: Variable redefinition", ERR_STR, let_name.get_loc()));
         }
 
-        let dest = self.get_mem();
-        let src = self.convert_expr(&let_expr)?;
+        let mem = self.get_mem();
+        let reg = self.convert_expr(&let_expr)?;
         let local_vars = self.local_lookup.get_mut(self.current_fn.as_ref().unwrap()).unwrap();
-        local_vars.insert(let_name.get_value(), dest);
-        self.code.push(Instruction::Copy { dest, src });
+        local_vars.insert(let_name.get_value(), mem);
+        self.code.push(Instruction::StoreMem { reg,  mem } );
         Ok(())
     }
 
@@ -148,12 +150,12 @@ impl Generator {
         if !local_lookup.contains_key(&var_name) {
             return Err(format!("{}: {:?}: Unknown variable `{}`", ERR_STR, assign_name.tkn.as_ref().unwrap().get_loc(), var_name));
         }
-        let dest = *local_lookup.get(&var_name).unwrap();
+        let mem = *local_lookup.get(&var_name).unwrap();
         let assign_eq = &instr_children[1];
         assert!(assign_eq.tkn.as_ref().unwrap().get_type() == TokenType::Equal);
         let assign_expr = &instr_children[2];
-        let src = self.convert_expr(assign_expr)?;
-        self.code.push(Instruction::Copy { dest, src });
+        let reg = self.convert_expr(assign_expr)?;
+        self.code.push(Instruction::StoreMem { mem, reg } );
         Ok(())
     }
     
@@ -270,8 +272,16 @@ impl Generator {
                     self.memory[*dest] = self.memory[*src1] / self.memory[*src2];
                 },
                 Instruction::Copy { dest, src } => {
-                    self.memory[*dest] = self.memory[*src];
+                    // self.memory[*dest] = self.memory[*src];
+                    todo!("Instruction::Copy")
                 },
+                Instruction::LoadMem { reg, mem } => {
+                    self.memory[*reg] = self.memory[*mem];    
+                },
+                Instruction::StoreMem { reg, mem } => {
+                    self.memory[*mem] = self.memory[*reg];    
+
+                }
                 Instruction::Load { dest, val } => {
                     self.memory[*dest] = *val;
                 },
