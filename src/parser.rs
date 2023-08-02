@@ -8,6 +8,8 @@ pub enum TreeType {
     ErrorTree,
     File,
     Func,
+    ParamList, Param,
+    ArgList, Arg,
     Block,
     Stmt, StmtExpr, StmtLet, StmtAssign, StmtCall,
     Expr, ExprName, ExprLiteral, ExprBinary, ExprParen
@@ -207,11 +209,31 @@ impl Parser {
         Ok(())
     }
 
+    fn parse_arg(&mut self) -> Result<(), String> {
+        let m = self.open();
+        self.parse_expr()?;
+        if self.at(TokenType::Comma) {
+            self.advance();
+        }
+        self.close(m, TreeType::Arg);
+        Ok(())
+    }
+
+    fn parse_arg_list(&mut self) -> Result<(), String> {
+        let m = self.open();
+        self.expect(TokenType::OpenParenthesis)?;
+        while !self.at(TokenType::ClosingParenthesis) && !self.eof() {
+            self.parse_arg()?;
+        }
+        self.expect(TokenType::ClosingParenthesis)?;
+        self.close(m, TreeType::ArgList);
+        Ok(())
+    }
+
     fn parse_stmt_call(&mut self) -> Result<(), String> {
         let m = self.open();
         self.expect(TokenType::Name)?;
-        self.expect(TokenType::OpenParenthesis)?;
-        self.expect(TokenType::ClosingParenthesis)?;
+        self.parse_arg_list()?;
         self.expect(TokenType::Semi)?;
         self.close(m, TreeType::StmtCall);
         Ok(())
@@ -238,16 +260,34 @@ impl Parser {
         Ok(())
     }
 
+    fn parse_param(&mut self) -> Result<(), String> {
+        let m = self.open();
+        self.expect(TokenType::Name)?;
+        if self.at(TokenType::Comma) {
+            self.advance();
+        }
+        self.close(m, TreeType::Param);
+        Ok(())
+    }
+
+    fn parse_param_list(&mut self) -> Result<(), String> {
+        let m = self.open();
+        self.expect(TokenType::OpenParenthesis)?;
+        while !self.at(TokenType::ClosingParenthesis) && !self.eof() {
+            self.parse_param()?;
+        }
+        self.expect(TokenType::ClosingParenthesis)?;
+        self.close(m, TreeType::ParamList);
+        Ok(())
+    }
+
     fn parse_func(&mut self) -> Result<(), String> {
         assert!(self.at(TokenType::FnKeyword));
         let m = self.open();
         self.expect(TokenType::FnKeyword)?;
         self.expect(TokenType::Name)?;
-        self.expect(TokenType::OpenParenthesis)?;
-        self.expect(TokenType::ClosingParenthesis)?;
-        if self.at(TokenType::OpenBracket) {
-            self.parse_block()?;
-        }
+        self.parse_param_list()?;
+        self.parse_block()?;
         self.close(m, TreeType::Func);
         Ok(())
     }
@@ -289,7 +329,8 @@ impl Parser {
                         | TokenType::ClosingParenthesis
                         | TokenType::OpenBracket
                         | TokenType::OpenParenthesis
-                        | TokenType::Semi => {}, // There's no reason to clutter the AST with this
+                        | TokenType::Semi
+                        | TokenType::Comma => {}, // There's no reason to clutter the AST with this
                         _ => stack.last_mut().unwrap().children.push(Box::new(Tree { typ: None, tkn: Some(t), children: vec![] }))
                     }
                 }

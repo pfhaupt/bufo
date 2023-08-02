@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, BTreeMap, VecDeque};
 
 use crate::parser::{Tree, TreeType};
 use crate::lexer::TokenType;
@@ -12,7 +12,7 @@ enum Instruction {
     Sub { dest: usize, src: usize },
     Mul { dest: usize, src: usize },
     Div { dest: usize, src: usize },
-    Copy { dest: usize, src: usize },
+    Move { dest: usize, src: usize },
     LoadMem { mem: usize, reg: usize },
     StoreMem { mem: usize, reg: usize },
     Return {},
@@ -21,12 +21,65 @@ enum Instruction {
 }
 
 #[derive(Debug)]
+struct Function {
+    ip: usize,
+    name: String,
+    param_variables: BTreeMap<String, usize>,
+    local_variables: BTreeMap<String, usize>,
+}
+
+impl Function {
+    fn new(name: &String, ip: usize) -> Self {
+        Self { ip, name: name.clone(), param_variables: BTreeMap::new(), local_variables: BTreeMap::new() }
+    }
+
+    fn get_ip(&self) -> usize {
+        self.ip
+    }
+
+    fn get_var_count(&self) -> usize {
+        self.param_variables.len() + self.local_variables.len()
+    }
+
+    fn get_params(&self) -> &BTreeMap<String, usize> {
+        &self.param_variables
+    }
+
+    fn get_local_variables(&self) -> &BTreeMap<String, usize> {
+        &self.local_variables
+    }
+
+    fn contains_param(&self, var_name: &String) -> bool {
+        self.param_variables.contains_key(var_name)
+    }
+
+    fn contains_variable(&self, var_name: &String) -> bool {
+        self.contains_param(var_name) || self.local_variables.contains_key(var_name)
+    }
+
+    fn get_variable_location(&self, var_name: &String) -> usize {
+        *self.param_variables
+            .get(var_name)
+            .unwrap_or_else(||self.local_variables.get(var_name).unwrap())
+    }
+
+    fn add_local_variable(&mut self, var_name: String, mem: usize) {
+        self.local_variables.insert(var_name, mem);
+    }
+
+    fn add_param(&mut self, param_name: &String) -> usize {
+        let mem = self.get_var_count();
+        self.param_variables.insert(param_name.clone(), mem);
+        mem
+    }
+}
+
+#[derive(Debug)]
 pub struct Generator {
     ast: Tree,
     registers: Vec<usize>,
     register_ctr: usize,
-    function_lookup: HashMap<String, usize>,
-    local_lookup: HashMap<String, HashMap<String, usize>>,
+    functions: HashMap<String, Function>,
     code: Vec<Instruction>,
     current_fn: Option<String>
 }
@@ -35,10 +88,9 @@ impl Generator {
     pub fn new(ast: Tree) -> Result<Self, String> {
         let mut gen = Self {
             ast,
-            registers: vec![],
+            registers: vec![0; 100],
             register_ctr: 0,
-            function_lookup: HashMap::new(),
-            local_lookup: HashMap::new(),
+            functions: HashMap::new(),
             code: vec![],
             current_fn: None
         };
@@ -46,23 +98,33 @@ impl Generator {
         Ok(gen)
     }
 
+    fn add_local_var(&mut self, var_name: &String) -> usize {
+        assert!(self.current_fn.is_some());
+        assert!(self.functions.contains_key(self.current_fn.as_ref().unwrap()));
+        let mem = self.get_stack_offset();
+        self.functions
+            .get_mut(self.current_fn.as_ref().unwrap())
+            .unwrap()
+            .add_local_variable(var_name.clone(), mem);
+        mem
+    }
+
     fn get_stack_offset(&self) -> usize {
         assert!(self.current_fn.is_some());
-        self.local_lookup
+        self.functions
             .get(self.current_fn.as_ref().unwrap())
-            .unwrap_or(&HashMap::new())
-            .len()
+            .unwrap_or_else(|| panic!() )
+            .get_var_count()
     }
 
     fn get_function_stack_size(&self, func_name: &String) -> usize {
-        assert!(self.function_lookup.contains_key(func_name));
-        assert!(self.local_lookup.contains_key(func_name));
-        self.local_lookup
+        assert!(self.functions.contains_key(func_name));
+        self.functions
             .get(func_name)
-            .unwrap_or(&HashMap::new())
-            .len()
+            .unwrap_or_else(||panic!())
+            .get_var_count()
     }
-
+    
     fn reset_registers(&mut self) {
         self.register_ctr = 0;
     }
@@ -110,9 +172,9 @@ impl Generator {
                 let name = val_name.tkn.as_ref().unwrap().get_value();
                 
                 let reg = self.get_register();
-                let local_vars = self.local_lookup.get_mut(self.current_fn.as_ref().unwrap()).unwrap();
-                if local_vars.contains_key(&name) {
-                    let mem = *local_vars.get(&name).unwrap();
+                let curr_fn = self.functions.get(self.current_fn.as_ref().unwrap()).unwrap();
+                if curr_fn.contains_variable(&name) {
+                    let mem = curr_fn.get_variable_location(&name);
                     self.code.push(Instruction::LoadMem { reg, mem });
                     return Ok(reg);
                 }
@@ -121,7 +183,7 @@ impl Generator {
             e => todo!("Handle {:?} in convert_expr_atomic. Got:\n{:?}", e, instr)
         }
     }
-
+    
     fn convert_expr(&mut self, expr_tree: &Tree) -> Result<usize, String> {
         let r = match &expr_tree.typ {
             Some(t) => {
@@ -140,10 +202,11 @@ impl Generator {
         self.reset_registers();
         r
     }
-
-
+    
+    
     fn convert_stmt_let(&mut self, let_tree: &Tree) -> Result<(), String> {
         let instr_children = &let_tree.children;
+        assert!(instr_children.len() == 4);
         let let_keyword = &instr_children[0];
         assert!(let_keyword.tkn.as_ref().unwrap().get_type() == TokenType::LetKeyword);
         let let_name = &instr_children[1];
@@ -153,29 +216,28 @@ impl Generator {
         let let_expr = &instr_children[3];
         
         let let_name = let_name.tkn.as_ref().unwrap();
-        let local_lookup = self.local_lookup.get(self.current_fn.as_ref().unwrap()).unwrap();
-        if local_lookup.contains_key(&let_name.get_value()) {
+        let local_lookup = self.functions.get(self.current_fn.as_ref().unwrap()).unwrap();
+        if local_lookup.contains_variable(&let_name.get_value()) {
             return Err(format!("{}: {:?}: Variable redefinition", ERR_STR, let_name.get_loc()));
         }
-
-        let mem = self.get_stack_offset();
+        
+        let mem = self.add_local_var(&let_name.get_value());
         let reg = self.convert_expr(&let_expr)?;
-        let local_vars = self.local_lookup.get_mut(self.current_fn.as_ref().unwrap()).unwrap();
-        local_vars.insert(let_name.get_value(), mem);
         self.code.push(Instruction::StoreMem { reg,  mem } );
         Ok(())
     }
-
+    
     fn convert_stmt_assign(&mut self, assign_tree: &Tree) -> Result<(), String> {
         let instr_children = &assign_tree.children;
+        assert!(instr_children.len() == 3);
         let assign_name = &instr_children[0];
         assert!(assign_name.tkn.as_ref().unwrap().get_type() == TokenType::Name);
         let var_name = assign_name.tkn.as_ref().unwrap().get_value();
-        let local_lookup = self.local_lookup.get(self.current_fn.as_ref().unwrap()).unwrap();
-        if !local_lookup.contains_key(&var_name) {
+        let local_lookup = self.functions.get(self.current_fn.as_ref().unwrap()).unwrap();
+        if !local_lookup.contains_variable(&var_name) {
             return Err(format!("{}: {:?}: Unknown variable `{}`", ERR_STR, assign_name.tkn.as_ref().unwrap().get_loc(), var_name));
         }
-        let mem = *local_lookup.get(&var_name).unwrap();
+        let mem = local_lookup.get_variable_location(&var_name);
         let assign_eq = &instr_children[1];
         assert!(assign_eq.tkn.as_ref().unwrap().get_type() == TokenType::Equal);
         let assign_expr = &instr_children[2];
@@ -183,39 +245,99 @@ impl Generator {
         self.code.push(Instruction::StoreMem { mem, reg } );
         Ok(())
     }
+
+    fn convert_arg(&mut self, arg: &Tree) -> Result<usize, String> {
+        assert!(*arg.typ.as_ref().unwrap() == TreeType::Arg);
+        let arg_children = &arg.children;
+        assert!(arg_children.len() == 1);
+        let arg_expr = &arg_children[0];
+        self.convert_expr(&arg_expr)
+    }
     
     fn convert_stmt_call(&mut self, call_tree: &Tree) -> Result<(), String> {
         let instr_children = &call_tree.children;
+        assert!(instr_children.len() == 2);
         let call_name = &instr_children[0];
         assert!(call_name.tkn.as_ref().unwrap().get_type() == TokenType::Name);
+        let call_args = &instr_children[1];
+        assert!(*call_args.typ.as_ref().unwrap() == TreeType::ArgList);
         let name = call_name.tkn.as_ref().unwrap().get_value();
-        if !self.function_lookup.contains_key(&name) {
+        if !self.functions.contains_key(&name) {
             return Err(format!("{} {:?}: Unknown function `{}`",ERR_STR, call_name.tkn.as_ref().unwrap().get_loc(), name));
+        }
+
+        let params = self.functions.get(&name).unwrap().get_params();
+
+        if call_args.children.len() != params.len() {
+            let err_txt = 
+                    if call_args.children.len() > params.len() { format!("Attempted to call function `{}` with too many arguments", name) }
+                    else { format!("Attempted to call function `{}` with too little arguments", name) };
+
+            return Err(format!("{}: {:?}: {}! Got {} arguments, expected {}",
+                        ERR_STR,
+                        call_name.tkn.as_ref().unwrap().get_loc(),
+                        err_txt,
+                        call_args.children.len(),
+                        params.len()));
+        }
+        let mut reg_ctr = 50;
+        for arg in &call_args.children {
+            let reg = self.convert_arg(&arg)?;
+            self.code.push(Instruction::Move { dest: reg_ctr, src: reg });
+            reg_ctr += 1;
         }
         self.code.push(Instruction::Call { func_name: name });
         Ok(())
     }
-
+    
     fn convert_fn(&mut self, func: &Tree) -> Result<(), String> {
         let fn_children = &func.children;
-        assert!(fn_children.len() == 3, "fnKeyword fnName {{block}} expected.");
+        assert!(fn_children.len() == 4, "fnKeyword fnName {{Param}} {{Block}} expected.");
         let fn_keyword = fn_children[0].tkn.as_ref().unwrap();
         assert!(fn_keyword.get_type() == TokenType::FnKeyword);
         let fn_name = fn_children[1].tkn.as_ref().unwrap();
         assert!(fn_name.get_type() == TokenType::Name);
-        if self.function_lookup.contains_key(&fn_name.get_value()) {
+        if self.functions.contains_key(&fn_name.get_value()) {
             return Err(format!("{}: {:?}: Function redefinition", ERR_STR, fn_name.get_loc()));
         }
-        let block = fn_children[2].typ.as_ref().unwrap();
         let name = fn_name.get_value();
-
+        
         self.current_fn = Some(name.clone());
-        self.function_lookup.insert(name.clone(), self.code.len());
-        self.local_lookup.insert(name.clone(), HashMap::new());
-        self.convert_fn_helper(&fn_children[2])?;
+        let f = Function::new(&name, self.code.len());
+        self.functions.insert(name.clone(), f);
+        self.convert_fn_param(&fn_children[2])?;
+        self.convert_fn_helper(&fn_children[3])?;
         self.current_fn = None;
-
-        assert!(*block == TreeType::Block);
+        
+        Ok(())
+    }
+    
+    fn convert_fn_param(&mut self, param: &Tree) -> Result<(), String> {
+        let param_children = &param.children;
+        let mut reg_ctr = 50;
+        for p in param_children {
+            match &p.typ {
+                Some(t) => {
+                    match t {
+                        TreeType::Param => {
+                            assert!(p.children.len() == 1);
+                            let param_node = &p.children[0];
+                            let param_name = param_node.tkn.as_ref().unwrap().get_value();
+                            // todo!("{:?}", param_name);
+                            let local_lookup = self.functions.get_mut(self.current_fn.as_ref().unwrap()).unwrap();
+                            if local_lookup.contains_param(&param_name) {
+                                return Err(format!("{}: {:?}: Parameter redefinition `{}`", ERR_STR, param_node.tkn.as_ref().unwrap().get_loc(), param_name));
+                            }
+                            let mem = local_lookup.add_param(&param_name);
+                            self.code.push(Instruction::StoreMem { mem, reg: reg_ctr });
+                            reg_ctr += 1;
+                        },
+                        _ => { todo!("Handle t not TreeType::Param in convert_fn_param() - Got: {:?}", t) }
+                    }
+                },
+                None => panic!()
+            }
+        }
         Ok(())
     }
 
@@ -274,18 +396,18 @@ impl Generator {
         let mut stack = vec![0; STACK_SIZE];
         let mut stack_ptr = STACK_SIZE - 1 - self.get_function_stack_size(&entry_point);
 
-        if !self.function_lookup.contains_key(&entry_point) {
+        if !self.functions.contains_key(&entry_point) {
             return Err(format!("{}: Missing entry point - Could not find function {}()", ERR_STR, entry_point));
         }
 
-        let mut ip = *self.function_lookup.get(&entry_point).unwrap();
+        let mut ip = self.functions.get(&entry_point).unwrap().get_ip();
 
         while ip < self.code.len() {
             if return_stack.len() > RETURN_STACK_LIMIT {
                 return Err(format!("{}: Recursion Limit reached when interpreting!", ERR_STR));
             }
             let instr = &self.code[ip];
-            println!("{:3} {:?}", ip, instr);
+            // println!("{:3} {:?}", ip, instr);
             let mut add_ip = true;
             match instr {
                 Instruction::Add { dest, src } => {
@@ -300,9 +422,9 @@ impl Generator {
                 Instruction::Div { dest, src } => {
                     self.registers[*dest] /= self.registers[*src];
                 },
-                Instruction::Copy { .. } => {
-                    // self.registers[*dest] = self.registers[*src];
-                    todo!("Instruction::Copy")
+                Instruction::Move { dest, src } => {
+                    self.registers[*dest] = self.registers[*src];
+                    // todo!("Instruction::Move")
                 },
                 Instruction::LoadMem { reg, mem } => {
                     self.registers[*reg] = stack[stack_ptr + *mem + 1];    
@@ -322,7 +444,10 @@ impl Generator {
                     }
                     stack_ptr -= stack_size;
                     println!("Entering {} with a stack size of {}", func_name, stack_size);
-                    ip = *self.function_lookup.get(func_name).unwrap();
+                    for i in 0..20 {
+                        println!("{}", stack[STACK_SIZE - i - 1]);
+                    }
+                    ip = self.functions.get(func_name).unwrap().get_ip();
                     add_ip = false;
                 }
                 Instruction::Return {} => {
@@ -338,6 +463,9 @@ impl Generator {
             if add_ip {
                 ip += 1;
             }
+        }
+        for i in 0..10 {
+            println!("{}", stack[STACK_SIZE - i - 1]);
         }
         Ok(())
     }

@@ -1,15 +1,21 @@
 File: Fn*;
 
-Fn = "func" "name" "(" ")" "{" Block "}";
+Fn = "func" "name" ParamList Block;
 
-Block = (Stmt*);
+Param = "name" [","];
+ParamList = "(" {Param} ")";
+
+Block = "{" {Stmt} "}";
 
 Stmt = StmtExpr | StmtLet | StmtAssign | StmtCall;
 
 StmtExpr = Expr ";";
 StmtLet = "let" "name" "=" Expr ";";
 StmtAssign = "name" "=" Expr ";";
-StmtCall = "name" "(" ")" ";";
+StmtCall = "name" ArgList ";";
+
+Arg = Expr [","];
+ArgList = "(" {Arg} ")";
 
 Expr = ExprName
      | ExprLiteral

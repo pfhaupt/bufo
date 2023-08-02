@@ -11,7 +11,7 @@ pub enum TokenType {
     OpenBracket, ClosingBracket,
     FnKeyword, LetKeyword,
     Equal, Plus, Minus, Mult, Div,
-    Semi,
+    Semi, Comma,
     Name,
     EOF
 }
@@ -132,6 +132,7 @@ impl Lexer {
             '{' => Ok( Token { typ: TokenType::OpenBracket, value: String::from("{"), loc: self.get_location() } ),
             '}' => Ok( Token { typ: TokenType::ClosingBracket, value: String::from("}"), loc: self.get_location() } ),
             ';' => Ok( Token { typ: TokenType::Semi, value: String::from(";"), loc: self.get_location() } ),
+            ',' => Ok( Token { typ: TokenType::Comma, value: String::from(","), loc: self.get_location() } ),
             '=' => Ok( Token { typ: TokenType::Equal, value: String::from(c), loc: self.get_location() } ),
             '+' => Ok( Token { typ: TokenType::Plus, value: String::from(c), loc: self.get_location() } ),
             '-' => Ok( Token { typ: TokenType::Minus, value: String::from(c), loc: self.get_location() } ),
