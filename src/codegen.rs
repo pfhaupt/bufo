@@ -24,6 +24,7 @@ enum Instruction {
 pub struct Generator {
     ast: Tree,
     registers: Vec<usize>,
+    register_ctr: usize,
     function_lookup: HashMap<String, usize>,
     local_lookup: HashMap<String, HashMap<String, usize>>,
     code: Vec<Instruction>,
@@ -35,6 +36,7 @@ impl Generator {
         let mut gen = Self {
             ast,
             registers: vec![],
+            register_ctr: 0,
             function_lookup: HashMap::new(),
             local_lookup: HashMap::new(),
             code: vec![],
@@ -61,9 +63,14 @@ impl Generator {
             .len()
     }
 
+    fn reset_registers(&mut self) {
+        self.register_ctr = 0;
+    }
+
     fn get_register(&mut self) -> usize {
-        let r = self.registers.len();
-        self.registers.push(0);
+        let r = self.register_ctr;
+        if r >= self.registers.len() { self.registers.push(0); }
+        self.register_ctr += 1;
         r
     }    
 
@@ -116,20 +123,22 @@ impl Generator {
     }
 
     fn convert_expr(&mut self, expr_tree: &Tree) -> Result<usize, String> {
-        match &expr_tree.typ {
+        let r = match &expr_tree.typ {
             Some(t) => {
                 match t {
                     TreeType::ExprLiteral
                     | TreeType::ExprBinary
                     | TreeType::ExprName
                     | TreeType::ExprParen => {
-                        return self.convert_expr_atomic(expr_tree);
+                        self.convert_expr_atomic(expr_tree)
                     }
                     e => todo!("Handle {:?} in convert_expr", e)
                 }
             },
             e => todo!("Handle {:?} in convert_expr", e)
-        }
+        };
+        self.reset_registers();
+        r
     }
 
 
