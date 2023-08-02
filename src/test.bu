@@ -1,5 +1,7 @@
 func bla() {
     let b = 43;
+    let a = b + 1;
+    let c = a + 1;
 }
 
 func otherFunc() {
@@ -10,7 +12,9 @@ func otherFunc() {
     let c = a - b;
     let d = c + 1;
     d = c + (a + b) * d;
+    let e = 65;
     bla();
+    otherFunc();
 }
 func main() {
     let a = 5;

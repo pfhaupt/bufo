@@ -23,7 +23,7 @@ enum Instruction {
 #[derive(Debug)]
 pub struct Generator {
     ast: Tree,
-    memory: Vec<usize>,
+    registers: Vec<usize>,
     function_lookup: HashMap<String, usize>,
     local_lookup: HashMap<String, HashMap<String, usize>>,
     code: Vec<Instruction>,
@@ -34,7 +34,7 @@ impl Generator {
     pub fn new(ast: Tree) -> Result<Self, String> {
         let mut gen = Self {
             ast,
-            memory: vec![],
+            registers: vec![],
             function_lookup: HashMap::new(),
             local_lookup: HashMap::new(),
             code: vec![],
@@ -44,9 +44,26 @@ impl Generator {
         Ok(gen)
     }
 
-    fn get_mem(&mut self) -> usize {
-        let r = self.memory.len();
-        self.memory.push(0);
+    fn get_stack_offset(&self) -> usize {
+        assert!(self.current_fn.is_some());
+        self.local_lookup
+            .get(self.current_fn.as_ref().unwrap())
+            .unwrap_or(&HashMap::new())
+            .len()
+    }
+
+    fn get_function_stack_size(&self, func_name: &String) -> usize {
+        assert!(self.function_lookup.contains_key(func_name));
+        assert!(self.local_lookup.contains_key(func_name));
+        self.local_lookup
+            .get(func_name)
+            .unwrap_or(&HashMap::new())
+            .len()
+    }
+
+    fn get_register(&mut self) -> usize {
+        let r = self.registers.len();
+        self.registers.push(0);
         r
     }    
 
@@ -55,7 +72,7 @@ impl Generator {
             TreeType::ExprLiteral => {
                 assert!(instr.children.len() == 1);
                 let val = instr.children[0].tkn.as_ref().unwrap().get_value().parse().unwrap();
-                let dest = self.get_mem();
+                let dest = self.get_register();
                 self.code.push(Instruction::Load { dest, val });
                 return Ok(dest);
             },
@@ -71,7 +88,7 @@ impl Generator {
                 let rhs = instr.children[2].as_ref();
                 let lhs_src = self.convert_expr_atomic(lhs)?;
                 let rhs_src = self.convert_expr_atomic(rhs)?;
-                let dst = self.get_mem();
+                let dst = self.get_register();
                 match op.tkn.as_ref().unwrap().get_type() {
                     TokenType::Plus => self.code.push(Instruction::Add { dest: dst, src1: lhs_src, src2: rhs_src }),
                     TokenType::Minus => self.code.push(Instruction::Sub { dest: dst, src1: lhs_src, src2: rhs_src }),
@@ -86,7 +103,7 @@ impl Generator {
                 let val_name = &instr.children[0];
                 let name = val_name.tkn.as_ref().unwrap().get_value();
                 
-                let reg = self.get_mem();
+                let reg = self.get_register();
                 let local_vars = self.local_lookup.get_mut(self.current_fn.as_ref().unwrap()).unwrap();
                 if local_vars.contains_key(&name) {
                     let mem = *local_vars.get(&name).unwrap();
@@ -133,7 +150,7 @@ impl Generator {
             return Err(format!("{}: {:?}: Variable redefinition", ERR_STR, let_name.get_loc()));
         }
 
-        let mem = self.get_mem();
+        let mem = self.get_stack_offset();
         let reg = self.convert_expr(&let_expr)?;
         let local_vars = self.local_lookup.get_mut(self.current_fn.as_ref().unwrap()).unwrap();
         local_vars.insert(let_name.get_value(), mem);
@@ -194,7 +211,6 @@ impl Generator {
         Ok(())
     }
 
-    
     fn convert_fn_helper(&mut self, block: &Tree) -> Result<(), String> {
         assert!(*block.typ.as_ref().unwrap() == TreeType::Block);
         for instr in &block.children {
@@ -242,9 +258,13 @@ impl Generator {
     }
 
     pub fn interpret(&mut self) -> Result<(), String> {
+        const RETURN_STACK_LIMIT: usize = 4096;
+        const STACK_SIZE: usize = 1_000_000;
         let entry_point = String::from("main");
+
         let mut return_stack = VecDeque::<usize>::new();
-        const RETURN_STACK_SIZE: usize = 4096;
+        let mut stack = vec![0; STACK_SIZE];
+        let mut stack_ptr = STACK_SIZE - 1 - self.get_function_stack_size(&entry_point);
 
         if !self.function_lookup.contains_key(&entry_point) {
             return Err(format!("{}: Missing entry point - Could not find function {}()", ERR_STR, entry_point));
@@ -252,42 +272,47 @@ impl Generator {
         let mut ip = *self.function_lookup.get(&entry_point).unwrap();
 
         while ip < self.code.len() {
-            if return_stack.len() > RETURN_STACK_SIZE {
-                return Err(format!("{}: Stack Overflow when interpreting!", ERR_STR));
+            if return_stack.len() > RETURN_STACK_LIMIT {
+                return Err(format!("{}: Recursion Limit reached when interpreting!", ERR_STR));
             }
             let instr = &self.code[ip];
             println!("{:3} {:?}", ip, instr);
             let mut add_ip = true;
             match instr {
                 Instruction::Add { dest, src1, src2 } => {
-                    self.memory[*dest] = self.memory[*src1] + self.memory[*src2];
+                    self.registers[*dest] = self.registers[*src1] + self.registers[*src2];
                 },
                 Instruction::Sub { dest, src1, src2 } => {
-                    self.memory[*dest] = self.memory[*src1] - self.memory[*src2];
+                    self.registers[*dest] = self.registers[*src1] - self.registers[*src2];
                 },
                 Instruction::Mul { dest, src1, src2 } => {
-                    self.memory[*dest] = self.memory[*src1] * self.memory[*src2];
+                    self.registers[*dest] = self.registers[*src1] * self.registers[*src2];
                 },
                 Instruction::Div { dest, src1, src2 } => {
-                    self.memory[*dest] = self.memory[*src1] / self.memory[*src2];
+                    self.registers[*dest] = self.registers[*src1] / self.registers[*src2];
                 },
                 Instruction::Copy { dest, src } => {
-                    // self.memory[*dest] = self.memory[*src];
+                    // self.registers[*dest] = self.registers[*src];
                     todo!("Instruction::Copy")
                 },
                 Instruction::LoadMem { reg, mem } => {
-                    self.memory[*reg] = self.memory[*mem];    
+                    self.registers[*reg] = stack[stack_ptr + *mem + 1];    
                 },
                 Instruction::StoreMem { reg, mem } => {
-                    self.memory[*mem] = self.memory[*reg];    
-
+                    stack[stack_ptr + *mem + 1] = self.registers[*reg];
                 }
                 Instruction::Load { dest, val } => {
-                    self.memory[*dest] = *val;
+                    self.registers[*dest] = *val;
                 },
                 Instruction::Call { func_name } => {
+                    let stack_size = self.get_function_stack_size(func_name);
                     return_stack.push_back(ip);
-                    println!("Entering {}", func_name);
+                    return_stack.push_back(stack_size);
+                    if stack_ptr < stack_size {
+                        return Err(format!("{}: Stack Overflow when interpreting!", ERR_STR));
+                    }
+                    stack_ptr -= stack_size;
+                    println!("Entering {} with a stack size of {}", func_name, stack_size);
                     ip = *self.function_lookup.get(func_name).unwrap();
                     add_ip = false;
                 }
@@ -296,18 +321,13 @@ impl Generator {
                         println!("Finished!");
                         break;
                     }
+                    stack_ptr += return_stack.pop_back().unwrap();
                     ip = return_stack.pop_back().unwrap();
                 }
                 Instruction::Print { src: _src } => todo!(),
             }
             if add_ip {
                 ip += 1;
-            }
-        }
-        for (fn_name, fn_local) in &self.local_lookup {
-            println!("Local variables for `{}()`", fn_name);
-            for (name, ip) in fn_local {
-                println!("{:10} -> {}", name, self.memory[*ip]);
             }
         }
         Ok(())
