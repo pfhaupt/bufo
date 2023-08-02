@@ -8,10 +8,10 @@ pub const ERR_STR: &str = "\x1b[91merror\x1b[0m";
 #[derive(Debug)]
 enum Instruction {
     Load { dest: usize, val: usize },
-    Add { dest: usize, src1: usize, src2: usize },
-    Sub { dest: usize, src1: usize, src2: usize },
-    Mul { dest: usize, src1: usize, src2: usize },
-    Div { dest: usize, src1: usize, src2: usize },
+    Add { dest: usize, src: usize },
+    Sub { dest: usize, src: usize },
+    Mul { dest: usize, src: usize },
+    Div { dest: usize, src: usize },
     Copy { dest: usize, src: usize },
     LoadMem { mem: usize, reg: usize },
     StoreMem { mem: usize, reg: usize },
@@ -86,17 +86,16 @@ impl Generator {
                 let lhs = instr.children[0].as_ref();
                 let op = instr.children[1].as_ref();
                 let rhs = instr.children[2].as_ref();
-                let lhs_src = self.convert_expr_atomic(lhs)?;
-                let rhs_src = self.convert_expr_atomic(rhs)?;
-                let dst = self.get_register();
+                let dest = self.convert_expr_atomic(lhs)?;
+                let src = self.convert_expr_atomic(rhs)?;
                 match op.tkn.as_ref().unwrap().get_type() {
-                    TokenType::Plus => self.code.push(Instruction::Add { dest: dst, src1: lhs_src, src2: rhs_src }),
-                    TokenType::Minus => self.code.push(Instruction::Sub { dest: dst, src1: lhs_src, src2: rhs_src }),
-                    TokenType::Mult => self.code.push(Instruction::Mul { dest: dst, src1: lhs_src, src2: rhs_src }),
-                    TokenType::Div => self.code.push(Instruction::Div { dest: dst, src1: lhs_src, src2: rhs_src }),
+                    TokenType::Plus => self.code.push(Instruction::Add { dest, src }),
+                    TokenType::Minus => self.code.push(Instruction::Sub { dest, src }),
+                    TokenType::Mult => self.code.push(Instruction::Mul { dest, src }),
+                    TokenType::Div => self.code.push(Instruction::Div { dest, src }),
                     e => todo!("Handle {:?} in convert_expr_atomic()", e)
                 }
-                return Ok(dst);
+                return Ok(dest);
             },
             TreeType::ExprName => {
                 assert!(instr.children.len() == 1);
@@ -269,6 +268,7 @@ impl Generator {
         if !self.function_lookup.contains_key(&entry_point) {
             return Err(format!("{}: Missing entry point - Could not find function {}()", ERR_STR, entry_point));
         }
+
         let mut ip = *self.function_lookup.get(&entry_point).unwrap();
 
         while ip < self.code.len() {
@@ -279,19 +279,19 @@ impl Generator {
             println!("{:3} {:?}", ip, instr);
             let mut add_ip = true;
             match instr {
-                Instruction::Add { dest, src1, src2 } => {
-                    self.registers[*dest] = self.registers[*src1] + self.registers[*src2];
+                Instruction::Add { dest, src } => {
+                    self.registers[*dest] += self.registers[*src];
                 },
-                Instruction::Sub { dest, src1, src2 } => {
-                    self.registers[*dest] = self.registers[*src1] - self.registers[*src2];
+                Instruction::Sub { dest, src } => {
+                    self.registers[*dest] -= self.registers[*src];
                 },
-                Instruction::Mul { dest, src1, src2 } => {
-                    self.registers[*dest] = self.registers[*src1] * self.registers[*src2];
+                Instruction::Mul { dest, src } => {
+                    self.registers[*dest] *= self.registers[*src];
                 },
-                Instruction::Div { dest, src1, src2 } => {
-                    self.registers[*dest] = self.registers[*src1] / self.registers[*src2];
+                Instruction::Div { dest, src } => {
+                    self.registers[*dest] /= self.registers[*src];
                 },
-                Instruction::Copy { dest, src } => {
+                Instruction::Copy { .. } => {
                     // self.registers[*dest] = self.registers[*src];
                     todo!("Instruction::Copy")
                 },
