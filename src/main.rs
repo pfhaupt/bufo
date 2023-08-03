@@ -15,6 +15,13 @@ TODO-List:
         -> currently the compiler crashes if you wanna do something like f(f(10))
         -> this is because fn calls are treated as statements, instead of expressions
         -> this means you can also not do something like `let a = f(10);`
+    Introduce Scope
+        ->  The following code snippet should not work:
+                if (cond) {
+                    let a = 0;
+                }
+                a = 4;
+            It should fail in line 4 with "Undefined variable `a`"
 */
 
 fn compile() -> Result<(), String> {
