@@ -9,6 +9,16 @@ use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::codegen::Generator;
 
+/*
+TODO-List:
+    Replace unwrap() with expect(), stating why exactly the thing is unrecoverable
+        -> if error recoverable, make it Result instead
+    Rewrite Grammar to make call expr, instead of stmt
+        -> currently the compiler crashes if you wanna do something like f(f(10))
+        -> this is because fn calls are treated as statements, instead of expressions
+        -> this means you can also not do something like `let a = f(10);`
+*/
+
 fn compile() -> Result<(), String> {
     let path = String::from("src/test.bu");
 
