@@ -217,10 +217,10 @@ impl Parser {
     fn parse_arg(&mut self) -> Result<(), String> {
         let m = self.open();
         self.parse_expr()?;
-        if self.at(TokenType::Comma) {
-            self.advance();
-        }
         self.close(m, TreeType::Arg);
+        if self.eat(TokenType::Comma) {
+            self.parse_arg()?;
+        }
         Ok(())
     }
 

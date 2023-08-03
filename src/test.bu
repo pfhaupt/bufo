@@ -3,5 +3,5 @@ func factorial(n, acc) {
 }
 
 func main() {
-    factorial(10, 1);
+    factorial(10,);
 }
