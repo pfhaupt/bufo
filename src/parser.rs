@@ -197,6 +197,7 @@ impl Parser {
             [
                 [TokenType::Plus, TokenType::Minus].as_slice(),
                 &[TokenType::Mult, TokenType::Div],
+                &[TokenType::CmpEq, TokenType::CmpNeq, TokenType::CmpGt, TokenType::CmpGte, TokenType::CmpLt, TokenType::CmpLte]
             ]
             .iter()
             .position(|l| l.contains(&typ))
@@ -213,42 +214,6 @@ impl Parser {
 
     fn parse_expr(&mut self) -> Result<(), String> {
         self.parse_expr_rec(TokenType::Eof)
-    }
-
-    fn parse_expr_cmp(&mut self) -> Result<(), String> {
-        let m = self.open();
-        self.parse_expr()?;
-        let mut found = false;
-        for typ in &[
-            TokenType::CmpEq,
-            TokenType::CmpNeq,
-            TokenType::CmpGt,
-            TokenType::CmpGte,
-            TokenType::CmpLt,
-            TokenType::CmpLte,
-        ] {
-            if self.eat(*typ) {
-                found = true;
-                break;
-            }
-        }
-        if !found {
-            let ptr = if self.ptr == self.tokens.len() {
-                self.ptr - 1
-            } else {
-                self.ptr
-            };
-            let tkn = self.tokens.get(ptr).unwrap();
-            return Err(format!(
-                "{}: {:?}: Expected Comparison, found {:?}",
-                ERR_STR,
-                tkn.get_loc(),
-                tkn.get_type()
-            ));
-        }
-        self.parse_expr()?;
-        self.close(m, TreeType::ExprBinary);
-        Ok(())
     }
 
     fn parse_stmt_let(&mut self) -> Result<(), String> {
@@ -316,7 +281,7 @@ impl Parser {
         let m = self.open();
         self.expect(TokenType::IfKeyword)?;
         self.expect(TokenType::OpenParenthesis)?;
-        self.parse_expr_cmp()?;
+        self.parse_expr()?;
         self.expect(TokenType::ClosingParenthesis)?;
         self.parse_block()?;
         if self.eat(TokenType::ElseKeyword) {
