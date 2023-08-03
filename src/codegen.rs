@@ -34,22 +34,20 @@ enum Instruction {
     StoreMem { mem: usize, reg: usize },
     Return {},
     Call { func_name: String },
-    Print { src: usize },
+    // Print { src: usize },
 }
 
 #[derive(Debug)]
 struct Function {
     ip: usize,
-    name: String,
     param_variables: BTreeMap<String, usize>,
     local_variables: BTreeMap<String, usize>,
 }
 
 impl Function {
-    fn new(name: &String, ip: usize) -> Self {
+    fn new(ip: usize) -> Self {
         Self {
             ip,
-            name: name.clone(),
             param_variables: BTreeMap::new(),
             local_variables: BTreeMap::new(),
         }
@@ -65,10 +63,6 @@ impl Function {
 
     fn get_params(&self) -> &BTreeMap<String, usize> {
         &self.param_variables
-    }
-
-    fn get_local_variables(&self) -> &BTreeMap<String, usize> {
-        &self.local_variables
     }
 
     fn contains_param(&self, var_name: &String) -> bool {
@@ -89,9 +83,9 @@ impl Function {
         self.local_variables.insert(var_name, mem);
     }
 
-    fn add_param(&mut self, param_name: &String) -> usize {
+    fn add_param(&mut self, param_name: &str) -> usize {
         let mem = self.get_var_count();
-        self.param_variables.insert(param_name.clone(), mem);
+        self.param_variables.insert(param_name.to_owned(), mem);
         mem
     }
 }
@@ -122,14 +116,14 @@ impl Generator {
         Ok(gen)
     }
 
-    fn add_local_var(&mut self, var_name: &String) -> usize {
+    fn add_local_var(&mut self, var_name: &str) -> usize {
         assert!(!self.current_fn.is_empty());
         assert!(self.functions.contains_key(&self.current_fn));
         let mem = self.get_stack_offset();
         self.functions
             .get_mut(&self.current_fn)
             .expect("Function table does not contain current_fn! This might be a bug in Codegen.")
-            .add_local_variable(var_name.clone(), mem);
+            .add_local_variable(var_name.to_owned(), mem);
         mem
     }
 
@@ -175,18 +169,18 @@ impl Generator {
                 .expect("At this point value of ExprLiteral should only contain valid digits.");
                 let dest = self.get_register();
                 self.code.push(Instruction::Load { dest, val });
-                return Ok(dest);
+                Ok(dest)
             }
             TreeType::ExprParen => {
                 assert!(instr.children.len() == 1);
-                return self.convert_expr_atomic(&instr.children[0]);
+                self.convert_expr_atomic(&instr.children[0])
             }
             TreeType::ExprBinary => {
                 assert!(*ref_unwrap!(instr.typ) == TreeType::ExprBinary);
                 assert!(instr.children.len() == 3);
-                let lhs = instr.children[0].as_ref();
-                let op = instr.children[1].as_ref();
-                let rhs = instr.children[2].as_ref();
+                let lhs = &instr.children[0];
+                let op = &instr.children[1];
+                let rhs = &instr.children[2];
                 let dest = self.convert_expr_atomic(lhs)?;
                 let src = self.convert_expr_atomic(rhs)?;
                 match ref_unwrap!(op.tkn, "Expected valid ExprBinary operator, got None instead. This might be a bug in parsing.").get_type() {
@@ -226,7 +220,7 @@ impl Generator {
                     },
                     e => todo!("Handle {:?} in convert_expr_atomic()", e)
                 }
-                return Ok(dest);
+                Ok(dest)
             }
             TreeType::ExprName => {
                 assert!(instr.children.len() == 1);
@@ -247,12 +241,12 @@ impl Generator {
                     self.code.push(Instruction::LoadMem { reg, mem });
                     return Ok(reg);
                 }
-                return Err(format!(
+                Err(format!(
                     "{}: {:?}: Undefined variable `{}`",
                     ERR_STR,
                     ref_unwrap!(val_name.tkn).get_loc(),
                     name
-                ));
+                ))
             }
             e => todo!("Handle {:?} in convert_expr_atomic. Got:\n{:?}", e, instr),
         }
@@ -301,7 +295,7 @@ impl Generator {
         }
 
         let mem = self.add_local_var(&let_name.get_value());
-        let reg = self.convert_expr(&let_expr)?;
+        let reg = self.convert_expr(let_expr)?;
         self.code.push(Instruction::StoreMem { reg, mem });
         Ok(())
     }
@@ -338,7 +332,7 @@ impl Generator {
         let arg_children = &arg.children;
         assert!(arg_children.len() == 1);
         let arg_expr = &arg_children[0];
-        self.convert_expr(&arg_expr)
+        self.convert_expr(arg_expr)
     }
 
     fn convert_stmt_call(&mut self, call_tree: &Tree) -> Result<(), String> {
@@ -385,7 +379,7 @@ impl Generator {
         }
         let mut reg_ctr = 50;
         for arg in &call_args.children {
-            let reg = self.convert_arg(&arg)?;
+            let reg = self.convert_arg(arg)?;
             self.code.push(Instruction::Move {
                 dest: reg_ctr,
                 src: reg,
@@ -403,9 +397,9 @@ impl Generator {
         let if_cond = &if_children[1];
         assert!(*ref_unwrap!(if_cond.typ) == TreeType::ExprBinary);
         let if_block = &if_children[2];
-        self.convert_expr(&if_cond)?;
+        self.convert_expr(if_cond)?;
 
-        self.convert_block(&if_block)?;
+        self.convert_block(if_block)?;
         let if_jmp = self.resolve_last_jmp();
 
         if if_children.len() == 5 {
@@ -418,14 +412,14 @@ impl Generator {
             self.code.push(Instruction::Jmp { dest: usize::MAX });
             self.set_jmp_lbl(if_jmp, self.code.len());
 
-            self.convert_block(&else_block)?;
+            self.convert_block(else_block)?;
             self.resolve_last_jmp();
         }
         Ok(())
     }
 
     fn resolve_last_jmp(&mut self) -> usize {
-        assert!(self.unresolved_jmp_instr.len() > 0);
+        assert!(!self.unresolved_jmp_instr.is_empty());
         let ip = self.unresolved_jmp_instr.pop_back().unwrap();
         self.set_jmp_lbl(ip, self.code.len());
         ip
@@ -464,7 +458,7 @@ impl Generator {
         let name = fn_name.get_value();
 
         self.current_fn = name.clone();
-        let f = Function::new(&name, self.code.len());
+        let f = Function::new(self.code.len());
         self.functions.insert(name.clone(), f);
         self.convert_fn_param(&fn_children[2])?;
         self.convert_block(&fn_children[3])?;
@@ -677,12 +671,12 @@ impl Generator {
                     ip = self
                         .functions
                         .get(func_name)
-                        .expect(format!("Could not find {func_name} in function table").as_str())
+                        .unwrap_or_else(|| panic!("Could not find {func_name} in function table"))
                         .get_ip();
                     add_ip = false;
                 }
                 Instruction::Return {} => {
-                    if return_stack.len() == 0 {
+                    if return_stack.is_empty() {
                         println!("Finished!");
                         break;
                     }
@@ -691,11 +685,7 @@ impl Generator {
                     // where only one element is on the return_stack
                     stack_ptr += return_stack.pop_back().unwrap();
                     ip = return_stack.pop_back().unwrap();
-                }
-                Instruction::Print { src: _src } => todo!(),
-                i => {
-                    todo!("{:?}", i)
-                }
+                } // Instruction::Print { src: _src } => todo!(),
             }
             if add_ip {
                 ip += 1;
@@ -707,6 +697,7 @@ impl Generator {
         Ok(())
     }
 
+    #[allow(unused)]
     pub fn compile(&mut self) -> Result<(), String> {
         todo!("Restructure the program -> Functions should use the same instruction space, and same memory")
     }

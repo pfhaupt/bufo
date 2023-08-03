@@ -5,7 +5,6 @@ use crate::codegen::ERR_STR;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum TokenType {
-    Invalid,
     IntLiteral,
     OpenParenthesis,
     ClosingParenthesis,
@@ -29,7 +28,7 @@ pub enum TokenType {
     Semi,
     Comma,
     Name,
-    EOF,
+    Eof,
 }
 
 #[derive(Clone)]
@@ -54,7 +53,7 @@ pub struct Token {
 
 impl Token {
     pub fn get_type(&self) -> TokenType {
-        self.typ.clone()
+        self.typ
     }
 
     pub fn get_value(&self) -> String {
@@ -136,8 +135,8 @@ impl Lexer {
 
     fn next_token(&mut self) -> Result<Token, String> {
         assert_eq!(
-            TokenType::EOF as u8 + 1,
-            25,
+            TokenType::Eof as u8 + 1,
+            24,
             "Not all TokenTypes are handled in next_token()"
         );
         let c = self.next_char()?;
@@ -220,12 +219,12 @@ impl Lexer {
                         _ => {
                             let mut v = String::from(c);
                             v.push(nc);
-                            return Err(format!(
+                            Err(format!(
                                 "{}: {:?}: Unexpected Symbol `{}`",
                                 ERR_STR,
                                 self.get_location(),
                                 v
-                            ));
+                            ))
                         }
                     }
                 } else {

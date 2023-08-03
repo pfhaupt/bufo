@@ -13,13 +13,11 @@ pub enum TreeType {
     ArgList,
     Arg,
     Block,
-    Stmt,
     StmtExpr,
     StmtLet,
     StmtAssign,
     StmtCall,
     StmtIf,
-    Expr,
     ExprName,
     ExprLiteral,
     ExprBinary,
@@ -30,7 +28,7 @@ pub enum TreeType {
 pub struct Tree {
     pub typ: Option<TreeType>,
     pub tkn: Option<Token>,
-    pub children: Vec<Box<Tree>>,
+    pub children: Vec<Tree>,
 }
 
 enum Event {
@@ -109,7 +107,7 @@ impl Parser {
         self.fuel.set(self.fuel.get() - 1);
         self.tokens
             .get(self.ptr + lookahead)
-            .map_or(TokenType::EOF, |it| it.get_type())
+            .map_or(TokenType::Eof, |it| it.get_type())
     }
 
     fn at(&self, typ: TokenType) -> bool {
@@ -126,13 +124,13 @@ impl Parser {
     }
 
     fn expect(&mut self, typ: TokenType) -> Result<(), String> {
-        let t = typ.clone();
+        let t = typ;
         if self.eat(typ) {
             return Ok(());
         }
         // TODO: Improve error handling
         let (prev, typ) = match self.tokens.get(self.ptr) {
-            None => (self.tokens.get(self.ptr - 1).expect("Expected Some value, found None instead. This might be a bug in Parsing or Lexing."), TokenType::EOF),
+            None => (self.tokens.get(self.ptr - 1).expect("Expected Some value, found None instead. This might be a bug in Parsing or Lexing."), TokenType::Eof),
             Some(prev) => (prev, prev.get_type())
         };
         Err(format!(
@@ -207,21 +205,21 @@ impl Parser {
             return false
         };
         let Some(left_tight) = tightness(left) else {
-            assert!(left == TokenType::EOF);
+            assert!(left == TokenType::Eof);
             return true;
         };
         right_tight > left_tight
     }
 
     fn parse_expr(&mut self) -> Result<(), String> {
-        self.parse_expr_rec(TokenType::EOF)
+        self.parse_expr_rec(TokenType::Eof)
     }
 
     fn parse_expr_cmp(&mut self) -> Result<(), String> {
         let m = self.open();
         self.parse_expr()?;
         let mut found = false;
-        for typ in vec![
+        for typ in &[
             TokenType::CmpEq,
             TokenType::CmpNeq,
             TokenType::CmpGt,
@@ -229,7 +227,7 @@ impl Parser {
             TokenType::CmpLt,
             TokenType::CmpLte,
         ] {
-            if self.eat(typ) {
+            if self.eat(*typ) {
                 found = true;
                 break;
             }
@@ -395,8 +393,8 @@ impl Parser {
 
     pub fn parse_file(&mut self) -> Result<(), String> {
         assert_eq!(
-            TokenType::EOF as u8 + 1,
-            25,
+            TokenType::Eof as u8 + 1,
+            24,
             "Not all TokenTypes are handled in parse_file()"
         );
         let m = self.open();
@@ -433,7 +431,7 @@ impl Parser {
                 }),
                 Event::Close => {
                     let t = stack.pop().unwrap();
-                    stack.last_mut().unwrap().children.push(Box::new(t))
+                    stack.last_mut().unwrap().children.push(t)
                 }
                 Event::Advance => {
                     let t = tokens.next().unwrap();
@@ -444,11 +442,11 @@ impl Parser {
                         | TokenType::OpenParenthesis
                         | TokenType::Semi
                         | TokenType::Comma => {} // There's no reason to clutter the AST with this
-                        _ => stack.last_mut().unwrap().children.push(Box::new(Tree {
+                        _ => stack.last_mut().unwrap().children.push(Tree {
                             typ: None,
                             tkn: Some(t),
                             children: vec![],
-                        })),
+                        }),
                     }
                 }
             }
