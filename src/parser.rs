@@ -107,8 +107,11 @@ impl Parser {
             return Ok(());
         }
         // TODO: Improve error handling
-        let prev = self.tokens.get(self.ptr).unwrap();
-        Err(format!("{}: {:?}: Expected {:?}, found {:?}", ERR_STR, prev.get_loc(), t, prev.get_type()))
+        let (prev, typ) = match self.tokens.get(self.ptr) {
+            None => (self.tokens.get(self.ptr - 1).expect("Expected Some value, found None instead. This might be a bug in Parsing or Lexing."), TokenType::EOF),
+            Some(prev) => (prev, prev.get_type())
+        };
+        Err(format!("{}: {:?}: Expected {:?}, found {:?}", ERR_STR, prev.get_loc(), t, typ))
     }
 
     fn parse_expr_delim(&mut self) -> Result<MarkClosed, String> {
@@ -128,11 +131,13 @@ impl Parser {
                 self.expect(TokenType::ClosingParenthesis)?;
                 self.close(m, TreeType::ExprParen)
             }
-            _ => {
-                if !self.eof() {
-                    self.advance();
-                }
-                self.close(m, TreeType::ErrorTree)
+            e => {
+                let ptr = if self.ptr == self.tokens.len() { self.ptr - 1 } else { self.ptr };
+                return Err(
+                    format!("{}: {:?}: Expected Expr, found {:?}",
+                    ERR_STR,
+                    self.tokens.get(ptr).unwrap().get_loc(),
+                    e));
             }
         })
     }
