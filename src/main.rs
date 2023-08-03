@@ -1,13 +1,13 @@
+mod codegen;
 mod lexer;
 mod parser;
-mod codegen;
 
 use std::process::exit;
 use std::time::Instant;
 
+use crate::codegen::Generator;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
-use crate::codegen::Generator;
 
 /*
 TODO-List:

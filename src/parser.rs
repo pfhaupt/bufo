@@ -1,18 +1,29 @@
 use std::cell::Cell;
 
-use crate::lexer::{Token, TokenType};
 use crate::codegen::ERR_STR;
+use crate::lexer::{Token, TokenType};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum TreeType {
     ErrorTree,
     File,
     Func,
-    ParamList, Param,
-    ArgList, Arg,
+    ParamList,
+    Param,
+    ArgList,
+    Arg,
     Block,
-    Stmt, StmtExpr, StmtLet, StmtAssign, StmtCall, StmtIf,
-    Expr, ExprName, ExprLiteral, ExprBinary, ExprParen
+    Stmt,
+    StmtExpr,
+    StmtLet,
+    StmtAssign,
+    StmtCall,
+    StmtIf,
+    Expr,
+    ExprName,
+    ExprLiteral,
+    ExprBinary,
+    ExprParen,
 }
 
 #[derive(Debug, Clone)]
@@ -29,7 +40,7 @@ enum Event {
 }
 
 struct MarkOpened {
-    index: usize
+    index: usize,
 }
 
 struct MarkClosed {
@@ -40,17 +51,26 @@ pub struct Parser {
     tokens: Vec<Token>,
     ptr: usize,
     fuel: Cell<u32>,
-    events: Vec<Event>
+    events: Vec<Event>,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, ptr: 0, fuel: Cell::new(256), events: vec![] }
+        Self {
+            tokens,
+            ptr: 0,
+            fuel: Cell::new(256),
+            events: vec![],
+        }
     }
 
     fn open(&mut self) -> MarkOpened {
-        let mark = MarkOpened { index: self.events.len() };
-        self.events.push(Event::Open { typ: TreeType::ErrorTree });
+        let mark = MarkOpened {
+            index: self.events.len(),
+        };
+        self.events.push(Event::Open {
+            typ: TreeType::ErrorTree,
+        });
         mark
     }
 
@@ -60,11 +80,13 @@ impl Parser {
         MarkClosed { index: m.index }
     }
 
-    fn open_before(&mut self, m: MarkClosed) -> MarkOpened { 
+    fn open_before(&mut self, m: MarkClosed) -> MarkOpened {
         let mark = MarkOpened { index: m.index };
         self.events.insert(
-          m.index,
-          Event::Open { typ: TreeType::ErrorTree },
+            m.index,
+            Event::Open {
+                typ: TreeType::ErrorTree,
+            },
         );
         mark
     }
@@ -85,7 +107,9 @@ impl Parser {
             panic!("Parser is stuck at {}", self.ptr);
         }
         self.fuel.set(self.fuel.get() - 1);
-        self.tokens.get(self.ptr + lookahead).map_or(TokenType::EOF, |it|it.get_type())
+        self.tokens
+            .get(self.ptr + lookahead)
+            .map_or(TokenType::EOF, |it| it.get_type())
     }
 
     fn at(&self, typ: TokenType) -> bool {
@@ -111,7 +135,13 @@ impl Parser {
             None => (self.tokens.get(self.ptr - 1).expect("Expected Some value, found None instead. This might be a bug in Parsing or Lexing."), TokenType::EOF),
             Some(prev) => (prev, prev.get_type())
         };
-        Err(format!("{}: {:?}: Expected {:?}, found {:?}", ERR_STR, prev.get_loc(), t, typ))
+        Err(format!(
+            "{}: {:?}: Expected {:?}, found {:?}",
+            ERR_STR,
+            prev.get_loc(),
+            t,
+            typ
+        ))
     }
 
     fn parse_expr_delim(&mut self) -> Result<MarkClosed, String> {
@@ -124,7 +154,7 @@ impl Parser {
             TokenType::Name => {
                 self.advance();
                 self.close(m, TreeType::ExprName)
-            },
+            }
             TokenType::OpenParenthesis => {
                 self.expect(TokenType::OpenParenthesis)?;
                 self.parse_expr()?;
@@ -132,19 +162,24 @@ impl Parser {
                 self.close(m, TreeType::ExprParen)
             }
             e => {
-                let ptr = if self.ptr == self.tokens.len() { self.ptr - 1 } else { self.ptr };
-                return Err(
-                    format!("{}: {:?}: Expected Expr, found {:?}",
+                let ptr = if self.ptr == self.tokens.len() {
+                    self.ptr - 1
+                } else {
+                    self.ptr
+                };
+                return Err(format!(
+                    "{}: {:?}: Expected Expr, found {:?}",
                     ERR_STR,
                     self.tokens.get(ptr).unwrap().get_loc(),
-                    e));
+                    e
+                ));
             }
         })
     }
 
     fn parse_expr_rec(&mut self, left: TokenType) -> Result<(), String> {
         let mut lhs = self.parse_expr_delim()?;
-        
+
         loop {
             let right = self.nth(0);
             if Self::right_binds_tighter(left, right) {
@@ -166,7 +201,7 @@ impl Parser {
                 &[TokenType::Mult, TokenType::Div],
             ]
             .iter()
-            .position(|l|l.contains(&typ))
+            .position(|l| l.contains(&typ))
         }
         let Some(right_tight) = tightness(right) else {
             return false
@@ -177,7 +212,6 @@ impl Parser {
         };
         right_tight > left_tight
     }
-    
 
     fn parse_expr(&mut self) -> Result<(), String> {
         self.parse_expr_rec(TokenType::EOF)
@@ -187,28 +221,38 @@ impl Parser {
         let m = self.open();
         self.parse_expr()?;
         let mut found = false;
-        for typ in
-        vec![TokenType::CmpEq,
+        for typ in vec![
+            TokenType::CmpEq,
             TokenType::CmpNeq,
             TokenType::CmpGt,
             TokenType::CmpGte,
             TokenType::CmpLt,
-            TokenType::CmpLte] {
-                if self.eat(typ) {
-                    found = true;
-                    break;
-                }
+            TokenType::CmpLte,
+        ] {
+            if self.eat(typ) {
+                found = true;
+                break;
+            }
         }
         if !found {
-            let ptr = if self.ptr == self.tokens.len() { self.ptr - 1 } else { self.ptr };
+            let ptr = if self.ptr == self.tokens.len() {
+                self.ptr - 1
+            } else {
+                self.ptr
+            };
             let tkn = self.tokens.get(ptr).unwrap();
-            return Err(format!("{}: {:?}: Expected Comparison, found {:?}", ERR_STR, tkn.get_loc(), tkn.get_type()));
+            return Err(format!(
+                "{}: {:?}: Expected Comparison, found {:?}",
+                ERR_STR,
+                tkn.get_loc(),
+                tkn.get_type()
+            ));
         }
         self.parse_expr()?;
         self.close(m, TreeType::ExprBinary);
         Ok(())
     }
-    
+
     fn parse_stmt_let(&mut self) -> Result<(), String> {
         assert!(self.at(TokenType::LetKeyword));
         let m = self.open();
@@ -286,10 +330,18 @@ impl Parser {
 
     fn parse_block(&mut self) -> Result<(), String> {
         if !self.at(TokenType::OpenBracket) {
-            let ptr = if self.ptr == self.tokens.len() { self.ptr - 1 } else { self.ptr };
+            let ptr = if self.ptr == self.tokens.len() {
+                self.ptr - 1
+            } else {
+                self.ptr
+            };
             let tkn = self.tokens.get(ptr).unwrap();
-            return Err(format!("{}: {:?}: Expected `{{`, found `{:?}`",
-                ERR_STR, tkn.get_loc(), self.nth(0)));
+            return Err(format!(
+                "{}: {:?}: Expected `{{`, found `{:?}`",
+                ERR_STR,
+                tkn.get_loc(),
+                self.nth(0)
+            ));
         }
         let m = self.open();
         self.expect(TokenType::OpenBracket)?;
@@ -297,13 +349,11 @@ impl Parser {
             match self.nth(0) {
                 TokenType::LetKeyword => self.parse_stmt_let()?,
                 TokenType::IfKeyword => self.parse_stmt_if()?,
-                TokenType::Name => {
-                    match self.nth(1) {
-                        TokenType::OpenParenthesis => self.parse_stmt_call()?,
-                        _ => self.parse_stmt_assign()?,
-                    }
+                TokenType::Name => match self.nth(1) {
+                    TokenType::OpenParenthesis => self.parse_stmt_call()?,
+                    _ => self.parse_stmt_assign()?,
                 },
-                _ => self.parse_stmt_expr()?
+                _ => self.parse_stmt_expr()?,
             }
         }
         self.expect(TokenType::ClosingBracket)?;
@@ -344,14 +394,23 @@ impl Parser {
     }
 
     pub fn parse_file(&mut self) -> Result<(), String> {
-        assert_eq!(TokenType::EOF as u8 + 1, 25, "Not all TokenTypes are handled in parse_file()");
+        assert_eq!(
+            TokenType::EOF as u8 + 1,
+            25,
+            "Not all TokenTypes are handled in parse_file()"
+        );
         let m = self.open();
         while !self.eof() {
             if self.at(TokenType::FnKeyword) {
                 self.parse_func()?;
             } else {
                 let prev = self.tokens.get(self.ptr).unwrap();
-                return Err(format!("{}: {:?}: Expected Function, found {:?}", ERR_STR, prev.get_loc(), prev.get_type()))
+                return Err(format!(
+                    "{}: {:?}: Expected Function, found {:?}",
+                    ERR_STR,
+                    prev.get_loc(),
+                    prev.get_type()
+                ));
             }
         }
         self.close(m, TreeType::File);
@@ -362,18 +421,20 @@ impl Parser {
         let mut tokens = self.tokens.into_iter();
         let mut events = self.events;
         let mut stack = Vec::new();
-        
+
         assert!(matches!(events.pop(), Some(Event::Close)));
 
         for event in events {
             match event {
-                Event::Open { typ } => {
-                    stack.push(Tree { typ: Some(typ), tkn: None, children: Vec::new() })
-                },
+                Event::Open { typ } => stack.push(Tree {
+                    typ: Some(typ),
+                    tkn: None,
+                    children: Vec::new(),
+                }),
                 Event::Close => {
                     let t = stack.pop().unwrap();
                     stack.last_mut().unwrap().children.push(Box::new(t))
-                },
+                }
                 Event::Advance => {
                     let t = tokens.next().unwrap();
                     match t.get_type() {
@@ -382,8 +443,12 @@ impl Parser {
                         | TokenType::OpenBracket
                         | TokenType::OpenParenthesis
                         | TokenType::Semi
-                        | TokenType::Comma => {}, // There's no reason to clutter the AST with this
-                        _ => stack.last_mut().unwrap().children.push(Box::new(Tree { typ: None, tkn: Some(t), children: vec![] }))
+                        | TokenType::Comma => {} // There's no reason to clutter the AST with this
+                        _ => stack.last_mut().unwrap().children.push(Box::new(Tree {
+                            typ: None,
+                            tkn: Some(t),
+                            children: vec![],
+                        })),
                     }
                 }
             }
