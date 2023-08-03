@@ -1,7 +1,19 @@
 func factorial(n, acc) {
-    factorial(n - 1, acc * n);
+    if (n > 0) {
+        factorial(n - 1, acc * n);
+    }
+}
+
+func inc(x, y) {
+    if (x < y) {
+        inc(x + 1, y);
+    }
 }
 
 func main() {
-    factorial(10,);
+    if (1 == 1) {
+        factorial(20, 1);
+    }
+    factorial(5, 1);
+    inc(0, 10);
 }

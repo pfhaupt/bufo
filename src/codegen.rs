@@ -21,6 +21,14 @@ enum Instruction {
     Sub { dest: usize, src: usize },
     Mul { dest: usize, src: usize },
     Div { dest: usize, src: usize },
+    Cmp { dest: usize, src: usize },
+    Jmp { dest: usize },
+    JmpEq { dest: usize },
+    JmpNeq { dest: usize },
+    JmpGt { dest: usize },
+    JmpGte { dest: usize },
+    JmpLt { dest: usize },
+    JmpLte { dest: usize },
     Move { dest: usize, src: usize },
     LoadMem { mem: usize, reg: usize },
     StoreMem { mem: usize, reg: usize },
@@ -91,6 +99,7 @@ pub struct Generator {
     functions: HashMap<String, Function>,
     code: Vec<Instruction>,
     current_fn: String,
+    unresolved_jmp_instr: VecDeque<usize>,
 }
 
 impl Generator {
@@ -101,7 +110,8 @@ impl Generator {
             register_ctr: 0,
             functions: HashMap::new(),
             code: vec![],
-            current_fn: String::new()
+            current_fn: String::new(),
+            unresolved_jmp_instr: VecDeque::new(),
         };
         gen.generate_code()?;
         Ok(gen)
@@ -174,6 +184,36 @@ impl Generator {
                     TokenType::Minus => self.code.push(Instruction::Sub { dest, src }),
                     TokenType::Mult => self.code.push(Instruction::Mul { dest, src }),
                     TokenType::Div => self.code.push(Instruction::Div { dest, src }),
+                    TokenType::CmpEq => {
+                        self.code.push(Instruction::Cmp { dest, src });
+                        self.unresolved_jmp_instr.push_back(self.code.len());
+                        self.code.push(Instruction::JmpNeq { dest: usize::MAX });
+                    },
+                    TokenType::CmpNeq => {
+                        self.code.push(Instruction::Cmp { dest, src });
+                        self.unresolved_jmp_instr.push_back(self.code.len());
+                        self.code.push(Instruction::JmpEq { dest: usize::MAX });
+                    },
+                    TokenType::CmpGt => {
+                        self.code.push(Instruction::Cmp { dest, src });
+                        self.unresolved_jmp_instr.push_back(self.code.len());
+                        self.code.push(Instruction::JmpLte { dest: usize::MAX });
+                    },
+                    TokenType::CmpGte => {
+                        self.code.push(Instruction::Cmp { dest, src });
+                        self.unresolved_jmp_instr.push_back(self.code.len());
+                        self.code.push(Instruction::JmpLt { dest: usize::MAX });
+                    },
+                    TokenType::CmpLt => {
+                        self.code.push(Instruction::Cmp { dest, src });
+                        self.unresolved_jmp_instr.push_back(self.code.len());
+                        self.code.push(Instruction::JmpGte { dest: usize::MAX });
+                    },
+                    TokenType::CmpLte => {
+                        self.code.push(Instruction::Cmp { dest, src });
+                        self.unresolved_jmp_instr.push_back(self.code.len());
+                        self.code.push(Instruction::JmpGt { dest: usize::MAX });
+                    },
                     e => todo!("Handle {:?} in convert_expr_atomic()", e)
                 }
                 return Ok(dest);
@@ -205,7 +245,7 @@ impl Generator {
                     | TreeType::ExprName
                     | TreeType::ExprParen => {
                         self.convert_expr_atomic(expr_tree)
-                    }
+                    },
                     e => todo!("Handle {:?} in convert_expr", e)
                 }
             },
@@ -303,6 +343,55 @@ impl Generator {
         Ok(())
     }
     
+    fn convert_stmt_if(&mut self, if_tree: &Tree) -> Result<(), String> {
+        let if_children = &if_tree.children;
+        let if_keyword = &if_children[0];
+        assert!(ref_unwrap!(if_keyword.tkn).get_type() == TokenType::IfKeyword);
+        let if_cond = &if_children[1];
+        assert!(*ref_unwrap!(if_cond.typ) == TreeType::ExprBinary);
+        let if_block = &if_children[2];
+        self.convert_expr(&if_cond)?;
+
+        self.convert_block(&if_block)?;
+        let if_jmp = self.resolve_last_jmp();
+
+        if if_children.len() == 5 {
+            let else_keyword = &if_children[3];
+            assert!(ref_unwrap!(else_keyword.tkn).get_type() == TokenType::ElseKeyword);
+            let else_block = &if_children[4];
+            assert!(*ref_unwrap!(else_block.typ) == TreeType::Block);
+            
+            self.unresolved_jmp_instr.push_back(self.code.len());
+            self.code.push(Instruction::Jmp { dest: usize::MAX });
+            self.set_jmp_lbl(if_jmp, self.code.len());
+
+            self.convert_block(&else_block)?;
+            self.resolve_last_jmp();
+        }
+        Ok(())
+    }
+
+    fn resolve_last_jmp(&mut self) -> usize {
+        assert!(self.unresolved_jmp_instr.len() > 0);
+        let ip = self.unresolved_jmp_instr.pop_back().unwrap();
+        self.set_jmp_lbl(ip, self.code.len());
+        ip
+    }
+
+    fn set_jmp_lbl(&mut self, index: usize, dest: usize) {
+        self.code[index] = match self.code[index] {
+            Instruction::JmpEq {..} => Instruction::JmpEq { dest },
+            Instruction::JmpNeq {..} => Instruction::JmpNeq { dest },
+            Instruction::JmpGt {..} => Instruction::JmpGt { dest },
+            Instruction::JmpGte {..} => Instruction::JmpGte { dest },
+            Instruction::JmpLt {..} => Instruction::JmpLt { dest },
+            Instruction::JmpLte {..} => Instruction::JmpLte { dest },
+            Instruction::Jmp {..} => Instruction::Jmp { dest },
+            _ => todo!()
+        };
+    }
+
+
     fn convert_fn(&mut self, func: &Tree) -> Result<(), String> {
         let fn_children = &func.children;
         assert!(fn_children.len() == 4, "fnKeyword fnName {{Param}} {{Block}} expected.");
@@ -319,8 +408,9 @@ impl Generator {
         let f = Function::new(&name, self.code.len());
         self.functions.insert(name.clone(), f);
         self.convert_fn_param(&fn_children[2])?;
-        self.convert_fn_helper(&fn_children[3])?;
+        self.convert_block(&fn_children[3])?;
         self.current_fn.clear();
+        self.code.push(Instruction::Return {});
         
         Ok(())
     }
@@ -359,7 +449,7 @@ impl Generator {
         Ok(())
     }
 
-    fn convert_fn_helper(&mut self, block: &Tree) -> Result<(), String> {
+    fn convert_block(&mut self, block: &Tree) -> Result<(), String> {
         assert!(*ref_unwrap!(block.typ) == TreeType::Block);
         for instr in &block.children {
             match &instr.typ {
@@ -368,13 +458,13 @@ impl Generator {
                         TreeType::StmtLet => self.convert_stmt_let(instr)?,
                         TreeType::StmtAssign => self.convert_stmt_assign(instr)?,
                         TreeType::StmtCall => self.convert_stmt_call(instr)?,
-                        e => todo!("convert {:?} inside function", e)
+                        TreeType::StmtIf => self.convert_stmt_if(instr)?,
+                        e => todo!("convert {:?} inside block", e)
                     }
                 },
                 _ => panic!()
             }
         }
-        self.code.push(Instruction::Return {});
         Ok(())
     }
 
@@ -406,6 +496,10 @@ impl Generator {
     }
 
     pub fn interpret(&mut self) -> Result<(), String> {
+        // for (i, c) in self.code.iter().enumerate() {
+        //     println!("{i:3} -> {c:?}");
+        // }
+        // todo!();
         const RETURN_STACK_LIMIT: usize = 4096;
         const STACK_SIZE: usize = 1_000_000;
         let entry_point = String::from("main");
@@ -413,6 +507,7 @@ impl Generator {
         let mut return_stack = VecDeque::<usize>::new();
         let mut stack = vec![0; STACK_SIZE];
         let mut stack_ptr = STACK_SIZE - 1 - self.get_function_stack_size(&entry_point);
+        let mut flags = vec![false; 3];
 
         if !self.functions.contains_key(&entry_point) {
             return Err(format!("{}: Missing entry point - Could not find function {}()", ERR_STR, entry_point));
@@ -428,7 +523,7 @@ impl Generator {
                 return Err(format!("{}: Recursion Limit reached when interpreting!", ERR_STR));
             }
             let instr = &self.code[ip];
-            // println!("{:3} {:?}", ip, instr);
+            println!("{:3} {:?} {:?}", ip, flags, instr);
             let mut add_ip = true;
             match instr {
                 Instruction::Add { dest, src } => {
@@ -443,9 +538,58 @@ impl Generator {
                 Instruction::Div { dest, src } => {
                     self.registers[*dest] /= self.registers[*src];
                 },
+                Instruction::Cmp { dest, src } => {
+                    let lhs = self.registers[*dest];
+                    let rhs = self.registers[*src];
+                    flags[0] = lhs == rhs;
+                    flags[1] = lhs < rhs;
+                    flags[2] = lhs > rhs;
+                    // >= is flags[0] || flags[2]
+                    // <= is flags[0] || flags[1]
+                    // != is not flags[0]
+                },
+                Instruction::JmpEq { dest } => {
+                    if flags[0] {
+                        ip = *dest;
+                        add_ip = false;
+                    }
+                },
+                Instruction::JmpNeq { dest } => {
+                    if !flags[0] {
+                        ip = *dest;
+                        add_ip = false;
+                    }
+                },
+                Instruction::JmpGt { dest } => {
+                    if flags[2] {
+                        ip = *dest;
+                        add_ip = false;
+                    }
+                },
+                Instruction::JmpGte { dest } => {
+                    if flags[0] || flags[2] {
+                        ip = *dest;
+                        add_ip = false;
+                    }
+                },
+                Instruction::JmpLt { dest } => {
+                    if flags[1] {
+                        ip = *dest;
+                        add_ip = false;
+                    }
+                },
+                Instruction::JmpLte { dest } => {
+                    if flags[0] || flags[1] {
+                        ip = *dest;
+                        add_ip = false;
+                    }
+                },
+                Instruction::Jmp { dest } => {
+                    ip = *dest;
+                    add_ip = false;
+                }
                 Instruction::Move { dest, src } => {
                     self.registers[*dest] = self.registers[*src];
-                    // todo!("Instruction::Move")
                 },
                 Instruction::LoadMem { reg, mem } => {
                     self.registers[*reg] = stack[stack_ptr + *mem + 1];    
@@ -464,10 +608,6 @@ impl Generator {
                         return Err(format!("{}: Stack Overflow when interpreting!", ERR_STR));
                     }
                     stack_ptr -= stack_size;
-                    println!("Entering {} with a stack size of {}", func_name, stack_size);
-                    for i in 0..20 {
-                        println!("{}", stack[STACK_SIZE - i - 1]);
-                    }
                     ip = self.functions
                             .get(func_name)
                             .expect(format!("Could not find {func_name} in function table")
@@ -486,12 +626,15 @@ impl Generator {
                     ip = return_stack.pop_back().unwrap();
                 }
                 Instruction::Print { src: _src } => todo!(),
+                i => {
+                    todo!("{:?}", i)
+                }
             }
             if add_ip {
                 ip += 1;
             }
         }
-        for i in 0..10 {
+        for i in 0..50 {
             println!("{}", stack[STACK_SIZE - i - 1]);
         }
         Ok(())

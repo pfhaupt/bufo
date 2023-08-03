@@ -9,8 +9,9 @@ pub enum TokenType {
     IntLiteral,
     OpenParenthesis, ClosingParenthesis,
     OpenBracket, ClosingBracket,
-    FnKeyword, LetKeyword,
+    FnKeyword, LetKeyword, IfKeyword, ElseKeyword,
     Equal, Plus, Minus, Mult, Div,
+    CmpEq, CmpNeq, CmpLt, CmpLte, CmpGt, CmpGte,
     Semi, Comma,
     Name,
     EOF
@@ -98,6 +99,7 @@ impl Lexer {
     }
 
     fn next_token(&mut self) -> Result<Token, String> {
+        assert_eq!(TokenType::EOF as u8 + 1, 25, "Not all TokenTypes are handled in next_token()");
         let c = self.next_char()?;
         match c {
             '0'..='9' => {
@@ -123,6 +125,8 @@ impl Lexer {
                 let typ = match value.as_str() {
                     "func" => TokenType::FnKeyword,
                     "let" => TokenType::LetKeyword,
+                    "if" => TokenType::IfKeyword,
+                    "else" => TokenType::ElseKeyword,
                     _ => TokenType::Name
                 };
                 Ok( Token { typ, value, loc: self.get_location() } )
@@ -133,12 +137,69 @@ impl Lexer {
             '}' => Ok( Token { typ: TokenType::ClosingBracket, value: String::from("}"), loc: self.get_location() } ),
             ';' => Ok( Token { typ: TokenType::Semi, value: String::from(";"), loc: self.get_location() } ),
             ',' => Ok( Token { typ: TokenType::Comma, value: String::from(","), loc: self.get_location() } ),
-            '=' => Ok( Token { typ: TokenType::Equal, value: String::from(c), loc: self.get_location() } ),
+            '!' => {
+                if let Ok(nc) = self.next_char() {
+                    match nc {
+                        '=' => Ok ( Token { typ: TokenType::CmpNeq, value: String::from("!="), loc: self.get_location() } ),
+                        _ => {
+                            let mut v = String::from(c);
+                            v.push(nc);
+                            return Err(format!("{}: {:?}: Unexpected Symbol `{}`", ERR_STR, self.get_location(), v));
+                        }
+                    }
+                } else {
+                    Err(format!("{}: Reached End Of File while lexing.", ERR_STR))
+                }
+            },
+            '=' => {
+                let (typ, value) = if let Ok(nc) = self.next_char() {
+                    match nc {
+                        '=' => (TokenType::CmpEq, String::from("==")),
+                        _ => {
+                            self.current_char -= 1; // Went too far, go a step back
+                            (TokenType::Equal, String::from("="))
+                        }
+                    }
+                } else {
+                    (TokenType::Equal, String::from("="))
+                };
+                Ok ( Token { typ, value, loc: self.get_location() } )
+            },
+            '<' => {
+                let (typ, value) = if let Ok(nc) = self.next_char() {
+                    match nc {
+                        '=' => (TokenType::CmpLte, String::from("<=")),
+                        _ => {
+                            self.current_char -= 1; // Went too far, go a step back
+                            (TokenType::CmpLt, String::from("<"))
+                        }
+                    }
+                } else {
+                    (TokenType::CmpLt, String::from("<"))
+                };
+                Ok ( Token { typ, value, loc: self.get_location() } )
+            },
+            '>' => {
+                let (typ, value) = if let Ok(nc) = self.next_char() {
+                    match nc {
+                        '=' => (TokenType::CmpGte, String::from(">=")),
+                        _ => {
+                            self.current_char -= 1; // Went too far, go a step back
+                            (TokenType::CmpGt, String::from(">"))
+                        }
+                    }
+                } else {
+                    (TokenType::CmpGt, String::from(">"))
+                };
+                Ok ( Token { typ, value, loc: self.get_location() } )
+            },
             '+' => Ok( Token { typ: TokenType::Plus, value: String::from(c), loc: self.get_location() } ),
             '-' => Ok( Token { typ: TokenType::Minus, value: String::from(c), loc: self.get_location() } ),
             '*' => Ok( Token { typ: TokenType::Mult, value: String::from(c), loc: self.get_location() } ),
             '/' => Ok( Token { typ: TokenType::Div, value: String::from(c), loc: self.get_location() } ),
-            e => Ok( Token { typ: TokenType::Invalid, value: String::from(e), loc: self.get_location() } )
+            e => {
+                Err(format!("{}: {:?}: Unexpected Symbol `{}`", ERR_STR, self.get_location(), e))
+            }
         }
     }
 

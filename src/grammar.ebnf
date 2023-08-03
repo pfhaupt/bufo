@@ -7,12 +7,17 @@ ParamList = "(" {Param} ")";
 
 Block = "{" {Stmt} "}";
 
-Stmt = StmtExpr | StmtLet | StmtAssign | StmtCall;
+Stmt = StmtExpr
+     | StmtLet
+     | StmtAssign
+     | StmtCall
+     | StmtIf;
 
 StmtExpr = Expr ";";
 StmtLet = "let" "name" "=" Expr ";";
 StmtAssign = "name" "=" Expr ";";
 StmtCall = "name" ArgList ";";
+StmtIf = "if" "(" ExprCmp ")" Block {"else" Block};
 
 Arg = Expr [","];
 ArgList = "(" {Arg} ")";
@@ -23,5 +28,5 @@ Expr = ExprName
      | ExprParen;
 ExprName = "name";
 ExprLiteral = "int";
-ExprBinary = Expr ("+" | "-" | "*" | "/") Expr;
+ExprBinary = Expr ("+" | "-" | "*" | "/" | "==" | "!=" | "<" | ">" | "<=" | ">=") Expr;
 ExprParen = "(" Expr ")";

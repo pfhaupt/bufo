@@ -11,7 +11,7 @@ pub enum TreeType {
     ParamList, Param,
     ArgList, Arg,
     Block,
-    Stmt, StmtExpr, StmtLet, StmtAssign, StmtCall,
+    Stmt, StmtExpr, StmtLet, StmtAssign, StmtCall, StmtIf,
     Expr, ExprName, ExprLiteral, ExprBinary, ExprParen
 }
 
@@ -182,6 +182,32 @@ impl Parser {
     fn parse_expr(&mut self) -> Result<(), String> {
         self.parse_expr_rec(TokenType::EOF)
     }
+
+    fn parse_expr_cmp(&mut self) -> Result<(), String> {
+        let m = self.open();
+        self.parse_expr()?;
+        let mut found = false;
+        for typ in
+        vec![TokenType::CmpEq,
+            TokenType::CmpNeq,
+            TokenType::CmpGt,
+            TokenType::CmpGte,
+            TokenType::CmpLt,
+            TokenType::CmpLte] {
+                if self.eat(typ) {
+                    found = true;
+                    break;
+                }
+        }
+        if !found {
+            let ptr = if self.ptr == self.tokens.len() { self.ptr - 1 } else { self.ptr };
+            let tkn = self.tokens.get(ptr).unwrap();
+            return Err(format!("{}: {:?}: Expected Comparison, found {:?}", ERR_STR, tkn.get_loc(), tkn.get_type()));
+        }
+        self.parse_expr()?;
+        self.close(m, TreeType::ExprBinary);
+        Ok(())
+    }
     
     fn parse_stmt_let(&mut self) -> Result<(), String> {
         assert!(self.at(TokenType::LetKeyword));
@@ -244,13 +270,33 @@ impl Parser {
         Ok(())
     }
 
+    fn parse_stmt_if(&mut self) -> Result<(), String> {
+        let m = self.open();
+        self.expect(TokenType::IfKeyword)?;
+        self.expect(TokenType::OpenParenthesis)?;
+        self.parse_expr_cmp()?;
+        self.expect(TokenType::ClosingParenthesis)?;
+        self.parse_block()?;
+        if self.eat(TokenType::ElseKeyword) {
+            self.parse_block()?;
+        }
+        self.close(m, TreeType::StmtIf);
+        Ok(())
+    }
+
     fn parse_block(&mut self) -> Result<(), String> {
-        assert!(self.at(TokenType::OpenBracket));
+        if !self.at(TokenType::OpenBracket) {
+            let ptr = if self.ptr == self.tokens.len() { self.ptr - 1 } else { self.ptr };
+            let tkn = self.tokens.get(ptr).unwrap();
+            return Err(format!("{}: {:?}: Expected `{{`, found `{:?}`",
+                ERR_STR, tkn.get_loc(), self.nth(0)));
+        }
         let m = self.open();
         self.expect(TokenType::OpenBracket)?;
         while !self.at(TokenType::ClosingBracket) && !self.eof() {
             match self.nth(0) {
                 TokenType::LetKeyword => self.parse_stmt_let()?,
+                TokenType::IfKeyword => self.parse_stmt_if()?,
                 TokenType::Name => {
                     match self.nth(1) {
                         TokenType::OpenParenthesis => self.parse_stmt_call()?,
@@ -298,6 +344,7 @@ impl Parser {
     }
 
     pub fn parse_file(&mut self) -> Result<(), String> {
+        assert_eq!(TokenType::EOF as u8 + 1, 25, "Not all TokenTypes are handled in parse_file()");
         let m = self.open();
         while !self.eof() {
             if self.at(TokenType::FnKeyword) {
