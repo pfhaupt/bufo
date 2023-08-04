@@ -560,7 +560,11 @@ impl Generator {
         let mut return_stack = VecDeque::<usize>::new();
         let mut stack = vec![0; STACK_SIZE];
         let mut stack_ptr = STACK_SIZE - 1 - self.get_function_stack_size(&entry_point);
-        let mut flags = vec![false; 3];
+        
+        let mut flags = 0;
+        const EQ: usize = 1;
+        const LT: usize = 2;
+        const GT: usize = 4;
 
         if !self.functions.contains_key(&entry_point) {
             return Err(format!(
@@ -601,45 +605,46 @@ impl Generator {
                 Instruction::Cmp { dest, src } => {
                     let lhs = self.registers[*dest];
                     let rhs = self.registers[*src];
-                    flags[0] = lhs == rhs;
-                    flags[1] = lhs < rhs;
-                    flags[2] = lhs > rhs;
-                    // >= is flags[0] || flags[2]
-                    // <= is flags[0] || flags[1]
-                    // != is not flags[0]
+                    flags = 0;
+                    flags |= (lhs == rhs) as usize * EQ;
+                    flags |= (lhs < rhs) as usize * LT;
+                    flags |= (lhs > rhs) as usize * GT;
+                    // >= is flags & EQ || flags & GT
+                    // <= is flags & EQ || flags & LT
+                    // != is not flags & EQ
                 }
                 Instruction::JmpEq { dest } => {
-                    if flags[0] {
+                    if flags & EQ != 0 {
                         ip = *dest;
                         add_ip = false;
                     }
                 }
                 Instruction::JmpNeq { dest } => {
-                    if !flags[0] {
+                    if flags & EQ == 0 {
                         ip = *dest;
                         add_ip = false;
                     }
                 }
                 Instruction::JmpGt { dest } => {
-                    if flags[2] {
+                    if flags & GT != 0 {
                         ip = *dest;
                         add_ip = false;
                     }
                 }
                 Instruction::JmpGte { dest } => {
-                    if flags[0] || flags[2] {
+                    if flags & EQ != 0 || flags & GT != 0 {
                         ip = *dest;
                         add_ip = false;
                     }
                 }
                 Instruction::JmpLt { dest } => {
-                    if flags[1] {
+                    if flags & LT != 0{
                         ip = *dest;
                         add_ip = false;
                     }
                 }
                 Instruction::JmpLte { dest } => {
-                    if flags[0] || flags[1] {
+                    if flags & EQ != 0 || flags & LT != 0 {
                         ip = *dest;
                         add_ip = false;
                     }
@@ -691,7 +696,7 @@ impl Generator {
                 ip += 1;
             }
         }
-        for i in 0..50 {
+        for i in 0..10 {
             println!("{}", stack[STACK_SIZE - i - 1]);
         }
         Ok(())

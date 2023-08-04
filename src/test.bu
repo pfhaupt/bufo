@@ -1,19 +1,21 @@
-func factorial(n, acc) {
-    if (n > 0) {
-        factorial(n - 1, acc * n);
-    }
-}
-
-func inc(x, y) {
-    if (x < y) {
-        inc(x + 1, y);
-    }
-}
-
 func main() {
-    if (1 == 1) {
-        factorial(20, 1);
+    let a = 0;
+    if (a == 1) {
+        let b = 2;
     }
-    factorial(5, 1);
-    inc(0, 10);
+    if (a != 0) {
+        let c = 3;
+    }
+    if (a > 0) {
+        let d = 4;
+    }
+    if (a <= 0) {
+        let e = 5;
+    }
+    if (a <= 1) {
+        let f = 6;
+    }
+    if (a <= 2) {
+        let g = 7;
+    }
 }
