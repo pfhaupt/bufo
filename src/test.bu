@@ -1,10 +1,12 @@
 func factorial(n, acc) {
+    let c = acc;
     if (n > 0) {
-        let c = acc;
-        factorial(n - 1, acc * n);
+        factorial(n - 1, c * n);
+        let d = 5;
     } else {
         let c = 42069;
     }
+    c = 1337;
 }
 
 func main() {

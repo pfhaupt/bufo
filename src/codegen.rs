@@ -561,7 +561,7 @@ impl Generator {
 
     fn enter_scope(&mut self) {
         assert!(!self.current_fn.is_empty());
-        println!("Entering scope");
+        // println!("Entering scope");
         self.scope_depth += 1;
         self.functions
             .get_mut(&self.current_fn)
@@ -571,7 +571,7 @@ impl Generator {
 
     fn leave_scope(&mut self) {
         assert!(!self.current_fn.is_empty());
-        println!("Leaving scope");
+        // println!("Leaving scope");
         self.scope_depth -= 1;
         self.functions
             .get_mut(&self.current_fn)
