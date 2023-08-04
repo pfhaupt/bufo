@@ -17,7 +17,7 @@ StmtExpr = Expr ";";
 StmtLet = "let" "name" "=" Expr ";";
 StmtAssign = "name" "=" Expr ";";
 StmtCall = "name" ArgList ";";
-StmtIf = "if" "(" ExprCmp ")" Block {"else" Block};
+StmtIf = "if" "(" Expr ")" Block {"else" Block};
 
 Arg = Expr [","];
 ArgList = "(" {Arg} ")";
