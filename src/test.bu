@@ -1,10 +1,8 @@
 func test(a) {
-    if (a == 4) {
-        let b = 4;
-        return;
+    if (a == 2) {
+        return 5;
     }
-    test(a + 1);
-    let c = a;
+    return;
 }
 
 func main() {
