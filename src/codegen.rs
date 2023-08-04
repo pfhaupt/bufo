@@ -69,38 +69,21 @@ impl Function {
         &self.param_variables
     }
 
-    fn contains_param(&self, var_name: &String) -> bool {
-        self.param_variables.contains_key(var_name)
+    fn get_param_location(&self, var_name: &String) -> Option<usize> {
+        self.param_variables.get(var_name).copied()
     }
 
-    fn contains_local(&self, var_name: &String) -> bool {
-        for i in (0..self.local_variables.len()).rev() {
-            if self.local_variables.get(i).unwrap().contains_key(var_name) {
-                return true;
-            }
+    fn get_local_location(&self, var_name: &String) -> Option<usize> {
+        (0..self.local_variables.len())
+            .rev()
+            .find(|&i| self.local_variables.get(i).unwrap().contains_key(var_name))
+    }
+
+    fn get_variable_location(&self, var_name: &String) -> Option<usize> {
+        match self.get_param_location(var_name) {
+            Some(i) => Some(i),
+            None => self.get_local_location(var_name),
         }
-        false
-    }
-
-    fn contains_variable(&self, var_name: &String) -> bool {
-        self.contains_param(var_name) || self.contains_local(var_name)
-    }
-
-    fn get_variable_location(&self, var_name: &String) -> usize {
-        match self.param_variables.get(var_name) {
-            Some(p) => *p,
-            None => self.get_local_location(var_name),    
-        }
-    }
-
-    fn get_local_location(&self, var_name: &String) -> usize {
-        for scope_depth in (0..self.local_variables.len()).rev() {
-            let scope_vars = self.local_variables.get(scope_depth).unwrap();
-            if let Some(mem) = scope_vars.get(var_name) {
-                return *mem;
-            }
-        }
-        panic!()
     }
 
     fn add_local_variable(&mut self, var_name: String, mem: usize, scope_depth: usize) {
@@ -272,17 +255,18 @@ impl Generator {
                     .functions
                     .get(&self.current_fn)
                     .expect("At this point, function table is guaranteed to contain current_fn.");
-                if curr_fn.contains_variable(&name) {
-                    let mem = curr_fn.get_variable_location(&name);
-                    self.code.push(Instruction::LoadMem { reg, mem });
-                    return Ok(reg);
+                match curr_fn.get_variable_location(&name) {
+                    Some(mem) => {
+                        self.code.push(Instruction::LoadMem { reg, mem });
+                        Ok(reg)
+                    }
+                    None => Err(format!(
+                        "{}: {:?}: Undefined variable `{}`",
+                        ERR_STR,
+                        ref_unwrap!(val_name.tkn).get_loc(),
+                        name
+                    )),
                 }
-                Err(format!(
-                    "{}: {:?}: Undefined variable `{}`",
-                    ERR_STR,
-                    ref_unwrap!(val_name.tkn).get_loc(),
-                    name
-                ))
             }
             e => todo!("Handle {:?} in convert_expr_atomic. Got:\n{:?}", e, instr),
         }
@@ -322,7 +306,10 @@ impl Generator {
             .functions
             .get(&self.current_fn)
             .expect("At this point, function table is guaranteed to contain current_fn.");
-        if local_lookup.contains_variable(&let_name.get_value()) {
+        if local_lookup
+            .get_variable_location(&let_name.get_value())
+            .is_some()
+        {
             return Err(format!(
                 "{}: {:?}: Variable redefinition",
                 ERR_STR,
@@ -346,15 +333,17 @@ impl Generator {
             .functions
             .get(&self.current_fn)
             .expect("At this point, function table is guaranteed to contain current_fn.");
-        if !local_lookup.contains_variable(&var_name) {
-            return Err(format!(
-                "{}: {:?}: Unknown variable `{}`",
-                ERR_STR,
-                ref_unwrap!(assign_name.tkn).get_loc(),
-                var_name
-            ));
-        }
-        let mem = local_lookup.get_variable_location(&var_name);
+        let mem = match local_lookup.get_variable_location(&var_name) {
+            Some(i) => i,
+            None => {
+                return Err(format!(
+                    "{}: {:?}: Unknown variable `{}`",
+                    ERR_STR,
+                    ref_unwrap!(assign_name.tkn).get_loc(),
+                    var_name
+                ))
+            }
+        };
         let assign_eq = &instr_children[1];
         assert!(ref_unwrap!(assign_eq.tkn).get_type() == TokenType::Equal);
         let assign_expr = &instr_children[2];
@@ -516,7 +505,7 @@ impl Generator {
                             let param_node = &p.children[0];
                             let param_name = ref_unwrap!(param_node.tkn).get_value();
                             let local_lookup = self.functions.get_mut(&self.current_fn).expect("At this point, function table is guaranteed to contain current_fn.");
-                            if local_lookup.contains_param(&param_name) {
+                            if local_lookup.get_param_location(&param_name).is_some() {
                                 return Err(format!(
                                     "{}: {:?}: Parameter redefinition `{}`",
                                     ERR_STR,
@@ -565,14 +554,20 @@ impl Generator {
         assert!(!self.current_fn.is_empty());
         println!("Entering scope");
         self.scope_depth += 1;
-        self.functions.get_mut(&self.current_fn).unwrap().add_scope();
+        self.functions
+            .get_mut(&self.current_fn)
+            .unwrap()
+            .add_scope();
     }
 
     fn leave_scope(&mut self) {
         assert!(!self.current_fn.is_empty());
         println!("Leaving scope");
         self.scope_depth -= 1;
-        self.functions.get_mut(&self.current_fn).unwrap().remove_scope();
+        self.functions
+            .get_mut(&self.current_fn)
+            .unwrap()
+            .remove_scope();
     }
 
     fn convert_ast(&mut self, ast: &Tree) -> Result<(), String> {
@@ -613,7 +608,7 @@ impl Generator {
         let mut return_stack = VecDeque::<usize>::new();
         let mut stack = vec![0; STACK_SIZE];
         let mut stack_ptr = STACK_SIZE - 1 - self.get_function_stack_size(&entry_point);
-        
+
         let mut flags = 0;
         const EQ: usize = 1;
         const LT: usize = 2;
@@ -691,7 +686,7 @@ impl Generator {
                     }
                 }
                 Instruction::JmpLt { dest } => {
-                    if flags & LT != 0{
+                    if flags & LT != 0 {
                         ip = *dest;
                         add_ip = false;
                     }

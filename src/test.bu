@@ -1,5 +1,6 @@
 func main() {
     let a = 0;
+    let b = 1;
     if (a == 1) {
         let b = 2;
         if (b == 3) {
