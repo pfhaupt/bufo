@@ -1,12 +1,14 @@
-func main() {
-    let a = 0;
-    let b = 1;
-    if (a == 1) {
-        let b = 2;
-        if (b == 3) {
-            let c = 5;
-        }
+func factorial(n, acc) {
+    if (n > 0) {
+        let c = acc;
+        factorial(n - 1, acc * n);
+    } else {
+        let c = 42069;
     }
-    b = 3;
-    c = 5;
+}
+
+func main() {
+    let a = 10;
+    factorial(a, 1);
+    let b = a;
 }

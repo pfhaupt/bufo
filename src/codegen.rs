@@ -43,8 +43,8 @@ enum Instruction {
 struct Function {
     ip: usize,
     param_variables: BTreeMap<String, usize>,
-    // local_variables: BTreeMap<String, usize>,
     local_variables: Vec<BTreeMap<String, usize>>,
+    stack_size: usize,
 }
 
 impl Function {
@@ -52,8 +52,8 @@ impl Function {
         Self {
             ip,
             param_variables: BTreeMap::new(),
-            // local_variables: BTreeMap::new(),
             local_variables: vec![BTreeMap::new()],
+            stack_size: 0,
         }
     }
 
@@ -61,8 +61,8 @@ impl Function {
         self.ip
     }
 
-    fn get_var_count(&self) -> usize {
-        self.param_variables.len() + self.local_variables.len()
+    fn get_stack_size(&self) -> usize {
+        self.stack_size
     }
 
     fn get_params(&self) -> &BTreeMap<String, usize> {
@@ -74,9 +74,16 @@ impl Function {
     }
 
     fn get_local_location(&self, var_name: &String) -> Option<usize> {
-        (0..self.local_variables.len())
-            .rev()
-            .find(|&i| self.local_variables.get(i).unwrap().contains_key(var_name))
+        for scope in (0..self.local_variables.len()).rev() {
+            if let Some(mem) = self.local_variables.get(scope).unwrap().get(var_name) {
+                return Some(*mem);
+            }
+        }
+        None
+    }
+
+    fn get_scope_location(&self, var_name: &String) -> Option<usize> {
+        self.local_variables.last().unwrap().get(var_name).copied()
     }
 
     fn get_variable_location(&self, var_name: &String) -> Option<usize> {
@@ -89,12 +96,14 @@ impl Function {
     fn add_local_variable(&mut self, var_name: String, mem: usize, scope_depth: usize) {
         let mut scope_var = self.local_variables.get_mut(scope_depth).unwrap();
         scope_var.insert(var_name, mem);
+        self.stack_size += 1;
         // self.local_variables.insert(var_name, mem);
     }
 
     fn add_param(&mut self, param_name: &str) -> usize {
-        let mem = self.get_var_count();
+        let mem = self.get_stack_size();
         self.param_variables.insert(param_name.to_owned(), mem);
+        self.stack_size += 1;
         mem
     }
 
@@ -151,7 +160,7 @@ impl Generator {
         self.functions
             .get(&self.current_fn)
             .expect("Function table does not contain current_fn! This might be a bug in Codegen.")
-            .get_var_count()
+            .get_stack_size()
     }
 
     fn get_function_stack_size(&self, func_name: &String) -> usize {
@@ -159,7 +168,7 @@ impl Generator {
         self.functions
             .get(func_name)
             .expect("Function table does not contain current_fn! This might be a bug in Codegen.")
-            .get_var_count()
+            .get_stack_size()
     }
 
     fn reset_registers(&mut self) {
@@ -307,7 +316,7 @@ impl Generator {
             .get(&self.current_fn)
             .expect("At this point, function table is guaranteed to contain current_fn.");
         if local_lookup
-            .get_variable_location(&let_name.get_value())
+            .get_scope_location(&let_name.get_value())
             .is_some()
         {
             return Err(format!(
@@ -577,7 +586,6 @@ impl Generator {
                     for func in &ast.children {
                         self.convert_fn(func)?;
                     }
-                    todo!()
                 }
                 _ => todo!("handle other types"),
             },
@@ -715,6 +723,7 @@ impl Generator {
                 }
                 Instruction::Call { func_name } => {
                     let stack_size = self.get_function_stack_size(func_name);
+                    println!("{func_name} has a stack size of {stack_size}");
                     return_stack.push_back(ip);
                     return_stack.push_back(stack_size);
                     if stack_ptr < stack_size {
