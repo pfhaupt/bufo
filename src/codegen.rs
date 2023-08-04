@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use crate::lexer::TokenType;
@@ -41,7 +43,8 @@ enum Instruction {
 struct Function {
     ip: usize,
     param_variables: BTreeMap<String, usize>,
-    local_variables: BTreeMap<String, usize>,
+    // local_variables: BTreeMap<String, usize>,
+    local_variables: Vec<BTreeMap<String, usize>>,
 }
 
 impl Function {
@@ -49,7 +52,8 @@ impl Function {
         Self {
             ip,
             param_variables: BTreeMap::new(),
-            local_variables: BTreeMap::new(),
+            // local_variables: BTreeMap::new(),
+            local_variables: vec![BTreeMap::new()],
         }
     }
 
@@ -69,24 +73,54 @@ impl Function {
         self.param_variables.contains_key(var_name)
     }
 
+    fn contains_local(&self, var_name: &String) -> bool {
+        for i in (0..self.local_variables.len()).rev() {
+            if self.local_variables.get(i).unwrap().contains_key(var_name) {
+                return true;
+            }
+        }
+        false
+    }
+
     fn contains_variable(&self, var_name: &String) -> bool {
-        self.contains_param(var_name) || self.local_variables.contains_key(var_name)
+        self.contains_param(var_name) || self.contains_local(var_name)
     }
 
     fn get_variable_location(&self, var_name: &String) -> usize {
-        *self.param_variables
-            .get(var_name)
-            .unwrap_or_else(||self.local_variables.get(var_name).expect("Variable exists, but was neither found in param lookup nor in var lookup. This might be a bug in Codegen."))
+        match self.param_variables.get(var_name) {
+            Some(p) => *p,
+            None => self.get_local_location(var_name),    
+        }
     }
 
-    fn add_local_variable(&mut self, var_name: String, mem: usize) {
-        self.local_variables.insert(var_name, mem);
+    fn get_local_location(&self, var_name: &String) -> usize {
+        for scope_depth in (0..self.local_variables.len()).rev() {
+            let scope_vars = self.local_variables.get(scope_depth).unwrap();
+            if let Some(mem) = scope_vars.get(var_name) {
+                return *mem;
+            }
+        }
+        panic!()
+    }
+
+    fn add_local_variable(&mut self, var_name: String, mem: usize, scope_depth: usize) {
+        let mut scope_var = self.local_variables.get_mut(scope_depth).unwrap();
+        scope_var.insert(var_name, mem);
+        // self.local_variables.insert(var_name, mem);
     }
 
     fn add_param(&mut self, param_name: &str) -> usize {
         let mem = self.get_var_count();
         self.param_variables.insert(param_name.to_owned(), mem);
         mem
+    }
+
+    fn add_scope(&mut self) {
+        self.local_variables.push(BTreeMap::new());
+    }
+
+    fn remove_scope(&mut self) {
+        self.local_variables.pop().unwrap();
     }
 }
 
@@ -99,6 +133,7 @@ pub struct Generator {
     code: Vec<Instruction>,
     current_fn: String,
     unresolved_jmp_instr: VecDeque<usize>,
+    scope_depth: usize,
 }
 
 impl Generator {
@@ -111,19 +146,20 @@ impl Generator {
             code: vec![],
             current_fn: String::new(),
             unresolved_jmp_instr: VecDeque::new(),
+            scope_depth: 0,
         };
         gen.generate_code()?;
         Ok(gen)
     }
 
-    fn add_local_var(&mut self, var_name: &str) -> usize {
+    fn add_local_var(&mut self, var_name: &str, scope_depth: usize) -> usize {
         assert!(!self.current_fn.is_empty());
         assert!(self.functions.contains_key(&self.current_fn));
         let mem = self.get_stack_offset();
         self.functions
             .get_mut(&self.current_fn)
             .expect("Function table does not contain current_fn! This might be a bug in Codegen.")
-            .add_local_variable(var_name.to_owned(), mem);
+            .add_local_variable(var_name.to_owned(), mem, scope_depth);
         mem
     }
 
@@ -294,7 +330,7 @@ impl Generator {
             ));
         }
 
-        let mem = self.add_local_var(&let_name.get_value());
+        let mem = self.add_local_var(&let_name.get_value(), self.scope_depth);
         let reg = self.convert_expr(let_expr)?;
         self.code.push(Instruction::StoreMem { reg, mem });
         Ok(())
@@ -508,6 +544,7 @@ impl Generator {
 
     fn convert_block(&mut self, block: &Tree) -> Result<(), String> {
         assert!(*ref_unwrap!(block.typ) == TreeType::Block);
+        self.enter_scope();
         for instr in &block.children {
             match &instr.typ {
                 Some(t) => match t {
@@ -520,7 +557,22 @@ impl Generator {
                 _ => panic!(),
             }
         }
+        self.leave_scope();
         Ok(())
+    }
+
+    fn enter_scope(&mut self) {
+        assert!(!self.current_fn.is_empty());
+        println!("Entering scope");
+        self.scope_depth += 1;
+        self.functions.get_mut(&self.current_fn).unwrap().add_scope();
+    }
+
+    fn leave_scope(&mut self) {
+        assert!(!self.current_fn.is_empty());
+        println!("Leaving scope");
+        self.scope_depth -= 1;
+        self.functions.get_mut(&self.current_fn).unwrap().remove_scope();
     }
 
     fn convert_ast(&mut self, ast: &Tree) -> Result<(), String> {
@@ -530,6 +582,7 @@ impl Generator {
                     for func in &ast.children {
                         self.convert_fn(func)?;
                     }
+                    todo!()
                 }
                 _ => todo!("handle other types"),
             },

@@ -2,20 +2,10 @@ func main() {
     let a = 0;
     if (a == 1) {
         let b = 2;
+        if (b == 3) {
+            let c = 5;
+        }
     }
-    if (a != 0) {
-        let c = 3;
-    }
-    if (a > 0) {
-        let d = 4;
-    }
-    if (a <= 0) {
-        let e = 5;
-    }
-    if (a <= 1) {
-        let f = 6;
-    }
-    if (a <= 2) {
-        let g = 7;
-    }
+    b = 3;
+    c = 5;
 }
