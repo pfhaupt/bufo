@@ -452,6 +452,18 @@ impl Generator {
         Ok(())
     }
 
+    fn convert_stmt_return(&mut self, ret_tree: &Tree) -> Result<(), String> {
+        println!("{:#?}", ret_tree);
+        match ret_tree.children.len() {
+            1 => {
+                self.code.push(Instruction::Return {  });
+                Ok(())
+            },
+            2 => todo!("Handle return statement with return value."),
+            _ => panic!()
+        }
+    }
+
     fn resolve_last_jmp(&mut self) -> usize {
         assert!(!self.unresolved_jmp_instr.is_empty());
         let ip = self.unresolved_jmp_instr.pop_back().unwrap();
@@ -550,6 +562,7 @@ impl Generator {
                     TreeType::StmtAssign => self.convert_stmt_assign(instr)?,
                     TreeType::StmtCall => self.convert_stmt_call(instr)?,
                     TreeType::StmtIf => self.convert_stmt_if(instr)?,
+                    TreeType::StmtReturn => self.convert_stmt_return(instr)?,
                     e => todo!("convert {:?} inside block", e),
                 },
                 _ => panic!(),

@@ -18,6 +18,7 @@ pub enum TreeType {
     StmtAssign,
     StmtCall,
     StmtIf,
+    StmtReturn,
     ExprName,
     ExprLiteral,
     ExprBinary,
@@ -291,6 +292,17 @@ impl Parser {
         Ok(())
     }
 
+    fn parse_stmt_return(&mut self) -> Result<(), String> {
+        let m = self.open();
+        self.expect(TokenType::ReturnKeyword)?;
+        if !self.eat(TokenType::Semi) {
+            self.parse_expr()?;
+            self.expect(TokenType::Semi)?;
+        }
+        self.close(m, TreeType::StmtReturn);
+        Ok(())
+    }
+
     fn parse_block(&mut self) -> Result<(), String> {
         if !self.at(TokenType::OpenBracket) {
             let ptr = if self.ptr == self.tokens.len() {
@@ -312,6 +324,7 @@ impl Parser {
             match self.nth(0) {
                 TokenType::LetKeyword => self.parse_stmt_let()?,
                 TokenType::IfKeyword => self.parse_stmt_if()?,
+                TokenType::ReturnKeyword => self.parse_stmt_return()?,
                 TokenType::Name => match self.nth(1) {
                     TokenType::OpenParenthesis => self.parse_stmt_call()?,
                     _ => self.parse_stmt_assign()?,
@@ -359,7 +372,7 @@ impl Parser {
     pub fn parse_file(&mut self) -> Result<(), String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
-            24,
+            25,
             "Not all TokenTypes are handled in parse_file()"
         );
         let m = self.open();
