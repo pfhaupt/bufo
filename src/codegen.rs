@@ -452,6 +452,20 @@ impl Generator {
         Ok(())
     }
 
+    fn convert_stmt_return(&mut self, ret_tree: &Tree) -> Result<(), String> {
+        let child_count = ret_tree.children.len();
+        assert!(&[1,2].contains(&child_count));
+        if child_count == 2 {
+            let reg = self.convert_expr(&ret_tree.children[1])?;
+            // Assertion for two reasons:
+            // 1: Register 0 is always the result for the outermost expr
+            // 2: Calling conventions -> Reg 0 (RAX/EAX/...) always contains return value
+            assert!(reg == 0);
+        }
+        self.code.push(Instruction::Return {} );
+        Ok(())
+    }
+
     fn resolve_last_jmp(&mut self) -> usize {
         assert!(!self.unresolved_jmp_instr.is_empty());
         let ip = self.unresolved_jmp_instr.pop_back().unwrap();
@@ -550,6 +564,7 @@ impl Generator {
                     TreeType::StmtAssign => self.convert_stmt_assign(instr)?,
                     TreeType::StmtCall => self.convert_stmt_call(instr)?,
                     TreeType::StmtIf => self.convert_stmt_if(instr)?,
+                    TreeType::StmtReturn => self.convert_stmt_return(instr)?,
                     e => todo!("convert {:?} inside block", e),
                 },
                 _ => panic!(),
@@ -747,7 +762,7 @@ impl Generator {
                     // where only one element is on the return_stack
                     stack_ptr += return_stack.pop_back().unwrap();
                     ip = return_stack.pop_back().unwrap();
-                } // Instruction::Print { src: _src } => todo!(),
+                }
             }
             if add_ip {
                 ip += 1;

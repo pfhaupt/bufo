@@ -14,6 +14,7 @@ pub enum TokenType {
     LetKeyword,
     IfKeyword,
     ElseKeyword,
+    ReturnKeyword,
     Equal,
     Plus,
     Minus,
@@ -136,7 +137,7 @@ impl Lexer {
     fn next_token(&mut self) -> Result<Token, String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
-            24,
+            25,
             "Not all TokenTypes are handled in next_token()"
         );
         let c = self.next_char()?;
@@ -170,6 +171,7 @@ impl Lexer {
                     "let" => TokenType::LetKeyword,
                     "if" => TokenType::IfKeyword,
                     "else" => TokenType::ElseKeyword,
+                    "return" => TokenType::ReturnKeyword,
                     _ => TokenType::Name,
                 };
                 Ok(Token {
