@@ -9,21 +9,6 @@ use crate::codegen::Generator;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 
-/*
-TODO-List:
-    Rewrite Grammar to make call expr, instead of stmt
-        -> currently the compiler crashes if you wanna do something like f(f(10))
-        -> this is because fn calls are treated as statements, instead of expressions
-        -> this means you can also not do something like `let a = f(10);`
-    Introduce Scope
-        ->  The following code snippet should not work:
-                if (cond) {
-                    let a = 0;
-                }
-                a = 4;
-            It should fail in line 4 with "Undefined variable `a`"
-*/
-
 fn compile() -> Result<(), String> {
     let path = String::from("src/test.bu");
 
