@@ -22,6 +22,7 @@ pub enum TreeType {
     ExprLiteral,
     ExprBinary,
     ExprParen,
+    ExprCall,
 }
 
 #[derive(Debug, Clone)]
@@ -142,18 +143,32 @@ impl Parser {
         ))
     }
 
-    fn parse_expr_delim(&mut self) -> Result<MarkClosed, String> {
+    fn parse_expr_call(&mut self) -> Result<MarkClosed, String> {
         let m = self.open();
+        self.expect(TokenType::Name)?;
+        self.parse_arg_list()?;
+        Ok(self.close(m, TreeType::ExprCall))
+    }
+
+    fn parse_expr_delim(&mut self) -> Result<MarkClosed, String> {
         Ok(match self.nth(0) {
             TokenType::IntLiteral => {
+                let m = self.open();
                 self.advance();
                 self.close(m, TreeType::ExprLiteral)
             }
             TokenType::Name => {
-                self.advance();
-                self.close(m, TreeType::ExprName)
+                match self.nth(1) {
+                    TokenType::OpenParenthesis => self.parse_expr_call()?,
+                    _ => {
+                        let m = self.open();
+                        self.advance();
+                        self.close(m, TreeType::ExprName)
+                    }
+                }
             }
             TokenType::OpenParenthesis => {
+                let m = self.open();
                 self.expect(TokenType::OpenParenthesis)?;
                 self.parse_expr()?;
                 self.expect(TokenType::ClosingParenthesis)?;
@@ -315,7 +330,10 @@ impl Parser {
                 TokenType::LetKeyword => self.parse_stmt_let()?,
                 TokenType::IfKeyword => self.parse_stmt_if()?,
                 TokenType::ReturnKeyword => self.parse_stmt_return()?,
-                TokenType::Name => self.parse_stmt_assign()?,
+                TokenType::Name => match self.nth(1) {
+                    TokenType::Equal => self.parse_stmt_assign()?,
+                    _ => self.parse_stmt_expr()?,
+                }
                 _ => self.parse_stmt_expr()?,
             }
         }

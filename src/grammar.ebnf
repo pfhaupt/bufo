@@ -24,8 +24,10 @@ ArgList = "(" {Arg} ")";
 Expr = ExprName
      | ExprLiteral
      | ExprBinary
-     | ExprParen;
+     | ExprParen
+     | ExprCall;
 ExprName = "name";
 ExprLiteral = "int";
 ExprBinary = Expr ("+" | "-" | "*" | "/" | "==" | "!=" | "<" | ">" | "<=" | ">=") Expr;
 ExprParen = "(" Expr ")";
+ExprCall = "name" ArgList;

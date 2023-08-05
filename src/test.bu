@@ -1,10 +1,9 @@
-func test(a) {
-    if (a == 2) {
-        return 5;
-    }
-    return;
+func factorial(n) {
+    if (n <= 1) { return 1; }
+    let a = factorial(n - 1);
+    return a * n;
 }
 
 func main() {
-    test(3);
+    let a = factorial(10);
 }
