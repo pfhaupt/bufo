@@ -1,9 +1,10 @@
-func factorial(n) {
-    if (n <= 1) { return 1; }
-    let a = factorial(n - 1);
-    return a * n;
+func ack(m, n) {
+    if (m == 0) { return n + 1; }
+    if (n == 0) { return ack(m - 1, 1); }
+    let a = ack(m, n - 1);
+    return ack(m - 1, a);
 }
 
 func main() {
-    let a = factorial(10);
+    let a = ack(3, 11);
 }

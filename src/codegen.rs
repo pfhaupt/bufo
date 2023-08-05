@@ -174,7 +174,7 @@ impl Generator {
     }
 
     fn reset_registers(&mut self) {
-        // self.register_ctr = 0;
+        self.register_ctr = 0;
     }
 
     fn get_register(&mut self) -> usize {
@@ -613,7 +613,7 @@ impl Generator {
         //     println!("{i:3} -> {c:?}");
         // }
         // todo!();
-        const RETURN_STACK_LIMIT: usize = 4096;
+        const RETURN_STACK_LIMIT: usize = 4096 * 4096;
         const STACK_SIZE: usize = 1_000_000;
         let entry_point = String::from("main");
 
@@ -648,7 +648,7 @@ impl Generator {
                 ));
             }
             let instr = &self.code[ip];
-            println!("{:3} {:?} {:?}", ip, flags, instr);
+            // println!("{:3} {:?} {:?}", ip, flags, instr);
             let mut add_ip = true;
             match instr {
                 Instruction::Add { dest, src } => {
@@ -728,7 +728,7 @@ impl Generator {
                 }
                 Instruction::Call { fn_name } => {
                     let stack_size = self.get_function_stack_size(fn_name);
-                    println!("{fn_name} has a stack size of {stack_size}");
+                    // println!("{fn_name} has a stack size of {stack_size}");
                     return_stack.push_back(ip);
                     return_stack.push_back(stack_size);
                     if stack_ptr < stack_size {
