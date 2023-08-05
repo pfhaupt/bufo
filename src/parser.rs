@@ -16,7 +16,6 @@ pub enum TreeType {
     StmtExpr,
     StmtLet,
     StmtAssign,
-    StmtCall,
     StmtIf,
     StmtReturn,
     ExprName,
@@ -269,15 +268,6 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_stmt_call(&mut self) -> Result<(), String> {
-        let m = self.open();
-        self.expect(TokenType::Name)?;
-        self.parse_arg_list()?;
-        self.expect(TokenType::Semi)?;
-        self.close(m, TreeType::StmtCall);
-        Ok(())
-    }
-
     fn parse_stmt_if(&mut self) -> Result<(), String> {
         let m = self.open();
         self.expect(TokenType::IfKeyword)?;
@@ -325,10 +315,7 @@ impl Parser {
                 TokenType::LetKeyword => self.parse_stmt_let()?,
                 TokenType::IfKeyword => self.parse_stmt_if()?,
                 TokenType::ReturnKeyword => self.parse_stmt_return()?,
-                TokenType::Name => match self.nth(1) {
-                    TokenType::OpenParenthesis => self.parse_stmt_call()?,
-                    _ => self.parse_stmt_assign()?,
-                },
+                TokenType::Name => self.parse_stmt_assign()?,
                 _ => self.parse_stmt_expr()?,
             }
         }

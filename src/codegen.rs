@@ -35,7 +35,6 @@ enum Instruction {
     LoadMem { mem: usize, reg: usize },
     StoreMem { mem: usize, reg: usize },
     Return {},
-    Call { func_name: String },
     // Print { src: usize },
 }
 
@@ -369,61 +368,6 @@ impl Generator {
         self.convert_expr(arg_expr)
     }
 
-    fn convert_stmt_call(&mut self, call_tree: &Tree) -> Result<(), String> {
-        let instr_children = &call_tree.children;
-        assert!(instr_children.len() == 2);
-        let call_name = &instr_children[0];
-        assert!(ref_unwrap!(call_name.tkn).get_type() == TokenType::Name);
-        let call_args = &instr_children[1];
-        assert!(*ref_unwrap!(call_args.typ) == TreeType::ArgList);
-        let name = ref_unwrap!(call_name.tkn).get_value();
-        if !self.functions.contains_key(&name) {
-            return Err(format!(
-                "{} {:?}: Unknown function `{}`",
-                ERR_STR,
-                ref_unwrap!(call_name.tkn).get_loc(),
-                name
-            ));
-        }
-
-        // We just checked if function table contains name, we can safely unwrap
-        let params = self.functions.get(&name).unwrap().get_params();
-
-        if call_args.children.len() != params.len() {
-            let err_txt = if call_args.children.len() > params.len() {
-                format!(
-                    "Attempted to call function `{}` with too many arguments",
-                    name
-                )
-            } else {
-                format!(
-                    "Attempted to call function `{}` with too little arguments",
-                    name
-                )
-            };
-
-            return Err(format!(
-                "{}: {:?}: {}! Got {} arguments, expected {}",
-                ERR_STR,
-                ref_unwrap!(call_name.tkn).get_loc(),
-                err_txt,
-                call_args.children.len(),
-                params.len()
-            ));
-        }
-        let mut reg_ctr = 50;
-        for arg in &call_args.children {
-            let reg = self.convert_arg(arg)?;
-            self.code.push(Instruction::Move {
-                dest: reg_ctr,
-                src: reg,
-            });
-            reg_ctr += 1;
-        }
-        self.code.push(Instruction::Call { func_name: name });
-        Ok(())
-    }
-
     fn convert_stmt_if(&mut self, if_tree: &Tree) -> Result<(), String> {
         let if_children = &if_tree.children;
         let if_keyword = &if_children[0];
@@ -562,7 +506,6 @@ impl Generator {
                 Some(t) => match t {
                     TreeType::StmtLet => self.convert_stmt_let(instr)?,
                     TreeType::StmtAssign => self.convert_stmt_assign(instr)?,
-                    TreeType::StmtCall => self.convert_stmt_call(instr)?,
                     TreeType::StmtIf => self.convert_stmt_if(instr)?,
                     TreeType::StmtReturn => self.convert_stmt_return(instr)?,
                     e => todo!("convert {:?} inside block", e),
@@ -735,22 +678,6 @@ impl Generator {
                 }
                 Instruction::Load { dest, val } => {
                     self.registers[*dest] = *val;
-                }
-                Instruction::Call { func_name } => {
-                    let stack_size = self.get_function_stack_size(func_name);
-                    println!("{func_name} has a stack size of {stack_size}");
-                    return_stack.push_back(ip);
-                    return_stack.push_back(stack_size);
-                    if stack_ptr < stack_size {
-                        return Err(format!("{}: Stack Overflow when interpreting!", ERR_STR));
-                    }
-                    stack_ptr -= stack_size;
-                    ip = self
-                        .functions
-                        .get(func_name)
-                        .unwrap_or_else(|| panic!("Could not find {func_name} in function table"))
-                        .get_ip();
-                    add_ip = false;
                 }
                 Instruction::Return {} => {
                     if return_stack.is_empty() {
