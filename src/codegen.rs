@@ -16,7 +16,7 @@ macro_rules! ref_unwrap {
     };
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum Instruction {
     Load { dest: usize, val: usize },
     Add { dest: usize, src: usize },
@@ -285,7 +285,6 @@ impl Generator {
                 let fn_instr = &instr_children[0];
                 assert!(ref_unwrap!(fn_instr.tkn).get_type() == TokenType::Name);
                 let fn_name = ref_unwrap!(fn_instr.tkn).get_value();
-                println!("{}", fn_name);
                 let fn_args = &instr_children[1];
                 if let Some(func) = self.functions.get(&fn_name) {
                     let params = func.get_params();
@@ -500,7 +499,9 @@ impl Generator {
         self.convert_fn_param(&fn_children[2])?;
         self.convert_block(&fn_children[3])?;
         self.current_fn.clear();
-        self.code.push(Instruction::Return {});
+        if !(*self.code.last().unwrap() == Instruction::Return { }) {
+            self.code.push(Instruction::Return {});
+        }
 
         Ok(())
     }
