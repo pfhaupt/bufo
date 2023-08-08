@@ -35,8 +35,8 @@ enum Instruction {
     LoadMem { mem: usize, reg: usize },
     StoreMem { mem: usize, reg: usize },
     Call { fn_name: String },
-    PushRet { reg: usize },
-    PopRet { reg: usize },
+    Push { reg: usize },
+    Pop { reg: usize },
     Return {},
     // Print { src: usize },
 }
@@ -291,7 +291,11 @@ impl Generator {
                     if fn_args.children.len() != params.len() {
                         todo!()
                     }
-                    let mut reg_ctr = 50;
+                    let curr_reg_ctr = self.register_ctr;
+                    for reg in 0..curr_reg_ctr {
+                        self.code.push(Instruction::Push { reg });
+                    }
+                    let mut reg_ctr = 0;
                     for arg in &fn_args.children {
                         let reg = self.convert_arg(arg)?;
                         self.code.push(Instruction::Move { dest: reg_ctr, src: reg });
@@ -299,7 +303,10 @@ impl Generator {
                     }
                     self.code.push(Instruction::Call { fn_name });
                     let reg = self.get_register();
-                    self.code.push(Instruction::PopRet { reg });
+                    self.code.push(Instruction::Pop { reg });
+                    for reg in (0..curr_reg_ctr).rev() {
+                        self.code.push(Instruction::Pop { reg });
+                    }
                     Ok( reg )
                 } else {
                     Err(format!(
@@ -326,7 +333,6 @@ impl Generator {
             },
             e => todo!("Handle {:?} in convert_expr", e),
         };
-        self.reset_registers();
         r
     }
 
@@ -363,6 +369,7 @@ impl Generator {
         let mem = self.add_local_var(&let_name.get_value(), self.scope_depth);
         let reg = self.convert_expr(let_expr)?;
         self.code.push(Instruction::StoreMem { reg, mem });
+        self.reset_registers();
         Ok(())
     }
 
@@ -392,6 +399,7 @@ impl Generator {
         let assign_expr = &instr_children[2];
         let reg = self.convert_expr(assign_expr)?;
         self.code.push(Instruction::StoreMem { mem, reg });
+        self.reset_registers();
         Ok(())
     }
 
@@ -411,6 +419,7 @@ impl Generator {
         assert!(*ref_unwrap!(if_cond.typ) == TreeType::ExprBinary);
         let if_block = &if_children[2];
         self.convert_expr(if_cond)?;
+        self.reset_registers();
 
         self.convert_block(if_block)?;
         let if_jmp = self.resolve_last_jmp();
@@ -428,6 +437,7 @@ impl Generator {
             self.convert_block(else_block)?;
             self.resolve_last_jmp();
         }
+        self.reset_registers();
         Ok(())
     }
 
@@ -439,10 +449,10 @@ impl Generator {
             // Assertion for two reasons:
             // 1: Register 0 is always the result for the outermost expr
             // 2: Calling conventions -> Reg 0 (RAX/EAX/...) always contains return value
-            // assert!(reg == 0);
-            self.code.push(Instruction::PushRet { reg });
+            self.code.push(Instruction::Push { reg });
         }
         self.code.push(Instruction::Return {} );
+        self.reset_registers();
         Ok(())
     }
 
@@ -451,6 +461,7 @@ impl Generator {
         assert!(expr_children.len() == 1, "Expected {{Expr}}");
         let expr = &expr_children[0];
         self.convert_expr(expr)?;
+        self.reset_registers();
         Ok(())
     }
 
@@ -508,7 +519,7 @@ impl Generator {
 
     fn convert_fn_param(&mut self, param: &Tree) -> Result<(), String> {
         let param_children = &param.children;
-        let mut reg_ctr = 50;
+        let mut reg_ctr = 0;
         for p in param_children {
             match &p.typ {
                 Some(t) => {
@@ -743,10 +754,10 @@ impl Generator {
                         .get_ip();
                     add_ip = false;
                 }
-                Instruction::PushRet { reg } => {
+                Instruction::Push { reg } => {
                     return_values.push_back(self.registers[*reg]);
                 }
-                Instruction::PopRet { reg } => {
+                Instruction::Pop { reg } => {
                     self.registers[*reg] = return_values.pop_back().unwrap();
                 }
                 Instruction::Return {} => {
