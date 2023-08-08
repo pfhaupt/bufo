@@ -10,5 +10,5 @@ func factorial(n) {
 }
 
 func main() {
-    let a = factorial(ack(3, factorial(2)));
+    let a = factorial(ack(factorial(2), factorial(2)));
 }
