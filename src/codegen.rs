@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
-use crate::lexer::TokenType;
+use crate::lexer::{Token, TokenType, Location};
 use crate::parser::{Tree, TreeType};
 
 pub const ERR_STR: &str = "\x1b[91merror\x1b[0m";
@@ -16,14 +16,53 @@ macro_rules! ref_unwrap {
     };
 }
 
+// parse_type!(i32, Instruction::LoadI32, dest, loc, val, typ);
+macro_rules! parse_type {
+    ($parse_typ:ty, $loc:expr, $val:expr, $typ: expr) => {
+        match $val.parse::<$parse_typ>() {
+            Ok(val) => Ok(val),
+            Err(e) => Err(
+                format!("{}: {:?}: Integer Literal `{}` too big for Type `{:?}`",
+                ERR_STR,
+                $loc,
+                $val,
+                $typ)
+            )
+        }
+    };
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+enum Type {
+    Unknown,
+    I32,
+    I64,
+    U32,
+    U64,
+    // Reserved for later use
+    F32,
+    F64,
+}
+
+struct Variable {
+    typ: Type,
+    value: String,
+}
+
 #[derive(Debug, PartialEq)]
 enum Instruction {
-    Load { dest: usize, val: usize },
-    Add { dest: usize, src: usize },
-    Sub { dest: usize, src: usize },
-    Mul { dest: usize, src: usize },
-    Div { dest: usize, src: usize },
-    Cmp { dest: usize, src: usize },
+    LoadUnknown { dest: usize, val: String, loc: Location },
+    LoadI32 { dest: usize, val: i32 },
+    LoadI64 { dest: usize, val: i64 },
+    LoadU32 { dest: usize, val: u32 },
+    LoadU64 { dest: usize, val: u64 },
+    LoadF32 { dest: usize, val: f32 },
+    LoadF64 { dest: usize, val: f64 },
+    Add { dest: usize, src: usize, typ: Type },
+    Sub { dest: usize, src: usize, typ: Type },
+    Mul { dest: usize, src: usize, typ: Type },
+    Div { dest: usize, src: usize, typ: Type },
+    Cmp { dest: usize, src: usize, typ: Type },
     Jmp { dest: usize },
     JmpEq { dest: usize },
     JmpNeq { dest: usize },
@@ -32,8 +71,8 @@ enum Instruction {
     JmpLt { dest: usize },
     JmpLte { dest: usize },
     Move { dest: usize, src: usize },
-    LoadMem { mem: usize, reg: usize },
-    StoreMem { mem: usize, reg: usize },
+    LoadMem { mem: usize, reg: usize, typ: Type },
+    StoreMem { mem: usize, reg: usize, typ: Type },
     Call { fn_name: String },
     Push { reg: usize },
     Pop { reg: usize },
@@ -44,8 +83,8 @@ enum Instruction {
 #[derive(Debug)]
 struct Function {
     ip: usize,
-    param_variables: BTreeMap<String, usize>,
-    local_variables: Vec<BTreeMap<String, usize>>,
+    param_variables: BTreeMap<String, (usize, Type)>,
+    local_variables: Vec<BTreeMap<String, (usize, Type)>>,
     stack_size: usize,
 }
 
@@ -67,15 +106,15 @@ impl Function {
         self.stack_size
     }
 
-    fn get_params(&self) -> &BTreeMap<String, usize> {
+    fn get_params(&self) -> &BTreeMap<String, (usize, Type)> {
         &self.param_variables
     }
 
-    fn get_param_location(&self, var_name: &String) -> Option<usize> {
+    fn get_param_location(&self, var_name: &String) -> Option<(usize, Type)> {
         self.param_variables.get(var_name).copied()
     }
 
-    fn get_local_location(&self, var_name: &String) -> Option<usize> {
+    fn get_local_location(&self, var_name: &String) -> Option<(usize, Type)> {
         for scope in (0..self.local_variables.len()).rev() {
             if let Some(mem) = self.local_variables.get(scope).unwrap().get(var_name) {
                 return Some(*mem);
@@ -84,27 +123,27 @@ impl Function {
         None
     }
 
-    fn get_scope_location(&self, var_name: &String) -> Option<usize> {
+    fn get_scope_location(&self, var_name: &String) -> Option<(usize, Type)> {
         self.local_variables.last().unwrap().get(var_name).copied()
     }
 
-    fn get_variable_location(&self, var_name: &String) -> Option<usize> {
+    fn get_variable_location(&self, var_name: &String) -> Option<(usize, Type)> {
         match self.get_param_location(var_name) {
             Some(i) => Some(i),
             None => self.get_local_location(var_name),
         }
     }
 
-    fn add_local_variable(&mut self, var_name: String, mem: usize, scope_depth: usize) {
+    fn add_local_variable(&mut self, var_name: String, mem: usize, scope_depth: usize, typ: &Type) {
         let mut scope_var = self.local_variables.get_mut(scope_depth).unwrap();
-        scope_var.insert(var_name, mem);
+        scope_var.insert(var_name, (mem, typ.clone()));
         self.stack_size += 1;
         // self.local_variables.insert(var_name, mem);
     }
 
-    fn add_param(&mut self, param_name: &str) -> usize {
+    fn add_param(&mut self, param_name: &str, typ: &Type) -> usize {
         let mem = self.get_stack_size();
-        self.param_variables.insert(param_name.to_owned(), mem);
+        self.param_variables.insert(param_name.to_owned(), (mem, typ.clone()));
         self.stack_size += 1;
         mem
     }
@@ -127,6 +166,7 @@ pub struct Generator {
     code: Vec<Instruction>,
     current_fn: String,
     unresolved_jmp_instr: VecDeque<usize>,
+    unresolved_typ_instr: VecDeque<usize>,
     scope_depth: usize,
 }
 
@@ -140,20 +180,21 @@ impl Generator {
             code: vec![],
             current_fn: String::new(),
             unresolved_jmp_instr: VecDeque::new(),
+            unresolved_typ_instr: VecDeque::new(),
             scope_depth: 0,
         };
         gen.generate_code()?;
         Ok(gen)
     }
 
-    fn add_local_var(&mut self, var_name: &str, scope_depth: usize) -> usize {
+    fn add_local_var(&mut self, var_name: &str, scope_depth: usize, typ: &Type) -> usize {
         assert!(!self.current_fn.is_empty());
         assert!(self.functions.contains_key(&self.current_fn));
         let mem = self.get_stack_offset();
         self.functions
             .get_mut(&self.current_fn)
             .expect("Function table does not contain current_fn! This might be a bug in Codegen.")
-            .add_local_variable(var_name.to_owned(), mem, scope_depth);
+            .add_local_variable(var_name.to_owned(), mem, scope_depth, typ);
         mem
     }
 
@@ -186,7 +227,18 @@ impl Generator {
         r
     }
 
-    fn convert_expr_atomic(&mut self, instr: &Tree) -> Result<usize, String> {
+    fn convert_expr_literal(&mut self, lit: String) -> Result<(String, Type), String> {
+        match lit.bytes().position(|c| c.is_ascii_alphabetic()) {
+            Some(index) => {
+                let typ_str = &lit[index..];
+                let typ = self.convert_type_str(typ_str)?;
+                Ok((lit[0..index].to_owned(), typ))
+            }
+            None => Ok((lit, Type::Unknown)),
+        }
+    }
+
+    fn convert_expr_atomic(&mut self, instr: &Tree) -> Result<(usize, Type), String> {
         let instr_children = &instr.children;
         match ref_unwrap!(instr.typ, "Atomic Expression Head can't be None.") {
             TreeType::ExprLiteral => {
@@ -195,12 +247,44 @@ impl Generator {
                     instr_children[0].tkn,
                     "Expected valid ExprLiteral, got None instead. This might be a bug in parsing."
                 )
-                .get_value()
-                .parse()
-                .expect("At this point value of ExprLiteral should only contain valid digits.");
+                .get_value();
+                let (val, typ) = match self.convert_expr_literal(val) {
+                    Ok((v, t)) => (v, t),
+                    Err(e) => {
+                        return Err(format!(
+                            "{}: {:?}: {}",
+                            ERR_STR,
+                            ref_unwrap!(instr_children[0].tkn).get_loc(),
+                            e
+                        ));
+                    }
+                };
                 let dest = self.get_register();
-                self.code.push(Instruction::Load { dest, val });
-                Ok(dest)
+                let loc = ref_unwrap!(instr_children[0].tkn).get_loc();
+                match typ {
+                    Type::I32 => {
+                        let val = parse_type!(i32, loc, val, typ)?;
+                        self.code.push(Instruction::LoadI32 { dest, val });
+                    }
+                    Type::I64 => {
+                        let val = parse_type!(i64, loc, val, typ)?;
+                        self.code.push(Instruction::LoadI64 { dest, val });
+                    }
+                    Type::U32 => {
+                        let val = parse_type!(u32, loc, val, typ)?;
+                        self.code.push(Instruction::LoadU32 { dest, val });
+                    }
+                    Type::U64 => {
+                        let val = parse_type!(u64, loc, val, typ)?;
+                        self.code.push(Instruction::LoadU64 { dest, val });
+                    }
+                    Type::Unknown => {
+                        self.unresolved_typ_instr.push_back(self.code.len());
+                        self.code.push(Instruction::LoadUnknown { dest, val, loc });
+                    }
+                    _ => todo!()
+                };
+                Ok((dest, typ))
             }
             TreeType::ExprParen => {
                 assert!(instr_children.len() == 1, "Expected {{Expr}}");
@@ -208,50 +292,57 @@ impl Generator {
             }
             TreeType::ExprBinary => {
                 assert!(*ref_unwrap!(instr.typ) == TreeType::ExprBinary);
-                assert!(instr_children.len() == 3, "Expected {{Expr}} {{Op}} {{Expr}}");
+                assert!(
+                    instr_children.len() == 3,
+                    "Expected {{Expr}} {{Op}} {{Expr}}"
+                );
                 let lhs = &instr_children[0];
                 let op = &instr_children[1];
                 let rhs = &instr_children[2];
                 let dest = self.convert_expr_atomic(lhs)?;
                 let src = self.convert_expr_atomic(rhs)?;
+                todo!("Handle return values from convert_expr_atomic() in ExprBinary");
+                let dest = dest.0;
+                let src = src.0;
                 match ref_unwrap!(op.tkn, "Expected valid ExprBinary operator, got None instead. This might be a bug in parsing.").get_type() {
-                    TokenType::Plus => self.code.push(Instruction::Add { dest, src }),
-                    TokenType::Minus => self.code.push(Instruction::Sub { dest, src }),
-                    TokenType::Mult => self.code.push(Instruction::Mul { dest, src }),
-                    TokenType::Div => self.code.push(Instruction::Div { dest, src }),
+                    TokenType::Plus => self.code.push(Instruction::Add { dest, src, typ: Type::U64 }),
+                    TokenType::Minus => self.code.push(Instruction::Sub { dest, src, typ: Type::U64 }),
+                    TokenType::Mult => self.code.push(Instruction::Mul { dest, src, typ: Type::U64 }),
+                    TokenType::Div => self.code.push(Instruction::Div { dest, src, typ: Type::U64 }),
                     TokenType::CmpEq => {
-                        self.code.push(Instruction::Cmp { dest, src });
+                        self.code.push(Instruction::Cmp { dest, src, typ: Type::U64 });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpNeq { dest: usize::MAX });
                     },
                     TokenType::CmpNeq => {
-                        self.code.push(Instruction::Cmp { dest, src });
+                        self.code.push(Instruction::Cmp { dest, src, typ: Type::U64 });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpEq { dest: usize::MAX });
                     },
                     TokenType::CmpGt => {
-                        self.code.push(Instruction::Cmp { dest, src });
+                        self.code.push(Instruction::Cmp { dest, src, typ: Type::U64 });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpLte { dest: usize::MAX });
                     },
                     TokenType::CmpGte => {
-                        self.code.push(Instruction::Cmp { dest, src });
+                        self.code.push(Instruction::Cmp { dest, src, typ: Type::U64 });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpLt { dest: usize::MAX });
                     },
                     TokenType::CmpLt => {
-                        self.code.push(Instruction::Cmp { dest, src });
+                        self.code.push(Instruction::Cmp { dest, src, typ: Type::U64 });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpGte { dest: usize::MAX });
                     },
                     TokenType::CmpLte => {
-                        self.code.push(Instruction::Cmp { dest, src });
+                        self.code.push(Instruction::Cmp { dest, src, typ: Type::U64 });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpGt { dest: usize::MAX });
                     },
                     e => todo!("Handle {:?} in convert_expr_atomic()", e)
                 }
-                Ok(dest)
+                todo!("Make ExprBinary return the correct return value");
+                // Ok(dest)
             }
             TreeType::ExprName => {
                 assert!(instr_children.len() == 1, "Expected {{name}}");
@@ -268,9 +359,13 @@ impl Generator {
                     .get(&self.current_fn)
                     .expect("At this point, function table is guaranteed to contain current_fn.");
                 match curr_fn.get_variable_location(&name) {
-                    Some(mem) => {
-                        self.code.push(Instruction::LoadMem { reg, mem });
-                        Ok(reg)
+                    Some(var) => {
+                        self.code.push(Instruction::LoadMem {
+                            reg,
+                            mem: var.0,
+                            typ: var.1,
+                        });
+                        Ok((reg, var.1))
                     }
                     None => Err(format!(
                         "{}: {:?}: Undefined variable `{}`",
@@ -281,6 +376,7 @@ impl Generator {
                 }
             }
             TreeType::ExprCall => {
+                todo!("ExprCall is currently not supported by the Type System.");
                 assert!(instr_children.len() == 2, "Expected {{name}} {{ArgList}}");
                 let fn_instr = &instr_children[0];
                 assert!(ref_unwrap!(fn_instr.tkn).get_type() == TokenType::Name);
@@ -295,10 +391,10 @@ impl Generator {
                     for reg in 0..curr_reg_ctr {
                         self.code.push(Instruction::Push { reg });
                     }
-                    let mut reg_ctr = 0;
-                    for arg in &fn_args.children {
+                    for (reg_ctr, arg) in fn_args.children.iter().enumerate() {
                         let reg = self.convert_arg(arg)?;
-                        self.code.push(Instruction::Move { dest: reg_ctr, src: reg });
+                        todo!("Handle correct return values in ExprCall -> convert_arg()");
+                        // self.code.push(Instruction::Move { dest: reg_ctr, src: reg });
                         reg_ctr += 1;
                     }
                     self.code.push(Instruction::Call { fn_name });
@@ -307,7 +403,8 @@ impl Generator {
                     for reg in (0..curr_reg_ctr).rev() {
                         self.code.push(Instruction::Pop { reg });
                     }
-                    Ok( reg )
+                    todo!("Make ExprCall return the correct return value");
+                    // Ok( reg )
                 } else {
                     Err(format!(
                         "{} {:?}: Unknown function `{}`",
@@ -321,8 +418,8 @@ impl Generator {
         }
     }
 
-    fn convert_expr(&mut self, expr_tree: &Tree) -> Result<usize, String> {
-        let r = match &expr_tree.typ {
+    fn convert_expr(&mut self, expr_tree: &Tree) -> Result<(usize, Type), String> {
+        match &expr_tree.typ {
             Some(t) => match t {
                 TreeType::ExprLiteral
                 | TreeType::ExprBinary
@@ -332,20 +429,57 @@ impl Generator {
                 e => todo!("Handle {:?} in convert_expr", e),
             },
             e => todo!("Handle {:?} in convert_expr", e),
-        };
-        r
+        }
+    }
+
+    fn convert_type_str(&self, val: &str) -> Result<Type, String> {
+        match val {
+            "i32" => Ok(Type::I32),
+            "i64" => Ok(Type::I64),
+            "u32" => Ok(Type::U32),
+            "u64" => Ok(Type::U64),
+            // Reserved for future use
+            "f32" => Ok(Type::F32),
+            "f64" => Ok(Type::F64),
+            t => Err(format!(
+                "Unexpected Type `{}`. Expected one of {{i32, i64, u32, u64}}",
+                t
+            )),
+        }
+    }
+
+    fn convert_type(&mut self, typ_tree: &Tree) -> Result<Type, String> {
+        let typ_children = &typ_tree.children;
+        assert!(typ_children.len() == 2);
+        let typ_decl = &typ_children[0];
+        assert!(ref_unwrap!(typ_decl.tkn).get_type() == TokenType::TypeDecl);
+        let typ_type = &typ_children[1];
+        assert!(ref_unwrap!(typ_type.tkn).get_type() == TokenType::Name);
+        let typ_type_value = ref_unwrap!(typ_type.tkn).get_value();
+        match self.convert_type_str(typ_type_value.as_str()) {
+            Ok(t) => Ok(t),
+            Err(e) => Err(format!(
+                "{}: {:?}: {}",
+                ERR_STR,
+                ref_unwrap!(typ_type.tkn).get_loc(),
+                e
+            )),
+        }
     }
 
     fn convert_stmt_let(&mut self, let_tree: &Tree) -> Result<(), String> {
         let instr_children = &let_tree.children;
-        assert!(instr_children.len() == 4);
+        assert!(instr_children.len() == 5, "{:#?}", instr_children);
         let let_keyword = &instr_children[0];
         assert!(ref_unwrap!(let_keyword.tkn).get_type() == TokenType::LetKeyword);
         let let_name = &instr_children[1];
         assert!(ref_unwrap!(let_name.tkn).get_type() == TokenType::Name);
-        let let_eq = &instr_children[2];
+        let let_type = &instr_children[2];
+        assert!(*ref_unwrap!(let_type.typ) == TreeType::TypeDecl);
+        let expected_type = self.convert_type(let_type)?;
+        let let_eq = &instr_children[3];
         assert!(ref_unwrap!(let_eq.tkn).get_type() == TokenType::Equal);
-        let let_expr = &instr_children[3];
+        let let_expr = &instr_children[4];
 
         let let_name = ref_unwrap!(
             let_name.tkn,
@@ -366,11 +500,33 @@ impl Generator {
             ));
         }
 
-        let mem = self.add_local_var(&let_name.get_value(), self.scope_depth);
+        let mem = self.add_local_var(&let_name.get_value(), self.scope_depth, &expected_type);
         let reg = self.convert_expr(let_expr)?;
-        self.code.push(Instruction::StoreMem { reg, mem });
+        if expected_type != reg.1 {
+            match reg.1 {
+                Type::Unknown => {
+                    println!("\nLHS: {:?}\nRHS: {:?}", expected_type, reg.1);
+                    println!("{:?}", self.code);
+                    assert!(!self.unresolved_typ_instr.is_empty());
+                    let index = self.unresolved_typ_instr.pop_back().unwrap();
+                    self.set_load_instr(index, expected_type)?;
+                    println!("{:?}", self.code);
+                }
+                _ => return Err(
+                        format!("{}: {:?}: Type mismatch! Expected type `{:?}`, got type `{:?}`.",
+                        ERR_STR,
+                        let_name.get_loc(),
+                        expected_type,
+                        reg.1)
+                )
+            };
+        }
+        self.code.push(Instruction::StoreMem { mem, reg: reg.0, typ: expected_type });
         self.reset_registers();
         Ok(())
+        // self.code.push(Instruction::StoreMem { reg, mem, typ: Type::U64 });
+        // self.reset_registers();
+        // Ok(())
     }
 
     fn convert_stmt_assign(&mut self, assign_tree: &Tree) -> Result<(), String> {
@@ -398,12 +554,13 @@ impl Generator {
         assert!(ref_unwrap!(assign_eq.tkn).get_type() == TokenType::Equal);
         let assign_expr = &instr_children[2];
         let reg = self.convert_expr(assign_expr)?;
-        self.code.push(Instruction::StoreMem { mem, reg });
-        self.reset_registers();
-        Ok(())
+        todo!("Handle return values in convert_stmt_assign()");
+        // self.code.push(Instruction::StoreMem { mem, reg, typ: Type::U64 });
+        // self.reset_registers();
+        // Ok(())
     }
 
-    fn convert_arg(&mut self, arg: &Tree) -> Result<usize, String> {
+    fn convert_arg(&mut self, arg: &Tree) -> Result<(usize, Type), String> {
         assert!(*ref_unwrap!(arg.typ) == TreeType::Arg);
         let arg_children = &arg.children;
         assert!(arg_children.len() == 1);
@@ -443,15 +600,16 @@ impl Generator {
 
     fn convert_stmt_return(&mut self, ret_tree: &Tree) -> Result<(), String> {
         let child_count = ret_tree.children.len();
-        assert!(&[1,2].contains(&child_count));
+        assert!(&[1, 2].contains(&child_count));
         if child_count == 2 {
             let reg = self.convert_expr(&ret_tree.children[1])?;
+            todo!("Handle return values in convert_stmt_return()");
             // Assertion for two reasons:
             // 1: Register 0 is always the result for the outermost expr
             // 2: Calling conventions -> Reg 0 (RAX/EAX/...) always contains return value
-            self.code.push(Instruction::Push { reg });
+            // self.code.push(Instruction::Push { reg });
         }
-        self.code.push(Instruction::Return {} );
+        self.code.push(Instruction::Return {});
         self.reset_registers();
         Ok(())
     }
@@ -485,6 +643,34 @@ impl Generator {
         };
     }
 
+    fn set_load_instr(&mut self, index: usize, typ: Type) -> Result<(), String> {
+        self.code[index] = match &self.code[index] {
+            Instruction::LoadUnknown { dest, val, loc } => {
+                match typ {
+                    Type::I32 => {
+                        let val = parse_type!(i32, *loc, *val, typ)?;
+                        Instruction::LoadI32 { dest: *dest, val }
+                    }
+                    Type::I64 => {
+                        let val = parse_type!(i64, loc, val, typ)?;
+                        Instruction::LoadI64 { dest: *dest, val }
+                    }
+                    Type::U32 => {
+                        let val = parse_type!(u32, loc, val, typ)?;
+                        Instruction::LoadU32 { dest: *dest, val }
+                    }
+                    Type::U64 => {
+                        let val = parse_type!(u64, loc, val, typ)?;
+                        Instruction::LoadU64 { dest: *dest, val }
+                    }
+                    _ => todo!()
+                }
+            },
+            _ => panic!()
+        };
+        Ok(())
+    }
+
     fn convert_fn(&mut self, func: &Tree) -> Result<(), String> {
         let fn_children = &func.children;
         assert!(
@@ -510,7 +696,7 @@ impl Generator {
         self.convert_fn_param(&fn_children[2])?;
         self.convert_block(&fn_children[3])?;
         self.current_fn.clear();
-        if !(*self.code.last().unwrap() == Instruction::Return { }) {
+        if !(*self.code.last().unwrap() == Instruction::Return {}) {
             self.code.push(Instruction::Return {});
         }
 
@@ -525,6 +711,7 @@ impl Generator {
                 Some(t) => {
                     match t {
                         TreeType::Param => {
+                            todo!("Handle param type");
                             assert!(p.children.len() == 1);
                             let param_node = &p.children[0];
                             let param_name = ref_unwrap!(param_node.tkn).get_value();
@@ -537,8 +724,12 @@ impl Generator {
                                     param_name
                                 ));
                             }
-                            let mem = local_lookup.add_param(&param_name);
-                            self.code.push(Instruction::StoreMem { mem, reg: reg_ctr });
+                            let mem = local_lookup.add_param(&param_name, &Type::U64);
+                            self.code.push(Instruction::StoreMem {
+                                mem,
+                                reg: reg_ctr,
+                                typ: Type::U64,
+                            });
                             reg_ctr += 1;
                         }
                         _ => {
@@ -621,10 +812,10 @@ impl Generator {
     }
 
     pub fn interpret(&mut self) -> Result<(), String> {
-        // for (i, c) in self.code.iter().enumerate() {
-        //     println!("{i:3} -> {c:?}");
-        // }
-        // todo!();
+        for (i, c) in self.code.iter().enumerate() {
+            println!("{i:3} -> {c:?}");
+        }
+        todo!();
         const RETURN_STACK_LIMIT: usize = 4096 * 4096;
         const STACK_SIZE: usize = 1_000_000;
         let entry_point = String::from("main");
@@ -653,6 +844,7 @@ impl Generator {
             .get_ip();
 
         while ip < self.code.len() {
+            todo!("Interpretation with type system in place.");
             if return_stack.len() > RETURN_STACK_LIMIT {
                 return Err(format!(
                     "{}: Recursion Limit reached when interpreting!",
@@ -663,19 +855,26 @@ impl Generator {
             // println!("{:3} {:?} {:?}", ip, flags, instr);
             let mut add_ip = true;
             match instr {
-                Instruction::Add { dest, src } => {
+                Instruction::LoadUnknown { .. } => panic!(),
+                Instruction::LoadI32 { dest, val } => todo!(),
+                Instruction::LoadI64 { dest, val } => todo!(),
+                Instruction::LoadU32 { dest, val } => todo!(),
+                Instruction::LoadU64 { dest, val } => todo!(),
+                Instruction::LoadF32 { dest, val } => todo!(),
+                Instruction::LoadF64 { dest, val } => todo!(),
+                Instruction::Add { dest, src, typ } => {
                     self.registers[*dest] += self.registers[*src];
                 }
-                Instruction::Sub { dest, src } => {
+                Instruction::Sub { dest, src, typ } => {
                     self.registers[*dest] -= self.registers[*src];
                 }
-                Instruction::Mul { dest, src } => {
+                Instruction::Mul { dest, src, typ } => {
                     self.registers[*dest] *= self.registers[*src];
                 }
-                Instruction::Div { dest, src } => {
+                Instruction::Div { dest, src, typ } => {
                     self.registers[*dest] /= self.registers[*src];
                 }
-                Instruction::Cmp { dest, src } => {
+                Instruction::Cmp { dest, src, typ } => {
                     let lhs = self.registers[*dest];
                     let rhs = self.registers[*src];
                     flags = 0;
@@ -729,14 +928,11 @@ impl Generator {
                 Instruction::Move { dest, src } => {
                     self.registers[*dest] = self.registers[*src];
                 }
-                Instruction::LoadMem { reg, mem } => {
+                Instruction::LoadMem { reg, mem, typ } => {
                     self.registers[*reg] = stack[stack_ptr + *mem + 1];
                 }
-                Instruction::StoreMem { reg, mem } => {
+                Instruction::StoreMem { reg, mem, typ } => {
                     stack[stack_ptr + *mem + 1] = self.registers[*reg];
-                }
-                Instruction::Load { dest, val } => {
-                    self.registers[*dest] = *val;
                 }
                 Instruction::Call { fn_name } => {
                     let stack_size = self.get_function_stack_size(fn_name);
