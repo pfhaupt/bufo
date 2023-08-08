@@ -15,6 +15,7 @@ pub enum TokenType {
     IfKeyword,
     ElseKeyword,
     ReturnKeyword,
+    TypeDecl,
     Equal,
     Plus,
     Minus,
@@ -32,7 +33,7 @@ pub enum TokenType {
     Eof,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Location {
     file: String,
     row: usize,
@@ -137,7 +138,7 @@ impl Lexer {
     fn next_token(&mut self) -> Result<Token, String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
-            25,
+            26,
             "Not all TokenTypes are handled in next_token()"
         );
         let c = self.next_char()?;
@@ -145,7 +146,7 @@ impl Lexer {
             '0'..='9' => {
                 let mut value = String::from(c);
                 while let Ok(nc) = self.next_char() {
-                    if !nc.is_ascii_digit() {
+                    if !nc.is_alphanumeric() {
                         self.current_char -= 1; // Went too far, go a step back
                         break;
                     }
@@ -287,6 +288,11 @@ impl Lexer {
                     loc: self.get_location(),
                 })
             }
+            ':' => Ok(Token {
+                typ: TokenType::TypeDecl,
+                value: String::from(c),
+                loc: self.get_location(),
+            }),
             '+' => Ok(Token {
                 typ: TokenType::Plus,
                 value: String::from(c),
