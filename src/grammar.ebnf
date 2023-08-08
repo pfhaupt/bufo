@@ -10,7 +10,8 @@ Block = "{" {Stmt} "}";
 Stmt = StmtExpr
      | StmtLet
      | StmtAssign
-     | StmtIf;
+     | StmtIf
+     | StmtReturn;
 
 StmtExpr = Expr ";";
 StmtLet = "let" "name" "=" Expr ";";
