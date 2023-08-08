@@ -157,16 +157,14 @@ impl Parser {
                 self.advance();
                 self.close(m, TreeType::ExprLiteral)
             }
-            TokenType::Name => {
-                match self.nth(1) {
-                    TokenType::OpenParenthesis => self.parse_expr_call()?,
-                    _ => {
-                        let m = self.open();
-                        self.advance();
-                        self.close(m, TreeType::ExprName)
-                    }
+            TokenType::Name => match self.nth(1) {
+                TokenType::OpenParenthesis => self.parse_expr_call()?,
+                _ => {
+                    let m = self.open();
+                    self.advance();
+                    self.close(m, TreeType::ExprName)
                 }
-            }
+            },
             TokenType::OpenParenthesis => {
                 let m = self.open();
                 self.expect(TokenType::OpenParenthesis)?;
@@ -212,7 +210,14 @@ impl Parser {
             [
                 [TokenType::Plus, TokenType::Minus].as_slice(),
                 &[TokenType::Mult, TokenType::Div],
-                &[TokenType::CmpEq, TokenType::CmpNeq, TokenType::CmpGt, TokenType::CmpGte, TokenType::CmpLt, TokenType::CmpLte]
+                &[
+                    TokenType::CmpEq,
+                    TokenType::CmpNeq,
+                    TokenType::CmpGt,
+                    TokenType::CmpGte,
+                    TokenType::CmpLt,
+                    TokenType::CmpLte,
+                ],
             ]
             .iter()
             .position(|l| l.contains(&typ))
@@ -333,7 +338,7 @@ impl Parser {
                 TokenType::Name => match self.nth(1) {
                     TokenType::Equal => self.parse_stmt_assign()?,
                     _ => self.parse_stmt_expr()?,
-                }
+                },
                 _ => self.parse_stmt_expr()?,
             }
         }
