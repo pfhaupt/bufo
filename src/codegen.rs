@@ -16,7 +16,7 @@ macro_rules! ref_unwrap {
     };
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum Instruction {
     Load { dest: usize, val: usize },
     Add { dest: usize, src: usize },
@@ -34,8 +34,10 @@ enum Instruction {
     Move { dest: usize, src: usize },
     LoadMem { mem: usize, reg: usize },
     StoreMem { mem: usize, reg: usize },
+    Call { fn_name: String },
+    Push { reg: usize },
+    Pop { reg: usize },
     Return {},
-    Call { func_name: String },
     // Print { src: usize },
 }
 
@@ -185,11 +187,12 @@ impl Generator {
     }
 
     fn convert_expr_atomic(&mut self, instr: &Tree) -> Result<usize, String> {
+        let instr_children = &instr.children;
         match ref_unwrap!(instr.typ, "Atomic Expression Head can't be None.") {
             TreeType::ExprLiteral => {
-                assert!(instr.children.len() == 1);
+                assert!(instr_children.len() == 1, "Expected {{Literal}}");
                 let val = ref_unwrap!(
-                    instr.children[0].tkn,
+                    instr_children[0].tkn,
                     "Expected valid ExprLiteral, got None instead. This might be a bug in parsing."
                 )
                 .get_value()
@@ -200,15 +203,15 @@ impl Generator {
                 Ok(dest)
             }
             TreeType::ExprParen => {
-                assert!(instr.children.len() == 1);
-                self.convert_expr_atomic(&instr.children[0])
+                assert!(instr_children.len() == 1, "Expected {{Expr}}");
+                self.convert_expr_atomic(&instr_children[0])
             }
             TreeType::ExprBinary => {
                 assert!(*ref_unwrap!(instr.typ) == TreeType::ExprBinary);
-                assert!(instr.children.len() == 3);
-                let lhs = &instr.children[0];
-                let op = &instr.children[1];
-                let rhs = &instr.children[2];
+                assert!(instr_children.len() == 3, "Expected {{Expr}} {{Op}} {{Expr}}");
+                let lhs = &instr_children[0];
+                let op = &instr_children[1];
+                let rhs = &instr_children[2];
                 let dest = self.convert_expr_atomic(lhs)?;
                 let src = self.convert_expr_atomic(rhs)?;
                 match ref_unwrap!(op.tkn, "Expected valid ExprBinary operator, got None instead. This might be a bug in parsing.").get_type() {
@@ -251,8 +254,8 @@ impl Generator {
                 Ok(dest)
             }
             TreeType::ExprName => {
-                assert!(instr.children.len() == 1);
-                let val_name = &instr.children[0];
+                assert!(instr_children.len() == 1, "Expected {{name}}");
+                let val_name = &instr_children[0];
                 let name = ref_unwrap!(
                     val_name.tkn,
                     "Expected valid ExprName, got None instead. This might be a bug in parsing"
@@ -277,6 +280,43 @@ impl Generator {
                     )),
                 }
             }
+            TreeType::ExprCall => {
+                assert!(instr_children.len() == 2, "Expected {{name}} {{ArgList}}");
+                let fn_instr = &instr_children[0];
+                assert!(ref_unwrap!(fn_instr.tkn).get_type() == TokenType::Name);
+                let fn_name = ref_unwrap!(fn_instr.tkn).get_value();
+                let fn_args = &instr_children[1];
+                if let Some(func) = self.functions.get(&fn_name) {
+                    let params = func.get_params();
+                    if fn_args.children.len() != params.len() {
+                        todo!()
+                    }
+                    let curr_reg_ctr = self.register_ctr;
+                    for reg in 0..curr_reg_ctr {
+                        self.code.push(Instruction::Push { reg });
+                    }
+                    let mut reg_ctr = 0;
+                    for arg in &fn_args.children {
+                        let reg = self.convert_arg(arg)?;
+                        self.code.push(Instruction::Move { dest: reg_ctr, src: reg });
+                        reg_ctr += 1;
+                    }
+                    self.code.push(Instruction::Call { fn_name });
+                    let reg = self.get_register();
+                    self.code.push(Instruction::Pop { reg });
+                    for reg in (0..curr_reg_ctr).rev() {
+                        self.code.push(Instruction::Pop { reg });
+                    }
+                    Ok( reg )
+                } else {
+                    Err(format!(
+                        "{} {:?}: Unknown function `{}`",
+                        ERR_STR,
+                        ref_unwrap!(fn_instr.tkn).get_loc(),
+                        fn_name
+                    ))
+                }
+            }
             e => todo!("Handle {:?} in convert_expr_atomic. Got:\n{:?}", e, instr),
         }
     }
@@ -287,12 +327,12 @@ impl Generator {
                 TreeType::ExprLiteral
                 | TreeType::ExprBinary
                 | TreeType::ExprName
-                | TreeType::ExprParen => self.convert_expr_atomic(expr_tree),
+                | TreeType::ExprParen
+                | TreeType::ExprCall => self.convert_expr_atomic(expr_tree),
                 e => todo!("Handle {:?} in convert_expr", e),
             },
             e => todo!("Handle {:?} in convert_expr", e),
         };
-        self.reset_registers();
         r
     }
 
@@ -329,6 +369,7 @@ impl Generator {
         let mem = self.add_local_var(&let_name.get_value(), self.scope_depth);
         let reg = self.convert_expr(let_expr)?;
         self.code.push(Instruction::StoreMem { reg, mem });
+        self.reset_registers();
         Ok(())
     }
 
@@ -358,6 +399,7 @@ impl Generator {
         let assign_expr = &instr_children[2];
         let reg = self.convert_expr(assign_expr)?;
         self.code.push(Instruction::StoreMem { mem, reg });
+        self.reset_registers();
         Ok(())
     }
 
@@ -369,61 +411,6 @@ impl Generator {
         self.convert_expr(arg_expr)
     }
 
-    fn convert_stmt_call(&mut self, call_tree: &Tree) -> Result<(), String> {
-        let instr_children = &call_tree.children;
-        assert!(instr_children.len() == 2);
-        let call_name = &instr_children[0];
-        assert!(ref_unwrap!(call_name.tkn).get_type() == TokenType::Name);
-        let call_args = &instr_children[1];
-        assert!(*ref_unwrap!(call_args.typ) == TreeType::ArgList);
-        let name = ref_unwrap!(call_name.tkn).get_value();
-        if !self.functions.contains_key(&name) {
-            return Err(format!(
-                "{} {:?}: Unknown function `{}`",
-                ERR_STR,
-                ref_unwrap!(call_name.tkn).get_loc(),
-                name
-            ));
-        }
-
-        // We just checked if function table contains name, we can safely unwrap
-        let params = self.functions.get(&name).unwrap().get_params();
-
-        if call_args.children.len() != params.len() {
-            let err_txt = if call_args.children.len() > params.len() {
-                format!(
-                    "Attempted to call function `{}` with too many arguments",
-                    name
-                )
-            } else {
-                format!(
-                    "Attempted to call function `{}` with too little arguments",
-                    name
-                )
-            };
-
-            return Err(format!(
-                "{}: {:?}: {}! Got {} arguments, expected {}",
-                ERR_STR,
-                ref_unwrap!(call_name.tkn).get_loc(),
-                err_txt,
-                call_args.children.len(),
-                params.len()
-            ));
-        }
-        let mut reg_ctr = 50;
-        for arg in &call_args.children {
-            let reg = self.convert_arg(arg)?;
-            self.code.push(Instruction::Move {
-                dest: reg_ctr,
-                src: reg,
-            });
-            reg_ctr += 1;
-        }
-        self.code.push(Instruction::Call { func_name: name });
-        Ok(())
-    }
-
     fn convert_stmt_if(&mut self, if_tree: &Tree) -> Result<(), String> {
         let if_children = &if_tree.children;
         let if_keyword = &if_children[0];
@@ -432,6 +419,7 @@ impl Generator {
         assert!(*ref_unwrap!(if_cond.typ) == TreeType::ExprBinary);
         let if_block = &if_children[2];
         self.convert_expr(if_cond)?;
+        self.reset_registers();
 
         self.convert_block(if_block)?;
         let if_jmp = self.resolve_last_jmp();
@@ -449,6 +437,7 @@ impl Generator {
             self.convert_block(else_block)?;
             self.resolve_last_jmp();
         }
+        self.reset_registers();
         Ok(())
     }
 
@@ -460,9 +449,19 @@ impl Generator {
             // Assertion for two reasons:
             // 1: Register 0 is always the result for the outermost expr
             // 2: Calling conventions -> Reg 0 (RAX/EAX/...) always contains return value
-            assert!(reg == 0);
+            self.code.push(Instruction::Push { reg });
         }
         self.code.push(Instruction::Return {} );
+        self.reset_registers();
+        Ok(())
+    }
+
+    fn convert_stmt_expr(&mut self, expr_tree: &Tree) -> Result<(), String> {
+        let expr_children = &expr_tree.children;
+        assert!(expr_children.len() == 1, "Expected {{Expr}}");
+        let expr = &expr_children[0];
+        self.convert_expr(expr)?;
+        self.reset_registers();
         Ok(())
     }
 
@@ -511,14 +510,16 @@ impl Generator {
         self.convert_fn_param(&fn_children[2])?;
         self.convert_block(&fn_children[3])?;
         self.current_fn.clear();
-        self.code.push(Instruction::Return {});
+        if !(*self.code.last().unwrap() == Instruction::Return { }) {
+            self.code.push(Instruction::Return {});
+        }
 
         Ok(())
     }
 
     fn convert_fn_param(&mut self, param: &Tree) -> Result<(), String> {
         let param_children = &param.children;
-        let mut reg_ctr = 50;
+        let mut reg_ctr = 0;
         for p in param_children {
             match &p.typ {
                 Some(t) => {
@@ -562,9 +563,9 @@ impl Generator {
                 Some(t) => match t {
                     TreeType::StmtLet => self.convert_stmt_let(instr)?,
                     TreeType::StmtAssign => self.convert_stmt_assign(instr)?,
-                    TreeType::StmtCall => self.convert_stmt_call(instr)?,
                     TreeType::StmtIf => self.convert_stmt_if(instr)?,
                     TreeType::StmtReturn => self.convert_stmt_return(instr)?,
+                    TreeType::StmtExpr => self.convert_stmt_expr(instr)?,
                     e => todo!("convert {:?} inside block", e),
                 },
                 _ => panic!(),
@@ -624,11 +625,12 @@ impl Generator {
         //     println!("{i:3} -> {c:?}");
         // }
         // todo!();
-        const RETURN_STACK_LIMIT: usize = 4096;
+        const RETURN_STACK_LIMIT: usize = 4096 * 4096;
         const STACK_SIZE: usize = 1_000_000;
         let entry_point = String::from("main");
 
         let mut return_stack = VecDeque::<usize>::new();
+        let mut return_values = VecDeque::<usize>::new();
         let mut stack = vec![0; STACK_SIZE];
         let mut stack_ptr = STACK_SIZE - 1 - self.get_function_stack_size(&entry_point);
 
@@ -658,7 +660,7 @@ impl Generator {
                 ));
             }
             let instr = &self.code[ip];
-            println!("{:3} {:?} {:?}", ip, flags, instr);
+            // println!("{:3} {:?} {:?}", ip, flags, instr);
             let mut add_ip = true;
             match instr {
                 Instruction::Add { dest, src } => {
@@ -736,9 +738,9 @@ impl Generator {
                 Instruction::Load { dest, val } => {
                     self.registers[*dest] = *val;
                 }
-                Instruction::Call { func_name } => {
-                    let stack_size = self.get_function_stack_size(func_name);
-                    println!("{func_name} has a stack size of {stack_size}");
+                Instruction::Call { fn_name } => {
+                    let stack_size = self.get_function_stack_size(fn_name);
+                    // println!("{fn_name} has a stack size of {stack_size}");
                     return_stack.push_back(ip);
                     return_stack.push_back(stack_size);
                     if stack_ptr < stack_size {
@@ -747,10 +749,16 @@ impl Generator {
                     stack_ptr -= stack_size;
                     ip = self
                         .functions
-                        .get(func_name)
-                        .unwrap_or_else(|| panic!("Could not find {func_name} in function table"))
+                        .get(fn_name)
+                        .unwrap_or_else(|| panic!("Could not find {fn_name} in function table"))
                         .get_ip();
                     add_ip = false;
+                }
+                Instruction::Push { reg } => {
+                    return_values.push_back(self.registers[*reg]);
+                }
+                Instruction::Pop { reg } => {
+                    self.registers[*reg] = return_values.pop_back().unwrap();
                 }
                 Instruction::Return {} => {
                     if return_stack.is_empty() {
@@ -767,6 +775,9 @@ impl Generator {
             if add_ip {
                 ip += 1;
             }
+            // for i in 0..10 {
+            //     println!("{:5} {:5}", stack[STACK_SIZE - i - 1], self.registers[i]);
+            // }
         }
         for i in 0..10 {
             println!("{}", stack[STACK_SIZE - i - 1]);

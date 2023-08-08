@@ -16,13 +16,13 @@ pub enum TreeType {
     StmtExpr,
     StmtLet,
     StmtAssign,
-    StmtCall,
     StmtIf,
     StmtReturn,
     ExprName,
     ExprLiteral,
     ExprBinary,
     ExprParen,
+    ExprCall,
 }
 
 #[derive(Debug, Clone)]
@@ -143,18 +143,30 @@ impl Parser {
         ))
     }
 
-    fn parse_expr_delim(&mut self) -> Result<MarkClosed, String> {
+    fn parse_expr_call(&mut self) -> Result<MarkClosed, String> {
         let m = self.open();
+        self.expect(TokenType::Name)?;
+        self.parse_arg_list()?;
+        Ok(self.close(m, TreeType::ExprCall))
+    }
+
+    fn parse_expr_delim(&mut self) -> Result<MarkClosed, String> {
         Ok(match self.nth(0) {
             TokenType::IntLiteral => {
+                let m = self.open();
                 self.advance();
                 self.close(m, TreeType::ExprLiteral)
             }
-            TokenType::Name => {
-                self.advance();
-                self.close(m, TreeType::ExprName)
-            }
+            TokenType::Name => match self.nth(1) {
+                TokenType::OpenParenthesis => self.parse_expr_call()?,
+                _ => {
+                    let m = self.open();
+                    self.advance();
+                    self.close(m, TreeType::ExprName)
+                }
+            },
             TokenType::OpenParenthesis => {
+                let m = self.open();
                 self.expect(TokenType::OpenParenthesis)?;
                 self.parse_expr()?;
                 self.expect(TokenType::ClosingParenthesis)?;
@@ -198,7 +210,14 @@ impl Parser {
             [
                 [TokenType::Plus, TokenType::Minus].as_slice(),
                 &[TokenType::Mult, TokenType::Div],
-                &[TokenType::CmpEq, TokenType::CmpNeq, TokenType::CmpGt, TokenType::CmpGte, TokenType::CmpLt, TokenType::CmpLte]
+                &[
+                    TokenType::CmpEq,
+                    TokenType::CmpNeq,
+                    TokenType::CmpGt,
+                    TokenType::CmpGte,
+                    TokenType::CmpLt,
+                    TokenType::CmpLte,
+                ],
             ]
             .iter()
             .position(|l| l.contains(&typ))
@@ -269,15 +288,6 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_stmt_call(&mut self) -> Result<(), String> {
-        let m = self.open();
-        self.expect(TokenType::Name)?;
-        self.parse_arg_list()?;
-        self.expect(TokenType::Semi)?;
-        self.close(m, TreeType::StmtCall);
-        Ok(())
-    }
-
     fn parse_stmt_if(&mut self) -> Result<(), String> {
         let m = self.open();
         self.expect(TokenType::IfKeyword)?;
@@ -326,8 +336,8 @@ impl Parser {
                 TokenType::IfKeyword => self.parse_stmt_if()?,
                 TokenType::ReturnKeyword => self.parse_stmt_return()?,
                 TokenType::Name => match self.nth(1) {
-                    TokenType::OpenParenthesis => self.parse_stmt_call()?,
-                    _ => self.parse_stmt_assign()?,
+                    TokenType::Equal => self.parse_stmt_assign()?,
+                    _ => self.parse_stmt_expr()?,
                 },
                 _ => self.parse_stmt_expr()?,
             }

@@ -1,0 +1,17 @@
+
+Instruction::Call { func_name } => {
+    let stack_size = self.get_function_stack_size(func_name);
+    println!("{func_name} has a stack size of {stack_size}");
+    return_stack.push_back(ip);
+    return_stack.push_back(stack_size);
+    if stack_ptr < stack_size {
+        return Err(format!("{}: Stack Overflow when interpreting!", ERR_STR));
+    }
+    stack_ptr -= stack_size;
+    ip = self
+        .functions
+        .get(func_name)
+        .unwrap_or_else(|| panic!("Could not find {func_name} in function table"))
+        .get_ip();
+    add_ip = false;
+}
