@@ -44,9 +44,10 @@ enum Type {
     F64,
 }
 
+#[derive(Debug, Clone, Copy)]
 struct Variable {
     typ: Type,
-    value: String,
+    mem: usize,
 }
 
 #[derive(Debug, PartialEq)]
@@ -83,8 +84,8 @@ enum Instruction {
 #[derive(Debug)]
 struct Function {
     ip: usize,
-    param_variables: BTreeMap<String, (usize, Type)>,
-    local_variables: Vec<BTreeMap<String, (usize, Type)>>,
+    param_variables: BTreeMap<String, Variable>,
+    local_variables: Vec<BTreeMap<String, Variable>>,
     stack_size: usize,
 }
 
@@ -106,15 +107,15 @@ impl Function {
         self.stack_size
     }
 
-    fn get_params(&self) -> &BTreeMap<String, (usize, Type)> {
+    fn get_params(&self) -> &BTreeMap<String, Variable> {
         &self.param_variables
     }
 
-    fn get_param_location(&self, var_name: &String) -> Option<(usize, Type)> {
+    fn get_param_location(&self, var_name: &String) -> Option<Variable> {
         self.param_variables.get(var_name).copied()
     }
 
-    fn get_local_location(&self, var_name: &String) -> Option<(usize, Type)> {
+    fn get_local_location(&self, var_name: &String) -> Option<Variable> {
         for scope in (0..self.local_variables.len()).rev() {
             if let Some(mem) = self.local_variables.get(scope).unwrap().get(var_name) {
                 return Some(*mem);
@@ -123,11 +124,11 @@ impl Function {
         None
     }
 
-    fn get_scope_location(&self, var_name: &String) -> Option<(usize, Type)> {
+    fn get_scope_location(&self, var_name: &String) -> Option<Variable> {
         self.local_variables.last().unwrap().get(var_name).copied()
     }
 
-    fn get_variable_location(&self, var_name: &String) -> Option<(usize, Type)> {
+    fn get_variable_location(&self, var_name: &String) -> Option<Variable> {
         match self.get_param_location(var_name) {
             Some(i) => Some(i),
             None => self.get_local_location(var_name),
@@ -136,14 +137,14 @@ impl Function {
 
     fn add_local_variable(&mut self, var_name: String, mem: usize, scope_depth: usize, typ: &Type) {
         let mut scope_var = self.local_variables.get_mut(scope_depth).unwrap();
-        scope_var.insert(var_name, (mem, typ.clone()));
+        scope_var.insert(var_name, Variable {mem, typ: typ.clone() });
         self.stack_size += 1;
         // self.local_variables.insert(var_name, mem);
     }
 
     fn add_param(&mut self, param_name: &str, typ: &Type) -> usize {
         let mem = self.get_stack_size();
-        self.param_variables.insert(param_name.to_owned(), (mem, typ.clone()));
+        self.param_variables.insert(param_name.to_owned(), Variable {mem, typ: typ.clone() });
         self.stack_size += 1;
         mem
     }
@@ -238,7 +239,7 @@ impl Generator {
         }
     }
 
-    fn convert_expr_atomic(&mut self, instr: &Tree) -> Result<(usize, Type), String> {
+    fn convert_expr_atomic(&mut self, instr: &Tree) -> Result<Variable, String> {
         let instr_children = &instr.children;
         match ref_unwrap!(instr.typ, "Atomic Expression Head can't be None.") {
             TreeType::ExprLiteral => {
@@ -284,7 +285,7 @@ impl Generator {
                     }
                     _ => todo!()
                 };
-                Ok((dest, typ))
+                Ok(Variable {mem: dest, typ })
             }
             TreeType::ExprParen => {
                 assert!(instr_children.len() == 1, "Expected {{Expr}}");
@@ -302,8 +303,8 @@ impl Generator {
                 let dest = self.convert_expr_atomic(lhs)?;
                 let src = self.convert_expr_atomic(rhs)?;
                 todo!("Handle return values from convert_expr_atomic() in ExprBinary");
-                let dest = dest.0;
-                let src = src.0;
+                let dest = dest.mem;
+                let src = src.mem;
                 match ref_unwrap!(op.tkn, "Expected valid ExprBinary operator, got None instead. This might be a bug in parsing.").get_type() {
                     TokenType::Plus => self.code.push(Instruction::Add { dest, src, typ: Type::U64 }),
                     TokenType::Minus => self.code.push(Instruction::Sub { dest, src, typ: Type::U64 }),
@@ -362,10 +363,10 @@ impl Generator {
                     Some(var) => {
                         self.code.push(Instruction::LoadMem {
                             reg,
-                            mem: var.0,
-                            typ: var.1,
+                            mem: var.mem,
+                            typ: var.typ,
                         });
-                        Ok((reg, var.1))
+                        Ok(Variable {mem: reg, typ: var.typ })
                     }
                     None => Err(format!(
                         "{}: {:?}: Undefined variable `{}`",
@@ -418,7 +419,7 @@ impl Generator {
         }
     }
 
-    fn convert_expr(&mut self, expr_tree: &Tree) -> Result<(usize, Type), String> {
+    fn convert_expr(&mut self, expr_tree: &Tree) -> Result<Variable, String> {
         match &expr_tree.typ {
             Some(t) => match t {
                 TreeType::ExprLiteral
@@ -502,10 +503,10 @@ impl Generator {
 
         let mem = self.add_local_var(&let_name.get_value(), self.scope_depth, &expected_type);
         let reg = self.convert_expr(let_expr)?;
-        if expected_type != reg.1 {
-            match reg.1 {
+        if expected_type != reg.typ {
+            match reg.typ {
                 Type::Unknown => {
-                    println!("\nLHS: {:?}\nRHS: {:?}", expected_type, reg.1);
+                    println!("\nLHS: {:?}\nRHS: {:?}", expected_type, reg.typ);
                     println!("{:?}", self.code);
                     assert!(!self.unresolved_typ_instr.is_empty());
                     let index = self.unresolved_typ_instr.pop_back().unwrap();
@@ -517,11 +518,11 @@ impl Generator {
                         ERR_STR,
                         let_name.get_loc(),
                         expected_type,
-                        reg.1)
+                        reg.typ)
                 )
             };
         }
-        self.code.push(Instruction::StoreMem { mem, reg: reg.0, typ: expected_type });
+        self.code.push(Instruction::StoreMem { mem, reg: reg.mem, typ: expected_type });
         self.reset_registers();
         Ok(())
         // self.code.push(Instruction::StoreMem { reg, mem, typ: Type::U64 });
@@ -560,7 +561,7 @@ impl Generator {
         // Ok(())
     }
 
-    fn convert_arg(&mut self, arg: &Tree) -> Result<(usize, Type), String> {
+    fn convert_arg(&mut self, arg: &Tree) -> Result<Variable, String> {
         assert!(*ref_unwrap!(arg.typ) == TreeType::Arg);
         let arg_children = &arg.children;
         assert!(arg_children.len() == 1);
