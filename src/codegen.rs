@@ -16,7 +16,7 @@ macro_rules! ref_unwrap {
     };
 }
 
-// parse_type!(i32, Instruction::LoadI32, dest, loc, val, typ);
+// parse_type!(i32, loc, val, typ);
 macro_rules! parse_type {
     ($parse_typ:ty, $loc:expr, $val:expr, $typ: expr) => {
         match $val.parse::<$parse_typ>() {
@@ -44,7 +44,7 @@ enum Type {
     F64,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct Variable {
     typ: Type,
     mem: usize,
@@ -72,8 +72,8 @@ enum Instruction {
     JmpLt { dest: usize },
     JmpLte { dest: usize },
     Move { dest: usize, src: usize },
-    LoadMem { mem: usize, reg: usize, typ: Type },
-    StoreMem { mem: usize, reg: usize, typ: Type },
+    LoadMem { reg: usize, var: Variable },
+    StoreMem { reg: usize, var: Variable },
     Call { fn_name: String },
     Push { reg: usize },
     Pop { reg: usize },
@@ -302,48 +302,67 @@ impl Generator {
                 let rhs = &instr_children[2];
                 let dest = self.convert_expr_atomic(lhs)?;
                 let src = self.convert_expr_atomic(rhs)?;
-                todo!("Handle return values from convert_expr_atomic() in ExprBinary");
+                let typ = match (dest.typ, src.typ) {
+                    (Type::Unknown, Type::Unknown) => Type::Unknown,
+                    (Type::Unknown, other_type) | (other_type, Type::Unknown) => {
+                        let index = self.unresolved_typ_instr.pop_back().unwrap();
+                        self.set_load_instr(index, other_type)?;
+                        other_type
+                    },
+                    (left_type, right_type) => {
+                        if right_type != left_type {
+                            return Err(
+                                format!("{}: {:?}: Type mismatch for binary expression `{}`! Left hand side got type `{:?}`, right hand side got type `{:?}`.",
+                                ERR_STR,
+                                ref_unwrap!(op.tkn).get_loc(),
+                                ref_unwrap!(op.tkn).get_value(),
+                                left_type,
+                                right_type))
+                        }
+                        right_type
+                    }
+                };
                 let dest = dest.mem;
                 let src = src.mem;
+                if typ == Type::Unknown { self.unresolved_typ_instr.push_back(self.code.len()) }
                 match ref_unwrap!(op.tkn, "Expected valid ExprBinary operator, got None instead. This might be a bug in parsing.").get_type() {
-                    TokenType::Plus => self.code.push(Instruction::Add { dest, src, typ: Type::U64 }),
-                    TokenType::Minus => self.code.push(Instruction::Sub { dest, src, typ: Type::U64 }),
-                    TokenType::Mult => self.code.push(Instruction::Mul { dest, src, typ: Type::U64 }),
-                    TokenType::Div => self.code.push(Instruction::Div { dest, src, typ: Type::U64 }),
+                    TokenType::Plus => self.code.push(Instruction::Add { dest, src, typ }),
+                    TokenType::Minus => self.code.push(Instruction::Sub { dest, src, typ }),
+                    TokenType::Mult => self.code.push(Instruction::Mul { dest, src, typ }),
+                    TokenType::Div => self.code.push(Instruction::Div { dest, src, typ }),
                     TokenType::CmpEq => {
-                        self.code.push(Instruction::Cmp { dest, src, typ: Type::U64 });
+                        self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpNeq { dest: usize::MAX });
                     },
                     TokenType::CmpNeq => {
-                        self.code.push(Instruction::Cmp { dest, src, typ: Type::U64 });
+                        self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpEq { dest: usize::MAX });
                     },
                     TokenType::CmpGt => {
-                        self.code.push(Instruction::Cmp { dest, src, typ: Type::U64 });
+                        self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpLte { dest: usize::MAX });
                     },
                     TokenType::CmpGte => {
-                        self.code.push(Instruction::Cmp { dest, src, typ: Type::U64 });
+                        self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpLt { dest: usize::MAX });
                     },
                     TokenType::CmpLt => {
-                        self.code.push(Instruction::Cmp { dest, src, typ: Type::U64 });
+                        self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpGte { dest: usize::MAX });
                     },
                     TokenType::CmpLte => {
-                        self.code.push(Instruction::Cmp { dest, src, typ: Type::U64 });
+                        self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpGt { dest: usize::MAX });
                     },
                     e => todo!("Handle {:?} in convert_expr_atomic()", e)
                 }
-                todo!("Make ExprBinary return the correct return value");
-                // Ok(dest)
+                Ok(Variable { typ, mem: dest })
             }
             TreeType::ExprName => {
                 assert!(instr_children.len() == 1, "Expected {{name}}");
@@ -363,8 +382,7 @@ impl Generator {
                     Some(var) => {
                         self.code.push(Instruction::LoadMem {
                             reg,
-                            mem: var.mem,
-                            typ: var.typ,
+                            var: Variable { typ: var.typ, mem: var.mem }
                         });
                         Ok(Variable {mem: reg, typ: var.typ })
                     }
@@ -506,12 +524,7 @@ impl Generator {
         if expected_type != reg.typ {
             match reg.typ {
                 Type::Unknown => {
-                    println!("\nLHS: {:?}\nRHS: {:?}", expected_type, reg.typ);
-                    println!("{:?}", self.code);
-                    assert!(!self.unresolved_typ_instr.is_empty());
-                    let index = self.unresolved_typ_instr.pop_back().unwrap();
-                    self.set_load_instr(index, expected_type)?;
-                    println!("{:?}", self.code);
+                    self.resolve_types(expected_type)?;
                 }
                 _ => return Err(
                         format!("{}: {:?}: Type mismatch! Expected type `{:?}`, got type `{:?}`.",
@@ -522,7 +535,7 @@ impl Generator {
                 )
             };
         }
-        self.code.push(Instruction::StoreMem { mem, reg: reg.mem, typ: expected_type });
+        self.code.push(Instruction::StoreMem { reg: reg.mem, var: Variable { typ: expected_type, mem } });
         self.reset_registers();
         Ok(())
         // self.code.push(Instruction::StoreMem { reg, mem, typ: Type::U64 });
@@ -631,6 +644,13 @@ impl Generator {
         ip
     }
 
+    fn resolve_types(&mut self, expected_type: Type) -> Result<(), String> {
+        while let Some(index) = self.unresolved_typ_instr.pop_back() {
+            self.set_load_instr(index, expected_type)?;
+        }
+        Ok(())
+    }
+
     fn set_jmp_lbl(&mut self, index: usize, dest: usize) {
         self.code[index] = match self.code[index] {
             Instruction::JmpEq { .. } => Instruction::JmpEq { dest },
@@ -667,7 +687,15 @@ impl Generator {
                     _ => todo!()
                 }
             },
-            _ => panic!()
+            Instruction::Add { dest, src, typ: _typ } =>
+                Instruction::Add { dest: *dest, src: *src, typ },
+            Instruction::Sub { dest, src, typ: _typ } =>
+                Instruction::Sub { dest: *dest, src: *src, typ },
+            Instruction::Mul { dest, src, typ: _typ } =>
+                Instruction::Mul { dest: *dest, src: *src, typ },
+            Instruction::Div { dest, src, typ: _typ } =>
+                Instruction::Div { dest: *dest, src: *src, typ },
+            e => todo!("Handle Instruction {:?}", e)
         };
         Ok(())
     }
@@ -725,13 +753,13 @@ impl Generator {
                                     param_name
                                 ));
                             }
-                            let mem = local_lookup.add_param(&param_name, &Type::U64);
-                            self.code.push(Instruction::StoreMem {
-                                mem,
-                                reg: reg_ctr,
-                                typ: Type::U64,
-                            });
-                            reg_ctr += 1;
+                            // let mem = local_lookup.add_param(&param_name, &Type::U64);
+                            // self.code.push(Instruction::StoreMem {
+                            //     mem,
+                            //     reg: reg_ctr,
+                            //     typ: Type::U64,
+                            // });
+                            // reg_ctr += 1;
                         }
                         _ => {
                             todo!(
@@ -929,11 +957,13 @@ impl Generator {
                 Instruction::Move { dest, src } => {
                     self.registers[*dest] = self.registers[*src];
                 }
-                Instruction::LoadMem { reg, mem, typ } => {
-                    self.registers[*reg] = stack[stack_ptr + *mem + 1];
+                Instruction::LoadMem { reg, var: Variable { typ, mem } } => {
+                    todo!()
+                    // self.registers[*reg] = stack[stack_ptr + *mem + 1];
                 }
-                Instruction::StoreMem { reg, mem, typ } => {
-                    stack[stack_ptr + *mem + 1] = self.registers[*reg];
+                Instruction::StoreMem { reg, var: Variable { typ, mem } } => {
+                    todo!()
+                    // stack[stack_ptr + *mem + 1] = self.registers[*reg];
                 }
                 Instruction::Call { fn_name } => {
                     let stack_size = self.get_function_stack_size(fn_name);
