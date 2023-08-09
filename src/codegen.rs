@@ -16,6 +16,20 @@ macro_rules! ref_unwrap {
     };
 }
 
+macro_rules! perform_op {
+    ($v1:expr, $v2:expr, $typ:expr, $op:tt) => {
+        match $typ {
+            Type::I32 => ($v1 as i32 $op $v2 as i32) as usize,
+            Type::I64 => ($v1 as i64 $op $v2 as i64) as usize,
+            Type::U32 => ($v1 as u32 $op $v2 as u32) as usize,
+            Type::U64 => ($v1 as u64 $op $v2 as u64) as usize,
+            Type::F32 => ($v1 as f32 $op $v2 as f32) as usize,
+            Type::F64 => ($v1 as f64 $op $v2 as f64) as usize,
+            _ => todo!()
+        }
+    };
+}
+
 // parse_type!(i32, loc, val, typ);
 macro_rules! parse_type {
     ($parse_typ:ty, $loc:expr, $val:expr, $typ: expr) => {
@@ -305,8 +319,7 @@ impl Generator {
                 let typ = match (dest.typ, src.typ) {
                     (Type::Unknown, Type::Unknown) => Type::Unknown,
                     (Type::Unknown, other_type) | (other_type, Type::Unknown) => {
-                        let index = self.unresolved_typ_instr.pop_back().unwrap();
-                        self.set_load_instr(index, other_type)?;
+                        self.resolve_types(other_type);
                         other_type
                     },
                     (left_type, right_type) => {
@@ -841,23 +854,11 @@ impl Generator {
     }
 
     pub fn interpret(&mut self) -> Result<(), String> {
-        for (i, c) in self.code.iter().enumerate() {
-            println!("{i:3} -> {c:?}");
-        }
-        todo!();
-        const RETURN_STACK_LIMIT: usize = 4096 * 4096;
-        const STACK_SIZE: usize = 1_000_000;
+        // for (i, c) in self.code.iter().enumerate() {
+        //     println!("{i:3} -> {c:?}");
+        // }
+        // todo!();
         let entry_point = String::from("main");
-
-        let mut return_stack = VecDeque::<usize>::new();
-        let mut return_values = VecDeque::<usize>::new();
-        let mut stack = vec![0; STACK_SIZE];
-        let mut stack_ptr = STACK_SIZE - 1 - self.get_function_stack_size(&entry_point);
-
-        let mut flags = 0;
-        const EQ: usize = 1;
-        const LT: usize = 2;
-        const GT: usize = 4;
 
         if !self.functions.contains_key(&entry_point) {
             return Err(format!(
@@ -866,6 +867,19 @@ impl Generator {
             ));
         }
 
+        const RETURN_STACK_LIMIT: usize = 4096 * 4096;
+        const STACK_SIZE: usize = 1_000_000;
+
+        let mut return_stack = VecDeque::<usize>::new();
+        let mut return_values = VecDeque::<usize>::new();
+        let mut stack = vec![0; STACK_SIZE];
+        let mut stack_ptr = STACK_SIZE - 1 - self.get_function_stack_size(&entry_point);
+        
+        let mut flags = 0;
+        const EQ: usize = 1;
+        const LT: usize = 2;
+        const GT: usize = 4;
+
         let mut ip = self
             .functions
             .get(&entry_point)
@@ -873,7 +887,7 @@ impl Generator {
             .get_ip();
 
         while ip < self.code.len() {
-            todo!("Interpretation with type system in place.");
+            // todo!("Interpretation with type system in place.");
             if return_stack.len() > RETURN_STACK_LIMIT {
                 return Err(format!(
                     "{}: Recursion Limit reached when interpreting!",
@@ -885,23 +899,43 @@ impl Generator {
             let mut add_ip = true;
             match instr {
                 Instruction::LoadUnknown { .. } => panic!(),
-                Instruction::LoadI32 { dest, val } => todo!(),
-                Instruction::LoadI64 { dest, val } => todo!(),
-                Instruction::LoadU32 { dest, val } => todo!(),
-                Instruction::LoadU64 { dest, val } => todo!(),
-                Instruction::LoadF32 { dest, val } => todo!(),
-                Instruction::LoadF64 { dest, val } => todo!(),
+                Instruction::LoadI32 { dest, val } => {
+                    self.registers[*dest] = *val as usize;
+                },
+                Instruction::LoadI64 { dest, val } => {
+                    self.registers[*dest] = *val as usize;
+                },
+                Instruction::LoadU32 { dest, val } => {
+                    self.registers[*dest] = *val as usize;
+                },
+                Instruction::LoadU64 { dest, val } => {
+                    self.registers[*dest] = *val as usize;
+                },
+                Instruction::LoadF32 { dest, val } => {
+                    todo!()
+                },
+                Instruction::LoadF64 { dest, val } => {
+                    todo!()
+                },
                 Instruction::Add { dest, src, typ } => {
-                    self.registers[*dest] += self.registers[*src];
+                    let v1 = self.registers[*dest];
+                    let v2 = self.registers[*src];
+                    self.registers[*dest] = perform_op!(v1, v2, typ, +);
                 }
                 Instruction::Sub { dest, src, typ } => {
-                    self.registers[*dest] -= self.registers[*src];
+                    let v1 = self.registers[*dest];
+                    let v2 = self.registers[*src];
+                    self.registers[*dest] = perform_op!(v1, v2, typ, -);
                 }
                 Instruction::Mul { dest, src, typ } => {
-                    self.registers[*dest] *= self.registers[*src];
+                    let v1 = self.registers[*dest];
+                    let v2 = self.registers[*src];
+                    self.registers[*dest] = perform_op!(v1, v2, typ, *);
                 }
                 Instruction::Div { dest, src, typ } => {
-                    self.registers[*dest] /= self.registers[*src];
+                    let v1 = self.registers[*dest];
+                    let v2 = self.registers[*src];
+                    self.registers[*dest] = perform_op!(v1, v2, typ, /);
                 }
                 Instruction::Cmp { dest, src, typ } => {
                     let lhs = self.registers[*dest];
@@ -958,16 +992,14 @@ impl Generator {
                     self.registers[*dest] = self.registers[*src];
                 }
                 Instruction::LoadMem { reg, var: Variable { typ, mem } } => {
-                    todo!()
-                    // self.registers[*reg] = stack[stack_ptr + *mem + 1];
+                    self.registers[*reg] = stack[stack_ptr + *mem + 1];
                 }
                 Instruction::StoreMem { reg, var: Variable { typ, mem } } => {
-                    todo!()
-                    // stack[stack_ptr + *mem + 1] = self.registers[*reg];
+                    stack[stack_ptr + *mem + 1] = self.registers[*reg];
                 }
                 Instruction::Call { fn_name } => {
                     let stack_size = self.get_function_stack_size(fn_name);
-                    // println!("{fn_name} has a stack size of {stack_size}");
+                    println!("{fn_name} has a stack size of {stack_size}");
                     return_stack.push_back(ip);
                     return_stack.push_back(stack_size);
                     if stack_ptr < stack_size {
