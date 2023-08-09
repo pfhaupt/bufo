@@ -1,5 +1,5 @@
 func main() {
-    let i64: u32 = 5;
-    let a: u32 = (0 - 20 + 5) / 5;
-    let b: u32 = a - i64;
+    let i64: i32 = 5;
+    let a: i32 = (0 - 20 + 5) / 5;
+    let b: i32 = a - i64;
 }
