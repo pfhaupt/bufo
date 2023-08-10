@@ -19,12 +19,26 @@ macro_rules! ref_unwrap {
 macro_rules! perform_op {
     ($dest: expr, $reg1:expr, $reg2:expr, $typ:expr, $op:tt) => {
         match $typ {
-            Type::I32 => unsafe { ($dest.i32 = $reg1.i32 $op $reg2.i32) },
-            Type::I64 => unsafe { ($dest.i64 = $reg1.i64 $op $reg2.i64) },
-            Type::U32 => unsafe { ($dest.u32 = $reg1.u32 $op $reg2.u32) },
-            Type::U64 => unsafe { ($dest.u64 = $reg1.u64 $op $reg2.u64) },
-            Type::F32 => unsafe { ($dest.f32 = $reg1.f32 $op $reg2.f32) },
-            Type::F64 => unsafe { ($dest.f64 = $reg1.f64 $op $reg2.f64) },
+            Type::I32 => unsafe { $dest.i32 = $reg1.i32 $op $reg2.i32 },
+            Type::I64 => unsafe { $dest.i64 = $reg1.i64 $op $reg2.i64 },
+            Type::U32 => unsafe { $dest.u32 = $reg1.u32 $op $reg2.u32 },
+            Type::U64 => unsafe { $dest.u64 = $reg1.u64 $op $reg2.u64 },
+            Type::F32 => unsafe { $dest.f32 = $reg1.f32 $op $reg2.f32 },
+            Type::F64 => unsafe { $dest.f64 = $reg1.f64 $op $reg2.f64 },
+            _ => todo!()
+        }
+    };
+}
+
+macro_rules! perform_cmp {
+    ($reg1:expr, $reg2:expr, $typ:expr, $op:tt) => {
+        match $typ {
+            Type::I32 => unsafe { $reg1.i32 $op $reg2.i32 },
+            Type::I64 => unsafe { $reg1.i64 $op $reg2.i64 },
+            Type::U32 => unsafe { $reg1.u32 $op $reg2.u32 },
+            Type::U64 => unsafe { $reg1.u64 $op $reg2.u64 },
+            Type::F32 => unsafe { $reg1.f32 $op $reg2.f32 },
+            Type::F64 => unsafe { $reg1.f64 $op $reg2.f64 },
             _ => todo!()
         }
     };
@@ -975,13 +989,12 @@ impl Generator {
                     perform_op!(self.registers[*dest], v1, v2, typ, /);
                 }
                 Instruction::Cmp { dest, src, typ } => {
-                    todo!()
-                    // let lhs = self.registers[*dest];
-                    // let rhs = self.registers[*src];
-                    // flags = 0;
-                    // flags |= (lhs == rhs) as usize * EQ;
-                    // flags |= (lhs < rhs) as usize * LT;
-                    // flags |= (lhs > rhs) as usize * GT;
+                    let v1 = self.registers[*dest];
+                    let v2 = self.registers[*src];
+                    flags = 0;
+                    flags |= perform_cmp!(v1, v2, typ, ==) as usize * EQ;
+                    flags |= perform_cmp!(v1, v2, typ, <) as usize * LT;
+                    flags |= perform_cmp!(v1, v2, typ, >) as usize * GT;
                     // >= is flags & EQ || flags & GT
                     // <= is flags & EQ || flags & LT
                     // != is not flags & EQ

@@ -1,7 +1,9 @@
 func main() {
-    let i64: i32 = 5;
-    let a: i32 = (0 - 20 + 5) / 5;
-    let b: i32 = a - i64;
-    let c: u32 = 5;
-    c = b;
+    let a: i32 = 5;
+    let b: u64 = 0;
+    if (a == 4) {
+        b = 5;
+    } else {
+        b = 10;
+    }
 }
