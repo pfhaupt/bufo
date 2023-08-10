@@ -6,6 +6,7 @@ use crate::lexer::{Token, TokenType, Location};
 use crate::parser::{Tree, TreeType};
 
 pub const ERR_STR: &str = "\x1b[91merror\x1b[0m";
+pub const WARN_STR: &str = "\x1b[93mwarning\x1b[0m";
 
 macro_rules! ref_unwrap {
     ($str:expr) => {
@@ -697,6 +698,9 @@ impl Generator {
         assert!(expr_children.len() == 1, "Expected {{Expr}}");
         let expr = &expr_children[0];
         self.convert_expr(expr)?;
+        println!("{}: Could not resolve type for StmtExpr. Defaulting to `I32`.", WARN_STR);
+        todo!();
+        self.resolve_types(Type::I32);
         self.reset_registers();
         Ok(())
     }
