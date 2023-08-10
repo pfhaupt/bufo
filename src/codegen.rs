@@ -85,6 +85,7 @@ impl std::fmt::Debug for Memory {
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 enum Type {
+    None, // For functions that return nothing
     Unknown,
     I32,
     I64,
@@ -137,6 +138,8 @@ struct Function {
     ip: usize,
     param_variables: BTreeMap<String, Variable>,
     local_variables: Vec<BTreeMap<String, Variable>>,
+    return_type: Type,
+    return_found: bool,
     stack_size: usize,
 }
 
@@ -146,6 +149,8 @@ impl Function {
             ip,
             param_variables: BTreeMap::new(),
             local_variables: vec![BTreeMap::new()],
+            return_type: Type::None,
+            return_found: false,
             stack_size: 0,
         }
     }
@@ -193,11 +198,12 @@ impl Function {
         // self.local_variables.insert(var_name, mem);
     }
 
-    fn add_param(&mut self, param_name: &str, typ: &Type) -> usize {
+    fn add_param(&mut self, param_name: &str, typ: &Type) -> Variable {
         let mem = self.get_stack_size();
-        self.param_variables.insert(param_name.to_owned(), Variable {mem, typ: typ.clone() });
+        let var = Variable {mem, typ: typ.clone() };
+        self.param_variables.insert(param_name.to_owned(), var);
         self.stack_size += 1;
-        mem
+        var
     }
 
     fn add_scope(&mut self) {
@@ -206,6 +212,17 @@ impl Function {
 
     fn remove_scope(&mut self) {
         self.local_variables.pop().unwrap();
+    }
+
+    fn set_return_type(&mut self, typ: &Type) {
+        if self.return_type != Type::None {
+            panic!()
+        }
+        self.return_type = typ.clone();
+    }
+
+    fn get_return_type(&self) -> Type {
+        self.return_type
     }
 }
 
@@ -445,14 +462,15 @@ impl Generator {
                 }
             }
             TreeType::ExprCall => {
-                todo!("ExprCall is currently not supported by the Type System.");
                 assert!(instr_children.len() == 2, "Expected {{name}} {{ArgList}}");
                 let fn_instr = &instr_children[0];
                 assert!(ref_unwrap!(fn_instr.tkn).get_type() == TokenType::Name);
                 let fn_name = ref_unwrap!(fn_instr.tkn).get_value();
                 let fn_args = &instr_children[1];
                 if let Some(func) = self.functions.get(&fn_name) {
+                    let fn_return_type = func.get_return_type();
                     let params = func.get_params();
+                    let mut params_as_list = params.clone();
                     if fn_args.children.len() != params.len() {
                         todo!()
                     }
@@ -462,18 +480,30 @@ impl Generator {
                     }
                     for (reg_ctr, arg) in fn_args.children.iter().enumerate() {
                         let reg = self.convert_arg(arg)?;
-                        todo!("Handle correct return values in ExprCall -> convert_arg()");
-                        // self.code.push(Instruction::Move { dest: reg_ctr, src: reg });
-                        reg_ctr += 1;
+                        let param = params_as_list.pop_first().unwrap();
+                        let param_type = param.1;
+                        if reg.typ == Type::Unknown {
+                            self.resolve_types(param_type.typ);
+                        } else if reg.typ != param_type.typ {
+                            return Err(format!("{}: {:?}: Type mismatch in Function Call. Argument {} is expected to be type `{:?}`, found `{:?}`.",
+                                ERR_STR,
+                                ref_unwrap!(fn_instr.tkn).get_loc(),
+                                reg_ctr + 1,
+                                param_type.typ,
+                                reg.typ)
+                            );
+                        }
+                        self.code.push(Instruction::Move { dest: reg_ctr, src: reg.mem });
                     }
                     self.code.push(Instruction::Call { fn_name });
                     let reg = self.get_register();
-                    self.code.push(Instruction::Pop { reg });
+                    if fn_return_type != Type::None {
+                        self.code.push(Instruction::Pop { reg });
+                    }
                     for reg in (0..curr_reg_ctr).rev() {
                         self.code.push(Instruction::Pop { reg });
                     }
-                    todo!("Make ExprCall return the correct return value");
-                    // Ok( reg )
+                    Ok( Variable { typ: fn_return_type, mem: reg } )
                 } else {
                     Err(format!(
                         "{} {:?}: Unknown function `{}`",
@@ -680,13 +710,38 @@ impl Generator {
     fn convert_stmt_return(&mut self, ret_tree: &Tree) -> Result<(), String> {
         let child_count = ret_tree.children.len();
         assert!(&[1, 2].contains(&child_count));
+        self.functions.get_mut(&self.current_fn).unwrap().return_found = true;
         if child_count == 2 {
             let reg = self.convert_expr(&ret_tree.children[1])?;
-            todo!("Handle return values in convert_stmt_return()");
-            // Assertion for two reasons:
-            // 1: Register 0 is always the result for the outermost expr
-            // 2: Calling conventions -> Reg 0 (RAX/EAX/...) always contains return value
-            // self.code.push(Instruction::Push { reg });
+            let fn_return_type = self.functions.get(&self.current_fn).unwrap().get_return_type();
+            match (fn_return_type, reg.typ) {
+                (Type::None, _) => {
+                    return Err(
+                        format!(
+                        "{}: {:?}: Function is declared to not return anything, but found return type `{:?}`.",
+                        ERR_STR,
+                        ref_unwrap!(ret_tree.children[0].tkn).get_loc(),
+                        reg.typ
+                        )
+                    );
+                },
+                (ret_type, expr_type) => {
+                    if expr_type == Type::Unknown {
+                        self.resolve_types(ret_type);
+                    } else if expr_type != ret_type {
+                        return Err(
+                            format!(
+                            "{}: {:?}: Function is declared to return `{:?}`, but found `{:?}`.",
+                            ERR_STR,
+                            ref_unwrap!(ret_tree.children[0].tkn).get_loc(),
+                            ret_type,
+                            expr_type
+                            )
+                        );
+                    }
+                }
+            }
+            self.code.push(Instruction::Push { reg: reg.mem });
         }
         self.code.push(Instruction::Return {});
         self.reset_registers();
@@ -698,9 +753,9 @@ impl Generator {
         assert!(expr_children.len() == 1, "Expected {{Expr}}");
         let expr = &expr_children[0];
         self.convert_expr(expr)?;
-        println!("{}: Could not resolve type for StmtExpr. Defaulting to `I32`.", WARN_STR);
-        todo!();
-        self.resolve_types(Type::I32);
+        if !self.unresolved_typ_instr.is_empty() {
+            todo!()
+        }
         self.reset_registers();
         Ok(())
     }
@@ -713,6 +768,9 @@ impl Generator {
     }
 
     fn resolve_types(&mut self, expected_type: Type) -> Result<(), String> {
+        if expected_type == Type::None {
+            todo!()
+        }
         while let Some(index) = self.unresolved_typ_instr.pop_back() {
             self.set_load_instr(index, expected_type)?;
         }
@@ -763,6 +821,8 @@ impl Generator {
                 Instruction::Mul { dest: *dest, src: *src, typ },
             Instruction::Div { dest, src, typ: _typ } =>
                 Instruction::Div { dest: *dest, src: *src, typ },
+            Instruction::Cmp { dest, src, typ: _typ } =>
+                Instruction::Cmp { dest: *dest, src: *src, typ },
             e => todo!("Handle Instruction {:?}", e)
         };
         Ok(())
@@ -770,10 +830,7 @@ impl Generator {
 
     fn convert_fn(&mut self, func: &Tree) -> Result<(), String> {
         let fn_children = &func.children;
-        assert!(
-            fn_children.len() == 4,
-            "fnKeyword fnName {{Param}} {{Block}} expected."
-        );
+        assert!(&[4, 5].contains(&fn_children.len()), "fnKeyword fnName {{Param}} [ReturnType] {{Block}} expected.");
         let fn_keyword = ref_unwrap!(fn_children[0].tkn);
         assert!(fn_keyword.get_type() == TokenType::FnKeyword);
         let fn_name = ref_unwrap!(fn_children[1].tkn);
@@ -788,14 +845,65 @@ impl Generator {
         let name = fn_name.get_value();
 
         self.current_fn = name.clone();
-        let f = Function::new(self.code.len());
+        let mut f = Function::new(self.code.len());
         self.functions.insert(name.clone(), f);
         self.convert_fn_param(&fn_children[2])?;
-        self.convert_block(&fn_children[3])?;
-        self.current_fn.clear();
-        if !(*self.code.last().unwrap() == Instruction::Return {}) {
-            self.code.push(Instruction::Return {});
+        if fn_children.len() == 4 {
+            self.convert_block(&fn_children[3])?;
+        } else if fn_children.len() == 5 {
+            let fn_return =&fn_children[3];
+            assert!(*ref_unwrap!(fn_return.typ) == TreeType::TypeDecl);
+            let return_children = &fn_return.children;
+            assert!(return_children.len() == 2);
+            
+            let type_arrow = &return_children[0];
+            assert!(ref_unwrap!(type_arrow.tkn).get_type() == TokenType::Arrow);
+            
+            let type_name = &return_children[1];
+            assert!(ref_unwrap!(type_name.tkn).get_type() == TokenType::Name);
+            
+            let type_name_str = ref_unwrap!(type_name.tkn).get_value();
+            
+            let typ = match self.convert_type_str(&type_name_str) {
+                Ok(t) => t,
+                Err(e) => return Err(format!("{}: {:?}: {}",
+                ERR_STR,
+                ref_unwrap!(type_name.tkn).get_loc(),
+                e))
+            };
+            self.functions.get_mut(&name).unwrap().set_return_type(&typ);
+            
+            self.convert_block(&fn_children[4])?;
         }
+        let return_found = self.functions.get(&self.current_fn).unwrap().return_found;
+        let return_type = self.functions.get(&self.current_fn).unwrap().return_type;
+        match (return_found, return_type) {
+            (_, Type::None) => {
+                if !(*self.code.last().unwrap() == Instruction::Return {}) {
+                    println!("{}: Inserting Return instruction in {}", WARN_STR, self.current_fn);
+                    self.code.push(Instruction::Return {});
+                }
+            },
+            (false, t) => {
+                return Err(
+                    format!("{}: Function `{}` is declared to return `{:?}`, but no return statements found.",
+                    ERR_STR, 
+                    self.current_fn,
+                    t)
+                );
+            },
+            (true, t) => {
+                if !(*self.code.last().unwrap() == Instruction::Return {}) {
+                    return Err(
+                        format!("{}: {:?}: Function `{}` is declared to return `{:?}`, expected `return` as last instruction.",
+                        ERR_STR,
+                        fn_name.get_loc(),
+                        self.current_fn,
+                        t))
+                }
+            }
+        }
+        self.current_fn.clear();
 
         Ok(())
     }
@@ -808,10 +916,28 @@ impl Generator {
                 Some(t) => {
                     match t {
                         TreeType::Param => {
-                            todo!("Handle param type");
-                            assert!(p.children.len() == 1);
+                            assert!(p.children.len() == 2);
                             let param_node = &p.children[0];
                             let param_name = ref_unwrap!(param_node.tkn).get_value();
+                            
+                            let param_type = ref_unwrap!(&p.children[1].typ);
+                            assert!(*param_type == TreeType::TypeDecl);
+                            let param_type_child = &p.children[1].children;
+                            assert!(param_type_child.len() == 2);
+                            let type_symbol = &param_type_child[0];
+                            assert!(ref_unwrap!(type_symbol.tkn).get_type() == TokenType::TypeDecl);
+                            let type_name = &param_type_child[1];
+                            assert!(ref_unwrap!(type_name.tkn).get_type() == TokenType::Name);
+                            let type_name_str = ref_unwrap!(type_name.tkn).get_value();
+
+                            let typ = match self.convert_type_str(&type_name_str) {
+                                Ok(t) => t,
+                                Err(e) => return Err(format!("{}: {:?}: {}",
+                                        ERR_STR,
+                                        ref_unwrap!(type_name.tkn).get_loc(),
+                                        e))
+                            };
+
                             let local_lookup = self.functions.get_mut(&self.current_fn).expect("At this point, function table is guaranteed to contain current_fn.");
                             if local_lookup.get_param_location(&param_name).is_some() {
                                 return Err(format!(
@@ -821,13 +947,12 @@ impl Generator {
                                     param_name
                                 ));
                             }
-                            // let mem = local_lookup.add_param(&param_name, &Type::U64);
-                            // self.code.push(Instruction::StoreMem {
-                            //     mem,
-                            //     reg: reg_ctr,
-                            //     typ: Type::U64,
-                            // });
-                            // reg_ctr += 1;
+                            let var = local_lookup.add_param(&param_name, &typ);
+                            self.code.push(Instruction::StoreMem {
+                                reg: reg_ctr,
+                                var,
+                            });
+                            reg_ctr += 1;
                         }
                         _ => {
                             todo!(
@@ -926,7 +1051,7 @@ impl Generator {
         const STACK_SIZE: usize = 1_000_000;
 
         let mut return_stack = VecDeque::<usize>::new();
-        let mut return_values = VecDeque::<usize>::new();
+        let mut return_values = VecDeque::<Memory>::new();
         let mut stack = vec![Memory { u64: 0} ; STACK_SIZE];
         let mut stack_ptr = STACK_SIZE - 1 - self.get_function_stack_size(&entry_point);
         
@@ -1054,7 +1179,7 @@ impl Generator {
                 }
                 Instruction::Call { fn_name } => {
                     let stack_size = self.get_function_stack_size(fn_name);
-                    println!("{fn_name} has a stack size of {stack_size}");
+                    // println!("{fn_name} has a stack size of {stack_size}");
                     return_stack.push_back(ip);
                     return_stack.push_back(stack_size);
                     if stack_ptr < stack_size {
@@ -1069,12 +1194,10 @@ impl Generator {
                     add_ip = false;
                 }
                 Instruction::Push { reg } => {
-                    todo!()
-                    // return_values.push_back(self.registers[*reg]);
+                    return_values.push_back(self.registers[*reg]);
                 }
                 Instruction::Pop { reg } => {
-                    todo!()
-                    // self.registers[*reg] = return_values.pop_back().unwrap();
+                    self.registers[*reg] = return_values.pop_back().unwrap();
                 }
                 Instruction::Return {} => {
                     if return_stack.is_empty() {
