@@ -588,7 +588,7 @@ impl Generator {
             .functions
             .get(&self.current_fn)
             .expect("At this point, function table is guaranteed to contain current_fn.");
-        let mem = match local_lookup.get_variable_location(&var_name) {
+        let var = match local_lookup.get_variable_location(&var_name) {
             Some(i) => i,
             None => {
                 return Err(format!(
@@ -603,10 +603,25 @@ impl Generator {
         assert!(ref_unwrap!(assign_eq.tkn).get_type() == TokenType::Equal);
         let assign_expr = &instr_children[2];
         let reg = self.convert_expr(assign_expr)?;
-        todo!("Handle return values in convert_stmt_assign()");
-        // self.code.push(Instruction::StoreMem { mem, reg, typ: Type::U64 });
-        // self.reset_registers();
-        // Ok(())
+        match (var.typ, reg.typ) {
+            (Type::Unknown, Type::Unknown) => panic!(),
+            (Type::Unknown, _) => todo!(),
+            (typ, Type::Unknown) => { self.resolve_types(typ)?; },
+            (var_typ, expr_typ) => {
+                if var_typ != expr_typ {
+                    return Err(
+                        format!("{}: {:?}: Type mismatch! Expected type `{:?}`, got type `{:?}`.",
+                        ERR_STR,
+                        ref_unwrap!(assign_name.tkn).get_loc(),
+                        var.typ,
+                        reg.typ)
+                );
+                }
+            }
+        }
+        self.code.push(Instruction::StoreMem { reg: reg.mem, var });
+        self.reset_registers();
+        Ok(())
     }
 
     fn convert_arg(&mut self, arg: &Tree) -> Result<Variable, String> {
