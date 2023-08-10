@@ -10,6 +10,7 @@ pub enum TreeType {
     Func,
     ParamList,
     Param,
+    ReturnType,
     ArgList,
     Arg,
     Block,
@@ -360,6 +361,7 @@ impl Parser {
     fn parse_param(&mut self) -> Result<(), String> {
         let m = self.open();
         self.expect(TokenType::Name)?;
+        self.parse_type_decl()?;
         if self.at(TokenType::Comma) {
             self.advance();
         }
@@ -378,12 +380,24 @@ impl Parser {
         Ok(())
     }
 
+    fn parse_return_type(&mut self) -> Result<(), String> {
+        assert!(self.at(TokenType::Arrow));
+        let m = self.open();
+        self.expect(TokenType::Arrow)?;
+        self.expect(TokenType::Name)?;
+        self.close(m, TreeType::ReturnType);
+        Ok(())
+    }
+
     fn parse_func(&mut self) -> Result<(), String> {
         assert!(self.at(TokenType::FnKeyword));
         let m = self.open();
         self.expect(TokenType::FnKeyword)?;
         self.expect(TokenType::Name)?;
         self.parse_param_list()?;
+        if self.at(TokenType::Arrow) {
+            self.parse_return_type()?;
+        }
         self.parse_block()?;
         self.close(m, TreeType::Func);
         Ok(())
@@ -392,7 +406,7 @@ impl Parser {
     pub fn parse_file(&mut self) -> Result<(), String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
-            26,
+            27,
             "Not all TokenTypes are handled in parse_file()"
         );
         let m = self.open();
