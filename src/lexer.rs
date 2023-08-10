@@ -16,6 +16,7 @@ pub enum TokenType {
     ElseKeyword,
     ReturnKeyword,
     TypeDecl,
+    Arrow,
     Equal,
     Plus,
     Minus,
@@ -138,7 +139,7 @@ impl Lexer {
     fn next_token(&mut self) -> Result<Token, String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
-            26,
+            27,
             "Not all TokenTypes are handled in next_token()"
         );
         let c = self.next_char()?;
@@ -298,11 +299,24 @@ impl Lexer {
                 value: String::from(c),
                 loc: self.get_location(),
             }),
-            '-' => Ok(Token {
-                typ: TokenType::Minus,
-                value: String::from(c),
-                loc: self.get_location(),
-            }),
+            '-' => {
+                let (typ, value) = if let Ok(nc) = self.next_char() {
+                    match nc {
+                        '>' => (TokenType::Arrow, String::from("->")),
+                        _ => {
+                            self.current_char -= 1; // Went too far, go a step back
+                            (TokenType::Minus, String::from("-"))
+                        }
+                    }
+                } else {
+                    (TokenType::Minus, String::from("-"))
+                };
+                Ok(Token {
+                    typ,
+                    value,
+                    loc: self.get_location(),
+                })
+            }
             '*' => Ok(Token {
                 typ: TokenType::Mult,
                 value: String::from(c),
