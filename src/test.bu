@@ -1,14 +1,20 @@
-func ack(m, n) {
+func ack(m: u32, n: u64) -> u64 {
     if (m == 0) { return n + 1; }
     if (n == 0) { return ack(m - 1, 1); }
     return ack(m - 1, ack(m, n - 1));
 }
 
-func factorial(n) {
+func factorial(n: u64) -> u64 {
     if (n <= 1) { return 1; }
     return n * factorial(n - 1);
 }
 
 func main() {
-    let a = factorial(ack(factorial(2), factorial(2)));
+    let result: u64 = ack(3, 3);
+    if (result > 100) {
+        let a: i32 = 10;
+    } else {
+        let a: u32 = 5;
+    }
+    return;
 }

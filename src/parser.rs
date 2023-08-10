@@ -23,6 +23,7 @@ pub enum TreeType {
     ExprBinary,
     ExprParen,
     ExprCall,
+    TypeDecl,
 }
 
 #[derive(Debug, Clone)]
@@ -236,11 +237,20 @@ impl Parser {
         self.parse_expr_rec(TokenType::Eof)
     }
 
+    fn parse_type_decl(&mut self) -> Result<(), String> {
+        let m = self.open();
+        self.expect(TokenType::TypeDecl)?;
+        self.expect(TokenType::Name)?;
+        self.close(m, TreeType::TypeDecl);
+        Ok(())
+    }
+
     fn parse_stmt_let(&mut self) -> Result<(), String> {
         assert!(self.at(TokenType::LetKeyword));
         let m = self.open();
         self.expect(TokenType::LetKeyword)?;
         self.expect(TokenType::Name)?;
+        self.parse_type_decl()?;
         self.expect(TokenType::Equal)?;
         self.parse_expr()?;
         self.expect(TokenType::Semi)?;
@@ -350,6 +360,7 @@ impl Parser {
     fn parse_param(&mut self) -> Result<(), String> {
         let m = self.open();
         self.expect(TokenType::Name)?;
+        self.parse_type_decl()?;
         if self.at(TokenType::Comma) {
             self.advance();
         }
@@ -368,12 +379,24 @@ impl Parser {
         Ok(())
     }
 
+    fn parse_return_type(&mut self) -> Result<(), String> {
+        assert!(self.at(TokenType::Arrow));
+        let m = self.open();
+        self.expect(TokenType::Arrow)?;
+        self.expect(TokenType::Name)?;
+        self.close(m, TreeType::TypeDecl);
+        Ok(())
+    }
+
     fn parse_func(&mut self) -> Result<(), String> {
         assert!(self.at(TokenType::FnKeyword));
         let m = self.open();
         self.expect(TokenType::FnKeyword)?;
         self.expect(TokenType::Name)?;
         self.parse_param_list()?;
+        if self.at(TokenType::Arrow) {
+            self.parse_return_type()?;
+        }
         self.parse_block()?;
         self.close(m, TreeType::Func);
         Ok(())
@@ -382,7 +405,7 @@ impl Parser {
     pub fn parse_file(&mut self) -> Result<(), String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
-            25,
+            27,
             "Not all TokenTypes are handled in parse_file()"
         );
         let m = self.open();

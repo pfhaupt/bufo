@@ -1,11 +1,10 @@
-#![allow(unused)]
-
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
-use crate::lexer::TokenType;
+use crate::lexer::{Location, TokenType};
 use crate::parser::{Tree, TreeType};
 
 pub const ERR_STR: &str = "\x1b[91merror\x1b[0m";
+pub const WARN_STR: &str = "\x1b[93mwarning\x1b[0m";
 
 macro_rules! ref_unwrap {
     ($str:expr) => {
@@ -16,27 +15,187 @@ macro_rules! ref_unwrap {
     };
 }
 
+macro_rules! perform_op {
+    ($dest: expr, $reg1:expr, $reg2:expr, $typ:expr, $op:tt) => {
+        match $typ {
+            Type::I32 => unsafe { $dest.i32 = $reg1.i32 $op $reg2.i32 },
+            Type::I64 => unsafe { $dest.i64 = $reg1.i64 $op $reg2.i64 },
+            Type::U32 => unsafe { $dest.u32 = $reg1.u32 $op $reg2.u32 },
+            Type::U64 => unsafe { $dest.u64 = $reg1.u64 $op $reg2.u64 },
+            Type::F32 => unsafe { $dest.f32 = $reg1.f32 $op $reg2.f32 },
+            Type::F64 => unsafe { $dest.f64 = $reg1.f64 $op $reg2.f64 },
+            _ => todo!()
+        }
+    };
+}
+
+macro_rules! perform_cmp {
+    ($reg1:expr, $reg2:expr, $typ:expr, $op:tt) => {
+        match $typ {
+            Type::I32 => unsafe { $reg1.i32 $op $reg2.i32 },
+            Type::I64 => unsafe { $reg1.i64 $op $reg2.i64 },
+            Type::U32 => unsafe { $reg1.u32 $op $reg2.u32 },
+            Type::U64 => unsafe { $reg1.u64 $op $reg2.u64 },
+            Type::F32 => unsafe { $reg1.f32 $op $reg2.f32 },
+            Type::F64 => unsafe { $reg1.f64 $op $reg2.f64 },
+            _ => todo!()
+        }
+    };
+}
+
+// parse_type!(i32, loc, val, typ);
+macro_rules! parse_type {
+    ($parse_typ:ty, $loc:expr, $val:expr, $typ: expr) => {
+        match $val.parse::<$parse_typ>() {
+            Ok(val) => Ok(val),
+            Err(_) => Err(format!(
+                "{}: {:?}: Integer Literal `{}` too big for Type `{:?}`",
+                ERR_STR, $loc, $val, $typ
+            )),
+        }
+    };
+}
+
+#[derive(Copy, Clone)]
+union Memory {
+    i32: i32,
+    i64: i64,
+    u32: u32,
+    u64: u64,
+    f32: f32,
+    f64: f64,
+}
+
+impl std::fmt::Display for Memory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "{}", unsafe { self.u64 })
+    }
+}
+
+impl std::fmt::Debug for Memory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "{}", unsafe { self.u64 })
+    }
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+enum Type {
+    None, // For functions that return nothing
+    Unknown,
+    I32,
+    I64,
+    U32,
+    U64,
+    // Reserved for later use
+    F32,
+    F64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Variable {
+    typ: Type,
+    mem: usize,
+}
+
+#[allow(unused)]
 #[derive(Debug, PartialEq)]
 enum Instruction {
-    Load { dest: usize, val: usize },
-    Add { dest: usize, src: usize },
-    Sub { dest: usize, src: usize },
-    Mul { dest: usize, src: usize },
-    Div { dest: usize, src: usize },
-    Cmp { dest: usize, src: usize },
-    Jmp { dest: usize },
-    JmpEq { dest: usize },
-    JmpNeq { dest: usize },
-    JmpGt { dest: usize },
-    JmpGte { dest: usize },
-    JmpLt { dest: usize },
-    JmpLte { dest: usize },
-    Move { dest: usize, src: usize },
-    LoadMem { mem: usize, reg: usize },
-    StoreMem { mem: usize, reg: usize },
-    Call { fn_name: String },
-    Push { reg: usize },
-    Pop { reg: usize },
+    LoadUnknown {
+        dest: usize,
+        val: String,
+        loc: Location,
+    },
+    LoadI32 {
+        dest: usize,
+        val: i32,
+    },
+    LoadI64 {
+        dest: usize,
+        val: i64,
+    },
+    LoadU32 {
+        dest: usize,
+        val: u32,
+    },
+    LoadU64 {
+        dest: usize,
+        val: u64,
+    },
+    LoadF32 {
+        dest: usize,
+        val: f32,
+    },
+    LoadF64 {
+        dest: usize,
+        val: f64,
+    },
+    Add {
+        dest: usize,
+        src: usize,
+        typ: Type,
+    },
+    Sub {
+        dest: usize,
+        src: usize,
+        typ: Type,
+    },
+    Mul {
+        dest: usize,
+        src: usize,
+        typ: Type,
+    },
+    Div {
+        dest: usize,
+        src: usize,
+        typ: Type,
+    },
+    Cmp {
+        dest: usize,
+        src: usize,
+        typ: Type,
+    },
+    Jmp {
+        dest: usize,
+    },
+    JmpEq {
+        dest: usize,
+    },
+    JmpNeq {
+        dest: usize,
+    },
+    JmpGt {
+        dest: usize,
+    },
+    JmpGte {
+        dest: usize,
+    },
+    JmpLt {
+        dest: usize,
+    },
+    JmpLte {
+        dest: usize,
+    },
+    Move {
+        dest: usize,
+        src: usize,
+    },
+    LoadMem {
+        reg: usize,
+        var: Variable,
+    },
+    StoreMem {
+        reg: usize,
+        var: Variable,
+    },
+    Call {
+        fn_name: String,
+    },
+    Push {
+        reg: usize,
+    },
+    Pop {
+        reg: usize,
+    },
     Return {},
     // Print { src: usize },
 }
@@ -44,8 +203,10 @@ enum Instruction {
 #[derive(Debug)]
 struct Function {
     ip: usize,
-    param_variables: BTreeMap<String, usize>,
-    local_variables: Vec<BTreeMap<String, usize>>,
+    param_variables: BTreeMap<String, Variable>,
+    local_variables: Vec<BTreeMap<String, Variable>>,
+    return_type: Type,
+    return_found: bool,
     stack_size: usize,
 }
 
@@ -55,6 +216,8 @@ impl Function {
             ip,
             param_variables: BTreeMap::new(),
             local_variables: vec![BTreeMap::new()],
+            return_type: Type::None,
+            return_found: false,
             stack_size: 0,
         }
     }
@@ -67,15 +230,15 @@ impl Function {
         self.stack_size
     }
 
-    fn get_params(&self) -> &BTreeMap<String, usize> {
+    fn get_params(&self) -> &BTreeMap<String, Variable> {
         &self.param_variables
     }
 
-    fn get_param_location(&self, var_name: &String) -> Option<usize> {
+    fn get_param_location(&self, var_name: &String) -> Option<Variable> {
         self.param_variables.get(var_name).copied()
     }
 
-    fn get_local_location(&self, var_name: &String) -> Option<usize> {
+    fn get_local_location(&self, var_name: &String) -> Option<Variable> {
         for scope in (0..self.local_variables.len()).rev() {
             if let Some(mem) = self.local_variables.get(scope).unwrap().get(var_name) {
                 return Some(*mem);
@@ -84,29 +247,30 @@ impl Function {
         None
     }
 
-    fn get_scope_location(&self, var_name: &String) -> Option<usize> {
+    fn get_scope_location(&self, var_name: &String) -> Option<Variable> {
         self.local_variables.last().unwrap().get(var_name).copied()
     }
 
-    fn get_variable_location(&self, var_name: &String) -> Option<usize> {
+    fn get_variable_location(&self, var_name: &String) -> Option<Variable> {
         match self.get_param_location(var_name) {
             Some(i) => Some(i),
             None => self.get_local_location(var_name),
         }
     }
 
-    fn add_local_variable(&mut self, var_name: String, mem: usize, scope_depth: usize) {
-        let mut scope_var = self.local_variables.get_mut(scope_depth).unwrap();
-        scope_var.insert(var_name, mem);
+    fn add_local_variable(&mut self, var_name: String, mem: usize, scope_depth: usize, typ: &Type) {
+        let scope_var = self.local_variables.get_mut(scope_depth).unwrap();
+        scope_var.insert(var_name, Variable { mem, typ: *typ });
         self.stack_size += 1;
         // self.local_variables.insert(var_name, mem);
     }
 
-    fn add_param(&mut self, param_name: &str) -> usize {
+    fn add_param(&mut self, param_name: &str, typ: &Type) -> Variable {
         let mem = self.get_stack_size();
-        self.param_variables.insert(param_name.to_owned(), mem);
+        let var = Variable { mem, typ: *typ };
+        self.param_variables.insert(param_name.to_owned(), var);
         self.stack_size += 1;
-        mem
+        var
     }
 
     fn add_scope(&mut self) {
@@ -116,17 +280,29 @@ impl Function {
     fn remove_scope(&mut self) {
         self.local_variables.pop().unwrap();
     }
+
+    fn set_return_type(&mut self, typ: &Type) {
+        if self.return_type != Type::None {
+            panic!()
+        }
+        self.return_type = *typ;
+    }
+
+    fn get_return_type(&self) -> Type {
+        self.return_type
+    }
 }
 
 #[derive(Debug)]
 pub struct Generator {
     ast: Tree,
-    registers: Vec<usize>,
+    registers: Vec<Memory>,
     register_ctr: usize,
     functions: HashMap<String, Function>,
     code: Vec<Instruction>,
     current_fn: String,
     unresolved_jmp_instr: VecDeque<usize>,
+    unresolved_typ_instr: VecDeque<usize>,
     scope_depth: usize,
 }
 
@@ -134,26 +310,27 @@ impl Generator {
     pub fn new(ast: Tree) -> Result<Self, String> {
         let mut gen = Self {
             ast,
-            registers: vec![0; 100],
+            registers: vec![Memory { u64: 0 }; 100],
             register_ctr: 0,
             functions: HashMap::new(),
             code: vec![],
             current_fn: String::new(),
             unresolved_jmp_instr: VecDeque::new(),
+            unresolved_typ_instr: VecDeque::new(),
             scope_depth: 0,
         };
         gen.generate_code()?;
         Ok(gen)
     }
 
-    fn add_local_var(&mut self, var_name: &str, scope_depth: usize) -> usize {
+    fn add_local_var(&mut self, var_name: &str, scope_depth: usize, typ: &Type) -> usize {
         assert!(!self.current_fn.is_empty());
         assert!(self.functions.contains_key(&self.current_fn));
         let mem = self.get_stack_offset();
         self.functions
             .get_mut(&self.current_fn)
             .expect("Function table does not contain current_fn! This might be a bug in Codegen.")
-            .add_local_variable(var_name.to_owned(), mem, scope_depth);
+            .add_local_variable(var_name.to_owned(), mem, scope_depth, typ);
         mem
     }
 
@@ -180,13 +357,24 @@ impl Generator {
     fn get_register(&mut self) -> usize {
         let r = self.register_ctr;
         if r >= self.registers.len() {
-            self.registers.push(0);
+            self.registers.push(Memory { u64: 0 });
         }
         self.register_ctr += 1;
         r
     }
 
-    fn convert_expr_atomic(&mut self, instr: &Tree) -> Result<usize, String> {
+    fn convert_expr_literal(&mut self, lit: String) -> Result<(String, Type), String> {
+        match lit.bytes().position(|c| c.is_ascii_alphabetic()) {
+            Some(index) => {
+                let typ_str = &lit[index..];
+                let typ = self.convert_type_str(typ_str)?;
+                Ok((lit[0..index].to_owned(), typ))
+            }
+            None => Ok((lit, Type::Unknown)),
+        }
+    }
+
+    fn convert_expr_atomic(&mut self, instr: &Tree) -> Result<Variable, String> {
         let instr_children = &instr.children;
         match ref_unwrap!(instr.typ, "Atomic Expression Head can't be None.") {
             TreeType::ExprLiteral => {
@@ -195,12 +383,44 @@ impl Generator {
                     instr_children[0].tkn,
                     "Expected valid ExprLiteral, got None instead. This might be a bug in parsing."
                 )
-                .get_value()
-                .parse()
-                .expect("At this point value of ExprLiteral should only contain valid digits.");
+                .get_value();
+                let (val, typ) = match self.convert_expr_literal(val) {
+                    Ok((v, t)) => (v, t),
+                    Err(e) => {
+                        return Err(format!(
+                            "{}: {:?}: {}",
+                            ERR_STR,
+                            ref_unwrap!(instr_children[0].tkn).get_loc(),
+                            e
+                        ));
+                    }
+                };
                 let dest = self.get_register();
-                self.code.push(Instruction::Load { dest, val });
-                Ok(dest)
+                let loc = ref_unwrap!(instr_children[0].tkn).get_loc();
+                match typ {
+                    Type::I32 => {
+                        let val = parse_type!(i32, loc, val, typ)?;
+                        self.code.push(Instruction::LoadI32 { dest, val });
+                    }
+                    Type::I64 => {
+                        let val = parse_type!(i64, loc, val, typ)?;
+                        self.code.push(Instruction::LoadI64 { dest, val });
+                    }
+                    Type::U32 => {
+                        let val = parse_type!(u32, loc, val, typ)?;
+                        self.code.push(Instruction::LoadU32 { dest, val });
+                    }
+                    Type::U64 => {
+                        let val = parse_type!(u64, loc, val, typ)?;
+                        self.code.push(Instruction::LoadU64 { dest, val });
+                    }
+                    Type::Unknown => {
+                        self.unresolved_typ_instr.push_back(self.code.len());
+                        self.code.push(Instruction::LoadUnknown { dest, val, loc });
+                    }
+                    _ => todo!(),
+                };
+                Ok(Variable { mem: dest, typ })
             }
             TreeType::ExprParen => {
                 assert!(instr_children.len() == 1, "Expected {{Expr}}");
@@ -208,50 +428,77 @@ impl Generator {
             }
             TreeType::ExprBinary => {
                 assert!(*ref_unwrap!(instr.typ) == TreeType::ExprBinary);
-                assert!(instr_children.len() == 3, "Expected {{Expr}} {{Op}} {{Expr}}");
+                assert!(
+                    instr_children.len() == 3,
+                    "Expected {{Expr}} {{Op}} {{Expr}}"
+                );
                 let lhs = &instr_children[0];
                 let op = &instr_children[1];
                 let rhs = &instr_children[2];
                 let dest = self.convert_expr_atomic(lhs)?;
                 let src = self.convert_expr_atomic(rhs)?;
+                let typ = match (dest.typ, src.typ) {
+                    (Type::Unknown, Type::Unknown) => Type::Unknown,
+                    (Type::Unknown, other_type) | (other_type, Type::Unknown) => {
+                        self.resolve_types(other_type)?;
+                        other_type
+                    }
+                    (left_type, right_type) => {
+                        if right_type != left_type {
+                            return Err(
+                                format!("{}: {:?}: Type mismatch for binary expression `{}`! Left hand side got type `{:?}`, right hand side got type `{:?}`.",
+                                ERR_STR,
+                                ref_unwrap!(op.tkn).get_loc(),
+                                ref_unwrap!(op.tkn).get_value(),
+                                left_type,
+                                right_type));
+                        }
+                        right_type
+                    }
+                };
+                let dest = dest.mem;
+                let src = src.mem;
+                if typ == Type::Unknown {
+                    self.unresolved_typ_instr.push_back(self.code.len())
+                }
                 match ref_unwrap!(op.tkn, "Expected valid ExprBinary operator, got None instead. This might be a bug in parsing.").get_type() {
-                    TokenType::Plus => self.code.push(Instruction::Add { dest, src }),
-                    TokenType::Minus => self.code.push(Instruction::Sub { dest, src }),
-                    TokenType::Mult => self.code.push(Instruction::Mul { dest, src }),
-                    TokenType::Div => self.code.push(Instruction::Div { dest, src }),
+                    TokenType::Plus => self.code.push(Instruction::Add { dest, src, typ }),
+                    TokenType::Minus => self.code.push(Instruction::Sub { dest, src, typ }),
+                    TokenType::Mult => self.code.push(Instruction::Mul { dest, src, typ }),
+                    TokenType::Div => self.code.push(Instruction::Div { dest, src, typ }),
                     TokenType::CmpEq => {
-                        self.code.push(Instruction::Cmp { dest, src });
+                        self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpNeq { dest: usize::MAX });
                     },
                     TokenType::CmpNeq => {
-                        self.code.push(Instruction::Cmp { dest, src });
+                        self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpEq { dest: usize::MAX });
                     },
                     TokenType::CmpGt => {
-                        self.code.push(Instruction::Cmp { dest, src });
+                        self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpLte { dest: usize::MAX });
                     },
                     TokenType::CmpGte => {
-                        self.code.push(Instruction::Cmp { dest, src });
+                        self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpLt { dest: usize::MAX });
                     },
                     TokenType::CmpLt => {
-                        self.code.push(Instruction::Cmp { dest, src });
+                        self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpGte { dest: usize::MAX });
                     },
                     TokenType::CmpLte => {
-                        self.code.push(Instruction::Cmp { dest, src });
+                        self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpGt { dest: usize::MAX });
                     },
                     e => todo!("Handle {:?} in convert_expr_atomic()", e)
                 }
-                Ok(dest)
+                Ok(Variable { typ, mem: dest })
             }
             TreeType::ExprName => {
                 assert!(instr_children.len() == 1, "Expected {{name}}");
@@ -268,9 +515,18 @@ impl Generator {
                     .get(&self.current_fn)
                     .expect("At this point, function table is guaranteed to contain current_fn.");
                 match curr_fn.get_variable_location(&name) {
-                    Some(mem) => {
-                        self.code.push(Instruction::LoadMem { reg, mem });
-                        Ok(reg)
+                    Some(var) => {
+                        self.code.push(Instruction::LoadMem {
+                            reg,
+                            var: Variable {
+                                typ: var.typ,
+                                mem: var.mem,
+                            },
+                        });
+                        Ok(Variable {
+                            mem: reg,
+                            typ: var.typ,
+                        })
                     }
                     None => Err(format!(
                         "{}: {:?}: Undefined variable `{}`",
@@ -287,7 +543,9 @@ impl Generator {
                 let fn_name = ref_unwrap!(fn_instr.tkn).get_value();
                 let fn_args = &instr_children[1];
                 if let Some(func) = self.functions.get(&fn_name) {
+                    let fn_return_type = func.get_return_type();
                     let params = func.get_params();
+                    let mut params_as_list = params.clone();
                     if fn_args.children.len() != params.len() {
                         todo!()
                     }
@@ -295,19 +553,38 @@ impl Generator {
                     for reg in 0..curr_reg_ctr {
                         self.code.push(Instruction::Push { reg });
                     }
-                    let mut reg_ctr = 0;
-                    for arg in &fn_args.children {
+                    for (reg_ctr, arg) in fn_args.children.iter().enumerate() {
                         let reg = self.convert_arg(arg)?;
-                        self.code.push(Instruction::Move { dest: reg_ctr, src: reg });
-                        reg_ctr += 1;
+                        let param = params_as_list.pop_first().unwrap();
+                        let param_type = param.1;
+                        if reg.typ == Type::Unknown {
+                            self.resolve_types(param_type.typ)?;
+                        } else if reg.typ != param_type.typ {
+                            return Err(format!("{}: {:?}: Type mismatch in Function Call. Argument {} is expected to be type `{:?}`, found `{:?}`.",
+                                ERR_STR,
+                                ref_unwrap!(fn_instr.tkn).get_loc(),
+                                reg_ctr + 1,
+                                param_type.typ,
+                                reg.typ)
+                            );
+                        }
+                        self.code.push(Instruction::Move {
+                            dest: reg_ctr,
+                            src: reg.mem,
+                        });
                     }
                     self.code.push(Instruction::Call { fn_name });
                     let reg = self.get_register();
-                    self.code.push(Instruction::Pop { reg });
+                    if fn_return_type != Type::None {
+                        self.code.push(Instruction::Pop { reg });
+                    }
                     for reg in (0..curr_reg_ctr).rev() {
                         self.code.push(Instruction::Pop { reg });
                     }
-                    Ok( reg )
+                    Ok(Variable {
+                        typ: fn_return_type,
+                        mem: reg,
+                    })
                 } else {
                     Err(format!(
                         "{} {:?}: Unknown function `{}`",
@@ -321,8 +598,8 @@ impl Generator {
         }
     }
 
-    fn convert_expr(&mut self, expr_tree: &Tree) -> Result<usize, String> {
-        let r = match &expr_tree.typ {
+    fn convert_expr(&mut self, expr_tree: &Tree) -> Result<Variable, String> {
+        match &expr_tree.typ {
             Some(t) => match t {
                 TreeType::ExprLiteral
                 | TreeType::ExprBinary
@@ -332,20 +609,57 @@ impl Generator {
                 e => todo!("Handle {:?} in convert_expr", e),
             },
             e => todo!("Handle {:?} in convert_expr", e),
-        };
-        r
+        }
+    }
+
+    fn convert_type_str(&self, val: &str) -> Result<Type, String> {
+        match val {
+            "i32" => Ok(Type::I32),
+            "i64" => Ok(Type::I64),
+            "u32" => Ok(Type::U32),
+            "u64" => Ok(Type::U64),
+            // Reserved for future use
+            "f32" => Ok(Type::F32),
+            "f64" => Ok(Type::F64),
+            t => Err(format!(
+                "Unexpected Type `{}`. Expected one of {{i32, i64, u32, u64}}",
+                t
+            )),
+        }
+    }
+
+    fn convert_type(&mut self, typ_tree: &Tree) -> Result<Type, String> {
+        let typ_children = &typ_tree.children;
+        assert!(typ_children.len() == 2);
+        let typ_decl = &typ_children[0];
+        assert!(ref_unwrap!(typ_decl.tkn).get_type() == TokenType::TypeDecl);
+        let typ_type = &typ_children[1];
+        assert!(ref_unwrap!(typ_type.tkn).get_type() == TokenType::Name);
+        let typ_type_value = ref_unwrap!(typ_type.tkn).get_value();
+        match self.convert_type_str(typ_type_value.as_str()) {
+            Ok(t) => Ok(t),
+            Err(e) => Err(format!(
+                "{}: {:?}: {}",
+                ERR_STR,
+                ref_unwrap!(typ_type.tkn).get_loc(),
+                e
+            )),
+        }
     }
 
     fn convert_stmt_let(&mut self, let_tree: &Tree) -> Result<(), String> {
         let instr_children = &let_tree.children;
-        assert!(instr_children.len() == 4);
+        assert!(instr_children.len() == 5, "{:#?}", instr_children);
         let let_keyword = &instr_children[0];
         assert!(ref_unwrap!(let_keyword.tkn).get_type() == TokenType::LetKeyword);
         let let_name = &instr_children[1];
         assert!(ref_unwrap!(let_name.tkn).get_type() == TokenType::Name);
-        let let_eq = &instr_children[2];
+        let let_type = &instr_children[2];
+        assert!(*ref_unwrap!(let_type.typ) == TreeType::TypeDecl);
+        let expected_type = self.convert_type(let_type)?;
+        let let_eq = &instr_children[3];
         assert!(ref_unwrap!(let_eq.tkn).get_type() == TokenType::Equal);
-        let let_expr = &instr_children[3];
+        let let_expr = &instr_children[4];
 
         let let_name = ref_unwrap!(
             let_name.tkn,
@@ -366,11 +680,36 @@ impl Generator {
             ));
         }
 
-        let mem = self.add_local_var(&let_name.get_value(), self.scope_depth);
+        let mem = self.add_local_var(&let_name.get_value(), self.scope_depth, &expected_type);
         let reg = self.convert_expr(let_expr)?;
-        self.code.push(Instruction::StoreMem { reg, mem });
+        if expected_type != reg.typ {
+            match reg.typ {
+                Type::Unknown => {
+                    self.resolve_types(expected_type)?;
+                }
+                _ => {
+                    return Err(format!(
+                        "{}: {:?}: Type mismatch! Expected type `{:?}`, got type `{:?}`.",
+                        ERR_STR,
+                        let_name.get_loc(),
+                        expected_type,
+                        reg.typ
+                    ))
+                }
+            };
+        }
+        self.code.push(Instruction::StoreMem {
+            reg: reg.mem,
+            var: Variable {
+                typ: expected_type,
+                mem,
+            },
+        });
         self.reset_registers();
         Ok(())
+        // self.code.push(Instruction::StoreMem { reg, mem, typ: Type::U64 });
+        // self.reset_registers();
+        // Ok(())
     }
 
     fn convert_stmt_assign(&mut self, assign_tree: &Tree) -> Result<(), String> {
@@ -383,7 +722,7 @@ impl Generator {
             .functions
             .get(&self.current_fn)
             .expect("At this point, function table is guaranteed to contain current_fn.");
-        let mem = match local_lookup.get_variable_location(&var_name) {
+        let var = match local_lookup.get_variable_location(&var_name) {
             Some(i) => i,
             None => {
                 return Err(format!(
@@ -398,12 +737,30 @@ impl Generator {
         assert!(ref_unwrap!(assign_eq.tkn).get_type() == TokenType::Equal);
         let assign_expr = &instr_children[2];
         let reg = self.convert_expr(assign_expr)?;
-        self.code.push(Instruction::StoreMem { mem, reg });
+        match (var.typ, reg.typ) {
+            (Type::Unknown, Type::Unknown) => panic!(),
+            (Type::Unknown, _) => todo!(),
+            (typ, Type::Unknown) => {
+                self.resolve_types(typ)?;
+            }
+            (var_typ, expr_typ) => {
+                if var_typ != expr_typ {
+                    return Err(format!(
+                        "{}: {:?}: Type mismatch! Expected type `{:?}`, got type `{:?}`.",
+                        ERR_STR,
+                        ref_unwrap!(assign_name.tkn).get_loc(),
+                        var.typ,
+                        reg.typ
+                    ));
+                }
+            }
+        }
+        self.code.push(Instruction::StoreMem { reg: reg.mem, var });
         self.reset_registers();
         Ok(())
     }
 
-    fn convert_arg(&mut self, arg: &Tree) -> Result<usize, String> {
+    fn convert_arg(&mut self, arg: &Tree) -> Result<Variable, String> {
         assert!(*ref_unwrap!(arg.typ) == TreeType::Arg);
         let arg_children = &arg.children;
         assert!(arg_children.len() == 1);
@@ -443,15 +800,46 @@ impl Generator {
 
     fn convert_stmt_return(&mut self, ret_tree: &Tree) -> Result<(), String> {
         let child_count = ret_tree.children.len();
-        assert!(&[1,2].contains(&child_count));
+        assert!(&[1, 2].contains(&child_count));
+        self.functions
+            .get_mut(&self.current_fn)
+            .unwrap()
+            .return_found = true;
         if child_count == 2 {
             let reg = self.convert_expr(&ret_tree.children[1])?;
-            // Assertion for two reasons:
-            // 1: Register 0 is always the result for the outermost expr
-            // 2: Calling conventions -> Reg 0 (RAX/EAX/...) always contains return value
-            self.code.push(Instruction::Push { reg });
+            let fn_return_type = self
+                .functions
+                .get(&self.current_fn)
+                .unwrap()
+                .get_return_type();
+            match (fn_return_type, reg.typ) {
+                (Type::None, _) => {
+                    return Err(
+                        format!(
+                        "{}: {:?}: Function is declared to not return anything, but found return type `{:?}`.",
+                        ERR_STR,
+                        ref_unwrap!(ret_tree.children[0].tkn).get_loc(),
+                        reg.typ
+                        )
+                    );
+                }
+                (ret_type, expr_type) => {
+                    if expr_type == Type::Unknown {
+                        self.resolve_types(ret_type)?;
+                    } else if expr_type != ret_type {
+                        return Err(format!(
+                            "{}: {:?}: Function is declared to return `{:?}`, but found `{:?}`.",
+                            ERR_STR,
+                            ref_unwrap!(ret_tree.children[0].tkn).get_loc(),
+                            ret_type,
+                            expr_type
+                        ));
+                    }
+                }
+            }
+            self.code.push(Instruction::Push { reg: reg.mem });
         }
-        self.code.push(Instruction::Return {} );
+        self.code.push(Instruction::Return {});
         self.reset_registers();
         Ok(())
     }
@@ -461,6 +849,9 @@ impl Generator {
         assert!(expr_children.len() == 1, "Expected {{Expr}}");
         let expr = &expr_children[0];
         self.convert_expr(expr)?;
+        if !self.unresolved_typ_instr.is_empty() {
+            todo!()
+        }
         self.reset_registers();
         Ok(())
     }
@@ -470,6 +861,16 @@ impl Generator {
         let ip = self.unresolved_jmp_instr.pop_back().unwrap();
         self.set_jmp_lbl(ip, self.code.len());
         ip
+    }
+
+    fn resolve_types(&mut self, expected_type: Type) -> Result<(), String> {
+        if expected_type == Type::None {
+            todo!()
+        }
+        while let Some(index) = self.unresolved_typ_instr.pop_back() {
+            self.set_load_instr(index, expected_type)?;
+        }
+        Ok(())
     }
 
     fn set_jmp_lbl(&mut self, index: usize, dest: usize) {
@@ -485,11 +886,82 @@ impl Generator {
         };
     }
 
+    fn set_load_instr(&mut self, index: usize, typ: Type) -> Result<(), String> {
+        self.code[index] = match &self.code[index] {
+            Instruction::LoadUnknown { dest, val, loc } => match typ {
+                Type::I32 => {
+                    let val = parse_type!(i32, *loc, *val, typ)?;
+                    Instruction::LoadI32 { dest: *dest, val }
+                }
+                Type::I64 => {
+                    let val = parse_type!(i64, loc, val, typ)?;
+                    Instruction::LoadI64 { dest: *dest, val }
+                }
+                Type::U32 => {
+                    let val = parse_type!(u32, loc, val, typ)?;
+                    Instruction::LoadU32 { dest: *dest, val }
+                }
+                Type::U64 => {
+                    let val = parse_type!(u64, loc, val, typ)?;
+                    Instruction::LoadU64 { dest: *dest, val }
+                }
+                _ => todo!(),
+            },
+            Instruction::Add {
+                dest,
+                src,
+                typ: _typ,
+            } => Instruction::Add {
+                dest: *dest,
+                src: *src,
+                typ,
+            },
+            Instruction::Sub {
+                dest,
+                src,
+                typ: _typ,
+            } => Instruction::Sub {
+                dest: *dest,
+                src: *src,
+                typ,
+            },
+            Instruction::Mul {
+                dest,
+                src,
+                typ: _typ,
+            } => Instruction::Mul {
+                dest: *dest,
+                src: *src,
+                typ,
+            },
+            Instruction::Div {
+                dest,
+                src,
+                typ: _typ,
+            } => Instruction::Div {
+                dest: *dest,
+                src: *src,
+                typ,
+            },
+            Instruction::Cmp {
+                dest,
+                src,
+                typ: _typ,
+            } => Instruction::Cmp {
+                dest: *dest,
+                src: *src,
+                typ,
+            },
+            e => todo!("Handle Instruction {:?}", e),
+        };
+        Ok(())
+    }
+
     fn convert_fn(&mut self, func: &Tree) -> Result<(), String> {
         let fn_children = &func.children;
         assert!(
-            fn_children.len() == 4,
-            "fnKeyword fnName {{Param}} {{Block}} expected."
+            &[4, 5].contains(&fn_children.len()),
+            "fnKeyword fnName {{Param}} [ReturnType] {{Block}} expected."
         );
         let fn_keyword = ref_unwrap!(fn_children[0].tkn);
         assert!(fn_keyword.get_type() == TokenType::FnKeyword);
@@ -508,11 +980,69 @@ impl Generator {
         let f = Function::new(self.code.len());
         self.functions.insert(name.clone(), f);
         self.convert_fn_param(&fn_children[2])?;
-        self.convert_block(&fn_children[3])?;
-        self.current_fn.clear();
-        if !(*self.code.last().unwrap() == Instruction::Return { }) {
-            self.code.push(Instruction::Return {});
+        if fn_children.len() == 4 {
+            self.convert_block(&fn_children[3])?;
+        } else if fn_children.len() == 5 {
+            let fn_return = &fn_children[3];
+            assert!(*ref_unwrap!(fn_return.typ) == TreeType::TypeDecl);
+            let return_children = &fn_return.children;
+            assert!(return_children.len() == 2);
+
+            let type_arrow = &return_children[0];
+            assert!(ref_unwrap!(type_arrow.tkn).get_type() == TokenType::Arrow);
+
+            let type_name = &return_children[1];
+            assert!(ref_unwrap!(type_name.tkn).get_type() == TokenType::Name);
+
+            let type_name_str = ref_unwrap!(type_name.tkn).get_value();
+
+            let typ = match self.convert_type_str(&type_name_str) {
+                Ok(t) => t,
+                Err(e) => {
+                    return Err(format!(
+                        "{}: {:?}: {}",
+                        ERR_STR,
+                        ref_unwrap!(type_name.tkn).get_loc(),
+                        e
+                    ))
+                }
+            };
+            self.functions.get_mut(&name).unwrap().set_return_type(&typ);
+
+            self.convert_block(&fn_children[4])?;
         }
+        let return_found = self.functions.get(&self.current_fn).unwrap().return_found;
+        let return_type = self.functions.get(&self.current_fn).unwrap().return_type;
+        match (return_found, return_type) {
+            (_, Type::None) => {
+                if !(*self.code.last().unwrap() == Instruction::Return {}) {
+                    println!(
+                        "{}: Inserting Return instruction in {}",
+                        WARN_STR, self.current_fn
+                    );
+                    self.code.push(Instruction::Return {});
+                }
+            }
+            (false, t) => {
+                return Err(
+                    format!("{}: Function `{}` is declared to return `{:?}`, but no return statements found.",
+                    ERR_STR,
+                    self.current_fn,
+                    t)
+                );
+            }
+            (true, t) => {
+                if !(*self.code.last().unwrap() == Instruction::Return {}) {
+                    return Err(
+                        format!("{}: {:?}: Function `{}` is declared to return `{:?}`, expected `return` as last instruction.",
+                        ERR_STR,
+                        fn_name.get_loc(),
+                        self.current_fn,
+                        t));
+                }
+            }
+        }
+        self.current_fn.clear();
 
         Ok(())
     }
@@ -525,9 +1055,32 @@ impl Generator {
                 Some(t) => {
                     match t {
                         TreeType::Param => {
-                            assert!(p.children.len() == 1);
+                            assert!(p.children.len() == 2);
                             let param_node = &p.children[0];
                             let param_name = ref_unwrap!(param_node.tkn).get_value();
+
+                            let param_type = ref_unwrap!(&p.children[1].typ);
+                            assert!(*param_type == TreeType::TypeDecl);
+                            let param_type_child = &p.children[1].children;
+                            assert!(param_type_child.len() == 2);
+                            let type_symbol = &param_type_child[0];
+                            assert!(ref_unwrap!(type_symbol.tkn).get_type() == TokenType::TypeDecl);
+                            let type_name = &param_type_child[1];
+                            assert!(ref_unwrap!(type_name.tkn).get_type() == TokenType::Name);
+                            let type_name_str = ref_unwrap!(type_name.tkn).get_value();
+
+                            let typ = match self.convert_type_str(&type_name_str) {
+                                Ok(t) => t,
+                                Err(e) => {
+                                    return Err(format!(
+                                        "{}: {:?}: {}",
+                                        ERR_STR,
+                                        ref_unwrap!(type_name.tkn).get_loc(),
+                                        e
+                                    ))
+                                }
+                            };
+
                             let local_lookup = self.functions.get_mut(&self.current_fn).expect("At this point, function table is guaranteed to contain current_fn.");
                             if local_lookup.get_param_location(&param_name).is_some() {
                                 return Err(format!(
@@ -537,8 +1090,8 @@ impl Generator {
                                     param_name
                                 ));
                             }
-                            let mem = local_lookup.add_param(&param_name);
-                            self.code.push(Instruction::StoreMem { mem, reg: reg_ctr });
+                            let var = local_lookup.add_param(&param_name, &typ);
+                            self.code.push(Instruction::StoreMem { reg: reg_ctr, var });
                             reg_ctr += 1;
                         }
                         _ => {
@@ -625,19 +1178,7 @@ impl Generator {
         //     println!("{i:3} -> {c:?}");
         // }
         // todo!();
-        const RETURN_STACK_LIMIT: usize = 4096 * 4096;
-        const STACK_SIZE: usize = 1_000_000;
         let entry_point = String::from("main");
-
-        let mut return_stack = VecDeque::<usize>::new();
-        let mut return_values = VecDeque::<usize>::new();
-        let mut stack = vec![0; STACK_SIZE];
-        let mut stack_ptr = STACK_SIZE - 1 - self.get_function_stack_size(&entry_point);
-
-        let mut flags = 0;
-        const EQ: usize = 1;
-        const LT: usize = 2;
-        const GT: usize = 4;
 
         if !self.functions.contains_key(&entry_point) {
             return Err(format!(
@@ -646,6 +1187,19 @@ impl Generator {
             ));
         }
 
+        const RETURN_STACK_LIMIT: usize = 4096 * 4096;
+        const STACK_SIZE: usize = 1_000_000;
+
+        let mut return_stack = VecDeque::<usize>::new();
+        let mut return_values = VecDeque::<Memory>::new();
+        let mut stack = vec![Memory { u64: 0 }; STACK_SIZE];
+        let mut stack_ptr = STACK_SIZE - 1 - self.get_function_stack_size(&entry_point);
+
+        let mut flags = 0;
+        const EQ: usize = 1;
+        const LT: usize = 2;
+        const GT: usize = 4;
+
         let mut ip = self
             .functions
             .get(&entry_point)
@@ -653,6 +1207,7 @@ impl Generator {
             .get_ip();
 
         while ip < self.code.len() {
+            // todo!("Interpretation with type system in place.");
             if return_stack.len() > RETURN_STACK_LIMIT {
                 return Err(format!(
                     "{}: Recursion Limit reached when interpreting!",
@@ -663,25 +1218,52 @@ impl Generator {
             // println!("{:3} {:?} {:?}", ip, flags, instr);
             let mut add_ip = true;
             match instr {
-                Instruction::Add { dest, src } => {
-                    self.registers[*dest] += self.registers[*src];
+                Instruction::LoadUnknown { .. } => panic!(),
+                Instruction::LoadI32 { dest, val } => {
+                    self.registers[*dest].i32 = *val;
                 }
-                Instruction::Sub { dest, src } => {
-                    self.registers[*dest] -= self.registers[*src];
+                Instruction::LoadI64 { dest, val } => {
+                    self.registers[*dest].i64 = *val;
                 }
-                Instruction::Mul { dest, src } => {
-                    self.registers[*dest] *= self.registers[*src];
+                Instruction::LoadU32 { dest, val } => {
+                    self.registers[*dest].u32 = *val;
                 }
-                Instruction::Div { dest, src } => {
-                    self.registers[*dest] /= self.registers[*src];
+                Instruction::LoadU64 { dest, val } => {
+                    self.registers[*dest].u64 = *val;
                 }
-                Instruction::Cmp { dest, src } => {
-                    let lhs = self.registers[*dest];
-                    let rhs = self.registers[*src];
+                Instruction::LoadF32 { .. } => {
+                    todo!()
+                }
+                Instruction::LoadF64 { .. } => {
+                    todo!()
+                }
+                Instruction::Add { dest, src, typ } => {
+                    let v1 = self.registers[*dest];
+                    let v2 = self.registers[*src];
+                    perform_op!(self.registers[*dest], v1, v2, typ, +);
+                }
+                Instruction::Sub { dest, src, typ } => {
+                    let v1 = self.registers[*dest];
+                    let v2 = self.registers[*src];
+                    perform_op!(self.registers[*dest], v1, v2, typ, -);
+                }
+                Instruction::Mul { dest, src, typ } => {
+                    let v1 = self.registers[*dest];
+                    let v2 = self.registers[*src];
+                    perform_op!(self.registers[*dest], v1, v2, typ, *);
+                }
+                Instruction::Div { dest, src, typ } => {
+                    let v1 = self.registers[*dest];
+                    let v2 = self.registers[*src];
+                    perform_op!(self.registers[*dest], v1, v2, typ, /);
+                }
+                Instruction::Cmp { dest, src, typ } => {
+                    let v1 = self.registers[*dest];
+                    let v2 = self.registers[*src];
                     flags = 0;
-                    flags |= (lhs == rhs) as usize * EQ;
-                    flags |= (lhs < rhs) as usize * LT;
-                    flags |= (lhs > rhs) as usize * GT;
+                    flags |= perform_cmp!(v1, v2, typ, ==) as usize * EQ;
+                    flags |= perform_cmp!(v1, v2, typ, <) as usize * LT;
+                    flags |= perform_cmp!(v1, v2, typ, >) as usize * GT;
                     // >= is flags & EQ || flags & GT
                     // <= is flags & EQ || flags & LT
                     // != is not flags & EQ
@@ -729,14 +1311,17 @@ impl Generator {
                 Instruction::Move { dest, src } => {
                     self.registers[*dest] = self.registers[*src];
                 }
-                Instruction::LoadMem { reg, mem } => {
+                Instruction::LoadMem {
+                    reg,
+                    var: Variable { typ: _typ, mem },
+                } => {
                     self.registers[*reg] = stack[stack_ptr + *mem + 1];
                 }
-                Instruction::StoreMem { reg, mem } => {
+                Instruction::StoreMem {
+                    reg,
+                    var: Variable { typ: _typ, mem },
+                } => {
                     stack[stack_ptr + *mem + 1] = self.registers[*reg];
-                }
-                Instruction::Load { dest, val } => {
-                    self.registers[*dest] = *val;
                 }
                 Instruction::Call { fn_name } => {
                     let stack_size = self.get_function_stack_size(fn_name);
