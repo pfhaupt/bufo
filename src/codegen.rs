@@ -1,8 +1,6 @@
-#![allow(unused)]
-
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
-use crate::lexer::{Location, Token, TokenType};
+use crate::lexer::{Location, TokenType};
 use crate::parser::{Tree, TreeType};
 
 pub const ERR_STR: &str = "\x1b[91merror\x1b[0m";
@@ -50,7 +48,7 @@ macro_rules! parse_type {
     ($parse_typ:ty, $loc:expr, $val:expr, $typ: expr) => {
         match $val.parse::<$parse_typ>() {
             Ok(val) => Ok(val),
-            Err(e) => Err(format!(
+            Err(_) => Err(format!(
                 "{}: {:?}: Integer Literal `{}` too big for Type `{:?}`",
                 ERR_STR, $loc, $val, $typ
             )),
@@ -99,6 +97,7 @@ struct Variable {
     mem: usize,
 }
 
+#[allow(unused)]
 #[derive(Debug, PartialEq)]
 enum Instruction {
     LoadUnknown {
@@ -260,24 +259,15 @@ impl Function {
     }
 
     fn add_local_variable(&mut self, var_name: String, mem: usize, scope_depth: usize, typ: &Type) {
-        let mut scope_var = self.local_variables.get_mut(scope_depth).unwrap();
-        scope_var.insert(
-            var_name,
-            Variable {
-                mem,
-                typ: typ.clone(),
-            },
-        );
+        let scope_var = self.local_variables.get_mut(scope_depth).unwrap();
+        scope_var.insert(var_name, Variable { mem, typ: *typ });
         self.stack_size += 1;
         // self.local_variables.insert(var_name, mem);
     }
 
     fn add_param(&mut self, param_name: &str, typ: &Type) -> Variable {
         let mem = self.get_stack_size();
-        let var = Variable {
-            mem,
-            typ: typ.clone(),
-        };
+        let var = Variable { mem, typ: *typ };
         self.param_variables.insert(param_name.to_owned(), var);
         self.stack_size += 1;
         var
@@ -295,7 +285,7 @@ impl Function {
         if self.return_type != Type::None {
             panic!()
         }
-        self.return_type = typ.clone();
+        self.return_type = *typ;
     }
 
     fn get_return_type(&self) -> Type {
@@ -450,7 +440,7 @@ impl Generator {
                 let typ = match (dest.typ, src.typ) {
                     (Type::Unknown, Type::Unknown) => Type::Unknown,
                     (Type::Unknown, other_type) | (other_type, Type::Unknown) => {
-                        self.resolve_types(other_type);
+                        self.resolve_types(other_type)?;
                         other_type
                     }
                     (left_type, right_type) => {
@@ -568,7 +558,7 @@ impl Generator {
                         let param = params_as_list.pop_first().unwrap();
                         let param_type = param.1;
                         if reg.typ == Type::Unknown {
-                            self.resolve_types(param_type.typ);
+                            self.resolve_types(param_type.typ)?;
                         } else if reg.typ != param_type.typ {
                             return Err(format!("{}: {:?}: Type mismatch in Function Call. Argument {} is expected to be type `{:?}`, found `{:?}`.",
                                 ERR_STR,
@@ -835,7 +825,7 @@ impl Generator {
                 }
                 (ret_type, expr_type) => {
                     if expr_type == Type::Unknown {
-                        self.resolve_types(ret_type);
+                        self.resolve_types(ret_type)?;
                     } else if expr_type != ret_type {
                         return Err(format!(
                             "{}: {:?}: Function is declared to return `{:?}`, but found `{:?}`.",
@@ -987,7 +977,7 @@ impl Generator {
         let name = fn_name.get_value();
 
         self.current_fn = name.clone();
-        let mut f = Function::new(self.code.len());
+        let f = Function::new(self.code.len());
         self.functions.insert(name.clone(), f);
         self.convert_fn_param(&fn_children[2])?;
         if fn_children.len() == 4 {
@@ -1241,10 +1231,10 @@ impl Generator {
                 Instruction::LoadU64 { dest, val } => {
                     self.registers[*dest].u64 = *val;
                 }
-                Instruction::LoadF32 { dest, val } => {
+                Instruction::LoadF32 { .. } => {
                     todo!()
                 }
-                Instruction::LoadF64 { dest, val } => {
+                Instruction::LoadF64 { .. } => {
                     todo!()
                 }
                 Instruction::Add { dest, src, typ } => {
@@ -1323,13 +1313,13 @@ impl Generator {
                 }
                 Instruction::LoadMem {
                     reg,
-                    var: Variable { typ, mem },
+                    var: Variable { typ: _typ, mem },
                 } => {
                     self.registers[*reg] = stack[stack_ptr + *mem + 1];
                 }
                 Instruction::StoreMem {
                     reg,
-                    var: Variable { typ, mem },
+                    var: Variable { typ: _typ, mem },
                 } => {
                     stack[stack_ptr + *mem + 1] = self.registers[*reg];
                 }
