@@ -2,4 +2,7 @@ func main() {
     let i64: i32 = 5;
     let a: i32 = (0 - 20 + 5) / 5;
     let b: i32 = a - i64;
+    let c: u64 = 5 * (980123 + 12);
+    let d: u64 = c * 10;
+    let e: u64 = (d - 5) / 10;
 }

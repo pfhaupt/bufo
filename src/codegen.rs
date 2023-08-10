@@ -17,14 +17,14 @@ macro_rules! ref_unwrap {
 }
 
 macro_rules! perform_op {
-    ($v1:expr, $v2:expr, $typ:expr, $op:tt) => {
+    ($dest: expr, $reg1:expr, $reg2:expr, $typ:expr, $op:tt) => {
         match $typ {
-            Type::I32 => ($v1 as i32 $op $v2 as i32) as usize,
-            Type::I64 => ($v1 as i64 $op $v2 as i64) as usize,
-            Type::U32 => ($v1 as u32 $op $v2 as u32) as usize,
-            Type::U64 => ($v1 as u64 $op $v2 as u64) as usize,
-            Type::F32 => ($v1 as f32 $op $v2 as f32) as usize,
-            Type::F64 => ($v1 as f64 $op $v2 as f64) as usize,
+            Type::I32 => unsafe { ($dest.i32 = $reg1.i32 $op $reg2.i32) },
+            Type::I64 => unsafe { ($dest.i64 = $reg1.i64 $op $reg2.i64) },
+            Type::U32 => unsafe { ($dest.u32 = $reg1.u32 $op $reg2.u32) },
+            Type::U64 => unsafe { ($dest.u64 = $reg1.u64 $op $reg2.u64) },
+            Type::F32 => unsafe { ($dest.f32 = $reg1.f32 $op $reg2.f32) },
+            Type::F64 => unsafe { ($dest.f64 = $reg1.f64 $op $reg2.f64) },
             _ => todo!()
         }
     };
@@ -44,6 +44,28 @@ macro_rules! parse_type {
             )
         }
     };
+}
+
+#[derive(Copy, Clone)]
+union Memory {
+    i32: i32,
+    i64: i64,
+    u32: u32,
+    u64: u64,
+    f32: f32,
+    f64: f64,
+}
+
+impl std::fmt::Display for Memory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "{}", unsafe { self.u64 })
+    }
+}
+
+impl std::fmt::Debug for Memory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> { 
+        write!(f, "{}", unsafe { self.u64 })
+    }
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -175,7 +197,7 @@ impl Function {
 #[derive(Debug)]
 pub struct Generator {
     ast: Tree,
-    registers: Vec<usize>,
+    registers: Vec<Memory>,
     register_ctr: usize,
     functions: HashMap<String, Function>,
     code: Vec<Instruction>,
@@ -189,7 +211,7 @@ impl Generator {
     pub fn new(ast: Tree) -> Result<Self, String> {
         let mut gen = Self {
             ast,
-            registers: vec![0; 100],
+            registers: vec![Memory { u64: 0} ; 100],
             register_ctr: 0,
             functions: HashMap::new(),
             code: vec![],
@@ -236,7 +258,7 @@ impl Generator {
     fn get_register(&mut self) -> usize {
         let r = self.register_ctr;
         if r >= self.registers.len() {
-            self.registers.push(0);
+            self.registers.push( Memory { u64: 0 });
         }
         self.register_ctr += 1;
         r
@@ -872,7 +894,7 @@ impl Generator {
 
         let mut return_stack = VecDeque::<usize>::new();
         let mut return_values = VecDeque::<usize>::new();
-        let mut stack = vec![0; STACK_SIZE];
+        let mut stack = vec![Memory { u64: 0} ; STACK_SIZE];
         let mut stack_ptr = STACK_SIZE - 1 - self.get_function_stack_size(&entry_point);
         
         let mut flags = 0;
@@ -900,16 +922,16 @@ impl Generator {
             match instr {
                 Instruction::LoadUnknown { .. } => panic!(),
                 Instruction::LoadI32 { dest, val } => {
-                    self.registers[*dest] = *val as usize;
+                    self.registers[*dest].i32 = *val;
                 },
                 Instruction::LoadI64 { dest, val } => {
-                    self.registers[*dest] = *val as usize;
+                    self.registers[*dest].i64 = *val;
                 },
                 Instruction::LoadU32 { dest, val } => {
-                    self.registers[*dest] = *val as usize;
+                    self.registers[*dest].u32  = *val;
                 },
                 Instruction::LoadU64 { dest, val } => {
-                    self.registers[*dest] = *val as usize;
+                    self.registers[*dest].u64  = *val;
                 },
                 Instruction::LoadF32 { dest, val } => {
                     todo!()
@@ -920,30 +942,31 @@ impl Generator {
                 Instruction::Add { dest, src, typ } => {
                     let v1 = self.registers[*dest];
                     let v2 = self.registers[*src];
-                    self.registers[*dest] = perform_op!(v1, v2, typ, +);
+                    perform_op!(self.registers[*dest], v1, v2, typ, +);
                 }
                 Instruction::Sub { dest, src, typ } => {
                     let v1 = self.registers[*dest];
                     let v2 = self.registers[*src];
-                    self.registers[*dest] = perform_op!(v1, v2, typ, -);
+                    perform_op!(self.registers[*dest], v1, v2, typ, -);
                 }
                 Instruction::Mul { dest, src, typ } => {
                     let v1 = self.registers[*dest];
                     let v2 = self.registers[*src];
-                    self.registers[*dest] = perform_op!(v1, v2, typ, *);
+                    perform_op!(self.registers[*dest], v1, v2, typ, *);
                 }
                 Instruction::Div { dest, src, typ } => {
                     let v1 = self.registers[*dest];
                     let v2 = self.registers[*src];
-                    self.registers[*dest] = perform_op!(v1, v2, typ, /);
+                    perform_op!(self.registers[*dest], v1, v2, typ, /);
                 }
                 Instruction::Cmp { dest, src, typ } => {
-                    let lhs = self.registers[*dest];
-                    let rhs = self.registers[*src];
-                    flags = 0;
-                    flags |= (lhs == rhs) as usize * EQ;
-                    flags |= (lhs < rhs) as usize * LT;
-                    flags |= (lhs > rhs) as usize * GT;
+                    todo!()
+                    // let lhs = self.registers[*dest];
+                    // let rhs = self.registers[*src];
+                    // flags = 0;
+                    // flags |= (lhs == rhs) as usize * EQ;
+                    // flags |= (lhs < rhs) as usize * LT;
+                    // flags |= (lhs > rhs) as usize * GT;
                     // >= is flags & EQ || flags & GT
                     // <= is flags & EQ || flags & LT
                     // != is not flags & EQ
@@ -1014,10 +1037,12 @@ impl Generator {
                     add_ip = false;
                 }
                 Instruction::Push { reg } => {
-                    return_values.push_back(self.registers[*reg]);
+                    todo!()
+                    // return_values.push_back(self.registers[*reg]);
                 }
                 Instruction::Pop { reg } => {
-                    self.registers[*reg] = return_values.pop_back().unwrap();
+                    todo!()
+                    // self.registers[*reg] = return_values.pop_back().unwrap();
                 }
                 Instruction::Return {} => {
                     if return_stack.is_empty() {
