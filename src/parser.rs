@@ -10,7 +10,6 @@ pub enum TreeType {
     Func,
     ParamList,
     Param,
-    ReturnType,
     ArgList,
     Arg,
     Block,
@@ -385,7 +384,7 @@ impl Parser {
         let m = self.open();
         self.expect(TokenType::Arrow)?;
         self.expect(TokenType::Name)?;
-        self.close(m, TreeType::ReturnType);
+        self.close(m, TreeType::TypeDecl);
         Ok(())
     }
 
