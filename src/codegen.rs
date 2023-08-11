@@ -1174,10 +1174,10 @@ impl Generator {
     }
 
     pub fn interpret(&mut self) -> Result<(), String> {
-        // for (i, c) in self.code.iter().enumerate() {
-        //     println!("{i:3} -> {c:?}");
-        // }
-        // todo!();
+        for (i, c) in self.code.iter().enumerate() {
+            println!("{i:3} -> {c:?}");
+        }
+        todo!();
         let entry_point = String::from("main");
 
         if !self.functions.contains_key(&entry_point) {
