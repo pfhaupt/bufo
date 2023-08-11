@@ -1364,16 +1364,9 @@ impl Generator {
             //     println!("{:5} {:5}", stack[STACK_SIZE - i - 1], self.registers[i]);
             // }
         }
-        let mut index = 21;
-        for _ in 0..20 {
-            for _ in 0..20 {
-                let v = unsafe { stack[STACK_SIZE - index - 1].u32 };
-                if v == 1 { print!("#"); }
-                else { print!(" "); }
-                index += 1;
-            }
-            index += 22;
-            println!();
+        for i in 0..20 {
+            let v = unsafe { stack[STACK_SIZE - i - 1].u64 };
+            println!("{}", v);
         }
         Ok(())
     }
