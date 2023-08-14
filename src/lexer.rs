@@ -5,6 +5,7 @@ use crate::codegen::ERR_STR;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum TokenType {
+    File,
     IntLiteral,
     OpenParenthesis,
     ClosingParenthesis,
@@ -41,6 +42,12 @@ pub struct Location {
     col: usize,
 }
 
+impl Location {
+    pub fn new(file: String, row: usize, col: usize) -> Self {
+        Self { file, row, col }
+    }
+}
+
 impl Debug for Location {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(f, "{}:{}:{}", self.file, self.row, self.col)
@@ -55,6 +62,10 @@ pub struct Token {
 }
 
 impl Token {
+    pub fn new(typ: TokenType, value: String, loc: Location) -> Self {
+        Self { typ, value, loc }
+    }
+    
     pub fn get_type(&self) -> TokenType {
         self.typ
     }
@@ -139,7 +150,7 @@ impl Lexer {
     fn next_token(&mut self) -> Result<Token, String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
-            27,
+            28,
             "Not all TokenTypes are handled in next_token()"
         );
         let c = self.next_char()?;
