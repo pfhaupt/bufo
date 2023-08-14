@@ -5,6 +5,7 @@ use crate::parser::{Tree, TreeType};
 
 pub const ERR_STR: &str = "\x1b[91merror\x1b[0m";
 pub const WARN_STR: &str = "\x1b[93mwarning\x1b[0m";
+pub const NOTE_STR: &str = "\x1b[92mnote\x1b[0m";
 
 macro_rules! perform_op {
     ($dest: expr, $reg1:expr, $reg2:expr, $typ:expr, $op:tt) => {
@@ -196,8 +197,8 @@ struct Function {
     ip: usize,
     param_variables: BTreeMap<String, Variable>,
     local_variables: Vec<BTreeMap<String, Variable>>,
+    return_scopes: Vec<usize>,
     return_type: Type,
-    return_found: bool,
     stack_size: usize,
 }
 
@@ -207,8 +208,8 @@ impl Function {
             ip,
             param_variables: BTreeMap::new(),
             local_variables: vec![BTreeMap::new()],
+            return_scopes: vec![],
             return_type: Type::None,
-            return_found: false,
             stack_size: 0,
         }
     }
@@ -771,7 +772,8 @@ impl Generator {
         self.functions
             .get_mut(&self.current_fn)
             .unwrap()
-            .return_found = true;
+            .return_scopes
+            .push(self.scope_depth);
         let fn_return_type = self
             .functions
             .get(&self.current_fn)
@@ -974,7 +976,8 @@ impl Generator {
         } else {
             panic!();
         }
-        let return_found = self.functions.get(&self.current_fn).unwrap().return_found;
+        let return_scopes = &self.functions.get(&self.current_fn).unwrap().return_scopes;
+        let return_found = return_scopes.contains(&1);
         let return_type = self.functions.get(&self.current_fn).unwrap().return_type;
         match (return_found, return_type) {
             (_, Type::None) => {
@@ -988,10 +991,11 @@ impl Generator {
             }
             (false, t) => {
                 return Err(
-                    format!("{}: Function `{}` is declared to return `{:?}`, but no return statements found.",
+                    format!("{}: Function `{}` is declared to return `{:?}`, but no return statements found.\n{}: There's no Control Flow check yet, so even if it's unreachable because of if-else or anything else, it won't be caught.",
                     ERR_STR,
                     self.current_fn,
-                    t)
+                    t,
+                    NOTE_STR)
                 );
             }
             (true, t) => {
