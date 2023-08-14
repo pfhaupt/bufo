@@ -7,15 +7,6 @@ pub const ERR_STR: &str = "\x1b[91merror\x1b[0m";
 pub const WARN_STR: &str = "\x1b[93mwarning\x1b[0m";
 pub const NOTE_STR: &str = "\x1b[92mnote\x1b[0m";
 
-macro_rules! ref_unwrap {
-    ($str:expr) => {
-        $str.as_ref().unwrap()
-    };
-    ($str:expr, $msg:expr) => {
-        $str.as_ref().expect($msg)
-    };
-}
-
 macro_rules! perform_op {
     ($dest: expr, $reg1:expr, $reg2:expr, $typ:expr, $op:tt) => {
         match $typ {
@@ -377,27 +368,23 @@ impl Generator {
 
     fn convert_expr_atomic(&mut self, instr: &Tree) -> Result<Variable, String> {
         let instr_children = &instr.children;
-        match ref_unwrap!(instr.typ, "Atomic Expression Head can't be None.") {
+        match &instr.typ {
             TreeType::ExprLiteral => {
                 assert!(instr_children.len() == 1, "Expected {{Literal}}");
-                let val = ref_unwrap!(
-                    instr_children[0].tkn,
-                    "Expected valid ExprLiteral, got None instead. This might be a bug in parsing."
-                )
-                .get_value();
+                let val = instr_children[0].tkn.get_value();
                 let (val, typ) = match self.convert_expr_literal(val) {
                     Ok((v, t)) => (v, t),
                     Err(e) => {
                         return Err(format!(
                             "{}: {:?}: {}",
                             ERR_STR,
-                            ref_unwrap!(instr_children[0].tkn).get_loc(),
+                            instr_children[0].tkn.get_loc(),
                             e
                         ));
                     }
                 };
                 let dest = self.get_register();
-                let loc = ref_unwrap!(instr_children[0].tkn).get_loc();
+                let loc = instr_children[0].tkn.get_loc();
                 match typ {
                     Type::I32 => {
                         let val = parse_type!(i32, loc, val, typ)?;
@@ -428,14 +415,14 @@ impl Generator {
                 self.convert_expr_atomic(&instr_children[0])
             }
             TreeType::ExprBinary => {
-                assert!(*ref_unwrap!(instr.typ) == TreeType::ExprBinary);
+                assert!(instr.typ == TreeType::ExprBinary);
                 assert!(
-                    instr_children.len() == 3,
+                    instr_children.len() == 2,
                     "Expected {{Expr}} {{Op}} {{Expr}}"
                 );
+                let op = instr;
                 let lhs = &instr_children[0];
-                let op = &instr_children[1];
-                let rhs = &instr_children[2];
+                let rhs = &instr_children[1];
                 let dest = self.convert_expr_atomic(lhs)?;
                 let src = self.convert_expr_atomic(rhs)?;
                 let typ = match (dest.typ, src.typ) {
@@ -449,8 +436,8 @@ impl Generator {
                             return Err(
                                 format!("{}: {:?}: Type mismatch for binary expression `{}`! Left hand side got type `{:?}`, right hand side got type `{:?}`.",
                                 ERR_STR,
-                                ref_unwrap!(op.tkn).get_loc(),
-                                ref_unwrap!(op.tkn).get_value(),
+                                op.tkn.get_loc(),
+                                op.tkn.get_value(),
                                 left_type,
                                 right_type));
                         }
@@ -462,7 +449,7 @@ impl Generator {
                 if typ == Type::Unknown {
                     self.unresolved_typ_instr.push_back(self.code.len())
                 }
-                match ref_unwrap!(op.tkn, "Expected valid ExprBinary operator, got None instead. This might be a bug in parsing.").get_type() {
+                match op.tkn.get_type() {
                     TokenType::Plus => self.code.push(Instruction::Add { dest, src, typ }),
                     TokenType::Minus => self.code.push(Instruction::Sub { dest, src, typ }),
                     TokenType::Mult => self.code.push(Instruction::Mul { dest, src, typ }),
@@ -471,45 +458,40 @@ impl Generator {
                         self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpNeq { dest: usize::MAX });
-                    },
+                    }
                     TokenType::CmpNeq => {
                         self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpEq { dest: usize::MAX });
-                    },
+                    }
                     TokenType::CmpGt => {
                         self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpLte { dest: usize::MAX });
-                    },
+                    }
                     TokenType::CmpGte => {
                         self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpLt { dest: usize::MAX });
-                    },
+                    }
                     TokenType::CmpLt => {
                         self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpGte { dest: usize::MAX });
-                    },
+                    }
                     TokenType::CmpLte => {
                         self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpGt { dest: usize::MAX });
-                    },
-                    e => todo!("Handle {:?} in convert_expr_atomic()", e)
+                    }
+                    e => todo!("Handle {:?} in convert_expr_atomic()", e),
                 }
                 Ok(Variable { typ, mem: dest })
             }
             TreeType::ExprName => {
                 assert!(instr_children.len() == 1, "Expected {{name}}");
                 let val_name = &instr_children[0];
-                let name = ref_unwrap!(
-                    val_name.tkn,
-                    "Expected valid ExprName, got None instead. This might be a bug in parsing"
-                )
-                .get_value();
-
+                let name = val_name.tkn.get_value();
                 let reg = self.get_register();
                 let curr_fn = self
                     .functions
@@ -532,17 +514,16 @@ impl Generator {
                     None => Err(format!(
                         "{}: {:?}: Undefined variable `{}`",
                         ERR_STR,
-                        ref_unwrap!(val_name.tkn).get_loc(),
+                        val_name.tkn.get_loc(),
                         name
                     )),
                 }
             }
             TreeType::ExprCall => {
-                assert!(instr_children.len() == 2, "Expected {{name}} {{ArgList}}");
-                let fn_instr = &instr_children[0];
-                assert!(ref_unwrap!(fn_instr.tkn).get_type() == TokenType::Name);
-                let fn_name = ref_unwrap!(fn_instr.tkn).get_value();
-                let fn_args = &instr_children[1];
+                assert!(instr_children.len() == 1, "Expected {{name}} {{ArgList}}");
+                assert!(instr.tkn.get_type() == TokenType::Name);
+                let fn_name = instr.tkn.get_value();
+                let fn_args = &instr_children[0];
                 if let Some(func) = self.functions.get(&fn_name) {
                     let fn_return_type = func.get_return_type();
                     let params = func.get_params();
@@ -563,7 +544,7 @@ impl Generator {
                         } else if reg.typ != param_type.typ {
                             return Err(format!("{}: {:?}: Type mismatch in Function Call. Argument {} is expected to be type `{:?}`, found `{:?}`.",
                                 ERR_STR,
-                                ref_unwrap!(fn_instr.tkn).get_loc(),
+                                instr.tkn.get_loc(),
                                 reg_ctr + 1,
                                 param_type.typ,
                                 reg.typ)
@@ -590,7 +571,7 @@ impl Generator {
                     Err(format!(
                         "{} {:?}: Unknown function `{}`",
                         ERR_STR,
-                        ref_unwrap!(fn_instr.tkn).get_loc(),
+                        instr.tkn.get_loc(),
                         fn_name
                     ))
                 }
@@ -601,14 +582,11 @@ impl Generator {
 
     fn convert_expr(&mut self, expr_tree: &Tree) -> Result<Variable, String> {
         match &expr_tree.typ {
-            Some(t) => match t {
-                TreeType::ExprLiteral
-                | TreeType::ExprBinary
-                | TreeType::ExprName
-                | TreeType::ExprParen
-                | TreeType::ExprCall => self.convert_expr_atomic(expr_tree),
-                e => todo!("Handle {:?} in convert_expr", e),
-            },
+            TreeType::ExprLiteral
+            | TreeType::ExprBinary
+            | TreeType::ExprName
+            | TreeType::ExprParen
+            | TreeType::ExprCall => self.convert_expr_atomic(expr_tree),
             e => todo!("Handle {:?} in convert_expr", e),
         }
     }
@@ -631,41 +609,28 @@ impl Generator {
 
     fn convert_type(&mut self, typ_tree: &Tree) -> Result<Type, String> {
         let typ_children = &typ_tree.children;
-        assert!(typ_children.len() == 2);
-        let typ_decl = &typ_children[0];
-        assert!(ref_unwrap!(typ_decl.tkn).get_type() == TokenType::TypeDecl);
-        let typ_type = &typ_children[1];
-        assert!(ref_unwrap!(typ_type.tkn).get_type() == TokenType::Name);
-        let typ_type_value = ref_unwrap!(typ_type.tkn).get_value();
+        assert!(typ_children.len() == 1);
+        assert!(typ_tree.tkn.get_type() == TokenType::TypeDecl);
+        let typ_type = &typ_children[0];
+        assert!(typ_type.tkn.get_type() == TokenType::Name);
+        let typ_type_value = typ_type.tkn.get_value();
         match self.convert_type_str(typ_type_value.as_str()) {
             Ok(t) => Ok(t),
-            Err(e) => Err(format!(
-                "{}: {:?}: {}",
-                ERR_STR,
-                ref_unwrap!(typ_type.tkn).get_loc(),
-                e
-            )),
+            Err(e) => Err(format!("{}: {:?}: {}", ERR_STR, typ_type.tkn.get_loc(), e)),
         }
     }
 
     fn convert_stmt_let(&mut self, let_tree: &Tree) -> Result<(), String> {
         let instr_children = &let_tree.children;
-        assert!(instr_children.len() == 5, "{:#?}", instr_children);
-        let let_keyword = &instr_children[0];
-        assert!(ref_unwrap!(let_keyword.tkn).get_type() == TokenType::LetKeyword);
-        let let_name = &instr_children[1];
-        assert!(ref_unwrap!(let_name.tkn).get_type() == TokenType::Name);
-        let let_type = &instr_children[2];
-        assert!(*ref_unwrap!(let_type.typ) == TreeType::TypeDecl);
+        assert!(instr_children.len() == 3, "{:#?}", instr_children);
+        let let_name = &instr_children[0];
+        assert!(let_name.tkn.get_type() == TokenType::Name);
+        let let_type = &instr_children[1];
+        assert!(let_type.typ == TreeType::TypeDecl);
         let expected_type = self.convert_type(let_type)?;
-        let let_eq = &instr_children[3];
-        assert!(ref_unwrap!(let_eq.tkn).get_type() == TokenType::Equal);
-        let let_expr = &instr_children[4];
+        let let_expr = &instr_children[2];
 
-        let let_name = ref_unwrap!(
-            let_name.tkn,
-            "Expected Some Function Name Token, got None instead. This might be a bug in parsing."
-        );
+        let let_name = &let_name.tkn;
         let local_lookup = self
             .functions
             .get(&self.current_fn)
@@ -715,10 +680,10 @@ impl Generator {
 
     fn convert_stmt_assign(&mut self, assign_tree: &Tree) -> Result<(), String> {
         let instr_children = &assign_tree.children;
-        assert!(instr_children.len() == 3);
+        assert!(instr_children.len() == 2);
         let assign_name = &instr_children[0];
-        assert!(ref_unwrap!(assign_name.tkn).get_type() == TokenType::Name);
-        let var_name = ref_unwrap!(assign_name.tkn).get_value();
+        assert!(assign_name.tkn.get_type() == TokenType::Name);
+        let var_name = assign_name.tkn.get_value();
         let local_lookup = self
             .functions
             .get(&self.current_fn)
@@ -729,14 +694,12 @@ impl Generator {
                 return Err(format!(
                     "{}: {:?}: Unknown variable `{}`",
                     ERR_STR,
-                    ref_unwrap!(assign_name.tkn).get_loc(),
+                    assign_name.tkn.get_loc(),
                     var_name
                 ))
             }
         };
-        let assign_eq = &instr_children[1];
-        assert!(ref_unwrap!(assign_eq.tkn).get_type() == TokenType::Equal);
-        let assign_expr = &instr_children[2];
+        let assign_expr = &instr_children[1];
         let reg = self.convert_expr(assign_expr)?;
         match (var.typ, reg.typ) {
             (Type::Unknown, Type::Unknown) => panic!(),
@@ -749,7 +712,7 @@ impl Generator {
                     return Err(format!(
                         "{}: {:?}: Type mismatch! Expected type `{:?}`, got type `{:?}`.",
                         ERR_STR,
-                        ref_unwrap!(assign_name.tkn).get_loc(),
+                        assign_name.tkn.get_loc(),
                         var.typ,
                         reg.typ
                     ));
@@ -762,7 +725,7 @@ impl Generator {
     }
 
     fn convert_arg(&mut self, arg: &Tree) -> Result<Variable, String> {
-        assert!(*ref_unwrap!(arg.typ) == TreeType::Arg);
+        assert!(arg.typ == TreeType::Arg);
         let arg_children = &arg.children;
         assert!(arg_children.len() == 1);
         let arg_expr = &arg_children[0];
@@ -771,22 +734,26 @@ impl Generator {
 
     fn convert_stmt_if(&mut self, if_tree: &Tree) -> Result<(), String> {
         let if_children = &if_tree.children;
-        let if_keyword = &if_children[0];
-        assert!(ref_unwrap!(if_keyword.tkn).get_type() == TokenType::IfKeyword);
-        let if_cond = &if_children[1];
-        assert!(*ref_unwrap!(if_cond.typ) == TreeType::ExprBinary);
-        let if_block = &if_children[2];
+        assert!(&[2, 3].contains(&if_children.len()));
+        let if_cond = &if_children[0];
+        if if_cond.typ != TreeType::ExprBinary {
+            return Err(format!(
+                "{}: {:?}: Unexpected Symbol `{}`.",
+                ERR_STR,
+                if_cond.tkn.get_loc(),
+                if_cond.tkn.get_value()
+            ));
+        }
+        let if_block = &if_children[1];
         self.convert_expr(if_cond)?;
         self.reset_registers();
 
         self.convert_block(if_block)?;
         let if_jmp = self.resolve_last_jmp();
 
-        if if_children.len() == 5 {
-            let else_keyword = &if_children[3];
-            assert!(ref_unwrap!(else_keyword.tkn).get_type() == TokenType::ElseKeyword);
-            let else_block = &if_children[4];
-            assert!(*ref_unwrap!(else_block.typ) == TreeType::Block);
+        if if_children.len() == 3 {
+            let else_block = &if_children[2];
+            assert!(else_block.typ == TreeType::Block);
 
             self.unresolved_jmp_instr.push_back(self.code.len());
             self.code.push(Instruction::Jmp { dest: usize::MAX });
@@ -801,26 +768,26 @@ impl Generator {
 
     fn convert_stmt_return(&mut self, ret_tree: &Tree) -> Result<(), String> {
         let child_count = ret_tree.children.len();
-        assert!(&[1, 2].contains(&child_count));
+        assert!(&[0, 1].contains(&child_count));
         self.functions
             .get_mut(&self.current_fn)
             .unwrap()
             .return_scopes
             .push(self.scope_depth);
-        if child_count == 2 {
-            let reg = self.convert_expr(&ret_tree.children[1])?;
-            let fn_return_type = self
-                .functions
-                .get(&self.current_fn)
-                .unwrap()
-                .get_return_type();
+        let fn_return_type = self
+            .functions
+            .get(&self.current_fn)
+            .unwrap()
+            .get_return_type();
+        if child_count == 1 {
+            let reg = self.convert_expr(&ret_tree.children[0])?;
             match (fn_return_type, reg.typ) {
                 (Type::None, _) => {
                     return Err(
                         format!(
                         "{}: {:?}: Function is declared to not return anything, but found return type `{:?}`.",
                         ERR_STR,
-                        ref_unwrap!(ret_tree.children[0].tkn).get_loc(),
+                        ret_tree.children[0].tkn.get_loc(),
                         reg.typ
                         )
                     );
@@ -832,7 +799,7 @@ impl Generator {
                         return Err(format!(
                             "{}: {:?}: Function is declared to return `{:?}`, but found `{:?}`.",
                             ERR_STR,
-                            ref_unwrap!(ret_tree.children[0].tkn).get_loc(),
+                            ret_tree.children[0].tkn.get_loc(),
                             ret_type,
                             expr_type
                         ));
@@ -840,6 +807,13 @@ impl Generator {
                 }
             }
             self.code.push(Instruction::Push { reg: reg.mem });
+        } else if fn_return_type != Type::None {
+            return Err(format!(
+                "{}: {:?}: Function is declared to return `{:?}`, but found blank return statement.",
+                ERR_STR,
+                ret_tree.tkn.get_loc(),
+                fn_return_type,
+            ));
         }
         self.code.push(Instruction::Return {});
         self.reset_registers();
@@ -962,12 +936,10 @@ impl Generator {
     fn convert_fn(&mut self, func: &Tree) -> Result<(), String> {
         let fn_children = &func.children;
         assert!(
-            &[4, 5].contains(&fn_children.len()),
+            &[3, 4].contains(&fn_children.len()),
             "fnKeyword fnName {{Param}} [ReturnType] {{Block}} expected."
         );
-        let fn_keyword = ref_unwrap!(fn_children[0].tkn);
-        assert!(fn_keyword.get_type() == TokenType::FnKeyword);
-        let fn_name = ref_unwrap!(fn_children[1].tkn);
+        let fn_name = &fn_children[0].tkn;
         assert!(fn_name.get_type() == TokenType::Name);
         if self.functions.contains_key(&fn_name.get_value()) {
             return Err(format!(
@@ -981,37 +953,28 @@ impl Generator {
         self.current_fn = name.clone();
         let f = Function::new(self.code.len());
         self.functions.insert(name.clone(), f);
-        self.convert_fn_param(&fn_children[2])?;
-        if fn_children.len() == 4 {
-            self.convert_block(&fn_children[3])?;
-        } else if fn_children.len() == 5 {
-            let fn_return = &fn_children[3];
-            assert!(*ref_unwrap!(fn_return.typ) == TreeType::TypeDecl);
+        self.convert_fn_param(&fn_children[1])?;
+        if fn_children.len() == 3 {
+            self.convert_block(&fn_children[2])?;
+        } else if fn_children.len() == 4 {
+            let fn_return = &fn_children[2];
+            assert!(fn_return.typ == TreeType::TypeDecl);
             let return_children = &fn_return.children;
-            assert!(return_children.len() == 2);
 
-            let type_arrow = &return_children[0];
-            assert!(ref_unwrap!(type_arrow.tkn).get_type() == TokenType::Arrow);
+            let type_name = &return_children[0];
+            assert!(type_name.tkn.get_type() == TokenType::Name);
 
-            let type_name = &return_children[1];
-            assert!(ref_unwrap!(type_name.tkn).get_type() == TokenType::Name);
-
-            let type_name_str = ref_unwrap!(type_name.tkn).get_value();
+            let type_name_str = type_name.tkn.get_value();
 
             let typ = match self.convert_type_str(&type_name_str) {
                 Ok(t) => t,
-                Err(e) => {
-                    return Err(format!(
-                        "{}: {:?}: {}",
-                        ERR_STR,
-                        ref_unwrap!(type_name.tkn).get_loc(),
-                        e
-                    ))
-                }
+                Err(e) => return Err(format!("{}: {:?}: {}", ERR_STR, type_name.tkn.get_loc(), e)),
             };
             self.functions.get_mut(&name).unwrap().set_return_type(&typ);
 
-            self.convert_block(&fn_children[4])?;
+            self.convert_block(&fn_children[3])?;
+        } else {
+            panic!();
         }
         let return_scopes = &self.functions.get(&self.current_fn).unwrap().return_scopes;
         let return_found = return_scopes.contains(&1);
@@ -1056,76 +1019,66 @@ impl Generator {
         let mut reg_ctr = 0;
         for p in param_children {
             match &p.typ {
-                Some(t) => {
-                    match t {
-                        TreeType::Param => {
-                            assert!(p.children.len() == 2);
-                            let param_node = &p.children[0];
-                            let param_name = ref_unwrap!(param_node.tkn).get_value();
+                TreeType::Param => {
+                    assert!(p.children.len() == 1);
+                    let param_name = p.tkn.get_value();
 
-                            let param_type = ref_unwrap!(&p.children[1].typ);
-                            assert!(*param_type == TreeType::TypeDecl);
-                            let param_type_child = &p.children[1].children;
-                            assert!(param_type_child.len() == 2);
-                            let type_symbol = &param_type_child[0];
-                            assert!(ref_unwrap!(type_symbol.tkn).get_type() == TokenType::TypeDecl);
-                            let type_name = &param_type_child[1];
-                            assert!(ref_unwrap!(type_name.tkn).get_type() == TokenType::Name);
-                            let type_name_str = ref_unwrap!(type_name.tkn).get_value();
+                    let param_type = &p.children[0].typ;
+                    assert!(*param_type == TreeType::TypeDecl);
+                    let param_type_child = &p.children[0].children;
+                    let type_name = &param_type_child[0];
+                    assert!(type_name.tkn.get_type() == TokenType::Name);
+                    let type_name_str = type_name.tkn.get_value();
 
-                            let typ = match self.convert_type_str(&type_name_str) {
-                                Ok(t) => t,
-                                Err(e) => {
-                                    return Err(format!(
-                                        "{}: {:?}: {}",
-                                        ERR_STR,
-                                        ref_unwrap!(type_name.tkn).get_loc(),
-                                        e
-                                    ))
-                                }
-                            };
-
-                            let local_lookup = self.functions.get_mut(&self.current_fn).expect("At this point, function table is guaranteed to contain current_fn.");
-                            if local_lookup.get_param_location(&param_name).is_some() {
-                                return Err(format!(
-                                    "{}: {:?}: Parameter redefinition `{}`",
-                                    ERR_STR,
-                                    ref_unwrap!(param_node.tkn).get_loc(),
-                                    param_name
-                                ));
-                            }
-                            let var = local_lookup.add_param(&param_name, &typ);
-                            self.code.push(Instruction::StoreMem { reg: reg_ctr, var });
-                            reg_ctr += 1;
+                    let typ = match self.convert_type_str(&type_name_str) {
+                        Ok(t) => t,
+                        Err(e) => {
+                            return Err(format!(
+                                "{}: {:?}: {}",
+                                ERR_STR,
+                                type_name.tkn.get_loc(),
+                                e
+                            ))
                         }
-                        _ => {
-                            todo!(
-                                "Handle t not TreeType::Param in convert_fn_param() - Got: {:?}",
-                                t
-                            )
-                        }
+                    };
+
+                    let local_lookup = self.functions.get_mut(&self.current_fn).expect(
+                        "At this point, function table is guaranteed to contain current_fn.",
+                    );
+                    if local_lookup.get_param_location(&param_name).is_some() {
+                        return Err(format!(
+                            "{}: {:?}: Parameter redefinition `{}`",
+                            ERR_STR,
+                            p.tkn.get_loc(),
+                            param_name
+                        ));
                     }
+                    let var = local_lookup.add_param(&param_name, &typ);
+                    self.code.push(Instruction::StoreMem { reg: reg_ctr, var });
+                    reg_ctr += 1;
                 }
-                None => panic!(),
+                t => {
+                    todo!(
+                        "Handle t not TreeType::Param in convert_fn_param() - Got: {:?}",
+                        t
+                    )
+                }
             }
         }
         Ok(())
     }
 
     fn convert_block(&mut self, block: &Tree) -> Result<(), String> {
-        assert!(*ref_unwrap!(block.typ) == TreeType::Block);
+        assert!(block.typ == TreeType::Block);
         self.enter_scope();
         for instr in &block.children {
             match &instr.typ {
-                Some(t) => match t {
-                    TreeType::StmtLet => self.convert_stmt_let(instr)?,
-                    TreeType::StmtAssign => self.convert_stmt_assign(instr)?,
-                    TreeType::StmtIf => self.convert_stmt_if(instr)?,
-                    TreeType::StmtReturn => self.convert_stmt_return(instr)?,
-                    TreeType::StmtExpr => self.convert_stmt_expr(instr)?,
-                    e => todo!("convert {:?} inside block", e),
-                },
-                _ => panic!(),
+                TreeType::StmtLet => self.convert_stmt_let(instr)?,
+                TreeType::StmtAssign => self.convert_stmt_assign(instr)?,
+                TreeType::StmtIf => self.convert_stmt_if(instr)?,
+                TreeType::StmtReturn => self.convert_stmt_return(instr)?,
+                TreeType::StmtExpr => self.convert_stmt_expr(instr)?,
+                e => todo!("convert {:?} inside block", e),
             }
         }
         self.leave_scope();
@@ -1154,17 +1107,12 @@ impl Generator {
 
     fn convert_ast(&mut self, ast: &Tree) -> Result<(), String> {
         match &ast.typ {
-            Some(typ) => match typ {
-                TreeType::File => {
-                    for func in &ast.children {
-                        self.convert_fn(func)?;
-                    }
+            TreeType::File => {
+                for func in &ast.children {
+                    self.convert_fn(func)?;
                 }
-                _ => todo!("handle other types"),
-            },
-            None => {
-                panic!()
             }
+            _ => todo!("handle other types"),
         }
         Ok(())
     }
@@ -1373,10 +1321,22 @@ impl Generator {
             //     println!("{:5} {:5}", stack[STACK_SIZE - i - 1], self.registers[i]);
             // }
         }
+
         for i in 0..20 {
-            let v = unsafe { stack[STACK_SIZE - i - 1].u64 };
-            println!("{}", v);
+            println!("{}", unsafe { stack[STACK_SIZE - i - 1].u64 });
         }
+
+        // let mut index = 21;
+        // for _ in 0..20 {
+        //     for _ in 0..20 {
+        //         let v = unsafe { stack[STACK_SIZE - index - 1].u32 };
+        //         if v == 1 { print!("#"); }
+        //         else { print!(" "); }
+        //         index += 1;
+        //     }
+        //     index += 22;
+        //     println!();
+        // }
         Ok(())
     }
 

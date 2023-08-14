@@ -9,7 +9,26 @@ func fibWrongOutput(n: u32) -> u32 {
     return fibWrongOutput(n - 1) + fibWrongOutput(n - 2);
 }
 
+func ack(m: u32, n: u32) -> u32 {
+    if (m == 0) { return n + 1; }
+    if (n == 0) { return ack(m - 1, 1); }
+    return ack(m - 1, ack(m, n - 1));
+}
+
+func factorial(n: u32) -> u32 {
+    if (n <= 1) { return 1; }
+    return n * factorial(n - 1);
+}
+
+func test(n: u32, m: u32) -> u32 {
+    n = n - 1;
+    if (n > m) { return test(m, n); }
+    return n * n + m * m - (n / (m + 5));
+}
+
 func main() {
-    fibWrongOutput(7);
-    fibNoReturn(7);
+    let a: u32 = factorial(ack(factorial(2), factorial(2)));
+    let b: u32 = rule110(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1);
+    let c: u32 = test(10, 8);
+    return;
 }
