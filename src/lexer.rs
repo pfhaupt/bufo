@@ -65,7 +65,7 @@ impl Token {
     pub fn new(typ: TokenType, value: String, loc: Location) -> Self {
         Self { typ, value, loc }
     }
-    
+
     pub fn get_type(&self) -> TokenType {
         self.typ
     }

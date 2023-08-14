@@ -457,33 +457,33 @@ impl Generator {
                         self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpNeq { dest: usize::MAX });
-                    },
+                    }
                     TokenType::CmpNeq => {
                         self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpEq { dest: usize::MAX });
-                    },
+                    }
                     TokenType::CmpGt => {
                         self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpLte { dest: usize::MAX });
-                    },
+                    }
                     TokenType::CmpGte => {
                         self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpLt { dest: usize::MAX });
-                    },
+                    }
                     TokenType::CmpLt => {
                         self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpGte { dest: usize::MAX });
-                    },
+                    }
                     TokenType::CmpLte => {
                         self.code.push(Instruction::Cmp { dest, src, typ });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpGt { dest: usize::MAX });
-                    },
-                    e => todo!("Handle {:?} in convert_expr_atomic()", e)
+                    }
+                    e => todo!("Handle {:?} in convert_expr_atomic()", e),
                 }
                 Ok(Variable { typ, mem: dest })
             }
@@ -615,12 +615,7 @@ impl Generator {
         let typ_type_value = typ_type.tkn.get_value();
         match self.convert_type_str(typ_type_value.as_str()) {
             Ok(t) => Ok(t),
-            Err(e) => Err(format!(
-                "{}: {:?}: {}",
-                ERR_STR,
-                typ_type.tkn.get_loc(),
-                e
-            )),
+            Err(e) => Err(format!("{}: {:?}: {}", ERR_STR, typ_type.tkn.get_loc(), e)),
         }
     }
 
@@ -741,8 +736,8 @@ impl Generator {
         assert!(&[2, 3].contains(&if_children.len()));
         let if_cond = &if_children[0];
         if if_cond.typ != TreeType::ExprBinary {
-            return Err(
-                format!("{}: {:?}: Unexpected Symbol `{}`.",
+            return Err(format!(
+                "{}: {:?}: Unexpected Symbol `{}`.",
                 ERR_STR,
                 if_cond.tkn.get_loc(),
                 if_cond.tkn.get_value()
@@ -778,10 +773,10 @@ impl Generator {
             .unwrap()
             .return_found = true;
         let fn_return_type = self
-                .functions
-                .get(&self.current_fn)
-                .unwrap()
-                .get_return_type();
+            .functions
+            .get(&self.current_fn)
+            .unwrap()
+            .get_return_type();
         if child_count == 1 {
             let reg = self.convert_expr(&ret_tree.children[0])?;
             match (fn_return_type, reg.typ) {
@@ -965,7 +960,7 @@ impl Generator {
             let fn_return = &fn_children[2];
             assert!(fn_return.typ == TreeType::TypeDecl);
             let return_children = &fn_return.children;
-            
+
             let type_name = &return_children[0];
             assert!(type_name.tkn.get_type() == TokenType::Name);
 
@@ -973,14 +968,7 @@ impl Generator {
 
             let typ = match self.convert_type_str(&type_name_str) {
                 Ok(t) => t,
-                Err(e) => {
-                    return Err(format!(
-                        "{}: {:?}: {}",
-                        ERR_STR,
-                        type_name.tkn.get_loc(),
-                        e
-                    ))
-                }
+                Err(e) => return Err(format!("{}: {:?}: {}", ERR_STR, type_name.tkn.get_loc(), e)),
             };
             self.functions.get_mut(&name).unwrap().set_return_type(&typ);
 
@@ -1052,7 +1040,9 @@ impl Generator {
                         }
                     };
 
-                    let local_lookup = self.functions.get_mut(&self.current_fn).expect("At this point, function table is guaranteed to contain current_fn.");
+                    let local_lookup = self.functions.get_mut(&self.current_fn).expect(
+                        "At this point, function table is guaranteed to contain current_fn.",
+                    );
                     if local_lookup.get_param_location(&param_name).is_some() {
                         return Err(format!(
                             "{}: {:?}: Parameter redefinition `{}`",
@@ -1324,7 +1314,7 @@ impl Generator {
             //     println!("{:5} {:5}", stack[STACK_SIZE - i - 1], self.registers[i]);
             // }
         }
-        
+
         for i in 0..20 {
             println!("{}", unsafe { stack[STACK_SIZE - i - 1].u64 });
         }
