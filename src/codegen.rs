@@ -684,7 +684,7 @@ impl Generator {
 
     fn convert_stmt_assign(&mut self, assign_tree: &Tree) -> Result<(), String> {
         let instr_children = &assign_tree.children;
-        assert!(instr_children.len() == 3);
+        assert!(instr_children.len() == 2);
         let assign_name = &instr_children[0];
         assert!(assign_name.tkn.get_type() == TokenType::Name);
         let var_name = assign_name.tkn.get_value();
@@ -703,9 +703,7 @@ impl Generator {
                 ))
             }
         };
-        let assign_eq = &instr_children[1];
-        assert!(assign_eq.tkn.get_type() == TokenType::Equal);
-        let assign_expr = &instr_children[2];
+        let assign_expr = &instr_children[1];
         let reg = self.convert_expr(assign_expr)?;
         match (var.typ, reg.typ) {
             (Type::Unknown, Type::Unknown) => panic!(),
