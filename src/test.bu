@@ -44,6 +44,18 @@ func rule110(step: u32,
                 nk, nl, nm, nn, no, np, nq, nr, ns, nt);
 }
 
+func ack(m: u64, n: u64) -> u64 {
+    if (m == 0) { return n + 1; }
+    if (n == 0) { return ack(m - 1, 1); }
+    return ack(m - 1, ack(m, n - 1));
+}
+
+func factorial(n: u64) -> u64 {
+    if (n <= 1) { return 1; }
+    return n * factorial(n - 1);
+}
+
 func main() {
-    rule110(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1);
+    let s: u32 = rule110(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1);
+    let a: u64 = factorial(ack(factorial(2), factorial(2)));
 }

@@ -17,9 +17,9 @@ fn compile() -> Result<(), String> {
     // println!("{:#?}", lexer.get_tokens());
 
     let mut parser = Parser::new(lexer.get_tokens());
-    parser.parse_file()?;
-    let ast = parser.build_tree();
-    // println!("{:#?}", ast);
+    let ast = parser.parse_file()?;
+    // ast.print_debug();
+    // exit(1);
 
     let mut generator = Generator::new(ast)?;
     // generator.compile()?;
