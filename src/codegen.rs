@@ -1312,6 +1312,11 @@ impl Generator {
             if add_ip {
                 ip += 1;
             }
+            // print!("{} ", stack_ptr);
+            // for i in 0..6 {
+            //     print!("{} ", unsafe { self.registers[i].u32 } );
+            // }
+            // println!("{:?}", return_values);
             // for i in 0..10 {
             //     println!("{:5} {:5}", stack[STACK_SIZE - i - 1], self.registers[i]);
             // }
