@@ -261,7 +261,9 @@ impl Parser {
         self.expect(TokenType::OpenParenthesis)?;
         while !self.at(TokenType::ClosingParenthesis) && !self.eof() {
             children.push(self.parse_arg()?);
-            self.eat(TokenType::Comma);
+            if !self.eat(TokenType::Comma) {
+                break;
+            }
         }
         self.expect(TokenType::ClosingParenthesis)?;
         Ok(Tree { typ: TreeType::ArgList, tkn, children })
@@ -327,9 +329,6 @@ impl Parser {
         let (tkn, mut children) = self.open();
         self.expect(TokenType::Name)?;
         children.push(self.parse_type_decl()?);
-        if self.at(TokenType::Comma) {
-            self.advance();
-        }
         Ok(Tree { typ: TreeType::Param, tkn, children })
     }
 
@@ -338,6 +337,9 @@ impl Parser {
         self.expect(TokenType::OpenParenthesis)?;
         while !self.at(TokenType::ClosingParenthesis) && !self.eof() {
             children.push(self.parse_param()?);
+            if !self.eat(TokenType::Comma) {
+                break;
+            }
         }
         self.expect(TokenType::ClosingParenthesis)?;
         Ok(Tree { typ: TreeType::ParamList, tkn, children})
