@@ -388,10 +388,4 @@ impl Parser {
         self.root = Some(Tree { typ: TreeType::File, tkn, children});
         Ok(self.root.clone().unwrap())
     }
-
-    pub fn build_tree(self) -> Tree {
-        // println!("{:#?}", self.root.unwrap());
-        self.root.unwrap().print_debug();
-        todo!("build_tree")
-    }
 }
