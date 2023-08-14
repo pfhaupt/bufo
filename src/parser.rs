@@ -34,6 +34,7 @@ pub struct Tree {
 }
 
 impl Tree {
+    #[allow(unused)]
     pub fn print_debug(&self) {
         self.print_internal(0);
     }

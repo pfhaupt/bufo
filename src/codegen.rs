@@ -805,15 +805,13 @@ impl Generator {
                 }
             }
             self.code.push(Instruction::Push { reg: reg.mem });
-        } else {
-            if fn_return_type != Type::None {
-                return Err(format!(
-                    "{}: {:?}: Function is declared to return `{:?}`, but found blank return statement.",
-                    ERR_STR,
-                    ret_tree.tkn.get_loc(),
-                    fn_return_type,
-                ));
-            }
+        } else if fn_return_type != Type::None {
+            return Err(format!(
+                "{}: {:?}: Function is declared to return `{:?}`, but found blank return statement.",
+                ERR_STR,
+                ret_tree.tkn.get_loc(),
+                fn_return_type,
+            ));
         }
         self.code.push(Instruction::Return {});
         self.reset_registers();
