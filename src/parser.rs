@@ -148,7 +148,7 @@ impl Parser {
                 }
             }
             TokenType::Name => match self.nth(1) {
-                TokenType::OpenParen => self.parse_expr_call()?,
+                TokenType::OpenRound => self.parse_expr_call()?,
                 _ => {
                     let (tkn, mut children) = self.open();
                     children.push(Tree {
@@ -163,11 +163,11 @@ impl Parser {
                     }
                 }
             },
-            TokenType::OpenParen => {
+            TokenType::OpenRound => {
                 let (tkn, mut children) = self.open();
-                self.expect(TokenType::OpenParen)?;
+                self.expect(TokenType::OpenRound)?;
                 children.push(self.parse_expr()?);
-                self.expect(TokenType::ClosingParen)?;
+                self.expect(TokenType::ClosingRound)?;
                 Tree {
                     typ: TreeType::ExprParen,
                     tkn,
@@ -319,14 +319,14 @@ impl Parser {
 
     fn parse_arg_list(&mut self) -> Result<Tree, String> {
         let (tkn, mut children) = self.open();
-        self.expect(TokenType::OpenParen)?;
-        while !self.at(TokenType::ClosingParen) && !self.eof() {
+        self.expect(TokenType::OpenRound)?;
+        while !self.at(TokenType::ClosingRound) && !self.eof() {
             children.push(self.parse_arg()?);
             if !self.eat(TokenType::Comma) {
                 break;
             }
         }
-        self.expect(TokenType::ClosingParen)?;
+        self.expect(TokenType::ClosingRound)?;
         Ok(Tree {
             typ: TreeType::ArgList,
             tkn,
@@ -337,9 +337,9 @@ impl Parser {
     fn parse_stmt_if(&mut self) -> Result<Tree, String> {
         let (tkn, mut children) = self.open();
         self.expect(TokenType::IfKeyword)?;
-        self.expect(TokenType::OpenParen)?;
+        self.expect(TokenType::OpenRound)?;
         children.push(self.parse_expr()?);
-        self.expect(TokenType::ClosingParen)?;
+        self.expect(TokenType::ClosingRound)?;
         children.push(self.parse_block()?);
         if self.eat(TokenType::ElseKeyword) {
             children.push(self.parse_block()?);
@@ -415,14 +415,14 @@ impl Parser {
 
     fn parse_param_list(&mut self) -> Result<Tree, String> {
         let (tkn, mut children) = self.open();
-        self.expect(TokenType::OpenParen)?;
-        while !self.at(TokenType::ClosingParen) && !self.eof() {
+        self.expect(TokenType::OpenRound)?;
+        while !self.at(TokenType::ClosingRound) && !self.eof() {
             children.push(self.parse_param()?);
             if !self.eat(TokenType::Comma) {
                 break;
             }
         }
-        self.expect(TokenType::ClosingParen)?;
+        self.expect(TokenType::ClosingRound)?;
         Ok(Tree {
             typ: TreeType::ParamList,
             tkn,

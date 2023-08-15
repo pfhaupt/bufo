@@ -7,8 +7,8 @@ use crate::codegen::ERR_STR;
 pub enum TokenType {
     File,
     IntLiteral,
-    OpenParen,
-    ClosingParen,
+    OpenRound,
+    ClosingRound,
     OpenCurly,
     ClosingCurly,
     FnKeyword,
@@ -195,12 +195,12 @@ impl Lexer {
                 })
             }
             '(' => Ok(Token {
-                typ: TokenType::OpenParen,
+                typ: TokenType::OpenRound,
                 value: String::from("("),
                 loc,
             }),
             ')' => Ok(Token {
-                typ: TokenType::ClosingParen,
+                typ: TokenType::ClosingRound,
                 value: String::from(")"),
                 loc,
             }),
