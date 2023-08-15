@@ -27,6 +27,8 @@ pub enum TreeType {
     ExprCall,
     TypeDecl,
     ArrSize,
+    Pointer,
+    Deref,
 }
 
 #[derive(Debug, Clone)]
@@ -206,6 +208,26 @@ impl Parser {
                 }
             }
             TokenType::OpenSquare => self.parse_expr_array()?,
+            TokenType::Ampersand => {
+                let (tkn, mut children) = self.open();
+                self.expect(TokenType::Ampersand)?;
+                children.push(self.parse_name()?);
+                Tree {
+                    typ: TreeType::Pointer,
+                    tkn,
+                    children
+                }
+            }
+            TokenType::Mult => {
+                let (tkn, mut children) = self.open();
+                self.expect(TokenType::Mult)?;
+                children.push(self.parse_name()?);
+                Tree {
+                    typ: TreeType::Deref,
+                    tkn,
+                    children
+                }
+            }
             e => {
                 let ptr = if self.ptr == self.tokens.len() {
                     self.ptr - 1
@@ -296,14 +318,36 @@ impl Parser {
     fn parse_type_decl(&mut self) -> Result<Tree, String> {
         let (tkn, mut children) = self.open();
         self.expect(TokenType::TypeDecl)?;
-        let mut name = Tree {
-            typ: TreeType::Name,
-            tkn: self.expect(TokenType::Name)?,
-            children: vec![],
+        let name = match self.nth(0) {
+            TokenType::Ampersand => {
+                let mut ptr = Tree {
+                    typ: TreeType::Pointer,
+                    tkn: self.expect(TokenType::Ampersand)?,
+                    children: vec![]
+                };
+                let mut typ_name = Tree {
+                    typ: TreeType::Name,
+                    tkn: self.expect(TokenType::Name)?,
+                    children: vec![]
+                };
+                if self.at(TokenType::OpenSquare) {
+                    typ_name.children.push(self.parse_type_arr()?);
+                }
+                ptr.children.push(typ_name);
+                ptr
+            }
+            _ => {
+                let mut name = Tree {
+                    typ: TreeType::Name,
+                    tkn: self.expect(TokenType::Name)?,
+                    children: vec![],
+                };
+                if self.at(TokenType::OpenSquare) {
+                    name.children.push(self.parse_type_arr()?);
+                }
+                name
+            }
         };
-        if self.at(TokenType::OpenSquare) {
-            name.children.push(self.parse_type_arr()?);
-        }
         children.push(name);
         Ok(Tree {
             typ: TreeType::TypeDecl,
@@ -333,7 +377,6 @@ impl Parser {
     }
 
     fn parse_stmt_assign(&mut self) -> Result<Tree, String> {
-        assert!(self.at(TokenType::Name));
         let (tkn, mut children) = self.open();
         let node = match self.nth(1) {
             TokenType::Equal => Tree {
@@ -356,6 +399,30 @@ impl Parser {
             typ: TreeType::StmtAssign,
             tkn,
             children,
+        })
+    }
+
+    fn parse_stmt_assign_ptr(&mut self) -> Result<Tree, String> {
+        let (tkn, mut children) = self.open();
+        let mut var_ptr = Tree {
+            typ: TreeType::Pointer,
+            tkn: self.expect(TokenType::Mult)?,
+            children: vec![]
+        };
+        let var_name = Tree {
+            typ: TreeType::Name,
+            tkn: self.expect(TokenType::Name)?,
+            children: vec![]
+        };
+        var_ptr.children.push(var_name);
+        children.push(var_ptr);
+        self.expect(TokenType::Equal)?;
+        children.push(self.parse_expr()?);
+        self.expect(TokenType::Semi)?;
+        Ok(Tree {
+            typ: TreeType::StmtAssign,
+            tkn,
+            children
         })
     }
 
@@ -454,6 +521,7 @@ impl Parser {
                     TokenType::Equal | TokenType::OpenSquare => children.push(self.parse_stmt_assign()?),
                     _ => children.push(self.parse_stmt_expr()?),
                 },
+                TokenType::Mult => children.push(self.parse_stmt_assign_ptr()?),
                 _ => children.push(self.parse_stmt_expr()?),
             }
         }
@@ -533,7 +601,7 @@ impl Parser {
     pub fn parse_file(&mut self) -> Result<Tree, String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
-            30,
+            31,
             "Not all TokenTypes are handled in parse_file()"
         );
         let tkn = Token::new(
