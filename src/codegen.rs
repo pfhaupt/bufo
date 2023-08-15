@@ -16,6 +16,7 @@ macro_rules! perform_op {
             Type::U64 => unsafe { $dest.u64 = $reg1.u64 $op $reg2.u64 },
             Type::F32 => unsafe { $dest.f32 = $reg1.f32 $op $reg2.f32 },
             Type::F64 => unsafe { $dest.f64 = $reg1.f64 $op $reg2.f64 },
+            Type::Ptr(..) => unsafe { $dest.ptr = $reg1.ptr $op $reg2.ptr },
             _ => todo!()
         }
     };
@@ -56,6 +57,7 @@ union Memory {
     u64: u64,
     f32: f32,
     f64: f64,
+    ptr: usize
 }
 
 impl std::fmt::Display for Memory {
@@ -78,6 +80,7 @@ enum Type {
     I64,
     U32,
     U64,
+    Ptr(Box::<Type>),
     Arr(Box::<Type>, Vec<usize>),
     // Reserved for later use
     F32,
@@ -113,6 +116,25 @@ enum Instruction {
     LoadU64 {
         dest: usize,
         val: u64,
+    },
+    LoadUsize {
+        dest: usize,
+        val: usize,
+    },
+    LoadPtrRel {
+        dest: usize,
+        src: usize,
+        typ: Type,
+    },
+    LoadPtr {
+        dest: usize,
+        src: usize,
+        typ: Type,
+    },
+    StorePtr {
+        dest: usize,
+        src: usize,
+        typ: Type,
     },
     LoadF32 {
         dest: usize,
@@ -495,6 +517,7 @@ impl Generator {
                 return Err(format!("{}: {:?}: Unexpected Array Literal", ERR_STR, instr.tkn.get_loc()));
             }
             TreeType::ExprArrAccess => {
+                todo!();
                 let instr_children = &instr.children;
                 let name_tkn = &instr.tkn;
                 assert!(name_tkn.get_type() == TokenType::Name);
@@ -598,8 +621,22 @@ impl Generator {
                     let fn_return_type = func.get_return_type();
                     let params = func.get_params();
                     let mut params_as_list = params.clone();
-                    if fn_args.children.len() != params.len() {
-                        todo!()
+                    if fn_args.children.len() < params.len() {
+                        return Err(format!(
+                            "{}: {:?}: Too few arguments specified for function call. Expected {} arguments, got {}.",
+                            ERR_STR,
+                            instr.tkn.get_loc(),
+                            params.len(),
+                            fn_args.children.len()
+                        ));
+                    } else if fn_args.children.len() > params.len() {
+                        return Err(format!(
+                            "{}: {:?}: Too many arguments specified for function call. Expected {} arguments, got {}.",
+                            ERR_STR,
+                            instr.tkn.get_loc(),
+                            params.len(),
+                            fn_args.children.len()
+                        ));
                     }
                     let curr_reg_ctr = self.register_ctr;
                     for reg in 0..curr_reg_ctr {
@@ -646,6 +683,60 @@ impl Generator {
                     ))
                 }
             }
+            TreeType::Pointer => {
+                let val_name = &instr_children[0];
+                let name = val_name.tkn.get_value();
+                let reg = self.get_register();
+                let curr_fn = self
+                    .functions
+                    .get(&self.current_fn)
+                    .expect("At this point, function table is guaranteed to contain current_fn.");
+                match curr_fn.get_variable_location(&name) {
+                    Some(mem) => {
+                        self.code.push(Instruction::LoadPtrRel { dest: reg, src: mem.mem, typ: mem.typ.clone() });
+                        Ok(Variable {typ: Type::Ptr(Box::new(mem.typ)), mem: reg } )
+                    },
+                    None => Err(format!(
+                        "{}: {:?}: Undefined variable `{}`",
+                        ERR_STR,
+                        val_name.tkn.get_loc(),
+                        name
+                    )),
+                }
+            }
+            TreeType::Deref => {
+                let val_name = &instr_children[0];
+                let name = val_name.tkn.get_value();
+                let reg = self.get_register();
+                let curr_fn = self
+                    .functions
+                    .get(&self.current_fn)
+                    .expect("At this point, function table is guaranteed to contain current_fn.");
+                match curr_fn.get_variable_location(&name) {
+                    Some(mem) => match mem.clone().typ {
+                        Type::Ptr(t) => {
+                            let address = self.get_register();
+                            self.code.push(Instruction::LoadMem { reg: address, var: mem });
+                            self.code.push(Instruction::LoadPtr { dest: reg, src: address, typ: *t.clone() });
+                            Ok(Variable {typ: *t.clone(), mem: reg })
+                        },
+                        _ => panic!()
+                    },
+                    None => {
+                        let fp_str =
+                        if self.functions.contains_key(&name) {
+                            format!("\n{}: Function pointers are not supported yet.", NOTE_STR) }
+                        else { "".to_string() };
+                        Err(format!(
+                            "{}: {:?}: Undefined variable `{}`.{}",
+                            ERR_STR,
+                            val_name.tkn.get_loc(),
+                            name,
+                            fp_str
+                        ))
+                    },
+                }
+            }
             e => {
                 println!("{}: Unreachable Error when generating code! Could not convert:", ERR_STR);
                 todo!("Handle {:?} in convert_expr_atomic!", e)
@@ -658,6 +749,8 @@ impl Generator {
             TreeType::ExprLiteral
             | TreeType::ExprBinary
             | TreeType::ExprName
+            | TreeType::Pointer
+            | TreeType::Deref
             | TreeType::ExprArrAccess
             | TreeType::ExprArrLiteral
             | TreeType::ExprParen
@@ -688,9 +781,24 @@ impl Generator {
 
     fn convert_type(&mut self, typ_tree: &Tree) -> Result<Type, String> {
         let typ_children = &typ_tree.children;
-        assert!(typ_children.len() == 1);
         assert!(typ_tree.tkn.get_type() == TokenType::TypeDecl);
+        assert!(typ_children.len() == 1);
         let typ_type = &typ_children[0];
+        if typ_type.typ == TreeType::Pointer {
+            let actual_type = &typ_type.children[0];
+            if actual_type.children.len() > 0 && actual_type.children[0].typ == TreeType::ArrSize {
+                return Err(format!(
+                    "{}: {:?}: Can not declare pointer to an Array.",
+                    ERR_STR,
+                    actual_type.tkn.get_loc()
+                ));
+            }
+            let actual_type_name = actual_type.tkn.get_value();
+            match self.convert_type_str(&actual_type_name) {
+                Ok(t) => return Ok(Type::Ptr(Box::new(t))),
+                Err(e) => return Err(format!("{}: {:?}: {}", ERR_STR, actual_type.tkn.get_loc(), e))
+            }
+        }
         assert!(typ_type.tkn.get_type() == TokenType::Name);
         let typ_type_value = typ_type.tkn.get_value();
         let typ_size= if typ_type.children.len() == 0 { vec![] } else {
@@ -736,7 +844,7 @@ impl Generator {
         assert!(let_name.tkn.get_type() == TokenType::Name);
         let let_type = &instr_children[1];
         assert!(let_type.typ == TreeType::TypeDecl);
-        let expected_type = self.convert_type(let_type)?;
+        let mut expected_type = self.convert_type(let_type)?;
         let let_expr = &instr_children[2];
 
         let let_name_tkn = &let_name.tkn;
@@ -755,8 +863,8 @@ impl Generator {
             ));
         }
 
-        let mem = self.add_local_var(&let_name_tkn.get_value(), self.scope_depth, &expected_type);
         if let_expr.typ == TreeType::ExprArrLiteral {
+            let mem = self.add_local_var(&let_name_tkn.get_value(), self.scope_depth, &expected_type);
             match expected_type {
                 Type::Arr(t, size) => {
                     let elements = self.convert_let_arr(let_expr)?;
@@ -804,12 +912,12 @@ impl Generator {
             }
         } else {
             let reg = self.convert_expr(let_expr)?;
-            if expected_type != reg.typ {
-                match reg.typ {
-                    Type::Unknown => {
-                        self.resolve_types(expected_type.clone())?;
-                    }
-                    _ => {
+            match (expected_type.clone(), reg.typ.clone()) {
+                (e, Type::Unknown) => {
+                    self.resolve_types(e)?;
+                },
+                (Type::Ptr(t1, ..), Type::Ptr(t2, ..)) => {
+                    if t1 != t2 {
                         return Err(format!(
                             "{}: {:?}: Type mismatch! Expected type `{:?}`, got type `{:?}`.",
                             ERR_STR,
@@ -818,8 +926,21 @@ impl Generator {
                             reg.typ
                         ))
                     }
-                };
+                    expected_type = reg.typ.clone();
+                }
+                (e, t) => {
+                    if e != t {
+                        return Err(format!(
+                            "{}: {:?}: Type mismatch! Expected type `{:?}`, got type `{:?}`.",
+                            ERR_STR,
+                            let_name_tkn.get_loc(),
+                            e,
+                            t
+                        ))
+                    }
+                }
             }
+            let mem = self.add_local_var(&let_name_tkn.get_value(), self.scope_depth, &expected_type);
             self.code.push(Instruction::StoreMem {
                 reg: reg.mem,
                 var: Variable {
@@ -839,47 +960,93 @@ impl Generator {
         let instr_children = &assign_tree.children;
         assert!(instr_children.len() == 2);
         let assign_name = &instr_children[0];
-        assert!(assign_name.tkn.get_type() == TokenType::Name);
-        let var_name = assign_name.tkn.get_value();
-        let local_lookup = self
-            .functions
-            .get(&self.current_fn)
-            .expect("At this point, function table is guaranteed to contain current_fn.");
-        let var = match local_lookup.get_variable_location(&var_name) {
-            Some(i) => i,
-            None => {
-                return Err(format!(
-                    "{}: {:?}: Unknown variable `{}`",
-                    ERR_STR,
-                    assign_name.tkn.get_loc(),
-                    var_name
-                ))
-            }
-        };
         let assign_expr = &instr_children[1];
         let reg = self.convert_expr(assign_expr)?;
-        match (&var.typ, &reg.typ) {
-            (Type::Unknown, Type::Unknown) => panic!(),
-            (Type::Unknown, _) => todo!(),
-            (Type::Arr(typ, size), expr_typ) => {
-                println!("{:#?}", self.code);
-                todo!()
-            }
-            (typ, Type::Unknown) => {
-                self.resolve_types(typ.clone())?;
-                self.code.push(Instruction::StoreMem { reg: reg.mem, var });
-            }
-            (var_typ, expr_typ) => {
-                if var_typ != expr_typ {
+        if assign_name.tkn.get_type() == TokenType::Mult {
+            let var_name = &assign_name.children[0].tkn;
+            assert!(var_name.get_type() == TokenType::Name);
+            let local_lookup = self
+                .functions
+                .get(&self.current_fn)
+                .expect("At this point, function table is guaranteed to contain current_fn.");
+
+            let var = match local_lookup.get_variable_location(&var_name.get_value()) {
+                Some(i) => i,
+                None => {
                     return Err(format!(
-                        "{}: {:?}: Type mismatch! Expected type `{:?}`, got type `{:?}`.",
+                        "{}: {:?}: Unknown variable `{}`",
                         ERR_STR,
                         assign_name.tkn.get_loc(),
-                        var.typ.clone(),
-                        reg.typ.clone()
-                    ));
+                        var_name.get_value()
+                    ))
                 }
-                self.code.push(Instruction::StoreMem { reg: reg.mem, var });
+            };
+            match var.clone().typ {
+                Type::Ptr(t) => {
+                    if *t != reg.typ {
+                        return Err(format!(
+                            "{}: {:?}: Type Mismatch when assigning to Pointer. Pointer expected Type `{:?}`, but got Type `{:?}`.",
+                            ERR_STR,
+                            assign_name.tkn.get_loc(),
+                            t,
+                            reg.typ
+                        ));
+                    }
+                    self.resolve_types(*t.clone())?;
+                    let reg_mov = self.get_register();
+                    self.code.push(Instruction::LoadMem { reg: reg_mov, var });
+                    self.code.push(Instruction::StorePtr { src: reg.mem, dest: reg_mov, typ: *t });
+                },
+                e => {
+                    return Err(format!(
+                        "{}: {:?}: Can not dereference Type `{:?}`.",
+                        ERR_STR,
+                        assign_name.tkn.get_loc(),
+                        e
+                    ))
+                }
+            }
+        } else {
+            assert!(assign_name.tkn.get_type() == TokenType::Name);
+            let var_name = assign_name.tkn.get_value();
+            let local_lookup = self
+                .functions
+                .get(&self.current_fn)
+                .expect("At this point, function table is guaranteed to contain current_fn.");
+            let var = match local_lookup.get_variable_location(&var_name) {
+                Some(i) => i,
+                None => {
+                    return Err(format!(
+                        "{}: {:?}: Unknown variable `{}`",
+                        ERR_STR,
+                        assign_name.tkn.get_loc(),
+                        var_name
+                    ))
+                }
+            };
+            match (&var.typ, &reg.typ) {
+                (Type::Unknown, Type::Unknown) => panic!(),
+                (Type::Unknown, _) => todo!(),
+                (Type::Arr(..), _) => {
+                    println!("{:#?}", self.code);
+                    todo!()
+                }
+                (typ, Type::Unknown) => {
+                    self.resolve_types(typ.clone())?;
+                    self.code.push(Instruction::StoreMem { reg: reg.mem, var });
+                }
+                (var_typ, expr_typ) => {
+                    if var_typ != expr_typ {
+                        return Err(format!(
+                            "{}: {:?}: Type mismatch! Expected type `{:?}`, got type `{:?}`.",
+                            ERR_STR,
+                            assign_name.tkn.get_loc(),
+                            var.typ.clone(),
+                            reg.typ.clone()
+                        ));
+                    }
+                    self.code.push(Instruction::StoreMem { reg: reg.mem, var });
+                }
             }
         }
         self.reset_registers();
@@ -1043,7 +1210,11 @@ impl Generator {
                     let val = parse_type!(u64, loc, val, typ)?;
                     Instruction::LoadU64 { dest: *dest, val }
                 }
-                _ => todo!(),
+                Type::Ptr(t, ..) => {
+                    let val = parse_type!(usize, loc, val, t)?;
+                    Instruction::LoadUsize { dest: *dest, val }
+                }
+                _ => todo!("{:?}", loc),
             },
             Instruction::Add {
                 dest,
@@ -1142,11 +1313,18 @@ impl Generator {
         let return_found = return_scopes.contains(&1);
         let return_type = self.functions.get(&self.current_fn).unwrap().return_type.clone();
         match (return_found, return_type) {
-            (_, Type::None) => {
+            (false, Type::None) => {
+                println!(
+                    "{}: Inserting implicit Return instruction in {}\n{}: This does not change the behavior of the program.",
+                    WARN_STR, self.current_fn, NOTE_STR
+                );
+                self.code.push(Instruction::Return {});
+            }
+            (true, Type::None) => {
                 if self.code.len() == 0 || !(*self.code.last().unwrap() == Instruction::Return {}) {
                     println!(
-                        "{}: Inserting Return instruction in {}",
-                        WARN_STR, self.current_fn
+                        "{}: Inserting implicit Return instruction in {}\n{}: This does not change the behavior of the program.",
+                        WARN_STR, self.current_fn, NOTE_STR
                     );
                     self.code.push(Instruction::Return {});
                 }
@@ -1167,7 +1345,8 @@ impl Generator {
                         ERR_STR,
                         fn_name.get_loc(),
                         self.current_fn,
-                        t));
+                        t
+                    ));
                 }
             }
         }
@@ -1184,23 +1363,41 @@ impl Generator {
                 TreeType::Param => {
                     assert!(p.children.len() == 1);
                     let param_name = p.tkn.get_value();
-
                     let param_type = &p.children[0].typ;
                     assert!(*param_type == TreeType::TypeDecl);
                     let param_type_child = &p.children[0].children;
                     let type_name = &param_type_child[0];
-                    assert!(type_name.tkn.get_type() == TokenType::Name);
-                    let type_name_str = type_name.tkn.get_value();
+                    let typ =
+                    if type_name.tkn.get_type() == TokenType::Ampersand {
+                        let type_name = &type_name.children[0];
+                        assert!(type_name.typ == TreeType::Name);
+                        let type_name_str = type_name.tkn.get_value();
 
-                    let typ = match self.convert_type_str(&type_name_str) {
-                        Ok(t) => t,
-                        Err(e) => {
-                            return Err(format!(
-                                "{}: {:?}: {}",
-                                ERR_STR,
-                                type_name.tkn.get_loc(),
-                                e
-                            ))
+                        match self.convert_type_str(&type_name_str) {
+                            Ok(t) => Type::Ptr(Box::new(t)),
+                            Err(e) => {
+                                return Err(format!(
+                                    "{}: {:?}: {}",
+                                    ERR_STR,
+                                    type_name.tkn.get_loc(),
+                                    e
+                                ))
+                            }
+                        }
+                    } else {
+                        assert!(type_name.tkn.get_type() == TokenType::Name);
+                        let type_name_str = type_name.tkn.get_value();
+
+                        match self.convert_type_str(&type_name_str) {
+                            Ok(t) => t,
+                            Err(e) => {
+                                return Err(format!(
+                                    "{}: {:?}: {}",
+                                    ERR_STR,
+                                    type_name.tkn.get_loc(),
+                                    e
+                                ))
+                            }
                         }
                     };
 
@@ -1288,10 +1485,10 @@ impl Generator {
     }
 
     pub fn interpret(&mut self) -> Result<(), String> {
-        for (i, c) in self.code.iter().enumerate() {
-            println!("{i:3} -> {c:?}");
-        }
-        todo!();
+        // for (i, c) in self.code.iter().enumerate() {
+        //     println!("{i:3} -> {c:?}");
+        // }
+        // todo!();
         let entry_point = String::from("main");
 
         if !self.functions.contains_key(&entry_point) {
@@ -1344,6 +1541,18 @@ impl Generator {
                 }
                 Instruction::LoadU64 { dest, val } => {
                     self.registers[*dest].u64 = *val;
+                }
+                Instruction::LoadUsize { dest, val } => {
+                    self.registers[*dest].ptr = *val;
+                }
+                Instruction::LoadPtrRel { dest, src, .. } => {
+                    self.registers[*dest].ptr = stack_ptr + *src + 1;
+                }
+                Instruction::LoadPtr { dest, src, .. } => {
+                    self.registers[*dest].ptr = unsafe { self.registers[*src].ptr };
+                }
+                Instruction::StorePtr { dest, src, .. } => {
+                    stack[unsafe { self.registers[*dest].ptr }] = self.registers[*src];
                 }
                 Instruction::LoadF32 { .. } => {
                     todo!()
