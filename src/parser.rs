@@ -64,7 +64,7 @@ pub struct Parser {
 impl Parser {
     pub fn new(file_path: &String, tokens: Vec<Token>) -> Self {
         Self {
-            file_path: file_path.clone(),
+            file_path: file_path.to_owned(),
             tokens,
             ptr: 0,
             fuel: Cell::new(256),

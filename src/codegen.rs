@@ -14,7 +14,7 @@ macro_rules! perform_op {
             Type::I64 => unsafe { $dest.i64 = $reg1.i64 $op $reg2.i64 },
             Type::U32 => unsafe { $dest.u32 = $reg1.u32 $op $reg2.u32 },
             Type::U64 => unsafe { $dest.u64 = $reg1.u64 $op $reg2.u64 },
-            Type::USIZE => unsafe { $dest.ptr = $reg1.ptr $op $reg2.ptr },
+            Type::Usize => unsafe { $dest.ptr = $reg1.ptr $op $reg2.ptr },
             Type::F32 => unsafe { $dest.f32 = $reg1.f32 $op $reg2.f32 },
             Type::F64 => unsafe { $dest.f64 = $reg1.f64 $op $reg2.f64 },
             Type::Ptr(..) => unsafe { $dest.ptr = $reg1.ptr $op $reg2.ptr },
@@ -81,7 +81,7 @@ enum Type {
     I64,
     U32,
     U64,
-    USIZE,
+    Usize,
     Ptr(Box::<Type>),
     Arr(Box::<Type>, Vec<usize>),
     // Reserved for later use
@@ -429,7 +429,7 @@ impl Generator {
                         let val = parse_type!(u64, loc, val, typ)?;
                         self.code.push(Instruction::LoadU64 { dest, val });
                     }
-                    Type::USIZE => {
+                    Type::Usize => {
                         let val = parse_type!(usize, loc, val, typ)?;
                         self.code.push(Instruction::LoadUsize { dest, val });
                     }
@@ -520,7 +520,7 @@ impl Generator {
                 Ok(Variable { typ, mem: dest })
             }
             TreeType::ExprArrLiteral => {
-                return Err(format!("{}: {:?}: Unexpected Array Literal", ERR_STR, instr.tkn.get_loc()));
+                Err(format!("{}: {:?}: Unexpected Array Literal", ERR_STR, instr.tkn.get_loc()))
             }
             TreeType::ExprArrAccess => {
                 let instr_children = &instr.children;
@@ -538,7 +538,7 @@ impl Generator {
                                 self.code.push(Instruction::LoadUsize { dest: index_reg, val: variable.mem });
                                 for (count, child) in arr_literal.children.iter().enumerate() {
                                     let reg = self.convert_expr(child)?;
-                                    if reg.typ != Type::Unknown && reg.typ != Type::USIZE {
+                                    if reg.typ != Type::Unknown && reg.typ != Type::Usize {
                                         return Err(format!(
                                             "{}: {:?}: Type Mismatch: Array indices are expected to be of Type usize. Got `{:?}`",
                                             ERR_STR,
@@ -548,11 +548,11 @@ impl Generator {
                                     }
                                     // TODO: Handle Out Of Bounds!!
 
-                                    self.resolve_types(Type::USIZE)?;
+                                    self.resolve_types(Type::Usize)?;
                                     let offset = if count != size.len() - 1 { size[size.len() - count - 1] } else { 1 };
                                     self.code.push(Instruction::LoadUsize { dest: temp_reg, val: offset });
-                                    self.code.push(Instruction::Mul { dest: temp_reg, src: reg.mem, typ: Type::USIZE });
-                                    self.code.push(Instruction::Add { dest: index_reg, src: temp_reg, typ: Type::USIZE });
+                                    self.code.push(Instruction::Mul { dest: temp_reg, src: reg.mem, typ: Type::Usize });
+                                    self.code.push(Instruction::Add { dest: index_reg, src: temp_reg, typ: Type::Usize });
                                 }
                                 let reg = self.get_register();
                                 self.code.push(Instruction::LoadPtrRel { dest: reg, src: index_reg, typ: *typ.clone() });
@@ -618,59 +618,61 @@ impl Generator {
                     let fn_return_type = func.get_return_type();
                     let params = func.get_params();
                     let mut params_as_list = params.clone();
-                    if fn_args.children.len() < params.len() {
-                        return Err(format!(
+
+                    match fn_args.children.len().cmp(&params.len()) {
+                        std::cmp::Ordering::Less => Err(format!(
                             "{}: {:?}: Too few arguments specified for function call. Expected {} arguments, got {}.",
                             ERR_STR,
                             instr.tkn.get_loc(),
                             params.len(),
                             fn_args.children.len()
-                        ));
-                    } else if fn_args.children.len() > params.len() {
-                        return Err(format!(
+                        )),
+                        std::cmp::Ordering::Greater => Err(format!(
                             "{}: {:?}: Too many arguments specified for function call. Expected {} arguments, got {}.",
                             ERR_STR,
                             instr.tkn.get_loc(),
                             params.len(),
                             fn_args.children.len()
-                        ));
-                    }
-                    let curr_reg_ctr = self.register_ctr;
-                    for reg in 0..curr_reg_ctr {
-                        self.code.push(Instruction::Push { reg });
-                    }
-                    for (reg_ctr, arg) in fn_args.children.iter().enumerate() {
-                        let reg = self.convert_arg(arg)?;
-                        let param = params_as_list.pop_first().unwrap();
-                        let param_type = param.1;
-                        if reg.typ == Type::Unknown {
-                            self.resolve_types(param_type.typ)?;
-                        } else if reg.typ != param_type.typ {
-                            return Err(format!("{}: {:?}: Type mismatch in Function Call. Argument {} is expected to be type `{:?}`, found `{:?}`.",
-                                ERR_STR,
-                                instr.tkn.get_loc(),
-                                reg_ctr + 1,
-                                param_type.typ,
-                                reg.typ)
-                            );
+                        )),
+                        _ => {
+                            let curr_reg_ctr = self.register_ctr;
+                            for reg in 0..curr_reg_ctr {
+                                self.code.push(Instruction::Push { reg });
+                            }
+                            for (reg_ctr, arg) in fn_args.children.iter().enumerate() {
+                                let reg = self.convert_arg(arg)?;
+                                let param = params_as_list.pop_first().unwrap();
+                                let param_type = param.1;
+                                if reg.typ == Type::Unknown {
+                                    self.resolve_types(param_type.typ)?;
+                                } else if reg.typ != param_type.typ {
+                                    return Err(format!("{}: {:?}: Type mismatch in Function Call. Argument {} is expected to be type `{:?}`, found `{:?}`.",
+                                        ERR_STR,
+                                        instr.tkn.get_loc(),
+                                        reg_ctr + 1,
+                                        param_type.typ,
+                                        reg.typ)
+                                    );
+                                }
+                                self.code.push(Instruction::Move {
+                                    dest: reg_ctr,
+                                    src: reg.mem,
+                                });
+                            }
+                            self.code.push(Instruction::Call { fn_name });
+                            let reg = self.get_register();
+                            if fn_return_type != Type::None {
+                                self.code.push(Instruction::Pop { reg });
+                            }
+                            for reg in (0..curr_reg_ctr).rev() {
+                                self.code.push(Instruction::Pop { reg });
+                            }
+                            Ok(Variable {
+                                typ: fn_return_type,
+                                mem: reg,
+                            })
                         }
-                        self.code.push(Instruction::Move {
-                            dest: reg_ctr,
-                            src: reg.mem,
-                        });
                     }
-                    self.code.push(Instruction::Call { fn_name });
-                    let reg = self.get_register();
-                    if fn_return_type != Type::None {
-                        self.code.push(Instruction::Pop { reg });
-                    }
-                    for reg in (0..curr_reg_ctr).rev() {
-                        self.code.push(Instruction::Pop { reg });
-                    }
-                    Ok(Variable {
-                        typ: fn_return_type,
-                        mem: reg,
-                    })
                 } else {
                     Err(format!(
                         "{} {:?}: Unknown function `{}`",
@@ -768,7 +770,7 @@ impl Generator {
             "i64" => Ok(Type::I64),
             "u32" => Ok(Type::U32),
             "u64" => Ok(Type::U64),
-            "usize" => Ok(Type::USIZE),
+            "usize" => Ok(Type::Usize),
             // Reserved for future use
             "f32" => Ok(Type::F32),
             "f64" => Ok(Type::F64),
@@ -786,7 +788,7 @@ impl Generator {
         let typ_type = &typ_children[0];
         if typ_type.typ == TreeType::Pointer {
             let actual_type = &typ_type.children[0];
-            if actual_type.children.len() > 0 && actual_type.children[0].typ == TreeType::ArrSize {
+            if !actual_type.children.is_empty() && actual_type.children[0].typ == TreeType::ArrSize {
                 return Err(format!(
                     "{}: {:?}: Can not declare pointer to an Array.",
                     ERR_STR,
@@ -801,7 +803,7 @@ impl Generator {
         }
         assert!(typ_type.tkn.get_type() == TokenType::Name);
         let typ_type_value = typ_type.tkn.get_value();
-        let typ_size= if typ_type.children.len() == 0 { vec![] } else {
+        let typ_size= if typ_type.children.is_empty() { vec![] } else {
             let mut size = vec![];
             for c in &typ_type.children[0].children {
                 assert!(c.typ == TreeType::ArrSize);
@@ -819,7 +821,7 @@ impl Generator {
         };
         match self.convert_type_str(typ_type_value.as_str()) {
             Ok(t) => {
-                if typ_size.len() == 0 { Ok(t) }
+                if typ_size.is_empty() { Ok(t) }
                 else { Ok(Type::Arr(Box::new(t), typ_size))}
             }
             Err(e) => Err(format!("{}: {:?}: {}", ERR_STR, typ_type.tkn.get_loc(), e)),
@@ -869,7 +871,7 @@ impl Generator {
                     let elements = self.convert_let_arr(let_expr)?;
                     let expected_size = size.iter().fold(1, |acc, elem| acc * *elem);
                     if elements.len() != expected_size {
-                        let pos = if elements.len() == 0 {
+                        let pos = if elements.is_empty() {
                             let_name.tkn.get_loc()
                         } else {
                             elements.last().unwrap().1.clone()
@@ -1032,7 +1034,7 @@ impl Generator {
                     self.code.push(Instruction::LoadUsize { dest: index_reg, val: var.mem });
                     for (count, child) in assign_name.children[0].children.iter().enumerate() {
                         let reg = self.convert_expr(child)?;
-                        if reg.typ != Type::Unknown && reg.typ != Type::USIZE {
+                        if reg.typ != Type::Unknown && reg.typ != Type::Usize {
                             return Err(format!(
                                 "{}: {:?}: Type Mismatch: Array indices are expected to be of Type usize. Got `{:?}`",
                                 ERR_STR,
@@ -1042,11 +1044,11 @@ impl Generator {
                         }
                         // TODO: Handle Out Of Bounds!!
 
-                        self.resolve_types(Type::USIZE)?;
+                        self.resolve_types(Type::Usize)?;
                         let offset = if count != size.len() - 1 { size[size.len() - count - 1] } else { 1 };
                         self.code.push(Instruction::LoadUsize { dest: temp_reg, val: offset });
-                        self.code.push(Instruction::Mul { dest: temp_reg, src: reg.mem, typ: Type::USIZE });
-                        self.code.push(Instruction::Add { dest: index_reg, src: temp_reg, typ: Type::USIZE });
+                        self.code.push(Instruction::Mul { dest: temp_reg, src: reg.mem, typ: Type::Usize });
+                        self.code.push(Instruction::Add { dest: index_reg, src: temp_reg, typ: Type::Usize });
                     }
                     let reg_tmp = self.get_register();
                     self.code.push(Instruction::LoadPtrRel { dest: reg_tmp, src: index_reg, typ: *typ.clone() });
@@ -1231,7 +1233,7 @@ impl Generator {
                     let val = parse_type!(u64, loc, val, typ)?;
                     Instruction::LoadU64 { dest: *dest, val }
                 }
-                Type::USIZE => {
+                Type::Usize => {
                     let val = parse_type!(usize, loc, val, typ)?;
                     Instruction::LoadUsize { dest: *dest, val }
                 }
@@ -1346,7 +1348,7 @@ impl Generator {
                 self.code.push(Instruction::Return {});
             }
             (true, Type::None) => {
-                if self.code.len() == 0 || !(*self.code.last().unwrap() == Instruction::Return {}) {
+                if self.code.is_empty() || !(*self.code.last().unwrap() == Instruction::Return {}) {
                     println!(
                         "{}: Inserting implicit Return instruction in {}\n{}: This does not change the behavior of the program.",
                         WARN_STR, self.current_fn, NOTE_STR
