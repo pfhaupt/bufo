@@ -150,7 +150,11 @@ impl Parser {
             }
         }
         self.expect(TokenType::ClosingSquare)?;
-        Ok(Tree { typ: TreeType::ExprArrLiteral, tkn, children })
+        Ok(Tree {
+            typ: TreeType::ExprArrLiteral,
+            tkn,
+            children,
+        })
     }
 
     fn parse_name(&mut self) -> Result<Tree, String> {
@@ -217,7 +221,7 @@ impl Parser {
                 Tree {
                     typ: TreeType::Pointer,
                     tkn,
-                    children
+                    children,
                 }
             }
             TokenType::Asterisk => {
@@ -227,7 +231,7 @@ impl Parser {
                 Tree {
                     typ: TreeType::Deref,
                     tkn,
-                    children
+                    children,
                 }
             }
             e => {
@@ -306,7 +310,7 @@ impl Parser {
             let size = Tree {
                 typ: TreeType::ArrSize,
                 tkn: self.expect(TokenType::IntLiteral)?,
-                children: vec![]
+                children: vec![],
             };
             children.push(size);
             if !self.eat(TokenType::Comma) {
@@ -314,7 +318,11 @@ impl Parser {
             }
         }
         self.expect(TokenType::ClosingSquare)?;
-        Ok(Tree { typ: TreeType::ArrSize, tkn, children })
+        Ok(Tree {
+            typ: TreeType::ArrSize,
+            tkn,
+            children,
+        })
     }
 
     fn parse_type_decl(&mut self) -> Result<Tree, String> {
@@ -325,12 +333,12 @@ impl Parser {
                 let mut ptr = Tree {
                     typ: TreeType::Pointer,
                     tkn: self.expect(TokenType::Ampersand)?,
-                    children: vec![]
+                    children: vec![],
                 };
                 let mut typ_name = Tree {
                     typ: TreeType::Name,
                     tkn: self.expect(TokenType::Name)?,
-                    children: vec![]
+                    children: vec![],
                 };
                 if self.at(TokenType::OpenSquare) {
                     typ_name.children.push(self.parse_type_arr()?);
@@ -384,14 +392,14 @@ impl Parser {
             TokenType::Equal => Tree {
                 typ: TreeType::Name,
                 tkn: self.expect(TokenType::Name)?,
-                children: vec![]
+                children: vec![],
             },
             TokenType::OpenSquare => Tree {
                 typ: TreeType::ExprArrAccess,
                 tkn: self.expect(TokenType::Name)?,
-                children: vec![self.parse_expr_array()?]
+                children: vec![self.parse_expr_array()?],
             },
-            _ => todo!()
+            _ => todo!(),
         };
         self.expect(TokenType::Equal)?;
         children.push(node);
@@ -409,12 +417,12 @@ impl Parser {
         let mut var_ptr = Tree {
             typ: TreeType::Pointer,
             tkn: self.expect(TokenType::Asterisk)?,
-            children: vec![]
+            children: vec![],
         };
         let var_name = Tree {
             typ: TreeType::Name,
             tkn: self.expect(TokenType::Name)?,
-            children: vec![]
+            children: vec![],
         };
         var_ptr.children.push(var_name);
         children.push(var_ptr);
@@ -424,7 +432,7 @@ impl Parser {
         Ok(Tree {
             typ: TreeType::StmtAssign,
             tkn,
-            children
+            children,
         })
     }
 
@@ -520,7 +528,9 @@ impl Parser {
                 TokenType::IfKeyword => children.push(self.parse_stmt_if()?),
                 TokenType::ReturnKeyword => children.push(self.parse_stmt_return()?),
                 TokenType::Name => match self.nth(1) {
-                    TokenType::Equal | TokenType::OpenSquare => children.push(self.parse_stmt_assign()?),
+                    TokenType::Equal | TokenType::OpenSquare => {
+                        children.push(self.parse_stmt_assign()?)
+                    }
                     _ => children.push(self.parse_stmt_expr()?),
                 },
                 TokenType::Asterisk => children.push(self.parse_stmt_assign_ptr()?),

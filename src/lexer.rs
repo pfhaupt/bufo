@@ -191,11 +191,7 @@ impl Lexer {
                     "return" => TokenType::ReturnKeyword,
                     _ => TokenType::Name,
                 };
-                Ok(Token {
-                    typ,
-                    value,
-                    loc,
-                })
+                Ok(Token { typ, value, loc })
             }
             '(' => Ok(Token {
                 typ: TokenType::OpenRound,
@@ -277,11 +273,7 @@ impl Lexer {
                 } else {
                     (TokenType::Equal, String::from("="))
                 };
-                Ok(Token {
-                    typ,
-                    value,
-                    loc,
-                })
+                Ok(Token { typ, value, loc })
             }
             '<' => {
                 let (typ, value) = if let Ok(nc) = self.next_char() {
@@ -295,11 +287,7 @@ impl Lexer {
                 } else {
                     (TokenType::CmpLt, String::from("<"))
                 };
-                Ok(Token {
-                    typ,
-                    value,
-                    loc,
-                })
+                Ok(Token { typ, value, loc })
             }
             '>' => {
                 let (typ, value) = if let Ok(nc) = self.next_char() {
@@ -313,11 +301,7 @@ impl Lexer {
                 } else {
                     (TokenType::CmpGt, String::from(">"))
                 };
-                Ok(Token {
-                    typ,
-                    value,
-                    loc,
-                })
+                Ok(Token { typ, value, loc })
             }
             ':' => Ok(Token {
                 typ: TokenType::TypeDecl,
@@ -341,11 +325,7 @@ impl Lexer {
                 } else {
                     (TokenType::Minus, String::from("-"))
                 };
-                Ok(Token {
-                    typ,
-                    value,
-                    loc,
-                })
+                Ok(Token { typ, value, loc })
             }
             '*' => Ok(Token {
                 typ: TokenType::Asterisk,
