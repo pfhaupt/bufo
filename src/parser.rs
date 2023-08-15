@@ -218,9 +218,9 @@ impl Parser {
                     children
                 }
             }
-            TokenType::Mult => {
+            TokenType::Asterisk => {
                 let (tkn, mut children) = self.open();
-                self.expect(TokenType::Mult)?;
+                self.expect(TokenType::Asterisk)?;
                 children.push(self.parse_name()?);
                 Tree {
                     typ: TreeType::Deref,
@@ -270,7 +270,7 @@ impl Parser {
         fn tightness(typ: TokenType) -> Option<usize> {
             [
                 [TokenType::Plus, TokenType::Minus].as_slice(),
-                &[TokenType::Mult, TokenType::Div],
+                &[TokenType::Asterisk, TokenType::ForwardSlash],
                 &[
                     TokenType::CmpEq,
                     TokenType::CmpNeq,
@@ -406,7 +406,7 @@ impl Parser {
         let (tkn, mut children) = self.open();
         let mut var_ptr = Tree {
             typ: TreeType::Pointer,
-            tkn: self.expect(TokenType::Mult)?,
+            tkn: self.expect(TokenType::Asterisk)?,
             children: vec![]
         };
         let var_name = Tree {
@@ -521,7 +521,7 @@ impl Parser {
                     TokenType::Equal | TokenType::OpenSquare => children.push(self.parse_stmt_assign()?),
                     _ => children.push(self.parse_stmt_expr()?),
                 },
-                TokenType::Mult => children.push(self.parse_stmt_assign_ptr()?),
+                TokenType::Asterisk => children.push(self.parse_stmt_assign_ptr()?),
                 _ => children.push(self.parse_stmt_expr()?),
             }
         }

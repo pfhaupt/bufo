@@ -477,8 +477,8 @@ impl Generator {
                 match op.tkn.get_type() {
                     TokenType::Plus => self.code.push(Instruction::Add { dest, src, typ: typ.clone() }),
                     TokenType::Minus => self.code.push(Instruction::Sub { dest, src, typ: typ.clone() }),
-                    TokenType::Mult => self.code.push(Instruction::Mul { dest, src, typ: typ.clone() }),
-                    TokenType::Div => self.code.push(Instruction::Div { dest, src, typ: typ.clone() }),
+                    TokenType::Asterisk => self.code.push(Instruction::Mul { dest, src, typ: typ.clone() }),
+                    TokenType::ForwardSlash => self.code.push(Instruction::Div { dest, src, typ: typ.clone() }),
                     TokenType::CmpEq => {
                         self.code.push(Instruction::Cmp { dest, src, typ: typ.clone() });
                         self.unresolved_jmp_instr.push_back(self.code.len());
@@ -962,7 +962,7 @@ impl Generator {
         let assign_name = &instr_children[0];
         let assign_expr = &instr_children[1];
         let reg = self.convert_expr(assign_expr)?;
-        if assign_name.tkn.get_type() == TokenType::Mult {
+        if assign_name.tkn.get_type() == TokenType::Asterisk {
             let var_name = &assign_name.children[0].tkn;
             assert!(var_name.get_type() == TokenType::Name);
             let local_lookup = self

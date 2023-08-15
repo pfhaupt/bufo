@@ -24,8 +24,8 @@ pub enum TokenType {
     Equal,
     Plus,
     Minus,
-    Mult,
-    Div,
+    Asterisk,
+    ForwardSlash,
     CmpEq,
     CmpNeq,
     CmpLt,
@@ -348,12 +348,12 @@ impl Lexer {
                 })
             }
             '*' => Ok(Token {
-                typ: TokenType::Mult,
+                typ: TokenType::Asterisk,
                 value: String::from(c),
                 loc,
             }),
             '/' => Ok(Token {
-                typ: TokenType::Div,
+                typ: TokenType::ForwardSlash,
                 value: String::from(c),
                 loc,
             }),
