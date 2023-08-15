@@ -54,6 +54,7 @@ impl Tree {
 }
 
 pub struct Parser {
+    file_path: String,
     tokens: Vec<Token>,
     ptr: usize,
     fuel: Cell<u32>,
@@ -61,8 +62,9 @@ pub struct Parser {
 }
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Self {
+    pub fn new(file_path: &String, tokens: Vec<Token>) -> Self {
         Self {
+            file_path: file_path.clone(),
             tokens,
             ptr: 0,
             fuel: Cell::new(256),
@@ -606,8 +608,8 @@ impl Parser {
         );
         let tkn = Token::new(
             TokenType::File,
-            String::from("root"),
-            Location::new(String::from("idk"), 0, 0),
+            self.file_path.clone(),
+            Location::new(self.file_path.clone(), 0, 0),
         );
         let mut children = vec![];
         while !self.eof() {

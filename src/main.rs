@@ -16,7 +16,7 @@ fn compile() -> Result<(), String> {
     lexer.tokenize()?;
     // println!("{:#?}", lexer.get_tokens());
 
-    let mut parser = Parser::new(lexer.get_tokens());
+    let mut parser = Parser::new(&path, lexer.get_tokens());
     let ast = parser.parse_file()?;
     // ast.print_debug();
     // exit(1);
