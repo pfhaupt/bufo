@@ -7,10 +7,10 @@ use crate::codegen::ERR_STR;
 pub enum TokenType {
     File,
     IntLiteral,
-    OpenParenthesis,
-    ClosingParenthesis,
-    OpenBracket,
-    ClosingBracket,
+    OpenParen,
+    ClosingParen,
+    OpenCurly,
+    ClosingCurly,
     FnKeyword,
     LetKeyword,
     IfKeyword,
@@ -195,22 +195,22 @@ impl Lexer {
                 })
             }
             '(' => Ok(Token {
-                typ: TokenType::OpenParenthesis,
+                typ: TokenType::OpenParen,
                 value: String::from("("),
                 loc,
             }),
             ')' => Ok(Token {
-                typ: TokenType::ClosingParenthesis,
+                typ: TokenType::ClosingParen,
                 value: String::from(")"),
                 loc,
             }),
             '{' => Ok(Token {
-                typ: TokenType::OpenBracket,
+                typ: TokenType::OpenCurly,
                 value: String::from("{"),
                 loc,
             }),
             '}' => Ok(Token {
-                typ: TokenType::ClosingBracket,
+                typ: TokenType::ClosingCurly,
                 value: String::from("}"),
                 loc,
             }),
