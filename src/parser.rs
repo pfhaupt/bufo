@@ -19,11 +19,14 @@ pub enum TreeType {
     StmtIf,
     StmtReturn,
     ExprName,
+    ExprArrLiteral,
+    ExprArrAccess,
     ExprLiteral,
     ExprBinary,
     ExprParen,
     ExprCall,
     TypeDecl,
+    ArrSize,
 }
 
 #[derive(Debug, Clone)]
@@ -132,6 +135,49 @@ impl Parser {
         })
     }
 
+    fn parse_expr_array(&mut self) -> Result<Tree, String> {
+        let (tkn, mut children) = self.open();
+        self.expect(TokenType::OpenSquare)?;
+        while !self.at(TokenType::ClosingSquare) && !self.eof() {
+            let elem = self.parse_expr()?;
+            children.push(elem);
+            if !self.eat(TokenType::Comma) {
+                break;
+            }
+        }
+        self.expect(TokenType::ClosingSquare)?;
+        Ok(Tree { typ: TreeType::ExprArrLiteral, tkn, children })
+    }
+
+    fn parse_name(&mut self) -> Result<Tree, String> {
+        Ok(match self.nth(1) {
+            TokenType::OpenRound => self.parse_expr_call()?,
+            TokenType::OpenSquare => {
+                let (tkn, mut children) = self.open();
+                self.expect(TokenType::Name)?;
+                children.push(self.parse_expr_array()?);
+                Tree {
+                    typ: TreeType::ExprArrAccess,
+                    tkn,
+                    children,
+                }
+            }
+            _ => {
+                let (tkn, mut children) = self.open();
+                children.push(Tree {
+                    typ: TreeType::Name,
+                    tkn: self.expect(TokenType::Name)?,
+                    children: vec![],
+                });
+                Tree {
+                    typ: TreeType::ExprName,
+                    tkn,
+                    children,
+                }
+            }
+        })
+    }
+
     fn parse_expr_delim(&mut self) -> Result<Tree, String> {
         Ok(match self.nth(0) {
             TokenType::IntLiteral => {
@@ -147,22 +193,7 @@ impl Parser {
                     children,
                 }
             }
-            TokenType::Name => match self.nth(1) {
-                TokenType::OpenRound => self.parse_expr_call()?,
-                _ => {
-                    let (tkn, mut children) = self.open();
-                    children.push(Tree {
-                        typ: TreeType::Name,
-                        tkn: self.expect(TokenType::Name)?,
-                        children: vec![],
-                    });
-                    Tree {
-                        typ: TreeType::ExprName,
-                        tkn,
-                        children,
-                    }
-                }
-            },
+            TokenType::Name => self.parse_name()?,
             TokenType::OpenRound => {
                 let (tkn, mut children) = self.open();
                 self.expect(TokenType::OpenRound)?;
@@ -174,6 +205,7 @@ impl Parser {
                     children,
                 }
             }
+            TokenType::OpenSquare => self.parse_expr_array()?,
             e => {
                 let ptr = if self.ptr == self.tokens.len() {
                     self.ptr - 1
@@ -243,14 +275,36 @@ impl Parser {
         self.parse_expr_rec(TokenType::Eof)
     }
 
+    fn parse_type_arr(&mut self) -> Result<Tree, String> {
+        let (tkn, mut children) = self.open();
+        self.expect(TokenType::OpenSquare)?;
+        while !self.at(TokenType::ClosingSquare) && !self.eof() {
+            let size = Tree {
+                typ: TreeType::ArrSize,
+                tkn: self.expect(TokenType::IntLiteral)?,
+                children: vec![]
+            };
+            children.push(size);
+            if !self.eat(TokenType::Comma) {
+                break;
+            }
+        }
+        self.expect(TokenType::ClosingSquare)?;
+        Ok(Tree { typ: TreeType::ArrSize, tkn, children })
+    }
+
     fn parse_type_decl(&mut self) -> Result<Tree, String> {
         let (tkn, mut children) = self.open();
         self.expect(TokenType::TypeDecl)?;
-        children.push(Tree {
+        let mut name = Tree {
             typ: TreeType::Name,
             tkn: self.expect(TokenType::Name)?,
             children: vec![],
-        });
+        };
+        if self.at(TokenType::OpenSquare) {
+            name.children.push(self.parse_type_arr()?);
+        }
+        children.push(name);
         Ok(Tree {
             typ: TreeType::TypeDecl,
             tkn,
@@ -281,12 +335,21 @@ impl Parser {
     fn parse_stmt_assign(&mut self) -> Result<Tree, String> {
         assert!(self.at(TokenType::Name));
         let (tkn, mut children) = self.open();
-        children.push(Tree {
-            typ: TreeType::Name,
-            tkn: self.expect(TokenType::Name)?,
-            children: vec![],
-        });
+        let node = match self.nth(1) {
+            TokenType::Equal => Tree {
+                typ: TreeType::Name,
+                tkn: self.expect(TokenType::Name)?,
+                children: vec![]
+            },
+            TokenType::OpenSquare => Tree {
+                typ: TreeType::ExprArrAccess,
+                tkn: self.expect(TokenType::Name)?,
+                children: vec![self.parse_expr_array()?]
+            },
+            _ => todo!()
+        };
         self.expect(TokenType::Equal)?;
+        children.push(node);
         children.push(self.parse_expr()?);
         self.expect(TokenType::Semi)?;
         Ok(Tree {
@@ -388,7 +451,7 @@ impl Parser {
                 TokenType::IfKeyword => children.push(self.parse_stmt_if()?),
                 TokenType::ReturnKeyword => children.push(self.parse_stmt_return()?),
                 TokenType::Name => match self.nth(1) {
-                    TokenType::Equal => children.push(self.parse_stmt_assign()?),
+                    TokenType::Equal | TokenType::OpenSquare => children.push(self.parse_stmt_assign()?),
                     _ => children.push(self.parse_stmt_expr()?),
                 },
                 _ => children.push(self.parse_stmt_expr()?),
@@ -470,7 +533,7 @@ impl Parser {
     pub fn parse_file(&mut self) -> Result<Tree, String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
-            28,
+            30,
             "Not all TokenTypes are handled in parse_file()"
         );
         let tkn = Token::new(
