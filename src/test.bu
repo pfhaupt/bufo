@@ -1,14 +1,12 @@
-func test(acc: u32, n: &u32) {
-    let b: &u32 = &acc;
-    if (acc < 4) {
-        *n = acc;
-        test(acc + 1, n);
-    }
+func test(n: &u32) {
+    *n = 420u32;
 }
 
 func main() {
-    let a: u32 = 4;
-    test(0, &a);
-    let c: u32 = a;
-    let e: &u32 = &c;
+    let arr: usize[2, 3] = [
+        [1, 2, 3],
+        [4, 5, 6],
+    ];
+    let a: usize = arr[0, 1];
+    arr[0, a] = 10;
 }

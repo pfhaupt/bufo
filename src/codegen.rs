@@ -14,6 +14,7 @@ macro_rules! perform_op {
             Type::I64 => unsafe { $dest.i64 = $reg1.i64 $op $reg2.i64 },
             Type::U32 => unsafe { $dest.u32 = $reg1.u32 $op $reg2.u32 },
             Type::U64 => unsafe { $dest.u64 = $reg1.u64 $op $reg2.u64 },
+            Type::USIZE => unsafe { $dest.ptr = $reg1.ptr $op $reg2.ptr },
             Type::F32 => unsafe { $dest.f32 = $reg1.f32 $op $reg2.f32 },
             Type::F64 => unsafe { $dest.f64 = $reg1.f64 $op $reg2.f64 },
             Type::Ptr(..) => unsafe { $dest.ptr = $reg1.ptr $op $reg2.ptr },
@@ -80,6 +81,7 @@ enum Type {
     I64,
     U32,
     U64,
+    USIZE,
     Ptr(Box::<Type>),
     Arr(Box::<Type>, Vec<usize>),
     // Reserved for later use
@@ -277,7 +279,7 @@ impl Function {
         let scope_var = self.local_variables.get_mut(scope_depth).unwrap();
         scope_var.insert(var_name, Variable { mem, typ: typ.clone() });
         self.stack_size += match typ {
-            Type::Arr(_, size) => size.iter().sum(),
+            Type::Arr(_, size) => size.iter().product(),
             _ => 1
         };
     }
@@ -427,6 +429,10 @@ impl Generator {
                         let val = parse_type!(u64, loc, val, typ)?;
                         self.code.push(Instruction::LoadU64 { dest, val });
                     }
+                    Type::USIZE => {
+                        let val = parse_type!(usize, loc, val, typ)?;
+                        self.code.push(Instruction::LoadUsize { dest, val });
+                    }
                     Type::Unknown => {
                         self.unresolved_typ_instr.push_back(self.code.len());
                         self.code.push(Instruction::LoadUnknown { dest, val, loc });
@@ -517,50 +523,41 @@ impl Generator {
                 return Err(format!("{}: {:?}: Unexpected Array Literal", ERR_STR, instr.tkn.get_loc()));
             }
             TreeType::ExprArrAccess => {
-                todo!();
                 let instr_children = &instr.children;
                 let name_tkn = &instr.tkn;
                 assert!(name_tkn.get_type() == TokenType::Name);
                 let name = name_tkn.get_value();
-
+                let arr_literal = &instr_children[0];
                 let function_stack = self.functions.get(&self.current_fn).expect("At this point, function lookup is guaranteed to contain current_fn");
                 match function_stack.get_variable_location(&name) {
                     Some(variable) => {
                         match variable.typ {
                             Type::Arr(typ, size) => {
-                                let arr_lit = &instr_children[0];
-
-                                let offset_register = self.get_register();
-
-                                self.code.push(Instruction::LoadU64 { dest: offset_register, val: 0 });
-                                for (count, expr) in arr_lit.children.iter().enumerate() {
-                                    
-                                    let reg = self.convert_expr(expr)?;
-                                    self.resolve_types(Type::U64)?;
-                                    if reg.typ != Type::Unknown && reg.typ != Type::U64 {
+                                let index_reg = self.get_register();
+                                let temp_reg = self.get_register();
+                                self.code.push(Instruction::LoadUsize { dest: index_reg, val: variable.mem });
+                                for (count, child) in arr_literal.children.iter().enumerate() {
+                                    let reg = self.convert_expr(child)?;
+                                    if reg.typ != Type::Unknown && reg.typ != Type::USIZE {
                                         return Err(format!(
-                                            "{}: {:?}: Array indices must be of type U64. Got `{:?}`",
+                                            "{}: {:?}: Type Mismatch: Array indices are expected to be of Type usize. Got `{:?}`",
                                             ERR_STR,
-                                            expr.tkn.get_loc(),
+                                            child.tkn.get_loc(),
                                             reg.typ
                                         ));
                                     }
-                                    
-                                    // TODO: Manage Out Of Bounds Access!!
-                                    
-                                    self.code.push(Instruction::Add { dest: offset_register, src: reg.mem, typ: Type::U64 });
-                                    if count > 0 {
-                                        let arr_size_reg = self.get_register();
-                                        self.code.push(Instruction::LoadU64 { dest: arr_size_reg, val: size[count - 1] as u64 });
-                                        self.code.push(Instruction::Add { dest: offset_register, src: arr_size_reg, typ: Type::U64 });
-                                    }
+                                    // TODO: Handle Out Of Bounds!!
+
+                                    self.resolve_types(Type::USIZE)?;
+                                    let offset = if count != size.len() - 1 { size[size.len() - count - 1] } else { 1 };
+                                    self.code.push(Instruction::LoadUsize { dest: temp_reg, val: offset });
+                                    self.code.push(Instruction::Mul { dest: temp_reg, src: reg.mem, typ: Type::USIZE });
+                                    self.code.push(Instruction::Add { dest: index_reg, src: temp_reg, typ: Type::USIZE });
                                 }
                                 let reg = self.get_register();
-                                let mem = self.add_local_var("asduiyahjksbdbhajksd", 0, &Type::U64);
-                                let var = Variable { typ: *typ.clone(), mem };
-                                self.code.push(Instruction::StoreMem { reg: offset_register, var: var.clone() });
-                                self.code.push(Instruction::LoadMem { reg, var: var.clone() } );
-                                Ok(Variable { typ: *typ.clone(), mem: reg })
+                                self.code.push(Instruction::LoadPtrRel { dest: reg, src: index_reg, typ: *typ.clone() });
+                                self.code.push(Instruction::LoadPtr { dest: reg, src: reg, typ: *typ.clone() });
+                                Ok(Variable {typ: *typ.clone(), mem: reg})
                             }
                             _ => Err(format!(
                                 "{}: {:?}: Indexed variable `{}` is not an Array.",
@@ -693,7 +690,9 @@ impl Generator {
                     .expect("At this point, function table is guaranteed to contain current_fn.");
                 match curr_fn.get_variable_location(&name) {
                     Some(mem) => {
-                        self.code.push(Instruction::LoadPtrRel { dest: reg, src: mem.mem, typ: mem.typ.clone() });
+                        let reg_tmp = self.get_register();
+                        self.code.push(Instruction::LoadUsize { dest: reg_tmp, val: mem.mem });
+                        self.code.push(Instruction::LoadPtrRel { dest: reg, src: reg_tmp, typ: mem.typ.clone() });
                         Ok(Variable {typ: Type::Ptr(Box::new(mem.typ)), mem: reg } )
                     },
                     None => Err(format!(
@@ -769,6 +768,7 @@ impl Generator {
             "i64" => Ok(Type::I64),
             "u32" => Ok(Type::U32),
             "u64" => Ok(Type::U64),
+            "usize" => Ok(Type::USIZE),
             // Reserved for future use
             "f32" => Ok(Type::F32),
             "f64" => Ok(Type::F64),
@@ -862,7 +862,6 @@ impl Generator {
                 let_name_tkn.get_loc()
             ));
         }
-
         if let_expr.typ == TreeType::ExprArrLiteral {
             let mem = self.add_local_var(&let_name_tkn.get_value(), self.scope_depth, &expected_type);
             match expected_type {
@@ -1027,9 +1026,31 @@ impl Generator {
             match (&var.typ, &reg.typ) {
                 (Type::Unknown, Type::Unknown) => panic!(),
                 (Type::Unknown, _) => todo!(),
-                (Type::Arr(..), _) => {
-                    println!("{:#?}", self.code);
-                    todo!()
+                (Type::Arr(typ, size), _) => {
+                    let index_reg = self.get_register();
+                    let temp_reg = self.get_register();
+                    self.code.push(Instruction::LoadUsize { dest: index_reg, val: var.mem });
+                    for (count, child) in assign_name.children[0].children.iter().enumerate() {
+                        let reg = self.convert_expr(child)?;
+                        if reg.typ != Type::Unknown && reg.typ != Type::USIZE {
+                            return Err(format!(
+                                "{}: {:?}: Type Mismatch: Array indices are expected to be of Type usize. Got `{:?}`",
+                                ERR_STR,
+                                child.tkn.get_loc(),
+                                reg.typ
+                            ));
+                        }
+                        // TODO: Handle Out Of Bounds!!
+
+                        self.resolve_types(Type::USIZE)?;
+                        let offset = if count != size.len() - 1 { size[size.len() - count - 1] } else { 1 };
+                        self.code.push(Instruction::LoadUsize { dest: temp_reg, val: offset });
+                        self.code.push(Instruction::Mul { dest: temp_reg, src: reg.mem, typ: Type::USIZE });
+                        self.code.push(Instruction::Add { dest: index_reg, src: temp_reg, typ: Type::USIZE });
+                    }
+                    let reg_tmp = self.get_register();
+                    self.code.push(Instruction::LoadPtrRel { dest: reg_tmp, src: index_reg, typ: *typ.clone() });
+                    self.code.push(Instruction::StorePtr { dest: reg_tmp, src: reg.mem, typ: *typ.clone() });
                 }
                 (typ, Type::Unknown) => {
                     self.resolve_types(typ.clone())?;
@@ -1209,6 +1230,10 @@ impl Generator {
                 Type::U64 => {
                     let val = parse_type!(u64, loc, val, typ)?;
                     Instruction::LoadU64 { dest: *dest, val }
+                }
+                Type::USIZE => {
+                    let val = parse_type!(usize, loc, val, typ)?;
+                    Instruction::LoadUsize { dest: *dest, val }
                 }
                 Type::Ptr(t, ..) => {
                     let val = parse_type!(usize, loc, val, t)?;
@@ -1546,10 +1571,10 @@ impl Generator {
                     self.registers[*dest].ptr = *val;
                 }
                 Instruction::LoadPtrRel { dest, src, .. } => {
-                    self.registers[*dest].ptr = stack_ptr + *src + 1;
+                    self.registers[*dest].ptr = stack_ptr + unsafe { self.registers[*src].ptr } + 1;
                 }
                 Instruction::LoadPtr { dest, src, .. } => {
-                    self.registers[*dest].ptr = unsafe { self.registers[*src].ptr };
+                    self.registers[*dest] = unsafe { stack[self.registers[*src].ptr] };
                 }
                 Instruction::StorePtr { dest, src, .. } => {
                     stack[unsafe { self.registers[*dest].ptr }] = self.registers[*src];
