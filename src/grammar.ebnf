@@ -21,15 +21,17 @@ StmtReturn = "return" [Expr] ";";
 
 TypeDecl = ":" "type";
 
-Arg = Expr [","];
-ArgList = "(" {Arg} ")";
+Arg = Expr;
+ArgList = "(" [Arg {"," Arg}] ")";
 
 Expr = ExprName
+     | ExprArray
      | ExprLiteral
      | ExprBinary
      | ExprParen
      | ExprCall;
 ExprName = "name";
+ExprArray = "name" "[" Expr {"," Expr} "]";
 ExprLiteral = "int";
 ExprBinary = Expr ("+" | "-" | "*" | "/" | "==" | "!=" | "<" | ">" | "<=" | ">=") Expr;
 ExprParen = "(" Expr ")";
