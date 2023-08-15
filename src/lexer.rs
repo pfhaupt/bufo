@@ -11,6 +11,8 @@ pub enum TokenType {
     ClosingRound,
     OpenCurly,
     ClosingCurly,
+    OpenSquare,
+    ClosingSquare,
     FnKeyword,
     LetKeyword,
     IfKeyword,
@@ -150,7 +152,7 @@ impl Lexer {
     fn next_token(&mut self) -> Result<Token, String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
-            28,
+            30,
             "Not all TokenTypes are handled in next_token()"
         );
         let c = self.next_char()?;
@@ -212,6 +214,16 @@ impl Lexer {
             '}' => Ok(Token {
                 typ: TokenType::ClosingCurly,
                 value: String::from("}"),
+                loc,
+            }),
+            '[' => Ok(Token {
+                typ: TokenType::OpenSquare,
+                value: String::from("["),
+                loc,
+            }),
+            ']' => Ok(Token {
+                typ: TokenType::ClosingSquare,
+                value: String::from("]"),
                 loc,
             }),
             ';' => Ok(Token {
