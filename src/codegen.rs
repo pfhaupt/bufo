@@ -607,9 +607,16 @@ impl Generator {
                         match variable.typ {
                             Type::Arr(typ, size) => {
                                 let index_reg = self.get_register();
-                                let temp_reg = self.get_register();
+                                let mem_offset = self.get_register();
+                                let size_reg = self.get_register();
+                                // Prepare index register
                                 self.code.push(Instruction::LoadUsize {
                                     dest: index_reg,
+                                    val: 0,
+                                });
+                                // Stores final offset for stack addressing
+                                self.code.push(Instruction::LoadUsize {
+                                    dest: mem_offset,
                                     val: variable.mem,
                                 });
                                 for (count, child) in arr_literal.children.iter().enumerate() {
@@ -624,45 +631,36 @@ impl Generator {
                                     }
 
                                     self.resolve_types(Type::Usize)?;
-                                    let size_reg = self.get_register();
+                                    
+
+                                    // Index Out of Bounds check
                                     self.code.push(Instruction::LoadUsize { dest: size_reg, val: size[count] });
                                     self.code.push(Instruction::Cmp { dest: reg.mem, src: size_reg, typ: Type::Usize });
                                     self.code.push(Instruction::JmpLt { dest: self.code.len() + 2 });
                                     self.code.push(Instruction::Exit { code: ExitCode::OobAccess as usize });
-                                    let offset = if count != size.len() - 1 {
-                                        size[size.len() - count - 1]
-                                    } else {
-                                        1
-                                    };
-                                    self.code.push(Instruction::LoadUsize {
-                                        dest: temp_reg,
-                                        val: offset,
-                                    });
-                                    self.code.push(Instruction::Mul {
-                                        dest: temp_reg,
-                                        src: reg.mem,
-                                        typ: Type::Usize,
-                                    });
-                                    self.code.push(Instruction::Add {
-                                        dest: index_reg,
-                                        src: temp_reg,
-                                        typ: Type::Usize,
-                                    });
+
+                                    // index_reg contains our index
+                                    // in each step, multiply the index by the dimension of the array
+                                    self.code.push(Instruction::Mul { dest: index_reg, src: size_reg, typ: Type::Usize });
+                                    // in each step, add to that ^ the position we're indexing (result of expression)
+                                    self.code.push(Instruction::Add { dest: index_reg, src: reg.mem, typ: Type::Usize });
                                 }
-                                let reg = self.get_register();
+                                
+                                self.code.push(Instruction::Add { dest: index_reg, src: mem_offset, typ: Type::Usize });
+                                let reg_tmp = self.get_register();
                                 self.code.push(Instruction::LoadPtrRel {
-                                    dest: reg,
+                                    dest: reg_tmp,
                                     src: index_reg,
                                     typ: *typ.clone(),
                                 });
                                 self.code.push(Instruction::LoadPtr {
-                                    dest: reg,
-                                    src: reg,
+                                    dest: reg_tmp,
+                                    src: reg_tmp,
                                     typ: *typ.clone(),
                                 });
                                 Ok(Variable {
                                     typ: *typ.clone(),
-                                    mem: reg,
+                                    mem: reg_tmp,
                                 })
                             }
                             _ => Err(format!(
@@ -1223,9 +1221,16 @@ impl Generator {
                 (Type::Unknown, _) => todo!(),
                 (Type::Arr(typ, size), _) => {
                     let index_reg = self.get_register();
-                    let temp_reg = self.get_register();
+                    let mem_offset = self.get_register();
+                    let size_reg = self.get_register();
+                    // Prepare index register
                     self.code.push(Instruction::LoadUsize {
                         dest: index_reg,
+                        val: 0,
+                    });
+                    // Stores final offset for stack addressing
+                    self.code.push(Instruction::LoadUsize {
+                        dest: mem_offset,
                         val: var.mem,
                     });
                     for (count, child) in assign_name.children[0].children.iter().enumerate() {
@@ -1240,31 +1245,20 @@ impl Generator {
                         }
 
                         self.resolve_types(Type::Usize)?;
-                        let size_reg = self.get_register();
+
+                        // Index Out of Bounds check
                         self.code.push(Instruction::LoadUsize { dest: size_reg, val: size[count] });
                         self.code.push(Instruction::Cmp { dest: reg.mem, src: size_reg, typ: Type::Usize });
                         self.code.push(Instruction::JmpLt { dest: self.code.len() + 2 });
                         self.code.push(Instruction::Exit { code: ExitCode::OobAccess as usize });
-                        let offset = if count != size.len() - 1 {
-                            size[size.len() - count - 1]
-                        } else {
-                            1
-                        };
-                        self.code.push(Instruction::LoadUsize {
-                            dest: temp_reg,
-                            val: offset,
-                        });
-                        self.code.push(Instruction::Mul {
-                            dest: temp_reg,
-                            src: reg.mem,
-                            typ: Type::Usize,
-                        });
-                        self.code.push(Instruction::Add {
-                            dest: index_reg,
-                            src: temp_reg,
-                            typ: Type::Usize,
-                        });
+
+                        // index_reg contains our index
+                        // in each step, multiply the index by the dimension of the array
+                        self.code.push(Instruction::Mul { dest: index_reg, src: size_reg, typ: Type::Usize });
+                        // in each step, add to that ^ the position we're indexing (result of expression)
+                        self.code.push(Instruction::Add { dest: index_reg, src: reg.mem, typ: Type::Usize });
                     }
+                    self.code.push(Instruction::Add { dest: index_reg, src: mem_offset, typ: Type::Usize });
                     let reg_tmp = self.get_register();
                     self.code.push(Instruction::LoadPtrRel {
                         dest: reg_tmp,
@@ -1782,7 +1776,6 @@ impl Generator {
                 ));
             }
             let instr = &self.code[ip];
-            // println!("{:3} {:?} {:?}", ip, flags, instr);
             let mut add_ip = true;
             match instr {
                 Instruction::LoadUnknown { .. } => panic!(),
@@ -1946,10 +1939,18 @@ impl Generator {
             if add_ip {
                 ip += 1;
             }
+            let mut reg_string = String::from("[");
+            const DISP_REG: usize = 10;
+            for i in 0..=DISP_REG {
+                reg_string.push_str(format!("{:6}", unsafe {self.registers[i].u64 }).as_str());
+                if i < DISP_REG { reg_string.push_str(", "); }
+            }
+            reg_string.push(']');
+            println!("{:4} {:?} {} {:?}", ip, flags, reg_string, instr);
         }
 
         for i in 0..20 {
-            println!("{}", unsafe { stack[STACK_SIZE - i - 1].u64 });
+            println!("{} {}", STACK_SIZE - i - 1, unsafe { stack[STACK_SIZE - i - 1].u64 });
         }
         Ok(())
     }
