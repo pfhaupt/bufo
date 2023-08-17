@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use crate::lexer::{Location, TokenType};
@@ -606,6 +607,28 @@ impl Generator {
                     Some(variable) => {
                         match variable.typ {
                             Type::Arr(typ, size) => {
+                                let indices = &arr_literal.children;
+                                match indices.len().cmp(&size.len()) {
+                                    Ordering::Greater => {
+                                        return Err(format!(
+                                            "{}: {:?}: Attempted to index array with too many indices! Expected {} indices, got {}.",
+                                            ERR_STR,
+                                            arr_literal.tkn.get_loc(),
+                                            size.len(),
+                                            indices.len()
+                                        ));
+                                    }
+                                    Ordering::Less => {
+                                        return Err(format!(
+                                            "{}: {:?}: Attempted to index array with too few indices! Expected {} indices, got {}.",
+                                            ERR_STR,
+                                            arr_literal.tkn.get_loc(),
+                                            size.len(),
+                                            indices.len()
+                                        ));
+                                    }
+                                    _ => ()
+                                }
                                 let index_reg = self.get_register();
                                 let mem_offset = self.get_register();
                                 let size_reg = self.get_register();
@@ -619,7 +642,7 @@ impl Generator {
                                     dest: mem_offset,
                                     val: variable.mem,
                                 });
-                                for (count, child) in arr_literal.children.iter().enumerate() {
+                                for (count, child) in indices.iter().enumerate() {
                                     let reg = self.convert_expr(child)?;
                                     if reg.typ != Type::Unknown && reg.typ != Type::Usize {
                                         return Err(format!(
@@ -1220,6 +1243,28 @@ impl Generator {
                 (Type::Unknown, Type::Unknown) => panic!(),
                 (Type::Unknown, _) => todo!(),
                 (Type::Arr(typ, size), _) => {
+                    let indices = &assign_name.children[0].children;
+                    match indices.len().cmp(&size.len()) {
+                        Ordering::Greater => {
+                            return Err(format!(
+                                "{}: {:?}: Attempted to index array with too many indices! Expected {} indices, got {}.",
+                                ERR_STR,
+                                assign_name.tkn.get_loc(),
+                                size.len(),
+                                indices.len()
+                            ));
+                        }
+                        Ordering::Less => {
+                            return Err(format!(
+                                "{}: {:?}: Attempted to index array with too few indices! Expected {} indices, got {}.",
+                                ERR_STR,
+                                assign_name.tkn.get_loc(),
+                                size.len(),
+                                indices.len()
+                            ));
+                        }
+                        _ => ()
+                    }
                     let index_reg = self.get_register();
                     let mem_offset = self.get_register();
                     let size_reg = self.get_register();
@@ -1233,7 +1278,7 @@ impl Generator {
                         dest: mem_offset,
                         val: var.mem,
                     });
-                    for (count, child) in assign_name.children[0].children.iter().enumerate() {
+                    for (count, child) in indices.iter().enumerate() {
                         let reg = self.convert_expr(child)?;
                         if reg.typ != Type::Unknown && reg.typ != Type::Usize {
                             return Err(format!(
