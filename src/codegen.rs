@@ -955,7 +955,7 @@ impl Generator {
                     .unwrap_or_else(|e| panic!("{}", e));
                 if arr_size == 0 {
                     return Err(format!(
-                        "{}: {:?}: Attempted to create array of size 0!",
+                        "{}: {:?}: Attempted to create array with a dimension of size 0!",
                         ERR_STR,
                         c.tkn.get_loc()
                     ));
@@ -979,16 +979,49 @@ impl Generator {
     fn convert_let_arr(
         &mut self,
         let_tree: &Tree,
+        size_def_loc: &Location,
+        expected_size: &Vec<usize>,
+        depth: usize
     ) -> Result<Vec<(usize, Location, Variable)>, String> {
         let mut result = vec![];
+        if let_tree.children.len() != expected_size[expected_size.len() - depth - 1] {
+            return Err(format!(
+                "{}: {:?}: Unexpected Size for Array Literal. Expected Array with {} elements, got {}.\n{}: Size declared here: {:?}",
+                ERR_STR,
+                let_tree.tkn.get_loc(),
+                expected_size[expected_size.len() - depth - 1],
+                let_tree.children.len(),
+                NOTE_STR,
+                size_def_loc
+            ));
+        }
         for expr in &let_tree.children {
             match expr.typ {
-                TreeType::ExprArrLiteral => result.extend(self.convert_let_arr(expr)?),
-                _ => result.push((
-                    self.code.len(),
-                    expr.tkn.get_loc(),
-                    self.convert_expr(expr)?,
-                )),
+                TreeType::ExprArrLiteral => {
+                    if depth == 0 {
+                        return Err(format!(
+                            "{}: {:?}: Unexpected Array Literal in Array Initialization. Expected Array with depth {}, but found another layer.",
+                            ERR_STR,
+                            expr.tkn.get_loc(),
+                            expected_size.len()
+                        ));
+                    }
+                    result.extend(self.convert_let_arr(expr, size_def_loc, expected_size, depth - 1)?);
+                },
+                _ => {
+                    if expected_size.len() == depth {
+                        return Err(format!(
+                            "{}: {:?}: Unexpected Expression in Array Initialization.",
+                            ERR_STR,
+                            expr.tkn.get_loc()
+                        ));
+                    }
+                    result.push((
+                        self.code.len(),
+                        expr.tkn.get_loc(),
+                        self.convert_expr(expr)?,
+                    ));
+                },
             }
         }
         Ok(result)
@@ -1024,7 +1057,7 @@ impl Generator {
                 self.add_local_var(&let_name_tkn.get_value(), self.scope_depth, &expected_type);
             match expected_type {
                 Type::Arr(t, size) => {
-                    let elements = self.convert_let_arr(let_expr)?;
+                    let elements = self.convert_let_arr(let_expr, &let_type.tkn.get_loc(), &size, size.len() - 1)?;
                     let expected_size = size.iter().fold(1, |acc, elem| acc * *elem);
                     if elements.len() != expected_size {
                         let pos = if elements.is_empty() {
