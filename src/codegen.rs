@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use crate::lexer::{Location, TokenType};
 use crate::parser::{Tree, TreeType};
 
+pub const RUNTIME_ERR: &str = "\x1b[91mRuntime Exception\x1b[0m";
 pub const ERR_STR: &str = "\x1b[91merror\x1b[0m";
 pub const WARN_STR: &str = "\x1b[93mwarning\x1b[0m";
 pub const NOTE_STR: &str = "\x1b[92mnote\x1b[0m";
@@ -32,6 +33,7 @@ macro_rules! perform_cmp {
             Type::U64 => unsafe { $reg1.u64 $op $reg2.u64 },
             Type::F32 => unsafe { $reg1.f32 $op $reg2.f32 },
             Type::F64 => unsafe { $reg1.f64 $op $reg2.f64 },
+            Type::Usize => unsafe { $reg1.ptr $op $reg2.ptr },
             _ => todo!()
         }
     };
@@ -214,7 +216,23 @@ enum Instruction {
         reg: usize,
     },
     Return {},
+    Exit { code: usize},
     // Print { src: usize },
+}
+
+enum ExitCode {
+    Normal,
+    OobAccess,
+}
+
+impl ExitCode {
+    fn print_exit_msg(code: usize) {
+        match code {
+            0 => unreachable!(),
+            1 => println!("{}: Attempted to index out of bounds!", RUNTIME_ERR),
+            _ => unreachable!()
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -604,9 +622,13 @@ impl Generator {
                                             reg.typ
                                         ));
                                     }
-                                    // TODO: Handle Out Of Bounds!!
 
                                     self.resolve_types(Type::Usize)?;
+                                    let size_reg = self.get_register();
+                                    self.code.push(Instruction::LoadUsize { dest: size_reg, val: size[count] });
+                                    self.code.push(Instruction::Cmp { dest: reg.mem, src: size_reg, typ: Type::Usize });
+                                    self.code.push(Instruction::JmpLt { dest: self.code.len() + 2 });
+                                    self.code.push(Instruction::Exit { code: ExitCode::OobAccess as usize });
                                     let offset = if count != size.len() - 1 {
                                         size[size.len() - count - 1]
                                     } else {
@@ -658,9 +680,6 @@ impl Generator {
                         name
                     )),
                 }
-                // println!("{:#?}", self.functions);
-                // println!("{:?}", self.unresolved_typ_instr);
-                // println!("{:#?}", self.code);
             }
             TreeType::ExprName => {
                 assert!(instr_children.len() == 1, "Expected {{name}}");
@@ -1186,9 +1205,13 @@ impl Generator {
                                 reg.typ
                             ));
                         }
-                        // TODO: Handle Out Of Bounds!!
 
                         self.resolve_types(Type::Usize)?;
+                        let size_reg = self.get_register();
+                        self.code.push(Instruction::LoadUsize { dest: size_reg, val: size[count] });
+                        self.code.push(Instruction::Cmp { dest: reg.mem, src: size_reg, typ: Type::Usize });
+                        self.code.push(Instruction::JmpLt { dest: self.code.len() + 2 });
+                        self.code.push(Instruction::Exit { code: ExitCode::OobAccess as usize });
                         let offset = if count != size.len() - 1 {
                             size[size.len() - count - 1]
                         } else {
@@ -1511,6 +1534,9 @@ impl Generator {
             .unwrap()
             .return_type
             .clone();
+        if fn_name.get_value() == "main" {
+            self.code.push(Instruction::Exit { code: ExitCode::Normal as usize });
+        }
         match (return_found, return_type) {
             (false, Type::None) => {
                 println!(
@@ -1550,7 +1576,6 @@ impl Generator {
             }
         }
         self.current_fn.clear();
-
         Ok(())
     }
 
@@ -1868,14 +1893,21 @@ impl Generator {
                 }
                 Instruction::Return {} => {
                     if return_stack.is_empty() {
-                        println!("Finished!");
-                        break;
+                        todo!();
                     }
                     // Can safely unwrap because I just checked return_stack length
                     // Whenever I add something, I add packs of 2 values, so there's never a situation
                     // where only one element is on the return_stack
                     stack_ptr += return_stack.pop_back().unwrap();
                     ip = return_stack.pop_back().unwrap();
+                }
+                Instruction::Exit { code } => {
+                    println!("Program exited with Exit Code {code}.");
+                    if *code != 0 {
+                        // TODO: Add better runtime error messages
+                        ExitCode::print_exit_msg(*code);
+                    }
+                    break;
                 }
             }
             if add_ip {
