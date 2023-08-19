@@ -85,6 +85,7 @@ enum Type {
     U32,
     U64,
     Usize,
+    Bool,
     Ptr(Box<Type>),
     Arr(Box<Type>, Vec<usize>),
     // Reserved for later use
@@ -509,6 +510,7 @@ impl Generator {
                 if typ == Type::Unknown {
                     self.unresolved_typ_instr.push_back(self.code.len())
                 }
+                let mut is_cmp = false;
                 match op.tkn.get_type() {
                     TokenType::Plus => self.code.push(Instruction::Add {
                         dest,
@@ -538,6 +540,7 @@ impl Generator {
                         });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpNeq { dest: usize::MAX });
+                        is_cmp = true;
                     }
                     TokenType::CmpNeq => {
                         self.code.push(Instruction::Cmp {
@@ -547,6 +550,7 @@ impl Generator {
                         });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpEq { dest: usize::MAX });
+                        is_cmp = true;
                     }
                     TokenType::CmpGt => {
                         self.code.push(Instruction::Cmp {
@@ -556,6 +560,7 @@ impl Generator {
                         });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpLte { dest: usize::MAX });
+                        is_cmp = true;
                     }
                     TokenType::CmpGte => {
                         self.code.push(Instruction::Cmp {
@@ -565,6 +570,7 @@ impl Generator {
                         });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpLt { dest: usize::MAX });
+                        is_cmp = true;
                     }
                     TokenType::CmpLt => {
                         self.code.push(Instruction::Cmp {
@@ -574,6 +580,7 @@ impl Generator {
                         });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpGte { dest: usize::MAX });
+                        is_cmp = true;
                     }
                     TokenType::CmpLte => {
                         self.code.push(Instruction::Cmp {
@@ -583,10 +590,12 @@ impl Generator {
                         });
                         self.unresolved_jmp_instr.push_back(self.code.len());
                         self.code.push(Instruction::JmpGt { dest: usize::MAX });
+                        is_cmp = true;
                     }
                     e => todo!("Handle {:?} in convert_expr_atomic()", e),
                 }
-                Ok(Variable { typ, mem: dest })
+                if is_cmp { Ok(Variable { typ: Type::Bool, mem: dest }) }
+                else { Ok(Variable { typ, mem: dest }) }
             }
             TreeType::ExprArrLiteral => Err(format!(
                 "{}: {:?}: Unexpected Array Literal",
