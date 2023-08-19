@@ -999,12 +999,14 @@ impl Generator {
 
     fn convert_let_arr(
         &mut self,
+        mem: usize,
+        mem_offset: &mut usize,
         let_tree: &Tree,
         size_def_loc: &Location,
         expected_size: &Vec<usize>,
+        expected_type: &Type,
         depth: usize
-    ) -> Result<Vec<(usize, Location, Variable)>, String> {
-        let mut result = vec![];
+    ) -> Result<(), String> {
         if let_tree.children.len() != expected_size[expected_size.len() - depth - 1] {
             return Err(format!(
                 "{}: {:?}: Unexpected Size for Array Literal. Expected Array with {} elements, got {}.\n{}: Size declared here: {:?}",
@@ -1027,7 +1029,15 @@ impl Generator {
                             expected_size.len()
                         ));
                     }
-                    result.extend(self.convert_let_arr(expr, size_def_loc, expected_size, depth - 1)?);
+                    self.convert_let_arr(
+                        mem,
+                        mem_offset,
+                        expr,
+                        size_def_loc,
+                        expected_size,
+                        expected_type,
+                        depth - 1
+                    )?;
                 },
                 _ => {
                     if expected_size.len() == depth {
@@ -1037,15 +1047,31 @@ impl Generator {
                             expr.tkn.get_loc()
                         ));
                     }
-                    result.push((
-                        self.code.len(),
-                        expr.tkn.get_loc(),
-                        self.convert_expr(expr)?,
-                    ));
+                    let reg = self.convert_expr(expr)?;
+                    if reg.typ != Type::Unknown && reg.typ != *expected_type {
+                        return Err(format!(
+                            "{}: {:?}: Type Mismatch in Array Initialization! Array is declared to be Type `{:?}`, but got Type `{:?}`\n{}: Type declared here: {:?}",
+                            ERR_STR,
+                            expr.tkn.get_loc(),
+                            expected_type,
+                            reg.typ,
+                            NOTE_STR,
+                            size_def_loc,
+                        ));
+                    }
+                    self.code.push(Instruction::StoreMem {
+                        reg: reg.mem,
+                        var: Variable {
+                            typ: expected_type.clone(),
+                            mem: mem + *mem_offset,
+                        },
+                    });
+                    *mem_offset += 1;
+                    self.reset_registers();
                 },
             }
         }
-        Ok(result)
+        Ok(())
     }
 
     fn convert_stmt_let(&mut self, let_tree: &Tree) -> Result<(), String> {
@@ -1078,45 +1104,16 @@ impl Generator {
                 self.add_local_var(&let_name_tkn.get_value(), self.scope_depth, &expected_type);
             match expected_type {
                 Type::Arr(t, size) => {
-                    let elements = self.convert_let_arr(let_expr, &let_type.tkn.get_loc(), &size, size.len() - 1)?;
-                    let expected_size = size.iter().fold(1, |acc, elem| acc * *elem);
-                    if elements.len() != expected_size {
-                        let pos = if elements.is_empty() {
-                            let_name.tkn.get_loc()
-                        } else {
-                            elements.last().unwrap().1.clone()
-                        };
-                        return Err(format!(
-                            "{}: {:?}: Size Mismatch in Array Initialization! Array is declared to be of size {}, but got {} elements.\n{}: Size declared here: {:?}",
-                            ERR_STR,
-                            pos,
-                            expected_size,
-                            elements.len(),
-                            NOTE_STR,
-                            let_type.tkn.get_loc()
-                        ));
-                    }
+                    self.convert_let_arr(
+                        mem,
+                        &mut 0,
+                        let_expr,
+                        &let_type.tkn.get_loc(),
+                        &size,
+                        &t,
+                        size.len() - 1
+                    )?;
                     self.resolve_types(*t.clone())?;
-                    for (offset, reg) in elements.iter().enumerate() {
-                        if reg.2.typ != Type::Unknown && reg.2.typ != *t {
-                            return Err(format!(
-                                "{}: {:?}: Type Mismatch in Array Initialization! Array is declared to be Type `{:?}`, but got Type `{:?}`\n{}: Type declared here: {:?}",
-                                ERR_STR,
-                                reg.1,
-                                t,
-                                reg.2.typ,
-                                NOTE_STR,
-                                let_type.tkn.get_loc()
-                            ));
-                        }
-                        self.code.push(Instruction::StoreMem {
-                            reg: reg.2.mem,
-                            var: Variable {
-                                typ: *t.clone(),
-                                mem: mem + offset,
-                            },
-                        });
-                    }
                 }
                 e => todo!("{:?}", e),
             }
