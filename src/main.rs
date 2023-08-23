@@ -1,37 +1,61 @@
 mod codegen;
 mod lexer;
 mod parser;
+mod flags;
 
-use std::process::exit;
 use std::time::Instant;
+
+use flags::RUN_KEY;
 
 use crate::codegen::Generator;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
+use crate::flags::{Flag, FlagParser, INPUT_KEY, DEBUG_KEY};
 
 fn compile() -> Result<(), String> {
-    let path = String::from("src/test.bu");
+    let now = Instant::now();
 
-    let mut lexer = Lexer::new(&path)?;
+    let flags = FlagParser::init_flags().parse_flags()?;
+    
+    let path = match flags.get(INPUT_KEY).unwrap() {
+        Flag::InputFlag { path } => path.as_ref().unwrap(),
+        _ => unreachable!()
+    };
+    let run = match flags.get(RUN_KEY).unwrap() {
+        Flag::RunFlag { run } => *run,
+        _ => unreachable!()
+    };
+    let debug = match flags.get(DEBUG_KEY).unwrap() {
+        Flag::DebugFlag { debug } => *debug,
+        _ => unreachable!()
+    };
+    if debug { println!("Parsing flags took {:?}", now.elapsed()); }
+
+    let mut lexer = Lexer::new(path, debug)?;
     lexer.tokenize()?;
-    // println!("{:#?}", lexer.get_tokens());
+    if debug { println!("Tokenizing took {:?}", now.elapsed()); };
 
-    let mut parser = Parser::new(lexer.get_tokens());
+    let mut parser = Parser::new(path, lexer.get_tokens(), debug);
     let ast = parser.parse_file()?;
     // ast.print_debug();
     // exit(1);
+    if debug { println!("Parsing took {:?}", now.elapsed()); }
 
-    let mut generator = Generator::new(ast)?;
+    let mut generator = Generator::new(ast, debug)?;
+    if debug { println!("Generating Code took {:?}", now.elapsed()); }
     // generator.compile()?;
-    generator.interpret()?;
+    if run {
+        generator.interpret()?;
+        if debug { println!("Interpreting Code took {:?}", now.elapsed()); }
+    };
+
+    
     Ok(())
 }
 
 fn main() {
-    let now = Instant::now();
     if let Err(e) = compile() {
         println!("{}", e);
-        exit(1);
+        return;
     }
-    println!("{:?}", now.elapsed());
 }

@@ -7,22 +7,25 @@ use crate::codegen::ERR_STR;
 pub enum TokenType {
     File,
     IntLiteral,
-    OpenParenthesis,
-    ClosingParenthesis,
-    OpenBracket,
-    ClosingBracket,
+    OpenRound,
+    ClosingRound,
+    OpenCurly,
+    ClosingCurly,
+    OpenSquare,
+    ClosingSquare,
     FnKeyword,
     LetKeyword,
     IfKeyword,
     ElseKeyword,
     ReturnKeyword,
     TypeDecl,
+    Ampersand,
     Arrow,
     Equal,
     Plus,
     Minus,
-    Mult,
-    Div,
+    Asterisk,
+    ForwardSlash,
     CmpEq,
     CmpNeq,
     CmpLt,
@@ -87,10 +90,12 @@ pub struct Lexer {
     current_char: usize,
     current_line: usize,
     line_start: usize,
+    #[allow(unused)]
+    print_debug: bool,
 }
 
 impl Lexer {
-    pub fn new(origin_path: &String) -> Result<Self, String> {
+    pub fn new(origin_path: &String, print_debug: bool) -> Result<Self, String> {
         match fs::read_to_string(origin_path) {
             Ok(source) => Ok(Lexer {
                 origin: origin_path.to_string(),
@@ -99,8 +104,9 @@ impl Lexer {
                 current_char: 0,
                 current_line: 1,
                 line_start: 0,
+                print_debug
             }),
-            Err(e) => Err(format!("{}: {}", ERR_STR, e)),
+            Err(_) => Err(format!("{}: Could not find input file `{}`.", ERR_STR, origin_path)),
         }
     }
 
@@ -150,10 +156,11 @@ impl Lexer {
     fn next_token(&mut self) -> Result<Token, String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
-            28,
+            31,
             "Not all TokenTypes are handled in next_token()"
         );
         let c = self.next_char()?;
+        let loc = self.get_location();
         match c {
             '0'..='9' => {
                 let mut value = String::from(c);
@@ -167,7 +174,7 @@ impl Lexer {
                 Ok(Token {
                     typ: TokenType::IntLiteral,
                     value,
-                    loc: self.get_location(),
+                    loc,
                 })
             }
             'A'..='Z' | 'a'..='z' => {
@@ -187,41 +194,52 @@ impl Lexer {
                     "return" => TokenType::ReturnKeyword,
                     _ => TokenType::Name,
                 };
-                Ok(Token {
-                    typ,
-                    value,
-                    loc: self.get_location(),
-                })
+                Ok(Token { typ, value, loc })
             }
             '(' => Ok(Token {
-                typ: TokenType::OpenParenthesis,
+                typ: TokenType::OpenRound,
                 value: String::from("("),
-                loc: self.get_location(),
+                loc,
             }),
             ')' => Ok(Token {
-                typ: TokenType::ClosingParenthesis,
+                typ: TokenType::ClosingRound,
                 value: String::from(")"),
-                loc: self.get_location(),
+                loc,
             }),
             '{' => Ok(Token {
-                typ: TokenType::OpenBracket,
+                typ: TokenType::OpenCurly,
                 value: String::from("{"),
-                loc: self.get_location(),
+                loc,
             }),
             '}' => Ok(Token {
-                typ: TokenType::ClosingBracket,
+                typ: TokenType::ClosingCurly,
                 value: String::from("}"),
-                loc: self.get_location(),
+                loc,
+            }),
+            '[' => Ok(Token {
+                typ: TokenType::OpenSquare,
+                value: String::from("["),
+                loc,
+            }),
+            ']' => Ok(Token {
+                typ: TokenType::ClosingSquare,
+                value: String::from("]"),
+                loc,
             }),
             ';' => Ok(Token {
                 typ: TokenType::Semi,
                 value: String::from(";"),
-                loc: self.get_location(),
+                loc,
             }),
             ',' => Ok(Token {
                 typ: TokenType::Comma,
                 value: String::from(","),
-                loc: self.get_location(),
+                loc,
+            }),
+            '&' => Ok(Token {
+                typ: TokenType::Ampersand,
+                value: String::from("&"),
+                loc,
             }),
             '!' => {
                 if let Ok(nc) = self.next_char() {
@@ -229,7 +247,7 @@ impl Lexer {
                         '=' => Ok(Token {
                             typ: TokenType::CmpNeq,
                             value: String::from("!="),
-                            loc: self.get_location(),
+                            loc,
                         }),
                         _ => {
                             let mut v = String::from(c);
@@ -258,11 +276,7 @@ impl Lexer {
                 } else {
                     (TokenType::Equal, String::from("="))
                 };
-                Ok(Token {
-                    typ,
-                    value,
-                    loc: self.get_location(),
-                })
+                Ok(Token { typ, value, loc })
             }
             '<' => {
                 let (typ, value) = if let Ok(nc) = self.next_char() {
@@ -276,11 +290,7 @@ impl Lexer {
                 } else {
                     (TokenType::CmpLt, String::from("<"))
                 };
-                Ok(Token {
-                    typ,
-                    value,
-                    loc: self.get_location(),
-                })
+                Ok(Token { typ, value, loc })
             }
             '>' => {
                 let (typ, value) = if let Ok(nc) = self.next_char() {
@@ -294,21 +304,17 @@ impl Lexer {
                 } else {
                     (TokenType::CmpGt, String::from(">"))
                 };
-                Ok(Token {
-                    typ,
-                    value,
-                    loc: self.get_location(),
-                })
+                Ok(Token { typ, value, loc })
             }
             ':' => Ok(Token {
                 typ: TokenType::TypeDecl,
                 value: String::from(c),
-                loc: self.get_location(),
+                loc,
             }),
             '+' => Ok(Token {
                 typ: TokenType::Plus,
                 value: String::from(c),
-                loc: self.get_location(),
+                loc,
             }),
             '-' => {
                 let (typ, value) = if let Ok(nc) = self.next_char() {
@@ -322,21 +328,17 @@ impl Lexer {
                 } else {
                     (TokenType::Minus, String::from("-"))
                 };
-                Ok(Token {
-                    typ,
-                    value,
-                    loc: self.get_location(),
-                })
+                Ok(Token { typ, value, loc })
             }
             '*' => Ok(Token {
-                typ: TokenType::Mult,
+                typ: TokenType::Asterisk,
                 value: String::from(c),
-                loc: self.get_location(),
+                loc,
             }),
             '/' => Ok(Token {
-                typ: TokenType::Div,
+                typ: TokenType::ForwardSlash,
                 value: String::from(c),
-                loc: self.get_location(),
+                loc,
             }),
             e => Err(format!(
                 "{}: {:?}: Unexpected Symbol `{}`",
