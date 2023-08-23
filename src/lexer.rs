@@ -90,10 +90,12 @@ pub struct Lexer {
     current_char: usize,
     current_line: usize,
     line_start: usize,
+    #[allow(unused)]
+    print_debug: bool,
 }
 
 impl Lexer {
-    pub fn new(origin_path: &String) -> Result<Self, String> {
+    pub fn new(origin_path: &String, print_debug: bool) -> Result<Self, String> {
         match fs::read_to_string(origin_path) {
             Ok(source) => Ok(Lexer {
                 origin: origin_path.to_string(),
@@ -102,8 +104,9 @@ impl Lexer {
                 current_char: 0,
                 current_line: 1,
                 line_start: 0,
+                print_debug
             }),
-            Err(e) => Err(format!("{}: {}", ERR_STR, e)),
+            Err(_) => Err(format!("{}: Could not find input file `{}`.", ERR_STR, origin_path)),
         }
     }
 

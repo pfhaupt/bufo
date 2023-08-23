@@ -59,16 +59,19 @@ pub struct Parser {
     ptr: usize,
     fuel: Cell<u32>,
     root: Option<Tree>,
+    #[allow(unused)]
+    print_debug: bool
 }
 
 impl Parser {
-    pub fn new(file_path: &String, tokens: Vec<Token>) -> Self {
+    pub fn new(file_path: &String, tokens: Vec<Token>, print_debug: bool) -> Self {
         Self {
             file_path: file_path.to_owned(),
             tokens,
             ptr: 0,
             fuel: Cell::new(256),
             root: None,
+            print_debug
         }
     }
 

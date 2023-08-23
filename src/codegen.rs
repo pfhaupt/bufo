@@ -6,6 +6,7 @@ use crate::parser::{Tree, TreeType};
 
 pub const RUNTIME_ERR: &str = "\x1b[91mRuntime Exception\x1b[0m";
 pub const ERR_STR: &str = "\x1b[91merror\x1b[0m";
+#[allow(unused)]
 pub const WARN_STR: &str = "\x1b[93mwarning\x1b[0m";
 pub const NOTE_STR: &str = "\x1b[92mnote\x1b[0m";
 
@@ -353,10 +354,11 @@ pub struct Generator {
     unresolved_jmp_instr: VecDeque<usize>,
     unresolved_typ_instr: VecDeque<usize>,
     scope_depth: usize,
+    print_debug: bool
 }
 
 impl Generator {
-    pub fn new(ast: Tree) -> Result<Self, String> {
+    pub fn new(ast: Tree, print_debug: bool) -> Result<Self, String> {
         let mut gen = Self {
             ast,
             registers: vec![Memory { u64: 0 }; 100],
@@ -367,6 +369,7 @@ impl Generator {
             unresolved_jmp_instr: VecDeque::new(),
             unresolved_typ_instr: VecDeque::new(),
             scope_depth: 0,
+            print_debug
         };
         gen.generate_code()?;
         Ok(gen)
@@ -1617,18 +1620,10 @@ impl Generator {
         }
         match (return_found, return_type) {
             (false, Type::None) => {
-                println!(
-                    "{}: Inserting implicit Return instruction in {}\n{}: This does not change the behavior of the program.",
-                    WARN_STR, self.current_fn, NOTE_STR
-                );
                 self.code.push(Instruction::Return {});
             }
             (true, Type::None) => {
                 if self.code.is_empty() || !(*self.code.last().unwrap() == Instruction::Return {}) {
-                    println!(
-                        "{}: Inserting implicit Return instruction in {}\n{}: This does not change the behavior of the program.",
-                        WARN_STR, self.current_fn, NOTE_STR
-                    );
                     self.code.push(Instruction::Return {});
                 }
             }
@@ -1990,14 +1985,16 @@ impl Generator {
             if add_ip {
                 ip += 1;
             }
-            let mut reg_string = String::from("[");
-            const DISP_REG: usize = 10;
-            for i in 0..=DISP_REG {
-                reg_string.push_str(format!("{:6}", unsafe {self.registers[i].u64 }).as_str());
-                if i < DISP_REG { reg_string.push_str(", "); }
+            if self.print_debug {
+                let mut reg_string = String::from("[");
+                const DISP_REG: usize = 10;
+                for i in 0..=DISP_REG {
+                    reg_string.push_str(format!("{:6}", unsafe {self.registers[i].u64 }).as_str());
+                    if i < DISP_REG { reg_string.push_str(", "); }
+                }
+                reg_string.push(']');
+                println!("{:4} {:?} {} {:?}", ip, flags, reg_string, instr);
             }
-            reg_string.push(']');
-            println!("{:4} {:?} {} {:?}", ip, flags, reg_string, instr);
         }
 
         for i in 0..20 {
