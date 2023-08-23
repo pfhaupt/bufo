@@ -61,7 +61,7 @@ impl FlagParser {
                             match args.next() {
                                 Some(p) => {
                                     if !p.ends_with(FILE_EXT) {
-                                        return Err(format!("{ERR_STR}: Invalid file provided for input flag. Expected file ending with `{FILE_EXT}`."));
+                                        return Err(format!("{ERR_STR}: Invalid file provided for input flag. Expected file ending with `{FILE_EXT}`, got `{p}`."));
                                     }
                                     input_found = true;
                                     Flag::InputFlag { path: Some(p) }
