@@ -3,7 +3,7 @@ use std::fs;
 
 use crate::codegen::ERR_STR;
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TokenType {
     File,
     IntLiteral,
@@ -38,7 +38,7 @@ pub enum TokenType {
     Eof,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Location {
     file: String,
     row: usize,
@@ -57,7 +57,7 @@ impl Debug for Location {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
     typ: TokenType, // type is a reserved keyword in Rust :(
     value: String,
