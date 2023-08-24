@@ -1,7 +1,7 @@
 use std::cell::Cell;
 
 use crate::codegen::ERR_STR;
-use crate::lexer::{Location, Token, TokenType};
+use crate::lexer::{Location, Token, TokenType, COMPARATOR_TYPES};
 use crate::checker::Type;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -24,6 +24,7 @@ pub enum TreeType {
     ExprArrAccess { arr_name: String, indices: Box<Tree>, typ: Type }, // indices contains ArrLiteral
     ExprLiteral { typ: Type },
     ExprBinary { lhs: Box<Tree>, rhs: Box<Tree>, typ: Type },
+    ExprComp { lhs: Box<Tree>, rhs: Box<Tree> },
     ExprParen { expression: Box<Tree>, typ: Type },
     ExprCall { function_name: String, args: Box<Tree>, typ: Type },
     TypeDecl { typ: Type },
@@ -138,6 +139,11 @@ impl Tree {
             }
             TreeType::ExprBinary { lhs, rhs, typ } => {
                 println!("{tab}ExprBinary {} {typ:?}", self.tkn.get_value());
+                lhs.print_internal(indent + 2);
+                rhs.print_internal(indent + 2);
+            }
+            TreeType::ExprComp { lhs, rhs } => {
+                println!("{tab}ExprComp {}", self.tkn.get_value());
                 lhs.print_internal(indent + 2);
                 rhs.print_internal(indent + 2);
             }
@@ -412,13 +418,26 @@ impl Parser {
                 let tkn = self.open();
                 self.advance();
                 let rhs = self.parse_expr_rec(right)?;
-                lhs = Tree {
-                    typ: TreeType::ExprBinary {
-                        lhs: Box::new(lhs),
-                        rhs: Box::new(rhs),
-                        typ: Type::Unknown
-                    },
-                    tkn,
+                if COMPARATOR_TYPES.contains(&right) {
+
+                }
+                lhs = if COMPARATOR_TYPES.contains(&right) {
+                    Tree {
+                        typ: TreeType::ExprComp {
+                            lhs: Box::new(lhs),
+                            rhs: Box::new(rhs),
+                        },
+                        tkn
+                    }
+                } else {
+                    Tree {
+                        typ: TreeType::ExprBinary {
+                            lhs: Box::new(lhs),
+                            rhs: Box::new(rhs),
+                            typ: Type::Unknown
+                        },
+                        tkn
+                    }
                 };
             } else {
                 break;
@@ -430,16 +449,9 @@ impl Parser {
     fn right_binds_tighter(left: TokenType, right: TokenType) -> bool {
         fn tightness(typ: TokenType) -> Option<usize> {
             [
+                &COMPARATOR_TYPES,
                 [TokenType::Plus, TokenType::Minus].as_slice(),
                 &[TokenType::Asterisk, TokenType::ForwardSlash],
-                &[
-                    TokenType::CmpEq,
-                    TokenType::CmpNeq,
-                    TokenType::CmpGt,
-                    TokenType::CmpGte,
-                    TokenType::CmpLt,
-                    TokenType::CmpLte,
-                ],
             ]
             .iter()
             .position(|l| l.contains(&typ))
