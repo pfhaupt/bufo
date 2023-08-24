@@ -26,7 +26,7 @@ pub enum TreeType {
     ExprBinary { lhs: Box<Tree>, rhs: Box<Tree> },
     ExprParen { expression: Box<Tree> },
     ExprCall { function_name: String, args: Box<Tree> },
-    TypeDecl { typ: Box<Tree>, size: Option<Box<Tree>> }, // if size is some, typ is array
+    TypeDecl { typ: Type, size: Option<Box<Tree>> }, // if size is some, typ is array
     ArrSize { dimensions: Vec<Tree> },
     ArrDimension,
     Pointer { var_name: Box<Tree> },
@@ -151,7 +151,7 @@ impl Tree {
                 args.print_internal(indent + 2);
             }
             TreeType::TypeDecl { typ, size } => {
-                typ.print_internal(indent);
+                println!("{tab}{typ:?}");
                 if let Some(s) = size {
                     s.print_internal(indent);
                 }
@@ -251,6 +251,29 @@ impl Parser {
             t,
             typ
         ))
+    }
+
+    fn parse_type(&self, token: &Token) -> Result<Type, String> {
+        self.parse_type_str(&token.get_loc(), &token.get_value())
+    }
+
+    fn parse_type_str(&self, loc: &Location, val: &str) -> Result<Type, String> {
+        match val {
+            "i32" => Ok(Type::I32),
+            "i64" => Ok(Type::I64),
+            "u32" => Ok(Type::U32),
+            "u64" => Ok(Type::U64),
+            "usize" => Ok(Type::Usize),
+            // Reserved for future use
+            "f32" => Ok(Type::F32),
+            "f64" => Ok(Type::F64),
+            t => Err(format!(
+                "{}: {:?}: Unexpected Type `{}`. Expected one of {{i32, i64, u32, u64}}",
+                ERR_STR,
+                loc,
+                t
+            )),
+        }
     }
 
     fn parse_expr_call(&mut self) -> Result<Tree, String> {
@@ -454,39 +477,35 @@ impl Parser {
         self.expect(TokenType::TypeDecl)?;
         let name = match self.nth(0) {
             TokenType::Ampersand => {
-                let ptr_tkn = self.expect(TokenType::Ampersand)?;
+                self.expect(TokenType::Ampersand)?;
                 let typ_tkn = self.expect(TokenType::Name)?;
                 let arr_tree = if self.at(TokenType::OpenSquare) {
                     Some(Box::new(self.parse_type_arr()?))
                 } else {
                     None
                 };
+                let typ = self.parse_type(&typ_tkn)?;
                 Tree {
-                    typ: TreeType::TypeDecl { typ: Box::new(Tree {
-                        typ: TreeType::Pointer { var_name: 
-                            Box::new(Tree {
-                                typ: TreeType::Name { name: typ_tkn.get_value() }, tkn: typ_tkn }
-                            )},
-                            tkn: ptr_tkn
-                        })
-                        , size: arr_tree
+                    typ: TreeType::TypeDecl {
+                        typ: Type::Ptr(Box::new(typ)),
+                        size: arr_tree
                     },
                     tkn
                 }
             }
             _ => {
                 let name = self.expect(TokenType::Name)?;
-                let name_tree = Tree {
-                    typ: TreeType::Name { name: name.get_value() },
-                    tkn: name.clone(),
-                };
+                let typ = self.parse_type(&name)?;
                 let arr_tree = if self.at(TokenType::OpenSquare) {
                     Some(Box::new(self.parse_type_arr()?))
                 } else {
                     None
                 };
                 Tree {
-                    typ: TreeType::TypeDecl { typ: Box::new(name_tree), size: arr_tree },
+                    typ: TreeType::TypeDecl {
+                        typ,
+                        size: arr_tree
+                    },
                     tkn: name
                 }
             }
@@ -729,14 +748,10 @@ impl Parser {
         let tkn = self.open();
         self.expect(TokenType::Arrow)?;
         let name_tkn = self.expect(TokenType::Name)?;
+        let typ = self.parse_type(&name_tkn)?;
         Ok(Tree {
             typ: TreeType::TypeDecl {
-                typ: Box::new(Tree {
-                    typ: TreeType::Name {
-                        name: name_tkn.get_value()
-                    },
-                    tkn: name_tkn
-                }),
+                typ,
                 size: None
             },
             tkn,
