@@ -7,7 +7,7 @@
 // pub const RUNTIME_ERR: &str = "\x1b[91mRuntime Exception\x1b[0m";
 pub const ERR_STR: &str = "\x1b[91merror\x1b[0m";
 // #[allow(unused)]
-// pub const WARN_STR: &str = "\x1b[93mwarning\x1b[0m";
+pub const WARN_STR: &str = "\x1b[93mwarning\x1b[0m";
 pub const NOTE_STR: &str = "\x1b[92mnote\x1b[0m";
 
 // macro_rules! perform_op {

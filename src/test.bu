@@ -65,5 +65,23 @@ func main() {
     let a: u32 = factorial(ack(factorial(2), factorial(2)));
     let b: u32 = rule110(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1);
     let c: u32 = test(10, 8);
+    
+    let v: i32 = 5;
+    let arr1: i32[1, 1] = [[42069]];
+    let arr: i32[2, 2, 3] = [
+        [
+            [v * v - 3, 1, 2],
+            [3, 4, 5],
+        ],
+        [
+            [6, 7, arr1[0, 0]],
+            [9, 10, 11],
+        ]
+    ];
+    let b1: usize = 2;
+    let a1: i32 = arr[1, 1, b1];
+    arr[0, 1, b1] = 409 + a1;
+    test(1, 1);
+    main();
     return;
 }
