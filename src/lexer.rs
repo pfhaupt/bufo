@@ -38,6 +38,15 @@ pub enum TokenType {
     Eof,
 }
 
+pub const COMPARATOR_TYPES: [TokenType; 6] = [
+    TokenType::CmpEq,
+    TokenType::CmpNeq,
+    TokenType::CmpGt,
+    TokenType::CmpGte,
+    TokenType::CmpLt,
+    TokenType::CmpLte,
+];
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct Location {
     file: String,
