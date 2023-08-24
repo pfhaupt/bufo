@@ -1,9 +1,9 @@
 use indexmap::IndexMap;
 use std::collections::HashMap;
 
+use crate::codegen::{ERR_STR, NOTE_STR, WARN_STR};
 use crate::lexer::Location;
 use crate::parser::{Tree, TreeType};
-use crate::codegen::{ERR_STR, NOTE_STR, WARN_STR};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Type {
@@ -25,18 +25,23 @@ pub enum Type {
 #[derive(Debug, Clone)]
 struct TCVariable {
     loc: Location,
-    typ: Type
+    typ: Type,
 }
 
 impl TCVariable {
-    fn new(loc: &Location, typ: &Type) -> Self { Self { loc: loc.clone(), typ: typ.clone() }}
+    fn new(loc: &Location, typ: &Type) -> Self {
+        Self {
+            loc: loc.clone(),
+            typ: typ.clone(),
+        }
+    }
 }
 
 #[derive(Debug)]
 struct TCFunction {
     parameters: IndexMap<String, TCVariable>,
     variables: Vec<IndexMap<String, TCVariable>>,
-    return_type: Option<TCVariable>
+    return_type: Option<TCVariable>,
 }
 
 impl TCFunction {
@@ -44,8 +49,8 @@ impl TCFunction {
         return Self {
             parameters: IndexMap::new(),
             variables: vec![IndexMap::new()],
-            return_type: None
-        }
+            return_type: None,
+        };
     }
 
     fn set_return_type(&mut self, ret: &TCVariable) {
@@ -69,13 +74,10 @@ impl TCFunction {
 
     fn add_parameter(&mut self, v_name: &String, var: TCVariable) -> Result<(), String> {
         match self.get_variable(v_name) {
-            Some(v) => {
-                Err(format!(
-                    "Variable redefinition!\n{}: Variable already declared here: {:?}",
-                    NOTE_STR,
-                    v.loc
-                ))
-            }
+            Some(v) => Err(format!(
+                "Variable redefinition!\n{}: Variable already declared here: {:?}",
+                NOTE_STR, v.loc
+            )),
             None => {
                 self.parameters.insert(v_name.clone(), var);
                 Ok(())
@@ -83,17 +85,22 @@ impl TCFunction {
         }
     }
 
-    fn add_variable(&mut self, v_name: &String, var: TCVariable, scope_depth: usize) -> Result<(), String> {
+    fn add_variable(
+        &mut self,
+        v_name: &String,
+        var: TCVariable,
+        scope_depth: usize,
+    ) -> Result<(), String> {
         match self.get_scope_location(v_name) {
-            Some(v) => {
-                Err(format!(
-                    "Variable redefinition!\n{}: Variable already declared here: {:?}",
-                    NOTE_STR,
-                    v.loc
-                ))
-            }
+            Some(v) => Err(format!(
+                "Variable redefinition!\n{}: Variable already declared here: {:?}",
+                NOTE_STR, v.loc
+            )),
             None => {
-                self.variables.get_mut(scope_depth).unwrap().insert(v_name.clone(), var);
+                self.variables
+                    .get_mut(scope_depth)
+                    .unwrap()
+                    .insert(v_name.clone(), var);
                 Ok(())
             }
         }
@@ -124,7 +131,7 @@ pub struct TypeChecker {
     current_fn: String,
     scope_depth: usize,
     #[allow(unused)]
-    print_debug: bool
+    print_debug: bool,
 }
 
 impl TypeChecker {
@@ -134,7 +141,7 @@ impl TypeChecker {
             functions: HashMap::new(),
             current_fn: String::new(),
             scope_depth: 0,
-            print_debug
+            print_debug,
         }
     }
 
@@ -175,13 +182,20 @@ impl TypeChecker {
                     children.push(self.type_check(&c)?);
                 }
                 Ok(Tree {
-                    typ: TreeType::File { functions: children },
-                    tkn: tree.tkn.clone()
+                    typ: TreeType::File {
+                        functions: children,
+                    },
+                    tkn: tree.tkn.clone(),
                 })
             }
-            TreeType::Func { name, return_type, param, block } => {
+            TreeType::Func {
+                name,
+                return_type,
+                param,
+                block,
+            } => {
                 assert!(self.current_fn.is_empty());
-                
+
                 self.current_fn = name.clone();
                 if self.functions.contains_key(&self.current_fn) {
                     return Err(format!(
@@ -190,29 +204,35 @@ impl TypeChecker {
                         tree.tkn.get_loc()
                     ));
                 }
-                
+
                 let func = TCFunction::new();
                 self.functions.insert(self.current_fn.clone(), func);
 
                 let p_t = self.type_check(&param)?;
 
-                let typ = if let Some(rt) = return_type { 
+                let typ = if let Some(rt) = return_type {
                     self.get_type(&rt)?
                 } else {
                     Type::None
                 };
                 let func = self.functions.get_mut(&self.current_fn).unwrap();
-                func.set_return_type(&TCVariable { loc: tree.tkn.get_loc(), typ });
+                func.set_return_type(&TCVariable {
+                    loc: tree.tkn.get_loc(),
+                    typ,
+                });
 
                 let b_t = self.type_check(&block)?;
 
                 self.current_fn.clear();
-                Ok(Tree { typ: TreeType::Func {
-                    name: name.clone(),
-                    return_type: return_type.clone(),
-                    param: Box::new(p_t),
-                    block: Box::new(b_t)
-                }, tkn: tree.tkn.clone() })
+                Ok(Tree {
+                    typ: TreeType::Func {
+                        name: name.clone(),
+                        return_type: return_type.clone(),
+                        param: Box::new(p_t),
+                        block: Box::new(b_t),
+                    },
+                    tkn: tree.tkn.clone(),
+                })
             }
             TreeType::ParamList { parameters } => {
                 for p in parameters {
@@ -224,13 +244,10 @@ impl TypeChecker {
                 let p_type = self.get_type(&typ)?;
 
                 let func = self.functions.get_mut(&self.current_fn).unwrap();
-                if let Err(e) = func.add_parameter(&name, TCVariable::new(&tree.tkn.get_loc(), &p_type)) {
-                    Err(format!(
-                        "{}: {:?}: {}",
-                        ERR_STR,
-                        tree.tkn.get_loc(),
-                        e
-                    ))
+                if let Err(e) =
+                    func.add_parameter(&name, TCVariable::new(&tree.tkn.get_loc(), &p_type))
+                {
+                    Err(format!("{}: {:?}: {}", ERR_STR, tree.tkn.get_loc(), e))
                 } else {
                     Ok(tree.clone())
                 }
@@ -243,21 +260,41 @@ impl TypeChecker {
                     children.push(self.type_check(c)?);
                 }
                 self.leave_scope();
-                Ok(Tree { typ: TreeType::Block { statements: children }, tkn: tree.tkn.clone() })
+                Ok(Tree {
+                    typ: TreeType::Block {
+                        statements: children,
+                    },
+                    tkn: tree.tkn.clone(),
+                })
             }
-            TreeType::StmtLet { name, typ, expression } => {
+            TreeType::StmtLet {
+                name,
+                typ,
+                expression,
+            } => {
                 assert!(!self.current_fn.is_empty());
-                
+
                 let var_type = self.get_type(&typ)?;
-                
+
                 let func = self.functions.get_mut(&self.current_fn).unwrap();
-                if let Err(e) = func.add_variable(&name, TCVariable::new(&tree.tkn.get_loc(), &var_type), self.scope_depth) {
-                    return Err(format!("{}: {:?}: {}", ERR_STR, tree.tkn.get_loc(), e))
+                if let Err(e) = func.add_variable(
+                    &name,
+                    TCVariable::new(&tree.tkn.get_loc(), &var_type),
+                    self.scope_depth,
+                ) {
+                    return Err(format!("{}: {:?}: {}", ERR_STR, tree.tkn.get_loc(), e));
                 }
 
                 let e_t = Box::new(self.type_check_expr(&var_type, &expression)?);
 
-                Ok(Tree { typ: TreeType::StmtLet { name: name.clone(), typ: typ.clone(), expression: e_t }, tkn: tree.tkn.clone() })
+                Ok(Tree {
+                    typ: TreeType::StmtLet {
+                        name: name.clone(),
+                        typ: typ.clone(),
+                        expression: e_t,
+                    },
+                    tkn: tree.tkn.clone(),
+                })
             }
             TreeType::StmtAssign { name, expression } => {
                 assert!(!self.current_fn.is_empty());
@@ -266,9 +303,19 @@ impl TypeChecker {
                 let n_t = self.type_check_expr(&var_type, &name)?;
                 let e_t = self.type_check_expr(&var_type, &expression)?;
 
-                Ok(Tree { typ: TreeType::StmtAssign { name: Box::new(n_t), expression: Box::new(e_t) }, tkn: tree.tkn.clone() })
+                Ok(Tree {
+                    typ: TreeType::StmtAssign {
+                        name: Box::new(n_t),
+                        expression: Box::new(e_t),
+                    },
+                    tkn: tree.tkn.clone(),
+                })
             }
-            TreeType::StmtIf { condition, if_branch, else_branch } => {
+            TreeType::StmtIf {
+                condition,
+                if_branch,
+                else_branch,
+            } => {
                 let condition = Box::new(self.type_check_expr(&Type::Bool, &condition)?);
                 let if_branch = Box::new(self.type_check(&if_branch)?);
                 let else_branch = if let Some(else_branch) = else_branch {
@@ -277,8 +324,12 @@ impl TypeChecker {
                     None
                 };
                 Ok(Tree {
-                    typ: TreeType::StmtIf { condition, if_branch, else_branch },
-                    tkn: tree.tkn.clone()
+                    typ: TreeType::StmtIf {
+                        condition,
+                        if_branch,
+                        else_branch,
+                    },
+                    tkn: tree.tkn.clone(),
                 })
             }
             TreeType::StmtExpr { expression } => {
@@ -296,8 +347,8 @@ impl TypeChecker {
                                     }
                                 }
                                 self.type_check_expr(&Type::None, &expression)?
-                            },
-                            None => todo!()
+                            }
+                            None => todo!(),
                         }
                     }
                     _ => {
@@ -308,7 +359,12 @@ impl TypeChecker {
                         ))
                     }
                 };
-                Ok(Tree { typ: TreeType::StmtExpr { expression: Box::new(e_t) }, tkn: tree.tkn.clone() })
+                Ok(Tree {
+                    typ: TreeType::StmtExpr {
+                        expression: Box::new(e_t),
+                    },
+                    tkn: tree.tkn.clone(),
+                })
             }
             TreeType::StmtReturn { return_value } => {
                 let func_return_value = self.get_current_function().get_return_type();
@@ -322,8 +378,10 @@ impl TypeChecker {
                                     ERR_STR,
                                     tree.tkn.get_loc()
                                 ));
-                            },
-                            (Some(func_ret), Type::Unknown) => self.type_check_expr(&func_ret.typ, &ret_val)?,
+                            }
+                            (Some(func_ret), Type::Unknown) => {
+                                self.type_check_expr(&func_ret.typ, &ret_val)?
+                            }
                             (Some(func_ret), prov_ret) => {
                                 if func_ret.typ == *prov_ret {
                                     self.type_check_expr(prov_ret, &ret_val)?
@@ -334,14 +392,21 @@ impl TypeChecker {
                                         tree.tkn.get_loc(),
                                         func_ret.typ,
                                         prov_ret
-                                    ))
+                                    ));
                                 }
                             }
                         };
-                        Ok(Tree { typ: TreeType::StmtReturn { return_value: Some(Box::new(new_ret)) }, tkn: tree.tkn.clone() })
-                    },
+                        Ok(Tree {
+                            typ: TreeType::StmtReturn {
+                                return_value: Some(Box::new(new_ret)),
+                            },
+                            tkn: tree.tkn.clone(),
+                        })
+                    }
                     None => {
-                        if func_return_value.is_some() && func_return_value.as_ref().unwrap().typ != Type::None {
+                        if func_return_value.is_some()
+                            && func_return_value.as_ref().unwrap().typ != Type::None
+                        {
                             Err(format!(
                                 "{}: {:?}: Expected return value. Function is declared to return `{:?}`, found empty return.",
                                 ERR_STR,
@@ -349,7 +414,10 @@ impl TypeChecker {
                                 func_return_value.as_ref().unwrap().typ
                             ))
                         } else {
-                            Ok(Tree { typ: TreeType::StmtReturn { return_value: None }, tkn: tree.tkn.clone()})
+                            Ok(Tree {
+                                typ: TreeType::StmtReturn { return_value: None },
+                                tkn: tree.tkn.clone(),
+                            })
                         }
                     }
                 }
@@ -365,7 +433,12 @@ impl TypeChecker {
         self.type_check_expr_rec(expected_type, expr_tree, 0)
     }
 
-    fn type_check_expr_rec(&self, expected_type: &Type, expr_tree: &Tree, depth: usize) -> Result<Tree, String> {
+    fn type_check_expr_rec(
+        &self,
+        expected_type: &Type,
+        expr_tree: &Tree,
+        depth: usize,
+    ) -> Result<Tree, String> {
         match &expr_tree.typ {
             TreeType::ExprLiteral { typ } => {
                 if *typ != Type::Unknown && typ != expected_type {
@@ -378,8 +451,10 @@ impl TypeChecker {
                     ))
                 } else {
                     Ok(Tree {
-                        typ: TreeType::ExprLiteral { typ: expected_type.clone() },
-                        tkn: expr_tree.tkn.clone()
+                        typ: TreeType::ExprLiteral {
+                            typ: expected_type.clone(),
+                        },
+                        tkn: expr_tree.tkn.clone(),
                     })
                 }
             }
@@ -389,15 +464,19 @@ impl TypeChecker {
                 let rhs_type = self.get_expr_type(rhs, true)?;
                 let (new_lhs, new_rhs) = match (lhs_type, rhs_type) {
                     (Type::Unknown, Type::Unknown) => {
-                        let lhs_deep = Box::new(self.type_check_expr_rec(expected_type, lhs, depth + 1)?);
-                        let rhs_deep = Box::new(self.type_check_expr_rec(expected_type, rhs, depth + 1)?);
+                        let lhs_deep =
+                            Box::new(self.type_check_expr_rec(expected_type, lhs, depth + 1)?);
+                        let rhs_deep =
+                            Box::new(self.type_check_expr_rec(expected_type, rhs, depth + 1)?);
                         (lhs_deep, rhs_deep)
-                    },
+                    }
                     (Type::Unknown, some_type) | (some_type, Type::Unknown) => {
-                        let lhs_deep = Box::new(self.type_check_expr_rec(&some_type, lhs, depth + 1)?);
-                        let rhs_deep = Box::new(self.type_check_expr_rec(&some_type, rhs, depth + 1)?);
+                        let lhs_deep =
+                            Box::new(self.type_check_expr_rec(&some_type, lhs, depth + 1)?);
+                        let rhs_deep =
+                            Box::new(self.type_check_expr_rec(&some_type, rhs, depth + 1)?);
                         (lhs_deep, rhs_deep)
-                    },
+                    }
                     (lhs_type, rhs_type) => {
                         if lhs_type != rhs_type {
                             return Err(format!(
@@ -408,8 +487,10 @@ impl TypeChecker {
                                 rhs_type
                             ));
                         } else {
-                            let lhs_deep = Box::new(self.type_check_expr_rec(&lhs_type, lhs, depth + 1)?);
-                            let rhs_deep = Box::new(self.type_check_expr_rec(&lhs_type, rhs, depth + 1)?);
+                            let lhs_deep =
+                                Box::new(self.type_check_expr_rec(&lhs_type, lhs, depth + 1)?);
+                            let rhs_deep =
+                                Box::new(self.type_check_expr_rec(&lhs_type, rhs, depth + 1)?);
                             (lhs_deep, rhs_deep)
                         }
                     }
@@ -434,8 +515,12 @@ impl TypeChecker {
                     ))
                 } else {
                     Ok(Tree {
-                        typ: TreeType::ExprBinary { lhs: new_lhs, rhs: new_rhs, typ: expected_type.clone() },
-                        tkn: expr_tree.tkn.clone()
+                        typ: TreeType::ExprBinary {
+                            lhs: new_lhs,
+                            rhs: new_rhs,
+                            typ: expected_type.clone(),
+                        },
+                        tkn: expr_tree.tkn.clone(),
                     })
                 }
             }
@@ -462,15 +547,19 @@ impl TypeChecker {
                                 lhs_t
                             }
                         };
-                        let lhs_deep = Box::new(self.type_check_expr_rec(&expected_type, lhs, depth + 1)?);
-                        let rhs_deep = Box::new(self.type_check_expr_rec(&expected_type, rhs, depth + 1)?);
+                        let lhs_deep =
+                            Box::new(self.type_check_expr_rec(&expected_type, lhs, depth + 1)?);
+                        let rhs_deep =
+                            Box::new(self.type_check_expr_rec(&expected_type, rhs, depth + 1)?);
                         (lhs_deep, rhs_deep)
-                    },
+                    }
                     (Type::Unknown, some_type) | (some_type, Type::Unknown) => {
-                        let lhs_deep = Box::new(self.type_check_expr_rec(&some_type, lhs, depth + 1)?);
-                        let rhs_deep = Box::new(self.type_check_expr_rec(&some_type, rhs, depth + 1)?);
+                        let lhs_deep =
+                            Box::new(self.type_check_expr_rec(&some_type, lhs, depth + 1)?);
+                        let rhs_deep =
+                            Box::new(self.type_check_expr_rec(&some_type, rhs, depth + 1)?);
                         (lhs_deep, rhs_deep)
-                    },
+                    }
                     (lhs_type, rhs_type) => {
                         if lhs_type != rhs_type {
                             return Err(format!(
@@ -481,27 +570,41 @@ impl TypeChecker {
                                 rhs_type
                             ));
                         } else {
-                            let lhs_deep = Box::new(self.type_check_expr_rec(&lhs_type, lhs, depth + 1)?);
-                            let rhs_deep = Box::new(self.type_check_expr_rec(&lhs_type, rhs, depth + 1)?);
+                            let lhs_deep =
+                                Box::new(self.type_check_expr_rec(&lhs_type, lhs, depth + 1)?);
+                            let rhs_deep =
+                                Box::new(self.type_check_expr_rec(&lhs_type, rhs, depth + 1)?);
                             (lhs_deep, rhs_deep)
                         }
                     }
                 };
                 let lhs_type = self.get_expr_type(&new_lhs, true)?;
                 let rhs_type = self.get_expr_type(&new_rhs, true)?;
-                assert!(lhs_type != Type::Unknown, "If this fails, there's a bug in type checking");
-                assert!(rhs_type != Type::Unknown, "If this fails, there's a bug in type checking");
-                assert!(lhs_type == rhs_type, "If this fails, there's a bug in type checking");
+                assert!(
+                    lhs_type != Type::Unknown,
+                    "If this fails, there's a bug in type checking"
+                );
+                assert!(
+                    rhs_type != Type::Unknown,
+                    "If this fails, there's a bug in type checking"
+                );
+                assert!(
+                    lhs_type == rhs_type,
+                    "If this fails, there's a bug in type checking"
+                );
                 Ok(Tree {
-                    typ: TreeType::ExprComp { lhs: new_lhs, rhs: new_rhs },
-                    tkn: expr_tree.tkn.clone()
+                    typ: TreeType::ExprComp {
+                        lhs: new_lhs,
+                        rhs: new_rhs,
+                    },
+                    tkn: expr_tree.tkn.clone(),
                 })
             }
             TreeType::ExprParen { expression, typ } => {
                 assert!(*typ == Type::Unknown);
                 self.type_check_expr_rec(expected_type, &expression, depth + 1)
             }
-            TreeType::ExprName { name , typ} => {
+            TreeType::ExprName { name, typ } => {
                 assert!(*typ == Type::Unknown);
                 let func = self.get_current_function();
                 match func.get_variable(name) {
@@ -519,8 +622,11 @@ impl TypeChecker {
                             ))
                         } else {
                             Ok(Tree {
-                                typ: TreeType::ExprName { name: name.clone(), typ: expected_type.clone() },
-                                tkn: expr_tree.tkn.clone()
+                                typ: TreeType::ExprName {
+                                    name: name.clone(),
+                                    typ: expected_type.clone(),
+                                },
+                                tkn: expr_tree.tkn.clone(),
                             })
                         }
                     }
@@ -529,10 +635,14 @@ impl TypeChecker {
                         ERR_STR,
                         expr_tree.tkn.get_loc(),
                         name
-                    ))
+                    )),
                 }
             }
-            TreeType::ExprCall { function_name, args, typ } => {
+            TreeType::ExprCall {
+                function_name,
+                args,
+                typ,
+            } => {
                 assert!(*typ == Type::Unknown);
                 match self.functions.get(function_name) {
                     Some(func) => {
@@ -540,30 +650,33 @@ impl TypeChecker {
                         let args = self.type_check_args(args, params)?;
                         let typ = match &func.return_type {
                             Some(t) => t.typ.clone(),
-                            None => Type::None
+                            None => Type::None,
                         };
                         Ok(Tree {
                             typ: TreeType::ExprCall {
                                 function_name: function_name.clone(),
                                 args: Box::new(args),
-                                typ
+                                typ,
                             },
-                            tkn: expr_tree.tkn.clone()
+                            tkn: expr_tree.tkn.clone(),
                         })
                     }
-                    None => {
-                        Err(format!(
-                            "{}: {:?}: Unknown function `{}`",
-                            ERR_STR,
-                            expr_tree.tkn.get_loc(),
-                            function_name
-                        ))
-                    }
+                    None => Err(format!(
+                        "{}: {:?}: Unknown function `{}`",
+                        ERR_STR,
+                        expr_tree.tkn.get_loc(),
+                        function_name
+                    )),
                 }
             }
             TreeType::Arg { expression } => {
                 let e_t = self.type_check_expr_rec(expected_type, &expression, depth + 1)?;
-                Ok(Tree { typ: TreeType::Arg { expression: Box::new(e_t) }, tkn: expr_tree.tkn.clone() })
+                Ok(Tree {
+                    typ: TreeType::Arg {
+                        expression: Box::new(e_t),
+                    },
+                    tkn: expr_tree.tkn.clone(),
+                })
             }
             TreeType::Name { name } => {
                 assert!(!self.current_fn.is_empty());
@@ -574,9 +687,12 @@ impl TypeChecker {
                         if var_type != expected_type {
                             todo!();
                         }
-                        Ok(Tree { typ: TreeType::Name { name: name.clone() }, tkn: expr_tree.tkn.clone() })
-                    },
-                    None => todo!()
+                        Ok(Tree {
+                            typ: TreeType::Name { name: name.clone() },
+                            tkn: expr_tree.tkn.clone(),
+                        })
+                    }
+                    None => todo!(),
                 }
             }
             TreeType::ExprArrLiteral { elements } => {
@@ -587,7 +703,7 @@ impl TypeChecker {
                         } else {
                             (Box::new(Type::Arr(t.clone(), s[1..].to_vec())), s[0])
                         }
-                    },
+                    }
                     _ => {
                         return Err(format!(
                             "{}: {:?}: Unexpected Array Literal",
@@ -625,7 +741,11 @@ impl TypeChecker {
                     }
                 }
             }
-            TreeType::ExprArrAccess { arr_name, indices, typ } => {
+            TreeType::ExprArrAccess {
+                arr_name,
+                indices,
+                typ,
+            } => {
                 assert!(*typ == Type::Unknown);
                 let func = self.get_current_function();
                 match func.get_variable(arr_name) {
@@ -641,21 +761,28 @@ impl TypeChecker {
                                         at,
                                         NOTE_STR,
                                         var_type.loc
-                                    ))
+                                    ));
                                 }
                                 Type::Arr(Box::new(Type::Usize), vec![size.len()])
                             }
-                            _ => todo!()
+                            _ => todo!(),
                         };
                         let i_t = self.type_check_expr_rec(&index_type, indices, depth + 1)?;
-                        Ok(Tree { typ: TreeType::ExprArrAccess { arr_name: arr_name.clone(), indices: Box::new(i_t), typ: var_type.typ.clone() }, tkn: expr_tree.tkn.clone() })
+                        Ok(Tree {
+                            typ: TreeType::ExprArrAccess {
+                                arr_name: arr_name.clone(),
+                                indices: Box::new(i_t),
+                                typ: var_type.typ.clone(),
+                            },
+                            tkn: expr_tree.tkn.clone(),
+                        })
                     }
                     None => Err(format!(
                         "{}: {:?}: Undefined variable `{}`.",
                         ERR_STR,
                         expr_tree.tkn.get_loc(),
                         arr_name
-                    ))
+                    )),
                 }
             }
             _ => {
@@ -665,7 +792,11 @@ impl TypeChecker {
         }
     }
 
-    fn type_check_args(&self, args: &Box<Tree>, params: &IndexMap<String, TCVariable>) -> Result<Tree, String> {
+    fn type_check_args(
+        &self,
+        args: &Box<Tree>,
+        params: &IndexMap<String, TCVariable>,
+    ) -> Result<Tree, String> {
         match &args.typ {
             TreeType::ArgList { arguments } => {
                 let mut children = vec![];
@@ -701,13 +832,18 @@ impl TypeChecker {
                         }
                     },
                 }
-                
-                Ok(Tree { typ: TreeType::ArgList { arguments: children }, tkn: args.tkn.clone() })
+
+                Ok(Tree {
+                    typ: TreeType::ArgList {
+                        arguments: children,
+                    },
+                    tkn: args.tkn.clone(),
+                })
             }
-            _ => panic!()
+            _ => panic!(),
         }
     }
-    
+
     fn get_expr_type(&self, expr: &Tree, strict: bool) -> Result<Type, String> {
         match &expr.typ {
             TreeType::ExprBinary { lhs, rhs, typ } => {
@@ -777,31 +913,23 @@ impl TypeChecker {
                             ERR_STR,
                             expr.tkn.get_loc(),
                             name
-                        ))
+                        )),
                     }
                 }
             }
-            TreeType::ExprCall { function_name, .. } => {
-                match self.functions.get(function_name) {
-                    Some(func) => {
-                        Ok(match func.get_return_type() {
-                            Some(ret) => ret.typ.clone(),
-                            None => Type::None
-                        })
-                    }
-                    None => {
-                        Err(format!(
-                            "{}: {:?}: Unknown function `{}`",
-                            ERR_STR,
-                            expr.tkn.get_loc(),
-                            function_name
-                        ))
-                    }
-                }
-            }
-            TreeType::ExprLiteral { typ } => {
-                Ok(typ.clone())
-            }
+            TreeType::ExprCall { function_name, .. } => match self.functions.get(function_name) {
+                Some(func) => Ok(match func.get_return_type() {
+                    Some(ret) => ret.typ.clone(),
+                    None => Type::None,
+                }),
+                None => Err(format!(
+                    "{}: {:?}: Unknown function `{}`",
+                    ERR_STR,
+                    expr.tkn.get_loc(),
+                    function_name
+                )),
+            },
+            TreeType::ExprLiteral { typ } => Ok(typ.clone()),
             TreeType::ExprParen { expression, typ } => {
                 if *typ != Type::Unknown {
                     Ok(typ.clone())
@@ -814,7 +942,7 @@ impl TypeChecker {
                 let func = self.get_current_function();
                 match func.get_variable(name) {
                     Some(var) => Ok(var.typ.clone()),
-                    None => panic!()
+                    None => panic!(),
                 }
             }
             TreeType::ExprArrAccess { arr_name, .. } => {
@@ -823,12 +951,12 @@ impl TypeChecker {
                 match func.get_variable(arr_name) {
                     Some(var) => match &var.typ {
                         Type::Arr(t, _) => Ok(*t.clone()),
-                        _ => panic!()
+                        _ => panic!(),
                     },
-                    None => panic!()
+                    None => panic!(),
                 }
             }
-            
+
             _ => {
                 expr.print_debug();
                 todo!();
@@ -838,10 +966,8 @@ impl TypeChecker {
 
     fn get_type(&self, tree: &Tree) -> Result<Type, String> {
         match &tree.typ {
-            TreeType::TypeDecl { typ } => {
-                Ok(typ.clone())
-            }
-            _ => todo!()
+            TreeType::TypeDecl { typ } => Ok(typ.clone()),
+            _ => todo!(),
         }
     }
 }

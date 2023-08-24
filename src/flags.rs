@@ -1,5 +1,8 @@
-use std::{collections::HashMap, fmt::{Display, Debug, Formatter}};
-use crate::codegen::{NOTE_STR, ERR_STR};
+use crate::codegen::{ERR_STR, NOTE_STR};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display, Formatter},
+};
 
 pub const FILE_EXT: &str = ".bu";
 pub const INPUT_KEY: &str = "-i";
@@ -10,7 +13,7 @@ pub const DEBUG_KEY: &str = "-d";
 pub enum Flag {
     InputFlag { path: Option<String> },
     RunFlag { run: bool },
-    DebugFlag { debug: bool }
+    DebugFlag { debug: bool },
 }
 
 impl Display for Flag {
@@ -22,10 +25,10 @@ impl Display for Flag {
                 } else {
                     writeln!(f, "No input provided.")
                 }
-            },
+            }
             Flag::RunFlag { run } => {
                 writeln!(f, "Run after compilation: {}", run)
-            },
+            }
             Flag::DebugFlag { debug } => {
                 writeln!(f, "Show debug info: {}", debug)
             }
@@ -39,16 +42,24 @@ pub struct FlagParser {
 
 impl FlagParser {
     pub fn init_flags() -> Self {
-        let mut fp = FlagParser { flags: HashMap::new() };
+        let mut fp = FlagParser {
+            flags: HashMap::new(),
+        };
         // Default values for flags are declared here.
-        fp.flags.insert(INPUT_KEY.to_string(), Flag::InputFlag { path: None });
-        fp.flags.insert(RUN_KEY.to_string(), Flag::RunFlag { run: false });
-        fp.flags.insert(DEBUG_KEY.to_string(), Flag::DebugFlag { debug: false });
+        fp.flags
+            .insert(INPUT_KEY.to_string(), Flag::InputFlag { path: None });
+        fp.flags
+            .insert(RUN_KEY.to_string(), Flag::RunFlag { run: false });
+        fp.flags
+            .insert(DEBUG_KEY.to_string(), Flag::DebugFlag { debug: false });
         fp
     }
 
     pub fn parse_flags(&mut self) -> Result<HashMap<String, Flag>, String> {
-        assert!(!self.flags.is_empty(), "Did you try to parse flags before initializing them?");
+        assert!(
+            !self.flags.is_empty(),
+            "Did you try to parse flags before initializing them?"
+        );
         let mut args = std::env::args();
         let _ = args.next().expect("Expected Program Name"); // program name
         let mut input_found = false;
@@ -93,7 +104,9 @@ impl FlagParser {
             }
         }
         if !input_found {
-            return Err(format!("{ERR_STR}: No input flag was found. No input file was provided."));
+            return Err(format!(
+                "{ERR_STR}: No input flag was found. No input file was provided."
+            ));
         }
         Ok(self.flags.clone())
     }

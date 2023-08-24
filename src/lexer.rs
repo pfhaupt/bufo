@@ -113,9 +113,12 @@ impl Lexer {
                 current_char: 0,
                 current_line: 1,
                 line_start: 0,
-                print_debug
+                print_debug,
             }),
-            Err(_) => Err(format!("{}: Could not find input file `{}`.", ERR_STR, origin_path)),
+            Err(_) => Err(format!(
+                "{}: Could not find input file `{}`.",
+                ERR_STR, origin_path
+            )),
         }
     }
 
@@ -361,7 +364,9 @@ impl Lexer {
     pub fn tokenize(&mut self) -> Result<(), String> {
         while !self.is_eof() {
             self.trim_whitespace()?;
-            if self.is_eof() { break; }
+            if self.is_eof() {
+                break;
+            }
             let t = self.next_token()?;
             self.tokens.push(t);
         }

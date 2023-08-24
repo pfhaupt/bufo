@@ -666,7 +666,6 @@ pub const NOTE_STR: &str = "\x1b[92mnote\x1b[0m";
 //                                     }
 
 //                                     self.resolve_types(Type::Usize)?;
-                                    
 
 //                                     // Index Out of Bounds check
 //                                     self.code.push(Instruction::LoadUsize { dest: size_reg, val: size[count] });
@@ -680,7 +679,7 @@ pub const NOTE_STR: &str = "\x1b[92mnote\x1b[0m";
 //                                     // in each step, add to that ^ the position we're indexing (result of expression)
 //                                     self.code.push(Instruction::Add { dest: index_reg, src: reg.mem, typ: Type::Usize });
 //                                 }
-                                
+
 //                                 self.code.push(Instruction::Add { dest: index_reg, src: mem_offset, typ: Type::Usize });
 //                                 let reg_tmp = self.get_register();
 //                                 self.code.push(Instruction::LoadPtrRel {

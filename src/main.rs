@@ -1,52 +1,60 @@
+mod checker;
 mod codegen;
+mod flags;
 mod lexer;
 mod parser;
-mod flags;
-mod checker;
 
 use std::time::Instant;
 
 use flags::RUN_KEY;
 
 // use crate::codegen::Generator;
+use crate::checker::TypeChecker;
+use crate::flags::{Flag, FlagParser, DEBUG_KEY, INPUT_KEY};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
-use crate::flags::{Flag, FlagParser, INPUT_KEY, DEBUG_KEY};
-use crate::checker::TypeChecker;
 
 fn compile() -> Result<(), String> {
     let now = Instant::now();
     let flags = FlagParser::init_flags().parse_flags()?;
     let path = match flags.get(INPUT_KEY).unwrap() {
         Flag::InputFlag { path } => path.as_ref().unwrap(),
-        _ => unreachable!()
+        _ => unreachable!(),
     };
     let run = match flags.get(RUN_KEY).unwrap() {
         Flag::RunFlag { run } => *run,
-        _ => unreachable!()
+        _ => unreachable!(),
     };
     let debug = match flags.get(DEBUG_KEY).unwrap() {
         Flag::DebugFlag { debug } => *debug,
-        _ => unreachable!()
+        _ => unreachable!(),
     };
-    if debug { println!("Parsing flags took {:?}", now.elapsed()); }
+    if debug {
+        println!("Parsing flags took {:?}", now.elapsed());
+    }
 
     let now = Instant::now();
     let mut lexer = Lexer::new(path, debug)?;
     lexer.tokenize()?;
-    if debug { println!("Tokenizing took {:?}", now.elapsed()); };
+    if debug {
+        println!("Tokenizing took {:?}", now.elapsed());
+    };
 
     let now = Instant::now();
     let mut parser = Parser::new(path, lexer.get_tokens(), debug);
     let ast = parser.parse_file()?;
     // ast.print_debug();
-    if debug { println!("Parsing took {:?}", now.elapsed()); }
+    if debug {
+        println!("Parsing took {:?}", now.elapsed());
+    }
 
     let now = Instant::now();
     let mut type_checker = TypeChecker::new(&ast, debug);
     let ast = type_checker.type_check_program()?;
     // ast.print_debug();
-    if debug { println!("Type Checking took {:?}", now.elapsed()); }
+    if debug {
+        println!("Type Checking took {:?}", now.elapsed());
+    }
     todo!();
 
     // let now = Instant::now();
@@ -59,7 +67,6 @@ fn compile() -> Result<(), String> {
     //     if debug { println!("Interpreting Code took {:?}", now.elapsed()); }
     // };
 
-    
     Ok(())
 }
 
