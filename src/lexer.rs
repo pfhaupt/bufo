@@ -352,6 +352,7 @@ impl Lexer {
     pub fn tokenize(&mut self) -> Result<(), String> {
         while !self.is_eof() {
             self.trim_whitespace()?;
+            if self.is_eof() { break; }
             let t = self.next_token()?;
             self.tokens.push(t);
         }
