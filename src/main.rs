@@ -1,3 +1,5 @@
+#![allow(unused, unreachable_code)]
+
 mod checker;
 mod codegen;
 mod flags;
@@ -18,15 +20,15 @@ fn compile() -> Result<(), String> {
     let now = Instant::now();
     let flags = FlagParser::init_flags().parse_flags()?;
     let path = match flags.get(INPUT_KEY).unwrap() {
-        Flag::InputFlag { path } => path.as_ref().unwrap(),
+        Flag::Input { path } => path.as_ref().unwrap(),
         _ => unreachable!(),
     };
     let run = match flags.get(RUN_KEY).unwrap() {
-        Flag::RunFlag { run } => *run,
+        Flag::Run { run } => *run,
         _ => unreachable!(),
     };
     let debug = match flags.get(DEBUG_KEY).unwrap() {
-        Flag::DebugFlag { debug } => *debug,
+        Flag::Debug { debug } => *debug,
         _ => unreachable!(),
     };
     if debug {
@@ -73,6 +75,5 @@ fn compile() -> Result<(), String> {
 fn main() {
     if let Err(e) = compile() {
         println!("{}", e);
-        return;
     }
 }
