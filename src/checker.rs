@@ -43,14 +43,16 @@ struct TCFunction {
     parameters: IndexMap<String, TCVariable>,
     variables: Vec<IndexMap<String, TCVariable>>,
     return_type: Option<TCVariable>,
+    loc: Location
 }
 
 impl TCFunction {
-    fn new() -> Self {
+    fn new(loc: Location) -> Self {
         Self {
             parameters: IndexMap::new(),
             variables: vec![IndexMap::new()],
             return_type: None,
+            loc
         }
     }
 
@@ -206,7 +208,7 @@ impl TypeChecker {
                     ));
                 }
 
-                let func = TCFunction::new();
+                let func = TCFunction::new(tree.tkn.get_loc());
                 self.functions.insert(self.current_fn.clone(), func);
 
                 let p_t = self.type_check(param)?;
@@ -346,8 +348,10 @@ impl TypeChecker {
                                             function_name
                                         );
                                     }
+                                    self.type_check_expr(&ret.typ, expression)?
+                                } else {
+                                    self.type_check_expr(&Type::None, expression)?
                                 }
-                                self.type_check_expr(&Type::None, expression)?
                             }
                             None => todo!(),
                         }
@@ -651,19 +655,33 @@ impl TypeChecker {
                                         arguments.len()
                                     )),
                                     _ => {
-                                        let args = self.type_check_args(args, params)?;
+                                        let args = self.type_check_args(function_name, args, params)?;
                                         let typ = match &func.return_type {
                                             Some(t) => t.typ.clone(),
                                             None => Type::None,
                                         };
-                                        Ok(Tree {
-                                            typ: TreeType::ExprCall {
-                                                function_name: function_name.clone(),
-                                                args: Box::new(args),
+                                        if typ != *expected_type {
+                                            Err(format!(
+                                                "{}: {:?}: Type Mismatch. Expected Type `{:?}`, got Type `{:?}`.\n{}: {:?}: Function `{}` declared to return `{:?}` here.",
+                                                ERR_STR,
+                                                expr_tree.tkn.get_loc(),
+                                                expected_type,
                                                 typ,
-                                            },
-                                            tkn: expr_tree.tkn.clone(),
-                                        })
+                                                NOTE_STR,
+                                                func.loc,
+                                                function_name,
+                                                typ
+                                            ))
+                                        } else {
+                                            Ok(Tree {
+                                                typ: TreeType::ExprCall {
+                                                    function_name: function_name.clone(),
+                                                    args: Box::new(args),
+                                                    typ,
+                                                },
+                                                tkn: expr_tree.tkn.clone(),
+                                            })
+                                        }
                                     }
                                 }
                             }
@@ -805,6 +823,7 @@ impl TypeChecker {
 
     fn type_check_args(
         &self,
+        function_name: &String,
         args: &Tree,
         params: &IndexMap<String, TCVariable>,
     ) -> Result<Tree, String> {
@@ -834,9 +853,13 @@ impl TypeChecker {
                             let a_t = match self.type_check_expr(param_type, arg) {
                                 Ok(t) => t,
                                 Err(e) => return Err(format!(
-                                    "{e}\n{}: Parameter declared here: {:?}",
+                                    "{e}\n{}: {:?}: Error when evaluating type of argument.\n{}: {:?}: Parameter `{}` for function `{}` declared here.",
                                     NOTE_STR,
-                                    par.loc
+                                    arg.tkn.get_loc(),
+                                    NOTE_STR,
+                                    par.loc,
+                                    params.keys().collect::<Vec<_>>()[i],
+                                    function_name,
                                 ))
                             };
                             children.push(a_t);
