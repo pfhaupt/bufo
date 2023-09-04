@@ -1,7 +1,9 @@
-func bla() {
-    let a: i32[3] = [1, 2, 3];
-    let b: u32[0] = [];
-    a = 5;
+func lol(n: u32) -> i32 {
+    return 5;
+}
+func bla() -> i32 {
+    let arr: i32[1, 2] = [[1, 1]];
+    return arr[1, 1];
 }
 
 func main() {

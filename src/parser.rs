@@ -560,16 +560,20 @@ impl Parser {
         let tkn = self.open();
         let mut children = vec![];
         self.expect(TokenType::OpenSquare)?;
+        let size = self.expect(TokenType::IntLiteral)?;
+        let size = match size.get_value().parse::<usize>() {
+            Ok(i) => i,
+            Err(e) => return Err(format!("{}: {:?}: {}", ERR_STR, tkn.get_loc(), e)),
+        };
+        children.push(size);
         while !self.at(TokenType::ClosingSquare) && !self.eof() {
+            self.expect(TokenType::Comma);
             let size = self.expect(TokenType::IntLiteral)?;
             let size = match size.get_value().parse::<usize>() {
                 Ok(i) => i,
                 Err(e) => return Err(format!("{}: {:?}: {}", ERR_STR, tkn.get_loc(), e)),
             };
             children.push(size);
-            if !self.eat(TokenType::Comma) {
-                break;
-            }
         }
         self.expect(TokenType::ClosingSquare)?;
         Ok(children)

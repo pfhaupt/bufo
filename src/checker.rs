@@ -42,29 +42,22 @@ impl TCVariable {
 struct TCFunction {
     parameters: IndexMap<String, TCVariable>,
     variables: Vec<IndexMap<String, TCVariable>>,
-    return_type: Option<TCVariable>,
+    return_type: TCVariable,
     loc: Location
 }
 
 impl TCFunction {
-    fn new(loc: Location) -> Self {
+    fn new(loc: Location, return_type: TCVariable) -> Self {
         Self {
             parameters: IndexMap::new(),
             variables: vec![IndexMap::new()],
-            return_type: None,
+            return_type,
             loc
         }
     }
 
-    fn set_return_type(&mut self, ret: &TCVariable) {
-        if self.return_type.is_some() {
-            panic!()
-        }
-        self.return_type = Some(ret.clone());
-    }
-
-    fn get_return_type(&self) -> &Option<TCVariable> {
-        &self.return_type
+    fn get_return_type(&self) -> TCVariable {
+        self.return_type.clone()
     }
 
     fn add_scope(&mut self) {
@@ -208,21 +201,19 @@ impl TypeChecker {
                     ));
                 }
 
-                let func = TCFunction::new(tree.tkn.get_loc());
-                self.functions.insert(self.current_fn.clone(), func);
-
-                let p_t = self.type_check(param)?;
-
                 let typ = if let Some(rt) = return_type {
                     self.get_type(rt)?
                 } else {
                     Type::None
                 };
-                let func = self.functions.get_mut(&self.current_fn).unwrap();
-                func.set_return_type(&TCVariable {
+                let mut func = TCFunction::new(tree.tkn.get_loc(), TCVariable {
                     loc: tree.tkn.get_loc(),
                     typ,
                 });
+
+                self.functions.insert(self.current_fn.clone(), func);
+
+                let p_t = self.type_check(param)?;
 
                 let b_t = self.type_check(block)?;
 
@@ -340,18 +331,15 @@ impl TypeChecker {
                     TreeType::ExprCall { function_name, .. } => {
                         match self.functions.get(function_name) {
                             Some(func) => {
-                                if let Some(ret) = &func.return_type {
-                                    if ret.typ != Type::None {
-                                        println!("{}: {:?}: Ignoring return value of function call to `{}()`",
-                                            WARN_STR,
-                                            tree.tkn.get_loc(),
-                                            function_name
-                                        );
-                                    }
-                                    self.type_check_expr(&ret.typ, expression)?
-                                } else {
-                                    self.type_check_expr(&Type::None, expression)?
+                                let ret = &func.return_type.typ;
+                                if *ret != Type::None {
+                                    println!("{}: {:?}: Ignoring return value of function call to `{}()`",
+                                        WARN_STR,
+                                        tree.tkn.get_loc(),
+                                        function_name
+                                    );
                                 }
+                                self.type_check_expr(ret, expression)?
                             }
                             None => todo!(),
                         }
@@ -376,26 +364,26 @@ impl TypeChecker {
                 match return_value {
                     Some(ret_val) => {
                         let provided_return = &self.get_expr_type(ret_val, true)?;
-                        let new_ret = match (func_return_value, provided_return) {
-                            (None, _) => {
+                        let new_ret = match (func_return_value.typ, provided_return) {
+                            (Type::None, _) => {
                                 return Err(format!(
                                     "{}: {:?}: Unexpected return value. Function is declared to return nothing, found return value.",
                                     ERR_STR,
                                     tree.tkn.get_loc()
                                 ));
                             }
-                            (Some(func_ret), Type::Unknown) => {
-                                self.type_check_expr(&func_ret.typ, ret_val)?
+                            (func_ret, Type::Unknown) => {
+                                self.type_check_expr(&func_ret, ret_val)?
                             }
-                            (Some(func_ret), prov_ret) => {
-                                if func_ret.typ == *prov_ret {
+                            (func_ret, prov_ret) => {
+                                if func_ret == *prov_ret {
                                     self.type_check_expr(prov_ret, ret_val)?
                                 } else {
                                     return Err(format!(
                                         "{}: {:?}: Type Mismatch. Function is declared to return `{:?}`, got `{:?}`.",
                                         ERR_STR,
                                         tree.tkn.get_loc(),
-                                        func_ret.typ,
+                                        func_ret,
                                         prov_ret
                                     ));
                                 }
@@ -409,14 +397,13 @@ impl TypeChecker {
                         })
                     }
                     None => {
-                        if func_return_value.is_some()
-                            && func_return_value.as_ref().unwrap().typ != Type::None
+                        if func_return_value.typ != Type::None
                         {
                             Err(format!(
                                 "{}: {:?}: Expected return value. Function is declared to return `{:?}`, found empty return.",
                                 ERR_STR,
                                 tree.tkn.get_loc(),
-                                func_return_value.as_ref().unwrap().typ
+                                func_return_value.typ
                             ))
                         } else {
                             Ok(Tree {
@@ -450,12 +437,19 @@ impl TypeChecker {
                         typ
                     ))
                 } else {
-                    Ok(Tree {
-                        typ: TreeType::ExprLiteral {
-                            typ: expected_type.clone(),
-                        },
-                        tkn: expr_tree.tkn.clone(),
-                    })
+                    match expected_type {
+                        Type::Arr(..) => Err(format!(
+                            "{}: {:?}: Attempted to assign ExprLiteral to Array.",
+                            ERR_STR,
+                            expr_tree.tkn.get_loc()
+                        )),
+                        _ => Ok(Tree {
+                            typ: TreeType::ExprLiteral {
+                                typ: expected_type.clone(),
+                            },
+                            tkn: expr_tree.tkn.clone(),
+                        })
+                    }                    
                 }
             }
             TreeType::ExprBinary { lhs, rhs, typ } => {
@@ -656,11 +650,8 @@ impl TypeChecker {
                                     )),
                                     _ => {
                                         let args = self.type_check_args(function_name, args, params)?;
-                                        let typ = match &func.return_type {
-                                            Some(t) => t.typ.clone(),
-                                            None => Type::None,
-                                        };
-                                        if typ != *expected_type {
+                                        let typ = &func.return_type.typ;
+                                        if typ != expected_type {
                                             Err(format!(
                                                 "{}: {:?}: Type Mismatch. Expected Type `{:?}`, got Type `{:?}`.\n{}: {:?}: Function `{}` declared to return `{:?}` here.",
                                                 ERR_STR,
@@ -677,7 +668,7 @@ impl TypeChecker {
                                                 typ: TreeType::ExprCall {
                                                     function_name: function_name.clone(),
                                                     args: Box::new(args),
-                                                    typ,
+                                                    typ: typ.clone(),
                                                 },
                                                 tkn: expr_tree.tkn.clone(),
                                             })
@@ -740,6 +731,13 @@ impl TypeChecker {
                         ))
                     }
                 };
+                if size == 0 {
+                    return Err(format!(
+                        "{}: {:?}: Attempted to initialize Array of Size 0.",
+                        ERR_STR,
+                        expr_tree.tkn.get_loc()
+                    ));
+                }
                 match elements.len().cmp(&size) {
                     std::cmp::Ordering::Less | std::cmp::Ordering::Greater => Err(format!(
                         "{}: {:?}: Size Mismatch for Array Literal. Expected {} elements, got {} elements.",
@@ -956,10 +954,7 @@ impl TypeChecker {
                 }
             }
             TreeType::ExprCall { function_name, .. } => match self.functions.get(function_name) {
-                Some(func) => Ok(match func.get_return_type() {
-                    Some(ret) => ret.typ.clone(),
-                    None => Type::None,
-                }),
+                Some(func) => Ok(func.get_return_type().typ),
                 None => Err(format!(
                     "{}: {:?}: Unknown function `{}`",
                     ERR_STR,
