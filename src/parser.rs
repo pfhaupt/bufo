@@ -77,6 +77,7 @@ pub enum TreeType {
     ExprComp {
         lhs: Box<Tree>,
         rhs: Box<Tree>,
+        typ: Type,
     },
     ExprParen {
         expression: Box<Tree>,
@@ -204,7 +205,7 @@ impl Tree {
                 println!("{tab}ExprName {name} {typ:?}");
             }
             TreeType::ExprArrLiteral { elements } => {
-                println!("{tab}ArrLiteral");
+                println!("{tab}ExprArrLiteral");
                 for e in elements {
                     e.print_internal(indent + 2);
                 }
@@ -225,8 +226,8 @@ impl Tree {
                 lhs.print_internal(indent + 2);
                 rhs.print_internal(indent + 2);
             }
-            TreeType::ExprComp { lhs, rhs } => {
-                println!("{tab}ExprComp {}", self.tkn.get_value());
+            TreeType::ExprComp { lhs, rhs, typ } => {
+                println!("{tab}ExprComp {} {typ:?}", self.tkn.get_value());
                 lhs.print_internal(indent + 2);
                 rhs.print_internal(indent + 2);
             }
@@ -245,11 +246,13 @@ impl Tree {
             TreeType::TypeDecl { typ } => {
                 println!("{tab}{typ:?}");
             }
-            TreeType::Pointer { .. } => {
-                todo!();
+            TreeType::Pointer { var_name } => {
+                println!("{tab} Pointer");
+                var_name.print_internal(indent + 2);
             }
-            TreeType::Deref { .. } => {
-                todo!();
+            TreeType::Deref { var_name } => {
+                println!("{tab} Deref");
+                var_name.print_internal(indent + 2);
             }
         }
     }
@@ -508,6 +511,7 @@ impl Parser {
                         typ: TreeType::ExprComp {
                             lhs: Box::new(lhs),
                             rhs: Box::new(rhs),
+                            typ: Type::Unknown
                         },
                         tkn,
                     }

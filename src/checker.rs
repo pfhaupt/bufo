@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use indexmap::IndexMap;
 use std::collections::HashMap;
 
@@ -513,7 +514,8 @@ impl TypeChecker {
                     })
                 }
             }
-            TreeType::ExprComp { lhs, rhs } => {
+            TreeType::ExprComp { lhs, rhs, typ } => {
+                assert!(*typ == Type::Unknown);
                 let lhs_type = self.get_expr_type(lhs, true)?;
                 let rhs_type = self.get_expr_type(rhs, true)?;
                 let (new_lhs, new_rhs) = match (lhs_type, rhs_type) {
@@ -579,6 +581,7 @@ impl TypeChecker {
                     typ: TreeType::ExprComp {
                         lhs: new_lhs,
                         rhs: new_rhs,
+                        typ: expected_type.clone(),
                     },
                     tkn: expr_tree.tkn.clone(),
                 })
@@ -630,19 +633,43 @@ impl TypeChecker {
                 match self.functions.get(function_name) {
                     Some(func) => {
                         let params = &func.parameters;
-                        let args = self.type_check_args(args, params)?;
-                        let typ = match &func.return_type {
-                            Some(t) => t.typ.clone(),
-                            None => Type::None,
-                        };
-                        Ok(Tree {
-                            typ: TreeType::ExprCall {
-                                function_name: function_name.clone(),
-                                args: Box::new(args),
-                                typ,
-                            },
-                            tkn: expr_tree.tkn.clone(),
-                        })
+                        match &args.typ {
+                            TreeType::ArgList { arguments } => {
+                                match arguments.len().cmp(&params.len()) {
+                                    Ordering::Less => Err(format!(
+                                        "{}: {:?}: Too few arguments specified for function call. Expected {} arguments, got {}.",
+                                        ERR_STR,
+                                        expr_tree.tkn.get_loc(),
+                                        params.len(),
+                                        arguments.len()
+                                    )),
+                                    Ordering::Greater => Err(format!(
+                                        "{}: {:?}: Too many arguments specified for function call. Expected {} arguments, got {}.",
+                                        ERR_STR,
+                                        expr_tree.tkn.get_loc(),
+                                        params.len(),
+                                        arguments.len()
+                                    )),
+                                    _ => {
+                                        let args = self.type_check_args(args, params)?;
+                                        let typ = match &func.return_type {
+                                            Some(t) => t.typ.clone(),
+                                            None => Type::None,
+                                        };
+                                        Ok(Tree {
+                                            typ: TreeType::ExprCall {
+                                                function_name: function_name.clone(),
+                                                args: Box::new(args),
+                                                typ,
+                                            },
+                                            tkn: expr_tree.tkn.clone(),
+                                        })
+                                    }
+                                }
+                            }
+                            _ => panic!()
+                        }
+                        
                     }
                     None => Err(format!(
                         "{}: {:?}: Unknown function `{}`",
@@ -768,6 +795,7 @@ impl TypeChecker {
                     )),
                 }
             }
+            TreeType::Pointer { .. } => panic!("Pointers are currently not supported!"),
             _ => {
                 expr_tree.print_debug();
                 todo!()
@@ -860,23 +888,27 @@ impl TypeChecker {
                     }
                 }
             }
-            TreeType::ExprComp { lhs, rhs } => {
-                let l = self.get_expr_type(lhs, strict)?;
-                let r = self.get_expr_type(rhs, strict)?;
-                match (l, r) {
-                    (Type::Unknown, Type::Unknown) => Ok(Type::Unknown),
-                    (Type::Unknown, s) | (s, Type::Unknown) => {
-                        if strict {
-                            Ok(Type::Unknown)
-                        } else {
-                            Ok(s)
+            TreeType::ExprComp { lhs, rhs, typ } => {
+                if *typ != Type::Unknown {
+                    Ok(typ.clone())
+                } else {
+                    let l = self.get_expr_type(lhs, strict)?;
+                    let r = self.get_expr_type(rhs, strict)?;
+                    match (l, r) {
+                        (Type::Unknown, Type::Unknown) => Ok(Type::Unknown),
+                        (Type::Unknown, s) | (s, Type::Unknown) => {
+                            if strict {
+                                Ok(Type::Unknown)
+                            } else {
+                                Ok(s)
+                            }
                         }
-                    }
-                    (left_type, right_type) => {
-                        if left_type != right_type {
-                            todo!()
-                        } else {
-                            Ok(Type::Bool)
+                        (left_type, right_type) => {
+                            if left_type != right_type {
+                                todo!()
+                            } else {
+                                Ok(Type::Bool)
+                            }
                         }
                     }
                 }
@@ -934,12 +966,28 @@ impl TypeChecker {
                 match func.get_variable(arr_name) {
                     Some(var) => match &var.typ {
                         Type::Arr(t, _) => Ok(*t.clone()),
-                        _ => panic!(),
+                        t => Err(format!(
+                            "{}: {:?}: Attempted to index into non-array variable `{}`.\n{}: {:?}: Variable declared to be of type `{:?}` here.",
+                            ERR_STR,
+                            expr.tkn.get_loc(),
+                            arr_name,
+                            NOTE_STR,
+                            var.loc,
+                            t
+                        )),
                     },
-                    None => panic!(),
+                    None => Err(format!(
+                        "{}: {:?}: Undefined variable `{}`.",
+                        ERR_STR,
+                        expr.tkn.get_loc(),
+                        arr_name
+                    )),
                 }
             }
-
+            TreeType::ExprArrLiteral { elements } => {
+                todo!()
+            }
+            TreeType::Pointer { .. } => panic!("Pointers are currently not supported!"),
             _ => {
                 expr.print_debug();
                 todo!();

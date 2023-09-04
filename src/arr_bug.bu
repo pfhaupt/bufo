@@ -1,0 +1,9 @@
+func bla() {
+    let a: i32[3] = [1, 2, 3];
+    let b: u32[0] = [];
+    a = 5;
+}
+
+func main() {
+    bla();
+}
