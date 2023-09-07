@@ -3,7 +3,7 @@ use std::fs;
 
 use crate::codegen::ERR_STR;
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TokenType {
     File,
     IntLiteral,
@@ -38,7 +38,16 @@ pub enum TokenType {
     Eof,
 }
 
-#[derive(Clone, PartialEq)]
+pub const COMPARATOR_TYPES: [TokenType; 6] = [
+    TokenType::CmpEq,
+    TokenType::CmpNeq,
+    TokenType::CmpGt,
+    TokenType::CmpGte,
+    TokenType::CmpLt,
+    TokenType::CmpLte,
+];
+
+#[derive(Clone, PartialEq, Eq)]
 pub struct Location {
     file: String,
     row: usize,
@@ -57,7 +66,7 @@ impl Debug for Location {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
     typ: TokenType, // type is a reserved keyword in Rust :(
     value: String,
@@ -104,9 +113,12 @@ impl Lexer {
                 current_char: 0,
                 current_line: 1,
                 line_start: 0,
-                print_debug
+                print_debug,
             }),
-            Err(_) => Err(format!("{}: Could not find input file `{}`.", ERR_STR, origin_path)),
+            Err(_) => Err(format!(
+                "{}: Could not find input file `{}`.",
+                ERR_STR, origin_path
+            )),
         }
     }
 
@@ -352,6 +364,9 @@ impl Lexer {
     pub fn tokenize(&mut self) -> Result<(), String> {
         while !self.is_eof() {
             self.trim_whitespace()?;
+            if self.is_eof() {
+                break;
+            }
             let t = self.next_token()?;
             self.tokens.push(t);
         }
