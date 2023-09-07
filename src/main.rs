@@ -62,9 +62,10 @@ fn compile() -> Result<(), String> {
     let now = Instant::now();
     let mut generator = Generator::new(ast, debug)?;
     if debug { println!("Generating Code took {:?}", now.elapsed()); }
-    // generator.compile()?;
     if run {
         let now = Instant::now();
+        // generator.compile()?;
+        // if debug { println!("Compiling Code took {:?}", now.elapsed()); }
         generator.interpret()?;
         if debug { println!("Interpreting Code took {:?}", now.elapsed()); }
     };
