@@ -161,25 +161,25 @@ enum Instruction {
         typ: Type,
     },
     Jmp {
-        dest: usize,
+        dest: String,
     },
     JmpEq {
-        dest: usize,
+        dest: String,
     },
     JmpNeq {
-        dest: usize,
+        dest: String,
     },
     JmpGt {
-        dest: usize,
+        dest: String,
     },
     JmpGte {
-        dest: usize,
+        dest: String,
     },
     JmpLt {
-        dest: usize,
+        dest: String,
     },
     JmpLte {
-        dest: usize,
+        dest: String,
     },
     Move {
         dest: usize,
@@ -204,6 +204,7 @@ enum Instruction {
     },
     Return {},
     Exit { code: usize},
+    Label { name: String },
     // Print { src: usize },
 }
 
@@ -330,12 +331,14 @@ impl Function {
 #[derive(Debug)]
 pub struct Generator {
     ast: Tree,
+    entry_point: String,
     registers: Vec<Memory>,
     register_ctr: usize,
     functions: HashMap<String, Function>,
     code: Vec<Instruction>,
     current_fn: String,
     unresolved_jmp_instr: VecDeque<usize>,
+    label_lookup: HashMap<String, usize>,
     unresolved_typ_instr: VecDeque<usize>,
     scope_depth: usize,
     print_debug: bool
@@ -345,18 +348,33 @@ impl Generator {
     pub fn new(ast: Tree, print_debug: bool) -> Result<Self, String> {
         let mut gen = Self {
             ast,
+            entry_point: String::from("main"),
             registers: vec![Memory { u64: 0 }; 100],
             register_ctr: 0,
             functions: HashMap::new(),
             code: vec![],
             current_fn: String::new(),
             unresolved_jmp_instr: VecDeque::new(),
+            label_lookup: HashMap::new(),
             unresolved_typ_instr: VecDeque::new(),
             scope_depth: 0,
             print_debug
         };
         gen.generate_code()?;
         Ok(gen)
+    }
+
+    fn create_label(&mut self) -> String {
+        format!("lbl_{}", self.label_lookup.len())
+    }
+
+    fn add_label(&mut self, lbl: &String) {
+        self.label_lookup.insert(lbl.clone(), self.code.len());
+        self.code.push(Instruction::Label { name: lbl.clone() });
+    }
+
+    fn get_label_ip(&self, lbl: &String) -> usize {
+        *self.label_lookup.get(lbl).expect("At this point label_lookup should contain the label")
     }
 
     fn add_local_var(&mut self, var_name: &str, scope_depth: usize, typ: &Type) -> usize {
@@ -399,18 +417,6 @@ impl Generator {
         r
     }
 
-    fn convert_expr_literal(&mut self, lit: String) -> Result<(String, Type), String> {
-        todo!()
-        /* match lit.bytes().position(|c| c.is_ascii_alphabetic()) {
-            Some(index) => {
-                let typ_str = &lit[index..];
-                let typ = self.convert_type_str(typ_str)?;
-                Ok((lit[0..index].to_owned(), typ))
-            }
-            None => Ok((lit, Type::Unknown)),
-        } */
-    }
-
     fn convert_expr_atomic(&mut self, instr: &Tree) -> Result<Variable, String> {
         todo!() 
         /* let instr_children = &instr.children;
@@ -418,52 +424,6 @@ impl Generator {
             TreeType::ExprParen => {
                 /* assert!(instr_children.len() == 1, "Expected {{Expr}}");
                 self.convert_expr_atomic(&instr_children[0]) */
-            }
-            TreeType::ExprArrLiteral => /* Err(format!(
-                "{}: {:?}: Unexpected Array Literal",
-                ERR_STR,
-                instr.tkn.get_loc()
-            )) */,
-            TreeType::ExprArrAccess => {
-                /* let instr_children = &instr.children;
-                
-                match function_stack.get_variable_location(&name) {
-                    Some(variable) => {
-                        match variable.typ {
-                            Type::Arr(typ, size) => {
-
-                                self.code.push(Instruction::Add { dest: index_reg, src: mem_offset, typ: Type::Usize });
-                                let reg_tmp = self.get_register();
-                                self.code.push(Instruction::LoadPtrRel {
-                                    dest: reg_tmp,
-                                    src: index_reg,
-                                    typ: *typ.clone(),
-                                });
-                                self.code.push(Instruction::LoadPtr {
-                                    dest: reg_tmp,
-                                    src: reg_tmp,
-                                    typ: *typ.clone(),
-                                });
-                                Ok(Variable {
-                                    typ: *typ.clone(),
-                                    mem: reg_tmp,
-                                })
-                            }
-                            _ => Err(format!(
-                                "{}: {:?}: Indexed variable `{}` is not an Array.",
-                                ERR_STR,
-                                name_tkn.get_loc(),
-                                name
-                            )),
-                        }
-                    }
-                    None => Err(format!(
-                        "{}: {:?}: Undefined variable `{}`",
-                        ERR_STR,
-                        name_tkn.get_loc(),
-                        name
-                    )),
-                } */
             }
             TreeType::Pointer => {
                 /* let val_name = &instr_children[0];
@@ -593,61 +553,24 @@ impl Generator {
 
                 let dest = dest.mem;
                 let src = src.mem;
+
+                let lbl_name = self.create_label();
+                self.add_label(&lbl_name);
+                
+                self.code.push(Instruction::Cmp {
+                    dest,
+                    src,
+                    typ: typ.clone(),
+                });
+                self.unresolved_jmp_instr.push_back(self.code.len());
+
                 match expr_tree.tkn.get_type() {
-                    TokenType::CmpEq => {
-                        self.code.push(Instruction::Cmp {
-                            dest,
-                            src,
-                            typ: typ.clone(),
-                        });
-                        self.unresolved_jmp_instr.push_back(self.code.len());
-                        self.code.push(Instruction::JmpNeq { dest: usize::MAX });
-                    }
-                    TokenType::CmpNeq => {
-                        self.code.push(Instruction::Cmp {
-                            dest,
-                            src,
-                            typ: typ.clone(),
-                        });
-                        self.unresolved_jmp_instr.push_back(self.code.len());
-                        self.code.push(Instruction::JmpEq { dest: usize::MAX });
-                    }
-                    TokenType::CmpGt => {
-                        self.code.push(Instruction::Cmp {
-                            dest,
-                            src,
-                            typ: typ.clone(),
-                        });
-                        self.unresolved_jmp_instr.push_back(self.code.len());
-                        self.code.push(Instruction::JmpLte { dest: usize::MAX });
-                    }
-                    TokenType::CmpGte => {
-                        self.code.push(Instruction::Cmp {
-                            dest,
-                            src,
-                            typ: typ.clone(),
-                        });
-                        self.unresolved_jmp_instr.push_back(self.code.len());
-                        self.code.push(Instruction::JmpLt { dest: usize::MAX });
-                    }
-                    TokenType::CmpLt => {
-                        self.code.push(Instruction::Cmp {
-                            dest,
-                            src,
-                            typ: typ.clone(),
-                        });
-                        self.unresolved_jmp_instr.push_back(self.code.len());
-                        self.code.push(Instruction::JmpGte { dest: usize::MAX });
-                    }
-                    TokenType::CmpLte => {
-                        self.code.push(Instruction::Cmp {
-                            dest,
-                            src,
-                            typ: typ.clone(),
-                        });
-                        self.unresolved_jmp_instr.push_back(self.code.len());
-                        self.code.push(Instruction::JmpGt { dest: usize::MAX });
-                    }
+                    TokenType::CmpEq => self.code.push(Instruction::JmpNeq { dest: String::new() }),
+                    TokenType::CmpNeq => self.code.push(Instruction::JmpEq { dest: String::new() }),
+                    TokenType::CmpGt => self.code.push(Instruction::JmpLte { dest: String::new() }),
+                    TokenType::CmpGte => self.code.push(Instruction::JmpLt { dest: String::new() }),
+                    TokenType::CmpLt => self.code.push(Instruction::JmpGte { dest: String::new() }),
+                    TokenType::CmpLte => self.code.push(Instruction::JmpGt { dest: String::new() }),
                     e => todo!("Handle {:?} in convert_expr()", e),
                 }
                 Ok(Variable { typ: Type::Bool, mem: dest })
@@ -791,8 +714,10 @@ impl Generator {
                                             // Index Out of Bounds check
                                             self.code.push(Instruction::LoadUsize { dest: size_reg, val: size[count] });
                                             self.code.push(Instruction::Cmp { dest: reg.mem, src: size_reg, typ: Type::Usize });
-                                            self.code.push(Instruction::JmpLt { dest: self.code.len() + 2 });
+                                            let lbl = self.create_label();
+                                            self.code.push(Instruction::JmpLt { dest: lbl.clone() });
                                             self.code.push(Instruction::Exit { code: ExitCode::OobAccess as usize });
+                                            self.add_label(&lbl);
         
                                             // index_reg contains our index
                                             // in each step, multiply the index by the dimension of the array
@@ -971,8 +896,10 @@ impl Generator {
                                             // Index Out of Bounds check
                                             self.code.push(Instruction::LoadUsize { dest: size_reg, val: size[count] });
                                             self.code.push(Instruction::Cmp { dest: reg.mem, src: size_reg, typ: Type::Usize });
-                                            self.code.push(Instruction::JmpLt { dest: self.code.len() + 2 });
+                                            let lbl = self.create_label();
+                                            self.code.push(Instruction::JmpLt { dest: lbl.clone() });
                                             self.code.push(Instruction::Exit { code: ExitCode::OobAccess as usize });
+                                            self.add_label(&lbl);
                     
                                             // index_reg contains our index
                                             // in each step, multiply the index by the dimension of the array
@@ -1112,8 +1039,11 @@ impl Generator {
 
                 if let Some(else_br) = else_branch {
                     self.unresolved_jmp_instr.push_back(self.code.len());
-                    self.code.push(Instruction::Jmp { dest: usize::MAX });
-                    self.set_jmp_lbl(if_jmp, self.code.len());
+                    self.code.push(Instruction::Jmp { dest: String::new() });
+
+                    let lbl_name = self.create_label();
+                    self.add_label(&lbl_name);
+                    self.set_jmp_lbl(if_jmp, lbl_name);
 
                     self.convert_block(else_br)?;
                     self.resolve_last_jmp();
@@ -1164,7 +1094,11 @@ impl Generator {
     fn resolve_last_jmp(&mut self) -> usize {
         assert!(!self.unresolved_jmp_instr.is_empty());
         let ip = self.unresolved_jmp_instr.pop_back().unwrap();
-        self.set_jmp_lbl(ip, self.code.len());
+        
+        let lbl_name = self.create_label();
+        self.add_label(&lbl_name);
+
+        self.set_jmp_lbl(ip, lbl_name);
         ip
     }
 
@@ -1178,8 +1112,8 @@ impl Generator {
         Ok(())
     }
 
-    fn set_jmp_lbl(&mut self, index: usize, dest: usize) {
-        self.code[index] = match self.code[index] {
+    fn set_jmp_lbl(&mut self, index: usize, dest: String) {
+        self.code[index] = match &self.code[index] {
             Instruction::JmpEq { .. } => Instruction::JmpEq { dest },
             Instruction::JmpNeq { .. } => Instruction::JmpNeq { dest },
             Instruction::JmpGt { .. } => Instruction::JmpGt { dest },
@@ -1187,7 +1121,7 @@ impl Generator {
             Instruction::JmpLt { .. } => Instruction::JmpLt { dest },
             Instruction::JmpLte { .. } => Instruction::JmpLte { dest },
             Instruction::Jmp { .. } => Instruction::Jmp { dest },
-            _ => todo!(),
+            e => todo!("{:?}", e),
         };
     }
 
@@ -1302,7 +1236,7 @@ impl Generator {
                     .unwrap()
                     .return_type
                     .clone();
-                if name == "main" {
+                if name == self.entry_point.as_str() {
                     self.code.push(Instruction::Exit { code: ExitCode::Normal as usize });
                 }
                 match (return_found, return_type) {
@@ -1476,12 +1410,11 @@ impl Generator {
         //     println!("{i:3} -> {c:?}");
         // }
         // todo!();
-        let entry_point = String::from("main");
 
-        if !self.functions.contains_key(&entry_point) {
+        if !self.functions.contains_key(&self.entry_point) {
             return Err(format!(
                 "{}: Missing entry point - Could not find function {}()",
-                ERR_STR, entry_point
+                ERR_STR, self.entry_point
             ));
         }
 
@@ -1491,7 +1424,7 @@ impl Generator {
         let mut return_stack = VecDeque::<usize>::new();
         let mut return_values = VecDeque::<Memory>::new();
         let mut stack = vec![Memory { u64: 0 }; STACK_SIZE];
-        let mut stack_ptr = STACK_SIZE - 1 - self.get_function_stack_size(&entry_point);
+        let mut stack_ptr = STACK_SIZE - 1 - self.get_function_stack_size(&self.entry_point);
 
         let mut flags = 0;
         const EQ: usize = 1;
@@ -1500,7 +1433,7 @@ impl Generator {
 
         let mut ip = self
             .functions
-            .get(&entry_point)
+            .get(&self.entry_point)
             .unwrap() // Can safely unwrap because map is guaranteed to contain entry_point
             .get_ip();
 
@@ -1579,42 +1512,42 @@ impl Generator {
                 }
                 Instruction::JmpEq { dest } => {
                     if flags & EQ != 0 {
-                        ip = *dest;
+                        ip = self.get_label_ip(dest);
                         add_ip = false;
                     }
                 }
                 Instruction::JmpNeq { dest } => {
                     if flags & EQ == 0 {
-                        ip = *dest;
+                        ip = self.get_label_ip(dest);
                         add_ip = false;
                     }
                 }
                 Instruction::JmpGt { dest } => {
                     if flags & GT != 0 {
-                        ip = *dest;
+                        ip = self.get_label_ip(dest);
                         add_ip = false;
                     }
                 }
                 Instruction::JmpGte { dest } => {
                     if flags & EQ != 0 || flags & GT != 0 {
-                        ip = *dest;
+                        ip = self.get_label_ip(dest);
                         add_ip = false;
                     }
                 }
                 Instruction::JmpLt { dest } => {
                     if flags & LT != 0 {
-                        ip = *dest;
+                        ip = self.get_label_ip(dest);
                         add_ip = false;
                     }
                 }
                 Instruction::JmpLte { dest } => {
                     if flags & EQ != 0 || flags & LT != 0 {
-                        ip = *dest;
+                        ip = self.get_label_ip(dest);
                         add_ip = false;
                     }
                 }
                 Instruction::Jmp { dest } => {
-                    ip = *dest;
+                    ip = self.get_label_ip(dest);
                     add_ip = false;
                 }
                 Instruction::Move { dest, src } => {
@@ -1672,6 +1605,7 @@ impl Generator {
                     }
                     break;
                 }
+                Instruction::Label { .. } => {},
             }
             if add_ip {
                 ip += 1;
@@ -1696,6 +1630,17 @@ impl Generator {
 
     #[allow(unused)]
     pub fn compile(&mut self) -> Result<(), String> {
+        todo!();
+        if !self.functions.contains_key(&self.entry_point) {
+            return Err(format!(
+                "{}: Missing entry point - Could not find function {}()",
+                ERR_STR, self.entry_point
+            ));
+        }
+        
+        for instr in &self.code {
+            println!("{:?}", instr);
+        }
         todo!("Restructure the program -> Functions should use the same instruction space, and same memory")
     }
 }
