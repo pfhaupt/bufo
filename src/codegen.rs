@@ -1616,7 +1616,6 @@ impl Generator {
         Ok(())
     }
 
-    #[allow(unused)]
     pub fn compile(&mut self) -> Result<(), String> {
         if !self.functions.contains_key(&self.entry_point) {
             return Err(format!(
@@ -1861,6 +1860,14 @@ impl Generator {
             .args(["/no", "/console", "/entry", "main", "./out/output.obj", "MSVCRT.dll", "kernel32.dll"])
             .output()
             .expect("failed to execute process");
+        Ok(())
+    }
+
+    pub fn run(&self) -> Result<(), String> {
+        if self.print_debug {
+            println!("Running `./out/output.exe`");
+        }
+        Command::new("./out/output.exe").output().expect("failed to execute process");
         Ok(())
     }
 }
