@@ -1685,6 +1685,9 @@ impl Generator {
                     let type_size = Generator::get_type_size(&var.typ);
                     push_asm(format!("  mov {word} {reg}, [rbp-{stack_offset}-{type_size}]").as_str());
                 }
+                Instruction::LoadUnknown { dest, val, loc } => {
+                    panic!("At the point of generating ASM, there should never be a single LoadUnknown!\nFailed to resolve type at: {loc:?}");
+                }
                 Instruction::LoadU32 { dest, val } => {
                     let reg = get_register(*dest, &Type::U32);
                     push_asm(format!("  mov {reg}, {val}").as_str());
@@ -1692,6 +1695,20 @@ impl Generator {
                 Instruction::LoadI32 { dest, val } => {
                     let reg = get_register(*dest, &Type::I32);
                     push_asm(format!("  mov {reg}, {val}").as_str());
+                }
+                Instruction::LoadU64 { dest, val } => {
+                    let reg = get_register(*dest, &Type::U64);
+                    push_asm(format!("  mov {reg}, {val}").as_str());
+                }
+                Instruction::LoadI64 { dest, val } => {
+                    let reg = get_register(*dest, &Type::I64);
+                    push_asm(format!("  mov {reg}, {val}").as_str());
+                }
+                Instruction::LoadF32 { dest, val } => {
+                    todo!()
+                }
+                Instruction::LoadF64 { dest, val } => {
+                    todo!()
                 }
                 Instruction::LoadUsize { dest, val } => {
                     let reg = get_register(*dest, &Type::Usize);
@@ -1773,6 +1790,9 @@ impl Generator {
                         e => todo!("Cmp {:?}", e)
                     }
                 }
+                Instruction::Jmp { dest } => {
+                    push_asm(format!("  jmp {dest}").as_str());
+                }
                 Instruction::JmpEq { dest } => {
                     push_asm(format!("  je {dest}").as_str());
                 }
@@ -1814,10 +1834,6 @@ impl Generator {
                 Instruction::Exit { code } => {
                     push_asm(format!("  mov rcx, {code}").as_str());
                     push_asm("  call ExitProcess");
-                }
-                e => {
-                    println!("{}", asm);
-                    todo!("COMPILE THAT FKING {:?}", instr)
                 }
             }
         }
