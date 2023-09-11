@@ -10,8 +10,8 @@ use std::time::Instant;
 
 use flags::RUN_KEY;
 
-use crate::codegen::Generator;
 use crate::checker::TypeChecker;
+use crate::codegen::Generator;
 use crate::flags::{Flag, FlagParser, DEBUG_KEY, INPUT_KEY};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
@@ -61,14 +61,20 @@ fn compile() -> Result<(), String> {
 
     let now = Instant::now();
     let mut generator = Generator::new(ast, debug)?;
-    if debug { println!("Generating Code took {:?}", now.elapsed()); }
+    if debug {
+        println!("Generating Code took {:?}", now.elapsed());
+    }
     let now = Instant::now();
     generator.compile()?;
-    if debug { println!("Compiling Code took {:?}", now.elapsed()); }
+    if debug {
+        println!("Compiling Code took {:?}", now.elapsed());
+    }
     if run {
         let now = Instant::now();
         generator.run()?;
-        if debug { println!("Running Code took {:?}", now.elapsed()); }
+        if debug {
+            println!("Running Code took {:?}", now.elapsed());
+        }
     }
 
     Ok(())

@@ -270,7 +270,12 @@ impl Tree {
                     f.rebuild_code_internal(indent);
                 }
             }
-            TreeType::Func { name, return_type, param, block } => {
+            TreeType::Func {
+                name,
+                return_type,
+                param,
+                block,
+            } => {
                 print!("func {name}(");
                 param.rebuild_code();
                 print!(")");
@@ -295,7 +300,7 @@ impl Tree {
             TreeType::Param { name, typ } => {
                 print!("{name}: ");
                 typ.rebuild_code();
-            }            
+            }
             TreeType::ArgList { arguments } => {
                 if !arguments.is_empty() {
                     for i in 0..(arguments.len() - 1) {
@@ -314,7 +319,11 @@ impl Tree {
                     s.rebuild_code_internal(indent + EXTRA_INDENT);
                 }
             }
-            TreeType::StmtIf { condition, if_branch, else_branch } => {
+            TreeType::StmtIf {
+                condition,
+                if_branch,
+                else_branch,
+            } => {
                 print!("{tab}if (");
                 condition.rebuild_code();
                 println!(") {{");
@@ -336,7 +345,11 @@ impl Tree {
                 }
                 println!(";");
             }
-            TreeType::StmtLet { name, typ, expression } => {
+            TreeType::StmtLet {
+                name,
+                typ,
+                expression,
+            } => {
                 print!("{tab}let {name}: ");
                 typ.rebuild_code();
                 print!(" = ");
@@ -389,11 +402,17 @@ impl Tree {
                 }
                 print!("]");
             }
-            TreeType::ExprArrAccess { arr_name, indices, .. } => {
+            TreeType::ExprArrAccess {
+                arr_name, indices, ..
+            } => {
                 print!("{arr_name}");
                 indices.rebuild_code();
             }
-            TreeType::ExprCall { function_name, args, .. } => {
+            TreeType::ExprCall {
+                function_name,
+                args,
+                ..
+            } => {
                 print!("{function_name}(");
                 args.rebuild_code();
                 print!(")");
@@ -404,7 +423,7 @@ impl Tree {
             TreeType::Name { name } => {
                 print!("{name}");
             }
-            TreeType::Pointer { .. } | TreeType::Deref { .. } => todo!()
+            TreeType::Pointer { .. } | TreeType::Deref { .. } => todo!(),
         }
     }
 }
@@ -662,7 +681,7 @@ impl Parser {
                         typ: TreeType::ExprComp {
                             lhs: Box::new(lhs),
                             rhs: Box::new(rhs),
-                            typ: Type::Unknown
+                            typ: Type::Unknown,
                         },
                         tkn,
                     }
