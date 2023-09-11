@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::fmt::{Display, Formatter};
 use indexmap::IndexMap;
 use std::collections::HashMap;
 
@@ -21,6 +22,15 @@ pub enum Type {
     // Reserved for later use
     F32,
     F64,
+}
+
+impl Display for Type {
+    fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        match self {
+            Type::Arr(t, s) => write!(fmt, "{}", format!("{t:?}{s:?}").to_lowercase()),
+            _ => write!(fmt, "{}", format!("{:?}", self).to_lowercase())
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -586,7 +596,14 @@ impl TypeChecker {
             }
             TreeType::ExprParen { expression, typ } => {
                 assert!(*typ == Type::Unknown);
-                self.type_check_expr_rec(expected_type, expression)
+                let e_t = self.type_check_expr_rec(expected_type, expression)?;
+                Ok(Tree {
+                    typ: TreeType::ExprParen {
+                        expression: Box::new(e_t),
+                        typ: expected_type.clone()
+                    },
+                    tkn: expr_tree.tkn.clone()
+                })
             }
             TreeType::ExprName { name, typ } => {
                 assert!(*typ == Type::Unknown);

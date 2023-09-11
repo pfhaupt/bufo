@@ -45,7 +45,6 @@ fn compile() -> Result<(), String> {
     let now = Instant::now();
     let mut parser = Parser::new(path, lexer.get_tokens(), debug);
     let ast = parser.parse_file()?;
-    // ast.print_debug();
     if debug {
         println!("Parsing took {:?}", now.elapsed());
     }
@@ -53,10 +52,11 @@ fn compile() -> Result<(), String> {
     let now = Instant::now();
     let mut type_checker = TypeChecker::new(&ast, debug);
     let ast = type_checker.type_check_program()?;
-    // ast.print_debug();
     if debug {
         println!("Type Checking took {:?}", now.elapsed());
     }
+
+    // ast.rebuild_code();
     // todo!();
 
     let now = Instant::now();

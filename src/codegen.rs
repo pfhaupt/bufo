@@ -527,9 +527,12 @@ impl Generator {
             }
         } */
     }
-
+    
     fn convert_expr(&mut self, expr_tree: &Tree) -> Result<Variable, String> {
         match &expr_tree.typ {
+            TreeType::ExprParen { expression, .. } => {
+                self.convert_expr(&expression)
+            }
             TreeType::ExprBinary { lhs, rhs, typ } => {
                 let dest = self.convert_expr(lhs)?;
                 let src = self.convert_expr(rhs)?;

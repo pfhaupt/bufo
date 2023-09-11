@@ -256,6 +256,157 @@ impl Tree {
             }
         }
     }
+
+    pub fn rebuild_code(&self) {
+        self.rebuild_code_internal(0);
+    }
+
+    fn rebuild_code_internal(&self, indent: usize) {
+        const EXTRA_INDENT: usize = 4;
+        let tab = " ".repeat(indent);
+        match &self.typ {
+            TreeType::File { functions } => {
+                for f in functions {
+                    f.rebuild_code_internal(indent);
+                }
+            }
+            TreeType::Func { name, return_type, param, block } => {
+                print!("func {name}(");
+                param.rebuild_code();
+                print!(")");
+                if let Some(ret) = return_type {
+                    print!(" -> ");
+                    ret.rebuild_code();
+                }
+                println!(" {{");
+                block.rebuild_code();
+                println!("}}");
+            }
+            TreeType::ParamList { parameters } => {
+                if !parameters.is_empty() {
+                    for i in 0..(parameters.len() - 1) {
+                        let p = &parameters[i];
+                        p.rebuild_code();
+                        print!(", ");
+                    }
+                    parameters.last().unwrap().rebuild_code();
+                }
+            }
+            TreeType::Param { name, typ } => {
+                print!("{name}: ");
+                typ.rebuild_code();
+            }            
+            TreeType::ArgList { arguments } => {
+                if !arguments.is_empty() {
+                    for i in 0..(arguments.len() - 1) {
+                        let a = &arguments[i];
+                        a.rebuild_code();
+                        print!(", ");
+                    }
+                    arguments.last().unwrap().rebuild_code();
+                }
+            }
+            TreeType::Arg { expression } => {
+                expression.rebuild_code();
+            }
+            TreeType::Block { statements } => {
+                for s in statements {
+                    s.rebuild_code_internal(indent + EXTRA_INDENT);
+                }
+            }
+            TreeType::StmtIf { condition, if_branch, else_branch } => {
+                print!("{tab}if (");
+                condition.rebuild_code();
+                println!(") {{");
+                if_branch.rebuild_code_internal(indent);
+                print!("{tab}}}");
+                if let Some(els) = else_branch {
+                    println!(" else {{");
+                    els.rebuild_code_internal(indent);
+                    println!("{tab}}}");
+                } else {
+                    println!();
+                }
+            }
+            TreeType::StmtReturn { return_value } => {
+                print!("{tab}return");
+                if let Some(ret) = return_value {
+                    print!(" ");
+                    ret.rebuild_code();
+                }
+                println!(";");
+            }
+            TreeType::StmtLet { name, typ, expression } => {
+                print!("{tab}let {name}: ");
+                typ.rebuild_code();
+                print!(" = ");
+                expression.rebuild_code();
+                println!(";");
+            }
+            TreeType::StmtAssign { name, expression } => {
+                print!("{tab}");
+                name.rebuild_code();
+                print!(" = ");
+                expression.rebuild_code();
+                println!(";");
+            }
+            TreeType::StmtExpr { expression } => {
+                print!("{tab}");
+                expression.rebuild_code_internal(indent);
+                println!(";");
+            }
+
+            TreeType::ExprComp { lhs, rhs, .. } => {
+                lhs.rebuild_code();
+                print!(" {} ", self.tkn.get_value());
+                rhs.rebuild_code();
+            }
+            TreeType::ExprBinary { lhs, rhs, .. } => {
+                lhs.rebuild_code();
+                print!(" {} ", self.tkn.get_value());
+                rhs.rebuild_code();
+            }
+            TreeType::ExprParen { expression, .. } => {
+                print!("(");
+                expression.rebuild_code();
+                print!(")");
+            }
+            TreeType::ExprName { name, .. } => {
+                print!("{name}");
+            }
+            TreeType::ExprLiteral { .. } => {
+                print!("{}", self.tkn.get_value());
+            }
+            TreeType::ExprArrLiteral { elements } => {
+                print!("[");
+                if !elements.is_empty() {
+                    for i in 0..(elements.len() - 1) {
+                        let e = &elements[i];
+                        e.rebuild_code();
+                        print!(", ");
+                    }
+                    elements.last().unwrap().rebuild_code();
+                }
+                print!("]");
+            }
+            TreeType::ExprArrAccess { arr_name, indices, .. } => {
+                print!("{arr_name}");
+                indices.rebuild_code();
+            }
+            TreeType::ExprCall { function_name, args, .. } => {
+                print!("{function_name}(");
+                args.rebuild_code();
+                print!(")");
+            }
+            TreeType::TypeDecl { typ } => {
+                print!("{}", typ);
+            }
+            TreeType::Name { name } => {
+                print!("{name}");
+            }
+            TreeType::Pointer { .. } | TreeType::Deref { .. } => todo!()
+        }
+    }
 }
 
 pub struct Parser {
