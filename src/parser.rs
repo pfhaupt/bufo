@@ -289,8 +289,7 @@ impl Tree {
             }
             TreeType::ParamList { parameters } => {
                 if !parameters.is_empty() {
-                    for i in 0..(parameters.len() - 1) {
-                        let p = &parameters[i];
+                    for p in parameters.iter().take(parameters.len() - 1) {
                         p.rebuild_code();
                         print!(", ");
                     }
@@ -303,8 +302,7 @@ impl Tree {
             }
             TreeType::ArgList { arguments } => {
                 if !arguments.is_empty() {
-                    for i in 0..(arguments.len() - 1) {
-                        let a = &arguments[i];
+                    for a in arguments.iter().take(arguments.len() - 1) {
                         a.rebuild_code();
                         print!(", ");
                     }
@@ -393,8 +391,7 @@ impl Tree {
             TreeType::ExprArrLiteral { elements } => {
                 print!("[");
                 if !elements.is_empty() {
-                    for i in 0..(elements.len() - 1) {
-                        let e = &elements[i];
+                    for e in elements.iter().take(elements.len() - 1) {
                         e.rebuild_code();
                         print!(", ");
                     }

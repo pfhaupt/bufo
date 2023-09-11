@@ -391,9 +391,11 @@ impl Generator {
         format!("lbl_{}", self.label_lookup.len())
     }
 
-    fn add_label(&mut self, lbl: &String) {
-        self.label_lookup.insert(lbl.clone(), self.code.len());
-        self.code.push(Instruction::Label { name: lbl.clone() });
+    fn add_label(&mut self, lbl: &str) {
+        self.label_lookup.insert(lbl.to_owned(), self.code.len());
+        self.code.push(Instruction::Label {
+            name: lbl.to_owned(),
+        });
     }
 
     fn get_label_ip(&self, lbl: &String) -> usize {
@@ -437,9 +439,9 @@ impl Generator {
     fn get_register(&mut self) -> Result<usize, String> {
         let r = self.register_ctr;
         if r >= self.registers.len() {
-            return Err(format!(
-                "Oopsie Woopsie: The Compiler ran out of registers to allocate."
-            ));
+            return Err(
+                "Oopsie Woopsie: The Compiler ran out of registers to allocate.".to_string(),
+            );
             // self.registers.push(Memory { u64: 0 });
         }
         self.register_ctr += 1;
@@ -543,7 +545,7 @@ impl Generator {
 
     fn convert_expr(&mut self, expr_tree: &Tree) -> Result<Variable, String> {
         match &expr_tree.typ {
-            TreeType::ExprParen { expression, .. } => self.convert_expr(&expression),
+            TreeType::ExprParen { expression, .. } => self.convert_expr(expression),
             TreeType::ExprBinary { lhs, rhs, typ } => {
                 let dest = self.convert_expr(lhs)?;
                 let src = self.convert_expr(rhs)?;
@@ -845,21 +847,12 @@ impl Generator {
         mem: usize,
         mem_offset: &mut usize,
         arr_tree: &Tree,
-        expected_size: &Vec<usize>,
         expected_type: &Type,
-        depth: usize,
     ) -> Result<(), String> {
         match &arr_tree.typ {
             TreeType::ExprArrLiteral { elements } => {
                 for elem in elements {
-                    self.convert_let_arr(
-                        mem,
-                        mem_offset,
-                        elem,
-                        expected_size,
-                        expected_type,
-                        depth - 1,
-                    )?;
+                    self.convert_let_arr(mem, mem_offset, elem, expected_type)?;
                 }
             }
             _ => {
@@ -901,14 +894,7 @@ impl Generator {
                         let mem = self.add_local_var(name, self.scope_depth, typ);
                         match typ {
                             Type::Arr(expected_type, expected_size) => {
-                                self.convert_let_arr(
-                                    mem,
-                                    &mut 0,
-                                    expression,
-                                    expected_size,
-                                    expected_type,
-                                    expected_size.len(),
-                                );
+                                self.convert_let_arr(mem, &mut 0, expression, expected_type);
                             }
                             _ => {
                                 let reg = self.convert_expr(expression)?;
@@ -1754,7 +1740,7 @@ impl Generator {
         let mut asm = String::new();
         let mut push_asm = |s: &str| {
             asm.push_str(s.clone());
-            asm.push_str("\n")
+            asm.push('\n')
         };
 
         let get_word = |t: &Type| -> &str {
