@@ -1,6 +1,7 @@
-use std::cmp::Ordering;
 use indexmap::IndexMap;
+use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 
 use crate::codegen::{ERR_STR, NOTE_STR, WARN_STR};
 use crate::lexer::Location;
@@ -23,6 +24,15 @@ pub enum Type {
     F64,
 }
 
+impl Display for Type {
+    fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        match self {
+            Type::Arr(t, s) => write!(fmt, "{}", format!("{t:?}{s:?}").to_lowercase()),
+            _ => write!(fmt, "{}", format!("{:?}", self).to_lowercase()),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct TCVariable {
     loc: Location,
@@ -43,7 +53,7 @@ struct TCFunction {
     parameters: IndexMap<String, TCVariable>,
     variables: Vec<IndexMap<String, TCVariable>>,
     return_type: TCVariable,
-    loc: Location
+    loc: Location,
 }
 
 impl TCFunction {
@@ -52,7 +62,7 @@ impl TCFunction {
             parameters: IndexMap::new(),
             variables: vec![IndexMap::new()],
             return_type,
-            loc
+            loc,
         }
     }
 
@@ -206,10 +216,13 @@ impl TypeChecker {
                 } else {
                     Type::None
                 };
-                let mut func = TCFunction::new(tree.tkn.get_loc(), TCVariable {
-                    loc: tree.tkn.get_loc(),
-                    typ,
-                });
+                let mut func = TCFunction::new(
+                    tree.tkn.get_loc(),
+                    TCVariable {
+                        loc: tree.tkn.get_loc(),
+                        typ,
+                    },
+                );
 
                 self.functions.insert(self.current_fn.clone(), func);
 
@@ -397,8 +410,7 @@ impl TypeChecker {
                         })
                     }
                     None => {
-                        if func_return_value.typ != Type::None
-                        {
+                        if func_return_value.typ != Type::None {
                             Err(format!(
                                 "{}: {:?}: Expected return value. Function is declared to return `{:?}`, found empty return.",
                                 ERR_STR,
@@ -448,8 +460,8 @@ impl TypeChecker {
                                 typ: expected_type.clone(),
                             },
                             tkn: expr_tree.tkn.clone(),
-                        })
-                    }                    
+                        }),
+                    }
                 }
             }
             TreeType::ExprBinary { lhs, rhs, typ } => {
@@ -586,7 +598,14 @@ impl TypeChecker {
             }
             TreeType::ExprParen { expression, typ } => {
                 assert!(*typ == Type::Unknown);
-                self.type_check_expr_rec(expected_type, expression)
+                let e_t = self.type_check_expr_rec(expected_type, expression)?;
+                Ok(Tree {
+                    typ: TreeType::ExprParen {
+                        expression: Box::new(e_t),
+                        typ: expected_type.clone(),
+                    },
+                    tkn: expr_tree.tkn.clone(),
+                })
             }
             TreeType::ExprName { name, typ } => {
                 assert!(*typ == Type::Unknown);
@@ -676,9 +695,8 @@ impl TypeChecker {
                                     }
                                 }
                             }
-                            _ => panic!()
+                            _ => panic!(),
                         }
-                        
                     }
                     None => Err(format!(
                         "{}: {:?}: Unknown function `{}`",
