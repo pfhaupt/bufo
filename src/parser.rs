@@ -18,7 +18,7 @@ pub enum TreeType {
     },
     Field {
         name: String,
-        typ: Box<Tree>,
+        expr: Box<Tree>,
     },
     Func {
         name: String,
@@ -102,6 +102,15 @@ pub enum TreeType {
         args: Box<Tree>,
         typ: Type,
     },
+    ExprStructDecl {
+        name: String,
+        fields: Box<Tree>,
+    },
+    ExprStructAccess {
+        name: String,
+        field: Box<Tree>,
+        typ: Type
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,9 +143,9 @@ impl Tree {
                     e.print_internal(indent + 2);
                 }
             }
-            TreeType::Field { name, typ } => {
+            TreeType::Field { name, expr } => {
                 println!("{tab}Field {name}");
-                typ.print_internal(indent + 2);
+                expr.print_internal(indent + 2);
             }
             TreeType::Func {
                 name,
@@ -265,6 +274,14 @@ impl Tree {
             TreeType::TypeDecl { typ } => {
                 println!("{tab}{typ:?}");
             }
+            TreeType::ExprStructDecl { name, fields } => {
+                println!("{tab}StructDecl {name}");
+                fields.print_internal(indent + 2);
+            }
+            TreeType::ExprStructAccess { name, field, typ } => {
+                println!("{tab}StructAccess {name} {typ:?}");
+                field.print_internal(indent + 2);
+            }
         }
     }
 
@@ -282,23 +299,23 @@ impl Tree {
                 }
             }
             TreeType::Struct { name, fields } => {
-                println!("struct {name} {{");
+                print!("struct {name} {{");
                 fields.rebuild_code_internal(indent + EXTRA_INDENT);
-                println!("\n{tab}}}");
+                println!("}}");
             }
             TreeType::FieldList { elements } => {
                 if !elements.is_empty() {
                     for e in elements.iter().take(elements.len() - 1) {
-                        e.rebuild_code_internal(indent);
-                        println!(", ");
+                        e.rebuild_code();
+                        print!(", ");
                     }
-                    elements.last().unwrap().rebuild_code_internal(indent);
+                    elements.last().unwrap().rebuild_code();
                 }
 
             }
-            TreeType::Field { name, typ } => {
+            TreeType::Field { name, expr } => {
                 print!("{tab}{name}: ");
-                typ.rebuild_code();
+                expr.rebuild_code();
             }
             TreeType::Func {
                 name,
@@ -444,6 +461,15 @@ impl Tree {
                 args.rebuild_code();
                 print!(")");
             }
+            TreeType::ExprStructDecl { name, fields } => {
+                print!("{name} {{");
+                fields.rebuild_code();
+                print!("}}");
+            }
+            TreeType::ExprStructAccess { name, field, .. } => {
+                print!("{name}.");
+                field.rebuild_code();
+            }
             TreeType::TypeDecl { typ } => {
                 print!("{}", typ);
             }
@@ -577,6 +603,46 @@ impl Parser {
         })
     }
 
+    fn parse_struct_field_decl(&mut self) -> Result<Tree, String> {
+        let tkn = self.open();
+        self.expect(TokenType::Name)?;
+        self.expect(TokenType::TypeDecl)?;
+        let expr = self.parse_expr()?;
+        Ok(Tree {
+            typ: TreeType::Field {
+                name: tkn.get_value(),
+                expr: Box::new(expr)
+            },
+            tkn
+        })
+    }
+
+    fn parse_struct_decl(&mut self) -> Result<Tree, String> {
+        let tkn = self.open();
+        self.expect(TokenType::Name)?;
+        let mut children = vec![];
+        self.expect(TokenType::OpenCurly)?;
+        while !self.at(TokenType::ClosingCurly) && !self.eof() {
+            children.push(self.parse_struct_field_decl()?);
+            if !self.eat(TokenType::Comma) {
+                break;
+            }
+        }
+        self.expect(TokenType::ClosingCurly)?;
+        Ok(Tree {
+            typ: TreeType::ExprStructDecl {
+                name: tkn.get_value(),
+                fields: Box::new(Tree {
+                    typ: TreeType::FieldList {
+                        elements: children
+                    },
+                    tkn: tkn.clone()
+                })
+            },
+            tkn
+        })
+    }
+
     fn parse_expr_array_literal(&mut self) -> Result<Tree, String> {
         let tkn = self.open();
         let mut elements = vec![];
@@ -593,6 +659,31 @@ impl Parser {
             typ: TreeType::ExprArrLiteral { elements },
             tkn,
         })
+    }
+
+    fn parse_expr_struct_access(&mut self) -> Result<Tree, String> {
+        self.expect(TokenType::Dot)?;
+        let tkn = self.open();
+        let name = self.expect(TokenType::Name)?;
+        if self.at(TokenType::Dot) {
+            // self.advance();
+            Ok(Tree {
+                typ: TreeType::ExprStructAccess {
+                    name: tkn.get_value(),
+                    field: Box::new(self.parse_expr_struct_access()?),
+                    typ: Type::Unknown
+                },
+                tkn
+            })
+        } else {
+            Ok(Tree {
+                typ: TreeType::ExprName {
+                    name: name.get_value(),
+                    typ: Type::Unknown
+                },
+                tkn: name
+            })
+        }
     }
 
     fn parse_name(&mut self) -> Result<Tree, String> {
@@ -636,7 +727,23 @@ impl Parser {
                     tkn,
                 }
             }
-            TokenType::Name => self.parse_name()?,
+            TokenType::Name => {
+                println!("{:?}", self.tokens[self.ptr]);
+                match self.nth(1) {
+                    TokenType::Dot => {
+                        let tkn = self.expect(TokenType::Name)?;
+                        Tree {
+                            typ: TreeType::ExprStructAccess {
+                                name: tkn.get_value(),
+                                field: Box::new(self.parse_expr_struct_access()?),
+                                typ: Type::Unknown
+                            },
+                            tkn: tkn.clone()
+                        }
+                    },
+                    _ => self.parse_name()?,
+                }
+            }
             TokenType::OpenRound => {
                 let tkn = self.open();
                 self.expect(TokenType::OpenRound)?;
@@ -778,7 +885,16 @@ impl Parser {
         let name_tkn = self.expect(TokenType::Name)?;
         let type_tree = self.parse_type_decl()?;
         self.expect(TokenType::Equal)?;
-        let expr = self.parse_expr()?;
+        let expr = match self.nth(0) {
+            TokenType::OpenSquare => self.parse_expr_array_literal()?,
+            TokenType::Name => {
+                match self.nth(1) {
+                    TokenType::OpenCurly => self.parse_struct_decl()?,
+                    _ => self.parse_expr()?,
+                }
+            }
+            _ => self.parse_expr()?
+        };
         self.expect(TokenType::Semi)?;
         Ok(Tree {
             typ: TreeType::StmtLet {
@@ -792,9 +908,9 @@ impl Parser {
 
     fn parse_stmt_assign(&mut self) -> Result<Tree, String> {
         let tkn = self.open();
-        let node = match self.nth(1) {
+        let name = self.expect(TokenType::Name)?;
+        let node = match self.nth(0) {
             TokenType::Equal => {
-                let name = self.expect(TokenType::Name)?;
                 Tree {
                     typ: TreeType::Name {
                         name: name.get_value(),
@@ -803,7 +919,6 @@ impl Parser {
                 }
             }
             TokenType::OpenSquare => {
-                let name = self.expect(TokenType::Name)?;
                 Tree {
                     typ: TreeType::ExprArrAccess {
                         arr_name: name.get_value(),
@@ -813,6 +928,16 @@ impl Parser {
                     tkn: tkn.clone(),
                 }
             }
+            TokenType::Dot => {
+                Tree {
+                    typ: TreeType::ExprStructAccess {
+                        name: name.get_value(),
+                        field: Box::new(self.parse_expr_struct_access()?),
+                        typ: Type::Unknown
+                    },
+                    tkn: tkn.clone()
+                }
+            },
             _ => todo!(),
         };
         self.expect(TokenType::Equal)?;
@@ -932,7 +1057,7 @@ impl Parser {
                 TokenType::IfKeyword => children.push(self.parse_stmt_if()?),
                 TokenType::ReturnKeyword => children.push(self.parse_stmt_return()?),
                 TokenType::Name => match self.nth(1) {
-                    TokenType::Equal | TokenType::OpenSquare => {
+                    TokenType::Equal | TokenType::OpenSquare | TokenType::Dot => {
                         children.push(self.parse_stmt_assign()?)
                     }
                     _ => children.push(self.parse_stmt_expr()?),
@@ -1021,7 +1146,7 @@ impl Parser {
         Ok(Tree {
             typ: TreeType::Field {
                 name: name_tkn.get_value(),
-                typ: Box::new(type_decl),
+                expr: Box::new(type_decl),
             },
             tkn,
         })

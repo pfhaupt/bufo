@@ -18,7 +18,7 @@ Stmt = StmtExpr
      | StmtReturn;
 
 StmtExpr = ExprCall ";";
-StmtLet = "let" "name" TypeDecl "=" (Expr | ExprArrayLiteral) ";";
+StmtLet = "let" "name" TypeDecl "=" (Expr | ExprArrayLiteral | ExprStructDecl) ";";
 StmtAssign = ("name" | ExprStructAccess | ExprArray) "=" Expr ";";
 StmtIf = "if" "(" ExprComp ")" Block ["else" Block];
 StmtReturn = "return" [Expr] ";";
@@ -36,7 +36,6 @@ Expr = ExprName
      | ExprComp
      | ExprParen
      | ExprCall
-     | ExprStructDecl
      | ExprStructAccess;
 ExprName = "name";
 ExprArrayLiteral = "[" Expr {"," Expr} "]";

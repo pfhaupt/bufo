@@ -18,6 +18,7 @@ pub enum Type {
     Usize,
     Bool,
     // Ptr(Box<Type>),
+    Custom(String),
     Arr(Box<Type>, Vec<usize>),
     // Reserved for later use
     F32,
@@ -29,6 +30,7 @@ impl Display for Type {
         match self {
             // Type::Ptr(t) => write!(fmt, "&{}", t),
             Type::Arr(t, s) => write!(fmt, "{}", format!("{t:?}{s:?}").to_lowercase()),
+            Type::Custom(s) => write!(fmt, "{}", s),
             _ => write!(fmt, "{}", format!("{:?}", self).to_lowercase()),
         }
     }

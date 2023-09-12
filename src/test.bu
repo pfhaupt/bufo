@@ -1,10 +1,25 @@
-func test(param: str) {
-    // doStuff
+
+struct Bla {
+    d: i32
+}
+
+struct Test {
+    a: i32,
+    b: i64,
+    c: Bla,
 }
 
 func main() {
-    let bla: str = "Hello World!";
-    let c: char = bla[0];
-    bla[0] = 'K';
-    test(bla);
+    let b: i32 = c;
+    let a: i32[3] = [
+        1, 2, 3
+    ];
+    let t: Test = Test {
+        a: 5,
+        b: 10,
+        c: 42069
+    };
+    t.a = 10;
+    t.c.d = 50;
+    t.a = t.a - t.b;
 }
