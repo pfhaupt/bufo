@@ -1,7 +1,7 @@
 File = {Struct} {Fn};
 
 Struct = "struct" "StructName" FieldList;
-FieldList = "{" Field {"," Field} "}";
+FieldList = "{" Field {"," Field} [","] "}";
 Field = "FieldName" TypeDecl;
 
 Fn = "func" "name" ParamList ["->" Type] Block;
