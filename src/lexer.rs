@@ -6,6 +6,9 @@ use crate::codegen::ERR_STR;
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TokenType {
     File,
+    Comment,
+    CharLiteral,
+    StrLiteral,
     IntLiteral,
     OpenRound,
     ClosingRound,
@@ -168,7 +171,7 @@ impl Lexer {
     fn next_token(&mut self) -> Result<Token, String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
-            31,
+            34,
             "Not all TokenTypes are handled in next_token()"
         );
         let c = self.next_char()?;
@@ -208,6 +211,42 @@ impl Lexer {
                 };
                 Ok(Token { typ, value, loc })
             }
+            '"' => {
+                let mut value = String::new();
+                while let Ok(nc) = self.next_char() {
+                    if nc == '"' {
+                        break;
+                    }
+                    value.push(nc);
+                }
+                Ok(Token {
+                    typ: TokenType::StrLiteral,
+                    value,
+                    loc
+                })
+            }
+            '\'' => {
+                let mut value = String::new();
+                while let Ok(nc) = self.next_char() {
+                    if nc == '\'' {
+                        break;
+                    }
+                    value.push(nc);
+                }
+                if value.len() != 1 {
+                    Err(format!("{}: {:?}: Char Literal is expected to be a single char, got `{}`.",
+                        ERR_STR,
+                        loc,
+                        value
+                    ))
+                } else {
+                    Ok(Token {
+                        typ: TokenType::CharLiteral,
+                        value,
+                        loc
+                    })
+                }
+            } 
             '(' => Ok(Token {
                 typ: TokenType::OpenRound,
                 value: String::from("("),
@@ -347,11 +386,30 @@ impl Lexer {
                 value: String::from(c),
                 loc,
             }),
-            '/' => Ok(Token {
-                typ: TokenType::ForwardSlash,
-                value: String::from(c),
-                loc,
-            }),
+            '/' => {
+                let (typ, value) = if let Ok(nc) = self.next_char() {
+                    match nc {
+                        '/' => {
+                            let mut value = String::new();
+                            while let Ok(c) = self.next_char() {
+                                if c == '\r' || c == '\n' {
+                                    self.trim_whitespace();
+                                    break;
+                                }
+                                value.push(c);
+                            }
+                            (TokenType::Comment, value)
+                        },
+                        _ => {
+                            self.current_char -= 1; // Went too far, go a step back
+                            (TokenType::ForwardSlash, String::from("/"))
+                        }
+                    }
+                } else {
+                    (TokenType::ForwardSlash, String::from("/"))
+                };
+                Ok(Token { typ, value, loc })
+            },
             e => Err(format!(
                 "{}: {:?}: Unexpected Symbol `{}`",
                 ERR_STR,
