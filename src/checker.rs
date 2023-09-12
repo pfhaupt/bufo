@@ -17,7 +17,7 @@ pub enum Type {
     U64,
     Usize,
     Bool,
-    Ptr(Box<Type>),
+    // Ptr(Box<Type>),
     Arr(Box<Type>, Vec<usize>),
     // Reserved for later use
     F32,
@@ -27,6 +27,7 @@ pub enum Type {
 impl Display for Type {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
+            // Type::Ptr(t) => write!(fmt, "&{}", t),
             Type::Arr(t, s) => write!(fmt, "{}", format!("{t:?}{s:?}").to_lowercase()),
             _ => write!(fmt, "{}", format!("{:?}", self).to_lowercase()),
         }
@@ -434,10 +435,6 @@ impl TypeChecker {
     }
 
     fn type_check_expr(&self, expected_type: &Type, expr_tree: &Tree) -> Result<Tree, String> {
-        self.type_check_expr_rec(expected_type, expr_tree)
-    }
-
-    fn type_check_expr_rec(&self, expected_type: &Type, expr_tree: &Tree) -> Result<Tree, String> {
         match &expr_tree.typ {
             TreeType::ExprLiteral { typ } => {
                 if *typ != Type::Unknown && typ != expected_type {
@@ -468,15 +465,16 @@ impl TypeChecker {
                 assert!(*typ == Type::Unknown);
                 let lhs_type = self.get_expr_type(lhs, true)?;
                 let rhs_type = self.get_expr_type(rhs, true)?;
+
                 let (new_lhs, new_rhs) = match (lhs_type, rhs_type) {
                     (Type::Unknown, Type::Unknown) => {
-                        let lhs_deep = Box::new(self.type_check_expr_rec(expected_type, lhs)?);
-                        let rhs_deep = Box::new(self.type_check_expr_rec(expected_type, rhs)?);
+                        let lhs_deep = Box::new(self.type_check_expr(expected_type, lhs)?);
+                        let rhs_deep = Box::new(self.type_check_expr(expected_type, rhs)?);
                         (lhs_deep, rhs_deep)
                     }
                     (Type::Unknown, some_type) | (some_type, Type::Unknown) => {
-                        let lhs_deep = Box::new(self.type_check_expr_rec(&some_type, lhs)?);
-                        let rhs_deep = Box::new(self.type_check_expr_rec(&some_type, rhs)?);
+                        let lhs_deep = Box::new(self.type_check_expr(&some_type, lhs)?);
+                        let rhs_deep = Box::new(self.type_check_expr(&some_type, rhs)?);
                         (lhs_deep, rhs_deep)
                     }
                     (lhs_type, rhs_type) => {
@@ -489,15 +487,17 @@ impl TypeChecker {
                                 rhs_type
                             ));
                         } else {
-                            let lhs_deep = Box::new(self.type_check_expr_rec(&lhs_type, lhs)?);
-                            let rhs_deep = Box::new(self.type_check_expr_rec(&lhs_type, rhs)?);
+                            let lhs_deep = Box::new(self.type_check_expr(&lhs_type, lhs)?);
+                            let rhs_deep = Box::new(self.type_check_expr(&lhs_type, rhs)?);
                             (lhs_deep, rhs_deep)
                         }
                     }
                 };
                 let lhs_type = self.get_expr_type(&new_lhs, true)?;
                 let rhs_type = self.get_expr_type(&new_rhs, true)?;
+                println!("{:?} {:?} {:?}", lhs_type, rhs_type, expected_type);
                 if lhs_type != *expected_type {
+                    panic!();
                     Err(format!(
                         "{}: {:?}: Type mismatch! Expected type `{:?}`, got type `{:?}`.",
                         ERR_STR,
@@ -548,13 +548,13 @@ impl TypeChecker {
                                 lhs_t
                             }
                         };
-                        let lhs_deep = Box::new(self.type_check_expr_rec(&expected_type, lhs)?);
-                        let rhs_deep = Box::new(self.type_check_expr_rec(&expected_type, rhs)?);
+                        let lhs_deep = Box::new(self.type_check_expr(&expected_type, lhs)?);
+                        let rhs_deep = Box::new(self.type_check_expr(&expected_type, rhs)?);
                         (lhs_deep, rhs_deep)
                     }
                     (Type::Unknown, some_type) | (some_type, Type::Unknown) => {
-                        let lhs_deep = Box::new(self.type_check_expr_rec(&some_type, lhs)?);
-                        let rhs_deep = Box::new(self.type_check_expr_rec(&some_type, rhs)?);
+                        let lhs_deep = Box::new(self.type_check_expr(&some_type, lhs)?);
+                        let rhs_deep = Box::new(self.type_check_expr(&some_type, rhs)?);
                         (lhs_deep, rhs_deep)
                     }
                     (lhs_type, rhs_type) => {
@@ -567,8 +567,8 @@ impl TypeChecker {
                                 rhs_type
                             ));
                         } else {
-                            let lhs_deep = Box::new(self.type_check_expr_rec(&lhs_type, lhs)?);
-                            let rhs_deep = Box::new(self.type_check_expr_rec(&lhs_type, rhs)?);
+                            let lhs_deep = Box::new(self.type_check_expr(&lhs_type, lhs)?);
+                            let rhs_deep = Box::new(self.type_check_expr(&lhs_type, rhs)?);
                             (lhs_deep, rhs_deep)
                         }
                     }
@@ -598,7 +598,7 @@ impl TypeChecker {
             }
             TreeType::ExprParen { expression, typ } => {
                 assert!(*typ == Type::Unknown);
-                let e_t = self.type_check_expr_rec(expected_type, expression)?;
+                let e_t = self.type_check_expr(expected_type, expression)?;
                 Ok(Tree {
                     typ: TreeType::ExprParen {
                         expression: Box::new(e_t),
@@ -707,7 +707,7 @@ impl TypeChecker {
                 }
             }
             TreeType::Arg { expression } => {
-                let e_t = self.type_check_expr_rec(expected_type, expression)?;
+                let e_t = self.type_check_expr(expected_type, expression)?;
                 Ok(Tree {
                     typ: TreeType::Arg {
                         expression: Box::new(e_t),
@@ -769,7 +769,7 @@ impl TypeChecker {
                         for e in elements {
                             match (&e.typ, *typ.clone()) {
                                 (TreeType::ExprArrLiteral { .. }, Type::Arr(_, _)) => {
-                                    children.push(self.type_check_expr_rec(&typ, e)?);
+                                    children.push(self.type_check_expr(&typ, e)?);
                                 }
                                 (_, Type::Arr(_, _)) => {
                                     return Err(format!(
@@ -778,7 +778,7 @@ impl TypeChecker {
                                         expr_tree.tkn.get_loc()
                                     ))
                                 }
-                                (_, _) => children.push(self.type_check_expr_rec(&typ, e)?)
+                                (_, _) => children.push(self.type_check_expr(&typ, e)?)
                             }
                         }
                         Ok(Tree { typ: TreeType::ExprArrLiteral { elements: children }, tkn: expr_tree.tkn.clone() })
@@ -811,7 +811,7 @@ impl TypeChecker {
                             }
                             _ => todo!(),
                         };
-                        let i_t = self.type_check_expr_rec(&index_type, indices)?;
+                        let i_t = self.type_check_expr(&index_type, indices)?;
                         Ok(Tree {
                             typ: TreeType::ExprArrAccess {
                                 arr_name: arr_name.clone(),
@@ -829,9 +829,11 @@ impl TypeChecker {
                     )),
                 }
             }
-            TreeType::Pointer { .. } => panic!("Pointers are currently not supported!"),
             _ => {
                 expr_tree.print_debug();
+                print!("Caused by expression `");
+                expr_tree.rebuild_code();
+                println!("` here: {:?}", expr_tree.tkn.get_loc());
                 todo!()
             }
         }
@@ -1023,7 +1025,6 @@ impl TypeChecker {
             TreeType::ExprArrLiteral { elements } => {
                 todo!()
             }
-            TreeType::Pointer { .. } => panic!("Pointers are currently not supported!"),
             _ => {
                 expr.print_debug();
                 todo!();

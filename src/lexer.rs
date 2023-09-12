@@ -22,7 +22,6 @@ pub enum TokenType {
     ElseKeyword,
     ReturnKeyword,
     TypeDecl,
-    Ampersand,
     Arrow,
     Equal,
     Plus,
@@ -171,7 +170,7 @@ impl Lexer {
     fn next_token(&mut self) -> Result<Token, String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
-            34,
+            33,
             "Not all TokenTypes are handled in next_token()"
         );
         let c = self.next_char()?;
@@ -285,11 +284,6 @@ impl Lexer {
             ',' => Ok(Token {
                 typ: TokenType::Comma,
                 value: String::from(","),
-                loc,
-            }),
-            '&' => Ok(Token {
-                typ: TokenType::Ampersand,
-                value: String::from("&"),
                 loc,
             }),
             '!' => {

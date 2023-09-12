@@ -32,7 +32,7 @@ macro_rules! perform_op {
             Type::Usize => unsafe { $dest.ptr = $reg1.ptr $op $reg2.ptr },
             Type::F32 => unsafe { $dest.f32 = $reg1.f32 $op $reg2.f32 },
             Type::F64 => unsafe { $dest.f64 = $reg1.f64 $op $reg2.f64 },
-            Type::Ptr(..) => unsafe { $dest.ptr = $reg1.ptr $op $reg2.ptr },
+            // Type::Ptr(..) => unsafe { $dest.ptr = $reg1.ptr $op $reg2.ptr },
             _ => todo!()
         }
     };
@@ -383,6 +383,7 @@ impl Generator {
             Type::Arr(t, size) => Generator::get_type_size(t) * size.iter().product::<usize>(),
             Type::I32 | Type::U32 => 4,
             Type::I64 | Type::U64 | Type::Usize => 8,
+            // Type::Ptr(..) => 8,
             e => todo!("Figure out size of type {:?} in bytes", e),
         }
     }
@@ -1256,10 +1257,10 @@ impl Generator {
                     let val = parse_type!(usize, loc, val, typ)?;
                     Instruction::LoadUsize { dest: *dest, val }
                 }
-                Type::Ptr(t, ..) => {
-                    let val = parse_type!(usize, loc, val, t)?;
-                    Instruction::LoadUsize { dest: *dest, val }
-                }
+                // Type::Ptr(t, ..) => {
+                //     let val = parse_type!(usize, loc, val, t)?;
+                //     Instruction::LoadUsize { dest: *dest, val }
+                // }
                 _ => todo!("{:?}", loc),
             },
             Instruction::Add {
