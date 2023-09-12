@@ -50,7 +50,7 @@ fn compile() -> Result<(), String> {
     }
     ast.print_debug();
     ast.rebuild_code();
-    todo!();
+    // todo!();
 
     let now = Instant::now();
     let mut type_checker = TypeChecker::new(&ast, debug);
@@ -59,9 +59,9 @@ fn compile() -> Result<(), String> {
         println!("Type Checking took {:?}", now.elapsed());
     }
 
-
-    // ast.rebuild_code();
-    // todo!();
+    ast.print_debug();
+    ast.rebuild_code();
+    todo!();
 
     let now = Instant::now();
     let mut generator = Generator::new(ast, debug)?;

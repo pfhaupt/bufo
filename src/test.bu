@@ -1,6 +1,6 @@
 
 struct Bla {
-    d: i32
+    d: i32,
 }
 
 struct Test {
@@ -10,16 +10,14 @@ struct Test {
 }
 
 func main() {
-    let b: i32 = c;
     let a: i32[3] = [
         1, 2, 3
     ];
     let t: Test = Test {
         a: 5,
         b: 10,
-        c: 42069
+        c: Bla {
+            d: a[1] + 5,
+        }
     };
-    t.a = 10;
-    t.c.d = 50;
-    t.a = t.a - t.b;
 }

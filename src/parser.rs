@@ -275,11 +275,11 @@ impl Tree {
                 println!("{tab}{typ:?}");
             }
             TreeType::ExprStructDecl { name, fields } => {
-                println!("{tab}StructDecl {name}");
+                println!("{tab}ExprStructDecl {name}");
                 fields.print_internal(indent + 2);
             }
             TreeType::ExprStructAccess { name, field, typ } => {
-                println!("{tab}StructAccess {name} {typ:?}");
+                println!("{tab}ExprStructAccess {name} {typ:?}");
                 field.print_internal(indent + 2);
             }
         }
@@ -728,7 +728,6 @@ impl Parser {
                 }
             }
             TokenType::Name => {
-                println!("{:?}", self.tokens[self.ptr]);
                 match self.nth(1) {
                     TokenType::Dot => {
                         let tkn = self.expect(TokenType::Name)?;
@@ -741,6 +740,9 @@ impl Parser {
                             tkn: tkn.clone()
                         }
                     },
+                    TokenType::OpenCurly => {
+                        self.parse_struct_decl()?
+                    }
                     _ => self.parse_name()?,
                 }
             }

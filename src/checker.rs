@@ -134,10 +134,48 @@ impl TCFunction {
     }
 }
 
+
+#[derive(Debug)]
+struct TCStruct {
+    fields: IndexMap<String, TCVariable>,
+    loc: Location
+}
+
+impl TCStruct {
+    fn new(loc: Location) -> Self {
+        Self {
+            fields: IndexMap::new(),
+            loc,
+        }
+    }
+
+    fn has_field(&self, name: &String) -> bool {
+        self.fields.contains_key(name)
+    }
+
+    fn get_field(&self, name: &String) -> Option<TCVariable> {
+        self.fields.get(name).cloned()
+    }
+    fn add_field(&mut self, v_name: &String, var: TCVariable) -> Result<(), String> {
+        match self.get_field(v_name) {
+            Some(v) => Err(format!(
+                "Struct Field redefinition!\n{}: Field already declared here: {:?}",
+                NOTE_STR, v.loc
+            )),
+            None => {
+                self.fields.insert(v_name.clone(), var);
+                Ok(())
+            }
+        }
+    }
+}
+
 pub struct TypeChecker {
     ast: Tree,
     functions: HashMap<String, TCFunction>,
+    structs: HashMap<String, TCStruct>,
     current_fn: String,
+    current_str: String,
     scope_depth: usize,
     #[allow(unused)]
     print_debug: bool,
@@ -148,7 +186,9 @@ impl TypeChecker {
         Self {
             ast: ast.clone(),
             functions: HashMap::new(),
+            structs: HashMap::new(),
             current_fn: String::new(),
+            current_str: String::new(),
             scope_depth: 0,
             print_debug,
         }
@@ -197,6 +237,52 @@ impl TypeChecker {
                     tkn: tree.tkn.clone(),
                 })
             }
+            TreeType::Struct { name, fields } => {
+                assert!(self.current_fn.is_empty());
+                assert!(self.current_str.is_empty());
+
+                self.current_str = name.clone();
+                match self.structs.get(name) {
+                    Some(s) => {
+                        return Err(format!(
+                            "{}: {:?}: Struct redefinition\n{}: {:?}: Struct already defined here",
+                            ERR_STR,
+                            tree.tkn.get_loc(),
+                            NOTE_STR,
+                            s.loc
+                        ));
+                    }
+                    _ => ()
+                }
+                let mut str = TCStruct::new(tree.tkn.get_loc());
+                self.structs.insert(name.clone(), str);
+                
+                let f_t = self.type_check(fields)?;
+
+                self.current_str.clear();
+                Ok(Tree {
+                    typ: TreeType::Struct {
+                        name: name.clone(),
+                        fields: Box::new(f_t)
+                    },
+                    tkn: tree.tkn.clone()
+                })
+            }
+            TreeType::FieldList { elements } => {
+                for e in elements {
+                    self.type_check(e)?;
+                }
+                Ok(tree.clone())
+            }
+            TreeType::Field { name, expr } => {
+                let f_type = self.get_type(expr)?;
+                let str = self.structs.get_mut(&self.current_str).unwrap();
+                if let Err(e) = str.add_field(name, TCVariable::new(&tree.tkn.get_loc(), &f_type)) {
+                    Err(format!("{}: {:?}: {}", ERR_STR, tree.tkn.get_loc(), e))
+                } else {
+                    Ok(tree.clone())
+                }
+            }
             TreeType::Func {
                 name,
                 return_type,
@@ -206,12 +292,17 @@ impl TypeChecker {
                 assert!(self.current_fn.is_empty());
 
                 self.current_fn = name.clone();
-                if self.functions.contains_key(&self.current_fn) {
-                    return Err(format!(
-                        "{}: {:?}: Function redefinition",
-                        ERR_STR,
-                        tree.tkn.get_loc()
-                    ));
+                match self.functions.get(&self.current_fn) {
+                    Some(func) => {
+                        return Err(format!(
+                            "{}: {:?}: Function redefinition\n{}: {:?}: Function already defined here",
+                            ERR_STR,
+                            tree.tkn.get_loc(),
+                            NOTE_STR,
+                            func.loc
+                        ));
+                    }
+                    _ => ()
                 }
 
                 let typ = if let Some(rt) = return_type {
@@ -286,6 +377,8 @@ impl TypeChecker {
 
                 let var_type = self.get_type(typ)?;
 
+                let e_t = Box::new(self.type_check_expr(&var_type, expression)?);
+
                 let func = self.functions.get_mut(&self.current_fn).unwrap();
                 if let Err(e) = func.add_variable(
                     name,
@@ -294,9 +387,7 @@ impl TypeChecker {
                 ) {
                     return Err(format!("{}: {:?}: {}", ERR_STR, tree.tkn.get_loc(), e));
                 }
-
-                let e_t = Box::new(self.type_check_expr(&var_type, expression)?);
-
+                
                 Ok(Tree {
                     typ: TreeType::StmtLet {
                         name: name.clone(),
@@ -454,6 +545,11 @@ impl TypeChecker {
                             ERR_STR,
                             expr_tree.tkn.get_loc()
                         )),
+                        Type::Custom(s) => Err(format!(
+                            "{}: {:?}: Attempted to assign ExprLiteral to Struct.",
+                            ERR_STR,
+                            expr_tree.tkn.get_loc()
+                        )),
                         _ => Ok(Tree {
                             typ: TreeType::ExprLiteral {
                                 typ: expected_type.clone(),
@@ -497,9 +593,7 @@ impl TypeChecker {
                 };
                 let lhs_type = self.get_expr_type(&new_lhs, true)?;
                 let rhs_type = self.get_expr_type(&new_rhs, true)?;
-                println!("{:?} {:?} {:?}", lhs_type, rhs_type, expected_type);
                 if lhs_type != *expected_type {
-                    panic!();
                     Err(format!(
                         "{}: {:?}: Type mismatch! Expected type `{:?}`, got type `{:?}`.",
                         ERR_STR,
@@ -654,47 +748,29 @@ impl TypeChecker {
                         let params = &func.parameters;
                         match &args.typ {
                             TreeType::ArgList { arguments } => {
-                                match arguments.len().cmp(&params.len()) {
-                                    Ordering::Less => Err(format!(
-                                        "{}: {:?}: Too few arguments specified for function call. Expected {} arguments, got {}.",
+                                let args = self.type_check_args(function_name, args, params)?;
+                                let typ = &func.return_type.typ;
+                                if typ != expected_type {
+                                    Err(format!(
+                                        "{}: {:?}: Type Mismatch. Expected Type `{:?}`, got Type `{:?}`.\n{}: {:?}: Function `{}` declared to return `{:?}` here.",
                                         ERR_STR,
                                         expr_tree.tkn.get_loc(),
-                                        params.len(),
-                                        arguments.len()
-                                    )),
-                                    Ordering::Greater => Err(format!(
-                                        "{}: {:?}: Too many arguments specified for function call. Expected {} arguments, got {}.",
-                                        ERR_STR,
-                                        expr_tree.tkn.get_loc(),
-                                        params.len(),
-                                        arguments.len()
-                                    )),
-                                    _ => {
-                                        let args = self.type_check_args(function_name, args, params)?;
-                                        let typ = &func.return_type.typ;
-                                        if typ != expected_type {
-                                            Err(format!(
-                                                "{}: {:?}: Type Mismatch. Expected Type `{:?}`, got Type `{:?}`.\n{}: {:?}: Function `{}` declared to return `{:?}` here.",
-                                                ERR_STR,
-                                                expr_tree.tkn.get_loc(),
-                                                expected_type,
-                                                typ,
-                                                NOTE_STR,
-                                                func.loc,
-                                                function_name,
-                                                typ
-                                            ))
-                                        } else {
-                                            Ok(Tree {
-                                                typ: TreeType::ExprCall {
-                                                    function_name: function_name.clone(),
-                                                    args: Box::new(args),
-                                                    typ: typ.clone(),
-                                                },
-                                                tkn: expr_tree.tkn.clone(),
-                                            })
-                                        }
-                                    }
+                                        expected_type,
+                                        typ,
+                                        NOTE_STR,
+                                        func.loc,
+                                        function_name,
+                                        typ
+                                    ))
+                                } else {
+                                    Ok(Tree {
+                                        typ: TreeType::ExprCall {
+                                            function_name: function_name.clone(),
+                                            args: Box::new(args),
+                                            typ: typ.clone(),
+                                        },
+                                        tkn: expr_tree.tkn.clone(),
+                                    })
                                 }
                             }
                             _ => panic!(),
@@ -831,6 +907,33 @@ impl TypeChecker {
                     )),
                 }
             }
+            TreeType::ExprStructDecl { name, fields } => {
+                match self.structs.get(name) {
+                    Some(str) => {
+                        let def_fields = &str.fields;
+                        match &fields.typ {
+                            TreeType::FieldList { elements } => {
+                                let f_t = self.type_check_fields(name, def_fields, fields)?;
+                                Ok(Tree {
+                                    typ: TreeType::ExprStructDecl {
+                                        name: name.clone(),
+                                        fields: Box::new(f_t)
+                                    },
+                                    tkn: expr_tree.tkn.clone(),
+                                })
+                            }
+                            _ => panic!(),
+                        }
+                    },
+                    None => Err(format!(
+                        "{}: {:?}: Unknown struct `{}`",
+                        ERR_STR,
+                        expr_tree.tkn.get_loc(),
+                        name
+                    ))
+                }
+                // todo!();
+            }
             _ => {
                 expr_tree.print_debug();
                 print!("Caused by expression `");
@@ -838,6 +941,90 @@ impl TypeChecker {
                 println!("` here: {:?}", expr_tree.tkn.get_loc());
                 todo!()
             }
+        }
+    }
+
+    fn type_check_fields(
+        &self,
+        struct_name: &String,
+        fields: &IndexMap<String, TCVariable>,
+        list: &Tree,
+    ) -> Result<Tree, String> {
+        match &list.typ {
+            TreeType::FieldList { elements } => {
+                let mut children = vec![];
+                let mut found = IndexMap::new();
+                for f in fields {
+                    found.insert(f.0, false);
+                }
+                
+                for i in 0..elements.len() {
+                    let (name, field) = match &elements[i].typ {
+                        TreeType::Field { name, expr } => {
+                            if !fields.contains_key(name) {
+                                return Err(format!(
+                                    "{}: {:?}: Struct `{}` has no field `{}`.\n{}: {:?}: Struct declared here.",
+                                    ERR_STR,
+                                    elements[i].tkn.get_loc(),
+                                    struct_name,
+                                    name,
+                                    NOTE_STR,
+                                    self.structs.get(struct_name).unwrap().loc,
+                                ))
+                            }
+                            (name, expr)
+                        }
+                        _ => todo!()
+                    };
+                    if *found.get(name).unwrap() {
+                        return Err(format!(
+                            "{}: {:?}: Field `{}` of struct `{}` already initialized.",
+                            ERR_STR,
+                            field.tkn.get_loc(),
+                            name,
+                            struct_name
+                        ))
+                    } else {
+                        *(found.get_mut(name).unwrap()) = true;
+                    }
+                    let def_field = &fields[i];
+                    let field_type = &def_field.typ;
+                    let a_t = match self.type_check_expr(field_type, field) {
+                        Ok(t) => t,
+                        Err(e) => return Err(format!(
+                            "{e}\n{}: {:?}: Error when evaluating type of struct field.\n{}: {:?}: Field `{}` for Struct `{}` declared here.",
+                            NOTE_STR,
+                            list.tkn.get_loc(),
+                            NOTE_STR,
+                            def_field.loc,
+                            fields.keys().collect::<Vec<_>>()[i],
+                            struct_name,
+                        ))
+                    };
+                    let a_t = Tree {
+                        typ: TreeType::Field { name: name.clone(), expr: Box::new(a_t) },
+                        tkn: field.tkn.clone()
+                    };
+                    children.push(a_t);
+                }
+                if let Some(index) = found.iter().position(|(k, v)| !v) {
+                    Err(format!(
+                        "{}: {:?}: Struct Initialization is missing field `{}`.\n{}: {:?}: Struct `{}` declared here.",
+                        ERR_STR,
+                        list.tkn.get_loc(),
+                        found.keys().collect::<Vec<_>>()[index],
+                        NOTE_STR,
+                        self.structs.get(struct_name).unwrap().loc,
+                        struct_name
+                    ))
+                } else {
+                    Ok(Tree {
+                        typ: TreeType::FieldList { elements: children },
+                        tkn: list.tkn.clone()
+                    })
+                }
+            }
+            _ => panic!()
         }
     }
 
