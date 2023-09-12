@@ -934,6 +934,29 @@ impl TypeChecker {
                 }
                 // todo!();
             }
+            TreeType::ExprStructAccess { name, field, typ } => {
+                assert!(!self.current_fn.is_empty());
+                let func = self.get_current_function();
+                match func.get_variable(name) {
+                    Some(var) => {
+                        match &var.typ {
+                            Type::Custom(struct_name) => {
+                                let a_t = self.type_check_struct_access(struct_name, field)?;
+                                Ok(Tree {
+                                    typ: TreeType::ExprStructAccess {
+                                        name: name.clone(),
+                                        field: Box::new(a_t),
+                                        typ: var.typ.clone()
+                                    },
+                                    tkn: expr_tree.tkn.clone()
+                                })
+                            }
+                            _ => todo!()
+                        }
+                    }
+                    None => todo!(),
+                }
+            }
             _ => {
                 expr_tree.print_debug();
                 print!("Caused by expression `");
@@ -941,6 +964,57 @@ impl TypeChecker {
                 println!("` here: {:?}", expr_tree.tkn.get_loc());
                 todo!()
             }
+        }
+    }
+
+    fn type_check_struct_access(&self, struct_name: &String, field: &Box<Tree>) -> Result<Tree, String> {
+        match self.structs.get(struct_name) {
+            Some(str) => {
+                match &field.typ {
+                    TreeType::ExprStructAccess { name, field: fld, typ } => {
+                        match str.get_field(name) {
+                            Some(f) => {
+                                match &f.typ {
+                                    Type::Custom(s) => {
+                                        let a_t = self.type_check_struct_access(s, fld)?;
+                                        Ok(Tree {
+                                            typ: TreeType::ExprStructAccess {
+                                                name: name.clone(),
+                                                field: Box::new(a_t),
+                                                typ: f.typ
+                                            },
+                                            tkn: field.tkn.clone()
+                                        })
+                                    }
+                                    _ => todo!()
+                                }
+                            }
+                            None => todo!()
+                        }
+                    }
+                    TreeType::ExprName { name, typ } => {
+                        assert!(*typ == Type::Unknown);
+                        match str.get_field(name) {
+                            Some(f) => {
+                                match &f.typ {
+                                    _ => {
+                                        Ok(Tree {
+                                            typ: TreeType::ExprName {
+                                                name: name.clone(),
+                                                typ: f.typ
+                                            },
+                                            tkn: field.tkn.clone()
+                                        })
+                                    }
+                                }
+                            }
+                            None => todo!()
+                        }
+                    }
+                    _ => todo!()
+                }
+            },
+            None => panic!()
         }
     }
 
@@ -1214,11 +1288,81 @@ impl TypeChecker {
             TreeType::ExprArrLiteral { elements } => {
                 todo!()
             }
+            TreeType::ExprStructAccess { name, field, typ } => {
+                assert!(!self.current_fn.is_empty());
+                let func = self.get_current_function();
+                match func.get_variable(name) {
+                    Some(var) => {
+                        match &var.typ {
+                            Type::Custom(str) => {
+                                self.unwind_field_type(str, field, strict)
+                            }
+                            _ => panic!()
+                        }
+                    },
+                    None => Err(format!(
+                        "{}: {:?}: Undefined variable `{}`.",
+                        ERR_STR,
+                        expr.tkn.get_loc(),
+                        name
+                    ))
+                }
+
+            }
             _ => {
                 expr.print_debug();
                 todo!();
             }
         }
+    }
+
+    fn unwind_field_type(&self, struct_name: &String, field: &Box<Tree>, strict: bool) -> Result<Type, String> {
+        field.print_debug();
+        match self.structs.get(struct_name) {
+            Some(custom_struct) => {
+                match &field.typ {
+                    TreeType::ExprStructAccess { name, field: f, typ } => {
+                        match custom_struct.get_field(name) {
+                            Some(var) => {
+                                match &var.typ {
+                                    Type::Custom(str) => {
+                                        self.unwind_field_type(str, f, strict)
+                                    }
+                                    _ => Err(format!(
+                                        "{}: {:?}: Attempted to get field of non-struct element `{}`.\n{}: {:?}: Variable declared here.",
+                                        ERR_STR,
+                                        field.tkn.get_loc(),
+                                        name,
+                                        NOTE_STR,
+                                        var.loc
+                                    ))
+                                }
+                            }
+                            _ => todo!()
+                        }
+                    }
+                    TreeType::ExprName { name, typ } => {
+                        match custom_struct.get_field(name) {
+                            Some(t) => Ok(t.typ),
+                            None => {
+                                Err(format!(
+                                    "{}: {:?}: Struct `{}` has no field `{}`.\n{}: {:?}: Struct declared here.",
+                                    ERR_STR,
+                                    field.tkn.get_loc(),
+                                    struct_name,
+                                    name,
+                                    NOTE_STR,
+                                    custom_struct.loc                                    
+                                ))
+                            }
+                        }
+                    }
+                    _ => panic!()
+                }
+            },
+            None => panic!()
+        }
+        
     }
 
     fn get_type(&self, tree: &Tree) -> Result<Type, String> {

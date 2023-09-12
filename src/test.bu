@@ -1,11 +1,13 @@
-
+struct Idee {
+    a: i32
+}
 struct Bla {
-    d: i32,
+    d: Idee,
 }
 
 struct Test {
-    a: i32,
-    b: i64,
+    f: i32,
+    b: i32,
     c: Bla,
 }
 
@@ -14,10 +16,14 @@ func main() {
         1, 2, 3
     ];
     let t: Test = Test {
-        a: 5,
+        f: 5,
         b: 10,
         c: Bla {
-            d: a[1] + 5,
+            d: Idee {
+                a: a[1] + 5
+            },
         }
     };
+    t.c.d.a = t.b - t.f;
+    t.f = 50;
 }
