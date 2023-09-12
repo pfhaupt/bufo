@@ -16,6 +16,7 @@ pub enum TokenType {
     ClosingCurly,
     OpenSquare,
     ClosingSquare,
+    StructKeyword,
     FnKeyword,
     LetKeyword,
     IfKeyword,
@@ -36,6 +37,7 @@ pub enum TokenType {
     CmpGte,
     Semi,
     Comma,
+    Dot,
     Name,
     Eof,
 }
@@ -170,7 +172,7 @@ impl Lexer {
     fn next_token(&mut self) -> Result<Token, String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
-            33,
+            35,
             "Not all TokenTypes are handled in next_token()"
         );
         let c = self.next_char()?;
@@ -201,6 +203,7 @@ impl Lexer {
                     value.push(nc);
                 }
                 let typ = match value.as_str() {
+                    "struct" => TokenType::StructKeyword,
                     "func" => TokenType::FnKeyword,
                     "let" => TokenType::LetKeyword,
                     "if" => TokenType::IfKeyword,
@@ -353,6 +356,11 @@ impl Lexer {
             }
             ':' => Ok(Token {
                 typ: TokenType::TypeDecl,
+                value: String::from(c),
+                loc,
+            }),
+            '.' => Ok(Token {
+                typ: TokenType::Dot,
                 value: String::from(c),
                 loc,
             }),
