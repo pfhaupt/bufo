@@ -1,34 +1,38 @@
 struct Idee {
-    a: i32
+    a: u64
 }
 struct Bla {
+    a: usize,
+    b: i32,
     d: Idee,
 }
 
 struct Test {
-    f: i32,
+    f: u64,
     b: i32,
     c: Bla,
 }
 
 func bla(t: Test) -> Bla {
-    let a: i32 = t.f;
+    let a: u64 = t.c.d.a;
     let b: Bla = Bla {
+        a: 0,
+        b: 0,
         d: Idee {
-            a: a
+            a: a + a
         }
     };
     return b;
 }
 
 func main() {
-    let a: i32[3] = [
+    let a: u64[3] = [
         1, 2, 3
     ];
 
     let ideeArr: Idee[3] = [
         Idee {
-            a: 5
+            a: 500
         },
         Idee {
             a: 10
@@ -41,15 +45,14 @@ func main() {
         f: 5,
         b: 10,
         c: Bla {
+            a: 0,
+            b: 0,
             d: Idee {
                 a: a[1] + 5
             },
         }
     };
     t.c.d = ideeArr[0];
-    ideeArr[1] = Idee {
-        a: 42069
-    };
-    t.c.d.a = t.b - t.f;
+    t.c.d.a = t.f;
     t.f = 50;
 }

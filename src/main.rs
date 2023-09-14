@@ -61,7 +61,7 @@ fn compile() -> Result<(), String> {
 
     ast.print_debug();
     ast.rebuild_code();
-    todo!();
+    // todo!();
 
     let now = Instant::now();
     let mut generator = Generator::new(ast, debug)?;
@@ -69,7 +69,7 @@ fn compile() -> Result<(), String> {
         println!("Generating Code took {:?}", now.elapsed());
     }
     let now = Instant::now();
-    generator.compile()?;
+    generator.interpret()?;
     if debug {
         println!("Compiling Code took {:?}", now.elapsed());
     }
