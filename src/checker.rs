@@ -1261,7 +1261,12 @@ impl TypeChecker {
                 let func = self.get_current_function();
                 match func.get_variable(name) {
                     Some(var) => Ok(var.typ.clone()),
-                    None => panic!(),
+                    None => Err(format!(
+                        "{}: {:?}: Unknown variable `{}`.",
+                        ERR_STR,
+                        expr.tkn.get_loc(),
+                        name
+                    )),
                 }
             }
             TreeType::ExprArrAccess { arr_name, .. } => {
@@ -1373,7 +1378,19 @@ impl TypeChecker {
 
     fn get_type(&self, tree: &Tree) -> Result<Type, String> {
         match &tree.typ {
-            TreeType::TypeDecl { typ } => Ok(typ.clone()),
+            TreeType::TypeDecl { typ } => {
+                if let Type::Custom(str) = typ {
+                    if self.structs.get(str).is_none() {
+                        return Err(format!(
+                            "{}: {:?}: Unknown Type `{}`.",
+                            ERR_STR,
+                            tree.tkn.get_loc(),
+                            str
+                        ));
+                    }
+                }
+                Ok(typ.clone())
+            }
             _ => todo!(),
         }
     }
