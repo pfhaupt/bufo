@@ -29,7 +29,7 @@ impl Display for Type {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
             // Type::Ptr(t) => write!(fmt, "&{}", t),
-            Type::Arr(t, s) => write!(fmt, "{}", format!("{t:?}{s:?}").to_lowercase()),
+            Type::Arr(t, s) => write!(fmt, "{}", format!("{t}{s:?}")),
             Type::Custom(s) => write!(fmt, "{}", s),
             _ => write!(fmt, "{}", format!("{:?}", self).to_lowercase()),
         }
@@ -904,6 +904,17 @@ impl TypeChecker {
             TreeType::ExprStructDecl { name, fields } => {
                 match self.structs.get(name) {
                     Some(str) => {
+                        if *expected_type != Type::Custom(name.clone()) {
+                            return Err(format!(
+                                "{}: {:?}: Type mismatch! Expected type `{:?}`, got struct `{}`.\n{}: Struct declared here: {:?}.",
+                                ERR_STR,
+                                expr_tree.tkn.get_loc(),
+                                expected_type,
+                                Type::Custom(name.clone()),
+                                NOTE_STR,
+                                str.loc
+                            ));
+                        }
                         let def_fields = &str.fields;
                         match &fields.typ {
                             TreeType::FieldList { elements } => {
@@ -1308,7 +1319,6 @@ impl TypeChecker {
     }
 
     fn unwind_field_type(&self, struct_name: &String, field: &Tree) -> Result<Type, String> {
-        field.print_debug();
         match self.structs.get(struct_name) {
             Some(custom_struct) => {
                 match &field.typ {

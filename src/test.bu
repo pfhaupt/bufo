@@ -11,9 +11,31 @@ struct Test {
     c: Bla,
 }
 
+func bla(t: Test) -> Bla {
+    let a: i32 = t.f;
+    let b: Bla = Bla {
+        d: Idee {
+            a: a
+        }
+    };
+    return b;
+}
+
 func main() {
     let a: i32[3] = [
         1, 2, 3
+    ];
+
+    let ideeArr: Idee[3] = [
+        Idee {
+            a: 5
+        },
+        Idee {
+            a: 10
+        },
+        Idee {
+            a: 5
+        }
     ];
     let t: Test = Test {
         f: 5,
@@ -23,6 +45,10 @@ func main() {
                 a: a[1] + 5
             },
         }
+    };
+    t.c.d = ideeArr[0];
+    ideeArr[1] = Idee {
+        a: 42069
     };
     t.c.d.a = t.b - t.f;
     t.f = 50;
