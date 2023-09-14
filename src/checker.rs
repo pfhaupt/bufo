@@ -242,17 +242,14 @@ impl TypeChecker {
                 assert!(self.current_str.is_empty());
 
                 self.current_str = name.clone();
-                match self.structs.get(name) {
-                    Some(s) => {
-                        return Err(format!(
-                            "{}: {:?}: Struct redefinition\n{}: {:?}: Struct already defined here",
-                            ERR_STR,
-                            tree.tkn.get_loc(),
-                            NOTE_STR,
-                            s.loc
-                        ));
-                    }
-                    _ => ()
+                if let Some(s) = self.structs.get(name) {
+                    return Err(format!(
+                        "{}: {:?}: Struct redefinition\n{}: {:?}: Struct already defined here",
+                        ERR_STR,
+                        tree.tkn.get_loc(),
+                        NOTE_STR,
+                        s.loc
+                    ));
                 }
                 let mut str = TCStruct::new(tree.tkn.get_loc());
                 self.structs.insert(name.clone(), str);
@@ -292,17 +289,14 @@ impl TypeChecker {
                 assert!(self.current_fn.is_empty());
 
                 self.current_fn = name.clone();
-                match self.functions.get(&self.current_fn) {
-                    Some(func) => {
-                        return Err(format!(
-                            "{}: {:?}: Function redefinition\n{}: {:?}: Function already defined here",
-                            ERR_STR,
-                            tree.tkn.get_loc(),
-                            NOTE_STR,
-                            func.loc
-                        ));
-                    }
-                    _ => ()
+                if let Some(func) = self.functions.get(&self.current_fn) {
+                    return Err(format!(
+                        "{}: {:?}: Function redefinition\n{}: {:?}: Function already defined here",
+                        ERR_STR,
+                        tree.tkn.get_loc(),
+                        NOTE_STR,
+                        func.loc
+                    ));
                 }
 
                 let typ = if let Some(rt) = return_type {
@@ -967,26 +961,25 @@ impl TypeChecker {
         }
     }
 
-    fn type_check_struct_access(&self, struct_name: &String, field: &Box<Tree>) -> Result<Tree, String> {
+    fn type_check_struct_access(&self, struct_name: &String, field: &Tree) -> Result<Tree, String> {
         match self.structs.get(struct_name) {
             Some(str) => {
                 match &field.typ {
                     TreeType::ExprStructAccess { name, field: fld, typ } => {
                         match str.get_field(name) {
                             Some(f) => {
-                                match &f.typ {
-                                    Type::Custom(s) => {
-                                        let a_t = self.type_check_struct_access(s, fld)?;
-                                        Ok(Tree {
-                                            typ: TreeType::ExprStructAccess {
-                                                name: name.clone(),
-                                                field: Box::new(a_t),
-                                                typ: f.typ
-                                            },
-                                            tkn: field.tkn.clone()
-                                        })
-                                    }
-                                    _ => todo!()
+                                if let Type::Custom(s) = &f.typ {
+                                    let a_t = self.type_check_struct_access(s, fld)?;
+                                    Ok(Tree {
+                                        typ: TreeType::ExprStructAccess {
+                                            name: name.clone(),
+                                            field: Box::new(a_t),
+                                            typ: f.typ
+                                        },
+                                        tkn: field.tkn.clone()
+                                    })
+                                } else {
+                                    todo!()
                                 }
                             }
                             None => todo!()
@@ -996,17 +989,13 @@ impl TypeChecker {
                         assert!(*typ == Type::Unknown);
                         match str.get_field(name) {
                             Some(f) => {
-                                match &f.typ {
-                                    _ => {
-                                        Ok(Tree {
-                                            typ: TreeType::ExprName {
-                                                name: name.clone(),
-                                                typ: f.typ
-                                            },
-                                            tkn: field.tkn.clone()
-                                        })
-                                    }
-                                }
+                                Ok(Tree {
+                                    typ: TreeType::ExprName {
+                                        name: name.clone(),
+                                        typ: f.typ
+                                    },
+                                    tkn: field.tkn.clone()
+                                })
                             }
                             None => todo!()
                         }
@@ -1050,7 +1039,8 @@ impl TypeChecker {
                         }
                         _ => todo!()
                     };
-                    if *found.get(name).unwrap() {
+                    let found_field = found.get_mut(name).unwrap();
+                    if *found_field {
                         return Err(format!(
                             "{}: {:?}: Field `{}` of struct `{}` already initialized.",
                             ERR_STR,
@@ -1059,7 +1049,7 @@ impl TypeChecker {
                             struct_name
                         ))
                     } else {
-                        *(found.get_mut(name).unwrap()) = true;
+                        *found_field = true;
                     }
                     let def_field = &fields[i];
                     let field_type = &def_field.typ;
@@ -1236,15 +1226,17 @@ impl TypeChecker {
                     }
                 }
             }
-            TreeType::ExprCall { function_name, .. } => match self.functions.get(function_name) {
-                Some(func) => Ok(func.get_return_type().typ),
-                None => Err(format!(
-                    "{}: {:?}: Unknown function `{}`",
-                    ERR_STR,
-                    expr.tkn.get_loc(),
-                    function_name
-                )),
-            },
+            TreeType::ExprCall { function_name, .. } => {
+                match self.functions.get(function_name) {
+                    Some(func) => Ok(func.get_return_type().typ),
+                    None => Err(format!(
+                        "{}: {:?}: Unknown function `{}`",
+                        ERR_STR,
+                        expr.tkn.get_loc(),
+                        function_name
+                    )),
+                }
+            }
             TreeType::ExprLiteral { typ } => Ok(typ.clone()),
             TreeType::ExprParen { expression, typ } => {
                 if *typ != Type::Unknown {
@@ -1293,11 +1285,10 @@ impl TypeChecker {
                 let func = self.get_current_function();
                 match func.get_variable(name) {
                     Some(var) => {
-                        match &var.typ {
-                            Type::Custom(str) => {
-                                self.unwind_field_type(str, field, strict)
-                            }
-                            _ => panic!()
+                        if let Type::Custom(str) = &var.typ {
+                            self.unwind_field_type(str, field)
+                        } else {
+                            todo!()
                         }
                     },
                     None => Err(format!(
@@ -1316,45 +1307,50 @@ impl TypeChecker {
         }
     }
 
-    fn unwind_field_type(&self, struct_name: &String, field: &Box<Tree>, strict: bool) -> Result<Type, String> {
+    fn unwind_field_type(&self, struct_name: &String, field: &Tree) -> Result<Type, String> {
         field.print_debug();
         match self.structs.get(struct_name) {
             Some(custom_struct) => {
                 match &field.typ {
                     TreeType::ExprStructAccess { name, field: f, typ } => {
-                        match custom_struct.get_field(name) {
-                            Some(var) => {
-                                match &var.typ {
-                                    Type::Custom(str) => {
-                                        self.unwind_field_type(str, f, strict)
-                                    }
-                                    _ => Err(format!(
-                                        "{}: {:?}: Attempted to get field of non-struct element `{}`.\n{}: {:?}: Variable declared here.",
-                                        ERR_STR,
-                                        field.tkn.get_loc(),
-                                        name,
-                                        NOTE_STR,
-                                        var.loc
-                                    ))
-                                }
+                        if let Some(var) = custom_struct.get_field(name) {
+                            if let Type::Custom(str) = &var.typ {
+                                self.unwind_field_type(str, f)
+                            } else {
+                                Err(format!(
+                                    "{}: {:?}: Attempted to get field of non-struct element `{}`.\n{}: {:?}: Variable declared here.",
+                                    ERR_STR,
+                                    field.tkn.get_loc(),
+                                    name,
+                                    NOTE_STR,
+                                    var.loc
+                                ))    
                             }
-                            _ => todo!()
+                        } else {
+                            Err(format!(
+                                "{}: {:?}: Struct `{}` has no field `{}`.\n{}: {:?}: Struct declared here.",
+                                ERR_STR,
+                                field.tkn.get_loc(),
+                                struct_name,
+                                name,
+                                NOTE_STR,
+                                custom_struct.loc                                    
+                            ))
                         }
                     }
                     TreeType::ExprName { name, typ } => {
-                        match custom_struct.get_field(name) {
-                            Some(t) => Ok(t.typ),
-                            None => {
-                                Err(format!(
-                                    "{}: {:?}: Struct `{}` has no field `{}`.\n{}: {:?}: Struct declared here.",
-                                    ERR_STR,
-                                    field.tkn.get_loc(),
-                                    struct_name,
-                                    name,
-                                    NOTE_STR,
-                                    custom_struct.loc                                    
-                                ))
-                            }
+                        if let Some(t) = custom_struct.get_field(name) {
+                            Ok(t.typ)
+                        } else {
+                            Err(format!(
+                                "{}: {:?}: Struct `{}` has no field `{}`.\n{}: {:?}: Struct declared here.",
+                                ERR_STR,
+                                field.tkn.get_loc(),
+                                struct_name,
+                                name,
+                                NOTE_STR,
+                                custom_struct.loc                                    
+                            ))
                         }
                     }
                     _ => panic!()
