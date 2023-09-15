@@ -681,6 +681,13 @@ impl Generator {
                             // Convert argument expressions
                             for (reg_ctr, arg) in arguments.iter().enumerate() {
                                 let reg = self.convert_expr(arg)?;
+                                
+                                if let Type::Custom(str) = reg.typ {
+                                    print!("{:?}: Crash happened when converting `", expr_tree.tkn.get_loc());
+                                    expr_tree.rebuild_code();
+                                    println!("`");
+                                    todo!("Implement Argument being struct");
+                                }
                                 let reg_ctr = reg_ctr + 1; // Register 0 (RAX) is reserved
                                 if reg_ctr != reg.mem {
                                     self.code.push(Instruction::Move {
@@ -857,7 +864,6 @@ impl Generator {
                     Type::Custom(struct_name) => {
                         if let Some(str) = self.structs.get(struct_name) {
                             let s = str.clone();
-                            let struct_size = str.size;
                             let field_name = self.unwind_struct_access(field, Some(str.clone()))?;
                             let offset = match s.get_offset(&field_name.0) {
                                 Some(offset) => offset.mem,
@@ -1286,6 +1292,12 @@ impl Generator {
                     .get_return_type();
                 if let Some(ret_val) = return_value {
                     let reg = self.convert_expr(ret_val)?;
+                    if let Type::Custom(str) = reg.typ {
+                        print!("{:?}: Crash happened when converting `", ret_tree.tkn.get_loc());
+                        ret_tree.rebuild_code();
+                        println!("`");
+                        todo!("Implement return value being struct");
+                    }
                     self.code.push(Instruction::Move {
                         src: reg.mem,
                         dest: 0,
@@ -1588,6 +1600,12 @@ impl Generator {
                                         name
                                     ));
                                 }
+                                if let Type::Custom(str) = typ {
+                                    print!("{:?}: Crash happened when converting `", param.tkn.get_loc());
+                                    param.rebuild_code();
+                                    println!("`");
+                                    todo!("Implement Parameter being struct");
+                                }
                                 let var = local_lookup.add_param(&self.size_manager, name, typ);
                                 self.code.push(Instruction::StoreMem { reg: reg_ctr, var });
                                 reg_ctr += 1;
@@ -1732,19 +1750,19 @@ impl Generator {
                 }
                 Instruction::LoadPtrRel { dest, src, typ } => {
                     if let Type::Custom(struct_name) = typ {
-                        todo!("Implement LoadPtrRel for structs");
+                        todo!("Implement LoadPtrRel for structs in interpret");
                     }
                     self.registers[*dest].ptr = stack_ptr + unsafe { self.registers[*src].ptr } + 1;
                 }
                 Instruction::LoadPtr { dest, src, typ } => {
                     if let Type::Custom(struct_name) = typ {
-                        todo!("Implement LoadPtr for structs");
+                        todo!("Implement LoadPtr for structs in interpret");
                     }
                     self.registers[*dest] = unsafe { stack[self.registers[*src].ptr] };
                 }
                 Instruction::StorePtr { dest, src, typ } => {
                     if let Type::Custom(struct_name) = typ {
-                        todo!("Implement StorePtr for structs");
+                        todo!("Implement StorePtr for structs in interpret");
                     }
                     stack[unsafe { self.registers[*dest].ptr }] = self.registers[*src];
                 }
@@ -1833,7 +1851,7 @@ impl Generator {
                     var: Variable { typ, mem },
                 } => {
                     if let Type::Custom(struct_name) = typ {
-                        todo!("Implement LoadMem for structs");
+                        todo!("Implement LoadMem for structs in interpret");
                     }
                     self.registers[*reg] = stack[stack_ptr + *mem + 1];
                 }
@@ -1842,7 +1860,7 @@ impl Generator {
                     var: Variable { typ, mem },
                 } => {
                     if let Type::Custom(struct_name) = typ {
-                        todo!("Implement StoreMem for structs");
+                        todo!("Implement StoreMem for structs in interpret");
                     }
                     stack[stack_ptr + *mem + 1] = self.registers[*reg];
                 }
@@ -1974,7 +1992,7 @@ impl Generator {
                 }
                 Instruction::StoreMem { reg, var } => {
                     if let Type::Custom(struct_name) = &var.typ {
-                        todo!("Implement StoreMem for structs")
+                        todo!("Implement StoreMem for structs in compile")
                     } else {
                         let word = get_word(&var.typ);
                         let reg = get_register(*reg, &var.typ);
@@ -1987,7 +2005,7 @@ impl Generator {
                 }
                 Instruction::LoadMem { reg, var } => {
                     if let Type::Custom(struct_name) = &var.typ {
-                        todo!("Implement LoadMem for structs")
+                        todo!("Implement LoadMem for structs in compile")
                     } else {
                         let word = get_word(&var.typ);
                         let reg = get_register(*reg, &var.typ);
@@ -2029,7 +2047,7 @@ impl Generator {
                 }
                 Instruction::LoadPtrRel { dest, src, typ } => {
                     if let Type::Custom(struct_name) = typ {
-                        todo!("Implement LoadPtrRel for structs");
+                        todo!("Implement LoadPtrRel for structs in compile");
                     } else {
                         // self.registers[*dest].ptr = stack_ptr + unsafe { self.registers[*src].ptr } + 1;
                         let dest = get_register(*dest, &Type::Usize);
@@ -2040,7 +2058,7 @@ impl Generator {
                 }
                 Instruction::LoadPtr { dest, src, typ } => {
                     if let Type::Custom(struct_name) = typ {
-                        todo!("Implement LoadPtr for structs");
+                        todo!("Implement LoadPtr for structs in compile");
                     } else {
                         let dest = get_register(*dest, &Type::Usize);
                         let src = get_register(*src, &Type::Usize);
@@ -2049,7 +2067,7 @@ impl Generator {
                 }
                 Instruction::StorePtr { dest, src, typ } => {
                     if let Type::Custom(struct_name) = typ {
-                        todo!("Implement StorePtr for structs");
+                        todo!("Implement StorePtr for structs in compile");
                     } else {
                         let dest = get_register(*dest, &Type::Usize);
                         let src = get_register(*src, &Type::Usize);
