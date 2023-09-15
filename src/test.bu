@@ -7,13 +7,16 @@ struct Bla {
     d: Idee,
 }
 
+// Recursive Struct Definitions are working so far
 struct Test {
     f: u64,
     b: i32,
     c: Bla,
 }
 
-func bla(t: Test) -> Bla {
+// Param = Struct
+// Pass by Reference vs Value
+func bla(t: Test, t1: Test) -> Bla {
     let a: u64 = t.c.d.a;
     let b: Bla = Bla {
         a: 0,
@@ -22,6 +25,8 @@ func bla(t: Test) -> Bla {
             a: a + a
         }
     };
+    // ReturnType = Struct
+    // Pass by Reference vs Value
     return b;
 }
 
@@ -30,6 +35,7 @@ func main() {
         1, 2, 3
     ];
 
+    // Array of Structs
     let ideeArr: Idee[3] = [
         Idee {
             a: 500
@@ -52,7 +58,20 @@ func main() {
             },
         }
     };
+
+    // .d is Type Idee
+    // Assign StructAccess Arr[Struct]
     t.c.d = ideeArr[0];
+
+    // t is Type Test
+    // Arg = Struct
+    // Pass by Reference vs Value
+    // Handle Move to registers properly
+    bla(t, t);
+
+    // Assign StructAccess StructAccess
     t.c.d.a = t.f;
+
+    // Assign StructAccess Expr
     t.f = 50;
 }

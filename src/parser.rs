@@ -510,6 +510,13 @@ impl Parser {
         assert!(!self.eof());
         self.fuel.set(256);
         self.ptr += 1;
+        self.remove_comment_token();
+    }
+
+    fn remove_comment_token(&mut self) {
+        while self.at(TokenType::Comment) {
+            self.advance();
+        }
     }
 
     fn eof(&self) -> bool {
