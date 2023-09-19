@@ -48,8 +48,8 @@ fn compile() -> Result<(), String> {
     if debug {
         println!("Parsing took {:?}", now.elapsed());
     }
-    ast.print_debug();
-    ast.rebuild_code();
+    // ast.print_debug();
+    // ast.rebuild_code();
     // todo!();
 
     let now = Instant::now();
@@ -59,8 +59,8 @@ fn compile() -> Result<(), String> {
         println!("Type Checking took {:?}", now.elapsed());
     }
 
-    ast.print_debug();
-    ast.rebuild_code();
+    // ast.print_debug();
+    // ast.rebuild_code();
     // todo!();
 
     let now = Instant::now();

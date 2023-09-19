@@ -16,18 +16,19 @@ struct Test {
 
 // Param = Struct
 // Pass by Reference vs Value
-func bla(t: Test, t1: Test) -> Bla {
-    let a: u64 = t.c.d.a;
-    let b: Bla = Bla {
-        a: 0,
-        b: 0,
-        d: Idee {
-            a: a + a
-        }
-    };
+func bla(t: Test, t1: Test) -> u64 {
+    t1.c.d.a = 999999;
+    
     // ReturnType = Struct
     // Pass by Reference vs Value
-    return b;
+    return t1.c.d.a;
+}
+
+// Currently fails
+// -> Load Struct, store it into Return-Section
+// -> Then somehow load it back after call
+func retStruct(t: Test) -> Idee {
+    return t.c.d;
 }
 
 func main() {
@@ -36,38 +37,36 @@ func main() {
     ];
 
     // Array of Structs
-    let ideeArr: Idee[3] = [
-        Idee {
-            a: 500
-        },
-        Idee {
-            a: 10
-        },
-        Idee {
-            a: 5
-        }
-    ];
     let t: Test = Test {
-        f: 5,
-        b: 10,
+        f: 42069,
+        b: 1337,
         c: Bla {
-            a: 0,
-            b: 0,
+            a: 69420,
+            b: 1000,
             d: Idee {
-                a: a[1] + 5
+                a: 123456789
             },
         }
     };
 
     // .d is Type Idee
     // Assign StructAccess Arr[Struct]
-    t.c.d = ideeArr[0];
+    // t.c.d = ideeArr[0];
+
+    // Assign StructAccess StructDecl
+    let i: Idee = Idee {
+        a: 42069
+    };
+    t.c.d = i;
 
     // t is Type Test
     // Arg = Struct
     // Pass by Reference vs Value
     // Handle Move to registers properly
-    bla(t, t);
+    t.c.d.a = bla(t, t);
+
+    // Fails, Handle Return Struct properly
+    t.c.d = retStruct(t);
 
     // Assign StructAccess StructAccess
     t.c.d.a = t.f;
