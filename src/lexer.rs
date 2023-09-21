@@ -16,7 +16,6 @@ pub enum TokenType {
     ClosingCurly,
     OpenSquare,
     ClosingSquare,
-    StructKeyword,
     FnKeyword,
     LetKeyword,
     IfKeyword,
@@ -203,7 +202,6 @@ impl Lexer {
                     value.push(nc);
                 }
                 let typ = match value.as_str() {
-                    "struct" => TokenType::StructKeyword,
                     "func" => TokenType::FnKeyword,
                     "let" => TokenType::LetKeyword,
                     "if" => TokenType::IfKeyword,
