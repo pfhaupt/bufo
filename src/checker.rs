@@ -19,6 +19,7 @@ pub enum Type {
     Bool,
     // Ptr(Box<Type>),
     Arr(Box<Type>, Vec<usize>),
+    Class(String),
     // Reserved for later use
     F32,
     F64,
@@ -28,6 +29,7 @@ impl Display for Type {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
             // Type::Ptr(t) => write!(fmt, "&{}", t),
+            Type::Class(str) => write!(fmt, "{}", str),
             Type::Arr(t, s) => write!(fmt, "{}", format!("{t}{s:?}")),
             _ => write!(fmt, "{}", format!("{:?}", self).to_lowercase()),
         }
@@ -185,7 +187,8 @@ impl TypeChecker {
     fn type_check(&mut self, tree: &Tree) -> Result<Tree, String> {
         // println!("{:?}", tree.tkn);
         match &tree.typ {
-            TreeType::File { functions } => {
+            TreeType::File { functions, classes } => {
+                todo!();
                 let mut children = vec![];
                 for c in functions {
                     children.push(self.type_check(c)?);
@@ -193,6 +196,7 @@ impl TypeChecker {
                 Ok(Tree {
                     typ: TreeType::File {
                         functions: children,
+                        classes: classes.clone()
                     },
                     tkn: tree.tkn.clone(),
                 })
@@ -699,7 +703,7 @@ impl TypeChecker {
                     tkn: expr_tree.tkn.clone(),
                 })
             }
-            TreeType::Name { name } => {
+            TreeType::Identifier { name } => {
                 assert!(!self.current_fn.is_empty());
                 let func = self.get_current_function();
                 match func.get_variable(name) {
@@ -709,7 +713,7 @@ impl TypeChecker {
                             todo!();
                         }
                         Ok(Tree {
-                            typ: TreeType::Name { name: name.clone() },
+                            typ: TreeType::Identifier { name: name.clone() },
                             tkn: expr_tree.tkn.clone(),
                         })
                     }
@@ -976,7 +980,7 @@ impl TypeChecker {
                     self.get_expr_type(expression, strict)
                 }
             }
-            TreeType::Name { name } => {
+            TreeType::Identifier { name } => {
                 assert!(!self.current_fn.is_empty());
                 let func = self.get_current_function();
                 match func.get_variable(name) {

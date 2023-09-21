@@ -863,7 +863,7 @@ impl Generator {
                     .get(&self.current_fn)
                     .expect("At this point, function table is guaranteed to contain current_fn.");
                 match &name.typ {
-                    TreeType::Name { name } => {
+                    TreeType::Identifier { name } => {
                         let var = match local_lookup.get_variable_location(name) {
                             Some(i) => i,
                             None => panic!(),
@@ -1428,7 +1428,11 @@ impl Generator {
 
     fn convert_ast(&mut self, ast: &Tree) -> Result<(), String> {
         match &ast.typ {
-            TreeType::File { functions } => {
+            TreeType::File { functions, classes } => {
+                todo!();
+                for class in classes {
+                    self.convert_ast(class)?;
+                }
                 for func in functions {
                     self.convert_ast(func)?;
                 }

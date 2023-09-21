@@ -16,7 +16,6 @@ pub enum TokenType {
     OpenSquare,
     ClosingSquare,
     ClassKeyword,
-    ThisKeyword,
     FunctionKeyword,
     FeatureKeyword,
     LetKeyword,
@@ -173,7 +172,7 @@ impl Lexer {
     fn next_token(&mut self) -> Result<Token, String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
-            36,
+            35,
             "Not all TokenTypes are handled in next_token()"
         );
         let c = self.next_char()?;
@@ -204,7 +203,6 @@ impl Lexer {
                     value.push(nc);
                 }
                 let typ = match value.as_str() {
-                    "this" => TokenType::ThisKeyword,
                     "class" => TokenType::ClassKeyword,
                     "func" => TokenType::FunctionKeyword,
                     "feat" => TokenType::FeatureKeyword,

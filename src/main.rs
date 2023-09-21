@@ -41,6 +41,10 @@ fn compile() -> Result<(), String> {
     if debug {
         println!("Tokenizing took {:?}", now.elapsed());
     };
+    // for t in &lexer.get_tokens() {
+    //     println!("{:?} {}", t.get_type(), t.get_value());
+    // }
+    // todo!();
 
     let now = Instant::now();
     let mut parser = Parser::new(path, lexer.get_tokens(), debug);
@@ -48,9 +52,9 @@ fn compile() -> Result<(), String> {
     if debug {
         println!("Parsing took {:?}", now.elapsed());
     }
-    // ast.print_debug();
-    // ast.rebuild_code();
-    // todo!();
+    ast.print_debug();
+    ast.rebuild_code();
+    todo!();
 
     let now = Instant::now();
     let mut type_checker = TypeChecker::new(&ast, debug);
