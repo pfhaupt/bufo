@@ -1,8 +1,4 @@
-File = {Struct} {Fn};
-
-Struct = "struct" "StructName" FieldList;
-FieldList = "{" Field {"," Field} [","] "}";
-Field = "FieldName" TypeDecl;
+File = {Fn};
 
 Fn = "func" "name" ParamList ["->" Type] Block;
 
@@ -18,13 +14,13 @@ Stmt = StmtExpr
      | StmtReturn;
 
 StmtExpr = ExprCall ";";
-StmtLet = "let" "name" TypeDecl "=" (Expr | ExprArrayLiteral | ExprStructDecl) ";";
-StmtAssign = ("name" | ExprStructAccess | ExprArray) "=" Expr ";";
+StmtLet = "let" "name" TypeDecl "=" (Expr | ExprArrayLiteral) ";";
+StmtAssign = "name" | ExprArray "=" Expr ";";
 StmtIf = "if" "(" ExprComp ")" Block ["else" Block];
 StmtReturn = "return" [Expr] ";";
 
 TypeDecl = ":" Type;
-Type = "i32" | "i64" | "u32" | "u64" | "usize" | "StructName";
+Type = "i32" | "i64" | "u32" | "u64" | "usize";
 
 Arg = Expr;
 ArgList = "(" [Arg {"," Arg}] ")";
@@ -35,8 +31,7 @@ Expr = ExprName
      | ExprBinary
      | ExprComp
      | ExprParen
-     | ExprCall
-     | ExprStructAccess;
+     | ExprCall;
 ExprName = "name";
 ExprArrayLiteral = "[" Expr {"," Expr} "]";
 ExprArrayAccess = "name" ExprArrayLiteral;
@@ -45,7 +40,3 @@ ExprBinary = Expr ("+" | "-" | "*" | "/") Expr;
 ExprComp = Expr ("==" | "!=" | "<" | ">" | "<=" | ">=") Expr;
 ExprParen = "(" Expr ")";
 ExprCall = "name" ArgList;
-
-ExprStructDecl = "StructName" "{" FieldDecl {"," FieldDecl} "}";
-FieldDecl = "FieldName" ":" Expr;
-ExprStructAccess = "StructName" "." "FieldName";
