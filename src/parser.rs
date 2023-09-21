@@ -440,15 +440,7 @@ impl Parser {
         assert!(!self.eof());
         self.fuel.set(256);
         self.ptr += 1;
-        self.remove_comment_token();
     }
-
-    fn remove_comment_token(&mut self) {
-        while self.at(TokenType::Comment) {
-            self.advance();
-        }
-    }
-
     fn eof(&self) -> bool {
         self.ptr >= self.tokens.len()
     }
@@ -994,7 +986,6 @@ impl Parser {
         );
         let mut children = vec![];
         while !self.eof() {
-            self.remove_comment_token();
             match self.nth(0) {
                 TokenType::FnKeyword => children.push(self.parse_func()?),
                 _ => {

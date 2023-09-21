@@ -6,7 +6,6 @@ use crate::codegen::ERR_STR;
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TokenType {
     File,
-    Comment,
     CharLiteral,
     StrLiteral,
     IntLiteral,
@@ -170,7 +169,7 @@ impl Lexer {
     fn next_token(&mut self) -> Result<Token, String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
-            33,
+            32,
             "Not all TokenTypes are handled in next_token()"
         );
         let c = self.next_char()?;
@@ -389,15 +388,13 @@ impl Lexer {
                 let (typ, value) = if let Ok(nc) = self.next_char() {
                     match nc {
                         '/' => {
-                            let mut value = String::new();
                             while let Ok(c) = self.next_char() {
                                 if c == '\r' || c == '\n' {
                                     self.trim_whitespace();
                                     break;
                                 }
-                                value.push(c);
                             }
-                            (TokenType::Comment, value)
+                            return self.next_token();
                         },
                         _ => {
                             self.current_char -= 1; // Went too far, go a step back
