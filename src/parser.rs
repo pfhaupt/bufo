@@ -9,17 +9,6 @@ pub enum TreeType {
     File {
         functions: Vec<Tree>,
     },
-    Struct {
-        name: String,
-        fields: Box<Tree>,
-    },
-    FieldList {
-        elements: Vec<Tree>,
-    },
-    Field {
-        name: String,
-        expr: Box<Tree>,
-    },
     Func {
         name: String,
         return_type: Option<Box<Tree>>,
@@ -132,20 +121,6 @@ impl Tree {
                 for f in functions {
                     f.print_internal(indent + 2);
                 }
-            }
-            TreeType::Struct { name, fields } => {
-                println!("{tab}Struct {name}");
-                fields.print_internal(indent + 2);
-            }
-            TreeType::FieldList { elements } => {
-                println!("{tab}FieldList");
-                for e in elements {
-                    e.print_internal(indent + 2);
-                }
-            }
-            TreeType::Field { name, expr } => {
-                println!("{tab}Field {name}");
-                expr.print_internal(indent + 2);
             }
             TreeType::Func {
                 name,
@@ -297,25 +272,6 @@ impl Tree {
                 for f in functions {
                     f.rebuild_code_internal(indent);
                 }
-            }
-            TreeType::Struct { name, fields } => {
-                print!("struct {name} {{");
-                fields.rebuild_code_internal(indent + EXTRA_INDENT);
-                println!("}}");
-            }
-            TreeType::FieldList { elements } => {
-                if !elements.is_empty() {
-                    for e in elements.iter().take(elements.len() - 1) {
-                        e.rebuild_code();
-                        print!(", ");
-                    }
-                    elements.last().unwrap().rebuild_code();
-                }
-
-            }
-            TreeType::Field { name, expr } => {
-                print!("{tab}{name}: ");
-                expr.rebuild_code();
             }
             TreeType::Func {
                 name,
@@ -610,46 +566,6 @@ impl Parser {
         })
     }
 
-    fn parse_struct_field_decl(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        self.expect(TokenType::Name)?;
-        self.expect(TokenType::TypeDecl)?;
-        let expr = self.parse_expr()?;
-        Ok(Tree {
-            typ: TreeType::Field {
-                name: tkn.get_value(),
-                expr: Box::new(expr)
-            },
-            tkn
-        })
-    }
-
-    fn parse_struct_decl(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        self.expect(TokenType::Name)?;
-        let mut children = vec![];
-        self.expect(TokenType::OpenCurly)?;
-        while !self.at(TokenType::ClosingCurly) && !self.eof() {
-            children.push(self.parse_struct_field_decl()?);
-            if !self.eat(TokenType::Comma) {
-                break;
-            }
-        }
-        self.expect(TokenType::ClosingCurly)?;
-        Ok(Tree {
-            typ: TreeType::ExprStructDecl {
-                name: tkn.get_value(),
-                fields: Box::new(Tree {
-                    typ: TreeType::FieldList {
-                        elements: children
-                    },
-                    tkn: tkn.clone()
-                })
-            },
-            tkn
-        })
-    }
-
     fn parse_expr_array_literal(&mut self) -> Result<Tree, String> {
         let tkn = self.open();
         let mut elements = vec![];
@@ -734,25 +650,7 @@ impl Parser {
                     tkn,
                 }
             }
-            TokenType::Name => {
-                match self.nth(1) {
-                    TokenType::Dot => {
-                        let tkn = self.expect(TokenType::Name)?;
-                        Tree {
-                            typ: TreeType::ExprStructAccess {
-                                name: tkn.get_value(),
-                                field: Box::new(self.parse_expr_struct_access()?),
-                                typ: Type::Unknown
-                            },
-                            tkn: tkn.clone()
-                        }
-                    },
-                    TokenType::OpenCurly => {
-                        self.parse_struct_decl()?
-                    }
-                    _ => self.parse_name()?,
-                }
-            }
+            TokenType::Name => self.parse_name()?,
             TokenType::OpenRound => {
                 let tkn = self.open();
                 self.expect(TokenType::OpenRound)?;
@@ -896,12 +794,6 @@ impl Parser {
         self.expect(TokenType::Equal)?;
         let expr = match self.nth(0) {
             TokenType::OpenSquare => self.parse_expr_array_literal()?,
-            TokenType::Name => {
-                match self.nth(1) {
-                    TokenType::OpenCurly => self.parse_struct_decl()?,
-                    _ => self.parse_expr()?,
-                }
-            }
             _ => self.parse_expr()?
         };
         self.expect(TokenType::Semi)?;
@@ -1148,50 +1040,6 @@ impl Parser {
         })
     }
 
-    fn parse_struct_field(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        let name_tkn = self.expect(TokenType::Name)?;
-        let type_decl = self.parse_type_decl()?;
-        Ok(Tree {
-            typ: TreeType::Field {
-                name: name_tkn.get_value(),
-                expr: Box::new(type_decl),
-            },
-            tkn,
-        })
-    }
-
-    fn parse_struct_field_list(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        let mut children = vec![];
-        self.expect(TokenType::OpenCurly)?;
-        while !self.at(TokenType::ClosingCurly) && !self.eof() {
-            children.push(self.parse_struct_field()?);
-            if !self.eat(TokenType::Comma) {
-                break;
-            }
-        }
-        self.expect(TokenType::ClosingCurly)?;
-        Ok(Tree {
-            typ: TreeType::FieldList { elements: children },
-            tkn
-        })
-    }
-
-    fn parse_struct(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        self.expect(TokenType::StructKeyword)?;
-        let struct_name = self.expect(TokenType::Name)?;
-        let fields = self.parse_struct_field_list()?;
-        Ok(Tree {
-            typ: TreeType::Struct {
-                name: struct_name.get_value(),
-                fields: Box::new(fields)
-            },
-            tkn
-        })        
-    }
-
     pub fn parse_file(&mut self) -> Result<Tree, String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
@@ -1207,7 +1055,6 @@ impl Parser {
         while !self.eof() {
             match self.nth(0) {
                 TokenType::FnKeyword => children.push(self.parse_func()?),
-                TokenType::StructKeyword => children.push(self.parse_struct()?),
                 _ => {
                     let prev = self.tokens.get(self.ptr).unwrap();
                     return Err(format!(
