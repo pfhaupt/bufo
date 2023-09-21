@@ -18,7 +18,6 @@ pub enum Type {
     Usize,
     Bool,
     // Ptr(Box<Type>),
-    Custom(String),
     Arr(Box<Type>, Vec<usize>),
     // Reserved for later use
     F32,
@@ -30,7 +29,6 @@ impl Display for Type {
         match self {
             // Type::Ptr(t) => write!(fmt, "&{}", t),
             Type::Arr(t, s) => write!(fmt, "{}", format!("{t}{s:?}")),
-            Type::Custom(s) => write!(fmt, "{}", s),
             _ => write!(fmt, "{}", format!("{:?}", self).to_lowercase()),
         }
     }
@@ -134,46 +132,9 @@ impl TCFunction {
     }
 }
 
-
-#[derive(Debug)]
-struct TCStruct {
-    fields: IndexMap<String, TCVariable>,
-    loc: Location
-}
-
-impl TCStruct {
-    fn new(loc: Location) -> Self {
-        Self {
-            fields: IndexMap::new(),
-            loc,
-        }
-    }
-
-    fn has_field(&self, name: &String) -> bool {
-        self.fields.contains_key(name)
-    }
-
-    fn get_field(&self, name: &String) -> Option<TCVariable> {
-        self.fields.get(name).cloned()
-    }
-    fn add_field(&mut self, v_name: &String, var: TCVariable) -> Result<(), String> {
-        match self.get_field(v_name) {
-            Some(v) => Err(format!(
-                "Struct Field redefinition!\n{}: Field already declared here: {:?}",
-                NOTE_STR, v.loc
-            )),
-            None => {
-                self.fields.insert(v_name.clone(), var);
-                Ok(())
-            }
-        }
-    }
-}
-
 pub struct TypeChecker {
     ast: Tree,
     functions: HashMap<String, TCFunction>,
-    structs: HashMap<String, TCStruct>,
     current_fn: String,
     current_str: String,
     scope_depth: usize,
@@ -186,7 +147,6 @@ impl TypeChecker {
         Self {
             ast: ast.clone(),
             functions: HashMap::new(),
-            structs: HashMap::new(),
             current_fn: String::new(),
             current_str: String::new(),
             scope_depth: 0,
@@ -493,11 +453,6 @@ impl TypeChecker {
                     match expected_type {
                         Type::Arr(..) => Err(format!(
                             "{}: {:?}: Attempted to assign ExprLiteral to Array.",
-                            ERR_STR,
-                            expr_tree.tkn.get_loc()
-                        )),
-                        Type::Custom(s) => Err(format!(
-                            "{}: {:?}: Attempted to assign ExprLiteral to Struct.",
                             ERR_STR,
                             expr_tree.tkn.get_loc()
                         )),
@@ -1071,16 +1026,6 @@ impl TypeChecker {
     fn get_type(&self, tree: &Tree) -> Result<Type, String> {
         match &tree.typ {
             TreeType::TypeDecl { typ } => {
-                if let Type::Custom(str) = typ {
-                    if self.structs.get(str).is_none() {
-                        return Err(format!(
-                            "{}: {:?}: Unknown Type `{}`.",
-                            ERR_STR,
-                            tree.tkn.get_loc(),
-                            str
-                        ));
-                    }
-                }
                 Ok(typ.clone())
             }
             _ => todo!(),

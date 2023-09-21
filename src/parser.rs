@@ -453,7 +453,7 @@ impl Parser {
         self.ptr >= self.tokens.len()
     }
 
-    fn nth(&self, lookahead: usize) -> TokenType {
+    fn nth(&mut self, lookahead: usize) -> TokenType {
         if self.fuel.get() == 0 {
             panic!("Parser is stuck at {}", self.ptr);
         }
@@ -463,7 +463,7 @@ impl Parser {
             .map_or(TokenType::Eof, |it| it.get_type())
     }
 
-    fn at(&self, typ: TokenType) -> bool {
+    fn at(&mut self, typ: TokenType) -> bool {
         self.nth(0) == typ
     }
 
@@ -522,7 +522,9 @@ impl Parser {
             // Reserved for future use
             "f32" => Ok(Type::F32),
             "f64" => Ok(Type::F64),
-            t => Ok(Type::Custom(String::from(t)))
+            _ => {
+                Err(format!("{}: {:?}: Unknown type `{}`.", ERR_STR, loc, val))
+            }
         }
     }
 
@@ -897,7 +899,7 @@ impl Parser {
                 TokenType::IfKeyword => children.push(self.parse_stmt_if()?),
                 TokenType::ReturnKeyword => children.push(self.parse_stmt_return()?),
                 TokenType::Name => match self.nth(1) {
-                    TokenType::Equal | TokenType::OpenSquare | TokenType::Dot => {
+                    TokenType::Equal | TokenType::OpenSquare => {
                         children.push(self.parse_stmt_assign()?)
                     }
                     _ => children.push(self.parse_stmt_expr()?),
@@ -982,7 +984,7 @@ impl Parser {
     pub fn parse_file(&mut self) -> Result<Tree, String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
-            35,
+            33,
             "Not all TokenTypes are handled in parse_file()"
         );
         let tkn = Token::new(
@@ -992,6 +994,7 @@ impl Parser {
         );
         let mut children = vec![];
         while !self.eof() {
+            self.remove_comment_token();
             match self.nth(0) {
                 TokenType::FnKeyword => children.push(self.parse_func()?),
                 _ => {

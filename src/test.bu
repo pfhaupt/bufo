@@ -1,76 +1,13 @@
-struct Idee {
-    a: u64
-}
-struct Bla {
-    a: usize,
-    b: i32,
-    d: Idee,
-}
-
-// Recursive Struct Definitions are working so far
-struct Test {
-    f: u64,
-    b: i32,
-    c: Bla,
-}
-
-// Param = Struct
-// Pass by Reference vs Value
 func bla(t: Test, t1: Test) -> u64 {
-    t1.c.d.a = 999999;
-    
-    // ReturnType = Struct
-    // Pass by Reference vs Value
-    return t1.c.d.a;
+    return 0;
 }
 
-// Currently fails
-// -> Load Struct, store it into Return-Section
-// -> Then somehow load it back after call
 func retStruct(t: Test) -> Idee {
-    return t.c.d;
+    return 0;
 }
 
 func main() {
     let a: u64[3] = [
         1, 2, 3
     ];
-
-    // Array of Structs
-    let t: Test = Test {
-        f: 42069,
-        b: 1337,
-        c: Bla {
-            a: 69420,
-            b: 1000,
-            d: Idee {
-                a: 123456789
-            },
-        }
-    };
-
-    // .d is Type Idee
-    // Assign StructAccess Arr[Struct]
-    // t.c.d = ideeArr[0];
-
-    // Assign StructAccess StructDecl
-    let i: Idee = Idee {
-        a: 42069
-    };
-    t.c.d = i;
-
-    // t is Type Test
-    // Arg = Struct
-    // Pass by Reference vs Value
-    // Handle Move to registers properly
-    t.c.d.a = bla(t, t);
-
-    // Fails, Handle Return Struct properly
-    t.c.d = retStruct(t);
-
-    // Assign StructAccess StructAccess
-    t.c.d.a = t.f;
-
-    // Assign StructAccess Expr
-    t.f = 50;
 }

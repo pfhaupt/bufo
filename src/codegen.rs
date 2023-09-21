@@ -350,47 +350,13 @@ impl Function {
     }
 }
 
-#[derive(Debug, Clone)]
-struct Struct {
-    name: String,
-    fields: BTreeMap<String, Variable>,
-    size: usize,
-}
-
-impl Struct {
-    fn new(name: &String) -> Self {
-        Self {
-            name: name.clone(),
-            fields: BTreeMap::new(),
-            size: 0
-        }
-    }
-
-    fn add_field(&mut self, sm: &SizeManager, name: &str, typ: &Type) -> usize {
-        let offset = self.size;
-        let field_var = Variable {
-            mem: offset,
-            typ: typ.clone()
-        };
-        assert!(self.fields.insert(name.to_owned(), field_var).is_none());
-        self.size += sm.get_type_size(typ);
-        self.size
-    }
-
-    fn get_offset(&self, name: &String) -> Option<&Variable> {
-        self.fields.get(name)
-    }
-}
-
 #[derive(Debug)]
 struct SizeManager {
-    structs: HashMap<String, Struct>
 }
 
 impl SizeManager {
     fn new() -> Self {
         Self {
-            structs: HashMap::new()
         }
     }
 
@@ -399,24 +365,9 @@ impl SizeManager {
             Type::Arr(t, size) => self.get_type_size(t) * size.iter().product::<usize>(),
             Type::I32 | Type::U32 => 4,
             Type::I64 | Type::U64 | Type::Usize => 8,
-            Type::Custom(struct_name) => {
-                if let Some(str) = self.structs.get(struct_name) {
-                    str.size
-                } else {
-                    panic!()
-                }
-            }
             // Type::Ptr(..) => 8,
             e => todo!("Figure out size of type {:?} in bytes", e),
         }
-    }
-
-    fn add_struct(&mut self, name: &String, str: &Struct) {
-        self.structs.insert(name.clone(), str.clone());
-    }
-
-    fn update_struct(&mut self, str: &Struct) {
-        self.add_struct(&str.name, str)
     }
 }
 
@@ -427,7 +378,6 @@ pub struct Generator {
     registers: Vec<Memory>,
     register_ctr: usize,
     functions: HashMap<String, Function>,
-    structs: HashMap<String, Struct>,
     code: Vec<Instruction>,
     current_fn: String,
     current_str: String,
@@ -448,7 +398,6 @@ impl Generator {
             registers: vec![Memory { u64: 0 }; REGISTERS_32BIT.len()],
             register_ctr: 1,
             functions: HashMap::new(),
-            structs: HashMap::new(),
             code: vec![],
             current_fn: String::new(),
             current_str: String::new(),
@@ -615,18 +564,13 @@ impl Generator {
                     .expect("At this point, function table is guaranteed to contain current_fn.");
                 match curr_fn.get_variable_location(name) {
                     Some(var) => {
-                        let reg = if let Type::Custom(s) = &var.typ {
-                            var.mem
-                        } else {
-                            self.code.push(Instruction::LoadMem {
-                                reg,
-                                var: Variable {
-                                    typ: var.typ.clone(),
-                                    mem: var.mem,
-                                },
-                            });
-                            reg
-                        };
+                        self.code.push(Instruction::LoadMem {
+                            reg,
+                            var: Variable {
+                                typ: var.typ.clone(),
+                                mem: var.mem,
+                            },
+                        });
                         Ok(Variable {
                             mem: reg,
                             typ: var.typ.clone(),
@@ -696,27 +640,17 @@ impl Generator {
                             for arg in arguments.iter() {
                                 let reg = self.convert_expr(arg)?;
                                 
-                                if let Type::Custom(str) = &reg.typ {
-                                    self.load_struct(reg.clone(), self.size_manager.get_type_size(&reg.typ), &mut reg_ctr);
-                                } else {
-                                    if reg_ctr != reg.mem {
-                                        self.code.push(Instruction::Move {
-                                            dest: reg_ctr,
-                                            src: reg.mem,
-                                        });
-                                    }
+                                if reg_ctr != reg.mem {
+                                    self.code.push(Instruction::Move {
+                                        dest: reg_ctr,
+                                        src: reg.mem,
+                                    });
                                 }
                             }
                             self.code.push(Instruction::Call {
                                 fn_name: function_name.clone(),
                             });
                             let reg = self.get_register()?;
-                            if let Type::Custom(s) = &fn_return_type {
-                                print!("{:?}: Panic happened here: ", expr_tree.tkn.get_loc());
-                                expr_tree.rebuild_code();
-                                println!();
-                                todo!("Returning structs is currently not supported.")
-                            }
                             if fn_return_type != Type::None {
                                 self.code.push(Instruction::Move { dest: reg, src: 0 });
                             }
@@ -811,12 +745,6 @@ impl Generator {
                                             src: mem_offset,
                                             typ: Type::Usize,
                                         });
-                                        if let Type::Custom(s) = *typ.clone() {
-                                            print!("{:?}: Panic happened here: ", expr_tree.tkn.get_loc());
-                                            expr_tree.rebuild_code();
-                                            println!();
-                                            todo!("Getting the element of a Struct-Array is not supported yet")
-                                        }
                                         let reg_tmp = self.get_register()?;
                                         self.code.push(Instruction::LoadPtrRel {
                                             dest: reg_tmp,
@@ -842,46 +770,6 @@ impl Generator {
                     None => panic!(),
                 }
             }
-            TreeType::ExprStructAccess { .. } => {
-                let v = self.unwind_struct_access(expr_tree, None)?;
-                let offset = v.1;
-                let curr_fn = self
-                    .functions
-                    .get(&self.current_fn)
-                    .expect("At this point, function table is guaranteed to contain current_fn.");
-                match curr_fn.get_variable_location(&v.0) {
-                    Some(var) => {
-                        let reg = self.get_register()?;
-                        let var = Variable {
-                            typ: offset.typ.clone(),
-                            mem: var.mem + offset.mem
-                        };
-                        let reg = if let Type::Custom(s) = &var.typ {
-                            var.mem
-                        } else {
-                            self.code.push(Instruction::LoadMem {
-                                reg,
-                                var: Variable {
-                                    typ: var.typ.clone(),
-                                    mem: var.mem,
-                                },
-                            });
-                            reg
-                        };
-                        Ok(Variable {
-                            mem: reg,
-                            typ: offset.typ
-                        })
-                    },
-                    None => todo!()
-                }
-            }
-            TreeType::ExprStructDecl { name, fields } => {
-                print!("{:?}: Panic happened here: ", expr_tree.tkn.get_loc());
-                expr_tree.rebuild_code();
-                println!();
-                todo!("StmtAssign does not support struct allocation yet.")
-            }
             e => {
                 expr_tree.print_debug();
                 expr_tree.rebuild_code();
@@ -891,87 +779,6 @@ impl Generator {
         }
     }
 
-    fn unwind_struct_access(&mut self, struct_access: &Tree, prev_struct: Option<Struct>) -> Result<(String, Variable), String> {
-        match &struct_access.typ {
-            TreeType::ExprStructAccess { name, field, typ } => {
-                match typ {
-                    Type::Custom(struct_name) => {
-                        if let Some(str) = self.structs.get(struct_name) {
-                            let s = str.clone();
-                            let field_name = self.unwind_struct_access(field, Some(str.clone()))?;
-                            let offset = match s.get_offset(&field_name.0) {
-                                Some(offset) => offset.mem,
-                                None => todo!()
-                            };
-                            Ok((name.clone(), Variable { mem: field_name.1.mem + offset, typ: field_name.1.typ }))
-                        } else {
-                            todo!()
-                        }
-                    }
-                    _ => todo!()
-                }
-            }
-            TreeType::ExprName { name, typ } => {
-                if let Some(offset) = prev_struct.unwrap().get_offset(name) {
-                    Ok((name.clone(), Variable { typ: offset.typ.clone(), mem: 0 }))
-                } else {
-                    todo!()
-                }
-            }
-            _ => todo!()
-        }
-    }
-
-    fn convert_let_struct(
-        &mut self,
-        struct_tree: &Tree,
-        str: &Struct
-    ) -> Result<(), String> {
-        match &struct_tree.typ {
-            TreeType::ExprStructDecl { name, fields } => {
-                assert!(self.structs.contains_key(name));
-                assert!(str.name == *name);
-                self.convert_let_struct(fields, str)?;
-            }
-            TreeType::FieldList { elements } => {
-                for elem in elements {
-                    self.convert_let_struct(elem, str)?;
-                }
-            }
-            TreeType::Field { name, expr } => {
-                match &expr.typ {
-                    TreeType::ExprStructDecl { name, fields } => {
-                        let nested_struct = self.structs.get(name).unwrap().clone();
-                        self.convert_let_struct(expr, &nested_struct)?;
-                    }
-                    _ => {
-                        assert!(str.fields.contains_key(name));
-                        let typ = str.fields.get(name).unwrap();
-                        let reg = self.convert_expr(expr)?;
-                        self.code.push(Instruction::StoreMem {
-                            reg: reg.mem,
-                            var: Variable {
-                                typ: typ.typ.clone(), //expected_type.clone(),
-                                mem: self.memory_offset
-                            },
-                        });
-                        self.memory_offset += self.size_manager.get_type_size(&typ.typ);
-                    }
-                }
-                
-            }
-            TreeType::ExprArrLiteral { elements } => {
-                todo!()
-            }
-            _ => {
-                print!("{:?}: Panic happened here: ", struct_tree.tkn.get_loc());
-                struct_tree.rebuild_code();
-                println!();
-                todo!("Assigning Structs does not support expressions yet.");
-            }
-        }
-        Ok(())
-    }
 
     fn convert_let_arr(
         &mut self,
@@ -983,10 +790,6 @@ impl Generator {
                 for elem in elements {
                     self.convert_let_arr(elem, expected_type)?;
                 }
-            }
-            TreeType::ExprStructDecl { name, fields } => {
-                let nested_struct = self.structs.get(name).unwrap().clone();
-                self.convert_let_struct(arr_tree, &nested_struct)?;
             }
             _ => {
                 let reg = self.convert_expr(arr_tree)?;
@@ -1028,13 +831,6 @@ impl Generator {
                         match typ {
                             Type::Arr(expected_type, expected_size) => {
                                 self.convert_let_arr(expression, expected_type)?;
-                            }
-                            Type::Custom(str) => {
-                                let str = self.structs.get(str).expect(
-                                    "At this point, struct table is guaranteed to contain struct."
-                                ).clone();
-                                self.memory_offset = mem;
-                                self.convert_let_struct(expression, &str)?;
                             }
                             _ => {
                                 let reg = self.convert_expr(expression)?;
@@ -1162,25 +958,6 @@ impl Generator {
                                 }
                             }
                             _ => panic!(),
-                        }
-                    }
-                    TreeType::ExprStructAccess { name: n, field, typ } => {
-                        let offset = match local_lookup.get_variable_location(n) {
-                            Some(i) => i,
-                            None => panic!()
-                        };
-                        let var = self.unwind_struct_access(name, None)?;
-                        
-                        let var = Variable {
-                            typ: var.1.typ,
-                            mem: var.1.mem + offset.mem
-                        };
-                        if let Type::Custom(s) = &var.typ {
-                            // reg is lhs
-                            // var is rhs
-                            self.copy_struct(reg.mem, var.mem, self.size_manager.get_type_size(&var.typ));
-                        } else {
-                            self.code.push(Instruction::StoreMem { reg: reg.mem, var });
                         }
                     }
                     _ => {
@@ -1338,19 +1115,11 @@ impl Generator {
                     .get_return_type();
                 if let Some(ret_val) = return_value {
                     let mut reg = self.convert_expr(ret_val)?;
-                    if let Type::Custom(str) = &reg.typ {
-                        // convert_expr puts stackoffset into reg.mem
-                        self.copy_struct(
-                            reg.mem,
-                            self.functions.get(&self.current_fn).unwrap().get_return_loc(),
-                            self.size_manager.get_type_size(&fn_return_type)
-                        );
-                    } else {
-                        self.code.push(Instruction::Move {
-                            src: reg.mem,
-                            dest: 0,
-                        });
-                    }
+                    
+                    self.code.push(Instruction::Move {
+                        src: reg.mem,
+                        dest: 0,
+                    });
                 }
                 self.code.push(Instruction::Return {
                     from: self.current_fn.clone(),
@@ -1486,144 +1255,6 @@ impl Generator {
         Ok(())
     }
 
-    fn convert_struct_definition(&mut self, str: &Tree) -> Result<(), String> {
-        match &str.typ {
-            TreeType::Struct { name, fields } => {
-                if self.structs.contains_key(name) {
-                    return Err(format!(
-                        "{}: {:?}: Struct redefinition",
-                        ERR_STR,
-                        str.tkn.get_loc()
-                    ));
-                }
-                self.current_str = name.clone();
-                let s = Struct::new(name);
-                self.size_manager.add_struct(name, &s);
-                self.structs.insert(name.clone(), s);
-
-                self.convert_struct_field_definition(fields)?;
-            }
-            _ => panic!()
-        }
-        self.current_str.clear();
-        Ok(())
-    }
-
-    fn convert_struct_field_definition(&mut self, field: &Tree) -> Result<(), String> {
-        match &field.typ {
-            TreeType::FieldList { elements } => {
-                for e in elements {
-                    self.convert_struct_field_definition(e)?;
-                }
-            }
-            TreeType::Field { name, expr } => {
-                assert!(!self.current_str.is_empty());
-                let struct_lookup = self.structs.get_mut(&self.current_str).expect(
-                    "At this point, struct table is guaranteed to contain current_str."
-                );
-                match &expr.typ {
-                    TreeType::TypeDecl { typ } => {
-                        let new_size = struct_lookup.add_field(&self.size_manager, name, typ);
-                        self.size_manager.update_struct(struct_lookup);
-                        // println!("Struct `{}` grew to {} bytes", self.current_str, new_size);
-                    }
-                    _ => panic!()
-                }
-            }
-            _ => panic!()
-        }
-        Ok(())
-    }
-    
-    fn copy_struct(&mut self, src: usize, dest: usize, mut size: usize) -> Result<(), String> {
-        let reg = self.get_register()?;
-        let mut mem_offset = 0;
-        while size >= 8 {
-            self.code.push(Instruction::LoadMem { reg, var: Variable {
-                typ: Type::U64,
-                mem: src + mem_offset
-            }});
-            self.code.push(Instruction::StoreMem { reg, var: Variable {
-                typ: Type::U64,
-                mem: dest + mem_offset
-            }});
-            size -= 8;
-            mem_offset += 8;
-        }
-        if size != 0 {
-            if size == 4 {
-                self.code.push(Instruction::LoadMem { reg, var: Variable {
-                    typ: Type::U32,
-                    mem: src + mem_offset
-                }});
-                self.code.push(Instruction::StoreMem { reg, var: Variable {
-                    typ: Type::U32,
-                    mem: dest + mem_offset
-                }});
-                size -= 4;
-                mem_offset += 4;
-            } else {
-                todo!()
-            }
-        }
-        Ok(())
-    }
-
-    fn store_struct(&mut self, dest: Variable, mut size: usize, reg_ctr: &mut usize) -> Result<(), String> {
-        let mut mem_offset = 0;
-        while size >= 8 {
-            self.code.push(Instruction::StoreMem { reg: *reg_ctr, var: Variable {
-                typ: Type::U64,
-                mem: dest.mem + mem_offset
-            } });
-            *reg_ctr += 1;
-            size -= 8;
-            mem_offset += 8;
-        }
-        if size != 0 {
-            if size == 4 {
-                self.code.push(Instruction::StoreMem { reg: *reg_ctr, var: Variable {
-                    typ: Type::U32,
-                    mem: dest.mem + mem_offset
-                } });
-                *reg_ctr += 1;
-                size -= 4;
-                mem_offset += 4;
-            } else {
-                todo!()
-            }
-        }
-        Ok(())
-    }
-
-    fn load_struct(&mut self, src: Variable, mut size: usize, reg_ctr: &mut usize) -> Result<(), String> {
-        let mut mem_offset = 0;
-        while size >= 8 {
-            self.code.push(Instruction::LoadMem { reg: *reg_ctr, var: Variable {
-                typ: Type::U64,
-                mem: src.mem + mem_offset
-            } });
-            *reg_ctr += 1;
-            size -= 8;
-            mem_offset += 8;
-        }
-        if size != 0 {
-            if size == 4 {
-                self.code.push(Instruction::LoadMem { reg: *reg_ctr, var: Variable {
-                    typ: Type::U32,
-                    mem: src.mem + mem_offset
-                } });
-                *reg_ctr += 1;
-                size -= 4;
-                mem_offset += 4;
-            } else {
-                todo!()
-            }
-        }
-        Ok(())
-    }
-
-
     fn convert_fn(&mut self, func: &Tree) -> Result<(), String> {
         match &func.typ {
             TreeType::Func {
@@ -1739,15 +1370,9 @@ impl Generator {
                                         name
                                     ));
                                 }
-                                if let Type::Custom(str) = typ {
-                                    let var = local_lookup.add_param(&self.size_manager, name, typ);
-                                    let mut size = self.size_manager.get_type_size(typ);
-                                    self.store_struct(var, size, &mut reg_ctr)?;
-                                } else {
-                                    let var = local_lookup.add_param(&self.size_manager, name, typ);
-                                    self.code.push(Instruction::StoreMem { reg: reg_ctr, var });
-                                    reg_ctr += 1;
-                                }
+                                let var = local_lookup.add_param(&self.size_manager, name, typ);
+                                self.code.push(Instruction::StoreMem { reg: reg_ctr, var });
+                                reg_ctr += 1;
                             }
                             _ => panic!(),
                         },
@@ -1811,9 +1436,6 @@ impl Generator {
             TreeType::Func { .. } => {
                 self.memory_offset = 0;
                 self.convert_fn(ast)?;
-            }
-            TreeType::Struct { .. } => {
-                self.convert_struct_definition(ast)?;
             }
             _ => todo!("handle other types"),
         }
@@ -1884,21 +1506,12 @@ impl Generator {
                     self.registers[*dest].ptr = *val;
                 }
                 Instruction::LoadPtrRel { dest, src, typ } => {
-                    if let Type::Custom(struct_name) = typ {
-                        todo!("Implement LoadPtrRel for structs in interpret");
-                    }
                     self.registers[*dest].ptr = stack_ptr + unsafe { self.registers[*src].ptr } + 1;
                 }
                 Instruction::LoadPtr { dest, src, typ } => {
-                    if let Type::Custom(struct_name) = typ {
-                        todo!("Implement LoadPtr for structs in interpret");
-                    }
                     self.registers[*dest] = unsafe { stack[self.registers[*src].ptr] };
                 }
                 Instruction::StorePtr { dest, src, typ } => {
-                    if let Type::Custom(struct_name) = typ {
-                        todo!("Implement StorePtr for structs in interpret");
-                    }
                     stack[unsafe { self.registers[*dest].ptr }] = self.registers[*src];
                 }
                 Instruction::LoadF32 { .. } => {
@@ -1985,18 +1598,12 @@ impl Generator {
                     reg,
                     var: Variable { typ, mem },
                 } => {
-                    if let Type::Custom(struct_name) = typ {
-                        todo!("Implement LoadMem for structs in interpret");
-                    }
                     self.registers[*reg] = stack[stack_ptr + *mem + 1];
                 }
                 Instruction::StoreMem {
                     reg,
                     var: Variable { typ, mem },
                 } => {
-                    if let Type::Custom(struct_name) = typ {
-                        todo!("Implement StoreMem for structs in interpret");
-                    }
                     stack[stack_ptr + *mem + 1] = self.registers[*reg];
                 }
                 Instruction::Call { fn_name } => {
@@ -2126,30 +1733,22 @@ impl Generator {
                     push_asm(format!("  mov {dest}, {src}").as_str());
                 }
                 Instruction::StoreMem { reg, var } => {
-                    if let Type::Custom(struct_name) = &var.typ {
-                        todo!("Implement StoreMem for structs in compile")
-                    } else {
-                        let word = get_word(&var.typ);
-                        let reg = get_register(*reg, &var.typ);
-                        let stack_offset = var.mem;
-                        let type_size = self.size_manager.get_type_size(&var.typ);
-                        push_asm(
-                            format!("  mov {word} [rbp-{stack_offset}-{type_size}], {reg}").as_str(),
-                        );
-                    }
+                    let word = get_word(&var.typ);
+                    let reg = get_register(*reg, &var.typ);
+                    let stack_offset = var.mem;
+                    let type_size = self.size_manager.get_type_size(&var.typ);
+                    push_asm(
+                        format!("  mov {word} [rbp-{stack_offset}-{type_size}], {reg}").as_str(),
+                    );
                 }
                 Instruction::LoadMem { reg, var } => {
-                    if let Type::Custom(struct_name) = &var.typ {
-                        todo!("Implement LoadMem for structs in compile")
-                    } else {
-                        let word = get_word(&var.typ);
-                        let reg = get_register(*reg, &var.typ);
-                        let stack_offset = var.mem;
-                        let type_size = self.size_manager.get_type_size(&var.typ);
-                        push_asm(
-                            format!("  mov {word} {reg}, [rbp-{stack_offset}-{type_size}]").as_str(),
-                        );
-                    }
+                    let word = get_word(&var.typ);
+                    let reg = get_register(*reg, &var.typ);
+                    let stack_offset = var.mem;
+                    let type_size = self.size_manager.get_type_size(&var.typ);
+                    push_asm(
+                        format!("  mov {word} {reg}, [rbp-{stack_offset}-{type_size}]").as_str(),
+                    );
                 }
                 Instruction::LoadUnknown { dest, val, loc } => {
                     panic!("At the point of generating ASM, there should never be a single LoadUnknown!\nFailed to resolve type at: {loc:?}");
@@ -2181,33 +1780,21 @@ impl Generator {
                     push_asm(format!("  mov {reg}, {val}").as_str());
                 }
                 Instruction::LoadPtrRel { dest, src, typ } => {
-                    if let Type::Custom(struct_name) = typ {
-                        todo!("Implement LoadPtrRel for structs in compile");
-                    } else {
-                        // self.registers[*dest].ptr = stack_ptr + unsafe { self.registers[*src].ptr } + 1;
-                        let dest = get_register(*dest, &Type::Usize);
-                        let src = get_register(*src, &Type::Usize);
-                        push_asm(format!("  add {src}, rsp").as_str());
-                        push_asm(format!("  mov {dest}, {src}").as_str());
-                    }
+                    // self.registers[*dest].ptr = stack_ptr + unsafe { self.registers[*src].ptr } + 1;
+                    let dest = get_register(*dest, &Type::Usize);
+                    let src = get_register(*src, &Type::Usize);
+                    push_asm(format!("  add {src}, rsp").as_str());
+                    push_asm(format!("  mov {dest}, {src}").as_str());
                 }
                 Instruction::LoadPtr { dest, src, typ } => {
-                    if let Type::Custom(struct_name) = typ {
-                        todo!("Implement LoadPtr for structs in compile");
-                    } else {
-                        let dest = get_register(*dest, &Type::Usize);
-                        let src = get_register(*src, &Type::Usize);
-                        push_asm(format!("  mov {dest}, [{src}]").as_str());
-                    }
+                    let dest = get_register(*dest, &Type::Usize);
+                    let src = get_register(*src, &Type::Usize);
+                    push_asm(format!("  mov {dest}, [{src}]").as_str());
                 }
                 Instruction::StorePtr { dest, src, typ } => {
-                    if let Type::Custom(struct_name) = typ {
-                        todo!("Implement StorePtr for structs in compile");
-                    } else {
-                        let dest = get_register(*dest, &Type::Usize);
-                        let src = get_register(*src, &Type::Usize);
-                        push_asm(format!("  mov [{dest}], {src}").as_str());
-                    }
+                    let dest = get_register(*dest, &Type::Usize);
+                    let src = get_register(*src, &Type::Usize);
+                    push_asm(format!("  mov [{dest}], {src}").as_str());
                 }
                 Instruction::Add { dest, src, typ } => {
                     let dest = get_register(*dest, typ);
