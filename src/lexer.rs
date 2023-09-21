@@ -15,12 +15,18 @@ pub enum TokenType {
     ClosingCurly,
     OpenSquare,
     ClosingSquare,
-    FnKeyword,
+    ClassKeyword,
+    ThisKeyword,
+    FunctionKeyword,
+    FeatureKeyword,
     LetKeyword,
     IfKeyword,
     ElseKeyword,
     ReturnKeyword,
-    TypeDecl,
+    Colon,
+    Semi,
+    Comma,
+    Dot,
     Arrow,
     Equal,
     Plus,
@@ -33,9 +39,7 @@ pub enum TokenType {
     CmpLte,
     CmpGt,
     CmpGte,
-    Semi,
-    Comma,
-    Name,
+    Identifier,
     Eof,
 }
 
@@ -169,7 +173,7 @@ impl Lexer {
     fn next_token(&mut self) -> Result<Token, String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
-            32,
+            36,
             "Not all TokenTypes are handled in next_token()"
         );
         let c = self.next_char()?;
@@ -200,12 +204,15 @@ impl Lexer {
                     value.push(nc);
                 }
                 let typ = match value.as_str() {
-                    "func" => TokenType::FnKeyword,
+                    "this" => TokenType::ThisKeyword,
+                    "class" => TokenType::ClassKeyword,
+                    "func" => TokenType::FunctionKeyword,
+                    "feat" => TokenType::FeatureKeyword,
                     "let" => TokenType::LetKeyword,
                     "if" => TokenType::IfKeyword,
                     "else" => TokenType::ElseKeyword,
                     "return" => TokenType::ReturnKeyword,
-                    _ => TokenType::Name,
+                    _ => TokenType::Identifier,
                 };
                 Ok(Token { typ, value, loc })
             }
@@ -351,15 +358,15 @@ impl Lexer {
                 Ok(Token { typ, value, loc })
             }
             ':' => Ok(Token {
-                typ: TokenType::TypeDecl,
+                typ: TokenType::Colon,
                 value: String::from(c),
                 loc,
             }),
-            // '.' => Ok(Token {
-            //     typ: TokenType::Dot,
-            //     value: String::from(c),
-            //     loc,
-            // }),
+            '.' => Ok(Token {
+                typ: TokenType::Dot,
+                value: String::from(c),
+                loc,
+            }),
             '+' => Ok(Token {
                 typ: TokenType::Plus,
                 value: String::from(c),

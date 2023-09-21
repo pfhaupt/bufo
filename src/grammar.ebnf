@@ -59,7 +59,7 @@ FeatureName = Identifier;
 FunctionName = Identifier;
 FieldName = Identifier;
 ParameterName = Identifier;
-VariableName = Identifier;
+VariableName = Identifier | ( VariableName "." FieldName);
 
 Identifier = Character {Character};
 Integer = Digit {Digit};
