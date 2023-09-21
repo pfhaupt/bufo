@@ -90,15 +90,6 @@ pub enum TreeType {
         function_name: String,
         args: Box<Tree>,
         typ: Type,
-    },
-    ExprStructDecl {
-        name: String,
-        fields: Box<Tree>,
-    },
-    ExprStructAccess {
-        name: String,
-        field: Box<Tree>,
-        typ: Type
     }
 }
 
@@ -248,14 +239,6 @@ impl Tree {
             }
             TreeType::TypeDecl { typ } => {
                 println!("{tab}{typ:?}");
-            }
-            TreeType::ExprStructDecl { name, fields } => {
-                println!("{tab}ExprStructDecl {name}");
-                fields.print_internal(indent + 2);
-            }
-            TreeType::ExprStructAccess { name, field, typ } => {
-                println!("{tab}ExprStructAccess {name} {typ:?}");
-                field.print_internal(indent + 2);
             }
         }
     }
@@ -417,15 +400,6 @@ impl Tree {
                 args.rebuild_code();
                 print!(")");
             }
-            TreeType::ExprStructDecl { name, fields } => {
-                print!("{name} {{");
-                fields.rebuild_code();
-                print!("}}");
-            }
-            TreeType::ExprStructAccess { name, field, .. } => {
-                print!("{name}.");
-                field.rebuild_code();
-            }
             TreeType::TypeDecl { typ } => {
                 print!("{}", typ);
             }
@@ -582,31 +556,6 @@ impl Parser {
             typ: TreeType::ExprArrLiteral { elements },
             tkn,
         })
-    }
-
-    fn parse_expr_struct_access(&mut self) -> Result<Tree, String> {
-        self.expect(TokenType::Dot)?;
-        let tkn = self.open();
-        let name = self.expect(TokenType::Name)?;
-        if self.at(TokenType::Dot) {
-            // self.advance();
-            Ok(Tree {
-                typ: TreeType::ExprStructAccess {
-                    name: tkn.get_value(),
-                    field: Box::new(self.parse_expr_struct_access()?),
-                    typ: Type::Unknown
-                },
-                tkn
-            })
-        } else {
-            Ok(Tree {
-                typ: TreeType::ExprName {
-                    name: name.get_value(),
-                    typ: Type::Unknown
-                },
-                tkn: name
-            })
-        }
     }
 
     fn parse_name(&mut self) -> Result<Tree, String> {
@@ -829,16 +778,6 @@ impl Parser {
                     tkn: tkn.clone(),
                 }
             }
-            TokenType::Dot => {
-                Tree {
-                    typ: TreeType::ExprStructAccess {
-                        name: name.get_value(),
-                        field: Box::new(self.parse_expr_struct_access()?),
-                        typ: Type::Unknown
-                    },
-                    tkn: tkn.clone()
-                }
-            },
             _ => todo!(),
         };
         self.expect(TokenType::Equal)?;
