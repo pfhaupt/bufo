@@ -1,13 +1,40 @@
-func bla(t: Test, t1: Test) -> u64 {
-    return 0;
+class Test {
+    a: i64;
+    b: i64;
+    c: i64;
+    d: u64;
+
+    // Implicitly returns Instance of Test
+    feat new(na: i64, nb: i64, nc: i64) {
+        this.a = na;
+        this.b = nb;
+        this.c = nc;
+        // this.d gets 0 initialized
+    }
 }
 
-func retStruct(t: Test) -> Idee {
-    return 0;
+
+class Idee {
+    a: u64;
+
+    feat new(na: u64) {
+        this.a = na;
+    }
+}
+
+func bla(t: Test, t1: Test) -> u64 {
+    return t.d + t1.d;
+}
+
+func retInstance(t: Test) -> Idee {
+    return Idee::new(t.d);
 }
 
 func main() {
     let a: u64[3] = [
         1, 2, 3
     ];
+    let test: Test = Test::new(2, 3, 4usize);
+    test.d = 10;
+    let idee: Idee = retInstance(test);
 }
