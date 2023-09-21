@@ -26,9 +26,9 @@ TypeDecl = ":" (Type | ArrayType);
 Type = ("i32" | "i64" | "u32" | "u64" | "usize" | ClassName);
 ArrayType = Type "[" Integer {"," Integer} "]";
 
-Arg = Expr;
-ArgList = "(" [Arg {"," Arg}] ")";
-ExprCall = FunctionName ArgList;
+ExprCall = FunctionName ArgumentList;
+ArgumentList = "(" [Argument {"," Argument}] ")";
+Argument = Expr;
 
 ExprName = VariableName;
 ExprArrayLiteral = "[" Expr {"," Expr} "]";
