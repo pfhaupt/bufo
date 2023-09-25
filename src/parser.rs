@@ -1,6 +1,6 @@
 use std::cell::Cell;
 
-use crate::checker::Type;
+use crate::checker::{Type, TypeChecker};
 use crate::codegen::ERR_STR;
 use crate::lexer::{Location, Token, TokenType, COMPARATOR_TYPES};
 
@@ -112,6 +112,15 @@ pub enum TreeType {
         function_name: String,
         args: Box<Tree>,
         typ: Type,
+    },
+    BuiltInFunction {
+        function_name: String,
+        args: Box<Tree>,
+        typ: Type
+    },
+    BuiltInVariable {
+        variable_name: String,
+        typ: Type
     }
 }
 
@@ -301,49 +310,64 @@ impl Tree {
                 println!("{tab}ExprCall {function_name} {typ:?}");
                 args.print_internal(indent + EXTRA_INDENT);
             }
+            TreeType::BuiltInFunction {
+                function_name,
+                args,
+                typ,
+            } => {
+                println!("{tab}BuiltInFunction {function_name} {typ:?}");
+                args.print_internal(indent + EXTRA_INDENT);
+            }
+            TreeType::BuiltInVariable {
+                variable_name,
+                typ,
+            } => {
+                println!("{tab}BuiltInVariable {variable_name} {typ:?}");
+            }
             TreeType::TypeDecl { typ } => {
                 println!("{tab}{typ:?}");
             }
         }
     }
 
-    pub fn rebuild_code(&self) {
-        self.rebuild_code_internal(0);
+    pub fn rebuild_code(&self) -> String {
+        self.rebuild_code_internal(0)
     }
 
-    fn rebuild_code_internal(&self, indent: usize) {
+    fn rebuild_code_internal(&self, indent: usize) -> String {
         const EXTRA_INDENT: usize = 4;
         let tab = " ".repeat(indent);
+        let mut result = String::new();
         match &self.typ {
             TreeType::File { functions, classes } => {
                 for c in classes {
-                    c.rebuild_code_internal(indent);
+                    result.push_str(&c.rebuild_code_internal(indent));
                 }
                 for f in functions {
-                    f.rebuild_code_internal(indent);
+                    result.push_str(&f.rebuild_code_internal(indent));
                 }
             }
             TreeType::Class { name, fields, functions, features } => {
-                println!("class {name} {{");
+                result.push_str(format!("class {name} {{\n").as_str());
                 for f in fields {
-                    f.rebuild_code_internal(indent + EXTRA_INDENT);
+                    result.push_str(&f.rebuild_code_internal(indent + EXTRA_INDENT));
                 }
                 for f in features {
-                    f.rebuild_code_internal(indent + EXTRA_INDENT);
+                    result.push_str(&f.rebuild_code_internal(indent + EXTRA_INDENT));
                 }
                 for f in functions {
-                    f.rebuild_code_internal(indent + EXTRA_INDENT);
+                    result.push_str(&f.rebuild_code_internal(indent + EXTRA_INDENT));
                 }
-                println!("}}");
+                result.push_str("}\n");
             }
             TreeType::Field { name, typ } => {
-                print!("{tab}{name}: ");
-                typ.rebuild_code();
-                println!(";");
+                result.push_str(format!("{tab}{name}: ").as_str());
+                result.push_str(&typ.rebuild_code());
+                result.push_str(";\n");
             }
             TreeType::FieldAccess { name, field, .. } => {
-                print!("{name}.");
-                field.rebuild_code();
+                result.push_str(format!("{name}.").as_str());
+                result.push_str(&field.rebuild_code());
             }
             TreeType::Feature {
                 name,
@@ -351,16 +375,16 @@ impl Tree {
                 param,
                 block,
             } => {
-                print!("{tab}feat {name}(");
-                param.rebuild_code();
-                print!(")");
+                result.push_str(format!("{tab}feat {name}(").as_str());
+                result.push_str(&param.rebuild_code());
+                result.push_str(")");
                 if let Some(ret) = return_type {
-                    print!(" -> ");
-                    ret.rebuild_code();
+                    result.push_str(" -> ");
+                    result.push_str(&ret.rebuild_code());
                 }
-                println!(" {{");
-                block.rebuild_code_internal(indent);
-                println!("{tab}}}");
+                result.push_str(" {\n");
+                result.push_str(&block.rebuild_code_internal(indent));
+                result.push_str(format!("{tab}}}\n").as_str());
             }
             TreeType::Func {
                 name,
@@ -368,45 +392,45 @@ impl Tree {
                 param,
                 block,
             } => {
-                print!("{tab}func {name}(");
-                param.rebuild_code();
-                print!(")");
+                result.push_str(format!("{tab}func {name}(").as_str());
+                result.push_str(&param.rebuild_code());
+                result.push_str(")");
                 if let Some(ret) = return_type {
-                    print!(" -> ");
-                    ret.rebuild_code();
+                    result.push_str(" -> ");
+                    result.push_str(&ret.rebuild_code());
                 }
-                println!(" {{");
-                block.rebuild_code_internal(indent);
-                println!("{tab}}}");
+                result.push_str(" {\n");
+                result.push_str(&block.rebuild_code_internal(indent));
+                result.push_str(format!("{tab}}}\n").as_str());
             }
             TreeType::ParamList { parameters } => {
                 if !parameters.is_empty() {
                     for p in parameters.iter().take(parameters.len() - 1) {
-                        p.rebuild_code();
-                        print!(", ");
+                        result.push_str(&p.rebuild_code());
+                        result.push_str(", ");
                     }
-                    parameters.last().unwrap().rebuild_code();
+                    result.push_str(&parameters.last().unwrap().rebuild_code());
                 }
             }
             TreeType::Param { name, typ } => {
-                print!("{name}: ");
-                typ.rebuild_code();
+                result.push_str(format!("{name}: ").as_str());
+                result.push_str(&typ.rebuild_code());
             }
             TreeType::ArgList { arguments } => {
                 if !arguments.is_empty() {
                     for a in arguments.iter().take(arguments.len() - 1) {
-                        a.rebuild_code();
-                        print!(", ");
+                        result.push_str(&a.rebuild_code());
+                        result.push_str(", ");
                     }
-                    arguments.last().unwrap().rebuild_code();
+                    result.push_str(&arguments.last().unwrap().rebuild_code());
                 }
             }
             TreeType::Arg { expression } => {
-                expression.rebuild_code();
+                result.push_str(&expression.rebuild_code());
             }
             TreeType::Block { statements } => {
                 for s in statements {
-                    s.rebuild_code_internal(indent + EXTRA_INDENT);
+                    result.push_str(&s.rebuild_code_internal(indent + EXTRA_INDENT));
                 }
             }
             TreeType::StmtIf {
@@ -414,108 +438,125 @@ impl Tree {
                 if_branch,
                 else_branch,
             } => {
-                print!("{tab}if (");
-                condition.rebuild_code();
-                println!(") {{");
-                if_branch.rebuild_code_internal(indent);
-                print!("{tab}}}");
+                result.push_str(format!("{tab}if (").as_str());
+                result.push_str(&condition.rebuild_code());
+                result.push_str(") {\n");
+                result.push_str(&if_branch.rebuild_code_internal(indent));
+                result.push_str(format!("{tab}}}").as_str());
                 if let Some(els) = else_branch {
-                    println!(" else {{");
-                    els.rebuild_code_internal(indent);
-                    println!("{tab}}}");
+                    result.push_str(" else {\n");
+                    result.push_str(&els.rebuild_code_internal(indent));
+                    result.push_str(format!("{tab}}}\n").as_str());
                 } else {
-                    println!();
+                    result.push('\n');
                 }
             }
             TreeType::StmtReturn { return_value } => {
-                print!("{tab}return");
+                result.push_str(format!("{tab}return").as_str());
                 if let Some(ret) = return_value {
-                    print!(" ");
-                    ret.rebuild_code();
+                    result.push_str(" ");
+                    result.push_str(&ret.rebuild_code());
                 }
-                println!(";");
+                result.push_str(";\n");
             }
             TreeType::StmtLet {
                 name,
                 typ,
                 expression,
             } => {
-                print!("{tab}let {name}: ");
-                typ.rebuild_code();
-                print!(" = ");
-                expression.rebuild_code();
-                println!(";");
+                result.push_str(format!("{tab}let {name}: ").as_str());
+                result.push_str(&typ.rebuild_code());
+                result.push_str(" = ");
+                result.push_str(&expression.rebuild_code());
+                result.push_str(";\n");
             }
             TreeType::StmtAssign { name, expression } => {
-                print!("{tab}");
-                name.rebuild_code();
-                print!(" = ");
-                expression.rebuild_code();
-                println!(";");
+                result.push_str(format!("{tab}").as_str());
+                result.push_str(&name.rebuild_code());
+                result.push_str(" = ");
+                result.push_str(&expression.rebuild_code());
+                result.push_str(";\n");
             }
             TreeType::StmtExpr { expression } => {
-                print!("{tab}");
-                expression.rebuild_code_internal(indent);
-                println!(";");
+                result.push_str(format!("{tab}").as_str());
+                result.push_str(&expression.rebuild_code_internal(indent));
+                result.push_str(";\n");
             }
 
             TreeType::ExprComp { lhs, rhs, .. } => {
-                lhs.rebuild_code();
-                print!(" {} ", self.tkn.get_value());
-                rhs.rebuild_code();
+                result.push_str(&lhs.rebuild_code());
+                result.push_str(format!(" {} ", self.tkn.get_value()).as_str());
+                result.push_str(&rhs.rebuild_code());
             }
             TreeType::ExprBinary { lhs, rhs, .. } => {
-                lhs.rebuild_code();
-                print!(" {} ", self.tkn.get_value());
-                rhs.rebuild_code();
+                result.push_str(&lhs.rebuild_code());
+                result.push_str(format!(" {} ", self.tkn.get_value()).as_str());
+                result.push_str(&rhs.rebuild_code());
             }
             TreeType::ExprParen { expression, .. } => {
-                print!("(");
-                expression.rebuild_code();
-                print!(")");
+                result.push_str("(");
+                result.push_str(&expression.rebuild_code());
+                result.push_str(")");
             }
             TreeType::ExprName { name, .. } => {
-                print!("{name}");
+                result.push_str(format!("{name}").as_str());
             }
             TreeType::ExprLiteral { .. } => {
-                print!("{}", self.tkn.get_value());
+                result.push_str(format!("{}", self.tkn.get_value()).as_str());
             }
             TreeType::ExprArrLiteral { elements } => {
-                print!("[");
+                result.push_str("[");
                 if !elements.is_empty() {
                     for e in elements.iter().take(elements.len() - 1) {
-                        e.rebuild_code();
-                        print!(", ");
+                        result.push_str(&e.rebuild_code());
+                        result.push_str(", ");
                     }
-                    elements.last().unwrap().rebuild_code();
+                    result.push_str(&elements.last().unwrap().rebuild_code());
                 }
-                print!("]");
+                result.push_str("]");
             }
             TreeType::ExprArrAccess {
                 arr_name, indices, ..
             } => {
-                print!("{arr_name}");
-                indices.rebuild_code();
+                result.push_str(format!("{arr_name}").as_str());
+                result.push_str(&indices.rebuild_code());
             }
             TreeType::ExprCall {
                 function_name,
                 args,
                 ..
             } => {
-                print!("{function_name}(");
-                args.rebuild_code();
-                print!(")");
+                result.push_str(format!("{function_name}(").as_str());
+                result.push_str(&args.rebuild_code());
+                result.push_str(")");
+            }
+            TreeType::BuiltInFunction {
+                function_name,
+                args,
+                ..
+            } => {
+                result.push_str(format!("{function_name}(").as_str());
+                result.push_str(&args.rebuild_code());
+                result.push_str(")");
+            }
+            TreeType::BuiltInVariable {
+                variable_name,
+                ..
+            } => {
+                result.push_str(format!("{variable_name}").as_str());
             }
             TreeType::TypeDecl { typ } => {
-                print!("{}", typ);
+                result.push_str(format!("{typ}").as_str());
             }
             TreeType::Identifier { name } => {
-                print!("{name}");
+                result.push_str(format!("{name}").as_str());
             }
         }
+        result
     }
 }
 
+#[derive(Clone)]
 pub struct Parser {
     file_path: String,
     tokens: Vec<Token>,
@@ -527,15 +568,36 @@ pub struct Parser {
 }
 
 impl Parser {
-    pub fn new(file_path: &String, tokens: Vec<Token>, print_debug: bool) -> Self {
+    pub fn new() -> Self {
         Self {
-            file_path: file_path.to_owned(),
-            tokens,
+            file_path: String::new(),
+            tokens: vec![],
             ptr: 0,
             fuel: Cell::new(256),
             root: None,
-            print_debug,
+            print_debug: false,
         }
+    }
+
+    pub fn origin(&mut self, file_path: &String) -> Self {
+        self.file_path = file_path.to_string();
+        self.clone()
+    }
+
+    pub fn debug(&mut self, debug: bool) -> Self {
+        self.print_debug = debug;
+        self.clone()
+    }
+
+    pub fn set_tokens(&mut self, tokens: Vec<Token>) {
+        self.tokens = tokens.to_owned();
+        self.reset();
+    }
+
+    fn reset(&mut self) {
+        self.ptr = 0;
+        self.fuel.set(256);
+        self.root = None;
     }
 
     fn open(&self) -> Token {
@@ -593,10 +655,25 @@ impl Parser {
         ))
     }
 
+    pub fn parse_snippet(&mut self) -> Result<Tree, String> {
+        // Only ever call this in combination with Compiler::throwaway_compiler_parse()
+        // Assumes there's a single statement or function or whatever
+        // like `return this;` that's getting inserted in desugaring
+        match self.nth(0) {
+            TokenType::FunctionKeyword => self.parse_func(),
+            TokenType::FeatureKeyword => self.parse_feature(),
+            TokenType::ClassKeyword => self.parse_class(),
+            TokenType::LetKeyword => self.parse_stmt_let(),
+            TokenType::IfKeyword => self.parse_stmt_if(),
+            TokenType::ReturnKeyword => self.parse_stmt_return(),
+            e => todo!("`parse_snippet()` does not support `{:?}` yet", e)
+        }
+    }
+
     pub fn parse_file(&mut self) -> Result<Tree, String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
-            35,
+            36,
             "Not all TokenTypes are handled in parse_file()"
         );
         let tkn = Token::new(
@@ -716,6 +793,14 @@ impl Parser {
         let tkn = self.open();
         self.expect(TokenType::FunctionKeyword)?;
         let fn_name = self.expect(TokenType::Identifier)?;
+        if fn_name.get_value().as_bytes()[0].is_ascii_uppercase() {
+            return Err(format!(
+                "{}: {:?}: Function names are not expected to be capitalized, found `{}`.",
+                ERR_STR,
+                fn_name.get_loc(),
+                fn_name.get_value()
+            ));
+        }
         let params = self.parse_param_list()?;
         let return_type = if self.at(TokenType::Arrow) {
             Some(Box::new(self.parse_return_type()?))
@@ -1093,6 +1178,7 @@ impl Parser {
                 }
             }
             TokenType::OpenSquare => self.parse_expr_array_literal()?,
+            TokenType::BuiltInKeyword => self.parse_built_in()?,
             e => {
                 let ptr = if self.ptr == self.tokens.len() {
                     self.ptr - 1
@@ -1145,6 +1231,23 @@ impl Parser {
             typ: TreeType::ExprArrLiteral { elements },
             tkn,
         })
+    }
+
+    fn parse_built_in(&mut self) -> Result<Tree, String> {
+        let tkn = self.open();
+        let kw = self.expect(TokenType::BuiltInKeyword)?;
+        if ["ALLOC", "SIZEOF"].contains(&kw.get_value().as_str()) {
+            Ok(Tree {
+                typ: TreeType::BuiltInFunction {
+                    function_name: kw.get_value(),
+                    args: Box::new(self.parse_arg_list()?),
+                    typ: Type::Unknown,
+                },
+                tkn
+            })
+        } else {
+            todo!()
+        }
     }
 
     fn parse_identifier(&mut self) -> Result<Tree, String> {

@@ -22,6 +22,7 @@ pub enum TokenType {
     IfKeyword,
     ElseKeyword,
     ReturnKeyword,
+    BuiltInKeyword,
     Colon,
     Semi,
     Comma,
@@ -62,6 +63,14 @@ impl Location {
     pub fn new(file: String, row: usize, col: usize) -> Self {
         Self { file, row, col }
     }
+
+    pub fn anonymous() -> Self {
+        Self::new(String::from("anonymous"), 0, 0)
+    }
+
+    pub fn builtin() -> Self {
+        Self::new(String::from("builtin"), 0, 0)
+    }
 }
 
 impl Debug for Location {
@@ -95,7 +104,7 @@ impl Token {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Lexer {
     origin: String,
     source: Vec<char>,
@@ -108,22 +117,53 @@ pub struct Lexer {
 }
 
 impl Lexer {
-    pub fn new(origin_path: &String, print_debug: bool) -> Result<Self, String> {
-        match fs::read_to_string(origin_path) {
-            Ok(source) => Ok(Lexer {
-                origin: origin_path.to_string(),
-                source: source.chars().collect(),
-                tokens: vec![],
-                current_char: 0,
-                current_line: 1,
-                line_start: 0,
-                print_debug,
-            }),
-            Err(_) => Err(format!(
-                "{}: Could not find input file `{}`.",
-                ERR_STR, origin_path
-            )),
+    pub fn new() -> Self {
+        Lexer {
+            origin: String::new(),
+            source: vec![],
+            tokens: vec![],
+            current_char: 0,
+            current_line: 1,
+            line_start: 0,
+            print_debug: false,
         }
+    }
+
+    pub fn origin(&mut self, origin_path: &String) -> Result<Self, String> {
+        match fs::read_to_string(origin_path) {
+            Ok(source) => {
+                self.source = source.chars().collect();
+                self.origin = origin_path.to_string();
+                Ok(self.clone())
+            }
+            Err(_) => {
+                Err(format!(
+                    "{}: Could not find input file `{}`.",
+                    ERR_STR, origin_path
+                ))
+            }
+        }
+    }
+
+    pub fn debug(&mut self, debug: bool) -> Self {
+        self.print_debug = debug;
+        self.clone()
+    }
+
+    pub fn set_source(&mut self, source: &String) {
+        self.source = source.chars().collect();
+        self.reset();
+    }
+
+    pub fn set_origin_unchecked(&mut self, origin: &String) {
+        self.origin = origin.clone();
+    }
+
+    fn reset(&mut self) {
+        self.current_char = 0;
+        self.current_line = 1;
+        self.line_start = 0;
+        self.tokens.clear();
     }
 
     fn get_location(&self) -> Location {
@@ -172,7 +212,7 @@ impl Lexer {
     fn next_token(&mut self) -> Result<Token, String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
-            35,
+            36,
             "Not all TokenTypes are handled in next_token()"
         );
         let c = self.next_char()?;
@@ -210,6 +250,9 @@ impl Lexer {
                     "if" => TokenType::IfKeyword,
                     "else" => TokenType::ElseKeyword,
                     "return" => TokenType::ReturnKeyword,
+                    v if value.chars().all(|c| c.is_uppercase()) => {
+                        TokenType::BuiltInKeyword
+                    }
                     _ => TokenType::Identifier,
                 };
                 Ok(Token { typ, value, loc })

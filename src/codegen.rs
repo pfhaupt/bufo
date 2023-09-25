@@ -373,7 +373,7 @@ impl SizeManager {
 
 #[derive(Debug)]
 pub struct Generator {
-    ast: Tree,
+    ast: Option<Tree>,
     entry_point: String,
     registers: Vec<Memory>,
     register_ctr: usize,
@@ -391,9 +391,9 @@ pub struct Generator {
 }
 
 impl Generator {
-    pub fn new(ast: Tree, print_debug: bool) -> Result<Self, String> {
-        let mut gen = Self {
-            ast,
+    pub fn new(print_debug: bool) -> Self {
+        Self {
+            ast: None,
             entry_point: String::from("main"),
             registers: vec![Memory { u64: 0 }; REGISTERS_32BIT.len()],
             register_ctr: 1,
@@ -408,9 +408,11 @@ impl Generator {
             scope_depth: 0,
             memory_offset: 0,
             print_debug,
-        };
-        gen.generate_code()?;
-        Ok(gen)
+        }
+    }
+
+    pub fn set_ast(&mut self, ast: Tree) {
+        self.ast = Some(ast);
     }
 
     fn create_label(&mut self) -> String {
@@ -1447,7 +1449,8 @@ impl Generator {
     }
 
     fn generate_code(&mut self) -> Result<(), String> {
-        self.convert_ast(&self.ast.clone())
+        assert!(self.ast.is_some());
+        self.convert_ast(&self.ast.as_ref().unwrap().clone())
     }
 
     pub fn interpret(&mut self) -> Result<(), String> {
