@@ -37,9 +37,6 @@ pub enum TreeType {
         param: Box<Tree>,
         block: Box<Tree>,
     },
-    Identifier {
-        name: String,
-    },
     Param {
         name: String,
         typ: Box<Tree>,
@@ -199,21 +196,18 @@ impl Tree {
                 } else {
                     println!("{tab}None", tab = " ".repeat(indent + 2 * EXTRA_INDENT));
                 }
-                println!("{tab}Param", tab = " ".repeat(indent + EXTRA_INDENT));
-                param.print_internal(indent + 2 * EXTRA_INDENT);
+                param.print_internal(indent + EXTRA_INDENT);
                 println!("{tab}Block", tab = " ".repeat(indent + EXTRA_INDENT));
                 block.print_internal(indent + 2 * EXTRA_INDENT);
             }
-            TreeType::Identifier { name } => {
-                println!("{tab}{}", name);
-            }
             TreeType::ParamList { parameters } => {
+                println!("{tab}ParamList");
                 for p in parameters {
-                    p.print_internal(indent);
+                    p.print_internal(indent + EXTRA_INDENT);
                 }
             }
             TreeType::Param { name, typ } => {
-                println!("{tab}{name}");
+                println!("{tab}Param {name}");
                 typ.print_internal(indent + EXTRA_INDENT);
             }
             TreeType::ArgList { arguments } => {
@@ -325,7 +319,7 @@ impl Tree {
                 println!("{tab}BuiltInVariable {variable_name} {typ:?}");
             }
             TreeType::TypeDecl { typ } => {
-                println!("{tab}{typ:?}");
+                println!("{tab}TypeDecl {typ:?}");
             }
         }
     }
@@ -547,9 +541,6 @@ impl Tree {
             }
             TreeType::TypeDecl { typ } => {
                 result.push_str(format!("{typ}").as_str());
-            }
-            TreeType::Identifier { name } => {
-                result.push_str(format!("{name}").as_str());
             }
         }
         result

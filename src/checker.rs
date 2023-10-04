@@ -860,24 +860,6 @@ impl TypeChecker {
                     tkn: expr_tree.tkn.clone(),
                 })
             }
-            TreeType::Identifier { name } => {
-                todo!();
-                // assert!(!self.current_fn.is_empty());
-                // let func = self.get_current_function();
-                // match func.get_variable(name) {
-                //     Some(var) => {
-                //         let var_type = &var.typ;
-                //         if var_type != expected_type {
-                //             todo!();
-                //         }
-                //         Ok(Tree {
-                //             typ: TreeType::Identifier { name: name.clone() },
-                //             tkn: expr_tree.tkn.clone(),
-                //         })
-                //     }
-                //     None => todo!(),
-                // }
-            }
             TreeType::ExprArrLiteral { elements } => {
                 let (typ, size) = match expected_type {
                     Type::Arr(t, s) => {
@@ -1246,20 +1228,6 @@ impl TypeChecker {
                 } else {
                     self.get_expr_type(expression, strict)
                 }
-            }
-            TreeType::Identifier { name } => {
-                todo!();
-                // assert!(!self.current_fn.is_empty());
-                // let func = self.get_current_function();
-                // match func.get_variable(name) {
-                //     Some(var) => Ok(var.typ.clone()),
-                //     None => Err(format!(
-                //         "{}: {:?}: Unknown variable `{}`.",
-                //         ERR_STR,
-                //         expr.tkn.get_loc(),
-                //         name
-                //     )),
-                // }
             }
             TreeType::ExprArrAccess { arr_name, .. } => {
                 assert!(!self.current_fn.is_empty());

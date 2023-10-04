@@ -382,7 +382,6 @@ impl Desugarer {
                     tkn
                 }
             }
-            TreeType::Identifier { name } => todo!(),
             TreeType::BuiltInFunction { function_name, args, typ } => {
                 Tree { typ: TreeType::BuiltInFunction {
                         function_name,

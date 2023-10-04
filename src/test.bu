@@ -55,6 +55,8 @@ func main() {
     ];
     // Test() works because `new()` has been implemented
     let test: Test = Test(2, 3, 4);
+    let d: i32 = 9;
+    d = 0;
     test.d = 10;
     let idee: Idee = retInstance(test);
     // let f: u64 = test.foo();

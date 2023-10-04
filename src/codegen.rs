@@ -865,7 +865,8 @@ impl Generator {
                     .get(&self.current_fn)
                     .expect("At this point, function table is guaranteed to contain current_fn.");
                 match &name.typ {
-                    TreeType::Identifier { name } => {
+                    TreeType::ExprName { name, typ } => {
+                        todo!("Changed from TreeType::Identifier {{name}} to TreeType::ExprName {{name, typ}}");
                         let var = match local_lookup.get_variable_location(name) {
                             Some(i) => i,
                             None => panic!(),
