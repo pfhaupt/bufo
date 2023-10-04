@@ -4,25 +4,73 @@ use crate::Compiler;
 use crate::parser::{Tree, TreeType, Parser};
 use crate::lexer::TokenType;
 use crate::checker::Type;
+use crate::codegen::SizeManager;
 
 pub struct Desugarer {
+    current_class: String,
+    class_sizes: HashMap<String, usize>,
+    sm: SizeManager,
 }
 
 impl Desugarer {
     pub fn new() -> Self {
-        Self { }
+        Self {
+            current_class: String::new(),
+            class_sizes: HashMap::new(),
+            sm: SizeManager {},
+        }
     }
+    fn get_type(&self, typ: Tree) -> Type {
+        match typ.typ {
+            TreeType::TypeDecl { typ } => typ,
+            _ => panic!()
+        }
+    }
+    fn fill_lookup(&mut self, ast: Tree) -> Result<(), String> {
+        match ast.typ {
+            TreeType::File { functions, classes } => {
+                for c in classes {
+                    self.fill_lookup(c)?;
+                }
+            }
+            TreeType::Class { name, fields, functions, features } => {
+                assert!(self.current_class.is_empty());
+                self.current_class = name;
+                self.class_sizes.insert(self.current_class.clone(), 0);
+
+                for f in fields {
+                    self.fill_lookup(f)?;
+                }
+
+                self.current_class.clear();
+            }
+            TreeType::Field { name, typ } => {
+                let typ = self.get_type(*typ);
+                let c = *self.class_sizes
+                    .get(&self.current_class)
+                    .unwrap();
+                self.class_sizes.insert(self.current_class.clone(), c + self.sm.get_type_size(&typ));
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     pub fn desugar_tree(&mut self, ast: Tree) -> Result<Tree, String> {
+        self.fill_lookup(ast.clone())?;
+        self.desugar_tree_internal(ast)
+    }
+    fn desugar_tree_internal(&mut self, ast: Tree) -> Result<Tree, String> {
         let tkn = ast.tkn;
         Ok(match ast.typ {
             TreeType::File { functions, classes } => {
                 let mut desugared_functions = vec![];
                 let mut desugared_classes = vec![];
                 for f in functions {
-                    desugared_functions.push(self.desugar_tree(f)?);
+                    desugared_functions.push(self.desugar_tree_internal(f)?);
                 }
                 for c in classes {
-                    if let TreeType::Class { name, fields: this, functions, features } = self.desugar_tree(c)?.typ {
+                    if let TreeType::Class { name, fields: this, functions, features } = self.desugar_tree_internal(c)?.typ {
                         assert!(this.len() == 1);
                         desugared_classes.extend(this);
                         let mut df = functions;
@@ -65,7 +113,7 @@ impl Desugarer {
                 };
                 let mut class_functions = vec![];
                 for f in functions {
-                    let desugared_func = self.desugar_tree(f)?;
+                    let desugared_func = self.desugar_tree_internal(f)?;
                     if let TreeType::Func { name: fn_name, return_type, param, block } = desugared_func.typ {
                         let new_params = if let TreeType::ParamList { parameters } = param.typ {
                             let mut params = vec![added_this.clone()];
@@ -94,7 +142,7 @@ impl Desugarer {
                 }
                 let mut class_features = vec![];
                 for f in features {
-                    let desugared_feat = self.desugar_tree(f)?;
+                    let desugared_feat = self.desugar_tree_internal(f)?;
                     if let TreeType::Feature { name: feat_name, return_type, param, block } = desugared_feat.typ {
                         let new_params = if let TreeType::ParamList { parameters } = param.typ {
                             if feat_name == "new" { parameters}
@@ -112,7 +160,7 @@ impl Desugarer {
                         };
                         let (return_type, block) = if feat_name == "new" {
                             let block = if let TreeType::Block { statements } = block.typ {
-                                let this_str = format!("let this: {} = ALLOC(SIZEOF({}));", name, name);
+                                let this_str = format!("let this: {} = ALLOC({});", name, self.get_size(&Type::Class(name.clone())));
                                 let this_alloc = Compiler::parse_snippet(&this_str)?;
                                 let mut s = vec![this_alloc];
                                 s.extend(statements);
@@ -160,7 +208,7 @@ impl Desugarer {
             TreeType::FieldAccess { name, field, typ } => {
                 Tree { typ: TreeType::FieldAccess {
                         name,
-                        field: Box::new(self.desugar_tree(*field)?),
+                        field: Box::new(self.desugar_tree_internal(*field)?),
                         typ
                     },
                     tkn
@@ -168,30 +216,30 @@ impl Desugarer {
             }
             TreeType::Feature { name, return_type, param, block } => {
                 let return_type = if let Some(ret) = return_type {
-                    Some(Box::new(self.desugar_tree(*ret)?))
+                    Some(Box::new(self.desugar_tree_internal(*ret)?))
                 } else {
                     None
                 };
                 Tree { typ: TreeType::Feature {
                         name,
                         return_type,
-                        param: Box::new(self.desugar_tree(*param)?),
-                        block: Box::new(self.desugar_tree(*block)?)
+                        param: Box::new(self.desugar_tree_internal(*param)?),
+                        block: Box::new(self.desugar_tree_internal(*block)?)
                     },
                     tkn
                 }
             }
             TreeType::Func { name, return_type, param, block } => {
                 let return_type = if let Some(ret) = return_type {
-                    Some(Box::new(self.desugar_tree(*ret)?))
+                    Some(Box::new(self.desugar_tree_internal(*ret)?))
                 } else {
                     None
                 };
                 Tree { typ: TreeType::Func {
                         name,
                         return_type,
-                        param: Box::new(self.desugar_tree(*param)?),
-                        block: Box::new(self.desugar_tree(*block)?)
+                        param: Box::new(self.desugar_tree_internal(*param)?),
+                        block: Box::new(self.desugar_tree_internal(*block)?)
                     },
                     tkn
                 }
@@ -199,21 +247,21 @@ impl Desugarer {
             TreeType::ParamList { parameters} => {
                 let mut desugared_parameters = vec![];
                 for p in parameters {
-                    desugared_parameters.push(self.desugar_tree(p)?);
+                    desugared_parameters.push(self.desugar_tree_internal(p)?);
                 }
                 Tree { typ: TreeType::ParamList { parameters: desugared_parameters },
                     tkn
                 }
             }
             TreeType::Param { name, typ } => {
-                Tree { typ: TreeType::Param { name, typ: Box::new(self.desugar_tree(*typ)?) },
+                Tree { typ: TreeType::Param { name, typ: Box::new(self.desugar_tree_internal(*typ)?) },
                     tkn
                 }
             }
             TreeType::Block { statements } => {
                 let mut desugared_statements = vec![];
                 for s in statements {
-                    desugared_statements.push(self.desugar_tree(s)?);
+                    desugared_statements.push(self.desugar_tree_internal(s)?);
                 }
                 Tree { typ: TreeType::Block { statements: desugared_statements },
                     tkn
@@ -221,8 +269,8 @@ impl Desugarer {
             }
             TreeType::StmtExpr { expression } => todo!(),
             TreeType::StmtLet { name, typ, expression } => {
-                let desugared_type = self.desugar_tree(*typ)?;
-                let desugared_expr = self.desugar_tree(*expression)?;
+                let desugared_type = self.desugar_tree_internal(*typ)?;
+                let desugared_expr = self.desugar_tree_internal(*expression)?;
                 Tree { typ: TreeType::StmtLet {
                         name,
                         typ: Box::new(desugared_type),
@@ -232,8 +280,8 @@ impl Desugarer {
                 }
             }
             TreeType::StmtAssign { name, expression } => {
-                let desugared_name = self.desugar_tree(*name)?;
-                let desugared_expr = self.desugar_tree(*expression)?;
+                let desugared_name = self.desugar_tree_internal(*name)?;
+                let desugared_expr = self.desugar_tree_internal(*expression)?;
                 Tree { typ: TreeType::StmtAssign {
                         name: Box::new(desugared_name),
                         expression: Box::new(desugared_expr)
@@ -244,7 +292,7 @@ impl Desugarer {
             TreeType::StmtIf { condition, if_branch, else_branch } => todo!(),
             TreeType::StmtReturn { return_value } => {
                 let return_value = if let Some(ret) = return_value {
-                    Some(Box::new(self.desugar_tree(*ret)?))
+                    Some(Box::new(self.desugar_tree_internal(*ret)?))
                 } else {
                     None
                 };
@@ -267,7 +315,7 @@ impl Desugarer {
                     };
                     Tree { typ: TreeType::ExprCall {
                             function_name: new_name,
-                            args: Box::new(self.desugar_tree(*args)?),
+                            args: Box::new(self.desugar_tree_internal(*args)?),
                             typ: Type::Class(function_name.clone())
                         },
                         tkn
@@ -275,7 +323,7 @@ impl Desugarer {
                 } else {
                     Tree { typ: TreeType::ExprCall {
                             function_name,
-                            args: Box::new(self.desugar_tree(*args)?),
+                            args: Box::new(self.desugar_tree_internal(*args)?),
                             typ
                         },
                         tkn
@@ -285,7 +333,7 @@ impl Desugarer {
             TreeType::ArgList { arguments } => {
                 let mut desugared_arguments = vec![];
                 for a in arguments {
-                    desugared_arguments.push(self.desugar_tree(a)?);
+                    desugared_arguments.push(self.desugar_tree_internal(a)?);
                 }
                 Tree { typ: TreeType::ArgList {
                         arguments: desugared_arguments
@@ -295,7 +343,7 @@ impl Desugarer {
             }
             TreeType::Arg { expression } => {
                 Tree { typ: TreeType::Arg {
-                        expression: Box::new(self.desugar_tree(*expression)?),
+                        expression: Box::new(self.desugar_tree_internal(*expression)?),
                     },
                     tkn
                 }
@@ -311,7 +359,7 @@ impl Desugarer {
             TreeType::ExprArrLiteral { elements } => {
                 let mut desugared_elements = vec![];
                 for e in elements {
-                    desugared_elements.push(self.desugar_tree(e)?);
+                    desugared_elements.push(self.desugar_tree_internal(e)?);
                 }
                 Tree { typ: TreeType::ExprArrLiteral {
                     elements: desugared_elements
@@ -322,7 +370,7 @@ impl Desugarer {
             TreeType::ExprArrAccess { arr_name, indices, typ } => {
                 Tree { typ: TreeType::ExprArrAccess {
                         arr_name,
-                        indices: Box::new(self.desugar_tree(*indices)?),
+                        indices: Box::new(self.desugar_tree_internal(*indices)?),
                         typ
                     },
                     tkn
@@ -332,8 +380,8 @@ impl Desugarer {
                 Tree { typ: TreeType::ExprLiteral { typ }, tkn }
             }
             TreeType::ExprBinary { lhs, rhs, typ } => {
-                let desugared_lhs = self.desugar_tree(*lhs)?;
-                let desugared_rhs = self.desugar_tree(*rhs)?;
+                let desugared_lhs = self.desugar_tree_internal(*lhs)?;
+                let desugared_rhs = self.desugar_tree_internal(*rhs)?;
                 Tree { typ: TreeType::ExprBinary {
                         lhs: Box::new(desugared_lhs),
                         rhs: Box::new(desugared_rhs),
@@ -376,7 +424,7 @@ impl Desugarer {
             TreeType::ExprComp { lhs, rhs, typ } => todo!(),
             TreeType::ExprParen { expression, typ } => {
                 Tree { typ: TreeType::ExprParen {
-                        expression: Box::new(self.desugar_tree(*expression)?),
+                        expression: Box::new(self.desugar_tree_internal(*expression)?),
                         typ
                     },
                     tkn
@@ -385,7 +433,7 @@ impl Desugarer {
             TreeType::BuiltInFunction { function_name, args, typ } => {
                 Tree { typ: TreeType::BuiltInFunction {
                         function_name,
-                        args: Box::new(self.desugar_tree(*args)?),
+                        args: Box::new(self.desugar_tree_internal(*args)?),
                         typ
                     },
                     tkn
@@ -393,5 +441,12 @@ impl Desugarer {
             }
             TreeType::BuiltInVariable { variable_name, typ } => todo!(),
         })
+    }
+
+    fn get_size(&self, typ: &Type) -> usize {
+        match typ {
+            Type::Class(c) => *self.class_sizes.get(c).unwrap(),
+            _ => self.sm.get_type_size(typ)
+        }
     }
 }
