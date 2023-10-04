@@ -2,7 +2,7 @@ class Test {
     a: i64;
     b: i64;
     c: i64;
-    d: u64;
+    d: i64;
 
     // new() is equivalent to:
     // func new(na: i64, nb: i64, nc: i64) -> Test {
@@ -24,24 +24,26 @@ class Test {
     // func foo(this: Test) -> u64 { ... }
     // test.foo() is equivalent to:
     // Test::foo(test)
-    func foo() -> u64 {
+    func foo() -> i64 {
         return this.d;
     }
 }
 
 class Idee {
-    a: u64;
+    a: i64;
     t: Test;
 
-    feat new(na: u64) {
+    feat new(na: i64) {
+        // let this: Idee = ALLOC(16);
         this.a = na;
         // Test(this.a, 5, 10) is equivalent to Test::new(this.a, 5, 10)
         this.t = Test(this.a, 5, 10);
+        let a: i64 = this.a;
         this.t.b = 10;
     }
 }
 
-func bla(t: Test, t1: Test) -> u64 {
+func bla(t: Test, t1: Test) -> i64 {
     return t.d + t1.d;
 }
 

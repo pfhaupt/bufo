@@ -378,7 +378,7 @@ impl TypeChecker {
 
                 self.current_fn.clear();
                 Ok(Tree {
-                    typ: TreeType::Feature {
+                    typ: TreeType::Func {
                         name: name.clone(),
                         return_type: return_type.clone(),
                         param: param.clone(),
@@ -965,14 +965,25 @@ impl TypeChecker {
                         match &var.typ {
                             Type::Class(class_name) => {
                                 let a_t = self.type_check_field_access(class_name, field)?;
-                                Ok(Tree {
-                                    typ: TreeType::FieldAccess {
-                                        name: name.clone(),
-                                        field: Box::new(a_t),
-                                        typ: var.typ.clone()
-                                    },
-                                    tkn: expr_tree.tkn.clone()
-                                })
+                                let t = self.get_field_type(class_name, field)?;
+                                if !self.match_type(expected_type, &t) {
+                                    Err(format!(
+                                        "{}: {:?}: Type Mismatch when accessing class field. Expected type `{:?}`, got `{:?}`.",
+                                        ERR_STR,
+                                        expr_tree.tkn.get_loc(),
+                                        expected_type,
+                                        t
+                                    ))
+                                } else {
+                                    Ok(Tree {
+                                        typ: TreeType::FieldAccess {
+                                            name: name.clone(),
+                                            field: Box::new(a_t),
+                                            typ: var.typ.clone()
+                                        },
+                                        tkn: expr_tree.tkn.clone()
+                                    })
+                                }
                             }
                             _ => todo!()
                         }
