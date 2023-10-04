@@ -23,7 +23,8 @@ pub struct Compiler {
     parser: Parser,
     desugarer: Desugarer,
     checker: TypeChecker,
-    codegen: Generator
+    codegen: Generator,
+    debug: bool
 }
 
 impl Compiler {
@@ -33,7 +34,8 @@ impl Compiler {
             parser: Parser::new().origin(path).debug(debug),
             desugarer: Desugarer::new(),
             checker: TypeChecker::new(debug),
-            codegen: Generator::new(debug)
+            codegen: Generator::new(debug),
+            debug
         })
     }
 
@@ -52,23 +54,45 @@ impl Compiler {
     }
 
     pub fn run_everything(&mut self) -> Result<(), String> {
+        let now = Instant::now();
         self.lexer.tokenize()?;
         let tokens = self.lexer.get_tokens();
+        if self.debug {
+            println!("Lexing took {:?}", now.elapsed());
+        }
         
+        let now = Instant::now();
         self.parser.set_tokens(tokens);
         let parsed_ast = self.parser.parse_file()?;
-
+        if self.debug {
+            println!("Parsing took {:?}", now.elapsed());
+        }
+        
+        let now = Instant::now();
         let mut desugared_ast = self.desugarer.desugar_tree(parsed_ast)?;
-
+        if self.debug {
+            println!("Desugaring took {:?}", now.elapsed());
+        }
+        
+        let now = Instant::now();
         self.checker.set_ast(desugared_ast);
         let checked_ast = self.checker.type_check_program()?;
+        if self.debug {
+            println!("Type Checking took {:?}", now.elapsed());
+        }
 
-        checked_ast.print_debug();
-        println!("{}", checked_ast.rebuild_code());
-        todo!();
-
+        let now = Instant::now();
         self.codegen.set_ast(checked_ast);
+        self.codegen.generate_code()?;
+        if self.debug {
+            println!("Codegen took {:?}", now.elapsed());
+        }
+        
+        let now = Instant::now();
         self.codegen.compile()?;
+        if self.debug {
+            println!("Compiling took {:?}", now.elapsed());
+        }
 
         Ok(())
     }
@@ -77,6 +101,7 @@ impl Compiler {
 fn compile() -> Result<(), String> {
     let now = Instant::now();
     let flags = FlagParser::init_flags().parse_flags()?;
+
     let path = match flags.get(INPUT_KEY).unwrap() {
         Flag::Input { path } => path.as_ref().unwrap(),
         _ => unreachable!(),

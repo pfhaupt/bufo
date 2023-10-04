@@ -476,7 +476,597 @@ impl Generator {
         Ok(r)
     }
 
+    fn resolve_last_jmp(&mut self) -> usize {
+        assert!(!self.unresolved_jmp_instr.is_empty());
+        let ip = self.unresolved_jmp_instr.pop_back().unwrap();
+
+        let lbl_name = self.create_label();
+        self.add_label(&lbl_name);
+
+        self.set_jmp_lbl(ip, lbl_name);
+        ip
+    }
+
+    fn resolve_types(&mut self, expected_type: Type) -> Result<(), String> {
+        if expected_type == Type::None {
+            todo!()
+        }
+        while let Some(index) = self.unresolved_typ_instr.pop_back() {
+            self.set_load_instr(index, expected_type.clone())?;
+        }
+        Ok(())
+    }
+
+    fn set_jmp_lbl(&mut self, index: usize, dest: String) {
+        self.code[index] = match &self.code[index] {
+            Instruction::JmpEq { .. } => Instruction::JmpEq { dest },
+            Instruction::JmpNeq { .. } => Instruction::JmpNeq { dest },
+            Instruction::JmpGt { .. } => Instruction::JmpGt { dest },
+            Instruction::JmpGte { .. } => Instruction::JmpGte { dest },
+            Instruction::JmpLt { .. } => Instruction::JmpLt { dest },
+            Instruction::JmpLte { .. } => Instruction::JmpLte { dest },
+            Instruction::Jmp { .. } => Instruction::Jmp { dest },
+            e => todo!("{:?}", e),
+        };
+    }
+
+    fn set_load_instr(&mut self, index: usize, typ: Type) -> Result<(), String> {
+        self.code[index] = match &self.code[index] {
+            Instruction::LoadUnknown { dest, val, loc } => match typ {
+                Type::I32 => {
+                    let val = parse_type!(i32, *loc, *val, typ)?;
+                    Instruction::LoadI32 { dest: *dest, val }
+                }
+                Type::I64 => {
+                    let val = parse_type!(i64, loc, val, typ)?;
+                    Instruction::LoadI64 { dest: *dest, val }
+                }
+                Type::U32 => {
+                    let val = parse_type!(u32, loc, val, typ)?;
+                    Instruction::LoadU32 { dest: *dest, val }
+                }
+                Type::U64 => {
+                    let val = parse_type!(u64, loc, val, typ)?;
+                    Instruction::LoadU64 { dest: *dest, val }
+                }
+                Type::Usize => {
+                    let val = parse_type!(usize, loc, val, typ)?;
+                    Instruction::LoadUsize { dest: *dest, val }
+                }
+                // Type::Ptr(t, ..) => {
+                //     let val = parse_type!(usize, loc, val, t)?;
+                //     Instruction::LoadUsize { dest: *dest, val }
+                // }
+                _ => todo!("{:?}", loc),
+            },
+            Instruction::Add {
+                dest,
+                src,
+                typ: _typ,
+            } => Instruction::Add {
+                dest: *dest,
+                src: *src,
+                typ,
+            },
+            Instruction::Sub {
+                dest,
+                src,
+                typ: _typ,
+            } => Instruction::Sub {
+                dest: *dest,
+                src: *src,
+                typ,
+            },
+            Instruction::Mul {
+                dest,
+                src,
+                typ: _typ,
+            } => Instruction::Mul {
+                dest: *dest,
+                src: *src,
+                typ,
+            },
+            Instruction::Div {
+                dest,
+                src,
+                typ: _typ,
+            } => Instruction::Div {
+                dest: *dest,
+                src: *src,
+                typ,
+            },
+            Instruction::Cmp {
+                dest,
+                src,
+                typ: _typ,
+            } => Instruction::Cmp {
+                dest: *dest,
+                src: *src,
+                typ,
+            },
+            e => todo!("Handle Instruction {:?}", e),
+        };
+        Ok(())
+    }
+   
+    fn enter_scope(&mut self) {
+        assert!(!self.current_fn.is_empty());
+        // println!("Entering scope");
+        self.scope_depth += 1;
+        self.functions
+            .get_mut(&self.current_fn)
+            .unwrap()
+            .add_scope();
+    }
+
+    fn leave_scope(&mut self) {
+        assert!(!self.current_fn.is_empty());
+        // println!("Leaving scope");
+        self.scope_depth -= 1;
+        self.functions
+            .get_mut(&self.current_fn)
+            .unwrap()
+            .remove_scope();
+    }
+
+    
+
+    pub fn generate_code(&mut self) -> Result<(), String> {
+        assert!(self.ast.is_some());
+        self.convert_file(&self.ast.as_ref().unwrap().clone())
+    }
+
+    fn convert_file(&mut self, ast: &Tree) -> Result<(), String> {
+        match &ast.typ {
+            TreeType::File { functions, classes } => {
+                todo!();
+                for class in classes {
+                    self.convert_file(class)?;
+                }
+                for func in functions {
+                    self.convert_file(func)?;
+                }
+            }
+            TreeType::Func { .. } => {
+                self.memory_offset = 0;
+                self.convert_func(ast)?;
+            }
+            _ => todo!("handle other types"),
+        }
+        Ok(())
+    }
+
+    fn convert_class(&mut self, class: &Tree) -> Result<(), String> {
+        todo!()
+    }
+
+    fn convert_feature(&mut self, feat: &Tree) -> Result<(), String> {
+        todo!()
+    }
+
+    fn convert_func(&mut self, func: &Tree) -> Result<(), String> {
+        match &func.typ {
+            TreeType::Func {
+                name,
+                return_type,
+                param,
+                block,
+            } => {
+                if self.functions.contains_key(name) {
+                    return Err(format!(
+                        "{}: {:?}: Function redefinition",
+                        ERR_STR,
+                        func.tkn.get_loc()
+                    ));
+                }
+                self.current_fn = name.clone();
+                let f = Function::new(self.code.len());
+                self.functions.insert(name.clone(), f);
+
+                self.code.push(Instruction::Label { name: name.clone() });
+                self.convert_func_param(param)?;
+
+                if let Some(ret_tree) = return_type {
+                    match &ret_tree.typ {
+                        TreeType::TypeDecl { typ } => {
+                            self.functions.get_mut(name).unwrap().set_return_type(&self.size_manager, typ);
+                        }
+                        _ => panic!(),
+                    }
+                }
+
+                self.convert_block(block)?;
+
+                let return_scopes = &self.functions.get(&self.current_fn).unwrap().return_scopes;
+                let return_found = return_scopes.contains(&1);
+                let return_type = self
+                    .functions
+                    .get(&self.current_fn)
+                    .unwrap()
+                    .return_type
+                    .clone();
+                if name == self.entry_point.as_str() {
+                    self.code.push(Instruction::Exit {
+                        code: ExitCode::Normal as usize,
+                    });
+                }
+                match (return_found, return_type.typ) {
+                    (false, Type::None) => {
+                        self.code.push(Instruction::Return {
+                            from: self.current_fn.clone(),
+                        });
+                    }
+                    (true, Type::None) => {
+                        if self.code.is_empty()
+                            || !(*self.code.last().unwrap()
+                                == Instruction::Return {
+                                    from: self.current_fn.clone(),
+                                })
+                        {
+                            self.code.push(Instruction::Return {
+                                from: self.current_fn.clone(),
+                            });
+                        }
+                    }
+                    (false, t) => {
+                        return Err(
+                            format!("{}: Function `{}` is declared to return `{:?}`, but no return statements found.\n{}: There's no Control Flow check yet, so even if it's unreachable because of if-else or anything else, it won't be caught.",
+                            ERR_STR,
+                            self.current_fn,
+                            t,
+                            NOTE_STR)
+                        );
+                    }
+                    (true, t) => {
+                        if !(*self.code.last().unwrap()
+                            == Instruction::Return {
+                                from: self.current_fn.clone(),
+                            })
+                        {
+                            return Err(
+                                format!("{}: {:?}: Function `{}` is declared to return `{:?}`, expected `return` as last instruction.",
+                                ERR_STR,
+                                func.tkn.get_loc(),
+                                self.current_fn,
+                                t
+                            ));
+                        }
+                    }
+                }
+            }
+            _ => panic!(),
+        }
+        self.current_fn.clear();
+        Ok(())
+    }
+
+    fn convert_func_param(&mut self, param: &Tree) -> Result<(), String> {
+        let mut reg_ctr = 1;
+        match &param.typ {
+            TreeType::ParamList { parameters } => {
+                for p in parameters {
+                    match &p.typ {
+                        TreeType::Param { name, typ } => match &typ.typ {
+                            TreeType::TypeDecl { typ } => {
+                                let local_lookup = self.functions.get_mut(&self.current_fn).expect(
+                                        "At this point, function table is guaranteed to contain current_fn.",
+                                    );
+                                if local_lookup.get_param_location(name).is_some() {
+                                    return Err(format!(
+                                        "{}: {:?}: Parameter redefinition `{}`",
+                                        ERR_STR,
+                                        p.tkn.get_loc(),
+                                        name
+                                    ));
+                                }
+                                let var = local_lookup.add_param(&self.size_manager, name, typ);
+                                self.code.push(Instruction::StoreMem { reg: reg_ctr, var });
+                                reg_ctr += 1;
+                            }
+                            _ => panic!(),
+                        },
+                        _ => panic!(),
+                    }
+                }
+            }
+            _ => panic!(),
+        }
+        Ok(())
+    }
+
+    fn convert_block(&mut self, block: &Tree) -> Result<(), String> {
+        self.enter_scope();
+        match &block.typ {
+            TreeType::Block { statements } => {
+                for instr in statements {
+                    match &instr.typ {
+                        TreeType::StmtLet { .. } => self.convert_stmt_let(instr)?,
+                        TreeType::StmtAssign { .. } => self.convert_stmt_assign(instr)?,
+                        TreeType::StmtIf { .. } => self.convert_stmt_if(instr)?,
+                        TreeType::StmtReturn { .. } => self.convert_stmt_return(instr)?,
+                        TreeType::StmtExpr { .. } => self.convert_stmt_expr(instr)?,
+                        e => todo!("convert {:?} inside block", e),
+                    }
+                }
+            }
+            _ => panic!(),
+        }
+        self.leave_scope();
+        Ok(())
+    }
+
+    fn convert_stmt_expr(&mut self, expr_tree: &Tree) -> Result<(), String> {
+        match &expr_tree.typ {
+            TreeType::StmtExpr { expression } => {
+                self.convert_expr(expression)?;
+            }
+            _ => panic!(),
+        }
+        self.reset_registers();
+        Ok(())
+    }
+
+    fn convert_stmt_let(&mut self, let_tree: &Tree) -> Result<(), String> {
+        match &let_tree.typ {
+            TreeType::StmtLet {
+                name,
+                typ,
+                expression,
+            } => {
+                let local_lookup = self
+                    .functions
+                    .get(&self.current_fn)
+                    .expect("At this point, function table is guaranteed to contain current_fn.");
+                if local_lookup.get_scope_location(name).is_some() {
+                    return Err(format!(
+                        "{}: {:?}: Variable redefinition",
+                        ERR_STR,
+                        let_tree.tkn.get_loc()
+                    ));
+                }
+                match &typ.typ {
+                    TreeType::TypeDecl { typ } => {
+                        let mem = self.add_local_var(name, self.scope_depth, typ);
+                        match typ {
+                            Type::Arr(expected_type, expected_size) => {
+                                self.convert_let_arr(expression, expected_type)?;
+                            }
+                            _ => {
+                                let reg = self.convert_expr(expression)?;
+                                self.code.push(Instruction::StoreMem {
+                                    reg: reg.mem,
+                                    var: Variable {
+                                        typ: typ.clone(),
+                                        mem,
+                                    },
+                                });
+                                self.memory_offset += mem;
+                            }
+                        }
+                    }
+                    _ => panic!(),
+                };
+            }
+            _ => panic!(),
+        }
+        self.reset_registers();
+        Ok(())
+    }
+
+    fn convert_let_arr(
+        &mut self,
+        arr_tree: &Tree,
+        expected_type: &Type,
+    ) -> Result<(), String> {
+        match &arr_tree.typ {
+            TreeType::ExprArrLiteral { elements } => {
+                for elem in elements {
+                    self.convert_let_arr(elem, expected_type)?;
+                }
+            }
+            _ => {
+                let reg = self.convert_expr(arr_tree)?;
+                self.code.push(Instruction::StoreMem {
+                    reg: reg.mem,
+                    var: Variable {
+                        typ: expected_type.clone(),
+                        mem: self.memory_offset
+                    },
+                });
+                self.memory_offset += self.size_manager.get_type_size(expected_type);
+                self.reset_registers();
+            }
+        }
+        Ok(())
+    }
+
+    fn convert_stmt_assign(&mut self, assign_tree: &Tree) -> Result<(), String> {
+        match &assign_tree.typ {
+            TreeType::StmtAssign { name, expression } => {
+                let reg = self.convert_expr(expression)?;
+                let local_lookup = self
+                    .functions
+                    .get(&self.current_fn)
+                    .expect("At this point, function table is guaranteed to contain current_fn.");
+                match &name.typ {
+                    TreeType::ExprName { name, typ } => {
+                        todo!("Changed from TreeType::Identifier {{name}} to TreeType::ExprName {{name, typ}}");
+                        let var = match local_lookup.get_variable_location(name) {
+                            Some(i) => i,
+                            None => panic!(),
+                        };
+                        match &var.typ {
+                            Type::Arr(typ, size) => {
+                                todo!()
+                            }
+                            _ => self.code.push(Instruction::StoreMem { reg: reg.mem, var }),
+                        }
+                    }
+                    TreeType::ExprArrAccess {
+                        arr_name,
+                        indices,
+                        typ,
+                    } => {
+                        let var = match local_lookup.get_variable_location(arr_name) {
+                            Some(i) => i,
+                            None => panic!(),
+                        };
+                        match &typ {
+                            Type::Arr(typ, size) => {
+                                match &indices.typ {
+                                    TreeType::ExprArrLiteral { elements } => {
+                                        let index_reg = self.get_register()?;
+                                        let mem_offset = self.get_register()?;
+                                        let size_reg = self.get_register()?;
+                                        // Prepare index register
+                                        self.code.push(Instruction::LoadUsize {
+                                            dest: index_reg,
+                                            val: 0,
+                                        });
+                                        // Stores final offset for stack addressing
+                                        self.code.push(Instruction::LoadUsize {
+                                            dest: mem_offset,
+                                            val: var.mem,
+                                        });
+
+                                        for (count, child) in elements.iter().enumerate() {
+                                            let reg = self.convert_expr(child)?;
+
+                                            // Index Out of Bounds check
+                                            self.code.push(Instruction::LoadUsize {
+                                                dest: size_reg,
+                                                val: size[count],
+                                            });
+                                            self.code.push(Instruction::Cmp {
+                                                dest: reg.mem,
+                                                src: size_reg,
+                                                typ: Type::Usize,
+                                            });
+                                            let lbl = self.create_label();
+                                            self.code
+                                                .push(Instruction::JmpLt { dest: lbl.clone() });
+                                            self.code.push(Instruction::Exit {
+                                                code: ExitCode::OobAccess as usize,
+                                            });
+                                            self.add_label(&lbl);
+
+                                            // index_reg contains our index
+                                            // in each step, multiply the index by the dimension of the array
+                                            self.code.push(Instruction::Mul {
+                                                dest: index_reg,
+                                                src: size_reg,
+                                                typ: Type::Usize,
+                                            });
+                                            // in each step, add to that ^ the position we're indexing (result of expression)
+                                            self.code.push(Instruction::Add {
+                                                dest: index_reg,
+                                                src: reg.mem,
+                                                typ: Type::Usize,
+                                            });
+                                        }
+                                        self.code.push(Instruction::Add {
+                                            dest: index_reg,
+                                            src: mem_offset,
+                                            typ: Type::Usize,
+                                        });
+                                        let reg_tmp = self.get_register()?;
+                                        self.code.push(Instruction::LoadPtrRel {
+                                            dest: reg_tmp,
+                                            src: index_reg,
+                                            typ: *typ.clone(),
+                                        });
+                                        self.code.push(Instruction::StorePtr {
+                                            dest: reg_tmp,
+                                            src: reg.mem,
+                                            typ: *typ.clone(),
+                                        });
+                                    }
+                                    _ => panic!(),
+                                }
+                            }
+                            _ => panic!(),
+                        }
+                    }
+                    _ => {
+                        for c in &self.code {
+                            println!("{:?}", c);
+                        }
+                        panic!()
+                    },
+                }
+            }
+            _ => panic!(),
+        }
+        self.reset_registers();
+        Ok(())
+    }
+
+    fn convert_stmt_if(&mut self, if_tree: &Tree) -> Result<(), String> {
+        match &if_tree.typ {
+            TreeType::StmtIf {
+                condition,
+                if_branch,
+                else_branch,
+            } => {
+                self.convert_expr(condition)?;
+                self.reset_registers();
+
+                self.convert_block(if_branch)?;
+                let if_jmp = self.resolve_last_jmp();
+
+                if let Some(else_br) = else_branch {
+                    self.unresolved_jmp_instr.push_back(self.code.len());
+                    self.code.push(Instruction::Jmp {
+                        dest: String::new(),
+                    });
+
+                    let lbl_name = self.create_label();
+                    self.add_label(&lbl_name);
+                    self.set_jmp_lbl(if_jmp, lbl_name);
+
+                    self.convert_block(else_br)?;
+                    self.resolve_last_jmp();
+                }
+            }
+            _ => panic!(),
+        }
+        self.reset_registers();
+        Ok(())
+    }
+    
+    fn convert_stmt_return(&mut self, ret_tree: &Tree) -> Result<(), String> {
+        match &ret_tree.typ {
+            TreeType::StmtReturn { return_value } => {
+                self.functions
+                    .get_mut(&self.current_fn)
+                    .unwrap()
+                    .return_scopes
+                    .push(self.scope_depth);
+                let fn_return_type = self
+                    .functions
+                    .get(&self.current_fn)
+                    .unwrap()
+                    .get_return_type();
+                if let Some(ret_val) = return_value {
+                    let mut reg = self.convert_expr(ret_val)?;
+                    
+                    self.code.push(Instruction::Move {
+                        src: reg.mem,
+                        dest: 0,
+                    });
+                }
+                self.code.push(Instruction::Return {
+                    from: self.current_fn.clone(),
+                });
+            }
+            _ => panic!(),
+        }
+        self.reset_registers();
+        Ok(())
+    }
+    
     fn convert_expr(&mut self, expr_tree: &Tree) -> Result<Variable, String> {
+        todo!("Refactor convert_expr() into atomic units like convert_expr_binary");
         match &expr_tree.typ {
             TreeType::ExprParen { expression, .. } => self.convert_expr(expression),
             TreeType::ExprBinary { lhs, rhs, typ } => {
@@ -780,680 +1370,8 @@ impl Generator {
             },
         }
     }
-
-
-    fn convert_let_arr(
-        &mut self,
-        arr_tree: &Tree,
-        expected_type: &Type,
-    ) -> Result<(), String> {
-        match &arr_tree.typ {
-            TreeType::ExprArrLiteral { elements } => {
-                for elem in elements {
-                    self.convert_let_arr(elem, expected_type)?;
-                }
-            }
-            _ => {
-                let reg = self.convert_expr(arr_tree)?;
-                self.code.push(Instruction::StoreMem {
-                    reg: reg.mem,
-                    var: Variable {
-                        typ: expected_type.clone(),
-                        mem: self.memory_offset
-                    },
-                });
-                self.memory_offset += self.size_manager.get_type_size(expected_type);
-                self.reset_registers();
-            }
-        }
-        Ok(())
-    }
-
-    fn convert_stmt_let(&mut self, let_tree: &Tree) -> Result<(), String> {
-        match &let_tree.typ {
-            TreeType::StmtLet {
-                name,
-                typ,
-                expression,
-            } => {
-                let local_lookup = self
-                    .functions
-                    .get(&self.current_fn)
-                    .expect("At this point, function table is guaranteed to contain current_fn.");
-                if local_lookup.get_scope_location(name).is_some() {
-                    return Err(format!(
-                        "{}: {:?}: Variable redefinition",
-                        ERR_STR,
-                        let_tree.tkn.get_loc()
-                    ));
-                }
-                match &typ.typ {
-                    TreeType::TypeDecl { typ } => {
-                        let mem = self.add_local_var(name, self.scope_depth, typ);
-                        match typ {
-                            Type::Arr(expected_type, expected_size) => {
-                                self.convert_let_arr(expression, expected_type)?;
-                            }
-                            _ => {
-                                let reg = self.convert_expr(expression)?;
-                                self.code.push(Instruction::StoreMem {
-                                    reg: reg.mem,
-                                    var: Variable {
-                                        typ: typ.clone(),
-                                        mem,
-                                    },
-                                });
-                                self.memory_offset += mem;
-                            }
-                        }
-                    }
-                    _ => panic!(),
-                };
-            }
-            _ => panic!(),
-        }
-        self.reset_registers();
-        Ok(())
-    }
-
-    fn convert_stmt_assign(&mut self, assign_tree: &Tree) -> Result<(), String> {
-        match &assign_tree.typ {
-            TreeType::StmtAssign { name, expression } => {
-                let reg = self.convert_expr(expression)?;
-                let local_lookup = self
-                    .functions
-                    .get(&self.current_fn)
-                    .expect("At this point, function table is guaranteed to contain current_fn.");
-                match &name.typ {
-                    TreeType::ExprName { name, typ } => {
-                        todo!("Changed from TreeType::Identifier {{name}} to TreeType::ExprName {{name, typ}}");
-                        let var = match local_lookup.get_variable_location(name) {
-                            Some(i) => i,
-                            None => panic!(),
-                        };
-                        match &var.typ {
-                            Type::Arr(typ, size) => {
-                                todo!()
-                            }
-                            _ => self.code.push(Instruction::StoreMem { reg: reg.mem, var }),
-                        }
-                    }
-                    TreeType::ExprArrAccess {
-                        arr_name,
-                        indices,
-                        typ,
-                    } => {
-                        let var = match local_lookup.get_variable_location(arr_name) {
-                            Some(i) => i,
-                            None => panic!(),
-                        };
-                        match &typ {
-                            Type::Arr(typ, size) => {
-                                match &indices.typ {
-                                    TreeType::ExprArrLiteral { elements } => {
-                                        let index_reg = self.get_register()?;
-                                        let mem_offset = self.get_register()?;
-                                        let size_reg = self.get_register()?;
-                                        // Prepare index register
-                                        self.code.push(Instruction::LoadUsize {
-                                            dest: index_reg,
-                                            val: 0,
-                                        });
-                                        // Stores final offset for stack addressing
-                                        self.code.push(Instruction::LoadUsize {
-                                            dest: mem_offset,
-                                            val: var.mem,
-                                        });
-
-                                        for (count, child) in elements.iter().enumerate() {
-                                            let reg = self.convert_expr(child)?;
-
-                                            // Index Out of Bounds check
-                                            self.code.push(Instruction::LoadUsize {
-                                                dest: size_reg,
-                                                val: size[count],
-                                            });
-                                            self.code.push(Instruction::Cmp {
-                                                dest: reg.mem,
-                                                src: size_reg,
-                                                typ: Type::Usize,
-                                            });
-                                            let lbl = self.create_label();
-                                            self.code
-                                                .push(Instruction::JmpLt { dest: lbl.clone() });
-                                            self.code.push(Instruction::Exit {
-                                                code: ExitCode::OobAccess as usize,
-                                            });
-                                            self.add_label(&lbl);
-
-                                            // index_reg contains our index
-                                            // in each step, multiply the index by the dimension of the array
-                                            self.code.push(Instruction::Mul {
-                                                dest: index_reg,
-                                                src: size_reg,
-                                                typ: Type::Usize,
-                                            });
-                                            // in each step, add to that ^ the position we're indexing (result of expression)
-                                            self.code.push(Instruction::Add {
-                                                dest: index_reg,
-                                                src: reg.mem,
-                                                typ: Type::Usize,
-                                            });
-                                        }
-                                        self.code.push(Instruction::Add {
-                                            dest: index_reg,
-                                            src: mem_offset,
-                                            typ: Type::Usize,
-                                        });
-                                        let reg_tmp = self.get_register()?;
-                                        self.code.push(Instruction::LoadPtrRel {
-                                            dest: reg_tmp,
-                                            src: index_reg,
-                                            typ: *typ.clone(),
-                                        });
-                                        self.code.push(Instruction::StorePtr {
-                                            dest: reg_tmp,
-                                            src: reg.mem,
-                                            typ: *typ.clone(),
-                                        });
-                                    }
-                                    _ => panic!(),
-                                }
-                            }
-                            _ => panic!(),
-                        }
-                    }
-                    _ => {
-                        for c in &self.code {
-                            println!("{:?}", c);
-                        }
-                        panic!()
-                    },
-                }
-            }
-            _ => panic!(),
-        }
-        /*
-        if assign_name.tkn.get_type() == TokenType::Asterisk {
-            let var_name = &assign_name.children[0].tkn;
-            assert!(var_name.get_type() == TokenType::Name);
-
-            match var.clone().typ {
-                Type::Ptr(t) => {
-                    if *t != reg.typ {
-                        return Err(format!(
-                            "{}: {:?}: Type Mismatch when assigning to Pointer. Pointer expected Type `{:?}`, but got Type `{:?}`.",
-                            ERR_STR,
-                            assign_name.tkn.get_loc(),
-                            t,
-                            reg.typ
-                        ));
-                    }
-                    self.resolve_types(*t.clone())?;
-                    let reg_mov = self.get_register()?;
-                    self.code.push(Instruction::LoadMem { reg: reg_mov, var });
-                    self.code.push(Instruction::StorePtr {
-                        src: reg.mem,
-                        dest: reg_mov,
-                        typ: *t,
-                    });
-                }
-                e => {
-                    return Err(format!(
-                        "{}: {:?}: Can not dereference Type `{:?}`.",
-                        ERR_STR,
-                        assign_name.tkn.get_loc(),
-                        e
-                    ))
-                }
-            }
-        } else {
-            assert!(assign_name.tkn.get_type() == TokenType::Name);
-                (Type::Arr(typ, size), _) => {
-                    for (count, child) in indices.iter().enumerate() {
-                        let reg = self.convert_expr(child)?;
-                        if reg.typ != Type::Unknown && reg.typ != Type::Usize {
-                            return Err(format!(
-                                "{}: {:?}: Type Mismatch: Array indices are expected to be of Type usize. Got `{:?}`",
-                                ERR_STR,
-                                child.tkn.get_loc(),
-                                reg.typ
-                            ));
-                        }
-
-                        self.resolve_types(Type::Usize)?;
-
-                        // Index Out of Bounds check
-                        self.code.push(Instruction::LoadUsize { dest: size_reg, val: size[count] });
-                        self.code.push(Instruction::Cmp { dest: reg.mem, src: size_reg, typ: Type::Usize });
-                        self.code.push(Instruction::JmpLt { dest: self.code.len() + 2 });
-                        self.code.push(Instruction::Exit { code: ExitCode::OobAccess as usize });
-
-                        // index_reg contains our index
-                        // in each step, multiply the index by the dimension of the array
-                        self.code.push(Instruction::Mul { dest: index_reg, src: size_reg, typ: Type::Usize });
-                        // in each step, add to that ^ the position we're indexing (result of expression)
-                        self.code.push(Instruction::Add { dest: index_reg, src: reg.mem, typ: Type::Usize });
-                    }
-                    self.code.push(Instruction::Add { dest: index_reg, src: mem_offset, typ: Type::Usize });
-                    let reg_tmp = self.get_register()?;
-                    self.code.push(Instruction::LoadPtrRel {
-                        dest: reg_tmp,
-                        src: index_reg,
-                        typ: *typ.clone(),
-                    });
-                    self.code.push(Instruction::StorePtr {
-                        dest: reg_tmp,
-                        src: reg.mem,
-                        typ: *typ.clone(),
-                    });
-                }
-                (typ, Type::Unknown) => {
-                    self.resolve_types(typ.clone())?;
-                    self.code.push(Instruction::StoreMem { reg: reg.mem, var });
-                }
-                (var_typ, expr_typ) => {
-                    if var_typ != expr_typ {
-                        return Err(format!(
-                            "{}: {:?}: Type mismatch! Expected type `{:?}`, got type `{:?}`.",
-                            ERR_STR,
-                            assign_name.tkn.get_loc(),
-                            var.typ.clone(),
-                            reg.typ.clone()
-                        ));
-                    }
-                    self.code.push(Instruction::StoreMem { reg: reg.mem, var });
-                }
-            }
-        } */
-        self.reset_registers();
-        Ok(())
-    }
-
-    fn convert_stmt_if(&mut self, if_tree: &Tree) -> Result<(), String> {
-        match &if_tree.typ {
-            TreeType::StmtIf {
-                condition,
-                if_branch,
-                else_branch,
-            } => {
-                self.convert_expr(condition)?;
-                self.reset_registers();
-
-                self.convert_block(if_branch)?;
-                let if_jmp = self.resolve_last_jmp();
-
-                if let Some(else_br) = else_branch {
-                    self.unresolved_jmp_instr.push_back(self.code.len());
-                    self.code.push(Instruction::Jmp {
-                        dest: String::new(),
-                    });
-
-                    let lbl_name = self.create_label();
-                    self.add_label(&lbl_name);
-                    self.set_jmp_lbl(if_jmp, lbl_name);
-
-                    self.convert_block(else_br)?;
-                    self.resolve_last_jmp();
-                }
-            }
-            _ => panic!(),
-        }
-        self.reset_registers();
-        Ok(())
-    }
-
-    fn convert_stmt_return(&mut self, ret_tree: &Tree) -> Result<(), String> {
-        match &ret_tree.typ {
-            TreeType::StmtReturn { return_value } => {
-                self.functions
-                    .get_mut(&self.current_fn)
-                    .unwrap()
-                    .return_scopes
-                    .push(self.scope_depth);
-                let fn_return_type = self
-                    .functions
-                    .get(&self.current_fn)
-                    .unwrap()
-                    .get_return_type();
-                if let Some(ret_val) = return_value {
-                    let mut reg = self.convert_expr(ret_val)?;
-                    
-                    self.code.push(Instruction::Move {
-                        src: reg.mem,
-                        dest: 0,
-                    });
-                }
-                self.code.push(Instruction::Return {
-                    from: self.current_fn.clone(),
-                });
-            }
-            _ => panic!(),
-        }
-        self.reset_registers();
-        Ok(())
-    }
-
-    fn convert_stmt_expr(&mut self, expr_tree: &Tree) -> Result<(), String> {
-        match &expr_tree.typ {
-            TreeType::StmtExpr { expression } => {
-                self.convert_expr(expression)?;
-            }
-            _ => panic!(),
-        }
-        self.reset_registers();
-        Ok(())
-    }
-
-    fn resolve_last_jmp(&mut self) -> usize {
-        assert!(!self.unresolved_jmp_instr.is_empty());
-        let ip = self.unresolved_jmp_instr.pop_back().unwrap();
-
-        let lbl_name = self.create_label();
-        self.add_label(&lbl_name);
-
-        self.set_jmp_lbl(ip, lbl_name);
-        ip
-    }
-
-    fn resolve_types(&mut self, expected_type: Type) -> Result<(), String> {
-        if expected_type == Type::None {
-            todo!()
-        }
-        while let Some(index) = self.unresolved_typ_instr.pop_back() {
-            self.set_load_instr(index, expected_type.clone())?;
-        }
-        Ok(())
-    }
-
-    fn set_jmp_lbl(&mut self, index: usize, dest: String) {
-        self.code[index] = match &self.code[index] {
-            Instruction::JmpEq { .. } => Instruction::JmpEq { dest },
-            Instruction::JmpNeq { .. } => Instruction::JmpNeq { dest },
-            Instruction::JmpGt { .. } => Instruction::JmpGt { dest },
-            Instruction::JmpGte { .. } => Instruction::JmpGte { dest },
-            Instruction::JmpLt { .. } => Instruction::JmpLt { dest },
-            Instruction::JmpLte { .. } => Instruction::JmpLte { dest },
-            Instruction::Jmp { .. } => Instruction::Jmp { dest },
-            e => todo!("{:?}", e),
-        };
-    }
-
-    fn set_load_instr(&mut self, index: usize, typ: Type) -> Result<(), String> {
-        self.code[index] = match &self.code[index] {
-            Instruction::LoadUnknown { dest, val, loc } => match typ {
-                Type::I32 => {
-                    let val = parse_type!(i32, *loc, *val, typ)?;
-                    Instruction::LoadI32 { dest: *dest, val }
-                }
-                Type::I64 => {
-                    let val = parse_type!(i64, loc, val, typ)?;
-                    Instruction::LoadI64 { dest: *dest, val }
-                }
-                Type::U32 => {
-                    let val = parse_type!(u32, loc, val, typ)?;
-                    Instruction::LoadU32 { dest: *dest, val }
-                }
-                Type::U64 => {
-                    let val = parse_type!(u64, loc, val, typ)?;
-                    Instruction::LoadU64 { dest: *dest, val }
-                }
-                Type::Usize => {
-                    let val = parse_type!(usize, loc, val, typ)?;
-                    Instruction::LoadUsize { dest: *dest, val }
-                }
-                // Type::Ptr(t, ..) => {
-                //     let val = parse_type!(usize, loc, val, t)?;
-                //     Instruction::LoadUsize { dest: *dest, val }
-                // }
-                _ => todo!("{:?}", loc),
-            },
-            Instruction::Add {
-                dest,
-                src,
-                typ: _typ,
-            } => Instruction::Add {
-                dest: *dest,
-                src: *src,
-                typ,
-            },
-            Instruction::Sub {
-                dest,
-                src,
-                typ: _typ,
-            } => Instruction::Sub {
-                dest: *dest,
-                src: *src,
-                typ,
-            },
-            Instruction::Mul {
-                dest,
-                src,
-                typ: _typ,
-            } => Instruction::Mul {
-                dest: *dest,
-                src: *src,
-                typ,
-            },
-            Instruction::Div {
-                dest,
-                src,
-                typ: _typ,
-            } => Instruction::Div {
-                dest: *dest,
-                src: *src,
-                typ,
-            },
-            Instruction::Cmp {
-                dest,
-                src,
-                typ: _typ,
-            } => Instruction::Cmp {
-                dest: *dest,
-                src: *src,
-                typ,
-            },
-            e => todo!("Handle Instruction {:?}", e),
-        };
-        Ok(())
-    }
-
-    fn convert_fn(&mut self, func: &Tree) -> Result<(), String> {
-        match &func.typ {
-            TreeType::Func {
-                name,
-                return_type,
-                param,
-                block,
-            } => {
-                if self.functions.contains_key(name) {
-                    return Err(format!(
-                        "{}: {:?}: Function redefinition",
-                        ERR_STR,
-                        func.tkn.get_loc()
-                    ));
-                }
-                self.current_fn = name.clone();
-                let f = Function::new(self.code.len());
-                self.functions.insert(name.clone(), f);
-
-                self.code.push(Instruction::Label { name: name.clone() });
-                self.convert_fn_param(param)?;
-
-                if let Some(ret_tree) = return_type {
-                    match &ret_tree.typ {
-                        TreeType::TypeDecl { typ } => {
-                            self.functions.get_mut(name).unwrap().set_return_type(&self.size_manager, typ);
-                        }
-                        _ => panic!(),
-                    }
-                }
-
-                self.convert_block(block)?;
-
-                let return_scopes = &self.functions.get(&self.current_fn).unwrap().return_scopes;
-                let return_found = return_scopes.contains(&1);
-                let return_type = self
-                    .functions
-                    .get(&self.current_fn)
-                    .unwrap()
-                    .return_type
-                    .clone();
-                if name == self.entry_point.as_str() {
-                    self.code.push(Instruction::Exit {
-                        code: ExitCode::Normal as usize,
-                    });
-                }
-                match (return_found, return_type.typ) {
-                    (false, Type::None) => {
-                        self.code.push(Instruction::Return {
-                            from: self.current_fn.clone(),
-                        });
-                    }
-                    (true, Type::None) => {
-                        if self.code.is_empty()
-                            || !(*self.code.last().unwrap()
-                                == Instruction::Return {
-                                    from: self.current_fn.clone(),
-                                })
-                        {
-                            self.code.push(Instruction::Return {
-                                from: self.current_fn.clone(),
-                            });
-                        }
-                    }
-                    (false, t) => {
-                        return Err(
-                            format!("{}: Function `{}` is declared to return `{:?}`, but no return statements found.\n{}: There's no Control Flow check yet, so even if it's unreachable because of if-else or anything else, it won't be caught.",
-                            ERR_STR,
-                            self.current_fn,
-                            t,
-                            NOTE_STR)
-                        );
-                    }
-                    (true, t) => {
-                        if !(*self.code.last().unwrap()
-                            == Instruction::Return {
-                                from: self.current_fn.clone(),
-                            })
-                        {
-                            return Err(
-                                format!("{}: {:?}: Function `{}` is declared to return `{:?}`, expected `return` as last instruction.",
-                                ERR_STR,
-                                func.tkn.get_loc(),
-                                self.current_fn,
-                                t
-                            ));
-                        }
-                    }
-                }
-            }
-            _ => panic!(),
-        }
-        self.current_fn.clear();
-        Ok(())
-    }
-
-    fn convert_fn_param(&mut self, param: &Tree) -> Result<(), String> {
-        let mut reg_ctr = 1;
-        match &param.typ {
-            TreeType::ParamList { parameters } => {
-                for p in parameters {
-                    match &p.typ {
-                        TreeType::Param { name, typ } => match &typ.typ {
-                            TreeType::TypeDecl { typ } => {
-                                let local_lookup = self.functions.get_mut(&self.current_fn).expect(
-                                        "At this point, function table is guaranteed to contain current_fn.",
-                                    );
-                                if local_lookup.get_param_location(name).is_some() {
-                                    return Err(format!(
-                                        "{}: {:?}: Parameter redefinition `{}`",
-                                        ERR_STR,
-                                        p.tkn.get_loc(),
-                                        name
-                                    ));
-                                }
-                                let var = local_lookup.add_param(&self.size_manager, name, typ);
-                                self.code.push(Instruction::StoreMem { reg: reg_ctr, var });
-                                reg_ctr += 1;
-                            }
-                            _ => panic!(),
-                        },
-                        _ => panic!(),
-                    }
-                }
-            }
-            _ => panic!(),
-        }
-        Ok(())
-    }
-
-    fn convert_block(&mut self, block: &Tree) -> Result<(), String> {
-        self.enter_scope();
-        match &block.typ {
-            TreeType::Block { statements } => {
-                for instr in statements {
-                    match &instr.typ {
-                        TreeType::StmtLet { .. } => self.convert_stmt_let(instr)?,
-                        TreeType::StmtAssign { .. } => self.convert_stmt_assign(instr)?,
-                        TreeType::StmtIf { .. } => self.convert_stmt_if(instr)?,
-                        TreeType::StmtReturn { .. } => self.convert_stmt_return(instr)?,
-                        TreeType::StmtExpr { .. } => self.convert_stmt_expr(instr)?,
-                        e => todo!("convert {:?} inside block", e),
-                    }
-                }
-            }
-            _ => panic!(),
-        }
-        self.leave_scope();
-        Ok(())
-    }
-
-    fn enter_scope(&mut self) {
-        assert!(!self.current_fn.is_empty());
-        // println!("Entering scope");
-        self.scope_depth += 1;
-        self.functions
-            .get_mut(&self.current_fn)
-            .unwrap()
-            .add_scope();
-    }
-
-    fn leave_scope(&mut self) {
-        assert!(!self.current_fn.is_empty());
-        // println!("Leaving scope");
-        self.scope_depth -= 1;
-        self.functions
-            .get_mut(&self.current_fn)
-            .unwrap()
-            .remove_scope();
-    }
-
-    fn convert_ast(&mut self, ast: &Tree) -> Result<(), String> {
-        match &ast.typ {
-            TreeType::File { functions, classes } => {
-                todo!();
-                for class in classes {
-                    self.convert_ast(class)?;
-                }
-                for func in functions {
-                    self.convert_ast(func)?;
-                }
-            }
-            TreeType::Func { .. } => {
-                self.memory_offset = 0;
-                self.convert_fn(ast)?;
-            }
-            _ => todo!("handle other types"),
-        }
-        Ok(())
-    }
-
-    fn generate_code(&mut self) -> Result<(), String> {
-        assert!(self.ast.is_some());
-        self.convert_ast(&self.ast.as_ref().unwrap().clone())
-    }
-
+    
+    
     pub fn interpret(&mut self) -> Result<(), String> {
         // for (i, c) in self.code.iter().enumerate() {
         //     println!("{i:3} -> {c:?}");
