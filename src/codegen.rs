@@ -53,8 +53,8 @@ macro_rules! perform_cmp {
     };
 }
 
-// parse_type!(i32, loc, val, typ);
-macro_rules! parse_type {
+// parse_value!(i32, loc, val, typ);
+macro_rules! parse_value {
     ($parse_typ:ty, $loc:expr, $val:expr, $typ: expr) => {
         match $val.parse::<$parse_typ>() {
             Ok(val) => Ok(val),
@@ -351,6 +351,20 @@ impl Function {
 }
 
 #[derive(Debug)]
+struct Class {
+    fields: HashMap<String, Variable>,
+    size: usize
+}
+
+impl Class {
+    fn new() -> Self {
+        Self {
+            fields: HashMap::new(),
+            size: 0
+        }
+    }
+}
+#[derive(Debug)]
 struct SizeManager {
 }
 
@@ -378,6 +392,7 @@ pub struct Generator {
     registers: Vec<Memory>,
     register_ctr: usize,
     functions: HashMap<String, Function>,
+    classes: HashMap<String, Class>,
     code: Vec<Instruction>,
     current_fn: String,
     current_str: String,
@@ -398,6 +413,7 @@ impl Generator {
             registers: vec![Memory { u64: 0 }; REGISTERS_32BIT.len()],
             register_ctr: 1,
             functions: HashMap::new(),
+            classes: HashMap::new(),
             code: vec![],
             current_fn: String::new(),
             current_str: String::new(),
@@ -487,16 +503,6 @@ impl Generator {
         ip
     }
 
-    fn resolve_types(&mut self, expected_type: Type) -> Result<(), String> {
-        if expected_type == Type::None {
-            todo!()
-        }
-        while let Some(index) = self.unresolved_typ_instr.pop_back() {
-            self.set_load_instr(index, expected_type.clone())?;
-        }
-        Ok(())
-    }
-
     fn set_jmp_lbl(&mut self, index: usize, dest: String) {
         self.code[index] = match &self.code[index] {
             Instruction::JmpEq { .. } => Instruction::JmpEq { dest },
@@ -508,85 +514,6 @@ impl Generator {
             Instruction::Jmp { .. } => Instruction::Jmp { dest },
             e => todo!("{:?}", e),
         };
-    }
-
-    fn set_load_instr(&mut self, index: usize, typ: Type) -> Result<(), String> {
-        self.code[index] = match &self.code[index] {
-            Instruction::LoadUnknown { dest, val, loc } => match typ {
-                Type::I32 => {
-                    let val = parse_type!(i32, *loc, *val, typ)?;
-                    Instruction::LoadI32 { dest: *dest, val }
-                }
-                Type::I64 => {
-                    let val = parse_type!(i64, loc, val, typ)?;
-                    Instruction::LoadI64 { dest: *dest, val }
-                }
-                Type::U32 => {
-                    let val = parse_type!(u32, loc, val, typ)?;
-                    Instruction::LoadU32 { dest: *dest, val }
-                }
-                Type::U64 => {
-                    let val = parse_type!(u64, loc, val, typ)?;
-                    Instruction::LoadU64 { dest: *dest, val }
-                }
-                Type::Usize => {
-                    let val = parse_type!(usize, loc, val, typ)?;
-                    Instruction::LoadUsize { dest: *dest, val }
-                }
-                // Type::Ptr(t, ..) => {
-                //     let val = parse_type!(usize, loc, val, t)?;
-                //     Instruction::LoadUsize { dest: *dest, val }
-                // }
-                _ => todo!("{:?}", loc),
-            },
-            Instruction::Add {
-                dest,
-                src,
-                typ: _typ,
-            } => Instruction::Add {
-                dest: *dest,
-                src: *src,
-                typ,
-            },
-            Instruction::Sub {
-                dest,
-                src,
-                typ: _typ,
-            } => Instruction::Sub {
-                dest: *dest,
-                src: *src,
-                typ,
-            },
-            Instruction::Mul {
-                dest,
-                src,
-                typ: _typ,
-            } => Instruction::Mul {
-                dest: *dest,
-                src: *src,
-                typ,
-            },
-            Instruction::Div {
-                dest,
-                src,
-                typ: _typ,
-            } => Instruction::Div {
-                dest: *dest,
-                src: *src,
-                typ,
-            },
-            Instruction::Cmp {
-                dest,
-                src,
-                typ: _typ,
-            } => Instruction::Cmp {
-                dest: *dest,
-                src: *src,
-                typ,
-            },
-            e => todo!("Handle Instruction {:?}", e),
-        };
-        Ok(())
     }
    
     fn enter_scope(&mut self) {
@@ -619,7 +546,6 @@ impl Generator {
     fn convert_file(&mut self, ast: &Tree) -> Result<(), String> {
         match &ast.typ {
             TreeType::File { functions, classes } => {
-                todo!();
                 for class in classes {
                     self.convert_file(class)?;
                 }
@@ -627,17 +553,26 @@ impl Generator {
                     self.convert_file(func)?;
                 }
             }
+            TreeType::Class { .. } => {
+                self.convert_class(ast)?;
+            }
             TreeType::Func { .. } => {
                 self.memory_offset = 0;
                 self.convert_func(ast)?;
             }
-            _ => todo!("handle other types"),
+            _ => todo!("handle other types:\n{}", ast.rebuild_code()),
         }
         Ok(())
     }
 
     fn convert_class(&mut self, class: &Tree) -> Result<(), String> {
-        todo!()
+        match &class.typ {
+            TreeType::Class { name, fields, functions, features } => {
+
+                todo!()
+            }
+            _ => panic!()
+        }
     }
 
     fn convert_feature(&mut self, feat: &Tree) -> Result<(), String> {
@@ -709,6 +644,7 @@ impl Generator {
                         }
                     }
                     (false, t) => {
+                        unreachable!();
                         return Err(
                             format!("{}: Function `{}` is declared to return `{:?}`, but no return statements found.\n{}: There's no Control Flow check yet, so even if it's unreachable because of if-else or anything else, it won't be caught.",
                             ERR_STR,
@@ -723,6 +659,7 @@ impl Generator {
                                 from: self.current_fn.clone(),
                             })
                         {
+                            unreachable!();
                             return Err(
                                 format!("{}: {:?}: Function `{}` is declared to return `{:?}`, expected `return` as last instruction.",
                                 ERR_STR,
@@ -752,6 +689,7 @@ impl Generator {
                                         "At this point, function table is guaranteed to contain current_fn.",
                                     );
                                 if local_lookup.get_param_location(name).is_some() {
+                                    unreachable!();
                                     return Err(format!(
                                         "{}: {:?}: Parameter redefinition `{}`",
                                         ERR_STR,
@@ -818,6 +756,7 @@ impl Generator {
                     .get(&self.current_fn)
                     .expect("At this point, function table is guaranteed to contain current_fn.");
                 if local_lookup.get_scope_location(name).is_some() {
+                    unreachable!();
                     return Err(format!(
                         "{}: {:?}: Variable redefinition",
                         ERR_STR,
@@ -1168,12 +1107,15 @@ impl Generator {
                             typ: var.typ.clone(),
                         })
                     }
-                    None => Err(format!(
-                        "{}: {:?}: Undefined variable `{}`",
-                        ERR_STR,
-                        expr_tree.tkn.get_loc(),
-                        name
-                    )),
+                    None => {
+                        unreachable!();
+                        Err(format!(
+                            "{}: {:?}: Undefined variable `{}`",
+                            ERR_STR,
+                            expr_tree.tkn.get_loc(),
+                            name
+                        ))
+                    },
                 }
             }
             TreeType::ExprLiteral { typ } => {
@@ -1182,23 +1124,23 @@ impl Generator {
                 let dest = self.get_register()?;
                 match typ {
                     Type::I32 => {
-                        let val = parse_type!(i32, loc, val, typ)?;
+                        let val = parse_value!(i32, loc, val, typ)?;
                         self.code.push(Instruction::LoadI32 { dest, val });
                     }
                     Type::I64 => {
-                        let val = parse_type!(i64, loc, val, typ)?;
+                        let val = parse_value!(i64, loc, val, typ)?;
                         self.code.push(Instruction::LoadI64 { dest, val });
                     }
                     Type::U32 => {
-                        let val = parse_type!(u32, loc, val, typ)?;
+                        let val = parse_value!(u32, loc, val, typ)?;
                         self.code.push(Instruction::LoadU32 { dest, val });
                     }
                     Type::U64 => {
-                        let val = parse_type!(u64, loc, val, typ)?;
+                        let val = parse_value!(u64, loc, val, typ)?;
                         self.code.push(Instruction::LoadU64 { dest, val });
                     }
                     Type::Usize => {
-                        let val = parse_type!(usize, loc, val, typ)?;
+                        let val = parse_value!(usize, loc, val, typ)?;
                         self.code.push(Instruction::LoadUsize { dest, val });
                     }
                     Type::Unknown => panic!(
@@ -1259,6 +1201,7 @@ impl Generator {
                         _ => panic!(),
                     }
                 } else {
+                    unreachable!();
                     Err(format!(
                         "{} {:?}: Unknown function `{}`",
                         ERR_STR,
