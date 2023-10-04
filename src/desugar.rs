@@ -1,20 +1,9 @@
 use std::collections::HashMap;
 
-use lazy_static::lazy_static;
-use regex::Regex;
-
 use crate::Compiler;
 use crate::parser::{Tree, TreeType, Parser};
 use crate::lexer::TokenType;
 use crate::checker::Type;
-
-lazy_static!{
-    static ref REGEX_LOOKUP: HashMap<&'static str, Regex> = {
-        let mut lookup = HashMap::new();
-        lookup.insert("plus", Regex::new(r"(<lhs>.*)").unwrap());
-        lookup
-    };
-}
 
 pub struct Desugarer {
 }
@@ -278,7 +267,7 @@ impl Desugarer {
                     };
                     Tree { typ: TreeType::ExprCall {
                             function_name: new_name,
-                            args,
+                            args: Box::new(self.desugar_tree(*args)?),
                             typ: Type::Class(function_name.clone())
                         },
                         tkn
