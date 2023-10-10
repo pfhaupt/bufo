@@ -128,7 +128,7 @@ impl Desugarer {
                         };
                         let desugared_func = Tree {
                             typ: TreeType::Func {
-                                name: name.clone() + "::" + &fn_name,
+                                name: name.clone() + "_" + &fn_name,
                                 return_type,
                                 param: Box::new(new_params),
                                 block
@@ -185,7 +185,7 @@ impl Desugarer {
                         };
                         let desugared_feat = Tree {
                             typ: TreeType::Feature {
-                                name: name.clone() + "::" + &feat_name,
+                                name: name.clone() + "_" + &feat_name,
                                 return_type,
                                 param: Box::new(new_params),
                                 block
@@ -308,10 +308,10 @@ impl Desugarer {
             TreeType::ExprCall { function_name, args, typ } => {
                 if function_name.as_bytes()[0].is_ascii_uppercase() {
                     // Function Call is assumed to be ClassName(args), which desugars to ClassName::new(args)
-                    let new_name = if function_name.contains("::") {
+                    let new_name = if function_name.contains("_") {
                         function_name.clone()
                     } else {
-                        function_name.clone() + "::new"
+                        function_name.clone() + "_new"
                     };
                     Tree { typ: TreeType::ExprCall {
                             function_name: new_name,

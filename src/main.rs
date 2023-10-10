@@ -87,6 +87,7 @@ impl Compiler {
         if self.debug {
             println!("Codegen took {:?}", now.elapsed());
         }
+        // todo!();
         
         let now = Instant::now();
         self.codegen.compile()?;

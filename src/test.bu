@@ -1,6 +1,6 @@
 class Test {
     a: i64;
-    b: i64;
+    b: Test;
     c: i64;
     d: i64;
 
@@ -15,7 +15,7 @@ class Test {
     // -> Every Function in a class has hidden parameter `this` (no static for now)
     feat new(na: i64, nb: i64, nc: i64) {
         this.a = na;
-        this.b = nb;
+        this.b = Test(0, 0, 0);
         this.c = nc;
         // this.d gets 0 initialized
     }
@@ -39,7 +39,7 @@ class Idee {
         // Test(this.a, 5, 10) is equivalent to Test::new(this.a, 5, 10)
         this.t = Test(this.a, 5, 10);
         let a: i64 = this.a;
-        this.t.b = 10;
+        this.t.b.b.b.b.b.b.a = 10;
     }
 }
 
