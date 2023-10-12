@@ -41,13 +41,13 @@ impl Compiler {
         })
     }
 
-    pub fn parse_snippet(snippet: &String) -> Result<Tree, String> {
+    pub fn parse_snippet(origin: &String, snippet: &String) -> Result<Tree, String> {
         let mut lexer = Lexer::new();
         lexer.set_source(snippet);
-        lexer.set_origin_unchecked(&String::from("anonymous"));
+        lexer.set_origin_unchecked(origin);
         lexer.tokenize()?;
 
-        let mut parser = Parser::new().origin(&String::from("anonymous"));
+        let mut parser = Parser::new().origin(origin);
         parser.set_tokens(lexer.get_tokens());
         let parsed_ast = parser.parse_snippet()?;
 

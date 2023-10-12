@@ -22,7 +22,7 @@ pub enum TokenType {
     IfKeyword,
     ElseKeyword,
     ReturnKeyword,
-    BuiltInKeyword,
+    BuiltInFunction,
     Colon,
     Semi,
     Comma,
@@ -50,6 +50,17 @@ pub const COMPARATOR_TYPES: [TokenType; 6] = [
     TokenType::CmpGte,
     TokenType::CmpLt,
     TokenType::CmpLte,
+];
+
+pub const BUILT_IN_VARIABLES: [&str; 3] = [
+    "STACK_OVERFLOW_CODE",
+    "FUNCTION_COUNTER",
+    "FUNCTION_LIMIT"
+];
+pub const BUILT_IN_FUNCTIONS: [&str; 3] = [
+    "EXIT",
+    "MALLOC",
+    "SIZEOF"
 ];
 
 #[derive(Clone, PartialEq, Eq)]
@@ -236,7 +247,7 @@ impl Lexer {
             'A'..='Z' | 'a'..='z' => {
                 let mut value = String::from(c);
                 while let Ok(nc) = self.next_char() {
-                    if !nc.is_alphanumeric() {
+                    if !nc.is_alphanumeric() && !(nc == '_') {
                         self.current_char -= 1; // Went too far, go a step back
                         break;
                     }
@@ -250,9 +261,7 @@ impl Lexer {
                     "if" => TokenType::IfKeyword,
                     "else" => TokenType::ElseKeyword,
                     "return" => TokenType::ReturnKeyword,
-                    v if value.chars().all(|c| c.is_uppercase()) => {
-                        TokenType::BuiltInKeyword
-                    }
+                    _ if BUILT_IN_FUNCTIONS.contains(&value.as_str()) => TokenType::BuiltInFunction,
                     _ => TokenType::Identifier,
                 };
                 Ok(Token { typ, value, loc })

@@ -2,7 +2,7 @@ use std::cell::Cell;
 
 use crate::checker::{Type, TypeChecker};
 use crate::codegen::ERR_STR;
-use crate::lexer::{Location, Token, TokenType, COMPARATOR_TYPES};
+use crate::lexer::{Location, Token, TokenType, COMPARATOR_TYPES, BUILT_IN_FUNCTIONS, BUILT_IN_VARIABLES};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum TreeType {
@@ -113,10 +113,6 @@ pub enum TreeType {
     BuiltInFunction {
         function_name: String,
         args: Box<Tree>,
-        typ: Type
-    },
-    BuiltInVariable {
-        variable_name: String,
         typ: Type
     }
 }
@@ -311,12 +307,6 @@ impl Tree {
             } => {
                 println!("{tab}BuiltInFunction {function_name} {typ:?}");
                 args.print_internal(indent + EXTRA_INDENT);
-            }
-            TreeType::BuiltInVariable {
-                variable_name,
-                typ,
-            } => {
-                println!("{tab}BuiltInVariable {variable_name} {typ:?}");
             }
             TreeType::TypeDecl { typ } => {
                 println!("{tab}TypeDecl {typ:?}");
@@ -533,12 +523,6 @@ impl Tree {
                 result.push_str(&args.rebuild_code());
                 result.push_str(")");
             }
-            TreeType::BuiltInVariable {
-                variable_name,
-                ..
-            } => {
-                result.push_str(format!("{variable_name}").as_str());
-            }
             TreeType::TypeDecl { typ } => {
                 result.push_str(format!("{typ}").as_str());
             }
@@ -657,6 +641,7 @@ impl Parser {
             TokenType::LetKeyword => self.parse_stmt_let(),
             TokenType::IfKeyword => self.parse_stmt_if(),
             TokenType::ReturnKeyword => self.parse_stmt_return(),
+            TokenType::OpenCurly => self.parse_block(),
             e => todo!("`parse_snippet()` does not support `{:?}` yet", e)
         }
     }
@@ -1169,7 +1154,7 @@ impl Parser {
                 }
             }
             TokenType::OpenSquare => self.parse_expr_array_literal()?,
-            TokenType::BuiltInKeyword => self.parse_built_in()?,
+            TokenType::BuiltInFunction => self.parse_expr_built_in_func()?,
             e => {
                 let ptr = if self.ptr == self.tokens.len() {
                     self.ptr - 1
@@ -1224,21 +1209,43 @@ impl Parser {
         })
     }
 
+    fn parse_expr_built_in_func(&mut self) -> Result<Tree, String> {
+        let tkn = self.open();
+        self.expect(TokenType::BuiltInFunction)?;
+        let args = self.parse_arg_list()?;
+        Ok(Tree {
+            typ: TreeType::BuiltInFunction {
+                function_name: tkn.get_value(),
+                args: Box::new(args),
+                typ: Type::Unknown,
+            },
+            tkn,
+        })
+    }
     fn parse_built_in(&mut self) -> Result<Tree, String> {
         let tkn = self.open();
-        let kw = self.expect(TokenType::BuiltInKeyword)?;
-        if ["MALLOC", "SIZEOF"].contains(&kw.get_value().as_str()) {
-            Ok(Tree {
-                typ: TreeType::BuiltInFunction {
-                    function_name: kw.get_value(),
-                    args: Box::new(self.parse_arg_list()?),
-                    typ: Type::Unknown,
-                },
-                tkn
-            })
-        } else {
-            todo!()
-        }
+        todo!();
+        // let kw = self.expect(TokenType::BuiltInKeyword)?;
+        // if BUILT_IN_VARIABLES.contains(&&kw.get_value().as_str()) {
+        //     Ok(Tree {
+        //         typ: TreeType::BuiltInVariable {
+        //             variable_name: kw.get_value(),
+        //             typ: Type::Unknown
+        //         },
+        //         tkn
+        //     })
+        // } else if BUILT_IN_FUNCTIONS.contains(&kw.get_value().as_str()) {
+        //     Ok(Tree {
+        //         typ: TreeType::BuiltInFunction {
+        //             function_name: kw.get_value(),
+        //             args: Box::new(self.parse_arg_list()?),
+        //             typ: Type::Unknown,
+        //         },
+        //         tkn
+        //     })
+        // } else {
+        //     todo!()
+        // }
     }
 
     fn parse_identifier(&mut self) -> Result<Tree, String> {
@@ -1278,7 +1285,7 @@ impl Parser {
                         typ: Type::Unknown,
                     },
                     tkn,
-                }
+                }                
             }
         })
     }

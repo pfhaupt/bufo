@@ -61,8 +61,8 @@ impl Desugarer {
         self.desugar_tree_internal(ast)
     }
     fn desugar_tree_internal(&mut self, ast: Tree) -> Result<Tree, String> {
-        let tkn = ast.tkn;
-        Ok(match ast.typ {
+        let tkn = ast.tkn.clone();
+        Ok(match ast.typ.clone() {
             TreeType::File { functions, classes } => {
                 let mut desugared_functions = vec![];
                 let mut desugared_classes = vec![];
@@ -161,16 +161,17 @@ impl Desugarer {
                         let (return_type, block) = if feat_name == "new" {
                             let block = if let TreeType::Block { statements } = block.typ {
                                 let this_str = format!("let this: {} = MALLOC({});", name, self.get_size(&Type::Class(name.clone())));
-                                let this_alloc = Compiler::parse_snippet(&this_str)?;
+                                let this_alloc = Compiler::parse_snippet(&format!("this_{name}_desugar"), &this_str)?;
                                 let mut s = vec![this_alloc];
                                 s.extend(statements);
-                                s.push(Compiler::parse_snippet(&"return this;".to_string())?);
+                                s.push(Compiler::parse_snippet(&format!("return_{name}_desugar"), &"return this;".to_string())?);
                                 Tree { typ: TreeType::Block {
                                         statements: s
                                     },
                                     tkn: block.tkn
                                 }
                             } else {
+                                println!("{}", block.rebuild_code());
                                 unreachable!();
                             };
                             (Some(Box::new(
@@ -215,6 +216,18 @@ impl Desugarer {
                 }
             }
             TreeType::Feature { name, return_type, param, block } => {
+                
+                let desugared_block = self.desugar_tree_internal(*block)?;
+                let new_feature = format!(
+                    "{{FUNCTION_COUNTER = FUNCTION_COUNTER + 1;
+                        if (FUNCTION_COUNTER >= FUNCTION_LIMIT) {{
+                        EXIT(STACK_OVERFLOW_CODE);
+                    }} else {{
+                        {}
+                    }}}}", desugared_block.rebuild_code()
+                );
+                let new_block = Compiler::parse_snippet(&format!("feature_{name}_desugar"), &new_feature)?;
+                
                 let return_type = if let Some(ret) = return_type {
                     Some(Box::new(self.desugar_tree_internal(*ret)?))
                 } else {
@@ -224,7 +237,7 @@ impl Desugarer {
                         name,
                         return_type,
                         param: Box::new(self.desugar_tree_internal(*param)?),
-                        block: Box::new(self.desugar_tree_internal(*block)?)
+                        block: Box::new(new_block)
                     },
                     tkn
                 }
@@ -235,11 +248,39 @@ impl Desugarer {
                 } else {
                     None
                 };
+                
+                let TreeType::Block { mut statements } = block.typ else { panic!() };
+                let dec_str = format!("{{FUNCTION_COUNTER = FUNCTION_COUNTER - 1;}}");
+                let dec_fn_ctr = Compiler::parse_snippet(&format!("dec_fn_{name}_desugar"), &dec_str)?;
+                
+                let dec_index = if return_type.is_none() { statements.len() } else { statements.len() - 1};
+                statements.insert(dec_index, dec_fn_ctr);
+                
+                let block = Tree {
+                    typ: TreeType::Block {
+                        statements
+                    },
+                    tkn: block.tkn
+                };
+                let desugared_block = self.desugar_tree_internal(block)?;
+
+                let new_function = format!(
+                    "{{
+                        FUNCTION_COUNTER = FUNCTION_COUNTER + 1;
+                        if (FUNCTION_COUNTER >= FUNCTION_LIMIT) {{
+                        EXIT(STACK_OVERFLOW_CODE);
+                    }} else {{
+                        {}
+                    }}}}", desugared_block.rebuild_code()
+                );
+                let new_block = Compiler::parse_snippet(&format!("function_{name}_desugar"), &new_function)?;
+                let desugared_block = self.desugar_tree_internal(new_block)?;
+                
                 Tree { typ: TreeType::Func {
                         name,
                         return_type,
                         param: Box::new(self.desugar_tree_internal(*param)?),
-                        block: Box::new(self.desugar_tree_internal(*block)?)
+                        block: Box::new(desugared_block)
                     },
                     tkn
                 }
@@ -267,7 +308,13 @@ impl Desugarer {
                     tkn
                 }
             }
-            TreeType::StmtExpr { expression } => todo!(),
+            TreeType::StmtExpr { expression } => {
+                Tree { typ: TreeType::StmtExpr {
+                    expression: Box::new(self.desugar_tree_internal(*expression)?)
+                    },
+                    tkn
+                }
+            },
             TreeType::StmtLet { name, typ, expression } => {
                 let desugared_type = self.desugar_tree_internal(*typ)?;
                 let desugared_expr = self.desugar_tree_internal(*expression)?;
@@ -289,7 +336,22 @@ impl Desugarer {
                     tkn
                 }
             }
-            TreeType::StmtIf { condition, if_branch, else_branch } => todo!(),
+            TreeType::StmtIf { condition, if_branch, else_branch } => {
+                let desugared_condition = self.desugar_tree_internal(*condition)?;
+                let desugared_if = self.desugar_tree_internal(*if_branch)?;
+                let desugared_else = match else_branch {
+                    Some(else_branch) => Some(Box::new(self.desugar_tree_internal(*else_branch)?)),
+                    None => None
+                };
+                Tree {
+                    typ: TreeType::StmtIf {
+                        condition: Box::new(desugared_condition),
+                        if_branch: Box::new(desugared_if),
+                        else_branch: desugared_else
+                    },
+                tkn
+            }
+            },
             TreeType::StmtReturn { return_value } => {
                 let return_value = if let Some(ret) = return_value {
                     Some(Box::new(self.desugar_tree_internal(*ret)?))
@@ -313,6 +375,7 @@ impl Desugarer {
                     } else {
                         function_name.clone() + "_new"
                     };
+                    // let args = self.desugar_tree_internal(*args)?;
                     Tree { typ: TreeType::ExprCall {
                             function_name: new_name,
                             args: Box::new(self.desugar_tree_internal(*args)?),
@@ -421,7 +484,17 @@ impl Desugarer {
                 //     tkn
                 // }
             }
-            TreeType::ExprComp { lhs, rhs, typ } => todo!(),
+            TreeType::ExprComp { lhs, rhs, typ } => {
+                let desugared_lhs = self.desugar_tree_internal(*lhs)?;
+                let desugared_rhs = self.desugar_tree_internal(*rhs)?;
+                Tree { typ: TreeType::ExprComp {
+                        lhs: Box::new(desugared_lhs),
+                        rhs: Box::new(desugared_rhs),
+                        typ
+                    },
+                    tkn
+                }
+            },
             TreeType::ExprParen { expression, typ } => {
                 Tree { typ: TreeType::ExprParen {
                         expression: Box::new(self.desugar_tree_internal(*expression)?),
@@ -439,7 +512,6 @@ impl Desugarer {
                     tkn
                 }
             }
-            TreeType::BuiltInVariable { variable_name, typ } => todo!(),
         })
     }
 

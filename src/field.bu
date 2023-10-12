@@ -1,14 +1,16 @@
 class Test {
-    a: i64;
+    a: usize;
     b: i64;
     c: Test;
 
     feat new() {
-        
     }
 }
 
 func main() {
     let b: Test = Test();
+    let a: i32 = 0;
+    b.c = Test();
     b.c.a = 10;
+    EXIT(b.c.a);
 }

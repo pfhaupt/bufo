@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
 use crate::codegen::{ERR_STR, NOTE_STR, WARN_STR};
-use crate::lexer::Location;
+use crate::lexer::{Location, BUILT_IN_VARIABLES, BUILT_IN_FUNCTIONS};
 use crate::parser::{Tree, TreeType};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -29,6 +29,7 @@ pub enum Type {
 
 lazy_static!{
     static ref BUILT_IN_FUNC: HashMap<String, TCFunction> = {
+        assert!(BUILT_IN_FUNCTIONS.len() == 3);
         type TCF = TCFunction;
         type TCV = TCVariable;
         type LOC = Location;
@@ -41,6 +42,24 @@ lazy_static!{
         let mut sizeof_fn = TCF::new(LOC::builtin(), TCV::new(&LOC::builtin(), &Type::Usize));
         sizeof_fn.add_parameter(&String::from("obj"), TCV::new(&LOC::builtin(), &Type::Any));
         h.insert(String::from("SIZEOF"), sizeof_fn);
+
+        let mut exit_fn = TCF::new(LOC::builtin(), TCV::new(&LOC::builtin(), &Type::None));
+        exit_fn.add_parameter(&String::from("code"), TCV::new(&LOC::builtin(), &Type::Usize));
+        h.insert(String::from("EXIT"), exit_fn);
+
+        h
+    };
+
+    pub static ref BUILT_IN_VARS: HashMap<String, TCVariable> = {
+        assert!(BUILT_IN_VARIABLES.len() == 3);
+        type TCF = TCFunction;
+        type TCV = TCVariable;
+        type LOC = Location;
+        let mut h = HashMap::new();
+        h.insert(String::from("STACK_OVERFLOW_CODE"), TCV::new(&LOC::builtin(), &Type::Usize));
+        h.insert(String::from("FUNCTION_COUNTER"), TCV::new(&LOC::builtin(), &Type::Usize));
+        h.insert(String::from("FUNCTION_LIMIT"), TCV::new(&LOC::builtin(), &Type::Usize));
+
         h
     };
 }
@@ -57,9 +76,9 @@ impl Display for Type {
 }
 
 #[derive(Debug, Clone)]
-struct TCVariable {
+pub struct TCVariable {
     loc: Location,
-    typ: Type,
+    pub typ: Type,
 }
 
 impl TCVariable {
@@ -511,6 +530,22 @@ impl TypeChecker {
                             None => todo!(),
                         }
                     }
+                    TreeType::BuiltInFunction { function_name, .. } => {
+                        match BUILT_IN_FUNC.get(function_name) {
+                            Some(func) => {
+                                let ret = &func.return_type.typ;
+                                if !self.match_type(&Type::None, ret) {
+                                    println!("{}: {:?}: Ignoring return value of function call to `{}()`",
+                                        WARN_STR,
+                                        tree.tkn.get_loc(),
+                                        function_name
+                                    );
+                                }
+                                self.type_check_expr(ret, expression)?
+                            }
+                            None => todo!()
+                        }
+                    }
                     _ => {
                         return Err(format!(
                             "{}: {:?}: Unexpected Expression",
@@ -795,12 +830,22 @@ impl TypeChecker {
                                 tkn: expr_tree.tkn.clone()
                             })
                         } else {
-                            Err(format!(
-                                "{}: {:?}: Undefined variable `{}`.",
-                                ERR_STR,
-                                expr_tree.tkn.get_loc(),
-                                name
-                            ))
+                            match BUILT_IN_VARS.get(name) {
+                                Some(var) => Ok(Tree {
+                                    typ: TreeType::ExprName {
+                                        name: name.clone(),
+                                        typ: var.typ.clone()
+                                    },
+                                    tkn: expr_tree.tkn.clone()
+                                    }
+                                ),
+                                None => Err(format!(
+                                    "{}: {:?}: Undefined variable `{}`.",
+                                    ERR_STR,
+                                    expr_tree.tkn.get_loc(),
+                                    name
+                                ))
+                            }
                         }
                     },
                 }
@@ -1211,12 +1256,15 @@ impl TypeChecker {
                             Ok(typ.clone())
                         }
                         None => {
-                            Err(format!(
-                                "{}: {:?}: Undefined variable `{}`.",
-                                ERR_STR,
-                                expr.tkn.get_loc(),
-                                name
-                            ))
+                            match BUILT_IN_VARS.get(name) {
+                                Some(var) => Ok(var.typ.clone()),
+                                None => Err(format!(
+                                    "{}: {:?}: Undefined variable `{}`.",
+                                    ERR_STR,
+                                    expr.tkn.get_loc(),
+                                    name
+                                ))
+                            }
                         },
                     }
                 }

@@ -4,26 +4,12 @@ class Test {
     c: i64;
     d: i64;
 
-    // new() is equivalent to:
-    // func new(na: i64, nb: i64, nc: i64) -> Test {
-    //     let this: Test = alloc(some bytes);
-    //     this.a.b = na;
-    //     this.b = nb;
-    //     this.c = nc;
-    //     return this;
-    // }
-    // -> Every Function in a class has hidden parameter `this` (no static for now)
     feat new(na: i64, nb: i64, nc: i64) {
         this.a = na;
-        this.b = Test(0, 0, 0);
+        // this.b = Test(0, 0, 0);
         this.c = nc;
         // this.d gets 0 initialized
     }
-    
-    // foo() is equivalent to:
-    // func foo(this: Test) -> u64 { ... }
-    // test.foo() is equivalent to:
-    // Test::foo(test)
     func foo() -> i64 {
         return this.d;
     }
@@ -34,9 +20,7 @@ class Idee {
     t: Test;
 
     feat new(na: i64) {
-        // let this: Idee = ALLOC(16);
         this.a = na;
-        // Test(this.a, 5, 10) is equivalent to Test::new(this.a, 5, 10)
         this.t = Test(this.a, 5, 10);
         let a: i64 = this.a;
         this.t.b.b.b.b.b.b.a = 10;
@@ -52,10 +36,10 @@ func retInstance(t: Test) -> Idee {
 }
 
 func main() {
+    let e: i32 = 0;
     let a: u64[3] = [
-        1 - 3, 2 * 4, 3 / 5
+         1 - 3, 2 * 4, 3 / 5
     ];
-    // Test() works because `new()` has been implemented
     let test: Test = Test(2, 3, 4);
     let d: i32 = 9;
     d = 0;
