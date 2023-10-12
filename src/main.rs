@@ -249,8 +249,8 @@ mod tests {
     }
 
     mod semantic_tests {
-        use crate::{Compiler, codegen::ERR_STR};
-        
+        use crate::{Compiler, codegen::{ERR_STR, ExitCode}};
+
         macro_rules! generate_failing_test {
             ($name:ident, $($err:expr),*) => {
                 #[test]
@@ -258,6 +258,20 @@ mod tests {
                     fail!(concat!("tests/semantics/", stringify!($name), ".bu"), [ERR_STR, $($err),*])
                 }
             };
+        }
+
+        generate_failing_test!(undefined_variable, "Undefined variable");
+        generate_failing_test!(type_mismatch_in_binary_op, "Type Mismatch!", "Left hand side", "right side", "U32");
+        generate_failing_test!(type_mismatch_in_comparison, "Type Mismatch!", "Left hand side", "right side", "I32");
+        generate_failing_test!(type_mismatch_in_fn_args, "Type Mismatch", "Parameter", "declared here", "I32", "Expected type");
+        generate_failing_test!(function_redefinition, "Function already defined here", "redefinition");
+        generate_failing_test!(calling_undefined_function, "Unknown function", "testfunction");
+        #[test] fn array_out_of_bounds() {
+            test!("tests/semantics/array_out_of_bounds.bu", false, true, true, [ERR_STR, "Code execution failed", format!("{:X}", (ExitCode::OobAccess as usize)).as_str()])
+        }
+        generate_failing_test!(return_mismatch, "Type Mismatch!", "Function", "declared to return", "got");
+        #[test] fn variable_shadowing() {
+            test!("tests/semantics/variable_shadowing.bu", false, true, true, [ERR_STR, "Code execution failed", format!("{:X}", 42069).as_str()])
         }
     }
 }

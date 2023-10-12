@@ -1,0 +1,8 @@
+func bla(a: i32) {
+
+}
+
+func main() {
+    let b: u32 = 0;
+    bla(b);
+}

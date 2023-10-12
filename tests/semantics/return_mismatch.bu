@@ -1,0 +1,7 @@
+func bla() -> i32 {
+    if (1 == 2) {
+        return 1u32;
+    } else {
+        return 1i32;
+    }
+}
