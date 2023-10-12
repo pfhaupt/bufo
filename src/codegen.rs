@@ -233,7 +233,7 @@ enum Instruction {
     // Print { src: usize },
 }
 
-enum ExitCode {
+pub enum ExitCode {
     Normal,
     OobAccess,
     StackOverflow,
@@ -1248,7 +1248,6 @@ impl Generator {
     fn convert_expr_array_access(&mut self, expr_tree: &Tree) -> Result<Variable, String> {
         match &expr_tree.typ {
             TreeType::ExprArrAccess { arr_name, indices, typ } => {
-                todo!();
                 let function_stack = self
                     .functions
                     .get(&self.current_fn)
@@ -1314,17 +1313,11 @@ impl Generator {
                                             typ: Type::Usize,
                                         });
                                         let reg_tmp = self.get_register()?;
-                                        todo!("Load Array element");
-                                        // self.code.push(Instruction::LoadPtrRel {
-                                        //     dest: reg_tmp,
-                                        //     src: index_reg,
-                                        //     typ: *typ.clone(),
-                                        // });
-                                        // self.code.push(Instruction::LoadPtr {
-                                        //     dest: reg_tmp,
-                                        //     src: reg_tmp,
-                                        //     typ: *typ.clone(),
-                                        // });
+                                        self.code.push(Instruction::LoadPtr {
+                                            dest: reg_tmp,
+                                            src: reg_tmp,
+                                            typ: *typ.clone(),
+                                        });
                                         Ok(Variable {
                                             typ: *typ.clone(),
                                             mem: reg_tmp,
