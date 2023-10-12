@@ -1,6 +1,7 @@
 class Test {
     a: i64;
     b: i64;
+    c: Test;
 
     feat new() {
         
@@ -8,6 +9,6 @@ class Test {
 }
 
 func main() {
-    let a: Test = Test();
-    a.a = 10;
+    let b: Test = Test();
+    b.c.a = 10;
 }

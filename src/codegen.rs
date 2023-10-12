@@ -827,20 +827,43 @@ impl Generator {
         match &assign_tree.typ {
             TreeType::StmtAssign { name, expression } => {
                 let reg = self.convert_expr(expression)?;
+                let local_lookup = self
+                    .functions
+                    .get(&self.current_fn)
+                    .expect("At this point, function table is guaranteed to contain current_fn.");
                 match &name.typ {
-                    TreeType::ExprName { name, typ } => todo!(),
+                    TreeType::ExprName { name, typ } => {
+                        let Some(var) = local_lookup.get_variable_location(name) else { panic!() };
+                        match &var.typ {
+                            Type::Arr(..) => todo!(),
+                            Type::Class(..) => todo!(),
+                            _ => {
+                                self.code.push(Instruction::StoreStack { reg: reg.mem, var });
+                            }
+                        }
+                    },
                     TreeType::ExprArrAccess { arr_name, indices, typ } => todo!(),
                     TreeType::FieldAccess { name, field, typ } => {
                         let cls = match typ {
                             Type::Class(s) => self.classes.get(s).unwrap(),
                             _ => panic!()
                         }.clone();
-                        let field_address = self.unwind_field_access(0, name, field, &cls)?;
-                        self.code.push(Instruction::StorePtr {
-                            src: reg.mem,
-                            dest: field_address.mem,
-                            typ: field_address.typ
-                        });
+                        let field_access = self.unwind_field_access(
+                            0,
+                            name,
+                            field,
+                            &cls
+                        )?;
+                        for s in &self.code {
+                            println!("{:?}", s);
+                        }
+                        todo!();
+                        // let field_address = self.unwind_field_access(0, name, field, &cls)?;
+                        // self.code.push(Instruction::StorePtr {
+                        //     src: reg.mem,
+                        //     dest: field_address.mem,
+                        //     typ: field_address.typ
+                        // });
                     },
                     _ => panic!()
                 }
@@ -1036,7 +1059,6 @@ impl Generator {
     fn convert_expr_binary(&mut self, expr_tree: &Tree) -> Result<Variable, String> {
         match &expr_tree.typ {
             TreeType::ExprBinary { lhs, rhs, typ } => {
-                todo!();
                 let dest = self.convert_expr(lhs)?;
                 let src = self.convert_expr(rhs)?;
                 let dest = dest.mem;
@@ -1345,136 +1367,317 @@ impl Generator {
                     Type::Class(s) => self.classes.get(s).unwrap(),
                     _ => panic!()
                 }.clone();
-                let field_address = self.unwind_field_access(0, name, field, &cls)?;
-                self.code.push(Instruction::LoadPtr {
-                    src: field_address.mem,
-                    dest: field_address.mem,
-                    typ: field_address.typ.clone()
-                });
-                Ok(field_address)
+                self.unwind_field_access(
+                    0,
+                    name,
+                    field,
+                    &cls
+                )?;
+                for s in &self.code {
+                    println!("{:?}", s);
+                }
+                todo!();
+                // let field_address = self.unwind_field_access2(0, name, field, &cls)?;
+                // self.code.push(Instruction::LoadPtr {
+                //     src: field_address.mem,
+                //     dest: field_address.mem,
+                //     typ: field_address.typ.clone()
+                // });
+                // Ok(field_address)
             }
             _ => panic!()
         }
     }
 
-    fn unwind_field_access(&mut self, depth: usize, instance_name: &String, instance_field: &Tree, prev_class: &Class) -> Result<Variable, String> {
-        println!("WOOHJ");
-        match &instance_field.typ {
-            TreeType::FieldAccess { name, field, typ } => {
-                /* 
-                    something of the form a.b.c[...]
-                    unwind(a, b.c)
-                    where instance_name = a
-                    where instance_field = b.c
-                    The steps needed:
-                    Load A in Reg X
-                    Add Offset of B to X
-                    LoadPtr X to Reg Y
-                    
-                    shift all names and fields such that
-                    new_instance = b
-                    new_field = c
-                    Load B in Reg X
-                    Add Offset of C to X
-                    LoadPtr X to Reg Z
+    fn unwind_field_access(
+        &mut self,
+        depth: usize,
+        instance_name: &String,
+        instance_field: &Tree,
+        prev_class: &Class
+    ) -> Result<(), String> {
+        /* 
+        unwind b.c.a
+        LoadStack b into reg2
+        Load Offset(c) into reg3
+        Add reg2, reg3
+        LoadPtr reg2, reg2 <- pointer to b.c
+        Load Offset(a) into reg4
+        Add reg2, reg4
+        reg2 contains pointer to b.c.a
+        return
+         */
+        let ptr_reg = self.get_register()?;
+        let offset_reg = self.get_register()?;
 
-                    instance_name and instance_field are current top level
-                    name and field are next level, "shifted" by one field access
-
-                    this.t.b.b.b.a
-                    
-                    LoadUsize   RCX, 8      this.t
-                    LoadStack   RBX, this
-                    Add         RBX, RCX
-                    
-                    LoadUsize   RDX, 8      this.t.b
-                    LoadHeap    RBX, RBX
-                    Add         RBX, RDX
-
-                    LoadUsize   REX, 8      this.t.b.b
-                    LoadHeap    RBX, RBX
-                    Add         RBX, REX
-                    
-                    LoadUsize   RFX, 8      this.t.b.b.b
-                    LoadHeap    RBX, RBX
-                    Add         RBX, RFX
-                    
-                    LoadUsize   RGX, 0      this.t.b.b.b.a
-                    LoadHeap    RBX, RBX
-                    Add         RBX, RGX
-                    RBX now contains the (hopefully) correct Pointer to... the field access
-                    then, depending on Assignment or Access, you can load/store pointer
-                 */
-                match &typ {
-                    Type::Class(s) => {
-                        let size_reg = self.get_register()?;
-                        let class = self.classes.get(s).unwrap().clone();
-                        let offset = prev_class.get_offset(name);
-                        self.code.push(Instruction::LoadUsize { dest: size_reg, val: offset });
-
-                        if depth == 0 {
-                            let curr_fn = self.functions.get(&self.current_fn).unwrap();
-                            let Some(var) = curr_fn.get_variable_location(instance_name) else { panic!() };
-                            match &var.typ {
-                                Type::Class(s) => {
-                                    let reg = self.get_register()?;
-                                    self.code.push(Instruction::LoadStack { reg, var: var.clone() });
-                                    self.code.push(Instruction::Add { dest: reg, src: size_reg, typ: Type::Usize });
-                                    self.unwind_field_access(depth + 1, name, field, &class)
-                                },
-                                _ => panic!()
+        let local_lookup = self
+        .functions
+                    .get(&self.current_fn)
+                    .expect("At this point, function table is guaranteed to contain current_fn.");
+        if let Some(var) = local_lookup.get_variable_location(instance_name) {
+            let mut current_field = instance_field.clone();
+            match &var.typ {
+                Type::Class(class_name) => {
+                    self.code.push(Instruction::LoadStack { reg: ptr_reg, var });
+                }
+                _ => panic!()
+            }
+            loop {
+                println!("UNWINDING");
+                match &current_field.typ {
+                    TreeType::FieldAccess { name, field, typ } => {
+                        println!("field name {name}");
+                        match &typ {
+                            Type::Class(cls) => {
+                                let offset = self.classes.get(cls).unwrap().get_offset(name);
+                                self.code.push(Instruction::LoadUsize { dest: offset_reg, val: offset });
+                                self.code.push(Instruction::Add { dest: ptr_reg, src: offset_reg, typ: Type::Usize });
+                                self.code.push(Instruction::LoadPtr { dest: ptr_reg, src: ptr_reg, typ: Type::Usize });
                             }
-                        } else {
-                            println!("ye");
-                            let reg = self.unwind_field_access(
+                            _ => panic!()
+                        }
+                        current_field = *field.clone();
+                    }
+                    TreeType::ExprName { name, typ } => {
+                        todo!()
+                    }
+                    _ => panic!()
+                }
+            }
+        }
+        
+        if depth == 0 {
+            if let Some(var) = local_lookup.get_variable_location(instance_name) {
+                // top of unwind stack, we've got a variable that we need to load from stack into register
+                match &var.typ {
+                    Type::Class(class_name) => {
+                        self.code.push(Instruction::LoadStack { reg: ptr_reg, var });
+                        let offset = prev_class.get_offset(instance_name);
+                        self.unwind_field_access(
+                            depth + 1,
+                            instance_name,
+                            instance_field,
+                            prev_class
+                        )?;
+                        self.code.push(Instruction::Add { dest: ptr_reg, src: offset_reg, typ: Type::Usize });
+                        for c in &self.code {
+                            println!("{:?}", c);
+                        }
+                        todo!("There's an add missing here lol");
+                    },
+                    _ => panic!()
+                }
+                todo!()
+            } else {
+                panic!()
+            }
+        } else {
+            match &instance_field.typ {
+                TreeType::FieldAccess { name, field, typ } => {
+                    println!("field name {name}");
+                    println!("instance name {instance_name}");
+                    instance_field.print_debug();
+                    let offset = prev_class.get_offset(name);
+                    self.code.push(Instruction::LoadUsize { dest: offset_reg, val: offset });
+                    match &typ {
+                        Type::Class(s) => {
+                            let class = self.classes.get(s).unwrap().clone();
+                            self.unwind_field_access(
                                 depth + 1,
                                 name,
                                 field,
                                 &class
-                            )?.mem;
-                            self.code.push(Instruction::LoadPtr { 
-                                dest: reg,
-                                src: reg,
-                                typ: typ.clone()
-                            });
-                            self.code.push(Instruction::Add {
-                                dest: reg,
-                                src: size_reg,
-                                typ: Type::Usize
-                            });
-                            Ok(Variable {
-                                mem: reg,
-                                typ: typ.clone()
-                            })
+                            )?;
+                            todo!()
                         }
+                        _ => panic!()
                     }
-                    _ => panic!()
+                    todo!()
                 }
-            },
-            TreeType::ExprName { name, typ } => {
-                let size_reg = self.get_register()?;
-                self.code.push(Instruction::LoadUsize { dest: size_reg, val: prev_class.get_offset(name) });
-                // Stack at location RSP+var.mem contains Pointer to Heap
-                // Read Pointer, add offset of field, then store result in register
-                // and return this register
-                let reg = self.get_register()?;
-                // var.mem contains Pointer
-                self.code.push(Instruction::LoadPtr {
-                    src: reg,
-                    dest: reg,
-                    typ: typ.clone()
-                });
-                // reg contains Pointer
-                self.code.push(Instruction::Add { dest: reg, src: size_reg, typ: Type::Usize });
-                // reg contains Pointer + Offset = Pointer to Field
-                Ok(Variable {
-                    typ: typ.clone(),
-                    mem: reg
-                })
+                TreeType::ExprName { name, typ } => {
+                    println!("field name {name}");
+                    println!("instance name {instance_name}");
+                    instance_field.print_debug();
+                    let offset = prev_class.get_offset(name);
+                    self.code.push(Instruction::LoadUsize { dest: offset_reg, val: offset });
+                }
+                _ => panic!()
             }
-            _ => panic!()
         }
+        Ok(())
     }
+    
+    fn unwind_field_access2(&mut self, depth: usize, instance_name: &String, instance_field: &Tree, prev_class: &Class) -> Result<Variable, String> {
+        println!("WOOHJ");
+        todo!()
+            /* match &instance_field.typ {
+                TreeType::FieldAccess { name, field, typ } => {
+                    /* 
+                        something of the form a.b.c[...]
+                        unwind(a, b.c)
+                        where instance_name = a
+                        where instance_field = b.c
+                        The steps needed:
+                        Load A in Reg X
+                        Add Offset of B to X
+                        LoadPtr X to Reg Y
+                        
+                        shift all names and fields such that
+                        new_instance = b
+                        new_field = c
+                        Load B in Reg X
+                        Add Offset of C to X
+                        LoadPtr X to Reg Z
+    
+                        instance_name and instance_field are current top level
+                        name and field are next level, "shifted" by one field access
+    
+                        this.t.b.b.b.a
+                        
+                        LoadUsize   RCX, 8      this.t
+                        LoadStack   RBX, this
+                        Add         RBX, RCX
+                        
+                        LoadUsize   RDX, 8      this.t.b
+                        LoadHeap    RBX, RBX
+                        Add         RBX, RDX
+    
+                        LoadUsize   REX, 8      this.t.b.b
+                        LoadHeap    RBX, RBX
+                        Add         RBX, REX
+                        
+                        LoadUsize   RFX, 8      this.t.b.b.b
+                        LoadHeap    RBX, RBX
+                        Add         RBX, RFX
+                        
+                        LoadUsize   RGX, 0      this.t.b.b.b.a
+                        LoadHeap    RBX, RBX
+                        Add         RBX, RGX
+                        RBX now contains the (hopefully) correct Pointer to... the field access
+                        then, depending on Assignment or Access, you can load/store pointer
+                     */
+                    println!("field name {}", name);
+                    println!("instance name{}", instance_name);
+                    instance_field.print_debug();
+                    let offset = prev_class.get_offset(name);
+                    self.code.push(Instruction::LoadUsize { dest: size_reg, val: offset });
+                    match &typ {
+                        Type::Class(s) => {
+                            let class = self.classes.get(s).unwrap().clone();
+                            let reg = self.unwind_field_access2(
+                                depth + 1,
+                                name,
+                                field,
+                                &class
+                            )?;
+                            self.code.push(Instruction::Add { dest: size_reg, src: reg.mem, typ: Type::Usize });
+                            self.code.push(Instruction::LoadPtr { dest: size_reg, src: size_reg, typ: Type::Usize });
+                            Ok(Variable {
+                                typ: typ.clone(),
+                                mem: size_reg
+                            })
+                        },
+                        _ => panic!()
+                    }
+                    /* 
+                    this.a.b.c.d
+                    LoadStack this done
+                    unwind a b.c.d
+                    Load Offset from a to prev_class
+                    Unwind Rest
+                    Add together
+
+                    LoadStack b into reg2
+                    Load Offset(c) into reg3
+                    Add reg2, reg3
+                    LoadPtr reg2, reg2
+                    Load Offset(a) into reg4
+                    Add reg2, reg4
+                    LoadPtr reg2, reg2
+                    reg2 contains value of b.c.a
+                    return
+                     */
+                    // match &typ {
+                    //     Type::Class(s) => {
+                    //         let size_reg = self.get_register()?;
+                    //         let class = self.classes.get(s).unwrap().clone();
+                    //         let offset = prev_class.get_offset(name);
+                    //         self.code.push(Instruction::LoadUsize { dest: size_reg, val: offset });
+    
+                    //         if depth == 0 {
+                    //             let curr_fn = self.functions.get(&self.current_fn).unwrap();
+                    //             let Some(var) = curr_fn.get_variable_location(instance_name) else { panic!() };
+                    //             match &var.typ {
+                    //                 Type::Class(s) => {
+                    //                     let reg = self.get_register()?;
+                    //                     self.code.push(Instruction::LoadStack { reg, var: var.clone() });
+                    //                     self.code.push(Instruction::Add { dest: reg, src: size_reg, typ: Type::Usize });
+                    //                     self.unwind_field_access(depth + 1, name, field, &class)
+                    //                 },
+                    //                 _ => panic!()
+                    //             }
+                    //         } else {
+                    //             println!("ye");
+                    //             let reg = self.unwind_field_access(
+                    //                 depth + 1,
+                    //                 name,
+                    //                 field,
+                    //                 &class
+                    //             )?.mem;
+                    //             self.code.push(Instruction::LoadPtr { 
+                    //                 dest: reg,
+                    //                 src: reg,
+                    //                 typ: typ.clone()
+                    //             });
+                    //             self.code.push(Instruction::Add {
+                    //                 dest: reg,
+                    //                 src: size_reg,
+                    //                 typ: Type::Usize
+                    //             });
+                    //             Ok(Variable {
+                    //                 mem: reg,
+                    //                 typ: typ.clone()
+                    //             })
+                    //         }
+                    //     }
+                    //     _ => panic!()
+                    // }
+                },
+                TreeType::ExprName { name, typ } => {
+                    println!("field name {}", name);
+                    println!("instance name {}", instance_name);
+                    instance_field.print_debug();
+
+                    let offset = prev_class.get_offset(name);
+                    self.code.push(Instruction::LoadUsize { dest: size_reg, val: offset });
+                    
+                    Ok(Variable {
+                        typ: typ.clone(),
+                        mem: size_reg
+                    })
+                    // let size_reg = self.get_register()?;
+                    // self.code.push(Instruction::LoadUsize { dest: size_reg, val: prev_class.get_offset(name) });
+                    // // Stack at location RSP+var.mem contains Pointer to Heap
+                    // // Read Pointer, add offset of field, then store result in register
+                    // // and return this register
+                    // let reg = self.get_register()?;
+                    // // var.mem contains Pointer
+                    // self.code.push(Instruction::LoadPtr {
+                    //     src: reg,
+                    //     dest: reg,
+                    //     typ: typ.clone()
+                    // });
+                    // // reg contains Pointer
+                    // self.code.push(Instruction::Add { dest: reg, src: size_reg, typ: Type::Usize });
+                    // // reg contains Pointer + Offset = Pointer to Field
+                    // Ok(Variable {
+                    //     typ: typ.clone(),
+                    //     mem: reg
+                    // })
+                }
+                _ => panic!()
+            }
+     */}
 
     pub fn interpret(&mut self) -> Result<(), String> {
         todo!();
@@ -1751,7 +1954,8 @@ impl Generator {
         // TODO: Clarify extern stuff - See https://github.com/pfhaupt/bufo/issues/6
         push_asm("  extern ExitProcess");
         push_asm("  extern printf");
-        push_asm("  extern alloc");
+        push_asm("  extern malloc");
+        push_asm("");
 
         for instr in &self.code {
             if self.print_debug {
@@ -1969,16 +2173,19 @@ impl Generator {
         if self.print_debug {
             println!("Running `nasm -f win64 ./out/output.asm -o ./out/output.obj`");
         }
-        Command::new("nasm")
+        let nasm_output = Command::new("nasm")
             .args(["-f", "win64", "./out/output.asm", "-o", "./out/output.obj"])
             .output()
             .expect("failed to execute process");
+        if nasm_output.status.code().unwrap() != 0 {
+            todo!();
+        }
         if self.print_debug {
             println!(
-                "Running `golink /console /entry main output.obj MSVCRT.dll kernel32.dll`"
+                "Running `golink /console /entry main ./out/output.obj MSVCRT.dll kernel32.dll`"
             );
         }
-        Command::new("golink")
+        let golink_output = Command::new("golink")
             .args([
                 "/console",
                 "/entry",
@@ -1989,6 +2196,9 @@ impl Generator {
             ])
             .output()
             .expect("failed to execute process");
+        if golink_output.status.code().unwrap() != 0 {
+            todo!();
+        }
         Ok(())
     }
 
@@ -1996,9 +2206,16 @@ impl Generator {
         if self.print_debug {
             println!("Running `./out/output.exe`");
         }
-        Command::new("./out/output.exe")
+        let output = Command::new("./out/output.exe")
             .output()
             .expect("failed to execute process");
-        Ok(())
+        let exit_code = output.status.code().unwrap();
+        if exit_code != 0 {
+            Err(format!(
+                "{}: Code execution failed with code 0x{:X}.", ERR_STR, exit_code
+            ))
+        } else {
+            Ok(())
+        }
     }
 }

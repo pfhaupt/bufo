@@ -1227,7 +1227,7 @@ impl Parser {
     fn parse_built_in(&mut self) -> Result<Tree, String> {
         let tkn = self.open();
         let kw = self.expect(TokenType::BuiltInKeyword)?;
-        if ["ALLOC", "SIZEOF"].contains(&kw.get_value().as_str()) {
+        if ["MALLOC", "SIZEOF"].contains(&kw.get_value().as_str()) {
             Ok(Tree {
                 typ: TreeType::BuiltInFunction {
                     function_name: kw.get_value(),

@@ -36,7 +36,7 @@ lazy_static!{
         
         let mut alloc_fn = TCF::new(LOC::builtin(), TCV::new(&LOC::builtin(), &Type::Any));
         alloc_fn.add_parameter(&String::from("size"), TCV::new(&LOC::builtin(), &Type::Usize));
-        h.insert(String::from("ALLOC"), alloc_fn);
+        h.insert(String::from("MALLOC"), alloc_fn);
 
         let mut sizeof_fn = TCF::new(LOC::builtin(), TCV::new(&LOC::builtin(), &Type::Usize));
         sizeof_fn.add_parameter(&String::from("obj"), TCV::new(&LOC::builtin(), &Type::Any));

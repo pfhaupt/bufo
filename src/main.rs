@@ -24,7 +24,8 @@ pub struct Compiler {
     desugarer: Desugarer,
     checker: TypeChecker,
     codegen: Generator,
-    debug: bool
+    debug: bool,
+    run: bool
 }
 
 impl Compiler {
@@ -35,7 +36,8 @@ impl Compiler {
             desugarer: Desugarer::new(),
             checker: TypeChecker::new(debug),
             codegen: Generator::new(debug),
-            debug
+            debug,
+            run
         })
     }
 
@@ -93,6 +95,13 @@ impl Compiler {
         self.codegen.compile()?;
         if self.debug {
             println!("Compiling took {:?}", now.elapsed());
+        }
+        if self.run {
+            let now = Instant::now();
+            self.codegen.run()?;
+            if self.debug {
+                println!("Running took {:?}", now.elapsed());
+            }
         }
 
         Ok(())

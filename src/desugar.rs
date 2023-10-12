@@ -160,7 +160,7 @@ impl Desugarer {
                         };
                         let (return_type, block) = if feat_name == "new" {
                             let block = if let TreeType::Block { statements } = block.typ {
-                                let this_str = format!("let this: {} = ALLOC({});", name, self.get_size(&Type::Class(name.clone())));
+                                let this_str = format!("let this: {} = MALLOC({});", name, self.get_size(&Type::Class(name.clone())));
                                 let this_alloc = Compiler::parse_snippet(&this_str)?;
                                 let mut s = vec![this_alloc];
                                 s.extend(statements);
