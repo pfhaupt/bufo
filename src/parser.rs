@@ -485,8 +485,12 @@ impl Tree {
             TreeType::ExprName { name, .. } => {
                 result.push_str(format!("{name}").as_str());
             }
-            TreeType::ExprLiteral { .. } => {
-                result.push_str(format!("{}", self.tkn.get_value()).as_str());
+            TreeType::ExprLiteral { typ } => {
+                if *typ != Type::Unknown {
+                    result.push_str(format!("{}{}", self.tkn.get_value(), typ).as_str());
+                } else {
+                    result.push_str(format!("{}", self.tkn.get_value()).as_str());
+                }
             }
             TreeType::ExprArrLiteral { elements } => {
                 result.push_str("[");

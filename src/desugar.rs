@@ -262,7 +262,6 @@ impl Desugarer {
                     },
                     tkn: block.tkn
                 };
-                let desugared_block = self.desugar_tree_internal(block)?;
 
                 let new_function = format!(
                     "{{
@@ -271,7 +270,7 @@ impl Desugarer {
                         EXIT(STACK_OVERFLOW_CODE);
                     }} else {{
                         {}
-                    }}}}", desugared_block.rebuild_code()
+                    }}}}", block.rebuild_code()
                 );
                 let new_block = Compiler::parse_snippet(&format!("function_{name}_desugar"), &new_function)?;
                 let desugared_block = self.desugar_tree_internal(new_block)?;
