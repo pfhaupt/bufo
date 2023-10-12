@@ -1,0 +1,3 @@
+func main() {
+    let 0c: i32 = 5;
+}

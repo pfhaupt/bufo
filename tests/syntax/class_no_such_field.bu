@@ -1,0 +1,11 @@
+class Test {
+    a: i32;
+
+    feat new() {
+        this.b = 10;
+    }
+}
+
+func main() {
+    
+}

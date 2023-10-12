@@ -173,6 +173,7 @@ impl TCFunction {
     }
 }
 
+#[derive(Debug)]
 struct TCClass {
     loc: Location,
     fields: HashMap<String, TCVariable>
@@ -272,11 +273,11 @@ impl TypeChecker {
     fn fill_lookup(&mut self, ast: Tree) -> Result<(), String> {
         match ast.typ {
             TreeType::File { functions, classes } => {
-                for f in functions {
-                    self.fill_lookup(f)?;
-                }
                 for c in classes {
                     self.fill_lookup(c)?;
+                }
+                for f in functions {
+                    self.fill_lookup(f)?;
                 }
                 Ok(())
             }
@@ -527,7 +528,12 @@ impl TypeChecker {
                                 }
                                 self.type_check_expr(ret, expression)?
                             }
-                            None => todo!(),
+                            None => return Err(format!(
+                                "{}: {:?}: Unknown function `{}`",
+                                ERR_STR,
+                                expression.tkn.get_loc(),
+                                function_name
+                            )),
                         }
                     }
                     TreeType::BuiltInFunction { function_name, .. } => {
@@ -582,7 +588,7 @@ impl TypeChecker {
                                     self.type_check_expr(prov_ret, ret_val)?
                                 } else {
                                     return Err(format!(
-                                        "{}: {:?}: Type Mismatch. Function is declared to return `{:?}`, got `{:?}`.",
+                                        "{}: {:?}: Type Mismatch! Function is declared to return `{:?}`, got `{:?}`.",
                                         ERR_STR,
                                         tree.tkn.get_loc(),
                                         func_ret,
@@ -628,7 +634,7 @@ impl TypeChecker {
                 if !self.match_type(&Type::Unknown, typ)
                 && !self.match_type(expected_type, typ) {
                     Err(format!(
-                        "{}: {:?}: Type mismatch! Expected type `{:?}`, got type `{:?}`.",
+                        "{}: {:?}: Type Mismatch! Expected type `{:?}`, got type `{:?}`.",
                         ERR_STR,
                         expr_tree.tkn.get_loc(),
                         expected_type,
@@ -638,6 +644,11 @@ impl TypeChecker {
                     match expected_type {
                         Type::Arr(..) => Err(format!(
                             "{}: {:?}: Attempted to assign ExprLiteral to Array.",
+                            ERR_STR,
+                            expr_tree.tkn.get_loc()
+                        )),
+                        Type::Class(..) => Err(format!(
+                            "{}: {:?}: Attempted to assign ExprLiteral to Class.",
                             ERR_STR,
                             expr_tree.tkn.get_loc()
                         )),
@@ -669,7 +680,7 @@ impl TypeChecker {
                     (lhs_type, rhs_type) => {
                         if !self.match_type(&lhs_type, &rhs_type) {
                             return Err(format!(
-                                "{}: {:?}: Type Mismatch. Left hand side has type `{:?}`, right side `{:?}`.",
+                                "{}: {:?}: Type Mismatch! Left hand side has type `{:?}`, right side `{:?}`.",
                                 ERR_STR,
                                 expr_tree.tkn.get_loc(),
                                 lhs_type,
@@ -686,7 +697,7 @@ impl TypeChecker {
                 let rhs_type = self.get_expr_type(&new_rhs, true)?;
                 if !self.match_type(expected_type, &lhs_type) {
                     Err(format!(
-                        "{}: {:?}: Type mismatch! Expected type `{:?}`, got type `{:?}`.",
+                        "{}: {:?}: Type Mismatch! Expected type `{:?}`, got type `{:?}`.",
                         ERR_STR,
                         expr_tree.tkn.get_loc(),
                         expected_type,
@@ -694,7 +705,7 @@ impl TypeChecker {
                     ))
                 } else if !self.match_type(expected_type, &rhs_type) {
                     Err(format!(
-                        "{}: {:?}: Type mismatch! Expected type `{:?}`, got type `{:?}`.",
+                        "{}: {:?}: Type Mismatch! Expected type `{:?}`, got type `{:?}`.",
                         ERR_STR,
                         expr_tree.tkn.get_loc(),
                         expected_type,
@@ -725,7 +736,7 @@ impl TypeChecker {
                             (lhs_t, rhs_t) => {
                                 if !self.match_type(&lhs_t, &rhs_t) {
                                     return Err(format!(
-                                        "{}: {:?}: Type Mismatch. Left hand side has type `{:?}`, right side `{:?}`.",
+                                        "{}: {:?}: Type Mismatch! Left hand side has type `{:?}`, right side `{:?}`.",
                                         ERR_STR,
                                         expr_tree.tkn.get_loc(),
                                         lhs_t,
@@ -747,7 +758,7 @@ impl TypeChecker {
                     (lhs_type, rhs_type) => {
                         if !self.match_type(&lhs_type, &rhs_type) {
                             return Err(format!(
-                                "{}: {:?}: Type Mismatch. Left hand side has type `{:?}`, right side `{:?}`.",
+                                "{}: {:?}: Type Mismatch! Left hand side has type `{:?}`, right side `{:?}`.",
                                 ERR_STR,
                                 expr_tree.tkn.get_loc(),
                                 lhs_type,
@@ -802,7 +813,7 @@ impl TypeChecker {
                         let typ = &var_type.typ;
                         if !self.match_type(expected_type, typ) {
                             Err(format!(
-                                "{}: {:?}: Type mismatch! Expected type `{:?}`, got type `{:?}`.\n{}: Variable declared here: {:?}",
+                                "{}: {:?}: Type Mismatch! Expected type `{:?}`, got type `{:?}`.\n{}: Variable declared here: {:?}",
                                 ERR_STR,
                                 expr_tree.tkn.get_loc(),
                                 expected_type,
@@ -864,7 +875,7 @@ impl TypeChecker {
                                 let typ = &func.return_type.typ;
                                 if !self.match_type(expected_type, typ) {
                                     Err(format!(
-                                        "{}: {:?}: Type Mismatch. Expected Type `{:?}`, got Type `{:?}`.\n{}: {:?}: Function `{}` declared to return `{:?}` here.",
+                                        "{}: {:?}: Type Mismatch! Expected Type `{:?}`, got Type `{:?}`.\n{}: {:?}: Function `{}` declared to return `{:?}` here.",
                                         ERR_STR,
                                         expr_tree.tkn.get_loc(),
                                         expected_type,
@@ -971,7 +982,7 @@ impl TypeChecker {
                             Type::Arr(at, size) => {
                                 if !self.match_type(expected_type, at) {
                                     return Err(format!(
-                                        "{}: {:?}: Type mismatch! Expected type `{:?}`, got type `{:?}`.\n{}: Variable declared here: {:?}",
+                                        "{}: {:?}: Type Mismatch! Expected type `{:?}`, got type `{:?}`.\n{}: Variable declared here: {:?}",
                                         ERR_STR,
                                         expr_tree.tkn.get_loc(),
                                         expected_type,
@@ -1044,7 +1055,7 @@ impl TypeChecker {
                         let hit = self.match_type(expected_type, &typ);
                         if !hit {
                             Err(format!(
-                                "{}: {:?}: Type Mismatch. Expected Type `{:?}`, got Type `{:?}`.\n{}: {:?}: Function `{}` declared to return `{:?}` here.",
+                                "{}: {:?}: Type Mismatch! Expected Type `{:?}`, got Type `{:?}`.\n{}: {:?}: Function `{}` declared to return `{:?}` here.",
                                 ERR_STR,
                                 expr_tree.tkn.get_loc(),
                                 expected_type,
@@ -1207,7 +1218,7 @@ impl TypeChecker {
                         (left_type, right_type) => {
                             if !self.match_type(&left_type, &right_type) {
                                 Err(format!(
-                                    "{}: {:?}: Type Mismatch. Left hand side has type `{:?}`, right side `{:?}`.",
+                                    "{}: {:?}: Type Mismatch! Left hand side has type `{:?}`, right side `{:?}`.",
                                     ERR_STR,
                                     expr.tkn.get_loc(),
                                     left_type,

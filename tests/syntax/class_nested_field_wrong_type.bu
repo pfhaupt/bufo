@@ -1,0 +1,18 @@
+
+class Test {
+    bla: Bla;
+
+    feat new() {
+        this.bla = Bla();
+    }
+}
+
+class Bla {
+    test : Test;
+    a: i32;
+
+    feat new() {
+        this.test = Test();
+        this.test.bla.test.bla.test.bla.test.bla.a = 5u32;
+    }
+}

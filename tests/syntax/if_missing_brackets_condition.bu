@@ -1,0 +1,5 @@
+func main() {
+    if a == 1 {
+        EXIT(1);
+    }
+}

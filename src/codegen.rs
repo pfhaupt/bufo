@@ -1993,7 +1993,9 @@ exit:
             .output()
             .expect("failed to execute process");
         if golink_output.status.code().unwrap() != 0 {
-            todo!();
+            return Err(format!(
+                "{}: Converting linking object files failed with:\n{}", ERR_STR, String::from_utf8(golink_output.stderr).unwrap()
+            ));
         }
         Ok(())
     }
