@@ -6,6 +6,7 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::checker::{Type, BUILT_IN_VARS};
+use crate::flags::FILE_EXT;
 use crate::lexer::{Location, TokenType};
 use crate::parser::{Tree, TreeType};
 
@@ -21,6 +22,8 @@ const REGISTERS_64BIT: [&str; 12] = [
 const REGISTERS_32BIT: [&str; 12] = [
     "eax", "ebx", "ecx", "edx", "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d",
 ];
+
+const OUTPUT_FOLDER: &str = "./out/";
 
 macro_rules! perform_op {
     ($dest: expr, $reg1:expr, $reg2:expr, $typ:expr, $op:tt) => {
@@ -404,6 +407,7 @@ impl SizeManager {
 
 #[derive(Debug)]
 pub struct Generator {
+    filename: String,
     ast: Option<Tree>,
     entry_point: String,
     registers: Vec<Memory>,
@@ -427,6 +431,7 @@ impl Generator {
     pub fn new(print_debug: bool) -> Self {
         Self {
             ast: None,
+            filename: String::new(),
             entry_point: String::from("main"),
             registers: vec![Memory { u64: 0 }; REGISTERS_32BIT.len()],
             register_ctr: 1,
@@ -565,6 +570,10 @@ impl Generator {
     fn convert_file(&mut self, ast: &Tree) -> Result<(), String> {
         match &ast.typ {
             TreeType::File { functions, classes } => {
+                self.filename = ast.tkn.get_value();
+                if self.filename.contains("/") {
+                    self.filename = self.filename.split("/").last().unwrap().to_string();
+                }
                 for class in classes {
                     self.convert_class(class)?;
                 }
@@ -1716,7 +1725,7 @@ impl Generator {
             }
         };
 
-        push_asm("  ; Generated code for some program - TODO: Find out which one");
+        push_asm(format!("  ; Generated code for {}", self.filename).as_str());
         push_asm("default rel");
         push_asm("");
 
@@ -1936,7 +1945,7 @@ exit:
         push_asm("");
         push_asm("segment .bss");
 
-        match Path::new("./out/").try_exists() {
+        match Path::new(OUTPUT_FOLDER).try_exists() {
             Ok(b) => {
                 if !b {
                     // Create folder
@@ -1948,20 +1957,27 @@ exit:
             }
             Err(e) => panic!("{}", e),
         }
+        let mut filename = String::from(OUTPUT_FOLDER);
+        filename.push_str(&self.filename);
+        let asmname = filename.replace(FILE_EXT, ".asm");
+        let objname = asmname.replace(".asm", ".obj");
+
         if self.print_debug {
-            println!("Writing to ./out/output.asm");
+            println!("Writing to {asmname}");
         }
-        match File::create("./out/output.asm") {
+        match File::create(format!("{asmname}")) {
             Ok(mut file) => {
                 file.write_all(asm.as_bytes());
             }
             Err(e) => panic!("{}", e),
         }
+        
+        filename.replace(FILE_EXT, ".asm");
         if self.print_debug {
-            println!("Running `nasm -f win64 ./out/output.asm -o ./out/output.obj`");
+            println!("Running `nasm -f win64 {asmname} -o {objname}`");
         }
         let nasm_output = Command::new("nasm")
-            .args(["-f", "win64", "./out/output.asm", "-o", "./out/output.obj"])
+            .args(["-f", "win64", &asmname, "-o", &objname])
             .output()
             .expect("failed to execute process");
         if nasm_output.status.code().unwrap() != 0 {
@@ -1971,7 +1987,7 @@ exit:
         }
         if self.print_debug {
             println!(
-                "Running `golink /console /entry main ./out/output.obj MSVCRT.dll kernel32.dll`"
+                "Running `golink /console /entry main {objname} MSVCRT.dll kernel32.dll`"
             );
         }
         let golink_output = Command::new("golink")
@@ -1979,7 +1995,7 @@ exit:
                 "/console",
                 "/entry",
                 "main",
-                "./out/output.obj",
+                &objname,
                 "MSVCRT.dll",
                 "kernel32.dll",
             ])
@@ -1994,10 +2010,14 @@ exit:
     }
 
     pub fn run(&self) -> Result<(), String> {
+        let mut output_path = String::from(OUTPUT_FOLDER);
+        output_path.push_str(&self.filename.replace(FILE_EXT, ".exe"));
+
         if self.print_debug {
-            println!("Running `./out/output.exe`");
+            println!("Running `{output_path}`");
         }
-        let output = Command::new("./out/output.exe")
+        
+        let output = Command::new(output_path)
             .output()
             .expect("failed to execute process");
         let exit_code = output.status.code().unwrap();
