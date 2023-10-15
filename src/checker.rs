@@ -123,7 +123,7 @@ impl TCFunction {
     fn add_parameter(&mut self, v_name: &String, var: TCVariable) -> Result<(), String> {
         match self.get_variable(v_name) {
             Some(v) => Err(format!(
-                "Variable redefinition!\n{}: Variable already declared here: {:?}",
+                "Variable redeclaration!\n{}: Variable already declared here: {:?}",
                 NOTE_STR, v.loc
             )),
             None => {
@@ -141,7 +141,7 @@ impl TCFunction {
     ) -> Result<(), String> {
         match self.get_scope_location(v_name) {
             Some(v) => Err(format!(
-                "Variable redefinition!\n{}: Variable already declared here: {:?}",
+                "Variable redeclaration!\n{}: Variable already declared here: {:?}",
                 NOTE_STR, v.loc
             )),
             None => {
@@ -191,7 +191,7 @@ impl TCClass {
         match self.fields.get(name) {
             Some(f) => {
                 Err(format!(
-                    "Class Field redeclaration!\n{}: {:?}: Field `{}` already defined here.",
+                    "Class Field redeclaration!\n{}: {:?}: Field `{}` already declared here.",
                     NOTE_STR,
                     f.loc,
                     name
@@ -287,7 +287,7 @@ impl TypeChecker {
                 self.current_class = name.clone();
                 if let Some(class) = self.classes.get(&self.current_class) {
                     return Err(format!(
-                        "{}: {:?}: Class redefinition\n{}: {:?}: Class already defined here",
+                        "{}: {:?}: Class redeclaration\n{}: {:?}: Class already declared here",
                         ERR_STR,
                         ast.tkn.get_loc(),
                         NOTE_STR,
@@ -320,7 +320,7 @@ impl TypeChecker {
                 self.current_fn = name.clone();
                 if let Some(func) = self.functions.get(&self.current_fn) {
                     return Err(format!(
-                        "{}: {:?}: Function redefinition\n{}: {:?}: Function already defined here",
+                        "{}: {:?}: Function redeclaration\n{}: {:?}: Function already declared here",
                         ERR_STR,
                         ast.tkn.get_loc(),
                         NOTE_STR,
@@ -695,7 +695,23 @@ impl TypeChecker {
                 };
                 let lhs_type = self.get_expr_type(&new_lhs, true)?;
                 let rhs_type = self.get_expr_type(&new_rhs, true)?;
-                if !self.match_type(expected_type, &lhs_type) {
+                if !self.is_primitive(&lhs_type) {
+                    Err(format!(
+                        "{}: {:?}: Binary Operation `{}` is not defined for type `{:?}`.",
+                        ERR_STR,
+                        expr_tree.tkn.get_loc(),
+                        expr_tree.tkn.get_value(),
+                        lhs_type,
+                    ))
+                } else if !self.is_primitive(&rhs_type) {
+                    Err(format!(
+                        "{}: {:?}: Binary Operation `{}` is not defined for type `{:?}`.",
+                        ERR_STR,
+                        expr_tree.tkn.get_loc(),
+                        expr_tree.tkn.get_value(),
+                        rhs_type,
+                    ))
+                } else if !self.match_type(expected_type, &lhs_type) {
                     Err(format!(
                         "{}: {:?}: Type Mismatch! Expected type `{:?}`, got type `{:?}`.",
                         ERR_STR,
@@ -785,14 +801,32 @@ impl TypeChecker {
                     self.match_type(&lhs_type, &rhs_type),
                     "If this fails, there's a bug in type checking"
                 );
-                Ok(Tree {
-                    typ: TreeType::ExprComp {
-                        lhs: new_lhs,
-                        rhs: new_rhs,
-                        typ: expected_type.clone(),
-                    },
-                    tkn: expr_tree.tkn.clone(),
-                })
+                if !self.is_primitive(&lhs_type) {
+                    Err(format!(
+                        "{}: {:?}: Binary Operation `{}` is not defined for type `{:?}`.",
+                        ERR_STR,
+                        expr_tree.tkn.get_loc(),
+                        expr_tree.tkn.get_value(),
+                        lhs_type,
+                    ))
+                } else if !self.is_primitive(&rhs_type) {
+                    Err(format!(
+                        "{}: {:?}: Binary Operation `{}` is not defined for type `{:?}`.",
+                        ERR_STR,
+                        expr_tree.tkn.get_loc(),
+                        expr_tree.tkn.get_value(),
+                        rhs_type,
+                    ))
+                } else {
+                    Ok(Tree {
+                        typ: TreeType::ExprComp {
+                            lhs: new_lhs,
+                            rhs: new_rhs,
+                            typ: expected_type.clone(),
+                        },
+                        tkn: expr_tree.tkn.clone(),
+                    })
+                }
             }
             TreeType::ExprParen { expression, typ } => {
                 assert!(*typ == Type::Unknown);
@@ -851,7 +885,7 @@ impl TypeChecker {
                                     }
                                 ),
                                 None => Err(format!(
-                                    "{}: {:?}: Undefined variable `{}`.",
+                                    "{}: {:?}: Undeclared variable `{}`.",
                                     ERR_STR,
                                     expr_tree.tkn.get_loc(),
                                     name
@@ -1006,7 +1040,7 @@ impl TypeChecker {
                         })
                     }
                     None => Err(format!(
-                        "{}: {:?}: Undefined variable `{}`.",
+                        "{}: {:?}: Undeclared variable `{}`.",
                         ERR_STR,
                         expr_tree.tkn.get_loc(),
                         arr_name
@@ -1270,7 +1304,7 @@ impl TypeChecker {
                             match BUILT_IN_VARS.get(name) {
                                 Some(var) => Ok(var.typ.clone()),
                                 None => Err(format!(
-                                    "{}: {:?}: Undefined variable `{}`.",
+                                    "{}: {:?}: Undeclared variable `{}`.",
                                     ERR_STR,
                                     expr.tkn.get_loc(),
                                     name
@@ -1316,7 +1350,7 @@ impl TypeChecker {
                         )),
                     },
                     None => Err(format!(
-                        "{}: {:?}: Undefined variable `{}`.",
+                        "{}: {:?}: Undeclared variable `{}`.",
                         ERR_STR,
                         expr.tkn.get_loc(),
                         arr_name
@@ -1339,7 +1373,7 @@ impl TypeChecker {
                     }
                     None => {
                         Err(format!(
-                            "{}: {:?}: Undefined variable `{}`.",
+                            "{}: {:?}: Undeclared variable `{}`.",
                             ERR_STR,
                             expr.tkn.get_loc(),
                             name
@@ -1420,6 +1454,15 @@ impl TypeChecker {
             (Type::Any, Type::Any) => panic!(),
             (Type::Any, other) | (other, Type::Any) => true,
             (lhs, rhs) => lhs == rhs
+        }
+    }
+
+    fn is_primitive(&self, typ: &Type) -> bool {
+        match typ {
+            Type::Arr(..) | Type::Class(..) => false,
+            Type::Any => todo!(),
+            Type::Unknown => todo!(),
+            _ => true
         }
     }
 }
