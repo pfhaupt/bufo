@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use crate::Compiler;
-use crate::parser::{Tree, TreeType, Parser};
-use crate::lexer::TokenType;
+use crate::parser::{Tree, TreeType, Parser, TokenType};
 use crate::checker::Type;
 use crate::codegen::SizeManager;
 

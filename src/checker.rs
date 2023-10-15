@@ -5,8 +5,7 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
 use crate::codegen::{ERR_STR, NOTE_STR, WARN_STR};
-use crate::lexer::{Location, BUILT_IN_VARIABLES, BUILT_IN_FUNCTIONS};
-use crate::parser::{Tree, TreeType};
+use crate::parser::{Tree, TreeType, Location, BUILT_IN_VARIABLES, BUILT_IN_FUNCTIONS};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Type {

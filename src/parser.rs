@@ -1,8 +1,12 @@
 use std::cell::Cell;
+use std::collections::VecDeque;
+use std::fmt::{Debug, Formatter};
+use std::fs;
 
 use crate::checker::{Type, TypeChecker};
 use crate::codegen::ERR_STR;
-use crate::lexer::{Location, Token, TokenType, COMPARATOR_TYPES, BUILT_IN_FUNCTIONS, BUILT_IN_VARIABLES};
+
+const LOOKAHEAD_LIMIT: usize = 3;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum TreeType {
@@ -535,110 +539,582 @@ impl Tree {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum TokenType {
+    File,
+    CharLiteral,
+    StrLiteral,
+    IntLiteral,
+    OpenRound,
+    ClosingRound,
+    OpenCurly,
+    ClosingCurly,
+    OpenSquare,
+    ClosingSquare,
+    ClassKeyword,
+    FunctionKeyword,
+    FeatureKeyword,
+    LetKeyword,
+    IfKeyword,
+    ElseKeyword,
+    ReturnKeyword,
+    BuiltInFunction,
+    Colon,
+    Semi,
+    Comma,
+    Dot,
+    Arrow,
+    Equal,
+    Plus,
+    Minus,
+    Asterisk,
+    ForwardSlash,
+    CmpEq,
+    CmpNeq,
+    CmpLt,
+    CmpLte,
+    CmpGt,
+    CmpGte,
+    Identifier,
+    Eof,
+}
+
+pub const COMPARATOR_TYPES: [TokenType; 6] = [
+    TokenType::CmpEq,
+    TokenType::CmpNeq,
+    TokenType::CmpGt,
+    TokenType::CmpGte,
+    TokenType::CmpLt,
+    TokenType::CmpLte,
+];
+
+pub const BUILT_IN_VARIABLES: [&str; 3] = [
+    "STACK_OVERFLOW_CODE",
+    "FUNCTION_COUNTER",
+    "FUNCTION_LIMIT"
+];
+pub const BUILT_IN_FUNCTIONS: [&str; 3] = [
+    "EXIT",
+    "MALLOC",
+    "SIZEOF"
+];
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct Location {
+    file: String,
+    row: usize,
+    col: usize,
+}
+
+impl Location {
+    pub fn new(file: String, row: usize, col: usize) -> Self {
+        Self { file, row, col }
+    }
+
+    pub fn anonymous() -> Self {
+        Self::new(String::from("anonymous"), 0, 0)
+    }
+
+    pub fn builtin() -> Self {
+        Self::new(String::from("builtin"), 0, 0)
+    }
+}
+
+
+impl Debug for Location {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "{}:{}:{}", self.file, self.row, self.col)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Token {
+    typ: TokenType, // type is a reserved keyword in Rust :(
+    value: String,
+    loc: Location,
+}
+
+impl Token {
+    pub fn new(typ: TokenType, value: String, loc: Location) -> Self {
+        Self { typ, value, loc }
+    }
+
+    pub fn get_type(&self) -> TokenType {
+        self.typ
+    }
+
+    pub fn get_value(&self) -> String {
+        self.value.clone()
+    }
+
+    pub fn get_loc(&self) -> Location {
+        self.loc.clone()
+    }
+}
+
 #[derive(Clone)]
 pub struct Parser {
-    file_path: String,
-    tokens: Vec<Token>,
+    origin: String,
     ptr: usize,
     fuel: Cell<u32>,
     root: Option<Tree>,
     #[allow(unused)]
     print_debug: bool,
+    lookahead: VecDeque<Token>,
+    // Lexer fields
+    source: Vec<char>,
+    current_char: usize,
+    current_line: usize,
+    line_start: usize,
 }
 
 impl Parser {
     pub fn new() -> Self {
         Self {
-            file_path: String::new(),
-            tokens: vec![],
+            origin: String::new(),
             ptr: 0,
             fuel: Cell::new(256),
             root: None,
             print_debug: false,
+            lookahead: VecDeque::new(),
+            // Lexer fields
+            source: vec![],
+            current_char: 0,
+            current_line: 1,
+            line_start: 0,
         }
     }
 
-    pub fn origin(&mut self, file_path: &String) -> Self {
-        self.file_path = file_path.to_string();
-        self.clone()
+    pub fn set_origin_unchecked(&mut self, origin_path: &String) {
+        self.origin = origin_path.clone();
     }
+    pub fn set_source(&mut self, source: &String) {
+        self.source = source.chars().collect();
+    }
+
+    pub fn origin(&mut self, origin_path: &String) -> Result<Self, String> {
+        match fs::read_to_string(origin_path) {
+            Ok(source) => {
+                self.source = source.chars().collect();
+                self.origin = origin_path.to_string();
+                Ok(self.clone())
+            }
+            Err(_) => {
+                Err(format!(
+                    "{}: Could not find input file `{}`.",
+                    ERR_STR, origin_path
+                ))
+            }
+        }
+    }
+
 
     pub fn debug(&mut self, debug: bool) -> Self {
         self.print_debug = debug;
         self.clone()
     }
 
-    pub fn set_tokens(&mut self, tokens: Vec<Token>) {
-        self.tokens = tokens.to_owned();
-        self.reset();
+    // ---------- End of Builder Pattern ----------
+
+    // ---------- Start of Lexer ----------
+    fn get_location(&self) -> Location {
+        Location {
+            file: self.origin.clone(),
+            row: self.current_line,
+            col: self.current_char - self.line_start,
+        }
     }
 
+    fn lexer_eof(&self) -> bool {
+        self.current_char >= self.source.len()
+    }
+
+    fn parser_eof(&mut self) -> bool {
+        self.nth(0).unwrap() == TokenType::Eof
+    }
+
+    fn next_char(&mut self) -> Result<char, String> {
+        if self.lexer_eof() {
+            Err(format!("{}: Reached End Of File while lexing.", ERR_STR))
+        } else {
+            let c = self.source[self.current_char];
+            self.current_char += 1;
+            Ok(c)
+        }
+    }
+
+    fn trim_whitespace(&mut self) -> Result<(), String> {
+        while !self.lexer_eof() && self.source[self.current_char].is_whitespace() {
+            match self.source[self.current_char] {
+                '\r' => {
+                    self.current_char += 2;
+                    self.current_line += 1;
+                    self.line_start = self.current_char;
+                } // Windows
+                '\n' => {
+                    self.current_char += 1;
+                    self.current_line += 1;
+                    self.line_start = self.current_char;
+                } // Linux
+                _ => {
+                    self.current_char += 1;
+                } // Normal space
+            }
+        }
+        Ok(())
+    }
+
+    fn next_token(&mut self) -> Result<Token, String> {
+        assert_eq!(
+            TokenType::Eof as u8 + 1,
+            36,
+            "Not all TokenTypes are handled in next_token()"
+        );
+        self.trim_whitespace()?;
+        let loc = self.get_location();
+        let c = self.next_char();
+        if c.is_err() {
+            return Ok(Token {
+                value: String::new(),
+                typ: TokenType::Eof,
+                loc
+            });
+        }
+        let c = c.unwrap();
+        match c {
+            '0'..='9' => {
+                let mut value = String::from(c);
+                while let Ok(nc) = self.next_char() {
+                    if !nc.is_alphanumeric() {
+                        self.current_char -= 1; // Went too far, go a step back
+                        break;
+                    }
+                    value.push(nc);
+                }
+                Ok(Token {
+                    typ: TokenType::IntLiteral,
+                    value,
+                    loc,
+                })
+            }
+            'A'..='Z' | 'a'..='z' => {
+                let mut value = String::from(c);
+                while let Ok(nc) = self.next_char() {
+                    if !nc.is_alphanumeric() && !(nc == '_') {
+                        self.current_char -= 1; // Went too far, go a step back
+                        break;
+                    }
+                    value.push(nc);
+                }
+                let typ = match value.as_str() {
+                    "class" => TokenType::ClassKeyword,
+                    "func" => TokenType::FunctionKeyword,
+                    "feat" => TokenType::FeatureKeyword,
+                    "let" => TokenType::LetKeyword,
+                    "if" => TokenType::IfKeyword,
+                    "else" => TokenType::ElseKeyword,
+                    "return" => TokenType::ReturnKeyword,
+                    _ if BUILT_IN_FUNCTIONS.contains(&value.as_str()) => TokenType::BuiltInFunction,
+                    _ => TokenType::Identifier,
+                };
+                Ok(Token { typ, value, loc })
+            }
+            '"' => {
+                let mut value = String::new();
+                while let Ok(nc) = self.next_char() {
+                    if nc == '"' {
+                        break;
+                    }
+                    value.push(nc);
+                }
+                Ok(Token {
+                    typ: TokenType::StrLiteral,
+                    value,
+                    loc
+                })
+            }
+            '\'' => {
+                let mut value = String::new();
+                while let Ok(nc) = self.next_char() {
+                    if nc == '\'' {
+                        break;
+                    }
+                    value.push(nc);
+                }
+                if value.len() != 1 {
+                    Err(format!("{}: {:?}: Char Literal is expected to be a single char, got `{}`.",
+                        ERR_STR,
+                        loc,
+                        value
+                    ))
+                } else {
+                    Ok(Token {
+                        typ: TokenType::CharLiteral,
+                        value,
+                        loc
+                    })
+                }
+            } 
+            '(' => Ok(Token {
+                typ: TokenType::OpenRound,
+                value: String::from("("),
+                loc,
+            }),
+            ')' => Ok(Token {
+                typ: TokenType::ClosingRound,
+                value: String::from(")"),
+                loc,
+            }),
+            '{' => Ok(Token {
+                typ: TokenType::OpenCurly,
+                value: String::from("{"),
+                loc,
+            }),
+            '}' => Ok(Token {
+                typ: TokenType::ClosingCurly,
+                value: String::from("}"),
+                loc,
+            }),
+            '[' => Ok(Token {
+                typ: TokenType::OpenSquare,
+                value: String::from("["),
+                loc,
+            }),
+            ']' => Ok(Token {
+                typ: TokenType::ClosingSquare,
+                value: String::from("]"),
+                loc,
+            }),
+            ';' => Ok(Token {
+                typ: TokenType::Semi,
+                value: String::from(";"),
+                loc,
+            }),
+            ',' => Ok(Token {
+                typ: TokenType::Comma,
+                value: String::from(","),
+                loc,
+            }),
+            '!' => {
+                if let Ok(nc) = self.next_char() {
+                    match nc {
+                        '=' => Ok(Token {
+                            typ: TokenType::CmpNeq,
+                            value: String::from("!="),
+                            loc,
+                        }),
+                        _ => {
+                            let mut v = String::from(c);
+                            v.push(nc);
+                            Err(format!(
+                                "{}: {:?}: Unexpected Symbol `{}`",
+                                ERR_STR,
+                                self.get_location(),
+                                v
+                            ))
+                        }
+                    }
+                } else {
+                    Err(format!("{}: Reached End Of File while lexing.", ERR_STR))
+                }
+            }
+            '=' => {
+                let (typ, value) = if let Ok(nc) = self.next_char() {
+                    match nc {
+                        '=' => (TokenType::CmpEq, String::from("==")),
+                        _ => {
+                            self.current_char -= 1; // Went too far, go a step back
+                            (TokenType::Equal, String::from("="))
+                        }
+                    }
+                } else {
+                    (TokenType::Equal, String::from("="))
+                };
+                Ok(Token { typ, value, loc })
+            }
+            '<' => {
+                let (typ, value) = if let Ok(nc) = self.next_char() {
+                    match nc {
+                        '=' => (TokenType::CmpLte, String::from("<=")),
+                        _ => {
+                            self.current_char -= 1; // Went too far, go a step back
+                            (TokenType::CmpLt, String::from("<"))
+                        }
+                    }
+                } else {
+                    (TokenType::CmpLt, String::from("<"))
+                };
+                Ok(Token { typ, value, loc })
+            }
+            '>' => {
+                let (typ, value) = if let Ok(nc) = self.next_char() {
+                    match nc {
+                        '=' => (TokenType::CmpGte, String::from(">=")),
+                        _ => {
+                            self.current_char -= 1; // Went too far, go a step back
+                            (TokenType::CmpGt, String::from(">"))
+                        }
+                    }
+                } else {
+                    (TokenType::CmpGt, String::from(">"))
+                };
+                Ok(Token { typ, value, loc })
+            }
+            ':' => Ok(Token {
+                typ: TokenType::Colon,
+                value: String::from(c),
+                loc,
+            }),
+            '.' => Ok(Token {
+                typ: TokenType::Dot,
+                value: String::from(c),
+                loc,
+            }),
+            '+' => Ok(Token {
+                typ: TokenType::Plus,
+                value: String::from(c),
+                loc,
+            }),
+            '-' => {
+                let (typ, value) = if let Ok(nc) = self.next_char() {
+                    match nc {
+                        '>' => (TokenType::Arrow, String::from("->")),
+                        _ => {
+                            self.current_char -= 1; // Went too far, go a step back
+                            (TokenType::Minus, String::from("-"))
+                        }
+                    }
+                } else {
+                    (TokenType::Minus, String::from("-"))
+                };
+                Ok(Token { typ, value, loc })
+            }
+            '*' => Ok(Token {
+                typ: TokenType::Asterisk,
+                value: String::from(c),
+                loc,
+            }),
+            '/' => {
+                let (typ, value) = if let Ok(nc) = self.next_char() {
+                    match nc {
+                        '/' => {
+                            while let Ok(c) = self.next_char() {
+                                if c == '\r' || c == '\n' {
+                                    self.trim_whitespace();
+                                    break;
+                                }
+                            }
+                            return self.next_token();
+                        },
+                        _ => {
+                            self.current_char -= 1; // Went too far, go a step back
+                            (TokenType::ForwardSlash, String::from("/"))
+                        }
+                    }
+                } else {
+                    (TokenType::ForwardSlash, String::from("/"))
+                };
+                Ok(Token { typ, value, loc })
+            },
+            e => Err(format!(
+                "{}: {:?}: Unexpected Symbol `{}`",
+                ERR_STR,
+                self.get_location(),
+                e
+            )),
+        }
+    }
+
+    // ---------- End of Lexer ----------
+
     fn reset(&mut self) {
+        self.current_char = 0;
+        self.current_line = 1;
+        self.line_start = 0;
         self.ptr = 0;
         self.fuel.set(256);
         self.root = None;
     }
-
     fn open(&self) -> Token {
-        self.tokens[self.ptr].clone()
+        self.lookahead[0].clone()
     }
-
-    fn advance(&mut self) {
-        assert!(!self.eof());
+    fn advance(&mut self) -> Result<Token, String> {
+        // assert!(!self.parser_eof());
         self.fuel.set(256);
-        self.ptr += 1;
+        self.next()
     }
-    fn eof(&self) -> bool {
-        self.ptr >= self.tokens.len()
+    
+    fn fill_lookahead(&mut self) -> Result<(), String> {
+        while self.lookahead.len() < LOOKAHEAD_LIMIT {
+            let tkn = self.next_token()?;
+            self.lookahead.push_back(tkn);
+        }
+        Ok(())
     }
 
-    fn nth(&mut self, lookahead: usize) -> TokenType {
+    fn nth(&mut self, lookahead: usize) -> Result<TokenType, String> {
+        self.fill_lookahead()?;
         if self.fuel.get() == 0 {
             panic!("Parser is stuck at {}", self.ptr);
         }
         self.fuel.set(self.fuel.get() - 1);
-        self.tokens
-            .get(self.ptr + lookahead)
-            .map_or(TokenType::Eof, |it| it.get_type())
+        Ok(self.lookahead[lookahead].get_type())
     }
 
-    fn at(&mut self, typ: TokenType) -> bool {
-        self.nth(0) == typ
+    // // fn next_token(&mut self) -> Result<Token, String> {
+    // //     self.fill_lookahead()?;
+    // //     assert!(self.lookahead.len() > 0);
+    // //     Ok(self.lookahead[0].clone())
+    // // }
+
+    fn at(&mut self, typ: TokenType) -> Result<bool, String> {
+        Ok(self.nth(0)? == typ)
     }
 
-    fn eat(&mut self, typ: TokenType) -> bool {
-        if self.at(typ) {
+    fn next(&mut self) -> Result<Token, String> {
+        self.fill_lookahead()?;
+        assert!(self.lookahead.len() > 0);
+        Ok(self.lookahead.pop_front().unwrap())
+    }
+
+    fn eat(&mut self, typ: TokenType) -> Result<bool, String> {
+        if self.at(typ)? {
             self.advance();
-            true
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
     }
 
     fn expect(&mut self, typ: TokenType) -> Result<Token, String> {
         let t = typ;
-        if self.eat(typ) {
-            return Ok(self.tokens[self.ptr - 1].clone());
+        if self.at(typ)? {
+            return self.advance();
         }
-        // TODO: Improve error handling
-        let (prev, typ) = match self.tokens.get(self.ptr) {
-            None => (self.tokens.get(self.ptr - 1).expect("Expected Some value, found None instead. This might be a bug in Parsing or Lexing."), TokenType::Eof),
-            Some(prev) => (prev, prev.get_type())
-        };
+        let tkn = self.next()?;
         Err(format!(
             "{}: {:?}: Expected {:?}, found {:?}",
             ERR_STR,
-            prev.get_loc(),
+            tkn.loc,
             t,
-            typ
+            tkn.typ
         ))
+    }
+
+    pub fn dump(&mut self) {
+        let mut t = self.next().unwrap();
+        while t.typ != TokenType::Eof {
+            println!("{:?}", t);
+            t = self.next().unwrap();
+        }
+
     }
 
     pub fn parse_snippet(&mut self) -> Result<Tree, String> {
         // Only ever call this in combination with Compiler::throwaway_compiler_parse()
         // Assumes there's a single statement or function or whatever
         // like `return this;` that's getting inserted in desugaring
-        match self.nth(0) {
+        match self.nth(0)? {
             TokenType::FunctionKeyword => self.parse_func(),
             TokenType::FeatureKeyword => self.parse_feature(),
             TokenType::ClassKeyword => self.parse_class(),
@@ -658,26 +1134,27 @@ impl Parser {
         );
         let tkn = Token::new(
             TokenType::File,
-            self.file_path.clone(),
-            Location::new(self.file_path.clone(), 0, 0),
+            self.origin.clone(),
+            Location::new(self.origin.clone(), 0, 0),
         );
         let mut functions = vec![];
         let mut classes = vec![];
-        while !self.eof() {
-            match self.nth(0) {
+        while !self.parser_eof() {
+            match self.nth(0)? {
                 TokenType::FunctionKeyword => functions.push(self.parse_func()?),
                 TokenType::ClassKeyword => classes.push(self.parse_class()?),
                 _ => {
-                    let prev = self.tokens.get(self.ptr).unwrap();
+                    let tkn = self.next()?;
                     return Err(format!(
                         "{}: {:?}: Expected one of {{Function, Class}}, found {:?}",
                         ERR_STR,
-                        prev.get_loc(),
-                        prev.get_type()
+                        tkn.get_loc(),
+                        tkn.get_type()
                     ));
                 }
             }
         }
+        assert!(self.nth(0)? == TokenType::Eof);
         self.root = Some(Tree {
             typ: TreeType::File {
                 functions,
@@ -704,20 +1181,21 @@ impl Parser {
         let mut fields = vec![];
         let mut functions = vec![];
         let mut features = vec![];
-        while !self.at(TokenType::ClosingCurly) && !self.eof() {
+        while !self.at(TokenType::ClosingCurly)? && !self.parser_eof() {
             // println!("{:#?}\n{:#?}\n{:#?}", fields, features, functions);
-            match self.nth(0) {
+            match self.nth(0)? {
                 TokenType::Identifier => fields.push(self.parse_class_field()?),
                 TokenType::FunctionKeyword => functions.push(self.parse_func()?),
                 TokenType::FeatureKeyword => features.push(self.parse_feature()?),
                 _ => {
-                    let prev = self.tokens.get(self.ptr).unwrap();
-                    return Err(format!(
-                        "{}: {:?}: Expected one of {{Field, Function}}, found {:?}.",
-                        ERR_STR,
-                        prev.get_loc(),
-                        prev.get_type()
-                    ));
+                    todo!()
+                    // let prev = self.tokens.get(self.ptr).unwrap();
+                    // return Err(format!(
+                    //     "{}: {:?}: Expected one of {{Field, Function}}, found {:?}.",
+                    //     ERR_STR,
+                    //     prev.get_loc(),
+                    //     prev.get_type()
+                    // ));
                 }
             }
         }
@@ -752,7 +1230,7 @@ impl Parser {
         self.expect(TokenType::FeatureKeyword)?;
         let feature_name = self.expect(TokenType::Identifier)?;
         let params = self.parse_param_list()?;
-        let return_type = if self.at(TokenType::Arrow) {
+        let return_type = if self.at(TokenType::Arrow)? {
             Some(Box::new(self.parse_return_type()?))
         } else {
             None
@@ -770,8 +1248,7 @@ impl Parser {
     }
 
     fn parse_func(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        self.expect(TokenType::FunctionKeyword)?;
+        let tkn = self.expect(TokenType::FunctionKeyword)?;
         let fn_name = self.expect(TokenType::Identifier)?;
         if fn_name.get_value().as_bytes()[0].is_ascii_uppercase() {
             return Err(format!(
@@ -782,7 +1259,7 @@ impl Parser {
             ));
         }
         let params = self.parse_param_list()?;
-        let return_type = if self.at(TokenType::Arrow) {
+        let return_type = if self.at(TokenType::Arrow)? {
             Some(Box::new(self.parse_return_type()?))
         } else {
             None
@@ -803,9 +1280,9 @@ impl Parser {
         let tkn = self.open();
         let mut children = vec![];
         self.expect(TokenType::OpenRound)?;
-        while !self.at(TokenType::ClosingRound) && !self.eof() {
+        while !self.at(TokenType::ClosingRound)? && !self.parser_eof() {
             children.push(self.parse_param()?);
-            if !self.eat(TokenType::Comma) {
+            if !self.eat(TokenType::Comma)? {
                 break;
             }
         }
@@ -827,35 +1304,30 @@ impl Parser {
                 name: name_tkn.get_value(),
                 typ: Box::new(type_decl),
             },
-            tkn,
+            tkn
         })
     }
 
     fn parse_block(&mut self) -> Result<Tree, String> {
-        if !self.at(TokenType::OpenCurly) {
-            let ptr = if self.ptr == self.tokens.len() {
-                self.ptr - 1
-            } else {
-                self.ptr
-            };
-            let tkn = self.tokens.get(ptr).unwrap();
+        if !self.at(TokenType::OpenCurly)? {
+            let tkn = self.next()?;
             return Err(format!(
                 "{}: {:?}: Expected `{{`, found `{:?}`",
                 ERR_STR,
                 tkn.get_loc(),
-                self.nth(0)
+                tkn.get_type()
             ));
         }
         let tkn = self.open();
         let mut children = vec![];
         self.expect(TokenType::OpenCurly)?;
-        while !self.at(TokenType::ClosingCurly) && !self.eof() {
+        while !self.at(TokenType::ClosingCurly)? && !self.parser_eof() {
             // Parse Statements
-            match self.nth(0) {
+            match self.nth(0)? {
                 TokenType::LetKeyword => children.push(self.parse_stmt_let()?),
                 TokenType::IfKeyword => children.push(self.parse_stmt_if()?),
                 TokenType::ReturnKeyword => children.push(self.parse_stmt_return()?),
-                TokenType::Identifier => match self.nth(1) {
+                TokenType::Identifier => match self.nth(1)? {
                     TokenType::Dot | TokenType::Equal | TokenType::OpenSquare => {
                         children.push(self.parse_stmt_assign()?)
                     }
@@ -879,9 +1351,9 @@ impl Parser {
         self.expect(TokenType::Semi)?;
         Ok(Tree {
             typ: TreeType::StmtExpr {
-                expression: Box::new(expr),
+                expression: Box::new(expr.clone()),
             },
-            tkn,
+            tkn: tkn,
         })
     }
 
@@ -891,7 +1363,7 @@ impl Parser {
         let name_tkn = self.expect(TokenType::Identifier)?;
         let type_tree = self.parse_type_decl()?;
         self.expect(TokenType::Equal)?;
-        let expr = match self.nth(0) {
+        let expr = match self.nth(0)? {
             TokenType::OpenSquare => self.parse_expr_array_literal()?,
             _ => self.parse_expr()?
         };
@@ -914,7 +1386,7 @@ impl Parser {
         self.expect(TokenType::Semi)?;
         Ok(Tree {
             typ: TreeType::StmtAssign {
-                name: Box::new(node),
+                name: Box::new(node.clone()),
                 expression: Box::new(expr),
             },
             tkn,
@@ -928,7 +1400,7 @@ impl Parser {
         let condition = self.parse_expr()?;
         self.expect(TokenType::ClosingRound)?;
         let if_block = self.parse_block()?;
-        let else_block = if self.eat(TokenType::ElseKeyword) {
+        let else_block = if self.eat(TokenType::ElseKeyword)? {
             Some(Box::new(self.parse_block()?))
         } else {
             None
@@ -946,7 +1418,7 @@ impl Parser {
     fn parse_stmt_return(&mut self) -> Result<Tree, String> {
         let tkn = self.open();
         self.expect(TokenType::ReturnKeyword)?;
-        let ret_value = if !self.at(TokenType::Semi) {
+        let ret_value = if !self.at(TokenType::Semi)? {
             Some(Box::new(self.parse_expr()?))
         } else {
             None
@@ -976,7 +1448,7 @@ impl Parser {
         self.expect(TokenType::Colon)?;
         let name = self.expect(TokenType::Identifier)?;
         let typ = self.parse_type(&name)?;
-        let name = if self.at(TokenType::OpenSquare) {
+        let name = if self.at(TokenType::OpenSquare)? {
             let size = self.parse_type_arr_size()?;
             Tree {
                 typ: TreeType::TypeDecl {
@@ -1034,7 +1506,7 @@ impl Parser {
             Err(e) => return Err(format!("{}: {:?}: {}", ERR_STR, tkn.get_loc(), e)),
         };
         children.push(size);
-        while !self.at(TokenType::ClosingSquare) && !self.eof() {
+        while !self.at(TokenType::ClosingSquare)? && !self.parser_eof() {
             self.expect(TokenType::Comma);
             let size = self.expect(TokenType::IntLiteral)?;
             let size = match size.get_value().parse::<usize>() {
@@ -1065,9 +1537,9 @@ impl Parser {
         let tkn = self.open();
         let mut children = vec![];
         self.expect(TokenType::OpenRound)?;
-        while !self.at(TokenType::ClosingRound) && !self.eof() {
+        while !self.at(TokenType::ClosingRound)? && !self.parser_eof() {
             children.push(self.parse_arg()?);
-            if !self.eat(TokenType::Comma) {
+            if !self.eat(TokenType::Comma)? {
                 break;
             }
         }
@@ -1085,7 +1557,7 @@ impl Parser {
         let expr = self.parse_expr()?;
         Ok(Tree {
             typ: TreeType::Arg {
-                expression: Box::new(expr),
+                expression: Box::new(expr.clone()),
             },
             tkn,
         })
@@ -1099,7 +1571,7 @@ impl Parser {
         let mut lhs = self.parse_expr_delim()?;
 
         loop {
-            let right = self.nth(0);
+            let right = self.nth(0)?;
             if Self::right_binds_tighter(left, right) {
                 let tkn = self.open();
                 self.advance();
@@ -1132,7 +1604,7 @@ impl Parser {
     }
 
     fn parse_expr_delim(&mut self) -> Result<Tree, String> {
-        Ok(match self.nth(0) {
+        Ok(match self.nth(0)? {
             TokenType::IntLiteral => {
                 // let tkn = self.open();
                 let number_token = self.expect(TokenType::IntLiteral)?;
@@ -1160,15 +1632,11 @@ impl Parser {
             TokenType::OpenSquare => self.parse_expr_array_literal()?,
             TokenType::BuiltInFunction => self.parse_expr_built_in_func()?,
             e => {
-                let ptr = if self.ptr == self.tokens.len() {
-                    self.ptr - 1
-                } else {
-                    self.ptr
-                };
+                let tkn = self.next()?;
                 return Err(format!(
                     "{}: {:?}: Expected Expr, found {:?}",
                     ERR_STR,
-                    self.tokens.get(ptr).unwrap().get_loc(),
+                    tkn.get_loc(),
                     e
                 ));
             }
@@ -1199,10 +1667,10 @@ impl Parser {
         let tkn = self.open();
         let mut elements = vec![];
         self.expect(TokenType::OpenSquare)?;
-        while !self.at(TokenType::ClosingSquare) && !self.eof() {
+        while !self.at(TokenType::ClosingSquare)? && !self.parser_eof() {
             let elem = self.parse_expr()?;
             elements.push(elem);
-            if !self.eat(TokenType::Comma) {
+            if !self.eat(TokenType::Comma)? {
                 break;
             }
         }
@@ -1226,35 +1694,10 @@ impl Parser {
             tkn,
         })
     }
-    fn parse_built_in(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        todo!();
-        // let kw = self.expect(TokenType::BuiltInKeyword)?;
-        // if BUILT_IN_VARIABLES.contains(&&kw.get_value().as_str()) {
-        //     Ok(Tree {
-        //         typ: TreeType::BuiltInVariable {
-        //             variable_name: kw.get_value(),
-        //             typ: Type::Unknown
-        //         },
-        //         tkn
-        //     })
-        // } else if BUILT_IN_FUNCTIONS.contains(&kw.get_value().as_str()) {
-        //     Ok(Tree {
-        //         typ: TreeType::BuiltInFunction {
-        //             function_name: kw.get_value(),
-        //             args: Box::new(self.parse_arg_list()?),
-        //             typ: Type::Unknown,
-        //         },
-        //         tkn
-        //     })
-        // } else {
-        //     todo!()
-        // }
-    }
 
     fn parse_identifier(&mut self) -> Result<Tree, String> {
         let tkn = self.open();
-        Ok(match self.nth(1) {
+        Ok(match self.nth(1)? {
             TokenType::OpenRound => self.parse_expr_call()?,
             TokenType::OpenSquare => {
                 self.expect(TokenType::Identifier)?;

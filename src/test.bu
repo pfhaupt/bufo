@@ -45,5 +45,6 @@ func main() {
     d = 0;
     test.d = 10;
     let idee: Idee = retInstance(test);
+    idee.a = 12;
     // let f: u64 = test.foo();
 }

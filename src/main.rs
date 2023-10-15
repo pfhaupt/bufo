@@ -3,7 +3,6 @@
 mod checker;
 mod codegen;
 mod flags;
-mod lexer;
 mod parser;
 mod desugar;
 
@@ -14,12 +13,10 @@ use flags::RUN_KEY;
 use crate::checker::TypeChecker;
 use crate::codegen::Generator;
 use crate::flags::{Flag, FlagParser, DEBUG_KEY, INPUT_KEY};
-use crate::lexer::Lexer;
 use crate::parser::{Parser, Tree};
 use crate::desugar::Desugarer;
 
 pub struct Compiler {
-    lexer: Lexer,
     parser: Parser,
     desugarer: Desugarer,
     checker: TypeChecker,
@@ -31,8 +28,7 @@ pub struct Compiler {
 impl Compiler {
     pub fn new(path: &String, debug: bool, run: bool) -> Result<Self, String> {
         Ok(Self {
-            lexer: Lexer::new().origin(path)?.debug(debug),
-            parser: Parser::new().origin(path).debug(debug),
+            parser: Parser::new().origin(path)?.debug(debug),
             desugarer: Desugarer::new(),
             checker: TypeChecker::new(debug),
             codegen: Generator::new(debug),
@@ -42,13 +38,9 @@ impl Compiler {
     }
 
     pub fn parse_snippet(origin: &String, snippet: &String) -> Result<Tree, String> {
-        let mut lexer = Lexer::new();
-        lexer.set_source(snippet);
-        lexer.set_origin_unchecked(origin);
-        lexer.tokenize()?;
-
-        let mut parser = Parser::new().origin(origin);
-        parser.set_tokens(lexer.get_tokens());
+        let mut parser = Parser::new();
+        parser.set_origin_unchecked(origin);
+        parser.set_source(snippet);
         let parsed_ast = parser.parse_snippet()?;
 
         let mut desugarer = Desugarer::new();
@@ -57,18 +49,11 @@ impl Compiler {
 
     pub fn run_everything(&mut self) -> Result<(), String> {
         let now = Instant::now();
-        self.lexer.tokenize()?;
-        let tokens = self.lexer.get_tokens();
-        if self.debug {
-            println!("Lexing took {:?}", now.elapsed());
-        }
-        
-        let now = Instant::now();
-        self.parser.set_tokens(tokens);
-        let parsed_ast = self.parser.parse_file()?;
+        let parsed_ast = self.parser.parse_file();
         if self.debug {
             println!("Parsing took {:?}", now.elapsed());
         }
+        let parsed_ast = parsed_ast?;
         
         let now = Instant::now();
         let mut desugared_ast = self.desugarer.desugar_tree(parsed_ast)?;
