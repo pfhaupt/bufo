@@ -3,7 +3,6 @@ class Test {
     b: Test;
     c: i64;
     d: i64;
-
     feat new(na: i64, nb: i64, nc: i64) {
         this.a = na;
         // this.b = Test(0, 0, 0);

@@ -599,7 +599,7 @@ pub const BUILT_IN_FUNCTIONS: [&str; 3] = [
     "SIZEOF"
 ];
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Default)]
 pub struct Location {
     file: String,
     row: usize,
