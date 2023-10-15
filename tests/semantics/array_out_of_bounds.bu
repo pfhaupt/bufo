@@ -1,0 +1,4 @@
+func main() {
+    let arr: i32[3] = [1, 2, 3];
+    let a: i32 = arr[5];
+}

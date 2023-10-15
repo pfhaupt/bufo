@@ -1,9 +1,12 @@
-File = Fn*;
+File = { Class | Function };
 
-Fn = "func" "name" ParamList ["->" "type"] Block;
+Class = ClassKeyword ClassName "{" { Field | Function | Feature } "}";
+Field = FieldName TypeDecl ";";
+Feature = FeatureKeyword FeatureName ParameterList ["->" Type] Block;
 
-Param = "name" TypeDecl [","];
-ParamList = "(" {Param} ")";
+Function = FunctionKeyword FunctionName ParameterList ["->" Type] Block;
+ParameterList = "(" [Parameter {"," Parameter}] ")";
+Parameter = ParameterName TypeDecl;
 
 Block = "{" {Stmt} "}";
 
@@ -13,26 +16,65 @@ Stmt = StmtExpr
      | StmtIf
      | StmtReturn;
 
-StmtExpr = Expr ";";
-StmtLet = "let" "name" TypeDecl "=" Expr ";";
-StmtAssign = "name" "=" Expr ";";
-StmtIf = "if" "(" Expr ")" Block ["else" Block];
-StmtReturn = "return" [Expr] ";";
+StmtExpr = ExprCall ";";
+StmtLet = LetKeyword VariableName TypeDecl "=" (Expr | ExprArrayLiteral) ";";
+StmtAssign = VariableName | ExprArrayAccess "=" Expr ";";
+StmtIf = IfKeyword "(" ExprComp ")" Block [ElseKeyword Block];
+StmtReturn = ReturnKeyword [Expr] ";";
 
-TypeDecl = ":" "type";
+TypeDecl = ":" (Type | ArrayType);
+Type = ("i32" | "i64" | "u32" | "u64" | "usize" | ClassName);
+ArrayType = Type "[" Integer {"," Integer} "]";
 
-Arg = Expr;
-ArgList = "(" [Arg {"," Arg}] ")";
+ExprCall = FunctionName ArgumentList;
+ArgumentList = "(" [Argument {"," Argument}] ")";
+Argument = Expr;
+
+ExprName = VariableName;
+ExprArrayLiteral = "[" Expr {"," Expr} "]";
+ExprArrayAccess = VariableName ExprArrayLiteral;
+ExprLiteral = Integer;
+ExprBinary = Expr ("+" | "-" | "*" | "/") Expr;
+ExprComp = Expr ("==" | "!=" | "<" | ">" | "<=" | ">=") Expr;
+ExprParen = "(" Expr ")";
 
 Expr = ExprName
-     | ExprArray
+     | ExprArrayAccess
      | ExprLiteral
      | ExprBinary
+     | ExprComp
      | ExprParen
      | ExprCall;
-ExprName = "name";
-ExprArray = "name" "[" Expr {"," Expr} "]";
-ExprLiteral = "int";
-ExprBinary = Expr ("+" | "-" | "*" | "/" | "==" | "!=" | "<" | ">" | "<=" | ">=") Expr;
-ExprParen = "(" Expr ")";
-ExprCall = "name" ArgList;
+
+ClassKeyword = "class";
+FeatureKeyword = "feat";
+FunctionKeyword = "func";
+LetKeyword = "let";
+IfKeyword = "if";
+ElseKeyword = "else";
+ReturnKeyword = "return";
+
+ClassName = UpperChar { Character };
+FeatureName = Identifier;
+FunctionName = Identifier;
+FieldName = Identifier;
+ParameterName = Identifier;
+VariableName = Identifier | ( VariableName "." FieldName);
+
+Identifier = Character {Character};
+Integer = Digit {Digit};
+
+Character = UpperChar | LowerChar;
+
+UpperChar = "A" | "B" | "C" | "D" | "E" | "F"
+          | "G" | "H" | "I" | "J" | "K" | "L"
+          | "M" | "N" | "O" | "P" | "Q" | "R"
+          | "S" | "T" | "U" | "V" | "W" | "X"
+          | "Y" | "Z";
+LowerChar = "a" | "b" | "c" | "d" | "e" | "f"
+          | "g" | "h" | "i" | "j" | "k" | "l"
+          | "m" | "n" | "o" | "p" | "q" | "r"
+          | "s" | "t" | "u" | "v" | "w" | "x"
+          | "y" | "z";
+
+Digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";

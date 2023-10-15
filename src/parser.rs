@@ -1,13 +1,35 @@
 use std::cell::Cell;
 
-use crate::checker::Type;
+use crate::checker::{Type, TypeChecker};
 use crate::codegen::ERR_STR;
-use crate::lexer::{Location, Token, TokenType, COMPARATOR_TYPES};
+use crate::lexer::{Location, Token, TokenType, COMPARATOR_TYPES, BUILT_IN_FUNCTIONS, BUILT_IN_VARIABLES};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum TreeType {
     File {
         functions: Vec<Tree>,
+        classes: Vec<Tree>,
+    },
+    Class {
+        name: String,
+        fields: Vec<Tree>,
+        functions: Vec<Tree>,
+        features: Vec<Tree>,
+    },
+    Field {
+        name: String,
+        typ: Box<Tree>,
+    },
+    FieldAccess {
+        name: String,
+        field: Box<Tree>,
+        typ: Type,
+    },
+    Feature {
+        name: String,
+        return_type: Option<Box<Tree>>,
+        param: Box<Tree>,
+        block: Box<Tree>,
     },
     Func {
         name: String,
@@ -15,21 +37,12 @@ pub enum TreeType {
         param: Box<Tree>,
         block: Box<Tree>,
     },
-    Name {
-        name: String,
-    },
-    ParamList {
-        parameters: Vec<Tree>,
-    },
     Param {
         name: String,
         typ: Box<Tree>,
     },
-    ArgList {
-        arguments: Vec<Tree>,
-    },
-    Arg {
-        expression: Box<Tree>,
+    ParamList {
+        parameters: Vec<Tree>,
     },
     Block {
         statements: Vec<Tree>,
@@ -54,6 +67,15 @@ pub enum TreeType {
     StmtReturn {
         return_value: Option<Box<Tree>>,
     },
+    TypeDecl {
+        typ: Type,
+    },
+    ArgList {
+        arguments: Vec<Tree>,
+    },
+    Arg {
+        expression: Box<Tree>,
+    },
     ExprName {
         name: String,
         typ: Type,
@@ -65,7 +87,7 @@ pub enum TreeType {
         arr_name: String,
         indices: Box<Tree>,
         typ: Type,
-    }, // indices contains ArrLiteral
+    },
     ExprLiteral {
         typ: Type,
     },
@@ -88,15 +110,11 @@ pub enum TreeType {
         args: Box<Tree>,
         typ: Type,
     },
-    TypeDecl {
-        typ: Type,
-    },
-    Pointer {
-        var_name: Box<Tree>,
-    },
-    Deref {
-        var_name: Box<Tree>,
-    },
+    BuiltInFunction {
+        function_name: String,
+        args: Box<Tree>,
+        typ: Type
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -112,12 +130,54 @@ impl Tree {
     }
 
     fn print_internal(&self, indent: usize) {
+        const EXTRA_INDENT: usize = 2;
         let tab = " ".repeat(indent);
         match &self.typ {
-            TreeType::File { functions } => {
-                for f in functions {
-                    f.print_internal(indent + 2);
+            TreeType::File { functions, classes } => {
+                for c in classes {
+                    c.print_internal(indent + EXTRA_INDENT);
                 }
+                for f in functions {
+                    f.print_internal(indent + EXTRA_INDENT);
+                }
+            }
+            TreeType::Class { name, fields, functions, features } => {
+                println!("{tab}Class {name}");
+                for f in fields {
+                    f.print_internal(indent + EXTRA_INDENT);
+                }
+                for f in features {
+                    f.print_internal(indent + EXTRA_INDENT);
+                }
+                for f in functions {
+                    f.print_internal(indent + EXTRA_INDENT);
+                }
+            }
+            TreeType::Field { name, typ } => {
+                println!("{tab}Field {name}");
+                typ.print_internal(indent + EXTRA_INDENT);
+            }
+            TreeType::FieldAccess { name, field, typ } => {
+                println!("{tab}FieldAccess {name} {typ:?}");
+                field.print_internal(indent + EXTRA_INDENT);
+            }
+            TreeType::Feature {
+                name,
+                return_type,
+                param,
+                block,
+            } => {
+                println!("{tab}Feature {name}");
+                println!("{tab}Return", tab = " ".repeat(indent + EXTRA_INDENT));
+                if let Some(s) = return_type {
+                    s.print_internal(indent + 2 * EXTRA_INDENT);
+                } else {
+                    println!("{tab}None", tab = " ".repeat(indent + 2 * EXTRA_INDENT));
+                }
+                println!("{tab}Param", tab = " ".repeat(indent + EXTRA_INDENT));
+                param.print_internal(indent + 2 * EXTRA_INDENT);
+                println!("{tab}Block", tab = " ".repeat(indent + EXTRA_INDENT));
+                block.print_internal(indent + 2 * EXTRA_INDENT);
             }
             TreeType::Func {
                 name,
@@ -126,28 +186,25 @@ impl Tree {
                 block,
             } => {
                 println!("{tab}Function {name}");
-                println!("{tab}Return", tab = " ".repeat(indent + 2));
+                println!("{tab}Return", tab = " ".repeat(indent + EXTRA_INDENT));
                 if let Some(s) = return_type {
-                    s.print_internal(indent + 4);
+                    s.print_internal(indent + 2 * EXTRA_INDENT);
                 } else {
-                    println!("{tab}None", tab = " ".repeat(indent + 4));
+                    println!("{tab}None", tab = " ".repeat(indent + 2 * EXTRA_INDENT));
                 }
-                println!("{tab}Param", tab = " ".repeat(indent + 2));
-                param.print_internal(indent + 4);
-                println!("{tab}Block", tab = " ".repeat(indent + 2));
-                block.print_internal(indent + 4);
-            }
-            TreeType::Name { name } => {
-                println!("{tab}{}", name);
+                param.print_internal(indent + EXTRA_INDENT);
+                println!("{tab}Block", tab = " ".repeat(indent + EXTRA_INDENT));
+                block.print_internal(indent + 2 * EXTRA_INDENT);
             }
             TreeType::ParamList { parameters } => {
+                println!("{tab}ParamList");
                 for p in parameters {
-                    p.print_internal(indent);
+                    p.print_internal(indent + EXTRA_INDENT);
                 }
             }
             TreeType::Param { name, typ } => {
-                println!("{tab}{name}");
-                typ.print_internal(indent + 2);
+                println!("{tab}Param {name}");
+                typ.print_internal(indent + EXTRA_INDENT);
             }
             TreeType::ArgList { arguments } => {
                 for a in arguments {
@@ -156,7 +213,7 @@ impl Tree {
             }
             TreeType::Arg { expression } => {
                 println!("{tab}Arg");
-                expression.print_internal(indent + 2);
+                expression.print_internal(indent + EXTRA_INDENT);
             }
             TreeType::Block { statements } => {
                 for s in statements {
@@ -172,13 +229,13 @@ impl Tree {
                 expression,
             } => {
                 println!("{tab}StmtLet {name}");
-                typ.print_internal(indent + 4);
-                expression.print_internal(indent + 2);
+                typ.print_internal(indent + 2 * EXTRA_INDENT);
+                expression.print_internal(indent + EXTRA_INDENT);
             }
             TreeType::StmtAssign { name, expression } => {
                 println!("{tab}StmtAssign");
-                name.print_internal(indent + 2);
-                expression.print_internal(indent + 2);
+                name.print_internal(indent + EXTRA_INDENT);
+                expression.print_internal(indent + EXTRA_INDENT);
             }
             TreeType::StmtIf {
                 condition,
@@ -186,19 +243,19 @@ impl Tree {
                 else_branch,
             } => {
                 println!("{tab}StmtIf");
-                println!("{tab}Condition", tab = " ".repeat(indent + 2));
-                condition.print_internal(indent + 4);
-                println!("{tab}If-Branch", tab = " ".repeat(indent + 2));
-                if_branch.print_internal(indent + 4);
+                println!("{tab}Condition", tab = " ".repeat(indent + EXTRA_INDENT));
+                condition.print_internal(indent + 2 * EXTRA_INDENT);
+                println!("{tab}If-Branch", tab = " ".repeat(indent + EXTRA_INDENT));
+                if_branch.print_internal(indent + 2 * EXTRA_INDENT);
                 if let Some(e) = else_branch {
-                    println!("{tab}Else-Branch", tab = " ".repeat(indent + 2));
-                    e.print_internal(indent + 4);
+                    println!("{tab}Else-Branch", tab = " ".repeat(indent + EXTRA_INDENT));
+                    e.print_internal(indent + 2 * EXTRA_INDENT);
                 }
             }
             TreeType::StmtReturn { return_value } => {
                 println!("{tab}StmtReturn");
                 if let Some(r) = return_value {
-                    r.print_internal(indent + 2);
+                    r.print_internal(indent + EXTRA_INDENT);
                 }
             }
             TreeType::ExprName { name, typ } => {
@@ -207,7 +264,7 @@ impl Tree {
             TreeType::ExprArrLiteral { elements } => {
                 println!("{tab}ExprArrLiteral");
                 for e in elements {
-                    e.print_internal(indent + 2);
+                    e.print_internal(indent + EXTRA_INDENT);
                 }
             }
             TreeType::ExprArrAccess {
@@ -216,24 +273,24 @@ impl Tree {
                 typ,
             } => {
                 println!("{tab}ArrAccess {arr_name} {typ:?}");
-                indices.print_internal(indent + 2);
+                indices.print_internal(indent + EXTRA_INDENT);
             }
             TreeType::ExprLiteral { typ } => {
                 println!("{tab}ExprLiteral {} {typ:?}", self.tkn.get_value());
             }
             TreeType::ExprBinary { lhs, rhs, typ } => {
                 println!("{tab}ExprBinary {} {typ:?}", self.tkn.get_value());
-                lhs.print_internal(indent + 2);
-                rhs.print_internal(indent + 2);
+                lhs.print_internal(indent + EXTRA_INDENT);
+                rhs.print_internal(indent + EXTRA_INDENT);
             }
             TreeType::ExprComp { lhs, rhs, typ } => {
                 println!("{tab}ExprComp {} {typ:?}", self.tkn.get_value());
-                lhs.print_internal(indent + 2);
-                rhs.print_internal(indent + 2);
+                lhs.print_internal(indent + EXTRA_INDENT);
+                rhs.print_internal(indent + EXTRA_INDENT);
             }
             TreeType::ExprParen { expression, typ } => {
                 println!("{tab}ExprParen {typ:?}");
-                expression.print_internal(indent + 2);
+                expression.print_internal(indent + EXTRA_INDENT);
             }
             TreeType::ExprCall {
                 function_name,
@@ -241,34 +298,77 @@ impl Tree {
                 typ,
             } => {
                 println!("{tab}ExprCall {function_name} {typ:?}");
-                args.print_internal(indent + 2);
+                args.print_internal(indent + EXTRA_INDENT);
+            }
+            TreeType::BuiltInFunction {
+                function_name,
+                args,
+                typ,
+            } => {
+                println!("{tab}BuiltInFunction {function_name} {typ:?}");
+                args.print_internal(indent + EXTRA_INDENT);
             }
             TreeType::TypeDecl { typ } => {
-                println!("{tab}{typ:?}");
-            }
-            TreeType::Pointer { var_name } => {
-                println!("{tab} Pointer");
-                var_name.print_internal(indent + 2);
-            }
-            TreeType::Deref { var_name } => {
-                println!("{tab} Deref");
-                var_name.print_internal(indent + 2);
+                println!("{tab}TypeDecl {typ:?}");
             }
         }
     }
 
-    pub fn rebuild_code(&self) {
-        self.rebuild_code_internal(0);
+    pub fn rebuild_code(&self) -> String {
+        self.rebuild_code_internal(0)
     }
 
-    fn rebuild_code_internal(&self, indent: usize) {
+    fn rebuild_code_internal(&self, indent: usize) -> String {
         const EXTRA_INDENT: usize = 4;
         let tab = " ".repeat(indent);
+        let mut result = String::new();
         match &self.typ {
-            TreeType::File { functions } => {
-                for f in functions {
-                    f.rebuild_code_internal(indent);
+            TreeType::File { functions, classes } => {
+                for c in classes {
+                    result.push_str(&c.rebuild_code_internal(indent));
                 }
+                for f in functions {
+                    result.push_str(&f.rebuild_code_internal(indent));
+                }
+            }
+            TreeType::Class { name, fields, functions, features } => {
+                result.push_str(format!("class {name} {{\n").as_str());
+                for f in fields {
+                    result.push_str(&f.rebuild_code_internal(indent + EXTRA_INDENT));
+                }
+                for f in features {
+                    result.push_str(&f.rebuild_code_internal(indent + EXTRA_INDENT));
+                }
+                for f in functions {
+                    result.push_str(&f.rebuild_code_internal(indent + EXTRA_INDENT));
+                }
+                result.push_str("}\n");
+            }
+            TreeType::Field { name, typ } => {
+                result.push_str(format!("{tab}{name}: ").as_str());
+                result.push_str(&typ.rebuild_code());
+                result.push_str(";\n");
+            }
+            TreeType::FieldAccess { name, field, .. } => {
+                result.push_str(format!("{name}.").as_str());
+                result.push_str(&field.rebuild_code());
+            }
+            TreeType::Feature {
+                name,
+                return_type,
+                param,
+                block,
+            } => {
+                result.push_str(format!("{tab}feat {name}(").as_str());
+                result.push_str(&param.rebuild_code());
+                result.push_str(")");
+                if let Some(ret) = return_type {
+                    result.push_str(" -> ");
+                    result.push_str(&ret.rebuild_code());
+                }
+                result.push_str(" {\n");
+                result.push_str(&block.rebuild_code_internal(indent));
+                result.push_str(format!("{tab}}}\n").as_str());
             }
             TreeType::Func {
                 name,
@@ -276,45 +376,45 @@ impl Tree {
                 param,
                 block,
             } => {
-                print!("func {name}(");
-                param.rebuild_code();
-                print!(")");
+                result.push_str(format!("{tab}func {name}(").as_str());
+                result.push_str(&param.rebuild_code());
+                result.push_str(")");
                 if let Some(ret) = return_type {
-                    print!(" -> ");
-                    ret.rebuild_code();
+                    result.push_str(" -> ");
+                    result.push_str(&ret.rebuild_code());
                 }
-                println!(" {{");
-                block.rebuild_code();
-                println!("}}");
+                result.push_str(" {\n");
+                result.push_str(&block.rebuild_code_internal(indent));
+                result.push_str(format!("{tab}}}\n").as_str());
             }
             TreeType::ParamList { parameters } => {
                 if !parameters.is_empty() {
                     for p in parameters.iter().take(parameters.len() - 1) {
-                        p.rebuild_code();
-                        print!(", ");
+                        result.push_str(&p.rebuild_code());
+                        result.push_str(", ");
                     }
-                    parameters.last().unwrap().rebuild_code();
+                    result.push_str(&parameters.last().unwrap().rebuild_code());
                 }
             }
             TreeType::Param { name, typ } => {
-                print!("{name}: ");
-                typ.rebuild_code();
+                result.push_str(format!("{name}: ").as_str());
+                result.push_str(&typ.rebuild_code());
             }
             TreeType::ArgList { arguments } => {
                 if !arguments.is_empty() {
                     for a in arguments.iter().take(arguments.len() - 1) {
-                        a.rebuild_code();
-                        print!(", ");
+                        result.push_str(&a.rebuild_code());
+                        result.push_str(", ");
                     }
-                    arguments.last().unwrap().rebuild_code();
+                    result.push_str(&arguments.last().unwrap().rebuild_code());
                 }
             }
             TreeType::Arg { expression } => {
-                expression.rebuild_code();
+                result.push_str(&expression.rebuild_code());
             }
             TreeType::Block { statements } => {
                 for s in statements {
-                    s.rebuild_code_internal(indent + EXTRA_INDENT);
+                    result.push_str(&s.rebuild_code_internal(indent + EXTRA_INDENT));
                 }
             }
             TreeType::StmtIf {
@@ -322,109 +422,120 @@ impl Tree {
                 if_branch,
                 else_branch,
             } => {
-                print!("{tab}if (");
-                condition.rebuild_code();
-                println!(") {{");
-                if_branch.rebuild_code_internal(indent);
-                print!("{tab}}}");
+                result.push_str(format!("{tab}if (").as_str());
+                result.push_str(&condition.rebuild_code());
+                result.push_str(") {\n");
+                result.push_str(&if_branch.rebuild_code_internal(indent));
+                result.push_str(format!("{tab}}}").as_str());
                 if let Some(els) = else_branch {
-                    println!(" else {{");
-                    els.rebuild_code_internal(indent);
-                    println!("{tab}}}");
+                    result.push_str(" else {\n");
+                    result.push_str(&els.rebuild_code_internal(indent));
+                    result.push_str(format!("{tab}}}\n").as_str());
                 } else {
-                    println!();
+                    result.push('\n');
                 }
             }
             TreeType::StmtReturn { return_value } => {
-                print!("{tab}return");
+                result.push_str(format!("{tab}return").as_str());
                 if let Some(ret) = return_value {
-                    print!(" ");
-                    ret.rebuild_code();
+                    result.push_str(" ");
+                    result.push_str(&ret.rebuild_code());
                 }
-                println!(";");
+                result.push_str(";\n");
             }
             TreeType::StmtLet {
                 name,
                 typ,
                 expression,
             } => {
-                print!("{tab}let {name}: ");
-                typ.rebuild_code();
-                print!(" = ");
-                expression.rebuild_code();
-                println!(";");
+                result.push_str(format!("{tab}let {name}: ").as_str());
+                result.push_str(&typ.rebuild_code());
+                result.push_str(" = ");
+                result.push_str(&expression.rebuild_code());
+                result.push_str(";\n");
             }
             TreeType::StmtAssign { name, expression } => {
-                print!("{tab}");
-                name.rebuild_code();
-                print!(" = ");
-                expression.rebuild_code();
-                println!(";");
+                result.push_str(format!("{tab}").as_str());
+                result.push_str(&name.rebuild_code());
+                result.push_str(" = ");
+                result.push_str(&expression.rebuild_code());
+                result.push_str(";\n");
             }
             TreeType::StmtExpr { expression } => {
-                print!("{tab}");
-                expression.rebuild_code_internal(indent);
-                println!(";");
+                result.push_str(format!("{tab}").as_str());
+                result.push_str(&expression.rebuild_code_internal(indent));
+                result.push_str(";\n");
             }
 
             TreeType::ExprComp { lhs, rhs, .. } => {
-                lhs.rebuild_code();
-                print!(" {} ", self.tkn.get_value());
-                rhs.rebuild_code();
+                result.push_str(&lhs.rebuild_code());
+                result.push_str(format!(" {} ", self.tkn.get_value()).as_str());
+                result.push_str(&rhs.rebuild_code());
             }
             TreeType::ExprBinary { lhs, rhs, .. } => {
-                lhs.rebuild_code();
-                print!(" {} ", self.tkn.get_value());
-                rhs.rebuild_code();
+                result.push_str(&lhs.rebuild_code());
+                result.push_str(format!(" {} ", self.tkn.get_value()).as_str());
+                result.push_str(&rhs.rebuild_code());
             }
             TreeType::ExprParen { expression, .. } => {
-                print!("(");
-                expression.rebuild_code();
-                print!(")");
+                result.push_str("(");
+                result.push_str(&expression.rebuild_code());
+                result.push_str(")");
             }
             TreeType::ExprName { name, .. } => {
-                print!("{name}");
+                result.push_str(format!("{name}").as_str());
             }
-            TreeType::ExprLiteral { .. } => {
-                print!("{}", self.tkn.get_value());
+            TreeType::ExprLiteral { typ } => {
+                if *typ != Type::Unknown {
+                    result.push_str(format!("{}{}", self.tkn.get_value(), typ).as_str());
+                } else {
+                    result.push_str(format!("{}", self.tkn.get_value()).as_str());
+                }
             }
             TreeType::ExprArrLiteral { elements } => {
-                print!("[");
+                result.push_str("[");
                 if !elements.is_empty() {
                     for e in elements.iter().take(elements.len() - 1) {
-                        e.rebuild_code();
-                        print!(", ");
+                        result.push_str(&e.rebuild_code());
+                        result.push_str(", ");
                     }
-                    elements.last().unwrap().rebuild_code();
+                    result.push_str(&elements.last().unwrap().rebuild_code());
                 }
-                print!("]");
+                result.push_str("]");
             }
             TreeType::ExprArrAccess {
                 arr_name, indices, ..
             } => {
-                print!("{arr_name}");
-                indices.rebuild_code();
+                result.push_str(format!("{arr_name}").as_str());
+                result.push_str(&indices.rebuild_code());
             }
             TreeType::ExprCall {
                 function_name,
                 args,
                 ..
             } => {
-                print!("{function_name}(");
-                args.rebuild_code();
-                print!(")");
+                result.push_str(format!("{function_name}(").as_str());
+                result.push_str(&args.rebuild_code());
+                result.push_str(")");
+            }
+            TreeType::BuiltInFunction {
+                function_name,
+                args,
+                ..
+            } => {
+                result.push_str(format!("{function_name}(").as_str());
+                result.push_str(&args.rebuild_code());
+                result.push_str(")");
             }
             TreeType::TypeDecl { typ } => {
-                print!("{}", typ);
+                result.push_str(format!("{typ}").as_str());
             }
-            TreeType::Name { name } => {
-                print!("{name}");
-            }
-            TreeType::Pointer { .. } | TreeType::Deref { .. } => todo!(),
         }
+        result
     }
 }
 
+#[derive(Clone)]
 pub struct Parser {
     file_path: String,
     tokens: Vec<Token>,
@@ -436,15 +547,36 @@ pub struct Parser {
 }
 
 impl Parser {
-    pub fn new(file_path: &String, tokens: Vec<Token>, print_debug: bool) -> Self {
+    pub fn new() -> Self {
         Self {
-            file_path: file_path.to_owned(),
-            tokens,
+            file_path: String::new(),
+            tokens: vec![],
             ptr: 0,
             fuel: Cell::new(256),
             root: None,
-            print_debug,
+            print_debug: false,
         }
+    }
+
+    pub fn origin(&mut self, file_path: &String) -> Self {
+        self.file_path = file_path.to_string();
+        self.clone()
+    }
+
+    pub fn debug(&mut self, debug: bool) -> Self {
+        self.print_debug = debug;
+        self.clone()
+    }
+
+    pub fn set_tokens(&mut self, tokens: Vec<Token>) {
+        self.tokens = tokens.to_owned();
+        self.reset();
+    }
+
+    fn reset(&mut self) {
+        self.ptr = 0;
+        self.fuel.set(256);
+        self.root = None;
     }
 
     fn open(&self) -> Token {
@@ -456,12 +588,11 @@ impl Parser {
         self.fuel.set(256);
         self.ptr += 1;
     }
-
     fn eof(&self) -> bool {
         self.ptr >= self.tokens.len()
     }
 
-    fn nth(&self, lookahead: usize) -> TokenType {
+    fn nth(&mut self, lookahead: usize) -> TokenType {
         if self.fuel.get() == 0 {
             panic!("Parser is stuck at {}", self.ptr);
         }
@@ -471,7 +602,7 @@ impl Parser {
             .map_or(TokenType::Eof, |it| it.get_type())
     }
 
-    fn at(&self, typ: TokenType) -> bool {
+    fn at(&mut self, typ: TokenType) -> bool {
         self.nth(0) == typ
     }
 
@@ -503,372 +634,240 @@ impl Parser {
         ))
     }
 
-    fn parse_type_literal(&mut self, lit_tkn: &Token) -> Result<(String, Type), String> {
-        let lit = lit_tkn.get_value();
-        let loc = &lit_tkn.get_loc();
-        match lit.bytes().position(|c| c.is_ascii_alphabetic()) {
-            Some(index) => {
-                let typ_str = &lit[index..];
-                let typ = self.parse_type_str(loc, typ_str)?;
-                Ok((lit[0..index].to_owned(), typ))
+    pub fn parse_snippet(&mut self) -> Result<Tree, String> {
+        // Only ever call this in combination with Compiler::throwaway_compiler_parse()
+        // Assumes there's a single statement or function or whatever
+        // like `return this;` that's getting inserted in desugaring
+        match self.nth(0) {
+            TokenType::FunctionKeyword => self.parse_func(),
+            TokenType::FeatureKeyword => self.parse_feature(),
+            TokenType::ClassKeyword => self.parse_class(),
+            TokenType::LetKeyword => self.parse_stmt_let(),
+            TokenType::IfKeyword => self.parse_stmt_if(),
+            TokenType::ReturnKeyword => self.parse_stmt_return(),
+            TokenType::OpenCurly => self.parse_block(),
+            e => todo!("`parse_snippet()` does not support `{:?}` yet", e)
+        }
+    }
+
+    pub fn parse_file(&mut self) -> Result<Tree, String> {
+        assert_eq!(
+            TokenType::Eof as u8 + 1,
+            36,
+            "Not all TokenTypes are handled in parse_file()"
+        );
+        let tkn = Token::new(
+            TokenType::File,
+            self.file_path.clone(),
+            Location::new(self.file_path.clone(), 0, 0),
+        );
+        let mut functions = vec![];
+        let mut classes = vec![];
+        while !self.eof() {
+            match self.nth(0) {
+                TokenType::FunctionKeyword => functions.push(self.parse_func()?),
+                TokenType::ClassKeyword => classes.push(self.parse_class()?),
+                _ => {
+                    let prev = self.tokens.get(self.ptr).unwrap();
+                    return Err(format!(
+                        "{}: {:?}: Expected one of {{Function, Class}}, found {:?}",
+                        ERR_STR,
+                        prev.get_loc(),
+                        prev.get_type()
+                    ));
+                }
             }
-            None => Ok((lit, Type::Unknown)),
         }
+        self.root = Some(Tree {
+            typ: TreeType::File {
+                functions,
+                classes
+            },
+            tkn,
+        });
+        Ok(self.root.clone().unwrap())
     }
 
-    fn parse_type(&self, token: &Token) -> Result<Type, String> {
-        self.parse_type_str(&token.get_loc(), &token.get_value())
-    }
-
-    fn parse_type_str(&self, loc: &Location, val: &str) -> Result<Type, String> {
-        match val {
-            "i32" => Ok(Type::I32),
-            "i64" => Ok(Type::I64),
-            "u32" => Ok(Type::U32),
-            "u64" => Ok(Type::U64),
-            "usize" => Ok(Type::Usize),
-            // Reserved for future use
-            "f32" => Ok(Type::F32),
-            "f64" => Ok(Type::F64),
-            t => Err(format!(
-                "{}: {:?}: Unexpected Type `{}`. Expected one of {{i32, i64, u32, u64}}",
-                ERR_STR, loc, t
-            )),
-        }
-    }
-
-    fn parse_expr_call(&mut self) -> Result<Tree, String> {
+    fn parse_class(&mut self) -> Result<Tree, String> {
         let tkn = self.open();
-        self.expect(TokenType::Name)?;
-        let args = self.parse_arg_list()?;
+        self.expect(TokenType::ClassKeyword)?;
+        let class_name = self.expect(TokenType::Identifier)?;
+        if !class_name.get_value().as_bytes()[0].is_ascii_uppercase() {
+            return Err(format!(
+                "{}: {:?}: Class names are expected to be capitalized, found `{}`.",
+                ERR_STR,
+                class_name.get_loc(),
+                class_name.get_value()
+            ));
+        }
+        self.expect(TokenType::OpenCurly)?;
+        let mut fields = vec![];
+        let mut functions = vec![];
+        let mut features = vec![];
+        while !self.at(TokenType::ClosingCurly) && !self.eof() {
+            // println!("{:#?}\n{:#?}\n{:#?}", fields, features, functions);
+            match self.nth(0) {
+                TokenType::Identifier => fields.push(self.parse_class_field()?),
+                TokenType::FunctionKeyword => functions.push(self.parse_func()?),
+                TokenType::FeatureKeyword => features.push(self.parse_feature()?),
+                _ => {
+                    let prev = self.tokens.get(self.ptr).unwrap();
+                    return Err(format!(
+                        "{}: {:?}: Expected one of {{Field, Function}}, found {:?}.",
+                        ERR_STR,
+                        prev.get_loc(),
+                        prev.get_type()
+                    ));
+                }
+            }
+        }
+        self.expect(TokenType::ClosingCurly)?;
         Ok(Tree {
-            typ: TreeType::ExprCall {
-                function_name: tkn.get_value(),
-                args: Box::new(args),
-                typ: Type::Unknown,
+            typ: TreeType::Class {
+                name: class_name.get_value(),
+                fields,
+                functions,
+                features
+            },
+            tkn
+        })
+    }
+
+    fn parse_class_field(&mut self) -> Result<Tree, String> {
+        let tkn = self.open();
+        let name = self.expect(TokenType::Identifier)?;
+        let typ = self.parse_type_decl()?;
+        self.expect(TokenType::Semi)?;
+        Ok(Tree {
+            typ: TreeType::Field {
+                name: name.get_value(),
+                typ: Box::new(typ)
+            },
+            tkn
+        })
+    }
+
+    fn parse_feature(&mut self) -> Result<Tree, String> {
+        let tkn = self.open();
+        self.expect(TokenType::FeatureKeyword)?;
+        let feature_name = self.expect(TokenType::Identifier)?;
+        let params = self.parse_param_list()?;
+        let return_type = if self.at(TokenType::Arrow) {
+            Some(Box::new(self.parse_return_type()?))
+        } else {
+            None
+        };
+        let block = self.parse_block()?;
+        Ok(Tree {
+            typ: TreeType::Feature {
+                name: feature_name.get_value(),
+                return_type,
+                param: Box::new(params),
+                block: Box::new(block),
             },
             tkn,
         })
     }
 
-    fn parse_expr_array(&mut self) -> Result<Tree, String> {
+    fn parse_func(&mut self) -> Result<Tree, String> {
         let tkn = self.open();
-        let mut elements = vec![];
-        self.expect(TokenType::OpenSquare)?;
-        while !self.at(TokenType::ClosingSquare) && !self.eof() {
-            let elem = self.parse_expr()?;
-            elements.push(elem);
+        self.expect(TokenType::FunctionKeyword)?;
+        let fn_name = self.expect(TokenType::Identifier)?;
+        if fn_name.get_value().as_bytes()[0].is_ascii_uppercase() {
+            return Err(format!(
+                "{}: {:?}: Function names are not expected to be capitalized, found `{}`.",
+                ERR_STR,
+                fn_name.get_loc(),
+                fn_name.get_value()
+            ));
+        }
+        let params = self.parse_param_list()?;
+        let return_type = if self.at(TokenType::Arrow) {
+            Some(Box::new(self.parse_return_type()?))
+        } else {
+            None
+        };
+        let block = self.parse_block()?;
+        Ok(Tree {
+            typ: TreeType::Func {
+                name: fn_name.get_value(),
+                return_type,
+                param: Box::new(params),
+                block: Box::new(block),
+            },
+            tkn,
+        })
+    }
+
+    fn parse_param_list(&mut self) -> Result<Tree, String> {
+        let tkn = self.open();
+        let mut children = vec![];
+        self.expect(TokenType::OpenRound)?;
+        while !self.at(TokenType::ClosingRound) && !self.eof() {
+            children.push(self.parse_param()?);
             if !self.eat(TokenType::Comma) {
                 break;
             }
         }
-        self.expect(TokenType::ClosingSquare)?;
+        self.expect(TokenType::ClosingRound)?;
         Ok(Tree {
-            typ: TreeType::ExprArrLiteral { elements },
+            typ: TreeType::ParamList {
+                parameters: children,
+            },
             tkn,
         })
     }
 
-    fn parse_name(&mut self) -> Result<Tree, String> {
+    fn parse_param(&mut self) -> Result<Tree, String> {
         let tkn = self.open();
-        Ok(match self.nth(1) {
-            TokenType::OpenRound => self.parse_expr_call()?,
-            TokenType::OpenSquare => {
-                self.expect(TokenType::Name)?;
-                let indices = self.parse_expr_array()?;
-                Tree {
-                    typ: TreeType::ExprArrAccess {
-                        arr_name: tkn.get_value(),
-                        indices: Box::new(indices),
-                        typ: Type::Unknown,
-                    },
-                    tkn,
-                }
-            }
-            _ => {
-                self.expect(TokenType::Name)?;
-                Tree {
-                    typ: TreeType::ExprName {
-                        name: tkn.get_value(),
-                        typ: Type::Unknown,
-                    },
-                    tkn,
-                }
-            }
+        let name_tkn = self.expect(TokenType::Identifier)?;
+        let type_decl = self.parse_type_decl()?;
+        Ok(Tree {
+            typ: TreeType::Param {
+                name: name_tkn.get_value(),
+                typ: Box::new(type_decl),
+            },
+            tkn,
         })
     }
 
-    fn parse_expr_delim(&mut self) -> Result<Tree, String> {
-        Ok(match self.nth(0) {
-            TokenType::IntLiteral => {
-                // let tkn = self.open();
-                let number_token = self.expect(TokenType::IntLiteral)?;
-                let (number, typ) = self.parse_type_literal(&number_token)?;
-                let tkn = Token::new(TokenType::IntLiteral, number, number_token.get_loc());
-                Tree {
-                    typ: TreeType::ExprLiteral { typ },
-                    tkn,
-                }
-            }
-            TokenType::Name => self.parse_name()?,
-            TokenType::OpenRound => {
-                let tkn = self.open();
-                self.expect(TokenType::OpenRound)?;
-                let expr = self.parse_expr()?;
-                self.expect(TokenType::ClosingRound)?;
-                Tree {
-                    typ: TreeType::ExprParen {
-                        expression: Box::new(expr),
-                        typ: Type::Unknown,
-                    },
-                    tkn,
-                }
-            }
-            TokenType::OpenSquare => self.parse_expr_array()?,
-            TokenType::Ampersand => {
-                let tkn = self.open();
-                self.expect(TokenType::Ampersand)?;
-                let name = self.parse_name()?;
-                Tree {
-                    typ: TreeType::Pointer {
-                        var_name: Box::new(name),
-                    },
-                    tkn,
-                }
-            }
-            TokenType::Asterisk => {
-                let tkn = self.open();
-                self.expect(TokenType::Asterisk)?;
-                let name = self.parse_name()?;
-                Tree {
-                    typ: TreeType::Deref {
-                        var_name: Box::new(name),
-                    },
-                    tkn,
-                }
-            }
-            e => {
-                let ptr = if self.ptr == self.tokens.len() {
-                    self.ptr - 1
-                } else {
-                    self.ptr
-                };
-                return Err(format!(
-                    "{}: {:?}: Expected Expr, found {:?}",
-                    ERR_STR,
-                    self.tokens.get(ptr).unwrap().get_loc(),
-                    e
-                ));
-            }
-        })
-    }
-
-    fn parse_expr_rec(&mut self, left: TokenType) -> Result<Tree, String> {
-        let mut lhs = self.parse_expr_delim()?;
-
-        loop {
-            let right = self.nth(0);
-            if Self::right_binds_tighter(left, right) {
-                let tkn = self.open();
-                self.advance();
-                let rhs = self.parse_expr_rec(right)?;
-                if COMPARATOR_TYPES.contains(&right) {}
-                lhs = if COMPARATOR_TYPES.contains(&right) {
-                    Tree {
-                        typ: TreeType::ExprComp {
-                            lhs: Box::new(lhs),
-                            rhs: Box::new(rhs),
-                            typ: Type::Unknown,
-                        },
-                        tkn,
-                    }
-                } else {
-                    Tree {
-                        typ: TreeType::ExprBinary {
-                            lhs: Box::new(lhs),
-                            rhs: Box::new(rhs),
-                            typ: Type::Unknown,
-                        },
-                        tkn,
-                    }
-                };
+    fn parse_block(&mut self) -> Result<Tree, String> {
+        if !self.at(TokenType::OpenCurly) {
+            let ptr = if self.ptr == self.tokens.len() {
+                self.ptr - 1
             } else {
-                break;
-            }
+                self.ptr
+            };
+            let tkn = self.tokens.get(ptr).unwrap();
+            return Err(format!(
+                "{}: {:?}: Expected `{{`, found `{:?}`",
+                ERR_STR,
+                tkn.get_loc(),
+                self.nth(0)
+            ));
         }
-        Ok(lhs)
-    }
-
-    fn right_binds_tighter(left: TokenType, right: TokenType) -> bool {
-        fn tightness(typ: TokenType) -> Option<usize> {
-            [
-                &COMPARATOR_TYPES,
-                [TokenType::Plus, TokenType::Minus].as_slice(),
-                &[TokenType::Asterisk, TokenType::ForwardSlash],
-            ]
-            .iter()
-            .position(|l| l.contains(&typ))
-        }
-        let Some(right_tight) = tightness(right) else {
-            return false
-        };
-        let Some(left_tight) = tightness(left) else {
-            assert!(left == TokenType::Eof);
-            return true;
-        };
-        right_tight > left_tight
-    }
-
-    fn parse_expr(&mut self) -> Result<Tree, String> {
-        self.parse_expr_rec(TokenType::Eof)
-    }
-
-    fn parse_type_arr_size(&mut self) -> Result<Vec<usize>, String> {
         let tkn = self.open();
         let mut children = vec![];
-        self.expect(TokenType::OpenSquare)?;
-        let size = self.expect(TokenType::IntLiteral)?;
-        let size = match size.get_value().parse::<usize>() {
-            Ok(i) => i,
-            Err(e) => return Err(format!("{}: {:?}: {}", ERR_STR, tkn.get_loc(), e)),
-        };
-        children.push(size);
-        while !self.at(TokenType::ClosingSquare) && !self.eof() {
-            self.expect(TokenType::Comma);
-            let size = self.expect(TokenType::IntLiteral)?;
-            let size = match size.get_value().parse::<usize>() {
-                Ok(i) => i,
-                Err(e) => return Err(format!("{}: {:?}: {}", ERR_STR, tkn.get_loc(), e)),
-            };
-            children.push(size);
+        self.expect(TokenType::OpenCurly)?;
+        while !self.at(TokenType::ClosingCurly) && !self.eof() {
+            // Parse Statements
+            match self.nth(0) {
+                TokenType::LetKeyword => children.push(self.parse_stmt_let()?),
+                TokenType::IfKeyword => children.push(self.parse_stmt_if()?),
+                TokenType::ReturnKeyword => children.push(self.parse_stmt_return()?),
+                TokenType::Identifier => match self.nth(1) {
+                    TokenType::Dot | TokenType::Equal | TokenType::OpenSquare => {
+                        children.push(self.parse_stmt_assign()?)
+                    }
+                    _ => children.push(self.parse_stmt_expr()?),
+                },
+                _ => children.push(self.parse_stmt_expr()?),
+            }
         }
-        self.expect(TokenType::ClosingSquare)?;
-        Ok(children)
-    }
-
-    fn parse_type_decl(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        self.expect(TokenType::TypeDecl)?;
-        let name = match self.nth(0) {
-            TokenType::Ampersand => {
-                self.expect(TokenType::Ampersand)?;
-                let typ_tkn = self.expect(TokenType::Name)?;
-                let typ = self.parse_type(&typ_tkn)?;
-                if self.at(TokenType::OpenSquare) {
-                    let size = self.parse_type_arr_size()?;
-                    Tree {
-                        typ: TreeType::TypeDecl {
-                            typ: Type::Ptr(Box::new(Type::Arr(Box::new(typ), size))),
-                        },
-                        tkn,
-                    }
-                } else {
-                    Tree {
-                        typ: TreeType::TypeDecl {
-                            typ: Type::Ptr(Box::new(typ)),
-                        },
-                        tkn,
-                    }
-                }
-            }
-            _ => {
-                let name = self.expect(TokenType::Name)?;
-                let typ = self.parse_type(&name)?;
-                if self.at(TokenType::OpenSquare) {
-                    let size = self.parse_type_arr_size()?;
-                    Tree {
-                        typ: TreeType::TypeDecl {
-                            typ: Type::Arr(Box::new(typ), size),
-                        },
-                        tkn,
-                    }
-                } else {
-                    Tree {
-                        typ: TreeType::TypeDecl { typ },
-                        tkn,
-                    }
-                }
-            }
-        };
-        Ok(name)
-    }
-
-    fn parse_stmt_let(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        self.expect(TokenType::LetKeyword)?;
-        let name_tkn = self.expect(TokenType::Name)?;
-        let type_tree = self.parse_type_decl()?;
-        self.expect(TokenType::Equal)?;
-        let expr = self.parse_expr()?;
-        self.expect(TokenType::Semi)?;
+        self.expect(TokenType::ClosingCurly)?;
         Ok(Tree {
-            typ: TreeType::StmtLet {
-                name: name_tkn.get_value(),
-                typ: Box::new(type_tree),
-                expression: Box::new(expr),
-            },
-            tkn,
-        })
-    }
-
-    fn parse_stmt_assign(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        let node = match self.nth(1) {
-            TokenType::Equal => {
-                let name = self.expect(TokenType::Name)?;
-                Tree {
-                    typ: TreeType::Name {
-                        name: name.get_value(),
-                    },
-                    tkn: tkn.clone(),
-                }
-            }
-            TokenType::OpenSquare => {
-                let name = self.expect(TokenType::Name)?;
-                Tree {
-                    typ: TreeType::ExprArrAccess {
-                        arr_name: name.get_value(),
-                        indices: Box::new(self.parse_expr_array()?),
-                        typ: Type::Unknown,
-                    },
-                    tkn: tkn.clone(),
-                }
-            }
-            _ => todo!(),
-        };
-        self.expect(TokenType::Equal)?;
-        let expr = self.parse_expr()?;
-        self.expect(TokenType::Semi)?;
-        Ok(Tree {
-            typ: TreeType::StmtAssign {
-                name: Box::new(node),
-                expression: Box::new(expr),
-            },
-            tkn,
-        })
-    }
-
-    fn parse_stmt_assign_ptr(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        let ptr_tkn = self.expect(TokenType::Asterisk)?;
-        let var_tkn = self.expect(TokenType::Name)?;
-        self.expect(TokenType::Equal)?;
-        let expr = self.parse_expr()?;
-        self.expect(TokenType::Semi)?;
-        Ok(Tree {
-            typ: TreeType::StmtAssign {
-                name: Box::new(Tree {
-                    typ: TreeType::Pointer {
-                        var_name: Box::new(Tree {
-                            typ: TreeType::Name {
-                                name: var_tkn.get_value(),
-                            },
-                            tkn: var_tkn,
-                        }),
-                    },
-                    tkn: ptr_tkn,
-                }),
-                expression: Box::new(expr),
+            typ: TreeType::Block {
+                statements: children,
             },
             tkn,
         })
@@ -886,31 +885,37 @@ impl Parser {
         })
     }
 
-    fn parse_arg(&mut self) -> Result<Tree, String> {
+    fn parse_stmt_let(&mut self) -> Result<Tree, String> {
         let tkn = self.open();
-        let expr = self.parse_expr()?;
+        self.expect(TokenType::LetKeyword)?;
+        let name_tkn = self.expect(TokenType::Identifier)?;
+        let type_tree = self.parse_type_decl()?;
+        self.expect(TokenType::Equal)?;
+        let expr = match self.nth(0) {
+            TokenType::OpenSquare => self.parse_expr_array_literal()?,
+            _ => self.parse_expr()?
+        };
+        self.expect(TokenType::Semi)?;
         Ok(Tree {
-            typ: TreeType::Arg {
+            typ: TreeType::StmtLet {
+                name: name_tkn.get_value(),
+                typ: Box::new(type_tree),
                 expression: Box::new(expr),
             },
             tkn,
         })
     }
 
-    fn parse_arg_list(&mut self) -> Result<Tree, String> {
+    fn parse_stmt_assign(&mut self) -> Result<Tree, String> {
         let tkn = self.open();
-        let mut children = vec![];
-        self.expect(TokenType::OpenRound)?;
-        while !self.at(TokenType::ClosingRound) && !self.eof() {
-            children.push(self.parse_arg()?);
-            if !self.eat(TokenType::Comma) {
-                break;
-            }
-        }
-        self.expect(TokenType::ClosingRound)?;
+        let node = self.parse_identifier()?;
+        self.expect(TokenType::Equal)?;
+        let expr = self.parse_expr()?;
+        self.expect(TokenType::Semi)?;
         Ok(Tree {
-            typ: TreeType::ArgList {
-                arguments: children,
+            typ: TreeType::StmtAssign {
+                name: Box::new(node),
+                expression: Box::new(expr),
             },
             tkn,
         })
@@ -955,84 +960,10 @@ impl Parser {
         })
     }
 
-    fn parse_block(&mut self) -> Result<Tree, String> {
-        if !self.at(TokenType::OpenCurly) {
-            let ptr = if self.ptr == self.tokens.len() {
-                self.ptr - 1
-            } else {
-                self.ptr
-            };
-            let tkn = self.tokens.get(ptr).unwrap();
-            return Err(format!(
-                "{}: {:?}: Expected `{{`, found `{:?}`",
-                ERR_STR,
-                tkn.get_loc(),
-                self.nth(0)
-            ));
-        }
-        let tkn = self.open();
-        let mut children = vec![];
-        self.expect(TokenType::OpenCurly)?;
-        while !self.at(TokenType::ClosingCurly) && !self.eof() {
-            match self.nth(0) {
-                TokenType::LetKeyword => children.push(self.parse_stmt_let()?),
-                TokenType::IfKeyword => children.push(self.parse_stmt_if()?),
-                TokenType::ReturnKeyword => children.push(self.parse_stmt_return()?),
-                TokenType::Name => match self.nth(1) {
-                    TokenType::Equal | TokenType::OpenSquare => {
-                        children.push(self.parse_stmt_assign()?)
-                    }
-                    _ => children.push(self.parse_stmt_expr()?),
-                },
-                TokenType::Asterisk => children.push(self.parse_stmt_assign_ptr()?),
-                _ => children.push(self.parse_stmt_expr()?),
-            }
-        }
-        self.expect(TokenType::ClosingCurly)?;
-        Ok(Tree {
-            typ: TreeType::Block {
-                statements: children,
-            },
-            tkn,
-        })
-    }
-
-    fn parse_param(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        let name_tkn = self.expect(TokenType::Name)?;
-        let type_decl = self.parse_type_decl()?;
-        Ok(Tree {
-            typ: TreeType::Param {
-                name: name_tkn.get_value(),
-                typ: Box::new(type_decl),
-            },
-            tkn,
-        })
-    }
-
-    fn parse_param_list(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        let mut children = vec![];
-        self.expect(TokenType::OpenRound)?;
-        while !self.at(TokenType::ClosingRound) && !self.eof() {
-            children.push(self.parse_param()?);
-            if !self.eat(TokenType::Comma) {
-                break;
-            }
-        }
-        self.expect(TokenType::ClosingRound)?;
-        Ok(Tree {
-            typ: TreeType::ParamList {
-                parameters: children,
-            },
-            tkn,
-        })
-    }
-
     fn parse_return_type(&mut self) -> Result<Tree, String> {
         let tkn = self.open();
         self.expect(TokenType::Arrow)?;
-        let name_tkn = self.expect(TokenType::Name)?;
+        let name_tkn = self.expect(TokenType::Identifier)?;
         let typ = self.parse_type(&name_tkn)?;
         Ok(Tree {
             typ: TreeType::TypeDecl { typ },
@@ -1040,59 +971,326 @@ impl Parser {
         })
     }
 
-    fn parse_func(&mut self) -> Result<Tree, String> {
+    fn parse_type_decl(&mut self) -> Result<Tree, String> {
         let tkn = self.open();
-        self.expect(TokenType::FnKeyword)?;
-        let fn_name = self.expect(TokenType::Name)?;
-        let params = self.parse_param_list()?;
-        let return_type = if self.at(TokenType::Arrow) {
-            Some(Box::new(self.parse_return_type()?))
+        self.expect(TokenType::Colon)?;
+        let name = self.expect(TokenType::Identifier)?;
+        let typ = self.parse_type(&name)?;
+        let name = if self.at(TokenType::OpenSquare) {
+            let size = self.parse_type_arr_size()?;
+            Tree {
+                typ: TreeType::TypeDecl {
+                    typ: Type::Arr(Box::new(typ), size),
+                },
+                tkn,
+            }
         } else {
-            None
+            Tree {
+                typ: TreeType::TypeDecl { typ },
+                tkn,
+            }
         };
-        let block = self.parse_block()?;
+        Ok(name)
+    }
+
+    fn parse_type_literal(&mut self, lit_tkn: &Token) -> Result<(String, Type), String> {
+        let lit = lit_tkn.get_value();
+        let loc = &lit_tkn.get_loc();
+        match lit.bytes().position(|c| c.is_ascii_alphabetic()) {
+            Some(index) => {
+                let typ_str = &lit[index..];
+                let typ = self.parse_type_str(loc, typ_str)?;
+                Ok((lit[0..index].to_owned(), typ))
+            }
+            None => Ok((lit, Type::Unknown)),
+        }
+    }
+
+    fn parse_type(&self, token: &Token) -> Result<Type, String> {
+        self.parse_type_str(&token.get_loc(), &token.get_value())
+    }
+
+    fn parse_type_str(&self, loc: &Location, val: &str) -> Result<Type, String> {
+        match val {
+            "i32" => Ok(Type::I32),
+            "i64" => Ok(Type::I64),
+            "u32" => Ok(Type::U32),
+            "u64" => Ok(Type::U64),
+            "usize" => Ok(Type::Usize),
+            // Reserved for future use
+            "f32" => Ok(Type::F32),
+            "f64" => Ok(Type::F64),
+            _ => Ok(Type::Class(val.to_owned()))
+        }
+    }
+
+    fn parse_type_arr_size(&mut self) -> Result<Vec<usize>, String> {
+        let tkn = self.open();
+        let mut children = vec![];
+        self.expect(TokenType::OpenSquare)?;
+        let size = self.expect(TokenType::IntLiteral)?;
+        let size = match size.get_value().parse::<usize>() {
+            Ok(i) => i,
+            Err(e) => return Err(format!("{}: {:?}: {}", ERR_STR, tkn.get_loc(), e)),
+        };
+        children.push(size);
+        while !self.at(TokenType::ClosingSquare) && !self.eof() {
+            self.expect(TokenType::Comma);
+            let size = self.expect(TokenType::IntLiteral)?;
+            let size = match size.get_value().parse::<usize>() {
+                Ok(i) => i,
+                Err(e) => return Err(format!("{}: {:?}: {}", ERR_STR, tkn.get_loc(), e)),
+            };
+            children.push(size);
+        }
+        self.expect(TokenType::ClosingSquare)?;
+        Ok(children)
+    }
+
+    fn parse_expr_call(&mut self) -> Result<Tree, String> {
+        let tkn = self.open();
+        self.expect(TokenType::Identifier)?;
+        let args = self.parse_arg_list()?;
         Ok(Tree {
-            typ: TreeType::Func {
-                name: fn_name.get_value(),
-                return_type,
-                param: Box::new(params),
-                block: Box::new(block),
+            typ: TreeType::ExprCall {
+                function_name: tkn.get_value(),
+                args: Box::new(args),
+                typ: Type::Unknown,
+            },
+            tkn,
+        })
+    }
+    
+    fn parse_arg_list(&mut self) -> Result<Tree, String> {
+        let tkn = self.open();
+        let mut children = vec![];
+        self.expect(TokenType::OpenRound)?;
+        while !self.at(TokenType::ClosingRound) && !self.eof() {
+            children.push(self.parse_arg()?);
+            if !self.eat(TokenType::Comma) {
+                break;
+            }
+        }
+        self.expect(TokenType::ClosingRound)?;
+        Ok(Tree {
+            typ: TreeType::ArgList {
+                arguments: children,
             },
             tkn,
         })
     }
 
-    pub fn parse_file(&mut self) -> Result<Tree, String> {
-        assert_eq!(
-            TokenType::Eof as u8 + 1,
-            31,
-            "Not all TokenTypes are handled in parse_file()"
-        );
-        let tkn = Token::new(
-            TokenType::File,
-            self.file_path.clone(),
-            Location::new(self.file_path.clone(), 0, 0),
-        );
-        let mut children = vec![];
-        while !self.eof() {
-            if self.at(TokenType::FnKeyword) {
-                children.push(self.parse_func()?);
-            } else {
-                let prev = self.tokens.get(self.ptr).unwrap();
-                return Err(format!(
-                    "{}: {:?}: Expected Function, found {:?}",
-                    ERR_STR,
-                    prev.get_loc(),
-                    prev.get_type()
-                ));
-            }
-        }
-        self.root = Some(Tree {
-            typ: TreeType::File {
-                functions: children,
+    fn parse_arg(&mut self) -> Result<Tree, String> {
+        let tkn = self.open();
+        let expr = self.parse_expr()?;
+        Ok(Tree {
+            typ: TreeType::Arg {
+                expression: Box::new(expr),
             },
             tkn,
-        });
-        Ok(self.root.clone().unwrap())
+        })
+    }
+
+    fn parse_expr(&mut self) -> Result<Tree, String> {
+        self.parse_expr_rec(TokenType::Eof)
+    }
+
+    fn parse_expr_rec(&mut self, left: TokenType) -> Result<Tree, String> {
+        let mut lhs = self.parse_expr_delim()?;
+
+        loop {
+            let right = self.nth(0);
+            if Self::right_binds_tighter(left, right) {
+                let tkn = self.open();
+                self.advance();
+                let rhs = self.parse_expr_rec(right)?;
+                if COMPARATOR_TYPES.contains(&right) {}
+                lhs = if COMPARATOR_TYPES.contains(&right) {
+                    Tree {
+                        typ: TreeType::ExprComp {
+                            lhs: Box::new(lhs),
+                            rhs: Box::new(rhs),
+                            typ: Type::Unknown,
+                        },
+                        tkn,
+                    }
+                } else {
+                    Tree {
+                        typ: TreeType::ExprBinary {
+                            lhs: Box::new(lhs),
+                            rhs: Box::new(rhs),
+                            typ: Type::Unknown,
+                        },
+                        tkn,
+                    }
+                };
+            } else {
+                break;
+            }
+        }
+        Ok(lhs)
+    }
+
+    fn parse_expr_delim(&mut self) -> Result<Tree, String> {
+        Ok(match self.nth(0) {
+            TokenType::IntLiteral => {
+                // let tkn = self.open();
+                let number_token = self.expect(TokenType::IntLiteral)?;
+                let (number, typ) = self.parse_type_literal(&number_token)?;
+                let tkn = Token::new(TokenType::IntLiteral, number, number_token.get_loc());
+                Tree {
+                    typ: TreeType::ExprLiteral { typ },
+                    tkn,
+                }
+            }
+            TokenType::Identifier => self.parse_identifier()?,
+            TokenType::OpenRound => {
+                let tkn = self.open();
+                self.expect(TokenType::OpenRound)?;
+                let expr = self.parse_expr()?;
+                self.expect(TokenType::ClosingRound)?;
+                Tree {
+                    typ: TreeType::ExprParen {
+                        expression: Box::new(expr),
+                        typ: Type::Unknown,
+                    },
+                    tkn,
+                }
+            }
+            TokenType::OpenSquare => self.parse_expr_array_literal()?,
+            TokenType::BuiltInFunction => self.parse_expr_built_in_func()?,
+            e => {
+                let ptr = if self.ptr == self.tokens.len() {
+                    self.ptr - 1
+                } else {
+                    self.ptr
+                };
+                return Err(format!(
+                    "{}: {:?}: Expected Expr, found {:?}",
+                    ERR_STR,
+                    self.tokens.get(ptr).unwrap().get_loc(),
+                    e
+                ));
+            }
+        })
+    }
+    
+    fn right_binds_tighter(left: TokenType, right: TokenType) -> bool {
+        fn tightness(typ: TokenType) -> Option<usize> {
+            [
+                &COMPARATOR_TYPES,
+                [TokenType::Plus, TokenType::Minus].as_slice(),
+                &[TokenType::Asterisk, TokenType::ForwardSlash],
+            ]
+            .iter()
+            .position(|l| l.contains(&typ))
+        }
+        let Some(right_tight) = tightness(right) else {
+            return false
+        };
+        let Some(left_tight) = tightness(left) else {
+            assert!(left == TokenType::Eof);
+            return true;
+        };
+        right_tight > left_tight
+    }
+    
+    fn parse_expr_array_literal(&mut self) -> Result<Tree, String> {
+        let tkn = self.open();
+        let mut elements = vec![];
+        self.expect(TokenType::OpenSquare)?;
+        while !self.at(TokenType::ClosingSquare) && !self.eof() {
+            let elem = self.parse_expr()?;
+            elements.push(elem);
+            if !self.eat(TokenType::Comma) {
+                break;
+            }
+        }
+        self.expect(TokenType::ClosingSquare)?;
+        Ok(Tree {
+            typ: TreeType::ExprArrLiteral { elements },
+            tkn,
+        })
+    }
+
+    fn parse_expr_built_in_func(&mut self) -> Result<Tree, String> {
+        let tkn = self.open();
+        self.expect(TokenType::BuiltInFunction)?;
+        let args = self.parse_arg_list()?;
+        Ok(Tree {
+            typ: TreeType::BuiltInFunction {
+                function_name: tkn.get_value(),
+                args: Box::new(args),
+                typ: Type::Unknown,
+            },
+            tkn,
+        })
+    }
+    fn parse_built_in(&mut self) -> Result<Tree, String> {
+        let tkn = self.open();
+        todo!();
+        // let kw = self.expect(TokenType::BuiltInKeyword)?;
+        // if BUILT_IN_VARIABLES.contains(&&kw.get_value().as_str()) {
+        //     Ok(Tree {
+        //         typ: TreeType::BuiltInVariable {
+        //             variable_name: kw.get_value(),
+        //             typ: Type::Unknown
+        //         },
+        //         tkn
+        //     })
+        // } else if BUILT_IN_FUNCTIONS.contains(&kw.get_value().as_str()) {
+        //     Ok(Tree {
+        //         typ: TreeType::BuiltInFunction {
+        //             function_name: kw.get_value(),
+        //             args: Box::new(self.parse_arg_list()?),
+        //             typ: Type::Unknown,
+        //         },
+        //         tkn
+        //     })
+        // } else {
+        //     todo!()
+        // }
+    }
+
+    fn parse_identifier(&mut self) -> Result<Tree, String> {
+        let tkn = self.open();
+        Ok(match self.nth(1) {
+            TokenType::OpenRound => self.parse_expr_call()?,
+            TokenType::OpenSquare => {
+                self.expect(TokenType::Identifier)?;
+                let indices = self.parse_expr_array_literal()?;
+                Tree {
+                    typ: TreeType::ExprArrAccess {
+                        arr_name: tkn.get_value(),
+                        indices: Box::new(indices),
+                        typ: Type::Unknown,
+                    },
+                    tkn,
+                }
+            }
+            TokenType::Dot => {
+                self.expect(TokenType::Identifier)?;
+                self.expect(TokenType::Dot)?;
+                let access = self.parse_identifier()?;
+                Tree {
+                    typ: TreeType::FieldAccess {
+                        name: tkn.get_value(),
+                        field: Box::new(access),
+                        typ: Type::Unknown
+                    },
+                    tkn
+                }
+            }
+            _ => {
+                self.expect(TokenType::Identifier)?;
+                Tree {
+                    typ: TreeType::ExprName {
+                        name: tkn.get_value(),
+                        typ: Type::Unknown,
+                    },
+                    tkn,
+                }                
+            }
+        })
     }
 }

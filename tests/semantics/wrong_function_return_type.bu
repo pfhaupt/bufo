@@ -1,0 +1,7 @@
+func bla() -> i32 {
+    return 0u32;
+}
+
+func main() {
+    bla();
+}

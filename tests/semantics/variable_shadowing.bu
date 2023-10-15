@@ -1,0 +1,13 @@
+
+func main() {
+    let a: i32 = 0;
+    let b: u32 = 1337;
+    if (a == 0) {
+        let b: i64 = 0;
+        if (b == 1337) {
+            EXIT(1337);
+        } else {
+            EXIT(42069);
+        }
+    }
+}

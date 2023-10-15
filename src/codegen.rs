@@ -5,7 +5,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
-use crate::checker::Type;
+use crate::checker::{Type, BUILT_IN_VARS};
 use crate::lexer::{Location, TokenType};
 use crate::parser::{Tree, TreeType};
 
@@ -32,7 +32,7 @@ macro_rules! perform_op {
             Type::Usize => unsafe { $dest.ptr = $reg1.ptr $op $reg2.ptr },
             Type::F32 => unsafe { $dest.f32 = $reg1.f32 $op $reg2.f32 },
             Type::F64 => unsafe { $dest.f64 = $reg1.f64 $op $reg2.f64 },
-            Type::Ptr(..) => unsafe { $dest.ptr = $reg1.ptr $op $reg2.ptr },
+            // Type::Ptr(..) => unsafe { $dest.ptr = $reg1.ptr $op $reg2.ptr },
             _ => todo!()
         }
     };
@@ -53,8 +53,8 @@ macro_rules! perform_cmp {
     };
 }
 
-// parse_type!(i32, loc, val, typ);
-macro_rules! parse_type {
+// parse_value!(i32, loc, val, typ);
+macro_rules! parse_value {
     ($parse_typ:ty, $loc:expr, $val:expr, $typ: expr) => {
         match $val.parse::<$parse_typ>() {
             Ok(val) => Ok(val),
@@ -123,21 +123,6 @@ enum Instruction {
         dest: usize,
         val: usize,
     },
-    LoadPtrRel {
-        dest: usize,
-        src: usize,
-        typ: Type,
-    },
-    LoadPtr {
-        dest: usize,
-        src: usize,
-        typ: Type,
-    },
-    StorePtr {
-        dest: usize,
-        src: usize,
-        typ: Type,
-    },
     LoadF32 {
         dest: usize,
         val: f32,
@@ -196,14 +181,37 @@ enum Instruction {
         dest: usize,
         src: usize,
     },
-    LoadMem {
+    StoreStatic {
+        reg: usize,
+        name: String,
+    },
+    LoadStatic {
+        reg: usize,
+        name: String,
+    },
+    StoreStack {
         reg: usize,
         var: Variable,
     },
-    StoreMem {
+    LoadStack {
         reg: usize,
         var: Variable,
     },
+    StorePtr {
+        dest: usize,
+        src: usize,
+        typ: Type,
+    },
+    LoadPtr {
+        dest: usize,
+        src: usize,
+        typ: Type,
+    },
+    // LoadPtrRel {
+    //     dest: usize,
+    //     src: usize,
+    //     typ: Type,
+    // },
     Call {
         fn_name: String,
     },
@@ -225,9 +233,10 @@ enum Instruction {
     // Print { src: usize },
 }
 
-enum ExitCode {
+pub enum ExitCode {
     Normal,
     OobAccess,
+    StackOverflow,
 }
 
 impl ExitCode {
@@ -235,6 +244,7 @@ impl ExitCode {
         match code {
             0 => unreachable!(),
             1 => println!("{}: Attempted to index out of bounds!", RUNTIME_ERR),
+            2 => println!("{}: Stack Overflow!", RUNTIME_ERR),
             _ => unreachable!(),
         }
     }
@@ -242,30 +252,23 @@ impl ExitCode {
 
 #[derive(Debug)]
 struct Function {
-    ip: usize,
     param_variables: BTreeMap<String, Variable>,
     local_variables: Vec<BTreeMap<String, Variable>>,
     return_scopes: Vec<usize>,
-    return_type: Type,
+    return_type: Variable,
     stack_size: usize,
 }
 
 impl Function {
-    fn new(ip: usize) -> Self {
+    fn new() -> Self {
         Self {
-            ip,
             param_variables: BTreeMap::new(),
             local_variables: vec![BTreeMap::new()],
             return_scopes: vec![],
-            return_type: Type::None,
+            return_type: Variable { typ: Type::None, mem: 0 },
             stack_size: 0,
         }
     }
-
-    fn get_ip(&self) -> usize {
-        self.ip
-    }
-
     fn get_stack_size(&self) -> usize {
         self.stack_size
     }
@@ -298,7 +301,7 @@ impl Function {
         }
     }
 
-    fn add_local_variable(&mut self, var_name: String, mem: usize, scope_depth: usize, typ: &Type) {
+    fn add_local_variable(&mut self, sm: &SizeManager, var_name: String, mem: usize, scope_depth: usize, typ: &Type) {
         let scope_var = self.local_variables.get_mut(scope_depth).unwrap();
         scope_var.insert(
             var_name,
@@ -307,10 +310,10 @@ impl Function {
                 typ: typ.clone(),
             },
         );
-        self.stack_size += Generator::get_type_size(typ);
+        self.stack_size += sm.get_type_size(typ);
     }
 
-    fn add_param(&mut self, param_name: &str, typ: &Type) -> Variable {
+    fn add_param(&mut self, sm: &SizeManager, param_name: &str, typ: &Type) -> Variable {
         let mem = self.get_stack_size();
         let var = Variable {
             mem,
@@ -318,7 +321,7 @@ impl Function {
         };
         self.param_variables
             .insert(param_name.to_owned(), var.clone());
-        self.stack_size += Generator::get_type_size(typ);
+        self.stack_size += sm.get_type_size(typ);
         var.clone()
     }
 
@@ -330,61 +333,121 @@ impl Function {
         self.local_variables.pop().unwrap();
     }
 
-    fn set_return_type(&mut self, typ: &Type) {
-        if self.return_type != Type::None {
+    fn set_return_type(&mut self, sm: &SizeManager, typ: &Type) {
+        if self.return_type.typ != Type::None {
             panic!()
         }
-        self.return_type = typ.clone();
+        self.return_type = Variable {
+            typ: typ.clone(),
+            mem: self.stack_size
+        };
+        self.stack_size += sm.get_type_size(typ);
+    }
+
+    fn get_return_loc(&self) -> usize {
+        self.return_type.mem
     }
 
     fn get_return_type(&self) -> Type {
-        self.return_type.clone()
+        self.return_type.typ.clone()
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Class {
+    fields: HashMap<String, Variable>,
+    size: usize
+}
+
+impl Class {
+    fn new() -> Self {
+        Self {
+            fields: HashMap::new(),
+            size: 0
+        }
+    }
+
+    fn add_field(&mut self, sm: &SizeManager, name: &str, typ: &Type) {
+        let type_size = sm.get_type_size(typ);
+        let offset = self.size;
+        self.fields.insert(name.to_owned(), Variable {
+            typ: typ.clone(),
+            mem: offset
+        });
+        self.size += type_size;
+    }
+
+    fn get_offset(&self, name: &str) -> usize {
+        self.fields.get(name).unwrap().mem
+    }
+}
+#[derive(Debug)]
+pub struct SizeManager {
+}
+
+impl SizeManager {
+    fn new() -> Self {
+        Self {
+        }
+    }
+
+    pub fn get_type_size(&self, typ: &Type) -> usize {
+        match typ {
+            Type::Arr(t, size) => self.get_type_size(t) * size.iter().product::<usize>(),
+            Type::I32 | Type::U32 => 4,
+            Type::I64 | Type::U64 | Type::Usize => 8,
+            Type::Class(..) => 8,
+            e => todo!("Figure out size of type {:?} in bytes", e),
+        }
     }
 }
 
 #[derive(Debug)]
 pub struct Generator {
-    ast: Tree,
+    ast: Option<Tree>,
     entry_point: String,
     registers: Vec<Memory>,
     register_ctr: usize,
     functions: HashMap<String, Function>,
+    classes: HashMap<String, Class>,
     code: Vec<Instruction>,
     current_fn: String,
+    current_class: String,
+    current_str: String,
     unresolved_jmp_instr: VecDeque<usize>,
     label_lookup: HashMap<String, usize>,
     unresolved_typ_instr: VecDeque<usize>,
+    size_manager: SizeManager,
     scope_depth: usize,
+    memory_offset: usize,
     print_debug: bool,
 }
 
 impl Generator {
-    pub fn new(ast: Tree, print_debug: bool) -> Result<Self, String> {
-        let mut gen = Self {
-            ast,
+    pub fn new(print_debug: bool) -> Self {
+        Self {
+            ast: None,
             entry_point: String::from("main"),
             registers: vec![Memory { u64: 0 }; REGISTERS_32BIT.len()],
             register_ctr: 1,
             functions: HashMap::new(),
+            classes: HashMap::new(),
             code: vec![],
             current_fn: String::new(),
+            current_class: String::new(),
+            current_str: String::new(),
             unresolved_jmp_instr: VecDeque::new(),
             label_lookup: HashMap::new(),
             unresolved_typ_instr: VecDeque::new(),
+            size_manager: SizeManager::new(),
             scope_depth: 0,
+            memory_offset: 0,
             print_debug,
-        };
-        gen.generate_code()?;
-        Ok(gen)
+        }
     }
 
-    fn get_type_size(typ: &Type) -> usize {
-        match typ {
-            Type::Arr(t, size) => Generator::get_type_size(t) * size.iter().product::<usize>(),
-            Type::I32 | Type::U32 => 4,
-            Type::I64 | Type::U64 | Type::Usize => 8,
-            e => todo!("Figure out size of type {:?} in bytes", e),
-        }
+    pub fn set_ast(&mut self, ast: Tree) {
+        self.ast = Some(ast);
     }
 
     fn create_label(&mut self) -> String {
@@ -412,7 +475,7 @@ impl Generator {
         self.functions
             .get_mut(&self.current_fn)
             .expect("Function table does not contain current_fn! This might be a bug in Codegen.")
-            .add_local_variable(var_name.to_owned(), mem, scope_depth, typ);
+            .add_local_variable(&self.size_manager, var_name.to_owned(), mem, scope_depth, typ);
         mem
     }
 
@@ -448,104 +511,526 @@ impl Generator {
         Ok(r)
     }
 
-    fn convert_expr_atomic(&mut self, instr: &Tree) -> Result<Variable, String> {
-        todo!()
-        /* let instr_children = &instr.children;
-        match &instr.typ {
-            TreeType::ExprParen => {
-                /* assert!(instr_children.len() == 1, "Expected {{Expr}}");
-                self.convert_expr_atomic(&instr_children[0]) */
-            }
-            TreeType::Pointer => {
-                /* let val_name = &instr_children[0];
-                let name = val_name.tkn.get_value();
-                let reg = self.get_register()?;
-                let curr_fn = self
-                    .functions
-                    .get(&self.current_fn)
-                    .expect("At this point, function table is guaranteed to contain current_fn.");
-                match curr_fn.get_variable_location(&name) {
-                    Some(mem) => {
-                        let reg_tmp = self.get_register()?;
-                        self.code.push(Instruction::LoadUsize {
-                            dest: reg_tmp,
-                            val: mem.mem,
-                        });
-                        self.code.push(Instruction::LoadPtrRel {
-                            dest: reg,
-                            src: reg_tmp,
-                            typ: mem.typ.clone(),
-                        });
-                        Ok(Variable {
-                            typ: Type::Ptr(Box::new(mem.typ)),
-                            mem: reg,
-                        })
-                    }
-                    None => Err(format!(
-                        "{}: {:?}: Undefined variable `{}`",
-                        ERR_STR,
-                        val_name.tkn.get_loc(),
-                        name
-                    )),
-                } */
-            }
-            TreeType::Deref => {
-                /* let val_name = &instr_children[0];
-                let name = val_name.tkn.get_value();
-                let reg = self.get_register()?;
-                let curr_fn = self
-                    .functions
-                    .get(&self.current_fn)
-                    .expect("At this point, function table is guaranteed to contain current_fn.");
-                match curr_fn.get_variable_location(&name) {
-                    Some(mem) => match mem.clone().typ {
-                        Type::Ptr(t) => {
-                            let address = self.get_register()?;
-                            self.code.push(Instruction::LoadMem {
-                                reg: address,
-                                var: mem,
-                            });
-                            self.code.push(Instruction::LoadPtr {
-                                dest: reg,
-                                src: address,
-                                typ: *t.clone(),
-                            });
-                            Ok(Variable {
-                                typ: *t.clone(),
-                                mem: reg,
-                            })
-                        }
-                        _ => panic!(),
-                    },
-                    None => {
-                        let fp_str = if self.functions.contains_key(&name) {
-                            format!("\n{}: Function pointers are not supported yet.", NOTE_STR)
-                        } else {
-                            "".to_string()
-                        };
-                        Err(format!(
-                            "{}: {:?}: Undefined variable `{}`.{}",
-                            ERR_STR,
-                            val_name.tkn.get_loc(),
-                            name,
-                            fp_str
-                        ))
-                    }
-                } */
-            }
-            e => {
-                println!(
-                    "{}: Unreachable Error when generating code! Could not convert:",
-                    ERR_STR
-                );
-                todo!("Handle {:?} in convert_expr_atomic!", e)
-            }
-        } */
+    fn resolve_last_jmp(&mut self) -> usize {
+        assert!(!self.unresolved_jmp_instr.is_empty());
+        let ip = self.unresolved_jmp_instr.pop_back().unwrap();
+
+        let lbl_name = self.create_label();
+        self.add_label(&lbl_name);
+
+        self.set_jmp_lbl(ip, lbl_name);
+        ip
     }
 
+    fn set_jmp_lbl(&mut self, index: usize, dest: String) {
+        self.code[index] = match &self.code[index] {
+            Instruction::JmpEq { .. } => Instruction::JmpEq { dest },
+            Instruction::JmpNeq { .. } => Instruction::JmpNeq { dest },
+            Instruction::JmpGt { .. } => Instruction::JmpGt { dest },
+            Instruction::JmpGte { .. } => Instruction::JmpGte { dest },
+            Instruction::JmpLt { .. } => Instruction::JmpLt { dest },
+            Instruction::JmpLte { .. } => Instruction::JmpLte { dest },
+            Instruction::Jmp { .. } => Instruction::Jmp { dest },
+            e => todo!("{:?}", e),
+        };
+    }
+   
+    fn enter_scope(&mut self) {
+        assert!(!self.current_fn.is_empty());
+        // println!("Entering scope");
+        self.scope_depth += 1;
+        self.functions
+            .get_mut(&self.current_fn)
+            .unwrap()
+            .add_scope();
+    }
+
+    fn leave_scope(&mut self) {
+        assert!(!self.current_fn.is_empty());
+        // println!("Leaving scope");
+        self.scope_depth -= 1;
+        self.functions
+            .get_mut(&self.current_fn)
+            .unwrap()
+            .remove_scope();
+    }
+
+    
+
+    pub fn generate_code(&mut self) -> Result<(), String> {
+        assert!(self.ast.is_some());
+        self.convert_file(&self.ast.as_ref().unwrap().clone())
+    }
+
+    fn convert_file(&mut self, ast: &Tree) -> Result<(), String> {
+        match &ast.typ {
+            TreeType::File { functions, classes } => {
+                for class in classes {
+                    self.convert_class(class)?;
+                }
+                for func in functions {
+                    self.memory_offset = 0;
+                    match func.typ {
+                        TreeType::Func { .. } => self.convert_func(func)?,
+                        _ => panic!()
+                    }
+                }
+            }
+            _ => todo!("handle other types:\n{}", ast.rebuild_code()),
+        }
+        Ok(())
+    }
+
+    fn convert_class(&mut self, class: &Tree) -> Result<(), String> {
+        match &class.typ {
+            TreeType::Class { name, fields, functions, features } => {
+                assert!(self.current_fn.is_empty());
+                assert!(self.current_class.is_empty());
+                assert!(!self.classes.contains_key(name));
+                assert!(functions.is_empty());
+                assert!(features.is_empty());
+
+                self.current_class = name.clone();
+                let c = Class::new();
+                self.classes.insert(self.current_class.clone(), c);
+
+                for f in fields {
+                    self.convert_field(f)?;
+                }
+
+                self.current_class.clear();
+            }
+            _ => panic!()
+        }
+        Ok(())
+    }
+
+    fn convert_field(&mut self, field: &Tree) -> Result<(), String> {
+        match &field.typ {
+            TreeType::Field { name, typ } => {
+                assert!(!self.current_class.is_empty());
+                match &typ.typ {
+                    TreeType::TypeDecl { typ } => {
+                        let c = self.classes.get_mut(&self.current_class).unwrap();
+                        c.add_field(&self.size_manager, name, typ);
+                    }
+                    _ => panic!()
+                }
+            }
+            _ => panic!()
+        }
+        Ok(())
+    }
+
+    fn convert_func(&mut self, func: &Tree) -> Result<(), String> {
+        match &func.typ {
+            TreeType::Func {name, return_type, param, block} => {
+                assert!(self.current_class.is_empty());
+                assert!(self.current_fn.is_empty());
+                assert!(!self.functions.contains_key(name));
+
+                self.current_fn = name.clone();
+                let f = Function::new();
+                self.functions.insert(name.clone(), f);
+                
+                self.code.push(Instruction::Label { name: name.clone() });
+                self.convert_func_param(param)?;
+                
+                if let Some(ret_tree) = return_type {
+                    match &ret_tree.typ {
+                        TreeType::TypeDecl { typ } => {
+                            self.functions.get_mut(name).unwrap().set_return_type(&self.size_manager, typ);
+                        }
+                        _ => panic!(),
+                    }
+                }
+                
+                self.convert_block(block)?;
+                // todo!();
+                
+                let return_scopes = &self.functions.get(&self.current_fn).unwrap().return_scopes;
+                let return_found = return_scopes.contains(&1) || return_scopes.contains(&2);
+                let return_type = self
+                    .functions
+                    .get(&self.current_fn)
+                    .unwrap()
+                    .return_type
+                    .clone();
+                if name == self.entry_point.as_str() {
+                    self.code.push(Instruction::Exit {
+                        code: ExitCode::Normal as usize,
+                    });
+                }
+                self.code.push(Instruction::Return {
+                    from: self.current_fn.clone(),
+                });
+            }
+            _ => panic!(),
+        }
+        self.current_fn.clear();
+        Ok(())
+    }
+
+    fn convert_func_param(&mut self, param: &Tree) -> Result<(), String> {
+        let mut reg_ctr = 2;
+        match &param.typ {
+            TreeType::ParamList { parameters } => {
+                for p in parameters {
+                    match &p.typ {
+                        TreeType::Param { name, typ } => {
+                            match &typ.typ {
+                                TreeType::TypeDecl { typ } => {
+                                    let local_lookup = self.functions.get_mut(&self.current_fn).expect(
+                                        "At this point, function table is guaranteed to contain self.current_fn."
+                                    );
+                                    let var = local_lookup.add_param(&self.size_manager, &name, typ);
+                                    
+                                    self.code.push(Instruction::StoreStack { reg: reg_ctr, var });
+                                    reg_ctr += 1;
+                                }
+                                _ => panic!()
+                            }
+                        }
+                        _ => panic!()
+                    }
+                }
+            }
+            _ => panic!(),
+        }
+        Ok(())
+    }
+
+    fn convert_block(&mut self, block: &Tree) -> Result<(), String> {
+        self.enter_scope();
+        match &block.typ {
+            TreeType::Block { statements } => {
+                for instr in statements {
+                    match &instr.typ {
+                        TreeType::StmtLet { .. } => self.convert_stmt_let(instr)?,
+                        TreeType::StmtAssign { .. } => self.convert_stmt_assign(instr)?,
+                        TreeType::StmtIf { .. } => self.convert_stmt_if(instr)?,
+                        TreeType::StmtReturn { .. } => self.convert_stmt_return(instr)?,
+                        TreeType::StmtExpr { .. } => self.convert_stmt_expr(instr)?,
+                        e => todo!("convert {:?} inside block", e),
+                    }
+                }
+            }
+            _ => panic!(),
+        }
+        self.leave_scope();
+        Ok(())
+    }
+
+    fn convert_stmt_expr(&mut self, expr_tree: &Tree) -> Result<(), String> {
+        match &expr_tree.typ {
+            TreeType::StmtExpr { expression } => {
+                self.convert_expr(expression)?;
+            }
+            _ => panic!(),
+        }
+        self.reset_registers();
+        Ok(())
+    }
+
+    fn convert_stmt_let(&mut self, let_tree: &Tree) -> Result<(), String> {
+        match &let_tree.typ {
+            TreeType::StmtLet {name, typ, expression} => {
+                assert!(!self.current_fn.is_empty());
+                assert!(self.functions.contains_key(&self.current_fn));
+                assert!(self.functions.get(&self.current_fn).unwrap().get_scope_location(name).is_none());
+
+                match &typ.typ {
+                    TreeType::TypeDecl { typ } => {
+                        let mem = self.add_local_var(name, self.scope_depth, typ);
+                        match typ {
+                            Type::Arr(expected_type, .. ) => {
+                                self.convert_let_arr(expression, expected_type)?;
+                            }
+                            _ => {
+                                let reg = self.convert_expr(expression)?;
+                                self.code.push(Instruction::StoreStack {
+                                    reg: reg.mem,
+                                    var: Variable {
+                                        typ: typ.clone(),
+                                        mem
+                                    }
+                                });
+                                self.memory_offset += mem;
+                            }
+                        }
+                    }
+                    _ => panic!()
+                }
+            }
+            _ => panic!(),
+        }
+        self.reset_registers();
+        Ok(())
+    }
+
+    fn convert_let_arr(&mut self, arr_tree: &Tree, expected_type: &Type) -> Result<(), String> {
+        match &arr_tree.typ {
+            TreeType::ExprArrLiteral { elements } => {
+                for elem in elements {
+                    self.convert_let_arr(elem, expected_type)?;
+                }
+            }
+            _ => {
+                let reg = self.convert_expr(arr_tree)?;
+                self.code.push(Instruction::StoreStack {
+                    reg: reg.mem,
+                    var: Variable {
+                        typ: expected_type.clone(),
+                        mem: self.memory_offset
+                    },
+                });
+                self.memory_offset += self.size_manager.get_type_size(expected_type);
+                self.reset_registers();
+            }
+        }
+        Ok(())
+    }
+
+    fn convert_stmt_assign(&mut self, assign_tree: &Tree) -> Result<(), String> {
+        match &assign_tree.typ {
+            TreeType::StmtAssign { name, expression } => {
+                let reg = self.convert_expr(expression)?;
+                let local_lookup = self
+                    .functions
+                    .get(&self.current_fn)
+                    .expect("At this point, function table is guaranteed to contain current_fn.");
+                match &name.typ {
+                    TreeType::ExprName { name, typ } => {
+                        match BUILT_IN_VARS.get(name) {
+                            Some(var) => {
+                                self.code.push(Instruction::StoreStatic {
+                                    reg: reg.mem,
+                                    name: name.clone()
+                                });
+                            },
+                            None => {
+                                let Some(var) = local_lookup.get_variable_location(name) else { panic!() };
+                        match &var.typ {
+                            Type::Arr(..) => todo!(),
+                            Type::Class(..) => todo!(),
+                            _ => {
+                                self.code.push(Instruction::StoreStack { reg: reg.mem, var });
+                            }
+                        }
+                            }
+                        }
+                        
+                    },
+                    TreeType::ExprArrAccess { arr_name, indices, typ } => todo!(),
+                    TreeType::FieldAccess { name, field, typ } => {
+                        let cls = match typ {
+                            Type::Class(s) => self.classes.get(s).unwrap(),
+                            _ => panic!()
+                        }.clone();
+                        let field_address = self.unwind_field_access(
+                            0,
+                            name,
+                            field,
+                            &cls
+                        )?;
+                        self.code.push(Instruction::StorePtr {
+                            src: reg.mem,
+                            dest: field_address.mem,
+                            typ: field_address.typ
+                        });
+                    },
+                    _ => panic!()
+                }
+                // match &name.typ {
+                //     TreeType::ExprName { name, typ } => {
+                //         todo!("Changed from TreeType::Identifier {{name}} to TreeType::ExprName {{name, typ}}");
+                //         let var = match local_lookup.get_variable_location(name) {
+                //             Some(i) => i,
+                //             None => panic!(),
+                //         };
+                //         match &var.typ {
+                //             Type::Arr(typ, size) => {
+                //                 todo!()
+                //             }
+                //             _ => self.code.push(Instruction::StoreStack { reg: reg.mem, var }),
+                //         }
+                //     }
+                //     TreeType::ExprArrAccess {
+                //         arr_name,
+                //         indices,
+                //         typ,
+                //     } => {
+                //         let var = match local_lookup.get_variable_location(arr_name) {
+                //             Some(i) => i,
+                //             None => panic!(),
+                //         };
+                //         match &typ {
+                //             Type::Arr(typ, size) => {
+                //                 match &indices.typ {
+                //                     TreeType::ExprArrLiteral { elements } => {
+                //                         let index_reg = self.get_register()?;
+                //                         let mem_offset = self.get_register()?;
+                //                         let size_reg = self.get_register()?;
+                //                         // Prepare index register
+                //                         self.code.push(Instruction::LoadUsize {
+                //                             dest: index_reg,
+                //                             val: 0,
+                //                         });
+                //                         // Stores final offset for stack addressing
+                //                         self.code.push(Instruction::LoadUsize {
+                //                             dest: mem_offset,
+                //                             val: var.mem,
+                //                         });
+
+                //                         for (count, child) in elements.iter().enumerate() {
+                //                             let reg = self.convert_expr(child)?;
+
+                //                             // Index Out of Bounds check
+                //                             self.code.push(Instruction::LoadUsize {
+                //                                 dest: size_reg,
+                //                                 val: size[count],
+                //                             });
+                //                             self.code.push(Instruction::Cmp {
+                //                                 dest: reg.mem,
+                //                                 src: size_reg,
+                //                                 typ: Type::Usize,
+                //                             });
+                //                             let lbl = self.create_label();
+                //                             self.code
+                //                                 .push(Instruction::JmpLt { dest: lbl.clone() });
+                //                             self.code.push(Instruction::Exit {
+                //                                 code: ExitCode::OobAccess as usize,
+                //                             });
+                //                             self.add_label(&lbl);
+
+                //                             // index_reg contains our index
+                //                             // in each step, multiply the index by the dimension of the array
+                //                             self.code.push(Instruction::Mul {
+                //                                 dest: index_reg,
+                //                                 src: size_reg,
+                //                                 typ: Type::Usize,
+                //                             });
+                //                             // in each step, add to that ^ the position we're indexing (result of expression)
+                //                             self.code.push(Instruction::Add {
+                //                                 dest: index_reg,
+                //                                 src: reg.mem,
+                //                                 typ: Type::Usize,
+                //                             });
+                //                         }
+                //                         self.code.push(Instruction::Add {
+                //                             dest: index_reg,
+                //                             src: mem_offset,
+                //                             typ: Type::Usize,
+                //                         });
+                //                         let reg_tmp = self.get_register()?;
+                //                         self.code.push(Instruction::LoadPtrRel {
+                //                             dest: reg_tmp,
+                //                             src: index_reg,
+                //                             typ: *typ.clone(),
+                //                         });
+                //                         self.code.push(Instruction::StorePtr {
+                //                             dest: reg_tmp,
+                //                             src: reg.mem,
+                //                             typ: *typ.clone(),
+                //                         });
+                //                     }
+                //                     _ => panic!(),
+                //                 }
+                //             }
+                //             _ => panic!(),
+                //         }
+                //     }
+                //     _ => {
+                //         for c in &self.code {
+                //             println!("{:?}", c);
+                //         }
+                //         panic!()
+                //     },
+                // }
+            }
+            _ => panic!(),
+        }
+        self.reset_registers();
+        Ok(())
+    }
+
+    fn convert_stmt_if(&mut self, if_tree: &Tree) -> Result<(), String> {
+        match &if_tree.typ {
+            TreeType::StmtIf {condition, if_branch, else_branch} => {
+                self.convert_expr(condition)?;
+                self.reset_registers();
+
+                self.convert_block(if_branch)?;
+                let if_jmp = self.resolve_last_jmp();
+
+                if let Some(else_br) = else_branch {
+                    self.unresolved_jmp_instr.push_back(self.code.len());
+                    self.code.push(Instruction::Jmp {
+                        dest: String::new()
+                    });
+
+                    let lbl_name = self.create_label();
+                    self.add_label(&lbl_name);
+                    self.set_jmp_lbl(if_jmp, lbl_name);
+
+                    self.convert_block(else_br)?;
+                    self.resolve_last_jmp();
+                }
+            }
+            _ => panic!(),
+        }
+        self.reset_registers();
+        Ok(())
+    }
+    
+    fn convert_stmt_return(&mut self, ret_tree: &Tree) -> Result<(), String> {
+        match &ret_tree.typ {
+            TreeType::StmtReturn { return_value } => {
+                self.functions
+                    .get_mut(&self.current_fn)
+                    .unwrap()
+                    .return_scopes
+                    .push(self.scope_depth);
+                if let Some(ret_val) = return_value {
+                    let mut reg = self.convert_expr(ret_val)?;
+                    
+                    self.code.push(Instruction::Move {
+                        src: reg.mem,
+                        dest: 0,
+                    });
+                }
+                self.code.push(Instruction::Return {
+                    from: self.current_fn.clone(),
+                });
+            }
+            _ => panic!(),
+        }
+        self.reset_registers();
+        Ok(())
+    }
+    
     fn convert_expr(&mut self, expr_tree: &Tree) -> Result<Variable, String> {
         match &expr_tree.typ {
             TreeType::ExprParen { expression, .. } => self.convert_expr(expression),
+            TreeType::ExprBinary { .. } => self.convert_expr_binary(expr_tree),
+            TreeType::ExprComp { .. } => self.convert_expr_comp(expr_tree),
+            TreeType::ExprName { .. } => self.convert_expr_name(expr_tree),
+            TreeType::ExprLiteral { .. } => self.convert_expr_literal(expr_tree),
+            TreeType::BuiltInFunction { .. } | TreeType::ExprCall { .. } => self.convert_expr_call(expr_tree),
+            TreeType::Arg { expression } => self.convert_expr(expression),
+            TreeType::ExprArrAccess { .. } => self.convert_expr_array_access(expr_tree),
+            TreeType::FieldAccess { .. } => self.convert_expr_field_access(expr_tree),
+            e => {
+                expr_tree.print_debug();
+                expr_tree.rebuild_code();
+                println!();
+                todo!("Handle Expr Type")
+            },
+        }
+    }
+    
+    fn convert_expr_binary(&mut self, expr_tree: &Tree) -> Result<Variable, String> {
+        match &expr_tree.typ {
             TreeType::ExprBinary { lhs, rhs, typ } => {
                 let dest = self.convert_expr(lhs)?;
                 let src = self.convert_expr(rhs)?;
@@ -579,7 +1064,13 @@ impl Generator {
                     mem: dest,
                 })
             }
-            TreeType::ExprComp { lhs, rhs, .. } => {
+            _ => panic!()
+        }
+    }
+    
+    fn convert_expr_comp(&mut self, expr_tree: &Tree) -> Result<Variable, String> {
+        match &expr_tree.typ {
+            TreeType::ExprComp { lhs, rhs, typ } => {
                 let dest = self.convert_expr(lhs)?;
                 let src = self.convert_expr(rhs)?;
 
@@ -588,9 +1079,6 @@ impl Generator {
 
                 let dest = dest.mem;
                 let src = src.mem;
-
-                let lbl_name = self.create_label();
-                self.add_label(&lbl_name);
 
                 self.code.push(Instruction::Cmp {
                     dest,
@@ -625,57 +1113,71 @@ impl Generator {
                     mem: dest,
                 })
             }
-            TreeType::ExprName { name, .. } => {
+            _ => panic!()
+        }
+    }
+    
+    fn convert_expr_name(&mut self, expr_tree: &Tree) -> Result<Variable, String> {
+        match &expr_tree.typ {
+            TreeType::ExprName { name, typ } => {
                 let reg = self.get_register()?;
                 let curr_fn = self
                     .functions
                     .get(&self.current_fn)
                     .expect("At this point, function table is guaranteed to contain current_fn.");
-                match curr_fn.get_variable_location(name) {
+                match BUILT_IN_VARS.get(name) {
                     Some(var) => {
-                        self.code.push(Instruction::LoadMem {
+                        self.code.push(Instruction::LoadStatic {
                             reg,
-                            var: Variable {
-                                typ: var.typ.clone(),
-                                mem: var.mem,
-                            },
+                            name: name.clone()
                         });
                         Ok(Variable {
                             mem: reg,
-                            typ: var.typ.clone(),
+                            typ: var.typ.clone()
+                        })
+                    },
+                    None => {
+                        let Some(var) = curr_fn.get_variable_location(name) else { panic!() };
+                        self.code.push(Instruction::LoadStack {
+                            reg,
+                            var: var.clone()
+                        });
+                        Ok(Variable {
+                            mem: reg,
+                            typ: var.typ
                         })
                     }
-                    None => Err(format!(
-                        "{}: {:?}: Undefined variable `{}`",
-                        ERR_STR,
-                        expr_tree.tkn.get_loc(),
-                        name
-                    )),
                 }
             }
+            _ => panic!()
+        }
+    }
+    
+    fn convert_expr_literal(&mut self, expr_tree: &Tree) -> Result<Variable, String> {
+        match &expr_tree.typ {
             TreeType::ExprLiteral { typ } => {
                 let val = expr_tree.tkn.get_value();
                 let loc = expr_tree.tkn.get_loc();
                 let dest = self.get_register()?;
                 match typ {
                     Type::I32 => {
-                        let val = parse_type!(i32, loc, val, typ)?;
+                        let val = parse_value!(i32, loc, val, typ)?;
                         self.code.push(Instruction::LoadI32 { dest, val });
                     }
                     Type::I64 => {
-                        let val = parse_type!(i64, loc, val, typ)?;
+                        let val = parse_value!(i64, loc, val, typ)?;
                         self.code.push(Instruction::LoadI64 { dest, val });
                     }
                     Type::U32 => {
-                        let val = parse_type!(u32, loc, val, typ)?;
+                        let val = parse_value!(u32, loc, val, typ)?;
                         self.code.push(Instruction::LoadU32 { dest, val });
                     }
                     Type::U64 => {
-                        let val = parse_type!(u64, loc, val, typ)?;
+                        let val = parse_value!(u64, loc, val, typ)?;
                         self.code.push(Instruction::LoadU64 { dest, val });
                     }
                     Type::Usize => {
-                        let val = parse_type!(usize, loc, val, typ)?;
+                        let val = parse_value!(usize, loc, val, typ)?;
                         self.code.push(Instruction::LoadUsize { dest, val });
                     }
                     Type::Unknown => panic!(
@@ -688,67 +1190,64 @@ impl Generator {
                     typ: typ.clone(),
                 })
             }
-            TreeType::ExprCall {
-                function_name,
-                args,
-                typ,
-            } => {
-                if let Some(func) = self.functions.get(function_name) {
-                    let fn_return_type = func.get_return_type();
-                    let params = func.get_params();
-                    match &args.typ {
-                        TreeType::ArgList { arguments } => {
-                            // Save important registers that are still needed but can be destroyed by fn call
-                            let curr_reg_ctr = self.register_ctr;
-                            for reg in 1..curr_reg_ctr {
-                                self.code.push(Instruction::Push { reg });
-                            }
+            _ => panic!()
+        }
+    }
 
-                            // Convert argument expressions
-                            for (reg_ctr, arg) in arguments.iter().enumerate() {
-                                let reg = self.convert_expr(arg)?;
-                                let reg_ctr = reg_ctr + 1; // Register 0 (RAX) is reserved
-                                if reg_ctr != reg.mem {
-                                    self.code.push(Instruction::Move {
-                                        dest: reg_ctr,
-                                        src: reg.mem,
-                                    });
-                                }
-                            }
-                            self.code.push(Instruction::Call {
-                                fn_name: function_name.clone(),
-                            });
-                            let reg = self.get_register()?;
-                            if fn_return_type != Type::None {
-                                self.code.push(Instruction::Move { dest: reg, src: 0 });
-                            }
-
-                            // Restore important registers from above
-                            for reg in (1..curr_reg_ctr).rev() {
-                                self.code.push(Instruction::Pop { reg });
-                            }
-                            Ok(Variable {
-                                typ: fn_return_type,
-                                mem: reg,
-                            })
+    fn convert_expr_call(&mut self, expr_tree: &Tree) -> Result<Variable, String> {
+        match &expr_tree.typ {
+            TreeType::BuiltInFunction { function_name, args, typ }
+            | TreeType::ExprCall { function_name, args, typ } => {
+                let fn_return_type = typ.clone();
+                match &args.typ {
+                    TreeType::ArgList { arguments } => {
+                        // Save important registers that are still needed but can be destroyed by fn call
+                        let curr_reg_ctr = self.register_ctr;
+                        for reg in 1..curr_reg_ctr {
+                            self.code.push(Instruction::Push { reg });
                         }
-                        _ => panic!(),
+
+                        // Convert argument expressions
+                        // TODO: Follow calling conventions
+                        let mut reg_ctr = 2;
+                        for arg in arguments.iter() {
+                            let reg = self.convert_expr(arg)?;
+                            
+                            if reg_ctr != reg.mem {
+                                self.code.push(Instruction::Move {
+                                    dest: reg_ctr,
+                                    src: reg.mem,
+                                });
+                            }
+                            reg_ctr += 1;
+                        }
+                        self.code.push(Instruction::Call {
+                            fn_name: function_name.to_ascii_lowercase().clone(),
+                        });
+                        let reg = self.get_register()?;
+                        if fn_return_type != Type::None {
+                            self.code.push(Instruction::Move { dest: reg, src: 0 });
+                        }
+
+                        // Restore important registers from above
+                        for reg in (1..curr_reg_ctr).rev() {
+                            self.code.push(Instruction::Pop { reg });
+                        }
+                        Ok(Variable {
+                            typ: fn_return_type,
+                            mem: reg,
+                        })
                     }
-                } else {
-                    Err(format!(
-                        "{} {:?}: Unknown function `{}`",
-                        ERR_STR,
-                        expr_tree.tkn.get_loc(),
-                        function_name
-                    ))
+                    _ => panic!(),
                 }
             }
-            TreeType::Arg { expression } => self.convert_expr(expression),
-            TreeType::ExprArrAccess {
-                arr_name,
-                indices,
-                typ,
-            } => {
+            _ => panic!()
+        }
+    }
+
+    fn convert_expr_array_access(&mut self, expr_tree: &Tree) -> Result<Variable, String> {
+        match &expr_tree.typ {
+            TreeType::ExprArrAccess { arr_name, indices, typ } => {
                 let function_stack = self
                     .functions
                     .get(&self.current_fn)
@@ -814,11 +1313,6 @@ impl Generator {
                                             typ: Type::Usize,
                                         });
                                         let reg_tmp = self.get_register()?;
-                                        self.code.push(Instruction::LoadPtrRel {
-                                            dest: reg_tmp,
-                                            src: index_reg,
-                                            typ: *typ.clone(),
-                                        });
                                         self.code.push(Instruction::LoadPtr {
                                             dest: reg_tmp,
                                             src: reg_tmp,
@@ -838,671 +1332,108 @@ impl Generator {
                     None => panic!(),
                 }
             }
-            e => todo!("Handle Expr Type: {:?}", e),
+            _ => panic!()
         }
     }
 
-    fn convert_let_arr(
-        &mut self,
-        mem: usize,
-        mem_offset: &mut usize,
-        arr_tree: &Tree,
-        expected_type: &Type,
-    ) -> Result<(), String> {
-        match &arr_tree.typ {
-            TreeType::ExprArrLiteral { elements } => {
-                for elem in elements {
-                    self.convert_let_arr(mem, mem_offset, elem, expected_type)?;
-                }
-            }
-            _ => {
-                let reg = self.convert_expr(arr_tree)?;
-                self.code.push(Instruction::StoreMem {
-                    reg: reg.mem,
-                    var: Variable {
-                        typ: expected_type.clone(),
-                        mem: mem + *mem_offset,
-                    },
+    fn convert_expr_field_access(&mut self, expr_tree: &Tree) -> Result<Variable, String> {
+        match &expr_tree.typ {
+            TreeType::FieldAccess { name, field, typ } => {
+                let cls = match typ {
+                    Type::Class(s) => self.classes.get(s).unwrap(),
+                    _ => panic!()
+                }.clone();
+                let field_address = self.unwind_field_access(
+                    0,
+                    name,
+                    field,
+                    &cls
+                )?;
+                self.code.push(Instruction::LoadPtr {
+                    src: field_address.mem,
+                    dest: field_address.mem,
+                    typ: field_address.typ.clone()
                 });
-                *mem_offset += 1;
-                self.reset_registers();
+                Ok(field_address)
             }
+            _ => panic!()
         }
-        Ok(())
     }
 
-    fn convert_stmt_let(&mut self, let_tree: &Tree) -> Result<(), String> {
-        match &let_tree.typ {
-            TreeType::StmtLet {
-                name,
-                typ,
-                expression,
-            } => {
-                let local_lookup = self
-                    .functions
+    fn unwind_field_access(
+        &mut self,
+        depth: usize,
+        instance_name: &String,
+        instance_field: &Tree,
+        prev_class: &Class
+    ) -> Result<Variable, String> {
+        /* 
+        unwind b.c.a
+        LoadStack b into reg2
+        Load Offset(c) into reg3
+        Add reg2, reg3
+        LoadPtr reg2, reg2 <- pointer to b.c
+        Load Offset(a) into reg4
+        Add reg2, reg4
+        reg2 contains pointer to b.c.a
+        return
+         */
+        let ptr_reg = self.get_register()?;
+        let offset_reg = self.get_register()?;
+
+        let local_lookup = self
+        .functions
                     .get(&self.current_fn)
                     .expect("At this point, function table is guaranteed to contain current_fn.");
-                if local_lookup.get_scope_location(name).is_some() {
-                    return Err(format!(
-                        "{}: {:?}: Variable redefinition",
-                        ERR_STR,
-                        let_tree.tkn.get_loc()
-                    ));
+        if let Some(var) = local_lookup.get_variable_location(instance_name) {
+            let mut current_field = instance_field.clone();
+            let mut current_class = prev_class;
+            match &var.typ {
+                Type::Class(class_name) => {
+                    self.code.push(Instruction::LoadStack { reg: ptr_reg, var });
                 }
-                match &typ.typ {
-                    TreeType::TypeDecl { typ } => {
-                        let mem = self.add_local_var(name, self.scope_depth, typ);
-                        match typ {
-                            Type::Arr(expected_type, expected_size) => {
-                                self.convert_let_arr(mem, &mut 0, expression, expected_type);
-                            }
-                            _ => {
-                                let reg = self.convert_expr(expression)?;
-                                self.code.push(Instruction::StoreMem {
-                                    reg: reg.mem,
-                                    var: Variable {
-                                        typ: typ.clone(),
-                                        mem,
-                                    },
-                                });
-                            }
-                        }
-                    }
-                    _ => panic!(),
-                };
+                _ => panic!()
             }
-            _ => panic!(),
-        }
-        self.reset_registers();
-        Ok(())
-    }
-
-    fn convert_stmt_assign(&mut self, assign_tree: &Tree) -> Result<(), String> {
-        match &assign_tree.typ {
-            TreeType::StmtAssign { name, expression } => {
-                let reg = self.convert_expr(expression)?;
-                let local_lookup = self
-                    .functions
-                    .get(&self.current_fn)
-                    .expect("At this point, function table is guaranteed to contain current_fn.");
-                match &name.typ {
-                    TreeType::Name { name } => {
-                        let var = match local_lookup.get_variable_location(name) {
-                            Some(i) => i,
-                            None => panic!(),
-                        };
-                        match &var.typ {
-                            Type::Arr(typ, size) => {
-                                todo!()
-                            }
-                            _ => self.code.push(Instruction::StoreMem { reg: reg.mem, var }),
-                        }
-                    }
-                    TreeType::ExprArrAccess {
-                        arr_name,
-                        indices,
-                        typ,
-                    } => {
-                        let var = match local_lookup.get_variable_location(arr_name) {
-                            Some(i) => i,
-                            None => panic!(),
-                        };
+            loop {
+                match &current_field.typ {
+                    TreeType::FieldAccess { name, field, typ } => {
+                        let offset = current_class.get_offset(name);
                         match &typ {
-                            Type::Arr(typ, size) => {
-                                match &indices.typ {
-                                    TreeType::ExprArrLiteral { elements } => {
-                                        let index_reg = self.get_register()?;
-                                        let mem_offset = self.get_register()?;
-                                        let size_reg = self.get_register()?;
-                                        // Prepare index register
-                                        self.code.push(Instruction::LoadUsize {
-                                            dest: index_reg,
-                                            val: 0,
-                                        });
-                                        // Stores final offset for stack addressing
-                                        self.code.push(Instruction::LoadUsize {
-                                            dest: mem_offset,
-                                            val: var.mem,
-                                        });
-
-                                        for (count, child) in elements.iter().enumerate() {
-                                            let reg = self.convert_expr(child)?;
-
-                                            // Index Out of Bounds check
-                                            self.code.push(Instruction::LoadUsize {
-                                                dest: size_reg,
-                                                val: size[count],
-                                            });
-                                            self.code.push(Instruction::Cmp {
-                                                dest: reg.mem,
-                                                src: size_reg,
-                                                typ: Type::Usize,
-                                            });
-                                            let lbl = self.create_label();
-                                            self.code
-                                                .push(Instruction::JmpLt { dest: lbl.clone() });
-                                            self.code.push(Instruction::Exit {
-                                                code: ExitCode::OobAccess as usize,
-                                            });
-                                            self.add_label(&lbl);
-
-                                            // index_reg contains our index
-                                            // in each step, multiply the index by the dimension of the array
-                                            self.code.push(Instruction::Mul {
-                                                dest: index_reg,
-                                                src: size_reg,
-                                                typ: Type::Usize,
-                                            });
-                                            // in each step, add to that ^ the position we're indexing (result of expression)
-                                            self.code.push(Instruction::Add {
-                                                dest: index_reg,
-                                                src: reg.mem,
-                                                typ: Type::Usize,
-                                            });
-                                        }
-                                        self.code.push(Instruction::Add {
-                                            dest: index_reg,
-                                            src: mem_offset,
-                                            typ: Type::Usize,
-                                        });
-                                        let reg_tmp = self.get_register()?;
-                                        self.code.push(Instruction::LoadPtrRel {
-                                            dest: reg_tmp,
-                                            src: index_reg,
-                                            typ: *typ.clone(),
-                                        });
-                                        self.code.push(Instruction::StorePtr {
-                                            dest: reg_tmp,
-                                            src: reg.mem,
-                                            typ: *typ.clone(),
-                                        });
-                                    }
-                                    _ => panic!(),
-                                }
+                            Type::Class(cls) => {
+                                self.code.push(Instruction::LoadUsize { dest: offset_reg, val: offset });
+                                self.code.push(Instruction::Add { dest: ptr_reg, src: offset_reg, typ: Type::Usize });
+                                self.code.push(Instruction::LoadPtr { dest: ptr_reg, src: ptr_reg, typ: Type::Usize });
+                                
+                                current_class = self.classes.get(cls).unwrap();
                             }
-                            _ => panic!(),
+                            _ => panic!()
                         }
+                        current_field = *field.clone();
                     }
-                    _ => panic!(),
-                }
-            }
-            _ => panic!(),
-        }
-        /*
-        if assign_name.tkn.get_type() == TokenType::Asterisk {
-            let var_name = &assign_name.children[0].tkn;
-            assert!(var_name.get_type() == TokenType::Name);
-
-            match var.clone().typ {
-                Type::Ptr(t) => {
-                    if *t != reg.typ {
-                        return Err(format!(
-                            "{}: {:?}: Type Mismatch when assigning to Pointer. Pointer expected Type `{:?}`, but got Type `{:?}`.",
-                            ERR_STR,
-                            assign_name.tkn.get_loc(),
-                            t,
-                            reg.typ
-                        ));
+                    TreeType::ExprName { name, typ } => {
+                        let offset = current_class.get_offset(name);
+                        match &typ {
+                            Type::Arr(..) => todo!(),
+                            _ => {
+                                self.code.push(Instruction::LoadUsize { dest: offset_reg, val: offset });
+                                self.code.push(Instruction::Add { dest: ptr_reg, src: offset_reg, typ: Type::Usize });
+                            }
+                        }
+                        break Ok(Variable {
+                            mem: ptr_reg,
+                            typ: typ.clone()
+                        });
                     }
-                    self.resolve_types(*t.clone())?;
-                    let reg_mov = self.get_register()?;
-                    self.code.push(Instruction::LoadMem { reg: reg_mov, var });
-                    self.code.push(Instruction::StorePtr {
-                        src: reg.mem,
-                        dest: reg_mov,
-                        typ: *t,
-                    });
-                }
-                e => {
-                    return Err(format!(
-                        "{}: {:?}: Can not dereference Type `{:?}`.",
-                        ERR_STR,
-                        assign_name.tkn.get_loc(),
-                        e
-                    ))
+                    _ => panic!()
                 }
             }
         } else {
-            assert!(assign_name.tkn.get_type() == TokenType::Name);
-                (Type::Arr(typ, size), _) => {
-                    for (count, child) in indices.iter().enumerate() {
-                        let reg = self.convert_expr(child)?;
-                        if reg.typ != Type::Unknown && reg.typ != Type::Usize {
-                            return Err(format!(
-                                "{}: {:?}: Type Mismatch: Array indices are expected to be of Type usize. Got `{:?}`",
-                                ERR_STR,
-                                child.tkn.get_loc(),
-                                reg.typ
-                            ));
-                        }
-
-                        self.resolve_types(Type::Usize)?;
-
-                        // Index Out of Bounds check
-                        self.code.push(Instruction::LoadUsize { dest: size_reg, val: size[count] });
-                        self.code.push(Instruction::Cmp { dest: reg.mem, src: size_reg, typ: Type::Usize });
-                        self.code.push(Instruction::JmpLt { dest: self.code.len() + 2 });
-                        self.code.push(Instruction::Exit { code: ExitCode::OobAccess as usize });
-
-                        // index_reg contains our index
-                        // in each step, multiply the index by the dimension of the array
-                        self.code.push(Instruction::Mul { dest: index_reg, src: size_reg, typ: Type::Usize });
-                        // in each step, add to that ^ the position we're indexing (result of expression)
-                        self.code.push(Instruction::Add { dest: index_reg, src: reg.mem, typ: Type::Usize });
-                    }
-                    self.code.push(Instruction::Add { dest: index_reg, src: mem_offset, typ: Type::Usize });
-                    let reg_tmp = self.get_register()?;
-                    self.code.push(Instruction::LoadPtrRel {
-                        dest: reg_tmp,
-                        src: index_reg,
-                        typ: *typ.clone(),
-                    });
-                    self.code.push(Instruction::StorePtr {
-                        dest: reg_tmp,
-                        src: reg.mem,
-                        typ: *typ.clone(),
-                    });
-                }
-                (typ, Type::Unknown) => {
-                    self.resolve_types(typ.clone())?;
-                    self.code.push(Instruction::StoreMem { reg: reg.mem, var });
-                }
-                (var_typ, expr_typ) => {
-                    if var_typ != expr_typ {
-                        return Err(format!(
-                            "{}: {:?}: Type mismatch! Expected type `{:?}`, got type `{:?}`.",
-                            ERR_STR,
-                            assign_name.tkn.get_loc(),
-                            var.typ.clone(),
-                            reg.typ.clone()
-                        ));
-                    }
-                    self.code.push(Instruction::StoreMem { reg: reg.mem, var });
-                }
-            }
-        } */
-        self.reset_registers();
-        Ok(())
-    }
-
-    fn convert_stmt_if(&mut self, if_tree: &Tree) -> Result<(), String> {
-        match &if_tree.typ {
-            TreeType::StmtIf {
-                condition,
-                if_branch,
-                else_branch,
-            } => {
-                self.convert_expr(condition)?;
-                self.reset_registers();
-
-                self.convert_block(if_branch)?;
-                let if_jmp = self.resolve_last_jmp();
-
-                if let Some(else_br) = else_branch {
-                    self.unresolved_jmp_instr.push_back(self.code.len());
-                    self.code.push(Instruction::Jmp {
-                        dest: String::new(),
-                    });
-
-                    let lbl_name = self.create_label();
-                    self.add_label(&lbl_name);
-                    self.set_jmp_lbl(if_jmp, lbl_name);
-
-                    self.convert_block(else_br)?;
-                    self.resolve_last_jmp();
-                }
-            }
-            _ => panic!(),
+            panic!();
         }
-        self.reset_registers();
-        Ok(())
-    }
-
-    fn convert_stmt_return(&mut self, ret_tree: &Tree) -> Result<(), String> {
-        match &ret_tree.typ {
-            TreeType::StmtReturn { return_value } => {
-                self.functions
-                    .get_mut(&self.current_fn)
-                    .unwrap()
-                    .return_scopes
-                    .push(self.scope_depth);
-                let fn_return_type = self
-                    .functions
-                    .get(&self.current_fn)
-                    .unwrap()
-                    .get_return_type();
-                if let Some(ret_val) = return_value {
-                    let reg = self.convert_expr(ret_val)?;
-                    self.code.push(Instruction::Move {
-                        src: reg.mem,
-                        dest: 0,
-                    });
-                }
-                self.code.push(Instruction::Return {
-                    from: self.current_fn.clone(),
-                });
-            }
-            _ => panic!(),
-        }
-        self.reset_registers();
-        Ok(())
-    }
-
-    fn convert_stmt_expr(&mut self, expr_tree: &Tree) -> Result<(), String> {
-        match &expr_tree.typ {
-            TreeType::StmtExpr { expression } => {
-                self.convert_expr(expression)?;
-            }
-            _ => panic!(),
-        }
-        self.reset_registers();
-        Ok(())
-    }
-
-    fn resolve_last_jmp(&mut self) -> usize {
-        assert!(!self.unresolved_jmp_instr.is_empty());
-        let ip = self.unresolved_jmp_instr.pop_back().unwrap();
-
-        let lbl_name = self.create_label();
-        self.add_label(&lbl_name);
-
-        self.set_jmp_lbl(ip, lbl_name);
-        ip
-    }
-
-    fn resolve_types(&mut self, expected_type: Type) -> Result<(), String> {
-        if expected_type == Type::None {
-            todo!()
-        }
-        while let Some(index) = self.unresolved_typ_instr.pop_back() {
-            self.set_load_instr(index, expected_type.clone())?;
-        }
-        Ok(())
-    }
-
-    fn set_jmp_lbl(&mut self, index: usize, dest: String) {
-        self.code[index] = match &self.code[index] {
-            Instruction::JmpEq { .. } => Instruction::JmpEq { dest },
-            Instruction::JmpNeq { .. } => Instruction::JmpNeq { dest },
-            Instruction::JmpGt { .. } => Instruction::JmpGt { dest },
-            Instruction::JmpGte { .. } => Instruction::JmpGte { dest },
-            Instruction::JmpLt { .. } => Instruction::JmpLt { dest },
-            Instruction::JmpLte { .. } => Instruction::JmpLte { dest },
-            Instruction::Jmp { .. } => Instruction::Jmp { dest },
-            e => todo!("{:?}", e),
-        };
-    }
-
-    fn set_load_instr(&mut self, index: usize, typ: Type) -> Result<(), String> {
-        self.code[index] = match &self.code[index] {
-            Instruction::LoadUnknown { dest, val, loc } => match typ {
-                Type::I32 => {
-                    let val = parse_type!(i32, *loc, *val, typ)?;
-                    Instruction::LoadI32 { dest: *dest, val }
-                }
-                Type::I64 => {
-                    let val = parse_type!(i64, loc, val, typ)?;
-                    Instruction::LoadI64 { dest: *dest, val }
-                }
-                Type::U32 => {
-                    let val = parse_type!(u32, loc, val, typ)?;
-                    Instruction::LoadU32 { dest: *dest, val }
-                }
-                Type::U64 => {
-                    let val = parse_type!(u64, loc, val, typ)?;
-                    Instruction::LoadU64 { dest: *dest, val }
-                }
-                Type::Usize => {
-                    let val = parse_type!(usize, loc, val, typ)?;
-                    Instruction::LoadUsize { dest: *dest, val }
-                }
-                Type::Ptr(t, ..) => {
-                    let val = parse_type!(usize, loc, val, t)?;
-                    Instruction::LoadUsize { dest: *dest, val }
-                }
-                _ => todo!("{:?}", loc),
-            },
-            Instruction::Add {
-                dest,
-                src,
-                typ: _typ,
-            } => Instruction::Add {
-                dest: *dest,
-                src: *src,
-                typ,
-            },
-            Instruction::Sub {
-                dest,
-                src,
-                typ: _typ,
-            } => Instruction::Sub {
-                dest: *dest,
-                src: *src,
-                typ,
-            },
-            Instruction::Mul {
-                dest,
-                src,
-                typ: _typ,
-            } => Instruction::Mul {
-                dest: *dest,
-                src: *src,
-                typ,
-            },
-            Instruction::Div {
-                dest,
-                src,
-                typ: _typ,
-            } => Instruction::Div {
-                dest: *dest,
-                src: *src,
-                typ,
-            },
-            Instruction::Cmp {
-                dest,
-                src,
-                typ: _typ,
-            } => Instruction::Cmp {
-                dest: *dest,
-                src: *src,
-                typ,
-            },
-            e => todo!("Handle Instruction {:?}", e),
-        };
-        Ok(())
-    }
-
-    fn convert_fn(&mut self, func: &Tree) -> Result<(), String> {
-        match &func.typ {
-            TreeType::Func {
-                name,
-                return_type,
-                param,
-                block,
-            } => {
-                if self.functions.contains_key(name) {
-                    return Err(format!(
-                        "{}: {:?}: Function redefinition",
-                        ERR_STR,
-                        func.tkn.get_loc()
-                    ));
-                }
-                self.current_fn = name.clone();
-                let f = Function::new(self.code.len());
-                self.functions.insert(name.clone(), f);
-
-                self.code.push(Instruction::Label { name: name.clone() });
-
-                self.convert_fn_param(param)?;
-                if let Some(ret_tree) = return_type {
-                    match &ret_tree.typ {
-                        TreeType::TypeDecl { typ } => {
-                            self.functions.get_mut(name).unwrap().set_return_type(typ);
-                        }
-                        _ => panic!(),
-                    }
-                }
-                self.convert_block(block)?;
-
-                let return_scopes = &self.functions.get(&self.current_fn).unwrap().return_scopes;
-                let return_found = return_scopes.contains(&1);
-                let return_type = self
-                    .functions
-                    .get(&self.current_fn)
-                    .unwrap()
-                    .return_type
-                    .clone();
-                if name == self.entry_point.as_str() {
-                    self.code.push(Instruction::Exit {
-                        code: ExitCode::Normal as usize,
-                    });
-                }
-                match (return_found, return_type) {
-                    (false, Type::None) => {
-                        self.code.push(Instruction::Return {
-                            from: self.current_fn.clone(),
-                        });
-                    }
-                    (true, Type::None) => {
-                        if self.code.is_empty()
-                            || !(*self.code.last().unwrap()
-                                == Instruction::Return {
-                                    from: self.current_fn.clone(),
-                                })
-                        {
-                            self.code.push(Instruction::Return {
-                                from: self.current_fn.clone(),
-                            });
-                        }
-                    }
-                    (false, t) => {
-                        return Err(
-                            format!("{}: Function `{}` is declared to return `{:?}`, but no return statements found.\n{}: There's no Control Flow check yet, so even if it's unreachable because of if-else or anything else, it won't be caught.",
-                            ERR_STR,
-                            self.current_fn,
-                            t,
-                            NOTE_STR)
-                        );
-                    }
-                    (true, t) => {
-                        if !(*self.code.last().unwrap()
-                            == Instruction::Return {
-                                from: self.current_fn.clone(),
-                            })
-                        {
-                            return Err(
-                                format!("{}: {:?}: Function `{}` is declared to return `{:?}`, expected `return` as last instruction.",
-                                ERR_STR,
-                                func.tkn.get_loc(),
-                                self.current_fn,
-                                t
-                            ));
-                        }
-                    }
-                }
-            }
-            _ => panic!(),
-        }
-        self.current_fn.clear();
-        Ok(())
-    }
-
-    fn convert_fn_param(&mut self, param: &Tree) -> Result<(), String> {
-        let mut reg_ctr = 1;
-        match &param.typ {
-            TreeType::ParamList { parameters } => {
-                for p in parameters {
-                    match &p.typ {
-                        TreeType::Param { name, typ } => match &typ.typ {
-                            TreeType::TypeDecl { typ } => {
-                                let local_lookup = self.functions.get_mut(&self.current_fn).expect(
-                                        "At this point, function table is guaranteed to contain current_fn.",
-                                    );
-                                if local_lookup.get_param_location(name).is_some() {
-                                    return Err(format!(
-                                        "{}: {:?}: Parameter redefinition `{}`",
-                                        ERR_STR,
-                                        p.tkn.get_loc(),
-                                        name
-                                    ));
-                                }
-                                let var = local_lookup.add_param(name, typ);
-                                self.code.push(Instruction::StoreMem { reg: reg_ctr, var });
-                                reg_ctr += 1;
-                            }
-                            _ => panic!(),
-                        },
-                        _ => panic!(),
-                    }
-                }
-            }
-            _ => panic!(),
-        }
-        Ok(())
-    }
-
-    fn convert_block(&mut self, block: &Tree) -> Result<(), String> {
-        self.enter_scope();
-        match &block.typ {
-            TreeType::Block { statements } => {
-                for instr in statements {
-                    match &instr.typ {
-                        TreeType::StmtLet { .. } => self.convert_stmt_let(instr)?,
-                        TreeType::StmtAssign { .. } => self.convert_stmt_assign(instr)?,
-                        TreeType::StmtIf { .. } => self.convert_stmt_if(instr)?,
-                        TreeType::StmtReturn { .. } => self.convert_stmt_return(instr)?,
-                        TreeType::StmtExpr { .. } => self.convert_stmt_expr(instr)?,
-                        e => todo!("convert {:?} inside block", e),
-                    }
-                }
-            }
-            _ => panic!(),
-        }
-        self.leave_scope();
-        Ok(())
-    }
-
-    fn enter_scope(&mut self) {
-        assert!(!self.current_fn.is_empty());
-        // println!("Entering scope");
-        self.scope_depth += 1;
-        self.functions
-            .get_mut(&self.current_fn)
-            .unwrap()
-            .add_scope();
-    }
-
-    fn leave_scope(&mut self) {
-        assert!(!self.current_fn.is_empty());
-        // println!("Leaving scope");
-        self.scope_depth -= 1;
-        self.functions
-            .get_mut(&self.current_fn)
-            .unwrap()
-            .remove_scope();
-    }
-
-    fn convert_ast(&mut self, ast: &Tree) -> Result<(), String> {
-        match &ast.typ {
-            TreeType::File { functions } => {
-                for func in functions {
-                    self.convert_fn(func)?;
-                }
-            }
-            _ => todo!("handle other types"),
-        }
-        Ok(())
-    }
-
-    // fn add_instruction(&mut self, instr: Instruction) {
-    //     self.code.push(instr);
-    // }
-
-    fn generate_code(&mut self) -> Result<(), String> {
-        self.convert_ast(&self.ast.clone())
     }
 
     pub fn interpret(&mut self) -> Result<(), String> {
+        todo!();
         // for (i, c) in self.code.iter().enumerate() {
         //     println!("{i:3} -> {c:?}");
         // }
@@ -1523,16 +1454,30 @@ impl Generator {
         let mut stack = vec![Memory { u64: 0 }; STACK_SIZE];
         let mut stack_ptr = STACK_SIZE - 1 - self.get_function_stack_size(&self.entry_point);
 
+        let mut static_vars = HashMap::new();
+        for v in BUILT_IN_VARS.keys() {
+            static_vars.insert(v, Memory { u64: 0 });
+        }
+
         let mut flags = 0;
         const EQ: usize = 1;
         const LT: usize = 2;
         const GT: usize = 4;
 
-        let mut ip = self
-            .functions
-            .get(&self.entry_point)
-            .unwrap() // Can safely unwrap because map is guaranteed to contain entry_point
-            .get_ip();
+        println!("{:?}", self.functions);
+        let mut ip = 0;
+        for (i, c) in self.code.iter().enumerate() {
+            match c {
+                Instruction::Label { name } => {
+                    if *name == self.entry_point {
+                        ip = i;
+                        break;
+                    }
+                }
+                _ => ()
+            }
+        };
+        assert!(ip != 0);
 
         while ip < self.code.len() {
             // todo!("Interpretation with type system in place.");
@@ -1561,13 +1506,31 @@ impl Generator {
                 Instruction::LoadUsize { dest, val } => {
                     self.registers[*dest].ptr = *val;
                 }
-                Instruction::LoadPtrRel { dest, src, .. } => {
-                    self.registers[*dest].ptr = stack_ptr + unsafe { self.registers[*src].ptr } + 1;
+                // Instruction::LoadPtrRel { dest, src, typ } => {
+                //     self.registers[*dest].ptr = stack_ptr + unsafe { self.registers[*src].ptr } + 1;
+                // }
+                Instruction::StoreStatic { reg, name } => {
+                    static_vars.insert(name, self.registers[*reg]);
+                },
+                Instruction::LoadStatic { reg, name } => {
+                    self.registers[*reg] = *static_vars.get(name).unwrap();
+                },
+                Instruction::StoreStack {
+                    reg,
+                    var: Variable { typ, mem },
+                } => {
+                    stack[stack_ptr + *mem + 1] = self.registers[*reg];
                 }
-                Instruction::LoadPtr { dest, src, .. } => {
+                Instruction::LoadStack {
+                    reg,
+                    var: Variable { typ, mem },
+                } => {
+                    self.registers[*reg] = stack[stack_ptr + *mem + 1];
+                }
+                Instruction::LoadPtr { dest, src, typ } => {
                     self.registers[*dest] = unsafe { stack[self.registers[*src].ptr] };
                 }
-                Instruction::StorePtr { dest, src, .. } => {
+                Instruction::StorePtr { dest, src, typ } => {
                     stack[unsafe { self.registers[*dest].ptr }] = self.registers[*src];
                 }
                 Instruction::LoadF32 { .. } => {
@@ -1650,18 +1613,6 @@ impl Generator {
                 Instruction::Move { dest, src } => {
                     self.registers[*dest] = self.registers[*src];
                 }
-                Instruction::LoadMem {
-                    reg,
-                    var: Variable { typ: _typ, mem },
-                } => {
-                    self.registers[*reg] = stack[stack_ptr + *mem + 1];
-                }
-                Instruction::StoreMem {
-                    reg,
-                    var: Variable { typ: _typ, mem },
-                } => {
-                    stack[stack_ptr + *mem + 1] = self.registers[*reg];
-                }
                 Instruction::Call { fn_name } => {
                     let stack_size = self.get_function_stack_size(fn_name);
                     // println!("{fn_name} has a stack size of {stack_size}");
@@ -1671,11 +1622,12 @@ impl Generator {
                         return Err(format!("{}: Stack Overflow when interpreting!", ERR_STR));
                     }
                     stack_ptr -= stack_size;
-                    ip = self
-                        .functions
-                        .get(fn_name)
-                        .unwrap_or_else(|| panic!("Could not find {fn_name} in function table"))
-                        .get_ip();
+                    todo!("IP");
+                    // ip = self
+                    //     .functions
+                    //     .get(fn_name)
+                    //     .unwrap_or_else(|| panic!("Could not find {fn_name} in function table"))
+                    //     .get_ip();
                     add_ip = false;
                 }
                 Instruction::Push { reg } => {
@@ -1722,14 +1674,19 @@ impl Generator {
         }
 
         for i in 0..20 {
-            println!("{} {}", STACK_SIZE - i - 1, unsafe {
-                stack[STACK_SIZE - i - 1].u64
+            let id = STACK_SIZE - (i + 1) * 4;
+            println!("{} {}", id, unsafe {
+                stack[id].u32
             });
         }
         Ok(())
     }
 
     pub fn compile(&mut self) -> Result<(), String> {
+        // for c in &self.code {
+        //     println!("{:?}", c);
+        // }
+        // todo!();
         if !self.functions.contains_key(&self.entry_point) {
             return Err(format!(
                 "{}: Missing entry point - Could not find function {}()",
@@ -1746,7 +1703,7 @@ impl Generator {
         let get_word = |t: &Type| -> &str {
             match t {
                 Type::I32 | Type::U32 => "DWORD",
-                Type::I64 | Type::U64 | Type::Usize => "QWORD",
+                Type::I64 | Type::U64 | Type::Usize | Type::Class(..) => "QWORD",
                 _ => todo!("{:?}", t),
             }
         };
@@ -1754,7 +1711,7 @@ impl Generator {
         let get_register = |reg: usize, typ: &Type| -> &str {
             match typ {
                 Type::I32 | Type::U32 => REGISTERS_32BIT[reg],
-                Type::I64 | Type::U64 | Type::Usize => REGISTERS_64BIT[reg],
+                Type::I64 | Type::U64 | Type::Usize | Type::Class(..) => REGISTERS_64BIT[reg],
                 _ => todo!("{:?}", typ),
             }
         };
@@ -1768,6 +1725,8 @@ impl Generator {
         // TODO: Clarify extern stuff - See https://github.com/pfhaupt/bufo/issues/6
         push_asm("  extern ExitProcess");
         push_asm("  extern printf");
+        push_asm("  extern malloc");
+        push_asm("");
 
         for instr in &self.code {
             if self.print_debug {
@@ -1775,11 +1734,11 @@ impl Generator {
             }
             match instr {
                 Instruction::Label { name } => {
-                    push_asm(format!("{}:", name).as_str());
+                    push_asm(format!("{}:", name.to_lowercase()).as_str());
                     if let Some(func) = self.functions.get(name) {
                         push_asm("  push rbp");
                         push_asm("  mov rbp, rsp");
-                        push_asm(format!("  sub rsp, {}", func.get_stack_size()).as_str());
+                        push_asm(format!("  sub rsp, {}", func.get_stack_size() + 32).as_str());
                     }
                 }
                 Instruction::Move { dest, src } => {
@@ -1787,23 +1746,41 @@ impl Generator {
                     let src = REGISTERS_64BIT[*src];
                     push_asm(format!("  mov {dest}, {src}").as_str());
                 }
-                Instruction::StoreMem { reg, var } => {
+                Instruction::StoreStatic { reg, name } => {
+                    let reg = get_register(*reg, &Type::Usize);
+                    push_asm(format!("  mov qword [{name}], {reg}").as_str());
+                },
+                Instruction::LoadStatic { reg, name } => {
+                    let reg = get_register(*reg, &Type::Usize);
+                    push_asm(format!("  mov qword {reg}, [{name}]").as_str());
+                },
+                Instruction::StoreStack { reg, var } => {
                     let word = get_word(&var.typ);
                     let reg = get_register(*reg, &var.typ);
                     let stack_offset = var.mem;
-                    let type_size = Generator::get_type_size(&var.typ);
+                    let type_size = self.size_manager.get_type_size(&var.typ);
                     push_asm(
                         format!("  mov {word} [rbp-{stack_offset}-{type_size}], {reg}").as_str(),
                     );
                 }
-                Instruction::LoadMem { reg, var } => {
+                Instruction::LoadStack { reg, var } => {
                     let word = get_word(&var.typ);
                     let reg = get_register(*reg, &var.typ);
                     let stack_offset = var.mem;
-                    let type_size = Generator::get_type_size(&var.typ);
+                    let type_size = self.size_manager.get_type_size(&var.typ);
                     push_asm(
                         format!("  mov {word} {reg}, [rbp-{stack_offset}-{type_size}]").as_str(),
                     );
+                }
+                Instruction::StorePtr { dest, src, typ } => {
+                    let dest = get_register(*dest, &Type::Usize);
+                    let src = get_register(*src, &Type::Usize);
+                    push_asm(format!("  mov [{dest}], {src}").as_str());
+                }
+                Instruction::LoadPtr { dest, src, typ } => {
+                    let dest = get_register(*dest, &Type::Usize);
+                    let src = get_register(*src, &Type::Usize);
+                    push_asm(format!("  mov {dest}, [{src}]").as_str());
                 }
                 Instruction::LoadUnknown { dest, val, loc } => {
                     panic!("At the point of generating ASM, there should never be a single LoadUnknown!\nFailed to resolve type at: {loc:?}");
@@ -1834,23 +1811,13 @@ impl Generator {
                     let reg = get_register(*dest, &Type::Usize);
                     push_asm(format!("  mov {reg}, {val}").as_str());
                 }
-                Instruction::LoadPtrRel { dest, src, .. } => {
-                    // self.registers[*dest].ptr = stack_ptr + unsafe { self.registers[*src].ptr } + 1;
-                    let dest = get_register(*dest, &Type::Usize);
-                    let src = get_register(*src, &Type::Usize);
-                    push_asm(format!("  add {src}, rsp").as_str());
-                    push_asm(format!("  mov {dest}, {src}").as_str());
-                }
-                Instruction::LoadPtr { dest, src, .. } => {
-                    let dest = get_register(*dest, &Type::Usize);
-                    let src = get_register(*src, &Type::Usize);
-                    push_asm(format!("  mov {dest}, [{src}]").as_str());
-                }
-                Instruction::StorePtr { dest, src, .. } => {
-                    let dest = get_register(*dest, &Type::Usize);
-                    let src = get_register(*src, &Type::Usize);
-                    push_asm(format!("  mov [{dest}], {src}").as_str());
-                }
+                // Instruction::LoadPtrRel { dest, src, typ } => {
+                //     // self.registers[*dest].ptr = stack_ptr + unsafe { self.registers[*src].ptr } + 1;
+                //     let dest = get_register(*dest, &Type::Usize);
+                //     let src = get_register(*src, &Type::Usize);
+                //     push_asm(format!("  add {src}, rsp").as_str());
+                //     push_asm(format!("  mov {dest}, {src}").as_str());
+                // }
                 Instruction::Add { dest, src, typ } => {
                     let dest = get_register(*dest, typ);
                     let src = get_register(*src, typ);
@@ -1949,7 +1916,7 @@ impl Generator {
                     } else {
                         panic!();
                     }
-                    push_asm("  ret");
+                    push_asm("  ret\n");
                 }
                 Instruction::Exit { code } => {
                     push_asm(format!("  mov rcx, {code}").as_str());
@@ -1957,10 +1924,18 @@ impl Generator {
                 }
             }
         }
+        push_asm("
+exit:
+  mov rcx, rbx\n
+  call ExitProcess");
         push_asm("");
         push_asm("segment .data");
+        push_asm("STACK_OVERFLOW_CODE dq 2");
+        push_asm("FUNCTION_COUNTER dq 0");
+        push_asm("FUNCTION_LIMIT dq 10");
         push_asm("");
         push_asm("segment .bss");
+
         match Path::new("./out/").try_exists() {
             Ok(b) => {
                 if !b {
@@ -1985,18 +1960,22 @@ impl Generator {
         if self.print_debug {
             println!("Running `nasm -f win64 ./out/output.asm -o ./out/output.obj`");
         }
-        Command::new("nasm")
+        let nasm_output = Command::new("nasm")
             .args(["-f", "win64", "./out/output.asm", "-o", "./out/output.obj"])
             .output()
             .expect("failed to execute process");
+        if nasm_output.status.code().unwrap() != 0 {
+            return Err(format!(
+                "{}: Converting assembly to object file failed with:\n{}", ERR_STR, String::from_utf8(nasm_output.stderr).unwrap()
+            ));
+        }
         if self.print_debug {
             println!(
-                "Running `golink /no /console /entry main output.obj MSVCRT.dll kernel32.dll`"
+                "Running `golink /console /entry main ./out/output.obj MSVCRT.dll kernel32.dll`"
             );
         }
-        Command::new("golink")
+        let golink_output = Command::new("golink")
             .args([
-                "/no",
                 "/console",
                 "/entry",
                 "main",
@@ -2006,6 +1985,11 @@ impl Generator {
             ])
             .output()
             .expect("failed to execute process");
+        if golink_output.status.code().unwrap() != 0 {
+            return Err(format!(
+                "{}: Converting linking object files failed with:\n{}", ERR_STR, String::from_utf8(golink_output.stderr).unwrap()
+            ));
+        }
         Ok(())
     }
 
@@ -2013,9 +1997,16 @@ impl Generator {
         if self.print_debug {
             println!("Running `./out/output.exe`");
         }
-        Command::new("./out/output.exe")
+        let output = Command::new("./out/output.exe")
             .output()
             .expect("failed to execute process");
-        Ok(())
+        let exit_code = output.status.code().unwrap();
+        if exit_code != 0 {
+            Err(format!(
+                "{}: Code execution failed with code 0x{:X}.", ERR_STR, exit_code
+            ))
+        } else {
+            Ok(())
+        }
     }
 }

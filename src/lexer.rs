@@ -6,6 +6,8 @@ use crate::codegen::ERR_STR;
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TokenType {
     File,
+    CharLiteral,
+    StrLiteral,
     IntLiteral,
     OpenRound,
     ClosingRound,
@@ -13,13 +15,18 @@ pub enum TokenType {
     ClosingCurly,
     OpenSquare,
     ClosingSquare,
-    FnKeyword,
+    ClassKeyword,
+    FunctionKeyword,
+    FeatureKeyword,
     LetKeyword,
     IfKeyword,
     ElseKeyword,
     ReturnKeyword,
-    TypeDecl,
-    Ampersand,
+    BuiltInFunction,
+    Colon,
+    Semi,
+    Comma,
+    Dot,
     Arrow,
     Equal,
     Plus,
@@ -32,9 +39,7 @@ pub enum TokenType {
     CmpLte,
     CmpGt,
     CmpGte,
-    Semi,
-    Comma,
-    Name,
+    Identifier,
     Eof,
 }
 
@@ -47,6 +52,17 @@ pub const COMPARATOR_TYPES: [TokenType; 6] = [
     TokenType::CmpLte,
 ];
 
+pub const BUILT_IN_VARIABLES: [&str; 3] = [
+    "STACK_OVERFLOW_CODE",
+    "FUNCTION_COUNTER",
+    "FUNCTION_LIMIT"
+];
+pub const BUILT_IN_FUNCTIONS: [&str; 3] = [
+    "EXIT",
+    "MALLOC",
+    "SIZEOF"
+];
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct Location {
     file: String,
@@ -57,6 +73,14 @@ pub struct Location {
 impl Location {
     pub fn new(file: String, row: usize, col: usize) -> Self {
         Self { file, row, col }
+    }
+
+    pub fn anonymous() -> Self {
+        Self::new(String::from("anonymous"), 0, 0)
+    }
+
+    pub fn builtin() -> Self {
+        Self::new(String::from("builtin"), 0, 0)
     }
 }
 
@@ -91,7 +115,7 @@ impl Token {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Lexer {
     origin: String,
     source: Vec<char>,
@@ -104,22 +128,53 @@ pub struct Lexer {
 }
 
 impl Lexer {
-    pub fn new(origin_path: &String, print_debug: bool) -> Result<Self, String> {
-        match fs::read_to_string(origin_path) {
-            Ok(source) => Ok(Lexer {
-                origin: origin_path.to_string(),
-                source: source.chars().collect(),
-                tokens: vec![],
-                current_char: 0,
-                current_line: 1,
-                line_start: 0,
-                print_debug,
-            }),
-            Err(_) => Err(format!(
-                "{}: Could not find input file `{}`.",
-                ERR_STR, origin_path
-            )),
+    pub fn new() -> Self {
+        Lexer {
+            origin: String::new(),
+            source: vec![],
+            tokens: vec![],
+            current_char: 0,
+            current_line: 1,
+            line_start: 0,
+            print_debug: false,
         }
+    }
+
+    pub fn origin(&mut self, origin_path: &String) -> Result<Self, String> {
+        match fs::read_to_string(origin_path) {
+            Ok(source) => {
+                self.source = source.chars().collect();
+                self.origin = origin_path.to_string();
+                Ok(self.clone())
+            }
+            Err(_) => {
+                Err(format!(
+                    "{}: Could not find input file `{}`.",
+                    ERR_STR, origin_path
+                ))
+            }
+        }
+    }
+
+    pub fn debug(&mut self, debug: bool) -> Self {
+        self.print_debug = debug;
+        self.clone()
+    }
+
+    pub fn set_source(&mut self, source: &String) {
+        self.source = source.chars().collect();
+        self.reset();
+    }
+
+    pub fn set_origin_unchecked(&mut self, origin: &String) {
+        self.origin = origin.clone();
+    }
+
+    fn reset(&mut self) {
+        self.current_char = 0;
+        self.current_line = 1;
+        self.line_start = 0;
+        self.tokens.clear();
     }
 
     fn get_location(&self) -> Location {
@@ -168,7 +223,7 @@ impl Lexer {
     fn next_token(&mut self) -> Result<Token, String> {
         assert_eq!(
             TokenType::Eof as u8 + 1,
-            31,
+            36,
             "Not all TokenTypes are handled in next_token()"
         );
         let c = self.next_char()?;
@@ -192,22 +247,61 @@ impl Lexer {
             'A'..='Z' | 'a'..='z' => {
                 let mut value = String::from(c);
                 while let Ok(nc) = self.next_char() {
-                    if !nc.is_alphanumeric() {
+                    if !nc.is_alphanumeric() && !(nc == '_') {
                         self.current_char -= 1; // Went too far, go a step back
                         break;
                     }
                     value.push(nc);
                 }
                 let typ = match value.as_str() {
-                    "func" => TokenType::FnKeyword,
+                    "class" => TokenType::ClassKeyword,
+                    "func" => TokenType::FunctionKeyword,
+                    "feat" => TokenType::FeatureKeyword,
                     "let" => TokenType::LetKeyword,
                     "if" => TokenType::IfKeyword,
                     "else" => TokenType::ElseKeyword,
                     "return" => TokenType::ReturnKeyword,
-                    _ => TokenType::Name,
+                    _ if BUILT_IN_FUNCTIONS.contains(&value.as_str()) => TokenType::BuiltInFunction,
+                    _ => TokenType::Identifier,
                 };
                 Ok(Token { typ, value, loc })
             }
+            '"' => {
+                let mut value = String::new();
+                while let Ok(nc) = self.next_char() {
+                    if nc == '"' {
+                        break;
+                    }
+                    value.push(nc);
+                }
+                Ok(Token {
+                    typ: TokenType::StrLiteral,
+                    value,
+                    loc
+                })
+            }
+            '\'' => {
+                let mut value = String::new();
+                while let Ok(nc) = self.next_char() {
+                    if nc == '\'' {
+                        break;
+                    }
+                    value.push(nc);
+                }
+                if value.len() != 1 {
+                    Err(format!("{}: {:?}: Char Literal is expected to be a single char, got `{}`.",
+                        ERR_STR,
+                        loc,
+                        value
+                    ))
+                } else {
+                    Ok(Token {
+                        typ: TokenType::CharLiteral,
+                        value,
+                        loc
+                    })
+                }
+            } 
             '(' => Ok(Token {
                 typ: TokenType::OpenRound,
                 value: String::from("("),
@@ -246,11 +340,6 @@ impl Lexer {
             ',' => Ok(Token {
                 typ: TokenType::Comma,
                 value: String::from(","),
-                loc,
-            }),
-            '&' => Ok(Token {
-                typ: TokenType::Ampersand,
-                value: String::from("&"),
                 loc,
             }),
             '!' => {
@@ -319,7 +408,12 @@ impl Lexer {
                 Ok(Token { typ, value, loc })
             }
             ':' => Ok(Token {
-                typ: TokenType::TypeDecl,
+                typ: TokenType::Colon,
+                value: String::from(c),
+                loc,
+            }),
+            '.' => Ok(Token {
+                typ: TokenType::Dot,
                 value: String::from(c),
                 loc,
             }),
@@ -347,11 +441,28 @@ impl Lexer {
                 value: String::from(c),
                 loc,
             }),
-            '/' => Ok(Token {
-                typ: TokenType::ForwardSlash,
-                value: String::from(c),
-                loc,
-            }),
+            '/' => {
+                let (typ, value) = if let Ok(nc) = self.next_char() {
+                    match nc {
+                        '/' => {
+                            while let Ok(c) = self.next_char() {
+                                if c == '\r' || c == '\n' {
+                                    self.trim_whitespace();
+                                    break;
+                                }
+                            }
+                            return self.next_token();
+                        },
+                        _ => {
+                            self.current_char -= 1; // Went too far, go a step back
+                            (TokenType::ForwardSlash, String::from("/"))
+                        }
+                    }
+                } else {
+                    (TokenType::ForwardSlash, String::from("/"))
+                };
+                Ok(Token { typ, value, loc })
+            },
             e => Err(format!(
                 "{}: {:?}: Unexpected Symbol `{}`",
                 ERR_STR,
