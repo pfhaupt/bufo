@@ -248,11 +248,13 @@ mod tests {
         generate_failing_test!(wrong_function_argument_types, "Type Mismatch!", "Error when evaluating type of argument.");
         generate_failing_test!(wrong_function_return_type, "Type Mismatch!", "Function is declared to return `I32`");
         generate_failing_test!(calling_undeclared_function, "Unknown function", "testfunction");
-        #[test] fn array_out_of_bounds() {
+        #[test] #[cfg_attr(not(feature = "test_exec"), ignore = "Pass the `text_exec` feature-flag to run this test")] fn array_out_of_bounds() {
+            // TODO: Automatically clean up after running code
             test!("tests/semantics/array_out_of_bounds.bu", false, true, true, [ERR_STR, "Code execution failed", format!("{:X}", (ExitCode::OobAccess as usize)).as_str()])
         }
         generate_failing_test!(return_mismatch, "Type Mismatch!", "Function", "declared to return", "got");
-        #[test] fn variable_shadowing() {
+        #[test] #[cfg_attr(not(feature = "test_exec"), ignore = "Pass the `text_exec` feature-flag to run this test")] fn variable_shadowing() {
+            // TODO: Automatically clean up after running code
             test!("tests/semantics/variable_shadowing.bu", false, true, true, [ERR_STR, "Code execution failed", format!("{:X}", 42069).as_str()])
         }
         generate_failing_test!(using_out_of_scope_variable, "Undeclared variable");

@@ -8,3 +8,6 @@ edition = "2021"
 [dependencies]
 indexmap = "2.0.0"
 lazy_static = "1.4.0"
+
+[features]
+test_exec = []
