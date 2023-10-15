@@ -1,0 +1,7 @@
+class Test {
+    a: i32;
+}
+
+func main() {
+    let t: Test = Test(); // Should fail with something like "Feature `new` not defined for `Test`, can't use it"
+}

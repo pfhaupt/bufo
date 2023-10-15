@@ -1,4 +1,4 @@
 func main() {
     let a: i32 = 0;
-    let b: u32 = a;
+    let a: u64 = 0;
 }

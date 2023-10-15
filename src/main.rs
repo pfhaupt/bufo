@@ -145,21 +145,7 @@ mod tests {
 
     use crate::{Compiler, codegen::ERR_STR};
 
-    macro_rules! perform_op {
-        ($dest: expr, $reg1:expr, $reg2:expr, $typ:expr, $op:tt) => {
-            match $typ {
-                Type::I32 => unsafe { $dest.i32 = $reg1.i32 $op $reg2.i32 },
-                Type::I64 => unsafe { $dest.i64 = $reg1.i64 $op $reg2.i64 },
-                Type::U32 => unsafe { $dest.u32 = $reg1.u32 $op $reg2.u32 },
-                Type::U64 => unsafe { $dest.u64 = $reg1.u64 $op $reg2.u64 },
-                Type::Usize => unsafe { $dest.ptr = $reg1.ptr $op $reg2.ptr },
-                Type::F32 => unsafe { $dest.f32 = $reg1.f32 $op $reg2.f32 },
-                Type::F64 => unsafe { $dest.f64 = $reg1.f64 $op $reg2.f64 },
-                // Type::Ptr(..) => unsafe { $dest.ptr = $reg1.ptr $op $reg2.ptr },
-                _ => todo!()
-            }
-        };
-    }
+    const ALWAYS_FAILS: &str = "This is a String we defined to make sure that a test always fails. This is expected.";
 
     macro_rules! init {
         ($path: expr, $debug: expr, $run: expr) => {
@@ -189,7 +175,7 @@ mod tests {
                         let res = result.err().unwrap();
                         for e in $expected {
                             if !res.contains(e) {
-                                assert!(false, "Unexpected Error String!\nExpected Substring `{e}`\nin `{res}`")
+                                assert!(false, "Unexpected Error String!\nExpected Substring\n> {e}\nin error message\n{res}\n")
                             }
                         }
                     } else {
@@ -231,25 +217,17 @@ mod tests {
         generate_failing_test!(extra_arguments_in_func_call, "Too many arguments");
         generate_failing_test!(operator_without_operands, "Expected Expr");
         generate_failing_test!(too_many_literals, "found IntLiteral");
-        generate_failing_test!(using_undeclared_variable, "Undefined variable");
-        generate_failing_test!(using_out_of_scope_variable, "Undefined variable");
-        generate_failing_test!(missing_function_declaration, "Unknown function");
-        generate_failing_test!(wrong_function_argument_types, "Type Mismatch!", "Error when evaluating type of argument.");
-        generate_failing_test!(wrong_function_return_type, "Type Mismatch!", "Function is declared to return `I32`");
-        generate_failing_test!(unknown_type_declaration, "Attempted to assign");
-        generate_failing_test!(assign_wrong_variable_type, "Type Mismatch!");
         generate_failing_test!(if_missing_body, "Expected `{`");
         generate_failing_test!(if_missing_condition, "Expected Expr");
         generate_failing_test!(if_missing_brackets_condition, "Expected OpenRound", "found Identifier");
         generate_failing_test!(unexpected_symbol, "Unexpected Symbol `#`");
-        generate_failing_test!(class_no_such_field, "has no field", "Class declared here");
-        generate_failing_test!(class_nested_field_wrong_type, "Type Mismatch!", "Expected type", "got type");
         generate_failing_test!(char_literal_more_than_one_chars, "Char Literal", "single char", "got `hello`");
         generate_failing_test!(brackets_in_expressions, "Expected ClosingRound");
     }
 
     mod semantic_tests {
         use crate::{Compiler, codegen::{ERR_STR, ExitCode}};
+        use crate::tests::ALWAYS_FAILS;
 
         macro_rules! generate_failing_test {
             ($name:ident, $($err:expr),*) => {
@@ -260,18 +238,37 @@ mod tests {
             };
         }
 
-        generate_failing_test!(undefined_variable, "Undefined variable");
+        generate_failing_test!(undeclared_variable, "Undeclared variable");
+        generate_failing_test!(unknown_type_declaration, "Attempted to assign");
         generate_failing_test!(type_mismatch_in_binary_op, "Type Mismatch!", "Left hand side", "right side", "U32");
         generate_failing_test!(type_mismatch_in_comparison, "Type Mismatch!", "Left hand side", "right side", "I32");
         generate_failing_test!(type_mismatch_in_fn_args, "Type Mismatch", "Parameter", "declared here", "I32", "Expected type");
-        generate_failing_test!(function_redefinition, "Function already defined here", "redefinition");
-        generate_failing_test!(calling_undefined_function, "Unknown function", "testfunction");
+        generate_failing_test!(type_mismatch_in_assignment, "Type Mismatch", "Expected type", "U64", "got", "I32");
+        generate_failing_test!(function_redeclaration, "Function redeclaration", "Function already declared here");
+        generate_failing_test!(wrong_function_argument_types, "Type Mismatch!", "Error when evaluating type of argument.");
+        generate_failing_test!(wrong_function_return_type, "Type Mismatch!", "Function is declared to return `I32`");
+        generate_failing_test!(calling_undeclared_function, "Unknown function", "testfunction");
         #[test] fn array_out_of_bounds() {
             test!("tests/semantics/array_out_of_bounds.bu", false, true, true, [ERR_STR, "Code execution failed", format!("{:X}", (ExitCode::OobAccess as usize)).as_str()])
         }
         generate_failing_test!(return_mismatch, "Type Mismatch!", "Function", "declared to return", "got");
         #[test] fn variable_shadowing() {
             test!("tests/semantics/variable_shadowing.bu", false, true, true, [ERR_STR, "Code execution failed", format!("{:X}", 42069).as_str()])
+        }
+        generate_failing_test!(using_out_of_scope_variable, "Undeclared variable");
+
+        generate_failing_test!(variable_redeclaration, "Variable redeclaration", "Variable already declared here");
+        generate_failing_test!(class_field_redeclaration, "Class Field redeclaration", "Field", "already declared here");
+        generate_failing_test!(class_no_such_field, "has no field", "Class declared here");
+        generate_failing_test!(class_nested_field_wrong_type, "Type Mismatch!", "Expected type", "got type");
+        #[test] #[ignore = "Error Messages for missing feats are still showing as missing [desugared] functions"] fn class_no_feat_new() {
+            // TODO: Implement generate_failing_test for this once error messages are better
+        }
+        generate_failing_test!(incompatible_operands, "Binary Operation", "not defined for type", "Class");
+
+        #[test] #[ignore = "NullPointer are still not checked at runtime (very bad)"] fn null_pointer_exception() {
+            // TODO: Implement generate_failing_test for this once Nullpointer are handled at runtime
+            // test!("tests/semantics/null_pointer_exception.bu", false, true, true, [ERR_STR, ALWAYS_FAILS])
         }
     }
 }

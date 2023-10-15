@@ -1,0 +1,13 @@
+class Test {
+    a: i64;
+
+    feat new() {
+
+    }
+}
+
+func main() {
+    let t1: Test = Test();
+    let t2: Test = Test();
+    let t3: Test = t1 + t2; // OP_PLUS is not defined for class Test
+}

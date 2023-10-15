@@ -1,0 +1,4 @@
+class Test {
+    a: i32;
+    a: u64;
+}
