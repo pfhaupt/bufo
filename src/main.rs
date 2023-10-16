@@ -17,8 +17,11 @@ use crate::flags::{Flag, FlagParser, DEBUG_KEY, INPUT_KEY};
 use crate::parser::{Parser, Tree};
 use crate::desugar::Desugarer;
 
-use crate::new::new_parser::main as other_main;
+use crate::new::compiler::main as other_main;
 fn main() {
+    // if let Err(e) = compile() {
+    //     println!("{}", e);
+    // }
     other_main();
 }
 
@@ -124,12 +127,6 @@ fn compile() -> Result<(), String> {
     Ok(())
 }
 
-// fn main() {
-//     if let Err(e) = compile() {
-//         println!("{}", e);
-//     }
-// }
-
 #[cfg(test)]
 mod tests {
     use lazy_static::lazy_static;
@@ -186,7 +183,8 @@ mod tests {
     }
 
     mod syntax_tests {
-        use crate::{Compiler, codegen::ERR_STR};
+        use crate::new::{compiler::Compiler};
+        use crate::codegen::ERR_STR;
 
         macro_rules! generate_failing_test {
             ($name:ident, $($err:expr),*) => {
@@ -208,7 +206,7 @@ mod tests {
         generate_failing_test!(extra_arguments_in_func_call, "Too many arguments");
         generate_failing_test!(operator_without_operands, "Expected Expr");
         generate_failing_test!(too_many_literals, "found IntLiteral");
-        generate_failing_test!(if_missing_body, "Expected `{`");
+        generate_failing_test!(if_missing_body, "Expected OpenCurly");
         generate_failing_test!(if_missing_condition, "Expected Expr");
         generate_failing_test!(if_missing_brackets_condition, "Expected OpenRound", "found Identifier");
         generate_failing_test!(unexpected_symbol, "Unexpected Symbol `#`");

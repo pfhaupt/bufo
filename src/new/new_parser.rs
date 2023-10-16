@@ -6,9 +6,10 @@ use std::path::{Path, PathBuf};
 
 use derive_builder::Builder;
 
+use crate::parser::{Location, Tree, TreeType, TokenType, COMPARATOR_TYPES};
 use crate::codegen::ERR_STR;
-use crate::{checker::Type, parser::Location};
-use crate::new::nodes;
+use crate::checker::Type;
+use super::nodes;
 
 // We always store the N-1 next tokens for lookahead purposes, even if we only use 1 right now
 const LOOKAHEAD_LIMIT: usize = 3;
@@ -23,6 +24,20 @@ pub const BUILT_IN_FUNCTIONS: [&str; 3] = [
     "MALLOC",
     "SIZEOF"
 ];
+
+#[macro_export]
+macro_rules! parse_snippet {
+    ($filepath: expr, $node: ty, $snippet: expr) => {
+        {
+            use crate::new::new_parser::{Parser, Parsable};
+            let mut parser = Parser::new();
+            parser.set_filepath_unchecked($filepath);
+            parser.set_source($snippet);
+            parser = parser.initialize()?;
+            <$node>::parse(&mut parser)?
+        }
+    };
+}
 
 #[derive(Debug)]
 pub struct Token {
@@ -44,7 +59,396 @@ impl Token {
     fn token_type(self, token_type: TokenType) -> Self { Self { token_type, ..self } }
 }
 
-trait Parsable {
+
+#[derive(Debug, Clone)]
+pub enum Operation {
+    PLUS,
+    MINUS,
+    MULT,
+    DIV,
+    EQ,
+    NEQ,
+    LT,
+    LTE,
+    GT,
+    GTE
+}
+
+impl Operation {
+    fn from(s: String) -> Self {
+        debug_assert_eq!(Operation::GTE as u8 + 1, 10);
+        match s.as_str() {
+            "+" => Self::PLUS,
+            "-" => Self::MINUS,
+            "*" => Self::MULT,
+            "/" => Self::DIV,
+            "==" => Self::EQ,
+            "!=" => Self::NEQ,
+            "<" => Self::LT,
+            "<=" => Self::LTE,
+            ">" => Self::GT,
+            ">=" => Self::GTE,
+            _ => unreachable!()
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct Parser {
+    filepath: PathBuf,
+    filename: String,
+    source: Vec<char>,
+    fuel: Cell<u32>,
+    lookahead: VecDeque<Token>,
+    current_char: usize,
+    current_line: usize,
+    line_start: usize,
+    print_debug: bool,
+}
+
+impl Parser {
+    // ---------- Start of Builder Pattern ----------
+    pub fn new() -> Self {
+        Self {
+            current_line: 1,
+            ..Default::default()
+        }
+    }
+
+    pub fn filepath(self, filepath: &str) -> Result<Self, String> {
+        match fs::read_to_string(filepath) {
+            Ok(source) => {
+                let pb = PathBuf::from(filepath);
+                let p = Self {
+                    filepath: pb.clone(),
+                    filename: pb.into_os_string().into_string().unwrap(),
+                    source: source.chars().collect(),
+                    ..self
+                };
+                Ok(p)
+            }
+            Err(e) => {
+                Err(format!(
+                    "{}: Parsing file failed because: {}", ERR_STR, e,
+                ))
+            }
+        }
+    }
+
+    pub fn debug(self, print_debug: bool) -> Self {
+        Self {
+            print_debug,
+            ..self
+        }
+    }
+
+    pub fn initialize(self) -> Result<Self, String> {
+        let mut new = self;
+        new.fill_lookup()?;
+        Ok(new)
+    }
+
+    pub fn set_filepath_unchecked(&mut self, filepath: &str) {
+        self.filepath = PathBuf::from(filepath);
+        self.filename = self.filepath.clone().into_os_string().into_string().unwrap();
+    }
+
+    pub fn set_source(&mut self, source: &str) {
+        self.source = source.chars().collect();
+    }
+    // ---------- End of Builder Pattern ----------
+    // ---------- Start of Lexer ----------
+    fn lexed_eof(&self) -> bool {
+        self.current_char >= self.source.len()
+    }
+
+    fn trim_whitespace(&mut self) -> Result<(), String> {
+        while !self.lexed_eof() && self.source[self.current_char].is_whitespace() {
+            match self.source[self.current_char] {
+                '\r' => {
+                    self.current_char += 2;
+                    self.current_line += 1;
+                    self.line_start = self.current_char;
+                } // Windows
+                '\n' => {
+                    self.current_char += 1;
+                    self.current_line += 1;
+                    self.line_start = self.current_char;
+                } // Linux
+                _ => {
+                    self.current_char += 1;
+                } // Normal space
+            }
+        }
+        Ok(())
+    }
+
+    fn next_char(&mut self) -> char {
+        if self.lexed_eof() {
+            '\0'
+        } else {
+            let c = self.source[self.current_char];
+            self.current_char += 1;
+            c
+        }
+    }
+
+    fn next_token(&mut self) -> Result<Token, String> {
+        macro_rules! fill_buffer {
+            ($start: expr, $cond: expr) => {
+                {
+                    let mut value = String::from($start);
+                    loop {
+                        let nc = self.next_char();
+                        if !($cond)(nc) {
+                            self.current_char -= 1;
+                            break value;
+                        }
+                        value.push(nc);
+                    }
+                }
+            };
+        }
+        debug_assert_eq!(
+            TokenType::Eof as u8 + 1,
+            36,
+            "Not all TokenTypes are handled in next_token()"
+        );
+        self.trim_whitespace();
+        let c = self.next_char();
+        let loc = self.get_location();
+        let (typ, value) = match c {
+            '0'..='9' => {
+                let value = fill_buffer!(c, 
+                    |c: char| { c.is_alphanumeric() }
+                );
+                (TokenType::IntLiteral, value)
+            }
+            'A'..='Z' | 'a'..='z' => {
+                let value = fill_buffer!(c,
+                    |c: char| { c.is_alphanumeric() || c == '_' }
+                );                
+                let typ = match value.as_str() {
+                    "class" => TokenType::ClassKeyword,
+                    "func" => TokenType::FunctionKeyword,
+                    "feat" => TokenType::FeatureKeyword,
+                    "let" => TokenType::LetKeyword,
+                    "if" => TokenType::IfKeyword,
+                    "else" => TokenType::ElseKeyword,
+                    "return" => TokenType::ReturnKeyword,
+                    _ if BUILT_IN_FUNCTIONS.contains(&value.as_str()) => TokenType::BuiltInFunction,
+                    _ => TokenType::Identifier,
+                };
+                (typ, value)
+            }
+            '"' => {
+                let value = fill_buffer!(c,
+                    |c: char| { c != '"' }
+                );
+                (TokenType::StrLiteral, value)
+            }
+            '\'' => {
+                let value = fill_buffer!(c,
+                    |c: char| { c == '\'' }
+                );
+                if value.len() != 1 {
+                    return Err(format!("{}: {:?}: Char Literal is expected to be a single char, got `{}`.",
+                        ERR_STR,
+                        loc,
+                        value
+                    ))
+                }
+                (TokenType::CharLiteral, value)
+            }
+            '!' => {
+                match self.next_char() {
+                    '=' => (TokenType::CmpNeq, String::from("!=")),
+                    _ => return Err(format!(
+                        "{}: {:?}: Unexpected Symbol `{}`",
+                        ERR_STR,
+                        loc,
+                        c
+                    ))
+                }
+            }
+            '=' => {
+                match self.next_char() {
+                    '=' => (TokenType::CmpEq, String::from("==")),
+                    _ => {
+                        self.current_char -= 1;
+                        (TokenType::Equal, String::from(c))
+                    }
+                }
+            }
+            '<' => {
+                match self.next_char() {
+                    '=' => (TokenType::CmpLte, String::from("<=")),
+                    _ => {
+                        self.current_char -= 1;
+                        (TokenType::CmpLt, String::from(c))
+                    }
+                }
+            }
+            '>' => {
+                match self.next_char() {
+                    '=' => (TokenType::CmpGte, String::from(">=")),
+                    _ => {
+                        self.current_char -= 1;
+                        (TokenType::CmpGt, String::from(c))
+                    }
+                }
+            }
+            '-' => {
+                match self.next_char() {
+                    '>' => (TokenType::Arrow, String::from("->")),
+                    _ => {
+                        self.current_char -= 1;
+                        (TokenType::Minus, String::from("-"))
+                    }
+                }
+            }
+            '/' => {
+                match self.next_char() {
+                    '/' => {
+                        let v = fill_buffer!(c, 
+                            |c: char| { c != '\r' && c != '\n' }
+                        );
+                        return self.next_token();
+                    }
+                    _ => {
+                        self.current_char -= 1;
+                        (TokenType::ForwardSlash, String::from("/"))
+                    }
+                }
+            }
+            '(' => (TokenType::OpenRound, String::from(c)),
+            ')' => (TokenType::ClosingRound, String::from(c)),
+            '{' => (TokenType::OpenCurly, String::from(c)),
+            '}' => (TokenType::ClosingCurly, String::from(c)),
+            '[' => (TokenType::OpenSquare, String::from(c)),
+            ']' => (TokenType::ClosingSquare, String::from(c)),
+            ';' => (TokenType::Semi, String::from(c)),
+            ':' => (TokenType::Colon, String::from(c)),
+            ',' => (TokenType::Comma, String::from(c)),
+            '.' => (TokenType::Dot, String::from(c)),
+            '+' => (TokenType::Plus, String::from(c)),
+            '*' => (TokenType::Asterisk, String::from(c)),
+            '\0'=> (TokenType::Eof, String::new()),
+            e => return Err(format!(
+                "{}: {:?}: Unexpected Symbol `{}`",
+                ERR_STR,
+                self.get_location(),
+                e
+            )),
+        };
+        Ok(Token::new()
+            .location(loc)
+            .token_type(typ)
+            .value(value))
+    }
+
+    fn get_location(&self) -> Location {
+        Location::new(self.filename.clone(), self.current_line, self.current_char - self.line_start)
+    }
+
+    fn current_location(&self) -> Location {
+        debug_assert!(!self.lookahead.is_empty());
+        self.lookahead[0].location.clone()
+    }
+
+    fn fill_lookup(&mut self) -> Result<(), String> {
+        while self.lookahead.len() < LOOKAHEAD_LIMIT {
+            let n = self.next_token()?;
+            if self.print_debug {
+                // println!("[DEBUG] Found {:?}", n);
+            }
+            self.lookahead.push_back(n);
+        }
+        Ok(())
+    }
+    // ---------- End of Lexer ----------
+    // ---------- Start of Parser ----------
+    pub fn parse_file(&mut self) -> Result<nodes::FileNode, String> {
+        self.fill_lookup()?;
+        nodes::FileNode::parse(self)
+    }
+
+    fn parse_type(&self, token: Token) -> Type {
+        self.parse_type_str(token.location, token.value)
+    }
+    fn parse_type_str(&self, loc: Location, val: String) -> Type {
+        match val.as_str() {
+            "i32" => Type::I32,
+            "i64" => Type::I64,
+            "u32" => Type::U32,
+            "u64" => Type::U64,
+            "usize" => Type::Usize,
+            // Reserved for future use
+            "f32" => Type::F32,
+            "f64" => Type::F64,
+            _ => Type::Class(val)
+        }
+    }
+    fn parse_type_literal(&self, lit_tkn: Token) -> Result<(String, Type), String> {
+        let lit = lit_tkn.value;
+        let loc = lit_tkn.location;
+        match lit.bytes().position(|c| c.is_ascii_alphabetic()) {
+            Some(index) => {
+                let typ_str = String::from(&lit[index..]);
+                let typ = self.parse_type_str(loc, typ_str);
+                Ok((lit[0..index].to_owned(), typ))
+            }
+            None => Ok((lit, Type::Unknown)),
+        }
+    }
+
+
+    fn parsed_eof(&self) -> bool {
+        self.lookahead.iter().any(|t| t.token_type == TokenType::Eof)
+    }
+
+    fn eat(&mut self, token_type: TokenType) -> bool {
+        if self.at(token_type) {
+            self.next();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn at(&self, token_type: TokenType) -> bool {
+        self.nth(0) == token_type
+    }
+
+    fn nth(&self, lookahead: usize) -> TokenType {
+        debug_assert!(self.lookahead.len() >= lookahead);
+        self.lookahead[lookahead].token_type
+    }
+
+    fn next(&mut self) -> Result<Token, String> {
+        self.fill_lookup()?;
+        debug_assert!(!self.lookahead.is_empty());
+        Ok(self.lookahead.pop_front().unwrap())
+    }
+
+    fn expect(&mut self, token_type: TokenType) -> Result<Token, String> {
+        let n = self.next()?;
+        if n.token_type != token_type {
+            Err(format!(
+                "{}: {:?}: Expected {:?}, found {:?}",
+                ERR_STR,
+                n.location,
+                token_type,
+                n.token_type
+            ))
+        } else {
+            Ok(n)
+        }
+    }
+    // ---------- End of Parser ----------
+}
+
+pub trait Parsable {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized;
 }
 
@@ -79,6 +483,7 @@ impl Parsable for nodes::FileNode {
             .location(location)
             .classes(classes)
             .functions(functions)
+            .features(vec![])
             .build()
             .unwrap())
     }
@@ -136,7 +541,7 @@ impl Parsable for nodes::FieldNode {
         Ok(nodes::FieldNodeBuilder::default()
             .location(location)
             .name(name)
-            .typ(typ)
+            .type_def(typ)
             .build()
             .unwrap())
     }
@@ -289,10 +694,17 @@ impl Parsable for nodes::Statement {
             TokenType::Identifier => match parser.nth(1) {
                 TokenType::Dot | TokenType::Equal | TokenType::OpenSquare =>
                     nodes::Statement::Assign(nodes::AssignNode::parse(parser)?),
-                _ =>
-                    nodes::Statement::Expression(nodes::ExpressionNode::parse(parser)?)
+                _ => {
+                    let expr = nodes::Statement::Expression(nodes::ExpressionNode::parse(parser)?);
+                    parser.expect(TokenType::Semi)?;
+                    expr
+                }
             }
-            _ => nodes::Statement::Expression(nodes::ExpressionNode::parse(parser)?)
+            _ => {
+                let expr = nodes::Statement::Expression(nodes::ExpressionNode::parse(parser)?);
+                parser.expect(TokenType::Semi)?;
+                expr
+            }
         })
     }
 }
@@ -369,7 +781,24 @@ impl Parsable for nodes::ExpressionIdentifierNode {
 
 impl Parsable for nodes::IfNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
-        todo!()
+        let location = parser.current_location();
+        parser.expect(TokenType::IfKeyword)?;
+        parser.expect(TokenType::OpenRound)?;
+        let nodes::Expression::Binary(condition) = nodes::Expression::parse(parser)? else { todo!() };
+        parser.expect(TokenType::ClosingRound)?;
+        let if_block = nodes::BlockNode::parse(parser)?;
+        let else_block = if parser.eat(TokenType::ElseKeyword) {
+            Some(nodes::BlockNode::parse(parser)?)
+        } else {
+            None
+        };
+        Ok(nodes::IfNodeBuilder::default()
+            .location(location)
+            .condition(condition)
+            .if_branch(if_block)
+            .else_branch(else_block)
+            .build()
+            .unwrap())
     }
 }
 
@@ -393,19 +822,52 @@ impl Parsable for nodes::ReturnNode {
 
 impl Parsable for nodes::TypeNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
-        let location = parser.current_location();
         parser.expect(TokenType::Colon)?;
+        let location = parser.current_location();
         let name_token = parser.expect(TokenType::Identifier)?;
         let typ = parser.parse_type(name_token);
-        let dims = if parser.at(TokenType::OpenSquare) {
-            Some(nodes::ExpressionArrayLiteralNode::parse(parser)?)
+        let typ = if parser.eat(TokenType::OpenSquare) {
+            let mut dimensions = vec![];
+            while !parser.parsed_eof() && !parser.at(TokenType::ClosingSquare) {
+                let size = parser.expect(TokenType::IntLiteral)?;
+                let loc = size.location.clone();
+                let (value, typ) = parser.parse_type_literal(size)?;
+                if typ != Type::Unknown && typ != Type::Usize {
+                    return Err(format!(
+                        "{}: {:?}: Unexpected type for integer literal. Expected Usize, found `{}`.",
+                        ERR_STR,
+                        loc,
+                        typ
+                    ))
+                }
+                let value = match value.parse() {
+                    Ok(v) => v,
+                    Err(e) => return Err(format!(
+                        "{}: {:?}: Error when parsing number as Usize: {e}",
+                        ERR_STR,
+                        loc
+                    ))
+                };
+                dimensions.push(value);
+                if !parser.eat(TokenType::Comma) {
+                    break;
+                }
+            }
+            if dimensions.is_empty() {
+                return Err(format!(
+                    "{}: {:?}: Expected size for array type, found ClosingSquare.",
+                    ERR_STR,
+                    parser.current_location()
+                ));
+            }
+            parser.expect(TokenType::ClosingSquare)?;
+            Type::Arr(Box::new(typ), dimensions)
         } else {
-            None
+            typ
         };
         Ok(nodes::TypeNodeBuilder::default()
                 .location(location)
                 .typ(typ)
-                .array_dimensions(dims)
                 .build()
                 .unwrap())
     }
@@ -428,6 +890,7 @@ impl Parsable for nodes::Expression {
         Self::parse_rec(parser, TokenType::Eof)
     }
 }
+
 impl nodes::Expression {
     fn parse_delim(parser: &mut Parser) -> Result<Self, String> {
         Ok(match parser.nth(0) {
@@ -442,6 +905,10 @@ impl nodes::Expression {
             TokenType::OpenSquare => {
                 let expression = nodes::ExpressionArrayLiteralNode::parse(parser)?;
                 Self::ArrayLiteral(expression)
+            }
+            TokenType::BuiltInFunction => {
+                let expression = nodes::ExpressionBuiltInNode::parse(parser)?;
+                Self::BuiltIn(expression)
             }
             e => todo!("{:?}", e)
         })
@@ -487,6 +954,39 @@ impl nodes::Expression {
             return true;
         };
         right_tight > left_tight
+    }
+}
+
+impl Parsable for nodes::ExpressionBinaryNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        todo!()
+    }
+}
+
+impl Parsable for nodes::ExpressionBuiltInNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+        let name_token = parser.expect(TokenType::BuiltInFunction)?;
+        let name = name_token.value;
+
+        let mut arguments = vec![];
+        parser.expect(TokenType::OpenRound)?;
+        while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
+            let arg = nodes::ArgumentNode::parse(parser)?;
+            arguments.push(arg);
+            if !parser.eat(TokenType::Comma) {
+                break;
+            }
+        }
+        parser.expect(TokenType::ClosingRound)?;
+
+        Ok(nodes::ExpressionBuiltInNodeBuilder::default()
+            .location(location)
+            .function_name(name)
+            .arguments(arguments)
+            .typ(Type::Unknown)
+            .build()
+            .unwrap())
     }
 }
 
@@ -580,407 +1080,5 @@ impl Parsable for nodes::NameNode {
             .typ(Type::Unknown)
             .build()
             .unwrap())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum Operation {
-    PLUS,
-    MINUS,
-    MULT,
-    DIV,
-    EQ,
-    NEQ,
-    LT,
-    LTE,
-    GT,
-    GTE
-}
-
-impl Operation {
-    fn from(s: String) -> Self {
-        debug_assert_eq!(Operation::GTE as u8 + 1, 10);
-        match s.as_str() {
-            "+" => Self::PLUS,
-            "-" => Self::MINUS,
-            "*" => Self::MULT,
-            "/" => Self::DIV,
-            "==" => Self::EQ,
-            "!=" => Self::NEQ,
-            "<" => Self::LT,
-            "<=" => Self::LTE,
-            ">" => Self::GT,
-            ">=" => Self::GTE,
-            _ => unreachable!()
-        }
-    }
-}
-
-use crate::parser::{Tree, TreeType, TokenType, COMPARATOR_TYPES};
-
-#[derive(Default)]
-pub struct Parser {
-    filepath: PathBuf,
-    filename: String,
-    source: Vec<char>,
-    fuel: Cell<u32>,
-    lookahead: VecDeque<Token>,
-    current_char: usize,
-    current_line: usize,
-    line_start: usize,
-    print_debug: bool,
-}
-
-impl Parser {
-    // ---------- Start of Builder Pattern ----------
-    pub fn new() -> Self {
-        Self {
-            current_line: 1,
-            ..Default::default()
-        }
-    }
-
-    pub fn filepath(self, filepath: &str) -> Result<Self, String> {
-        match fs::read_to_string(filepath) {
-            Ok(source) => {
-                let pb = PathBuf::from(filepath);
-                let p = Self {
-                    filepath: pb.clone(),
-                    filename: pb.into_os_string().into_string().unwrap(),
-                    source: source.chars().collect(),
-                    ..self
-                };
-                Ok(p)
-            }
-            Err(e) => {
-                Err(format!(
-                    "{}: Parsing file failed because: {}", ERR_STR, e,
-                ))
-            }
-        }
-    }
-
-    pub fn debug(self, print_debug: bool) -> Self {
-        Self {
-            print_debug,
-            ..self
-        }
-    }
-
-    pub fn initialize(self) -> Result<Self, String> {
-        let mut new = self;
-        new.fill_lookup()?;
-        Ok(new)
-    }
-
-    pub fn set_filepath_unchecked(&mut self, filepath: &str) {
-        self.filepath = PathBuf::from(filepath);
-    }
-
-    pub fn set_source(&mut self, source: &str) {
-        self.source = source.chars().collect();
-    }    
-    // ---------- End of Builder Pattern ----------
-    // ---------- Start of Lexer ----------
-    fn lexed_eof(&self) -> bool {
-        self.current_char >= self.source.len()
-    }
-
-    fn trim_whitespace(&mut self) -> Result<(), String> {
-        while !self.lexed_eof() && self.source[self.current_char].is_whitespace() {
-            match self.source[self.current_char] {
-                '\r' => {
-                    self.current_char += 2;
-                    self.current_line += 1;
-                    self.line_start = self.current_char;
-                } // Windows
-                '\n' => {
-                    self.current_char += 1;
-                    self.current_line += 1;
-                    self.line_start = self.current_char;
-                } // Linux
-                _ => {
-                    self.current_char += 1;
-                } // Normal space
-            }
-        }
-        Ok(())
-    }
-
-    fn next_char(&mut self) -> char {
-        if self.lexed_eof() {
-            '\0'
-        } else {
-            let c = self.source[self.current_char];
-            self.current_char += 1;
-            c
-        }
-    }
-
-    fn next_token(&mut self) -> Result<Token, String> {
-        macro_rules! fill_buffer {
-            ($start: expr, $cond: expr) => {
-                {
-                    let mut value = String::from($start);
-                    loop {
-                        let nc = self.next_char();
-                        if !($cond)(nc) {
-                            self.current_char -= 1;
-                            break value;
-                        }
-                        value.push(nc);
-                    }
-                }
-            };
-        }
-        debug_assert_eq!(
-            TokenType::Eof as u8 + 1,
-            36,
-            "Not all TokenTypes are handled in next_token()"
-        );
-        self.trim_whitespace();
-        let loc = self.get_location();
-        let c = self.next_char();
-        let (typ, value) = match c {
-            '0'..='9' => {
-                let value = fill_buffer!(c, 
-                    |c: char| { c.is_numeric() }
-                );
-                (TokenType::IntLiteral, value)
-            }
-            'A'..='Z' | 'a'..='z' => {
-                let value = fill_buffer!(c,
-                    |c: char| { c.is_alphanumeric() || c == '_' }
-                );                
-                let typ = match value.as_str() {
-                    "class" => TokenType::ClassKeyword,
-                    "func" => TokenType::FunctionKeyword,
-                    "feat" => TokenType::FeatureKeyword,
-                    "let" => TokenType::LetKeyword,
-                    "if" => TokenType::IfKeyword,
-                    "else" => TokenType::ElseKeyword,
-                    "return" => TokenType::ReturnKeyword,
-                    _ if BUILT_IN_FUNCTIONS.contains(&value.as_str()) => TokenType::BuiltInFunction,
-                    _ => TokenType::Identifier,
-                };
-                (typ, value)
-            }
-            '"' => {
-                let value = fill_buffer!(c,
-                    |c: char| { c != '"' }
-                );
-                (TokenType::StrLiteral, value)
-            }
-            '\'' => {
-                let value = fill_buffer!(c,
-                    |c: char| { c == '\'' }
-                );
-                if value.len() != 1 {
-                    return Err(format!("{}: {:?}: Char Literal is expected to be a single char, got `{}`.",
-                        ERR_STR,
-                        loc,
-                        value
-                    ))
-                }
-                (TokenType::CharLiteral, value)
-            }
-            '!' => {
-                match self.next_char() {
-                    '=' => (TokenType::CmpNeq, String::from("!=")),
-                    _ => return Err(format!(
-                        "{}: {:?}: Unexpected Symbol `{}`",
-                        ERR_STR,
-                        loc,
-                        c
-                    ))
-                }
-            }
-            '=' => {
-                match self.next_char() {
-                    '=' => (TokenType::CmpEq, String::from("==")),
-                    _ => {
-                        self.current_char -= 1;
-                        (TokenType::Equal, String::from(c))
-                    }
-                }
-            }
-            '<' => {
-                match self.next_char() {
-                    '=' => (TokenType::CmpLte, String::from("<=")),
-                    _ => {
-                        self.current_char -= 1;
-                        (TokenType::CmpLt, String::from(c))
-                    }
-                }
-            }
-            '>' => {
-                match self.next_char() {
-                    '=' => (TokenType::CmpGte, String::from(">=")),
-                    _ => {
-                        self.current_char -= 1;
-                        (TokenType::CmpGt, String::from(c))
-                    }
-                }
-            }
-            '-' => {
-                match self.next_char() {
-                    '>' => (TokenType::Arrow, String::from("->")),
-                    _ => {
-                        self.current_char -= 1;
-                        (TokenType::Minus, String::from("-"))
-                    }
-                }
-            }
-            '/' => {
-                match self.next_char() {
-                    '/' => {
-                        let v = fill_buffer!(c, 
-                            |c: char| { c != '\r' && c != '\n' }
-                        );
-                        return self.next_token();
-                    }
-                    _ => {
-                        self.current_char -= 1;
-                        (TokenType::ForwardSlash, String::from("/"))
-                    }
-                }
-            }
-            '(' => (TokenType::OpenRound, String::from(c)),
-            ')' => (TokenType::ClosingRound, String::from(c)),
-            '{' => (TokenType::OpenCurly, String::from(c)),
-            '}' => (TokenType::ClosingCurly, String::from(c)),
-            '[' => (TokenType::OpenSquare, String::from(c)),
-            ']' => (TokenType::ClosingSquare, String::from(c)),
-            ';' => (TokenType::Semi, String::from(c)),
-            ':' => (TokenType::Colon, String::from(c)),
-            ',' => (TokenType::Comma, String::from(c)),
-            '.' => (TokenType::Dot, String::from(c)),
-            '+' => (TokenType::Plus, String::from(c)),
-            '*' => (TokenType::Asterisk, String::from(c)),
-            '\0'=> (TokenType::Eof, String::new()),
-            e => return Err(format!(
-                "{}: {:?}: Unexpected Symbol `{}`",
-                ERR_STR,
-                self.get_location(),
-                e
-            )),
-        };
-        Ok(Token::new()
-            .location(loc)
-            .token_type(typ)
-            .value(value))
-    }
-
-    fn get_location(&self) -> Location {
-        Location::new(self.filename.clone(), self.current_line, self.current_char - self.line_start)
-    }
-
-    fn current_location(&self) -> Location {
-        debug_assert!(!self.lookahead.is_empty());
-        self.lookahead[0].location.clone()
-    }
-
-    fn fill_lookup(&mut self) -> Result<(), String> {
-        while self.lookahead.len() < LOOKAHEAD_LIMIT {
-            let n = self.next_token()?;
-            println!("Found {:?}", n);
-            self.lookahead.push_back(n);
-        }
-        Ok(())
-    }
-    // ---------- End of Lexer ----------
-    // ---------- Start of Parser ----------
-    pub fn parse_file(&mut self) -> Result<nodes::FileNode, String> {
-        nodes::FileNode::parse(self)
-    }
-
-    fn parse_type(&self, token: Token) -> Type {
-        self.parse_type_str(token.location, token.value)
-    }
-    fn parse_type_str(&self, loc: Location, val: String) -> Type {
-        match val.as_str() {
-            "i32" => Type::I32,
-            "i64" => Type::I64,
-            "u32" => Type::U32,
-            "u64" => Type::U64,
-            "usize" => Type::Usize,
-            // Reserved for future use
-            "f32" => Type::F32,
-            "f64" => Type::F64,
-            _ => Type::Class(val)
-        }
-    }
-    fn parse_type_literal(&self, lit_tkn: Token) -> Result<(String, Type), String> {
-        let lit = lit_tkn.value;
-        let loc = lit_tkn.location;
-        match lit.bytes().position(|c| c.is_ascii_alphabetic()) {
-            Some(index) => {
-                let typ_str = String::from(&lit[index..]);
-                let typ = self.parse_type_str(loc, typ_str);
-                Ok((lit[0..index].to_owned(), typ))
-            }
-            None => Ok((lit, Type::Unknown)),
-        }
-    }
-
-
-    fn parsed_eof(&self) -> bool {
-        self.lookahead.iter().any(|t| t.token_type == TokenType::Eof)
-    }
-
-    fn eat(&mut self, token_type: TokenType) -> bool {
-        if self.at(token_type) {
-            self.next();
-            true
-        } else {
-            false
-        }
-    }
-
-    fn at(&self, token_type: TokenType) -> bool {
-        self.nth(0) == token_type
-    }
-
-    fn nth(&self, lookahead: usize) -> TokenType {
-        debug_assert!(self.lookahead.len() >= lookahead);
-        self.lookahead[lookahead].token_type
-    }
-
-    fn next(&mut self) -> Result<Token, String> {
-        self.fill_lookup()?;
-        debug_assert!(!self.lookahead.is_empty());
-        Ok(self.lookahead.pop_front().unwrap())
-    }
-
-    fn expect(&mut self, token_type: TokenType) -> Result<Token, String> {
-        let n = self.next()?;
-        if n.token_type != token_type {
-            Err(format!(
-                "{}: {:?}: Expected {:?}, found {:?}",
-                ERR_STR,
-                n.location,
-                token_type,
-                n.token_type
-            ))
-        } else {
-            Ok(n)
-        }
-    }
-    // ---------- End of Parser ----------
-}
-
-fn compile() -> Result<(), String> {
-    let mut parser = Parser::new()
-        .filepath("src/test.bu")?
-        .debug(true)
-        .initialize()?;
-    let ast = parser.parse_file()?;
-    println!("{:#?}", ast);
-    Ok(())
-}
-pub fn main() {
-    if let Err(e) = compile() {
-        eprintln!("{}", e);
-        std::process::exit(1);
     }
 }
