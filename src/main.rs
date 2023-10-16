@@ -5,7 +5,7 @@ mod codegen;
 mod flags;
 mod parser;
 mod desugar;
-mod new_parser;
+mod new;
 
 use std::time::Instant;
 
@@ -17,7 +17,7 @@ use crate::flags::{Flag, FlagParser, DEBUG_KEY, INPUT_KEY};
 use crate::parser::{Parser, Tree};
 use crate::desugar::Desugarer;
 
-use crate::new_parser::main as other_main;
+use crate::new::new_parser::main as other_main;
 fn main() {
     other_main();
 }

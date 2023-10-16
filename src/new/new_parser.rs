@@ -8,6 +8,7 @@ use derive_builder::Builder;
 
 use crate::codegen::ERR_STR;
 use crate::{checker::Type, parser::Location};
+use crate::new::nodes;
 
 // We always store the N-1 next tokens for lookahead purposes, even if we only use 1 right now
 const LOOKAHEAD_LIMIT: usize = 3;
@@ -47,15 +48,7 @@ trait Parsable {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized;
 }
 
-#[derive(Debug, Default, Builder, Clone)]
-pub struct FileNode {
-    location: Location,
-    filepath: String,
-    functions: Vec<FunctionNode>,
-    classes: Vec<ClassNode>,
-}
-
-impl Parsable for FileNode {
+impl Parsable for nodes::FileNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> {
         let location = parser.current_location();
         let mut classes = vec![];
@@ -63,11 +56,11 @@ impl Parsable for FileNode {
         while !parser.parsed_eof() {
             match parser.nth(0) {
                 TokenType::ClassKeyword => {
-                    let parsed_class = ClassNode::parse(parser)?;
+                    let parsed_class = nodes::ClassNode::parse(parser)?;
                     classes.push(parsed_class);
                 },
                 TokenType::FunctionKeyword => {
-                    let parsed_function = FunctionNode::parse(parser)?;
+                    let parsed_function = nodes::FunctionNode::parse(parser)?;
                     functions.push(parsed_function);
                 },
                 _ => {
@@ -81,7 +74,7 @@ impl Parsable for FileNode {
                 }
             }
         }
-        Ok(FileNodeBuilder::default()
+        Ok(nodes::FileNodeBuilder::default()
             .filepath(parser.filepath.file_stem().unwrap().to_str().unwrap().to_string())
             .location(location)
             .classes(classes)
@@ -91,16 +84,7 @@ impl Parsable for FileNode {
     }
 }
 
-#[derive(Debug, Default, Builder, Clone)]
-pub struct ClassNode {
-    location: Location,
-    name: String,
-    fields: Vec<FieldNode>,
-    functions: Vec<FunctionNode>,
-    features: Vec<FeatureNode>,
-}
-
-impl Parsable for ClassNode {
+impl Parsable for nodes::ClassNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
         parser.expect(TokenType::ClassKeyword)?;
@@ -116,22 +100,22 @@ impl Parsable for ClassNode {
         while !parser.parsed_eof() && !parser.at(TokenType::ClosingCurly) {
             match parser.nth(0) {
                 TokenType::Identifier => {
-                    let parsed_field = FieldNode::parse(parser)?;
+                    let parsed_field = nodes::FieldNode::parse(parser)?;
                     fields.push(parsed_field);
                 }
                 TokenType::FeatureKeyword => {
-                    let parsed_feature = FeatureNode::parse(parser)?;
+                    let parsed_feature = nodes::FeatureNode::parse(parser)?;
                     features.push(parsed_feature);
                 }
                 TokenType::FunctionKeyword => {
-                    let parsed_function = FunctionNode::parse(parser)?;
+                    let parsed_function = nodes::FunctionNode::parse(parser)?;
                     functions.push(parsed_function);
                 }
                 e => todo!("{:?}", e)
             }
         }
         parser.expect(TokenType::ClosingCurly)?;
-        Ok(ClassNodeBuilder::default()
+        Ok(nodes::ClassNodeBuilder::default()
             .name(name)
             .location(location)
             .features(features)
@@ -141,22 +125,15 @@ impl Parsable for ClassNode {
     }
 }
 
-#[derive(Debug, Default, Builder, Clone)]
-pub struct FieldNode {
-    location: Location,
-    name: String,
-    typ: TypeNode,
-}
-
-impl Parsable for FieldNode {
+impl Parsable for nodes::FieldNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
         let name_token = parser.expect(TokenType::Identifier)?;
         let name = name_token.value;
 
-        let typ = TypeNode::parse(parser)?;
+        let typ = nodes::TypeNode::parse(parser)?;
         parser.expect(TokenType::Semi);
-        Ok(FieldNodeBuilder::default()
+        Ok(nodes::FieldNodeBuilder::default()
             .location(location)
             .name(name)
             .typ(typ)
@@ -165,30 +142,13 @@ impl Parsable for FieldNode {
     }
 }
 
-#[derive(Debug, Builder, Clone)]
-pub struct FieldAccess {
-    location: Location,
-    name: String,
-    field: Expression,
-    typ: Type
-}
-
-impl Parsable for FieldAccess {
+impl Parsable for nodes::FieldAccess {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         todo!()
     }
 }
 
-#[derive(Debug, Builder, Clone)]
-pub struct FeatureNode {
-    location: Location,
-    name: String,
-    return_type: ReturnTypeNode,
-    parameters: Vec<ParameterNode>,
-    block: BlockNode,
-}
-
-impl Parsable for FeatureNode {
+impl Parsable for nodes::FeatureNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
         
@@ -199,7 +159,7 @@ impl Parsable for FeatureNode {
         let mut parameters = vec![];
         parser.expect(TokenType::OpenRound)?;
         while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
-            let parsed_param = ParameterNode::parse(parser)?;
+            let parsed_param = nodes::ParameterNode::parse(parser)?;
             parameters.push(parsed_param);
             if !parser.eat(TokenType::Comma) {
                 break;
@@ -207,10 +167,10 @@ impl Parsable for FeatureNode {
         }
         parser.expect(TokenType::ClosingRound)?;
         
-        let return_type = ReturnTypeNode::parse(parser)?;
+        let return_type = nodes::ReturnTypeNode::parse(parser)?;
 
-        let block = BlockNode::parse(parser)?;
-        Ok(FeatureNodeBuilder::default()
+        let block = nodes::BlockNode::parse(parser)?;
+        Ok(nodes::FeatureNodeBuilder::default()
             .location(location)
             .name(name)
             .return_type(return_type)
@@ -221,16 +181,7 @@ impl Parsable for FeatureNode {
     }
 }
 
-#[derive(Debug, Default, Builder, Clone)]
-pub struct FunctionNode {
-    location: Location,
-    name: String,
-    return_type: ReturnTypeNode,
-    parameters: Vec<ParameterNode>,
-    block: BlockNode
-}
-
-impl Parsable for FunctionNode {
+impl Parsable for nodes::FunctionNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
         
@@ -241,7 +192,7 @@ impl Parsable for FunctionNode {
         let mut parameters = vec![];
         parser.expect(TokenType::OpenRound)?;
         while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
-            let parsed_param = ParameterNode::parse(parser)?;
+            let parsed_param = nodes::ParameterNode::parse(parser)?;
             parameters.push(parsed_param);
             if !parser.eat(TokenType::Comma) {
                 break;
@@ -249,10 +200,10 @@ impl Parsable for FunctionNode {
         }
         parser.expect(TokenType::ClosingRound)?;
         
-        let return_type = ReturnTypeNode::parse(parser)?;
+        let return_type = nodes::ReturnTypeNode::parse(parser)?;
 
-        let block = BlockNode::parse(parser)?;
-        Ok(FunctionNodeBuilder::default()
+        let block = nodes::BlockNode::parse(parser)?;
+        Ok(nodes::FunctionNodeBuilder::default()
             .location(location)
             .name(name)
             .return_type(return_type)
@@ -263,13 +214,7 @@ impl Parsable for FunctionNode {
     }
 }
 
-#[derive(Debug, Default, Builder, Clone)]
-pub struct ReturnTypeNode {
-    location: Location,
-    typ: Type
-}
-
-impl Parsable for ReturnTypeNode {
+impl Parsable for nodes::ReturnTypeNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
         let typ = if parser.eat(TokenType::Arrow) {
@@ -290,7 +235,7 @@ impl Parsable for ReturnTypeNode {
         } else {
             Type::None
         };
-        Ok(ReturnTypeNodeBuilder::default()
+        Ok(nodes::ReturnTypeNodeBuilder::default()
             .location(location)
             .typ(typ)
             .build()
@@ -298,21 +243,13 @@ impl Parsable for ReturnTypeNode {
     }
 }
 
-
-#[derive(Debug, Builder, Clone)]
-pub struct ParameterNode {
-    location: Location,
-    name: String,
-    typ: TypeNode
-}
-
-impl Parsable for ParameterNode {
+impl Parsable for nodes::ParameterNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
         let name_token = parser.expect(TokenType::Identifier)?;
         let name = name_token.value;
-        let type_declaration = TypeNode::parse(parser)?;
-        Ok(ParameterNodeBuilder::default()
+        let type_declaration = nodes::TypeNode::parse(parser)?;
+        Ok(nodes::ParameterNodeBuilder::default()
             .location(location)
             .name(name)
             .typ(type_declaration)
@@ -321,24 +258,18 @@ impl Parsable for ParameterNode {
     }
 }
 
-#[derive(Debug, Default, Builder, Clone)]
-pub struct BlockNode {
-    location: Location,
-    statements: Vec<Statement>,
-}
-
-impl Parsable for BlockNode {
+impl Parsable for nodes::BlockNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
 
         parser.expect(TokenType::OpenCurly)?;
         let mut statements = vec![];
         while !parser.parsed_eof() && !parser.at(TokenType::ClosingCurly) {
-            let parsed_statement = Statement::parse(parser)?;
+            let parsed_statement = nodes::Statement::parse(parser)?;
             statements.push(parsed_statement);
         }
         parser.expect(TokenType::ClosingCurly)?;
-        Ok(BlockNodeBuilder::default()
+        Ok(nodes::BlockNodeBuilder::default()
             .location(location)
             .statements(statements)
             .build()
@@ -346,43 +277,31 @@ impl Parsable for BlockNode {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum Statement {
-    Expression(ExpressionNode),
-    Let(LetNode),
-    Assign(AssignNode),
-    If(IfNode),
-    Return(ReturnNode)
-}
-
-impl Parsable for Statement {
+impl Parsable for nodes::Statement {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         Ok(match parser.nth(0) {
-            TokenType::LetKeyword => Statement::Let(LetNode::parse(parser)?),
-            TokenType::IfKeyword => Statement::If(IfNode::parse(parser)?),
-            TokenType::ReturnKeyword => Statement::Return(ReturnNode::parse(parser)?),
+            TokenType::LetKeyword =>
+                nodes::Statement::Let(nodes::LetNode::parse(parser)?),
+            TokenType::IfKeyword =>
+                nodes::Statement::If(nodes::IfNode::parse(parser)?),
+            TokenType::ReturnKeyword =>
+                nodes::Statement::Return(nodes::ReturnNode::parse(parser)?),
             TokenType::Identifier => match parser.nth(1) {
-                TokenType::Dot | TokenType::Equal | TokenType::OpenSquare => {
-                    Statement::Assign(AssignNode::parse(parser)?)
-                }
-                _ => Statement::Expression(ExpressionNode::parse(parser)?)
+                TokenType::Dot | TokenType::Equal | TokenType::OpenSquare =>
+                    nodes::Statement::Assign(nodes::AssignNode::parse(parser)?),
+                _ =>
+                    nodes::Statement::Expression(nodes::ExpressionNode::parse(parser)?)
             }
-            _ => Statement::Expression(ExpressionNode::parse(parser)?)
+            _ => nodes::Statement::Expression(nodes::ExpressionNode::parse(parser)?)
         })
     }
 }
 
-#[derive(Debug, Default, Builder, Clone)]
-pub struct ExpressionNode {
-    location: Location,
-    expression: Expression
-}
-
-impl Parsable for ExpressionNode {
+impl Parsable for nodes::ExpressionNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
-        let expression = Expression::parse(parser)?;
-        Ok(ExpressionNodeBuilder::default()
+        let expression = nodes::Expression::parse(parser)?;
+        Ok(nodes::ExpressionNodeBuilder::default()
             .location(location)
             .expression(expression)
             .build()
@@ -390,26 +309,18 @@ impl Parsable for ExpressionNode {
     }
 }
 
-#[derive(Debug, Builder, Clone)]
-pub struct LetNode {
-    location: Location,
-    name: String,
-    typ: TypeNode,
-    expression: ExpressionNode,
-}
-
-impl Parsable for LetNode {
+impl Parsable for nodes::LetNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
         parser.expect(TokenType::LetKeyword)?;
         let name_token = parser.expect(TokenType::Identifier)?;
         let name = name_token.value;
 
-        let type_tree = TypeNode::parse(parser)?;
+        let type_tree = nodes::TypeNode::parse(parser)?;
         parser.expect(TokenType::Equal)?;
-        let expression = ExpressionNode::parse(parser)?;
+        let expression = nodes::ExpressionNode::parse(parser)?;
         parser.expect(TokenType::Semi)?;
-        Ok(LetNodeBuilder::default()
+        Ok(nodes::LetNodeBuilder::default()
             .location(location)
             .name(name)
             .typ(type_tree)
@@ -419,21 +330,14 @@ impl Parsable for LetNode {
     }
 }
 
-#[derive(Debug, Builder, Clone)]
-pub struct AssignNode {
-    location: Location,
-    name: ExpressionIdentifierNode,
-    expression: ExpressionNode,
-}
-
-impl Parsable for AssignNode {
+impl Parsable for nodes::AssignNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
-        let name = ExpressionIdentifierNode::parse(parser)?;
+        let name = nodes::ExpressionIdentifierNode::parse(parser)?;
         parser.expect(TokenType::Equal)?;
-        let expression = ExpressionNode::parse(parser)?;
+        let expression = nodes::ExpressionNode::parse(parser)?;
         parser.expect(TokenType::Semi)?;
-        Ok(AssignNodeBuilder::default()
+        Ok(nodes::AssignNodeBuilder::default()
             .location(location)
             .name(name)
             .expression(expression)
@@ -442,23 +346,19 @@ impl Parsable for AssignNode {
     }
 }
 
-#[derive(Debug, Builder, Clone)]
-pub struct ExpressionIdentifierNode {
-    location: Location,
-    expression: Box<Expression>,
-    typ: Type
-}
-
-impl Parsable for ExpressionIdentifierNode {
+impl Parsable for nodes::ExpressionIdentifierNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
         let expression = match parser.nth(1) {
-            TokenType::OpenRound => Expression::FunctionCall(ExpressionCallNode::parse(parser)?),
-            TokenType::OpenSquare => todo!(),
-            TokenType::Dot => Expression::FieldAccess(ExpressionFieldAccessNode::parse(parser)?),
-            _ => Expression::Name(NameNode::parse(parser)?)
+            TokenType::OpenRound =>
+                nodes::Expression::FunctionCall(nodes::ExpressionCallNode::parse(parser)?),
+            TokenType::OpenSquare =>
+                todo!(),
+            TokenType::Dot =>
+                nodes::Expression::FieldAccess(nodes::ExpressionFieldAccessNode::parse(parser)?),
+            _ => nodes::Expression::Name(nodes::NameNode::parse(parser)?)
         };
-        Ok(ExpressionIdentifierNodeBuilder::default()
+        Ok(nodes::ExpressionIdentifierNodeBuilder::default()
             .location(location)
             .expression(Box::new(expression))
             .typ(Type::Unknown)
@@ -467,37 +367,23 @@ impl Parsable for ExpressionIdentifierNode {
     }
 }
 
-#[derive(Debug, Builder, Clone)]
-pub struct IfNode {
-    location: Location,
-    condition: ExpressionBinaryNode,
-    if_branch: BlockNode,
-    else_branch: Option<BlockNode>,
-}
-
-impl Parsable for IfNode {
+impl Parsable for nodes::IfNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         todo!()
     }
 }
 
-#[derive(Debug, Default, Builder, Clone)]
-pub struct ReturnNode {
-    location: Location,
-    return_value: Option<ExpressionNode>,
-}
-
-impl Parsable for ReturnNode {
+impl Parsable for nodes::ReturnNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
         parser.expect(TokenType::ReturnKeyword)?;
         let ret_value = if !parser.at(TokenType::Semi) {
-            Some(ExpressionNode::parse(parser)?)
+            Some(nodes::ExpressionNode::parse(parser)?)
         } else {
             None
         };
         parser.expect(TokenType::Semi)?;
-        Ok(ReturnNodeBuilder::default()
+        Ok(nodes::ReturnNodeBuilder::default()
             .location(location)
             .return_value(ret_value)
             .build()
@@ -505,25 +391,18 @@ impl Parsable for ReturnNode {
     }
 }
 
-#[derive(Debug, Default, Builder, Clone)]
-pub struct TypeNode {
-    location: Location,
-    typ: Type,
-    array_dimensions: Option<ExpressionArrayLiteralNode>
-}
-
-impl Parsable for TypeNode {
+impl Parsable for nodes::TypeNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
         parser.expect(TokenType::Colon)?;
         let name_token = parser.expect(TokenType::Identifier)?;
         let typ = parser.parse_type(name_token);
         let dims = if parser.at(TokenType::OpenSquare) {
-            Some(ExpressionArrayLiteralNode::parse(parser)?)
+            Some(nodes::ExpressionArrayLiteralNode::parse(parser)?)
         } else {
             None
         };
-        Ok(TypeNodeBuilder::default()
+        Ok(nodes::TypeNodeBuilder::default()
                 .location(location)
                 .typ(typ)
                 .array_dimensions(dims)
@@ -532,17 +411,11 @@ impl Parsable for TypeNode {
     }
 }
 
-#[derive(Debug, Builder, Clone)]
-pub struct ArgumentNode {
-    location: Location,
-    expression: ExpressionNode
-}
-
-impl Parsable for ArgumentNode {
+impl Parsable for nodes::ArgumentNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
-        let expression = ExpressionNode::parse(parser)?;
-        Ok(ArgumentNodeBuilder::default()
+        let expression = nodes::ExpressionNode::parse(parser)?;
+        Ok(nodes::ArgumentNodeBuilder::default()
             .location(location)
             .expression(expression)
             .build()
@@ -550,39 +423,24 @@ impl Parsable for ArgumentNode {
     }
 }
 
-#[derive(Debug, Default, Clone)]
-pub enum Expression {
-    Name(NameNode),
-    Identifier(ExpressionIdentifierNode),
-    ArrayLiteral(ExpressionArrayLiteralNode),
-    ArrayAccess(ExpressionArrayAccessNode),
-    Literal(ExpressionLiteralNode),
-    Binary(ExpressionBinaryNode),
-    FieldAccess(ExpressionFieldAccessNode),
-    // Parenthesis(ExpressionNode),
-    FunctionCall(ExpressionCallNode),
-    BuiltIn(ExpressionBuiltInNode),
-    #[default] None,
-}
-
-impl Parsable for Expression {
+impl Parsable for nodes::Expression {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         Self::parse_rec(parser, TokenType::Eof)
     }
 }
-impl Expression {
+impl nodes::Expression {
     fn parse_delim(parser: &mut Parser) -> Result<Self, String> {
         Ok(match parser.nth(0) {
             TokenType::IntLiteral => {
-                let expression = ExpressionLiteralNode::parse(parser)?;
+                let expression = nodes::ExpressionLiteralNode::parse(parser)?;
                 Self::Literal(expression)
             }
             TokenType::Identifier => {
-                let expression = ExpressionIdentifierNode::parse(parser)?;
+                let expression = nodes::ExpressionIdentifierNode::parse(parser)?;
                 Self::Identifier(expression)
             }
             TokenType::OpenSquare => {
-                let expression = ExpressionArrayLiteralNode::parse(parser)?;
+                let expression = nodes::ExpressionArrayLiteralNode::parse(parser)?;
                 Self::ArrayLiteral(expression)
             }
             e => todo!("{:?}", e)
@@ -595,13 +453,15 @@ impl Expression {
             if Self::right_binds_tighter(left, right) {
                 let token = parser.next()?;
                 let rhs = Self::parse_rec(parser, right)?;
-                lhs = Expression::Binary(ExpressionBinaryNode {
-                    location: token.location,
-                    operation: Operation::from(token.value),
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
-                    typ: Type::Unknown
-                });
+                lhs = nodes::Expression::Binary(
+                    nodes::ExpressionBinaryNodeBuilder::default()
+                        .location(token.location)
+                        .operation(Operation::from(token.value))
+                        .lhs(Box::new(lhs))
+                        .rhs(Box::new(rhs))
+                        .typ(Type::Unknown)
+                        .build()
+                        .unwrap());
             } else {
                 break;
             }
@@ -630,26 +490,20 @@ impl Expression {
     }
 }
 
-#[derive(Debug, Builder, Clone)]
-pub struct ExpressionArrayLiteralNode {
-    location: Location,
-    elements: Vec<Expression>
-}
-
-impl Parsable for ExpressionArrayLiteralNode {
+impl Parsable for nodes::ExpressionArrayLiteralNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
         let mut elements = vec![];
         parser.expect(TokenType::OpenSquare)?;
         while !parser.parsed_eof() && !parser.at(TokenType::ClosingSquare) {
-            let elem = Expression::parse(parser)?;
+            let elem = nodes::Expression::parse(parser)?;
             elements.push(elem);
             if !parser.eat(TokenType::Comma) {
                 break;
             }
         }
         parser.expect(TokenType::ClosingSquare)?;
-        Ok(ExpressionArrayLiteralNodeBuilder::default()
+        Ok(nodes::ExpressionArrayLiteralNodeBuilder::default()
             .location(location)
             .elements(elements)
             .build()
@@ -657,27 +511,12 @@ impl Parsable for ExpressionArrayLiteralNode {
     }
 }
 
-#[derive(Debug, Builder, Clone)]
-pub struct ExpressionArrayAccessNode {
-    location: Location,
-    array_name: String,
-    indices: ExpressionArrayLiteralNode,
-    typ: Type
-}
-
-#[derive(Debug, Builder, Clone)]
-pub struct ExpressionLiteralNode {
-    location: Location,
-    value: String,
-    typ: Type,
-}
-
-impl Parsable for ExpressionLiteralNode {
+impl Parsable for nodes::ExpressionLiteralNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
         let number_token = parser.expect(TokenType::IntLiteral)?;
         let (number, typ) = parser.parse_type_literal(number_token)?;
-        Ok(ExpressionLiteralNodeBuilder::default()
+        Ok(nodes::ExpressionLiteralNodeBuilder::default()
             .location(location)
             .value(number)
             .typ(typ)
@@ -686,24 +525,7 @@ impl Parsable for ExpressionLiteralNode {
     }
 }
 
-#[derive(Debug, Builder, Clone)]
-pub struct ExpressionBinaryNode {
-    location: Location,
-    operation: Operation,
-    lhs: Box<Expression>,
-    rhs: Box<Expression>,
-    typ: Type
-}
-
-#[derive(Debug, Builder, Clone)]
-pub struct ExpressionCallNode {
-    location: Location,
-    function_name: String,
-    arguments: Vec<ArgumentNode>,
-    typ: Type
-}
-
-impl Parsable for ExpressionCallNode {
+impl Parsable for nodes::ExpressionCallNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
         let name_token = parser.expect(TokenType::Identifier)?;
@@ -712,14 +534,14 @@ impl Parsable for ExpressionCallNode {
         let mut arguments = vec![];
         parser.expect(TokenType::OpenRound)?;
         while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
-            let arg = ArgumentNode::parse(parser)?;
+            let arg = nodes::ArgumentNode::parse(parser)?;
             arguments.push(arg);
             if !parser.eat(TokenType::Comma) {
                 break;
             }
         }
         parser.expect(TokenType::ClosingRound)?;
-        Ok(ExpressionCallNodeBuilder::default()
+        Ok(nodes::ExpressionCallNodeBuilder::default()
             .function_name(name)
             .location(location)
             .arguments(arguments)
@@ -729,22 +551,14 @@ impl Parsable for ExpressionCallNode {
     }
 }
 
-#[derive(Debug, Builder, Clone)]
-pub struct ExpressionFieldAccessNode {
-    location: Location,
-    name: String,
-    field: ExpressionIdentifierNode,
-    typ: Type
-}
-
-impl Parsable for ExpressionFieldAccessNode {
+impl Parsable for nodes::ExpressionFieldAccessNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
         let name_token = parser.expect(TokenType::Identifier)?;
         let name = name_token.value;
         parser.expect(TokenType::Dot)?;
-        let field = ExpressionIdentifierNode::parse(parser)?;
-        Ok(ExpressionFieldAccessNodeBuilder::default()
+        let field = nodes::ExpressionIdentifierNode::parse(parser)?;
+        Ok(nodes::ExpressionFieldAccessNodeBuilder::default()
             .location(location)
             .name(name)
             .field(field)
@@ -754,34 +568,19 @@ impl Parsable for ExpressionFieldAccessNode {
     }
 }
 
-#[derive(Debug, Builder, Clone)]
-pub struct NameNode {
-    location: Location,
-    name: String,
-    typ: Type,
-}
-
-impl Parsable for NameNode {
+impl Parsable for nodes::NameNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
         let name_token = parser.expect(TokenType::Identifier)?;
         
         let name = name_token.value;
-        Ok(NameNodeBuilder::default()
+        Ok(nodes::NameNodeBuilder::default()
             .location(location)
             .name(name)
             .typ(Type::Unknown)
             .build()
             .unwrap())
     }
-}
-
-#[derive(Debug, Builder, Clone)]
-pub struct ExpressionBuiltInNode {
-    location: Location,
-    function_name: String,
-    arguments: Vec<ArgumentNode>,
-    typ: Type
 }
 
 #[derive(Debug, Clone)]
@@ -1091,8 +890,8 @@ impl Parser {
     }
     // ---------- End of Lexer ----------
     // ---------- Start of Parser ----------
-    pub fn parse_file(&mut self) -> Result<FileNode, String> {
-        FileNode::parse(self)
+    pub fn parse_file(&mut self) -> Result<nodes::FileNode, String> {
+        nodes::FileNode::parse(self)
     }
 
     fn parse_type(&self, token: Token) -> Type {
