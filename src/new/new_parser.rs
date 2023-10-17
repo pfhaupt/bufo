@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 use derive_builder::Builder;
 
 use crate::parser::{Location, Tree, TreeType, TokenType, COMPARATOR_TYPES};
-use crate::codegen::ERR_STR;
+use crate::codegen::{ERR_STR, NOTE_STR, WARN_STR};
 use crate::checker::Type;
-use super::nodes;
+use super::nodes::{self, Expression};
 
 // We always store the N-1 next tokens for lookahead purposes, even if we only use 1 right now
 const LOOKAHEAD_LIMIT: usize = 3;
@@ -183,11 +183,15 @@ impl Parser {
         Ok(())
     }
 
+    fn current_char(&self) -> char {
+        self.source[self.current_char]
+    }
+
     fn next_char(&mut self) -> char {
         if self.lexed_eof() {
             '\0'
         } else {
-            let c = self.source[self.current_char];
+            let c = self.current_char();
             self.current_char += 1;
             c
         }
@@ -195,19 +199,26 @@ impl Parser {
 
     fn next_token(&mut self) -> Result<Token, String> {
         macro_rules! fill_buffer {
-            ($start: expr, $cond: expr) => {
+            ($start: expr, $cond: expr, $stepback: expr) => {
                 {
                     let mut value = String::from($start);
                     loop {
                         let nc = self.next_char();
-                        if !($cond)(nc) {
-                            self.current_char -= 1;
+                        if $cond(nc) {
+                            if $stepback {
+                                self.current_char -= 1;
+                            } else {
+                                value.push(nc);
+                            }
                             break value;
                         }
                         value.push(nc);
                     }
                 }
             };
+            ($start: expr, $cond: expr) => {
+                fill_buffer!($start, $cond, true)
+            }
         }
         debug_assert_eq!(
             TokenType::Eof as u8 + 1,
@@ -220,14 +231,14 @@ impl Parser {
         let (typ, value) = match c {
             '0'..='9' => {
                 let value = fill_buffer!(c, 
-                    |c: char| { c.is_alphanumeric() }
+                    |c: char| { !c.is_alphanumeric() || c == '\0' }
                 );
                 (TokenType::IntLiteral, value)
             }
             'A'..='Z' | 'a'..='z' => {
                 let value = fill_buffer!(c,
-                    |c: char| { c.is_alphanumeric() || c == '_' }
-                );                
+                    |c: char| { (!c.is_alphanumeric() && c != '_') || c == '\0' }
+                );
                 let typ = match value.as_str() {
                     "class" => TokenType::ClassKeyword,
                     "func" => TokenType::FunctionKeyword,
@@ -241,21 +252,36 @@ impl Parser {
                 };
                 (typ, value)
             }
-            '"' => {
-                let value = fill_buffer!(c,
-                    |c: char| { c != '"' }
+            '\"' => {
+                let mut value = fill_buffer!(c,
+                    |c: char| { c == '"' || c == '\0' },
+                    false
                 );
+                if value.contains("\\") {
+                    println!("{}: {:?}: Escape sequences in Strings are not supported yet.", WARN_STR, loc);
+                }
+                if value.chars().filter(|c| *c == '"').count() != 2 {
+                    return Err(format!(
+                        "{}: {:?}: Unterminated String Literal.",
+                        ERR_STR,
+                        loc
+                    ));
+                }
                 (TokenType::StrLiteral, value)
             }
             '\'' => {
-                let value = fill_buffer!(c,
-                    |c: char| { c == '\'' }
+                let mut value = fill_buffer!(c,
+                    |c: char| { c == '\'' || c == '\0' },
+                    false
                 );
-                if value.len() != 1 {
-                    return Err(format!("{}: {:?}: Char Literal is expected to be a single char, got `{}`.",
+                if value.contains("\\") {
+                    println!("{}: {:?}: Escape sequences in Char Literals are not supported yet.", WARN_STR, loc);
+                }
+                if value.len() != 3 {
+                    return Err(format!("{}: {:?}: Char Literal is expected to be a single char, got {}.",
                         ERR_STR,
                         loc,
-                        value
+                        value,
                     ))
                 }
                 (TokenType::CharLiteral, value)
@@ -311,7 +337,7 @@ impl Parser {
                 match self.next_char() {
                     '/' => {
                         let v = fill_buffer!(c, 
-                            |c: char| { c != '\r' && c != '\n' }
+                            |c: char| { c == '\r' || c == '\n' || c == '\0' }
                         );
                         return self.next_token();
                     }
@@ -404,7 +430,7 @@ impl Parser {
 
 
     fn parsed_eof(&self) -> bool {
-        self.lookahead.iter().any(|t| t.token_type == TokenType::Eof)
+        self.lookahead[0].token_type == TokenType::Eof
     }
 
     fn eat(&mut self, token_type: TokenType) -> bool {
@@ -902,6 +928,12 @@ impl nodes::Expression {
                 let expression = nodes::ExpressionIdentifierNode::parse(parser)?;
                 Self::Identifier(expression)
             }
+            TokenType::OpenRound => {
+                parser.expect(TokenType::OpenRound)?;
+                let expression = Self::parse(parser)?;
+                parser.expect(TokenType::ClosingRound)?;
+                expression
+            }
             TokenType::OpenSquare => {
                 let expression = nodes::ExpressionArrayLiteralNode::parse(parser)?;
                 Self::ArrayLiteral(expression)
@@ -909,6 +941,14 @@ impl nodes::Expression {
             TokenType::BuiltInFunction => {
                 let expression = nodes::ExpressionBuiltInNode::parse(parser)?;
                 Self::BuiltIn(expression)
+            }            
+            e => {
+                return Err(format!(
+                    "{}: {:?}: Expected Expr, found {:?}",
+                    ERR_STR,
+                    parser.current_location(),
+                    e
+                ));
             }
             e => todo!("{:?}", e)
         })
