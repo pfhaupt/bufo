@@ -53,81 +53,59 @@ impl Desugarer {
         Ok(())
     }
 
-    pub fn desugar_file(&mut self, file: nodes::FileNode) -> Result<nodes::FileNode, String> {
+    pub fn desugar_file(&mut self, file: &mut nodes::FileNode) -> Result<(), String> {
         self.fill_lookup(&file)?;
         file.desugar(self)
     }
 }
 
 trait Desugarable {
-    fn desugar(self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized;
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized;
 }
 
 impl Desugarable for nodes::FileNode {
-    fn desugar(mut self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
-        let mut desugared_functions = vec![];
-        for f in self.functions {
-            desugared_functions.push(f.desugar(desugarer)?);
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
+        for f in &mut self.functions {
+            f.desugar(desugarer)?;
         }
-
-        let mut desugared_classes = vec![];
-        let mut desugared_features = vec![];
-        for c in self.classes {
-            let mut desugared_class = c.desugar(desugarer)?;
-            
-            desugared_functions.extend(desugared_class.functions);
-            desugared_features.extend(desugared_class.features);
-            
-            // TODO: Is this necessary?
-            desugared_class.functions = vec![];
-            desugared_class.features = vec![];
-
-            desugared_classes.push(desugared_class);
+        for c in &mut self.classes {
+            c.desugar(desugarer)?;
+            self.functions.append(&mut c.functions);
+            self.features.append(&mut c.features);
         }
-        self.classes = desugared_classes;
-        self.features = desugared_features;
-        self.functions = desugared_functions;
-        Ok(self)
+        Ok(())
     }
 }
 impl Desugarable for nodes::ClassNode {
-    fn desugar(mut self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
         desugarer.current_class = self.name.clone();
-        let mut fields = vec![];
-        for f in self.fields {
-            fields.push(f.desugar(desugarer)?);
+        for f in &mut self.fields {
+            f.desugar(desugarer)?;
         }
-        
-        let mut functions = vec![];
-        for f in self.functions {
-            functions.push(f.desugar(desugarer)?);
+        for f in &mut self.functions {
+            f.desugar(desugarer)?;
         }
-
-        let mut features = vec![];
-        for f in self.features {
-            features.push(f.desugar(desugarer)?);
+        for f in &mut self.features {
+            f.desugar(desugarer)?;
         }
         desugarer.current_class.clear();
-        self.fields = fields;
-        self.functions = functions;
-        self.features = features;
-        Ok(self)        
+        Ok(())        
     }
 }
 impl Desugarable for nodes::FieldNode {
-    fn desugar(mut self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
         debug_assert!(!desugarer.current_class.is_empty());
-        self.type_def = self.type_def.desugar(desugarer)?;
-        Ok(self)
+        self.type_def.desugar(desugarer)?;
+        Ok(())
     }
 }
 impl Desugarable for nodes::FieldAccess {
-    fn desugar(self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
         todo!()
     }
 }
 impl Desugarable for nodes::FeatureNode {
-    fn desugar(mut self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
         debug_assert!(!desugarer.current_class.is_empty());
         match self.name.as_str() {
             "new" => {
@@ -175,12 +153,13 @@ impl Desugarable for nodes::FeatureNode {
                 );
                 self.block.statements.push(return_this_stmt);
                 let mut statements = vec![];
-                for s in self.block.statements {
-                    statements.push(s.desugar(desugarer)?);
+                for mut s in &mut self.block.statements {
+                    s.desugar(desugarer)?;
+                    statements.push(s.clone());
                 }
                 self.block.statements = statements;
                 self.name = format!("{}_{}", desugarer.current_class, self.name);
-                Ok(self)
+                Ok(())
             }
             e => Err(format!(
                 "{}: {:?}: Unknown feature `{e}`", ERR_STR, self.location
@@ -189,11 +168,10 @@ impl Desugarable for nodes::FeatureNode {
     }
 }
 impl Desugarable for nodes::FunctionNode {
-    fn desugar(mut self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
-        self.return_type = self.return_type.desugar(desugarer)?;
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
+        self.return_type.desugar(desugarer)?;
 
-        let old_block = self.block;
-        let mut statements = old_block.statements;
+        let old_block = &mut self.block.statements;
         // TODO: Should we keep this here, or inline it at the last stage (when generating ASM)?
         let inc_index = parse_snippet!(
             "INTERNAL_FunctionNode::desugar()",
@@ -206,7 +184,7 @@ impl Desugarable for nodes::FunctionNode {
             }"
         );
         for s in inc_index.statements.iter().rev() {
-            statements.insert(0, s.clone());
+            self.block.statements.insert(0, s.clone());
         }
         // TODO: We can't always push this at the end, we need to consider cases where return is last statement
         let dec_index = parse_snippet!(
@@ -214,17 +192,10 @@ impl Desugarable for nodes::FunctionNode {
             nodes::Statement,
             "FUNCTION_COUNTER = FUNCTION_COUNTER - 1;"
         );
-        statements.push(dec_index);
-        let mut new_stmt = vec![];
-        for s in statements {
-            new_stmt.push(s.desugar(desugarer)?);
+        self.block.statements.push(dec_index);
+        for mut s in &mut self.block.statements {
+            s.desugar(desugarer)?;
         }
-        let body = BlockNodeBuilder::default()
-            .location(old_block.location)
-            .statements(new_stmt)
-            .build()
-            .unwrap();
-        self.block = body;
         if !desugarer.current_class.is_empty() {
             let this_param = parse_snippet!(
                 "INTERNAL_FunctionNode::desugar()",
@@ -234,184 +205,178 @@ impl Desugarable for nodes::FunctionNode {
             self.parameters.insert(0, this_param);
             self.name = format!("{}_{}", desugarer.current_class, self.name);
         }
-        Ok(self)
+        Ok(())
     }
 }
 impl Desugarable for nodes::ReturnTypeNode {
-    fn desugar(self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
-        Ok(self)
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
+        Ok(())
     }
 }
 impl Desugarable for nodes::ParameterNode {
-    fn desugar(self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
         todo!()
     }
 }
 impl Desugarable for nodes::BlockNode {
-    fn desugar(mut self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
-        let mut statements = vec![];
-        for s in self.statements {
-            statements.push(s.desugar(desugarer)?);
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
+        for mut s in &mut self.statements {
+            s.desugar(desugarer)?;
         }
-        self.statements = statements;
-        Ok(self)
+        Ok(())
     }
 }
 impl Desugarable for nodes::Statement {
-    fn desugar(self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
         match self {
             Self::Assign(assign_expr) =>
-                Ok(Self::Assign(assign_expr.desugar(desugarer)?)),
+                assign_expr.desugar(desugarer)?,
             Self::Expression(expr) =>
-                Ok(Self::Expression(expr.desugar(desugarer)?)),
+                expr.desugar(desugarer)?,
             Self::If(if_block) =>
-                Ok(Self::If(if_block.desugar(desugarer)?)),
+                if_block.desugar(desugarer)?,
             Self::Let(let_block) =>
-                Ok(Self::Let(let_block.desugar(desugarer)?)),
+                let_block.desugar(desugarer)?,
             Self::Return(return_block) =>
-                Ok(Self::Return(return_block.desugar(desugarer)?)),
+                return_block.desugar(desugarer)?,
         }
+        Ok(())
     }
 }
 impl Desugarable for nodes::ExpressionNode {
-    fn desugar(mut self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
-        self.expression = self.expression.desugar(desugarer)?;
-        Ok(self)
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
+        self.expression.desugar(desugarer)?;
+        Ok(())
     }
 }
 impl Desugarable for nodes::LetNode {
-    fn desugar(mut self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
-        self.typ = self.typ.desugar(desugarer)?;
-        self.expression = self.expression.desugar(desugarer)?;
-        Ok(self)
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
+        self.typ.desugar(desugarer)?;
+        self.expression.desugar(desugarer)?;
+        Ok(())
     }
 }
 impl Desugarable for nodes::AssignNode {
-    fn desugar(mut self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
-        self.name = self.name.desugar(desugarer)?;
-        self.expression = self.expression.desugar(desugarer)?;
-        Ok(self)
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
+        self.name.desugar(desugarer)?;
+        self.expression.desugar(desugarer)?;
+        Ok(())
     }
 }
 impl Desugarable for nodes::ExpressionIdentifierNode {
-    fn desugar(mut self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
-        self.expression = Box::new((*self.expression).desugar(desugarer)?);
-        Ok(self)
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
+        self.expression.desugar(desugarer)?;
+        Ok(())
     }
 }
 impl Desugarable for nodes::IfNode {
-    fn desugar(mut self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
-        self.condition = self.condition.desugar(desugarer)?;
-        self.if_branch = self.if_branch.desugar(desugarer)?;
-        if let Some(else_branch) = self.else_branch {
-            self.else_branch = Some(else_branch.desugar(desugarer)?);
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
+        self.condition.desugar(desugarer)?;
+        self.if_branch.desugar(desugarer)?;
+        if let Some(else_branch) = &mut self.else_branch {
+            else_branch.desugar(desugarer)?;
         }
-        Ok(self)
+        Ok(())
     }
 }
 impl Desugarable for nodes::ReturnNode {
-    fn desugar(mut self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
-        if let Some(return_value) = self.return_value {
-            self.return_value = Some(return_value.desugar(desugarer)?);
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
+        if let Some(return_value) = &mut self.return_value {
+            return_value.desugar(desugarer)?;
         }
-        Ok(self)
+        Ok(())
     }
 }
 impl Desugarable for nodes::TypeNode {
-    fn desugar(mut self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
-        Ok(self)
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
+        Ok(())
     }
 }
 impl Desugarable for nodes::ArgumentNode {
-    fn desugar(mut self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
-        self.expression = self.expression.desugar(desugarer)?;
-        Ok(self)
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
+        self.expression.desugar(desugarer)?;
+        Ok(())
     }
 }
 impl Desugarable for nodes::Expression {
-    fn desugar(self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
         match self {
             Self::Name(name) => 
-                Ok(Self::Name(name.desugar(desugarer)?)),
+                name.desugar(desugarer)?,
             Self::Binary(binary) => 
-                Ok(Self::Binary(binary.desugar(desugarer)?)),
+                binary.desugar(desugarer)?,
             Self::ArrayAccess(access) =>
-                Ok(Self::ArrayAccess(access.desugar(desugarer)?)),
+                access.desugar(desugarer)?,
             Self::ArrayLiteral(literal) =>
-                Ok(Self::ArrayLiteral(literal.desugar(desugarer)?)),
+                literal.desugar(desugarer)?,
             Self::BuiltIn(builtin) =>
-                Ok(Self::BuiltIn(builtin.desugar(desugarer)?)),
+                builtin.desugar(desugarer)?,
             Self::FieldAccess(field) =>
-                Ok(Self::FieldAccess(field.desugar(desugarer)?)),
+                field.desugar(desugarer)?,
             Self::FunctionCall(fn_call) =>
-                Ok(Self::FunctionCall(fn_call.desugar(desugarer)?)),
+                fn_call.desugar(desugarer)?,
             Self::Identifier(identifier) =>
-                Ok(Self::Identifier(identifier.desugar(desugarer)?)),
+                identifier.desugar(desugarer)?,
             Self::Literal(literal) =>
-                Ok(Self::Literal(literal.desugar(desugarer)?)),
+                literal.desugar(desugarer)?,
             Self::None => unreachable!()
         }
+        Ok(())
     }
 }
 impl Desugarable for nodes::ExpressionArrayLiteralNode {
-    fn desugar(mut self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
-        let mut elements = vec![];
-        for e in self.elements {
-            elements.push(e.desugar(desugarer)?);
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
+        for e in &mut self.elements {
+            e.desugar(desugarer)?;
         }
-        self.elements = elements;
-        Ok(self)
+        Ok(())
     }
 }
 impl Desugarable for nodes::ExpressionArrayAccessNode {
-    fn desugar(self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
         todo!()
     }
 }
 impl Desugarable for nodes::ExpressionLiteralNode {
-    fn desugar(self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
-        Ok(self)
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
+        Ok(())
     }
 }
 impl Desugarable for nodes::ExpressionBinaryNode {
-    fn desugar(mut self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
-        self.lhs = Box::new(self.lhs.desugar(desugarer)?);
-        self.rhs = Box::new(self.rhs.desugar(desugarer)?);
-        Ok(self)
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
+        self.lhs.desugar(desugarer)?;
+        self.rhs.desugar(desugarer)?;
+        Ok(())
     }
 }
 impl Desugarable for nodes::ExpressionCallNode {
-    fn desugar(mut self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
         if desugarer.class_sizes.contains_key(&self.function_name) {
             // Assume that this is Class::new() call
             self.function_name.push_str("_new");
         }
-        let mut arguments = vec![];
-        for a in self.arguments {
-            arguments.push(a.desugar(desugarer)?);
+        for a in &mut self.arguments {
+            a.desugar(desugarer)?;
         }
-        self.arguments = arguments;
-        Ok(self)
+        Ok(())
     }
 }
 impl Desugarable for nodes::ExpressionFieldAccessNode {
-    fn desugar(mut self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
-        self.field = self.field.desugar(desugarer)?;
-        Ok(self)
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
+        self.field.desugar(desugarer)?;
+        Ok(())
     }
 }
 impl Desugarable for nodes::NameNode {
-    fn desugar(self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
-        Ok(self)
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
+        Ok(())
     }
 }
 impl Desugarable for nodes::ExpressionBuiltInNode {
-    fn desugar(mut self, desugarer: &mut Desugarer) -> Result<Self, String> where Self: Sized {
-        let mut arguments = vec![];
-        for a in self.arguments {
-            arguments.push(a.desugar(desugarer)?);
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
+        for a in &mut self.arguments {
+            a.desugar(desugarer)?;
         }
-        self.arguments = arguments;
-        Ok(self)
+        Ok(())
     }
 }

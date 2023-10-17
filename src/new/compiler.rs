@@ -32,16 +32,18 @@ impl Compiler {
 
     pub fn run_everything(&mut self) -> Result<(), String> {
         let now = Instant::now();
-        let parsed_ast = self.parser.parse_file()?;
+        let mut parsed_ast = self.parser.parse_file()?;
         if self.debug {
             println!("Parsing took {:?}", now.elapsed());
         }
 
         let now = Instant::now();
-        let mut desugared_ast = self.desugarer.desugar_file(parsed_ast)?;
+        self.desugarer.desugar_file(&mut parsed_ast)?;
         if self.debug {
             println!("Desugaring took {:?}", now.elapsed());
         }
+
+        println!("{:#?}", parsed_ast);
         
         // let now = Instant::now();
         // let checked_ast = self.checker.type_check_file(desugared_ast)?;
