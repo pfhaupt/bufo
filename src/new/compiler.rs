@@ -44,12 +44,12 @@ impl Compiler {
         }
 
         println!("{:#?}", parsed_ast);
-        
-        // let now = Instant::now();
-        // let checked_ast = self.checker.type_check_file(desugared_ast)?;
-        // if self.debug {
-        //     println!("Type Checking took {:?}", now.elapsed());
-        // }
+        let now = Instant::now();
+        self.checker.type_check_file(&mut parsed_ast)?;
+        if self.debug {
+            println!("Type Checking took {:?}", now.elapsed());
+        }
+        println!("{:#?}", parsed_ast);
 
         // let now = Instant::now();
         // self.codegen.generate_code(checked_ast)?;
