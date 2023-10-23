@@ -526,6 +526,7 @@ impl Parsable for nodes::ClassNode {
         let mut fields = vec![];
         let mut functions = vec![];
         let mut features = vec![];
+        let mut has_constructor = false;
         while !parser.parsed_eof() && !parser.at(TokenType::ClosingCurly) {
             match parser.nth(0) {
                 TokenType::Identifier => {
@@ -534,6 +535,7 @@ impl Parsable for nodes::ClassNode {
                 }
                 TokenType::FeatureKeyword => {
                     let parsed_feature = nodes::FeatureNode::parse(parser)?;
+                    has_constructor |= parsed_feature.is_constructor;
                     features.push(parsed_feature);
                 }
                 TokenType::FunctionKeyword => {
@@ -550,7 +552,8 @@ impl Parsable for nodes::ClassNode {
             name,
             fields,
             functions,
-            features
+            features,
+            has_constructor
         })
     }
 }

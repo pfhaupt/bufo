@@ -17,6 +17,7 @@ pub struct ClassNode {
     pub fields: Vec<FieldNode>,
     pub functions: Vec<FunctionNode>,
     pub features: Vec<FeatureNode>,
+    pub has_constructor: bool,
 }
 
 #[derive(Debug, Default, Clone)]
