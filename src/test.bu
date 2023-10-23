@@ -3,14 +3,18 @@ class Test {
     asdb: Test;
     c: i64;
     d: i64;
-    feat new(na: i64, nb: i64, nc: i64) {
+    feat new(na: i64, nb: i64, nc: i64) -> Test {
         this.a = na;
         // this.b = Test(0, 0, 0);
         this.c = nc;
         // this.d gets 0 initialized
     }
-    func foo() -> i64 {
+    func foo(this: Test, b: i32) -> i64 {
         return this.d;
+    }
+
+    func fee(b: i32) -> i32 {
+        return b;
     }
 
     func faa() {}

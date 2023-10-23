@@ -1,32 +1,100 @@
 use std::collections::HashMap;
-use crate::{checker::Type, parser::Location, codegen::{ERR_STR, NOTE_STR}};
+use crate::{checker::Type, parser::Location, codegen::{ERR_STR, NOTE_STR, WARN_STR}};
 
 use super::nodes;
 
 const BUILT_IN_FEATURES: [&str; 1] = ["new"];
 
+#[derive(Debug)]
+pub struct Parameter {
+    name: String,
+    location: Location,
+    typ: Type
+}
+
+#[derive(Debug)]
+pub struct Method {
+    name: String,
+    location: Location,
+    return_type: Type,
+    parameters: Vec<Parameter>,
+}
+
+impl Method {
+    fn add_this_param(&mut self, class_type: &Type) -> Result<(), String> {
+        // FIXME: Should this be part of the Parser?
+        
+        // FIXME: Calculate correct location for this param
+        if self.parameters.len() == 0 {
+            self.parameters.push(Parameter {
+                name: String::from("this"),
+                location: self.location.clone(),
+                typ: class_type.clone()
+            });
+        } else {
+            let first_param = &mut self.parameters[0];
+            if first_param.name == String::from("this") {
+                if first_param.typ != *class_type {
+                    return Err(format!(
+                        "{}: {:?}: Unexpected Type for parameter `this`.\n{}: `this` is an implicit parameter. Specifying it is not necessary.",
+                        ERR_STR,
+                        first_param.location,
+                        NOTE_STR
+                    ));
+                }
+                println!("{}: {:?}: Use of implicit parameter `this`.", WARN_STR, first_param.location);
+                return Ok(());
+            } else {
+                for param in &self.parameters {
+                    if param.name == String::from("this") {
+                        return Err(format!(
+                            "{}: {:?}: Unexpected Parameter. `this` is either implicit or the first parameter.",
+                            ERR_STR,
+                            param.location
+                        ))
+                    }
+                }
+            }
+            // We have >0 parameters, none of them are named `this`
+            self.parameters.insert(0, Parameter {
+                name: String::from("this"),
+                location: self.location.clone(),
+                typ: class_type.clone()
+            });
+        }
+        Ok(())
+    }
+}
+
+
+#[derive(Debug)]
 pub struct Function {
     name: String,
     location: Location,
     return_type: Type,
-    parameters: Vec<Type>,
+    parameters: Vec<Parameter>,
 }
 
+#[derive(Debug)]
 pub struct Class {
+    name: String,
+    class_type: Type,
     location: Location,
     fields: HashMap<String, (Location, Type)>,
-    known_functions: HashMap<String, Function>,
+    known_methods: HashMap<String, Method>,
     // FIXME: Maybe we should have an own struct for Features
     known_features: HashMap<String, Function>,
     has_constructor: bool,
 }
 
 impl Class {
-    fn new() -> Self {
+    fn new(name: String) -> Self {
         Self {
+            name: name.clone(),
+            class_type: Type::Class(name),
             location: Location::anonymous(),
             fields: HashMap::new(),
-            known_functions: HashMap::new(),
+            known_methods: HashMap::new(),
             known_features: HashMap::new(),
             has_constructor: false,
         }
@@ -52,11 +120,11 @@ impl Class {
         }
     }
 
-    fn add_function(&mut self, function: &nodes::FunctionNode) -> Result<(), String> {
-        debug_assert!(function.is_method);
-        let name = &function.name;
-        let location = &function.location;
-        match self.known_functions.get(name) {
+    fn add_method(&mut self, method: &nodes::FunctionNode) -> Result<(), String> {
+        debug_assert!(method.is_method);
+        let name = &method.name;
+        let location = &method.location;
+        match self.known_methods.get(name) {
             Some(f) => Err(format!(
                 "{}: {:?}: Method redeclaration.\n{}: {:?}: Method already declared here.",
                 ERR_STR,
@@ -65,18 +133,24 @@ impl Class {
                 f.location
             )),
             None => {
-                let return_type = &function.return_type.typ;
-                let parameters: Vec<Type> = function.parameters
+                let return_type = &method.return_type.typ;
+                let parameters: Vec<_> = method.parameters
                     .iter()
-                    .map(|param|param.typ.typ.clone())
+                    .map(|param| {
+                        Parameter {
+                            name: param.name.clone(),
+                            location: param.location.clone(),
+                            typ: param.typ.typ.clone()
+                        }
+                    })
                     .collect();
-                let func = Function {
+                let method = Method {
                     name: name.clone(),
                     location: location.clone(),
                     return_type: return_type.clone(),
-                    parameters: parameters
+                    parameters
                 };
-                self.known_functions.insert(name.clone(), func);
+                self.known_methods.insert(name.clone(), method);
                 Ok(())
             }
         }
@@ -106,23 +180,66 @@ impl Class {
                     ));
                 }
                 let return_type = &feature.return_type.typ;
-                let parameters: Vec<Type> = feature.parameters
+                let parameters: Vec<_> = feature.parameters
                     .iter()
-                    .map(|param|param.typ.typ.clone())
+                    .map(|param| {
+                        Parameter {
+                            name: param.name.clone(),
+                            location: param.location.clone(),
+                            typ: param.typ.typ.clone()
+                        }
+                    })
                     .collect();
                 let func = Function {
                     name: name.clone(),
                     location: location.clone(),
                     return_type: return_type.clone(),
-                    parameters: parameters
+                    parameters
                 };
                 self.known_features.insert(name.clone(), func);
                 Ok(())
             }
         }
     }
+
+    fn resolve_new_return_type(&mut self) -> Result<(), String> {
+        for feat in &mut self.known_features {
+            if *feat.0 == String::from("new") {
+                if feat.1.return_type == self.class_type {
+                    // FIXME: Also store location of return type declaration for better warnings
+                    println!(
+                        "{}: {:?}: Use of implicit return type for constructor.",
+                        WARN_STR,
+                        feat.1.location
+                    );
+                    return Ok(());
+                }
+                if feat.1.return_type != Type::None {
+                    return Err(format!(
+                        "{}: {:?}: Feature `new` is expected to return None, found {}.",
+                        ERR_STR,
+                        feat.1.location,
+                        feat.1.return_type
+                    ));
+                }
+                feat.1.return_type = self.class_type.clone();
+                return Ok(());
+            }
+        }
+        assert!(false, "Class has constructor but no new feature found");
+        unreachable!()
+    }
+
+    fn add_this_param(&mut self) -> Result<(), String> {
+        // FIXME: Also add this parameter to features, once we have more of them
+        for function in &mut self.known_methods {
+            function.1.add_this_param(&self.class_type)?;
+        }
+        Ok(())
+    }
 }
 
+#[derive(Debug)]
 pub struct TypeChecker {
     known_functions: HashMap<String, Function>,
     known_classes: HashMap<String, Class>,
@@ -136,6 +253,42 @@ impl TypeChecker {
          }
     }
 
+    fn add_function(&mut self, function: &nodes::FunctionNode) -> Result<(), String> {
+        let name = &function.name;
+        let location = &function.location;
+        match self.known_functions.get(name) {
+            Some(f) => Err(format!(
+                "{}: {:?}: Function redeclaration.\n{}: {:?}: Function already declared here.",
+                ERR_STR,
+                location,
+                NOTE_STR,
+                f.location
+            )),
+            None => {
+                let return_type = &function.return_type.typ;
+                // FIXME: Check if parameter names repeat
+                let parameters: Vec<_> = function.parameters
+                .iter()
+                .map(|param| {
+                    Parameter {
+                        name: param.name.clone(),
+                        location: param.location.clone(),
+                        typ: param.typ.typ.clone()
+                    }
+                })
+                .collect();
+                let func = Function {
+                    name: name.clone(),
+                    location: location.clone(),
+                    return_type: return_type.clone(),
+                    parameters
+                };
+                self.known_functions.insert(name.clone(), func);
+                Ok(())
+            }
+        }
+    }
+
     fn fill_lookup(&mut self, ast: &nodes::FileNode) -> Result<(), String> {
         for c in &ast.classes {
             match self.known_classes.get(&c.name) {
@@ -147,24 +300,30 @@ impl TypeChecker {
                     class.location
                 )),
                 None => {
-                    let mut class = Class::new();
+                    let mut class = Class::new(c.name.clone());
                     class.location = c.location.clone();
+                    class.has_constructor = c.has_constructor;
                     for field in &c.fields {
                         class.add_field(field)?;
                     }
-                    for function in &c.functions {
-                        class.add_function(function)?;
+                    for method in &c.functions {
+                        class.add_method(method)?;
                     }
                     for feature in &c.features {
                         class.add_feature(feature)?;
                     }
+                    if class.has_constructor {
+                        class.resolve_new_return_type()?;
+                    }
+                    class.add_this_param()?;
                     self.known_classes.insert(c.name.clone(), class);
                 }
             }
         }
-
-
-        todo!()
+        for function in &ast.functions {
+            self.add_function(function)?;
+        }
+        Ok(())
     }
 
     pub fn type_check_file(&mut self, ast: &mut nodes::FileNode) -> Result<(), String> {
