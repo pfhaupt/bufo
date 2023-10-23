@@ -98,6 +98,7 @@ pub struct Parser {
     source: Vec<char>,
     fuel: Cell<u32>,
     lookahead: VecDeque<Token>,
+    current_class: String,
     current_char: usize,
     current_line: usize,
     line_start: usize,
@@ -515,9 +516,10 @@ impl Parsable for nodes::ClassNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
         parser.expect(TokenType::ClassKeyword)?;
-
+        
         let class_name = parser.expect(TokenType::Identifier)?;
         let name = class_name.value;
+        parser.current_class = name.clone();
 
         parser.expect(TokenType::OpenCurly)?;
 
@@ -542,6 +544,7 @@ impl Parsable for nodes::ClassNode {
             }
         }
         parser.expect(TokenType::ClosingCurly)?;
+        parser.current_class.clear();
         Ok(nodes::ClassNode {
             location,
             name,
@@ -635,7 +638,7 @@ impl Parsable for nodes::FunctionNode {
             return_type,
             parameters,
             block,
-            is_method: false, // FIXME: Give current class context to Parser
+            is_method: !parser.current_class.is_empty()
         })
     }
 }
