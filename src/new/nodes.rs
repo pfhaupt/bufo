@@ -1,73 +1,73 @@
 use crate::parser::Location;
 use crate::checker::Type;
 use crate::new::new_parser::Operation;
-use derive_builder::Builder;
 
-#[derive(Debug, Default, Builder, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct FileNode {
-    location: Location,
-    filepath: String,
+    pub location: Location,
+    pub filepath: String,
     pub functions: Vec<FunctionNode>,
-    pub features: Vec<FeatureNode>,
     pub classes: Vec<ClassNode>,
 }
 
-#[derive(Debug, Default, Builder, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct ClassNode {
-    location: Location,
+    pub location: Location,
     pub name: String,
     pub fields: Vec<FieldNode>,
     pub functions: Vec<FunctionNode>,
     pub features: Vec<FeatureNode>,
 }
 
-#[derive(Debug, Default, Builder, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct FieldNode {
-    location: Location,
-    name: String,
+    pub location: Location,
+    pub name: String,
     pub type_def: TypeNode,
 }
 
-#[derive(Debug, Default, Builder, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct FieldAccess {
-    location: Location,
-    name: String,
-    field: Expression,
-    typ: Type
+    pub location: Location,
+    pub name: String,
+    pub field: Expression,
+    pub typ: Type
 }
 
-#[derive(Debug, Default, Builder, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct FeatureNode {
     pub location: Location,
     pub name: String,
     pub return_type: ReturnTypeNode,
     pub parameters: Vec<ParameterNode>,
     pub block: BlockNode,
+    pub is_constructor: bool
 }
 
-#[derive(Debug, Default, Builder, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct FunctionNode {
     pub location: Location,
     pub name: String,
     pub return_type: ReturnTypeNode,
     pub parameters: Vec<ParameterNode>,
-    pub block: BlockNode
+    pub block: BlockNode,
+    pub is_method: bool
 }
 
-#[derive(Debug, Default, Builder, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct ReturnTypeNode {
     pub location: Location,
     pub typ: Type
 }
 
-#[derive(Debug, Default, Builder, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct ParameterNode {
-    location: Location,
-    name: String,
-    typ: TypeNode
+    pub location: Location,
+    pub name: String,
+    pub typ: TypeNode
 }
 
-#[derive(Debug, Default, Builder, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct BlockNode {
     pub location: Location,
     pub statements: Vec<Statement>,
@@ -82,13 +82,13 @@ pub enum Statement {
     Return(ReturnNode)
 }
 
-#[derive(Debug, Default, Builder, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct ExpressionNode {
     pub location: Location,
     pub expression: Expression
 }
 
-#[derive(Debug, Default, Builder, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct LetNode {
     pub location: Location,
     pub name: String,
@@ -96,21 +96,21 @@ pub struct LetNode {
     pub expression: ExpressionNode,
 }
 
-#[derive(Debug, Builder, Clone)]
+#[derive(Debug, Clone)]
 pub struct AssignNode {
     pub location: Location,
     pub name: ExpressionIdentifierNode,
     pub expression: ExpressionNode,
 }
 
-#[derive(Debug, Builder, Clone)]
+#[derive(Debug, Clone)]
 pub struct ExpressionIdentifierNode {
     pub location: Location,
     pub expression: Box<Expression>,
     pub typ: Type
 }
 
-#[derive(Debug, Builder, Clone)]
+#[derive(Debug, Clone)]
 pub struct IfNode {
     pub location: Location,
     pub condition: ExpressionBinaryNode,
@@ -118,19 +118,19 @@ pub struct IfNode {
     pub else_branch: Option<BlockNode>,
 }
 
-#[derive(Debug, Default, Builder, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct ReturnNode {
     pub location: Location,
     pub return_value: Option<ExpressionNode>,
 }
 
-#[derive(Debug, Default, Builder, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct TypeNode {
     pub location: Location,
     pub typ: Type,
 }
 
-#[derive(Debug, Builder, Clone)]
+#[derive(Debug, Clone)]
 pub struct ArgumentNode {
     pub location: Location,
     pub expression: ExpressionNode
@@ -151,28 +151,28 @@ pub enum Expression {
     #[default] None,
 }
 
-#[derive(Debug, Builder, Clone)]
+#[derive(Debug, Clone)]
 pub struct ExpressionArrayLiteralNode {
     pub location: Location,
     pub elements: Vec<Expression>
 }
 
-#[derive(Debug, Builder, Clone)]
+#[derive(Debug, Clone)]
 pub struct ExpressionArrayAccessNode {
-    location: Location,
-    array_name: String,
-    indices: ExpressionArrayLiteralNode,
-    typ: Type
+    pub location: Location,
+    pub array_name: String,
+    pub indices: ExpressionArrayLiteralNode,
+    pub typ: Type
 }
 
-#[derive(Debug, Builder, Clone)]
+#[derive(Debug, Clone)]
 pub struct ExpressionLiteralNode {
-    location: Location,
-    value: String,
-    typ: Type,
+    pub location: Location,
+    pub value: String,
+    pub typ: Type,
 }
 
-#[derive(Debug, Builder, Clone)]
+#[derive(Debug, Clone)]
 pub struct ExpressionBinaryNode {
     pub location: Location,
     pub operation: Operation,
@@ -181,7 +181,7 @@ pub struct ExpressionBinaryNode {
     pub typ: Type
 }
 
-#[derive(Debug, Builder, Clone)]
+#[derive(Debug, Clone)]
 pub struct ExpressionCallNode {
     pub location: Location,
     pub function_name: String,
@@ -189,7 +189,7 @@ pub struct ExpressionCallNode {
     pub typ: Type
 }
 
-#[derive(Debug, Builder, Clone)]
+#[derive(Debug, Clone)]
 pub struct ExpressionFieldAccessNode {
     pub location: Location,
     pub name: String,
@@ -197,14 +197,14 @@ pub struct ExpressionFieldAccessNode {
     pub typ: Type
 }
 
-#[derive(Debug, Builder, Clone)]
+#[derive(Debug, Clone)]
 pub struct NameNode {
-    location: Location,
-    name: String,
-    typ: Type,
+    pub location: Location,
+    pub name: String,
+    pub typ: Type,
 }
 
-#[derive(Debug, Builder, Clone)]
+#[derive(Debug, Clone)]
 pub struct ExpressionBuiltInNode {
     pub location: Location,
     pub function_name: String,

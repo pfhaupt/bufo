@@ -5,7 +5,7 @@ use crate::checker::Type;
 
 use crate::codegen::{SizeManager, ERR_STR};
 use crate::parse_snippet;
-use super::nodes::{self, BlockNodeBuilder};
+use super::nodes;
 
 pub struct Desugarer {
     current_class: String,
@@ -71,7 +71,6 @@ impl Desugarable for nodes::FileNode {
         for c in &mut self.classes {
             c.desugar(desugarer)?;
             self.functions.append(&mut c.functions);
-            self.features.append(&mut c.features);
         }
         Ok(())
     }

@@ -38,7 +38,7 @@ impl Compiler {
         }
 
         let now = Instant::now();
-        self.desugarer.desugar_file(&mut parsed_ast)?;
+        // self.desugarer.desugar_file(&mut parsed_ast)?;
         if self.debug {
             println!("Desugaring took {:?}", now.elapsed());
         }
