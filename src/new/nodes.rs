@@ -38,6 +38,7 @@ pub struct FieldAccess {
 #[derive(Debug, Default, Clone)]
 pub struct FeatureNode {
     pub location: Location,
+    pub class_name: String,
     pub name: String,
     pub return_type: ReturnTypeNode,
     pub parameters: Vec<ParameterNode>,
@@ -148,6 +149,7 @@ pub struct ArgumentNode {
 
 #[derive(Debug, Default, Clone)]
 pub enum Expression {
+    // FIXME: What's the difference between Name and Identifier?
     Name(NameNode),
     Identifier(ExpressionIdentifierNode),
     ArrayLiteral(ExpressionArrayLiteralNode),
@@ -157,6 +159,7 @@ pub enum Expression {
     FieldAccess(ExpressionFieldAccessNode),
     // Parenthesis(ExpressionNode),
     FunctionCall(ExpressionCallNode),
+    ConstructorCall(ExpressionConstructorNode),
     BuiltIn(ExpressionBuiltInNode),
     #[default] None,
 }
@@ -195,6 +198,14 @@ pub struct ExpressionBinaryNode {
 pub struct ExpressionCallNode {
     pub location: Location,
     pub function_name: String,
+    pub arguments: Vec<ArgumentNode>,
+    pub typ: Type
+}
+
+#[derive(Debug, Clone)]
+pub struct ExpressionConstructorNode {
+    pub location: Location,
+    pub class_name: String,
     pub arguments: Vec<ArgumentNode>,
     pub typ: Type
 }

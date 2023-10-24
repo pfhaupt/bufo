@@ -37,7 +37,7 @@ macro_rules! parse_snippet {
     };
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Token {
     location: Location,
     value: String,
@@ -445,6 +445,10 @@ impl Parser {
         self.nth(0) == token_type
     }
 
+    fn peek(&self, lookahead: usize) -> Token {
+        self.lookahead[lookahead].clone()
+    }
+
     fn nth(&self, lookahead: usize) -> TokenType {
         debug_assert!(self.lookahead.len() >= lookahead);
         self.lookahead[lookahead].token_type
@@ -582,6 +586,7 @@ impl Parsable for nodes::FieldAccess {
 
 impl Parsable for nodes::FeatureNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        debug_assert!(!parser.current_class.is_empty());
         let location = parser.current_location();
         
         parser.expect(TokenType::FeatureKeyword)?;
@@ -604,6 +609,7 @@ impl Parsable for nodes::FeatureNode {
         let block = nodes::BlockNode::parse(parser)?;
         Ok(nodes::FeatureNode {
             is_constructor: name == String::from("new"),
+            class_name: parser.current_class.clone(),
             location,
             name,
             return_type,
@@ -817,8 +823,13 @@ impl Parsable for nodes::ExpressionIdentifierNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
         let expression = match parser.nth(1) {
-            TokenType::OpenRound =>
-                nodes::Expression::FunctionCall(nodes::ExpressionCallNode::parse(parser)?),
+            TokenType::OpenRound => {
+                if parser.peek(0).value.as_bytes()[0].is_ascii_uppercase() {
+                    nodes::Expression::ConstructorCall(nodes::ExpressionConstructorNode::parse(parser)?)
+                } else {
+                    nodes::Expression::FunctionCall(nodes::ExpressionCallNode::parse(parser)?)
+                }
+            }
             TokenType::OpenSquare =>
                 todo!(),
             TokenType::Dot =>
@@ -1080,6 +1091,32 @@ impl Parsable for nodes::ExpressionLiteralNode {
             location,
             value,
             typ
+        })
+    }
+}
+
+impl Parsable for nodes::ExpressionConstructorNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+        let name_token = parser.expect(TokenType::Identifier)?;
+        let class_name = name_token.value;
+        debug_assert!(class_name.as_bytes()[0].is_ascii_uppercase());
+
+        let mut arguments = vec![];
+        parser.expect(TokenType::OpenRound)?;
+        while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
+            let arg = nodes::ArgumentNode::parse(parser)?;
+            arguments.push(arg);
+            if !parser.eat(TokenType::Comma) {
+                break;
+            }
+        }
+        parser.expect(TokenType::ClosingRound)?;
+        Ok(nodes::ExpressionConstructorNode {
+            class_name,
+            location,
+            arguments,
+            typ: Type::Unknown
         })
     }
 }
