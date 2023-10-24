@@ -524,7 +524,7 @@ impl Parsable for nodes::ClassNode {
         parser.expect(TokenType::OpenCurly)?;
 
         let mut fields = vec![];
-        let mut functions = vec![];
+        let mut methods = vec![];
         let mut features = vec![];
         let mut has_constructor = false;
         while !parser.parsed_eof() && !parser.at(TokenType::ClosingCurly) {
@@ -539,8 +539,8 @@ impl Parsable for nodes::ClassNode {
                     features.push(parsed_feature);
                 }
                 TokenType::FunctionKeyword => {
-                    let parsed_function = nodes::FunctionNode::parse(parser)?;
-                    functions.push(parsed_function);
+                    let parsed_function = nodes::MethodNode::parse(parser)?;
+                    methods.push(parsed_function);
                 }
                 e => todo!("{:?}", e)
             }
@@ -551,7 +551,7 @@ impl Parsable for nodes::ClassNode {
             location,
             name,
             fields,
-            functions,
+            methods,
             features,
             has_constructor
         })
@@ -641,7 +641,40 @@ impl Parsable for nodes::FunctionNode {
             return_type,
             parameters,
             block,
-            is_method: !parser.current_class.is_empty()
+        })
+    }
+}
+
+impl Parsable for nodes::MethodNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        debug_assert!(!parser.current_class.is_empty());
+        let location = parser.current_location();
+        
+        parser.expect(TokenType::FunctionKeyword)?;
+        let feature_name = parser.expect(TokenType::Identifier)?;
+        let name = feature_name.value;
+        
+        let mut parameters = vec![];
+        parser.expect(TokenType::OpenRound)?;
+        while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
+            let parsed_param = nodes::ParameterNode::parse(parser)?;
+            parameters.push(parsed_param);
+            if !parser.eat(TokenType::Comma) {
+                break;
+            }
+        }
+        parser.expect(TokenType::ClosingRound)?;
+        
+        let return_type = nodes::ReturnTypeNode::parse(parser)?;
+
+        let block = nodes::BlockNode::parse(parser)?;
+        Ok(nodes::MethodNode {
+            location,
+            class_name: parser.current_class.clone(),
+            name,
+            return_type,
+            parameters,
+            block,
         })
     }
 }

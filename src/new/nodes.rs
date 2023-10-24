@@ -15,7 +15,7 @@ pub struct ClassNode {
     pub location: Location,
     pub name: String,
     pub fields: Vec<FieldNode>,
-    pub functions: Vec<FunctionNode>,
+    pub methods: Vec<MethodNode>,
     pub features: Vec<FeatureNode>,
     pub has_constructor: bool,
 }
@@ -51,8 +51,17 @@ pub struct FunctionNode {
     pub name: String,
     pub return_type: ReturnTypeNode,
     pub parameters: Vec<ParameterNode>,
-    pub block: BlockNode,
-    pub is_method: bool
+    pub block: BlockNode
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct MethodNode {
+    pub location: Location,
+    pub class_name: String,
+    pub name: String,
+    pub return_type: ReturnTypeNode,
+    pub parameters: Vec<ParameterNode>,
+    pub block: BlockNode
 }
 
 #[derive(Debug, Default, Clone)]
