@@ -592,6 +592,13 @@ impl Parsable for nodes::FeatureNode {
         parser.expect(TokenType::FeatureKeyword)?;
         let feature_name = parser.expect(TokenType::Identifier)?;
         let name = feature_name.value;
+        if name.as_bytes()[0].is_ascii_uppercase() {
+            return Err(format!(
+                "{}: {:?}: Feature names are not allowed to be capitalized.",
+                ERR_STR,
+                feature_name.location
+            ))
+        }
         
         let mut parameters = vec![];
         parser.expect(TokenType::OpenRound)?;
@@ -624,8 +631,15 @@ impl Parsable for nodes::FunctionNode {
         let location = parser.current_location();
         
         parser.expect(TokenType::FunctionKeyword)?;
-        let feature_name = parser.expect(TokenType::Identifier)?;
-        let name = feature_name.value;
+        let function_name = parser.expect(TokenType::Identifier)?;
+        let name = function_name.value;
+        if name.as_bytes()[0].is_ascii_uppercase() {
+            return Err(format!(
+                "{}: {:?}: Function names are not allowed to be capitalized.",
+                ERR_STR,
+                function_name.location
+            ))
+        }
         
         let mut parameters = vec![];
         parser.expect(TokenType::OpenRound)?;
@@ -657,8 +671,15 @@ impl Parsable for nodes::MethodNode {
         let location = parser.current_location();
         
         parser.expect(TokenType::FunctionKeyword)?;
-        let feature_name = parser.expect(TokenType::Identifier)?;
-        let name = feature_name.value;
+        let method_name = parser.expect(TokenType::Identifier)?;
+        let name = method_name.value;
+        if name.as_bytes()[0].is_ascii_uppercase() {
+            return Err(format!(
+                "{}: {:?}: Method names are not allowed to be capitalized.",
+                ERR_STR,
+                method_name.location
+            ))
+        }
         
         let mut parameters = vec![];
         parser.expect(TokenType::OpenRound)?;
