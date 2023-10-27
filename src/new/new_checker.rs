@@ -365,9 +365,19 @@ impl TypeChecker {
         Ok(())
     }
 
-    pub fn type_check_file(&mut self, ast: &mut nodes::FileNode) -> Result<(), String> {
+    pub fn type_check_file(&mut self, ast: &mut nodes::FileNode) -> Result<Type, String> {
         self.fill_lookup(ast)?;
         ast.type_check(self)
+    }
+
+    fn get_variable(&self, name: &String) -> Option<Variable> {
+        for scope in self.known_variables.iter().rev() {
+            match scope.get(name) {
+                Some(t) => return Some(t.clone()),
+                None => ()
+            }
+        }
+        None
     }
 }
 
