@@ -382,23 +382,40 @@ impl TypeChecker {
 }
 
 trait Typecheckable {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized;
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized;
 }
 
 impl Typecheckable for nodes::FileNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
         for c in &mut self.classes {
             c.type_check(checker)?;
         }
         for f in &mut self.functions {
             f.type_check(checker)?;
         }
-        Ok(())
+        Ok(Type::None)
     }
 }
 impl Typecheckable for nodes::ClassNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
-        todo!()
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+        debug_assert!(checker.current_class.is_empty());
+        debug_assert!(checker.current_function.is_empty());
+        checker.current_class = self.name.clone();
+        // At this point, all known classes have entered the lookup
+        // and all fields are unique
+        // Only thing left to test is that the field types exist
+        // and that functions and methods type check
+        for field in &mut self.fields {
+            field.type_check(checker)?;
+        }
+        for function in &mut self.methods {
+            function.type_check(checker)?;
+        }
+        for feature in &mut self.features {
+            feature.type_check(checker)?;
+        }
+        checker.current_class.clear();
+        Ok(Type::None)
     }
 }
 impl Typecheckable for nodes::FieldNode {
@@ -412,8 +429,48 @@ impl Typecheckable for nodes::FieldAccess {
     }
 }
 impl Typecheckable for nodes::FeatureNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
-        todo!()
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+        debug_assert!(checker.current_function.is_empty());
+        debug_assert!(checker.known_variables.is_empty());
+        debug_assert!(checker.known_classes.contains_key(&self.class_name));
+
+        checker.current_function = self.name.clone();
+        let Some(class_info) = checker.known_classes.get(&self.class_name) else { unreachable!() };
+        // FIXME: Is the else actually unreachable for the feature?
+        let Some(feature) = class_info.known_features.get(&self.name) else { unreachable!() };
+        
+        // Parameters are now known variables
+        // FIXME: Parameter modification in fill_lookup should modify the AST too
+        let mut parameters = HashMap::new();
+        for param in &feature.parameters {
+            let var = Variable::new(
+                param.name.clone(),
+                param.location.clone(),
+                param.typ.clone()
+            );
+            match parameters.insert(param.name.clone(), var) {
+                Some(param) => todo!(),
+                None => ()
+            }
+        }
+        checker.known_variables.push_back(parameters);
+
+        // FIXME: Handle this better
+        if feature.name == String::from("new") {
+            let mut this_var = HashMap::new();
+            this_var.insert(String::from("this"), Variable {
+                name: String::from("this"),
+                location: Location::anonymous(),
+                typ: Type::Class(self.class_name.clone())
+            });
+            checker.known_variables.push_back(this_var);
+        }
+        
+        self.block.type_check(checker)?;
+
+        checker.current_function.clear();
+        checker.known_variables.clear();
+        Ok(Type::None)
     }
 }
 impl Typecheckable for nodes::FunctionNode {
@@ -421,8 +478,42 @@ impl Typecheckable for nodes::FunctionNode {
         todo!()
     }
 }
+impl Typecheckable for nodes::MethodNode {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+        debug_assert!(checker.current_function.is_empty());
+        debug_assert!(checker.known_variables.is_empty());
+        debug_assert!(checker.known_classes.contains_key(&self.class_name));
+
+        checker.current_function = self.name.clone();
+        let Some(class_info) = checker.known_classes.get(&self.class_name) else { unreachable!() };
+        // FIXME: Is the else actually unreachable for the method?
+        let Some(method) = class_info.known_methods.get(&self.name) else { unreachable!() };
+        
+        // Parameters are now known variables
+        // FIXME: Parameter modification in fill_lookup should modify the AST too
+        let mut parameters = HashMap::new();
+        for param in &method.parameters {
+            let var = Variable::new(
+                param.name.clone(),
+                param.location.clone(),
+                param.typ.clone()
+            );
+            match parameters.insert(param.name.clone(), var) {
+                Some(param) => todo!(),
+                None => ()
+            }
+        }
+        checker.known_variables.push_back(parameters);
+        
+        self.block.type_check(checker)?;
+
+        checker.current_function.clear();
+        checker.known_variables.clear();
+        Ok(Type::None)
+    }
+}
 impl Typecheckable for nodes::ParameterNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
         todo!()
     }
 }
