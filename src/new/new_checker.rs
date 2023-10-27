@@ -531,8 +531,13 @@ impl Typecheckable for nodes::ParameterNode {
     }
 }
 impl Typecheckable for nodes::BlockNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
-        todo!()
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+        checker.add_scope();
+        for statement in &mut self.statements {
+            statement.type_check(checker)?;
+        }
+        checker.remove_scope();
+        Ok(Type::None)
     }
 }
 impl Typecheckable for nodes::ExpressionNode {
