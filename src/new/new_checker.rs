@@ -571,8 +571,22 @@ impl Typecheckable for nodes::ReturnNode {
     }
 }
 impl Typecheckable for nodes::TypeNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
-        todo!()
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+        match &self.typ {
+            Type::Class(class_name) => {
+                if !checker.known_classes.contains_key(class_name) {
+                    Err(format!(
+                        "{}: {:?}: Unknown Type `{}`.",
+                        ERR_STR,
+                        self.location,
+                        self.typ
+                    ))
+                } else {
+                    Ok(Type::None)
+                }
+            },
+            _ => Ok(Type::None)
+        }
     }
 }
 impl Typecheckable for nodes::ArgumentNode {
