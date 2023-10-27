@@ -241,6 +241,10 @@ impl Class {
     fn get_field(&self, name: &String) -> Option<(Location, Type)> {
         self.fields.get(name).cloned()
     }
+
+    fn get_feature(&self, name: &String) -> Option<&Function> {
+        self.known_features.get(name)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1056,7 +1060,7 @@ impl Typecheckable for nodes::ExpressionCallNode {
             }
             std::cmp::Ordering::Greater => {
                 return Err(format!(
-                    "{}: {:?}: Too manyarguments for call to function `{}`. Expected {} argument(s), found {}.\n{}: {:?}: Function declared here.",
+                    "{}: {:?}: Too many arguments for call to function `{}`. Expected {} argument(s), found {}.\n{}: {:?}: Function declared here.",
                     ERR_STR,
                     self.location,
                     self.function_name,
@@ -1109,7 +1113,72 @@ impl Typecheckable for nodes::ExpressionConstructorNode {
                 NOTE_STR
             ))
         }
-        debug_assert!(checker.known_classes.contains_key(&self.class_name));
+        let Some(class) = checker.known_classes.get(&self.class_name) else { unreachable!() };
+        if !class.has_constructor {
+            return Err(format!(
+                "{}: {:?}: Class `{}` has no constructor.\n{}: {:?}: Could not find feature `new` in class `{}`.",
+                ERR_STR,
+                self.location,
+                self.class_name,
+                NOTE_STR,
+                class.location,
+                self.class_name
+            ));
+        }
+        let class_type = class.class_type.clone();
+        // FIXME: Unhardcode `new` String - What if we change the name of the feature later?
+        let Some(constructor) = class.get_feature(&String::from("new")) else { unreachable!() };
+
+        match self.arguments.len().cmp(&constructor.parameters.len()) {
+            std::cmp::Ordering::Less => {
+                return Err(format!(
+                    "{}: {:?}: Not enough arguments for call to constructor `{}`. Expected {} argument(s), found {}.\n{}: {:?}: Constructor declared here.",
+                    ERR_STR,
+                    self.location,
+                    self.class_name,
+                    constructor.parameters.len(),
+                    self.arguments.len(),
+                    NOTE_STR,
+                    constructor .location
+                ));
+            }
+            std::cmp::Ordering::Greater => {
+                return Err(format!(
+                    "{}: {:?}: Too many arguments for call to constructor `{}`. Expected {} argument(s), found {}.\n{}: {:?}: Constructor declared here.",
+                    ERR_STR,
+                    self.location,
+                    self.class_name,
+                    constructor.parameters.len(),
+                    self.arguments.len(),
+                    NOTE_STR,
+                    constructor .location
+                ));
+            }
+            std::cmp::Ordering::Equal => ()
+        }
+        let params = constructor.parameters.clone();
+        for (arg, param) in self.arguments.iter_mut().zip(params) {
+            println!("{:#?}", arg);
+            println!("{:#?}", param);
+            let expected = param.typ;
+            let arg_type = arg.type_check(checker)?;
+            debug_assert!(arg_type != Type::None);
+            if arg_type == Type::Unknown {
+                // We need to `infer` the type again
+                arg.type_check_with_type(checker, &expected)?;
+            } else if arg_type != expected {
+                return Err(format!(
+                    "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{:?}`, got type `{:?}`.",
+                    ERR_STR,
+                    arg.location,
+                    expected,
+                    arg_type
+                ));
+            } else {
+                // Everything is cool
+            }
+        }
+        self.typ = class_type;
         Ok(Type::Class(self.class_name.clone()))
     }
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
