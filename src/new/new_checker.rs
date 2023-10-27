@@ -866,10 +866,74 @@ impl Typecheckable for nodes::ExpressionIdentifierNode {
 }
 impl Typecheckable for nodes::ExpressionArrayLiteralNode {
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
-        todo!()
+        let mut expected_type = Type::None;
+        for element in &mut self.elements {
+            let element_type = element.type_check(checker)?;
+            if element_type == Type::Unknown {
+                // Shortcut, we simply do not know the type of the array
+                expected_type = element_type;
+                break;
+            } else if expected_type == Type::None {
+                expected_type = element_type;
+            } else if element_type != expected_type {
+                // FIXME: Add Location to Expression for better error reporting
+                // Here we could say "Element 0 is u64, so we expect the rest to also be u64", for example
+                // And then point to element 0
+                return Err(format!(
+                    "{}: {:?}: Type Mismatch in Array Literal. Type of array is inferred to be `{:?}`, but got `{:?}`.",
+                    ERR_STR,
+                    self.location,
+                    expected_type,
+                    element_type
+                ));
+            }
+        }
+        debug_assert!(expected_type != Type::None); // FIXME: This should throw an error, I think
+        if let Type::Arr(expected, mut size) = expected_type {
+            size.push(self.elements.len());
+            let new_type = Type::Arr(expected, size);
+            println!("{:#?}", new_type);
+            todo!();
+            Ok(new_type)
+        } else {
+            Ok(expected_type)
+        }
     }
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
-        todo!()
+        if let Type::Arr(expected_type, expected_size) = typ {
+            let expected_count = expected_size[0];
+            if expected_count != self.elements.len() {
+                return Err(format!(
+                    "{}: {:?}: Size Mismatch when evaluating Array Literal. Expected {} element(s), found {}.",
+                    ERR_STR,
+                    self.location,
+                    expected_count,
+                    self.elements.len()
+                ));
+            }
+            println!("{} {}", expected_count, self.elements.len());
+            let sub_expected: Vec<_> = expected_size[1..].to_vec();
+            let sub_type = if sub_expected.is_empty() {
+                // FIXME: This looks ugly
+                (*expected_type.to_owned()).clone()
+            } else {
+                Type::Arr(expected_type.clone(), sub_expected)
+            };
+            for element in &mut self.elements {
+                if let Err(e) = element.type_check_with_type(checker, &sub_type) {
+                    return Err(format!(
+                        "{}: {:?}: Error when evaluating type of Array Literal:\n{}",
+                        ERR_STR,
+                        self.location,
+                        e
+                    ));
+                }
+            }
+            // FIXME: Why does ExpressionArrayLiteralNode not have a field type??
+            Ok(())
+        } else {
+            todo!() // Attempted to `infer` non-array to Array Literal
+        }
     }
 }
 impl Typecheckable for nodes::ExpressionArrayAccessNode {
@@ -887,13 +951,20 @@ impl Typecheckable for nodes::ExpressionLiteralNode {
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
         debug_assert!(self.typ == Type::Unknown);
         if let Type::Arr(_, _) = typ {
-            todo!() // FIXME: Also generate error for: Attempted to infer array to literal.
-        }
-        if let Type::Class(class_name) = typ {
+            // FIXME: How the heck do I deal with this error?
+            // NOTE: We wanted to infer an array to a literal
+            return Err(format!(
+                "{}: {:?}: Unexpected type. Attempted to assign `{:?}` to literal `{:?}`.",
+                ERR_STR,
+                self.location,
+                typ,
+                self.value
+            ));
+        } else if let Type::Class(class_name) = typ {
             // FIXME: How the heck do I deal with this error?
             // NOTE: We wanted to infer a class to a literal
             return Err(format!(
-                "{}: {:?}: Unexpected type. Attempted to assign `{}` to literal `{}`.",
+                "{}: {:?}: Unexpected type. Attempted to assign `{:?}` to literal `{:?}`.",
                 ERR_STR,
                 self.location,
                 class_name,
