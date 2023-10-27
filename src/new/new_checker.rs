@@ -370,6 +370,19 @@ impl TypeChecker {
         ast.type_check(self)
     }
 
+    fn add_scope(&mut self) {
+        self.known_variables.push_back(HashMap::new());
+    }
+
+    fn remove_scope(&mut self) {
+        self.known_variables.pop_back();
+    }
+
+    fn get_current_scope(&mut self) -> &mut HashMap<String, Variable> {
+        let len = self.known_variables.len();
+        &mut self.known_variables[len - 1]
+    }
+
     fn get_variable(&self, name: &String) -> Option<Variable> {
         for scope in self.known_variables.iter().rev() {
             match scope.get(name) {
