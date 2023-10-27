@@ -504,7 +504,33 @@ impl Typecheckable for nodes::FeatureNode {
 }
 impl Typecheckable for nodes::FunctionNode {
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
-        todo!()
+        debug_assert!(checker.current_function.is_empty());
+        debug_assert!(checker.current_class.is_empty());
+        debug_assert!(checker.known_variables.is_empty());
+        debug_assert!(checker.known_functions.contains_key(&self.name));
+
+        checker.current_function = self.name.clone();
+        let Some(function) = checker.known_functions.get(&self.name) else { unreachable!() };
+
+        let mut parameters = HashMap::new();
+        for param in &function.parameters {
+            let var = Variable::new(
+                param.name.clone(),
+                param.location.clone(),
+                param.typ.clone()
+            );
+            match parameters.insert(param.name.clone(), var) {
+                Some(param) => todo!(),
+                None => ()
+            }
+        }
+        checker.known_variables.push_back(parameters);
+
+        self.block.type_check(checker)?;
+
+        checker.current_function.clear();
+        checker.known_variables.clear();
+        Ok(Type::None)
     }
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
         todo!()
