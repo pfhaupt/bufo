@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use crate::{checker::Type, parser::Location, codegen::{ERR_STR, NOTE_STR, WARN_STR}};
 
 use super::nodes;
@@ -71,6 +71,7 @@ impl Method {
 pub struct Function {
     name: String,
     location: Location,
+    // FIXME: Also store return declaration for better error reporting
     return_type: Type,
     parameters: Vec<Parameter>,
 }
@@ -120,8 +121,7 @@ impl Class {
         }
     }
 
-    fn add_method(&mut self, method: &nodes::FunctionNode) -> Result<(), String> {
-        debug_assert!(method.is_method);
+    fn add_method(&mut self, method: &nodes::MethodNode) -> Result<(), String> {
         let name = &method.name;
         let location = &method.location;
         match self.known_methods.get(name) {
@@ -237,12 +237,48 @@ impl Class {
         }
         Ok(())
     }
+
+    fn get_field(&self, name: &String) -> Option<(Location, Type)> {
+        self.fields.get(name).cloned()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Variable {
+    name: String,
+    location: Location,
+    typ: Type,
+}
+
+impl Variable {
+    fn new(name: String, location: Location, typ: Type) -> Self {
+        Self {
+            name,
+            location,
+            typ
+        }
+    }
+    fn is_class_instance(&self) -> bool {
+        match &self.typ {
+            Type::Class(..) => true,
+            _ => false
+        }
+    }
+    fn get_class_name(&self) -> String {
+        match &self.typ {
+            Type::Class(name) => name.clone(),
+            _ => panic!()
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct TypeChecker {
     known_functions: HashMap<String, Function>,
     known_classes: HashMap<String, Class>,
+    known_variables: VecDeque<HashMap<String, Variable>>,
+    current_function: String,
+    current_class: String,
 }
 
 impl TypeChecker {
@@ -250,6 +286,9 @@ impl TypeChecker {
         Self { 
             known_classes: HashMap::new(),
             known_functions: HashMap::new(),
+            known_variables: VecDeque::new(),
+            current_function: String::new(),
+            current_class: String::new()
          }
     }
 
@@ -306,7 +345,7 @@ impl TypeChecker {
                     for field in &c.fields {
                         class.add_field(field)?;
                     }
-                    for method in &c.functions {
+                    for method in &c.methods {
                         class.add_method(method)?;
                     }
                     for feature in &c.features {
