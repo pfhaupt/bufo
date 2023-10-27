@@ -885,6 +885,20 @@ impl Typecheckable for nodes::ExpressionLiteralNode {
     }
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
         debug_assert!(self.typ == Type::Unknown);
+        if let Type::Arr(_, _) = typ {
+            todo!() // FIXME: Also generate error for: Attempted to infer array to literal.
+        }
+        if let Type::Class(class_name) = typ {
+            // FIXME: How the heck do I deal with this error?
+            // NOTE: We wanted to infer a class to a literal
+            return Err(format!(
+                "{}: {:?}: Unexpected type. Attempted to assign `{}` to literal `{}`.",
+                ERR_STR,
+                self.location,
+                class_name,
+                self.value
+            ));
+        }
         self.typ = typ.clone();
         Ok(())
     }
