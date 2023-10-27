@@ -573,21 +573,92 @@ impl Typecheckable for nodes::ExpressionNode {
         self.expression.type_check(checker)
     }
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
-        todo!()
+        self.expression.type_check_with_type(checker, typ)
     }
 }
-impl Typecheckable for nodes::LetNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
+impl Typecheckable for nodes::Statement {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+        match self {
+            Self::Expression(expression) => expression.type_check(checker),
+            Self::Let(let_node) => let_node.type_check(checker),
+            Self::Assign(assignment) => assignment.type_check(checker),
+            Self::If(if_node) => if_node.type_check(checker),
+            Self::Return(return_node) => return_node.type_check(checker),
+        }
+    }
+    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
         todo!()
     }
 }
 impl Typecheckable for nodes::LetNode {
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+        match checker.get_variable(&self.name) {
+            Some(var) => Err(format!(
+                "{}: {:?}: Variable redeclaration.\n{}: {:?}: Variable `{}` already declared here.",
+                ERR_STR,
+                self.location,
+                NOTE_STR,
+                var.location,
+                var.name
+            )),
+            None => {
+                self.typ.type_check(checker)?;
+
+                let current_scope = checker.get_current_scope();
+                let var = Variable {
+                    name: self.name.clone(),
+                    location: self.location.clone(),
+                    typ: self.typ.typ.clone()
+                };
+                debug_assert!(current_scope.insert(self.name.clone(), var).is_none());
+                let expected_type = &self.typ.typ;
+
+                let expr_type = self.expression.type_check(checker)?;
+                debug_assert!(expr_type != Type::None);
+
+                if expr_type == Type::Unknown {
+                    // Couldnt determine type of expression
+                    // We need to `infer` it
+                    todo!()
+                } else if expr_type != *expected_type {
+                    Err(format!(
+                        "{}: {:?}: Type Mismatch! Expected type `{:?}`, got type `{:?}`.",
+                        ERR_STR,
+                        self.location,
+                        expected_type,
+                        expr_type
+                    ))
+                } else {
+                    Ok(expr_type)
+                }
+            }
+        }
+    }
+    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
         todo!()
     }
 }
-impl Typecheckable for nodes::ExpressionIdentifierNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
+impl Typecheckable for nodes::AssignNode {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+        let expected_type = self.name.type_check(checker)?;
+        let rhs_type = self.expression.type_check(checker)?;
+        if rhs_type == Type::Unknown {
+            // We need to try and force the type of LHS to RHS
+            self.expression.type_check_with_type(checker, &expected_type)?;
+            Ok(rhs_type)
+        } else if rhs_type != expected_type {
+            Err(format!(
+                "{}: {:?}: Can not assign `{}` to variable of type `{}`.",
+                ERR_STR,
+                self.expression.location,
+                rhs_type,
+                expected_type,
+            ))
+        } else {
+            Ok(rhs_type)
+        }
+    }
+    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
         todo!()
     }
 }
@@ -600,7 +671,64 @@ impl Typecheckable for nodes::IfNode {
     }
 }
 impl Typecheckable for nodes::ReturnNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+        debug_assert!(!checker.current_function.is_empty());
+        if checker.current_class.is_empty() {
+            todo!()
+        } else {
+            // We're returning from a method or feature
+            let Some(class) = checker.known_classes.get(&checker.current_class) else { unreachable!() };
+            let (mut location, mut expected_return_type) = (Location::anonymous(), Type::Unknown);
+            match class.known_features.get(&checker.current_function) {
+                Some(feature) => {
+                    expected_return_type = feature.return_type.clone();
+                    location = feature.location.clone();
+                },
+                None => ()
+            }
+            match class.known_methods.get(&checker.current_function) {
+                Some(method) => {
+                    expected_return_type = method.return_type.clone();
+                    location = method.location.clone();
+                }
+                None => ()
+            }
+            debug_assert!(expected_return_type != Type::Unknown);
+            debug_assert!(location != Location::anonymous());
+
+            println!("{:?}", expected_return_type);
+            if let Some(ret_expr) = &mut self.return_value {
+                if expected_return_type == Type::None {
+                    // Found expression but expected none, makes no sense
+                    todo!()
+                }
+                let expr_type = ret_expr.type_check(checker)?;
+                if expr_type == Type::Unknown {
+                    // we have something like `return 5;`, where we couldn't determine the type
+                    // so we now have to `infer` the type, and set it accordingly
+                    todo!()
+                } else if expr_type != expected_return_type {
+                    // Signature expects `expected_return_type`, `return {expr}` has other type for expr
+                    Err(format!(
+                        "{}: {:?}: Function is declared to return `{}`, found `{}`.\n{}: {:?}: Function declared to return `{}` here.",
+                        NOTE_STR,
+                        self.location,
+                        expected_return_type,
+                        expr_type,
+                        NOTE_STR,
+                        location,
+                        expr_type
+                    ))
+                } else {
+                    // Everything is fine, correct return type was provided
+                    Ok(expr_type)
+                }
+            } else {
+                todo!()
+            }
+        }
+    }
+    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
         todo!()
     }
 }
