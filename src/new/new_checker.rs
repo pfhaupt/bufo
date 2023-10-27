@@ -949,7 +949,15 @@ impl Typecheckable for nodes::ExpressionLiteralNode {
         Ok(self.typ.clone())
     }
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
-        debug_assert!(self.typ == Type::Unknown);
+        if self.typ != Type::Unknown && self.typ != *typ {
+            return Err(format!(
+                "{}: {:?}: Type Mismatch! Expected {}, found {}.",
+                ERR_STR,
+                self.location,
+                typ,
+                self.typ
+            ));
+        }
         if let Type::Arr(_, _) = typ {
             // FIXME: How the heck do I deal with this error?
             // NOTE: We wanted to infer an array to a literal
@@ -1016,7 +1024,10 @@ impl Typecheckable for nodes::ExpressionBinaryNode {
         }
     }
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
-        todo!()
+        self.lhs.type_check_with_type(checker, typ)?;
+        self.rhs.type_check_with_type(checker, typ)?;
+        self.typ = typ.clone();
+        Ok(())
     }
 }
 impl Typecheckable for nodes::ExpressionCallNode {
