@@ -758,6 +758,51 @@ impl Typecheckable for nodes::ArgumentNode {
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
         todo!()
     }
+    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
+        todo!()
+    }
+}
+impl Typecheckable for nodes::Expression {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+        match self {
+            Self::Name(name_node) => name_node.type_check(checker),
+            Self::Binary(binary_expr) => binary_expr.type_check(checker),
+            Self::Identifier(ident_expr) => ident_expr.type_check(checker),
+            Self::FunctionCall(func_call) => func_call.type_check(checker),
+            Self::ConstructorCall(cons_call) => cons_call.type_check(checker),
+            Self::BuiltIn(built_in) => built_in.type_check(checker),
+            Self::ArrayAccess(access) => access.type_check(checker),
+            Self::ArrayLiteral(literal) => literal.type_check(checker),
+            Self::FieldAccess(access) => access.type_check(checker),
+            Self::Literal(literal) => literal.type_check(checker),
+            Self::None => unreachable!()
+        }
+    }
+    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
+        match self {
+            Self::Name(name_node) => name_node.type_check_with_type(checker, typ),
+            Self::Binary(binary_expr) => binary_expr.type_check_with_type(checker, typ),
+            Self::Identifier(ident_expr) => ident_expr.type_check_with_type(checker, typ),
+            Self::FunctionCall(func_call) => func_call.type_check_with_type(checker, typ),
+            Self::ConstructorCall(cons_call) => cons_call.type_check_with_type(checker, typ),
+            Self::BuiltIn(built_in) => built_in.type_check_with_type(checker, typ),
+            Self::ArrayAccess(access) => access.type_check_with_type(checker, typ),
+            Self::ArrayLiteral(literal) => literal.type_check_with_type(checker, typ),
+            Self::FieldAccess(access) => access.type_check_with_type(checker, typ),
+            Self::Literal(literal) => literal.type_check_with_type(checker, typ),
+            Self::None => unreachable!()
+        }
+    }
+}
+impl Typecheckable for nodes::ExpressionIdentifierNode {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+        let typ = self.expression.type_check(checker)?;
+        self.typ = typ.clone();
+        Ok(typ)
+    }
+    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
+        todo!()
+    }
 }
 impl Typecheckable for nodes::ExpressionArrayLiteralNode {
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
@@ -780,7 +825,9 @@ impl Typecheckable for nodes::ExpressionLiteralNode {
         Ok(self.typ.clone())
     }
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
-        todo!()
+        debug_assert!(self.typ == Type::Unknown);
+        self.typ = typ.clone();
+        Ok(())
     }
 }
 impl Typecheckable for nodes::ExpressionBinaryNode {
@@ -796,14 +843,146 @@ impl Typecheckable for nodes::ExpressionCallNode {
         println!("{:#?}", self);
         todo!()
     }
-}
-impl Typecheckable for nodes::ExpressionFieldAccessNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
         todo!()
     }
 }
+impl Typecheckable for nodes::ExpressionConstructorNode {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+        debug_assert!(!checker.current_function.is_empty());
+        if !checker.known_classes.contains_key(&self.class_name) {
+            return Err(format!(
+                "{}: {:?}: Call to constructor of unknown class `{}`.\n{}: Capitalized function calls are always assumed to be constructor calls.",
+                ERR_STR,
+                self.location,
+                self.class_name,
+                NOTE_STR
+            ))
+        }
+        debug_assert!(checker.known_classes.contains_key(&self.class_name));
+        Ok(Type::Class(self.class_name.clone()))
+    }
+    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
+        todo!()
+    }
+}
+impl Typecheckable for nodes::ExpressionFieldAccessNode {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+        debug_assert!(!checker.current_function.is_empty());
+        match checker.get_variable(&self.name) {
+            Some(var) => {
+                if !var.is_class_instance() {
+                    return Err(format!(
+                        "{}: {:?}: Variable `{}` is not a class instance, it has no fields.",
+                        ERR_STR,
+                        self.location,
+                        self.name
+                    ));
+                }
+                let typ = self.type_check_field(checker, var)?;
+                self.typ = typ.clone();
+                Ok(typ)
+            }
+            None => {
+                Err(format!(
+                    "{}: {:?}: Unknown variable `{}`.",
+                    ERR_STR,
+                    self.location,
+                    self.name
+                ))
+            }
+        }
+    }
+    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
+        todo!()
+    }
+}
+impl nodes::ExpressionFieldAccessNode {
+    fn type_check_field(&mut self, checker: &mut TypeChecker, var: Variable) -> Result<Type, String> {
+        match &mut (*self.field.expression) {
+            nodes::Expression::FieldAccess(field_access) => {
+                /* 
+                get type of current variable
+                get fields of current variable, if its class (if not, error)
+                check if field_access.name is field (if not, error)
+                create temporary variable with name field_access.name and type field.typ
+                recursively call type_check_field
+                 */
+                let typ = var.typ;
+                match typ {
+                    Type::Class(class_name) => {
+                        let Some(class) = checker.known_classes.get(&class_name) else {
+                            // NOTE: Actually, I think this might be unreachable...
+                            todo!() // FIXME: Not a known class
+                        };
+                        let Some(field) = class.get_field(&field_access.name) else {
+                            return Err(format!(
+                                "{}: {:?}: Class `{}` has no field `{}`.\n{}: {:?}: Class declared here.",
+                                ERR_STR,
+                                field_access.location,
+                                class.name,
+                                field_access.name,
+                                NOTE_STR,
+                                class.location
+                            ));
+                        };
+                        let var = Variable {
+                            name: field_access.name.clone(),
+                            location: field.0,
+                            typ: field.1
+                        };
+                        let typ = field_access.type_check_field(checker, var.clone())?;
+                        // FIXME: var.typ does not sound logical here, but it works for now
+                        field_access.typ = var.typ.clone();
+                        self.field.typ = var.typ.clone();
+                        Ok(typ)
+                    }
+                    // NOTE: I think this might also be unreachable
+                    _ => todo!() // FIXME: Not a class, doesnt have fields
+                }
+            },
+            nodes::Expression::Name(name_node) => {
+                let class_name = var.get_class_name();
+                match checker.known_classes.get(&class_name) {
+                    Some(class) => {
+                        match class.get_field(&name_node.name) {
+                            Some(field) => {
+                                name_node.typ = field.1.clone();
+                                self.field.typ = field.1.clone();
+                                Ok(field.1)
+                            },
+                            None => Err(format!(
+                                "{}: {:?}: Identifier `{}` has no field `{}`.",
+                                ERR_STR,
+                                self.location,
+                                self.name,
+                                name_node.name
+                            ))
+                        }
+                    },
+                    None => todo!()
+                }
+            },
+            e => todo!("{:#?}", e)
+        }
+    }
+}
 impl Typecheckable for nodes::NameNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+        match checker.get_variable(&self.name) {
+            Some(var) => {
+                self.typ = var.typ.clone();
+                Ok(var.typ)
+            },
+            None => Err(format!(
+                "{}: {:?}: Unknown variable `{}`.",
+                ERR_STR,
+                self.location,
+                self.name
+            ))
+        }
+    }
+    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
         todo!()
     }
 }
