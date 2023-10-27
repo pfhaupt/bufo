@@ -5,7 +5,7 @@ use super::nodes;
 
 const BUILT_IN_FEATURES: [&str; 1] = ["new"];
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Parameter {
     name: String,
     location: Location,
@@ -815,10 +815,10 @@ impl Typecheckable for nodes::TypeNode {
 }
 impl Typecheckable for nodes::ArgumentNode {
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
-        todo!()
+        self.expression.type_check(checker)
     }
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
-        todo!()
+        self.expression.type_check_with_type(checker, typ)
     }
 }
 impl Typecheckable for nodes::Expression {
@@ -949,8 +949,66 @@ impl Typecheckable for nodes::ExpressionBinaryNode {
 }
 impl Typecheckable for nodes::ExpressionCallNode {
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
-        println!("{:#?}", self);
-        todo!()
+        let Some(function) = checker.known_functions.get(&self.function_name) else {
+            return Err(format!(
+                "{}: {:?}: Call to unknown function `{}`.",
+                ERR_STR,
+                self.location,
+                self.function_name
+            ));
+        };
+        let return_type = function.return_type.clone();
+        match self.arguments.len().cmp(&function.parameters.len()) {
+            std::cmp::Ordering::Less => {
+                return Err(format!(
+                    "{}: {:?}: Not enough arguments for call to function `{}`. Expected {} argument(s), found {}.\n{}: {:?}: Function declared here.",
+                    ERR_STR,
+                    self.location,
+                    self.function_name,
+                    function.parameters.len(),
+                    self.arguments.len(),
+                    NOTE_STR,
+                    function.location
+                ));
+            }
+            std::cmp::Ordering::Greater => {
+                return Err(format!(
+                    "{}: {:?}: Too manyarguments for call to function `{}`. Expected {} argument(s), found {}.\n{}: {:?}: Function declared here.",
+                    ERR_STR,
+                    self.location,
+                    self.function_name,
+                    function.parameters.len(),
+                    self.arguments.len(),
+                    NOTE_STR,
+                    function.location
+                ));
+            }
+            std::cmp::Ordering::Equal => ()
+        }
+        let params = function.parameters.clone();
+        for (arg, param) in self.arguments.iter_mut().zip(params) {
+            println!("{:#?}", arg);
+            println!("{:#?}", param);
+            let expected = param.typ;
+            let arg_type = arg.type_check(checker)?;
+            debug_assert!(arg_type != Type::None);
+            if arg_type == Type::Unknown {
+                // We need to `infer` the type again
+                arg.type_check_with_type(checker, &expected)?;
+            } else if arg_type != expected {
+                return Err(format!(
+                    "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{:?}`, got type `{:?}`.",
+                    ERR_STR,
+                    arg.location,
+                    expected,
+                    arg_type
+                ));
+            } else {
+                // Everything is cool
+            }
+        }
+        self.typ = return_type;
+        Ok(self.typ.clone())
     }
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
         todo!()
