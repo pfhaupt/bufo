@@ -645,7 +645,8 @@ impl Typecheckable for nodes::LetNode {
                 if expr_type == Type::Unknown {
                     // Couldnt determine type of expression
                     // We need to `infer` it
-                    todo!()
+                    self.expression.type_check_with_type(checker, expected_type)?;
+                    Ok(expr_type)
                 } else if expr_type != *expected_type {
                     Err(format!(
                         "{}: {:?}: Type Mismatch! Expected type `{:?}`, got type `{:?}`.",
