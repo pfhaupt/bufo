@@ -891,7 +891,43 @@ impl Typecheckable for nodes::ExpressionLiteralNode {
 }
 impl Typecheckable for nodes::ExpressionBinaryNode {
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
-        todo!()
+        let lhs_type = self.lhs.type_check(checker)?;
+        let rhs_type = self.rhs.type_check(checker)?;
+        println!("{:?} {:?}", lhs_type, rhs_type);
+        debug_assert!(lhs_type != Type::None);
+        debug_assert!(rhs_type != Type::None);
+        // FIXME: Make this easier
+        match (lhs_type, rhs_type) {
+            (Type::Unknown, Type::Unknown) => {
+                Ok(Type::Unknown)
+            }
+            (Type::Unknown, other) => {
+                self.lhs.type_check_with_type(checker, &other)?;
+                todo!();
+            }
+            (other, Type::Unknown) => {
+                self.rhs.type_check_with_type(checker, &other)?;
+                todo!()
+            }
+            (Type::Class(..), _) | (_, Type::Class(..))
+            | (Type::Arr(..), _) | (_, Type::Arr(..)) => {
+                todo!() // No operator overloading for classes and arrays yet
+            }
+            (lhs, rhs) => {
+                if lhs != rhs {
+                    // FIXME: Also store location of LHS and RHS for better error reporting
+                    return Err(format!(
+                        "{}: {:?}: Type Mismatch in binary expression. LHS has type `{:?}`, RHS has type `{:?}`.",
+                        ERR_STR,
+                        self.location,
+                        lhs,
+                        rhs
+                    ));
+                }
+                self.typ = lhs.clone();
+                Ok(lhs)
+            }
+        }
     }
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
         todo!()
