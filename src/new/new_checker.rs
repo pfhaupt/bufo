@@ -699,8 +699,40 @@ impl Typecheckable for nodes::IfNode {
 impl Typecheckable for nodes::ReturnNode {
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
         debug_assert!(!checker.current_function.is_empty());
+        // FIXME: Both branches share 80% same work, we can reduce code size and make this easier to read
         if checker.current_class.is_empty() {
-            todo!()
+            // We're returning from a normal function
+            let Some(function) = checker.known_functions.get(&checker.current_function) else { unreachable!() };
+            let expected_return_type = function.return_type.clone();
+            let location = function.location.clone();
+            debug_assert!(expected_return_type != Type::Unknown);
+
+            if let Some(ret_expr) = &mut self.return_value {
+                if expected_return_type == Type::None {
+                    todo!() // FIXME: Unexpected return value
+                }
+                let expr_type = ret_expr.type_check(checker)?;
+                if expr_type == Type::Unknown {
+                    todo!() // FIXME: `infer` type
+                } else if expr_type != expected_return_type {
+                    Err(format!(
+                        "{}: {:?}: Function is declared to return `{}`, found `{}`.\n{}: {:?}: Function declared to return `{}` here.",
+                        NOTE_STR,
+                        self.location,
+                        expected_return_type,
+                        expr_type,
+                        NOTE_STR,
+                        location,
+                        expr_type
+                    ))
+                } else {
+                    // Everything is fine, correct return type was provided
+                    Ok(expr_type)
+                }
+            } else {
+                // NOTE: This means no return value
+                todo!()
+            }
         } else {
             // We're returning from a method or feature
             let Some(class) = checker.known_classes.get(&checker.current_class) else { unreachable!() };
@@ -750,6 +782,7 @@ impl Typecheckable for nodes::ReturnNode {
                     Ok(expr_type)
                 }
             } else {
+                // NOTE: This means no return value
                 todo!()
             }
         }
