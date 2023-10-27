@@ -419,12 +419,12 @@ impl Typecheckable for nodes::ClassNode {
     }
 }
 impl Typecheckable for nodes::FieldNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
-        todo!()
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+        self.type_def.type_check(checker)
     }
 }
 impl Typecheckable for nodes::FieldAccess {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
         todo!()
     }
 }
@@ -474,7 +474,7 @@ impl Typecheckable for nodes::FeatureNode {
     }
 }
 impl Typecheckable for nodes::FunctionNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
         todo!()
     }
 }
@@ -523,8 +523,8 @@ impl Typecheckable for nodes::BlockNode {
     }
 }
 impl Typecheckable for nodes::ExpressionNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
-        todo!()
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+        self.expression.type_check(checker)
     }
 }
 impl Typecheckable for nodes::LetNode {
@@ -532,8 +532,8 @@ impl Typecheckable for nodes::LetNode {
         todo!()
     }
 }
-impl Typecheckable for nodes::AssignNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
+impl Typecheckable for nodes::LetNode {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
         todo!()
     }
 }
@@ -543,7 +543,7 @@ impl Typecheckable for nodes::ExpressionIdentifierNode {
     }
 }
 impl Typecheckable for nodes::IfNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
         todo!()
     }
 }
@@ -558,32 +558,33 @@ impl Typecheckable for nodes::TypeNode {
     }
 }
 impl Typecheckable for nodes::ArgumentNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
         todo!()
     }
 }
 impl Typecheckable for nodes::ExpressionArrayLiteralNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
         todo!()
     }
 }
 impl Typecheckable for nodes::ExpressionArrayAccessNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
         todo!()
     }
 }
 impl Typecheckable for nodes::ExpressionLiteralNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
         todo!()
     }
 }
 impl Typecheckable for nodes::ExpressionBinaryNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
         todo!()
     }
 }
 impl Typecheckable for nodes::ExpressionCallNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+        println!("{:#?}", self);
         todo!()
     }
 }
@@ -598,7 +599,7 @@ impl Typecheckable for nodes::NameNode {
     }
 }
 impl Typecheckable for nodes::ExpressionBuiltInNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<(), String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
         todo!()
     }
 }
