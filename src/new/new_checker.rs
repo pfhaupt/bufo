@@ -741,7 +741,6 @@ impl Typecheckable for nodes::ReturnNode {
             debug_assert!(expected_return_type != Type::Unknown);
             debug_assert!(location != Location::anonymous());
 
-            println!("{:?}", expected_return_type);
             if let Some(ret_expr) = &mut self.return_value {
                 if expected_return_type == Type::None {
                     // Found expression but expected none, makes no sense
@@ -897,7 +896,6 @@ impl Typecheckable for nodes::ExpressionArrayLiteralNode {
                     self.elements.len()
                 ));
             }
-            println!("{} {}", expected_count, self.elements.len());
             let sub_expected: Vec<_> = expected_size[1..].to_vec();
             let sub_type = if sub_expected.is_empty() {
                 // FIXME: This looks ugly
@@ -973,7 +971,6 @@ impl Typecheckable for nodes::ExpressionBinaryNode {
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
         let lhs_type = self.lhs.type_check(checker)?;
         let rhs_type = self.rhs.type_check(checker)?;
-        println!("{:?} {:?}", lhs_type, rhs_type);
         debug_assert!(lhs_type != Type::None);
         debug_assert!(rhs_type != Type::None);
         // FIXME: Make this easier
@@ -1056,8 +1053,6 @@ impl Typecheckable for nodes::ExpressionCallNode {
         }
         let params = function.parameters.clone();
         for (arg, param) in self.arguments.iter_mut().zip(params) {
-            println!("{:#?}", arg);
-            println!("{:#?}", param);
             let expected = param.typ;
             let arg_type = arg.type_check(checker)?;
             debug_assert!(arg_type != Type::None);
@@ -1140,8 +1135,6 @@ impl Typecheckable for nodes::ExpressionConstructorNode {
         }
         let params = constructor.parameters.clone();
         for (arg, param) in self.arguments.iter_mut().zip(params) {
-            println!("{:#?}", arg);
-            println!("{:#?}", param);
             let expected = param.typ;
             let arg_type = arg.type_check(checker)?;
             debug_assert!(arg_type != Type::None);
