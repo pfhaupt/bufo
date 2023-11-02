@@ -2,7 +2,7 @@ use crate::parser::Location;
 use crate::checker::Type;
 use crate::new::new_parser::Operation;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct FileNode {
     pub location: Location,
     pub filepath: String,
@@ -10,7 +10,7 @@ pub struct FileNode {
     pub classes: Vec<ClassNode>,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct ClassNode {
     pub location: Location,
     pub name: String,
@@ -20,14 +20,14 @@ pub struct ClassNode {
     pub has_constructor: bool,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct FieldNode {
     pub location: Location,
     pub name: String,
     pub type_def: TypeNode,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct FieldAccess {
     pub location: Location,
     pub name: String,
@@ -35,7 +35,7 @@ pub struct FieldAccess {
     pub typ: Type
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct FeatureNode {
     pub location: Location,
     pub class_name: String,
@@ -46,7 +46,7 @@ pub struct FeatureNode {
     pub is_constructor: bool
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct FunctionNode {
     pub location: Location,
     pub name: String,
@@ -55,7 +55,7 @@ pub struct FunctionNode {
     pub block: BlockNode
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct MethodNode {
     pub location: Location,
     pub class_name: String,
@@ -65,20 +65,20 @@ pub struct MethodNode {
     pub block: BlockNode
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct ReturnTypeNode {
     pub location: Location,
     pub typ: Type
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct ParameterNode {
     pub location: Location,
     pub name: String,
     pub typ: TypeNode
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct BlockNode {
     pub location: Location,
     pub statements: Vec<Statement>,
@@ -93,13 +93,13 @@ pub enum Statement {
     Return(ReturnNode)
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct ExpressionNode {
     pub location: Location,
     pub expression: Expression
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct LetNode {
     pub location: Location,
     pub name: String,
@@ -129,13 +129,13 @@ pub struct IfNode {
     pub else_branch: Option<BlockNode>,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct ReturnNode {
     pub location: Location,
     pub return_value: Option<ExpressionNode>,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct TypeNode {
     pub location: Location,
     pub typ: Type,
@@ -147,7 +147,7 @@ pub struct ArgumentNode {
     pub expression: ExpressionNode
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     // FIXME: What's the difference between Name and Identifier?
     Name(NameNode),
@@ -156,12 +156,12 @@ pub enum Expression {
     ArrayAccess(ExpressionArrayAccessNode),
     Literal(ExpressionLiteralNode),
     Binary(ExpressionBinaryNode),
+    Comparison(ExpressionComparisonNode),
     FieldAccess(ExpressionFieldAccessNode),
     // Parenthesis(ExpressionNode),
     FunctionCall(ExpressionCallNode),
     ConstructorCall(ExpressionConstructorNode),
     BuiltIn(ExpressionBuiltInNode),
-    #[default] None,
 }
 
 #[derive(Debug, Clone)]
@@ -187,6 +187,15 @@ pub struct ExpressionLiteralNode {
 
 #[derive(Debug, Clone)]
 pub struct ExpressionBinaryNode {
+    pub location: Location,
+    pub operation: Operation,
+    pub lhs: Box<Expression>,
+    pub rhs: Box<Expression>,
+    pub typ: Type
+}
+
+#[derive(Debug, Clone)]
+pub struct ExpressionComparisonNode {
     pub location: Location,
     pub operation: Operation,
     pub lhs: Box<Expression>,

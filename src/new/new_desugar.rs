@@ -70,7 +70,7 @@ impl Desugarable for nodes::FileNode {
         }
         for c in &mut self.classes {
             c.desugar(desugarer)?;
-            self.functions.append(&mut c.functions);
+            // self.functions.append(&mut c.methods);
         }
         Ok(())
     }
@@ -81,8 +81,8 @@ impl Desugarable for nodes::ClassNode {
         for f in &mut self.fields {
             f.desugar(desugarer)?;
         }
-        for f in &mut self.functions {
-            f.desugar(desugarer)?;
+        for f in &mut self.methods {
+            // f.desugar(desugarer)?;
         }
         for f in &mut self.features {
             f.desugar(desugarer)?;
@@ -304,6 +304,8 @@ impl Desugarable for nodes::Expression {
                 name.desugar(desugarer)?,
             Self::Binary(binary) => 
                 binary.desugar(desugarer)?,
+            Self::Comparison(comp) =>
+                comp.desugar(desugarer)?,
             Self::ArrayAccess(access) =>
                 access.desugar(desugarer)?,
             Self::ArrayLiteral(literal) =>
@@ -314,13 +316,19 @@ impl Desugarable for nodes::Expression {
                 field.desugar(desugarer)?,
             Self::FunctionCall(fn_call) =>
                 fn_call.desugar(desugarer)?,
+            Self::ConstructorCall(cons_call) =>
+                cons_call.desugar(desugarer)?,
             Self::Identifier(identifier) =>
                 identifier.desugar(desugarer)?,
             Self::Literal(literal) =>
                 literal.desugar(desugarer)?,
-            Self::None => unreachable!()
         }
         Ok(())
+    }
+}
+impl Desugarable for nodes::ExpressionComparisonNode {
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
+        todo!()
     }
 }
 impl Desugarable for nodes::ExpressionArrayLiteralNode {
@@ -358,6 +366,11 @@ impl Desugarable for nodes::ExpressionCallNode {
             a.desugar(desugarer)?;
         }
         Ok(())
+    }
+}
+impl Desugarable for nodes::ExpressionConstructorNode {
+    fn desugar(&mut self, desugarer: &mut Desugarer) -> Result<(), String> where Self: Sized {
+        todo!()
     }
 }
 impl Desugarable for nodes::ExpressionFieldAccessNode {

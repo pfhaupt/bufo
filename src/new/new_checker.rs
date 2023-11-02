@@ -822,6 +822,7 @@ impl Typecheckable for nodes::Expression {
         match self {
             Self::Name(name_node) => name_node.type_check(checker),
             Self::Binary(binary_expr) => binary_expr.type_check(checker),
+            Self::Comparison(comp_expr) => comp_expr.type_check(checker),
             Self::Identifier(ident_expr) => ident_expr.type_check(checker),
             Self::FunctionCall(func_call) => func_call.type_check(checker),
             Self::ConstructorCall(cons_call) => cons_call.type_check(checker),
@@ -830,13 +831,13 @@ impl Typecheckable for nodes::Expression {
             Self::ArrayLiteral(literal) => literal.type_check(checker),
             Self::FieldAccess(access) => access.type_check(checker),
             Self::Literal(literal) => literal.type_check(checker),
-            Self::None => unreachable!()
         }
     }
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
         match self {
             Self::Name(name_node) => name_node.type_check_with_type(checker, typ),
             Self::Binary(binary_expr) => binary_expr.type_check_with_type(checker, typ),
+            Self::Comparison(comp_expr) => comp_expr.type_check_with_type(checker, typ),
             Self::Identifier(ident_expr) => ident_expr.type_check_with_type(checker, typ),
             Self::FunctionCall(func_call) => func_call.type_check_with_type(checker, typ),
             Self::ConstructorCall(cons_call) => cons_call.type_check_with_type(checker, typ),
@@ -845,8 +846,15 @@ impl Typecheckable for nodes::Expression {
             Self::ArrayLiteral(literal) => literal.type_check_with_type(checker, typ),
             Self::FieldAccess(access) => access.type_check_with_type(checker, typ),
             Self::Literal(literal) => literal.type_check_with_type(checker, typ),
-            Self::None => unreachable!()
         }
+    }
+}
+impl Typecheckable for nodes::ExpressionComparisonNode {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+        todo!()
+    }
+    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
+        todo!()
     }
 }
 impl Typecheckable for nodes::ExpressionIdentifierNode {
