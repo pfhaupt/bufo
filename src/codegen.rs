@@ -7,8 +7,7 @@ use std::process::Command;
 
 use crate::checker::{Type, BUILT_IN_VARS};
 use crate::flags::FILE_EXT;
-use crate::lexer::{Location, TokenType};
-use crate::parser::{Tree, TreeType};
+use crate::parser::{Tree, TreeType, Location, TokenType};
 
 pub const RUNTIME_ERR: &str = "\x1b[91mRuntime Exception\x1b[0m";
 pub const ERR_STR: &str = "\x1b[91merror\x1b[0m";
@@ -1941,7 +1940,7 @@ exit:
         push_asm("segment .data");
         push_asm("STACK_OVERFLOW_CODE dq 2");
         push_asm("FUNCTION_COUNTER dq 0");
-        push_asm("FUNCTION_LIMIT dq 10");
+        push_asm("FUNCTION_LIMIT dq 4096");
         push_asm("");
         push_asm("segment .bss");
 

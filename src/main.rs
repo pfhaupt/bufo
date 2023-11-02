@@ -3,9 +3,9 @@
 mod checker;
 mod codegen;
 mod flags;
-mod lexer;
 mod parser;
 mod desugar;
+mod new;
 
 use std::time::Instant;
 
@@ -14,12 +14,18 @@ use flags::RUN_KEY;
 use crate::checker::TypeChecker;
 use crate::codegen::Generator;
 use crate::flags::{Flag, FlagParser, DEBUG_KEY, INPUT_KEY};
-use crate::lexer::Lexer;
 use crate::parser::{Parser, Tree};
 use crate::desugar::Desugarer;
 
+use crate::new::compiler::main as other_main;
+fn main() {
+    // if let Err(e) = compile() {
+    //     println!("{}", e);
+    // }
+    other_main();
+}
+
 pub struct Compiler {
-    lexer: Lexer,
     parser: Parser,
     desugarer: Desugarer,
     checker: TypeChecker,
@@ -31,8 +37,7 @@ pub struct Compiler {
 impl Compiler {
     pub fn new(path: &String, debug: bool, run: bool) -> Result<Self, String> {
         Ok(Self {
-            lexer: Lexer::new().origin(path)?.debug(debug),
-            parser: Parser::new().origin(path).debug(debug),
+            parser: Parser::new().origin(path)?.debug(debug),
             desugarer: Desugarer::new(),
             checker: TypeChecker::new(debug),
             codegen: Generator::new(debug),
@@ -42,13 +47,9 @@ impl Compiler {
     }
 
     pub fn parse_snippet(origin: &String, snippet: &String) -> Result<Tree, String> {
-        let mut lexer = Lexer::new();
-        lexer.set_source(snippet);
-        lexer.set_origin_unchecked(origin);
-        lexer.tokenize()?;
-
-        let mut parser = Parser::new().origin(origin);
-        parser.set_tokens(lexer.get_tokens());
+        let mut parser = Parser::new();
+        parser.set_origin_unchecked(origin);
+        parser.set_source(snippet);
         let parsed_ast = parser.parse_snippet()?;
 
         let mut desugarer = Desugarer::new();
@@ -57,18 +58,11 @@ impl Compiler {
 
     pub fn run_everything(&mut self) -> Result<(), String> {
         let now = Instant::now();
-        self.lexer.tokenize()?;
-        let tokens = self.lexer.get_tokens();
-        if self.debug {
-            println!("Lexing took {:?}", now.elapsed());
-        }
-        
-        let now = Instant::now();
-        self.parser.set_tokens(tokens);
-        let parsed_ast = self.parser.parse_file()?;
+        let parsed_ast = self.parser.parse_file();
         if self.debug {
             println!("Parsing took {:?}", now.elapsed());
         }
+        let parsed_ast = parsed_ast?;
         
         let now = Instant::now();
         let mut desugared_ast = self.desugarer.desugar_tree(parsed_ast)?;
@@ -133,12 +127,6 @@ fn compile() -> Result<(), String> {
     Ok(())
 }
 
-fn main() {
-    if let Err(e) = compile() {
-        println!("{}", e);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use lazy_static::lazy_static;
@@ -195,7 +183,8 @@ mod tests {
     }
 
     mod syntax_tests {
-        use crate::{Compiler, codegen::ERR_STR};
+        use crate::new::{compiler::Compiler};
+        use crate::codegen::ERR_STR;
 
         macro_rules! generate_failing_test {
             ($name:ident, $($err:expr),*) => {
@@ -213,20 +202,20 @@ mod tests {
         generate_failing_test!(reserved_keyword_as_expr, "found ClassKeyword");
         generate_failing_test!(invalid_variable_name_start_with_digit, "Expected Identifier", "found IntLiteral");
         generate_failing_test!(invalid_variable_name_contains_special, "Unexpected Symbol");
-        generate_failing_test!(missing_arguments_in_func_call, "Too few arguments");
+        generate_failing_test!(missing_arguments_in_func_call, "Not enough arguments");
         generate_failing_test!(extra_arguments_in_func_call, "Too many arguments");
         generate_failing_test!(operator_without_operands, "Expected Expr");
         generate_failing_test!(too_many_literals, "found IntLiteral");
-        generate_failing_test!(if_missing_body, "Expected `{`");
+        generate_failing_test!(if_missing_body, "Expected OpenCurly");
         generate_failing_test!(if_missing_condition, "Expected Expr");
         generate_failing_test!(if_missing_brackets_condition, "Expected OpenRound", "found Identifier");
         generate_failing_test!(unexpected_symbol, "Unexpected Symbol `#`");
-        generate_failing_test!(char_literal_more_than_one_chars, "Char Literal", "single char", "got `hello`");
+        generate_failing_test!(char_literal_more_than_one_chars, "Char Literal", "single char", "found 'hello'");
         generate_failing_test!(brackets_in_expressions, "Expected ClosingRound");
     }
 
     mod semantic_tests {
-        use crate::{Compiler, codegen::{ERR_STR, ExitCode}};
+        use crate::{new::compiler::Compiler, codegen::{ERR_STR, ExitCode}};
         use crate::tests::ALWAYS_FAILS;
 
         macro_rules! generate_failing_test {
@@ -239,34 +228,35 @@ mod tests {
         }
 
         generate_failing_test!(undeclared_variable, "Undeclared variable");
-        generate_failing_test!(unknown_type_declaration, "Attempted to assign");
-        generate_failing_test!(type_mismatch_in_binary_op, "Type Mismatch!", "Left hand side", "right side", "U32");
-        generate_failing_test!(type_mismatch_in_comparison, "Type Mismatch!", "Left hand side", "right side", "I32");
+        generate_failing_test!(unknown_type_declaration, "Unknown Type", "`random`");
+        generate_failing_test!(type_mismatch_in_binary_op, "Type Mismatch", "LHS", "RHS", "U32");
+        generate_failing_test!(type_mismatch_in_comparison, "Type Mismatch", "LHS", "RHS", "I32");
         generate_failing_test!(type_mismatch_in_fn_args, "Type Mismatch", "Parameter", "declared here", "I32", "Expected type");
-        generate_failing_test!(type_mismatch_in_assignment, "Type Mismatch", "Expected type", "U64", "got", "I32");
+        generate_failing_test!(type_mismatch_in_assignment, "Type Mismatch", "Expected type", "U64", "found", "I32");
         generate_failing_test!(function_redeclaration, "Function redeclaration", "Function already declared here");
-        generate_failing_test!(wrong_function_argument_types, "Type Mismatch!", "Error when evaluating type of argument.");
-        generate_failing_test!(wrong_function_return_type, "Type Mismatch!", "Function is declared to return `I32`");
-        generate_failing_test!(calling_undeclared_function, "Unknown function", "testfunction");
+        generate_failing_test!(wrong_function_argument_types, "Type Mismatch", "in argument evaluation");
+        generate_failing_test!(wrong_function_return_type, "Type Mismatch", "Function is declared to return `I32`");
+        generate_failing_test!(calling_undeclared_function, "unknown function", "testfunction");
         #[test] #[cfg_attr(not(feature = "test_exec"), ignore = "Pass the `text_exec` feature-flag to run this test")] fn array_out_of_bounds() {
             // TODO: Automatically clean up after running code
             test!("tests/semantics/array_out_of_bounds.bu", false, true, true, [ERR_STR, "Code execution failed", format!("{:X}", (ExitCode::OobAccess as usize)).as_str()])
         }
-        generate_failing_test!(return_mismatch, "Type Mismatch!", "Function", "declared to return", "got");
+        generate_failing_test!(return_mismatch, "Type Mismatch", "Function", "declared to return", "found");
         #[test] #[cfg_attr(not(feature = "test_exec"), ignore = "Pass the `text_exec` feature-flag to run this test")] fn variable_shadowing() {
             // TODO: Automatically clean up after running code
             test!("tests/semantics/variable_shadowing.bu", false, true, true, [ERR_STR, "Code execution failed", format!("{:X}", 42069).as_str()])
         }
         generate_failing_test!(using_out_of_scope_variable, "Undeclared variable");
 
-        generate_failing_test!(variable_redeclaration, "Variable redeclaration", "Variable already declared here");
-        generate_failing_test!(class_field_redeclaration, "Class Field redeclaration", "Field", "already declared here");
+        generate_failing_test!(variable_redeclaration, "Variable redeclaration", "already declared here");
+        generate_failing_test!(class_field_redeclaration, "Field redeclaration", "Field", "already declared here");
         generate_failing_test!(class_no_such_field, "has no field", "Class declared here");
-        generate_failing_test!(class_nested_field_wrong_type, "Type Mismatch!", "Expected type", "got type");
-        #[test] #[ignore = "Error Messages for missing feats are still showing as missing [desugared] functions"] fn class_no_feat_new() {
-            // TODO: Implement generate_failing_test for this once error messages are better
-        }
-        generate_failing_test!(incompatible_operands, "Binary Operation", "not defined for type", "Class");
+        generate_failing_test!(class_nested_field_wrong_type, "Type Mismatch", "Expected type", "found type");
+        // #[test] #[ignore = "Error Messages for missing feats are still showing as missing [desugared] functions"] fn class_no_feat_new() {
+        //     // TODO: Implement generate_failing_test for this once error messages are better
+        // }
+        generate_failing_test!(class_no_feat_new, "no constructor", "feature `new`", "in class");
+        generate_failing_test!(incompatible_operands, "Binary Operation", "not defined", "class", "context");
 
         #[test] #[ignore = "NullPointer are still not checked at runtime (very bad)"] fn null_pointer_exception() {
             // TODO: Implement generate_failing_test for this once Nullpointer are handled at runtime
