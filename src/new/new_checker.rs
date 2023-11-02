@@ -677,7 +677,17 @@ impl Typecheckable for nodes::AssignNode {
 }
 impl Typecheckable for nodes::IfNode {
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
-        todo!()
+        let condition_type = self.condition.type_check(checker)?;
+        if condition_type != Type::Bool {
+            todo!();
+        }
+        let if_type = self.if_branch.type_check(checker)?;
+        debug_assert!(if_type == Type::None);
+        if let Some(else_branch) = &mut self.else_branch {
+            let else_type = else_branch.type_check(checker)?;
+            debug_assert!(else_type == Type::None);
+        }
+        Ok(Type::None)
     }
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
         todo!()
