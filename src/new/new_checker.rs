@@ -1040,6 +1040,33 @@ impl Typecheckable for nodes::ExpressionBinaryNode {
         debug_assert!(rhs_type != Type::None);
         // FIXME: Make this easier
         match (&lhs_type, &rhs_type) {
+            // FIXME: Show which side is Class/Array/Bool
+            (Type::Class(..), _) | (_, Type::Class(..)) => {
+                // NOTE: Modify this once more features (ahem, operator overload) exist
+                return Err(format!(
+                    "{}: {:?}: Binary Operation `{}` is not defined in the context of classes.",
+                    ERR_STR,
+                    self.location,
+                    self.operation
+                ))
+            }
+            (Type::Arr(..), _) | (_, Type::Arr(..)) => {
+                // NOTE: Modify this once more features (ahem, operator overload) exist
+                return Err(format!(
+                    "{}: {:?}: Binary Operation `{}` is not defined in the context of arrays.",
+                    ERR_STR,
+                    self.location,
+                    self.operation
+                ))
+            }
+            (Type::Bool, _) | (_, Type::Bool) => {
+                return Err(format!(
+                    "{}: {:?}: Binary Operation `{}` is not defined in the context of booleans.",
+                    ERR_STR,
+                    self.location,
+                    self.operation
+                ))
+            }
             (Type::Unknown, Type::Unknown) => {
                 Ok(Type::Unknown)
             }
@@ -1050,18 +1077,6 @@ impl Typecheckable for nodes::ExpressionBinaryNode {
             (other, Type::Unknown) => {
                 self.rhs.type_check_with_type(checker, other)?;
                 Ok(other.clone())
-            }
-            (Type::Class(..), _) | (_, Type::Class(..))
-            | (Type::Arr(..), _) | (_, Type::Arr(..)) => {
-                // NOTE: Modify this once more features (ahem, operator overload) exist
-                return Err(format!(
-                    "{}: {:?}: Binary Operation `{}` is not defined for types `{:?}` and `{:?}`.",
-                    ERR_STR,
-                    self.location,
-                    self.operation,
-                    lhs_type,
-                    rhs_type
-                ))
             }
             (lhs, rhs) => {
                 if lhs != rhs {
