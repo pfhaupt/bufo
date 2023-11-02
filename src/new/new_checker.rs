@@ -21,49 +21,6 @@ pub struct Method {
 }
 
 impl Method {
-    fn add_this_param(&mut self, class_type: &Type) -> Result<(), String> {
-        // FIXME: Should this be part of the Parser?
-        
-        // FIXME: Calculate correct location for this param
-        if self.parameters.len() == 0 {
-            self.parameters.push(Parameter {
-                name: String::from("this"),
-                location: self.location.clone(),
-                typ: class_type.clone()
-            });
-        } else {
-            let first_param = &mut self.parameters[0];
-            if first_param.name == String::from("this") {
-                if first_param.typ != *class_type {
-                    return Err(format!(
-                        "{}: {:?}: Unexpected Type for parameter `this`.\n{}: `this` is an implicit parameter. Specifying it is not necessary.",
-                        ERR_STR,
-                        first_param.location,
-                        NOTE_STR
-                    ));
-                }
-                println!("{}: {:?}: Use of implicit parameter `this`.", WARN_STR, first_param.location);
-                return Ok(());
-            } else {
-                for param in &self.parameters {
-                    if param.name == String::from("this") {
-                        return Err(format!(
-                            "{}: {:?}: Unexpected Parameter. `this` is either implicit or the first parameter.",
-                            ERR_STR,
-                            param.location
-                        ))
-                    }
-                }
-            }
-            // We have >0 parameters, none of them are named `this`
-            self.parameters.insert(0, Parameter {
-                name: String::from("this"),
-                location: self.location.clone(),
-                typ: class_type.clone()
-            });
-        }
-        Ok(())
-    }
 }
 
 
@@ -230,14 +187,6 @@ impl Class {
         unreachable!()
     }
 
-    fn add_this_param(&mut self) -> Result<(), String> {
-        // FIXME: Also add this parameter to features, once we have more of them
-        for function in &mut self.known_methods {
-            function.1.add_this_param(&self.class_type)?;
-        }
-        Ok(())
-    }
-
     fn get_field(&self, name: &String) -> Option<(Location, Type)> {
         self.fields.get(name).cloned()
     }
@@ -358,7 +307,6 @@ impl TypeChecker {
                     if class.has_constructor {
                         class.resolve_new_return_type()?;
                     }
-                    class.add_this_param()?;
                     self.known_classes.insert(c.name.clone(), class);
                 }
             }
@@ -464,14 +412,26 @@ impl Typecheckable for nodes::FeatureNode {
         debug_assert!(checker.known_variables.is_empty());
         debug_assert!(checker.known_classes.contains_key(&self.class_name));
 
+        for param in &mut self.parameters {
+            param.type_check(checker)?;
+        }
+
         checker.current_function = self.name.clone();
         let Some(class_info) = checker.known_classes.get(&self.class_name) else { unreachable!() };
         // FIXME: Is the else actually unreachable for the feature?
         let Some(feature) = class_info.known_features.get(&self.name) else { unreachable!() };
         
         // Parameters are now known variables
-        // FIXME: Parameter modification in fill_lookup should modify the AST too
         let mut parameters = HashMap::new();
+        // FIXME: Handle this better
+        if feature.name == String::from("new") {
+            let this_param = Variable::new(
+                String::from("this"),
+                self.location.clone(),
+                Type::Class(self.class_name.clone())
+            );
+            parameters.insert(String::from("this"), this_param);
+        }
         for param in &feature.parameters {
             let var = Variable::new(
                 param.name.clone(),
@@ -479,22 +439,18 @@ impl Typecheckable for nodes::FeatureNode {
                 param.typ.clone()
             );
             match parameters.insert(param.name.clone(), var) {
-                Some(param) => todo!(),
+                Some(param) => {
+                    if param.name == String::from("this") {
+                        return Err(format!(
+                            "{}: {:?}: Use of implicit parameter `this`.", ERR_STR, param.location
+                        ))
+                    }
+                    todo!()
+                },
                 None => ()
             }
         }
         checker.known_variables.push_back(parameters);
-
-        // FIXME: Handle this better
-        if feature.name == String::from("new") {
-            let mut this_var = HashMap::new();
-            this_var.insert(String::from("this"), Variable {
-                name: String::from("this"),
-                location: Location::anonymous(),
-                typ: Type::Class(self.class_name.clone())
-            });
-            checker.known_variables.push_back(this_var);
-        }
         
         self.block.type_check(checker)?;
 
@@ -512,6 +468,10 @@ impl Typecheckable for nodes::FunctionNode {
         debug_assert!(checker.current_class.is_empty());
         debug_assert!(checker.known_variables.is_empty());
         debug_assert!(checker.known_functions.contains_key(&self.name));
+
+        for param in &mut self.parameters {
+            param.type_check(checker)?;
+        }
 
         checker.current_function = self.name.clone();
         let Some(function) = checker.known_functions.get(&self.name) else { unreachable!() };
@@ -546,14 +506,25 @@ impl Typecheckable for nodes::MethodNode {
         debug_assert!(checker.known_variables.is_empty());
         debug_assert!(checker.known_classes.contains_key(&self.class_name));
 
+        for param in &mut self.parameters {
+            param.type_check(checker)?;
+        }
         checker.current_function = self.name.clone();
         let Some(class_info) = checker.known_classes.get(&self.class_name) else { unreachable!() };
         // FIXME: Is the else actually unreachable for the method?
         let Some(method) = class_info.known_methods.get(&self.name) else { unreachable!() };
-        
+
         // Parameters are now known variables
-        // FIXME: Parameter modification in fill_lookup should modify the AST too
         let mut parameters = HashMap::new();
+
+        // NOTE: Once we have static methods, this should not be an unconditional insertion
+        let this_param = Variable::new(
+            String::from("this"),
+            self.location.clone(),
+            Type::Class(self.class_name.clone())
+        );
+        parameters.insert(String::from("this"), this_param);
+
         for param in &method.parameters {
             let var = Variable::new(
                 param.name.clone(),
@@ -561,7 +532,14 @@ impl Typecheckable for nodes::MethodNode {
                 param.typ.clone()
             );
             match parameters.insert(param.name.clone(), var) {
-                Some(param) => todo!(),
+                Some(param) => {
+                    if param.name == String::from("this") {
+                        return Err(format!(
+                            "{}: {:?}: Use of implicit parameter `this`.", ERR_STR, param.location
+                        ))
+                    }
+                    todo!()
+                },
                 None => ()
             }
         }
@@ -579,7 +557,7 @@ impl Typecheckable for nodes::MethodNode {
 }
 impl Typecheckable for nodes::ParameterNode {
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
-        todo!()
+        self.typ.type_check(checker)
     }
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
         todo!()
