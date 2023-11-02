@@ -124,7 +124,7 @@ pub struct ExpressionIdentifierNode {
 #[derive(Debug, Clone)]
 pub struct IfNode {
     pub location: Location,
-    pub condition: ExpressionBinaryNode,
+    pub condition: ExpressionComparisonNode,
     pub if_branch: BlockNode,
     pub else_branch: Option<BlockNode>,
 }

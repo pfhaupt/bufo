@@ -851,7 +851,54 @@ impl Typecheckable for nodes::Expression {
 }
 impl Typecheckable for nodes::ExpressionComparisonNode {
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
-        todo!()
+        debug_assert!(self.typ == Type::Bool);
+        let lhs_type = self.lhs.type_check(checker)?;
+        let rhs_type = self.rhs.type_check(checker)?;
+        match (&lhs_type, &rhs_type) {
+            // FIXME: Show which side is Class/Array/Booleans
+            (Type::Class(..), _) | (_, Type::Class(..)) => {
+                // NOTE: Modify this once more features (ahem, operator overload) exist
+                return Err(format!(
+                    "{}: {:?}: Binary Operation `{}` is not defined in the context of classes.",
+                    ERR_STR,
+                    self.location,
+                    self.operation
+                ))
+            }
+            (Type::Arr(..), _) | (_, Type::Arr(..)) => {
+                // NOTE: Modify this once more features (ahem, operator overload) exist
+                return Err(format!(
+                    "{}: {:?}: Binary Operation `{}` is not defined in the context of arrays.",
+                    ERR_STR,
+                    self.location,
+                    self.operation
+                ))
+            }
+            (Type::Bool, _) | (_, Type::Bool) => {
+                return Err(format!(
+                    "{}: {:?}: Binary Operation `{}` is not defined in the context of booleans.",
+                    ERR_STR,
+                    self.location,
+                    self.operation
+                ))
+            }
+            (Type::Unknown, Type::Unknown) => (),
+            (Type::Unknown, other) => self.lhs.type_check_with_type(checker, other)?,
+            (other, Type::Unknown) => self.rhs.type_check_with_type(checker, other)?,
+            (lhs, rhs) => {
+                if lhs != rhs {
+                    // FIXME: Also store location of LHS and RHS for better error reporting
+                    return Err(format!(
+                        "{}: {:?}: Type Mismatch in comparison. LHS has type `{:?}`, RHS has type `{:?}`.",
+                        ERR_STR,
+                        self.location,
+                        lhs,
+                        rhs
+                    ));
+                }
+            }
+        }
+        Ok(Type::Bool)
     }
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
         todo!()

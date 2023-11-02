@@ -59,7 +59,7 @@ impl Token {
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Operation {
     PLUS,
     MINUS,
@@ -72,6 +72,15 @@ pub enum Operation {
     GT,
     GTE
 }
+
+const COMPARISONS: [Operation; 6] = [
+    Operation::EQ,
+    Operation::NEQ,
+    Operation::LT,
+    Operation::LTE,
+    Operation::GT,
+    Operation::GTE
+];
 
 impl Display for Operation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -890,7 +899,7 @@ impl Parsable for nodes::IfNode {
         let location = parser.current_location();
         parser.expect(TokenType::IfKeyword)?;
         parser.expect(TokenType::OpenRound)?;
-        let nodes::Expression::Binary(condition) = nodes::Expression::parse(parser)? else { todo!() };
+        let nodes::Expression::Comparison(condition) = nodes::Expression::parse(parser)? else { todo!() };
         parser.expect(TokenType::ClosingRound)?;
         let if_branch = nodes::BlockNode::parse(parser)?;
         let else_branch = if parser.eat(TokenType::ElseKeyword) {
@@ -1036,14 +1045,26 @@ impl nodes::Expression {
             if Self::right_binds_tighter(left, right) {
                 let token = parser.next()?;
                 let rhs = Self::parse_rec(parser, right)?;
-                lhs = nodes::Expression::Binary(
-                    nodes::ExpressionBinaryNode {
-                        location: token.location,
-                        operation: Operation::from(token.value),
-                        lhs: Box::new(lhs),
-                        rhs: Box::new(rhs),
-                        typ: Type::Unknown
-                    });
+                let operation = Operation::from(token.value);
+                lhs = if COMPARISONS.contains(&operation) {
+                    nodes::Expression::Comparison(
+                        nodes::ExpressionComparisonNode {
+                            location: token.location,
+                            operation,
+                            lhs: Box::new(lhs),
+                            rhs: Box::new(rhs),
+                            typ: Type::Bool
+                        })
+                } else {
+                    nodes::Expression::Binary(
+                        nodes::ExpressionBinaryNode {
+                            location: token.location,
+                            operation,
+                            lhs: Box::new(lhs),
+                            rhs: Box::new(rhs),
+                            typ: Type::Unknown
+                        })
+                    }
             } else {
                 break;
             }
