@@ -54,4 +54,9 @@ func main() {
     test.d = 10;
     idee.a = 12;
     let f: i64 = test.foo(5);
+    if (d == 1) {
+
+    } else {
+
+    }
 }

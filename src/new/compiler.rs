@@ -24,7 +24,7 @@ impl Compiler {
             parser: Parser::new().filepath(path)?.debug(debug),
             desugarer: Desugarer::new().debug(debug),
             checker: TypeChecker::new(),
-            codegen: Codegen::new(),
+            codegen: Codegen::new().debug(debug),
             debug,
             run
         })
@@ -51,12 +51,12 @@ impl Compiler {
         }
         println!("{:#?}", parsed_ast);
 
-        // let now = Instant::now();
-        // self.codegen.generate_code(checked_ast)?;
-        // if self.debug {
-        //     println!("Codegen took {:?}", now.elapsed());
-        // }
-        // // todo!();
+        let now = Instant::now();
+        self.codegen.generate_code(&parsed_ast)?;
+        if self.debug {
+            println!("Codegen took {:?}", now.elapsed());
+        }
+        // todo!();
         
         // let now = Instant::now();
         // self.codegen.compile()?;
