@@ -306,7 +306,7 @@ impl Parser {
                     println!("{}: {:?}: Escape sequences in Char Literals are not supported yet.", WARN_STR, loc);
                 }
                 if value.len() != 3 {
-                    return Err(format!("{}: {:?}: Char Literal is expected to be a single char, got {}.",
+                    return Err(format!("{}: {:?}: Char Literal is expected to be a single char, found {}.",
                         ERR_STR,
                         loc,
                         value,

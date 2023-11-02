@@ -635,7 +635,7 @@ impl Typecheckable for nodes::LetNode {
                     Ok(expr_type)
                 } else if expr_type != *expected_type {
                     Err(format!(
-                        "{}: {:?}: Type Mismatch! Expected type `{:?}`, got type `{:?}`.",
+                        "{}: {:?}: Type Mismatch! Expected type `{:?}`, found type `{:?}`.",
                         ERR_STR,
                         self.location,
                         expected_type,
@@ -661,7 +661,7 @@ impl Typecheckable for nodes::AssignNode {
             Ok(rhs_type)
         } else if rhs_type != expected_type {
             Err(format!(
-                "{}: {:?}: Type Mismatch! Expected type `{}`, got type `{}`.",
+                "{}: {:?}: Type Mismatch! Expected type `{}`, found type `{}`.",
                 ERR_STR,
                 self.expression.location,
                 expected_type,
@@ -930,7 +930,7 @@ impl Typecheckable for nodes::ExpressionArrayLiteralNode {
                 // Here we could say "Element 0 is u64, so we expect the rest to also be u64", for example
                 // And then point to element 0
                 return Err(format!(
-                    "{}: {:?}: Type Mismatch in Array Literal. Type of array is inferred to be `{:?}`, but got `{:?}`.",
+                    "{}: {:?}: Type Mismatch in Array Literal. Type of array is inferred to be `{:?}`, but found `{:?}`.",
                     ERR_STR,
                     self.location,
                     expected_type,
@@ -1149,7 +1149,7 @@ impl Typecheckable for nodes::ExpressionCallNode {
                 arg.type_check_with_type(checker, &expected)?;
             } else if arg_type != expected {
                 return Err(format!(
-                    "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{:?}`, got type `{:?}`.\n{}: {:?}: Parameter declared here.",
+                    "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{:?}`, found type `{:?}`.\n{}: {:?}: Parameter declared here.",
                     ERR_STR,
                     arg.location,
                     expected,
@@ -1233,7 +1233,7 @@ impl Typecheckable for nodes::ExpressionConstructorNode {
                 arg.type_check_with_type(checker, &expected)?;
             } else if arg_type != expected {
                 return Err(format!(
-                    "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{:?}`, got type `{:?}`.\n{}: {:?}: Parameter declared here.",
+                    "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{:?}`, found type `{:?}`.\n{}: {:?}: Parameter declared here.",
                     ERR_STR,
                     arg.location,
                     expected,
@@ -1395,7 +1395,7 @@ impl nodes::ExpressionFieldAccessNode {
                         arg.type_check_with_type(checker, &expected)?;
                     } else if arg_type != expected {
                         return Err(format!(
-                            "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{:?}`, got type `{:?}`.\n{}: {:?}: Parameter declared here.",
+                            "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{:?}`, found type `{:?}`.\n{}: {:?}: Parameter declared here.",
                             ERR_STR,
                             arg.location,
                             expected,
