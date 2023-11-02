@@ -1,6 +1,7 @@
 use std::cell::Cell;
 use std::collections::VecDeque;
 use std::ffi::OsStr;
+use std::fmt::Display;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -70,6 +71,25 @@ pub enum Operation {
     LTE,
     GT,
     GTE
+}
+
+impl Display for Operation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        debug_assert_eq!(Operation::GTE as u8 + 1, 10);
+        match self {
+            Self::PLUS => write!(f, "+"),
+            Self::MINUS => write!(f, "-"),
+            Self::MULT => write!(f, "*"),
+            Self::DIV => write!(f, "/"),
+            Self::EQ => write!(f, "=="),
+            Self::NEQ => write!(f, "!="),
+            Self::LT => write!(f, "<"),
+            Self::LTE => write!(f, "<="),
+            Self::GT => write!(f, ">"),
+            Self::GTE => write!(f, ">="),
+            _ => unreachable!()
+        }
+    }
 }
 
 impl Operation {
