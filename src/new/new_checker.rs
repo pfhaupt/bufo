@@ -194,6 +194,10 @@ impl Class {
     fn get_feature(&self, name: &String) -> Option<&Function> {
         self.known_features.get(name)
     }
+
+    fn get_method(&self, name: &String) -> Option<&Method> {
+        self.known_methods.get(name)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -979,11 +983,11 @@ impl Typecheckable for nodes::ExpressionBinaryNode {
             }
             (Type::Unknown, other) => {
                 self.lhs.type_check_with_type(checker, &other)?;
-                todo!();
+                Ok(other)
             }
             (other, Type::Unknown) => {
                 self.rhs.type_check_with_type(checker, &other)?;
-                todo!()
+                Ok(other)
             }
             (Type::Class(..), _) | (_, Type::Class(..))
             | (Type::Arr(..), _) | (_, Type::Arr(..)) => {
@@ -1260,6 +1264,65 @@ impl nodes::ExpressionFieldAccessNode {
                     None => todo!()
                 }
             },
+            nodes::Expression::FunctionCall(function_node) => {
+                let class_name = var.get_class_name();
+                let Some(class) = checker.known_classes.get(&class_name) else { todo!() };
+                let Some(method) = class.get_method(&function_node.function_name) else {
+                    todo!() // FIXME: Class has no function
+                };
+                let return_type = method.return_type.clone();
+                match function_node.arguments.len().cmp(&method.parameters.len()) {
+                    std::cmp::Ordering::Less => {
+                        return Err(format!(
+                            "{}: {:?}: Not enough arguments for call to method `{}`. Expected {} argument(s), found {}.\n{}: {:?}: Method declared here.",
+                            ERR_STR,
+                            self.location,
+                            function_node.function_name,
+                            method.parameters.len(),
+                            function_node.arguments.len(),
+                            NOTE_STR,
+                            method.location
+                        ));
+                    }
+                    std::cmp::Ordering::Greater => {
+                        return Err(format!(
+                            "{}: {:?}: Too many arguments for call to method `{}`. Expected {} argument(s), found {}.\n{}: {:?}: Method declared here.",
+                            ERR_STR,
+                            self.location,
+                            function_node.function_name,
+                            method.parameters.len(),
+                            function_node.arguments.len(),
+                            NOTE_STR,
+                            method.location
+                        ));
+                    }
+                    std::cmp::Ordering::Equal => ()
+                }
+                let params = method.parameters.clone();
+                for (arg, param) in function_node.arguments.iter_mut().zip(params) {
+                    let expected = param.typ;
+                    let arg_type = arg.type_check(checker)?;
+                    debug_assert!(arg_type != Type::None);
+                    if arg_type == Type::Unknown {
+                        // We need to `infer` the type again
+                        arg.type_check_with_type(checker, &expected)?;
+                    } else if arg_type != expected {
+                        return Err(format!(
+                            "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{:?}`, got type `{:?}`.",
+                            ERR_STR,
+                            arg.location,
+                            expected,
+                            arg_type
+                        ));
+                    } else {
+                        // Everything is cool
+                    }
+                }
+                function_node.typ = return_type.clone();
+                self.field.typ = return_type.clone();
+                self.typ = return_type.clone();
+                Ok(return_type)
+            }
             e => todo!("{:#?}", e)
         }
     }
