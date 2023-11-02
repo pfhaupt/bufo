@@ -1,6 +1,6 @@
 class Test {
     a: i64;
-    asdb: Test;
+    b: Test;
     c: i64;
     d: i64;
     feat new(na: i64, nb: i64, nc: i64) -> Test {
@@ -9,7 +9,7 @@ class Test {
         this.c = nc;
         // this.d gets 0 initialized
     }
-    func foo(this: Test, b: i32) -> i64 {
+    func foo(b: i32) -> i64 {
         return this.d;
     }
 
@@ -41,16 +41,17 @@ func retInstance(t: Test) -> Idee {
 }
 
 func main() {
-    bla();
+    let test: Test = Test(2, 3, 4);
+    let idee: Idee = retInstance(test);
     let e: i32 = 0;
     let a: u64[3, 3] = [
-         1 - 3, 2 * 4, 3 / 5
+         [1 - 3, 2 * 4, 3 / 5],
+         [1 - 3, 2 * 4, 3 / 5],
+         [1 - 3, 2 * 4, 3 / 5],
     ];
-    let test: Test = Test(2, 3, 4);
     let d: i32 = 9;
     d = 0;
     test.d = 10;
-    let idee: Idee = retInstance(test);
     idee.a = 12;
-    let f: u64 = test.foo();
+    let f: i64 = test.foo(5);
 }
