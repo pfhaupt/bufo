@@ -661,11 +661,11 @@ impl Typecheckable for nodes::AssignNode {
             Ok(rhs_type)
         } else if rhs_type != expected_type {
             Err(format!(
-                "{}: {:?}: Can not assign `{}` to variable of type `{}`.",
+                "{}: {:?}: Type Mismatch! Expected type `{}`, got type `{}`.",
                 ERR_STR,
                 self.expression.location,
-                rhs_type,
                 expected_type,
+                rhs_type,
             ))
         } else {
             Ok(rhs_type)
@@ -703,8 +703,8 @@ impl Typecheckable for nodes::ReturnNode {
                     todo!() // FIXME: `infer` type
                 } else if expr_type != expected_return_type {
                     Err(format!(
-                        "{}: {:?}: Function is declared to return `{}`, found `{}`.\n{}: {:?}: Function declared to return `{}` here.",
-                        NOTE_STR,
+                        "{}: {:?}: Type Mismatch! Function is declared to return `{:?}`, found `{:?}`.\n{}: {:?}: Function declared to return `{:?}` here.",
+                        ERR_STR,
                         self.location,
                         expected_return_type,
                         expr_type,
@@ -754,8 +754,8 @@ impl Typecheckable for nodes::ReturnNode {
                 } else if expr_type != expected_return_type {
                     // Signature expects `expected_return_type`, `return {expr}` has other type for expr
                     Err(format!(
-                        "{}: {:?}: Function is declared to return `{}`, found `{}`.\n{}: {:?}: Function declared to return `{}` here.",
-                        NOTE_STR,
+                        "{}: {:?}: Type Mismatch! Function is declared to return `{:?}`, found `{:?}`.\n{}: {:?}: Function declared to return `{:?}` here.",
+                        ERR_STR,
                         self.location,
                         expected_return_type,
                         expr_type,
@@ -974,21 +974,29 @@ impl Typecheckable for nodes::ExpressionBinaryNode {
         debug_assert!(lhs_type != Type::None);
         debug_assert!(rhs_type != Type::None);
         // FIXME: Make this easier
-        match (lhs_type, rhs_type) {
+        match (&lhs_type, &rhs_type) {
             (Type::Unknown, Type::Unknown) => {
                 Ok(Type::Unknown)
             }
             (Type::Unknown, other) => {
-                self.lhs.type_check_with_type(checker, &other)?;
-                Ok(other)
+                self.lhs.type_check_with_type(checker, other)?;
+                Ok(other.clone())
             }
             (other, Type::Unknown) => {
-                self.rhs.type_check_with_type(checker, &other)?;
-                Ok(other)
+                self.rhs.type_check_with_type(checker, other)?;
+                Ok(other.clone())
             }
             (Type::Class(..), _) | (_, Type::Class(..))
             | (Type::Arr(..), _) | (_, Type::Arr(..)) => {
-                todo!() // No operator overloading for classes and arrays yet
+                // NOTE: Modify this once more features (ahem, operator overload) exist
+                return Err(format!(
+                    "{}: {:?}: Binary Operation `{}` is not defined for types `{:?}` and `{:?}`.",
+                    ERR_STR,
+                    self.location,
+                    self.operation,
+                    lhs_type,
+                    rhs_type
+                ))
             }
             (lhs, rhs) => {
                 if lhs != rhs {
@@ -1002,7 +1010,7 @@ impl Typecheckable for nodes::ExpressionBinaryNode {
                     ));
                 }
                 self.typ = lhs.clone();
-                Ok(lhs)
+                Ok(lhs.clone())
             }
         }
     }
@@ -1061,11 +1069,13 @@ impl Typecheckable for nodes::ExpressionCallNode {
                 arg.type_check_with_type(checker, &expected)?;
             } else if arg_type != expected {
                 return Err(format!(
-                    "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{:?}`, got type `{:?}`.",
+                    "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{:?}`, got type `{:?}`.\n{}: {:?}: Parameter declared here.",
                     ERR_STR,
                     arg.location,
                     expected,
-                    arg_type
+                    arg_type,
+                    NOTE_STR,
+                    param.location
                 ));
             } else {
                 // Everything is cool
@@ -1143,11 +1153,13 @@ impl Typecheckable for nodes::ExpressionConstructorNode {
                 arg.type_check_with_type(checker, &expected)?;
             } else if arg_type != expected {
                 return Err(format!(
-                    "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{:?}`, got type `{:?}`.",
+                    "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{:?}`, got type `{:?}`.\n{}: {:?}: Parameter declared here.",
                     ERR_STR,
                     arg.location,
                     expected,
-                    arg_type
+                    arg_type,
+                    NOTE_STR,
+                    param.location
                 ));
             } else {
                 // Everything is cool
@@ -1179,7 +1191,7 @@ impl Typecheckable for nodes::ExpressionFieldAccessNode {
             }
             None => {
                 Err(format!(
-                    "{}: {:?}: Unknown variable `{}`.",
+                    "{}: {:?}: Undeclared variable `{}`.",
                     ERR_STR,
                     self.location,
                     self.name
@@ -1246,11 +1258,13 @@ impl nodes::ExpressionFieldAccessNode {
                                 Ok(field.1)
                             },
                             None => Err(format!(
-                                "{}: {:?}: Identifier `{}` has no field `{}`.",
+                                "{}: {:?}: Identifier `{}` has no field `{}`.\n{}: {:?}: Class declared here.",
                                 ERR_STR,
                                 self.location,
                                 self.name,
-                                name_node.name
+                                name_node.name,
+                                NOTE_STR,
+                                class.location
                             ))
                         }
                     },
@@ -1301,11 +1315,13 @@ impl nodes::ExpressionFieldAccessNode {
                         arg.type_check_with_type(checker, &expected)?;
                     } else if arg_type != expected {
                         return Err(format!(
-                            "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{:?}`, got type `{:?}`.",
+                            "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{:?}`, got type `{:?}`.\n{}: {:?}: Parameter declared here.",
                             ERR_STR,
                             arg.location,
                             expected,
-                            arg_type
+                            arg_type,
+                            NOTE_STR,
+                            param.location
                         ));
                     } else {
                         // Everything is cool
@@ -1328,7 +1344,7 @@ impl Typecheckable for nodes::NameNode {
                 Ok(var.typ)
             },
             None => Err(format!(
-                "{}: {:?}: Unknown variable `{}`.",
+                "{}: {:?}: Undeclared variable `{}`.",
                 ERR_STR,
                 self.location,
                 self.name
