@@ -1284,8 +1284,8 @@ impl Typecheckable for nodes::ExpressionFieldAccessNode {
                         self.name
                     ));
                 }
-                let typ = self.type_check_field(checker, var)?;
-                self.typ = typ.clone();
+                let typ = self.type_check_field(checker, var.clone())?;
+                self.typ = var.typ;
                 Ok(typ)
             }
             None => {
