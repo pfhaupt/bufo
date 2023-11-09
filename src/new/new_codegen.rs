@@ -145,12 +145,6 @@ impl Codegen {
         info.get_field_offset(name)
     }
 
-    fn update_stack_offset(&mut self, typ_size: usize) -> usize {
-        let v = self.current_stack_offset;
-        self.current_stack_offset += typ_size;
-        v
-    }
-
     fn get_register(&mut self) -> Result<usize, String> {
         let v = self.register_counter;
         self.register_counter += 1;
@@ -169,6 +163,21 @@ impl Codegen {
     fn add_variable_offset(&mut self, name: &String, offset: usize) {
         debug_assert!(!self.stack_scopes.is_empty());
         self.stack_scopes.last_mut().unwrap().insert(name.clone(), offset);
+    }
+
+    fn update_stack_offset(&mut self, typ_size: usize) -> usize {
+        let v = self.current_stack_offset;
+        self.current_stack_offset += typ_size;
+        v
+    }
+
+    fn get_stack_offset(&mut self, name: &String) -> usize {
+        for scope in self.stack_scopes.iter().rev() {
+            if let Some(offset) = scope.get(name) {
+                return *offset;
+            }
+        }
+        unreachable!()
     }
 
     fn store_variable_in_stack(&mut self, name: &String, typ: &Type) -> Result<(), String> {
@@ -356,7 +365,7 @@ impl Codegenable for nodes::AssignNode {
 }
 impl Codegenable for nodes::ExpressionIdentifierNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        self.expression.codegen(codegen)
     }
 }
 impl Codegenable for nodes::IfNode {
@@ -438,7 +447,15 @@ impl Codegenable for nodes::ExpressionFieldAccessNode {
 }
 impl Codegenable for nodes::NameNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        let offset = codegen.get_stack_offset(&self.name);
+        debug_assert!(self.typ != Type::None || self.typ != Type::Unknown);
+        let reg = codegen.get_register()?;
+        let reg = instr::Operand::Reg(reg, instr::RegMode::from(&self.typ));
+        codegen.add_ir(instr::IR::Load {
+            dst: reg,
+            addr: instr::Operand::StackOffset(offset)
+        });
+        Ok(reg)
     }
 }
 impl Codegenable for nodes::ExpressionBuiltInNode {

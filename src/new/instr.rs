@@ -1,5 +1,5 @@
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum RegMode {
     BIT64,
     BIT32
@@ -21,7 +21,7 @@ impl From<usize> for RegMode {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Operand {
     Reg(usize, RegMode),
     StackOffset(usize), // e.g., stack offset
