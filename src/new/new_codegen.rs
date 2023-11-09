@@ -70,6 +70,8 @@ impl SizeManager {
 pub struct Codegen {
     sm: SizeManager,
     current_class: String,
+    ir: Vec<instr::IR>,
+    label_counter: usize,
     print_debug: bool
 }
 impl Codegen {
@@ -77,6 +79,8 @@ impl Codegen {
         Self {
             sm: SizeManager::new(),
             current_class: String::new(),
+            ir: Vec::new(),
+            label_counter: 0,
             print_debug: false
          }
     }
@@ -106,6 +110,10 @@ impl Codegen {
             println!("[DEBUG] Added new field `{}` to class `{}`", name, self.current_class);
             println!("[DEBUG] Class `{}` has a size of {} bytes now.", self.current_class, self.sm.get_class_size(&self.current_class));
         }
+    }
+
+    fn add_ir(&mut self, ir: instr::IR) {
+        self.ir.push(ir)
     }
 
     pub fn compile(&mut self) -> Result<(), String> {
