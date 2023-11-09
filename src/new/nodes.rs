@@ -43,6 +43,7 @@ pub struct FeatureNode {
     pub return_type: ReturnTypeNode,
     pub parameters: Vec<ParameterNode>,
     pub block: BlockNode,
+    pub stack_size: usize,
     pub is_constructor: bool
 }
 
@@ -52,7 +53,8 @@ pub struct FunctionNode {
     pub name: String,
     pub return_type: ReturnTypeNode,
     pub parameters: Vec<ParameterNode>,
-    pub block: BlockNode
+    pub block: BlockNode,
+    pub stack_size: usize
 }
 
 #[derive(Debug, Clone)]
@@ -62,7 +64,8 @@ pub struct MethodNode {
     pub name: String,
     pub return_type: ReturnTypeNode,
     pub parameters: Vec<ParameterNode>,
-    pub block: BlockNode
+    pub block: BlockNode,
+    pub stack_size: usize
 }
 
 #[derive(Debug, Clone)]

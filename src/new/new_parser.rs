@@ -651,6 +651,7 @@ impl Parsable for nodes::FeatureNode {
             return_type,
             parameters,
             block,
+            stack_size: 0,
         })
     }
 }
@@ -690,6 +691,7 @@ impl Parsable for nodes::FunctionNode {
             return_type,
             parameters,
             block,
+            stack_size: 0,
         })
     }
 }
@@ -731,6 +733,7 @@ impl Parsable for nodes::MethodNode {
             return_type,
             parameters,
             block,
+            stack_size: 0,
         })
     }
 }
