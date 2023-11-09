@@ -318,7 +318,13 @@ impl Codegenable for nodes::BlockNode {
 
 impl Codegenable for nodes::Statement {
     fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
-        todo!()
+        match self {
+            Self::Assign(assign_node) => assign_node.codegen(codegen),
+            Self::Expression(expr_node) => expr_node.codegen(codegen),
+            Self::If(if_node) => if_node.codegen(codegen),
+            Self::Let(let_node) => let_node.codegen(codegen),
+            Self::Return(ret_node) => ret_node.codegen(codegen)
+        }
     }
 }
 
