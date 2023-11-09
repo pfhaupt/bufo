@@ -42,7 +42,7 @@ impl SizeManager {
     }
 
     fn add_field(&mut self, class_name: &String, field_name: &String, typ: &Type) {
-        let size = self.get_type_size(typ);
+        let size = typ.size();
         let Some(class) = self.class_sizes.get_mut(class_name) else {
             // Two Options: Forgot to add class to Manager, or Type Checker f*ed up.
             unreachable!();
@@ -50,14 +50,8 @@ impl SizeManager {
         class.add_field(field_name, size);
     }
 
-    fn get_type_size(&self, typ: &Type) -> usize {
-        match typ {
-            Type::Arr(t, size) => self.get_type_size(t) * size.iter().product::<usize>(),
-            Type::I32 | Type::U32 => 4,
-            Type::I64 | Type::U64 | Type::Usize => 8,
-            Type::Class(..) => 8,
-            e => todo!("Figure out size of type {:?} in bytes", e),
-        }
+    fn get_class_info(&self, name: &String) -> &ClassInfo {
+        self.class_sizes.get(name).unwrap()
     }
 
     fn get_class_size(&self, class_name: &String) -> usize {

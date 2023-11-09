@@ -350,16 +350,6 @@ impl TypeChecker {
         }
         None
     }
-
-    fn get_type_size(&self, typ: &Type) -> usize {
-        match typ {
-            Type::Arr(t, size) => self.get_type_size(t) * size.iter().product::<usize>(),
-            Type::I32 | Type::U32 => 4,
-            Type::I64 | Type::U64 | Type::Usize => 8,
-            Type::Class(..) => 8,
-            e => todo!("Figure out size of type {:?} in bytes", e),
-        }
-    }
 }
 
 trait Typecheckable {
@@ -585,7 +575,7 @@ impl Typecheckable for nodes::MethodNode {
 impl Typecheckable for nodes::ParameterNode {
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
         self.typ.type_check(checker);
-        let var_size = checker.get_type_size(&self.typ.typ);
+        let var_size = self.typ.typ.size();
         checker.current_stack_size += var_size;
         Ok(Type::None)
     }
@@ -642,7 +632,7 @@ impl Typecheckable for nodes::LetNode {
             None => {
                 self.typ.type_check(checker)?;
 
-                let var_size = checker.get_type_size(&self.typ.typ);
+                let var_size = self.typ.typ.size();
                 checker.current_stack_size += var_size;
 
                 let current_scope = checker.get_current_scope();
