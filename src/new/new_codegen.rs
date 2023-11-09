@@ -1,8 +1,11 @@
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use super::nodes;
 use crate::checker::Type;
+use super::instr;
+
+const LBL_STR: &str = "lbl_";
 
 #[derive(Debug)]
 struct ClassInfo {
@@ -21,6 +24,10 @@ impl ClassInfo {
         debug_assert!(!self.field_offsets.contains_key(field_name));
         self.field_offsets.insert(field_name.clone(), self.total_size);
         self.total_size += size;
+    }
+
+    fn get_field_offset(&self, name: &String) -> usize {
+        *self.field_offsets.get(name).unwrap()
     }
 }
 
@@ -66,6 +73,9 @@ pub struct Codegen {
     current_class: String,
     ir: Vec<instr::IR>,
     label_counter: usize,
+    current_stack_offset: usize,
+    stack_scopes: Vec<HashMap<String, usize>>,
+    register_counter: usize,
     print_debug: bool
 }
 impl Codegen {
@@ -75,6 +85,9 @@ impl Codegen {
             current_class: String::new(),
             ir: Vec::new(),
             label_counter: 0,
+            current_stack_offset: 0,
+            stack_scopes: Vec::new(),
+            register_counter: 1,
             print_debug: false
          }
     }
@@ -88,6 +101,16 @@ impl Codegen {
 
     pub fn generate_code(&mut self, ast: &nodes::FileNode) -> Result<(), String> {
         ast.codegen(self)
+    }
+
+    fn generate_label(&mut self, name: Option<String>) -> instr::IR {
+        if let Some(name) = name {
+            instr::IR::Label { name }
+        } else {
+            let label = LBL_STR.to_string() + &self.label_counter.to_string();
+            self.label_counter += 1;
+            instr::IR::Label { name: label }
+        }
     }
 
     fn add_class(&mut self, class_name: &String) {
@@ -106,8 +129,56 @@ impl Codegen {
         }
     }
 
+    fn enter_scope(&mut self) {
+        self.stack_scopes.push(HashMap::new())
+    }
+
+    fn leave_scope(&mut self) {
+        debug_assert!(!self.stack_scopes.is_empty());
+        self.stack_scopes.pop();
+    }
+
+    fn get_field_offset(&self, name: &String) -> usize {
+        debug_assert!(!self.current_class.is_empty());
+        let info = self.sm.get_class_info(&self.current_class);
+        info.get_field_offset(name)
+    }
+
+    fn update_stack_offset(&mut self, typ_size: usize) -> usize {
+        let v = self.current_stack_offset;
+        self.current_stack_offset += typ_size;
+        v
+    }
+
+    fn get_register(&mut self) -> Result<usize, String> {
+        let v = self.register_counter;
+        self.register_counter += 1;
+        if self.register_counter == 100 {
+            todo!()
+        } else {
+            Ok(v)
+        }
+    }
+
     fn add_ir(&mut self, ir: instr::IR) {
+        println!("{:?}", ir);
         self.ir.push(ir)
+    }
+
+    fn add_variable_offset(&mut self, name: &String, offset: usize) {
+        debug_assert!(!self.stack_scopes.is_empty());
+        self.stack_scopes.last_mut().unwrap().insert(name.clone(), offset);
+    }
+
+    fn store_variable_in_stack(&mut self, name: &String, typ: &Type) -> Result<(), String> {
+        let offset = self.update_stack_offset(typ.size());
+        let reg = self.get_register()?;
+        self.add_variable_offset(name, offset);
+        self.add_ir(instr::IR::StoreStack {
+            offset: instr::Operand::MemOffset(offset),
+            value: instr::Operand::Reg(reg, instr::RegMode::from(typ))
+        });
+        Ok(())
     }
 
     pub fn compile(&mut self) -> Result<(), String> {
@@ -145,6 +216,14 @@ impl Codegenable for nodes::ClassNode {
             field.codegen(codegen)?;
         }
 
+        for feature in &self.features {
+            feature.codegen(codegen)?;
+        }
+
+        for method in &self.methods {
+            method.codegen(codegen)?;
+        }
+
         codegen.current_class.clear();
         todo!()
     }
@@ -164,7 +243,46 @@ impl Codegenable for nodes::FieldAccess {
 }
 impl Codegenable for nodes::FeatureNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
-        todo!()
+        // TODO: Make this a macro, it's the same thing for Functions and Methods
+        debug_assert!(!codegen.current_class.is_empty());
+        debug_assert!(codegen.current_stack_offset == 0);
+        debug_assert!(codegen.stack_scopes.is_empty());
+
+        codegen.enter_scope();
+
+        // Generate entrypoint for later `call func_name` call
+        let name = self.class_name.clone() + "_" + &self.name;
+        let label = codegen.generate_label(Some(name.clone()));
+        codegen.add_ir(label);
+
+        // Prepare stack offset
+        let mut bytes = self.stack_size;
+        if bytes % 16 != 0 {
+            // 16-byte align the stack
+            bytes += 16 - bytes % 16;
+        }
+        codegen.add_ir(instr::IR::AllocStack { bytes });
+
+        // Prepare parameters
+        for param in &self.parameters {
+            param.codegen(codegen)?;
+        }
+
+        // FIXME: Please add this-allocation if we're in the new-Feature :^)
+
+        // Function body
+        self.block.codegen(codegen)?;
+
+        // Clean up stack offset
+        codegen.add_ir(instr::IR::DeallocStack { bytes });
+
+        // Return
+        let label = codegen.generate_label(Some(name + "_return"));
+        codegen.add_ir(label);
+        codegen.add_ir(instr::IR::Return);
+
+        codegen.leave_scope();
+        Ok(())
     }
 }
 impl Codegenable for nodes::FunctionNode {
@@ -184,11 +302,16 @@ impl Codegenable for nodes::ReturnTypeNode {
 }
 impl Codegenable for nodes::ParameterNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
-        todo!()
+        codegen.store_variable_in_stack(&self.name, &self.typ.typ)
     }
 }
 impl Codegenable for nodes::BlockNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+        codegen.enter_scope();
+        for stmt in &self.statements {
+            stmt.codegen(codegen)?;
+        }
+        codegen.leave_scope();
         todo!()
     }
 }
