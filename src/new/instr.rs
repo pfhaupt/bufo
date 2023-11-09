@@ -31,6 +31,14 @@ pub enum Operand {
     None, // for nodes that do not return any registers
 }
 
+impl Operand {
+    pub const RET: usize = 0;
+    pub const ARG1: usize = 1;
+    pub const ARG2: usize = 2;
+    pub const ARG3: usize = 3;
+    pub const ARG4: usize = 4;
+}
+
 #[derive(Debug)]
 pub enum IR {
     LoadImm { dst: Operand, imm: Operand },
