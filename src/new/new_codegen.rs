@@ -332,7 +332,7 @@ impl Codegenable for nodes::Statement {
 
 impl Codegenable for nodes::ExpressionNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        self.expression.codegen(codegen)
     }
 }impl Codegenable for nodes::LetNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
@@ -381,7 +381,19 @@ impl Codegenable for nodes::ArgumentNode {
 }
 impl Codegenable for nodes::Expression {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        match self {
+            Self::Name(expr) => expr.codegen(codegen),
+            Self::Identifier(expr) => expr.codegen(codegen),
+            Self::ArrayLiteral(expr) => expr.codegen(codegen),
+            Self::ArrayAccess(expr) => expr.codegen(codegen),
+            Self::Literal(expr) => expr.codegen(codegen),
+            Self::Binary(expr) => expr.codegen(codegen),
+            Self::Comparison(expr) => expr.codegen(codegen),
+            Self::FieldAccess(expr) => expr.codegen(codegen),
+            Self::FunctionCall(expr) => expr.codegen(codegen),
+            Self::ConstructorCall(expr) => expr.codegen(codegen),
+            Self::BuiltIn(expr) => expr.codegen(codegen),
+        }
     }
 }
 impl Codegenable for nodes::ExpressionArrayLiteralNode {
