@@ -1,5 +1,5 @@
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum RegMode {
     BIT64,
     BIT32
@@ -21,11 +21,11 @@ impl From<usize> for RegMode {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Operand {
     Reg(usize, RegMode),
-    MemOffset(usize), // e.g., stack offset
-    MemAddr(usize),
+    StackOffset(usize), // e.g., stack offset
+    HeapAddr(usize),
     Imm32(u32),
     Imm64(u64),
     None, // for nodes that do not return any registers
@@ -34,8 +34,8 @@ pub enum Operand {
 #[derive(Debug)]
 pub enum IR {
     LoadImm { dst: Operand, imm: Operand },
-    StoreStack { offset: Operand, value: Operand },
-    LoadStack { dst: Operand, offset: Operand },
+    Store { addr: Operand, value: Operand },
+    Load { dst: Operand, addr: Operand },
 
     // Arithmetics
     Add { dst: Operand, src1: Operand, src2: Operand },

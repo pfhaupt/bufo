@@ -175,8 +175,8 @@ impl Codegen {
         let offset = self.update_stack_offset(typ.size());
         let reg = self.get_register()?;
         self.add_variable_offset(name, offset);
-        self.add_ir(instr::IR::StoreStack {
-            offset: instr::Operand::MemOffset(offset),
+        self.add_ir(instr::IR::Store {
+            addr: instr::Operand::StackOffset(offset),
             value: instr::Operand::Reg(reg, instr::RegMode::from(typ))
         });
         Ok(())
@@ -341,7 +341,17 @@ impl Codegenable for nodes::ExpressionNode {
 }
 impl Codegenable for nodes::AssignNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        let rhs = self.expression.codegen(codegen)?;
+        debug_assert!(rhs != instr::Operand::None);
+        
+        let lhs = self.name.codegen(codegen)?;
+        debug_assert!(lhs != instr::Operand::None);
+
+        codegen.add_ir(instr::IR::Store {
+            addr: lhs,
+            value: rhs
+        });
+        Ok(instr::Operand::None)
     }
 }
 impl Codegenable for nodes::ExpressionIdentifierNode {
