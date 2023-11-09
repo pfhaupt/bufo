@@ -1,7 +1,29 @@
 
 #[derive(Debug)]
+pub enum RegMode {
+    BIT64,
+    BIT32
+}
+
+impl From<&crate::checker::Type> for RegMode {
+    fn from(value: &crate::checker::Type) -> Self {
+        Self::from(value.size())
+    }
+}
+
+impl From<usize> for RegMode {
+    fn from(bytes: usize) -> Self {
+        match bytes {
+            4 => Self::BIT32,
+            8 => Self::BIT64,
+            _ => panic!()
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum Operand {
-    Reg(usize),
+    Reg(usize, RegMode),
     MemOffset(usize), // e.g., stack offset
     MemAddr(usize),
     Imm32(u32),
