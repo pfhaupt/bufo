@@ -75,6 +75,7 @@ pub struct Codegen {
     label_counter: usize,
     current_stack_offset: usize,
     stack_scopes: Vec<HashMap<String, usize>>,
+    field_stack: Vec<Type>,
     register_counter: usize,
     print_debug: bool
 }
@@ -87,6 +88,7 @@ impl Codegen {
             label_counter: 0,
             current_stack_offset: 0,
             stack_scopes: Vec::new(),
+            field_stack: Vec::new(),
             register_counter: 1,
             print_debug: false
          }
@@ -171,12 +173,22 @@ impl Codegen {
         v
     }
 
+    fn known_variable(&mut self, name: &String) -> bool {
+        for scope in self.stack_scopes.iter().rev() {
+            if scope.contains_key(name) {
+                return true;
+            }
+        }
+        false
+    }
+
     fn get_stack_offset(&mut self, name: &String) -> usize {
         for scope in self.stack_scopes.iter().rev() {
             if let Some(offset) = scope.get(name) {
                 return *offset;
             }
         }
+        println!("Could not find {name} in {scopes:?}", scopes=self.stack_scopes);
         unreachable!()
     }
 
@@ -337,7 +349,7 @@ impl Codegenable for nodes::BlockNode {
             stmt.codegen(codegen)?;
         }
         codegen.leave_scope();
-        todo!()
+        Ok(instr::Operand::None)
     }
 }
 
@@ -456,7 +468,73 @@ impl Codegenable for nodes::ExpressionConstructorNode {
 }
 impl Codegenable for nodes::ExpressionFieldAccessNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        // This is only ever called at the root of the access, so it's always a variable
+        // for nesting, we call self.codegen_field()
+        debug_assert!(codegen.known_variable(&self.name));
+
+        // load stack variable, which is a pointer
+        let offset = codegen.get_stack_offset(&self.name);
+        let reg = codegen.get_register()?;
+        let reg = instr::Operand::Reg(reg, instr::RegMode::BIT64);
+        let var = instr::Operand::StackOffset(offset);
+        codegen.add_ir(instr::IR::Load {
+            dst: reg,
+            addr: var
+        });
+        codegen.field_stack.push(self.typ.clone());
+
+        // codegen field access
+        let field = self.codegen_field(codegen, &self.field)?;
+
+        // add both together
+        codegen.add_ir(instr::IR::Add {
+            dst: reg,
+            src1: reg,
+            src2: field
+        });
+
+        // reg now (hopefully) contains Pointer to field of actual instance
+        codegen.add_ir(instr::IR::Load {
+            dst: reg,
+            addr: reg
+        });
+
+        // reg should now contain the value of the field
+        Ok(reg)
+    }
+}
+impl nodes::ExpressionFieldAccessNode {
+    fn codegen_field(&self, codegen: &mut Codegen, field: &nodes::ExpressionIdentifierNode) -> Result<instr::Operand, String> {
+        match &(*field.expression) {
+            nodes::Expression::FieldAccess(field_access) => {
+                todo!()
+            }
+            nodes::Expression::Name(name_node) => {
+                let class_type = codegen.field_stack.pop().unwrap();
+                let Type::Class(class_name) = class_type else { panic!() };
+
+                let current_class = codegen.current_class.clone();
+                codegen.current_class = class_name;
+                let offset = codegen.get_field_offset(&name_node.name);
+                let reg = codegen.get_register()?;
+                let reg = instr::Operand::Reg(reg, instr::RegMode::from(&name_node.typ));
+                codegen.add_ir(instr::IR::LoadImm {
+                    dst: reg,
+                    // FIXME: Improve this
+                    imm: if name_node.typ.size() == 4 {
+                        instr::Operand::Imm32(offset as u32)
+                    } else {
+                        instr::Operand::Imm64(offset as u64)
+                    }
+                });
+                codegen.current_class = current_class;
+                Ok(reg)
+            }
+            nodes::Expression::FunctionCall(fn_call) => {
+                todo!()
+            }
+            _ => unreachable!()
+        }
     }
 }
 impl Codegenable for nodes::NameNode {
