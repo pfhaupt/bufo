@@ -33,6 +33,8 @@ pub enum Operand {
 #[derive(Debug)]
 pub enum IR {
     LoadImm { dst: Operand, imm: Operand },
+    StoreStack { offset: Operand, value: Operand },
+    LoadStack { dst: Operand, offset: Operand },
 
     // Arithmetics
     Add { dst: Operand, src1: Operand, src2: Operand },
@@ -53,6 +55,8 @@ pub enum IR {
 
     // Functions
     Call { name: String },
+    AllocStack { bytes: usize },
+    DeallocStack { bytes: usize },
     PushReg,
     PopReg,
     Return,
