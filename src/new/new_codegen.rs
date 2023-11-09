@@ -278,7 +278,21 @@ impl Codegenable for nodes::FeatureNode {
             param.codegen(codegen)?;
         }
 
-        // FIXME: Please add this-allocation if we're in the new-Feature :^)
+        if self.is_constructor {
+            // let this: Class = alloc(sizeof(Class));
+            let alloc_size = instr::Operand::Reg(instr::Operand::ARG1, instr::RegMode::BIT64);
+            codegen.add_ir(instr::IR::LoadImm {
+                dst: alloc_size,
+                imm: instr::Operand::Imm64(codegen.sm.get_class_size(&self.class_name) as u64)
+            });
+            codegen.add_ir(instr::IR::Call { name: String::from("malloc") });
+            let offset = codegen.update_stack_offset(8);
+            codegen.add_variable_offset(&String::from("this"), offset);
+            codegen.add_ir(instr::IR::Store {
+                addr: instr::Operand::StackOffset(offset),
+                value: instr::Operand::Reg(instr::Operand::RET, instr::RegMode::BIT64)
+            });
+        }
 
         // Function body
         self.block.codegen(codegen)?;
