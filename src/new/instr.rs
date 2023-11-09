@@ -28,6 +28,7 @@ pub enum Operand {
     MemAddr(usize),
     Imm32(u32),
     Imm64(u64),
+    None, // for nodes that do not return any registers
 }
 
 #[derive(Debug)]

@@ -100,7 +100,8 @@ impl Codegen {
     }
 
     pub fn generate_code(&mut self, ast: &nodes::FileNode) -> Result<(), String> {
-        ast.codegen(self)
+        ast.codegen(self)?;
+        Ok(())
     }
 
     fn generate_label(&mut self, name: Option<String>) -> instr::IR {
@@ -191,11 +192,11 @@ impl Codegen {
 }
 
 trait Codegenable {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String>;
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String>;
 }
 
 impl Codegenable for nodes::FileNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         for class in &self.classes {
             class.codegen(codegen)?;
         }
@@ -207,7 +208,7 @@ impl Codegenable for nodes::FileNode {
 }
 
 impl Codegenable for nodes::ClassNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         debug_assert!(codegen.current_class.is_empty());
         codegen.add_class(&self.name);
         codegen.current_class = self.name.clone();
@@ -229,20 +230,20 @@ impl Codegenable for nodes::ClassNode {
     }
 }
 impl Codegenable for nodes::FieldNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let typ = &self.type_def.typ;
         debug_assert!(*typ != Type::None);
         codegen.add_field(&self.name, typ);
-        Ok(())
+        Ok(instr::Operand::None)
     }
 }
 impl Codegenable for nodes::FieldAccess {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::FeatureNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         // TODO: Make this a macro, it's the same thing for Functions and Methods
         debug_assert!(!codegen.current_class.is_empty());
         debug_assert!(codegen.current_stack_offset == 0);
@@ -282,31 +283,32 @@ impl Codegenable for nodes::FeatureNode {
         codegen.add_ir(instr::IR::Return);
 
         codegen.leave_scope();
-        Ok(())
+        Ok(instr::Operand::None)
     }
 }
 impl Codegenable for nodes::FunctionNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::MethodNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::ReturnTypeNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::ParameterNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
-        codegen.store_variable_in_stack(&self.name, &self.typ.typ)
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
+        codegen.store_variable_in_stack(&self.name, &self.typ.typ)?;
+        Ok(instr::Operand::None)
     }
 }
 impl Codegenable for nodes::BlockNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         codegen.enter_scope();
         for stmt in &self.statements {
             stmt.codegen(codegen)?;
@@ -317,7 +319,7 @@ impl Codegenable for nodes::BlockNode {
 }
 
 impl Codegenable for nodes::Statement {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         match self {
             Self::Assign(assign_node) => assign_node.codegen(codegen),
             Self::Expression(expr_node) => expr_node.codegen(codegen),
@@ -329,96 +331,96 @@ impl Codegenable for nodes::Statement {
 }
 
 impl Codegenable for nodes::ExpressionNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }impl Codegenable for nodes::LetNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::AssignNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::ExpressionIdentifierNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::IfNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::ReturnNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::TypeNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::ArgumentNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::Expression {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::ExpressionArrayLiteralNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::ExpressionArrayAccessNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::ExpressionLiteralNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::ExpressionBinaryNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::ExpressionComparisonNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::ExpressionCallNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::ExpressionConstructorNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::ExpressionFieldAccessNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::NameNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::ExpressionBuiltInNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<(), String> {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
