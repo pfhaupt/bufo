@@ -313,6 +313,14 @@ impl Codegenable for nodes::FeatureNode {
         let label = codegen.generate_label(Some(name + "_return"));
         codegen.add_ir(label);
 
+        if self.is_constructor {
+            let offset = codegen.get_stack_offset(&String::from("this"));
+            codegen.add_ir(instr::IR::Load {
+                dst: instr::Operand::Reg(instr::Operand::RET, instr::RegMode::BIT64),
+                addr: instr::Operand::StackOffset(offset)
+            });
+        }
+
         // Clean up stack offset
         codegen.add_ir(instr::IR::DeallocStack { bytes });
 
