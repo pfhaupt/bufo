@@ -44,6 +44,7 @@ pub enum IR {
     LoadImm { dst: Operand, imm: Operand },
     Store { addr: Operand, value: Operand },
     Load { dst: Operand, addr: Operand },
+    Move { dst: Operand, src: Operand },
 
     // Arithmetics
     Add { dst: Operand, src1: Operand, src2: Operand },
