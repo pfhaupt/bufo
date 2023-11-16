@@ -160,13 +160,19 @@ impl Codegen {
         info.get_field_offset(name)
     }
 
-    fn get_register(&mut self) -> Result<usize, String> {
+    fn get_register(&mut self) -> Result<instr::Register, String> {
         let v = self.register_counter;
         self.register_counter += 1;
-        if self.register_counter == 100 {
+        if self.register_counter == instr::Register::__COUNT as usize {
             todo!()
         } else {
-            Ok(v)
+            let reg = instr::Register::from(v);
+            if reg == instr::Register::RSP || reg == instr::Register::RBP {
+                // We do not want to mess with RSP and RBP
+                self.get_register()
+            } else {
+                Ok(instr::Register::from(v))
+            }
         }
     }
 
@@ -303,7 +309,7 @@ impl Codegenable for nodes::FeatureNode {
 
         if self.is_constructor {
             // let this: Class = alloc(sizeof(Class));
-            let alloc_size = instr::Operand::Reg(instr::Operand::ARG1, instr::RegMode::BIT64);
+            let alloc_size = instr::Operand::Reg(instr::Register::ARG1, instr::RegMode::BIT64);
             codegen.add_ir(instr::IR::LoadImm {
                 dst: alloc_size,
                 imm: instr::Operand::Imm64(codegen.sm.get_class_size(&self.class_name) as u64)
@@ -313,7 +319,7 @@ impl Codegenable for nodes::FeatureNode {
             codegen.add_variable_offset(&String::from("this"), offset);
             codegen.add_ir(instr::IR::Store {
                 addr: instr::Operand::StackOffset(offset),
-                value: instr::Operand::Reg(instr::Operand::RET, instr::RegMode::BIT64)
+                value: instr::Operand::Reg(instr::Register::RET, instr::RegMode::BIT64)
             });
         }
 
@@ -327,7 +333,7 @@ impl Codegenable for nodes::FeatureNode {
         if self.is_constructor {
             let offset = codegen.get_stack_offset(&String::from("this"));
             codegen.add_ir(instr::IR::Load {
-                dst: instr::Operand::Reg(instr::Operand::RET, instr::RegMode::BIT64),
+                dst: instr::Operand::Reg(instr::Register::RET, instr::RegMode::BIT64),
                 addr: instr::Operand::StackOffset(offset)
             });
         }
@@ -483,7 +489,7 @@ impl Codegenable for nodes::ReturnNode {
                 panic!()
             };
             codegen.add_ir(instr::IR::Move {
-                dst: instr::Operand::Reg(instr::Operand::RET, mode),
+                dst: instr::Operand::Reg(instr::Register::RET, mode),
                 src: reg
             });
         }

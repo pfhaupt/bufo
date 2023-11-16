@@ -1,4 +1,3 @@
-
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum RegMode {
     BIT64,
@@ -22,21 +21,95 @@ impl From<usize> for RegMode {
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
+pub enum Register {
+    RAX,
+    RCX,
+    RDX,
+    RBX,
+    RSP,
+    RBP,
+    RSI,
+    RDI,
+    R8,
+    R9,
+    R10,
+    R11,
+    R12,
+    R13,
+    R14,
+    R15,
+    __COUNT,
+}
+
+impl From<usize> for Register {
+    fn from(value: usize) -> Self {
+        match value {
+            0  => Register::RAX,
+            1  => Register::RCX,
+            2  => Register::RDX,
+            3  => Register::RBX,
+            4  => Register::RSP,
+            5  => Register::RBP,
+            6  => Register::RSI,
+            7  => Register::RDI,
+            8  => Register::R8,
+            9  => Register::R9,
+            10 => Register::R10,
+            11 => Register::R11,
+            12 => Register::R12,
+            13 => Register::R13,
+            14 => Register::R14,
+            15 => Register::R15,
+            _ => panic!()
+        }
+    }
+}
+
+impl Register {
+    pub const RET: Self = Self::RAX; // Return value in RAX
+    // We're using the Windows x86-64 convention for arguments:
+    pub const ARG1: Self = Self::RCX; // First argument in RCX
+    pub const ARG2: Self = Self::RDX; // Second argument in RDX
+    pub const ARG3: Self = Self::R8;  // Third argument in R8
+    pub const ARG4: Self = Self::R9;  // Fourth argument in R9
+
+    pub const CALLER_SAVED: [Self; 7] = [
+        Self::RAX,
+        Self::RCX,
+        Self::RDX,
+        Self::R8,
+        Self::R9,
+        Self::R10,
+        Self::R11,
+    ];
+
+    pub const CALLEE_SAVED: [Self; 8] = [
+        Self::RBX,
+        Self::RBP,
+        Self::RSI,
+        Self::RDI,
+        Self::R12,
+        Self::R13,
+        Self::R14,
+        Self::R15,
+    ];
+
+    pub fn arg(index: usize) -> Self {
+        // FIXME: Handle this case
+        debug_assert!(index <= 3);
+        Self::from(Self::ARG1 as usize + index)
+    }
+}
+
+
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Operand {
-    Reg(usize, RegMode),
+    Reg(Register, RegMode),
     StackOffset(usize), // e.g., stack offset
     HeapAddr(usize),
     Imm32(u32),
     Imm64(u64),
     None, // for nodes that do not return any registers
-}
-
-impl Operand {
-    pub const RET: usize = 0;
-    pub const ARG1: usize = 1;
-    pub const ARG2: usize = 2;
-    pub const ARG3: usize = 3;
-    pub const ARG4: usize = 4;
 }
 
 #[derive(Debug)]
