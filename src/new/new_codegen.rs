@@ -180,6 +180,18 @@ impl Codegen {
         self.register_counter = 1;
     }
 
+    fn push_caller_saved_registers(&mut self) {
+        for reg in instr::Register::CALLER_SAVED {
+            self.add_ir(instr::IR::PushReg { reg });
+        }
+    }
+
+    fn pop_caller_saved_registers(&mut self) {
+        for reg in instr::Register::CALLER_SAVED.iter().rev() {
+            self.add_ir(instr::IR::PopReg { reg: *reg });
+        }
+    }
+
     fn add_ir(&mut self, ir: instr::IR) {
         println!("{:?}", ir);
         self.ir.push(ir)

@@ -140,7 +140,7 @@ pub enum IR {
     Call { name: String },
     AllocStack { bytes: usize },
     DeallocStack { bytes: usize },
-    PushReg,
-    PopReg,
+    PushReg { reg: Register },
+    PopReg { reg: Register },
     Return,
 }
