@@ -298,6 +298,7 @@ impl Codegenable for nodes::FeatureNode {
         for param in &self.parameters {
             param.codegen(codegen)?;
         }
+        codegen.reset_registers();
 
         if self.is_constructor {
             // let this: Class = alloc(sizeof(Class));
@@ -382,6 +383,7 @@ impl Codegenable for nodes::MethodNode {
         for param in &self.parameters {
             param.codegen(codegen)?;
         }
+        codegen.reset_registers();
 
         // Function body
         self.block.codegen(codegen)?;
