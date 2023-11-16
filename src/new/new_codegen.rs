@@ -71,6 +71,7 @@ impl SizeManager {
 pub struct Codegen {
     sm: SizeManager,
     current_class: String,
+    current_return_label: String,
     ir: Vec<instr::IR>,
     label_counter: usize,
     current_stack_offset: usize,
@@ -84,6 +85,7 @@ impl Codegen {
         Self {
             sm: SizeManager::new(),
             current_class: String::new(),
+            current_return_label: String::new(),
             ir: Vec::new(),
             label_counter: 0,
             current_stack_offset: 0,
@@ -273,6 +275,7 @@ impl Codegenable for nodes::FeatureNode {
         debug_assert!(!codegen.current_class.is_empty());
         debug_assert!(codegen.current_stack_offset == 0);
         debug_assert!(codegen.stack_scopes.is_empty());
+        debug_assert!(codegen.current_return_label.is_empty());
 
         codegen.enter_scope();
 
@@ -280,6 +283,8 @@ impl Codegenable for nodes::FeatureNode {
         let name = self.class_name.clone() + "_" + &self.name;
         let label = codegen.generate_label(Some(name.clone()));
         codegen.add_ir(label);
+
+        codegen.current_return_label = name + "_return";
 
         // Prepare stack offset
         let mut bytes = self.stack_size;
@@ -314,7 +319,7 @@ impl Codegenable for nodes::FeatureNode {
         self.block.codegen(codegen)?;
 
         // Return procedure
-        let label = codegen.generate_label(Some(name + "_return"));
+        let label = codegen.generate_label(Some(codegen.current_return_label.clone()));
         codegen.add_ir(label);
 
         if self.is_constructor {
@@ -331,6 +336,7 @@ impl Codegenable for nodes::FeatureNode {
         codegen.add_ir(instr::IR::Return);
 
         codegen.current_stack_offset = 0;
+        codegen.current_return_label.clear();
         codegen.reset_registers();
         codegen.leave_scope();
         Ok(instr::Operand::None)
@@ -347,6 +353,7 @@ impl Codegenable for nodes::MethodNode {
         debug_assert!(!codegen.current_class.is_empty());
         debug_assert!(codegen.current_stack_offset == 0);
         debug_assert!(codegen.stack_scopes.is_empty());
+        debug_assert!(codegen.current_return_label.is_empty());
 
         codegen.enter_scope();
 
@@ -354,6 +361,8 @@ impl Codegenable for nodes::MethodNode {
         let name = self.class_name.clone() + "_" + &self.name;
         let label = codegen.generate_label(Some(name.clone()));
         codegen.add_ir(label);
+
+        codegen.current_return_label = name + "_return";
 
         // Prepare stack offset
         let mut bytes = self.stack_size;
@@ -378,7 +387,7 @@ impl Codegenable for nodes::MethodNode {
         self.block.codegen(codegen)?;
 
         // Return procedure
-        let label = codegen.generate_label(Some(name + "_return"));
+        let label = codegen.generate_label(Some(codegen.current_return_label.clone()));
         codegen.add_ir(label);
 
         // Clean up stack offset
@@ -387,6 +396,7 @@ impl Codegenable for nodes::MethodNode {
         codegen.add_ir(instr::IR::Return);
 
         codegen.current_stack_offset = 0;
+        codegen.current_return_label.clear();
         codegen.reset_registers();
         codegen.leave_scope();
         Ok(instr::Operand::None)
@@ -464,7 +474,21 @@ impl Codegenable for nodes::IfNode {
 }
 impl Codegenable for nodes::ReturnNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        if let Some(return_expr) = &self.return_value {
+            let reg = return_expr.codegen(codegen)?;
+            debug_assert!(reg != instr::Operand::None);
+            let instr::Operand::Reg(_, mode) = reg else {
+                panic!()
+            };
+            codegen.add_ir(instr::IR::Move {
+                dst: instr::Operand::Reg(instr::Operand::RET, mode),
+                src: reg
+            });
+        }
+        codegen.add_ir(instr::IR::Jmp {
+            name: codegen.current_return_label.clone()
+        });
+        Ok(instr::Operand::None)
     }
 }
 impl Codegenable for nodes::TypeNode {
