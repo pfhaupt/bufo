@@ -157,6 +157,10 @@ impl Codegen {
         }
     }
 
+    fn reset_registers(&mut self) {
+        self.register_counter = 1;
+    }
+
     fn add_ir(&mut self, ir: instr::IR) {
         println!("{:?}", ir);
         self.ir.push(ir)
@@ -365,13 +369,15 @@ impl Codegenable for nodes::BlockNode {
 
 impl Codegenable for nodes::Statement {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        match self {
+        let reg = match self {
             Self::Assign(assign_node) => assign_node.codegen(codegen),
             Self::Expression(expr_node) => expr_node.codegen(codegen),
             Self::If(if_node) => if_node.codegen(codegen),
             Self::Let(let_node) => let_node.codegen(codegen),
             Self::Return(ret_node) => ret_node.codegen(codegen)
-        }
+        };
+        codegen.reset_registers();
+        reg
     }
 }
 
