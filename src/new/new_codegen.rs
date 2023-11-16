@@ -103,7 +103,19 @@ impl Codegen {
         }
     }
 
+    fn fill_lookup(&mut self, ast: &nodes::FileNode) {
+        for class in &ast.classes {
+            self.add_class(&class.name);
+            self.current_class = class.name.clone();
+            for field in &class.fields {
+                field.codegen(self).unwrap();
+            }
+        }
+        self.current_class.clear();
+    }
+
     pub fn generate_code(&mut self, ast: &nodes::FileNode) -> Result<(), String> {
+        self.fill_lookup(ast);
         ast.codegen(self)?;
         Ok(())
     }
@@ -143,9 +155,8 @@ impl Codegen {
         self.stack_scopes.pop();
     }
 
-    fn get_field_offset(&self, name: &String) -> usize {
-        debug_assert!(!self.current_class.is_empty());
-        let info = self.sm.get_class_info(&self.current_class);
+    fn get_field_offset(&self, class: &String, name: &String) -> usize {
+        let info = self.sm.get_class_info(class);
         info.get_field_offset(name)
     }
 
@@ -236,14 +247,6 @@ impl Codegenable for nodes::FileNode {
 
 impl Codegenable for nodes::ClassNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        debug_assert!(codegen.current_class.is_empty());
-        codegen.add_class(&self.name);
-        codegen.current_class = self.name.clone();
-
-        for field in &self.fields {
-            field.codegen(codegen)?;
-        }
-
         for feature in &self.features {
             feature.codegen(codegen)?;
         }
@@ -252,8 +255,7 @@ impl Codegenable for nodes::ClassNode {
             method.codegen(codegen)?;
         }
 
-        codegen.current_class.clear();
-        todo!()
+        Ok(instr::Operand::None)
     }
 }
 impl Codegenable for nodes::FieldNode {
@@ -272,7 +274,6 @@ impl Codegenable for nodes::FieldAccess {
 impl Codegenable for nodes::FeatureNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         // TODO: Make this a macro, it's the same thing for Functions and Methods
-        debug_assert!(!codegen.current_class.is_empty());
         debug_assert!(codegen.current_stack_offset == 0);
         debug_assert!(codegen.stack_scopes.is_empty());
         debug_assert!(codegen.current_return_label.is_empty());
@@ -351,7 +352,6 @@ impl Codegenable for nodes::FunctionNode {
 impl Codegenable for nodes::MethodNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         // TODO: Make this a macro, it's the same thing for Functions and Methods
-        debug_assert!(!codegen.current_class.is_empty());
         debug_assert!(codegen.current_stack_offset == 0);
         debug_assert!(codegen.stack_scopes.is_empty());
         debug_assert!(codegen.current_return_label.is_empty());
@@ -602,9 +602,7 @@ impl nodes::ExpressionFieldAccessNode {
                 let class_type = codegen.field_stack.pop().unwrap();
                 let Type::Class(class_name) = class_type else { panic!() };
 
-                let current_class = codegen.current_class.clone();
-                codegen.current_class = class_name;
-                let offset = codegen.get_field_offset(&name_node.name);
+                let offset = codegen.get_field_offset(&class_name, &name_node.name);
                 let reg = codegen.get_register()?;
                 let reg = instr::Operand::Reg(reg, instr::RegMode::from(&name_node.typ));
                 codegen.add_ir(instr::IR::LoadImm {
@@ -616,7 +614,6 @@ impl nodes::ExpressionFieldAccessNode {
                         instr::Operand::Imm64(offset as u64)
                     }
                 });
-                codegen.current_class = current_class;
                 Ok(reg)
             }
             nodes::Expression::FunctionCall(fn_call) => {
