@@ -309,14 +309,16 @@ impl Codegenable for nodes::FeatureNode {
         // Function body
         self.block.codegen(codegen)?;
 
+        // Return procedure
+        let label = codegen.generate_label(Some(name + "_return"));
+        codegen.add_ir(label);
+
         // Clean up stack offset
         codegen.add_ir(instr::IR::DeallocStack { bytes });
 
-        // Return
-        let label = codegen.generate_label(Some(name + "_return"));
-        codegen.add_ir(label);
         codegen.add_ir(instr::IR::Return);
 
+        codegen.current_stack_offset = 0;
         codegen.leave_scope();
         Ok(instr::Operand::None)
     }
