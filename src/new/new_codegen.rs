@@ -331,6 +331,7 @@ impl Codegenable for nodes::FeatureNode {
         codegen.add_ir(instr::IR::Return);
 
         codegen.current_stack_offset = 0;
+        codegen.reset_registers();
         codegen.leave_scope();
         Ok(instr::Operand::None)
     }
@@ -342,7 +343,53 @@ impl Codegenable for nodes::FunctionNode {
 }
 impl Codegenable for nodes::MethodNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        // TODO: Make this a macro, it's the same thing for Functions and Methods
+        debug_assert!(!codegen.current_class.is_empty());
+        debug_assert!(codegen.current_stack_offset == 0);
+        debug_assert!(codegen.stack_scopes.is_empty());
+
+        codegen.enter_scope();
+
+        // Generate entrypoint for later `call func_name` call
+        let name = self.class_name.clone() + "_" + &self.name;
+        let label = codegen.generate_label(Some(name.clone()));
+        codegen.add_ir(label);
+
+        // Prepare stack offset
+        let mut bytes = self.stack_size;
+        if bytes % 16 != 0 {
+            // 16-byte align the stack
+            bytes += 16 - bytes % 16;
+        }
+        codegen.add_ir(instr::IR::AllocStack { bytes });
+
+        // Add `this` param
+        // FIXME: This is unreliable once we add static methods and all that
+        //        It'd be 100 times better and easier if the parser would just add the parameter directly
+        //        instead of the implicit use in the Type Checker and Codegen.
+        codegen.store_variable_in_stack(&String::from("this"), &Type::Class(self.class_name.clone()));
+
+        // Prepare parameters
+        for param in &self.parameters {
+            param.codegen(codegen)?;
+        }
+
+        // Function body
+        self.block.codegen(codegen)?;
+
+        // Return procedure
+        let label = codegen.generate_label(Some(name + "_return"));
+        codegen.add_ir(label);
+
+        // Clean up stack offset
+        codegen.add_ir(instr::IR::DeallocStack { bytes });
+
+        codegen.add_ir(instr::IR::Return);
+
+        codegen.current_stack_offset = 0;
+        codegen.reset_registers();
+        codegen.leave_scope();
+        Ok(instr::Operand::None)
     }
 }
 impl Codegenable for nodes::ReturnTypeNode {
