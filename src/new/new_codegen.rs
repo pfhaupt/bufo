@@ -518,7 +518,7 @@ impl Codegenable for nodes::TypeNode {
 }
 impl Codegenable for nodes::ArgumentNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        self.expression.codegen(codegen)
     }
 }
 impl Codegenable for nodes::Expression {
