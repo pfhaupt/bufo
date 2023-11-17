@@ -562,7 +562,36 @@ impl Codegenable for nodes::ExpressionIdentifierNode {
 }
 impl Codegenable for nodes::IfNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        let cond = self.condition.codegen(codegen)?;
+        let instr::Operand::Cmp(cmp_mode) = cond else { unreachable!() };
+
+        let cond_false = codegen.generate_label(None);
+        let lbl_name = cond_false.get_lbl();
+        match cmp_mode {
+            Operation::EQ => codegen.add_ir(instr::IR::JmpNeq { name: lbl_name }),
+            Operation::NEQ => codegen.add_ir(instr::IR::JmpEq { name: lbl_name }),
+            Operation::GT => todo!(),
+            Operation::GTE => todo!(),
+            Operation::LT => todo!(),
+            Operation::LTE => todo!(),
+            _ => todo!()
+        }
+        self.if_branch.codegen(codegen)?;
+
+        if let Some(else_branch) = &self.else_branch {
+            let fin = codegen.generate_label(None);
+            let lbl_name = fin.get_lbl();
+            codegen.add_ir(instr::IR::Jmp { name: lbl_name });
+
+            codegen.add_ir(cond_false);
+
+            else_branch.codegen(codegen)?;
+
+            codegen.add_ir(fin);
+        } else {
+            codegen.add_ir(cond_false);
+        }
+        Ok(instr::Operand::None)
     }
 }
 impl Codegenable for nodes::ReturnNode {
