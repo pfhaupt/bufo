@@ -73,19 +73,11 @@ impl Register {
     pub const ARG3: Self = Self::R8;  // Third argument in R8
     pub const ARG4: Self = Self::R9;  // Fourth argument in R9
 
-    pub const CALLER_SAVED: [Self; 7] = [
-        Self::RAX,
-        Self::RCX,
-        Self::RDX,
-        Self::R8,
-        Self::R9,
-        Self::R10,
-        Self::R11,
-    ];
-
-    pub const CALLEE_SAVED: [Self; 8] = [
+    // https://learn.microsoft.com/en-us/cpp/build/x64-calling-convention?view=msvc-170#callercallee-saved-registers
+    pub const PRESERVED: [Self; 9] = [
         Self::RBX,
         Self::RBP,
+        Self::RSP,
         Self::RSI,
         Self::RDI,
         Self::R12,
@@ -97,7 +89,13 @@ impl Register {
     pub fn arg(index: usize) -> Self {
         // FIXME: Handle this case
         debug_assert!(index <= 3);
-        Self::from(Self::ARG1 as usize + index)
+        const ARGS: [Register; 4] = [
+            Register::ARG1,
+            Register::ARG2,
+            Register::ARG3,
+            Register::ARG4
+        ];
+        ARGS[index]
     }
 }
 

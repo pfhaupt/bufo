@@ -180,15 +180,31 @@ impl Codegen {
         self.register_counter = 1;
     }
 
-    fn push_caller_saved_registers(&mut self) {
-        for reg in instr::Register::CALLER_SAVED {
+    fn push_preserved_registers(&mut self) {
+        for reg in instr::Register::PRESERVED {
             self.add_ir(instr::IR::PushReg { reg });
         }
     }
 
-    fn pop_caller_saved_registers(&mut self) {
-        for reg in instr::Register::CALLER_SAVED.iter().rev() {
+    fn pop_preserved_registers(&mut self) {
+        for reg in instr::Register::PRESERVED.iter().rev() {
             self.add_ir(instr::IR::PopReg { reg: *reg });
+        }
+    }
+
+    fn push_registers(&mut self, reg_ctr: usize) {
+        for index in 1..reg_ctr {
+            self.add_ir(instr::IR::PushReg {
+                reg: instr::Register::from(index)
+            });
+        }
+    }
+
+    fn pop_registers(&mut self, reg_ctr: usize) {
+        for index in (1..reg_ctr).rev() {
+            self.add_ir(instr::IR::PopReg {
+                reg: instr::Register::from(index)
+            });
         }
     }
 
@@ -577,7 +593,9 @@ impl Codegenable for nodes::ExpressionConstructorNode {
         let result_mode = instr::RegMode::from(&self.typ);
         let result = instr::Operand::Reg(result, result_mode);
 
-        codegen.push_caller_saved_registers();
+        // FIXME: Why -1?
+        let counter = codegen.register_counter - 1;
+        codegen.push_registers(counter);
 
         // Codegen each argument and move it into the correct registers
         for (index, arg) in self.arguments.iter().enumerate() {
@@ -604,12 +622,12 @@ impl Codegenable for nodes::ExpressionConstructorNode {
             name: constructor
         });
 
-        codegen.pop_caller_saved_registers();
-
         codegen.add_ir(instr::IR::Move {
             dst: result,
             src: instr::Operand::Reg(instr::Register::RET, result_mode)
         });
+
+        codegen.pop_registers(counter);
         Ok(result)
     }
 }
