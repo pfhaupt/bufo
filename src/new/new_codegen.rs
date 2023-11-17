@@ -340,7 +340,7 @@ impl Codegenable for nodes::FeatureNode {
             let alloc_size = instr::Operand::Reg(instr::Register::ARG1, instr::RegMode::BIT64);
             codegen.add_ir(instr::IR::LoadImm {
                 dst: alloc_size,
-                imm: instr::Operand::Imm64(codegen.sm.get_class_size(&self.class_name) as u64)
+                imm: instr::Operand::ImmU64(codegen.sm.get_class_size(&self.class_name) as u64)
             });
             codegen.add_ir(instr::IR::Call { name: String::from("malloc") });
             let offset = codegen.update_stack_offset(8);
@@ -566,7 +566,39 @@ impl Codegenable for nodes::ExpressionArrayAccessNode {
 }
 impl Codegenable for nodes::ExpressionLiteralNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        // FIXME: Put this into a macro or expand ExpressionLiteralNode
+        match &self.typ {
+            Type::I32 => {
+                let v = self.value.parse::<i32>().map_err(|e| {
+                    todo!();
+                    e.to_string()
+                })?;
+                Ok(instr::Operand::ImmI32(v))
+            },
+            Type::I64 => {
+                let v = self.value.parse::<i64>().map_err(|e| {
+                    todo!();
+                    e.to_string()
+                })?;
+                Ok(instr::Operand::ImmI64(v))
+            },
+            Type::U32 => {
+                let v = self.value.parse::<u32>().map_err(|e| {
+                    todo!();
+                    e.to_string()
+                })?;
+                Ok(instr::Operand::ImmU32(v))
+            },
+            Type::U64 => {
+                let v = self.value.parse::<u64>().map_err(|e| {
+                    todo!();
+                    e.to_string()
+                })?;
+                Ok(instr::Operand::ImmU64(v))
+            },
+            Type::Usize => todo!(),
+            _ => todo!()
+        }
     }
 }
 impl Codegenable for nodes::ExpressionBinaryNode {
@@ -601,20 +633,35 @@ impl Codegenable for nodes::ExpressionConstructorNode {
         for (index, arg) in self.arguments.iter().enumerate() {
             let reg = arg.codegen(codegen)?;
             debug_assert!(reg != instr::Operand::None);
-
-            if let instr::Operand::Reg(reg_index, reg_mode) = reg {
-                let target_reg = instr::Register::arg(index);
-                if reg_index != target_reg {
-                    // Move to correct register if necessary
-                    let target_reg = instr::Operand::Reg(target_reg, reg_mode);
-                    codegen.add_ir(instr::IR::Move {
+            let target_reg = instr::Register::arg(index);
+            match reg {
+                instr::Operand::Reg(reg_index, reg_mode) => {
+                    if reg_index != target_reg {
+                        // Move to correct register if necessary
+                        let target_reg = instr::Operand::Reg(target_reg, reg_mode);
+                        codegen.add_ir(instr::IR::Move {
+                            dst: target_reg,
+                            src: reg,
+                        });
+                    }
+                }
+                imm @ instr::Operand::ImmI32(_)
+                | imm @ instr::Operand::ImmU32(_) => {
+                    let target_reg = instr::Operand::Reg(target_reg, instr::RegMode::BIT32);
+                    codegen.add_ir(instr::IR::LoadImm {
                         dst: target_reg,
-                        src: reg,
+                        imm
                     });
                 }
-            } else {
-                // FIXME: Is this actually `unreachable!()`?
-                todo!()
+                imm @ instr::Operand::ImmI64(_)
+                | imm @ instr::Operand::ImmU64(_) => {
+                    let target_reg = instr::Operand::Reg(target_reg, instr::RegMode::BIT64);
+                    codegen.add_ir(instr::IR::LoadImm {
+                        dst: target_reg,
+                        imm
+                    });
+                }
+                _ => todo!()
             }
         }
 
@@ -685,9 +732,9 @@ impl nodes::ExpressionFieldAccessNode {
                     dst: reg,
                     // FIXME: Improve this
                     imm: if name_node.typ.size() == 4 {
-                        instr::Operand::Imm32(offset as u32)
+                        instr::Operand::ImmU32(offset as u32)
                     } else {
-                        instr::Operand::Imm64(offset as u64)
+                        instr::Operand::ImmU64(offset as u64)
                     }
                 });
                 Ok(reg)

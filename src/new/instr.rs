@@ -105,8 +105,10 @@ pub enum Operand {
     Reg(Register, RegMode),
     StackOffset(usize), // e.g., stack offset
     HeapAddr(usize),
-    Imm32(u32),
-    Imm64(u64),
+    ImmU32(u32),
+    ImmU64(u64),
+    ImmI32(i32),
+    ImmI64(i64),
     None, // for nodes that do not return any registers
 }
 
