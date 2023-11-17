@@ -255,7 +255,36 @@ impl Codegen {
     }
 
     pub fn compile(&mut self) -> Result<(), String> {
-        todo!()
+        println!("{}", "-".repeat(50));
+        let mut output = String::new();
+        let mut push_asm = |s: &str| {
+            output.push_str(s.clone());
+            output.push('\n');
+        };
+
+        push_asm(format!("  ; Generated code for {}", "TODO: Figure out filename").as_str());
+        push_asm("default rel");
+        push_asm("");
+
+        push_asm("segment .text");
+        push_asm("  global main");
+        push_asm("  extern ExitProcess");
+        push_asm("  extern printf");
+        push_asm("  extern malloc");
+        push_asm("");
+
+        for ir in &self.ir {
+            if self.print_debug {
+                push_asm(format!("; -- {ir:?} --").as_str());
+            }
+            match ir {
+                _ => push_asm("; Can't generate ASM for that yet")
+            }
+        }
+
+        println!("{}", output);
+
+        Ok(())
     }
 
     pub fn run(&mut self) -> Result<(), String> {

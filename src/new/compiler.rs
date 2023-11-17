@@ -58,11 +58,11 @@ impl Compiler {
         }
         // todo!();
         
-        // let now = Instant::now();
-        // self.codegen.compile()?;
-        // if self.debug {
-        //     println!("Compiling took {:?}", now.elapsed());
-        // }
+        let now = Instant::now();
+        self.codegen.compile()?;
+        if self.debug {
+            println!("Compiling took {:?}", now.elapsed());
+        }
         // if self.run {
         //     let now = Instant::now();
         //     self.codegen.run()?;
