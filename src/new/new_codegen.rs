@@ -695,7 +695,7 @@ impl Codegenable for nodes::ExpressionFieldAccessNode {
         // for nesting, we call self.codegen_field()
         debug_assert!(codegen.known_variable(&self.name));
 
-        // load stack variable, which is a pointer
+        // load stack variable, which is a pointer to the instance
         let offset = codegen.get_stack_offset(&self.name);
         let reg = codegen.get_register()?;
         let reg = instr::Operand::Reg(reg, instr::RegMode::BIT64);
@@ -704,46 +704,67 @@ impl Codegenable for nodes::ExpressionFieldAccessNode {
             dst: reg,
             addr: var
         });
-        codegen.field_stack.push(self.typ.clone());
 
         // codegen field access
-        let field = self.codegen_field(codegen, &self.field)?;
+        codegen.field_stack.push(self.typ.clone());
+        self.codegen_field(codegen, &self.field)?;
 
-        // add both together
-        codegen.add_ir(instr::IR::Add {
-            dst: reg,
-            src1: reg,
-            src2: field
-        });
-
-        // reg now (hopefully) contains Pointer to field of actual instance
-        codegen.add_ir(instr::IR::Load {
-            dst: reg,
-            addr: reg
-        });
-
-        // reg should now contain the value of the field
+        // reg now contains address of field
+        // FIXME: Remember to deref the register when necessary
         Ok(reg)
     }
 }
 impl nodes::ExpressionFieldAccessNode {
     fn codegen_field(&self, codegen: &mut Codegen, field: &nodes::ExpressionIdentifierNode) -> Result<instr::Operand, String> {
+        let curr_reg = codegen.register_counter;
+        let reg = instr::Operand::Reg(instr::Register::from(curr_reg), instr::RegMode::BIT64);
+        // at this point, reg contains a reference to the instance
+
+        let class_type = codegen.field_stack.pop().unwrap();
+        let Type::Class(class_name) = class_type else { panic!() };
+
         match &(*field.expression) {
             nodes::Expression::FieldAccess(field_access) => {
-                todo!()
+                let offset = codegen.get_field_offset(&class_name, &field_access.name);
+                // Dereference register
+                // reg now holds the base address of the instance
+                codegen.add_ir(instr::IR::Load {
+                    dst: reg,
+                    addr: reg
+                });
+                let imm = if self.typ.size() == 4 {
+                    instr::Operand::ImmU32(offset as u32)
+                } else {
+                    instr::Operand::ImmU64(offset as u64)
+                };
+                // add offset of field to base address
+                codegen.add_ir(instr::IR::Add {
+                    dst: reg,
+                    src1: reg,
+                    src2: imm
+                });
+
+                // unwind field access by one level
+                codegen.field_stack.push(field_access.typ.clone());
+                field_access.codegen_field(codegen, &field_access.field)
             }
             nodes::Expression::Name(name_node) => {
-                let class_type = codegen.field_stack.pop().unwrap();
-                let Type::Class(class_name) = class_type else { panic!() };
-
                 let offset = codegen.get_field_offset(&class_name, &name_node.name);
-                // let reg = codegen.get_register()?;
-                // let reg = instr::Operand::Reg(reg, instr::RegMode::from(&name_node.typ));
                 let imm = if name_node.typ.size() == 4 {
                     instr::Operand::ImmU32(offset as u32)
                 } else {
                     instr::Operand::ImmU64(offset as u64)
                 };
+                codegen.add_ir(instr::IR::Load {
+                    dst: reg,
+                    addr: reg
+                });
+                // add both together
+                codegen.add_ir(instr::IR::Add {
+                    dst: reg,
+                    src1: reg,
+                    src2: imm
+                });
                 Ok(imm)
             }
             nodes::Expression::FunctionCall(fn_call) => {
