@@ -43,13 +43,13 @@ impl Compiler {
             println!("Desugaring took {:?}", now.elapsed());
         }
 
-        println!("{:#?}", parsed_ast);
+        // println!("{:#?}", parsed_ast);
         let now = Instant::now();
         self.checker.type_check_file(&mut parsed_ast)?;
         if self.debug {
             println!("Type Checking took {:?}", now.elapsed());
         }
-        println!("{:#?}", parsed_ast);
+        // println!("{:#?}", parsed_ast);
 
         let now = Instant::now();
         self.codegen.generate_code(&parsed_ast)?;

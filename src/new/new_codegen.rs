@@ -210,7 +210,6 @@ impl Codegen {
     }
 
     fn add_ir(&mut self, ir: instr::IR) {
-        println!("{:?}", ir);
         self.ir.push(ir)
     }
 
@@ -241,7 +240,7 @@ impl Codegen {
             }
         }
         println!("Could not find {name} in {scopes:?}", scopes=self.stack_scopes);
-        unreachable!()
+        panic!()
     }
 
     fn store_variable_in_stack(&mut self, name: &String, typ: &Type) -> Result<(), String> {
@@ -276,7 +275,7 @@ impl Codegenable for nodes::FileNode {
         for function in &self.functions {
             function.codegen(codegen)?;
         }
-        todo!()
+        Ok(instr::Operand::None)
     }
 }
 

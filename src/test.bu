@@ -17,4 +17,5 @@ func ack(m: u64, n: u64) -> u64 {
 func main() {
     let a: i32 = 5;
     let b: i32 = foo(a, a);
+    let c: u64 = ack(3, 3);
 }
