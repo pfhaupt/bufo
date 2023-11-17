@@ -136,6 +136,7 @@ pub struct IfNode {
 pub struct ReturnNode {
     pub location: Location,
     pub return_value: Option<ExpressionNode>,
+    pub typ: Type,
 }
 
 #[derive(Debug, Clone)]

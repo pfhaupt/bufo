@@ -931,7 +931,8 @@ impl Parsable for nodes::ReturnNode {
         parser.expect(TokenType::Semi)?;
         Ok(nodes::ReturnNode {
             location,
-            return_value
+            return_value,
+            typ: Type::Unknown
         })
     }
 }

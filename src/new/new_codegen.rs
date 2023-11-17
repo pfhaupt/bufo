@@ -596,14 +596,12 @@ impl Codegenable for nodes::IfNode {
 }
 impl Codegenable for nodes::ReturnNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
+        debug_assert!(self.typ != Type::Unknown);
         if let Some(return_expr) = &self.return_value {
             let reg = return_expr.codegen(codegen)?;
             debug_assert!(reg != instr::Operand::None);
-            let instr::Operand::Reg(_, mode) = reg else {
-                panic!()
-            };
             codegen.add_ir(instr::IR::Move {
-                dst: instr::Operand::Reg(instr::Register::RET, mode),
+                dst: instr::Operand::Reg(instr::Register::RET, instr::RegMode::from(&self.typ)),
                 src: reg
             });
         }
@@ -903,6 +901,7 @@ impl nodes::ExpressionFieldAccessNode {
 }
 impl Codegenable for nodes::NameNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
+        // FIXME: We can reduce register usage here by directly returning the Offset-Operand
         let offset = codegen.get_stack_offset(&self.name);
         debug_assert!(self.typ != Type::None || self.typ != Type::Unknown);
         let reg = codegen.get_register()?;

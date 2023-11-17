@@ -715,6 +715,7 @@ impl Typecheckable for nodes::IfNode {
 impl Typecheckable for nodes::ReturnNode {
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
         debug_assert!(!checker.current_function.is_empty());
+        debug_assert!(self.typ == Type::Unknown);
         // FIXME: Both branches share 80% same work, we can reduce code size and make this easier to read
         if checker.current_class.is_empty() {
             // We're returning from a normal function
@@ -728,10 +729,11 @@ impl Typecheckable for nodes::ReturnNode {
                     todo!() // FIXME: Unexpected return value
                 }
                 let expr_type = ret_expr.type_check(checker)?;
-                if expr_type == Type::Unknown {
-                    todo!() // FIXME: `infer` type
+                let t = if expr_type == Type::Unknown {
+                    ret_expr.type_check_with_type(checker, &expected_return_type)?;
+                    expected_return_type
                 } else if expr_type != expected_return_type {
-                    Err(format!(
+                    return Err(format!(
                         "{}: {:?}: Type Mismatch! Function is declared to return `{:?}`, found `{:?}`.\n{}: {:?}: Function declared to return `{:?}` here.",
                         ERR_STR,
                         self.location,
@@ -740,11 +742,13 @@ impl Typecheckable for nodes::ReturnNode {
                         NOTE_STR,
                         location,
                         expr_type
-                    ))
+                    ));
                 } else {
                     // Everything is fine, correct return type was provided
-                    Ok(expr_type)
-                }
+                    expr_type
+                };
+                self.typ = t.clone();
+                Ok(t)
             } else {
                 // NOTE: This means no return value
                 todo!()
@@ -776,13 +780,13 @@ impl Typecheckable for nodes::ReturnNode {
                     todo!()
                 }
                 let expr_type = ret_expr.type_check(checker)?;
-                if expr_type == Type::Unknown {
+                let t = if expr_type == Type::Unknown {
                     // we have something like `return 5;`, where we couldn't determine the type
                     // so we now have to `infer` the type, and set it accordingly
                     todo!()
                 } else if expr_type != expected_return_type {
                     // Signature expects `expected_return_type`, `return {expr}` has other type for expr
-                    Err(format!(
+                    return Err(format!(
                         "{}: {:?}: Type Mismatch! Function is declared to return `{:?}`, found `{:?}`.\n{}: {:?}: Function declared to return `{:?}` here.",
                         ERR_STR,
                         self.location,
@@ -791,11 +795,13 @@ impl Typecheckable for nodes::ReturnNode {
                         NOTE_STR,
                         location,
                         expr_type
-                    ))
+                    ));
                 } else {
                     // Everything is fine, correct return type was provided
-                    Ok(expr_type)
-                }
+                    expr_type
+                };
+                self.typ = t.clone();
+                Ok(t)
             } else {
                 // NOTE: This means no return value
                 todo!()
