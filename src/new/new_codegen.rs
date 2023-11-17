@@ -91,7 +91,7 @@ impl Codegen {
             current_stack_offset: 0,
             stack_scopes: Vec::new(),
             field_stack: Vec::new(),
-            register_counter: 1,
+            register_counter: 0,
             print_debug: false
          }
     }
@@ -161,8 +161,8 @@ impl Codegen {
     }
 
     fn get_register(&mut self) -> Result<instr::Register, String> {
-        let v = self.register_counter;
         self.register_counter += 1;
+        let v = self.register_counter;
         if self.register_counter == instr::Register::__COUNT as usize {
             todo!()
         } else {
@@ -177,7 +177,8 @@ impl Codegen {
     }
 
     fn reset_registers(&mut self) {
-        self.register_counter = 1;
+        // even if register 0 (RAX) is reserved, get_register() increases this counter before returning it, so it's ok.
+        self.register_counter = 0;
     }
 
     fn push_preserved_registers(&mut self) {
@@ -636,8 +637,7 @@ impl Codegenable for nodes::ExpressionConstructorNode {
         let result_mode = instr::RegMode::from(&self.typ);
         let result = instr::Operand::Reg(result, result_mode);
 
-        // FIXME: Why -1?
-        let counter = codegen.register_counter - 1;
+        let counter = codegen.register_counter;
         codegen.push_registers(counter);
 
         // Codegen each argument and move it into the correct registers
