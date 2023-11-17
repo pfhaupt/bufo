@@ -134,8 +134,8 @@ pub enum IR {
     // Arithmetics
     Add { dst: Operand, src1: Operand, src2: Operand },
     Sub { dst: Operand, src1: Operand, src2: Operand },
-    Mul { dst: Operand, src1: Operand, src2: Operand },
-    Div { dst: Operand, src1: Operand, src2: Operand },
+    Mul { dst: Operand, src1: Operand, src2: Operand, signed: bool },
+    Div { dst: Operand, src1: Operand, src2: Operand, signed: bool },
     
     // Control Flow
     Label { name: String },

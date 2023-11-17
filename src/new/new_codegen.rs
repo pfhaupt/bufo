@@ -715,14 +715,16 @@ impl Codegenable for nodes::ExpressionBinaryNode {
                 codegen.add_ir(instr::IR::Mul {
                     dst: lhs,
                     src1: lhs,
-                    src2: rhs
+                    src2: rhs,
+                    signed: self.typ == Type::I32 || self.typ == Type::I64
                 });
             },
             Operation::DIV => {
                 codegen.add_ir(instr::IR::Div {
                     dst: lhs,
                     src1: lhs,
-                    src2: rhs
+                    src2: rhs,
+                    signed: self.typ == Type::I32 || self.typ == Type::I64
                 });
             },
             _ => todo!()
