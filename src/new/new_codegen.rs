@@ -737,18 +737,14 @@ impl nodes::ExpressionFieldAccessNode {
                 let Type::Class(class_name) = class_type else { panic!() };
 
                 let offset = codegen.get_field_offset(&class_name, &name_node.name);
-                let reg = codegen.get_register()?;
-                let reg = instr::Operand::Reg(reg, instr::RegMode::from(&name_node.typ));
-                codegen.add_ir(instr::IR::LoadImm {
-                    dst: reg,
-                    // FIXME: Improve this
-                    imm: if name_node.typ.size() == 4 {
-                        instr::Operand::ImmU32(offset as u32)
-                    } else {
-                        instr::Operand::ImmU64(offset as u64)
-                    }
-                });
-                Ok(reg)
+                // let reg = codegen.get_register()?;
+                // let reg = instr::Operand::Reg(reg, instr::RegMode::from(&name_node.typ));
+                let imm = if name_node.typ.size() == 4 {
+                    instr::Operand::ImmU32(offset as u32)
+                } else {
+                    instr::Operand::ImmU64(offset as u64)
+                };
+                Ok(imm)
             }
             nodes::Expression::FunctionCall(fn_call) => {
                 todo!()
