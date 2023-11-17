@@ -245,8 +245,8 @@ impl Codegen {
 
     fn store_variable_in_stack(&mut self, name: &String, typ: &Type) -> Result<(), String> {
         let offset = self.update_stack_offset(typ.size());
-        let reg = self.get_register()?;
         self.add_variable_offset(name, offset);
+        let reg = self.get_register()?;
         self.add_ir(instr::IR::Store {
             addr: instr::Operand::StackOffset(offset),
             value: instr::Operand::Reg(reg, instr::RegMode::from(typ))
@@ -480,7 +480,18 @@ impl Codegenable for nodes::ExpressionNode {
     }
 }impl Codegenable for nodes::LetNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        let rhs = self.expression.codegen(codegen)?;
+        debug_assert!(rhs != instr::Operand::None);
+
+        let offset = codegen.update_stack_offset(self.typ.typ.size());
+        codegen.add_variable_offset(&self.name, offset);
+
+        codegen.add_ir(instr::IR::Store {
+            addr: instr::Operand::StackOffset(offset),
+            value: rhs
+        });
+
+        Ok(instr::Operand::None)
     }
 }
 impl Codegenable for nodes::AssignNode {
