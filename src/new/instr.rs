@@ -1,3 +1,5 @@
+use super::new_parser::Operation;
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum RegMode {
     BIT64,
@@ -109,7 +111,17 @@ pub enum Operand {
     ImmU64(u64),
     ImmI32(i32),
     ImmI64(i64),
+    Cmp(Operation),
     None, // for nodes that do not return any registers
+}
+
+impl IR {
+    pub fn get_lbl(&self) -> String {
+        match &self {
+            Self::Label { name } => name.clone(),
+            _ => unreachable!()
+        }
+    }
 }
 
 #[derive(Debug)]
