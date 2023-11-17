@@ -752,7 +752,66 @@ impl Codegenable for nodes::ExpressionComparisonNode {
 }
 impl Codegenable for nodes::ExpressionCallNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        debug_assert!(self.typ != Type::Unknown);
+        // FIXME: Type::None does not mean that the function is invalid
+        //        It just means we don't put anything in the return register
+        debug_assert!(self.typ != Type::None);
+
+        // FIXME: Reduce register usage by directly returning RET-Reg at the end
+        let result = codegen.get_register()?;
+        let result_mode = instr::RegMode::from(&self.typ);
+        let result = instr::Operand::Reg(result, result_mode);
+
+        let counter = codegen.register_counter;
+        codegen.push_registers(counter);
+
+        // Codegen each argument and move it into the correct registers
+        for (index, arg) in self.arguments.iter().enumerate() {
+            let reg = arg.codegen(codegen)?;
+            debug_assert!(reg != instr::Operand::None);
+            let target_reg = instr::Register::arg(index);
+            match reg {
+                instr::Operand::Reg(reg_index, reg_mode) => {
+                    if reg_index != target_reg {
+                        // Move to correct register if necessary
+                        let target_reg = instr::Operand::Reg(target_reg, reg_mode);
+                        codegen.add_ir(instr::IR::Move {
+                            dst: target_reg,
+                            src: reg,
+                        });
+                    }
+                }
+                imm @ instr::Operand::ImmI32(_)
+                | imm @ instr::Operand::ImmU32(_) => {
+                    let target_reg = instr::Operand::Reg(target_reg, instr::RegMode::BIT32);
+                    codegen.add_ir(instr::IR::LoadImm {
+                        dst: target_reg,
+                        imm
+                    });
+                }
+                imm @ instr::Operand::ImmI64(_)
+                | imm @ instr::Operand::ImmU64(_) => {
+                    let target_reg = instr::Operand::Reg(target_reg, instr::RegMode::BIT64);
+                    codegen.add_ir(instr::IR::LoadImm {
+                        dst: target_reg,
+                        imm
+                    });
+                }
+                _ => todo!()
+            }
+        }
+
+        codegen.add_ir(instr::IR::Call {
+            name: self.function_name.clone()
+        });
+
+        codegen.add_ir(instr::IR::Move {
+            dst: result,
+            src: instr::Operand::Reg(instr::Register::RET, result_mode)
+        });
+
+        codegen.pop_registers(counter);
+        Ok(result)
     }
 }
 impl Codegenable for nodes::ExpressionConstructorNode {
