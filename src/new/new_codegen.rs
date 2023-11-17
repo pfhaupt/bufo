@@ -381,7 +381,52 @@ impl Codegenable for nodes::FeatureNode {
 }
 impl Codegenable for nodes::FunctionNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        // TODO: Make this a macro, it's the same thing for Functions and Methods
+        debug_assert!(codegen.current_stack_offset == 0);
+        debug_assert!(codegen.stack_scopes.is_empty());
+        debug_assert!(codegen.current_return_label.is_empty());
+        debug_assert!(codegen.current_class.is_empty());
+
+        codegen.enter_scope();
+
+        // Generate entrypoint for later `call func_name` call
+        let name = self.name.clone();
+        let label = codegen.generate_label(Some(name.clone()));
+        codegen.add_ir(label);
+
+        codegen.current_return_label = name + "_return";
+
+        // Prepare stack offset
+        let mut bytes = self.stack_size;
+        if bytes % 16 != 0 {
+            // 16-byte align the stack
+            bytes += 16 - bytes % 16;
+        }
+        codegen.add_ir(instr::IR::AllocStack { bytes });
+
+        // Prepare parameters
+        for param in &self.parameters {
+            param.codegen(codegen)?;
+        }
+        codegen.reset_registers();
+
+        // Function body
+        self.block.codegen(codegen)?;
+
+        // Return procedure
+        let label = codegen.generate_label(Some(codegen.current_return_label.clone()));
+        codegen.add_ir(label);
+
+        // Clean up stack offset
+        codegen.add_ir(instr::IR::DeallocStack { bytes });
+
+        codegen.add_ir(instr::IR::Return);
+
+        codegen.current_stack_offset = 0;
+        codegen.current_return_label.clear();
+        codegen.reset_registers();
+        codegen.leave_scope();
+        Ok(instr::Operand::None)
     }
 }
 impl Codegenable for nodes::MethodNode {
