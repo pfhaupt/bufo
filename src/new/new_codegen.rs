@@ -2,7 +2,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use super::nodes;
-use crate::checker::Type;
+use crate::{checker::Type, new::new_parser::Operation};
 use super::instr;
 
 const LBL_STR: &str = "lbl_";
@@ -660,7 +660,47 @@ impl Codegenable for nodes::ExpressionLiteralNode {
 }
 impl Codegenable for nodes::ExpressionBinaryNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        let lhs = self.lhs.codegen(codegen)?;
+        debug_assert!(lhs != instr::Operand::None);
+        if let instr::Operand::Reg(_, _) = lhs {} else {
+            // basically assert that LHS is a register for now
+            // we need to handle LHS=Imm later on
+            panic!()
+        }
+        let rhs = self.rhs.codegen(codegen)?;
+        debug_assert!(rhs != instr::Operand::None);
+        match &self.operation {
+            Operation::PLUS => {
+                codegen.add_ir(instr::IR::Add {
+                    dst: lhs,
+                    src1: lhs,
+                    src2: rhs
+                });
+            },
+            Operation::MINUS => {
+                codegen.add_ir(instr::IR::Sub {
+                    dst: lhs,
+                    src1: lhs,
+                    src2: rhs
+                });
+            },
+            Operation::MULT => {
+                codegen.add_ir(instr::IR::Mul {
+                    dst: lhs,
+                    src1: lhs,
+                    src2: rhs
+                });
+            },
+            Operation::DIV => {
+                codegen.add_ir(instr::IR::Div {
+                    dst: lhs,
+                    src1: lhs,
+                    src2: rhs
+                });
+            },
+            _ => todo!()
+        }
+        Ok(lhs)
     }
 }
 impl Codegenable for nodes::ExpressionComparisonNode {
