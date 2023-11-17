@@ -705,7 +705,20 @@ impl Codegenable for nodes::ExpressionBinaryNode {
 }
 impl Codegenable for nodes::ExpressionComparisonNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        let lhs = self.lhs.codegen(codegen)?;
+        debug_assert!(lhs != instr::Operand::None);
+        if let instr::Operand::Reg(_, _) = lhs {} else {
+            // basically assert that LHS is a register for now
+            // we need to handle LHS=Imm later on
+            panic!()
+        }
+        let rhs = self.rhs.codegen(codegen)?;
+        debug_assert!(rhs != instr::Operand::None);
+        codegen.add_ir(instr::IR::Cmp {
+            dst: lhs,
+            src: rhs
+        });
+        Ok(instr::Operand::Cmp(self.operation))
     }
 }
 impl Codegenable for nodes::ExpressionCallNode {
