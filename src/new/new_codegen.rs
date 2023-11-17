@@ -570,7 +570,47 @@ impl Codegenable for nodes::ExpressionCallNode {
 }
 impl Codegenable for nodes::ExpressionConstructorNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        // FIXME: This will break if we ever rename the new feature
+        let constructor = self.class_name.clone() + "_new";
+
+        let result = codegen.get_register()?;
+        let result_mode = instr::RegMode::from(&self.typ);
+        let result = instr::Operand::Reg(result, result_mode);
+
+        codegen.push_caller_saved_registers();
+
+        // Codegen each argument and move it into the correct registers
+        for (index, arg) in self.arguments.iter().enumerate() {
+            let reg = arg.codegen(codegen)?;
+            debug_assert!(reg != instr::Operand::None);
+
+            if let instr::Operand::Reg(reg_index, reg_mode) = reg {
+                let target_reg = instr::Register::arg(index);
+                if reg_index != target_reg {
+                    // Move to correct register if necessary
+                    let target_reg = instr::Operand::Reg(target_reg, reg_mode);
+                    codegen.add_ir(instr::IR::Move {
+                        dst: target_reg,
+                        src: reg,
+                    });
+                }
+            } else {
+                // FIXME: Is this actually `unreachable!()`?
+                todo!()
+            }
+        }
+
+        codegen.add_ir(instr::IR::Call {
+            name: constructor
+        });
+
+        codegen.pop_caller_saved_registers();
+
+        codegen.add_ir(instr::IR::Move {
+            dst: result,
+            src: instr::Operand::Reg(instr::Register::RET, result_mode)
+        });
+        Ok(result)
     }
 }
 impl Codegenable for nodes::ExpressionFieldAccessNode {
