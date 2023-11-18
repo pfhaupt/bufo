@@ -65,7 +65,6 @@ impl Assembler {
     }
 
     pub fn generate_x86_64(&self, ir: Vec<instr::IR>) -> Result<(), String> {
-        println!("{}", "-".repeat(50));
         let mut output = String::new();
         let mut push_asm = |s: &str| {
             output.push_str(s.clone());
@@ -430,5 +429,26 @@ impl Assembler {
         }
 
         Ok(())
+    }
+
+    pub fn run(&self) -> Result<(), String> {
+        let mut output_path = String::from(OUTPUT_FOLDER);
+        output_path.push_str(&self.path.replace(FILE_EXT, ".exe"));
+
+        if self.print_debug {
+            println!("Running `{output_path}`");
+        }
+
+        let output = Command::new(output_path)
+            .output()
+            .expect("failed to execute process");
+        let exit_code = output.status.code().unwrap();
+        if exit_code != 0 {
+            Err(format!(
+                "{}: Code execution failed with code 0x{:X}.", ERR_STR, exit_code
+            ))
+        } else {
+            Ok(())
+        }
     }
 }

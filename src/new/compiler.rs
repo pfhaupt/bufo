@@ -16,19 +16,19 @@ pub struct Compiler {
     checker: TypeChecker,
     codegen: Codegen,
     assembler: Assembler,
-    debug: bool,
+    print_debug: bool,
     run: bool
 }
 
 impl Compiler {
-    pub fn new(path: &String, debug: bool, run: bool) -> Result<Self, String> {
+    pub fn new(path: &String, print_debug: bool, run: bool) -> Result<Self, String> {
         Ok(Self {
-            parser: Parser::new().filepath(path)?.debug(debug),
-            desugarer: Desugarer::new().debug(debug),
+            parser: Parser::new().filepath(path)?.debug(print_debug),
+            desugarer: Desugarer::new().debug(print_debug),
             checker: TypeChecker::new(),
-            codegen: Codegen::new().debug(debug),
-            assembler: Assembler::new().debug(debug).filepath(path),
-            debug,
+            codegen: Codegen::new().debug(print_debug),
+            assembler: Assembler::new().debug(print_debug).filepath(path),
+            print_debug,
             run
         })
     }
@@ -36,45 +36,44 @@ impl Compiler {
     pub fn run_everything(&mut self) -> Result<(), String> {
         let now = Instant::now();
         let mut parsed_ast = self.parser.parse_file()?;
-        if self.debug {
+        if self.print_debug {
             println!("Parsing took {:?}", now.elapsed());
         }
 
         let now = Instant::now();
         // self.desugarer.desugar_file(&mut parsed_ast)?;
-        if self.debug {
+        if self.print_debug {
             println!("Desugaring took {:?}", now.elapsed());
         }
 
         // println!("{:#?}", parsed_ast);
         let now = Instant::now();
         self.checker.type_check_file(&mut parsed_ast)?;
-        if self.debug {
+        if self.print_debug {
             println!("Type Checking took {:?}", now.elapsed());
         }
         // println!("{:#?}", parsed_ast);
 
         let now = Instant::now();
         let ir = self.codegen.generate_code(&parsed_ast)?;
-        if self.debug {
+        if self.print_debug {
             println!("Codegen took {:?}", now.elapsed());
         }
         // todo!();
         
         let now = Instant::now();
         self.assembler.generate_x86_64(ir)?;
-        if self.debug {
+        if self.print_debug {
             println!("Assembling took {:?}", now.elapsed());
         }
-        // if self.run {
-        //     let now = Instant::now();
-        //     self.codegen.run()?;
-        //     if self.debug {
-        //         println!("Running took {:?}", now.elapsed());
-        //     }
-        // }
-        Err(String::from("Technically yes, but we're not done yet"))
-        // Ok(())
+        if self.run {
+            let now = Instant::now();
+            self.assembler.run()?;
+            if self.print_debug {
+                println!("Running took {:?}", now.elapsed());
+            }
+        }
+        Ok(())
     }
 }
 

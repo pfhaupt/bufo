@@ -1,22 +1,9 @@
-func foo(a: i32, b1: i32) -> i32 {
-    let b: i32 = 5;
-    let c: i32 = a * a;
-    if (c == 25) {
-        return b / b;
-    } else {
-        return 420;
-    }
-}
-
-func ack(m: u64, n: u64) -> u64 {
-    if (m == 0) { return n; }
+func ack(m: u32, n: u32) -> u32 {
+    if (m == 0) { return n + 1; }
     if (n == 0) { return ack(m - 1, 1); }
     return ack(m - 1, ack(m, n - 1));
 }
 
 func main() {
-    let a: i32 = 5;
-    let b: i32 = foo(a, a);
-    let c: u64 = ack(3, 3);
-    let d: i32 = a + b;
+    let a: u32 = ack(3, 5);
 }
