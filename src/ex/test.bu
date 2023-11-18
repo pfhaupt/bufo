@@ -6,4 +6,5 @@ func ack(m: u32, n: u32) -> u32 {
 
 func main() {
     let a: u32 = ack(3, 5);
+    let b: u32 = (1u32 + 1u32) == 4i32;
 }

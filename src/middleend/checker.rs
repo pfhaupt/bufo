@@ -1056,14 +1056,19 @@ impl Typecheckable for nodes::ExpressionComparisonNode {
             (Type::Unknown, other) => self.lhs.type_check_with_type(checker, other)?,
             (other, Type::Unknown) => self.rhs.type_check_with_type(checker, other)?,
             (lhs, rhs) => {
+                let lhs_loc = self.lhs.get_loc();
+                let rhs_loc = self.rhs.get_loc();
                 if lhs != rhs {
-                    // FIXME: Also store location of LHS and RHS for better error reporting
                     return Err(format!(
-                        "{}: {:?}: Type Mismatch in comparison. LHS has type `{:?}`, RHS has type `{:?}`.",
+                        "{}: {:?}: Type Mismatch in comparison. LHS has type `{:?}`, RHS has type `{:?}`.\n{}: {:?}: LHS is here.\n{}: {:?}: RHS is here.",
                         ERR_STR,
                         self.location,
                         lhs,
-                        rhs
+                        rhs,
+                        NOTE_STR,
+                        lhs_loc,
+                        NOTE_STR,
+                        rhs_loc
                     ));
                 }
             }

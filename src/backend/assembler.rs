@@ -179,7 +179,12 @@ impl Assembler {
                             push_asm(format!("  add {dst_reg}, {immediate}").as_str());
                         }
                         (dst, src) => {
-                            todo!("add {dst:?} {src:?}")
+                            return Err(format!(
+                                "Internal Error: {}:{}:{}: Can't generate ASM for `add {dst:?}, {src:?}",
+                                file!(),
+                                line!(),
+                                column!()
+                            ));
                         }
                     }
                 }
@@ -201,7 +206,12 @@ impl Assembler {
                             push_asm(format!("  sub {dst_reg}, {immediate}").as_str());
                         }
                         (dst, src) => {
-                            todo!("sub {dst:?} {src:?}")
+                            return Err(format!(
+                                "Internal Error: {}:{}:{}: Can't generate ASM for `sub {dst:?}, {src:?}",
+                                file!(),
+                                line!(),
+                                column!()
+                            ));
                         }
                     }
                 }
@@ -232,7 +242,12 @@ impl Assembler {
                                 todo!()
                             }
                             (dst, src) => {
-                                todo!("imul {dst:?} {src:?}")
+                                return Err(format!(
+                                    "Internal Error: {}:{}:{}: Can't generate ASM for `imul {dst:?}, {src:?}",
+                                    file!(),
+                                    line!(),
+                                    column!()
+                                ));
                             }
                         }
                     } else {
@@ -261,7 +276,12 @@ impl Assembler {
                                 todo!()
                             }
                             (dst, src) => {
-                                todo!("mul {dst:?} {src:?}")
+                                return Err(format!(
+                                    "Internal Error: {}:{}:{}: Can't generate ASM for `mul {dst:?}, {src:?}",
+                                    file!(),
+                                    line!(),
+                                    column!()
+                                ));
                             }
                         }
                     }
@@ -299,7 +319,12 @@ impl Assembler {
                             push_asm(format!("  mov {dst_reg}, {acc}").as_str());
                         }
                         (dst, src) => {
-                            todo!("{d} {dst:?} {src:?}")
+                            return Err(format!(
+                                "Internal Error: {}:{}:{}: Can't generate ASM for `{d} {dst:?}, {src:?}",
+                                file!(),
+                                line!(),
+                                column!()
+                            ));
                         }
                     }
                 }
@@ -325,7 +350,12 @@ impl Assembler {
                             push_asm(format!("  cmp {dst_reg}, {immediate}").as_str());
                         }
                         (dst, src) => {
-                            todo!("cmp {dst:?} {src:?}")
+                            return Err(format!(
+                                "Internal Error: {}:{}:{}: Can't generate ASM for `cmp {dst:?}, {src:?}",
+                                file!(),
+                                line!(),
+                                column!()
+                            ));
                         }
                     }
                 }

@@ -722,7 +722,7 @@ impl Codegenable for nodes::ExpressionBinaryNode {
                     signed: self.typ == Type::I32 || self.typ == Type::I64,
                 });
             }
-            _ => todo!(),
+            _ => unreachable!(),
         }
         Ok(lhs)
     }
