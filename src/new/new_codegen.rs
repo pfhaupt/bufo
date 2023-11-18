@@ -2,7 +2,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use super::nodes;
-use crate::{new::new_checker::Type, parser::Operation};
+use crate::{checker::Type, parser::Operation};
 use super::instr;
 
 const LBL_STR: &str = "lbl_";

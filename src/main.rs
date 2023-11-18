@@ -2,6 +2,7 @@
 
 mod codegen;
 mod parser;
+mod checker;
 mod flags;
 mod new;
 

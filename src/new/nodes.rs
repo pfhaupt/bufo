@@ -1,5 +1,5 @@
 use crate::parser::Location;
-use crate::new::new_checker::Type;
+use crate::checker::Type;
 use crate::parser::Operation;
 
 #[derive(Debug, Clone)]

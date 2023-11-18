@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::new::new_codegen::{ERR_STR, NOTE_STR, WARN_STR};
-use crate::new::new_checker::Type;
+use crate::checker::Type;
 use crate::new::nodes::{self, Expression};
 
 // We always store the N-1 next tokens for lookahead purposes, even if we only use 1 right now
