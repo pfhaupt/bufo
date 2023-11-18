@@ -309,11 +309,6 @@ impl Codegenable for nodes::FieldNode {
         Ok(instr::Operand::none())
     }
 }
-impl Codegenable for nodes::FieldAccess {
-    fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
-    }
-}
 impl Codegenable for nodes::FeatureNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         // TODO: Make this a macro, it's the same thing for Functions and Methods

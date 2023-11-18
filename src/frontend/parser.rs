@@ -622,15 +622,6 @@ impl Parsable for nodes::FieldNode {
     }
 }
 
-impl Parsable for nodes::FieldAccess {
-    fn parse(_parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        todo!()
-    }
-}
-
 impl Parsable for nodes::FeatureNode {
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where

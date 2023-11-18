@@ -452,24 +452,6 @@ impl Typecheckable for nodes::FieldNode {
         todo!()
     }
 }
-impl Typecheckable for nodes::FieldAccess {
-    fn type_check(&mut self, _checker: &mut TypeChecker) -> Result<Type, String>
-    where
-        Self: Sized,
-    {
-        todo!()
-    }
-    fn type_check_with_type(
-        &mut self,
-        _checker: &mut TypeChecker,
-        _typ: &Type,
-    ) -> Result<(), String>
-    where
-        Self: Sized,
-    {
-        todo!()
-    }
-}
 impl Typecheckable for nodes::FeatureNode {
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where

@@ -27,14 +27,6 @@ pub struct FieldNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct FieldAccess {
-    pub location: Location,
-    pub name: String,
-    pub field: Expression,
-    pub typ: Type,
-}
-
-#[derive(Debug, Clone)]
 pub struct FeatureNode {
     pub location: Location,
     pub class_name: String,
