@@ -24,7 +24,7 @@ pub struct Compiler {
 }
 
 impl Compiler {
-    pub fn new(path: &String, print_debug: bool, run: bool) -> Result<Self, String> {
+    pub fn new(path: &str, print_debug: bool, run: bool) -> Result<Self, String> {
         Ok(Self {
             parser: Parser::new().filepath(path)?.debug(print_debug),
             checker: TypeChecker::new(),

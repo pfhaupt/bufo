@@ -168,7 +168,7 @@ impl Codegen {
             todo!()
         } else {
             let reg = instr::Register::from(v);
-            if reg == instr::Register::RSP || reg == instr::Register::RBP {
+            if reg == instr::Register::Rsp || reg == instr::Register::Rbp {
                 // We do not want to mess with RSP and RBP
                 self.get_register()
             } else {
@@ -216,9 +216,9 @@ impl Codegen {
         self.ir.push(ir)
     }
 
-    fn add_variable_offset(&mut self, name: &String, offset: usize) {
+    fn add_variable_offset(&mut self, name: &str, offset: usize) {
         debug_assert!(!self.stack_scopes.is_empty());
-        self.stack_scopes.last_mut().unwrap().insert(name.clone(), offset);
+        self.stack_scopes.last_mut().unwrap().insert(name.to_owned(), offset);
     }
 
     fn update_stack_offset(&mut self, typ_size: usize) -> usize {
@@ -227,7 +227,7 @@ impl Codegen {
         v
     }
 
-    fn known_variable(&mut self, name: &String) -> bool {
+    fn known_variable(&mut self, name: &str) -> bool {
         for scope in self.stack_scopes.iter().rev() {
             if scope.contains_key(name) {
                 return true;
@@ -236,7 +236,7 @@ impl Codegen {
         false
     }
 
-    fn get_stack_offset(&mut self, name: &String) -> usize {
+    fn get_stack_offset(&mut self, name: &str) -> usize {
         for scope in self.stack_scopes.iter().rev() {
             if let Some(offset) = scope.get(name) {
                 return *offset;
@@ -246,7 +246,7 @@ impl Codegen {
         panic!()
     }
 
-    fn store_variable_in_stack(&mut self, name: &String, typ: &Type) -> Result<(), String> {
+    fn store_variable_in_stack(&mut self, name: &str, typ: &Type) -> Result<(), String> {
         let offset = self.update_stack_offset(typ.size());
         self.add_variable_offset(name, offset);
         let reg = self.get_register()?;
@@ -562,12 +562,12 @@ impl Codegenable for nodes::IfNode {
         let cond_false = codegen.generate_label(None);
         let lbl_name = cond_false.get_lbl();
         match cmp_mode {
-            Operation::EQ => codegen.add_ir(instr::IR::JmpNeq { name: lbl_name }),
-            Operation::NEQ => codegen.add_ir(instr::IR::JmpEq { name: lbl_name }),
-            Operation::GT => todo!(),
-            Operation::GTE => todo!(),
-            Operation::LT => todo!(),
-            Operation::LTE => todo!(),
+            Operation::Eq => codegen.add_ir(instr::IR::JmpNeq { name: lbl_name }),
+            Operation::Neq => codegen.add_ir(instr::IR::JmpEq { name: lbl_name }),
+            Operation::Gt => todo!(),
+            Operation::Gte => todo!(),
+            Operation::Lt => todo!(),
+            Operation::Lte => todo!(),
             _ => todo!()
         }
         self.if_branch.codegen(codegen)?;
@@ -685,21 +685,21 @@ impl Codegenable for nodes::ExpressionBinaryNode {
         let rhs = self.rhs.codegen(codegen)?;
         debug_assert!(rhs != instr::Operand::none());
         match &self.operation {
-            Operation::PLUS => {
+            Operation::Add => {
                 codegen.add_ir(instr::IR::Add {
                     dst: lhs,
                     src1: lhs,
                     src2: rhs
                 });
             },
-            Operation::MINUS => {
+            Operation::Sub => {
                 codegen.add_ir(instr::IR::Sub {
                     dst: lhs,
                     src1: lhs,
                     src2: rhs
                 });
             },
-            Operation::MULT => {
+            Operation::Mul => {
                 codegen.add_ir(instr::IR::Mul {
                     dst: lhs,
                     src1: lhs,
@@ -707,7 +707,7 @@ impl Codegenable for nodes::ExpressionBinaryNode {
                     signed: self.typ == Type::I32 || self.typ == Type::I64
                 });
             },
-            Operation::DIV => {
+            Operation::Div => {
                 codegen.add_ir(instr::IR::Div {
                     dst: lhs,
                     src1: lhs,

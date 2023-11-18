@@ -41,7 +41,7 @@ impl Display for Type {
         match self {
             // Type::Ptr(t) => write!(fmt, "&{}", t),
             Type::Class(str) => write!(fmt, "{}", str),
-            Type::Arr(t, s) => write!(fmt, "{}", format!("{t}{s:?}")),
+            Type::Arr(t, s) => write!(fmt, "{t}{s:?}"),
             _ => write!(fmt, "{}", format!("{:?}", self).to_lowercase()),
         }
     }
@@ -203,7 +203,7 @@ impl Class {
 
     fn resolve_new_return_type(&mut self) -> Result<(), String> {
         for feat in &mut self.known_features {
-            if *feat.0 == String::from("new") {
+            if *feat.0 == "new" {
                 if feat.1.return_type == self.class_type {
                     // FIXME: Also store location of return type declaration for better warnings
                     println!(
@@ -225,8 +225,7 @@ impl Class {
                 return Ok(());
             }
         }
-        assert!(false, "Class has constructor but no new feature found");
-        unreachable!()
+        panic!("Class has constructor but no new feature found");
     }
 
     fn get_field(&self, name: &String) -> Option<(Location, Type)> {
@@ -258,10 +257,7 @@ impl Variable {
         }
     }
     fn is_class_instance(&self) -> bool {
-        match &self.typ {
-            Type::Class(..) => true,
-            _ => false
-        }
+        matches!(&self.typ, Type::Class(..))
     }
     fn get_class_name(&self) -> String {
         match &self.typ {
@@ -385,9 +381,8 @@ impl TypeChecker {
 
     fn get_variable(&self, name: &String) -> Option<Variable> {
         for scope in self.known_variables.iter().rev() {
-            match scope.get(name) {
-                Some(t) => return Some(t.clone()),
-                None => ()
+            if let Some(t) = scope.get(name) {
+                return Some(t.clone())
             }
         }
         None
@@ -473,7 +468,7 @@ impl Typecheckable for nodes::FeatureNode {
         // Parameters are now known variables
         let mut parameters = HashMap::new();
         // FIXME: Handle this better
-        if feature.name == String::from("new") {
+        if feature.name == *"new" {
             let this_param = Variable::new(
                 String::from("this"),
                 self.location.clone(),
@@ -488,16 +483,13 @@ impl Typecheckable for nodes::FeatureNode {
                 param.location.clone(),
                 param.typ.clone()
             );
-            match parameters.insert(param.name.clone(), var) {
-                Some(param) => {
-                    if param.name == String::from("this") {
-                        return Err(format!(
-                            "{}: {:?}: Use of implicit parameter `this`.", ERR_STR, param.location
-                        ))
-                    }
-                    todo!()
-                },
-                None => ()
+            if let Some(param) = parameters.insert(param.name.clone(), var) {
+                if param.name == *"this" {
+                    return Err(format!(
+                        "{}: {:?}: Use of implicit parameter `this`.", ERR_STR, param.location
+                    ))
+                }
+                todo!()
             }
         }
         checker.known_variables.push_back(parameters);
@@ -536,9 +528,9 @@ impl Typecheckable for nodes::FunctionNode {
                 param.location.clone(),
                 param.typ.clone()
             );
-            match parameters.insert(param.name.clone(), var) {
-                Some(_) => todo!(),
-                None => ()
+            if parameters.insert(param.name.clone(), var).is_some() {
+                // Parameter already exists
+                todo!()
             }
         }
         checker.known_variables.push_back(parameters);
@@ -588,16 +580,13 @@ impl Typecheckable for nodes::MethodNode {
                 param.location.clone(),
                 param.typ.clone()
             );
-            match parameters.insert(param.name.clone(), var) {
-                Some(param) => {
-                    if param.name == String::from("this") {
-                        return Err(format!(
-                            "{}: {:?}: Use of implicit parameter `this`.", ERR_STR, param.location
-                        ))
-                    }
-                    todo!()
-                },
-                None => ()
+            if let Some(param) = parameters.insert(param.name.clone(), var) {
+                if param.name == *"this" {
+                    return Err(format!(
+                        "{}: {:?}: Use of implicit parameter `this`.", ERR_STR, param.location
+                    ))
+                }
+                todo!()
             }
         }
         checker.known_variables.push_back(parameters);
@@ -799,19 +788,13 @@ impl Typecheckable for nodes::ReturnNode {
             // We're returning from a method or feature
             let Some(class) = checker.known_classes.get(&checker.current_class) else { unreachable!() };
             let (mut location, mut expected_return_type) = (Location::anonymous(), Type::Unknown);
-            match class.known_features.get(&checker.current_function) {
-                Some(feature) => {
-                    expected_return_type = feature.return_type.clone();
-                    location = feature.location.clone();
-                },
-                None => ()
+            if let Some(feature) = class.known_features.get(&checker.current_function) {
+                expected_return_type = feature.return_type.clone();
+                location = feature.location.clone();
             }
-            match class.known_methods.get(&checker.current_function) {
-                Some(method) => {
-                    expected_return_type = method.return_type.clone();
-                    location = method.location.clone();
-                }
-                None => ()
+            if let Some(method) = class.known_methods.get(&checker.current_function) {
+                expected_return_type = method.return_type.clone();
+                location = method.location.clone();
             }
             debug_assert!(expected_return_type != Type::Unknown);
             debug_assert!(location != Location::anonymous());
@@ -1109,7 +1092,7 @@ impl Typecheckable for nodes::ExpressionBinaryNode {
             // FIXME: Show which side is Class/Array/Bool
             (Type::Class(..), _) | (_, Type::Class(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
-                return Err(format!(
+                Err(format!(
                     "{}: {:?}: Binary Operation `{}` is not defined in the context of classes.",
                     ERR_STR,
                     self.location,
@@ -1118,7 +1101,7 @@ impl Typecheckable for nodes::ExpressionBinaryNode {
             }
             (Type::Arr(..), _) | (_, Type::Arr(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
-                return Err(format!(
+                Err(format!(
                     "{}: {:?}: Binary Operation `{}` is not defined in the context of arrays.",
                     ERR_STR,
                     self.location,
@@ -1126,7 +1109,7 @@ impl Typecheckable for nodes::ExpressionBinaryNode {
                 ))
             }
             (Type::Bool, _) | (_, Type::Bool) => {
-                return Err(format!(
+                Err(format!(
                     "{}: {:?}: Binary Operation `{}` is not defined in the context of booleans.",
                     ERR_STR,
                     self.location,

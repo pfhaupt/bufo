@@ -86,20 +86,6 @@ impl Debug for Location {
     }
 }
 
-#[macro_export]
-macro_rules! parse_snippet {
-    ($filepath: expr, $node: ty, $snippet: expr) => {
-        {
-            use crate::new::new_parser::{Parser, Parsable};
-            let mut parser = Parser::new();
-            parser.set_filepath_unchecked($filepath);
-            parser.set_source($snippet);
-            parser = parser.initialize()?;
-            <$node>::parse(&mut parser)?
-        }
-    };
-}
-
 #[derive(Debug, Clone)]
 pub struct Token {
     location: Location,
@@ -123,59 +109,59 @@ impl Token {
 
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub enum Operation {
-    PLUS,
-    MINUS,
-    MULT,
-    DIV,
-    EQ,
-    NEQ,
-    LT,
-    LTE,
-    GT,
-    GTE
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Eq,
+    Neq,
+    Lt,
+    Lte,
+    Gt,
+    Gte
 }
 
 const COMPARISONS: [Operation; 6] = [
-    Operation::EQ,
-    Operation::NEQ,
-    Operation::LT,
-    Operation::LTE,
-    Operation::GT,
-    Operation::GTE
+    Operation::Eq,
+    Operation::Neq,
+    Operation::Lt,
+    Operation::Lte,
+    Operation::Gt,
+    Operation::Gte
 ];
 
 impl Display for Operation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        debug_assert_eq!(Operation::GTE as u8 + 1, 10);
+        debug_assert_eq!(Operation::Gte as u8 + 1, 10);
         match self {
-            Self::PLUS => write!(f, "+"),
-            Self::MINUS => write!(f, "-"),
-            Self::MULT => write!(f, "*"),
-            Self::DIV => write!(f, "/"),
-            Self::EQ => write!(f, "=="),
-            Self::NEQ => write!(f, "!="),
-            Self::LT => write!(f, "<"),
-            Self::LTE => write!(f, "<="),
-            Self::GT => write!(f, ">"),
-            Self::GTE => write!(f, ">="),
+            Self::Add => write!(f, "+"),
+            Self::Sub => write!(f, "-"),
+            Self::Mul => write!(f, "*"),
+            Self::Div => write!(f, "/"),
+            Self::Eq => write!(f, "=="),
+            Self::Neq => write!(f, "!="),
+            Self::Lt => write!(f, "<"),
+            Self::Lte => write!(f, "<="),
+            Self::Gt => write!(f, ">"),
+            Self::Gte => write!(f, ">="),
         }
     }
 }
 
 impl Operation {
     fn from(s: String) -> Self {
-        debug_assert_eq!(Operation::GTE as u8 + 1, 10);
+        debug_assert_eq!(Operation::Gte as u8 + 1, 10);
         match s.as_str() {
-            "+" => Self::PLUS,
-            "-" => Self::MINUS,
-            "*" => Self::MULT,
-            "/" => Self::DIV,
-            "==" => Self::EQ,
-            "!=" => Self::NEQ,
-            "<" => Self::LT,
-            "<=" => Self::LTE,
-            ">" => Self::GT,
-            ">=" => Self::GTE,
+            "+" => Self::Add,
+            "-" => Self::Sub,
+            "*" => Self::Mul,
+            "/" => Self::Div,
+            "==" => Self::Eq,
+            "!=" => Self::Neq,
+            "<" => Self::Lt,
+            "<=" => Self::Lte,
+            ">" => Self::Gt,
+            ">=" => Self::Gte,
             _ => unreachable!()
         }
     }
@@ -331,7 +317,7 @@ impl Parser {
                     |c: char| { c == '"' || c == '\0' },
                     false
                 );
-                if value.contains("\\") {
+                if value.contains('\\') {
                     println!("{}: {:?}: Escape sequences in Strings are not supported yet.", WARN_STR, loc);
                 }
                 if value.chars().filter(|c| *c == '"').count() != 2 {
@@ -348,7 +334,7 @@ impl Parser {
                     |c: char| { c == '\'' || c == '\0' },
                     false
                 );
-                if value.contains("\\") {
+                if value.contains('\\') {
                     println!("{}: {:?}: Escape sequences in Char Literals are not supported yet.", WARN_STR, loc);
                 }
                 if value.len() != 3 {
@@ -690,7 +676,7 @@ impl Parsable for nodes::FeatureNode {
 
         let block = nodes::BlockNode::parse(parser)?;
         Ok(nodes::FeatureNode {
-            is_constructor: name == String::from("new"),
+            is_constructor: name == *"new",
             class_name: parser.current_class.clone(),
             location,
             name,

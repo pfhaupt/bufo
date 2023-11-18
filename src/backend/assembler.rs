@@ -43,10 +43,10 @@ impl Assembler {
         }
     }
 
-    pub fn filepath(self, path: &String) -> Self {
-        let mut path = path.clone();
-        if path.contains("/") {
-            path = path.split("/").last().unwrap().to_string();
+    pub fn filepath(self, path: &str) -> Self {
+        let mut path = path.to_owned();
+        if path.contains('/') {
+            path = path.split('/').last().unwrap().to_string();
         }
         Self {
             path,
@@ -379,7 +379,7 @@ impl Assembler {
         if self.print_debug {
             println!("Writing to {asmname}");
         }
-        match File::create(format!("{asmname}")) {
+        match File::create(&asmname) {
             Ok(mut file) => {
                 file.write_all(output.as_bytes()).unwrap();
             }
