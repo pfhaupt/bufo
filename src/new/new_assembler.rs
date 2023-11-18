@@ -97,18 +97,14 @@ impl Assembler {
                         (OperandType::Offset, OperandType::Reg) => {
                             let offset = addr.off_or_imm;
                             let reg = reg(value.reg, value.reg_mode);
-                            // FIXME: I think this is incorrect and doesnt account for type size
-                            push_asm(format!("  mov [rbp-{offset}], {reg}").as_str());
+                            let size = if value.reg_mode == RegMode::BIT32 { 4 } else { 8 };
+                            push_asm(format!("  mov [rbp-{offset}-{size}], {reg}").as_str());
                         }
                         (OperandType::Offset, OperandType::ImmI32
-                                            | OperandType::ImmI64
-                                            | OperandType::ImmU32
-                                            | OperandType::ImmU64) => {
+                                            | OperandType::ImmU32) => {
                             let offset = addr.off_or_imm;
                             let val = value.off_or_imm;
-                            // FIXME: I think this is incorrect and doesnt account for type size
-                            // FIXME: Add WORD-size
-                            push_asm(format!("  mov [rbp-{offset}], {val}").as_str());
+                            push_asm(format!("  mov DWORD [rbp-{offset}-4], {val}").as_str());
                         }
                         (OperandType::Reg, OperandType::Reg) => {
                             let dst = reg(addr.reg, addr.reg_mode);
@@ -123,8 +119,8 @@ impl Assembler {
                         (OperandType::Reg, OperandType::Offset) => {
                             let reg = reg(dst.reg, dst.reg_mode);
                             let offset = addr.off_or_imm;
-                            // FIXME: I think this is incorrect and doesnt account for type size
-                            push_asm(format!("  mov {reg}, [rbp-{offset}]").as_str());
+                            let size = if dst.reg_mode == RegMode::BIT32 { 4 } else { 8 };
+                            push_asm(format!("  mov {reg}, [rbp-{offset}-{size}]").as_str());
                         }
                         (OperandType::Reg, OperandType::Reg) => {
                             let dst = reg(dst.reg, dst.reg_mode);
