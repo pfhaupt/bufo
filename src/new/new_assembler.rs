@@ -119,6 +119,12 @@ impl Assembler {
                             let val = value.off_or_imm;
                             push_asm(format!("  mov DWORD [rbp-{offset}-4], {val}").as_str());
                         }
+                        (OperandType::Offset, OperandType::ImmI64
+                                            | OperandType::ImmU64) => {
+                            let offset = addr.off_or_imm;
+                            let val = value.off_or_imm;
+                            push_asm(format!("  mov QWORD [rbp-{offset}-8], {val}").as_str());
+                        }
                         (OperandType::Reg, OperandType::Reg) => {
                             let dst = reg(addr.reg, addr.reg_mode);
                             let src = reg(value.reg, value.reg_mode);
@@ -176,6 +182,11 @@ impl Assembler {
                             let offset = src2.off_or_imm;
                             push_asm(format!("  add {dst_reg}, {offset}").as_str());
                         }
+                        (OperandType::Reg, OperandType::ImmI32
+                                            | OperandType::ImmU32) => {
+                            let immediate = src2.off_or_imm;
+                            push_asm(format!("  add {dst_reg}, {immediate}").as_str());
+                        }
                         (dst, src) => {
                             todo!("add {dst:?} {src:?}")
                         }
@@ -195,9 +206,7 @@ impl Assembler {
                             push_asm(format!("  sub {dst_reg}, {offset}").as_str());
                         }
                         (OperandType::Reg, OperandType::ImmI32
-                                            | OperandType::ImmI64
-                                            | OperandType::ImmU32
-                                            | OperandType::ImmU64) => {
+                                            | OperandType::ImmU32) => {
                             let immediate = src2.off_or_imm;
                             push_asm(format!("  sub {dst_reg}, {immediate}").as_str());
                         }
