@@ -7,6 +7,8 @@ use crate::frontend::nodes;
 use crate::frontend::parser::Operation;
 use crate::middleend::checker::Type;
 
+use crate::internal_error;
+
 const LBL_STR: &str = "lbl_";
 
 macro_rules! func_assert {
@@ -603,7 +605,7 @@ impl Codegenable for nodes::ReturnNode {
 }
 impl Codegenable for nodes::TypeNode {
     fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        internal_error!("TypeNode::codegen() is not implemented yet.")
     }
 }
 impl Codegenable for nodes::ArgumentNode {
@@ -630,12 +632,12 @@ impl Codegenable for nodes::Expression {
 }
 impl Codegenable for nodes::ExpressionArrayLiteralNode {
     fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        internal_error!("ExpressionArrayLiteralNode::codegen() is not implemented yet")
     }
 }
 impl Codegenable for nodes::ExpressionArrayAccessNode {
     fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        internal_error!("ExpressionArrayAccessNode::codegen() is not implemented yet")
     }
 }
 impl Codegenable for nodes::ExpressionLiteralNode {

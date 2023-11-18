@@ -4,7 +4,6 @@ class Test {
     }
 
     func foo(a: i32) {
-
     }
 }
 
@@ -13,6 +12,8 @@ func ack(m: u32, n: u32) -> u32 {
     if (n == 0) { return ack(m - 1, 1); }
     return ack(m - 1, ack(m, n - 1));
 }
+
+// func f(a: i32, b: i32, c: i32, d: i32, e: i32) {}
 
 func main() {
     let a: u32 = ack(3, 5);

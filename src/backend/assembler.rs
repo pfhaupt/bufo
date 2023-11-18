@@ -234,11 +234,22 @@ impl Assembler {
                             (
                                 OperandType::Reg,
                                 OperandType::ImmI32
-                                | OperandType::ImmI64
                                 | OperandType::ImmU32
+                            ) => {
+                                let value = src2.off_or_imm;
+                                push_asm(format!("  imul {dst_reg}, {dst_reg}, {value}").as_str());
+                            }
+                            (
+                                OperandType::Reg,
+                                | OperandType::ImmI64
                                 | OperandType::ImmU64,
                             ) => {
-                                // IMUL only has up to 32bit immediates, need to use temp reg
+                                // IMUL has no 64bit immediate mode, we need to use a register
+                                let value = src2.off_or_imm;
+                                push_asm("  push rax");
+                                push_asm(format!("  mov rax, {value}").as_str());
+                                push_asm(format!("  imul {dst_reg}, rax").as_str());
+                                push_asm("  pop rax");
                                 todo!()
                             }
                             (dst, src) => {

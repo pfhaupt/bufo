@@ -5,6 +5,7 @@ use crate::frontend::nodes;
 use crate::frontend::parser::Location;
 
 use crate::compiler::{ERR_STR, NOTE_STR, WARN_STR};
+use crate::internal_error;
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub enum Type {
@@ -431,7 +432,7 @@ impl Typecheckable for nodes::ClassNode {
     where
         Self: Sized,
     {
-        todo!()
+        internal_error!("ClassNode::type_check_with_type() is not implemented yet")
     }
 }
 impl Typecheckable for nodes::FieldNode {
@@ -499,6 +500,14 @@ impl Typecheckable for nodes::FeatureNode {
                 todo!()
             }
         }
+        if parameters.len() > 4 {
+            return Err(format!(
+                "{}: {:?}: Features can have at most 4 parameters.\n{}: The implicit parameter `this` counts towards that limit.",
+                ERR_STR,
+                self.location,
+                NOTE_STR
+            ));
+        }
         checker.known_variables.push_back(parameters);
 
         self.block.type_check(checker)?;
@@ -549,6 +558,13 @@ impl Typecheckable for nodes::FunctionNode {
                 // Parameter already exists
                 todo!()
             }
+        }
+        if parameters.len() > 4 {
+            return Err(format!(
+                "{}: {:?}: Functions can have at most 4 parameters.",
+                ERR_STR,
+                self.location
+            ));
         }
         checker.known_variables.push_back(parameters);
 
@@ -616,6 +632,14 @@ impl Typecheckable for nodes::MethodNode {
                 }
                 todo!()
             }
+        }
+        if parameters.len() > 4 {
+            return Err(format!(
+                "{}: {:?}: Methods can have at most 4 parameters.\n{}: The implicit parameter `this` counts towards that limit.",
+                ERR_STR,
+                self.location,
+                NOTE_STR
+            ));
         }
         checker.known_variables.push_back(parameters);
 
@@ -717,7 +741,7 @@ impl Typecheckable for nodes::Statement {
     where
         Self: Sized,
     {
-        Ok(())
+        internal_error!("Statement::type_check_with_type() is not implemented yet")
     }
 }
 impl Typecheckable for nodes::LetNode {
@@ -976,7 +1000,7 @@ impl Typecheckable for nodes::TypeNode {
     where
         Self: Sized,
     {
-        todo!()
+        internal_error!("TypeNode::type_check_with_type() is not implemented yet")
     }
 }
 impl Typecheckable for nodes::ArgumentNode {
@@ -1169,8 +1193,7 @@ impl Typecheckable for nodes::ExpressionArrayLiteralNode {
             }
             let sub_expected: Vec<_> = expected_size[1..].to_vec();
             let sub_type = if sub_expected.is_empty() {
-                // FIXME: This looks ugly
-                (*expected_type.to_owned()).clone()
+                *expected_type.clone()
             } else {
                 Type::Arr(expected_type.clone(), sub_expected)
             };
@@ -1387,7 +1410,7 @@ impl Typecheckable for nodes::ExpressionCallNode {
     where
         Self: Sized,
     {
-        Ok(())
+        internal_error!("ExpressionCallNode::type_check_with_type() is not implemented yet")
     }
 }
 impl Typecheckable for nodes::ExpressionConstructorNode {
@@ -1595,7 +1618,15 @@ impl nodes::ExpressionFieldAccessNode {
                 let class_name = var.get_class_name();
                 let Some(class) = checker.known_classes.get(&class_name) else { todo!() };
                 let Some(method) = class.get_method(&function_node.function_name) else {
-                    todo!() // FIXME: Class has no function
+                    return Err(format!(
+                        "{}: {:?}: Class `{}` has no method `{}`.\n{}: {:?}: Class declared here.",
+                        ERR_STR,
+                        function_node.location,
+                        class_name,
+                        function_node.function_name,
+                        NOTE_STR,
+                        class.location
+                    ));
                 };
                 let return_type = method.return_type.clone();
                 match function_node.arguments.len().cmp(&method.parameters.len()) {

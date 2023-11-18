@@ -93,7 +93,9 @@ impl Register {
     ];
 
     pub fn arg(index: usize) -> Self {
-        // FIXME: Handle this case
+        // NOTE: The Type Checker prevents the user from ever declaring
+        //       Methods, Functions or Features with more than 4 arguments.
+        //       This is an easy fix, we still may want a more sophisticated algorithm later.
         debug_assert!(index <= 3);
         const ARGS: [Register; 4] = [
             Register::ARG1,

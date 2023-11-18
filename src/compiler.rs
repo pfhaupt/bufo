@@ -13,6 +13,19 @@ pub const NOTE_STR: &str = "\x1b[92mnote\x1b[0m";
 pub const OUTPUT_FOLDER: &str = "./out/";
 pub const FILE_EXT: &str = ".bu";
 
+#[macro_export]
+macro_rules! internal_error {
+    ($msg:expr) => {
+        Err(format!(
+            "INTERNAL ERROR AT {}:{}:{}: {}",
+            file!(),
+            line!(),
+            column!(),
+            $msg
+        ))
+    };
+}
+
 pub struct Compiler {
     parser: Parser,
     checker: TypeChecker,
