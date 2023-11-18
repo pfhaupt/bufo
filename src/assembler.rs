@@ -7,7 +7,7 @@ use std::path::Path;
 use crate::new::instr;
 use crate::new::instr::{OperandType, IR};
 
-use super::instr::{Register, RegMode};
+use crate::new::instr::{Register, RegMode};
 use crate::flags::FILE_EXT;
 
 use crate::codegen::ERR_STR;

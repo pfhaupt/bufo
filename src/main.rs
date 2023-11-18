@@ -3,6 +3,7 @@
 mod parser;
 mod checker;
 mod codegen;
+mod assembler;
 mod flags;
 mod new;
 
