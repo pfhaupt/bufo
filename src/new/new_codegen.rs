@@ -114,10 +114,10 @@ impl Codegen {
         self.current_class.clear();
     }
 
-    pub fn generate_code(&mut self, ast: &nodes::FileNode) -> Result<(), String> {
+    pub fn generate_code(&mut self, ast: &nodes::FileNode) -> Result<Vec<instr::IR>, String> {
         self.fill_lookup(ast);
         ast.codegen(self)?;
-        Ok(())
+        Ok(self.ir.clone())
     }
 
     fn generate_label(&mut self, name: Option<String>) -> instr::IR {
@@ -251,39 +251,6 @@ impl Codegen {
             addr: instr::Operand::offset(offset),
             value: instr::Operand::reg(reg, instr::RegMode::from(typ))
         });
-        Ok(())
-    }
-
-    pub fn compile(&mut self) -> Result<(), String> {
-        println!("{}", "-".repeat(50));
-        let mut output = String::new();
-        let mut push_asm = |s: &str| {
-            output.push_str(s.clone());
-            output.push('\n');
-        };
-
-        push_asm(format!("  ; Generated code for {}", "TODO: Figure out filename").as_str());
-        push_asm("default rel");
-        push_asm("");
-
-        push_asm("segment .text");
-        push_asm("  global main");
-        push_asm("  extern ExitProcess");
-        push_asm("  extern printf");
-        push_asm("  extern malloc");
-        push_asm("");
-
-        for ir in &self.ir {
-            if self.print_debug {
-                push_asm(format!("; -- {ir:?} --").as_str());
-            }
-            match ir {
-                _ => push_asm("; Can't generate ASM for that yet")
-            }
-        }
-
-        println!("{}", output);
-
         Ok(())
     }
 

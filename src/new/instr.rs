@@ -190,7 +190,7 @@ impl IR {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum IR {
     LoadImm { dst: Operand, imm: Operand },
     Store { addr: Operand, value: Operand },

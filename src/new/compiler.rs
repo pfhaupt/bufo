@@ -8,12 +8,14 @@ use super::new_parser::Parser;
 use super::new_desugar::Desugarer;
 use super::new_checker::TypeChecker;
 use super::new_codegen::Codegen;
+use super::new_assembler::Assembler;
 
 pub struct Compiler {
     parser: Parser,
     desugarer: Desugarer,
     checker: TypeChecker,
     codegen: Codegen,
+    assembler: Assembler,
     debug: bool,
     run: bool
 }
@@ -25,6 +27,7 @@ impl Compiler {
             desugarer: Desugarer::new().debug(debug),
             checker: TypeChecker::new(),
             codegen: Codegen::new().debug(debug),
+            assembler: Assembler::new().debug(debug).filepath(path),
             debug,
             run
         })
@@ -52,16 +55,16 @@ impl Compiler {
         // println!("{:#?}", parsed_ast);
 
         let now = Instant::now();
-        self.codegen.generate_code(&parsed_ast)?;
+        let ir = self.codegen.generate_code(&parsed_ast)?;
         if self.debug {
             println!("Codegen took {:?}", now.elapsed());
         }
         // todo!();
         
         let now = Instant::now();
-        self.codegen.compile()?;
+        self.assembler.generate_x86_64(ir)?;
         if self.debug {
-            println!("Compiling took {:?}", now.elapsed());
+            println!("Assembling took {:?}", now.elapsed());
         }
         // if self.run {
         //     let now = Instant::now();
