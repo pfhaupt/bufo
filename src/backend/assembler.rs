@@ -8,11 +8,8 @@ use super::instr;
 use super::instr::{OperandType, IR};
 
 use super::instr::{Register, RegMode};
-use crate::frontend::flags::FILE_EXT;
 
-use super::codegen::ERR_STR;
-
-const OUTPUT_FOLDER: &str = "./out/";
+use crate::compiler::{ERR_STR, OUTPUT_FOLDER, FILE_EXT};
 
 const REG_64BIT: [&str; 16] = [
     "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",

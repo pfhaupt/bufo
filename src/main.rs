@@ -5,22 +5,15 @@ mod middleend;
 mod backend;
 mod compiler;
 
-use std::time::Instant;
-
-use crate::compiler::main as other_main;
 fn main() {
-    // if let Err(e) = compile() {
-    //     println!("{}", e);
-    // }
-    other_main();
+    crate::compiler::run();
 }
 
 #[cfg(test)]
 mod tests {
     use lazy_static::lazy_static;
 
-    use crate::compiler::Compiler;
-    use crate::backend::codegen::ERR_STR;
+    use crate::compiler::{Compiler, ERR_STR};
 
     const ALWAYS_FAILS: &str = "This is a String we defined to make sure that a test always fails. This is expected.";
 
@@ -72,8 +65,7 @@ mod tests {
     }
 
     mod syntax_tests {
-        use crate::compiler::Compiler;
-        use crate::backend::codegen::ERR_STR;
+        use crate::compiler::{Compiler, ERR_STR};
 
         macro_rules! generate_failing_test {
             ($name:ident, $($err:expr),*) => {
@@ -104,8 +96,7 @@ mod tests {
     }
 
     mod semantic_tests {
-        use crate::compiler::Compiler;
-        use crate::backend::codegen::ERR_STR;
+        use crate::compiler::{Compiler, ERR_STR};
         use crate::tests::ALWAYS_FAILS;
 
         macro_rules! generate_failing_test {

@@ -4,7 +4,7 @@ use std::fmt::{Display, Formatter};
 use crate::frontend::parser::Location;
 use crate::frontend::nodes;
 
-use crate::backend::codegen::{ERR_STR, NOTE_STR, WARN_STR};
+use crate::compiler::{ERR_STR, NOTE_STR, WARN_STR};
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub enum Type {

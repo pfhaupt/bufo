@@ -7,6 +7,14 @@ use crate::middleend::checker::TypeChecker;
 use crate::backend::codegen::Codegen;
 use crate::backend::assembler::Assembler;
 
+pub const RUNTIME_ERR: &str = "\x1b[91mRuntime Exception\x1b[0m";
+pub const ERR_STR: &str = "\x1b[91merror\x1b[0m";
+#[allow(unused)]
+pub const WARN_STR: &str = "\x1b[93mwarning\x1b[0m";
+pub const NOTE_STR: &str = "\x1b[92mnote\x1b[0m";
+
+pub const OUTPUT_FOLDER: &str = "./out/";
+pub const FILE_EXT: &str = ".bu";
 
 pub struct Compiler {
     parser: Parser,
@@ -36,20 +44,17 @@ impl Compiler {
             println!("Parsing took {:?}", now.elapsed());
         }
 
-        // println!("{:#?}", parsed_ast);
         let now = Instant::now();
         self.checker.type_check_file(&mut parsed_ast)?;
         if self.print_debug {
             println!("Type Checking took {:?}", now.elapsed());
         }
-        // println!("{:#?}", parsed_ast);
 
         let now = Instant::now();
         let ir = self.codegen.generate_code(&parsed_ast)?;
         if self.print_debug {
             println!("Codegen took {:?}", now.elapsed());
         }
-        // todo!();
         
         let now = Instant::now();
         self.assembler.generate_x86_64(ir)?;
@@ -90,7 +95,7 @@ fn compile() -> Result<(), String> {
     let mut compiler = Compiler::new(path, debug, run)?;
     compiler.run_everything()
 }
-pub fn main() {
+pub fn run() {
     if let Err(e) = compile() {
         eprintln!("{}", e);
         std::process::exit(1);

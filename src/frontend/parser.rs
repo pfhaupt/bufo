@@ -5,7 +5,7 @@ use std::fmt::{Display, Debug, Formatter};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::backend::codegen::{ERR_STR, NOTE_STR, WARN_STR};
+use crate::compiler::{ERR_STR, NOTE_STR, WARN_STR};
 use crate::middleend::checker::Type;
 use super::nodes::{self, Expression};
 
