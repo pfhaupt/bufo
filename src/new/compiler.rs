@@ -1,10 +1,9 @@
 
 use std::time::Instant;
 
-use crate::parser;
+use crate::parser::Parser;
 use crate::flags::{FlagParser, Flag, DEBUG_KEY, RUN_KEY, INPUT_KEY};
 
-use super::new_parser::Parser;
 use super::new_checker::TypeChecker;
 use super::new_codegen::Codegen;
 use super::new_assembler::Assembler;

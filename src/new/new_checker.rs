@@ -1,7 +1,51 @@
 use std::collections::{HashMap, VecDeque};
-use crate::{checker::Type, parser::Location, codegen::{ERR_STR, NOTE_STR, WARN_STR}};
+use std::fmt::{Display, Formatter};
+
+use crate::{parser::Location, new::new_codegen::{ERR_STR, NOTE_STR, WARN_STR}};
 
 use super::nodes;
+
+#[derive(Debug, PartialEq, Eq, Clone, Default)]
+pub enum Type {
+    Any, // Can be everything, `Any+Usize`->Usize, `let a: ClassType = Any`->ClassType
+    None, // For functions that return nothing
+    #[default] Unknown,
+    I32,
+    I64,
+    U32,
+    U64,
+    Usize,
+    Bool,
+    // Ptr(Box<Type>),
+    Arr(Box<Type>, Vec<usize>),
+    Class(String),
+    // Reserved for later use
+    F32,
+    F64,
+}
+
+impl Type {
+    pub fn size(&self) -> usize {
+        match self {
+            Type::Arr(t, size) => t.size() * size.iter().product::<usize>(),
+            Type::I32 | Type::U32 => 4,
+            Type::I64 | Type::U64 | Type::Usize => 8,
+            Type::Class(..) => 8,
+            e => todo!("Figure out size of type {:?} in bytes", e),
+        }
+    }
+}
+
+impl Display for Type {
+    fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        match self {
+            // Type::Ptr(t) => write!(fmt, "&{}", t),
+            Type::Class(str) => write!(fmt, "{}", str),
+            Type::Arr(t, s) => write!(fmt, "{}", format!("{t}{s:?}")),
+            _ => write!(fmt, "{}", format!("{:?}", self).to_lowercase()),
+        }
+    }
+}
 
 const BUILT_IN_FEATURES: [&str; 1] = ["new"];
 

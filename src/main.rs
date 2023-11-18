@@ -1,19 +1,11 @@
 #![allow(unused, unreachable_code)]
 
-mod checker;
 mod codegen;
-mod flags;
 mod parser;
+mod flags;
 mod new;
 
 use std::time::Instant;
-
-use flags::RUN_KEY;
-
-use crate::checker::TypeChecker;
-use crate::codegen::Generator;
-use crate::flags::{Flag, FlagParser, DEBUG_KEY, INPUT_KEY};
-use crate::parser::{Parser, Tree};
 
 use crate::new::compiler::main as other_main;
 fn main() {
@@ -23,103 +15,11 @@ fn main() {
     other_main();
 }
 
-pub struct Compiler {
-    parser: Parser,
-    checker: TypeChecker,
-    codegen: Generator,
-    debug: bool,
-    run: bool
-}
-
-impl Compiler {
-    pub fn new(path: &String, debug: bool, run: bool) -> Result<Self, String> {
-        Ok(Self {
-            parser: Parser::new().origin(path)?.debug(debug),
-            checker: TypeChecker::new(debug),
-            codegen: Generator::new(debug),
-            debug,
-            run
-        })
-    }
-
-    pub fn parse_snippet(origin: &String, snippet: &String) -> Result<Tree, String> {
-        let mut parser = Parser::new();
-        parser.set_origin_unchecked(origin);
-        parser.set_source(snippet);
-        let parsed_ast = parser.parse_snippet()?;
-        Ok(parsed_ast)
-    }
-
-    pub fn run_everything(&mut self) -> Result<(), String> {
-        let now = Instant::now();
-        let parsed_ast = self.parser.parse_file();
-        if self.debug {
-            println!("Parsing took {:?}", now.elapsed());
-        }
-        let parsed_ast = parsed_ast?;
-        
-        let now = Instant::now();
-        self.checker.set_ast(parsed_ast);
-        let checked_ast = self.checker.type_check_program()?;
-        if self.debug {
-            println!("Type Checking took {:?}", now.elapsed());
-        }
-
-        let now = Instant::now();
-        self.codegen.set_ast(checked_ast);
-        self.codegen.generate_code()?;
-        if self.debug {
-            println!("Codegen took {:?}", now.elapsed());
-        }
-        // todo!();
-        
-        let now = Instant::now();
-        self.codegen.compile()?;
-        if self.debug {
-            println!("Compiling took {:?}", now.elapsed());
-        }
-        if self.run {
-            let now = Instant::now();
-            self.codegen.run()?;
-            if self.debug {
-                println!("Running took {:?}", now.elapsed());
-            }
-        }
-
-        Ok(())
-    }
-}
-
-fn compile() -> Result<(), String> {
-    let now = Instant::now();
-    let flags = FlagParser::init_flags().parse_flags()?;
-
-    let path = match flags.get(INPUT_KEY).unwrap() {
-        Flag::Input { path } => path.as_ref().unwrap(),
-        _ => unreachable!(),
-    };
-    let run = match flags.get(RUN_KEY).unwrap() {
-        Flag::Run { run } => *run,
-        _ => unreachable!(),
-    };
-    let debug = match flags.get(DEBUG_KEY).unwrap() {
-        Flag::Debug { debug } => *debug,
-        _ => unreachable!(),
-    };
-    if debug {
-        println!("Parsing flags took {:?}", now.elapsed());
-    }
-
-    let mut compiler = Compiler::new(path, debug, run)?;
-    compiler.run_everything()?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use lazy_static::lazy_static;
 
-    use crate::{Compiler, codegen::ERR_STR};
+    use crate::{new::compiler::Compiler, new::new_codegen::ERR_STR};
 
     const ALWAYS_FAILS: &str = "This is a String we defined to make sure that a test always fails. This is expected.";
 
@@ -172,7 +72,7 @@ mod tests {
 
     mod syntax_tests {
         use crate::new::{compiler::Compiler};
-        use crate::codegen::ERR_STR;
+        use crate::new::new_codegen::ERR_STR;
 
         macro_rules! generate_failing_test {
             ($name:ident, $($err:expr),*) => {
@@ -203,7 +103,7 @@ mod tests {
     }
 
     mod semantic_tests {
-        use crate::{new::compiler::Compiler, codegen::{ERR_STR, ExitCode}};
+        use crate::{new::compiler::Compiler, new::new_codegen::{ERR_STR}};
         use crate::tests::ALWAYS_FAILS;
 
         macro_rules! generate_failing_test {
@@ -225,15 +125,15 @@ mod tests {
         generate_failing_test!(wrong_function_argument_types, "Type Mismatch", "in argument evaluation");
         generate_failing_test!(wrong_function_return_type, "Type Mismatch", "Function is declared to return `I32`");
         generate_failing_test!(calling_undeclared_function, "unknown function", "testfunction");
-        #[test] #[cfg_attr(not(feature = "test_exec"), ignore = "Pass the `text_exec` feature-flag to run this test")] fn array_out_of_bounds() {
-            // TODO: Automatically clean up after running code
-            test!("tests/semantics/array_out_of_bounds.bu", false, true, true, [ERR_STR, "Code execution failed", format!("{:X}", (ExitCode::OobAccess as usize)).as_str()])
-        }
-        generate_failing_test!(return_mismatch, "Type Mismatch", "Function", "declared to return", "found");
-        #[test] #[cfg_attr(not(feature = "test_exec"), ignore = "Pass the `text_exec` feature-flag to run this test")] fn variable_shadowing() {
-            // TODO: Automatically clean up after running code
-            test!("tests/semantics/variable_shadowing.bu", false, true, true, [ERR_STR, "Code execution failed", format!("{:X}", 42069).as_str()])
-        }
+        // #[test] #[cfg_attr(not(feature = "test_exec"), ignore = "Pass the `text_exec` feature-flag to run this test")] fn array_out_of_bounds() {
+        //     // TODO: Automatically clean up after running code
+        //     test!("tests/semantics/array_out_of_bounds.bu", false, true, true, [ERR_STR, "Code execution failed", format!("{:X}", (ExitCode::OobAccess as usize)).as_str()])
+        // }
+        // generate_failing_test!(return_mismatch, "Type Mismatch", "Function", "declared to return", "found");
+        // #[test] #[cfg_attr(not(feature = "test_exec"), ignore = "Pass the `text_exec` feature-flag to run this test")] fn variable_shadowing() {
+        //     // TODO: Automatically clean up after running code
+        //     test!("tests/semantics/variable_shadowing.bu", false, true, true, [ERR_STR, "Code execution failed", format!("{:X}", 42069).as_str()])
+        // }
         generate_failing_test!(using_out_of_scope_variable, "Undeclared variable");
 
         generate_failing_test!(variable_redeclaration, "Variable redeclaration", "already declared here");

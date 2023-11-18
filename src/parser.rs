@@ -1,543 +1,16 @@
 use std::cell::Cell;
 use std::collections::VecDeque;
-use std::fmt::{Debug, Formatter};
+use std::ffi::OsStr;
+use std::fmt::{Display, Debug, Formatter};
 use std::fs;
+use std::path::{Path, PathBuf};
 
-use crate::checker::{Type, TypeChecker};
-use crate::codegen::ERR_STR;
+use crate::new::new_codegen::{ERR_STR, NOTE_STR, WARN_STR};
+use crate::new::new_checker::Type;
+use crate::new::nodes::{self, Expression};
 
+// We always store the N-1 next tokens for lookahead purposes, even if we only use 1 right now
 const LOOKAHEAD_LIMIT: usize = 3;
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum TreeType {
-    File {
-        functions: Vec<Tree>,
-        classes: Vec<Tree>,
-    },
-    Class {
-        name: String,
-        fields: Vec<Tree>,
-        functions: Vec<Tree>,
-        features: Vec<Tree>,
-    },
-    Field {
-        name: String,
-        typ: Box<Tree>,
-    },
-    FieldAccess {
-        name: String,
-        field: Box<Tree>,
-        typ: Type,
-    },
-    Feature {
-        name: String,
-        return_type: Option<Box<Tree>>,
-        param: Box<Tree>,
-        block: Box<Tree>,
-    },
-    Func {
-        name: String,
-        return_type: Option<Box<Tree>>,
-        param: Box<Tree>,
-        block: Box<Tree>,
-    },
-    Param {
-        name: String,
-        typ: Box<Tree>,
-    },
-    ParamList {
-        parameters: Vec<Tree>,
-    },
-    Block {
-        statements: Vec<Tree>,
-    },
-    StmtExpr {
-        expression: Box<Tree>,
-    },
-    StmtLet {
-        name: String,
-        typ: Box<Tree>,
-        expression: Box<Tree>,
-    },
-    StmtAssign {
-        name: Box<Tree>,
-        expression: Box<Tree>,
-    },
-    StmtIf {
-        condition: Box<Tree>,
-        if_branch: Box<Tree>,
-        else_branch: Option<Box<Tree>>,
-    },
-    StmtReturn {
-        return_value: Option<Box<Tree>>,
-    },
-    TypeDecl {
-        typ: Type,
-    },
-    ArgList {
-        arguments: Vec<Tree>,
-    },
-    Arg {
-        expression: Box<Tree>,
-    },
-    ExprName {
-        name: String,
-        typ: Type,
-    },
-    ExprArrLiteral {
-        elements: Vec<Tree>,
-    },
-    ExprArrAccess {
-        arr_name: String,
-        indices: Box<Tree>,
-        typ: Type,
-    },
-    ExprLiteral {
-        typ: Type,
-    },
-    ExprBinary {
-        lhs: Box<Tree>,
-        rhs: Box<Tree>,
-        typ: Type,
-    },
-    ExprComp {
-        lhs: Box<Tree>,
-        rhs: Box<Tree>,
-        typ: Type,
-    },
-    ExprParen {
-        expression: Box<Tree>,
-        typ: Type,
-    },
-    ExprCall {
-        function_name: String,
-        args: Box<Tree>,
-        typ: Type,
-    },
-    BuiltInFunction {
-        function_name: String,
-        args: Box<Tree>,
-        typ: Type
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Tree {
-    pub typ: TreeType,
-    pub tkn: Token,
-}
-
-impl Tree {
-    #[allow(unused)]
-    pub fn print_debug(&self) {
-        self.print_internal(0);
-    }
-
-    fn print_internal(&self, indent: usize) {
-        const EXTRA_INDENT: usize = 2;
-        let tab = " ".repeat(indent);
-        match &self.typ {
-            TreeType::File { functions, classes } => {
-                for c in classes {
-                    c.print_internal(indent + EXTRA_INDENT);
-                }
-                for f in functions {
-                    f.print_internal(indent + EXTRA_INDENT);
-                }
-            }
-            TreeType::Class { name, fields, functions, features } => {
-                println!("{tab}Class {name}");
-                for f in fields {
-                    f.print_internal(indent + EXTRA_INDENT);
-                }
-                for f in features {
-                    f.print_internal(indent + EXTRA_INDENT);
-                }
-                for f in functions {
-                    f.print_internal(indent + EXTRA_INDENT);
-                }
-            }
-            TreeType::Field { name, typ } => {
-                println!("{tab}Field {name}");
-                typ.print_internal(indent + EXTRA_INDENT);
-            }
-            TreeType::FieldAccess { name, field, typ } => {
-                println!("{tab}FieldAccess {name} {typ:?}");
-                field.print_internal(indent + EXTRA_INDENT);
-            }
-            TreeType::Feature {
-                name,
-                return_type,
-                param,
-                block,
-            } => {
-                println!("{tab}Feature {name}");
-                println!("{tab}Return", tab = " ".repeat(indent + EXTRA_INDENT));
-                if let Some(s) = return_type {
-                    s.print_internal(indent + 2 * EXTRA_INDENT);
-                } else {
-                    println!("{tab}None", tab = " ".repeat(indent + 2 * EXTRA_INDENT));
-                }
-                println!("{tab}Param", tab = " ".repeat(indent + EXTRA_INDENT));
-                param.print_internal(indent + 2 * EXTRA_INDENT);
-                println!("{tab}Block", tab = " ".repeat(indent + EXTRA_INDENT));
-                block.print_internal(indent + 2 * EXTRA_INDENT);
-            }
-            TreeType::Func {
-                name,
-                return_type,
-                param,
-                block,
-            } => {
-                println!("{tab}Function {name}");
-                println!("{tab}Return", tab = " ".repeat(indent + EXTRA_INDENT));
-                if let Some(s) = return_type {
-                    s.print_internal(indent + 2 * EXTRA_INDENT);
-                } else {
-                    println!("{tab}None", tab = " ".repeat(indent + 2 * EXTRA_INDENT));
-                }
-                param.print_internal(indent + EXTRA_INDENT);
-                println!("{tab}Block", tab = " ".repeat(indent + EXTRA_INDENT));
-                block.print_internal(indent + 2 * EXTRA_INDENT);
-            }
-            TreeType::ParamList { parameters } => {
-                println!("{tab}ParamList");
-                for p in parameters {
-                    p.print_internal(indent + EXTRA_INDENT);
-                }
-            }
-            TreeType::Param { name, typ } => {
-                println!("{tab}Param {name}");
-                typ.print_internal(indent + EXTRA_INDENT);
-            }
-            TreeType::ArgList { arguments } => {
-                for a in arguments {
-                    a.print_internal(indent);
-                }
-            }
-            TreeType::Arg { expression } => {
-                println!("{tab}Arg");
-                expression.print_internal(indent + EXTRA_INDENT);
-            }
-            TreeType::Block { statements } => {
-                for s in statements {
-                    s.print_internal(indent);
-                }
-            }
-            TreeType::StmtExpr { expression } => {
-                expression.print_internal(indent);
-            }
-            TreeType::StmtLet {
-                name,
-                typ,
-                expression,
-            } => {
-                println!("{tab}StmtLet {name}");
-                typ.print_internal(indent + 2 * EXTRA_INDENT);
-                expression.print_internal(indent + EXTRA_INDENT);
-            }
-            TreeType::StmtAssign { name, expression } => {
-                println!("{tab}StmtAssign");
-                name.print_internal(indent + EXTRA_INDENT);
-                expression.print_internal(indent + EXTRA_INDENT);
-            }
-            TreeType::StmtIf {
-                condition,
-                if_branch,
-                else_branch,
-            } => {
-                println!("{tab}StmtIf");
-                println!("{tab}Condition", tab = " ".repeat(indent + EXTRA_INDENT));
-                condition.print_internal(indent + 2 * EXTRA_INDENT);
-                println!("{tab}If-Branch", tab = " ".repeat(indent + EXTRA_INDENT));
-                if_branch.print_internal(indent + 2 * EXTRA_INDENT);
-                if let Some(e) = else_branch {
-                    println!("{tab}Else-Branch", tab = " ".repeat(indent + EXTRA_INDENT));
-                    e.print_internal(indent + 2 * EXTRA_INDENT);
-                }
-            }
-            TreeType::StmtReturn { return_value } => {
-                println!("{tab}StmtReturn");
-                if let Some(r) = return_value {
-                    r.print_internal(indent + EXTRA_INDENT);
-                }
-            }
-            TreeType::ExprName { name, typ } => {
-                println!("{tab}ExprName {name} {typ:?}");
-            }
-            TreeType::ExprArrLiteral { elements } => {
-                println!("{tab}ExprArrLiteral");
-                for e in elements {
-                    e.print_internal(indent + EXTRA_INDENT);
-                }
-            }
-            TreeType::ExprArrAccess {
-                arr_name,
-                indices,
-                typ,
-            } => {
-                println!("{tab}ArrAccess {arr_name} {typ:?}");
-                indices.print_internal(indent + EXTRA_INDENT);
-            }
-            TreeType::ExprLiteral { typ } => {
-                println!("{tab}ExprLiteral {} {typ:?}", self.tkn.get_value());
-            }
-            TreeType::ExprBinary { lhs, rhs, typ } => {
-                println!("{tab}ExprBinary {} {typ:?}", self.tkn.get_value());
-                lhs.print_internal(indent + EXTRA_INDENT);
-                rhs.print_internal(indent + EXTRA_INDENT);
-            }
-            TreeType::ExprComp { lhs, rhs, typ } => {
-                println!("{tab}ExprComp {} {typ:?}", self.tkn.get_value());
-                lhs.print_internal(indent + EXTRA_INDENT);
-                rhs.print_internal(indent + EXTRA_INDENT);
-            }
-            TreeType::ExprParen { expression, typ } => {
-                println!("{tab}ExprParen {typ:?}");
-                expression.print_internal(indent + EXTRA_INDENT);
-            }
-            TreeType::ExprCall {
-                function_name,
-                args,
-                typ,
-            } => {
-                println!("{tab}ExprCall {function_name} {typ:?}");
-                args.print_internal(indent + EXTRA_INDENT);
-            }
-            TreeType::BuiltInFunction {
-                function_name,
-                args,
-                typ,
-            } => {
-                println!("{tab}BuiltInFunction {function_name} {typ:?}");
-                args.print_internal(indent + EXTRA_INDENT);
-            }
-            TreeType::TypeDecl { typ } => {
-                println!("{tab}TypeDecl {typ:?}");
-            }
-        }
-    }
-
-    pub fn rebuild_code(&self) -> String {
-        self.rebuild_code_internal(0)
-    }
-
-    fn rebuild_code_internal(&self, indent: usize) -> String {
-        const EXTRA_INDENT: usize = 4;
-        let tab = " ".repeat(indent);
-        let mut result = String::new();
-        match &self.typ {
-            TreeType::File { functions, classes } => {
-                for c in classes {
-                    result.push_str(&c.rebuild_code_internal(indent));
-                }
-                for f in functions {
-                    result.push_str(&f.rebuild_code_internal(indent));
-                }
-            }
-            TreeType::Class { name, fields, functions, features } => {
-                result.push_str(format!("class {name} {{\n").as_str());
-                for f in fields {
-                    result.push_str(&f.rebuild_code_internal(indent + EXTRA_INDENT));
-                }
-                for f in features {
-                    result.push_str(&f.rebuild_code_internal(indent + EXTRA_INDENT));
-                }
-                for f in functions {
-                    result.push_str(&f.rebuild_code_internal(indent + EXTRA_INDENT));
-                }
-                result.push_str("}\n");
-            }
-            TreeType::Field { name, typ } => {
-                result.push_str(format!("{tab}{name}: ").as_str());
-                result.push_str(&typ.rebuild_code());
-                result.push_str(";\n");
-            }
-            TreeType::FieldAccess { name, field, .. } => {
-                result.push_str(format!("{name}.").as_str());
-                result.push_str(&field.rebuild_code());
-            }
-            TreeType::Feature {
-                name,
-                return_type,
-                param,
-                block,
-            } => {
-                result.push_str(format!("{tab}feat {name}(").as_str());
-                result.push_str(&param.rebuild_code());
-                result.push_str(")");
-                if let Some(ret) = return_type {
-                    result.push_str(" -> ");
-                    result.push_str(&ret.rebuild_code());
-                }
-                result.push_str(" {\n");
-                result.push_str(&block.rebuild_code_internal(indent));
-                result.push_str(format!("{tab}}}\n").as_str());
-            }
-            TreeType::Func {
-                name,
-                return_type,
-                param,
-                block,
-            } => {
-                result.push_str(format!("{tab}func {name}(").as_str());
-                result.push_str(&param.rebuild_code());
-                result.push_str(")");
-                if let Some(ret) = return_type {
-                    result.push_str(" -> ");
-                    result.push_str(&ret.rebuild_code());
-                }
-                result.push_str(" {\n");
-                result.push_str(&block.rebuild_code_internal(indent));
-                result.push_str(format!("{tab}}}\n").as_str());
-            }
-            TreeType::ParamList { parameters } => {
-                if !parameters.is_empty() {
-                    for p in parameters.iter().take(parameters.len() - 1) {
-                        result.push_str(&p.rebuild_code());
-                        result.push_str(", ");
-                    }
-                    result.push_str(&parameters.last().unwrap().rebuild_code());
-                }
-            }
-            TreeType::Param { name, typ } => {
-                result.push_str(format!("{name}: ").as_str());
-                result.push_str(&typ.rebuild_code());
-            }
-            TreeType::ArgList { arguments } => {
-                if !arguments.is_empty() {
-                    for a in arguments.iter().take(arguments.len() - 1) {
-                        result.push_str(&a.rebuild_code());
-                        result.push_str(", ");
-                    }
-                    result.push_str(&arguments.last().unwrap().rebuild_code());
-                }
-            }
-            TreeType::Arg { expression } => {
-                result.push_str(&expression.rebuild_code());
-            }
-            TreeType::Block { statements } => {
-                for s in statements {
-                    result.push_str(&s.rebuild_code_internal(indent + EXTRA_INDENT));
-                }
-            }
-            TreeType::StmtIf {
-                condition,
-                if_branch,
-                else_branch,
-            } => {
-                result.push_str(format!("{tab}if (").as_str());
-                result.push_str(&condition.rebuild_code());
-                result.push_str(") {\n");
-                result.push_str(&if_branch.rebuild_code_internal(indent));
-                result.push_str(format!("{tab}}}").as_str());
-                if let Some(els) = else_branch {
-                    result.push_str(" else {\n");
-                    result.push_str(&els.rebuild_code_internal(indent));
-                    result.push_str(format!("{tab}}}\n").as_str());
-                } else {
-                    result.push('\n');
-                }
-            }
-            TreeType::StmtReturn { return_value } => {
-                result.push_str(format!("{tab}return").as_str());
-                if let Some(ret) = return_value {
-                    result.push_str(" ");
-                    result.push_str(&ret.rebuild_code());
-                }
-                result.push_str(";\n");
-            }
-            TreeType::StmtLet {
-                name,
-                typ,
-                expression,
-            } => {
-                result.push_str(format!("{tab}let {name}: ").as_str());
-                result.push_str(&typ.rebuild_code());
-                result.push_str(" = ");
-                result.push_str(&expression.rebuild_code());
-                result.push_str(";\n");
-            }
-            TreeType::StmtAssign { name, expression } => {
-                result.push_str(format!("{tab}").as_str());
-                result.push_str(&name.rebuild_code());
-                result.push_str(" = ");
-                result.push_str(&expression.rebuild_code());
-                result.push_str(";\n");
-            }
-            TreeType::StmtExpr { expression } => {
-                result.push_str(format!("{tab}").as_str());
-                result.push_str(&expression.rebuild_code_internal(indent));
-                result.push_str(";\n");
-            }
-
-            TreeType::ExprComp { lhs, rhs, .. } => {
-                result.push_str(&lhs.rebuild_code());
-                result.push_str(format!(" {} ", self.tkn.get_value()).as_str());
-                result.push_str(&rhs.rebuild_code());
-            }
-            TreeType::ExprBinary { lhs, rhs, .. } => {
-                result.push_str(&lhs.rebuild_code());
-                result.push_str(format!(" {} ", self.tkn.get_value()).as_str());
-                result.push_str(&rhs.rebuild_code());
-            }
-            TreeType::ExprParen { expression, .. } => {
-                result.push_str("(");
-                result.push_str(&expression.rebuild_code());
-                result.push_str(")");
-            }
-            TreeType::ExprName { name, .. } => {
-                result.push_str(format!("{name}").as_str());
-            }
-            TreeType::ExprLiteral { typ } => {
-                if *typ != Type::Unknown {
-                    result.push_str(format!("{}{}", self.tkn.get_value(), typ).as_str());
-                } else {
-                    result.push_str(format!("{}", self.tkn.get_value()).as_str());
-                }
-            }
-            TreeType::ExprArrLiteral { elements } => {
-                result.push_str("[");
-                if !elements.is_empty() {
-                    for e in elements.iter().take(elements.len() - 1) {
-                        result.push_str(&e.rebuild_code());
-                        result.push_str(", ");
-                    }
-                    result.push_str(&elements.last().unwrap().rebuild_code());
-                }
-                result.push_str("]");
-            }
-            TreeType::ExprArrAccess {
-                arr_name, indices, ..
-            } => {
-                result.push_str(format!("{arr_name}").as_str());
-                result.push_str(&indices.rebuild_code());
-            }
-            TreeType::ExprCall {
-                function_name,
-                args,
-                ..
-            } => {
-                result.push_str(format!("{function_name}(").as_str());
-                result.push_str(&args.rebuild_code());
-                result.push_str(")");
-            }
-            TreeType::BuiltInFunction {
-                function_name,
-                args,
-                ..
-            } => {
-                result.push_str(format!("{function_name}(").as_str());
-                result.push_str(&args.rebuild_code());
-                result.push_str(")");
-            }
-            TreeType::TypeDecl { typ } => {
-                result.push_str(format!("{typ}").as_str());
-            }
-        }
-        result
-    }
-}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TokenType {
@@ -620,131 +93,180 @@ impl Location {
     }
 }
 
-
 impl Debug for Location {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(f, "{}:{}:{}", self.file, self.row, self.col)
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[macro_export]
+macro_rules! parse_snippet {
+    ($filepath: expr, $node: ty, $snippet: expr) => {
+        {
+            use crate::new::new_parser::{Parser, Parsable};
+            let mut parser = Parser::new();
+            parser.set_filepath_unchecked($filepath);
+            parser.set_source($snippet);
+            parser = parser.initialize()?;
+            <$node>::parse(&mut parser)?
+        }
+    };
+}
+
+#[derive(Debug, Clone)]
 pub struct Token {
-    typ: TokenType, // type is a reserved keyword in Rust :(
+    location: Location,
     value: String,
-    loc: Location,
+    token_type: TokenType
 }
 
 impl Token {
-    pub fn new(typ: TokenType, value: String, loc: Location) -> Self {
-        Self { typ, value, loc }
+    fn new() -> Self {
+        Self {
+            location: Location::anonymous(),
+            value: String::new(),
+            token_type: TokenType::Eof
+        }
     }
+    fn location(self, location: Location) -> Self { Self { location, ..self } }
+    fn value(self, value: String) -> Self { Self { value, ..self } }
+    fn token_type(self, token_type: TokenType) -> Self { Self { token_type, ..self } }
+}
 
-    pub fn get_type(&self) -> TokenType {
-        self.typ
-    }
 
-    pub fn get_value(&self) -> String {
-        self.value.clone()
-    }
+#[derive(Debug, Clone, PartialEq, Copy)]
+pub enum Operation {
+    PLUS,
+    MINUS,
+    MULT,
+    DIV,
+    EQ,
+    NEQ,
+    LT,
+    LTE,
+    GT,
+    GTE
+}
 
-    pub fn get_loc(&self) -> Location {
-        self.loc.clone()
+const COMPARISONS: [Operation; 6] = [
+    Operation::EQ,
+    Operation::NEQ,
+    Operation::LT,
+    Operation::LTE,
+    Operation::GT,
+    Operation::GTE
+];
+
+impl Display for Operation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        debug_assert_eq!(Operation::GTE as u8 + 1, 10);
+        match self {
+            Self::PLUS => write!(f, "+"),
+            Self::MINUS => write!(f, "-"),
+            Self::MULT => write!(f, "*"),
+            Self::DIV => write!(f, "/"),
+            Self::EQ => write!(f, "=="),
+            Self::NEQ => write!(f, "!="),
+            Self::LT => write!(f, "<"),
+            Self::LTE => write!(f, "<="),
+            Self::GT => write!(f, ">"),
+            Self::GTE => write!(f, ">="),
+            _ => unreachable!()
+        }
     }
 }
 
-#[derive(Clone)]
+impl Operation {
+    fn from(s: String) -> Self {
+        debug_assert_eq!(Operation::GTE as u8 + 1, 10);
+        match s.as_str() {
+            "+" => Self::PLUS,
+            "-" => Self::MINUS,
+            "*" => Self::MULT,
+            "/" => Self::DIV,
+            "==" => Self::EQ,
+            "!=" => Self::NEQ,
+            "<" => Self::LT,
+            "<=" => Self::LTE,
+            ">" => Self::GT,
+            ">=" => Self::GTE,
+            _ => unreachable!()
+        }
+    }
+}
+
+#[derive(Default)]
 pub struct Parser {
-    origin: String,
-    ptr: usize,
-    fuel: Cell<u32>,
-    root: Option<Tree>,
-    #[allow(unused)]
-    print_debug: bool,
-    lookahead: VecDeque<Token>,
-    // Lexer fields
+    filepath: PathBuf,
+    filename: String,
     source: Vec<char>,
+    fuel: Cell<u32>,
+    lookahead: VecDeque<Token>,
+    current_class: String,
     current_char: usize,
     current_line: usize,
     line_start: usize,
+    print_debug: bool,
 }
 
 impl Parser {
+    // ---------- Start of Builder Pattern ----------
     pub fn new() -> Self {
         Self {
-            origin: String::new(),
-            ptr: 0,
-            fuel: Cell::new(256),
-            root: None,
-            print_debug: false,
-            lookahead: VecDeque::new(),
-            // Lexer fields
-            source: vec![],
-            current_char: 0,
             current_line: 1,
-            line_start: 0,
+            ..Default::default()
         }
     }
 
-    pub fn set_origin_unchecked(&mut self, origin_path: &String) {
-        self.origin = origin_path.clone();
-    }
-    pub fn set_source(&mut self, source: &String) {
-        self.source = source.chars().collect();
-    }
-
-    pub fn origin(&mut self, origin_path: &String) -> Result<Self, String> {
-        match fs::read_to_string(origin_path) {
+    pub fn filepath(self, filepath: &str) -> Result<Self, String> {
+        match fs::read_to_string(filepath) {
             Ok(source) => {
-                self.source = source.chars().collect();
-                self.origin = origin_path.to_string();
-                Ok(self.clone())
+                let pb = PathBuf::from(filepath);
+                let p = Self {
+                    filepath: pb.clone(),
+                    filename: pb.into_os_string().into_string().unwrap(),
+                    source: source.chars().collect(),
+                    ..self
+                };
+                Ok(p)
             }
-            Err(_) => {
+            Err(e) => {
                 Err(format!(
-                    "{}: Could not find input file `{}`.",
-                    ERR_STR, origin_path
+                    "{}: Parsing file failed because: {}", ERR_STR, e,
                 ))
             }
         }
     }
 
-
-    pub fn debug(&mut self, debug: bool) -> Self {
-        self.print_debug = debug;
-        self.clone()
-    }
-
-    // ---------- End of Builder Pattern ----------
-
-    // ---------- Start of Lexer ----------
-    fn get_location(&self) -> Location {
-        Location {
-            file: self.origin.clone(),
-            row: self.current_line,
-            col: self.current_char - self.line_start,
+    pub fn debug(self, print_debug: bool) -> Self {
+        Self {
+            print_debug,
+            ..self
         }
     }
 
-    fn lexer_eof(&self) -> bool {
+    pub fn initialize(self) -> Result<Self, String> {
+        let mut new = self;
+        new.fill_lookup()?;
+        Ok(new)
+    }
+
+    pub fn set_filepath_unchecked(&mut self, filepath: &str) {
+        self.filepath = PathBuf::from(filepath);
+        self.filename = self.filepath.clone().into_os_string().into_string().unwrap();
+    }
+
+    pub fn set_source(&mut self, source: &str) {
+        self.source = source.chars().collect();
+    }
+    // ---------- End of Builder Pattern ----------
+    // ---------- Start of Lexer ----------
+    fn lexed_eof(&self) -> bool {
         self.current_char >= self.source.len()
     }
 
-    fn parser_eof(&mut self) -> bool {
-        self.nth(0).unwrap() == TokenType::Eof
-    }
-
-    fn next_char(&mut self) -> Result<char, String> {
-        if self.lexer_eof() {
-            Err(format!("{}: Reached End Of File while lexing.", ERR_STR))
-        } else {
-            let c = self.source[self.current_char];
-            self.current_char += 1;
-            Ok(c)
-        }
-    }
-
     fn trim_whitespace(&mut self) -> Result<(), String> {
-        while !self.lexer_eof() && self.source[self.current_char].is_whitespace() {
+        while !self.lexed_eof() && self.source[self.current_char].is_whitespace() {
             match self.source[self.current_char] {
                 '\r' => {
                     self.current_char += 2;
@@ -764,48 +286,62 @@ impl Parser {
         Ok(())
     }
 
+    fn current_char(&self) -> char {
+        self.source[self.current_char]
+    }
+
+    fn next_char(&mut self) -> char {
+        if self.lexed_eof() {
+            '\0'
+        } else {
+            let c = self.current_char();
+            self.current_char += 1;
+            c
+        }
+    }
+
     fn next_token(&mut self) -> Result<Token, String> {
-        assert_eq!(
+        macro_rules! fill_buffer {
+            ($start: expr, $cond: expr, $stepback: expr) => {
+                {
+                    let mut value = String::from($start);
+                    loop {
+                        let nc = self.next_char();
+                        if $cond(nc) {
+                            if $stepback {
+                                self.current_char -= 1;
+                            } else {
+                                value.push(nc);
+                            }
+                            break value;
+                        }
+                        value.push(nc);
+                    }
+                }
+            };
+            ($start: expr, $cond: expr) => {
+                fill_buffer!($start, $cond, true)
+            }
+        }
+        debug_assert_eq!(
             TokenType::Eof as u8 + 1,
             36,
             "Not all TokenTypes are handled in next_token()"
         );
-        self.trim_whitespace()?;
-        let loc = self.get_location();
+        self.trim_whitespace();
         let c = self.next_char();
-        if c.is_err() {
-            return Ok(Token {
-                value: String::new(),
-                typ: TokenType::Eof,
-                loc
-            });
-        }
-        let c = c.unwrap();
-        match c {
+        let loc = self.get_location();
+        let (typ, value) = match c {
             '0'..='9' => {
-                let mut value = String::from(c);
-                while let Ok(nc) = self.next_char() {
-                    if !nc.is_alphanumeric() {
-                        self.current_char -= 1; // Went too far, go a step back
-                        break;
-                    }
-                    value.push(nc);
-                }
-                Ok(Token {
-                    typ: TokenType::IntLiteral,
-                    value,
-                    loc,
-                })
+                let value = fill_buffer!(c, 
+                    |c: char| { !c.is_alphanumeric() || c == '\0' }
+                );
+                (TokenType::IntLiteral, value)
             }
             'A'..='Z' | 'a'..='z' => {
-                let mut value = String::from(c);
-                while let Ok(nc) = self.next_char() {
-                    if !nc.is_alphanumeric() && !(nc == '_') {
-                        self.current_char -= 1; // Went too far, go a step back
-                        break;
-                    }
-                    value.push(nc);
-                }
+                let value = fill_buffer!(c,
+                    |c: char| { (!c.is_alphanumeric() && c != '_') || c == '\0' }
+                );
                 let typ = match value.as_str() {
                     "class" => TokenType::ClassKeyword,
                     "func" => TokenType::FunctionKeyword,
@@ -817,785 +353,797 @@ impl Parser {
                     _ if BUILT_IN_FUNCTIONS.contains(&value.as_str()) => TokenType::BuiltInFunction,
                     _ => TokenType::Identifier,
                 };
-                Ok(Token { typ, value, loc })
+                (typ, value)
             }
-            '"' => {
-                let mut value = String::new();
-                while let Ok(nc) = self.next_char() {
-                    if nc == '"' {
-                        break;
-                    }
-                    value.push(nc);
+            '\"' => {
+                let mut value = fill_buffer!(c,
+                    |c: char| { c == '"' || c == '\0' },
+                    false
+                );
+                if value.contains("\\") {
+                    println!("{}: {:?}: Escape sequences in Strings are not supported yet.", WARN_STR, loc);
                 }
-                Ok(Token {
-                    typ: TokenType::StrLiteral,
-                    value,
-                    loc
-                })
+                if value.chars().filter(|c| *c == '"').count() != 2 {
+                    return Err(format!(
+                        "{}: {:?}: Unterminated String Literal.",
+                        ERR_STR,
+                        loc
+                    ));
+                }
+                (TokenType::StrLiteral, value)
             }
             '\'' => {
-                let mut value = String::new();
-                while let Ok(nc) = self.next_char() {
-                    if nc == '\'' {
-                        break;
-                    }
-                    value.push(nc);
+                let mut value = fill_buffer!(c,
+                    |c: char| { c == '\'' || c == '\0' },
+                    false
+                );
+                if value.contains("\\") {
+                    println!("{}: {:?}: Escape sequences in Char Literals are not supported yet.", WARN_STR, loc);
                 }
-                if value.len() != 1 {
-                    Err(format!("{}: {:?}: Char Literal is expected to be a single char, got `{}`.",
+                if value.len() != 3 {
+                    return Err(format!("{}: {:?}: Char Literal is expected to be a single char, found {}.",
                         ERR_STR,
                         loc,
-                        value
-                    ))
-                } else {
-                    Ok(Token {
-                        typ: TokenType::CharLiteral,
                         value,
-                        loc
-                    })
+                    ))
                 }
-            } 
-            '(' => Ok(Token {
-                typ: TokenType::OpenRound,
-                value: String::from("("),
-                loc,
-            }),
-            ')' => Ok(Token {
-                typ: TokenType::ClosingRound,
-                value: String::from(")"),
-                loc,
-            }),
-            '{' => Ok(Token {
-                typ: TokenType::OpenCurly,
-                value: String::from("{"),
-                loc,
-            }),
-            '}' => Ok(Token {
-                typ: TokenType::ClosingCurly,
-                value: String::from("}"),
-                loc,
-            }),
-            '[' => Ok(Token {
-                typ: TokenType::OpenSquare,
-                value: String::from("["),
-                loc,
-            }),
-            ']' => Ok(Token {
-                typ: TokenType::ClosingSquare,
-                value: String::from("]"),
-                loc,
-            }),
-            ';' => Ok(Token {
-                typ: TokenType::Semi,
-                value: String::from(";"),
-                loc,
-            }),
-            ',' => Ok(Token {
-                typ: TokenType::Comma,
-                value: String::from(","),
-                loc,
-            }),
+                (TokenType::CharLiteral, value)
+            }
             '!' => {
-                if let Ok(nc) = self.next_char() {
-                    match nc {
-                        '=' => Ok(Token {
-                            typ: TokenType::CmpNeq,
-                            value: String::from("!="),
-                            loc,
-                        }),
-                        _ => {
-                            let mut v = String::from(c);
-                            v.push(nc);
-                            Err(format!(
-                                "{}: {:?}: Unexpected Symbol `{}`",
-                                ERR_STR,
-                                self.get_location(),
-                                v
-                            ))
-                        }
-                    }
-                } else {
-                    Err(format!("{}: Reached End Of File while lexing.", ERR_STR))
+                match self.next_char() {
+                    '=' => (TokenType::CmpNeq, String::from("!=")),
+                    _ => return Err(format!(
+                        "{}: {:?}: Unexpected Symbol `{}`",
+                        ERR_STR,
+                        loc,
+                        c
+                    ))
                 }
             }
             '=' => {
-                let (typ, value) = if let Ok(nc) = self.next_char() {
-                    match nc {
-                        '=' => (TokenType::CmpEq, String::from("==")),
-                        _ => {
-                            self.current_char -= 1; // Went too far, go a step back
-                            (TokenType::Equal, String::from("="))
-                        }
+                match self.next_char() {
+                    '=' => (TokenType::CmpEq, String::from("==")),
+                    _ => {
+                        self.current_char -= 1;
+                        (TokenType::Equal, String::from(c))
                     }
-                } else {
-                    (TokenType::Equal, String::from("="))
-                };
-                Ok(Token { typ, value, loc })
+                }
             }
             '<' => {
-                let (typ, value) = if let Ok(nc) = self.next_char() {
-                    match nc {
-                        '=' => (TokenType::CmpLte, String::from("<=")),
-                        _ => {
-                            self.current_char -= 1; // Went too far, go a step back
-                            (TokenType::CmpLt, String::from("<"))
-                        }
+                match self.next_char() {
+                    '=' => (TokenType::CmpLte, String::from("<=")),
+                    _ => {
+                        self.current_char -= 1;
+                        (TokenType::CmpLt, String::from(c))
                     }
-                } else {
-                    (TokenType::CmpLt, String::from("<"))
-                };
-                Ok(Token { typ, value, loc })
+                }
             }
             '>' => {
-                let (typ, value) = if let Ok(nc) = self.next_char() {
-                    match nc {
-                        '=' => (TokenType::CmpGte, String::from(">=")),
-                        _ => {
-                            self.current_char -= 1; // Went too far, go a step back
-                            (TokenType::CmpGt, String::from(">"))
-                        }
+                match self.next_char() {
+                    '=' => (TokenType::CmpGte, String::from(">=")),
+                    _ => {
+                        self.current_char -= 1;
+                        (TokenType::CmpGt, String::from(c))
                     }
-                } else {
-                    (TokenType::CmpGt, String::from(">"))
-                };
-                Ok(Token { typ, value, loc })
+                }
             }
-            ':' => Ok(Token {
-                typ: TokenType::Colon,
-                value: String::from(c),
-                loc,
-            }),
-            '.' => Ok(Token {
-                typ: TokenType::Dot,
-                value: String::from(c),
-                loc,
-            }),
-            '+' => Ok(Token {
-                typ: TokenType::Plus,
-                value: String::from(c),
-                loc,
-            }),
             '-' => {
-                let (typ, value) = if let Ok(nc) = self.next_char() {
-                    match nc {
-                        '>' => (TokenType::Arrow, String::from("->")),
-                        _ => {
-                            self.current_char -= 1; // Went too far, go a step back
-                            (TokenType::Minus, String::from("-"))
-                        }
+                match self.next_char() {
+                    '>' => (TokenType::Arrow, String::from("->")),
+                    _ => {
+                        self.current_char -= 1;
+                        (TokenType::Minus, String::from("-"))
                     }
-                } else {
-                    (TokenType::Minus, String::from("-"))
-                };
-                Ok(Token { typ, value, loc })
+                }
             }
-            '*' => Ok(Token {
-                typ: TokenType::Asterisk,
-                value: String::from(c),
-                loc,
-            }),
             '/' => {
-                let (typ, value) = if let Ok(nc) = self.next_char() {
-                    match nc {
-                        '/' => {
-                            while let Ok(c) = self.next_char() {
-                                if c == '\r' || c == '\n' {
-                                    self.trim_whitespace();
-                                    break;
-                                }
-                            }
-                            return self.next_token();
-                        },
-                        _ => {
-                            self.current_char -= 1; // Went too far, go a step back
-                            (TokenType::ForwardSlash, String::from("/"))
-                        }
+                match self.next_char() {
+                    '/' => {
+                        let v = fill_buffer!(c, 
+                            |c: char| { c == '\r' || c == '\n' || c == '\0' }
+                        );
+                        return self.next_token();
                     }
-                } else {
-                    (TokenType::ForwardSlash, String::from("/"))
-                };
-                Ok(Token { typ, value, loc })
-            },
-            e => Err(format!(
+                    _ => {
+                        self.current_char -= 1;
+                        (TokenType::ForwardSlash, String::from("/"))
+                    }
+                }
+            }
+            '(' => (TokenType::OpenRound, String::from(c)),
+            ')' => (TokenType::ClosingRound, String::from(c)),
+            '{' => (TokenType::OpenCurly, String::from(c)),
+            '}' => (TokenType::ClosingCurly, String::from(c)),
+            '[' => (TokenType::OpenSquare, String::from(c)),
+            ']' => (TokenType::ClosingSquare, String::from(c)),
+            ';' => (TokenType::Semi, String::from(c)),
+            ':' => (TokenType::Colon, String::from(c)),
+            ',' => (TokenType::Comma, String::from(c)),
+            '.' => (TokenType::Dot, String::from(c)),
+            '+' => (TokenType::Plus, String::from(c)),
+            '*' => (TokenType::Asterisk, String::from(c)),
+            '\0'=> (TokenType::Eof, String::new()),
+            e => return Err(format!(
                 "{}: {:?}: Unexpected Symbol `{}`",
                 ERR_STR,
                 self.get_location(),
                 e
             )),
-        }
+        };
+        Ok(Token::new()
+            .location(loc)
+            .token_type(typ)
+            .value(value))
     }
 
-    // ---------- End of Lexer ----------
+    fn get_location(&self) -> Location {
+        Location::new(self.filename.clone(), self.current_line, self.current_char - self.line_start)
+    }
 
-    fn reset(&mut self) {
-        self.current_char = 0;
-        self.current_line = 1;
-        self.line_start = 0;
-        self.ptr = 0;
-        self.fuel.set(256);
-        self.root = None;
+    fn current_location(&self) -> Location {
+        debug_assert!(!self.lookahead.is_empty());
+        self.lookahead[0].location.clone()
     }
-    fn open(&self) -> Token {
-        self.lookahead[0].clone()
-    }
-    fn advance(&mut self) -> Result<Token, String> {
-        // assert!(!self.parser_eof());
-        self.fuel.set(256);
-        self.next()
-    }
-    
-    fn fill_lookahead(&mut self) -> Result<(), String> {
+
+    fn fill_lookup(&mut self) -> Result<(), String> {
         while self.lookahead.len() < LOOKAHEAD_LIMIT {
-            let tkn = self.next_token()?;
-            self.lookahead.push_back(tkn);
+            let n = self.next_token()?;
+            if self.print_debug {
+                // println!("[DEBUG] Found {:?}", n);
+            }
+            self.lookahead.push_back(n);
         }
         Ok(())
     }
-
-    fn nth(&mut self, lookahead: usize) -> Result<TokenType, String> {
-        self.fill_lookahead()?;
-        if self.fuel.get() == 0 {
-            panic!("Parser is stuck at {}", self.ptr);
-        }
-        self.fuel.set(self.fuel.get() - 1);
-        Ok(self.lookahead[lookahead].get_type())
+    // ---------- End of Lexer ----------
+    // ---------- Start of Parser ----------
+    pub fn parse_file(&mut self) -> Result<nodes::FileNode, String> {
+        self.fill_lookup()?;
+        nodes::FileNode::parse(self)
     }
 
-    // // fn next_token(&mut self) -> Result<Token, String> {
-    // //     self.fill_lookahead()?;
-    // //     assert!(self.lookahead.len() > 0);
-    // //     Ok(self.lookahead[0].clone())
-    // // }
-
-    fn at(&mut self, typ: TokenType) -> Result<bool, String> {
-        Ok(self.nth(0)? == typ)
+    fn parse_type(&self, token: Token) -> Type {
+        self.parse_type_str(token.location, token.value)
     }
-
-    fn next(&mut self) -> Result<Token, String> {
-        self.fill_lookahead()?;
-        assert!(self.lookahead.len() > 0);
-        Ok(self.lookahead.pop_front().unwrap())
-    }
-
-    fn eat(&mut self, typ: TokenType) -> Result<bool, String> {
-        if self.at(typ)? {
-            self.advance();
-            Ok(true)
-        } else {
-            Ok(false)
+    fn parse_type_str(&self, loc: Location, val: String) -> Type {
+        match val.as_str() {
+            "i32" => Type::I32,
+            "i64" => Type::I64,
+            "u32" => Type::U32,
+            "u64" => Type::U64,
+            "usize" => Type::Usize,
+            // Reserved for future use
+            "f32" => Type::F32,
+            "f64" => Type::F64,
+            _ => Type::Class(val)
         }
     }
-
-    fn expect(&mut self, typ: TokenType) -> Result<Token, String> {
-        let t = typ;
-        if self.at(typ)? {
-            return self.advance();
-        }
-        let tkn = self.next()?;
-        Err(format!(
-            "{}: {:?}: Expected {:?}, found {:?}",
-            ERR_STR,
-            tkn.loc,
-            t,
-            tkn.typ
-        ))
-    }
-
-    pub fn dump(&mut self) {
-        let mut t = self.next().unwrap();
-        while t.typ != TokenType::Eof {
-            println!("{:?}", t);
-            t = self.next().unwrap();
-        }
-
-    }
-
-    pub fn parse_snippet(&mut self) -> Result<Tree, String> {
-        // Only ever call this in combination with Compiler::throwaway_compiler_parse()
-        // Assumes there's a single statement or function or whatever
-        // like `return this;` that's getting inserted in desugaring
-        match self.nth(0)? {
-            TokenType::FunctionKeyword => self.parse_func(),
-            TokenType::FeatureKeyword => self.parse_feature(),
-            TokenType::ClassKeyword => self.parse_class(),
-            TokenType::LetKeyword => self.parse_stmt_let(),
-            TokenType::IfKeyword => self.parse_stmt_if(),
-            TokenType::ReturnKeyword => self.parse_stmt_return(),
-            TokenType::OpenCurly => self.parse_block(),
-            e => todo!("`parse_snippet()` does not support `{:?}` yet", e)
-        }
-    }
-
-    pub fn parse_file(&mut self) -> Result<Tree, String> {
-        assert_eq!(
-            TokenType::Eof as u8 + 1,
-            36,
-            "Not all TokenTypes are handled in parse_file()"
-        );
-        let tkn = Token::new(
-            TokenType::File,
-            self.origin.clone(),
-            Location::new(self.origin.clone(), 0, 0),
-        );
-        let mut functions = vec![];
-        let mut classes = vec![];
-        while !self.parser_eof() {
-            match self.nth(0)? {
-                TokenType::FunctionKeyword => functions.push(self.parse_func()?),
-                TokenType::ClassKeyword => classes.push(self.parse_class()?),
-                _ => {
-                    let tkn = self.next()?;
-                    return Err(format!(
-                        "{}: {:?}: Expected one of {{Function, Class}}, found {:?}",
-                        ERR_STR,
-                        tkn.get_loc(),
-                        tkn.get_type()
-                    ));
-                }
-            }
-        }
-        assert!(self.nth(0)? == TokenType::Eof);
-        self.root = Some(Tree {
-            typ: TreeType::File {
-                functions,
-                classes
-            },
-            tkn,
-        });
-        Ok(self.root.clone().unwrap())
-    }
-
-    fn parse_class(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        self.expect(TokenType::ClassKeyword)?;
-        let class_name = self.expect(TokenType::Identifier)?;
-        if !class_name.get_value().as_bytes()[0].is_ascii_uppercase() {
-            return Err(format!(
-                "{}: {:?}: Class names are expected to be capitalized, found `{}`.",
-                ERR_STR,
-                class_name.get_loc(),
-                class_name.get_value()
-            ));
-        }
-        self.expect(TokenType::OpenCurly)?;
-        let mut fields = vec![];
-        let mut functions = vec![];
-        let mut features = vec![];
-        while !self.at(TokenType::ClosingCurly)? && !self.parser_eof() {
-            // println!("{:#?}\n{:#?}\n{:#?}", fields, features, functions);
-            match self.nth(0)? {
-                TokenType::Identifier => fields.push(self.parse_class_field()?),
-                TokenType::FunctionKeyword => functions.push(self.parse_func()?),
-                TokenType::FeatureKeyword => features.push(self.parse_feature()?),
-                _ => {
-                    todo!()
-                    // let prev = self.tokens.get(self.ptr).unwrap();
-                    // return Err(format!(
-                    //     "{}: {:?}: Expected one of {{Field, Function}}, found {:?}.",
-                    //     ERR_STR,
-                    //     prev.get_loc(),
-                    //     prev.get_type()
-                    // ));
-                }
-            }
-        }
-        self.expect(TokenType::ClosingCurly)?;
-        Ok(Tree {
-            typ: TreeType::Class {
-                name: class_name.get_value(),
-                fields,
-                functions,
-                features
-            },
-            tkn
-        })
-    }
-
-    fn parse_class_field(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        let name = self.expect(TokenType::Identifier)?;
-        let typ = self.parse_type_decl()?;
-        self.expect(TokenType::Semi)?;
-        Ok(Tree {
-            typ: TreeType::Field {
-                name: name.get_value(),
-                typ: Box::new(typ)
-            },
-            tkn
-        })
-    }
-
-    fn parse_feature(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        self.expect(TokenType::FeatureKeyword)?;
-        let feature_name = self.expect(TokenType::Identifier)?;
-        let params = self.parse_param_list()?;
-        let return_type = if self.at(TokenType::Arrow)? {
-            Some(Box::new(self.parse_return_type()?))
-        } else {
-            None
-        };
-        let block = self.parse_block()?;
-        Ok(Tree {
-            typ: TreeType::Feature {
-                name: feature_name.get_value(),
-                return_type,
-                param: Box::new(params),
-                block: Box::new(block),
-            },
-            tkn,
-        })
-    }
-
-    fn parse_func(&mut self) -> Result<Tree, String> {
-        let tkn = self.expect(TokenType::FunctionKeyword)?;
-        let fn_name = self.expect(TokenType::Identifier)?;
-        if fn_name.get_value().as_bytes()[0].is_ascii_uppercase() {
-            return Err(format!(
-                "{}: {:?}: Function names are not expected to be capitalized, found `{}`.",
-                ERR_STR,
-                fn_name.get_loc(),
-                fn_name.get_value()
-            ));
-        }
-        let params = self.parse_param_list()?;
-        let return_type = if self.at(TokenType::Arrow)? {
-            Some(Box::new(self.parse_return_type()?))
-        } else {
-            None
-        };
-        let block = self.parse_block()?;
-        Ok(Tree {
-            typ: TreeType::Func {
-                name: fn_name.get_value(),
-                return_type,
-                param: Box::new(params),
-                block: Box::new(block),
-            },
-            tkn,
-        })
-    }
-
-    fn parse_param_list(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        let mut children = vec![];
-        self.expect(TokenType::OpenRound)?;
-        while !self.at(TokenType::ClosingRound)? && !self.parser_eof() {
-            children.push(self.parse_param()?);
-            if !self.eat(TokenType::Comma)? {
-                break;
-            }
-        }
-        self.expect(TokenType::ClosingRound)?;
-        Ok(Tree {
-            typ: TreeType::ParamList {
-                parameters: children,
-            },
-            tkn,
-        })
-    }
-
-    fn parse_param(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        let name_tkn = self.expect(TokenType::Identifier)?;
-        let type_decl = self.parse_type_decl()?;
-        Ok(Tree {
-            typ: TreeType::Param {
-                name: name_tkn.get_value(),
-                typ: Box::new(type_decl),
-            },
-            tkn
-        })
-    }
-
-    fn parse_block(&mut self) -> Result<Tree, String> {
-        if !self.at(TokenType::OpenCurly)? {
-            let tkn = self.next()?;
-            return Err(format!(
-                "{}: {:?}: Expected `{{`, found `{:?}`",
-                ERR_STR,
-                tkn.get_loc(),
-                tkn.get_type()
-            ));
-        }
-        let tkn = self.open();
-        let mut children = vec![];
-        self.expect(TokenType::OpenCurly)?;
-        while !self.at(TokenType::ClosingCurly)? && !self.parser_eof() {
-            // Parse Statements
-            match self.nth(0)? {
-                TokenType::LetKeyword => children.push(self.parse_stmt_let()?),
-                TokenType::IfKeyword => children.push(self.parse_stmt_if()?),
-                TokenType::ReturnKeyword => children.push(self.parse_stmt_return()?),
-                TokenType::Identifier => match self.nth(1)? {
-                    TokenType::Dot | TokenType::Equal | TokenType::OpenSquare => {
-                        children.push(self.parse_stmt_assign()?)
-                    }
-                    _ => children.push(self.parse_stmt_expr()?),
-                },
-                _ => children.push(self.parse_stmt_expr()?),
-            }
-        }
-        self.expect(TokenType::ClosingCurly)?;
-        Ok(Tree {
-            typ: TreeType::Block {
-                statements: children,
-            },
-            tkn,
-        })
-    }
-
-    fn parse_stmt_expr(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        let expr = self.parse_expr()?;
-        self.expect(TokenType::Semi)?;
-        Ok(Tree {
-            typ: TreeType::StmtExpr {
-                expression: Box::new(expr.clone()),
-            },
-            tkn: tkn,
-        })
-    }
-
-    fn parse_stmt_let(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        self.expect(TokenType::LetKeyword)?;
-        let name_tkn = self.expect(TokenType::Identifier)?;
-        let type_tree = self.parse_type_decl()?;
-        self.expect(TokenType::Equal)?;
-        let expr = match self.nth(0)? {
-            TokenType::OpenSquare => self.parse_expr_array_literal()?,
-            _ => self.parse_expr()?
-        };
-        self.expect(TokenType::Semi)?;
-        Ok(Tree {
-            typ: TreeType::StmtLet {
-                name: name_tkn.get_value(),
-                typ: Box::new(type_tree),
-                expression: Box::new(expr),
-            },
-            tkn,
-        })
-    }
-
-    fn parse_stmt_assign(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        let node = self.parse_identifier()?;
-        self.expect(TokenType::Equal)?;
-        let expr = self.parse_expr()?;
-        self.expect(TokenType::Semi)?;
-        Ok(Tree {
-            typ: TreeType::StmtAssign {
-                name: Box::new(node.clone()),
-                expression: Box::new(expr),
-            },
-            tkn,
-        })
-    }
-
-    fn parse_stmt_if(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        self.expect(TokenType::IfKeyword)?;
-        self.expect(TokenType::OpenRound)?;
-        let condition = self.parse_expr()?;
-        self.expect(TokenType::ClosingRound)?;
-        let if_block = self.parse_block()?;
-        let else_block = if self.eat(TokenType::ElseKeyword)? {
-            Some(Box::new(self.parse_block()?))
-        } else {
-            None
-        };
-        Ok(Tree {
-            typ: TreeType::StmtIf {
-                condition: Box::new(condition),
-                if_branch: Box::new(if_block),
-                else_branch: else_block,
-            },
-            tkn,
-        })
-    }
-
-    fn parse_stmt_return(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        self.expect(TokenType::ReturnKeyword)?;
-        let ret_value = if !self.at(TokenType::Semi)? {
-            Some(Box::new(self.parse_expr()?))
-        } else {
-            None
-        };
-        self.expect(TokenType::Semi)?;
-        Ok(Tree {
-            typ: TreeType::StmtReturn {
-                return_value: ret_value,
-            },
-            tkn,
-        })
-    }
-
-    fn parse_return_type(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        self.expect(TokenType::Arrow)?;
-        let name_tkn = self.expect(TokenType::Identifier)?;
-        let typ = self.parse_type(&name_tkn)?;
-        Ok(Tree {
-            typ: TreeType::TypeDecl { typ },
-            tkn,
-        })
-    }
-
-    fn parse_type_decl(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        self.expect(TokenType::Colon)?;
-        let name = self.expect(TokenType::Identifier)?;
-        let typ = self.parse_type(&name)?;
-        let name = if self.at(TokenType::OpenSquare)? {
-            let size = self.parse_type_arr_size()?;
-            Tree {
-                typ: TreeType::TypeDecl {
-                    typ: Type::Arr(Box::new(typ), size),
-                },
-                tkn,
-            }
-        } else {
-            Tree {
-                typ: TreeType::TypeDecl { typ },
-                tkn,
-            }
-        };
-        Ok(name)
-    }
-
-    fn parse_type_literal(&mut self, lit_tkn: &Token) -> Result<(String, Type), String> {
-        let lit = lit_tkn.get_value();
-        let loc = &lit_tkn.get_loc();
+    fn parse_type_literal(&self, lit_tkn: Token) -> Result<(String, Type), String> {
+        let lit = lit_tkn.value;
+        let loc = lit_tkn.location;
         match lit.bytes().position(|c| c.is_ascii_alphabetic()) {
             Some(index) => {
-                let typ_str = &lit[index..];
-                let typ = self.parse_type_str(loc, typ_str)?;
+                let typ_str = String::from(&lit[index..]);
+                let typ = self.parse_type_str(loc, typ_str);
                 Ok((lit[0..index].to_owned(), typ))
             }
             None => Ok((lit, Type::Unknown)),
         }
     }
 
-    fn parse_type(&self, token: &Token) -> Result<Type, String> {
-        self.parse_type_str(&token.get_loc(), &token.get_value())
+
+    fn parsed_eof(&self) -> bool {
+        self.lookahead[0].token_type == TokenType::Eof
     }
 
-    fn parse_type_str(&self, loc: &Location, val: &str) -> Result<Type, String> {
-        match val {
-            "i32" => Ok(Type::I32),
-            "i64" => Ok(Type::I64),
-            "u32" => Ok(Type::U32),
-            "u64" => Ok(Type::U64),
-            "usize" => Ok(Type::Usize),
-            // Reserved for future use
-            "f32" => Ok(Type::F32),
-            "f64" => Ok(Type::F64),
-            _ => Ok(Type::Class(val.to_owned()))
+    fn eat(&mut self, token_type: TokenType) -> bool {
+        if self.at(token_type) {
+            self.next();
+            true
+        } else {
+            false
         }
     }
 
-    fn parse_type_arr_size(&mut self) -> Result<Vec<usize>, String> {
-        let tkn = self.open();
-        let mut children = vec![];
-        self.expect(TokenType::OpenSquare)?;
-        let size = self.expect(TokenType::IntLiteral)?;
-        let size = match size.get_value().parse::<usize>() {
-            Ok(i) => i,
-            Err(e) => return Err(format!("{}: {:?}: {}", ERR_STR, tkn.get_loc(), e)),
-        };
-        children.push(size);
-        while !self.at(TokenType::ClosingSquare)? && !self.parser_eof() {
-            self.expect(TokenType::Comma);
-            let size = self.expect(TokenType::IntLiteral)?;
-            let size = match size.get_value().parse::<usize>() {
-                Ok(i) => i,
-                Err(e) => return Err(format!("{}: {:?}: {}", ERR_STR, tkn.get_loc(), e)),
-            };
-            children.push(size);
-        }
-        self.expect(TokenType::ClosingSquare)?;
-        Ok(children)
+    fn at(&self, token_type: TokenType) -> bool {
+        self.nth(0) == token_type
     }
 
-    fn parse_expr_call(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        self.expect(TokenType::Identifier)?;
-        let args = self.parse_arg_list()?;
-        Ok(Tree {
-            typ: TreeType::ExprCall {
-                function_name: tkn.get_value(),
-                args: Box::new(args),
-                typ: Type::Unknown,
-            },
-            tkn,
+    fn peek(&self, lookahead: usize) -> Token {
+        self.lookahead[lookahead].clone()
+    }
+
+    fn nth(&self, lookahead: usize) -> TokenType {
+        debug_assert!(self.lookahead.len() >= lookahead);
+        self.lookahead[lookahead].token_type
+    }
+
+    fn next(&mut self) -> Result<Token, String> {
+        self.fill_lookup()?;
+        debug_assert!(!self.lookahead.is_empty());
+        Ok(self.lookahead.pop_front().unwrap())
+    }
+
+    fn expect(&mut self, token_type: TokenType) -> Result<Token, String> {
+        let n = self.next()?;
+        if n.token_type != token_type {
+            Err(format!(
+                "{}: {:?}: Expected {:?}, found {:?}",
+                ERR_STR,
+                n.location,
+                token_type,
+                n.token_type
+            ))
+        } else {
+            Ok(n)
+        }
+    }
+    // ---------- End of Parser ----------
+}
+
+pub trait Parsable {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized;
+}
+
+impl Parsable for nodes::FileNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> {
+        let location = parser.current_location();
+        let mut classes = vec![];
+        let mut functions = vec![];
+        while !parser.parsed_eof() {
+            match parser.nth(0) {
+                TokenType::ClassKeyword => {
+                    let parsed_class = nodes::ClassNode::parse(parser)?;
+                    classes.push(parsed_class);
+                },
+                TokenType::FunctionKeyword => {
+                    let parsed_function = nodes::FunctionNode::parse(parser)?;
+                    functions.push(parsed_function);
+                },
+                _ => {
+                    let tkn = parser.next()?;
+                    return Err(format!(
+                        "{}: {:?}: Expected one of {{Function, Class}}, found {:?}",
+                        ERR_STR,
+                        tkn.location,
+                        tkn.token_type
+                    ));
+                }
+            }
+        }
+        Ok(nodes::FileNode {
+            location,
+            filepath: parser.filepath.file_stem().unwrap().to_str().unwrap().to_string(),
+            functions,
+            classes
         })
     }
-    
-    fn parse_arg_list(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        let mut children = vec![];
-        self.expect(TokenType::OpenRound)?;
-        while !self.at(TokenType::ClosingRound)? && !self.parser_eof() {
-            children.push(self.parse_arg()?);
-            if !self.eat(TokenType::Comma)? {
+}
+
+impl Parsable for nodes::ClassNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+        parser.expect(TokenType::ClassKeyword)?;
+        
+        let class_name = parser.expect(TokenType::Identifier)?;
+        let name = class_name.value;
+        parser.current_class = name.clone();
+
+        parser.expect(TokenType::OpenCurly)?;
+
+        let mut fields = vec![];
+        let mut methods = vec![];
+        let mut features = vec![];
+        let mut has_constructor = false;
+        while !parser.parsed_eof() && !parser.at(TokenType::ClosingCurly) {
+            match parser.nth(0) {
+                TokenType::Identifier => {
+                    let parsed_field = nodes::FieldNode::parse(parser)?;
+                    fields.push(parsed_field);
+                }
+                TokenType::FeatureKeyword => {
+                    let parsed_feature = nodes::FeatureNode::parse(parser)?;
+                    has_constructor |= parsed_feature.is_constructor;
+                    features.push(parsed_feature);
+                }
+                TokenType::FunctionKeyword => {
+                    let parsed_function = nodes::MethodNode::parse(parser)?;
+                    methods.push(parsed_function);
+                }
+                e => todo!("{:?}", e)
+            }
+        }
+        parser.expect(TokenType::ClosingCurly)?;
+        parser.current_class.clear();
+        Ok(nodes::ClassNode {
+            location,
+            name,
+            fields,
+            methods,
+            features,
+            has_constructor
+        })
+    }
+}
+
+impl Parsable for nodes::FieldNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+        let name_token = parser.expect(TokenType::Identifier)?;
+        let name = name_token.value;
+
+        let type_def = nodes::TypeNode::parse(parser)?;
+        parser.expect(TokenType::Semi);
+        Ok(nodes::FieldNode {
+            location,
+            name,
+            type_def
+        })
+    }
+}
+
+impl Parsable for nodes::FieldAccess {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        todo!()
+    }
+}
+
+impl Parsable for nodes::FeatureNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        debug_assert!(!parser.current_class.is_empty());
+        let location = parser.current_location();
+        
+        parser.expect(TokenType::FeatureKeyword)?;
+        let feature_name = parser.expect(TokenType::Identifier)?;
+        let name = feature_name.value;
+        if name.as_bytes()[0].is_ascii_uppercase() {
+            return Err(format!(
+                "{}: {:?}: Feature names are not allowed to be capitalized.",
+                ERR_STR,
+                feature_name.location
+            ))
+        }
+        
+        let mut parameters = vec![];
+        parser.expect(TokenType::OpenRound)?;
+        while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
+            let parsed_param = nodes::ParameterNode::parse(parser)?;
+            parameters.push(parsed_param);
+            if !parser.eat(TokenType::Comma) {
                 break;
             }
         }
-        self.expect(TokenType::ClosingRound)?;
-        Ok(Tree {
-            typ: TreeType::ArgList {
-                arguments: children,
-            },
-            tkn,
+        parser.expect(TokenType::ClosingRound)?;
+        
+        let return_type = nodes::ReturnTypeNode::parse(parser)?;
+
+        let block = nodes::BlockNode::parse(parser)?;
+        Ok(nodes::FeatureNode {
+            is_constructor: name == String::from("new"),
+            class_name: parser.current_class.clone(),
+            location,
+            name,
+            return_type,
+            parameters,
+            block,
+            stack_size: 0,
         })
     }
+}
 
-    fn parse_arg(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        let expr = self.parse_expr()?;
-        Ok(Tree {
-            typ: TreeType::Arg {
-                expression: Box::new(expr.clone()),
-            },
-            tkn,
+impl Parsable for nodes::FunctionNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+        
+        parser.expect(TokenType::FunctionKeyword)?;
+        let function_name = parser.expect(TokenType::Identifier)?;
+        let name = function_name.value;
+        if name.as_bytes()[0].is_ascii_uppercase() {
+            return Err(format!(
+                "{}: {:?}: Function names are not allowed to be capitalized.",
+                ERR_STR,
+                function_name.location
+            ))
+        }
+        
+        let mut parameters = vec![];
+        parser.expect(TokenType::OpenRound)?;
+        while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
+            let parsed_param = nodes::ParameterNode::parse(parser)?;
+            parameters.push(parsed_param);
+            if !parser.eat(TokenType::Comma) {
+                break;
+            }
+        }
+        parser.expect(TokenType::ClosingRound)?;
+        
+        let return_type = nodes::ReturnTypeNode::parse(parser)?;
+
+        let block = nodes::BlockNode::parse(parser)?;
+        Ok(nodes::FunctionNode {
+            location,
+            name,
+            return_type,
+            parameters,
+            block,
+            stack_size: 0,
         })
     }
+}
 
-    fn parse_expr(&mut self) -> Result<Tree, String> {
-        self.parse_expr_rec(TokenType::Eof)
+impl Parsable for nodes::MethodNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        debug_assert!(!parser.current_class.is_empty());
+        let location = parser.current_location();
+        
+        parser.expect(TokenType::FunctionKeyword)?;
+        let method_name = parser.expect(TokenType::Identifier)?;
+        let name = method_name.value;
+        if name.as_bytes()[0].is_ascii_uppercase() {
+            return Err(format!(
+                "{}: {:?}: Method names are not allowed to be capitalized.",
+                ERR_STR,
+                method_name.location
+            ))
+        }
+        
+        let mut parameters = vec![];
+        parser.expect(TokenType::OpenRound)?;
+        while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
+            let parsed_param = nodes::ParameterNode::parse(parser)?;
+            parameters.push(parsed_param);
+            if !parser.eat(TokenType::Comma) {
+                break;
+            }
+        }
+        parser.expect(TokenType::ClosingRound)?;
+        
+        let return_type = nodes::ReturnTypeNode::parse(parser)?;
+
+        let block = nodes::BlockNode::parse(parser)?;
+        Ok(nodes::MethodNode {
+            location,
+            class_name: parser.current_class.clone(),
+            name,
+            return_type,
+            parameters,
+            block,
+            stack_size: 0,
+        })
     }
+}
 
-    fn parse_expr_rec(&mut self, left: TokenType) -> Result<Tree, String> {
-        let mut lhs = self.parse_expr_delim()?;
+impl Parsable for nodes::ReturnTypeNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+        let typ = if parser.eat(TokenType::Arrow) {
+            let name_token = parser.expect(TokenType::Identifier)?;
+            let typ = parser.parse_type(name_token);
+            if parser.at(TokenType::OpenSquare) {
+                todo!()
+                // let size = ExpressionArrayLiteralNode::parse(parser)?;
+                // Ok(TypeNodeBuilder::default()
+                //     .location(location)
+                //     .name(name)
+                //     .typ(typ)
+                //     .build()
+                //     .unwrap())
+            } else {
+                typ
+            }
+        } else {
+            Type::None
+        };
+        Ok(nodes::ReturnTypeNode {
+            location,
+            typ
+        })
+    }
+}
 
-        loop {
-            let right = self.nth(0)?;
-            if Self::right_binds_tighter(left, right) {
-                let tkn = self.open();
-                self.advance();
-                let rhs = self.parse_expr_rec(right)?;
-                if COMPARATOR_TYPES.contains(&right) {}
-                lhs = if COMPARATOR_TYPES.contains(&right) {
-                    Tree {
-                        typ: TreeType::ExprComp {
-                            lhs: Box::new(lhs),
-                            rhs: Box::new(rhs),
-                            typ: Type::Unknown,
-                        },
-                        tkn,
-                    }
+impl Parsable for nodes::ParameterNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+        let name_token = parser.expect(TokenType::Identifier)?;
+        let name = name_token.value;
+        let typ = nodes::TypeNode::parse(parser)?;
+        Ok(nodes::ParameterNode {
+            location,
+            name,
+            typ
+        })
+    }
+}
+
+impl Parsable for nodes::BlockNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+
+        parser.expect(TokenType::OpenCurly)?;
+        let mut statements = vec![];
+        while !parser.parsed_eof() && !parser.at(TokenType::ClosingCurly) {
+            let parsed_statement = nodes::Statement::parse(parser)?;
+            statements.push(parsed_statement);
+        }
+        parser.expect(TokenType::ClosingCurly)?;
+        Ok(nodes::BlockNode {
+            location,
+            statements
+        })
+    }
+}
+
+impl Parsable for nodes::Statement {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        Ok(match parser.nth(0) {
+            TokenType::LetKeyword =>
+                nodes::Statement::Let(nodes::LetNode::parse(parser)?),
+            TokenType::IfKeyword =>
+                nodes::Statement::If(nodes::IfNode::parse(parser)?),
+            TokenType::ReturnKeyword =>
+                nodes::Statement::Return(nodes::ReturnNode::parse(parser)?),
+            TokenType::Identifier => match parser.nth(1) {
+                TokenType::Dot | TokenType::Equal | TokenType::OpenSquare =>
+                    nodes::Statement::Assign(nodes::AssignNode::parse(parser)?),
+                _ => {
+                    let expr = nodes::Statement::Expression(nodes::ExpressionNode::parse(parser)?);
+                    parser.expect(TokenType::Semi)?;
+                    expr
+                }
+            }
+            _ => {
+                let expr = nodes::Statement::Expression(nodes::ExpressionNode::parse(parser)?);
+                parser.expect(TokenType::Semi)?;
+                expr
+            }
+        })
+    }
+}
+
+impl Parsable for nodes::ExpressionNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+        let expression = nodes::Expression::parse(parser)?;
+        Ok(nodes::ExpressionNode {
+            location,
+            expression
+        })
+    }
+}
+
+impl Parsable for nodes::LetNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+        parser.expect(TokenType::LetKeyword)?;
+        let name_token = parser.expect(TokenType::Identifier)?;
+        let name = name_token.value;
+
+        let typ = nodes::TypeNode::parse(parser)?;
+        parser.expect(TokenType::Equal)?;
+        let expression = nodes::ExpressionNode::parse(parser)?;
+        parser.expect(TokenType::Semi)?;
+
+        Ok(nodes::LetNode {
+            location,
+            name,
+            typ,
+            expression
+        })
+    }
+}
+
+impl Parsable for nodes::AssignNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+        let name = nodes::ExpressionIdentifierNode::parse(parser)?;
+        parser.expect(TokenType::Equal)?;
+        let expression = nodes::ExpressionNode::parse(parser)?;
+        parser.expect(TokenType::Semi)?;
+        Ok(nodes::AssignNode {
+            location,
+            name,
+            expression
+        })
+    }
+}
+
+impl Parsable for nodes::ExpressionIdentifierNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+        let expression = match parser.nth(1) {
+            TokenType::OpenRound => {
+                if parser.peek(0).value.as_bytes()[0].is_ascii_uppercase() {
+                    nodes::Expression::ConstructorCall(nodes::ExpressionConstructorNode::parse(parser)?)
                 } else {
-                    Tree {
-                        typ: TreeType::ExprBinary {
+                    nodes::Expression::FunctionCall(nodes::ExpressionCallNode::parse(parser)?)
+                }
+            }
+            TokenType::OpenSquare =>
+                todo!(),
+            TokenType::Dot =>
+                nodes::Expression::FieldAccess(nodes::ExpressionFieldAccessNode::parse(parser)?),
+            _ => nodes::Expression::Name(nodes::NameNode::parse(parser)?)
+        };
+        Ok(nodes::ExpressionIdentifierNode {
+            location,
+            expression: Box::new(expression),
+            typ: Type::Unknown
+        })
+    }
+}
+
+impl Parsable for nodes::IfNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+        parser.expect(TokenType::IfKeyword)?;
+        parser.expect(TokenType::OpenRound)?;
+        let nodes::Expression::Comparison(condition) = nodes::Expression::parse(parser)? else { todo!() };
+        parser.expect(TokenType::ClosingRound)?;
+        let if_branch = nodes::BlockNode::parse(parser)?;
+        let else_branch = if parser.eat(TokenType::ElseKeyword) {
+            Some(nodes::BlockNode::parse(parser)?)
+        } else {
+            None
+        };
+        Ok(nodes::IfNode {
+            location,
+            condition,
+            if_branch,
+            else_branch
+        })
+    }
+}
+
+impl Parsable for nodes::ReturnNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+        parser.expect(TokenType::ReturnKeyword)?;
+        let return_value = if !parser.at(TokenType::Semi) {
+            Some(nodes::ExpressionNode::parse(parser)?)
+        } else {
+            None
+        };
+        parser.expect(TokenType::Semi)?;
+        Ok(nodes::ReturnNode {
+            location,
+            return_value,
+            typ: Type::Unknown
+        })
+    }
+}
+
+impl Parsable for nodes::TypeNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        parser.expect(TokenType::Colon)?;
+        let location = parser.current_location();
+        let name_token = parser.expect(TokenType::Identifier)?;
+        let typ = parser.parse_type(name_token);
+        let typ = if parser.eat(TokenType::OpenSquare) {
+            let mut dimensions = vec![];
+            while !parser.parsed_eof() && !parser.at(TokenType::ClosingSquare) {
+                let size = parser.expect(TokenType::IntLiteral)?;
+                let loc = size.location.clone();
+                let (value, typ) = parser.parse_type_literal(size)?;
+                if typ != Type::Unknown && typ != Type::Usize {
+                    return Err(format!(
+                        "{}: {:?}: Unexpected type for integer literal. Expected Usize, found `{}`.",
+                        ERR_STR,
+                        loc,
+                        typ
+                    ))
+                }
+                let value = match value.parse() {
+                    Ok(v) => v,
+                    Err(e) => return Err(format!(
+                        "{}: {:?}: Error when parsing number as Usize: {e}",
+                        ERR_STR,
+                        loc
+                    ))
+                };
+                dimensions.push(value);
+                if !parser.eat(TokenType::Comma) {
+                    break;
+                }
+            }
+            if dimensions.is_empty() {
+                return Err(format!(
+                    "{}: {:?}: Expected size for array type, found ClosingSquare.",
+                    ERR_STR,
+                    parser.current_location()
+                ));
+            }
+            parser.expect(TokenType::ClosingSquare)?;
+            Type::Arr(Box::new(typ), dimensions)
+        } else {
+            typ
+        };
+        Ok(nodes::TypeNode {
+            location,
+            typ
+        })
+    }
+}
+
+impl Parsable for nodes::ArgumentNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+        let expression = nodes::ExpressionNode::parse(parser)?;
+        Ok(nodes::ArgumentNode {
+            location,
+            expression
+        })
+    }
+}
+
+impl Parsable for nodes::Expression {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        Self::parse_rec(parser, TokenType::Eof)
+    }
+}
+
+impl nodes::Expression {
+    fn parse_delim(parser: &mut Parser) -> Result<Self, String> {
+        Ok(match parser.nth(0) {
+            TokenType::IntLiteral => {
+                let expression = nodes::ExpressionLiteralNode::parse(parser)?;
+                Self::Literal(expression)
+            }
+            TokenType::Identifier => {
+                let expression = nodes::ExpressionIdentifierNode::parse(parser)?;
+                Self::Identifier(expression)
+            }
+            TokenType::OpenRound => {
+                parser.expect(TokenType::OpenRound)?;
+                let expression = Self::parse(parser)?;
+                parser.expect(TokenType::ClosingRound)?;
+                expression
+            }
+            TokenType::OpenSquare => {
+                let expression = nodes::ExpressionArrayLiteralNode::parse(parser)?;
+                Self::ArrayLiteral(expression)
+            }
+            TokenType::BuiltInFunction => {
+                let expression = nodes::ExpressionBuiltInNode::parse(parser)?;
+                Self::BuiltIn(expression)
+            }            
+            e => {
+                return Err(format!(
+                    "{}: {:?}: Expected Expr, found {:?}",
+                    ERR_STR,
+                    parser.current_location(),
+                    e
+                ));
+            }
+            e => todo!("{:?}", e)
+        })
+    }
+    fn parse_rec(parser: &mut Parser, left: TokenType) -> Result<Self, String> {
+        let mut lhs = Self::parse_delim(parser)?;
+        loop {
+            let right = parser.nth(0);
+            if Self::right_binds_tighter(left, right) {
+                let token = parser.next()?;
+                let rhs = Self::parse_rec(parser, right)?;
+                let operation = Operation::from(token.value);
+                lhs = if COMPARISONS.contains(&operation) {
+                    nodes::Expression::Comparison(
+                        nodes::ExpressionComparisonNode {
+                            location: token.location,
+                            operation,
                             lhs: Box::new(lhs),
                             rhs: Box::new(rhs),
-                            typ: Type::Unknown,
-                        },
-                        tkn,
+                            typ: Type::Bool
+                        })
+                } else {
+                    nodes::Expression::Binary(
+                        nodes::ExpressionBinaryNode {
+                            location: token.location,
+                            operation,
+                            lhs: Box::new(lhs),
+                            rhs: Box::new(rhs),
+                            typ: Type::Unknown
+                        })
                     }
-                };
             } else {
                 break;
             }
@@ -1603,46 +1151,6 @@ impl Parser {
         Ok(lhs)
     }
 
-    fn parse_expr_delim(&mut self) -> Result<Tree, String> {
-        Ok(match self.nth(0)? {
-            TokenType::IntLiteral => {
-                // let tkn = self.open();
-                let number_token = self.expect(TokenType::IntLiteral)?;
-                let (number, typ) = self.parse_type_literal(&number_token)?;
-                let tkn = Token::new(TokenType::IntLiteral, number, number_token.get_loc());
-                Tree {
-                    typ: TreeType::ExprLiteral { typ },
-                    tkn,
-                }
-            }
-            TokenType::Identifier => self.parse_identifier()?,
-            TokenType::OpenRound => {
-                let tkn = self.open();
-                self.expect(TokenType::OpenRound)?;
-                let expr = self.parse_expr()?;
-                self.expect(TokenType::ClosingRound)?;
-                Tree {
-                    typ: TreeType::ExprParen {
-                        expression: Box::new(expr),
-                        typ: Type::Unknown,
-                    },
-                    tkn,
-                }
-            }
-            TokenType::OpenSquare => self.parse_expr_array_literal()?,
-            TokenType::BuiltInFunction => self.parse_expr_built_in_func()?,
-            e => {
-                let tkn = self.next()?;
-                return Err(format!(
-                    "{}: {:?}: Expected Expr, found {:?}",
-                    ERR_STR,
-                    tkn.get_loc(),
-                    e
-                ));
-            }
-        })
-    }
-    
     fn right_binds_tighter(left: TokenType, right: TokenType) -> bool {
         fn tightness(typ: TokenType) -> Option<usize> {
             [
@@ -1662,78 +1170,149 @@ impl Parser {
         };
         right_tight > left_tight
     }
-    
-    fn parse_expr_array_literal(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        let mut elements = vec![];
-        self.expect(TokenType::OpenSquare)?;
-        while !self.at(TokenType::ClosingSquare)? && !self.parser_eof() {
-            let elem = self.parse_expr()?;
-            elements.push(elem);
-            if !self.eat(TokenType::Comma)? {
+}
+
+impl Parsable for nodes::ExpressionBinaryNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        todo!()
+    }
+}
+
+impl Parsable for nodes::ExpressionBuiltInNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+        let name_token = parser.expect(TokenType::BuiltInFunction)?;
+        let function_name = name_token.value;
+
+        let mut arguments = vec![];
+        parser.expect(TokenType::OpenRound)?;
+        while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
+            let arg = nodes::ArgumentNode::parse(parser)?;
+            arguments.push(arg);
+            if !parser.eat(TokenType::Comma) {
                 break;
             }
         }
-        self.expect(TokenType::ClosingSquare)?;
-        Ok(Tree {
-            typ: TreeType::ExprArrLiteral { elements },
-            tkn,
+        parser.expect(TokenType::ClosingRound)?;
+        Ok(nodes::ExpressionBuiltInNode {
+            location,
+            function_name,
+            arguments,
+            typ: Type::Unknown
         })
     }
+}
 
-    fn parse_expr_built_in_func(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        self.expect(TokenType::BuiltInFunction)?;
-        let args = self.parse_arg_list()?;
-        Ok(Tree {
-            typ: TreeType::BuiltInFunction {
-                function_name: tkn.get_value(),
-                args: Box::new(args),
-                typ: Type::Unknown,
-            },
-            tkn,
+impl Parsable for nodes::ExpressionArrayLiteralNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+        let mut elements = vec![];
+        parser.expect(TokenType::OpenSquare)?;
+        while !parser.parsed_eof() && !parser.at(TokenType::ClosingSquare) {
+            let elem = nodes::Expression::parse(parser)?;
+            elements.push(elem);
+            if !parser.eat(TokenType::Comma) {
+                break;
+            }
+        }
+        parser.expect(TokenType::ClosingSquare)?;
+        Ok(nodes::ExpressionArrayLiteralNode {
+            location,
+            elements
         })
     }
+}
 
-    fn parse_identifier(&mut self) -> Result<Tree, String> {
-        let tkn = self.open();
-        Ok(match self.nth(1)? {
-            TokenType::OpenRound => self.parse_expr_call()?,
-            TokenType::OpenSquare => {
-                self.expect(TokenType::Identifier)?;
-                let indices = self.parse_expr_array_literal()?;
-                Tree {
-                    typ: TreeType::ExprArrAccess {
-                        arr_name: tkn.get_value(),
-                        indices: Box::new(indices),
-                        typ: Type::Unknown,
-                    },
-                    tkn,
-                }
+impl Parsable for nodes::ExpressionLiteralNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+        let number_token = parser.expect(TokenType::IntLiteral)?;
+        let (value, typ) = parser.parse_type_literal(number_token)?;
+        Ok(nodes::ExpressionLiteralNode {
+            location,
+            value,
+            typ
+        })
+    }
+}
+
+impl Parsable for nodes::ExpressionConstructorNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+        let name_token = parser.expect(TokenType::Identifier)?;
+        let class_name = name_token.value;
+        debug_assert!(class_name.as_bytes()[0].is_ascii_uppercase());
+
+        let mut arguments = vec![];
+        parser.expect(TokenType::OpenRound)?;
+        while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
+            let arg = nodes::ArgumentNode::parse(parser)?;
+            arguments.push(arg);
+            if !parser.eat(TokenType::Comma) {
+                break;
             }
-            TokenType::Dot => {
-                self.expect(TokenType::Identifier)?;
-                self.expect(TokenType::Dot)?;
-                let access = self.parse_identifier()?;
-                Tree {
-                    typ: TreeType::FieldAccess {
-                        name: tkn.get_value(),
-                        field: Box::new(access),
-                        typ: Type::Unknown
-                    },
-                    tkn
-                }
+        }
+        parser.expect(TokenType::ClosingRound)?;
+        Ok(nodes::ExpressionConstructorNode {
+            class_name,
+            location,
+            arguments,
+            typ: Type::Unknown
+        })
+    }
+}
+
+impl Parsable for nodes::ExpressionCallNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+        let name_token = parser.expect(TokenType::Identifier)?;
+        let function_name = name_token.value;
+
+        let mut arguments = vec![];
+        parser.expect(TokenType::OpenRound)?;
+        while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
+            let arg = nodes::ArgumentNode::parse(parser)?;
+            arguments.push(arg);
+            if !parser.eat(TokenType::Comma) {
+                break;
             }
-            _ => {
-                self.expect(TokenType::Identifier)?;
-                Tree {
-                    typ: TreeType::ExprName {
-                        name: tkn.get_value(),
-                        typ: Type::Unknown,
-                    },
-                    tkn,
-                }                
-            }
+        }
+        parser.expect(TokenType::ClosingRound)?;
+        Ok(nodes::ExpressionCallNode {
+            function_name,
+            location,
+            arguments,
+            typ: Type::Unknown
+        })
+    }
+}
+
+impl Parsable for nodes::ExpressionFieldAccessNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+        let name_token = parser.expect(TokenType::Identifier)?;
+        let name = name_token.value;
+        parser.expect(TokenType::Dot)?;
+        let field = nodes::ExpressionIdentifierNode::parse(parser)?;
+        Ok(nodes::ExpressionFieldAccessNode {
+            location,
+            name,
+            field,
+            typ: Type::Unknown
+        })
+    }
+}
+
+impl Parsable for nodes::NameNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+        let location = parser.current_location();
+        let name_token = parser.expect(TokenType::Identifier)?;
+        
+        let name = name_token.value;
+        Ok(nodes::NameNode {
+            location,
+            name,
+            typ: Type::Unknown
         })
     }
 }
