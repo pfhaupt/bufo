@@ -58,6 +58,8 @@ impl Assembler {
             output.push('\n');
         };
 
+        let mut invalid = false;
+
         push_asm(format!("  ; Generated code for {}", self.path).as_str());
         push_asm("default rel");
         push_asm("");
@@ -119,11 +121,47 @@ impl Assembler {
                     }
                 }
                 IR::Label { name } => push_asm(format!("{name}:").as_str()),
-                _ => push_asm("; Can't generate ASM for that yet")
+
+                // Functions
+                IR::Call { name } => {
+                    push_asm(format!("  call {name}").as_str());
+                }
+                IR::AllocStack { bytes } => {
+                    push_asm("  push rbp");
+                    push_asm("  mov rbp, rsp");
+                    push_asm(format!("  sub rsp, {}", bytes).as_str());
+                }
+                IR::DeallocStack { bytes } => {
+                    push_asm("  mov rsp, rbp");
+                    push_asm("  pop rbp");
+                }
+                IR::PushReg { reg } => {
+                    let reg = *reg as usize;
+                    let reg = REG_64BIT[reg];
+                    push_asm(format!("  push {reg}").as_str());
+                }
+                IR::PopReg { reg } => {
+                    let reg = *reg as usize;
+                    let reg = REG_64BIT[reg];
+                    push_asm(format!("  pop {reg}").as_str());
+                }
+                IR::Return => {
+                    push_asm("  ret");
+                }
+
+                _ => {
+                    // FIXME: Later on this must crash
+                    push_asm("; Can't generate ASM for that yet");
+                    invalid = true;
+                }
             }
         }
 
         println!("{}", output);
+        if invalid {
+            println!("INVALID!!!");
+            std::process::exit(1);
+        }
 
         Ok(())
     }
