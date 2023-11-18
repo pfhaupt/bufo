@@ -1,6 +1,5 @@
-use crate::parser::Location;
-use crate::checker::Type;
-use crate::parser::Operation;
+use crate::frontend::parser::{Location, Operation};
+use crate::middleend::checker::Type;
 
 #[derive(Debug, Clone)]
 pub struct FileNode {

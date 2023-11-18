@@ -1,9 +1,10 @@
 
 use std::collections::{HashMap, VecDeque};
 
-use crate::nodes;
-use crate::{checker::Type, parser::Operation};
-use crate::instr;
+use crate::frontend::nodes;
+use crate::frontend::parser::Operation;
+use crate::middleend::checker::Type;
+use super::instr;
 
 const LBL_STR: &str = "lbl_";
 

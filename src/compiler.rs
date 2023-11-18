@@ -1,11 +1,11 @@
 
 use std::time::Instant;
 
-use crate::parser::Parser;
-use crate::checker::TypeChecker;
-use crate::codegen::Codegen;
-use crate::assembler::Assembler;
-use crate::flags::{FlagParser, Flag, DEBUG_KEY, RUN_KEY, INPUT_KEY};
+use crate::frontend::parser::Parser;
+use crate::frontend::flags::{FlagParser, Flag, DEBUG_KEY, RUN_KEY, INPUT_KEY};
+use crate::middleend::checker::TypeChecker;
+use crate::backend::codegen::Codegen;
+use crate::backend::assembler::Assembler;
 
 
 pub struct Compiler {

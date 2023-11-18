@@ -5,9 +5,9 @@ use std::fmt::{Display, Debug, Formatter};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::codegen::{ERR_STR, NOTE_STR, WARN_STR};
-use crate::checker::Type;
-use crate::nodes::{self, Expression};
+use crate::backend::codegen::{ERR_STR, NOTE_STR, WARN_STR};
+use crate::middleend::checker::Type;
+use super::nodes::{self, Expression};
 
 // We always store the N-1 next tokens for lookahead purposes, even if we only use 1 right now
 const LOOKAHEAD_LIMIT: usize = 3;

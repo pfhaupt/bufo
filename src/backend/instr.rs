@@ -1,4 +1,6 @@
-use crate::parser::Operation;
+use crate::frontend::parser::Operation;
+
+use crate::middleend::checker::Type;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum RegMode {
@@ -6,8 +8,8 @@ pub enum RegMode {
     BIT32
 }
 
-impl From<&crate::checker::Type> for RegMode {
-    fn from(value: &crate::checker::Type) -> Self {
+impl From<&Type> for RegMode {
+    fn from(value: &Type) -> Self {
         Self::from(value.size())
     }
 }

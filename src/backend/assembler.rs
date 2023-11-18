@@ -4,13 +4,13 @@ use std::io::Write;
 use std::process::Command;
 use std::path::Path;
 
-use crate::instr;
-use crate::instr::{OperandType, IR};
+use super::instr;
+use super::instr::{OperandType, IR};
 
-use crate::instr::{Register, RegMode};
-use crate::flags::FILE_EXT;
+use super::instr::{Register, RegMode};
+use crate::frontend::flags::FILE_EXT;
 
-use crate::codegen::ERR_STR;
+use super::codegen::ERR_STR;
 
 const OUTPUT_FOLDER: &str = "./out/";
 
