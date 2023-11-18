@@ -1,20 +1,17 @@
-use std::cell::Cell;
 use std::collections::VecDeque;
-use std::ffi::OsStr;
 use std::fmt::{Display, Debug, Formatter};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use crate::compiler::{ERR_STR, NOTE_STR, WARN_STR};
+use crate::compiler::{ERR_STR, WARN_STR};
 use crate::middleend::checker::Type;
-use super::nodes::{self, Expression};
+use super::nodes;
 
 // We always store the N-1 next tokens for lookahead purposes, even if we only use 1 right now
 const LOOKAHEAD_LIMIT: usize = 3;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TokenType {
-    File,
     CharLiteral,
     StrLiteral,
     IntLiteral,
@@ -60,12 +57,6 @@ pub const COMPARATOR_TYPES: [TokenType; 6] = [
     TokenType::CmpLt,
     TokenType::CmpLte,
 ];
-
-pub const BUILT_IN_VARIABLES: [&str; 3] = [
-    "STACK_OVERFLOW_CODE",
-    "FUNCTION_COUNTER",
-    "FUNCTION_LIMIT"
-];
 pub const BUILT_IN_FUNCTIONS: [&str; 3] = [
     "EXIT",
     "MALLOC",
@@ -86,10 +77,6 @@ impl Location {
 
     pub fn anonymous() -> Self {
         Self::new(String::from("anonymous"), 0, 0)
-    }
-
-    pub fn builtin() -> Self {
-        Self::new(String::from("builtin"), 0, 0)
     }
 }
 
@@ -171,7 +158,6 @@ impl Display for Operation {
             Self::LTE => write!(f, "<="),
             Self::GT => write!(f, ">"),
             Self::GTE => write!(f, ">="),
-            _ => unreachable!()
         }
     }
 }
@@ -200,7 +186,6 @@ pub struct Parser {
     filepath: PathBuf,
     filename: String,
     source: Vec<char>,
-    fuel: Cell<u32>,
     lookahead: VecDeque<Token>,
     current_class: String,
     current_char: usize,
@@ -245,20 +230,6 @@ impl Parser {
         }
     }
 
-    pub fn initialize(self) -> Result<Self, String> {
-        let mut new = self;
-        new.fill_lookup()?;
-        Ok(new)
-    }
-
-    pub fn set_filepath_unchecked(&mut self, filepath: &str) {
-        self.filepath = PathBuf::from(filepath);
-        self.filename = self.filepath.clone().into_os_string().into_string().unwrap();
-    }
-
-    pub fn set_source(&mut self, source: &str) {
-        self.source = source.chars().collect();
-    }
     // ---------- End of Builder Pattern ----------
     // ---------- Start of Lexer ----------
     fn lexed_eof(&self) -> bool {
@@ -325,10 +296,10 @@ impl Parser {
         }
         debug_assert_eq!(
             TokenType::Eof as u8 + 1,
-            36,
+            35,
             "Not all TokenTypes are handled in next_token()"
         );
-        self.trim_whitespace();
+        self.trim_whitespace()?;
         let c = self.next_char();
         let loc = self.get_location();
         let (typ, value) = match c {
@@ -356,7 +327,7 @@ impl Parser {
                 (typ, value)
             }
             '\"' => {
-                let mut value = fill_buffer!(c,
+                let value = fill_buffer!(c,
                     |c: char| { c == '"' || c == '\0' },
                     false
                 );
@@ -373,7 +344,7 @@ impl Parser {
                 (TokenType::StrLiteral, value)
             }
             '\'' => {
-                let mut value = fill_buffer!(c,
+                let value = fill_buffer!(c,
                     |c: char| { c == '\'' || c == '\0' },
                     false
                 );
@@ -439,7 +410,7 @@ impl Parser {
             '/' => {
                 match self.next_char() {
                     '/' => {
-                        let v = fill_buffer!(c, 
+                        let _ = fill_buffer!(c, 
                             |c: char| { c == '\r' || c == '\n' || c == '\0' }
                         );
                         return self.next_token();
@@ -505,7 +476,7 @@ impl Parser {
     fn parse_type(&self, token: Token) -> Type {
         self.parse_type_str(token.location, token.value)
     }
-    fn parse_type_str(&self, loc: Location, val: String) -> Type {
+    fn parse_type_str(&self, _loc: Location, val: String) -> Type {
         match val.as_str() {
             "i32" => Type::I32,
             "i64" => Type::I64,
@@ -536,12 +507,12 @@ impl Parser {
         self.lookahead[0].token_type == TokenType::Eof
     }
 
-    fn eat(&mut self, token_type: TokenType) -> bool {
+    fn eat(&mut self, token_type: TokenType) -> Result<bool, String> {
         if self.at(token_type) {
-            self.next();
-            true
+            self.next()?;
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
     }
 
@@ -673,7 +644,7 @@ impl Parsable for nodes::FieldNode {
         let name = name_token.value;
 
         let type_def = nodes::TypeNode::parse(parser)?;
-        parser.expect(TokenType::Semi);
+        parser.expect(TokenType::Semi)?;
         Ok(nodes::FieldNode {
             location,
             name,
@@ -683,7 +654,7 @@ impl Parsable for nodes::FieldNode {
 }
 
 impl Parsable for nodes::FieldAccess {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(_parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         todo!()
     }
 }
@@ -709,7 +680,7 @@ impl Parsable for nodes::FeatureNode {
         while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
             let parsed_param = nodes::ParameterNode::parse(parser)?;
             parameters.push(parsed_param);
-            if !parser.eat(TokenType::Comma) {
+            if !parser.eat(TokenType::Comma)? {
                 break;
             }
         }
@@ -751,7 +722,7 @@ impl Parsable for nodes::FunctionNode {
         while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
             let parsed_param = nodes::ParameterNode::parse(parser)?;
             parameters.push(parsed_param);
-            if !parser.eat(TokenType::Comma) {
+            if !parser.eat(TokenType::Comma)? {
                 break;
             }
         }
@@ -792,7 +763,7 @@ impl Parsable for nodes::MethodNode {
         while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
             let parsed_param = nodes::ParameterNode::parse(parser)?;
             parameters.push(parsed_param);
-            if !parser.eat(TokenType::Comma) {
+            if !parser.eat(TokenType::Comma)? {
                 break;
             }
         }
@@ -816,7 +787,7 @@ impl Parsable for nodes::MethodNode {
 impl Parsable for nodes::ReturnTypeNode {
     fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         let location = parser.current_location();
-        let typ = if parser.eat(TokenType::Arrow) {
+        let typ = if parser.eat(TokenType::Arrow)? {
             let name_token = parser.expect(TokenType::Identifier)?;
             let typ = parser.parse_type(name_token);
             if parser.at(TokenType::OpenSquare) {
@@ -980,7 +951,7 @@ impl Parsable for nodes::IfNode {
         let nodes::Expression::Comparison(condition) = nodes::Expression::parse(parser)? else { todo!() };
         parser.expect(TokenType::ClosingRound)?;
         let if_branch = nodes::BlockNode::parse(parser)?;
-        let else_branch = if parser.eat(TokenType::ElseKeyword) {
+        let else_branch = if parser.eat(TokenType::ElseKeyword)? {
             Some(nodes::BlockNode::parse(parser)?)
         } else {
             None
@@ -1018,7 +989,7 @@ impl Parsable for nodes::TypeNode {
         let location = parser.current_location();
         let name_token = parser.expect(TokenType::Identifier)?;
         let typ = parser.parse_type(name_token);
-        let typ = if parser.eat(TokenType::OpenSquare) {
+        let typ = if parser.eat(TokenType::OpenSquare)? {
             let mut dimensions = vec![];
             while !parser.parsed_eof() && !parser.at(TokenType::ClosingSquare) {
                 let size = parser.expect(TokenType::IntLiteral)?;
@@ -1041,7 +1012,7 @@ impl Parsable for nodes::TypeNode {
                     ))
                 };
                 dimensions.push(value);
-                if !parser.eat(TokenType::Comma) {
+                if !parser.eat(TokenType::Comma)? {
                     break;
                 }
             }
@@ -1114,7 +1085,6 @@ impl nodes::Expression {
                     e
                 ));
             }
-            e => todo!("{:?}", e)
         })
     }
     fn parse_rec(parser: &mut Parser, left: TokenType) -> Result<Self, String> {
@@ -1173,7 +1143,7 @@ impl nodes::Expression {
 }
 
 impl Parsable for nodes::ExpressionBinaryNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(_parser: &mut Parser) -> Result<Self, String> where Self: Sized {
         todo!()
     }
 }
@@ -1189,7 +1159,7 @@ impl Parsable for nodes::ExpressionBuiltInNode {
         while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
             let arg = nodes::ArgumentNode::parse(parser)?;
             arguments.push(arg);
-            if !parser.eat(TokenType::Comma) {
+            if !parser.eat(TokenType::Comma)? {
                 break;
             }
         }
@@ -1211,7 +1181,7 @@ impl Parsable for nodes::ExpressionArrayLiteralNode {
         while !parser.parsed_eof() && !parser.at(TokenType::ClosingSquare) {
             let elem = nodes::Expression::parse(parser)?;
             elements.push(elem);
-            if !parser.eat(TokenType::Comma) {
+            if !parser.eat(TokenType::Comma)? {
                 break;
             }
         }
@@ -1248,7 +1218,7 @@ impl Parsable for nodes::ExpressionConstructorNode {
         while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
             let arg = nodes::ArgumentNode::parse(parser)?;
             arguments.push(arg);
-            if !parser.eat(TokenType::Comma) {
+            if !parser.eat(TokenType::Comma)? {
                 break;
             }
         }
@@ -1273,7 +1243,7 @@ impl Parsable for nodes::ExpressionCallNode {
         while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
             let arg = nodes::ArgumentNode::parse(parser)?;
             arguments.push(arg);
-            if !parser.eat(TokenType::Comma) {
+            if !parser.eat(TokenType::Comma)? {
                 break;
             }
         }

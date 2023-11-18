@@ -1,5 +1,5 @@
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 use crate::frontend::nodes;
 use crate::frontend::parser::Operation;
@@ -182,12 +182,14 @@ impl Codegen {
         self.register_counter = 0;
     }
 
+    #[allow(unused)]
     fn push_preserved_registers(&mut self) {
         for reg in instr::Register::PRESERVED {
             self.add_ir(instr::IR::PushReg { reg });
         }
     }
-
+    
+    #[allow(unused)]
     fn pop_preserved_registers(&mut self) {
         for reg in instr::Register::PRESERVED.iter().rev() {
             self.add_ir(instr::IR::PopReg { reg: *reg });
@@ -254,10 +256,6 @@ impl Codegen {
         });
         Ok(())
     }
-
-    pub fn run(&mut self) -> Result<(), String> {
-        todo!()
-    }
 }
 
 trait Codegenable {
@@ -298,7 +296,7 @@ impl Codegenable for nodes::FieldNode {
     }
 }
 impl Codegenable for nodes::FieldAccess {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
+    fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
@@ -453,7 +451,7 @@ impl Codegenable for nodes::MethodNode {
         // FIXME: This is unreliable once we add static methods and all that
         //        It'd be 100 times better and easier if the parser would just add the parameter directly
         //        instead of the implicit use in the Type Checker and Codegen.
-        codegen.store_variable_in_stack(&String::from("this"), &Type::Class(self.class_name.clone()));
+        codegen.store_variable_in_stack(&String::from("this"), &Type::Class(self.class_name.clone()))?;
 
         // Prepare parameters
         for param in &self.parameters {
@@ -481,7 +479,7 @@ impl Codegenable for nodes::MethodNode {
     }
 }
 impl Codegenable for nodes::ReturnTypeNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
+    fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
@@ -608,7 +606,7 @@ impl Codegenable for nodes::ReturnNode {
     }
 }
 impl Codegenable for nodes::TypeNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
+    fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
@@ -635,46 +633,42 @@ impl Codegenable for nodes::Expression {
     }
 }
 impl Codegenable for nodes::ExpressionArrayLiteralNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
+    fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::ExpressionArrayAccessNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
+    fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }
 impl Codegenable for nodes::ExpressionLiteralNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
+    fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
         // FIXME: Put this into a macro or expand ExpressionLiteralNode
         match &self.typ {
             Type::I32 => {
-                let v = self.value.parse::<i32>().map_err(|e| {
-                    todo!();
-                    e.to_string()
-                })?;
-                Ok(instr::Operand::imm_i32(v))
+                let v = self.value.parse::<i32>().map_err(|_e| {
+                    todo!()
+                });
+                Ok(instr::Operand::imm_i32(v.unwrap()))
             },
             Type::I64 => {
-                let v = self.value.parse::<i64>().map_err(|e| {
-                    todo!();
-                    e.to_string()
-                })?;
-                Ok(instr::Operand::imm_i64(v))
+                let v = self.value.parse::<i64>().map_err(|_e| {
+                    todo!()
+                });
+                Ok(instr::Operand::imm_i64(v.unwrap()))
             },
             Type::U32 => {
-                let v = self.value.parse::<u32>().map_err(|e| {
-                    todo!();
-                    e.to_string()
-                })?;
-                Ok(instr::Operand::imm_u32(v))
+                let v = self.value.parse::<u32>().map_err(|_e| {
+                    todo!()
+                });
+                Ok(instr::Operand::imm_u32(v.unwrap()))
             },
             Type::U64 => {
-                let v = self.value.parse::<u64>().map_err(|e| {
-                    todo!();
-                    e.to_string()
-                })?;
-                Ok(instr::Operand::imm_u64(v))
+                let v = self.value.parse::<u64>().map_err(|_e| {
+                    todo!()
+                });
+                Ok(instr::Operand::imm_u64(v.unwrap()))
             },
             Type::Usize => todo!(),
             _ => todo!()
@@ -945,7 +939,7 @@ impl nodes::ExpressionFieldAccessNode {
                 });
                 Ok(imm)
             }
-            nodes::Expression::FunctionCall(fn_call) => {
+            nodes::Expression::FunctionCall(_fn_call) => {
                 todo!()
             }
             _ => unreachable!()
@@ -967,7 +961,7 @@ impl Codegenable for nodes::NameNode {
     }
 }
 impl Codegenable for nodes::ExpressionBuiltInNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
+    fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
         todo!()
     }
 }

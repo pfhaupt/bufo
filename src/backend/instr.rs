@@ -79,6 +79,7 @@ impl Register {
     pub const ARG4: Self = Self::R9;  // Fourth argument in R9
 
     // https://learn.microsoft.com/en-us/cpp/build/x64-calling-convention?view=msvc-170#callercallee-saved-registers
+    #[allow(unused)]
     pub const PRESERVED: [Self; 9] = [
         Self::RBX,
         Self::RBP,
@@ -202,6 +203,7 @@ impl IR {
 }
 
 #[derive(Debug, Clone)]
+#[allow(unused)]
 pub enum IR {
     // Memory
     LoadImm { dst: Operand, imm: Operand },

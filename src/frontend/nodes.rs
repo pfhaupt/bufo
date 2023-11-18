@@ -150,6 +150,7 @@ pub struct ArgumentNode {
     pub expression: ExpressionNode
 }
 
+#[allow(unused)]
 #[derive(Debug, Clone)]
 pub enum Expression {
     // FIXME: What's the difference between Name and Identifier?

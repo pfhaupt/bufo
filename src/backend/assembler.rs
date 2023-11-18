@@ -68,8 +68,6 @@ impl Assembler {
             output.push('\n');
         };
 
-        let mut invalid = false;
-
         push_asm(format!("  ; Generated code for {}", self.path).as_str());
         push_asm("default rel");
         push_asm("");
@@ -334,7 +332,7 @@ impl Assembler {
                     push_asm("  mov rbp, rsp");
                     push_asm(format!("  sub rsp, {}", bytes).as_str());
                 }
-                IR::DeallocStack { bytes } => {
+                IR::DeallocStack { .. } => {
                     push_asm("  mov rsp, rbp");
                     push_asm("  pop rbp");
                 }
@@ -351,12 +349,6 @@ impl Assembler {
                 IR::Return => {
                     push_asm("  ret");
                 }
-
-                _ => {
-                    // FIXME: Later on this must crash
-                    push_asm("; Can't generate ASM for that yet");
-                    invalid = true;
-                }
             }
         }
         push_asm("");
@@ -367,11 +359,6 @@ impl Assembler {
         push_asm("");
         push_asm("segment .bss");
 
-        // println!("{}", output);
-        if invalid {
-            println!("INVALID!!!");
-            std::process::exit(1);
-        }
         match Path::new(OUTPUT_FOLDER).try_exists() {
             Ok(b) => {
                 if !b {
@@ -379,7 +366,7 @@ impl Assembler {
                     if self.print_debug {
                         println!("Could not find output folder, creating now");
                     }
-                    std::fs::create_dir(Path::new("./out/"));
+                    std::fs::create_dir(Path::new("./out/")).unwrap();
                 }
             }
             Err(e) => panic!("{}", e),
@@ -394,12 +381,11 @@ impl Assembler {
         }
         match File::create(format!("{asmname}")) {
             Ok(mut file) => {
-                file.write_all(output.as_bytes());
+                file.write_all(output.as_bytes()).unwrap();
             }
             Err(e) => panic!("{}", e),
         }
 
-        filename.replace(FILE_EXT, ".asm");
         if self.print_debug {
             println!("Running `nasm -f win64 {asmname} -o {objname}`");
         }
