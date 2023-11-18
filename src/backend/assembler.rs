@@ -1,21 +1,22 @@
-
 use std::fs::File;
 use std::io::Write;
-use std::process::Command;
 use std::path::Path;
+use std::process::Command;
 
 use super::instr;
 use super::instr::{OperandType, IR};
 
-use super::instr::{Register, RegMode};
+use super::instr::{RegMode, Register};
 
-use crate::compiler::{ERR_STR, OUTPUT_FOLDER, FILE_EXT};
+use crate::compiler::{ERR_STR, FILE_EXT, OUTPUT_FOLDER};
 
 const REG_64BIT: [&str; 16] = [
-    "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
+    "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13",
+    "r14", "r15",
 ];
 const REG_32BIT: [&str; 16] = [
-    "eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi", "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d",
+    "eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi", "r8d", "r9d", "r10d", "r11d", "r12d",
+    "r13d", "r14d", "r15d",
 ];
 
 fn reg(r: Register, rm: RegMode) -> &'static str {
@@ -39,7 +40,7 @@ impl Assembler {
     pub fn new() -> Self {
         Self {
             print_debug: false,
-            path: String::new()
+            path: String::new(),
         }
     }
 
@@ -48,10 +49,7 @@ impl Assembler {
         if path.contains('/') {
             path = path.split('/').last().unwrap().to_string();
         }
-        Self {
-            path,
-            ..self
-        }
+        Self { path, ..self }
     }
 
     pub fn debug(self, print_debug: bool) -> Self {
@@ -97,71 +95,70 @@ impl Assembler {
                             let immediate = imm.off_or_imm;
                             push_asm(format!("  mov {dst_reg}, {immediate}").as_str());
                         }
-                        _ => todo!()
+                        _ => todo!(),
                     }
                 }
-                IR::Store { addr, value } => {
-                    match (addr.typ, value.typ) {
-                        (OperandType::Offset, OperandType::Reg) => {
-                            let offset = addr.off_or_imm;
-                            let reg = reg(value.reg, value.reg_mode);
-                            let size = if value.reg_mode == RegMode::BIT32 { 4 } else { 8 };
-                            push_asm(format!("  mov [rbp-{offset}-{size}], {reg}").as_str());
-                        }
-                        (OperandType::Offset, OperandType::ImmI32
-                                            | OperandType::ImmU32) => {
-                            let offset = addr.off_or_imm;
-                            let val = value.off_or_imm;
-                            push_asm(format!("  mov DWORD [rbp-{offset}-4], {val}").as_str());
-                        }
-                        (OperandType::Offset, OperandType::ImmI64
-                                            | OperandType::ImmU64) => {
-                            let offset = addr.off_or_imm;
-                            let val = value.off_or_imm;
-                            push_asm(format!("  mov QWORD [rbp-{offset}-8], {val}").as_str());
-                        }
-                        (OperandType::Reg, OperandType::Reg) => {
-                            let dst = reg(addr.reg, addr.reg_mode);
-                            let src = reg(value.reg, value.reg_mode);
-                            push_asm(format!("  mov [{dst}], {src}").as_str());
-                        }
-                        (lhs, rhs) => todo!("{lhs:?} {rhs:?}")
+                IR::Store { addr, value } => match (addr.typ, value.typ) {
+                    (OperandType::Offset, OperandType::Reg) => {
+                        let offset = addr.off_or_imm;
+                        let reg = reg(value.reg, value.reg_mode);
+                        let size = if value.reg_mode == RegMode::BIT32 {
+                            4
+                        } else {
+                            8
+                        };
+                        push_asm(format!("  mov [rbp-{offset}-{size}], {reg}").as_str());
                     }
-                }
-                IR::Load { dst, addr } => {
-                    match (dst.typ, addr.typ) {
-                        (OperandType::Reg, OperandType::Offset) => {
-                            let reg = reg(dst.reg, dst.reg_mode);
-                            let offset = addr.off_or_imm;
-                            let size = if dst.reg_mode == RegMode::BIT32 { 4 } else { 8 };
-                            push_asm(format!("  mov {reg}, [rbp-{offset}-{size}]").as_str());
-                        }
-                        (OperandType::Reg, OperandType::Reg) => {
-                            let dst = reg(dst.reg, dst.reg_mode);
-                            let src = reg(addr.reg, addr.reg_mode);
-                            push_asm(format!("  mov {dst}, [{src}]").as_str());
-                        }
-                        (lhs, rhs) => todo!("{lhs:?} {rhs:?}")
+                    (OperandType::Offset, OperandType::ImmI32 | OperandType::ImmU32) => {
+                        let offset = addr.off_or_imm;
+                        let val = value.off_or_imm;
+                        push_asm(format!("  mov DWORD [rbp-{offset}-4], {val}").as_str());
                     }
-                }
-                IR::Move { dst, src } => {
-                    match (dst.typ, src.typ) {
-                        (OperandType::Reg, OperandType::Reg) => {
-                            let dst = reg(dst.reg, dst.reg_mode);
-                            let src = reg(src.reg, src.reg_mode);
-                            push_asm(format!("  mov {dst}, {src}").as_str());
-                        }
-                        (OperandType::Reg, OperandType::ImmI32
-                                            | OperandType::ImmI64
-                                            | OperandType::ImmU32
-                                            | OperandType::ImmU64) => {
-                            let dst = reg(dst.reg, dst.reg_mode);
-                            let imm = src.off_or_imm;
-                            push_asm(format!("  mov {dst}, {imm}").as_str());
-                        }
-                        (lhs, rhs) => todo!("{lhs:?} {rhs:?}")
+                    (OperandType::Offset, OperandType::ImmI64 | OperandType::ImmU64) => {
+                        let offset = addr.off_or_imm;
+                        let val = value.off_or_imm;
+                        push_asm(format!("  mov QWORD [rbp-{offset}-8], {val}").as_str());
                     }
-                }
+                    (OperandType::Reg, OperandType::Reg) => {
+                        let dst = reg(addr.reg, addr.reg_mode);
+                        let src = reg(value.reg, value.reg_mode);
+                        push_asm(format!("  mov [{dst}], {src}").as_str());
+                    }
+                    (lhs, rhs) => todo!("{lhs:?} {rhs:?}"),
+                },
+                IR::Load { dst, addr } => match (dst.typ, addr.typ) {
+                    (OperandType::Reg, OperandType::Offset) => {
+                        let reg = reg(dst.reg, dst.reg_mode);
+                        let offset = addr.off_or_imm;
+                        let size = if dst.reg_mode == RegMode::BIT32 { 4 } else { 8 };
+                        push_asm(format!("  mov {reg}, [rbp-{offset}-{size}]").as_str());
+                    }
+                    (OperandType::Reg, OperandType::Reg) => {
+                        let dst = reg(dst.reg, dst.reg_mode);
+                        let src = reg(addr.reg, addr.reg_mode);
+                        push_asm(format!("  mov {dst}, [{src}]").as_str());
+                    }
+                    (lhs, rhs) => todo!("{lhs:?} {rhs:?}"),
+                },
+                IR::Move { dst, src } => match (dst.typ, src.typ) {
+                    (OperandType::Reg, OperandType::Reg) => {
+                        let dst = reg(dst.reg, dst.reg_mode);
+                        let src = reg(src.reg, src.reg_mode);
+                        push_asm(format!("  mov {dst}, {src}").as_str());
+                    }
+                    (
+                        OperandType::Reg,
+                        OperandType::ImmI32
+                        | OperandType::ImmI64
+                        | OperandType::ImmU32
+                        | OperandType::ImmU64,
+                    ) => {
+                        let dst = reg(dst.reg, dst.reg_mode);
+                        let imm = src.off_or_imm;
+                        push_asm(format!("  mov {dst}, {imm}").as_str());
+                    }
+                    (lhs, rhs) => todo!("{lhs:?} {rhs:?}"),
+                },
 
                 // Arithmetics
                 IR::Add { dst, src1, src2 } => {
@@ -177,8 +174,7 @@ impl Assembler {
                             let offset = src2.off_or_imm;
                             push_asm(format!("  add {dst_reg}, {offset}").as_str());
                         }
-                        (OperandType::Reg, OperandType::ImmI32
-                                            | OperandType::ImmU32) => {
+                        (OperandType::Reg, OperandType::ImmI32 | OperandType::ImmU32) => {
                             let immediate = src2.off_or_imm;
                             push_asm(format!("  add {dst_reg}, {immediate}").as_str());
                         }
@@ -200,8 +196,7 @@ impl Assembler {
                             let offset = src2.off_or_imm;
                             push_asm(format!("  sub {dst_reg}, {offset}").as_str());
                         }
-                        (OperandType::Reg, OperandType::ImmI32
-                                            | OperandType::ImmU32) => {
+                        (OperandType::Reg, OperandType::ImmI32 | OperandType::ImmU32) => {
                             let immediate = src2.off_or_imm;
                             push_asm(format!("  sub {dst_reg}, {immediate}").as_str());
                         }
@@ -210,7 +205,12 @@ impl Assembler {
                         }
                     }
                 }
-                IR::Mul { dst, src1, src2, signed } => {
+                IR::Mul {
+                    dst,
+                    src1,
+                    src2,
+                    signed,
+                } => {
                     debug_assert!(dst == src1);
                     debug_assert!(dst.reg != instr::Register::None);
                     let dst_reg = reg(dst.reg, dst.reg_mode);
@@ -221,10 +221,13 @@ impl Assembler {
                                 let src_reg = reg(src2.reg, src2.reg_mode);
                                 push_asm(format!("  imul {dst_reg}, {src_reg}").as_str());
                             }
-                            (OperandType::Reg, OperandType::ImmI32
-                                                | OperandType::ImmI64
-                                                | OperandType::ImmU32
-                                                | OperandType::ImmU64) => {
+                            (
+                                OperandType::Reg,
+                                OperandType::ImmI32
+                                | OperandType::ImmI64
+                                | OperandType::ImmU32
+                                | OperandType::ImmU64,
+                            ) => {
                                 // IMUL only has up to 32bit immediates, need to use temp reg
                                 todo!()
                             }
@@ -247,10 +250,13 @@ impl Assembler {
                                 push_asm(format!("  mul {src_reg}").as_str());
                                 push_asm(format!("  mov {dst_reg}, {acc}").as_str());
                             }
-                            (OperandType::Reg, OperandType::ImmI32
-                                                | OperandType::ImmI64
-                                                | OperandType::ImmU32
-                                                | OperandType::ImmU64) => {
+                            (
+                                OperandType::Reg,
+                                OperandType::ImmI32
+                                | OperandType::ImmI64
+                                | OperandType::ImmU32
+                                | OperandType::ImmU64,
+                            ) => {
                                 // MUL has no Immediate mode, need to use temp reg
                                 todo!()
                             }
@@ -260,7 +266,12 @@ impl Assembler {
                         }
                     }
                 }
-                IR::Div { dst, src1, src2, signed } => {
+                IR::Div {
+                    dst,
+                    src1,
+                    src2,
+                    signed,
+                } => {
                     debug_assert!(dst == src1);
                     debug_assert!(dst.reg != instr::Register::None);
                     let dst_reg = reg(dst.reg, dst.reg_mode);
@@ -303,10 +314,13 @@ impl Assembler {
                             let src_reg = reg(src.reg, src.reg_mode);
                             push_asm(format!("  cmp {dst_reg}, {src_reg}").as_str());
                         }
-                        (OperandType::Reg, OperandType::ImmI32
+                        (
+                            OperandType::Reg,
+                            OperandType::ImmI32
                             | OperandType::ImmI64
                             | OperandType::ImmU32
-                            | OperandType::ImmU64) => {
+                            | OperandType::ImmU64,
+                        ) => {
                             let immediate = src.off_or_imm;
                             push_asm(format!("  cmp {dst_reg}, {immediate}").as_str());
                         }
@@ -395,13 +409,13 @@ impl Assembler {
             .expect("failed to execute process");
         if nasm_output.status.code().unwrap() != 0 {
             return Err(format!(
-                "{}: Converting assembly to object file failed with:\n{}", ERR_STR, String::from_utf8(nasm_output.stderr).unwrap()
+                "{}: Converting assembly to object file failed with:\n{}",
+                ERR_STR,
+                String::from_utf8(nasm_output.stderr).unwrap()
             ));
         }
         if self.print_debug {
-            println!(
-                "Running `golink /console /entry main {objname} MSVCRT.dll kernel32.dll`"
-            );
+            println!("Running `golink /console /entry main {objname} MSVCRT.dll kernel32.dll`");
         }
         let golink_output = Command::new("golink")
             .args([
@@ -416,7 +430,9 @@ impl Assembler {
             .expect("failed to execute process");
         if golink_output.status.code().unwrap() != 0 {
             return Err(format!(
-                "{}: Converting linking object files failed with:\n{}", ERR_STR, String::from_utf8(golink_output.stderr).unwrap()
+                "{}: Converting linking object files failed with:\n{}",
+                ERR_STR,
+                String::from_utf8(golink_output.stderr).unwrap()
             ));
         }
 
@@ -437,7 +453,8 @@ impl Assembler {
         let exit_code = output.status.code().unwrap();
         if exit_code != 0 {
             Err(format!(
-                "{}: Code execution failed with code 0x{:X}.", ERR_STR, exit_code
+                "{}: Code execution failed with code 0x{:X}.",
+                ERR_STR, exit_code
             ))
         } else {
             Ok(())

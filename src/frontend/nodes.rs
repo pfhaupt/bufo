@@ -31,7 +31,7 @@ pub struct FieldAccess {
     pub location: Location,
     pub name: String,
     pub field: Expression,
-    pub typ: Type
+    pub typ: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -43,7 +43,7 @@ pub struct FeatureNode {
     pub parameters: Vec<ParameterNode>,
     pub block: BlockNode,
     pub stack_size: usize,
-    pub is_constructor: bool
+    pub is_constructor: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -53,7 +53,7 @@ pub struct FunctionNode {
     pub return_type: ReturnTypeNode,
     pub parameters: Vec<ParameterNode>,
     pub block: BlockNode,
-    pub stack_size: usize
+    pub stack_size: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -64,20 +64,20 @@ pub struct MethodNode {
     pub return_type: ReturnTypeNode,
     pub parameters: Vec<ParameterNode>,
     pub block: BlockNode,
-    pub stack_size: usize
+    pub stack_size: usize,
 }
 
 #[derive(Debug, Clone)]
 pub struct ReturnTypeNode {
     pub location: Location,
-    pub typ: Type
+    pub typ: Type,
 }
 
 #[derive(Debug, Clone)]
 pub struct ParameterNode {
     pub location: Location,
     pub name: String,
-    pub typ: TypeNode
+    pub typ: TypeNode,
 }
 
 #[derive(Debug, Clone)]
@@ -92,13 +92,13 @@ pub enum Statement {
     Let(LetNode),
     Assign(AssignNode),
     If(IfNode),
-    Return(ReturnNode)
+    Return(ReturnNode),
 }
 
 #[derive(Debug, Clone)]
 pub struct ExpressionNode {
     pub location: Location,
-    pub expression: Expression
+    pub expression: Expression,
 }
 
 #[derive(Debug, Clone)]
@@ -120,7 +120,7 @@ pub struct AssignNode {
 pub struct ExpressionIdentifierNode {
     pub location: Location,
     pub expression: Box<Expression>,
-    pub typ: Type
+    pub typ: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -147,7 +147,7 @@ pub struct TypeNode {
 #[derive(Debug, Clone)]
 pub struct ArgumentNode {
     pub location: Location,
-    pub expression: ExpressionNode
+    pub expression: ExpressionNode,
 }
 
 #[allow(unused)]
@@ -171,7 +171,7 @@ pub enum Expression {
 #[derive(Debug, Clone)]
 pub struct ExpressionArrayLiteralNode {
     pub location: Location,
-    pub elements: Vec<Expression>
+    pub elements: Vec<Expression>,
 }
 
 #[derive(Debug, Clone)]
@@ -179,7 +179,7 @@ pub struct ExpressionArrayAccessNode {
     pub location: Location,
     pub array_name: String,
     pub indices: ExpressionArrayLiteralNode,
-    pub typ: Type
+    pub typ: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -195,7 +195,7 @@ pub struct ExpressionBinaryNode {
     pub operation: Operation,
     pub lhs: Box<Expression>,
     pub rhs: Box<Expression>,
-    pub typ: Type
+    pub typ: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -204,7 +204,7 @@ pub struct ExpressionComparisonNode {
     pub operation: Operation,
     pub lhs: Box<Expression>,
     pub rhs: Box<Expression>,
-    pub typ: Type
+    pub typ: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -212,7 +212,7 @@ pub struct ExpressionCallNode {
     pub location: Location,
     pub function_name: String,
     pub arguments: Vec<ArgumentNode>,
-    pub typ: Type
+    pub typ: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -220,7 +220,7 @@ pub struct ExpressionConstructorNode {
     pub location: Location,
     pub class_name: String,
     pub arguments: Vec<ArgumentNode>,
-    pub typ: Type
+    pub typ: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -228,7 +228,7 @@ pub struct ExpressionFieldAccessNode {
     pub location: Location,
     pub name: String,
     pub field: ExpressionIdentifierNode,
-    pub typ: Type
+    pub typ: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -243,5 +243,5 @@ pub struct ExpressionBuiltInNode {
     pub location: Location,
     pub function_name: String,
     pub arguments: Vec<ArgumentNode>,
-    pub typ: Type
+    pub typ: Type,
 }

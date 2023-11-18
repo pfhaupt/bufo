@@ -1,15 +1,16 @@
 use std::collections::{HashMap, VecDeque};
 use std::fmt::{Display, Formatter};
 
-use crate::frontend::parser::Location;
 use crate::frontend::nodes;
+use crate::frontend::parser::Location;
 
 use crate::compiler::{ERR_STR, NOTE_STR, WARN_STR};
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub enum Type {
     None, // For functions that return nothing
-    #[default] Unknown,
+    #[default]
+    Unknown,
     I32,
     I64,
     U32,
@@ -53,7 +54,7 @@ const BUILT_IN_FEATURES: [&str; 1] = ["new"];
 pub struct Parameter {
     name: String,
     location: Location,
-    typ: Type
+    typ: Type,
 }
 
 #[derive(Debug)]
@@ -63,9 +64,7 @@ pub struct Method {
     parameters: Vec<Parameter>,
 }
 
-impl Method {
-}
-
+impl Method {}
 
 #[derive(Debug)]
 pub struct Function {
@@ -104,18 +103,16 @@ impl Class {
     fn add_field(&mut self, field: &nodes::FieldNode) -> Result<(), String> {
         let name = &field.name;
         let location = &field.location;
-        
+
         match self.fields.get(name) {
             Some(f) => Err(format!(
                 "{}: {:?}: Field redeclaration.\n{}: {:?}: Field already declared here.",
-                ERR_STR,
-                location,
-                NOTE_STR,
-                f.0
+                ERR_STR, location, NOTE_STR, f.0
             )),
             None => {
                 let typ = &field.type_def.typ;
-                self.fields.insert(name.to_string(), (location.clone(), typ.clone()));
+                self.fields
+                    .insert(name.to_string(), (location.clone(), typ.clone()));
                 Ok(())
             }
         }
@@ -127,27 +124,23 @@ impl Class {
         match self.known_methods.get(name) {
             Some(f) => Err(format!(
                 "{}: {:?}: Method redeclaration.\n{}: {:?}: Method already declared here.",
-                ERR_STR,
-                location,
-                NOTE_STR,
-                f.location
+                ERR_STR, location, NOTE_STR, f.location
             )),
             None => {
                 let return_type = &method.return_type.typ;
-                let parameters: Vec<_> = method.parameters
+                let parameters: Vec<_> = method
+                    .parameters
                     .iter()
-                    .map(|param| {
-                        Parameter {
-                            name: param.name.clone(),
-                            location: param.location.clone(),
-                            typ: param.typ.typ.clone()
-                        }
+                    .map(|param| Parameter {
+                        name: param.name.clone(),
+                        location: param.location.clone(),
+                        typ: param.typ.typ.clone(),
                     })
                     .collect();
                 let method = Method {
                     location: location.clone(),
                     return_type: return_type.clone(),
-                    parameters
+                    parameters,
                 };
                 self.known_methods.insert(name.clone(), method);
                 Ok(())
@@ -161,39 +154,31 @@ impl Class {
         match self.known_features.get(name) {
             Some(f) => Err(format!(
                 "{}: {:?}: Feature redeclaration.\n{}: {:?}: Feature already declared here.",
-                ERR_STR,
-                location,
-                NOTE_STR,
-                f.location
+                ERR_STR, location, NOTE_STR, f.location
             )),
             None => {
                 if !BUILT_IN_FEATURES.contains(&name.as_str()) {
                     // FIXME: Do we need to show all features? If yes, how do we display them nicely?
                     return Err(format!(
                         "{}: {:?}: Unknown feature `{}`.\n{}: This is a list of all features: {:?}",
-                        ERR_STR,
-                        location,
-                        name,
-                        NOTE_STR,
-                        BUILT_IN_FEATURES
+                        ERR_STR, location, name, NOTE_STR, BUILT_IN_FEATURES
                     ));
                 }
                 let return_type = &feature.return_type.typ;
-                let parameters: Vec<_> = feature.parameters
+                let parameters: Vec<_> = feature
+                    .parameters
                     .iter()
-                    .map(|param| {
-                        Parameter {
-                            name: param.name.clone(),
-                            location: param.location.clone(),
-                            typ: param.typ.typ.clone()
-                        }
+                    .map(|param| Parameter {
+                        name: param.name.clone(),
+                        location: param.location.clone(),
+                        typ: param.typ.typ.clone(),
                     })
                     .collect();
                 let func = Function {
                     name: name.clone(),
                     location: location.clone(),
                     return_type: return_type.clone(),
-                    parameters
+                    parameters,
                 };
                 self.known_features.insert(name.clone(), func);
                 Ok(())
@@ -208,17 +193,14 @@ impl Class {
                     // FIXME: Also store location of return type declaration for better warnings
                     println!(
                         "{}: {:?}: Use of implicit return type for constructor.",
-                        WARN_STR,
-                        feat.1.location
+                        WARN_STR, feat.1.location
                     );
                     return Ok(());
                 }
                 if feat.1.return_type != Type::None {
                     return Err(format!(
                         "{}: {:?}: Feature `new` is expected to return None, found {}.",
-                        ERR_STR,
-                        feat.1.location,
-                        feat.1.return_type
+                        ERR_STR, feat.1.location, feat.1.return_type
                     ));
                 }
                 feat.1.return_type = self.class_type.clone();
@@ -253,7 +235,7 @@ impl Variable {
         Self {
             name,
             location,
-            typ
+            typ,
         }
     }
     fn is_class_instance(&self) -> bool {
@@ -262,7 +244,7 @@ impl Variable {
     fn get_class_name(&self) -> String {
         match &self.typ {
             Type::Class(name) => name.clone(),
-            _ => panic!()
+            _ => panic!(),
         }
     }
 }
@@ -279,14 +261,14 @@ pub struct TypeChecker {
 
 impl TypeChecker {
     pub fn new() -> Self {
-        Self { 
+        Self {
             known_classes: HashMap::new(),
             known_functions: HashMap::new(),
             known_variables: VecDeque::new(),
             current_function: String::new(),
             current_class: String::new(),
             current_stack_size: 0,
-         }
+        }
     }
 
     fn add_function(&mut self, function: &nodes::FunctionNode) -> Result<(), String> {
@@ -295,29 +277,25 @@ impl TypeChecker {
         match self.known_functions.get(name) {
             Some(f) => Err(format!(
                 "{}: {:?}: Function redeclaration.\n{}: {:?}: Function already declared here.",
-                ERR_STR,
-                location,
-                NOTE_STR,
-                f.location
+                ERR_STR, location, NOTE_STR, f.location
             )),
             None => {
                 let return_type = &function.return_type.typ;
                 // FIXME: Check if parameter names repeat
-                let parameters: Vec<_> = function.parameters
-                .iter()
-                .map(|param| {
-                    Parameter {
+                let parameters: Vec<_> = function
+                    .parameters
+                    .iter()
+                    .map(|param| Parameter {
                         name: param.name.clone(),
                         location: param.location.clone(),
-                        typ: param.typ.typ.clone()
-                    }
-                })
-                .collect();
+                        typ: param.typ.typ.clone(),
+                    })
+                    .collect();
                 let func = Function {
                     name: name.clone(),
                     location: location.clone(),
                     return_type: return_type.clone(),
-                    parameters
+                    parameters,
                 };
                 self.known_functions.insert(name.clone(), func);
                 Ok(())
@@ -328,13 +306,12 @@ impl TypeChecker {
     fn fill_lookup(&mut self, ast: &nodes::FileNode) -> Result<(), String> {
         for c in &ast.classes {
             match self.known_classes.get(&c.name) {
-                Some(class) => return Err(format!(
-                    "{}: {:?}: Class redeclaration.\n{}: {:?}: Class already declared here.",
-                    ERR_STR,
-                    c.location,
-                    NOTE_STR,
-                    class.location
-                )),
+                Some(class) => {
+                    return Err(format!(
+                        "{}: {:?}: Class redeclaration.\n{}: {:?}: Class already declared here.",
+                        ERR_STR, c.location, NOTE_STR, class.location
+                    ))
+                }
                 None => {
                     let mut class = Class::new(c.name.clone());
                     class.location = c.location.clone();
@@ -382,7 +359,7 @@ impl TypeChecker {
     fn get_variable(&self, name: &String) -> Option<Variable> {
         for scope in self.known_variables.iter().rev() {
             if let Some(t) = scope.get(name) {
-                return Some(t.clone())
+                return Some(t.clone());
             }
         }
         None
@@ -390,12 +367,19 @@ impl TypeChecker {
 }
 
 trait Typecheckable {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized;
-    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized;
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized;
+    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String>
+    where
+        Self: Sized;
 }
 
 impl Typecheckable for nodes::FileNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         for c in &mut self.classes {
             c.type_check(checker)?;
         }
@@ -404,12 +388,22 @@ impl Typecheckable for nodes::FileNode {
         }
         Ok(Type::None)
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl Typecheckable for nodes::ClassNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         debug_assert!(checker.current_class.is_empty());
         debug_assert!(checker.current_function.is_empty());
         checker.current_class = self.name.clone();
@@ -429,28 +423,58 @@ impl Typecheckable for nodes::ClassNode {
         checker.current_class.clear();
         Ok(Type::None)
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl Typecheckable for nodes::FieldNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         self.type_def.type_check(checker)
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl Typecheckable for nodes::FieldAccess {
-    fn type_check(&mut self, _checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, _checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl Typecheckable for nodes::FeatureNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         debug_assert!(checker.current_function.is_empty());
         debug_assert!(checker.known_variables.is_empty());
         debug_assert!(checker.known_classes.contains_key(&self.class_name));
@@ -464,7 +488,7 @@ impl Typecheckable for nodes::FeatureNode {
         let Some(class_info) = checker.known_classes.get(&self.class_name) else { unreachable!() };
         // FIXME: Is the else actually unreachable for the feature?
         let Some(feature) = class_info.known_features.get(&self.name) else { unreachable!() };
-        
+
         // Parameters are now known variables
         let mut parameters = HashMap::new();
         // FIXME: Handle this better
@@ -472,7 +496,7 @@ impl Typecheckable for nodes::FeatureNode {
             let this_param = Variable::new(
                 String::from("this"),
                 self.location.clone(),
-                Type::Class(self.class_name.clone())
+                Type::Class(self.class_name.clone()),
             );
             checker.current_stack_size += 8;
             parameters.insert(String::from("this"), this_param);
@@ -481,19 +505,20 @@ impl Typecheckable for nodes::FeatureNode {
             let var = Variable::new(
                 param.name.clone(),
                 param.location.clone(),
-                param.typ.clone()
+                param.typ.clone(),
             );
             if let Some(param) = parameters.insert(param.name.clone(), var) {
                 if param.name == *"this" {
                     return Err(format!(
-                        "{}: {:?}: Use of implicit parameter `this`.", ERR_STR, param.location
-                    ))
+                        "{}: {:?}: Use of implicit parameter `this`.",
+                        ERR_STR, param.location
+                    ));
                 }
                 todo!()
             }
         }
         checker.known_variables.push_back(parameters);
-        
+
         self.block.type_check(checker)?;
         self.stack_size = checker.current_stack_size;
 
@@ -502,12 +527,22 @@ impl Typecheckable for nodes::FeatureNode {
         checker.known_variables.clear();
         Ok(Type::None)
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl Typecheckable for nodes::FunctionNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         debug_assert!(checker.current_function.is_empty());
         debug_assert!(checker.current_class.is_empty());
         debug_assert!(checker.known_variables.is_empty());
@@ -526,7 +561,7 @@ impl Typecheckable for nodes::FunctionNode {
             let var = Variable::new(
                 param.name.clone(),
                 param.location.clone(),
-                param.typ.clone()
+                param.typ.clone(),
             );
             if parameters.insert(param.name.clone(), var).is_some() {
                 // Parameter already exists
@@ -543,12 +578,22 @@ impl Typecheckable for nodes::FunctionNode {
         checker.known_variables.clear();
         Ok(Type::None)
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl Typecheckable for nodes::MethodNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         debug_assert!(checker.current_function.is_empty());
         debug_assert!(checker.known_variables.is_empty());
         debug_assert!(checker.known_classes.contains_key(&self.class_name));
@@ -569,7 +614,7 @@ impl Typecheckable for nodes::MethodNode {
         let this_param = Variable::new(
             String::from("this"),
             self.location.clone(),
-            Type::Class(self.class_name.clone())
+            Type::Class(self.class_name.clone()),
         );
         parameters.insert(String::from("this"), this_param);
         checker.current_stack_size += 8;
@@ -578,19 +623,20 @@ impl Typecheckable for nodes::MethodNode {
             let var = Variable::new(
                 param.name.clone(),
                 param.location.clone(),
-                param.typ.clone()
+                param.typ.clone(),
             );
             if let Some(param) = parameters.insert(param.name.clone(), var) {
                 if param.name == *"this" {
                     return Err(format!(
-                        "{}: {:?}: Use of implicit parameter `this`.", ERR_STR, param.location
-                    ))
+                        "{}: {:?}: Use of implicit parameter `this`.",
+                        ERR_STR, param.location
+                    ));
                 }
                 todo!()
             }
         }
         checker.known_variables.push_back(parameters);
-        
+
         self.block.type_check(checker)?;
         self.stack_size = checker.current_stack_size;
 
@@ -599,23 +645,43 @@ impl Typecheckable for nodes::MethodNode {
         checker.known_variables.clear();
         Ok(Type::None)
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl Typecheckable for nodes::ParameterNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         self.typ.type_check(checker)?;
         let var_size = self.typ.typ.size();
         checker.current_stack_size += var_size;
         Ok(Type::None)
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl Typecheckable for nodes::BlockNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         checker.add_scope();
         for statement in &mut self.statements {
             statement.type_check(checker)?;
@@ -623,20 +689,36 @@ impl Typecheckable for nodes::BlockNode {
         checker.remove_scope();
         Ok(Type::None)
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl Typecheckable for nodes::ExpressionNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         self.expression.type_check(checker)
     }
-    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         self.expression.type_check_with_type(checker, typ)
     }
 }
 impl Typecheckable for nodes::Statement {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         match self {
             Self::Expression(expression) => expression.type_check(checker),
             Self::Let(let_node) => let_node.type_check(checker),
@@ -645,20 +727,26 @@ impl Typecheckable for nodes::Statement {
             Self::Return(return_node) => return_node.type_check(checker),
         }
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl Typecheckable for nodes::LetNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         match checker.get_variable(&self.name) {
             Some(var) => Err(format!(
                 "{}: {:?}: Variable redeclaration.\n{}: {:?}: Variable `{}` already declared here.",
-                ERR_STR,
-                self.location,
-                NOTE_STR,
-                var.location,
-                var.name
+                ERR_STR, self.location, NOTE_STR, var.location, var.name
             )),
             None => {
                 self.typ.type_check(checker)?;
@@ -670,7 +758,7 @@ impl Typecheckable for nodes::LetNode {
                 let var = Variable {
                     name: self.name.clone(),
                     location: self.location.clone(),
-                    typ: self.typ.typ.clone()
+                    typ: self.typ.typ.clone(),
                 };
                 debug_assert!(current_scope.insert(self.name.clone(), var).is_none());
                 let expected_type = &self.typ.typ;
@@ -681,15 +769,13 @@ impl Typecheckable for nodes::LetNode {
                 if expr_type == Type::Unknown {
                     // Couldnt determine type of expression
                     // We need to `infer` it
-                    self.expression.type_check_with_type(checker, expected_type)?;
+                    self.expression
+                        .type_check_with_type(checker, expected_type)?;
                     Ok(expr_type)
                 } else if expr_type != *expected_type {
                     Err(format!(
                         "{}: {:?}: Type Mismatch! Expected type `{:?}`, found type `{:?}`.",
-                        ERR_STR,
-                        self.location,
-                        expected_type,
-                        expr_type
+                        ERR_STR, self.location, expected_type, expr_type
                     ))
                 } else {
                     Ok(expr_type)
@@ -697,36 +783,54 @@ impl Typecheckable for nodes::LetNode {
             }
         }
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl Typecheckable for nodes::AssignNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         let expected_type = self.name.type_check(checker)?;
         let rhs_type = self.expression.type_check(checker)?;
         if rhs_type == Type::Unknown {
             // We need to try and force the type of LHS to RHS
-            self.expression.type_check_with_type(checker, &expected_type)?;
+            self.expression
+                .type_check_with_type(checker, &expected_type)?;
             Ok(rhs_type)
         } else if rhs_type != expected_type {
             Err(format!(
                 "{}: {:?}: Type Mismatch! Expected type `{}`, found type `{}`.",
-                ERR_STR,
-                self.expression.location,
-                expected_type,
-                rhs_type,
+                ERR_STR, self.expression.location, expected_type, rhs_type,
             ))
         } else {
             Ok(rhs_type)
         }
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl Typecheckable for nodes::IfNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         let condition_type = self.condition.type_check(checker)?;
         if condition_type != Type::Bool {
             todo!();
@@ -739,12 +843,22 @@ impl Typecheckable for nodes::IfNode {
         }
         Ok(Type::None)
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl Typecheckable for nodes::ReturnNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         debug_assert!(!checker.current_function.is_empty());
         debug_assert!(self.typ == Type::Unknown);
         // FIXME: Both branches share 80% same work, we can reduce code size and make this easier to read
@@ -833,42 +947,66 @@ impl Typecheckable for nodes::ReturnNode {
             }
         }
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl Typecheckable for nodes::TypeNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         match &self.typ {
             Type::Class(class_name) => {
                 if !checker.known_classes.contains_key(class_name) {
                     Err(format!(
                         "{}: {:?}: Unknown Type `{}`.",
-                        ERR_STR,
-                        self.location,
-                        self.typ
+                        ERR_STR, self.location, self.typ
                     ))
                 } else {
                     Ok(Type::None)
                 }
-            },
-            _ => Ok(Type::None)
+            }
+            _ => Ok(Type::None),
         }
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl Typecheckable for nodes::ArgumentNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         self.expression.type_check(checker)
     }
-    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         self.expression.type_check_with_type(checker, typ)
     }
 }
 impl Typecheckable for nodes::Expression {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         match self {
             Self::Name(name_node) => name_node.type_check(checker),
             Self::Binary(binary_expr) => binary_expr.type_check(checker),
@@ -883,7 +1021,10 @@ impl Typecheckable for nodes::Expression {
             Self::Literal(literal) => literal.type_check(checker),
         }
     }
-    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         match self {
             Self::Name(name_node) => name_node.type_check_with_type(checker, typ),
             Self::Binary(binary_expr) => binary_expr.type_check_with_type(checker, typ),
@@ -900,7 +1041,10 @@ impl Typecheckable for nodes::Expression {
     }
 }
 impl Typecheckable for nodes::ExpressionComparisonNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         debug_assert!(self.typ == Type::Bool);
         let lhs_type = self.lhs.type_check(checker)?;
         let rhs_type = self.rhs.type_check(checker)?;
@@ -910,26 +1054,20 @@ impl Typecheckable for nodes::ExpressionComparisonNode {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 return Err(format!(
                     "{}: {:?}: Binary Operation `{}` is not defined in the context of classes.",
-                    ERR_STR,
-                    self.location,
-                    self.operation
-                ))
+                    ERR_STR, self.location, self.operation
+                ));
             }
             (Type::Arr(..), _) | (_, Type::Arr(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 return Err(format!(
                     "{}: {:?}: Binary Operation `{}` is not defined in the context of arrays.",
-                    ERR_STR,
-                    self.location,
-                    self.operation
-                ))
+                    ERR_STR, self.location, self.operation
+                ));
             }
             (Type::Bool, _) | (_, Type::Bool) => {
                 return Err(format!(
                     "{}: {:?}: Binary Operation `{}` is not defined in the context of booleans.",
-                    ERR_STR,
-                    self.location,
-                    self.operation
+                    ERR_STR, self.location, self.operation
                 ))
             }
             (Type::Unknown, Type::Unknown) => (),
@@ -950,22 +1088,42 @@ impl Typecheckable for nodes::ExpressionComparisonNode {
         }
         Ok(Type::Bool)
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl Typecheckable for nodes::ExpressionIdentifierNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         let typ = self.expression.type_check(checker)?;
         self.typ = typ.clone();
         Ok(typ)
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl Typecheckable for nodes::ExpressionArrayLiteralNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         let mut expected_type = Type::None;
         for element in &mut self.elements {
             let element_type = element.type_check(checker)?;
@@ -998,7 +1156,10 @@ impl Typecheckable for nodes::ExpressionArrayLiteralNode {
             Ok(expected_type)
         }
     }
-    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         if let Type::Arr(expected_type, expected_size) = typ {
             let expected_count = expected_size[0];
             if expected_count != self.elements.len() {
@@ -1021,9 +1182,7 @@ impl Typecheckable for nodes::ExpressionArrayLiteralNode {
                 if let Err(e) = element.type_check_with_type(checker, &sub_type) {
                     return Err(format!(
                         "{}: {:?}: Error when evaluating type of Array Literal:\n{}",
-                        ERR_STR,
-                        self.location,
-                        e
+                        ERR_STR, self.location, e
                     ));
                 }
             }
@@ -1035,25 +1194,38 @@ impl Typecheckable for nodes::ExpressionArrayLiteralNode {
     }
 }
 impl Typecheckable for nodes::ExpressionArrayAccessNode {
-    fn type_check(&mut self, _checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, _checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl Typecheckable for nodes::ExpressionLiteralNode {
-    fn type_check(&mut self, _checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, _checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         Ok(self.typ.clone())
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, typ: &Type) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         if self.typ != Type::Unknown && self.typ != *typ {
             return Err(format!(
                 "{}: {:?}: Type Mismatch! Expected {}, found {}.",
-                ERR_STR,
-                self.location,
-                typ,
-                self.typ
+                ERR_STR, self.location, typ, self.typ
             ));
         }
         if let Type::Arr(_, _) = typ {
@@ -1061,20 +1233,14 @@ impl Typecheckable for nodes::ExpressionLiteralNode {
             // NOTE: We wanted to infer an array to a literal
             return Err(format!(
                 "{}: {:?}: Unexpected type. Attempted to assign `{:?}` to literal `{:?}`.",
-                ERR_STR,
-                self.location,
-                typ,
-                self.value
+                ERR_STR, self.location, typ, self.value
             ));
         } else if let Type::Class(class_name) = typ {
             // FIXME: How the heck do I deal with this error?
             // NOTE: We wanted to infer a class to a literal
             return Err(format!(
                 "{}: {:?}: Unexpected type. Attempted to assign `{:?}` to literal `{:?}`.",
-                ERR_STR,
-                self.location,
-                class_name,
-                self.value
+                ERR_STR, self.location, class_name, self.value
             ));
         }
         self.typ = typ.clone();
@@ -1082,7 +1248,10 @@ impl Typecheckable for nodes::ExpressionLiteralNode {
     }
 }
 impl Typecheckable for nodes::ExpressionBinaryNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         let lhs_type = self.lhs.type_check(checker)?;
         let rhs_type = self.rhs.type_check(checker)?;
         debug_assert!(lhs_type != Type::None);
@@ -1094,31 +1263,21 @@ impl Typecheckable for nodes::ExpressionBinaryNode {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 Err(format!(
                     "{}: {:?}: Binary Operation `{}` is not defined in the context of classes.",
-                    ERR_STR,
-                    self.location,
-                    self.operation
+                    ERR_STR, self.location, self.operation
                 ))
             }
             (Type::Arr(..), _) | (_, Type::Arr(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 Err(format!(
                     "{}: {:?}: Binary Operation `{}` is not defined in the context of arrays.",
-                    ERR_STR,
-                    self.location,
-                    self.operation
+                    ERR_STR, self.location, self.operation
                 ))
             }
-            (Type::Bool, _) | (_, Type::Bool) => {
-                Err(format!(
-                    "{}: {:?}: Binary Operation `{}` is not defined in the context of booleans.",
-                    ERR_STR,
-                    self.location,
-                    self.operation
-                ))
-            }
-            (Type::Unknown, Type::Unknown) => {
-                Ok(Type::Unknown)
-            }
+            (Type::Bool, _) | (_, Type::Bool) => Err(format!(
+                "{}: {:?}: Binary Operation `{}` is not defined in the context of booleans.",
+                ERR_STR, self.location, self.operation
+            )),
+            (Type::Unknown, Type::Unknown) => Ok(Type::Unknown),
             (Type::Unknown, other) => {
                 self.lhs.type_check_with_type(checker, other)?;
                 Ok(other.clone())
@@ -1143,7 +1302,10 @@ impl Typecheckable for nodes::ExpressionBinaryNode {
             }
         }
     }
-    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         self.lhs.type_check_with_type(checker, typ)?;
         self.rhs.type_check_with_type(checker, typ)?;
         self.typ = typ.clone();
@@ -1151,7 +1313,10 @@ impl Typecheckable for nodes::ExpressionBinaryNode {
     }
 }
 impl Typecheckable for nodes::ExpressionCallNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         let Some(function) = checker.known_functions.get(&self.function_name) else {
             return Err(format!(
                 "{}: {:?}: Call to unknown function `{}`.",
@@ -1186,7 +1351,7 @@ impl Typecheckable for nodes::ExpressionCallNode {
                     function.location
                 ));
             }
-            std::cmp::Ordering::Equal => ()
+            std::cmp::Ordering::Equal => (),
         }
         let params = function.parameters.clone();
         for (arg, param) in self.arguments.iter_mut().zip(params) {
@@ -1213,12 +1378,22 @@ impl Typecheckable for nodes::ExpressionCallNode {
         self.typ = return_type;
         Ok(self.typ.clone())
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl Typecheckable for nodes::ExpressionConstructorNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         debug_assert!(!checker.current_function.is_empty());
         if !checker.known_classes.contains_key(&self.class_name) {
             return Err(format!(
@@ -1227,7 +1402,7 @@ impl Typecheckable for nodes::ExpressionConstructorNode {
                 self.location,
                 self.class_name,
                 NOTE_STR
-            ))
+            ));
         }
         let Some(class) = checker.known_classes.get(&self.class_name) else { unreachable!() };
         if !class.has_constructor {
@@ -1270,7 +1445,7 @@ impl Typecheckable for nodes::ExpressionConstructorNode {
                     constructor .location
                 ));
             }
-            std::cmp::Ordering::Equal => ()
+            std::cmp::Ordering::Equal => (),
         }
         let params = constructor.parameters.clone();
         for (arg, param) in self.arguments.iter_mut().zip(params) {
@@ -1297,46 +1472,61 @@ impl Typecheckable for nodes::ExpressionConstructorNode {
         self.typ = class_type;
         Ok(Type::Class(self.class_name.clone()))
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl Typecheckable for nodes::ExpressionFieldAccessNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         debug_assert!(!checker.current_function.is_empty());
         match checker.get_variable(&self.name) {
             Some(var) => {
                 if !var.is_class_instance() {
                     return Err(format!(
                         "{}: {:?}: Variable `{}` is not a class instance, it has no fields.",
-                        ERR_STR,
-                        self.location,
-                        self.name
+                        ERR_STR, self.location, self.name
                     ));
                 }
                 let typ = self.type_check_field(checker, var.clone())?;
                 self.typ = var.typ;
                 Ok(typ)
             }
-            None => {
-                Err(format!(
-                    "{}: {:?}: Undeclared variable `{}`.",
-                    ERR_STR,
-                    self.location,
-                    self.name
-                ))
-            }
+            None => Err(format!(
+                "{}: {:?}: Undeclared variable `{}`.",
+                ERR_STR, self.location, self.name
+            )),
         }
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl nodes::ExpressionFieldAccessNode {
-    fn type_check_field(&mut self, checker: &mut TypeChecker, var: Variable) -> Result<Type, String> {
+    fn type_check_field(
+        &mut self,
+        checker: &mut TypeChecker,
+        var: Variable,
+    ) -> Result<Type, String> {
         match &mut (*self.field.expression) {
             nodes::Expression::FieldAccess(field_access) => {
-                /* 
+                /*
                 get type of current variable
                 get fields of current variable, if its class (if not, error)
                 check if field_access.name is field (if not, error)
@@ -1364,7 +1554,7 @@ impl nodes::ExpressionFieldAccessNode {
                         let var = Variable {
                             name: field_access.name.clone(),
                             location: field.0,
-                            typ: field.1
+                            typ: field.1,
                         };
                         let typ = field_access.type_check_field(checker, var.clone())?;
                         // FIXME: var.typ does not sound logical here, but it works for now
@@ -1373,9 +1563,9 @@ impl nodes::ExpressionFieldAccessNode {
                         Ok(typ)
                     }
                     // NOTE: I think this might also be unreachable
-                    _ => todo!() // FIXME: Not a class, doesnt have fields
+                    _ => todo!(), // FIXME: Not a class, doesnt have fields
                 }
-            },
+            }
             nodes::Expression::Name(name_node) => {
                 let class_name = var.get_class_name();
                 match checker.known_classes.get(&class_name) {
@@ -1399,7 +1589,7 @@ impl nodes::ExpressionFieldAccessNode {
                     },
                     None => todo!()
                 }
-            },
+            }
             nodes::Expression::FunctionCall(function_node) => {
                 let class_name = var.get_class_name();
                 let Some(class) = checker.known_classes.get(&class_name) else { todo!() };
@@ -1432,7 +1622,7 @@ impl nodes::ExpressionFieldAccessNode {
                             method.location
                         ));
                     }
-                    std::cmp::Ordering::Equal => ()
+                    std::cmp::Ordering::Equal => (),
                 }
                 let params = method.parameters.clone();
                 for (arg, param) in function_node.arguments.iter_mut().zip(params) {
@@ -1461,34 +1651,52 @@ impl nodes::ExpressionFieldAccessNode {
                 self.typ = return_type.clone();
                 Ok(return_type)
             }
-            e => todo!("{:#?}", e)
+            e => todo!("{:#?}", e),
         }
     }
 }
 impl Typecheckable for nodes::NameNode {
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         match checker.get_variable(&self.name) {
             Some(var) => {
                 self.typ = var.typ.clone();
                 Ok(var.typ)
-            },
+            }
             None => Err(format!(
                 "{}: {:?}: Undeclared variable `{}`.",
-                ERR_STR,
-                self.location,
-                self.name
-            ))
+                ERR_STR, self.location, self.name
+            )),
         }
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 impl Typecheckable for nodes::ExpressionBuiltInNode {
-    fn type_check(&mut self, _checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
+    fn type_check(&mut self, _checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String> where Self: Sized {
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }

@@ -1,11 +1,10 @@
-
 use std::time::Instant;
 
-use crate::frontend::parser::Parser;
-use crate::frontend::flags::{FlagParser, Flag, DEBUG_KEY, RUN_KEY, INPUT_KEY};
-use crate::middleend::checker::TypeChecker;
-use crate::backend::codegen::Codegen;
 use crate::backend::assembler::Assembler;
+use crate::backend::codegen::Codegen;
+use crate::frontend::flags::{Flag, FlagParser, DEBUG_KEY, INPUT_KEY, RUN_KEY};
+use crate::frontend::parser::Parser;
+use crate::middleend::checker::TypeChecker;
 
 pub const ERR_STR: &str = "\x1b[91merror\x1b[0m";
 pub const WARN_STR: &str = "\x1b[93mwarning\x1b[0m";
@@ -20,7 +19,7 @@ pub struct Compiler {
     codegen: Codegen,
     assembler: Assembler,
     print_debug: bool,
-    run: bool
+    run: bool,
 }
 
 impl Compiler {
@@ -31,7 +30,7 @@ impl Compiler {
             codegen: Codegen::new().debug(print_debug),
             assembler: Assembler::new().debug(print_debug).filepath(path),
             print_debug,
-            run
+            run,
         })
     }
 
@@ -53,7 +52,7 @@ impl Compiler {
         if self.print_debug {
             println!("Codegen took {:?}", now.elapsed());
         }
-        
+
         let now = Instant::now();
         self.assembler.generate_x86_64(ir)?;
         if self.print_debug {
@@ -69,7 +68,6 @@ impl Compiler {
         Ok(())
     }
 }
-
 
 fn compile() -> Result<(), String> {
     let now = Instant::now();

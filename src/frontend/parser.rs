@@ -1,11 +1,11 @@
 use std::collections::VecDeque;
-use std::fmt::{Display, Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::fs;
 use std::path::PathBuf;
 
+use super::nodes;
 use crate::compiler::{ERR_STR, WARN_STR};
 use crate::middleend::checker::Type;
-use super::nodes;
 
 // We always store the N-1 next tokens for lookahead purposes, even if we only use 1 right now
 const LOOKAHEAD_LIMIT: usize = 3;
@@ -57,11 +57,7 @@ pub const COMPARATOR_TYPES: [TokenType; 6] = [
     TokenType::CmpLt,
     TokenType::CmpLte,
 ];
-pub const BUILT_IN_FUNCTIONS: [&str; 3] = [
-    "EXIT",
-    "MALLOC",
-    "SIZEOF"
-];
+pub const BUILT_IN_FUNCTIONS: [&str; 3] = ["EXIT", "MALLOC", "SIZEOF"];
 
 #[derive(Clone, PartialEq, Eq, Default)]
 pub struct Location {
@@ -90,7 +86,7 @@ impl Debug for Location {
 pub struct Token {
     location: Location,
     value: String,
-    token_type: TokenType
+    token_type: TokenType,
 }
 
 impl Token {
@@ -98,14 +94,19 @@ impl Token {
         Self {
             location: Location::anonymous(),
             value: String::new(),
-            token_type: TokenType::Eof
+            token_type: TokenType::Eof,
         }
     }
-    fn location(self, location: Location) -> Self { Self { location, ..self } }
-    fn value(self, value: String) -> Self { Self { value, ..self } }
-    fn token_type(self, token_type: TokenType) -> Self { Self { token_type, ..self } }
+    fn location(self, location: Location) -> Self {
+        Self { location, ..self }
+    }
+    fn value(self, value: String) -> Self {
+        Self { value, ..self }
+    }
+    fn token_type(self, token_type: TokenType) -> Self {
+        Self { token_type, ..self }
+    }
 }
-
 
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub enum Operation {
@@ -118,7 +119,7 @@ pub enum Operation {
     Lt,
     Lte,
     Gt,
-    Gte
+    Gte,
 }
 
 const COMPARISONS: [Operation; 6] = [
@@ -127,7 +128,7 @@ const COMPARISONS: [Operation; 6] = [
     Operation::Lt,
     Operation::Lte,
     Operation::Gt,
-    Operation::Gte
+    Operation::Gte,
 ];
 
 impl Display for Operation {
@@ -162,7 +163,7 @@ impl Operation {
             "<=" => Self::Lte,
             ">" => Self::Gt,
             ">=" => Self::Gte,
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 }
@@ -201,11 +202,7 @@ impl Parser {
                 };
                 Ok(p)
             }
-            Err(e) => {
-                Err(format!(
-                    "{}: Parsing file failed because: {}", ERR_STR, e,
-                ))
-            }
+            Err(e) => Err(format!("{}: Parsing file failed because: {}", ERR_STR, e,)),
         }
     }
 
@@ -259,26 +256,24 @@ impl Parser {
 
     fn next_token(&mut self) -> Result<Token, String> {
         macro_rules! fill_buffer {
-            ($start: expr, $cond: expr, $stepback: expr) => {
-                {
-                    let mut value = String::from($start);
-                    loop {
-                        let nc = self.next_char();
-                        if $cond(nc) {
-                            if $stepback {
-                                self.current_char -= 1;
-                            } else {
-                                value.push(nc);
-                            }
-                            break value;
+            ($start: expr, $cond: expr, $stepback: expr) => {{
+                let mut value = String::from($start);
+                loop {
+                    let nc = self.next_char();
+                    if $cond(nc) {
+                        if $stepback {
+                            self.current_char -= 1;
+                        } else {
+                            value.push(nc);
                         }
-                        value.push(nc);
+                        break value;
                     }
+                    value.push(nc);
                 }
-            };
+            }};
             ($start: expr, $cond: expr) => {
                 fill_buffer!($start, $cond, true)
-            }
+            };
         }
         debug_assert_eq!(
             TokenType::Eof as u8 + 1,
@@ -290,15 +285,13 @@ impl Parser {
         let loc = self.get_location();
         let (typ, value) = match c {
             '0'..='9' => {
-                let value = fill_buffer!(c, 
-                    |c: char| { !c.is_alphanumeric() || c == '\0' }
-                );
+                let value = fill_buffer!(c, |c: char| { !c.is_alphanumeric() || c == '\0' });
                 (TokenType::IntLiteral, value)
             }
             'A'..='Z' | 'a'..='z' => {
-                let value = fill_buffer!(c,
-                    |c: char| { (!c.is_alphanumeric() && c != '_') || c == '\0' }
-                );
+                let value = fill_buffer!(c, |c: char| {
+                    (!c.is_alphanumeric() && c != '_') || c == '\0'
+                });
                 let typ = match value.as_str() {
                     "class" => TokenType::ClassKeyword,
                     "func" => TokenType::FunctionKeyword,
@@ -313,100 +306,79 @@ impl Parser {
                 (typ, value)
             }
             '\"' => {
-                let value = fill_buffer!(c,
-                    |c: char| { c == '"' || c == '\0' },
-                    false
-                );
+                let value = fill_buffer!(c, |c: char| { c == '"' || c == '\0' }, false);
                 if value.contains('\\') {
-                    println!("{}: {:?}: Escape sequences in Strings are not supported yet.", WARN_STR, loc);
+                    println!(
+                        "{}: {:?}: Escape sequences in Strings are not supported yet.",
+                        WARN_STR, loc
+                    );
                 }
                 if value.chars().filter(|c| *c == '"').count() != 2 {
                     return Err(format!(
                         "{}: {:?}: Unterminated String Literal.",
-                        ERR_STR,
-                        loc
+                        ERR_STR, loc
                     ));
                 }
                 (TokenType::StrLiteral, value)
             }
             '\'' => {
-                let value = fill_buffer!(c,
-                    |c: char| { c == '\'' || c == '\0' },
-                    false
-                );
+                let value = fill_buffer!(c, |c: char| { c == '\'' || c == '\0' }, false);
                 if value.contains('\\') {
-                    println!("{}: {:?}: Escape sequences in Char Literals are not supported yet.", WARN_STR, loc);
+                    println!(
+                        "{}: {:?}: Escape sequences in Char Literals are not supported yet.",
+                        WARN_STR, loc
+                    );
                 }
                 if value.len() != 3 {
-                    return Err(format!("{}: {:?}: Char Literal is expected to be a single char, found {}.",
-                        ERR_STR,
-                        loc,
-                        value,
-                    ))
+                    return Err(format!(
+                        "{}: {:?}: Char Literal is expected to be a single char, found {}.",
+                        ERR_STR, loc, value,
+                    ));
                 }
                 (TokenType::CharLiteral, value)
             }
-            '!' => {
-                match self.next_char() {
-                    '=' => (TokenType::CmpNeq, String::from("!=")),
-                    _ => return Err(format!(
-                        "{}: {:?}: Unexpected Symbol `{}`",
-                        ERR_STR,
-                        loc,
-                        c
-                    ))
+            '!' => match self.next_char() {
+                '=' => (TokenType::CmpNeq, String::from("!=")),
+                _ => return Err(format!("{}: {:?}: Unexpected Symbol `{}`", ERR_STR, loc, c)),
+            },
+            '=' => match self.next_char() {
+                '=' => (TokenType::CmpEq, String::from("==")),
+                _ => {
+                    self.current_char -= 1;
+                    (TokenType::Equal, String::from(c))
                 }
-            }
-            '=' => {
-                match self.next_char() {
-                    '=' => (TokenType::CmpEq, String::from("==")),
-                    _ => {
-                        self.current_char -= 1;
-                        (TokenType::Equal, String::from(c))
-                    }
+            },
+            '<' => match self.next_char() {
+                '=' => (TokenType::CmpLte, String::from("<=")),
+                _ => {
+                    self.current_char -= 1;
+                    (TokenType::CmpLt, String::from(c))
                 }
-            }
-            '<' => {
-                match self.next_char() {
-                    '=' => (TokenType::CmpLte, String::from("<=")),
-                    _ => {
-                        self.current_char -= 1;
-                        (TokenType::CmpLt, String::from(c))
-                    }
+            },
+            '>' => match self.next_char() {
+                '=' => (TokenType::CmpGte, String::from(">=")),
+                _ => {
+                    self.current_char -= 1;
+                    (TokenType::CmpGt, String::from(c))
                 }
-            }
-            '>' => {
-                match self.next_char() {
-                    '=' => (TokenType::CmpGte, String::from(">=")),
-                    _ => {
-                        self.current_char -= 1;
-                        (TokenType::CmpGt, String::from(c))
-                    }
+            },
+            '-' => match self.next_char() {
+                '>' => (TokenType::Arrow, String::from("->")),
+                _ => {
+                    self.current_char -= 1;
+                    (TokenType::Minus, String::from("-"))
                 }
-            }
-            '-' => {
-                match self.next_char() {
-                    '>' => (TokenType::Arrow, String::from("->")),
-                    _ => {
-                        self.current_char -= 1;
-                        (TokenType::Minus, String::from("-"))
-                    }
+            },
+            '/' => match self.next_char() {
+                '/' => {
+                    let _ = fill_buffer!(c, |c: char| { c == '\r' || c == '\n' || c == '\0' });
+                    return self.next_token();
                 }
-            }
-            '/' => {
-                match self.next_char() {
-                    '/' => {
-                        let _ = fill_buffer!(c, 
-                            |c: char| { c == '\r' || c == '\n' || c == '\0' }
-                        );
-                        return self.next_token();
-                    }
-                    _ => {
-                        self.current_char -= 1;
-                        (TokenType::ForwardSlash, String::from("/"))
-                    }
+                _ => {
+                    self.current_char -= 1;
+                    (TokenType::ForwardSlash, String::from("/"))
                 }
-            }
+            },
             '(' => (TokenType::OpenRound, String::from(c)),
             ')' => (TokenType::ClosingRound, String::from(c)),
             '{' => (TokenType::OpenCurly, String::from(c)),
@@ -419,22 +391,25 @@ impl Parser {
             '.' => (TokenType::Dot, String::from(c)),
             '+' => (TokenType::Plus, String::from(c)),
             '*' => (TokenType::Asterisk, String::from(c)),
-            '\0'=> (TokenType::Eof, String::new()),
-            e => return Err(format!(
-                "{}: {:?}: Unexpected Symbol `{}`",
-                ERR_STR,
-                self.get_location(),
-                e
-            )),
+            '\0' => (TokenType::Eof, String::new()),
+            e => {
+                return Err(format!(
+                    "{}: {:?}: Unexpected Symbol `{}`",
+                    ERR_STR,
+                    self.get_location(),
+                    e
+                ))
+            }
         };
-        Ok(Token::new()
-            .location(loc)
-            .token_type(typ)
-            .value(value))
+        Ok(Token::new().location(loc).token_type(typ).value(value))
     }
 
     fn get_location(&self) -> Location {
-        Location::new(self.filename.clone(), self.current_line, self.current_char - self.line_start)
+        Location::new(
+            self.filename.clone(),
+            self.current_line,
+            self.current_char - self.line_start,
+        )
     }
 
     fn current_location(&self) -> Location {
@@ -472,7 +447,7 @@ impl Parser {
             // Reserved for future use
             "f32" => Type::F32,
             "f64" => Type::F64,
-            _ => Type::Class(val)
+            _ => Type::Class(val),
         }
     }
     fn parse_type_literal(&self, lit_tkn: Token) -> Result<(String, Type), String> {
@@ -487,7 +462,6 @@ impl Parser {
             None => Ok((lit, Type::Unknown)),
         }
     }
-
 
     fn parsed_eof(&self) -> bool {
         self.lookahead[0].token_type == TokenType::Eof
@@ -526,10 +500,7 @@ impl Parser {
         if n.token_type != token_type {
             Err(format!(
                 "{}: {:?}: Expected {:?}, found {:?}",
-                ERR_STR,
-                n.location,
-                token_type,
-                n.token_type
+                ERR_STR, n.location, token_type, n.token_type
             ))
         } else {
             Ok(n)
@@ -539,7 +510,9 @@ impl Parser {
 }
 
 pub trait Parsable {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized;
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized;
 }
 
 impl Parsable for nodes::FileNode {
@@ -552,36 +525,43 @@ impl Parsable for nodes::FileNode {
                 TokenType::ClassKeyword => {
                     let parsed_class = nodes::ClassNode::parse(parser)?;
                     classes.push(parsed_class);
-                },
+                }
                 TokenType::FunctionKeyword => {
                     let parsed_function = nodes::FunctionNode::parse(parser)?;
                     functions.push(parsed_function);
-                },
+                }
                 _ => {
                     let tkn = parser.next()?;
                     return Err(format!(
                         "{}: {:?}: Expected one of {{Function, Class}}, found {:?}",
-                        ERR_STR,
-                        tkn.location,
-                        tkn.token_type
+                        ERR_STR, tkn.location, tkn.token_type
                     ));
                 }
             }
         }
         Ok(nodes::FileNode {
             location,
-            filepath: parser.filepath.file_stem().unwrap().to_str().unwrap().to_string(),
+            filepath: parser
+                .filepath
+                .file_stem()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string(),
             functions,
-            classes
+            classes,
         })
     }
 }
 
 impl Parsable for nodes::ClassNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         let location = parser.current_location();
         parser.expect(TokenType::ClassKeyword)?;
-        
+
         let class_name = parser.expect(TokenType::Identifier)?;
         let name = class_name.value;
         parser.current_class = name.clone();
@@ -607,7 +587,7 @@ impl Parsable for nodes::ClassNode {
                     let parsed_function = nodes::MethodNode::parse(parser)?;
                     methods.push(parsed_function);
                 }
-                e => todo!("{:?}", e)
+                e => todo!("{:?}", e),
             }
         }
         parser.expect(TokenType::ClosingCurly)?;
@@ -618,13 +598,16 @@ impl Parsable for nodes::ClassNode {
             fields,
             methods,
             features,
-            has_constructor
+            has_constructor,
         })
     }
 }
 
 impl Parsable for nodes::FieldNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         let location = parser.current_location();
         let name_token = parser.expect(TokenType::Identifier)?;
         let name = name_token.value;
@@ -634,33 +617,38 @@ impl Parsable for nodes::FieldNode {
         Ok(nodes::FieldNode {
             location,
             name,
-            type_def
+            type_def,
         })
     }
 }
 
 impl Parsable for nodes::FieldAccess {
-    fn parse(_parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(_parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 
 impl Parsable for nodes::FeatureNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         debug_assert!(!parser.current_class.is_empty());
         let location = parser.current_location();
-        
+
         parser.expect(TokenType::FeatureKeyword)?;
         let feature_name = parser.expect(TokenType::Identifier)?;
         let name = feature_name.value;
         if name.as_bytes()[0].is_ascii_uppercase() {
             return Err(format!(
                 "{}: {:?}: Feature names are not allowed to be capitalized.",
-                ERR_STR,
-                feature_name.location
-            ))
+                ERR_STR, feature_name.location
+            ));
         }
-        
+
         let mut parameters = vec![];
         parser.expect(TokenType::OpenRound)?;
         while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
@@ -671,7 +659,7 @@ impl Parsable for nodes::FeatureNode {
             }
         }
         parser.expect(TokenType::ClosingRound)?;
-        
+
         let return_type = nodes::ReturnTypeNode::parse(parser)?;
 
         let block = nodes::BlockNode::parse(parser)?;
@@ -689,20 +677,22 @@ impl Parsable for nodes::FeatureNode {
 }
 
 impl Parsable for nodes::FunctionNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         let location = parser.current_location();
-        
+
         parser.expect(TokenType::FunctionKeyword)?;
         let function_name = parser.expect(TokenType::Identifier)?;
         let name = function_name.value;
         if name.as_bytes()[0].is_ascii_uppercase() {
             return Err(format!(
                 "{}: {:?}: Function names are not allowed to be capitalized.",
-                ERR_STR,
-                function_name.location
-            ))
+                ERR_STR, function_name.location
+            ));
         }
-        
+
         let mut parameters = vec![];
         parser.expect(TokenType::OpenRound)?;
         while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
@@ -713,7 +703,7 @@ impl Parsable for nodes::FunctionNode {
             }
         }
         parser.expect(TokenType::ClosingRound)?;
-        
+
         let return_type = nodes::ReturnTypeNode::parse(parser)?;
 
         let block = nodes::BlockNode::parse(parser)?;
@@ -729,21 +719,23 @@ impl Parsable for nodes::FunctionNode {
 }
 
 impl Parsable for nodes::MethodNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         debug_assert!(!parser.current_class.is_empty());
         let location = parser.current_location();
-        
+
         parser.expect(TokenType::FunctionKeyword)?;
         let method_name = parser.expect(TokenType::Identifier)?;
         let name = method_name.value;
         if name.as_bytes()[0].is_ascii_uppercase() {
             return Err(format!(
                 "{}: {:?}: Method names are not allowed to be capitalized.",
-                ERR_STR,
-                method_name.location
-            ))
+                ERR_STR, method_name.location
+            ));
         }
-        
+
         let mut parameters = vec![];
         parser.expect(TokenType::OpenRound)?;
         while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
@@ -754,7 +746,7 @@ impl Parsable for nodes::MethodNode {
             }
         }
         parser.expect(TokenType::ClosingRound)?;
-        
+
         let return_type = nodes::ReturnTypeNode::parse(parser)?;
 
         let block = nodes::BlockNode::parse(parser)?;
@@ -771,7 +763,10 @@ impl Parsable for nodes::MethodNode {
 }
 
 impl Parsable for nodes::ReturnTypeNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         let location = parser.current_location();
         let typ = if parser.eat(TokenType::Arrow)? {
             let name_token = parser.expect(TokenType::Identifier)?;
@@ -791,15 +786,15 @@ impl Parsable for nodes::ReturnTypeNode {
         } else {
             Type::None
         };
-        Ok(nodes::ReturnTypeNode {
-            location,
-            typ
-        })
+        Ok(nodes::ReturnTypeNode { location, typ })
     }
 }
 
 impl Parsable for nodes::ParameterNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         let location = parser.current_location();
         let name_token = parser.expect(TokenType::Identifier)?;
         let name = name_token.value;
@@ -807,13 +802,16 @@ impl Parsable for nodes::ParameterNode {
         Ok(nodes::ParameterNode {
             location,
             name,
-            typ
+            typ,
         })
     }
 }
 
 impl Parsable for nodes::BlockNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         let location = parser.current_location();
 
         parser.expect(TokenType::OpenCurly)?;
@@ -825,29 +823,30 @@ impl Parsable for nodes::BlockNode {
         parser.expect(TokenType::ClosingCurly)?;
         Ok(nodes::BlockNode {
             location,
-            statements
+            statements,
         })
     }
 }
 
 impl Parsable for nodes::Statement {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         Ok(match parser.nth(0) {
-            TokenType::LetKeyword =>
-                nodes::Statement::Let(nodes::LetNode::parse(parser)?),
-            TokenType::IfKeyword =>
-                nodes::Statement::If(nodes::IfNode::parse(parser)?),
-            TokenType::ReturnKeyword =>
-                nodes::Statement::Return(nodes::ReturnNode::parse(parser)?),
+            TokenType::LetKeyword => nodes::Statement::Let(nodes::LetNode::parse(parser)?),
+            TokenType::IfKeyword => nodes::Statement::If(nodes::IfNode::parse(parser)?),
+            TokenType::ReturnKeyword => nodes::Statement::Return(nodes::ReturnNode::parse(parser)?),
             TokenType::Identifier => match parser.nth(1) {
-                TokenType::Dot | TokenType::Equal | TokenType::OpenSquare =>
-                    nodes::Statement::Assign(nodes::AssignNode::parse(parser)?),
+                TokenType::Dot | TokenType::Equal | TokenType::OpenSquare => {
+                    nodes::Statement::Assign(nodes::AssignNode::parse(parser)?)
+                }
                 _ => {
                     let expr = nodes::Statement::Expression(nodes::ExpressionNode::parse(parser)?);
                     parser.expect(TokenType::Semi)?;
                     expr
                 }
-            }
+            },
             _ => {
                 let expr = nodes::Statement::Expression(nodes::ExpressionNode::parse(parser)?);
                 parser.expect(TokenType::Semi)?;
@@ -858,18 +857,24 @@ impl Parsable for nodes::Statement {
 }
 
 impl Parsable for nodes::ExpressionNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         let location = parser.current_location();
         let expression = nodes::Expression::parse(parser)?;
         Ok(nodes::ExpressionNode {
             location,
-            expression
+            expression,
         })
     }
 }
 
 impl Parsable for nodes::LetNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         let location = parser.current_location();
         parser.expect(TokenType::LetKeyword)?;
         let name_token = parser.expect(TokenType::Identifier)?;
@@ -884,13 +889,16 @@ impl Parsable for nodes::LetNode {
             location,
             name,
             typ,
-            expression
+            expression,
         })
     }
 }
 
 impl Parsable for nodes::AssignNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         let location = parser.current_location();
         let name = nodes::ExpressionIdentifierNode::parse(parser)?;
         parser.expect(TokenType::Equal)?;
@@ -899,38 +907,46 @@ impl Parsable for nodes::AssignNode {
         Ok(nodes::AssignNode {
             location,
             name,
-            expression
+            expression,
         })
     }
 }
 
 impl Parsable for nodes::ExpressionIdentifierNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         let location = parser.current_location();
         let expression = match parser.nth(1) {
             TokenType::OpenRound => {
                 if parser.peek(0).value.as_bytes()[0].is_ascii_uppercase() {
-                    nodes::Expression::ConstructorCall(nodes::ExpressionConstructorNode::parse(parser)?)
+                    nodes::Expression::ConstructorCall(nodes::ExpressionConstructorNode::parse(
+                        parser,
+                    )?)
                 } else {
                     nodes::Expression::FunctionCall(nodes::ExpressionCallNode::parse(parser)?)
                 }
             }
-            TokenType::OpenSquare =>
-                todo!(),
-            TokenType::Dot =>
-                nodes::Expression::FieldAccess(nodes::ExpressionFieldAccessNode::parse(parser)?),
-            _ => nodes::Expression::Name(nodes::NameNode::parse(parser)?)
+            TokenType::OpenSquare => todo!(),
+            TokenType::Dot => {
+                nodes::Expression::FieldAccess(nodes::ExpressionFieldAccessNode::parse(parser)?)
+            }
+            _ => nodes::Expression::Name(nodes::NameNode::parse(parser)?),
         };
         Ok(nodes::ExpressionIdentifierNode {
             location,
             expression: Box::new(expression),
-            typ: Type::Unknown
+            typ: Type::Unknown,
         })
     }
 }
 
 impl Parsable for nodes::IfNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         let location = parser.current_location();
         parser.expect(TokenType::IfKeyword)?;
         parser.expect(TokenType::OpenRound)?;
@@ -946,13 +962,16 @@ impl Parsable for nodes::IfNode {
             location,
             condition,
             if_branch,
-            else_branch
+            else_branch,
         })
     }
 }
 
 impl Parsable for nodes::ReturnNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         let location = parser.current_location();
         parser.expect(TokenType::ReturnKeyword)?;
         let return_value = if !parser.at(TokenType::Semi) {
@@ -964,13 +983,16 @@ impl Parsable for nodes::ReturnNode {
         Ok(nodes::ReturnNode {
             location,
             return_value,
-            typ: Type::Unknown
+            typ: Type::Unknown,
         })
     }
 }
 
 impl Parsable for nodes::TypeNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         parser.expect(TokenType::Colon)?;
         let location = parser.current_location();
         let name_token = parser.expect(TokenType::Identifier)?;
@@ -987,15 +1009,16 @@ impl Parsable for nodes::TypeNode {
                         ERR_STR,
                         loc,
                         typ
-                    ))
+                    ));
                 }
                 let value = match value.parse() {
                     Ok(v) => v,
-                    Err(e) => return Err(format!(
-                        "{}: {:?}: Error when parsing number as Usize: {e}",
-                        ERR_STR,
-                        loc
-                    ))
+                    Err(e) => {
+                        return Err(format!(
+                            "{}: {:?}: Error when parsing number as Usize: {e}",
+                            ERR_STR, loc
+                        ))
+                    }
                 };
                 dimensions.push(value);
                 if !parser.eat(TokenType::Comma)? {
@@ -1014,26 +1037,29 @@ impl Parsable for nodes::TypeNode {
         } else {
             typ
         };
-        Ok(nodes::TypeNode {
-            location,
-            typ
-        })
+        Ok(nodes::TypeNode { location, typ })
     }
 }
 
 impl Parsable for nodes::ArgumentNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         let location = parser.current_location();
         let expression = nodes::ExpressionNode::parse(parser)?;
         Ok(nodes::ArgumentNode {
             location,
-            expression
+            expression,
         })
     }
 }
 
 impl Parsable for nodes::Expression {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         Self::parse_rec(parser, TokenType::Eof)
     }
 }
@@ -1062,7 +1088,7 @@ impl nodes::Expression {
             TokenType::BuiltInFunction => {
                 let expression = nodes::ExpressionBuiltInNode::parse(parser)?;
                 Self::BuiltIn(expression)
-            }            
+            }
             e => {
                 return Err(format!(
                     "{}: {:?}: Expected Expr, found {:?}",
@@ -1082,24 +1108,22 @@ impl nodes::Expression {
                 let rhs = Self::parse_rec(parser, right)?;
                 let operation = Operation::from(token.value);
                 lhs = if COMPARISONS.contains(&operation) {
-                    nodes::Expression::Comparison(
-                        nodes::ExpressionComparisonNode {
-                            location: token.location,
-                            operation,
-                            lhs: Box::new(lhs),
-                            rhs: Box::new(rhs),
-                            typ: Type::Bool
-                        })
+                    nodes::Expression::Comparison(nodes::ExpressionComparisonNode {
+                        location: token.location,
+                        operation,
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                        typ: Type::Bool,
+                    })
                 } else {
-                    nodes::Expression::Binary(
-                        nodes::ExpressionBinaryNode {
-                            location: token.location,
-                            operation,
-                            lhs: Box::new(lhs),
-                            rhs: Box::new(rhs),
-                            typ: Type::Unknown
-                        })
-                    }
+                    nodes::Expression::Binary(nodes::ExpressionBinaryNode {
+                        location: token.location,
+                        operation,
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                        typ: Type::Unknown,
+                    })
+                }
             } else {
                 break;
             }
@@ -1129,13 +1153,19 @@ impl nodes::Expression {
 }
 
 impl Parsable for nodes::ExpressionBinaryNode {
-    fn parse(_parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(_parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         todo!()
     }
 }
 
 impl Parsable for nodes::ExpressionBuiltInNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         let location = parser.current_location();
         let name_token = parser.expect(TokenType::BuiltInFunction)?;
         let function_name = name_token.value;
@@ -1154,13 +1184,16 @@ impl Parsable for nodes::ExpressionBuiltInNode {
             location,
             function_name,
             arguments,
-            typ: Type::Unknown
+            typ: Type::Unknown,
         })
     }
 }
 
 impl Parsable for nodes::ExpressionArrayLiteralNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         let location = parser.current_location();
         let mut elements = vec![];
         parser.expect(TokenType::OpenSquare)?;
@@ -1172,28 +1205,31 @@ impl Parsable for nodes::ExpressionArrayLiteralNode {
             }
         }
         parser.expect(TokenType::ClosingSquare)?;
-        Ok(nodes::ExpressionArrayLiteralNode {
-            location,
-            elements
-        })
+        Ok(nodes::ExpressionArrayLiteralNode { location, elements })
     }
 }
 
 impl Parsable for nodes::ExpressionLiteralNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         let location = parser.current_location();
         let number_token = parser.expect(TokenType::IntLiteral)?;
         let (value, typ) = parser.parse_type_literal(number_token)?;
         Ok(nodes::ExpressionLiteralNode {
             location,
             value,
-            typ
+            typ,
         })
     }
 }
 
 impl Parsable for nodes::ExpressionConstructorNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         let location = parser.current_location();
         let name_token = parser.expect(TokenType::Identifier)?;
         let class_name = name_token.value;
@@ -1213,13 +1249,16 @@ impl Parsable for nodes::ExpressionConstructorNode {
             class_name,
             location,
             arguments,
-            typ: Type::Unknown
+            typ: Type::Unknown,
         })
     }
 }
 
 impl Parsable for nodes::ExpressionCallNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         let location = parser.current_location();
         let name_token = parser.expect(TokenType::Identifier)?;
         let function_name = name_token.value;
@@ -1238,13 +1277,16 @@ impl Parsable for nodes::ExpressionCallNode {
             function_name,
             location,
             arguments,
-            typ: Type::Unknown
+            typ: Type::Unknown,
         })
     }
 }
 
 impl Parsable for nodes::ExpressionFieldAccessNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         let location = parser.current_location();
         let name_token = parser.expect(TokenType::Identifier)?;
         let name = name_token.value;
@@ -1254,21 +1296,24 @@ impl Parsable for nodes::ExpressionFieldAccessNode {
             location,
             name,
             field,
-            typ: Type::Unknown
+            typ: Type::Unknown,
         })
     }
 }
 
 impl Parsable for nodes::NameNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String> where Self: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
         let location = parser.current_location();
         let name_token = parser.expect(TokenType::Identifier)?;
-        
+
         let name = name_token.value;
         Ok(nodes::NameNode {
             location,
             name,
-            typ: Type::Unknown
+            typ: Type::Unknown,
         })
     }
 }

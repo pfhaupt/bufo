@@ -1,10 +1,9 @@
-
 use std::collections::HashMap;
 
+use super::instr;
 use crate::frontend::nodes;
 use crate::frontend::parser::Operation;
 use crate::middleend::checker::Type;
-use super::instr;
 
 const LBL_STR: &str = "lbl_";
 
@@ -18,12 +17,13 @@ impl ClassInfo {
     fn new() -> Self {
         Self {
             total_size: 0,
-            field_offsets: HashMap::new()
+            field_offsets: HashMap::new(),
         }
     }
     fn add_field(&mut self, field_name: &String, size: usize) {
         debug_assert!(!self.field_offsets.contains_key(field_name));
-        self.field_offsets.insert(field_name.clone(), self.total_size);
+        self.field_offsets
+            .insert(field_name.clone(), self.total_size);
         self.total_size += size;
     }
 
@@ -40,13 +40,14 @@ struct SizeManager {
 impl SizeManager {
     fn new() -> Self {
         Self {
-            class_sizes: HashMap::new()
+            class_sizes: HashMap::new(),
         }
     }
 
     fn add_class(&mut self, class_name: &String) {
         debug_assert!(!self.class_sizes.contains_key(class_name));
-        self.class_sizes.insert(class_name.clone(), ClassInfo::new());
+        self.class_sizes
+            .insert(class_name.clone(), ClassInfo::new());
     }
 
     fn add_field(&mut self, class_name: &String, field_name: &String, typ: &Type) {
@@ -79,7 +80,7 @@ pub struct Codegen {
     stack_scopes: Vec<HashMap<String, usize>>,
     field_stack: Vec<Type>,
     register_counter: usize,
-    print_debug: bool
+    print_debug: bool,
 }
 impl Codegen {
     pub fn new() -> Self {
@@ -93,8 +94,8 @@ impl Codegen {
             stack_scopes: Vec::new(),
             field_stack: Vec::new(),
             register_counter: 0,
-            print_debug: false
-         }
+            print_debug: false,
+        }
     }
 
     pub fn debug(self, print_debug: bool) -> Self {
@@ -142,8 +143,15 @@ impl Codegen {
         debug_assert!(!self.current_class.is_empty());
         self.sm.add_field(&self.current_class, name, typ);
         if self.print_debug {
-            println!("[DEBUG] Added new field `{}` to class `{}`", name, self.current_class);
-            println!("[DEBUG] Class `{}` has a size of {} bytes now.", self.current_class, self.sm.get_class_size(&self.current_class));
+            println!(
+                "[DEBUG] Added new field `{}` to class `{}`",
+                name, self.current_class
+            );
+            println!(
+                "[DEBUG] Class `{}` has a size of {} bytes now.",
+                self.current_class,
+                self.sm.get_class_size(&self.current_class)
+            );
         }
     }
 
@@ -188,7 +196,7 @@ impl Codegen {
             self.add_ir(instr::IR::PushReg { reg });
         }
     }
-    
+
     #[allow(unused)]
     fn pop_preserved_registers(&mut self) {
         for reg in instr::Register::PRESERVED.iter().rev() {
@@ -199,7 +207,7 @@ impl Codegen {
     fn push_registers(&mut self, reg_ctr: usize) {
         for index in 1..reg_ctr {
             self.add_ir(instr::IR::PushReg {
-                reg: instr::Register::from(index)
+                reg: instr::Register::from(index),
             });
         }
     }
@@ -207,7 +215,7 @@ impl Codegen {
     fn pop_registers(&mut self, reg_ctr: usize) {
         for index in (1..reg_ctr).rev() {
             self.add_ir(instr::IR::PopReg {
-                reg: instr::Register::from(index)
+                reg: instr::Register::from(index),
             });
         }
     }
@@ -218,7 +226,10 @@ impl Codegen {
 
     fn add_variable_offset(&mut self, name: &str, offset: usize) {
         debug_assert!(!self.stack_scopes.is_empty());
-        self.stack_scopes.last_mut().unwrap().insert(name.to_owned(), offset);
+        self.stack_scopes
+            .last_mut()
+            .unwrap()
+            .insert(name.to_owned(), offset);
     }
 
     fn update_stack_offset(&mut self, typ_size: usize) -> usize {
@@ -242,7 +253,10 @@ impl Codegen {
                 return *offset;
             }
         }
-        println!("Could not find {name} in {scopes:?}", scopes=self.stack_scopes);
+        println!(
+            "Could not find {name} in {scopes:?}",
+            scopes = self.stack_scopes
+        );
         panic!()
     }
 
@@ -252,7 +266,7 @@ impl Codegen {
         let reg = self.get_register()?;
         self.add_ir(instr::IR::Store {
             addr: instr::Operand::offset(offset),
-            value: instr::Operand::reg(reg, instr::RegMode::from(typ))
+            value: instr::Operand::reg(reg, instr::RegMode::from(typ)),
         });
         Ok(())
     }
@@ -335,14 +349,16 @@ impl Codegenable for nodes::FeatureNode {
             let alloc_size = instr::Operand::reg(instr::Register::ARG1, instr::RegMode::BIT64);
             codegen.add_ir(instr::IR::LoadImm {
                 dst: alloc_size,
-                imm: instr::Operand::imm_u64(codegen.sm.get_class_size(&self.class_name) as u64)
+                imm: instr::Operand::imm_u64(codegen.sm.get_class_size(&self.class_name) as u64),
             });
-            codegen.add_ir(instr::IR::Call { name: String::from("malloc") });
+            codegen.add_ir(instr::IR::Call {
+                name: String::from("malloc"),
+            });
             let offset = codegen.update_stack_offset(8);
             codegen.add_variable_offset(&String::from("this"), offset);
             codegen.add_ir(instr::IR::Store {
                 addr: instr::Operand::offset(offset),
-                value: instr::Operand::reg(instr::Register::RET, instr::RegMode::BIT64)
+                value: instr::Operand::reg(instr::Register::RET, instr::RegMode::BIT64),
             });
         }
 
@@ -357,7 +373,7 @@ impl Codegenable for nodes::FeatureNode {
             let offset = codegen.get_stack_offset(&String::from("this"));
             codegen.add_ir(instr::IR::Load {
                 dst: instr::Operand::reg(instr::Register::RET, instr::RegMode::BIT64),
-                addr: instr::Operand::offset(offset)
+                addr: instr::Operand::offset(offset),
             });
         }
 
@@ -451,7 +467,10 @@ impl Codegenable for nodes::MethodNode {
         // FIXME: This is unreliable once we add static methods and all that
         //        It'd be 100 times better and easier if the parser would just add the parameter directly
         //        instead of the implicit use in the Type Checker and Codegen.
-        codegen.store_variable_in_stack(&String::from("this"), &Type::Class(self.class_name.clone()))?;
+        codegen.store_variable_in_stack(
+            &String::from("this"),
+            &Type::Class(self.class_name.clone()),
+        )?;
 
         // Prepare parameters
         for param in &self.parameters {
@@ -507,7 +526,7 @@ impl Codegenable for nodes::Statement {
             Self::Expression(expr_node) => expr_node.codegen(codegen),
             Self::If(if_node) => if_node.codegen(codegen),
             Self::Let(let_node) => let_node.codegen(codegen),
-            Self::Return(ret_node) => ret_node.codegen(codegen)
+            Self::Return(ret_node) => ret_node.codegen(codegen),
         };
         codegen.reset_registers();
         reg
@@ -518,7 +537,8 @@ impl Codegenable for nodes::ExpressionNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         self.expression.codegen(codegen)
     }
-}impl Codegenable for nodes::LetNode {
+}
+impl Codegenable for nodes::LetNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let rhs = self.expression.codegen(codegen)?;
         debug_assert!(rhs != instr::Operand::none());
@@ -528,7 +548,7 @@ impl Codegenable for nodes::ExpressionNode {
 
         codegen.add_ir(instr::IR::Store {
             addr: instr::Operand::offset(offset),
-            value: rhs
+            value: rhs,
         });
 
         Ok(instr::Operand::none())
@@ -538,13 +558,13 @@ impl Codegenable for nodes::AssignNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let rhs = self.expression.codegen(codegen)?;
         debug_assert!(rhs != instr::Operand::none());
-        
+
         let lhs = self.name.codegen(codegen)?;
         debug_assert!(lhs != instr::Operand::none());
 
         codegen.add_ir(instr::IR::Store {
             addr: lhs,
-            value: rhs
+            value: rhs,
         });
         Ok(instr::Operand::none())
     }
@@ -568,7 +588,7 @@ impl Codegenable for nodes::IfNode {
             Operation::Gte => todo!(),
             Operation::Lt => todo!(),
             Operation::Lte => todo!(),
-            _ => todo!()
+            _ => todo!(),
         }
         self.if_branch.codegen(codegen)?;
 
@@ -596,11 +616,11 @@ impl Codegenable for nodes::ReturnNode {
             debug_assert!(reg != instr::Operand::none());
             codegen.add_ir(instr::IR::Move {
                 dst: instr::Operand::reg(instr::Register::RET, instr::RegMode::from(&self.typ)),
-                src: reg
+                src: reg,
             });
         }
         codegen.add_ir(instr::IR::Jmp {
-            name: codegen.current_return_label.clone()
+            name: codegen.current_return_label.clone(),
         });
         Ok(instr::Operand::none())
     }
@@ -647,31 +667,23 @@ impl Codegenable for nodes::ExpressionLiteralNode {
         // FIXME: Put this into a macro or expand ExpressionLiteralNode
         match &self.typ {
             Type::I32 => {
-                let v = self.value.parse::<i32>().map_err(|_e| {
-                    todo!()
-                });
+                let v = self.value.parse::<i32>().map_err(|_e| todo!());
                 Ok(instr::Operand::imm_i32(v.unwrap()))
-            },
+            }
             Type::I64 => {
-                let v = self.value.parse::<i64>().map_err(|_e| {
-                    todo!()
-                });
+                let v = self.value.parse::<i64>().map_err(|_e| todo!());
                 Ok(instr::Operand::imm_i64(v.unwrap()))
-            },
+            }
             Type::U32 => {
-                let v = self.value.parse::<u32>().map_err(|_e| {
-                    todo!()
-                });
+                let v = self.value.parse::<u32>().map_err(|_e| todo!());
                 Ok(instr::Operand::imm_u32(v.unwrap()))
-            },
+            }
             Type::U64 => {
-                let v = self.value.parse::<u64>().map_err(|_e| {
-                    todo!()
-                });
+                let v = self.value.parse::<u64>().map_err(|_e| todo!());
                 Ok(instr::Operand::imm_u64(v.unwrap()))
-            },
+            }
             Type::Usize => todo!(),
-            _ => todo!()
+            _ => todo!(),
         }
     }
 }
@@ -689,33 +701,33 @@ impl Codegenable for nodes::ExpressionBinaryNode {
                 codegen.add_ir(instr::IR::Add {
                     dst: lhs,
                     src1: lhs,
-                    src2: rhs
+                    src2: rhs,
                 });
-            },
+            }
             Operation::Sub => {
                 codegen.add_ir(instr::IR::Sub {
                     dst: lhs,
                     src1: lhs,
-                    src2: rhs
+                    src2: rhs,
                 });
-            },
+            }
             Operation::Mul => {
                 codegen.add_ir(instr::IR::Mul {
                     dst: lhs,
                     src1: lhs,
                     src2: rhs,
-                    signed: self.typ == Type::I32 || self.typ == Type::I64
+                    signed: self.typ == Type::I32 || self.typ == Type::I64,
                 });
-            },
+            }
             Operation::Div => {
                 codegen.add_ir(instr::IR::Div {
                     dst: lhs,
                     src1: lhs,
                     src2: rhs,
-                    signed: self.typ == Type::I32 || self.typ == Type::I64
+                    signed: self.typ == Type::I32 || self.typ == Type::I64,
                 });
-            },
-            _ => todo!()
+            }
+            _ => todo!(),
         }
         Ok(lhs)
     }
@@ -729,10 +741,7 @@ impl Codegenable for nodes::ExpressionComparisonNode {
 
         let rhs = self.rhs.codegen(codegen)?;
         debug_assert!(rhs != instr::Operand::none());
-        codegen.add_ir(instr::IR::Cmp {
-            dst: lhs,
-            src: rhs
-        });
+        codegen.add_ir(instr::IR::Cmp { dst: lhs, src: rhs });
         Ok(instr::Operand::cmp(self.operation))
     }
 }
@@ -767,33 +776,31 @@ impl Codegenable for nodes::ExpressionCallNode {
                         });
                     }
                 }
-                instr::OperandType::ImmI32
-                | instr::OperandType::ImmU32 => {
+                instr::OperandType::ImmI32 | instr::OperandType::ImmU32 => {
                     let target_reg = instr::Operand::reg(target_reg, instr::RegMode::BIT32);
                     codegen.add_ir(instr::IR::LoadImm {
                         dst: target_reg,
-                        imm: op
+                        imm: op,
                     });
                 }
-                instr::OperandType::ImmI64
-                | instr::OperandType::ImmU64 => {
+                instr::OperandType::ImmI64 | instr::OperandType::ImmU64 => {
                     let target_reg = instr::Operand::reg(target_reg, instr::RegMode::BIT64);
                     codegen.add_ir(instr::IR::LoadImm {
                         dst: target_reg,
-                        imm: op
+                        imm: op,
                     });
                 }
-                _ => todo!()
+                _ => todo!(),
             }
         }
 
         codegen.add_ir(instr::IR::Call {
-            name: self.function_name.clone()
+            name: self.function_name.clone(),
         });
 
         codegen.add_ir(instr::IR::Move {
             dst: result,
-            src: instr::Operand::reg(instr::Register::RET, result_mode)
+            src: instr::Operand::reg(instr::Register::RET, result_mode),
         });
 
         codegen.pop_registers(counter);
@@ -828,33 +835,29 @@ impl Codegenable for nodes::ExpressionConstructorNode {
                         });
                     }
                 }
-                instr::OperandType::ImmI32
-                | instr::OperandType::ImmU32 => {
+                instr::OperandType::ImmI32 | instr::OperandType::ImmU32 => {
                     let target_reg = instr::Operand::reg(target_reg, instr::RegMode::BIT32);
                     codegen.add_ir(instr::IR::LoadImm {
                         dst: target_reg,
-                        imm: op
+                        imm: op,
                     });
                 }
-                instr::OperandType::ImmI64
-                | instr::OperandType::ImmU64 => {
+                instr::OperandType::ImmI64 | instr::OperandType::ImmU64 => {
                     let target_reg = instr::Operand::reg(target_reg, instr::RegMode::BIT64);
                     codegen.add_ir(instr::IR::LoadImm {
                         dst: target_reg,
-                        imm: op
+                        imm: op,
                     });
                 }
-                _ => todo!()
+                _ => todo!(),
             }
         }
 
-        codegen.add_ir(instr::IR::Call {
-            name: constructor
-        });
+        codegen.add_ir(instr::IR::Call { name: constructor });
 
         codegen.add_ir(instr::IR::Move {
             dst: result,
-            src: instr::Operand::reg(instr::Register::RET, result_mode)
+            src: instr::Operand::reg(instr::Register::RET, result_mode),
         });
 
         codegen.pop_registers(counter);
@@ -874,7 +877,7 @@ impl Codegenable for nodes::ExpressionFieldAccessNode {
         let var = instr::Operand::offset(offset);
         codegen.add_ir(instr::IR::Load {
             dst: reg,
-            addr: var
+            addr: var,
         });
 
         // codegen field access
@@ -887,7 +890,11 @@ impl Codegenable for nodes::ExpressionFieldAccessNode {
     }
 }
 impl nodes::ExpressionFieldAccessNode {
-    fn codegen_field(&self, codegen: &mut Codegen, field: &nodes::ExpressionIdentifierNode) -> Result<instr::Operand, String> {
+    fn codegen_field(
+        &self,
+        codegen: &mut Codegen,
+        field: &nodes::ExpressionIdentifierNode,
+    ) -> Result<instr::Operand, String> {
         let curr_reg = codegen.register_counter;
         let reg = instr::Operand::reg(instr::Register::from(curr_reg), instr::RegMode::BIT64);
         // at this point, reg contains a reference to the instance
@@ -902,7 +909,7 @@ impl nodes::ExpressionFieldAccessNode {
                 // reg now holds the base address of the instance
                 codegen.add_ir(instr::IR::Load {
                     dst: reg,
-                    addr: reg
+                    addr: reg,
                 });
                 let imm = if self.typ.size() == 4 {
                     instr::Operand::imm_u32(offset as u32)
@@ -913,7 +920,7 @@ impl nodes::ExpressionFieldAccessNode {
                 codegen.add_ir(instr::IR::Add {
                     dst: reg,
                     src1: reg,
-                    src2: imm
+                    src2: imm,
                 });
 
                 // unwind field access by one level
@@ -929,20 +936,20 @@ impl nodes::ExpressionFieldAccessNode {
                 };
                 codegen.add_ir(instr::IR::Load {
                     dst: reg,
-                    addr: reg
+                    addr: reg,
                 });
                 // add both together
                 codegen.add_ir(instr::IR::Add {
                     dst: reg,
                     src1: reg,
-                    src2: imm
+                    src2: imm,
                 });
                 Ok(imm)
             }
             nodes::Expression::FunctionCall(_fn_call) => {
                 todo!()
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 }
@@ -955,7 +962,7 @@ impl Codegenable for nodes::NameNode {
         let reg = instr::Operand::reg(reg, instr::RegMode::from(&self.typ));
         codegen.add_ir(instr::IR::Load {
             dst: reg,
-            addr: instr::Operand::offset(offset)
+            addr: instr::Operand::offset(offset),
         });
         Ok(reg)
     }
