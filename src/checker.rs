@@ -3,7 +3,7 @@ use std::fmt::{Display, Formatter};
 
 use crate::{parser::Location, codegen::{ERR_STR, NOTE_STR, WARN_STR}};
 
-use crate::new::nodes;
+use crate::nodes;
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub enum Type {

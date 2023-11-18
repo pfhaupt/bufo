@@ -5,7 +5,10 @@ mod checker;
 mod codegen;
 mod assembler;
 mod compiler;
+
+mod nodes;
 mod flags;
+
 mod new;
 
 use std::time::Instant;

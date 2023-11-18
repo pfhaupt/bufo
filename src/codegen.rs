@@ -1,7 +1,7 @@
 
 use std::collections::{HashMap, VecDeque};
 
-use crate::new::nodes;
+use crate::nodes;
 use crate::{checker::Type, parser::Operation};
 use crate::new::instr;
 
