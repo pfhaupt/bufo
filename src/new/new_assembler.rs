@@ -340,6 +340,13 @@ impl Assembler {
                 }
             }
         }
+        push_asm("");
+        push_asm("segment .data");
+        push_asm("STACK_OVERFLOW_CODE dq 2");
+        push_asm("FUNCTION_COUNTER dq 0");
+        push_asm("FUNCTION_LIMIT dq 4096");
+        push_asm("");
+        push_asm("segment .bss");
 
         println!("{}", output);
         if invalid {
