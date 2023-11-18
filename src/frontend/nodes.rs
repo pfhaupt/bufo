@@ -145,7 +145,6 @@ pub struct ArgumentNode {
 #[allow(unused)]
 #[derive(Debug, Clone)]
 pub enum Expression {
-    // FIXME: What's the difference between Name and Identifier?
     Name(NameNode),
     Identifier(ExpressionIdentifierNode),
     ArrayLiteral(ExpressionArrayLiteralNode),

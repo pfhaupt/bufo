@@ -477,7 +477,7 @@ impl Codegenable for nodes::MethodNode {
 }
 impl Codegenable for nodes::ReturnTypeNode {
     fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        internal_error!("ReturnTypeNode::codegen() is not implemented yet")
     }
 }
 impl Codegenable for nodes::ParameterNode {
@@ -744,14 +744,16 @@ impl Codegenable for nodes::ExpressionComparisonNode {
 impl Codegenable for nodes::ExpressionCallNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         debug_assert!(self.typ != Type::Unknown);
-        // FIXME: Type::None does not mean that the function is invalid
-        //        It just means we don't put anything in the return register
-        debug_assert!(self.typ != Type::None);
 
         // FIXME: Reduce register usage by directly returning RET-reg at the end
-        let result = codegen.get_register()?;
-        let result_mode = instr::RegMode::from(&self.typ);
-        let result = instr::Operand::reg(result, result_mode);
+        let result = if self.typ == Type::None {
+            None
+        } else {
+            let result = codegen.get_register()?;
+            let result_mode = instr::RegMode::from(&self.typ);
+            let result = instr::Operand::reg(result, result_mode);
+            Some(result)
+        };
 
         let counter = codegen.register_counter;
         codegen.push_registers(counter);
@@ -794,13 +796,19 @@ impl Codegenable for nodes::ExpressionCallNode {
             name: self.function_name.clone(),
         });
 
-        codegen.add_ir(instr::IR::Move {
-            dst: result,
-            src: instr::Operand::reg(instr::Register::RET, result_mode),
-        });
-
-        codegen.pop_registers(counter);
-        Ok(result)
+        if self.typ != Type::None {
+            debug_assert!(result.is_some());
+            let result = result.unwrap();
+            codegen.add_ir(instr::IR::Move {
+                dst: result,
+                src: instr::Operand::reg(instr::Register::RET, result.reg_mode),
+            });
+            codegen.pop_registers(counter);
+            Ok(result)
+        } else {
+            codegen.pop_registers(counter);
+            Ok(instr::Operand::none())
+        }
     }
 }
 impl Codegenable for nodes::ExpressionConstructorNode {

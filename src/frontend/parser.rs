@@ -587,7 +587,12 @@ impl Parsable for nodes::ClassNode {
                     let parsed_function = nodes::MethodNode::parse(parser)?;
                     methods.push(parsed_function);
                 }
-                e => todo!("{:?}", e),
+                e => return Err(format!(
+                    "{}: {:?}: Unexpected Token. Expected one of (Field, Feature, Method), found {:?}.",
+                    ERR_STR,
+                    parser.current_location(),
+                    e
+                )),
             }
         }
         parser.expect(TokenType::ClosingCurly)?;
@@ -941,7 +946,13 @@ impl Parsable for nodes::IfNode {
         let location = parser.current_location();
         parser.expect(TokenType::IfKeyword)?;
         parser.expect(TokenType::OpenRound)?;
-        let nodes::Expression::Comparison(condition) = nodes::Expression::parse(parser)? else { todo!() };
+        let nodes::Expression::Comparison(condition) = nodes::Expression::parse(parser)? else {
+            return Err(format!(
+                "{}: {:?}: if-condition is expected to be a comparison.",
+                ERR_STR,
+                location
+            ))
+        };
         parser.expect(TokenType::ClosingRound)?;
         let if_branch = nodes::BlockNode::parse(parser)?;
         let else_branch = if parser.eat(TokenType::ElseKeyword)? {

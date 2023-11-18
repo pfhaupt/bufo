@@ -31,11 +31,27 @@ mod tests {
         };
     }
 
+    macro_rules! clean_up {
+        ($path: expr) => {
+            use std::fs;
+            let mut path = String::from("./out/") + $path.split('/').last().unwrap();
+            path = path.replace(".bu", ".asm");
+            fs::remove_file(path.clone()).unwrap();
+            path = path.replace(".asm", ".obj");
+            fs::remove_file(path.clone()).unwrap();
+            path = path.replace(".obj", ".exe");
+            fs::remove_file(path).unwrap();
+        };
+    }
+
     macro_rules! test {
         ($path: expr, $debug: expr, $run: expr, $should_fail: expr, $expected: expr) => {
             match init!($path, $debug, $run) {
                 Ok(mut c) => {
                     let result = c.run_everything();
+                    if $run {
+                        clean_up!($path);
+                    }
                     if $should_fail {
                         assert!(result.is_err());
                         let res = result.err().unwrap();
@@ -172,10 +188,9 @@ mod tests {
         #[test]
         #[cfg_attr(
             not(feature = "test_exec"),
-            ignore = "Pass the `text_exec` feature-flag to run this test"
+            ignore = "Pass the `test_exec` feature-flag to run this test"
         )]
         fn array_out_of_bounds() {
-            // TODO: Automatically clean up after running code
             test!(
                 "tests/semantics/array_out_of_bounds.bu",
                 false,
@@ -194,10 +209,9 @@ mod tests {
         #[test]
         #[cfg_attr(
             not(feature = "test_exec"),
-            ignore = "Pass the `text_exec` feature-flag to run this test"
+            ignore = "Pass the `test_exec` feature-flag to run this test"
         )]
         fn variable_shadowing() {
-            // TODO: Automatically clean up after running code
             test!(
                 "tests/semantics/variable_shadowing.bu",
                 false,
@@ -208,7 +222,7 @@ mod tests {
                     "Code execution failed",
                     format!("{:X}", 42069).as_str()
                 ]
-            )
+            );
         }
         generate_failing_test!(using_out_of_scope_variable, "Undeclared variable");
 
@@ -230,9 +244,6 @@ mod tests {
             "Expected type",
             "found type"
         );
-        // #[test] #[ignore = "Error Messages for missing feats are still showing as missing [desugared] functions"] fn class_no_feat_new() {
-        //     // TODO: Implement generate_failing_test for this once error messages are better
-        // }
         generate_failing_test!(
             class_no_feat_new,
             "no constructor",

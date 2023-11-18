@@ -1,9 +1,15 @@
-class Test {
-    feat new() {
+class Foo {
+    t: Test;
+}
 
+class Test {
+    f: Foo;
+    a: i32;
+    feat new() {
     }
 
     func foo(a: i32) {
+        this.f.t.a.e.e = 10;
     }
 }
 
@@ -15,7 +21,12 @@ func ack(m: u32, n: u32) -> u32 {
 
 // func f(a: i32, b: i32, c: i32, d: i32, e: i32) {}
 
+func foo(a: i32, a: i32) {
+
+}
+
 func main() {
     let a: u32 = ack(3, 5);
-    // let b: u32 = [1, 2, 3] + 1;
+    let c: i32 = 0;
+    foo();
 }

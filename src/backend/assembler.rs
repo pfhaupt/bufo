@@ -9,6 +9,7 @@ use super::instr::{OperandType, IR};
 use super::instr::{RegMode, Register};
 
 use crate::compiler::{ERR_STR, FILE_EXT, OUTPUT_FOLDER};
+use crate::internal_error;
 
 const REG_64BIT: [&str; 16] = [
     "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13",
@@ -124,7 +125,9 @@ impl Assembler {
                         let src = reg(value.reg, value.reg_mode);
                         push_asm(format!("  mov [{dst}], {src}").as_str());
                     }
-                    (lhs, rhs) => todo!("{lhs:?} {rhs:?}"),
+                    (lhs, rhs) => {
+                        return internal_error!(format!("Can't generate ASM for `store {lhs:?}, {rhs:?}"));
+                    },
                 },
                 IR::Load { dst, addr } => match (dst.typ, addr.typ) {
                     (OperandType::Reg, OperandType::Offset) => {
@@ -138,7 +141,9 @@ impl Assembler {
                         let src = reg(addr.reg, addr.reg_mode);
                         push_asm(format!("  mov {dst}, [{src}]").as_str());
                     }
-                    (lhs, rhs) => todo!("{lhs:?} {rhs:?}"),
+                    (lhs, rhs) => {
+                        return internal_error!(format!("Can't generate ASM for `load {lhs:?}, {rhs:?}"));
+                    },
                 },
                 IR::Move { dst, src } => match (dst.typ, src.typ) {
                     (OperandType::Reg, OperandType::Reg) => {
@@ -157,7 +162,9 @@ impl Assembler {
                         let imm = src.off_or_imm;
                         push_asm(format!("  mov {dst}, {imm}").as_str());
                     }
-                    (lhs, rhs) => todo!("{lhs:?} {rhs:?}"),
+                    (lhs, rhs) => {
+                        return internal_error!(format!("Can't generate ASM for `move {lhs:?}, {rhs:?}"));
+                    },
                 },
 
                 // Arithmetics
@@ -179,12 +186,7 @@ impl Assembler {
                             push_asm(format!("  add {dst_reg}, {immediate}").as_str());
                         }
                         (dst, src) => {
-                            return Err(format!(
-                                "Internal Error: {}:{}:{}: Can't generate ASM for `add {dst:?}, {src:?}",
-                                file!(),
-                                line!(),
-                                column!()
-                            ));
+                            return internal_error!(format!("Can't generate ASM for `add {dst:?}, {src:?}"));
                         }
                     }
                 }
