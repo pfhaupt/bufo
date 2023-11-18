@@ -41,6 +41,7 @@ pub enum Register {
     R14,
     R15,
     __COUNT,
+    None,
 }
 
 impl From<usize> for Register {
@@ -101,18 +102,83 @@ impl Register {
     }
 }
 
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub enum Operand {
-    Reg(Register, RegMode),
-    StackOffset(usize), // e.g., stack offset
-    HeapAddr(usize),
-    ImmU32(u32),
-    ImmU64(u64),
-    ImmI32(i32),
-    ImmI64(i64),
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum OperandType {
+    Reg(RegMode),
     Cmp(Operation),
-    None, // for nodes that do not return any registers
+    ImmU32,
+    ImmU64,
+    ImmI32,
+    ImmI64,
+    Offset,
+    None // For nodes that do not return anything
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct Operand {
+    pub typ: OperandType,
+    pub off_or_imm: usize,
+    pub reg: Register,
+}
+
+impl Operand {
+    pub fn none() -> Self {
+        Self {
+            typ: OperandType::None,
+            off_or_imm: 0,
+            reg: Register::None
+        }
+    }
+    pub fn reg(r: Register, rm: RegMode) -> Self {
+        Self {
+            typ: OperandType::Reg(rm),
+            off_or_imm: 0,
+            reg: r
+        }
+    }
+
+    pub fn imm_u32(immediate: u32) -> Self {
+        Self {
+            typ: OperandType::ImmU32,
+            off_or_imm: unsafe { std::mem::transmute(immediate as u64) },
+            reg: Register::None
+        }
+    }
+    pub fn imm_u64(immediate: u64) -> Self {
+        Self {
+            typ: OperandType::ImmU64,
+            off_or_imm: unsafe { std::mem::transmute(immediate) },
+            reg: Register::None
+        }
+    }
+    pub fn imm_i32(immediate: i32) -> Self {
+        Self {
+            typ: OperandType::ImmI32,
+            off_or_imm: unsafe { std::mem::transmute(immediate as i64) },
+            reg: Register::None
+        }
+    }
+    pub fn imm_i64(immediate: i64) -> Self {
+        Self {
+            typ: OperandType::ImmI64,
+            off_or_imm: unsafe { std::mem::transmute(immediate) },
+            reg: Register::None
+        }
+    }
+    pub fn offset(offset: usize) -> Self {
+        Self {
+            typ: OperandType::Offset,
+            off_or_imm: offset,
+            reg: Register::None
+        }
+    }
+    pub fn cmp(cmp: Operation) -> Self {
+        Self {
+            typ: OperandType::Cmp(cmp),
+            off_or_imm: 0,
+            reg: Register::None
+        }
+    }
 }
 
 impl IR {
