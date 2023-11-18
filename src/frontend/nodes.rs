@@ -168,6 +168,24 @@ pub enum Expression {
     BuiltIn(ExpressionBuiltInNode),
 }
 
+impl Expression {
+    pub fn get_loc(&self) -> Location {
+        match &self {
+            Self::Name(e) => e.location.clone(),
+            Self::Identifier(e) => e.location.clone(),
+            Self::ArrayLiteral(e) => e.location.clone(),
+            Self::ArrayAccess(e) => e.location.clone(),
+            Self::Literal(e) => e.location.clone(),
+            Self::Binary(e) => e.location.clone(),
+            Self::Comparison(e) => e.location.clone(),
+            Self::FieldAccess(e) => e.location.clone(),
+            Self::FunctionCall(e) => e.location.clone(),
+            Self::ConstructorCall(e) => e.location.clone(),
+            Self::BuiltIn(e) => e.location.clone()
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ExpressionArrayLiteralNode {
     pub location: Location,
