@@ -93,6 +93,31 @@ impl Assembler {
                         }
                     }
                 }
+                IR::Sub { dst, src1, src2 } => {
+                    debug_assert!(dst == src1);
+                    debug_assert!(dst.reg != instr::Register::None);
+                    let dst_reg = reg(dst.reg, dst.reg_mode);
+                    match (dst.typ, src2.typ) {
+                        (OperandType::Reg, OperandType::Reg) => {
+                            let src_reg = reg(src2.reg, src2.reg_mode);
+                            push_asm(format!("  sub {dst_reg}, {src_reg}").as_str());
+                        }
+                        (OperandType::Reg, OperandType::Offset) => {
+                            let offset = src2.off_or_imm;
+                            push_asm(format!("  sub {dst_reg}, {offset}").as_str());
+                        }
+                        (OperandType::Reg, OperandType::ImmI32
+                                            | OperandType::ImmI64
+                                            | OperandType::ImmU32
+                                            | OperandType::ImmU64) => {
+                            let immediate = src2.off_or_imm;
+                            push_asm(format!("  sub {dst_reg}, {immediate}").as_str());
+                        }
+                        (dst, src) => {
+                            todo!("sub {dst:?} {src:?}")
+                        }
+                    }
+                }
                 IR::Label { name } => push_asm(format!("{name}:").as_str()),
                 _ => push_asm("; Can't generate ASM for that yet")
             }
