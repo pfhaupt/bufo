@@ -684,11 +684,9 @@ impl Codegenable for nodes::ExpressionBinaryNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let lhs = self.lhs.codegen(codegen)?;
         debug_assert!(lhs != instr::Operand::none());
-        if let instr::OperandType::Reg(_) = lhs.typ {} else {
-            // basically assert that LHS is a register for now
-            // we need to handle LHS=Imm later on
-            panic!()
-        }
+        // we need to handle LHS=Imm later on
+        debug_assert!(lhs.typ == instr::OperandType::Reg);
+
         let rhs = self.rhs.codegen(codegen)?;
         debug_assert!(rhs != instr::Operand::none());
         match &self.operation {
@@ -731,11 +729,9 @@ impl Codegenable for nodes::ExpressionComparisonNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let lhs = self.lhs.codegen(codegen)?;
         debug_assert!(lhs != instr::Operand::none());
-        if let instr::OperandType::Reg(_) = lhs.typ {} else {
-            // basically assert that LHS is a register for now
-            // we need to handle LHS=Imm later on
-            panic!()
-        }
+        // we need to handle LHS=Imm later on
+        debug_assert!(lhs.typ == instr::OperandType::Reg);
+
         let rhs = self.rhs.codegen(codegen)?;
         debug_assert!(rhs != instr::Operand::none());
         codegen.add_ir(instr::IR::Cmp {
@@ -766,10 +762,10 @@ impl Codegenable for nodes::ExpressionCallNode {
             debug_assert!(op != instr::Operand::none());
             let target_reg = instr::Register::arg(index);
             match op.typ {
-                instr::OperandType::Reg(mode) => {
+                instr::OperandType::Reg => {
                     if op.reg != target_reg {
                         // Move to correct register if necessary
-                        let target_reg = instr::Operand::reg(target_reg, mode);
+                        let target_reg = instr::Operand::reg(target_reg, op.reg_mode);
                         codegen.add_ir(instr::IR::Move {
                             dst: target_reg,
                             src: op,
@@ -827,10 +823,10 @@ impl Codegenable for nodes::ExpressionConstructorNode {
             debug_assert!(op != instr::Operand::none());
             let target_reg = instr::Register::arg(index);
             match op.typ {
-                instr::OperandType::Reg(mode) => {
+                instr::OperandType::Reg => {
                     if op.reg != target_reg {
                         // Move to correct register if necessary
-                        let target_reg = instr::Operand::reg(target_reg, mode);
+                        let target_reg = instr::Operand::reg(target_reg, op.reg_mode);
                         codegen.add_ir(instr::IR::Move {
                             dst: target_reg,
                             src: op,

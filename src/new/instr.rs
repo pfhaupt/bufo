@@ -104,7 +104,7 @@ impl Register {
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum OperandType {
-    Reg(RegMode),
+    Reg,
     Cmp(Operation),
     ImmU32,
     ImmU64,
@@ -119,6 +119,7 @@ pub struct Operand {
     pub typ: OperandType,
     pub off_or_imm: usize,
     pub reg: Register,
+    pub reg_mode: RegMode,
 }
 
 impl Operand {
@@ -126,14 +127,16 @@ impl Operand {
         Self {
             typ: OperandType::None,
             off_or_imm: 0,
-            reg: Register::None
+            reg: Register::None,
+            reg_mode: RegMode::BIT64
         }
     }
     pub fn reg(r: Register, rm: RegMode) -> Self {
         Self {
-            typ: OperandType::Reg(rm),
+            typ: OperandType::Reg,
             off_or_imm: 0,
-            reg: r
+            reg: r,
+            reg_mode: rm
         }
     }
 
@@ -141,42 +144,48 @@ impl Operand {
         Self {
             typ: OperandType::ImmU32,
             off_or_imm: unsafe { std::mem::transmute(immediate as u64) },
-            reg: Register::None
+            reg: Register::None,
+            reg_mode: RegMode::BIT64
         }
     }
     pub fn imm_u64(immediate: u64) -> Self {
         Self {
             typ: OperandType::ImmU64,
             off_or_imm: unsafe { std::mem::transmute(immediate) },
-            reg: Register::None
+            reg: Register::None,
+            reg_mode: RegMode::BIT64
         }
     }
     pub fn imm_i32(immediate: i32) -> Self {
         Self {
             typ: OperandType::ImmI32,
             off_or_imm: unsafe { std::mem::transmute(immediate as i64) },
-            reg: Register::None
+            reg: Register::None,
+            reg_mode: RegMode::BIT64
         }
     }
     pub fn imm_i64(immediate: i64) -> Self {
         Self {
             typ: OperandType::ImmI64,
             off_or_imm: unsafe { std::mem::transmute(immediate) },
-            reg: Register::None
+            reg: Register::None,
+            reg_mode: RegMode::BIT64
         }
     }
     pub fn offset(offset: usize) -> Self {
         Self {
             typ: OperandType::Offset,
             off_or_imm: offset,
-            reg: Register::None
+            reg: Register::None,
+            reg_mode: RegMode::BIT64
         }
     }
     pub fn cmp(cmp: Operation) -> Self {
         Self {
             typ: OperandType::Cmp(cmp),
             off_or_imm: 0,
-            reg: Register::None
+            reg: Register::None,
+            reg_mode: RegMode::BIT64
         }
     }
 }
