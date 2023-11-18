@@ -4,7 +4,6 @@ mod checker;
 mod codegen;
 mod flags;
 mod parser;
-mod desugar;
 mod new;
 
 use std::time::Instant;
@@ -15,7 +14,6 @@ use crate::checker::TypeChecker;
 use crate::codegen::Generator;
 use crate::flags::{Flag, FlagParser, DEBUG_KEY, INPUT_KEY};
 use crate::parser::{Parser, Tree};
-use crate::desugar::Desugarer;
 
 use crate::new::compiler::main as other_main;
 fn main() {
@@ -27,7 +25,6 @@ fn main() {
 
 pub struct Compiler {
     parser: Parser,
-    desugarer: Desugarer,
     checker: TypeChecker,
     codegen: Generator,
     debug: bool,
@@ -38,7 +35,6 @@ impl Compiler {
     pub fn new(path: &String, debug: bool, run: bool) -> Result<Self, String> {
         Ok(Self {
             parser: Parser::new().origin(path)?.debug(debug),
-            desugarer: Desugarer::new(),
             checker: TypeChecker::new(debug),
             codegen: Generator::new(debug),
             debug,
@@ -51,9 +47,7 @@ impl Compiler {
         parser.set_origin_unchecked(origin);
         parser.set_source(snippet);
         let parsed_ast = parser.parse_snippet()?;
-
-        let mut desugarer = Desugarer::new();
-        desugarer.desugar_tree(parsed_ast)
+        Ok(parsed_ast)
     }
 
     pub fn run_everything(&mut self) -> Result<(), String> {
@@ -65,13 +59,7 @@ impl Compiler {
         let parsed_ast = parsed_ast?;
         
         let now = Instant::now();
-        let mut desugared_ast = self.desugarer.desugar_tree(parsed_ast)?;
-        if self.debug {
-            println!("Desugaring took {:?}", now.elapsed());
-        }
-        
-        let now = Instant::now();
-        self.checker.set_ast(desugared_ast);
+        self.checker.set_ast(parsed_ast);
         let checked_ast = self.checker.type_check_program()?;
         if self.debug {
             println!("Type Checking took {:?}", now.elapsed());
