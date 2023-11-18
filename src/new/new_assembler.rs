@@ -1,6 +1,6 @@
 
 use crate::new::instr;
-use crate::new::instr::OperandType;
+use crate::new::instr::{OperandType, IR};
 
 use super::instr::{Register, RegMode};
 
@@ -75,8 +75,85 @@ impl Assembler {
             if self.print_debug {
                 push_asm(format!("; -- {ir:?} --").as_str());
             }
-            use instr::IR;
             match ir {
+                // Memory
+                IR::LoadImm { dst, imm } => {
+                    debug_assert!(dst.typ == OperandType::Reg);
+                    debug_assert!(dst.reg != instr::Register::None);
+                    let dst_reg = reg(dst.reg, dst.reg_mode);
+                    match imm.typ {
+                        OperandType::ImmI32
+                        | OperandType::ImmI64
+                        | OperandType::ImmU32
+                        | OperandType::ImmU64 => {
+                            let immediate = imm.off_or_imm;
+                            push_asm(format!("  mov {dst_reg}, {immediate}").as_str());
+                        }
+                        _ => todo!()
+                    }
+                }
+                IR::Store { addr, value } => {
+                    match (addr.typ, value.typ) {
+                        (OperandType::Offset, OperandType::Reg) => {
+                            let offset = addr.off_or_imm;
+                            let reg = reg(value.reg, value.reg_mode);
+                            // FIXME: I think this is incorrect and doesnt account for type size
+                            push_asm(format!("  mov [rbp-{offset}], {reg}").as_str());
+                        }
+                        (OperandType::Offset, OperandType::ImmI32
+                                            | OperandType::ImmI64
+                                            | OperandType::ImmU32
+                                            | OperandType::ImmU64) => {
+                            let offset = addr.off_or_imm;
+                            let val = value.off_or_imm;
+                            // FIXME: I think this is incorrect and doesnt account for type size
+                            // FIXME: Add WORD-size
+                            push_asm(format!("  mov [rbp-{offset}], {val}").as_str());
+                        }
+                        (OperandType::Reg, OperandType::Reg) => {
+                            let dst = reg(addr.reg, addr.reg_mode);
+                            let src = reg(value.reg, value.reg_mode);
+                            push_asm(format!("  mov [{dst}], {src}").as_str());
+                        }
+                        (lhs, rhs) => todo!("{lhs:?} {rhs:?}")
+                    }
+                }
+                IR::Load { dst, addr } => {
+                    match (dst.typ, addr.typ) {
+                        (OperandType::Reg, OperandType::Offset) => {
+                            let reg = reg(dst.reg, dst.reg_mode);
+                            let offset = addr.off_or_imm;
+                            // FIXME: I think this is incorrect and doesnt account for type size
+                            push_asm(format!("  mov {reg}, [rbp-{offset}]").as_str());
+                        }
+                        (OperandType::Reg, OperandType::Reg) => {
+                            let dst = reg(dst.reg, dst.reg_mode);
+                            let src = reg(addr.reg, addr.reg_mode);
+                            push_asm(format!("  mov {dst}, [{src}]").as_str());
+                        }
+                        (lhs, rhs) => todo!("{lhs:?} {rhs:?}")
+                    }
+                }
+                IR::Move { dst, src } => {
+                    match (dst.typ, src.typ) {
+                        (OperandType::Reg, OperandType::Reg) => {
+                            let dst = reg(dst.reg, dst.reg_mode);
+                            let src = reg(src.reg, src.reg_mode);
+                            push_asm(format!("  mov {dst}, {src}").as_str());
+                        }
+                        (OperandType::Reg, OperandType::ImmI32
+                                            | OperandType::ImmI64
+                                            | OperandType::ImmU32
+                                            | OperandType::ImmU64) => {
+                            let dst = reg(dst.reg, dst.reg_mode);
+                            let imm = src.off_or_imm;
+                            push_asm(format!("  mov {dst}, {imm}").as_str());
+                        }
+                        (lhs, rhs) => todo!("{lhs:?} {rhs:?}")
+                    }
+                }
+
+                // Arithmetics
                 IR::Add { dst, src1, src2 } => {
                     debug_assert!(dst == src1);
                     debug_assert!(dst.reg != instr::Register::None);
