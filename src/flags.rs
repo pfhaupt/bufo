@@ -1,4 +1,4 @@
-use crate::new::new_codegen::{ERR_STR, NOTE_STR};
+use crate::codegen::{ERR_STR, NOTE_STR};
 use std::{
     collections::HashMap,
     fmt::{Debug, Display, Formatter},

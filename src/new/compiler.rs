@@ -3,9 +3,9 @@ use std::time::Instant;
 
 use crate::parser::Parser;
 use crate::checker::TypeChecker;
+use crate::codegen::Codegen;
 use crate::flags::{FlagParser, Flag, DEBUG_KEY, RUN_KEY, INPUT_KEY};
 
-use super::new_codegen::Codegen;
 use super::new_assembler::Assembler;
 
 pub struct Compiler {

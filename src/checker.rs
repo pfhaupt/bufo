@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::fmt::{Display, Formatter};
 
-use crate::{parser::Location, new::new_codegen::{ERR_STR, NOTE_STR, WARN_STR}};
+use crate::{parser::Location, codegen::{ERR_STR, NOTE_STR, WARN_STR}};
 
 use crate::new::nodes;
 

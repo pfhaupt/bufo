@@ -1,8 +1,8 @@
 #![allow(unused, unreachable_code)]
 
-mod codegen;
 mod parser;
 mod checker;
+mod codegen;
 mod flags;
 mod new;
 
@@ -20,7 +20,7 @@ fn main() {
 mod tests {
     use lazy_static::lazy_static;
 
-    use crate::{new::compiler::Compiler, new::new_codegen::ERR_STR};
+    use crate::{new::compiler::Compiler, codegen::ERR_STR};
 
     const ALWAYS_FAILS: &str = "This is a String we defined to make sure that a test always fails. This is expected.";
 
@@ -73,7 +73,7 @@ mod tests {
 
     mod syntax_tests {
         use crate::new::{compiler::Compiler};
-        use crate::new::new_codegen::ERR_STR;
+        use crate::codegen::ERR_STR;
 
         macro_rules! generate_failing_test {
             ($name:ident, $($err:expr),*) => {
@@ -104,7 +104,7 @@ mod tests {
     }
 
     mod semantic_tests {
-        use crate::{new::compiler::Compiler, new::new_codegen::{ERR_STR}};
+        use crate::{new::compiler::Compiler, codegen::{ERR_STR}};
         use crate::tests::ALWAYS_FAILS;
 
         macro_rules! generate_failing_test {

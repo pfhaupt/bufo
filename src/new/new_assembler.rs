@@ -10,7 +10,7 @@ use crate::new::instr::{OperandType, IR};
 use super::instr::{Register, RegMode};
 use crate::flags::FILE_EXT;
 
-use crate::new::new_codegen::ERR_STR;
+use crate::codegen::ERR_STR;
 
 const OUTPUT_FOLDER: &str = "./out/";
 
