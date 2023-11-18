@@ -193,6 +193,90 @@ impl Assembler {
                         }
                     }
                 }
+                IR::Mul { dst, src1, src2, signed } => {
+                    debug_assert!(dst == src1);
+                    debug_assert!(dst.reg != instr::Register::None);
+                    let dst_reg = reg(dst.reg, dst.reg_mode);
+                    if *signed {
+                        match (dst.typ, src2.typ) {
+                            (OperandType::Reg, OperandType::Reg) => {
+                                // IMUL is simpler, it has 2-operand form
+                                let src_reg = reg(src2.reg, src2.reg_mode);
+                                push_asm(format!("  imul {dst_reg}, {src_reg}").as_str());
+                            }
+                            (OperandType::Reg, OperandType::ImmI32
+                                                | OperandType::ImmI64
+                                                | OperandType::ImmU32
+                                                | OperandType::ImmU64) => {
+                                // IMUL only has up to 32bit immediates, need to use temp reg
+                                todo!()
+                            }
+                            (dst, src) => {
+                                todo!("imul {dst:?} {src:?}")
+                            }
+                        }
+                    } else {
+                        match (dst.typ, src2.typ) {
+                            (OperandType::Reg, OperandType::Reg) => {
+                                // MUL always puts result in accumulator
+                                // need to accomodate for that
+                                let src_reg = reg(src2.reg, src2.reg_mode);
+                                let acc = if dst.reg_mode == RegMode::BIT32 {
+                                    "eax"
+                                } else {
+                                    "rax"
+                                };
+                                push_asm(format!("  mov {acc}, {dst_reg}").as_str());
+                                push_asm(format!("  mul {src_reg}").as_str());
+                                push_asm(format!("  mov {dst_reg}, {acc}").as_str());
+                            }
+                            (OperandType::Reg, OperandType::ImmI32
+                                                | OperandType::ImmI64
+                                                | OperandType::ImmU32
+                                                | OperandType::ImmU64) => {
+                                // MUL has no Immediate mode, need to use temp reg
+                                todo!()
+                            }
+                            (dst, src) => {
+                                todo!("mul {dst:?} {src:?}")
+                            }
+                        }
+                    }
+                }
+                IR::Div { dst, src1, src2, signed } => {
+                    debug_assert!(dst == src1);
+                    debug_assert!(dst.reg != instr::Register::None);
+                    let dst_reg = reg(dst.reg, dst.reg_mode);
+
+                    let d = if *signed { "idiv" } else { "div" };
+                    let acc = if dst.reg_mode == RegMode::BIT32 {
+                        "eax"
+                    } else {
+                        "rax"
+                    };
+
+                    // IDIV and DIV put remainder in DX, need to preserve it
+                    let rem = "rdx";
+                    push_asm(format!("  push {rem}").as_str());
+
+                    match (dst.typ, src2.typ) {
+                        (OperandType::Reg, OperandType::Reg) => {
+                            let src_reg = reg(src2.reg, src2.reg_mode);
+                            // As with MUL, DIV uses accumulator
+                            push_asm(format!("  mov {acc}, {dst_reg}").as_str());
+                            push_asm("  cqo");
+                            push_asm(format!("  {d} {src_reg}").as_str());
+                            // Restore DX
+                            push_asm(format!("  pop {rem}").as_str());
+                            push_asm(format!("  mov {dst_reg}, {acc}").as_str());
+                        }
+                        (dst, src) => {
+                            todo!("{d} {dst:?} {src:?}")
+                        }
+                    }
+                }
+
+                // Control Flow
                 IR::Label { name } => push_asm(format!("{name}:").as_str()),
 
                 // Functions
