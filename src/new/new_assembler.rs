@@ -278,6 +278,33 @@ impl Assembler {
 
                 // Control Flow
                 IR::Label { name } => push_asm(format!("{name}:").as_str()),
+                IR::Cmp { dst, src } => {
+                    debug_assert!(dst.typ == OperandType::Reg);
+                    let dst_reg = reg(dst.reg, dst.reg_mode);
+                    match (dst.typ, src.typ) {
+                        (OperandType::Reg, OperandType::Reg) => {
+                            let src_reg = reg(src.reg, src.reg_mode);
+                            push_asm(format!("  cmp {dst_reg}, {src_reg}").as_str());
+                        }
+                        (OperandType::Reg, OperandType::ImmI32
+                            | OperandType::ImmI64
+                            | OperandType::ImmU32
+                            | OperandType::ImmU64) => {
+                            let immediate = src.off_or_imm;
+                            push_asm(format!("  cmp {dst_reg}, {immediate}").as_str());
+                        }
+                        (dst, src) => {
+                            todo!("cmp {dst:?} {src:?}")
+                        }
+                    }
+                }
+                IR::Jmp { name } => push_asm(format!("  jmp {name}").as_str()),
+                IR::JmpEq { name } => push_asm(format!("  je {name}").as_str()),
+                IR::JmpNeq { name } => push_asm(format!("  jne {name}").as_str()),
+                IR::JmpLt { name } => push_asm(format!("  jl {name}").as_str()),
+                IR::JmpLte { name } => push_asm(format!("  jle {name}").as_str()),
+                IR::JmpGt { name } => push_asm(format!("  jg {name}").as_str()),
+                IR::JmpGte { name } => push_asm(format!("  jge {name}").as_str()),
 
                 // Functions
                 IR::Call { name } => {
