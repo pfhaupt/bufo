@@ -3,7 +3,7 @@ use std::collections::{HashMap, VecDeque};
 
 use crate::nodes;
 use crate::{checker::Type, parser::Operation};
-use crate::new::instr;
+use crate::instr;
 
 const LBL_STR: &str = "lbl_";
 

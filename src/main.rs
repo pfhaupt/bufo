@@ -8,8 +8,7 @@ mod compiler;
 
 mod nodes;
 mod flags;
-
-mod new;
+mod instr;
 
 use std::time::Instant;
 

@@ -4,10 +4,10 @@ use std::io::Write;
 use std::process::Command;
 use std::path::Path;
 
-use crate::new::instr;
-use crate::new::instr::{OperandType, IR};
+use crate::instr;
+use crate::instr::{OperandType, IR};
 
-use crate::new::instr::{Register, RegMode};
+use crate::instr::{Register, RegMode};
 use crate::flags::FILE_EXT;
 
 use crate::codegen::ERR_STR;
