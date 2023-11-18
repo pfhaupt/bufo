@@ -1,8 +1,18 @@
 
+use std::fs::File;
+use std::io::Write;
+use std::process::Command;
+use std::path::Path;
+
 use crate::new::instr;
 use crate::new::instr::{OperandType, IR};
 
 use super::instr::{Register, RegMode};
+use crate::flags::FILE_EXT;
+
+use crate::codegen::ERR_STR;
+
+const OUTPUT_FOLDER: &str = "./out/";
 
 const REG_64BIT: [&str; 16] = [
     "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
@@ -37,8 +47,12 @@ impl Assembler {
     }
 
     pub fn filepath(self, path: &String) -> Self {
+        let mut path = path.clone();
+        if path.contains("/") {
+            path = path.split("/").last().unwrap().to_string();
+        }
         Self {
-            path: path.clone(),
+            path,
             ..self
         }
     }
@@ -348,10 +362,71 @@ impl Assembler {
         push_asm("");
         push_asm("segment .bss");
 
-        println!("{}", output);
+        // println!("{}", output);
         if invalid {
             println!("INVALID!!!");
             std::process::exit(1);
+        }
+        match Path::new(OUTPUT_FOLDER).try_exists() {
+            Ok(b) => {
+                if !b {
+                    // Create folder
+                    if self.print_debug {
+                        println!("Could not find output folder, creating now");
+                    }
+                    std::fs::create_dir(Path::new("./out/"));
+                }
+            }
+            Err(e) => panic!("{}", e),
+        }
+        let mut filename = String::from(OUTPUT_FOLDER);
+        filename.push_str(&self.path);
+        let asmname = filename.replace(FILE_EXT, ".asm");
+        let objname = asmname.replace(".asm", ".obj");
+
+        if self.print_debug {
+            println!("Writing to {asmname}");
+        }
+        match File::create(format!("{asmname}")) {
+            Ok(mut file) => {
+                file.write_all(output.as_bytes());
+            }
+            Err(e) => panic!("{}", e),
+        }
+
+        filename.replace(FILE_EXT, ".asm");
+        if self.print_debug {
+            println!("Running `nasm -f win64 {asmname} -o {objname}`");
+        }
+        let nasm_output = Command::new("nasm")
+            .args(["-f", "win64", &asmname, "-o", &objname])
+            .output()
+            .expect("failed to execute process");
+        if nasm_output.status.code().unwrap() != 0 {
+            return Err(format!(
+                "{}: Converting assembly to object file failed with:\n{}", ERR_STR, String::from_utf8(nasm_output.stderr).unwrap()
+            ));
+        }
+        if self.print_debug {
+            println!(
+                "Running `golink /console /entry main {objname} MSVCRT.dll kernel32.dll`"
+            );
+        }
+        let golink_output = Command::new("golink")
+            .args([
+                "/console",
+                "/entry",
+                "main",
+                &objname,
+                "MSVCRT.dll",
+                "kernel32.dll",
+            ])
+            .output()
+            .expect("failed to execute process");
+        if golink_output.status.code().unwrap() != 0 {
+            return Err(format!(
+                "{}: Converting linking object files failed with:\n{}", ERR_STR, String::from_utf8(golink_output.stderr).unwrap()
+            ));
         }
 
         Ok(())
