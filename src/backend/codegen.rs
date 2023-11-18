@@ -1,11 +1,115 @@
 use std::collections::HashMap;
+use std::num::ParseIntError;
 
 use super::instr;
+use crate::compiler::{ERR_STR, NOTE_STR};
 use crate::frontend::nodes;
 use crate::frontend::parser::Operation;
 use crate::middleend::checker::Type;
 
 const LBL_STR: &str = "lbl_";
+
+macro_rules! func_assert {
+    ($codegen:ident) => {
+        debug_assert!($codegen.current_stack_offset == 0);
+        debug_assert!($codegen.stack_scopes.is_empty());
+        debug_assert!($codegen.current_return_label.is_empty());
+        debug_assert!($codegen.current_class.is_empty());
+    };
+}
+macro_rules! func_entry {
+    ($codegen:ident,$name:expr) => {
+        $codegen.enter_scope();
+
+        // Generate entrypoint for later `call func_name` call
+        let label = $codegen.generate_label(Some($name.clone()));
+        $codegen.add_ir(label);
+
+        $codegen.current_return_label = $name.clone() + "_return";
+    };
+}
+macro_rules! func_stack {
+    ($codegen:ident, $self:ident, $alloc:expr) => {
+        // Prepare stack offset
+        let mut bytes = $self.stack_size;
+        if bytes % 16 != 0 {
+            // 16-byte align the stack
+            bytes += 16 - bytes % 16;
+        }
+        if $alloc {
+            $codegen.add_ir(instr::IR::AllocStack { bytes });
+        } else {
+            $codegen.add_ir(instr::IR::DeallocStack { bytes });
+        }
+    };
+}
+macro_rules! func_param {
+    ($codegen:ident, $self:ident) => {
+        // Prepare parameters
+        for param in &$self.parameters {
+            param.codegen($codegen)?;
+        }
+        $codegen.reset_registers();
+    };
+}
+macro_rules! func_body {
+    ($codegen:ident, $self:ident) => {
+        // Function body
+        $self.block.codegen($codegen)?;
+    };
+}
+macro_rules! func_return {
+    ($codegen:ident, $self:ident) => {
+        // Return procedure
+        let label = $codegen.generate_label(Some($codegen.current_return_label.clone()));
+        $codegen.add_ir(label);
+
+        // Clean up stack offset
+        func_stack!($codegen, $self, false);
+
+        $codegen.add_ir(instr::IR::Return);
+    };
+}
+macro_rules! func_leave {
+    ($codegen:ident) => {
+        $codegen.current_stack_offset = 0;
+        $codegen.current_return_label.clear();
+        $codegen.reset_registers();
+        $codegen.leave_scope();
+    };
+}
+
+macro_rules! method {
+    ($codegen:ident, $self:ident, $name:expr) => {
+        func_assert!($codegen);
+        func_entry!($codegen, $name);
+        func_stack!($codegen, $self, true);
+        // Add `this` param
+        // FIXME: This is unreliable once we add static methods and all that
+        //        It'd be 100 times better and easier if the parser would just add the parameter directly
+        //        instead of the implicit use in the Type Checker and Codegen.
+        $codegen.store_variable_in_stack(
+            &String::from("this"),
+            &Type::Class($self.class_name.clone()),
+        )?;
+        func_param!($codegen, $self);
+        func_body!($codegen, $self);
+        func_return!($codegen, $self);
+        func_leave!($codegen);
+    };
+}
+
+macro_rules! function {
+    ($codegen:ident, $self:ident, $name:expr) => {
+        func_assert!($codegen);
+        func_entry!($codegen, $name);
+        func_stack!($codegen, $self, true);
+        func_param!($codegen, $self);
+        func_body!($codegen, $self);
+        func_return!($codegen, $self);
+        func_leave!($codegen);
+    };
+}
 
 #[derive(Debug)]
 struct ClassInfo {
@@ -311,33 +415,10 @@ impl Codegenable for nodes::FieldNode {
 }
 impl Codegenable for nodes::FeatureNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        // TODO: Make this a macro, it's the same thing for Functions and Methods
-        debug_assert!(codegen.current_stack_offset == 0);
-        debug_assert!(codegen.stack_scopes.is_empty());
-        debug_assert!(codegen.current_return_label.is_empty());
-
-        codegen.enter_scope();
-
-        // Generate entrypoint for later `call func_name` call
-        let name = self.class_name.clone() + "_" + &self.name;
-        let label = codegen.generate_label(Some(name.clone()));
-        codegen.add_ir(label);
-
-        codegen.current_return_label = name + "_return";
-
-        // Prepare stack offset
-        let mut bytes = self.stack_size;
-        if bytes % 16 != 0 {
-            // 16-byte align the stack
-            bytes += 16 - bytes % 16;
-        }
-        codegen.add_ir(instr::IR::AllocStack { bytes });
-
-        // Prepare parameters
-        for param in &self.parameters {
-            param.codegen(codegen)?;
-        }
-        codegen.reset_registers();
+        func_assert!(codegen);
+        func_entry!(codegen, self.class_name.clone() + "_" + &self.name);
+        func_stack!(codegen, self, true);
+        func_param!(codegen, self);
 
         if self.is_constructor {
             // let this: Class = alloc(sizeof(Class));
@@ -357,8 +438,7 @@ impl Codegenable for nodes::FeatureNode {
             });
         }
 
-        // Function body
-        self.block.codegen(codegen)?;
+        func_body!(codegen, self);
 
         // Return procedure
         let label = codegen.generate_label(Some(codegen.current_return_label.clone()));
@@ -372,123 +452,24 @@ impl Codegenable for nodes::FeatureNode {
             });
         }
 
-        // Clean up stack offset
-        codegen.add_ir(instr::IR::DeallocStack { bytes });
+        func_stack!(codegen, self, false);
 
         codegen.add_ir(instr::IR::Return);
 
-        codegen.current_stack_offset = 0;
-        codegen.current_return_label.clear();
-        codegen.reset_registers();
-        codegen.leave_scope();
+        func_leave!(codegen);
+
         Ok(instr::Operand::none())
     }
 }
 impl Codegenable for nodes::FunctionNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        // TODO: Make this a macro, it's the same thing for Functions and Methods
-        debug_assert!(codegen.current_stack_offset == 0);
-        debug_assert!(codegen.stack_scopes.is_empty());
-        debug_assert!(codegen.current_return_label.is_empty());
-        debug_assert!(codegen.current_class.is_empty());
-
-        codegen.enter_scope();
-
-        // Generate entrypoint for later `call func_name` call
-        let name = self.name.clone();
-        let label = codegen.generate_label(Some(name.clone()));
-        codegen.add_ir(label);
-
-        codegen.current_return_label = name + "_return";
-
-        // Prepare stack offset
-        let mut bytes = self.stack_size;
-        if bytes % 16 != 0 {
-            // 16-byte align the stack
-            bytes += 16 - bytes % 16;
-        }
-        codegen.add_ir(instr::IR::AllocStack { bytes });
-
-        // Prepare parameters
-        for param in &self.parameters {
-            param.codegen(codegen)?;
-        }
-        codegen.reset_registers();
-
-        // Function body
-        self.block.codegen(codegen)?;
-
-        // Return procedure
-        let label = codegen.generate_label(Some(codegen.current_return_label.clone()));
-        codegen.add_ir(label);
-
-        // Clean up stack offset
-        codegen.add_ir(instr::IR::DeallocStack { bytes });
-
-        codegen.add_ir(instr::IR::Return);
-
-        codegen.current_stack_offset = 0;
-        codegen.current_return_label.clear();
-        codegen.reset_registers();
-        codegen.leave_scope();
+        function!(codegen, self, self.name);
         Ok(instr::Operand::none())
     }
 }
 impl Codegenable for nodes::MethodNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        // TODO: Make this a macro, it's the same thing for Functions and Methods
-        debug_assert!(codegen.current_stack_offset == 0);
-        debug_assert!(codegen.stack_scopes.is_empty());
-        debug_assert!(codegen.current_return_label.is_empty());
-
-        codegen.enter_scope();
-
-        // Generate entrypoint for later `call func_name` call
-        let name = self.class_name.clone() + "_" + &self.name;
-        let label = codegen.generate_label(Some(name.clone()));
-        codegen.add_ir(label);
-
-        codegen.current_return_label = name + "_return";
-
-        // Prepare stack offset
-        let mut bytes = self.stack_size;
-        if bytes % 16 != 0 {
-            // 16-byte align the stack
-            bytes += 16 - bytes % 16;
-        }
-        codegen.add_ir(instr::IR::AllocStack { bytes });
-
-        // Add `this` param
-        // FIXME: This is unreliable once we add static methods and all that
-        //        It'd be 100 times better and easier if the parser would just add the parameter directly
-        //        instead of the implicit use in the Type Checker and Codegen.
-        codegen.store_variable_in_stack(
-            &String::from("this"),
-            &Type::Class(self.class_name.clone()),
-        )?;
-
-        // Prepare parameters
-        for param in &self.parameters {
-            param.codegen(codegen)?;
-        }
-        codegen.reset_registers();
-
-        // Function body
-        self.block.codegen(codegen)?;
-
-        // Return procedure
-        let label = codegen.generate_label(Some(codegen.current_return_label.clone()));
-        codegen.add_ir(label);
-
-        // Clean up stack offset
-        codegen.add_ir(instr::IR::DeallocStack { bytes });
-
-        codegen.add_ir(instr::IR::Return);
-
-        codegen.current_stack_offset = 0;
-        codegen.current_return_label.clear();
-        codegen.reset_registers();
-        codegen.leave_scope();
+        method!(codegen, self, self.class_name.clone() + "_" + &self.name);
         Ok(instr::Operand::none())
     }
 }
@@ -579,11 +560,11 @@ impl Codegenable for nodes::IfNode {
         match cmp_mode {
             Operation::Eq => codegen.add_ir(instr::IR::JmpNeq { name: lbl_name }),
             Operation::Neq => codegen.add_ir(instr::IR::JmpEq { name: lbl_name }),
-            Operation::Gt => todo!(),
-            Operation::Gte => todo!(),
-            Operation::Lt => todo!(),
-            Operation::Lte => todo!(),
-            _ => todo!(),
+            Operation::Gt => codegen.add_ir(instr::IR::JmpLte { name: lbl_name }),
+            Operation::Gte => codegen.add_ir(instr::IR::JmpLt { name: lbl_name }),
+            Operation::Lt => codegen.add_ir(instr::IR::JmpGte { name: lbl_name }),
+            Operation::Lte => codegen.add_ir(instr::IR::JmpGt { name: lbl_name }),
+            _ => unreachable!(),
         }
         self.if_branch.codegen(codegen)?;
 
@@ -659,23 +640,41 @@ impl Codegenable for nodes::ExpressionArrayAccessNode {
 }
 impl Codegenable for nodes::ExpressionLiteralNode {
     fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
+        let err_to_str = |e: ParseIntError| {
+            let s = e.to_string();
+            format!(
+                "{}: {:?}: Integer Literal could not be parsed.\n{}: {}",
+                ERR_STR,
+                self.location,
+                NOTE_STR,
+                s
+            )
+        };
         // FIXME: Put this into a macro or expand ExpressionLiteralNode
         match &self.typ {
             Type::I32 => {
-                let v = self.value.parse::<i32>().map_err(|_e| todo!());
-                Ok(instr::Operand::imm_i32(v.unwrap()))
+                let v = self.value.parse::<i32>().map_err(|e| {
+                    err_to_str(e)
+                })?;
+                Ok(instr::Operand::imm_i32(v))
             }
             Type::I64 => {
-                let v = self.value.parse::<i64>().map_err(|_e| todo!());
-                Ok(instr::Operand::imm_i64(v.unwrap()))
+                let v = self.value.parse::<i64>().map_err(|e| {
+                    err_to_str(e)
+                })?;
+                Ok(instr::Operand::imm_i64(v))
             }
             Type::U32 => {
-                let v = self.value.parse::<u32>().map_err(|_e| todo!());
-                Ok(instr::Operand::imm_u32(v.unwrap()))
+                let v = self.value.parse::<u32>().map_err(|e| {
+                    err_to_str(e)
+                })?;
+                Ok(instr::Operand::imm_u32(v))
             }
             Type::U64 => {
-                let v = self.value.parse::<u64>().map_err(|_e| todo!());
-                Ok(instr::Operand::imm_u64(v.unwrap()))
+                let v = self.value.parse::<u64>().map_err(|e| {
+                    err_to_str(e)
+                })?;
+                Ok(instr::Operand::imm_u64(v))
             }
             Type::Usize => todo!(),
             _ => todo!(),

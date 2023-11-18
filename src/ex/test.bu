@@ -1,3 +1,13 @@
+class Test {
+    feat new() {
+
+    }
+
+    func foo(a: i32) {
+
+    }
+}
+
 func ack(m: u32, n: u32) -> u32 {
     if (m == 0) { return n + 1; }
     if (n == 0) { return ack(m - 1, 1); }
@@ -6,5 +16,5 @@ func ack(m: u32, n: u32) -> u32 {
 
 func main() {
     let a: u32 = ack(3, 5);
-    let b: u32 = (1u32 + 1u32) == 4i32;
+    // let b: u32 = [1, 2, 3] + 1;
 }

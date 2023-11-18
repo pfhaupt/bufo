@@ -1148,7 +1148,9 @@ impl Parsable for nodes::ExpressionBinaryNode {
     where
         Self: Sized,
     {
-        todo!()
+        Err(format!(
+            "INTERNAL ERROR AT {}:{}:{}: Not implemented yet.", file!(), line!(), column!()
+        ))
     }
 }
 

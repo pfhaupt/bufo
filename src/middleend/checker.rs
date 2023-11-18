@@ -717,7 +717,7 @@ impl Typecheckable for nodes::Statement {
     where
         Self: Sized,
     {
-        todo!()
+        Ok(())
     }
 }
 impl Typecheckable for nodes::LetNode {
@@ -884,6 +884,7 @@ impl Typecheckable for nodes::ReturnNode {
             // We're returning from a method or feature
             let Some(class) = checker.known_classes.get(&checker.current_class) else { unreachable!() };
             let (mut location, mut expected_return_type) = (Location::anonymous(), Type::Unknown);
+            let mut is_feature = true;
             if let Some(feature) = class.known_features.get(&checker.current_function) {
                 expected_return_type = feature.return_type.clone();
                 location = feature.location.clone();
@@ -891,6 +892,7 @@ impl Typecheckable for nodes::ReturnNode {
             if let Some(method) = class.known_methods.get(&checker.current_function) {
                 expected_return_type = method.return_type.clone();
                 location = method.location.clone();
+                is_feature = false;
             }
             debug_assert!(expected_return_type != Type::Unknown);
             debug_assert!(location != Location::anonymous());
@@ -898,7 +900,14 @@ impl Typecheckable for nodes::ReturnNode {
             if let Some(ret_expr) = &mut self.return_value {
                 if expected_return_type == Type::None {
                     // Found expression but expected none, makes no sense
-                    todo!()
+                    return Err(format!(
+                        "{}: {:?}: Unexpected Return expression.\n{}: {:?}: {} is declared to return nothing here.",
+                        ERR_STR,
+                        self.location,
+                        NOTE_STR,
+                        location,
+                        if is_feature { "Feature" } else { "Method" }
+                    ));
                 }
                 let expr_type = ret_expr.type_check(checker)?;
                 let t = if expr_type == Type::Unknown {
@@ -1176,7 +1185,12 @@ impl Typecheckable for nodes::ExpressionArrayLiteralNode {
             // FIXME: Why does ExpressionArrayLiteralNode not have a field type??
             Ok(())
         } else {
-            todo!() // Attempted to `infer` non-array to Array Literal
+            Err(format!(
+                "{}: {:?}: Type Mismatch! Expected {}, found Array Literal.",
+                ERR_STR,
+                self.location,
+                typ
+            ))
         }
     }
 }
@@ -1373,7 +1387,7 @@ impl Typecheckable for nodes::ExpressionCallNode {
     where
         Self: Sized,
     {
-        todo!()
+        Ok(())
     }
 }
 impl Typecheckable for nodes::ExpressionConstructorNode {
