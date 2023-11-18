@@ -26,6 +26,18 @@ pub enum Type {
     F64,
 }
 
+impl Type {
+    pub fn size(&self) -> usize {
+        match self {
+            Type::Arr(t, size) => t.size() * size.iter().product::<usize>(),
+            Type::I32 | Type::U32 => 4,
+            Type::I64 | Type::U64 | Type::Usize => 8,
+            Type::Class(..) => 8,
+            e => todo!("Figure out size of type {:?} in bytes", e),
+        }
+    }
+}
+
 lazy_static!{
     static ref BUILT_IN_FUNC: HashMap<String, TCFunction> = {
         assert!(BUILT_IN_FUNCTIONS.len() == 3);

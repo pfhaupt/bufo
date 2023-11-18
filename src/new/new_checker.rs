@@ -236,6 +236,7 @@ pub struct TypeChecker {
     known_variables: VecDeque<HashMap<String, Variable>>,
     current_function: String,
     current_class: String,
+    current_stack_size: usize,
 }
 
 impl TypeChecker {
@@ -245,7 +246,8 @@ impl TypeChecker {
             known_functions: HashMap::new(),
             known_variables: VecDeque::new(),
             current_function: String::new(),
-            current_class: String::new()
+            current_class: String::new(),
+            current_stack_size: 0,
          }
     }
 
@@ -415,6 +417,7 @@ impl Typecheckable for nodes::FeatureNode {
         debug_assert!(checker.current_function.is_empty());
         debug_assert!(checker.known_variables.is_empty());
         debug_assert!(checker.known_classes.contains_key(&self.class_name));
+        debug_assert!(checker.current_stack_size == 0);
 
         for param in &mut self.parameters {
             param.type_check(checker)?;
@@ -434,6 +437,7 @@ impl Typecheckable for nodes::FeatureNode {
                 self.location.clone(),
                 Type::Class(self.class_name.clone())
             );
+            checker.current_stack_size += 8;
             parameters.insert(String::from("this"), this_param);
         }
         for param in &feature.parameters {
@@ -457,7 +461,9 @@ impl Typecheckable for nodes::FeatureNode {
         checker.known_variables.push_back(parameters);
         
         self.block.type_check(checker)?;
+        self.stack_size = checker.current_stack_size;
 
+        checker.current_stack_size = 0;
         checker.current_function.clear();
         checker.known_variables.clear();
         Ok(Type::None)
@@ -472,6 +478,7 @@ impl Typecheckable for nodes::FunctionNode {
         debug_assert!(checker.current_class.is_empty());
         debug_assert!(checker.known_variables.is_empty());
         debug_assert!(checker.known_functions.contains_key(&self.name));
+        debug_assert!(checker.current_stack_size == 0);
 
         for param in &mut self.parameters {
             param.type_check(checker)?;
@@ -495,7 +502,9 @@ impl Typecheckable for nodes::FunctionNode {
         checker.known_variables.push_back(parameters);
 
         self.block.type_check(checker)?;
+        self.stack_size = checker.current_stack_size;
 
+        checker.current_stack_size = 0;
         checker.current_function.clear();
         checker.known_variables.clear();
         Ok(Type::None)
@@ -509,6 +518,7 @@ impl Typecheckable for nodes::MethodNode {
         debug_assert!(checker.current_function.is_empty());
         debug_assert!(checker.known_variables.is_empty());
         debug_assert!(checker.known_classes.contains_key(&self.class_name));
+        debug_assert!(checker.current_stack_size == 0);
 
         for param in &mut self.parameters {
             param.type_check(checker)?;
@@ -528,6 +538,7 @@ impl Typecheckable for nodes::MethodNode {
             Type::Class(self.class_name.clone())
         );
         parameters.insert(String::from("this"), this_param);
+        checker.current_stack_size += 8;
 
         for param in &method.parameters {
             let var = Variable::new(
@@ -550,7 +561,9 @@ impl Typecheckable for nodes::MethodNode {
         checker.known_variables.push_back(parameters);
         
         self.block.type_check(checker)?;
+        self.stack_size = checker.current_stack_size;
 
+        checker.current_stack_size = 0;
         checker.current_function.clear();
         checker.known_variables.clear();
         Ok(Type::None)
@@ -561,7 +574,10 @@ impl Typecheckable for nodes::MethodNode {
 }
 impl Typecheckable for nodes::ParameterNode {
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
-        self.typ.type_check(checker)
+        self.typ.type_check(checker);
+        let var_size = self.typ.typ.size();
+        checker.current_stack_size += var_size;
+        Ok(Type::None)
     }
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String> where Self: Sized {
         todo!()
@@ -615,6 +631,9 @@ impl Typecheckable for nodes::LetNode {
             )),
             None => {
                 self.typ.type_check(checker)?;
+
+                let var_size = self.typ.typ.size();
+                checker.current_stack_size += var_size;
 
                 let current_scope = checker.get_current_scope();
                 let var = Variable {
@@ -696,6 +715,7 @@ impl Typecheckable for nodes::IfNode {
 impl Typecheckable for nodes::ReturnNode {
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String> where Self: Sized {
         debug_assert!(!checker.current_function.is_empty());
+        debug_assert!(self.typ == Type::Unknown);
         // FIXME: Both branches share 80% same work, we can reduce code size and make this easier to read
         if checker.current_class.is_empty() {
             // We're returning from a normal function
@@ -709,10 +729,11 @@ impl Typecheckable for nodes::ReturnNode {
                     todo!() // FIXME: Unexpected return value
                 }
                 let expr_type = ret_expr.type_check(checker)?;
-                if expr_type == Type::Unknown {
-                    todo!() // FIXME: `infer` type
+                let t = if expr_type == Type::Unknown {
+                    ret_expr.type_check_with_type(checker, &expected_return_type)?;
+                    expected_return_type
                 } else if expr_type != expected_return_type {
-                    Err(format!(
+                    return Err(format!(
                         "{}: {:?}: Type Mismatch! Function is declared to return `{:?}`, found `{:?}`.\n{}: {:?}: Function declared to return `{:?}` here.",
                         ERR_STR,
                         self.location,
@@ -721,11 +742,13 @@ impl Typecheckable for nodes::ReturnNode {
                         NOTE_STR,
                         location,
                         expr_type
-                    ))
+                    ));
                 } else {
                     // Everything is fine, correct return type was provided
-                    Ok(expr_type)
-                }
+                    expr_type
+                };
+                self.typ = t.clone();
+                Ok(t)
             } else {
                 // NOTE: This means no return value
                 todo!()
@@ -757,13 +780,13 @@ impl Typecheckable for nodes::ReturnNode {
                     todo!()
                 }
                 let expr_type = ret_expr.type_check(checker)?;
-                if expr_type == Type::Unknown {
+                let t = if expr_type == Type::Unknown {
                     // we have something like `return 5;`, where we couldn't determine the type
                     // so we now have to `infer` the type, and set it accordingly
                     todo!()
                 } else if expr_type != expected_return_type {
                     // Signature expects `expected_return_type`, `return {expr}` has other type for expr
-                    Err(format!(
+                    return Err(format!(
                         "{}: {:?}: Type Mismatch! Function is declared to return `{:?}`, found `{:?}`.\n{}: {:?}: Function declared to return `{:?}` here.",
                         ERR_STR,
                         self.location,
@@ -772,11 +795,13 @@ impl Typecheckable for nodes::ReturnNode {
                         NOTE_STR,
                         location,
                         expr_type
-                    ))
+                    ));
                 } else {
                     // Everything is fine, correct return type was provided
-                    Ok(expr_type)
-                }
+                    expr_type
+                };
+                self.typ = t.clone();
+                Ok(t)
             } else {
                 // NOTE: This means no return value
                 todo!()
@@ -1265,8 +1290,8 @@ impl Typecheckable for nodes::ExpressionFieldAccessNode {
                         self.name
                     ));
                 }
-                let typ = self.type_check_field(checker, var)?;
-                self.typ = typ.clone();
+                let typ = self.type_check_field(checker, var.clone())?;
+                self.typ = var.typ;
                 Ok(typ)
             }
             None => {

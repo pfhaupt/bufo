@@ -59,7 +59,7 @@ impl Token {
 }
 
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum Operation {
     PLUS,
     MINUS,
@@ -651,6 +651,7 @@ impl Parsable for nodes::FeatureNode {
             return_type,
             parameters,
             block,
+            stack_size: 0,
         })
     }
 }
@@ -690,6 +691,7 @@ impl Parsable for nodes::FunctionNode {
             return_type,
             parameters,
             block,
+            stack_size: 0,
         })
     }
 }
@@ -731,6 +733,7 @@ impl Parsable for nodes::MethodNode {
             return_type,
             parameters,
             block,
+            stack_size: 0,
         })
     }
 }
@@ -928,7 +931,8 @@ impl Parsable for nodes::ReturnNode {
         parser.expect(TokenType::Semi)?;
         Ok(nodes::ReturnNode {
             location,
-            return_value
+            return_value,
+            typ: Type::Unknown
         })
     }
 }
