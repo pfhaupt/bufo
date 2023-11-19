@@ -13,6 +13,12 @@ pub const NOTE_STR: &str = "\x1b[92mnote\x1b[0m";
 pub const OUTPUT_FOLDER: &str = "./out/";
 pub const FILE_EXT: &str = ".bu";
 
+pub const CONSTRUCTOR_NAME: &str = "new";
+
+pub const BUILT_IN_FEATURES: [&str; 1] = [
+    CONSTRUCTOR_NAME
+];
+
 #[macro_export]
 macro_rules! internal_error {
     ($msg:expr) => {

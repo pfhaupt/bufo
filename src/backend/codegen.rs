@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::num::ParseIntError;
 
 use super::instr;
-use crate::compiler::{ERR_STR, NOTE_STR};
+use crate::compiler::{ERR_STR, NOTE_STR, CONSTRUCTOR_NAME};
 use crate::frontend::nodes;
 use crate::frontend::parser::Operation;
 use crate::middleend::checker::Type;
@@ -678,8 +678,16 @@ impl Codegenable for nodes::ExpressionLiteralNode {
                 })?;
                 Ok(instr::Operand::imm_u64(v))
             }
-            Type::Usize => todo!(),
-            _ => todo!(),
+            Type::Usize => {
+                let v = self.value.parse::<u64>().map_err(|e| {
+                    err_to_str(e)
+                })?;
+                Ok(instr::Operand::imm_u64(v))
+            },
+            t => internal_error!(format!(
+                "Unexpected Type {:?} in ExpressionLiteralNode::codegen()!",
+                t
+            )),
         }
     }
 }
@@ -788,7 +796,12 @@ impl Codegenable for nodes::ExpressionCallNode {
                         imm: op,
                     });
                 }
-                _ => todo!(),
+                op => {
+                    return internal_error!(format!(
+                        "ExpressionCallNode::codegen() can't handle argument type `{:?}` yet.",
+                        op
+                    ));
+                }
             }
         }
 
@@ -813,8 +826,7 @@ impl Codegenable for nodes::ExpressionCallNode {
 }
 impl Codegenable for nodes::ExpressionConstructorNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        // FIXME: This will break if we ever rename the new feature
-        let constructor = self.class_name.clone() + "_new";
+        let constructor = self.class_name.clone() + "_" + CONSTRUCTOR_NAME;
 
         let result = codegen.get_register()?;
         let result_mode = instr::RegMode::from(&self.typ);

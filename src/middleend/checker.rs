@@ -4,7 +4,8 @@ use std::fmt::{Display, Formatter};
 use crate::frontend::nodes;
 use crate::frontend::parser::Location;
 
-use crate::compiler::{ERR_STR, NOTE_STR, WARN_STR};
+use crate::compiler::{ERR_STR, NOTE_STR, WARN_STR, BUILT_IN_FEATURES};
+use crate::compiler::CONSTRUCTOR_NAME;
 use crate::internal_error;
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
@@ -49,7 +50,6 @@ impl Display for Type {
     }
 }
 
-const BUILT_IN_FEATURES: [&str; 1] = ["new"];
 
 #[derive(Debug, Clone)]
 pub struct Parameter {
@@ -189,7 +189,7 @@ impl Class {
 
     fn resolve_new_return_type(&mut self) -> Result<(), String> {
         for feat in &mut self.known_features {
-            if *feat.0 == "new" {
+            if *feat.0 == CONSTRUCTOR_NAME {
                 if feat.1.return_type == self.class_type {
                     // FIXME: Also store location of return type declaration for better warnings
                     println!(
@@ -200,7 +200,7 @@ impl Class {
                 }
                 if feat.1.return_type != Type::None {
                     return Err(format!(
-                        "{}: {:?}: Feature `new` is expected to return None, found {}.",
+                        "{}: {:?}: Feature `{CONSTRUCTOR_NAME}` is expected to return None, found {}.",
                         ERR_STR, feat.1.location, feat.1.return_type
                     ));
                 }
@@ -208,18 +208,18 @@ impl Class {
                 return Ok(());
             }
         }
-        panic!("Class has constructor but no new feature found");
+        panic!("Class has constructor but no feature `{CONSTRUCTOR_NAME}` found");
     }
 
-    fn get_field(&self, name: &String) -> Option<(Location, Type)> {
+    fn get_field(&self, name: &str) -> Option<(Location, Type)> {
         self.fields.get(name).cloned()
     }
 
-    fn get_feature(&self, name: &String) -> Option<&Function> {
+    fn get_feature(&self, name: &str) -> Option<&Function> {
         self.known_features.get(name)
     }
 
-    fn get_method(&self, name: &String) -> Option<&Method> {
+    fn get_method(&self, name: &str) -> Option<&Method> {
         self.known_methods.get(name)
     }
 }
@@ -474,7 +474,7 @@ impl Typecheckable for nodes::FeatureNode {
         // Parameters are now known variables
         let mut parameters = HashMap::new();
         // FIXME: Handle this better
-        if feature.name == *"new" {
+        if feature.name == *CONSTRUCTOR_NAME {
             let this_param = Variable::new(
                 String::from("this"),
                 self.location.clone(),
@@ -942,8 +942,17 @@ impl Typecheckable for nodes::ReturnNode {
             };
             self.typ = t.clone();
             Ok(t)
+        } else if expected_return_type != Type::None {
+            // No return expression, but we expected return value
+            Err(format!(
+                "{}: {:?}: Expected Return value, found nothing.\n{}: {:?}: Function is declared to return {} here.",
+                ERR_STR,
+                self.location,
+                NOTE_STR,
+                location,
+                expected_return_type
+            ))
         } else {
-            // NOTE: This means no return value
             todo!()
         }
     }
@@ -955,7 +964,7 @@ impl Typecheckable for nodes::ReturnNode {
     where
         Self: Sized,
     {
-        todo!()
+        internal_error!("ReturnNode::type_check_with_type() is not implemented yet")
     }
 }
 impl Typecheckable for nodes::TypeNode {
@@ -1148,7 +1157,14 @@ impl Typecheckable for nodes::ExpressionArrayLiteralNode {
                 ))
             }
         }
-        Ok(array_type)
+        if let Type::Arr(t, mut size) = array_type {
+            size.push(self.elements.len());
+            Ok(Type::Arr(t, size))
+        } else if array_type != Type::Unknown {
+            Ok(Type::Arr(Box::new(array_type), vec![self.elements.len()]))
+        } else {
+            Ok(array_type)
+        }
     }
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String>
     where
@@ -1192,11 +1208,71 @@ impl Typecheckable for nodes::ExpressionArrayLiteralNode {
     }
 }
 impl Typecheckable for nodes::ExpressionArrayAccessNode {
-    fn type_check(&mut self, _checker: &mut TypeChecker) -> Result<Type, String>
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
     {
-        todo!()
+        let Some(var) = checker.get_variable(&self.array_name) else {
+            return Err(format!(
+                "{}: {:?}: Unknown variable `{}`.",
+                ERR_STR,
+                self.location,
+                self.array_name
+            ));
+        };
+        let Type::Arr(elem, arr_size) = &var.typ else {
+            return Err(format!(
+                "{}: {:?}: Attempted to index into non-array variable `{}`.\n{}: {:?}: Variable `{}` declared here.",
+                ERR_STR,
+                self.location,
+                self.array_name,
+                NOTE_STR,
+                var.location,
+                var.name,
+            ));
+        };
+        if arr_size.len() != self.indices.elements.len() {
+            let i = if arr_size.len() == 1 { "index" } else { "indices" };
+            return Err(format!(
+                "{}: {:?}: Dimension Mismatch in Array indexing. Expected {} {i}, found {}.\n{}: Getting a subarray is not supported yet, you can only get single elements.",
+                ERR_STR,
+                self.location,
+                arr_size.len(),
+                self.indices.elements.len(),
+                NOTE_STR
+            ))
+        }
+        let t = self.indices.type_check(checker)?;
+        if let Type::Arr(elem_index, _) = t {
+            if *elem_index != Type::Usize {
+                Err(format!(
+                    "{}: {:?}: Array Indices are expected to be type usize, found array of {}.",
+                    ERR_STR,
+                    self.location,
+                    elem_index
+                ))
+            } else {
+                todo!()
+            }
+        } else if t == Type::Unknown {
+            let index_arr = Type::Arr(
+                Box::new(Type::Usize),
+                vec![arr_size.len()]
+            );
+            if let Err(e) = self.indices.type_check_with_type(checker, &index_arr) {
+                Err(format!(
+                    "{}\n{}: Array Indices are expected to be of type usize.",
+                    e,
+                    NOTE_STR,
+                ))
+            } else {
+                let final_type = *elem.clone();
+                self.typ = final_type.clone();
+                return Ok(final_type)
+            }
+        } else {
+            todo!()
+        }
     }
     fn type_check_with_type(
         &mut self,
@@ -1225,24 +1301,25 @@ impl Typecheckable for nodes::ExpressionLiteralNode {
                 "{}: {:?}: Type Mismatch! Expected {}, found {}.",
                 ERR_STR, self.location, typ, self.typ
             ));
-        }
-        if let Type::Arr(_, _) = typ {
-            // FIXME: How the heck do I deal with this error?
-            // NOTE: We wanted to infer an array to a literal
-            return Err(format!(
-                "{}: {:?}: Unexpected type. Attempted to assign `{:?}` to literal `{:?}`.",
-                ERR_STR, self.location, typ, self.value
-            ));
+        } else if let Type::Arr(_, _) = typ {
+            Err(format!(
+                "{}: {:?} Type Mismatch! Expected Array Literal, found Integer Literal `{}`",
+                ERR_STR,
+                self.location,
+                self.value
+            ))
         } else if let Type::Class(class_name) = typ {
-            // FIXME: How the heck do I deal with this error?
-            // NOTE: We wanted to infer a class to a literal
-            return Err(format!(
-                "{}: {:?}: Unexpected type. Attempted to assign `{:?}` to literal `{:?}`.",
-                ERR_STR, self.location, class_name, self.value
-            ));
+            Err(format!(
+                "{}: {:?} Type Mismatch! Expected instance of class `{}`, found Integer Literal `{}`",
+                ERR_STR,
+                self.location,
+                class_name,
+                self.value
+            ))
+        } else {
+            self.typ = typ.clone();
+            Ok(())
         }
-        self.typ = typ.clone();
-        Ok(())
     }
 }
 impl Typecheckable for nodes::ExpressionBinaryNode {
@@ -1278,20 +1355,25 @@ impl Typecheckable for nodes::ExpressionBinaryNode {
             (Type::Unknown, Type::Unknown) => Ok(Type::Unknown),
             (Type::Unknown, other) => {
                 self.lhs.type_check_with_type(checker, other)?;
+                self.typ = other.clone();
                 Ok(other.clone())
             }
             (other, Type::Unknown) => {
                 self.rhs.type_check_with_type(checker, other)?;
+                self.typ = other.clone();
                 Ok(other.clone())
             }
             (lhs, rhs) => {
                 if lhs != rhs {
-                    // FIXME: Also store location of LHS and RHS for better error reporting
                     return Err(format!(
-                        "{}: {:?}: Type Mismatch in binary expression. LHS has type `{:?}`, RHS has type `{:?}`.",
+                        "{}: {:?}: Type Mismatch in binary expression.\n{}: {:?}: LHS has type {}.\n{}: {:?}: RHS has type {}.",
                         ERR_STR,
                         self.location,
+                        NOTE_STR,
+                        self.lhs.get_loc(),
                         lhs,
+                        NOTE_STR,
+                        self.rhs.get_loc(),
                         rhs
                     ));
                 }
@@ -1405,7 +1487,7 @@ impl Typecheckable for nodes::ExpressionConstructorNode {
         let Some(class) = checker.known_classes.get(&self.class_name) else { unreachable!() };
         if !class.has_constructor {
             return Err(format!(
-                "{}: {:?}: Class `{}` has no constructor.\n{}: {:?}: Could not find feature `new` in class `{}`.",
+                "{}: {:?}: Class `{}` has no constructor.\n{}: {:?}: Could not find feature `{CONSTRUCTOR_NAME}` in class `{}`.",
                 ERR_STR,
                 self.location,
                 self.class_name,
@@ -1415,8 +1497,7 @@ impl Typecheckable for nodes::ExpressionConstructorNode {
             ));
         }
         let class_type = class.class_type.clone();
-        // FIXME: Unhardcode `new` String - What if we change the name of the feature later?
-        let Some(constructor) = class.get_feature(&String::from("new")) else { unreachable!() };
+        let Some(constructor) = class.get_feature(CONSTRUCTOR_NAME) else { unreachable!() };
 
         match self.arguments.len().cmp(&constructor.parameters.len()) {
             std::cmp::Ordering::Less => {

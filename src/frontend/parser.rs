@@ -4,10 +4,9 @@ use std::fs;
 use std::path::PathBuf;
 
 use super::nodes;
-use crate::compiler::{ERR_STR, WARN_STR};
+use crate::compiler::{ERR_STR, WARN_STR, CONSTRUCTOR_NAME};
 use crate::middleend::checker::Type;
 
-// We always store the N-1 next tokens for lookahead purposes, even if we only use 1 right now
 const LOOKAHEAD_LIMIT: usize = 3;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -660,7 +659,7 @@ impl Parsable for nodes::FeatureNode {
 
         let block = nodes::BlockNode::parse(parser)?;
         Ok(nodes::FeatureNode {
-            is_constructor: name == *"new",
+            is_constructor: name == *CONSTRUCTOR_NAME,
             class_name: parser.current_class.clone(),
             location,
             name,
@@ -924,7 +923,9 @@ impl Parsable for nodes::ExpressionIdentifierNode {
                     nodes::Expression::FunctionCall(nodes::ExpressionCallNode::parse(parser)?)
                 }
             }
-            TokenType::OpenSquare => todo!(),
+            TokenType::OpenSquare => {
+                nodes::Expression::ArrayAccess(nodes::ExpressionArrayAccessNode::parse(parser)?)
+            },
             TokenType::Dot => {
                 nodes::Expression::FieldAccess(nodes::ExpressionFieldAccessNode::parse(parser)?)
             }
@@ -1210,6 +1211,23 @@ impl Parsable for nodes::ExpressionArrayLiteralNode {
         }
         parser.expect(TokenType::ClosingSquare)?;
         Ok(nodes::ExpressionArrayLiteralNode { location, elements })
+    }
+}
+
+impl Parsable for nodes::ExpressionArrayAccessNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+        where
+            Self: Sized {
+        let location = parser.current_location();
+        let array_name = parser.expect(TokenType::Identifier)?;
+        let array_name = array_name.value;
+        let indices = nodes::ExpressionArrayLiteralNode::parse(parser)?;
+        Ok(nodes::ExpressionArrayAccessNode{
+            location,
+            array_name,
+            indices,
+            typ: Type::Unknown
+        })
     }
 }
 

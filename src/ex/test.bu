@@ -9,7 +9,7 @@ class Test {
     }
 
     func foo(a: i32) {
-        this.f.t.a.e.e = 10;
+        // this.f.t.a.e.e = 10;
     }
 }
 
@@ -21,12 +21,15 @@ func ack(m: u32, n: u32) -> u32 {
 
 // func f(a: i32, b: i32, c: i32, d: i32, e: i32) {}
 
-func foo(a: i32, a: i32) {
+// func foo(a: i32, a: i32) {}
 
-}
+// func faa() -> i32 { return; }
 
 func main() {
     let a: u32 = ack(3, 5);
-    let c: i32 = 0;
-    foo();
+    let c: i32 = 1 + 1 + 1;
+    let arr: i32[1, 1] = [[1]];
+    let index: usize = 1;
+    arr[index, 1] = 2;
+    //foo();
 }

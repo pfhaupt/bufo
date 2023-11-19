@@ -121,7 +121,7 @@ mod tests {
     }
 
     mod semantic_tests {
-        use crate::compiler::{Compiler, ERR_STR};
+        use crate::compiler::{Compiler, ERR_STR, CONSTRUCTOR_NAME};
         use crate::tests::ALWAYS_FAILS;
 
         macro_rules! generate_failing_test {
@@ -247,7 +247,8 @@ mod tests {
         generate_failing_test!(
             class_no_feat_new,
             "no constructor",
-            "feature `new`",
+            "feature",
+            CONSTRUCTOR_NAME,
             "in class"
         );
         generate_failing_test!(
