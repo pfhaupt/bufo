@@ -163,10 +163,12 @@ impl Class {
             )),
             None => {
                 let return_type = &feature.return_type.typ;
-                feature.parameters.insert(0, nodes::ParameterNode::this(
-                    feature.location.clone(),
-                    Type::Class(feature.class_name.clone())
-                ));
+                if name != CONSTRUCTOR_NAME {
+                    feature.parameters.insert(0, nodes::ParameterNode::this(
+                        feature.location.clone(),
+                        Type::Class(feature.class_name.clone())
+                    ));
+                }
                 let parameters: Vec<_> = feature
                     .parameters
                     .iter()
@@ -472,6 +474,14 @@ impl Typecheckable for nodes::FeatureNode {
 
         // Parameters are now known variables
         let mut parameters = HashMap::new();
+        if self.is_constructor {
+            parameters.insert(String::from("this"),
+            Variable::new(
+                String::from("this"),
+                self.location.clone(),
+                Type::Class(self.class_name.clone()),
+            ));
+        }
         for param in &feature.parameters {
             let var = Variable::new(
                 param.name.clone(),
@@ -482,7 +492,7 @@ impl Typecheckable for nodes::FeatureNode {
                 if p.name == *"this" {
                     return Err(format!(
                         "{}: {:?}: Use of implicit parameter `this`.",
-                        ERR_STR, p.location
+                        ERR_STR, param.location
                     ));
                 }
                 return Err(format!(
@@ -1487,8 +1497,7 @@ impl Typecheckable for nodes::ExpressionConstructorNode {
         let class_type = class.class_type.clone();
         let Some(constructor) = class.get_feature(CONSTRUCTOR_NAME) else { unreachable!() };
 
-        let mut params = constructor.parameters.clone();
-        params.remove(0); // Remove this-param for type checking
+        let params = constructor.parameters.clone();
         match self.arguments.len().cmp(&params.len()) {
             std::cmp::Ordering::Less => {
                 return Err(format!(

@@ -86,14 +86,6 @@ macro_rules! method {
         func_assert!($codegen);
         func_entry!($codegen, $name);
         func_stack!($codegen, $self, true);
-        // Add `this` param
-        // FIXME: This is unreliable once we add static methods and all that
-        //        It'd be 100 times better and easier if the parser would just add the parameter directly
-        //        instead of the implicit use in the Type Checker and Codegen.
-        $codegen.store_variable_in_stack(
-            &String::from("this"),
-            &Type::Class($self.class_name.clone()),
-        )?;
         func_param!($codegen, $self);
         func_body!($codegen, $self);
         func_return!($codegen, $self);
