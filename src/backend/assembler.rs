@@ -96,7 +96,9 @@ impl Assembler {
                             let immediate = imm.off_or_imm;
                             push_asm(format!("  mov {dst_reg}, {immediate}").as_str());
                         }
-                        _ => todo!(),
+                        i => {
+                            return internal_error!(format!("Can't generate ASM for `LoadImm {i:?}"));
+                        },
                     }
                 }
                 IR::Store { addr, value } => match (addr.typ, value.typ) {
@@ -252,14 +254,10 @@ impl Assembler {
                                 push_asm(format!("  mov rax, {value}").as_str());
                                 push_asm(format!("  imul {dst_reg}, rax").as_str());
                                 push_asm("  pop rax");
-                                todo!()
                             }
                             (dst, src) => {
-                                return Err(format!(
-                                    "Internal Error: {}:{}:{}: Can't generate ASM for `imul {dst:?}, {src:?}",
-                                    file!(),
-                                    line!(),
-                                    column!()
+                                return internal_error!(format!(
+                                    "Can't generate ASM for `imul {dst:?}, {src:?}"
                                 ));
                             }
                         }
@@ -281,19 +279,42 @@ impl Assembler {
                             (
                                 OperandType::Reg,
                                 OperandType::ImmI32
-                                | OperandType::ImmI64
                                 | OperandType::ImmU32
+                            ) => {
+                                let value = src2.off_or_imm;
+                                push_asm("push rax");
+                                push_asm("push rdx");
+                                push_asm("push rbx");
+
+                                push_asm(format!("mov eax, {dst_reg}").as_str());
+                                push_asm(format!("mov ebx, {value}").as_str());
+                                push_asm("mul ebx");
+                                push_asm("pop rbx");
+                                push_asm("pop rdx");
+                                push_asm(format!("mov {dst_reg}, eax").as_str());
+                                push_asm("pop rax");
+
+                            }
+                            (
+                                OperandType::Reg,
+                                | OperandType::ImmI64
                                 | OperandType::ImmU64,
                             ) => {
-                                // MUL has no Immediate mode, need to use temp reg
-                                todo!()
+                                let value = src2.off_or_imm;
+                                push_asm("push rax");
+                                push_asm("push rdx");
+                                push_asm("push rbx");
+                                push_asm(format!("mov rax, {dst_reg}").as_str());
+                                push_asm(format!("mov rbx, {value}").as_str());
+                                push_asm("mul rbx");
+                                push_asm("pop rbx");
+                                push_asm("pop rdx");
+                                push_asm(format!("mov {dst_reg}, rax").as_str());
+                                push_asm("pop rax");
                             }
                             (dst, src) => {
-                                return Err(format!(
-                                    "Internal Error: {}:{}:{}: Can't generate ASM for `mul {dst:?}, {src:?}",
-                                    file!(),
-                                    line!(),
-                                    column!()
+                                return internal_error!(format!(
+                                    "Can't generate ASM for `mul {dst:?}, {src:?}"
                                 ));
                             }
                         }

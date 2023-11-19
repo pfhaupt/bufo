@@ -641,38 +641,22 @@ impl Codegenable for nodes::ExpressionLiteralNode {
                 s
             )
         };
-        // FIXME: Put this into a macro or expand ExpressionLiteralNode
+        macro_rules! parse_num {
+            ($typ:ty, $fn:ident) => {
+                {
+                    let v = self.value.parse::<$typ>().map_err(|e| {
+                        err_to_str(e)
+                    })?;
+                    Ok(instr::Operand::$fn(v))
+                }
+            };
+        }
         match &self.typ {
-            Type::I32 => {
-                let v = self.value.parse::<i32>().map_err(|e| {
-                    err_to_str(e)
-                })?;
-                Ok(instr::Operand::imm_i32(v))
-            }
-            Type::I64 => {
-                let v = self.value.parse::<i64>().map_err(|e| {
-                    err_to_str(e)
-                })?;
-                Ok(instr::Operand::imm_i64(v))
-            }
-            Type::U32 => {
-                let v = self.value.parse::<u32>().map_err(|e| {
-                    err_to_str(e)
-                })?;
-                Ok(instr::Operand::imm_u32(v))
-            }
-            Type::U64 => {
-                let v = self.value.parse::<u64>().map_err(|e| {
-                    err_to_str(e)
-                })?;
-                Ok(instr::Operand::imm_u64(v))
-            }
-            Type::Usize => {
-                let v = self.value.parse::<u64>().map_err(|e| {
-                    err_to_str(e)
-                })?;
-                Ok(instr::Operand::imm_u64(v))
-            },
+            Type::I32 => parse_num!(i32, imm_i32),
+            Type::I64 => parse_num!(i64, imm_i64),
+            Type::U32 => parse_num!(u32, imm_u32),
+            Type::U64 => parse_num!(u64, imm_u64),
+            Type::Usize => parse_num!(u64, imm_u64),
             t => internal_error!(format!(
                 "Unexpected Type {:?} in ExpressionLiteralNode::codegen()!",
                 t
@@ -682,9 +666,13 @@ impl Codegenable for nodes::ExpressionLiteralNode {
 }
 impl Codegenable for nodes::ExpressionBinaryNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        let lhs = self.lhs.codegen(codegen)?;
+        let mut lhs = self.lhs.codegen(codegen)?;
         debug_assert!(lhs != instr::Operand::none());
-        // we need to handle LHS=Imm later on
+        if lhs.typ != instr::OperandType::Reg {
+            let reg = codegen.get_register()?;
+            let reg_mode = instr::RegMode::from(&self.typ);
+            lhs = instr::Operand::reg(reg, reg_mode);
+        }
         debug_assert!(lhs.typ == instr::OperandType::Reg);
 
         let rhs = self.rhs.codegen(codegen)?;
@@ -742,7 +730,6 @@ impl Codegenable for nodes::ExpressionCallNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         debug_assert!(self.typ != Type::Unknown);
 
-        // FIXME: Reduce register usage by directly returning RET-reg at the end
         let result = if self.typ == Type::None {
             None
         } else {
@@ -854,7 +841,12 @@ impl Codegenable for nodes::ExpressionConstructorNode {
                         imm: op,
                     });
                 }
-                _ => todo!(),
+                op => {
+                    return internal_error!(format!(
+                        "ExpressionConstructorNode::codegen() can't handle argument type `{:?}` yet.",
+                        op
+                    ));
+                }
             }
         }
 
@@ -952,7 +944,7 @@ impl nodes::ExpressionFieldAccessNode {
                 Ok(imm)
             }
             nodes::Expression::FunctionCall(_fn_call) => {
-                todo!()
+                internal_error!("ExpressionFieldAccessNode::FunctionCall() is not implemented yet")
             }
             _ => unreachable!(),
         }

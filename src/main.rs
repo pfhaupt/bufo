@@ -49,9 +49,6 @@ mod tests {
             match init!($path, $debug, $run) {
                 Ok(mut c) => {
                     let result = c.run_everything();
-                    if $run {
-                        clean_up!($path);
-                    }
                     if $should_fail {
                         assert!(result.is_err());
                         let res = result.err().unwrap();
@@ -62,6 +59,9 @@ mod tests {
                         }
                     } else {
                         assert!(result.is_ok());
+                    }
+                    if $run {
+                        clean_up!($path);
                     }
                 }
                 Err(err) => {
