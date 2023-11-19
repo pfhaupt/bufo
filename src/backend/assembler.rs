@@ -105,11 +105,7 @@ impl Assembler {
                     (OperandType::Offset, OperandType::Reg) => {
                         let offset = addr.off_or_imm;
                         let reg = reg(value.reg, value.reg_mode);
-                        let size = if value.reg_mode == RegMode::BIT32 {
-                            4
-                        } else {
-                            8
-                        };
+                        let size = value.reg_mode.size();
                         push_asm(format!("  mov [rbp-{offset}-{size}], {reg}").as_str());
                     }
                     (OperandType::Offset, OperandType::ImmI32 | OperandType::ImmU32) => {
@@ -135,7 +131,7 @@ impl Assembler {
                     (OperandType::Reg, OperandType::Offset) => {
                         let reg = reg(dst.reg, dst.reg_mode);
                         let offset = addr.off_or_imm;
-                        let size = if dst.reg_mode == RegMode::BIT32 { 4 } else { 8 };
+                        let size = dst.reg_mode.size();
                         push_asm(format!("  mov {reg}, [rbp-{offset}-{size}]").as_str());
                     }
                     (OperandType::Reg, OperandType::Reg) => {
@@ -152,6 +148,12 @@ impl Assembler {
                         let dst = reg(dst.reg, dst.reg_mode);
                         let src = reg(src.reg, src.reg_mode);
                         push_asm(format!("  mov {dst}, {src}").as_str());
+                    }
+                    (OperandType::Reg, OperandType::Offset) => {
+                        let reg = reg(dst.reg, dst.reg_mode);
+                        let offset = src.off_or_imm;
+                        let size = dst.reg_mode.size();
+                        push_asm(format!("  mov {reg}, [rbp-{offset}-{size}]").as_str());
                     }
                     (
                         OperandType::Reg,
@@ -181,11 +183,20 @@ impl Assembler {
                         }
                         (OperandType::Reg, OperandType::Offset) => {
                             let offset = src2.off_or_imm;
-                            push_asm(format!("  add {dst_reg}, {offset}").as_str());
+                            let size = dst.reg_mode.size();
+                            push_asm(format!("  add {dst_reg}, [rbp-{offset}-{size}]").as_str());
                         }
                         (OperandType::Reg, OperandType::ImmI32 | OperandType::ImmU32) => {
                             let immediate = src2.off_or_imm;
                             push_asm(format!("  add {dst_reg}, {immediate}").as_str());
+                        }
+                        (OperandType::Reg, OperandType::ImmI64 | OperandType::ImmU64) => {
+                            // ADD has no 64bit immediate mode, we need to use a register
+                            let immediate = src2.off_or_imm;
+                            push_asm("  push rax");
+                            push_asm(format!("  mov rax, {immediate}").as_str());
+                            push_asm(format!("  add {dst_reg}, rax").as_str());
+                            push_asm("  pop rax");
                         }
                         (dst, src) => {
                             return internal_error!(format!("Can't generate ASM for `add {dst:?}, {src:?}"));
@@ -203,11 +214,20 @@ impl Assembler {
                         }
                         (OperandType::Reg, OperandType::Offset) => {
                             let offset = src2.off_or_imm;
-                            push_asm(format!("  sub {dst_reg}, {offset}").as_str());
+                            let size = dst.reg_mode.size();
+                            push_asm(format!("  sub {dst_reg}, [rbp-{offset}-{size}]").as_str());
                         }
                         (OperandType::Reg, OperandType::ImmI32 | OperandType::ImmU32) => {
                             let immediate = src2.off_or_imm;
                             push_asm(format!("  sub {dst_reg}, {immediate}").as_str());
+                        }
+                        (OperandType::Reg, OperandType::ImmI64 | OperandType::ImmU64) => {
+                            // SUB has no 64bit immediate mode, we need to use a register
+                            let immediate = src2.off_or_imm;
+                            push_asm("  push rax");
+                            push_asm(format!("  mov rax, {immediate}").as_str());
+                            push_asm(format!("  sub {dst_reg}, rax").as_str());
+                            push_asm("  pop rax");
                         }
                         (dst, src) => {
                             return Err(format!(

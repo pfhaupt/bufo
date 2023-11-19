@@ -156,6 +156,7 @@ impl TypeNode {
 pub struct ArgumentNode {
     pub location: Location,
     pub expression: ExpressionNode,
+    pub typ: Type,
 }
 
 #[allow(unused)]

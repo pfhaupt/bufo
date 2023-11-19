@@ -273,7 +273,7 @@ impl Codegen {
         self.register_counter += 1;
         let v = self.register_counter;
         if self.register_counter == instr::Register::__COUNT as usize {
-            todo!()
+            internal_error!("We have run out of registers to assign!!")
         } else {
             let reg = instr::Register::from(v);
             if reg == instr::Register::Rsp || reg == instr::Register::Rbp {
@@ -671,7 +671,12 @@ impl Codegenable for nodes::ExpressionBinaryNode {
         if lhs.typ != instr::OperandType::Reg {
             let reg = codegen.get_register()?;
             let reg_mode = instr::RegMode::from(&self.typ);
-            lhs = instr::Operand::reg(reg, reg_mode);
+            let reg = instr::Operand::reg(reg, reg_mode);
+            codegen.add_ir(instr::IR::Move {
+                dst: reg,
+                src: lhs
+            });
+            lhs = reg;
         }
         debug_assert!(lhs.typ == instr::OperandType::Reg);
 
@@ -715,9 +720,18 @@ impl Codegenable for nodes::ExpressionBinaryNode {
 }
 impl Codegenable for nodes::ExpressionComparisonNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        let lhs = self.lhs.codegen(codegen)?;
+        let mut lhs = self.lhs.codegen(codegen)?;
         debug_assert!(lhs != instr::Operand::none());
-        // we need to handle LHS=Imm later on
+        if lhs.typ != instr::OperandType::Reg {
+            let reg = codegen.get_register()?;
+            let reg_mode = instr::RegMode::from(&self.typ);
+            let reg = instr::Operand::reg(reg, reg_mode);
+            codegen.add_ir(instr::IR::Move {
+                dst: reg,
+                src: lhs
+            });
+            lhs = reg;
+        }
         debug_assert!(lhs.typ == instr::OperandType::Reg);
 
         let rhs = self.rhs.codegen(codegen)?;
@@ -770,6 +784,13 @@ impl Codegenable for nodes::ExpressionCallNode {
                     codegen.add_ir(instr::IR::LoadImm {
                         dst: target_reg,
                         imm: op,
+                    });
+                }
+                instr::OperandType::Offset => {
+                    let target_reg = instr::Operand::reg(target_reg, instr::RegMode::from(&arg.typ));
+                    codegen.add_ir(instr::IR::Load {
+                        dst: target_reg,
+                        addr: op
                     });
                 }
                 op => {
@@ -881,8 +902,10 @@ impl Codegenable for nodes::ExpressionFieldAccessNode {
         codegen.field_stack.push(self.typ.clone());
         self.codegen_field(codegen, &self.field)?;
 
-        // reg now contains address of field
-        // FIXME: Remember to deref the register when necessary
+        // based on final field:
+        // if primitive: reg now contains value of field
+        // if class:     reg now contains reference of field
+        // if method:    reg now contains return value of method
         Ok(reg)
     }
 }
@@ -954,17 +977,11 @@ impl Codegenable for nodes::NameNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let offset = codegen.get_stack_offset(&self.name);
         debug_assert!(self.typ != Type::None || self.typ != Type::Unknown);
-        let reg = codegen.get_register()?;
-        let reg = instr::Operand::reg(reg, instr::RegMode::from(&self.typ));
-        codegen.add_ir(instr::IR::Load {
-            dst: reg,
-            addr: instr::Operand::offset(offset),
-        });
-        Ok(reg)
+        Ok(instr::Operand::offset(offset))
     }
 }
 impl Codegenable for nodes::ExpressionBuiltInNode {
     fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+        internal_error!("ExpressionBuiltInNode::codegen() is not implemented yet")
     }
 }

@@ -1051,6 +1051,7 @@ impl Parsable for nodes::ArgumentNode {
         Ok(nodes::ArgumentNode {
             location,
             expression,
+            typ: Type::Unknown
         })
     }
 }

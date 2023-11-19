@@ -27,6 +27,15 @@ impl From<usize> for RegMode {
     }
 }
 
+impl RegMode {
+    pub fn size(&self) -> usize {
+        match self {
+            Self::BIT32 => 4,
+            Self::BIT64 => 8,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Register {
     Rax,

@@ -92,7 +92,7 @@ pub struct Class {
     location: Location,
     fields: HashMap<String, TypeLoc>,
     known_methods: HashMap<String, Method>,
-    // FIXME: Maybe we should have an own struct for Features
+    // NOTE: Maybe it's better to add a custom Feature struct later on, once more features are implemented
     known_features: HashMap<String, Function>,
     has_constructor: bool,
 }
@@ -738,7 +738,7 @@ impl Typecheckable for nodes::BlockNode {
     where
         Self: Sized,
     {
-        todo!()
+        internal_error!("BlockNode::type_check_with_type() is not implemented yet")
     }
 }
 impl Typecheckable for nodes::ExpressionNode {
@@ -1037,13 +1037,17 @@ impl Typecheckable for nodes::ArgumentNode {
     where
         Self: Sized,
     {
-        self.expression.type_check(checker)
+        let t = self.expression.type_check(checker)?;
+        self.typ = t.clone();
+        Ok(t)
     }
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String>
     where
         Self: Sized,
     {
-        self.expression.type_check_with_type(checker, typ)
+        self.expression.type_check_with_type(checker, typ)?;
+        self.typ = typ.clone();
+        Ok(())
     }
 }
 impl Typecheckable for nodes::Expression {
@@ -1093,25 +1097,30 @@ impl Typecheckable for nodes::ExpressionComparisonNode {
         let lhs_type = self.lhs.type_check(checker)?;
         let rhs_type = self.rhs.type_check(checker)?;
         match (&lhs_type, &rhs_type) {
-            // FIXME: Show which side is Class/Array/Booleans
             (Type::Class(..), _) | (_, Type::Class(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 return Err(format!(
-                    "{}: {:?}: Binary Operation `{}` is not defined in the context of classes.",
-                    ERR_STR, self.location, self.operation
+                    "{}: {:?}: Binary Operation `{}` is not defined in the context of classes.\n{}: {:?}: LHS is here.\n{}: {:?}: RHS is here.",
+                    ERR_STR, self.location, self.operation,
+                    NOTE_STR, self.lhs.get_loc(),
+                    NOTE_STR, self.rhs.get_loc(),
                 ));
             }
             (Type::Arr(..), _) | (_, Type::Arr(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 return Err(format!(
-                    "{}: {:?}: Binary Operation `{}` is not defined in the context of arrays.",
-                    ERR_STR, self.location, self.operation
+                    "{}: {:?}: Binary Operation `{}` is not defined in the context of arrays.\n{}: {:?}: LHS is here.\n{}: {:?}: RHS is here.",
+                    ERR_STR, self.location, self.operation,
+                    NOTE_STR, self.lhs.get_loc(),
+                    NOTE_STR, self.rhs.get_loc(),
                 ));
             }
             (Type::Bool, _) | (_, Type::Bool) => {
                 return Err(format!(
-                    "{}: {:?}: Binary Operation `{}` is not defined in the context of booleans.",
-                    ERR_STR, self.location, self.operation
+                    "{}: {:?}: Binary Operation `{}` is not defined in the context of booleans.\n{}: {:?}: LHS is here.\n{}: {:?}: RHS is here.",
+                    ERR_STR, self.location, self.operation,
+                    NOTE_STR, self.lhs.get_loc(),
+                    NOTE_STR, self.rhs.get_loc(),
                 ))
             }
             (Type::Unknown, Type::Unknown) => (),
