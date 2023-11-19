@@ -616,6 +616,7 @@ impl Parsable for nodes::FieldNode {
         let name_token = parser.expect(TokenType::Identifier)?;
         let name = name_token.value;
 
+        parser.expect(TokenType::Colon)?;
         let type_def = nodes::TypeNode::parse(parser)?;
         parser.expect(TokenType::Semi)?;
         Ok(nodes::FieldNode {
@@ -666,7 +667,11 @@ impl Parsable for nodes::FeatureNode {
         }
         parser.expect(TokenType::ClosingRound)?;
 
-        let return_type = nodes::ReturnTypeNode::parse(parser)?;
+        let return_type = if parser.eat(TokenType::Arrow)? {
+            nodes::TypeNode::parse(parser)?
+        } else {
+            nodes::TypeNode::none(parser.current_location())
+        };
 
         let block = nodes::BlockNode::parse(parser)?;
         Ok(nodes::FeatureNode {
@@ -710,7 +715,11 @@ impl Parsable for nodes::FunctionNode {
         }
         parser.expect(TokenType::ClosingRound)?;
 
-        let return_type = nodes::ReturnTypeNode::parse(parser)?;
+        let return_type = if parser.eat(TokenType::Arrow)? {
+            nodes::TypeNode::parse(parser)?
+        } else {
+            nodes::TypeNode::none(parser.current_location())
+        };
 
         let block = nodes::BlockNode::parse(parser)?;
         Ok(nodes::FunctionNode {
@@ -753,7 +762,11 @@ impl Parsable for nodes::MethodNode {
         }
         parser.expect(TokenType::ClosingRound)?;
 
-        let return_type = nodes::ReturnTypeNode::parse(parser)?;
+        let return_type = if parser.eat(TokenType::Arrow)? {
+            nodes::TypeNode::parse(parser)?
+        } else {
+            nodes::TypeNode::none(parser.current_location())
+        };
 
         let block = nodes::BlockNode::parse(parser)?;
         Ok(nodes::MethodNode {
@@ -768,34 +781,6 @@ impl Parsable for nodes::MethodNode {
     }
 }
 
-impl Parsable for nodes::ReturnTypeNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        let typ = if parser.eat(TokenType::Arrow)? {
-            let name_token = parser.expect(TokenType::Identifier)?;
-            let typ = parser.parse_type(name_token);
-            if parser.at(TokenType::OpenSquare) {
-                todo!()
-                // let size = ExpressionArrayLiteralNode::parse(parser)?;
-                // Ok(TypeNodeBuilder::default()
-                //     .location(location)
-                //     .name(name)
-                //     .typ(typ)
-                //     .build()
-                //     .unwrap())
-            } else {
-                typ
-            }
-        } else {
-            Type::None
-        };
-        Ok(nodes::ReturnTypeNode { location, typ })
-    }
-}
-
 impl Parsable for nodes::ParameterNode {
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
@@ -804,6 +789,7 @@ impl Parsable for nodes::ParameterNode {
         let location = parser.current_location();
         let name_token = parser.expect(TokenType::Identifier)?;
         let name = name_token.value;
+        parser.expect(TokenType::Colon)?;
         let typ = nodes::TypeNode::parse(parser)?;
         Ok(nodes::ParameterNode {
             location,
@@ -886,6 +872,7 @@ impl Parsable for nodes::LetNode {
         let name_token = parser.expect(TokenType::Identifier)?;
         let name = name_token.value;
 
+        parser.expect(TokenType::Colon)?;
         let typ = nodes::TypeNode::parse(parser)?;
         parser.expect(TokenType::Equal)?;
         let expression = nodes::ExpressionNode::parse(parser)?;
@@ -1007,7 +994,6 @@ impl Parsable for nodes::TypeNode {
     where
         Self: Sized,
     {
-        parser.expect(TokenType::Colon)?;
         let location = parser.current_location();
         let name_token = parser.expect(TokenType::Identifier)?;
         let typ = parser.parse_type(name_token);

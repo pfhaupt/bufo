@@ -595,7 +595,7 @@ impl Typecheckable for nodes::FunctionNode {
     where
         Self: Sized,
     {
-        todo!()
+        internal_error!("FunctionNode::type_check_with_type() is not implemented yet")
     }
 }
 impl Typecheckable for nodes::MethodNode {
@@ -790,7 +790,7 @@ impl Typecheckable for nodes::LetNode {
                     Ok(expr_type)
                 } else if expr_type != *expected_type {
                     Err(format!(
-                        "{}: {:?}: Type Mismatch! Expected type `{:?}`, found type `{:?}`.",
+                        "{}: {:?}: Type Mismatch! Expected type `{}`, found type `{}`.",
                         ERR_STR, self.location, expected_type, expr_type
                     ))
                 } else {
@@ -882,7 +882,6 @@ impl Typecheckable for nodes::ReturnNode {
     {
         debug_assert!(!checker.current_function.is_empty());
         debug_assert!(self.typ == Type::Unknown);
-        // FIXME: Both branches share 80% same work, we can reduce code size and make this easier to read
         let (expected_return_type, location) = if checker.current_class.is_empty() {
             // We're returning from a normal function
             let Some(function) = checker.known_functions.get(&checker.current_function) else { unreachable!() };
@@ -921,11 +920,21 @@ impl Typecheckable for nodes::ReturnNode {
             let t = if expr_type == Type::Unknown {
                 // we have something like `return 5;`, where we couldn't determine the type
                 // so we now have to `infer` the type, and set it accordingly
-                todo!()
+                if let Err(e) = ret_expr.type_check_with_type(checker, &expected_return_type) {
+                    return Err(format!(
+                        "{}\n{}: {:?}: Function declared to return {} here.",
+                        e,
+                        NOTE_STR,
+                        location,
+                        expected_return_type
+                    ));
+                }
+                // Successfully `inferred` type, we can now proceed as normal
+                expected_return_type
             } else if expr_type != expected_return_type {
                 // Signature expects `expected_return_type`, `return {expr}` has other type for expr
                 return Err(format!(
-                    "{}: {:?}: Type Mismatch! Function is declared to return `{:?}`, found `{:?}`.\n{}: {:?}: Function declared to return `{:?}` here.",
+                    "{}: {:?}: Type Mismatch! Function is declared to return `{}`, found `{}`.\n{}: {:?}: Function declared to return `{}` here.",
                     ERR_STR,
                     self.location,
                     expected_return_type,
@@ -1085,7 +1094,7 @@ impl Typecheckable for nodes::ExpressionComparisonNode {
                 let rhs_loc = self.rhs.get_loc();
                 if lhs != rhs {
                     return Err(format!(
-                        "{}: {:?}: Type Mismatch in comparison. LHS has type `{:?}`, RHS has type `{:?}`.\n{}: {:?}: LHS is here.\n{}: {:?}: RHS is here.",
+                        "{}: {:?}: Type Mismatch in comparison. LHS has type `{}`, RHS has type `{}`.\n{}: {:?}: LHS is here.\n{}: {:?}: RHS is here.",
                         ERR_STR,
                         self.location,
                         lhs,
@@ -1441,7 +1450,7 @@ impl Typecheckable for nodes::ExpressionCallNode {
                 arg.type_check_with_type(checker, &expected)?;
             } else if arg_type != expected {
                 return Err(format!(
-                    "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{:?}`, found type `{:?}`.\n{}: {:?}: Parameter declared here.",
+                    "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{}`, found type `{}`.\n{}: {:?}: Parameter declared here.",
                     ERR_STR,
                     arg.location,
                     expected,
@@ -1534,7 +1543,7 @@ impl Typecheckable for nodes::ExpressionConstructorNode {
                 arg.type_check_with_type(checker, &expected)?;
             } else if arg_type != expected {
                 return Err(format!(
-                    "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{:?}`, found type `{:?}`.\n{}: {:?}: Parameter declared here.",
+                    "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{}`, found type `{}`.\n{}: {:?}: Parameter declared here.",
                     ERR_STR,
                     arg.location,
                     expected,
@@ -1592,7 +1601,7 @@ impl Typecheckable for nodes::ExpressionFieldAccessNode {
     where
         Self: Sized,
     {
-        todo!()
+        internal_error!("ExpressionFieldAccessNode::type_check_with_type() is not implemented yet")
     }
 }
 impl nodes::ExpressionFieldAccessNode {
@@ -1741,7 +1750,7 @@ impl nodes::ExpressionFieldAccessNode {
                         arg.type_check_with_type(checker, &expected)?;
                     } else if arg_type != expected {
                         return Err(format!(
-                            "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{:?}`, found type `{:?}`.\n{}: {:?}: Parameter declared here.",
+                            "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{}`, found type `{}`.\n{}: {:?}: Parameter declared here.",
                             ERR_STR,
                             arg.location,
                             expected,

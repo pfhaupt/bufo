@@ -148,23 +148,23 @@ mod tests {
             "Type Mismatch",
             "LHS",
             "RHS",
-            "I32"
+            "i32"
         );
         generate_failing_test!(
             type_mismatch_in_fn_args,
             "Type Mismatch",
             "Parameter",
             "declared here",
-            "I32",
+            "i32",
             "Expected type"
         );
         generate_failing_test!(
             type_mismatch_in_assignment,
             "Type Mismatch",
             "Expected type",
-            "U64",
+            "u64",
             "found",
-            "I32"
+            "i32"
         );
         generate_failing_test!(
             function_redeclaration,
@@ -179,7 +179,7 @@ mod tests {
         generate_failing_test!(
             wrong_function_return_type,
             "Type Mismatch",
-            "Function is declared to return `I32`"
+            "Function is declared to return `i32`"
         );
         generate_failing_test!(
             calling_undeclared_function,

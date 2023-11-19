@@ -31,7 +31,7 @@ pub struct FeatureNode {
     pub location: Location,
     pub class_name: String,
     pub name: String,
-    pub return_type: ReturnTypeNode,
+    pub return_type: TypeNode,
     pub parameters: Vec<ParameterNode>,
     pub block: BlockNode,
     pub stack_size: usize,
@@ -42,7 +42,7 @@ pub struct FeatureNode {
 pub struct FunctionNode {
     pub location: Location,
     pub name: String,
-    pub return_type: ReturnTypeNode,
+    pub return_type: TypeNode,
     pub parameters: Vec<ParameterNode>,
     pub block: BlockNode,
     pub stack_size: usize,
@@ -53,16 +53,10 @@ pub struct MethodNode {
     pub location: Location,
     pub class_name: String,
     pub name: String,
-    pub return_type: ReturnTypeNode,
+    pub return_type: TypeNode,
     pub parameters: Vec<ParameterNode>,
     pub block: BlockNode,
     pub stack_size: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct ReturnTypeNode {
-    pub location: Location,
-    pub typ: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -147,6 +141,15 @@ pub struct ReturnNode {
 pub struct TypeNode {
     pub location: Location,
     pub typ: Type,
+}
+
+impl TypeNode {
+    pub fn none(location: Location) -> Self {
+        Self {
+            location,
+            typ: Type::None
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

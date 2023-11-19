@@ -469,11 +469,6 @@ impl Codegenable for nodes::MethodNode {
         Ok(instr::Operand::none())
     }
 }
-impl Codegenable for nodes::ReturnTypeNode {
-    fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        internal_error!("ReturnTypeNode::codegen() is not implemented yet")
-    }
-}
 impl Codegenable for nodes::ParameterNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         codegen.store_variable_in_stack(&self.name, &self.typ.typ)?;
@@ -965,7 +960,6 @@ impl nodes::ExpressionFieldAccessNode {
 }
 impl Codegenable for nodes::NameNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        // FIXME: We can reduce register usage here by directly returning the Offset-Operand
         let offset = codegen.get_stack_offset(&self.name);
         debug_assert!(self.typ != Type::None || self.typ != Type::Unknown);
         let reg = codegen.get_register()?;

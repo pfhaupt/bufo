@@ -10,10 +10,11 @@ class Test {
     f: Foo;
     a: i32;
     feat new() {
+        this.a = 10;
     }
 
     func foo(a: i32) {
-        // this.f.t.a.e.e = 10;
+        this.a = a;
     }
 }
 
@@ -28,6 +29,10 @@ func ack(m: u32, n: u32) -> u32 {
 // func foo(a: i32, a: i32) {}
 
 // func faa() -> i32 { return; }
+
+func foo() -> i32[3] {
+    return [1, 2, 3];
+}
 
 func main() {
     let a: u32 = ack(3, 5);
