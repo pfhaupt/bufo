@@ -4,7 +4,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use super::nodes;
-use crate::compiler::{ERR_STR, WARN_STR, CONSTRUCTOR_NAME};
+use crate::compiler::{ERR_STR, WARN_STR, CONSTRUCTOR_NAME, BUILT_IN_FEATURES, NOTE_STR};
 use crate::middleend::checker::Type;
 
 const LOOKAHEAD_LIMIT: usize = 3;
@@ -642,6 +642,17 @@ impl Parsable for nodes::FeatureNode {
                 "{}: {:?}: Feature names are not allowed to be capitalized.",
                 ERR_STR, feature_name.location
             ));
+        }
+
+        if !BUILT_IN_FEATURES.contains(&name.as_str()) {
+            return Err(format!(
+                "{}: {:?}: Unknown feature `{}`.\n{}: This is a list of all features: {:?}",
+                ERR_STR,
+                feature_name.location,
+                name,
+                NOTE_STR,
+                BUILT_IN_FEATURES
+            ))
         }
 
         let mut parameters = vec![];

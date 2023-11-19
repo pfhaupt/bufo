@@ -4,7 +4,7 @@ use std::fmt::{Display, Formatter};
 use crate::frontend::nodes;
 use crate::frontend::parser::Location;
 
-use crate::compiler::{ERR_STR, NOTE_STR, WARN_STR, BUILT_IN_FEATURES};
+use crate::compiler::{ERR_STR, NOTE_STR};
 use crate::compiler::CONSTRUCTOR_NAME;
 use crate::internal_error;
 
@@ -28,13 +28,14 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn size(&self) -> usize {
+    pub fn size(&self) -> Result<usize, String> {
         match self {
-            Type::Arr(t, size) => t.size() * size.iter().product::<usize>(),
-            Type::I32 | Type::U32 => 4,
-            Type::I64 | Type::U64 | Type::Usize => 8,
-            Type::Class(..) => 8,
-            e => todo!("Figure out size of type {:?} in bytes", e),
+            Type::Arr(t, size) => Ok(t.size()? * size.iter().product::<usize>()),
+            Type::I32 | Type::U32 | Type::F32 | Type::Bool => Ok(4),
+            Type::I64 | Type::U64 | Type::F64 | Type::Usize => Ok(8),
+            Type::Class(..) => Ok(4),
+            Type::None => internal_error!("Something attempted to get the size of Type::None!"),
+            Type::Unknown => internal_error!("Something attempted to get the size of Type::Unknown!"),
         }
     }
 }
@@ -69,7 +70,6 @@ impl Method {}
 
 #[derive(Debug)]
 pub struct Function {
-    name: String,
     location: Location,
     // FIXME: Also store return declaration for better error reporting
     return_type: Type,
@@ -119,7 +119,7 @@ impl Class {
         }
     }
 
-    fn add_method(&mut self, method: &nodes::MethodNode) -> Result<(), String> {
+    fn add_method(&mut self, method: &mut nodes::MethodNode) -> Result<(), String> {
         let name = &method.name;
         let location = &method.location;
         match self.known_methods.get(name) {
@@ -129,6 +129,10 @@ impl Class {
             )),
             None => {
                 let return_type = &method.return_type.typ;
+                method.parameters.insert(0, nodes::ParameterNode::this(
+                    method.location.clone(),
+                    Type::Class(method.class_name.clone())
+                ));
                 let parameters: Vec<_> = method
                     .parameters
                     .iter()
@@ -149,7 +153,7 @@ impl Class {
         }
     }
 
-    fn add_feature(&mut self, feature: &nodes::FeatureNode) -> Result<(), String> {
+    fn add_feature(&mut self, feature: &mut nodes::FeatureNode) -> Result<(), String> {
         let name = &feature.name;
         let location = &feature.location;
         match self.known_features.get(name) {
@@ -158,14 +162,11 @@ impl Class {
                 ERR_STR, location, NOTE_STR, f.location
             )),
             None => {
-                if !BUILT_IN_FEATURES.contains(&name.as_str()) {
-                    // FIXME: Do we need to show all features? If yes, how do we display them nicely?
-                    return Err(format!(
-                        "{}: {:?}: Unknown feature `{}`.\n{}: This is a list of all features: {:?}",
-                        ERR_STR, location, name, NOTE_STR, BUILT_IN_FEATURES
-                    ));
-                }
                 let return_type = &feature.return_type.typ;
+                feature.parameters.insert(0, nodes::ParameterNode::this(
+                    feature.location.clone(),
+                    Type::Class(feature.class_name.clone())
+                ));
                 let parameters: Vec<_> = feature
                     .parameters
                     .iter()
@@ -176,7 +177,6 @@ impl Class {
                     })
                     .collect();
                 let func = Function {
-                    name: name.clone(),
                     location: location.clone(),
                     return_type: return_type.clone(),
                     parameters,
@@ -192,20 +192,20 @@ impl Class {
             if *feat.0 == CONSTRUCTOR_NAME {
                 if feat.1.return_type == self.class_type {
                     // FIXME: Also store location of return type declaration for better warnings
-                    println!(
+                    return Err(format!(
                         "{}: {:?}: Use of implicit return type for constructor.",
-                        WARN_STR, feat.1.location
-                    );
-                    return Ok(());
-                }
-                if feat.1.return_type != Type::None {
+                        ERR_STR,
+                        feat.1.location
+                    ));
+                } else if feat.1.return_type != Type::None {
                     return Err(format!(
                         "{}: {:?}: Feature `{CONSTRUCTOR_NAME}` is expected to return None, found {}.",
                         ERR_STR, feat.1.location, feat.1.return_type
                     ));
+                } else {
+                    feat.1.return_type = self.class_type.clone();
+                    return Ok(());
                 }
-                feat.1.return_type = self.class_type.clone();
-                return Ok(());
             }
         }
         panic!("Class has constructor but no feature `{CONSTRUCTOR_NAME}` found");
@@ -293,7 +293,6 @@ impl TypeChecker {
                     })
                     .collect();
                 let func = Function {
-                    name: name.clone(),
                     location: location.clone(),
                     return_type: return_type.clone(),
                     parameters,
@@ -304,8 +303,8 @@ impl TypeChecker {
         }
     }
 
-    fn fill_lookup(&mut self, ast: &nodes::FileNode) -> Result<(), String> {
-        for c in &ast.classes {
+    fn fill_lookup(&mut self, ast: &mut nodes::FileNode) -> Result<(), String> {
+        for c in &mut ast.classes {
             match self.known_classes.get(&c.name) {
                 Some(class) => {
                     return Err(format!(
@@ -320,10 +319,10 @@ impl TypeChecker {
                     for field in &c.fields {
                         class.add_field(field)?;
                     }
-                    for method in &c.methods {
+                    for method in &mut c.methods {
                         class.add_method(method)?;
                     }
-                    for feature in &c.features {
+                    for feature in &mut c.features {
                         class.add_feature(feature)?;
                     }
                     if class.has_constructor {
@@ -473,16 +472,6 @@ impl Typecheckable for nodes::FeatureNode {
 
         // Parameters are now known variables
         let mut parameters = HashMap::new();
-        // FIXME: Handle this better
-        if feature.name == *CONSTRUCTOR_NAME {
-            let this_param = Variable::new(
-                String::from("this"),
-                self.location.clone(),
-                Type::Class(self.class_name.clone()),
-            );
-            checker.current_stack_size += 8;
-            parameters.insert(String::from("this"), this_param);
-        }
         for param in &feature.parameters {
             let var = Variable::new(
                 param.name.clone(),
@@ -620,29 +609,28 @@ impl Typecheckable for nodes::MethodNode {
         // Parameters are now known variables
         let mut parameters = HashMap::new();
 
-        // NOTE: Once we have static methods, this should not be an unconditional insertion
-        let this_param = Variable::new(
-            String::from("this"),
-            self.location.clone(),
-            Type::Class(self.class_name.clone()),
-        );
-        parameters.insert(String::from("this"), this_param);
-        checker.current_stack_size += 8;
-
         for param in &method.parameters {
             let var = Variable::new(
                 param.name.clone(),
                 param.location.clone(),
                 param.typ.clone(),
             );
-            if let Some(param) = parameters.insert(param.name.clone(), var) {
+            if let Some(p) = parameters.insert(param.name.clone(), var) {
                 if param.name == *"this" {
                     return Err(format!(
                         "{}: {:?}: Use of implicit parameter `this`.",
                         ERR_STR, param.location
                     ));
+                } else {
+                    return Err(format!(
+                        "{}: {:?}: Parameter redeclaration.\n{}: {:?}: Parameter `{}` already declared here.",
+                        ERR_STR,
+                        param.location,
+                        NOTE_STR,
+                        p.location,
+                        param.name
+                    ))
                 }
-                todo!()
             }
         }
         if parameters.len() > 4 {
@@ -680,7 +668,7 @@ impl Typecheckable for nodes::ParameterNode {
         Self: Sized,
     {
         self.typ.type_check(checker)?;
-        let var_size = self.typ.typ.size();
+        let var_size = self.typ.typ.size()?;
         checker.current_stack_size += var_size;
         Ok(Type::None)
     }
@@ -769,7 +757,7 @@ impl Typecheckable for nodes::LetNode {
             None => {
                 self.typ.type_check(checker)?;
 
-                let var_size = self.typ.typ.size();
+                let var_size = self.typ.typ.size()?;
                 checker.current_stack_size += var_size;
 
                 let current_scope = checker.get_current_scope();
@@ -1499,17 +1487,19 @@ impl Typecheckable for nodes::ExpressionConstructorNode {
         let class_type = class.class_type.clone();
         let Some(constructor) = class.get_feature(CONSTRUCTOR_NAME) else { unreachable!() };
 
-        match self.arguments.len().cmp(&constructor.parameters.len()) {
+        let mut params = constructor.parameters.clone();
+        params.remove(0); // Remove this-param for type checking
+        match self.arguments.len().cmp(&params.len()) {
             std::cmp::Ordering::Less => {
                 return Err(format!(
                     "{}: {:?}: Not enough arguments for call to constructor `{}`. Expected {} argument(s), found {}.\n{}: {:?}: Constructor declared here.",
                     ERR_STR,
                     self.location,
                     self.class_name,
-                    constructor.parameters.len(),
+                    params.len(),
                     self.arguments.len(),
                     NOTE_STR,
-                    constructor .location
+                    constructor.location
                 ));
             }
             std::cmp::Ordering::Greater => {
@@ -1518,15 +1508,14 @@ impl Typecheckable for nodes::ExpressionConstructorNode {
                     ERR_STR,
                     self.location,
                     self.class_name,
-                    constructor.parameters.len(),
+                    params.len(),
                     self.arguments.len(),
                     NOTE_STR,
-                    constructor .location
+                    constructor.location
                 ));
             }
             std::cmp::Ordering::Equal => (),
         }
-        let params = constructor.parameters.clone();
         for (arg, param) in self.arguments.iter_mut().zip(params) {
             let expected = param.typ;
             let arg_type = arg.type_check(checker)?;

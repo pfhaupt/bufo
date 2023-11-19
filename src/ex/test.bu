@@ -1,5 +1,9 @@
 class Foo {
     t: Test;
+    // feat new(this: Foo) {}
+    // feat new() -> Foo {}
+    // func foo(this: Foo) {}
+    // func foo(a: u32, this: Foo) {}
 }
 
 class Test {
@@ -31,5 +35,7 @@ func main() {
     let arr: i32[1, 1] = [[1]];
     let index: usize = 1;
     arr[index, 1] = 2;
+    let t: Test = Test();
+    let ba: i32 = t.a;
     //foo();
 }

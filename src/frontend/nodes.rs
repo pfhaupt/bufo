@@ -72,6 +72,19 @@ pub struct ParameterNode {
     pub typ: TypeNode,
 }
 
+impl ParameterNode {
+    pub fn this(location: Location, typ: Type) -> Self {
+        Self {
+            location: location.clone(),
+            name: String::from("this"),
+            typ: TypeNode {
+                location,
+                typ
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BlockNode {
     pub location: Location,

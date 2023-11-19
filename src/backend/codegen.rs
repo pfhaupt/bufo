@@ -156,13 +156,14 @@ impl SizeManager {
             .insert(class_name.clone(), ClassInfo::new());
     }
 
-    fn add_field(&mut self, class_name: &String, field_name: &String, typ: &Type) {
-        let size = typ.size();
+    fn add_field(&mut self, class_name: &String, field_name: &String, typ: &Type) -> Result<(), String> {
+        let size = typ.size()?;
         let Some(class) = self.class_sizes.get_mut(class_name) else {
             // Two Options: Forgot to add class to Manager, or Type Checker f*ed up.
             unreachable!();
         };
         class.add_field(field_name, size);
+        Ok(())
     }
 
     fn get_class_info(&self, name: &String) -> &ClassInfo {
@@ -245,9 +246,9 @@ impl Codegen {
         self.sm.add_class(class_name);
     }
 
-    fn add_field(&mut self, name: &String, typ: &Type) {
+    fn add_field(&mut self, name: &String, typ: &Type) -> Result<(), String> {
         debug_assert!(!self.current_class.is_empty());
-        self.sm.add_field(&self.current_class, name, typ);
+        self.sm.add_field(&self.current_class, name, typ)?;
         if self.print_debug {
             println!(
                 "[DEBUG] Added new field `{}` to class `{}`",
@@ -259,6 +260,7 @@ impl Codegen {
                 self.sm.get_class_size(&self.current_class)
             );
         }
+        Ok(())
     }
 
     fn enter_scope(&mut self) {
@@ -367,7 +369,7 @@ impl Codegen {
     }
 
     fn store_variable_in_stack(&mut self, name: &str, typ: &Type) -> Result<(), String> {
-        let offset = self.update_stack_offset(typ.size());
+        let offset = self.update_stack_offset(typ.size()?);
         self.add_variable_offset(name, offset);
         let reg = self.get_register()?;
         self.add_ir(instr::IR::Store {
@@ -411,7 +413,7 @@ impl Codegenable for nodes::FieldNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let typ = &self.type_def.typ;
         debug_assert!(*typ != Type::None);
-        codegen.add_field(&self.name, typ);
+        codegen.add_field(&self.name, typ)?;
         Ok(instr::Operand::none())
     }
 }
@@ -521,7 +523,7 @@ impl Codegenable for nodes::LetNode {
         let rhs = self.expression.codegen(codegen)?;
         debug_assert!(rhs != instr::Operand::none());
 
-        let offset = codegen.update_stack_offset(self.typ.typ.size());
+        let offset = codegen.update_stack_offset(self.typ.typ.size()?);
         codegen.add_variable_offset(&self.name, offset);
 
         codegen.add_ir(instr::IR::Store {
@@ -927,7 +929,7 @@ impl nodes::ExpressionFieldAccessNode {
                     dst: reg,
                     addr: reg,
                 });
-                let imm = if self.typ.size() == 4 {
+                let imm = if self.typ.size()? == 4 {
                     instr::Operand::imm_u32(offset as u32)
                 } else {
                     instr::Operand::imm_u64(offset as u64)
@@ -945,7 +947,7 @@ impl nodes::ExpressionFieldAccessNode {
             }
             nodes::Expression::Name(name_node) => {
                 let offset = codegen.get_field_offset(&class_name, &name_node.name);
-                let imm = if name_node.typ.size() == 4 {
+                let imm = if name_node.typ.size()? == 4 {
                     instr::Operand::imm_u32(offset as u32)
                 } else {
                     instr::Operand::imm_u64(offset as u64)

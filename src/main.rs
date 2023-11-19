@@ -140,7 +140,8 @@ mod tests {
             "Type Mismatch",
             "LHS",
             "RHS",
-            "U32"
+            "i32",
+            "u32"
         );
         generate_failing_test!(
             type_mismatch_in_comparison,
