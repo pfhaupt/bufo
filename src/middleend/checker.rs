@@ -897,7 +897,7 @@ impl Typecheckable for nodes::IfNode {
     where
         Self: Sized,
     {
-        todo!()
+        internal_error!("IfNode::type_check_with_type() is not implemented yet")
     }
 }
 impl Typecheckable for nodes::ReturnNode {
@@ -1203,9 +1203,11 @@ impl Typecheckable for nodes::ExpressionArrayLiteralNode {
         }
         if let Type::Arr(t, mut size) = array_type {
             size.push(self.elements.len());
-            Ok(Type::Arr(t, size))
+            self.typ = Type::Arr(t, size);
+            Ok(self.typ.clone())
         } else if array_type != Type::Unknown {
-            Ok(Type::Arr(Box::new(array_type), vec![self.elements.len()]))
+            self.typ = Type::Arr(Box::new(array_type), vec![self.elements.len()]);
+            Ok(self.typ.clone())
         } else {
             Ok(array_type)
         }
@@ -1239,7 +1241,7 @@ impl Typecheckable for nodes::ExpressionArrayLiteralNode {
                     ));
                 }
             }
-            // FIXME: Why does ExpressionArrayLiteralNode not have a field type??
+            self.typ = typ.clone();
             Ok(())
         } else {
             Err(format!(
@@ -1381,25 +1383,32 @@ impl Typecheckable for nodes::ExpressionBinaryNode {
         debug_assert!(lhs_type != Type::None);
         debug_assert!(rhs_type != Type::None);
         match (&lhs_type, &rhs_type) {
-            // FIXME: Show which side is Class/Array/Bool
             (Type::Class(..), _) | (_, Type::Class(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
-                Err(format!(
-                    "{}: {:?}: Binary Operation `{}` is not defined in the context of classes.",
-                    ERR_STR, self.location, self.operation
-                ))
+                return Err(format!(
+                    "{}: {:?}: Binary Operation `{}` is not defined in the context of classes.\n{}: {:?}: LHS is here.\n{}: {:?}: RHS is here.",
+                    ERR_STR, self.location, self.operation,
+                    NOTE_STR, self.lhs.get_loc(),
+                    NOTE_STR, self.rhs.get_loc(),
+                ));
             }
             (Type::Arr(..), _) | (_, Type::Arr(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
-                Err(format!(
-                    "{}: {:?}: Binary Operation `{}` is not defined in the context of arrays.",
-                    ERR_STR, self.location, self.operation
+                return Err(format!(
+                    "{}: {:?}: Binary Operation `{}` is not defined in the context of arrays.\n{}: {:?}: LHS is here.\n{}: {:?}: RHS is here.",
+                    ERR_STR, self.location, self.operation,
+                    NOTE_STR, self.lhs.get_loc(),
+                    NOTE_STR, self.rhs.get_loc(),
+                ));
+            }
+            (Type::Bool, _) | (_, Type::Bool) => {
+                return Err(format!(
+                    "{}: {:?}: Binary Operation `{}` is not defined in the context of booleans.\n{}: {:?}: LHS is here.\n{}: {:?}: RHS is here.",
+                    ERR_STR, self.location, self.operation,
+                    NOTE_STR, self.lhs.get_loc(),
+                    NOTE_STR, self.rhs.get_loc(),
                 ))
             }
-            (Type::Bool, _) | (_, Type::Bool) => Err(format!(
-                "{}: {:?}: Binary Operation `{}` is not defined in the context of booleans.",
-                ERR_STR, self.location, self.operation
-            )),
             (Type::Unknown, Type::Unknown) => Ok(Type::Unknown),
             (Type::Unknown, other) => {
                 self.lhs.type_check_with_type(checker, other)?;
@@ -1685,7 +1694,6 @@ impl nodes::ExpressionFieldAccessNode {
                             typ: field.t,
                         };
                         let typ = field_access.type_check_field(checker, var.clone())?;
-                        // FIXME: var.typ does not sound logical here, but it works for now
                         field_access.typ = var.typ.clone();
                         self.field.typ = var.typ.clone();
                         Ok(typ)

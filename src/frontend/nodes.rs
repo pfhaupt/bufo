@@ -198,6 +198,7 @@ impl Expression {
 pub struct ExpressionArrayLiteralNode {
     pub location: Location,
     pub elements: Vec<Expression>,
+    pub typ: Type,
 }
 
 #[derive(Debug, Clone)]

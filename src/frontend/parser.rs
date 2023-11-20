@@ -1208,7 +1208,11 @@ impl Parsable for nodes::ExpressionArrayLiteralNode {
             }
         }
         parser.expect(TokenType::ClosingSquare)?;
-        Ok(nodes::ExpressionArrayLiteralNode { location, elements })
+        Ok(nodes::ExpressionArrayLiteralNode {
+            location,
+            elements,
+            typ: Type::Unknown
+        })
     }
 }
 
