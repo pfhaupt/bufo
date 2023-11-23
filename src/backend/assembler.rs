@@ -393,6 +393,11 @@ impl Assembler {
                             let src_reg = reg(src.reg, src.reg_mode);
                             push_asm(format!("  cmp {dst_reg}, {src_reg}").as_str());
                         }
+                        (OperandType::Reg, OperandType::Offset) => {
+                            let offset = src.off_or_imm;
+                            let size = dst.reg_mode.size();
+                            push_asm(format!("  cmp {dst_reg}, [rbp-{offset}-{size}]").as_str());
+                        }
                         (
                             OperandType::Reg,
                             OperandType::ImmI32
