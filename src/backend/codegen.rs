@@ -1,11 +1,109 @@
+use std::collections::HashMap;
+use std::num::ParseIntError;
 
-use std::collections::{HashMap, VecDeque};
-
-use super::nodes;
-use crate::{checker::Type, new::new_parser::Operation};
 use super::instr;
+use crate::compiler::{ERR_STR, NOTE_STR, CONSTRUCTOR_NAME};
+use crate::frontend::nodes;
+use crate::frontend::parser::Operation;
+use crate::middleend::checker::Type;
+
+use crate::internal_error;
 
 const LBL_STR: &str = "lbl_";
+
+macro_rules! func_assert {
+    ($codegen:ident) => {
+        debug_assert!($codegen.current_stack_offset == 0);
+        debug_assert!($codegen.stack_scopes.is_empty());
+        debug_assert!($codegen.current_return_label.is_empty());
+        debug_assert!($codegen.current_class.is_empty());
+    };
+}
+macro_rules! func_entry {
+    ($codegen:ident,$name:expr) => {
+        $codegen.enter_scope();
+
+        // Generate entrypoint for later `call func_name` call
+        let label = $codegen.generate_label(Some($name.clone()));
+        $codegen.add_ir(label);
+
+        $codegen.current_return_label = $name.clone() + "_return";
+    };
+}
+macro_rules! func_stack {
+    ($codegen:ident, $self:ident, $alloc:expr) => {
+        // Prepare stack offset
+        let mut bytes = $self.stack_size;
+        if bytes % 16 != 0 {
+            // 16-byte align the stack
+            bytes += 16 - bytes % 16;
+        }
+        if $alloc {
+            $codegen.add_ir(instr::IR::AllocStack { bytes });
+        } else {
+            $codegen.add_ir(instr::IR::DeallocStack { bytes });
+        }
+    };
+}
+macro_rules! func_param {
+    ($codegen:ident, $self:ident) => {
+        // Prepare parameters
+        for param in &$self.parameters {
+            param.codegen($codegen)?;
+        }
+        $codegen.reset_registers();
+    };
+}
+macro_rules! func_body {
+    ($codegen:ident, $self:ident) => {
+        // Function body
+        $self.block.codegen($codegen)?;
+    };
+}
+macro_rules! func_return {
+    ($codegen:ident, $self:ident) => {
+        // Return procedure
+        let label = $codegen.generate_label(Some($codegen.current_return_label.clone()));
+        $codegen.add_ir(label);
+
+        // Clean up stack offset
+        func_stack!($codegen, $self, false);
+
+        $codegen.add_ir(instr::IR::Return);
+    };
+}
+macro_rules! func_leave {
+    ($codegen:ident) => {
+        $codegen.current_stack_offset = 0;
+        $codegen.current_return_label.clear();
+        $codegen.reset_registers();
+        $codegen.leave_scope();
+    };
+}
+
+macro_rules! method {
+    ($codegen:ident, $self:ident, $name:expr) => {
+        func_assert!($codegen);
+        func_entry!($codegen, $name);
+        func_stack!($codegen, $self, true);
+        func_param!($codegen, $self);
+        func_body!($codegen, $self);
+        func_return!($codegen, $self);
+        func_leave!($codegen);
+    };
+}
+
+macro_rules! function {
+    ($codegen:ident, $self:ident, $name:expr) => {
+        func_assert!($codegen);
+        func_entry!($codegen, $name);
+        func_stack!($codegen, $self, true);
+        func_param!($codegen, $self);
+        func_body!($codegen, $self);
+        func_return!($codegen, $self);
+        func_leave!($codegen);
+    };
+}
 
 #[derive(Debug)]
 struct ClassInfo {
@@ -17,12 +115,13 @@ impl ClassInfo {
     fn new() -> Self {
         Self {
             total_size: 0,
-            field_offsets: HashMap::new()
+            field_offsets: HashMap::new(),
         }
     }
     fn add_field(&mut self, field_name: &String, size: usize) {
         debug_assert!(!self.field_offsets.contains_key(field_name));
-        self.field_offsets.insert(field_name.clone(), self.total_size);
+        self.field_offsets
+            .insert(field_name.clone(), self.total_size);
         self.total_size += size;
     }
 
@@ -39,22 +138,24 @@ struct SizeManager {
 impl SizeManager {
     fn new() -> Self {
         Self {
-            class_sizes: HashMap::new()
+            class_sizes: HashMap::new(),
         }
     }
 
     fn add_class(&mut self, class_name: &String) {
         debug_assert!(!self.class_sizes.contains_key(class_name));
-        self.class_sizes.insert(class_name.clone(), ClassInfo::new());
+        self.class_sizes
+            .insert(class_name.clone(), ClassInfo::new());
     }
 
-    fn add_field(&mut self, class_name: &String, field_name: &String, typ: &Type) {
-        let size = typ.size();
+    fn add_field(&mut self, class_name: &String, field_name: &String, typ: &Type) -> Result<(), String> {
+        let size = typ.size()?;
         let Some(class) = self.class_sizes.get_mut(class_name) else {
             // Two Options: Forgot to add class to Manager, or Type Checker f*ed up.
             unreachable!();
         };
         class.add_field(field_name, size);
+        Ok(())
     }
 
     fn get_class_info(&self, name: &String) -> &ClassInfo {
@@ -78,7 +179,7 @@ pub struct Codegen {
     stack_scopes: Vec<HashMap<String, usize>>,
     field_stack: Vec<Type>,
     register_counter: usize,
-    print_debug: bool
+    print_debug: bool,
 }
 impl Codegen {
     pub fn new() -> Self {
@@ -92,8 +193,8 @@ impl Codegen {
             stack_scopes: Vec::new(),
             field_stack: Vec::new(),
             register_counter: 0,
-            print_debug: false
-         }
+            print_debug: false,
+        }
     }
 
     pub fn debug(self, print_debug: bool) -> Self {
@@ -137,13 +238,21 @@ impl Codegen {
         self.sm.add_class(class_name);
     }
 
-    fn add_field(&mut self, name: &String, typ: &Type) {
+    fn add_field(&mut self, name: &String, typ: &Type) -> Result<(), String> {
         debug_assert!(!self.current_class.is_empty());
-        self.sm.add_field(&self.current_class, name, typ);
+        self.sm.add_field(&self.current_class, name, typ)?;
         if self.print_debug {
-            println!("[DEBUG] Added new field `{}` to class `{}`", name, self.current_class);
-            println!("[DEBUG] Class `{}` has a size of {} bytes now.", self.current_class, self.sm.get_class_size(&self.current_class));
+            println!(
+                "[DEBUG] Added new field `{}` to class `{}`",
+                name, self.current_class
+            );
+            println!(
+                "[DEBUG] Class `{}` has a size of {} bytes now.",
+                self.current_class,
+                self.sm.get_class_size(&self.current_class)
+            );
         }
+        Ok(())
     }
 
     fn enter_scope(&mut self) {
@@ -164,10 +273,10 @@ impl Codegen {
         self.register_counter += 1;
         let v = self.register_counter;
         if self.register_counter == instr::Register::__COUNT as usize {
-            todo!()
+            internal_error!("We have run out of registers to assign!!")
         } else {
             let reg = instr::Register::from(v);
-            if reg == instr::Register::RSP || reg == instr::Register::RBP {
+            if reg == instr::Register::Rsp || reg == instr::Register::Rbp {
                 // We do not want to mess with RSP and RBP
                 self.get_register()
             } else {
@@ -181,12 +290,14 @@ impl Codegen {
         self.register_counter = 0;
     }
 
+    #[allow(unused)]
     fn push_preserved_registers(&mut self) {
         for reg in instr::Register::PRESERVED {
             self.add_ir(instr::IR::PushReg { reg });
         }
     }
 
+    #[allow(unused)]
     fn pop_preserved_registers(&mut self) {
         for reg in instr::Register::PRESERVED.iter().rev() {
             self.add_ir(instr::IR::PopReg { reg: *reg });
@@ -196,7 +307,7 @@ impl Codegen {
     fn push_registers(&mut self, reg_ctr: usize) {
         for index in 1..reg_ctr {
             self.add_ir(instr::IR::PushReg {
-                reg: instr::Register::from(index)
+                reg: instr::Register::from(index),
             });
         }
     }
@@ -204,7 +315,7 @@ impl Codegen {
     fn pop_registers(&mut self, reg_ctr: usize) {
         for index in (1..reg_ctr).rev() {
             self.add_ir(instr::IR::PopReg {
-                reg: instr::Register::from(index)
+                reg: instr::Register::from(index),
             });
         }
     }
@@ -213,9 +324,12 @@ impl Codegen {
         self.ir.push(ir)
     }
 
-    fn add_variable_offset(&mut self, name: &String, offset: usize) {
+    fn add_variable_offset(&mut self, name: &str, offset: usize) {
         debug_assert!(!self.stack_scopes.is_empty());
-        self.stack_scopes.last_mut().unwrap().insert(name.clone(), offset);
+        self.stack_scopes
+            .last_mut()
+            .unwrap()
+            .insert(name.to_owned(), offset);
     }
 
     fn update_stack_offset(&mut self, typ_size: usize) -> usize {
@@ -224,7 +338,7 @@ impl Codegen {
         v
     }
 
-    fn known_variable(&mut self, name: &String) -> bool {
+    fn known_variable(&mut self, name: &str) -> bool {
         for scope in self.stack_scopes.iter().rev() {
             if scope.contains_key(name) {
                 return true;
@@ -233,29 +347,28 @@ impl Codegen {
         false
     }
 
-    fn get_stack_offset(&mut self, name: &String) -> usize {
+    fn get_stack_offset(&mut self, name: &str) -> usize {
         for scope in self.stack_scopes.iter().rev() {
             if let Some(offset) = scope.get(name) {
                 return *offset;
             }
         }
-        println!("Could not find {name} in {scopes:?}", scopes=self.stack_scopes);
+        println!(
+            "Could not find {name} in {scopes:?}",
+            scopes = self.stack_scopes
+        );
         panic!()
     }
 
-    fn store_variable_in_stack(&mut self, name: &String, typ: &Type) -> Result<(), String> {
-        let offset = self.update_stack_offset(typ.size());
+    fn store_variable_in_stack(&mut self, name: &str, typ: &Type) -> Result<(), String> {
+        let offset = self.update_stack_offset(typ.size()?);
         self.add_variable_offset(name, offset);
         let reg = self.get_register()?;
         self.add_ir(instr::IR::Store {
             addr: instr::Operand::offset(offset),
-            value: instr::Operand::reg(reg, instr::RegMode::from(typ))
+            value: instr::Operand::reg(reg, instr::RegMode::from(typ)),
         });
         Ok(())
-    }
-
-    pub fn run(&mut self) -> Result<(), String> {
-        todo!()
     }
 }
 
@@ -292,63 +405,36 @@ impl Codegenable for nodes::FieldNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let typ = &self.type_def.typ;
         debug_assert!(*typ != Type::None);
-        codegen.add_field(&self.name, typ);
+        codegen.add_field(&self.name, typ)?;
         Ok(instr::Operand::none())
-    }
-}
-impl Codegenable for nodes::FieldAccess {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
     }
 }
 impl Codegenable for nodes::FeatureNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        // TODO: Make this a macro, it's the same thing for Functions and Methods
-        debug_assert!(codegen.current_stack_offset == 0);
-        debug_assert!(codegen.stack_scopes.is_empty());
-        debug_assert!(codegen.current_return_label.is_empty());
-
-        codegen.enter_scope();
-
-        // Generate entrypoint for later `call func_name` call
-        let name = self.class_name.clone() + "_" + &self.name;
-        let label = codegen.generate_label(Some(name.clone()));
-        codegen.add_ir(label);
-
-        codegen.current_return_label = name + "_return";
-
-        // Prepare stack offset
-        let mut bytes = self.stack_size;
-        if bytes % 16 != 0 {
-            // 16-byte align the stack
-            bytes += 16 - bytes % 16;
-        }
-        codegen.add_ir(instr::IR::AllocStack { bytes });
-
-        // Prepare parameters
-        for param in &self.parameters {
-            param.codegen(codegen)?;
-        }
-        codegen.reset_registers();
+        func_assert!(codegen);
+        func_entry!(codegen, self.class_name.clone() + "_" + &self.name);
+        func_stack!(codegen, self, true);
+        func_param!(codegen, self);
 
         if self.is_constructor {
             // let this: Class = alloc(sizeof(Class));
             let alloc_size = instr::Operand::reg(instr::Register::ARG1, instr::RegMode::BIT64);
             codegen.add_ir(instr::IR::LoadImm {
                 dst: alloc_size,
-                imm: instr::Operand::imm_u64(codegen.sm.get_class_size(&self.class_name) as u64)
+                imm: instr::Operand::imm_u64(codegen.sm.get_class_size(&self.class_name) as u64),
             });
-            codegen.add_ir(instr::IR::Call { name: String::from("malloc") });
+            codegen.add_ir(instr::IR::Call {
+                name: String::from("malloc"),
+            });
             let offset = codegen.update_stack_offset(8);
             codegen.add_variable_offset(&String::from("this"), offset);
             codegen.add_ir(instr::IR::Store {
                 addr: instr::Operand::offset(offset),
-                value: instr::Operand::reg(instr::Register::RET, instr::RegMode::BIT64)
+                value: instr::Operand::reg(instr::Register::RET, instr::RegMode::BIT64),
             });
         }
 
-        // Function body
-        self.block.codegen(codegen)?;
+        func_body!(codegen, self);
 
         // Return procedure
         let label = codegen.generate_label(Some(codegen.current_return_label.clone()));
@@ -358,130 +444,29 @@ impl Codegenable for nodes::FeatureNode {
             let offset = codegen.get_stack_offset(&String::from("this"));
             codegen.add_ir(instr::IR::Load {
                 dst: instr::Operand::reg(instr::Register::RET, instr::RegMode::BIT64),
-                addr: instr::Operand::offset(offset)
+                addr: instr::Operand::offset(offset),
             });
         }
 
-        // Clean up stack offset
-        codegen.add_ir(instr::IR::DeallocStack { bytes });
+        func_stack!(codegen, self, false);
 
         codegen.add_ir(instr::IR::Return);
 
-        codegen.current_stack_offset = 0;
-        codegen.current_return_label.clear();
-        codegen.reset_registers();
-        codegen.leave_scope();
+        func_leave!(codegen);
+
         Ok(instr::Operand::none())
     }
 }
 impl Codegenable for nodes::FunctionNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        // TODO: Make this a macro, it's the same thing for Functions and Methods
-        debug_assert!(codegen.current_stack_offset == 0);
-        debug_assert!(codegen.stack_scopes.is_empty());
-        debug_assert!(codegen.current_return_label.is_empty());
-        debug_assert!(codegen.current_class.is_empty());
-
-        codegen.enter_scope();
-
-        // Generate entrypoint for later `call func_name` call
-        let name = self.name.clone();
-        let label = codegen.generate_label(Some(name.clone()));
-        codegen.add_ir(label);
-
-        codegen.current_return_label = name + "_return";
-
-        // Prepare stack offset
-        let mut bytes = self.stack_size;
-        if bytes % 16 != 0 {
-            // 16-byte align the stack
-            bytes += 16 - bytes % 16;
-        }
-        codegen.add_ir(instr::IR::AllocStack { bytes });
-
-        // Prepare parameters
-        for param in &self.parameters {
-            param.codegen(codegen)?;
-        }
-        codegen.reset_registers();
-
-        // Function body
-        self.block.codegen(codegen)?;
-
-        // Return procedure
-        let label = codegen.generate_label(Some(codegen.current_return_label.clone()));
-        codegen.add_ir(label);
-
-        // Clean up stack offset
-        codegen.add_ir(instr::IR::DeallocStack { bytes });
-
-        codegen.add_ir(instr::IR::Return);
-
-        codegen.current_stack_offset = 0;
-        codegen.current_return_label.clear();
-        codegen.reset_registers();
-        codegen.leave_scope();
+        function!(codegen, self, self.name);
         Ok(instr::Operand::none())
     }
 }
 impl Codegenable for nodes::MethodNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        // TODO: Make this a macro, it's the same thing for Functions and Methods
-        debug_assert!(codegen.current_stack_offset == 0);
-        debug_assert!(codegen.stack_scopes.is_empty());
-        debug_assert!(codegen.current_return_label.is_empty());
-
-        codegen.enter_scope();
-
-        // Generate entrypoint for later `call func_name` call
-        let name = self.class_name.clone() + "_" + &self.name;
-        let label = codegen.generate_label(Some(name.clone()));
-        codegen.add_ir(label);
-
-        codegen.current_return_label = name + "_return";
-
-        // Prepare stack offset
-        let mut bytes = self.stack_size;
-        if bytes % 16 != 0 {
-            // 16-byte align the stack
-            bytes += 16 - bytes % 16;
-        }
-        codegen.add_ir(instr::IR::AllocStack { bytes });
-
-        // Add `this` param
-        // FIXME: This is unreliable once we add static methods and all that
-        //        It'd be 100 times better and easier if the parser would just add the parameter directly
-        //        instead of the implicit use in the Type Checker and Codegen.
-        codegen.store_variable_in_stack(&String::from("this"), &Type::Class(self.class_name.clone()));
-
-        // Prepare parameters
-        for param in &self.parameters {
-            param.codegen(codegen)?;
-        }
-        codegen.reset_registers();
-
-        // Function body
-        self.block.codegen(codegen)?;
-
-        // Return procedure
-        let label = codegen.generate_label(Some(codegen.current_return_label.clone()));
-        codegen.add_ir(label);
-
-        // Clean up stack offset
-        codegen.add_ir(instr::IR::DeallocStack { bytes });
-
-        codegen.add_ir(instr::IR::Return);
-
-        codegen.current_stack_offset = 0;
-        codegen.current_return_label.clear();
-        codegen.reset_registers();
-        codegen.leave_scope();
+        method!(codegen, self, self.class_name.clone() + "_" + &self.name);
         Ok(instr::Operand::none())
-    }
-}
-impl Codegenable for nodes::ReturnTypeNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
     }
 }
 impl Codegenable for nodes::ParameterNode {
@@ -508,7 +493,7 @@ impl Codegenable for nodes::Statement {
             Self::Expression(expr_node) => expr_node.codegen(codegen),
             Self::If(if_node) => if_node.codegen(codegen),
             Self::Let(let_node) => let_node.codegen(codegen),
-            Self::Return(ret_node) => ret_node.codegen(codegen)
+            Self::Return(ret_node) => ret_node.codegen(codegen),
         };
         codegen.reset_registers();
         reg
@@ -519,17 +504,18 @@ impl Codegenable for nodes::ExpressionNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         self.expression.codegen(codegen)
     }
-}impl Codegenable for nodes::LetNode {
+}
+impl Codegenable for nodes::LetNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let rhs = self.expression.codegen(codegen)?;
         debug_assert!(rhs != instr::Operand::none());
 
-        let offset = codegen.update_stack_offset(self.typ.typ.size());
+        let offset = codegen.update_stack_offset(self.typ.typ.size()?);
         codegen.add_variable_offset(&self.name, offset);
 
         codegen.add_ir(instr::IR::Store {
             addr: instr::Operand::offset(offset),
-            value: rhs
+            value: rhs,
         });
 
         Ok(instr::Operand::none())
@@ -539,13 +525,13 @@ impl Codegenable for nodes::AssignNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let rhs = self.expression.codegen(codegen)?;
         debug_assert!(rhs != instr::Operand::none());
-        
+
         let lhs = self.name.codegen(codegen)?;
         debug_assert!(lhs != instr::Operand::none());
 
         codegen.add_ir(instr::IR::Store {
             addr: lhs,
-            value: rhs
+            value: rhs,
         });
         Ok(instr::Operand::none())
     }
@@ -563,13 +549,13 @@ impl Codegenable for nodes::IfNode {
         let cond_false = codegen.generate_label(None);
         let lbl_name = cond_false.get_lbl();
         match cmp_mode {
-            Operation::EQ => codegen.add_ir(instr::IR::JmpNeq { name: lbl_name }),
-            Operation::NEQ => codegen.add_ir(instr::IR::JmpEq { name: lbl_name }),
-            Operation::GT => todo!(),
-            Operation::GTE => todo!(),
-            Operation::LT => todo!(),
-            Operation::LTE => todo!(),
-            _ => todo!()
+            Operation::Eq => codegen.add_ir(instr::IR::JmpNeq { name: lbl_name }),
+            Operation::Neq => codegen.add_ir(instr::IR::JmpEq { name: lbl_name }),
+            Operation::Gt => codegen.add_ir(instr::IR::JmpLte { name: lbl_name }),
+            Operation::Gte => codegen.add_ir(instr::IR::JmpLt { name: lbl_name }),
+            Operation::Lt => codegen.add_ir(instr::IR::JmpGte { name: lbl_name }),
+            Operation::Lte => codegen.add_ir(instr::IR::JmpGt { name: lbl_name }),
+            _ => unreachable!(),
         }
         self.if_branch.codegen(codegen)?;
 
@@ -597,18 +583,18 @@ impl Codegenable for nodes::ReturnNode {
             debug_assert!(reg != instr::Operand::none());
             codegen.add_ir(instr::IR::Move {
                 dst: instr::Operand::reg(instr::Register::RET, instr::RegMode::from(&self.typ)),
-                src: reg
+                src: reg,
             });
         }
         codegen.add_ir(instr::IR::Jmp {
-            name: codegen.current_return_label.clone()
+            name: codegen.current_return_label.clone(),
         });
         Ok(instr::Operand::none())
     }
 }
 impl Codegenable for nodes::TypeNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+    fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
+        internal_error!("TypeNode::codegen() is not implemented yet.")
     }
 }
 impl Codegenable for nodes::ArgumentNode {
@@ -634,124 +620,138 @@ impl Codegenable for nodes::Expression {
     }
 }
 impl Codegenable for nodes::ExpressionArrayLiteralNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+    fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
+        internal_error!("ExpressionArrayLiteralNode::codegen() is not implemented yet")
     }
 }
 impl Codegenable for nodes::ExpressionArrayAccessNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+    fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
+        internal_error!("ExpressionArrayAccessNode::codegen() is not implemented yet")
     }
 }
 impl Codegenable for nodes::ExpressionLiteralNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        // FIXME: Put this into a macro or expand ExpressionLiteralNode
+    fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
+        let err_to_str = |e: ParseIntError| {
+            let s = e.to_string();
+            format!(
+                "{}: {:?}: Integer Literal could not be parsed.\n{}: {}",
+                ERR_STR,
+                self.location,
+                NOTE_STR,
+                s
+            )
+        };
+        macro_rules! parse_num {
+            ($typ:ty, $fn:ident) => {
+                {
+                    let v = self.value.parse::<$typ>().map_err(|e| {
+                        err_to_str(e)
+                    })?;
+                    Ok(instr::Operand::$fn(v))
+                }
+            };
+        }
         match &self.typ {
-            Type::I32 => {
-                let v = self.value.parse::<i32>().map_err(|e| {
-                    todo!();
-                    e.to_string()
-                })?;
-                Ok(instr::Operand::imm_i32(v))
-            },
-            Type::I64 => {
-                let v = self.value.parse::<i64>().map_err(|e| {
-                    todo!();
-                    e.to_string()
-                })?;
-                Ok(instr::Operand::imm_i64(v))
-            },
-            Type::U32 => {
-                let v = self.value.parse::<u32>().map_err(|e| {
-                    todo!();
-                    e.to_string()
-                })?;
-                Ok(instr::Operand::imm_u32(v))
-            },
-            Type::U64 => {
-                let v = self.value.parse::<u64>().map_err(|e| {
-                    todo!();
-                    e.to_string()
-                })?;
-                Ok(instr::Operand::imm_u64(v))
-            },
-            Type::Usize => todo!(),
-            _ => todo!()
+            Type::I32 => parse_num!(i32, imm_i32),
+            Type::I64 => parse_num!(i64, imm_i64),
+            Type::U32 => parse_num!(u32, imm_u32),
+            Type::U64 => parse_num!(u64, imm_u64),
+            Type::Usize => parse_num!(u64, imm_u64),
+            t => internal_error!(format!(
+                "Unexpected Type {:?} in ExpressionLiteralNode::codegen()!",
+                t
+            )),
         }
     }
 }
 impl Codegenable for nodes::ExpressionBinaryNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        let lhs = self.lhs.codegen(codegen)?;
+        let mut lhs = self.lhs.codegen(codegen)?;
         debug_assert!(lhs != instr::Operand::none());
-        // we need to handle LHS=Imm later on
+        if lhs.typ != instr::OperandType::Reg {
+            let reg = codegen.get_register()?;
+            let reg_mode = instr::RegMode::from(&self.typ);
+            let reg = instr::Operand::reg(reg, reg_mode);
+            codegen.add_ir(instr::IR::Move {
+                dst: reg,
+                src: lhs
+            });
+            lhs = reg;
+        }
         debug_assert!(lhs.typ == instr::OperandType::Reg);
 
         let rhs = self.rhs.codegen(codegen)?;
         debug_assert!(rhs != instr::Operand::none());
         match &self.operation {
-            Operation::PLUS => {
+            Operation::Add => {
                 codegen.add_ir(instr::IR::Add {
                     dst: lhs,
                     src1: lhs,
-                    src2: rhs
+                    src2: rhs,
                 });
-            },
-            Operation::MINUS => {
+            }
+            Operation::Sub => {
                 codegen.add_ir(instr::IR::Sub {
                     dst: lhs,
                     src1: lhs,
-                    src2: rhs
+                    src2: rhs,
                 });
-            },
-            Operation::MULT => {
+            }
+            Operation::Mul => {
                 codegen.add_ir(instr::IR::Mul {
                     dst: lhs,
                     src1: lhs,
                     src2: rhs,
-                    signed: self.typ == Type::I32 || self.typ == Type::I64
+                    signed: self.typ == Type::I32 || self.typ == Type::I64,
                 });
-            },
-            Operation::DIV => {
+            }
+            Operation::Div => {
                 codegen.add_ir(instr::IR::Div {
                     dst: lhs,
                     src1: lhs,
                     src2: rhs,
-                    signed: self.typ == Type::I32 || self.typ == Type::I64
+                    signed: self.typ == Type::I32 || self.typ == Type::I64,
                 });
-            },
-            _ => todo!()
+            }
+            _ => unreachable!(),
         }
         Ok(lhs)
     }
 }
 impl Codegenable for nodes::ExpressionComparisonNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        let lhs = self.lhs.codegen(codegen)?;
+        let mut lhs = self.lhs.codegen(codegen)?;
         debug_assert!(lhs != instr::Operand::none());
-        // we need to handle LHS=Imm later on
+        if lhs.typ != instr::OperandType::Reg {
+            let reg = codegen.get_register()?;
+            let reg_mode = instr::RegMode::from(&self.lhs.get_type());
+            let reg = instr::Operand::reg(reg, reg_mode);
+            codegen.add_ir(instr::IR::Move {
+                dst: reg,
+                src: lhs
+            });
+            lhs = reg;
+        }
         debug_assert!(lhs.typ == instr::OperandType::Reg);
 
         let rhs = self.rhs.codegen(codegen)?;
         debug_assert!(rhs != instr::Operand::none());
-        codegen.add_ir(instr::IR::Cmp {
-            dst: lhs,
-            src: rhs
-        });
+        codegen.add_ir(instr::IR::Cmp { dst: lhs, src: rhs });
         Ok(instr::Operand::cmp(self.operation))
     }
 }
 impl Codegenable for nodes::ExpressionCallNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         debug_assert!(self.typ != Type::Unknown);
-        // FIXME: Type::None does not mean that the function is invalid
-        //        It just means we don't put anything in the return register
-        debug_assert!(self.typ != Type::None);
 
-        // FIXME: Reduce register usage by directly returning RET-reg at the end
-        let result = codegen.get_register()?;
-        let result_mode = instr::RegMode::from(&self.typ);
-        let result = instr::Operand::reg(result, result_mode);
+        let result = if self.typ == Type::None {
+            None
+        } else {
+            let result = codegen.get_register()?;
+            let result_mode = instr::RegMode::from(&self.typ);
+            let result = instr::Operand::reg(result, result_mode);
+            Some(result)
+        };
 
         let counter = codegen.register_counter;
         codegen.push_registers(counter);
@@ -772,43 +772,58 @@ impl Codegenable for nodes::ExpressionCallNode {
                         });
                     }
                 }
-                instr::OperandType::ImmI32
-                | instr::OperandType::ImmU32 => {
+                instr::OperandType::ImmI32 | instr::OperandType::ImmU32 => {
                     let target_reg = instr::Operand::reg(target_reg, instr::RegMode::BIT32);
                     codegen.add_ir(instr::IR::LoadImm {
                         dst: target_reg,
-                        imm: op
+                        imm: op,
                     });
                 }
-                instr::OperandType::ImmI64
-                | instr::OperandType::ImmU64 => {
+                instr::OperandType::ImmI64 | instr::OperandType::ImmU64 => {
                     let target_reg = instr::Operand::reg(target_reg, instr::RegMode::BIT64);
                     codegen.add_ir(instr::IR::LoadImm {
                         dst: target_reg,
-                        imm: op
+                        imm: op,
                     });
                 }
-                _ => todo!()
+                instr::OperandType::Offset => {
+                    let target_reg = instr::Operand::reg(target_reg, instr::RegMode::from(&arg.typ));
+                    codegen.add_ir(instr::IR::Load {
+                        dst: target_reg,
+                        addr: op
+                    });
+                }
+                op => {
+                    return internal_error!(format!(
+                        "ExpressionCallNode::codegen() can't handle argument type `{:?}` yet.",
+                        op
+                    ));
+                }
             }
         }
 
         codegen.add_ir(instr::IR::Call {
-            name: self.function_name.clone()
+            name: self.function_name.clone(),
         });
 
-        codegen.add_ir(instr::IR::Move {
-            dst: result,
-            src: instr::Operand::reg(instr::Register::RET, result_mode)
-        });
-
-        codegen.pop_registers(counter);
-        Ok(result)
+        if self.typ != Type::None {
+            debug_assert!(result.is_some());
+            let result = result.unwrap();
+            codegen.add_ir(instr::IR::Move {
+                dst: result,
+                src: instr::Operand::reg(instr::Register::RET, result.reg_mode),
+            });
+            codegen.pop_registers(counter);
+            Ok(result)
+        } else {
+            codegen.pop_registers(counter);
+            Ok(instr::Operand::none())
+        }
     }
 }
 impl Codegenable for nodes::ExpressionConstructorNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        // FIXME: This will break if we ever rename the new feature
-        let constructor = self.class_name.clone() + "_new";
+        let constructor = self.class_name.clone() + "_" + CONSTRUCTOR_NAME;
 
         let result = codegen.get_register()?;
         let result_mode = instr::RegMode::from(&self.typ);
@@ -833,33 +848,34 @@ impl Codegenable for nodes::ExpressionConstructorNode {
                         });
                     }
                 }
-                instr::OperandType::ImmI32
-                | instr::OperandType::ImmU32 => {
+                instr::OperandType::ImmI32 | instr::OperandType::ImmU32 => {
                     let target_reg = instr::Operand::reg(target_reg, instr::RegMode::BIT32);
                     codegen.add_ir(instr::IR::LoadImm {
                         dst: target_reg,
-                        imm: op
+                        imm: op,
                     });
                 }
-                instr::OperandType::ImmI64
-                | instr::OperandType::ImmU64 => {
+                instr::OperandType::ImmI64 | instr::OperandType::ImmU64 => {
                     let target_reg = instr::Operand::reg(target_reg, instr::RegMode::BIT64);
                     codegen.add_ir(instr::IR::LoadImm {
                         dst: target_reg,
-                        imm: op
+                        imm: op,
                     });
                 }
-                _ => todo!()
+                op => {
+                    return internal_error!(format!(
+                        "ExpressionConstructorNode::codegen() can't handle argument type `{:?}` yet.",
+                        op
+                    ));
+                }
             }
         }
 
-        codegen.add_ir(instr::IR::Call {
-            name: constructor
-        });
+        codegen.add_ir(instr::IR::Call { name: constructor });
 
         codegen.add_ir(instr::IR::Move {
             dst: result,
-            src: instr::Operand::reg(instr::Register::RET, result_mode)
+            src: instr::Operand::reg(instr::Register::RET, result_mode),
         });
 
         codegen.pop_registers(counter);
@@ -879,20 +895,26 @@ impl Codegenable for nodes::ExpressionFieldAccessNode {
         let var = instr::Operand::offset(offset);
         codegen.add_ir(instr::IR::Load {
             dst: reg,
-            addr: var
+            addr: var,
         });
 
         // codegen field access
         codegen.field_stack.push(self.typ.clone());
         self.codegen_field(codegen, &self.field)?;
 
-        // reg now contains address of field
-        // FIXME: Remember to deref the register when necessary
+        // based on final field:
+        // if primitive: reg now contains value of field
+        // if class:     reg now contains reference of field
+        // if method:    reg now contains return value of method
         Ok(reg)
     }
 }
 impl nodes::ExpressionFieldAccessNode {
-    fn codegen_field(&self, codegen: &mut Codegen, field: &nodes::ExpressionIdentifierNode) -> Result<instr::Operand, String> {
+    fn codegen_field(
+        &self,
+        codegen: &mut Codegen,
+        field: &nodes::ExpressionIdentifierNode,
+    ) -> Result<instr::Operand, String> {
         let curr_reg = codegen.register_counter;
         let reg = instr::Operand::reg(instr::Register::from(curr_reg), instr::RegMode::BIT64);
         // at this point, reg contains a reference to the instance
@@ -907,9 +929,9 @@ impl nodes::ExpressionFieldAccessNode {
                 // reg now holds the base address of the instance
                 codegen.add_ir(instr::IR::Load {
                     dst: reg,
-                    addr: reg
+                    addr: reg,
                 });
-                let imm = if self.typ.size() == 4 {
+                let imm = if self.typ.size()? == 4 {
                     instr::Operand::imm_u32(offset as u32)
                 } else {
                     instr::Operand::imm_u64(offset as u64)
@@ -918,7 +940,7 @@ impl nodes::ExpressionFieldAccessNode {
                 codegen.add_ir(instr::IR::Add {
                     dst: reg,
                     src1: reg,
-                    src2: imm
+                    src2: imm,
                 });
 
                 // unwind field access by one level
@@ -927,46 +949,39 @@ impl nodes::ExpressionFieldAccessNode {
             }
             nodes::Expression::Name(name_node) => {
                 let offset = codegen.get_field_offset(&class_name, &name_node.name);
-                let imm = if name_node.typ.size() == 4 {
+                let imm = if name_node.typ.size()? == 4 {
                     instr::Operand::imm_u32(offset as u32)
                 } else {
                     instr::Operand::imm_u64(offset as u64)
                 };
                 codegen.add_ir(instr::IR::Load {
                     dst: reg,
-                    addr: reg
+                    addr: reg,
                 });
                 // add both together
                 codegen.add_ir(instr::IR::Add {
                     dst: reg,
                     src1: reg,
-                    src2: imm
+                    src2: imm,
                 });
                 Ok(imm)
             }
-            nodes::Expression::FunctionCall(fn_call) => {
-                todo!()
+            nodes::Expression::FunctionCall(_fn_call) => {
+                internal_error!("ExpressionFieldAccessNode::FunctionCall() is not implemented yet")
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 }
 impl Codegenable for nodes::NameNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        // FIXME: We can reduce register usage here by directly returning the Offset-Operand
         let offset = codegen.get_stack_offset(&self.name);
         debug_assert!(self.typ != Type::None || self.typ != Type::Unknown);
-        let reg = codegen.get_register()?;
-        let reg = instr::Operand::reg(reg, instr::RegMode::from(&self.typ));
-        codegen.add_ir(instr::IR::Load {
-            dst: reg,
-            addr: instr::Operand::offset(offset)
-        });
-        Ok(reg)
+        Ok(instr::Operand::offset(offset))
     }
 }
 impl Codegenable for nodes::ExpressionBuiltInNode {
-    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+    fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
+        internal_error!("ExpressionBuiltInNode::codegen() is not implemented yet")
     }
 }

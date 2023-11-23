@@ -1,0 +1,23 @@
+
+func main() -> u32 {
+    let c: i32 = 12;
+    let a: i32 = 5;
+    let d: i32 = 0;
+    if (a + 7 == c) {
+        let b: i32 = 9;
+        d = b + 0;
+    } else {
+        let b: i32 = 7;
+        d = b + 1;
+    }
+    if (d == 9) {
+        // a == 5
+        // c == 12
+        // c - d == 3
+        // a == c - d + 2
+        if (a == c - d + 2) {
+            return 54;
+        }
+    }
+    return 91;
+}

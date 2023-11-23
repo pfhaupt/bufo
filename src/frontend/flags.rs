@@ -1,4 +1,4 @@
-use crate::codegen::{ERR_STR, NOTE_STR};
+use crate::compiler::{ERR_STR, NOTE_STR};
 use std::{
     collections::HashMap,
     fmt::{Debug, Display, Formatter},
@@ -68,7 +68,14 @@ impl FlagParser {
                 self.flags.insert(flag_str,
                     match flag {
                         Flag::Input { path } => {
-                            if path.is_some() { todo!("Two inputs provided!") }
+                            if path.is_some() {
+                                return Err(format!(
+                                    "{}: Providing multiple input files is not supported.\n{}: Already got input file `{}`.",
+                                    ERR_STR,
+                                    NOTE_STR,
+                                    path.as_ref().unwrap()
+                                ));
+                            }
                             match args.next() {
                                 Some(p) => {
                                     if !p.ends_with(FILE_EXT) {

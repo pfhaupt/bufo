@@ -1,0 +1,8 @@
+
+func main() -> u32 {
+    let a: i32 = 0;
+    if (a == 0) {
+        return 1290;
+    }
+    return 0;
+}

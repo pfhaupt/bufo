@@ -1,35 +1,55 @@
-
 use std::time::Instant;
 
-use crate::parser;
-use crate::flags::{FlagParser, Flag, DEBUG_KEY, RUN_KEY, INPUT_KEY};
+use crate::backend::assembler::Assembler;
+use crate::backend::codegen::Codegen;
+use crate::frontend::flags::{Flag, FlagParser, DEBUG_KEY, INPUT_KEY, RUN_KEY};
+use crate::frontend::parser::Parser;
+use crate::middleend::checker::TypeChecker;
 
-use super::new_parser::Parser;
-use super::new_desugar::Desugarer;
-use super::new_checker::TypeChecker;
-use super::new_codegen::Codegen;
-use super::new_assembler::Assembler;
+pub const ERR_STR: &str = "\x1b[91merror\x1b[0m";
+pub const WARN_STR: &str = "\x1b[93mwarning\x1b[0m";
+pub const NOTE_STR: &str = "\x1b[92mnote\x1b[0m";
+
+pub const OUTPUT_FOLDER: &str = "./out/";
+pub const FILE_EXT: &str = ".bu";
+
+pub const CONSTRUCTOR_NAME: &str = "new";
+
+pub const BUILT_IN_FEATURES: [&str; 1] = [
+    CONSTRUCTOR_NAME
+];
+
+#[macro_export]
+macro_rules! internal_error {
+    ($msg:expr) => {
+        Err(format!(
+            "INTERNAL ERROR AT {}:{}:{}: {}",
+            file!(),
+            line!(),
+            column!(),
+            $msg
+        ))
+    };
+}
 
 pub struct Compiler {
     parser: Parser,
-    desugarer: Desugarer,
     checker: TypeChecker,
     codegen: Codegen,
     assembler: Assembler,
     print_debug: bool,
-    run: bool
+    run: bool,
 }
 
 impl Compiler {
-    pub fn new(path: &String, print_debug: bool, run: bool) -> Result<Self, String> {
+    pub fn new(path: &str, print_debug: bool, run: bool) -> Result<Self, String> {
         Ok(Self {
             parser: Parser::new().filepath(path)?.debug(print_debug),
-            desugarer: Desugarer::new().debug(print_debug),
             checker: TypeChecker::new(),
             codegen: Codegen::new().debug(print_debug),
             assembler: Assembler::new().debug(print_debug).filepath(path),
             print_debug,
-            run
+            run,
         })
     }
 
@@ -41,26 +61,17 @@ impl Compiler {
         }
 
         let now = Instant::now();
-        // self.desugarer.desugar_file(&mut parsed_ast)?;
-        if self.print_debug {
-            println!("Desugaring took {:?}", now.elapsed());
-        }
-
-        // println!("{:#?}", parsed_ast);
-        let now = Instant::now();
         self.checker.type_check_file(&mut parsed_ast)?;
         if self.print_debug {
             println!("Type Checking took {:?}", now.elapsed());
         }
-        // println!("{:#?}", parsed_ast);
 
         let now = Instant::now();
         let ir = self.codegen.generate_code(&parsed_ast)?;
         if self.print_debug {
             println!("Codegen took {:?}", now.elapsed());
         }
-        // todo!();
-        
+
         let now = Instant::now();
         self.assembler.generate_x86_64(ir)?;
         if self.print_debug {
@@ -76,7 +87,6 @@ impl Compiler {
         Ok(())
     }
 }
-
 
 fn compile() -> Result<(), String> {
     let now = Instant::now();
@@ -100,7 +110,7 @@ fn compile() -> Result<(), String> {
     let mut compiler = Compiler::new(path, debug, run)?;
     compiler.run_everything()
 }
-pub fn main() {
+pub fn run() {
     if let Err(e) = compile() {
         eprintln!("{}", e);
         std::process::exit(1);
