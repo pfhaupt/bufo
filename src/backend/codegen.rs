@@ -724,7 +724,7 @@ impl Codegenable for nodes::ExpressionComparisonNode {
         debug_assert!(lhs != instr::Operand::none());
         if lhs.typ != instr::OperandType::Reg {
             let reg = codegen.get_register()?;
-            let reg_mode = instr::RegMode::from(&self.typ);
+            let reg_mode = instr::RegMode::from(&self.lhs.get_type());
             let reg = instr::Operand::reg(reg, reg_mode);
             codegen.add_ir(instr::IR::Move {
                 dst: reg,

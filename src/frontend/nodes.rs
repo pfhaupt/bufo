@@ -192,6 +192,22 @@ impl Expression {
             Self::BuiltIn(e) => e.location.clone()
         }
     }
+
+    pub fn get_type(&self) -> Type {
+        match &self {
+            Self::Name(e) => e.typ.clone(),
+            Self::Identifier(e) => e.typ.clone(),
+            Self::ArrayLiteral(e) => e.typ.clone(),
+            Self::ArrayAccess(e) => e.typ.clone(),
+            Self::Literal(e) => e.typ.clone(),
+            Self::Binary(e) => e.typ.clone(),
+            Self::Comparison(e) => e.typ.clone(),
+            Self::FieldAccess(e) => e.typ.clone(),
+            Self::FunctionCall(e) => e.typ.clone(),
+            Self::ConstructorCall(e) => e.typ.clone(),
+            Self::BuiltIn(e) => e.typ.clone()
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
