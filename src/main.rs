@@ -121,6 +121,7 @@ mod tests {
         generate_failing_test!(unexpected_symbol, "Unexpected Symbol `#`");
         generate_failing_test!(char_literal_more_than_one_chars, "Char Literal", "single char", "found 'hello'");
         generate_failing_test!(brackets_in_expressions, "Expected ClosingRound");
+        generate_failing_test!(else_missing_if, "found ElseKeyword", "Expr");
     }
 
     mod semantic_tests {
