@@ -33,7 +33,7 @@ impl Type {
             Type::Arr(t, size) => Ok(t.size()? * size.iter().product::<usize>()),
             Type::I32 | Type::U32 | Type::F32 | Type::Bool => Ok(4),
             Type::I64 | Type::U64 | Type::F64 | Type::Usize => Ok(8),
-            Type::Class(..) => Ok(4),
+            Type::Class(..) => Ok(8),
             Type::None => internal_error!("Something attempted to get the size of Type::None!"),
             Type::Unknown => internal_error!("Something attempted to get the size of Type::Unknown!"),
         }
