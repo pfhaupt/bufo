@@ -123,6 +123,20 @@ impl Assembler {
                         let src = reg(value.reg, value.reg_mode);
                         push_asm(format!("  mov [{dst}], {src}").as_str());
                     }
+                    (OperandType::Reg,
+                    OperandType::ImmI32
+                    | OperandType::ImmU32) => {
+                        let dst = reg(addr.reg, addr.reg_mode);
+                        let imm = value.off_or_imm;
+                        push_asm(format!("  mov DWORD [{dst}], {imm}").as_str());
+                    }
+                    (OperandType::Reg,
+                    OperandType::ImmI64
+                    | OperandType::ImmU64) => {
+                        let dst = reg(addr.reg, addr.reg_mode);
+                        let imm = value.off_or_imm;
+                        push_asm(format!("  mov QWORD [{dst}], {imm}").as_str());
+                    }
                     (lhs, rhs) => {
                         return internal_error!(format!("Can't generate ASM for `store {lhs:?}, {rhs:?}"));
                     },
