@@ -226,7 +226,7 @@ impl Debug for Operand {
             OperandType::ImmI64 => write!(f, "{}", unsafe {
                 std::mem::transmute::<usize, i64>(self.off_or_imm)
             }),
-            OperandType::Offset => write!(f, "{}", self.off_or_imm),
+            OperandType::Offset => write!(f, "stack+{}", self.off_or_imm),
             OperandType::None => write!(f, ""),
         }
     }
