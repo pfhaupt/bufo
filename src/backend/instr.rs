@@ -2,6 +2,8 @@ use crate::frontend::parser::Operation;
 
 use crate::middleend::checker::Type;
 
+use std::fmt::Debug;
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum RegMode {
     BIT64,
@@ -131,7 +133,7 @@ pub enum OperandType {
     None, // For nodes that do not return anything
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy)]
 pub struct Operand {
     pub typ: OperandType,
     pub off_or_imm: usize,
@@ -207,6 +209,29 @@ impl Operand {
     }
 }
 
+impl Debug for Operand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.typ {
+            OperandType::Reg => write!(f, "{:?}", self.reg),
+            OperandType::Cmp(cmp) => write!(f, "{:?}", cmp),
+            OperandType::ImmU32 => write!(f, "{}", unsafe {
+                std::mem::transmute::<usize, u64>(self.off_or_imm) as u32
+            }),
+            OperandType::ImmU64 => write!(f, "{}", unsafe {
+                std::mem::transmute::<usize, u64>(self.off_or_imm)
+            }),
+            OperandType::ImmI32 => write!(f, "{}", unsafe {
+                std::mem::transmute::<usize, i64>(self.off_or_imm) as i32
+            }),
+            OperandType::ImmI64 => write!(f, "{}", unsafe {
+                std::mem::transmute::<usize, i64>(self.off_or_imm)
+            }),
+            OperandType::Offset => write!(f, "{}", self.off_or_imm),
+            OperandType::None => write!(f, ""),
+        }
+    }
+}
+
 impl IR {
     pub fn get_lbl(&self) -> String {
         match &self {
@@ -216,7 +241,7 @@ impl IR {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[allow(unused)]
 pub enum IR {
     // Memory
@@ -308,4 +333,56 @@ pub enum IR {
         reg: Register,
     },
     Return,
+}
+
+impl Debug for IR {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LoadImm { dst, imm } => write!(f, "LoadImm dst: {:?}, imm: {:?}", dst, imm),
+            Self::Store { addr, value } => write!(f, "Store addr: {:?}, value: {:?}", addr, value),
+            Self::Load { dst, addr } => write!(f, "Load dst: {:?}, addr: {:?}", dst, addr),
+            Self::Move { dst, src } => write!(f, "Move dst: {:?}, src: {:?}", dst, src),
+            Self::Add { dst, src1, src2 } => {
+                write!(f, "Add dst: {:?}, src1: {:?}, src2: {:?}", dst, src1, src2)
+            }
+            Self::Sub { dst, src1, src2 } => {
+                write!(f, "Sub dst: {:?}, src1: {:?}, src2: {:?}", dst, src1, src2)
+            }
+            Self::Mul {
+                dst,
+                src1,
+                src2,
+                signed,
+            } => write!(
+                f,
+                "Mul dst: {:?}, src1: {:?}, src2: {:?}, signed: {:?}",
+                dst, src1, src2, signed
+            ),
+            Self::Div {
+                dst,
+                src1,
+                src2,
+                signed,
+            } => write!(
+                f,
+                "Div dst: {:?}, src1: {:?}, src2: {:?}, signed: {:?}",
+                dst, src1, src2, signed
+            ),
+            Self::Label { name } => write!(f, "Label name: {:?}", name),
+            Self::Cmp { dst, src } => write!(f, "Cmp dst: {:?}, src: {:?}", dst, src),
+            Self::Jmp { name } => write!(f, "Jmp name: {:?}", name),
+            Self::JmpEq { name } => write!(f, "JmpEq name: {:?}", name),
+            Self::JmpNeq { name } => write!(f, "JmpNeq name: {:?}", name),
+            Self::JmpLt { name } => write!(f, "JmpLt name: {:?}", name),
+            Self::JmpLte { name } => write!(f, "JmpLte name: {:?}", name),
+            Self::JmpGt { name } => write!(f, "JmpGt name: {:?}", name),
+            Self::JmpGte { name } => write!(f, "JmpGte name: {:?}", name),
+            Self::Call { name } => write!(f, "Call name: {:?}", name),
+            Self::AllocStack { bytes } => write!(f, "AllocStack bytes: {:?}", bytes),
+            Self::DeallocStack { bytes } => write!(f, "DeallocStack bytes: {:?}", bytes),
+            Self::PushReg { reg } => write!(f, "PushReg reg: {:?}", reg),
+            Self::PopReg { reg } => write!(f, "PopReg reg: {:?}", reg),
+            Self::Return => write!(f, "Return"),
+        }
+    }
 }

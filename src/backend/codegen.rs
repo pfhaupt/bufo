@@ -321,6 +321,9 @@ impl Codegen {
     }
 
     fn add_ir(&mut self, ir: instr::IR) {
+        if self.print_debug {
+            println!("[DEBUG] Added IR: {:?}", ir);
+        }
         self.ir.push(ir)
     }
 
