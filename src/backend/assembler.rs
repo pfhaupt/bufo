@@ -137,6 +137,13 @@ impl Assembler {
                         let imm = value.off_or_imm;
                         push_asm(format!("  mov QWORD [{dst}], {imm}").as_str());
                     }
+                    (OperandType::Address, OperandType::Reg) => {
+                        debug_assert!(addr.reg != instr::Register::None);
+                        let src = reg(value.reg, value.reg_mode);
+                        let dst = addr.reg;
+                        let dst = reg(dst, RegMode::BIT64);
+                        push_asm(format!("  mov [{dst}], {src}").as_str());
+                    }
                     (lhs, rhs) => {
                         return internal_error!(format!("Can't generate ASM for `store {lhs:?}, {rhs:?}"));
                     },
