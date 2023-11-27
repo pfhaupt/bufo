@@ -508,8 +508,18 @@ impl Codegenable for nodes::ExpressionNode {
 }
 impl Codegenable for nodes::LetNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        let rhs = self.expression.codegen(codegen)?;
+        let mut rhs = self.expression.codegen(codegen)?;
         debug_assert!(rhs != instr::Operand::none());
+        if rhs.typ != instr::OperandType::Reg {
+            let reg = codegen.get_register()?;
+            let reg_mode = instr::RegMode::from(&self.typ.typ);
+            let reg = instr::Operand::reg(reg, reg_mode);
+            codegen.add_ir(instr::IR::Move {
+                dst: reg,
+                src: rhs
+            });
+            rhs = reg;
+        }
 
         let offset = codegen.update_stack_offset(self.typ.typ.size()?);
         codegen.add_variable_offset(&self.name, offset);
@@ -524,8 +534,19 @@ impl Codegenable for nodes::LetNode {
 }
 impl Codegenable for nodes::AssignNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        let rhs = self.expression.codegen(codegen)?;
+        let mut rhs = self.expression.codegen(codegen)?;
         debug_assert!(rhs != instr::Operand::none());
+        if rhs.typ != instr::OperandType::Reg {
+            let reg = codegen.get_register()?;
+            // FIXME: Why does AssigNode not have a type?
+            let reg_mode = instr::RegMode::from(&self.expression.expression.get_type());
+            let reg = instr::Operand::reg(reg, reg_mode);
+            codegen.add_ir(instr::IR::Move {
+                dst: reg,
+                src: rhs
+            });
+            rhs = reg;
+        }
 
         let lhs = self.name.codegen(codegen)?;
         debug_assert!(lhs != instr::Operand::none());

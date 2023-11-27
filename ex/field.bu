@@ -9,7 +9,14 @@ class Test {
 }
 
 func main() -> u64 {
-    let b: Test = Test();
-    b.a = 10;
-    return b.a;
+    // let b: Test = Test();
+    // b.a = 10;
+    // return b.a;
+    let a: u64 = 10;
+    let b: u64 = 12;
+    a = b;
+    let c: u64 = b;
+    a = 420;
+    b = 1337;
+    return c;
 }
