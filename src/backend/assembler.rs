@@ -214,6 +214,10 @@ impl Assembler {
                             let size = dst.reg_mode.size();
                             push_asm(format!("  add {dst_reg}, [rbp-{offset}-{size}]").as_str());
                         }
+                        (OperandType::Reg, OperandType::Address) => {
+                            let src_reg = reg(src2.reg, src2.reg_mode);
+                            push_asm(format!("  add {dst_reg}, [{src_reg}]").as_str());
+                        }
                         (OperandType::Reg, OperandType::ImmI32 | OperandType::ImmU32) => {
                             let immediate = src2.off_or_imm;
                             push_asm(format!("  add {dst_reg}, {immediate}").as_str());
