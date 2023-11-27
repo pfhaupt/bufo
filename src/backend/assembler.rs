@@ -176,6 +176,13 @@ impl Assembler {
                         let size = dst.reg_mode.size();
                         push_asm(format!("  mov {reg}, [rbp-{offset}-{size}]").as_str());
                     }
+                    (OperandType::Reg, OperandType::Address) => {
+                        debug_assert!(src.reg != instr::Register::None);
+                        let src = reg(src.reg, src.reg_mode);
+                        let dst = dst.reg;
+                        let dst = reg(dst, RegMode::BIT64);
+                        push_asm(format!("  mov {dst}, [{src}]").as_str());
+                    }
                     (
                         OperandType::Reg,
                         OperandType::ImmI32
