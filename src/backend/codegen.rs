@@ -211,6 +211,9 @@ impl Codegen {
             for field in &class.fields {
                 field.codegen(self).unwrap();
             }
+            if self.print_debug {
+                println!("[DEBUG] Class `{}` has size {} bytes", class.name, self.sm.get_class_size(&class.name));
+            }
         }
         self.current_class.clear();
     }
@@ -245,11 +248,6 @@ impl Codegen {
             println!(
                 "[DEBUG] Added new field `{}` to class `{}`",
                 name, self.current_class
-            );
-            println!(
-                "[DEBUG] Class `{}` has a size of {} bytes now.",
-                self.current_class,
-                self.sm.get_class_size(&self.current_class)
             );
         }
         Ok(())
