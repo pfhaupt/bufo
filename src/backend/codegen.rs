@@ -924,13 +924,11 @@ impl Codegenable for nodes::ExpressionFieldAccessNode {
 
         // codegen field access
         codegen.field_stack.push(self.typ.clone());
-        self.codegen_field(codegen, &self.field, &reg)?;
-
+        self.codegen_field(codegen, &self.field, &reg)
         // based on final field:
         // if primitive: reg now contains value of field
         // if class:     reg now contains reference of field
         // if method:    reg now contains return value of method
-        Ok(reg)
     }
 }
 impl nodes::ExpressionFieldAccessNode {
@@ -988,7 +986,8 @@ impl nodes::ExpressionFieldAccessNode {
                 });
 
                 // reg now holds the address of the field
-                Ok(*reg)
+                let op = instr::Operand::addr(reg.reg);
+                Ok(op)
             }
             nodes::Expression::FunctionCall(_fn_call) => {
                 internal_error!("ExpressionFieldAccessNode::FunctionCall() is not implemented yet")

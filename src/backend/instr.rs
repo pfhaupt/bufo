@@ -130,6 +130,7 @@ pub enum OperandType {
     ImmI32,
     ImmI64,
     Offset,
+    Address, // For nodes that return an address
     None, // For nodes that do not return anything
 }
 
@@ -207,6 +208,15 @@ impl Operand {
             reg_mode: RegMode::BIT64,
         }
     }
+
+    pub fn addr(reg: Register) -> Self {
+        Self {
+            typ: OperandType::Address,
+            off_or_imm: 0,
+            reg,
+            reg_mode: RegMode::BIT64,
+        }
+    }
 }
 
 impl Debug for Operand {
@@ -227,6 +237,7 @@ impl Debug for Operand {
                 std::mem::transmute::<usize, i64>(self.off_or_imm)
             }),
             OperandType::Offset => write!(f, "stack+{}", self.off_or_imm),
+            OperandType::Address => write!(f, "addr"),
             OperandType::None => write!(f, ""),
         }
     }
