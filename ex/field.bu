@@ -1,0 +1,15 @@
+class Test {
+    a: u64;
+    b: i64;
+    c: Test;
+
+    feat new() {
+        this.b = 12;
+    }
+}
+
+func main() -> u64 {
+    let b: Test = Test();
+    b.a = 10;
+    return b.a;
+}
