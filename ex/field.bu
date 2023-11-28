@@ -4,8 +4,9 @@ class Test {
     c: Test;
 
     feat new() {
+        this.c = this;
         this.b = 12;
-        this.a = 1337;
+        this.c.c.c.a = 420;
     }
 }
 

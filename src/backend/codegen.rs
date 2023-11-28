@@ -925,10 +925,8 @@ impl Codegenable for nodes::ExpressionFieldAccessNode {
         // codegen field access
         codegen.field_stack.push(self.typ.clone());
         self.codegen_field(codegen, &self.field, &reg)
-        // based on final field:
-        // if primitive: reg now contains value of field
-        // if class:     reg now contains reference of field
-        // if method:    reg now contains return value of method
+        // reg contains the address of the field
+        // it is up to the caller to load or store the field
     }
 }
 impl nodes::ExpressionFieldAccessNode {
@@ -944,12 +942,6 @@ impl nodes::ExpressionFieldAccessNode {
         match &(*field.expression) {
             nodes::Expression::FieldAccess(field_access) => {
                 let offset = codegen.get_field_offset(&class_name, &field_access.name);
-                // Dereference register
-                // reg now holds the base address of the instance
-                codegen.add_ir(instr::IR::Load {
-                    dst: *reg,
-                    addr: *reg,
-                });
                 let imm = if self.typ.size()? == 4 {
                     instr::Operand::imm_u32(offset as u32)
                 } else {
@@ -960,6 +952,11 @@ impl nodes::ExpressionFieldAccessNode {
                     dst: *reg,
                     src1: *reg,
                     src2: imm,
+                });
+
+                codegen.add_ir(instr::IR::Load {
+                    dst: *reg,
+                    addr: *reg,
                 });
                 // reg now holds the address of the field
 
@@ -974,10 +971,7 @@ impl nodes::ExpressionFieldAccessNode {
                 } else {
                     instr::Operand::imm_u64(offset as u64)
                 };
-                codegen.add_ir(instr::IR::Load {
-                    dst: *reg,
-                    addr: *reg,
-                });
+
                 // add both together
                 codegen.add_ir(instr::IR::Add {
                     dst: *reg,
