@@ -75,7 +75,7 @@ impl Assembler {
         push_asm("  global main");
         push_asm("  extern ExitProcess");
         push_asm("  extern printf");
-        push_asm("  extern malloc");
+        push_asm("  extern calloc");
         push_asm("");
 
         for ir in &ir {

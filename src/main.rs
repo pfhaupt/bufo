@@ -172,12 +172,7 @@ mod tests {
         generate_failing_test!(class_no_feat_new, "no constructor", "feature", CONSTRUCTOR_NAME, "in class");
         generate_failing_test!(incompatible_operands, "Binary Operation", "not defined", "class", "context");
         generate_failing_test!(if_no_comparison, "if-condition", "comparison");
-        #[test]
-        #[ignore = "NullPointer are still not checked at runtime (very bad)"]
-        fn null_pointer_exception() {
-            // TODO: Implement generate_failing_test for this once Nullpointer are handled at runtime
-            // test!("tests/semantics/null_pointer_exception.bu", false, true, true, [ERR_STR, ALWAYS_FAILS])
-        }
+        generate_runtime_failing_test!(null_pointer_exception, format!("{:X}", 2).as_str());
         generate_runtime_failing_test!(array_out_of_bounds, ALWAYS_FAILS);
         generate_runtime_failing_test!(variable_shadowing, format!("{:X}", 42069).as_str());
         generate_runtime_failing_test!(if_else_flow, "1");

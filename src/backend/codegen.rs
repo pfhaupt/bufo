@@ -418,15 +418,21 @@ impl Codegenable for nodes::FeatureNode {
         func_param!(codegen, self);
 
         if self.is_constructor {
-            // let this: Class = alloc(sizeof(Class));
-            let alloc_size = instr::Operand::reg(instr::Register::ARG1, instr::RegMode::BIT64);
+            // let this: Class = calloc(1, sizeof(Class));
+            let calloc_number = instr::Operand::reg(instr::Register::ARG1, instr::RegMode::BIT64);
             codegen.add_ir(instr::IR::LoadImm {
-                dst: alloc_size,
+                dst: calloc_number,
+                imm: instr::Operand::imm_u64(1),
+            });
+            let calloc_size = instr::Operand::reg(instr::Register::ARG2, instr::RegMode::BIT64);
+            codegen.add_ir(instr::IR::LoadImm {
+                dst: calloc_size,
                 imm: instr::Operand::imm_u64(codegen.sm.get_class_size(&self.class_name) as u64),
             });
             codegen.add_ir(instr::IR::Call {
-                name: String::from("malloc"),
+                name: String::from("calloc"),
             });
+
             let offset = codegen.update_stack_offset(8);
             codegen.add_variable_offset(&String::from("this"), offset);
             codegen.add_ir(instr::IR::Store {
@@ -938,6 +944,20 @@ impl nodes::ExpressionFieldAccessNode {
     ) -> Result<instr::Operand, String> {
         let class_type = codegen.field_stack.pop().unwrap();
         let Type::Class(class_name) = class_type else { panic!() };
+
+        // if (reg == null) { exit(2); }
+        let valid_reference = codegen.generate_label(None);
+        codegen.add_ir(instr::IR::Cmp {
+            dst: *reg,
+            src: instr::Operand::imm_u32(0),
+        });
+        codegen.add_ir(instr::IR::JmpNeq {
+            name: valid_reference.get_lbl(),
+        });
+        codegen.add_ir(instr::IR::Exit {
+            code: instr::Operand::imm_i32(2)
+        });
+        codegen.add_ir(valid_reference);
 
         match &(*field.expression) {
             nodes::Expression::FieldAccess(field_access) => {
