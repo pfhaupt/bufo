@@ -38,6 +38,10 @@ macro_rules! func_stack {
             // 16-byte align the stack
             bytes += 16 - bytes % 16;
         }
+        if bytes < 32 {
+            // Windows ABI requires at least 32 bytes of stack space
+            bytes = 32;
+        }
         if $alloc {
             $codegen.add_ir(instr::IR::AllocStack { bytes });
         } else {
