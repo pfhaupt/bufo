@@ -326,6 +326,9 @@ pub enum IR {
     JmpGte {
         name: String,
     },
+    Exit {
+        code: Operand,
+    },
 
     // Functions
     Call {
@@ -349,10 +352,13 @@ pub enum IR {
 impl Debug for IR {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            // Memory
             Self::LoadImm { dst, imm } => write!(f, "LoadImm dst: {:?}, imm: {:?}", dst, imm),
             Self::Store { addr, value } => write!(f, "Store addr: {:?}, value: {:?}", addr, value),
             Self::Load { dst, addr } => write!(f, "Load dst: {:?}, addr: {:?}", dst, addr),
             Self::Move { dst, src } => write!(f, "Move dst: {:?}, src: {:?}", dst, src),
+
+            // Arithmetics
             Self::Add { dst, src1, src2 } => {
                 write!(f, "Add dst: {:?}, src1: {:?}, src2: {:?}", dst, src1, src2)
             }
@@ -379,6 +385,8 @@ impl Debug for IR {
                 "Div dst: {:?}, src1: {:?}, src2: {:?}, signed: {:?}",
                 dst, src1, src2, signed
             ),
+
+            // Control Flow
             Self::Label { name } => write!(f, "Label name: {:?}", name),
             Self::Cmp { dst, src } => write!(f, "Cmp dst: {:?}, src: {:?}", dst, src),
             Self::Jmp { name } => write!(f, "Jmp name: {:?}", name),
@@ -388,6 +396,9 @@ impl Debug for IR {
             Self::JmpLte { name } => write!(f, "JmpLte name: {:?}", name),
             Self::JmpGt { name } => write!(f, "JmpGt name: {:?}", name),
             Self::JmpGte { name } => write!(f, "JmpGte name: {:?}", name),
+            Self::Exit { code } => write!(f, "Exit code: {:?}", code),
+
+            // Functions
             Self::Call { name } => write!(f, "Call name: {:?}", name),
             Self::AllocStack { bytes } => write!(f, "AllocStack bytes: {:?}", bytes),
             Self::DeallocStack { bytes } => write!(f, "DeallocStack bytes: {:?}", bytes),

@@ -457,7 +457,11 @@ impl Assembler {
                 IR::JmpLte { name } => push_asm(format!("  jle {name}").as_str()),
                 IR::JmpGt { name } => push_asm(format!("  jg {name}").as_str()),
                 IR::JmpGte { name } => push_asm(format!("  jge {name}").as_str()),
-
+                IR::Exit { code } => {
+                    let code = code.off_or_imm;
+                    push_asm(format!("  mov rax, {code}").as_str());
+                    push_asm("  call ExitProcess");
+                }
                 // Functions
                 IR::Call { name } => {
                     push_asm(format!("  call {name}").as_str());
