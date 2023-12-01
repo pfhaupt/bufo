@@ -7,6 +7,7 @@ pub fn trace_call(_attr: TokenStream, item: TokenStream) -> TokenStream {
     // it adds a println!() to the beginning of the function that prints the function name
     debug_assert!(item.to_string().contains("fn"));
     let item_str = item.to_string();
+    let fn_pub = if item_str.contains("pub") { "pub " } else { "" };
     let fn_name = item_str
         .split("fn")
         .nth(1)
@@ -56,18 +57,18 @@ pub fn trace_call(_attr: TokenStream, item: TokenStream) -> TokenStream {
     // Only inject the tracing code if the feature is enabled
     let tracing_fn = format!(
         "
-        fn {}({}) {} {{
+        {} fn {}({}) {} {{
             println!(\"[LOG] {{}}:{{}}: {}() called\", file!(), line!());
             {}
         }}",
-        fn_name, fn_args, fn_return, fn_name, fn_body
+        fn_pub, fn_name, fn_args, fn_return, fn_name, fn_body
     );
     let normal_fn = format!(
         "
-        fn {}({}) {} {{
+        {} fn {}({}) {} {{
             {}
         }}",
-        fn_name, fn_args, fn_return, fn_body
+        fn_pub, fn_name, fn_args, fn_return, fn_body
     );
 
     let feature_fn = format!(
