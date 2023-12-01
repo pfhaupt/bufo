@@ -3,6 +3,10 @@ mod compiler;
 mod frontend;
 mod middleend;
 
+// This macro injects tracing code into the compiler.
+// Must be enabled with the `trace` feature-flag.
+extern crate tracer;
+
 fn main() {
     crate::compiler::run();
 }
