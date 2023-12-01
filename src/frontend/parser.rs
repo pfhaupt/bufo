@@ -4,10 +4,12 @@ use std::fs;
 use std::path::PathBuf;
 
 use super::nodes;
-use crate::compiler::{ERR_STR, WARN_STR, CONSTRUCTOR_NAME, BUILT_IN_FEATURES, NOTE_STR};
+use crate::compiler::{BUILT_IN_FEATURES, CONSTRUCTOR_NAME, ERR_STR, NOTE_STR, WARN_STR};
 use crate::middleend::checker::Type;
 
 const LOOKAHEAD_LIMIT: usize = 3;
+
+use tracer::trace_call;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TokenType {
@@ -66,10 +68,12 @@ pub struct Location {
 }
 
 impl Location {
+    #[trace_call(extra)]
     pub fn new(file: String, row: usize, col: usize) -> Self {
         Self { file, row, col }
     }
 
+    #[trace_call(extra)]
     pub fn anonymous() -> Self {
         Self::new(String::from("anonymous"), 0, 0)
     }
@@ -89,6 +93,7 @@ pub struct Token {
 }
 
 impl Token {
+    #[trace_call(extra)]
     fn new() -> Self {
         Self {
             location: Location::anonymous(),
@@ -96,12 +101,15 @@ impl Token {
             token_type: TokenType::Eof,
         }
     }
+    #[trace_call(extra)]
     fn location(self, location: Location) -> Self {
         Self { location, ..self }
     }
+    #[trace_call(extra)]
     fn value(self, value: String) -> Self {
         Self { value, ..self }
     }
+    #[trace_call(extra)]
     fn token_type(self, token_type: TokenType) -> Self {
         Self { token_type, ..self }
     }
@@ -149,6 +157,7 @@ impl Display for Operation {
 }
 
 impl Operation {
+    #[trace_call(extra)]
     fn from(s: String) -> Self {
         debug_assert_eq!(Operation::Gte as u8 + 1, 10);
         match s.as_str() {
@@ -253,6 +262,7 @@ impl Parser {
         }
     }
 
+    #[trace_call(extra)]
     fn next_token(&mut self) -> Result<Token, String> {
         macro_rules! fill_buffer {
             ($start: expr, $cond: expr, $stepback: expr) => {{
@@ -403,6 +413,7 @@ impl Parser {
         Ok(Token::new().location(loc).token_type(typ).value(value))
     }
 
+    #[trace_call(extra)]
     fn get_location(&self) -> Location {
         Location::new(
             self.filename.clone(),
@@ -411,11 +422,13 @@ impl Parser {
         )
     }
 
+    #[trace_call(extra)]
     fn current_location(&self) -> Location {
         debug_assert!(!self.lookahead.is_empty());
         self.lookahead[0].location.clone()
     }
 
+    #[trace_call(extra)]
     fn fill_lookup(&mut self) -> Result<(), String> {
         while self.lookahead.len() < LOOKAHEAD_LIMIT {
             let n = self.next_token()?;
@@ -428,14 +441,17 @@ impl Parser {
     }
     // ---------- End of Lexer ----------
     // ---------- Start of Parser ----------
+    #[trace_call(always)]
     pub fn parse_file(&mut self) -> Result<nodes::FileNode, String> {
         self.fill_lookup()?;
         nodes::FileNode::parse(self)
     }
 
+    #[trace_call(always)]
     fn parse_type(&self, token: Token) -> Type {
         self.parse_type_str(token.location, token.value)
     }
+    #[trace_call(always)]
     fn parse_type_str(&self, _loc: Location, val: String) -> Type {
         match val.as_str() {
             "i32" => Type::I32,
@@ -449,6 +465,7 @@ impl Parser {
             _ => Type::Class(val),
         }
     }
+    #[trace_call(always)]
     fn parse_type_literal(&self, lit_tkn: Token) -> Result<(String, Type), String> {
         let lit = lit_tkn.value;
         let loc = lit_tkn.location;
@@ -462,10 +479,12 @@ impl Parser {
         }
     }
 
+    #[trace_call(extra)]
     fn parsed_eof(&self) -> bool {
         self.lookahead[0].token_type == TokenType::Eof
     }
 
+    #[trace_call(extra)]
     fn eat(&mut self, token_type: TokenType) -> Result<bool, String> {
         if self.at(token_type) {
             self.next()?;
@@ -475,25 +494,30 @@ impl Parser {
         }
     }
 
+    #[trace_call(extra)]
     fn at(&self, token_type: TokenType) -> bool {
         self.nth(0) == token_type
     }
 
+    #[trace_call(extra)]
     fn peek(&self, lookahead: usize) -> Token {
         self.lookahead[lookahead].clone()
     }
 
+    #[trace_call(extra)]
     fn nth(&self, lookahead: usize) -> TokenType {
         debug_assert!(self.lookahead.len() >= lookahead);
         self.lookahead[lookahead].token_type
     }
 
+    #[trace_call(extra)]
     fn next(&mut self) -> Result<Token, String> {
         self.fill_lookup()?;
         debug_assert!(!self.lookahead.is_empty());
         Ok(self.lookahead.pop_front().unwrap())
     }
 
+    #[trace_call(extra)]
     fn expect(&mut self, token_type: TokenType) -> Result<Token, String> {
         let n = self.next()?;
         if n.token_type != token_type {
@@ -515,6 +539,7 @@ pub trait Parsable {
 }
 
 impl Parsable for nodes::FileNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String> {
         let location = parser.current_location();
         let mut classes = vec![];
@@ -554,6 +579,7 @@ impl Parsable for nodes::FileNode {
 }
 
 impl Parsable for nodes::ClassNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -608,6 +634,7 @@ impl Parsable for nodes::ClassNode {
 }
 
 impl Parsable for nodes::FieldNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -628,6 +655,7 @@ impl Parsable for nodes::FieldNode {
 }
 
 impl Parsable for nodes::FeatureNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -648,12 +676,8 @@ impl Parsable for nodes::FeatureNode {
         if !BUILT_IN_FEATURES.contains(&name.as_str()) {
             return Err(format!(
                 "{}: {:?}: Unknown feature `{}`.\n{}: This is a list of all features: {:?}",
-                ERR_STR,
-                feature_name.location,
-                name,
-                NOTE_STR,
-                BUILT_IN_FEATURES
-            ))
+                ERR_STR, feature_name.location, name, NOTE_STR, BUILT_IN_FEATURES
+            ));
         }
 
         let mut parameters = vec![];
@@ -688,6 +712,7 @@ impl Parsable for nodes::FeatureNode {
 }
 
 impl Parsable for nodes::FunctionNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -734,6 +759,7 @@ impl Parsable for nodes::FunctionNode {
 }
 
 impl Parsable for nodes::MethodNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -782,6 +808,7 @@ impl Parsable for nodes::MethodNode {
 }
 
 impl Parsable for nodes::ParameterNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -800,6 +827,7 @@ impl Parsable for nodes::ParameterNode {
 }
 
 impl Parsable for nodes::BlockNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -821,6 +849,7 @@ impl Parsable for nodes::BlockNode {
 }
 
 impl Parsable for nodes::Statement {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -849,6 +878,7 @@ impl Parsable for nodes::Statement {
 }
 
 impl Parsable for nodes::ExpressionNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -863,6 +893,7 @@ impl Parsable for nodes::ExpressionNode {
 }
 
 impl Parsable for nodes::LetNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -888,6 +919,7 @@ impl Parsable for nodes::LetNode {
 }
 
 impl Parsable for nodes::AssignNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -906,6 +938,7 @@ impl Parsable for nodes::AssignNode {
 }
 
 impl Parsable for nodes::ExpressionIdentifierNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -923,7 +956,7 @@ impl Parsable for nodes::ExpressionIdentifierNode {
             }
             TokenType::OpenSquare => {
                 nodes::Expression::ArrayAccess(nodes::ExpressionArrayAccessNode::parse(parser)?)
-            },
+            }
             TokenType::Dot => {
                 nodes::Expression::FieldAccess(nodes::ExpressionFieldAccessNode::parse(parser)?)
             }
@@ -938,6 +971,7 @@ impl Parsable for nodes::ExpressionIdentifierNode {
 }
 
 impl Parsable for nodes::IfNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -969,6 +1003,7 @@ impl Parsable for nodes::IfNode {
 }
 
 impl Parsable for nodes::ReturnNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -990,6 +1025,7 @@ impl Parsable for nodes::ReturnNode {
 }
 
 impl Parsable for nodes::TypeNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -1042,6 +1078,7 @@ impl Parsable for nodes::TypeNode {
 }
 
 impl Parsable for nodes::ArgumentNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -1051,12 +1088,13 @@ impl Parsable for nodes::ArgumentNode {
         Ok(nodes::ArgumentNode {
             location,
             expression,
-            typ: Type::Unknown
+            typ: Type::Unknown,
         })
     }
 }
 
 impl Parsable for nodes::Expression {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -1066,6 +1104,7 @@ impl Parsable for nodes::Expression {
 }
 
 impl nodes::Expression {
+    #[trace_call(always)]
     fn parse_delim(parser: &mut Parser) -> Result<Self, String> {
         Ok(match parser.nth(0) {
             TokenType::IntLiteral => {
@@ -1100,6 +1139,7 @@ impl nodes::Expression {
             }
         })
     }
+    #[trace_call(always)]
     fn parse_rec(parser: &mut Parser, left: TokenType) -> Result<Self, String> {
         let mut lhs = Self::parse_delim(parser)?;
         loop {
@@ -1132,6 +1172,7 @@ impl nodes::Expression {
         Ok(lhs)
     }
 
+    #[trace_call(always)]
     fn right_binds_tighter(left: TokenType, right: TokenType) -> bool {
         fn tightness(typ: TokenType) -> Option<usize> {
             [
@@ -1154,17 +1195,22 @@ impl nodes::Expression {
 }
 
 impl Parsable for nodes::ExpressionBinaryNode {
+    #[trace_call(always)]
     fn parse(_parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
     {
         Err(format!(
-            "INTERNAL ERROR AT {}:{}:{}: Not implemented yet.", file!(), line!(), column!()
+            "INTERNAL ERROR AT {}:{}:{}: Not implemented yet.",
+            file!(),
+            line!(),
+            column!()
         ))
     }
 }
 
 impl Parsable for nodes::ExpressionBuiltInNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -1193,6 +1239,7 @@ impl Parsable for nodes::ExpressionBuiltInNode {
 }
 
 impl Parsable for nodes::ExpressionArrayLiteralNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -1211,29 +1258,32 @@ impl Parsable for nodes::ExpressionArrayLiteralNode {
         Ok(nodes::ExpressionArrayLiteralNode {
             location,
             elements,
-            typ: Type::Unknown
+            typ: Type::Unknown,
         })
     }
 }
 
 impl Parsable for nodes::ExpressionArrayAccessNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
-        where
-            Self: Sized {
+    where
+        Self: Sized,
+    {
         let location = parser.current_location();
         let array_name = parser.expect(TokenType::Identifier)?;
         let array_name = array_name.value;
         let indices = nodes::ExpressionArrayLiteralNode::parse(parser)?;
-        Ok(nodes::ExpressionArrayAccessNode{
+        Ok(nodes::ExpressionArrayAccessNode {
             location,
             array_name,
             indices,
-            typ: Type::Unknown
+            typ: Type::Unknown,
         })
     }
 }
 
 impl Parsable for nodes::ExpressionLiteralNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -1250,6 +1300,7 @@ impl Parsable for nodes::ExpressionLiteralNode {
 }
 
 impl Parsable for nodes::ExpressionConstructorNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -1279,6 +1330,7 @@ impl Parsable for nodes::ExpressionConstructorNode {
 }
 
 impl Parsable for nodes::ExpressionCallNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -1307,6 +1359,7 @@ impl Parsable for nodes::ExpressionCallNode {
 }
 
 impl Parsable for nodes::ExpressionFieldAccessNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,
@@ -1326,6 +1379,7 @@ impl Parsable for nodes::ExpressionFieldAccessNode {
 }
 
 impl Parsable for nodes::NameNode {
+    #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
         Self: Sized,

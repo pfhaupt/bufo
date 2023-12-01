@@ -55,35 +55,36 @@ impl Compiler {
         })
     }
 
+    #[trace_call(always)]
     pub fn run_everything(&mut self) -> Result<(), String> {
         let now = Instant::now();
         let mut parsed_ast = self.parser.parse_file()?;
         if self.print_debug {
-            println!("Parsing took {:?}", now.elapsed());
+            println!("[DEBUG] Parsing took {:?}", now.elapsed());
         }
 
         let now = Instant::now();
         self.checker.type_check_file(&mut parsed_ast)?;
         if self.print_debug {
-            println!("Type Checking took {:?}", now.elapsed());
+            println!("[DEBUG] Type Checking took {:?}", now.elapsed());
         }
 
         let now = Instant::now();
         let ir = self.codegen.generate_code(&parsed_ast)?;
         if self.print_debug {
-            println!("Codegen took {:?}", now.elapsed());
+            println!("[DEBUG] Codegen took {:?}", now.elapsed());
         }
 
         let now = Instant::now();
         self.assembler.generate_x86_64(ir)?;
         if self.print_debug {
-            println!("Assembling took {:?}", now.elapsed());
+            println!("[DEBUG] Assembling took {:?}", now.elapsed());
         }
         if self.run {
             let now = Instant::now();
             self.assembler.run()?;
             if self.print_debug {
-                println!("Running took {:?}", now.elapsed());
+                println!("[DEBUG] Running took {:?}", now.elapsed());
             }
         }
         Ok(())
@@ -108,7 +109,7 @@ fn compile() -> Result<(), String> {
         _ => unreachable!(),
     };
     if debug {
-        println!("Parsing flags took {:?}", now.elapsed());
+        println!("[DEBUG] Parsing flags took {:?}", now.elapsed());
     }
     let mut compiler = Compiler::new(path, debug, run)?;
     compiler.run_everything()

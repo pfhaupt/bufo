@@ -11,6 +11,8 @@ use super::instr::{RegMode, Register};
 use crate::compiler::{ERR_STR, FILE_EXT, OUTPUT_FOLDER};
 use crate::internal_error;
 
+use tracer::trace_call;
+
 const REG_64BIT: [&str; 16] = [
     "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13",
     "r14", "r15",
@@ -20,6 +22,7 @@ const REG_32BIT: [&str; 16] = [
     "r13d", "r14d", "r15d",
 ];
 
+#[trace_call(extra)]
 fn reg(r: Register, rm: RegMode) -> &'static str {
     let index = r as usize;
     debug_assert!(index < REG_32BIT.len());
@@ -60,6 +63,7 @@ impl Assembler {
         }
     }
 
+    #[trace_call(always)]
     pub fn generate_x86_64(&self, ir: Vec<instr::IR>) -> Result<(), String> {
         let mut output = String::new();
         let mut push_asm = |s: &str| {
@@ -564,6 +568,7 @@ impl Assembler {
         Ok(())
     }
 
+    #[trace_call(always)]
     pub fn run(&self) -> Result<(), String> {
         let mut output_path = String::from(OUTPUT_FOLDER);
         output_path.push_str(&self.path.replace(FILE_EXT, ".exe"));

@@ -4,6 +4,8 @@ use crate::middleend::checker::Type;
 
 use std::fmt::Debug;
 
+use tracer::trace_call;
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum RegMode {
     BIT64,
@@ -11,15 +13,17 @@ pub enum RegMode {
 }
 
 impl From<&Type> for RegMode {
+    #[trace_call(extra)]
     fn from(value: &Type) -> Self {
         match value.size() {
             Ok(v) => Self::from(v),
-            Err(e) => panic!("{}", e)
+            Err(e) => panic!("{}", e),
         }
     }
 }
 
 impl From<usize> for RegMode {
+    #[trace_call(extra)]
     fn from(bytes: usize) -> Self {
         match bytes {
             4 => Self::BIT32,
@@ -30,6 +34,7 @@ impl From<usize> for RegMode {
 }
 
 impl RegMode {
+    #[trace_call(extra)]
     pub fn size(&self) -> usize {
         match self {
             Self::BIT32 => 4,
@@ -61,6 +66,7 @@ pub enum Register {
 }
 
 impl From<usize> for Register {
+    #[trace_call(extra)]
     fn from(value: usize) -> Self {
         match value {
             0 => Register::Rax,
@@ -106,6 +112,7 @@ impl Register {
         Self::R15,
     ];
 
+    #[trace_call(extra)]
     pub fn arg(index: usize) -> Self {
         // NOTE: The Type Checker prevents the user from ever declaring
         //       Methods, Functions or Features with more than 4 arguments.
@@ -131,7 +138,7 @@ pub enum OperandType {
     ImmI64,
     Offset,
     Address, // For nodes that return an address
-    None, // For nodes that do not return anything
+    None,    // For nodes that do not return anything
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -143,6 +150,7 @@ pub struct Operand {
 }
 
 impl Operand {
+    #[trace_call(extra)]
     pub fn none() -> Self {
         Self {
             typ: OperandType::None,
@@ -151,6 +159,7 @@ impl Operand {
             reg_mode: RegMode::BIT64,
         }
     }
+    #[trace_call(extra)]
     pub fn reg(r: Register, rm: RegMode) -> Self {
         Self {
             typ: OperandType::Reg,
@@ -159,7 +168,7 @@ impl Operand {
             reg_mode: rm,
         }
     }
-
+    #[trace_call(extra)]
     pub fn imm_u32(immediate: u32) -> Self {
         Self {
             typ: OperandType::ImmU32,
@@ -168,6 +177,7 @@ impl Operand {
             reg_mode: RegMode::BIT64,
         }
     }
+    #[trace_call(extra)]
     pub fn imm_u64(immediate: u64) -> Self {
         Self {
             typ: OperandType::ImmU64,
@@ -176,6 +186,7 @@ impl Operand {
             reg_mode: RegMode::BIT64,
         }
     }
+    #[trace_call(extra)]
     pub fn imm_i32(immediate: i32) -> Self {
         Self {
             typ: OperandType::ImmI32,
@@ -184,6 +195,7 @@ impl Operand {
             reg_mode: RegMode::BIT64,
         }
     }
+    #[trace_call(extra)]
     pub fn imm_i64(immediate: i64) -> Self {
         Self {
             typ: OperandType::ImmI64,
@@ -192,6 +204,7 @@ impl Operand {
             reg_mode: RegMode::BIT64,
         }
     }
+    #[trace_call(extra)]
     pub fn offset(offset: usize) -> Self {
         Self {
             typ: OperandType::Offset,
@@ -200,6 +213,7 @@ impl Operand {
             reg_mode: RegMode::BIT64,
         }
     }
+    #[trace_call(extra)]
     pub fn cmp(cmp: Operation) -> Self {
         Self {
             typ: OperandType::Cmp(cmp),
@@ -208,7 +222,7 @@ impl Operand {
             reg_mode: RegMode::BIT64,
         }
     }
-
+    #[trace_call(extra)]
     pub fn addr(reg: Register) -> Self {
         Self {
             typ: OperandType::Address,
@@ -244,6 +258,7 @@ impl Debug for Operand {
 }
 
 impl IR {
+    #[trace_call(extra)]
     pub fn get_lbl(&self) -> String {
         match &self {
             Self::Label { name } => name.clone(),

@@ -4,9 +4,11 @@ use std::fmt::{Display, Formatter};
 use crate::frontend::nodes;
 use crate::frontend::parser::Location;
 
-use crate::compiler::{ERR_STR, NOTE_STR};
 use crate::compiler::CONSTRUCTOR_NAME;
+use crate::compiler::{ERR_STR, NOTE_STR};
 use crate::internal_error;
+
+use tracer::trace_call;
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub enum Type {
@@ -28,6 +30,7 @@ pub enum Type {
 }
 
 impl Type {
+    #[trace_call(extra)]
     pub fn size(&self) -> Result<usize, String> {
         match self {
             Type::Arr(t, size) => Ok(t.size()? * size.iter().product::<usize>()),
@@ -35,12 +38,15 @@ impl Type {
             Type::I64 | Type::U64 | Type::F64 | Type::Usize => Ok(8),
             Type::Class(..) => Ok(8),
             Type::None => internal_error!("Something attempted to get the size of Type::None!"),
-            Type::Unknown => internal_error!("Something attempted to get the size of Type::Unknown!"),
+            Type::Unknown => {
+                internal_error!("Something attempted to get the size of Type::Unknown!")
+            }
         }
     }
 }
 
 impl Display for Type {
+    #[trace_call(extra)]
     fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
             // Type::Ptr(t) => write!(fmt, "&{}", t),
@@ -50,7 +56,6 @@ impl Display for Type {
         }
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct Parameter {
@@ -66,7 +71,10 @@ struct TypeLoc {
 }
 
 impl TypeLoc {
-    fn new(l: Location, t: Type) -> Self { Self { l, t } }
+    #[trace_call(extra)]
+    fn new(l: Location, t: Type) -> Self {
+        Self { l, t }
+    }
 }
 
 #[derive(Debug)]
@@ -98,6 +106,7 @@ pub struct Class {
 }
 
 impl Class {
+    #[trace_call(extra)]
     fn new(name: String) -> Self {
         Self {
             name: name.clone(),
@@ -110,6 +119,7 @@ impl Class {
         }
     }
 
+    #[trace_call(extra)]
     fn add_field(&mut self, field: &nodes::FieldNode) -> Result<(), String> {
         let name = &field.name;
         let location = &field.location;
@@ -121,13 +131,16 @@ impl Class {
             )),
             None => {
                 let typ = &field.type_def.typ;
-                self.fields
-                    .insert(name.to_string(), TypeLoc::new(location.clone(), typ.clone()));
+                self.fields.insert(
+                    name.to_string(),
+                    TypeLoc::new(location.clone(), typ.clone()),
+                );
                 Ok(())
             }
         }
     }
 
+    #[trace_call(extra)]
     fn add_method(&mut self, method: &mut nodes::MethodNode) -> Result<(), String> {
         let name = &method.name;
         let location = &method.location;
@@ -139,10 +152,13 @@ impl Class {
             None => {
                 let return_type = &method.return_type.typ;
                 let return_loc = &method.return_type.location;
-                method.parameters.insert(0, nodes::ParameterNode::this(
-                    method.location.clone(),
-                    Type::Class(method.class_name.clone())
-                ));
+                method.parameters.insert(
+                    0,
+                    nodes::ParameterNode::this(
+                        method.location.clone(),
+                        Type::Class(method.class_name.clone()),
+                    ),
+                );
                 let parameters: Vec<_> = method
                     .parameters
                     .iter()
@@ -163,6 +179,7 @@ impl Class {
         }
     }
 
+    #[trace_call(extra)]
     fn add_feature(&mut self, feature: &mut nodes::FeatureNode) -> Result<(), String> {
         let name = &feature.name;
         let location = &feature.location;
@@ -175,10 +192,13 @@ impl Class {
                 let return_type = &feature.return_type.typ;
                 let return_loc = &feature.return_type.location;
                 if name != CONSTRUCTOR_NAME {
-                    feature.parameters.insert(0, nodes::ParameterNode::this(
-                        feature.location.clone(),
-                        Type::Class(feature.class_name.clone())
-                    ));
+                    feature.parameters.insert(
+                        0,
+                        nodes::ParameterNode::this(
+                            feature.location.clone(),
+                            Type::Class(feature.class_name.clone()),
+                        ),
+                    );
                 }
                 let parameters: Vec<_> = feature
                     .parameters
@@ -200,6 +220,7 @@ impl Class {
         }
     }
 
+    #[trace_call(extra)]
     fn resolve_new_return_type(&mut self) -> Result<(), String> {
         for feat in &mut self.known_features {
             if *feat.0 == CONSTRUCTOR_NAME {
@@ -226,14 +247,17 @@ impl Class {
         panic!("Class has constructor but no feature `{CONSTRUCTOR_NAME}` found");
     }
 
+    #[trace_call(extra)]
     fn get_field(&self, name: &str) -> Option<TypeLoc> {
         self.fields.get(name).cloned()
     }
 
+    #[trace_call(extra)]
     fn get_feature(&self, name: &str) -> Option<&Function> {
         self.known_features.get(name)
     }
 
+    #[trace_call(extra)]
     fn get_method(&self, name: &str) -> Option<&Method> {
         self.known_methods.get(name)
     }
@@ -247,6 +271,7 @@ pub struct Variable {
 }
 
 impl Variable {
+    #[trace_call(extra)]
     fn new(name: String, location: Location, typ: Type) -> Self {
         Self {
             name,
@@ -254,9 +279,11 @@ impl Variable {
             typ,
         }
     }
+    #[trace_call(extra)]
     fn is_class_instance(&self) -> bool {
         matches!(&self.typ, Type::Class(..))
     }
+    #[trace_call(extra)]
     fn get_class_name(&self) -> String {
         match &self.typ {
             Type::Class(name) => name.clone(),
@@ -276,6 +303,7 @@ pub struct TypeChecker {
 }
 
 impl TypeChecker {
+    #[trace_call(extra)]
     pub fn new() -> Self {
         Self {
             known_classes: HashMap::new(),
@@ -287,6 +315,7 @@ impl TypeChecker {
         }
     }
 
+    #[trace_call(extra)]
     fn add_function(&mut self, function: &nodes::FunctionNode) -> Result<(), String> {
         let name = &function.name;
         let location = &function.location;
@@ -318,6 +347,7 @@ impl TypeChecker {
         }
     }
 
+    #[trace_call(always)]
     fn fill_lookup(&mut self, ast: &mut nodes::FileNode) -> Result<(), String> {
         for c in &mut ast.classes {
             match self.known_classes.get(&c.name) {
@@ -353,15 +383,18 @@ impl TypeChecker {
         Ok(())
     }
 
+    #[trace_call(always)]
     pub fn type_check_file(&mut self, ast: &mut nodes::FileNode) -> Result<Type, String> {
         self.fill_lookup(ast)?;
         ast.type_check(self)
     }
 
+    #[trace_call(extra)]
     fn add_scope(&mut self) {
         self.known_variables.push_back(HashMap::new());
     }
 
+    #[trace_call(extra)]
     fn remove_scope(&mut self) {
         self.known_variables.pop_back();
     }
@@ -371,10 +404,14 @@ impl TypeChecker {
         &mut self.known_variables[len - 1]
     }
 
+    #[trace_call(extra)]
     fn get_variable_in_current_scope(&self, name: &str) -> Option<Variable> {
-        self.known_variables[self.known_variables.len() - 1].get(name).cloned()
+        self.known_variables[self.known_variables.len() - 1]
+            .get(name)
+            .cloned()
     }
 
+    #[trace_call(extra)]
     fn get_variable(&self, name: &String) -> Option<Variable> {
         for scope in self.known_variables.iter().rev() {
             if let Some(t) = scope.get(name) {
@@ -395,6 +432,7 @@ trait Typecheckable {
 }
 
 impl Typecheckable for nodes::FileNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -407,6 +445,7 @@ impl Typecheckable for nodes::FileNode {
         }
         Ok(Type::None)
     }
+    #[trace_call(always)]
     fn type_check_with_type(
         &mut self,
         _checker: &mut TypeChecker,
@@ -419,6 +458,7 @@ impl Typecheckable for nodes::FileNode {
     }
 }
 impl Typecheckable for nodes::ClassNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -442,6 +482,7 @@ impl Typecheckable for nodes::ClassNode {
         checker.current_class.clear();
         Ok(Type::None)
     }
+    #[trace_call(always)]
     fn type_check_with_type(
         &mut self,
         _checker: &mut TypeChecker,
@@ -454,12 +495,14 @@ impl Typecheckable for nodes::ClassNode {
     }
 }
 impl Typecheckable for nodes::FieldNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
     {
         self.type_def.type_check(checker)
     }
+    #[trace_call(always)]
     fn type_check_with_type(
         &mut self,
         _checker: &mut TypeChecker,
@@ -472,6 +515,7 @@ impl Typecheckable for nodes::FieldNode {
     }
 }
 impl Typecheckable for nodes::FeatureNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -492,12 +536,14 @@ impl Typecheckable for nodes::FeatureNode {
         // Parameters are now known variables
         let mut parameters = HashMap::new();
         if self.is_constructor {
-            parameters.insert(String::from("this"),
-            Variable::new(
+            parameters.insert(
                 String::from("this"),
-                self.location.clone(),
-                Type::Class(self.class_name.clone()),
-            ));
+                Variable::new(
+                    String::from("this"),
+                    self.location.clone(),
+                    Type::Class(self.class_name.clone()),
+                ),
+            );
             checker.current_stack_size += 8;
         }
         for param in &feature.parameters {
@@ -541,6 +587,7 @@ impl Typecheckable for nodes::FeatureNode {
         checker.known_variables.clear();
         Ok(Type::None)
     }
+    #[trace_call(always)]
     fn type_check_with_type(
         &mut self,
         _checker: &mut TypeChecker,
@@ -553,6 +600,7 @@ impl Typecheckable for nodes::FeatureNode {
     }
 }
 impl Typecheckable for nodes::FunctionNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -591,8 +639,7 @@ impl Typecheckable for nodes::FunctionNode {
         if parameters.len() > 4 {
             return Err(format!(
                 "{}: {:?}: Functions can have at most 4 parameters.",
-                ERR_STR,
-                self.location
+                ERR_STR, self.location
             ));
         }
         checker.known_variables.push_back(parameters);
@@ -605,6 +652,7 @@ impl Typecheckable for nodes::FunctionNode {
         checker.known_variables.clear();
         Ok(Type::None)
     }
+    #[trace_call(always)]
     fn type_check_with_type(
         &mut self,
         _checker: &mut TypeChecker,
@@ -617,6 +665,7 @@ impl Typecheckable for nodes::FunctionNode {
     }
 }
 impl Typecheckable for nodes::MethodNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -664,7 +713,7 @@ impl Typecheckable for nodes::MethodNode {
                         NOTE_STR,
                         p.location,
                         param.name
-                    ))
+                    ));
                 }
             }
         }
@@ -686,6 +735,7 @@ impl Typecheckable for nodes::MethodNode {
         checker.known_variables.clear();
         Ok(Type::None)
     }
+    #[trace_call(always)]
     fn type_check_with_type(
         &mut self,
         _checker: &mut TypeChecker,
@@ -698,6 +748,7 @@ impl Typecheckable for nodes::MethodNode {
     }
 }
 impl Typecheckable for nodes::ParameterNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -707,6 +758,7 @@ impl Typecheckable for nodes::ParameterNode {
         checker.current_stack_size += var_size;
         Ok(Type::None)
     }
+    #[trace_call(always)]
     fn type_check_with_type(
         &mut self,
         _checker: &mut TypeChecker,
@@ -719,6 +771,7 @@ impl Typecheckable for nodes::ParameterNode {
     }
 }
 impl Typecheckable for nodes::BlockNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -730,6 +783,7 @@ impl Typecheckable for nodes::BlockNode {
         checker.remove_scope();
         Ok(Type::None)
     }
+    #[trace_call(always)]
     fn type_check_with_type(
         &mut self,
         _checker: &mut TypeChecker,
@@ -742,12 +796,14 @@ impl Typecheckable for nodes::BlockNode {
     }
 }
 impl Typecheckable for nodes::ExpressionNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
     {
         self.expression.type_check(checker)
     }
+    #[trace_call(always)]
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String>
     where
         Self: Sized,
@@ -756,6 +812,7 @@ impl Typecheckable for nodes::ExpressionNode {
     }
 }
 impl Typecheckable for nodes::Statement {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -768,6 +825,7 @@ impl Typecheckable for nodes::Statement {
             Self::Return(return_node) => return_node.type_check(checker),
         }
     }
+    #[trace_call(always)]
     fn type_check_with_type(
         &mut self,
         _checker: &mut TypeChecker,
@@ -780,6 +838,7 @@ impl Typecheckable for nodes::Statement {
     }
 }
 impl Typecheckable for nodes::LetNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -824,6 +883,7 @@ impl Typecheckable for nodes::LetNode {
             }
         }
     }
+    #[trace_call(always)]
     fn type_check_with_type(
         &mut self,
         _checker: &mut TypeChecker,
@@ -836,6 +896,7 @@ impl Typecheckable for nodes::LetNode {
     }
 }
 impl Typecheckable for nodes::AssignNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -856,6 +917,7 @@ impl Typecheckable for nodes::AssignNode {
             Ok(rhs_type)
         }
     }
+    #[trace_call(always)]
     fn type_check_with_type(
         &mut self,
         _checker: &mut TypeChecker,
@@ -868,6 +930,7 @@ impl Typecheckable for nodes::AssignNode {
     }
 }
 impl Typecheckable for nodes::IfNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -876,10 +939,8 @@ impl Typecheckable for nodes::IfNode {
         if condition_type != Type::Bool {
             return Err(format!(
                 "{}: {:?}: if-condition is expected to evaluate to boolean, found {}.",
-                ERR_STR,
-                self.location,
-                condition_type
-            ))
+                ERR_STR, self.location, condition_type
+            ));
         }
         let if_type = self.if_branch.type_check(checker)?;
         debug_assert!(if_type == Type::None);
@@ -889,6 +950,7 @@ impl Typecheckable for nodes::IfNode {
         }
         Ok(Type::None)
     }
+    #[trace_call(always)]
     fn type_check_with_type(
         &mut self,
         _checker: &mut TypeChecker,
@@ -901,6 +963,7 @@ impl Typecheckable for nodes::IfNode {
     }
 }
 impl Typecheckable for nodes::ReturnNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -948,10 +1011,7 @@ impl Typecheckable for nodes::ReturnNode {
                 if let Err(e) = ret_expr.type_check_with_type(checker, &expected_return_type) {
                     return Err(format!(
                         "{}\n{}: {:?}: Function declared to return {} here.",
-                        e,
-                        NOTE_STR,
-                        location,
-                        expected_return_type
+                        e, NOTE_STR, location, expected_return_type
                     ));
                 }
                 // Successfully `inferred` type, we can now proceed as normal
@@ -991,6 +1051,7 @@ impl Typecheckable for nodes::ReturnNode {
             Ok(Type::None)
         }
     }
+    #[trace_call(always)]
     fn type_check_with_type(
         &mut self,
         _checker: &mut TypeChecker,
@@ -1003,6 +1064,7 @@ impl Typecheckable for nodes::ReturnNode {
     }
 }
 impl Typecheckable for nodes::TypeNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -1021,6 +1083,7 @@ impl Typecheckable for nodes::TypeNode {
             _ => Ok(Type::None),
         }
     }
+    #[trace_call(always)]
     fn type_check_with_type(
         &mut self,
         _checker: &mut TypeChecker,
@@ -1033,6 +1096,7 @@ impl Typecheckable for nodes::TypeNode {
     }
 }
 impl Typecheckable for nodes::ArgumentNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -1041,6 +1105,7 @@ impl Typecheckable for nodes::ArgumentNode {
         self.typ = t.clone();
         Ok(t)
     }
+    #[trace_call(always)]
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String>
     where
         Self: Sized,
@@ -1051,6 +1116,7 @@ impl Typecheckable for nodes::ArgumentNode {
     }
 }
 impl Typecheckable for nodes::Expression {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -1069,6 +1135,7 @@ impl Typecheckable for nodes::Expression {
             Self::Literal(literal) => literal.type_check(checker),
         }
     }
+    #[trace_call(always)]
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String>
     where
         Self: Sized,
@@ -1089,6 +1156,7 @@ impl Typecheckable for nodes::Expression {
     }
 }
 impl Typecheckable for nodes::ExpressionComparisonNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -1146,6 +1214,7 @@ impl Typecheckable for nodes::ExpressionComparisonNode {
         }
         Ok(Type::Bool)
     }
+    #[trace_call(always)]
     fn type_check_with_type(
         &mut self,
         _checker: &mut TypeChecker,
@@ -1158,6 +1227,7 @@ impl Typecheckable for nodes::ExpressionComparisonNode {
     }
 }
 impl Typecheckable for nodes::ExpressionIdentifierNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -1166,11 +1236,8 @@ impl Typecheckable for nodes::ExpressionIdentifierNode {
         self.typ = typ.clone();
         Ok(typ)
     }
-    fn type_check_with_type(
-        &mut self,
-        checker: &mut TypeChecker,
-        typ: &Type,
-    ) -> Result<(), String>
+    #[trace_call(always)]
+    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String>
     where
         Self: Sized,
     {
@@ -1180,6 +1247,7 @@ impl Typecheckable for nodes::ExpressionIdentifierNode {
     }
 }
 impl Typecheckable for nodes::ExpressionArrayLiteralNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -1188,7 +1256,7 @@ impl Typecheckable for nodes::ExpressionArrayLiteralNode {
         for elem in &mut self.elements {
             let elem_type = elem.type_check(checker)?;
             if elem_type == Type::Unknown {
-                return Ok(Type::Unknown)
+                return Ok(Type::Unknown);
             } else if array_type == Type::Unknown {
                 array_type = elem_type;
             } else if array_type != elem_type {
@@ -1198,7 +1266,7 @@ impl Typecheckable for nodes::ExpressionArrayLiteralNode {
                     elem.get_loc(),
                     array_type,
                     elem_type
-                ))
+                ));
             }
         }
         if let Type::Arr(t, mut size) = array_type {
@@ -1212,6 +1280,7 @@ impl Typecheckable for nodes::ExpressionArrayLiteralNode {
             Ok(array_type)
         }
     }
+    #[trace_call(always)]
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String>
     where
         Self: Sized,
@@ -1246,14 +1315,13 @@ impl Typecheckable for nodes::ExpressionArrayLiteralNode {
         } else {
             Err(format!(
                 "{}: {:?}: Type Mismatch! Expected {}, found Array Literal.",
-                ERR_STR,
-                self.location,
-                typ
+                ERR_STR, self.location, typ
             ))
         }
     }
 }
 impl Typecheckable for nodes::ExpressionArrayAccessNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -1278,7 +1346,11 @@ impl Typecheckable for nodes::ExpressionArrayAccessNode {
             ));
         };
         if arr_size.len() != self.indices.elements.len() {
-            let i = if arr_size.len() == 1 { "index" } else { "indices" };
+            let i = if arr_size.len() == 1 {
+                "index"
+            } else {
+                "indices"
+            };
             return Err(format!(
                 "{}: {:?}: Dimension Mismatch in Array indexing. Expected {} {i}, found {}.\n{}: Getting a subarray is not supported yet, you can only get single elements.",
                 ERR_STR,
@@ -1286,16 +1358,14 @@ impl Typecheckable for nodes::ExpressionArrayAccessNode {
                 arr_size.len(),
                 self.indices.elements.len(),
                 NOTE_STR
-            ))
+            ));
         }
         let t = self.indices.type_check(checker)?;
         if let Type::Arr(elem_index, _) = t {
             if *elem_index != Type::Usize {
                 Err(format!(
                     "{}: {:?}: Array Indices are expected to be type usize, found array of {}.",
-                    ERR_STR,
-                    self.location,
-                    elem_index
+                    ERR_STR, self.location, elem_index
                 ))
             } else {
                 // Indices is Array of Usizes, all is well
@@ -1304,15 +1374,11 @@ impl Typecheckable for nodes::ExpressionArrayAccessNode {
                 Ok(final_type)
             }
         } else if t == Type::Unknown {
-            let index_arr = Type::Arr(
-                Box::new(Type::Usize),
-                vec![arr_size.len()]
-            );
+            let index_arr = Type::Arr(Box::new(Type::Usize), vec![arr_size.len()]);
             if let Err(e) = self.indices.type_check_with_type(checker, &index_arr) {
                 Err(format!(
                     "{}\n{}: Array Indices are expected to be of type usize.",
-                    e,
-                    NOTE_STR,
+                    e, NOTE_STR,
                 ))
             } else {
                 let final_type = *elem.clone();
@@ -1325,6 +1391,7 @@ impl Typecheckable for nodes::ExpressionArrayAccessNode {
             unreachable!()
         }
     }
+    #[trace_call(always)]
     fn type_check_with_type(
         &mut self,
         _checker: &mut TypeChecker,
@@ -1337,12 +1404,14 @@ impl Typecheckable for nodes::ExpressionArrayAccessNode {
     }
 }
 impl Typecheckable for nodes::ExpressionLiteralNode {
+    #[trace_call(always)]
     fn type_check(&mut self, _checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
     {
         Ok(self.typ.clone())
     }
+    #[trace_call(always)]
     fn type_check_with_type(&mut self, _checker: &mut TypeChecker, typ: &Type) -> Result<(), String>
     where
         Self: Sized,
@@ -1355,9 +1424,7 @@ impl Typecheckable for nodes::ExpressionLiteralNode {
         } else if let Type::Arr(_, _) = typ {
             Err(format!(
                 "{}: {:?} Type Mismatch! Expected Array Literal, found Integer Literal `{}`",
-                ERR_STR,
-                self.location,
-                self.value
+                ERR_STR, self.location, self.value
             ))
         } else if let Type::Class(class_name) = typ {
             Err(format!(
@@ -1374,6 +1441,7 @@ impl Typecheckable for nodes::ExpressionLiteralNode {
     }
 }
 impl Typecheckable for nodes::ExpressionBinaryNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -1439,6 +1507,7 @@ impl Typecheckable for nodes::ExpressionBinaryNode {
             }
         }
     }
+    #[trace_call(always)]
     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String>
     where
         Self: Sized,
@@ -1450,6 +1519,7 @@ impl Typecheckable for nodes::ExpressionBinaryNode {
     }
 }
 impl Typecheckable for nodes::ExpressionCallNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -1515,6 +1585,7 @@ impl Typecheckable for nodes::ExpressionCallNode {
         self.typ = return_type.t;
         Ok(self.typ.clone())
     }
+    #[trace_call(always)]
     fn type_check_with_type(
         &mut self,
         _checker: &mut TypeChecker,
@@ -1527,6 +1598,7 @@ impl Typecheckable for nodes::ExpressionCallNode {
     }
 }
 impl Typecheckable for nodes::ExpressionConstructorNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -1608,6 +1680,7 @@ impl Typecheckable for nodes::ExpressionConstructorNode {
         self.typ = class_type;
         Ok(Type::Class(self.class_name.clone()))
     }
+    #[trace_call(always)]
     fn type_check_with_type(
         &mut self,
         _checker: &mut TypeChecker,
@@ -1620,6 +1693,7 @@ impl Typecheckable for nodes::ExpressionConstructorNode {
     }
 }
 impl Typecheckable for nodes::ExpressionFieldAccessNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -1643,6 +1717,7 @@ impl Typecheckable for nodes::ExpressionFieldAccessNode {
             )),
         }
     }
+    #[trace_call(always)]
     fn type_check_with_type(
         &mut self,
         _checker: &mut TypeChecker,
@@ -1655,6 +1730,7 @@ impl Typecheckable for nodes::ExpressionFieldAccessNode {
     }
 }
 impl nodes::ExpressionFieldAccessNode {
+    #[trace_call(always)]
     fn type_check_field(
         &mut self,
         checker: &mut TypeChecker,
@@ -1825,6 +1901,7 @@ impl nodes::ExpressionFieldAccessNode {
     }
 }
 impl Typecheckable for nodes::NameNode {
+    #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
@@ -1840,11 +1917,8 @@ impl Typecheckable for nodes::NameNode {
             )),
         }
     }
-    fn type_check_with_type(
-        &mut self,
-        checker: &mut TypeChecker,
-        typ: &Type,
-    ) -> Result<(), String>
+    #[trace_call(always)]
+    fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String>
     where
         Self: Sized,
     {
@@ -1854,22 +1928,21 @@ impl Typecheckable for nodes::NameNode {
         if self.typ != *typ {
             return Err(format!(
                 "{}: {:?}: Type Mismatch! Expected Type {}, found {}.",
-                ERR_STR,
-                self.location,
-                typ,
-                self.typ
-            ))
+                ERR_STR, self.location, typ, self.typ
+            ));
         }
         Ok(())
     }
 }
 impl Typecheckable for nodes::ExpressionBuiltInNode {
+    #[trace_call(always)]
     fn type_check(&mut self, _checker: &mut TypeChecker) -> Result<Type, String>
     where
         Self: Sized,
     {
         internal_error!("ExpressionBuiltIn::type_check() is not implemented yet")
     }
+    #[trace_call(always)]
     fn type_check_with_type(
         &mut self,
         _checker: &mut TypeChecker,
