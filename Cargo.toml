@@ -13,3 +13,4 @@ tracer = { path = "tracer" }
 [features]
 test_exec = []
 trace = []
+trace_extra = []

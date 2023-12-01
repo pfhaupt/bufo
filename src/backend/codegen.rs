@@ -2,12 +2,14 @@ use std::collections::HashMap;
 use std::num::ParseIntError;
 
 use super::instr;
-use crate::compiler::{ERR_STR, NOTE_STR, CONSTRUCTOR_NAME};
+use crate::compiler::{CONSTRUCTOR_NAME, ERR_STR, NOTE_STR};
 use crate::frontend::nodes;
 use crate::frontend::parser::Operation;
 use crate::middleend::checker::Type;
 
 use crate::internal_error;
+
+use tracer::trace_call;
 
 const LBL_STR: &str = "lbl_";
 
@@ -122,6 +124,7 @@ impl ClassInfo {
             field_offsets: HashMap::new(),
         }
     }
+
     fn add_field(&mut self, field_name: &String, size: usize) {
         debug_assert!(!self.field_offsets.contains_key(field_name));
         self.field_offsets
@@ -152,7 +155,12 @@ impl SizeManager {
             .insert(class_name.clone(), ClassInfo::new());
     }
 
-    fn add_field(&mut self, class_name: &String, field_name: &String, typ: &Type) -> Result<(), String> {
+    fn add_field(
+        &mut self,
+        class_name: &String,
+        field_name: &String,
+        typ: &Type,
+    ) -> Result<(), String> {
         let size = typ.size()?;
         let Some(class) = self.class_sizes.get_mut(class_name) else {
             // Two Options: Forgot to add class to Manager, or Type Checker f*ed up.
@@ -208,6 +216,7 @@ impl Codegen {
         }
     }
 
+    #[trace_call(always)]
     fn fill_lookup(&mut self, ast: &nodes::FileNode) {
         for class in &ast.classes {
             self.add_class(&class.name);
@@ -216,18 +225,24 @@ impl Codegen {
                 field.codegen(self).unwrap();
             }
             if self.print_debug {
-                println!("[DEBUG] Class `{}` has size {} bytes", class.name, self.sm.get_class_size(&class.name));
+                println!(
+                    "[DEBUG] Class `{}` has size {} bytes",
+                    class.name,
+                    self.sm.get_class_size(&class.name)
+                );
             }
         }
         self.current_class.clear();
     }
 
+    #[trace_call(always)]
     pub fn generate_code(&mut self, ast: &nodes::FileNode) -> Result<Vec<instr::IR>, String> {
         self.fill_lookup(ast);
         ast.codegen(self)?;
         Ok(self.ir.clone())
     }
 
+    #[trace_call(extra)]
     fn generate_label(&mut self, name: Option<String>) -> instr::IR {
         if let Some(name) = name {
             instr::IR::Label { name }
@@ -238,6 +253,7 @@ impl Codegen {
         }
     }
 
+    #[trace_call(extra)]
     fn add_class(&mut self, class_name: &String) {
         if self.print_debug {
             println!("[DEBUG] Added new Class `{}`", class_name);
@@ -245,6 +261,7 @@ impl Codegen {
         self.sm.add_class(class_name);
     }
 
+    #[trace_call(extra)]
     fn add_field(&mut self, name: &String, typ: &Type) -> Result<(), String> {
         debug_assert!(!self.current_class.is_empty());
         self.sm.add_field(&self.current_class, name, typ)?;
@@ -257,20 +274,24 @@ impl Codegen {
         Ok(())
     }
 
+    #[trace_call(extra)]
     fn enter_scope(&mut self) {
         self.stack_scopes.push(HashMap::new())
     }
 
+    #[trace_call(extra)]
     fn leave_scope(&mut self) {
         debug_assert!(!self.stack_scopes.is_empty());
         self.stack_scopes.pop();
     }
 
+    #[trace_call(extra)]
     fn get_field_offset(&self, class: &String, name: &String) -> usize {
         let info = self.sm.get_class_info(class);
         info.get_field_offset(name)
     }
 
+    #[trace_call(extra)]
     fn get_register(&mut self) -> Result<instr::Register, String> {
         self.register_counter += 1;
         let v = self.register_counter;
@@ -287,12 +308,14 @@ impl Codegen {
         }
     }
 
+    #[trace_call(extra)]
     fn reset_registers(&mut self) {
         // even if register 0 (RAX) is reserved, get_register() increases this counter before returning it, so it's ok.
         self.register_counter = 0;
     }
 
     #[allow(unused)]
+    #[trace_call(extra)]
     fn push_preserved_registers(&mut self) {
         for reg in instr::Register::PRESERVED {
             self.add_ir(instr::IR::PushReg { reg });
@@ -300,12 +323,14 @@ impl Codegen {
     }
 
     #[allow(unused)]
+    #[trace_call(extra)]
     fn pop_preserved_registers(&mut self) {
         for reg in instr::Register::PRESERVED.iter().rev() {
             self.add_ir(instr::IR::PopReg { reg: *reg });
         }
     }
 
+    #[trace_call(extra)]
     fn push_registers(&mut self, reg_ctr: usize) {
         for index in 1..reg_ctr {
             self.add_ir(instr::IR::PushReg {
@@ -314,6 +339,7 @@ impl Codegen {
         }
     }
 
+    #[trace_call(extra)]
     fn pop_registers(&mut self, reg_ctr: usize) {
         for index in (1..reg_ctr).rev() {
             self.add_ir(instr::IR::PopReg {
@@ -322,6 +348,7 @@ impl Codegen {
         }
     }
 
+    #[trace_call(always)]
     fn add_ir(&mut self, ir: instr::IR) {
         if self.print_debug {
             println!("[DEBUG] Added IR: {:?}", ir);
@@ -329,6 +356,7 @@ impl Codegen {
         self.ir.push(ir)
     }
 
+    #[trace_call(extra)]
     fn add_variable_offset(&mut self, name: &str, offset: usize) {
         debug_assert!(!self.stack_scopes.is_empty());
         self.stack_scopes
@@ -337,12 +365,14 @@ impl Codegen {
             .insert(name.to_owned(), offset);
     }
 
+    #[trace_call(extra)]
     fn update_stack_offset(&mut self, typ_size: usize) -> usize {
         let v = self.current_stack_offset;
         self.current_stack_offset += typ_size;
         v
     }
 
+    #[trace_call(extra)]
     fn known_variable(&mut self, name: &str) -> bool {
         for scope in self.stack_scopes.iter().rev() {
             if scope.contains_key(name) {
@@ -352,6 +382,7 @@ impl Codegen {
         false
     }
 
+    #[trace_call(extra)]
     fn get_stack_offset(&mut self, name: &str) -> usize {
         for scope in self.stack_scopes.iter().rev() {
             if let Some(offset) = scope.get(name) {
@@ -365,6 +396,7 @@ impl Codegen {
         panic!()
     }
 
+    #[trace_call(extra)]
     fn store_variable_in_stack(&mut self, name: &str, typ: &Type) -> Result<(), String> {
         let offset = self.update_stack_offset(typ.size()?);
         self.add_variable_offset(name, offset);
@@ -382,6 +414,7 @@ trait Codegenable {
 }
 
 impl Codegenable for nodes::FileNode {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         for class in &self.classes {
             class.codegen(codegen)?;
@@ -394,6 +427,7 @@ impl Codegenable for nodes::FileNode {
 }
 
 impl Codegenable for nodes::ClassNode {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         for feature in &self.features {
             feature.codegen(codegen)?;
@@ -407,6 +441,7 @@ impl Codegenable for nodes::ClassNode {
     }
 }
 impl Codegenable for nodes::FieldNode {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let typ = &self.type_def.typ;
         debug_assert!(*typ != Type::None);
@@ -415,6 +450,7 @@ impl Codegenable for nodes::FieldNode {
     }
 }
 impl Codegenable for nodes::FeatureNode {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         func_assert!(codegen);
         func_entry!(codegen, self.class_name.clone() + "_" + &self.name);
@@ -469,24 +505,28 @@ impl Codegenable for nodes::FeatureNode {
     }
 }
 impl Codegenable for nodes::FunctionNode {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         function!(codegen, self, self.name);
         Ok(instr::Operand::none())
     }
 }
 impl Codegenable for nodes::MethodNode {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         method!(codegen, self, self.class_name.clone() + "_" + &self.name);
         Ok(instr::Operand::none())
     }
 }
 impl Codegenable for nodes::ParameterNode {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         codegen.store_variable_in_stack(&self.name, &self.typ.typ)?;
         Ok(instr::Operand::none())
     }
 }
 impl Codegenable for nodes::BlockNode {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         codegen.enter_scope();
         for stmt in &self.statements {
@@ -498,6 +538,7 @@ impl Codegenable for nodes::BlockNode {
 }
 
 impl Codegenable for nodes::Statement {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let reg = match self {
             Self::Assign(assign_node) => assign_node.codegen(codegen),
@@ -512,11 +553,13 @@ impl Codegenable for nodes::Statement {
 }
 
 impl Codegenable for nodes::ExpressionNode {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         self.expression.codegen(codegen)
     }
 }
 impl Codegenable for nodes::LetNode {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let mut rhs = self.expression.codegen(codegen)?;
         debug_assert!(rhs != instr::Operand::none());
@@ -524,10 +567,7 @@ impl Codegenable for nodes::LetNode {
             let reg = codegen.get_register()?;
             let reg_mode = instr::RegMode::from(&self.typ.typ);
             let reg = instr::Operand::reg(reg, reg_mode);
-            codegen.add_ir(instr::IR::Move {
-                dst: reg,
-                src: rhs
-            });
+            codegen.add_ir(instr::IR::Move { dst: reg, src: rhs });
             rhs = reg;
         }
 
@@ -543,6 +583,7 @@ impl Codegenable for nodes::LetNode {
     }
 }
 impl Codegenable for nodes::AssignNode {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let mut rhs = self.expression.codegen(codegen)?;
         debug_assert!(rhs != instr::Operand::none());
@@ -551,10 +592,7 @@ impl Codegenable for nodes::AssignNode {
             // FIXME: Why does AssigNode not have a type?
             let reg_mode = instr::RegMode::from(&self.expression.expression.get_type());
             let reg = instr::Operand::reg(reg, reg_mode);
-            codegen.add_ir(instr::IR::Move {
-                dst: reg,
-                src: rhs
-            });
+            codegen.add_ir(instr::IR::Move { dst: reg, src: rhs });
             rhs = reg;
         }
 
@@ -569,11 +607,13 @@ impl Codegenable for nodes::AssignNode {
     }
 }
 impl Codegenable for nodes::ExpressionIdentifierNode {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         self.expression.codegen(codegen)
     }
 }
 impl Codegenable for nodes::IfNode {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let cond = self.condition.codegen(codegen)?;
         let instr::OperandType::Cmp(cmp_mode) = cond.typ else { unreachable!() };
@@ -608,6 +648,7 @@ impl Codegenable for nodes::IfNode {
     }
 }
 impl Codegenable for nodes::ReturnNode {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         debug_assert!(self.typ != Type::Unknown);
         if let Some(return_expr) = &self.return_value {
@@ -625,16 +666,19 @@ impl Codegenable for nodes::ReturnNode {
     }
 }
 impl Codegenable for nodes::TypeNode {
+    #[trace_call(always)]
     fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
         internal_error!("TypeNode::codegen() is not implemented yet.")
     }
 }
 impl Codegenable for nodes::ArgumentNode {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         self.expression.codegen(codegen)
     }
 }
 impl Codegenable for nodes::Expression {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         match self {
             Self::Name(expr) => expr.codegen(codegen),
@@ -652,36 +696,32 @@ impl Codegenable for nodes::Expression {
     }
 }
 impl Codegenable for nodes::ExpressionArrayLiteralNode {
+    #[trace_call(always)]
     fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
         internal_error!("ExpressionArrayLiteralNode::codegen() is not implemented yet")
     }
 }
 impl Codegenable for nodes::ExpressionArrayAccessNode {
+    #[trace_call(always)]
     fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
         internal_error!("ExpressionArrayAccessNode::codegen() is not implemented yet")
     }
 }
 impl Codegenable for nodes::ExpressionLiteralNode {
+    #[trace_call(always)]
     fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let err_to_str = |e: ParseIntError| {
             let s = e.to_string();
             format!(
                 "{}: {:?}: Integer Literal could not be parsed.\n{}: {}",
-                ERR_STR,
-                self.location,
-                NOTE_STR,
-                s
+                ERR_STR, self.location, NOTE_STR, s
             )
         };
         macro_rules! parse_num {
-            ($typ:ty, $fn:ident) => {
-                {
-                    let v = self.value.parse::<$typ>().map_err(|e| {
-                        err_to_str(e)
-                    })?;
-                    Ok(instr::Operand::$fn(v))
-                }
-            };
+            ($typ:ty, $fn:ident) => {{
+                let v = self.value.parse::<$typ>().map_err(|e| err_to_str(e))?;
+                Ok(instr::Operand::$fn(v))
+            }};
         }
         match &self.typ {
             Type::I32 => parse_num!(i32, imm_i32),
@@ -697,6 +737,7 @@ impl Codegenable for nodes::ExpressionLiteralNode {
     }
 }
 impl Codegenable for nodes::ExpressionBinaryNode {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let mut lhs = self.lhs.codegen(codegen)?;
         debug_assert!(lhs != instr::Operand::none());
@@ -704,10 +745,7 @@ impl Codegenable for nodes::ExpressionBinaryNode {
             let reg = codegen.get_register()?;
             let reg_mode = instr::RegMode::from(&self.typ);
             let reg = instr::Operand::reg(reg, reg_mode);
-            codegen.add_ir(instr::IR::Move {
-                dst: reg,
-                src: lhs
-            });
+            codegen.add_ir(instr::IR::Move { dst: reg, src: lhs });
             lhs = reg;
         }
         debug_assert!(lhs.typ == instr::OperandType::Reg);
@@ -751,6 +789,7 @@ impl Codegenable for nodes::ExpressionBinaryNode {
     }
 }
 impl Codegenable for nodes::ExpressionComparisonNode {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let mut lhs = self.lhs.codegen(codegen)?;
         debug_assert!(lhs != instr::Operand::none());
@@ -758,10 +797,7 @@ impl Codegenable for nodes::ExpressionComparisonNode {
             let reg = codegen.get_register()?;
             let reg_mode = instr::RegMode::from(&self.lhs.get_type());
             let reg = instr::Operand::reg(reg, reg_mode);
-            codegen.add_ir(instr::IR::Move {
-                dst: reg,
-                src: lhs
-            });
+            codegen.add_ir(instr::IR::Move { dst: reg, src: lhs });
             lhs = reg;
         }
         debug_assert!(lhs.typ == instr::OperandType::Reg);
@@ -773,6 +809,7 @@ impl Codegenable for nodes::ExpressionComparisonNode {
     }
 }
 impl Codegenable for nodes::ExpressionCallNode {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         debug_assert!(self.typ != Type::Unknown);
 
@@ -819,10 +856,11 @@ impl Codegenable for nodes::ExpressionCallNode {
                     });
                 }
                 instr::OperandType::Offset => {
-                    let target_reg = instr::Operand::reg(target_reg, instr::RegMode::from(&arg.typ));
+                    let target_reg =
+                        instr::Operand::reg(target_reg, instr::RegMode::from(&arg.typ));
                     codegen.add_ir(instr::IR::Load {
                         dst: target_reg,
-                        addr: op
+                        addr: op,
                     });
                 }
                 op => {
@@ -854,6 +892,7 @@ impl Codegenable for nodes::ExpressionCallNode {
     }
 }
 impl Codegenable for nodes::ExpressionConstructorNode {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let constructor = self.class_name.clone() + "_" + CONSTRUCTOR_NAME;
 
@@ -915,6 +954,7 @@ impl Codegenable for nodes::ExpressionConstructorNode {
     }
 }
 impl Codegenable for nodes::ExpressionFieldAccessNode {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         // This is only ever called at the root of the access, so it's always a variable
         // for nesting, we call self.codegen_field()
@@ -940,6 +980,7 @@ impl Codegenable for nodes::ExpressionFieldAccessNode {
     }
 }
 impl nodes::ExpressionFieldAccessNode {
+    #[trace_call(always)]
     fn codegen_field(
         &self,
         codegen: &mut Codegen,
@@ -959,7 +1000,7 @@ impl nodes::ExpressionFieldAccessNode {
             name: valid_reference.get_lbl(),
         });
         codegen.add_ir(instr::IR::Exit {
-            code: instr::Operand::imm_i32(2)
+            code: instr::Operand::imm_i32(2),
         });
         codegen.add_ir(valid_reference);
 
@@ -1015,6 +1056,7 @@ impl nodes::ExpressionFieldAccessNode {
     }
 }
 impl Codegenable for nodes::NameNode {
+    #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let offset = codegen.get_stack_offset(&self.name);
         debug_assert!(self.typ != Type::None || self.typ != Type::Unknown);
@@ -1022,6 +1064,7 @@ impl Codegenable for nodes::NameNode {
     }
 }
 impl Codegenable for nodes::ExpressionBuiltInNode {
+    #[trace_call(always)]
     fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
         internal_error!("ExpressionBuiltInNode::codegen() is not implemented yet")
     }

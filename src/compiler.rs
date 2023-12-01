@@ -1,5 +1,7 @@
 use std::time::Instant;
 
+use tracer::trace_call;
+
 use crate::backend::assembler::Assembler;
 use crate::backend::codegen::Codegen;
 use crate::frontend::flags::{Flag, FlagParser, DEBUG_KEY, INPUT_KEY, RUN_KEY};
@@ -88,6 +90,7 @@ impl Compiler {
     }
 }
 
+#[trace_call(always)]
 fn compile() -> Result<(), String> {
     let now = Instant::now();
     let flags = FlagParser::init_flags().parse_flags()?;
@@ -110,6 +113,7 @@ fn compile() -> Result<(), String> {
     let mut compiler = Compiler::new(path, debug, run)?;
     compiler.run_everything()
 }
+#[trace_call(always)]
 pub fn run() {
     if let Err(e) = compile() {
         eprintln!("{}", e);
