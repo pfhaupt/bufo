@@ -1194,7 +1194,14 @@ impl Typecheckable for nodes::ExpressionComparisonNode {
                     NOTE_STR, self.rhs.get_loc(),
                 ))
             }
-            (Type::Unknown, Type::Unknown) => (),
+            (Type::Unknown, Type::Unknown) => {
+                // We can't determine the type of either side, let's try to force it
+                // FIXME: This is a bit hacky, but it works for now
+                self.lhs
+                    .type_check_with_type(checker, &Type::I64)?;
+                self.rhs
+                    .type_check_with_type(checker, &Type::I64)?;
+            },
             (Type::Unknown, other) => self.lhs.type_check_with_type(checker, other)?,
             (other, Type::Unknown) => self.rhs.type_check_with_type(checker, other)?,
             (lhs, rhs) => {
