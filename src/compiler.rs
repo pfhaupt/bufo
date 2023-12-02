@@ -6,6 +6,7 @@ use crate::backend::assembler::Assembler;
 use crate::backend::codegen::Codegen;
 use crate::frontend::flags::Flags;
 use crate::frontend::parser::Parser;
+use crate::middleend::flow_checker::FlowChecker;
 use crate::middleend::type_checker::TypeChecker;
 
 pub const ERR_STR: &str = "\x1b[91merror\x1b[0m";
@@ -36,7 +37,8 @@ macro_rules! internal_error {
 
 pub struct Compiler {
     parser: Parser,
-    checker: TypeChecker,
+    type_checker: TypeChecker,
+    flow_checker: FlowChecker,
     codegen: Codegen,
     assembler: Assembler,
     flags: Flags,
@@ -46,7 +48,8 @@ impl Compiler {
     pub fn new(flags: Flags) -> Self {
         Self {
             parser: Parser::new(flags.clone()),
-            checker: TypeChecker::new(flags.clone()),
+            type_checker: TypeChecker::new(flags.clone()),
+            flow_checker: FlowChecker::new(flags.clone()),
             codegen: Codegen::new(flags.clone()),
             assembler: Assembler::new(flags.clone()),
             flags: flags.clone()
@@ -62,9 +65,15 @@ impl Compiler {
         }
 
         let now = Instant::now();
-        self.checker.type_check_file(&mut parsed_ast)?;
+        self.type_checker.type_check_file(&mut parsed_ast)?;
         if self.flags.debug {
             println!("[DEBUG] Type Checking took {:?}", now.elapsed());
+        }
+
+        let now = Instant::now();
+        self.flow_checker.check(&parsed_ast)?;
+        if self.flags.debug {
+            println!("[DEBUG] Flow Checking took {:?}", now.elapsed());
         }
 
         let now = Instant::now();

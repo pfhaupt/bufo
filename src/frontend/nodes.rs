@@ -100,6 +100,21 @@ pub enum Statement {
     Continue(ContinueNode),
 }
 
+impl Statement {
+    pub fn get_loc(&self) -> Location {
+        match self {
+            Self::Expression(e) => e.location.clone(),
+            Self::Let(e) => e.location.clone(),
+            Self::Assign(e) => e.location.clone(),
+            Self::If(e) => e.location.clone(),
+            Self::Return(e) => e.location.clone(),
+            Self::While(e) => e.location.clone(),
+            Self::Break(e) => e.location.clone(),
+            Self::Continue(e) => e.location.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ExpressionNode {
     pub location: Location,
