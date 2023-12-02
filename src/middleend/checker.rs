@@ -828,6 +828,8 @@ impl Typecheckable for nodes::Statement {
             Self::If(if_node) => if_node.type_check(checker),
             Self::Return(return_node) => return_node.type_check(checker),
             Self::While(while_node) => while_node.type_check(checker),
+            Self::Break(break_node) => break_node.type_check(checker),
+            Self::Continue(continue_node) => continue_node.type_check(checker),
         }
     }
     #[trace_call(always)]
@@ -1084,11 +1086,49 @@ impl Typecheckable for nodes::WhileNode {
         debug_assert!(block_type == Type::None);
         Ok(Type::None)
     }
-    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String>
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
     where
         Self: Sized,
     {
         internal_error!("WhileNode::type_check_with_type() is not implemented yet")
+    }
+}
+impl Typecheckable for nodes::BreakNode {
+    fn type_check(&mut self, _checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
+        // TODO: Check if we're in a loop
+        Ok(Type::None)
+    }
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    {
+        internal_error!("BreakNode::type_check_with_type() is not implemented yet")
+    }
+}
+impl Typecheckable for nodes::ContinueNode {
+    fn type_check(&mut self, _checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
+        // TODO: Check if we're in a loop
+        Ok(Type::None)
+    }
+    fn type_check_with_type(
+        &mut self,
+        _checker: &mut TypeChecker,
+        _typ: &Type,
+    ) -> Result<(), String>
+    {
+        internal_error!("ContinueNode::type_check_with_type() is not implemented yet")
     }
 }
 impl Typecheckable for nodes::TypeNode {

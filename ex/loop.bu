@@ -1,11 +1,19 @@
 func main() -> u64 {
-    let a: u64 = 5;
-    while (a < 15) {
-        let b: i32 = 0;
-        while (b >= 0) {
-            b = b + 100;
+    let a: u64 = 0;
+    let c: u64 = 0;
+    while (a < 10) {
+        let b: u32 = 0;
+        while (b < 10) {
+            if (a == 5) {
+                break;
+            }
+            b = b + 1;
+            if (b == 5) {
+                continue;
+            }
+            c = c + 1;
         }
         a = a + 1;
     }
-    return a;
+    return c;
 }

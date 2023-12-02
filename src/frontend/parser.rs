@@ -31,6 +31,8 @@ pub enum TokenType {
     ElseKeyword,
     ReturnKeyword,
     WhileKeyword,
+    BreakKeyword,
+    ContinueKeyword,
     BuiltInFunction,
     Colon,
     Semi,
@@ -282,7 +284,7 @@ impl Parser {
         }
         debug_assert_eq!(
             TokenType::Eof as u8 + 1,
-            36,
+            38,
             "Not all TokenTypes are handled in next_token()"
         );
         self.trim_whitespace()?;
@@ -306,6 +308,8 @@ impl Parser {
                     "else" => TokenType::ElseKeyword,
                     "return" => TokenType::ReturnKeyword,
                     "while" => TokenType::WhileKeyword,
+                    "break" => TokenType::BreakKeyword,
+                    "continue" => TokenType::ContinueKeyword,
                     _ if BUILT_IN_FUNCTIONS.contains(&value.as_str()) => TokenType::BuiltInFunction,
                     _ => TokenType::Identifier,
                 };
@@ -856,6 +860,8 @@ impl Parsable for nodes::Statement {
             TokenType::IfKeyword => nodes::Statement::If(nodes::IfNode::parse(parser)?),
             TokenType::ReturnKeyword => nodes::Statement::Return(nodes::ReturnNode::parse(parser)?),
             TokenType::WhileKeyword => nodes::Statement::While(nodes::WhileNode::parse(parser)?),
+            TokenType::BreakKeyword => nodes::Statement::Break(nodes::BreakNode::parse(parser)?),
+            TokenType::ContinueKeyword => nodes::Statement::Continue(nodes::ContinueNode::parse(parser)?),
             TokenType::Identifier => match parser.nth(1) {
                 // FIXME: Simple void function calls are not handled correctly
                 //        Currently, they are parsed as assignments
@@ -1046,6 +1052,30 @@ impl Parsable for nodes::WhileNode {
             condition,
             block,
         })
+    }
+}
+
+impl Parsable for nodes::BreakNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
+        let location = parser.current_location();
+        parser.expect(TokenType::BreakKeyword)?;
+        parser.expect(TokenType::Semi)?;
+        Ok(nodes::BreakNode { location })
+    }
+}
+
+impl Parsable for nodes::ContinueNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
+        let location = parser.current_location();
+        parser.expect(TokenType::ContinueKeyword)?;
+        parser.expect(TokenType::Semi)?;
+        Ok(nodes::ContinueNode { location })
     }
 }
 

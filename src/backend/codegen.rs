@@ -191,6 +191,8 @@ pub struct Codegen {
     current_stack_offset: usize,
     stack_scopes: Vec<HashMap<String, usize>>,
     field_stack: Vec<Type>,
+    // FIXME: Figure out a better way to do this
+    loop_stack: Vec<(String, String)>,
     register_counter: usize,
     flags: Flags
 }
@@ -205,6 +207,7 @@ impl Codegen {
             current_stack_offset: 0,
             stack_scopes: Vec::new(),
             field_stack: Vec::new(),
+            loop_stack: Vec::new(),
             register_counter: 0,
             flags
         }
@@ -541,6 +544,8 @@ impl Codegenable for nodes::Statement {
             Self::Let(let_node) => let_node.codegen(codegen),
             Self::Return(ret_node) => ret_node.codegen(codegen),
             Self::While(while_node) => while_node.codegen(codegen),
+            Self::Break(break_node) => break_node.codegen(codegen),
+            Self::Continue(continue_node) => continue_node.codegen(codegen),
         };
         codegen.reset_registers();
         reg
@@ -665,7 +670,12 @@ impl Codegenable for nodes::WhileNode {
         // jump to condition
         let cond_lbl = codegen.generate_label(None);
         let cond_name = cond_lbl.get_lbl();
-        codegen.add_ir(instr::IR::Jmp { name: cond_name });
+        codegen.add_ir(instr::IR::Jmp { name: cond_name.clone() });
+
+        // label for break statements to jump to
+        let break_lbl = codegen.generate_label(None);
+        let break_name = break_lbl.get_lbl();
+        codegen.loop_stack.push((break_name, cond_name));
 
         // block code
         let block_lbl = codegen.generate_label(None);
@@ -687,6 +697,28 @@ impl Codegenable for nodes::WhileNode {
             Operation::Lte => codegen.add_ir(instr::IR::JmpLte { name: block_name }),
             _ => unreachable!(),
         }
+        codegen.add_ir(break_lbl);
+        codegen.loop_stack.pop();
+        Ok(instr::Operand::none())
+    }
+}
+impl Codegenable for nodes::BreakNode {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
+        debug_assert!(!codegen.loop_stack.is_empty());
+        let loop_lbl = codegen.loop_stack.last().unwrap();
+
+        let break_lbl = loop_lbl.0.clone();
+        codegen.add_ir(instr::IR::Jmp { name: break_lbl });
+        Ok(instr::Operand::none())
+    }
+}
+impl Codegenable for nodes::ContinueNode {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
+        debug_assert!(!codegen.loop_stack.is_empty());
+        let loop_lbl = codegen.loop_stack.last().unwrap();
+
+        let cond_lbl = loop_lbl.1.clone();
+        codegen.add_ir(instr::IR::Jmp { name: cond_lbl });
         Ok(instr::Operand::none())
     }
 }

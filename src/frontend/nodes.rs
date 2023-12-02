@@ -96,6 +96,8 @@ pub enum Statement {
     If(IfNode),
     Return(ReturnNode),
     While(WhileNode),
+    Break(BreakNode),
+    Continue(ContinueNode),
 }
 
 #[derive(Debug, Clone)]
@@ -146,6 +148,16 @@ pub struct WhileNode {
     pub location: Location,
     pub condition: ExpressionComparisonNode,
     pub block: BlockNode,
+}
+
+#[derive(Debug, Clone)]
+pub struct BreakNode {
+    pub location: Location,
+}
+
+#[derive(Debug, Clone)]
+pub struct ContinueNode {
+    pub location: Location,
 }
 
 #[derive(Debug, Clone)]
