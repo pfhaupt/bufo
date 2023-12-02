@@ -301,7 +301,8 @@ pub struct TypeChecker {
     current_function: String,
     current_class: String,
     current_stack_size: usize,
-    #[allow(unused)] flags: Flags,
+    #[allow(unused)]
+    flags: Flags,
 }
 
 impl TypeChecker {
@@ -314,7 +315,7 @@ impl TypeChecker {
             current_function: String::new(),
             current_class: String::new(),
             current_stack_size: 0,
-            flags
+            flags,
         }
     }
 
@@ -826,6 +827,7 @@ impl Typecheckable for nodes::Statement {
             Self::Assign(assignment) => assignment.type_check(checker),
             Self::If(if_node) => if_node.type_check(checker),
             Self::Return(return_node) => return_node.type_check(checker),
+            Self::While(while_node) => while_node.type_check(checker),
         }
     }
     #[trace_call(always)]
@@ -1064,6 +1066,29 @@ impl Typecheckable for nodes::ReturnNode {
         Self: Sized,
     {
         internal_error!("ReturnNode::type_check_with_type() is not implemented yet")
+    }
+}
+impl Typecheckable for nodes::WhileNode {
+    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
+    where
+        Self: Sized,
+    {
+        let condition_type = self.condition.type_check(checker)?;
+        if condition_type != Type::Bool {
+            return Err(format!(
+                "{}: {:?}: while-condition is expected to evaluate to boolean, found {}.",
+                ERR_STR, self.location, condition_type
+            ));
+        }
+        let block_type = self.block.type_check(checker)?;
+        debug_assert!(block_type == Type::None);
+        Ok(Type::None)
+    }
+    fn type_check_with_type(&mut self, _checker: &mut TypeChecker, _typ: &Type) -> Result<(), String>
+    where
+        Self: Sized,
+    {
+        internal_error!("WhileNode::type_check_with_type() is not implemented yet")
     }
 }
 impl Typecheckable for nodes::TypeNode {
