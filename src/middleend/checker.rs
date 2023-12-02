@@ -1,6 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::fmt::{Display, Formatter};
 
+use crate::frontend::flags::Flags;
 use crate::frontend::nodes;
 use crate::frontend::parser::Location;
 
@@ -300,11 +301,12 @@ pub struct TypeChecker {
     current_function: String,
     current_class: String,
     current_stack_size: usize,
+    #[allow(unused)] flags: Flags,
 }
 
 impl TypeChecker {
     #[trace_call(extra)]
-    pub fn new() -> Self {
+    pub fn new(flags: Flags) -> Self {
         Self {
             known_classes: HashMap::new(),
             known_functions: HashMap::new(),
@@ -312,6 +314,7 @@ impl TypeChecker {
             current_function: String::new(),
             current_class: String::new(),
             current_stack_size: 0,
+            flags
         }
     }
 

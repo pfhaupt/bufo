@@ -19,7 +19,13 @@ mod tests {
 
     macro_rules! init {
         ($path: expr, $debug: expr, $run: expr) => {
-            Compiler::new(&String::from($path), $debug, $run)
+            {
+                let mut flags = crate::frontend::flags::Flags::default();
+                flags.input = $path.to_string();
+                flags.debug = $debug;
+                flags.run = $run;
+                Compiler::new(flags)
+            }
         };
     }
 
@@ -63,34 +69,22 @@ mod tests {
 
     macro_rules! test {
         ($path: expr, $debug: expr, $run: expr, $should_fail: expr, $expected: expr) => {
-            match init!($path, $debug, $run) {
-                Ok(mut c) => {
-                    let result = c.run_everything();
-                    if $should_fail {
-                        assert!(result.is_err());
-                        let res = result.err().unwrap();
-                        for e in $expected {
-                            if !res.contains(e) {
-                                assert!(false, "Unexpected Error String!\nExpected Substring\n> {e}\nin error message\n{res}\n")
-                            }
-                        }
-                    } else {
-                        assert!(result.is_ok());
-                    }
-                    if $run {
-                        clean_up!($path);
-                    }
-                }
-                Err(err) => {
-                    if $run {
-                        clean_up!($path);
-                    }
-                    assert!($should_fail);
+            {
+                let mut c = init!($path, $debug, $run);
+                let result = c.run_everything();
+                if $should_fail {
+                    assert!(result.is_err());
+                    let res = result.err().unwrap();
                     for e in $expected {
-                        if !err.contains(e) {
-                            assert!(false, "Unexpected Error String!\nExpected Substring `{e}`\nin `{err}`")
+                        if !res.contains(e) {
+                            assert!(false, "Unexpected Error String!\nExpected Substring\n> {e}\nin error message\n{res}\n")
                         }
                     }
+                } else {
+                    assert!(result.is_ok());
+                }
+                if $run {
+                    clean_up!($path);
                 }
             }
         };

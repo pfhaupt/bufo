@@ -9,6 +9,7 @@ use super::instr::{OperandType, IR};
 use super::instr::{RegMode, Register};
 
 use crate::compiler::{ERR_STR, FILE_EXT, OUTPUT_FOLDER};
+use crate::frontend::flags::Flags;
 use crate::internal_error;
 
 use tracer::trace_call;
@@ -36,16 +37,16 @@ fn reg(r: Register, rm: RegMode) -> &'static str {
 }
 
 pub struct Assembler {
-    print_debug: bool,
     path: String,
+    flags: Flags,
 }
 
 impl Assembler {
-    pub fn new() -> Self {
+    pub fn new(flags: Flags) -> Self {
         Self {
-            print_debug: false,
             path: String::new(),
-        }
+            flags: flags.clone()
+        }.filepath(&flags.input)
     }
 
     pub fn filepath(self, path: &str) -> Self {
@@ -54,13 +55,6 @@ impl Assembler {
             path = path.split('/').last().unwrap().to_string();
         }
         Self { path, ..self }
-    }
-
-    pub fn debug(self, print_debug: bool) -> Self {
-        Self {
-            print_debug,
-            ..self
-        }
     }
 
     #[trace_call(always)]
@@ -83,7 +77,7 @@ impl Assembler {
         push_asm("");
 
         for ir in &ir {
-            if self.print_debug {
+            if self.flags.debug {
                 push_asm(format!("; -- {ir:?} --").as_str());
             }
             match ir {
@@ -506,7 +500,7 @@ impl Assembler {
             Ok(b) => {
                 if !b {
                     // Create folder
-                    if self.print_debug {
+                    if self.flags.debug {
                         println!("Could not find output folder, creating now");
                     }
                     std::fs::create_dir(Path::new("./out/")).unwrap();
@@ -519,7 +513,7 @@ impl Assembler {
         let asmname = filename.replace(FILE_EXT, ".asm");
         let objname = asmname.replace(".asm", ".obj");
 
-        if self.print_debug {
+        if self.flags.debug {
             println!("Writing to {asmname}");
         }
         match File::create(&asmname) {
@@ -529,7 +523,7 @@ impl Assembler {
             Err(e) => panic!("{}", e),
         }
 
-        if self.print_debug {
+        if self.flags.debug {
             println!("Running `nasm -f win64 {asmname} -o {objname}`");
         }
         let nasm_output = Command::new("nasm")
@@ -543,7 +537,7 @@ impl Assembler {
                 String::from_utf8(nasm_output.stderr).unwrap()
             ));
         }
-        if self.print_debug {
+        if self.flags.debug {
             println!("Running `golink /console /entry main {objname} MSVCRT.dll kernel32.dll`");
         }
         let golink_output = Command::new("golink")
@@ -573,7 +567,7 @@ impl Assembler {
         let mut output_path = String::from(OUTPUT_FOLDER);
         output_path.push_str(&self.path.replace(FILE_EXT, ".exe"));
 
-        if self.print_debug {
+        if self.flags.debug {
             println!("Running `{output_path}`");
         }
 

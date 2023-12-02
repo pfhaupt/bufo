@@ -3,6 +3,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::fs;
 use std::path::PathBuf;
 
+use super::flags::Flags;
 use super::nodes;
 use crate::compiler::{BUILT_IN_FEATURES, CONSTRUCTOR_NAME, ERR_STR, NOTE_STR, WARN_STR};
 use crate::middleend::checker::Type;
@@ -186,41 +187,35 @@ pub struct Parser {
     current_char: usize,
     current_line: usize,
     line_start: usize,
-    print_debug: bool,
+    flags: Flags,
 }
 
 impl Parser {
     // ---------- Start of Builder Pattern ----------
-    pub fn new() -> Self {
+    pub fn new(flags: Flags) -> Self {
         Self {
             current_line: 1,
+            flags: flags.clone(),
             ..Default::default()
         }
+        .filepath(&flags.input)
     }
 
-    pub fn filepath(self, filepath: &str) -> Result<Self, String> {
-        match fs::read_to_string(filepath) {
-            Ok(source) => {
-                let pb = PathBuf::from(filepath);
-                let p = Self {
-                    filepath: pb.clone(),
-                    filename: pb.into_os_string().into_string().unwrap(),
-                    source: source.chars().collect(),
-                    ..self
-                };
-                Ok(p)
-            }
-            Err(e) => Err(format!("{}: Parsing file failed because: {}", ERR_STR, e,)),
-        }
-    }
-
-    pub fn debug(self, print_debug: bool) -> Self {
+    pub fn filepath(self, filepath: &str) -> Self {
+        let pb = PathBuf::from(filepath);
+        let source = match fs::read_to_string(filepath) {
+            Ok(source) => source.chars().collect(),
+            // Error Handling is done by the Flags struct
+            // At this point, the file is guaranteed to exist
+            Err(_) => unreachable!()
+        };
         Self {
-            print_debug,
+            filepath: pb.clone(),
+            filename: pb.into_os_string().into_string().unwrap(),
+            source,
             ..self
         }
     }
-
     // ---------- End of Builder Pattern ----------
     // ---------- Start of Lexer ----------
     fn lexed_eof(&self) -> bool {
@@ -432,7 +427,7 @@ impl Parser {
     fn fill_lookup(&mut self) -> Result<(), String> {
         while self.lookahead.len() < LOOKAHEAD_LIMIT {
             let n = self.next_token()?;
-            if self.print_debug {
+            if self.flags.debug {
                 // println!("[DEBUG] Found {:?}", n);
             }
             self.lookahead.push_back(n);

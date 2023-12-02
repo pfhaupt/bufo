@@ -3,6 +3,7 @@ use std::num::ParseIntError;
 
 use super::instr;
 use crate::compiler::{CONSTRUCTOR_NAME, ERR_STR, NOTE_STR};
+use crate::frontend::flags::Flags;
 use crate::frontend::nodes;
 use crate::frontend::parser::Operation;
 use crate::middleend::checker::Type;
@@ -191,10 +192,10 @@ pub struct Codegen {
     stack_scopes: Vec<HashMap<String, usize>>,
     field_stack: Vec<Type>,
     register_counter: usize,
-    print_debug: bool,
+    flags: Flags
 }
 impl Codegen {
-    pub fn new() -> Self {
+    pub fn new(flags: Flags) -> Self {
         Self {
             sm: SizeManager::new(),
             current_class: String::new(),
@@ -205,14 +206,7 @@ impl Codegen {
             stack_scopes: Vec::new(),
             field_stack: Vec::new(),
             register_counter: 0,
-            print_debug: false,
-        }
-    }
-
-    pub fn debug(self, print_debug: bool) -> Self {
-        Self {
-            print_debug,
-            ..self
+            flags
         }
     }
 
@@ -224,7 +218,7 @@ impl Codegen {
             for field in &class.fields {
                 field.codegen(self).unwrap();
             }
-            if self.print_debug {
+            if self.flags.debug {
                 println!(
                     "[DEBUG] Class `{}` has size {} bytes",
                     class.name,
@@ -255,7 +249,7 @@ impl Codegen {
 
     #[trace_call(extra)]
     fn add_class(&mut self, class_name: &String) {
-        if self.print_debug {
+        if self.flags.debug {
             println!("[DEBUG] Added new Class `{}`", class_name);
         }
         self.sm.add_class(class_name);
@@ -265,7 +259,7 @@ impl Codegen {
     fn add_field(&mut self, name: &String, typ: &Type) -> Result<(), String> {
         debug_assert!(!self.current_class.is_empty());
         self.sm.add_field(&self.current_class, name, typ)?;
-        if self.print_debug {
+        if self.flags.debug {
             println!(
                 "[DEBUG] Added new field `{}` to class `{}`",
                 name, self.current_class
@@ -350,7 +344,7 @@ impl Codegen {
 
     #[trace_call(always)]
     fn add_ir(&mut self, ir: instr::IR) {
-        if self.print_debug {
+        if self.flags.debug {
             println!("[DEBUG] Added IR: {:?}", ir);
         }
         self.ir.push(ir)
