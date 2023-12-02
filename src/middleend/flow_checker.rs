@@ -9,6 +9,7 @@ use crate::{
 use super::type_checker::Type;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
+#[allow(unused)]
 enum FlowType {
     Linear,
     MayReturn,
@@ -54,13 +55,13 @@ impl Flowable for nodes::FileNode {
 }
 impl Flowable for nodes::ClassNode {
     #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
+    fn check(&self, _checker: &FlowChecker) -> Result<FlowType, String> {
         internal_error!("ClassNode::check not implemented")
     }
 }
 impl Flowable for nodes::MethodNode {
     #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
+    fn check(&self, _checker: &FlowChecker) -> Result<FlowType, String> {
         internal_error!("MethodNode::check not implemented")
     }
 }
@@ -111,6 +112,7 @@ impl Flowable for nodes::Statement {
             Self::Let(let_node) => let_node.check(checker),
             Self::If(if_node) => if_node.check(checker),
             Self::Return(return_node) => return_node.check(checker),
+            Self::While(while_node) => while_node.check(checker),
             _ => todo!(),
         }
     }
@@ -119,8 +121,7 @@ impl Flowable for nodes::Statement {
 impl Flowable for nodes::LetNode {
     #[trace_call(always)]
     fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
-        self.expression.check(checker)?;
-        Ok(FlowType::Linear)
+        self.expression.check(checker)
     }
 }
 impl Flowable for nodes::IfNode {
@@ -166,6 +167,22 @@ impl Flowable for nodes::ReturnNode {
         }
     }
 }
+impl Flowable for nodes::WhileNode {
+    #[trace_call(always)]
+    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
+        let cond_flow = self.condition.check(checker)?;
+        // Later on we might want to check if the condition always exits
+        debug_assert!(cond_flow == FlowType::Linear);
+        let block_flow = self.block.check(checker)?;
+        if checker.flags.debug {
+            println!(
+                "[DEBUG] WhileNode::check: block_flow: {:?}",
+                block_flow
+            );
+        }
+        Ok(block_flow)
+    }
+}
 
 impl Flowable for nodes::Expression {
     #[trace_call(always)]
@@ -194,20 +211,20 @@ impl Flowable for nodes::ExpressionComparisonNode {
 
 impl Flowable for nodes::NameNode {
     #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
+    fn check(&self, _checker: &FlowChecker) -> Result<FlowType, String> {
         Ok(FlowType::Linear)
     }
 }
 impl Flowable for nodes::ExpressionLiteralNode {
     #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
+    fn check(&self, _checker: &FlowChecker) -> Result<FlowType, String> {
         Ok(FlowType::Linear)
     }
 }
 
 impl Flowable for nodes::TypeNode {
     #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
+    fn check(&self, _checker: &FlowChecker) -> Result<FlowType, String> {
         Ok(FlowType::Linear)
     }
 }
