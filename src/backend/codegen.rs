@@ -835,6 +835,13 @@ impl Codegenable for nodes::ExpressionCallNode {
                         });
                     }
                 }
+                instr::OperandType::Address => {
+                    let target_reg = instr::Operand::reg(target_reg, instr::RegMode::BIT64);
+                    codegen.add_ir(instr::IR::Move {
+                        dst: target_reg,
+                        src: op,
+                    });
+                }
                 instr::OperandType::ImmI32 | instr::OperandType::ImmU32 => {
                     let target_reg = instr::Operand::reg(target_reg, instr::RegMode::BIT32);
                     codegen.add_ir(instr::IR::LoadImm {
@@ -873,6 +880,7 @@ impl Codegenable for nodes::ExpressionCallNode {
         if self.typ != Type::None {
             debug_assert!(result.is_some());
             let result = result.unwrap();
+            // FIXME: Just return the RET register, no need to move it
             codegen.add_ir(instr::IR::Move {
                 dst: result,
                 src: instr::Operand::reg(instr::Register::RET, result.reg_mode),
@@ -1042,8 +1050,82 @@ impl nodes::ExpressionFieldAccessNode {
                 let op = instr::Operand::addr(reg.reg);
                 Ok(op)
             }
-            nodes::Expression::FunctionCall(_fn_call) => {
-                internal_error!("ExpressionFieldAccessNode::FunctionCall() is not implemented yet")
+            nodes::Expression::FunctionCall(fn_call) => {
+                // Method call on instance
+
+                // store registers
+                let counter = codegen.register_counter;
+                codegen.push_registers(counter);
+
+                // reg contains the address of the instance, which is the first argument
+                codegen.add_ir(instr::IR::Move {
+                    dst: instr::Operand::reg(instr::Register::ARG1, instr::RegMode::BIT64),
+                    src: *reg,
+                });
+                // codegen the rest of the arguments
+                for (index, arg) in fn_call.arguments.iter().enumerate() {
+                    let op = arg.codegen(codegen)?;
+                    debug_assert!(op != instr::Operand::none());
+                    let target_reg = instr::Register::arg(index + 1);
+                    match op.typ {
+                        instr::OperandType::Reg => {
+                            if op.reg != target_reg {
+                                // Move to correct register if necessary
+                                let target_reg = instr::Operand::reg(target_reg, op.reg_mode);
+                                codegen.add_ir(instr::IR::Move {
+                                    dst: target_reg,
+                                    src: op,
+                                });
+                            }
+                        }
+                        instr::OperandType::Offset => {
+                            let target_reg =
+                                instr::Operand::reg(target_reg, instr::RegMode::from(&arg.typ));
+                            codegen.add_ir(instr::IR::Load {
+                                dst: target_reg,
+                                addr: op,
+                            });
+                        }
+                        instr::OperandType::ImmI32 | instr::OperandType::ImmU32 => {
+                            let target_reg =
+                                instr::Operand::reg(target_reg, instr::RegMode::BIT32);
+                            codegen.add_ir(instr::IR::LoadImm {
+                                dst: target_reg,
+                                imm: op,
+                            });
+                        }
+                        instr::OperandType::ImmI64 | instr::OperandType::ImmU64 => {
+                            let target_reg =
+                                instr::Operand::reg(target_reg, instr::RegMode::BIT64);
+                            codegen.add_ir(instr::IR::LoadImm {
+                                dst: target_reg,
+                                imm: op,
+                            });
+                        }
+                        op => {
+                            return internal_error!(format!(
+                                "ExpressionFieldAccessNode::codegen() can't handle argument type `{:?}` yet.",
+                                op
+                            ));
+                        }
+                    }
+                }
+                // call the method
+                let name = class_name + "_" + &fn_call.function_name;
+                codegen.add_ir(instr::IR::Call {
+                    name,
+                });
+
+                // move the result into reg
+                // FIXME: Handle methods that return void
+                codegen.add_ir(instr::IR::Move {
+                    dst: *reg,
+                    src: instr::Operand::reg(instr::Register::RET, instr::RegMode::from(&fn_call.typ)),
+                });
+
+                codegen.pop_registers(counter);
+                // reg now contains the result of the method call
+                Ok(*reg)
             }
             _ => unreachable!(),
         }

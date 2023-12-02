@@ -1845,14 +1845,18 @@ impl nodes::ExpressionFieldAccessNode {
                     ));
                 };
                 let return_type = method.return_type.clone();
-                match function_node.arguments.len().cmp(&method.parameters.len()) {
+                let mut params = method.parameters.clone();
+                // FIXME: Once we introduce static methods, we need to check for that here
+                let this = params.remove(0);
+                debug_assert!(this.typ == Type::Class(class_name.clone()));
+                match function_node.arguments.len().cmp(&params.len()) {
                     std::cmp::Ordering::Less => {
                         return Err(format!(
                             "{}: {:?}: Not enough arguments for call to method `{}`. Expected {} argument(s), found {}.\n{}: {:?}: Method declared here.",
                             ERR_STR,
                             self.location,
                             function_node.function_name,
-                            method.parameters.len(),
+                            params.len(),
                             function_node.arguments.len(),
                             NOTE_STR,
                             method.location
@@ -1864,7 +1868,7 @@ impl nodes::ExpressionFieldAccessNode {
                             ERR_STR,
                             self.location,
                             function_node.function_name,
-                            method.parameters.len(),
+                            params.len(),
                             function_node.arguments.len(),
                             NOTE_STR,
                             method.location
@@ -1872,7 +1876,6 @@ impl nodes::ExpressionFieldAccessNode {
                     }
                     std::cmp::Ordering::Equal => (),
                 }
-                let params = method.parameters.clone();
                 for (arg, param) in function_node.arguments.iter_mut().zip(params) {
                     let expected = param.typ;
                     let arg_type = arg.type_check(checker)?;

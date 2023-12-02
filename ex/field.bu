@@ -4,13 +4,30 @@ class Test {
     c: Test;
 
     feat new() {
+        this.c = this;
         this.b = 12;
-        this.c.c.c.a = 420;
+        this.a = 1337;
     }
+    func get_c() -> Test {
+        return this.c;
+    }
+    func get_a() -> u64 {
+        return this.a;
+    }
+    func set_a(a: u64) {
+        this.a = a;
+    }
+}
+
+func destroy(t: Test, counter: u64) -> u64 {
+    if (counter == 0) {
+        return 0;
+    }
+    let tmp: u64 = destroy(t.get_c(), counter - 1);
+    return tmp + t.get_a();
 }
 
 func main() -> u64 {
     let b: Test = Test();
-    b.a = 420 + b.a;
-    return b.a;
+    return destroy(b, 100);
 }
