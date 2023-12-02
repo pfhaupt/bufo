@@ -1,6 +1,8 @@
 use crate::frontend::parser::{Location, Operation};
 use crate::middleend::checker::Type;
 
+use tracer::trace_call;
+
 #[derive(Debug, Clone)]
 pub struct FileNode {
     pub location: Location,
@@ -67,6 +69,7 @@ pub struct ParameterNode {
 }
 
 impl ParameterNode {
+    #[trace_call(extra)]
     pub fn this(location: Location, typ: Type) -> Self {
         Self {
             location: location.clone(),
@@ -92,6 +95,7 @@ pub enum Statement {
     Assign(AssignNode),
     If(IfNode),
     Return(ReturnNode),
+    While(WhileNode),
 }
 
 #[derive(Debug, Clone)]
@@ -138,12 +142,20 @@ pub struct ReturnNode {
 }
 
 #[derive(Debug, Clone)]
+pub struct WhileNode {
+    pub location: Location,
+    pub condition: ExpressionComparisonNode,
+    pub block: BlockNode,
+}
+
+#[derive(Debug, Clone)]
 pub struct TypeNode {
     pub location: Location,
     pub typ: Type,
 }
 
 impl TypeNode {
+    #[trace_call(extra)]
     pub fn none(location: Location) -> Self {
         Self {
             location,
@@ -177,6 +189,7 @@ pub enum Expression {
 }
 
 impl Expression {
+    #[trace_call(extra)]
     pub fn get_loc(&self) -> Location {
         match &self {
             Self::Name(e) => e.location.clone(),
@@ -193,6 +206,7 @@ impl Expression {
         }
     }
 
+    #[trace_call(extra)]
     pub fn get_type(&self) -> Type {
         match &self {
             Self::Name(e) => e.typ.clone(),

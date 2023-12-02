@@ -3,6 +3,10 @@ mod compiler;
 mod frontend;
 mod middleend;
 
+// This macro injects tracing code into the compiler.
+// Must be enabled with the `trace` feature-flag.
+extern crate tracer;
+
 fn main() {
     crate::compiler::run();
 }
@@ -15,7 +19,13 @@ mod tests {
 
     macro_rules! init {
         ($path: expr, $debug: expr, $run: expr) => {
-            Compiler::new(&String::from($path), $debug, $run)
+            {
+                let mut flags = crate::frontend::flags::Flags::default();
+                flags.input = $path.to_string();
+                flags.debug = $debug;
+                flags.run = $run;
+                Compiler::new(flags)
+            }
         };
     }
 
@@ -59,34 +69,22 @@ mod tests {
 
     macro_rules! test {
         ($path: expr, $debug: expr, $run: expr, $should_fail: expr, $expected: expr) => {
-            match init!($path, $debug, $run) {
-                Ok(mut c) => {
-                    let result = c.run_everything();
-                    if $should_fail {
-                        assert!(result.is_err());
-                        let res = result.err().unwrap();
-                        for e in $expected {
-                            if !res.contains(e) {
-                                assert!(false, "Unexpected Error String!\nExpected Substring\n> {e}\nin error message\n{res}\n")
-                            }
-                        }
-                    } else {
-                        assert!(result.is_ok());
-                    }
-                    if $run {
-                        clean_up!($path);
-                    }
-                }
-                Err(err) => {
-                    if $run {
-                        clean_up!($path);
-                    }
-                    assert!($should_fail);
+            {
+                let mut c = init!($path, $debug, $run);
+                let result = c.run_everything();
+                if $should_fail {
+                    assert!(result.is_err());
+                    let res = result.err().unwrap();
                     for e in $expected {
-                        if !err.contains(e) {
-                            assert!(false, "Unexpected Error String!\nExpected Substring `{e}`\nin `{err}`")
+                        if !res.contains(e) {
+                            assert!(false, "Unexpected Error String!\nExpected Substring\n> {e}\nin error message\n{res}\n")
                         }
                     }
+                } else {
+                    assert!(result.is_ok());
+                }
+                if $run {
+                    clean_up!($path);
                 }
             }
         };
@@ -118,6 +116,9 @@ mod tests {
         generate_failing_test!(if_missing_body, "Expected OpenCurly");
         generate_failing_test!(if_missing_condition, "Expected Expr");
         generate_failing_test!(if_missing_brackets_condition, "Expected OpenRound", "found Identifier");
+        generate_failing_test!(while_missing_body, "Expected OpenCurly");
+        generate_failing_test!(while_missing_condition, "Expected Expr");
+        generate_failing_test!(while_missing_brackets_condition, "Expected OpenRound", "found Identifier");
         generate_failing_test!(unexpected_symbol, "Unexpected Symbol `#`");
         generate_failing_test!(char_literal_more_than_one_chars, "Char Literal", "single char", "found 'hello'");
         generate_failing_test!(brackets_in_expressions, "Expected ClosingRound");
@@ -127,6 +128,11 @@ mod tests {
     mod semantic_tests {
         use crate::compiler::{Compiler, ERR_STR, CONSTRUCTOR_NAME};
         use crate::tests::ALWAYS_FAILS;
+
+        // FIXME: Separate runtime tests from semantic tests
+        // FIXME: For runtime tests, differentiate between "working, returned value" and "working, expected crash"
+        //        (e.g. null pointer exception is an expected crash)
+        //        (e.g. while loop returns a value as exit code)
 
         macro_rules! generate_failing_test {
             ($name:ident, $($err:expr),*) => {
@@ -172,17 +178,16 @@ mod tests {
         generate_failing_test!(class_no_feat_new, "no constructor", "feature", CONSTRUCTOR_NAME, "in class");
         generate_failing_test!(incompatible_operands, "Binary Operation", "not defined", "class", "context");
         generate_failing_test!(if_no_comparison, "if-condition", "comparison");
-        #[test]
-        #[ignore = "NullPointer are still not checked at runtime (very bad)"]
-        fn null_pointer_exception() {
-            // TODO: Implement generate_failing_test for this once Nullpointer are handled at runtime
-            // test!("tests/semantics/null_pointer_exception.bu", false, true, true, [ERR_STR, ALWAYS_FAILS])
-        }
+        generate_failing_test!(while_no_comparison, "while-condition", "comparison");
+        generate_runtime_failing_test!(null_pointer_exception, format!("{:X}", 2).as_str());
         generate_runtime_failing_test!(array_out_of_bounds, ALWAYS_FAILS);
         generate_runtime_failing_test!(variable_shadowing, format!("{:X}", 42069).as_str());
         generate_runtime_failing_test!(if_else_flow, "1");
         generate_runtime_failing_test!(if_expression, format!("{:X}", 1337).as_str());
         generate_runtime_failing_test!(if_flow, format!("{:X}", 1290).as_str());
         generate_runtime_failing_test!(nested_if, format!("{:X}", 54).as_str());
+        generate_runtime_failing_test!(while_expression, format!("{:X}", 1337).as_str());
+        generate_runtime_failing_test!(while_flow, format!("{:X}", 10).as_str());
+        generate_runtime_failing_test!(nested_while, format!("{:X}", 10000).as_str());
     }
 }

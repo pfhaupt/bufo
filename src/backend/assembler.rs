@@ -9,7 +9,10 @@ use super::instr::{OperandType, IR};
 use super::instr::{RegMode, Register};
 
 use crate::compiler::{ERR_STR, FILE_EXT, OUTPUT_FOLDER};
+use crate::frontend::flags::Flags;
 use crate::internal_error;
+
+use tracer::trace_call;
 
 const REG_64BIT: [&str; 16] = [
     "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13",
@@ -20,6 +23,7 @@ const REG_32BIT: [&str; 16] = [
     "r13d", "r14d", "r15d",
 ];
 
+#[trace_call(extra)]
 fn reg(r: Register, rm: RegMode) -> &'static str {
     let index = r as usize;
     debug_assert!(index < REG_32BIT.len());
@@ -33,16 +37,16 @@ fn reg(r: Register, rm: RegMode) -> &'static str {
 }
 
 pub struct Assembler {
-    print_debug: bool,
     path: String,
+    flags: Flags,
 }
 
 impl Assembler {
-    pub fn new() -> Self {
+    pub fn new(flags: Flags) -> Self {
         Self {
-            print_debug: false,
             path: String::new(),
-        }
+            flags: flags.clone()
+        }.filepath(&flags.input)
     }
 
     pub fn filepath(self, path: &str) -> Self {
@@ -53,13 +57,7 @@ impl Assembler {
         Self { path, ..self }
     }
 
-    pub fn debug(self, print_debug: bool) -> Self {
-        Self {
-            print_debug,
-            ..self
-        }
-    }
-
+    #[trace_call(always)]
     pub fn generate_x86_64(&self, ir: Vec<instr::IR>) -> Result<(), String> {
         let mut output = String::new();
         let mut push_asm = |s: &str| {
@@ -75,11 +73,11 @@ impl Assembler {
         push_asm("  global main");
         push_asm("  extern ExitProcess");
         push_asm("  extern printf");
-        push_asm("  extern malloc");
+        push_asm("  extern calloc");
         push_asm("");
 
         for ir in &ir {
-            if self.print_debug {
+            if self.flags.debug {
                 push_asm(format!("; -- {ir:?} --").as_str());
             }
             match ir {
@@ -123,6 +121,27 @@ impl Assembler {
                         let src = reg(value.reg, value.reg_mode);
                         push_asm(format!("  mov [{dst}], {src}").as_str());
                     }
+                    (OperandType::Reg,
+                    OperandType::ImmI32
+                    | OperandType::ImmU32) => {
+                        let dst = reg(addr.reg, addr.reg_mode);
+                        let imm = value.off_or_imm;
+                        push_asm(format!("  mov DWORD [{dst}], {imm}").as_str());
+                    }
+                    (OperandType::Reg,
+                    OperandType::ImmI64
+                    | OperandType::ImmU64) => {
+                        let dst = reg(addr.reg, addr.reg_mode);
+                        let imm = value.off_or_imm;
+                        push_asm(format!("  mov QWORD [{dst}], {imm}").as_str());
+                    }
+                    (OperandType::Address, OperandType::Reg) => {
+                        debug_assert!(addr.reg != instr::Register::None);
+                        let src = reg(value.reg, value.reg_mode);
+                        let dst = addr.reg;
+                        let dst = reg(dst, RegMode::BIT64);
+                        push_asm(format!("  mov [{dst}], {src}").as_str());
+                    }
                     (lhs, rhs) => {
                         return internal_error!(format!("Can't generate ASM for `store {lhs:?}, {rhs:?}"));
                     },
@@ -155,6 +174,13 @@ impl Assembler {
                         let size = dst.reg_mode.size();
                         push_asm(format!("  mov {reg}, [rbp-{offset}-{size}]").as_str());
                     }
+                    (OperandType::Reg, OperandType::Address) => {
+                        debug_assert!(src.reg != instr::Register::None);
+                        let src = reg(src.reg, src.reg_mode);
+                        let dst = dst.reg;
+                        let dst = reg(dst, RegMode::BIT64);
+                        push_asm(format!("  mov {dst}, [{src}]").as_str());
+                    }
                     (
                         OperandType::Reg,
                         OperandType::ImmI32
@@ -185,6 +211,10 @@ impl Assembler {
                             let offset = src2.off_or_imm;
                             let size = dst.reg_mode.size();
                             push_asm(format!("  add {dst_reg}, [rbp-{offset}-{size}]").as_str());
+                        }
+                        (OperandType::Reg, OperandType::Address) => {
+                            let src_reg = reg(src2.reg, src2.reg_mode);
+                            push_asm(format!("  add {dst_reg}, [{src_reg}]").as_str());
                         }
                         (OperandType::Reg, OperandType::ImmI32 | OperandType::ImmU32) => {
                             let immediate = src2.off_or_imm;
@@ -425,7 +455,11 @@ impl Assembler {
                 IR::JmpLte { name } => push_asm(format!("  jle {name}").as_str()),
                 IR::JmpGt { name } => push_asm(format!("  jg {name}").as_str()),
                 IR::JmpGte { name } => push_asm(format!("  jge {name}").as_str()),
-
+                IR::Exit { code } => {
+                    let code = code.off_or_imm;
+                    push_asm(format!("  mov rcx, {code}").as_str());
+                    push_asm("  call ExitProcess");
+                }
                 // Functions
                 IR::Call { name } => {
                     push_asm(format!("  call {name}").as_str());
@@ -466,7 +500,7 @@ impl Assembler {
             Ok(b) => {
                 if !b {
                     // Create folder
-                    if self.print_debug {
+                    if self.flags.debug {
                         println!("Could not find output folder, creating now");
                     }
                     std::fs::create_dir(Path::new("./out/")).unwrap();
@@ -479,7 +513,7 @@ impl Assembler {
         let asmname = filename.replace(FILE_EXT, ".asm");
         let objname = asmname.replace(".asm", ".obj");
 
-        if self.print_debug {
+        if self.flags.debug {
             println!("Writing to {asmname}");
         }
         match File::create(&asmname) {
@@ -489,7 +523,7 @@ impl Assembler {
             Err(e) => panic!("{}", e),
         }
 
-        if self.print_debug {
+        if self.flags.debug {
             println!("Running `nasm -f win64 {asmname} -o {objname}`");
         }
         let nasm_output = Command::new("nasm")
@@ -503,7 +537,7 @@ impl Assembler {
                 String::from_utf8(nasm_output.stderr).unwrap()
             ));
         }
-        if self.print_debug {
+        if self.flags.debug {
             println!("Running `golink /console /entry main {objname} MSVCRT.dll kernel32.dll`");
         }
         let golink_output = Command::new("golink")
@@ -528,11 +562,12 @@ impl Assembler {
         Ok(())
     }
 
+    #[trace_call(always)]
     pub fn run(&self) -> Result<(), String> {
         let mut output_path = String::from(OUTPUT_FOLDER);
         output_path.push_str(&self.path.replace(FILE_EXT, ".exe"));
 
-        if self.print_debug {
+        if self.flags.debug {
             println!("Running `{output_path}`");
         }
 

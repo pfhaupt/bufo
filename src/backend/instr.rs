@@ -2,6 +2,10 @@ use crate::frontend::parser::Operation;
 
 use crate::middleend::checker::Type;
 
+use std::fmt::Debug;
+
+use tracer::trace_call;
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum RegMode {
     BIT64,
@@ -9,15 +13,17 @@ pub enum RegMode {
 }
 
 impl From<&Type> for RegMode {
+    #[trace_call(extra)]
     fn from(value: &Type) -> Self {
         match value.size() {
             Ok(v) => Self::from(v),
-            Err(e) => panic!("{}", e)
+            Err(e) => panic!("{}", e),
         }
     }
 }
 
 impl From<usize> for RegMode {
+    #[trace_call(extra)]
     fn from(bytes: usize) -> Self {
         match bytes {
             4 => Self::BIT32,
@@ -28,6 +34,7 @@ impl From<usize> for RegMode {
 }
 
 impl RegMode {
+    #[trace_call(extra)]
     pub fn size(&self) -> usize {
         match self {
             Self::BIT32 => 4,
@@ -59,6 +66,7 @@ pub enum Register {
 }
 
 impl From<usize> for Register {
+    #[trace_call(extra)]
     fn from(value: usize) -> Self {
         match value {
             0 => Register::Rax,
@@ -104,6 +112,7 @@ impl Register {
         Self::R15,
     ];
 
+    #[trace_call(extra)]
     pub fn arg(index: usize) -> Self {
         // NOTE: The Type Checker prevents the user from ever declaring
         //       Methods, Functions or Features with more than 4 arguments.
@@ -128,10 +137,11 @@ pub enum OperandType {
     ImmI32,
     ImmI64,
     Offset,
-    None, // For nodes that do not return anything
+    Address, // For nodes that return an address
+    None,    // For nodes that do not return anything
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy)]
 pub struct Operand {
     pub typ: OperandType,
     pub off_or_imm: usize,
@@ -140,6 +150,7 @@ pub struct Operand {
 }
 
 impl Operand {
+    #[trace_call(extra)]
     pub fn none() -> Self {
         Self {
             typ: OperandType::None,
@@ -148,6 +159,7 @@ impl Operand {
             reg_mode: RegMode::BIT64,
         }
     }
+    #[trace_call(extra)]
     pub fn reg(r: Register, rm: RegMode) -> Self {
         Self {
             typ: OperandType::Reg,
@@ -156,7 +168,7 @@ impl Operand {
             reg_mode: rm,
         }
     }
-
+    #[trace_call(extra)]
     pub fn imm_u32(immediate: u32) -> Self {
         Self {
             typ: OperandType::ImmU32,
@@ -165,6 +177,7 @@ impl Operand {
             reg_mode: RegMode::BIT64,
         }
     }
+    #[trace_call(extra)]
     pub fn imm_u64(immediate: u64) -> Self {
         Self {
             typ: OperandType::ImmU64,
@@ -173,6 +186,7 @@ impl Operand {
             reg_mode: RegMode::BIT64,
         }
     }
+    #[trace_call(extra)]
     pub fn imm_i32(immediate: i32) -> Self {
         Self {
             typ: OperandType::ImmI32,
@@ -181,6 +195,7 @@ impl Operand {
             reg_mode: RegMode::BIT64,
         }
     }
+    #[trace_call(extra)]
     pub fn imm_i64(immediate: i64) -> Self {
         Self {
             typ: OperandType::ImmI64,
@@ -189,6 +204,7 @@ impl Operand {
             reg_mode: RegMode::BIT64,
         }
     }
+    #[trace_call(extra)]
     pub fn offset(offset: usize) -> Self {
         Self {
             typ: OperandType::Offset,
@@ -197,6 +213,7 @@ impl Operand {
             reg_mode: RegMode::BIT64,
         }
     }
+    #[trace_call(extra)]
     pub fn cmp(cmp: Operation) -> Self {
         Self {
             typ: OperandType::Cmp(cmp),
@@ -205,9 +222,43 @@ impl Operand {
             reg_mode: RegMode::BIT64,
         }
     }
+    #[trace_call(extra)]
+    pub fn addr(reg: Register) -> Self {
+        Self {
+            typ: OperandType::Address,
+            off_or_imm: 0,
+            reg,
+            reg_mode: RegMode::BIT64,
+        }
+    }
+}
+
+impl Debug for Operand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.typ {
+            OperandType::Reg => write!(f, "{:?}", self.reg),
+            OperandType::Cmp(cmp) => write!(f, "{:?}", cmp),
+            OperandType::ImmU32 => write!(f, "{}", unsafe {
+                std::mem::transmute::<usize, u64>(self.off_or_imm) as u32
+            }),
+            OperandType::ImmU64 => write!(f, "{}", unsafe {
+                std::mem::transmute::<usize, u64>(self.off_or_imm)
+            }),
+            OperandType::ImmI32 => write!(f, "{}", unsafe {
+                std::mem::transmute::<usize, i64>(self.off_or_imm) as i32
+            }),
+            OperandType::ImmI64 => write!(f, "{}", unsafe {
+                std::mem::transmute::<usize, i64>(self.off_or_imm)
+            }),
+            OperandType::Offset => write!(f, "stack+{}", self.off_or_imm),
+            OperandType::Address => write!(f, "addr"),
+            OperandType::None => write!(f, ""),
+        }
+    }
 }
 
 impl IR {
+    #[trace_call(extra)]
     pub fn get_lbl(&self) -> String {
         match &self {
             Self::Label { name } => name.clone(),
@@ -216,7 +267,7 @@ impl IR {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[allow(unused)]
 pub enum IR {
     // Memory
@@ -290,6 +341,9 @@ pub enum IR {
     JmpGte {
         name: String,
     },
+    Exit {
+        code: Operand,
+    },
 
     // Functions
     Call {
@@ -308,4 +362,64 @@ pub enum IR {
         reg: Register,
     },
     Return,
+}
+
+impl Debug for IR {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            // Memory
+            Self::LoadImm { dst, imm } => write!(f, "LoadImm dst: {:?}, imm: {:?}", dst, imm),
+            Self::Store { addr, value } => write!(f, "Store addr: {:?}, value: {:?}", addr, value),
+            Self::Load { dst, addr } => write!(f, "Load dst: {:?}, addr: {:?}", dst, addr),
+            Self::Move { dst, src } => write!(f, "Move dst: {:?}, src: {:?}", dst, src),
+
+            // Arithmetics
+            Self::Add { dst, src1, src2 } => {
+                write!(f, "Add dst: {:?}, src1: {:?}, src2: {:?}", dst, src1, src2)
+            }
+            Self::Sub { dst, src1, src2 } => {
+                write!(f, "Sub dst: {:?}, src1: {:?}, src2: {:?}", dst, src1, src2)
+            }
+            Self::Mul {
+                dst,
+                src1,
+                src2,
+                signed,
+            } => write!(
+                f,
+                "Mul dst: {:?}, src1: {:?}, src2: {:?}, signed: {:?}",
+                dst, src1, src2, signed
+            ),
+            Self::Div {
+                dst,
+                src1,
+                src2,
+                signed,
+            } => write!(
+                f,
+                "Div dst: {:?}, src1: {:?}, src2: {:?}, signed: {:?}",
+                dst, src1, src2, signed
+            ),
+
+            // Control Flow
+            Self::Label { name } => write!(f, "Label name: {:?}", name),
+            Self::Cmp { dst, src } => write!(f, "Cmp dst: {:?}, src: {:?}", dst, src),
+            Self::Jmp { name } => write!(f, "Jmp name: {:?}", name),
+            Self::JmpEq { name } => write!(f, "JmpEq name: {:?}", name),
+            Self::JmpNeq { name } => write!(f, "JmpNeq name: {:?}", name),
+            Self::JmpLt { name } => write!(f, "JmpLt name: {:?}", name),
+            Self::JmpLte { name } => write!(f, "JmpLte name: {:?}", name),
+            Self::JmpGt { name } => write!(f, "JmpGt name: {:?}", name),
+            Self::JmpGte { name } => write!(f, "JmpGte name: {:?}", name),
+            Self::Exit { code } => write!(f, "Exit code: {:?}", code),
+
+            // Functions
+            Self::Call { name } => write!(f, "Call name: {:?}", name),
+            Self::AllocStack { bytes } => write!(f, "AllocStack bytes: {:?}", bytes),
+            Self::DeallocStack { bytes } => write!(f, "DeallocStack bytes: {:?}", bytes),
+            Self::PushReg { reg } => write!(f, "PushReg reg: {:?}", reg),
+            Self::PopReg { reg } => write!(f, "PopReg reg: {:?}", reg),
+            Self::Return => write!(f, "Return"),
+        }
+    }
 }

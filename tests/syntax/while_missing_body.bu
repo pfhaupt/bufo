@@ -1,0 +1,5 @@
+func main() {
+    let a: i32 = 0;
+    let b: i32 = 1;
+    while (a == 1);
+}
