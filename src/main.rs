@@ -116,6 +116,9 @@ mod tests {
         generate_failing_test!(if_missing_body, "Expected OpenCurly");
         generate_failing_test!(if_missing_condition, "Expected Expr");
         generate_failing_test!(if_missing_brackets_condition, "Expected OpenRound", "found Identifier");
+        generate_failing_test!(while_missing_body, "Expected OpenCurly");
+        generate_failing_test!(while_missing_condition, "Expected Expr");
+        generate_failing_test!(while_missing_brackets_condition, "Expected OpenRound", "found Identifier");
         generate_failing_test!(unexpected_symbol, "Unexpected Symbol `#`");
         generate_failing_test!(char_literal_more_than_one_chars, "Char Literal", "single char", "found 'hello'");
         generate_failing_test!(brackets_in_expressions, "Expected ClosingRound");
@@ -170,6 +173,7 @@ mod tests {
         generate_failing_test!(class_no_feat_new, "no constructor", "feature", CONSTRUCTOR_NAME, "in class");
         generate_failing_test!(incompatible_operands, "Binary Operation", "not defined", "class", "context");
         generate_failing_test!(if_no_comparison, "if-condition", "comparison");
+        generate_failing_test!(while_no_comparison, "while-condition", "comparison");
         generate_runtime_failing_test!(null_pointer_exception, format!("{:X}", 2).as_str());
         generate_runtime_failing_test!(array_out_of_bounds, ALWAYS_FAILS);
         generate_runtime_failing_test!(variable_shadowing, format!("{:X}", 42069).as_str());
@@ -177,5 +181,8 @@ mod tests {
         generate_runtime_failing_test!(if_expression, format!("{:X}", 1337).as_str());
         generate_runtime_failing_test!(if_flow, format!("{:X}", 1290).as_str());
         generate_runtime_failing_test!(nested_if, format!("{:X}", 54).as_str());
+        generate_runtime_failing_test!(while_expression, format!("{:X}", 1337).as_str());
+        generate_runtime_failing_test!(while_flow, format!("{:X}", 10).as_str());
+        generate_runtime_failing_test!(nested_while, format!("{:X}", 10000).as_str());
     }
 }
