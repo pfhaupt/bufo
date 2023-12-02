@@ -540,6 +540,7 @@ impl Codegenable for nodes::Statement {
             Self::If(if_node) => if_node.codegen(codegen),
             Self::Let(let_node) => let_node.codegen(codegen),
             Self::Return(ret_node) => ret_node.codegen(codegen),
+            Self::While(while_node) => while_node.codegen(codegen),
         };
         codegen.reset_registers();
         reg
@@ -656,6 +657,36 @@ impl Codegenable for nodes::ReturnNode {
         codegen.add_ir(instr::IR::Jmp {
             name: codegen.current_return_label.clone(),
         });
+        Ok(instr::Operand::none())
+    }
+}
+impl Codegenable for nodes::WhileNode {
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
+        // jump to condition
+        let cond_lbl = codegen.generate_label(None);
+        let cond_name = cond_lbl.get_lbl();
+        codegen.add_ir(instr::IR::Jmp { name: cond_name });
+
+        // block code
+        let block_lbl = codegen.generate_label(None);
+        let block_name = block_lbl.get_lbl();
+        codegen.add_ir(block_lbl);
+        self.block.codegen(codegen)?;
+
+        // condition code
+        // if condition is true, jump to block code
+        codegen.add_ir(cond_lbl);
+        let cond = self.condition.codegen(codegen)?;
+        let instr::OperandType::Cmp(cmp_mode) = cond.typ else { unreachable!() };
+        match cmp_mode {
+            Operation::Eq => codegen.add_ir(instr::IR::JmpEq { name: block_name }),
+            Operation::Neq => codegen.add_ir(instr::IR::JmpNeq { name: block_name }),
+            Operation::Gt => codegen.add_ir(instr::IR::JmpGt { name: block_name }),
+            Operation::Gte => codegen.add_ir(instr::IR::JmpGte { name: block_name }),
+            Operation::Lt => codegen.add_ir(instr::IR::JmpLt { name: block_name }),
+            Operation::Lte => codegen.add_ir(instr::IR::JmpLte { name: block_name }),
+            _ => unreachable!(),
+        }
         Ok(instr::Operand::none())
     }
 }
