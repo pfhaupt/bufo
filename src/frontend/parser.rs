@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use super::flags::Flags;
 use super::nodes;
 use crate::compiler::{BUILT_IN_FEATURES, CONSTRUCTOR_NAME, ERR_STR, NOTE_STR, WARN_STR};
-use crate::middleend::checker::Type;
+use crate::middleend::type_checker::Type;
 
 const LOOKAHEAD_LIMIT: usize = 3;
 

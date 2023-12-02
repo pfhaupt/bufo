@@ -6,7 +6,7 @@ use crate::compiler::{CONSTRUCTOR_NAME, ERR_STR, NOTE_STR};
 use crate::frontend::flags::Flags;
 use crate::frontend::nodes;
 use crate::frontend::parser::Operation;
-use crate::middleend::checker::Type;
+use crate::middleend::type_checker::Type;
 
 use crate::internal_error;
 

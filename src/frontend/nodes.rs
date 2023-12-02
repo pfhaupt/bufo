@@ -1,5 +1,5 @@
 use crate::frontend::parser::{Location, Operation};
-use crate::middleend::checker::Type;
+use crate::middleend::type_checker::Type;
 
 use tracer::trace_call;
 

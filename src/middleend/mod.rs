@@ -1,1 +1,1 @@
-pub mod checker;
+pub mod type_checker;

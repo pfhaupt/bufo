@@ -1,6 +1,6 @@
 use crate::frontend::parser::Operation;
 
-use crate::middleend::checker::Type;
+use crate::middleend::type_checker::Type;
 
 use std::fmt::Debug;
 
