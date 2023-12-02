@@ -857,6 +857,8 @@ impl Parsable for nodes::Statement {
             TokenType::ReturnKeyword => nodes::Statement::Return(nodes::ReturnNode::parse(parser)?),
             TokenType::WhileKeyword => nodes::Statement::While(nodes::WhileNode::parse(parser)?),
             TokenType::Identifier => match parser.nth(1) {
+                // FIXME: Simple void function calls are not handled correctly
+                //        Currently, they are parsed as assignments
                 TokenType::Dot | TokenType::Equal | TokenType::OpenSquare => {
                     nodes::Statement::Assign(nodes::AssignNode::parse(parser)?)
                 }

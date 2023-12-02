@@ -129,6 +129,11 @@ mod tests {
         use crate::compiler::{Compiler, ERR_STR, CONSTRUCTOR_NAME};
         use crate::tests::ALWAYS_FAILS;
 
+        // FIXME: Separate runtime tests from semantic tests
+        // FIXME: For runtime tests, differentiate between "working, returned value" and "working, expected crash"
+        //        (e.g. null pointer exception is an expected crash)
+        //        (e.g. while loop returns a value as exit code)
+
         macro_rules! generate_failing_test {
             ($name:ident, $($err:expr),*) => {
                 #[test]
