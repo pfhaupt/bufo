@@ -95,6 +95,7 @@ pub enum Statement {
     Assign(AssignNode),
     If(IfNode),
     Return(ReturnNode),
+    While(WhileNode),
 }
 
 #[derive(Debug, Clone)]
@@ -138,6 +139,13 @@ pub struct ReturnNode {
     pub location: Location,
     pub return_value: Option<ExpressionNode>,
     pub typ: Type,
+}
+
+#[derive(Debug, Clone)]
+pub struct WhileNode {
+    pub location: Location,
+    pub condition: ExpressionComparisonNode,
+    pub block: BlockNode,
 }
 
 #[derive(Debug, Clone)]

@@ -30,6 +30,7 @@ pub enum TokenType {
     IfKeyword,
     ElseKeyword,
     ReturnKeyword,
+    WhileKeyword,
     BuiltInFunction,
     Colon,
     Semi,
@@ -207,7 +208,7 @@ impl Parser {
             Ok(source) => source.chars().collect(),
             // Error Handling is done by the Flags struct
             // At this point, the file is guaranteed to exist
-            Err(_) => unreachable!()
+            Err(_) => unreachable!(),
         };
         Self {
             filepath: pb.clone(),
@@ -281,7 +282,7 @@ impl Parser {
         }
         debug_assert_eq!(
             TokenType::Eof as u8 + 1,
-            35,
+            36,
             "Not all TokenTypes are handled in next_token()"
         );
         self.trim_whitespace()?;
@@ -304,6 +305,7 @@ impl Parser {
                     "if" => TokenType::IfKeyword,
                     "else" => TokenType::ElseKeyword,
                     "return" => TokenType::ReturnKeyword,
+                    "while" => TokenType::WhileKeyword,
                     _ if BUILT_IN_FUNCTIONS.contains(&value.as_str()) => TokenType::BuiltInFunction,
                     _ => TokenType::Identifier,
                 };
@@ -853,6 +855,7 @@ impl Parsable for nodes::Statement {
             TokenType::LetKeyword => nodes::Statement::Let(nodes::LetNode::parse(parser)?),
             TokenType::IfKeyword => nodes::Statement::If(nodes::IfNode::parse(parser)?),
             TokenType::ReturnKeyword => nodes::Statement::Return(nodes::ReturnNode::parse(parser)?),
+            TokenType::WhileKeyword => nodes::Statement::While(nodes::WhileNode::parse(parser)?),
             TokenType::Identifier => match parser.nth(1) {
                 TokenType::Dot | TokenType::Equal | TokenType::OpenSquare => {
                     nodes::Statement::Assign(nodes::AssignNode::parse(parser)?)
@@ -1015,6 +1018,31 @@ impl Parsable for nodes::ReturnNode {
             location,
             return_value,
             typ: Type::Unknown,
+        })
+    }
+}
+
+impl Parsable for nodes::WhileNode {
+    fn parse(parser: &mut Parser) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
+        let location = parser.current_location();
+        parser.expect(TokenType::WhileKeyword)?;
+        parser.expect(TokenType::OpenRound)?;
+        let nodes::Expression::Comparison(condition) = nodes::Expression::parse(parser)? else {
+            return Err(format!(
+                "{}: {:?}: while-condition is expected to be a comparison.",
+                ERR_STR,
+                location
+            ))
+        };
+        parser.expect(TokenType::ClosingRound)?;
+        let block = nodes::BlockNode::parse(parser)?;
+        Ok(nodes::WhileNode {
+            location,
+            condition,
+            block,
         })
     }
 }
