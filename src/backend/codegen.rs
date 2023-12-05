@@ -606,7 +606,7 @@ impl Codegenable for nodes::AssignNode {
         Ok(instr::Operand::none())
     }
 }
-impl Codegenable for nodes::ExpressionIdentifierNode {
+impl Codegenable for nodes::IdentifierNode {
     #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         self.expression.codegen(codegen)
@@ -752,19 +752,19 @@ impl Codegenable for nodes::Expression {
         }
     }
 }
-impl Codegenable for nodes::ExpressionArrayLiteralNode {
+impl Codegenable for nodes::ArrayLiteralNode {
     #[trace_call(always)]
     fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
         internal_error!("ExpressionArrayLiteralNode::codegen() is not implemented yet")
     }
 }
-impl Codegenable for nodes::ExpressionArrayAccessNode {
+impl Codegenable for nodes::ArrayAccessNode {
     #[trace_call(always)]
     fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
         internal_error!("ExpressionArrayAccessNode::codegen() is not implemented yet")
     }
 }
-impl Codegenable for nodes::ExpressionLiteralNode {
+impl Codegenable for nodes::LiteralNode {
     #[trace_call(always)]
     fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let err_to_str = |e: ParseIntError| {
@@ -793,7 +793,7 @@ impl Codegenable for nodes::ExpressionLiteralNode {
         }
     }
 }
-impl Codegenable for nodes::ExpressionBinaryNode {
+impl Codegenable for nodes::BinaryNode {
     #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let mut lhs = self.lhs.codegen(codegen)?;
@@ -845,7 +845,7 @@ impl Codegenable for nodes::ExpressionBinaryNode {
         Ok(lhs)
     }
 }
-impl Codegenable for nodes::ExpressionComparisonNode {
+impl Codegenable for nodes::ComparisonNode {
     #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let mut lhs = self.lhs.codegen(codegen)?;
@@ -865,7 +865,7 @@ impl Codegenable for nodes::ExpressionComparisonNode {
         Ok(instr::Operand::cmp(self.operation))
     }
 }
-impl Codegenable for nodes::ExpressionCallNode {
+impl Codegenable for nodes::CallNode {
     #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         debug_assert!(self.typ != Type::Unknown);
@@ -956,7 +956,7 @@ impl Codegenable for nodes::ExpressionCallNode {
         }
     }
 }
-impl Codegenable for nodes::ExpressionConstructorNode {
+impl Codegenable for nodes::ConstructorNode {
     #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let constructor = self.class_name.clone() + "_" + CONSTRUCTOR_NAME;
@@ -1018,7 +1018,7 @@ impl Codegenable for nodes::ExpressionConstructorNode {
         Ok(result)
     }
 }
-impl Codegenable for nodes::ExpressionFieldAccessNode {
+impl Codegenable for nodes::FieldAccessNode {
     #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         // This is only ever called at the root of the access, so it's always a variable
@@ -1044,12 +1044,12 @@ impl Codegenable for nodes::ExpressionFieldAccessNode {
         // it is up to the caller to load or store the field
     }
 }
-impl nodes::ExpressionFieldAccessNode {
+impl nodes::FieldAccessNode {
     #[trace_call(always)]
     fn codegen_field(
         &self,
         codegen: &mut Codegen,
-        field: &nodes::ExpressionIdentifierNode,
+        field: &nodes::IdentifierNode,
         reg: &instr::Operand,
     ) -> Result<instr::Operand, String> {
         let class_type = codegen.field_stack.pop().unwrap();
@@ -1202,7 +1202,7 @@ impl Codegenable for nodes::NameNode {
         Ok(instr::Operand::offset(offset))
     }
 }
-impl Codegenable for nodes::ExpressionBuiltInNode {
+impl Codegenable for nodes::BuiltInNode {
     #[trace_call(always)]
     fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
         internal_error!("ExpressionBuiltInNode::codegen() is not implemented yet")

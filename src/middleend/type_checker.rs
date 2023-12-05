@@ -1223,7 +1223,7 @@ impl Typecheckable for nodes::Expression {
         }
     }
 }
-impl Typecheckable for nodes::ExpressionComparisonNode {
+impl Typecheckable for nodes::ComparisonNode {
     #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
@@ -1301,7 +1301,7 @@ impl Typecheckable for nodes::ExpressionComparisonNode {
         internal_error!("ExpressionComparisonNode::type_check_with_type() is not implemented yet")
     }
 }
-impl Typecheckable for nodes::ExpressionIdentifierNode {
+impl Typecheckable for nodes::IdentifierNode {
     #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
@@ -1321,7 +1321,7 @@ impl Typecheckable for nodes::ExpressionIdentifierNode {
         Ok(())
     }
 }
-impl Typecheckable for nodes::ExpressionArrayLiteralNode {
+impl Typecheckable for nodes::ArrayLiteralNode {
     #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
@@ -1395,7 +1395,7 @@ impl Typecheckable for nodes::ExpressionArrayLiteralNode {
         }
     }
 }
-impl Typecheckable for nodes::ExpressionArrayAccessNode {
+impl Typecheckable for nodes::ArrayAccessNode {
     #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
@@ -1478,7 +1478,7 @@ impl Typecheckable for nodes::ExpressionArrayAccessNode {
         internal_error!("ExpressionArrayAccessNode::type_check_with_type() is not implemented yet")
     }
 }
-impl Typecheckable for nodes::ExpressionLiteralNode {
+impl Typecheckable for nodes::LiteralNode {
     #[trace_call(always)]
     fn type_check(&mut self, _checker: &mut TypeChecker) -> Result<Type, String>
     where
@@ -1515,7 +1515,7 @@ impl Typecheckable for nodes::ExpressionLiteralNode {
         }
     }
 }
-impl Typecheckable for nodes::ExpressionBinaryNode {
+impl Typecheckable for nodes::BinaryNode {
     #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
@@ -1593,7 +1593,7 @@ impl Typecheckable for nodes::ExpressionBinaryNode {
         Ok(())
     }
 }
-impl Typecheckable for nodes::ExpressionCallNode {
+impl Typecheckable for nodes::CallNode {
     #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
@@ -1672,7 +1672,7 @@ impl Typecheckable for nodes::ExpressionCallNode {
         internal_error!("ExpressionCallNode::type_check_with_type() is not implemented yet")
     }
 }
-impl Typecheckable for nodes::ExpressionConstructorNode {
+impl Typecheckable for nodes::ConstructorNode {
     #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
@@ -1767,7 +1767,7 @@ impl Typecheckable for nodes::ExpressionConstructorNode {
         internal_error!("ExpressionConstructorNode::type_check_with_type() is not implemented yet")
     }
 }
-impl Typecheckable for nodes::ExpressionFieldAccessNode {
+impl Typecheckable for nodes::FieldAccessNode {
     #[trace_call(always)]
     fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
     where
@@ -1804,7 +1804,7 @@ impl Typecheckable for nodes::ExpressionFieldAccessNode {
         internal_error!("ExpressionFieldAccessNode::type_check_with_type() is not implemented yet")
     }
 }
-impl nodes::ExpressionFieldAccessNode {
+impl nodes::FieldAccessNode {
     #[trace_call(always)]
     fn type_check_field(
         &mut self,
@@ -2012,7 +2012,7 @@ impl Typecheckable for nodes::NameNode {
         Ok(())
     }
 }
-impl Typecheckable for nodes::ExpressionBuiltInNode {
+impl Typecheckable for nodes::BuiltInNode {
     #[trace_call(always)]
     fn type_check(&mut self, _checker: &mut TypeChecker) -> Result<Type, String>
     where

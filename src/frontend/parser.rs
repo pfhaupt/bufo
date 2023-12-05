@@ -931,7 +931,7 @@ impl Parsable for nodes::AssignNode {
         Self: Sized,
     {
         let location = parser.current_location();
-        let name = nodes::ExpressionIdentifierNode::parse(parser)?;
+        let name = nodes::IdentifierNode::parse(parser)?;
         parser.expect(TokenType::Equal)?;
         let expression = nodes::ExpressionNode::parse(parser)?;
         parser.expect(TokenType::Semi)?;
@@ -943,7 +943,7 @@ impl Parsable for nodes::AssignNode {
     }
 }
 
-impl Parsable for nodes::ExpressionIdentifierNode {
+impl Parsable for nodes::IdentifierNode {
     #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
@@ -953,22 +953,22 @@ impl Parsable for nodes::ExpressionIdentifierNode {
         let expression = match parser.nth(1) {
             TokenType::OpenRound => {
                 if parser.peek(0).value.as_bytes()[0].is_ascii_uppercase() {
-                    nodes::Expression::ConstructorCall(nodes::ExpressionConstructorNode::parse(
+                    nodes::Expression::ConstructorCall(nodes::ConstructorNode::parse(
                         parser,
                     )?)
                 } else {
-                    nodes::Expression::FunctionCall(nodes::ExpressionCallNode::parse(parser)?)
+                    nodes::Expression::FunctionCall(nodes::CallNode::parse(parser)?)
                 }
             }
             TokenType::OpenSquare => {
-                nodes::Expression::ArrayAccess(nodes::ExpressionArrayAccessNode::parse(parser)?)
+                nodes::Expression::ArrayAccess(nodes::ArrayAccessNode::parse(parser)?)
             }
             TokenType::Dot => {
-                nodes::Expression::FieldAccess(nodes::ExpressionFieldAccessNode::parse(parser)?)
+                nodes::Expression::FieldAccess(nodes::FieldAccessNode::parse(parser)?)
             }
             _ => nodes::Expression::Name(nodes::NameNode::parse(parser)?),
         };
-        Ok(nodes::ExpressionIdentifierNode {
+        Ok(nodes::IdentifierNode {
             location,
             expression: Box::new(expression),
             typ: Type::Unknown,
@@ -1163,11 +1163,11 @@ impl nodes::Expression {
     fn parse_delim(parser: &mut Parser) -> Result<Self, String> {
         Ok(match parser.nth(0) {
             TokenType::IntLiteral => {
-                let expression = nodes::ExpressionLiteralNode::parse(parser)?;
+                let expression = nodes::LiteralNode::parse(parser)?;
                 Self::Literal(expression)
             }
             TokenType::Identifier => {
-                let expression = nodes::ExpressionIdentifierNode::parse(parser)?;
+                let expression = nodes::IdentifierNode::parse(parser)?;
                 Self::Identifier(expression)
             }
             TokenType::OpenRound => {
@@ -1177,11 +1177,11 @@ impl nodes::Expression {
                 expression
             }
             TokenType::OpenSquare => {
-                let expression = nodes::ExpressionArrayLiteralNode::parse(parser)?;
+                let expression = nodes::ArrayLiteralNode::parse(parser)?;
                 Self::ArrayLiteral(expression)
             }
             TokenType::BuiltInFunction => {
-                let expression = nodes::ExpressionBuiltInNode::parse(parser)?;
+                let expression = nodes::BuiltInNode::parse(parser)?;
                 Self::BuiltIn(expression)
             }
             e => {
@@ -1204,7 +1204,7 @@ impl nodes::Expression {
                 let rhs = Self::parse_rec(parser, right)?;
                 let operation = Operation::from(token.value);
                 lhs = if COMPARISONS.contains(&operation) {
-                    nodes::Expression::Comparison(nodes::ExpressionComparisonNode {
+                    nodes::Expression::Comparison(nodes::ComparisonNode {
                         location: token.location,
                         operation,
                         lhs: Box::new(lhs),
@@ -1212,7 +1212,7 @@ impl nodes::Expression {
                         typ: Type::Bool,
                     })
                 } else {
-                    nodes::Expression::Binary(nodes::ExpressionBinaryNode {
+                    nodes::Expression::Binary(nodes::BinaryNode {
                         location: token.location,
                         operation,
                         lhs: Box::new(lhs),
@@ -1249,7 +1249,7 @@ impl nodes::Expression {
     }
 }
 
-impl Parsable for nodes::ExpressionBinaryNode {
+impl Parsable for nodes::BinaryNode {
     #[trace_call(always)]
     fn parse(_parser: &mut Parser) -> Result<Self, String>
     where
@@ -1264,7 +1264,7 @@ impl Parsable for nodes::ExpressionBinaryNode {
     }
 }
 
-impl Parsable for nodes::ExpressionBuiltInNode {
+impl Parsable for nodes::BuiltInNode {
     #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
@@ -1284,7 +1284,7 @@ impl Parsable for nodes::ExpressionBuiltInNode {
             }
         }
         parser.expect(TokenType::ClosingRound)?;
-        Ok(nodes::ExpressionBuiltInNode {
+        Ok(nodes::BuiltInNode {
             location,
             function_name,
             arguments,
@@ -1293,7 +1293,7 @@ impl Parsable for nodes::ExpressionBuiltInNode {
     }
 }
 
-impl Parsable for nodes::ExpressionArrayLiteralNode {
+impl Parsable for nodes::ArrayLiteralNode {
     #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
@@ -1310,7 +1310,7 @@ impl Parsable for nodes::ExpressionArrayLiteralNode {
             }
         }
         parser.expect(TokenType::ClosingSquare)?;
-        Ok(nodes::ExpressionArrayLiteralNode {
+        Ok(nodes::ArrayLiteralNode {
             location,
             elements,
             typ: Type::Unknown,
@@ -1318,7 +1318,7 @@ impl Parsable for nodes::ExpressionArrayLiteralNode {
     }
 }
 
-impl Parsable for nodes::ExpressionArrayAccessNode {
+impl Parsable for nodes::ArrayAccessNode {
     #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
@@ -1327,8 +1327,8 @@ impl Parsable for nodes::ExpressionArrayAccessNode {
         let location = parser.current_location();
         let array_name = parser.expect(TokenType::Identifier)?;
         let array_name = array_name.value;
-        let indices = nodes::ExpressionArrayLiteralNode::parse(parser)?;
-        Ok(nodes::ExpressionArrayAccessNode {
+        let indices = nodes::ArrayLiteralNode::parse(parser)?;
+        Ok(nodes::ArrayAccessNode {
             location,
             array_name,
             indices,
@@ -1337,7 +1337,7 @@ impl Parsable for nodes::ExpressionArrayAccessNode {
     }
 }
 
-impl Parsable for nodes::ExpressionLiteralNode {
+impl Parsable for nodes::LiteralNode {
     #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
@@ -1346,7 +1346,7 @@ impl Parsable for nodes::ExpressionLiteralNode {
         let location = parser.current_location();
         let number_token = parser.expect(TokenType::IntLiteral)?;
         let (value, typ) = parser.parse_type_literal(number_token)?;
-        Ok(nodes::ExpressionLiteralNode {
+        Ok(nodes::LiteralNode {
             location,
             value,
             typ,
@@ -1354,7 +1354,7 @@ impl Parsable for nodes::ExpressionLiteralNode {
     }
 }
 
-impl Parsable for nodes::ExpressionConstructorNode {
+impl Parsable for nodes::ConstructorNode {
     #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
@@ -1375,7 +1375,7 @@ impl Parsable for nodes::ExpressionConstructorNode {
             }
         }
         parser.expect(TokenType::ClosingRound)?;
-        Ok(nodes::ExpressionConstructorNode {
+        Ok(nodes::ConstructorNode {
             class_name,
             location,
             arguments,
@@ -1384,7 +1384,7 @@ impl Parsable for nodes::ExpressionConstructorNode {
     }
 }
 
-impl Parsable for nodes::ExpressionCallNode {
+impl Parsable for nodes::CallNode {
     #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
@@ -1404,7 +1404,7 @@ impl Parsable for nodes::ExpressionCallNode {
             }
         }
         parser.expect(TokenType::ClosingRound)?;
-        Ok(nodes::ExpressionCallNode {
+        Ok(nodes::CallNode {
             function_name,
             location,
             arguments,
@@ -1413,7 +1413,7 @@ impl Parsable for nodes::ExpressionCallNode {
     }
 }
 
-impl Parsable for nodes::ExpressionFieldAccessNode {
+impl Parsable for nodes::FieldAccessNode {
     #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
     where
@@ -1423,8 +1423,8 @@ impl Parsable for nodes::ExpressionFieldAccessNode {
         let name_token = parser.expect(TokenType::Identifier)?;
         let name = name_token.value;
         parser.expect(TokenType::Dot)?;
-        let field = nodes::ExpressionIdentifierNode::parse(parser)?;
-        Ok(nodes::ExpressionFieldAccessNode {
+        let field = nodes::IdentifierNode::parse(parser)?;
+        Ok(nodes::FieldAccessNode {
             location,
             name,
             field,

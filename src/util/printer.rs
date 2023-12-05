@@ -224,14 +224,14 @@ impl Printable for nodes::NameNode {
     }
 }
 
-impl Printable for nodes::ExpressionIdentifierNode {
+impl Printable for nodes::IdentifierNode {
     fn print(&self, indent: usize) {
         println!("{}ExpressionIdentifierNode", " ".repeat(indent));
         self.expression.print(indent + INDENT_PER_LEVEL);
     }
 }
 
-impl Printable for nodes::ExpressionArrayLiteralNode {
+impl Printable for nodes::ArrayLiteralNode {
     fn print(&self, indent: usize) {
         println!("{}ExpressionArrayLiteralNode", " ".repeat(indent));
         for expression in &self.elements {
@@ -240,7 +240,7 @@ impl Printable for nodes::ExpressionArrayLiteralNode {
     }
 }
 
-impl Printable for nodes::ExpressionArrayAccessNode {
+impl Printable for nodes::ArrayAccessNode {
     fn print(&self, indent: usize) {
         println!("{}ExpressionArrayAccessNode", " ".repeat(indent));
         println!("{}Array {}", " ".repeat(indent + INDENT_PER_LEVEL), self.array_name);
@@ -248,7 +248,7 @@ impl Printable for nodes::ExpressionArrayAccessNode {
     }
 }
 
-impl Printable for nodes::ExpressionLiteralNode {
+impl Printable for nodes::LiteralNode {
     fn print(&self, indent: usize) {
         println!("{}ExpressionLiteralNode", " ".repeat(indent));
         println!("{}Type {}", " ".repeat(indent + INDENT_PER_LEVEL), self.typ);
@@ -256,7 +256,7 @@ impl Printable for nodes::ExpressionLiteralNode {
     }
 }
 
-impl Printable for nodes::ExpressionBinaryNode {
+impl Printable for nodes::BinaryNode {
     fn print(&self, indent: usize) {
         println!("{}ExpressionBinaryNode", " ".repeat(indent));
         println!("{}Operator {}", " ".repeat(indent + INDENT_PER_LEVEL), self.operation);
@@ -265,7 +265,7 @@ impl Printable for nodes::ExpressionBinaryNode {
     }
 }
 
-impl Printable for nodes::ExpressionComparisonNode {
+impl Printable for nodes::ComparisonNode {
     fn print(&self, indent: usize) {
         println!("{}ExpressionComparisonNode", " ".repeat(indent));
         println!("{}Operator {}", " ".repeat(indent + INDENT_PER_LEVEL), self.operation);
@@ -274,7 +274,7 @@ impl Printable for nodes::ExpressionComparisonNode {
     }
 }
 
-impl Printable for nodes::ExpressionCallNode {
+impl Printable for nodes::CallNode {
     fn print(&self, indent: usize) {
         println!("{}ExpressionCallNode", " ".repeat(indent));
         println!("{}Function {}", " ".repeat(indent + INDENT_PER_LEVEL), self.function_name);
@@ -284,7 +284,7 @@ impl Printable for nodes::ExpressionCallNode {
     }
 }
 
-impl Printable for nodes::ExpressionConstructorNode {
+impl Printable for nodes::ConstructorNode {
     fn print(&self, indent: usize) {
         println!("{}ExpressionConstructorNode", " ".repeat(indent));
         println!("{}Class {}", " ".repeat(indent + INDENT_PER_LEVEL), self.class_name);
@@ -294,7 +294,7 @@ impl Printable for nodes::ExpressionConstructorNode {
     }
 }
 
-impl Printable for nodes::ExpressionFieldAccessNode {
+impl Printable for nodes::FieldAccessNode {
     fn print(&self, indent: usize) {
         println!("{}ExpressionFieldAccessNode", " ".repeat(indent));
         println!("{}Name {}", " ".repeat(indent + INDENT_PER_LEVEL), self.name);
@@ -303,7 +303,7 @@ impl Printable for nodes::ExpressionFieldAccessNode {
     }
 }
 
-impl Printable for nodes::ExpressionBuiltInNode {
+impl Printable for nodes::BuiltInNode {
     fn print(&self, indent: usize) {
         println!("{}ExpressionBuiltInNode", " ".repeat(indent));
         println!("{}Function {}", " ".repeat(indent + INDENT_PER_LEVEL), self.function_name);

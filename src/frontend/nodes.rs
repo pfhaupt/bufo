@@ -132,12 +132,12 @@ pub struct LetNode {
 #[derive(Debug, Clone)]
 pub struct AssignNode {
     pub location: Location,
-    pub name: ExpressionIdentifierNode,
+    pub name: IdentifierNode,
     pub expression: ExpressionNode,
 }
 
 #[derive(Debug, Clone)]
-pub struct ExpressionIdentifierNode {
+pub struct IdentifierNode {
     pub location: Location,
     pub expression: Box<Expression>,
     pub typ: Type,
@@ -146,7 +146,7 @@ pub struct ExpressionIdentifierNode {
 #[derive(Debug, Clone)]
 pub struct IfNode {
     pub location: Location,
-    pub condition: ExpressionComparisonNode,
+    pub condition: ComparisonNode,
     pub if_branch: BlockNode,
     pub else_branch: Option<BlockNode>,
 }
@@ -161,7 +161,7 @@ pub struct ReturnNode {
 #[derive(Debug, Clone)]
 pub struct WhileNode {
     pub location: Location,
-    pub condition: ExpressionComparisonNode,
+    pub condition: ComparisonNode,
     pub block: BlockNode,
 }
 
@@ -202,17 +202,17 @@ pub struct ArgumentNode {
 #[derive(Debug, Clone)]
 pub enum Expression {
     Name(NameNode),
-    Identifier(ExpressionIdentifierNode),
-    ArrayLiteral(ExpressionArrayLiteralNode),
-    ArrayAccess(ExpressionArrayAccessNode),
-    Literal(ExpressionLiteralNode),
-    Binary(ExpressionBinaryNode),
-    Comparison(ExpressionComparisonNode),
-    FieldAccess(ExpressionFieldAccessNode),
+    Identifier(IdentifierNode),
+    ArrayLiteral(ArrayLiteralNode),
+    ArrayAccess(ArrayAccessNode),
+    Literal(LiteralNode),
+    Binary(BinaryNode),
+    Comparison(ComparisonNode),
+    FieldAccess(FieldAccessNode),
     // Parenthesis(ExpressionNode),
-    FunctionCall(ExpressionCallNode),
-    ConstructorCall(ExpressionConstructorNode),
-    BuiltIn(ExpressionBuiltInNode),
+    FunctionCall(CallNode),
+    ConstructorCall(ConstructorNode),
+    BuiltIn(BuiltInNode),
 }
 
 impl Expression {
@@ -252,29 +252,29 @@ impl Expression {
 }
 
 #[derive(Debug, Clone)]
-pub struct ExpressionArrayLiteralNode {
+pub struct ArrayLiteralNode {
     pub location: Location,
     pub elements: Vec<Expression>,
     pub typ: Type,
 }
 
 #[derive(Debug, Clone)]
-pub struct ExpressionArrayAccessNode {
+pub struct ArrayAccessNode {
     pub location: Location,
     pub array_name: String,
-    pub indices: ExpressionArrayLiteralNode,
+    pub indices: ArrayLiteralNode,
     pub typ: Type,
 }
 
 #[derive(Debug, Clone)]
-pub struct ExpressionLiteralNode {
+pub struct LiteralNode {
     pub location: Location,
     pub value: String,
     pub typ: Type,
 }
 
 #[derive(Debug, Clone)]
-pub struct ExpressionBinaryNode {
+pub struct BinaryNode {
     pub location: Location,
     pub operation: Operation,
     pub lhs: Box<Expression>,
@@ -283,7 +283,7 @@ pub struct ExpressionBinaryNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct ExpressionComparisonNode {
+pub struct ComparisonNode {
     pub location: Location,
     pub operation: Operation,
     pub lhs: Box<Expression>,
@@ -292,7 +292,7 @@ pub struct ExpressionComparisonNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct ExpressionCallNode {
+pub struct CallNode {
     pub location: Location,
     pub function_name: String,
     pub arguments: Vec<ArgumentNode>,
@@ -300,7 +300,7 @@ pub struct ExpressionCallNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct ExpressionConstructorNode {
+pub struct ConstructorNode {
     pub location: Location,
     pub class_name: String,
     pub arguments: Vec<ArgumentNode>,
@@ -308,10 +308,10 @@ pub struct ExpressionConstructorNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct ExpressionFieldAccessNode {
+pub struct FieldAccessNode {
     pub location: Location,
     pub name: String,
-    pub field: ExpressionIdentifierNode,
+    pub field: IdentifierNode,
     pub typ: Type,
 }
 
@@ -323,7 +323,7 @@ pub struct NameNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct ExpressionBuiltInNode {
+pub struct BuiltInNode {
     pub location: Location,
     pub function_name: String,
     pub arguments: Vec<ArgumentNode>,

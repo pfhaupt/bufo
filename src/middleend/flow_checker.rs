@@ -201,7 +201,7 @@ impl Flowable for nodes::ExpressionNode {
         self.expression.check(checker)
     }
 }
-impl Flowable for nodes::ExpressionComparisonNode {
+impl Flowable for nodes::ComparisonNode {
     #[trace_call(always)]
     fn check(&self, _checker: &FlowChecker) -> Result<FlowType, String> {
         // TODO: LHS and RHS might cause an exit
@@ -215,7 +215,7 @@ impl Flowable for nodes::NameNode {
         Ok(FlowType::Linear)
     }
 }
-impl Flowable for nodes::ExpressionLiteralNode {
+impl Flowable for nodes::LiteralNode {
     #[trace_call(always)]
     fn check(&self, _checker: &FlowChecker) -> Result<FlowType, String> {
         Ok(FlowType::Linear)
