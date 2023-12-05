@@ -8,6 +8,7 @@ use crate::frontend::flags::Flags;
 use crate::frontend::parser::Parser;
 use crate::middleend::flow_checker::FlowChecker;
 use crate::middleend::type_checker::TypeChecker;
+use crate::util::printer::Printer;
 
 pub const ERR_STR: &str = "\x1b[91merror\x1b[0m";
 pub const WARN_STR: &str = "\x1b[93mwarning\x1b[0m";
@@ -68,6 +69,10 @@ impl Compiler {
         self.type_checker.type_check_file(&mut parsed_ast)?;
         if self.flags.debug {
             println!("[DEBUG] Type Checking took {:?}", now.elapsed());
+        }
+
+        if self.flags.print_ast {
+            Printer::print(&parsed_ast);
         }
 
         let now = Instant::now();

@@ -2,6 +2,7 @@ mod backend;
 mod compiler;
 mod frontend;
 mod middleend;
+mod util;
 
 // This macro injects tracing code into the compiler.
 // Must be enabled with the `trace` feature-flag.

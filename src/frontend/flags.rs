@@ -15,6 +15,8 @@ pub struct Flags {
     pub run: bool,
     #[arg(short, long, default_value = "false")]
     pub debug: bool,
+    #[arg(short='A', long="ast", default_value = "false")]
+    pub print_ast: bool,
 }
 
 fn valid_filepath(filepath: &str) -> Result<String, String> {
