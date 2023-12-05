@@ -1195,7 +1195,6 @@ impl Typecheckable for nodes::Expression {
             Self::Comparison(comp_expr) => comp_expr.type_check(checker),
             Self::Identifier(ident_expr) => ident_expr.type_check(checker),
             Self::FunctionCall(func_call) => func_call.type_check(checker),
-            Self::ConstructorCall(cons_call) => cons_call.type_check(checker),
             Self::BuiltIn(built_in) => built_in.type_check(checker),
             Self::ArrayAccess(access) => access.type_check(checker),
             Self::ArrayLiteral(literal) => literal.type_check(checker),
@@ -1214,7 +1213,6 @@ impl Typecheckable for nodes::Expression {
             Self::Comparison(comp_expr) => comp_expr.type_check_with_type(checker, typ),
             Self::Identifier(ident_expr) => ident_expr.type_check_with_type(checker, typ),
             Self::FunctionCall(func_call) => func_call.type_check_with_type(checker, typ),
-            Self::ConstructorCall(cons_call) => cons_call.type_check_with_type(checker, typ),
             Self::BuiltIn(built_in) => built_in.type_check_with_type(checker, typ),
             Self::ArrayAccess(access) => access.type_check_with_type(checker, typ),
             Self::ArrayLiteral(literal) => literal.type_check_with_type(checker, typ),
@@ -1599,13 +1597,38 @@ impl Typecheckable for nodes::CallNode {
     where
         Self: Sized,
     {
-        let Some(function) = checker.known_functions.get(&self.function_name) else {
-            return Err(format!(
-                "{}: {:?}: Call to unknown function `{}`.",
-                ERR_STR,
-                self.location,
-                self.function_name
-            ));
+        let function = if self.is_constructor {
+            if let Some(class) = checker.known_classes.get(&self.function_name) {
+                let Some(feat) = class.known_features.get(CONSTRUCTOR_NAME) else {
+                    return Err(format!(
+                        "{}: {:?}: Class `{}` has no constructor.\n{}: {:?}: Class declared here.\n{}: Implement the {} feature to create a constructor.",
+                        ERR_STR, self.location, self.function_name,
+                        NOTE_STR, class.location,
+                        NOTE_STR, CONSTRUCTOR_NAME
+                    ));
+                };
+                self.function_name = format!("{}_{}", self.function_name, CONSTRUCTOR_NAME);
+                debug_assert!(class.has_constructor, "Class has constructor feature, but has_constructor is false");
+                feat
+            } else {
+                return Err(format!(
+                    "{}: {:?}: Call to unknown class `{}`.\n{}: Capitalized function calls are reserved for class constructors.",
+                    ERR_STR,
+                    self.location,
+                    self.function_name,
+                    NOTE_STR
+                ));
+            }
+        } else {
+            let Some(function) = checker.known_functions.get(&self.function_name) else {
+                return Err(format!(
+                    "{}: {:?}: Call to unknown function `{}`.",
+                    ERR_STR,
+                    self.location,
+                    self.function_name
+                ));
+            };
+            function
         };
         let return_type = function.return_type.clone();
         match self.arguments.len().cmp(&function.parameters.len()) {
@@ -1670,101 +1693,6 @@ impl Typecheckable for nodes::CallNode {
         Self: Sized,
     {
         internal_error!("ExpressionCallNode::type_check_with_type() is not implemented yet")
-    }
-}
-impl Typecheckable for nodes::ConstructorNode {
-    #[trace_call(always)]
-    fn type_check(&mut self, checker: &mut TypeChecker) -> Result<Type, String>
-    where
-        Self: Sized,
-    {
-        debug_assert!(!checker.current_function.is_empty());
-        if !checker.known_classes.contains_key(&self.class_name) {
-            return Err(format!(
-                "{}: {:?}: Call to constructor of unknown class `{}`.\n{}: Capitalized function calls are always assumed to be constructor calls.",
-                ERR_STR,
-                self.location,
-                self.class_name,
-                NOTE_STR
-            ));
-        }
-        let Some(class) = checker.known_classes.get(&self.class_name) else { unreachable!() };
-        if !class.has_constructor {
-            return Err(format!(
-                "{}: {:?}: Class `{}` has no constructor.\n{}: {:?}: Could not find feature `{CONSTRUCTOR_NAME}` in class `{}`.",
-                ERR_STR,
-                self.location,
-                self.class_name,
-                NOTE_STR,
-                class.location,
-                self.class_name
-            ));
-        }
-        let class_type = class.class_type.clone();
-        let Some(constructor) = class.get_feature(CONSTRUCTOR_NAME) else { unreachable!() };
-
-        let params = constructor.parameters.clone();
-        match self.arguments.len().cmp(&params.len()) {
-            std::cmp::Ordering::Less => {
-                return Err(format!(
-                    "{}: {:?}: Not enough arguments for call to constructor `{}`. Expected {} argument(s), found {}.\n{}: {:?}: Constructor declared here.",
-                    ERR_STR,
-                    self.location,
-                    self.class_name,
-                    params.len(),
-                    self.arguments.len(),
-                    NOTE_STR,
-                    constructor.location
-                ));
-            }
-            std::cmp::Ordering::Greater => {
-                return Err(format!(
-                    "{}: {:?}: Too many arguments for call to constructor `{}`. Expected {} argument(s), found {}.\n{}: {:?}: Constructor declared here.",
-                    ERR_STR,
-                    self.location,
-                    self.class_name,
-                    params.len(),
-                    self.arguments.len(),
-                    NOTE_STR,
-                    constructor.location
-                ));
-            }
-            std::cmp::Ordering::Equal => (),
-        }
-        for (arg, param) in self.arguments.iter_mut().zip(params) {
-            let expected = param.typ;
-            let arg_type = arg.type_check(checker)?;
-            debug_assert!(arg_type != Type::None);
-            if arg_type == Type::Unknown {
-                // We need to `infer` the type again
-                arg.type_check_with_type(checker, &expected)?;
-            } else if arg_type != expected {
-                return Err(format!(
-                    "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{}`, found type `{}`.\n{}: {:?}: Parameter declared here.",
-                    ERR_STR,
-                    arg.location,
-                    expected,
-                    arg_type,
-                    NOTE_STR,
-                    param.location
-                ));
-            } else {
-                // Everything is cool
-            }
-        }
-        self.typ = class_type;
-        Ok(Type::Class(self.class_name.clone()))
-    }
-    #[trace_call(always)]
-    fn type_check_with_type(
-        &mut self,
-        _checker: &mut TypeChecker,
-        _typ: &Type,
-    ) -> Result<(), String>
-    where
-        Self: Sized,
-    {
-        internal_error!("ExpressionConstructorNode::type_check_with_type() is not implemented yet")
     }
 }
 impl Typecheckable for nodes::FieldAccessNode {

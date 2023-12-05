@@ -205,7 +205,6 @@ impl Printable for nodes::Expression {
             Self::Comparison(node) => node.print(indent),
             Self::FieldAccess(node) => node.print(indent),
             Self::FunctionCall(node) => node.print(indent),
-            Self::ConstructorCall(node) => node.print(indent),
             Self::BuiltIn(node) => node.print(indent),
         }
     }
@@ -278,16 +277,6 @@ impl Printable for nodes::CallNode {
     fn print(&self, indent: usize) {
         println!("{}ExpressionCallNode", " ".repeat(indent));
         println!("{}Function {}", " ".repeat(indent + INDENT_PER_LEVEL), self.function_name);
-        for argument in &self.arguments {
-            argument.print(indent + INDENT_PER_LEVEL);
-        }
-    }
-}
-
-impl Printable for nodes::ConstructorNode {
-    fn print(&self, indent: usize) {
-        println!("{}ExpressionConstructorNode", " ".repeat(indent));
-        println!("{}Class {}", " ".repeat(indent + INDENT_PER_LEVEL), self.class_name);
         for argument in &self.arguments {
             argument.print(indent + INDENT_PER_LEVEL);
         }

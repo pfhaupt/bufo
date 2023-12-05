@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::num::ParseIntError;
 
 use super::instr;
-use crate::compiler::{CONSTRUCTOR_NAME, ERR_STR, NOTE_STR};
+use crate::compiler::{ERR_STR, NOTE_STR};
 use crate::frontend::flags::Flags;
 use crate::frontend::nodes;
 use crate::frontend::parser::Operation;
@@ -747,7 +747,6 @@ impl Codegenable for nodes::Expression {
             Self::Comparison(expr) => expr.codegen(codegen),
             Self::FieldAccess(expr) => expr.codegen(codegen),
             Self::FunctionCall(expr) => expr.codegen(codegen),
-            Self::ConstructorCall(expr) => expr.codegen(codegen),
             Self::BuiltIn(expr) => expr.codegen(codegen),
         }
     }
@@ -870,6 +869,12 @@ impl Codegenable for nodes::CallNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         debug_assert!(self.typ != Type::Unknown);
 
+        // FIXME: Implement this, it should be easy, if not free
+        //        Isn't this just a function call?
+        if self.is_constructor {
+            return internal_error!("CallNode::codegen() is not implemented yet for constructors.");
+        }
+
         let result = if self.typ == Type::None {
             None
         } else {
@@ -954,68 +959,6 @@ impl Codegenable for nodes::CallNode {
             codegen.pop_registers(counter);
             Ok(instr::Operand::none())
         }
-    }
-}
-impl Codegenable for nodes::ConstructorNode {
-    #[trace_call(always)]
-    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        let constructor = self.class_name.clone() + "_" + CONSTRUCTOR_NAME;
-
-        let result = codegen.get_register()?;
-        let result_mode = instr::RegMode::from(&self.typ);
-        let result = instr::Operand::reg(result, result_mode);
-
-        let counter = codegen.register_counter;
-        codegen.push_registers(counter);
-
-        // Codegen each argument and move it into the correct registers
-        for (index, arg) in self.arguments.iter().enumerate() {
-            let op = arg.codegen(codegen)?;
-            debug_assert!(op != instr::Operand::none());
-            let target_reg = instr::Register::arg(index);
-            match op.typ {
-                instr::OperandType::Reg => {
-                    if op.reg != target_reg {
-                        // Move to correct register if necessary
-                        let target_reg = instr::Operand::reg(target_reg, op.reg_mode);
-                        codegen.add_ir(instr::IR::Move {
-                            dst: target_reg,
-                            src: op,
-                        });
-                    }
-                }
-                instr::OperandType::ImmI32 | instr::OperandType::ImmU32 => {
-                    let target_reg = instr::Operand::reg(target_reg, instr::RegMode::BIT32);
-                    codegen.add_ir(instr::IR::LoadImm {
-                        dst: target_reg,
-                        imm: op,
-                    });
-                }
-                instr::OperandType::ImmI64 | instr::OperandType::ImmU64 => {
-                    let target_reg = instr::Operand::reg(target_reg, instr::RegMode::BIT64);
-                    codegen.add_ir(instr::IR::LoadImm {
-                        dst: target_reg,
-                        imm: op,
-                    });
-                }
-                op => {
-                    return internal_error!(format!(
-                        "ExpressionConstructorNode::codegen() can't handle argument type `{:?}` yet.",
-                        op
-                    ));
-                }
-            }
-        }
-
-        codegen.add_ir(instr::IR::Call { name: constructor });
-
-        codegen.add_ir(instr::IR::Move {
-            dst: result,
-            src: instr::Operand::reg(instr::Register::RET, result_mode),
-        });
-
-        codegen.pop_registers(counter);
-        Ok(result)
     }
 }
 impl Codegenable for nodes::FieldAccessNode {

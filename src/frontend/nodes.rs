@@ -211,7 +211,6 @@ pub enum Expression {
     FieldAccess(FieldAccessNode),
     // Parenthesis(ExpressionNode),
     FunctionCall(CallNode),
-    ConstructorCall(ConstructorNode),
     BuiltIn(BuiltInNode),
 }
 
@@ -228,7 +227,6 @@ impl Expression {
             Self::Comparison(e) => e.location.clone(),
             Self::FieldAccess(e) => e.location.clone(),
             Self::FunctionCall(e) => e.location.clone(),
-            Self::ConstructorCall(e) => e.location.clone(),
             Self::BuiltIn(e) => e.location.clone()
         }
     }
@@ -245,7 +243,6 @@ impl Expression {
             Self::Comparison(e) => e.typ.clone(),
             Self::FieldAccess(e) => e.typ.clone(),
             Self::FunctionCall(e) => e.typ.clone(),
-            Self::ConstructorCall(e) => e.typ.clone(),
             Self::BuiltIn(e) => e.typ.clone()
         }
     }
@@ -297,14 +294,7 @@ pub struct CallNode {
     pub function_name: String,
     pub arguments: Vec<ArgumentNode>,
     pub typ: Type,
-}
-
-#[derive(Debug, Clone)]
-pub struct ConstructorNode {
-    pub location: Location,
-    pub class_name: String,
-    pub arguments: Vec<ArgumentNode>,
-    pub typ: Type,
+    pub is_constructor: bool,
 }
 
 #[derive(Debug, Clone)]

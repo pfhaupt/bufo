@@ -952,13 +952,7 @@ impl Parsable for nodes::IdentifierNode {
         let location = parser.current_location();
         let expression = match parser.nth(1) {
             TokenType::OpenRound => {
-                if parser.peek(0).value.as_bytes()[0].is_ascii_uppercase() {
-                    nodes::Expression::ConstructorCall(nodes::ConstructorNode::parse(
-                        parser,
-                    )?)
-                } else {
-                    nodes::Expression::FunctionCall(nodes::CallNode::parse(parser)?)
-                }
+                nodes::Expression::FunctionCall(nodes::CallNode::parse(parser)?)
             }
             TokenType::OpenSquare => {
                 nodes::Expression::ArrayAccess(nodes::ArrayAccessNode::parse(parser)?)
@@ -1354,36 +1348,6 @@ impl Parsable for nodes::LiteralNode {
     }
 }
 
-impl Parsable for nodes::ConstructorNode {
-    #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        let name_token = parser.expect(TokenType::Identifier)?;
-        let class_name = name_token.value;
-        debug_assert!(class_name.as_bytes()[0].is_ascii_uppercase());
-
-        let mut arguments = vec![];
-        parser.expect(TokenType::OpenRound)?;
-        while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
-            let arg = nodes::ArgumentNode::parse(parser)?;
-            arguments.push(arg);
-            if !parser.eat(TokenType::Comma)? {
-                break;
-            }
-        }
-        parser.expect(TokenType::ClosingRound)?;
-        Ok(nodes::ConstructorNode {
-            class_name,
-            location,
-            arguments,
-            typ: Type::Unknown,
-        })
-    }
-}
-
 impl Parsable for nodes::CallNode {
     #[trace_call(always)]
     fn parse(parser: &mut Parser) -> Result<Self, String>
@@ -1405,6 +1369,7 @@ impl Parsable for nodes::CallNode {
         }
         parser.expect(TokenType::ClosingRound)?;
         Ok(nodes::CallNode {
+            is_constructor: function_name.as_bytes()[0].is_ascii_uppercase(),
             function_name,
             location,
             arguments,
