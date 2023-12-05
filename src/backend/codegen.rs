@@ -869,12 +869,6 @@ impl Codegenable for nodes::CallNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         debug_assert!(self.typ != Type::Unknown);
 
-        // FIXME: Implement this, it should be easy, if not free
-        //        Isn't this just a function call?
-        if self.is_constructor {
-            return internal_error!("CallNode::codegen() is not implemented yet for constructors.");
-        }
-
         let result = if self.typ == Type::None {
             None
         } else {
