@@ -197,13 +197,13 @@ impl Flowable for nodes::IfNode {
                 (FlowType::AlwaysReturn, _) => Ok(FlowType::MayReturn),
                 (_, FlowType::AlwaysReturn) => Ok(FlowType::MayReturn),
                 (FlowType::Linear, FlowType::Linear) => Ok(FlowType::Linear),
-                _ => todo!(),
+                (i, e) => todo!("{i:?}, {e:?}"),
             }
         } else {
             match if_flow {
-                FlowType::AlwaysReturn => Ok(FlowType::MayReturn),
+                FlowType::AlwaysReturn | FlowType::MayReturn => Ok(FlowType::MayReturn),
                 FlowType::Linear => Ok(FlowType::Linear),
-                _ => todo!(),
+                i => todo!("{i:?}"),
             }
         }
     }
