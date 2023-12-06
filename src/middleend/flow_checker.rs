@@ -229,7 +229,11 @@ impl Flowable for nodes::WhileNode {
                 block_flow
             );
         }
-        Ok(block_flow)
+        if block_flow == FlowType::AlwaysReturn {
+            Ok(FlowType::MayReturn)
+        } else {
+            Ok(block_flow)
+        }
     }
 }
 
