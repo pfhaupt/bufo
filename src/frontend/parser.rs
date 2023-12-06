@@ -590,6 +590,12 @@ impl Parsable for nodes::ClassNode {
 
         let class_name = parser.expect(TokenType::Identifier)?;
         let name = class_name.value;
+        if !name.as_bytes()[0].is_ascii_uppercase() {
+            return Err(format!(
+                "{}: {:?}: Class names are expected to be capitalized.",
+                ERR_STR, class_name.location
+            ));
+        }
         parser.current_class = name.clone();
 
         parser.expect(TokenType::OpenCurly)?;
