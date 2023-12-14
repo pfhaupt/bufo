@@ -1,0 +1,16 @@
+func foo(x: i32, y: i32) {
+    let c: i32 = 4 / 2;
+    let a: u64 = 12;
+}
+
+func a() {}
+func b() {}
+func c() {}
+func d() {}
+func e() {}
+func f() {}
+
+func main() {
+    let a: i32 = 0;
+    let b: i32 = 10;
+}

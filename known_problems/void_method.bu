@@ -1,0 +1,11 @@
+class Test {
+    feat new() {
+    }
+    func foo() {
+    }
+}
+
+func main() {
+    let t: Test = Test();
+    t.foo();
+}

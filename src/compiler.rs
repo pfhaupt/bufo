@@ -2,8 +2,12 @@ use std::time::Instant;
 
 use tracer::trace_call;
 
+#[cfg(not(feature = "llvm"))]
 use crate::backend::assembler::Assembler;
+#[cfg(not(feature = "llvm"))]
 use crate::backend::codegen::Codegen;
+#[cfg(feature = "llvm")]
+use crate::backend::codegen_llvm::LLVMCodegen;
 use crate::frontend::flags::Flags;
 use crate::frontend::parser::Parser;
 use crate::middleend::flow_checker::FlowChecker;
@@ -36,6 +40,7 @@ macro_rules! internal_error {
     };
 }
 
+#[cfg(not(feature = "llvm"))]
 pub struct Compiler {
     parser: Parser,
     type_checker: TypeChecker,
@@ -45,6 +50,16 @@ pub struct Compiler {
     flags: Flags,
 }
 
+#[cfg(feature = "llvm")]
+pub struct Compiler {
+    parser: Parser,
+    type_checker: TypeChecker,
+    flow_checker: FlowChecker,
+    codegen: LLVMCodegen,
+    flags: Flags,
+}
+
+#[cfg(not(feature = "llvm"))]
 impl Compiler {
     pub fn new(flags: Flags) -> Self {
         Self {
@@ -99,6 +114,59 @@ impl Compiler {
                 println!("[DEBUG] Running took {:?}", now.elapsed());
             }
         }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "llvm")]
+impl Compiler {
+    pub fn new(flags: Flags) -> Self {
+        Self {
+            parser: Parser::new(flags.clone()),
+            type_checker: TypeChecker::new(flags.clone()),
+            flow_checker: FlowChecker::new(flags.clone()),
+            codegen: LLVMCodegen::new(flags.clone()),
+            flags: flags.clone()
+        }
+    }
+
+    #[trace_call(always)]
+    pub fn run_everything(&mut self) -> Result<(), String> {
+        let now = Instant::now();
+        let mut parsed_ast = self.parser.parse_file()?;
+        if self.flags.debug {
+            println!("[DEBUG] Parsing took {:?}", now.elapsed());
+        }
+
+        let now = Instant::now();
+        self.type_checker.type_check_file(&mut parsed_ast)?;
+        if self.flags.debug {
+            println!("[DEBUG] Type Checking took {:?}", now.elapsed());
+        }
+
+        if self.flags.print_ast {
+            Printer::print(&parsed_ast);
+        }
+
+        let now = Instant::now();
+        self.flow_checker.check(&parsed_ast)?;
+        if self.flags.debug {
+            println!("[DEBUG] Flow Checking took {:?}", now.elapsed());
+        }
+
+        let now = Instant::now();
+        let ir = self.codegen.generate_code(&parsed_ast)?;
+        if self.flags.debug {
+            println!("[DEBUG] Codegen took {:?}", now.elapsed());
+        }
+
+        // if self.flags.run {
+        //     let now = Instant::now();
+        //     self.codegen.run(ir)?;
+        //     if self.flags.debug {
+        //         println!("[DEBUG] Running took {:?}", now.elapsed());
+        //     }
+        // }
         Ok(())
     }
 }
