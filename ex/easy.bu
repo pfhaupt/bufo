@@ -1,3 +1,16 @@
+class Test {
+    a: i32;
+    b: i32;
+    c: i32;
+
+    feat new() {
+    }
+
+    func get_a() -> i32 {
+        return this.a;
+    }
+}
+
 func foo(x: i32, y: i32) {
     let c: i32 = 4 / 2;
     let a: u64 = 12;
