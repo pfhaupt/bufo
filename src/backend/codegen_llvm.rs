@@ -13,6 +13,37 @@ use llvm::core::*;
 use tracer::trace_call;
 use crate::middleend::type_checker::Type;
 
+/*
+Macro to generate all necessary LLVM code for setting up a function:
+- Get correct return type
+- Codegen parameters
+- Generate function type
+- Create Function
+- Set Builder to insert instructions in the basic block of that function
+ */
+macro_rules! codegen_function_header {
+    ($codegen:ident, $function:ident, $name:ident) => {
+        // Prepare return type
+        let ret_type = $codegen.codegen_type(&$function.return_type.typ)?;
+
+        // Prepare parameters as C-style array
+        let param_count = $function.parameters.len() as u32;
+        let params = $function.parameters.iter().map(|param| {
+            $codegen.codegen_type(&param.typ.typ).expect("Parameter type is guaranteed to be valid!")
+        }).collect::<Vec<LLVMTypeRef>>().as_mut_ptr();
+
+        // Create function type
+        let func_type = LLVMFunctionType(ret_type, params, param_count, 0);
+
+        // Create function
+        let func = LLVMAddFunction($codegen.module, $name.as_ptr() as *const _, func_type);
+
+        // Create basic block and set it as the current one
+        let bb = LLVMAppendBasicBlockInContext($codegen.context, func, b"entry\0".as_ptr() as *const _);
+        LLVMPositionBuilderAtEnd($codegen.builder, bb);
+    }
+}
+
 struct ClassInfo {
     total_size: usize,
     field_offsets: HashMap<String, usize>,
@@ -168,54 +199,38 @@ impl LLVMCodegen {
         let final_name = format!("{}_{}", feature.class_name, feature.name);
         let name = Self::str_to_cstr(&final_name);
 
-        // Prepare return type
-        let ret_type = self.codegen_type(&feature.return_type.typ)?;
+        codegen_function_header!(self, feature, name);
+        // LLVM is now set up to codegen instructions for the body of the function
 
-        // Prepare parameters as C-style array
-        let param_count = feature.parameters.len() as u32;
-        let params = feature.parameters.iter().map(|param| {
-            self.codegen_type(&param.typ.typ).expect("Parameter type is guaranteed to be valid!")
-        }).collect::<Vec<LLVMTypeRef>>().as_mut_ptr();
+        if feature.is_constructor {
+            // LLVM does not malloc by size, but by Struct
+            // So we need to get the stored class definition
+            let class_struct = self.class_defs.get(&feature.class_name).unwrap();
 
-        // Create function type
-        let func_type = LLVMFunctionType(ret_type, params, param_count, 0);
+            // let this: Class = malloc(Class);
+            let this_alloc = LLVMBuildMalloc(
+                self.builder,
+                *class_struct,
+                b"this\0".as_ptr() as *const _
+            );
+            // memset(this, 0, sizeof(Class));
+            // Memset does not return a value
+            let _this_zero = LLVMBuildMemSet(
+                self.builder,
+                this_alloc,
+                LLVMConstInt(LLVMInt8TypeInContext(self.context), 0, 0),
+                LLVMSizeOf(*class_struct),
+                0
+            );
 
-        // Create function
-        let func = LLVMAddFunction(self.module, name.as_ptr() as *const _, func_type);
+            // Actual code we wrote
+            self.codegen_block(&feature.block)?;
 
-        // Create basic block and set it as the current one
-        let bb = LLVMAppendBasicBlockInContext(self.context, func, b"entry\0".as_ptr() as *const _);
-        LLVMPositionBuilderAtEnd(self.builder, bb);
-
-        debug_assert!(feature.is_constructor, "Only constructors are supported right now!");
-        self.codegen_constructor_block(feature)?;
-
-        Ok(())
-    }
-
-    #[trace_call(always)]
-    unsafe fn codegen_constructor_block(&mut self, feature: &nodes::FeatureNode) -> Result<(), String> {
-        debug_assert!(feature.is_constructor);
-        // let this: Class = malloc(sizeof(Class));
-        let class_struct = self.class_defs.get(&feature.class_name).unwrap();
-        let this_alloc = LLVMBuildMalloc(
-            self.builder,
-            *class_struct,
-            b"this\0".as_ptr() as *const _
-        );
-        // memset(this, 0, sizeof(Class));
-        // Memset does not return a value
-        let _this_zero = LLVMBuildMemSet(
-            self.builder,
-            this_alloc,
-            LLVMConstInt(LLVMInt8TypeInContext(self.context), 0, 0),
-            LLVMSizeOf(*class_struct),
-            0
-        );
-        self.codegen_block(&feature.block)?;
-
-        // return this;
-        LLVMBuildRet(self.builder, this_alloc);
+            // return this;
+            LLVMBuildRet(self.builder, this_alloc);
+        } else {
+            todo!("Handle non-constructor feature")
+        }
 
         Ok(())
     }
@@ -238,8 +253,9 @@ impl LLVMCodegen {
     #[trace_call(always)]
     unsafe fn codegen_type(&mut self, typ: &Type) -> Result<LLVMTypeRef, String> {
         match typ {
-            Type::None => Ok(LLVMPointerTypeInContext(self.context, 0)),
+            Type::None => Ok(LLVMVoidTypeInContext(self.context)),
             Type::I32 | Type::U32 => Ok(LLVMInt32TypeInContext(self.context)),
+            Type::Class(_) => Ok(LLVMPointerTypeInContext(self.context, 0)),
             e => todo!("Type codegen not implemented for {:?}", e)
         }
     }
