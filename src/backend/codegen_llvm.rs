@@ -187,9 +187,10 @@ impl LLVMCodegen {
         let bb = LLVMAppendBasicBlockInContext(self.context, func, b"entry\0".as_ptr() as *const _);
         LLVMPositionBuilderAtEnd(self.builder, bb);
 
+        debug_assert!(feature.is_constructor, "Only constructors are supported right now!");
         self.codegen_constructor_block(feature)?;
 
-        internal_error!("Feature codegen not implemented yet!")
+        Ok(())
     }
 
     #[trace_call(always)]
@@ -203,22 +204,41 @@ impl LLVMCodegen {
             b"this\0".as_ptr() as *const _
         );
         // memset(this, 0, sizeof(Class));
-        let this_zero = LLVMBuildMemSet(
+        // Memset does not return a value
+        let _this_zero = LLVMBuildMemSet(
             self.builder,
             this_alloc,
             LLVMConstInt(LLVMInt8TypeInContext(self.context), 0, 0),
             LLVMSizeOf(*class_struct),
             0
         );
-        LLVMDumpModule(self.module);
-        internal_error!("Constructor block codegen not implemented yet!")
+        self.codegen_block(&feature.block)?;
+
+        // return this;
+        LLVMBuildRet(self.builder, this_alloc);
+
+        Ok(())
     }
 
+    #[trace_call(always)]
+    unsafe fn codegen_block(&mut self, block: &nodes::BlockNode) -> Result<(), String> {
+        for stmt in &block.statements {
+            self.codegen_statement(stmt)?;
+        }
+        Ok(())
+    }
+
+    #[trace_call(always)]
+    unsafe fn codegen_statement(&mut self, stmt: &nodes::Statement) -> Result<(), String> {
+        match stmt {
+            s => todo!("{:?}", s)
+        }
+    }
 
     #[trace_call(always)]
     unsafe fn codegen_type(&mut self, typ: &Type) -> Result<LLVMTypeRef, String> {
         match typ {
-            Type::None => Ok(LLVMVoidTypeInContext(self.context)),
+            Type::None => Ok(LLVMPointerTypeInContext(self.context, 0)),
             Type::I32 | Type::U32 => Ok(LLVMInt32TypeInContext(self.context)),
             e => todo!("Type codegen not implemented for {:?}", e)
         }
