@@ -275,8 +275,30 @@ impl LLVMCodegen {
     #[trace_call(always)]
     unsafe fn codegen_statement(&mut self, stmt: &nodes::Statement) -> Result<(), String> {
         match stmt {
+            nodes::Statement::Return(ret) => self.codegen_return(ret),
             s => todo!("{:?}", s)
         }
+    }
+
+    #[trace_call(always)]
+    unsafe fn codegen_return(&mut self, ret: &nodes::ReturnNode) -> Result<(), String> {
+        if let Some(ret_val) = &ret.return_value {
+            let value = self.codegen_expression_node(ret_val)?;
+            LLVMBuildRet(self.builder, value);
+        } else {
+            LLVMBuildRetVoid(self.builder);
+        }
+        Ok(())
+    }
+
+    #[trace_call(always)]
+    unsafe fn codegen_expression_node(&mut self, expr: &nodes::ExpressionNode) -> Result<LLVMValueRef, String> {
+        self.codegen_expression(&expr.expression)
+    }
+
+    #[trace_call(always)]
+    unsafe fn codegen_expression(&mut self, expression: &nodes::Expression) -> Result<LLVMValueRef, String> {
+        internal_error!("Expression codegen not implemented yet!")
     }
 
     #[trace_call(always)]
