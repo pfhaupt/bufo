@@ -337,9 +337,23 @@ impl LLVMCodegen {
     #[trace_call(always)]
     unsafe fn codegen_statement(&mut self, stmt: &nodes::Statement) -> Result<(), String> {
         match stmt {
+            nodes::Statement::Assign(assign) => self.codegen_assign(assign),
             nodes::Statement::Return(ret) => self.codegen_return(ret),
             s => todo!("{:?}", s)
         }
+    }
+
+    #[trace_call(always)]
+    unsafe fn codegen_assign(&mut self, assign: &nodes::AssignNode) -> Result<(), String> {
+        self.field_mode = FieldMode::Set;
+        let var = self.codegen_identifier(&assign.name)?;
+
+        self.field_mode = FieldMode::Get;
+        let val = self.codegen_expression_node(&assign.expression)?;
+
+        self.field_mode = FieldMode::None;
+        LLVMBuildStore(self.builder, val, var);
+        Ok(())
     }
 
     #[trace_call(always)]
