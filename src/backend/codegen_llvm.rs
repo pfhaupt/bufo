@@ -287,8 +287,13 @@ impl LLVMCodegen {
             // Actual code we wrote
             self.codegen_block(&feature.block)?;
 
-            // return this;
-            LLVMBuildRet(self.builder, this_alloc);
+            if feature.return_type.typ == Type::None {
+                // return;
+                LLVMBuildRetVoid(self.builder);
+            } else {
+                // return this;
+                LLVMBuildRet(self.builder, this_alloc);
+            }
         } else {
             todo!("Handle non-constructor feature")
         }
@@ -306,6 +311,14 @@ impl LLVMCodegen {
 
         // Actual code we wrote
         self.codegen_block(&method.block)?;
+
+        if method.return_type.typ == Type::None {
+            // return;
+            LLVMBuildRetVoid(self.builder);
+        } else {
+            // Method is guaranteed to return a value
+            // in block codegen
+        }
 
         self.leave_scope();
         Ok(())
@@ -378,6 +391,7 @@ impl LLVMCodegen {
         let Type::Class(class_name) = class_type else {
             panic!("Field access codegen is only valid for classes!")
         };
+        let class_struct = self.class_defs.get(&class_name).unwrap();
         // FIXME: Implement NullPointer check
 
         match &(*field.expression) {
@@ -386,14 +400,14 @@ impl LLVMCodegen {
                 let field_offset = self.sm
                     .get_class_info(&class_name)
                     .get_field_offset(&name_node.name);
-                let field_type = self.codegen_type(&name_node.typ)?;
                 let field_ptr = LLVMBuildStructGEP2(
                     self.builder,
-                    field_type,
+                    class_struct.clone(),
                     base,
                     field_offset as u32,
                     name.as_ptr() as *const _
                 );
+                let field_type = self.codegen_type(&name_node.typ)?;
                 if self.field_mode == FieldMode::Get {
                     Ok(LLVMBuildLoad2(
                         self.builder,

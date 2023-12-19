@@ -594,6 +594,10 @@ impl Typecheckable for nodes::FeatureNode {
         checker.current_stack_size = 0;
         checker.current_function.clear();
         checker.known_variables.clear();
+
+        if self.is_constructor {
+            self.return_type.typ = Type::Class(self.class_name.clone());
+        }
         Ok(Type::None)
     }
     #[trace_call(always)]

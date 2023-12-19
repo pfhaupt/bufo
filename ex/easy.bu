@@ -6,6 +6,10 @@ class Test {
     feat new() {
     }
 
+    func set_a(a: i32) {
+        this.a = a;
+    }
+
     func get_a() -> i32 {
         return this.a;
     }
