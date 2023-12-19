@@ -365,8 +365,16 @@ impl LLVMCodegen {
         match expression {
             nodes::Expression::FieldAccess(field_access) => self.codegen_field_access_node(field_access),
             nodes::Expression::Identifier(ident) => self.codegen_identifier(ident),
+            nodes::Expression::Name(name) => self.codegen_name(name),
             e => todo!("{:?}", e)
         }
+    }
+
+    #[trace_call(always)]
+    unsafe fn codegen_name(&mut self, name: &nodes::NameNode) -> Result<LLVMValueRef, String> {
+        debug_assert!(self.known_variable(&name.name));
+        let var = self.get_variable(&name.name);
+        Ok(var)
     }
 
     #[trace_call(always)]
