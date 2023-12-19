@@ -44,6 +44,11 @@ impl Type {
             }
         }
     }
+
+    #[trace_call(extra)]
+    pub fn is_class(&self) -> bool {
+        matches!(self, Type::Class(..))
+    }
 }
 
 impl Display for Type {

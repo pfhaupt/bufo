@@ -1,6 +1,5 @@
 use std::ffi::CString;
 use std::collections::HashMap;
-use std::ptr;
 
 use crate::frontend::nodes;
 use crate::frontend::flags::Flags;
@@ -114,6 +113,13 @@ impl SizeManager {
     }
 }
 
+#[derive(PartialEq, Eq)]
+enum FieldMode {
+    None,
+    Get,
+    Set,
+}
+
 pub struct LLVMCodegen {
     context: LLVMContextRef,
     module: LLVMModuleRef,
@@ -121,6 +127,8 @@ pub struct LLVMCodegen {
 
     class_defs: HashMap<String, LLVMTypeRef>,
     stack_scopes: Vec<HashMap<String, LLVMValueRef>>,
+    field_stack: Vec<Type>,
+    field_mode: FieldMode,
 
     sm: SizeManager,
     flags: Flags,
@@ -139,6 +147,8 @@ impl LLVMCodegen {
 
                 class_defs: HashMap::new(),
                 stack_scopes: vec![],
+                field_stack: vec![],
+                field_mode: FieldMode::None,
 
                 sm: SizeManager::new(),
                 flags,
@@ -194,6 +204,26 @@ impl LLVMCodegen {
         self.stack_scopes.last_mut().unwrap().insert(name.to_owned(), value);
     }
 
+    #[trace_call(extra)]
+    fn known_variable(&self, name: &str) -> bool {
+        for scope in &self.stack_scopes {
+            if scope.contains_key(name) {
+                return true;
+            }
+        }
+        false
+    }
+
+    #[trace_call(extra)]
+    fn get_variable(&self, name: &str) -> LLVMValueRef {
+        for scope in self.stack_scopes.iter().rev() {
+            if let Some(value) = scope.get(name) {
+                return *value;
+            }
+        }
+        panic!("Variable `{}` is not known!", name);
+    }
+
     #[trace_call(always)]
     pub fn generate_code(&mut self, root: &nodes::FileNode) -> Result<(), String> {
         unsafe {
@@ -217,6 +247,10 @@ impl LLVMCodegen {
         for feature in &class.features {
             self.codegen_feature(feature)?;
         }
+        for method in &class.methods {
+            self.codegen_method(method)?;
+        }
+        LLVMDumpModule(self.module);
         internal_error!("Class codegen not implemented yet!")
     }
 
@@ -263,6 +297,21 @@ impl LLVMCodegen {
     }
 
     #[trace_call(always)]
+    unsafe fn codegen_method(&mut self, method: &nodes::MethodNode) -> Result<(), String> {
+        self.enter_scope();
+        let final_name = format!("{}_{}", method.class_name, method.name);
+        let name = Self::str_to_cstr(&final_name);
+
+        codegen_function_header!(self, method, name);
+
+        // Actual code we wrote
+        self.codegen_block(&method.block)?;
+
+        self.leave_scope();
+        Ok(())
+    }
+
+    #[trace_call(always)]
     unsafe fn codegen_block(&mut self, block: &nodes::BlockNode) -> Result<(), String> {
         self.enter_scope();
         for stmt in &block.statements {
@@ -283,7 +332,9 @@ impl LLVMCodegen {
     #[trace_call(always)]
     unsafe fn codegen_return(&mut self, ret: &nodes::ReturnNode) -> Result<(), String> {
         if let Some(ret_val) = &ret.return_value {
+            self.field_mode = FieldMode::Get;
             let value = self.codegen_expression_node(ret_val)?;
+            self.field_mode = FieldMode::None;
             LLVMBuildRet(self.builder, value);
         } else {
             LLVMBuildRetVoid(self.builder);
@@ -298,7 +349,64 @@ impl LLVMCodegen {
 
     #[trace_call(always)]
     unsafe fn codegen_expression(&mut self, expression: &nodes::Expression) -> Result<LLVMValueRef, String> {
-        internal_error!("Expression codegen not implemented yet!")
+        match expression {
+            nodes::Expression::FieldAccess(field_access) => self.codegen_field_access_node(field_access),
+            nodes::Expression::Identifier(ident) => self.codegen_identifier(ident),
+            e => todo!("{:?}", e)
+        }
+    }
+
+    #[trace_call(always)]
+    unsafe fn codegen_identifier(&mut self, ident: &nodes::IdentifierNode) -> Result<LLVMValueRef, String> {
+        self.codegen_expression(&(*ident.expression))
+    }
+
+    #[trace_call(always)]
+    unsafe fn codegen_field_access_node(&mut self, field_access: &nodes::FieldAccessNode) -> Result<LLVMValueRef, String> {
+        debug_assert!(field_access.typ.is_class());
+        debug_assert!(self.known_variable(&field_access.name));
+
+        let var = self.get_variable(&field_access.name);
+
+        self.field_stack.push(field_access.typ.clone());
+        self.codegen_field_access_rec(&field_access.field, var)
+    }
+
+    #[trace_call(always)]
+    unsafe fn codegen_field_access_rec(&mut self, field: &nodes::IdentifierNode, base: LLVMValueRef) -> Result<LLVMValueRef, String> {
+        let class_type = self.field_stack.pop().unwrap();
+        let Type::Class(class_name) = class_type else {
+            panic!("Field access codegen is only valid for classes!")
+        };
+        // FIXME: Implement NullPointer check
+
+        match &(*field.expression) {
+            nodes::Expression::Name(name_node) => {
+                let name = Self::str_to_cstr(&name_node.name);
+                let field_offset = self.sm
+                    .get_class_info(&class_name)
+                    .get_field_offset(&name_node.name);
+                let field_type = self.codegen_type(&name_node.typ)?;
+                let field_ptr = LLVMBuildStructGEP2(
+                    self.builder,
+                    field_type,
+                    base,
+                    field_offset as u32,
+                    name.as_ptr() as *const _
+                );
+                if self.field_mode == FieldMode::Get {
+                    Ok(LLVMBuildLoad2(
+                        self.builder,
+                        field_type,
+                        field_ptr,
+                        name.as_ptr() as *const _
+                    ))
+                } else {
+                    Ok(field_ptr)
+                }
+            }
+            e => todo!("{:?}", e)
+        }
     }
 
     #[trace_call(always)]
