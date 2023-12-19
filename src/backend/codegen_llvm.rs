@@ -38,6 +38,13 @@ macro_rules! codegen_function_header {
         // Create function
         let func = LLVMAddFunction($codegen.module, $name.as_ptr() as *const _, func_type);
 
+        for (i, param) in $function.parameters.iter().enumerate() {
+            let param_name = Self::str_to_cstr(&param.name);
+            let param_value = LLVMGetParam(func, i as u32);
+            LLVMSetValueName2(param_value, param_name.as_ptr() as *const _, param_name.as_bytes().len());
+            $codegen.add_variable(&param.name, param_value);
+        }
+
         // Create basic block and set it as the current one
         let bb = LLVMAppendBasicBlockInContext($codegen.context, func, b"entry\0".as_ptr() as *const _);
         LLVMPositionBuilderAtEnd($codegen.builder, bb);
@@ -113,6 +120,7 @@ pub struct LLVMCodegen {
     builder: LLVMBuilderRef,
 
     class_defs: HashMap<String, LLVMTypeRef>,
+    stack_scopes: Vec<HashMap<String, LLVMValueRef>>,
 
     sm: SizeManager,
     flags: Flags,
@@ -130,6 +138,7 @@ impl LLVMCodegen {
                 builder: LLVMCreateBuilderInContext(context),
 
                 class_defs: HashMap::new(),
+                stack_scopes: vec![],
 
                 sm: SizeManager::new(),
                 flags,
@@ -168,6 +177,23 @@ impl LLVMCodegen {
         Ok(())
     }
 
+    #[trace_call(extra)]
+    fn enter_scope(&mut self) {
+        self.stack_scopes.push(HashMap::new())
+    }
+
+    #[trace_call(extra)]
+    fn leave_scope(&mut self) {
+        debug_assert!(self.stack_scopes.len() > 0);
+        self.stack_scopes.pop();
+    }
+
+    #[trace_call(extra)]
+    fn add_variable(&mut self, name: &str, value: LLVMValueRef) {
+        debug_assert!(self.stack_scopes.len() > 0);
+        self.stack_scopes.last_mut().unwrap().insert(name.to_owned(), value);
+    }
+
     #[trace_call(always)]
     pub fn generate_code(&mut self, root: &nodes::FileNode) -> Result<(), String> {
         unsafe {
@@ -196,6 +222,7 @@ impl LLVMCodegen {
 
     #[trace_call(always)]
     unsafe fn codegen_feature(&mut self, feature: &nodes::FeatureNode) -> Result<(), String> {
+        self.enter_scope();
         let final_name = format!("{}_{}", feature.class_name, feature.name);
         let name = Self::str_to_cstr(&final_name);
 
@@ -231,15 +258,17 @@ impl LLVMCodegen {
         } else {
             todo!("Handle non-constructor feature")
         }
-
+        self.leave_scope();
         Ok(())
     }
 
     #[trace_call(always)]
     unsafe fn codegen_block(&mut self, block: &nodes::BlockNode) -> Result<(), String> {
+        self.enter_scope();
         for stmt in &block.statements {
             self.codegen_statement(stmt)?;
         }
+        self.leave_scope();
         Ok(())
     }
 
