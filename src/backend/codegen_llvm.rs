@@ -239,6 +239,9 @@ impl LLVMCodegen {
         for class in &root.classes {
             self.codegen_class(class)?;
         }
+        for function in &root.functions {
+            self.codegen_function(function)?;
+        }
         internal_error!("File codegen not implemented yet!")
     }
 
@@ -250,8 +253,7 @@ impl LLVMCodegen {
         for method in &class.methods {
             self.codegen_method(method)?;
         }
-        LLVMDumpModule(self.module);
-        internal_error!("Class codegen not implemented yet!")
+        Ok(())
     }
 
     #[trace_call(always)]
@@ -317,6 +319,28 @@ impl LLVMCodegen {
             LLVMBuildRetVoid(self.builder);
         } else {
             // Method is guaranteed to return a value
+            // in block codegen
+        }
+
+        self.leave_scope();
+        Ok(())
+    }
+
+    #[trace_call(always)]
+    unsafe fn codegen_function(&mut self, function: &nodes::FunctionNode) -> Result<(), String> {
+        self.enter_scope();
+        let name = Self::str_to_cstr(&function.name);
+
+        codegen_function_header!(self, function, name);
+
+        // Actual code we wrote
+        self.codegen_block(&function.block)?;
+
+        if function.return_type.typ == Type::None {
+            // return;
+            LLVMBuildRetVoid(self.builder);
+        } else {
+            // Function is guaranteed to return a value
             // in block codegen
         }
 
