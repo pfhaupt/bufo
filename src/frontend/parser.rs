@@ -186,7 +186,6 @@ pub struct Parser {
     filename: String,
     source: Vec<char>,
     lookahead: VecDeque<Token>,
-    current_class: String,
     current_char: usize,
     current_line: usize,
     line_start: usize,
@@ -441,13 +440,7 @@ impl Parser {
         Ok(())
     }
     // ---------- End of Lexer ----------
-    // ---------- Start of Parser ----------
-    #[trace_call(always)]
-    pub fn parse_file(&mut self) -> Result<nodes::FileNode, String> {
-        self.fill_lookup()?;
-        nodes::FileNode::parse(self)
-    }
-
+    // ---------- Start of Parser Utility ----------
     #[trace_call(always)]
     fn parse_type(&self, token: Token) -> Type {
         self.parse_type_str(token.location, token.value)
@@ -530,33 +523,38 @@ impl Parser {
             Ok(n)
         }
     }
-    // ---------- End of Parser ----------
-}
 
-pub trait Parsable {
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized;
-}
-
-impl Parsable for nodes::FileNode {
+    #[trace_call(extra)]
+    fn expect_lowercase_ident(&mut self) -> Result<Token, String> {
+        let token = self.expect(TokenType::Identifier)?;
+        if token.value.as_bytes()[0].is_ascii_uppercase() {
+            return Err(format!(
+                "{}: {:?}: Expected lowercase identifier, found {:?}",
+                ERR_STR, token.location, token.value
+            ));
+        }
+        Ok(token)
+    }
+    // ---------- End of Parser Utility ----------
+    // ---------- Start of Parser ----------
     #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String> {
-        let location = parser.current_location();
+    pub fn parse_file(&mut self) -> Result<nodes::FileNode, String> {
+        self.fill_lookup()?;
+        let location = self.current_location();
         let mut classes = vec![];
         let mut functions = vec![];
-        while !parser.parsed_eof() {
-            match parser.nth(0) {
+        while !self.parsed_eof() {
+            match self.nth(0) {
                 TokenType::ClassKeyword => {
-                    let parsed_class = nodes::ClassNode::parse(parser)?;
+                    let parsed_class = self.parse_class()?;
                     classes.push(parsed_class);
                 }
                 TokenType::FunctionKeyword => {
-                    let parsed_function = nodes::FunctionNode::parse(parser)?;
+                    let parsed_function = self.parse_function()?;
                     functions.push(parsed_function);
                 }
                 _ => {
-                    let tkn = parser.next()?;
+                    let tkn = self.next()?;
                     return Err(format!(
                         "{}: {:?}: Expected one of {{Function, Class}}, found {:?}",
                         ERR_STR, tkn.location, tkn.token_type
@@ -566,7 +564,7 @@ impl Parsable for nodes::FileNode {
         }
         Ok(nodes::FileNode {
             location,
-            filepath: parser
+            filepath: self
                 .filepath
                 .file_stem()
                 .unwrap()
@@ -577,18 +575,13 @@ impl Parsable for nodes::FileNode {
             classes,
         })
     }
-}
 
-impl Parsable for nodes::ClassNode {
     #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        parser.expect(TokenType::ClassKeyword)?;
+    fn parse_class(&mut self) -> Result<nodes::ClassNode, String> {
+        let location = self.current_location();
+        self.expect(TokenType::ClassKeyword)?;
 
-        let class_name = parser.expect(TokenType::Identifier)?;
+        let class_name = self.expect(TokenType::Identifier)?;
         let name = class_name.value;
         if !name.as_bytes()[0].is_ascii_uppercase() {
             return Err(format!(
@@ -596,39 +589,35 @@ impl Parsable for nodes::ClassNode {
                 ERR_STR, class_name.location
             ));
         }
-        parser.current_class = name.clone();
-
-        parser.expect(TokenType::OpenCurly)?;
-
+        self.expect(TokenType::OpenCurly)?;
         let mut fields = vec![];
         let mut methods = vec![];
         let mut features = vec![];
         let mut has_constructor = false;
-        while !parser.parsed_eof() && !parser.at(TokenType::ClosingCurly) {
-            match parser.nth(0) {
+        while !self.parsed_eof() && !self.at(TokenType::ClosingCurly) {
+            match self.nth(0) {
                 TokenType::Identifier => {
-                    let parsed_field = nodes::FieldNode::parse(parser)?;
+                    let parsed_field = self.parse_field()?;
                     fields.push(parsed_field);
                 }
                 TokenType::FeatureKeyword => {
-                    let parsed_feature = nodes::FeatureNode::parse(parser)?;
+                    let parsed_feature = self.parse_feature(&name)?;
                     has_constructor |= parsed_feature.is_constructor;
                     features.push(parsed_feature);
                 }
                 TokenType::FunctionKeyword => {
-                    let parsed_function = nodes::MethodNode::parse(parser)?;
+                    let parsed_function = self.parse_method(&name)?;
                     methods.push(parsed_function);
                 }
                 e => return Err(format!(
                     "{}: {:?}: Unexpected Token. Expected one of (Field, Feature, Method), found {:?}.",
                     ERR_STR,
-                    parser.current_location(),
+                    self.current_location(),
                     e
                 )),
             }
         }
-        parser.expect(TokenType::ClosingCurly)?;
-        parser.current_class.clear();
+        self.expect(TokenType::ClosingCurly)?;
         Ok(nodes::ClassNode {
             location,
             name,
@@ -638,76 +627,46 @@ impl Parsable for nodes::ClassNode {
             has_constructor,
         })
     }
-}
 
-impl Parsable for nodes::FieldNode {
     #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        let name_token = parser.expect(TokenType::Identifier)?;
+    fn parse_field(&mut self) -> Result<nodes::FieldNode, String> {
+        let location = self.current_location();
+        let name_token = self.expect(TokenType::Identifier)?;
         let name = name_token.value;
-
-        parser.expect(TokenType::Colon)?;
-        let type_def = nodes::TypeNode::parse(parser)?;
-        parser.expect(TokenType::Semi)?;
+        self.expect(TokenType::Colon)?;
+        let type_def = self.parse_type_node()?;
+        self.expect(TokenType::Semi)?;
         Ok(nodes::FieldNode {
             location,
             name,
             type_def,
         })
     }
-}
 
-impl Parsable for nodes::FeatureNode {
     #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        debug_assert!(!parser.current_class.is_empty());
-        let location = parser.current_location();
+    fn parse_feature(&mut self, class_name: &str) -> Result<nodes::FeatureNode, String> {
+        let location = self.current_location();
+        self.expect(TokenType::FeatureKeyword)?;
 
-        parser.expect(TokenType::FeatureKeyword)?;
-        let feature_name = parser.expect(TokenType::Identifier)?;
-        let name = feature_name.value;
-        if name.as_bytes()[0].is_ascii_uppercase() {
-            return Err(format!(
-                "{}: {:?}: Feature names are not allowed to be capitalized.",
-                ERR_STR, feature_name.location
-            ));
-        }
-
+        let name_token = self.expect_lowercase_ident()?;
+        let name = name_token.value;
         if !BUILT_IN_FEATURES.contains(&name.as_str()) {
             return Err(format!(
                 "{}: {:?}: Unknown feature `{}`.\n{}: This is a list of all features: {:?}",
-                ERR_STR, feature_name.location, name, NOTE_STR, BUILT_IN_FEATURES
+                ERR_STR, name_token.location, name, NOTE_STR, BUILT_IN_FEATURES
             ));
         }
 
-        let mut parameters = vec![];
-        parser.expect(TokenType::OpenRound)?;
-        while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
-            let parsed_param = nodes::ParameterNode::parse(parser)?;
-            parameters.push(parsed_param);
-            if !parser.eat(TokenType::Comma)? {
-                break;
-            }
-        }
-        parser.expect(TokenType::ClosingRound)?;
+        self.expect(TokenType::OpenRound)?;
+        let parameters = self.parse_parameters()?;
+        self.expect(TokenType::ClosingRound)?;
 
-        let return_type = if parser.eat(TokenType::Arrow)? {
-            nodes::TypeNode::parse(parser)?
-        } else {
-            nodes::TypeNode::none(parser.current_location())
-        };
+        let return_type = self.parse_return_type()?;
 
-        let block = nodes::BlockNode::parse(parser)?;
+        let block = self.parse_block()?;
         Ok(nodes::FeatureNode {
             is_constructor: name == *CONSTRUCTOR_NAME,
-            class_name: parser.current_class.clone(),
+            class_name: class_name.to_string(),
             location,
             name,
             return_type,
@@ -716,286 +675,187 @@ impl Parsable for nodes::FeatureNode {
             stack_size: 0,
         })
     }
-}
 
-impl Parsable for nodes::FunctionNode {
     #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
+    fn parse_function(&mut self) -> Result<nodes::FunctionNode, String> {
+        let location = self.current_location();
+        self.expect(TokenType::FunctionKeyword)?;
 
-        parser.expect(TokenType::FunctionKeyword)?;
-        let function_name = parser.expect(TokenType::Identifier)?;
-        let name = function_name.value;
-        if name.as_bytes()[0].is_ascii_uppercase() {
-            return Err(format!(
-                "{}: {:?}: Function names are not allowed to be capitalized.",
-                ERR_STR, function_name.location
-            ));
-        }
+        let name = self.expect_lowercase_ident()?;
 
-        let mut parameters = vec![];
-        parser.expect(TokenType::OpenRound)?;
-        while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
-            let parsed_param = nodes::ParameterNode::parse(parser)?;
-            parameters.push(parsed_param);
-            if !parser.eat(TokenType::Comma)? {
-                break;
-            }
-        }
-        parser.expect(TokenType::ClosingRound)?;
+        self.expect(TokenType::OpenRound)?;
+        let parameters = self.parse_parameters()?;
+        self.expect(TokenType::ClosingRound)?;
 
-        let return_type = if parser.eat(TokenType::Arrow)? {
-            nodes::TypeNode::parse(parser)?
-        } else {
-            nodes::TypeNode::none(parser.current_location())
-        };
-
-        let block = nodes::BlockNode::parse(parser)?;
+        let return_type = self.parse_return_type()?;
+        let block = self.parse_block()?;
         Ok(nodes::FunctionNode {
             location,
-            name,
+            name: name.value,
             return_type,
             parameters,
             block,
             stack_size: 0,
         })
     }
-}
 
-impl Parsable for nodes::MethodNode {
     #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        debug_assert!(!parser.current_class.is_empty());
-        let location = parser.current_location();
+    fn parse_method(&mut self, class_name: &str) -> Result<nodes::MethodNode, String> {
+        let location = self.current_location();
+        self.expect(TokenType::FunctionKeyword)?;
 
-        parser.expect(TokenType::FunctionKeyword)?;
-        let method_name = parser.expect(TokenType::Identifier)?;
-        let name = method_name.value;
-        if name.as_bytes()[0].is_ascii_uppercase() {
-            return Err(format!(
-                "{}: {:?}: Method names are not allowed to be capitalized.",
-                ERR_STR, method_name.location
-            ));
+        let name = self.expect_lowercase_ident()?;
+
+        self.expect(TokenType::OpenRound)?;
+        let parameters = self.parse_parameters()?;
+        self.expect(TokenType::ClosingRound)?;
+
+        let return_type = self.parse_return_type()?;
+        let block = self.parse_block()?;
+        Ok(nodes::MethodNode {
+            location,
+            class_name: class_name.to_string(),
+            name: name.value,
+            return_type,
+            parameters,
+            block,
+            stack_size: 0,
+        })
+    }
+
+    #[trace_call(always)]
+    fn parse_return_type(&mut self) -> Result<nodes::TypeNode, String> {
+        if self.eat(TokenType::Arrow)? {
+            self.parse_type_node()
+        } else {
+            Ok(nodes::TypeNode::none(self.current_location()))
         }
+    }
 
+    #[trace_call(always)]
+    fn parse_parameters(&mut self) -> Result<Vec<nodes::ParameterNode>, String> {
         let mut parameters = vec![];
-        parser.expect(TokenType::OpenRound)?;
-        while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
-            let parsed_param = nodes::ParameterNode::parse(parser)?;
-            parameters.push(parsed_param);
-            if !parser.eat(TokenType::Comma)? {
+        while !self.parsed_eof() && !self.at(TokenType::ClosingRound) {
+            let location = self.current_location();
+            let name_token = self.expect(TokenType::Identifier)?;
+            let name = name_token.value;
+            self.expect(TokenType::Colon)?;
+            let typ = self.parse_type_node()?;
+            let param = nodes::ParameterNode {
+                location,
+                name,
+                typ,
+            };
+            parameters.push(param);
+            if !self.eat(TokenType::Comma)? {
                 break;
             }
         }
-        parser.expect(TokenType::ClosingRound)?;
-
-        let return_type = if parser.eat(TokenType::Arrow)? {
-            nodes::TypeNode::parse(parser)?
-        } else {
-            nodes::TypeNode::none(parser.current_location())
-        };
-
-        let block = nodes::BlockNode::parse(parser)?;
-        Ok(nodes::MethodNode {
-            location,
-            class_name: parser.current_class.clone(),
-            name,
-            return_type,
-            parameters,
-            block,
-            stack_size: 0,
-        })
+        Ok(parameters)
     }
-}
 
-impl Parsable for nodes::ParameterNode {
     #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        let name_token = parser.expect(TokenType::Identifier)?;
-        let name = name_token.value;
-        parser.expect(TokenType::Colon)?;
-        let typ = nodes::TypeNode::parse(parser)?;
-        Ok(nodes::ParameterNode {
-            location,
-            name,
-            typ,
-        })
-    }
-}
-
-impl Parsable for nodes::BlockNode {
-    #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-
-        parser.expect(TokenType::OpenCurly)?;
+    fn parse_block(&mut self) -> Result<nodes::BlockNode, String> {
+        let location = self.current_location();
+        self.expect(TokenType::OpenCurly)?;
         let mut statements = vec![];
-        while !parser.parsed_eof() && !parser.at(TokenType::ClosingCurly) {
-            let parsed_statement = nodes::Statement::parse(parser)?;
+        while !self.parsed_eof() && !self.at(TokenType::ClosingCurly) {
+            let parsed_statement = self.parse_statement()?;
             statements.push(parsed_statement);
         }
-        parser.expect(TokenType::ClosingCurly)?;
+        self.expect(TokenType::ClosingCurly)?;
         Ok(nodes::BlockNode {
             location,
             statements,
         })
     }
-}
 
-impl Parsable for nodes::Statement {
     #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        Ok(match parser.nth(0) {
-            TokenType::LetKeyword => nodes::Statement::Let(nodes::LetNode::parse(parser)?),
-            TokenType::IfKeyword => nodes::Statement::If(nodes::IfNode::parse(parser)?),
-            TokenType::ReturnKeyword => nodes::Statement::Return(nodes::ReturnNode::parse(parser)?),
-            TokenType::WhileKeyword => nodes::Statement::While(nodes::WhileNode::parse(parser)?),
-            TokenType::BreakKeyword => nodes::Statement::Break(nodes::BreakNode::parse(parser)?),
-            TokenType::ContinueKeyword => nodes::Statement::Continue(nodes::ContinueNode::parse(parser)?),
-            TokenType::Identifier => match parser.nth(1) {
+    fn parse_statement(&mut self) -> Result<nodes::Statement, String> {
+        Ok(match self.nth(0) {
+            TokenType::LetKeyword => 
+                nodes::Statement::Let(self.parse_stmt_let()?),
+            TokenType::IfKeyword => 
+                nodes::Statement::If(self.parse_stmt_if()?),
+            TokenType::ReturnKeyword =>
+                nodes::Statement::Return(self.parse_stmt_return()?),
+            TokenType::WhileKeyword => 
+                nodes::Statement::While(self.parse_stmt_while()?),
+            TokenType::BreakKeyword =>
+                nodes::Statement::Break(self.parse_stmt_break()?),
+            TokenType::ContinueKeyword =>
+                nodes::Statement::Continue(self.parse_stmt_continue()?),
+            TokenType::Identifier => match self.nth(1) {
                 // FIXME: Simple void function calls are not handled correctly
                 //        Currently, they are parsed as assignments
-                TokenType::Dot | TokenType::Equal | TokenType::OpenSquare => {
-                    nodes::Statement::Assign(nodes::AssignNode::parse(parser)?)
-                }
+                TokenType::Dot | TokenType::Equal | TokenType::OpenSquare =>
+                    nodes::Statement::Assign(self.parse_assignment()?),
                 _ => {
-                    let expr = nodes::Statement::Expression(nodes::ExpressionNode::parse(parser)?);
-                    parser.expect(TokenType::Semi)?;
-                    expr
+                    let expr = self.parse_expression()?;
+                    self.expect(TokenType::Semi)?;
+                    nodes::Statement::Expression(expr)
                 }
-            },
-            _ => {
-                let expr = nodes::Statement::Expression(nodes::ExpressionNode::parse(parser)?);
-                parser.expect(TokenType::Semi)?;
-                expr
+            }
+            s => {
+                eprintln!("FIXME: Attempted to parse {:?} as statement", s);
+                eprintln!("       Proceeding to parse as expression!");
+                let expr = self.parse_expression()?;
+                self.expect(TokenType::Semi)?;
+                nodes::Statement::Expression(expr)
             }
         })
     }
-}
 
-impl Parsable for nodes::ExpressionNode {
     #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        let expression = nodes::Expression::parse(parser)?;
-        Ok(nodes::ExpressionNode {
-            location,
-            expression,
-        })
-    }
-}
-
-impl Parsable for nodes::LetNode {
-    #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        parser.expect(TokenType::LetKeyword)?;
-        let name_token = parser.expect(TokenType::Identifier)?;
+    fn parse_stmt_let(&mut self) -> Result<nodes::LetNode, String> {
+        let location = self.current_location();
+        self.expect(TokenType::LetKeyword)?;
+        let name_token = self.expect(TokenType::Identifier)?;
         let name = name_token.value;
 
-        parser.expect(TokenType::Colon)?;
-        let typ = nodes::TypeNode::parse(parser)?;
-        parser.expect(TokenType::Equal)?;
-        let expression = nodes::ExpressionNode::parse(parser)?;
-        parser.expect(TokenType::Semi)?;
-
-        Ok(nodes::LetNode {
+        self.expect(TokenType::Colon)?;
+        let typ = self.parse_type_node()?;
+        self.expect(TokenType::Equal)?;
+        let expression = self.parse_expression()?;
+        self.expect(TokenType::Semi)?;
+        Ok(nodes::LetNode{
             location,
             name,
             typ,
             expression,
         })
     }
-}
 
-impl Parsable for nodes::AssignNode {
     #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        let name = nodes::IdentifierNode::parse(parser)?;
-        parser.expect(TokenType::Equal)?;
-        let expression = nodes::ExpressionNode::parse(parser)?;
-        parser.expect(TokenType::Semi)?;
+    fn parse_assignment(&mut self) -> Result<nodes::AssignNode, String> {
+        let location = self.current_location();
+        let name = self.parse_expr_identifier()?;
+        self.expect(TokenType::Equal)?;
+        let expression = self.parse_expression()?;
+        self.expect(TokenType::Semi)?;
         Ok(nodes::AssignNode {
             location,
             name,
             expression,
         })
     }
-}
 
-impl Parsable for nodes::IdentifierNode {
     #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        let expression = match parser.nth(1) {
-            TokenType::OpenRound => {
-                nodes::Expression::FunctionCall(nodes::CallNode::parse(parser)?)
-            }
-            TokenType::OpenSquare => {
-                nodes::Expression::ArrayAccess(nodes::ArrayAccessNode::parse(parser)?)
-            }
-            TokenType::Dot => {
-                nodes::Expression::FieldAccess(nodes::FieldAccessNode::parse(parser)?)
-            }
-            _ => nodes::Expression::Name(nodes::NameNode::parse(parser)?),
-        };
-        Ok(nodes::IdentifierNode {
-            location,
-            expression: Box::new(expression),
-            typ: Type::Unknown,
-        })
-    }
-}
-
-impl Parsable for nodes::IfNode {
-    #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        parser.expect(TokenType::IfKeyword)?;
-        parser.expect(TokenType::OpenRound)?;
-        let nodes::Expression::Comparison(condition) = nodes::Expression::parse(parser)? else {
+    fn parse_stmt_if(&mut self) -> Result<nodes::IfNode, String> {
+        let location = self.current_location();
+        self.expect(TokenType::IfKeyword)?;
+        self.expect(TokenType::OpenRound)?;
+        let nodes::Expression::Comparison(condition) = self.parse_expression_enum()? else {
             return Err(format!(
                 "{}: {:?}: if-condition is expected to be a comparison.",
                 ERR_STR,
                 location
             ))
         };
-        parser.expect(TokenType::ClosingRound)?;
-        let if_branch = nodes::BlockNode::parse(parser)?;
-        let else_branch = if parser.eat(TokenType::ElseKeyword)? {
-            Some(nodes::BlockNode::parse(parser)?)
+        self.expect(TokenType::ClosingRound)?;
+        let if_branch = self.parse_block()?;
+        let else_branch = if self.eat(TokenType::ElseKeyword)? {
+            Some(self.parse_block()?)
         } else {
             None
         };
@@ -1006,202 +866,130 @@ impl Parsable for nodes::IfNode {
             else_branch,
         })
     }
-}
 
-impl Parsable for nodes::ReturnNode {
     #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        parser.expect(TokenType::ReturnKeyword)?;
-        let return_value = if !parser.at(TokenType::Semi) {
-            Some(nodes::ExpressionNode::parse(parser)?)
+    fn parse_stmt_return(&mut self) -> Result<nodes::ReturnNode, String> {
+        let location = self.current_location();
+        self.expect(TokenType::ReturnKeyword)?;
+
+        let return_value = if !self.at(TokenType::Semi) {
+            Some(self.parse_expression()?)
         } else {
             None
         };
-        parser.expect(TokenType::Semi)?;
+        self.expect(TokenType::Semi)?;
         Ok(nodes::ReturnNode {
             location,
             return_value,
-            typ: Type::Unknown,
+            typ: Type::Unknown
         })
     }
-}
 
-impl Parsable for nodes::WhileNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        parser.expect(TokenType::WhileKeyword)?;
-        parser.expect(TokenType::OpenRound)?;
-        let nodes::Expression::Comparison(condition) = nodes::Expression::parse(parser)? else {
+    #[trace_call(always)]
+    fn parse_stmt_while(&mut self) -> Result<nodes::WhileNode, String> {
+        let location = self.current_location();
+        self.expect(TokenType::WhileKeyword)?;
+
+        self.expect(TokenType::OpenRound)?;
+        let nodes::Expression::Comparison(condition) = self.parse_expression_enum()? else {
             return Err(format!(
                 "{}: {:?}: while-condition is expected to be a comparison.",
                 ERR_STR,
                 location
             ))
         };
-        parser.expect(TokenType::ClosingRound)?;
-        let block = nodes::BlockNode::parse(parser)?;
+        self.expect(TokenType::ClosingRound)?;
+
+        let block = self.parse_block()?;
         Ok(nodes::WhileNode {
             location,
             condition,
             block,
         })
     }
-}
 
-impl Parsable for nodes::BreakNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        parser.expect(TokenType::BreakKeyword)?;
-        parser.expect(TokenType::Semi)?;
+    #[trace_call(always)]
+    fn parse_stmt_break(&mut self) -> Result<nodes::BreakNode, String> {
+        let location = self.current_location();
+        self.expect(TokenType::BreakKeyword)?;
+        self.expect(TokenType::Semi)?;
         Ok(nodes::BreakNode { location })
     }
-}
 
-impl Parsable for nodes::ContinueNode {
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        parser.expect(TokenType::ContinueKeyword)?;
-        parser.expect(TokenType::Semi)?;
+    #[trace_call(always)]
+    fn parse_stmt_continue(&mut self) -> Result<nodes::ContinueNode, String> {
+        let location = self.current_location();
+        self.expect(TokenType::ContinueKeyword)?;
+        self.expect(TokenType::Semi)?;
         Ok(nodes::ContinueNode { location })
     }
-}
 
-impl Parsable for nodes::TypeNode {
     #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        let name_token = parser.expect(TokenType::Identifier)?;
-        let typ = parser.parse_type(name_token);
-        let typ = if parser.eat(TokenType::OpenSquare)? {
-            let mut dimensions = vec![];
-            while !parser.parsed_eof() && !parser.at(TokenType::ClosingSquare) {
-                let size = parser.expect(TokenType::IntLiteral)?;
-                let loc = size.location.clone();
-                let (value, typ) = parser.parse_type_literal(size)?;
-                if typ != Type::Unknown && typ != Type::Usize {
-                    return Err(format!(
-                        "{}: {:?}: Unexpected type for integer literal. Expected Usize, found `{}`.",
-                        ERR_STR,
-                        loc,
-                        typ
-                    ));
-                }
-                let value = match value.parse() {
-                    Ok(v) => v,
-                    Err(e) => {
-                        return Err(format!(
-                            "{}: {:?}: Error when parsing number as Usize: {e}",
-                            ERR_STR, loc
-                        ))
-                    }
-                };
-                dimensions.push(value);
-                if !parser.eat(TokenType::Comma)? {
-                    break;
-                }
-            }
-            if dimensions.is_empty() {
-                return Err(format!(
-                    "{}: {:?}: Expected size for array type, found ClosingSquare.",
-                    ERR_STR,
-                    parser.current_location()
-                ));
-            }
-            parser.expect(TokenType::ClosingSquare)?;
-            Type::Arr(Box::new(typ), dimensions)
-        } else {
-            typ
-        };
-        Ok(nodes::TypeNode { location, typ })
-    }
-}
-
-impl Parsable for nodes::ArgumentNode {
-    #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        let expression = nodes::ExpressionNode::parse(parser)?;
-        Ok(nodes::ArgumentNode {
+    fn parse_expression(&mut self) -> Result<nodes::ExpressionNode, String> {
+        let location = self.current_location();
+        // TODO: Deprecate ExpressionNode, we can store all important information in Expression-enum
+        let expression = self.parse_expression_enum()?;
+        Ok(nodes::ExpressionNode {
             location,
             expression,
-            typ: Type::Unknown,
         })
     }
-}
 
-impl Parsable for nodes::Expression {
     #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        Self::parse_rec(parser, TokenType::Eof)
+    fn parse_expression_enum(&mut self) -> Result<nodes::Expression, String> {
+        // TODO: Refactor expressions
+        //       Every expression always consists of two things:
+        //       - Mandatory primary expression
+        //       - Optional secondary expression, if we find an operator after primary
+        //       We could simplify many things by always storing expressions as binary nodes
+        //       instead of whatever we're doing right now
+        self.parse_expression_rec(TokenType::Eof)
     }
-}
 
-impl nodes::Expression {
     #[trace_call(always)]
-    fn parse_delim(parser: &mut Parser) -> Result<Self, String> {
-        Ok(match parser.nth(0) {
+    fn parse_expression_delim(&mut self) -> Result<nodes::Expression, String> {
+        Ok(match self.nth(0) {
             TokenType::IntLiteral => {
-                let expression = nodes::LiteralNode::parse(parser)?;
-                Self::Literal(expression)
+                let expression = self.parse_expr_int_literal()?;
+                nodes::Expression::Literal(expression)
             }
             TokenType::Identifier => {
-                let expression = nodes::IdentifierNode::parse(parser)?;
-                Self::Identifier(expression)
+                let expression = self.parse_expr_identifier()?;
+                nodes::Expression::Identifier(expression)
             }
             TokenType::OpenRound => {
-                parser.expect(TokenType::OpenRound)?;
-                let expression = Self::parse(parser)?;
-                parser.expect(TokenType::ClosingRound)?;
+                self.expect(TokenType::OpenRound)?;
+                let expression = self.parse_expression_enum()?;
+                self.expect(TokenType::ClosingRound)?;
                 expression
             }
             TokenType::OpenSquare => {
-                let expression = nodes::ArrayLiteralNode::parse(parser)?;
-                Self::ArrayLiteral(expression)
+                let expression = self.parse_expr_array_literal()?;
+                nodes::Expression::ArrayLiteral(expression)
             }
             TokenType::BuiltInFunction => {
-                let expression = nodes::BuiltInNode::parse(parser)?;
-                Self::BuiltIn(expression)
+                let expression = self.parse_expr_builtin()?;
+                nodes::Expression::BuiltIn(expression)
             }
             e => {
                 return Err(format!(
                     "{}: {:?}: Expected Expr, found {:?}",
                     ERR_STR,
-                    parser.current_location(),
+                    self.current_location(),
                     e
                 ));
             }
         })
     }
+
     #[trace_call(always)]
-    fn parse_rec(parser: &mut Parser, left: TokenType) -> Result<Self, String> {
-        let mut lhs = Self::parse_delim(parser)?;
+    fn parse_expression_rec(&mut self, left: TokenType) -> Result<nodes::Expression, String> {
+        let mut lhs = self.parse_expression_delim()?;
         loop {
-            let right = parser.nth(0);
-            if Self::right_binds_tighter(left, right) {
-                let token = parser.next()?;
-                let rhs = Self::parse_rec(parser, right)?;
+            let right = self.nth(0);
+            if self.right_binds_tighter(left, right) {
+                let token = self.next()?;
+                let rhs = self.parse_expression_rec(right)?;
                 let operation = Operation::from(token.value);
                 lhs = if COMPARISONS.contains(&operation) {
                     nodes::Expression::Comparison(nodes::ComparisonNode {
@@ -1228,7 +1016,7 @@ impl nodes::Expression {
     }
 
     #[trace_call(always)]
-    fn right_binds_tighter(left: TokenType, right: TokenType) -> bool {
+    fn right_binds_tighter(&self, left: TokenType, right: TokenType) -> bool {
         fn tightness(typ: TokenType) -> Option<usize> {
             [
                 &COMPARATOR_TYPES,
@@ -1247,87 +1035,54 @@ impl nodes::Expression {
         };
         right_tight > left_tight
     }
-}
 
-impl Parsable for nodes::BinaryNode {
     #[trace_call(always)]
-    fn parse(_parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        Err(format!(
-            "INTERNAL ERROR AT {}:{}:{}: Not implemented yet.",
-            file!(),
-            line!(),
-            column!()
-        ))
-    }
-}
-
-impl Parsable for nodes::BuiltInNode {
-    #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        let name_token = parser.expect(TokenType::BuiltInFunction)?;
-        let function_name = name_token.value;
-
-        let mut arguments = vec![];
-        parser.expect(TokenType::OpenRound)?;
-        while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
-            let arg = nodes::ArgumentNode::parse(parser)?;
-            arguments.push(arg);
-            if !parser.eat(TokenType::Comma)? {
-                break;
-            }
-        }
-        parser.expect(TokenType::ClosingRound)?;
-        Ok(nodes::BuiltInNode {
+    fn parse_expr_identifier(&mut self) -> Result<nodes::IdentifierNode, String> {
+        let location = self.current_location();
+        let expression = match self.nth(1) {
+            TokenType::OpenRound =>
+                nodes::Expression::FunctionCall(self.parse_expr_function_call()?),
+            TokenType::OpenSquare =>
+                nodes::Expression::ArrayAccess(self.parse_expr_array_access()?),
+            TokenType::Dot =>
+                nodes::Expression::FieldAccess(self.parse_expr_field_access()?),
+            _ =>
+                nodes::Expression::Name(self.parse_expr_name()?),
+        };
+        let expression = Box::new(expression);
+        Ok(nodes::IdentifierNode {
             location,
-            function_name,
-            arguments,
+            expression,
             typ: Type::Unknown,
         })
     }
-}
 
-impl Parsable for nodes::ArrayLiteralNode {
     #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
+    fn parse_expr_array_literal(&mut self) -> Result<nodes::ArrayLiteralNode, String> {
+        let location = self.current_location();
         let mut elements = vec![];
-        parser.expect(TokenType::OpenSquare)?;
-        while !parser.parsed_eof() && !parser.at(TokenType::ClosingSquare) {
-            let elem = nodes::Expression::parse(parser)?;
+        self.expect(TokenType::OpenSquare)?;
+        while !self.parsed_eof() && !self.at(TokenType::ClosingSquare) {
+            let elem = self.parse_expression_enum()?;
             elements.push(elem);
-            if !parser.eat(TokenType::Comma)? {
+            if !self.eat(TokenType::Comma)? {
                 break;
             }
         }
-        parser.expect(TokenType::ClosingSquare)?;
+        self.expect(TokenType::ClosingSquare)?;
         Ok(nodes::ArrayLiteralNode {
             location,
             elements,
             typ: Type::Unknown,
         })
     }
-}
 
-impl Parsable for nodes::ArrayAccessNode {
     #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        let array_name = parser.expect(TokenType::Identifier)?;
+    fn parse_expr_array_access(&mut self) -> Result<nodes::ArrayAccessNode, String> {
+        let location = self.current_location();
+        let array_name = self.expect(TokenType::Identifier)?;
         let array_name = array_name.value;
-        let indices = nodes::ArrayLiteralNode::parse(parser)?;
+        let indices = self.parse_expr_array_literal()?;
         Ok(nodes::ArrayAccessNode {
             location,
             array_name,
@@ -1335,45 +1090,58 @@ impl Parsable for nodes::ArrayAccessNode {
             typ: Type::Unknown,
         })
     }
-}
 
-impl Parsable for nodes::LiteralNode {
     #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        let number_token = parser.expect(TokenType::IntLiteral)?;
-        let (value, typ) = parser.parse_type_literal(number_token)?;
+    fn parse_expr_builtin(&mut self) -> Result<nodes::BuiltInNode, String> {
+        let location = self.current_location();
+        let name_token = self.expect(TokenType::BuiltInFunction)?;
+        let function_name = name_token.value;
+
+        self.expect(TokenType::OpenRound)?;
+        let arguments = self.parse_arguments()?;
+        self.expect(TokenType::ClosingRound)?;
+        Ok(nodes::BuiltInNode {
+            location,
+            function_name,
+            arguments,
+            typ: Type::Unknown,
+        })
+    }
+
+    #[trace_call(always)]
+    fn parse_expr_int_literal(&mut self) -> Result<nodes::LiteralNode, String> {
+        let location = self.current_location();
+        let number_token = self.expect(TokenType::IntLiteral)?;
+        let (value, typ) = self.parse_type_literal(number_token)?;
         Ok(nodes::LiteralNode {
             location,
             value,
             typ,
         })
     }
-}
 
-impl Parsable for nodes::CallNode {
     #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        let name_token = parser.expect(TokenType::Identifier)?;
+    fn parse_expr_name(&mut self) -> Result<nodes::NameNode, String> {
+        let location = self.current_location();
+        let name_token = self.expect(TokenType::Identifier)?;
+        let name = name_token.value;
+        Ok(nodes::NameNode {
+            location,
+            name,
+            typ: Type::Unknown
+        })
+    }
+
+    #[trace_call(always)]
+    fn parse_expr_function_call(&mut self) -> Result<nodes::CallNode, String> {
+        let location = self.current_location();
+        let name_token = self.expect(TokenType::Identifier)?;
         let function_name = name_token.value;
 
-        let mut arguments = vec![];
-        parser.expect(TokenType::OpenRound)?;
-        while !parser.parsed_eof() && !parser.at(TokenType::ClosingRound) {
-            let arg = nodes::ArgumentNode::parse(parser)?;
-            arguments.push(arg);
-            if !parser.eat(TokenType::Comma)? {
-                break;
-            }
-        }
-        parser.expect(TokenType::ClosingRound)?;
+        self.expect(TokenType::OpenRound)?;
+        let arguments = self.parse_arguments()?;
+        self.expect(TokenType::ClosingRound)?;
+
         Ok(nodes::CallNode {
             is_constructor: function_name.as_bytes()[0].is_ascii_uppercase(),
             function_name,
@@ -1382,19 +1150,14 @@ impl Parsable for nodes::CallNode {
             typ: Type::Unknown,
         })
     }
-}
 
-impl Parsable for nodes::FieldAccessNode {
     #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        let name_token = parser.expect(TokenType::Identifier)?;
+    fn parse_expr_field_access(&mut self) -> Result<nodes::FieldAccessNode, String> {
+        let location = self.current_location();
+        let name_token = self.expect(TokenType::Identifier)?;
         let name = name_token.value;
-        parser.expect(TokenType::Dot)?;
-        let field = nodes::IdentifierNode::parse(parser)?;
+        self.expect(TokenType::Dot)?;
+        let field = self.parse_expr_identifier()?;
         Ok(nodes::FieldAccessNode {
             location,
             name,
@@ -1402,22 +1165,77 @@ impl Parsable for nodes::FieldAccessNode {
             typ: Type::Unknown,
         })
     }
-}
 
-impl Parsable for nodes::NameNode {
     #[trace_call(always)]
-    fn parse(parser: &mut Parser) -> Result<Self, String>
-    where
-        Self: Sized,
-    {
-        let location = parser.current_location();
-        let name_token = parser.expect(TokenType::Identifier)?;
+    fn parse_arguments(&mut self) -> Result<Vec<nodes::ArgumentNode>, String> {
+        let mut arguments = Vec::new();
+        while !self.parsed_eof() && !self.at(TokenType::ClosingRound) {
+            let arg = self.parse_argument()?;
+            arguments.push(arg);
+            if !self.eat(TokenType::Comma)? {
+                break;
+            }
+        }
+        Ok(arguments)
+    }
 
-        let name = name_token.value;
-        Ok(nodes::NameNode {
+    #[trace_call(always)]
+    fn parse_argument(&mut self) -> Result<nodes::ArgumentNode, String> {
+        let location = self.current_location();
+        let expression = self.parse_expression()?;
+        Ok(nodes::ArgumentNode {
             location,
-            name,
+            expression,
             typ: Type::Unknown,
         })
+    }
+
+    #[trace_call(always)]
+    fn parse_type_node(&mut self) -> Result<nodes::TypeNode, String> {
+        let location = self.current_location();
+        let name_token = self.expect(TokenType::Identifier)?;
+        let typ = self.parse_type(name_token);
+        let typ = if self.eat(TokenType::OpenSquare)? {
+            let mut dimensions = vec![];
+            // FIXME: This loop is a bit ugly
+            while !self.parsed_eof() && !self.at(TokenType::ClosingSquare) {
+                let size = self.expect(TokenType::IntLiteral)?;
+                let location = size.location.clone();
+                let (value, typ) = self.parse_type_literal(size)?;
+                if typ != Type::Unknown && typ != Type::Usize {
+                    return Err(format!(
+                        "{}: {:?}: Unexpected type for integer literal. Expected Usize, found `{}`.",
+                        ERR_STR,
+                        location,
+                        typ
+                    ));
+                }
+                let value = match value.parse() {
+                    Ok(v) => v,
+                    Err(e) => {
+                        return Err(format!(
+                            "{}: {:?}: Error when parsing number as Usize: {e}",
+                            ERR_STR, location
+                        ))
+                    }
+                };
+                dimensions.push(value);
+                if !self.eat(TokenType::Comma)? {
+                    break;
+                }
+            }
+            if dimensions.is_empty() {
+                return Err(format!(
+                    "{}: {:?}: Expected size for array type, found ClosingSquare.",
+                    ERR_STR,
+                    self.current_location()
+                ));
+            }
+            self.expect(TokenType::ClosingSquare)?;
+            Type::Arr(Box::new(typ), dimensions)
+        } else {
+            typ
+        };
+        Ok(nodes::TypeNode { location, typ })
     }
 }
