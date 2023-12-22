@@ -8,10 +8,10 @@ edition = "2021"
 [dependencies]
 clap = {version = "4.4.10", features = ["derive"]}
 tracer = { path = "tracer" }
-llvm-sys-160 = { package = "llvm-sys", version = "160.0.0", features = ["prefer-static"] }
+llvm-sys-160 = { package = "llvm-sys", version = "160.0.0", features = ["prefer-static"], optional = true }
 
 [features]
 test_exec = []
 trace = []
 trace_extra = []
-llvm = []
+llvm = ["llvm-sys-160"]
