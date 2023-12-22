@@ -54,6 +54,9 @@ impl Assembler {
         if path.contains('/') {
             path = path.split('/').last().unwrap().to_string();
         }
+        if path.contains('\\') {
+            path = path.split('\\').last().unwrap().to_string();
+        }
         Self { path, ..self }
     }
 
