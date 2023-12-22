@@ -31,12 +31,27 @@ pub const BUILT_IN_FEATURES: [&str; 1] = [
 macro_rules! internal_error {
     ($msg:expr) => {
         Err(format!(
-            "INTERNAL ERROR AT {}:{}:{}: {}",
+            "INTERNAL ERROR AT {}:{}:{}: {}\n{}: This is a bug in the compiler, please report it in the issue tracker at the GitHub repository.",
             file!(),
             line!(),
             column!(),
-            $msg
+            $msg,
+            crate::compiler::ERR_STR
         ))
+    };
+}
+
+#[macro_export]
+macro_rules! internal_warning {
+    ($msg:expr) => {
+        eprintln!(
+            "INTERNAL WARNING AT {}:{}:{}: {}\n{}: This is a bug in the compiler, please report it in the issue tracker at the GitHub repository.",
+            file!(),
+            line!(),
+            column!(),
+            $msg,
+            crate::compiler::WARN_STR
+        )
     };
 }
 

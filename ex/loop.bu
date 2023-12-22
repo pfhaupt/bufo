@@ -2,6 +2,7 @@ func main() -> u64 {
     let a: u64 = 0;
     let c: u64 = 0;
     while (a < 100) {
+        break;
         return a;
         if (a == 10) {
             return a;
