@@ -45,12 +45,11 @@ macro_rules! internal_error {
 macro_rules! internal_warning {
     ($msg:expr) => {
         eprintln!(
-            "INTERNAL WARNING AT {}:{}:{}: {}\n{}: This is a bug in the compiler, please report it in the issue tracker at the GitHub repository.",
+            "INTERNAL WARNING AT {}:{}:{}: {}",
             file!(),
             line!(),
             column!(),
             $msg,
-            crate::compiler::WARN_STR
         )
     };
 }
@@ -106,7 +105,7 @@ impl Compiler {
         }
 
         let now = Instant::now();
-        self.flow_checker.check(&parsed_ast)?;
+        self.flow_checker.check_file(&parsed_ast)?;
         if self.flags.debug {
             println!("[DEBUG] Flow Checking took {:?}", now.elapsed());
         }

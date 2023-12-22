@@ -7,7 +7,7 @@ use crate::frontend::parser::Location;
 
 use crate::compiler::CONSTRUCTOR_NAME;
 use crate::compiler::{ERR_STR, NOTE_STR};
-use crate::{internal_error, internal_warning};
+use crate::internal_error;
 
 use tracer::trace_call;
 
@@ -878,7 +878,6 @@ impl TypeChecker {
 
     #[trace_call(always)]
     fn type_check_stmt_break(&mut self, _break_node: &mut nodes::BreakNode) -> Result<(), String> {
-        internal_warning!("TODO: Check if we're in a loop for break");
         Ok(())
     }
 
@@ -887,7 +886,6 @@ impl TypeChecker {
         &mut self,
         _continue_node: &mut nodes::ContinueNode,
     ) -> Result<(), String> {
-        internal_warning!("TODO: Check if we're in a loop for continue");
         Ok(())
     }
 

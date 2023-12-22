@@ -2,15 +2,15 @@ func main() -> u64 {
     let a: u64 = 0;
     let c: u64 = 0;
     while (a < 100) {
-        break;
-        return a;
         if (a == 10) {
+            break;
             return a;
         } else {
             while (a > 100) {
                 return a;
             }
         }
+        return a;
     }
     if (a == 0) {
         return a;
