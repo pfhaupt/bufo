@@ -1,12 +1,12 @@
 use std::collections::{HashMap, VecDeque};
 use std::fmt::{Display, Formatter};
 
-use crate::frontend::flags::Flags;
 use crate::frontend::nodes;
 use crate::frontend::parser::Location;
 
 use crate::compiler::CONSTRUCTOR_NAME;
 use crate::compiler::{ERR_STR, NOTE_STR};
+use crate::util::flags::Flags;
 use crate::internal_error;
 
 use tracer::trace_call;

@@ -1,6 +1,8 @@
 use clap::Parser;
 use std::fs;
 
+use crate::util::opt_flags::OptimizationFlags;
+
 pub const FILE_EXT: &str = ".bu";
 
 #[derive(Parser, Default, Debug, Clone)]
@@ -17,6 +19,15 @@ pub struct Flags {
     pub debug: bool,
     #[arg(short='A', long="ast", default_value = "false")]
     pub print_ast: bool,
+    #[arg(short='O', default_value = "0", value_parser = valid_opt)]
+    pub optimizations: OptimizationFlags,
+}
+
+fn valid_opt(opt: &str) -> Result<OptimizationFlags, String> {
+    if !["0", "1", "2", "3", "s"].contains(&opt) {
+        return Err(format!("Optimization level `{}` is not supported.", opt));
+    }
+    Ok(OptimizationFlags::from(opt))
 }
 
 fn valid_filepath(filepath: &str) -> Result<String, String> {

@@ -3,10 +3,10 @@ use std::num::ParseIntError;
 
 use super::instr;
 use crate::compiler::{ERR_STR, NOTE_STR};
-use crate::frontend::flags::Flags;
 use crate::frontend::nodes;
 use crate::frontend::parser::Operation;
 use crate::middleend::type_checker::Type;
+use crate::util::flags::Flags;
 
 use crate::internal_error;
 

@@ -8,11 +8,11 @@ use crate::backend::assembler::Assembler;
 use crate::backend::codegen::Codegen;
 #[cfg(feature = "llvm")]
 use crate::backend::codegen_llvm::LLVMCodegen;
-use crate::frontend::flags::Flags;
 use crate::frontend::parser::Parser;
 use crate::middleend::flow_checker::FlowChecker;
 use crate::middleend::type_checker::TypeChecker;
 use crate::util::printer::Printer;
+use crate::util::flags::Flags;
 
 pub const ERR_STR: &str = "\x1b[91merror\x1b[0m";
 pub const WARN_STR: &str = "\x1b[93mwarning\x1b[0m";

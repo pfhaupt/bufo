@@ -3,7 +3,8 @@ use tracer::trace_call;
 use crate::compiler::NOTE_STR;
 use crate::{
     compiler::{ERR_STR, WARN_STR},
-    frontend::{flags::Flags, nodes},
+    frontend::nodes,
+    util::flags::Flags,
     internal_error, internal_warning,
 };
 

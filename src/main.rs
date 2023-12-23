@@ -21,7 +21,7 @@ mod tests {
     macro_rules! init {
         ($path: expr, $debug: expr, $run: expr) => {
             {
-                let mut flags = crate::frontend::flags::Flags::default();
+                let mut flags = crate::util::flags::Flags::default();
                 flags.input = $path.to_string();
                 flags.debug = $debug;
                 flags.run = $run;
