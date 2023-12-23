@@ -180,16 +180,22 @@ impl FlowChecker {
             }
             match (if_flow, else_flow) {
                 (FlowType::AlwaysReturn, FlowType::AlwaysReturn) => Ok(FlowType::AlwaysReturn),
+                (FlowType::AlwaysContinue, FlowType::AlwaysContinue) => Ok(FlowType::AlwaysContinue),
+                (FlowType::Linear, FlowType::Linear) => Ok(FlowType::Linear),
+                (FlowType::AlwaysBreak, FlowType::AlwaysBreak) => Ok(FlowType::AlwaysBreak),
                 (FlowType::AlwaysReturn, _) => Ok(FlowType::MayReturn),
                 (_, FlowType::AlwaysReturn) => Ok(FlowType::MayReturn),
-                (FlowType::Linear, FlowType::Linear) => Ok(FlowType::Linear),
+                (FlowType::MayReturn, _) => Ok(FlowType::MayReturn),
+                (_, FlowType::MayReturn) => Ok(FlowType::MayReturn),
                 (i, e) => todo!("{i:?}, {e:?}"),
             }
         } else {
             match if_flow {
                 FlowType::AlwaysReturn | FlowType::MayReturn => Ok(FlowType::MayReturn),
+                FlowType::AlwaysContinue | FlowType::MayContinue => Ok(FlowType::MayContinue),
+                FlowType::AlwaysBreak | FlowType::MayBreak => Ok(FlowType::MayBreak),
                 FlowType::Linear => Ok(FlowType::Linear),
-                i => todo!("{i:?}"),
+                // i => todo!("{i:?}"),
             }
         }
     }

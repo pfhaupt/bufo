@@ -1,17 +1,14 @@
 func main() -> u64 {
     let a: u64 = 0;
+    return a;
     let c: u64 = 0;
     while (a < 100) {
-        if (a == 10) {
+        if (a == 15) {
             break;
-            return a;
-        } else {
-            while (a > 100) {
-                return a;
-            }
         }
-        return a;
+        a = a + 1;
     }
+    while (1 == 1) {}
     if (a == 0) {
         return a;
     } else {
