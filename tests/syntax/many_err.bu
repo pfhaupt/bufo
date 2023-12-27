@@ -1,0 +1,38 @@
+// Every error inside a class recovers until it finds a semi colon or a curly bracket with the same
+// bracket level as the error token
+class Test {
+    // 1. Missing type, consumes until the semi colon
+    fea:; // We resume parsing after this
+
+    // 2. This gets interpreted as field, not feature
+    // This consumes everything until the closing curly bracket
+    fea new() {
+    } // We resume parsing after this
+
+    // 3. Missing function name, consumes until it finds a matching curly bracket
+    func () {
+        // While recovering, we skip this error
+        if (1 ==) {
+
+        } 
+
+    } // We resume parsing after this
+
+    // Now we're finding the if-error
+    func foo() {
+        // 4. Missing expression for RHS, we consume until we find the matching curly bracket for the if statement
+        if (1 ==) {
+
+        } // We resume parsing after this
+    }
+
+    // 5. Missing everything, consumes until it finds a matching closing curly bracket or semi colon
+    // There is none, so we consume everything until EOF
+    fe
+}
+func main() {
+
+}
+
+// 6. Missing a curly bracket,
+// because we're still trying to parse a class

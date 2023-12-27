@@ -103,27 +103,28 @@ mod tests {
             };
         }
 
-        generate_failing_test!(missing_semicolon, "Expected Semi");
-        generate_failing_test!(unclosed_parens, "Expected ClosingCurly");
-        generate_failing_test!(mismatched_parens, "found OpenCurly");
-        generate_failing_test!(reserved_keyword_as_var_name, "found FunctionKeyword");
-        generate_failing_test!(reserved_keyword_as_expr, "found ClassKeyword");
-        generate_failing_test!(invalid_variable_name_start_with_digit, "Expected Identifier", "found IntLiteral");
+        generate_failing_test!(missing_semicolon, "Expected `;`");
+        generate_failing_test!(unclosed_parens, "Expected `}`");
+        generate_failing_test!(mismatched_parens, "found `{`");
+        generate_failing_test!(reserved_keyword_as_var_name, "found `func`");
+        generate_failing_test!(reserved_keyword_as_expr, "found `class`");
+        generate_failing_test!(invalid_variable_name_start_with_digit, "Expected Identifier", "found Integer Literal");
         generate_failing_test!(invalid_variable_name_contains_special, "Unexpected Symbol");
         generate_failing_test!(missing_arguments_in_func_call, "Not enough arguments");
         generate_failing_test!(extra_arguments_in_func_call, "Too many arguments");
-        generate_failing_test!(operator_without_operands, "Expected Expr");
-        generate_failing_test!(too_many_literals, "found IntLiteral");
-        generate_failing_test!(if_missing_body, "Expected OpenCurly");
-        generate_failing_test!(if_missing_condition, "Expected Expr");
-        generate_failing_test!(if_missing_brackets_condition, "Expected OpenRound", "found Identifier");
-        generate_failing_test!(while_missing_body, "Expected OpenCurly");
-        generate_failing_test!(while_missing_condition, "Expected Expr");
-        generate_failing_test!(while_missing_brackets_condition, "Expected OpenRound", "found Identifier");
+        generate_failing_test!(operator_without_operands, "Expected Expression");
+        generate_failing_test!(too_many_literals, "found Integer Literal");
+        generate_failing_test!(if_missing_body, "Expected `{`");
+        generate_failing_test!(if_missing_condition, "Expected Expression");
+        generate_failing_test!(if_missing_brackets_condition, "Expected `(`", "found Identifier");
+        generate_failing_test!(while_missing_body, "Expected `{`");
+        generate_failing_test!(while_missing_condition, "Expected Expression");
+        generate_failing_test!(while_missing_brackets_condition, "Expected `(`", "found Identifier");
         generate_failing_test!(unexpected_symbol, "Unexpected Symbol `#`");
-        generate_failing_test!(char_literal_more_than_one_chars, "Char Literal", "single char", "found 'hello'");
-        generate_failing_test!(brackets_in_expressions, "Expected ClosingRound");
-        generate_failing_test!(else_missing_if, "found ElseKeyword", "Expr");
+        generate_failing_test!(char_literal_more_than_one_chars, "Char Literal", "'hello'");
+        generate_failing_test!(brackets_in_expressions, "Expected `)`");
+        generate_failing_test!(else_missing_if, "found `else`", "Expression");
+        generate_failing_test!(many_err, "Expected Identifier, found `;`", "Expected `:`, found Identifier", "Expected Identifier, found `(`", "Expected Expression, found `)`", "Expected `:`, found `}`", "Expected `}`, found End of File");
     }
 
     mod semantic_tests {
@@ -176,7 +177,7 @@ mod tests {
         generate_failing_test!(class_field_redeclaration, "Field redeclaration", "Field", "already declared here");
         generate_failing_test!(class_no_such_field, "has no field", "Class declared here");
         generate_failing_test!(class_nested_field_wrong_type, "Type Mismatch", "Expected type", "found type");
-        generate_failing_test!(class_no_feat_new, "no constructor", "feature", CONSTRUCTOR_NAME, "in class");
+        generate_failing_test!(class_no_feat_new, "no constructor", "feature", CONSTRUCTOR_NAME, "Class `Test`");
         generate_failing_test!(incompatible_operands, "Binary Operation", "not defined", "class", "context");
         generate_failing_test!(if_no_comparison, "if-condition", "comparison");
         generate_failing_test!(while_no_comparison, "while-condition", "comparison");
