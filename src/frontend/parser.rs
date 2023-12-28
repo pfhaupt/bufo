@@ -882,6 +882,18 @@ impl Parser {
 
         try_parse!(self.expect(TokenType::OpenRound));
         try_parse!(parameters, self.parse_parameters());
+        // TODO: Don't forget to handle static methods later
+        // Add `this` parameter
+        let mut parameters = parameters;
+        if name != CONSTRUCTOR_NAME {
+            parameters.insert(
+                0,
+                nodes::ParameterNode::this(
+                    location.clone(),
+                    Type::Class(class_name.to_string()),
+                ),
+            );
+        }
         try_parse!(self.expect(TokenType::ClosingRound));
 
         try_parse!(return_type, self.parse_return_type());
@@ -948,6 +960,16 @@ impl Parser {
 
         try_parse!(self.expect(TokenType::OpenRound));
         try_parse!(parameters, self.parse_parameters());
+        // TODO: Don't forget to handle static methods later
+        // Add `this` parameter
+        let mut parameters = parameters;
+        parameters.insert(
+            0,
+            nodes::ParameterNode::this(
+                location.clone(),
+                Type::Class(class_name.to_string()),
+            ),
+        );
         try_parse!(self.expect(TokenType::ClosingRound));
 
         try_parse!(return_type, self.parse_return_type());

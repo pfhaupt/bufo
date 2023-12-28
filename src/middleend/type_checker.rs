@@ -385,7 +385,7 @@ impl Class {
     }
 
     #[trace_call(extra)]
-    fn add_method(&mut self, method: &mut nodes::MethodNode) -> Result<(), TypeError> {
+    fn add_method(&mut self, method: &nodes::MethodNode) -> Result<(), TypeError> {
         let name = &method.name;
         let location = &method.location;
         match self.known_methods.get(name) {
@@ -398,13 +398,6 @@ impl Class {
             None => {
                 let return_type = &method.return_type.typ;
                 let return_loc = &method.return_type.location;
-                method.parameters.insert(
-                    0,
-                    nodes::ParameterNode::this(
-                        method.location.clone(),
-                        Type::Class(method.class_name.clone()),
-                    ),
-                );
                 let parameters: Vec<_> = method
                     .parameters
                     .iter()
@@ -426,7 +419,7 @@ impl Class {
     }
 
     #[trace_call(extra)]
-    fn add_feature(&mut self, feature: &mut nodes::FeatureNode) -> Result<(), TypeError> {
+    fn add_feature(&mut self, feature: &nodes::FeatureNode) -> Result<(), TypeError> {
         let name = &feature.name;
         let location = &feature.location;
         match self.known_features.get(name) {
@@ -439,15 +432,6 @@ impl Class {
             None => {
                 let return_type = &feature.return_type.typ;
                 let return_loc = &feature.return_type.location;
-                if name != CONSTRUCTOR_NAME {
-                    feature.parameters.insert(
-                        0,
-                        nodes::ParameterNode::this(
-                            feature.location.clone(),
-                            Type::Class(feature.class_name.clone()),
-                        ),
-                    );
-                }
                 let parameters: Vec<_> = feature
                     .parameters
                     .iter()
