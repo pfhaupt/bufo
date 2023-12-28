@@ -1,0 +1,16 @@
+class Foo {
+    a: i32;
+    b: i32;
+    c: i32;
+    d: i32;
+    a: i32;
+    a: u32;
+    a: u32;
+
+    func foo() {}
+    func foo() {}
+    func foo() {}
+
+    feat new() {}
+    feat new() {}
+}
