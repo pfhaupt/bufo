@@ -960,7 +960,9 @@ impl TypeChecker {
                     location: let_node.location.clone(),
                     typ: let_node.typ.typ.clone(),
                 };
-                debug_assert!(current_scope.insert(let_node.name.clone(), var).is_none());
+                if current_scope.insert(let_node.name.clone(), var).is_some() {
+                    internal_panic!(format!("Variable `{}` already exists in current scope", let_node.name));
+                }
                 let expected_type = &let_node.typ.typ;
 
                 let expr_type = self.type_check_expression_node(&mut let_node.expression);
