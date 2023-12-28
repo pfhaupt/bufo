@@ -191,6 +191,7 @@ impl TypeNode {
     }
 }
 
+// FIXME: Deprecate this, use Expression instead
 #[derive(Debug, Clone)]
 pub struct ArgumentNode {
     pub location: Location,

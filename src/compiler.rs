@@ -8,11 +8,11 @@ use crate::backend::assembler::Assembler;
 use crate::backend::codegen::Codegen;
 #[cfg(feature = "llvm")]
 use crate::backend::codegen_llvm::LLVMCodegen;
-use crate::frontend::flags::Flags;
 use crate::frontend::parser::Parser;
 use crate::middleend::flow_checker::FlowChecker;
 use crate::middleend::type_checker::TypeChecker;
 use crate::util::printer::Printer;
+use crate::util::flags::Flags;
 
 pub const ERR_STR: &str = "\x1b[91merror\x1b[0m";
 pub const WARN_STR: &str = "\x1b[93mwarning\x1b[0m";
@@ -28,15 +28,43 @@ pub const BUILT_IN_FEATURES: [&str; 1] = [
 ];
 
 #[macro_export]
-macro_rules! internal_error {
+macro_rules! internal_panic {
     ($msg:expr) => {
-        Err(format!(
-            "INTERNAL ERROR AT {}:{}:{}: {}",
+        panic!(
+            "INTERNAL PANIC AT {}:{}:{}: {}\n{}: This is a bug in the compiler, please report it in the issue tracker at the GitHub repository.",
             file!(),
             line!(),
             column!(),
-            $msg
+            $msg,
+            crate::compiler::ERR_STR
+        )
+    };
+}
+
+#[macro_export]
+macro_rules! internal_error {
+    ($msg:expr) => {
+        Err(format!(
+            "INTERNAL ERROR AT {}:{}:{}: {}\n{}: This is a bug in the compiler, please report it in the issue tracker at the GitHub repository.",
+            file!(),
+            line!(),
+            column!(),
+            $msg,
+            crate::compiler::ERR_STR
         ))
+    };
+}
+
+#[macro_export]
+macro_rules! internal_warning {
+    ($msg:expr) => {
+        eprintln!(
+            "INTERNAL WARNING AT {}:{}:{}: {}",
+            file!(),
+            line!(),
+            column!(),
+            $msg,
+        )
     };
 }
 
@@ -91,7 +119,7 @@ impl Compiler {
         }
 
         let now = Instant::now();
-        self.flow_checker.check(&parsed_ast)?;
+        self.flow_checker.check_file(&parsed_ast)?;
         if self.flags.debug {
             println!("[DEBUG] Flow Checking took {:?}", now.elapsed());
         }

@@ -9,7 +9,7 @@ use super::instr::{OperandType, IR};
 use super::instr::{RegMode, Register};
 
 use crate::compiler::{ERR_STR, FILE_EXT, OUTPUT_FOLDER};
-use crate::frontend::flags::Flags;
+use crate::util::flags::Flags;
 use crate::internal_error;
 
 use tracer::trace_call;
@@ -53,6 +53,9 @@ impl Assembler {
         let mut path = path.to_owned();
         if path.contains('/') {
             path = path.split('/').last().unwrap().to_string();
+        }
+        if path.contains('\\') {
+            path = path.split('\\').last().unwrap().to_string();
         }
         Self { path, ..self }
     }

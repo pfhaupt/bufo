@@ -3,10 +3,10 @@ use std::num::ParseIntError;
 
 use super::instr;
 use crate::compiler::{ERR_STR, NOTE_STR};
-use crate::frontend::flags::Flags;
 use crate::frontend::nodes;
 use crate::frontend::parser::Operation;
 use crate::middleend::type_checker::Type;
+use crate::util::flags::Flags;
 
 use crate::internal_error;
 
@@ -162,7 +162,7 @@ impl SizeManager {
         field_name: &String,
         typ: &Type,
     ) -> Result<(), String> {
-        let size = typ.size()?;
+        let size = typ.size();
         let Some(class) = self.class_sizes.get_mut(class_name) else {
             // Two Options: Forgot to add class to Manager, or Type Checker f*ed up.
             unreachable!();
@@ -395,7 +395,7 @@ impl Codegen {
 
     #[trace_call(extra)]
     fn store_variable_in_stack(&mut self, name: &str, typ: &Type) -> Result<(), String> {
-        let offset = self.update_stack_offset(typ.size()?);
+        let offset = self.update_stack_offset(typ.size());
         self.add_variable_offset(name, offset);
         let reg = self.get_register()?;
         self.add_ir(instr::IR::Store {
@@ -571,7 +571,7 @@ impl Codegenable for nodes::LetNode {
             rhs = reg;
         }
 
-        let offset = codegen.update_stack_offset(self.typ.typ.size()?);
+        let offset = codegen.update_stack_offset(self.typ.typ.size());
         codegen.add_variable_offset(&self.name, offset);
 
         codegen.add_ir(instr::IR::Store {
@@ -1009,7 +1009,7 @@ impl nodes::FieldAccessNode {
         match &(*field.expression) {
             nodes::Expression::FieldAccess(field_access) => {
                 let offset = codegen.get_field_offset(&class_name, &field_access.name);
-                let imm = if self.typ.size()? == 4 {
+                let imm = if self.typ.size() == 4 {
                     instr::Operand::imm_u32(offset as u32)
                 } else {
                     instr::Operand::imm_u64(offset as u64)
@@ -1033,7 +1033,7 @@ impl nodes::FieldAccessNode {
             }
             nodes::Expression::Name(name_node) => {
                 let offset = codegen.get_field_offset(&class_name, &name_node.name);
-                let imm = if name_node.typ.size()? == 4 {
+                let imm = if name_node.typ.size() == 4 {
                     instr::Operand::imm_u32(offset as u32)
                 } else {
                     instr::Operand::imm_u64(offset as u64)

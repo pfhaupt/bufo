@@ -1,15 +1,16 @@
 use tracer::trace_call;
 
+use crate::compiler::NOTE_STR;
 use crate::{
     compiler::{ERR_STR, WARN_STR},
-    frontend::{flags::Flags, nodes},
-    internal_error,
+    frontend::nodes,
+    util::flags::Flags,
+    internal_error, internal_warning,
 };
-use crate::compiler::NOTE_STR;
 
 use super::type_checker::Type;
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 #[allow(unused)]
 enum FlowType {
     Linear,
@@ -18,125 +19,114 @@ enum FlowType {
     MayBreak,
     AlwaysBreak,
     MayContinue,
-    AlwaysContinue,
+    AlwaysContinue
 }
 
 pub struct FlowChecker {
+    loop_stack: Vec<()>,
     #[allow(unused)]
     flags: Flags,
 }
 
 impl FlowChecker {
     pub fn new(flags: Flags) -> FlowChecker {
-        FlowChecker { flags }
+        FlowChecker {
+            loop_stack: Vec::new(),
+            flags,
+        }
     }
 
-    pub fn check(&self, ast: &nodes::FileNode) -> Result<(), String> {
-        let flow = ast.check(self)?;
-        debug_assert!(flow == FlowType::Linear);
+    #[trace_call(always)]
+    pub fn check_file(&mut self, file: &nodes::FileNode) -> Result<(), String> {
+        for class in &file.classes {
+            self.check_class(class)?;
+        }
+        for function in &file.functions {
+            self.check_function(function)?;
+        }
         Ok(())
     }
-}
 
-trait Flowable {
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String>;
-}
+    #[trace_call(always)]
+    fn check_class(&mut self, class: &nodes::ClassNode) -> Result<(), String> {
+        for feature in &class.features {
+            self.check_feature(feature)?;
+        }
+        for method in &class.methods {
+            self.check_method(method)?;
+        }
+        Ok(())
+    }
 
-impl Flowable for nodes::FileNode {
     #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
-        for class in &self.classes {
-            class.check(checker)?;
-        }
-        for function in &self.functions {
-            function.check(checker)?;
-        }
-        Ok(FlowType::Linear)
-    }
-}
-impl Flowable for nodes::ClassNode {
-    #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
-        for feature in &self.features {
-            feature.check(checker)?;
-        }
-        for method in &self.methods {
-            method.check(checker)?;
-        }
-        Ok(FlowType::Linear)
-    }
-}
-impl Flowable for nodes::FeatureNode {
-    #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
-        let flow = self.block.check(checker)?;
-        if self.is_constructor {
+    fn check_feature(&mut self, feature: &nodes::FeatureNode) -> Result<(), String> {
+        let flow = self.check_block(&feature.block, &[FlowType::AlwaysReturn])?;
+        if feature.is_constructor {
             // Constructors never return a value
             // It's all implicit at the end of the block
             if flow != FlowType::Linear {
                 Err(format!(
                     "{}: {:?}: Return values are not allowed in constructors.\n{}: Returning `this` is implicit in constructors.",
-                    ERR_STR, self.location, NOTE_STR
+                    ERR_STR, feature.location, NOTE_STR
                 ))
             } else {
-                Ok(FlowType::Linear)
+                // Implicit return statement.
+                Ok(())
             }
         } else {
             internal_error!("There's only one feature now, and it's a constructor")
         }
     }
-}
-impl Flowable for nodes::MethodNode {
+
     #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
-        let flow = self.block.check(checker)?;
+    fn check_method(&mut self, method: &nodes::MethodNode) -> Result<(), String> {
+        let flow = self.check_block(&method.block, &[FlowType::AlwaysReturn])?;
         if flow != FlowType::AlwaysReturn {
-            if self.return_type.typ != Type::None {
+            if method.return_type.typ != Type::None {
                 Err(format!(
                     "{}: {:?}: Method `{}` does not always return a value",
-                    ERR_STR, self.location, self.name
+                    ERR_STR, method.location, method.name
                 ))
             } else {
                 // Implicit return statement.
-                Ok(FlowType::AlwaysReturn)
+                Ok(())
             }
         } else {
-            Ok(flow)
+            Ok(())
         }
     }
-}
-impl Flowable for nodes::FunctionNode {
+
     #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
-        let flow = self.block.check(checker)?;
+    fn check_function(&mut self, function: &nodes::FunctionNode) -> Result<(), String> {
+        let flow = self.check_block(&function.block, &[FlowType::AlwaysReturn])?;
         if flow != FlowType::AlwaysReturn {
-            if self.return_type.typ != Type::None {
+            if function.return_type.typ != Type::None {
                 Err(format!(
                     "{}: {:?}: Function `{}` does not always return a value",
-                    ERR_STR, self.location, self.name
+                    ERR_STR, function.location, function.name
                 ))
             } else {
                 // Implicit return statement.
-                Ok(FlowType::AlwaysReturn)
+                Ok(())
             }
         } else {
-            Ok(flow)
+            Ok(())
         }
     }
-}
-impl Flowable for nodes::BlockNode {
+
     #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
+    fn check_block(&mut self, block: &nodes::BlockNode, early_exit: &[FlowType]) -> Result<FlowType, String> {
+        // println!("{:?}: check_block: {:?}", block.location, early_exit);
         let mut flow = FlowType::Linear;
-        for index in 0..self.statements.len() {
-            let statement = &self.statements[index];
-            flow = statement.check(checker)?;
-            if flow == FlowType::AlwaysReturn {
-                if index != self.statements.len() - 1 {
+        for index in 0..block.statements.len() {
+            let statement = &block.statements[index];
+            flow = self.check_statement(statement, early_exit)?;
+            if early_exit.contains(&flow) {
+                if index != block.statements.len() - 1 {
                     println!(
                         "{}: {:?}: Unreachable code",
                         WARN_STR,
-                        self.statements[index + 1].get_loc()
+                        block.statements[index + 1].get_loc()
                     );
                 }
                 break;
@@ -144,49 +134,45 @@ impl Flowable for nodes::BlockNode {
         }
         Ok(flow)
     }
-}
-impl Flowable for nodes::Statement {
+
     #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
-        match self {
-            Self::Expression(expression_node) => expression_node.check(checker),
-            Self::Let(let_node) => let_node.check(checker),
-            Self::Assign(assign_node) => assign_node.check(checker),
-            Self::If(if_node) => if_node.check(checker),
-            Self::Return(return_node) => return_node.check(checker),
-            Self::While(while_node) => while_node.check(checker),
-            Self::Break(break_node) => break_node.check(checker),
-            Self::Continue(continue_node) => continue_node.check(checker),
+    fn check_statement(&mut self, statement: &nodes::Statement, early_exit: &[FlowType]) -> Result<FlowType, String> {
+        match statement {
+            nodes::Statement::Expression(_expr_node) => {
+                internal_warning!(
+                    "We're not checking expressions for control flow yet, assuming linear flow"
+                );
+                Ok(FlowType::Linear)
+            }
+            nodes::Statement::Let(let_node) => self.check_stmt_let(let_node),
+            nodes::Statement::Assign(assign_node) => self.check_stmt_assign(assign_node),
+            nodes::Statement::If(if_node) => self.check_stmt_if(if_node, early_exit),
+            nodes::Statement::Return(return_node) => self.check_stmt_return(return_node),
+            nodes::Statement::While(while_node) => self.check_stmt_while(while_node),
+            nodes::Statement::Break(break_node) => self.check_stmt_break(break_node),
+            nodes::Statement::Continue(continue_node) => self.check_stmt_continue(continue_node),
         }
     }
-}
 
-impl Flowable for nodes::LetNode {
     #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
-        self.expression.check(checker)
-    }
-}
-
-impl Flowable for nodes::AssignNode {
-    #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
-        self.name.check(checker)?;
-        self.expression.check(checker)?;
+    fn check_stmt_let(&mut self, _let_node: &nodes::LetNode) -> Result<FlowType, String> {
         Ok(FlowType::Linear)
     }
-}
 
-impl Flowable for nodes::IfNode {
     #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
-        let cond_flow = self.condition.check(checker)?;
+    fn check_stmt_assign(&mut self, _assign_node: &nodes::AssignNode) -> Result<FlowType, String> {
+        Ok(FlowType::Linear)
+    }
+
+    #[trace_call(always)]
+    fn check_stmt_if(&mut self, if_node: &nodes::IfNode, early_exit: &[FlowType]) -> Result<FlowType, String> {
+        // let cond_flow = self.check_expression_node(&if_node.condition)?;
+        // debug_assert!(cond_flow == FlowType::Linear);
         // Later on we might want to check if the condition always exits
-        debug_assert!(cond_flow == FlowType::Linear);
-        let if_flow = self.if_branch.check(checker)?;
-        if let Some(else_branch) = &self.else_branch {
-            let else_flow = else_branch.check(checker)?;
-            if checker.flags.debug {
+        let if_flow = self.check_block(&if_node.if_branch, early_exit)?;
+        if let Some(else_branch) = &if_node.else_branch {
+            let else_flow = self.check_block(else_branch, early_exit)?;
+            if self.flags.debug {
                 println!(
                     "[DEBUG] IfNode::check: if_flow: {:?}, else_flow: {:?}",
                     if_flow, else_flow
@@ -194,40 +180,44 @@ impl Flowable for nodes::IfNode {
             }
             match (if_flow, else_flow) {
                 (FlowType::AlwaysReturn, FlowType::AlwaysReturn) => Ok(FlowType::AlwaysReturn),
+                (FlowType::AlwaysContinue, FlowType::AlwaysContinue) => Ok(FlowType::AlwaysContinue),
+                (FlowType::Linear, FlowType::Linear) => Ok(FlowType::Linear),
+                (FlowType::AlwaysBreak, FlowType::AlwaysBreak) => Ok(FlowType::AlwaysBreak),
                 (FlowType::AlwaysReturn, _) => Ok(FlowType::MayReturn),
                 (_, FlowType::AlwaysReturn) => Ok(FlowType::MayReturn),
-                (FlowType::Linear, FlowType::Linear) => Ok(FlowType::Linear),
+                (FlowType::MayReturn, _) => Ok(FlowType::MayReturn),
+                (_, FlowType::MayReturn) => Ok(FlowType::MayReturn),
                 (i, e) => todo!("{i:?}, {e:?}"),
             }
         } else {
             match if_flow {
                 FlowType::AlwaysReturn | FlowType::MayReturn => Ok(FlowType::MayReturn),
+                FlowType::AlwaysContinue | FlowType::MayContinue => Ok(FlowType::MayContinue),
+                FlowType::AlwaysBreak | FlowType::MayBreak => Ok(FlowType::MayBreak),
                 FlowType::Linear => Ok(FlowType::Linear),
-                i => todo!("{i:?}"),
+                // i => todo!("{i:?}"),
             }
         }
     }
-}
 
-impl Flowable for nodes::ReturnNode {
     #[trace_call(always)]
-    fn check(&self, _checker: &FlowChecker) -> Result<FlowType, String> {
-        // FIXME: Value might cause an exit
+    fn check_stmt_return(&mut self, _return_node: &nodes::ReturnNode) -> Result<FlowType, String> {
         Ok(FlowType::AlwaysReturn)
     }
-}
-impl Flowable for nodes::WhileNode {
+
     #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
-        let cond_flow = self.condition.check(checker)?;
+    fn check_stmt_while(&mut self, while_node: &nodes::WhileNode) -> Result<FlowType, String> {
+        // let cond_flow = self.check_expression_node(&while_node.condition)?;
+        // debug_assert!(cond_flow == FlowType::Linear);
         // Later on we might want to check if the condition always exits
-        debug_assert!(cond_flow == FlowType::Linear);
-        let block_flow = self.block.check(checker)?;
-        if checker.flags.debug {
-            println!(
-                "[DEBUG] WhileNode::check: block_flow: {:?}",
-                block_flow
-            );
+        self.loop_stack.push(());
+        let block_flow = self.check_block(
+            &while_node.block,
+            &[FlowType::AlwaysReturn, FlowType::AlwaysBreak, FlowType::AlwaysContinue]
+        )?;
+        self.loop_stack.pop();
+        if self.flags.debug {
+            println!("[DEBUG] WhileNode::check: block_flow: {:?}", block_flow);
         }
         if block_flow == FlowType::AlwaysReturn {
             Ok(FlowType::MayReturn)
@@ -235,141 +225,31 @@ impl Flowable for nodes::WhileNode {
             Ok(block_flow)
         }
     }
-}
 
-impl Flowable for nodes::BreakNode {
     #[trace_call(always)]
-    fn check(&self, _checker: &FlowChecker) -> Result<FlowType, String> {
-        Ok(FlowType::AlwaysBreak)
-    }
-}
-
-impl Flowable for nodes::ContinueNode {
-    #[trace_call(always)]
-    fn check(&self, _checker: &FlowChecker) -> Result<FlowType, String> {
-        Ok(FlowType::AlwaysContinue)
-    }
-}
-
-impl Flowable for nodes::Expression {
-    #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
-        match self {
-            Self::Name(name_node) => name_node.check(checker),
-            Self::Identifier(identifier_node) => identifier_node.check(checker),
-            Self::ArrayLiteral(array_literal_node) => array_literal_node.check(checker),
-            Self::ArrayAccess(array_access_node) => array_access_node.check(checker),
-            Self::Literal(literal_node) => literal_node.check(checker),
-            Self::Binary(binary_node) => binary_node.check(checker),
-            Self::Comparison(comparison_node) => comparison_node.check(checker),
-            Self::FieldAccess(field_access_node) => field_access_node.check(checker),
-            Self::FunctionCall(function_call_node) => function_call_node.check(checker),
-            Self::BuiltIn(built_in_node) => built_in_node.check(checker),
+    fn check_stmt_break(&mut self, break_node: &nodes::BreakNode) -> Result<FlowType, String> {
+        if self.loop_stack.is_empty() {
+            Err(format!(
+                "{}: {:?}: Break statement outside of loop",
+                ERR_STR, break_node.location
+            ))
+        } else {
+            Ok(FlowType::AlwaysBreak)
         }
     }
-}
 
-impl Flowable for nodes::NameNode {
     #[trace_call(always)]
-    fn check(&self, _checker: &FlowChecker) -> Result<FlowType, String> {
-        Ok(FlowType::Linear)
-    }
-}
-
-impl Flowable for nodes::IdentifierNode {
-    #[trace_call(always)]
-    fn check(&self, _checker: &FlowChecker) -> Result<FlowType, String> {
-        Ok(FlowType::Linear)
-    }
-}
-
-impl Flowable for nodes::ArrayLiteralNode {
-    #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
-        for element in &self.elements {
-            element.check(checker)?;
+    fn check_stmt_continue(
+        &mut self,
+        continue_node: &nodes::ContinueNode,
+    ) -> Result<FlowType, String> {
+        if self.loop_stack.is_empty() {
+            Err(format!(
+                "{}: {:?}: Continue statement outside of loop",
+                ERR_STR, continue_node.location
+            ))
+        } else {
+            Ok(FlowType::AlwaysContinue)
         }
-        Ok(FlowType::Linear)
-    }
-}
-
-impl Flowable for nodes::ArrayAccessNode {
-    #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
-        self.indices.check(checker)
-    }
-}
-
-impl Flowable for nodes::BinaryNode {
-    #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
-        // FIXME: LHS and RHS might cause an exit
-        self.lhs.check(checker)?;
-        self.rhs.check(checker)?;
-        Ok(FlowType::Linear)
-    }
-}
-
-impl Flowable for nodes::FieldAccessNode {
-    #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
-        self.field.check(checker)
-    }
-}
-
-impl Flowable for nodes::CallNode {
-    #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
-        for arg in &self.arguments {
-            arg.check(checker)?;
-        }
-        Ok(FlowType::Linear)
-    }
-}
-
-impl Flowable for nodes::BuiltInNode {
-    #[trace_call(always)]
-    fn check(&self, _checker: &FlowChecker) -> Result<FlowType, String> {
-        // FIXME: Later on we might want to check if the builtin always exits
-        //        for example, we could check if the builtin is `exit`
-        Ok(FlowType::Linear)
-    }
-}
-
-impl Flowable for nodes::ExpressionNode {
-    #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
-        self.expression.check(checker)
-    }
-}
-impl Flowable for nodes::ComparisonNode {
-    #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
-        // FIXME: LHS and RHS might cause an exit
-        self.lhs.check(checker)?;
-        self.rhs.check(checker)?;
-        Ok(FlowType::Linear)
-    }
-}
-
-
-impl Flowable for nodes::ArgumentNode {
-    #[trace_call(always)]
-    fn check(&self, checker: &FlowChecker) -> Result<FlowType, String> {
-        self.expression.check(checker)
-    }
-}
-
-impl Flowable for nodes::LiteralNode {
-    #[trace_call(always)]
-    fn check(&self, _checker: &FlowChecker) -> Result<FlowType, String> {
-        Ok(FlowType::Linear)
-    }
-}
-
-impl Flowable for nodes::TypeNode {
-    #[trace_call(always)]
-    fn check(&self, _checker: &FlowChecker) -> Result<FlowType, String> {
-        Ok(FlowType::Linear)
     }
 }

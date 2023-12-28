@@ -15,10 +15,7 @@ pub enum RegMode {
 impl From<&Type> for RegMode {
     #[trace_call(extra)]
     fn from(value: &Type) -> Self {
-        match value.size() {
-            Ok(v) => Self::from(v),
-            Err(e) => panic!("{}", e),
-        }
+        Self::from(value.size())
     }
 }
 
