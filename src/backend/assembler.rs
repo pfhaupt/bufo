@@ -64,7 +64,7 @@ impl Assembler {
     pub fn generate_x86_64(&self, ir: Vec<instr::IR>) -> Result<(), String> {
         let mut output = String::new();
         let mut push_asm = |s: &str| {
-            output.push_str(s.clone());
+            output.push_str(s);
             output.push('\n');
         };
 
@@ -515,6 +515,7 @@ impl Assembler {
         filename.push_str(&self.path);
         let asmname = filename.replace(FILE_EXT, ".asm");
         let objname = asmname.replace(".asm", ".obj");
+        let exename = objname.replace(".obj", ".exe");
 
         if self.flags.debug {
             println!("Writing to {asmname}");
@@ -526,41 +527,34 @@ impl Assembler {
             Err(e) => panic!("{}", e),
         }
 
-        if self.flags.debug {
-            println!("Running `nasm -f win64 {asmname} -o {objname}`");
-        }
-        let nasm_output = Command::new("nasm")
-            .args(["-f", "win64", &asmname, "-o", &objname])
-            .output()
-            .expect("failed to execute process");
-        if nasm_output.status.code().unwrap() != 0 {
-            return Err(format!(
-                "{}: Converting assembly to object file failed with:\n{}",
-                ERR_STR,
-                String::from_utf8(nasm_output.stderr).unwrap()
-            ));
-        }
-        if self.flags.debug {
-            println!("Running `golink /console /entry main {objname} MSVCRT.dll kernel32.dll`");
-        }
-        let golink_output = Command::new("golink")
-            .args([
-                "/console",
-                "/entry",
-                "main",
-                &objname,
-                "MSVCRT.dll",
-                "kernel32.dll",
-            ])
-            .output()
-            .expect("failed to execute process");
-        if golink_output.status.code().unwrap() != 0 {
-            return Err(format!(
-                "{}: Converting linking object files failed with:\n{}",
-                ERR_STR,
-                String::from_utf8(golink_output.stderr).unwrap()
-            ));
-        }
+        // TODO: Figure out how to do this without calling nasm
+        //       We're eventually going to fully switch to LLVM/clang, so we need to
+        //       figure this out.
+        let run_cmd = |args: &[&str], err_msg: &str| {
+            if self.flags.debug {
+                println!("Running `{}`", args.join(" "));
+            }
+            let output = Command::new(args[0])
+                .args(&args[1..])
+                .output()
+                .expect("failed to execute process");
+            if output.status.code().unwrap() != 0 {
+                return Err(format!(
+                    "{}: {err_msg}:\n{}",
+                    ERR_STR,
+                    String::from_utf8(output.stderr).unwrap()
+                ));
+            }
+            Ok(())
+        };
+        run_cmd(
+            &["nasm", "-f", "win64", &asmname, "-o", &objname],
+            "Converting assembly to object file failed",
+        )?;
+        run_cmd(
+            &["clang", &objname, "-o", &exename],
+            "Creating executable failed",
+        )?;
 
         Ok(())
     }
