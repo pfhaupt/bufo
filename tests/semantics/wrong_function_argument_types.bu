@@ -1,7 +1,0 @@
-func bla(a: i32) {
-
-}
-
-func main() {
-    bla(5u32);
-}

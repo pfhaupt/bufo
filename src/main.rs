@@ -161,24 +161,23 @@ mod tests {
             };
         }
 
-        generate_failing_test!(undeclared_variable, "Undeclared variable");
-        generate_failing_test!(unknown_type_declaration, "Unknown Type", "`random`");
-        generate_failing_test!(type_mismatch_in_binary_op, "Type Mismatch", "LHS", "RHS", "i32", "u32");
-        generate_failing_test!(type_mismatch_in_comparison, "Type Mismatch", "LHS", "RHS", "i32");
-        generate_failing_test!(type_mismatch_in_fn_args, "Type Mismatch", "Parameter", "declared here", "i32", "Expected type");
-        generate_failing_test!(type_mismatch_in_assignment, "Type Mismatch", "Expected type", "u64", "found", "i32");
-        generate_failing_test!(function_redeclaration, "Function redeclaration", "Function already declared here");
-        generate_failing_test!(wrong_function_argument_types, "Type Mismatch", "in argument evaluation");
-        generate_failing_test!(wrong_function_return_type, "Type Mismatch", "Function is declared to return `i32`");
-        generate_failing_test!(calling_undeclared_function, "unknown function", "testfunction");
-        generate_failing_test!(return_mismatch, "Type Mismatch", "Function", "declared to return", "found");
-        generate_failing_test!(using_out_of_scope_variable, "Undeclared variable");
+        generate_failing_test!(undeclared_variable, "undeclared variable", "`b`");
+        generate_failing_test!(unknown_type_declaration, "Unknown type", "`random`");
+        generate_failing_test!(type_mismatch_in_binary_op, "Type mismatch", "LHS", "RHS", "i32", "u32");
+        generate_failing_test!(type_mismatch_in_comparison, "Type mismatch", "LHS", "RHS", "i32");
+        generate_failing_test!(type_mismatch_in_fn_args, "Type mismatch", "Parameter `a` is declared to be", "`u32`", "Argument is expected to be", "found type `i32`");
+        generate_failing_test!(type_mismatch_in_assignment, "Type mismatch", "Expected type", "u64", "found", "i32");
+        generate_failing_test!(function_redeclaration, "Function redeclaration", "Function `bla` already declared here");
+        generate_failing_test!(wrong_function_return_type, "Type mismatch", "Function is declared to return `i32`");
+        generate_failing_test!(calling_undeclared_function, "undeclared function", "testfunction");
+        generate_failing_test!(return_mismatch, "Type mismatch", "Function", "declared to return", "found");
+        generate_failing_test!(using_out_of_scope_variable, "undeclared variable", "`a`");
         generate_failing_test!(variable_redeclaration, "Variable redeclaration", "already declared here");
         generate_failing_test!(class_field_redeclaration, "Field redeclaration", "Field", "already declared here");
-        generate_failing_test!(class_no_such_field, "has no field", "Class declared here");
-        generate_failing_test!(class_nested_field_wrong_type, "Type Mismatch", "Expected type", "found type");
+        generate_failing_test!(class_no_such_field, "unknown field", "Variable `this`", "Class `Test`", "is declared here");
+        generate_failing_test!(class_nested_field_wrong_type, "Type mismatch", "Expected type", "found type");
         generate_failing_test!(class_no_feat_new, "no constructor", "feature", CONSTRUCTOR_NAME, "Class `Test`");
-        generate_failing_test!(incompatible_operands, "Binary Operation", "not defined", "class", "context");
+        generate_failing_test!(incompatible_operands, "binary expression", "not defined", "Operation `Test + Test`", "LHS has type", "RHS has type");
         generate_failing_test!(if_no_comparison, "if-condition", "comparison");
         generate_failing_test!(while_no_comparison, "while-condition", "comparison");
         generate_runtime_failing_test!(null_pointer_exception, format!("{:X}", 2).as_str());

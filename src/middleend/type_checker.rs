@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt::{Display, Formatter};
 
 use crate::frontend::nodes;
-use crate::frontend::parser::Location;
+use crate::frontend::parser::{Location, Operation};
 
 use crate::compiler::CONSTRUCTOR_NAME;
 use crate::compiler::{ERR_STR, NOTE_STR};
@@ -15,28 +15,53 @@ use tracer::trace_call;
 //        We can just use references to the AST and lifetime parameters
 #[derive(Debug)]
 enum TypeError {
-    // Syntax: Decl Type, Error Loc, Name, Decl Loc
+    /// Syntax: Decl Type, Error Loc, Name, Decl Loc
     Redeclaration(&'static str, Location, String, Location),
-    // Syntax: Error Loc, Type Name
+    /// Syntax: Error Loc, Type Name
     UnknownType(Location, Type),
-    // Syntax: Error Loc
+    /// Syntax: Error Loc
     ImplicitThisParam(Location),
-    // Syntax: Fn Type, Error Loc, Has This
+    /// Syntax: Fn Type, Error Loc, Has This
     TooManyParameters(&'static str, Location, bool),
-    // Syntax: Error Loc, Expected, Found
+    /// Syntax: Error Loc, Expected, Found
     TypeMismatch(Location, Type, Type),
-    // Syntax: Error Loc, Expected Type, LHS Loc, LHS Type, RHS Loc, RHS Type
-    BinaryTypeMismatch(Location, Type, Location, Type, Location, Type),
-    // Syntax: Error Loc, Var Name
+    /// Syntax: Error Loc, Binary Op, LHS Loc, LHS Type, RHS Loc, RHS Type
+    BinaryTypeMismatch(Location, Operation, Location, Type, Location, Type),
+    /// Syntax: Error Loc, Var Name
     UndeclaredVariable(Location, String),
-    // Syntax: Fn Type, Error Loc, Fn Name, Arg Count, Fn Decl, Param Count
+    /// Syntax: Error Loc, Fn Name
+    UndeclaredFunction(Location, String),
+    /// Syntax: Error Loc, Class Name
+    UndeclaredClass(Location, String),
+    /// Syntax: Fn Type, Error Loc, Fn Name, Arg Count, Fn Decl, Param Count
     NotEnoughArguments(&'static str, Location, String, usize, Location, usize),
-    // Syntax: Fn Type, Error Loc, Fn Name, Arg Count, Fn Decl, Param Count
+    /// Syntax: Fn Type, Error Loc, Fn Name, Arg Count, Fn Decl, Param Count
     TooManyArguments(&'static str, Location, String, usize, Location, usize),
-    // Syntax: Arg Decl, Arg Type, Param Decl, Param Name, Param Type
+    /// Syntax: Arg Decl, Arg Type, Param Decl, Param Name, Param Type
     ArgParamTypeMismatch(Location, Type, Location, String, Type),
-    // Syntax: Error Loc, Found Type, Decl Loc, Decl Type
+    /// Syntax: Error Loc, Found Type, Decl Loc, Decl Type
     WrongReturnType(Location, Type, Location, Type),
+    /// Syntax: Error Loc, Found Type
+    ConstructorReturnsValue(Location, Type),
+    /// Syntax: Error Loc, Decl Loc, Decl Type
+    /// NOTE: This is a special case, where the return type is implicit
+    ImplicitReturnType(Location, Location, Type),
+    /// Syntax: Error Loc, Expected Size, Found Size
+    DimensionMismatch(Location, usize, usize),
+    /// Syntax: Error Loc, Decl Loc, Decl Type
+    MissingReturn(Location, Location, Type),
+    /// Syntax: Error Loc, Var Name, Field Loc, Field Name
+    NonClassFieldAccess(Location, String, Location, String),
+    /// Syntax: Error Loc, Var Decl, Var Name, Field Name, Class Loc, Class Name
+    UnknownField(Location, Location, String, String, Location, String),
+    /// Syntax: Error Loc, Var Name, Class Loc, Class Name
+    UnknownMethod(Location, String, Location, String),
+    /// Syntax: Expected, Error Loc, Found Literal
+    UnexpectedLiteral(&'static str, Location, String),
+    /// Syntax: Error Loc, Var Name, Decl Loc
+    IndexIntoNonArray(Location, String, Location),
+    /// Syntax: Error Loc, Class Decl, Class Name
+    NoConstructor(Location, Location, String)
 }
 
 impl Display for TypeError {
@@ -81,17 +106,17 @@ impl Display for TypeError {
             TypeError::TypeMismatch(loc, expected, found) => {
                 write!(
                     f,
-                    "{}: {:?}: Type Mismatch! Expected type `{}`, found type `{}`.",
+                    "{}: {:?}: Type mismatch! Expected type `{}`, found type `{}`.",
                     ERR_STR, loc, expected, found
                 )
             }
-            TypeError::BinaryTypeMismatch(error_loc, expected, lhs_loc, lhs_typ, rhs_loc, rhs_typ) => {
+            TypeError::BinaryTypeMismatch(error_loc, op, lhs_loc, lhs_typ, rhs_loc, rhs_typ) => {
                 write!(
                     f,
-                    "{}: {:?}: Type Mismatch in binary expression!\n{}: {:?}: LHS is expected to be of type `{}`, found type `{}`.\n{}: {:?}: RHS is expected to be of type `{}`, found type `{}`.",
-                    ERR_STR, error_loc,
-                    ERR_STR, lhs_loc, expected, lhs_typ,
-                    ERR_STR, rhs_loc, expected, rhs_typ,
+                    "{}: {:?}: Type mismatch in binary expression! Operation `{} {} {}` is not defined.\n{}: {:?}: LHS has type `{}`.\n{}: {:?}: RHS has type `{}`.",
+                    ERR_STR, error_loc, lhs_typ, op, rhs_typ,
+                    ERR_STR, lhs_loc, lhs_typ,
+                    ERR_STR, rhs_loc, rhs_typ,
                 )
             }
             TypeError::UndeclaredVariable(loc, name) => {
@@ -99,6 +124,20 @@ impl Display for TypeError {
                     f,
                     "{}: {:?}: Use of undeclared variable `{}`.",
                     ERR_STR, loc, name
+                )
+            }
+            TypeError::UndeclaredFunction(error_loc, fn_name) => {
+                write!(
+                    f,
+                    "{}: {:?}: Use of undeclared function `{}`.",
+                    ERR_STR, error_loc, fn_name
+                )
+            }
+            TypeError::UndeclaredClass(error_loc, class_name) => {
+                write!(
+                    f,
+                    "{}: {:?}: Use of undeclared class `{}`.\n{}: Capitalized function calls are reserved for class constructors.",
+                    ERR_STR, error_loc, class_name, NOTE_STR
                 )
             }
             TypeError::NotEnoughArguments(fn_kind, error_loc, fn_name, arg_count, fn_loc, param_count) => {
@@ -118,15 +157,90 @@ impl Display for TypeError {
             TypeError::ArgParamTypeMismatch(arg_loc, arg_type, param_loc, param_name, param_type) => {
                 write!(
                     f,
-                    "{}: {:?}: Type Mismatch! Argument is expected to be of type `{}`, found type `{}`.\n{}: {:?}: Parameter `{}` is declared to be of type `{}`.",
+                    "{}: {:?}: Type mismatch! Argument is expected to be of type `{}`, found type `{}`.\n{}: {:?}: Parameter `{}` is declared to be of type `{}`.",
                     ERR_STR, arg_loc, param_type, arg_type, NOTE_STR, param_loc, param_name, param_type
                 )
             }
             TypeError::WrongReturnType(error_loc, found, decl_loc, decl_type) => {
                 write!(
                     f,
-                    "{}: {:?}: Type Mismatch! Expected type `{}`, found type `{}`.\n{}: {:?}: Function is declared to return `{}` here.",
+                    "{}: {:?}: Type mismatch! Expected type `{}`, found type `{}`.\n{}: {:?}: Function is declared to return `{}` here.",
                     ERR_STR, error_loc, decl_type, found, NOTE_STR, decl_loc, decl_type
+                )
+            }
+            TypeError::ConstructorReturnsValue(error_loc, found) => {
+                write!(
+                    f,
+                    "{}: {:?}: Feature `{CONSTRUCTOR_NAME}` is expected to return None, found {}.",
+                    ERR_STR, error_loc, found
+                )
+            }
+            TypeError::ImplicitReturnType(error_loc, decl_loc, decl_type) => {
+                write!(
+                    f,
+                    "{}: {:?}: Use of implicit return type for constructor.\n{}: {:?}: Constructor declared to return {} here.",
+                    ERR_STR, error_loc, NOTE_STR, decl_loc, decl_type
+                )
+            }
+            TypeError::DimensionMismatch(loc, expected, found) => {
+                let i = if *found == 1 {
+                    "index"
+                } else {
+                    "indices"
+                };
+                write!(
+                    f,
+                    "{}: {:?}: Dimension Mismatch in Array indexing! Expected  {} {i}, found {}.\n{}: Getting a subarray is not supported yet, you can only get single elements.",
+                    ERR_STR, loc, expected, found, NOTE_STR
+                )
+            }
+            TypeError::MissingReturn(error_loc, decl_loc, decl_type) => {
+                write!(
+                    f,
+                    "{}: {:?}: Missing Return value.\n{}: {:?}: Function is declared to return {} here.",
+                    ERR_STR, error_loc, NOTE_STR, decl_loc, decl_type
+                )
+            }
+            TypeError::NonClassFieldAccess(error_loc, var_name, field_loc, field_name) => {
+                write!(
+                    f,
+                    "{}: {:?}: Attempted to access field `{}` of non-class variable `{}`.\n{}: {:?}: Field `{}` is declared here.",
+                    ERR_STR, error_loc, field_name, var_name, NOTE_STR, field_loc, field_name
+                )
+            }
+            TypeError::UnknownField(error_loc, var_loc, var_name, field_name, class_loc, class_name) => {
+                write!(
+                    f,
+                    "{}: {:?}: Attempted to access unknown field `{}` of variable `{}`.\n{}: {:?}: Variable `{}` is declared here.\n{}: {:?}: Class `{}` is declared here.",
+                    ERR_STR, error_loc, field_name, var_name, NOTE_STR, var_loc, var_name, NOTE_STR, class_loc, class_name
+                )
+            }
+            TypeError::UnknownMethod(error_loc, method_name, class_loc, class_name) => {
+                write!(
+                    f,
+                    "{}: {:?}: Attempted to call unknown method `{}`.\n{}: {:?}: Class `{}` is declared here.",
+                    ERR_STR, error_loc, method_name, NOTE_STR, class_loc, class_name
+                )
+            }
+            TypeError::UnexpectedLiteral(expected, error_loc, found) => {
+                write!(
+                    f,
+                    "{}: {:?}: Unexpected Literal! Expected {}, found `{}`.",
+                    ERR_STR, error_loc, expected, found
+                )
+            }
+            TypeError::IndexIntoNonArray(error_loc, var_name, var_loc) => {
+                write!(
+                    f,
+                    "{}: {:?}: Attempted to index into non-array variable `{}`.\n{}: {:?}: Variable `{}` is declared here.",
+                    ERR_STR, error_loc, var_name, NOTE_STR, var_loc, var_name
+                )
+            }
+            TypeError::NoConstructor(error_loc, class_loc, class_name) => {
+                write!(
+                    f,
+                    "{}: {:?}: Class `{}` has no constructor.\n{}: {:?}: Class `{}` is declared here.\n{}: Implement the {} feature to create a constructor.",
+                    ERR_STR, error_loc, class_name, NOTE_STR, class_loc, class_name, NOTE_STR, CONSTRUCTOR_NAME
                 )
             }
         }
@@ -359,21 +473,16 @@ impl Class {
         for feat in &mut self.known_features {
             if *feat.0 == CONSTRUCTOR_NAME {
                 if feat.1.return_type.t == self.class_type {
-                    todo!()
-                    // return Err(format!(
-                    //     "{}: {:?}: Use of implicit return type for constructor.\n{}: {:?}: Constructor declared to return {} here.",
-                    //     ERR_STR,
-                    //     feat.1.location,
-                    //     NOTE_STR,
-                    //     feat.1.return_type.l,
-                    //     feat.1.return_type.t
-                    // ));
+                    return Err(TypeError::ImplicitReturnType(
+                        feat.1.location.clone(),
+                        feat.1.return_type.l.clone(),
+                        feat.1.return_type.t.clone(),
+                    ));
                 } else if feat.1.return_type.t != Type::None {
-                    todo!()
-                    // return Err(format!(
-                    //     "{}: {:?}: Feature `{CONSTRUCTOR_NAME}` is expected to return None, found {}.",
-                    //     ERR_STR, feat.1.location, feat.1.return_type.t
-                    // ));
+                    return Err(TypeError::ConstructorReturnsValue(
+                        feat.1.location.clone(),
+                        feat.1.return_type.t.clone(),
+                    ));
                 } else {
                     feat.1.return_type.t = self.class_type.clone();
                     return Ok(());
@@ -918,11 +1027,11 @@ impl TypeChecker {
     fn type_check_stmt_if(&mut self, if_node: &mut nodes::IfNode) {
         let cond = self.type_check_expr_comparison(&mut if_node.condition);
         if cond != Type::Bool {
-            todo!()
-            // return Err(format!(
-            //     "{}: {:?}: if-condition is expected to evaluate to boolean, found {}.",
-            //     ERR_STR, if_node.condition.location, cond
-            // ));
+            self.report_error(TypeError::TypeMismatch(
+                if_node.condition.location.clone(),
+                Type::Bool,
+                cond,
+            ));
         }
         self.type_check_block(&mut if_node.if_branch);
         if let Some(else_branch) = &mut if_node.else_branch {
@@ -964,25 +1073,17 @@ impl TypeChecker {
         if let Some(ret_expr) = &mut return_node.return_value {
             if expected_return_type == Type::None {
                 // Found expression but expected none, makes no sense
-                todo!()
-                // return Err(format!(
-                //     "{}: {:?}: Unexpected Return expression.\n{}: {:?}: Function is declared to return nothing here.",
-                //     ERR_STR,
-                //     return_node.location,
-                //     NOTE_STR,
-                //     location,
-                // ));
+                self.report_error(TypeError::WrongReturnType(
+                    return_node.location.clone(),
+                    Type::None,
+                    location.clone(),
+                    expected_return_type.clone(),
+                ));
             }
             let expr_type = self.type_check_expression_node(ret_expr);
             let t = if expr_type == Type::Unknown {
                 // we have something like `return 5;`, where we couldn't determine the type
                 // so we now have to `infer` the type, and set it accordingly
-
-                // FIXME: Old Error also had the location of the function return type declaration
-                // return Err(format!(
-                //     "{}\n{}: {:?}: Function declared to return {} here.",
-                //     e, NOTE_STR, location, expected_return_type
-                // ));
                 self.type_check_expression_with_type(
                     &mut ret_expr.expression,
                     &expected_return_type,
@@ -1005,15 +1106,12 @@ impl TypeChecker {
             return_node.typ = t.clone();
         } else if expected_return_type != Type::None {
             // No return expression, but we expected return value
-            todo!()
-            // Err(format!(
-            //     "{}: {:?}: Expected Return value, found nothing.\n{}: {:?}: Function is declared to return {} here.",
-            //     ERR_STR,
-            //     return_node.location,
-            //     NOTE_STR,
-            //     location,
-            //     expected_return_type
-            // ))
+            self.report_error(TypeError::MissingReturn(
+                return_node.location.clone(),
+                location.clone(),
+                expected_return_type.clone(),
+            ));
+            return_node.typ = expected_return_type.clone();
         } else {
             // No return expression
             // No return type expected
@@ -1025,11 +1123,11 @@ impl TypeChecker {
     fn type_check_stmt_while(&mut self, while_node: &mut nodes::WhileNode) {
         let cond = self.type_check_expr_comparison(&mut while_node.condition);
         if cond != Type::Bool {
-            todo!()
-            // return Err(format!(
-            //     "{}: {:?}: while-condition is expected to evaluate to boolean, found {}.",
-            //     ERR_STR, while_node.condition.location, cond
-            // ));
+            self.report_error(TypeError::TypeMismatch(
+                while_node.condition.location.clone(),
+                Type::Bool,
+                cond,
+            ));
         }
         self.type_check_block(&mut while_node.block);
     }
@@ -1105,30 +1203,17 @@ impl TypeChecker {
                         lit_node.typ.clone(),
                     ));
                 } else if let Type::Arr(_, _) = typ {
-                    // FIXME: Use old error message
-                    self.report_error(TypeError::TypeMismatch(
+                    self.report_error(TypeError::UnexpectedLiteral(
+                        "array",
                         lit_node.location.clone(),
-                        typ.clone(),
-                        lit_node.typ.clone(),
+                        lit_node.value.clone(),
                     ));
-                    // Err(format!(
-                    //     "{}: {:?} Type Mismatch! Expected Array Literal, found Integer Literal `{}`",
-                    //     ERR_STR, lit_node.location, lit_node.value
-                    // ))
-                } else if let Type::Class(class_name) = typ {
-                    // FIXME: Use old error message
-                    self.report_error(TypeError::TypeMismatch(
+                } else if let Type::Class(_) = typ {
+                    self.report_error(TypeError::UnexpectedLiteral(
+                        "class instance",
                         lit_node.location.clone(),
-                        typ.clone(),
-                        lit_node.typ.clone(),
+                        lit_node.value.clone(),
                     ));
-                    // Err(format!(
-                    //     "{}: {:?} Type Mismatch! Expected instance of class `{}`, found Integer Literal `{}`",
-                    //     ERR_STR,
-                    //     lit_node.location,
-                    //     class_name,
-                    //     lit_node.value
-                    // ))
                 } else {
                     lit_node.typ = typ.clone();
                 }
@@ -1171,7 +1256,7 @@ impl TypeChecker {
                     name_node.location.clone(),
                     name_node.name.clone(),
                 ));
-                Type::Unknown
+                Type::None
             },
         }
     }
@@ -1186,34 +1271,40 @@ impl TypeChecker {
         debug_assert!(lhs_type != Type::None);
         debug_assert!(rhs_type != Type::None);
         match (&lhs_type, &rhs_type) {
-            (Type::Class(..), _) | (_, Type::Class(..)) => {
+            (typ @ Type::Class(..), _) | (_, typ @ Type::Class(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
-                todo!()
-                // return Err(format!(
-                //     "{}: {:?}: Binary Operation `{}` is not defined in the context of classes.\n{}: {:?}: LHS is here.\n{}: {:?}: RHS is here.",
-                //     ERR_STR, binary_expr.location, binary_expr.operation,
-                //     NOTE_STR, binary_expr.lhs.get_loc(),
-                //     NOTE_STR, binary_expr.rhs.get_loc(),
-                // ));
+                self.report_error(TypeError::BinaryTypeMismatch(
+                    binary_expr.location.clone(),
+                    binary_expr.operation.clone(),
+                    binary_expr.lhs.get_loc(),
+                    lhs_type.clone(),
+                    binary_expr.rhs.get_loc(),
+                    rhs_type.clone(),
+                ));
+                typ.clone()
             }
-            (Type::Arr(..), _) | (_, Type::Arr(..)) => {
+            (typ @ Type::Arr(..), _) | (_, typ @ Type::Arr(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
-                todo!()
-                // return Err(format!(
-                //     "{}: {:?}: Binary Operation `{}` is not defined in the context of arrays.\n{}: {:?}: LHS is here.\n{}: {:?}: RHS is here.",
-                //     ERR_STR, binary_expr.location, binary_expr.operation,
-                //     NOTE_STR, binary_expr.lhs.get_loc(),
-                //     NOTE_STR, binary_expr.rhs.get_loc(),
-                // ));
+                self.report_error(TypeError::BinaryTypeMismatch(
+                    binary_expr.location.clone(),
+                    binary_expr.operation.clone(),
+                    binary_expr.lhs.get_loc(),
+                    lhs_type.clone(),
+                    binary_expr.rhs.get_loc(),
+                    rhs_type.clone(),
+                ));
+                typ.clone()
             }
             (Type::Bool, _) | (_, Type::Bool) => {
-                todo!()
-                // return Err(format!(
-                //     "{}: {:?}: Binary Operation `{}` is not defined in the context of booleans.\n{}: {:?}: LHS is here.\n{}: {:?}: RHS is here.",
-                //     ERR_STR, binary_expr.location, binary_expr.operation,
-                //     NOTE_STR, binary_expr.lhs.get_loc(),
-                //     NOTE_STR, binary_expr.rhs.get_loc(),
-                // ))
+                self.report_error(TypeError::BinaryTypeMismatch(
+                    binary_expr.location.clone(),
+                    binary_expr.operation.clone(),
+                    binary_expr.lhs.get_loc(),
+                    lhs_type.clone(),
+                    binary_expr.rhs.get_loc(),
+                    rhs_type.clone(),
+                ));
+                Type::Bool
             }
             (Type::Unknown, Type::Unknown) => Type::Unknown,
             (Type::Unknown, other) => {
@@ -1228,18 +1319,14 @@ impl TypeChecker {
             }
             (lhs, rhs) => {
                 if lhs != rhs {
-                    todo!()
-                    // return Err(format!(
-                    //     "{}: {:?}: Type Mismatch in binary expression.\n{}: {:?}: LHS has type {}.\n{}: {:?}: RHS has type {}.",
-                    //     ERR_STR,
-                    //     binary_expr.location,
-                    //     NOTE_STR,
-                    //     binary_expr.lhs.get_loc(),
-                    //     lhs,
-                    //     NOTE_STR,
-                    //     binary_expr.rhs.get_loc(),
-                    //     rhs
-                    // ));
+                    self.report_error(TypeError::BinaryTypeMismatch(
+                        binary_expr.location.clone(),
+                        binary_expr.operation.clone(),
+                        binary_expr.lhs.get_loc(),
+                        lhs.clone(),
+                        binary_expr.rhs.get_loc(),
+                        rhs.clone(),
+                    ));
                 }
                 binary_expr.typ = lhs.clone();
                 lhs.clone()
@@ -1259,32 +1346,38 @@ impl TypeChecker {
         match (&lhs_type, &rhs_type) {
             (Type::Class(..), _) | (_, Type::Class(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
-                todo!()
-                // Err(format!(
-                //     "{}: {:?}: Binary Operation `{}` is not defined in the context of classes.\n{}: {:?}: LHS is here.\n{}: {:?}: RHS is here.",
-                //     ERR_STR, comp_expr.location, comp_expr.operation,
-                //     NOTE_STR, comp_expr.lhs.get_loc(),
-                //     NOTE_STR, comp_expr.rhs.get_loc(),
-                // ))
+                self.report_error(TypeError::BinaryTypeMismatch(
+                    comp_expr.location.clone(),
+                    comp_expr.operation.clone(),
+                    comp_expr.lhs.get_loc(),
+                    lhs_type.clone(),
+                    comp_expr.rhs.get_loc(),
+                    rhs_type.clone(),
+                ));
+                Type::Bool
             }
             (Type::Arr(..), _) | (_, Type::Arr(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
-                todo!()
-                // Err(format!(
-                //     "{}: {:?}: Binary Operation `{}` is not defined in the context of arrays.\n{}: {:?}: LHS is here.\n{}: {:?}: RHS is here.",
-                //     ERR_STR, comp_expr.location, comp_expr.operation,
-                //     NOTE_STR, comp_expr.lhs.get_loc(),
-                //     NOTE_STR, comp_expr.rhs.get_loc(),
-                // ))
+                self.report_error(TypeError::BinaryTypeMismatch(
+                    comp_expr.location.clone(),
+                    comp_expr.operation.clone(),
+                    comp_expr.lhs.get_loc(),
+                    lhs_type.clone(),
+                    comp_expr.rhs.get_loc(),
+                    rhs_type.clone(),
+                ));
+                Type::Bool
             }
             (Type::Bool, _) | (_, Type::Bool) => {
-                todo!()
-                // Err(format!(
-                //     "{}: {:?}: Binary Operation `{}` is not defined in the context of booleans.\n{}: {:?}: LHS is here.\n{}: {:?}: RHS is here.",
-                //     ERR_STR, comp_expr.location, comp_expr.operation,
-                //     NOTE_STR, comp_expr.lhs.get_loc(),
-                //     NOTE_STR, comp_expr.rhs.get_loc(),
-                // ))
+                self.report_error(TypeError::BinaryTypeMismatch(
+                    comp_expr.location.clone(),
+                    comp_expr.operation.clone(),
+                    comp_expr.lhs.get_loc(),
+                    lhs_type.clone(),
+                    comp_expr.rhs.get_loc(),
+                    rhs_type.clone(),
+                ));
+                Type::Bool
             }
             (Type::Unknown, Type::Unknown) => {
                 // We can't determine the type of either side, let's try to force it
@@ -1306,18 +1399,14 @@ impl TypeChecker {
             }
             (lhs, rhs) => {
                 if lhs != rhs {
-                    todo!()
-                    // return Err(format!(
-                    //     "{}: {:?}: Type Mismatch in comparison. LHS has type `{}`, RHS has type `{}`.\n{}: {:?}: LHS is here.\n{}: {:?}: RHS is here.",
-                    //     ERR_STR,
-                    //     comp_expr.location,
-                    //     lhs,
-                    //     rhs,
-                    //     NOTE_STR,
-                    //     comp_expr.lhs.get_loc(),
-                    //     NOTE_STR,
-                    //     comp_expr.rhs.get_loc()
-                    // ));
+                    self.report_error(TypeError::BinaryTypeMismatch(
+                        comp_expr.location.clone(),
+                        comp_expr.operation.clone(),
+                        comp_expr.lhs.get_loc(),
+                        lhs.clone(),
+                        comp_expr.rhs.get_loc(),
+                        rhs.clone(),
+                    ));
                 }
                 comp_expr.typ = Type::Bool;
                 Type::Bool
@@ -1348,14 +1437,11 @@ impl TypeChecker {
             } else if array_type == Type::Unknown {
                 array_type = elem_type;
             } else if array_type != elem_type {
-                todo!()
-                // return Err(format!(
-                //     "{}: {:?}: Type Mismatch in Array Literal. Expected Type {}, found {}.",
-                //     ERR_STR,
-                //     elem.get_loc(),
-                //     array_type,
-                //     elem_type
-                // ));
+                self.report_error(TypeError::TypeMismatch(
+                    elem.get_loc(),
+                    array_type.clone(),
+                    elem_type,
+                ));
             }
         }
         if let Type::Arr(t, mut size) = array_type {
@@ -1381,44 +1467,32 @@ impl TypeChecker {
                 access.location.clone(),
                 access.array_name.clone(),
             ));
-            return Type::Unknown;
+            return Type::None;
         };
         let Type::Arr(elem, arr_size) = &var.typ else {
-            todo!()
-            // return Err(format!(
-            //     "{}: {:?}: Attempted to index into non-array variable `{}`.\n{}: {:?}: Variable `{}` declared here.",
-            //     ERR_STR,
-            //     access.location,
-            //     access.array_name,
-            //     NOTE_STR,
-            //     var.location,
-            //     var.name,
-            // ));
+            self.report_error(TypeError::IndexIntoNonArray(
+                access.location.clone(),
+                access.array_name.clone(),
+                var.location.clone(),
+            ));
+            return Type::None;
         };
         if arr_size.len() != access.indices.elements.len() {
-            let i = if arr_size.len() == 1 {
-                "index"
-            } else {
-                "indices"
-            };
-            todo!()
-            // return Err(format!(
-            //     "{}: {:?}: Dimension Mismatch in Array indexing. Expected {} {i}, found {}.\n{}: Getting a subarray is not supported yet, you can only get single elements.",
-            //     ERR_STR,
-            //     access.location,
-            //     arr_size.len(),
-            //     access.indices.elements.len(),
-            //     NOTE_STR
-            // ));
+            self.report_error(TypeError::DimensionMismatch(
+                access.location.clone(),
+                arr_size.len(),
+                access.indices.elements.len(),
+            ));
         }
         let t = self.type_check_expr_array_literal(&mut access.indices);
         if let Type::Arr(elem_index, _) = t {
             if *elem_index != Type::Usize {
-                todo!()
-                // Err(format!(
-                //     "{}: {:?}: Array Indices are expected to be type usize, found array of {}.",
-                //     ERR_STR, access.location, elem_index
-                // ))
+                self.report_error(TypeError::TypeMismatch(
+                    access.indices.location.clone(),
+                    Type::Usize,
+                    *elem_index.clone(),
+                ));
+                Type::None
             } else {
                 // Indices is Array of Usizes, all is well
                 access.typ = *elem.clone();
@@ -1459,13 +1533,12 @@ impl TypeChecker {
         let function = if func_call.is_constructor {
             if let Some(class) = self.known_classes.get(&func_call.function_name) {
                 let Some(feat) = class.known_features.get(CONSTRUCTOR_NAME) else {
-                    todo!()
-                    // return Err(format!(
-                    //     "{}: {:?}: Class `{}` has no constructor.\n{}: {:?}: Class declared here.\n{}: Implement the {} feature to create a constructor.",
-                    //     ERR_STR, func_call.location, func_call.function_name,
-                    //     NOTE_STR, class.location,
-                    //     NOTE_STR, CONSTRUCTOR_NAME
-                    // ));
+                    self.report_error(TypeError::NoConstructor(
+                        func_call.location.clone(),
+                        class.location.clone(),
+                        class.name.clone(),
+                    ));
+                    return Type::None;
                 };
                 func_call.function_name =
                     format!("{}_{}", func_call.function_name, CONSTRUCTOR_NAME);
@@ -1475,24 +1548,19 @@ impl TypeChecker {
                 );
                 feat
             } else {
-                todo!()
-                // return Err(format!(
-                //     "{}: {:?}: Call to unknown class `{}`.\n{}: Capitalized function calls are reserved for class constructors.",
-                //     ERR_STR,
-                //     func_call.location,
-                //     func_call.function_name,
-                //     NOTE_STR
-                // ));
+                self.report_error(TypeError::UndeclaredClass(
+                    func_call.location.clone(),
+                    func_call.function_name.clone(),
+                ));
+                return Type::None;
             }
         } else {
             let Some(function) = self.known_functions.get(&func_call.function_name) else {
-                todo!()
-                // return Err(format!(
-                //     "{}: {:?}: Call to unknown function `{}`.",
-                //     ERR_STR,
-                //     func_call.location,
-                //     func_call.function_name
-                // ));
+                self.report_error(TypeError::UndeclaredFunction(
+                    func_call.location.clone(),
+                    func_call.function_name.clone(),
+                ));
+                return Type::None;
             };
             function
         };
@@ -1572,11 +1640,12 @@ impl TypeChecker {
         match self.get_variable(&access.name) {
             Some(var) => {
                 if !var.is_class_instance() {
-                    todo!()
-                    // return Err(format!(
-                    //     "{}: {:?}: Variable `{}` is not a class instance, it has no fields.",
-                    //     ERR_STR, access.location, access.name
-                    // ));
+                    self.report_error(TypeError::NonClassFieldAccess(
+                        access.location.clone(),
+                        access.name.clone(),
+                        var.location.clone(),
+                        var.name.clone(),
+                    ));
                 }
                 let typ = self.type_check_expr_field_access_rec(access, &var);
                 access.typ = var.typ;
@@ -1587,7 +1656,7 @@ impl TypeChecker {
                     access.location.clone(),
                     access.name.clone(),
                 ));
-                Type::Unknown
+                Type::None
             },
         }
     }
@@ -1616,16 +1685,15 @@ impl TypeChecker {
                             unreachable!()
                         };
                         let Some(field) = class.get_field(&field_access.name) else {
-                            todo!()
-                            // return Err(format!(
-                            //     "{}: {:?}: Class `{}` has no field `{}`.\n{}: {:?}: Class declared here.",
-                            //     ERR_STR,
-                            //     field_access.location,
-                            //     class.name,
-                            //     field_access.name,
-                            //     NOTE_STR,
-                            //     class.location
-                            // ));
+                            self.report_error(TypeError::UnknownField(
+                                access.location.clone(),
+                                var.location.clone(),
+                                var.name.clone(),
+                                field_access.name.clone(),
+                                class.location.clone(),
+                                class.name.clone(),
+                            ));
+                            return Type::None;
                         };
                         let var = Variable {
                             name: field_access.name.clone(),
@@ -1637,32 +1705,25 @@ impl TypeChecker {
                         access.field.typ = var.typ.clone();
                         typ
                     }
-                    _ => todo!()
-                    // _ => Err(format!(
-                    //     "{}: {:?}: Can't access field `{}` of non-class identifier `{}`.\n{}: {:?}: Field `{}` declared here.",
-                    //     ERR_STR,
-                    //     access.location,
-                    //     field_access.name,
-                    //     var.name,
-                    //     NOTE_STR,
-                    //     var.location,
-                    //     var.name
-                    // ))
+                    _ => {
+                        self.report_error(TypeError::NonClassFieldAccess(
+                            access.location.clone(),
+                            field_access.name.clone(),
+                            var.location.clone(),
+                            var.name.clone(),
+                        ));
+                        Type::None
+                    }
                 }
             }
             nodes::Expression::Name(name_node) => {
                 if !var.is_class_instance() {
-                    todo!()
-                    // return Err(format!(
-                    //     "{}: {:?}: Can't access field `{}` of non-class identifier `{}`.\n{}: {:?}: Field `{}` declared here.",
-                    //     ERR_STR,
-                    //     access.location,
-                    //     name_node.name,
-                    //     var.name,
-                    //     NOTE_STR,
-                    //     var.location,
-                    //     var.name
-                    // ));
+                    self.report_error(TypeError::NonClassFieldAccess(
+                        access.location.clone(),
+                        name_node.name.clone(),
+                        var.location.clone(),
+                        var.name.clone(),
+                    ));
                 }
                 let class_name = var.get_class_name();
                 if let Some(class) = self.known_classes.get(&class_name) {
@@ -1672,16 +1733,17 @@ impl TypeChecker {
                             access.field.typ = field.t.clone();
                             field.t
                         },
-                        None => todo!()
-                        // None => Err(format!(
-                        //     "{}: {:?}: Identifier `{}` has no field `{}`.\n{}: {:?}: Class declared here.",
-                        //     ERR_STR,
-                        //     access.location,
-                        //     access.name,
-                        //     name_node.name,
-                        //     NOTE_STR,
-                        //     class.location
-                        // ))
+                        None => {
+                            self.report_error(TypeError::UnknownField(
+                                access.location.clone(),
+                                var.location.clone(),
+                                var.name.clone(),
+                                name_node.name.clone(),
+                                class.location.clone(),
+                                class.name.clone(),
+                            ));
+                            Type::None
+                        }
                     }
                 } else {
                     // Lookup of classes and their fields is done before ever evaluating any field access
@@ -1697,16 +1759,13 @@ impl TypeChecker {
                     unreachable!()
                 };
                 let Some(method) = class.get_method(&function_node.function_name) else {
-                    todo!()
-                    // return Err(format!(
-                    //     "{}: {:?}: Class `{}` has no method `{}`.\n{}: {:?}: Class declared here.",
-                    //     ERR_STR,
-                    //     function_node.location,
-                    //     class_name,
-                    //     function_node.function_name,
-                    //     NOTE_STR,
-                    //     class.location
-                    // ));
+                    self.report_error(TypeError::UnknownMethod(
+                        function_node.location.clone(),
+                        function_node.function_name.clone(),
+                        class.location.clone(),
+                        class.name.clone(),
+                    ));
+                    return Type::None;
                 };
                 let return_type = method.return_type.clone();
                 let mut params = method.parameters.clone();
@@ -1715,30 +1774,26 @@ impl TypeChecker {
                 debug_assert!(this.typ == Type::Class(class_name.clone()));
                 match function_node.arguments.len().cmp(&params.len()) {
                     std::cmp::Ordering::Less => {
-                        todo!()
-                        // return Err(format!(
-                        //     "{}: {:?}: Not enough arguments for call to method `{}`. Expected {} argument(s), found {}.\n{}: {:?}: Method declared here.",
-                        //     ERR_STR,
-                        //     access.location,
-                        //     function_node.function_name,
-                        //     params.len(),
-                        //     function_node.arguments.len(),
-                        //     NOTE_STR,
-                        //     method.location
-                        // ));
+                        self.report_error(TypeError::NotEnoughArguments(
+                            "Method",
+                            access.location.clone(),
+                            function_node.function_name.clone(),
+                            function_node.arguments.len(),
+                            method.location.clone(),
+                            params.len(),
+                        ));
+                        return return_type.t.clone();
                     }
                     std::cmp::Ordering::Greater => {
-                        todo!()
-                        // return Err(format!(
-                        //     "{}: {:?}: Too many arguments for call to method `{}`. Expected {} argument(s), found {}.\n{}: {:?}: Method declared here.",
-                        //     ERR_STR,
-                        //     access.location,
-                        //     function_node.function_name,
-                        //     params.len(),
-                        //     function_node.arguments.len(),
-                        //     NOTE_STR,
-                        //     method.location
-                        // ));
+                        self.report_error(TypeError::TooManyArguments(
+                            "Method",
+                            access.location.clone(),
+                            function_node.function_name.clone(),
+                            function_node.arguments.len(),
+                            method.location.clone(),
+                            params.len(),
+                        ));
+                        return return_type.t.clone();
                     }
                     std::cmp::Ordering::Equal => (),
                 }
@@ -1750,16 +1805,13 @@ impl TypeChecker {
                         // We need to `infer` the type again
                         self.type_check_argument_with_type(arg, &expected);
                     } else if arg_type != expected {
-                        todo!()
-                        // return Err(format!(
-                        //     "{}: {:?}: Type Mismatch in argument evaluation. Expected type `{}`, found type `{}`.\n{}: {:?}: Parameter declared here.",
-                        //     ERR_STR,
-                        //     arg.location,
-                        //     expected,
-                        //     arg_type,
-                        //     NOTE_STR,
-                        //     param.location
-                        // ));
+                        self.report_error(TypeError::ArgParamTypeMismatch(
+                            arg.location.clone(),
+                            expected.clone(),
+                            param.location.clone(),
+                            param.name.clone(),
+                            arg_type.clone(),
+                        ));
                     } else {
                         // Everything is cool
                     }
