@@ -45,7 +45,7 @@ enum TypeError {
     ConstructorReturnsValue(Location, Type),
     /// Syntax: Error Loc, Decl Loc, Decl Type
     /// NOTE: This is a special case, where the return type is implicit
-    ImplicitReturnType(Location, Location, Type),
+    ImplicitReturnType(Location),
     /// Syntax: Error Loc, Expected Size, Found Size
     DimensionMismatch(Location, usize, usize),
     /// Syntax: Error Loc, Decl Loc, Decl Type
@@ -171,15 +171,15 @@ impl Display for TypeError {
             TypeError::ConstructorReturnsValue(error_loc, found) => {
                 write!(
                     f,
-                    "{}: {:?}: Feature `{CONSTRUCTOR_NAME}` is expected to return None, found {}.",
-                    ERR_STR, error_loc, found
+                    "{}: {:?}: Feature `{CONSTRUCTOR_NAME}` is expected to return None, found {}.\n{}: The return type of constructors is implicit, and should not be specified.",
+                    ERR_STR, error_loc, found, NOTE_STR
                 )
             }
-            TypeError::ImplicitReturnType(error_loc, decl_loc, decl_type) => {
+            TypeError::ImplicitReturnType(error_loc) => {
                 write!(
                     f,
-                    "{}: {:?}: Use of implicit return type for constructor.\n{}: {:?}: Constructor declared to return {} here.",
-                    ERR_STR, error_loc, NOTE_STR, decl_loc, decl_type
+                    "{}: {:?}: Use of implicit return type for constructor.",
+                    ERR_STR, error_loc
                 )
             }
             TypeError::DimensionMismatch(loc, expected, found) => {
@@ -349,15 +349,15 @@ pub struct Class {
 
 impl Class {
     #[trace_call(extra)]
-    fn new(name: String) -> Self {
+    fn new(name: String, location: Location, has_constructor: bool) -> Self {
         Self {
             name: name.clone(),
             class_type: Type::Class(name),
-            location: Location::anonymous(),
+            location,
+            has_constructor,
             fields: HashMap::new(),
             known_methods: HashMap::new(),
             known_features: HashMap::new(),
-            has_constructor: false,
         }
     }
 
@@ -441,39 +441,31 @@ impl Class {
                         typ: param.typ.typ.clone(),
                     })
                     .collect();
-                let func = Function {
+                let mut func = Function {
                     location: location.clone(),
                     return_type: TypeLoc::new(return_loc.clone(), return_type.clone()),
                     parameters,
                 };
+                if feature.is_constructor {
+                    if *return_type == self.class_type {
+                        self.known_features.insert(name.clone(), func);
+                        return Err(TypeError::ImplicitReturnType(
+                            return_loc.clone(),
+                        ));
+                    } else if *return_type != Type::None {
+                        self.known_features.insert(name.clone(), func);
+                        return Err(TypeError::ConstructorReturnsValue(
+                            location.clone(),
+                            return_type.clone(),
+                        ));
+                    } else {
+                        func.return_type.t = self.class_type.clone();
+                    }
+                }
                 self.known_features.insert(name.clone(), func);
                 Ok(())
             }
         }
-    }
-
-    #[trace_call(extra)]
-    fn resolve_new_return_type(&mut self) -> Result<(), TypeError> {
-        for feat in &mut self.known_features {
-            if *feat.0 == CONSTRUCTOR_NAME {
-                if feat.1.return_type.t == self.class_type {
-                    return Err(TypeError::ImplicitReturnType(
-                        feat.1.location.clone(),
-                        feat.1.return_type.l.clone(),
-                        feat.1.return_type.t.clone(),
-                    ));
-                } else if feat.1.return_type.t != Type::None {
-                    return Err(TypeError::ConstructorReturnsValue(
-                        feat.1.location.clone(),
-                        feat.1.return_type.t.clone(),
-                    ));
-                } else {
-                    feat.1.return_type.t = self.class_type.clone();
-                    return Ok(());
-                }
-            }
-        }
-        panic!("Class has constructor but no feature `{CONSTRUCTOR_NAME}` found");
     }
 
     #[trace_call(extra)]
@@ -579,8 +571,8 @@ impl TypeChecker {
     }
 
     #[trace_call(always)]
-    fn fill_lookup(&mut self, ast: &mut nodes::FileNode) {
-        for c in &mut ast.classes {
+    fn fill_lookup(&mut self, ast: &nodes::FileNode) {
+        for c in &ast.classes {
             match self.known_classes.get(&c.name) {
                 Some(class) => {
                     let err = TypeError::Redeclaration(
@@ -592,26 +584,19 @@ impl TypeChecker {
                     self.report_error(err);
                 },
                 None => {
-                    let mut class = Class::new(c.name.clone());
-                    class.location = c.location.clone();
-                    class.has_constructor = c.has_constructor;
+                    let mut class = Class::new(c.name.clone(), c.location.clone(), c.has_constructor);
                     for field in &c.fields {
                         if let Err(error) = class.add_field(field) {
                             self.report_error(error);
                         }
                     }
-                    for method in &mut c.methods {
+                    for method in &c.methods {
                         if let Err(error) = class.add_method(method) {
                             self.report_error(error);
                         }
                     }
-                    for feature in &mut c.features {
+                    for feature in &c.features {
                         if let Err(error) = class.add_feature(feature) {
-                            self.report_error(error);
-                        }
-                    }
-                    if class.has_constructor {
-                        if let Err(error) = class.resolve_new_return_type() {
                             self.report_error(error);
                         }
                     }

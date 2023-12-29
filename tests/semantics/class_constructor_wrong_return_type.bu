@@ -1,0 +1,14 @@
+class Foo {
+    feat new() -> i32 {
+        return 5;
+    }
+}
+class Bar {
+    feat new() -> Bar {
+        return this;
+    }
+}
+
+func main() {
+
+}

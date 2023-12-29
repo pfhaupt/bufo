@@ -165,7 +165,7 @@ mod tests {
         generate_failing_test!(unknown_type_declaration, "Unknown type", "`random`");
         generate_failing_test!(type_mismatch_in_binary_op, "Type mismatch", "LHS", "RHS", "i32", "u32");
         generate_failing_test!(type_mismatch_in_comparison, "Type mismatch", "LHS", "RHS", "i32");
-        generate_failing_test!(type_mismatch_in_fn_args, "Type mismatch", "Parameter `a` is declared to be", "`u32`", "Argument is expected to be", "found type `i32`");
+        generate_failing_test!(type_mismatch_in_fn_args, "Type mismatch", "Parameter `a` is declared to be", "`i32`", "Argument is expected to be", "found type `u32`");
         generate_failing_test!(type_mismatch_in_assignment, "Type mismatch", "Expected type", "u64", "found", "i32");
         generate_failing_test!(function_redeclaration, "Function redeclaration", "Function `bla` already declared here");
         generate_failing_test!(wrong_function_return_type, "Type mismatch", "Function is declared to return `i32`");
@@ -180,6 +180,7 @@ mod tests {
         generate_failing_test!(incompatible_operands, "binary expression", "not defined", "Operation `Test + Test`", "LHS has type", "RHS has type");
         generate_failing_test!(if_no_comparison, "if-condition", "comparison");
         generate_failing_test!(while_no_comparison, "while-condition", "comparison");
+        generate_failing_test!(class_constructor_wrong_return_type, "Feature", CONSTRUCTOR_NAME, "is expected to return None", "found", "i32", "implicit", "should not be specified", "implicit return type for constructor");
         generate_runtime_failing_test!(null_pointer_exception, format!("{:X}", 2).as_str());
         generate_runtime_failing_test!(array_out_of_bounds, ALWAYS_FAILS);
         generate_runtime_failing_test!(variable_shadowing, format!("{:X}", 42069).as_str());
