@@ -50,7 +50,7 @@ func main() -> u32 {
             let b: u32 = ack(3, 2);
         }
     } else {
-        let b: u32 = ack(3, 4);
+        let b: u32 = ack(3, s + 1);
     }
 
     // let arr: i32[1, 1] = [[1]];

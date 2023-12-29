@@ -1223,8 +1223,6 @@ impl TypeChecker {
     ) -> Type {
         let lhs_type = self.type_check_expression(&mut binary_expr.lhs);
         let rhs_type = self.type_check_expression(&mut binary_expr.rhs);
-        debug_assert!(lhs_type != Type::None);
-        debug_assert!(rhs_type != Type::None);
         match (&lhs_type, &rhs_type) {
             (typ @ Type::Class(..), _) | (_, typ @ Type::Class(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
@@ -1296,8 +1294,6 @@ impl TypeChecker {
     ) -> Type {
         let lhs_type = self.type_check_expression(&mut comp_expr.lhs);
         let rhs_type = self.type_check_expression(&mut comp_expr.rhs);
-        debug_assert!(lhs_type != Type::None);
-        debug_assert!(rhs_type != Type::None);
         match (&lhs_type, &rhs_type) {
             (Type::Class(..), _) | (_, Type::Class(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
@@ -1549,7 +1545,6 @@ impl TypeChecker {
         for (arg, param) in func_call.arguments.iter_mut().zip(params) {
             let expected = param.typ;
             let arg_type = self.type_check_expression_node(arg);
-            debug_assert!(arg_type != Type::None);
             if arg_type == Type::Unknown {
                 // We need to `infer` the type again
                 self.type_check_expression_with_type(&mut arg.expression, &expected);
@@ -1737,7 +1732,6 @@ impl TypeChecker {
                 for (arg, param) in function_node.arguments.iter_mut().zip(params) {
                     let expected = param.typ;
                     let arg_type = self.type_check_expression_node(arg);
-                    debug_assert!(arg_type != Type::None);
                     if arg_type == Type::Unknown {
                         // We need to `infer` the type again
                         self.type_check_expression_with_type(&mut arg.expression, &expected);
