@@ -526,8 +526,6 @@ pub struct TypeChecker {
     known_functions: HashMap<String, Function>,
     known_classes: HashMap<String, Class>,
     known_variables: VecDeque<HashMap<String, Variable>>,
-    current_function: String,
-    current_class: String,
     current_stack_size: usize,
     errors: Vec<TypeError>,
     #[allow(unused)]
@@ -541,8 +539,6 @@ impl TypeChecker {
             known_classes: HashMap::new(),
             known_functions: HashMap::new(),
             known_variables: VecDeque::new(),
-            current_function: String::new(),
-            current_class: String::new(),
             current_stack_size: 0,
             errors: Vec::new(),
             flags,
@@ -691,7 +687,6 @@ impl TypeChecker {
 
     #[trace_call(always)]
     fn type_check_class(&mut self, class: &mut nodes::ClassNode) {
-        self.current_class = class.name.clone();
         for field in &mut class.fields {
             self.type_check_field(field);
         }
@@ -701,7 +696,6 @@ impl TypeChecker {
         for feature in &mut class.features {
             self.type_check_feature(feature, &class.name);
         }
-        self.current_class.clear();
     }
 
     #[trace_call(always)]
@@ -716,7 +710,6 @@ impl TypeChecker {
         feature: &mut nodes::FeatureNode,
         class_name: &str,
     ) {
-        debug_assert!(self.current_function.is_empty());
         debug_assert!(self.known_variables.is_empty());
         debug_assert!(self.known_classes.contains_key(class_name));
         debug_assert!(self.current_stack_size == 0);
@@ -725,7 +718,6 @@ impl TypeChecker {
             self.type_check_parameter(param);
         }
 
-        self.current_function = feature.name.clone();
         let Some(class_info) = self.known_classes.get(class_name) else { unreachable!() };
         let Some(feature_info) = class_info.known_features.get(&feature.name) else { unreachable!() };
 
@@ -781,7 +773,6 @@ impl TypeChecker {
             feature.return_type.typ = Type::Class(feature.class_name.clone());
         }
 
-        self.current_function.clear();
         self.current_stack_size = 0;
         self.known_variables.clear();
     }
@@ -792,7 +783,6 @@ impl TypeChecker {
         method: &mut nodes::MethodNode,
         class_name: &str,
     ) {
-        debug_assert!(self.current_function.is_empty());
         debug_assert!(self.known_variables.is_empty());
         debug_assert!(self.known_classes.contains_key(class_name));
         debug_assert!(self.current_stack_size == 0);
@@ -801,7 +791,6 @@ impl TypeChecker {
             self.type_check_parameter(param);
         }
 
-        self.current_function = method.name.clone();
         let Some(class_info) = self.known_classes.get(class_name) else {
             // Lookup of classes and methods is done before ever evaluating any methods,
             // so known_classes should always contain the class
@@ -850,13 +839,11 @@ impl TypeChecker {
         method.stack_size = self.current_stack_size;
 
         self.current_stack_size = 0;
-        self.current_function.clear();
         self.known_variables.clear();
     }
 
     #[trace_call(always)]
     fn type_check_function(&mut self, function: &mut nodes::FunctionNode) {
-        debug_assert!(self.current_function.is_empty());
         debug_assert!(self.known_variables.is_empty());
         debug_assert!(self.known_functions.contains_key(&function.name));
         debug_assert!(self.current_stack_size == 0);
@@ -865,7 +852,6 @@ impl TypeChecker {
             self.type_check_parameter(param);
         }
 
-        self.current_function = function.name.clone();
         let Some(function_info) = self.known_functions.get(&function.name) else { unreachable!() };
 
         // Parameters are now known variables
@@ -898,7 +884,6 @@ impl TypeChecker {
         self.type_check_block(&mut function.block);
         function.stack_size = self.current_stack_size;
 
-        self.current_function.clear();
         self.current_stack_size = 0;
         self.known_variables.clear();
     }
@@ -1030,24 +1015,23 @@ impl TypeChecker {
         &mut self,
         return_node: &mut nodes::ReturnNode,
     ) {
-        debug_assert!(!self.current_function.is_empty());
         debug_assert!(return_node.typ == Type::Unknown);
 
-        let (expected_return_type, location) = if self.current_class.is_empty() {
+        let (expected_return_type, location) = if return_node.class.is_none() {
             // We're returning from a normal function
-            let Some(function) = self.known_functions.get(&self.current_function) else { unreachable!() };
+            let Some(function) = self.known_functions.get(&return_node.function) else { unreachable!() };
             let expected_return_type = function.return_type.t.clone();
             let location = function.location.clone();
             debug_assert!(expected_return_type != Type::Unknown);
             (expected_return_type, location)
         } else {
             // We're returning from a method or feature
-            let Some(class) = self.known_classes.get(&self.current_class) else { unreachable!() };
+            let Some(class) = self.known_classes.get(return_node.class.as_ref().unwrap()) else { unreachable!() };
             let (mut location, mut expected_return_type) = (Location::anonymous(), Type::Unknown);
-            if let Some(feature) = class.known_features.get(&self.current_function) {
+            if let Some(feature) = class.known_features.get(&return_node.function) {
                 expected_return_type = feature.return_type.t.clone();
                 location = feature.location.clone();
-            } else if let Some(method) = class.known_methods.get(&self.current_function) {
+            } else if let Some(method) = class.known_methods.get(&return_node.function) {
                 expected_return_type = method.return_type.t.clone();
                 location = method.location.clone();
             }
@@ -1622,7 +1606,6 @@ impl TypeChecker {
         &mut self,
         access: &mut nodes::FieldAccessNode,
     ) -> Type {
-        debug_assert!(!self.current_function.is_empty());
         match self.get_variable(&access.name) {
             Some(var) => {
                 if !var.is_class_instance() {

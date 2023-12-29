@@ -340,6 +340,8 @@ pub struct Parser {
     lookahead: VecDeque<Token>,
     current_char: usize,
     current_line: usize,
+    current_function: Option<String>,
+    current_class: Option<String>,
     line_start: usize,
     errors: Vec<ParserError>,
     bracket_level: usize,
@@ -798,6 +800,7 @@ impl Parser {
             ));
             return None;
         }
+        self.current_class = Some(name.clone());
         try_parse!(self.expect(TokenType::OpenCurly));
         let mut fields = vec![];
         let mut methods = vec![];
@@ -833,6 +836,8 @@ impl Parser {
             }
         }
         try_parse!(self.expect(TokenType::ClosingCurly));
+
+        self.current_class = None;
         Some(nodes::ClassNode {
             location,
             name,
@@ -872,6 +877,8 @@ impl Parser {
             return None;
         }
         let name = name_token.value;
+        self.current_function = Some(name.clone());
+
         if !BUILT_IN_FEATURES.contains(&name.as_str()) {
             self.report_error(ParserError::UnknownFeature(
                 name_token.location,
@@ -900,6 +907,8 @@ impl Parser {
 
         try_parse!(block, self.parse_block());
 
+        self.current_function = None;
+
         Some(nodes::FeatureNode {
             is_constructor: name == *CONSTRUCTOR_NAME,
             class_name: class_name.to_string(),
@@ -926,6 +935,8 @@ impl Parser {
             return None;
         }
 
+        self.current_function = Some(name.value.clone());
+
         try_parse!(self.expect(TokenType::OpenRound));
         try_parse!(parameters, self.parse_parameters());
         try_parse!(self.expect(TokenType::ClosingRound));
@@ -934,6 +945,7 @@ impl Parser {
 
         try_parse!(block, self.parse_block());
 
+        self.current_function = None;
         Some(nodes::FunctionNode {
             location,
             name: name.value,
@@ -958,6 +970,8 @@ impl Parser {
             return None;
         }
 
+        self.current_function = Some(name.value.clone());
+
         try_parse!(self.expect(TokenType::OpenRound));
         try_parse!(parameters, self.parse_parameters());
         // TODO: Don't forget to handle static methods later
@@ -975,6 +989,8 @@ impl Parser {
         try_parse!(return_type, self.parse_return_type());
 
         try_parse!(block, self.parse_block());
+
+        self.current_function = None;
 
         Some(nodes::MethodNode {
             location,
@@ -1164,7 +1180,9 @@ impl Parser {
         Some(nodes::ReturnNode {
             location,
             return_value,
-            typ: Type::Unknown
+            typ: Type::Unknown,
+            function: self.current_function.clone().expect("This is guaranteed by the recursive nature of the parser"),
+            class: self.current_class.clone(),
         })
     }
 

@@ -156,6 +156,8 @@ pub struct ReturnNode {
     pub location: Location,
     pub return_value: Option<ExpressionNode>,
     pub typ: Type,
+    pub function: String,
+    pub class: Option<String>,
 }
 
 #[derive(Debug, Clone)]
