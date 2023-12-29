@@ -1477,27 +1477,16 @@ impl Parser {
     }
 
     #[trace_call(always)]
-    fn parse_arguments(&mut self) -> Option<Vec<nodes::ArgumentNode>> {
+    fn parse_arguments(&mut self) -> Option<Vec<nodes::ExpressionNode>> {
         let mut arguments = Vec::new();
         while !self.parsed_eof() && !self.at(TokenType::ClosingRound) {
-            try_parse!(arg, self.parse_argument());
+            try_parse!(arg, self.parse_expression());
             arguments.push(arg);
             if !self.eat(TokenType::Comma) {
                 break;
             }
         }
         Some(arguments)
-    }
-
-    #[trace_call(always)]
-    fn parse_argument(&mut self) -> Option<nodes::ArgumentNode> {
-        let location = self.current_location();
-        try_parse!(expression, self.parse_expression());
-        Some(nodes::ArgumentNode {
-            location,
-            expression,
-            typ: Type::Unknown,
-        })
     }
 
     #[trace_call(always)]

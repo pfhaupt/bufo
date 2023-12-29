@@ -1548,18 +1548,18 @@ impl TypeChecker {
         let params = function.parameters.clone();
         for (arg, param) in func_call.arguments.iter_mut().zip(params) {
             let expected = param.typ;
-            let arg_type = self.type_check_argument(arg);
+            let arg_type = self.type_check_expression_node(arg);
             debug_assert!(arg_type != Type::None);
             if arg_type == Type::Unknown {
                 // We need to `infer` the type again
-                self.type_check_argument_with_type(arg, &expected);
+                self.type_check_expression_with_type(&mut arg.expression, &expected);
             } else if arg_type != expected {
                 self.report_error(TypeError::ArgParamTypeMismatch(
                     arg.location.clone(),
-                    expected.clone(),
+                    arg_type.clone(),
                     param.location.clone(),
                     param.name.clone(),
-                    arg_type.clone(),
+                    expected.clone(),
                 ));
             } else {
                 // Everything is cool
@@ -1567,23 +1567,6 @@ impl TypeChecker {
         }
         func_call.typ = return_type.t;
         func_call.typ.clone()
-    }
-
-    #[trace_call(always)]
-    fn type_check_argument(&mut self, arg: &mut nodes::ArgumentNode) -> Type {
-        let typ = self.type_check_expression_node(&mut arg.expression);
-        arg.typ = typ.clone();
-        typ
-    }
-
-    #[trace_call(always)]
-    fn type_check_argument_with_type(
-        &mut self,
-        arg: &mut nodes::ArgumentNode,
-        typ: &Type,
-    ) {
-        let typ = self.type_check_expression_with_type(&mut arg.expression.expression, typ);
-        arg.typ = typ.clone();
     }
 
     #[trace_call(always)]
@@ -1753,18 +1736,18 @@ impl TypeChecker {
                 }
                 for (arg, param) in function_node.arguments.iter_mut().zip(params) {
                     let expected = param.typ;
-                    let arg_type = self.type_check_argument(arg);
+                    let arg_type = self.type_check_expression_node(arg);
                     debug_assert!(arg_type != Type::None);
                     if arg_type == Type::Unknown {
                         // We need to `infer` the type again
-                        self.type_check_argument_with_type(arg, &expected);
+                        self.type_check_expression_with_type(&mut arg.expression, &expected);
                     } else if arg_type != expected {
                         self.report_error(TypeError::ArgParamTypeMismatch(
                             arg.location.clone(),
-                            expected.clone(),
+                            arg_type.clone(),
                             param.location.clone(),
                             param.name.clone(),
-                            arg_type.clone(),
+                            expected.clone(),
                         ));
                     } else {
                         // Everything is cool

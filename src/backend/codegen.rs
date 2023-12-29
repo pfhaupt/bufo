@@ -728,12 +728,6 @@ impl Codegenable for nodes::TypeNode {
         internal_error!("TypeNode::codegen() is not implemented yet.")
     }
 }
-impl Codegenable for nodes::ArgumentNode {
-    #[trace_call(always)]
-    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        self.expression.codegen(codegen)
-    }
-}
 impl Codegenable for nodes::Expression {
     #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
@@ -920,7 +914,7 @@ impl Codegenable for nodes::CallNode {
                 }
                 instr::OperandType::Offset => {
                     let target_reg =
-                        instr::Operand::reg(target_reg, instr::RegMode::from(&arg.typ));
+                        instr::Operand::reg(target_reg, instr::RegMode::from(&arg.expression.get_type()));
                     codegen.add_ir(instr::IR::Load {
                         dst: target_reg,
                         addr: op,
@@ -1080,7 +1074,7 @@ impl nodes::FieldAccessNode {
                         }
                         instr::OperandType::Offset => {
                             let target_reg =
-                                instr::Operand::reg(target_reg, instr::RegMode::from(&arg.typ));
+                                instr::Operand::reg(target_reg, instr::RegMode::from(&arg.expression.get_type()));
                             codegen.add_ir(instr::IR::Load {
                                 dst: target_reg,
                                 addr: op,

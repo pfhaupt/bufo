@@ -193,14 +193,6 @@ impl TypeNode {
     }
 }
 
-// FIXME: Deprecate this, use Expression instead
-#[derive(Debug, Clone)]
-pub struct ArgumentNode {
-    pub location: Location,
-    pub expression: ExpressionNode,
-    pub typ: Type,
-}
-
 #[allow(unused)]
 #[derive(Debug, Clone)]
 pub enum Expression {
@@ -295,7 +287,7 @@ pub struct ComparisonNode {
 pub struct CallNode {
     pub location: Location,
     pub function_name: String,
-    pub arguments: Vec<ArgumentNode>,
+    pub arguments: Vec<ExpressionNode>,
     pub typ: Type,
     pub is_constructor: bool,
 }
@@ -319,6 +311,6 @@ pub struct NameNode {
 pub struct BuiltInNode {
     pub location: Location,
     pub function_name: String,
-    pub arguments: Vec<ArgumentNode>,
+    pub arguments: Vec<ExpressionNode>,
     pub typ: Type,
 }

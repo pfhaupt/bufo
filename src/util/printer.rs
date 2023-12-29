@@ -302,11 +302,3 @@ impl Printable for nodes::BuiltInNode {
         }
     }
 }
-
-impl Printable for nodes::ArgumentNode {
-    fn print(&self, indent: usize) {
-        println!("{}ArgumentNode", " ".repeat(indent));
-        self.expression.print(indent + INDENT_PER_LEVEL);
-    }
-}
-
