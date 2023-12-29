@@ -551,13 +551,6 @@ impl Codegenable for nodes::Statement {
         reg
     }
 }
-
-impl Codegenable for nodes::ExpressionNode {
-    #[trace_call(always)]
-    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        self.expression.codegen(codegen)
-    }
-}
 impl Codegenable for nodes::LetNode {
     #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
@@ -590,7 +583,7 @@ impl Codegenable for nodes::AssignNode {
         if rhs.typ != instr::OperandType::Reg {
             let reg = codegen.get_register()?;
             // FIXME: Why does AssigNode not have a type?
-            let reg_mode = instr::RegMode::from(&self.expression.expression.get_type());
+            let reg_mode = instr::RegMode::from(&self.expression.get_type());
             let reg = instr::Operand::reg(reg, reg_mode);
             codegen.add_ir(instr::IR::Move { dst: reg, src: rhs });
             rhs = reg;
@@ -914,7 +907,7 @@ impl Codegenable for nodes::CallNode {
                 }
                 instr::OperandType::Offset => {
                     let target_reg =
-                        instr::Operand::reg(target_reg, instr::RegMode::from(&arg.expression.get_type()));
+                        instr::Operand::reg(target_reg, instr::RegMode::from(&arg.get_type()));
                     codegen.add_ir(instr::IR::Load {
                         dst: target_reg,
                         addr: op,
@@ -1074,7 +1067,7 @@ impl nodes::FieldAccessNode {
                         }
                         instr::OperandType::Offset => {
                             let target_reg =
-                                instr::Operand::reg(target_reg, instr::RegMode::from(&arg.expression.get_type()));
+                                instr::Operand::reg(target_reg, instr::RegMode::from(&arg.get_type()));
                             codegen.add_ir(instr::IR::Load {
                                 dst: target_reg,
                                 addr: op,

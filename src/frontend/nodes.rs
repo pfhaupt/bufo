@@ -90,7 +90,7 @@ pub struct BlockNode {
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Expression(ExpressionNode),
+    Expression(Expression),
     Let(LetNode),
     Assign(AssignNode),
     If(IfNode),
@@ -103,7 +103,7 @@ pub enum Statement {
 impl Statement {
     pub fn get_loc(&self) -> Location {
         match self {
-            Self::Expression(e) => e.location.clone(),
+            Self::Expression(e) => e.get_loc(),
             Self::Let(e) => e.location.clone(),
             Self::Assign(e) => e.location.clone(),
             Self::If(e) => e.location.clone(),
@@ -116,24 +116,18 @@ impl Statement {
 }
 
 #[derive(Debug, Clone)]
-pub struct ExpressionNode {
-    pub location: Location,
-    pub expression: Expression,
-}
-
-#[derive(Debug, Clone)]
 pub struct LetNode {
     pub location: Location,
     pub name: String,
     pub typ: TypeNode,
-    pub expression: ExpressionNode,
+    pub expression: Expression,
 }
 
 #[derive(Debug, Clone)]
 pub struct AssignNode {
     pub location: Location,
     pub name: IdentifierNode,
-    pub expression: ExpressionNode,
+    pub expression: Expression,
 }
 
 #[derive(Debug, Clone)]
@@ -154,7 +148,7 @@ pub struct IfNode {
 #[derive(Debug, Clone)]
 pub struct ReturnNode {
     pub location: Location,
-    pub return_value: Option<ExpressionNode>,
+    pub return_value: Option<Expression>,
     pub typ: Type,
     pub function: String,
     pub class: Option<String>,
@@ -204,7 +198,7 @@ pub enum Expression {
     Binary(BinaryNode),
     Comparison(ComparisonNode),
     FieldAccess(FieldAccessNode),
-    // Parenthesis(ExpressionNode),
+    // Parenthesis(Expression),
     FunctionCall(CallNode),
     BuiltIn(BuiltInNode),
 }
@@ -287,7 +281,7 @@ pub struct ComparisonNode {
 pub struct CallNode {
     pub location: Location,
     pub function_name: String,
-    pub arguments: Vec<ExpressionNode>,
+    pub arguments: Vec<Expression>,
     pub typ: Type,
     pub is_constructor: bool,
 }
@@ -311,6 +305,6 @@ pub struct NameNode {
 pub struct BuiltInNode {
     pub location: Location,
     pub function_name: String,
-    pub arguments: Vec<ExpressionNode>,
+    pub arguments: Vec<Expression>,
     pub typ: Type,
 }

@@ -210,13 +210,6 @@ impl Printable for nodes::Expression {
     }
 }
 
-impl Printable for nodes::ExpressionNode {
-    fn print(&self, indent: usize) {
-        println!("{}ExpressionNode", " ".repeat(indent));
-        self.expression.print(indent + INDENT_PER_LEVEL);
-    }
-}
-
 impl Printable for nodes::NameNode {
     fn print(&self, indent: usize) {
         println!("{}NameNode {}", " ".repeat(indent), self.name);

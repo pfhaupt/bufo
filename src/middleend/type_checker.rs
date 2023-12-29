@@ -903,7 +903,7 @@ impl TypeChecker {
                 self.type_check_stmt_continue(continue_node)
             }
             nodes::Statement::Expression(expression_node) => {
-                self.type_check_stmt_expression(expression_node)
+                self.type_check_expression(expression_node);
             }
         }
     }
@@ -935,19 +935,19 @@ impl TypeChecker {
                 }
                 let expected_type = &let_node.typ.typ;
 
-                let expr_type = self.type_check_expression_node(&mut let_node.expression);
+                let expr_type = self.type_check_expression(&mut let_node.expression);
 
                 if expr_type == Type::Unknown {
                     // Couldnt determine type of expression
                     // We need to `infer` it
                     self.type_check_expression_with_type(
-                        &mut let_node.expression.expression,
+                        &mut let_node.expression,
                         expected_type,
                     );
                 } else {
                     if expr_type != *expected_type {
                         self.report_error(TypeError::TypeMismatch(
-                            let_node.expression.location.clone(),
+                            let_node.expression.get_loc(),
                             expected_type.clone(),
                             expr_type,
                         ));
@@ -963,16 +963,16 @@ impl TypeChecker {
         assign_node: &mut nodes::AssignNode,
     ) {
         let expected_type = self.type_check_expr_identifier(&mut assign_node.name);
-        let expr_type = self.type_check_expression_node(&mut assign_node.expression);
+        let expr_type = self.type_check_expression(&mut assign_node.expression);
         if expr_type == Type::Unknown {
             // We need to try and force the type of LHS to RHS
             self.type_check_expression_with_type(
-                &mut assign_node.expression.expression,
+                &mut assign_node.expression,
                 &expected_type,
             );
         } else if expr_type != expected_type {
             self.report_error(TypeError::TypeMismatch(
-                assign_node.expression.location.clone(),
+                assign_node.expression.get_loc(),
                 expected_type.clone(),
                 expr_type,
             ));
@@ -1025,7 +1025,7 @@ impl TypeChecker {
             (expected_return_type, location)
         };
 
-        if let Some(ret_expr) = &mut return_node.return_value {
+        if let Some(ref mut ret_expr) = &mut return_node.return_value {
             if expected_return_type == Type::None {
                 // Found expression but expected none, makes no sense
                 self.report_error(TypeError::WrongReturnType(
@@ -1035,12 +1035,12 @@ impl TypeChecker {
                     expected_return_type.clone(),
                 ));
             }
-            let expr_type = self.type_check_expression_node(ret_expr);
+            let expr_type = self.type_check_expression(ret_expr);
             let t = if expr_type == Type::Unknown {
                 // we have something like `return 5;`, where we couldn't determine the type
                 // so we now have to `infer` the type, and set it accordingly
                 self.type_check_expression_with_type(
-                    &mut ret_expr.expression,
+                    ret_expr,
                     &expected_return_type,
                 );
                 // Successfully `inferred` type, we can now proceed as normal
@@ -1096,22 +1096,6 @@ impl TypeChecker {
         &mut self,
         _continue_node: &mut nodes::ContinueNode,
     ) {
-    }
-
-    #[trace_call(always)]
-    fn type_check_stmt_expression(
-        &mut self,
-        expression_node: &mut nodes::ExpressionNode,
-    ) {
-        self.type_check_expression(&mut expression_node.expression);
-    }
-
-    #[trace_call(always)]
-    fn type_check_expression_node(
-        &mut self,
-        expression_node: &mut nodes::ExpressionNode,
-    ) -> Type {
-        self.type_check_expression(&mut expression_node.expression)
     }
 
     #[trace_call(always)]
@@ -1542,15 +1526,15 @@ impl TypeChecker {
             std::cmp::Ordering::Equal => (),
         }
         let params = function.parameters.clone();
-        for (arg, param) in func_call.arguments.iter_mut().zip(params) {
+        for (mut arg, param) in func_call.arguments.iter_mut().zip(params) {
             let expected = param.typ;
-            let arg_type = self.type_check_expression_node(arg);
+            let arg_type = self.type_check_expression(arg);
             if arg_type == Type::Unknown {
                 // We need to `infer` the type again
-                self.type_check_expression_with_type(&mut arg.expression, &expected);
+                self.type_check_expression_with_type(&mut arg, &expected);
             } else if arg_type != expected {
                 self.report_error(TypeError::ArgParamTypeMismatch(
-                    arg.location.clone(),
+                    arg.get_loc(),
                     arg_type.clone(),
                     param.location.clone(),
                     param.name.clone(),
@@ -1729,15 +1713,15 @@ impl TypeChecker {
                     }
                     std::cmp::Ordering::Equal => (),
                 }
-                for (arg, param) in function_node.arguments.iter_mut().zip(params) {
+                for (mut arg, param) in function_node.arguments.iter_mut().zip(params) {
                     let expected = param.typ;
-                    let arg_type = self.type_check_expression_node(arg);
+                    let arg_type = self.type_check_expression(arg);
                     if arg_type == Type::Unknown {
                         // We need to `infer` the type again
-                        self.type_check_expression_with_type(&mut arg.expression, &expected);
+                        self.type_check_expression_with_type(&mut arg, &expected);
                     } else if arg_type != expected {
                         self.report_error(TypeError::ArgParamTypeMismatch(
-                            arg.location.clone(),
+                            arg.get_loc(),
                             arg_type.clone(),
                             param.location.clone(),
                             param.name.clone(),

@@ -1141,7 +1141,7 @@ impl Parser {
         let location = self.current_location();
         try_parse!(self.expect(TokenType::IfKeyword));
         try_parse!(self.expect(TokenType::OpenRound));
-        try_parse!(condition, self.parse_expression_enum());
+        try_parse!(condition, self.parse_expression());
         let nodes::Expression::Comparison(condition) = condition else {
             self.report_error(ParserError::ExpectedCondition(
                 location,
@@ -1192,7 +1192,7 @@ impl Parser {
         try_parse!(self.expect(TokenType::WhileKeyword));
 
         try_parse!(self.expect(TokenType::OpenRound));
-        try_parse!(condition, self.parse_expression_enum());
+        try_parse!(condition, self.parse_expression());
         let nodes::Expression::Comparison(condition) = condition else {
             self.report_error(ParserError::ExpectedCondition(
                 location,
@@ -1227,18 +1227,7 @@ impl Parser {
     }
 
     #[trace_call(always)]
-    fn parse_expression(&mut self) -> Option<nodes::ExpressionNode> {
-        let location = self.current_location();
-        // TODO: Deprecate ExpressionNode, we can store all important information in Expression-enum
-        try_parse!(expression, self.parse_expression_enum());
-        Some(nodes::ExpressionNode {
-            location,
-            expression,
-        })
-    }
-
-    #[trace_call(always)]
-    fn parse_expression_enum(&mut self) -> Option<nodes::Expression> {
+    fn parse_expression(&mut self) -> Option<nodes::Expression> {
         // TODO: Refactor expressions
         //       Every expression always consists of two things:
         //       - Mandatory primary expression
@@ -1261,7 +1250,7 @@ impl Parser {
             }
             TokenType::OpenRound => {
                 try_parse!(self.expect(TokenType::OpenRound));
-                try_parse!(expression, self.parse_expression_enum());
+                try_parse!(expression, self.parse_expression());
                 try_parse!(self.expect(TokenType::ClosingRound));
                 expression
             }
@@ -1373,7 +1362,7 @@ impl Parser {
         let mut elements = vec![];
         try_parse!(self.expect(TokenType::OpenSquare));
         while !self.parsed_eof() && !self.at(TokenType::ClosingSquare) {
-            try_parse!(elem, self.parse_expression_enum());
+            try_parse!(elem, self.parse_expression());
             elements.push(elem);
             if !self.eat(TokenType::Comma) {
                 break;
@@ -1477,7 +1466,7 @@ impl Parser {
     }
 
     #[trace_call(always)]
-    fn parse_arguments(&mut self) -> Option<Vec<nodes::ExpressionNode>> {
+    fn parse_arguments(&mut self) -> Option<Vec<nodes::Expression>> {
         let mut arguments = Vec::new();
         while !self.parsed_eof() && !self.at(TokenType::ClosingRound) {
             try_parse!(arg, self.parse_expression());
