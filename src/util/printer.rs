@@ -18,11 +18,27 @@ trait Printable {
 impl Printable for nodes::FileNode {
     fn print(&self, indent: usize) {
         println!("{}FileNode", " ".repeat(indent));
+        for ext in &self.externs {
+            ext.print(indent + INDENT_PER_LEVEL);
+        }
         for class in &self.classes {
             class.print(indent + INDENT_PER_LEVEL);
         }
         for function in &self.functions {
             function.print(indent + INDENT_PER_LEVEL);
+        }
+    }
+}
+
+impl Printable for nodes::ExternNode {
+    fn print(&self, indent: usize) {
+        println!("{}ExternNode {}", " ".repeat(indent), self.name);
+        println!("{}Return Type", " ".repeat(indent + INDENT_PER_LEVEL));
+        self.return_type.print(indent + 2 * INDENT_PER_LEVEL);
+
+        println!("{}Parameters", " ".repeat(indent + INDENT_PER_LEVEL));
+        for parameter in &self.parameters {
+            parameter.print(indent + 2 * INDENT_PER_LEVEL);
         }
     }
 }

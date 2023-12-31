@@ -413,6 +413,9 @@ trait Codegenable {
 impl Codegenable for nodes::FileNode {
     #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
+        for externs in &self.externs {
+            externs.codegen(codegen)?;
+        }
         for class in &self.classes {
             class.codegen(codegen)?;
         }
@@ -422,7 +425,15 @@ impl Codegenable for nodes::FileNode {
         Ok(instr::Operand::none())
     }
 }
-
+impl Codegenable for nodes::ExternNode {
+    #[trace_call(always)]
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
+        codegen.add_ir(instr::IR::External {
+            name: self.name.clone(),
+        });
+        Ok(instr::Operand::none())
+    }
+}
 impl Codegenable for nodes::ClassNode {
     #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {

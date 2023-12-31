@@ -1,0 +1,15 @@
+extern time(current: u32) -> u32;
+extern raise(sig: u32) -> u32;
+extern abort();
+
+extern RaiseException(
+    dwExceptionCode: u32,
+    dwExceptionFlags: u32,
+    nNumberOfArguments: u32,
+    lpArguments: usize); // actually a pointer, but we pass NULL anyway
+
+func main() -> u32 {
+    // 57005 is 0x0000DEAD in u32
+    RaiseException(57005,0,0,0);
+    return time(0);
+}

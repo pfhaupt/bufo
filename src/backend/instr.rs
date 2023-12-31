@@ -343,6 +343,9 @@ pub enum IR {
     },
 
     // Functions
+    External {
+        name: String,
+    },
     Call {
         name: String,
     },
@@ -411,6 +414,7 @@ impl Debug for IR {
             Self::Exit { code } => write!(f, "Exit code: {:?}", code),
 
             // Functions
+            Self::External { name } => write!(f, "External: {:?}", name),
             Self::Call { name } => write!(f, "Call name: {:?}", name),
             Self::AllocStack { bytes } => write!(f, "AllocStack bytes: {:?}", bytes),
             Self::DeallocStack { bytes } => write!(f, "DeallocStack bytes: {:?}", bytes),

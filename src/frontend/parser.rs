@@ -20,6 +20,7 @@ pub const RETURN_KEYWORD: &str = "return";
 pub const WHILE_KEYWORD: &str = "while";
 pub const BREAK_KEYWORD: &str = "break";
 pub const CONTINUE_KEYWORD: &str = "continue";
+pub const EXTERN_KEYWORD: &str = "extern";
 
 use tracer::trace_call;
 
@@ -126,7 +127,7 @@ pub enum TokenType {
     WhileKeyword,
     BreakKeyword,
     ContinueKeyword,
-    BuiltInFunction,
+    ExternKeyword,
     Colon,
     Semi,
     Comma,
@@ -184,7 +185,7 @@ impl Display for TokenType {
             Self::WhileKeyword => write!(f, "`{}`", WHILE_KEYWORD),
             Self::BreakKeyword => write!(f, "`{}`", BREAK_KEYWORD),
             Self::ContinueKeyword => write!(f, "`{}`", CONTINUE_KEYWORD),
-            Self::BuiltInFunction => write!(f, "`built-in function`"),
+            Self::ExternKeyword => write!(f, "`{}`", EXTERN_KEYWORD),
             Self::Colon => write!(f, "`:`"),
             Self::Semi => write!(f, "`;`"),
             Self::Comma => write!(f, "`,`"),
@@ -214,7 +215,6 @@ pub const COMPARATOR_TYPES: [TokenType; 6] = [
     TokenType::CmpLt,
     TokenType::CmpLte,
 ];
-pub const BUILT_IN_FUNCTIONS: [&str; 3] = ["EXIT", "MALLOC", "SIZEOF"];
 
 #[derive(Clone, PartialEq, Eq, Default)]
 pub struct Location {
@@ -342,6 +342,7 @@ pub struct Parser {
     current_line: usize,
     current_function: Option<String>,
     current_class: Option<String>,
+    current_externs: Vec<String>,
     line_start: usize,
     errors: Vec<ParserError>,
     bracket_level: usize,
@@ -464,7 +465,7 @@ impl Parser {
                     WHILE_KEYWORD => TokenType::WhileKeyword,
                     BREAK_KEYWORD => TokenType::BreakKeyword,
                     CONTINUE_KEYWORD => TokenType::ContinueKeyword,
-                    _ if BUILT_IN_FUNCTIONS.contains(&value.as_str()) => TokenType::BuiltInFunction,
+                    EXTERN_KEYWORD => TokenType::ExternKeyword,
                     _ => TokenType::Identifier,
                 };
                 (typ, value)
@@ -739,11 +740,17 @@ impl Parser {
         let location = self.current_location();
         let mut classes = vec![];
         let mut functions = vec![];
+        let mut externs = vec![];
         const RECOVER_TOKENS: [TokenType; 1] = [
             TokenType::ClosingCurly,
         ];
         while !self.parsed_eof() {
             match self.nth(0) {
+                TokenType::ExternKeyword => {
+                    parse_or_recover!(parsed_extern, self.parse_extern(), self.recover(&RECOVER_TOKENS));
+                    self.current_externs.push(parsed_extern.name.clone());
+                    externs.push(parsed_extern);
+                }
                 TokenType::ClassKeyword => {
                     parse_or_recover!(parsed_class, self.parse_class(), self.recover(&RECOVER_TOKENS));
                     classes.push(parsed_class);
@@ -775,6 +782,7 @@ impl Parser {
                     .to_string(),
                 functions,
                 classes,
+                externs,
             })
         } else {
             let mut error_string = String::from(self.errors[0].to_string());
@@ -784,6 +792,29 @@ impl Parser {
             }
             Err(error_string)
         }
+    }
+
+    #[trace_call(always)]
+    fn parse_extern(&mut self) -> Option<nodes::ExternNode> {
+        let location = self.current_location();
+        try_parse!(self.expect(TokenType::ExternKeyword));
+
+        try_parse!(name_token, self.expect(TokenType::Identifier));
+
+        try_parse!(self.expect(TokenType::OpenRound));
+        try_parse!(parameters, self.parse_parameters());
+        try_parse!(self.expect(TokenType::ClosingRound));
+
+        try_parse!(return_type, self.parse_return_type());
+
+        try_parse!(self.expect(TokenType::Semi));
+
+        Some(nodes::ExternNode {
+            location,
+            name: name_token.value,
+            return_type,
+            parameters,
+        })
     }
 
     #[trace_call(always)]
@@ -1258,10 +1289,6 @@ impl Parser {
                 try_parse!(expression, self.parse_expr_array_literal());
                 nodes::Expression::ArrayLiteral(expression)
             }
-            TokenType::BuiltInFunction => {
-                try_parse!(expression, self.parse_expr_builtin());
-                nodes::Expression::BuiltIn(expression)
-            }
             e => {
                 self.report_error(ParserError::ExpectedExpression(
                     self.current_location(),
@@ -1391,23 +1418,6 @@ impl Parser {
     }
 
     #[trace_call(always)]
-    fn parse_expr_builtin(&mut self) -> Option<nodes::BuiltInNode> {
-        let location = self.current_location();
-        try_parse!(name_token, self.expect(TokenType::BuiltInFunction));
-        let function_name = name_token.value;
-
-        try_parse!(self.expect(TokenType::OpenRound));
-        try_parse!(arguments, self.parse_arguments());
-        try_parse!(self.expect(TokenType::ClosingRound));
-        Some(nodes::BuiltInNode {
-            location,
-            function_name,
-            arguments,
-            typ: Type::Unknown,
-        })
-    }
-
-    #[trace_call(always)]
     fn parse_expr_int_literal(&mut self) -> Option<nodes::LiteralNode> {
         try_parse!(number_token, self.expect(TokenType::IntLiteral));
         try_parse!(value, self.parse_type_literal(number_token));
@@ -1441,8 +1451,13 @@ impl Parser {
         try_parse!(arguments, self.parse_arguments());
         try_parse!(self.expect(TokenType::ClosingRound));
 
+        let is_extern = self.current_externs.contains(&function_name);
+        // External functions can be uppercase, but they are not constructors
+        let is_constructor = !is_extern && function_name.as_bytes()[0].is_ascii_uppercase();
+
         Some(nodes::CallNode {
-            is_constructor: function_name.as_bytes()[0].is_ascii_uppercase(),
+            is_constructor,
+            is_extern,
             function_name,
             location,
             arguments,

@@ -464,6 +464,9 @@ impl Assembler {
                     push_asm("  call ExitProcess");
                 }
                 // Functions
+                IR::External { name } => {
+                    push_asm(format!("  extern {name}").as_str());
+                }
                 IR::Call { name } => {
                     push_asm(format!("  call {name}").as_str());
                 }

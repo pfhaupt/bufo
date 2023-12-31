@@ -17,6 +17,8 @@ use tracer::trace_call;
 enum TypeError {
     /// Syntax: Decl Type, Error Loc, Name, Decl Loc
     Redeclaration(&'static str, Location, String, Location),
+    /// Syntax: Error Loc, Fn Name, Extern Loc
+    ExternFunction(Location, String, Location),
     /// Syntax: Error Loc, Type Name
     UnknownType(Location, Type),
     /// Syntax: Error Loc
@@ -72,6 +74,15 @@ impl Display for TypeError {
                     f,
                     "{}: {:?}: {} redeclaration.\n{}: {:?}: {} `{}` already declared here.",
                     ERR_STR, loc1, kind, NOTE_STR, loc2, kind, name
+                )
+            }
+            TypeError::ExternFunction(error_loc, fn_name, fn_loc) => {
+                // TODO: Change this to a warning once the compiler is more mature
+                //       This should be a warning because the external simply shadows the function
+                write!(
+                    f,
+                    "{}: {:?}: Function redeclaration.\n{}: {:?}: Intrinsic `{}` already declared here.",
+                    ERR_STR, error_loc, NOTE_STR, fn_loc, fn_name
                 )
             }
             TypeError::UnknownType(loc, name) => {
@@ -516,6 +527,7 @@ impl Variable {
 #[derive(Debug)]
 pub struct TypeChecker {
     known_functions: HashMap<String, Function>,
+    known_externs: HashMap<String, Function>,
     known_classes: HashMap<String, Class>,
     known_variables: VecDeque<HashMap<String, Variable>>,
     current_stack_size: usize,
@@ -530,6 +542,7 @@ impl TypeChecker {
         Self {
             known_classes: HashMap::new(),
             known_functions: HashMap::new(),
+            known_externs: HashMap::new(),
             known_variables: VecDeque::new(),
             current_stack_size: 0,
             errors: Vec::new(),
@@ -541,6 +554,13 @@ impl TypeChecker {
     fn add_function(&mut self, function: &nodes::FunctionNode) {
         let name = &function.name;
         let location = &function.location;
+        if let Some(external) = self.known_externs.get(name) {
+            self.report_error(TypeError::ExternFunction(
+                location.clone(),
+                name.clone(),
+                external.location.clone(),
+            ));
+        }
         match self.known_functions.get(name) {
             Some(f) => self.report_error(TypeError::Redeclaration(
                 "Function",
@@ -570,8 +590,44 @@ impl TypeChecker {
         }
     }
 
+    #[trace_call(extra)]
+    fn add_extern(&mut self, extern_node: &nodes::ExternNode) {
+        let name = &extern_node.name;
+        let location = &extern_node.location;
+        match self.known_externs.get(name) {
+            Some(f) => self.report_error(TypeError::Redeclaration(
+                "Extern",
+                location.clone(),
+                name.clone(),
+                f.location.clone(),
+            )),
+            None => {
+                let return_type = &extern_node.return_type.typ;
+                let return_loc = &extern_node.return_type.location;
+                let parameters: Vec<_> = extern_node
+                    .parameters
+                    .iter()
+                    .map(|param| Parameter {
+                        name: param.name.clone(),
+                        location: param.location.clone(),
+                        typ: param.typ.typ.clone(),
+                    })
+                    .collect();
+                let func = Function {
+                    location: location.clone(),
+                    return_type: TypeLoc::new(return_loc.clone(), return_type.clone()),
+                    parameters,
+                };
+                self.known_externs.insert(name.clone(), func);
+            }
+        }
+    }
+
     #[trace_call(always)]
     fn fill_lookup(&mut self, ast: &nodes::FileNode) {
+        for extern_node in &ast.externs {
+            self.add_extern(extern_node);
+        }
         for c in &ast.classes {
             match self.known_classes.get(&c.name) {
                 Some(class) => {
@@ -1465,7 +1521,17 @@ impl TypeChecker {
         &mut self,
         func_call: &mut nodes::CallNode,
     ) -> Type {
-        let function = if func_call.is_constructor {
+        let function = if func_call.is_extern {
+            debug_assert!(!func_call.is_constructor);
+            let Some(external) = self.known_externs.get(&func_call.function_name) else {
+                // is_builtin -> Parser says this is an external function
+                // known_externs -> Filled by type_check_file, so it should contain all externs
+                // This is unreachable, or the parser is broken
+                unreachable!()
+            };
+            external
+        } else if func_call.is_constructor {
+            debug_assert!(!func_call.is_extern);
             if let Some(class) = self.known_classes.get(&func_call.function_name) {
                 let Some(feat) = class.known_features.get(CONSTRUCTOR_NAME) else {
                     self.report_error(TypeError::NoConstructor(

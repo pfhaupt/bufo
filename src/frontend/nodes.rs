@@ -9,6 +9,15 @@ pub struct FileNode {
     pub filepath: String,
     pub functions: Vec<FunctionNode>,
     pub classes: Vec<ClassNode>,
+    pub externs: Vec<ExternNode>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExternNode {
+    pub location: Location,
+    pub name: String,
+    pub return_type: TypeNode,
+    pub parameters: Vec<ParameterNode>,
 }
 
 #[derive(Debug, Clone)]
@@ -284,6 +293,7 @@ pub struct CallNode {
     pub arguments: Vec<Expression>,
     pub typ: Type,
     pub is_constructor: bool,
+    pub is_extern: bool,
 }
 
 #[derive(Debug, Clone)]
