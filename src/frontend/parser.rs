@@ -35,7 +35,6 @@ enum ParserError {
     InvalidFunctionName(Location, String),
     InvalidClassName(Location, String),
     UnknownFeature(Location, String),
-    ExpectedCondition(Location, &'static str),
     ExpectedExpression(Location, TokenType),
     InvalidIntegerLiteral(Location, String, Type),
     STDParseIntError(Location, String, std::num::ParseIntError),
@@ -69,7 +68,6 @@ impl Display for ParserError {
             Self::InvalidFunctionName(l, s) => format!("{l:?}: Invalid Function Name: {}", s),
             Self::InvalidClassName(l, s) => format!("{l:?}: Invalid Class Name: {}", s),
             Self::UnknownFeature(l, s) => format!("{l:?}: Unknown Feature: {}", s),
-            Self::ExpectedCondition(l, s) => format!("{l:?}: Expected Comparison for {}-condition", s),
             Self::ExpectedExpression(l, e) => format!("{l:?}: Expected Expression, found {}", e),
             Self::InvalidIntegerLiteral(l, s, typ) => format!("{l:?}: Invalid Integer Literal {} for type {}", s, typ),
             Self::STDParseIntError(l, s, e) => format!("{l:?}: Failed to parse integer literal {}\n{}: Reason: {}", s, NOTE_STR, e),
@@ -277,37 +275,28 @@ pub enum Operation {
     Sub,
     Mul,
     Div,
-    Eq,
-    Neq,
-    Lt,
-    Lte,
-    Gt,
-    Gte,
+    Equal,
+    NotEqual,
+    LessThan,
+    LessThanOrEqual,
+    GreaterThan,
+    GreaterThanOrEqual,
 }
-
-const COMPARISONS: [Operation; 6] = [
-    Operation::Eq,
-    Operation::Neq,
-    Operation::Lt,
-    Operation::Lte,
-    Operation::Gt,
-    Operation::Gte,
-];
 
 impl Display for Operation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        debug_assert_eq!(Operation::Gte as u8 + 1, 10);
+        debug_assert_eq!(Operation::GreaterThanOrEqual as u8 + 1, 10);
         match self {
             Self::Add => write!(f, "+"),
             Self::Sub => write!(f, "-"),
             Self::Mul => write!(f, "*"),
             Self::Div => write!(f, "/"),
-            Self::Eq => write!(f, "=="),
-            Self::Neq => write!(f, "!="),
-            Self::Lt => write!(f, "<"),
-            Self::Lte => write!(f, "<="),
-            Self::Gt => write!(f, ">"),
-            Self::Gte => write!(f, ">="),
+            Self::Equal => write!(f, "=="),
+            Self::NotEqual => write!(f, "!="),
+            Self::LessThan => write!(f, "<"),
+            Self::LessThanOrEqual => write!(f, "<="),
+            Self::GreaterThan => write!(f, ">"),
+            Self::GreaterThanOrEqual => write!(f, ">="),
         }
     }
 }
@@ -315,18 +304,18 @@ impl Display for Operation {
 impl Operation {
     #[trace_call(extra)]
     fn from(s: String) -> Self {
-        debug_assert_eq!(Operation::Gte as u8 + 1, 10);
+        debug_assert_eq!(Operation::GreaterThanOrEqual as u8 + 1, 10);
         match s.as_str() {
             "+" => Self::Add,
             "-" => Self::Sub,
             "*" => Self::Mul,
             "/" => Self::Div,
-            "==" => Self::Eq,
-            "!=" => Self::Neq,
-            "<" => Self::Lt,
-            "<=" => Self::Lte,
-            ">" => Self::Gt,
-            ">=" => Self::Gte,
+            "==" => Self::Equal,
+            "!=" => Self::NotEqual,
+            "<" => Self::LessThan,
+            "<=" => Self::LessThanOrEqual,
+            ">" => Self::GreaterThan,
+            ">=" => Self::GreaterThanOrEqual,
             _ => unreachable!(),
         }
     }
@@ -1173,13 +1162,6 @@ impl Parser {
         try_parse!(self.expect(TokenType::IfKeyword));
         try_parse!(self.expect(TokenType::OpenRound));
         try_parse!(condition, self.parse_expression());
-        let nodes::Expression::Comparison(condition) = condition else {
-            self.report_error(ParserError::ExpectedCondition(
-                location,
-                IF_KEYWORD,
-            ));
-            return None;
-        };
         try_parse!(self.expect(TokenType::ClosingRound));
         try_parse!(if_branch, self.parse_block());
         let else_branch = if self.eat(TokenType::ElseKeyword) {
@@ -1224,13 +1206,6 @@ impl Parser {
 
         try_parse!(self.expect(TokenType::OpenRound));
         try_parse!(condition, self.parse_expression());
-        let nodes::Expression::Comparison(condition) = condition else {
-            self.report_error(ParserError::ExpectedCondition(
-                location,
-                WHILE_KEYWORD,
-            ));
-            return None;
-        };
         try_parse!(self.expect(TokenType::ClosingRound));
 
         try_parse!(block, self.parse_block());
@@ -1309,23 +1284,13 @@ impl Parser {
                 let token = self.next();
                 try_parse!(rhs, self.parse_expression_rec(right));
                 let operation = Operation::from(token.value);
-                lhs = if COMPARISONS.contains(&operation) {
-                    nodes::Expression::Comparison(nodes::ComparisonNode {
-                        location: token.location,
-                        operation,
-                        lhs: Box::new(lhs),
-                        rhs: Box::new(rhs),
-                        typ: Type::Bool,
-                    })
-                } else {
-                    nodes::Expression::Binary(nodes::BinaryNode {
-                        location: token.location,
-                        operation,
-                        lhs: Box::new(lhs),
-                        rhs: Box::new(rhs),
-                        typ: Type::Unknown,
-                    })
-                }
+                lhs = nodes::Expression::Binary(nodes::BinaryNode {
+                    location: token.location,
+                    operation,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                    typ: Type::Unknown,
+                })
             } else {
                 break;
             }

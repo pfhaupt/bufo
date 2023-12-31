@@ -625,12 +625,12 @@ impl Codegenable for nodes::IfNode {
         let cond_false = codegen.generate_label(None);
         let lbl_name = cond_false.get_lbl();
         match cmp_mode {
-            Operation::Eq => codegen.add_ir(instr::IR::JmpNeq { name: lbl_name }),
-            Operation::Neq => codegen.add_ir(instr::IR::JmpEq { name: lbl_name }),
-            Operation::Gt => codegen.add_ir(instr::IR::JmpLte { name: lbl_name }),
-            Operation::Gte => codegen.add_ir(instr::IR::JmpLt { name: lbl_name }),
-            Operation::Lt => codegen.add_ir(instr::IR::JmpGte { name: lbl_name }),
-            Operation::Lte => codegen.add_ir(instr::IR::JmpGt { name: lbl_name }),
+            Operation::Equal => codegen.add_ir(instr::IR::JmpNeq { name: lbl_name }),
+            Operation::NotEqual => codegen.add_ir(instr::IR::JmpEq { name: lbl_name }),
+            Operation::GreaterThan => codegen.add_ir(instr::IR::JmpLte { name: lbl_name }),
+            Operation::GreaterThanOrEqual => codegen.add_ir(instr::IR::JmpLt { name: lbl_name }),
+            Operation::LessThan => codegen.add_ir(instr::IR::JmpGte { name: lbl_name }),
+            Operation::LessThanOrEqual => codegen.add_ir(instr::IR::JmpGt { name: lbl_name }),
             _ => unreachable!(),
         }
         self.if_branch.codegen(codegen)?;
@@ -693,12 +693,12 @@ impl Codegenable for nodes::WhileNode {
         let cond = self.condition.codegen(codegen)?;
         let instr::OperandType::Cmp(cmp_mode) = cond.typ else { unreachable!() };
         match cmp_mode {
-            Operation::Eq => codegen.add_ir(instr::IR::JmpEq { name: block_name }),
-            Operation::Neq => codegen.add_ir(instr::IR::JmpNeq { name: block_name }),
-            Operation::Gt => codegen.add_ir(instr::IR::JmpGt { name: block_name }),
-            Operation::Gte => codegen.add_ir(instr::IR::JmpGte { name: block_name }),
-            Operation::Lt => codegen.add_ir(instr::IR::JmpLt { name: block_name }),
-            Operation::Lte => codegen.add_ir(instr::IR::JmpLte { name: block_name }),
+            Operation::Equal => codegen.add_ir(instr::IR::JmpEq { name: block_name }),
+            Operation::NotEqual => codegen.add_ir(instr::IR::JmpNeq { name: block_name }),
+            Operation::GreaterThan => codegen.add_ir(instr::IR::JmpGt { name: block_name }),
+            Operation::GreaterThanOrEqual => codegen.add_ir(instr::IR::JmpGte { name: block_name }),
+            Operation::LessThan => codegen.add_ir(instr::IR::JmpLt { name: block_name }),
+            Operation::LessThanOrEqual => codegen.add_ir(instr::IR::JmpLte { name: block_name }),
             _ => unreachable!(),
         }
         codegen.add_ir(break_lbl);
@@ -742,7 +742,6 @@ impl Codegenable for nodes::Expression {
             Self::ArrayAccess(expr) => expr.codegen(codegen),
             Self::Literal(expr) => expr.codegen(codegen),
             Self::Binary(expr) => expr.codegen(codegen),
-            Self::Comparison(expr) => expr.codegen(codegen),
             Self::FieldAccess(expr) => expr.codegen(codegen),
             Self::FunctionCall(expr) => expr.codegen(codegen),
             Self::BuiltIn(expr) => expr.codegen(codegen),
@@ -797,7 +796,7 @@ impl Codegenable for nodes::BinaryNode {
         debug_assert!(lhs != instr::Operand::none());
         if lhs.typ != instr::OperandType::Reg {
             let reg = codegen.get_register()?;
-            let reg_mode = instr::RegMode::from(&self.typ);
+            let reg_mode = instr::RegMode::from(&self.lhs.get_type());
             let reg = instr::Operand::reg(reg, reg_mode);
             codegen.add_ir(instr::IR::Move { dst: reg, src: lhs });
             lhs = reg;
@@ -837,29 +836,13 @@ impl Codegenable for nodes::BinaryNode {
                     signed: self.typ == Type::I32 || self.typ == Type::I64,
                 });
             }
+            _ if self.is_comparison() => {
+                codegen.add_ir(instr::IR::Cmp { dst: lhs, src: rhs });
+                return Ok(instr::Operand::cmp(self.operation));
+            }
             _ => unreachable!(),
         }
         Ok(lhs)
-    }
-}
-impl Codegenable for nodes::ComparisonNode {
-    #[trace_call(always)]
-    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        let mut lhs = self.lhs.codegen(codegen)?;
-        debug_assert!(lhs != instr::Operand::none());
-        if lhs.typ != instr::OperandType::Reg {
-            let reg = codegen.get_register()?;
-            let reg_mode = instr::RegMode::from(&self.lhs.get_type());
-            let reg = instr::Operand::reg(reg, reg_mode);
-            codegen.add_ir(instr::IR::Move { dst: reg, src: lhs });
-            lhs = reg;
-        }
-        debug_assert!(lhs.typ == instr::OperandType::Reg);
-
-        let rhs = self.rhs.codegen(codegen)?;
-        debug_assert!(rhs != instr::Operand::none());
-        codegen.add_ir(instr::IR::Cmp { dst: lhs, src: rhs });
-        Ok(instr::Operand::cmp(self.operation))
     }
 }
 impl Codegenable for nodes::CallNode {

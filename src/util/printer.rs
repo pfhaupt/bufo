@@ -218,7 +218,6 @@ impl Printable for nodes::Expression {
             Self::ArrayAccess(node) => node.print(indent),
             Self::Literal(node) => node.print(indent),
             Self::Binary(node) => node.print(indent),
-            Self::Comparison(node) => node.print(indent),
             Self::FieldAccess(node) => node.print(indent),
             Self::FunctionCall(node) => node.print(indent),
             Self::BuiltIn(node) => node.print(indent),
@@ -267,15 +266,6 @@ impl Printable for nodes::LiteralNode {
 impl Printable for nodes::BinaryNode {
     fn print(&self, indent: usize) {
         println!("{}ExpressionBinaryNode", " ".repeat(indent));
-        println!("{}Operator {}", " ".repeat(indent + INDENT_PER_LEVEL), self.operation);
-        self.lhs.print(indent + INDENT_PER_LEVEL);
-        self.rhs.print(indent + INDENT_PER_LEVEL);
-    }
-}
-
-impl Printable for nodes::ComparisonNode {
-    fn print(&self, indent: usize) {
-        println!("{}ExpressionComparisonNode", " ".repeat(indent));
         println!("{}Operator {}", " ".repeat(indent + INDENT_PER_LEVEL), self.operation);
         self.lhs.print(indent + INDENT_PER_LEVEL);
         self.rhs.print(indent + INDENT_PER_LEVEL);

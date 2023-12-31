@@ -1037,10 +1037,10 @@ impl TypeChecker {
 
     #[trace_call(always)]
     fn type_check_stmt_if(&mut self, if_node: &mut nodes::IfNode) {
-        let cond = self.type_check_expr_comparison(&mut if_node.condition);
+        let cond = self.type_check_expression(&mut if_node.condition);
         if cond != Type::Bool {
             self.report_error(TypeError::TypeMismatch(
-                if_node.condition.location.clone(),
+                if_node.condition.get_loc(),
                 Type::Bool,
                 cond,
             ));
@@ -1132,10 +1132,10 @@ impl TypeChecker {
 
     #[trace_call(always)]
     fn type_check_stmt_while(&mut self, while_node: &mut nodes::WhileNode) {
-        let cond = self.type_check_expr_comparison(&mut while_node.condition);
+        let cond = self.type_check_expression(&mut while_node.condition);
         if cond != Type::Bool {
             self.report_error(TypeError::TypeMismatch(
-                while_node.condition.location.clone(),
+                while_node.condition.get_loc(),
                 Type::Bool,
                 cond,
             ));
@@ -1162,7 +1162,6 @@ impl TypeChecker {
         match expression {
             nodes::Expression::Name(name_node) => self.type_check_expr_name(name_node),
             nodes::Expression::Binary(binary_expr) => self.type_check_expr_binary(binary_expr),
-            nodes::Expression::Comparison(comp_expr) => self.type_check_expr_comparison(comp_expr),
             nodes::Expression::Identifier(ident_expr) => {
                 self.type_check_expr_identifier(ident_expr)
             }
@@ -1263,6 +1262,16 @@ impl TypeChecker {
     ) -> Type {
         let lhs_type = self.type_check_expression(&mut binary_expr.lhs);
         let rhs_type = self.type_check_expression(&mut binary_expr.rhs);
+        let cond = binary_expr.is_comparison();
+        macro_rules! type_or_bool {
+            ($typ:expr) => {
+                if cond {
+                    Type::Bool
+                } else {
+                    $typ
+                }
+            };
+        }
         match (&lhs_type, &rhs_type) {
             (typ @ Type::Class(..), _) | (_, typ @ Type::Class(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
@@ -1274,7 +1283,7 @@ impl TypeChecker {
                     binary_expr.rhs.get_loc(),
                     rhs_type.clone(),
                 ));
-                typ.clone()
+                type_or_bool!(typ.clone())
             }
             (typ @ Type::Arr(..), _) | (_, typ @ Type::Arr(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
@@ -1286,7 +1295,7 @@ impl TypeChecker {
                     binary_expr.rhs.get_loc(),
                     rhs_type.clone(),
                 ));
-                typ.clone()
+                type_or_bool!(typ.clone())
             }
             (Type::Bool, _) | (_, Type::Bool) => {
                 self.report_error(TypeError::BinaryTypeMismatch(
@@ -1302,13 +1311,15 @@ impl TypeChecker {
             (Type::Unknown, Type::Unknown) => Type::Unknown,
             (Type::Unknown, other) => {
                 self.type_check_expression_with_type(&mut binary_expr.lhs, other);
-                binary_expr.typ = other.clone();
-                other.clone()
+                let typ = type_or_bool!(other.clone());
+                binary_expr.typ = typ.clone();
+                typ
             }
             (other, Type::Unknown) => {
                 self.type_check_expression_with_type(&mut binary_expr.rhs, other);
-                binary_expr.typ = other.clone();
-                other.clone()
+                let typ = type_or_bool!(other.clone());
+                binary_expr.typ = typ.clone();
+                typ
             }
             (lhs, rhs) => {
                 if lhs != rhs {
@@ -1321,86 +1332,9 @@ impl TypeChecker {
                         rhs.clone(),
                     ));
                 }
-                binary_expr.typ = lhs.clone();
-                lhs.clone()
-            }
-        }
-    }
-
-    #[trace_call(always)]
-    fn type_check_expr_comparison(
-        &mut self,
-        comp_expr: &mut nodes::ComparisonNode,
-    ) -> Type {
-        let lhs_type = self.type_check_expression(&mut comp_expr.lhs);
-        let rhs_type = self.type_check_expression(&mut comp_expr.rhs);
-        match (&lhs_type, &rhs_type) {
-            (Type::Class(..), _) | (_, Type::Class(..)) => {
-                // NOTE: Modify this once more features (ahem, operator overload) exist
-                self.report_error(TypeError::BinaryTypeMismatch(
-                    comp_expr.location.clone(),
-                    comp_expr.operation.clone(),
-                    comp_expr.lhs.get_loc(),
-                    lhs_type.clone(),
-                    comp_expr.rhs.get_loc(),
-                    rhs_type.clone(),
-                ));
-                Type::Bool
-            }
-            (Type::Arr(..), _) | (_, Type::Arr(..)) => {
-                // NOTE: Modify this once more features (ahem, operator overload) exist
-                self.report_error(TypeError::BinaryTypeMismatch(
-                    comp_expr.location.clone(),
-                    comp_expr.operation.clone(),
-                    comp_expr.lhs.get_loc(),
-                    lhs_type.clone(),
-                    comp_expr.rhs.get_loc(),
-                    rhs_type.clone(),
-                ));
-                Type::Bool
-            }
-            (Type::Bool, _) | (_, Type::Bool) => {
-                self.report_error(TypeError::BinaryTypeMismatch(
-                    comp_expr.location.clone(),
-                    comp_expr.operation.clone(),
-                    comp_expr.lhs.get_loc(),
-                    lhs_type.clone(),
-                    comp_expr.rhs.get_loc(),
-                    rhs_type.clone(),
-                ));
-                Type::Bool
-            }
-            (Type::Unknown, Type::Unknown) => {
-                // We can't determine the type of either side, let's try to force it
-                // FIXME: This is a bit hacky, but it works for now
-                self.type_check_expression_with_type(&mut comp_expr.lhs, &Type::I64);
-                self.type_check_expression_with_type(&mut comp_expr.rhs, &Type::I64);
-                comp_expr.typ = Type::Bool;
-                Type::Bool
-            },
-            (Type::Unknown, other) => {
-                self.type_check_expression_with_type(&mut comp_expr.lhs, other);
-                comp_expr.typ = Type::Bool;
-                Type::Bool
-            }
-            (other, Type::Unknown) => {
-                self.type_check_expression_with_type(&mut comp_expr.rhs, other);
-                comp_expr.typ = Type::Bool;
-                Type::Bool
-            }
-            (lhs, rhs) => {
-                if lhs != rhs {
-                    self.report_error(TypeError::BinaryTypeMismatch(
-                        comp_expr.location.clone(),
-                        comp_expr.operation.clone(),
-                        comp_expr.lhs.get_loc(),
-                        lhs.clone(),
-                        comp_expr.rhs.get_loc(),
-                        rhs.clone(),
-                    ));
-                }
-                comp_expr.typ = Type::Bool;
-                Type::Bool
+                let typ = type_or_bool!(lhs.clone());
+                binary_expr.typ = typ.clone();
+                typ
             }
         }
     }

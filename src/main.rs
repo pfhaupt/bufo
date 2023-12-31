@@ -178,8 +178,8 @@ mod tests {
         generate_failing_test!(class_nested_field_wrong_type, "Type mismatch", "Expected type", "found type");
         generate_failing_test!(class_no_feat_new, "no constructor", "feature", CONSTRUCTOR_NAME, "Class `Test`");
         generate_failing_test!(incompatible_operands, "binary expression", "not defined", "Operation `Test + Test`", "LHS has type", "RHS has type");
-        generate_failing_test!(if_no_comparison, "if-condition", "comparison");
-        generate_failing_test!(while_no_comparison, "while-condition", "comparison");
+        generate_failing_test!(if_no_comparison, "Expected type `bool`", "found type `i32`");
+        generate_failing_test!(while_no_comparison, "Expected type `bool`", "found type `i32`");
         generate_failing_test!(class_constructor_wrong_return_type, "Feature", CONSTRUCTOR_NAME, "is expected to return None", "found", "i32", "implicit", "should not be specified", "implicit return type for constructor");
         generate_runtime_failing_test!(null_pointer_exception, format!("{:X}", 2).as_str());
         generate_runtime_failing_test!(array_out_of_bounds, ALWAYS_FAILS);

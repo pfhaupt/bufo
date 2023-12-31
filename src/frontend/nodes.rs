@@ -149,7 +149,7 @@ pub struct IdentifierNode {
 #[derive(Debug, Clone)]
 pub struct IfNode {
     pub location: Location,
-    pub condition: ComparisonNode,
+    pub condition: Expression,
     pub if_branch: BlockNode,
     pub else_branch: Option<BlockNode>,
 }
@@ -166,7 +166,7 @@ pub struct ReturnNode {
 #[derive(Debug, Clone)]
 pub struct WhileNode {
     pub location: Location,
-    pub condition: ComparisonNode,
+    pub condition: Expression,
     pub block: BlockNode,
 }
 
@@ -205,7 +205,6 @@ pub enum Expression {
     ArrayAccess(ArrayAccessNode),
     Literal(LiteralNode),
     Binary(BinaryNode),
-    Comparison(ComparisonNode),
     FieldAccess(FieldAccessNode),
     // Parenthesis(Expression),
     FunctionCall(CallNode),
@@ -222,7 +221,6 @@ impl Expression {
             Self::ArrayAccess(e) => e.location.clone(),
             Self::Literal(e) => e.location.clone(),
             Self::Binary(e) => e.location.clone(),
-            Self::Comparison(e) => e.location.clone(),
             Self::FieldAccess(e) => e.location.clone(),
             Self::FunctionCall(e) => e.location.clone(),
             Self::BuiltIn(e) => e.location.clone()
@@ -238,7 +236,6 @@ impl Expression {
             Self::ArrayAccess(e) => e.typ.clone(),
             Self::Literal(e) => e.typ.clone(),
             Self::Binary(e) => e.typ.clone(),
-            Self::Comparison(e) => e.typ.clone(),
             Self::FieldAccess(e) => e.typ.clone(),
             Self::FunctionCall(e) => e.typ.clone(),
             Self::BuiltIn(e) => e.typ.clone()
@@ -277,13 +274,19 @@ pub struct BinaryNode {
     pub typ: Type,
 }
 
-#[derive(Debug, Clone)]
-pub struct ComparisonNode {
-    pub location: Location,
-    pub operation: Operation,
-    pub lhs: Box<Expression>,
-    pub rhs: Box<Expression>,
-    pub typ: Type,
+impl BinaryNode {
+    #[trace_call(extra)]
+    pub fn is_comparison(&self) -> bool {
+        match self.operation {
+            Operation::LessThan => true,
+            Operation::LessThanOrEqual => true,
+            Operation::GreaterThan => true,
+            Operation::GreaterThanOrEqual => true,
+            Operation::Equal => true,
+            Operation::NotEqual => true,
+            _ => false
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
