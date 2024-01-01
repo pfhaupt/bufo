@@ -1095,14 +1095,16 @@ impl nodes::FieldAccessNode {
 
                 // move the result into reg
                 // FIXME: Handle methods that return void
+                let mut reg = reg.clone();
+                reg.reg_mode = instr::RegMode::from(&fn_call.typ);
                 codegen.add_ir(instr::IR::Move {
-                    dst: *reg,
+                    dst: reg,
                     src: instr::Operand::reg(instr::Register::RET, instr::RegMode::from(&fn_call.typ)),
                 });
 
                 codegen.pop_registers(counter);
                 // reg now contains the result of the method call
-                Ok(*reg)
+                Ok(reg)
             }
             _ => unreachable!(),
         }

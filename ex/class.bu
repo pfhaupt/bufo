@@ -1,0 +1,15 @@
+class Foo {
+    a: i32;
+    constructor() {
+        this.a = 5;
+    }
+
+    func getA() -> i32 {
+        return this.a;
+    }
+}
+
+func main() -> i32 {
+    let f: Foo = Foo();
+    return f.getA();
+}
