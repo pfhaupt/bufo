@@ -2,7 +2,7 @@
 class Test {
     bla: Bla;
 
-    feat new() {
+    constructor() {
         this.bla = Bla();
     }
 }
@@ -11,7 +11,7 @@ class Bla {
     test : Test;
     a: i32;
 
-    feat new() {
+    constructor() {
         this.test = Test();
         this.test.bla.test.bla.test.bla.test.bla.a = 5u32;
     }

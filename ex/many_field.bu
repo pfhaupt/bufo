@@ -11,6 +11,6 @@ class Foo {
     func foo() {}
     func foo() {}
 
-    feat new() {}
-    feat new() {}
+    constructor() {}
+    constructor() {}
 }

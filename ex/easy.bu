@@ -3,7 +3,7 @@ class Test {
     b: i32;
     c: i32;
 
-    feat new() {
+    constructor() {
     }
 
     func set_a(a: i32) {

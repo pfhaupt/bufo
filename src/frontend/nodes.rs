@@ -26,8 +26,7 @@ pub struct ClassNode {
     pub name: String,
     pub fields: Vec<FieldNode>,
     pub methods: Vec<MethodNode>,
-    pub features: Vec<FeatureNode>,
-    pub has_constructor: bool,
+    pub constructors: Vec<ConstructorNode>,
 }
 
 #[derive(Debug, Clone)]
@@ -38,15 +37,13 @@ pub struct FieldNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct FeatureNode {
+pub struct ConstructorNode {
     pub location: Location,
     pub class_name: String,
-    pub name: String,
     pub return_type: TypeNode,
     pub parameters: Vec<ParameterNode>,
     pub block: BlockNode,
     pub stack_size: usize,
-    pub is_constructor: bool,
 }
 
 #[derive(Debug, Clone)]

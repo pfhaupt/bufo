@@ -128,7 +128,8 @@ mod tests {
     }
 
     mod semantic_tests {
-        use crate::compiler::{Compiler, ERR_STR, CONSTRUCTOR_NAME};
+        use crate::compiler::{Compiler, ERR_STR};
+        use crate::frontend::parser::CONSTRUCTOR_KEYWORD;
         use crate::tests::ALWAYS_FAILS;
 
         // FIXME: Separate runtime tests from semantic tests
@@ -176,11 +177,11 @@ mod tests {
         generate_failing_test!(class_field_redeclaration, "Field redeclaration", "Field", "already declared here");
         generate_failing_test!(class_no_such_field, "unknown field", "Variable `this`", "Class `Test`", "is declared here");
         generate_failing_test!(class_nested_field_wrong_type, "Type mismatch", "Expected type", "found type");
-        generate_failing_test!(class_no_feat_new, "no constructor", "feature", CONSTRUCTOR_NAME, "Class `Test`");
+        generate_failing_test!(class_no_constructor, "no constructor", "Implement", CONSTRUCTOR_KEYWORD, "Class `Test`", "to create a constructor");
         generate_failing_test!(incompatible_operands, "binary expression", "not defined", "Operation `Test + Test`", "LHS has type", "RHS has type");
         generate_failing_test!(if_no_comparison, "Expected type `bool`", "found type `i32`");
         generate_failing_test!(while_no_comparison, "Expected type `bool`", "found type `i32`");
-        generate_failing_test!(class_constructor_wrong_return_type, "Feature", CONSTRUCTOR_NAME, "is expected to return None", "found", "i32", "implicit", "should not be specified", "implicit return type for constructor");
+        generate_failing_test!(class_constructor_wrong_return_type, "Constructor cannot return a value.", CONSTRUCTOR_KEYWORD, "return type of constructors is implicit", "should not be specified");
         generate_runtime_failing_test!(null_pointer_exception, format!("{:X}", 2).as_str());
         generate_runtime_failing_test!(array_out_of_bounds, ALWAYS_FAILS);
         generate_runtime_failing_test!(variable_shadowing, format!("{:X}", 42069).as_str());

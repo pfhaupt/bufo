@@ -4,7 +4,7 @@ use std::num::ParseIntError;
 use super::instr;
 use crate::compiler::{ERR_STR, NOTE_STR};
 use crate::frontend::nodes;
-use crate::frontend::parser::Operation;
+use crate::frontend::parser::{Operation, CONSTRUCTOR_KEYWORD};
 use crate::middleend::type_checker::Type;
 use crate::util::flags::Flags;
 
@@ -437,8 +437,8 @@ impl Codegenable for nodes::ExternNode {
 impl Codegenable for nodes::ClassNode {
     #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        for feature in &self.features {
-            feature.codegen(codegen)?;
+        for constructor in &self.constructors {
+            constructor.codegen(codegen)?;
         }
 
         for method in &self.methods {
@@ -457,37 +457,35 @@ impl Codegenable for nodes::FieldNode {
         Ok(instr::Operand::none())
     }
 }
-impl Codegenable for nodes::FeatureNode {
+impl Codegenable for nodes::ConstructorNode {
     #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         func_assert!(codegen);
-        func_entry!(codegen, self.class_name.clone() + "_" + &self.name);
+        func_entry!(codegen, self.class_name.clone() + "_" + &CONSTRUCTOR_KEYWORD);
         func_stack!(codegen, self, true);
         func_param!(codegen, self);
 
-        if self.is_constructor {
-            // let this: Class = calloc(1, sizeof(Class));
-            let calloc_number = instr::Operand::reg(instr::Register::ARG1, instr::RegMode::BIT64);
-            codegen.add_ir(instr::IR::LoadImm {
-                dst: calloc_number,
-                imm: instr::Operand::imm_u64(1),
-            });
-            let calloc_size = instr::Operand::reg(instr::Register::ARG2, instr::RegMode::BIT64);
-            codegen.add_ir(instr::IR::LoadImm {
-                dst: calloc_size,
-                imm: instr::Operand::imm_u64(codegen.sm.get_class_size(&self.class_name) as u64),
-            });
-            codegen.add_ir(instr::IR::Call {
-                name: String::from("calloc"),
-            });
+        // let this: Class = calloc(1, sizeof(Class));
+        let calloc_number = instr::Operand::reg(instr::Register::ARG1, instr::RegMode::BIT64);
+        codegen.add_ir(instr::IR::LoadImm {
+            dst: calloc_number,
+            imm: instr::Operand::imm_u64(1),
+        });
+        let calloc_size = instr::Operand::reg(instr::Register::ARG2, instr::RegMode::BIT64);
+        codegen.add_ir(instr::IR::LoadImm {
+            dst: calloc_size,
+            imm: instr::Operand::imm_u64(codegen.sm.get_class_size(&self.class_name) as u64),
+        });
+        codegen.add_ir(instr::IR::Call {
+            name: String::from("calloc"),
+        });
 
-            let offset = codegen.update_stack_offset(8);
-            codegen.add_variable_offset(&String::from("this"), offset);
-            codegen.add_ir(instr::IR::Store {
-                addr: instr::Operand::offset(offset),
-                value: instr::Operand::reg(instr::Register::RET, instr::RegMode::BIT64),
-            });
-        }
+        let offset = codegen.update_stack_offset(8);
+        codegen.add_variable_offset(&String::from("this"), offset);
+        codegen.add_ir(instr::IR::Store {
+            addr: instr::Operand::offset(offset),
+            value: instr::Operand::reg(instr::Register::RET, instr::RegMode::BIT64),
+        });
 
         func_body!(codegen, self);
 
@@ -495,13 +493,11 @@ impl Codegenable for nodes::FeatureNode {
         let label = codegen.generate_label(Some(codegen.current_return_label.clone()));
         codegen.add_ir(label);
 
-        if self.is_constructor {
-            let offset = codegen.get_stack_offset(&String::from("this"));
-            codegen.add_ir(instr::IR::Load {
-                dst: instr::Operand::reg(instr::Register::RET, instr::RegMode::BIT64),
-                addr: instr::Operand::offset(offset),
-            });
-        }
+        let offset = codegen.get_stack_offset(&String::from("this"));
+        codegen.add_ir(instr::IR::Load {
+            dst: instr::Operand::reg(instr::Register::RET, instr::RegMode::BIT64),
+            addr: instr::Operand::offset(offset),
+        });
 
         func_stack!(codegen, self, false);
 

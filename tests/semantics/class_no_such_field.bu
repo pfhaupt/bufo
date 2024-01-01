@@ -1,7 +1,7 @@
 class Test {
     a: i32;
 
-    feat new() {
+    constructor() {
         this.b = 10;
     }
 }

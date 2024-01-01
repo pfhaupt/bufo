@@ -2,9 +2,8 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt::{Display, Formatter};
 
 use crate::frontend::nodes;
-use crate::frontend::parser::{Location, Operation};
+use crate::frontend::parser::{Location, Operation, CONSTRUCTOR_KEYWORD};
 
-use crate::compiler::CONSTRUCTOR_NAME;
 use crate::compiler::{ERR_STR, NOTE_STR};
 use crate::util::flags::Flags;
 use crate::internal_panic;
@@ -43,11 +42,6 @@ enum TypeError {
     ArgParamTypeMismatch(Location, Type, Location, String, Type),
     /// Syntax: Error Loc, Found Type, Decl Loc, Decl Type
     WrongReturnType(Location, Type, Location, Type),
-    /// Syntax: Error Loc, Found Type
-    ConstructorReturnsValue(Location, Type),
-    /// Syntax: Error Loc, Decl Loc, Decl Type
-    /// NOTE: This is a special case, where the return type is implicit
-    ImplicitReturnType(Location),
     /// Syntax: Error Loc, Expected Size, Found Size
     DimensionMismatch(Location, usize, usize),
     /// Syntax: Error Loc, Decl Loc, Decl Type
@@ -179,20 +173,6 @@ impl Display for TypeError {
                     ERR_STR, error_loc, decl_type, found, NOTE_STR, decl_loc, decl_type
                 )
             }
-            TypeError::ConstructorReturnsValue(error_loc, found) => {
-                write!(
-                    f,
-                    "{}: {:?}: Feature `{CONSTRUCTOR_NAME}` is expected to return None, found {}.\n{}: The return type of constructors is implicit, and should not be specified.",
-                    ERR_STR, error_loc, found, NOTE_STR
-                )
-            }
-            TypeError::ImplicitReturnType(error_loc) => {
-                write!(
-                    f,
-                    "{}: {:?}: Use of implicit return type for constructor.",
-                    ERR_STR, error_loc
-                )
-            }
             TypeError::DimensionMismatch(loc, expected, found) => {
                 let i = if *found == 1 {
                     "index"
@@ -250,8 +230,8 @@ impl Display for TypeError {
             TypeError::NoConstructor(error_loc, class_loc, class_name) => {
                 write!(
                     f,
-                    "{}: {:?}: Class `{}` has no constructor.\n{}: {:?}: Class `{}` is declared here.\n{}: Implement the {} feature to create a constructor.",
-                    ERR_STR, error_loc, class_name, NOTE_STR, class_loc, class_name, NOTE_STR, CONSTRUCTOR_NAME
+                    "{}: {:?}: Class `{}` has no constructor.\n{}: {:?}: Class `{}` is declared here.\n{}: Implement the special `{}() {{}}` method to create a constructor.",
+                    ERR_STR, error_loc, class_name, NOTE_STR, class_loc, class_name, NOTE_STR, CONSTRUCTOR_KEYWORD
                 )
             }
         }
@@ -311,7 +291,7 @@ impl Display for Type {
 }
 
 #[derive(Debug, Clone)]
-pub struct Parameter {
+struct Parameter {
     name: String,
     location: Location,
     typ: Type,
@@ -331,7 +311,7 @@ impl TypeLoc {
 }
 
 #[derive(Debug)]
-pub struct Method {
+struct Method {
     location: Location,
     return_type: TypeLoc,
     parameters: Vec<Parameter>,
@@ -340,21 +320,54 @@ pub struct Method {
 impl Method {}
 
 #[derive(Debug)]
-pub struct Function {
+struct Function {
     location: Location,
     return_type: TypeLoc,
     parameters: Vec<Parameter>,
 }
 
 #[derive(Debug)]
+struct Constructor {
+    location: Location,
+    parameters: Vec<Parameter>,
+    return_type: TypeLoc,
+}
+
+enum FunctionType<'a> {
+    Function(&'a Function),
+    Constructor(&'a Constructor),
+}
+
+impl<'a> FunctionType<'a> {
+    fn get_return_type(&self) -> &TypeLoc {
+        match self {
+            FunctionType::Function(f) => &f.return_type,
+            FunctionType::Constructor(c) => &c.return_type,
+        }
+    }
+
+    fn get_parameters(&self) -> &Vec<Parameter> {
+        match self {
+            FunctionType::Function(f) => &f.parameters,
+            FunctionType::Constructor(c) => &c.parameters,
+        }
+    }
+
+    fn get_location(&self) -> &Location {
+        match self {
+            FunctionType::Function(f) => &f.location,
+            FunctionType::Constructor(c) => &c.location,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Class {
     name: String,
-    class_type: Type,
     location: Location,
     fields: HashMap<String, TypeLoc>,
     known_methods: HashMap<String, Method>,
-    // NOTE: Maybe it's better to add a custom Feature struct later on, once more features are implemented
-    known_features: HashMap<String, Function>,
+    known_constructors: Vec<Constructor>,
     has_constructor: bool,
 }
 
@@ -362,13 +375,12 @@ impl Class {
     #[trace_call(extra)]
     fn new(name: String, location: Location, has_constructor: bool) -> Self {
         Self {
-            name: name.clone(),
-            class_type: Type::Class(name),
+            name,
             location,
             has_constructor,
             fields: HashMap::new(),
             known_methods: HashMap::new(),
-            known_features: HashMap::new(),
+            known_constructors: Vec::new(),
         }
     }
 
@@ -430,63 +442,39 @@ impl Class {
     }
 
     #[trace_call(extra)]
-    fn add_feature(&mut self, feature: &nodes::FeatureNode) -> Result<(), TypeError> {
-        let name = &feature.name;
-        let location = &feature.location;
-        match self.known_features.get(name) {
-            Some(f) => Err(TypeError::Redeclaration(
-                "Feature",
+    fn add_constructor(&mut self, constructor_node: &nodes::ConstructorNode) -> Result<(), TypeError> {
+        let location = &constructor_node.location;
+        let parameters: Vec<_> = constructor_node
+            .parameters
+            .iter()
+            .map(|param| Parameter {
+                name: param.name.clone(),
+                location: param.location.clone(),
+                typ: param.typ.typ.clone(),
+            })
+            .collect();
+        let ret_type = &constructor_node.return_type;
+        let constructor = Constructor {
+            location: location.clone(),
+            parameters,
+            return_type: TypeLoc::new(ret_type.location.clone(), ret_type.typ.clone()),
+        };
+        if self.known_constructors.len() > 0 {
+            // TODO: Allow multiple constructors
+            return Err(TypeError::Redeclaration(
+                "Constructor",
                 location.clone(),
-                name.clone(),
-                f.location.clone(),
-            )),
-            None => {
-                let return_type = &feature.return_type.typ;
-                let return_loc = &feature.return_type.location;
-                let parameters: Vec<_> = feature
-                    .parameters
-                    .iter()
-                    .map(|param| Parameter {
-                        name: param.name.clone(),
-                        location: param.location.clone(),
-                        typ: param.typ.typ.clone(),
-                    })
-                    .collect();
-                let mut func = Function {
-                    location: location.clone(),
-                    return_type: TypeLoc::new(return_loc.clone(), return_type.clone()),
-                    parameters,
-                };
-                if feature.is_constructor {
-                    if *return_type == self.class_type {
-                        self.known_features.insert(name.clone(), func);
-                        return Err(TypeError::ImplicitReturnType(
-                            return_loc.clone(),
-                        ));
-                    } else if *return_type != Type::None {
-                        self.known_features.insert(name.clone(), func);
-                        return Err(TypeError::ConstructorReturnsValue(
-                            location.clone(),
-                            return_type.clone(),
-                        ));
-                    } else {
-                        func.return_type.t = self.class_type.clone();
-                    }
-                }
-                self.known_features.insert(name.clone(), func);
-                Ok(())
-            }
+                self.name.clone(),
+                self.known_constructors[0].location.clone(),
+            ));
         }
+        self.known_constructors.push(constructor);
+        Ok(())
     }
 
     #[trace_call(extra)]
     fn get_field(&self, name: &str) -> Option<TypeLoc> {
         self.fields.get(name).cloned()
-    }
-
-    #[trace_call(extra)]
-    fn get_feature(&self, name: &str) -> Option<&Function> {
-        self.known_features.get(name)
     }
 
     #[trace_call(extra)]
@@ -640,7 +628,7 @@ impl TypeChecker {
                     self.report_error(err);
                 },
                 None => {
-                    let mut class = Class::new(c.name.clone(), c.location.clone(), c.has_constructor);
+                    let mut class = Class::new(c.name.clone(), c.location.clone(), c.constructors.len() > 0);
                     for field in &c.fields {
                         if let Err(error) = class.add_field(field) {
                             self.report_error(error);
@@ -651,8 +639,8 @@ impl TypeChecker {
                             self.report_error(error);
                         }
                     }
-                    for feature in &c.features {
-                        if let Err(error) = class.add_feature(feature) {
+                    for constructor in &c.constructors {
+                        if let Err(error) = class.add_constructor(constructor) {
                             self.report_error(error);
                         }
                     }
@@ -734,8 +722,8 @@ impl TypeChecker {
         for method in &mut class.methods {
             self.type_check_method(method, &class.name);
         }
-        for feature in &mut class.features {
-            self.type_check_feature(feature, &class.name);
+        for feature in &mut class.constructors {
+            self.type_check_constructor(feature, &class.name);
         }
     }
 
@@ -744,39 +732,35 @@ impl TypeChecker {
         self.type_check_type_node(&mut field.type_def)
     }
 
-    // FIXME: Repeating code of features, methods and functions can be extracted into macros
     #[trace_call(always)]
-    fn type_check_feature(
+    fn type_check_constructor(
         &mut self,
-        feature: &mut nodes::FeatureNode,
+        constructor: &mut nodes::ConstructorNode,
         class_name: &str,
     ) {
         debug_assert!(self.known_variables.is_empty());
         debug_assert!(self.known_classes.contains_key(class_name));
         debug_assert!(self.current_stack_size == 0);
 
-        for param in &mut feature.parameters {
+        for param in &mut constructor.parameters {
             self.type_check_parameter(param);
         }
 
         let Some(class_info) = self.known_classes.get(class_name) else { unreachable!() };
-        let Some(feature_info) = class_info.known_features.get(&feature.name) else { unreachable!() };
+        let Some(constructor_info) = class_info.known_constructors.get(0) else { unreachable!() };
 
         // Parameters are now known variables
         let mut parameters = HashMap::new();
-        if feature.is_constructor {
-            parameters.insert(
+        parameters.insert(
+            String::from("this"),
+            Variable::new(
                 String::from("this"),
-                Variable::new(
-                    String::from("this"),
-                    feature.location.clone(),
-                    Type::Class(class_name.to_string()),
-                ),
-            );
-            self.current_stack_size += 8;
-        }
-        // FIXME: Rust is bad, there should be a way to do this without cloning
-        for param in &feature_info.parameters.clone() {
+                constructor.location.clone(),
+                Type::Class(class_name.to_string()),
+            ),
+        );
+        self.current_stack_size += 8;
+        for param in &constructor_info.parameters.clone() {
             let var = Variable::new(
                 param.name.clone(),
                 param.location.clone(),
@@ -802,17 +786,14 @@ impl TypeChecker {
         if parameters.len() > 4 {
             self.report_error(TypeError::TooManyParameters(
                 "Features",
-                feature.location.clone(),
+                constructor.location.clone(),
                 true // this counts towards the limit
             ));
         }
-        self.known_variables.push_back(parameters);
-        self.type_check_block(&mut feature.block);
-        feature.stack_size = self.current_stack_size;
 
-        if feature.is_constructor {
-            feature.return_type.typ = Type::Class(feature.class_name.clone());
-        }
+        self.known_variables.push_back(parameters);
+        self.type_check_block(&mut constructor.block);
+        constructor.stack_size = self.current_stack_size;
 
         self.current_stack_size = 0;
         self.known_variables.clear();
@@ -1069,10 +1050,7 @@ impl TypeChecker {
             // We're returning from a method or feature
             let Some(class) = self.known_classes.get(return_node.class.as_ref().unwrap()) else { unreachable!() };
             let (mut location, mut expected_return_type) = (Location::anonymous(), Type::Unknown);
-            if let Some(feature) = class.known_features.get(&return_node.function) {
-                expected_return_type = feature.return_type.t.clone();
-                location = feature.location.clone();
-            } else if let Some(method) = class.known_methods.get(&return_node.function) {
+            if let Some(method) = class.known_methods.get(&return_node.function) {
                 expected_return_type = method.return_type.t.clone();
                 location = method.location.clone();
             }
@@ -1463,11 +1441,11 @@ impl TypeChecker {
                 // This is unreachable, or the parser is broken
                 unreachable!()
             };
-            external
+            FunctionType::Function(external)
         } else if func_call.is_constructor {
             debug_assert!(!func_call.is_extern);
             if let Some(class) = self.known_classes.get(&func_call.function_name) {
-                let Some(feat) = class.known_features.get(CONSTRUCTOR_NAME) else {
+                let Some(constructor) = class.known_constructors.get(0) else {
                     self.report_error(TypeError::NoConstructor(
                         func_call.location.clone(),
                         class.location.clone(),
@@ -1476,12 +1454,12 @@ impl TypeChecker {
                     return Type::None;
                 };
                 func_call.function_name =
-                    format!("{}_{}", func_call.function_name, CONSTRUCTOR_NAME);
+                    format!("{}_{}", func_call.function_name, CONSTRUCTOR_KEYWORD);
                 debug_assert!(
                     class.has_constructor,
                     "Class has constructor feature, but has_constructor is false"
                 );
-                feat
+                FunctionType::Constructor(constructor)
             } else {
                 self.report_error(TypeError::UndeclaredClass(
                     func_call.location.clone(),
@@ -1497,18 +1475,20 @@ impl TypeChecker {
                 ));
                 return Type::None;
             };
-            function
+            FunctionType::Function(function)
         };
-        let return_type = function.return_type.clone();
-        match func_call.arguments.len().cmp(&function.parameters.len()) {
+        let return_type = function.get_return_type().clone();
+        let location = function.get_location();
+        let parameters = function.get_parameters();
+        match func_call.arguments.len().cmp(&parameters.len()) {
             std::cmp::Ordering::Less => {
                 self.report_error(TypeError::NotEnoughArguments(
                     "Function",
                     func_call.location.clone(),
                     func_call.function_name.clone(),
                     func_call.arguments.len(),
-                    function.location.clone(),
-                    function.parameters.len(),
+                    location.clone(),
+                    parameters.len(),
                 ));
                 return return_type.t.clone();
             }
@@ -1518,14 +1498,14 @@ impl TypeChecker {
                     func_call.location.clone(),
                     func_call.function_name.clone(),
                     func_call.arguments.len(),
-                    function.location.clone(),
-                    function.parameters.len(),
+                    location.clone(),
+                    parameters.len(),
                 ));
                 return return_type.t.clone();
             }
             std::cmp::Ordering::Equal => (),
         }
-        let params = function.parameters.clone();
+        let params = parameters.clone();
         for (mut arg, param) in func_call.arguments.iter_mut().zip(params) {
             let expected = param.typ;
             let arg_type = self.type_check_expression(arg);

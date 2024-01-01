@@ -1,6 +1,6 @@
 class foo {
     // Class names should be capitalized
-    feat new() {
+    constructor() {
     }
 }
 

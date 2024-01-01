@@ -1,5 +1,5 @@
 class Test {
-    feat new() {
+    constructor() {
     }
     func foo() {
     }

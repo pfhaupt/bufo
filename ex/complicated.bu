@@ -3,7 +3,7 @@ class Test {
     b: Test;
     c: i64;
     d: i64;
-    feat new(na: i64, nb: i64, nc: i64) -> Test {
+    constructor(na: i64, nb: i64, nc: i64) -> Test {
         this.a = na;
         // this.b = Test(0, 0, 0);
         this.c = nc;
@@ -24,7 +24,7 @@ class Idee {
     a: i64;
     t: Test;
 
-    feat new(na: i64) {
+    constructor(na: i64) {
         this.a = na;
         this.t = Test(this.a, 5, 10);
         let a: i64 = this.a;

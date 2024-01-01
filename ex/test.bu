@@ -1,7 +1,7 @@
 class Foo {
     t: Test;
-    // feat new(this: Foo) {}
-    // feat new() -> Foo {}
+    // constructor(this: Foo) {}
+    // constructor() -> Foo {}
     // func foo(this: Foo) {}
     // func foo(a: u32, this: Foo) {}
 }
@@ -9,7 +9,7 @@ class Foo {
 class Test {
     f: Foo;
     a: i32;
-    feat new() {
+    constructor() {
         // this.a = 10;
     }
 
@@ -32,7 +32,7 @@ func ack(m: u32, n: u32) -> u32 {
 
 class Bar {
     a: u32;
-    feat new(a: u32) {
+    constructor(a: u32) {
         this.a = a;
     }
 }
@@ -50,7 +50,7 @@ func main() -> u32 {
             let b: u32 = ack(3, 2);
         }
     } else {
-        let b: u32 = ack(3, s + 1);
+        let b: u32 = ack(3, 4);
     }
 
     // let arr: i32[1, 1] = [[1]];

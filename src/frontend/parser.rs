@@ -4,15 +4,15 @@ use std::fs;
 use std::path::PathBuf;
 
 use super::nodes;
-use crate::compiler::{BUILT_IN_FEATURES, CONSTRUCTOR_NAME, WARN_STR, ERR_STR, NOTE_STR};
+use crate::compiler::{WARN_STR, ERR_STR, NOTE_STR};
 use crate::middleend::type_checker::Type;
 use crate::util::flags::Flags;
 
 const LOOKAHEAD_LIMIT: usize = 3;
 
 pub const CLASS_KEYWORD: &str = "class";
+pub const CONSTRUCTOR_KEYWORD: &str = "constructor";
 pub const FUNCTION_KEYWORD: &str = "func";
-pub const FEATURE_KEYWORD: &str = "feat";
 pub const LET_KEYWORD: &str = "let";
 pub const IF_KEYWORD: &str = "if";
 pub const ELSE_KEYWORD: &str = "else";
@@ -34,7 +34,7 @@ enum ParserError {
     UnexpectedSymbol(Location, char),
     InvalidFunctionName(Location, String),
     InvalidClassName(Location, String),
-    UnknownFeature(Location, String),
+    ConstructorReturnsValue(Location),
     ExpectedExpression(Location, TokenType),
     InvalidIntegerLiteral(Location, String, Type),
     STDParseIntError(Location, String, std::num::ParseIntError),
@@ -67,7 +67,10 @@ impl Display for ParserError {
             Self::UnexpectedSymbol(l, c) => format!("{l:?}: Unexpected Symbol `{}`", c),
             Self::InvalidFunctionName(l, s) => format!("{l:?}: Invalid Function Name: {}", s),
             Self::InvalidClassName(l, s) => format!("{l:?}: Invalid Class Name: {}", s),
-            Self::UnknownFeature(l, s) => format!("{l:?}: Unknown Feature: {}", s),
+            Self::ConstructorReturnsValue(l) => format!(
+                "{l:?}: Constructor cannot return a value.\n{}: The return type of constructors is implicit, and should not be specified.",
+                NOTE_STR
+            ),
             Self::ExpectedExpression(l, e) => format!("{l:?}: Expected Expression, found {}", e),
             Self::InvalidIntegerLiteral(l, s, typ) => format!("{l:?}: Invalid Integer Literal {} for type {}", s, typ),
             Self::STDParseIntError(l, s, e) => format!("{l:?}: Failed to parse integer literal {}\n{}: Reason: {}", s, NOTE_STR, e),
@@ -116,8 +119,8 @@ pub enum TokenType {
     OpenSquare,
     ClosingSquare,
     ClassKeyword,
+    ConstructorKeyword,
     FunctionKeyword,
-    FeatureKeyword,
     LetKeyword,
     IfKeyword,
     ElseKeyword,
@@ -174,8 +177,8 @@ impl Display for TokenType {
             Self::OpenSquare => write!(f, "`[`"),
             Self::ClosingSquare => write!(f, "`]`"),
             Self::ClassKeyword => write!(f, "`{}`", CLASS_KEYWORD),
+            Self::ConstructorKeyword => write!(f, "`{}`", CONSTRUCTOR_KEYWORD),
             Self::FunctionKeyword => write!(f, "`{}`", FUNCTION_KEYWORD),
-            Self::FeatureKeyword => write!(f, "`{}`", FEATURE_KEYWORD),
             Self::LetKeyword => write!(f, "`{}`", LET_KEYWORD),
             Self::IfKeyword => write!(f, "`{}`", IF_KEYWORD),
             Self::ElseKeyword => write!(f, "`{}`", ELSE_KEYWORD),
@@ -445,8 +448,8 @@ impl Parser {
                 });
                 let typ = match value.as_str() {
                     CLASS_KEYWORD => TokenType::ClassKeyword,
+                    CONSTRUCTOR_KEYWORD => TokenType::ConstructorKeyword,
                     FUNCTION_KEYWORD => TokenType::FunctionKeyword,
-                    FEATURE_KEYWORD => TokenType::FeatureKeyword,
                     LET_KEYWORD => TokenType::LetKeyword,
                     IF_KEYWORD => TokenType::IfKeyword,
                     ELSE_KEYWORD => TokenType::ElseKeyword,
@@ -824,8 +827,7 @@ impl Parser {
         try_parse!(self.expect(TokenType::OpenCurly));
         let mut fields = vec![];
         let mut methods = vec![];
-        let mut features = vec![];
-        let mut has_constructor = false;
+        let mut constructors = vec![];
         const RECOVER_TOKENS: [TokenType; 2] = [
             TokenType::ClosingCurly,
             TokenType::Semi,
@@ -836,10 +838,9 @@ impl Parser {
                     parse_or_recover!(parsed_field, self.parse_field(), self.recover(&RECOVER_TOKENS));
                     fields.push(parsed_field);
                 }
-                TokenType::FeatureKeyword => {
-                    parse_or_recover!(parsed_feature, self.parse_feature(&name), self.recover(&RECOVER_TOKENS));
-                    has_constructor |= parsed_feature.is_constructor;
-                    features.push(parsed_feature);
+                TokenType::ConstructorKeyword => {
+                    parse_or_recover!(parsed_constructor, self.parse_constructor(&name), self.recover(&RECOVER_TOKENS));
+                    constructors.push(parsed_constructor);
                 }
                 TokenType::FunctionKeyword => {
                     parse_or_recover!(parsed_method, self.parse_method(&name), self.recover(&RECOVER_TOKENS));
@@ -848,7 +849,7 @@ impl Parser {
                 e => {
                     self.report_error(ParserError::UnexpectedTokenMany(
                         self.current_location(),
-                        vec![TokenType::Identifier, TokenType::FeatureKeyword, TokenType::FunctionKeyword],
+                        vec![TokenType::Identifier, TokenType::ConstructorKeyword, TokenType::FunctionKeyword],
                         e,
                     ));
                     self.recover(&RECOVER_TOKENS);
@@ -863,8 +864,7 @@ impl Parser {
             name,
             fields,
             methods,
-            features,
-            has_constructor,
+            constructors,
         })
     }
 
@@ -884,56 +884,31 @@ impl Parser {
     }
 
     #[trace_call(always)]
-    fn parse_feature(&mut self, class_name: &str) -> Option<nodes::FeatureNode> {
+    fn parse_constructor(&mut self, class_name: &str) -> Option<nodes::ConstructorNode> {
         let location = self.current_location();
-        try_parse!(self.expect(TokenType::FeatureKeyword));
-
-        try_parse!(name_token, self.expect(TokenType::Identifier));
-        if !name_token.value.as_bytes()[0].is_ascii_lowercase() {
-            self.report_error(ParserError::InvalidFunctionName(
-                name_token.location,
-                name_token.value
-            ));
-            return None;
-        }
-        let name = name_token.value;
-        self.current_function = Some(name.clone());
-
-        if !BUILT_IN_FEATURES.contains(&name.as_str()) {
-            self.report_error(ParserError::UnknownFeature(
-                name_token.location,
-                name
-            ));
-            return None;
-        }
+        try_parse!(self.expect(TokenType::ConstructorKeyword));
 
         try_parse!(self.expect(TokenType::OpenRound));
         try_parse!(parameters, self.parse_parameters());
-        // TODO: Don't forget to handle static methods later
-        // Add `this` parameter
-        let mut parameters = parameters;
-        if name != CONSTRUCTOR_NAME {
-            parameters.insert(
-                0,
-                nodes::ParameterNode::this(
-                    location.clone(),
-                    Type::Class(class_name.to_string()),
-                ),
-            );
-        }
         try_parse!(self.expect(TokenType::ClosingRound));
 
-        try_parse!(return_type, self.parse_return_type());
+        if self.eat(TokenType::Arrow) {
+            self.report_error(ParserError::ConstructorReturnsValue(
+                self.current_location(),
+            ));
+            return None;
+        }
+
+        let return_type = nodes::TypeNode {
+            location: location.clone(),
+            typ: Type::Class(class_name.to_string()),
+        };
 
         try_parse!(block, self.parse_block());
 
-        self.current_function = None;
-
-        Some(nodes::FeatureNode {
-            is_constructor: name == *CONSTRUCTOR_NAME,
-            class_name: class_name.to_string(),
+        Some(nodes::ConstructorNode {
             location,
-            name,
+            class_name: class_name.to_string(),
             return_type,
             parameters,
             block,

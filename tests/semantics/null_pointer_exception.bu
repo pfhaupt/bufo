@@ -2,7 +2,7 @@ class Test {
     tField: Test;
     otherField: u32;
 
-    feat new() {
+    constructor() {
         this.otherField = 10;
     }
 }

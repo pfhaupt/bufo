@@ -1,10 +1,10 @@
 class Foo {
-    feat new() -> i32 {
+    constructor() -> i32 {
         return 5;
     }
 }
 class Bar {
-    feat new() -> Bar {
+    constructor() -> Bar {
         return this;
     }
 }

@@ -3,7 +3,7 @@ class Test {
     b: i64;
     c: Test;
 
-    feat new() {
+    constructor() {
         this.c = this;
         this.b = 12;
         this.a = 1337;

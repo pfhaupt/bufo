@@ -55,8 +55,8 @@ impl Printable for nodes::ClassNode {
             method.print(indent + 2 * INDENT_PER_LEVEL);
         }
         println!("{}Features", " ".repeat(indent + INDENT_PER_LEVEL));
-        for feature in &self.features {
-            feature.print(indent + 2 * INDENT_PER_LEVEL);
+        for constructor in &self.constructors {
+            constructor.print(indent + 2 * INDENT_PER_LEVEL);
         }
     }
 }
@@ -68,9 +68,9 @@ impl Printable for nodes::FieldNode {
     }
 }
 
-impl Printable for nodes::FeatureNode {
+impl Printable for nodes::ConstructorNode {
     fn print(&self, indent: usize) {
-        println!("{}FeatureNode {}", " ".repeat(indent), self.name);
+        println!("{}ConstructorNode", " ".repeat(indent));
         println!("{}Return Type", " ".repeat(indent + INDENT_PER_LEVEL));
         self.return_type.print(indent + 2 * INDENT_PER_LEVEL);
 

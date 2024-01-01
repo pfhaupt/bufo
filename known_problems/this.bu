@@ -1,5 +1,5 @@
 class Foo {
-    feat new() {
+    constructor() {
         let this: i32 = 0; // Should be an error
     }
     func other() {

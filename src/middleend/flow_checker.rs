@@ -5,7 +5,7 @@ use crate::{
     compiler::{ERR_STR, WARN_STR},
     frontend::nodes,
     util::flags::Flags,
-    internal_error, internal_warning,
+    internal_warning,
 };
 
 use super::type_checker::Type;
@@ -49,8 +49,8 @@ impl FlowChecker {
 
     #[trace_call(always)]
     fn check_class(&mut self, class: &nodes::ClassNode) -> Result<(), String> {
-        for feature in &class.features {
-            self.check_feature(feature)?;
+        for constructor in &class.constructors {
+            self.check_constructor(constructor)?;
         }
         for method in &class.methods {
             self.check_method(method)?;
@@ -59,22 +59,18 @@ impl FlowChecker {
     }
 
     #[trace_call(always)]
-    fn check_feature(&mut self, feature: &nodes::FeatureNode) -> Result<(), String> {
-        let flow = self.check_block(&feature.block, &[FlowType::AlwaysReturn])?;
-        if feature.is_constructor {
-            // Constructors never return a value
-            // It's all implicit at the end of the block
-            if flow != FlowType::Linear {
-                Err(format!(
-                    "{}: {:?}: Return values are not allowed in constructors.\n{}: Returning `this` is implicit in constructors.",
-                    ERR_STR, feature.location, NOTE_STR
-                ))
-            } else {
-                // Implicit return statement.
-                Ok(())
-            }
+    fn check_constructor(&mut self, constructor: &nodes::ConstructorNode) -> Result<(), String> {
+        let flow = self.check_block(&constructor.block, &[FlowType::AlwaysReturn])?;
+        // Constructors never return a value
+        // It's all implicit at the end of the block
+        if flow != FlowType::Linear {
+            Err(format!(
+                "{}: {:?}: Return values are not allowed in constructors.\n{}: Returning `this` is implicit in constructors.",
+                ERR_STR, constructor.location, NOTE_STR
+            ))
         } else {
-            internal_error!("There's only one feature now, and it's a constructor")
+            // Implicit return statement.
+            Ok(())
         }
     }
 
