@@ -63,13 +63,13 @@ macro_rules! internal_warning {
 }
 
 #[cfg(not(feature = "llvm"))]
-pub struct Compiler {
-    parser: Parser,
-    type_checker: TypeChecker,
-    flow_checker: FlowChecker,
-    codegen: Codegen,
-    assembler: Assembler,
-    flags: Flags,
+pub struct Compiler<'flags> {
+    parser: Parser<'flags>,
+    type_checker: TypeChecker<'flags>,
+    flow_checker: FlowChecker<'flags>,
+    codegen: Codegen<'flags>,
+    assembler: Assembler<'flags>,
+    flags: &'flags Flags,
 }
 
 #[cfg(feature = "llvm")]
@@ -82,15 +82,15 @@ pub struct Compiler {
 }
 
 #[cfg(not(feature = "llvm"))]
-impl Compiler {
-    pub fn new(flags: Flags) -> Self {
+impl<'flags> Compiler<'flags> {
+    pub fn new(flags: &'flags Flags) -> Self {
         Self {
-            parser: Parser::new(flags.clone()),
-            type_checker: TypeChecker::new(flags.clone()),
-            flow_checker: FlowChecker::new(flags.clone()),
-            codegen: Codegen::new(flags.clone()),
-            assembler: Assembler::new(flags.clone()),
-            flags: flags.clone()
+            parser: Parser::new(flags),
+            type_checker: TypeChecker::new(flags),
+            flow_checker: FlowChecker::new(flags),
+            codegen: Codegen::new(flags),
+            assembler: Assembler::new(flags),
+            flags: flags
         }
     }
 
@@ -200,7 +200,7 @@ fn compile() -> Result<(), String> {
     if flags.debug {
         println!("[DEBUG] Parsing flags took {:?}", now.elapsed());
     }
-    let mut compiler = Compiler::new(flags);
+    let mut compiler = Compiler::new(&flags);
     compiler.run_everything()
 }
 #[trace_call(always)]

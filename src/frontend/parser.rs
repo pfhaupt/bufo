@@ -324,8 +324,7 @@ impl Operation {
     }
 }
 
-#[derive(Default)]
-pub struct Parser {
+pub struct Parser<'flags> {
     filepath: PathBuf,
     filename: String,
     source: Vec<char>,
@@ -338,16 +337,26 @@ pub struct Parser {
     line_start: usize,
     errors: Vec<ParserError>,
     bracket_level: usize,
-    flags: Flags,
+    flags: &'flags Flags,
 }
 
-impl Parser {
+impl<'flags> Parser<'flags> {
     // ---------- Start of Builder Pattern ----------
-    pub fn new(flags: Flags) -> Self {
+    pub fn new(flags: &'flags Flags) -> Self {
         Self {
+            filepath: PathBuf::new(),
+            filename: String::new(),
+            source: Vec::new(),
+            lookahead: VecDeque::new(),
+            current_char: 0,
             current_line: 1,
-            flags: flags.clone(),
-            ..Default::default()
+            current_function: None,
+            current_class: None,
+            current_externs: Vec::new(),
+            line_start: 0,
+            errors: Vec::new(),
+            bracket_level: 0,
+            flags,
         }
         .filepath(&flags.input)
     }

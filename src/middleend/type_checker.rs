@@ -513,24 +513,24 @@ impl Variable {
 }
 
 #[derive(Debug)]
-pub struct TypeChecker {
-    known_functions: HashMap<String, Function>,
+pub struct TypeChecker<'flags> {
     known_externs: HashMap<String, Function>,
     known_classes: HashMap<String, Class>,
+    known_functions: HashMap<String, Function>,
     known_variables: VecDeque<HashMap<String, Variable>>,
     current_stack_size: usize,
     errors: Vec<TypeError>,
     #[allow(unused)]
-    flags: Flags,
+    flags: &'flags Flags,
 }
 
-impl TypeChecker {
+impl<'flags> TypeChecker<'flags> {
     #[trace_call(extra)]
-    pub fn new(flags: Flags) -> Self {
+    pub fn new(flags: &'flags Flags) -> Self {
         Self {
+            known_externs: HashMap::new(),
             known_classes: HashMap::new(),
             known_functions: HashMap::new(),
-            known_externs: HashMap::new(),
             known_variables: VecDeque::new(),
             current_stack_size: 0,
             errors: Vec::new(),

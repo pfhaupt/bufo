@@ -22,14 +22,14 @@ enum FlowType {
     AlwaysContinue
 }
 
-pub struct FlowChecker {
+pub struct FlowChecker<'flags> {
     loop_stack: Vec<()>,
     #[allow(unused)]
-    flags: Flags,
+    flags: &'flags Flags,
 }
 
-impl FlowChecker {
-    pub fn new(flags: Flags) -> FlowChecker {
+impl<'flags> FlowChecker<'flags> {
+    pub fn new(flags: &'flags Flags) -> FlowChecker {
         FlowChecker {
             loop_stack: Vec::new(),
             flags,

@@ -182,7 +182,7 @@ impl SizeManager {
 }
 
 #[derive(Debug)]
-pub struct Codegen {
+pub struct Codegen<'flags> {
     sm: SizeManager,
     current_class: String,
     current_return_label: String,
@@ -194,10 +194,10 @@ pub struct Codegen {
     // FIXME: Figure out a better way to do this
     loop_stack: Vec<(String, String)>,
     register_counter: usize,
-    flags: Flags
+    flags: &'flags Flags
 }
-impl Codegen {
-    pub fn new(flags: Flags) -> Self {
+impl<'flags> Codegen<'flags> {
+    pub fn new(flags: &'flags Flags) -> Self {
         Self {
             sm: SizeManager::new(),
             current_class: String::new(),

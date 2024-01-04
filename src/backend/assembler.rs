@@ -36,16 +36,16 @@ fn reg(r: Register, rm: RegMode) -> &'static str {
     }
 }
 
-pub struct Assembler {
+pub struct Assembler<'flags> {
     path: String,
-    flags: Flags,
+    flags: &'flags Flags,
 }
 
-impl Assembler {
-    pub fn new(flags: Flags) -> Self {
+impl<'flags> Assembler<'flags> {
+    pub fn new(flags: &'flags Flags) -> Self {
         Self {
             path: String::new(),
-            flags: flags.clone()
+            flags
         }.filepath(&flags.input)
     }
 

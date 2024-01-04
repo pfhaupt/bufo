@@ -18,18 +18,6 @@ mod tests {
     const ALWAYS_FAILS: &str =
         "This is a String we defined to make sure that a test always fails. This is expected.";
 
-    macro_rules! init {
-        ($path: expr, $debug: expr, $run: expr) => {
-            {
-                let mut flags = crate::util::flags::Flags::default();
-                flags.input = $path.to_string();
-                flags.debug = $debug;
-                flags.run = $run;
-                Compiler::new(flags)
-            }
-        };
-    }
-
     macro_rules! fail {
         ($path: expr, $expected: expr) => {
             test!($path, false, false, true, $expected)
@@ -71,7 +59,11 @@ mod tests {
     macro_rules! test {
         ($path: expr, $debug: expr, $run: expr, $should_fail: expr, $expected: expr) => {
             {
-                let mut c = init!($path, $debug, $run);
+                let mut flags = crate::util::flags::Flags::default();
+                flags.input = $path.to_string();
+                flags.debug = $debug;
+                flags.run = $run;
+                let mut c = Compiler::new(&flags);
                 let result = c.run_everything();
                 if $should_fail {
                     assert!(result.is_err());
