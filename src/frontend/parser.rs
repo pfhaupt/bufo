@@ -38,6 +38,8 @@ enum ParserError {
     ExpectedExpression(Location, TokenType),
     InvalidIntegerLiteral(Location, String, Type),
     STDParseIntError(Location, String, std::num::ParseIntError),
+    ExpectedUnaryOperator(Location, TokenType),
+    ExpectedBinaryOperator(Location, TokenType),
 }
 
 impl Display for ParserError {
@@ -74,6 +76,8 @@ impl Display for ParserError {
             Self::ExpectedExpression(l, e) => format!("{l:?}: Expected Expression, found {}", e),
             Self::InvalidIntegerLiteral(l, s, typ) => format!("{l:?}: Invalid Integer Literal {} for type {}", s, typ),
             Self::STDParseIntError(l, s, e) => format!("{l:?}: Failed to parse integer literal {}\n{}: Reason: {}", s, NOTE_STR, e),
+            Self::ExpectedUnaryOperator(l, t) => format!("{l:?}: Expected Unary Operator, found {}", t),
+            Self::ExpectedBinaryOperator(l, t) => format!("{l:?}: Expected Binary Operator, found {}", t),
         };
         let message = format!("{}: {}", ERR_STR, error_msg);
         write!(f, "{}", message)
@@ -208,15 +212,6 @@ impl Display for TokenType {
     }
 }
 
-pub const COMPARATOR_TYPES: [TokenType; 6] = [
-    TokenType::CmpEq,
-    TokenType::CmpNeq,
-    TokenType::CmpGt,
-    TokenType::CmpGte,
-    TokenType::CmpLt,
-    TokenType::CmpLte,
-];
-
 #[derive(Clone, PartialEq, Eq, Default)]
 pub struct Location {
     file: String,
@@ -274,6 +269,7 @@ impl Token {
 
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub enum Operation {
+    Negate,
     Add,
     Sub,
     Mul,
@@ -286,12 +282,18 @@ pub enum Operation {
     GreaterThanOrEqual,
 }
 
+#[derive(Debug, Clone, PartialEq, Copy)]
+enum Associativity {
+    Left,
+    Right,
+}
+
 impl Display for Operation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        debug_assert_eq!(Operation::GreaterThanOrEqual as u8 + 1, 10);
+        debug_assert_eq!(Operation::GreaterThanOrEqual as u8 + 1, 11);
         match self {
             Self::Add => write!(f, "+"),
-            Self::Sub => write!(f, "-"),
+            Self::Sub | Self::Negate => write!(f, "-"),
             Self::Mul => write!(f, "*"),
             Self::Div => write!(f, "/"),
             Self::Equal => write!(f, "=="),
@@ -1093,7 +1095,7 @@ impl<'flags> Parser<'flags> {
                     nodes::Statement::Assign(assign_stmt)
                 }
                 _ => {
-                    try_parse!(expr, self.parse_expression());
+                    try_parse!(expr, self.parse_expression(0, Associativity::Left));
                     try_parse!(self.expect(TokenType::Semi));
                     nodes::Statement::Expression(expr)
                 }
@@ -1101,7 +1103,7 @@ impl<'flags> Parser<'flags> {
             s => {
                 eprintln!("FIXME: Attempted to parse {:?} as statement", s);
                 eprintln!("       Proceeding to parse as expression!");
-                try_parse!(expr, self.parse_expression());
+                try_parse!(expr, self.parse_expression(0, Associativity::Left));
                 try_parse!(self.expect(TokenType::Semi));
                 nodes::Statement::Expression(expr)
             }
@@ -1116,7 +1118,7 @@ impl<'flags> Parser<'flags> {
         try_parse!(self.expect(TokenType::Colon));
         try_parse!(typ, self.parse_type_node());
         try_parse!(self.expect(TokenType::Equal));
-        try_parse!(expression, self.parse_expression());
+        try_parse!(expression, self.parse_expression(0, Associativity::Left));
         try_parse!(self.expect(TokenType::Semi));
         Some(nodes::LetNode{
             location,
@@ -1131,7 +1133,7 @@ impl<'flags> Parser<'flags> {
         let location = self.current_location();
         try_parse!(name, self.parse_expr_identifier());
         try_parse!(self.expect(TokenType::Equal));
-        try_parse!(expression, self.parse_expression());
+        try_parse!(expression, self.parse_expression(0, Associativity::Left));
         try_parse!(self.expect(TokenType::Semi));
         Some(nodes::AssignNode {
             location,
@@ -1145,7 +1147,7 @@ impl<'flags> Parser<'flags> {
         let location = self.current_location();
         try_parse!(self.expect(TokenType::IfKeyword));
         try_parse!(self.expect(TokenType::OpenRound));
-        try_parse!(condition, self.parse_expression());
+        try_parse!(condition, self.parse_expression(0, Associativity::Left));
         try_parse!(self.expect(TokenType::ClosingRound));
         try_parse!(if_branch, self.parse_block());
         let else_branch = if self.eat(TokenType::ElseKeyword) {
@@ -1168,7 +1170,7 @@ impl<'flags> Parser<'flags> {
         try_parse!(self.expect(TokenType::ReturnKeyword));
 
         let return_value = if !self.at(TokenType::Semi) {
-            try_parse!(rv, self.parse_expression());
+            try_parse!(rv, self.parse_expression(0, Associativity::Left));
             Some(rv)
         } else {
             None
@@ -1189,7 +1191,7 @@ impl<'flags> Parser<'flags> {
         try_parse!(self.expect(TokenType::WhileKeyword));
 
         try_parse!(self.expect(TokenType::OpenRound));
-        try_parse!(condition, self.parse_expression());
+        try_parse!(condition, self.parse_expression(0, Associativity::Left));
         try_parse!(self.expect(TokenType::ClosingRound));
 
         try_parse!(block, self.parse_block());
@@ -1217,90 +1219,262 @@ impl<'flags> Parser<'flags> {
     }
 
     #[trace_call(always)]
-    fn parse_expression(&mut self) -> Option<nodes::Expression> {
-        // TODO: Refactor expressions
-        //       Every expression always consists of two things:
-        //       - Mandatory primary expression
-        //       - Optional secondary expression, if we find an operator after primary
-        //       We could simplify many things by always storing expressions as binary nodes
-        //       instead of whatever we're doing right now
-        self.parse_expression_rec(TokenType::Eof)
+    fn get_precedence(&self, token_type: TokenType) -> usize {
+        match token_type {
+            TokenType::ForwardSlash => 20,
+            TokenType::Asterisk => 20,
+            TokenType::Plus => 15,
+            TokenType::Minus => 15,
+            TokenType::CmpEq => 10,
+            TokenType::CmpNeq => 10,
+            TokenType::CmpLt => 10,
+            TokenType::CmpLte => 10,
+            TokenType::CmpGt => 10,
+            TokenType::CmpGte => 10,
+            e => todo!("get_precedence({:?})", e),
+        }
     }
 
     #[trace_call(always)]
-    fn parse_expression_delim(&mut self) -> Option<nodes::Expression> {
-        Some(match self.nth(0) {
+    fn get_associativity(&self, token_type: TokenType) -> Associativity {
+        match token_type {
+            TokenType::Plus
+            | TokenType::Minus
+            | TokenType::Asterisk
+            | TokenType::ForwardSlash
+            | TokenType::CmpEq
+            | TokenType::CmpNeq
+            | TokenType::CmpLt
+            | TokenType::CmpLte
+            | TokenType::CmpGt
+            | TokenType::CmpGte => Associativity::Left,
+            _ => Associativity::Right,
+        }
+    }
+
+    #[trace_call(always)]
+    fn parse_expression(&mut self, min_precedence: usize, associativity: Associativity) -> Option<nodes::Expression> {
+        let mut expression = self.parse_primary_expression()?;
+
+        while self.matches_binary_expression() {
+            let new_precedence = self.get_precedence(self.nth(0));
+            if new_precedence < min_precedence {
+                break;
+            }
+            if new_precedence == min_precedence && associativity == Associativity::Left {
+                break;
+            }
+            let new_associativity = self.get_associativity(self.nth(0));
+            try_parse!(result, self.parse_secondary_expression(expression, new_precedence, new_associativity));
+            expression = result;
+        }
+        Some(expression)
+    }
+
+    #[trace_call(always)]
+    fn parse_primary_expression(&mut self) -> Option<nodes::Expression> {
+        // let location = self.current_location();
+        if self.matches_unary_expression() {
+            try_parse!(unary, self.parse_unary_expression());
+            return Some(nodes::Expression::Unary(unary));
+        }
+        match self.nth(0) {
             TokenType::IntLiteral => {
-                try_parse!(expression, self.parse_expr_int_literal());
-                nodes::Expression::Literal(expression)
+                try_parse!(int_literal, self.parse_expr_int_literal());
+                Some(nodes::Expression::Literal(int_literal))
             }
             TokenType::Identifier => {
-                try_parse!(expression, self.parse_expr_identifier());
-                nodes::Expression::Identifier(expression)
+                try_parse!(identifier, self.parse_expr_identifier());
+                Some(nodes::Expression::Identifier(identifier))
             }
             TokenType::OpenRound => {
                 try_parse!(self.expect(TokenType::OpenRound));
-                try_parse!(expression, self.parse_expression());
+                try_parse!(expression, self.parse_expression(0, Associativity::Left));
                 try_parse!(self.expect(TokenType::ClosingRound));
-                expression
+                Some(expression)
             }
             TokenType::OpenSquare => {
-                try_parse!(expression, self.parse_expr_array_literal());
-                nodes::Expression::ArrayLiteral(expression)
+                try_parse!(array_literal, self.parse_expr_array_literal());
+                Some(nodes::Expression::ArrayLiteral(array_literal))
             }
             e => {
                 self.report_error(ParserError::ExpectedExpression(
                     self.current_location(),
                     e
                 ));
+                None
+            }
+        }
+    }
+
+    #[trace_call(always)]
+    fn matches_unary_expression(&mut self) -> bool {
+        match self.nth(0) {
+            TokenType::Minus => true,
+            _ => false,
+        }
+    }
+
+    #[trace_call(always)]
+    fn matches_binary_expression(&mut self) -> bool {
+        match self.nth(0) {
+            TokenType::Plus
+            | TokenType::Minus
+            | TokenType::Asterisk
+            | TokenType::ForwardSlash
+            | TokenType::CmpEq
+            | TokenType::CmpNeq
+            | TokenType::CmpLt
+            | TokenType::CmpLte
+            | TokenType::CmpGt
+            | TokenType::CmpGte => true,
+            _ => false,
+        }
+    }
+
+    #[trace_call(always)]
+    fn parse_secondary_expression(
+        &mut self,
+        lhs: nodes::Expression,
+        precedence: usize,
+        associativity: Associativity,
+    ) -> Option<nodes::Expression> {
+        let location = self.current_location();
+        match self.nth(0) {
+            TokenType::Plus => {
+                self.next();
+                return Some(nodes::Expression::Binary(nodes::BinaryNode {
+                    location,
+                    operation: Operation::Add,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(self.parse_expression(precedence, associativity)?),
+                    typ: Type::Unknown,
+                }));
+            },
+            TokenType::Minus => {
+                self.next();
+                return Some(nodes::Expression::Binary(nodes::BinaryNode {
+                    location,
+                    operation: Operation::Sub,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(self.parse_expression(precedence, associativity)?),
+                    typ: Type::Unknown,
+                }));
+            },
+            TokenType::Asterisk => {
+                self.next();
+                return Some(nodes::Expression::Binary(nodes::BinaryNode {
+                    location,
+                    operation: Operation::Mul,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(self.parse_expression(precedence, associativity)?),
+                    typ: Type::Unknown,
+                }));
+            },
+            TokenType::ForwardSlash => {
+                self.next();
+                return Some(nodes::Expression::Binary(nodes::BinaryNode {
+                    location,
+                    operation: Operation::Div,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(self.parse_expression(precedence, associativity)?),
+                    typ: Type::Unknown,
+                }));
+            },
+            TokenType::CmpEq => {
+                self.next();
+                return Some(nodes::Expression::Binary(nodes::BinaryNode {
+                    location,
+                    operation: Operation::Equal,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(self.parse_expression(precedence, associativity)?),
+                    typ: Type::Unknown,
+                }));
+            },
+            TokenType::CmpNeq => {
+                self.next();
+                return Some(nodes::Expression::Binary(nodes::BinaryNode {
+                    location,
+                    operation: Operation::NotEqual,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(self.parse_expression(precedence, associativity)?),
+                    typ: Type::Unknown,
+                }));
+            },
+            TokenType::CmpLt => {
+                self.next();
+                return Some(nodes::Expression::Binary(nodes::BinaryNode {
+                    location,
+                    operation: Operation::LessThan,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(self.parse_expression(precedence, associativity)?),
+                    typ: Type::Unknown,
+                }));
+            },
+            TokenType::CmpLte => {
+                self.next();
+                return Some(nodes::Expression::Binary(nodes::BinaryNode {
+                    location,
+                    operation: Operation::LessThanOrEqual,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(self.parse_expression(precedence, associativity)?),
+                    typ: Type::Unknown,
+                }));
+            },
+            TokenType::CmpGt => {
+                self.next();
+                return Some(nodes::Expression::Binary(nodes::BinaryNode {
+                    location,
+                    operation: Operation::GreaterThan,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(self.parse_expression(precedence, associativity)?),
+                    typ: Type::Unknown,
+                }));
+            },
+            TokenType::CmpGte => {
+                self.next();
+                return Some(nodes::Expression::Binary(nodes::BinaryNode {
+                    location,
+                    operation: Operation::GreaterThanOrEqual,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(self.parse_expression(precedence, associativity)?),
+                    typ: Type::Unknown,
+                }));
+            },
+            _ => {
+                self.report_error(ParserError::ExpectedBinaryOperator(
+                    self.current_location(),
+                    self.nth(0),
+                ));
                 return None;
             }
-        })
+        }
     }
 
     #[trace_call(always)]
-    fn parse_expression_rec(&mut self, left: TokenType) -> Option<nodes::Expression> {
-        try_parse!(lhs, self.parse_expression_delim());
-        let mut lhs = lhs;
-        loop {
-            let right = self.nth(0);
-            if self.right_binds_tighter(left, right) {
-                let token = self.next();
-                try_parse!(rhs, self.parse_expression_rec(right));
-                let operation = Operation::from(token.value);
-                lhs = nodes::Expression::Binary(nodes::BinaryNode {
-                    location: token.location,
-                    operation,
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
+    fn parse_unary_expression(&mut self) -> Option<nodes::UnaryNode> {
+        let location = self.current_location();
+        let precedence = self.get_precedence(self.nth(0));
+        let associativity = self.get_associativity(self.nth(0));
+        match self.nth(0) {
+            TokenType::Minus => {
+                try_parse!(self.expect(TokenType::Minus));
+                try_parse!(expression, self.parse_expression(precedence, associativity));
+                Some(nodes::UnaryNode {
+                    location,
+                    operation: Operation::Negate,
+                    expression: Box::new(expression),
                     typ: Type::Unknown,
                 })
-            } else {
-                break;
+            }
+            _ => {
+                self.report_error(ParserError::ExpectedUnaryOperator(
+                    self.current_location(),
+                    self.nth(0),
+                ));
+                None
             }
         }
-        Some(lhs)
-    }
-
-    #[trace_call(always)]
-    fn right_binds_tighter(&self, left: TokenType, right: TokenType) -> bool {
-        fn tightness(typ: TokenType) -> Option<usize> {
-            [
-                &COMPARATOR_TYPES,
-                [TokenType::Plus, TokenType::Minus].as_slice(),
-                &[TokenType::Asterisk, TokenType::ForwardSlash],
-            ]
-            .iter()
-            .position(|l| l.contains(&typ))
-        }
-        let Some(right_tight) = tightness(right) else {
-            return false
-        };
-        let Some(left_tight) = tightness(left) else {
-            assert!(left == TokenType::Eof);
-            return true;
-        };
-        right_tight > left_tight
     }
 
     #[trace_call(always)]
@@ -1338,7 +1512,7 @@ impl<'flags> Parser<'flags> {
         let mut elements = vec![];
         try_parse!(self.expect(TokenType::OpenSquare));
         while !self.parsed_eof() && !self.at(TokenType::ClosingSquare) {
-            try_parse!(elem, self.parse_expression());
+            try_parse!(elem, self.parse_expression(0, Associativity::Left));
             elements.push(elem);
             if !self.eat(TokenType::Comma) {
                 break;
@@ -1433,7 +1607,7 @@ impl<'flags> Parser<'flags> {
     fn parse_arguments(&mut self) -> Option<Vec<nodes::Expression>> {
         let mut arguments = Vec::new();
         while !self.parsed_eof() && !self.at(TokenType::ClosingRound) {
-            try_parse!(arg, self.parse_expression());
+            try_parse!(arg, self.parse_expression(0, Associativity::Left));
             arguments.push(arg);
             if !self.eat(TokenType::Comma) {
                 break;

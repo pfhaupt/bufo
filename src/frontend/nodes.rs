@@ -201,6 +201,7 @@ pub enum Expression {
     ArrayLiteral(ArrayLiteralNode),
     ArrayAccess(ArrayAccessNode),
     Literal(LiteralNode),
+    Unary(UnaryNode),
     Binary(BinaryNode),
     FieldAccess(FieldAccessNode),
     // Parenthesis(Expression),
@@ -217,6 +218,7 @@ impl Expression {
             Self::ArrayLiteral(e) => e.location.clone(),
             Self::ArrayAccess(e) => e.location.clone(),
             Self::Literal(e) => e.location.clone(),
+            Self::Unary(e) => e.location.clone(),
             Self::Binary(e) => e.location.clone(),
             Self::FieldAccess(e) => e.location.clone(),
             Self::FunctionCall(e) => e.location.clone(),
@@ -232,6 +234,7 @@ impl Expression {
             Self::ArrayLiteral(e) => e.typ.clone(),
             Self::ArrayAccess(e) => e.typ.clone(),
             Self::Literal(e) => e.typ.clone(),
+            Self::Unary(e) => e.typ.clone(),
             Self::Binary(e) => e.typ.clone(),
             Self::FieldAccess(e) => e.typ.clone(),
             Self::FunctionCall(e) => e.typ.clone(),
@@ -259,6 +262,14 @@ pub struct ArrayAccessNode {
 pub struct LiteralNode {
     pub location: Location,
     pub value: String,
+    pub typ: Type,
+}
+
+#[derive(Debug, Clone)]
+pub struct UnaryNode {
+    pub location: Location,
+    pub operation: Operation,
+    pub expression: Box<Expression>,
     pub typ: Type,
 }
 

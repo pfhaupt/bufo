@@ -184,5 +184,6 @@ mod tests {
         generate_runtime_failing_test!(while_expression, format!("{:X}", 1337).as_str());
         generate_runtime_failing_test!(while_flow, format!("{:X}", 10).as_str());
         generate_runtime_failing_test!(nested_while, format!("{:X}", 10000).as_str());
+        generate_runtime_failing_test!(operator_stresstest, format!("{:X}", 1337).as_str());
     }
 }

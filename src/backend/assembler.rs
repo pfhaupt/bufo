@@ -308,6 +308,11 @@ impl<'flags> Assembler<'flags> {
                                 push_asm(format!("  imul {dst_reg}, rax").as_str());
                                 push_asm("  pop rax");
                             }
+                            (OperandType::Reg, OperandType::Offset) => {
+                                let offset = src2.off_or_imm;
+                                let size = dst.reg_mode.size();
+                                push_asm(format!("  imul {dst_reg}, [rbp-{offset}-{size}]").as_str());
+                            }
                             (dst, src) => {
                                 return internal_error!(format!(
                                     "Can't generate ASM for `imul {dst:?}, {src:?}"
@@ -384,10 +389,21 @@ impl<'flags> Assembler<'flags> {
                     let dst_reg = reg(dst.reg, dst.reg_mode);
 
                     let d = if *signed { "idiv" } else { "div" };
+                    let word = if dst.reg_mode == RegMode::BIT32 {
+                        "DWORD"
+                    } else {
+                        "QWORD"
+                    };
                     let acc = if dst.reg_mode == RegMode::BIT32 {
                         "eax"
                     } else {
                         "rax"
+                    };
+
+                    let cq = if dst.reg_mode == RegMode::BIT32 {
+                        "  cdq"
+                    } else {
+                        "  cqo"
                     };
 
                     // IDIV and DIV put remainder in DX, need to preserve it
@@ -399,8 +415,31 @@ impl<'flags> Assembler<'flags> {
                             let src_reg = reg(src2.reg, src2.reg_mode);
                             // As with MUL, DIV uses accumulator
                             push_asm(format!("  mov {acc}, {dst_reg}").as_str());
-                            push_asm("  cqo");
+                            push_asm(cq);
                             push_asm(format!("  {d} {src_reg}").as_str());
+                            // Restore DX
+                            push_asm(format!("  pop {rem}").as_str());
+                            push_asm(format!("  mov {dst_reg}, {acc}").as_str());
+                        }
+                        (OperandType::Reg, OperandType::ImmI32) => {
+                            // IDIV and DIV have no immediate mode, we need to use a register
+                            let value = src2.off_or_imm;
+                            push_asm(format!("  mov {acc}, {dst_reg}").as_str());
+                            push_asm("  push rcx");
+                            push_asm(format!("  mov ecx, {value}").as_str());
+                            push_asm(cq);
+                            push_asm(format!("  {d} ecx").as_str());
+                            push_asm("  pop rcx");
+                            // Restore DX
+                            push_asm(format!("  pop {rem}").as_str());
+                            push_asm(format!("  mov {dst_reg}, {acc}").as_str());
+                        }
+                        (OperandType::Reg, OperandType::Offset) => {
+                            let offset = src2.off_or_imm;
+                            let size = dst.reg_mode.size();
+                            push_asm(format!("  mov {acc}, {dst_reg}").as_str());
+                            push_asm(cq);
+                            push_asm(format!("  {d} {word} [rbp-{offset}-{size}]").as_str());
                             // Restore DX
                             push_asm(format!("  pop {rem}").as_str());
                             push_asm(format!("  mov {dst_reg}, {acc}").as_str());

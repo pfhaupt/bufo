@@ -1139,6 +1139,7 @@ impl<'flags> TypeChecker<'flags> {
     ) -> Type {
         match expression {
             nodes::Expression::Name(name_node) => self.type_check_expr_name(name_node),
+            nodes::Expression::Unary(unary_expr) => self.type_check_expr_unary(unary_expr),
             nodes::Expression::Binary(binary_expr) => self.type_check_expr_binary(binary_expr),
             nodes::Expression::Identifier(ident_expr) => {
                 self.type_check_expr_identifier(ident_expr)
@@ -1231,6 +1232,14 @@ impl<'flags> TypeChecker<'flags> {
                 Type::None
             },
         }
+    }
+
+    #[trace_call(always)]
+    fn type_check_expr_unary(
+        &mut self,
+        _unary_expr: &mut nodes::UnaryNode
+    ) -> Type {
+        todo!()
     }
 
     #[trace_call(always)]

@@ -737,6 +737,7 @@ impl Codegenable for nodes::Expression {
             Self::ArrayLiteral(expr) => expr.codegen(codegen),
             Self::ArrayAccess(expr) => expr.codegen(codegen),
             Self::Literal(expr) => expr.codegen(codegen),
+            Self::Unary(expr) => expr.codegen(codegen),
             Self::Binary(expr) => expr.codegen(codegen),
             Self::FieldAccess(expr) => expr.codegen(codegen),
             Self::FunctionCall(expr) => expr.codegen(codegen),
@@ -785,6 +786,13 @@ impl Codegenable for nodes::LiteralNode {
         }
     }
 }
+
+impl Codegenable for nodes::UnaryNode {
+    fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
+        todo!()
+    }
+}
+
 impl Codegenable for nodes::BinaryNode {
     #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
