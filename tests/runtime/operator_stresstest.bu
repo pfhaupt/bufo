@@ -127,6 +127,5 @@ func main() -> i32 {
     if (test_extreme() != 0) {
         return 4;
     }
-    // Note: Once better testing is in place, this can return 0
-    return 1337;
+    return 0;
 }

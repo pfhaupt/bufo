@@ -614,6 +614,7 @@ impl<'flags> Assembler<'flags> {
             .output()
             .expect("failed to execute process");
         let exit_code = output.status.code().unwrap();
+        println!("{}", String::from_utf8(output.stdout).unwrap());
         if exit_code != 0 {
             Err(format!(
                 "{}: Code execution failed with code 0x{:X}.",

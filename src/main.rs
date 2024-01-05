@@ -83,6 +83,34 @@ mod tests {
         };
     }
 
+    mod runtime_tests {
+        use crate::compiler::Compiler;
+
+        // FIXME: Add expected print output to runtime tests
+        //        (e.g. "Hello World!" for hello_world.bu)
+        macro_rules! run {
+            ($name:ident) => {
+                test!(concat!("tests/runtime/", stringify!($name), ".bu"), false, true, false, [""])
+            };
+        }
+
+        macro_rules! generate_successful_test {
+            ($name:ident) => {
+                #[test]
+                #[cfg_attr(
+                    not(feature = "test_exec"),
+                    ignore = "Pass the `test_exec` feature-flag to run this test"
+                )]
+                fn $name() {
+                    run!($name)
+                }
+            };
+        }
+
+        generate_successful_test!(hello_world);
+        generate_successful_test!(operator_stresstest);
+    }
+
     mod syntax_tests {
         use crate::compiler::{Compiler, ERR_STR};
 
@@ -184,6 +212,5 @@ mod tests {
         generate_runtime_failing_test!(while_expression, format!("{:X}", 1337).as_str());
         generate_runtime_failing_test!(while_flow, format!("{:X}", 10).as_str());
         generate_runtime_failing_test!(nested_while, format!("{:X}", 10000).as_str());
-        generate_runtime_failing_test!(operator_stresstest, format!("{:X}", 1337).as_str());
     }
 }
