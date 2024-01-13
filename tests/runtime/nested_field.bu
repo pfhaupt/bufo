@@ -17,5 +17,9 @@ class Foo {
 
 func main() -> i32 {
     let f: Foo = Foo();
-    return f.f.f.getF().f.f.f.f.getA() + 3;
+    let result: i32 = f.f.f.getF().f.f.f.f.getA() + 3;
+    if (result != 8) {
+        return 1;
+    }
+    return 0;
 }

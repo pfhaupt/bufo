@@ -10,6 +10,67 @@ use crate::internal_panic;
 
 use tracer::trace_call;
 
+
+macro_rules! check_function {
+    ($tc:ident, $call_node:ident, $func_info:ident, $typ:expr, $implicit_this:expr) => {
+        {
+            let mut params = $func_info.parameters.clone();
+            if $implicit_this {
+                params.remove(0);
+            }
+            let return_type = $func_info.return_type.t.clone();
+            match $call_node.arguments.len().cmp(&params.len()) {
+                std::cmp::Ordering::Less => {
+                    $tc.report_error(TypeError::NotEnoughArguments(
+                        $typ,
+                        $call_node.location.clone(),
+                        $call_node.function_name.clone(),
+                        $call_node.arguments.len(),
+                        $func_info.location.clone(),
+                        params.len(),
+                    ));
+                    return return_type;
+                }
+                std::cmp::Ordering::Greater => {
+                    $tc.report_error(TypeError::TooManyArguments(
+                        $typ,
+                        $call_node.location.clone(),
+                        $call_node.function_name.clone(),
+                        $call_node.arguments.len(),
+                        $func_info.location.clone(),
+                        params.len(),
+                    ));
+                    return return_type;
+                }
+                std::cmp::Ordering::Equal => (),
+            }
+
+            for (mut arg, param) in $call_node.arguments.iter_mut().zip(params) {
+                let expected = param.typ;
+                let arg_type = $tc.type_check_expression(arg);
+                if arg_type == Type::Unknown {
+                    // We need to `infer` the type again
+                    $tc.type_check_expression_with_type(&mut arg, &expected);
+                } else if arg_type != expected {
+                    $tc.report_error(TypeError::ArgParamTypeMismatch(
+                        arg.get_loc(),
+                        arg_type.clone(),
+                        param.location.clone(),
+                        param.name.clone(),
+                        expected.clone(),
+                    ));
+                } else {
+                    // Everything is cool
+                }
+            }
+
+            $call_node.typ = return_type;
+            $call_node.typ.clone()
+        }
+    };
+}
+
+
 // FIXME: All this info is in the AST, there's no need to clone this
 //        We can just use references to the AST and lifetime parameters
 #[derive(Debug)]
@@ -46,10 +107,8 @@ enum TypeError {
     DimensionMismatch(Location, usize, usize),
     /// Syntax: Error Loc, Decl Loc, Decl Type
     MissingReturn(Location, Location, Type),
-    /// Syntax: Error Loc, Var Name, Field Loc, Field Name
-    NonClassFieldAccess(Location, String, Location, String),
     /// Syntax: Error Loc, Var Decl, Var Name, Field Name, Class Loc, Class Name
-    UnknownField(Location, Location, String, String, Location, String),
+    UnknownField(Location, String, Location, String),
     /// Syntax: Error Loc, Var Name, Class Loc, Class Name
     UnknownMethod(Location, String, Location, String),
     /// Syntax: Expected, Error Loc, Found Literal
@@ -57,7 +116,11 @@ enum TypeError {
     /// Syntax: Error Loc, Var Name, Decl Loc
     IndexIntoNonArray(Location, String, Location),
     /// Syntax: Error Loc, Class Decl, Class Name
-    NoConstructor(Location, Location, String)
+    NoConstructor(Location, Location, String),
+    /// Syntax: Error Loc
+    DotOnNonClass(Location),
+    /// Syntax: Error Loc
+    InvalidLValue(Location),
 }
 
 impl Display for TypeError {
@@ -192,18 +255,11 @@ impl Display for TypeError {
                     ERR_STR, error_loc, NOTE_STR, decl_loc, decl_type
                 )
             }
-            TypeError::NonClassFieldAccess(error_loc, var_name, field_loc, field_name) => {
+            TypeError::UnknownField(error_loc, field_name, class_loc, class_name) => {
                 write!(
                     f,
-                    "{}: {:?}: Attempted to access field `{}` of non-class variable `{}`.\n{}: {:?}: Field `{}` is declared here.",
-                    ERR_STR, error_loc, field_name, var_name, NOTE_STR, field_loc, field_name
-                )
-            }
-            TypeError::UnknownField(error_loc, var_loc, var_name, field_name, class_loc, class_name) => {
-                write!(
-                    f,
-                    "{}: {:?}: Attempted to access unknown field `{}` of variable `{}`.\n{}: {:?}: Variable `{}` is declared here.\n{}: {:?}: Class `{}` is declared here.",
-                    ERR_STR, error_loc, field_name, var_name, NOTE_STR, var_loc, var_name, NOTE_STR, class_loc, class_name
+                    "{}: {:?}: Attempted to access unknown field `{}` of instance of class `{}`.\n{}: {:?}: Class `{}` is declared here.",
+                    ERR_STR, error_loc, field_name, class_name, NOTE_STR, class_loc, class_name
                 )
             }
             TypeError::UnknownMethod(error_loc, method_name, class_loc, class_name) => {
@@ -232,6 +288,20 @@ impl Display for TypeError {
                     f,
                     "{}: {:?}: Class `{}` has no constructor.\n{}: {:?}: Class `{}` is declared here.\n{}: Implement the special `{}() {{}}` method to create a constructor.",
                     ERR_STR, error_loc, class_name, NOTE_STR, class_loc, class_name, NOTE_STR, CONSTRUCTOR_KEYWORD
+                )
+            }
+            TypeError::DotOnNonClass(error_loc) => {
+                write!(
+                    f,
+                    "{}: {:?}: Attempted to access field of non-class value.",
+                    ERR_STR, error_loc
+                )
+            }
+            TypeError::InvalidLValue(error_loc) => {
+                write!(
+                    f,
+                    "{}: {:?}: Attempted to assign to non-assignable value.",
+                    ERR_STR, error_loc
                 )
             }
         }
@@ -276,10 +346,17 @@ impl Type {
     pub fn is_class(&self) -> bool {
         matches!(self, Type::Class(..))
     }
+
+    #[trace_call(extra)]
+    pub fn get_class_name(&self) -> String {
+        match self {
+            Type::Class(name) => name.clone(),
+            _ => panic!(),
+        }
+    }
 }
 
 impl Display for Type {
-    #[trace_call(extra)]
     fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
             // Type::Ptr(t) => write!(fmt, "&{}", t),
@@ -288,13 +365,6 @@ impl Display for Type {
             _ => write!(fmt, "{}", format!("{:?}", self).to_lowercase()),
         }
     }
-}
-
-#[derive(Debug, Clone)]
-struct Parameter {
-    name: String,
-    location: Location,
-    typ: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -311,63 +381,71 @@ impl TypeLoc {
 }
 
 #[derive(Debug)]
-struct Method {
-    location: Location,
-    return_type: TypeLoc,
-    parameters: Vec<Parameter>,
-}
-
-impl Method {}
-
-#[derive(Debug)]
 struct Function {
     location: Location,
     return_type: TypeLoc,
-    parameters: Vec<Parameter>,
+    parameters: Vec<Variable>,
 }
 
-#[derive(Debug)]
-struct Constructor {
-    location: Location,
-    parameters: Vec<Parameter>,
-    return_type: TypeLoc,
-}
-
-enum FunctionType<'a> {
-    Function(&'a Function),
-    Constructor(&'a Constructor),
-}
-
-impl<'a> FunctionType<'a> {
-    fn get_return_type(&self) -> &TypeLoc {
-        match self {
-            FunctionType::Function(f) => &f.return_type,
-            FunctionType::Constructor(c) => &c.return_type,
+impl Function {
+    #[trace_call(extra)]
+    fn get_parameters_as_hashmap(&self) -> HashMap<String, Variable> {
+        let mut parameters = HashMap::new();
+        for param in &self.parameters {
+            parameters.insert(param.name.clone(), param.clone());
         }
-    }
-
-    fn get_parameters(&self) -> &Vec<Parameter> {
-        match self {
-            FunctionType::Function(f) => &f.parameters,
-            FunctionType::Constructor(c) => &c.parameters,
-        }
-    }
-
-    fn get_location(&self) -> &Location {
-        match self {
-            FunctionType::Function(f) => &f.location,
-            FunctionType::Constructor(c) => &c.location,
-        }
+        parameters
     }
 }
+// FIXME: constructor(this: ClassName) { ... } should not be allowed because ImplicitThisParam
+macro_rules! check_parameters {
+    ($tc:ident, $function:ident, $implicit_this:expr) => {
+        {
+            let mut parameters: HashMap<String, Variable> = HashMap::new();
+            let mut errors: Vec<TypeError> = Vec::new();
+            for param in &$function.parameters {
+                let p = Variable {
+                    name: param.name.clone(),
+                    location: param.location.clone(),
+                    typ: param.typ.typ.clone(),
+                };
+                if let Some(p) = parameters.get(&param.name) {
+                    if p.name == *"this" {
+                        errors.push(TypeError::ImplicitThisParam(
+                            param.location.clone(),
+                        ));
+                    } else {
+                        errors.push(TypeError::Redeclaration(
+                            "Parameter",
+                            param.location.clone(),
+                            param.name.clone(),
+                            p.location.clone(),
+                        ));
+                    }
+                } else {
+                    parameters.insert(param.name.clone(), p);
+                }
+            }
+            if parameters.len() > 4 {
+                errors.push(TypeError::TooManyParameters(
+                    "Method",
+                    $function.location.clone(),
+                    $implicit_this,
+                ));
+            }
+            (parameters.into_iter().map(|(_, v)| v).collect(), errors)
+        }
+    };
+}
+
 
 #[derive(Debug)]
 pub struct Class {
     name: String,
     location: Location,
     fields: HashMap<String, TypeLoc>,
-    known_methods: HashMap<String, Method>,
-    known_constructors: Vec<Constructor>,
+    known_methods: HashMap<String, Function>,
+    known_constructors: Vec<Function>,
     has_constructor: bool,
 }
 
@@ -408,77 +486,12 @@ impl Class {
     }
 
     #[trace_call(extra)]
-    fn add_method(&mut self, method: &nodes::MethodNode) -> Result<(), TypeError> {
-        let name = &method.name;
-        let location = &method.location;
-        match self.known_methods.get(name) {
-            Some(f) => Err(TypeError::Redeclaration(
-                "Method",
-                location.clone(),
-                name.clone(),
-                f.location.clone(),
-            )),
-            None => {
-                let return_type = &method.return_type.typ;
-                let return_loc = &method.return_type.location;
-                let parameters: Vec<_> = method
-                    .parameters
-                    .iter()
-                    .map(|param| Parameter {
-                        name: param.name.clone(),
-                        location: param.location.clone(),
-                        typ: param.typ.typ.clone(),
-                    })
-                    .collect();
-                let method = Method {
-                    location: location.clone(),
-                    return_type: TypeLoc::new(return_loc.clone(), return_type.clone()),
-                    parameters,
-                };
-                self.known_methods.insert(name.clone(), method);
-                Ok(())
-            }
-        }
-    }
-
-    #[trace_call(extra)]
-    fn add_constructor(&mut self, constructor_node: &nodes::ConstructorNode) -> Result<(), TypeError> {
-        let location = &constructor_node.location;
-        let parameters: Vec<_> = constructor_node
-            .parameters
-            .iter()
-            .map(|param| Parameter {
-                name: param.name.clone(),
-                location: param.location.clone(),
-                typ: param.typ.typ.clone(),
-            })
-            .collect();
-        let ret_type = &constructor_node.return_type;
-        let constructor = Constructor {
-            location: location.clone(),
-            parameters,
-            return_type: TypeLoc::new(ret_type.location.clone(), ret_type.typ.clone()),
-        };
-        if self.known_constructors.len() > 0 {
-            // TODO: Allow multiple constructors
-            return Err(TypeError::Redeclaration(
-                "Constructor",
-                location.clone(),
-                self.name.clone(),
-                self.known_constructors[0].location.clone(),
-            ));
-        }
-        self.known_constructors.push(constructor);
-        Ok(())
-    }
-
-    #[trace_call(extra)]
     fn get_field(&self, name: &str) -> Option<TypeLoc> {
         self.fields.get(name).cloned()
     }
 
     #[trace_call(extra)]
-    fn get_method(&self, name: &str) -> Option<&Method> {
+    fn get_method(&self, name: &str) -> Option<&Function> {
         self.known_methods.get(name)
     }
 }
@@ -562,7 +575,7 @@ impl<'flags> TypeChecker<'flags> {
                 let parameters: Vec<_> = function
                     .parameters
                     .iter()
-                    .map(|param| Parameter {
+                    .map(|param| Variable {
                         name: param.name.clone(),
                         location: param.location.clone(),
                         typ: param.typ.typ.clone(),
@@ -595,7 +608,7 @@ impl<'flags> TypeChecker<'flags> {
                 let parameters: Vec<_> = extern_node
                     .parameters
                     .iter()
-                    .map(|param| Parameter {
+                    .map(|param| Variable {
                         name: param.name.clone(),
                         location: param.location.clone(),
                         typ: param.typ.typ.clone(),
@@ -607,6 +620,63 @@ impl<'flags> TypeChecker<'flags> {
                     parameters,
                 };
                 self.known_externs.insert(name.clone(), func);
+            }
+        }
+    }
+
+    #[trace_call(extra)]
+    fn add_method_to_class(&mut self, method: &nodes::MethodNode, class: &mut Class) {
+        let name = &method.name;
+        let location = &method.location;
+        if class.known_methods.get(name).is_some() {
+            self.report_error(TypeError::Redeclaration(
+                "Method",
+                location.clone(),
+                name.clone(),
+                class.location.clone(),
+            ));
+        } else {
+            let return_type = &method.return_type.typ;
+            let return_loc = &method.return_type.location;
+            let (parameters, errors) = check_parameters!(self, method, true);
+            let method = Function {
+                location: location.clone(),
+                return_type: TypeLoc::new(return_loc.clone(), return_type.clone()),
+                parameters,
+            };
+            class.known_methods.insert(name.clone(), method);
+            for error in errors {
+                self.report_error(error);
+            }
+        }
+    }
+
+    #[trace_call(extra)]
+    fn add_constructor_to_class(
+        &mut self,
+        constructor: &nodes::ConstructorNode,
+        class: &mut Class
+    ) {
+        let location = &constructor.location;
+        if class.known_constructors.len() > 0 {
+            self.report_error(TypeError::Redeclaration(
+                "Constructor",
+                location.clone(),
+                class.name.to_string(),
+                class.location.clone(),
+            ));
+        } else {
+            let return_type = &constructor.return_type.typ;
+            let return_loc = &constructor.return_type.location;
+            let (parameters, errors) = check_parameters!(self, constructor, true);
+            let constructor = Function {
+                location: location.clone(),
+                return_type: TypeLoc::new(return_loc.clone(), return_type.clone()),
+                parameters,
+            };
+            class.known_constructors.push(constructor);
+            for error in errors {
+                self.report_error(error);
             }
         }
     }
@@ -635,14 +705,10 @@ impl<'flags> TypeChecker<'flags> {
                         }
                     }
                     for method in &c.methods {
-                        if let Err(error) = class.add_method(method) {
-                            self.report_error(error);
-                        }
+                        self.add_method_to_class(method, &mut class);
                     }
                     for constructor in &c.constructors {
-                        if let Err(error) = class.add_constructor(constructor) {
-                            self.report_error(error);
-                        }
+                        self.add_constructor_to_class(constructor, &mut class);
                     }
                     self.known_classes.insert(c.name.clone(), class);
                 }
@@ -750,46 +816,16 @@ impl<'flags> TypeChecker<'flags> {
         let Some(constructor_info) = class_info.known_constructors.get(0) else { unreachable!() };
 
         // Parameters are now known variables
-        let mut parameters = HashMap::new();
+        let mut parameters = constructor_info.get_parameters_as_hashmap();
         parameters.insert(
-            String::from("this"),
+            "this".to_string(),
             Variable::new(
-                String::from("this"),
+                "this".to_string(),
                 constructor.location.clone(),
                 Type::Class(class_name.to_string()),
             ),
         );
-        self.current_stack_size += 8;
-        for param in &constructor_info.parameters.clone() {
-            let var = Variable::new(
-                param.name.clone(),
-                param.location.clone(),
-                param.typ.clone(),
-            );
-            if let Some(p) = parameters.get(&param.name) {
-                if p.name == *"this" {
-                    self.report_error(TypeError::ImplicitThisParam(
-                        param.location.clone(),
-                    ));
-                } else {
-                    self.report_error(TypeError::Redeclaration(
-                        "Parameter",
-                        param.location.clone(),
-                        param.name.clone(),
-                        p.location.clone(),
-                    ));
-                }
-            } else {
-                parameters.insert(param.name.clone(), var);
-            }
-        }
-        if parameters.len() > 4 {
-            self.report_error(TypeError::TooManyParameters(
-                "Features",
-                constructor.location.clone(),
-                true // this counts towards the limit
-            ));
-        }
+        self.current_stack_size += 8; // `this` is always 8 bytes
 
         self.known_variables.push_back(parameters);
         self.type_check_block(&mut constructor.block);
@@ -825,36 +861,7 @@ impl<'flags> TypeChecker<'flags> {
         };
 
         // Parameters are now known variables
-        let mut parameters = HashMap::new();
-        // FIXME: Rust is bad, there should be a way to do this without cloning
-        for param in &method_info.parameters.clone() {
-            let var = Variable::new(
-                param.name.clone(),
-                param.location.clone(),
-                param.typ.clone(),
-            );
-            if let Some(p) = parameters.insert(param.name.clone(), var) {
-                if param.name == *"this" {
-                    self.report_error(TypeError::ImplicitThisParam(
-                        param.location.clone(),
-                    ));
-                } else {
-                    self.report_error(TypeError::Redeclaration(
-                        "Parameter",
-                        param.location.clone(),
-                        param.name.clone(),
-                        p.location.clone(),
-                    ));
-                }
-            }
-        }
-        if parameters.len() > 4 {
-            self.report_error(TypeError::TooManyParameters(
-                "Methods",
-                method.location.clone(),
-                true // this counts towards the limit
-            ));
-        }
+        let parameters = method_info.get_parameters_as_hashmap();
         self.known_variables.push_back(parameters);
 
         self.type_check_block(&mut method.block);
@@ -877,30 +884,7 @@ impl<'flags> TypeChecker<'flags> {
         let Some(function_info) = self.known_functions.get(&function.name) else { unreachable!() };
 
         // Parameters are now known variables
-        let mut parameters = HashMap::new();
-        // FIXME: Rust is bad, there should be a way to do this without cloning
-        for param in &function_info.parameters.clone() {
-            let var = Variable::new(
-                param.name.clone(),
-                param.location.clone(),
-                param.typ.clone(),
-            );
-            if let Some(p) = parameters.insert(param.name.clone(), var) {
-                self.report_error(TypeError::Redeclaration(
-                    "Parameter",
-                    param.location.clone(),
-                    param.name.clone(),
-                    p.location.clone(),
-                ));
-            }
-        }
-        if parameters.len() > 4 {
-            self.report_error(TypeError::TooManyParameters(
-                "Functions",
-                function.location.clone(),
-                false // Functions do not have an implicit `this` parameter
-            ));
-        }
+        let parameters = function_info.get_parameters_as_hashmap();
         self.known_variables.push_back(parameters);
 
         self.type_check_block(&mut function.block);
@@ -931,7 +915,6 @@ impl<'flags> TypeChecker<'flags> {
     fn type_check_statement(&mut self, statement: &mut nodes::Statement) {
         match statement {
             nodes::Statement::Let(let_node) => self.type_check_stmt_let(let_node),
-            nodes::Statement::Assign(assign_node) => self.type_check_stmt_assign(assign_node),
             nodes::Statement::If(if_node) => self.type_check_stmt_if(if_node),
             nodes::Statement::Return(return_node) => self.type_check_stmt_return(return_node),
             nodes::Statement::While(while_node) => self.type_check_stmt_while(while_node),
@@ -991,28 +974,6 @@ impl<'flags> TypeChecker<'flags> {
                     }
                 }
             }
-        }
-    }
-
-    #[trace_call(always)]
-    fn type_check_stmt_assign(
-        &mut self,
-        assign_node: &mut nodes::AssignNode,
-    ) {
-        let expected_type = self.type_check_expr_identifier(&mut assign_node.name);
-        let expr_type = self.type_check_expression(&mut assign_node.expression);
-        if expr_type == Type::Unknown {
-            // We need to try and force the type of LHS to RHS
-            self.type_check_expression_with_type(
-                &mut assign_node.expression,
-                &expected_type,
-            );
-        } else if expr_type != expected_type {
-            self.report_error(TypeError::TypeMismatch(
-                assign_node.expression.get_loc(),
-                expected_type.clone(),
-                expr_type,
-            ));
         }
     }
 
@@ -1141,16 +1102,12 @@ impl<'flags> TypeChecker<'flags> {
             nodes::Expression::Name(name_node) => self.type_check_expr_name(name_node),
             nodes::Expression::Unary(unary_expr) => self.type_check_expr_unary(unary_expr),
             nodes::Expression::Binary(binary_expr) => self.type_check_expr_binary(binary_expr),
-            nodes::Expression::Identifier(ident_expr) => {
-                self.type_check_expr_identifier(ident_expr)
-            }
             nodes::Expression::FunctionCall(func_call) => {
                 self.type_check_expr_function_call(func_call)
             }
             nodes::Expression::BuiltIn(built_in) => self.type_check_expr_builtin(built_in),
             nodes::Expression::ArrayAccess(access) => self.type_check_expr_array_access(access),
             nodes::Expression::ArrayLiteral(literal) => self.type_check_expr_array_literal(literal),
-            nodes::Expression::FieldAccess(access) => self.type_check_expr_field_access(access),
             nodes::Expression::Literal(literal) => self.type_check_expr_literal(literal),
         }
     }
@@ -1190,11 +1147,6 @@ impl<'flags> TypeChecker<'flags> {
                 } else {
                     lit_node.typ = typ.clone();
                 }
-                typ.clone()
-            }
-            nodes::Expression::Identifier(ident_node) => {
-                self.type_check_expression_with_type(&mut ident_node.expression, typ);
-                ident_node.typ = typ.clone();
                 typ.clone()
             }
             nodes::Expression::Name(name_node) => {
@@ -1247,18 +1199,23 @@ impl<'flags> TypeChecker<'flags> {
         &mut self,
         binary_expr: &mut nodes::BinaryNode,
     ) -> Type {
+        match binary_expr.operation {
+            Operation::Dot => self.type_check_expr_dot(binary_expr),
+            Operation::Assign => self.type_check_expr_assign(binary_expr),
+            _ if binary_expr.is_comparison() => self.type_check_expr_binary_comparison(binary_expr),
+            _ if binary_expr.is_arithmetic() => self.type_check_expr_binary_arithmetic(binary_expr),
+            o => todo!("type_check_expr_binary for {:?} is not implemented yet!", o),
+        }
+    }
+
+    #[trace_call(always)]
+    fn type_check_expr_binary_arithmetic(
+        &mut self,
+        binary_expr: &mut nodes::BinaryNode,
+    ) -> Type {
         let lhs_type = self.type_check_expression(&mut binary_expr.lhs);
         let rhs_type = self.type_check_expression(&mut binary_expr.rhs);
-        let cond = binary_expr.is_comparison();
-        macro_rules! type_or_bool {
-            ($typ:expr) => {
-                if cond {
-                    Type::Bool
-                } else {
-                    $typ
-                }
-            };
-        }
+        assert!(binary_expr.is_arithmetic());
         match (&lhs_type, &rhs_type) {
             (typ @ Type::Class(..), _) | (_, typ @ Type::Class(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
@@ -1270,7 +1227,8 @@ impl<'flags> TypeChecker<'flags> {
                     binary_expr.rhs.get_loc(),
                     rhs_type.clone(),
                 ));
-                type_or_bool!(typ.clone())
+                binary_expr.typ = typ.clone();
+                typ.clone()
             }
             (typ @ Type::Arr(..), _) | (_, typ @ Type::Arr(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
@@ -1282,7 +1240,85 @@ impl<'flags> TypeChecker<'flags> {
                     binary_expr.rhs.get_loc(),
                     rhs_type.clone(),
                 ));
-                type_or_bool!(typ.clone())
+                binary_expr.typ = typ.clone();
+                typ.clone()
+            }
+            (Type::Bool, _) | (_, Type::Bool) => {
+                self.report_error(TypeError::BinaryTypeMismatch(
+                    binary_expr.location.clone(),
+                    binary_expr.operation.clone(),
+                    binary_expr.lhs.get_loc(),
+                    lhs_type.clone(),
+                    binary_expr.rhs.get_loc(),
+                    rhs_type.clone(),
+                ));
+                let typ = Type::Bool;
+                binary_expr.typ = typ.clone();
+                typ.clone()
+            }
+            (Type::Unknown, Type::Unknown) => Type::Unknown,
+            (Type::Unknown, other) => {
+                self.type_check_expression_with_type(&mut binary_expr.lhs, other);
+                let typ = other;
+                binary_expr.typ = typ.clone();
+                typ.clone()
+            }
+            (other, Type::Unknown) => {
+                self.type_check_expression_with_type(&mut binary_expr.rhs, other);
+                let typ = other.clone();
+                binary_expr.typ = typ.clone();
+                typ
+            }
+            (lhs, rhs) => {
+                if lhs != rhs {
+                    self.report_error(TypeError::BinaryTypeMismatch(
+                        binary_expr.location.clone(),
+                        binary_expr.operation.clone(),
+                        binary_expr.lhs.get_loc(),
+                        lhs.clone(),
+                        binary_expr.rhs.get_loc(),
+                        rhs.clone(),
+                    ));
+                }
+                let typ = lhs.clone();
+                binary_expr.typ = typ.clone();
+                typ
+            }
+        }
+    }
+
+    #[trace_call(always)]
+    fn type_check_expr_binary_comparison(
+        &mut self,
+        binary_expr: &mut nodes::BinaryNode,
+    ) -> Type {
+        let lhs_type = self.type_check_expression(&mut binary_expr.lhs);
+        let rhs_type = self.type_check_expression(&mut binary_expr.rhs);
+        assert!(binary_expr.is_comparison());
+        match (&lhs_type, &rhs_type) {
+            (Type::Class(..), _) | (_, Type::Class(..)) => {
+                // NOTE: Modify this once more features (ahem, operator overload) exist
+                self.report_error(TypeError::BinaryTypeMismatch(
+                    binary_expr.location.clone(),
+                    binary_expr.operation.clone(),
+                    binary_expr.lhs.get_loc(),
+                    lhs_type.clone(),
+                    binary_expr.rhs.get_loc(),
+                    rhs_type.clone(),
+                ));
+                Type::Bool
+            }
+            (Type::Arr(..), _) | (_, Type::Arr(..)) => {
+                // NOTE: Modify this once more features (ahem, operator overload) exist
+                self.report_error(TypeError::BinaryTypeMismatch(
+                    binary_expr.location.clone(),
+                    binary_expr.operation.clone(),
+                    binary_expr.lhs.get_loc(),
+                    lhs_type.clone(),
+                    binary_expr.rhs.get_loc(),
+                    rhs_type.clone(),
+                ));
+                Type::Bool
             }
             (Type::Bool, _) | (_, Type::Bool) => {
                 self.report_error(TypeError::BinaryTypeMismatch(
@@ -1298,13 +1334,13 @@ impl<'flags> TypeChecker<'flags> {
             (Type::Unknown, Type::Unknown) => Type::Unknown,
             (Type::Unknown, other) => {
                 self.type_check_expression_with_type(&mut binary_expr.lhs, other);
-                let typ = type_or_bool!(other.clone());
+                let typ = Type::Bool;
                 binary_expr.typ = typ.clone();
                 typ
             }
             (other, Type::Unknown) => {
                 self.type_check_expression_with_type(&mut binary_expr.rhs, other);
-                let typ = type_or_bool!(other.clone());
+                let typ = Type::Bool;
                 binary_expr.typ = typ.clone();
                 typ
             }
@@ -1319,7 +1355,7 @@ impl<'flags> TypeChecker<'flags> {
                         rhs.clone(),
                     ));
                 }
-                let typ = type_or_bool!(lhs.clone());
+                let typ = Type::Bool;
                 binary_expr.typ = typ.clone();
                 typ
             }
@@ -1327,13 +1363,104 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_expr_identifier(
+    fn type_check_expr_assign(
         &mut self,
-        ident_expr: &mut nodes::IdentifierNode,
+        assign_expr: &mut nodes::BinaryNode,
     ) -> Type {
-        let typ = self.type_check_expression(&mut ident_expr.expression);
-        ident_expr.typ = typ.clone();
-        typ
+        if !assign_expr.lhs.is_lvalue() {
+            self.report_error(TypeError::InvalidLValue(
+                assign_expr.lhs.get_loc(),
+            ));
+            return Type::None;
+        }
+        let lhs_type = self.type_check_expression(&mut assign_expr.lhs);
+        if lhs_type == Type::None {
+            // Error propagation, for example LHS is unknown field of instance
+            return Type::None;
+        }
+        let rhs_type = self.type_check_expression(&mut assign_expr.rhs);
+        debug_assert!(rhs_type != Type::None);
+
+        if lhs_type == Type::Unknown {
+            // Note: This is an error, how can we assign to something we don't know the type of?
+            todo!()
+        } else if rhs_type == Type::Unknown {
+            // Infer type of rhs from lhs
+            let typ = self.type_check_expression_with_type(&mut assign_expr.rhs, &lhs_type);
+            assign_expr.typ = typ.clone();
+            typ
+        } else if lhs_type != rhs_type {
+            self.report_error(TypeError::TypeMismatch(
+                assign_expr.location.clone(),
+                lhs_type.clone(),
+                rhs_type.clone(),
+            ));
+            Type::None
+        } else {
+            assign_expr.typ = rhs_type.clone();
+            rhs_type
+        }
+
+
+    }
+
+    #[trace_call(always)]
+    fn type_check_expr_dot(
+        &mut self,
+        binary_expr: &mut nodes::BinaryNode,
+    ) -> Type {
+        let lhs_type = self.type_check_expression(&mut binary_expr.lhs);
+        if let Type::Class(class_name) = lhs_type {
+            let Some(class) = self.known_classes.get(&class_name) else {
+                self.report_error(TypeError::UndeclaredClass(
+                    binary_expr.lhs.get_loc(),
+                    class_name.clone(),
+                ));
+                return Type::None;
+            };
+            match &mut (*binary_expr.rhs) {
+                nodes::Expression::Name(name_node) => {
+                    if let Some(field) = class.get_field(&name_node.name) {
+                        binary_expr.typ = field.t.clone();
+                        name_node.typ = field.t.clone();
+                        field.t.clone()
+                    } else {
+                        self.report_error(TypeError::UnknownField(
+                            name_node.location.clone(),
+                            name_node.name.clone(),
+                            class.location.clone(),
+                            class.name.clone(),
+                        ));
+                        Type::None
+                    }
+                }
+                nodes::Expression::FunctionCall(call_node) => {
+                    // FIXME: Error Log shows wrong location
+                    if let Some(method) = class.get_method(&call_node.function_name) {
+                        let result = check_function!(self, call_node, method, "Method", true);
+                        binary_expr.typ = result.clone();
+                        result
+                    } else {
+                        self.report_error(TypeError::UnknownMethod(
+                            call_node.location.clone(),
+                            call_node.function_name.clone(),
+                            class.location.clone(),
+                            class.name.clone(),
+                        ));
+                        Type::None
+                    }
+                }
+                _ => {
+                    // Not a field, not a method, this is an error
+                    todo!()
+                },
+            }
+        } else {
+            self.report_error(TypeError::DotOnNonClass(
+                binary_expr.lhs.get_loc(),
+            ));
+            Type::None
+        }
     }
 
     #[trace_call(always)]
@@ -1450,7 +1577,7 @@ impl<'flags> TypeChecker<'flags> {
                 // This is unreachable, or the parser is broken
                 unreachable!()
             };
-            FunctionType::Function(external)
+            external
         } else if func_call.is_constructor {
             debug_assert!(!func_call.is_extern);
             if let Some(class) = self.known_classes.get(&func_call.function_name) {
@@ -1468,7 +1595,7 @@ impl<'flags> TypeChecker<'flags> {
                     class.has_constructor,
                     "Class has constructor feature, but has_constructor is false"
                 );
-                FunctionType::Constructor(constructor)
+                constructor
             } else {
                 self.report_error(TypeError::UndeclaredClass(
                     func_call.location.clone(),
@@ -1484,249 +1611,23 @@ impl<'flags> TypeChecker<'flags> {
                 ));
                 return Type::None;
             };
-            FunctionType::Function(function)
+            function
         };
-        let return_type = function.get_return_type().clone();
-        let location = function.get_location();
-        let parameters = function.get_parameters();
-        match func_call.arguments.len().cmp(&parameters.len()) {
-            std::cmp::Ordering::Less => {
-                self.report_error(TypeError::NotEnoughArguments(
-                    "Function",
+        let return_type = function.return_type.clone();
+        if let Type::Class(class_name) = &return_type.t {
+            if !self.known_classes.contains_key(class_name) {
+                self.report_error(TypeError::UndeclaredClass(
                     func_call.location.clone(),
-                    func_call.function_name.clone(),
-                    func_call.arguments.len(),
-                    location.clone(),
-                    parameters.len(),
+                    class_name.clone(),
                 ));
-                return return_type.t.clone();
-            }
-            std::cmp::Ordering::Greater => {
-                self.report_error(TypeError::TooManyArguments(
-                    "Function",
-                    func_call.location.clone(),
-                    func_call.function_name.clone(),
-                    func_call.arguments.len(),
-                    location.clone(),
-                    parameters.len(),
+                self.report_error(TypeError::UnknownType(
+                    return_type.l.clone(),
+                    return_type.t.clone(),
                 ));
-                return return_type.t.clone();
-            }
-            std::cmp::Ordering::Equal => (),
-        }
-        let params = parameters.clone();
-        for (mut arg, param) in func_call.arguments.iter_mut().zip(params) {
-            let expected = param.typ;
-            let arg_type = self.type_check_expression(arg);
-            if arg_type == Type::Unknown {
-                // We need to `infer` the type again
-                self.type_check_expression_with_type(&mut arg, &expected);
-            } else if arg_type != expected {
-                self.report_error(TypeError::ArgParamTypeMismatch(
-                    arg.get_loc(),
-                    arg_type.clone(),
-                    param.location.clone(),
-                    param.name.clone(),
-                    expected.clone(),
-                ));
-            } else {
-                // Everything is cool
+                return Type::None;
             }
         }
-        func_call.typ = return_type.t;
-        func_call.typ.clone()
-    }
-
-    #[trace_call(always)]
-    fn type_check_expr_field_access(
-        &mut self,
-        access: &mut nodes::FieldAccessNode,
-    ) -> Type {
-        match self.get_variable(&access.name) {
-            Some(var) => {
-                if !var.is_class_instance() {
-                    self.report_error(TypeError::NonClassFieldAccess(
-                        access.location.clone(),
-                        access.name.clone(),
-                        var.location.clone(),
-                        var.name.clone(),
-                    ));
-                }
-                let typ = self.type_check_expr_field_access_rec(access, &var);
-                access.typ = var.typ;
-                typ
-            }
-            None => {
-                self.report_error(TypeError::UndeclaredVariable(
-                    access.location.clone(),
-                    access.name.clone(),
-                ));
-                Type::None
-            },
-        }
-    }
-
-    #[trace_call(always)]
-    fn type_check_expr_field_access_rec(
-        &mut self,
-        access: &mut nodes::FieldAccessNode,
-        var: &Variable,
-    ) -> Type {
-        match &mut (*access.field.expression) {
-            nodes::Expression::FieldAccess(field_access) => {
-                /*
-                get type of current variable
-                get fields of current variable, if its class (if not, error)
-                check if field_access.name is field (if not, error)
-                create temporary variable with name field_access.name and type field.typ
-                recursively call type_check_field
-                 */
-                let typ = &var.typ;
-                match typ {
-                    Type::Class(class_name) => {
-                        let Some(class) = self.known_classes.get(class_name) else {
-                            // Lookup of classes and their fields is done before ever evaluating any field access
-                            // So at this point, field access only consists of known classes
-                            unreachable!()
-                        };
-                        let Some(field) = class.get_field(&field_access.name) else {
-                            self.report_error(TypeError::UnknownField(
-                                access.location.clone(),
-                                var.location.clone(),
-                                var.name.clone(),
-                                field_access.name.clone(),
-                                class.location.clone(),
-                                class.name.clone(),
-                            ));
-                            return Type::None;
-                        };
-                        let var = Variable {
-                            name: field_access.name.clone(),
-                            location: field.l,
-                            typ: field.t,
-                        };
-                        let typ = self.type_check_expr_field_access_rec(field_access, &var);
-                        field_access.typ = var.typ.clone();
-                        access.field.typ = var.typ.clone();
-                        typ
-                    }
-                    _ => {
-                        self.report_error(TypeError::NonClassFieldAccess(
-                            access.location.clone(),
-                            field_access.name.clone(),
-                            var.location.clone(),
-                            var.name.clone(),
-                        ));
-                        Type::None
-                    }
-                }
-            }
-            nodes::Expression::Name(name_node) => {
-                if !var.is_class_instance() {
-                    self.report_error(TypeError::NonClassFieldAccess(
-                        access.location.clone(),
-                        name_node.name.clone(),
-                        var.location.clone(),
-                        var.name.clone(),
-                    ));
-                }
-                let class_name = var.get_class_name();
-                if let Some(class) = self.known_classes.get(&class_name) {
-                    match class.get_field(&name_node.name) {
-                        Some(field) => {
-                            name_node.typ = field.t.clone();
-                            access.field.typ = field.t.clone();
-                            field.t
-                        },
-                        None => {
-                            self.report_error(TypeError::UnknownField(
-                                access.location.clone(),
-                                var.location.clone(),
-                                var.name.clone(),
-                                name_node.name.clone(),
-                                class.location.clone(),
-                                class.name.clone(),
-                            ));
-                            Type::None
-                        }
-                    }
-                } else {
-                    // Lookup of classes and their fields is done before ever evaluating any field access
-                    // So at this point, field access only consists of known classes
-                    unreachable!()
-                }
-            }
-            nodes::Expression::FunctionCall(function_node) => {
-                let class_name = var.get_class_name();
-                let Some(class) = self.known_classes.get(&class_name) else {
-                    // Lookup of classes and their fields is done before ever evaluating any field access
-                    // So at this point, field access only consists of known classes
-                    unreachable!()
-                };
-                let Some(method) = class.get_method(&function_node.function_name) else {
-                    self.report_error(TypeError::UnknownMethod(
-                        function_node.location.clone(),
-                        function_node.function_name.clone(),
-                        class.location.clone(),
-                        class.name.clone(),
-                    ));
-                    return Type::None;
-                };
-                let return_type = method.return_type.clone();
-                let mut params = method.parameters.clone();
-                // FIXME: Once we introduce static methods, we need to check for that here
-                let this = params.remove(0);
-                debug_assert!(this.typ == Type::Class(class_name.clone()));
-                match function_node.arguments.len().cmp(&params.len()) {
-                    std::cmp::Ordering::Less => {
-                        self.report_error(TypeError::NotEnoughArguments(
-                            "Method",
-                            access.location.clone(),
-                            function_node.function_name.clone(),
-                            function_node.arguments.len(),
-                            method.location.clone(),
-                            params.len(),
-                        ));
-                        return return_type.t.clone();
-                    }
-                    std::cmp::Ordering::Greater => {
-                        self.report_error(TypeError::TooManyArguments(
-                            "Method",
-                            access.location.clone(),
-                            function_node.function_name.clone(),
-                            function_node.arguments.len(),
-                            method.location.clone(),
-                            params.len(),
-                        ));
-                        return return_type.t.clone();
-                    }
-                    std::cmp::Ordering::Equal => (),
-                }
-                for (mut arg, param) in function_node.arguments.iter_mut().zip(params) {
-                    let expected = param.typ;
-                    let arg_type = self.type_check_expression(arg);
-                    if arg_type == Type::Unknown {
-                        // We need to `infer` the type again
-                        self.type_check_expression_with_type(&mut arg, &expected);
-                    } else if arg_type != expected {
-                        self.report_error(TypeError::ArgParamTypeMismatch(
-                            arg.get_loc(),
-                            arg_type.clone(),
-                            param.location.clone(),
-                            param.name.clone(),
-                            expected.clone(),
-                        ));
-                    } else {
-                        // Everything is cool
-                    }
-                }
-                function_node.typ = return_type.t.clone();
-                access.field.typ = return_type.t.clone();
-                access.typ = return_type.t.clone();
-                return_type.t
-            }
-            _ => unreachable!(),
-        }
+        check_function!(self, func_call, function, "Function", false)
     }
 
     #[trace_call(always)]

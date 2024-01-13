@@ -133,7 +133,6 @@ impl Printable for nodes::Statement {
         match self {
             nodes::Statement::Expression(node) => node.print(indent),
             nodes::Statement::Let(node) => node.print(indent),
-            nodes::Statement::Assign(node) => node.print(indent),
             nodes::Statement::If(node) => node.print(indent),
             nodes::Statement::Return(node) => node.print(indent),
             nodes::Statement::While(node) => node.print(indent),
@@ -147,14 +146,6 @@ impl Printable for nodes::LetNode {
     fn print(&self, indent: usize) {
         println!("{}LetNode {}", " ".repeat(indent), self.name);
         self.typ.print(indent + INDENT_PER_LEVEL);
-        self.expression.print(indent + INDENT_PER_LEVEL);
-    }
-}
-
-impl Printable for nodes::AssignNode {
-    fn print(&self, indent: usize) {
-        println!("{}AssignNode", " ".repeat(indent));
-        self.name.print(indent + INDENT_PER_LEVEL);
         self.expression.print(indent + INDENT_PER_LEVEL);
     }
 }
@@ -213,13 +204,11 @@ impl Printable for nodes::Expression {
     fn print(&self, indent: usize) {
         match self {
             Self::Name(node) => node.print(indent),
-            Self::Identifier(node) => node.print(indent),
             Self::ArrayLiteral(node) => node.print(indent),
             Self::ArrayAccess(node) => node.print(indent),
             Self::Literal(node) => node.print(indent),
             Self::Unary(node) => node.print(indent),
             Self::Binary(node) => node.print(indent),
-            Self::FieldAccess(node) => node.print(indent),
             Self::FunctionCall(node) => node.print(indent),
             Self::BuiltIn(node) => node.print(indent),
         }
@@ -229,13 +218,6 @@ impl Printable for nodes::Expression {
 impl Printable for nodes::NameNode {
     fn print(&self, indent: usize) {
         println!("{}NameNode {}", " ".repeat(indent), self.name);
-    }
-}
-
-impl Printable for nodes::IdentifierNode {
-    fn print(&self, indent: usize) {
-        println!("{}ExpressionIdentifierNode", " ".repeat(indent));
-        self.expression.print(indent + INDENT_PER_LEVEL);
     }
 }
 
@@ -276,6 +258,7 @@ impl Printable for nodes::BinaryNode {
     fn print(&self, indent: usize) {
         println!("{}ExpressionBinaryNode", " ".repeat(indent));
         println!("{}Operator {}", " ".repeat(indent + INDENT_PER_LEVEL), self.operation);
+        println!("{}Type {}", " ".repeat(indent + INDENT_PER_LEVEL), self.typ);
         self.lhs.print(indent + INDENT_PER_LEVEL);
         self.rhs.print(indent + INDENT_PER_LEVEL);
     }
@@ -288,15 +271,6 @@ impl Printable for nodes::CallNode {
         for argument in &self.arguments {
             argument.print(indent + INDENT_PER_LEVEL);
         }
-    }
-}
-
-impl Printable for nodes::FieldAccessNode {
-    fn print(&self, indent: usize) {
-        println!("{}ExpressionFieldAccessNode", " ".repeat(indent));
-        println!("{}Name {}", " ".repeat(indent + INDENT_PER_LEVEL), self.name);
-        println!("{}Field", " ".repeat(indent + INDENT_PER_LEVEL));
-        self.field.print(indent + 2 * INDENT_PER_LEVEL);
     }
 }
 

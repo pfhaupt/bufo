@@ -109,6 +109,10 @@ mod tests {
 
         generate_successful_test!(hello_world);
         generate_successful_test!(operator_stresstest);
+        generate_successful_test!(nested_field);
+        generate_successful_test!(fibonacci);
+        generate_successful_test!(prime);
+        generate_successful_test!(tree);
     }
 
     mod syntax_tests {
@@ -195,7 +199,7 @@ mod tests {
         generate_failing_test!(using_out_of_scope_variable, "undeclared variable", "`a`");
         generate_failing_test!(variable_redeclaration, "Variable redeclaration", "already declared here");
         generate_failing_test!(class_field_redeclaration, "Field redeclaration", "Field", "already declared here");
-        generate_failing_test!(class_no_such_field, "unknown field", "Variable `this`", "Class `Test`", "is declared here");
+        generate_failing_test!(class_no_such_field, "unknown field", "of instance of class `Test`", "is declared here");
         generate_failing_test!(class_nested_field_wrong_type, "Type mismatch", "Expected type", "found type");
         generate_failing_test!(class_no_constructor, "no constructor", "Implement", CONSTRUCTOR_KEYWORD, "Class `Test`", "to create a constructor");
         generate_failing_test!(incompatible_operands, "binary expression", "not defined", "Operation `Test + Test`", "LHS has type", "RHS has type");
@@ -212,5 +216,6 @@ mod tests {
         generate_runtime_failing_test!(while_expression, format!("{:X}", 1337).as_str());
         generate_runtime_failing_test!(while_flow, format!("{:X}", 10).as_str());
         generate_runtime_failing_test!(nested_while, format!("{:X}", 10000).as_str());
+        generate_runtime_failing_test!(assignment, "0x30"); // 0x30 = 48
     }
 }

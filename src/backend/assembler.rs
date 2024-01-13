@@ -161,6 +161,13 @@ impl<'flags> Assembler<'flags> {
                         let src = reg(addr.reg, addr.reg_mode);
                         push_asm(format!("  mov {dst}, [{src}]").as_str());
                     }
+                    (OperandType::Reg, OperandType::Address) => {
+                        debug_assert!(addr.reg != instr::Register::None);
+                        let src = reg(addr.reg, addr.reg_mode);
+                        let dst = dst.reg;
+                        let dst = reg(dst, RegMode::BIT64);
+                        push_asm(format!("  mov {dst}, [{src}]").as_str());
+                    }
                     (lhs, rhs) => {
                         return internal_error!(format!("Can't generate ASM for `load {lhs:?}, {rhs:?}"));
                     },
@@ -364,6 +371,23 @@ impl<'flags> Assembler<'flags> {
                                 push_asm("push rbx");
                                 push_asm(format!("mov rax, {dst_reg}").as_str());
                                 push_asm(format!("mov rbx, {value}").as_str());
+                                push_asm("mul rbx");
+                                push_asm("pop rbx");
+                                push_asm("pop rdx");
+                                push_asm(format!("mov {dst_reg}, rax").as_str());
+                                push_asm("pop rax");
+                            }
+                            (
+                                OperandType::Reg,
+                                OperandType::Offset,
+                            ) => {
+                                let offset = src2.off_or_imm;
+                                let size = dst.reg_mode.size();
+                                push_asm("push rax");
+                                push_asm("push rdx");
+                                push_asm("push rbx");
+                                push_asm(format!("mov rax, {dst_reg}").as_str());
+                                push_asm(format!("mov rbx, [rbp-{offset}-{size}]").as_str());
                                 push_asm("mul rbx");
                                 push_asm("pop rbx");
                                 push_asm("pop rdx");

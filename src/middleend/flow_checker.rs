@@ -141,7 +141,6 @@ impl<'flags> FlowChecker<'flags> {
                 Ok(FlowType::Linear)
             }
             nodes::Statement::Let(let_node) => self.check_stmt_let(let_node),
-            nodes::Statement::Assign(assign_node) => self.check_stmt_assign(assign_node),
             nodes::Statement::If(if_node) => self.check_stmt_if(if_node, early_exit),
             nodes::Statement::Return(return_node) => self.check_stmt_return(return_node),
             nodes::Statement::While(while_node) => self.check_stmt_while(while_node),
@@ -152,11 +151,6 @@ impl<'flags> FlowChecker<'flags> {
 
     #[trace_call(always)]
     fn check_stmt_let(&mut self, _let_node: &nodes::LetNode) -> Result<FlowType, String> {
-        Ok(FlowType::Linear)
-    }
-
-    #[trace_call(always)]
-    fn check_stmt_assign(&mut self, _assign_node: &nodes::AssignNode) -> Result<FlowType, String> {
         Ok(FlowType::Linear)
     }
 

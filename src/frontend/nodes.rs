@@ -98,7 +98,6 @@ pub struct BlockNode {
 pub enum Statement {
     Expression(Expression),
     Let(LetNode),
-    Assign(AssignNode),
     If(IfNode),
     Return(ReturnNode),
     While(WhileNode),
@@ -111,7 +110,6 @@ impl Statement {
         match self {
             Self::Expression(e) => e.get_loc(),
             Self::Let(e) => e.location.clone(),
-            Self::Assign(e) => e.location.clone(),
             Self::If(e) => e.location.clone(),
             Self::Return(e) => e.location.clone(),
             Self::While(e) => e.location.clone(),
@@ -127,20 +125,6 @@ pub struct LetNode {
     pub name: String,
     pub typ: TypeNode,
     pub expression: Expression,
-}
-
-#[derive(Debug, Clone)]
-pub struct AssignNode {
-    pub location: Location,
-    pub name: IdentifierNode,
-    pub expression: Expression,
-}
-
-#[derive(Debug, Clone)]
-pub struct IdentifierNode {
-    pub location: Location,
-    pub expression: Box<Expression>,
-    pub typ: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -197,13 +181,11 @@ impl TypeNode {
 #[derive(Debug, Clone)]
 pub enum Expression {
     Name(NameNode),
-    Identifier(IdentifierNode),
     ArrayLiteral(ArrayLiteralNode),
     ArrayAccess(ArrayAccessNode),
     Literal(LiteralNode),
     Unary(UnaryNode),
     Binary(BinaryNode),
-    FieldAccess(FieldAccessNode),
     // Parenthesis(Expression),
     FunctionCall(CallNode),
     BuiltIn(BuiltInNode),
@@ -214,13 +196,11 @@ impl Expression {
     pub fn get_loc(&self) -> Location {
         match &self {
             Self::Name(e) => e.location.clone(),
-            Self::Identifier(e) => e.location.clone(),
             Self::ArrayLiteral(e) => e.location.clone(),
             Self::ArrayAccess(e) => e.location.clone(),
             Self::Literal(e) => e.location.clone(),
             Self::Unary(e) => e.location.clone(),
             Self::Binary(e) => e.location.clone(),
-            Self::FieldAccess(e) => e.location.clone(),
             Self::FunctionCall(e) => e.location.clone(),
             Self::BuiltIn(e) => e.location.clone()
         }
@@ -230,15 +210,34 @@ impl Expression {
     pub fn get_type(&self) -> Type {
         match &self {
             Self::Name(e) => e.typ.clone(),
-            Self::Identifier(e) => e.typ.clone(),
             Self::ArrayLiteral(e) => e.typ.clone(),
             Self::ArrayAccess(e) => e.typ.clone(),
             Self::Literal(e) => e.typ.clone(),
             Self::Unary(e) => e.typ.clone(),
             Self::Binary(e) => e.typ.clone(),
-            Self::FieldAccess(e) => e.typ.clone(),
             Self::FunctionCall(e) => e.typ.clone(),
             Self::BuiltIn(e) => e.typ.clone()
+        }
+    }
+
+    #[trace_call(extra)]
+    pub fn is_lvalue(&self) -> bool {
+        match &self {
+            Self::Name(_) => true,
+            Self::ArrayAccess(_) => true,
+            Self::Binary(e) => {
+                e.operation == Operation::Dot
+            }
+            _ => false
+        }
+    }
+
+    #[trace_call(extra)]
+    pub fn is_arithmetic(&self) -> bool {
+        match &self {
+            Self::Unary(e) => e.operation.is_arithmetic(),
+            Self::Binary(e) => e.operation.is_arithmetic(),
+            _ => false
         }
     }
 }
@@ -285,15 +284,12 @@ pub struct BinaryNode {
 impl BinaryNode {
     #[trace_call(extra)]
     pub fn is_comparison(&self) -> bool {
-        match self.operation {
-            Operation::LessThan => true,
-            Operation::LessThanOrEqual => true,
-            Operation::GreaterThan => true,
-            Operation::GreaterThanOrEqual => true,
-            Operation::Equal => true,
-            Operation::NotEqual => true,
-            _ => false
-        }
+        self.operation.is_comparison()
+    }
+
+    #[trace_call(extra)]
+    pub fn is_arithmetic(&self) -> bool {
+        self.operation.is_arithmetic()
     }
 }
 
@@ -305,14 +301,6 @@ pub struct CallNode {
     pub typ: Type,
     pub is_constructor: bool,
     pub is_extern: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct FieldAccessNode {
-    pub location: Location,
-    pub name: String,
-    pub field: IdentifierNode,
-    pub typ: Type,
 }
 
 #[derive(Debug, Clone)]

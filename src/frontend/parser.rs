@@ -269,7 +269,9 @@ impl Token {
 
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub enum Operation {
+    Assign,
     Negate,
+    Dot,
     Add,
     Sub,
     Mul,
@@ -282,16 +284,11 @@ pub enum Operation {
     GreaterThanOrEqual,
 }
 
-#[derive(Debug, Clone, PartialEq, Copy)]
-enum Associativity {
-    Left,
-    Right,
-}
-
 impl Display for Operation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        debug_assert_eq!(Operation::GreaterThanOrEqual as u8 + 1, 11);
         match self {
+            Self::Assign => write!(f, "="),
+            Self::Dot => write!(f, "."),
             Self::Add => write!(f, "+"),
             Self::Sub | Self::Negate => write!(f, "-"),
             Self::Mul => write!(f, "*"),
@@ -311,6 +308,7 @@ impl Operation {
     fn from(s: String) -> Self {
         debug_assert_eq!(Operation::GreaterThanOrEqual as u8 + 1, 10);
         match s.as_str() {
+            "=" => Self::Assign,
             "+" => Self::Add,
             "-" => Self::Sub,
             "*" => Self::Mul,
@@ -324,6 +322,36 @@ impl Operation {
             _ => unreachable!(),
         }
     }
+
+    #[trace_call(extra)]
+    pub fn is_comparison(&self) -> bool {
+        match self {
+            Self::Equal => true,
+            Self::NotEqual => true,
+            Self::LessThan => true,
+            Self::LessThanOrEqual => true,
+            Self::GreaterThan => true,
+            Self::GreaterThanOrEqual => true,
+            _ => false,
+        }
+    }
+
+    #[trace_call(extra)]
+    pub fn is_arithmetic(&self) -> bool {
+        match self {
+            Self::Add => true,
+            Self::Sub => true,
+            Self::Mul => true,
+            Self::Div => true,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Copy)]
+enum Associativity {
+    Left,
+    Right,
 }
 
 pub struct Parser<'flags> {
@@ -1087,22 +1115,7 @@ impl<'flags> Parser<'flags> {
                 try_parse!(continue_stmt, self.parse_stmt_continue());
                 nodes::Statement::Continue(continue_stmt)
             }
-            TokenType::Identifier => match self.nth(1) {
-                // FIXME: Simple void function calls are not handled correctly
-                //        Currently, they are parsed as assignments
-                TokenType::Dot | TokenType::Equal | TokenType::OpenSquare => {
-                    try_parse!(assign_stmt, self.parse_assignment());
-                    nodes::Statement::Assign(assign_stmt)
-                }
-                _ => {
-                    try_parse!(expr, self.parse_expression(0, Associativity::Left));
-                    try_parse!(self.expect(TokenType::Semi));
-                    nodes::Statement::Expression(expr)
-                }
-            }
-            s => {
-                eprintln!("FIXME: Attempted to parse {:?} as statement", s);
-                eprintln!("       Proceeding to parse as expression!");
+            _ => {
                 try_parse!(expr, self.parse_expression(0, Associativity::Left));
                 try_parse!(self.expect(TokenType::Semi));
                 nodes::Statement::Expression(expr)
@@ -1124,20 +1137,6 @@ impl<'flags> Parser<'flags> {
             location,
             name: name_token.value,
             typ,
-            expression,
-        })
-    }
-
-    #[trace_call(always)]
-    fn parse_assignment(&mut self) -> Option<nodes::AssignNode> {
-        let location = self.current_location();
-        try_parse!(name, self.parse_expr_identifier());
-        try_parse!(self.expect(TokenType::Equal));
-        try_parse!(expression, self.parse_expression(0, Associativity::Left));
-        try_parse!(self.expect(TokenType::Semi));
-        Some(nodes::AssignNode {
-            location,
-            name,
             expression,
         })
     }
@@ -1218,19 +1217,24 @@ impl<'flags> Parser<'flags> {
         Some(nodes::ContinueNode { location })
     }
 
+    // Roughly inspired by:
+    // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Operator_Precedence#table
+    // If it works for JS, it should work for us too
     #[trace_call(always)]
     fn get_precedence(&self, token_type: TokenType) -> usize {
         match token_type {
-            TokenType::ForwardSlash => 20,
-            TokenType::Asterisk => 20,
-            TokenType::Plus => 15,
-            TokenType::Minus => 15,
-            TokenType::CmpEq => 10,
-            TokenType::CmpNeq => 10,
-            TokenType::CmpLt => 10,
-            TokenType::CmpLte => 10,
-            TokenType::CmpGt => 10,
-            TokenType::CmpGte => 10,
+            TokenType::Dot => 17,
+            TokenType::ForwardSlash => 12,
+            TokenType::Asterisk => 12,
+            TokenType::Plus => 11,
+            TokenType::Minus => 11,
+            TokenType::CmpEq => 9,
+            TokenType::CmpNeq => 9,
+            TokenType::CmpLt => 9,
+            TokenType::CmpLte => 9,
+            TokenType::CmpGt => 9,
+            TokenType::CmpGte => 9,
+            TokenType::Equal => 2,
             e => todo!("get_precedence({:?})", e),
         }
     }
@@ -1238,20 +1242,24 @@ impl<'flags> Parser<'flags> {
     #[trace_call(always)]
     fn get_associativity(&self, token_type: TokenType) -> Associativity {
         match token_type {
-            TokenType::Plus
-            | TokenType::Minus
-            | TokenType::Asterisk
-            | TokenType::ForwardSlash
-            | TokenType::CmpEq
-            | TokenType::CmpNeq
-            | TokenType::CmpLt
-            | TokenType::CmpLte
-            | TokenType::CmpGt
-            | TokenType::CmpGte => Associativity::Left,
-            _ => Associativity::Right,
+            TokenType::Plus => Associativity::Left,
+            TokenType::Minus => Associativity::Left,
+            TokenType::Asterisk => Associativity::Left,
+            TokenType::ForwardSlash => Associativity::Left,
+            TokenType::CmpEq => Associativity::Left,
+            TokenType::CmpNeq => Associativity::Left,
+            TokenType::CmpLt => Associativity::Left,
+            TokenType::CmpLte => Associativity::Left,
+            TokenType::CmpGt => Associativity::Left,
+            TokenType::CmpGte => Associativity::Left,
+            TokenType::Dot => Associativity::Left,
+            TokenType::Equal => Associativity::Right,
+            e => todo!("get_associativity({:?})", e),
         }
     }
 
+    // Inspired by the awesome work done by the SerenityOS team:
+    // Credit: https://github.com/SerenityOS/serenity/blob/master/Userland/Libraries/LibJS/Parser.cpp
     #[trace_call(always)]
     fn parse_expression(&mut self, min_precedence: usize, associativity: Associativity) -> Option<nodes::Expression> {
         let mut expression = self.parse_primary_expression()?;
@@ -1285,7 +1293,7 @@ impl<'flags> Parser<'flags> {
             }
             TokenType::Identifier => {
                 try_parse!(identifier, self.parse_expr_identifier());
-                Some(nodes::Expression::Identifier(identifier))
+                Some(identifier)
             }
             TokenType::OpenRound => {
                 try_parse!(self.expect(TokenType::OpenRound));
@@ -1318,17 +1326,45 @@ impl<'flags> Parser<'flags> {
     #[trace_call(always)]
     fn matches_binary_expression(&mut self) -> bool {
         match self.nth(0) {
-            TokenType::Plus
-            | TokenType::Minus
-            | TokenType::Asterisk
-            | TokenType::ForwardSlash
-            | TokenType::CmpEq
-            | TokenType::CmpNeq
-            | TokenType::CmpLt
-            | TokenType::CmpLte
-            | TokenType::CmpGt
-            | TokenType::CmpGte => true,
-            _ => false,
+            TokenType::Equal => true,
+            TokenType::Plus => true,
+            TokenType::Minus => true,
+            TokenType::Asterisk => true,
+            TokenType::ForwardSlash => true,
+            TokenType::CmpEq => true,
+            TokenType::CmpNeq => true,
+            TokenType::CmpLt => true,
+            TokenType::CmpLte => true,
+            TokenType::CmpGt => true,
+            TokenType::CmpGte => true,
+            TokenType::Dot => true,
+
+            TokenType::CharLiteral => false,
+            TokenType::StrLiteral => false,
+            TokenType::IntLiteral => false,
+            TokenType::Identifier => false,
+            TokenType::OpenRound => false,
+            TokenType::OpenSquare => false,
+            TokenType::OpenCurly => false,
+            TokenType::Semi => false,
+            TokenType::Colon => false,
+            TokenType::Comma => false,
+            TokenType::ClosingRound => false,
+            TokenType::ClosingSquare => false,
+            TokenType::ClosingCurly => false,
+            TokenType::Arrow => false,
+            TokenType::IfKeyword => false,
+            TokenType::ElseKeyword => false,
+            TokenType::LetKeyword => false,
+            TokenType::FunctionKeyword => false,
+            TokenType::ReturnKeyword => false,
+            TokenType::WhileKeyword => false,
+            TokenType::BreakKeyword => false,
+            TokenType::ContinueKeyword => false,
+            TokenType::ExternKeyword => false,
+            TokenType::ClassKeyword => false,
+            TokenType::ConstructorKeyword => false,
+            TokenType::Eof => false,
         }
     }
 
@@ -1441,6 +1477,31 @@ impl<'flags> Parser<'flags> {
                     typ: Type::Unknown,
                 }));
             },
+            TokenType::Dot => {
+                self.next();
+                return Some(nodes::Expression::Binary(
+                    nodes::BinaryNode {
+                        location,
+                        operation: Operation::Dot,
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(self.parse_expression(precedence, associativity)?),
+                        typ: Type::Unknown,
+                    }
+                ));
+            }
+            TokenType::Equal => {
+                self.next();
+                return Some(nodes::Expression::Binary(nodes::BinaryNode {
+                    location,
+                    operation: Operation::Assign,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(self.parse_expression(precedence, associativity)?),
+                    typ: Type::Unknown,
+                }));
+            }
+            _ if self.matches_binary_expression() => {
+                todo!("parse_secondary_expression({:?}, {:?}, {:?})", lhs, precedence, associativity);
+            }
             _ => {
                 self.report_error(ParserError::ExpectedBinaryOperator(
                     self.current_location(),
@@ -1478,8 +1539,7 @@ impl<'flags> Parser<'flags> {
     }
 
     #[trace_call(always)]
-    fn parse_expr_identifier(&mut self) -> Option<nodes::IdentifierNode> {
-        let location = self.current_location();
+    fn parse_expr_identifier(&mut self) -> Option<nodes::Expression> {
         let expression = match self.nth(1) {
             TokenType::OpenRound => {
                 try_parse!(fn_call, self.parse_expr_function_call());
@@ -1489,21 +1549,12 @@ impl<'flags> Parser<'flags> {
                 try_parse!(array_access, self.parse_expr_array_access());
                 nodes::Expression::ArrayAccess(array_access)
             }
-            TokenType::Dot => {
-                try_parse!(field_access, self.parse_expr_field_access());
-                nodes::Expression::FieldAccess(field_access)
-            }
             _ => {
                 try_parse!(name_token, self.parse_expr_name());
                 nodes::Expression::Name(name_token)
             }
         };
-        let expression = Box::new(expression);
-        Some(nodes::IdentifierNode {
-            location,
-            expression,
-            typ: Type::Unknown,
-        })
+        Some(expression)
     }
 
     #[trace_call(always)]
@@ -1584,21 +1635,6 @@ impl<'flags> Parser<'flags> {
             function_name,
             location,
             arguments,
-            typ: Type::Unknown,
-        })
-    }
-
-    #[trace_call(always)]
-    fn parse_expr_field_access(&mut self) -> Option<nodes::FieldAccessNode> {
-        let location = self.current_location();
-        try_parse!(name_token, self.expect(TokenType::Identifier));
-        let name = name_token.value;
-        try_parse!(self.expect(TokenType::Dot));
-        try_parse!(field, self.parse_expr_identifier());
-        Some(nodes::FieldAccessNode {
-            location,
-            name,
-            field,
             typ: Type::Unknown,
         })
     }

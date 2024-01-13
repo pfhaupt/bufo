@@ -21,8 +21,11 @@ if __name__ == "__main__":
             case "random":
                 print(get_random())
             case "all":
-                for line in call_cmd(["git", "grep", "-nE", "(todo!|TODO|FIXME)", "--", ":!todo.py"]):
+                todos = call_cmd(["git", "grep", "-nE", "(todo!|TODO|FIXME)", "--", ":!todo.py"])
+                todos = list(filter(lambda elem: elem != b'', todos))
+                for line in todos:
                     print(line)
+                print(f"\nFound {len(todos)} things that need fixing!")
             case _:
                 print("Usage: todo.py [random]")
     else:

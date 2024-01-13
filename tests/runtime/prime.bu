@@ -1,0 +1,44 @@
+func mod(a: u64, b: u64) -> u64 {
+    return a - b * (a / b);
+}
+
+func is_prime(n: u64) -> u32 {
+    if (n == 2) { return 1; }
+    if (n == 3) { return 1; }
+    if (n < 2) { return 0; }
+    if (mod(n, 2) == 0) { return 0; }
+    if (n < 9) { return 1; }
+    if (mod(n, 3) == 0) { return 0; }
+    let f: u64 = 5;
+    while (f * f <= n) {
+        if (mod(n, f) == 0) { return 0; }
+        if (mod(n, f + 2) == 0) { return 0; }
+        f = f + 6;
+    }
+    return 1;
+}
+
+func main() -> u64 {
+    if (is_prime(2) == 0) {
+        return 2;
+    }
+    if (is_prime(3) == 0) {
+        return 3;
+    }
+    if (is_prime(19381) == 0) {
+        return 19381;
+    }
+    if (is_prime(19382) == 1) {
+        return 19382;
+    }
+    if (is_prime(192806849) == 0) {
+        return 192806849;
+    }
+    if (is_prime(192801989593) == 0) {
+        return 192801989593;
+    }
+    if (is_prime(1928019895934) == 1) {
+        return 1928019895934;
+    }
+    return 0;
+}
