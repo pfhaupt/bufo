@@ -140,6 +140,7 @@ impl<'flags> FlowChecker<'flags> {
                 );
                 Ok(FlowType::Linear)
             }
+            nodes::Statement::Block(block_node) => self.check_block(block_node, early_exit),
             nodes::Statement::Let(let_node) => self.check_stmt_let(let_node),
             nodes::Statement::If(if_node) => self.check_stmt_if(if_node, early_exit),
             nodes::Statement::Return(return_node) => self.check_stmt_return(return_node),
@@ -159,9 +160,9 @@ impl<'flags> FlowChecker<'flags> {
         // let cond_flow = self.check_expression_node(&if_node.condition)?;
         // debug_assert!(cond_flow == FlowType::Linear);
         // Later on we might want to check if the condition always exits
-        let if_flow = self.check_block(&if_node.if_branch, early_exit)?;
-        if let Some(else_branch) = &if_node.else_branch {
-            let else_flow = self.check_block(else_branch, early_exit)?;
+        let if_flow = self.check_statement(&if_node.if_body, early_exit)?;
+        if let Some(else_branch) = &if_node.else_body {
+            let else_flow = self.check_statement(else_branch, early_exit)?;
             if self.flags.debug {
                 println!(
                     "[DEBUG] IfNode::check: if_flow: {:?}, else_flow: {:?}",
@@ -201,8 +202,8 @@ impl<'flags> FlowChecker<'flags> {
         // debug_assert!(cond_flow == FlowType::Linear);
         // Later on we might want to check if the condition always exits
         self.loop_stack.push(());
-        let block_flow = self.check_block(
-            &while_node.block,
+        let block_flow = self.check_statement(
+            &while_node.body,
             &[FlowType::AlwaysReturn, FlowType::AlwaysBreak, FlowType::AlwaysContinue]
         )?;
         self.loop_stack.pop();

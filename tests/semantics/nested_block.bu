@@ -1,0 +1,16 @@
+
+func main() -> i32 {
+    let a: i32 = 0;
+    {
+        let b: i32 = 10;
+        a = b;
+        {
+            let c: i32 = a * b;
+            b = c;
+            a = c - a;
+        }
+        if (b != 100) return b;
+    }
+    if (a != 90) return a;
+    return 1337;
+}

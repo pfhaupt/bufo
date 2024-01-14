@@ -1,0 +1,10 @@
+
+
+func main() -> i32 {
+    let b: i32 = 0;
+    {
+        let a: i32 = 10;
+        b = a;
+    }
+    return b;
+}

@@ -914,6 +914,7 @@ impl<'flags> TypeChecker<'flags> {
     #[trace_call(always)]
     fn type_check_statement(&mut self, statement: &mut nodes::Statement) {
         match statement {
+            nodes::Statement::Block(block_node) => self.type_check_block(block_node),
             nodes::Statement::Let(let_node) => self.type_check_stmt_let(let_node),
             nodes::Statement::If(if_node) => self.type_check_stmt_if(if_node),
             nodes::Statement::Return(return_node) => self.type_check_stmt_return(return_node),
@@ -987,9 +988,9 @@ impl<'flags> TypeChecker<'flags> {
                 cond,
             ));
         }
-        self.type_check_block(&mut if_node.if_branch);
-        if let Some(else_branch) = &mut if_node.else_branch {
-            self.type_check_block(else_branch);
+        self.type_check_statement(&mut if_node.if_body);
+        if let Some(else_branch) = &mut if_node.else_body {
+            self.type_check_statement(else_branch);
         }
     }
 
@@ -1079,7 +1080,7 @@ impl<'flags> TypeChecker<'flags> {
                 cond,
             ));
         }
-        self.type_check_block(&mut while_node.block);
+        self.type_check_statement(&mut while_node.body);
     }
 
     #[trace_call(always)]

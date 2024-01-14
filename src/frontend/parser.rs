@@ -1115,6 +1115,10 @@ impl<'flags> Parser<'flags> {
                 try_parse!(continue_stmt, self.parse_stmt_continue());
                 nodes::Statement::Continue(continue_stmt)
             }
+            TokenType::OpenCurly => {
+                try_parse!(block, self.parse_block());
+                nodes::Statement::Block(block)
+            }
             _ => {
                 try_parse!(expr, self.parse_expression(0, Associativity::Left));
                 try_parse!(self.expect(TokenType::Semi));
@@ -1148,18 +1152,18 @@ impl<'flags> Parser<'flags> {
         try_parse!(self.expect(TokenType::OpenRound));
         try_parse!(condition, self.parse_expression(0, Associativity::Left));
         try_parse!(self.expect(TokenType::ClosingRound));
-        try_parse!(if_branch, self.parse_block());
-        let else_branch = if self.eat(TokenType::ElseKeyword) {
-            try_parse!(eb, self.parse_block());
-            Some(eb)
+        try_parse!(if_body, self.parse_statement());
+        let else_body = if self.eat(TokenType::ElseKeyword) {
+            try_parse!(eb, self.parse_statement());
+            Some(Box::new(eb))
         } else {
             None
         };
         Some(nodes::IfNode {
             location,
             condition,
-            if_branch,
-            else_branch,
+            if_body: Box::new(if_body),
+            else_body,
         })
     }
 
@@ -1193,11 +1197,11 @@ impl<'flags> Parser<'flags> {
         try_parse!(condition, self.parse_expression(0, Associativity::Left));
         try_parse!(self.expect(TokenType::ClosingRound));
 
-        try_parse!(block, self.parse_block());
+        try_parse!(body, self.parse_statement());
         Some(nodes::WhileNode {
             location,
             condition,
-            block,
+            body: Box::new(body),
         })
     }
 

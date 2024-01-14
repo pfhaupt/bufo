@@ -1,0 +1,6 @@
+func main() -> i32 {
+    let a: i32 = 0;
+    a = a + 10;
+    if (a != 10) return a;
+    else return 0;
+}

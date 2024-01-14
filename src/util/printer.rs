@@ -131,6 +131,7 @@ impl Printable for nodes::BlockNode {
 impl Printable for nodes::Statement {
     fn print(&self, indent: usize) {
         match self {
+            nodes::Statement::Block(node) => node.print(indent),
             nodes::Statement::Expression(node) => node.print(indent),
             nodes::Statement::Let(node) => node.print(indent),
             nodes::Statement::If(node) => node.print(indent),
@@ -154,8 +155,8 @@ impl Printable for nodes::IfNode {
     fn print(&self, indent: usize) {
         println!("{}IfNode", " ".repeat(indent));
         self.condition.print(indent + INDENT_PER_LEVEL);
-        self.if_branch.print(indent + INDENT_PER_LEVEL);
-        if let Some(else_block) = &self.else_branch {
+        self.if_body.print(indent + INDENT_PER_LEVEL);
+        if let Some(else_block) = &self.else_body {
             else_block.print(indent + INDENT_PER_LEVEL);
         }
     }
@@ -178,7 +179,7 @@ impl Printable for nodes::WhileNode {
         println!("{}Condition", " ".repeat(indent + INDENT_PER_LEVEL));
         self.condition.print(indent + 2 * INDENT_PER_LEVEL);
         println!("{}Body", " ".repeat(indent + INDENT_PER_LEVEL));
-        self.block.print(indent + 2 * INDENT_PER_LEVEL);
+        self.body.print(indent + 2 * INDENT_PER_LEVEL);
     }
 }
 

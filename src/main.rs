@@ -113,6 +113,8 @@ mod tests {
         generate_successful_test!(fibonacci);
         generate_successful_test!(prime);
         generate_successful_test!(tree);
+        generate_successful_test!(if_statement);
+        generate_successful_test!(while_statement);
     }
 
     mod syntax_tests {
@@ -138,10 +140,10 @@ mod tests {
         generate_failing_test!(extra_arguments_in_func_call, "Too many arguments");
         generate_failing_test!(operator_without_operands, "Expected Expression");
         generate_failing_test!(too_many_literals, "found Integer Literal");
-        generate_failing_test!(if_missing_body, "Expected `{`");
+        generate_failing_test!(if_missing_body, "Expected Expression, found `;`");
         generate_failing_test!(if_missing_condition, "Expected Expression");
         generate_failing_test!(if_missing_brackets_condition, "Expected `(`", "found Identifier");
-        generate_failing_test!(while_missing_body, "Expected `{`");
+        generate_failing_test!(while_missing_body, "Expected Expression, found `;`");
         generate_failing_test!(while_missing_condition, "Expected Expression");
         generate_failing_test!(while_missing_brackets_condition, "Expected `(`", "found Identifier");
         generate_failing_test!(unexpected_symbol, "Unexpected Symbol `#`");
@@ -217,5 +219,6 @@ mod tests {
         generate_runtime_failing_test!(while_flow, format!("{:X}", 10).as_str());
         generate_runtime_failing_test!(nested_while, format!("{:X}", 10000).as_str());
         generate_runtime_failing_test!(assignment, "0x30"); // 0x30 = 48
+        generate_runtime_failing_test!(nested_block, format!("{:X}", 1337).as_str());
     }
 }

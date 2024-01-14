@@ -537,6 +537,7 @@ impl Codegenable for nodes::Statement {
     #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let reg = match self {
+            Self::Block(block_node) => block_node.codegen(codegen),
             Self::Expression(expr_node) => expr_node.codegen(codegen),
             Self::If(if_node) => if_node.codegen(codegen),
             Self::Let(let_node) => let_node.codegen(codegen),
@@ -590,9 +591,9 @@ impl Codegenable for nodes::IfNode {
             Operation::LessThanOrEqual => codegen.add_ir(instr::IR::JmpGt { name: lbl_name }),
             _ => unreachable!(),
         }
-        self.if_branch.codegen(codegen)?;
+        self.if_body.codegen(codegen)?;
 
-        if let Some(else_branch) = &self.else_branch {
+        if let Some(else_branch) = &self.else_body {
             let fin = codegen.generate_label(None);
             let lbl_name = fin.get_lbl();
             codegen.add_ir(instr::IR::Jmp { name: lbl_name });
@@ -642,7 +643,7 @@ impl Codegenable for nodes::WhileNode {
         let block_lbl = codegen.generate_label(None);
         let block_name = block_lbl.get_lbl();
         codegen.add_ir(block_lbl);
-        self.block.codegen(codegen)?;
+        self.body.codegen(codegen)?;
 
         // condition code
         // if condition is true, jump to block code

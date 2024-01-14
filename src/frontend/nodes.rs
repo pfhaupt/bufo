@@ -96,6 +96,7 @@ pub struct BlockNode {
 
 #[derive(Debug, Clone)]
 pub enum Statement {
+    Block(BlockNode),
     Expression(Expression),
     Let(LetNode),
     If(IfNode),
@@ -108,6 +109,7 @@ pub enum Statement {
 impl Statement {
     pub fn get_loc(&self) -> Location {
         match self {
+            Self::Block(e) => e.location.clone(),
             Self::Expression(e) => e.get_loc(),
             Self::Let(e) => e.location.clone(),
             Self::If(e) => e.location.clone(),
@@ -131,8 +133,8 @@ pub struct LetNode {
 pub struct IfNode {
     pub location: Location,
     pub condition: Expression,
-    pub if_branch: BlockNode,
-    pub else_branch: Option<BlockNode>,
+    pub if_body: Box<Statement>,
+    pub else_body: Option<Box<Statement>>,
 }
 
 #[derive(Debug, Clone)]
@@ -148,7 +150,7 @@ pub struct ReturnNode {
 pub struct WhileNode {
     pub location: Location,
     pub condition: Expression,
-    pub block: BlockNode,
+    pub body: Box<Statement>,
 }
 
 #[derive(Debug, Clone)]
