@@ -189,6 +189,17 @@ mod tests {
         }
 
         generate_failing_test!(undeclared_variable, "undeclared variable", "`b`");
+        generate_failing_test!(undeclared_variable_many,
+            ".bu:3:9: Use of undeclared variable `d`.",
+            ".bu:4:9: Use of undeclared variable `d`.",
+            ".bu:4:14: Use of undeclared variable `d`.",
+            ".bu:4:18: Use of undeclared variable `d`.",
+            ".bu:4:22: Use of undeclared variable `d`.",
+            ".bu:4:27: Use of undeclared variable `d`.",
+            ".bu:4:31: Use of undeclared variable `d`.",
+            ".bu:7:12: Use of undeclared variable `d`.",
+            ".bu:10:12: Use of undeclared variable `d`."
+        );
         generate_failing_test!(unknown_type_declaration, "Unknown type", "`random`");
         generate_failing_test!(type_mismatch_in_binary_op, "Type mismatch", "LHS", "RHS", "i32", "u32");
         generate_failing_test!(type_mismatch_in_comparison, "Type mismatch", "LHS", "RHS", "i32");

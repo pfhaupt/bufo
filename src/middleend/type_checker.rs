@@ -70,6 +70,62 @@ macro_rules! check_function {
     };
 }
 
+// FIXME: constructor(this: ClassName) { ... } should not be allowed because ImplicitThisParam
+macro_rules! check_parameters {
+    ($tc:ident, $function:ident, $implicit_this:expr) => {
+        {
+            let mut parameters: HashMap<String, Variable> = HashMap::new();
+            let mut errors: Vec<TypeError> = Vec::new();
+            for param in &$function.parameters {
+                let p = Variable {
+                    name: param.name.clone(),
+                    location: param.location.clone(),
+                    typ: param.typ.typ.clone(),
+                };
+                if let Some(p) = parameters.get(&param.name) {
+                    if p.name == *"this" {
+                        errors.push(TypeError::ImplicitThisParam(
+                            param.location.clone(),
+                        ));
+                    } else {
+                        errors.push(TypeError::Redeclaration(
+                            "Parameter",
+                            param.location.clone(),
+                            param.name.clone(),
+                            p.location.clone(),
+                        ));
+                    }
+                } else {
+                    parameters.insert(param.name.clone(), p);
+                }
+            }
+            if parameters.len() > 4 {
+                errors.push(TypeError::TooManyParameters(
+                    "Method",
+                    $function.location.clone(),
+                    $implicit_this,
+                ));
+            }
+            (parameters.into_iter().map(|(_, v)| v).collect(), errors)
+        }
+    };
+}
+
+macro_rules! check_or_abort {
+    ($lhs:ident, $lhs_func:expr, $rhs:ident, $rhs_func:expr) => {
+        let $lhs = $lhs_func;
+        let $rhs = $rhs_func;
+        if $lhs == Type::None || $rhs == Type::None {
+            return Type::None;
+        }
+    };
+    ($val:ident, $func:expr) => {
+        let $val = $func;
+        if $val == Type::None {
+            return Type::None;
+        }
+    };
+}
 
 // FIXME: All this info is in the AST, there's no need to clone this
 //        We can just use references to the AST and lifetime parameters
@@ -397,47 +453,6 @@ impl Function {
         parameters
     }
 }
-// FIXME: constructor(this: ClassName) { ... } should not be allowed because ImplicitThisParam
-macro_rules! check_parameters {
-    ($tc:ident, $function:ident, $implicit_this:expr) => {
-        {
-            let mut parameters: HashMap<String, Variable> = HashMap::new();
-            let mut errors: Vec<TypeError> = Vec::new();
-            for param in &$function.parameters {
-                let p = Variable {
-                    name: param.name.clone(),
-                    location: param.location.clone(),
-                    typ: param.typ.typ.clone(),
-                };
-                if let Some(p) = parameters.get(&param.name) {
-                    if p.name == *"this" {
-                        errors.push(TypeError::ImplicitThisParam(
-                            param.location.clone(),
-                        ));
-                    } else {
-                        errors.push(TypeError::Redeclaration(
-                            "Parameter",
-                            param.location.clone(),
-                            param.name.clone(),
-                            p.location.clone(),
-                        ));
-                    }
-                } else {
-                    parameters.insert(param.name.clone(), p);
-                }
-            }
-            if parameters.len() > 4 {
-                errors.push(TypeError::TooManyParameters(
-                    "Method",
-                    $function.location.clone(),
-                    $implicit_this,
-                ));
-            }
-            (parameters.into_iter().map(|(_, v)| v).collect(), errors)
-        }
-    };
-}
-
 
 #[derive(Debug)]
 pub struct Class {
@@ -981,7 +996,7 @@ impl<'flags> TypeChecker<'flags> {
     #[trace_call(always)]
     fn type_check_stmt_if(&mut self, if_node: &mut nodes::IfNode) {
         let cond = self.type_check_expression(&mut if_node.condition);
-        if cond != Type::Bool {
+        if cond != Type::None && cond != Type::Bool {
             self.report_error(TypeError::TypeMismatch(
                 if_node.condition.get_loc(),
                 Type::Bool,
@@ -1032,6 +1047,10 @@ impl<'flags> TypeChecker<'flags> {
                 ));
             }
             let expr_type = self.type_check_expression(ret_expr);
+            if expr_type == Type::None {
+                // Error in expression, we can't continue
+                return;
+            }
             let t = if expr_type == Type::Unknown {
                 // we have something like `return 5;`, where we couldn't determine the type
                 // so we now have to `infer` the type, and set it accordingly
@@ -1073,7 +1092,7 @@ impl<'flags> TypeChecker<'flags> {
     #[trace_call(always)]
     fn type_check_stmt_while(&mut self, while_node: &mut nodes::WhileNode) {
         let cond = self.type_check_expression(&mut while_node.condition);
-        if cond != Type::Bool {
+        if cond != Type::None && cond != Type::Bool {
             self.report_error(TypeError::TypeMismatch(
                 while_node.condition.get_loc(),
                 Type::Bool,
@@ -1214,8 +1233,10 @@ impl<'flags> TypeChecker<'flags> {
         &mut self,
         binary_expr: &mut nodes::BinaryNode,
     ) -> Type {
-        let lhs_type = self.type_check_expression(&mut binary_expr.lhs);
-        let rhs_type = self.type_check_expression(&mut binary_expr.rhs);
+        check_or_abort!(
+            lhs_type, self.type_check_expression(&mut binary_expr.lhs),
+            rhs_type, self.type_check_expression(&mut binary_expr.rhs)
+        );
         assert!(binary_expr.is_arithmetic());
         match (&lhs_type, &rhs_type) {
             (typ @ Type::Class(..), _) | (_, typ @ Type::Class(..)) => {
@@ -1293,8 +1314,10 @@ impl<'flags> TypeChecker<'flags> {
         &mut self,
         binary_expr: &mut nodes::BinaryNode,
     ) -> Type {
-        let lhs_type = self.type_check_expression(&mut binary_expr.lhs);
-        let rhs_type = self.type_check_expression(&mut binary_expr.rhs);
+        check_or_abort!(
+            lhs_type, self.type_check_expression(&mut binary_expr.lhs),
+            rhs_type, self.type_check_expression(&mut binary_expr.rhs)
+        );
         assert!(binary_expr.is_comparison());
         match (&lhs_type, &rhs_type) {
             (Type::Class(..), _) | (_, Type::Class(..)) => {
@@ -1374,13 +1397,11 @@ impl<'flags> TypeChecker<'flags> {
             ));
             return Type::None;
         }
-        let lhs_type = self.type_check_expression(&mut assign_expr.lhs);
-        if lhs_type == Type::None {
-            // Error propagation, for example LHS is unknown field of instance
-            return Type::None;
-        }
-        let rhs_type = self.type_check_expression(&mut assign_expr.rhs);
-        debug_assert!(rhs_type != Type::None);
+
+        check_or_abort!(
+            lhs_type, self.type_check_expression(&mut assign_expr.lhs),
+            rhs_type, self.type_check_expression(&mut assign_expr.rhs)
+        );
 
         if lhs_type == Type::Unknown {
             // Note: This is an error, how can we assign to something we don't know the type of?
@@ -1410,14 +1431,16 @@ impl<'flags> TypeChecker<'flags> {
         &mut self,
         binary_expr: &mut nodes::BinaryNode,
     ) -> Type {
-        let lhs_type = self.type_check_expression(&mut binary_expr.lhs);
+        check_or_abort!(lhs_type, self.type_check_expression(&mut binary_expr.lhs));
         if let Type::Class(class_name) = lhs_type {
             let Some(class) = self.known_classes.get(&class_name) else {
-                self.report_error(TypeError::UndeclaredClass(
-                    binary_expr.lhs.get_loc(),
-                    class_name.clone(),
-                ));
-                return Type::None;
+                // FIXME: Note: Idk if this is actually reachable
+                unreachable!();
+                // self.report_error(TypeError::UndeclaredClass(
+                //     binary_expr.lhs.get_loc(),
+                //     class_name.clone(),
+                // ));
+                // return Type::None;
             };
             match &mut (*binary_expr.rhs) {
                 nodes::Expression::Name(name_node) => {
@@ -1471,7 +1494,7 @@ impl<'flags> TypeChecker<'flags> {
     ) -> Type {
         let mut array_type = Type::Unknown;
         for elem in &mut literal.elements {
-            let elem_type = self.type_check_expression(elem);
+            check_or_abort!(elem_type, self.type_check_expression(elem));
             if elem_type == Type::Unknown {
                 return Type::Unknown;
             } else if array_type == Type::Unknown {
@@ -1524,7 +1547,7 @@ impl<'flags> TypeChecker<'flags> {
                 access.indices.elements.len(),
             ));
         }
-        let t = self.type_check_expr_array_literal(&mut access.indices);
+        check_or_abort!(t, self.type_check_expr_array_literal(&mut access.indices));
         if let Type::Arr(elem_index, _) = t {
             if *elem_index != Type::Usize {
                 self.report_error(TypeError::TypeMismatch(
