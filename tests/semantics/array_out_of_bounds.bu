@@ -1,9 +1,11 @@
 //! THIS IS A TEST PROGRAM
 //! COMPILER
-//! SUCCESS
-//! CODE: 1
+//! FAILURE
+//! CODE: 101
 //! ERROR:
 //! idk lol, this is allowed to fail for now, arrays are scuffed anyway
 
 func main() {
+    let arr: i32[3] = [1, 2, 3];
+    let a: i32 = arr[5];
 }
