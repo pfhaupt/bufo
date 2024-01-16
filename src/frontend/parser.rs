@@ -142,6 +142,7 @@ pub enum TokenType {
     Plus,
     Minus,
     Asterisk,
+    Percent,
     ForwardSlash,
     CmpEq,
     CmpNeq,
@@ -201,6 +202,7 @@ impl Display for TokenType {
             Self::Minus => write!(f, "`-`"),
             Self::Asterisk => write!(f, "`*`"),
             Self::ForwardSlash => write!(f, "`/`"),
+            Self::Percent => write!(f, "`%`"),
             Self::CmpEq => write!(f, "`==`"),
             Self::CmpNeq => write!(f, "`!=`"),
             Self::CmpLt => write!(f, "`<`"),
@@ -276,6 +278,7 @@ pub enum Operation {
     Sub,
     Mul,
     Div,
+    Modulo,
     Equal,
     NotEqual,
     LessThan,
@@ -293,6 +296,7 @@ impl Display for Operation {
             Self::Sub | Self::Negate => write!(f, "-"),
             Self::Mul => write!(f, "*"),
             Self::Div => write!(f, "/"),
+            Self::Modulo => write!(f, "%"),
             Self::Equal => write!(f, "=="),
             Self::NotEqual => write!(f, "!="),
             Self::LessThan => write!(f, "<"),
@@ -305,14 +309,15 @@ impl Display for Operation {
 
 impl Operation {
     #[trace_call(extra)]
-    fn from(s: String) -> Self {
-        debug_assert_eq!(Operation::GreaterThanOrEqual as u8 + 1, 10);
-        match s.as_str() {
+    fn from(s: &str) -> Self {
+        debug_assert_eq!(Operation::GreaterThanOrEqual as u8 + 1, 11);
+        match s {
             "=" => Self::Assign,
             "+" => Self::Add,
             "-" => Self::Sub,
             "*" => Self::Mul,
             "/" => Self::Div,
+            "%" => Self::Modulo,
             "==" => Self::Equal,
             "!=" => Self::NotEqual,
             "<" => Self::LessThan,
@@ -343,6 +348,7 @@ impl Operation {
             Self::Sub => true,
             Self::Mul => true,
             Self::Div => true,
+            Self::Modulo => true,
             _ => false,
         }
     }
@@ -470,7 +476,7 @@ impl<'flags> Parser<'flags> {
         }
         debug_assert_eq!(
             TokenType::Eof as u8 + 1,
-            38,
+            39,
             "Not all TokenTypes are handled in next_token()"
         );
         self.trim_whitespace();
@@ -597,6 +603,7 @@ impl<'flags> Parser<'flags> {
             '.' => (TokenType::Dot, String::from(c)),
             '+' => (TokenType::Plus, String::from(c)),
             '*' => (TokenType::Asterisk, String::from(c)),
+            '%' => (TokenType::Percent, String::from(c)),
             '\0' => (TokenType::Eof, String::new()),
             e => {
                 self.report_error(ParserError::UnexpectedSymbol(
@@ -1230,6 +1237,7 @@ impl<'flags> Parser<'flags> {
             TokenType::Dot => 17,
             TokenType::ForwardSlash => 12,
             TokenType::Asterisk => 12,
+            TokenType::Percent => 12,
             TokenType::Plus => 11,
             TokenType::Minus => 11,
             TokenType::CmpEq => 9,
@@ -1250,6 +1258,7 @@ impl<'flags> Parser<'flags> {
             TokenType::Minus => Associativity::Left,
             TokenType::Asterisk => Associativity::Left,
             TokenType::ForwardSlash => Associativity::Left,
+            TokenType::Percent => Associativity::Left,
             TokenType::CmpEq => Associativity::Left,
             TokenType::CmpNeq => Associativity::Left,
             TokenType::CmpLt => Associativity::Left,
@@ -1335,6 +1344,7 @@ impl<'flags> Parser<'flags> {
             TokenType::Minus => true,
             TokenType::Asterisk => true,
             TokenType::ForwardSlash => true,
+            TokenType::Percent => true,
             TokenType::CmpEq => true,
             TokenType::CmpNeq => true,
             TokenType::CmpLt => true,
@@ -1419,6 +1429,16 @@ impl<'flags> Parser<'flags> {
                     lhs: Box::new(lhs),
                     rhs: Box::new(self.parse_expression(precedence, associativity)?),
                     typ: Type::Unknown,
+                }));
+            },
+            TokenType::Percent => {
+                self.next();
+                return Some(nodes::Expression::Binary(nodes::BinaryNode {
+                    location,
+                    operation: Operation::Modulo,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(self.parse_expression(precedence, associativity)?),
+                    typ: Type::Unknown
                 }));
             },
             TokenType::CmpEq => {

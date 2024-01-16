@@ -308,6 +308,12 @@ pub enum IR {
         src2: Operand,
         signed: bool,
     },
+    Mod {
+        dst: Operand,
+        src1: Operand,
+        src2: Operand,
+        signed: bool,
+    },
 
     // Control Flow
     Label {
@@ -398,6 +404,16 @@ impl Debug for IR {
             } => write!(
                 f,
                 "Div dst: {:?}, src1: {:?}, src2: {:?}, signed: {:?}",
+                dst, src1, src2, signed
+            ),
+            Self::Mod {
+                dst,
+                src1,
+                src2,
+                signed,
+            } => write!(
+                f,
+                "Mod dst: {:?}, src1: {:?}, src2: {:?}, signed: {:?}",
                 dst, src1, src2, signed
             ),
 

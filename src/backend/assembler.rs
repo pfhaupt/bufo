@@ -478,6 +478,110 @@ impl<'flags> Assembler<'flags> {
                         }
                     }
                 }
+                IR::Mod { dst, src1, src2, signed } => {
+                    debug_assert!(dst == src1);
+                    debug_assert!(dst.reg != instr::Register::None);
+                    let dst_reg = reg(dst.reg, dst.reg_mode);
+
+                    let d = if *signed { "idiv" } else { "div" };
+                    let word = if dst.reg_mode == RegMode::BIT32 {
+                        "DWORD"
+                    } else {
+                        "QWORD"
+                    };
+                    let acc = if dst.reg_mode == RegMode::BIT32 {
+                        "eax"
+                    } else {
+                        "rax"
+                    };
+                    let cq = if dst.reg_mode == RegMode::BIT32 {
+                        "  cdq"
+                    } else {
+                        "  cqo"
+                    };
+                    // IDIV and DIV put remainder in DX, need to preserve it
+                    let rem = if dst.reg_mode == RegMode::BIT32 {
+                        "edx"
+                    } else {
+                        "rdx"
+                    };
+                    push_asm(format!("  push rdx").as_str());
+
+                    match (dst.typ, src2.typ) {
+                        (OperandType::Reg, OperandType::Reg) => {
+                            let src_reg = reg(src2.reg, src2.reg_mode);
+                            if src2.reg == Register::Rdx {
+                                // We can't use RDX as source, need to use a register
+                                // because IDIV and DIV sign-extend into RDX
+                                let reserve = if dst.reg_mode == RegMode::BIT32 {
+                                    "ecx"
+                                } else {
+                                    "rcx"
+                                };
+                                push_asm(format!("  mov {acc}, {dst_reg}").as_str());
+                                push_asm(format!("  push rcx").as_str());
+                                push_asm(format!("  mov {reserve}, {src_reg}").as_str());
+                                push_asm(cq);
+                                push_asm(format!("  {d} {reserve}").as_str());
+                                push_asm(format!("  pop rcx").as_str());
+                                push_asm(format!("  mov {acc}, {rem}").as_str());
+                                // Restore DX
+                                push_asm(format!("  pop rdx").as_str());
+                                push_asm(format!("  mov {dst_reg}, {acc}").as_str());
+                            } else {
+                                // As with MUL, DIV uses accumulator
+                                push_asm(format!("  mov {acc}, {dst_reg}").as_str());
+                                push_asm(cq);
+                                push_asm(format!("  {d} {src_reg}").as_str());
+                                push_asm(format!("  mov {acc}, {rem}").as_str());
+                                // Restore DX
+                                push_asm(format!("  pop rdx").as_str());
+                                push_asm(format!("  mov {dst_reg}, {acc}").as_str());
+                            }
+                        }
+                        (OperandType::Reg, OperandType::ImmI32) |
+                        (OperandType::Reg, OperandType::ImmU32) |
+                        (OperandType::Reg, OperandType::ImmI64) |
+                        (OperandType::Reg, OperandType::ImmU64) => {
+                            // IDIV and DIV have no immediate mode, we need to use a register
+                            let cx = if dst.reg_mode == RegMode::BIT32 {
+                                "ecx"
+                            } else {
+                                "rcx"
+                            };
+                            let value = src2.off_or_imm;
+                            push_asm(format!("  mov {acc}, {dst_reg}").as_str());
+                            push_asm("  push rcx");
+                            push_asm(format!("  mov {cx}, {value}").as_str());
+                            push_asm(cq);
+                            push_asm(format!("  {d} {cx}").as_str());
+                            push_asm(format!("  mov {acc}, {rem}").as_str());
+                            push_asm("  pop rcx");
+                            // Restore DX
+                            push_asm(format!("  pop rdx").as_str());
+                            push_asm(format!("  mov {dst_reg}, {acc}").as_str());
+                        }
+                        (OperandType::Reg, OperandType::Offset) => {
+                            let offset = src2.off_or_imm;
+                            let size = dst.reg_mode.size();
+                            push_asm(format!("  mov {acc}, {dst_reg}").as_str());
+                            push_asm(cq);
+                            push_asm(format!("  {d} {word} [rbp-{offset}-{size}]").as_str());
+                            push_asm(format!("  mov {acc}, {rem}").as_str());
+                            // Restore DX
+                            push_asm(format!("  pop rdx").as_str());
+                            push_asm(format!("  mov {dst_reg}, {acc}").as_str());
+                        }
+                        (dst, src) => {
+                            return Err(format!(
+                                "Internal Error: {}:{}:{}: Can't generate ASM for `{d} {dst:?}, {src:?}",
+                                file!(),
+                                line!(),
+                                column!()
+                            ));
+                        }
+                    }
+                }
 
                 // Control Flow
                 IR::Label { name } => push_asm(format!("{name}:").as_str()),

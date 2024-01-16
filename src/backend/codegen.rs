@@ -815,6 +815,16 @@ impl Codegenable for nodes::BinaryNode {
                 });
                 Ok(lhs)
             }
+            Operation::Modulo => {
+                let (lhs, rhs) = gen_bin!(self.lhs, self.rhs)?;
+                codegen.add_ir(instr::IR::Mod {
+                    dst: lhs,
+                    src1: lhs,
+                    src2: rhs,
+                    signed: self.typ == Type::I32 || self.typ == Type::I64,
+                });
+                Ok(lhs)
+            }
             _ if self.is_comparison() => {
                 let (lhs, rhs) = gen_bin!(self.lhs, self.rhs)?;
                 codegen.add_ir(instr::IR::Cmp { dst: lhs, src: rhs });

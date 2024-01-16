@@ -1,18 +1,14 @@
-func mod(a: u64, b: u64) -> u64 {
-    return a - b * (a / b);
-}
-
 func is_prime(n: u64) -> u32 {
     if (n == 2) return 1;
     if (n == 3) return 1;
     if (n < 2) return 0;
-    if (mod(n, 2) == 0) return 0;
+    if (n % 2 == 0) return 0;
     if (n < 9) return 1;
-    if (mod(n, 3) == 0) return 0;
+    if (n % 3 == 0) return 0;
     let f: u64 = 5;
     while (f * f <= n) {
-        if (mod(n, f) == 0) return 0;
-        if (mod(n, f + 2) == 0) return 0;
+        if (n % f == 0) return 0;
+        if (n % (f + 2) == 0) return 0;
         f = f + 6;
     }
     return 1;
