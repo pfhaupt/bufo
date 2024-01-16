@@ -62,6 +62,9 @@ def run_test(path: str, exec: bool) -> TestResult:
             print("Second line must be either `//! RUNTIME` or `//! COMPILETIME`", file=sys.stderr)
             return TestResult(path, STATE.INVALID)
 
+        if point_of_failure == "RUNTIME" and not exec:
+            return TestResult(path, STATE.IGNORED)
+
         expected_mode = lines[2].removeprefix("//! ").upper().strip()
         if expected_mode not in ["FAILURE", "SUCCESS"]:
             print("Invalid test file: " + path, file=sys.stderr)
@@ -97,7 +100,7 @@ def run_test(path: str, exec: bool) -> TestResult:
                 print(output.stderr.decode("utf-8"), file=sys.stderr)
                 return TestResult(path, STATE.INVALID)
             filename = path.split("\\")[-1].split(".")[0]
-            if exec: output = call_cmd(["./out/" + filename + ".exe"])
+            output = call_cmd(["./out/" + filename + ".exe"])
             os.remove("./out/" + filename + ".exe")
         else:
             output = call_cmd(["cargo", "run", "--", "-i", path])
