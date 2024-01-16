@@ -1,3 +1,18 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! undeclared_variable_many.bu:18:9: Use of undeclared variable `d`.
+//! undeclared_variable_many.bu:19:9: Use of undeclared variable `d`.
+//! undeclared_variable_many.bu:19:14: Use of undeclared variable `d`.
+//! undeclared_variable_many.bu:19:18: Use of undeclared variable `d`.
+//! undeclared_variable_many.bu:19:22: Use of undeclared variable `d`.
+//! undeclared_variable_many.bu:19:27: Use of undeclared variable `d`.
+//! undeclared_variable_many.bu:19:31: Use of undeclared variable `d`.
+//! undeclared_variable_many.bu:22:12: Use of undeclared variable `d`.
+//! undeclared_variable_many.bu:25:12: Use of undeclared variable `d`.
+
 func main()->i32 {
     let a: u32 = 10;
     a = d;

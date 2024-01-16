@@ -1,3 +1,7 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
 func is_prime(n: u64) -> u32 {
     if (n == 2) return 1;
     if (n == 3) return 1;

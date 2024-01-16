@@ -1,3 +1,9 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! class_nested_field_wrong_type.bu:22:52: Type mismatch! Expected type `i32`, found type `u32`.
 
 class Test {
     bla: Bla;

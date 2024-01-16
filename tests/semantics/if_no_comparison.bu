@@ -1,3 +1,9 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! if_no_comparison.bu:10:9: Type mismatch! Expected type `bool`, found type `i32`.
 
 func main() {
     let a: i32 = 0;

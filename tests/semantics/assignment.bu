@@ -1,3 +1,8 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! FAILURE
+//! CODE: 48
+
 func main() -> i32 {
     let a: i32 = 11;
     let c: i32 = 0;

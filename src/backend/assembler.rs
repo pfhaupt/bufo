@@ -726,6 +726,13 @@ impl<'flags> Assembler<'flags> {
             "Creating executable failed",
         )?;
 
+        // Clean up generated files
+        // FIXME: Add this flag
+        // if !self.flags.keep {
+            std::fs::remove_file(&asmname).unwrap();
+            std::fs::remove_file(&objname).unwrap();
+        // }
+
         Ok(())
     }
 

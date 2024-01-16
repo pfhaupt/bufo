@@ -1,3 +1,7 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
 extern printf(s: String) -> usize;
 
 class String {

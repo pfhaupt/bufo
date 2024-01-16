@@ -1,3 +1,11 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! wrong_function_return_type.bu:10:5: Type mismatch! Expected type `i32`, found type `u32`.
+//! wrong_function_return_type.bu:9:1: Function is declared to return `i32` here.
+
 func bla() -> i32 {
     return 0u32;
 }

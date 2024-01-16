@@ -1,3 +1,10 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! mismatched_parens.bu:9:5: Expected Identifier, found `{`
+
 func main(
     {
 )

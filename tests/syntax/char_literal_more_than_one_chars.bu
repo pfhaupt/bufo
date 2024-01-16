@@ -1,3 +1,11 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! char_literal_more_than_one_chars.bu:10:19: Invalid Char Literal: 'hello'
+//! char_literal_more_than_one_chars.bu:10:26: Expected Expression, found `;`
+
 func main() {
     let a: char = 'hello';
 }

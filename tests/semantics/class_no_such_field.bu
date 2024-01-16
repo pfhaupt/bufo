@@ -1,3 +1,11 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! class_no_such_field.bu:13:14: Attempted to access unknown field `b` of instance of class `Test`.
+//! class_no_such_field.bu:9:1: Class `Test` is declared here.
+
 class Test {
     a: i32;
 

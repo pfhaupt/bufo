@@ -1,3 +1,7 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
 class Tree {
     left: Tree;
     right: Tree;

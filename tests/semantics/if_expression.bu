@@ -1,3 +1,8 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! FAILURE
+//! CODE: 1337
+
 func foo() -> u32 {
     return 1;
 }
@@ -6,5 +11,5 @@ func main() -> u32 {
     if (foo() == 1) {
         return 1337;
     }
-    return 420;
+    return 0;
 }

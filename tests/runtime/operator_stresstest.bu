@@ -1,3 +1,7 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
 func test_easy() -> i32 {
     let a: i32 = 5;
     let b: i32 = 3;

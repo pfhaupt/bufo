@@ -1,3 +1,11 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! invalid_variable_name_contains_special.bu:10:10: Unexpected Symbol `_`
+//! invalid_variable_name_contains_special.bu:10:9: Expected Identifier, found Integer Literal
+
 func main() {
     let 5_3: i32 = 5;
 }

@@ -1,3 +1,10 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! else_missing_if.bu:10:5: Expected Expression, found `else`
+//! else_missing_if.bu:13:1: Expected one of `class` or `func`, found `}`
 
 func main() {
     else {

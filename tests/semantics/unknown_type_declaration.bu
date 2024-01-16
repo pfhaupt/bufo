@@ -1,3 +1,11 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! unknown_type_declaration.bu:10:12: Unknown type `random`.
+//! unknown_type_declaration.bu:10:21: Unexpected Literal! Expected class instance, found `5`.
+
 func main() {
     let a: random = 5;
 }

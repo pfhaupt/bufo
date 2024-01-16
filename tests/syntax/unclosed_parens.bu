@@ -1,2 +1,9 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! unclosed_parens.bu:10:0: Expected `}`, found End of File
+
 func main() {
 

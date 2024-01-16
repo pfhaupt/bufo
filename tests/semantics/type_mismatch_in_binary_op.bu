@@ -1,3 +1,12 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! type_mismatch_in_binary_op.bu:13:20: Type mismatch in binary expression! Operation `i32 + u32` is not defined.
+//! type_mismatch_in_binary_op.bu:13:18: LHS has type `i32`.
+//! type_mismatch_in_binary_op.bu:13:22: RHS has type `u32`.
+
 func main() {
     let a: i32 = 0;
     let b: u32 = 0;

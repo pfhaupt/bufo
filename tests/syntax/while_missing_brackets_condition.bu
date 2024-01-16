@@ -1,3 +1,11 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! while_missing_brackets_condition.bu:10:11: Expected `(`, found Identifier
+//! while_missing_brackets_condition.bu:13:1: Expected one of `class` or `func`, found `}`
+
 func main() {
     while a == 1 {
         EXIT(1);

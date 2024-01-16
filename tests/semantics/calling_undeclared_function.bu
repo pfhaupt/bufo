@@ -1,3 +1,9 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! calling_undeclared_function.bu:8:5: Use of undeclared function `testfunction`.
 func main() {
     testfunction();
 }

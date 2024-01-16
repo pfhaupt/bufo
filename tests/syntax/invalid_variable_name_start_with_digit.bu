@@ -1,3 +1,10 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! invalid_variable_name_start_with_digit.bu:9:9: Expected Identifier, found Integer Literal
+
 func main() {
     let 0c: i32 = 5;
 }

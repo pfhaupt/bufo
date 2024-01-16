@@ -1,3 +1,7 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! FAILURE
+//! CODE: 10000
 
 func main() -> u64 {
     let counter: u64 = 0;

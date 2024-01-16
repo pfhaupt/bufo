@@ -1,3 +1,7 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! FAILURE
+//! CODE: 1290
 
 func main() -> u32 {
     let a: i32 = 0;

@@ -1,3 +1,11 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! class_field_redeclaration.bu:11:5: Field redeclaration.
+//! class_field_redeclaration.bu:10:5: Field `a` already declared here.
+
 class Test {
     a: i32;
     a: u64;

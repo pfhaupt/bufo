@@ -1,3 +1,8 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! FAILURE
+//! CODE: 2
+
 class Test {
     tField: Test;
     otherField: u32;

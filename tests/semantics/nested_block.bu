@@ -1,3 +1,7 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! FAILURE
+//! CODE: 1337
 
 func main() -> i32 {
     let a: i32 = 0;
