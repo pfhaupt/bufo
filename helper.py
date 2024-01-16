@@ -4,8 +4,6 @@ import os
 import sys
 import multiprocessing
 
-COMPILER_PATH = "./target/release/bufo.exe"
-
 def compare(expected: List[str], actual: List[str]) -> bool:
     for line in expected:
         inside = False
@@ -95,7 +93,7 @@ def run_test(info: Tuple[str, bool]) -> TestResult:
             error_lines = []
 
         if point_of_failure == "RUNTIME":
-            output = call_cmd([COMPILER_PATH, "-i", path])
+            output = call_cmd(["cargo", "run", "--", "-i", path])
             if output.returncode != 0:
                 print("Compilation failed", file=sys.stderr)
                 print(output.stderr.decode("utf-8"), file=sys.stderr)
@@ -104,7 +102,7 @@ def run_test(info: Tuple[str, bool]) -> TestResult:
             if exec: output = call_cmd(["./out/" + filename + ".exe"])
             os.remove("./out/" + filename + ".exe")
         else:
-            output = call_cmd([COMPILER_PATH, "-i", path])
+            output = call_cmd(["cargo", "run", "--", "-i", path])
         # stdout = output.stdout.decode("utf-8").split('\n')
         stderr = output.stderr.decode("utf-8").split('\n')
         if output.returncode == 101:
