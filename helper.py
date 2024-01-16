@@ -101,8 +101,8 @@ def run_test(info: Tuple[str, bool]) -> TestResult:
                 print(output.stderr.decode("utf-8"), file=sys.stderr)
                 return TestResult(path, STATE.INVALID)
             filename = path.split("\\")[-1].split(".")[0]
-            if exec: output = call_cmd([".\\out\\" + filename + ".exe"])
-            os.remove(".\\out\\" + filename + ".exe")
+            if exec: output = call_cmd(["./out/" + filename + ".exe"])
+            os.remove("./out/" + filename + ".exe")
         else:
             output = call_cmd([COMPILER_PATH, "-i", path])
         # stdout = output.stdout.decode("utf-8").split('\n')
@@ -147,9 +147,8 @@ def run_all_tests(exec: bool = True):
     invalid_tests = []
     ignored_tests = []
     paths = []
-    print(os.listdir(".\\tests"))
-    print(os.listdir("."))
-    for root, _, files in os.walk(".\\tests"):
+    print(os.listdir("./tests"))
+    for root, _, files in os.walk("./tests"):
         for filename in files:
             path = os.path.join(root, filename)
             if os.path.isfile(path):
