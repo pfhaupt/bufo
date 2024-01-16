@@ -972,6 +972,10 @@ impl<'flags> TypeChecker<'flags> {
                 let expected_type = &let_node.typ.typ;
 
                 let expr_type = self.type_check_expression(&mut let_node.expression);
+                if expr_type == Type::None {
+                    // Error in expression, we can't continue
+                    return;
+                }
 
                 if expr_type == Type::Unknown {
                     // Couldnt determine type of expression
@@ -1355,7 +1359,15 @@ impl<'flags> TypeChecker<'flags> {
                 ));
                 Type::Bool
             }
-            (Type::Unknown, Type::Unknown) => Type::Unknown,
+            (Type::Unknown, Type::Unknown) => {
+                // FIXME: Better error handling, is it always a good idea to infer i64?
+                let force_type = Type::I64;
+                self.type_check_expression_with_type(&mut binary_expr.lhs, &force_type);
+                self.type_check_expression_with_type(&mut binary_expr.rhs, &force_type);
+                let typ = Type::Bool;
+                binary_expr.typ = typ.clone();
+                typ
+            },
             (Type::Unknown, other) => {
                 self.type_check_expression_with_type(&mut binary_expr.lhs, other);
                 let typ = Type::Bool;

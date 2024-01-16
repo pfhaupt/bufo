@@ -4,8 +4,7 @@ use crate::compiler::NOTE_STR;
 use crate::{
     compiler::{ERR_STR, WARN_STR},
     frontend::nodes,
-    util::flags::Flags,
-    internal_warning,
+    util::flags::Flags
 };
 
 use super::type_checker::Type;
@@ -134,12 +133,7 @@ impl<'flags> FlowChecker<'flags> {
     #[trace_call(always)]
     fn check_statement(&mut self, statement: &nodes::Statement, early_exit: &[FlowType]) -> Result<FlowType, String> {
         match statement {
-            nodes::Statement::Expression(_expr_node) => {
-                internal_warning!(
-                    "We're not checking expressions for control flow yet, assuming linear flow"
-                );
-                Ok(FlowType::Linear)
-            }
+            nodes::Statement::Expression(_expr_node) => Ok(FlowType::Linear),
             nodes::Statement::Block(block_node) => self.check_block(block_node, early_exit),
             nodes::Statement::Let(let_node) => self.check_stmt_let(let_node),
             nodes::Statement::If(if_node) => self.check_stmt_if(if_node, early_exit),
