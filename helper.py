@@ -4,7 +4,7 @@ import os
 import sys
 import multiprocessing
 
-COMPILER_PATH = ".\\target\\release\\bufo.exe"
+COMPILER_PATH = "./target/release/bufo.exe"
 
 def compare(expected: List[str], actual: List[str]) -> bool:
     for line in expected:
@@ -147,13 +147,11 @@ def run_all_tests(exec: bool = True):
     invalid_tests = []
     ignored_tests = []
     paths = []
-    print(os.listdir("./tests"))
     for root, _, files in os.walk("./tests"):
         for filename in files:
             path = os.path.join(root, filename)
             if os.path.isfile(path):
                 paths.append((path, exec))
-    print(paths)
     with multiprocessing.Pool() as pool:
         results = pool.map(run_test, paths)
     for result in results:
