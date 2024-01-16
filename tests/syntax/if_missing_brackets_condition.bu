@@ -3,8 +3,8 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! if_missing_brackets_condition.bu:10:8: Expected `(`, found Identifier
-//! if_missing_brackets_condition.bu:13:1: Expected one of `class` or `func`, found `}`
+//! Expected `(`, found Identifier
+//! Expected one of `class` or `func`, found `}`
 
 func main() {
     if a == 1 {

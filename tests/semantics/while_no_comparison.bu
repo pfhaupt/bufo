@@ -3,7 +3,7 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! while_no_comparison.bu:10:12: Type mismatch! Expected type `bool`, found type `i32`.
+//! Type mismatch! Expected type `bool`, found type `i32`.
 
 func main() {
     let a: i32 = 0;

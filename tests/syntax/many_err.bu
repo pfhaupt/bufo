@@ -3,12 +3,12 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! many_err.bu:17:9: Expected Identifier, found `;`
-//! many_err.bu:21:9: Expected `:`, found Identifier
-//! many_err.bu:25:10: Expected Identifier, found `(`
-//! many_err.bu:36:17: Expected Expression, found `)`
-//! many_err.bu:44:1: Expected `:`, found `}`
-//! many_err.bu:50:46: Expected `}`, found End of File
+//! Expected Identifier, found `;`
+//! Expected `:`, found Identifier
+//! Expected Identifier, found `(`
+//! Expected Expression, found `)`
+//! Expected `:`, found `}`
+//! Expected `}`, found End of File
 
 // Every error inside a class recovers until it finds a semi colon or a curly bracket with the same
 // bracket level as the error token

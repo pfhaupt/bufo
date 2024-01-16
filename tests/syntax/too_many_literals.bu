@@ -3,7 +3,7 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! too_many_literals.bu:9:20: Expected `;`, found Integer Literal
+//! Expected `;`, found Integer Literal
 
 func main() {
     let a: i32 = 1 2 3;

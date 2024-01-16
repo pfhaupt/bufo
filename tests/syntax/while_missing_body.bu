@@ -3,7 +3,7 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! while_missing_body.bu:11:19: Expected Expression, found `;`
+//! Expected Expression, found `;`
 
 func main() {
     let a: i32 = 0;

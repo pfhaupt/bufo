@@ -3,7 +3,7 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! brackets_in_expressions.bu:9:25: Expected `)`, found `(`
+//! Expected `)`, found `(`
 
 func main() {
     let a: i32 = 1 + (4 (- (3 * 4 * 1)));

@@ -3,9 +3,9 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! incompatible_operands.bu:21:23: Type mismatch in binary expression! Operation `Test + Test` is not defined.
-//! incompatible_operands.bu:21:20: LHS has type `Test`.
-//! incompatible_operands.bu:21:25: RHS has type `Test`.
+//! Type mismatch in binary expression! Operation `Test + Test` is not defined.
+//! LHS has type `Test`.
+//! RHS has type `Test`.
 
 class Test {
     a: i64;

@@ -3,8 +3,8 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! function_redeclaration.bu:13:1: Function redeclaration.
-//! function_redeclaration.bu:9:1: Function `bla` already declared here.
+//! Function redeclaration.
+//! Function `bla` already declared here.
 
 func bla() {
     

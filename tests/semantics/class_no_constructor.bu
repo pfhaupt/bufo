@@ -3,8 +3,8 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! class_no_constructor.bu:15:19: Class `Test` has no constructor.
-//! class_no_constructor.bu:10:1: Class `Test` is declared here.
+//! Class `Test` has no constructor.
+//! Class `Test` is declared here.
 //! Implement the special `constructor() {}` method to create a constructor.
 
 class Test {

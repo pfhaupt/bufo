@@ -3,8 +3,8 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! type_mismatch_in_fn_args.bu:15:9: Type mismatch! Argument is expected to be of type `i32`, found type `u32`.
-//! type_mismatch_in_fn_args.bu:9:10: Parameter `a` is declared to be of type `i32`.
+//! Type mismatch! Argument is expected to be of type `i32`, found type `u32`.
+//! Parameter `a` is declared to be of type `i32`.
 
 func bla(a: i32) {
 

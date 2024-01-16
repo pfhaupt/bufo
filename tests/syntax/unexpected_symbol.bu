@@ -3,7 +3,7 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! unexpected_symbol.bu:9:21: Unexpected Symbol `#`
+//! Unexpected Symbol `#`
 
 func main() {
     let a: i32 = 0; #

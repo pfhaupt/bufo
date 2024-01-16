@@ -3,7 +3,7 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! class_constructor_wrong_return_type.bu:10:22: Constructor cannot return a value.
+//! Constructor cannot return a value.
 //! The return type of constructors is implicit, and should not be specified.
 
 class Foo {

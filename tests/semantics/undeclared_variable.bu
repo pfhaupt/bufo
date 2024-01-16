@@ -3,7 +3,7 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! undeclared_variable.bu:9:18: Use of undeclared variable `b`.
+//! Use of undeclared variable `b`.
 
 func main() {
     let a: i32 = b;

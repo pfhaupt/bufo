@@ -3,8 +3,8 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! return_mismatch.bu:11:9: Type mismatch! Expected type `i32`, found type `u32`.
-//! return_mismatch.bu:9:1: Function is declared to return `i32` here.
+//! Type mismatch! Expected type `i32`, found type `u32`.
+//! Function is declared to return `i32` here.
 
 func bla() -> i32 {
     if (1 == 2) {

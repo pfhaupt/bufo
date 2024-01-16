@@ -3,8 +3,8 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! missing_semicolon.bu:11:1: Expected `;`, found `}`
-//! missing_semicolon.bu:11:1: Expected `}`, found End of File
+//! Expected `;`, found `}`
+//! Expected `}`, found End of File
 
 func main() {
     let a: i32 = 4

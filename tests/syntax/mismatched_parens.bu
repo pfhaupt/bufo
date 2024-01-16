@@ -3,7 +3,7 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! mismatched_parens.bu:9:5: Expected Identifier, found `{`
+//! Expected Identifier, found `{`
 
 func main(
     {

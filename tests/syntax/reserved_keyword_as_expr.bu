@@ -3,7 +3,7 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! reserved_keyword_as_expr.bu:9:18: Expected Expression, found `class`
+//! Expected Expression, found `class`
 
 func main() {
     let c: i32 = class;

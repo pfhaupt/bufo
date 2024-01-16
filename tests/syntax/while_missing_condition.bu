@@ -3,7 +3,7 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! while_missing_condition.bu:9:12: Expected Expression, found `)`
+//! Expected Expression, found `)`
 
 func main() {
     while () {

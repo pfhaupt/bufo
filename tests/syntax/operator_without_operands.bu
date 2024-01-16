@@ -3,7 +3,7 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! operator_without_operands.bu:9:18: Expected Expression, found `+`
+//! Expected Expression, found `+`
 
 func main() {
     let a: i32 = +;

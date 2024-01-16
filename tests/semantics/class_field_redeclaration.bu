@@ -3,8 +3,8 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! class_field_redeclaration.bu:11:5: Field redeclaration.
-//! class_field_redeclaration.bu:10:5: Field `a` already declared here.
+//! Field redeclaration.
+//! Field `a` already declared here.
 
 class Test {
     a: i32;

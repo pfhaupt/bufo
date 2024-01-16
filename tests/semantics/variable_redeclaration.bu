@@ -3,8 +3,8 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! variable_redeclaration.bu:11:5: Variable redeclaration.
-//! variable_redeclaration.bu:10:5: Variable `a` already declared here.
+//! Variable redeclaration.
+//! Variable `a` already declared here.
 
 func main() {
     let a: i32 = 0;

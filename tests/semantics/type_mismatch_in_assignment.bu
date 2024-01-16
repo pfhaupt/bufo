@@ -3,7 +3,7 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! type_mismatch_in_assignment.bu:10:18: Type mismatch! Expected type `u64`, found type `i32`.
+//! Type mismatch! Expected type `u64`, found type `i32`.
 
 func main() {
     let a: i32 = 0;

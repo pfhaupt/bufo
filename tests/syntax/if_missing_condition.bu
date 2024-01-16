@@ -3,7 +3,7 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! if_missing_condition.bu:9:9: Expected Expression, found `)`
+//! Expected Expression, found `)`
 
 func main() {
     if () {
