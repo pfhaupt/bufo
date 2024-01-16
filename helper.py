@@ -1,8 +1,10 @@
-from typing import List, Tuple
+from typing import List
 import subprocess
 import os
 import sys
-import multiprocessing
+
+from dataclasses import dataclass
+from enum import Enum
 
 def compare(expected: List[str], actual: List[str]) -> bool:
     for line in expected:
@@ -17,10 +19,8 @@ def compare(expected: List[str], actual: List[str]) -> bool:
 
 
 def call_cmd(cmd: List) -> int:
+    print("[INFO]", " ".join(cmd))
     return subprocess.run(cmd, capture_output=True)
-
-from dataclasses import dataclass
-from enum import Enum
 
 class STATE(Enum):
     SUCCESS = 0
@@ -34,9 +34,7 @@ class TestResult:
     path: str
     success: STATE
 
-def run_test(info: Tuple[str, bool]) -> TestResult:
-    path = info[0]
-    exec = info[1]
+def run_test(path: str, exec: bool) -> TestResult:
     print("Running test: " + path)
     """
     The protocol for tests is as follows:
@@ -144,27 +142,23 @@ def run_all_tests(exec: bool = True):
     panicked_tests = []
     invalid_tests = []
     ignored_tests = []
-    paths = []
     for root, _, files in os.walk("./tests"):
         for filename in files:
             path = os.path.join(root, filename)
             if os.path.isfile(path):
-                paths.append((path, exec))
-    with multiprocessing.Pool() as pool:
-        results = pool.map(run_test, paths)
-    for result in results:
-        total += 1
-        match result.success:
-            case STATE.SUCCESS:
-                pass
-            case STATE.FAILURE:
-                failed_tests.append(result.path)
-            case STATE.PANIC:
-                panicked_tests.append(result.path)
-            case STATE.INVALID:
-                invalid_tests.append(result.path)
-            case STATE.IGNORED:
-                ignored_tests.append(result.path)
+                result = run_test(path, exec)
+                total += 1
+                match result.success:
+                    case STATE.SUCCESS:
+                        pass
+                    case STATE.FAILURE:
+                        failed_tests.append(result.path)
+                    case STATE.PANIC:
+                        panicked_tests.append(result.path)
+                    case STATE.INVALID:
+                        invalid_tests.append(result.path)
+                    case STATE.IGNORED:
+                        ignored_tests.append(result.path)
 
     def print_tests(tests: List[str], s: str) -> None:
         if len(tests) > 0:
