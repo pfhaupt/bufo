@@ -152,7 +152,7 @@ def run_all_tests(exec: bool = True):
             path = os.path.join(root, filename)
             if os.path.isfile(path):
                 paths.append((path, exec))
-
+    print(paths)
     with multiprocessing.Pool() as pool:
         results = pool.map(run_test, paths)
     for result in results:
