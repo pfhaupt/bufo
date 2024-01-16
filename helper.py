@@ -147,6 +147,8 @@ def run_all_tests(exec: bool = True):
     invalid_tests = []
     ignored_tests = []
     paths = []
+    print(os.listdir(".\\tests"))
+    print(os.listdir("."))
     for root, _, files in os.walk(".\\tests"):
         for filename in files:
             path = os.path.join(root, filename)
