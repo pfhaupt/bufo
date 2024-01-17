@@ -6,6 +6,8 @@ import sys
 from dataclasses import dataclass
 from enum import Enum
 
+COMPILER_PATH = "./target/release/bufo"
+
 def compare(expected: List[str], actual: List[str]) -> bool:
     for line in expected:
         inside = False
@@ -94,7 +96,7 @@ def run_test(path: str, exec: bool) -> TestResult:
             error_lines = []
 
         if point_of_failure == "RUNTIME":
-            output = call_cmd(["cargo", "run", "--", "-i", path])
+            output = call_cmd([COMPILER_PATH, "-i", path])
             if output.returncode != 0:
                 print("Compilation failed", file=sys.stderr)
                 print(output.stderr.decode("utf-8"), file=sys.stderr)
@@ -103,7 +105,7 @@ def run_test(path: str, exec: bool) -> TestResult:
             output = call_cmd(["./out/" + filename + ".exe"])
             os.remove("./out/" + filename + ".exe")
         else:
-            output = call_cmd(["cargo", "run", "--", "-i", path])
+            output = call_cmd([COMPILER_PATH, "-i", path])
         # stdout = output.stdout.decode("utf-8").split('\n')
         stderr = output.stderr.decode("utf-8").split('\n')
         if output.returncode == 101:
