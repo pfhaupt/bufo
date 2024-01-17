@@ -22,17 +22,19 @@ const REG_32BIT: [&str; 16] = [
     "eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi", "r8d", "r9d", "r10d", "r11d", "r12d",
     "r13d", "r14d", "r15d",
 ];
+const REG_8BIT: [&str; 16] = [
+    "al", "cl", "dl", "bl", "spl", "bpl", "sil", "dil", "r8b", "r9b", "r10b", "r11b", "r12b", "r13b",
+    "r14b", "r15b",
+];
 
 #[trace_call(extra)]
 fn reg(r: Register, rm: RegMode) -> &'static str {
     let index = r as usize;
     debug_assert!(index < REG_32BIT.len());
-    if rm == RegMode::BIT32 {
-        REG_32BIT[index]
-    } else if rm == RegMode::BIT64 {
-        REG_64BIT[index]
-    } else {
-        unreachable!()
+    match rm {
+        RegMode::BIT8 => REG_8BIT[index],
+        RegMode::BIT32 => REG_32BIT[index],
+        RegMode::BIT64 => REG_64BIT[index],
     }
 }
 
@@ -193,8 +195,10 @@ impl<'flags> Assembler<'flags> {
                     }
                     (
                         OperandType::Reg,
-                        OperandType::ImmI32
+                        OperandType::ImmI8
+                        | OperandType::ImmI32
                         | OperandType::ImmI64
+                        | OperandType::ImmU8
                         | OperandType::ImmU32
                         | OperandType::ImmU64,
                     ) => {
@@ -692,9 +696,34 @@ impl<'flags> Assembler<'flags> {
                         }
                     }
                 }
-
                 // Control Flow
                 IR::Label { name } => push_asm(format!("{name}:").as_str()),
+                IR::Test { src1, src2 } => {
+                    debug_assert!(src1 == src2);
+                    debug_assert!(src1.reg_mode.size() == 1);
+                    match src1.typ {
+                        OperandType::Reg => {
+                            let reg = reg(src1.reg, src1.reg_mode);
+                            push_asm(format!("  test {reg}, {reg}").as_str());
+                        }
+                        OperandType::Offset => {
+                            let offset = src1.off_or_imm;
+                            let size = src1.reg_mode.size();
+                            push_asm(format!("  push rax").as_str());
+                            push_asm(format!("  mov al, [rbp-{offset}-{size}]",).as_str());
+                            push_asm(format!("  test al, al").as_str());
+                            push_asm(format!("  pop rax").as_str());
+                        }
+                        src => {
+                            return Err(format!(
+                                "Internal Error: {}:{}:{}: Can't generate ASM for `test {src:?}",
+                                file!(),
+                                line!(),
+                                column!()
+                            ));
+                        }
+                    }
+                },
                 IR::Cmp { dst, src } => {
                     debug_assert!(dst.typ == OperandType::Reg);
                     let dst_reg = reg(dst.reg, dst.reg_mode);
@@ -710,8 +739,10 @@ impl<'flags> Assembler<'flags> {
                         }
                         (
                             OperandType::Reg,
-                            OperandType::ImmI32
+                            OperandType::ImmI8
+                            | OperandType::ImmI32
                             | OperandType::ImmI64
+                            | OperandType::ImmU8
                             | OperandType::ImmU32
                             | OperandType::ImmU64,
                         ) => {
@@ -728,13 +759,39 @@ impl<'flags> Assembler<'flags> {
                         }
                     }
                 }
+                IR::SetEq { dst } => {
+                    debug_assert!(dst.reg != instr::Register::None);
+                    let dst_reg = reg(dst.reg, dst.reg_mode);
+                    push_asm(format!("  sete {dst_reg}",).as_str());
+                }
+                IR::SetNeq { dst } => {
+                    debug_assert!(dst.reg != instr::Register::None);
+                    let dst_reg = reg(dst.reg, dst.reg_mode);
+                    push_asm(format!("  setne {dst_reg}",).as_str());
+                }
+                IR::SetLt { dst } => {
+                    debug_assert!(dst.reg != instr::Register::None);
+                    let dst_reg = reg(dst.reg, dst.reg_mode);
+                    push_asm(format!("  setl {dst_reg}",).as_str());
+                }
+                IR::SetLte { dst } => {
+                    debug_assert!(dst.reg != instr::Register::None);
+                    let dst_reg = reg(dst.reg, dst.reg_mode);
+                    push_asm(format!("  setle {dst_reg}",).as_str());
+                }
+                IR::SetGt { dst } => {
+                    debug_assert!(dst.reg != instr::Register::None);
+                    let dst_reg = reg(dst.reg, dst.reg_mode);
+                    push_asm(format!("  setg {dst_reg}",).as_str());
+                }
+                IR::SetGte { dst } => {
+                    debug_assert!(dst.reg != instr::Register::None);
+                    let dst_reg = reg(dst.reg, dst.reg_mode);
+                    push_asm(format!("  setge {dst_reg}",).as_str());
+                }
                 IR::Jmp { name } => push_asm(format!("  jmp {name}").as_str()),
                 IR::JmpEq { name } => push_asm(format!("  je {name}").as_str()),
                 IR::JmpNeq { name } => push_asm(format!("  jne {name}").as_str()),
-                IR::JmpLt { name } => push_asm(format!("  jl {name}").as_str()),
-                IR::JmpLte { name } => push_asm(format!("  jle {name}").as_str()),
-                IR::JmpGt { name } => push_asm(format!("  jg {name}").as_str()),
-                IR::JmpGte { name } => push_asm(format!("  jge {name}").as_str()),
                 IR::Exit { code } => {
                     let code = code.off_or_imm;
                     push_asm(format!("  mov rcx, {code}").as_str());

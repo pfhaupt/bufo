@@ -1,0 +1,13 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Unexpected Literal! Expected boolean, found `3`.
+
+func main() -> i32 {
+    if (false == 3) {
+        return 1;
+    }
+    return 0;
+}

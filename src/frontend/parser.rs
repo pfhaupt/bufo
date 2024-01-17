@@ -21,6 +21,8 @@ pub const WHILE_KEYWORD: &str = "while";
 pub const BREAK_KEYWORD: &str = "break";
 pub const CONTINUE_KEYWORD: &str = "continue";
 pub const EXTERN_KEYWORD: &str = "extern";
+pub const TRUE_KEYWORD: &str = "true";
+pub const FALSE_KEYWORD: &str = "false";
 
 use tracer::trace_call;
 
@@ -133,6 +135,8 @@ pub enum TokenType {
     BreakKeyword,
     ContinueKeyword,
     ExternKeyword,
+    TrueKeyword,
+    FalseKeyword,
     Colon,
     Semi,
     Comma,
@@ -195,6 +199,8 @@ impl Display for TokenType {
             Self::BreakKeyword => write!(f, "`{}`", BREAK_KEYWORD),
             Self::ContinueKeyword => write!(f, "`{}`", CONTINUE_KEYWORD),
             Self::ExternKeyword => write!(f, "`{}`", EXTERN_KEYWORD),
+            Self::TrueKeyword => write!(f, "`{}`", TRUE_KEYWORD),
+            Self::FalseKeyword => write!(f, "`{}`", FALSE_KEYWORD),
             Self::Colon => write!(f, "`:`"),
             Self::Semi => write!(f, "`;`"),
             Self::Comma => write!(f, "`,`"),
@@ -501,7 +507,7 @@ impl<'flags> Parser<'flags> {
         }
         debug_assert_eq!(
             TokenType::Eof as u8 + 1,
-            42,
+            44,
             "Not all TokenTypes are handled in next_token()"
         );
         self.trim_whitespace();
@@ -528,6 +534,8 @@ impl<'flags> Parser<'flags> {
                     BREAK_KEYWORD => TokenType::BreakKeyword,
                     CONTINUE_KEYWORD => TokenType::ContinueKeyword,
                     EXTERN_KEYWORD => TokenType::ExternKeyword,
+                    TRUE_KEYWORD => TokenType::TrueKeyword,
+                    FALSE_KEYWORD => TokenType::FalseKeyword,
                     _ => TokenType::Identifier,
                 };
                 (typ, value)
@@ -683,6 +691,7 @@ impl<'flags> Parser<'flags> {
             "u32" => Type::U32,
             "u64" => Type::U64,
             "usize" => Type::Usize,
+            "bool" => Type::Bool,
             // Reserved for future use
             "f32" => Type::F32,
             "f64" => Type::F64,
@@ -1352,6 +1361,10 @@ impl<'flags> Parser<'flags> {
                 try_parse!(array_literal, self.parse_expr_array_literal());
                 Some(nodes::Expression::ArrayLiteral(array_literal))
             }
+            TokenType::TrueKeyword | TokenType::FalseKeyword => {
+                try_parse!(bool_literal, self.parse_expr_bool_literal());
+                Some(nodes::Expression::Literal(bool_literal))
+            }
             e => {
                 self.report_error(ParserError::ExpectedExpression(
                     self.current_location(),
@@ -1415,6 +1428,8 @@ impl<'flags> Parser<'flags> {
             TokenType::ExternKeyword => false,
             TokenType::ClassKeyword => false,
             TokenType::ConstructorKeyword => false,
+            TokenType::TrueKeyword => false,
+            TokenType::FalseKeyword => false,
             TokenType::Eof => false,
         }
     }
@@ -1679,6 +1694,23 @@ impl<'flags> Parser<'flags> {
             array_name,
             indices,
             typ: Type::Unknown,
+        })
+    }
+
+    #[trace_call(always)]
+    fn parse_expr_bool_literal(&mut self) -> Option<nodes::LiteralNode> {
+        let location = self.current_location();
+        let bool_token = if self.at(TokenType::FalseKeyword) {
+            try_parse!(bool_token, self.expect(TokenType::FalseKeyword));
+            bool_token
+        } else {
+            try_parse!(bool_token, self.expect(TokenType::TrueKeyword));
+            bool_token
+        };
+        Some(nodes::LiteralNode {
+            location,
+            value: bool_token.value,
+            typ: Type::Bool,
         })
     }
 

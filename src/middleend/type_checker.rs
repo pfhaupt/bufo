@@ -388,8 +388,9 @@ impl Type {
     pub fn size(&self) -> usize {
         match self {
             Type::Arr(t, size) => t.size() * size.iter().product::<usize>(),
-            Type::I32 | Type::U32 | Type::F32 | Type::Bool => 4,
+            Type::I32 | Type::U32 | Type::F32 => 4,
             Type::I64 | Type::U64 | Type::F64 | Type::Usize => 8,
+            Type::Bool => 1,
             Type::Class(..) => 8,
             Type::None => internal_panic!("Something attempted to get the size of Type::None!"),
             Type::Unknown => {
@@ -1168,6 +1169,12 @@ impl<'flags> TypeChecker<'flags> {
                         lit_node.location.clone(),
                         lit_node.value.clone(),
                     ));
+                } else if *typ == Type::Bool {
+                    self.report_error(TypeError::UnexpectedLiteral(
+                        "boolean",
+                        lit_node.location.clone(),
+                        lit_node.value.clone(),
+                    ));
                 } else {
                     lit_node.typ = typ.clone();
                 }
@@ -1413,17 +1420,6 @@ impl<'flags> TypeChecker<'flags> {
             }
             (Type::Arr(..), _) | (_, Type::Arr(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
-                self.report_error(TypeError::BinaryTypeMismatch(
-                    binary_expr.location.clone(),
-                    binary_expr.operation.clone(),
-                    binary_expr.lhs.get_loc(),
-                    lhs_type.clone(),
-                    binary_expr.rhs.get_loc(),
-                    rhs_type.clone(),
-                ));
-                Type::Bool
-            }
-            (Type::Bool, _) | (_, Type::Bool) => {
                 self.report_error(TypeError::BinaryTypeMismatch(
                     binary_expr.location.clone(),
                     binary_expr.operation.clone(),

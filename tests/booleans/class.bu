@@ -1,0 +1,19 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Expected Identifier, found `true`
+//! Expected Identifier, found `false`
+//! Expected `;`, found `(`
+
+class true {
+    constructor();
+}
+
+class false {
+}
+
+func main() {
+    true();
+}

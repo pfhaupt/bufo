@@ -1,0 +1,21 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Type mismatch in binary expression! Operation `bool + i32` is not defined.
+//! LHS has type `bool`.
+//! RHS has type `i32`.
+//! Type mismatch! Expected type `u32`, found type `bool`.
+//! Type mismatch in binary expression! Operation `u32 + bool` is not defined.
+//! LHS has type `u32`.
+//! RHS has type `bool`.
+//! Type mismatch! Expected type `u64`, found type `bool`.
+//! Type mismatch in binary expression! Operation `bool + bool` is not defined.
+
+func main() {
+    let a: u32 = true + 54i32;
+    let b: u64 = a + (a == 1);
+
+    let c: bool = (a == 1) + (a == 0);
+}

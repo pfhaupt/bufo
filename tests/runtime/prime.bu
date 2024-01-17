@@ -2,29 +2,30 @@
 //! RUNTIME
 //! SUCCESS
 
-func is_prime(n: u64) -> u32 {
-    if (n == 2) return 1;
-    if (n == 3) return 1;
-    if (n < 2) return 0;
-    if (n % 2 == 0) return 0;
-    if (n < 9) return 1;
-    if (n % 3 == 0) return 0;
+func is_prime(n: u64) -> bool {
+    if (n == 2) return true;
+    if (n == 3) return true;
+    if (n < 2) return false;
+    if (n % 2 == 0) return false;
+    if (n < 9) return true;
+    if (n % 3 == 0) return false;
     let f: u64 = 5;
     while (f * f <= n) {
-        if (n % f == 0) return 0;
-        if (n % (f + 2) == 0) return 0;
+        if (n % f == 0) return false;
+        if (n % (f + 2) == 0) return false;
         f = f + 6;
     }
-    return 1;
+    return true;
 }
 
 func main() -> u64 {
-    if (is_prime(2) == 0) return 2;
-    if (is_prime(3) == 0) return 3;
-    if (is_prime(19381) == 0) return 19381;
-    if (is_prime(19382) == 1) return 19382;
-    if (is_prime(192806849) == 0) return 192806849;
-    if (is_prime(192801989593) == 0) return 192801989593;
-    if (is_prime(1928019895934) == 1) return 1928019895934;
+    // FIXME: We need Unary Not :^)
+    if (is_prime(2) == false) return 2;
+    if (is_prime(3) == false) return 3;
+    if (is_prime(19381) == false) return 19381;
+    if (is_prime(19382)) return 19382;
+    if (is_prime(192806849) == false) return 192806849;
+    if (is_prime(192801989593) == false) return 192801989593;
+    if (is_prime(1928019895934)) return 1928019895934;
     return 0;
 }

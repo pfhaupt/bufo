@@ -391,7 +391,7 @@ impl<'flags> Codegen<'flags> {
         self.add_variable_offset(name, offset);
         let reg = self.get_register()?;
         self.add_ir(instr::IR::Store {
-            addr: instr::Operand::offset(offset),
+            addr: instr::Operand::offset(offset, typ.size()),
             value: instr::Operand::reg(reg, instr::RegMode::from(typ)),
         });
         Ok(())
@@ -475,7 +475,7 @@ impl Codegenable for nodes::ConstructorNode {
         let offset = codegen.update_stack_offset(8);
         codegen.add_variable_offset(&String::from("this"), offset);
         codegen.add_ir(instr::IR::Store {
-            addr: instr::Operand::offset(offset),
+            addr: instr::Operand::offset(offset, 8),
             value: instr::Operand::reg(instr::Register::RET, instr::RegMode::BIT64),
         });
 
@@ -488,7 +488,7 @@ impl Codegenable for nodes::ConstructorNode {
         let offset = codegen.get_stack_offset(&String::from("this"));
         codegen.add_ir(instr::IR::Load {
             dst: instr::Operand::reg(instr::Register::RET, instr::RegMode::BIT64),
-            addr: instr::Operand::offset(offset),
+            addr: instr::Operand::offset(offset, 8),
         });
 
         func_stack!(codegen, self, false);
@@ -567,7 +567,7 @@ impl Codegenable for nodes::LetNode {
         codegen.add_variable_offset(&self.name, offset);
 
         codegen.add_ir(instr::IR::Store {
-            addr: instr::Operand::offset(offset),
+            addr: instr::Operand::offset(offset, self.typ.typ.size()),
             value: rhs,
         });
 
@@ -577,20 +577,15 @@ impl Codegenable for nodes::LetNode {
 impl Codegenable for nodes::IfNode {
     #[trace_call(always)]
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        let cond = self.condition.codegen(codegen)?;
-        let instr::OperandType::Cmp(cmp_mode) = cond.typ else { unreachable!() };
-
         let cond_false = codegen.generate_label(None);
         let lbl_name = cond_false.get_lbl();
-        match cmp_mode {
-            Operation::Equal => codegen.add_ir(instr::IR::JmpNeq { name: lbl_name }),
-            Operation::NotEqual => codegen.add_ir(instr::IR::JmpEq { name: lbl_name }),
-            Operation::GreaterThan => codegen.add_ir(instr::IR::JmpLte { name: lbl_name }),
-            Operation::GreaterThanOrEqual => codegen.add_ir(instr::IR::JmpLt { name: lbl_name }),
-            Operation::LessThan => codegen.add_ir(instr::IR::JmpGte { name: lbl_name }),
-            Operation::LessThanOrEqual => codegen.add_ir(instr::IR::JmpGt { name: lbl_name }),
-            _ => unreachable!(),
-        }
+        let cond = self.condition.codegen(codegen)?;
+        codegen.add_ir(instr::IR::Test {
+            src1: cond,
+            src2: cond,
+        });
+        // Test sets ZF to 1 if cond is false, so we need to jump if ZF is 1
+        codegen.add_ir(instr::IR::JmpEq { name: lbl_name });
         self.if_body.codegen(codegen)?;
 
         if let Some(else_branch) = &self.else_body {
@@ -646,19 +641,15 @@ impl Codegenable for nodes::WhileNode {
         self.body.codegen(codegen)?;
 
         // condition code
-        // if condition is true, jump to block code
         codegen.add_ir(cond_lbl);
         let cond = self.condition.codegen(codegen)?;
-        let instr::OperandType::Cmp(cmp_mode) = cond.typ else { unreachable!() };
-        match cmp_mode {
-            Operation::Equal => codegen.add_ir(instr::IR::JmpEq { name: block_name }),
-            Operation::NotEqual => codegen.add_ir(instr::IR::JmpNeq { name: block_name }),
-            Operation::GreaterThan => codegen.add_ir(instr::IR::JmpGt { name: block_name }),
-            Operation::GreaterThanOrEqual => codegen.add_ir(instr::IR::JmpGte { name: block_name }),
-            Operation::LessThan => codegen.add_ir(instr::IR::JmpLt { name: block_name }),
-            Operation::LessThanOrEqual => codegen.add_ir(instr::IR::JmpLte { name: block_name }),
-            _ => unreachable!(),
-        }
+        codegen.add_ir(instr::IR::Test {
+            src1: cond,
+            src2: cond,
+        });
+        // Test sets ZF to 0 if cond is true, so we need to jump if ZF is 0
+        codegen.add_ir(instr::IR::JmpNeq { name: block_name });
+
         codegen.add_ir(break_lbl);
         codegen.loop_stack.pop();
         Ok(instr::Operand::none())
@@ -733,12 +724,23 @@ impl Codegenable for nodes::LiteralNode {
                 Ok(instr::Operand::$fn(v))
             }};
         }
+        let parse_bool = |s: &str| -> Result<instr::Operand, String> {
+            match s {
+                "true" => Ok(instr::Operand::imm_u8(1)),
+                "false" => Ok(instr::Operand::imm_u8(0)),
+                _ => Err(format!(
+                    "{}: {:?}: Boolean Literal could not be parsed.\n{}: {}",
+                    ERR_STR, self.location, NOTE_STR, s
+                )),
+            }
+        };
         match &self.typ {
             Type::I32 => parse_num!(i32, imm_i32),
             Type::I64 => parse_num!(i64, imm_i64),
             Type::U32 => parse_num!(u32, imm_u32),
             Type::U64 => parse_num!(u64, imm_u64),
             Type::Usize => parse_num!(u64, imm_u64),
+            Type::Bool => parse_bool(&self.value),
             t => internal_error!(format!(
                 "Unexpected Type {:?} in ExpressionLiteralNode::codegen()!",
                 t
@@ -853,9 +855,23 @@ impl Codegenable for nodes::BinaryNode {
                 Ok(lhs)
             }
             _ if self.is_comparison() => {
-                let (lhs, rhs) = gen_bin!(self.lhs, self.rhs)?;
-                codegen.add_ir(instr::IR::Cmp { dst: lhs, src: rhs });
-                return Ok(instr::Operand::cmp(self.operation));
+                let (mut lhs, rhs) = gen_bin!(self.lhs, self.rhs)?;
+                let cmp_mode = self.operation;
+                codegen.add_ir(instr::IR::Cmp {
+                    dst: lhs,
+                    src: rhs,
+                });
+                lhs.reg_mode = instr::RegMode::BIT8;
+                match cmp_mode {
+                    Operation::Equal => codegen.add_ir(instr::IR::SetEq { dst: lhs }),
+                    Operation::NotEqual => codegen.add_ir(instr::IR::SetNeq { dst: lhs }),
+                    Operation::GreaterThan => codegen.add_ir(instr::IR::SetGt { dst: lhs }),
+                    Operation::GreaterThanOrEqual => codegen.add_ir(instr::IR::SetGte { dst: lhs }),
+                    Operation::LessThan => codegen.add_ir(instr::IR::SetLt { dst: lhs }),
+                    Operation::LessThanOrEqual => codegen.add_ir(instr::IR::SetLte { dst: lhs }),
+                    _ => unreachable!(),
+                }
+                Ok(lhs)
             }
             Operation::Assign => {
                 // This case is reversed because Assignment is right-associative
@@ -1110,7 +1126,7 @@ impl Codegenable for nodes::NameNode {
     fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
         let offset = codegen.get_stack_offset(&self.name);
         debug_assert!(self.typ != Type::None || self.typ != Type::Unknown);
-        Ok(instr::Operand::offset(offset))
+        Ok(instr::Operand::offset(offset, self.typ.size()))
     }
 }
 impl Codegenable for nodes::BuiltInNode {

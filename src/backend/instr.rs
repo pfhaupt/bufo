@@ -1,5 +1,3 @@
-use crate::frontend::parser::Operation;
-
 use crate::middleend::type_checker::Type;
 
 use std::fmt::Debug;
@@ -8,8 +6,9 @@ use tracer::trace_call;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum RegMode {
-    BIT64,
+    BIT8,
     BIT32,
+    BIT64,
 }
 
 impl From<&Type> for RegMode {
@@ -23,6 +22,7 @@ impl From<usize> for RegMode {
     #[trace_call(extra)]
     fn from(bytes: usize) -> Self {
         match bytes {
+            1 => Self::BIT8,
             4 => Self::BIT32,
             8 => Self::BIT64,
             _ => panic!(),
@@ -34,6 +34,7 @@ impl RegMode {
     #[trace_call(extra)]
     pub fn size(&self) -> usize {
         match self {
+            Self::BIT8 => 1,
             Self::BIT32 => 4,
             Self::BIT64 => 8,
         }
@@ -126,9 +127,11 @@ impl Register {
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
+#[allow(unused)]
 pub enum OperandType {
     Reg,
-    Cmp(Operation),
+    ImmU8,
+    ImmI8,
     ImmU32,
     ImmU64,
     ImmI32,
@@ -166,12 +169,21 @@ impl Operand {
         }
     }
     #[trace_call(extra)]
+    pub fn imm_u8(immediate: u8) -> Self {
+        Self {
+            typ: OperandType::ImmU8,
+            off_or_imm: unsafe { std::mem::transmute(immediate as u64) },
+            reg: Register::None,
+            reg_mode: RegMode::BIT8,
+        }
+    }
+    #[trace_call(extra)]
     pub fn imm_u32(immediate: u32) -> Self {
         Self {
             typ: OperandType::ImmU32,
             off_or_imm: unsafe { std::mem::transmute(immediate as u64) },
             reg: Register::None,
-            reg_mode: RegMode::BIT64,
+            reg_mode: RegMode::BIT32,
         }
     }
     #[trace_call(extra)]
@@ -184,12 +196,22 @@ impl Operand {
         }
     }
     #[trace_call(extra)]
+    pub fn imm_i8(immediate: i8) -> Self {
+        // FIXME: Add overflow check, this is a bug waiting to happen.
+        Self {
+            typ: OperandType::ImmI8,
+            off_or_imm: unsafe { std::mem::transmute(immediate as i64) },
+            reg: Register::None,
+            reg_mode: RegMode::BIT8,
+        }
+    }
+    #[trace_call(extra)]
     pub fn imm_i32(immediate: i32) -> Self {
         Self {
             typ: OperandType::ImmI32,
             off_or_imm: unsafe { std::mem::transmute(immediate as i64) },
             reg: Register::None,
-            reg_mode: RegMode::BIT64,
+            reg_mode: RegMode::BIT32,
         }
     }
     #[trace_call(extra)]
@@ -202,21 +224,12 @@ impl Operand {
         }
     }
     #[trace_call(extra)]
-    pub fn offset(offset: usize) -> Self {
+    pub fn offset(offset: usize, size: usize) -> Self {
         Self {
             typ: OperandType::Offset,
             off_or_imm: offset,
             reg: Register::None,
-            reg_mode: RegMode::BIT64,
-        }
-    }
-    #[trace_call(extra)]
-    pub fn cmp(cmp: Operation) -> Self {
-        Self {
-            typ: OperandType::Cmp(cmp),
-            off_or_imm: 0,
-            reg: Register::None,
-            reg_mode: RegMode::BIT64,
+            reg_mode: RegMode::from(size),
         }
     }
     #[trace_call(extra)]
@@ -234,12 +247,17 @@ impl Debug for Operand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.typ {
             OperandType::Reg => write!(f, "{:?}", self.reg),
-            OperandType::Cmp(cmp) => write!(f, "{:?}", cmp),
+            OperandType::ImmU8 => write!(f, "{}", unsafe {
+                std::mem::transmute::<usize, u64>(self.off_or_imm) as u8
+            }),
             OperandType::ImmU32 => write!(f, "{}", unsafe {
                 std::mem::transmute::<usize, u64>(self.off_or_imm) as u32
             }),
             OperandType::ImmU64 => write!(f, "{}", unsafe {
                 std::mem::transmute::<usize, u64>(self.off_or_imm)
+            }),
+            OperandType::ImmI8 => write!(f, "{}", unsafe {
+                std::mem::transmute::<usize, i64>(self.off_or_imm) as i8
             }),
             OperandType::ImmI32 => write!(f, "{}", unsafe {
                 std::mem::transmute::<usize, i64>(self.off_or_imm) as i32
@@ -340,6 +358,28 @@ pub enum IR {
         dst: Operand,
         src: Operand,
     },
+    Test {
+        src1: Operand,
+        src2: Operand,
+    },
+    SetEq {
+        dst: Operand,
+    },
+    SetNeq {
+        dst: Operand,
+    },
+    SetLt {
+        dst: Operand,
+    },
+    SetLte {
+        dst: Operand,
+    },
+    SetGt {
+        dst: Operand,
+    },
+    SetGte {
+        dst: Operand,
+    },
     Jmp {
         name: String,
     },
@@ -347,18 +387,6 @@ pub enum IR {
         name: String,
     },
     JmpNeq {
-        name: String,
-    },
-    JmpLt {
-        name: String,
-    },
-    JmpLte {
-        name: String,
-    },
-    JmpGt {
-        name: String,
-    },
-    JmpGte {
         name: String,
     },
     Exit {
@@ -447,14 +475,17 @@ impl Debug for IR {
 
             // Control Flow
             Self::Label { name } => write!(f, "Label name: {:?}", name),
+            Self::Test { src1, src2 } => write!(f, "Test src1: {:?}, src2: {:?}", src1, src2),
             Self::Cmp { dst, src } => write!(f, "Cmp dst: {:?}, src: {:?}", dst, src),
+            Self::SetEq { dst } => write!(f, "SetEq dst: {:?}", dst),
+            Self::SetNeq { dst } => write!(f, "SetNeq dst: {:?}", dst),
+            Self::SetLt { dst } => write!(f, "SetLt dst: {:?}", dst),
+            Self::SetLte { dst } => write!(f, "SetLte dst: {:?}", dst),
+            Self::SetGt { dst } => write!(f, "SetGt dst: {:?}", dst),
+            Self::SetGte { dst } => write!(f, "SetGte dst: {:?}", dst),
             Self::Jmp { name } => write!(f, "Jmp name: {:?}", name),
             Self::JmpEq { name } => write!(f, "JmpEq name: {:?}", name),
             Self::JmpNeq { name } => write!(f, "JmpNeq name: {:?}", name),
-            Self::JmpLt { name } => write!(f, "JmpLt name: {:?}", name),
-            Self::JmpLte { name } => write!(f, "JmpLte name: {:?}", name),
-            Self::JmpGt { name } => write!(f, "JmpGt name: {:?}", name),
-            Self::JmpGte { name } => write!(f, "JmpGte name: {:?}", name),
             Self::Exit { code } => write!(f, "Exit code: {:?}", code),
 
             // Functions
