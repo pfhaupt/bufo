@@ -143,6 +143,9 @@ pub enum TokenType {
     Minus,
     Asterisk,
     Percent,
+    Ampersand,
+    Pipe,
+    Caret,
     ForwardSlash,
     CmpEq,
     CmpNeq,
@@ -203,6 +206,9 @@ impl Display for TokenType {
             Self::Asterisk => write!(f, "`*`"),
             Self::ForwardSlash => write!(f, "`/`"),
             Self::Percent => write!(f, "`%`"),
+            Self::Ampersand => write!(f, "`&`"),
+            Self::Pipe => write!(f, "`|`"),
+            Self::Caret => write!(f, "`^`"),
             Self::CmpEq => write!(f, "`==`"),
             Self::CmpNeq => write!(f, "`!=`"),
             Self::CmpLt => write!(f, "`<`"),
@@ -279,6 +285,9 @@ pub enum Operation {
     Mul,
     Div,
     Modulo,
+    BitwiseAnd,
+    BitwiseOr,
+    BitwiseXor,
     Equal,
     NotEqual,
     LessThan,
@@ -297,6 +306,9 @@ impl Display for Operation {
             Self::Mul => write!(f, "*"),
             Self::Div => write!(f, "/"),
             Self::Modulo => write!(f, "%"),
+            Self::BitwiseAnd => write!(f, "&"),
+            Self::BitwiseOr => write!(f, "|"),
+            Self::BitwiseXor => write!(f, "^"),
             Self::Equal => write!(f, "=="),
             Self::NotEqual => write!(f, "!="),
             Self::LessThan => write!(f, "<"),
@@ -318,6 +330,9 @@ impl Operation {
             "*" => Self::Mul,
             "/" => Self::Div,
             "%" => Self::Modulo,
+            "&" => Self::BitwiseAnd,
+            "|" => Self::BitwiseOr,
+            "^" => Self::BitwiseXor,
             "==" => Self::Equal,
             "!=" => Self::NotEqual,
             "<" => Self::LessThan,
@@ -349,6 +364,16 @@ impl Operation {
             Self::Mul => true,
             Self::Div => true,
             Self::Modulo => true,
+            _ => false,
+        }
+    }
+
+    #[trace_call(extra)]
+    pub fn is_bitwise(&self) -> bool {
+        match self {
+            Self::BitwiseAnd => true,
+            Self::BitwiseOr => true,
+            Self::BitwiseXor => true,
             _ => false,
         }
     }
@@ -476,7 +501,7 @@ impl<'flags> Parser<'flags> {
         }
         debug_assert_eq!(
             TokenType::Eof as u8 + 1,
-            39,
+            42,
             "Not all TokenTypes are handled in next_token()"
         );
         self.trim_whitespace();
@@ -591,6 +616,9 @@ impl<'flags> Parser<'flags> {
                     (TokenType::ForwardSlash, String::from("/"))
                 }
             },
+            '&' => (TokenType::Ampersand, String::from(c)),
+            '|' => (TokenType::Pipe, String::from(c)),
+            '^' => (TokenType::Caret, String::from(c)),
             '(' => (TokenType::OpenRound, String::from(c)),
             ')' => (TokenType::ClosingRound, String::from(c)),
             '{' => (TokenType::OpenCurly, String::from(c)),
@@ -1246,6 +1274,9 @@ impl<'flags> Parser<'flags> {
             TokenType::CmpLte => 9,
             TokenType::CmpGt => 9,
             TokenType::CmpGte => 9,
+            TokenType::Ampersand => 7,
+            TokenType::Caret => 6,
+            TokenType::Pipe => 5,
             TokenType::Equal => 2,
             e => todo!("get_precedence({:?})", e),
         }
@@ -1259,6 +1290,9 @@ impl<'flags> Parser<'flags> {
             TokenType::Asterisk => Associativity::Left,
             TokenType::ForwardSlash => Associativity::Left,
             TokenType::Percent => Associativity::Left,
+            TokenType::Ampersand => Associativity::Left,
+            TokenType::Pipe => Associativity::Left,
+            TokenType::Caret => Associativity::Left,
             TokenType::CmpEq => Associativity::Left,
             TokenType::CmpNeq => Associativity::Left,
             TokenType::CmpLt => Associativity::Left,
@@ -1345,6 +1379,9 @@ impl<'flags> Parser<'flags> {
             TokenType::Asterisk => true,
             TokenType::ForwardSlash => true,
             TokenType::Percent => true,
+            TokenType::Ampersand => true,
+            TokenType::Pipe => true,
+            TokenType::Caret => true,
             TokenType::CmpEq => true,
             TokenType::CmpNeq => true,
             TokenType::CmpLt => true,
@@ -1436,6 +1473,36 @@ impl<'flags> Parser<'flags> {
                 return Some(nodes::Expression::Binary(nodes::BinaryNode {
                     location,
                     operation: Operation::Modulo,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(self.parse_expression(precedence, associativity)?),
+                    typ: Type::Unknown
+                }));
+            },
+            TokenType::Ampersand => {
+                self.next();
+                return Some(nodes::Expression::Binary(nodes::BinaryNode {
+                    location,
+                    operation: Operation::BitwiseAnd,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(self.parse_expression(precedence, associativity)?),
+                    typ: Type::Unknown
+                }));
+            },
+            TokenType::Pipe => {
+                self.next();
+                return Some(nodes::Expression::Binary(nodes::BinaryNode {
+                    location,
+                    operation: Operation::BitwiseOr,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(self.parse_expression(precedence, associativity)?),
+                    typ: Type::Unknown
+                }));
+            },
+            TokenType::Caret => {
+                self.next();
+                return Some(nodes::Expression::Binary(nodes::BinaryNode {
+                    location,
+                    operation: Operation::BitwiseXor,
                     lhs: Box::new(lhs),
                     rhs: Box::new(self.parse_expression(precedence, associativity)?),
                     typ: Type::Unknown

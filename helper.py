@@ -103,6 +103,8 @@ def run_test(path: str, exec: bool) -> TestResult:
                 return TestResult(path, STATE.INVALID)
             filename = path.split("\\")[-1].split(".")[0]
             output = call_cmd(["./out/" + filename + ".exe"])
+            os.remove("./out/" + filename + ".asm")
+            os.remove("./out/" + filename + ".obj")
             os.remove("./out/" + filename + ".exe")
         else:
             output = call_cmd([COMPILER_PATH, "-i", path])

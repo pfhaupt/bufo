@@ -1228,7 +1228,82 @@ impl<'flags> TypeChecker<'flags> {
             Operation::Assign => self.type_check_expr_assign(binary_expr),
             _ if binary_expr.is_comparison() => self.type_check_expr_binary_comparison(binary_expr),
             _ if binary_expr.is_arithmetic() => self.type_check_expr_binary_arithmetic(binary_expr),
+            _ if binary_expr.is_bitwise() => self.type_check_expr_binary_bitwise(binary_expr),
             o => todo!("type_check_expr_binary for {:?} is not implemented yet!", o),
+        }
+    }
+
+    #[trace_call(always)]
+    fn type_check_expr_binary_bitwise(
+        &mut self,
+        binary_expr: &mut nodes::BinaryNode
+    ) -> Type {
+        check_or_abort!(
+            lhs_type, self.type_check_expression(&mut binary_expr.lhs),
+            rhs_type, self.type_check_expression(&mut binary_expr.rhs)
+        );
+        assert!(binary_expr.is_bitwise());
+        match (&lhs_type, &rhs_type) {
+            (Type::Class(..), _) | (_, Type::Class(..)) => {
+                // NOTE: Modify this once more features (ahem, operator overload) exist
+                self.report_error(TypeError::BinaryTypeMismatch(
+                    binary_expr.location.clone(),
+                    binary_expr.operation.clone(),
+                    binary_expr.lhs.get_loc(),
+                    lhs_type.clone(),
+                    binary_expr.rhs.get_loc(),
+                    rhs_type.clone(),
+                ));
+                Type::None
+            }
+            (Type::Arr(..), _) | (_, Type::Arr(..)) => {
+                // NOTE: Modify this once more features (ahem, operator overload) exist
+                self.report_error(TypeError::BinaryTypeMismatch(
+                    binary_expr.location.clone(),
+                    binary_expr.operation.clone(),
+                    binary_expr.lhs.get_loc(),
+                    lhs_type.clone(),
+                    binary_expr.rhs.get_loc(),
+                    rhs_type.clone(),
+                ));
+                Type::None
+            }
+            (Type::Bool, _) | (_, Type::Bool) => {
+                self.report_error(TypeError::BinaryTypeMismatch(
+                    binary_expr.location.clone(),
+                    binary_expr.operation.clone(),
+                    binary_expr.lhs.get_loc(),
+                    lhs_type.clone(),
+                    binary_expr.rhs.get_loc(),
+                    rhs_type.clone(),
+                ));
+                Type::None
+            }
+            (Type::Unknown, Type::Unknown) => Type::Unknown,
+            (Type::Unknown, other) => {
+                let typ = self.type_check_expression_with_type(&mut binary_expr.lhs, other);
+                binary_expr.typ = typ.clone();
+                typ
+            }
+            (other, Type::Unknown) => {
+                let typ = self.type_check_expression_with_type(&mut binary_expr.rhs, other);
+                binary_expr.typ = typ.clone();
+                typ
+            }
+            (lhs, rhs) => {
+                if lhs != rhs {
+                    self.report_error(TypeError::BinaryTypeMismatch(
+                        binary_expr.location.clone(),
+                        binary_expr.operation.clone(),
+                        binary_expr.lhs.get_loc(),
+                        lhs.clone(),
+                        binary_expr.rhs.get_loc(),
+                        rhs.clone(),
+                    ));
+                }
+                binary_expr.typ = lhs.clone();
+                lhs.clone()
+            }
         }
     }
 

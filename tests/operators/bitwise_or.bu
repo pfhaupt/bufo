@@ -1,0 +1,54 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+func and_i32() -> i32 {
+    let a: i32 = 178;
+    let b: i32 = 147;
+    if ((a | b) != 179) return 1;
+    if ((a | b) != (b | a)) return 2;
+    return 0;
+}
+func and_u32() -> u32 {
+    let a: u32 = 178;
+    let b: u32 = 147;
+    if ((a | b) != 179) return 1;
+    if ((a | b) != (b | a)) return 2;
+    return 0;
+}
+func and_i64() -> i64 {
+    let a: i64 = 178;
+    let b: i64 = 147;
+    if ((a | b) != 179) return 1;
+    if ((a | b) != (b | a)) return 2;
+    return 0;
+}
+func and_u64() -> u64 {
+    let a: u64 = 178;
+    let b: u64 = 147;
+    if ((a | b) != 179) return 1;
+    if ((a | b) != (b | a)) return 2;
+    return 0;
+}
+func and_ident() -> u32 {
+    let a: u32 = 19803;
+    let b: u32 = 12093;
+    let expected: u32 = 28543;
+    if ((a | b) != expected) return 1;
+    if ((a | b) != (b | a)) return 2;
+    if ((a | a) != (a | a)) return 3;
+    if ((a | a | a) != (a | a | a)) return 4;
+    if ((b | b) != (b | b)) return 5;
+    if ((b | b | b) != (b | b | b)) return 6;
+    return 0;
+}
+
+func main() -> u32 {
+    if (and_i32() != 0) return 1;
+    if (and_u32() != 0) return 2;
+    if (and_i64() != 0) return 3;
+    if (and_u64() != 0) return 4;
+    let a: u32 = and_ident();
+    if (a != 0) return a;
+    return 0;
+}

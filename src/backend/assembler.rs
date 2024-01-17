@@ -583,6 +583,116 @@ impl<'flags> Assembler<'flags> {
                     }
                 }
 
+                // Bitwise
+                IR::And { dst, src1, src2 } => {
+                    debug_assert!(dst == src1);
+                    debug_assert!(dst.reg != instr::Register::None);
+                    let dst_reg = reg(dst.reg, dst.reg_mode);
+                    match (dst.typ, src2.typ) {
+                        (OperandType::Reg, OperandType::Reg) => {
+                            let src_reg = reg(src2.reg, src2.reg_mode);
+                            push_asm(format!("  and {dst_reg}, {src_reg}").as_str());
+                        }
+                        (OperandType::Reg, OperandType::Offset) => {
+                            let offset = src2.off_or_imm;
+                            let size = dst.reg_mode.size();
+                            push_asm(format!("  and {dst_reg}, [rbp-{offset}-{size}]").as_str());
+                        }
+                        (OperandType::Reg, OperandType::ImmI32 | OperandType::ImmU32) => {
+                            let immediate = src2.off_or_imm;
+                            push_asm(format!("  and {dst_reg}, {immediate}").as_str());
+                        }
+                        (OperandType::Reg, OperandType::ImmI64 | OperandType::ImmU64) => {
+                            // AND has no 64bit immediate mode, we need to use a register
+                            let immediate = src2.off_or_imm;
+                            push_asm("  push rax");
+                            push_asm(format!("  mov rax, {immediate}").as_str());
+                            push_asm(format!("  and {dst_reg}, rax").as_str());
+                            push_asm("  pop rax");
+                        }
+                        (dst, src) => {
+                            return Err(format!(
+                                "Internal Error: {}:{}:{}: Can't generate ASM for `and {dst:?}, {src:?}",
+                                file!(),
+                                line!(),
+                                column!()
+                            ));
+                        }
+                    }
+                }
+                IR::Or { dst, src1, src2 } => {
+                    debug_assert!(dst == src1);
+                    debug_assert!(dst.reg != instr::Register::None);
+                    let dst_reg = reg(dst.reg, dst.reg_mode);
+                    match (dst.typ, src2.typ) {
+                        (OperandType::Reg, OperandType::Reg) => {
+                            let src_reg = reg(src2.reg, src2.reg_mode);
+                            push_asm(format!("  or {dst_reg}, {src_reg}").as_str());
+                        }
+                        (OperandType::Reg, OperandType::Offset) => {
+                            let offset = src2.off_or_imm;
+                            let size = dst.reg_mode.size();
+                            push_asm(format!("  or {dst_reg}, [rbp-{offset}-{size}]").as_str());
+                        }
+                        (OperandType::Reg, OperandType::ImmI32 | OperandType::ImmU32) => {
+                            let immediate = src2.off_or_imm;
+                            push_asm(format!("  or {dst_reg}, {immediate}").as_str());
+                        }
+                        (OperandType::Reg, OperandType::ImmI64 | OperandType::ImmU64) => {
+                            // OR has no 64bit immediate mode, we need to use a register
+                            let immediate = src2.off_or_imm;
+                            push_asm("  push rax");
+                            push_asm(format!("  mov rax, {immediate}").as_str());
+                            push_asm(format!("  or {dst_reg}, rax").as_str());
+                            push_asm("  pop rax");
+                        }
+                        (dst, src) => {
+                            return Err(format!(
+                                "Internal Error: {}:{}:{}: Can't generate ASM for `or {dst:?}, {src:?}",
+                                file!(),
+                                line!(),
+                                column!()
+                            ));
+                        }
+                    }
+                }
+                IR::Xor { dst, src1, src2 } => {
+                    debug_assert!(dst == src1);
+                    debug_assert!(dst.reg != instr::Register::None);
+                    let dst_reg = reg(dst.reg, dst.reg_mode);
+                    match (dst.typ, src2.typ) {
+                        (OperandType::Reg, OperandType::Reg) => {
+                            let src_reg = reg(src2.reg, src2.reg_mode);
+                            push_asm(format!("  xor {dst_reg}, {src_reg}").as_str());
+                        }
+                        (OperandType::Reg, OperandType::Offset) => {
+                            let offset = src2.off_or_imm;
+                            let size = dst.reg_mode.size();
+                            push_asm(format!("  xor {dst_reg}, [rbp-{offset}-{size}]").as_str());
+                        }
+                        (OperandType::Reg, OperandType::ImmI32 | OperandType::ImmU32) => {
+                            let immediate = src2.off_or_imm;
+                            push_asm(format!("  xor {dst_reg}, {immediate}").as_str());
+                        }
+                        (OperandType::Reg, OperandType::ImmI64 | OperandType::ImmU64) => {
+                            // XOR has no 64bit immediate mode, we need to use a register
+                            let immediate = src2.off_or_imm;
+                            push_asm("  push rax");
+                            push_asm(format!("  mov rax, {immediate}").as_str());
+                            push_asm(format!("  xor {dst_reg}, rax").as_str());
+                            push_asm("  pop rax");
+                        }
+                        (dst, src) => {
+                            return Err(format!(
+                                "Internal Error: {}:{}:{}: Can't generate ASM for `xor {dst:?}, {src:?}",
+                                file!(),
+                                line!(),
+                                column!()
+                            ));
+                        }
+                    }
+                }
+
                 // Control Flow
                 IR::Label { name } => push_asm(format!("{name}:").as_str()),
                 IR::Cmp { dst, src } => {
@@ -729,8 +839,8 @@ impl<'flags> Assembler<'flags> {
         // Clean up generated files
         // FIXME: Add this flag
         // if !self.flags.keep {
-            std::fs::remove_file(&asmname).unwrap();
-            std::fs::remove_file(&objname).unwrap();
+            // std::fs::remove_file(&asmname).unwrap();
+            // std::fs::remove_file(&objname).unwrap();
         // }
 
         Ok(())

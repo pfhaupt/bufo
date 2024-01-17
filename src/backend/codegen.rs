@@ -825,6 +825,33 @@ impl Codegenable for nodes::BinaryNode {
                 });
                 Ok(lhs)
             }
+            Operation::BitwiseAnd => {
+                let (lhs, rhs) = gen_bin!(self.lhs, self.rhs)?;
+                codegen.add_ir(instr::IR::And {
+                    dst: lhs,
+                    src1: lhs,
+                    src2: rhs,
+                });
+                Ok(lhs)
+            }
+            Operation::BitwiseOr => {
+                let (lhs, rhs) = gen_bin!(self.lhs, self.rhs)?;
+                codegen.add_ir(instr::IR::Or {
+                    dst: lhs,
+                    src1: lhs,
+                    src2: rhs,
+                });
+                Ok(lhs)
+            }
+            Operation::BitwiseXor => {
+                let (lhs, rhs) = gen_bin!(self.lhs, self.rhs)?;
+                codegen.add_ir(instr::IR::Xor {
+                    dst: lhs,
+                    src1: lhs,
+                    src2: rhs,
+                });
+                Ok(lhs)
+            }
             _ if self.is_comparison() => {
                 let (lhs, rhs) = gen_bin!(self.lhs, self.rhs)?;
                 codegen.add_ir(instr::IR::Cmp { dst: lhs, src: rhs });

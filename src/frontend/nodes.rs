@@ -293,6 +293,11 @@ impl BinaryNode {
     pub fn is_arithmetic(&self) -> bool {
         self.operation.is_arithmetic()
     }
+
+    #[trace_call(extra)]
+    pub fn is_bitwise(&self) -> bool {
+        self.operation.is_bitwise()
+    }
 }
 
 #[derive(Debug, Clone)]

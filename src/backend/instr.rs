@@ -315,6 +315,23 @@ pub enum IR {
         signed: bool,
     },
 
+    // Bitwise
+    And {
+        dst: Operand,
+        src1: Operand,
+        src2: Operand,
+    },
+    Or {
+        dst: Operand,
+        src1: Operand,
+        src2: Operand,
+    },
+    Xor {
+        dst: Operand,
+        src1: Operand,
+        src2: Operand,
+    },
+
     // Control Flow
     Label {
         name: String,
@@ -416,6 +433,17 @@ impl Debug for IR {
                 "Mod dst: {:?}, src1: {:?}, src2: {:?}, signed: {:?}",
                 dst, src1, src2, signed
             ),
+
+            // Bitwise
+            Self::And { dst, src1, src2 } => {
+                write!(f, "BitwiseAnd dst: {:?}, src1: {:?}, src2: {:?}", dst, src1, src2)
+            }
+            Self::Or { dst, src1, src2 } => {
+                write!(f, "BitwiseOr dst: {:?}, src1: {:?}, src2: {:?}", dst, src1, src2)
+            }
+            Self::Xor { dst, src1, src2 } => {
+                write!(f, "BitwiseXor dst: {:?}, src1: {:?}, src2: {:?}", dst, src1, src2)
+            }
 
             // Control Flow
             Self::Label { name } => write!(f, "Label name: {:?}", name),
