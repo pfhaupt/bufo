@@ -728,9 +728,9 @@ impl Codegenable for nodes::LiteralNode {
             match s {
                 "true" => Ok(instr::Operand::imm_u8(1)),
                 "false" => Ok(instr::Operand::imm_u8(0)),
-                _ => Err(format!(
+                e => Err(format!(
                     "{}: {:?}: Boolean Literal could not be parsed.\n{}: {}",
-                    ERR_STR, self.location, NOTE_STR, s
+                    ERR_STR, self.location, NOTE_STR, e
                 )),
             }
         };
