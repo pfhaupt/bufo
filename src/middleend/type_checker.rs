@@ -961,18 +961,18 @@ impl<'flags> TypeChecker<'flags> {
                 let var_size = let_node.typ.typ.size();
                 self.current_stack_size += var_size;
 
-                let current_scope = self.get_current_scope();
                 let var = Variable {
                     name: let_node.name.clone(),
                     location: let_node.location.clone(),
                     typ: let_node.typ.typ.clone(),
                 };
-                if current_scope.insert(let_node.name.clone(), var).is_some() {
-                    internal_panic!(format!("Variable `{}` already exists in current scope", let_node.name));
-                }
                 let expected_type = &let_node.typ.typ;
 
                 let expr_type = self.type_check_expression(&mut let_node.expression);
+                let current_scope = self.get_current_scope();
+                if current_scope.insert(let_node.name.clone(), var).is_some() {
+                    internal_panic!(format!("Variable `{}` already exists in current scope", let_node.name));
+                }
                 if expr_type == Type::None {
                     // Error in expression, we can't continue
                     return;
