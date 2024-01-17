@@ -16,4 +16,4 @@ jobs:
     - name: Build
       run: cargo build --verbose --release
     - name: Run tests
-      run: python helper.py test --no-exec
+      run: python helper.py test

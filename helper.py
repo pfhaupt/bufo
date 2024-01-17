@@ -36,7 +36,7 @@ class TestResult:
     path: str
     success: STATE
 
-def run_test(path: str, exec: bool) -> TestResult:
+def run_test(path: str) -> TestResult:
     print("Running test: " + path)
     """
     The protocol for tests is as follows:
@@ -63,9 +63,6 @@ def run_test(path: str, exec: bool) -> TestResult:
             print("Invalid test file: " + path, file=sys.stderr)
             print("Second line must be either `//! RUNTIME` or `//! COMPILETIME`", file=sys.stderr)
             return TestResult(path, STATE.INVALID)
-
-        if point_of_failure == "RUNTIME" and not exec:
-            return TestResult(path, STATE.IGNORED)
 
         expected_mode = lines[2].removeprefix("//! ").upper().strip()
         if expected_mode not in ["FAILURE", "SUCCESS"]:
@@ -102,7 +99,7 @@ def run_test(path: str, exec: bool) -> TestResult:
                 print(output.stderr.decode("utf-8"), file=sys.stderr)
                 return TestResult(path, STATE.INVALID)
             filename = path.split("\\")[-1].split(".")[0]
-            output = call_cmd(["./out/" + filename + ".exe"])
+            output = call_cmd(["./out/" + filename])
             os.remove("./out/" + filename + ".exe")
         else:
             output = call_cmd([COMPILER_PATH, "-i", path])
@@ -121,8 +118,6 @@ def run_test(path: str, exec: bool) -> TestResult:
                     print("Actual:", file=sys.stderr)
                     print(stderr, file=sys.stderr)
                     return TestResult(path, STATE.FAILURE)
-            elif point_of_failure == "RUNTIME" and not exec:
-                return TestResult(path, STATE.IGNORED)
             if output.returncode != expected_error_code:
                 print("Expected failure, but program succeeded")
                 return TestResult(path, STATE.FAILURE)
@@ -141,7 +136,7 @@ def recompile_compiler() -> None:
         sys.exit(1)
     print("Recompilation successful")
 
-def run_all_tests(exec: bool = True):
+def run_all_tests():
     total = 0
     failed_tests = []
     panicked_tests = []
@@ -151,7 +146,7 @@ def run_all_tests(exec: bool = True):
         for filename in files:
             path = os.path.join(root, filename)
             if os.path.isfile(path):
-                result = run_test(path, exec)
+                result = run_test(path)
                 total += 1
                 match result.success:
                     case STATE.SUCCESS:
@@ -192,7 +187,7 @@ if __name__ == "__main__":
         if mode == "test":
             recompile_compiler()
             print("Running tests...")
-            run_all_tests(not (len(sys.argv) > 2 and sys.argv[2] == "--no-exec"))
+            run_all_tests()
         elif mode == "bench":
             recompile_compiler()
             print("Running benchmarks...")
