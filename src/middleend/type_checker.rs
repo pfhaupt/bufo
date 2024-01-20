@@ -778,6 +778,9 @@ impl<'flags> TypeChecker<'flags> {
     #[trace_call(always)]
     pub fn type_check_file(&mut self, file: &mut nodes::FileNode) -> Result<(), String> {
         self.fill_lookup(file);
+        for e in &mut file.externs {
+            self.type_check_extern(e);
+        }
         for c in &mut file.classes {
             self.type_check_class(c);
         }
@@ -794,6 +797,14 @@ impl<'flags> TypeChecker<'flags> {
             }
             Err(error_string)
         }
+    }
+
+    #[trace_call(always)]
+    fn type_check_extern(&mut self, extern_node: &mut nodes::ExternNode) {
+        for p in &mut extern_node.parameters {
+            self.type_check_parameter(p);
+        }
+        self.type_check_type_node(&mut extern_node.return_type);
     }
 
     #[trace_call(always)]
