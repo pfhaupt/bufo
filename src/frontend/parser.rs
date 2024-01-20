@@ -1271,6 +1271,14 @@ impl<'flags> Parser<'flags> {
         let location = self.current_location();
         try_parse!(self.expect(TokenType::ReturnKeyword));
 
+        if self.current_function.is_none() {
+            // We're in a constructor
+            self.report_error(ParserError::ConstructorReturnsValue(
+                location.clone(),
+            ));
+            return None;
+        }
+
         let return_value = if !self.at(TokenType::Semi) {
             try_parse!(rv, self.parse_expression(0, Associativity::Left));
             Some(rv)

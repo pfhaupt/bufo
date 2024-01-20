@@ -209,6 +209,9 @@ class Fuzzer:
             os.makedirs("./fuzz/invalid")
         if not os.path.exists("./fuzz/valid"):
             os.makedirs("./fuzz/valid")
+        else:
+            for file in os.listdir("./fuzz/valid"):
+                os.remove(f"./fuzz/valid/{file}")
         from multiprocessing import Pool
         with Pool(self.threads) as p:
             p.starmap(self.generate_bulk_code, [(i, self.limit // self.threads) for i in range(self.threads)])
