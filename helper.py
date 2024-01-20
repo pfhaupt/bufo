@@ -193,6 +193,16 @@ def run_all_tests(exec: bool = True):
     if failure > 0 or panicked > 0 or invalid > 0:
         sys.exit(1)
 
+def run_fuzzer(limit: int, threads: int):
+    from fuzz.fuzzer import Fuzzer
+    fuzzer = Fuzzer(call_cmd, [COMPILER_PATH, "-i"], limit, threads)
+    fuzzer.run()
+    for root, _, files in os.walk("./out/"):
+        for filename in files:
+            path = os.path.join(root, filename)
+            if os.path.isfile(path):
+                os.remove(path)
+
 if __name__ == "__main__":
     if len(sys.argv) == 1:
         print("Usage: python helper.py [test|bench]")
@@ -206,6 +216,12 @@ if __name__ == "__main__":
             recompile_compiler()
             print("Running benchmarks...")
             assert False, "Not implemented"
+        elif mode == "fuzz":
+            recompile_compiler()
+            limit = int(sys.argv[2]) if len(sys.argv) > 2 else 100
+            threads = int(sys.argv[3]) if len(sys.argv) > 3 else 1
+            print("Running fuzzer™️...")
+            run_fuzzer(limit, threads)
         else:
             print("Usage: python helper.py [test|bench]")
     # main()

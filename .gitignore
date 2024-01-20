@@ -3,3 +3,6 @@
 /.vscode/
 /stresstest/
 /.idea/
+
+/fuzz/*
+!/fuzz/fuzzer.py
