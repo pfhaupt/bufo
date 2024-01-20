@@ -36,30 +36,30 @@ impl<'flags> FlowChecker<'flags> {
     }
 
     #[trace_call(always)]
-    pub fn check_file(&mut self, file: &nodes::FileNode) -> Result<(), String> {
-        for class in &file.classes {
+    pub fn check_file(&mut self, file: &mut nodes::FileNode) -> Result<(), String> {
+        for class in &mut file.classes {
             self.check_class(class)?;
         }
-        for function in &file.functions {
+        for function in &mut file.functions {
             self.check_function(function)?;
         }
         Ok(())
     }
 
     #[trace_call(always)]
-    fn check_class(&mut self, class: &nodes::ClassNode) -> Result<(), String> {
-        for constructor in &class.constructors {
+    fn check_class(&mut self, class: &mut nodes::ClassNode) -> Result<(), String> {
+        for constructor in &mut class.constructors {
             self.check_constructor(constructor)?;
         }
-        for method in &class.methods {
+        for method in &mut class.methods {
             self.check_method(method)?;
         }
         Ok(())
     }
 
     #[trace_call(always)]
-    fn check_constructor(&mut self, constructor: &nodes::ConstructorNode) -> Result<(), String> {
-        let flow = self.check_block(&constructor.block, &[FlowType::AlwaysReturn])?;
+    fn check_constructor(&mut self, constructor: &mut nodes::ConstructorNode) -> Result<(), String> {
+        let flow = self.check_block(&mut constructor.block, &[FlowType::AlwaysReturn])?;
         // Constructors never return a value
         // It's all implicit at the end of the block
         if flow != FlowType::Linear {
@@ -74,8 +74,8 @@ impl<'flags> FlowChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn check_method(&mut self, method: &nodes::MethodNode) -> Result<(), String> {
-        let flow = self.check_block(&method.block, &[FlowType::AlwaysReturn])?;
+    fn check_method(&mut self, method: &mut nodes::MethodNode) -> Result<(), String> {
+        let flow = self.check_block(&mut method.block, &[FlowType::AlwaysReturn])?;
         if flow != FlowType::AlwaysReturn {
             if method.return_type.typ != Type::None {
                 Err(format!(
@@ -92,8 +92,8 @@ impl<'flags> FlowChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn check_function(&mut self, function: &nodes::FunctionNode) -> Result<(), String> {
-        let flow = self.check_block(&function.block, &[FlowType::AlwaysReturn])?;
+    fn check_function(&mut self, function: &mut nodes::FunctionNode) -> Result<(), String> {
+        let flow = self.check_block(&mut function.block, &[FlowType::AlwaysReturn])?;
         if flow != FlowType::AlwaysReturn {
             if function.return_type.typ != Type::None {
                 Err(format!(
@@ -110,11 +110,12 @@ impl<'flags> FlowChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn check_block(&mut self, block: &nodes::BlockNode, early_exit: &[FlowType]) -> Result<FlowType, String> {
+    fn check_block(&mut self, block: &mut nodes::BlockNode, early_exit: &[FlowType]) -> Result<FlowType, String> {
         // println!("{:?}: check_block: {:?}", block.location, early_exit);
         let mut flow = FlowType::Linear;
+        let mut exit_index = None;
         for index in 0..block.statements.len() {
-            let statement = &block.statements[index];
+            let statement = &mut block.statements[index];
             flow = self.check_statement(statement, early_exit)?;
             if early_exit.contains(&flow) {
                 if index != block.statements.len() - 1 {
@@ -124,14 +125,24 @@ impl<'flags> FlowChecker<'flags> {
                         block.statements[index + 1].get_loc()
                     );
                 }
+                exit_index = Some(index);
                 break;
             }
+        }
+        #[cfg(feature = "llvm")]
+        if let Some(index) = exit_index {
+            block.statements.truncate(index + 1);
+            block.llvm_has_terminator = true;
+        }
+        #[cfg(not(feature = "llvm"))]
+        if let Some(index) = exit_index {
+            block.statements.truncate(index + 1);
         }
         Ok(flow)
     }
 
     #[trace_call(always)]
-    fn check_statement(&mut self, statement: &nodes::Statement, early_exit: &[FlowType]) -> Result<FlowType, String> {
+    fn check_statement(&mut self, statement: &mut nodes::Statement, early_exit: &[FlowType]) -> Result<FlowType, String> {
         match statement {
             nodes::Statement::Expression(_expr_node) => Ok(FlowType::Linear),
             nodes::Statement::Block(block_node) => self.check_block(block_node, early_exit),
@@ -150,13 +161,13 @@ impl<'flags> FlowChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn check_stmt_if(&mut self, if_node: &nodes::IfNode, early_exit: &[FlowType]) -> Result<FlowType, String> {
+    fn check_stmt_if(&mut self, if_node: &mut nodes::IfNode, early_exit: &[FlowType]) -> Result<FlowType, String> {
         // let cond_flow = self.check_expression_node(&if_node.condition)?;
         // debug_assert!(cond_flow == FlowType::Linear);
         // Later on we might want to check if the condition always exits
-        let if_flow = self.check_statement(&if_node.if_body, early_exit)?;
-        if let Some(else_branch) = &if_node.else_body {
-            let else_flow = self.check_statement(else_branch, early_exit)?;
+        let if_flow = self.check_block(&mut if_node.if_body, early_exit)?;
+        if let Some(else_branch) = &mut if_node.else_body {
+            let else_flow = self.check_block(else_branch, early_exit)?;
             if self.flags.debug {
                 println!(
                     "[DEBUG] IfNode::check: if_flow: {:?}, else_flow: {:?}",
@@ -191,13 +202,13 @@ impl<'flags> FlowChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn check_stmt_while(&mut self, while_node: &nodes::WhileNode) -> Result<FlowType, String> {
+    fn check_stmt_while(&mut self, while_node: &mut nodes::WhileNode) -> Result<FlowType, String> {
         // let cond_flow = self.check_expression_node(&while_node.condition)?;
         // debug_assert!(cond_flow == FlowType::Linear);
         // Later on we might want to check if the condition always exits
         self.loop_stack.push(());
-        let block_flow = self.check_statement(
-            &while_node.body,
+        let block_flow = self.check_block(
+            &mut while_node.body,
             &[FlowType::AlwaysReturn, FlowType::AlwaysBreak, FlowType::AlwaysContinue]
         )?;
         self.loop_stack.pop();

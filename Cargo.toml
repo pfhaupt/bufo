@@ -8,10 +8,11 @@ edition = "2021"
 [dependencies]
 clap = {version = "4.4.10", features = ["derive"]}
 tracer = { path = "tracer" }
-llvm-sys-160 = { package = "llvm-sys", version = "160.0.0", features = ["prefer-static"], optional = true }
+# llvm-sys-160 = { package = "llvm-sys", version = "160.0.0", features = ["prefer-static"], optional = true }
+inkwell = { package = "inkwell", version = "0.2.0", features = ["target-x86", "llvm16-0"], optional = true }
 
 [features]
 test_exec = []
 trace = []
 trace_extra = []
-llvm = ["llvm-sys-160"]
+llvm = ["inkwell"]

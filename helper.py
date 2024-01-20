@@ -8,6 +8,8 @@ from enum import Enum
 
 COMPILER_PATH = "./target/release/bufo"
 
+USE_LLVM = True
+
 def compare(expected: List[str], actual: List[str]) -> bool:
     for line in expected:
         inside = False
@@ -20,8 +22,9 @@ def compare(expected: List[str], actual: List[str]) -> bool:
     return True
 
 
-def call_cmd(cmd: List) -> int:
-    print("[INFO]", " ".join(cmd))
+def call_cmd(cmd: List, log: bool = True) -> subprocess.CompletedProcess[bytes]:
+    if log:
+        print("[INFO]", " ".join(cmd))
     return subprocess.run(cmd, capture_output=True)
 
 class STATE(Enum):
@@ -103,7 +106,8 @@ def run_test(path: str, exec: bool) -> TestResult:
                 return TestResult(path, STATE.INVALID)
             filename = path.split("\\")[-1].split(".")[0]
             output = call_cmd(["./out/" + filename + ".exe"])
-            os.remove("./out/" + filename + ".asm")
+            # We're not generating assembly in LLVM mode
+            if not USE_LLVM: os.remove("./out/" + filename + ".asm")
             os.remove("./out/" + filename + ".obj")
             os.remove("./out/" + filename + ".exe")
         else:
@@ -136,7 +140,10 @@ def run_test(path: str, exec: bool) -> TestResult:
 
 def recompile_compiler() -> None:
     print("Recompiling compiler...")
-    cmd = call_cmd(["cargo", "build", "--release"])
+    if USE_LLVM:
+        cmd = call_cmd(["cargo", "build", "--release", "--features=llvm"])
+    else:
+        cmd = call_cmd(["cargo", "build", "--release"])
     if cmd.returncode != 0:
         print("Failed to recompile compiler", file=sys.stderr)
         print(cmd.stderr.decode("utf-8"), file=sys.stderr)

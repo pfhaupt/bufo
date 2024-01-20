@@ -815,7 +815,27 @@ impl<'flags> Parser<'flags> {
         let location = self.current_location();
         let mut classes = vec![];
         let mut functions = vec![];
-        let mut externs = vec![];
+        // TODO: Once we have a way to load files, we can remove this
+        //       and replace it with a prelude file
+        // Note: The exit function is explicitly needed so we can exit the program on errors
+        //       e.g. Nullpointer exceptions
+        //       I wish LLVM had an intrinsic exit, but there's only abort...
+        let mut externs = vec![nodes::ExternNode {
+            location: Location::anonymous(),
+            name: String::from("exit"),
+            return_type: nodes::TypeNode {
+                location: Location::anonymous(),
+                typ: Type::None,
+            },
+            parameters: vec![nodes::ParameterNode {
+                location: Location::anonymous(),
+                name: String::from("code"),
+                typ: nodes::TypeNode {
+                    location: Location::anonymous(),
+                    typ: Type::I32,
+                },
+            }],
+        }];
         const RECOVER_TOKENS: [TokenType; 1] = [
             TokenType::ClosingCurly,
         ];
@@ -1129,6 +1149,8 @@ impl<'flags> Parser<'flags> {
         Some(nodes::BlockNode {
             location,
             statements,
+            #[cfg(feature = "llvm")]
+            llvm_has_terminator: false,
         })
     }
 
@@ -1197,11 +1219,44 @@ impl<'flags> Parser<'flags> {
         try_parse!(condition, self.parse_expression(0, Associativity::Left));
         try_parse!(self.expect(TokenType::ClosingRound));
         try_parse!(if_body, self.parse_statement());
+        let if_body = match if_body {
+            nodes::Statement::Block(if_body) => if_body,
+            _ => {
+                let mut statements = vec![];
+                let location = if_body.get_loc();
+                statements.push(if_body);
+                nodes::BlockNode {
+                    location,
+                    statements,
+                    #[cfg(feature = "llvm")]
+                    llvm_has_terminator: false,
+                }
+            }
+        };
         let else_body = if self.eat(TokenType::ElseKeyword) {
             try_parse!(eb, self.parse_statement());
             Some(Box::new(eb))
         } else {
             None
+        };
+        let else_body = match else_body {
+            Some(eb) => {
+                match *eb {
+                    nodes::Statement::Block(ref eb) => Some(eb.clone()),
+                    _ => {
+                        let mut statements = vec![];
+                        let location = eb.get_loc();
+                        statements.push(*eb);
+                        Some(nodes::BlockNode {
+                            location,
+                            statements,
+                            #[cfg(feature = "llvm")]
+                            llvm_has_terminator: false,
+                        })
+                    }
+                }
+            }
+            None => None,
         };
         Some(nodes::IfNode {
             location,
@@ -1242,10 +1297,24 @@ impl<'flags> Parser<'flags> {
         try_parse!(self.expect(TokenType::ClosingRound));
 
         try_parse!(body, self.parse_statement());
+        let body = match body {
+            nodes::Statement::Block(body) => body,
+            _ => {
+                let mut statements = vec![];
+                let location = body.get_loc();
+                statements.push(body);
+                nodes::BlockNode {
+                    location,
+                    statements,
+                    #[cfg(feature = "llvm")]
+                    llvm_has_terminator: false,
+                }
+            }
+        };
         Some(nodes::WhileNode {
             location,
             condition,
-            body: Box::new(body),
+            body: body,
         })
     }
 

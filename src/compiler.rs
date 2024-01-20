@@ -1,5 +1,7 @@
 use std::time::Instant;
 
+#[cfg(feature = "llvm")]
+use inkwell::context::Context;
 use tracer::trace_call;
 
 #[cfg(not(feature = "llvm"))]
@@ -72,15 +74,6 @@ pub struct Compiler<'flags> {
     flags: &'flags Flags,
 }
 
-#[cfg(feature = "llvm")]
-pub struct Compiler {
-    parser: Parser,
-    type_checker: TypeChecker,
-    flow_checker: FlowChecker,
-    codegen: LLVMCodegen,
-    flags: Flags,
-}
-
 #[cfg(not(feature = "llvm"))]
 impl<'flags> Compiler<'flags> {
     pub fn new(flags: &'flags Flags) -> Self {
@@ -113,7 +106,7 @@ impl<'flags> Compiler<'flags> {
         }
 
         let now = Instant::now();
-        self.flow_checker.check_file(&parsed_ast)?;
+        self.flow_checker.check_file(&mut parsed_ast)?;
         if self.flags.debug {
             println!("[DEBUG] Flow Checking took {:?}", now.elapsed());
         }
@@ -141,14 +134,23 @@ impl<'flags> Compiler<'flags> {
 }
 
 #[cfg(feature = "llvm")]
-impl Compiler {
-    pub fn new(flags: Flags) -> Self {
+pub struct Compiler<'flags, 'ctx> {
+    parser: Parser<'flags>,
+    type_checker: TypeChecker<'flags>,
+    flow_checker: FlowChecker<'flags>,
+    codegen: LLVMCodegen<'flags, 'ctx>,
+    flags: &'flags Flags,
+}
+
+#[cfg(feature = "llvm")]
+impl<'flags, 'ctx> Compiler<'flags, 'ctx> {
+    pub fn new(flags: &'flags Flags, context: &'ctx Context) -> Self {
         Self {
-            parser: Parser::new(flags.clone()),
-            type_checker: TypeChecker::new(flags.clone()),
-            flow_checker: FlowChecker::new(flags.clone()),
-            codegen: LLVMCodegen::new(flags.clone()),
-            flags: flags.clone()
+            parser: Parser::new(flags),
+            type_checker: TypeChecker::new(flags),
+            flow_checker: FlowChecker::new(flags),
+            codegen: LLVMCodegen::new(flags, context),
+            flags
         }
     }
 
@@ -171,24 +173,24 @@ impl Compiler {
         }
 
         let now = Instant::now();
-        self.flow_checker.check(&parsed_ast)?;
+        self.flow_checker.check_file(&mut parsed_ast)?;
         if self.flags.debug {
             println!("[DEBUG] Flow Checking took {:?}", now.elapsed());
         }
 
         let now = Instant::now();
-        let ir = self.codegen.generate_code(&parsed_ast)?;
+        self.codegen.create_executable(&parsed_ast)?;
         if self.flags.debug {
             println!("[DEBUG] Codegen took {:?}", now.elapsed());
         }
 
-        // if self.flags.run {
-        //     let now = Instant::now();
-        //     self.codegen.run(ir)?;
-        //     if self.flags.debug {
-        //         println!("[DEBUG] Running took {:?}", now.elapsed());
-        //     }
-        // }
+        if self.flags.run {
+            let now = Instant::now();
+            self.codegen.run()?;
+            if self.flags.debug {
+                println!("[DEBUG] Running took {:?}", now.elapsed());
+            }
+        }
         Ok(())
     }
 }
@@ -200,8 +202,17 @@ fn compile() -> Result<(), String> {
     if flags.debug {
         println!("[DEBUG] Parsing flags took {:?}", now.elapsed());
     }
-    let mut compiler = Compiler::new(&flags);
-    compiler.run_everything()
+    #[cfg(not(feature = "llvm"))]
+    {
+        let mut compiler = Compiler::new(&flags);
+        compiler.run_everything()
+    }
+    #[cfg(feature = "llvm")]
+    {
+        let context = Context::create();
+        let mut compiler = Compiler::new(&flags, &context);
+        compiler.run_everything()
+    }
 }
 #[trace_call(always)]
 pub fn run() {

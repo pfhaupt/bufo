@@ -1008,9 +1008,9 @@ impl<'flags> TypeChecker<'flags> {
                 cond,
             ));
         }
-        self.type_check_statement(&mut if_node.if_body);
+        self.type_check_block(&mut if_node.if_body);
         if let Some(else_branch) = &mut if_node.else_body {
-            self.type_check_statement(else_branch);
+            self.type_check_block(else_branch);
         }
     }
 
@@ -1104,7 +1104,7 @@ impl<'flags> TypeChecker<'flags> {
                 cond,
             ));
         }
-        self.type_check_statement(&mut while_node.body);
+        self.type_check_block(&mut while_node.body);
     }
 
     #[trace_call(always)]

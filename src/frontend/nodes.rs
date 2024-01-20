@@ -92,6 +92,8 @@ impl ParameterNode {
 pub struct BlockNode {
     pub location: Location,
     pub statements: Vec<Statement>,
+    #[cfg(feature = "llvm")]
+    pub llvm_has_terminator: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -133,8 +135,8 @@ pub struct LetNode {
 pub struct IfNode {
     pub location: Location,
     pub condition: Expression,
-    pub if_body: Box<Statement>,
-    pub else_body: Option<Box<Statement>>,
+    pub if_body: Box<BlockNode>,
+    pub else_body: Option<BlockNode>,
 }
 
 #[derive(Debug, Clone)]
@@ -150,7 +152,7 @@ pub struct ReturnNode {
 pub struct WhileNode {
     pub location: Location,
     pub condition: Expression,
-    pub body: Box<Statement>,
+    pub body: BlockNode,
 }
 
 #[derive(Debug, Clone)]
