@@ -177,6 +177,8 @@ enum TypeError {
     DotOnNonClass(Location),
     /// Syntax: Error Loc
     InvalidLValue(Location),
+    /// Syntax: Error Loc, Type
+    NegationTypeMismatch(Location, Type),
 }
 
 impl Display for TypeError {
@@ -358,6 +360,13 @@ impl Display for TypeError {
                     f,
                     "{}: {:?}: Attempted to assign to non-assignable value.",
                     ERR_STR, error_loc
+                )
+            }
+            TypeError::NegationTypeMismatch(error_loc, typ) => {
+                write!(
+                    f,
+                    "{}: {:?}: Type mismatch! Negation is not defined for type `{}`.",
+                    ERR_STR, error_loc, typ
                 )
             }
         }
@@ -1203,6 +1212,37 @@ impl<'flags> TypeChecker<'flags> {
                 }
                 typ.clone()
             }
+            nodes::Expression::Unary(unary_node) => {
+                match unary_node.operation {
+                    Operation::Negate => {
+                        let expr_type = self.type_check_expression_with_type(
+                            &mut unary_node.expression,
+                            typ,
+                        );
+                        if expr_type != Type::I32 && expr_type != Type::I64 {
+                            self.report_error(TypeError::NegationTypeMismatch(
+                                unary_node.location.clone(),
+                                typ.clone(),
+                            ));
+                        } else if expr_type == Type::Unknown {
+                            unary_node.typ = typ.clone();
+                        } else if expr_type != *typ {
+                            self.report_error(TypeError::TypeMismatch(
+                                unary_node.location.clone(),
+                                typ.clone(),
+                                expr_type.clone(),
+                            ));
+                        } else {
+                            unary_node.typ = typ.clone();
+                        }
+                    }
+                    _ => internal_panic!(format!(
+                        "type_check_expression_with_type for {:?} is not implemented yet!",
+                        unary_node.operation
+                    )),
+                }
+                typ.clone()
+            }
             e => internal_panic!(format!(
                 "type_check_expression_with_type for {:?} is not implemented yet!",
                 e
@@ -1231,9 +1271,29 @@ impl<'flags> TypeChecker<'flags> {
     #[trace_call(always)]
     fn type_check_expr_unary(
         &mut self,
-        _unary_expr: &mut nodes::UnaryNode
+        unary_expr: &mut nodes::UnaryNode
     ) -> Type {
-        todo!()
+        check_or_abort!(expr_type, self.type_check_expression(&mut unary_expr.expression));
+        match unary_expr.operation {
+            Operation::Negate => {
+                if expr_type == Type::Unknown {
+                    return Type::Unknown;
+                } else if expr_type != Type::I32 && expr_type != Type::I64 {
+                    self.report_error(TypeError::NegationTypeMismatch(
+                        unary_expr.location.clone(),
+                        expr_type.clone(),
+                    ));
+                }
+                unary_expr.typ = expr_type.clone();
+                expr_type
+            }
+            _ => {
+                internal_panic!(format!(
+                    "type_check_expr_unary for {:?} is not implemented yet!",
+                    unary_expr.operation
+                ))
+            }
+        }
     }
 
     #[trace_call(always)]

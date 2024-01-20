@@ -572,7 +572,21 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             nodes::Expression::Binary(binary) => self.codegen_binary(binary, load_var),
             nodes::Expression::Name(name) => self.codegen_name(name, load_var),
             nodes::Expression::FunctionCall(function_call) => self.codegen_function_call(function_call),
+            nodes::Expression::Unary(unary) => self.codegen_unary(unary, load_var),
             e => unimplemented!("codegen_expression: {:?}", e),
+        }
+    }
+
+    #[trace_call(always)]
+    fn codegen_unary(&mut self, unary_node: &nodes::UnaryNode, _load_var: bool) -> Result<BasicValueEnum<'ctx>, String> {
+        match unary_node.operation {
+            Operation::Negate => {
+                let value = self.codegen_expression(&unary_node.expression, true)?;
+                assert_is_int!(unary_node.expression, unary_node.expression);
+                let result = self.builder.build_int_neg(value.into_int_value(), "codegen_unary_negate");
+                Ok(result.into())
+            }
+            e => unimplemented!("codegen_unary: {:?}", e),
         }
     }
 

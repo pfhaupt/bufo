@@ -251,6 +251,7 @@ impl Printable for nodes::UnaryNode {
     fn print(&self, indent: usize) {
         println!("{}ExpressionUnaryNode", " ".repeat(indent));
         println!("{}Operator {}", " ".repeat(indent + INDENT_PER_LEVEL), self.operation);
+        println!("{}Type {}", " ".repeat(indent + INDENT_PER_LEVEL), self.typ);
         self.expression.print(indent + INDENT_PER_LEVEL);
     }
 }

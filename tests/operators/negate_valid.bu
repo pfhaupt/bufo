@@ -1,0 +1,12 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! FAILURE
+//! CODE: 420
+
+func main() -> i32 {
+    let a: i32 = 1337;
+    let b: i32 = -a;
+    if (b >= 0) return 1337;
+    if (b < 0) return 420;
+    return 69;
+}
