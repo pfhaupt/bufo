@@ -9,6 +9,7 @@ use crate::internal_panic;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::builder::Builder;
+use inkwell::passes::PassManager;
 use inkwell::targets::{Target, InitializationConfig, CodeModel, RelocMode, TargetTriple, TargetMachine};
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::AddressSpace;
@@ -323,6 +324,16 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         if self.flags.debug {
             self.module.print_to_stderr();
         }
+
+        // TODO: We already have an opt-flag, so we should add optimizations accordingly
+        //       instead of just adding all of them
+        let pass_manager = PassManager::create(());
+        pass_manager.add_promote_memory_to_register_pass();
+        pass_manager.add_instruction_combining_pass();
+        pass_manager.add_reassociate_pass();
+        pass_manager.add_gvn_pass();
+        pass_manager.run_on(&self.module);
+
         let path = std::path::Path::new(&self.objname);
         self.target_machine.write_to_file(
             &self.module,
@@ -952,6 +963,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
 
     #[trace_call(always)]
     pub fn run(&mut self) -> Result<(), String> {
+        println!("[INFO] Running {}", self.exename);
         let mut filename = String::from(OUTPUT_FOLDER);
         filename.push_str(&self.path);
         let path = std::path::Path::new(&self.exename);
@@ -959,7 +971,8 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             .output()
             .expect("Failed to execute program!");
         let exit_code = output.status.code().unwrap();
-        println!("{}", String::from_utf8(output.stdout).unwrap());
+        println!("[INFO] BEGIN OUTPUT\n{}\n[INFO] END OUTPUT", String::from_utf8(output.stdout).unwrap());
+        println!("[INFO] Program exited with code 0x{:X}.", exit_code);
         if exit_code != 0 {
             Err(format!(
                 "{}: Code execution failed with code 0x{:X}.",
