@@ -313,7 +313,6 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         for function in &file.functions {
             self.codegen_function(function)?;
         }
-        println!("yep");
         match self.module.verify() {
             Ok(_) => (),
             Err(e) => {

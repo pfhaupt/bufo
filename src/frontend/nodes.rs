@@ -78,7 +78,7 @@ impl ParameterNode {
     #[trace_call(extra)]
     pub fn this(location: Location, typ: Type) -> Self {
         Self {
-            location: location.clone(),
+            location: location,
             name: String::from("this"),
             typ: TypeNode {
                 location,
@@ -111,14 +111,14 @@ pub enum Statement {
 impl Statement {
     pub fn get_loc(&self) -> Location {
         match self {
-            Self::Block(e) => e.location.clone(),
+            Self::Block(e) => e.location,
             Self::Expression(e) => e.get_loc(),
-            Self::Let(e) => e.location.clone(),
-            Self::If(e) => e.location.clone(),
-            Self::Return(e) => e.location.clone(),
-            Self::While(e) => e.location.clone(),
-            Self::Break(e) => e.location.clone(),
-            Self::Continue(e) => e.location.clone(),
+            Self::Let(e) => e.location,
+            Self::If(e) => e.location,
+            Self::Return(e) => e.location,
+            Self::While(e) => e.location,
+            Self::Break(e) => e.location,
+            Self::Continue(e) => e.location,
         }
     }
 }
@@ -199,14 +199,14 @@ impl Expression {
     #[trace_call(extra)]
     pub fn get_loc(&self) -> Location {
         match &self {
-            Self::Name(e) => e.location.clone(),
-            Self::ArrayLiteral(e) => e.location.clone(),
-            Self::ArrayAccess(e) => e.location.clone(),
-            Self::Literal(e) => e.location.clone(),
-            Self::Unary(e) => e.location.clone(),
-            Self::Binary(e) => e.location.clone(),
-            Self::FunctionCall(e) => e.location.clone(),
-            Self::BuiltIn(e) => e.location.clone()
+            Self::Name(e) => e.location,
+            Self::ArrayLiteral(e) => e.location,
+            Self::ArrayAccess(e) => e.location,
+            Self::Literal(e) => e.location,
+            Self::Unary(e) => e.location,
+            Self::Binary(e) => e.location,
+            Self::FunctionCall(e) => e.location,
+            Self::BuiltIn(e) => e.location
         }
     }
 

@@ -5,8 +5,11 @@ use std::path::PathBuf;
 
 use super::nodes;
 use crate::compiler::{WARN_STR, ERR_STR, NOTE_STR};
+use crate::internal_panic;
 use crate::middleend::type_checker::Type;
 use crate::util::flags::Flags;
+use tracer::trace_call;
+use once_cell::sync::Lazy;
 
 const LOOKAHEAD_LIMIT: usize = 3;
 
@@ -24,7 +27,6 @@ pub const EXTERN_KEYWORD: &str = "extern";
 pub const TRUE_KEYWORD: &str = "true";
 pub const FALSE_KEYWORD: &str = "false";
 
-use tracer::trace_call;
 
 enum ParserError {
     InvalidCharLiteral(Location, String),
@@ -226,28 +228,42 @@ impl Display for TokenType {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Default)]
+// FIXME: Move this somewhere else
+static FILE_ANONYMOUS: usize = 0;
+static mut FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
+    vec![String::from("anonymous")]
+});
+
+#[derive(Copy, Clone, PartialEq, Eq, Default)]
 pub struct Location {
-    file: String,
+    file_id: usize,
     row: usize,
     col: usize,
 }
 
 impl Location {
     #[trace_call(extra)]
-    pub fn new(file: String, row: usize, col: usize) -> Self {
-        Self { file, row, col }
+    pub fn new(file_id: usize, row: usize, col: usize) -> Self {
+        Self { file_id, row, col }
     }
 
     #[trace_call(extra)]
     pub fn anonymous() -> Self {
-        Self::new(String::from("anonymous"), 0, 0)
+        Self::new(FILE_ANONYMOUS, 0, 0)
     }
 }
 
+
+
 impl Debug for Location {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(f, "{}:{}:{}", self.file, self.row, self.col)
+        let file = unsafe { FILENAMES.get(self.file_id) };
+        if file.is_none() {
+            internal_panic!(format!("Invalid file_id {}", self.file_id))
+        } else {
+            let file = file.unwrap();
+            write!(f, "{}:{}:{}", file, self.row, self.col)
+        }
     }
 }
 
@@ -393,7 +409,7 @@ enum Associativity {
 
 pub struct Parser<'flags> {
     filepath: PathBuf,
-    filename: String,
+    file_id: usize,
     source: Vec<char>,
     lookahead: VecDeque<Token>,
     current_char: usize,
@@ -412,7 +428,7 @@ impl<'flags> Parser<'flags> {
     pub fn new(flags: &'flags Flags) -> Self {
         Self {
             filepath: PathBuf::new(),
-            filename: String::new(),
+            file_id: unsafe { FILENAMES.len() },
             source: Vec::new(),
             lookahead: VecDeque::new(),
             current_char: 0,
@@ -436,8 +452,16 @@ impl<'flags> Parser<'flags> {
             // At this point, the file is guaranteed to exist
             Err(_) => unreachable!(),
         };
+        unsafe {
+            FILENAMES.push(
+                pb.file_stem()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_string(),
+            );
+        }
         Self {
-            filename: pb.as_os_str().to_str().unwrap().to_string(),
             filepath: pb,
             source,
             ..self
@@ -655,7 +679,7 @@ impl<'flags> Parser<'flags> {
     #[trace_call(extra)]
     fn get_location(&self) -> Location {
         Location::new(
-            self.filename.clone(),
+            self.file_id,
             self.current_line,
             self.current_char - self.line_start,
         )
@@ -664,7 +688,7 @@ impl<'flags> Parser<'flags> {
     #[trace_call(extra)]
     fn current_location(&self) -> Location {
         debug_assert!(!self.lookahead.is_empty());
-        self.lookahead[0].location.clone()
+        self.lookahead[0].location
     }
 
     #[trace_call(extra)]
@@ -763,7 +787,7 @@ impl<'flags> Parser<'flags> {
         let n = self.peek(0);
         if n.token_type != token_type {
             self.report_error(ParserError::UnexpectedTokenSingle(
-                n.location.clone(),
+                n.location,
                 token_type,
                 n.token_type,
             ));
@@ -1003,7 +1027,7 @@ impl<'flags> Parser<'flags> {
         }
 
         let return_type = nodes::TypeNode {
-            location: location.clone(),
+            location: location,
             typ: Type::Class(class_name.to_string()),
         };
 
@@ -1078,7 +1102,7 @@ impl<'flags> Parser<'flags> {
         parameters.insert(
             0,
             nodes::ParameterNode::this(
-                location.clone(),
+                location,
                 Type::Class(class_name.to_string()),
             ),
         );
@@ -1274,7 +1298,7 @@ impl<'flags> Parser<'flags> {
         if self.current_function.is_none() {
             // We're in a constructor
             self.report_error(ParserError::ConstructorReturnsValue(
-                location.clone(),
+                location,
             ));
             return None;
         }

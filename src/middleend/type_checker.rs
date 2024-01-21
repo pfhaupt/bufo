@@ -23,10 +23,10 @@ macro_rules! check_function {
                 std::cmp::Ordering::Less => {
                     $tc.report_error(TypeError::NotEnoughArguments(
                         $typ,
-                        $call_node.location.clone(),
+                        $call_node.location,
                         $call_node.function_name.clone(),
                         $call_node.arguments.len(),
-                        $func_info.location.clone(),
+                        $func_info.location,
                         params.len(),
                     ));
                     return return_type;
@@ -34,10 +34,10 @@ macro_rules! check_function {
                 std::cmp::Ordering::Greater => {
                     $tc.report_error(TypeError::TooManyArguments(
                         $typ,
-                        $call_node.location.clone(),
+                        $call_node.location,
                         $call_node.function_name.clone(),
                         $call_node.arguments.len(),
-                        $func_info.location.clone(),
+                        $func_info.location,
                         params.len(),
                     ));
                     return return_type;
@@ -55,7 +55,7 @@ macro_rules! check_function {
                     $tc.report_error(TypeError::ArgParamTypeMismatch(
                         arg.get_loc(),
                         arg_type.clone(),
-                        param.location.clone(),
+                        param.location,
                         param.name.clone(),
                         expected.clone(),
                     ));
@@ -79,20 +79,20 @@ macro_rules! check_parameters {
             for param in &$function.parameters {
                 let p = Variable {
                     name: param.name.clone(),
-                    location: param.location.clone(),
+                    location: param.location,
                     typ: param.typ.typ.clone(),
                 };
                 if let Some(p) = parameters.get(&param.name) {
                     if p.name == *"this" {
                         errors.push(TypeError::ImplicitThisParam(
-                            param.location.clone(),
+                            param.location,
                         ));
                     } else {
                         errors.push(TypeError::Redeclaration(
                             "Parameter",
-                            param.location.clone(),
+                            param.location,
                             param.name.clone(),
-                            p.location.clone(),
+                            p.location,
                         ));
                     }
                 } else {
@@ -102,7 +102,7 @@ macro_rules! check_parameters {
             if parameters.len() > 4 {
                 errors.push(TypeError::TooManyParameters(
                     "Method",
-                    $function.location.clone(),
+                    $function.location,
                     $implicit_this,
                 ));
             }
@@ -495,15 +495,15 @@ impl Class {
         match self.fields.get(name) {
             Some(f) => Err(TypeError::Redeclaration(
                 "Field",
-                location.clone(),
+                *location,
                 name.clone(),
-                f.l.clone(),
+                f.l,
             )),
             None => {
                 let typ = &field.type_def.typ;
                 self.fields.insert(
                     name.to_string(),
-                    TypeLoc::new(location.clone(), typ.clone()),
+                    TypeLoc::new(*location, typ.clone()),
                 );
                 Ok(())
             }
@@ -582,17 +582,17 @@ impl<'flags> TypeChecker<'flags> {
         let location = &function.location;
         if let Some(external) = self.known_externs.get(name) {
             self.report_error(TypeError::ExternFunction(
-                location.clone(),
+                *location,
                 name.clone(),
-                external.location.clone(),
+                external.location,
             ));
         }
         match self.known_functions.get(name) {
             Some(f) => self.report_error(TypeError::Redeclaration(
                 "Function",
-                location.clone(),
+                *location,
                 name.clone(),
-                f.location.clone(),
+                f.location,
             )),
             None => {
                 let return_type = &function.return_type.typ;
@@ -602,13 +602,13 @@ impl<'flags> TypeChecker<'flags> {
                     .iter()
                     .map(|param| Variable {
                         name: param.name.clone(),
-                        location: param.location.clone(),
+                        location: param.location,
                         typ: param.typ.typ.clone(),
                     })
                     .collect();
                 let func = Function {
-                    location: location.clone(),
-                    return_type: TypeLoc::new(return_loc.clone(), return_type.clone()),
+                    location: *location,
+                    return_type: TypeLoc::new(*return_loc, return_type.clone()),
                     parameters,
                 };
                 self.known_functions.insert(name.clone(), func);
@@ -623,9 +623,9 @@ impl<'flags> TypeChecker<'flags> {
         match self.known_externs.get(name) {
             Some(f) => self.report_error(TypeError::Redeclaration(
                 "Extern",
-                location.clone(),
+                *location,
                 name.clone(),
-                f.location.clone(),
+                f.location,
             )),
             None => {
                 let return_type = &extern_node.return_type.typ;
@@ -635,13 +635,13 @@ impl<'flags> TypeChecker<'flags> {
                     .iter()
                     .map(|param| Variable {
                         name: param.name.clone(),
-                        location: param.location.clone(),
+                        location: param.location,
                         typ: param.typ.typ.clone(),
                     })
                     .collect();
                 let func = Function {
-                    location: location.clone(),
-                    return_type: TypeLoc::new(return_loc.clone(), return_type.clone()),
+                    location: *location,
+                    return_type: TypeLoc::new(*return_loc, return_type.clone()),
                     parameters,
                 };
                 self.known_externs.insert(name.clone(), func);
@@ -656,17 +656,17 @@ impl<'flags> TypeChecker<'flags> {
         if class.known_methods.get(name).is_some() {
             self.report_error(TypeError::Redeclaration(
                 "Method",
-                location.clone(),
+                *location,
                 name.clone(),
-                class.location.clone(),
+                class.location,
             ));
         } else {
             let return_type = &method.return_type.typ;
             let return_loc = &method.return_type.location;
             let (parameters, errors) = check_parameters!(self, method, true);
             let method = Function {
-                location: location.clone(),
-                return_type: TypeLoc::new(return_loc.clone(), return_type.clone()),
+                location: *location,
+                return_type: TypeLoc::new(*return_loc, return_type.clone()),
                 parameters,
             };
             class.known_methods.insert(name.clone(), method);
@@ -686,17 +686,17 @@ impl<'flags> TypeChecker<'flags> {
         if class.known_constructors.len() > 0 {
             self.report_error(TypeError::Redeclaration(
                 "Constructor",
-                location.clone(),
+                *location,
                 class.name.to_string(),
-                class.location.clone(),
+                class.location,
             ));
         } else {
             let return_type = &constructor.return_type.typ;
             let return_loc = &constructor.return_type.location;
             let (parameters, errors) = check_parameters!(self, constructor, true);
             let constructor = Function {
-                location: location.clone(),
-                return_type: TypeLoc::new(return_loc.clone(), return_type.clone()),
+                location: *location,
+                return_type: TypeLoc::new(*return_loc, return_type.clone()),
                 parameters,
             };
             class.known_constructors.push(constructor);
@@ -716,14 +716,14 @@ impl<'flags> TypeChecker<'flags> {
                 Some(class) => {
                     let err = TypeError::Redeclaration(
                         "Class",
-                        c.location.clone(),
+                        c.location,
                         c.name.clone(),
-                        class.location.clone(),
+                        class.location,
                     );
                     self.report_error(err);
                 },
                 None => {
-                    let mut class = Class::new(c.name.clone(), c.location.clone(), c.constructors.len() > 0);
+                    let mut class = Class::new(c.name.clone(), c.location, c.constructors.len() > 0);
                     for field in &c.fields {
                         if let Err(error) = class.add_field(field) {
                             self.report_error(error);
@@ -858,7 +858,7 @@ impl<'flags> TypeChecker<'flags> {
             "this".to_string(),
             Variable::new(
                 "this".to_string(),
-                constructor.location.clone(),
+                constructor.location,
                 Type::Class(class_name.to_string()),
             ),
         );
@@ -972,9 +972,9 @@ impl<'flags> TypeChecker<'flags> {
             Some(var) => {
                 self.report_error(TypeError::Redeclaration(
                     "Variable",
-                    let_node.location.clone(),
+                    let_node.location,
                     let_node.name.clone(),
-                    var.location.clone(),
+                    var.location,
                 ));
             },
             None => {
@@ -984,7 +984,7 @@ impl<'flags> TypeChecker<'flags> {
 
                 let var = Variable {
                     name: let_node.name.clone(),
-                    location: let_node.location.clone(),
+                    location: let_node.location,
                     typ: let_node.typ.typ.clone(),
                 };
                 let expected_type = &let_node.typ.typ;
@@ -1046,7 +1046,7 @@ impl<'flags> TypeChecker<'flags> {
             // We're returning from a normal function
             let Some(function) = self.known_functions.get(&return_node.function) else { unreachable!() };
             let expected_return_type = function.return_type.t.clone();
-            let location = function.location.clone();
+            let location = function.location;
             debug_assert!(expected_return_type != Type::Unknown);
             (expected_return_type, location)
         } else {
@@ -1055,7 +1055,7 @@ impl<'flags> TypeChecker<'flags> {
             let (mut location, mut expected_return_type) = (Location::anonymous(), Type::Unknown);
             if let Some(method) = class.known_methods.get(&return_node.function) {
                 expected_return_type = method.return_type.t.clone();
-                location = method.location.clone();
+                location = method.location;
             }
             debug_assert!(expected_return_type != Type::Unknown);
             debug_assert!(location != Location::anonymous());
@@ -1066,9 +1066,9 @@ impl<'flags> TypeChecker<'flags> {
             if expected_return_type == Type::None {
                 // Found expression but expected none, makes no sense
                 self.report_error(TypeError::WrongReturnType(
-                    return_node.location.clone(),
+                    return_node.location,
                     Type::None,
-                    location.clone(),
+                    location,
                     expected_return_type.clone(),
                 ));
             }
@@ -1089,9 +1089,9 @@ impl<'flags> TypeChecker<'flags> {
             } else if expr_type != expected_return_type {
                 // Signature expects `expected_return_type`, `return {expr}` has other type for expr
                 self.report_error(TypeError::WrongReturnType(
-                    return_node.location.clone(),
+                    return_node.location,
                     expr_type,
-                    location.clone(),
+                    location,
                     expected_return_type.clone(),
                 ));
                 expected_return_type
@@ -1103,8 +1103,8 @@ impl<'flags> TypeChecker<'flags> {
         } else if expected_return_type != Type::None {
             // No return expression, but we expected return value
             self.report_error(TypeError::MissingReturn(
-                return_node.location.clone(),
-                location.clone(),
+                return_node.location,
+                location,
                 expected_return_type.clone(),
             ));
             return_node.typ = expected_return_type.clone();
@@ -1174,26 +1174,26 @@ impl<'flags> TypeChecker<'flags> {
             nodes::Expression::Literal(lit_node) => {
                 if lit_node.typ != Type::Unknown && lit_node.typ != *typ {
                     self.report_error(TypeError::TypeMismatch(
-                        lit_node.location.clone(),
+                        lit_node.location,
                         typ.clone(),
                         lit_node.typ.clone(),
                     ));
                 } else if let Type::Arr(_, _) = typ {
                     self.report_error(TypeError::UnexpectedLiteral(
                         "array",
-                        lit_node.location.clone(),
+                        lit_node.location,
                         lit_node.value.clone(),
                     ));
                 } else if let Type::Class(_) = typ {
                     self.report_error(TypeError::UnexpectedLiteral(
                         "class instance",
-                        lit_node.location.clone(),
+                        lit_node.location,
                         lit_node.value.clone(),
                     ));
                 } else if *typ == Type::Bool {
                     self.report_error(TypeError::UnexpectedLiteral(
                         "boolean",
-                        lit_node.location.clone(),
+                        lit_node.location,
                         lit_node.value.clone(),
                     ));
                 } else {
@@ -1206,7 +1206,7 @@ impl<'flags> TypeChecker<'flags> {
                     name_node.typ = typ.clone();
                 } else if name_node.typ != *typ {
                     self.report_error(TypeError::TypeMismatch(
-                        name_node.location.clone(),
+                        name_node.location,
                         typ.clone(),
                         name_node.typ.clone(),
                     ));
@@ -1222,14 +1222,14 @@ impl<'flags> TypeChecker<'flags> {
                         );
                         if expr_type != Type::I32 && expr_type != Type::I64 {
                             self.report_error(TypeError::NegationTypeMismatch(
-                                unary_node.location.clone(),
+                                unary_node.location,
                                 typ.clone(),
                             ));
                         } else if expr_type == Type::Unknown {
                             unary_node.typ = typ.clone();
                         } else if expr_type != *typ {
                             self.report_error(TypeError::TypeMismatch(
-                                unary_node.location.clone(),
+                                unary_node.location,
                                 typ.clone(),
                                 expr_type.clone(),
                             ));
@@ -1261,7 +1261,7 @@ impl<'flags> TypeChecker<'flags> {
             }
             None => {
                 self.report_error(TypeError::UndeclaredVariable(
-                    name_node.location.clone(),
+                    name_node.location,
                     name_node.name.clone(),
                 ));
                 Type::None
@@ -1281,7 +1281,7 @@ impl<'flags> TypeChecker<'flags> {
                     return Type::Unknown;
                 } else if expr_type != Type::I32 && expr_type != Type::I64 {
                     self.report_error(TypeError::NegationTypeMismatch(
-                        unary_expr.location.clone(),
+                        unary_expr.location,
                         expr_type.clone(),
                     ));
                 }
@@ -1326,7 +1326,7 @@ impl<'flags> TypeChecker<'flags> {
             (Type::Class(..), _) | (_, Type::Class(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 self.report_error(TypeError::BinaryTypeMismatch(
-                    binary_expr.location.clone(),
+                    binary_expr.location,
                     binary_expr.operation.clone(),
                     binary_expr.lhs.get_loc(),
                     lhs_type.clone(),
@@ -1338,7 +1338,7 @@ impl<'flags> TypeChecker<'flags> {
             (Type::Arr(..), _) | (_, Type::Arr(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 self.report_error(TypeError::BinaryTypeMismatch(
-                    binary_expr.location.clone(),
+                    binary_expr.location,
                     binary_expr.operation.clone(),
                     binary_expr.lhs.get_loc(),
                     lhs_type.clone(),
@@ -1349,7 +1349,7 @@ impl<'flags> TypeChecker<'flags> {
             }
             (Type::Bool, _) | (_, Type::Bool) => {
                 self.report_error(TypeError::BinaryTypeMismatch(
-                    binary_expr.location.clone(),
+                    binary_expr.location,
                     binary_expr.operation.clone(),
                     binary_expr.lhs.get_loc(),
                     lhs_type.clone(),
@@ -1372,7 +1372,7 @@ impl<'flags> TypeChecker<'flags> {
             (lhs, rhs) => {
                 if lhs != rhs {
                     self.report_error(TypeError::BinaryTypeMismatch(
-                        binary_expr.location.clone(),
+                        binary_expr.location,
                         binary_expr.operation.clone(),
                         binary_expr.lhs.get_loc(),
                         lhs.clone(),
@@ -1400,7 +1400,7 @@ impl<'flags> TypeChecker<'flags> {
             (typ @ Type::Class(..), _) | (_, typ @ Type::Class(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 self.report_error(TypeError::BinaryTypeMismatch(
-                    binary_expr.location.clone(),
+                    binary_expr.location,
                     binary_expr.operation.clone(),
                     binary_expr.lhs.get_loc(),
                     lhs_type.clone(),
@@ -1413,7 +1413,7 @@ impl<'flags> TypeChecker<'flags> {
             (typ @ Type::Arr(..), _) | (_, typ @ Type::Arr(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 self.report_error(TypeError::BinaryTypeMismatch(
-                    binary_expr.location.clone(),
+                    binary_expr.location,
                     binary_expr.operation.clone(),
                     binary_expr.lhs.get_loc(),
                     lhs_type.clone(),
@@ -1425,7 +1425,7 @@ impl<'flags> TypeChecker<'flags> {
             }
             (Type::Bool, _) | (_, Type::Bool) => {
                 self.report_error(TypeError::BinaryTypeMismatch(
-                    binary_expr.location.clone(),
+                    binary_expr.location,
                     binary_expr.operation.clone(),
                     binary_expr.lhs.get_loc(),
                     lhs_type.clone(),
@@ -1452,7 +1452,7 @@ impl<'flags> TypeChecker<'flags> {
             (lhs, rhs) => {
                 if lhs != rhs {
                     self.report_error(TypeError::BinaryTypeMismatch(
-                        binary_expr.location.clone(),
+                        binary_expr.location,
                         binary_expr.operation.clone(),
                         binary_expr.lhs.get_loc(),
                         lhs.clone(),
@@ -1481,7 +1481,7 @@ impl<'flags> TypeChecker<'flags> {
             (Type::Class(..), _) | (_, Type::Class(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 self.report_error(TypeError::BinaryTypeMismatch(
-                    binary_expr.location.clone(),
+                    binary_expr.location,
                     binary_expr.operation.clone(),
                     binary_expr.lhs.get_loc(),
                     lhs_type.clone(),
@@ -1493,7 +1493,7 @@ impl<'flags> TypeChecker<'flags> {
             (Type::Arr(..), _) | (_, Type::Arr(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 self.report_error(TypeError::BinaryTypeMismatch(
-                    binary_expr.location.clone(),
+                    binary_expr.location,
                     binary_expr.operation.clone(),
                     binary_expr.lhs.get_loc(),
                     lhs_type.clone(),
@@ -1526,7 +1526,7 @@ impl<'flags> TypeChecker<'flags> {
             (lhs, rhs) => {
                 if lhs != rhs {
                     self.report_error(TypeError::BinaryTypeMismatch(
-                        binary_expr.location.clone(),
+                        binary_expr.location,
                         binary_expr.operation.clone(),
                         binary_expr.lhs.get_loc(),
                         lhs.clone(),
@@ -1568,7 +1568,7 @@ impl<'flags> TypeChecker<'flags> {
             typ
         } else if lhs_type != rhs_type {
             self.report_error(TypeError::TypeMismatch(
-                assign_expr.location.clone(),
+                assign_expr.location,
                 lhs_type.clone(),
                 rhs_type.clone(),
             ));
@@ -1605,9 +1605,9 @@ impl<'flags> TypeChecker<'flags> {
                         field.t.clone()
                     } else {
                         self.report_error(TypeError::UnknownField(
-                            name_node.location.clone(),
+                            name_node.location,
                             name_node.name.clone(),
-                            class.location.clone(),
+                            class.location,
                             class.name.clone(),
                         ));
                         Type::None
@@ -1621,9 +1621,9 @@ impl<'flags> TypeChecker<'flags> {
                         result
                     } else {
                         self.report_error(TypeError::UnknownMethod(
-                            call_node.location.clone(),
+                            call_node.location,
                             call_node.function_name.clone(),
-                            class.location.clone(),
+                            class.location,
                             class.name.clone(),
                         ));
                         Type::None
@@ -1682,22 +1682,22 @@ impl<'flags> TypeChecker<'flags> {
         // FIXME: This is a mess
         let Some(var) = self.get_variable(&access.array_name) else {
             self.report_error(TypeError::UndeclaredVariable(
-                access.location.clone(),
+                access.location,
                 access.array_name.clone(),
             ));
             return Type::None;
         };
         let Type::Arr(elem, arr_size) = &var.typ else {
             self.report_error(TypeError::IndexIntoNonArray(
-                access.location.clone(),
+                access.location,
                 access.array_name.clone(),
-                var.location.clone(),
+                var.location,
             ));
             return Type::None;
         };
         if arr_size.len() != access.indices.elements.len() {
             self.report_error(TypeError::DimensionMismatch(
-                access.location.clone(),
+                access.location,
                 arr_size.len(),
                 access.indices.elements.len(),
             ));
@@ -1706,7 +1706,7 @@ impl<'flags> TypeChecker<'flags> {
         if let Type::Arr(elem_index, _) = t {
             if *elem_index != Type::Usize {
                 self.report_error(TypeError::TypeMismatch(
-                    access.indices.location.clone(),
+                    access.indices.location,
                     Type::Usize,
                     *elem_index.clone(),
                 ));
@@ -1762,8 +1762,8 @@ impl<'flags> TypeChecker<'flags> {
             if let Some(class) = self.known_classes.get(&func_call.function_name) {
                 let Some(constructor) = class.known_constructors.get(0) else {
                     self.report_error(TypeError::NoConstructor(
-                        func_call.location.clone(),
-                        class.location.clone(),
+                        func_call.location,
+                        class.location,
                         class.name.clone(),
                     ));
                     return Type::None;
@@ -1777,7 +1777,7 @@ impl<'flags> TypeChecker<'flags> {
                 constructor
             } else {
                 self.report_error(TypeError::UndeclaredClass(
-                    func_call.location.clone(),
+                    func_call.location,
                     func_call.function_name.clone(),
                 ));
                 return Type::None;
@@ -1785,7 +1785,7 @@ impl<'flags> TypeChecker<'flags> {
         } else {
             let Some(function) = self.known_functions.get(&func_call.function_name) else {
                 self.report_error(TypeError::UndeclaredFunction(
-                    func_call.location.clone(),
+                    func_call.location,
                     func_call.function_name.clone(),
                 ));
                 return Type::None;
@@ -1796,7 +1796,7 @@ impl<'flags> TypeChecker<'flags> {
         if let Type::Class(class_name) = &return_type.t {
             if !self.known_classes.contains_key(class_name) {
                 self.report_error(TypeError::UndeclaredClass(
-                    func_call.location.clone(),
+                    func_call.location,
                     class_name.clone(),
                 ));
                 self.report_error(TypeError::UnknownType(
@@ -1822,7 +1822,7 @@ impl<'flags> TypeChecker<'flags> {
         if let Type::Class(class_name) = &type_node.typ {
             if !self.known_classes.contains_key(class_name) {
                 self.report_error(TypeError::UnknownType(
-                    type_node.location.clone(),
+                    type_node.location,
                     type_node.typ.clone(),
                 ));
             }
