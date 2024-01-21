@@ -350,6 +350,12 @@ pub enum IR {
         src2: Operand,
     },
 
+    // Unary
+    Negate {
+        dst: Operand,
+        src: Operand,
+    },
+
     // Control Flow
     Label {
         name: String,
@@ -472,6 +478,9 @@ impl Debug for IR {
             Self::Xor { dst, src1, src2 } => {
                 write!(f, "BitwiseXor dst: {:?}, src1: {:?}, src2: {:?}", dst, src1, src2)
             }
+
+            // Unary
+            Self::Negate { dst, src } => write!(f, "Negate dst: {:?}, src: {:?}", dst, src),
 
             // Control Flow
             Self::Label { name } => write!(f, "Label name: {:?}", name),

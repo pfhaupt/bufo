@@ -449,7 +449,7 @@ impl<'flags> Assembler<'flags> {
                             push_asm(format!("  pop {rem}").as_str());
                             push_asm(format!("  mov {dst_reg}, {acc}").as_str());
                         }
-                        (OperandType::Reg, OperandType::ImmI32) => {
+                        (OperandType::Reg, OperandType::ImmI32 | OperandType::ImmU32) => {
                             // IDIV and DIV have no immediate mode, we need to use a register
                             let value = src2.off_or_imm;
                             push_asm(format!("  mov {acc}, {dst_reg}").as_str());
@@ -696,6 +696,32 @@ impl<'flags> Assembler<'flags> {
                         }
                     }
                 }
+
+                // Unary
+                IR::Negate { dst, src } => {
+                    debug_assert!(dst == src);
+                    debug_assert!(dst.reg != instr::Register::None);
+                    let dst_reg = reg(dst.reg, dst.reg_mode);
+                    match dst.typ {
+                        OperandType::Reg => {
+                            push_asm(format!("  neg {dst_reg}",).as_str());
+                        }
+                        OperandType::Offset => {
+                            let offset = dst.off_or_imm;
+                            let size = dst.reg_mode.size();
+                            push_asm(format!("  neg [rbp-{offset}-{size}]",).as_str());
+                        }
+                        dst => {
+                            return Err(format!(
+                                "Internal Error: {}:{}:{}: Can't generate ASM for `neg {dst:?}",
+                                file!(),
+                                line!(),
+                                column!()
+                            ));
+                        }
+                    }
+                }
+
                 // Control Flow
                 IR::Label { name } => push_asm(format!("{name}:").as_str()),
                 IR::Test { src1, src2 } => {

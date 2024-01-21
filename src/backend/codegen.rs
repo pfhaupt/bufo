@@ -750,8 +750,27 @@ impl Codegenable for nodes::LiteralNode {
 }
 
 impl Codegenable for nodes::UnaryNode {
-    fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        todo!()
+    fn codegen(&self, codegen: &mut Codegen) -> Result<instr::Operand, String> {
+        match self.operation {
+            Operation::Negate => {
+                let expr = self.expression.codegen(codegen)?;
+                debug_assert!(expr != instr::Operand::none());
+                debug_assert!(self.typ == Type::I32 || self.typ == Type::I64);
+                let reg = codegen.get_register()?;
+                let reg_mode = instr::RegMode::from(&self.typ);
+                let reg = instr::Operand::reg(reg, reg_mode);
+                codegen.add_ir(instr::IR::Move { dst: reg, src: expr });
+                codegen.add_ir(instr::IR::Negate {
+                    dst: reg,
+                    src: reg,
+                });
+                Ok(reg)
+            },
+            e => internal_error!(format!(
+                "Unexpected Operation {:?} in ExpressionUnaryNode::codegen()!",
+                e
+            )),
+        }
     }
 }
 
