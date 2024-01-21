@@ -8,7 +8,7 @@ use crate::frontend::parser::{Operation, CONSTRUCTOR_KEYWORD};
 use crate::middleend::type_checker::Type;
 use crate::util::flags::Flags;
 
-use crate::internal_error;
+use crate::internal_panic;
 
 use tracer::trace_call;
 
@@ -285,7 +285,7 @@ impl<'flags> Codegen<'flags> {
         self.register_counter += 1;
         let v = self.register_counter;
         if self.register_counter == instr::Register::__COUNT as usize {
-            internal_error!("We have run out of registers to assign!!")
+            internal_panic!("We have run out of registers to assign!!")
         } else {
             let reg = instr::Register::from(v);
             if reg == instr::Register::Rsp || reg == instr::Register::Rbp {
@@ -678,7 +678,7 @@ impl Codegenable for nodes::ContinueNode {
 impl Codegenable for nodes::TypeNode {
     #[trace_call(always)]
     fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        internal_error!("TypeNode::codegen() is not implemented yet.")
+        internal_panic!("TypeNode::codegen() is not implemented yet.")
     }
 }
 impl Codegenable for nodes::Expression {
@@ -699,13 +699,13 @@ impl Codegenable for nodes::Expression {
 impl Codegenable for nodes::ArrayLiteralNode {
     #[trace_call(always)]
     fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        internal_error!("ExpressionArrayLiteralNode::codegen() is not implemented yet")
+        internal_panic!("ExpressionArrayLiteralNode::codegen() is not implemented yet")
     }
 }
 impl Codegenable for nodes::ArrayAccessNode {
     #[trace_call(always)]
     fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        internal_error!("ExpressionArrayAccessNode::codegen() is not implemented yet")
+        internal_panic!("ExpressionArrayAccessNode::codegen() is not implemented yet")
     }
 }
 impl Codegenable for nodes::LiteralNode {
@@ -741,7 +741,7 @@ impl Codegenable for nodes::LiteralNode {
             Type::U64 => parse_num!(u64, imm_u64),
             Type::Usize => parse_num!(u64, imm_u64),
             Type::Bool => parse_bool(&self.value),
-            t => internal_error!(format!(
+            t => internal_panic!(format!(
                 "Unexpected Type {:?} in ExpressionLiteralNode::codegen()!",
                 t
             )),
@@ -766,7 +766,7 @@ impl Codegenable for nodes::UnaryNode {
                 });
                 Ok(reg)
             },
-            e => internal_error!(format!(
+            e => internal_panic!(format!(
                 "Unexpected Operation {:?} in ExpressionUnaryNode::codegen()!",
                 e
             )),
@@ -1014,10 +1014,10 @@ impl Codegenable for nodes::BinaryNode {
                                     });
                                 }
                                 op => {
-                                    return internal_error!(format!(
+                                    internal_panic!(format!(
                                         "ExpressionCallNode::codegen() can't handle argument type `{:?}` yet.",
                                         op
-                                    ));
+                                    ))
                                 }
                             }
                         }
@@ -1117,10 +1117,10 @@ impl Codegenable for nodes::CallNode {
                     });
                 }
                 op => {
-                    return internal_error!(format!(
+                    internal_panic!(format!(
                         "ExpressionCallNode::codegen() can't handle argument type `{:?}` yet.",
                         op
-                    ));
+                    ))
                 }
             }
         }
@@ -1151,6 +1151,6 @@ impl Codegenable for nodes::NameNode {
 impl Codegenable for nodes::BuiltInNode {
     #[trace_call(always)]
     fn codegen(&self, _codegen: &mut Codegen) -> Result<instr::Operand, String> {
-        internal_error!("ExpressionBuiltInNode::codegen() is not implemented yet")
+        internal_panic!("ExpressionBuiltInNode::codegen() is not implemented yet")
     }
 }

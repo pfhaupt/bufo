@@ -10,7 +10,7 @@ use super::instr::{RegMode, Register};
 
 use crate::compiler::{ERR_STR, FILE_EXT, OUTPUT_FOLDER};
 use crate::util::flags::Flags;
-use crate::internal_error;
+use crate::internal_panic;
 
 use tracer::trace_call;
 
@@ -100,7 +100,7 @@ impl<'flags> Assembler<'flags> {
                             push_asm(format!("  mov {dst_reg}, {immediate}").as_str());
                         }
                         i => {
-                            return internal_error!(format!("Can't generate ASM for `LoadImm {i:?}"));
+                            internal_panic!(format!("Can't generate ASM for `LoadImm {i:?}"));
                         },
                     }
                 }
@@ -148,7 +148,7 @@ impl<'flags> Assembler<'flags> {
                         push_asm(format!("  mov [{dst}], {src}").as_str());
                     }
                     (lhs, rhs) => {
-                        return internal_error!(format!("Can't generate ASM for `store {lhs:?}, {rhs:?}"));
+                        internal_panic!(format!("Can't generate ASM for `store {lhs:?}, {rhs:?}"));
                     },
                 },
                 IR::Load { dst, addr } => match (dst.typ, addr.typ) {
@@ -171,7 +171,7 @@ impl<'flags> Assembler<'flags> {
                         push_asm(format!("  mov {dst}, [{src}]").as_str());
                     }
                     (lhs, rhs) => {
-                        return internal_error!(format!("Can't generate ASM for `load {lhs:?}, {rhs:?}"));
+                        internal_panic!(format!("Can't generate ASM for `load {lhs:?}, {rhs:?}"));
                     },
                 },
                 IR::Move { dst, src } => match (dst.typ, src.typ) {
@@ -207,7 +207,7 @@ impl<'flags> Assembler<'flags> {
                         push_asm(format!("  mov {dst}, {imm}").as_str());
                     }
                     (lhs, rhs) => {
-                        return internal_error!(format!("Can't generate ASM for `move {lhs:?}, {rhs:?}"));
+                        internal_panic!(format!("Can't generate ASM for `move {lhs:?}, {rhs:?}"));
                     },
                 },
 
@@ -243,7 +243,7 @@ impl<'flags> Assembler<'flags> {
                             push_asm("  pop rax");
                         }
                         (dst, src) => {
-                            return internal_error!(format!("Can't generate ASM for `add {dst:?}, {src:?}"));
+                            internal_panic!(format!("Can't generate ASM for `add {dst:?}, {src:?}"));
                         }
                     }
                 }
@@ -325,9 +325,9 @@ impl<'flags> Assembler<'flags> {
                                 push_asm(format!("  imul {dst_reg}, [rbp-{offset}-{size}]").as_str());
                             }
                             (dst, src) => {
-                                return internal_error!(format!(
+                                internal_panic!(format!(
                                     "Can't generate ASM for `imul {dst:?}, {src:?}"
-                                ));
+                                ))
                             }
                         }
                     } else {
@@ -399,9 +399,9 @@ impl<'flags> Assembler<'flags> {
                                 push_asm("pop rax");
                             }
                             (dst, src) => {
-                                return internal_error!(format!(
+                                internal_panic!(format!(
                                     "Can't generate ASM for `mul {dst:?}, {src:?}"
-                                ));
+                                ))
                             }
                         }
                     }

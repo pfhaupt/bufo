@@ -814,6 +814,7 @@ impl<'flags> TypeChecker<'flags> {
             self.type_check_parameter(p);
         }
         self.type_check_type_node(&mut extern_node.return_type);
+        self.current_stack_size = 0;
     }
 
     #[trace_call(always)]

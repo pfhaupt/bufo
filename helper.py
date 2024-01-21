@@ -6,7 +6,7 @@ import sys
 from dataclasses import dataclass
 from enum import Enum
 
-COMPILER_PATH = "./target/release/bufo"
+COMPILER_PATH = "./target/debug/bufo"
 
 USE_LLVM = True
 
@@ -140,10 +140,9 @@ def run_test(path: str, exec: bool) -> TestResult:
 
 def recompile_compiler() -> None:
     print("Recompiling compiler...")
-    if USE_LLVM:
-        cmd = call_cmd(["cargo", "build", "--release", "--features=llvm"])
-    else:
-        cmd = call_cmd(["cargo", "build", "--release"])
+    cargo = ["cargo", "build"]
+    command = cargo + ["--features=llvm"] if USE_LLVM else cargo
+    cmd = call_cmd(command)
     if cmd.returncode != 0:
         print("Failed to recompile compiler", file=sys.stderr)
         print(cmd.stderr.decode("utf-8"), file=sys.stderr)
@@ -197,11 +196,6 @@ def run_fuzzer(limit: int, threads: int):
     from fuzz.fuzzer import Fuzzer
     fuzzer = Fuzzer(call_cmd, [COMPILER_PATH, "-i"], limit, threads)
     fuzzer.run()
-    for root, _, files in os.walk("./out/"):
-        for filename in files:
-            path = os.path.join(root, filename)
-            if os.path.isfile(path):
-                os.remove(path)
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:

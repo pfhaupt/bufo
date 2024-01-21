@@ -37,33 +37,6 @@ macro_rules! internal_panic {
     };
 }
 
-#[macro_export]
-macro_rules! internal_error {
-    ($msg:expr) => {
-        Err(format!(
-            "INTERNAL ERROR AT {}:{}:{}: {}\n{}: This is a bug in the compiler, please report it in the issue tracker at the GitHub repository.",
-            file!(),
-            line!(),
-            column!(),
-            $msg,
-            crate::compiler::ERR_STR
-        ))
-    };
-}
-
-#[macro_export]
-macro_rules! internal_warning {
-    ($msg:expr) => {
-        eprintln!(
-            "INTERNAL WARNING AT {}:{}:{}: {}",
-            file!(),
-            line!(),
-            column!(),
-            $msg,
-        )
-    };
-}
-
 #[cfg(not(feature = "llvm"))]
 pub struct Compiler<'flags> {
     parser: Parser<'flags>,

@@ -1,13 +1,13 @@
 # TODO: Pass those values as arguments to the fuzzer
 MAX_MAX = 5
-MAX_EXTERN = 0 # 10
-MAX_CLASSES = 0 # 10
-MAX_FIELDS = 0 # 10
+MAX_EXTERN = MAX_MAX # 10
+MAX_CLASSES = MAX_MAX # 10
+MAX_FIELDS = MAX_MAX # 10
 MAX_FUNCTIONS = MAX_MAX # 10
-MAX_CONSTRUCTORS = 1 # 10
-MAX_STATEMENTS = 15 # 10
-MAX_RANDOM_CHARS = 10
-MAX_DEPTH = 5
+MAX_CONSTRUCTORS = MAX_MAX # 10
+MAX_STATEMENTS = MAX_MAX # 10
+MAX_RANDOM_CHARS = MAX_MAX
+MAX_DEPTH = MAX_MAX
 
 USE_FLOAT = False
 if USE_FLOAT:
@@ -61,7 +61,7 @@ class Fuzzer:
 
     def generate_expression(self) -> str:
         if self.expr_depth >= MAX_DEPTH:
-            return ""
+            return "1"
         self.expr_depth += 1
         odds = random.randint(0, 100)
         src = ""
@@ -92,7 +92,9 @@ class Fuzzer:
         return ", ".join([self.generate_expression() for _ in range(random.randint(0, MAX_STATEMENTS))])
 
     def generate_call(self) -> str:
-        if random.randint(0, 100) <= 90 and len(self.functions) > 0:
+        if random.randint(0, 100) <= 90 and len(self.classes) > 0:
+            return f"{random.choice(self.classes)}({self.generate_arguments()})"
+        elif random.randint(0, 100) <= 90 and len(self.functions) > 0:
             return f"{random.choice(self.functions)}({self.generate_arguments()})"
         else:
             return f"{self.generate_identifier()}({self.generate_arguments()})"
@@ -159,7 +161,7 @@ class Fuzzer:
 
     def generate_block(self) -> str:
         if self.stmt_depth >= MAX_DEPTH:
-            return ""
+            return "{}"
         self.stmt_depth += 1
         self.scopes.append([])
         if random.randint(0, 100) < 5:
@@ -250,6 +252,8 @@ class Fuzzer:
             elif output.returncode == 0:
                 print(f"Thread {thread} generated valid code: {filename}")
                 os.rename(filename, f"./fuzz/valid/fuzz_{thread}_{i}.bu")
+                os.remove(f"./out/{filename.split('/')[-1].split('.')[0]}.obj")
+                os.remove(f"./out/{filename.split('/')[-1].split('.')[0]}.exe")
             elif output.returncode != 1:
                 print(f"Thread {thread} generated code with return code {output.returncode}: {filename}")
                 os.rename(filename, f"./fuzz/whack/fuzz_{thread}_{i}.bu")

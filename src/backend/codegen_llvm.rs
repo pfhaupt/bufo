@@ -4,7 +4,7 @@ use crate::frontend::nodes;
 use crate::frontend::parser::Operation;
 use crate::util::flags::Flags;
 use crate::compiler::{OUTPUT_FOLDER, FILE_EXT, ERR_STR};
-use crate::internal_error;
+use crate::internal_panic;
 
 use inkwell::context::Context;
 use inkwell::module::Module;
@@ -296,7 +296,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             Ok(_) => (),
             Err(e) => {
                 self.module.print_to_stderr();
-                return internal_error!(format!("Module verification failed: {}", e.to_string()))
+                internal_panic!(format!("Module verification failed: {}", e.to_string()))
             },
         }
         if self.flags.debug {
@@ -600,7 +600,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     fn codegen_function_call(&mut self, function_call: &nodes::CallNode) -> Result<BasicValueEnum<'ctx>, String> {
         let name = function_call.function_name.clone();
         if !self.module.get_function(&name).is_some() {
-            return internal_error!("Could not find function {}");
+            internal_panic!("Could not find function {}");
         }
         let function = self.module.get_function(&name).unwrap();
         let mut args = Vec::new();
@@ -852,7 +852,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                     nodes::Expression::FunctionCall(method_call) => {
                         let method_name = format!("{}_{}", class_name, method_call.function_name);
                         if !self.module.get_function(&method_name).is_some() {
-                            return internal_error!("Could not find function {}");
+                            internal_panic!("Could not find function {}");
                         }
                         let method = self.module.get_function(&method_name).unwrap();
                         let mut args = Vec::new();
@@ -867,7 +867,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                             Ok(result.try_as_basic_value().left().unwrap())
                         }
                     }
-                    e => internal_error!(
+                    e => internal_panic!(
                         format!("This should never happen: Found {:?} as rhs of Dot operation!", e)
                     ),
                 }
