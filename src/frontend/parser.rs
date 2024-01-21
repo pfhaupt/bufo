@@ -403,7 +403,7 @@ pub struct Parser<'flags> {
     current_externs: Vec<String>,
     line_start: usize,
     errors: Vec<ParserError>,
-    bracket_level: usize,
+    bracket_level: i32,
     flags: &'flags Flags,
 }
 
