@@ -1,3 +1,8 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! FAILURE
+//! CODE: 1757
+
 class Foo {
     t: Test;
     // constructor(this: Foo) {}

@@ -1,3 +1,7 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
 func main() -> u64 {
     let a: u64 = 0;
     return a;

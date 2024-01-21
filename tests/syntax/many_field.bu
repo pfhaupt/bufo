@@ -1,0 +1,36 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Field redeclaration.
+//! Field `a` already declared here.
+//! Field redeclaration.
+//! Field `b` already declared here.
+//! Field redeclaration.
+//! Field `c` already declared here.
+//! Method redeclaration.
+//! Method `foo` already declared here.
+//! Method redeclaration.
+//! Method `bar` already declared here.
+//! Constructor redeclaration.
+//! Constructor `Foo` already declared here.
+
+class Foo {
+    a: i32;
+    b: i32;
+    c: i32;
+    d: i32;
+    a: i32;
+    b: u32;
+    c: u32;
+    d: u32;
+
+    func foo() {}
+    func foo() {}
+    func bar() {}
+    func bar() {}
+
+    constructor() {}
+    constructor() {}
+}

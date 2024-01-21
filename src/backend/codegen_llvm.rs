@@ -522,19 +522,25 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             // Emit then block.
             self.builder.position_at_end(then_bb);
             self.codegen_block(&if_node.if_body)?;
+            let then_bb = self.builder.get_insert_block().unwrap();
 
             // Emit else block.
             self.builder.position_at_end(else_bb);
             self.codegen_block(else_body)?;
+            let else_bb = self.builder.get_insert_block().unwrap();
             match (if_node.if_body.llvm_has_terminator, else_body.llvm_has_terminator) {
                 (true, true) => (),
                 (true, false) => {
+                    let cont_bb = self.context.append_basic_block(parent, "codegen_stmt_if_after");
                     self.builder.position_at_end(else_bb);
-                    self.builder.build_unconditional_branch(else_bb);
+                    self.builder.build_unconditional_branch(cont_bb);
+                    self.builder.position_at_end(cont_bb);
                 },
                 (false, true) => {
                     self.builder.position_at_end(then_bb);
-                    self.builder.build_unconditional_branch(then_bb);
+                    let cont_bb = self.context.append_basic_block(parent, "codegen_stmt_if_after");
+                    self.builder.build_unconditional_branch(cont_bb);
+                    self.builder.position_at_end(cont_bb);
                 },
                 (false, false) => {
                     let cont_bb = self.context.append_basic_block(parent, "codegen_stmt_if_after");
