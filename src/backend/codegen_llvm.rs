@@ -34,9 +34,8 @@ macro_rules! assert_is_int {
     };
 }
 
-macro_rules! codegen_function_header {
+macro_rules! fill_function_lookup {
     ($codegen:ident, $function:ident, $name:ident) => {
-
         // Prepare parameter types
         let mut param_types = Vec::new();
         for param in &$function.parameters {
@@ -51,12 +50,17 @@ macro_rules! codegen_function_header {
             let return_type = $codegen.codegen_type(&$function.return_type.typ);
             function_type = return_type.fn_type(&param_types, false);
         }
-        let function = $codegen.module.add_function(&$name, function_type, None);
+        let _function = $codegen.module.add_function(&$name, function_type, None);
+    };
+}
 
-        let entry = $codegen.context.append_basic_block(function, "entry");
+macro_rules! codegen_function_header {
+    ($codegen:ident, $function:ident, $name:ident) => {
+        let llvm_func = $codegen.module.get_function(&$name).unwrap();
+        let entry = $codegen.context.append_basic_block(llvm_func, "entry");
         $codegen.builder.position_at_end(entry);
         for (i, param) in $function.parameters.iter().enumerate() {
-            let func_param = function.get_nth_param(i as u32).unwrap();
+            let func_param = llvm_func.get_nth_param(i as u32).unwrap();
             func_param.set_name(&param.name);
             let param_alloc = $codegen.builder.build_alloca(func_param.get_type(), &param.name);
             $codegen.builder.build_store(param_alloc, func_param);
@@ -234,6 +238,24 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 println!("Class {} has size {}", class.name, self.sm.get_class_size(&class.name));
             }
         }
+        for class in &file.classes {
+            for method in &class.methods {
+                let name = format!("{}_{}", class.name, method.name);
+                fill_function_lookup!(self, method, name);
+            }
+            for constructor in &class.constructors {
+                let name = format!("{}_constructor", class.name);
+                fill_function_lookup!(self, constructor, name);
+            }
+        }
+        for function in &file.functions {
+            let name = function.name.clone();
+            fill_function_lookup!(self, function, name);
+        }
+        for external in &file.externs {
+            let name = external.name.clone();
+            fill_function_lookup!(self, external, name);
+        }
         Ok(())
     }
 
@@ -396,7 +418,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
 
         self.codegen_block(&method.block)?;
 
-        if method.return_type.typ == Type::None {
+        if method.return_type.typ == Type::None && !method.block.llvm_has_terminator {
             self.builder.build_return(None);
         } else {
             // Method is guaranteed to return a value in block codegen
@@ -415,7 +437,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
 
         self.codegen_block(&function.block)?;
 
-        if function.return_type.typ == Type::None {
+        if function.return_type.typ == Type::None && !function.block.llvm_has_terminator {
             self.builder.build_return(None);
         } else {
             // Function is guaranteed to return a value in block codegen
@@ -600,7 +622,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     fn codegen_function_call(&mut self, function_call: &nodes::CallNode) -> Result<BasicValueEnum<'ctx>, String> {
         let name = function_call.function_name.clone();
         if !self.module.get_function(&name).is_some() {
-            internal_panic!("Could not find function {}");
+            internal_panic!(format!("Could not find function {}", name));
         }
         let function = self.module.get_function(&name).unwrap();
         let mut args = Vec::new();
