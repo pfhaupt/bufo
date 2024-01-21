@@ -1,11 +1,19 @@
+# TODO: Pass those values as arguments to the fuzzer
 MAX_MAX = 5
-MAX_EXTERN = MAX_MAX # 10
-MAX_CLASSES = MAX_MAX # 10
-MAX_FIELDS = MAX_MAX # 10
+MAX_EXTERN = 0 # 10
+MAX_CLASSES = 0 # 10
+MAX_FIELDS = 0 # 10
 MAX_FUNCTIONS = MAX_MAX # 10
-MAX_STATEMENTS = MAX_MAX # 10
-MAX_RANDOM_CHARS = 1000
+MAX_CONSTRUCTORS = 1 # 10
+MAX_STATEMENTS = 15 # 10
+MAX_RANDOM_CHARS = 10
 MAX_DEPTH = 5
+
+USE_FLOAT = False
+if USE_FLOAT:
+    PRIMITIVE_TYPES = ["bool", "i32", "i64", "u32", "u64", "f32", "f64"]
+else:
+    PRIMITIVE_TYPES = ["bool", "i32", "i64", "u32", "u64"]
 
 from typing import List
 import random
@@ -39,11 +47,11 @@ class Fuzzer:
         class_name = class_name[0].upper() + class_name[1:]
         self.classes.append(class_name)
         src = f"class {class_name} {{\n"
-        for _ in range(random.randint(1, MAX_FIELDS)):
+        for _ in range(random.randint(0, MAX_FIELDS)):
             src += f"    {self.generate_field()}\n"
-        for _ in range(random.randint(1, MAX_FUNCTIONS)):
+        for _ in range(random.randint(0, MAX_FUNCTIONS)):
             src += f"    {self.generate_func()}\n"
-        for _ in range(random.randint(1, MAX_FUNCTIONS)):
+        for _ in range(random.randint(0, MAX_CONSTRUCTORS)):
             src += f"    {self.generate_constructor()}\n"
         src += "}\n"
         return src
@@ -67,6 +75,8 @@ class Fuzzer:
             src = self.generate_call()
         elif odds < 50:
             src = self.generate_field_access()
+        elif odds < 60:
+            src = f"({self.generate_expression()})"
         else:
             src = self.generate_literal()
         self.expr_depth -= 1
@@ -92,18 +102,19 @@ class Fuzzer:
 
     def generate_literal(self) -> str:
         odds = random.randint(0, 100)
+        max = 2 ** 64 - 1
         if odds < 20:
-            return str(random.randint(-100, 100))
+            return str(random.randint(-max, max))
         elif odds < 50:
             return random.choice(["true", "false"])
         else:
-            return str(random.randint(0, 100))
+            return str(random.randint(0, max))
 
     def generate_stmt_expression(self) -> str:
         return f"{self.generate_expression()};\n"
 
     def generate_stmt_let(self) -> str:
-        name = self.generate_identifier()
+        name = "".join([chr(random.randint(ord('a'), ord('z'))) for _ in range(random.randint(1, 10))])
         src = f"let {name}: {self.generate_type()} = {self.generate_expression()};\n"
         self.scopes[-1].append(name)
         return src
@@ -114,12 +125,12 @@ class Fuzzer:
     def generate_stmt_if(self) -> str:
         odds = random.randint(0, 100)
         if odds < 50:
-            return f"if ({self.generate_expression()}) {{\n{self.generate_block()}}}\n"
+            return f"if ({self.generate_expression()}) \n{self.generate_block()}\n"
         else:
-            return f"if ({self.generate_expression()}) {{\n{self.generate_block()}}} else {{\n{self.generate_block()}}}\n"
+            return f"if ({self.generate_expression()}) \n{self.generate_block()} else \n{self.generate_block()}\n"
 
     def generate_stmt_while(self) -> str:
-        return f"while ({self.generate_expression()}) {{\n{self.generate_block()}}}\n"
+        return f"while ({self.generate_expression()}) \n{self.generate_block()}\n"
 
     def generate_stmt_break(self) -> str:
         return "break;\n"
@@ -151,7 +162,15 @@ class Fuzzer:
             return ""
         self.stmt_depth += 1
         self.scopes.append([])
-        src = "".join(["    " * self.stmt_depth + self.generate_statement() for _ in range(random.randint(1, MAX_STATEMENTS))])
+        if random.randint(0, 100) < 5:
+            src = ""
+        else:
+            src = "    " * self.stmt_depth + "{\n"
+        src += "".join(["    " * self.stmt_depth + self.generate_statement() for _ in range(random.randint(0, MAX_STATEMENTS))])
+        if random.randint(0, 100) < 5:
+            src += "\n"
+        else:
+            src += "    " * self.stmt_depth + "}\n"
         self.scopes.pop()
         self.stmt_depth -= 1
         return src
@@ -160,7 +179,7 @@ class Fuzzer:
         self.scopes.append([])
         name = self.generate_identifier()
         self.functions.append(name)
-        src = f"func {name}({self.generate_parameters()}) -> {self.generate_type()} {{\n{self.generate_block()}}}\n"
+        src = f"func {name}({self.generate_parameters()}) -> {self.generate_type()} \n{self.generate_block()}\n"
         self.scopes.pop()
         return src
 
@@ -171,7 +190,7 @@ class Fuzzer:
         if random.randint(0, 1) == 0 and len(self.classes) > 0:
             return random.choice(self.classes)
         else:
-            return random.choice(["u32", "u64", "i32", "i64", "f32", "f64", "bool"])
+            return random.choice(PRIMITIVE_TYPES)
 
     def generate_parameter(self) -> str:
         return f"{self.generate_identifier()}: {self.generate_type()}"
@@ -190,16 +209,20 @@ class Fuzzer:
             return "".join([chr(random.randint(ord('a'), ord('z'))) for _ in range(random.randint(1, 10))])
 
     def generate_extern(self) -> str:
-        return f"extern {self.generate_identifier()}({self.generate_parameters()}) -> {self.generate_type()};\n"
+        name = self.generate_identifier()
+        self.functions.append(name)
+        return f"extern {name}({self.generate_parameters()}) -> {self.generate_type()};\n"
 
     def generate_file(self) -> str:
         src = ""
-        for _ in range(random.randint(1, MAX_EXTERN)):
+        for _ in range(random.randint(0, MAX_EXTERN)):
             src += self.generate_extern()
-        for _ in range(random.randint(1, MAX_CLASSES)):
+        for _ in range(random.randint(0, MAX_CLASSES)):
             src += self.generate_class()
-        for _ in range(random.randint(1, MAX_FUNCTIONS)):
+        for _ in range(random.randint(0, MAX_FUNCTIONS)):
             src += self.generate_func()
+        if len(src) == 0:
+            return self.generate_file()
         if random.randint(0, 1) == 0:
             for _ in range(MAX_RANDOM_CHARS):
                 index = random.randint(0, len(src) - 1)
@@ -211,40 +234,39 @@ class Fuzzer:
         print(f"Thread {thread} started.")
         for i in range(count):
             code = self.generate_file()
-            filename = f"./fuzz/invalid/fuzz_{thread}_{i}.bu"
+            filename = f"./fuzz/samples/fuzz_{thread}_{i}.bu"
             with open(filename, "w") as f:
                 f.write(code)
             compiler_cmd = self.compiler_cmd + [filename]
-            output = self.call_cmd(compiler_cmd)
+            output = self.call_cmd(compiler_cmd, log=False)
             if output.returncode == 101:
-                print(f"Thread {thread} generated invalid code.")
+                print(f"Thread {thread} generated invalid code: {filename}")
                 with open(filename, "w") as f:
                     for line in output.stderr.decode("utf-8").split("\n"):
                         f.write(f"// {line}\n")
                     f.write("\n")
                     f.write(code)
+                os.rename(filename, f"./fuzz/invalid/fuzz_{thread}_{i}.bu")
             elif output.returncode == 0:
+                print(f"Thread {thread} generated valid code: {filename}")
                 os.rename(filename, f"./fuzz/valid/fuzz_{thread}_{i}.bu")
-                print(f"Thread {thread} generated valid code.")
             elif output.returncode != 1:
+                print(f"Thread {thread} generated code with return code {output.returncode}: {filename}")
                 os.rename(filename, f"./fuzz/whack/fuzz_{thread}_{i}.bu")
-                print(f"Thread {thread} generated code with return code {output.returncode}.")
             else:
                 os.remove(filename)
 
     def run(self):
-        if not os.path.exists("./fuzz/invalid"):
-            os.makedirs("./fuzz/invalid")
-        if not os.path.exists("./fuzz/valid"):
-            os.makedirs("./fuzz/valid")
-        else:
-            for file in os.listdir("./fuzz/valid"):
-                os.remove(f"./fuzz/valid/{file}")
-        if not os.path.exists("./fuzz/whack"):
-            os.makedirs("./fuzz/whack")
-        else:
-            for file in os.listdir("./fuzz/whack"):
-                os.remove(f"./fuzz/whack/{file}")
+        def make_or_clear(path):
+            if not os.path.exists(path):
+                os.makedirs(path)
+            else:
+                for file in os.listdir(path):
+                    os.remove(f"{path}/{file}")
+        make_or_clear("./fuzz/samples")
+        make_or_clear("./fuzz/invalid")
+        make_or_clear("./fuzz/valid")
+        make_or_clear("./fuzz/whack")
         from multiprocessing import Pool
         with Pool(self.threads) as p:
             p.starmap(self.generate_bulk_code, [(i, self.limit // self.threads) for i in range(self.threads)])

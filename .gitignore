@@ -5,4 +5,5 @@
 /.idea/
 
 /fuzz/*
+!/fuzz/important
 !/fuzz/fuzzer.py

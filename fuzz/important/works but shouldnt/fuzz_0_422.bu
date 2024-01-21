@@ -1,0 +1,8 @@
+func hrun(abom: i32, o: bool) -> i32 {
+    return 82;
+    if (false) {
+        break;
+}
+}
+
+func main() -> u32 { return 0; }

@@ -1,0 +1,14 @@
+// thread 'main' panicked at src\backend\codegen_llvm.rs:882:58:
+// called `Result::unwrap()` on an `Err` value: ParseIntError { kind: PosOverflow }
+// note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+// 
+
+func bjygjv() -> i32 {
+    return -3601910792439935377;
+    true;
+    break;
+    1723618734455808559;
+    5808164526398138586;
+}
+
+func main() -> u32 { return 0; }
