@@ -1589,13 +1589,10 @@ impl<'flags> TypeChecker<'flags> {
         check_or_abort!(lhs_type, self.type_check_expression(&mut binary_expr.lhs));
         if let Type::Class(class_name) = lhs_type {
             let Some(class) = self.known_classes.get(&class_name) else {
-                // FIXME: Note: Idk if this is actually reachable
-                unreachable!();
-                // self.report_error(TypeError::UndeclaredClass(
-                //     binary_expr.lhs.get_loc(),
-                //     class_name.clone(),
-                // ));
-                // return Type::None;
+                self.report_error(TypeError::DotOnNonClass(
+                    binary_expr.lhs.get_loc(),
+                ));
+                return Type::None;
             };
             match &mut (*binary_expr.rhs) {
                 nodes::Expression::Name(name_node) => {
