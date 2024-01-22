@@ -72,20 +72,7 @@ pub struct ParameterNode {
     pub location: Location,
     pub name: String,
     pub typ: TypeNode,
-}
-
-impl ParameterNode {
-    #[trace_call(extra)]
-    pub fn this(location: Location, typ: Type) -> Self {
-        Self {
-            location: location,
-            name: String::from("this"),
-            typ: TypeNode {
-                location,
-                typ
-            }
-        }
-    }
+    pub is_mutable: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -100,7 +87,7 @@ pub struct BlockNode {
 pub enum Statement {
     Block(BlockNode),
     Expression(Expression),
-    Let(LetNode),
+    VarDecl(VarDeclNode),
     If(IfNode),
     Return(ReturnNode),
     While(WhileNode),
@@ -113,7 +100,7 @@ impl Statement {
         match self {
             Self::Block(e) => e.location,
             Self::Expression(e) => e.get_loc(),
-            Self::Let(e) => e.location,
+            Self::VarDecl(e) => e.location,
             Self::If(e) => e.location,
             Self::Return(e) => e.location,
             Self::While(e) => e.location,
@@ -124,11 +111,12 @@ impl Statement {
 }
 
 #[derive(Debug, Clone)]
-pub struct LetNode {
+pub struct VarDeclNode {
     pub location: Location,
     pub name: String,
     pub typ: TypeNode,
     pub expression: Expression,
+    pub is_mutable: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -177,6 +165,13 @@ impl TypeNode {
         Self {
             location,
             typ: Type::None
+        }
+    }
+    #[trace_call(extra)]
+    pub fn this(location: Location, class_name: &str) -> Self {
+        Self {
+            location,
+            typ: Type::Class(class_name.to_string())
         }
     }
 }

@@ -15,8 +15,10 @@ const LOOKAHEAD_LIMIT: usize = 3;
 
 pub const CLASS_KEYWORD: &str = "class";
 pub const CONSTRUCTOR_KEYWORD: &str = "constructor";
+pub const THIS_KEYWORD: &str = "this";
 pub const FUNCTION_KEYWORD: &str = "func";
 pub const LET_KEYWORD: &str = "let";
+pub const MUT_KEYWORD: &str = "mut";
 pub const IF_KEYWORD: &str = "if";
 pub const ELSE_KEYWORD: &str = "else";
 pub const RETURN_KEYWORD: &str = "return";
@@ -44,6 +46,10 @@ enum ParserError {
     STDParseIntError(Location, String, std::num::ParseIntError),
     ExpectedUnaryOperator(Location, TokenType),
     ExpectedBinaryOperator(Location, TokenType),
+    ThisParameterHasType(Location),
+    ThisParameterNotFirst(Location),
+    ForbiddenThisParameter(Location),
+    ThisOutsideClass(Location),
 }
 
 impl Display for ParserError {
@@ -82,6 +88,10 @@ impl Display for ParserError {
             Self::STDParseIntError(l, s, e) => format!("{l:?}: Failed to parse integer literal {}\n{}: Reason: {}", s, NOTE_STR, e),
             Self::ExpectedUnaryOperator(l, t) => format!("{l:?}: Expected Unary Operator, found {}", t),
             Self::ExpectedBinaryOperator(l, t) => format!("{l:?}: Expected Binary Operator, found {}", t),
+            Self::ThisParameterHasType(l) => format!("{l:?}: Unexpected type for `this` parameter.\n{}: The type of `this` is always the class the method is defined in.", NOTE_STR),
+            Self::ThisParameterNotFirst(l) => format!("{l:?}: `this` parameter must be the first parameter of a method."),
+            Self::ForbiddenThisParameter(l) => format!("{l:?}: Unexpected `this` parameter.\n{}: `this` parameters are only allowed in methods.", NOTE_STR),
+            Self::ThisOutsideClass(l) => format!("{l:?}: Unexpected `this` outside of a class.\n{}: `this` is only allowed in methods.", NOTE_STR),
         };
         let message = format!("{}: {}", ERR_STR, error_msg);
         write!(f, "{}", message)
@@ -128,8 +138,10 @@ pub enum TokenType {
     ClosingSquare,
     ClassKeyword,
     ConstructorKeyword,
+    ThisKeyword,
     FunctionKeyword,
     LetKeyword,
+    MutKeyword,
     IfKeyword,
     ElseKeyword,
     ReturnKeyword,
@@ -192,8 +204,10 @@ impl Display for TokenType {
             Self::ClosingSquare => write!(f, "`]`"),
             Self::ClassKeyword => write!(f, "`{}`", CLASS_KEYWORD),
             Self::ConstructorKeyword => write!(f, "`{}`", CONSTRUCTOR_KEYWORD),
+            Self::ThisKeyword => write!(f, "`{}`", THIS_KEYWORD),
             Self::FunctionKeyword => write!(f, "`{}`", FUNCTION_KEYWORD),
             Self::LetKeyword => write!(f, "`{}`", LET_KEYWORD),
+            Self::MutKeyword => write!(f, "`{}`", MUT_KEYWORD),
             Self::IfKeyword => write!(f, "`{}`", IF_KEYWORD),
             Self::ElseKeyword => write!(f, "`{}`", ELSE_KEYWORD),
             Self::ReturnKeyword => write!(f, "`{}`", RETURN_KEYWORD),
@@ -531,7 +545,7 @@ impl<'flags> Parser<'flags> {
         }
         debug_assert_eq!(
             TokenType::Eof as u8 + 1,
-            44,
+            46,
             "Not all TokenTypes are handled in next_token()"
         );
         self.trim_whitespace();
@@ -549,8 +563,10 @@ impl<'flags> Parser<'flags> {
                 let typ = match value.as_str() {
                     CLASS_KEYWORD => TokenType::ClassKeyword,
                     CONSTRUCTOR_KEYWORD => TokenType::ConstructorKeyword,
+                    THIS_KEYWORD => TokenType::ThisKeyword,
                     FUNCTION_KEYWORD => TokenType::FunctionKeyword,
                     LET_KEYWORD => TokenType::LetKeyword,
+                    MUT_KEYWORD => TokenType::MutKeyword,
                     IF_KEYWORD => TokenType::IfKeyword,
                     ELSE_KEYWORD => TokenType::ElseKeyword,
                     RETURN_KEYWORD => TokenType::ReturnKeyword,
@@ -858,6 +874,7 @@ impl<'flags> Parser<'flags> {
                     location: Location::anonymous(),
                     typ: Type::I32,
                 },
+                is_mutable: false,
             }],
         }];
         const RECOVER_TOKENS: [TokenType; 1] = [
@@ -921,7 +938,7 @@ impl<'flags> Parser<'flags> {
         try_parse!(name_token, self.expect(TokenType::Identifier));
 
         try_parse!(self.expect(TokenType::OpenRound));
-        try_parse!(parameters, self.parse_parameters());
+        try_parse!(parameters, self.parse_parameters(false));
         try_parse!(self.expect(TokenType::ClosingRound));
 
         try_parse!(return_type, self.parse_return_type());
@@ -1016,7 +1033,7 @@ impl<'flags> Parser<'flags> {
         try_parse!(self.expect(TokenType::ConstructorKeyword));
 
         try_parse!(self.expect(TokenType::OpenRound));
-        try_parse!(parameters, self.parse_parameters());
+        try_parse!(parameters, self.parse_parameters(false));
         try_parse!(self.expect(TokenType::ClosingRound));
 
         if self.eat(TokenType::Arrow) {
@@ -1027,7 +1044,7 @@ impl<'flags> Parser<'flags> {
         }
 
         let return_type = nodes::TypeNode {
-            location: location,
+            location,
             typ: Type::Class(class_name.to_string()),
         };
 
@@ -1060,7 +1077,7 @@ impl<'flags> Parser<'flags> {
         self.current_function = Some(name.value.clone());
 
         try_parse!(self.expect(TokenType::OpenRound));
-        try_parse!(parameters, self.parse_parameters());
+        try_parse!(parameters, self.parse_parameters(false));
         try_parse!(self.expect(TokenType::ClosingRound));
 
         try_parse!(return_type, self.parse_return_type());
@@ -1095,17 +1112,7 @@ impl<'flags> Parser<'flags> {
         self.current_function = Some(name.value.clone());
 
         try_parse!(self.expect(TokenType::OpenRound));
-        try_parse!(parameters, self.parse_parameters());
-        // TODO: Don't forget to handle static methods later
-        // Add `this` parameter
-        let mut parameters = parameters;
-        parameters.insert(
-            0,
-            nodes::ParameterNode::this(
-                location,
-                Type::Class(class_name.to_string()),
-            ),
-        );
+        try_parse!(parameters, self.parse_parameters(true));
         try_parse!(self.expect(TokenType::ClosingRound));
 
         try_parse!(return_type, self.parse_return_type());
@@ -1135,20 +1142,59 @@ impl<'flags> Parser<'flags> {
     }
 
     #[trace_call(always)]
-    fn parse_parameters(&mut self) -> Option<Vec<nodes::ParameterNode>> {
+    fn parse_parameters(&mut self, allowed_this: bool) -> Option<Vec<nodes::ParameterNode>> {
+        /*
+        Rules of `this` usage:
+        - In a method:
+            - Either the first parameter is `this` and has no type
+            - Or there is no `this` parameter (static method)
+        - In a constructor:
+            - There is no `this` parameter
+        - In a function:
+            - There is no `this` parameter
+        - In an extern:
+            - There is no `this` parameter
+         */
         let mut parameters = vec![];
         while !self.parsed_eof() && !self.at(TokenType::ClosingRound) {
             let location = self.current_location();
-            try_parse!(name_token, self.expect(TokenType::Identifier));
-            let name = name_token.value;
-            try_parse!(self.expect(TokenType::Colon));
-            try_parse!(typ, self.parse_type_node());
-            let param = nodes::ParameterNode {
-                location,
-                name,
-                typ,
-            };
-            parameters.push(param);
+            let is_mutable = self.eat(TokenType::MutKeyword);
+            let is_this = self.eat(TokenType::ThisKeyword);
+            if is_this {
+                if !allowed_this {
+                    self.report_error(ParserError::ForbiddenThisParameter(
+                        location,
+                    ));
+                    return None;
+                } else if parameters.len() != 0 {
+                    self.report_error(ParserError::ThisParameterNotFirst(
+                        location,
+                    ));
+                    return None;
+                } else if self.eat(TokenType::Colon) {
+                    self.report_error(ParserError::ThisParameterHasType(
+                        location,
+                    ));
+                    return None;
+                }
+                parameters.push(nodes::ParameterNode {
+                    location,
+                    name: String::from("this"),
+                    typ: nodes::TypeNode::this(location, self.current_class.as_ref().unwrap()),
+                    is_mutable,
+                });
+            } else {
+                try_parse!(name_token, self.expect(TokenType::Identifier));
+                let name = name_token.value;
+                try_parse!(self.expect(TokenType::Colon));
+                try_parse!(typ, self.parse_type_node());
+                parameters.push(nodes::ParameterNode {
+                    location,
+                    name,
+                    typ,
+                    is_mutable,
+                });
+            }
             if !self.eat(TokenType::Comma) {
                 break;
             }
@@ -1181,9 +1227,13 @@ impl<'flags> Parser<'flags> {
     #[trace_call(always)]
     fn parse_statement(&mut self) -> Option<nodes::Statement> {
         Some(match self.nth(0) {
+            TokenType::MutKeyword => {
+                try_parse!(mut_stmt, self.parse_stmt_var_decl(true));
+                nodes::Statement::VarDecl(mut_stmt)
+            }
             TokenType::LetKeyword => {
-                try_parse!(let_stmt, self.parse_stmt_let());
-                nodes::Statement::Let(let_stmt)
+                try_parse!(let_stmt, self.parse_stmt_var_decl(false));
+                nodes::Statement::VarDecl(let_stmt)
             }
             TokenType::IfKeyword => {
                 try_parse!(if_stmt, self.parse_stmt_if());
@@ -1218,20 +1268,25 @@ impl<'flags> Parser<'flags> {
     }
 
     #[trace_call(always)]
-    fn parse_stmt_let(&mut self) -> Option<nodes::LetNode> {
+    fn parse_stmt_var_decl(&mut self, is_mutable: bool) -> Option<nodes::VarDeclNode> {
         let location = self.current_location();
-        self.expect(TokenType::LetKeyword).expect("This is guaranteed by parse_statement()");
+        if is_mutable {
+            try_parse!(self.expect(TokenType::MutKeyword));
+        } else {
+            try_parse!(self.expect(TokenType::LetKeyword));
+        }
         try_parse!(name_token, self.expect(TokenType::Identifier));
         try_parse!(self.expect(TokenType::Colon));
         try_parse!(typ, self.parse_type_node());
         try_parse!(self.expect(TokenType::Equal));
         try_parse!(expression, self.parse_expression(0, Associativity::Left));
         try_parse!(self.expect(TokenType::Semi));
-        Some(nodes::LetNode{
+        Some(nodes::VarDeclNode{
             location,
             name: name_token.value,
             typ,
             expression,
+            is_mutable,
         })
     }
 
@@ -1466,6 +1521,21 @@ impl<'flags> Parser<'flags> {
                 try_parse!(bool_literal, self.parse_expr_bool_literal());
                 Some(nodes::Expression::Literal(bool_literal))
             }
+            TokenType::ThisKeyword => {
+                let this_token = self.next();
+                if self.current_class.is_none() {
+                    self.report_error(ParserError::ThisOutsideClass(
+                        this_token.location,
+                    ));
+                    return None;
+                }
+                let this_literal = nodes::NameNode {
+                    location: this_token.location,
+                    name: String::from("this"),
+                    typ: Type::Class(self.current_class.as_ref().unwrap().clone()),
+                };
+                Some(nodes::Expression::Name(this_literal))
+            }
             e => {
                 self.report_error(ParserError::ExpectedExpression(
                     self.current_location(),
@@ -1521,6 +1591,7 @@ impl<'flags> Parser<'flags> {
             TokenType::IfKeyword => false,
             TokenType::ElseKeyword => false,
             TokenType::LetKeyword => false,
+            TokenType::MutKeyword => false,
             TokenType::FunctionKeyword => false,
             TokenType::ReturnKeyword => false,
             TokenType::WhileKeyword => false,
@@ -1529,6 +1600,7 @@ impl<'flags> Parser<'flags> {
             TokenType::ExternKeyword => false,
             TokenType::ClassKeyword => false,
             TokenType::ConstructorKeyword => false,
+            TokenType::ThisKeyword => false,
             TokenType::TrueKeyword => false,
             TokenType::FalseKeyword => false,
             TokenType::Eof => false,

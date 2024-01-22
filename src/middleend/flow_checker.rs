@@ -146,7 +146,7 @@ impl<'flags> FlowChecker<'flags> {
         match statement {
             nodes::Statement::Expression(_expr_node) => Ok(FlowType::Linear),
             nodes::Statement::Block(block_node) => self.check_block(block_node, early_exit),
-            nodes::Statement::Let(let_node) => self.check_stmt_let(let_node),
+            nodes::Statement::VarDecl(var_node) => self.check_stmt_var_decl(var_node),
             nodes::Statement::If(if_node) => self.check_stmt_if(if_node, early_exit),
             nodes::Statement::Return(return_node) => self.check_stmt_return(return_node),
             nodes::Statement::While(while_node) => self.check_stmt_while(while_node),
@@ -156,7 +156,7 @@ impl<'flags> FlowChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn check_stmt_let(&mut self, _let_node: &nodes::LetNode) -> Result<FlowType, String> {
+    fn check_stmt_var_decl(&mut self, _let_node: &nodes::VarDeclNode) -> Result<FlowType, String> {
         Ok(FlowType::Linear)
     }
 

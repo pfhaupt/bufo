@@ -472,10 +472,10 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     fn codegen_statement(&mut self, statement: &nodes::Statement) -> Result<(), String> {
         match statement {
             nodes::Statement::Block(block) => self.codegen_block(block),
+            nodes::Statement::VarDecl(var_decl_node) => self.codegen_stmt_var_decl(var_decl_node),
             nodes::Statement::If(if_node) => self.codegen_stmt_if(if_node),
             nodes::Statement::While(while_node) => self.codegen_stmt_while(while_node),
             nodes::Statement::Return(return_node) => self.codegen_stmt_return(return_node),
-            nodes::Statement::Let(let_node) => self.codegen_stmt_let(let_node),
             nodes::Statement::Expression(expr) => {
                 let _ = self.codegen_expression(expr, true)?;
                 Ok(())
@@ -525,7 +525,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
-    fn codegen_stmt_let(&mut self, let_node: &nodes::LetNode) -> Result<(), String> {
+    fn codegen_stmt_var_decl(&mut self, let_node: &nodes::VarDeclNode) -> Result<(), String> {
         let typ = self.codegen_type(&let_node.typ.typ);
         let alloca = self.builder.build_alloca(typ, &let_node.name);
         self.add_variable(&let_node.name, alloca.into());

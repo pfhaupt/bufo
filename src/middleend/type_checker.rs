@@ -12,10 +12,12 @@ use tracer::trace_call;
 
 
 macro_rules! check_function {
-    ($tc:ident, $call_node:ident, $func_info:ident, $typ:expr, $implicit_this:expr) => {
+    ($tc:ident, $call_node:ident, $func_info:ident, $typ:expr) => {
         {
             let mut params = $func_info.parameters.clone();
-            if $implicit_this {
+            if $func_info.has_this {
+                // We need to remove the `this` parameter
+                // TODO: This is a hack, we should probably have a better way of doing this
                 params.remove(0);
             }
             let return_type = $func_info.return_type.t.clone();
@@ -70,7 +72,6 @@ macro_rules! check_function {
     };
 }
 
-// FIXME: constructor(this: ClassName) { ... } should not be allowed because ImplicitThisParam
 macro_rules! check_parameters {
     ($tc:ident, $function:ident, $implicit_this:expr) => {
         {
@@ -81,20 +82,15 @@ macro_rules! check_parameters {
                     name: param.name.clone(),
                     location: param.location,
                     typ: param.typ.typ.clone(),
+                    is_mutable: param.is_mutable,
                 };
                 if let Some(p) = parameters.get(&param.name) {
-                    if p.name == *"this" {
-                        errors.push(TypeError::ImplicitThisParam(
-                            param.location,
-                        ));
-                    } else {
-                        errors.push(TypeError::Redeclaration(
-                            "Parameter",
-                            param.location,
-                            param.name.clone(),
-                            p.location,
-                        ));
-                    }
+                    errors.push(TypeError::Redeclaration(
+                        "Parameter",
+                        param.location,
+                        param.name.clone(),
+                        p.location,
+                    ));
                 } else {
                     parameters.insert(param.name.clone(), p);
                 }
@@ -103,7 +99,6 @@ macro_rules! check_parameters {
                 errors.push(TypeError::TooManyParameters(
                     "Method",
                     $function.location,
-                    $implicit_this,
                 ));
             }
             (parameters.into_iter().map(|(_, v)| v).collect(), errors)
@@ -137,10 +132,8 @@ enum TypeError {
     ExternFunction(Location, String, Location),
     /// Syntax: Error Loc, Type Name
     UnknownType(Location, Type),
-    /// Syntax: Error Loc
-    ImplicitThisParam(Location),
-    /// Syntax: Fn Type, Error Loc, Has This
-    TooManyParameters(&'static str, Location, bool),
+    /// Syntax: Fn Type, Error Loc
+    TooManyParameters(&'static str, Location),
     /// Syntax: Error Loc, Expected, Found
     TypeMismatch(Location, Type, Type),
     /// Syntax: Error Loc, Binary Op, LHS Loc, LHS Type, RHS Loc, RHS Type
@@ -207,27 +200,12 @@ impl Display for TypeError {
                     ERR_STR, loc, name
                 )
             }
-            TypeError::ImplicitThisParam(loc) => {
+            TypeError::TooManyParameters(kind, loc) => {
                 write!(
                     f,
-                    "{}: {:?}: Use of implicit parameter `this`.",
-                    ERR_STR, loc
+                    "{}: {:?}: {}s can have at most 4 parameters.",
+                    ERR_STR, loc, kind
                 )
-            }
-            TypeError::TooManyParameters(kind, loc, has_this) => {
-                if *has_this {
-                    write!(
-                        f,
-                        "{}: {:?}: {}s can have at most 4 parameters.\n{}: The implicit parameter `this` counts towards that limit.",
-                        ERR_STR, loc, kind, NOTE_STR
-                    )
-                } else {
-                    write!(
-                        f,
-                        "{}: {:?}: {}s can have at most 4 parameters.",
-                        ERR_STR, loc, kind
-                    )
-                }
             }
             TypeError::TypeMismatch(loc, expected, found) => {
                 write!(
@@ -451,6 +429,7 @@ struct Function {
     location: Location,
     return_type: TypeLoc,
     parameters: Vec<Variable>,
+    has_this: bool,
 }
 
 impl Function {
@@ -526,15 +505,17 @@ pub struct Variable {
     name: String,
     location: Location,
     typ: Type,
+    is_mutable: bool,
 }
 
 impl Variable {
     #[trace_call(extra)]
-    fn new(name: String, location: Location, typ: Type) -> Self {
+    fn new(name: String, location: Location, typ: Type, is_mutable: bool) -> Self {
         Self {
             name,
             location,
             typ,
+            is_mutable
         }
     }
     #[trace_call(extra)]
@@ -604,12 +585,14 @@ impl<'flags> TypeChecker<'flags> {
                         name: param.name.clone(),
                         location: param.location,
                         typ: param.typ.typ.clone(),
+                        is_mutable: param.is_mutable,
                     })
                     .collect();
                 let func = Function {
                     location: *location,
                     return_type: TypeLoc::new(*return_loc, return_type.clone()),
                     parameters,
+                    has_this: false,
                 };
                 self.known_functions.insert(name.clone(), func);
             }
@@ -637,12 +620,14 @@ impl<'flags> TypeChecker<'flags> {
                         name: param.name.clone(),
                         location: param.location,
                         typ: param.typ.typ.clone(),
+                        is_mutable: param.is_mutable,
                     })
                     .collect();
                 let func = Function {
                     location: *location,
                     return_type: TypeLoc::new(*return_loc, return_type.clone()),
                     parameters,
+                    has_this: false,
                 };
                 self.known_externs.insert(name.clone(), func);
             }
@@ -663,10 +648,11 @@ impl<'flags> TypeChecker<'flags> {
         } else {
             let return_type = &method.return_type.typ;
             let return_loc = &method.return_type.location;
-            let (parameters, errors) = check_parameters!(self, method, true);
+            let (parameters, errors): (Vec<Variable>, Vec<TypeError>) = check_parameters!(self, method, true);
             let method = Function {
                 location: *location,
                 return_type: TypeLoc::new(*return_loc, return_type.clone()),
+                has_this: parameters.iter().find(|p| p.name == "this").is_some(),
                 parameters,
             };
             class.known_methods.insert(name.clone(), method);
@@ -698,6 +684,7 @@ impl<'flags> TypeChecker<'flags> {
                 location: *location,
                 return_type: TypeLoc::new(*return_loc, return_type.clone()),
                 parameters,
+                has_this: false,
             };
             class.known_constructors.push(constructor);
             for error in errors {
@@ -860,6 +847,7 @@ impl<'flags> TypeChecker<'flags> {
                 "this".to_string(),
                 constructor.location,
                 Type::Class(class_name.to_string()),
+                true,
             ),
         );
         self.current_stack_size += 8; // `this` is always 8 bytes
@@ -952,7 +940,7 @@ impl<'flags> TypeChecker<'flags> {
     fn type_check_statement(&mut self, statement: &mut nodes::Statement) {
         match statement {
             nodes::Statement::Block(block_node) => self.type_check_block(block_node),
-            nodes::Statement::Let(let_node) => self.type_check_stmt_let(let_node),
+            nodes::Statement::VarDecl(var_node) => self.type_check_stmt_var_decl(var_node),
             nodes::Statement::If(if_node) => self.type_check_stmt_if(if_node),
             nodes::Statement::Return(return_node) => self.type_check_stmt_return(return_node),
             nodes::Statement::While(while_node) => self.type_check_stmt_while(while_node),
@@ -967,7 +955,7 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_stmt_let(&mut self, let_node: &mut nodes::LetNode) {
+    fn type_check_stmt_var_decl(&mut self, let_node: &mut nodes::VarDeclNode) {
         match self.get_variable_in_current_scope(&let_node.name) {
             Some(var) => {
                 self.report_error(TypeError::Redeclaration(
@@ -986,6 +974,7 @@ impl<'flags> TypeChecker<'flags> {
                     name: let_node.name.clone(),
                     location: let_node.location,
                     typ: let_node.typ.typ.clone(),
+                    is_mutable: let_node.is_mutable,
                 };
                 let expected_type = &let_node.typ.typ;
 
@@ -1613,7 +1602,7 @@ impl<'flags> TypeChecker<'flags> {
                 nodes::Expression::FunctionCall(call_node) => {
                     // FIXME: Error Log shows wrong location
                     if let Some(method) = class.get_method(&call_node.function_name) {
-                        let result = check_function!(self, call_node, method, "Method", true);
+                        let result = check_function!(self, call_node, method, "Method");
                         binary_expr.typ = result.clone();
                         result
                     } else {
@@ -1803,7 +1792,7 @@ impl<'flags> TypeChecker<'flags> {
                 return Type::None;
             }
         }
-        check_function!(self, func_call, function, "Function", false)
+        check_function!(self, func_call, function, "Function")
     }
 
     #[trace_call(always)]

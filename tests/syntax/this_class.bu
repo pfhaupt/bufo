@@ -1,0 +1,36 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! `this` parameter must be the first parameter of a method.
+//! `this` parameter must be the first parameter of a method.
+//! `this` parameter must be the first parameter of a method.
+//! Unexpected `this` parameter.
+//! `this` parameters are only allowed in methods.
+//! Expected Identifier, found `this`
+
+class Foo {
+    field: u32;
+    constructor(){}
+    func foo(mut this) {
+        this.field = 5;
+    }
+    func foo2(a: i32, this) {}
+    func foo3(a: i32, mut this) {}
+    func foo4(a: i32, mut this: Foo) {}
+    func bar(this) {}
+    func bar2() {}
+}
+func illegal(this) {}
+func foo(a: i32) {}
+func bar(mut a: i32) {}
+
+func main() {
+    let this: i32 = 0;
+    let f: Foo = Foo();
+    // line below doesn't work yet
+    // Checker treats bar2() as method and panics
+    // but should error with 'use of static method as method' or smth
+    // f.bar2();
+}

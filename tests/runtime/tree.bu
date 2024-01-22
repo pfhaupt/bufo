@@ -10,10 +10,10 @@ class Tree {
     constructor(value: u32) {
         this.value = value;
     }
-    func setLeft(left: Tree) {
+    func setLeft(this, left: Tree) {
         this.left = left;
     }
-    func setRight(right: Tree) {
+    func setRight(this, right: Tree) {
         this.right = right;
     }
 }

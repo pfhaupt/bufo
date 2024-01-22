@@ -13,13 +13,13 @@ class Test {
         this.b = 12;
         this.a = 1337;
     }
-    func get_c() -> Test {
+    func get_c(this) -> Test {
         return this.c;
     }
-    func get_a() -> u64 {
+    func get_a(this) -> u64 {
         return this.a;
     }
-    func set_a(a: u64) {
+    func set_a(this, a: u64) {
         this.a = a;
     }
 }

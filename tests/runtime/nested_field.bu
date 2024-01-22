@@ -10,11 +10,11 @@ class Foo {
         this.f = this;
     }
 
-    func getA() -> i32 {
+    func getA(this) -> i32 {
         return this.a;
     }
 
-    func getF() -> Foo {
+    func getF(this) -> Foo {
         return this.f;
     }
 }

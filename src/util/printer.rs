@@ -46,17 +46,14 @@ impl Printable for nodes::ExternNode {
 impl Printable for nodes::ClassNode {
     fn print(&self, indent: usize) {
         println!("{}ClassNode {}", " ".repeat(indent), self.name);
-        println!("{}Fields", " ".repeat(indent + INDENT_PER_LEVEL));
         for field in &self.fields {
-            field.print(indent + 2 * INDENT_PER_LEVEL);
+            field.print(indent + INDENT_PER_LEVEL);
         }
-        println!("{}Methods", " ".repeat(indent + INDENT_PER_LEVEL));
-        for method in &self.methods {
-            method.print(indent + 2 * INDENT_PER_LEVEL);
-        }
-        println!("{}Features", " ".repeat(indent + INDENT_PER_LEVEL));
         for constructor in &self.constructors {
-            constructor.print(indent + 2 * INDENT_PER_LEVEL);
+            constructor.print(indent + INDENT_PER_LEVEL);
+        }
+        for method in &self.methods {
+            method.print(indent + INDENT_PER_LEVEL);
         }
     }
 }
@@ -116,6 +113,7 @@ impl Printable for nodes::ParameterNode {
     fn print(&self, indent: usize) {
         println!("{}ParameterNode {}", " ".repeat(indent), self.name);
         self.typ.print(indent + INDENT_PER_LEVEL);
+        println!("{}Mutable {}", " ".repeat(indent + INDENT_PER_LEVEL), self.is_mutable);
     }
 }
 
@@ -133,7 +131,7 @@ impl Printable for nodes::Statement {
         match self {
             nodes::Statement::Block(node) => node.print(indent),
             nodes::Statement::Expression(node) => node.print(indent),
-            nodes::Statement::Let(node) => node.print(indent),
+            nodes::Statement::VarDecl(node) => node.print(indent),
             nodes::Statement::If(node) => node.print(indent),
             nodes::Statement::Return(node) => node.print(indent),
             nodes::Statement::While(node) => node.print(indent),
@@ -143,10 +141,11 @@ impl Printable for nodes::Statement {
     }
 }
 
-impl Printable for nodes::LetNode {
+impl Printable for nodes::VarDeclNode {
     fn print(&self, indent: usize) {
-        println!("{}LetNode {}", " ".repeat(indent), self.name);
+        println!("{}VarDeclNode {}", " ".repeat(indent), self.name);
         self.typ.print(indent + INDENT_PER_LEVEL);
+        println!("{}Mutable {}", " ".repeat(indent + INDENT_PER_LEVEL), self.is_mutable);
         self.expression.print(indent + INDENT_PER_LEVEL);
     }
 }
