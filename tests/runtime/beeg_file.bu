@@ -20009,4 +20009,4 @@ func f9996(a:C9996)->C9996{return a;}
 func f9997(a:C9997)->C9997{return a;}
 func f9998(a:C9998)->C9998{return a;}
 func f9999(a:C9999)->C9999{return a;}
-func main()->i32{let i:i32=0;while(i<100){let v:C9999=C9999();let r:C9999=f9999(v);i=i+1;}return 0;}
+func main()->i32{mut i:i32=0;while(i<100){let v:C9999=C9999();let r:C9999=f9999(v);i=i+1;}return 0;}

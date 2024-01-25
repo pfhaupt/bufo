@@ -3,7 +3,7 @@
 //! SUCCESS
 
 func main() -> i32 {
-    let a: i32 = 0;
+    mut a: i32 = 0;
     while (a != 100) a = a + 1;
     if (a != 100) return a;
     return 0;

@@ -10,16 +10,16 @@ class Tree {
     constructor(value: u32) {
         this.value = value;
     }
-    func setLeft(this, left: Tree) {
+    func setLeft(mut this, left: Tree) {
         this.left = left;
     }
-    func setRight(this, right: Tree) {
+    func setRight(mut this, right: Tree) {
         this.right = right;
     }
 }
 
 func main() -> u32 {
-    let root: Tree = Tree(0);
+    mut root: Tree = Tree(0);
     let left: Tree = Tree(1);
     let right: Tree = Tree(2);
     root.setLeft(left);

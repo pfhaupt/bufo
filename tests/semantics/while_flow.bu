@@ -4,7 +4,7 @@
 //! CODE: 10
 
 func main() -> u64 {
-    let a: u64 = 0;
+    mut a: u64 = 0;
     while (a < 10) {
         a = a + 1;
     }

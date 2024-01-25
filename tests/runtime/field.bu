@@ -19,7 +19,7 @@ class Test {
     func get_a(this) -> u64 {
         return this.a;
     }
-    func set_a(this, a: u64) {
+    func set_a(mut this, a: u64) {
         this.a = a;
     }
 }

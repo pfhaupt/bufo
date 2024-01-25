@@ -4,8 +4,8 @@
 //! CODE: 48
 
 func main() -> i32 {
-    let a: i32 = 11;
-    let c: i32 = 0;
+    mut a: i32 = 11;
+    mut c: i32 = 0;
     let b: i32 = a = c = 5 + a;
     // a, b and c are all expected to be 5 + 11 = 16 here
     return a + b + c;

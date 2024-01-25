@@ -1,0 +1,33 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Attempted to modify immutable variable `f1`.
+//! Variable `f1` is declared here.
+
+class Foo {
+    field: i32;
+    constructor() {}
+}
+
+func createFoo() -> Foo {
+    let f: Foo = Foo();
+    return f;
+}
+
+func useFoo(mut f: Foo) -> Foo {
+    return f;
+}
+
+func main() -> i32 {
+    mut f: Foo = createFoo();
+    f.field = 10;
+    let f1: Foo = useFoo(f);
+    if (f1.field != f.field) {
+        f1.field = f.field;
+        f.field = f1.field;
+        return f.field;
+    }
+    return 0;
+}

@@ -3,9 +3,9 @@
 //! SUCCESS
 
 func main() -> i32 {
-    let a: i32 = 0;
-    let b: i32 = 1;
-    let c: i32 = 1;
+    mut a: i32 = 0;
+    mut b: i32 = 1;
+    mut c: i32 = 1;
 
     while (c < 1000) {
         c = a + b;

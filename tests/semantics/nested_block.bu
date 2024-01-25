@@ -4,9 +4,9 @@
 //! CODE: 1337
 
 func main() -> i32 {
-    let a: i32 = 0;
+    mut a: i32 = 0;
     {
-        let b: i32 = 10;
+        mut b: i32 = 10;
         a = b;
         {
             let c: i32 = a * b;

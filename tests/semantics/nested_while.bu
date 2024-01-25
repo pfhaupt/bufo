@@ -4,10 +4,10 @@
 //! CODE: 10000
 
 func main() -> u64 {
-    let counter: u64 = 0;
-    let a: u64 = 0;
+    mut counter: u64 = 0;
+    mut a: u64 = 0;
     while (a < 100) {
-        let b: u64 = 0;
+        mut b: u64 = 0;
         while (b < 100) {
             counter = counter + 1;
             b = b + 1;

@@ -43,10 +43,15 @@ macro_rules! check_function {
 
             for (mut arg, param) in $call_node.arguments.iter_mut().zip($func_info.parameters.clone()) {
                 let expected = param.typ;
-                let arg_type = $tc.type_check_expression(arg);
+                // TODO: Mutability error should specify that this is a parameter
+                let arg_type = $tc.type_check_expression(arg, param.is_mutable && expected.is_class());
+                if arg_type == Type::None {
+                    continue;
+                }
                 if arg_type == Type::Unknown {
                     // We need to `infer` the type again
                     $tc.type_check_expression_with_type(&mut arg, &expected);
+                    debug_assert!(!expected.is_class());
                 } else if arg_type != expected {
                     $tc.report_error(TypeError::ArgParamTypeMismatch(
                         arg.get_loc(),
@@ -169,6 +174,10 @@ enum TypeError {
     InvalidLValue(Location),
     /// Syntax: Error Loc, Type
     NegationTypeMismatch(Location, Type),
+    /// Syntax: Error Loc, Var Name, Decl Loc
+    ImmutableModification(Location, String, Location),
+    /// Syntax: Error Loc
+    CantMutateTemporary(Location),
 }
 
 impl Display for TypeError {
@@ -342,6 +351,20 @@ impl Display for TypeError {
                     f,
                     "{}: {:?}: Type mismatch! Negation is not defined for type `{}`.",
                     ERR_STR, error_loc, typ
+                )
+            }
+            TypeError::ImmutableModification(error_loc, var_name, var_loc) => {
+                write!(
+                    f,
+                    "{}: {:?}: Attempted to modify immutable variable `{}`.\n{}: {:?}: Variable `{}` is declared here.",
+                    ERR_STR, error_loc, var_name, NOTE_STR, var_loc, var_name
+                )
+            }
+            TypeError::CantMutateTemporary(error_loc) => {
+                write!(
+                    f,
+                    "{}: {:?}: Attempted to mutate temporary value.\n{}: Temporary values are only valid for the duration of the statement they are declared in.\n{}: If you want to mutate a value, declare it as a variable instead.",
+                    ERR_STR, error_loc, NOTE_STR, NOTE_STR
                 )
             }
         }
@@ -933,7 +956,7 @@ impl<'flags> TypeChecker<'flags> {
                 self.type_check_stmt_continue(continue_node)
             }
             nodes::Statement::Expression(expression_node) => {
-                self.type_check_expression(expression_node);
+                self.type_check_expression(expression_node, false);
             }
         }
     }
@@ -962,7 +985,7 @@ impl<'flags> TypeChecker<'flags> {
                 };
                 let expected_type = &let_node.typ.typ;
 
-                let expr_type = self.type_check_expression(&mut let_node.expression);
+                let expr_type = self.type_check_expression(&mut let_node.expression, false);
                 let current_scope = self.get_current_scope();
                 if current_scope.insert(let_node.name.clone(), var).is_some() {
                     internal_panic!(format!("Variable `{}` already exists in current scope", let_node.name));
@@ -994,7 +1017,7 @@ impl<'flags> TypeChecker<'flags> {
 
     #[trace_call(always)]
     fn type_check_stmt_if(&mut self, if_node: &mut nodes::IfNode) {
-        let cond = self.type_check_expression(&mut if_node.condition);
+        let cond = self.type_check_expression(&mut if_node.condition, false);
         if cond != Type::None && cond != Type::Bool {
             self.report_error(TypeError::TypeMismatch(
                 if_node.condition.get_loc(),
@@ -1045,7 +1068,7 @@ impl<'flags> TypeChecker<'flags> {
                     expected_return_type.clone(),
                 ));
             }
-            let expr_type = self.type_check_expression(ret_expr);
+            let expr_type = self.type_check_expression(ret_expr, false);
             if expr_type == Type::None {
                 // Error in expression, we can't continue
                 return;
@@ -1090,7 +1113,7 @@ impl<'flags> TypeChecker<'flags> {
 
     #[trace_call(always)]
     fn type_check_stmt_while(&mut self, while_node: &mut nodes::WhileNode) {
-        let cond = self.type_check_expression(&mut while_node.condition);
+        let cond = self.type_check_expression(&mut while_node.condition, false);
         if cond != Type::None && cond != Type::Bool {
             self.report_error(TypeError::TypeMismatch(
                 while_node.condition.get_loc(),
@@ -1116,13 +1139,14 @@ impl<'flags> TypeChecker<'flags> {
     fn type_check_expression(
         &mut self,
         expression: &mut nodes::Expression,
+        needs_mutability: bool,
     ) -> Type {
         match expression {
-            nodes::Expression::Name(name_node) => self.type_check_expr_name(name_node),
+            nodes::Expression::Name(name_node) => self.type_check_expr_name(name_node, needs_mutability),
             nodes::Expression::Unary(unary_expr) => self.type_check_expr_unary(unary_expr),
-            nodes::Expression::Binary(binary_expr) => self.type_check_expr_binary(binary_expr),
+            nodes::Expression::Binary(binary_expr) => self.type_check_expr_binary(binary_expr, needs_mutability),
             nodes::Expression::FunctionCall(func_call) => {
-                self.type_check_expr_function_call(func_call)
+                self.type_check_expr_function_call(func_call, needs_mutability)
             }
             nodes::Expression::BuiltIn(built_in) => self.type_check_expr_builtin(built_in),
             nodes::Expression::ArrayAccess(access) => self.type_check_expr_array_access(access),
@@ -1225,10 +1249,17 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_expr_name(&mut self, name_node: &mut nodes::NameNode) -> Type {
+    fn type_check_expr_name(&mut self, name_node: &mut nodes::NameNode, needs_mutability: bool) -> Type {
         let var = self.get_variable(&name_node.name);
         match var {
             Some(var) => {
+                if needs_mutability && !var.is_mutable {
+                    self.report_error(TypeError::ImmutableModification(
+                        name_node.location,
+                        name_node.name.clone(),
+                        var.location,
+                    ));
+                }
                 name_node.typ = var.typ.clone();
                 var.typ
             }
@@ -1247,7 +1278,7 @@ impl<'flags> TypeChecker<'flags> {
         &mut self,
         unary_expr: &mut nodes::UnaryNode
     ) -> Type {
-        check_or_abort!(expr_type, self.type_check_expression(&mut unary_expr.expression));
+        check_or_abort!(expr_type, self.type_check_expression(&mut unary_expr.expression, false));
         match unary_expr.operation {
             Operation::Negate => {
                 if expr_type == Type::Unknown {
@@ -1274,9 +1305,10 @@ impl<'flags> TypeChecker<'flags> {
     fn type_check_expr_binary(
         &mut self,
         binary_expr: &mut nodes::BinaryNode,
+        needs_mutability: bool,
     ) -> Type {
         match binary_expr.operation {
-            Operation::Dot => self.type_check_expr_dot(binary_expr),
+            Operation::Dot => self.type_check_expr_dot(binary_expr, needs_mutability),
             Operation::Assign => self.type_check_expr_assign(binary_expr),
             _ if binary_expr.is_comparison() => self.type_check_expr_binary_comparison(binary_expr),
             _ if binary_expr.is_arithmetic() => self.type_check_expr_binary_arithmetic(binary_expr),
@@ -1291,8 +1323,8 @@ impl<'flags> TypeChecker<'flags> {
         binary_expr: &mut nodes::BinaryNode
     ) -> Type {
         check_or_abort!(
-            lhs_type, self.type_check_expression(&mut binary_expr.lhs),
-            rhs_type, self.type_check_expression(&mut binary_expr.rhs)
+            lhs_type, self.type_check_expression(&mut binary_expr.lhs, false),
+            rhs_type, self.type_check_expression(&mut binary_expr.rhs, false)
         );
         assert!(binary_expr.is_bitwise());
         match (&lhs_type, &rhs_type) {
@@ -1365,8 +1397,8 @@ impl<'flags> TypeChecker<'flags> {
         binary_expr: &mut nodes::BinaryNode,
     ) -> Type {
         check_or_abort!(
-            lhs_type, self.type_check_expression(&mut binary_expr.lhs),
-            rhs_type, self.type_check_expression(&mut binary_expr.rhs)
+            lhs_type, self.type_check_expression(&mut binary_expr.lhs, false),
+            rhs_type, self.type_check_expression(&mut binary_expr.rhs, false)
         );
         assert!(binary_expr.is_arithmetic());
         match (&lhs_type, &rhs_type) {
@@ -1446,8 +1478,8 @@ impl<'flags> TypeChecker<'flags> {
         binary_expr: &mut nodes::BinaryNode,
     ) -> Type {
         check_or_abort!(
-            lhs_type, self.type_check_expression(&mut binary_expr.lhs),
-            rhs_type, self.type_check_expression(&mut binary_expr.rhs)
+            lhs_type, self.type_check_expression(&mut binary_expr.lhs, false),
+            rhs_type, self.type_check_expression(&mut binary_expr.rhs, false)
         );
         assert!(binary_expr.is_comparison());
         match (&lhs_type, &rhs_type) {
@@ -1526,10 +1558,8 @@ impl<'flags> TypeChecker<'flags> {
             return Type::None;
         }
 
-        check_or_abort!(
-            lhs_type, self.type_check_expression(&mut assign_expr.lhs),
-            rhs_type, self.type_check_expression(&mut assign_expr.rhs)
-        );
+        check_or_abort!(lhs_type, self.type_check_expression(&mut assign_expr.lhs, true));
+        check_or_abort!(rhs_type, self.type_check_expression(&mut assign_expr.rhs, false));
 
         if lhs_type == Type::Unknown {
             // Note: This is an error, how can we assign to something we don't know the type of?
@@ -1558,8 +1588,9 @@ impl<'flags> TypeChecker<'flags> {
     fn type_check_expr_dot(
         &mut self,
         binary_expr: &mut nodes::BinaryNode,
+        needs_mutability: bool,
     ) -> Type {
-        check_or_abort!(lhs_type, self.type_check_expression(&mut binary_expr.lhs));
+        check_or_abort!(lhs_type, self.type_check_expression(&mut binary_expr.lhs, needs_mutability));
         if let Type::Class(class_name) = lhs_type {
             let Some(class) = self.known_classes.get(&class_name) else {
                 self.report_error(TypeError::DotOnNonClass(
@@ -1630,7 +1661,7 @@ impl<'flags> TypeChecker<'flags> {
     ) -> Type {
         let mut array_type = Type::Unknown;
         for elem in &mut literal.elements {
-            check_or_abort!(elem_type, self.type_check_expression(elem));
+            check_or_abort!(elem_type, self.type_check_expression(elem, false));
             if elem_type == Type::Unknown {
                 return Type::Unknown;
             } else if array_type == Type::Unknown {
@@ -1728,7 +1759,13 @@ impl<'flags> TypeChecker<'flags> {
     fn type_check_expr_function_call(
         &mut self,
         func_call: &mut nodes::CallNode,
+        needs_mutability: bool,
     ) -> Type {
+        if needs_mutability {
+            self.report_error(TypeError::CantMutateTemporary(
+                func_call.location,
+            ));
+        }
         let function = if func_call.is_extern {
             debug_assert!(!func_call.is_constructor);
             let Some(external) = self.known_externs.get(&func_call.function_name) else {

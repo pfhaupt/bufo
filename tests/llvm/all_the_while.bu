@@ -3,12 +3,12 @@
 //! SUCCESS
 
 func foo() -> u32 {
-    let a: u32 = 0;
+    mut a: u32 = 0;
     while (a < 10) a = a + 1;
     return a; // returns 10
 }
 
-func bar(a: u32) -> u32 {
+func bar(mut a: u32) -> u32 {
     while (a != 100) {
         while (a < 100) {
             a = a + 1;
@@ -21,9 +21,9 @@ func bar(a: u32) -> u32 {
 }
 
 func main() -> u32 {
-    let a: u32 = 0;
+    mut a: u32 = 0;
     while (a < 10000) {
-        let b: u32 = 9;
+        mut b: u32 = 9;
         while (b != 0) b = b - 1;
         while (b != 1) { b = b + 1; }
         while (b < 0) while (a < 0) {

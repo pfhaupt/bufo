@@ -19,9 +19,9 @@ func bar(a: u32) -> u32 {
 }
 
 func main() -> u32 {
-    let a: u32 = 10;
+    mut a: u32 = 10;
     let b: u32 = 10;
-    let c: u32 = 5;
+    mut c: u32 = 5;
     if (a == b) c = foo(); // sets c to 1
     else {}
     if (c == 1)

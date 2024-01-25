@@ -63,7 +63,7 @@ func main() -> u32 {
     // let e: i32 = arr[index, index];
     // let ba: i32 = t.a;
     // foo();
-    let d: u32 = 0;
+    mut d: u32 = 0;
     d = d + d + d + d + d + d + d + d + d;
     return bar.a;
 }

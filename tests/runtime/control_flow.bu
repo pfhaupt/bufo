@@ -3,7 +3,7 @@
 //! SUCCESS
 
 func main() -> u64 {
-    let a: u64 = 0;
+    mut a: u64 = 0;
     return a;
     let c: u64 = 0;
     while (a < 100) {

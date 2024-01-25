@@ -1,0 +1,19 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+class Foo {
+    field: u32;
+    constructor() {}
+
+    func get_field(this) -> u32 {
+        return this.field;
+    }
+}
+
+func main() -> u32 {
+    mut f: Foo = Foo();
+    f.field = 10;
+    if (f.get_field() != 10) return f.get_field();
+    return 0;
+}

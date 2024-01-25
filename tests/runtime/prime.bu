@@ -9,7 +9,7 @@ func is_prime(n: u64) -> bool {
     if (n % 2 == 0) return false;
     if (n < 9) return true;
     if (n % 3 == 0) return false;
-    let f: u64 = 5;
+    mut f: u64 = 5;
     while (f * f <= n) {
         if (n % f == 0) return false;
         if (n % (f + 2) == 0) return false;
