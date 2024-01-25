@@ -14,14 +14,8 @@ use tracer::trace_call;
 macro_rules! check_function {
     ($tc:ident, $call_node:ident, $func_info:ident, $typ:expr) => {
         {
-            let mut params = $func_info.parameters.clone();
-            if $func_info.has_this {
-                // We need to remove the `this` parameter
-                // TODO: This is a hack, we should probably have a better way of doing this
-                params.remove(0);
-            }
             let return_type = $func_info.return_type.t.clone();
-            match $call_node.arguments.len().cmp(&params.len()) {
+            match $call_node.arguments.len().cmp(&$func_info.parameters.len()) {
                 std::cmp::Ordering::Less => {
                     $tc.report_error(TypeError::NotEnoughArguments(
                         $typ,
@@ -29,7 +23,7 @@ macro_rules! check_function {
                         $call_node.function_name.clone(),
                         $call_node.arguments.len(),
                         $func_info.location,
-                        params.len(),
+                        $func_info.parameters.len(),
                     ));
                     return return_type;
                 }
@@ -40,14 +34,14 @@ macro_rules! check_function {
                         $call_node.function_name.clone(),
                         $call_node.arguments.len(),
                         $func_info.location,
-                        params.len(),
+                        $func_info.parameters.len(),
                     ));
                     return return_type;
                 }
                 std::cmp::Ordering::Equal => (),
             }
 
-            for (mut arg, param) in $call_node.arguments.iter_mut().zip(params) {
+            for (mut arg, param) in $call_node.arguments.iter_mut().zip($func_info.parameters.clone()) {
                 let expected = param.typ;
                 let arg_type = $tc.type_check_expression(arg);
                 if arg_type == Type::Unknown {
@@ -542,7 +536,6 @@ pub struct TypeChecker<'flags> {
     known_variables: VecDeque<HashMap<String, Variable>>,
     current_stack_size: usize,
     errors: Vec<TypeError>,
-    #[allow(unused)]
     flags: &'flags Flags,
 }
 
@@ -1593,7 +1586,18 @@ impl<'flags> TypeChecker<'flags> {
                 nodes::Expression::FunctionCall(call_node) => {
                     // FIXME: Error Log shows wrong location
                     if let Some(method) = class.get_method(&call_node.function_name) {
-                        let result = check_function!(self, call_node, method, "Method");
+                        let result = if method.has_this {
+                            // FIXME: This is not a good solution, but it works for now
+                            call_node.arguments.insert(
+                                0,
+                                *binary_expr.lhs.clone(),
+                            );
+                            let result = check_function!(self, call_node, method, "Method");
+                            call_node.arguments.remove(0);
+                            result
+                        } else {
+                            check_function!(self, call_node, method, "Method")
+                        };
                         binary_expr.typ = result.clone();
                         result
                     } else {
@@ -1745,8 +1749,6 @@ impl<'flags> TypeChecker<'flags> {
                     ));
                     return Type::None;
                 };
-                func_call.function_name =
-                    format!("{}_{}", func_call.function_name, CONSTRUCTOR_KEYWORD);
                 debug_assert!(
                     class.has_constructor,
                     "Class has constructor feature, but has_constructor is false"

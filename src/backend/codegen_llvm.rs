@@ -630,7 +630,11 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
 
     #[trace_call(always)]
     fn codegen_function_call(&mut self, function_call: &nodes::CallNode) -> Result<BasicValueEnum<'ctx>, String> {
-        let name = function_call.function_name.clone();
+        let name = if function_call.is_constructor {
+            function_call.function_name.clone() + "_constructor"
+        } else {
+            function_call.function_name.clone()
+        };
         if !self.module.get_function(&name).is_some() {
             internal_panic!(format!("Could not find function {}", name));
         }
