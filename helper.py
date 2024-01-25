@@ -3,6 +3,8 @@ import subprocess
 import os
 import sys
 
+from multiprocessing import Pool
+from typing import Tuple
 from dataclasses import dataclass
 from enum import Enum
 
@@ -22,10 +24,11 @@ def compare(expected: List[str], actual: List[str]) -> bool:
     return True
 
 
-def call_cmd(cmd: List, log: bool = True) -> subprocess.CompletedProcess[bytes]:
+def call_cmd(cmd: List, log: bool = True) -> Tuple[str, subprocess.CompletedProcess[bytes]]:
     if log:
-        print("[INFO]", " ".join(cmd))
-    return subprocess.run(cmd, capture_output=True)
+        buf = "[INFO]" + " ".join(cmd) + "\n"
+        return buf, subprocess.run(cmd, capture_output=True)
+    return "\n", subprocess.run(cmd, capture_output=True)
 
 class STATE(Enum):
     SUCCESS = 0
@@ -40,7 +43,7 @@ class TestResult:
     success: STATE
 
 def run_test(path: str, exec: bool) -> TestResult:
-    print("Running test: " + path)
+    print_buffer = "Running test: " + path + "\n"
     """
     The protocol for tests is as follows:
     //! THIS IS A TEST PROGRAM
@@ -57,29 +60,35 @@ def run_test(path: str, exec: bool) -> TestResult:
     with open(path, "r") as f:
         lines = f.readlines()
         if not lines[0].startswith("//! THIS IS A TEST PROGRAM"):
-            print("Invalid test file: " + path, file=sys.stderr)
-            print("First line must be `//! THIS IS A TEST PROGRAM`", file=sys.stderr)
+            print_buffer += "Invalid test file: " + path + "\n"
+            print_buffer += "First line must be `//! THIS IS A TEST PROGRAM`\n"
+            print(print_buffer, file=sys.stderr)
             return TestResult(path, STATE.INVALID)
 
         point_of_failure = lines[1].removeprefix("//! ").upper().strip()
         if point_of_failure not in ["RUNTIME", "COMPILER"]:
-            print("Invalid test file: " + path, file=sys.stderr)
-            print("Second line must be either `//! RUNTIME` or `//! COMPILETIME`", file=sys.stderr)
+            print_buffer += "Invalid test file: " + path + "\n"
+            print_buffer += "Second line must be either `//! RUNTIME` or `//! COMPILETIME`\n"
+            print(print_buffer, file=sys.stderr)
             return TestResult(path, STATE.INVALID)
 
         if point_of_failure == "RUNTIME" and not exec:
+            print_buffer += "Ignoring test: " + path + "\n"
+            print(print_buffer, file=sys.stderr)
             return TestResult(path, STATE.IGNORED)
 
         expected_mode = lines[2].removeprefix("//! ").upper().strip()
         if expected_mode not in ["FAILURE", "SUCCESS"]:
-            print("Invalid test file: " + path, file=sys.stderr)
-            print("Second line must be either `//! FAILURE` or `//! SUCCESS`", file=sys.stderr)
+            print_buffer += "Invalid test file: " + path + "\n"
+            print_buffer += "Third line must be either `//! FAILURE` or `//! SUCCESS`\n"
+            print(print_buffer, file=sys.stderr)
             return TestResult(path, STATE.INVALID)
 
         if expected_mode == "FAILURE":
             if not lines[3].startswith("//! CODE: "):
-                print("Invalid test file: " + path, file=sys.stderr)
-                print("For failures, fourth line must be `//! CODE: <error code>`", file=sys.stderr)
+                print_buffer += "Invalid test file: " + path + "\n"
+                print_buffer += "For failures, fourth line must be `//! CODE: <error code>`\n"
+                print(print_buffer, file=sys.stderr)
                 return TestResult(path, STATE.INVALID)
             expected_error_code = int(lines[3].removeprefix("//! CODE: ").strip())
         else:
@@ -87,8 +96,9 @@ def run_test(path: str, exec: bool) -> TestResult:
         
         if expected_mode == "FAILURE" and point_of_failure == "COMPILER":
             if not lines[4].startswith("//! ERROR:"):
-                print("Invalid test file: " + path, file=sys.stderr)
-                print("For failures at compiletime, fifth line must be `//! ERROR:`", file=sys.stderr)
+                print_buffer += "Invalid test file: " + path + "\n"
+                print_buffer += "For failures at compiletime, fifth line must be `//! ERROR:`\n"
+                print(print_buffer, file=sys.stderr)
                 return TestResult(path, STATE.INVALID)
             index = 5
             error_lines = []
@@ -99,50 +109,58 @@ def run_test(path: str, exec: bool) -> TestResult:
             error_lines = []
 
         if point_of_failure == "RUNTIME":
-            output = call_cmd([COMPILER_PATH, "-i", path])
+            buf, output = call_cmd([COMPILER_PATH, "-i", path])
+            print_buffer += buf
             if output.returncode != 0:
-                print("Compilation failed", file=sys.stderr)
-                print(output.stderr.decode("utf-8"), file=sys.stderr)
+                print_buffer += "Compilation failed\n"
+                print_buffer += output.stderr.decode("utf-8")
+                print(print_buffer, file=sys.stderr)
                 return TestResult(path, STATE.INVALID)
             filename = path.split("\\")[-1].split(".")[0]
-            output = call_cmd(["./out/" + filename + ".exe"])
+            buf, output = call_cmd(["./out/" + filename + ".exe"])
+            print_buffer += buf
             # We're not generating assembly in LLVM mode
             if not USE_LLVM: os.remove("./out/" + filename + ".asm")
             os.remove("./out/" + filename + ".obj")
             os.remove("./out/" + filename + ".exe")
         else:
-            output = call_cmd([COMPILER_PATH, "-i", path])
+            buf, output = call_cmd([COMPILER_PATH, "-i", path])
+            print_buffer += buf
         # stdout = output.stdout.decode("utf-8").split('\n')
         stderr = output.stderr.decode("utf-8").split('\n')
         if output.returncode == 101:
-            print("The compiler panicked", file=sys.stderr)
-            print(output.stderr.decode("utf-8"), file=sys.stderr)
+            print_buffer += "The compiler panicked\n"
+            print_buffer += output.stderr.decode("utf-8")
+            print(print_buffer, file=sys.stderr)
             return TestResult(path, STATE.PANIC)
         if expected_mode == "FAILURE":
             if point_of_failure == "COMPILER":
                 if not compare(error_lines, stderr):
-                    print("Expected error message not found", file=sys.stderr)
-                    print("Expected:", file=sys.stderr)
-                    print(error_lines, file=sys.stderr)
-                    print("Actual:", file=sys.stderr)
-                    print(stderr, file=sys.stderr)
+                    print_buffer += "Expected error message not found\n"
+                    print_buffer += "Expected:\n"
+                    print_buffer += "\n".join(error_lines) + "\n"
+                    print_buffer += "Actual:\n"
+                    print_buffer += "\n".join(stderr) + "\n"
+                    print(print_buffer, file=sys.stderr)
                     return TestResult(path, STATE.FAILURE)
-            elif point_of_failure == "RUNTIME" and not exec:
-                return TestResult(path, STATE.IGNORED)
             if output.returncode != expected_error_code:
-                print("Expected failure, but program succeeded")
+                print_buffer += "Expected error code " + str(expected_error_code) + ", but got " + str(output.returncode) + "\n"
+                print(print_buffer, file=sys.stderr)
                 return TestResult(path, STATE.FAILURE)
         elif expected_mode == "SUCCESS":
             if output.returncode != expected_error_code:
-                print("Expected success, but program failed")
+                print_buffer += "Expected error code " + str(expected_error_code) + ", but got " + str(output.returncode) + "\n"
+                print(print_buffer, file=sys.stderr)
                 return TestResult(path, STATE.FAILURE)
+        print(print_buffer)
         return TestResult(path, STATE.SUCCESS)
 
 def recompile_compiler() -> None:
     print("Recompiling compiler...")
     cargo = ["cargo", "build"]
     command = cargo + ["--features=llvm"] if USE_LLVM else cargo
-    cmd = call_cmd(command)
+    buf, cmd = call_cmd(command)
+    print(buf)
     if cmd.returncode != 0:
         print("Failed to recompile compiler", file=sys.stderr)
         print(cmd.stderr.decode("utf-8"), file=sys.stderr)
@@ -155,23 +173,28 @@ def run_all_tests(exec: bool = True):
     panicked_tests = []
     invalid_tests = []
     ignored_tests = []
+    all_tests = []
     for root, _, files in os.walk("./tests"):
         for filename in files:
             path = os.path.join(root, filename)
             if os.path.isfile(path):
-                result = run_test(path, exec)
-                total += 1
-                match result.success:
-                    case STATE.SUCCESS:
-                        pass
-                    case STATE.FAILURE:
-                        failed_tests.append(result.path)
-                    case STATE.PANIC:
-                        panicked_tests.append(result.path)
-                    case STATE.INVALID:
-                        invalid_tests.append(result.path)
-                    case STATE.IGNORED:
-                        ignored_tests.append(result.path)
+                all_tests.append(path)
+
+    with Pool(16) as p:
+        results = p.starmap(run_test, [(path, exec) for path in all_tests])
+        for result in results:
+            total += 1
+            match result.success:
+                case STATE.SUCCESS:
+                    pass
+                case STATE.FAILURE:
+                    failed_tests.append(result.path)
+                case STATE.PANIC:
+                    panicked_tests.append(result.path)
+                case STATE.INVALID:
+                    invalid_tests.append(result.path)
+                case STATE.IGNORED:
+                    ignored_tests.append(result.path)
 
     def print_tests(tests: List[str], s: str) -> None:
         if len(tests) > 0:
