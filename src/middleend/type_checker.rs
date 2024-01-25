@@ -75,7 +75,7 @@ macro_rules! check_function {
 macro_rules! check_parameters {
     ($tc:ident, $function:ident, $implicit_this:expr) => {
         {
-            let mut parameters: HashMap<String, Variable> = HashMap::new();
+            let mut parameters: Vec<Variable> = Vec::new();
             let mut errors: Vec<TypeError> = Vec::new();
             for param in &$function.parameters {
                 let p = Variable {
@@ -84,15 +84,18 @@ macro_rules! check_parameters {
                     typ: param.typ.typ.clone(),
                     is_mutable: param.is_mutable,
                 };
-                if let Some(p) = parameters.get(&param.name) {
+                let index_of = parameters.iter().position(|p| p.name == param.name);
+                if index_of.is_some() {
+                    let index_of = index_of.unwrap();
+                    let p2 = &parameters[index_of];
                     errors.push(TypeError::Redeclaration(
                         "Parameter",
                         param.location,
                         param.name.clone(),
-                        p.location,
+                        p2.location,
                     ));
                 } else {
-                    parameters.insert(param.name.clone(), p);
+                    parameters.push(p);
                 }
             }
             if parameters.len() > 4 {
@@ -101,7 +104,7 @@ macro_rules! check_parameters {
                     $function.location,
                 ));
             }
-            (parameters.into_iter().map(|(_, v)| v).collect(), errors)
+            (parameters, errors)
         }
     };
 }
@@ -578,16 +581,7 @@ impl<'flags> TypeChecker<'flags> {
             None => {
                 let return_type = &function.return_type.typ;
                 let return_loc = &function.return_type.location;
-                let parameters: Vec<_> = function
-                    .parameters
-                    .iter()
-                    .map(|param| Variable {
-                        name: param.name.clone(),
-                        location: param.location,
-                        typ: param.typ.typ.clone(),
-                        is_mutable: param.is_mutable,
-                    })
-                    .collect();
+                let (parameters, errors) = check_parameters!(self, function, false);
                 let func = Function {
                     location: *location,
                     return_type: TypeLoc::new(*return_loc, return_type.clone()),
@@ -595,6 +589,9 @@ impl<'flags> TypeChecker<'flags> {
                     has_this: false,
                 };
                 self.known_functions.insert(name.clone(), func);
+                for error in errors {
+                    self.report_error(error);
+                }
             }
         }
     }
@@ -613,16 +610,7 @@ impl<'flags> TypeChecker<'flags> {
             None => {
                 let return_type = &extern_node.return_type.typ;
                 let return_loc = &extern_node.return_type.location;
-                let parameters: Vec<_> = extern_node
-                    .parameters
-                    .iter()
-                    .map(|param| Variable {
-                        name: param.name.clone(),
-                        location: param.location,
-                        typ: param.typ.typ.clone(),
-                        is_mutable: param.is_mutable,
-                    })
-                    .collect();
+                let (parameters, errors) = check_parameters!(self, extern_node, false);
                 let func = Function {
                     location: *location,
                     return_type: TypeLoc::new(*return_loc, return_type.clone()),
@@ -630,6 +618,9 @@ impl<'flags> TypeChecker<'flags> {
                     has_this: false,
                 };
                 self.known_externs.insert(name.clone(), func);
+                for error in errors {
+                    self.report_error(error);
+                }
             }
         }
     }
@@ -648,7 +639,7 @@ impl<'flags> TypeChecker<'flags> {
         } else {
             let return_type = &method.return_type.typ;
             let return_loc = &method.return_type.location;
-            let (parameters, errors): (Vec<Variable>, Vec<TypeError>) = check_parameters!(self, method, true);
+            let (parameters, errors) = check_parameters!(self, method, true);
             let method = Function {
                 location: *location,
                 return_type: TypeLoc::new(*return_loc, return_type.clone()),

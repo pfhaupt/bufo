@@ -640,6 +640,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             args.push(self.codegen_expression(arg, true)?.into());
         }
         let result = self.builder.build_call(function, &args, "codegen_function_call");
+        // FIXME: Panics if function returns void
         Ok(result.try_as_basic_value().left().unwrap())
     }
 
