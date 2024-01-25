@@ -305,9 +305,6 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
 
     #[trace_call(always)]
     fn codegen_file(&mut self, file: &nodes::FileNode) -> Result<(), String> {
-        for external in &file.externs {
-            self.codegen_extern(external)?;
-        }
         for class in &file.classes {
             self.codegen_class(class)?;
         }
@@ -644,8 +641,13 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             args.push(self.codegen_expression(arg, true)?.into());
         }
         let result = self.builder.build_call(function, &args, "codegen_function_call");
-        // FIXME: Panics if function returns void
-        Ok(result.try_as_basic_value().left().unwrap())
+        if result.try_as_basic_value().left().is_none() {
+            // NOTE: The return value doesn't matter, the function returns None
+            //       it's a workaround for `void_type` not being a BasicValueEnum
+            Ok(self.context.i32_type().const_int(0, false).into())
+        } else {
+            Ok(result.try_as_basic_value().left().unwrap())
+        }
     }
 
     #[trace_call(always)]
