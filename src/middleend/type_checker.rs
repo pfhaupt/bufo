@@ -97,6 +97,8 @@ macro_rules! check_parameters {
                     parameters.push(p);
                 }
             }
+            // in llvm we're not limited to 4 parameters
+            #[cfg(not(feature = "llvm"))]
             if parameters.len() > 4 {
                 errors.push(TypeError::TooManyParameters(
                     "Method",
@@ -135,6 +137,7 @@ enum TypeError {
     /// Syntax: Error Loc, Type Name
     UnknownType(Location, Type),
     /// Syntax: Fn Type, Error Loc
+    #[cfg(not(feature = "llvm"))]
     TooManyParameters(&'static str, Location),
     /// Syntax: Error Loc, Expected, Found
     TypeMismatch(Location, Type, Type),
@@ -206,6 +209,7 @@ impl Display for TypeError {
                     ERR_STR, loc, name
                 )
             }
+            #[cfg(not(feature = "llvm"))]
             TypeError::TooManyParameters(kind, loc) => {
                 write!(
                     f,
