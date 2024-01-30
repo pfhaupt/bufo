@@ -561,6 +561,7 @@ pub struct TypeChecker<'flags> {
     known_classes: HashMap<String, Class>,
     known_functions: HashMap<String, Function>,
     known_variables: VecDeque<HashMap<String, Variable>>,
+    #[cfg(not(feature = "llvm"))]
     current_stack_size: usize,
     errors: Vec<TypeError>,
     flags: &'flags Flags,
@@ -574,6 +575,7 @@ impl<'flags> TypeChecker<'flags> {
             known_classes: HashMap::new(),
             known_functions: HashMap::new(),
             known_variables: VecDeque::new(),
+            #[cfg(not(feature = "llvm"))]
             current_stack_size: 0,
             errors: Vec::new(),
             flags,
@@ -812,7 +814,10 @@ impl<'flags> TypeChecker<'flags> {
             self.type_check_parameter(p);
         }
         self.type_check_type_node(&mut extern_node.return_type);
-        self.current_stack_size = 0;
+        #[cfg(not(feature = "llvm"))]
+        {
+            self.current_stack_size = 0;
+        }
     }
 
     #[trace_call(always)]
@@ -841,6 +846,7 @@ impl<'flags> TypeChecker<'flags> {
     ) {
         debug_assert!(self.known_variables.is_empty());
         debug_assert!(self.known_classes.contains_key(class_name));
+        #[cfg(not(feature = "llvm"))]
         debug_assert!(self.current_stack_size == 0);
 
         for param in &mut constructor.parameters {
@@ -861,13 +867,20 @@ impl<'flags> TypeChecker<'flags> {
                 true,
             ),
         );
-        self.current_stack_size += 8; // `this` is always 8 bytes
+
+        #[cfg(not(feature = "llvm"))]
+        {
+            self.current_stack_size += 8; // `this` is always 8 bytes
+        }
 
         self.known_variables.push_back(parameters);
         self.type_check_block(&mut constructor.block);
-        constructor.stack_size = self.current_stack_size;
+        #[cfg(not(feature = "llvm"))]
+        {
+            constructor.stack_size = self.current_stack_size;
+            self.current_stack_size = 0;
+        }
 
-        self.current_stack_size = 0;
         self.known_variables.clear();
     }
 
@@ -879,6 +892,7 @@ impl<'flags> TypeChecker<'flags> {
     ) {
         debug_assert!(self.known_variables.is_empty());
         debug_assert!(self.known_classes.contains_key(class_name));
+        #[cfg(not(feature = "llvm"))]
         debug_assert!(self.current_stack_size == 0);
 
         for param in &mut method.parameters {
@@ -901,9 +915,12 @@ impl<'flags> TypeChecker<'flags> {
         self.known_variables.push_back(parameters);
 
         self.type_check_block(&mut method.block);
-        method.stack_size = self.current_stack_size;
+        #[cfg(not(feature = "llvm"))]
+        {
+            method.stack_size = self.current_stack_size;
+            self.current_stack_size = 0;
+        }
 
-        self.current_stack_size = 0;
         self.known_variables.clear();
     }
 
@@ -911,6 +928,7 @@ impl<'flags> TypeChecker<'flags> {
     fn type_check_function(&mut self, function: &mut nodes::FunctionNode) {
         debug_assert!(self.known_variables.is_empty());
         debug_assert!(self.known_functions.contains_key(&function.name));
+        #[cfg(not(feature = "llvm"))]
         debug_assert!(self.current_stack_size == 0);
 
         for param in &mut function.parameters {
@@ -924,9 +942,12 @@ impl<'flags> TypeChecker<'flags> {
         self.known_variables.push_back(parameters);
 
         self.type_check_block(&mut function.block);
-        function.stack_size = self.current_stack_size;
+        #[cfg(not(feature = "llvm"))]
+        {
+            function.stack_size = self.current_stack_size;
+            self.current_stack_size = 0;
+        }
 
-        self.current_stack_size = 0;
         self.known_variables.clear();
     }
 
@@ -934,8 +955,11 @@ impl<'flags> TypeChecker<'flags> {
     fn type_check_parameter(&mut self, parameter: &mut nodes::ParameterNode) {
         self.type_check_type_node(&parameter.typ);
         debug_assert!(parameter.typ.typ != Type::Unknown);
-        let var_size = parameter.typ.typ.size();
-        self.current_stack_size += var_size;
+        #[cfg(not(feature = "llvm"))]
+        {
+            let var_size = parameter.typ.typ.size();
+            self.current_stack_size += var_size;
+        }
     }
 
     #[trace_call(always)]
@@ -978,8 +1002,11 @@ impl<'flags> TypeChecker<'flags> {
             },
             None => {
                 self.type_check_type_node(&let_node.typ);
-                let var_size = let_node.typ.typ.size();
-                self.current_stack_size += var_size;
+                #[cfg(not(feature = "llvm"))]
+                {
+                    let var_size = let_node.typ.typ.size();
+                    self.current_stack_size += var_size;
+                }
 
                 let var = Variable {
                     name: let_node.name.clone(),

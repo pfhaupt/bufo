@@ -43,6 +43,7 @@ pub struct ConstructorNode {
     pub return_type: TypeNode,
     pub parameters: Vec<ParameterNode>,
     pub block: BlockNode,
+    #[cfg(not(feature = "llvm"))]
     pub stack_size: usize,
 }
 
@@ -53,6 +54,7 @@ pub struct FunctionNode {
     pub return_type: TypeNode,
     pub parameters: Vec<ParameterNode>,
     pub block: BlockNode,
+    #[cfg(not(feature = "llvm"))]
     pub stack_size: usize,
 }
 
@@ -64,6 +66,7 @@ pub struct MethodNode {
     pub return_type: TypeNode,
     pub parameters: Vec<ParameterNode>,
     pub block: BlockNode,
+    #[cfg(not(feature = "llvm"))]
     pub stack_size: usize,
 }
 

@@ -1056,6 +1056,7 @@ impl<'flags> Parser<'flags> {
             return_type,
             parameters,
             block,
+            #[cfg(not(feature = "llvm"))]
             stack_size: 0,
         })
     }
@@ -1091,6 +1092,7 @@ impl<'flags> Parser<'flags> {
             return_type,
             parameters,
             block,
+            #[cfg(not(feature = "llvm"))]
             stack_size: 0,
         })
     }
@@ -1128,6 +1130,7 @@ impl<'flags> Parser<'flags> {
             return_type,
             parameters,
             block,
+            #[cfg(not(feature = "llvm"))]
             stack_size: 0,
         })
     }
