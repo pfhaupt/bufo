@@ -8,12 +8,11 @@
 
 struct Test {
     a: i32;
-
-    constructor() {
-        this.b = 10;
-    }
 }
 
 func main() {
-    
+    let t: Test = Test {
+        a: 10,
+        b: 5
+    };
 }

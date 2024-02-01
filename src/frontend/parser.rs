@@ -14,7 +14,6 @@ use once_cell::sync::Lazy;
 const LOOKAHEAD_LIMIT: usize = 3;
 
 pub const STRUCT_KEYWORD: &str = "struct";
-pub const CONSTRUCTOR_KEYWORD: &str = "constructor";
 pub const THIS_KEYWORD: &str = "this";
 pub const FUNCTION_KEYWORD: &str = "func";
 pub const LET_KEYWORD: &str = "let";
@@ -40,7 +39,6 @@ enum ParserError {
     UnexpectedSymbol(Location, char),
     InvalidFunctionName(Location, String),
     InvalidStructName(Location, String),
-    ConstructorReturnsValue(Location),
     ExpectedExpression(Location, TokenType),
     InvalidIntegerLiteral(Location, String, Type),
     STDParseIntError(Location, String, std::num::ParseIntError),
@@ -79,10 +77,6 @@ impl Display for ParserError {
             Self::UnexpectedSymbol(l, c) => format!("{l:?}: Unexpected Symbol `{}`", c),
             Self::InvalidFunctionName(l, s) => format!("{l:?}: Invalid Function Name: {}", s),
             Self::InvalidStructName(l, s) => format!("{l:?}: Invalid Struct Name: {}", s),
-            Self::ConstructorReturnsValue(l) => format!(
-                "{l:?}: Constructor cannot return a value.\n{}: The return type of constructors is implicit, and should not be specified.",
-                NOTE_STR
-            ),
             Self::ExpectedExpression(l, e) => format!("{l:?}: Expected Expression, found {}", e),
             Self::InvalidIntegerLiteral(l, s, typ) => format!("{l:?}: Invalid Integer Literal {} for type {}", s, typ),
             Self::STDParseIntError(l, s, e) => format!("{l:?}: Failed to parse integer literal {}\n{}: Reason: {}", s, NOTE_STR, e),
@@ -137,7 +131,6 @@ pub enum TokenType {
     OpenSquare,
     ClosingSquare,
     StructKeyword,
-    ConstructorKeyword,
     ThisKeyword,
     FunctionKeyword,
     LetKeyword,
@@ -203,7 +196,6 @@ impl Display for TokenType {
             Self::OpenSquare => write!(f, "`[`"),
             Self::ClosingSquare => write!(f, "`]`"),
             Self::StructKeyword => write!(f, "`{}`", STRUCT_KEYWORD),
-            Self::ConstructorKeyword => write!(f, "`{}`", CONSTRUCTOR_KEYWORD),
             Self::ThisKeyword => write!(f, "`{}`", THIS_KEYWORD),
             Self::FunctionKeyword => write!(f, "`{}`", FUNCTION_KEYWORD),
             Self::LetKeyword => write!(f, "`{}`", LET_KEYWORD),
@@ -539,7 +531,7 @@ impl<'flags> Parser<'flags> {
         }
         debug_assert_eq!(
             TokenType::Eof as u8 + 1,
-            46,
+            45,
             "Not all TokenTypes are handled in next_token()"
         );
         self.trim_whitespace();
@@ -556,7 +548,6 @@ impl<'flags> Parser<'flags> {
                 });
                 let typ = match value.as_str() {
                     STRUCT_KEYWORD => TokenType::StructKeyword,
-                    CONSTRUCTOR_KEYWORD => TokenType::ConstructorKeyword,
                     THIS_KEYWORD => TokenType::ThisKeyword,
                     FUNCTION_KEYWORD => TokenType::FunctionKeyword,
                     LET_KEYWORD => TokenType::LetKeyword,
@@ -965,7 +956,6 @@ impl<'flags> Parser<'flags> {
         try_parse!(self.expect(TokenType::OpenCurly));
         let mut fields = vec![];
         let mut methods = vec![];
-        let mut constructors = vec![];
         const RECOVER_TOKENS: [TokenType; 2] = [
             TokenType::ClosingCurly,
             TokenType::Semi,
@@ -976,10 +966,6 @@ impl<'flags> Parser<'flags> {
                     parse_or_recover!(parsed_field, self.parse_field(), self.recover(&RECOVER_TOKENS));
                     fields.push(parsed_field);
                 }
-                TokenType::ConstructorKeyword => {
-                    parse_or_recover!(parsed_constructor, self.parse_constructor(&name), self.recover(&RECOVER_TOKENS));
-                    constructors.push(parsed_constructor);
-                }
                 TokenType::FunctionKeyword => {
                     parse_or_recover!(parsed_method, self.parse_method(&name), self.recover(&RECOVER_TOKENS));
                     methods.push(parsed_method);
@@ -987,7 +973,7 @@ impl<'flags> Parser<'flags> {
                 e => {
                     self.report_error(ParserError::UnexpectedTokenMany(
                         self.current_location(),
-                        vec![TokenType::Identifier, TokenType::ConstructorKeyword, TokenType::FunctionKeyword],
+                        vec![TokenType::Identifier, TokenType::FunctionKeyword],
                         e,
                     ));
                     self.recover(&RECOVER_TOKENS);
@@ -1002,7 +988,6 @@ impl<'flags> Parser<'flags> {
             name,
             fields,
             methods,
-            constructors,
         })
     }
 
@@ -1018,40 +1003,6 @@ impl<'flags> Parser<'flags> {
             location,
             name,
             type_def,
-        })
-    }
-
-    #[trace_call(always)]
-    fn parse_constructor(&mut self, struct_name: &str) -> Option<nodes::ConstructorNode> {
-        let location = self.current_location();
-        try_parse!(self.expect(TokenType::ConstructorKeyword));
-
-        try_parse!(self.expect(TokenType::OpenRound));
-        try_parse!(parameters, self.parse_parameters(false));
-        try_parse!(self.expect(TokenType::ClosingRound));
-
-        if self.eat(TokenType::Arrow) {
-            self.report_error(ParserError::ConstructorReturnsValue(
-                self.current_location(),
-            ));
-            return None;
-        }
-
-        let return_type = nodes::TypeNode {
-            location,
-            typ: Type::Struct(struct_name.to_string()),
-        };
-
-        try_parse!(block, self.parse_block());
-
-        Some(nodes::ConstructorNode {
-            location,
-            struct_name: struct_name.to_string(),
-            return_type,
-            parameters,
-            block,
-            #[cfg(not(feature = "llvm"))]
-            stack_size: 0,
         })
     }
 
@@ -1145,8 +1096,6 @@ impl<'flags> Parser<'flags> {
         - In a method:
             - Either the first parameter is `this` and has no type
             - Or there is no `this` parameter (static method)
-        - In a constructor:
-            - There is no `this` parameter
         - In a function:
             - There is no `this` parameter
         - In an extern:
@@ -1346,14 +1295,6 @@ impl<'flags> Parser<'flags> {
     fn parse_stmt_return(&mut self) -> Option<nodes::ReturnNode> {
         let location = self.current_location();
         try_parse!(self.expect(TokenType::ReturnKeyword));
-
-        if self.current_function.is_none() {
-            // We're in a constructor
-            self.report_error(ParserError::ConstructorReturnsValue(
-                location,
-            ));
-            return None;
-        }
 
         let return_value = if !self.at(TokenType::Semi) {
             try_parse!(rv, self.parse_expression(0, Associativity::Left));
@@ -1596,7 +1537,6 @@ impl<'flags> Parser<'flags> {
             TokenType::ContinueKeyword => false,
             TokenType::ExternKeyword => false,
             TokenType::StructKeyword => false,
-            TokenType::ConstructorKeyword => false,
             TokenType::ThisKeyword => false,
             TokenType::TrueKeyword => false,
             TokenType::FalseKeyword => false,
@@ -1825,12 +1765,41 @@ impl<'flags> Parser<'flags> {
                 try_parse!(array_access, self.parse_expr_array_access());
                 nodes::Expression::ArrayAccess(array_access)
             }
+            TokenType::OpenCurly => {
+                try_parse!(struct_literal, self.parse_expr_struct_literal());
+                nodes::Expression::StructLiteral(struct_literal)
+            }
             _ => {
                 try_parse!(name_token, self.parse_expr_name());
                 nodes::Expression::Name(name_token)
             }
         };
         Some(expression)
+    }
+
+    #[trace_call(always)]
+    fn parse_expr_struct_literal(&mut self) -> Option<nodes::StructLiteralNode> {
+        let location = self.current_location();
+        try_parse!(struct_name, self.expect(TokenType::Identifier));
+        try_parse!(self.expect(TokenType::OpenCurly));
+        let mut fields = vec![];
+        while !self.parsed_eof() && !self.at(TokenType::ClosingCurly) {
+            try_parse!(name_token, self.expect(TokenType::Identifier));
+            let name = name_token.value;
+            try_parse!(self.expect(TokenType::Colon));
+            try_parse!(expression, self.parse_expression(0, Associativity::Left));
+            fields.push((name, expression));
+            if !self.eat(TokenType::Comma) {
+                break;
+            }
+        }
+        try_parse!(self.expect(TokenType::ClosingCurly));
+        Some(nodes::StructLiteralNode {
+            struct_name: struct_name.value.clone(),
+            location,
+            fields,
+            typ: Type::Struct(struct_name.value),
+        })
     }
 
     #[trace_call(always)]
@@ -1919,11 +1888,8 @@ impl<'flags> Parser<'flags> {
         try_parse!(self.expect(TokenType::ClosingRound));
 
         let is_extern = self.current_externs.contains(&function_name);
-        // External functions can be uppercase, but they are not constructors
-        let is_constructor = !is_extern && function_name.as_bytes()[0].is_ascii_uppercase();
 
         Some(nodes::CallNode {
-            is_constructor,
             is_extern,
             function_name,
             location,

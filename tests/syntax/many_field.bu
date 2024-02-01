@@ -13,8 +13,6 @@
 //! Method `foo` already declared here.
 //! Method redeclaration.
 //! Method `bar` already declared here.
-//! Constructor redeclaration.
-//! Constructor `Foo` already declared here.
 
 struct Foo {
     a: i32;
@@ -30,7 +28,4 @@ struct Foo {
     func foo() {}
     func bar() {}
     func bar() {}
-
-    constructor() {}
-    constructor() {}
 }

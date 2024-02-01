@@ -8,7 +8,6 @@
 
 struct Foo {
     field: u32;
-    constructor(){}
 
     func mod_this(mut this) {
         this.field = 10;
@@ -16,6 +15,8 @@ struct Foo {
 }
 
 func main() {
-    let f: Foo = Foo();
+    let f: Foo = Foo {
+        field: 0
+    };
     f.mod_this();
 }

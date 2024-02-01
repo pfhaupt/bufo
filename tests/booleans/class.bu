@@ -8,7 +8,6 @@
 //! Expected `;`, found `(`
 
 struct true {
-    constructor();
 }
 
 struct false {

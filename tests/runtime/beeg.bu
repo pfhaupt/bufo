@@ -1,0 +1,173 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+// This file contains 80 structs
+// Because of the recursive nature of our Parser, we sadly can't go any deeper. :(
+
+// At the end, main performs a loop 100 times:
+// It creates an instance of the last struct,
+// which will create an instance of every other struct because of fields.
+// It then calls a function to which it passes that instance.
+
+struct C0{f:i32;}
+struct C1{f:C0;}
+struct C2{f:C1;}
+struct C3{f:C2;}
+struct C4{f:C3;}
+struct C5{f:C4;}
+struct C6{f:C5;}
+struct C7{f:C6;}
+struct C8{f:C7;}
+struct C9{f:C8;}
+struct C10{f:C9;}
+struct C11{f:C10;}
+struct C12{f:C11;}
+struct C13{f:C12;}
+struct C14{f:C13;}
+struct C15{f:C14;}
+struct C16{f:C15;}
+struct C17{f:C16;}
+struct C18{f:C17;}
+struct C19{f:C18;}
+struct C20{f:C19;}
+struct C21{f:C20;}
+struct C22{f:C21;}
+struct C23{f:C22;}
+struct C24{f:C23;}
+struct C25{f:C24;}
+struct C26{f:C25;}
+struct C27{f:C26;}
+struct C28{f:C27;}
+struct C29{f:C28;}
+struct C30{f:C29;}
+struct C31{f:C30;}
+struct C32{f:C31;}
+struct C33{f:C32;}
+struct C34{f:C33;}
+struct C35{f:C34;}
+struct C36{f:C35;}
+struct C37{f:C36;}
+struct C38{f:C37;}
+struct C39{f:C38;}
+struct C40{f:C39;}
+struct C41{f:C40;}
+struct C42{f:C41;}
+struct C43{f:C42;}
+struct C44{f:C43;}
+struct C45{f:C44;}
+struct C46{f:C45;}
+struct C47{f:C46;}
+struct C48{f:C47;}
+struct C49{f:C48;}
+struct C50{f:C49;}
+struct C51{f:C50;}
+struct C52{f:C51;}
+struct C53{f:C52;}
+struct C54{f:C53;}
+struct C55{f:C54;}
+struct C56{f:C55;}
+struct C57{f:C56;}
+struct C58{f:C57;}
+struct C59{f:C58;}
+struct C60{f:C59;}
+struct C61{f:C60;}
+struct C62{f:C61;}
+struct C63{f:C62;}
+struct C64{f:C63;}
+struct C65{f:C64;}
+struct C66{f:C65;}
+struct C67{f:C66;}
+struct C68{f:C67;}
+struct C69{f:C68;}
+struct C70{f:C69;}
+struct C71{f:C70;}
+struct C72{f:C71;}
+struct C73{f:C72;}
+struct C74{f:C73;}
+struct C75{f:C74;}
+struct C76{f:C75;}
+struct C77{f:C76;}
+struct C78{f:C77;}
+struct C79{f:C78;}
+func f0(a:C0) -> C0{return a;}
+func f1(a:C1) -> C1{return a;}
+func f2(a:C2) -> C2{return a;}
+func f3(a:C3) -> C3{return a;}
+func f4(a:C4) -> C4{return a;}
+func f5(a:C5) -> C5{return a;}
+func f6(a:C6) -> C6{return a;}
+func f7(a:C7) -> C7{return a;}
+func f8(a:C8) -> C8{return a;}
+func f9(a:C9) -> C9{return a;}
+func f10(a:C10) -> C10{return a;}
+func f11(a:C11) -> C11{return a;}
+func f12(a:C12) -> C12{return a;}
+func f13(a:C13) -> C13{return a;}
+func f14(a:C14) -> C14{return a;}
+func f15(a:C15) -> C15{return a;}
+func f16(a:C16) -> C16{return a;}
+func f17(a:C17) -> C17{return a;}
+func f18(a:C18) -> C18{return a;}
+func f19(a:C19) -> C19{return a;}
+func f20(a:C20) -> C20{return a;}
+func f21(a:C21) -> C21{return a;}
+func f22(a:C22) -> C22{return a;}
+func f23(a:C23) -> C23{return a;}
+func f24(a:C24) -> C24{return a;}
+func f25(a:C25) -> C25{return a;}
+func f26(a:C26) -> C26{return a;}
+func f27(a:C27) -> C27{return a;}
+func f28(a:C28) -> C28{return a;}
+func f29(a:C29) -> C29{return a;}
+func f30(a:C30) -> C30{return a;}
+func f31(a:C31) -> C31{return a;}
+func f32(a:C32) -> C32{return a;}
+func f33(a:C33) -> C33{return a;}
+func f34(a:C34) -> C34{return a;}
+func f35(a:C35) -> C35{return a;}
+func f36(a:C36) -> C36{return a;}
+func f37(a:C37) -> C37{return a;}
+func f38(a:C38) -> C38{return a;}
+func f39(a:C39) -> C39{return a;}
+func f40(a:C40) -> C40{return a;}
+func f41(a:C41) -> C41{return a;}
+func f42(a:C42) -> C42{return a;}
+func f43(a:C43) -> C43{return a;}
+func f44(a:C44) -> C44{return a;}
+func f45(a:C45) -> C45{return a;}
+func f46(a:C46) -> C46{return a;}
+func f47(a:C47) -> C47{return a;}
+func f48(a:C48) -> C48{return a;}
+func f49(a:C49) -> C49{return a;}
+func f50(a:C50) -> C50{return a;}
+func f51(a:C51) -> C51{return a;}
+func f52(a:C52) -> C52{return a;}
+func f53(a:C53) -> C53{return a;}
+func f54(a:C54) -> C54{return a;}
+func f55(a:C55) -> C55{return a;}
+func f56(a:C56) -> C56{return a;}
+func f57(a:C57) -> C57{return a;}
+func f58(a:C58) -> C58{return a;}
+func f59(a:C59) -> C59{return a;}
+func f60(a:C60) -> C60{return a;}
+func f61(a:C61) -> C61{return a;}
+func f62(a:C62) -> C62{return a;}
+func f63(a:C63) -> C63{return a;}
+func f64(a:C64) -> C64{return a;}
+func f65(a:C65) -> C65{return a;}
+func f66(a:C66) -> C66{return a;}
+func f67(a:C67) -> C67{return a;}
+func f68(a:C68) -> C68{return a;}
+func f69(a:C69) -> C69{return a;}
+func f70(a:C70) -> C70{return a;}
+func f71(a:C71) -> C71{return a;}
+func f72(a:C72) -> C72{return a;}
+func f73(a:C73) -> C73{return a;}
+func f74(a:C74) -> C74{return a;}
+func f75(a:C75) -> C75{return a;}
+func f76(a:C76) -> C76{return a;}
+func f77(a:C77) -> C77{return a;}
+func f78(a:C78) -> C78{return a;}
+func f79(a:C79) -> C79{return a;}
+func main()->i32{mut i:i32=0;while(i<100){let v:C79=C79{f:C78{f:C77{f:C76{f:C75{f:C74{f:C73{f:C72{f:C71{f:C70{f:C69{f:C68{f:C67{f:C66{f:C65{f:C64{f:C63{f:C62{f:C61{f:C60{f:C59{f:C58{f:C57{f:C56{f:C55{f:C54{f:C53{f:C52{f:C51{f:C50{f:C49{f:C48{f:C47{f:C46{f:C45{f:C44{f:C43{f:C42{f:C41{f:C40{f:C39{f:C38{f:C37{f:C36{f:C35{f:C34{f:C33{f:C32{f:C31{f:C30{f:C29{f:C28{f:C27{f:C26{f:C25{f:C24{f:C23{f:C22{f:C21{f:C20{f:C19{f:C18{f:C17{f:C16{f:C15{f:C14{f:C13{f:C12{f:C11{f:C10{f:C9{f:C8{f:C7{f:C6{f:C5{f:C4{f:C3{f:C2{f:C1{f:C0{f:0}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}};let r:C79=f79(v);i=i+1;}return 0;}

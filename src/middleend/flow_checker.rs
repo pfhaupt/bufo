@@ -1,6 +1,5 @@
 use tracer::trace_call;
 
-use crate::compiler::NOTE_STR;
 use crate::{
     compiler::{ERR_STR, WARN_STR},
     frontend::nodes,
@@ -48,29 +47,10 @@ impl<'flags> FlowChecker<'flags> {
 
     #[trace_call(always)]
     fn check_struct(&mut self, strukt: &mut nodes::StructNode) -> Result<(), String> {
-        for constructor in &mut strukt.constructors {
-            self.check_constructor(constructor)?;
-        }
         for method in &mut strukt.methods {
             self.check_method(method)?;
         }
         Ok(())
-    }
-
-    #[trace_call(always)]
-    fn check_constructor(&mut self, constructor: &mut nodes::ConstructorNode) -> Result<(), String> {
-        let flow = self.check_block(&mut constructor.block, &[FlowType::AlwaysReturn])?;
-        // Constructors never return a value
-        // It's all implicit at the end of the block
-        if flow != FlowType::Linear {
-            Err(format!(
-                "{}: {:?}: Return values are not allowed in constructors.\n{}: Returning `this` is implicit in constructors.",
-                ERR_STR, constructor.location, NOTE_STR
-            ))
-        } else {
-            // Implicit return statement.
-            Ok(())
-        }
     }
 
     #[trace_call(always)]

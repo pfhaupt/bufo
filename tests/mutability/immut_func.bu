@@ -4,7 +4,6 @@
 
 struct Foo {
     field: u32;
-    constructor() {}
 
     func get_field(this) -> u32 {
         return this.field;
@@ -12,7 +11,9 @@ struct Foo {
 }
 
 func main() -> u32 {
-    mut f: Foo = Foo();
+    mut f: Foo = Foo {
+        field: 0
+    };
     f.field = 10;
     if (f.get_field() != 10) return f.get_field();
     return 0;

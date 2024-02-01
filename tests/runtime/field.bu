@@ -7,10 +7,6 @@ struct Test {
     a: u64;
     b: i64;
 
-    constructor() {
-        this.b = 12;
-        this.a = 1337;
-    }
     func get_a(this) -> u64 {
         return this.a;
     }
@@ -28,6 +24,9 @@ func destroy(t: Test, counter: u64) -> u64 {
 }
 
 func main() -> u64 {
-    let b: Test = Test();
+    let b: Test = Test {
+        b: 12,
+        a: 1337
+    };
     return destroy(b, 100);
 }

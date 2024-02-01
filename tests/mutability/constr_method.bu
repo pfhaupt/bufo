@@ -9,7 +9,6 @@
 
 struct Foo {
     field: i64;
-    constructor(){}
 
     // Builder Pattern example
     func field(mut this, field: i64) -> Foo {
@@ -19,6 +18,8 @@ struct Foo {
 }
 
 func main() {
-    // Call to `Foo()` returns a temporary value
-    let f: Foo = Foo().field(10);
+    // Struct initialization returns a temporary value
+    let f: Foo = Foo {
+        field: 0
+    }.field(10);
 }

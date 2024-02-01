@@ -280,10 +280,6 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 let name = format!("{}_{}", strukt.name, method.name);
                 fill_function_lookup!(self, method, name);
             }
-            for constructor in &strukt.constructors {
-                let name = format!("{}_constructor", strukt.name);
-                fill_function_lookup!(self, constructor, name);
-            }
         }
         for function in &file.functions {
             let name = function.name.clone();
@@ -408,39 +404,9 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
 
     #[trace_call(always)]
     fn codegen_struct(&mut self, strukt: &nodes::StructNode) -> Result<(), String> {
-        for constructor in &strukt.constructors {
-            self.codegen_constructor(constructor)?;
-        }
         for method in &strukt.methods {
             self.codegen_method(method)?;
         }
-        Ok(())
-    }
-
-    #[trace_call(always)]
-    fn codegen_constructor(&mut self, constructor: &nodes::ConstructorNode) -> Result<(), String> {
-        self.enter_scope();
-
-        let name = format!("{}_constructor", constructor.struct_name);
-        codegen_function_header!(self, constructor, name);
-
-        // Create struct on stack
-        let struct_info = self.struct_defs.get(&constructor.struct_name).unwrap();
-        let this_alloc = self.builder.build_alloca(*struct_info, "this_alloc");
-        self.builder.build_store(this_alloc, this_alloc);
-        self.add_variable("this", this_alloc.into());
-
-        // Actual code we wrote
-        self.codegen_block(&constructor.block)?;
-
-        // Return this
-        let this_alloc = self.builder.build_load(
-            self.codegen_type(&constructor.return_type.typ),
-            this_alloc,
-            "this_alloc",
-        );
-        self.builder.build_return(Some(&this_alloc));
-        self.exit_scope();
         Ok(())
     }
 
@@ -636,6 +602,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             nodes::Expression::Name(name) => self.codegen_name(name, load_var),
             nodes::Expression::FunctionCall(function_call) => self.codegen_function_call(function_call),
             nodes::Expression::Unary(unary) => self.codegen_unary(unary, load_var),
+            nodes::Expression::StructLiteral(struct_literal) => self.codegen_struct_literal(struct_literal, load_var),
             e => unimplemented!("codegen_expression: {:?}", e),
         }
     }
@@ -654,12 +621,39 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
-    fn codegen_function_call(&mut self, function_call: &nodes::CallNode) -> Result<BasicValueEnum<'ctx>, String> {
-        let name = if function_call.is_constructor {
-            function_call.function_name.clone() + "_constructor"
+    fn codegen_struct_literal(&mut self, struct_literal: &nodes::StructLiteralNode, load_var: bool) -> Result<BasicValueEnum<'ctx>, String> {
+        let mut expressions = Vec::new();
+        for field in &struct_literal.fields {
+            expressions.push(self.codegen_expression(&field.1, true)?);
+        }
+        let struct_type = self.struct_defs.get(&struct_literal.struct_name).unwrap();
+        let struct_alloc = self.builder.build_alloca(*struct_type, "codegen_struct_literal");
+        for (i, field) in struct_literal.fields.iter().enumerate() {
+            let field_offset = self.sm.get_struct_info(&struct_literal.struct_name).get_field_index(&field.0);
+            let field_alloc = self.builder.build_struct_gep(
+                struct_type.clone(),
+                struct_alloc,
+                field_offset as u32,
+                &field.0,
+            ).unwrap();
+            let value = expressions[i];
+            self.builder.build_store(field_alloc, value);
+        }
+        if load_var {
+            let struct_alloc = self.builder.build_load(
+                self.codegen_type(&struct_literal.typ),
+                struct_alloc,
+                "codegen_struct_literal",
+            );
+            Ok(struct_alloc)
         } else {
-            function_call.function_name.clone()
-        };
+            Ok(struct_alloc.into())
+        }
+    }
+
+    #[trace_call(always)]
+    fn codegen_function_call(&mut self, function_call: &nodes::CallNode) -> Result<BasicValueEnum<'ctx>, String> {
+        let name = function_call.function_name.clone();
         if !self.module.get_function(&name).is_some() {
             internal_panic!(format!("Could not find function {}", name));
         }
@@ -861,7 +855,18 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             Operation::Dot => {
                 debug_assert!((*binary.lhs).get_type().is_struct());
                 let lhs = self.codegen_expression(&binary.lhs, false)?;
-                // TODO: Think about null pointers, do they make sense with structs?
+                // FIXME: This is a hack to guarantee that we have a pointer to the struct
+                //        This is very bad for performance, but it's the only way I could get it to work :^)
+                let lhs = if !lhs.is_pointer_value() {
+                    let new_lhs = self.builder.build_alloca(
+                        self.codegen_type(&binary.lhs.get_type()),
+                        "lhs_alloc",
+                    );
+                    self.builder.build_store(new_lhs, lhs);
+                    new_lhs
+                } else {
+                    lhs.into_pointer_value()
+                };
 
                 let struct_name = (*binary.lhs).get_type().get_struct_name();
                 let struct_struct_type = self.struct_defs.get(&struct_name).unwrap();
@@ -872,7 +877,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                             .get_field_index(&field.name);
                         let field_ptr = self.builder.build_struct_gep(
                             struct_struct_type.clone(),
-                            lhs.into_pointer_value(),
+                            lhs,
                             offset as u32,
                             "field_ptr").unwrap();
                         let field_type = self.codegen_type(&field.typ);
@@ -899,15 +904,11 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                         }
                         let method = self.module.get_function(&method_name).unwrap();
                         let mut args = Vec::new();
-                        let lhs = if !lhs.is_pointer_value() {
-                            lhs
-                        } else {
-                            self.builder.build_load(
-                                self.codegen_type(&binary.lhs.get_type()),
-                                lhs.into_pointer_value(),
-                                "lhs_load",
-                            )
-                        };
+                        let lhs = self.builder.build_load(
+                            self.codegen_type(&binary.lhs.get_type()),
+                            lhs,
+                            "lhs_load",
+                        );
                         args.push(lhs.into());
                         for arg in &method_call.arguments {
                             args.push(self.codegen_expression(arg, true)?.into());

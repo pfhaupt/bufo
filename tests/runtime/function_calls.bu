@@ -13,9 +13,6 @@ struct Foo {
 
 struct Test {
     a: i32;
-    constructor() {
-        // this.a = 10;
-    }
 
     func foo(a: i32) {
         // this.a = a;
@@ -36,17 +33,18 @@ func ack(m: u32, n: u32) -> u32 {
 
 struct Bar {
     a: u32;
-    constructor(a: u32) {
-        this.a = a;
-    }
 }
 
 func main() -> u32 {
-    let bar: Bar = Bar(420 + 1337);
+    let bar: Bar = Bar {
+        a: 420 + 1337
+    };
     let a: u32 = ack(3, 5);
     let c: i32 = 1 + 1 + 1;
     let index: usize = 1;
-    let t: Test = Test();
+    let t: Test = Test {
+        a: 0
+    };
     let b: u32 = ack(3, 5);
     if (b == 253) {
         let b: u32 = ack(3, 3);

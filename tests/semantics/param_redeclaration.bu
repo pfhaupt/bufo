@@ -6,14 +6,11 @@
 //! Parameter redeclaration.
 //! Parameter `d` already declared here.
 //! Parameter redeclaration.
-//! Parameter `c` already declared here.
-//! Parameter redeclaration.
 //! Parameter `f` already declared here.
 //! Parameter redeclaration.
 //! Parameter `a` already declared here.
 
 struct Foo {
-    constructor(c: i32, c: i32){}
     func method(this, d: i32, d: i32){}
 }
 

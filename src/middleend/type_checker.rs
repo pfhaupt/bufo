@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt::{Display, Formatter};
 
 use crate::frontend::nodes;
-use crate::frontend::parser::{Location, Operation, CONSTRUCTOR_KEYWORD};
+use crate::frontend::parser::{Location, Operation};
 
 use crate::compiler::{ERR_STR, NOTE_STR};
 use crate::util::flags::Flags;
@@ -147,8 +147,6 @@ enum TypeError {
     UndeclaredVariable(Location, String),
     /// Syntax: Error Loc, Fn Name
     UndeclaredFunction(Location, String),
-    /// Syntax: Error Loc, Struct Name
-    UndeclaredStruct(Location, String),
     /// Syntax: Fn Type, Error Loc, Fn Name, Arg Count, Fn Decl, Param Count
     NotEnoughArguments(&'static str, Location, String, usize, Location, usize),
     /// Syntax: Fn Type, Error Loc, Fn Name, Arg Count, Fn Decl, Param Count
@@ -169,8 +167,6 @@ enum TypeError {
     UnexpectedLiteral(&'static str, Location, String),
     /// Syntax: Error Loc, Var Name, Decl Loc
     IndexIntoNonArray(Location, String, Location),
-    /// Syntax: Error Loc, Struct Decl, Struct Name
-    NoConstructor(Location, Location, String),
     /// Syntax: Error Loc
     DotOnNonStruct(Location),
     /// Syntax: Error Loc
@@ -183,6 +179,8 @@ enum TypeError {
     CantMutateTemporary(Location),
     /// Syntax: Error Loc, Struct Name, Previous Struct Info
     RecursiveStruct(Location, String, Vec<(Location, String)>),
+    /// Syntax: Error Loc, Field Name, Struct Loc, Struct Name
+    MissingField(Location, String, Location, String),
 }
 
 impl Display for TypeError {
@@ -247,13 +245,6 @@ impl Display for TypeError {
                     f,
                     "{}: {:?}: Use of undeclared function `{}`.",
                     ERR_STR, error_loc, fn_name
-                )
-            }
-            TypeError::UndeclaredStruct(error_loc, struct_name) => {
-                write!(
-                    f,
-                    "{}: {:?}: Use of undeclared struct `{}`.\n{}: Capitalized function calls are reserved for struct constructors.",
-                    ERR_STR, error_loc, struct_name, NOTE_STR
                 )
             }
             TypeError::NotEnoughArguments(fn_kind, error_loc, fn_name, arg_count, fn_loc, param_count) => {
@@ -331,13 +322,6 @@ impl Display for TypeError {
                     ERR_STR, error_loc, var_name, NOTE_STR, var_loc, var_name
                 )
             }
-            TypeError::NoConstructor(error_loc, struct_loc, struct_name) => {
-                write!(
-                    f,
-                    "{}: {:?}: Struct `{}` has no constructor.\n{}: {:?}: Struct `{}` is declared here.\n{}: Implement the special `{}() {{}}` method to create a constructor.",
-                    ERR_STR, error_loc, struct_name, NOTE_STR, struct_loc, struct_name, NOTE_STR, CONSTRUCTOR_KEYWORD
-                )
-            }
             TypeError::DotOnNonStruct(error_loc) => {
                 write!(
                     f,
@@ -381,6 +365,13 @@ impl Display for TypeError {
                     message.push_str(&format!("\n{}: {:?}: Chain of recursion also includes Struct `{}`.", NOTE_STR, loc, name));
                 }
                 write!(f, "{}", message)
+            }
+            TypeError::MissingField(error_loc, field_name, struct_loc, struct_name) => {
+                write!(
+                    f,
+                    "{}: {:?}: Missing field `{}` in instantiation of struct `{}`.\n{}: {:?}: Struct `{}` is declared here.",
+                    ERR_STR, error_loc, field_name, struct_name, NOTE_STR, struct_loc, struct_name
+                )
             }
         }
     }
@@ -483,7 +474,6 @@ pub struct Struct {
     location: Location,
     fields: HashMap<String, TypeLoc>,
     known_methods: HashMap<String, Function>,
-    known_constructors: Vec<Function>,
 }
 
 impl Struct {
@@ -494,7 +484,6 @@ impl Struct {
             location,
             fields: HashMap::new(),
             known_methods: HashMap::new(),
-            known_constructors: Vec::new(),
         }
     }
 
@@ -683,37 +672,6 @@ impl<'flags> TypeChecker<'flags> {
         }
     }
 
-    #[trace_call(extra)]
-    fn add_constructor_to_struct(
-        &mut self,
-        constructor: &nodes::ConstructorNode,
-        strukt: &mut Struct
-    ) {
-        let location = &constructor.location;
-        if strukt.known_constructors.len() > 0 {
-            self.report_error(TypeError::Redeclaration(
-                "Constructor",
-                *location,
-                strukt.name.to_string(),
-                strukt.location,
-            ));
-        } else {
-            let return_type = &constructor.return_type.typ;
-            let return_loc = &constructor.return_type.location;
-            let (parameters, errors) = check_parameters!(self, constructor);
-            let constructor = Function {
-                location: *location,
-                return_type: TypeLoc::new(*return_loc, return_type.clone()),
-                parameters,
-                has_this: false,
-            };
-            strukt.known_constructors.push(constructor);
-            for error in errors {
-                self.report_error(error);
-            }
-        }
-    }
-
     #[trace_call(always)]
     fn fill_lookup(&mut self, ast: &nodes::FileNode) {
         for extern_node in &ast.externs {
@@ -739,9 +697,6 @@ impl<'flags> TypeChecker<'flags> {
                     }
                     for method in &s.methods {
                         self.add_method_to_struct(method, &mut strukt);
-                    }
-                    for constructor in &s.constructors {
-                        self.add_constructor_to_struct(constructor, &mut strukt);
                     }
                     self.known_structs.insert(s.name.clone(), strukt);
                 }
@@ -875,9 +830,6 @@ impl<'flags> TypeChecker<'flags> {
         for field in &mut struct_node.fields {
             self.type_check_field(field);
         }
-        for constructor in &mut struct_node.constructors {
-            self.type_check_constructor(constructor, &struct_node.name);
-        }
         for method in &mut struct_node.methods {
             self.type_check_method(method, &struct_node.name);
         }
@@ -886,52 +838,6 @@ impl<'flags> TypeChecker<'flags> {
     #[trace_call(always)]
     fn type_check_field(&mut self, field: &mut nodes::FieldNode) {
         self.type_check_type_node(&mut field.type_def)
-    }
-
-    #[trace_call(always)]
-    fn type_check_constructor(
-        &mut self,
-        constructor: &mut nodes::ConstructorNode,
-        struct_name: &str,
-    ) {
-        debug_assert!(self.known_variables.is_empty());
-        debug_assert!(self.known_structs.contains_key(struct_name));
-        #[cfg(not(feature = "llvm"))]
-        debug_assert!(self.current_stack_size == 0);
-
-        for param in &mut constructor.parameters {
-            self.type_check_parameter(param);
-        }
-
-        let Some(struct_info) = self.known_structs.get(struct_name) else { unreachable!() };
-        let Some(constructor_info) = struct_info.known_constructors.get(0) else { unreachable!() };
-
-        // Parameters are now known variables
-        let mut parameters = constructor_info.get_parameters_as_hashmap();
-        parameters.insert(
-            "this".to_string(),
-            Variable::new(
-                "this".to_string(),
-                constructor.location,
-                Type::Struct(struct_name.to_string()),
-                true,
-            ),
-        );
-
-        #[cfg(not(feature = "llvm"))]
-        {
-            self.current_stack_size += 8; // `this` is always 8 bytes
-        }
-
-        self.known_variables.push_back(parameters);
-        self.type_check_block(&mut constructor.block);
-        #[cfg(not(feature = "llvm"))]
-        {
-            constructor.stack_size = self.current_stack_size;
-            self.current_stack_size = 0;
-        }
-
-        self.known_variables.clear();
     }
 
     #[trace_call(always)]
@@ -1233,6 +1139,7 @@ impl<'flags> TypeChecker<'flags> {
             nodes::Expression::ArrayAccess(access) => self.type_check_expr_array_access(access),
             nodes::Expression::ArrayLiteral(literal) => self.type_check_expr_array_literal(literal),
             nodes::Expression::Literal(literal) => self.type_check_expr_literal(literal),
+            nodes::Expression::StructLiteral(literal) => self.type_check_expr_struct_literal(literal, needs_mutability),
         }
     }
 
@@ -1837,6 +1744,80 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
+    fn type_check_expr_struct_literal(
+        &mut self,
+        literal: &mut nodes::StructLiteralNode,
+        needs_mutability: bool,
+    ) -> Type {
+        if needs_mutability {
+            self.report_error(TypeError::CantMutateTemporary(
+                literal.location,
+            ));
+        }
+        if !self.known_structs.contains_key(&literal.struct_name) {
+            self.report_error(TypeError::UnknownType(
+                literal.location,
+                Type::Struct(literal.struct_name.clone()),
+            ));
+            return Type::None;
+        }
+        let mut fields = HashMap::new();
+        for field in &mut literal.fields {
+            let strukt = self.known_structs.get(&literal.struct_name).unwrap();
+            let Some(field_info) = strukt.get_field(&field.0) else {
+                self.report_error(TypeError::UnknownField(
+                    field.1.get_loc(),
+                    field.0.clone(),
+                    strukt.location,
+                    strukt.name.clone(),
+                ));
+                continue;
+            };
+            let field_type = field_info.t.clone();
+            let expr_type = self.type_check_expression(&mut field.1, false);
+            if expr_type == Type::None {
+                // Error in expression, we can't continue
+                continue;
+            } if expr_type == Type::Unknown {
+                // We couldn't determine the type of the expression
+                // We need to `infer` it
+                let inferred_result = self.type_check_expression_with_type(
+                    &mut field.1,
+                    &field_type,
+                );
+                if inferred_result == Type::None {
+                    // Proceed with next field
+                    continue;
+                }
+            } else if expr_type != field_type {
+                self.report_error(TypeError::TypeMismatch(
+                    field.1.get_loc(),
+                    field_type.clone(),
+                    expr_type,
+                ));
+            }
+            fields.insert(field.0.clone(), field_type);
+        }
+        let strukt = self.known_structs.get(&literal.struct_name).unwrap();
+        let mut errors = vec![];
+        for field in strukt.fields.iter() {
+            if !fields.contains_key(field.0) {
+                errors.push(TypeError::MissingField(
+                    literal.location,
+                    field.0.clone(),
+                    strukt.location,
+                    literal.struct_name.clone(),
+                ));
+            }
+        }
+        for error in errors {
+            self.report_error(error);
+        }
+        literal.typ = Type::Struct(literal.struct_name.clone());
+        literal.typ.clone()
+    }
+
+    #[trace_call(always)]
     fn type_check_expr_function_call(
         &mut self,
         func_call: &mut nodes::CallNode,
@@ -1848,7 +1829,6 @@ impl<'flags> TypeChecker<'flags> {
             ));
         }
         let function = if func_call.is_extern {
-            debug_assert!(!func_call.is_constructor);
             let Some(external) = self.known_externs.get(&func_call.function_name) else {
                 // is_builtin -> Parser says this is an external function
                 // known_externs -> Filled by type_check_file, so it should contain all externs
@@ -1856,29 +1836,6 @@ impl<'flags> TypeChecker<'flags> {
                 unreachable!()
             };
             external
-        } else if func_call.is_constructor {
-            debug_assert!(!func_call.is_extern);
-            if let Some(strukt) = self.known_structs.get(&func_call.function_name) {
-                let Some(constructor) = strukt.known_constructors.get(0) else {
-                    self.report_error(TypeError::NoConstructor(
-                        func_call.location,
-                        strukt.location,
-                        strukt.name.clone(),
-                    ));
-                    return Type::None;
-                };
-                debug_assert!(
-                    strukt.known_constructors.len() > 0,
-                    "Struct has constructor feature, but has_constructor is false"
-                );
-                constructor
-            } else {
-                self.report_error(TypeError::UndeclaredStruct(
-                    func_call.location,
-                    func_call.function_name.clone(),
-                ));
-                return Type::None;
-            }
         } else {
             let Some(function) = self.known_functions.get(&func_call.function_name) else {
                 self.report_error(TypeError::UndeclaredFunction(
@@ -1892,10 +1849,6 @@ impl<'flags> TypeChecker<'flags> {
         let return_type = function.return_type.clone();
         if let Type::Struct(struct_name) = &return_type.t {
             if !self.known_structs.contains_key(struct_name) {
-                self.report_error(TypeError::UndeclaredStruct(
-                    func_call.location,
-                    struct_name.clone(),
-                ));
                 self.report_error(TypeError::UnknownType(
                     return_type.l.clone(),
                     return_type.t.clone(),

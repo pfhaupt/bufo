@@ -49,9 +49,6 @@ impl Printable for nodes::StructNode {
         for field in &self.fields {
             field.print(indent + INDENT_PER_LEVEL);
         }
-        for constructor in &self.constructors {
-            constructor.print(indent + INDENT_PER_LEVEL);
-        }
         for method in &self.methods {
             method.print(indent + INDENT_PER_LEVEL);
         }
@@ -62,20 +59,6 @@ impl Printable for nodes::FieldNode {
     fn print(&self, indent: usize) {
         println!("{}FieldNode {}", " ".repeat(indent), self.name);
         self.type_def.print(indent + INDENT_PER_LEVEL);
-    }
-}
-
-impl Printable for nodes::ConstructorNode {
-    fn print(&self, indent: usize) {
-        println!("{}ConstructorNode", " ".repeat(indent));
-        println!("{}Return Type", " ".repeat(indent + INDENT_PER_LEVEL));
-        self.return_type.print(indent + 2 * INDENT_PER_LEVEL);
-
-        println!("{}Parameters", " ".repeat(indent + INDENT_PER_LEVEL));
-        for parameter in &self.parameters {
-            parameter.print(indent + 2 * INDENT_PER_LEVEL);
-        }
-        self.block.print(indent + INDENT_PER_LEVEL);
     }
 }
 
@@ -207,6 +190,7 @@ impl Printable for nodes::Expression {
             Self::ArrayLiteral(node) => node.print(indent),
             Self::ArrayAccess(node) => node.print(indent),
             Self::Literal(node) => node.print(indent),
+            Self::StructLiteral(node) => node.print(indent),
             Self::Unary(node) => node.print(indent),
             Self::Binary(node) => node.print(indent),
             Self::FunctionCall(node) => node.print(indent),
@@ -243,6 +227,17 @@ impl Printable for nodes::LiteralNode {
         println!("{}ExpressionLiteralNode", " ".repeat(indent));
         println!("{}Type {}", " ".repeat(indent + INDENT_PER_LEVEL), self.typ);
         println!("{}Value {}", " ".repeat(indent + INDENT_PER_LEVEL), self.value);
+    }
+}
+
+impl Printable for nodes::StructLiteralNode {
+    fn print(&self, indent: usize) {
+        println!("{}ExpressionStructLiteralNode", " ".repeat(indent));
+        println!("{}Type {}", " ".repeat(indent + INDENT_PER_LEVEL), self.typ);
+        for field in &self.fields {
+            println!("{}Field {}", " ".repeat(indent + INDENT_PER_LEVEL), field.0);
+            field.1.print(indent + INDENT_PER_LEVEL);
+        }
     }
 }
 

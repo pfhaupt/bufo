@@ -26,7 +26,6 @@ pub struct StructNode {
     pub name: String,
     pub fields: Vec<FieldNode>,
     pub methods: Vec<MethodNode>,
-    pub constructors: Vec<ConstructorNode>,
 }
 
 #[derive(Debug, Clone)]
@@ -34,17 +33,6 @@ pub struct FieldNode {
     pub location: Location,
     pub name: String,
     pub type_def: TypeNode,
-}
-
-#[derive(Debug, Clone)]
-pub struct ConstructorNode {
-    pub location: Location,
-    pub struct_name: String,
-    pub return_type: TypeNode,
-    pub parameters: Vec<ParameterNode>,
-    pub block: BlockNode,
-    #[cfg(not(feature = "llvm"))]
-    pub stack_size: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -186,6 +174,7 @@ pub enum Expression {
     ArrayLiteral(ArrayLiteralNode),
     ArrayAccess(ArrayAccessNode),
     Literal(LiteralNode),
+    StructLiteral(StructLiteralNode),
     Unary(UnaryNode),
     Binary(BinaryNode),
     // Parenthesis(Expression),
@@ -201,6 +190,7 @@ impl Expression {
             Self::ArrayLiteral(e) => e.location,
             Self::ArrayAccess(e) => e.location,
             Self::Literal(e) => e.location,
+            Self::StructLiteral(e) => e.location,
             Self::Unary(e) => e.location,
             Self::Binary(e) => e.location,
             Self::FunctionCall(e) => e.location,
@@ -214,6 +204,7 @@ impl Expression {
             Self::Name(e) => e.typ.clone(),
             Self::ArrayLiteral(e) => e.typ.clone(),
             Self::ArrayAccess(e) => e.typ.clone(),
+            Self::StructLiteral(e) => e.typ.clone(),
             Self::Literal(e) => e.typ.clone(),
             Self::Unary(e) => e.typ.clone(),
             Self::Binary(e) => e.typ.clone(),
@@ -267,6 +258,14 @@ pub struct LiteralNode {
 }
 
 #[derive(Debug, Clone)]
+pub struct StructLiteralNode {
+    pub location: Location,
+    pub struct_name: String,
+    pub fields: Vec<(String, Expression)>,
+    pub typ: Type,
+}
+
+#[derive(Debug, Clone)]
 pub struct UnaryNode {
     pub location: Location,
     pub operation: Operation,
@@ -306,7 +305,6 @@ pub struct CallNode {
     pub function_name: String,
     pub arguments: Vec<Expression>,
     pub typ: Type,
-    pub is_constructor: bool,
     pub is_extern: bool,
 }
 

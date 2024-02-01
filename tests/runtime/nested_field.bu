@@ -4,10 +4,6 @@
 
 struct Foo {
     a: i32;
-    constructor() {
-        this.a = 5;
-    }
-
     func getA(this) -> i32 {
         return this.a;
     }
@@ -18,7 +14,7 @@ struct Foo {
 }
 
 func main() -> i32 {
-    let f: Foo = Foo();
+    let f: Foo = Foo {a: 5};
     let result: i32 = f.getThis().getThis().getA() + 3;
     if (result != 8) {
         return 1;

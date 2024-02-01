@@ -9,14 +9,10 @@
 
 struct Test {
     a: i64;
-
-    constructor() {
-
-    }
 }
 
 func main() {
-    let t1: Test = Test();
-    let t2: Test = Test();
+    let t1: Test = Test {a: 0};
+    let t2: Test = Test {a: 0};
     let t3: Test = t1 + t2; // OP_PLUS is not defined for strukt Test
 }
