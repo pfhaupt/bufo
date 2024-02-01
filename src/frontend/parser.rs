@@ -37,8 +37,6 @@ enum ParserError {
     // Syntax: Expected, Found
     UnexpectedTokenMany(Location, Vec<TokenType>, TokenType),
     UnexpectedSymbol(Location, char),
-    InvalidFunctionName(Location, String),
-    InvalidStructName(Location, String),
     ExpectedExpression(Location, TokenType),
     InvalidIntegerLiteral(Location, String, Type),
     STDParseIntError(Location, String, std::num::ParseIntError),
@@ -75,8 +73,6 @@ impl Display for ParserError {
                 )
             },
             Self::UnexpectedSymbol(l, c) => format!("{l:?}: Unexpected Symbol `{}`", c),
-            Self::InvalidFunctionName(l, s) => format!("{l:?}: Invalid Function Name: {}", s),
-            Self::InvalidStructName(l, s) => format!("{l:?}: Invalid Struct Name: {}", s),
             Self::ExpectedExpression(l, e) => format!("{l:?}: Expected Expression, found {}", e),
             Self::InvalidIntegerLiteral(l, s, typ) => format!("{l:?}: Invalid Integer Literal {} for type {}", s, typ),
             Self::STDParseIntError(l, s, e) => format!("{l:?}: Failed to parse integer literal {}\n{}: Reason: {}", s, NOTE_STR, e),
@@ -946,12 +942,9 @@ impl<'flags> Parser<'flags> {
         try_parse!(struct_name, self.expect(TokenType::Identifier));
         let name = struct_name.value;
         if !name.as_bytes()[0].is_ascii_uppercase() {
-            self.report_error(ParserError::InvalidStructName(
-                struct_name.location,
-                name
-            ));
-            return None;
+            println!("{}: {:?}: Struct names must start with an uppercase letter.", WARN_STR, struct_name.location);
         }
+
         self.current_struct = Some(name.clone());
         try_parse!(self.expect(TokenType::OpenCurly));
         let mut fields = vec![];
@@ -1012,13 +1005,6 @@ impl<'flags> Parser<'flags> {
         try_parse!(self.expect(TokenType::FunctionKeyword));
 
         try_parse!(name, self.expect(TokenType::Identifier));
-        if !name.value.as_bytes()[0].is_ascii_lowercase() {
-            self.report_error(ParserError::InvalidFunctionName(
-                name.location,
-                name.value
-            ));
-            return None;
-        }
 
         self.current_function = Some(name.value.clone());
 
@@ -1048,13 +1034,6 @@ impl<'flags> Parser<'flags> {
         try_parse!(self.expect(TokenType::FunctionKeyword));
 
         try_parse!(name, self.expect(TokenType::Identifier));
-        if !name.value.as_bytes()[0].is_ascii_lowercase() {
-            self.report_error(ParserError::InvalidFunctionName(
-                name.location,
-                name.value
-            ));
-            return None;
-        }
 
         self.current_function = Some(name.value.clone());
 
