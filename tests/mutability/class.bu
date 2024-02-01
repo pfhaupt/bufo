@@ -6,7 +6,7 @@
 //! Attempted to modify immutable variable `f`.
 //! Variable `f` is declared here.
 
-class Foo {
+struct Foo {
     field: i32;
     constructor() {}
 }
@@ -14,5 +14,4 @@ class Foo {
 func main() {
     let f: Foo = Foo();
     f.field = 10;
-
 }

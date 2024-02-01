@@ -3,8 +3,8 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Expected Expression, found `class`
+//! Expected Expression, found `struct`
 
 func main() {
-    let c: i32 = class;
+    let c: i32 = struct;
 }

@@ -7,11 +7,11 @@
 //! Expected Identifier, found `false`
 //! Expected `;`, found `(`
 
-class true {
+struct true {
     constructor();
 }
 
-class false {
+struct false {
 }
 
 func main() {

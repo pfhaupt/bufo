@@ -4,7 +4,7 @@
 //! CODE: 1
 //! ERROR:
 //! Unknown type `random`.
-//! Unexpected Literal! Expected class instance, found `5`.
+//! Unexpected Literal! Expected struct instance, found `5`.
 
 func main() {
     let a: random = 5;

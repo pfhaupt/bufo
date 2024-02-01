@@ -3,14 +3,14 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Expected one of `class` or `func`, found `}`
+//! Expected one of `func`, `extern` or `struct`, found `}`
 //! Expected Expression, found `}`
-//! Expected one of `class` or `func`, found `}`
-//! Expected one of `class` or `func`, found `while`
-//! Expected one of `class` or `func`, found `}`
-//! Expected one of `class` or `func`, found `}`
+//! Expected one of `func`, `extern` or `struct`, found `}`
+//! Expected one of `func`, `extern` or `struct`, found `while`
+//! Expected one of `func`, `extern` or `struct`, found `}`
+//! Expected one of `func`, `extern` or `struct`, found `}`
 
-class Foo {
+struct Foo {
 
 }
 }

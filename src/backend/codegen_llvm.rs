@@ -64,21 +64,19 @@ macro_rules! codegen_function_header {
             let func_param = llvm_func.get_nth_param(i as u32).unwrap();
             func_param.set_name(&param.name);
             let param_alloc = $codegen.builder.build_alloca(func_param.get_type(), &param.name);
-            $codegen.builder.build_store(param_alloc, func_param);
             $codegen.add_variable(&param.name, param_alloc.into());
+            $codegen.builder.build_store(param_alloc, func_param);
         }
     };
 }
 
 struct ClassInfo {
-    total_size: usize,
     fields: Vec<(String, Type)>,
 }
 
 impl ClassInfo {
     fn new() -> Self {
         Self {
-            total_size: 0,
             fields: Vec::new(),
         }
     }
@@ -88,7 +86,6 @@ impl ClassInfo {
             debug_assert!(name != field_name);
         }
         self.fields.push((field_name.to_string(), typ.clone()));
-        self.total_size += typ.size();
     }
 
     fn get_field_index(&self, field_name: &str) -> usize {
@@ -97,44 +94,40 @@ impl ClassInfo {
                 return i;
             }
         }
-        unreachable!("Field {} not found in class!", field_name);
+        unreachable!("Field {} not found in struct!", field_name);
     }
 }
 
 struct SizeManager {
-    classes: HashMap<String, ClassInfo>,
+    structs: HashMap<String, ClassInfo>,
 }
 
 impl SizeManager {
     fn new() -> Self {
         Self {
-            classes: HashMap::new(),
+            structs: HashMap::new(),
         }
     }
 
-    fn add_class(&mut self, class_name: &str) {
-        debug_assert!(self.classes.get(class_name).is_none());
-        self.classes.insert(class_name.to_string(), ClassInfo::new());
+    fn add_struct(&mut self, struct_name: &str) {
+        debug_assert!(self.structs.get(struct_name).is_none());
+        self.structs.insert(struct_name.to_string(), ClassInfo::new());
     }
 
     fn add_field(
         &mut self,
-        class_name: &str,
+        struct_name: &str,
         field_name: &str,
         typ: &Type,
     ) {
-        self.classes
-            .get_mut(class_name)
-            .expect("Class is guaranteed to be in here, because we typechecked before!")
+        self.structs
+            .get_mut(struct_name)
+            .expect("Struct is guaranteed to be in here, because we typechecked before!")
             .add_field(field_name, typ);
     }
 
-    fn get_class_info(&self, class_name: &str) -> &ClassInfo {
-        self.classes.get(class_name).expect("Class is guaranteed to be in here, because we typechecked before!")
-    }
-
-    fn get_class_size(&self, class_name: &str) -> usize {
-        self.get_class_info(class_name).total_size
+    fn get_struct_info(&self, struct_name: &str) -> &ClassInfo {
+        self.structs.get(struct_name).expect("Struct is guaranteed to be in here, because we typechecked before!")
     }
 }
 
@@ -148,7 +141,7 @@ pub struct LLVMCodegen<'flags, 'ctx> {
     target_machine: TargetMachine,
 
     stack_scopes: Vec<HashMap<String, BasicValueEnum<'ctx>>>,
-    class_defs: HashMap<String, BasicTypeEnum<'ctx>>,
+    struct_defs: HashMap<String, BasicTypeEnum<'ctx>>,
 
     sm: SizeManager,
     flags: &'flags Flags,
@@ -190,7 +183,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             module,
             builder,
             target_machine,
-            class_defs: HashMap::new(),
+            struct_defs: HashMap::new(),
             stack_scopes: Vec::new(),
             sm: SizeManager::new(),
             flags,
@@ -224,28 +217,71 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
 
     #[trace_call(always)]
     fn fill_lookup(&mut self, file: &nodes::FileNode) -> Result<(), String> {
-        for class in &file.classes {
-            self.sm.add_class(&class.name);
-            let class_struct_type_def = self.context.opaque_struct_type(&class.name);
-            let fields = class.fields.iter().map(|field| {
-                let typ = &field.type_def.typ;
-                debug_assert!(*typ != Type::None);
-                self.sm.add_field(&class.name, &field.name, typ);
-                self.codegen_type(&field.type_def.typ)
-            });
-            class_struct_type_def.set_body(&fields.collect::<Vec<BasicTypeEnum>>(), false);
-            self.class_defs.insert(class.name.clone(), class_struct_type_def.into());
-            if self.flags.debug {
-                println!("Class {} has size {}", class.name, self.sm.get_class_size(&class.name));
+        // Sort structs by field dependency, so we can create them in the correct order for LLVM
+        // If struct `Foo` needs struct `Bar`, then `Bar` needs to be created first
+        // This means building a tree of dependencies, and then sorting by them
+        let mut struct_dependencies = HashMap::new();
+        for strukt in &file.structs {
+            struct_dependencies.insert(strukt.name.clone(), Vec::new());
+        }
+        for strukt in &file.structs {
+            for field in &strukt.fields {
+                if let Type::Struct(struct_name) = &field.type_def.typ {
+                    struct_dependencies.get_mut(struct_name).unwrap().push(strukt.name.clone());
+                }
             }
         }
-        for class in &file.classes {
-            for method in &class.methods {
-                let name = format!("{}_{}", class.name, method.name);
+        let mut sorted_structs = Vec::new();
+        let mut structs_to_process = Vec::new();
+        for strukt in &file.structs {
+            if struct_dependencies.get(&strukt.name).unwrap().len() == 0 {
+                structs_to_process.push(strukt.name.clone());
+            }
+        }
+        while structs_to_process.len() > 0 {
+            let struct_name = structs_to_process.pop().unwrap();
+            sorted_structs.push(struct_name.clone());
+            for (name, dependencies) in &mut struct_dependencies {
+                if dependencies.contains(&struct_name) {
+                    dependencies.retain(|n| n != &struct_name);
+                    if dependencies.len() == 0 {
+                        structs_to_process.push(name.clone());
+                    }
+                }
+            }
+        }
+        if sorted_structs.len() != file.structs.len() {
+            internal_panic!("Could not sort structs by dependency!");
+        }
+        sorted_structs.reverse();
+        let mut structs = Vec::new();
+        for struct_name in sorted_structs {
+            for strukt in &file.structs {
+                if strukt.name == struct_name {
+                    structs.push(strukt.clone());
+                }
+            }
+        }
+
+        for strukt in &structs {
+            self.sm.add_struct(&strukt.name);
+            let struct_struct_type_def = self.context.opaque_struct_type(&strukt.name);
+            let fields = strukt.fields.iter().map(|field| {
+                let typ = &field.type_def.typ;
+                debug_assert!(*typ != Type::None);
+                self.sm.add_field(&strukt.name, &field.name, typ);
+                self.codegen_type(&field.type_def.typ)
+            });
+            struct_struct_type_def.set_body(&fields.collect::<Vec<BasicTypeEnum>>(), false);
+            self.struct_defs.insert(strukt.name.clone(), struct_struct_type_def.into());
+        }
+        for strukt in &file.structs {
+            for method in &strukt.methods {
+                let name = format!("{}_{}", strukt.name, method.name);
                 fill_function_lookup!(self, method, name);
             }
-            for constructor in &class.constructors {
-                let name = format!("{}_constructor", class.name);
+            for constructor in &strukt.constructors {
+                let name = format!("{}_constructor", strukt.name);
                 fill_function_lookup!(self, constructor, name);
             }
         }
@@ -305,8 +341,8 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
 
     #[trace_call(always)]
     fn codegen_file(&mut self, file: &nodes::FileNode) -> Result<(), String> {
-        for class in &file.classes {
-            self.codegen_class(class)?;
+        for strukt in &file.structs {
+            self.codegen_struct(strukt)?;
         }
         for function in &file.functions {
             self.codegen_function(function)?;
@@ -371,11 +407,11 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
-    fn codegen_class(&mut self, class: &nodes::ClassNode) -> Result<(), String> {
-        for constructor in &class.constructors {
+    fn codegen_struct(&mut self, strukt: &nodes::StructNode) -> Result<(), String> {
+        for constructor in &strukt.constructors {
             self.codegen_constructor(constructor)?;
         }
-        for method in &class.methods {
+        for method in &strukt.methods {
             self.codegen_method(method)?;
         }
         Ok(())
@@ -385,32 +421,24 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     fn codegen_constructor(&mut self, constructor: &nodes::ConstructorNode) -> Result<(), String> {
         self.enter_scope();
 
-        let name = format!("{}_constructor", constructor.class_name);
+        let name = format!("{}_constructor", constructor.struct_name);
         codegen_function_header!(self, constructor, name);
 
-        // LLVM does not malloc by size, but by Struct
-        // So we need to get the stored class definition
-        let class_info = self.class_defs.get(&constructor.class_name).unwrap();
-        // let this: Class = malloc(Class);
-        let this_alloc = self.builder.build_malloc(*class_info, "this").unwrap();
-        // memset(this, 0, sizeof(Class));
-        let alignment = self.target_machine.get_target_data().get_preferred_alignment(class_info);
-        let _this_zero = self.builder.build_memset(
-            this_alloc,
-            alignment,
-            self.context.i8_type().const_int(0, false),
-            self.context.ptr_sized_int_type(&self.target_machine.get_target_data(), Some(AddressSpace::default())).const_int(self.sm.get_class_size(&constructor.class_name) as u64, false),
-        ).unwrap();
-
-        // Add `this` to the scope and store `this` on the stack
-        let alloca = self.builder.build_alloca(*class_info, "this");
-        self.add_variable("this", alloca.into());
-        self.builder.build_store(alloca, this_alloc);
+        // Create struct on stack
+        let struct_info = self.struct_defs.get(&constructor.struct_name).unwrap();
+        let this_alloc = self.builder.build_alloca(*struct_info, "this_alloc");
+        self.builder.build_store(this_alloc, this_alloc);
+        self.add_variable("this", this_alloc.into());
 
         // Actual code we wrote
         self.codegen_block(&constructor.block)?;
 
         // Return this
+        let this_alloc = self.builder.build_load(
+            self.codegen_type(&constructor.return_type.typ),
+            this_alloc,
+            "this_alloc",
+        );
         self.builder.build_return(Some(&this_alloc));
         self.exit_scope();
         Ok(())
@@ -420,7 +448,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     fn codegen_method(&mut self, method: &nodes::MethodNode) -> Result<(), String> {
         self.enter_scope();
 
-        let name = format!("{}_{}", method.class_name, method.name);
+        let name = format!("{}_{}", method.struct_name, method.name);
         codegen_function_header!(self, method, name);
 
         self.codegen_block(&method.block)?;
@@ -831,70 +859,55 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 Ok(value)
             }
             Operation::Dot => {
-                debug_assert!((*binary.lhs).get_type().is_class());
-                let lhs = self.codegen_expression(&binary.lhs, true)?;
-                // if (lhs == null) { exit(2); }
-                let lhs_as_int = self.builder.build_ptr_to_int(
-                    lhs.into_pointer_value(),
-                    self.context.i64_type(),
-                    "lhs_ptr_to_int",
-                );
-                let lhs_check = self.builder.build_int_compare(
-                    inkwell::IntPredicate::EQ,
-                    lhs_as_int,
-                    self.context.i64_type().const_int(0, false),
-                    "lhs_null_check",
-                );
-                let null_block = self.context.append_basic_block(
-                    self.builder.get_insert_block().unwrap().get_parent().unwrap(),
-                    "lhs_null_block",
-                );
-                let not_null_block = self.context.append_basic_block(
-                    self.builder.get_insert_block().unwrap().get_parent().unwrap(),
-                    "lhs_not_null_block",
-                );
-                self.builder.build_conditional_branch(lhs_check, null_block, not_null_block);
-                self.builder.position_at_end(null_block);
-                self.builder.build_call(
-                    self.module.get_function("exit").unwrap(),
-                    &[self.context.i32_type().const_int(2, false).into()],
-                    "exit",
-                );
-                self.builder.build_unconditional_branch(not_null_block);
-                self.builder.position_at_end(not_null_block);
+                debug_assert!((*binary.lhs).get_type().is_struct());
+                let lhs = self.codegen_expression(&binary.lhs, false)?;
+                // TODO: Think about null pointers, do they make sense with structs?
 
-                let class_name = (*binary.lhs).get_type().get_class_name();
-                let class_struct_type = self.class_defs.get(&class_name).unwrap();
+                let struct_name = (*binary.lhs).get_type().get_struct_name();
+                let struct_struct_type = self.struct_defs.get(&struct_name).unwrap();
                 match &*binary.rhs {
                     nodes::Expression::Name(field) => {
                         let offset = self.sm
-                            .get_class_info(&class_name)
+                            .get_struct_info(&struct_name)
                             .get_field_index(&field.name);
                         let field_ptr = self.builder.build_struct_gep(
-                            class_struct_type.clone(),
+                            struct_struct_type.clone(),
                             lhs.into_pointer_value(),
                             offset as u32,
                             "field_ptr").unwrap();
                         let field_type = self.codegen_type(&field.typ);
-                        // let field_ptr = self.builder.build_pointer_cast(
-                        //     field_ptr,
-                        //     field_type.ptr_type(AddressSpace::default()),
-                        //     "field_ptr_cast",
-                        // );
+                        let field_ptr = self.builder.build_pointer_cast(
+                            field_ptr,
+                            field_type.ptr_type(AddressSpace::default()),
+                            "field_ptr_cast",
+                        );
                         if load_var {
-                            let field_ptr = self.builder.build_load(field_type, field_ptr, "field_load");
-                            Ok(field_ptr.into())
+                            let field_ptr = self.builder.build_load(
+                                field_type,
+                                field_ptr,
+                                "field_ptr_load",
+                            );
+                            Ok(field_ptr)
                         } else {
                             Ok(field_ptr.into())
                         }
                     }
                     nodes::Expression::FunctionCall(method_call) => {
-                        let method_name = format!("{}_{}", class_name, method_call.function_name);
+                        let method_name = format!("{}_{}", struct_name, method_call.function_name);
                         if !self.module.get_function(&method_name).is_some() {
                             internal_panic!("Could not find function {}");
                         }
                         let method = self.module.get_function(&method_name).unwrap();
                         let mut args = Vec::new();
+                        let lhs = if !lhs.is_pointer_value() {
+                            lhs
+                        } else {
+                            self.builder.build_load(
+                                self.codegen_type(&binary.lhs.get_type()),
+                                lhs.into_pointer_value(),
+                                "lhs_load",
+                            )
+                        };
                         args.push(lhs.into());
                         for arg in &method_call.arguments {
                             args.push(self.codegen_expression(arg, true)?.into());
@@ -961,7 +974,11 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             Type::U64 => self.context.i64_type().as_basic_type_enum(),
             Type::Usize => self.context.i64_type().as_basic_type_enum(),
             Type::Bool => self.context.bool_type().as_basic_type_enum(),
-            Type::Class(_) => self.context.i64_type().ptr_type(AddressSpace::default()).as_basic_type_enum(),
+            Type::Struct(_) => {
+                let struct_name = typ.get_struct_name();
+                let struct_struct_type = self.struct_defs.get(&struct_name).unwrap();
+                struct_struct_type.clone()
+            },
             // Note: Void does not exist as BasicTypeEnum, so void functions are handled differently
             Type::None => unreachable!("Type::None should never be used!"),
             e => unimplemented!("codegen_type: {:?}", e),

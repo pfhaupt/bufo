@@ -7,7 +7,7 @@
 //! LHS has type `Test`.
 //! RHS has type `Test`.
 
-class Test {
+struct Test {
     a: i64;
 
     constructor() {
@@ -18,5 +18,5 @@ class Test {
 func main() {
     let t1: Test = Test();
     let t2: Test = Test();
-    let t3: Test = t1 + t2; // OP_PLUS is not defined for class Test
+    let t3: Test = t1 + t2; // OP_PLUS is not defined for strukt Test
 }

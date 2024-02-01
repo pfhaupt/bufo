@@ -10,9 +10,9 @@
 //! Expected `:`, found `}`
 //! Expected `}`, found End of File
 
-// Every error inside a class recovers until it finds a semi colon or a curly bracket with the same
+// Every error inside a struct recovers until it finds a semi colon or a curly bracket with the same
 // bracket level as the error token
-class Test {
+struct Test {
     // 1. Missing type, consumes until the semi colon
     fea:; // We resume parsing after this
 
@@ -47,4 +47,4 @@ func main() {
 }
 
 // 6. Missing a curly bracket,
-// because we're still trying to parse a class
+// because we're still trying to parse a strukt

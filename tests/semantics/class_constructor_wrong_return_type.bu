@@ -6,12 +6,12 @@
 //! Constructor cannot return a value.
 //! The return type of constructors is implicit, and should not be specified.
 
-class Foo {
+struct Foo {
     constructor() -> i32 {
         return 5;
     }
 }
-class Bar {
+struct Bar {
     constructor() -> Bar {
         return this;
     }

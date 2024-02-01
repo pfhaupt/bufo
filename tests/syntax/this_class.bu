@@ -10,7 +10,7 @@
 //! `this` parameters are only allowed in methods.
 //! Expected Identifier, found `this`
 
-class Foo {
+struct Foo {
     field: u32;
     constructor(){}
     func foo(mut this) {

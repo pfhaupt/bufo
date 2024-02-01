@@ -5,7 +5,7 @@
 //! ERROR:
 //! Type mismatch! Expected type `i32`, found type `u32`.
 
-class Test {
+struct Test {
     bla: Bla;
 
     constructor() {
@@ -13,7 +13,7 @@ class Test {
     }
 }
 
-class Bla {
+struct Bla {
     test : Test;
     a: i32;
 

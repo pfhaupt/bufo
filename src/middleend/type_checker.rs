@@ -44,14 +44,14 @@ macro_rules! check_function {
             for (mut arg, param) in $call_node.arguments.iter_mut().zip($func_info.parameters.clone()) {
                 let expected = param.typ;
                 // TODO: Mutability error should specify that this is a parameter
-                let arg_type = $tc.type_check_expression(arg, param.is_mutable && expected.is_class());
+                let arg_type = $tc.type_check_expression(arg, param.is_mutable && expected.is_struct());
                 if arg_type == Type::None {
                     continue;
                 }
                 if arg_type == Type::Unknown {
                     // We need to `infer` the type again
                     $tc.type_check_expression_with_type(&mut arg, &expected);
-                    debug_assert!(!expected.is_class());
+                    debug_assert!(!expected.is_struct());
                 } else if arg_type != expected {
                     $tc.report_error(TypeError::ArgParamTypeMismatch(
                         arg.get_loc(),
@@ -72,7 +72,7 @@ macro_rules! check_function {
 }
 
 macro_rules! check_parameters {
-    ($tc:ident, $function:ident, $implicit_this:expr) => {
+    ($tc:ident, $function:ident) => {
         {
             let mut parameters: Vec<Variable> = Vec::new();
             let mut errors: Vec<TypeError> = Vec::new();
@@ -147,8 +147,8 @@ enum TypeError {
     UndeclaredVariable(Location, String),
     /// Syntax: Error Loc, Fn Name
     UndeclaredFunction(Location, String),
-    /// Syntax: Error Loc, Class Name
-    UndeclaredClass(Location, String),
+    /// Syntax: Error Loc, Struct Name
+    UndeclaredStruct(Location, String),
     /// Syntax: Fn Type, Error Loc, Fn Name, Arg Count, Fn Decl, Param Count
     NotEnoughArguments(&'static str, Location, String, usize, Location, usize),
     /// Syntax: Fn Type, Error Loc, Fn Name, Arg Count, Fn Decl, Param Count
@@ -161,18 +161,18 @@ enum TypeError {
     DimensionMismatch(Location, usize, usize),
     /// Syntax: Error Loc, Decl Loc, Decl Type
     MissingReturn(Location, Location, Type),
-    /// Syntax: Error Loc, Var Decl, Var Name, Field Name, Class Loc, Class Name
+    /// Syntax: Error Loc, Var Decl, Var Name, Field Name, Struct Loc, Struct Name
     UnknownField(Location, String, Location, String),
-    /// Syntax: Error Loc, Var Name, Class Loc, Class Name
+    /// Syntax: Error Loc, Var Name, Struct Loc, Struct Name
     UnknownMethod(Location, String, Location, String),
     /// Syntax: Expected, Error Loc, Found Literal
     UnexpectedLiteral(&'static str, Location, String),
     /// Syntax: Error Loc, Var Name, Decl Loc
     IndexIntoNonArray(Location, String, Location),
-    /// Syntax: Error Loc, Class Decl, Class Name
+    /// Syntax: Error Loc, Struct Decl, Struct Name
     NoConstructor(Location, Location, String),
     /// Syntax: Error Loc
-    DotOnNonClass(Location),
+    DotOnNonStruct(Location),
     /// Syntax: Error Loc
     InvalidLValue(Location),
     /// Syntax: Error Loc, Type
@@ -181,6 +181,8 @@ enum TypeError {
     ImmutableModification(Location, String, Location),
     /// Syntax: Error Loc
     CantMutateTemporary(Location),
+    /// Syntax: Error Loc, Struct Name, Previous Struct Info
+    RecursiveStruct(Location, String, Vec<(Location, String)>),
 }
 
 impl Display for TypeError {
@@ -247,11 +249,11 @@ impl Display for TypeError {
                     ERR_STR, error_loc, fn_name
                 )
             }
-            TypeError::UndeclaredClass(error_loc, class_name) => {
+            TypeError::UndeclaredStruct(error_loc, struct_name) => {
                 write!(
                     f,
-                    "{}: {:?}: Use of undeclared class `{}`.\n{}: Capitalized function calls are reserved for class constructors.",
-                    ERR_STR, error_loc, class_name, NOTE_STR
+                    "{}: {:?}: Use of undeclared struct `{}`.\n{}: Capitalized function calls are reserved for struct constructors.",
+                    ERR_STR, error_loc, struct_name, NOTE_STR
                 )
             }
             TypeError::NotEnoughArguments(fn_kind, error_loc, fn_name, arg_count, fn_loc, param_count) => {
@@ -301,18 +303,18 @@ impl Display for TypeError {
                     ERR_STR, error_loc, NOTE_STR, decl_loc, decl_type
                 )
             }
-            TypeError::UnknownField(error_loc, field_name, class_loc, class_name) => {
+            TypeError::UnknownField(error_loc, field_name, struct_loc, struct_name) => {
                 write!(
                     f,
-                    "{}: {:?}: Attempted to access unknown field `{}` of instance of class `{}`.\n{}: {:?}: Class `{}` is declared here.",
-                    ERR_STR, error_loc, field_name, class_name, NOTE_STR, class_loc, class_name
+                    "{}: {:?}: Attempted to access unknown field `{}` of instance of struct `{}`.\n{}: {:?}: Struct `{}` is declared here.",
+                    ERR_STR, error_loc, field_name, struct_name, NOTE_STR, struct_loc, struct_name
                 )
             }
-            TypeError::UnknownMethod(error_loc, method_name, class_loc, class_name) => {
+            TypeError::UnknownMethod(error_loc, method_name, struct_loc, struct_name) => {
                 write!(
                     f,
-                    "{}: {:?}: Attempted to call unknown method `{}`.\n{}: {:?}: Class `{}` is declared here.",
-                    ERR_STR, error_loc, method_name, NOTE_STR, class_loc, class_name
+                    "{}: {:?}: Attempted to call unknown method `{}`.\n{}: {:?}: Struct `{}` is declared here.",
+                    ERR_STR, error_loc, method_name, NOTE_STR, struct_loc, struct_name
                 )
             }
             TypeError::UnexpectedLiteral(expected, error_loc, found) => {
@@ -329,17 +331,17 @@ impl Display for TypeError {
                     ERR_STR, error_loc, var_name, NOTE_STR, var_loc, var_name
                 )
             }
-            TypeError::NoConstructor(error_loc, class_loc, class_name) => {
+            TypeError::NoConstructor(error_loc, struct_loc, struct_name) => {
                 write!(
                     f,
-                    "{}: {:?}: Class `{}` has no constructor.\n{}: {:?}: Class `{}` is declared here.\n{}: Implement the special `{}() {{}}` method to create a constructor.",
-                    ERR_STR, error_loc, class_name, NOTE_STR, class_loc, class_name, NOTE_STR, CONSTRUCTOR_KEYWORD
+                    "{}: {:?}: Struct `{}` has no constructor.\n{}: {:?}: Struct `{}` is declared here.\n{}: Implement the special `{}() {{}}` method to create a constructor.",
+                    ERR_STR, error_loc, struct_name, NOTE_STR, struct_loc, struct_name, NOTE_STR, CONSTRUCTOR_KEYWORD
                 )
             }
-            TypeError::DotOnNonClass(error_loc) => {
+            TypeError::DotOnNonStruct(error_loc) => {
                 write!(
                     f,
-                    "{}: {:?}: Attempted to access field of non-class value.",
+                    "{}: {:?}: Attempted to access field of non-struct value.",
                     ERR_STR, error_loc
                 )
             }
@@ -371,6 +373,15 @@ impl Display for TypeError {
                     ERR_STR, error_loc, NOTE_STR, NOTE_STR
                 )
             }
+            TypeError::RecursiveStruct(error_loc, struct_name, struct_locs) => {
+                let mut message = format!(
+                    "{}: {:?}: Recursive struct `{}`.", ERR_STR, error_loc, struct_name
+                );
+                for (loc, name) in struct_locs.iter().skip(1) {
+                    message.push_str(&format!("\n{}: {:?}: Chain of recursion also includes Struct `{}`.", NOTE_STR, loc, name));
+                }
+                write!(f, "{}", message)
+            }
         }
     }
 }
@@ -388,7 +399,7 @@ pub enum Type {
     Bool,
     // Ptr(Box<Type>),
     Arr(Box<Type>, Vec<usize>),
-    Class(String),
+    Struct(String),
     // Reserved for later use
     F32,
     F64,
@@ -402,7 +413,7 @@ impl Type {
             Type::I32 | Type::U32 | Type::F32 => 4,
             Type::I64 | Type::U64 | Type::F64 | Type::Usize => 8,
             Type::Bool => 1,
-            Type::Class(..) => 8,
+            Type::Struct(..) => internal_panic!("Something attempted to get the size of a struct!"),
             Type::None => internal_panic!("Something attempted to get the size of Type::None!"),
             Type::Unknown => {
                 internal_panic!("Something attempted to get the size of Type::Unknown!")
@@ -411,14 +422,14 @@ impl Type {
     }
 
     #[trace_call(extra)]
-    pub fn is_class(&self) -> bool {
-        matches!(self, Type::Class(..))
+    pub fn is_struct(&self) -> bool {
+        matches!(self, Type::Struct(..))
     }
 
     #[trace_call(extra)]
-    pub fn get_class_name(&self) -> String {
+    pub fn get_struct_name(&self) -> String {
         match self {
-            Type::Class(name) => name.clone(),
+            Type::Struct(name) => name.clone(),
             _ => panic!(),
         }
     }
@@ -427,8 +438,7 @@ impl Type {
 impl Display for Type {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
-            // Type::Ptr(t) => write!(fmt, "&{}", t),
-            Type::Class(str) => write!(fmt, "{}", str),
+            Type::Struct(str) => write!(fmt, "{}", str),
             Type::Arr(t, s) => write!(fmt, "{t}{s:?}"),
             _ => write!(fmt, "{}", format!("{:?}", self).to_lowercase()),
         }
@@ -468,22 +478,20 @@ impl Function {
 }
 
 #[derive(Debug)]
-pub struct Class {
+pub struct Struct {
     name: String,
     location: Location,
     fields: HashMap<String, TypeLoc>,
     known_methods: HashMap<String, Function>,
     known_constructors: Vec<Function>,
-    has_constructor: bool,
 }
 
-impl Class {
+impl Struct {
     #[trace_call(extra)]
-    fn new(name: String, location: Location, has_constructor: bool) -> Self {
+    fn new(name: String, location: Location) -> Self {
         Self {
             name,
             location,
-            has_constructor,
             fields: HashMap::new(),
             known_methods: HashMap::new(),
             known_constructors: Vec::new(),
@@ -543,13 +551,13 @@ impl Variable {
         }
     }
     #[trace_call(extra)]
-    fn is_class_instance(&self) -> bool {
-        matches!(&self.typ, Type::Class(..))
+    fn is_struct_instance(&self) -> bool {
+        matches!(&self.typ, Type::Struct(..))
     }
     #[trace_call(extra)]
-    fn get_class_name(&self) -> String {
+    fn get_struct_name(&self) -> String {
         match &self.typ {
-            Type::Class(name) => name.clone(),
+            Type::Struct(name) => name.clone(),
             _ => panic!(),
         }
     }
@@ -558,7 +566,7 @@ impl Variable {
 #[derive(Debug)]
 pub struct TypeChecker<'flags> {
     known_externs: HashMap<String, Function>,
-    known_classes: HashMap<String, Class>,
+    known_structs: HashMap<String, Struct>,
     known_functions: HashMap<String, Function>,
     known_variables: VecDeque<HashMap<String, Variable>>,
     #[cfg(not(feature = "llvm"))]
@@ -572,7 +580,7 @@ impl<'flags> TypeChecker<'flags> {
     pub fn new(flags: &'flags Flags) -> Self {
         Self {
             known_externs: HashMap::new(),
-            known_classes: HashMap::new(),
+            known_structs: HashMap::new(),
             known_functions: HashMap::new(),
             known_variables: VecDeque::new(),
             #[cfg(not(feature = "llvm"))]
@@ -603,7 +611,7 @@ impl<'flags> TypeChecker<'flags> {
             None => {
                 let return_type = &function.return_type.typ;
                 let return_loc = &function.return_type.location;
-                let (parameters, errors) = check_parameters!(self, function, false);
+                let (parameters, errors) = check_parameters!(self, function);
                 let func = Function {
                     location: *location,
                     return_type: TypeLoc::new(*return_loc, return_type.clone()),
@@ -632,7 +640,7 @@ impl<'flags> TypeChecker<'flags> {
             None => {
                 let return_type = &extern_node.return_type.typ;
                 let return_loc = &extern_node.return_type.location;
-                let (parameters, errors) = check_parameters!(self, extern_node, false);
+                let (parameters, errors) = check_parameters!(self, extern_node);
                 let func = Function {
                     location: *location,
                     return_type: TypeLoc::new(*return_loc, return_type.clone()),
@@ -648,27 +656,27 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(extra)]
-    fn add_method_to_class(&mut self, method: &nodes::MethodNode, class: &mut Class) {
+    fn add_method_to_struct(&mut self, method: &nodes::MethodNode, strukt: &mut Struct) {
         let name = &method.name;
         let location = &method.location;
-        if class.known_methods.get(name).is_some() {
+        if strukt.known_methods.get(name).is_some() {
             self.report_error(TypeError::Redeclaration(
                 "Method",
                 *location,
                 name.clone(),
-                class.location,
+                strukt.location,
             ));
         } else {
             let return_type = &method.return_type.typ;
             let return_loc = &method.return_type.location;
-            let (parameters, errors) = check_parameters!(self, method, true);
+            let (parameters, errors) = check_parameters!(self, method);
             let method = Function {
                 location: *location,
                 return_type: TypeLoc::new(*return_loc, return_type.clone()),
                 has_this: parameters.iter().find(|p| p.name == "this").is_some(),
                 parameters,
             };
-            class.known_methods.insert(name.clone(), method);
+            strukt.known_methods.insert(name.clone(), method);
             for error in errors {
                 self.report_error(error);
             }
@@ -676,30 +684,30 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(extra)]
-    fn add_constructor_to_class(
+    fn add_constructor_to_struct(
         &mut self,
         constructor: &nodes::ConstructorNode,
-        class: &mut Class
+        strukt: &mut Struct
     ) {
         let location = &constructor.location;
-        if class.known_constructors.len() > 0 {
+        if strukt.known_constructors.len() > 0 {
             self.report_error(TypeError::Redeclaration(
                 "Constructor",
                 *location,
-                class.name.to_string(),
-                class.location,
+                strukt.name.to_string(),
+                strukt.location,
             ));
         } else {
             let return_type = &constructor.return_type.typ;
             let return_loc = &constructor.return_type.location;
-            let (parameters, errors) = check_parameters!(self, constructor, true);
+            let (parameters, errors) = check_parameters!(self, constructor);
             let constructor = Function {
                 location: *location,
                 return_type: TypeLoc::new(*return_loc, return_type.clone()),
                 parameters,
                 has_this: false,
             };
-            class.known_constructors.push(constructor);
+            strukt.known_constructors.push(constructor);
             for error in errors {
                 self.report_error(error);
             }
@@ -711,31 +719,31 @@ impl<'flags> TypeChecker<'flags> {
         for extern_node in &ast.externs {
             self.add_extern(extern_node);
         }
-        for c in &ast.classes {
-            match self.known_classes.get(&c.name) {
-                Some(class) => {
+        for s in &ast.structs {
+            match self.known_structs.get(&s.name) {
+                Some(strukt) => {
                     let err = TypeError::Redeclaration(
-                        "Class",
-                        c.location,
-                        c.name.clone(),
-                        class.location,
+                        "Struct",
+                        s.location,
+                        s.name.clone(),
+                        strukt.location,
                     );
                     self.report_error(err);
                 },
                 None => {
-                    let mut class = Class::new(c.name.clone(), c.location, c.constructors.len() > 0);
-                    for field in &c.fields {
-                        if let Err(error) = class.add_field(field) {
+                    let mut strukt = Struct::new(s.name.clone(), s.location);
+                    for field in &s.fields {
+                        if let Err(error) = strukt.add_field(field) {
                             self.report_error(error);
                         }
                     }
-                    for method in &c.methods {
-                        self.add_method_to_class(method, &mut class);
+                    for method in &s.methods {
+                        self.add_method_to_struct(method, &mut strukt);
                     }
-                    for constructor in &c.constructors {
-                        self.add_constructor_to_class(constructor, &mut class);
+                    for constructor in &s.constructors {
+                        self.add_constructor_to_struct(constructor, &mut strukt);
                     }
-                    self.known_classes.insert(c.name.clone(), class);
+                    self.known_structs.insert(s.name.clone(), strukt);
                 }
             }
         }
@@ -785,13 +793,55 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
+    fn find_recursive_structs(&mut self) {
+        if self.known_structs.is_empty() {
+            return;
+        }
+        let mut errors = Vec::new();
+        let mut queue = VecDeque::new();
+        let mut visited = Vec::new();
+
+        let first = self.known_structs.iter().next().unwrap();
+        queue.push_back((first.0.clone(), first.1));
+
+        while let Some((name, strukt)) = queue.pop_front() {
+            if visited.contains(&name) {
+                errors.push(TypeError::RecursiveStruct(
+                    strukt.location,
+                    strukt.name.clone(),
+                    visited.iter().map(|s| {
+                        let strukt = self.known_structs.get(s).unwrap();
+                        (strukt.location, strukt.name.clone())
+                    }).collect(),
+                ));
+                continue;
+            }
+            visited.push(name.clone());
+            for (_, field) in &strukt.fields {
+                if field.t.is_struct() {
+                    let field_name = field.t.get_struct_name();
+                    if let Some(field_strukt) = self.known_structs.get(&field_name) {
+                        queue.push_back((field_name, field_strukt));
+                    } else {
+                        unreachable!();
+                    }
+                }
+            }
+        }
+        for error in errors {
+            self.report_error(error);
+        }
+    }
+
+    #[trace_call(always)]
     pub fn type_check_file(&mut self, file: &mut nodes::FileNode) -> Result<(), String> {
         self.fill_lookup(file);
+        self.find_recursive_structs();
         for e in &mut file.externs {
             self.type_check_extern(e);
         }
-        for c in &mut file.classes {
-            self.type_check_class(c);
+        for s in &mut file.structs {
+            self.type_check_struct(s);
         }
         for f in &mut file.functions {
             self.type_check_function(f);
@@ -821,15 +871,15 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_class(&mut self, class: &mut nodes::ClassNode) {
-        for field in &mut class.fields {
+    fn type_check_struct(&mut self, struct_node: &mut nodes::StructNode) {
+        for field in &mut struct_node.fields {
             self.type_check_field(field);
         }
-        for method in &mut class.methods {
-            self.type_check_method(method, &class.name);
+        for constructor in &mut struct_node.constructors {
+            self.type_check_constructor(constructor, &struct_node.name);
         }
-        for feature in &mut class.constructors {
-            self.type_check_constructor(feature, &class.name);
+        for method in &mut struct_node.methods {
+            self.type_check_method(method, &struct_node.name);
         }
     }
 
@@ -842,10 +892,10 @@ impl<'flags> TypeChecker<'flags> {
     fn type_check_constructor(
         &mut self,
         constructor: &mut nodes::ConstructorNode,
-        class_name: &str,
+        struct_name: &str,
     ) {
         debug_assert!(self.known_variables.is_empty());
-        debug_assert!(self.known_classes.contains_key(class_name));
+        debug_assert!(self.known_structs.contains_key(struct_name));
         #[cfg(not(feature = "llvm"))]
         debug_assert!(self.current_stack_size == 0);
 
@@ -853,8 +903,8 @@ impl<'flags> TypeChecker<'flags> {
             self.type_check_parameter(param);
         }
 
-        let Some(class_info) = self.known_classes.get(class_name) else { unreachable!() };
-        let Some(constructor_info) = class_info.known_constructors.get(0) else { unreachable!() };
+        let Some(struct_info) = self.known_structs.get(struct_name) else { unreachable!() };
+        let Some(constructor_info) = struct_info.known_constructors.get(0) else { unreachable!() };
 
         // Parameters are now known variables
         let mut parameters = constructor_info.get_parameters_as_hashmap();
@@ -863,7 +913,7 @@ impl<'flags> TypeChecker<'flags> {
             Variable::new(
                 "this".to_string(),
                 constructor.location,
-                Type::Class(class_name.to_string()),
+                Type::Struct(struct_name.to_string()),
                 true,
             ),
         );
@@ -888,10 +938,10 @@ impl<'flags> TypeChecker<'flags> {
     fn type_check_method(
         &mut self,
         method: &mut nodes::MethodNode,
-        class_name: &str,
+        struct_name: &str,
     ) {
         debug_assert!(self.known_variables.is_empty());
-        debug_assert!(self.known_classes.contains_key(class_name));
+        debug_assert!(self.known_structs.contains_key(struct_name));
         #[cfg(not(feature = "llvm"))]
         debug_assert!(self.current_stack_size == 0);
 
@@ -899,13 +949,13 @@ impl<'flags> TypeChecker<'flags> {
             self.type_check_parameter(param);
         }
 
-        let Some(class_info) = self.known_classes.get(class_name) else {
-            // Lookup of classes and methods is done before ever evaluating any methods,
-            // so known_classes should always contain the class
+        let Some(struct_info) = self.known_structs.get(struct_name) else {
+            // Lookup of structs and methods is done before ever evaluating any methods,
+            // so known_structs should always contain the struct
             unreachable!()
         };
-        let Some(method_info) = class_info.known_methods.get(&method.name) else {
-            // Lookup of classes and methods is done before ever evaluating any methods,
+        let Some(method_info) = struct_info.known_methods.get(&method.name) else {
+            // Lookup of structs and methods is done before ever evaluating any methods,
             // so known_methods should always contain the method
             unreachable!()
         };
@@ -1069,7 +1119,7 @@ impl<'flags> TypeChecker<'flags> {
     ) {
         debug_assert!(return_node.typ == Type::Unknown);
 
-        let (expected_return_type, location) = if return_node.class.is_none() {
+        let (expected_return_type, location) = if return_node.strukt.is_none() {
             // We're returning from a normal function
             let Some(function) = self.known_functions.get(&return_node.function) else { unreachable!() };
             let expected_return_type = function.return_type.t.clone();
@@ -1078,9 +1128,9 @@ impl<'flags> TypeChecker<'flags> {
             (expected_return_type, location)
         } else {
             // We're returning from a method or feature
-            let Some(class) = self.known_classes.get(return_node.class.as_ref().unwrap()) else { unreachable!() };
+            let Some(strukt) = self.known_structs.get(return_node.strukt.as_ref().unwrap()) else { unreachable!() };
             let (mut location, mut expected_return_type) = (Location::anonymous(), Type::Unknown);
-            if let Some(method) = class.known_methods.get(&return_node.function) {
+            if let Some(method) = strukt.known_methods.get(&return_node.function) {
                 expected_return_type = method.return_type.t.clone();
                 location = method.location;
             }
@@ -1212,9 +1262,9 @@ impl<'flags> TypeChecker<'flags> {
                         lit_node.location,
                         lit_node.value.clone(),
                     ));
-                } else if let Type::Class(_) = typ {
+                } else if let Type::Struct(_) = typ {
                     self.report_error(TypeError::UnexpectedLiteral(
-                        "class instance",
+                        "struct instance",
                         lit_node.location,
                         lit_node.value.clone(),
                     ));
@@ -1359,7 +1409,7 @@ impl<'flags> TypeChecker<'flags> {
         );
         assert!(binary_expr.is_bitwise());
         match (&lhs_type, &rhs_type) {
-            (Type::Class(..), _) | (_, Type::Class(..)) => {
+            (Type::Struct(..), _) | (_, Type::Struct(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 self.report_error(TypeError::BinaryTypeMismatch(
                     binary_expr.location,
@@ -1433,7 +1483,7 @@ impl<'flags> TypeChecker<'flags> {
         );
         assert!(binary_expr.is_arithmetic());
         match (&lhs_type, &rhs_type) {
-            (typ @ Type::Class(..), _) | (_, typ @ Type::Class(..)) => {
+            (typ @ Type::Struct(..), _) | (_, typ @ Type::Struct(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 self.report_error(TypeError::BinaryTypeMismatch(
                     binary_expr.location,
@@ -1514,7 +1564,7 @@ impl<'flags> TypeChecker<'flags> {
         );
         assert!(binary_expr.is_comparison());
         match (&lhs_type, &rhs_type) {
-            (Type::Class(..), _) | (_, Type::Class(..)) => {
+            (Type::Struct(..), _) | (_, Type::Struct(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 self.report_error(TypeError::BinaryTypeMismatch(
                     binary_expr.location,
@@ -1622,16 +1672,16 @@ impl<'flags> TypeChecker<'flags> {
         needs_mutability: bool,
     ) -> Type {
         check_or_abort!(lhs_type, self.type_check_expression(&mut binary_expr.lhs, needs_mutability));
-        if let Type::Class(class_name) = lhs_type {
-            let Some(class) = self.known_classes.get(&class_name) else {
-                self.report_error(TypeError::DotOnNonClass(
+        if let Type::Struct(struct_name) = lhs_type {
+            let Some(strukt) = self.known_structs.get(&struct_name) else {
+                self.report_error(TypeError::DotOnNonStruct(
                     binary_expr.lhs.get_loc(),
                 ));
                 return Type::None;
             };
             match &mut (*binary_expr.rhs) {
                 nodes::Expression::Name(name_node) => {
-                    if let Some(field) = class.get_field(&name_node.name) {
+                    if let Some(field) = strukt.get_field(&name_node.name) {
                         binary_expr.typ = field.t.clone();
                         name_node.typ = field.t.clone();
                         field.t.clone()
@@ -1639,15 +1689,15 @@ impl<'flags> TypeChecker<'flags> {
                         self.report_error(TypeError::UnknownField(
                             name_node.location,
                             name_node.name.clone(),
-                            class.location,
-                            class.name.clone(),
+                            strukt.location,
+                            strukt.name.clone(),
                         ));
                         Type::None
                     }
                 }
                 nodes::Expression::FunctionCall(call_node) => {
                     // FIXME: Error Log shows wrong location
-                    if let Some(method) = class.get_method(&call_node.function_name) {
+                    if let Some(method) = strukt.get_method(&call_node.function_name) {
                         let result = if method.has_this {
                             // FIXME: This is not a good solution, but it works for now
                             call_node.arguments.insert(
@@ -1666,8 +1716,8 @@ impl<'flags> TypeChecker<'flags> {
                         self.report_error(TypeError::UnknownMethod(
                             call_node.location,
                             call_node.function_name.clone(),
-                            class.location,
-                            class.name.clone(),
+                            strukt.location,
+                            strukt.name.clone(),
                         ));
                         Type::None
                     }
@@ -1678,7 +1728,7 @@ impl<'flags> TypeChecker<'flags> {
                 },
             }
         } else {
-            self.report_error(TypeError::DotOnNonClass(
+            self.report_error(TypeError::DotOnNonStruct(
                 binary_expr.lhs.get_loc(),
             ));
             Type::None
@@ -1808,22 +1858,22 @@ impl<'flags> TypeChecker<'flags> {
             external
         } else if func_call.is_constructor {
             debug_assert!(!func_call.is_extern);
-            if let Some(class) = self.known_classes.get(&func_call.function_name) {
-                let Some(constructor) = class.known_constructors.get(0) else {
+            if let Some(strukt) = self.known_structs.get(&func_call.function_name) {
+                let Some(constructor) = strukt.known_constructors.get(0) else {
                     self.report_error(TypeError::NoConstructor(
                         func_call.location,
-                        class.location,
-                        class.name.clone(),
+                        strukt.location,
+                        strukt.name.clone(),
                     ));
                     return Type::None;
                 };
                 debug_assert!(
-                    class.has_constructor,
-                    "Class has constructor feature, but has_constructor is false"
+                    strukt.known_constructors.len() > 0,
+                    "Struct has constructor feature, but has_constructor is false"
                 );
                 constructor
             } else {
-                self.report_error(TypeError::UndeclaredClass(
+                self.report_error(TypeError::UndeclaredStruct(
                     func_call.location,
                     func_call.function_name.clone(),
                 ));
@@ -1840,11 +1890,11 @@ impl<'flags> TypeChecker<'flags> {
             function
         };
         let return_type = function.return_type.clone();
-        if let Type::Class(class_name) = &return_type.t {
-            if !self.known_classes.contains_key(class_name) {
-                self.report_error(TypeError::UndeclaredClass(
+        if let Type::Struct(struct_name) = &return_type.t {
+            if !self.known_structs.contains_key(struct_name) {
+                self.report_error(TypeError::UndeclaredStruct(
                     func_call.location,
-                    class_name.clone(),
+                    struct_name.clone(),
                 ));
                 self.report_error(TypeError::UnknownType(
                     return_type.l.clone(),
@@ -1866,8 +1916,8 @@ impl<'flags> TypeChecker<'flags> {
 
     #[trace_call(always)]
     fn type_check_type_node(&mut self, type_node: &nodes::TypeNode) {
-        if let Type::Class(class_name) = &type_node.typ {
-            if !self.known_classes.contains_key(class_name) {
+        if let Type::Struct(struct_name) = &type_node.typ {
+            if !self.known_structs.contains_key(struct_name) {
                 self.report_error(TypeError::UnknownType(
                     type_node.location,
                     type_node.typ.clone(),
@@ -1934,12 +1984,12 @@ impl<'flags> TypeChecker<'flags> {
 //                 "{}: {:?} Type Mismatch! Expected Array Literal, found Integer Literal `{}`",
 //                 ERR_STR, self.location, self.value
 //             ))
-//         } else if let Type::Class(class_name) = typ {
+//         } else if let Type::Struct(struct_name) = typ {
 //             Err(format!(
-//                 "{}: {:?} Type Mismatch! Expected instance of class `{}`, found Integer Literal `{}`",
+//                 "{}: {:?} Type Mismatch! Expected instance of struct `{}`, found Integer Literal `{}`",
 //                 ERR_STR,
 //                 self.location,
-//                 class_name,
+//                 struct_name,
 //                 self.value
 //             ))
 //         } else {

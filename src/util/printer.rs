@@ -21,8 +21,8 @@ impl Printable for nodes::FileNode {
         for ext in &self.externs {
             ext.print(indent + INDENT_PER_LEVEL);
         }
-        for class in &self.classes {
-            class.print(indent + INDENT_PER_LEVEL);
+        for strukt in &self.structs {
+            strukt.print(indent + INDENT_PER_LEVEL);
         }
         for function in &self.functions {
             function.print(indent + INDENT_PER_LEVEL);
@@ -43,7 +43,7 @@ impl Printable for nodes::ExternNode {
     }
 }
 
-impl Printable for nodes::ClassNode {
+impl Printable for nodes::StructNode {
     fn print(&self, indent: usize) {
         println!("{}ClassNode {}", " ".repeat(indent), self.name);
         for field in &self.fields {

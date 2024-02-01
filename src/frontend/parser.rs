@@ -13,7 +13,7 @@ use once_cell::sync::Lazy;
 
 const LOOKAHEAD_LIMIT: usize = 3;
 
-pub const CLASS_KEYWORD: &str = "class";
+pub const STRUCT_KEYWORD: &str = "struct";
 pub const CONSTRUCTOR_KEYWORD: &str = "constructor";
 pub const THIS_KEYWORD: &str = "this";
 pub const FUNCTION_KEYWORD: &str = "func";
@@ -39,7 +39,7 @@ enum ParserError {
     UnexpectedTokenMany(Location, Vec<TokenType>, TokenType),
     UnexpectedSymbol(Location, char),
     InvalidFunctionName(Location, String),
-    InvalidClassName(Location, String),
+    InvalidStructName(Location, String),
     ConstructorReturnsValue(Location),
     ExpectedExpression(Location, TokenType),
     InvalidIntegerLiteral(Location, String, Type),
@@ -78,7 +78,7 @@ impl Display for ParserError {
             },
             Self::UnexpectedSymbol(l, c) => format!("{l:?}: Unexpected Symbol `{}`", c),
             Self::InvalidFunctionName(l, s) => format!("{l:?}: Invalid Function Name: {}", s),
-            Self::InvalidClassName(l, s) => format!("{l:?}: Invalid Class Name: {}", s),
+            Self::InvalidStructName(l, s) => format!("{l:?}: Invalid Struct Name: {}", s),
             Self::ConstructorReturnsValue(l) => format!(
                 "{l:?}: Constructor cannot return a value.\n{}: The return type of constructors is implicit, and should not be specified.",
                 NOTE_STR
@@ -88,10 +88,10 @@ impl Display for ParserError {
             Self::STDParseIntError(l, s, e) => format!("{l:?}: Failed to parse integer literal {}\n{}: Reason: {}", s, NOTE_STR, e),
             Self::ExpectedUnaryOperator(l, t) => format!("{l:?}: Expected Unary Operator, found {}", t),
             Self::ExpectedBinaryOperator(l, t) => format!("{l:?}: Expected Binary Operator, found {}", t),
-            Self::ThisParameterHasType(l) => format!("{l:?}: Unexpected type for `this` parameter.\n{}: The type of `this` is always the class the method is defined in.", NOTE_STR),
+            Self::ThisParameterHasType(l) => format!("{l:?}: Unexpected type for `this` parameter.\n{}: The type of `this` is always the struct the method is defined in.", NOTE_STR),
             Self::ThisParameterNotFirst(l) => format!("{l:?}: `this` parameter must be the first parameter of a method."),
             Self::ForbiddenThisParameter(l) => format!("{l:?}: Unexpected `this` parameter.\n{}: `this` parameters are only allowed in methods.", NOTE_STR),
-            Self::ThisOutsideClass(l) => format!("{l:?}: Unexpected `this` outside of a class.\n{}: `this` is only allowed in methods.", NOTE_STR),
+            Self::ThisOutsideClass(l) => format!("{l:?}: Unexpected `this` outside of a struct.\n{}: `this` is only allowed in methods.", NOTE_STR),
         };
         let message = format!("{}: {}", ERR_STR, error_msg);
         write!(f, "{}", message)
@@ -136,7 +136,7 @@ pub enum TokenType {
     ClosingCurly,
     OpenSquare,
     ClosingSquare,
-    ClassKeyword,
+    StructKeyword,
     ConstructorKeyword,
     ThisKeyword,
     FunctionKeyword,
@@ -202,7 +202,7 @@ impl Display for TokenType {
             Self::ClosingCurly => write!(f, "`}}`"),
             Self::OpenSquare => write!(f, "`[`"),
             Self::ClosingSquare => write!(f, "`]`"),
-            Self::ClassKeyword => write!(f, "`{}`", CLASS_KEYWORD),
+            Self::StructKeyword => write!(f, "`{}`", STRUCT_KEYWORD),
             Self::ConstructorKeyword => write!(f, "`{}`", CONSTRUCTOR_KEYWORD),
             Self::ThisKeyword => write!(f, "`{}`", THIS_KEYWORD),
             Self::FunctionKeyword => write!(f, "`{}`", FUNCTION_KEYWORD),
@@ -244,8 +244,8 @@ impl Display for TokenType {
 
 // FIXME: Move this somewhere else
 static FILE_ANONYMOUS: usize = 0;
-static mut FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
-    vec![String::from("anonymous")]
+static mut FILENAMES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
+    vec![PathBuf::from("anonymous")]
 });
 
 #[derive(Copy, Clone, PartialEq, Eq, Default)]
@@ -276,7 +276,7 @@ impl Debug for Location {
             internal_panic!(format!("Invalid file_id {}", self.file_id))
         } else {
             let file = file.unwrap();
-            write!(f, "{}:{}:{}", file, self.row, self.col)
+            write!(f, "{}:{}:{}", file.to_str().unwrap(), self.row, self.col)
         }
     }
 }
@@ -429,7 +429,7 @@ pub struct Parser<'flags> {
     current_char: usize,
     current_line: usize,
     current_function: Option<String>,
-    current_class: Option<String>,
+    current_struct: Option<String>,
     current_externs: Vec<String>,
     line_start: usize,
     errors: Vec<ParserError>,
@@ -448,7 +448,7 @@ impl<'flags> Parser<'flags> {
             current_char: 0,
             current_line: 1,
             current_function: None,
-            current_class: None,
+            current_struct: None,
             current_externs: Vec::new(),
             line_start: 0,
             errors: Vec::new(),
@@ -467,13 +467,7 @@ impl<'flags> Parser<'flags> {
             Err(_) => unreachable!(),
         };
         unsafe {
-            FILENAMES.push(
-                pb.file_stem()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
-            );
+            FILENAMES.push(pb.clone());
         }
         Self {
             filepath: pb,
@@ -561,7 +555,7 @@ impl<'flags> Parser<'flags> {
                     (!c.is_alphanumeric() && c != '_') || c == '\0'
                 });
                 let typ = match value.as_str() {
-                    CLASS_KEYWORD => TokenType::ClassKeyword,
+                    STRUCT_KEYWORD => TokenType::StructKeyword,
                     CONSTRUCTOR_KEYWORD => TokenType::ConstructorKeyword,
                     THIS_KEYWORD => TokenType::ThisKeyword,
                     FUNCTION_KEYWORD => TokenType::FunctionKeyword,
@@ -735,7 +729,7 @@ impl<'flags> Parser<'flags> {
             // Reserved for future use
             "f32" => Type::F32,
             "f64" => Type::F64,
-            _ => Type::Class(val.to_string()),
+            _ => Type::Struct(val.to_string()),
         }
     }
     #[trace_call(always)]
@@ -853,7 +847,7 @@ impl<'flags> Parser<'flags> {
     pub fn parse_file(&mut self) -> Result<nodes::FileNode, String> {
         self.fill_lookup();
         let location = self.current_location();
-        let mut classes = vec![];
+        let mut structs = vec![];
         let mut functions = vec![];
         // TODO: Once we have a way to load files, we can remove this
         //       and replace it with a prelude file
@@ -887,9 +881,9 @@ impl<'flags> Parser<'flags> {
                     self.current_externs.push(parsed_extern.name.clone());
                     externs.push(parsed_extern);
                 }
-                TokenType::ClassKeyword => {
-                    parse_or_recover!(parsed_class, self.parse_class(), self.recover(&RECOVER_TOKENS));
-                    classes.push(parsed_class);
+                TokenType::StructKeyword => {
+                    parse_or_recover!(parsed_struct, self.parse_struct(), self.recover(&RECOVER_TOKENS));
+                    structs.push(parsed_struct);
                 }
                 TokenType::FunctionKeyword => {
                     parse_or_recover!(parsed_function, self.parse_function(), self.recover(&[TokenType::ClosingCurly]));
@@ -899,7 +893,7 @@ impl<'flags> Parser<'flags> {
                     let tkn = self.next();
                     self.report_error(ParserError::UnexpectedTokenMany(
                         tkn.location,
-                        vec![TokenType::ClassKeyword, TokenType::FunctionKeyword],
+                        vec![TokenType::FunctionKeyword, TokenType::ExternKeyword, TokenType::StructKeyword],
                         tkn.token_type,
                     ));
                     self.recover(&RECOVER_TOKENS);
@@ -917,7 +911,7 @@ impl<'flags> Parser<'flags> {
                     .unwrap()
                     .to_string(),
                 functions,
-                classes,
+                structs,
                 externs,
             })
         } else {
@@ -954,20 +948,20 @@ impl<'flags> Parser<'flags> {
     }
 
     #[trace_call(always)]
-    fn parse_class(&mut self) -> Option<nodes::ClassNode> {
+    fn parse_struct(&mut self) -> Option<nodes::StructNode> {
         let location = self.current_location();
-        try_parse!(self.expect(TokenType::ClassKeyword));
+        try_parse!(self.expect(TokenType::StructKeyword));
 
-        try_parse!(class_name, self.expect(TokenType::Identifier));
-        let name = class_name.value;
+        try_parse!(struct_name, self.expect(TokenType::Identifier));
+        let name = struct_name.value;
         if !name.as_bytes()[0].is_ascii_uppercase() {
-            self.report_error(ParserError::InvalidClassName(
-                class_name.location,
+            self.report_error(ParserError::InvalidStructName(
+                struct_name.location,
                 name
             ));
             return None;
         }
-        self.current_class = Some(name.clone());
+        self.current_struct = Some(name.clone());
         try_parse!(self.expect(TokenType::OpenCurly));
         let mut fields = vec![];
         let mut methods = vec![];
@@ -1002,8 +996,8 @@ impl<'flags> Parser<'flags> {
         }
         try_parse!(self.expect(TokenType::ClosingCurly));
 
-        self.current_class = None;
-        Some(nodes::ClassNode {
+        self.current_struct = None;
+        Some(nodes::StructNode {
             location,
             name,
             fields,
@@ -1028,7 +1022,7 @@ impl<'flags> Parser<'flags> {
     }
 
     #[trace_call(always)]
-    fn parse_constructor(&mut self, class_name: &str) -> Option<nodes::ConstructorNode> {
+    fn parse_constructor(&mut self, struct_name: &str) -> Option<nodes::ConstructorNode> {
         let location = self.current_location();
         try_parse!(self.expect(TokenType::ConstructorKeyword));
 
@@ -1045,14 +1039,14 @@ impl<'flags> Parser<'flags> {
 
         let return_type = nodes::TypeNode {
             location,
-            typ: Type::Class(class_name.to_string()),
+            typ: Type::Struct(struct_name.to_string()),
         };
 
         try_parse!(block, self.parse_block());
 
         Some(nodes::ConstructorNode {
             location,
-            class_name: class_name.to_string(),
+            struct_name: struct_name.to_string(),
             return_type,
             parameters,
             block,
@@ -1098,7 +1092,7 @@ impl<'flags> Parser<'flags> {
     }
 
     #[trace_call(always)]
-    fn parse_method(&mut self, class_name: &str) -> Option<nodes::MethodNode> {
+    fn parse_method(&mut self, struct_name: &str) -> Option<nodes::MethodNode> {
         let location = self.current_location();
         try_parse!(self.expect(TokenType::FunctionKeyword));
 
@@ -1125,7 +1119,7 @@ impl<'flags> Parser<'flags> {
 
         Some(nodes::MethodNode {
             location,
-            class_name: class_name.to_string(),
+            struct_name: struct_name.to_string(),
             name: name.value,
             return_type,
             parameters,
@@ -1183,7 +1177,7 @@ impl<'flags> Parser<'flags> {
                 parameters.push(nodes::ParameterNode {
                     location,
                     name: String::from("this"),
-                    typ: nodes::TypeNode::this(location, self.current_class.as_ref().unwrap()),
+                    typ: nodes::TypeNode::this(location, self.current_struct.as_ref().unwrap()),
                     is_mutable,
                 });
             } else {
@@ -1373,7 +1367,7 @@ impl<'flags> Parser<'flags> {
             return_value,
             typ: Type::Unknown,
             function: self.current_function.clone().expect("This is guaranteed by the recursive nature of the parser"),
-            class: self.current_class.clone(),
+            strukt: self.current_struct.clone(),
         })
     }
 
@@ -1526,7 +1520,7 @@ impl<'flags> Parser<'flags> {
             }
             TokenType::ThisKeyword => {
                 let this_token = self.next();
-                if self.current_class.is_none() {
+                if self.current_struct.is_none() {
                     self.report_error(ParserError::ThisOutsideClass(
                         this_token.location,
                     ));
@@ -1535,7 +1529,7 @@ impl<'flags> Parser<'flags> {
                 let this_literal = nodes::NameNode {
                     location: this_token.location,
                     name: String::from("this"),
-                    typ: Type::Class(self.current_class.as_ref().unwrap().clone()),
+                    typ: Type::Struct(self.current_struct.as_ref().unwrap().clone()),
                 };
                 Some(nodes::Expression::Name(this_literal))
             }
@@ -1601,7 +1595,7 @@ impl<'flags> Parser<'flags> {
             TokenType::BreakKeyword => false,
             TokenType::ContinueKeyword => false,
             TokenType::ExternKeyword => false,
-            TokenType::ClassKeyword => false,
+            TokenType::StructKeyword => false,
             TokenType::ConstructorKeyword => false,
             TokenType::ThisKeyword => false,
             TokenType::TrueKeyword => false,

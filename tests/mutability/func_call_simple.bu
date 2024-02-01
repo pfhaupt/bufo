@@ -6,7 +6,7 @@
 //! Attempted to modify immutable variable `f`.
 //! Variable `f` is declared here.
 
-class Foo {
+struct Foo {
     field: i32;
     constructor() {}
 }

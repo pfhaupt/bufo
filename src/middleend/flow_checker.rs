@@ -37,8 +37,8 @@ impl<'flags> FlowChecker<'flags> {
 
     #[trace_call(always)]
     pub fn check_file(&mut self, file: &mut nodes::FileNode) -> Result<(), String> {
-        for class in &mut file.classes {
-            self.check_class(class)?;
+        for strukt in &mut file.structs {
+            self.check_struct(strukt)?;
         }
         for function in &mut file.functions {
             self.check_function(function)?;
@@ -47,11 +47,11 @@ impl<'flags> FlowChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn check_class(&mut self, class: &mut nodes::ClassNode) -> Result<(), String> {
-        for constructor in &mut class.constructors {
+    fn check_struct(&mut self, strukt: &mut nodes::StructNode) -> Result<(), String> {
+        for constructor in &mut strukt.constructors {
             self.check_constructor(constructor)?;
         }
-        for method in &mut class.methods {
+        for method in &mut strukt.methods {
             self.check_method(method)?;
         }
         Ok(())

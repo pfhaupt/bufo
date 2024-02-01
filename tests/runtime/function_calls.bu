@@ -3,7 +3,7 @@
 //! FAILURE
 //! CODE: 1757
 
-class Foo {
+struct Foo {
     t: Test;
     // constructor(this: Foo) {}
     // constructor() -> Foo {}
@@ -11,8 +11,7 @@ class Foo {
     // func foo(a: u32, this: Foo) {}
 }
 
-class Test {
-    f: Foo;
+struct Test {
     a: i32;
     constructor() {
         // this.a = 10;
@@ -35,7 +34,7 @@ func ack(m: u32, n: u32) -> u32 {
 // func f(a: i32, b: i32, a: i32) {}
 // func foo() -> i32[3] { return [1, 2, 3]; }
 
-class Bar {
+struct Bar {
     a: u32;
     constructor(a: u32) {
         this.a = a;

@@ -1,9 +1,0 @@
-class foo {
-    // Class names should be capitalized
-    constructor() {
-    }
-}
-
-func main() {
-    let f: foo = foo(); // is now looking for a function instead of constructor
-}

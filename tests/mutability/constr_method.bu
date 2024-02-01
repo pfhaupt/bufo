@@ -7,7 +7,7 @@
 //! Temporary values are only valid for the duration of the statement they are declared in.
 //! If you want to mutate a value, declare it as a variable instead.
 
-class Foo {
+struct Foo {
     field: i64;
     constructor(){}
 

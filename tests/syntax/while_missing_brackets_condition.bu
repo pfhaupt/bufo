@@ -4,7 +4,7 @@
 //! CODE: 1
 //! ERROR:
 //! Expected `(`, found Identifier
-//! Expected one of `class` or `func`, found `}`
+//! Expected one of `func`, `extern` or `struct`, found `}`
 
 func main() {
     while a == 1 {

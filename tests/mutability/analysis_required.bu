@@ -7,12 +7,12 @@
 //! Line 24 also modifies `f`, which is not allowed to happen
 //! There's a 100% chance that this is something which we can statically verify
 //! But I'm too lazy to figure it out right now :^)
-class Bar {
+struct Bar {
     foo: Foo;
     constructor() {}
 }
 
-class Foo {
+struct Foo {
     field: i32;
     constructor() {}
 }

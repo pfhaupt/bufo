@@ -3,10 +3,10 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Attempted to access unknown field `b` of instance of class `Test`.
-//! Class `Test` is declared here.
+//! Attempted to access unknown field `b` of instance of struct `Test`.
+//! Struct `Test` is declared here.
 
-class Test {
+struct Test {
     a: i32;
 
     constructor() {

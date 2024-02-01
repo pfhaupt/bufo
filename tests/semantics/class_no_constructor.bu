@@ -3,11 +3,11 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Class `Test` has no constructor.
-//! Class `Test` is declared here.
+//! Struct `Test` has no constructor.
+//! Struct `Test` is declared here.
 //! Implement the special `constructor() {}` method to create a constructor.
 
-class Test {
+struct Test {
     a: i32;
 }
 

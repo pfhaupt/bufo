@@ -8,7 +8,7 @@ pub struct FileNode {
     pub location: Location,
     pub filepath: String,
     pub functions: Vec<FunctionNode>,
-    pub classes: Vec<ClassNode>,
+    pub structs: Vec<StructNode>,
     pub externs: Vec<ExternNode>,
 }
 
@@ -21,7 +21,7 @@ pub struct ExternNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct ClassNode {
+pub struct StructNode {
     pub location: Location,
     pub name: String,
     pub fields: Vec<FieldNode>,
@@ -39,7 +39,7 @@ pub struct FieldNode {
 #[derive(Debug, Clone)]
 pub struct ConstructorNode {
     pub location: Location,
-    pub class_name: String,
+    pub struct_name: String,
     pub return_type: TypeNode,
     pub parameters: Vec<ParameterNode>,
     pub block: BlockNode,
@@ -61,7 +61,7 @@ pub struct FunctionNode {
 #[derive(Debug, Clone)]
 pub struct MethodNode {
     pub location: Location,
-    pub class_name: String,
+    pub struct_name: String,
     pub name: String,
     pub return_type: TypeNode,
     pub parameters: Vec<ParameterNode>,
@@ -136,7 +136,7 @@ pub struct ReturnNode {
     pub return_value: Option<Expression>,
     pub typ: Type,
     pub function: String,
-    pub class: Option<String>,
+    pub strukt: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -171,10 +171,10 @@ impl TypeNode {
         }
     }
     #[trace_call(extra)]
-    pub fn this(location: Location, class_name: &str) -> Self {
+    pub fn this(location: Location, struct_name: &str) -> Self {
         Self {
             location,
-            typ: Type::Class(class_name.to_string())
+            typ: Type::Struct(struct_name.to_string())
         }
     }
 }

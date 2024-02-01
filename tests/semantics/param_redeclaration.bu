@@ -12,7 +12,7 @@
 //! Parameter redeclaration.
 //! Parameter `a` already declared here.
 
-class Foo {
+struct Foo {
     constructor(c: i32, c: i32){}
     func method(this, d: i32, d: i32){}
 }

@@ -221,7 +221,7 @@ impl<'flags> Codegen<'flags> {
             }
             if self.flags.debug {
                 println!(
-                    "[DEBUG] Class `{}` has size {} bytes",
+                    "[DEBUG] Struct `{}` has size {} bytes",
                     class.name,
                     self.sm.get_class_size(&class.name)
                 );
@@ -251,7 +251,7 @@ impl<'flags> Codegen<'flags> {
     #[trace_call(extra)]
     fn add_class(&mut self, class_name: &String) {
         if self.flags.debug {
-            println!("[DEBUG] Added new Class `{}`", class_name);
+            println!("[DEBUG] Added new Struct `{}`", class_name);
         }
         self.sm.add_class(class_name);
     }
@@ -457,7 +457,7 @@ impl Codegenable for nodes::ConstructorNode {
         func_stack!(codegen, self, true);
         func_param!(codegen, self);
 
-        // let this: Class = calloc(1, sizeof(Class));
+        // let this: Struct = calloc(1, sizeof(Struct));
         let calloc_number = instr::Operand::reg(instr::Register::ARG1, instr::RegMode::BIT64);
         codegen.add_ir(instr::IR::LoadImm {
             dst: calloc_number,

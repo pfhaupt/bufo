@@ -2,26 +2,24 @@
 //! RUNTIME
 //! SUCCESS
 
-class Foo {
+struct Foo {
     a: i32;
-    f: Foo;
     constructor() {
         this.a = 5;
-        this.f = this;
     }
 
     func getA(this) -> i32 {
         return this.a;
     }
 
-    func getF(this) -> Foo {
-        return this.f;
+    func getThis(this) -> Foo {
+        return this;
     }
 }
 
 func main() -> i32 {
     let f: Foo = Foo();
-    let result: i32 = f.f.f.getF().f.f.f.f.getA() + 3;
+    let result: i32 = f.getThis().getThis().getA() + 3;
     if (result != 8) {
         return 1;
     }

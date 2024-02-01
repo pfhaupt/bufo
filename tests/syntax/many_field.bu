@@ -16,7 +16,7 @@
 //! Constructor redeclaration.
 //! Constructor `Foo` already declared here.
 
-class Foo {
+struct Foo {
     a: i32;
     b: i32;
     c: i32;

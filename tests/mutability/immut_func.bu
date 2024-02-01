@@ -2,7 +2,7 @@
 //! RUNTIME
 //! SUCCESS
 
-class Foo {
+struct Foo {
     field: u32;
     constructor() {}
 
