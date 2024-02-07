@@ -171,15 +171,12 @@ impl TypeNode {
 #[derive(Debug, Clone)]
 pub enum Expression {
     Name(NameNode),
-    ArrayLiteral(ArrayLiteralNode),
-    ArrayAccess(ArrayAccessNode),
     Literal(LiteralNode),
     StructLiteral(StructLiteralNode),
     Unary(UnaryNode),
     Binary(BinaryNode),
     // Parenthesis(Expression),
     FunctionCall(CallNode),
-    BuiltIn(BuiltInNode),
 }
 
 impl Expression {
@@ -187,14 +184,11 @@ impl Expression {
     pub fn get_loc(&self) -> Location {
         match &self {
             Self::Name(e) => e.location,
-            Self::ArrayLiteral(e) => e.location,
-            Self::ArrayAccess(e) => e.location,
             Self::Literal(e) => e.location,
             Self::StructLiteral(e) => e.location,
             Self::Unary(e) => e.location,
             Self::Binary(e) => e.location,
             Self::FunctionCall(e) => e.location,
-            Self::BuiltIn(e) => e.location
         }
     }
 
@@ -202,14 +196,11 @@ impl Expression {
     pub fn get_type(&self) -> Type {
         match &self {
             Self::Name(e) => e.typ.clone(),
-            Self::ArrayLiteral(e) => e.typ.clone(),
-            Self::ArrayAccess(e) => e.typ.clone(),
             Self::StructLiteral(e) => e.typ.clone(),
             Self::Literal(e) => e.typ.clone(),
             Self::Unary(e) => e.typ.clone(),
             Self::Binary(e) => e.typ.clone(),
             Self::FunctionCall(e) => e.typ.clone(),
-            Self::BuiltIn(e) => e.typ.clone()
         }
     }
 
@@ -217,7 +208,6 @@ impl Expression {
     pub fn is_lvalue(&self) -> bool {
         match &self {
             Self::Name(_) => true,
-            Self::ArrayAccess(_) => true,
             Self::Binary(e) => {
                 e.operation == Operation::Dot
             }
@@ -233,21 +223,6 @@ impl Expression {
             _ => false
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct ArrayLiteralNode {
-    pub location: Location,
-    pub elements: Vec<Expression>,
-    pub typ: Type,
-}
-
-#[derive(Debug, Clone)]
-pub struct ArrayAccessNode {
-    pub location: Location,
-    pub array_name: String,
-    pub indices: ArrayLiteralNode,
-    pub typ: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -312,13 +287,5 @@ pub struct CallNode {
 pub struct NameNode {
     pub location: Location,
     pub name: String,
-    pub typ: Type,
-}
-
-#[derive(Debug, Clone)]
-pub struct BuiltInNode {
-    pub location: Location,
-    pub function_name: String,
-    pub arguments: Vec<Expression>,
     pub typ: Type,
 }

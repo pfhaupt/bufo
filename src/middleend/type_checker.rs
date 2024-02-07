@@ -155,8 +155,6 @@ enum TypeError {
     ArgParamTypeMismatch(Location, Type, Location, String, Type),
     /// Syntax: Error Loc, Found Type, Decl Loc, Decl Type
     WrongReturnType(Location, Type, Location, Type),
-    /// Syntax: Error Loc, Expected Size, Found Size
-    DimensionMismatch(Location, usize, usize),
     /// Syntax: Error Loc, Decl Loc, Decl Type
     MissingReturn(Location, Location, Type),
     /// Syntax: Error Loc, Var Decl, Var Name, Field Name, Struct Loc, Struct Name
@@ -165,8 +163,6 @@ enum TypeError {
     UnknownMethod(Location, String, Location, String),
     /// Syntax: Expected, Error Loc, Found Literal
     UnexpectedLiteral(&'static str, Location, String),
-    /// Syntax: Error Loc, Var Name, Decl Loc
-    IndexIntoNonArray(Location, String, Location),
     /// Syntax: Error Loc
     DotOnNonStruct(Location),
     /// Syntax: Error Loc
@@ -275,18 +271,6 @@ impl Display for TypeError {
                     ERR_STR, error_loc, decl_type, found, NOTE_STR, decl_loc, decl_type
                 )
             }
-            TypeError::DimensionMismatch(loc, expected, found) => {
-                let i = if *found == 1 {
-                    "index"
-                } else {
-                    "indices"
-                };
-                write!(
-                    f,
-                    "{}: {:?}: Dimension Mismatch in Array indexing! Expected  {} {i}, found {}.\n{}: Getting a subarray is not supported yet, you can only get single elements.",
-                    ERR_STR, loc, expected, found, NOTE_STR
-                )
-            }
             TypeError::MissingReturn(error_loc, decl_loc, decl_type) => {
                 write!(
                     f,
@@ -313,13 +297,6 @@ impl Display for TypeError {
                     f,
                     "{}: {:?}: Unexpected Literal! Expected {}, found `{}`.",
                     ERR_STR, error_loc, expected, found
-                )
-            }
-            TypeError::IndexIntoNonArray(error_loc, var_name, var_loc) => {
-                write!(
-                    f,
-                    "{}: {:?}: Attempted to index into non-array variable `{}`.\n{}: {:?}: Variable `{}` is declared here.",
-                    ERR_STR, error_loc, var_name, NOTE_STR, var_loc, var_name
                 )
             }
             TypeError::DotOnNonStruct(error_loc) => {
@@ -389,7 +366,6 @@ pub enum Type {
     Usize,
     Bool,
     // Ptr(Box<Type>),
-    Arr(Box<Type>, Vec<usize>),
     Struct(String),
     // Reserved for later use
     F32,
@@ -400,7 +376,6 @@ impl Type {
     #[trace_call(extra)]
     pub fn size(&self) -> usize {
         match self {
-            Type::Arr(t, size) => t.size() * size.iter().product::<usize>(),
             Type::I32 | Type::U32 | Type::F32 => 4,
             Type::I64 | Type::U64 | Type::F64 | Type::Usize => 8,
             Type::Bool => 1,
@@ -430,7 +405,6 @@ impl Display for Type {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
             Type::Struct(str) => write!(fmt, "{}", str),
-            Type::Arr(t, s) => write!(fmt, "{t}{s:?}"),
             _ => write!(fmt, "{}", format!("{:?}", self).to_lowercase()),
         }
     }
@@ -778,7 +752,7 @@ impl<'flags> TypeChecker<'flags> {
                     if let Some(field_strukt) = self.known_structs.get(&field_name) {
                         queue.push_back((field_name, field_strukt));
                     } else {
-                        unreachable!();
+                        // Unknown struct, handled elsewhere
                     }
                 }
             }
@@ -1135,9 +1109,6 @@ impl<'flags> TypeChecker<'flags> {
             nodes::Expression::FunctionCall(func_call) => {
                 self.type_check_expr_function_call(func_call, needs_mutability)
             }
-            nodes::Expression::BuiltIn(built_in) => self.type_check_expr_builtin(built_in),
-            nodes::Expression::ArrayAccess(access) => self.type_check_expr_array_access(access),
-            nodes::Expression::ArrayLiteral(literal) => self.type_check_expr_array_literal(literal),
             nodes::Expression::Literal(literal) => self.type_check_expr_literal(literal),
             nodes::Expression::StructLiteral(literal) => self.type_check_expr_struct_literal(literal, needs_mutability),
         }
@@ -1162,12 +1133,6 @@ impl<'flags> TypeChecker<'flags> {
                         lit_node.location,
                         typ.clone(),
                         lit_node.typ.clone(),
-                    ));
-                } else if let Type::Arr(_, _) = typ {
-                    self.report_error(TypeError::UnexpectedLiteral(
-                        "array",
-                        lit_node.location,
-                        lit_node.value.clone(),
                     ));
                 } else if let Type::Struct(_) = typ {
                     self.report_error(TypeError::UnexpectedLiteral(
@@ -1328,18 +1293,6 @@ impl<'flags> TypeChecker<'flags> {
                 ));
                 Type::None
             }
-            (Type::Arr(..), _) | (_, Type::Arr(..)) => {
-                // NOTE: Modify this once more features (ahem, operator overload) exist
-                self.report_error(TypeError::BinaryTypeMismatch(
-                    binary_expr.location,
-                    binary_expr.operation.clone(),
-                    binary_expr.lhs.get_loc(),
-                    lhs_type.clone(),
-                    binary_expr.rhs.get_loc(),
-                    rhs_type.clone(),
-                ));
-                Type::None
-            }
             (Type::Bool, _) | (_, Type::Bool) => {
                 self.report_error(TypeError::BinaryTypeMismatch(
                     binary_expr.location,
@@ -1391,19 +1344,6 @@ impl<'flags> TypeChecker<'flags> {
         assert!(binary_expr.is_arithmetic());
         match (&lhs_type, &rhs_type) {
             (typ @ Type::Struct(..), _) | (_, typ @ Type::Struct(..)) => {
-                // NOTE: Modify this once more features (ahem, operator overload) exist
-                self.report_error(TypeError::BinaryTypeMismatch(
-                    binary_expr.location,
-                    binary_expr.operation.clone(),
-                    binary_expr.lhs.get_loc(),
-                    lhs_type.clone(),
-                    binary_expr.rhs.get_loc(),
-                    rhs_type.clone(),
-                ));
-                binary_expr.typ = typ.clone();
-                typ.clone()
-            }
-            (typ @ Type::Arr(..), _) | (_, typ @ Type::Arr(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 self.report_error(TypeError::BinaryTypeMismatch(
                     binary_expr.location,
@@ -1472,18 +1412,6 @@ impl<'flags> TypeChecker<'flags> {
         assert!(binary_expr.is_comparison());
         match (&lhs_type, &rhs_type) {
             (Type::Struct(..), _) | (_, Type::Struct(..)) => {
-                // NOTE: Modify this once more features (ahem, operator overload) exist
-                self.report_error(TypeError::BinaryTypeMismatch(
-                    binary_expr.location,
-                    binary_expr.operation.clone(),
-                    binary_expr.lhs.get_loc(),
-                    lhs_type.clone(),
-                    binary_expr.rhs.get_loc(),
-                    rhs_type.clone(),
-                ));
-                Type::Bool
-            }
-            (Type::Arr(..), _) | (_, Type::Arr(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 self.report_error(TypeError::BinaryTypeMismatch(
                     binary_expr.location,
@@ -1643,99 +1571,6 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_expr_array_literal(
-        &mut self,
-        literal: &mut nodes::ArrayLiteralNode,
-    ) -> Type {
-        let mut array_type = Type::Unknown;
-        for elem in &mut literal.elements {
-            check_or_abort!(elem_type, self.type_check_expression(elem, false));
-            if elem_type == Type::Unknown {
-                return Type::Unknown;
-            } else if array_type == Type::Unknown {
-                array_type = elem_type;
-            } else if array_type != elem_type {
-                self.report_error(TypeError::TypeMismatch(
-                    elem.get_loc(),
-                    array_type.clone(),
-                    elem_type,
-                ));
-            }
-        }
-        if let Type::Arr(t, mut size) = array_type {
-            size.push(literal.elements.len());
-            literal.typ = Type::Arr(t, size);
-            literal.typ.clone()
-        } else if array_type != Type::Unknown {
-            literal.typ = Type::Arr(Box::new(array_type), vec![literal.elements.len()]);
-            literal.typ.clone()
-        } else {
-            array_type
-        }
-    }
-
-    #[trace_call(always)]
-    fn type_check_expr_array_access(
-        &mut self,
-        access: &mut nodes::ArrayAccessNode,
-    ) -> Type {
-        // FIXME: This is a mess
-        let Some(var) = self.get_variable(&access.array_name) else {
-            self.report_error(TypeError::UndeclaredVariable(
-                access.location,
-                access.array_name.clone(),
-            ));
-            return Type::None;
-        };
-        let Type::Arr(elem, arr_size) = &var.typ else {
-            self.report_error(TypeError::IndexIntoNonArray(
-                access.location,
-                access.array_name.clone(),
-                var.location,
-            ));
-            return Type::None;
-        };
-        if arr_size.len() != access.indices.elements.len() {
-            self.report_error(TypeError::DimensionMismatch(
-                access.location,
-                arr_size.len(),
-                access.indices.elements.len(),
-            ));
-        }
-        check_or_abort!(t, self.type_check_expr_array_literal(&mut access.indices));
-        if let Type::Arr(elem_index, _) = t {
-            if *elem_index != Type::Usize {
-                self.report_error(TypeError::TypeMismatch(
-                    access.indices.location,
-                    Type::Usize,
-                    *elem_index.clone(),
-                ));
-                Type::None
-            } else {
-                // Indices is Array of Usizes, all is well
-                access.typ = *elem.clone();
-                *elem.clone()
-            }
-        } else if t == Type::Unknown {
-            let _index_arr = Type::Arr(Box::new(Type::Usize), vec![arr_size.len()]);
-            todo!("access.indices is ArrayLiteralNode, type_check_expression_with_type wants Expression")
-            // if let Err(e) = self.type_check_expression_with_type(&mut access.indices, &index_arr) {
-            //     Err(format!(
-            //         "{}\n{}: {:?}: Array Indices are expected to be type usize.",
-            //         e, ERR_STR, access.location
-            //     ))
-            // } else {
-            //     access.typ = *elem.clone();
-            //     Ok(*elem.clone())
-            // }
-        } else {
-            // Type of indices is not an Array and not Unknown, what happened??
-            // This is unreachable
-            unreachable!()
-        }
-    }
-
-    #[trace_call(always)]
     fn type_check_expr_literal(
         &mut self,
         literal: &mut nodes::LiteralNode,
@@ -1857,14 +1692,6 @@ impl<'flags> TypeChecker<'flags> {
             }
         }
         check_function!(self, func_call, function, "Function")
-    }
-
-    #[trace_call(always)]
-    fn type_check_expr_builtin(
-        &mut self,
-        _builtin: &mut nodes::BuiltInNode,
-    ) -> Type {
-        internal_panic!("type_check_expr_builtin is not implemented yet")
     }
 
     #[trace_call(always)]

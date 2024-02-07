@@ -38,8 +38,6 @@ enum ParserError {
     UnexpectedTokenMany(Location, Vec<TokenType>, TokenType),
     UnexpectedSymbol(Location, char),
     ExpectedExpression(Location, TokenType),
-    InvalidIntegerLiteral(Location, String, Type),
-    STDParseIntError(Location, String, std::num::ParseIntError),
     ExpectedUnaryOperator(Location, TokenType),
     ExpectedBinaryOperator(Location, TokenType),
     ThisParameterHasType(Location),
@@ -74,8 +72,6 @@ impl Display for ParserError {
             },
             Self::UnexpectedSymbol(l, c) => format!("{l:?}: Unexpected Symbol `{}`", c),
             Self::ExpectedExpression(l, e) => format!("{l:?}: Expected Expression, found {}", e),
-            Self::InvalidIntegerLiteral(l, s, typ) => format!("{l:?}: Invalid Integer Literal {} for type {}", s, typ),
-            Self::STDParseIntError(l, s, e) => format!("{l:?}: Failed to parse integer literal {}\n{}: Reason: {}", s, NOTE_STR, e),
             Self::ExpectedUnaryOperator(l, t) => format!("{l:?}: Expected Unary Operator, found {}", t),
             Self::ExpectedBinaryOperator(l, t) => format!("{l:?}: Expected Binary Operator, found {}", t),
             Self::ThisParameterHasType(l) => format!("{l:?}: Unexpected type for `this` parameter.\n{}: The type of `this` is always the struct the method is defined in.", NOTE_STR),
@@ -124,8 +120,6 @@ pub enum TokenType {
     ClosingRound,
     OpenCurly,
     ClosingCurly,
-    OpenSquare,
-    ClosingSquare,
     StructKeyword,
     ThisKeyword,
     FunctionKeyword,
@@ -166,13 +160,13 @@ pub enum TokenType {
 impl TokenType {
     fn is_opening_bracket(&self) -> bool {
         match self {
-            Self::OpenRound | Self::OpenCurly | Self::OpenSquare => true,
+            Self::OpenRound | Self::OpenCurly => true,
             _ => false,
         }
     }
     fn is_closing_bracket(&self) -> bool {
         match self {
-            Self::ClosingRound | Self::ClosingCurly | Self::ClosingSquare => true,
+            Self::ClosingRound | Self::ClosingCurly => true,
             _ => false,
         }
     }
@@ -189,8 +183,6 @@ impl Display for TokenType {
             Self::ClosingRound => write!(f, "`)`"),
             Self::OpenCurly => write!(f, "`{{`"),
             Self::ClosingCurly => write!(f, "`}}`"),
-            Self::OpenSquare => write!(f, "`[`"),
-            Self::ClosingSquare => write!(f, "`]`"),
             Self::StructKeyword => write!(f, "`{}`", STRUCT_KEYWORD),
             Self::ThisKeyword => write!(f, "`{}`", THIS_KEYWORD),
             Self::FunctionKeyword => write!(f, "`{}`", FUNCTION_KEYWORD),
@@ -527,7 +519,7 @@ impl<'flags> Parser<'flags> {
         }
         debug_assert_eq!(
             TokenType::Eof as u8 + 1,
-            45,
+            43,
             "Not all TokenTypes are handled in next_token()"
         );
         self.trim_whitespace();
@@ -652,8 +644,6 @@ impl<'flags> Parser<'flags> {
             ')' => (TokenType::ClosingRound, String::from(c)),
             '{' => (TokenType::OpenCurly, String::from(c)),
             '}' => (TokenType::ClosingCurly, String::from(c)),
-            '[' => (TokenType::OpenSquare, String::from(c)),
-            ']' => (TokenType::ClosingSquare, String::from(c)),
             ';' => (TokenType::Semi, String::from(c)),
             ':' => (TokenType::Colon, String::from(c)),
             ',' => (TokenType::Comma, String::from(c)),
@@ -1430,10 +1420,6 @@ impl<'flags> Parser<'flags> {
                 try_parse!(self.expect(TokenType::ClosingRound));
                 Some(expression)
             }
-            TokenType::OpenSquare => {
-                try_parse!(array_literal, self.parse_expr_array_literal());
-                Some(nodes::Expression::ArrayLiteral(array_literal))
-            }
             TokenType::TrueKeyword | TokenType::FalseKeyword => {
                 try_parse!(bool_literal, self.parse_expr_bool_literal());
                 Some(nodes::Expression::Literal(bool_literal))
@@ -1496,13 +1482,11 @@ impl<'flags> Parser<'flags> {
             TokenType::IntLiteral => false,
             TokenType::Identifier => false,
             TokenType::OpenRound => false,
-            TokenType::OpenSquare => false,
             TokenType::OpenCurly => false,
             TokenType::Semi => false,
             TokenType::Colon => false,
             TokenType::Comma => false,
             TokenType::ClosingRound => false,
-            TokenType::ClosingSquare => false,
             TokenType::ClosingCurly => false,
             TokenType::Arrow => false,
             TokenType::IfKeyword => false,
@@ -1740,10 +1724,6 @@ impl<'flags> Parser<'flags> {
                 try_parse!(fn_call, self.parse_expr_function_call());
                 nodes::Expression::FunctionCall(fn_call)
             }
-            TokenType::OpenSquare => {
-                try_parse!(array_access, self.parse_expr_array_access());
-                nodes::Expression::ArrayAccess(array_access)
-            }
             TokenType::OpenCurly => {
                 try_parse!(struct_literal, self.parse_expr_struct_literal());
                 nodes::Expression::StructLiteral(struct_literal)
@@ -1778,40 +1758,6 @@ impl<'flags> Parser<'flags> {
             location,
             fields,
             typ: Type::Struct(struct_name.value),
-        })
-    }
-
-    #[trace_call(always)]
-    fn parse_expr_array_literal(&mut self) -> Option<nodes::ArrayLiteralNode> {
-        let location = self.current_location();
-        let mut elements = vec![];
-        try_parse!(self.expect(TokenType::OpenSquare));
-        while !self.parsed_eof() && !self.at(TokenType::ClosingSquare) {
-            try_parse!(elem, self.parse_expression(0, Associativity::Left));
-            elements.push(elem);
-            if !self.eat(TokenType::Comma) {
-                break;
-            }
-        }
-        try_parse!(self.expect(TokenType::ClosingSquare));
-        Some(nodes::ArrayLiteralNode {
-            location,
-            elements,
-            typ: Type::Unknown,
-        })
-    }
-
-    #[trace_call(always)]
-    fn parse_expr_array_access(&mut self) -> Option<nodes::ArrayAccessNode> {
-        let location = self.current_location();
-        try_parse!(array_name, self.expect(TokenType::Identifier));
-        let array_name = array_name.value;
-        try_parse!(indices, self.parse_expr_array_literal());
-        Some(nodes::ArrayAccessNode {
-            location,
-            array_name,
-            indices,
-            typ: Type::Unknown,
         })
     }
 
@@ -1895,50 +1841,6 @@ impl<'flags> Parser<'flags> {
         let location = self.current_location();
         try_parse!(name_token, self.expect(TokenType::Identifier));
         let typ = self.parse_type(&name_token);
-        let typ = if self.eat(TokenType::OpenSquare) {
-            let mut dimensions = vec![];
-            // FIXME: This loop is a bit ugly
-            while !self.parsed_eof() && !self.at(TokenType::ClosingSquare) {
-                try_parse!(size, self.expect(TokenType::IntLiteral));
-                try_parse!(size, self.parse_type_literal(size));
-                let (value, typ, location) = size;
-                if typ != Type::Unknown && typ != Type::Usize {
-                    self.report_error(ParserError::InvalidIntegerLiteral(
-                        location,
-                        value,
-                        typ,
-                    ));
-                    return None;
-                }
-                let value = match value.parse() {
-                    Ok(v) => v,
-                    Err(e) => {
-                        self.report_error(ParserError::STDParseIntError(
-                            location,
-                            value,
-                            e,
-                        ));
-                        return None;
-                    }
-                };
-                dimensions.push(value);
-                if !self.eat(TokenType::Comma) {
-                    break;
-                }
-            }
-            if dimensions.is_empty() {
-                self.report_error(ParserError::UnexpectedTokenSingle(
-                    self.current_location(),
-                    TokenType::IntLiteral,
-                    self.nth(0)
-                ));
-                return None;
-            }
-            try_parse!(self.expect(TokenType::ClosingSquare));
-            Type::Arr(Box::new(typ), dimensions)
-        } else {
-            typ
-        };
         Some(nodes::TypeNode { location, typ })
     }
 }

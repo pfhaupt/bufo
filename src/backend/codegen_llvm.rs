@@ -603,7 +603,6 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             nodes::Expression::FunctionCall(function_call) => self.codegen_function_call(function_call),
             nodes::Expression::Unary(unary) => self.codegen_unary(unary, load_var),
             nodes::Expression::StructLiteral(struct_literal) => self.codegen_struct_literal(struct_literal, load_var),
-            e => unimplemented!("codegen_expression: {:?}", e),
         }
     }
 
