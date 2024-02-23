@@ -116,7 +116,8 @@ def run_test(path: str, exec: bool) -> TestResult:
                 print_buffer += output.stderr.decode("utf-8")
                 print(print_buffer, file=sys.stderr)
                 return TestResult(path, STATE.INVALID)
-            filename = path.split("\\")[-1].split(".")[0]
+            # if on Windows, split path by backslashes, otherwise by forward slashes
+            filename = path.split("\\")[-1].split(".")[0] if os.name == "nt" else path.split("/")[-1].split(".")[0]
             buf, output = call_cmd(["./out/" + filename + ".exe"])
             print_buffer += buf
             # We're not generating assembly in LLVM mode

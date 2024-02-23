@@ -1,0 +1,17 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+struct Foo {
+    a: &i32;
+}
+
+func main() -> i32 {
+    let a: i32 = 10;
+    mut f: Foo = Foo {
+        a: &a
+    };
+    *(f.a) = 20;
+    if (a != 20) return a;
+    return 0;
+}

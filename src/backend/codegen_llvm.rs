@@ -217,6 +217,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
 
     #[trace_call(always)]
     fn fill_lookup(&mut self, file: &nodes::FileNode) -> Result<(), String> {
+        // FIXME: Structs with reference fields are not supported yet and will cause a panic later on
         // Sort structs by field dependency, so we can create them in the correct order for LLVM
         // If struct `Foo` needs struct `Bar`, then `Bar` needs to be created first
         // This means building a tree of dependencies, and then sorting by them
@@ -350,7 +351,10 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 internal_panic!(format!("Module verification failed: {}", e.to_string()))
             },
         }
+
         if self.flags.debug {
+            println!("{}", "-".repeat(80));
+            println!("Module before optimizations:");
             self.module.print_to_stderr();
         }
 
@@ -361,7 +365,15 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         pass_manager.add_instruction_combining_pass();
         pass_manager.add_reassociate_pass();
         pass_manager.add_gvn_pass();
+        pass_manager.add_cfg_simplification_pass();
         pass_manager.run_on(&self.module);
+
+        if self.flags.debug {
+            println!("{}", "-".repeat(80));
+            println!("Module after optimizations:");
+            self.module.print_to_stderr();
+            println!("{}", "-".repeat(80));
+        }
 
         let path = std::path::Path::new(&self.objname);
         self.target_machine.write_to_file(
@@ -468,7 +480,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             nodes::Statement::While(while_node) => self.codegen_stmt_while(while_node),
             nodes::Statement::Return(return_node) => self.codegen_stmt_return(return_node),
             nodes::Statement::Expression(expr) => {
-                let _ = self.codegen_expression(expr, true)?;
+                let _ = self.codegen_expression(expr, false)?;
                 Ok(())
             },
             e => unimplemented!("codegen_statement: {:?}", e),
@@ -481,7 +493,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         let while_cond = self.context.append_basic_block(function, "codegen_stmt_while_cond");
         self.builder.build_unconditional_branch(while_cond);
         self.builder.position_at_end(while_cond);
-        let condition = self.codegen_expression(&while_node.condition, true)?;
+        let condition = self.codegen_expression(&while_node.condition, false)?;
         let condition = self.builder.build_int_compare(
             inkwell::IntPredicate::NE,
             condition.into_int_value(),
@@ -504,7 +516,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     fn codegen_stmt_return(&mut self, return_node: &nodes::ReturnNode) -> Result<(), String> {
         match &return_node.return_value {
             Some(value) => {
-                let value = self.codegen_expression(value, true)?;
+                let value = self.codegen_expression(value, false)?;
                 self.builder.build_return(Some(&value));
                 Ok(())
             }
@@ -520,14 +532,14 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         let typ = self.codegen_type(&let_node.typ.typ);
         let alloca = self.builder.build_alloca(typ, &let_node.name);
         self.add_variable(&let_node.name, alloca.into());
-        let value = self.codegen_expression(&let_node.expression, true)?;
+        let value = self.codegen_expression(&let_node.expression, false)?;
         self.builder.build_store(alloca, value);
         Ok(())
     }
 
     #[trace_call(always)]
     fn codegen_stmt_if(&mut self, if_node: &nodes::IfNode) -> Result<(), String> {
-        let condition = self.codegen_expression(&if_node.condition, true)?;
+        let condition = self.codegen_expression(&if_node.condition, false)?;
         let condition = self.builder.build_int_compare(
             inkwell::IntPredicate::NE,
             condition.into_int_value(),
@@ -595,35 +607,68 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
-    fn codegen_expression(&mut self, expression: &nodes::Expression, load_var: bool) -> Result<BasicValueEnum<'ctx>, String> {
+    fn codegen_expression(&mut self, expression: &nodes::Expression, needs_ptr: bool) -> Result<BasicValueEnum<'ctx>, String> {
         match expression {
             nodes::Expression::Literal(literal) => self.codegen_literal(literal),
-            nodes::Expression::Binary(binary) => self.codegen_binary(binary, load_var),
-            nodes::Expression::Name(name) => self.codegen_name(name, load_var),
-            nodes::Expression::FunctionCall(function_call) => self.codegen_function_call(function_call),
-            nodes::Expression::Unary(unary) => self.codegen_unary(unary, load_var),
-            nodes::Expression::StructLiteral(struct_literal) => self.codegen_struct_literal(struct_literal, load_var),
+            nodes::Expression::Binary(binary) => self.codegen_binary(binary, needs_ptr),
+            nodes::Expression::Name(name) => self.codegen_name(name, needs_ptr),
+            nodes::Expression::FunctionCall(function_call) => self.codegen_function_call(function_call, needs_ptr),
+            nodes::Expression::Unary(unary) => self.codegen_unary(unary, needs_ptr),
+            nodes::Expression::StructLiteral(struct_literal) => self.codegen_struct_literal(struct_literal, needs_ptr),
         }
     }
 
     #[trace_call(always)]
-    fn codegen_unary(&mut self, unary_node: &nodes::UnaryNode, _load_var: bool) -> Result<BasicValueEnum<'ctx>, String> {
+    fn codegen_unary(&mut self, unary_node: &nodes::UnaryNode, needs_ptr: bool) -> Result<BasicValueEnum<'ctx>, String> {
         match unary_node.operation {
             Operation::Negate => {
-                let value = self.codegen_expression(&unary_node.expression, true)?;
+                let value = self.codegen_expression(&unary_node.expression, false)?;
                 assert_is_int!(unary_node.expression, unary_node.expression);
                 let result = self.builder.build_int_neg(value.into_int_value(), "codegen_unary_negate");
                 Ok(result.into())
+            }
+            Operation::Dereference => {
+                let value = self.codegen_expression(&unary_node.expression, false)?;
+                debug_assert!(value.is_pointer_value());
+                if needs_ptr {
+                    Ok(value)
+                } else {
+                    let value = self.builder.build_load(
+                        self.codegen_type(&unary_node.typ),
+                        value.into_pointer_value(),
+                        "codegen_unary_dereference",
+                    );
+                    Ok(value)
+                }
+            }
+            Operation::Reference => {
+                if needs_ptr {
+                    self.codegen_expression(&unary_node.expression, true)
+                } else {
+                    let value = self.codegen_expression(&unary_node.expression, true)?;
+                    if !value.is_pointer_value() {
+                        // Value is not a pointer (e.g. a literal), so we need to create a pointer to it
+                        let alloc = self.builder.build_alloca(
+                            self.codegen_type(&unary_node.expression.get_type()),
+                            "codegen_unary_reference",
+                        );
+                        self.builder.build_store(alloc, value);
+                        Ok(alloc.into())
+                    } else {
+                        // Value is already a pointer, so we can just return it
+                        Ok(value)
+                    }
+                }
             }
             e => unimplemented!("codegen_unary: {:?}", e),
         }
     }
 
     #[trace_call(always)]
-    fn codegen_struct_literal(&mut self, struct_literal: &nodes::StructLiteralNode, load_var: bool) -> Result<BasicValueEnum<'ctx>, String> {
+    fn codegen_struct_literal(&mut self, struct_literal: &nodes::StructLiteralNode, needs_ptr: bool) -> Result<BasicValueEnum<'ctx>, String> {
         let mut expressions = Vec::new();
         for field in &struct_literal.fields {
-            expressions.push(self.codegen_expression(&field.1, true)?);
+            expressions.push(self.codegen_expression(&field.1, false)?);
         }
         let struct_type = self.struct_defs.get(&struct_literal.struct_name).unwrap();
         let struct_alloc = self.builder.build_alloca(*struct_type, "codegen_struct_literal");
@@ -638,20 +683,20 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             let value = expressions[i];
             self.builder.build_store(field_alloc, value);
         }
-        if load_var {
+        if needs_ptr {
+            Ok(struct_alloc.into())
+        } else {
             let struct_alloc = self.builder.build_load(
                 self.codegen_type(&struct_literal.typ),
                 struct_alloc,
                 "codegen_struct_literal",
             );
             Ok(struct_alloc)
-        } else {
-            Ok(struct_alloc.into())
         }
     }
 
     #[trace_call(always)]
-    fn codegen_function_call(&mut self, function_call: &nodes::CallNode) -> Result<BasicValueEnum<'ctx>, String> {
+    fn codegen_function_call(&mut self, function_call: &nodes::CallNode, needs_ptr: bool) -> Result<BasicValueEnum<'ctx>, String> {
         let name = function_call.function_name.clone();
         if !self.module.get_function(&name).is_some() {
             internal_panic!(format!("Could not find function {}", name));
@@ -659,40 +704,48 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         let function = self.module.get_function(&name).unwrap();
         let mut args = Vec::new();
         for arg in &function_call.arguments {
-            args.push(self.codegen_expression(arg, true)?.into());
+            args.push(self.codegen_expression(arg, false)?.into());
         }
         let result = self.builder.build_call(function, &args, "codegen_function_call");
-        if result.try_as_basic_value().left().is_none() {
+        let val = if result.try_as_basic_value().left().is_none() {
             // NOTE: The return value doesn't matter, the function returns None
             //       it's a workaround for `void_type` not being a BasicValueEnum
-            Ok(self.context.i32_type().const_int(0, false).into())
+            self.context.i32_type().const_int(0, false).into()
         } else {
-            Ok(result.try_as_basic_value().left().unwrap())
+            result.try_as_basic_value().left().unwrap()
+        };
+        if needs_ptr {
+            let temp_alloc = self.builder.build_alloca(val.get_type(), "codegen_function_call");
+            self.builder.build_store(temp_alloc, val);
+            Ok(temp_alloc.into())
+        } else {
+            Ok(val)
         }
     }
 
     #[trace_call(always)]
-    fn codegen_name(&mut self, name: &nodes::NameNode, load_var: bool) -> Result<BasicValueEnum<'ctx>, String> {
+    fn codegen_name(&mut self, name: &nodes::NameNode, needs_ptr: bool) -> Result<BasicValueEnum<'ctx>, String> {
         debug_assert!(self.known_variable(&name.name));
         let var = self.get_variable(&name.name);
-        if load_var {
+        if needs_ptr {
+            debug_assert!(var.is_pointer_value());
+            Ok(var)
+        } else {
             let var = self.builder.build_load(
                 self.codegen_type(&name.typ),
                 var.into_pointer_value(),
-                "codegen_name"
+                "codegen_name",
             );
-            Ok(var)
-        } else {
             Ok(var)
         }
     }
 
     #[trace_call(always)]
-    fn codegen_binary(&mut self, binary: &nodes::BinaryNode, load_var: bool) -> Result<BasicValueEnum<'ctx>, String> {
+    fn codegen_binary(&mut self, binary: &nodes::BinaryNode, needs_ptr: bool) -> Result<BasicValueEnum<'ctx>, String> {
         match &binary.operation {
             Operation::Add => {
-                let lhs = self.codegen_expression(&binary.lhs, true)?;
-                let rhs = self.codegen_expression(&binary.rhs, true)?;
+                let lhs = self.codegen_expression(&binary.lhs, false)?;
+                let rhs = self.codegen_expression(&binary.rhs, false)?;
                 assert_is_int!(binary.lhs, binary.rhs);
                 let result = self.builder.build_int_add(
                     lhs.into_int_value(),
@@ -702,8 +755,8 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 Ok(result.into())
             }
             Operation::Sub => {
-                let lhs = self.codegen_expression(&binary.lhs, true)?;
-                let rhs = self.codegen_expression(&binary.rhs, true)?;
+                let lhs = self.codegen_expression(&binary.lhs, false)?;
+                let rhs = self.codegen_expression(&binary.rhs, false)?;
                 assert_is_int!(binary.lhs, binary.rhs);
                 let result = self.builder.build_int_sub(
                     lhs.into_int_value(),
@@ -713,8 +766,8 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 Ok(result.into())
             }
             Operation::Mul => {
-                let lhs = self.codegen_expression(&binary.lhs, true)?;
-                let rhs = self.codegen_expression(&binary.rhs, true)?;
+                let lhs = self.codegen_expression(&binary.lhs, false)?;
+                let rhs = self.codegen_expression(&binary.rhs, false)?;
                 assert_is_int!(binary.lhs, binary.rhs);
                 let result = self.builder.build_int_mul(
                     lhs.into_int_value(),
@@ -724,8 +777,8 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 Ok(result.into())
             }
             Operation::Div => {
-                let lhs = self.codegen_expression(&binary.lhs, true)?;
-                let rhs = self.codegen_expression(&binary.rhs, true)?;
+                let lhs = self.codegen_expression(&binary.lhs, false)?;
+                let rhs = self.codegen_expression(&binary.rhs, false)?;
                 assert_is_int!(binary.lhs, binary.rhs);
                 let result = self.builder.build_int_signed_div(
                     lhs.into_int_value(),
@@ -735,8 +788,8 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 Ok(result.into())
             }
             Operation::Modulo => {
-                let lhs = self.codegen_expression(&binary.lhs, true)?;
-                let rhs = self.codegen_expression(&binary.rhs, true)?;
+                let lhs = self.codegen_expression(&binary.lhs, false)?;
+                let rhs = self.codegen_expression(&binary.rhs, false)?;
                 assert_is_int!(binary.lhs, binary.rhs);
                 let result = self.builder.build_int_signed_rem(
                     lhs.into_int_value(),
@@ -746,8 +799,8 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 Ok(result.into())
             }
             Operation::LessThan => {
-                let lhs = self.codegen_expression(&binary.lhs, true)?;
-                let rhs = self.codegen_expression(&binary.rhs, true)?;
+                let lhs = self.codegen_expression(&binary.lhs, false)?;
+                let rhs = self.codegen_expression(&binary.rhs, false)?;
                 assert_is_int!(binary.lhs, binary.rhs);
                 let result = self.builder.build_int_compare(
                     inkwell::IntPredicate::SLT,
@@ -758,8 +811,8 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 Ok(result.into())
             }
             Operation::GreaterThan => {
-                let lhs = self.codegen_expression(&binary.lhs, true)?;
-                let rhs = self.codegen_expression(&binary.rhs, true)?;
+                let lhs = self.codegen_expression(&binary.lhs, false)?;
+                let rhs = self.codegen_expression(&binary.rhs, false)?;
                 assert_is_int!(binary.lhs, binary.rhs);
                 let result = self.builder.build_int_compare(
                     inkwell::IntPredicate::SGT,
@@ -770,8 +823,8 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 Ok(result.into())
             }
             Operation::LessThanOrEqual => {
-                let lhs = self.codegen_expression(&binary.lhs, true)?;
-                let rhs = self.codegen_expression(&binary.rhs, true)?;
+                let lhs = self.codegen_expression(&binary.lhs, false)?;
+                let rhs = self.codegen_expression(&binary.rhs, false)?;
                 assert_is_int!(binary.lhs, binary.rhs);
                 let result = self.builder.build_int_compare(
                     inkwell::IntPredicate::SLE,
@@ -782,8 +835,8 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 Ok(result.into())
             }
             Operation::GreaterThanOrEqual => {
-                let lhs = self.codegen_expression(&binary.lhs, true)?;
-                let rhs = self.codegen_expression(&binary.rhs, true)?;
+                let lhs = self.codegen_expression(&binary.lhs, false)?;
+                let rhs = self.codegen_expression(&binary.rhs, false)?;
                 assert_is_int!(binary.lhs, binary.rhs);
                 let result = self.builder.build_int_compare(
                     inkwell::IntPredicate::SGE,
@@ -794,8 +847,8 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 Ok(result.into())
             }
             Operation::Equal => {
-                let lhs = self.codegen_expression(&binary.lhs, true)?;
-                let rhs = self.codegen_expression(&binary.rhs, true)?;
+                let lhs = self.codegen_expression(&binary.lhs, false)?;
+                let rhs = self.codegen_expression(&binary.rhs, false)?;
                 let result = self.builder.build_int_compare(
                     inkwell::IntPredicate::EQ,
                     lhs.into_int_value(),
@@ -805,8 +858,8 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 Ok(result.into())
             }
             Operation::NotEqual => {
-                let lhs = self.codegen_expression(&binary.lhs, true)?;
-                let rhs = self.codegen_expression(&binary.rhs, true)?;
+                let lhs = self.codegen_expression(&binary.lhs, false)?;
+                let rhs = self.codegen_expression(&binary.rhs, false)?;
                 let result = self.builder.build_int_compare(
                     inkwell::IntPredicate::NE,
                     lhs.into_int_value(),
@@ -816,8 +869,8 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 Ok(result.into())
             }
             Operation::BitwiseAnd => {
-                let lhs = self.codegen_expression(&binary.lhs, true)?;
-                let rhs = self.codegen_expression(&binary.rhs, true)?;
+                let lhs = self.codegen_expression(&binary.lhs, false)?;
+                let rhs = self.codegen_expression(&binary.rhs, false)?;
                 let result = self.builder.build_and(
                     lhs.into_int_value(),
                     rhs.into_int_value(),
@@ -826,8 +879,8 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 Ok(result.into())
             }
             Operation::BitwiseOr => {
-                let lhs = self.codegen_expression(&binary.lhs, true)?;
-                let rhs = self.codegen_expression(&binary.rhs, true)?;
+                let lhs = self.codegen_expression(&binary.lhs, false)?;
+                let rhs = self.codegen_expression(&binary.rhs, false)?;
                 let result = self.builder.build_or(
                     lhs.into_int_value(),
                     rhs.into_int_value(),
@@ -836,8 +889,8 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 Ok(result.into())
             }
             Operation::BitwiseXor => {
-                let lhs = self.codegen_expression(&binary.lhs, true)?;
-                let rhs = self.codegen_expression(&binary.rhs, true)?;
+                let lhs = self.codegen_expression(&binary.lhs, false)?;
+                let rhs = self.codegen_expression(&binary.rhs, false)?;
                 let result = self.builder.build_xor(
                     lhs.into_int_value(),
                     rhs.into_int_value(),
@@ -846,37 +899,60 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 Ok(result.into())
             }
             Operation::Assign => {
-                let var = self.codegen_expression(&binary.lhs, false)?;
-                let value = self.codegen_expression(&binary.rhs, true)?;
+                let var = self.codegen_expression(&binary.lhs, true)?;
+                let value = self.codegen_expression(&binary.rhs, false)?;
                 self.builder.build_store(var.into_pointer_value(), value);
                 Ok(value)
             }
             Operation::Dot => {
-                debug_assert!((*binary.lhs).get_type().is_struct());
-                let lhs = self.codegen_expression(&binary.lhs, false)?;
-                // FIXME: This is a hack to guarantee that we have a pointer to the struct
-                //        This is very bad for performance, but it's the only way I could get it to work :^)
-                let lhs = if !lhs.is_pointer_value() {
-                    let new_lhs = self.builder.build_alloca(
-                        self.codegen_type(&binary.lhs.get_type()),
-                        "lhs_alloc",
-                    );
-                    self.builder.build_store(new_lhs, lhs);
-                    new_lhs
-                } else {
-                    lhs.into_pointer_value()
-                };
-
-                let struct_name = (*binary.lhs).get_type().get_struct_name();
-                let struct_struct_type = self.struct_defs.get(&struct_name).unwrap();
-                match &*binary.rhs {
-                    nodes::Expression::Name(field) => {
+                match ((*binary.lhs).get_type(), &(*binary.rhs)) {
+                    // TODO: We can collapse the field case into one, similar to the method call case
+                    (Type::Ref(typ, _), nodes::Expression::Name(field)) => {
+                        let lhs = self.codegen_expression(&binary.lhs, true)?;
+                        // Implicit dereference
+                        let lhs = self.builder.build_load(
+                            self.codegen_type(&binary.lhs.get_type()),
+                            lhs.into_pointer_value(),
+                            "lhs_load",
+                        );
+                        if !lhs.is_pointer_value() {
+                            todo!("lhs is not a pointer")
+                        }
+                        let field_type = self.codegen_type(&field.typ);
+                        let field_ptr = self.builder.build_struct_gep(
+                            self.codegen_type(&typ),
+                            lhs.into_pointer_value(),
+                            0,
+                            "field_ptr",
+                        ).unwrap();
+                        let field_ptr = self.builder.build_pointer_cast(
+                            field_ptr,
+                            field_type.ptr_type(AddressSpace::default()),
+                            "field_ptr_cast",
+                        );
+                        if needs_ptr {
+                            Ok(field_ptr.into())
+                        } else {
+                            let field_value = self.builder.build_load(
+                                field_type,
+                                field_ptr,
+                                "field_ptr_load",
+                            );
+                            Ok(field_value)
+                        }
+                    },
+                    (Type::Struct(struct_name), nodes::Expression::Name(field)) => {
+                        let lhs = self.codegen_expression(&binary.lhs, true)?;
+                        if !lhs.is_pointer_value() {
+                            todo!("lhs is not a pointer")
+                        }
+                        let struct_struct_type = self.struct_defs.get(&struct_name).unwrap();
                         let offset = self.sm
                             .get_struct_info(&struct_name)
                             .get_field_index(&field.name);
                         let field_ptr = self.builder.build_struct_gep(
                             struct_struct_type.clone(),
-                            lhs,
+                            lhs.into_pointer_value(),
                             offset as u32,
                             "field_ptr").unwrap();
                         let field_type = self.codegen_type(&field.typ);
@@ -885,43 +961,64 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                             field_type.ptr_type(AddressSpace::default()),
                             "field_ptr_cast",
                         );
-                        if load_var {
-                            let field_ptr = self.builder.build_load(
+                        if needs_ptr {
+                            Ok(field_ptr.into())
+                        } else {
+                            let field_value = self.builder.build_load(
                                 field_type,
                                 field_ptr,
                                 "field_ptr_load",
                             );
-                            Ok(field_ptr)
-                        } else {
-                            Ok(field_ptr.into())
+                            Ok(field_value)
                         }
-                    }
-                    nodes::Expression::FunctionCall(method_call) => {
+                    },
+                    (Type::Ref(strukt, _), nodes::Expression::FunctionCall(method_call)) => {
+                        let struct_name = strukt.get_struct_name();
+                        let lhs = self.codegen_expression(&binary.lhs, true)?;
                         let method_name = format!("{}_{}", struct_name, method_call.function_name);
-                        if !self.module.get_function(&method_name).is_some() {
-                            internal_panic!("Could not find function {}");
-                        }
-                        let method = self.module.get_function(&method_name).unwrap();
+                        let Some(method) = self.module.get_function(&method_name) else {
+                            internal_panic!(
+                                format!("Could not find function {}", method_name)
+                            )
+                        };
                         let mut args = Vec::new();
-                        let lhs = self.builder.build_load(
-                            self.codegen_type(&binary.lhs.get_type()),
-                            lhs,
-                            "lhs_load",
-                        );
                         args.push(lhs.into());
                         for arg in &method_call.arguments {
-                            args.push(self.codegen_expression(arg, true)?.into());
+                            args.push(self.codegen_expression(arg, false)?.into());
                         }
                         let result = self.builder.build_call(method, &args, "method_call");
                         if result.try_as_basic_value().left().is_none() {
+                            // NOTE: The return value doesn't matter, the function returns None
                             Ok(lhs.into())
                         } else {
                             Ok(result.try_as_basic_value().left().unwrap())
                         }
-                    }
-                    e => internal_panic!(
-                        format!("This should never happen: Found {:?} as rhs of Dot operation!", e)
-                    ),
+                    },
+                    (Type::Struct(struct_name), nodes::Expression::FunctionCall(method_call)) => {
+                        let method_name = format!("{}_{}", struct_name, method_call.function_name);
+                        let Some(method) = self.module.get_function(&method_name) else {
+                            internal_panic!(
+                                format!("Could not find function {}", method_name)
+                            )
+                        };
+                        let implicit_ref = method.get_first_param().unwrap().get_type().is_pointer_type();
+                        let lhs = self.codegen_expression(&binary.lhs, implicit_ref)?;
+                        let mut args = Vec::new();
+                        args.push(lhs.into());
+                        for arg in &method_call.arguments {
+                            args.push(self.codegen_expression(arg, false)?.into());
+                        }
+                        let result = self.builder.build_call(method, &args, "method_call");
+                        if result.try_as_basic_value().left().is_none() {
+                            // NOTE: The return value doesn't matter, the function returns None
+                            Ok(lhs.into())
+                        } else {
+                            Ok(result.try_as_basic_value().left().unwrap())
+                        }
+                    },
+                    (lhs, rhs) => internal_panic!(
+                        format!("Something went wrong: Found {:?} as lhs and {:?} as rhs of Dot operation!", lhs, rhs)
+                    )
                 }
             }
             e => unimplemented!("codegen_binary: {:?}", e),
@@ -978,6 +1075,10 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 let struct_name = typ.get_struct_name();
                 let struct_struct_type = self.struct_defs.get(&struct_name).unwrap();
                 struct_struct_type.clone()
+            },
+            Type::Ref(typ, _) => {
+                let typ = self.codegen_type(&*typ);
+                typ.ptr_type(AddressSpace::default()).as_basic_type_enum()
             },
             // Note: Void does not exist as BasicTypeEnum, so void functions are handled differently
             Type::None => unreachable!("Type::None should never be used!"),

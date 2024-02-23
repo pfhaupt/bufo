@@ -159,10 +159,10 @@ impl TypeNode {
         }
     }
     #[trace_call(extra)]
-    pub fn this(location: Location, struct_name: &str) -> Self {
+    pub fn this(location: Location, typ: Type) -> Self {
         Self {
             location,
-            typ: Type::Struct(struct_name.to_string())
+            typ
         }
     }
 }
@@ -208,6 +208,9 @@ impl Expression {
     pub fn is_lvalue(&self) -> bool {
         match &self {
             Self::Name(_) => true,
+            Self::Unary(e) => {
+                e.operation == Operation::Dereference
+            }
             Self::Binary(e) => {
                 e.operation == Operation::Dot
             }

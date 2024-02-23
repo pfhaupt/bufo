@@ -177,6 +177,12 @@ enum TypeError {
     RecursiveStruct(Location, String, Vec<(Location, String)>),
     /// Syntax: Error Loc, Field Name, Struct Loc, Struct Name
     MissingField(Location, String, Location, String),
+    /// Syntax: Error Loc, Type, Type
+    DereferenceTypeMismatch(Location, Type),
+    /// Syntax: Error Loc
+    DereferenceIntegerLiteral(Location),
+    /// Syntax: Error Loc
+    NestedReferenceNotAllowedYet(Location),
 }
 
 impl Display for TypeError {
@@ -350,6 +356,27 @@ impl Display for TypeError {
                     ERR_STR, error_loc, field_name, struct_name, NOTE_STR, struct_loc, struct_name
                 )
             }
+            TypeError::DereferenceTypeMismatch(error_loc, typ) => {
+                write!(
+                    f,
+                    "{}: {:?}: Type mismatch! Dereference is not defined for type `{}`.",
+                    ERR_STR, error_loc, typ
+                )
+            }
+            TypeError::DereferenceIntegerLiteral(error_loc) => {
+                write!(
+                    f,
+                    "{}: {:?}: Attempted to dereference an integer literal.",
+                    ERR_STR, error_loc
+                )
+            }
+            TypeError::NestedReferenceNotAllowedYet(error_loc) => {
+                write!(
+                    f,
+                    "{}: {:?}: Nested references are not allowed yet.",
+                    ERR_STR, error_loc
+                )
+            }
         }
     }
 }
@@ -367,6 +394,8 @@ pub enum Type {
     Bool,
     // Ptr(Box<Type>),
     Struct(String),
+    // TODO: More unit tests for references
+    Ref(Box<Type>, bool), // bool is mutability
     // Reserved for later use
     F32,
     F64,
@@ -379,6 +408,7 @@ impl Type {
             Type::I32 | Type::U32 | Type::F32 => 4,
             Type::I64 | Type::U64 | Type::F64 | Type::Usize => 8,
             Type::Bool => 1,
+            Type::Ref(_, _) => 8, // TODO: Support 32-bit systems
             Type::Struct(..) => internal_panic!("Something attempted to get the size of a struct!"),
             Type::None => internal_panic!("Something attempted to get the size of Type::None!"),
             Type::Unknown => {
@@ -405,6 +435,8 @@ impl Display for Type {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
             Type::Struct(str) => write!(fmt, "{}", str),
+            Type::Ref(t, true) => write!(fmt, "&mut {}", t),
+            Type::Ref(t, false) => write!(fmt, "&{}", t),
             _ => write!(fmt, "{}", format!("{:?}", self).to_lowercase()),
         }
     }
@@ -1134,6 +1166,12 @@ impl<'flags> TypeChecker<'flags> {
                         typ.clone(),
                         lit_node.typ.clone(),
                     ));
+                } else if let Type::Ref(_, _) = typ {
+                    self.report_error(TypeError::UnexpectedLiteral(
+                        "reference",
+                        lit_node.location,
+                        lit_node.value.clone(),
+                    ));
                 } else if let Type::Struct(_) = typ {
                     self.report_error(TypeError::UnexpectedLiteral(
                         "struct instance",
@@ -1176,6 +1214,28 @@ impl<'flags> TypeChecker<'flags> {
                                 typ.clone(),
                             ));
                         } else if expr_type == Type::Unknown {
+                            unary_node.typ = typ.clone();
+                        } else if expr_type != *typ {
+                            self.report_error(TypeError::TypeMismatch(
+                                unary_node.location,
+                                typ.clone(),
+                                expr_type.clone(),
+                            ));
+                        } else {
+                            unary_node.typ = typ.clone();
+                        }
+                    }
+                    Operation::Reference => {
+                        // FIXME: Do we need to consider mutability here?
+                        let Type::Ref(typ, _mutable) = typ else {
+                            internal_panic!("UnaryNode with Operation::Reference has wrong type!");
+                        };
+                        let typ = typ.as_ref();
+                        let expr_type = self.type_check_expression_with_type(
+                            &mut unary_node.expression,
+                            typ,
+                        );
+                        if expr_type == Type::Unknown {
                             unary_node.typ = typ.clone();
                         } else if expr_type != *typ {
                             self.report_error(TypeError::TypeMismatch(
@@ -1231,9 +1291,9 @@ impl<'flags> TypeChecker<'flags> {
         &mut self,
         unary_expr: &mut nodes::UnaryNode
     ) -> Type {
-        check_or_abort!(expr_type, self.type_check_expression(&mut unary_expr.expression, false));
         match unary_expr.operation {
             Operation::Negate => {
+                check_or_abort!(expr_type, self.type_check_expression(&mut unary_expr.expression, false));
                 if expr_type == Type::Unknown {
                     return Type::Unknown;
                 } else if expr_type != Type::I32 && expr_type != Type::I64 {
@@ -1244,6 +1304,50 @@ impl<'flags> TypeChecker<'flags> {
                 }
                 unary_expr.typ = expr_type.clone();
                 expr_type
+            }
+            Operation::Reference => {
+                let Type::Ref(_, is_mutable) = unary_expr.typ else {
+                    internal_panic!("UnaryNode with Operation::Reference has wrong type!");
+                };
+                check_or_abort!(expr_type, self.type_check_expression(&mut unary_expr.expression, is_mutable));
+                if expr_type == Type::Unknown {
+                    return Type::Unknown;
+                }
+                if matches!(expr_type, Type::Ref(..)) {
+                    // TODO: Should we allow references to references?
+                    self.report_error(TypeError::NestedReferenceNotAllowedYet(
+                        unary_expr.location,
+                    ));
+                }
+                unary_expr.typ = Type::Ref(Box::new(expr_type.clone()), is_mutable);
+                unary_expr.typ.clone()
+            }
+            Operation::Dereference => {
+                // FIXME: Do we need to consider mutability here?
+                //        That should depend on the context, right?
+                //        Just passing `false` is probably wrong
+                check_or_abort!(expr_type, self.type_check_expression(&mut unary_expr.expression, false));
+                match expr_type {
+                    Type::Ref(t, _) => {
+                        unary_expr.typ = *t.clone();
+                        *t.clone()
+                    }
+                    Type::Unknown => {
+                        // Only case where a type is unknown is integer literals
+                        // We can't dereference an integer literal
+                        self.report_error(TypeError::DereferenceIntegerLiteral(
+                            unary_expr.location
+                        ));
+                        Type::None
+                    },
+                    _ => {
+                        self.report_error(TypeError::DereferenceTypeMismatch(
+                            unary_expr.location,
+                            expr_type.clone(),
+                        ));
+                        Type::None
+                    }
+                }
             }
             _ => {
                 internal_panic!(format!(
@@ -1283,6 +1387,17 @@ impl<'flags> TypeChecker<'flags> {
         match (&lhs_type, &rhs_type) {
             (Type::Struct(..), _) | (_, Type::Struct(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
+                self.report_error(TypeError::BinaryTypeMismatch(
+                    binary_expr.location,
+                    binary_expr.operation.clone(),
+                    binary_expr.lhs.get_loc(),
+                    lhs_type.clone(),
+                    binary_expr.rhs.get_loc(),
+                    rhs_type.clone(),
+                ));
+                Type::None
+            }
+            (Type::Ref(..), _) | (_, Type::Ref(..)) => {
                 self.report_error(TypeError::BinaryTypeMismatch(
                     binary_expr.location,
                     binary_expr.operation.clone(),
@@ -1343,7 +1458,7 @@ impl<'flags> TypeChecker<'flags> {
         );
         assert!(binary_expr.is_arithmetic());
         match (&lhs_type, &rhs_type) {
-            (typ @ Type::Struct(..), _) | (_, typ @ Type::Struct(..)) => {
+            (Type::Struct(..), _) | (_, Type::Struct(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 self.report_error(TypeError::BinaryTypeMismatch(
                     binary_expr.location,
@@ -1353,8 +1468,18 @@ impl<'flags> TypeChecker<'flags> {
                     binary_expr.rhs.get_loc(),
                     rhs_type.clone(),
                 ));
-                binary_expr.typ = typ.clone();
-                typ.clone()
+                Type::None
+            }
+            (Type::Ref(..), _) | (_, Type::Ref(..)) => {
+                self.report_error(TypeError::BinaryTypeMismatch(
+                    binary_expr.location,
+                    binary_expr.operation.clone(),
+                    binary_expr.lhs.get_loc(),
+                    lhs_type.clone(),
+                    binary_expr.rhs.get_loc(),
+                    rhs_type.clone(),
+                ));
+                Type::None
             }
             (Type::Bool, _) | (_, Type::Bool) => {
                 self.report_error(TypeError::BinaryTypeMismatch(
@@ -1365,9 +1490,7 @@ impl<'flags> TypeChecker<'flags> {
                     binary_expr.rhs.get_loc(),
                     rhs_type.clone(),
                 ));
-                let typ = Type::Bool;
-                binary_expr.typ = typ.clone();
-                typ.clone()
+                Type::None
             }
             (Type::Unknown, Type::Unknown) => Type::Unknown,
             (Type::Unknown, other) => {
@@ -1507,66 +1630,97 @@ impl<'flags> TypeChecker<'flags> {
         needs_mutability: bool,
     ) -> Type {
         check_or_abort!(lhs_type, self.type_check_expression(&mut binary_expr.lhs, needs_mutability));
-        if let Type::Struct(struct_name) = lhs_type {
-            let Some(strukt) = self.known_structs.get(&struct_name) else {
+        let (is_ref, strukt) = match lhs_type {
+            Type::Ref(orig_type, _) => {
+                let Type::Struct(struct_name) = *orig_type else {
+                    self.report_error(TypeError::DotOnNonStruct(
+                        binary_expr.lhs.get_loc(),
+                    ));
+                    return Type::None;
+                };
+                let Some(strukt) = self.known_structs.get(&struct_name) else {
+                    self.report_error(TypeError::DotOnNonStruct(
+                        binary_expr.lhs.get_loc(),
+                    ));
+                    return Type::None;
+                };
+                (true, strukt)
+            }
+            Type::Struct(struct_name) => {
+                let Some(strukt) = self.known_structs.get(&struct_name) else {
+                    self.report_error(TypeError::DotOnNonStruct(
+                        binary_expr.lhs.get_loc(),
+                    ));
+                    return Type::None;
+                };
+                (false, strukt)
+            }
+            _ => {
                 self.report_error(TypeError::DotOnNonStruct(
                     binary_expr.lhs.get_loc(),
                 ));
                 return Type::None;
-            };
-            match &mut (*binary_expr.rhs) {
-                nodes::Expression::Name(name_node) => {
-                    if let Some(field) = strukt.get_field(&name_node.name) {
-                        binary_expr.typ = field.t.clone();
-                        name_node.typ = field.t.clone();
-                        field.t.clone()
-                    } else {
-                        self.report_error(TypeError::UnknownField(
-                            name_node.location,
-                            name_node.name.clone(),
-                            strukt.location,
-                            strukt.name.clone(),
-                        ));
-                        Type::None
-                    }
+            }
+        };
+        match &mut (*binary_expr.rhs) {
+            nodes::Expression::Name(name_node) => {
+                if let Some(field) = strukt.get_field(&name_node.name) {
+                    binary_expr.typ = field.t.clone();
+                    name_node.typ = field.t.clone();
+                    field.t.clone()
+                } else {
+                    self.report_error(TypeError::UnknownField(
+                        name_node.location,
+                        name_node.name.clone(),
+                        strukt.location,
+                        strukt.name.clone(),
+                    ));
+                    Type::None
                 }
-                nodes::Expression::FunctionCall(call_node) => {
-                    // FIXME: Error Log shows wrong location
-                    if let Some(method) = strukt.get_method(&call_node.function_name) {
-                        let result = if method.has_this {
-                            // FIXME: This is not a good solution, but it works for now
-                            call_node.arguments.insert(
-                                0,
-                                *binary_expr.lhs.clone(),
-                            );
-                            let result = check_function!(self, call_node, method, "Method");
-                            call_node.arguments.remove(0);
-                            result
+            }
+            nodes::Expression::FunctionCall(call_node) => {
+                // FIXME: Error Log shows wrong location
+                if let Some(method) = strukt.get_method(&call_node.function_name) {
+                    let result = if method.has_this {
+                        // FIXME: This is not a good solution, but it works for now
+                        if let expected_this @ Type::Ref(_, _) = &method.parameters[0].typ {
+                            let this_arg = if is_ref {
+                                *binary_expr.lhs.clone()
+                            } else {
+                                let new_node = nodes::UnaryNode {
+                                    location: binary_expr.lhs.get_loc(),
+                                    operation: Operation::Reference,
+                                    expression: binary_expr.lhs.clone(),
+                                    typ: expected_this.clone(),
+                                };
+                                nodes::Expression::Unary(new_node)
+                            };
+                            call_node.arguments.insert(0, this_arg);
                         } else {
-                            check_function!(self, call_node, method, "Method")
-                        };
-                        binary_expr.typ = result.clone();
+                            call_node.arguments.insert(0, *binary_expr.lhs.clone());
+                        }
+                        let result = check_function!(self, call_node, method, "Method");
+                        call_node.arguments.remove(0);
                         result
                     } else {
-                        self.report_error(TypeError::UnknownMethod(
-                            call_node.location,
-                            call_node.function_name.clone(),
-                            strukt.location,
-                            strukt.name.clone(),
-                        ));
-                        Type::None
-                    }
+                        check_function!(self, call_node, method, "Method")
+                    };
+                    binary_expr.typ = result.clone();
+                    result
+                } else {
+                    self.report_error(TypeError::UnknownMethod(
+                        call_node.location,
+                        call_node.function_name.clone(),
+                        strukt.location,
+                        strukt.name.clone(),
+                    ));
+                    Type::None
                 }
-                _ => {
-                    // Not a field, not a method, this is an error
-                    todo!()
-                },
             }
-        } else {
-            self.report_error(TypeError::DotOnNonStruct(
-                binary_expr.lhs.get_loc(),
-            ));
-            Type::None
+            _ => {
+                // Not a field, not a method, this is an error
+                todo!()
+            },
         }
     }
 

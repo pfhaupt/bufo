@@ -1,0 +1,19 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+struct Foo {
+    a: i32;
+    func setA(&mut this, val: i32) {
+        this.a = val;
+    }
+}
+
+func main() -> i32 {
+    mut f: Foo = Foo {
+        a: 10
+    };
+    f.setA(20);
+    if (f.a != 20) return f.a;
+    return 0;
+}

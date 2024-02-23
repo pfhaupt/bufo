@@ -310,6 +310,8 @@ pub enum Operation {
     LessThanOrEqual,
     GreaterThan,
     GreaterThanOrEqual,
+    Reference,
+    Dereference,
 }
 
 impl Display for Operation {
@@ -331,6 +333,8 @@ impl Display for Operation {
             Self::LessThanOrEqual => write!(f, "<="),
             Self::GreaterThan => write!(f, ">"),
             Self::GreaterThanOrEqual => write!(f, ">="),
+            Self::Reference => write!(f, "&"),
+            Self::Dereference => write!(f, "*"),
         }
     }
 }
@@ -690,10 +694,6 @@ impl<'flags> Parser<'flags> {
     }
     // ---------- End of Lexer ----------
     // ---------- Start of Parser Utility ----------
-    #[trace_call(always)]
-    fn parse_type(&self, token: &Token) -> Type {
-        self.parse_type_str(&token.value)
-    }
     #[trace_call(always)]
     fn parse_type_str(&self, val: &str) -> Type {
         match val {
@@ -1073,6 +1073,7 @@ impl<'flags> Parser<'flags> {
         let mut parameters = vec![];
         while !self.parsed_eof() && !self.at(TokenType::ClosingRound) {
             let location = self.current_location();
+            let is_reference = self.eat(TokenType::Ampersand);
             let is_mutable = self.eat(TokenType::MutKeyword);
             let is_this = self.eat(TokenType::ThisKeyword);
             if is_this {
@@ -1092,10 +1093,19 @@ impl<'flags> Parser<'flags> {
                     ));
                     return None;
                 }
+                let struct_typ = Type::Struct(self.current_struct.as_ref().unwrap().clone());
+                let typ = if is_reference {
+                    Type::Ref(Box::new(struct_typ), is_mutable)
+                } else {
+                    struct_typ
+                };
                 parameters.push(nodes::ParameterNode {
                     location,
                     name: String::from("this"),
-                    typ: nodes::TypeNode::this(location, self.current_struct.as_ref().unwrap()),
+                    typ: nodes::TypeNode {
+                        location,
+                        typ,
+                    },
                     is_mutable,
                 });
             } else {
@@ -1453,6 +1463,8 @@ impl<'flags> Parser<'flags> {
     fn matches_unary_expression(&mut self) -> bool {
         match self.nth(0) {
             TokenType::Minus => true,
+            TokenType::Ampersand => true,
+            TokenType::Asterisk => true,
             _ => false,
         }
     }
@@ -1707,6 +1719,27 @@ impl<'flags> Parser<'flags> {
                     typ: Type::Unknown,
                 })
             }
+            TokenType::Ampersand => {
+                try_parse!(self.expect(TokenType::Ampersand));
+                let is_mutable = self.eat(TokenType::MutKeyword);
+                try_parse!(expression, self.parse_expression(precedence, associativity));
+                Some(nodes::UnaryNode {
+                    location,
+                    operation: Operation::Reference,
+                    expression: Box::new(expression),
+                    typ: Type::Ref(Box::new(Type::Unknown), is_mutable),
+                })
+            }
+            TokenType::Asterisk => {
+                try_parse!(self.expect(TokenType::Asterisk));
+                try_parse!(expression, self.parse_expression(precedence, associativity));
+                Some(nodes::UnaryNode {
+                    location,
+                    operation: Operation::Dereference,
+                    expression: Box::new(expression),
+                    typ: Type::Unknown,
+                })
+            }
             _ => {
                 self.report_error(ParserError::ExpectedUnaryOperator(
                     self.current_location(),
@@ -1839,8 +1872,20 @@ impl<'flags> Parser<'flags> {
     #[trace_call(always)]
     fn parse_type_node(&mut self) -> Option<nodes::TypeNode> {
         let location = self.current_location();
-        try_parse!(name_token, self.expect(TokenType::Identifier));
-        let typ = self.parse_type(&name_token);
-        Some(nodes::TypeNode { location, typ })
+        if self.eat(TokenType::Ampersand) {
+            let is_mutable = self.eat(TokenType::MutKeyword);
+            try_parse!(typ, self.parse_type_node());
+            Some(nodes::TypeNode {
+                location,
+                typ: Type::Ref(Box::new(typ.typ), is_mutable),
+            })
+        } else {
+            try_parse!(name_token, self.expect(TokenType::Identifier));
+            let typ = self.parse_type_str(&name_token.value);
+            Some(nodes::TypeNode {
+                location,
+                typ,
+            })
+        }
     }
 }

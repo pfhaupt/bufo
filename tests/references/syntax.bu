@@ -1,0 +1,14 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Nested references are not allowed yet.
+//! Type mismatch! Expected type `&mut &mut i32`, found type `&&mut i32`.
+
+func main() {
+    mut a: i32 = 0;
+    let b: &&mut i32 = &&mut a;         // <-- 1st error
+    let c: &mut &mut i32 = b;           // <-- 2nd error
+    let d: &mut &mut i32 = &mut &mut a; // <-- Same Nested error
+}
