@@ -8,13 +8,14 @@ on:
 
 jobs:
   test:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
-    - name: Setup winlibs
-      uses: bwoodsend/setup-winlibs-action@v1
-      with:
-        tag: 13.1.0-16.0.5-11.0.0-msvcrt-r5
-        with_clang: true
+    - name: Setup LLVM and Clang
+      run: |
+      {
+        sudo apt-get install llvm-16 clang-16 llvm-16-dev libclang-16-dev
+        export PATH=$PATH:/usr/lib/llvm-16/bin
+      }
     - name: Checkout
       uses: actions/checkout@v3
     - name: Build
