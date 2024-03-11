@@ -2067,8 +2067,7 @@ impl<'flags> TypeChecker<'flags> {
                 Err(())
             }
             (Type::Unknown, Type::Unknown) => {
-                // FIXME: Better error handling, is it always a good idea to infer i64?
-                let force_type = Type::I64;
+                let force_type = Type::I32;
                 self.type_check_expression_with_type(&mut binary_expr.lhs, &force_type)?;
                 self.type_check_expression_with_type(&mut binary_expr.rhs, &force_type)?;
                 let typ = Type::Bool;
@@ -2217,7 +2216,6 @@ impl<'flags> TypeChecker<'flags> {
                 }
             }
             nodes::Expression::FunctionCall(call_node) => {
-                // FIXME: Error Log shows wrong location
                 let Some(method) = strukt.get_method(&call_node.function_name) else {
                     self.report_error(TypeError::UnknownMethod(
                         call_node.location,
@@ -2301,8 +2299,10 @@ impl<'flags> TypeChecker<'flags> {
             // 5 - LHS is 3 and a BinaryNode
             nodes::Expression::Binary(ref mut binary_node) => {
                 if binary_node.operation != Operation::ModuleAccess {
-                    // This is an error
-                    todo!()
+                    self.report_error(TypeError::InvalidModuleAccess(
+                        binary_node.lhs.get_loc()
+                    ));
+                    return Err(());
                 }
                 let lhs_type = self.type_check_expr_module_access(binary_node, module_stack, needs_mutability)?;
                 let mut lhs_type_copy = lhs_type.clone();

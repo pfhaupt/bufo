@@ -11,7 +11,14 @@ use crate::util::flags::Flags;
 use tracer::trace_call;
 use once_cell::sync::Lazy;
 
-const LOOKAHEAD_LIMIT: usize = 3;
+static FILE_ANONYMOUS: usize = 0;
+static mut FILENAMES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
+    vec![PathBuf::from("anonymous")]
+});
+
+// fill_lookup() fills up to < LOOKAHEAD_LIMIT, we always only check one token ahead
+// This makes our Parser LL(1), wooh! :D
+const LOOKAHEAD_LIMIT: usize = 2;
 
 pub const KEYWORD_BREAK: &str = "break";
 pub const KEYWORD_COMPILER_FLAGS: &str = "compiler_flags";
@@ -236,12 +243,6 @@ impl Display for TokenType {
         }
     }
 }
-
-// FIXME: Move this somewhere else
-static FILE_ANONYMOUS: usize = 0;
-static mut FILENAMES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
-    vec![PathBuf::from("anonymous")]
-});
 
 #[derive(Copy, Clone, PartialEq, Eq, Default)]
 pub struct Location {
@@ -1868,7 +1869,7 @@ impl<'flags> Parser<'flags> {
             TokenType::DoubleAmpersand => 4,
             TokenType::DoublePipe => 3,
             TokenType::Equal => 2,
-            e => todo!("get_precedence({:?})", e),
+            e => internal_panic!("get_precedence({:?}) is not implemented", e),
         }
     }
 

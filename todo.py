@@ -9,13 +9,19 @@ CMD = ["git", "grep", "-nE", "(todo!|TODO|FIXME|REVIEW)", "--", ":!todo.py"]
 def call_cmd(cmd: List) -> int:
     return subprocess.check_output(cmd).split(b'\n')
 
-def get_random():
+def get_list() -> List[str]:
     todo = call_cmd(CMD)
     todo = list(filter(lambda elem: elem != b'', todo))
+    todo = list(map(lambda elem: elem.decode("utf-8"), todo))
+    todo = list(filter(lambda elem: elem != '' and not "raylib" in elem, todo))
+    return todo
+
+def get_random():
+    todo = get_list()
     print(f"Found {len(todo)} things that need fixing!")
     if len(todo) == 0:
         return "DONE! No todo!(), TODO or FIXME found!"
-    return str(random.choice(todo))
+    return random.choice(todo)
 
 if __name__ == "__main__":
     if len(argv) > 1:
@@ -23,11 +29,10 @@ if __name__ == "__main__":
             case "random":
                 print(get_random())
             case "all":
-                todos = call_cmd(CMD)
-                todos = list(filter(lambda elem: elem != b'', todos))
-                for line in todos:
+                todo = get_list()
+                for line in todo:
                     print(line)
-                print(f"\nFound {len(todos)} things that need fixing!")
+                print(f"\nFound {len(todo)} things that need fixing!")
             case _:
                 print("Usage: todo.py [random]")
     else:
