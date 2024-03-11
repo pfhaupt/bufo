@@ -1,0 +1,18 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Unexpected Literal! Expected boolean, found `5`.
+//! Type mismatch! Logical not is not defined for type `i32`.
+//! Type mismatch! Expected type `u8`, found type `bool`.
+//! Type mismatch in binary expression! Operation `u8 - i32` is not defined.
+//! LHS has type `u8`.
+//! RHS has type `i32`.
+//! Type mismatch! Logical not is not defined for type `u8`.
+
+func main() {
+    let a: i32 = !5;
+    let b: u8 = !a;
+    let c: bool = !(b - a);
+}

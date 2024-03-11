@@ -226,6 +226,8 @@ enum TypeError {
     InvalidIndexedAccess(Location, Type),
     /// Syntax: Error Loc, Type
     ArrayIndexRequiresUsize(Location, Type),
+    /// Syntax: Error Loc, Type
+    LogicalNotTypeMismatch(Location, Type),
 }
 
 impl Display for TypeError {
@@ -481,6 +483,13 @@ impl Display for TypeError {
                 write!(
                     f,
                     "{}: {:?}: Array index requires type `usize`, found type `{}`.",
+                    ERR_STR, loc, typ
+                )
+            }
+            TypeError::LogicalNotTypeMismatch(loc, typ) => {
+                write!(
+                    f,
+                    "{}: {:?}: Type mismatch! Logical not is not defined for type `{}`.",
                     ERR_STR, loc, typ
                 )
             }
@@ -1627,10 +1636,8 @@ impl<'flags> TypeChecker<'flags> {
                 }
             }
             nodes::Expression::Name(name_node) => {
-                if name_node.typ == Type::Unknown {
-                    name_node.typ = typ.clone();
-                    Ok(typ.clone())
-                } else if name_node.typ != *typ {
+                debug_assert!(name_node.typ != Type::Unknown);
+                if name_node.typ != *typ {
                     self.report_error(TypeError::TypeMismatch(
                         name_node.location,
                         typ.clone(),
@@ -1646,15 +1653,13 @@ impl<'flags> TypeChecker<'flags> {
                     Operation::Negate => {
                         let expr_type =
                             self.type_check_expression_with_type(&mut unary_node.expression, typ)?;
+                        debug_assert!(expr_type != Type::Unknown);
                         if expr_type != Type::I32 && expr_type != Type::I64 {
                             self.report_error(TypeError::NegationTypeMismatch(
                                 unary_node.location,
                                 typ.clone(),
                             ));
                             Err(())
-                        } else if expr_type == Type::Unknown {
-                            unary_node.typ = typ.clone();
-                            Ok(typ.clone())
                         } else if expr_type != *typ {
                             self.report_error(TypeError::TypeMismatch(
                                 unary_node.location,
@@ -1675,10 +1680,8 @@ impl<'flags> TypeChecker<'flags> {
                         let typ = typ.as_ref();
                         let expr_type =
                             self.type_check_expression_with_type(&mut unary_node.expression, typ)?;
-                        if expr_type == Type::Unknown {
-                            unary_node.typ = typ.clone();
-                            Ok(typ.clone())
-                        } else if expr_type != *typ {
+                        debug_assert!(expr_type != Type::Unknown);
+                        if expr_type != *typ {
                             self.report_error(TypeError::TypeMismatch(
                                 unary_node.location,
                                 typ.clone(),
@@ -1688,6 +1691,24 @@ impl<'flags> TypeChecker<'flags> {
                         } else {
                             unary_node.typ = typ.clone();
                             Ok(typ.clone())
+                        }
+                    }
+                    Operation::LogicalNot => {
+                        let expr_type =
+                            self.type_check_expression_with_type(&mut unary_node.expression, &Type::Bool)?;
+                        if expr_type == Type::Unknown {
+                            unary_node.typ = Type::Bool;
+                            Ok(Type::Bool)
+                        } else if expr_type != Type::Bool {
+                            self.report_error(TypeError::TypeMismatch(
+                                unary_node.location,
+                                Type::Bool,
+                                expr_type.clone(),
+                            ));
+                            Err(())
+                        } else {
+                            unary_node.typ = Type::Bool;
+                            Ok(Type::Bool)
                         }
                     }
                     _ => internal_panic!(
@@ -1873,6 +1894,20 @@ impl<'flags> TypeChecker<'flags> {
                         Err(())
                     }
                 }
+            }
+            Operation::LogicalNot => {
+                let expr_type = self.type_check_expression(&mut unary_expr.expression, false)?;
+                if expr_type == Type::Unknown {
+                    return Ok(Type::Unknown);
+                }
+                if expr_type != Type::Bool {
+                    self.report_error(TypeError::LogicalNotTypeMismatch(
+                        unary_expr.location,
+                        expr_type.clone(),
+                    ));
+                }
+                unary_expr.typ = Type::Bool;
+                Ok(Type::Bool)
             }
             _ => {
                 internal_panic!(

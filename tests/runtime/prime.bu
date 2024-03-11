@@ -19,13 +19,12 @@ func is_prime(n: u64) -> bool {
 }
 
 func main() -> u64 {
-    // FIXME: We need Unary Not :^)
-    if (is_prime(2) == false) return 2;
-    if (is_prime(3) == false) return 3;
-    if (is_prime(19381) == false) return 19381;
+    if (!is_prime(2)) return 2;
+    if (!is_prime(3)) return 3;
+    if (!is_prime(19381)) return 19381;
     if (is_prime(19382)) return 19382;
-    if (is_prime(192806849) == false) return 192806849;
-    if (is_prime(192801989593) == false) return 192801989593;
+    if (!is_prime(192806849)) return 192806849;
+    if (!is_prime(192801989593)) return 192801989593;
     if (is_prime(1928019895934)) return 1928019895934;
     return 0;
 }

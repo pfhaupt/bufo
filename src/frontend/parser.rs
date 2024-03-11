@@ -149,6 +149,7 @@ pub enum TokenType {
     Semi,
     Comma,
     Dot,
+    Exclamation,
     VarArg, // REVIEW: This is only allowed in Externs (for now?), maybe handle it differently
     Arrow,
     Equal,
@@ -224,6 +225,7 @@ impl Display for TokenType {
             Self::Semi => write!(f, "`;`"),
             Self::Comma => write!(f, "`,`"),
             Self::Dot => write!(f, "`.`"),
+            Self::Exclamation => write!(f, "`!`"),
             Self::VarArg => write!(f, "`...`"),
             Self::Arrow => write!(f, "`->`"),
             Self::Equal => write!(f, "`=`"),
@@ -324,6 +326,7 @@ pub enum Operation {
     BitwiseXor,
     LogicalAnd,
     LogicalOr,
+    LogicalNot,
     Equal,
     NotEqual,
     LessThan,
@@ -346,8 +349,9 @@ impl Display for Operation {
             Self::BitwiseAnd => write!(f, "&"),
             Self::BitwiseOr => write!(f, "|"),
             Self::BitwiseXor => write!(f, "^"),
-            Self::LogicalAnd => write!(f, "and"),
-            Self::LogicalOr => write!(f, "or"),
+            Self::LogicalAnd => write!(f, "&&"),
+            Self::LogicalOr => write!(f, "||"),
+            Self::LogicalNot => write!(f, "!"),
             Self::Equal => write!(f, "=="),
             Self::NotEqual => write!(f, "!="),
             Self::LessThan => write!(f, "<"),
@@ -366,7 +370,7 @@ impl Display for Operation {
 impl Operation {
     #[trace_call(extra)]
     fn from(s: &str) -> Option<Self> {
-        debug_assert_eq!(Operation::GreaterThanOrEqual as u8 + 1, 21, "Not all Operations are handled in from()");
+        debug_assert_eq!(Operation::GreaterThanOrEqual as u8 + 1, 22, "Not all Operations are handled in from()");
         // TOKEN_TYPE_HANDLE_HERE (if new token is an operator)
         match s {
             "=" => Some(Self::Assign),
@@ -388,6 +392,7 @@ impl Operation {
             "::" => Some(Self::ModuleAccess),
             "&&" => Some(Self::LogicalAnd),
             "||" => Some(Self::LogicalOr),
+            "!" => Some(Self::LogicalNot),
             "[" => Some(Self::IndexedAccess),
             _ => None,
         }
@@ -588,7 +593,7 @@ impl<'flags> Parser<'flags> {
         }
         debug_assert_eq!(
             TokenType::Eof as u8 + 1,
-            54,
+            55,
             "Not all TokenTypes are handled in next_token()"
         );
         self.trim_whitespace();
@@ -710,11 +715,8 @@ impl<'flags> Parser<'flags> {
             '!' => match self.next_char() {
                 '=' => (TokenType::CmpNeq, String::from("!=")),
                 _ => {
-                    self.report_error(ParserError::UnexpectedSymbol(
-                        loc,
-                        c
-                    ));
-                    return self.next_token();
+                    self.current_char -= 1;
+                    (TokenType::Exclamation, String::from(c))
                 },
             },
             '=' => match self.next_char() {
@@ -1846,7 +1848,7 @@ impl<'flags> Parser<'flags> {
     // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Operator_Precedence#table
     // If it works for JS, it should work for us too
     #[trace_call(always)]
-    fn get_precedence(&self, token_type: TokenType) -> usize {
+    fn get_binary_precedence(&self, token_type: TokenType) -> usize {
         // TOKEN_TYPE_HANDLE_HERE
         match token_type {
             TokenType::DoubleColon => 18, // REVIEW: Can this be same level as Dot?
@@ -1857,19 +1859,32 @@ impl<'flags> Parser<'flags> {
             TokenType::Percent => 12,
             TokenType::Plus => 11,
             TokenType::Minus => 11,
-            TokenType::CmpEq => 9,
-            TokenType::CmpNeq => 9,
             TokenType::CmpLt => 9,
             TokenType::CmpLte => 9,
             TokenType::CmpGt => 9,
             TokenType::CmpGte => 9,
+            TokenType::CmpEq => 8,
+            TokenType::CmpNeq => 8,
             TokenType::Ampersand => 7,
             TokenType::Caret => 6,
             TokenType::Pipe => 5,
             TokenType::DoubleAmpersand => 4,
             TokenType::DoublePipe => 3,
             TokenType::Equal => 2,
-            e => internal_panic!("get_precedence({:?}) is not implemented", e),
+            e => internal_panic!("get_binary_precedence({:?}) is not implemented", e),
+        }
+    }
+
+    #[trace_call(always)]
+    fn get_unary_precedence(&self, token_type: TokenType) -> usize {
+        // TOKEN_TYPE_HANDLE_HERE
+        match token_type {
+            TokenType::Minus => 14,
+            TokenType::Ampersand => 14,
+            TokenType::Asterisk => 14,
+            TokenType::DoubleAmpersand => 14,
+            TokenType::Exclamation => 14,
+            e => internal_panic!("get_unary_precedence({:?}) is not implemented", e),
         }
     }
 
@@ -1908,7 +1923,7 @@ impl<'flags> Parser<'flags> {
         let mut expression = self.parse_primary_expression()?;
 
         while self.matches_binary_expression() {
-            let new_precedence = self.get_precedence(self.nth(0));
+            let new_precedence = self.get_binary_precedence(self.nth(0));
             if new_precedence < min_precedence {
                 break;
             }
@@ -1993,6 +2008,7 @@ impl<'flags> Parser<'flags> {
             TokenType::Ampersand => true,
             TokenType::Asterisk => true,
             TokenType::DoubleAmpersand => true,
+            TokenType::Exclamation => true,
             _ => false,
         }
     }
@@ -2066,12 +2082,11 @@ impl<'flags> Parser<'flags> {
     #[trace_call(always)]
     fn parse_unary_expression(&mut self)-> Result<nodes::UnaryNode, ()> {
         let location = self.current_location();
-        let precedence = self.get_precedence(self.nth(0));
-        let associativity = self.get_associativity(self.nth(0));
+        let precedence = self.get_unary_precedence(self.nth(0));
         match self.nth(0) {
             TokenType::Minus => {
                 self.expect(TokenType::Minus)?;
-                let expression = self.parse_expression(precedence, associativity)?;
+                let expression = self.parse_expression(precedence, Associativity::Left)?;
                 Ok(nodes::UnaryNode {
                     location,
                     operation: Operation::Negate,
@@ -2082,7 +2097,7 @@ impl<'flags> Parser<'flags> {
             TokenType::Ampersand => {
                 self.expect(TokenType::Ampersand)?;
                 let is_mutable = self.eat(TokenType::KeywordMut);
-                let expression = self.parse_expression(precedence, associativity)?;
+                let expression = self.parse_expression(precedence, Associativity::Left)?;
                 Ok(nodes::UnaryNode {
                     location,
                     operation: Operation::Reference,
@@ -2093,7 +2108,7 @@ impl<'flags> Parser<'flags> {
             TokenType::DoubleAmpersand => {
                 self.expect(TokenType::DoubleAmpersand)?;
                 let is_mutable = self.eat(TokenType::KeywordMut);
-                let expression = self.parse_expression(precedence, associativity)?;
+                let expression = self.parse_expression(precedence, Associativity::Left)?;
                 let inner_type = Type::Ref(Box::new(Type::Unknown), is_mutable);
                 let outer_type = Type::Ref(Box::new(inner_type.clone()), false);
                 let inner_ref = nodes::UnaryNode {
@@ -2111,12 +2126,22 @@ impl<'flags> Parser<'flags> {
             }
             TokenType::Asterisk => {
                 self.expect(TokenType::Asterisk)?;
-                let expression = self.parse_expression(precedence, associativity)?;
+                let expression = self.parse_expression(precedence, Associativity::Left)?;
                 Ok(nodes::UnaryNode {
                     location,
                     operation: Operation::Dereference,
                     expression: Box::new(expression),
                     typ: Type::Unknown,
+                })
+            }
+            TokenType::Exclamation => {
+                self.expect(TokenType::Exclamation)?;
+                let expression = self.parse_expression(precedence, Associativity::Left)?;
+                Ok(nodes::UnaryNode {
+                    location,
+                    operation: Operation::LogicalNot,
+                    expression: Box::new(expression),
+                    typ: Type::Bool,
                 })
             }
             _ => {

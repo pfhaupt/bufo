@@ -23,7 +23,7 @@ func index_oob(msg: &str, index: i64) {
 
 func assert(cond: bool, msg: &str) {
     unsafe {
-        if (cond == false) {
+        if (!cond) {
             let stderr: Any = fdopen(2, "w");
             fprintf(stderr, "ASSERTION FAILED: %s\n", msg);
             exit(1);

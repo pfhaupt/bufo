@@ -810,6 +810,12 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                     }
                 }
             }
+            Operation::LogicalNot => {
+                let value = self.codegen_expression(&unary_node.expression, false)?;
+                debug_assert!(unary_node.typ == Type::Bool);
+                let result = self.builder.build_not(value.into_int_value(), "codegen_unary_logical_not")?;
+                Ok(result.into())
+            }
             e => unimplemented!("codegen_unary: {:?}", e),
         }
     }

@@ -876,7 +876,7 @@ unsafe func main() -> i32 {
             y: 200
         }
     };
-    while (WindowShouldClose() == false) {
+    while (!WindowShouldClose()) {
         BeginDrawing();
         ClearBackground(Color { r: 0, g: 255, b: 0, a: 255 });
         DrawRectangleV(
