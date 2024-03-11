@@ -3,12 +3,12 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Expected one of `func`, `extern` or `struct`, found `}`
+//! Expected one of `extern`, `func`, `import`, `struct` or `unsafe`, found `}`
 //! Expected Expression, found `}`
-//! Expected one of `func`, `extern` or `struct`, found `}`
-//! Expected one of `func`, `extern` or `struct`, found `while`
-//! Expected one of `func`, `extern` or `struct`, found `}`
-//! Expected one of `func`, `extern` or `struct`, found `}`
+//! Expected one of `extern`, `func`, `import`, `struct` or `unsafe`, found `}`
+//! Expected one of `extern`, `func`, `import`, `struct` or `unsafe`, found `while`
+//! Expected one of `extern`, `func`, `import`, `struct` or `unsafe`, found `}`
+//! Expected one of `extern`, `func`, `import`, `struct` or `unsafe`, found `}`
 
 struct Foo {
 

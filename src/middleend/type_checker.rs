@@ -1,33 +1,32 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fmt::{Display, Formatter};
 
 use crate::frontend::nodes;
 use crate::frontend::parser::{Location, Operation};
 
 use crate::compiler::{ERR_STR, NOTE_STR};
-use crate::util::flags::Flags;
 use crate::internal_panic;
+use crate::util::flags::Flags;
 
 use tracer::trace_call;
 
-
 macro_rules! check_function {
-    ($tc:ident, $call_node:ident, $func_info:ident, $typ:expr) => {
-        {
-            let return_type = $func_info.return_type.t.clone();
-            match $call_node.arguments.len().cmp(&$func_info.parameters.len()) {
-                std::cmp::Ordering::Less => {
-                    $tc.report_error(TypeError::NotEnoughArguments(
-                        $typ,
-                        $call_node.location,
-                        $call_node.function_name.clone(),
-                        $call_node.arguments.len(),
-                        $func_info.location,
-                        $func_info.parameters.len(),
-                    ));
-                    return return_type;
-                }
-                std::cmp::Ordering::Greater => {
+    ($tc:ident, $call_node:ident, $func_info:ident, $typ:expr) => {{
+        let return_type = $func_info.return_type.t.clone();
+        match $call_node.arguments.len().cmp(&$func_info.parameters.len()) {
+            std::cmp::Ordering::Less => {
+                $tc.report_error(TypeError::NotEnoughArguments(
+                    $typ,
+                    $call_node.location,
+                    $call_node.function_name.clone(),
+                    $call_node.arguments.len(),
+                    $func_info.location,
+                    $func_info.parameters.len(),
+                ));
+                return Ok(return_type);
+            }
+            std::cmp::Ordering::Greater => {
+                if !$func_info.is_vararg {
                     $tc.report_error(TypeError::TooManyArguments(
                         $typ,
                         $call_node.location,
@@ -36,21 +35,23 @@ macro_rules! check_function {
                         $func_info.location,
                         $func_info.parameters.len(),
                     ));
-                    return return_type;
+                    return Ok(return_type);
                 }
-                std::cmp::Ordering::Equal => (),
             }
-
-            for (mut arg, param) in $call_node.arguments.iter_mut().zip($func_info.parameters.clone()) {
-                let expected = param.typ;
-                // TODO: Mutability error should specify that this is a parameter
-                let arg_type = $tc.type_check_expression(arg, param.is_mutable && expected.is_struct());
-                if arg_type == Type::None {
+            std::cmp::Ordering::Equal => (),
+        }
+        if $func_info.is_vararg {
+            let params = $func_info.parameters.clone();
+            for i in 0..params.len() {
+                let mut arg = &mut $call_node.arguments[i];
+                let param = &params[i];
+                let expected = param.typ.clone();
+                let Ok(arg_type) = $tc.type_check_expression(&mut arg, false) else {
                     continue;
-                }
+                };
                 if arg_type == Type::Unknown {
                     // We need to `infer` the type again
-                    $tc.type_check_expression_with_type(&mut arg, &expected);
+                    $tc.type_check_expression_with_type(&mut arg, &expected)?;
                     debug_assert!(!expected.is_struct());
                 } else if arg_type != expected {
                     $tc.report_error(TypeError::ArgParamTypeMismatch(
@@ -64,66 +65,92 @@ macro_rules! check_function {
                     // Everything is cool
                 }
             }
-
-            $call_node.typ = return_type;
-            $call_node.typ.clone()
+            for i in params.len()..$call_node.arguments.len() {
+                let mut arg = &mut $call_node.arguments[i];
+                let Ok(arg_type) = $tc.type_check_expression(&mut arg, false) else {
+                    continue;
+                };
+                if arg_type == Type::Unknown {
+                    $tc.type_check_expression_with_type(&mut arg, &Type::I32)?;
+                }
+                // TODO: https://www.gnu.org/software/libc/manual/html_node/Calling-Variadics.html
+                //       https://en.cppreference.com/w/c/language/variadic
+                //       https://en.cppreference.com/w/c/language/conversion#Default_argument_promotions
+                // match arg_type {
+                //     Type::Unknown => {
+                //         $tc.type_check_expression_with_type(&mut arg, &Type::I32)?;
+                //     }
+                //     Type::I8 | Type::U8 | Type::I16 | Type::U16 => arg.set_type(Type::I32),
+                //     Type::F32 => arg.set_type(Type::F64),
+                //     _ => (),
+                // }
+            }
+        } else {
+            for (mut arg, param) in $call_node
+                .arguments
+                .iter_mut()
+                .zip($func_info.parameters.clone())
+            {
+                let expected = param.typ;
+                // TODO: Mutability error should specify that this is a parameter
+                let Ok(arg_type) = $tc.type_check_expression(arg, false) else {
+                    continue;
+                };
+                if arg_type == Type::Unknown {
+                    // We need to `infer` the type again
+                    $tc.type_check_expression_with_type(&mut arg, &expected)?;
+                    debug_assert!(!expected.is_struct());
+                } else if arg_type != expected {
+                    $tc.report_error(TypeError::ArgParamTypeMismatch(
+                        arg.get_loc(),
+                        arg_type.clone(),
+                        param.location,
+                        param.name.clone(),
+                        expected.clone(),
+                    ));
+                } else {
+                    // Everything is cool
+                }
+            }
         }
-    };
+
+        $call_node.typ = return_type;
+        Ok($call_node.typ.clone())
+    }};
 }
 
 macro_rules! check_parameters {
-    ($tc:ident, $function:ident) => {
-        {
-            let mut parameters: Vec<Variable> = Vec::new();
-            let mut errors: Vec<TypeError> = Vec::new();
-            for param in &$function.parameters {
-                let p = Variable {
-                    name: param.name.clone(),
-                    location: param.location,
-                    typ: param.typ.typ.clone(),
-                    is_mutable: param.is_mutable,
-                };
-                let index_of = parameters.iter().position(|p| p.name == param.name);
-                if index_of.is_some() {
-                    let index_of = index_of.unwrap();
-                    let p2 = &parameters[index_of];
-                    errors.push(TypeError::Redeclaration(
-                        "Parameter",
-                        param.location,
-                        param.name.clone(),
-                        p2.location,
-                    ));
-                } else {
-                    parameters.push(p);
-                }
-            }
-            // in llvm we're not limited to 4 parameters
-            #[cfg(not(feature = "llvm"))]
-            if parameters.len() > 4 {
-                errors.push(TypeError::TooManyParameters(
-                    "Method",
-                    $function.location,
+    ($tc:ident, $function:ident) => {{
+        let mut parameters: Vec<Variable> = Vec::new();
+        let mut errors: Vec<TypeError> = Vec::new();
+        for param in &$function.parameters {
+            let p = Variable {
+                name: param.name.clone(),
+                location: param.location,
+                typ: param.typ.typ.clone(),
+                is_mutable: param.is_mutable,
+            };
+            let index_of = parameters.iter().position(|p| p.name == param.name);
+            if index_of.is_some() {
+                let index_of = index_of.unwrap();
+                let p2 = &parameters[index_of];
+                errors.push(TypeError::Redeclaration(
+                    "Parameter",
+                    param.location,
+                    param.name.clone(),
+                    p2.location,
                 ));
+            } else {
+                parameters.push(p);
             }
-            (parameters, errors)
         }
-    };
-}
-
-macro_rules! check_or_abort {
-    ($lhs:ident, $lhs_func:expr, $rhs:ident, $rhs_func:expr) => {
-        let $lhs = $lhs_func;
-        let $rhs = $rhs_func;
-        if $lhs == Type::None || $rhs == Type::None {
-            return Type::None;
+        // in llvm we're not limited to 4 parameters
+        #[cfg(feature = "old_codegen")]
+        if parameters.len() > 4 {
+            errors.push(TypeError::TooManyParameters("Method", $function.location));
         }
-    };
-    ($val:ident, $func:expr) => {
-        let $val = $func;
-        if $val == Type::None {
-            return Type::None;
-        }
-    };
+        (parameters, errors)
+    }};
 }
 
 // FIXME: All this info is in the AST, there's no need to clone this
@@ -137,7 +164,7 @@ enum TypeError {
     /// Syntax: Error Loc, Type Name
     UnknownType(Location, Type),
     /// Syntax: Fn Type, Error Loc
-    #[cfg(not(feature = "llvm"))]
+    #[cfg(feature = "old_codegen")]
     TooManyParameters(&'static str, Location),
     /// Syntax: Error Loc, Expected, Found
     TypeMismatch(Location, Type, Type),
@@ -183,6 +210,22 @@ enum TypeError {
     DereferenceIntegerLiteral(Location),
     /// Syntax: Error Loc
     NestedReferenceNotAllowedYet(Location),
+    /// Syntax: Error Loc, Function Name, Function Loc
+    UnsafeCallInSafeContext(Location, String, Location),
+    /// Syntax: Error Loc, Module Name
+    UnknownModule(Location, String),
+    /// Syntax: Error Loc
+    InvalidModuleAccess(Location),
+    /// Syntax: Error Loc
+    UnsafeAny(Location),
+    /// Syntax: Error Loc, Element Type, Inferred Loc, Inferred Type
+    ArrayLiteralElementTypeMismatch(Location, Type, Location, Type),
+    /// Syntax: Error Loc, Expected Size, Found Size
+    ArraySizeMismatch(Location, usize, usize),
+    /// Syntax: Error Loc, Type
+    InvalidIndexedAccess(Location, Type),
+    /// Syntax: Error Loc, Type
+    ArrayIndexRequiresUsize(Location, Type),
 }
 
 impl Display for TypeError {
@@ -200,18 +243,14 @@ impl Display for TypeError {
                 //       This should be a warning because the external simply shadows the function
                 write!(
                     f,
-                    "{}: {:?}: Function redeclaration.\n{}: {:?}: Intrinsic `{}` already declared here.",
+                    "{}: {:?}: Function redeclaration.\n{}: {:?}: Extern function `{}` already declared here.",
                     ERR_STR, error_loc, NOTE_STR, fn_loc, fn_name
                 )
             }
             TypeError::UnknownType(loc, name) => {
-                write!(
-                    f,
-                    "{}: {:?}: Unknown type `{}`.",
-                    ERR_STR, loc, name
-                )
+                write!(f, "{}: {:?}: Unknown type `{}`.", ERR_STR, loc, name)
             }
-            #[cfg(not(feature = "llvm"))]
+            #[cfg(feature = "old_codegen")]
             TypeError::TooManyParameters(kind, loc) => {
                 write!(
                     f,
@@ -249,21 +288,41 @@ impl Display for TypeError {
                     ERR_STR, error_loc, fn_name
                 )
             }
-            TypeError::NotEnoughArguments(fn_kind, error_loc, fn_name, arg_count, fn_loc, param_count) => {
+            TypeError::NotEnoughArguments(
+                fn_kind,
+                error_loc,
+                fn_name,
+                arg_count,
+                fn_loc,
+                param_count,
+            ) => {
                 write!(
                     f,
                     "{}: {:?}: Not enough arguments for {} `{}`.\n{}: {:?}: {} `{}` expects {} arguments, found {}.",
                     ERR_STR, error_loc, fn_kind, fn_name, NOTE_STR, fn_loc, fn_kind, fn_name, param_count, arg_count
                 )
             }
-            TypeError::TooManyArguments(fn_kind, error_loc, fn_name, arg_count, fn_loc, param_count) => {
+            TypeError::TooManyArguments(
+                fn_kind,
+                error_loc,
+                fn_name,
+                arg_count,
+                fn_loc,
+                param_count,
+            ) => {
                 write!(
                     f,
                     "{}: {:?}: Too many arguments for {} `{}`.\n{}: {:?}: {} `{}` expects {} arguments, found {}.",
                     ERR_STR, error_loc, fn_kind, fn_name, NOTE_STR, fn_loc, fn_kind, fn_name, param_count, arg_count
                 )
             }
-            TypeError::ArgParamTypeMismatch(arg_loc, arg_type, param_loc, param_name, param_type) => {
+            TypeError::ArgParamTypeMismatch(
+                arg_loc,
+                arg_type,
+                param_loc,
+                param_name,
+                param_type,
+            ) => {
                 write!(
                     f,
                     "{}: {:?}: Type mismatch! Argument is expected to be of type `{}`, found type `{}`.\n{}: {:?}: Parameter `{}` is declared to be of type `{}`.",
@@ -342,10 +401,14 @@ impl Display for TypeError {
             }
             TypeError::RecursiveStruct(error_loc, struct_name, struct_locs) => {
                 let mut message = format!(
-                    "{}: {:?}: Recursive struct `{}`.", ERR_STR, error_loc, struct_name
+                    "{}: {:?}: Recursive struct `{}`.",
+                    ERR_STR, error_loc, struct_name
                 );
                 for (loc, name) in struct_locs.iter().skip(1) {
-                    message.push_str(&format!("\n{}: {:?}: Chain of recursion also includes Struct `{}`.", NOTE_STR, loc, name));
+                    message.push_str(&format!(
+                        "\n{}: {:?}: Chain of recursion also includes Struct `{}`.",
+                        NOTE_STR, loc, name
+                    ));
                 }
                 write!(f, "{}", message)
             }
@@ -377,56 +440,205 @@ impl Display for TypeError {
                     ERR_STR, error_loc
                 )
             }
+            TypeError::UnsafeCallInSafeContext(error_loc, fn_name, fn_loc) => {
+                write!(
+                    f,
+                    "{}: {:?}: Unsafe function `{}` called in safe context.\n{}: {:?}: Function `{}` is declared here.\n{}: Use an `unsafe {{}}` block to fix this.",
+                    ERR_STR, error_loc, fn_name, NOTE_STR, fn_loc, fn_name, NOTE_STR
+                )
+            }
+            TypeError::UnknownModule(loc, name) => {
+                write!(f, "{}: {:?}: Unknown module `{}`.", ERR_STR, loc, name)
+            }
+            TypeError::InvalidModuleAccess(loc) => {
+                write!(f, "{}: {:?}: Invalid module.", ERR_STR, loc)
+            }
+            TypeError::UnsafeAny(loc) => {
+                write!(f, "{}: {:?}: Use of `Any` is unsafe.\n{}: Use an `unsafe {{}}` block if you really want to use `Any`.", ERR_STR, loc, NOTE_STR)
+            }
+            TypeError::ArrayLiteralElementTypeMismatch(loc, typ, inferred_loc, inferred_typ) => {
+                write!(
+                    f,
+                    "{}: {:?}: Type mismatch! Expected type `{}`, found type `{}`.\n{}: {:?}: Inferred type for array elements to be `{}` here.",
+                    ERR_STR, loc, inferred_typ, typ, NOTE_STR, inferred_loc, inferred_typ
+                )
+            }
+            TypeError::ArraySizeMismatch(loc, expected, found) => {
+                write!(
+                    f,
+                    "{}: {:?}: Array size mismatch! Expected size to be `{}`, found size to be `{}`.",
+                    ERR_STR, loc, expected, found
+                )
+            }
+            TypeError::InvalidIndexedAccess(loc, typ) => {
+                write!(
+                    f,
+                    "{}: {:?}: Invalid indexed access! Indexed access is not defined for type `{}`.",
+                    ERR_STR, loc, typ
+                )
+            }
+            TypeError::ArrayIndexRequiresUsize(loc, typ) => {
+                write!(
+                    f,
+                    "{}: {:?}: Array index requires type `usize`, found type `{}`.",
+                    ERR_STR, loc, typ
+                )
+            }
         }
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub enum Type {
     None, // For functions that return nothing
+    Any,  // C's void*, expected to be used for FFI, not for general use, infers to all references
     #[default]
     Unknown,
+    I8,
+    I16,
     I32,
     I64,
+    U8,
+    U16,
     U32,
     U64,
     Usize,
     Bool,
+    Char,
     // Ptr(Box<Type>),
     Struct(String),
     // TODO: More unit tests for references
     Ref(Box<Type>, bool), // bool is mutability
+    Array(Box<Type>, usize),
+    Module(String, Box<Type>), // Type <arg 2> defined in module <arg 1>
+    Str,
     // Reserved for later use
     F32,
     F64,
 }
 
-impl Type {
-    #[trace_call(extra)]
-    pub fn size(&self) -> usize {
-        match self {
-            Type::I32 | Type::U32 | Type::F32 => 4,
-            Type::I64 | Type::U64 | Type::F64 | Type::Usize => 8,
-            Type::Bool => 1,
-            Type::Ref(_, _) => 8, // TODO: Support 32-bit systems
-            Type::Struct(..) => internal_panic!("Something attempted to get the size of a struct!"),
-            Type::None => internal_panic!("Something attempted to get the size of Type::None!"),
-            Type::Unknown => {
-                internal_panic!("Something attempted to get the size of Type::Unknown!")
+impl PartialEq for Type {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Type::I8, Type::I8) => true,
+            (Type::I16, Type::I16) => true,
+            (Type::I32, Type::I32) => true,
+            (Type::I64, Type::I64) => true,
+            (Type::U8, Type::U8) => true,
+            (Type::U16, Type::U16) => true,
+            (Type::U32, Type::U32) => true,
+            (Type::U64, Type::U64) => true,
+            (Type::Usize, Type::Usize) => true,
+            (Type::Bool, Type::Bool) => true,
+            (Type::Char, Type::Char) => true,
+            (Type::Str, Type::Str) => true,
+            (Type::F32, Type::F32) => true,
+            (Type::F64, Type::F64) => true,
+            (Type::Unknown, Type::Unknown) => true,
+            (Type::None, Type::None) => true,
+            (Type::Any, Type::Any) => true,
+            (Type::Unknown, _) | (_, Type::Unknown) => false,
+            (Type::None, _) | (_, Type::None) => false,
+            (Type::Any, Type::Ref(_, _)) | (Type::Ref(_, _), Type::Any) => true, // Any is void*, so it can be inferred to any reference
+            (Type::Any, _) | (_, Type::Any) => false,
+            (own @ Type::Module(_, typ), other) | (other, own @ Type::Module(_, typ)) => {
+                let typ = &**typ;
+                if typ.is_primitive() && other.is_primitive() {
+                    return typ == other;
+                }
+                let own = own.get_unfolded_module_name();
+                let other = other.get_unfolded_module_name();
+                own == other
             }
+            (Type::Struct(lhs), Type::Struct(rhs)) => lhs == rhs,
+            (Type::Ref(lhs, l), Type::Ref(rhs, r)) => lhs == rhs && l == r,
+            (Type::Array(lhs, l), Type::Array(rhs, r)) => lhs == rhs && l == r,
+            _ => false,
         }
     }
+    fn ne(&self, other: &Self) -> bool {
+        !self.eq(other)
+    }
+}
 
+impl Type {
+    #[trace_call(extra)]
+    pub fn is_primitive(&self) -> bool {
+        matches!(
+            self,
+            Type::I8
+                | Type::I16
+                | Type::I32
+                | Type::I64
+                | Type::U8
+                | Type::U16
+                | Type::U32
+                | Type::U64
+                | Type::Usize
+                | Type::Bool
+                | Type::Char
+                | Type::F32
+                | Type::F64
+                | Type::Str
+                | Type::Any
+        )
+    }
+    #[trace_call(extra)]
+    pub fn is_module(&self) -> bool {
+        matches!(self, Type::Module(..))
+    }
     #[trace_call(extra)]
     pub fn is_struct(&self) -> bool {
         matches!(self, Type::Struct(..))
     }
 
     #[trace_call(extra)]
+    pub fn is_array(&self) -> bool {
+        matches!(self, Type::Array(..))
+    }
+
+    #[trace_call(extra)]
+    pub fn is_struct_ref(&self) -> bool {
+        match self {
+            Type::Ref(t, _) => match **t {
+                Type::Struct(..) => true,
+                Type::Ref(..) => t.is_struct_ref(),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
+    #[trace_call(extra)]
+    pub fn is_mutable_ref(&self) -> bool {
+        match self {
+            Type::Ref(_, is_mut) => *is_mut,
+            _ => false,
+        }
+    }
+
+    #[trace_call(extra)]
     pub fn get_struct_name(&self) -> String {
         match self {
             Type::Struct(name) => name.clone(),
-            _ => panic!(),
+            e => internal_panic!("Expected struct, found {:?}", e),
+        }
+    }
+
+    #[trace_call(extra)]
+    pub fn get_underlying_type(&self) -> Type {
+        match self {
+            Type::Ref(t, _) => t.get_underlying_type(),
+            Type::Array(t, _) => t.get_underlying_type(),
+            _ => self.clone(),
+        }
+    }
+
+    #[trace_call(extra)]
+    pub fn get_unfolded_module_name(&self) -> String {
+        match self {
+            Type::Module(module, t) => format!("{}.{}", module, t.get_unfolded_module_name()),
+            e => e.to_string(),
         }
     }
 }
@@ -437,12 +649,15 @@ impl Display for Type {
             Type::Struct(str) => write!(fmt, "{}", str),
             Type::Ref(t, true) => write!(fmt, "&mut {}", t),
             Type::Ref(t, false) => write!(fmt, "&{}", t),
+            Type::Array(t, len) => write!(fmt, "[{}; {}]", t, len),
+            Type::Any => write!(fmt, "Any"),
+            Type::Module(module, t) => write!(fmt, "{}::{}", module, t),
             _ => write!(fmt, "{}", format!("{:?}", self).to_lowercase()),
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct TypeLoc {
     t: Type,
     l: Location,
@@ -455,12 +670,14 @@ impl TypeLoc {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 struct Function {
     location: Location,
     return_type: TypeLoc,
     parameters: Vec<Variable>,
     has_this: bool,
+    is_unsafe: bool,
+    is_vararg: bool,
 }
 
 impl Function {
@@ -474,7 +691,7 @@ impl Function {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Struct {
     name: String,
     location: Location,
@@ -507,12 +724,44 @@ impl Struct {
             )),
             None => {
                 let typ = &field.type_def.typ;
-                self.fields.insert(
-                    name.to_string(),
-                    TypeLoc::new(*location, typ.clone()),
-                );
+                self.fields.insert(name.to_string(), TypeLoc::new(*location, typ.clone()));
                 Ok(())
             }
+        }
+    }
+
+    #[trace_call(extra)]
+    fn add_method(&mut self, method: &nodes::MethodNode) -> Result<(), Vec<TypeError>> {
+        let mut errors = Vec::new();
+        let name = &method.name;
+        let location = &method.location;
+        let return_type = &method.return_type.typ;
+        let return_loc = method.return_type.location;
+        let (parameters, mut param_errors) = check_parameters!(self, method);
+        errors.append(&mut param_errors);
+        let func = Function {
+            location: method.location,
+            return_type: TypeLoc::new(return_loc, return_type.clone()),
+            parameters,
+            has_this: true,
+            is_unsafe: false, // REVIEW: Do we want to allow unsafe methods?
+            is_vararg: false,
+        };
+        if self.known_methods.contains_key(name) {
+            let m = &self.known_methods[name];
+            errors.push(TypeError::Redeclaration(
+                "Method",
+                *location,
+                name.clone(),
+                m.location,
+            ));
+        } else {
+            self.known_methods.insert(name.clone(), func);
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
         }
     }
 
@@ -527,7 +776,7 @@ impl Struct {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Variable {
     name: String,
     location: Location,
@@ -558,13 +807,168 @@ impl Variable {
     }
 }
 
+#[derive(Debug, Clone)]
+struct Module {
+    name: String,
+    modules: HashMap<String, Module>,
+    externs: HashMap<String, Function>,
+    struct_indices: HashMap<String, usize>,
+    structs: Vec<Struct>,
+    functions: HashMap<String, Function>,
+}
+
+impl Module {
+    #[trace_call(extra)]
+    fn new(name: String) -> Self {
+        Self {
+            name,
+            modules: HashMap::new(),
+            externs: HashMap::new(),
+            struct_indices: HashMap::new(),
+            structs: Vec::new(),
+            functions: HashMap::new(),
+        }
+    }
+
+    #[trace_call(always)]
+    fn get_sub_module(&self, name: &str) -> Option<&Module> {
+        self.modules.get(name)
+    }
+
+    #[trace_call(always)]
+    fn add_module(&mut self, module: Module) {
+        self.modules.insert(module.name.clone(), module);
+    }
+
+    #[trace_call(extra)]
+    fn get_struct(&self, name: &str) -> Option<&Struct> {
+        match self.struct_indices.get(name) {
+            Some(index) => Some(&self.structs[*index]),
+            None => None,
+        }
+    }
+
+    #[trace_call(extra)]
+    fn insert_struct(&mut self, strukt: Struct) {
+        let index = self.structs.len();
+        self.struct_indices.insert(strukt.name.clone(), index);
+        self.structs.push(strukt);
+    }
+
+    #[trace_call(extra)]
+    fn has_struct(&self, name: &str) -> bool {
+        self.struct_indices.contains_key(name)
+    }
+
+    #[trace_call(extra)]
+    fn has_function(&self, name: &str) -> bool {
+        self.functions.contains_key(name)
+    }
+
+    #[trace_call(extra)]
+    fn get_function(&self, name: &str) -> Option<&Function> {
+        self.functions.get(name)
+    }
+
+    #[trace_call(extra)]
+    fn get_extern(&self, name: &str) -> Option<&Function> {
+        self.externs.get(name)
+    }
+
+    #[trace_call(always)]
+    fn add_extern(&mut self, extern_node: &nodes::ExternNode) -> Vec<TypeError> {
+        let return_type = &extern_node.return_type.typ;
+        let return_loc = extern_node.return_type.location;
+        let (parameters, errors) = check_parameters!(self, extern_node);
+        let func = Function {
+            location: extern_node.location,
+            return_type: TypeLoc::new(return_loc, return_type.clone()),
+            parameters,
+            has_this: false,
+            is_unsafe: extern_node.is_unsafe,
+            is_vararg: extern_node.is_vararg,
+        };
+        self.externs.insert(extern_node.name.clone(), func);
+        errors
+    }
+
+    #[trace_call(always)]
+    fn add_struct(&mut self, struct_node: &nodes::StructNode) -> Vec<TypeError> {
+        let mut errors = Vec::new();
+        let name = struct_node.name.clone();
+        let location = struct_node.location;
+        let mut strukt = Struct::new(name.clone(), location);
+        for field in &struct_node.fields {
+            match strukt.add_field(field) {
+                Ok(()) => (),
+                Err(e) => errors.push(e),
+            }
+        }
+        for method in &struct_node.methods {
+            match strukt.add_method(method) {
+                Ok(()) => (),
+                Err(e) => errors.extend(e),
+            }
+        }
+        if self.has_struct(&name) {
+            let strukt = self.get_struct(&name).unwrap();
+            errors.push(TypeError::Redeclaration(
+                "Struct",
+                location,
+                name.clone(),
+                strukt.location,
+            ));
+        } else {
+            self.insert_struct(strukt);
+        }
+        errors
+    }
+
+    #[trace_call(always)]
+    fn add_function(&mut self, function: &nodes::FunctionNode) -> Vec<TypeError> {
+        let name = function.name.clone();
+        let location = function.location;
+        let return_type = &function.return_type.typ;
+        let return_loc = function.return_type.location;
+        let (parameters, mut errors) = check_parameters!(self, function);
+        let func = Function {
+            location,
+            return_type: TypeLoc::new(return_loc, return_type.clone()),
+            parameters,
+            has_this: false,
+            is_unsafe: function.is_unsafe,
+            is_vararg: false, // REVIEW: Do we want to allow vararg functions?
+        };
+        if self.externs.contains_key(&name) {
+            let external = &self.externs[&name];
+            errors.push(TypeError::ExternFunction(
+                location,
+                name.clone(),
+                external.location,
+            ));
+        }
+        if self.functions.contains_key(&name) {
+            let f = &self.functions[&name];
+            errors.push(TypeError::Redeclaration(
+                "Function",
+                location,
+                name.clone(),
+                f.location,
+            ));
+        } else {
+            self.functions.insert(name.clone(), func);
+        }
+        errors
+    }
+}
+
 #[derive(Debug)]
 pub struct TypeChecker<'flags> {
-    known_externs: HashMap<String, Function>,
-    known_structs: HashMap<String, Struct>,
-    known_functions: HashMap<String, Function>,
+    module_tree: Option<Module>,
+    module_stack: Vec<String>,
     known_variables: VecDeque<HashMap<String, Variable>>,
-    #[cfg(not(feature = "llvm"))]
+    unsafe_depth: usize,
+    #[cfg(feature = "old_codegen")]
     current_stack_size: usize,
     errors: Vec<TypeError>,
     flags: &'flags Flags,
@@ -574,143 +978,49 @@ impl<'flags> TypeChecker<'flags> {
     #[trace_call(extra)]
     pub fn new(flags: &'flags Flags) -> Self {
         Self {
-            known_externs: HashMap::new(),
-            known_structs: HashMap::new(),
-            known_functions: HashMap::new(),
+            module_tree: None,
+            module_stack: Vec::new(),
             known_variables: VecDeque::new(),
-            #[cfg(not(feature = "llvm"))]
+            unsafe_depth: 0,
+            #[cfg(feature = "old_codegen")]
             current_stack_size: 0,
             errors: Vec::new(),
             flags,
         }
     }
 
-    #[trace_call(extra)]
-    fn add_function(&mut self, function: &nodes::FunctionNode) {
-        let name = &function.name;
-        let location = &function.location;
-        if let Some(external) = self.known_externs.get(name) {
-            self.report_error(TypeError::ExternFunction(
-                *location,
-                name.clone(),
-                external.location,
-            ));
-        }
-        match self.known_functions.get(name) {
-            Some(f) => self.report_error(TypeError::Redeclaration(
-                "Function",
-                *location,
-                name.clone(),
-                f.location,
-            )),
-            None => {
-                let return_type = &function.return_type.typ;
-                let return_loc = &function.return_type.location;
-                let (parameters, errors) = check_parameters!(self, function);
-                let func = Function {
-                    location: *location,
-                    return_type: TypeLoc::new(*return_loc, return_type.clone()),
-                    parameters,
-                    has_this: false,
-                };
-                self.known_functions.insert(name.clone(), func);
-                for error in errors {
-                    self.report_error(error);
-                }
-            }
-        }
-    }
-
-    #[trace_call(extra)]
-    fn add_extern(&mut self, extern_node: &nodes::ExternNode) {
-        let name = &extern_node.name;
-        let location = &extern_node.location;
-        match self.known_externs.get(name) {
-            Some(f) => self.report_error(TypeError::Redeclaration(
-                "Extern",
-                *location,
-                name.clone(),
-                f.location,
-            )),
-            None => {
-                let return_type = &extern_node.return_type.typ;
-                let return_loc = &extern_node.return_type.location;
-                let (parameters, errors) = check_parameters!(self, extern_node);
-                let func = Function {
-                    location: *location,
-                    return_type: TypeLoc::new(*return_loc, return_type.clone()),
-                    parameters,
-                    has_this: false,
-                };
-                self.known_externs.insert(name.clone(), func);
-                for error in errors {
-                    self.report_error(error);
-                }
-            }
-        }
-    }
-
-    #[trace_call(extra)]
-    fn add_method_to_struct(&mut self, method: &nodes::MethodNode, strukt: &mut Struct) {
-        let name = &method.name;
-        let location = &method.location;
-        if strukt.known_methods.get(name).is_some() {
-            self.report_error(TypeError::Redeclaration(
-                "Method",
-                *location,
-                name.clone(),
-                strukt.location,
-            ));
-        } else {
-            let return_type = &method.return_type.typ;
-            let return_loc = &method.return_type.location;
-            let (parameters, errors) = check_parameters!(self, method);
-            let method = Function {
-                location: *location,
-                return_type: TypeLoc::new(*return_loc, return_type.clone()),
-                has_this: parameters.iter().find(|p| p.name == "this").is_some(),
-                parameters,
-            };
-            strukt.known_methods.insert(name.clone(), method);
-            for error in errors {
-                self.report_error(error);
-            }
-        }
+    #[trace_call(always)]
+    fn get_full_name(&self, struct_name: &str) -> String {
+        let module_name = self.module_stack.join(".");
+        format!("{}.{}", module_name, struct_name)
     }
 
     #[trace_call(always)]
-    fn fill_lookup(&mut self, ast: &nodes::FileNode) {
-        for extern_node in &ast.externs {
-            self.add_extern(extern_node);
+    fn fill_lookup(&mut self, project: &nodes::ModuleNode) -> Module {
+        let mut module = Module::new(project.name.clone());
+        for sub_module in &project.modules {
+            let m = self.fill_lookup(sub_module);
+            module.add_module(m);
         }
-        for s in &ast.structs {
-            match self.known_structs.get(&s.name) {
-                Some(strukt) => {
-                    let err = TypeError::Redeclaration(
-                        "Struct",
-                        s.location,
-                        s.name.clone(),
-                        strukt.location,
-                    );
-                    self.report_error(err);
-                },
-                None => {
-                    let mut strukt = Struct::new(s.name.clone(), s.location);
-                    for field in &s.fields {
-                        if let Err(error) = strukt.add_field(field) {
-                            self.report_error(error);
-                        }
-                    }
-                    for method in &s.methods {
-                        self.add_method_to_struct(method, &mut strukt);
-                    }
-                    self.known_structs.insert(s.name.clone(), strukt);
-                }
+        for extern_node in &project.externs {
+            let extern_errors = module.add_extern(extern_node);
+            for error in extern_errors {
+                self.report_error(error);
             }
         }
-        for function in &ast.functions {
-            self.add_function(function);
+        for strukt in &project.structs {
+            let struct_errors = module.add_struct(strukt);
+            for error in struct_errors {
+                self.report_error(error);
+            }
         }
+        for func in &project.functions {
+            let func_errors = module.add_function(func);
+            for error in func_errors {
+                self.report_error(error);
+            }
+        }
+        module
     }
 
     #[trace_call(always)]
@@ -722,12 +1032,14 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(extra)]
-    fn add_scope(&mut self) {
+    fn add_scope(&mut self, is_unsafe: bool) {
+        self.unsafe_depth += if is_unsafe { 1 } else { 0 };
         self.known_variables.push_back(HashMap::new());
     }
 
     #[trace_call(extra)]
-    fn remove_scope(&mut self) {
+    fn remove_scope(&mut self, is_unsafe: bool) {
+        self.unsafe_depth -= if is_unsafe { 1 } else { 0 };
         self.known_variables.pop_back();
     }
 
@@ -753,39 +1065,89 @@ impl<'flags> TypeChecker<'flags> {
         None
     }
 
+    #[trace_call(extra)]
+    fn get_module(&self, name: &str) -> Option<&Module> {
+        self.module_tree.as_ref().unwrap().get_sub_module(name)
+    }
+
+    #[trace_call(extra)]
+    fn get_current_module(&self) -> &Module {
+        let mut module = self.module_tree.as_ref().unwrap();
+        for name in &self.module_stack {
+            module = module.get_sub_module(name).unwrap();
+        }
+        module
+    }
+
     #[trace_call(always)]
-    fn find_recursive_structs(&mut self) {
-        if self.known_structs.is_empty() {
+    fn gather_struct_info(
+        &mut self,
+        module: &nodes::ModuleNode,
+        root_module: bool
+        // FIXME: This return value is a bit of a mess
+    ) -> BTreeMap<String, (Location, BTreeMap<String, (Location, String)>)> {
+        if !root_module {
+            self.module_stack.push(module.name.clone());
+        }
+        let mut struct_info = BTreeMap::new();
+        for modu in &module.modules {
+            let info = self.gather_struct_info(modu, false);
+            struct_info.extend(info);
+        }
+        let module = self.get_current_module();
+        for strukt in &module.structs {
+            let real_name = self.get_full_name(&strukt.name);
+            let mut field_types = BTreeMap::new();
+            for (name, typ) in &strukt.fields {
+                let type_name = match &typ.t {
+                    typ @ Type::Module(_, _) => typ.get_unfolded_module_name(),
+                    Type::Struct(strukt_name) => self.get_full_name(strukt_name),
+                    typ => typ.to_string(),
+                };
+                field_types.insert(name.clone(), (typ.l.clone(), type_name));
+            }
+            struct_info.insert(real_name, (strukt.location.clone(), field_types));
+        }
+        if !root_module {
+            self.module_stack.pop();
+        }
+        struct_info
+    }
+
+    #[trace_call(always)]
+    fn find_recursive_structs(&mut self, current_module: &nodes::ModuleNode) {
+        let all_structs = self.gather_struct_info(current_module, true);
+        if all_structs.is_empty() {
             return;
+        }
+        if self.flags.debug {
+            println!("[DEBUG] All Structs: {:#?}", all_structs);
         }
         let mut errors = Vec::new();
         let mut queue = VecDeque::new();
         let mut visited = Vec::new();
 
-        let first = self.known_structs.iter().next().unwrap();
+        let first = all_structs.iter().next().unwrap();
         queue.push_back((first.0.clone(), first.1));
 
         while let Some((name, strukt)) = queue.pop_front() {
             if visited.contains(&name) {
                 errors.push(TypeError::RecursiveStruct(
-                    strukt.location,
-                    strukt.name.clone(),
+                    strukt.0,
+                    name.clone(),
                     visited.iter().map(|s| {
-                        let strukt = self.known_structs.get(s).unwrap();
-                        (strukt.location, strukt.name.clone())
+                        let strukt = all_structs.get(s).unwrap();
+                        (strukt.0, s.clone())
                     }).collect(),
                 ));
                 continue;
             }
             visited.push(name.clone());
-            for (_, field) in &strukt.fields {
-                if field.t.is_struct() {
-                    let field_name = field.t.get_struct_name();
-                    if let Some(field_strukt) = self.known_structs.get(&field_name) {
-                        queue.push_back((field_name, field_strukt));
-                    } else {
-                        // Unknown struct, handled elsewhere
-                    }
+            for (_, field) in &strukt.1 {
+                if let Some(field_strukt) = all_structs.get(&field.1) {
+                    queue.push_back((field.1.clone(), field_strukt));
+                } else {
+                    // Unknown struct, handled elsewhere
                 }
             }
         }
@@ -795,27 +1157,76 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    pub fn type_check_file(&mut self, file: &mut nodes::FileNode) -> Result<(), String> {
-        self.fill_lookup(file);
-        self.find_recursive_structs();
-        for e in &mut file.externs {
-            self.type_check_extern(e);
+    pub fn type_check_project(&mut self, project: &mut nodes::ModuleNode) -> Result<(), String> {
+        macro_rules! perform_step {
+            ($step:expr) => {
+                {
+                    debug_assert!(self.module_stack.is_empty());
+                    let res = $step;
+                    debug_assert!(self.module_stack.is_empty());
+                    if self.errors.len() > 0 {
+                        let mut error_string = String::new();
+                        for error in &self.errors {
+                            error_string.push_str(&format!("{}\n", error));
+                        }
+                        return Err(error_string);
+                    }
+                    res
+                }
+            }
         }
-        for s in &mut file.structs {
+        let root_module = perform_step!(self.fill_lookup(project));
+        self.module_tree = Some(root_module);
+        perform_step!(self.find_recursive_structs(project));
+        Ok(perform_step!(self.type_check_module(project, true)))
+    }
+
+    #[trace_call(always)]
+    fn type_check_module(&mut self, module: &mut nodes::ModuleNode, root_module: bool) {
+        if !root_module {
+            self.module_stack.push(module.name.clone());
+            let mut import_errors = Vec::new();
+            let mut allowed_imports = Vec::new();
+            // TODO: Check for double imports, i.e. if a module is imported twice
+            //       Should be a warning
+            for import in &module.imports {
+                let trace = import.trace.clone();
+                let mut module = self.module_tree.as_ref().unwrap();
+                let mut error = false;
+                for (name, location) in &trace {
+                    match module.get_sub_module(name) {
+                        None => {
+                            error = true;
+                            import_errors.push(TypeError::UnknownModule(location.clone(), name.clone()));
+                            break;
+                        }
+                        Some(m) => module = m,
+                    }
+                }
+                if !error {
+                    allowed_imports.push(trace);
+                }
+            }
+            for error in import_errors {
+                self.report_error(error);
+            }
+        } else {
+            debug_assert!(module.imports.is_empty());
+        }
+        for module in &mut module.modules {
+            self.type_check_module(module, false);
+        }
+        for extern_node in &mut module.externs {
+            self.type_check_extern(extern_node);
+        }
+        for s in &mut module.structs {
             self.type_check_struct(s);
         }
-        for f in &mut file.functions {
+        for f in &mut module.functions {
             self.type_check_function(f);
         }
-        if self.errors.is_empty() {
-            Ok(())
-        } else {
-            let mut error_string = String::from(self.errors[0].to_string());
-            for error in &self.errors[1..] {
-                error_string.push_str("\n");
-                error_string.push_str(&error.to_string());
-            }
-            Err(error_string)
+        if !root_module {
+            self.module_stack.pop();
         }
     }
 
@@ -825,7 +1236,7 @@ impl<'flags> TypeChecker<'flags> {
             self.type_check_parameter(p);
         }
         self.type_check_type_node(&mut extern_node.return_type);
-        #[cfg(not(feature = "llvm"))]
+        #[cfg(feature = "old_codegen")]
         {
             self.current_stack_size = 0;
         }
@@ -847,21 +1258,19 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_method(
-        &mut self,
-        method: &mut nodes::MethodNode,
-        struct_name: &str,
-    ) {
+    fn type_check_method(&mut self, method: &mut nodes::MethodNode, struct_name: &str) {
+        let current_module = self.get_current_module();
         debug_assert!(self.known_variables.is_empty());
-        debug_assert!(self.known_structs.contains_key(struct_name));
-        #[cfg(not(feature = "llvm"))]
+        debug_assert!(current_module.has_struct(&struct_name));
+        #[cfg(feature = "old_codegen")]
         debug_assert!(self.current_stack_size == 0);
 
         for param in &mut method.parameters {
             self.type_check_parameter(param);
         }
 
-        let Some(struct_info) = self.known_structs.get(struct_name) else {
+        let current_module = self.get_current_module();
+        let Some(struct_info) = current_module.get_struct(&struct_name) else {
             // Lookup of structs and methods is done before ever evaluating any methods,
             // so known_structs should always contain the struct
             unreachable!()
@@ -877,7 +1286,7 @@ impl<'flags> TypeChecker<'flags> {
         self.known_variables.push_back(parameters);
 
         self.type_check_block(&mut method.block);
-        #[cfg(not(feature = "llvm"))]
+        #[cfg(feature = "old_codegen")]
         {
             method.stack_size = self.current_stack_size;
             self.current_stack_size = 0;
@@ -888,23 +1297,24 @@ impl<'flags> TypeChecker<'flags> {
 
     #[trace_call(always)]
     fn type_check_function(&mut self, function: &mut nodes::FunctionNode) {
+        let current_module = self.get_current_module();
         debug_assert!(self.known_variables.is_empty());
-        debug_assert!(self.known_functions.contains_key(&function.name));
-        #[cfg(not(feature = "llvm"))]
+        debug_assert!(current_module.has_function(&function.name));
+        #[cfg(feature = "old_codegen")]
         debug_assert!(self.current_stack_size == 0);
 
         for param in &mut function.parameters {
             self.type_check_parameter(param);
         }
 
-        let Some(function_info) = self.known_functions.get(&function.name) else { unreachable!() };
+        let function_info = self.get_current_module().get_function(&function.name).unwrap();
 
         // Parameters are now known variables
         let parameters = function_info.get_parameters_as_hashmap();
         self.known_variables.push_back(parameters);
 
         self.type_check_block(&mut function.block);
-        #[cfg(not(feature = "llvm"))]
+        #[cfg(feature = "old_codegen")]
         {
             function.stack_size = self.current_stack_size;
             self.current_stack_size = 0;
@@ -917,7 +1327,7 @@ impl<'flags> TypeChecker<'flags> {
     fn type_check_parameter(&mut self, parameter: &mut nodes::ParameterNode) {
         self.type_check_type_node(&parameter.typ);
         debug_assert!(parameter.typ.typ != Type::Unknown);
-        #[cfg(not(feature = "llvm"))]
+        #[cfg(feature = "old_codegen")]
         {
             let var_size = parameter.typ.typ.size();
             self.current_stack_size += var_size;
@@ -926,11 +1336,11 @@ impl<'flags> TypeChecker<'flags> {
 
     #[trace_call(always)]
     fn type_check_block(&mut self, block: &mut nodes::BlockNode) {
-        self.add_scope();
+        self.add_scope(block.is_unsafe);
         for statement in &mut block.statements {
             self.type_check_statement(statement);
         }
-        self.remove_scope();
+        self.remove_scope(block.is_unsafe);
     }
 
     #[trace_call(always)]
@@ -946,7 +1356,7 @@ impl<'flags> TypeChecker<'flags> {
                 self.type_check_stmt_continue(continue_node)
             }
             nodes::Statement::Expression(expression_node) => {
-                self.type_check_expression(expression_node, false);
+                let _ = self.type_check_expression(expression_node, false);
             }
         }
     }
@@ -961,10 +1371,10 @@ impl<'flags> TypeChecker<'flags> {
                     let_node.name.clone(),
                     var.location,
                 ));
-            },
+            }
             None => {
                 self.type_check_type_node(&let_node.typ);
-                #[cfg(not(feature = "llvm"))]
+                #[cfg(feature = "old_codegen")]
                 {
                     let var_size = let_node.typ.typ.size();
                     self.current_stack_size += var_size;
@@ -978,23 +1388,30 @@ impl<'flags> TypeChecker<'flags> {
                 };
                 let expected_type = &let_node.typ.typ;
 
-                let expr_type = self.type_check_expression(&mut let_node.expression, false);
-                let current_scope = self.get_current_scope();
-                if current_scope.insert(let_node.name.clone(), var).is_some() {
-                    internal_panic!(format!("Variable `{}` already exists in current scope", let_node.name));
-                }
-                if expr_type == Type::None {
-                    // Error in expression, we can't continue
-                    return;
+                // Need to use `matches` because `==` treats `Type::Any` as a wildcard for reference types
+                if matches!(*expected_type, Type::Any) && self.unsafe_depth == 0 {
+                    // Unsafe to use `Any` outside of unsafe block
+                    self.report_error(TypeError::UnsafeAny(let_node.location));
                 }
 
+                // REVIEW: If type is mutable reference, we cant pass false
+                let expr_type = self.type_check_expression(&mut let_node.expression, false);
+
+                let current_scope = self.get_current_scope();
+                if current_scope.insert(let_node.name.clone(), var).is_some() {
+                    internal_panic!(
+                        "Variable `{}` already exists in current scope",
+                        let_node.name
+                    );
+                }
+                let Ok(expr_type) = expr_type else {
+                    // Error on expression, no need to continue
+                    return;
+                };
                 if expr_type == Type::Unknown {
                     // Couldnt determine type of expression
                     // We need to `infer` it
-                    self.type_check_expression_with_type(
-                        &mut let_node.expression,
-                        expected_type,
-                    );
+                    let _res = self.type_check_expression_with_type(&mut let_node.expression, expected_type);
                 } else {
                     if expr_type != *expected_type {
                         self.report_error(TypeError::TypeMismatch(
@@ -1010,12 +1427,14 @@ impl<'flags> TypeChecker<'flags> {
 
     #[trace_call(always)]
     fn type_check_stmt_if(&mut self, if_node: &mut nodes::IfNode) {
-        let cond = self.type_check_expression(&mut if_node.condition, false);
-        if cond != Type::None && cond != Type::Bool {
+        let Ok(cond_type) = self.type_check_expression(&mut if_node.condition, false) else {
+            return;
+        };
+        if cond_type != Type::Bool {
             self.report_error(TypeError::TypeMismatch(
                 if_node.condition.get_loc(),
                 Type::Bool,
-                cond,
+                cond_type,
             ));
         }
         self.type_check_block(&mut if_node.if_body);
@@ -1025,22 +1444,21 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_stmt_return(
-        &mut self,
-        return_node: &mut nodes::ReturnNode,
-    ) {
+    fn type_check_stmt_return(&mut self, return_node: &mut nodes::ReturnNode) {
         debug_assert!(return_node.typ == Type::Unknown);
 
         let (expected_return_type, location) = if return_node.strukt.is_none() {
             // We're returning from a normal function
-            let Some(function) = self.known_functions.get(&return_node.function) else { unreachable!() };
+            let Some(function) = self.get_current_module().get_function(&return_node.function) else {
+                unreachable!()
+            };
             let expected_return_type = function.return_type.t.clone();
             let location = function.location;
             debug_assert!(expected_return_type != Type::Unknown);
             (expected_return_type, location)
         } else {
             // We're returning from a method or feature
-            let Some(strukt) = self.known_structs.get(return_node.strukt.as_ref().unwrap()) else { unreachable!() };
+            let Some(strukt) = self.get_current_module().get_struct(return_node.strukt.as_ref().unwrap()) else { unreachable!() };
             let (mut location, mut expected_return_type) = (Location::anonymous(), Type::Unknown);
             if let Some(method) = strukt.known_methods.get(&return_node.function) {
                 expected_return_type = method.return_type.t.clone();
@@ -1061,15 +1479,13 @@ impl<'flags> TypeChecker<'flags> {
                     expected_return_type.clone(),
                 ));
             }
-            let expr_type = self.type_check_expression(ret_expr, false);
-            if expr_type == Type::None {
-                // Error in expression, we can't continue
+            let Ok(expr_type) = self.type_check_expression(ret_expr, false) else {
                 return;
-            }
+            };
             let t = if expr_type == Type::Unknown {
                 // we have something like `return 5;`, where we couldn't determine the type
                 // so we now have to `infer` the type, and set it accordingly
-                self.type_check_expression_with_type(
+                let _res = self.type_check_expression_with_type(
                     ret_expr,
                     &expected_return_type,
                 );
@@ -1106,43 +1522,49 @@ impl<'flags> TypeChecker<'flags> {
 
     #[trace_call(always)]
     fn type_check_stmt_while(&mut self, while_node: &mut nodes::WhileNode) {
-        let cond = self.type_check_expression(&mut while_node.condition, false);
-        if cond != Type::None && cond != Type::Bool {
+        let Ok(cond_type) = self.type_check_expression(&mut while_node.condition, false) else {
+            return;
+        };
+        if cond_type != Type::Bool {
             self.report_error(TypeError::TypeMismatch(
                 while_node.condition.get_loc(),
                 Type::Bool,
-                cond,
+                cond_type,
             ));
         }
         self.type_check_block(&mut while_node.body);
     }
 
     #[trace_call(always)]
-    fn type_check_stmt_break(&mut self, _break_node: &mut nodes::BreakNode) {
-    }
+    fn type_check_stmt_break(&mut self, _break_node: &mut nodes::BreakNode) {}
 
     #[trace_call(always)]
-    fn type_check_stmt_continue(
-        &mut self,
-        _continue_node: &mut nodes::ContinueNode,
-    ) {
-    }
+    fn type_check_stmt_continue(&mut self, _continue_node: &mut nodes::ContinueNode) {}
 
     #[trace_call(always)]
     fn type_check_expression(
         &mut self,
         expression: &mut nodes::Expression,
         needs_mutability: bool,
-    ) -> Type {
+    ) -> Result<Type, ()> {
         match expression {
-            nodes::Expression::Name(name_node) => self.type_check_expr_name(name_node, needs_mutability),
+            nodes::Expression::Name(name_node) => {
+                self.type_check_expr_name(name_node, needs_mutability)
+            }
             nodes::Expression::Unary(unary_expr) => self.type_check_expr_unary(unary_expr),
-            nodes::Expression::Binary(binary_expr) => self.type_check_expr_binary(binary_expr, needs_mutability),
+            nodes::Expression::Binary(binary_expr) => {
+                self.type_check_expr_binary(binary_expr, needs_mutability)
+            }
             nodes::Expression::FunctionCall(func_call) => {
                 self.type_check_expr_function_call(func_call, needs_mutability)
             }
             nodes::Expression::Literal(literal) => self.type_check_expr_literal(literal),
-            nodes::Expression::StructLiteral(literal) => self.type_check_expr_struct_literal(literal, needs_mutability),
+            nodes::Expression::StructLiteral(literal) => {
+                self.type_check_expr_struct_literal(literal, needs_mutability)
+            }
+            nodes::Expression::ArrayLiteral(literal) => {
+                self.type_check_expr_array_literal(literal, needs_mutability)
+            }
         }
     }
 
@@ -1151,13 +1573,17 @@ impl<'flags> TypeChecker<'flags> {
         &mut self,
         expression: &mut nodes::Expression,
         typ: &Type,
-    ) -> Type {
+    ) -> Result<Type, ()> {
         match expression {
             nodes::Expression::Binary(binary_node) => {
-                self.type_check_expression_with_type(&mut binary_node.lhs, typ);
-                self.type_check_expression_with_type(&mut binary_node.rhs, typ);
-                binary_node.typ = typ.clone();
-                typ.clone()
+                if binary_node.operation == Operation::IndexedAccess {
+                    self.type_check_expr_indexed_access_with_type(expression, typ)
+                } else {
+                    self.type_check_expression_with_type(&mut binary_node.lhs, typ)?;
+                    self.type_check_expression_with_type(&mut binary_node.rhs, typ)?;
+                    binary_node.typ = typ.clone();
+                    Ok(typ.clone())
+                }
             }
             nodes::Expression::Literal(lit_node) => {
                 if lit_node.typ != Type::Unknown && lit_node.typ != *typ {
@@ -1166,103 +1592,205 @@ impl<'flags> TypeChecker<'flags> {
                         typ.clone(),
                         lit_node.typ.clone(),
                     ));
+                    Err(())
                 } else if let Type::Ref(_, _) = typ {
                     self.report_error(TypeError::UnexpectedLiteral(
                         "reference",
                         lit_node.location,
                         lit_node.value.clone(),
                     ));
+                    Err(())
+                } else if let Type::Array(_, _) = typ {
+                    self.report_error(TypeError::UnexpectedLiteral(
+                        "array",
+                        lit_node.location,
+                        lit_node.value.clone(),
+                    ));
+                    Err(())
                 } else if let Type::Struct(_) = typ {
                     self.report_error(TypeError::UnexpectedLiteral(
                         "struct instance",
                         lit_node.location,
                         lit_node.value.clone(),
                     ));
+                    Err(())
                 } else if *typ == Type::Bool {
                     self.report_error(TypeError::UnexpectedLiteral(
                         "boolean",
                         lit_node.location,
                         lit_node.value.clone(),
                     ));
+                    Err(())
                 } else {
                     lit_node.typ = typ.clone();
+                    Ok(typ.clone())
                 }
-                typ.clone()
             }
             nodes::Expression::Name(name_node) => {
                 if name_node.typ == Type::Unknown {
                     name_node.typ = typ.clone();
+                    Ok(typ.clone())
                 } else if name_node.typ != *typ {
                     self.report_error(TypeError::TypeMismatch(
                         name_node.location,
                         typ.clone(),
                         name_node.typ.clone(),
                     ));
+                    Err(())
+                } else {
+                    Ok(typ.clone())
                 }
-                typ.clone()
             }
             nodes::Expression::Unary(unary_node) => {
                 match unary_node.operation {
                     Operation::Negate => {
-                        let expr_type = self.type_check_expression_with_type(
-                            &mut unary_node.expression,
-                            typ,
-                        );
+                        let expr_type =
+                            self.type_check_expression_with_type(&mut unary_node.expression, typ)?;
                         if expr_type != Type::I32 && expr_type != Type::I64 {
                             self.report_error(TypeError::NegationTypeMismatch(
                                 unary_node.location,
                                 typ.clone(),
                             ));
+                            Err(())
                         } else if expr_type == Type::Unknown {
                             unary_node.typ = typ.clone();
+                            Ok(typ.clone())
                         } else if expr_type != *typ {
                             self.report_error(TypeError::TypeMismatch(
                                 unary_node.location,
                                 typ.clone(),
                                 expr_type.clone(),
                             ));
+                            Err(())
                         } else {
                             unary_node.typ = typ.clone();
+                            Ok(typ.clone())
                         }
                     }
                     Operation::Reference => {
                         // FIXME: Do we need to consider mutability here?
                         let Type::Ref(typ, _mutable) = typ else {
-                            internal_panic!("UnaryNode with Operation::Reference has wrong type!");
+                            internal_panic!("UnaryNode with Operation::Reference has wrong type! Got: {:?}", typ);
                         };
                         let typ = typ.as_ref();
-                        let expr_type = self.type_check_expression_with_type(
-                            &mut unary_node.expression,
-                            typ,
-                        );
+                        let expr_type =
+                            self.type_check_expression_with_type(&mut unary_node.expression, typ)?;
                         if expr_type == Type::Unknown {
                             unary_node.typ = typ.clone();
+                            Ok(typ.clone())
                         } else if expr_type != *typ {
                             self.report_error(TypeError::TypeMismatch(
                                 unary_node.location,
                                 typ.clone(),
                                 expr_type.clone(),
                             ));
+                            Err(())
                         } else {
                             unary_node.typ = typ.clone();
+                            Ok(typ.clone())
                         }
                     }
-                    _ => internal_panic!(format!(
+                    _ => internal_panic!(
                         "type_check_expression_with_type for {:?} is not implemented yet!",
                         unary_node.operation
-                    )),
+                    ),
                 }
-                typ.clone()
             }
-            e => internal_panic!(format!(
+            nodes::Expression::ArrayLiteral(array_literal) => {
+                let Type::Array(ref elem_type, size) = *typ else {
+                    internal_panic!("ArrayLiteral with wrong type! Got: {:?}", typ);
+                };
+                let Type::Array(_, literal_size) = array_literal.typ else {
+                    internal_panic!("ArrayLiteral with wrong type! Got: {:?}", array_literal.typ);
+                };
+                if size != literal_size {
+                    self.report_error(TypeError::ArraySizeMismatch(
+                        array_literal.location,
+                        size,
+                        literal_size,
+                    ));
+                    return Err(());
+                }
+                for expr in &mut array_literal.elements {
+                    let Ok(expr_type) = self.type_check_expression_with_type(expr, elem_type) else {
+                        continue;
+                    };
+                    if expr_type != **elem_type {
+                        self.report_error(TypeError::TypeMismatch(
+                            expr.get_loc(),
+                            *elem_type.clone(),
+                            expr_type.clone(),
+                        ));
+                    }
+                }
+                array_literal.typ = Type::Array(Box::new(*elem_type.clone()), literal_size);
+                Ok(array_literal.typ.clone())
+            }
+            e => internal_panic!(
                 "type_check_expression_with_type for {:?} is not implemented yet!",
                 e
-            )),
+            ),
         }
     }
 
     #[trace_call(always)]
-    fn type_check_expr_name(&mut self, name_node: &mut nodes::NameNode, needs_mutability: bool) -> Type {
+    fn type_check_expr_indexed_access_with_type(
+        &mut self,
+        indexed_access: &mut nodes::Expression,
+        typ: &Type,
+    ) -> Result<Type, ()> {
+        match indexed_access {
+            nodes::Expression::Binary(indexed_access) => {
+                // LHS can be anything (Expression::Binary, etc), so we call this function again
+                // All we care about is that the type of LHS is an array, that's why we pass `usize::MAX`
+                let _lhs = self.type_check_expr_indexed_access_with_type(&mut indexed_access.lhs, &Type::Array(Box::new(typ.clone()), usize::MAX))?;
+                // RHS is an index, so it should be usize
+                let _rhs = self.type_check_expression_with_type(&mut indexed_access.rhs, &Type::Usize)?;
+                Ok(typ.clone())
+            }
+            nodes::Expression::Name(name_node) => {
+                let Type::Array(ref wanted_typ, wanted_size) = typ else {
+                    internal_panic!("IndexedAccess with wrong type! Got: {:?}", typ);
+                };
+                debug_assert!(*wanted_size == usize::MAX);
+                let Some(var) = self.get_variable(&name_node.name) else {
+                    self.report_error(TypeError::UndeclaredVariable(
+                        name_node.location,
+                        name_node.name.clone(),
+                    ));
+                    return Err(());
+                };
+                let Type::Array(ref elem_type, _) = var.typ else {
+                    self.report_error(TypeError::InvalidIndexedAccess(
+                        name_node.location,
+                        var.typ.clone(),
+                    ));
+                    return Err(());
+                };
+                if elem_type != wanted_typ {
+                    self.report_error(TypeError::TypeMismatch(
+                        name_node.location,
+                        typ.clone(),
+                        *elem_type.clone(),
+                    ));
+                    return Err(());
+                }
+                name_node.typ = var.typ.clone();
+                Ok(var.typ)
+            }
+            e => internal_panic!(
+                "type_check_expr_indexed_access_with_type for {:?} is not implemented yet!",
+                e
+            ),
+        }
+    }
+
+    #[trace_call(always)]
+    fn type_check_expr_name(
+        &mut self,
+        name_node: &mut nodes::NameNode,
+        needs_mutability: bool,
+    ) -> Result<Type, ()> {
         let var = self.get_variable(&name_node.name);
         match var {
             Some(var) => {
@@ -1272,88 +1800,85 @@ impl<'flags> TypeChecker<'flags> {
                         name_node.name.clone(),
                         var.location,
                     ));
+                    return Err(());
                 }
                 name_node.typ = var.typ.clone();
-                var.typ
+                Ok(var.typ)
             }
             None => {
                 self.report_error(TypeError::UndeclaredVariable(
                     name_node.location,
                     name_node.name.clone(),
                 ));
-                Type::None
-            },
+                Err(())
+            }
         }
     }
 
     #[trace_call(always)]
-    fn type_check_expr_unary(
-        &mut self,
-        unary_expr: &mut nodes::UnaryNode
-    ) -> Type {
+    fn type_check_expr_unary(&mut self, unary_expr: &mut nodes::UnaryNode) -> Result<Type, ()> {
         match unary_expr.operation {
             Operation::Negate => {
-                check_or_abort!(expr_type, self.type_check_expression(&mut unary_expr.expression, false));
+                let expr_type = self.type_check_expression(&mut unary_expr.expression, false)?;
                 if expr_type == Type::Unknown {
-                    return Type::Unknown;
-                } else if expr_type != Type::I32 && expr_type != Type::I64 {
+                    return Ok(Type::Unknown);
+                }
+                if expr_type != Type::I32 && expr_type != Type::I64 {
                     self.report_error(TypeError::NegationTypeMismatch(
                         unary_expr.location,
                         expr_type.clone(),
                     ));
                 }
                 unary_expr.typ = expr_type.clone();
-                expr_type
+                Ok(expr_type)
             }
             Operation::Reference => {
                 let Type::Ref(_, is_mutable) = unary_expr.typ else {
                     internal_panic!("UnaryNode with Operation::Reference has wrong type!");
                 };
-                check_or_abort!(expr_type, self.type_check_expression(&mut unary_expr.expression, is_mutable));
+                let expr_type = self.type_check_expression(&mut unary_expr.expression, false)?;
                 if expr_type == Type::Unknown {
-                    return Type::Unknown;
+                    return Ok(Type::Unknown);
                 }
                 if matches!(expr_type, Type::Ref(..)) {
                     // TODO: Should we allow references to references?
-                    self.report_error(TypeError::NestedReferenceNotAllowedYet(
-                        unary_expr.location,
-                    ));
+                    self.report_error(TypeError::NestedReferenceNotAllowedYet(unary_expr.location));
                 }
                 unary_expr.typ = Type::Ref(Box::new(expr_type.clone()), is_mutable);
-                unary_expr.typ.clone()
+                Ok(unary_expr.typ.clone())
             }
             Operation::Dereference => {
                 // FIXME: Do we need to consider mutability here?
                 //        That should depend on the context, right?
                 //        Just passing `false` is probably wrong
-                check_or_abort!(expr_type, self.type_check_expression(&mut unary_expr.expression, false));
+                let expr_type = self.type_check_expression(&mut unary_expr.expression, false)?;
                 match expr_type {
                     Type::Ref(t, _) => {
                         unary_expr.typ = *t.clone();
-                        *t.clone()
+                        Ok(*t.clone())
                     }
                     Type::Unknown => {
                         // Only case where a type is unknown is integer literals
                         // We can't dereference an integer literal
                         self.report_error(TypeError::DereferenceIntegerLiteral(
-                            unary_expr.location
+                            unary_expr.location,
                         ));
-                        Type::None
-                    },
+                        Err(())
+                    }
                     _ => {
                         self.report_error(TypeError::DereferenceTypeMismatch(
                             unary_expr.location,
                             expr_type.clone(),
                         ));
-                        Type::None
+                        Err(())
                     }
                 }
             }
             _ => {
-                internal_panic!(format!(
+                internal_panic!(
                     "type_check_expr_unary for {:?} is not implemented yet!",
                     unary_expr.operation
-                ))
+                )
             }
         }
     }
@@ -1363,27 +1888,50 @@ impl<'flags> TypeChecker<'flags> {
         &mut self,
         binary_expr: &mut nodes::BinaryNode,
         needs_mutability: bool,
-    ) -> Type {
+    ) -> Result<Type, ()> {
         match binary_expr.operation {
-            Operation::Dot => self.type_check_expr_dot(binary_expr, needs_mutability),
+            Operation::MemberAccess => self.type_check_expr_member_access(binary_expr, needs_mutability),
+            Operation::IndexedAccess => self.type_check_expr_indexed_access(binary_expr, needs_mutability),
+            Operation::ModuleAccess => self.type_check_expr_module_access(binary_expr, &mut vec![], needs_mutability),
             Operation::Assign => self.type_check_expr_assign(binary_expr),
             _ if binary_expr.is_comparison() => self.type_check_expr_binary_comparison(binary_expr),
             _ if binary_expr.is_arithmetic() => self.type_check_expr_binary_arithmetic(binary_expr),
             _ if binary_expr.is_bitwise() => self.type_check_expr_binary_bitwise(binary_expr),
+            _ if binary_expr.is_logical() => self.type_check_expr_binary_logical(binary_expr),
             o => todo!("type_check_expr_binary for {:?} is not implemented yet!", o),
         }
     }
 
     #[trace_call(always)]
-    fn type_check_expr_binary_bitwise(
-        &mut self,
-        binary_expr: &mut nodes::BinaryNode
-    ) -> Type {
-        check_or_abort!(
-            lhs_type, self.type_check_expression(&mut binary_expr.lhs, false),
-            rhs_type, self.type_check_expression(&mut binary_expr.rhs, false)
-        );
+    fn type_check_expr_binary_logical(&mut self, binary_expr: &mut nodes::BinaryNode) -> Result<Type, ()> {
+        assert!(binary_expr.is_logical());
+        let lhs_type = self.type_check_expression(&mut binary_expr.lhs, false)?;
+        let rhs_type = self.type_check_expression(&mut binary_expr.rhs, false)?;
+        if lhs_type != Type::Bool {
+            self.report_error(TypeError::TypeMismatch(
+                binary_expr.lhs.get_loc(),
+                Type::Bool,
+                lhs_type.clone(),
+            ));
+            return Err(());
+        }
+        if rhs_type != Type::Bool {
+            self.report_error(TypeError::TypeMismatch(
+                binary_expr.rhs.get_loc(),
+                Type::Bool,
+                rhs_type.clone(),
+            ));
+            return Err(());
+        }
+        binary_expr.typ = Type::Bool;
+        Ok(Type::Bool)
+    }
+
+    #[trace_call(always)]
+    fn type_check_expr_binary_bitwise(&mut self, binary_expr: &mut nodes::BinaryNode) -> Result<Type, ()> {
         assert!(binary_expr.is_bitwise());
+        let lhs_type = self.type_check_expression(&mut binary_expr.lhs, false)?;
+        let rhs_type = self.type_check_expression(&mut binary_expr.rhs, false)?;
         match (&lhs_type, &rhs_type) {
             (Type::Struct(..), _) | (_, Type::Struct(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
@@ -1395,7 +1943,7 @@ impl<'flags> TypeChecker<'flags> {
                     binary_expr.rhs.get_loc(),
                     rhs_type.clone(),
                 ));
-                Type::None
+                return Err(());
             }
             (Type::Ref(..), _) | (_, Type::Ref(..)) => {
                 self.report_error(TypeError::BinaryTypeMismatch(
@@ -1406,7 +1954,7 @@ impl<'flags> TypeChecker<'flags> {
                     binary_expr.rhs.get_loc(),
                     rhs_type.clone(),
                 ));
-                Type::None
+                return Err(());
             }
             (Type::Bool, _) | (_, Type::Bool) => {
                 self.report_error(TypeError::BinaryTypeMismatch(
@@ -1417,18 +1965,18 @@ impl<'flags> TypeChecker<'flags> {
                     binary_expr.rhs.get_loc(),
                     rhs_type.clone(),
                 ));
-                Type::None
+                return Err(());
             }
-            (Type::Unknown, Type::Unknown) => Type::Unknown,
+            (Type::Unknown, Type::Unknown) => Ok(Type::Unknown),
             (Type::Unknown, other) => {
-                let typ = self.type_check_expression_with_type(&mut binary_expr.lhs, other);
+                let typ = self.type_check_expression_with_type(&mut binary_expr.lhs, other)?;
                 binary_expr.typ = typ.clone();
-                typ
+                Ok(typ)
             }
             (other, Type::Unknown) => {
-                let typ = self.type_check_expression_with_type(&mut binary_expr.rhs, other);
+                let typ = self.type_check_expression_with_type(&mut binary_expr.rhs, other)?;
                 binary_expr.typ = typ.clone();
-                typ
+                Ok(typ)
             }
             (lhs, rhs) => {
                 if lhs != rhs {
@@ -1442,23 +1990,21 @@ impl<'flags> TypeChecker<'flags> {
                     ));
                 }
                 binary_expr.typ = lhs.clone();
-                lhs.clone()
+                Ok(lhs.clone())
             }
         }
     }
 
     #[trace_call(always)]
-    fn type_check_expr_binary_arithmetic(
-        &mut self,
-        binary_expr: &mut nodes::BinaryNode,
-    ) -> Type {
-        check_or_abort!(
-            lhs_type, self.type_check_expression(&mut binary_expr.lhs, false),
-            rhs_type, self.type_check_expression(&mut binary_expr.rhs, false)
-        );
+    fn type_check_expr_binary_arithmetic(&mut self, binary_expr: &mut nodes::BinaryNode) -> Result<Type, ()> {
         assert!(binary_expr.is_arithmetic());
+        let lhs_type = self.type_check_expression(&mut binary_expr.lhs, false)?;
+        let rhs_type = self.type_check_expression(&mut binary_expr.rhs, false)?;
         match (&lhs_type, &rhs_type) {
-            (Type::Struct(..), _) | (_, Type::Struct(..)) => {
+            (Type::Struct(..), _) | (_, Type::Struct(..))
+            | (Type::Array(..), _) | (_, Type::Array(..))
+            | (Type::Ref(..), _) | (_, Type::Ref(..))
+            | (Type::Bool, _) | (_, Type::Bool) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 self.report_error(TypeError::BinaryTypeMismatch(
                     binary_expr.location,
@@ -1468,42 +2014,20 @@ impl<'flags> TypeChecker<'flags> {
                     binary_expr.rhs.get_loc(),
                     rhs_type.clone(),
                 ));
-                Type::None
+                Err(())
             }
-            (Type::Ref(..), _) | (_, Type::Ref(..)) => {
-                self.report_error(TypeError::BinaryTypeMismatch(
-                    binary_expr.location,
-                    binary_expr.operation.clone(),
-                    binary_expr.lhs.get_loc(),
-                    lhs_type.clone(),
-                    binary_expr.rhs.get_loc(),
-                    rhs_type.clone(),
-                ));
-                Type::None
-            }
-            (Type::Bool, _) | (_, Type::Bool) => {
-                self.report_error(TypeError::BinaryTypeMismatch(
-                    binary_expr.location,
-                    binary_expr.operation.clone(),
-                    binary_expr.lhs.get_loc(),
-                    lhs_type.clone(),
-                    binary_expr.rhs.get_loc(),
-                    rhs_type.clone(),
-                ));
-                Type::None
-            }
-            (Type::Unknown, Type::Unknown) => Type::Unknown,
+            (Type::Unknown, Type::Unknown) => Ok(Type::Unknown),
             (Type::Unknown, other) => {
-                self.type_check_expression_with_type(&mut binary_expr.lhs, other);
+                self.type_check_expression_with_type(&mut binary_expr.lhs, other)?;
                 let typ = other;
                 binary_expr.typ = typ.clone();
-                typ.clone()
+                Ok(typ.clone())
             }
             (other, Type::Unknown) => {
-                self.type_check_expression_with_type(&mut binary_expr.rhs, other);
+                self.type_check_expression_with_type(&mut binary_expr.rhs, other)?;
                 let typ = other.clone();
                 binary_expr.typ = typ.clone();
-                typ
+                Ok(typ)
             }
             (lhs, rhs) => {
                 if lhs != rhs {
@@ -1518,23 +2042,19 @@ impl<'flags> TypeChecker<'flags> {
                 }
                 let typ = lhs.clone();
                 binary_expr.typ = typ.clone();
-                typ
+                Ok(typ)
             }
         }
     }
 
     #[trace_call(always)]
-    fn type_check_expr_binary_comparison(
-        &mut self,
-        binary_expr: &mut nodes::BinaryNode,
-    ) -> Type {
-        check_or_abort!(
-            lhs_type, self.type_check_expression(&mut binary_expr.lhs, false),
-            rhs_type, self.type_check_expression(&mut binary_expr.rhs, false)
-        );
+    fn type_check_expr_binary_comparison(&mut self, binary_expr: &mut nodes::BinaryNode) -> Result<Type, ()> {
         assert!(binary_expr.is_comparison());
+        let lhs_type = self.type_check_expression(&mut binary_expr.lhs, false)?;
+        let rhs_type = self.type_check_expression(&mut binary_expr.rhs, false)?;
         match (&lhs_type, &rhs_type) {
-            (Type::Struct(..), _) | (_, Type::Struct(..)) => {
+            (Type::Struct(..), _) | (_, Type::Struct(..))
+            | (Type::Array(..), _) | (_, Type::Array(..)) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 self.report_error(TypeError::BinaryTypeMismatch(
                     binary_expr.location,
@@ -1544,28 +2064,28 @@ impl<'flags> TypeChecker<'flags> {
                     binary_expr.rhs.get_loc(),
                     rhs_type.clone(),
                 ));
-                Type::Bool
+                Err(())
             }
             (Type::Unknown, Type::Unknown) => {
                 // FIXME: Better error handling, is it always a good idea to infer i64?
                 let force_type = Type::I64;
-                self.type_check_expression_with_type(&mut binary_expr.lhs, &force_type);
-                self.type_check_expression_with_type(&mut binary_expr.rhs, &force_type);
+                self.type_check_expression_with_type(&mut binary_expr.lhs, &force_type)?;
+                self.type_check_expression_with_type(&mut binary_expr.rhs, &force_type)?;
                 let typ = Type::Bool;
                 binary_expr.typ = typ.clone();
-                typ
-            },
+                Ok(typ)
+            }
             (Type::Unknown, other) => {
-                self.type_check_expression_with_type(&mut binary_expr.lhs, other);
+                self.type_check_expression_with_type(&mut binary_expr.lhs, other)?;
                 let typ = Type::Bool;
                 binary_expr.typ = typ.clone();
-                typ
+                Ok(typ)
             }
             (other, Type::Unknown) => {
-                self.type_check_expression_with_type(&mut binary_expr.rhs, other);
+                self.type_check_expression_with_type(&mut binary_expr.rhs, other)?;
                 let typ = Type::Bool;
                 binary_expr.typ = typ.clone();
-                typ
+                Ok(typ)
             }
             (lhs, rhs) => {
                 if lhs != rhs {
@@ -1580,94 +2100,112 @@ impl<'flags> TypeChecker<'flags> {
                 }
                 let typ = Type::Bool;
                 binary_expr.typ = typ.clone();
-                typ
+                Ok(typ)
             }
         }
     }
 
     #[trace_call(always)]
-    fn type_check_expr_assign(
-        &mut self,
-        assign_expr: &mut nodes::BinaryNode,
-    ) -> Type {
+    fn type_check_expr_assign(&mut self, assign_expr: &mut nodes::BinaryNode) -> Result<Type, ()> {
         if !assign_expr.lhs.is_lvalue() {
-            self.report_error(TypeError::InvalidLValue(
-                assign_expr.lhs.get_loc(),
-            ));
-            return Type::None;
+            self.report_error(TypeError::InvalidLValue(assign_expr.lhs.get_loc()));
+            return Err(());
         }
-
-        check_or_abort!(lhs_type, self.type_check_expression(&mut assign_expr.lhs, true));
-        check_or_abort!(rhs_type, self.type_check_expression(&mut assign_expr.rhs, false));
+        let lhs_type = self.type_check_expression(&mut assign_expr.lhs, true)?;
+        let rhs_type = self.type_check_expression(&mut assign_expr.rhs, false)?;
 
         if lhs_type == Type::Unknown {
             // Note: This is an error, how can we assign to something we don't know the type of?
             todo!()
-        } else if rhs_type == Type::Unknown {
+        }
+        if rhs_type == Type::Unknown {
             // Infer type of rhs from lhs
-            let typ = self.type_check_expression_with_type(&mut assign_expr.rhs, &lhs_type);
+            let typ = self.type_check_expression_with_type(&mut assign_expr.rhs, &lhs_type)?;
             assign_expr.typ = typ.clone();
-            typ
+            Ok(typ)
         } else if lhs_type != rhs_type {
             self.report_error(TypeError::TypeMismatch(
                 assign_expr.location,
                 lhs_type.clone(),
                 rhs_type.clone(),
             ));
-            Type::None
+            Err(())
         } else {
             assign_expr.typ = rhs_type.clone();
-            rhs_type
+            Ok(rhs_type)
         }
-
-
     }
 
     #[trace_call(always)]
-    fn type_check_expr_dot(
+    fn type_check_expr_member_access(
         &mut self,
         binary_expr: &mut nodes::BinaryNode,
         needs_mutability: bool,
-    ) -> Type {
-        check_or_abort!(lhs_type, self.type_check_expression(&mut binary_expr.lhs, needs_mutability));
-        let (is_ref, strukt) = match lhs_type {
+    ) -> Result<Type, ()> {
+        let lhs_type = self.type_check_expression(&mut binary_expr.lhs, needs_mutability)?;
+        let (is_ref, strukt) = match &lhs_type {
             Type::Ref(orig_type, _) => {
-                let Type::Struct(struct_name) = *orig_type else {
-                    self.report_error(TypeError::DotOnNonStruct(
-                        binary_expr.lhs.get_loc(),
-                    ));
-                    return Type::None;
+                let Type::Struct(ref struct_name) = **orig_type else {
+                    self.report_error(TypeError::DotOnNonStruct(binary_expr.lhs.get_loc()));
+                    return Err(());
                 };
-                let Some(strukt) = self.known_structs.get(&struct_name) else {
-                    self.report_error(TypeError::DotOnNonStruct(
+                let Some(strukt) = self.get_current_module().get_struct(struct_name) else {
+                    self.report_error(TypeError::UnknownType(
                         binary_expr.lhs.get_loc(),
+                        (**orig_type).clone()
                     ));
-                    return Type::None;
+                    return Err(());
                 };
                 (true, strukt)
             }
-            Type::Struct(struct_name) => {
-                let Some(strukt) = self.known_structs.get(&struct_name) else {
-                    self.report_error(TypeError::DotOnNonStruct(
+            ref struct_type @ Type::Struct(ref struct_name) => {
+                let Some(strukt) = self.get_current_module().get_struct(struct_name) else {
+                    self.report_error(TypeError::UnknownType(
                         binary_expr.lhs.get_loc(),
+                        (*struct_type).clone()
                     ));
-                    return Type::None;
+                    return Err(());
+                };
+                (false, strukt)
+            }
+            mut orig_type @ Type::Module(_, _) => {
+                let mut module_stack = vec![];
+                while let Type::Module(module, sub_type) = orig_type {
+                    module_stack.push(module.clone());
+                    orig_type = sub_type.as_ref();
+                }
+                let Type::Struct(ref struct_name) = orig_type else {
+                    self.report_error(TypeError::DotOnNonStruct(binary_expr.lhs.get_loc()));
+                    return Err(());
+                };
+                let Ok(module) = self.rebuild_module_from_stack(&binary_expr.lhs.get_loc(), &module_stack) else {
+                    self.report_error(TypeError::UnknownModule(
+                        binary_expr.lhs.get_loc(),
+                        module_stack.join("::")
+                    ));
+                    return Err(());
+                };
+                let Some(strukt) = module.get_struct(struct_name) else {
+                    self.report_error(TypeError::UnknownType(
+                        binary_expr.lhs.get_loc(),
+                        (*orig_type).clone()
+                    ));
+                    return Err(());
                 };
                 (false, strukt)
             }
             _ => {
-                self.report_error(TypeError::DotOnNonStruct(
-                    binary_expr.lhs.get_loc(),
-                ));
-                return Type::None;
+                self.report_error(TypeError::DotOnNonStruct(binary_expr.lhs.get_loc()));
+                return Err(());
             }
         };
+        let strukt = strukt.clone();
         match &mut (*binary_expr.rhs) {
             nodes::Expression::Name(name_node) => {
                 if let Some(field) = strukt.get_field(&name_node.name) {
                     binary_expr.typ = field.t.clone();
                     name_node.typ = field.t.clone();
-                    field.t.clone()
+                    Ok(field.t.clone())
                 } else {
                     self.report_error(TypeError::UnknownField(
                         name_node.location,
@@ -1675,61 +2213,316 @@ impl<'flags> TypeChecker<'flags> {
                         strukt.location,
                         strukt.name.clone(),
                     ));
-                    Type::None
+                    Err(())
                 }
             }
             nodes::Expression::FunctionCall(call_node) => {
                 // FIXME: Error Log shows wrong location
-                if let Some(method) = strukt.get_method(&call_node.function_name) {
-                    let result = if method.has_this {
-                        // FIXME: This is not a good solution, but it works for now
-                        if let expected_this @ Type::Ref(_, _) = &method.parameters[0].typ {
-                            let this_arg = if is_ref {
-                                *binary_expr.lhs.clone()
-                            } else {
-                                let new_node = nodes::UnaryNode {
-                                    location: binary_expr.lhs.get_loc(),
-                                    operation: Operation::Reference,
-                                    expression: binary_expr.lhs.clone(),
-                                    typ: expected_this.clone(),
-                                };
-                                nodes::Expression::Unary(new_node)
-                            };
-                            call_node.arguments.insert(0, this_arg);
-                        } else {
-                            call_node.arguments.insert(0, *binary_expr.lhs.clone());
-                        }
-                        let result = check_function!(self, call_node, method, "Method");
-                        call_node.arguments.remove(0);
-                        result
-                    } else {
-                        check_function!(self, call_node, method, "Method")
-                    };
-                    binary_expr.typ = result.clone();
-                    result
-                } else {
+                let Some(method) = strukt.get_method(&call_node.function_name) else {
                     self.report_error(TypeError::UnknownMethod(
                         call_node.location,
                         call_node.function_name.clone(),
                         strukt.location,
                         strukt.name.clone(),
                     ));
-                    Type::None
-                }
+                    return Err(());
+                };
+                let result = if method.has_this {
+                    // FIXME: This is not a good solution, but it works for now
+                    if let expected_this @ Type::Ref(_, expected_mutable) = &method.parameters[0].typ {
+                        if *expected_mutable && !needs_mutability {
+                            self.type_check_expression(&mut binary_expr.lhs, true)?;
+                        }
+                        let this_arg = if is_ref {
+                            *binary_expr.lhs.clone()
+                        } else {
+                            let new_node = nodes::UnaryNode {
+                                location: binary_expr.lhs.get_loc(),
+                                operation: Operation::Reference,
+                                expression: binary_expr.lhs.clone(),
+                                typ: expected_this.clone(),
+                            };
+                            nodes::Expression::Unary(new_node)
+                        };
+                        if self.flags.debug {
+                            println!("[DEBUG] MemberAcces::FunctionCall with this_arg: {:?}", this_arg);
+                        }
+                        call_node.arguments.insert(0, this_arg);
+                    } else {
+                        call_node.arguments.insert(0, *binary_expr.lhs.clone());
+                    }
+                    let result = check_function!(self, call_node, method, "Method")?;
+                    call_node.arguments.remove(0);
+                    result
+                } else {
+                    check_function!(self, call_node, method, "Method")?
+                };
+                binary_expr.typ = result.clone();
+                Ok(result)
             }
             _ => {
                 // Not a field, not a method, this is an error
                 todo!()
-            },
+            }
         }
     }
 
     #[trace_call(always)]
-    fn type_check_expr_literal(
+    fn type_check_expr_module_access(
         &mut self,
-        literal: &mut nodes::LiteralNode,
-    ) -> Type {
-        literal.typ.clone()
+        binary_expr: &mut nodes::BinaryNode,
+        module_stack: &mut Vec<String>,
+        needs_mutability: bool
+    ) -> Result<Type, ()> {
+        // FIXME: Module Access sucks right now
+        // If we define `Foo` in `bar`, and a function `bar::bez` returns `Foo`,
+        // If we call `bar::bez` in `main`, it returns `Foo`, which can't be assigned to `bar::Foo`
+        // (`Foo` is not the same as `bar::Foo`, and not defined in `main`)
+        //
+        // Also, if we define `Foo` in `bar` and a function returns `&Foo`,
+        // If we call that function in `main`, it returns `bar::&Foo`
+        // Which is also an error in our current implementation
+
+        /*
+        Example Layout
+                    mod(5)
+                    /  \
+                mod(3)  bez(4)
+                /   |
+            foo(1) bar(2)
+
+                    mod(6)
+                    /  \
+                bel(7)  buz(8)
+        In the code below the corresponding numbers are where we are in the match statement
+         */
+
+        match &mut *binary_expr.lhs {
+            // 5 - LHS is 3 and a BinaryNode
+            nodes::Expression::Binary(ref mut binary_node) => {
+                if binary_node.operation != Operation::ModuleAccess {
+                    // This is an error
+                    todo!()
+                }
+                let lhs_type = self.type_check_expr_module_access(binary_node, module_stack, needs_mutability)?;
+                let mut lhs_type_copy = lhs_type.clone();
+                let prev_module_stack = module_stack.clone();
+                while let Type::Module(sub_module, sub_type) = lhs_type_copy {
+                    module_stack.push(sub_module.clone());
+                    lhs_type_copy = *sub_type;
+                }
+                let rhs_type = match &mut *binary_expr.rhs {
+                    // 5 - RHS is 4 and a FunctionCall
+                    nodes::Expression::FunctionCall(call_node) => {
+                        self.type_check_expr_module_function_call(
+                            call_node,
+                            module_stack,
+                            needs_mutability
+                        )?
+                    }
+                    nodes::Expression::StructLiteral(struct_node) => {
+                        self.type_check_expr_module_struct_literal(
+                            struct_node,
+                            module_stack,
+                            needs_mutability
+                        )?
+                    }
+                    e => {
+                        // You can only call functions or create structs from modules for now
+                        todo!("{:?}", e)
+                    }
+                };
+                let mut rebuilt_type = rhs_type.clone();
+                for module in module_stack.iter().rev() {
+                    rebuilt_type = Type::Module(module.clone(), Box::new(rebuilt_type));
+                }
+                *module_stack = prev_module_stack;
+                binary_expr.typ = rebuilt_type.clone();
+                if rhs_type.is_primitive() {
+                    return Ok(rhs_type);
+                }
+                Ok(rebuilt_type)
+            }
+            // 3 - LHS is 1 and a NameNode
+            // 6 - LHS is 7 and a NameNode
+            nodes::Expression::Name(name_node) => {
+                let Some(module) = self.get_module(&name_node.name) else {
+                    self.report_error(TypeError::UnknownModule(
+                        name_node.location.clone(),
+                        name_node.name.clone()
+                    ));
+                    return Err(());
+                };
+                module_stack.push(name_node.name.clone());
+                let rhs_type = match &mut *binary_expr.rhs {
+                    // 3 - RHS is 2 and a NameNode
+                    nodes::Expression::Name(name_node) => {
+                        if module.get_sub_module(&name_node.name).is_none() {
+                            self.report_error(TypeError::UnknownModule(
+                                name_node.location.clone(),
+                                name_node.name.clone()
+                            ));
+                            return Err(());
+                        };
+                        name_node.typ = Type::Module(name_node.name.clone(), Box::new(Type::Unknown));
+                        name_node.typ.clone()
+                    }
+                    // 6 - RHS is 8 and a FunctionCall
+                    nodes::Expression::FunctionCall(call_node) => {
+                        self.type_check_expr_module_function_call(
+                            call_node,
+                            module_stack,
+                            needs_mutability
+                        )?
+                    }
+                    nodes::Expression::StructLiteral(struct_node) => {
+                        self.type_check_expr_module_struct_literal(
+                            struct_node,
+                            module_stack,
+                            needs_mutability
+                        )?
+                    }
+                    e => {
+                        todo!("{:?}", e)
+                    }
+                };
+                module_stack.pop();
+                let typ = Type::Module(name_node.name.clone(), Box::new(rhs_type.clone()));
+                binary_expr.typ = typ.clone();
+                if rhs_type.is_primitive() {
+                    return Ok(rhs_type);
+                }
+                Ok(typ)
+            }
+            _ => {
+                self.report_error(TypeError::InvalidModuleAccess(
+                    binary_expr.lhs.get_loc()
+                ));
+                Err(())
+            }
+        }
+    }
+
+    #[trace_call(always)]
+    fn type_check_expr_indexed_access(
+        &mut self,
+        binary_expr: &mut nodes::BinaryNode,
+        needs_mutability: bool,
+    ) -> Result<Type, ()> {
+        assert!(binary_expr.is_indexed_access());
+        let lhs_type = self.type_check_expression(&mut binary_expr.lhs, needs_mutability)?;
+        let rhs_type = self.type_check_expression(&mut binary_expr.rhs, false)?;
+        match (lhs_type, rhs_type) {
+            (Type::Unknown, Type::Unknown) => Ok(Type::Unknown),
+            (Type::Array(typ, _), Type::Unknown) => {
+                let rhs_typ = self.type_check_expression_with_type(&mut binary_expr.rhs, &Type::Usize)?;
+                debug_assert!(rhs_typ == Type::Usize);
+                binary_expr.typ = *typ.clone();
+                Ok(*typ)
+            }
+            (Type::Array(typ, _), Type::Usize) => {
+                binary_expr.typ = *typ.clone();
+                Ok(*typ)
+            }
+            (Type::Array(_, _), rhs_type) => {
+                self.report_error(TypeError::ArrayIndexRequiresUsize(
+                    binary_expr.location,
+                    rhs_type.clone(),
+                ));
+                Err(())
+            }
+            (l, r) => internal_panic!("type_check_expr_indexed_access for {:?} is not implemented yet!", (l, r)),
+        }
+    }
+
+    #[trace_call(always)]
+    fn rebuild_module_from_stack(&self, location: &Location, module_stack: &Vec<String>) -> Result<&Module, TypeError> {
+        let Some(mut module) = self.get_module(&module_stack[0]) else {
+            return Err(TypeError::UnknownModule(
+                location.clone(),
+                module_stack[0].clone()
+            ));
+        };
+        for module_name in module_stack.iter().skip(1) {
+            if let Some(sub_module) = module.get_sub_module(module_name) {
+                module = sub_module;
+            } else {
+                return Err(TypeError::UnknownModule(
+                    location.clone(),
+                    module_name.clone()
+                ));
+            }
+        }
+        Ok(module)
+    }
+
+    #[trace_call(always)]
+    fn type_check_expr_module_function_call(
+        &mut self,
+        call_node: &mut nodes::CallNode,
+        module_stack: &mut Vec<String>,
+        needs_mutability: bool
+    ) -> Result<Type, ()> {
+        if needs_mutability {
+            self.report_error(TypeError::CantMutateTemporary(call_node.location.clone()));
+        }
+        let Ok(module) = self.rebuild_module_from_stack(&call_node.location, module_stack) else {
+            self.report_error(TypeError::UnknownModule(
+                call_node.location.clone(),
+                module_stack.join("::")
+            ));
+            return Err(());
+        };
+        if let Some(external) = module.get_extern(&call_node.function_name) {
+            let result = check_function!(self, call_node, external, "External Function")?;
+            call_node.typ = result.clone();
+            Ok(result)
+        } else if let Some(function) = module.get_function(&call_node.function_name) {
+            let result = check_function!(self, call_node, function, "Function")?;
+            call_node.typ = result.clone();
+            Ok(result)
+        } else {
+            self.report_error(TypeError::UndeclaredFunction(
+                call_node.location.clone(),
+                call_node.function_name.clone()
+            ));
+            Err(())
+        }
+    }
+
+    #[trace_call(always)]
+    fn type_check_expr_module_struct_literal(
+        &mut self,
+        struct_node: &mut nodes::StructLiteralNode,
+        module_stack: &mut Vec<String>,
+        needs_mutability: bool
+    ) -> Result<Type, ()> {
+        if needs_mutability {
+            self.report_error(TypeError::CantMutateTemporary(struct_node.location.clone()));
+        }
+        let Ok(module) = self.rebuild_module_from_stack(&struct_node.location, module_stack) else {
+            self.report_error(TypeError::UnknownModule(
+                struct_node.location.clone(),
+                module_stack.join("::")
+            ));
+            return Err(());
+        };
+        let Some(strukt) = module.get_struct(&struct_node.struct_name) else {
+            self.report_error(TypeError::UnknownType(
+                struct_node.location.clone(),
+                Type::Module(module.name.clone(), Box::new(Type::Struct(struct_node.struct_name.clone()))),
+            ));
+            return Err(());
+        };
+        let strukt = strukt.clone();
+        self.type_check_struct_literal_fields(struct_node, &strukt)?;
+        struct_node.typ = Type::Struct(struct_node.struct_name.clone());
+        Ok(struct_node.typ.clone())
+    }
+
+    #[trace_call(always)]
+    fn type_check_expr_literal(&mut self, literal: &mut nodes::LiteralNode) -> Result<Type, ()> {
+        Ok(literal.typ.clone())
     }
 
     #[trace_call(always)]
@@ -1737,22 +2530,32 @@ impl<'flags> TypeChecker<'flags> {
         &mut self,
         literal: &mut nodes::StructLiteralNode,
         needs_mutability: bool,
-    ) -> Type {
+    ) -> Result<Type, ()> {
         if needs_mutability {
-            self.report_error(TypeError::CantMutateTemporary(
-                literal.location,
-            ));
+            self.report_error(TypeError::CantMutateTemporary(literal.location));
         }
-        if !self.known_structs.contains_key(&literal.struct_name) {
+        let current_module = self.get_current_module();
+        let Some(strukt) = current_module.get_struct(&literal.struct_name) else {
             self.report_error(TypeError::UnknownType(
                 literal.location,
                 Type::Struct(literal.struct_name.clone()),
             ));
-            return Type::None;
-        }
+            return Err(());
+        };
+        let strukt = strukt.clone();
+        self.type_check_struct_literal_fields(literal, &strukt)?;
+        literal.typ = Type::Struct(literal.struct_name.clone());
+        Ok(literal.typ.clone())
+    }
+
+    #[trace_call(always)]
+    fn type_check_struct_literal_fields(
+        &mut self,
+        literal: &mut nodes::StructLiteralNode,
+        strukt: &Struct,
+    ) -> Result<(), ()> {
         let mut fields = HashMap::new();
         for field in &mut literal.fields {
-            let strukt = self.known_structs.get(&literal.struct_name).unwrap();
             let Some(field_info) = strukt.get_field(&field.0) else {
                 self.report_error(TypeError::UnknownField(
                     field.1.get_loc(),
@@ -1763,21 +2566,14 @@ impl<'flags> TypeChecker<'flags> {
                 continue;
             };
             let field_type = field_info.t.clone();
-            let expr_type = self.type_check_expression(&mut field.1, false);
-            if expr_type == Type::None {
-                // Error in expression, we can't continue
+            let Ok(expr_type) = self.type_check_expression(&mut field.1, false) else {
                 continue;
-            } if expr_type == Type::Unknown {
+            };
+            if expr_type == Type::Unknown {
                 // We couldn't determine the type of the expression
                 // We need to `infer` it
-                let inferred_result = self.type_check_expression_with_type(
-                    &mut field.1,
-                    &field_type,
-                );
-                if inferred_result == Type::None {
-                    // Proceed with next field
-                    continue;
-                }
+                let t1 = self.type_check_expression_with_type(&mut field.1, &field_type)?;
+                debug_assert!(t1 == field_type);
             } else if expr_type != field_type {
                 self.report_error(TypeError::TypeMismatch(
                     field.1.get_loc(),
@@ -1787,7 +2583,6 @@ impl<'flags> TypeChecker<'flags> {
             }
             fields.insert(field.0.clone(), field_type);
         }
-        let strukt = self.known_structs.get(&literal.struct_name).unwrap();
         let mut errors = vec![];
         for field in strukt.fields.iter() {
             if !fields.contains_key(field.0) {
@@ -1802,8 +2597,78 @@ impl<'flags> TypeChecker<'flags> {
         for error in errors {
             self.report_error(error);
         }
-        literal.typ = Type::Struct(literal.struct_name.clone());
-        literal.typ.clone()
+        Ok(())
+    }
+
+    #[trace_call(always)]
+    fn type_check_expr_array_literal(
+        &mut self,
+        literal: &mut nodes::ArrayLiteralNode,
+        needs_mutability: bool,
+    ) -> Result<Type, ()> {
+        if needs_mutability {
+            self.report_error(TypeError::CantMutateTemporary(
+                literal.location
+            ));
+        }
+        if let Some(size) = literal.size {
+            // [elem; N] syntax
+            debug_assert!(literal.elements.len() == 1);
+            let Ok(elem_type) = self.type_check_expression(&mut literal.elements[0], false) else {
+                return Ok(Type::Unknown);
+            };
+            if elem_type == Type::Unknown {
+                return Ok(Type::Unknown);
+            }
+            literal.typ = Type::Array(Box::new(elem_type), size);
+            Ok(literal.typ.clone())
+        } else {
+            // [elem, elem, elem] syntax
+            let mut typ = Type::Unknown;
+            let mut unknown_indices = vec![];
+            let mut inferred_location = None;
+            for (index, elem) in literal.elements.iter_mut().enumerate() {
+                let Ok(elem_type) = self.type_check_expression(elem, false) else {
+                    continue;
+                };
+                if elem_type == Type::Unknown {
+                    unknown_indices.push(index);
+                } else if typ == Type::Unknown {
+                    typ = elem_type;
+                    inferred_location = Some(elem.get_loc());
+                } else if elem_type != typ {
+                    debug_assert!(inferred_location.is_some());
+                    self.report_error(TypeError::ArrayLiteralElementTypeMismatch(
+                        elem.get_loc(),
+                        elem_type,
+                        inferred_location.unwrap(),
+                        typ.clone(),
+                    ));
+                }
+            }
+            if typ == Type::Unknown {
+                debug_assert!(unknown_indices.len() == literal.elements.len());
+                // We're done here, all elements are unknown
+                return Ok(Type::Unknown)
+            }
+            if unknown_indices.len() > 0 {
+                debug_assert!(inferred_location.is_some());
+            }
+            for index in unknown_indices {
+                let elem = &mut literal.elements[index];
+                let elem_type = self.type_check_expression_with_type(elem, &typ)?;
+                if elem_type != typ {
+                    self.report_error(TypeError::ArrayLiteralElementTypeMismatch(
+                        elem.get_loc(),
+                        elem_type,
+                        inferred_location.unwrap(),
+                        typ.clone(),
+                    ));
+                }
+            }
+            literal.typ = Type::Array(Box::new(typ), literal.elements.len());
+            Ok(literal.typ.clone())
+        }
     }
 
     #[trace_call(always)]
@@ -1811,14 +2676,15 @@ impl<'flags> TypeChecker<'flags> {
         &mut self,
         func_call: &mut nodes::CallNode,
         needs_mutability: bool,
-    ) -> Type {
+    ) -> Result<Type, ()> {
         if needs_mutability {
             self.report_error(TypeError::CantMutateTemporary(
                 func_call.location,
             ));
         }
+        let current_module = self.get_current_module();
         let function = if func_call.is_extern {
-            let Some(external) = self.known_externs.get(&func_call.function_name) else {
+            let Some(external) = current_module.get_extern(&func_call.function_name) else {
                 // is_builtin -> Parser says this is an external function
                 // known_externs -> Filled by type_check_file, so it should contain all externs
                 // This is unreachable, or the parser is broken
@@ -1826,23 +2692,31 @@ impl<'flags> TypeChecker<'flags> {
             };
             external
         } else {
-            let Some(function) = self.known_functions.get(&func_call.function_name) else {
+            let Some(function) = current_module.get_function(&func_call.function_name) else {
                 self.report_error(TypeError::UndeclaredFunction(
                     func_call.location,
                     func_call.function_name.clone(),
                 ));
-                return Type::None;
+                return Err(());
             };
             function
         };
+        if function.is_unsafe && self.unsafe_depth == 0 {
+            self.report_error(TypeError::UnsafeCallInSafeContext(
+                func_call.location,
+                func_call.function_name.clone(),
+                function.location,
+            ));
+            return Err(());
+        }
         let return_type = function.return_type.clone();
         if let Type::Struct(struct_name) = &return_type.t {
-            if !self.known_structs.contains_key(struct_name) {
+            if !current_module.has_struct(struct_name) {
                 self.report_error(TypeError::UnknownType(
                     return_type.l.clone(),
                     return_type.t.clone(),
                 ));
-                return Type::None;
+                return Err(());
             }
         }
         check_function!(self, func_call, function, "Function")
@@ -1850,104 +2724,59 @@ impl<'flags> TypeChecker<'flags> {
 
     #[trace_call(always)]
     fn type_check_type_node(&mut self, type_node: &nodes::TypeNode) {
-        if let Type::Struct(struct_name) = &type_node.typ {
-            if !self.known_structs.contains_key(struct_name) {
+        let bottom_type = type_node.typ.get_underlying_type();
+        debug_assert!(!matches!(bottom_type, Type::Ref(_, _)));
+        debug_assert!(!matches!(bottom_type, Type::Array(_, _)));
+        debug_assert!(self.module_tree.is_some());
+        if let Type::Struct(struct_name) = &bottom_type {
+            let tree = self.get_current_module();
+            if !tree.has_struct(struct_name) {
                 self.report_error(TypeError::UnknownType(
                     type_node.location,
-                    type_node.typ.clone(),
+                    bottom_type.clone(),
+                ));
+            }
+        } else if let Type::Module(..) = &bottom_type {
+            let valid_type = self.validate_module_type(&bottom_type);
+            if !valid_type {
+                self.report_error(TypeError::UnknownType(
+                    type_node.location,
+                    bottom_type.clone(),
                 ));
             }
         }
     }
+
+    #[trace_call(always)]
+    fn validate_module_type(&self, module_type: &Type) -> bool {
+        // It's up to the caller to ensure that this function is only called with a Type::Module
+        debug_assert!(matches!(module_type, Type::Module(..)));
+        debug_assert!(self.module_tree.is_some());
+        let Type::Module(origin, ty) = module_type else {
+            unreachable!();
+        };
+        let module = self.module_tree.as_ref().unwrap();
+        let sub_module = module.get_sub_module(origin);
+        if sub_module.is_none() {
+            return false;
+        }
+        let mut sub_module = sub_module.unwrap();
+        let mut sub_type = ty.clone();
+        while let Type::Module(origin, ty) = *sub_type {
+            let optional_sub_module = sub_module.get_sub_module(&origin);
+            if optional_sub_module.is_none() {
+                return false;
+            }
+            sub_module = optional_sub_module.unwrap();
+            sub_type = ty;
+        }
+        let Type::Struct(struct_name) = *sub_type else {
+            return false;
+        };
+        if !sub_module.has_struct(&struct_name) {
+            return false;
+        }
+        true
+
+    }
 }
-
-// impl Typecheckable for nodes::ArrayLiteralNode {
-//     #[trace_call(always)]
-//     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String>
-//     where
-//         Self: Sized,
-//     {
-//         if let Type::Arr(expected_type, expected_size) = typ {
-//             let expected_count = expected_size[0];
-//             if expected_count != self.elements.len() {
-//                 return Err(format!(
-//                     "{}: {:?}: Size Mismatch when evaluating Array Literal. Expected {} element(s), found {}.",
-//                     ERR_STR,
-//                     self.location,
-//                     expected_count,
-//                     self.elements.len()
-//                 ));
-//             }
-//             let sub_expected: Vec<_> = expected_size[1..].to_vec();
-//             let sub_type = if sub_expected.is_empty() {
-//                 *expected_type.clone()
-//             } else {
-//                 Type::Arr(expected_type.clone(), sub_expected)
-//             };
-//             for element in &mut self.elements {
-//                 if let Err(e) = element.type_check_with_type(checker, &sub_type) {
-//                     return Err(format!(
-//                         "{}: {:?}: Error when evaluating type of Array Literal:\n{}",
-//                         ERR_STR, self.location, e
-//                     ));
-//                 }
-//             }
-//             self.typ = typ.clone();
-//             Ok(())
-//         } else {
-//             Err(format!(
-//                 "{}: {:?}: Type Mismatch! Expected {}, found Array Literal.",
-//                 ERR_STR, self.location, typ
-//             ))
-//         }
-//     }
-// }
-// impl Typecheckable for nodes::LiteralNode {
-//     #[trace_call(always)]
-//     fn type_check_with_type(&mut self, _checker: &mut TypeChecker, typ: &Type) -> Result<(), String>
-//     where
-//         Self: Sized,
-//     {
-//         if self.typ != Type::Unknown && self.typ != *typ {
-//             return Err(format!(
-//                 "{}: {:?}: Type Mismatch! Expected {}, found {}.",
-//                 ERR_STR, self.location, typ, self.typ
-//             ));
-//         } else if let Type::Arr(_, _) = typ {
-//             Err(format!(
-//                 "{}: {:?} Type Mismatch! Expected Array Literal, found Integer Literal `{}`",
-//                 ERR_STR, self.location, self.value
-//             ))
-//         } else if let Type::Struct(struct_name) = typ {
-//             Err(format!(
-//                 "{}: {:?} Type Mismatch! Expected instance of struct `{}`, found Integer Literal `{}`",
-//                 ERR_STR,
-//                 self.location,
-//                 struct_name,
-//                 self.value
-//             ))
-//         } else {
-//             self.typ = typ.clone();
-//             Ok(())
-//         }
-//     }
-// }
-
-// impl Typecheckable for nodes::NameNode {
-//     #[trace_call(always)]
-//     fn type_check_with_type(&mut self, checker: &mut TypeChecker, typ: &Type) -> Result<(), String>
-//     where
-//         Self: Sized,
-//     {
-//         if self.typ == Type::Unknown {
-//             self.type_check(checker)?;
-//         }
-//         if self.typ != *typ {
-//             return Err(format!(
-//                 "{}: {:?}: Type Mismatch! Expected Type {}, found {}.",
-//                 ERR_STR, self.location, typ, self.typ
-//             ));
-//         }
-//         Ok(())
-//     }
-// }

@@ -1,0 +1,22 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Array size mismatch! Expected size to be `3`, found size to be `2`.
+//! Unexpected Literal! Expected array, found `1`.
+//! Unexpected Literal! Expected array, found `2`.
+//! Unexpected Literal! Expected array, found `3`.
+//! Array size mismatch! Expected size to be `4`, found size to be `3`.
+//! Array size mismatch! Expected size to be `4`, found size to be `2`.
+//! Array size mismatch! Expected size to be `4`, found size to be `5`.
+
+func main() {
+    let a: [[i32; 4]; 3] = [1, 2];
+    let b: [[i32; 4]; 3] = [1, 2, 3];
+    let c: [[i32; 4]; 3] = [
+        [1, 2, 3],
+        [1, 2],
+        [1, 2, 3, 4, 5]
+    ];
+}

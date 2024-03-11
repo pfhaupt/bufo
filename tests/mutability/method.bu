@@ -9,7 +9,7 @@
 struct Foo {
     field: u32;
 
-    func mod_this(mut this) {
+    func mod_this(&mut this) {
         this.field = 10;
     }
 }

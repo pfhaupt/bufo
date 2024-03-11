@@ -1,12 +1,13 @@
 //! THIS IS A TEST PROGRAM
 //! RUNTIME
-//! FAILURE
-//! CODE: 48
+//! SUCCESS
 
 func main() -> i32 {
     mut a: i32 = 11;
     mut c: i32 = 0;
     let b: i32 = a = c = 5 + a;
     // a, b and c are all expected to be 5 + 11 = 16 here
-    return a + b + c;
+    let result: i32 = a + b + c;
+    if (result != 48) return 1;
+    return 0;
 }

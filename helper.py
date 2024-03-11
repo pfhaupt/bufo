@@ -10,7 +10,7 @@ from enum import Enum
 
 COMPILER_PATH = "./target/debug/bufo"
 
-USE_LLVM = True
+USE_OLD_CODEGEN = False
 
 def compare(expected: List[str], actual: List[str]) -> bool:
     for line in expected:
@@ -26,7 +26,7 @@ def compare(expected: List[str], actual: List[str]) -> bool:
 
 def call_cmd(cmd: List, log: bool = True) -> Tuple[str, subprocess.CompletedProcess[bytes]]:
     if log:
-        buf = "[INFO]" + " ".join(cmd) + "\n"
+        buf = "[CMD] " + " ".join(cmd) + "\n"
         return buf, subprocess.run(cmd, capture_output=True)
     return "\n", subprocess.run(cmd, capture_output=True)
 
@@ -36,6 +36,7 @@ class STATE(Enum):
     PANIC = 2
     INVALID = 3
     IGNORED = 4
+    DONT_TEST = 5
 
 @dataclass
 class TestResult:
@@ -50,15 +51,19 @@ def run_test(path: str, exec: bool) -> TestResult:
     //! {RUNTIME|COMPILER}
     //! {FAILURE|SUCCESS}
     //! CODE: <error code> (only if FAILURE)
-    //! ERROR: (only if FAILURE and COMPILER)
-    //! <error message> (only if FAILURE and COMPILER)
-    //! <error message> (only if FAILURE and COMPILER)
+    //! ERROR: (only if FAILURE)
+    //! <error message> (only if FAILURE)
+    //! <error message> (only if FAILURE)
     //! <...>
     <mandatory newline>
     <code>
     """
     with open(path, "r") as f:
         lines = f.readlines()
+        if lines[0].startswith("//! IGNORE"):
+            print_buffer += "Ignoring test: " + path + "\n"
+            print(print_buffer)
+            return TestResult(path, STATE.DONT_TEST)
         if not lines[0].startswith("//! THIS IS A TEST PROGRAM"):
             print_buffer += "Invalid test file: " + path + "\n"
             print_buffer += "First line must be `//! THIS IS A TEST PROGRAM`\n"
@@ -94,10 +99,10 @@ def run_test(path: str, exec: bool) -> TestResult:
         else:
             expected_error_code = 0
         
-        if expected_mode == "FAILURE" and point_of_failure == "COMPILER":
+        if expected_mode == "FAILURE":
             if not lines[4].startswith("//! ERROR:"):
                 print_buffer += "Invalid test file: " + path + "\n"
-                print_buffer += "For failures at compiletime, fifth line must be `//! ERROR:`\n"
+                print_buffer += "For failures, fifth line must be `//! ERROR:`\n"
                 print(print_buffer, file=sys.stderr)
                 return TestResult(path, STATE.INVALID)
             index = 5
@@ -108,9 +113,14 @@ def run_test(path: str, exec: bool) -> TestResult:
         else:
             error_lines = []
 
+        buf, output = call_cmd([COMPILER_PATH, "-i", path, "-vd"])
         if point_of_failure == "RUNTIME":
-            buf, output = call_cmd([COMPILER_PATH, "-i", path])
             print_buffer += buf
+            if output.returncode == 101:
+                print_buffer += "The compiler panicked\n"
+                print_buffer += output.stderr.decode("utf-8")
+                print(print_buffer, file=sys.stderr)
+                return TestResult(path, STATE.PANIC)
             if output.returncode != 0:
                 print_buffer += "Compilation failed\n"
                 print_buffer += output.stderr.decode("utf-8")
@@ -121,11 +131,9 @@ def run_test(path: str, exec: bool) -> TestResult:
             buf, output = call_cmd(["./out/" + filename + ".exe"])
             print_buffer += buf
             # We're not generating assembly in LLVM mode
-            if not USE_LLVM: os.remove("./out/" + filename + ".asm")
-            os.remove("./out/" + filename + ".obj")
+            if USE_OLD_CODEGEN: os.remove("./out/" + filename + ".asm")
             os.remove("./out/" + filename + ".exe")
         else:
-            buf, output = call_cmd([COMPILER_PATH, "-i", path])
             print_buffer += buf
         # stdout = output.stdout.decode("utf-8").split('\n')
         stderr = output.stderr.decode("utf-8").split('\n')
@@ -135,15 +143,14 @@ def run_test(path: str, exec: bool) -> TestResult:
             print(print_buffer, file=sys.stderr)
             return TestResult(path, STATE.PANIC)
         if expected_mode == "FAILURE":
-            if point_of_failure == "COMPILER":
-                if not compare(error_lines, stderr):
-                    print_buffer += "Expected error message not found\n"
-                    print_buffer += "Expected:\n"
-                    print_buffer += "\n".join(error_lines) + "\n"
-                    print_buffer += "Actual:\n"
-                    print_buffer += "\n".join(stderr) + "\n"
-                    print(print_buffer, file=sys.stderr)
-                    return TestResult(path, STATE.FAILURE)
+            if not compare(error_lines, stderr):
+                print_buffer += "Expected error message not found\n"
+                print_buffer += "Expected:\n"
+                print_buffer += "\n".join(error_lines) + "\n"
+                print_buffer += "Actual:\n"
+                print_buffer += "\n".join(stderr) + "\n"
+                print(print_buffer, file=sys.stderr)
+                return TestResult(path, STATE.FAILURE)
             if output.returncode != expected_error_code:
                 print_buffer += "Expected error code " + str(expected_error_code) + ", but got " + str(output.returncode) + "\n"
                 print(print_buffer, file=sys.stderr)
@@ -159,7 +166,7 @@ def run_test(path: str, exec: bool) -> TestResult:
 def recompile_compiler() -> None:
     print("Recompiling compiler...")
     cargo = ["cargo", "build"]
-    command = cargo + ["--features=llvm"] if USE_LLVM else cargo
+    command = cargo + ["--features=old_codegen"] if USE_OLD_CODEGEN else cargo
     buf, cmd = call_cmd(command)
     print(buf)
     if cmd.returncode != 0:
@@ -168,7 +175,7 @@ def recompile_compiler() -> None:
         sys.exit(1)
     print("Recompilation successful")
 
-def run_all_tests(exec: bool = True):
+def run_all_tests(exec: bool = True, exit_first_failure: bool = False):
     total = 0
     failed_tests = []
     panicked_tests = []
@@ -178,24 +185,48 @@ def run_all_tests(exec: bool = True):
     for root, _, files in os.walk("./tests"):
         for filename in files:
             path = os.path.join(root, filename)
-            if os.path.isfile(path):
+            if os.path.isfile(path) and path.endswith(".bu"):
                 all_tests.append(path)
 
-    with Pool(16) as p:
-        results = p.starmap(run_test, [(path, exec) for path in all_tests])
-        for result in results:
+    if exit_first_failure:
+        for path in all_tests:
+            result = run_test(path, exec)
             total += 1
             match result.success:
                 case STATE.SUCCESS:
                     pass
                 case STATE.FAILURE:
                     failed_tests.append(result.path)
+                    break
                 case STATE.PANIC:
                     panicked_tests.append(result.path)
+                    break
                 case STATE.INVALID:
                     invalid_tests.append(result.path)
+                    break
                 case STATE.IGNORED:
                     ignored_tests.append(result.path)
+                    break
+                case STATE.DONT_TEST:
+                    total -= 1
+    else:
+        with Pool(16) as p:
+            results = p.starmap(run_test, [(path, exec) for path in all_tests])
+            for result in results:
+                total += 1
+                match result.success:
+                    case STATE.SUCCESS:
+                        pass
+                    case STATE.FAILURE:
+                        failed_tests.append(result.path)
+                    case STATE.PANIC:
+                        panicked_tests.append(result.path)
+                    case STATE.INVALID:
+                        invalid_tests.append(result.path)
+                    case STATE.IGNORED:
+                        ignored_tests.append(result.path)
+                    case STATE.DONT_TEST:
+                        total -= 1
 
     def print_tests(tests: List[str], s: str) -> None:
         if len(tests) > 0:
@@ -216,11 +247,6 @@ def run_all_tests(exec: bool = True):
     if failure > 0 or panicked > 0 or invalid > 0:
         sys.exit(1)
 
-def run_fuzzer(limit: int, threads: int):
-    from fuzz.fuzzer import Fuzzer
-    fuzzer = Fuzzer(call_cmd, [COMPILER_PATH, "-i"], limit, threads)
-    fuzzer.run()
-
 if __name__ == "__main__":
     if len(sys.argv) == 1:
         print("Usage: python helper.py [test|bench]")
@@ -229,17 +255,13 @@ if __name__ == "__main__":
         if mode == "test":
             recompile_compiler()
             print("Running tests...")
-            run_all_tests(not (len(sys.argv) > 2 and sys.argv[2] == "--no-exec"))
+            no_exec = "--no-exec" in sys.argv
+            exit_first_failure = "--exit-first-failure" in sys.argv
+            run_all_tests(exec=not no_exec, exit_first_failure=exit_first_failure)
         elif mode == "bench":
             recompile_compiler()
             print("Running benchmarks...")
             assert False, "Not implemented"
-        elif mode == "fuzz":
-            recompile_compiler()
-            limit = int(sys.argv[2]) if len(sys.argv) > 2 else 100
-            threads = int(sys.argv[3]) if len(sys.argv) > 3 else 1
-            print("Running fuzzer™️...")
-            run_fuzzer(limit, threads)
         else:
             print("Usage: python helper.py [test|bench]")
     # main()

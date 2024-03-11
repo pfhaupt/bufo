@@ -1,19 +1,23 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use crate::frontend::nodes;
 use crate::frontend::parser::Operation;
 use crate::util::flags::Flags;
-use crate::compiler::{OUTPUT_FOLDER, FILE_EXT, ERR_STR};
+use crate::compiler::ERR_STR;
 use crate::internal_panic;
+use crate::util::opt_flags::OptimizationLevel;
 
+use inkwell::builder::BuilderError;
+use inkwell::basic_block::BasicBlock;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::builder::Builder;
 use inkwell::passes::PassManager;
 use inkwell::targets::{Target, InitializationConfig, CodeModel, RelocMode, TargetTriple, TargetMachine};
 use inkwell::types::{BasicType, BasicTypeEnum};
+use inkwell::values::{BasicValue, PointerValue};
 use inkwell::AddressSpace;
-use inkwell::OptimizationLevel;
 use inkwell::values::BasicValueEnum;
 
 use tracer::trace_call;
@@ -40,16 +44,23 @@ macro_rules! fill_function_lookup {
         // Prepare parameter types
         let mut param_types = Vec::new();
         for param in &$function.parameters {
-            param_types.push($codegen.codegen_type(&param.typ.typ).into());
+            let typ = &param.typ.typ;
+            let codegened_type = $codegen.codegen_type(&typ);
+            if codegened_type.is_struct_type() {
+                let real_type = $codegen.struct_type_for_arg(&codegened_type);
+                param_types.push(real_type.into());
+            } else {
+                param_types.push(codegened_type.into());
+            }
         }
         // Prepare return type
         let function_type;
         if $function.return_type.typ == Type::None {
             let return_type = $codegen.context.void_type();
-            function_type = return_type.fn_type(&param_types, false);
+            function_type = return_type.fn_type(&param_types, $function.is_vararg);
         } else {
             let return_type = $codegen.codegen_type(&$function.return_type.typ);
-            function_type = return_type.fn_type(&param_types, false);
+            function_type = return_type.fn_type(&param_types, $function.is_vararg);
         }
         let _function = $codegen.module.add_function(&$name, function_type, None);
     };
@@ -57,24 +68,44 @@ macro_rules! fill_function_lookup {
 
 macro_rules! codegen_function_header {
     ($codegen:ident, $function:ident, $name:ident) => {
-        let llvm_func = $codegen.module.get_function(&$name).unwrap();
+        let name = $codegen.get_full_name(&$name);
+        let llvm_func = $codegen.module.get_function(&name).unwrap();
         let entry = $codegen.context.append_basic_block(llvm_func, "entry");
         $codegen.builder.position_at_end(entry);
         for (i, param) in $function.parameters.iter().enumerate() {
             let func_param = llvm_func.get_nth_param(i as u32).unwrap();
-            func_param.set_name(&param.name);
-            let param_alloc = $codegen.builder.build_alloca(func_param.get_type(), &param.name);
-            $codegen.add_variable(&param.name, param_alloc.into());
-            $codegen.builder.build_store(param_alloc, func_param);
+            let param_type = $codegen.codegen_type(&param.typ.typ);
+            if param_type.is_struct_type() {
+                let typ = $codegen.struct_type_for_arg(&param_type);
+                if typ.is_pointer_type() {
+                    debug_assert!(func_param.is_pointer_value());
+                    func_param.set_name(&param.name);
+                    let func_param = $codegen.builder.build_load(param_type, func_param.into_pointer_value(), &param.name)?;
+                    let param_alloc = $codegen.allocate(func_param.get_type(), &param.name)?;
+                    $codegen.add_variable(&param.name, param_alloc.into());
+                    $codegen.builder.build_store(param_alloc, func_param)?;
+                } else {
+                    func_param.set_name(&param.name);
+                    let param_alloc = $codegen.allocate(param_type, &param.name)?;
+                    $codegen.add_variable(&param.name, param_alloc.into());
+                    $codegen.builder.build_store(param_alloc, func_param)?;
+                }
+            } else {
+                func_param.set_name(&param.name);
+                let param_alloc = $codegen.allocate(param_type, &param.name)?;
+                $codegen.add_variable(&param.name, param_alloc.into());
+                $codegen.builder.build_store(param_alloc, func_param)?;
+            }
         }
     };
 }
 
-struct ClassInfo {
+#[derive(Debug, Clone)]
+struct StructInfo {
     fields: Vec<(String, Type)>,
 }
 
-impl ClassInfo {
+impl StructInfo {
     fn new() -> Self {
         Self {
             fields: Vec::new(),
@@ -94,71 +125,34 @@ impl ClassInfo {
                 return i;
             }
         }
-        unreachable!("Field {} not found in struct!", field_name);
-    }
-}
-
-struct SizeManager {
-    structs: HashMap<String, ClassInfo>,
-}
-
-impl SizeManager {
-    fn new() -> Self {
-        Self {
-            structs: HashMap::new(),
-        }
-    }
-
-    fn add_struct(&mut self, struct_name: &str) {
-        debug_assert!(self.structs.get(struct_name).is_none());
-        self.structs.insert(struct_name.to_string(), ClassInfo::new());
-    }
-
-    fn add_field(
-        &mut self,
-        struct_name: &str,
-        field_name: &str,
-        typ: &Type,
-    ) {
-        self.structs
-            .get_mut(struct_name)
-            .expect("Struct is guaranteed to be in here, because we typechecked before!")
-            .add_field(field_name, typ);
-    }
-
-    fn get_struct_info(&self, struct_name: &str) -> &ClassInfo {
-        self.structs.get(struct_name).expect("Struct is guaranteed to be in here, because we typechecked before!")
+        internal_panic!("Field {} not found in struct!", field_name);
     }
 }
 
 pub struct LLVMCodegen<'flags, 'ctx> {
-    path: String,
-    objname: String,
-    exename: String,
+    filename: PathBuf,
+    exename: PathBuf,
     context: &'ctx Context,
+    module_stack: Vec<String>,
     module: Module<'ctx>,
     builder: Builder<'ctx>,
     target_machine: TargetMachine,
 
     stack_scopes: Vec<HashMap<String, BasicValueEnum<'ctx>>>,
+    loop_blocks: Vec<(BasicBlock<'ctx>, BasicBlock<'ctx>)>, // (loop, after_loop)
     struct_defs: HashMap<String, BasicTypeEnum<'ctx>>,
+    struct_info: HashMap<String, StructInfo>,
 
-    sm: SizeManager,
     flags: &'flags Flags,
+    clang_flags: Vec<String>,
 }
 impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     pub fn new(flags: &'flags Flags, context: &'ctx Context) -> Self {
-        let mut path = flags.input.to_owned();
-        if path.contains('/') {
-            path = path.split('/').last().unwrap().to_string();
-        }
-        if path.contains('\\') {
-            path = path.split('\\').last().unwrap().to_string();
-        }
-        let mut filename = String::from(OUTPUT_FOLDER);
-        filename.push_str(&path);
-        let objname = filename.replace(FILE_EXT, ".obj");
-        let exename = objname.replace(".obj", ".exe");
+        let filename = PathBuf::from(&flags.input);
+        let filename = filename.file_name().unwrap().to_str().unwrap().to_string();
+        let outname = PathBuf::from("./out/");
+        let filename = outname.join(filename);
+        let exename = filename.with_extension("exe");
         Target::initialize_native(&InitializationConfig::default()).unwrap();
         let target_str = Self::get_target().unwrap();
         let target = Target::from_name("x86-64").unwrap();
@@ -166,27 +160,30 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         let target_machine = target.create_target_machine(
             &target_triple,
             "x86-64",
-            "+avx2",
-            OptimizationLevel::Default,
+            "",
+            inkwell::OptimizationLevel::from(&flags.optimizations.level),
             RelocMode::Default,
             CodeModel::Default,
         ).unwrap();
         let module_name = flags.input.clone();
         let module = context.create_module(&module_name);
         module.set_triple(&target_triple);
+        module.set_data_layout(&target_machine.get_target_data().get_data_layout());
         let builder = context.create_builder();
         Self {
-            path,
-            objname,
+            filename,
             exename,
             context,
+            module_stack: Vec::new(),
             module,
             builder,
             target_machine,
-            struct_defs: HashMap::new(),
             stack_scopes: Vec::new(),
-            sm: SizeManager::new(),
+            loop_blocks: Vec::new(),
+            struct_defs: HashMap::new(),
+            struct_info: HashMap::new(),
             flags,
+            clang_flags: Vec::new(),
         }
     }
 
@@ -216,79 +213,105 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
-    fn fill_lookup(&mut self, file: &nodes::FileNode) -> Result<(), String> {
-        // FIXME: Structs with reference fields are not supported yet and will cause a panic later on
-        // Sort structs by field dependency, so we can create them in the correct order for LLVM
-        // If struct `Foo` needs struct `Bar`, then `Bar` needs to be created first
-        // This means building a tree of dependencies, and then sorting by them
-        let mut struct_dependencies = HashMap::new();
-        for strukt in &file.structs {
-            struct_dependencies.insert(strukt.name.clone(), Vec::new());
+    fn fill_struct_lookup(&mut self, file: &nodes::ModuleNode) -> Result<(), String> {
+        for module in &file.modules {
+            self.module_stack.push(module.name.clone());
+            self.fill_struct_lookup(module)?;
+            self.module_stack.pop();
         }
-        for strukt in &file.structs {
-            for field in &strukt.fields {
-                if let Type::Struct(struct_name) = &field.type_def.typ {
-                    struct_dependencies.get_mut(struct_name).unwrap().push(strukt.name.clone());
-                }
-            }
-        }
-        let mut sorted_structs = Vec::new();
-        let mut structs_to_process = Vec::new();
-        for strukt in &file.structs {
-            if struct_dependencies.get(&strukt.name).unwrap().len() == 0 {
-                structs_to_process.push(strukt.name.clone());
-            }
-        }
-        while structs_to_process.len() > 0 {
-            let struct_name = structs_to_process.pop().unwrap();
-            sorted_structs.push(struct_name.clone());
-            for (name, dependencies) in &mut struct_dependencies {
-                if dependencies.contains(&struct_name) {
-                    dependencies.retain(|n| n != &struct_name);
-                    if dependencies.len() == 0 {
-                        structs_to_process.push(name.clone());
+        macro_rules! check_dep {
+            ($typ:expr, $label:tt) => {
+                debug_assert!($typ != &Type::None);
+                if let Type::Struct(name) = $typ {
+                    let real_name = self.get_full_name(&name);
+                    if !self.struct_defs.contains_key(&real_name) {
+                        if self.flags.debug {
+                            println!("[DEBUG] Missing declaration for {:?}, restarting", $typ.to_string());
+                        }
+                        continue $label;
+                    }
+                } else if let Type::Ref(_, _) = $typ {
+                    if $typ.is_struct_ref() {
+                        let real_name = self.get_full_name(&$typ.get_underlying_type().get_struct_name());
+                        if !self.struct_defs.contains_key(&real_name) {
+                            if self.flags.debug {
+                                println!("[DEBUG] Missing declaration for {:?}, restarting", real_name);
+                            }
+                            continue $label;
+                        }
+                    }
+                } else if let Type::Module(_, _) = $typ {
+                    let unfolded_name = $typ.get_unfolded_module_name();
+                    if !self.struct_defs.contains_key(&unfolded_name) {
+                        if self.flags.debug {
+                            println!("[DEBUG] Missing declaration for {:?}, restarting", unfolded_name);
+                        }
+                        continue $label;
                     }
                 }
-            }
+            };
         }
-        if sorted_structs.len() != file.structs.len() {
-            internal_panic!("Could not sort structs by dependency!");
-        }
-        sorted_structs.reverse();
-        let mut structs = Vec::new();
-        for struct_name in sorted_structs {
-            for strukt in &file.structs {
-                if strukt.name == struct_name {
-                    structs.push(strukt.clone());
+        loop {
+            let mut changed = false;
+            'outer: for strukt in &file.structs {
+                let real_name = self.get_full_name(&strukt.name);
+                if self.struct_defs.contains_key(&real_name) {
+                    continue;
                 }
+                let mut fields = Vec::new();
+                let mut field_types = Vec::new();
+                for field in &strukt.fields {
+                    let typ = &field.type_def.typ;
+                    check_dep!(typ, 'outer);
+                    let field_type = self.codegen_type(typ);
+                    fields.push(field_type);
+                    field_types.push((field.name.clone(), typ.clone()));
+                }
+                let struct_struct_type_def = self.context.struct_type(&fields, false);
+                self.struct_defs.insert(real_name.clone(), struct_struct_type_def.into());
+                let mut struct_info = StructInfo::new();
+                for (name, typ) in field_types {
+                    struct_info.add_field(&name, &typ);
+                }
+                self.struct_info.insert(real_name, struct_info);
+                changed = true;
             }
+            if !changed {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    #[trace_call(always)]
+    fn fill_lookup(&mut self, file: &nodes::ModuleNode) -> Result<(), String> {
+        for module in &file.modules {
+            self.module_stack.push(module.name.clone());
+            self.fill_lookup(module)?;
+            self.module_stack.pop();
         }
 
-        for strukt in &structs {
-            self.sm.add_struct(&strukt.name);
-            let struct_struct_type_def = self.context.opaque_struct_type(&strukt.name);
-            let fields = strukt.fields.iter().map(|field| {
-                let typ = &field.type_def.typ;
-                debug_assert!(*typ != Type::None);
-                self.sm.add_field(&strukt.name, &field.name, typ);
-                self.codegen_type(&field.type_def.typ)
-            });
-            struct_struct_type_def.set_body(&fields.collect::<Vec<BasicTypeEnum>>(), false);
-            self.struct_defs.insert(strukt.name.clone(), struct_struct_type_def.into());
+        for external in &file.externs {
+            let name = &external.name;
+            fill_function_lookup!(self, external, name);
         }
         for strukt in &file.structs {
             for method in &strukt.methods {
-                let name = format!("{}_{}", strukt.name, method.name);
+                let name = self.get_full_name(&strukt.name);
+                let name = format!("{}_{}", name, method.name);
                 fill_function_lookup!(self, method, name);
             }
         }
         for function in &file.functions {
             let name = function.name.clone();
+            let name = self.get_full_name(&name);
             fill_function_lookup!(self, function, name);
         }
-        for external in &file.externs {
-            let name = external.name.clone();
-            fill_function_lookup!(self, external, name);
+        if let Some(compiler_flags) = &file.compiler_flags {
+            for comp_flag in &compiler_flags.flags {
+                let flag = comp_flag.to_vec();
+                self.clang_flags.extend(flag);
+            }
         }
         Ok(())
     }
@@ -327,95 +350,199 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 return *value;
             }
         }
-        unreachable!("Variable {} not found!", name);
+        internal_panic!("Variable {} not found!", name);
     }
 
     #[trace_call(always)]
-    pub fn create_executable(&mut self, file: &nodes::FileNode) -> Result<(), String> {
+    pub fn codegen_project(&mut self, file: &nodes::ModuleNode) -> Result<(), String> {
+        self.fill_struct_lookup(file)?;
+        debug_assert!(self.module_stack.is_empty());
         self.fill_lookup(file)?;
-        self.codegen_file(file)
+        debug_assert!(self.module_stack.is_empty());
+        if let Err(_e) = self.codegen_entrypoint(file) {
+            todo!()
+        }
+        if let Err(_e) = self.codegen_module(file) {
+            self.module.print_to_stderr();
+            todo!();
+        }
+        self.finalize_executable()
     }
 
     #[trace_call(always)]
-    fn codegen_file(&mut self, file: &nodes::FileNode) -> Result<(), String> {
-        for strukt in &file.structs {
-            self.codegen_struct(strukt)?;
-        }
+    fn find_main(&self, file: &nodes::ModuleNode) -> Option<String> {
+        // First module with a main function is the entrypoint
+        // Which is usually the file provided by the user
+        // If not, ¯\_(ツ)_/¯
         for function in &file.functions {
-            self.codegen_function(function)?;
+            if function.name == "main" {
+                return Some(function.name.clone());
+            }
         }
+        for module in &file.modules {
+            if let Some(main) = self.find_main(module) {
+                return Some(format!("{}.{}", module.name, main));
+            }
+        }
+        None
+    }
+
+    #[trace_call(always)]
+    fn codegen_entrypoint(&mut self, file: &nodes::ModuleNode) -> Result<(), BuilderError> {
+        let main_name = self.find_main(file).unwrap_or_else(|| {
+            // TODO: Proper error handling
+            println!("[ERROR] No main function found");
+            std::process::exit(1);
+        });
+        let main_func = self.module.get_function(&main_name).unwrap();
+        let ret_type = if main_func.get_type().get_return_type().is_none() {
+            self.context.i32_type().as_basic_type_enum()
+        } else {
+            main_func.get_type().get_return_type().unwrap()
+        };
+        let ret_fn_type = ret_type.fn_type(&[], false);
+        let main = self.module.add_function("main", ret_fn_type, None);
+        let entry = self.context.append_basic_block(main, "entry");
+        self.builder.position_at_end(entry);
+        let result = self.builder.build_call(main_func, &[], "main_call")?;
+        let val = if result.try_as_basic_value().left().is_none() {
+            // NOTE: The return value doesn't matter, the function returns None
+            //       it's a workaround for `void_type` not being a BasicValueEnum
+            self.context.i32_type().const_int(0, false).into()
+        } else {
+            result.try_as_basic_value().left().unwrap()
+        };
+        self.builder.build_return(Some(&val))?;
+        Ok(())
+    }
+
+    #[trace_call(always)]
+    fn finalize_executable(&mut self) -> Result<(), String> {
         match self.module.verify() {
             Ok(_) => (),
             Err(e) => {
                 self.module.print_to_stderr();
-                internal_panic!(format!("Module verification failed: {}", e.to_string()))
+                internal_panic!("Module verification failed:\n{}", e.to_string())
             },
         }
 
         if self.flags.debug {
             println!("{}", "-".repeat(80));
             println!("Module before optimizations:");
-            self.module.print_to_stderr();
+            println!("{}", self.module.to_string());
         }
 
         // TODO: We already have an opt-flag, so we should add optimizations accordingly
         //       instead of just adding all of them
         let pass_manager = PassManager::create(());
-        pass_manager.add_promote_memory_to_register_pass();
-        pass_manager.add_instruction_combining_pass();
-        pass_manager.add_reassociate_pass();
-        pass_manager.add_gvn_pass();
-        pass_manager.add_cfg_simplification_pass();
-        pass_manager.run_on(&self.module);
+        {
+            // Alloca -> SSA, very important and should always be run
+            pass_manager.add_promote_memory_to_register_pass();
+            for _ in 0..5 {
+                if !pass_manager.run_on(&self.module) {
+                    break;
+                }
+            }
+        }
+        if self.flags.optimizations.level == OptimizationLevel::Aggressive {
+            if self.flags.verbose {
+                println!("[INFO] Running aggressive optimizations");
+            }
+            pass_manager.add_instruction_combining_pass();
+            pass_manager.add_reassociate_pass();
+            pass_manager.add_gvn_pass();
+            pass_manager.add_cfg_simplification_pass();
+            pass_manager.add_scalar_repl_aggregates_pass_ssa();
+            pass_manager.add_early_cse_pass();
+            pass_manager.add_loop_unroll_pass();
+            pass_manager.add_loop_vectorize_pass();
+            pass_manager.add_dead_arg_elimination_pass();
+            pass_manager.add_global_dce_pass();
+            for _ in 0..10 {
+                if !pass_manager.run_on(&self.module) {
+                    break;
+                }
+            }
+        }
 
         if self.flags.debug {
             println!("{}", "-".repeat(80));
             println!("Module after optimizations:");
-            self.module.print_to_stderr();
+            println!("{}", self.module.to_string());
             println!("{}", "-".repeat(80));
         }
 
-        let path = std::path::Path::new(&self.objname);
-        self.target_machine.write_to_file(
-            &self.module,
-            inkwell::targets::FileType::Object,
-            &path,
-        ).unwrap();
-        println!("[INFO] Created {}", path.to_str().unwrap());
-        let clang_output = std::process::Command::new("clang")
-            .arg("-o")
-            .arg(&self.exename)
-            .arg(&self.objname)
-            .output()
-            .expect("Failed to execute clang!");
+        if self.flags.emit_asm {
+            let asmname = self.filename.with_extension("s");
+            let path = std::path::Path::new(&asmname);
+            self.target_machine.write_to_file(
+                &self.module,
+                inkwell::targets::FileType::Assembly,
+                &path,
+            ).unwrap();
+            println!("[INFO] Created {}", path.to_str().unwrap());
+        }
+
+        let llvmname = self.filename.with_extension("ll");
+        let path = std::path::Path::new(&llvmname);
+        self.module.print_to_file(path).unwrap();
+        if self.flags.emit_llvm {
+            println!("[INFO] Created {}", path.to_str().unwrap());
+        }
+
+        let mut clang_cmd = std::process::Command::new("clang");
+        clang_cmd.arg("-o").arg(&self.exename).arg(&llvmname).arg("-v");
+        for flag in &self.clang_flags {
+            clang_cmd.arg(flag);
+        }
+        if self.flags.verbose {
+            let mut s = String::from("clang");
+            for arg in clang_cmd.get_args() {
+                s.push(' ');
+                s.push_str(arg.to_str().unwrap());
+            }
+            println!("[INFO] Running `{}`", s);
+        }
+        let clang_output = clang_cmd.output().unwrap();
+
+        if !self.flags.emit_llvm {
+            std::fs::remove_file(&llvmname).unwrap();
+        }
+        if self.flags.verbose {
+            println!("[INFO] Clang output:");
+            println!("[INFO] {}", String::from_utf8_lossy(&clang_output.stdout));
+        }
         if !clang_output.status.success() {
             println!("[ERROR] Clang failed!");
             println!("[ERROR] {}", String::from_utf8_lossy(&clang_output.stderr));
             return Err("Clang failed!".to_string());
         }
-        println!("[INFO] Created {}", self.exename);
+        println!("[INFO] Created {}", self.exename.to_str().unwrap());
         Ok(())
     }
 
     #[trace_call(always)]
-    fn codegen_extern(&mut self, external: &nodes::ExternNode) -> Result<(), String> {
-        let mut param_types = Vec::new();
-        for param in &external.parameters {
-            param_types.push(self.codegen_type(&param.typ.typ).into());
+    fn codegen_module(&mut self, file: &nodes::ModuleNode) -> Result<(), BuilderError> {
+        for module in &file.modules {
+            self.module_stack.push(module.name.clone());
+            self.codegen_module(module)?;
+            self.module_stack.pop();
         }
-        let function_type = if external.return_type.typ == Type::None {
-            let return_type = self.context.void_type();
-            return_type.fn_type(&param_types, false)
-        } else {
-            let return_type = self.codegen_type(&external.return_type.typ);
-            return_type.fn_type(&param_types, false)
-        };
-        self.module.add_function(&external.name, function_type, None);
+        // External functions are already added in `fill_lookup`
+        // for external in &file.externs {
+        //     self.codegen_extern(external)?;
+        // }
+        for strukt in &file.structs {
+            self.codegen_struct(strukt)?;
+        }
+        for function in &file.functions {
+            self.codegen_function(function)?;
+        }
         Ok(())
     }
 
     #[trace_call(always)]
-    fn codegen_struct(&mut self, strukt: &nodes::StructNode) -> Result<(), String> {
+    fn codegen_struct(&mut self, strukt: &nodes::StructNode) -> Result<(), BuilderError> {
         for method in &strukt.methods {
             self.codegen_method(method)?;
         }
@@ -423,7 +550,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
-    fn codegen_method(&mut self, method: &nodes::MethodNode) -> Result<(), String> {
+    fn codegen_method(&mut self, method: &nodes::MethodNode) -> Result<(), BuilderError> {
         self.enter_scope();
 
         let name = format!("{}_{}", method.struct_name, method.name);
@@ -432,7 +559,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         self.codegen_block(&method.block)?;
 
         if method.return_type.typ == Type::None && !method.block.llvm_has_terminator {
-            self.builder.build_return(None);
+            self.builder.build_return(None)?;
         } else {
             // Method is guaranteed to return a value in block codegen
         }
@@ -442,7 +569,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
-    fn codegen_function(&mut self, function: &nodes::FunctionNode) -> Result<(), String> {
+    fn codegen_function(&mut self, function: &nodes::FunctionNode) -> Result<(), BuilderError> {
         self.enter_scope();
 
         let name = function.name.clone();
@@ -451,7 +578,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         self.codegen_block(&function.block)?;
 
         if function.return_type.typ == Type::None && !function.block.llvm_has_terminator {
-            self.builder.build_return(None);
+            self.builder.build_return(None)?;
         } else {
             // Function is guaranteed to return a value in block codegen
         }
@@ -461,98 +588,119 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
-    fn codegen_block(&mut self, block: &nodes::BlockNode) -> Result<(), String> {
+    fn codegen_block(&mut self, block: &nodes::BlockNode) -> Result<(), BuilderError> {
         self.enter_scope();
         for statement in &block.statements {
             self.codegen_statement(statement)?;
         }
         self.exit_scope();
         Ok(())
-        // todo!()
     }
 
     #[trace_call(always)]
-    fn codegen_statement(&mut self, statement: &nodes::Statement) -> Result<(), String> {
+    fn codegen_statement(&mut self, statement: &nodes::Statement) -> Result<(), BuilderError> {
         match statement {
             nodes::Statement::Block(block) => self.codegen_block(block),
             nodes::Statement::VarDecl(var_decl_node) => self.codegen_stmt_var_decl(var_decl_node),
             nodes::Statement::If(if_node) => self.codegen_stmt_if(if_node),
             nodes::Statement::While(while_node) => self.codegen_stmt_while(while_node),
             nodes::Statement::Return(return_node) => self.codegen_stmt_return(return_node),
+            nodes::Statement::Break(break_node) => self.codegen_stmt_break(break_node),
+            nodes::Statement::Continue(continue_node) => self.codegen_stmt_continue(continue_node),
             nodes::Statement::Expression(expr) => {
                 let _ = self.codegen_expression(expr, false)?;
                 Ok(())
             },
-            e => unimplemented!("codegen_statement: {:?}", e),
         }
     }
 
     #[trace_call(always)]
-    fn codegen_stmt_while(&mut self, while_node: &nodes::WhileNode) -> Result<(), String> {
+    fn codegen_stmt_continue(&mut self, _continue_node: &nodes::ContinueNode) -> Result<(), BuilderError> {
+        debug_assert!(!self.loop_blocks.is_empty());
+        let (loop_block, _) = self.loop_blocks.last().unwrap();
+        self.builder.build_unconditional_branch(*loop_block)?;
+        Ok(())
+    }
+
+    #[trace_call(always)]
+    fn codegen_stmt_break(&mut self, _break_node: &nodes::BreakNode) -> Result<(), BuilderError> {
+        debug_assert!(!self.loop_blocks.is_empty());
+        let (_, after_block) = self.loop_blocks.last().unwrap();
+        self.builder.build_unconditional_branch(*after_block)?;
+        Ok(())
+    }
+
+    #[trace_call(always)]
+    fn codegen_stmt_while(&mut self, while_node: &nodes::WhileNode) -> Result<(), BuilderError> {
         let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
         let while_cond = self.context.append_basic_block(function, "codegen_stmt_while_cond");
-        self.builder.build_unconditional_branch(while_cond);
+        self.builder.build_unconditional_branch(while_cond)?;
         self.builder.position_at_end(while_cond);
         let condition = self.codegen_expression(&while_node.condition, false)?;
-        let condition = self.builder.build_int_compare(
-            inkwell::IntPredicate::NE,
-            condition.into_int_value(),
-            self.context.bool_type().const_int(0, false),
-            "codegen_stmt_while_cond",
-        );
         let while_body = self.context.append_basic_block(function, "codegen_stmt_while_body");
         let while_after = self.context.append_basic_block(function, "codegen_stmt_while_after");
-        self.builder.build_conditional_branch(condition, while_body, while_after);
+        self.loop_blocks.push((while_cond, while_after));
+        self.builder.build_conditional_branch(condition.into_int_value(), while_body, while_after)?;
         self.builder.position_at_end(while_body);
         self.codegen_block(&while_node.body)?;
         if !while_node.body.llvm_has_terminator {
-            self.builder.build_unconditional_branch(while_cond);
+            self.builder.build_unconditional_branch(while_cond)?;
         }
         self.builder.position_at_end(while_after);
+        self.loop_blocks.pop();
         Ok(())
     }
 
     #[trace_call(always)]
-    fn codegen_stmt_return(&mut self, return_node: &nodes::ReturnNode) -> Result<(), String> {
+    fn codegen_stmt_return(&mut self, return_node: &nodes::ReturnNode) -> Result<(), BuilderError> {
         match &return_node.return_value {
             Some(value) => {
                 let value = self.codegen_expression(value, false)?;
-                self.builder.build_return(Some(&value));
+                self.builder.build_return(Some(&value))?;
                 Ok(())
             }
             None => {
-                self.builder.build_return(None);
+                self.builder.build_return(None)?;
                 Ok(())
             }
         }
     }
 
     #[trace_call(always)]
-    fn codegen_stmt_var_decl(&mut self, let_node: &nodes::VarDeclNode) -> Result<(), String> {
+    /// Wrapper to ensure that `alloca` is always inserted at the end of the entry block.  
+    /// This is very important because `mem2reg` only optimizes allocas in the entry block
+    fn allocate<T: BasicType<'ctx>>(&self, typ: T, name: &str) -> Result<PointerValue<'ctx>, BuilderError> {
+        let curr_block = self.builder.get_insert_block().unwrap();
+        let parent = curr_block.get_parent().unwrap();
+        let last_instr = parent.get_first_basic_block().unwrap().get_last_instruction();
+        match last_instr {
+            None => self.builder.position_at_end(curr_block),
+            Some(instr) => self.builder.position_before(&instr),
+        }
+        let alloca = self.builder.build_alloca(typ, name)?;
+        self.builder.position_at_end(curr_block);
+        Ok(alloca)
+    }
+
+    #[trace_call(always)]
+    fn codegen_stmt_var_decl(&mut self, let_node: &nodes::VarDeclNode) -> Result<(), BuilderError> {
         let typ = self.codegen_type(&let_node.typ.typ);
-        let alloca = self.builder.build_alloca(typ, &let_node.name);
+        let alloca = self.allocate(typ, &let_node.name)?;
         self.add_variable(&let_node.name, alloca.into());
         let value = self.codegen_expression(&let_node.expression, false)?;
-        self.builder.build_store(alloca, value);
+        self.builder.build_store(alloca, value)?;
         Ok(())
     }
 
     #[trace_call(always)]
-    fn codegen_stmt_if(&mut self, if_node: &nodes::IfNode) -> Result<(), String> {
+    fn codegen_stmt_if(&mut self, if_node: &nodes::IfNode) -> Result<(), BuilderError> {
         let condition = self.codegen_expression(&if_node.condition, false)?;
-        let condition = self.builder.build_int_compare(
-            inkwell::IntPredicate::NE,
-            condition.into_int_value(),
-            self.context.bool_type().const_int(0, false),
-            "codegen_stmt_if_cond",
-        );
-
         let parent = self.builder.get_insert_block().unwrap().get_parent().unwrap();
         if let Some(else_body) = &if_node.else_body {
             let then_bb = self.context.append_basic_block(parent, "codegen_stmt_if_then");
             let else_bb = self.context.append_basic_block(parent, "codegen_stmt_if_else");
 
-            self.builder.build_conditional_branch(condition, then_bb, else_bb);
+            self.builder.build_conditional_branch(condition.into_int_value(), then_bb, else_bb)?;
 
             // Emit then block.
             self.builder.position_at_end(then_bb);
@@ -568,21 +716,21 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 (true, false) => {
                     let cont_bb = self.context.append_basic_block(parent, "codegen_stmt_if_after");
                     self.builder.position_at_end(else_bb);
-                    self.builder.build_unconditional_branch(cont_bb);
+                    self.builder.build_unconditional_branch(cont_bb)?;
                     self.builder.position_at_end(cont_bb);
                 },
                 (false, true) => {
                     self.builder.position_at_end(then_bb);
                     let cont_bb = self.context.append_basic_block(parent, "codegen_stmt_if_after");
-                    self.builder.build_unconditional_branch(cont_bb);
+                    self.builder.build_unconditional_branch(cont_bb)?;
                     self.builder.position_at_end(cont_bb);
                 },
                 (false, false) => {
                     let cont_bb = self.context.append_basic_block(parent, "codegen_stmt_if_after");
                     self.builder.position_at_end(then_bb);
-                    self.builder.build_unconditional_branch(cont_bb);
+                    self.builder.build_unconditional_branch(cont_bb)?;
                     self.builder.position_at_end(else_bb);
-                    self.builder.build_unconditional_branch(cont_bb);
+                    self.builder.build_unconditional_branch(cont_bb)?;
                     self.builder.position_at_end(cont_bb);
                 }
             }
@@ -591,13 +739,13 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             let then_bb = self.context.append_basic_block(parent, "codegen_stmt_if_then");
             let cont_bb = self.context.append_basic_block(parent, "codegen_stmt_if_after");
 
-            self.builder.build_conditional_branch(condition, then_bb, cont_bb);
+            self.builder.build_conditional_branch(condition.into_int_value(), then_bb, cont_bb)?;
 
             // Emit then block.
             self.builder.position_at_end(then_bb);
             self.codegen_block(&if_node.if_body)?;
             if !if_node.if_body.llvm_has_terminator {
-                self.builder.build_unconditional_branch(cont_bb);
+                self.builder.build_unconditional_branch(cont_bb)?;
             }
 
             // Emit merge block.
@@ -607,7 +755,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
-    fn codegen_expression(&mut self, expression: &nodes::Expression, needs_ptr: bool) -> Result<BasicValueEnum<'ctx>, String> {
+    fn codegen_expression(&mut self, expression: &nodes::Expression, needs_ptr: bool) -> Result<BasicValueEnum<'ctx>, BuilderError> {
         match expression {
             nodes::Expression::Literal(literal) => self.codegen_literal(literal),
             nodes::Expression::Binary(binary) => self.codegen_binary(binary, needs_ptr),
@@ -615,16 +763,17 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             nodes::Expression::FunctionCall(function_call) => self.codegen_function_call(function_call, needs_ptr),
             nodes::Expression::Unary(unary) => self.codegen_unary(unary, needs_ptr),
             nodes::Expression::StructLiteral(struct_literal) => self.codegen_struct_literal(struct_literal, needs_ptr),
+            nodes::Expression::ArrayLiteral(array_literal) => self.codegen_array_literal(array_literal, needs_ptr),
         }
     }
 
     #[trace_call(always)]
-    fn codegen_unary(&mut self, unary_node: &nodes::UnaryNode, needs_ptr: bool) -> Result<BasicValueEnum<'ctx>, String> {
+    fn codegen_unary(&mut self, unary_node: &nodes::UnaryNode, needs_ptr: bool) -> Result<BasicValueEnum<'ctx>, BuilderError> {
         match unary_node.operation {
             Operation::Negate => {
                 let value = self.codegen_expression(&unary_node.expression, false)?;
                 assert_is_int!(unary_node.expression, unary_node.expression);
-                let result = self.builder.build_int_neg(value.into_int_value(), "codegen_unary_negate");
+                let result = self.builder.build_int_neg(value.into_int_value(), "codegen_unary_negate")?;
                 Ok(result.into())
             }
             Operation::Dereference => {
@@ -637,7 +786,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                         self.codegen_type(&unary_node.typ),
                         value.into_pointer_value(),
                         "codegen_unary_dereference",
-                    );
+                    )?;
                     Ok(value)
                 }
             }
@@ -648,11 +797,11 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                     let value = self.codegen_expression(&unary_node.expression, true)?;
                     if !value.is_pointer_value() {
                         // Value is not a pointer (e.g. a literal), so we need to create a pointer to it
-                        let alloc = self.builder.build_alloca(
+                        let alloc = self.allocate(
                             self.codegen_type(&unary_node.expression.get_type()),
                             "codegen_unary_reference",
-                        );
-                        self.builder.build_store(alloc, value);
+                        )?;
+                        self.builder.build_store(alloc, value)?;
                         Ok(alloc.into())
                     } else {
                         // Value is already a pointer, so we can just return it
@@ -665,48 +814,190 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
-    fn codegen_struct_literal(&mut self, struct_literal: &nodes::StructLiteralNode, needs_ptr: bool) -> Result<BasicValueEnum<'ctx>, String> {
+    fn codegen_struct_literal(
+        &mut self,
+        struct_literal: &nodes::StructLiteralNode,
+        needs_ptr: bool
+    ) -> Result<BasicValueEnum<'ctx>, BuilderError> {
         let mut expressions = Vec::new();
         for field in &struct_literal.fields {
             expressions.push(self.codegen_expression(&field.1, false)?);
         }
-        let struct_type = self.struct_defs.get(&struct_literal.struct_name).unwrap();
-        let struct_alloc = self.builder.build_alloca(*struct_type, "codegen_struct_literal");
+        let real_name = self.get_full_name(&struct_literal.struct_name);
+        let struct_type = self.struct_defs.get(&real_name).unwrap();
+        let mut struct_instance = struct_type.into_struct_type().get_undef();
         for (i, field) in struct_literal.fields.iter().enumerate() {
-            let field_offset = self.sm.get_struct_info(&struct_literal.struct_name).get_field_index(&field.0);
-            let field_alloc = self.builder.build_struct_gep(
-                struct_type.clone(),
-                struct_alloc,
-                field_offset as u32,
-                &field.0,
-            ).unwrap();
-            let value = expressions[i];
-            self.builder.build_store(field_alloc, value);
+            let offset = self.struct_info.get(&real_name).unwrap().get_field_index(&field.0);
+            struct_instance = self.builder.build_insert_value(
+                struct_instance,
+                expressions[i],
+                offset as u32,
+                "struct_elem",
+            )?.into_struct_value();
         }
         if needs_ptr {
+            let struct_alloc = self.allocate(struct_type.into_struct_type(), "codegen_struct_literal")?;
+            self.builder.build_store(struct_alloc, struct_instance)?;
             Ok(struct_alloc.into())
         } else {
-            let struct_alloc = self.builder.build_load(
-                self.codegen_type(&struct_literal.typ),
-                struct_alloc,
-                "codegen_struct_literal",
-            );
-            Ok(struct_alloc)
+            Ok(struct_instance.as_basic_value_enum())
         }
     }
 
     #[trace_call(always)]
-    fn codegen_function_call(&mut self, function_call: &nodes::CallNode, needs_ptr: bool) -> Result<BasicValueEnum<'ctx>, String> {
-        let name = function_call.function_name.clone();
-        if !self.module.get_function(&name).is_some() {
-            internal_panic!(format!("Could not find function {}", name));
+    fn get_struct_size(&self, typ: &BasicTypeEnum<'ctx>) -> u64 {
+        let struct_type = typ.into_struct_type();
+        let struct_size_0 = self.target_machine.get_target_data().get_store_size(&struct_type);
+        let struct_size_1 = self.target_machine.get_target_data().get_abi_size(&struct_type);
+        let struct_size_2 = self.target_machine.get_target_data().get_bit_size(&struct_type) / 8;
+        if struct_size_0 != struct_size_1 || struct_size_1 != struct_size_2 || struct_size_0 != struct_size_2 {
+            println!("type: {:?}", struct_type);
+            println!("size_0: {:?}", struct_size_0);
+            println!("size_1: {:?}", struct_size_1);
+            println!("size_2: {:?}", struct_size_2);
+            internal_panic!("Struct size mismatch");
         }
-        let function = self.module.get_function(&name).unwrap();
+        debug_assert!(struct_size_0 == struct_size_1 && struct_size_1 == struct_size_2 && struct_size_0 == struct_size_2);
+        struct_size_0
+    }
+
+    #[trace_call(always)]
+    fn struct_type_for_arg(&self, typ: &BasicTypeEnum<'ctx>) -> BasicTypeEnum<'ctx> {
+        let struct_size = self.get_struct_size(typ);
+        if struct_size == 1 {
+            self.context.i8_type().into()
+        } else if struct_size <= 2 {
+            self.context.i16_type().into()
+        } else if struct_size <= 4 {
+            self.context.i32_type().into()
+        } else if struct_size <= 8 {
+            self.context.i64_type().into()
+        } else {
+            self.context.i8_type().ptr_type(AddressSpace::default()).into()
+        }
+    }
+
+    #[trace_call(always)]
+    fn struct_value_for_arg(
+        &mut self,
+        struct_type: BasicTypeEnum<'ctx>,
+        struct_instance: BasicValueEnum<'ctx>
+    ) -> Result<BasicValueEnum<'ctx>, BuilderError> {
+        debug_assert!(struct_type.is_struct_type());
+        debug_assert!(struct_instance.is_struct_value());
+        let struct_size = self.get_struct_size(&struct_type);
+        let struct_alloc = self.allocate(struct_type.into_struct_type(), "struct_value_for_arg")?;
+        self.builder.build_store(struct_alloc, struct_instance)?;
+        let int = if struct_size == 1 {
+            self.context.i8_type()
+        } else if struct_size <= 2 {
+            self.context.i16_type()
+        } else if struct_size <= 4 {
+            self.context.i32_type()
+        } else if struct_size <= 8 {
+            self.context.i64_type()
+        } else {
+            return Ok(struct_alloc.into());
+        };
+        let int = self.builder.build_load(int, struct_alloc, "struct_value_for_arg")?;
+        Ok(int)
+    }
+
+    #[trace_call(always)]
+    fn codegen_array_literal(
+        &mut self,
+        array_literal: &nodes::ArrayLiteralNode,
+        needs_ptr: bool
+    ) -> Result<BasicValueEnum<'ctx>, BuilderError> {
+        let underlying_type = self.codegen_type(&array_literal.typ);
+        if let Some(size) = array_literal.size {
+            debug_assert!(array_literal.elements.len() == 1);
+            let value = self.codegen_expression(&array_literal.elements[0], false)?;
+            let array_alloca = self.allocate(underlying_type, "codegen_array_literal")?;
+            let current_block = self.builder.get_insert_block().unwrap();
+            let block_parent = current_block.get_parent().unwrap();
+            let loop_start = self.context.append_basic_block(block_parent, "codegen_array_literal_loop_start");
+            let loop_body = self.context.append_basic_block(block_parent, "codegen_array_literal_loop_body");
+            let loop_end = self.context.append_basic_block(block_parent, "codegen_array_literal_loop_end");
+            self.builder.build_unconditional_branch(loop_start)?;
+            self.builder.position_at_end(loop_start);
+            let i = self.builder.build_phi(self.context.i64_type(), "codegen_array_literal_i")?;
+            i.add_incoming(&[
+                (&self.context.i64_type().const_int(0, false), current_block),
+            ]);
+            let cond = self.builder.build_int_compare(
+                inkwell::IntPredicate::ULT,
+                i.as_basic_value().into_int_value(),
+                self.context.i64_type().const_int(size as u64, false),
+                "codegen_array_literal_cond"
+            )?;
+            self.builder.build_conditional_branch(cond, loop_body, loop_end)?;
+            self.builder.position_at_end(loop_body);
+            unsafe {
+                let array_field_ptr = self.builder.build_gep(
+                    underlying_type,
+                    array_alloca,
+                    &[self.context.i64_type().const_int(0, false), i.as_basic_value().into_int_value()],
+                    "codegen_array_literal_array_field_ptr",
+                )?;
+                self.builder.build_store(array_field_ptr, value)?;
+            }
+            let next_i = self.builder.build_int_add(i.as_basic_value().into_int_value(), self.context.i64_type().const_int(1, false), "codegen_array_literal_next_i")?;
+            i.add_incoming(&[
+                (&next_i, loop_body),
+            ]);
+            self.builder.build_unconditional_branch(loop_start)?;
+            self.builder.position_at_end(loop_end);
+            if needs_ptr {
+                Ok(array_alloca.into())
+            } else {
+                let loaded_instance = self.builder.build_load(underlying_type, array_alloca, "codegen_array_literal_loaded_instance")?;
+                Ok(loaded_instance.into())
+            }
+        } else {
+            let mut array_instance = underlying_type.into_array_type().get_undef();
+            for (i, element) in array_literal.elements.iter().enumerate() {
+                let value = self.codegen_expression(element, false)?;
+                array_instance = self.builder.build_insert_value(
+                    array_instance,
+                    value,
+                    i as u32,
+                    "arr_elem",
+                )?.into_array_value();
+            }
+            if needs_ptr {
+                let array_alloc = self.allocate(underlying_type, "codegen_array_literal")?;
+                self.builder.build_store(array_alloc, array_instance)?;
+                Ok(array_alloc.into())
+            } else {
+                Ok(array_instance.as_basic_value_enum())
+            }
+        }
+    }
+
+    #[trace_call(always)]
+    fn codegen_function_call(&mut self, function_call: &nodes::CallNode, needs_ptr: bool) -> Result<BasicValueEnum<'ctx>, BuilderError> {
+        let name = function_call.function_name.clone();
+        let real_name = if function_call.is_extern {
+            name.clone()
+        } else {
+            self.get_full_name(&name)
+        };
+        if self.module.get_function(&real_name).is_none() {
+            internal_panic!("Could not find function {}", real_name);
+        }
+        let function = self.module.get_function(&real_name).unwrap();
         let mut args = Vec::new();
         for arg in &function_call.arguments {
-            args.push(self.codegen_expression(arg, false)?.into());
+            let expr = self.codegen_expression(arg, false)?;
+            if expr.is_struct_value() {
+                let expr = self.struct_value_for_arg(self.codegen_type(&arg.get_type()), expr)?;
+                args.push(expr.into());
+            } else {
+                args.push(expr.into());
+            }
         }
-        let result = self.builder.build_call(function, &args, "codegen_function_call");
+        let result = self.builder.build_call(function, &args, "codegen_function_call")?;
         let val = if result.try_as_basic_value().left().is_none() {
             // NOTE: The return value doesn't matter, the function returns None
             //       it's a workaround for `void_type` not being a BasicValueEnum
@@ -715,8 +1006,8 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             result.try_as_basic_value().left().unwrap()
         };
         if needs_ptr {
-            let temp_alloc = self.builder.build_alloca(val.get_type(), "codegen_function_call");
-            self.builder.build_store(temp_alloc, val);
+            let temp_alloc = self.allocate(val.get_type(), "codegen_function_call")?;
+            self.builder.build_store(temp_alloc, val)?;
             Ok(temp_alloc.into())
         } else {
             Ok(val)
@@ -724,7 +1015,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
-    fn codegen_name(&mut self, name: &nodes::NameNode, needs_ptr: bool) -> Result<BasicValueEnum<'ctx>, String> {
+    fn codegen_name(&mut self, name: &nodes::NameNode, needs_ptr: bool) -> Result<BasicValueEnum<'ctx>, BuilderError> {
         debug_assert!(self.known_variable(&name.name));
         let var = self.get_variable(&name.name);
         if needs_ptr {
@@ -735,35 +1026,53 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 self.codegen_type(&name.typ),
                 var.into_pointer_value(),
                 "codegen_name",
-            );
+            )?;
             Ok(var)
         }
     }
 
     #[trace_call(always)]
-    fn codegen_binary(&mut self, binary: &nodes::BinaryNode, needs_ptr: bool) -> Result<BasicValueEnum<'ctx>, String> {
+    fn codegen_binary(&mut self, binary: &nodes::BinaryNode, needs_ptr: bool) -> Result<BasicValueEnum<'ctx>, BuilderError> {
         match &binary.operation {
             Operation::Add => {
                 let lhs = self.codegen_expression(&binary.lhs, false)?;
                 let rhs = self.codegen_expression(&binary.rhs, false)?;
-                assert_is_int!(binary.lhs, binary.rhs);
-                let result = self.builder.build_int_add(
-                    lhs.into_int_value(),
-                    rhs.into_int_value(),
-                    "codegen_binary_add",
-                );
-                Ok(result.into())
+                if binary.typ == Type::F32 || binary.typ == Type::F64 {
+                    let result = self.builder.build_float_add(
+                        lhs.into_float_value(),
+                        rhs.into_float_value(),
+                        "codegen_binary_add",
+                    )?;
+                    Ok(result.into())
+                } else {
+                    assert_is_int!(binary.lhs, binary.rhs);
+                    let result = self.builder.build_int_add(
+                        lhs.into_int_value(),
+                        rhs.into_int_value(),
+                        "codegen_binary_add",
+                    )?;
+                    Ok(result.into())
+                }
             }
             Operation::Sub => {
                 let lhs = self.codegen_expression(&binary.lhs, false)?;
                 let rhs = self.codegen_expression(&binary.rhs, false)?;
-                assert_is_int!(binary.lhs, binary.rhs);
-                let result = self.builder.build_int_sub(
-                    lhs.into_int_value(),
-                    rhs.into_int_value(),
-                    "codegen_binary_sub",
-                );
-                Ok(result.into())
+                if binary.typ == Type::F32 || binary.typ == Type::F64 {
+                    let result = self.builder.build_float_sub(
+                        lhs.into_float_value(),
+                        rhs.into_float_value(),
+                        "codegen_binary_sub",
+                    )?;
+                    Ok(result.into())
+                } else {
+                    assert_is_int!(binary.lhs, binary.rhs);
+                    let result = self.builder.build_int_sub(
+                        lhs.into_int_value(),
+                        rhs.into_int_value(),
+                        "codegen_binary_sub",
+                    )?;
+                    Ok(result.into())
+                }
             }
             Operation::Mul => {
                 let lhs = self.codegen_expression(&binary.lhs, false)?;
@@ -773,30 +1082,48 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                     lhs.into_int_value(),
                     rhs.into_int_value(),
                     "codegen_binary_mul",
-                );
+                )?;
                 Ok(result.into())
             }
             Operation::Div => {
                 let lhs = self.codegen_expression(&binary.lhs, false)?;
                 let rhs = self.codegen_expression(&binary.rhs, false)?;
-                assert_is_int!(binary.lhs, binary.rhs);
-                let result = self.builder.build_int_signed_div(
-                    lhs.into_int_value(),
-                    rhs.into_int_value(),
-                    "codegen_binary_div",
-                );
-                Ok(result.into())
+                if binary.typ == Type::F32 || binary.typ == Type::F64 {
+                    let result = self.builder.build_float_div(
+                        lhs.into_float_value(),
+                        rhs.into_float_value(),
+                        "codegen_binary_div",
+                    )?;
+                    Ok(result.into())
+                } else {
+                    assert_is_int!(binary.lhs, binary.rhs);
+                    let result = self.builder.build_int_signed_div(
+                        lhs.into_int_value(),
+                        rhs.into_int_value(),
+                        "codegen_binary_div",
+                    )?;
+                    Ok(result.into())
+                }
             }
             Operation::Modulo => {
                 let lhs = self.codegen_expression(&binary.lhs, false)?;
                 let rhs = self.codegen_expression(&binary.rhs, false)?;
-                assert_is_int!(binary.lhs, binary.rhs);
-                let result = self.builder.build_int_signed_rem(
-                    lhs.into_int_value(),
-                    rhs.into_int_value(),
-                    "codegen_binary_modulo",
-                );
-                Ok(result.into())
+                if binary.typ == Type::F32 || binary.typ == Type::F64 {
+                    let result = self.builder.build_float_rem(
+                        lhs.into_float_value(),
+                        rhs.into_float_value(),
+                        "codegen_binary_modulo",
+                    )?;
+                    Ok(result.into())
+                } else {
+                    assert_is_int!(binary.lhs, binary.rhs);
+                    let result = self.builder.build_int_signed_rem(
+                        lhs.into_int_value(),
+                        rhs.into_int_value(),
+                        "codegen_binary_modulo",
+                    )?;
+                    Ok(result.into())
+                }
             }
             Operation::LessThan => {
                 let lhs = self.codegen_expression(&binary.lhs, false)?;
@@ -807,7 +1134,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                     lhs.into_int_value(),
                     rhs.into_int_value(),
                     "codegen_binary_lessthan",
-                );
+                )?;
                 Ok(result.into())
             }
             Operation::GreaterThan => {
@@ -819,7 +1146,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                     lhs.into_int_value(),
                     rhs.into_int_value(),
                     "codegen_binary_greaterthan",
-                );
+                )?;
                 Ok(result.into())
             }
             Operation::LessThanOrEqual => {
@@ -831,7 +1158,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                     lhs.into_int_value(),
                     rhs.into_int_value(),
                     "codegen_binary_lessthanequal",
-                );
+                )?;
                 Ok(result.into())
             }
             Operation::GreaterThanOrEqual => {
@@ -843,7 +1170,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                     lhs.into_int_value(),
                     rhs.into_int_value(),
                     "codegen_binary_greaterthanequal",
-                );
+                )?;
                 Ok(result.into())
             }
             Operation::Equal => {
@@ -854,7 +1181,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                     lhs.into_int_value(),
                     rhs.into_int_value(),
                     "codegen_binary_equal",
-                );
+                )?;
                 Ok(result.into())
             }
             Operation::NotEqual => {
@@ -865,7 +1192,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                     lhs.into_int_value(),
                     rhs.into_int_value(),
                     "codegen_binary_notequal",
-                );
+                )?;
                 Ok(result.into())
             }
             Operation::BitwiseAnd => {
@@ -875,7 +1202,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                     lhs.into_int_value(),
                     rhs.into_int_value(),
                     "codegen_binary_and",
-                );
+                )?;
                 Ok(result.into())
             }
             Operation::BitwiseOr => {
@@ -885,7 +1212,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                     lhs.into_int_value(),
                     rhs.into_int_value(),
                     "codegen_binary_or",
-                );
+                )?;
                 Ok(result.into())
             }
             Operation::BitwiseXor => {
@@ -895,72 +1222,112 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                     lhs.into_int_value(),
                     rhs.into_int_value(),
                     "codegen_binary_xor",
-                );
+                )?;
+                Ok(result.into())
+            }
+            Operation::LogicalAnd => {
+                let lhs = self.codegen_expression(&binary.lhs, false)?;
+                let rhs = self.codegen_expression(&binary.rhs, false)?;
+                let result = self.builder.build_and(
+                    lhs.into_int_value(),
+                    rhs.into_int_value(),
+                    "codegen_binary_and",
+                )?;
+                Ok(result.into())
+            }
+            Operation::LogicalOr => {
+                let lhs = self.codegen_expression(&binary.lhs, false)?;
+                let rhs = self.codegen_expression(&binary.rhs, false)?;
+                let result = self.builder.build_or(
+                    lhs.into_int_value(),
+                    rhs.into_int_value(),
+                    "codegen_binary_or",
+                )?;
                 Ok(result.into())
             }
             Operation::Assign => {
                 let var = self.codegen_expression(&binary.lhs, true)?;
                 let value = self.codegen_expression(&binary.rhs, false)?;
-                self.builder.build_store(var.into_pointer_value(), value);
+                self.builder.build_store(var.into_pointer_value(), value)?;
                 Ok(value)
             }
-            Operation::Dot => {
+            Operation::MemberAccess => {
                 match ((*binary.lhs).get_type(), &(*binary.rhs)) {
                     // TODO: We can collapse the field case into one, similar to the method call case
                     (Type::Ref(typ, _), nodes::Expression::Name(field)) => {
-                        let lhs = self.codegen_expression(&binary.lhs, true)?;
                         // Implicit dereference
-                        let lhs = self.builder.build_load(
-                            self.codegen_type(&binary.lhs.get_type()),
-                            lhs.into_pointer_value(),
-                            "lhs_load",
-                        );
+                        let Type::Struct(ref struct_name) = *typ else {
+                            internal_panic!("Expected struct, found {:?}", typ)
+                        };
+                        let lhs = self.codegen_expression(&binary.lhs, false)?;
+                        let real_name = self.get_full_name(struct_name);
+                        let Some(struct_type) = self.get_struct_type(&real_name) else {
+                            internal_panic!("Could not find struct {}", real_name)
+                        };
+                        let Some(struct_lookup) = self.struct_info.get(&real_name) else {
+                            internal_panic!("Could not find struct {}", real_name)
+                        };
                         if !lhs.is_pointer_value() {
                             todo!("lhs is not a pointer")
                         }
-                        let field_type = self.codegen_type(&field.typ);
-                        let field_ptr = self.builder.build_struct_gep(
-                            self.codegen_type(&typ),
-                            lhs.into_pointer_value(),
-                            0,
-                            "field_ptr",
-                        ).unwrap();
-                        let field_ptr = self.builder.build_pointer_cast(
-                            field_ptr,
-                            field_type.ptr_type(AddressSpace::default()),
-                            "field_ptr_cast",
-                        );
                         if needs_ptr {
+                            let offset = struct_lookup.get_field_index(&field.name);
+                            let field_ptr = self.builder.build_struct_gep(
+                                struct_type.clone(),
+                                lhs.into_pointer_value(),
+                                offset as u32,
+                                "field_ptr")?;
                             Ok(field_ptr.into())
                         } else {
-                            let field_value = self.builder.build_load(
-                                field_type,
-                                field_ptr,
-                                "field_ptr_load",
-                            );
-                            Ok(field_value)
+                            println!("need_ptr no lhs: {:?}", lhs);
+                            todo!()
                         }
                     },
                     (Type::Struct(struct_name), nodes::Expression::Name(field)) => {
+                        let real_name = self.get_full_name(&struct_name);
                         let lhs = self.codegen_expression(&binary.lhs, true)?;
-                        if !lhs.is_pointer_value() {
-                            todo!("lhs is not a pointer")
-                        }
-                        let struct_struct_type = self.struct_defs.get(&struct_name).unwrap();
-                        let offset = self.sm
-                            .get_struct_info(&struct_name)
-                            .get_field_index(&field.name);
+                        let Some(struct_type) = self.get_struct_type(&real_name) else {
+                            internal_panic!("Could not find struct {}", real_name)
+                        };
+                        let struct_type = struct_type.into_struct_type();
+                        let Some(struct_lookup) = self.struct_info.get(&real_name) else {
+                            internal_panic!("Could not find struct {}", real_name)
+                        };
+                        let offset = struct_lookup.get_field_index(&field.name);
                         let field_ptr = self.builder.build_struct_gep(
-                            struct_struct_type.clone(),
+                            struct_type.clone(),
                             lhs.into_pointer_value(),
                             offset as u32,
-                            "field_ptr").unwrap();
+                            "field_ptr")?;
+                        if needs_ptr {
+                                Ok(field_ptr.into())
+                        } else {
+                            let field_type = self.codegen_type(&field.typ);
+                            let field_value = self.builder.build_load(
+                                field_type,
+                                field_ptr,
+                                "field_ptr_load",
+                            )?;
+                            Ok(field_value)
+                        }
+                    },
+                    (typ @ Type::Module(_, _), nodes::Expression::Name(field)) => {
+                        let real_name = typ.get_unfolded_module_name();
+                        let lhs = self.codegen_expression(&binary.lhs, true)?;
+                        let Some(struct_type) = self.get_struct_type(&real_name) else {
+                            internal_panic!("Could not find struct {}", real_name)
+                        };
+                        let struct_type = struct_type.into_struct_type();
+                        let Some(struct_lookup) = self.struct_info.get(&real_name) else {
+                            internal_panic!("Could not find struct {}", real_name)
+                        };
+                        let offset = struct_lookup.get_field_index(&field.name);
+                        let field_ptr = self.builder.build_struct_gep(
+                            struct_type.clone(),
+                            lhs.into_pointer_value(),
+                            offset as u32,
+                            "field_ptr")?;
                         let field_type = self.codegen_type(&field.typ);
-                        let field_ptr = self.builder.build_pointer_cast(
-                            field_ptr,
-                            field_type.ptr_type(AddressSpace::default()),
-                            "field_ptr_cast",
-                        );
                         if needs_ptr {
                             Ok(field_ptr.into())
                         } else {
@@ -968,25 +1335,37 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                                 field_type,
                                 field_ptr,
                                 "field_ptr_load",
-                            );
+                            )?;
                             Ok(field_value)
                         }
-                    },
+                    }
                     (Type::Ref(strukt, _), nodes::Expression::FunctionCall(method_call)) => {
-                        let struct_name = strukt.get_struct_name();
+                        let Type::Struct(strukt) = *strukt else {
+                            internal_panic!("Expected struct, found {:?}", strukt)
+                        };
+                        let real_name = self.get_full_name(&strukt);
                         let lhs = self.codegen_expression(&binary.lhs, true)?;
-                        let method_name = format!("{}_{}", struct_name, method_call.function_name);
+                        let method_name = format!("{}_{}", real_name, method_call.function_name);
                         let Some(method) = self.module.get_function(&method_name) else {
-                            internal_panic!(
-                                format!("Could not find function {}", method_name)
-                            )
+                            internal_panic!("Could not find function {}", method_name)
                         };
                         let mut args = Vec::new();
-                        args.push(lhs.into());
-                        for arg in &method_call.arguments {
-                            args.push(self.codegen_expression(arg, false)?.into());
+                        if lhs.is_struct_value() {
+                            let lhs = self.struct_value_for_arg(self.codegen_type(&binary.lhs.get_type()), lhs)?;
+                            args.push(lhs.into());
+                        } else {
+                            args.push(lhs.into());
                         }
-                        let result = self.builder.build_call(method, &args, "method_call");
+                        for arg in &method_call.arguments {
+                            let expr = self.codegen_expression(arg, false)?;
+                            if expr.is_struct_value() {
+                                let expr = self.struct_value_for_arg(self.codegen_type(&arg.get_type()), expr)?;
+                                args.push(expr.into());
+                            } else {
+                                args.push(expr.into());
+                            }
+                        }
+                        let result = self.builder.build_call(method, &args, "method_call")?;
                         if result.try_as_basic_value().left().is_none() {
                             // NOTE: The return value doesn't matter, the function returns None
                             Ok(lhs.into())
@@ -995,20 +1374,30 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                         }
                     },
                     (Type::Struct(struct_name), nodes::Expression::FunctionCall(method_call)) => {
-                        let method_name = format!("{}_{}", struct_name, method_call.function_name);
+                        let real_name = self.get_full_name(&struct_name);
+                        let method_name = format!("{}_{}", real_name, method_call.function_name);
                         let Some(method) = self.module.get_function(&method_name) else {
-                            internal_panic!(
-                                format!("Could not find function {}", method_name)
-                            )
+                            internal_panic!("Could not find function {}", method_name)
                         };
                         let implicit_ref = method.get_first_param().unwrap().get_type().is_pointer_type();
                         let lhs = self.codegen_expression(&binary.lhs, implicit_ref)?;
                         let mut args = Vec::new();
-                        args.push(lhs.into());
-                        for arg in &method_call.arguments {
-                            args.push(self.codegen_expression(arg, false)?.into());
+                        if lhs.is_struct_value() {
+                            let lhs = self.struct_value_for_arg(self.codegen_type(&binary.lhs.get_type()), lhs)?;
+                            args.push(lhs.into());
+                        } else {
+                            args.push(lhs.into());
                         }
-                        let result = self.builder.build_call(method, &args, "method_call");
+                        for arg in &method_call.arguments {
+                            let expr = self.codegen_expression(arg, false)?;
+                            if expr.is_struct_value() {
+                                let expr = self.struct_value_for_arg(self.codegen_type(&arg.get_type()), expr)?;
+                                args.push(expr.into());
+                            } else {
+                                args.push(expr.into());
+                            }
+                        }
+                        let result = self.builder.build_call(method, &args, "method_call")?;
                         if result.try_as_basic_value().left().is_none() {
                             // NOTE: The return value doesn't matter, the function returns None
                             Ok(lhs.into())
@@ -1016,9 +1405,172 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                             Ok(result.try_as_basic_value().left().unwrap())
                         }
                     },
+                    (typ @ Type::Module(_, _), nodes::Expression::FunctionCall(method_call)) => {
+                        let real_name = typ.get_unfolded_module_name();
+                        let method_name = format!("{}_{}", real_name, method_call.function_name);
+                        let Some(method) = self.module.get_function(&method_name) else {
+                            internal_panic!("Could not find function {}", method_name)
+                        };
+                        let implicit_ref = method.get_first_param().unwrap().get_type().is_pointer_type();
+                        let lhs = self.codegen_expression(&binary.lhs, implicit_ref)?;
+                        let mut args = Vec::new();
+                        if lhs.is_struct_value() {
+                            let lhs = self.struct_value_for_arg(self.codegen_type(&binary.lhs.get_type()), lhs)?;
+                            args.push(lhs.into());
+                        } else {
+                            args.push(lhs.into());
+                        }
+                        for arg in &method_call.arguments {
+                            let expr = self.codegen_expression(arg, false)?;
+                            if expr.is_struct_value() {
+                                let expr = self.struct_value_for_arg(self.codegen_type(&arg.get_type()), expr)?;
+                                args.push(expr.into());
+                            } else {
+                                args.push(expr.into());
+                            }
+                        }
+                        let result = self.builder.build_call(method, &args, "method_call")?;
+                        if result.try_as_basic_value().left().is_none() {
+                            // NOTE: The return value doesn't matter, the function returns None
+                            Ok(lhs.into())
+                        } else {
+                            Ok(result.try_as_basic_value().left().unwrap())
+                        }
+                    }
                     (lhs, rhs) => internal_panic!(
-                        format!("Something went wrong: Found {:?} as lhs and {:?} as rhs of Dot operation!", lhs, rhs)
+                        "Something went wrong: Found {:?} as lhs and {:?} as rhs of Dot operation!", lhs, rhs
                     )
+                }
+            }
+            Operation::ModuleAccess => {
+                let mut module_path = Vec::new();
+                let mut current = binary.typ.clone();
+                while let Type::Module(module_name, inner) = current {
+                    module_path.push(module_name);
+                    current = *inner;
+                }
+                let module_name = module_path.join(".");
+                match &*binary.rhs {
+                    nodes::Expression::FunctionCall(call_node) => {
+                        let real_name = if call_node.is_extern {
+                            call_node.function_name.clone()
+                        } else {
+                            format!("{}.{}", module_name, call_node.function_name)
+                        };
+                        let Some(function) = self.module.get_function(&real_name) else {
+                            internal_panic!("Could not find function {}", real_name)
+                        };
+                        let mut args = Vec::new();
+                        for arg in &call_node.arguments {
+                            let expr = self.codegen_expression(arg, false)?;
+                            args.push(expr.into());
+                        }
+                        let result = self.builder.build_call(function, &args, "codegen_function_call")?;
+                        let val = if result.try_as_basic_value().left().is_none() {
+                            // NOTE: The return value doesn't matter, the function returns None
+                            //       it's a workaround for `void_type` not being a BasicValueEnum
+                            self.context.i32_type().const_int(0, false).into()
+                        } else {
+                            result.try_as_basic_value().left().unwrap()
+                        };
+                        if needs_ptr {
+                            let temp_alloc = self.allocate(val.get_type(), "codegen_function_call")?;
+                            self.builder.build_store(temp_alloc, val)?;
+                            Ok(temp_alloc.into())
+                        } else {
+                            Ok(val)
+                        }
+                    }
+                    nodes::Expression::StructLiteral(struct_node) => {
+                        let real_name = format!("{}.{}", module_name, struct_node.struct_name);
+                        let Some(struct_type) = self.get_struct_type(&real_name) else {
+                            internal_panic!("Could not find struct {}", real_name)
+                        };
+                        let mut expressions = Vec::new();
+                        for field in &struct_node.fields {
+                            expressions.push(self.codegen_expression(&field.1, false)?);
+                        }
+                        let struct_alloc = self.allocate(struct_type, "codegen_struct_literal")?;
+                        for (i, field) in struct_node.fields.iter().enumerate() {
+                            let field_alloc = self.builder.build_struct_gep(
+                                struct_type.into_struct_type(),
+                                struct_alloc,
+                                i as u32,
+                                &field.0,
+                            )?;
+                            let value = expressions[i];
+                            self.builder.build_store(field_alloc, value)?;
+                        }
+                        if needs_ptr {
+                            Ok(struct_alloc.into())
+                        } else {
+                            let struct_alloc = self.builder.build_load(
+                                struct_type,
+                                struct_alloc,
+                                "codegen_struct_literal",
+                            )?;
+                            Ok(struct_alloc)
+                        }
+                    }
+                    _ => internal_panic!(
+                        "Something went wrong: Found {:?} as lhs and {:?} as rhs of DoubleColon operation!", binary.lhs, binary.rhs
+                    )
+                }
+            }
+            Operation::IndexedAccess => {
+                let array = self.codegen_expression(&binary.lhs, true)?;
+                let index = self.codegen_expression(&binary.rhs, false)?;
+                let array_type = self.codegen_type(&binary.lhs.get_type());
+                let array_size = match &binary.lhs.get_type() {
+                    Type::Array(_, size) => *size,
+                    _ => internal_panic!("Expected array, found {:?}", binary.lhs.get_type()),
+                };
+                debug_assert!(array_type.is_array_type());
+                debug_assert!(index.is_int_value());
+                debug_assert!(array.is_pointer_value());
+                {
+                    // if (index >= size) { panic("Index out of bounds"); }
+                    let cond = self.builder.build_int_compare(
+                        inkwell::IntPredicate::UGE,
+                        index.into_int_value(),
+                        self.context.i64_type().const_int(array_size as u64, false),
+                        "codegen_binary_indexedaccess_cond",
+                    )?;
+                    let current_fn = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+                    let panic_block = self.context.append_basic_block(current_fn, "codegen_binary_indexedaccess_panic");
+                    let normal_block = self.context.append_basic_block(current_fn, "codegen_binary_indexedaccess_normal");
+                    self.builder.build_conditional_branch(cond, panic_block, normal_block)?;
+                    self.builder.position_at_end(panic_block);
+                    let exit_fn = self.module.get_function(&"prelude.index_oob").unwrap();
+                    let exit_msg = self.builder.build_global_string_ptr(&format!(
+                        "{:?}: RUNTIME ERROR: Index out of bounds: Array of size {} has no index %d\n",
+                        binary.location,
+                        array_size,
+                    ), "oob_lit")?;
+                    self.builder.build_call(exit_fn, &[
+                        exit_msg.as_pointer_value().into(),
+                        index.into(),
+                    ], "run_time_error")?;
+                    self.builder.build_unreachable()?;
+                    self.builder.position_at_end(normal_block);
+                }
+                let field_ptr = unsafe {
+                    self.builder.build_gep(
+                        array_type,
+                        array.into_pointer_value(),
+                        &[self.context.i64_type().const_int(0, false), index.into_int_value()],
+                        "field_ptr")
+                }?;
+                let field_type = self.codegen_type(&binary.typ);
+                if needs_ptr {
+                    Ok(field_ptr.into())
+                } else {
+                    let field_value = self.builder.build_load(
+                        field_type,
+                        field_ptr,
+                        "field_ptr_load",
+                    )?;
+                    Ok(field_value)
                 }
             }
             e => unimplemented!("codegen_binary: {:?}", e),
@@ -1026,11 +1578,26 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
-    fn codegen_literal(&mut self, literal: &nodes::LiteralNode) -> Result<BasicValueEnum<'ctx>, String> {
+    fn codegen_literal(&mut self, literal: &nodes::LiteralNode) -> Result<BasicValueEnum<'ctx>, BuilderError> {
         match &literal.typ {
             Type::Bool => {
                 let value = if literal.value == "true" { 1 } else { 0 };
                 let value = self.context.bool_type().const_int(value as u64, false);
+                Ok(value.into())
+            }
+            Type::Char => {
+                let value = literal.value.chars().next().unwrap() as u8 - '0' as u8;
+                let value = self.context.i8_type().const_int(value as u64, false);
+                Ok(value.into())
+            }
+            Type::I8 => {
+                let value = literal.value.parse::<i8>().unwrap();
+                let value = self.context.i8_type().const_int(value as u64, true);
+                Ok(value.into())
+            }
+            Type::I16 => {
+                let value = literal.value.parse::<i16>().unwrap();
+                let value = self.context.i16_type().const_int(value as u64, true);
                 Ok(value.into())
             }
             Type::I32 => {
@@ -1041,6 +1608,16 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             Type::I64 => {
                 let value = literal.value.parse::<i64>().unwrap();
                 let value = self.context.i64_type().const_int(value as u64, false);
+                Ok(value.into())
+            }
+            Type::U8 => {
+                let value = literal.value.parse::<u8>().unwrap();
+                let value = self.context.i8_type().const_int(value as u64, false);
+                Ok(value.into())
+            }
+            Type::U16 => {
+                let value = literal.value.parse::<u16>().unwrap();
+                let value = self.context.i16_type().const_int(value as u64, false);
                 Ok(value.into())
             }
             Type::U32 => {
@@ -1058,6 +1635,23 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 let value = self.context.i64_type().const_int(value as u64, false);
                 Ok(value.into())
             }
+            Type::F32 => {
+                let value = literal.value.parse::<f32>().unwrap();
+                let value = self.context.f32_type().const_float(value as f64);
+                Ok(value.into())
+            }
+            Type::F64 => {
+                let value = literal.value.parse::<f64>().unwrap();
+                let value = self.context.f64_type().const_float(value);
+                Ok(value.into())
+            }
+            Type::Ref(t, false) => {
+                if **t != Type::Str {
+                    unimplemented!("codegen_literal: {:?}", literal);
+                }
+                let value = self.builder.build_global_string_ptr(&literal.value, "codegen_str_literal")?;
+                Ok(value.as_pointer_value().into())
+            }
             e => unimplemented!("codegen_literal: {:?}", e),
         }
     }
@@ -1065,38 +1659,86 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     #[trace_call(always)]
     fn codegen_type(&self, typ: &Type) -> BasicTypeEnum<'ctx> {
         match typ {
+            Type::Char => self.context.i8_type().as_basic_type_enum(),
+            Type::I8 => self.context.i8_type().as_basic_type_enum(),
+            Type::I16 => self.context.i16_type().as_basic_type_enum(),
             Type::I32 => self.context.i32_type().as_basic_type_enum(),
             Type::I64 => self.context.i64_type().as_basic_type_enum(),
+            Type::U8 => self.context.i8_type().as_basic_type_enum(),
+            Type::U16 => self.context.i16_type().as_basic_type_enum(),
             Type::U32 => self.context.i32_type().as_basic_type_enum(),
             Type::U64 => self.context.i64_type().as_basic_type_enum(),
+            Type::F32 => self.context.f32_type().as_basic_type_enum(),
+            Type::F64 => self.context.f64_type().as_basic_type_enum(),
             Type::Usize => self.context.i64_type().as_basic_type_enum(),
             Type::Bool => self.context.bool_type().as_basic_type_enum(),
-            Type::Struct(_) => {
-                let struct_name = typ.get_struct_name();
-                let struct_struct_type = self.struct_defs.get(&struct_name).unwrap();
-                struct_struct_type.clone()
+            Type::Array(ty, size) => {
+                let ty = self.codegen_type(&*ty);
+                ty.array_type(*size as u32).as_basic_type_enum()
+            },
+            Type::Struct(struct_name) => {
+                let real_name = self.get_full_name(struct_name);
+                let Some(struct_type) = self.get_struct_type(&real_name) else {
+                    if self.flags.debug {
+                        println!("[DEBUG] Could not find struct {}", real_name);
+                        println!("[DEBUG] Known structs: {:?}", self.struct_defs.keys());
+                    }
+                    internal_panic!("Could not find struct {}", real_name)
+                };
+                struct_type
             },
             Type::Ref(typ, _) => {
                 let typ = self.codegen_type(&*typ);
                 typ.ptr_type(AddressSpace::default()).as_basic_type_enum()
             },
+            Type::Module(_, _) => {
+                let mut current = typ.clone();
+                let mut module_path = Vec::new();
+                while let Type::Module(module_name, inner) = current {
+                    module_path.push(module_name);
+                    current = *inner;
+                }
+                let module_name = module_path.join(".");
+                let Type::Struct(struct_name) = current else {
+                    internal_panic!("Module type should always end in a struct type!")
+                };
+                let struct_name = format!("{}.{}", module_name, struct_name);
+                let struct_type = self.get_struct_type(&struct_name).unwrap();
+                struct_type
+            },
+            Type::Str => self.context.i8_type().ptr_type(AddressSpace::default()).as_basic_type_enum(),
+            Type::Any => self.context.i64_type().ptr_type(AddressSpace::default()).as_basic_type_enum(),
             // Note: Void does not exist as BasicTypeEnum, so void functions are handled differently
-            Type::None => unreachable!("Type::None should never be used!"),
-            e => unimplemented!("codegen_type: {:?}", e),
+            Type::None => internal_panic!("Type::None should never be used!"),
+            Type::Unknown => internal_panic!("Type::Unknown should never be used!"),
+        }
+    }
+
+    #[trace_call(always)]
+    fn get_full_name(&self, struct_name: &str) -> String {
+        let module_name = self.module_stack.join(".");
+        format!("{}.{}", module_name, struct_name)
+    }
+
+    #[trace_call(always)]
+    fn get_struct_type(&self, struct_name: &str) -> Option<BasicTypeEnum<'ctx>> {
+        if let Some(struct_type) = self.struct_defs.get(struct_name) {
+            Some(struct_type.clone())
+        } else {
+            None
         }
     }
 
     #[trace_call(always)]
     pub fn run(&mut self) -> Result<(), String> {
-        println!("[INFO] Running {}", self.exename);
-        let mut filename = String::from(OUTPUT_FOLDER);
-        filename.push_str(&self.path);
+        println!("[INFO] Running {}", self.exename.to_str().unwrap());
         let path = std::path::Path::new(&self.exename);
         let output = std::process::Command::new(path)
             .output()
             .expect("Failed to execute program!");
         let exit_code = output.status.code().unwrap();
         println!("[INFO] BEGIN OUTPUT\n{}\n[INFO] END OUTPUT", String::from_utf8(output.stdout).unwrap());
+        println!("[INFO] BEGIN ERROR\n{}\n[INFO] END ERROR", String::from_utf8(output.stderr).unwrap());
         println!("[INFO] Program exited with code 0x{:X}.", exit_code);
         if exit_code != 0 {
             Err(format!(

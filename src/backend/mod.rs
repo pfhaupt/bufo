@@ -1,9 +1,9 @@
 
-#[cfg(not(feature = "llvm"))]
+#[cfg(feature = "old_codegen")]
 pub mod assembler;
-#[cfg(not(feature = "llvm"))]
+#[cfg(feature = "old_codegen")]
 pub mod codegen;
-#[cfg(not(feature = "llvm"))]
+#[cfg(feature = "old_codegen")]
 pub mod instr;
-#[cfg(feature = "llvm")]
+#[cfg(not(feature = "old_codegen"))]
 pub mod codegen_llvm;

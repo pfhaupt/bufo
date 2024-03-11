@@ -3,7 +3,6 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Unexpected Symbol `_`
 //! Expected Identifier, found Integer Literal
 
 func main() {

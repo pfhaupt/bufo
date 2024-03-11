@@ -1,7 +1,6 @@
 //! THIS IS A TEST PROGRAM
 //! RUNTIME
-//! FAILURE
-//! CODE: 54
+//! SUCCESS
 
 func main() -> u32 {
     let c: i32 = 12;
@@ -20,8 +19,8 @@ func main() -> u32 {
         // c - d == 3
         // a == c - d + 2
         if (a == c - d + 2) {
-            return 54;
+            return 0;
         }
     }
-    return 91;
+    return 1;
 }

@@ -4,7 +4,7 @@
 //! CODE: 1
 //! ERROR:
 //! Expected `(`, found Identifier
-//! Expected one of `func`, `extern` or `struct`, found `}`
+//! Expected one of `extern`, `func`, `import`, `struct` or `unsafe`, found `}`
 
 func main() {
     if a == 1 {

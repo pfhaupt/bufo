@@ -1,0 +1,32 @@
+// All libc functions are unsafe, because C-compliance is not guaranteed yet.
+
+// File IO
+unsafe extern fopen(filename: &str, mode: &str) -> Any;
+unsafe extern fread(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
+unsafe extern fclose(stream: Any) -> i32;
+unsafe extern fprintf(stream: Any, msg: &str, ...);
+
+// Console IO
+unsafe extern printf(msg: &str, ...) -> usize;
+unsafe extern fdopen(fd: i32, mode: &str) -> Any;
+
+unsafe extern exit(code: i32);
+
+// Internal Runtime Errors
+func index_oob(msg: &str, index: i64) {
+    unsafe {
+        let stderr: Any = fdopen(2, "w");
+        fprintf(stderr, msg, index);
+        exit(1);
+    }
+}
+
+func assert(cond: bool, msg: &str) {
+    unsafe {
+        if (cond == false) {
+            let stderr: Any = fdopen(2, "w");
+            fprintf(stderr, "ASSERTION FAILED: %s\n", msg);
+            exit(1);
+        }
+    }
+}

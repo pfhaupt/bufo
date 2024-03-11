@@ -1,0 +1,15 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Use of `Any` is unsafe.
+//! Use an `unsafe {}` block if you really want to use `Any`.
+
+func main() -> i32 {
+    let a: u16 = 26984;
+    let b: &u16 = &a;
+    let c: Any = b;
+    let d: &char = c;
+    return 0;
+}

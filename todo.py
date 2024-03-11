@@ -4,11 +4,13 @@ import random
 
 from sys import argv
 
+CMD = ["git", "grep", "-nE", "(todo!|TODO|FIXME|REVIEW)", "--", ":!todo.py"]
+
 def call_cmd(cmd: List) -> int:
     return subprocess.check_output(cmd).split(b'\n')
 
 def get_random():
-    todo = call_cmd(["git", "grep", "-nE", "(todo!|TODO|FIXME)", "--", ":!todo.py"])
+    todo = call_cmd(CMD)
     todo = list(filter(lambda elem: elem != b'', todo))
     print(f"Found {len(todo)} things that need fixing!")
     if len(todo) == 0:
@@ -21,7 +23,7 @@ if __name__ == "__main__":
             case "random":
                 print(get_random())
             case "all":
-                todos = call_cmd(["git", "grep", "-nE", "(todo!|TODO|FIXME)", "--", ":!todo.py"])
+                todos = call_cmd(CMD)
                 todos = list(filter(lambda elem: elem != b'', todos))
                 for line in todos:
                     print(line)

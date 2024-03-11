@@ -1,0 +1,8 @@
+//! IGNORE
+
+struct Bez {
+    i: i32;
+}
+func foo() -> Bez {
+    return Bez { i: 10 };
+}

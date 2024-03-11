@@ -8,7 +8,7 @@
 
 func main() {
     mut a: i32 = 0;
-    let b: &&mut i32 = &&mut a;         // <-- 1st error
+    let b: &&mut i32 = &&mut a;        // <-- 1st error
     let c: &mut &mut i32 = b;           // <-- 2nd error
     let d: &mut &mut i32 = &mut &mut a; // <-- Same Nested error
 }

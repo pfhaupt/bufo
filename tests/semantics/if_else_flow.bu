@@ -1,13 +1,12 @@
 //! THIS IS A TEST PROGRAM
 //! RUNTIME
-//! FAILURE
-//! CODE: 1
+//! SUCCESS
 
 func main() -> u32 {
     let a: i32 = 1;
     if (a == 1) {
-        return 1;
-    } else {
         return 0;
+    } else {
+        return 1;
     }
 }

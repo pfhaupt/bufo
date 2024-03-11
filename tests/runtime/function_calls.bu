@@ -1,23 +1,6 @@
 //! THIS IS A TEST PROGRAM
 //! RUNTIME
-//! FAILURE
-//! CODE: 1757
-
-struct Foo {
-    t: Test;
-    // constructor(this: Foo) {}
-    // constructor() -> Foo {}
-    // func foo(this: Foo) {}
-    // func foo(a: u32, this: Foo) {}
-}
-
-struct Test {
-    a: i32;
-
-    func foo(a: i32) {
-        // this.a = a;
-    }
-}
+//! SUCCESS
 
 func ack(m: u32, n: u32) -> u32 {
     if (m == 0) { return n + 1; }
@@ -25,42 +8,12 @@ func ack(m: u32, n: u32) -> u32 {
     return ack(m - 1, ack(m, n - 1));
 }
 
-// func f(a: i32, b: i32, c: i32, d: i32, e: i32) {}
-// func foo(a: i32, a: i32) {}
-// func faa() -> i32 { return; }
-// func f(a: i32, b: i32, a: i32) {}
-// func foo() -> i32[3] { return [1, 2, 3]; }
-
-struct Bar {
-    a: u32;
-}
-
 func main() -> u32 {
-    let bar: Bar = Bar {
-        a: 420 + 1337
-    };
-    let a: u32 = ack(3, 5);
-    let c: i32 = 1 + 1 + 1;
-    let index: usize = 1;
-    let t: Test = Test {
-        a: 0
-    };
-    let b: u32 = ack(3, 5);
-    if (b == 253) {
-        let b: u32 = ack(3, 3);
-        if (b == 61) {
-            let b: u32 = ack(3, 2);
-        }
-    } else {
-        let b: u32 = ack(3, 4);
-    }
-
-    // let arr: i32[1, 1] = [[1]];
-    // arr[index, 1] = 2;
-    // let e: i32 = arr[index, index];
-    // let ba: i32 = t.a;
-    // foo();
-    mut d: u32 = 0;
-    d = d + d + d + d + d + d + d + d + d;
-    return bar.a;
+    mut b: u32 = ack(3, 5);
+    if (b != 253) return 1;
+    b = ack(3, 3);
+    if (b != 61) return 2;
+    b = ack(3, 2);
+    if (b != 29) return 3;
+    return 0;
 }

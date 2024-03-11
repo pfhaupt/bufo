@@ -1,0 +1,14 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+func main() -> i32 {
+    mut arr: [[i32; 3]; 2] = [
+        [1, 2, 3],
+        [4, 5, 6]
+    ];
+    if (arr[1][2] == 4) return 1;
+    arr[1][2] = 4;
+    if (arr[1][2] != 4) return 2;
+    return 0;
+}

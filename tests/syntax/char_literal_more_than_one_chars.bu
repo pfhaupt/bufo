@@ -3,7 +3,7 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Invalid Char Literal: 'hello'
+//! Invalid Char Literal: `hello`
 //! Expected Expression, found `;`
 
 func main() {

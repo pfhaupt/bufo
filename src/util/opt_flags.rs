@@ -1,5 +1,5 @@
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub enum OptimizationLevel {
     #[default]
     None,
@@ -7,6 +7,18 @@ pub enum OptimizationLevel {
     All,
     Aggressive,
     Size,
+}
+
+impl From<&OptimizationLevel> for inkwell::OptimizationLevel {
+    fn from(level: &OptimizationLevel) -> Self {
+        match level {
+            OptimizationLevel::None => Self::None,
+            OptimizationLevel::Some => Self::Less,
+            OptimizationLevel::All => Self::Default,
+            OptimizationLevel::Aggressive => Self::Aggressive,
+            OptimizationLevel::Size => Self::Default,
+        }
+    }
 }
 
 #[derive(Default, Debug, Clone)]

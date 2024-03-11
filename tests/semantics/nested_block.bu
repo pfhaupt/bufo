@@ -1,7 +1,6 @@
 //! THIS IS A TEST PROGRAM
 //! RUNTIME
-//! FAILURE
-//! CODE: 1337
+//! SUCCESS
 
 func main() -> i32 {
     mut a: i32 = 0;
@@ -13,8 +12,8 @@ func main() -> i32 {
             b = c;
             a = c - a;
         }
-        if (b != 100) return b;
+        if (b != 100) return 1;
     }
-    if (a != 90) return a;
-    return 1337;
+    if (a != 90) return 2;
+    return 0;
 }

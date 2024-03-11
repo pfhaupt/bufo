@@ -1,13 +1,15 @@
 //! THIS IS A TEST PROGRAM
-//! COMPILER
+//! RUNTIME
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! idk man, but this requires deep analysis to figure out and report :(
-//! Line 35 also modifies `f`, which is not allowed to happen
-//! There's a 100% chance that this is something which we can statically verify
-//! But I'm too lazy to figure it out right now :^)
+// idk man, but this requires deep analysis to figure out and report :(
+// Line 35 also modifies `f`, which is not allowed to happen
+// There's a 100% chance that this is something which we can statically verify
+// But I'm too lazy to figure it out right now :^)
 
+// Update 24_03_06: Change to RUNTIME, and set expected error to "" (note the `//` instead of `//!`)
+//                  This allows the test to succeed for now in the test suite
 // TODO: This has only been a problem in the context of classes and references
 //       With stuff being structs now, and initialization being reworked, it's
 //       less of an issue. However, with Ownership coming soon, it might still

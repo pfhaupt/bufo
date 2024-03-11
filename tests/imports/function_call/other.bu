@@ -1,0 +1,5 @@
+//! IGNORE
+
+func foo() -> i32 {
+    return 5;
+}

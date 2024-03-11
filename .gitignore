@@ -3,6 +3,7 @@
 /.vscode/
 /stresstest/
 /.idea/
+/.mypy_cache/
 
 /fuzz/*
 !/fuzz/important

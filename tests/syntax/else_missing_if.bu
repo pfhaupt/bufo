@@ -4,7 +4,7 @@
 //! CODE: 1
 //! ERROR:
 //! Expected Expression, found `else`
-//! Expected one of `func`, `extern` or `struct`, found `}`
+//! Expected one of `extern`, `func`, `import`, `struct` or `unsafe`, found `}`
 
 func main() {
     else {

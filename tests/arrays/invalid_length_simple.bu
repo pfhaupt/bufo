@@ -1,0 +1,10 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Array size mismatch! Expected size to be `4`, found size to be `3`.
+
+func main() {
+    let a: [i32; 4] = [1, 2, 3];
+}

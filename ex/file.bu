@@ -1,0 +1,8 @@
+unsafe func main() {
+    mut buf: [char; 1024] = [0; 1024];
+    mut f: Any = prelude::fopen("./ex/file.bu", "r");
+    let s: usize = prelude::fread(&buf, 1, 1024, f);
+    prelude::printf("Size in bytes: %u\n", s);
+    prelude::printf("File:\n%s\n", &buf);
+    prelude::assert(prelude::fclose(f) == 0, "Could not close file!");
+}

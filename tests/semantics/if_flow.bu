@@ -1,12 +1,11 @@
 //! THIS IS A TEST PROGRAM
 //! RUNTIME
-//! FAILURE
-//! CODE: 1290
+//! SUCCESS
 
 func main() -> u32 {
     let a: i32 = 0;
-    if (a == 0) {
-        return 1290;
+    if (a != 0) {
+        return 1;
     }
     return 0;
 }
