@@ -11,11 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Setup LLVM and Clang
-      run: |
-      {
-        sudo apt-get install llvm-16 clang-16 llvm-16-dev libclang-16-dev
-        export PATH=$PATH:/usr/lib/llvm-16/bin
-      }
+      run: sudo apt-get install llvm-16 clang-16 llvm-16-dev libclang-16-dev
+    - name: Add LLVM to PATH
+      run: export PATH=$PATH:/usr/lib/llvm-16/bin
     - name: Checkout
       uses: actions/checkout@v3
     - name: Build
