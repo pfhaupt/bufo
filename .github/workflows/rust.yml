@@ -8,12 +8,13 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
-    - name: Install Clang
-      uses: egor-tensin/setup-clang@v1.4
+    - name: Setup winlibs
+      uses: bwoodsend/setup-winlibs-action@v1
       with:
-        version: 16
+        tag: 13.1.0-16.0.5-11.0.0-msvcrt-r5
+        with_clang: true
     - name: Checkout
       uses: actions/checkout@v3
     - name: Build
