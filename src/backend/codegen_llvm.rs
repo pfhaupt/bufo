@@ -418,6 +418,9 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
 
     #[trace_call(always)]
     fn finalize_executable(&mut self) -> Result<(), String> {
+        if !std::path::Path::new("./out").exists() {
+            std::fs::create_dir("./out").unwrap();
+        }
         match self.module.verify() {
             Ok(_) => (),
             Err(e) => {
