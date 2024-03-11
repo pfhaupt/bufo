@@ -1,0 +1,18 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Expected Identifier, found `true`
+//! Expected Identifier, found `false`
+//! Expected `;`, found `(`
+
+struct true {
+}
+
+struct false {
+}
+
+func main() {
+    true();
+}

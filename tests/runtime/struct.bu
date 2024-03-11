@@ -1,0 +1,31 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+struct Foo {
+    value: i32;
+    var: i32;
+    func getVar(this) -> i32 {
+        return this.var;
+    }
+
+    func setVar(mut this, var: i32) {
+        // Will not work, because `setVar` copies the instance
+        this.var = var;
+    }
+}
+
+func foo(f: Foo) -> Foo {
+    return f;
+}
+
+func main() -> i32 {
+    mut f: Foo = Foo {
+        value: 420,
+        var: 69
+    };
+    let var: i32 = f.getVar();
+    f.setVar(12);
+    if (var != f.getVar()) return 1;
+    return 0;
+}

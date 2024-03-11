@@ -2,3 +2,9 @@
 /out/
 /.vscode/
 /stresstest/
+/.idea/
+/.mypy_cache/
+
+/fuzz/*
+!/fuzz/important
+!/fuzz/fuzzer.py

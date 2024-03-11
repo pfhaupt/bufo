@@ -1,0 +1,12 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Recursive struct `recursive_struct.Foo`.
+
+struct Foo {
+    field: Foo;
+}
+
+func main() {}

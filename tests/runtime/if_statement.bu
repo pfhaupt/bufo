@@ -1,0 +1,10 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+func main() -> i32 {
+    mut a: i32 = 0;
+    a = a + 10;
+    if (a != 10) return a;
+    else return 0;
+}

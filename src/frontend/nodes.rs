@@ -1,24 +1,85 @@
+use std::fs;
+
 use crate::frontend::parser::{Location, Operation};
-use crate::middleend::checker::Type;
+use crate::middleend::type_checker::Type;
 
 use tracer::trace_call;
 
 #[derive(Debug, Clone)]
-pub struct FileNode {
+pub struct ModuleNode {
     pub location: Location,
-    pub filepath: String,
+    pub name: String,
+    pub modules: Vec<ModuleNode>,
+    pub externs: Vec<ExternNode>,
+    pub structs: Vec<StructNode>,
     pub functions: Vec<FunctionNode>,
-    pub classes: Vec<ClassNode>,
+    pub imports: Vec<ImportNode>,
+    pub compiler_flags: Option<CompilerFlagsNode>,
 }
 
 #[derive(Debug, Clone)]
-pub struct ClassNode {
+pub struct ImportNode {
+    pub location: Location,
+    pub trace: Vec<(String, Location)>,
+}
+
+#[allow(unused)]
+#[derive(Debug, Clone)]
+pub enum CompilerFlag {
+    LibPath(Location, String),
+    Library(Location, String),
+    Linker(Location, String),
+}
+
+impl CompilerFlag {
+    #[trace_call(extra)]
+    pub fn from(location: Location, flag: String, value: String) -> Result<Self, String> {
+        match flag.as_str() {
+            "library" => Ok(Self::Library(location, value)),
+            "libpath" => {
+                if fs::metadata(&value).is_err() {
+                    return Err(format!("{:?}: Library path '{}' does not exist", location, value));
+                }
+                Ok(Self::LibPath(location, value))
+            },
+            "linker" => Ok(Self::Linker(location, value)),
+            _ => Err(format!("{:?}: Unknown compiler flag '{}'", location, flag)),
+        }
+    }
+
+    #[trace_call(extra)]
+    pub fn to_vec(&self) -> Vec<String> {
+        match self {
+            Self::LibPath(_, value) => vec![format!("-L{}", value.clone())],
+            Self::Library(_, value) => vec![format!("-l{}", value.clone())],
+            Self::Linker(_, value) => vec!["-Xlinker".to_string(), value.clone()],
+        }
+    }
+}
+
+#[allow(unused)]
+#[derive(Debug, Clone)]
+pub struct CompilerFlagsNode {
+    pub location: Location,
+    pub flags: Vec<CompilerFlag>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExternNode {
+    pub location: Location,
+    pub name: String,
+    pub return_type: TypeNode,
+    pub parameters: Vec<ParameterNode>,
+    pub is_unsafe: bool,
+    pub is_vararg: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructNode {
     pub location: Location,
     pub name: String,
     pub fields: Vec<FieldNode>,
     pub methods: Vec<MethodNode>,
-    pub features: Vec<FeatureNode>,
-    pub has_constructor: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -29,35 +90,28 @@ pub struct FieldNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct FeatureNode {
-    pub location: Location,
-    pub class_name: String,
-    pub name: String,
-    pub return_type: TypeNode,
-    pub parameters: Vec<ParameterNode>,
-    pub block: BlockNode,
-    pub stack_size: usize,
-    pub is_constructor: bool,
-}
-
-#[derive(Debug, Clone)]
 pub struct FunctionNode {
     pub location: Location,
     pub name: String,
     pub return_type: TypeNode,
     pub parameters: Vec<ParameterNode>,
     pub block: BlockNode,
+    pub is_unsafe: bool,
+    pub is_vararg: bool,
+    #[cfg(feature = "old_codegen")]
     pub stack_size: usize,
 }
 
 #[derive(Debug, Clone)]
 pub struct MethodNode {
     pub location: Location,
-    pub class_name: String,
+    pub struct_name: String,
     pub name: String,
     pub return_type: TypeNode,
     pub parameters: Vec<ParameterNode>,
     pub block: BlockNode,
+    pub is_vararg: bool,
+    #[cfg(feature = "old_codegen")]
     pub stack_size: usize,
 }
 
@@ -66,86 +120,86 @@ pub struct ParameterNode {
     pub location: Location,
     pub name: String,
     pub typ: TypeNode,
-}
-
-impl ParameterNode {
-    #[trace_call(extra)]
-    pub fn this(location: Location, typ: Type) -> Self {
-        Self {
-            location: location.clone(),
-            name: String::from("this"),
-            typ: TypeNode {
-                location,
-                typ
-            }
-        }
-    }
+    pub is_mutable: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct BlockNode {
     pub location: Location,
     pub statements: Vec<Statement>,
+    pub is_unsafe: bool,
+    #[cfg(not(feature = "old_codegen"))]
+    pub llvm_has_terminator: bool,
 }
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Expression(ExpressionNode),
-    Let(LetNode),
-    Assign(AssignNode),
+    Block(BlockNode),
+    Expression(Expression),
+    VarDecl(VarDeclNode),
     If(IfNode),
     Return(ReturnNode),
     While(WhileNode),
+    Break(BreakNode),
+    Continue(ContinueNode),
+}
+
+impl Statement {
+    pub fn get_loc(&self) -> Location {
+        match self {
+            Self::Block(e) => e.location,
+            Self::Expression(e) => e.get_loc(),
+            Self::VarDecl(e) => e.location,
+            Self::If(e) => e.location,
+            Self::Return(e) => e.location,
+            Self::While(e) => e.location,
+            Self::Break(e) => e.location,
+            Self::Continue(e) => e.location,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
-pub struct ExpressionNode {
-    pub location: Location,
-    pub expression: Expression,
-}
-
-#[derive(Debug, Clone)]
-pub struct LetNode {
+pub struct VarDeclNode {
     pub location: Location,
     pub name: String,
     pub typ: TypeNode,
-    pub expression: ExpressionNode,
-}
-
-#[derive(Debug, Clone)]
-pub struct AssignNode {
-    pub location: Location,
-    pub name: ExpressionIdentifierNode,
-    pub expression: ExpressionNode,
-}
-
-#[derive(Debug, Clone)]
-pub struct ExpressionIdentifierNode {
-    pub location: Location,
-    pub expression: Box<Expression>,
-    pub typ: Type,
+    pub expression: Expression,
+    pub is_mutable: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct IfNode {
     pub location: Location,
-    pub condition: ExpressionComparisonNode,
-    pub if_branch: BlockNode,
-    pub else_branch: Option<BlockNode>,
+    pub condition: Expression,
+    pub if_body: Box<BlockNode>,
+    pub else_body: Option<BlockNode>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ReturnNode {
     pub location: Location,
-    pub return_value: Option<ExpressionNode>,
+    pub return_value: Option<Expression>,
     pub typ: Type,
+    pub function: String,
+    pub strukt: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct WhileNode {
     pub location: Location,
-    pub condition: ExpressionComparisonNode,
-    pub block: BlockNode,
+    pub condition: Expression,
+    pub body: BlockNode,
+}
+
+#[derive(Debug, Clone)]
+pub struct BreakNode {
+    pub location: Location,
+}
+
+#[derive(Debug, Clone)]
+pub struct ContinueNode {
+    pub location: Location,
 }
 
 #[derive(Debug, Clone)]
@@ -162,47 +216,39 @@ impl TypeNode {
             typ: Type::None
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct ArgumentNode {
-    pub location: Location,
-    pub expression: ExpressionNode,
-    pub typ: Type,
+    #[trace_call(extra)]
+    pub fn this(location: Location, typ: Type) -> Self {
+        Self {
+            location,
+            typ
+        }
+    }
 }
 
 #[allow(unused)]
 #[derive(Debug, Clone)]
 pub enum Expression {
     Name(NameNode),
-    Identifier(ExpressionIdentifierNode),
-    ArrayLiteral(ExpressionArrayLiteralNode),
-    ArrayAccess(ExpressionArrayAccessNode),
-    Literal(ExpressionLiteralNode),
-    Binary(ExpressionBinaryNode),
-    Comparison(ExpressionComparisonNode),
-    FieldAccess(ExpressionFieldAccessNode),
-    // Parenthesis(ExpressionNode),
-    FunctionCall(ExpressionCallNode),
-    ConstructorCall(ExpressionConstructorNode),
-    BuiltIn(ExpressionBuiltInNode),
+    Literal(LiteralNode),
+    StructLiteral(StructLiteralNode),
+    ArrayLiteral(ArrayLiteralNode),
+    Unary(UnaryNode),
+    Binary(BinaryNode),
+    // Parenthesis(Expression),
+    FunctionCall(CallNode),
 }
 
 impl Expression {
     #[trace_call(extra)]
     pub fn get_loc(&self) -> Location {
         match &self {
-            Self::Name(e) => e.location.clone(),
-            Self::Identifier(e) => e.location.clone(),
-            Self::ArrayLiteral(e) => e.location.clone(),
-            Self::ArrayAccess(e) => e.location.clone(),
-            Self::Literal(e) => e.location.clone(),
-            Self::Binary(e) => e.location.clone(),
-            Self::Comparison(e) => e.location.clone(),
-            Self::FieldAccess(e) => e.location.clone(),
-            Self::FunctionCall(e) => e.location.clone(),
-            Self::ConstructorCall(e) => e.location.clone(),
-            Self::BuiltIn(e) => e.location.clone()
+            Self::Name(e) => e.location,
+            Self::Literal(e) => e.location,
+            Self::StructLiteral(e) => e.location,
+            Self::ArrayLiteral(e) => e.location,
+            Self::Unary(e) => e.location,
+            Self::Binary(e) => e.location,
+            Self::FunctionCall(e) => e.location,
         }
     }
 
@@ -210,44 +256,91 @@ impl Expression {
     pub fn get_type(&self) -> Type {
         match &self {
             Self::Name(e) => e.typ.clone(),
-            Self::Identifier(e) => e.typ.clone(),
+            Self::StructLiteral(e) => e.typ.clone(),
             Self::ArrayLiteral(e) => e.typ.clone(),
-            Self::ArrayAccess(e) => e.typ.clone(),
             Self::Literal(e) => e.typ.clone(),
+            Self::Unary(e) => e.typ.clone(),
             Self::Binary(e) => e.typ.clone(),
-            Self::Comparison(e) => e.typ.clone(),
-            Self::FieldAccess(e) => e.typ.clone(),
             Self::FunctionCall(e) => e.typ.clone(),
-            Self::ConstructorCall(e) => e.typ.clone(),
-            Self::BuiltIn(e) => e.typ.clone()
+        }
+    }
+
+    #[trace_call(extra)]
+    #[allow(unused)]
+    pub fn set_type(&mut self, typ: Type) {
+        match self {
+            Self::Name(e) => e.typ = typ,
+            Self::StructLiteral(e) => e.typ = typ,
+            Self::ArrayLiteral(e) => e.typ = typ,
+            Self::Literal(e) => e.typ = typ,
+            Self::Unary(e) => e.typ = typ,
+            Self::Binary(e) => e.typ = typ,
+            Self::FunctionCall(e) => e.typ = typ,
+        }
+    }
+
+    #[trace_call(extra)]
+    pub fn is_lvalue(&self) -> bool {
+        match &self {
+            Self::Name(_) => true,
+            Self::Unary(e) => {
+                e.operation == Operation::Dereference
+            }
+            Self::Binary(e) => {
+                e.operation == Operation::MemberAccess ||
+                e.operation == Operation::IndexedAccess
+            }
+            _ => false
+        }
+    }
+
+    #[trace_call(extra)]
+    pub fn is_arithmetic(&self) -> bool {
+        match &self {
+            Self::Unary(e) => e.operation.is_arithmetic(),
+            Self::Binary(e) => e.operation.is_arithmetic(),
+            _ => false
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct ExpressionArrayLiteralNode {
-    pub location: Location,
-    pub elements: Vec<Expression>,
-    pub typ: Type,
-}
-
-#[derive(Debug, Clone)]
-pub struct ExpressionArrayAccessNode {
-    pub location: Location,
-    pub array_name: String,
-    pub indices: ExpressionArrayLiteralNode,
-    pub typ: Type,
-}
-
-#[derive(Debug, Clone)]
-pub struct ExpressionLiteralNode {
+pub struct LiteralNode {
     pub location: Location,
     pub value: String,
     pub typ: Type,
 }
 
 #[derive(Debug, Clone)]
-pub struct ExpressionBinaryNode {
+pub struct StructLiteralNode {
+    pub location: Location,
+    pub struct_name: String,
+    pub fields: Vec<(String, Expression)>,
+    pub typ: Type,
+}
+
+#[derive(Debug, Clone)]
+pub struct ArrayLiteralNode {
+    pub location: Location,
+    pub elements: Vec<Expression>,
+    pub typ: Type,
+    // Small optimization so we don't need to typecheck
+    // and codegen the same array elements multiple times
+    // [elem; n] => size = Some(n), len(elements)=1
+    // [elem, elem, ...] => size = None, len(elements)=n
+    pub size: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UnaryNode {
+    pub location: Location,
+    pub operation: Operation,
+    pub expression: Box<Expression>,
+    pub typ: Type,
+}
+
+#[derive(Debug, Clone)]
+pub struct BinaryNode {
     pub location: Location,
     pub operation: Operation,
     pub lhs: Box<Expression>,
@@ -255,50 +348,45 @@ pub struct ExpressionBinaryNode {
     pub typ: Type,
 }
 
-#[derive(Debug, Clone)]
-pub struct ExpressionComparisonNode {
-    pub location: Location,
-    pub operation: Operation,
-    pub lhs: Box<Expression>,
-    pub rhs: Box<Expression>,
-    pub typ: Type,
+impl BinaryNode {
+    #[trace_call(extra)]
+    pub fn is_comparison(&self) -> bool {
+        self.operation.is_comparison()
+    }
+
+    #[trace_call(extra)]
+    pub fn is_arithmetic(&self) -> bool {
+        self.operation.is_arithmetic()
+    }
+
+    #[trace_call(extra)]
+    pub fn is_bitwise(&self) -> bool {
+        self.operation.is_bitwise()
+    }
+
+    #[trace_call(extra)]
+    pub fn is_logical(&self) -> bool {
+        self.operation.is_logical()
+    }
+
+    #[trace_call(extra)]
+    pub fn is_indexed_access(&self) -> bool {
+        self.operation == Operation::IndexedAccess
+    }
 }
 
 #[derive(Debug, Clone)]
-pub struct ExpressionCallNode {
+pub struct CallNode {
     pub location: Location,
     pub function_name: String,
-    pub arguments: Vec<ArgumentNode>,
+    pub arguments: Vec<Expression>,
     pub typ: Type,
-}
-
-#[derive(Debug, Clone)]
-pub struct ExpressionConstructorNode {
-    pub location: Location,
-    pub class_name: String,
-    pub arguments: Vec<ArgumentNode>,
-    pub typ: Type,
-}
-
-#[derive(Debug, Clone)]
-pub struct ExpressionFieldAccessNode {
-    pub location: Location,
-    pub name: String,
-    pub field: ExpressionIdentifierNode,
-    pub typ: Type,
+    pub is_extern: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct NameNode {
     pub location: Location,
     pub name: String,
-    pub typ: Type,
-}
-
-#[derive(Debug, Clone)]
-pub struct ExpressionBuiltInNode {
-    pub location: Location,
-    pub function_name: String,
-    pub arguments: Vec<ArgumentNode>,
     pub typ: Type,
 }

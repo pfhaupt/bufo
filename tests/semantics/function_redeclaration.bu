@@ -1,3 +1,11 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Function redeclaration.
+//! Function `bla` already declared here.
+
 func bla() {
     
 }

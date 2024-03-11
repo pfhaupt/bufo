@@ -1,10 +1,14 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
 func foo() -> u32 {
     return 1;
 }
 
 func main() -> u32 {
     while (foo() == 1) {
-        return 1337;
+        return 0;
     }
-    return 420;
+    return 1;
 }

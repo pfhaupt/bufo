@@ -1,3 +1,11 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Too many arguments for Function `bla`.
+//! Function `bla` expects 1 arguments, found 2.
+
 func bla(a: i32) {
 
 }

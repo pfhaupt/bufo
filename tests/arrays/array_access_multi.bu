@@ -1,0 +1,28 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+func main() -> i32 {
+    let arr: [[i32; 5]; 5] = [
+        [01, 02, 03, 04, 05],
+        [06, 07, 08, 09, 10],
+        [11, 12, 13, 14, 15],
+        [16, 17, 19, 19, 20],
+        [21, 22, 23, 24, 25]
+    ];
+    {
+        let val1: i32 = arr[2][3];
+        if (val1 != 14) return 1;
+    }
+    {
+        let val2: i32 = arr[4][0];
+        if (val2 != 21) return 2;
+    }
+    {
+        let subArr: [i32; 5] = arr[1];
+        let val3: i32 = subArr[2];
+        if (val3 != arr[1][2]) return 3;
+        if (val3 != 8) return 4;
+    }
+    return 0;
+}

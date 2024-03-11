@@ -1,11 +1,18 @@
-class Test {
-    a: i32;
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Attempted to access unknown field `b` of instance of struct `Test`.
+//! Struct `Test` is declared here.
 
-    feat new() {
-        this.b = 10;
-    }
+struct Test {
+    a: i32;
 }
 
 func main() {
-    
+    let t: Test = Test {
+        a: 10,
+        b: 5
+    };
 }

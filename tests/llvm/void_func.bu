@@ -1,0 +1,11 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+
+func foo() {}
+
+func main() -> i32 {
+    foo();
+    return 0;
+}

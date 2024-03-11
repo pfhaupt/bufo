@@ -1,0 +1,22 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Attempted to modify immutable variable `f`.
+//! Variable `f` is declared here.
+
+struct Foo {
+    field: u32;
+
+    func mod_this(&mut this) {
+        this.field = 10;
+    }
+}
+
+func main() {
+    let f: Foo = Foo {
+        field: 0
+    };
+    f.mod_this();
+}

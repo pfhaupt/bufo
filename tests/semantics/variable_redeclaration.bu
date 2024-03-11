@@ -1,3 +1,11 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Variable redeclaration.
+//! Variable `a` already declared here.
+
 func main() {
     let a: i32 = 0;
     let a: u64 = 0;
