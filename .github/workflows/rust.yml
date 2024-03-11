@@ -2,18 +2,20 @@ name: Test
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "master", "dev" ]
   pull_request:
     branches: [ "master" ]
 
 jobs:
-  build:
-
+  test:
     runs-on: ubuntu-latest
-
     steps:
+    - name: Install Clang
+        uses: egor-tensin/setup-clang@v1.4
+        with:
+          version: 16
     - uses: actions/checkout@v3
     - name: Build
       run: cargo build --verbose --release
     - name: Run tests
-      run: python helper.py test --no-exec
+      run: python helper.py test
