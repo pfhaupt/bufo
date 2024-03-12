@@ -118,7 +118,8 @@ def run_test(path: str, exec: bool) -> TestResult:
             print_buffer += buf
             if output.returncode == 101:
                 print_buffer += "The compiler panicked\n"
-                print_buffer += output.stderr.decode("utf-8")
+                print_buffer += f"Output: {output.stdout.decode('utf-8')}\n"
+                print_buffer += f"Error: {output.stderr.decode('utf-8')}\n"
                 print(print_buffer, file=sys.stderr)
                 return TestResult(path, STATE.PANIC)
             if output.returncode != 0:
@@ -163,11 +164,12 @@ def run_test(path: str, exec: bool) -> TestResult:
         print(print_buffer)
         return TestResult(path, STATE.SUCCESS)
 
-def recompile_compiler() -> None:
+def recompile_compiler(trace: bool = False) -> None:
     print("Recompiling compiler...")
     cargo = ["cargo", "build"]
-    command = cargo + ["--features=old_codegen"] if USE_OLD_CODEGEN else cargo
-    buf, cmd = call_cmd(command)
+    cargo = cargo + ["--features=trace"] if trace else cargo
+    cargo = cargo + ["--features=old_codegen"] if USE_OLD_CODEGEN else cargo
+    buf, cmd = call_cmd(cargo)
     print(buf)
     if cmd.returncode != 0:
         print("Failed to recompile compiler", file=sys.stderr)
@@ -253,7 +255,8 @@ if __name__ == "__main__":
     else:
         mode = sys.argv[1]
         if mode == "test":
-            recompile_compiler()
+            trace = "--trace" in sys.argv
+            recompile_compiler(trace=trace)
             print("Running tests...")
             no_exec = "--no-exec" in sys.argv
             exit_first_failure = "--exit-first-failure" in sys.argv

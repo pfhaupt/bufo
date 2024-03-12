@@ -753,6 +753,17 @@ impl<'flags> Parser<'flags> {
                     self.current_char += 1;
                     return self.next_token();
                 }
+                '*' => {
+                    while !self.lexed_eof() {
+                        let nc = self.next_char();
+                        if nc == '*' {
+                            if self.next_char() == '/' {
+                                break;
+                            }
+                        }
+                    }
+                    return self.next_token();
+                }
                 _ => {
                     self.current_char -= 1;
                     (TokenType::ForwardSlash, String::from("/"))
@@ -806,19 +817,6 @@ impl<'flags> Parser<'flags> {
             '*' => (TokenType::Asterisk, String::from(c)),
             '%' => (TokenType::Percent, String::from(c)),
             '\0' => (TokenType::Eof, String::new()),
-            '$' => {
-                // Block comment
-                // REVIEW: $ is a weird choice for block comments ^^
-                while !self.lexed_eof() {
-                    self.trim_whitespace();
-                    if self.source[self.current_char] == '$' {
-                        self.current_char += 1;
-                        break;
-                    }
-                    self.current_char += 1;
-                }
-                return self.next_token();
-            }
             e => {
                 self.report_error(ParserError::UnexpectedSymbol(
                     loc,
@@ -1851,7 +1849,7 @@ impl<'flags> Parser<'flags> {
     fn get_binary_precedence(&self, token_type: TokenType) -> usize {
         // TOKEN_TYPE_HANDLE_HERE
         match token_type {
-            TokenType::DoubleColon => 18, // REVIEW: Can this be same level as Dot?
+            TokenType::DoubleColon => 18,
             TokenType::Dot => 17,
             TokenType::OpenSquare => 16, // Array index
             TokenType::ForwardSlash => 12,

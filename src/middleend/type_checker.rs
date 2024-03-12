@@ -786,6 +786,12 @@ impl Struct {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+struct StructInfo {
+    location: Location,
+    fields: BTreeMap<String, (Location, String)>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Variable {
     name: String,
     location: Location,
@@ -1093,8 +1099,7 @@ impl<'flags> TypeChecker<'flags> {
         &mut self,
         module: &nodes::ModuleNode,
         root_module: bool
-        // FIXME: This return value is a bit of a mess
-    ) -> BTreeMap<String, (Location, BTreeMap<String, (Location, String)>)> {
+    ) -> BTreeMap<String, StructInfo> {
         if !root_module {
             self.module_stack.push(module.name.clone());
         }
@@ -1115,7 +1120,11 @@ impl<'flags> TypeChecker<'flags> {
                 };
                 field_types.insert(name.clone(), (typ.l.clone(), type_name));
             }
-            struct_info.insert(real_name, (strukt.location.clone(), field_types));
+            let info = StructInfo {
+                location: strukt.location.clone(),
+                fields: field_types,
+            };
+            struct_info.insert(real_name, info);
         }
         if !root_module {
             self.module_stack.pop();
@@ -1142,17 +1151,17 @@ impl<'flags> TypeChecker<'flags> {
         while let Some((name, strukt)) = queue.pop_front() {
             if visited.contains(&name) {
                 errors.push(TypeError::RecursiveStruct(
-                    strukt.0,
+                    strukt.location.clone(),
                     name.clone(),
                     visited.iter().map(|s| {
                         let strukt = all_structs.get(s).unwrap();
-                        (strukt.0, s.clone())
+                        (strukt.location, s.clone())
                     }).collect(),
                 ));
                 continue;
             }
             visited.push(name.clone());
-            for (_, field) in &strukt.1 {
+            for (_, field) in &strukt.fields {
                 if let Some(field_strukt) = all_structs.get(&field.1) {
                     queue.push_back((field.1.clone(), field_strukt));
                 } else {

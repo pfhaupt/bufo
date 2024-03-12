@@ -166,13 +166,20 @@ impl<'flags> FlowChecker<'flags> {
             match (if_flow, else_flow) {
                 (FlowType::AlwaysReturn, FlowType::AlwaysReturn) => Ok(FlowType::AlwaysReturn),
                 (FlowType::AlwaysContinue, FlowType::AlwaysContinue) => Ok(FlowType::AlwaysContinue),
-                (FlowType::Linear, FlowType::Linear) => Ok(FlowType::Linear),
                 (FlowType::AlwaysBreak, FlowType::AlwaysBreak) => Ok(FlowType::AlwaysBreak),
+                (FlowType::Linear, FlowType::Linear) => Ok(FlowType::Linear),
                 (FlowType::AlwaysReturn, _) => Ok(FlowType::MayReturn),
                 (_, FlowType::AlwaysReturn) => Ok(FlowType::MayReturn),
+                (FlowType::AlwaysContinue, _) => Ok(FlowType::MayContinue),
+                (_, FlowType::AlwaysContinue) => Ok(FlowType::MayContinue),
+                (FlowType::AlwaysBreak, _) => Ok(FlowType::MayBreak),
+                (_, FlowType::AlwaysBreak) => Ok(FlowType::MayBreak),
                 (FlowType::MayReturn, _) => Ok(FlowType::MayReturn),
                 (_, FlowType::MayReturn) => Ok(FlowType::MayReturn),
-                (i, e) => todo!("{i:?}, {e:?}"),
+                (FlowType::MayContinue, _) => Ok(FlowType::MayContinue),
+                (_, FlowType::MayContinue) => Ok(FlowType::MayContinue),
+                (FlowType::MayBreak, _) => Ok(FlowType::MayBreak),
+                (_, FlowType::MayBreak) => Ok(FlowType::MayBreak),
             }
         } else {
             match if_flow {
@@ -180,7 +187,6 @@ impl<'flags> FlowChecker<'flags> {
                 FlowType::AlwaysContinue | FlowType::MayContinue => Ok(FlowType::MayContinue),
                 FlowType::AlwaysBreak | FlowType::MayBreak => Ok(FlowType::MayBreak),
                 FlowType::Linear => Ok(FlowType::Linear),
-                // i => todo!("{i:?}"),
             }
         }
     }
