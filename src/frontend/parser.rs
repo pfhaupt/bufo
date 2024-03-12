@@ -61,7 +61,7 @@ enum ParserError {
     InvalidCompilerFlag(String),
     CompilerFlagsNotFirst(Location),
     InvalidArraySize(Location),
-    ArrayWithSpecifiedSizeMoreThanOneElement(Location), // REVIEW: This error name is too long
+    ArrayWithSpecifiedSizeMoreThanOneElement(Location),
 }
 
 impl Display for ParserError {
@@ -150,7 +150,7 @@ pub enum TokenType {
     Comma,
     Dot,
     Exclamation,
-    VarArg, // REVIEW: This is only allowed in Externs (for now?), maybe handle it differently
+    VarArg,
     Arrow,
     Equal,
     Plus,
@@ -1254,8 +1254,6 @@ impl<'flags> Parser<'flags> {
 
     #[trace_call(always)]
     fn parse_compiler_flags(&mut self)-> Result<nodes::CompilerFlagsNode, ()> {
-        // FIXME: We should have a way to specify OS-specific flags
-        //        e.g. -lkernel32 doesn't make sense on Linux
         let mut compiler_flags = vec![];
         if self.eat(TokenType::KeywordCompilerFlags) {
             let location = self.current_location();
@@ -1339,6 +1337,7 @@ impl<'flags> Parser<'flags> {
         self.expect(TokenType::OpenCurly)?;
         let mut fields = vec![];
         let mut methods = vec![];
+        let mut valid = true;
         const RECOVER_TOKENS: [TokenType; 2] = [
             TokenType::ClosingCurly,
             TokenType::Semi,
@@ -1354,11 +1353,34 @@ impl<'flags> Parser<'flags> {
                     }
                 }
                 TokenType::KeywordFunc => {
-                    let parsed_method = self.parse_method(&name);
+                    let parsed_method = self.parse_method(&name, false);
                     if parsed_method.is_err() {
                         self.recover(&RECOVER_TOKENS);
                     } else {
                         methods.push(parsed_method.unwrap());
+                    }
+                }
+                TokenType::KeywordUnsafe => {
+                    self.expect(TokenType::KeywordUnsafe)?;
+                    match self.nth(0) {
+                        TokenType::KeywordFunc => {
+                            let parsed_method = self.parse_method(&name, true);
+                            if parsed_method.is_err() {
+                                self.recover(&RECOVER_TOKENS);
+                            } else {
+                                methods.push(parsed_method.unwrap());
+                            }
+                        }
+                        _ => {
+                            valid = false;
+                            let tkn = self.next();
+                            self.report_error(ParserError::UnexpectedTokenMany(
+                                tkn.location,
+                                vec![TokenType::KeywordFunc],
+                                tkn.token_type,
+                            ));
+                            self.recover(&RECOVER_TOKENS);
+                        }
                     }
                 }
                 e => {
@@ -1372,8 +1394,10 @@ impl<'flags> Parser<'flags> {
             }
         }
         self.expect(TokenType::ClosingCurly)?;
-
         self.current_struct = None;
+        if !valid {
+            return Err(());
+        }
         Ok(nodes::StructNode {
             location,
             name,
@@ -1429,7 +1453,7 @@ impl<'flags> Parser<'flags> {
     }
 
     #[trace_call(always)]
-    fn parse_method(&mut self, struct_name: &str) -> Result<nodes::MethodNode, ()> {
+    fn parse_method(&mut self, struct_name: &str, is_unsafe: bool) -> Result<nodes::MethodNode, ()> {
         let location = self.current_location();
         self.expect(TokenType::KeywordFunc)?;
 
@@ -1454,6 +1478,7 @@ impl<'flags> Parser<'flags> {
             return_type,
             parameters,
             block,
+            is_unsafe,
             is_vararg: false,
             #[cfg(feature = "old_codegen")]
             stack_size: 0,
@@ -1910,7 +1935,7 @@ impl<'flags> Parser<'flags> {
             TokenType::DoublePipe => Associativity::Left,
             TokenType::OpenSquare => Associativity::Left,
             TokenType::Equal => Associativity::Right,
-            e => todo!("get_associativity({:?})", e),
+            e => internal_panic!("Entered unreachable code: get_associativity({:?})", e),
         }
     }
 

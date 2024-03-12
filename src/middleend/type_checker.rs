@@ -4,7 +4,7 @@ use std::fmt::{Display, Formatter};
 use crate::frontend::nodes;
 use crate::frontend::parser::{Location, Operation};
 
-use crate::compiler::{ERR_STR, NOTE_STR};
+use crate::compiler::{ERR_STR, NOTE_STR, WARN_STR};
 use crate::internal_panic;
 use crate::util::flags::Flags;
 
@@ -92,7 +92,6 @@ macro_rules! check_function {
                 .zip($func_info.parameters.clone())
             {
                 let expected = param.typ;
-                // TODO: Mutability error should specify that this is a parameter
                 let Ok(arg_type) = $tc.type_check_expression(arg, false) else {
                     continue;
                 };
@@ -153,8 +152,6 @@ macro_rules! check_parameters {
     }};
 }
 
-// FIXME: All this info is in the AST, there's no need to clone this
-//        We can just use references to the AST and lifetime parameters
 #[derive(Debug)]
 enum TypeError {
     /// Syntax: Decl Type, Error Loc, Name, Decl Loc
@@ -210,12 +207,12 @@ enum TypeError {
     DereferenceIntegerLiteral(Location),
     /// Syntax: Error Loc
     NestedReferenceNotAllowedYet(Location),
-    /// Syntax: Error Loc, Function Name, Function Loc
-    UnsafeCallInSafeContext(Location, String, Location),
+    /// Syntax: Kind, Error Loc, Function Name, Function Loc
+    UnsafeCallInSafeContext(&'static str, Location, String, Location),
     /// Syntax: Error Loc, Module Name
     UnknownModule(Location, String),
-    /// Syntax: Error Loc
-    InvalidModuleAccess(Location),
+    /// Syntax: Error Loc, Message
+    InvalidModuleAccess(Location, &'static str),
     /// Syntax: Error Loc
     UnsafeAny(Location),
     /// Syntax: Error Loc, Element Type, Inferred Loc, Inferred Type
@@ -228,6 +225,10 @@ enum TypeError {
     ArrayIndexRequiresUsize(Location, Type),
     /// Syntax: Error Loc, Type
     LogicalNotTypeMismatch(Location, Type),
+    /// Syntax: Error Loc, Message
+    InvalidMemberAccess(Location, &'static str),
+    /// Syntax: Error Loc
+    ImmutDerefInMutContext(Location, Location),
 }
 
 impl Display for TypeError {
@@ -442,18 +443,19 @@ impl Display for TypeError {
                     ERR_STR, error_loc
                 )
             }
-            TypeError::UnsafeCallInSafeContext(error_loc, fn_name, fn_loc) => {
+            TypeError::UnsafeCallInSafeContext(kind, error_loc, fn_name, fn_loc) => {
+                let lowercase_kind = kind.to_lowercase();
                 write!(
                     f,
-                    "{}: {:?}: Unsafe function `{}` called in safe context.\n{}: {:?}: Function `{}` is declared here.\n{}: Use an `unsafe {{}}` block to fix this.",
-                    ERR_STR, error_loc, fn_name, NOTE_STR, fn_loc, fn_name, NOTE_STR
+                    "{}: {:?}: Unsafe {} `{}` called in safe context.\n{}: {:?}: {} `{}` is declared here.\n{}: Use an `unsafe {{}}` block to fix this.",
+                    ERR_STR, error_loc, lowercase_kind, fn_name, NOTE_STR, fn_loc, kind, fn_name, NOTE_STR
                 )
             }
             TypeError::UnknownModule(loc, name) => {
                 write!(f, "{}: {:?}: Unknown module `{}`.", ERR_STR, loc, name)
             }
-            TypeError::InvalidModuleAccess(loc) => {
-                write!(f, "{}: {:?}: Invalid module.", ERR_STR, loc)
+            TypeError::InvalidModuleAccess(loc, msg) => {
+                write!(f, "{}: {:?}: {} is not allowed.", ERR_STR, loc, msg)
             }
             TypeError::UnsafeAny(loc) => {
                 write!(f, "{}: {:?}: Use of `Any` is unsafe.\n{}: Use an `unsafe {{}}` block if you really want to use `Any`.", ERR_STR, loc, NOTE_STR)
@@ -491,6 +493,16 @@ impl Display for TypeError {
                     f,
                     "{}: {:?}: Type mismatch! Logical not is not defined for type `{}`.",
                     ERR_STR, loc, typ
+                )
+            }
+            TypeError::InvalidMemberAccess(loc, msg) => {
+                write!(f, "{}: {:?}: {} is not allowed.", ERR_STR, loc, msg)
+            }
+            TypeError::ImmutDerefInMutContext(loc, sub_expr_loc) => {
+                write!(
+                    f,
+                    "{}: {:?}: Attempted to dereference immutable reference where mutability is required.\n{}: {:?}: Subexpression is not mutable.",
+                    ERR_STR, loc, NOTE_STR, sub_expr_loc
                 )
             }
         }
@@ -753,7 +765,7 @@ impl Struct {
             return_type: TypeLoc::new(return_loc, return_type.clone()),
             parameters,
             has_this: true,
-            is_unsafe: false, // REVIEW: Do we want to allow unsafe methods?
+            is_unsafe: method.is_unsafe,
             is_vararg: false,
         };
         if self.known_methods.contains_key(name) {
@@ -952,7 +964,7 @@ impl Module {
             parameters,
             has_this: false,
             is_unsafe: function.is_unsafe,
-            is_vararg: false, // REVIEW: Do we want to allow vararg functions?
+            is_vararg: false,
         };
         if self.externs.contains_key(&name) {
             let external = &self.externs[&name];
@@ -1204,9 +1216,7 @@ impl<'flags> TypeChecker<'flags> {
         if !root_module {
             self.module_stack.push(module.name.clone());
             let mut import_errors = Vec::new();
-            let mut allowed_imports = Vec::new();
-            // TODO: Check for double imports, i.e. if a module is imported twice
-            //       Should be a warning
+            let mut allowed_imports: Vec<Vec<(String, Location)>> = Vec::new();
             for import in &module.imports {
                 let trace = import.trace.clone();
                 let mut module = self.module_tree.as_ref().unwrap();
@@ -1222,6 +1232,22 @@ impl<'flags> TypeChecker<'flags> {
                     }
                 }
                 if !error {
+                    for imported in &allowed_imports {
+                        if imported.len() == trace.len() {
+                            let mut equal = true;
+                            for (i, (name, _)) in imported.iter().enumerate() {
+                                if name != &trace[i].0 {
+                                    equal = false;
+                                    break;
+                                }
+                            }
+                            if equal {
+                                println!("{}: {:?}: Module already imported.\n{}: {:?}: Here.", WARN_STR, trace[0].1.clone(), NOTE_STR, imported[0].1.clone());
+                                break;
+                            }
+                        }
+
+                    }
                     allowed_imports.push(trace);
                 }
             }
@@ -1412,8 +1438,8 @@ impl<'flags> TypeChecker<'flags> {
                     self.report_error(TypeError::UnsafeAny(let_node.location));
                 }
 
-                // REVIEW: If type is mutable reference, we cant pass false
-                let expr_type = self.type_check_expression(&mut let_node.expression, false);
+                let needs_mutable = expected_type.is_mutable_ref();
+                let expr_type = self.type_check_expression(&mut let_node.expression, needs_mutable);
 
                 let current_scope = self.get_current_scope();
                 if current_scope.insert(let_node.name.clone(), var).is_some() {
@@ -1569,7 +1595,7 @@ impl<'flags> TypeChecker<'flags> {
             nodes::Expression::Name(name_node) => {
                 self.type_check_expr_name(name_node, needs_mutability)
             }
-            nodes::Expression::Unary(unary_expr) => self.type_check_expr_unary(unary_expr),
+            nodes::Expression::Unary(unary_expr) => self.type_check_expr_unary(unary_expr, needs_mutability),
             nodes::Expression::Binary(binary_expr) => {
                 self.type_check_expr_binary(binary_expr, needs_mutability)
             }
@@ -1824,7 +1850,7 @@ impl<'flags> TypeChecker<'flags> {
         let var = self.get_variable(&name_node.name);
         match var {
             Some(var) => {
-                if needs_mutability && !var.is_mutable {
+                if needs_mutability && !(var.is_mutable || var.typ.is_mutable_ref()) {
                     self.report_error(TypeError::ImmutableModification(
                         name_node.location,
                         name_node.name.clone(),
@@ -1846,7 +1872,7 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_expr_unary(&mut self, unary_expr: &mut nodes::UnaryNode) -> Result<Type, ()> {
+    fn type_check_expr_unary(&mut self, unary_expr: &mut nodes::UnaryNode, needs_mutability: bool) -> Result<Type, ()> {
         match unary_expr.operation {
             Operation::Negate => {
                 let expr_type = self.type_check_expression(&mut unary_expr.expression, false)?;
@@ -1866,7 +1892,7 @@ impl<'flags> TypeChecker<'flags> {
                 let Type::Ref(_, is_mutable) = unary_expr.typ else {
                     internal_panic!("UnaryNode with Operation::Reference has wrong type!");
                 };
-                let expr_type = self.type_check_expression(&mut unary_expr.expression, false)?;
+                let expr_type = self.type_check_expression(&mut unary_expr.expression, is_mutable)?;
                 if expr_type == Type::Unknown {
                     return Ok(Type::Unknown);
                 }
@@ -1878,12 +1904,16 @@ impl<'flags> TypeChecker<'flags> {
                 Ok(unary_expr.typ.clone())
             }
             Operation::Dereference => {
-                // FIXME: Do we need to consider mutability here?
-                //        That should depend on the context, right?
-                //        Just passing `false` is probably wrong
-                let expr_type = self.type_check_expression(&mut unary_expr.expression, false)?;
+                let expr_type = self.type_check_expression(&mut unary_expr.expression, needs_mutability)?;
                 match expr_type {
-                    Type::Ref(t, _) => {
+                    Type::Ref(t, is_mut) => {
+                        if needs_mutability && !is_mut {
+                            self.report_error(TypeError::ImmutDerefInMutContext(
+                                unary_expr.location,
+                                unary_expr.expression.get_loc(),
+                            ));
+                            return Err(());
+                        }
                         unary_expr.typ = *t.clone();
                         Ok(*t.clone())
                     }
@@ -1942,7 +1972,7 @@ impl<'flags> TypeChecker<'flags> {
             _ if binary_expr.is_arithmetic() => self.type_check_expr_binary_arithmetic(binary_expr),
             _ if binary_expr.is_bitwise() => self.type_check_expr_binary_bitwise(binary_expr),
             _ if binary_expr.is_logical() => self.type_check_expr_binary_logical(binary_expr),
-            o => todo!("type_check_expr_binary for {:?} is not implemented yet!", o),
+            op => internal_panic!("Entered type_check_expr_binary with unknown operation: {:?}", op),
         }
     }
 
@@ -2156,11 +2186,8 @@ impl<'flags> TypeChecker<'flags> {
         }
         let lhs_type = self.type_check_expression(&mut assign_expr.lhs, true)?;
         let rhs_type = self.type_check_expression(&mut assign_expr.rhs, false)?;
+        debug_assert!(lhs_type != Type::Unknown);
 
-        if lhs_type == Type::Unknown {
-            // Note: This is an error, how can we assign to something we don't know the type of?
-            todo!()
-        }
         if rhs_type == Type::Unknown {
             // Infer type of rhs from lhs
             let typ = self.type_check_expression_with_type(&mut assign_expr.rhs, &lhs_type)?;
@@ -2269,6 +2296,15 @@ impl<'flags> TypeChecker<'flags> {
                     ));
                     return Err(());
                 };
+                if method.is_unsafe && self.unsafe_depth == 0 {
+                    self.report_error(TypeError::UnsafeCallInSafeContext(
+                        "Method",
+                        call_node.location,
+                        call_node.function_name.clone(),
+                        method.location,
+                    ));
+                    return Err(());
+                }
                 let result = if method.has_this {
                     // FIXME: This is not a good solution, but it works for now
                     if let expected_this @ Type::Ref(_, expected_mutable) = &method.parameters[0].typ {
@@ -2303,8 +2339,11 @@ impl<'flags> TypeChecker<'flags> {
                 Ok(result)
             }
             _ => {
-                // Not a field, not a method, this is an error
-                todo!()
+                self.report_error(TypeError::InvalidMemberAccess(
+                    binary_expr.rhs.get_loc(),
+                    "Non-NameNode or Non-FunctionCall on RHS"
+                ));
+                Err(())
             }
         }
     }
@@ -2344,7 +2383,8 @@ impl<'flags> TypeChecker<'flags> {
             nodes::Expression::Binary(ref mut binary_node) => {
                 if binary_node.operation != Operation::ModuleAccess {
                     self.report_error(TypeError::InvalidModuleAccess(
-                        binary_node.lhs.get_loc()
+                        binary_node.lhs.get_loc(),
+                        "Non-`::` Binary Operation on LHS"
                     ));
                     return Err(());
                 }
@@ -2372,8 +2412,11 @@ impl<'flags> TypeChecker<'flags> {
                         )?
                     }
                     e => {
-                        // You can only call functions or create structs from modules for now
-                        todo!("{:?}", e)
+                        self.report_error(TypeError::InvalidModuleAccess(
+                            e.get_loc(),
+                            "Non-Function Call or Non-Struct Literal on RHS"
+                        ));
+                        return Err(());
                     }
                 };
                 let mut rebuilt_type = rhs_type.clone();
@@ -2427,7 +2470,11 @@ impl<'flags> TypeChecker<'flags> {
                         )?
                     }
                     e => {
-                        todo!("{:?}", e)
+                        self.report_error(TypeError::InvalidModuleAccess(
+                            e.get_loc(),
+                            "Non-Function Call, Non-Struct Literal or Non-Module on RHS"
+                        ));
+                        return Err(());
                     }
                 };
                 module_stack.pop();
@@ -2440,7 +2487,8 @@ impl<'flags> TypeChecker<'flags> {
             }
             _ => {
                 self.report_error(TypeError::InvalidModuleAccess(
-                    binary_expr.lhs.get_loc()
+                    binary_expr.lhs.get_loc(),
+                    "Non-Module or Non-`::` Binary Operation on LHS"
                 ));
                 Err(())
             }
@@ -2747,6 +2795,7 @@ impl<'flags> TypeChecker<'flags> {
         };
         if function.is_unsafe && self.unsafe_depth == 0 {
             self.report_error(TypeError::UnsafeCallInSafeContext(
+                "Function",
                 func_call.location,
                 func_call.function_name.clone(),
                 function.location,

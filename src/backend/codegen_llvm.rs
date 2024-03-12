@@ -388,8 +388,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     #[trace_call(always)]
     fn codegen_entrypoint(&mut self, file: &nodes::ModuleNode) -> Result<(), BuilderError> {
         let main_name = self.find_main(file).unwrap_or_else(|| {
-            // TODO: Proper error handling
-            println!("[ERROR] No main function found");
+            println!("[ERROR] Could not find main function!");
             std::process::exit(1);
         });
         let main_func = self.module.get_function(&main_name).unwrap();

@@ -110,6 +110,7 @@ pub struct MethodNode {
     pub return_type: TypeNode,
     pub parameters: Vec<ParameterNode>,
     pub block: BlockNode,
+    pub is_unsafe: bool,
     pub is_vararg: bool,
     #[cfg(feature = "old_codegen")]
     pub stack_size: usize,
