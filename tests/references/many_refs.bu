@@ -1,0 +1,15 @@
+//! IGNORE
+
+// FIXME: Implement after needs_ptr refactor
+
+func main() -> i32 {
+    // mut a: i32 = 5;
+    // let b: &&mut i32 = &mut &mut a;
+    // **b = 10;
+    // if (a != 10) return 1;
+    // mut c: i32 = 10;
+    // let d: &&&&mut i32 = &&&mut &mut c;
+    // ****d = 20;
+    // if (c != 20) return 2;
+    return 0;
+}
