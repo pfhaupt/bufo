@@ -2,6 +2,7 @@
 
 // File IO
 unsafe extern fopen(filename: &str, mode: &str) -> Any;
+// FIXME: Any ignores Mutability :^) We should probably only write to mutable buffers tho...
 unsafe extern fread(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
 unsafe extern fclose(stream: Any) -> i32;
 unsafe extern fprintf(stream: Any, msg: &str, ...);
@@ -23,7 +24,7 @@ func index_oob(msg: &str, index: i64) {
 
 func assert(cond: bool, msg: &str) {
     unsafe {
-        if (cond == false) {
+        if (!cond) {
             let stderr: Any = fdopen(2, "w");
             fprintf(stderr, "ASSERTION FAILED: %s\n", msg);
             exit(1);

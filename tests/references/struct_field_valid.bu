@@ -1,0 +1,17 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+struct Foo {
+    a: &mut i32;
+}
+
+func main() -> i32 {
+    mut a: i32 = 10;
+    mut f: Foo = Foo {
+        a: &mut a
+    };
+    *(f.a) = 20; // <-- `f.a` is mutable reference to `a`, this is allowed
+    if (a != 20) return 1;
+    return 0;
+}

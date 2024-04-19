@@ -2,6 +2,7 @@ from typing import List
 import subprocess
 import os
 import sys
+import time
 
 from multiprocessing import Pool
 from typing import Tuple
@@ -118,7 +119,8 @@ def run_test(path: str, exec: bool) -> TestResult:
             print_buffer += buf
             if output.returncode == 101:
                 print_buffer += "The compiler panicked\n"
-                print_buffer += output.stderr.decode("utf-8")
+                print_buffer += f"Output: {output.stdout.decode('utf-8')}\n"
+                print_buffer += f"Error: {output.stderr.decode('utf-8')}\n"
                 print(print_buffer, file=sys.stderr)
                 return TestResult(path, STATE.PANIC)
             if output.returncode != 0:
@@ -163,11 +165,12 @@ def run_test(path: str, exec: bool) -> TestResult:
         print(print_buffer)
         return TestResult(path, STATE.SUCCESS)
 
-def recompile_compiler() -> None:
+def recompile_compiler(trace: bool = False) -> None:
     print("Recompiling compiler...")
     cargo = ["cargo", "build"]
-    command = cargo + ["--features=old_codegen"] if USE_OLD_CODEGEN else cargo
-    buf, cmd = call_cmd(command)
+    cargo = cargo + ["--features=trace"] if trace else cargo
+    cargo = cargo + ["--features=old_codegen"] if USE_OLD_CODEGEN else cargo
+    buf, cmd = call_cmd(cargo)
     print(buf)
     if cmd.returncode != 0:
         print("Failed to recompile compiler", file=sys.stderr)
@@ -176,6 +179,7 @@ def recompile_compiler() -> None:
     print("Recompilation successful")
 
 def run_all_tests(exec: bool = True, exit_first_failure: bool = False):
+    start_time = time.time()
     total = 0
     failed_tests = []
     panicked_tests = []
@@ -227,6 +231,7 @@ def run_all_tests(exec: bool = True, exit_first_failure: bool = False):
                         ignored_tests.append(result.path)
                     case STATE.DONT_TEST:
                         total -= 1
+    end_time = time.time()
 
     def print_tests(tests: List[str], s: str) -> None:
         if len(tests) > 0:
@@ -244,16 +249,31 @@ def run_all_tests(exec: bool = True, exit_first_failure: bool = False):
     invalid = len(invalid_tests)
     success = total - failure - panicked - invalid - ignored
     print(f"\nTotal: {total}, Success: {success}, Failure: {failure}, Invalid: {invalid}, Panicked: {panicked}, Ignored: {ignored}")
+    print(f"Time taken: {end_time - start_time:.2f} seconds")
     if failure > 0 or panicked > 0 or invalid > 0:
         sys.exit(1)
 
+def print_usage_and_help() -> None:
+    print("Usage: python helper.py [test|bench]")
+    print("Flags for test mode:")
+    print("  --no-exec            -> skip running runtime tests")
+    print("  --trace              -> enable tracing in the compiler (useful for debugging)")
+    print("  --exit-first-failure -> exit after the first failure, disables parallelism")
+    print("Flags for bench mode:")
+    print("  Not implemented")
+
 if __name__ == "__main__":
     if len(sys.argv) == 1:
-        print("Usage: python helper.py [test|bench]")
+        print_usage_and_help()
+        exit(1)
     else:
         mode = sys.argv[1]
+        if mode == "help":
+            print_usage_and_help()
+            exit(0)
         if mode == "test":
-            recompile_compiler()
+            trace = "--trace" in sys.argv
+            recompile_compiler(trace=trace)
             print("Running tests...")
             no_exec = "--no-exec" in sys.argv
             exit_first_failure = "--exit-first-failure" in sys.argv
@@ -261,7 +281,10 @@ if __name__ == "__main__":
         elif mode == "bench":
             recompile_compiler()
             print("Running benchmarks...")
-            assert False, "Not implemented"
+            print("Not implemented")
+            exit(1)
         else:
-            print("Usage: python helper.py [test|bench]")
+            print("Invalid mode: " + mode)
+            print_usage_and_help()
+            exit(1)
     # main()

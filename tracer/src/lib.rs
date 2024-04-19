@@ -73,6 +73,32 @@ fn trace_call_extra(item: TokenStream) -> TokenStream {
     output.into()
 }
 
+#[proc_macro]
+pub fn trace_panic(input: TokenStream) -> TokenStream {
+    let output = if input.is_empty() {
+        quote!(
+            #[cfg(any(feature = "trace", feature = "trace_extra"))]
+            panic!("This panic has been inserted by the tracer.")
+        )
+    } else {
+        // The fact that we have to call `trace_panic!((v1, v2, v3))` is kinda stupid
+        // FIXME: Find a way to not use a Tuple, and instead a Comma-separated idk-Expr
+        let stuff = syn::parse_macro_input!(input as syn::ExprTuple);
+        let output: Vec<_> = stuff.elems.iter().map(|e| {
+            quote!(println!("[LOG] {}: {:?}", stringify!(#e), #e);)
+        }).collect();
+        let output = quote!(
+            #[cfg(any(feature = "trace", feature = "trace_extra"))]
+            {
+                #(#output)*
+                panic!("[LOG] This panic has been inserted by the tracer.")
+            }
+        );
+        output
+    };
+    output.into()
+}
+
 #[proc_macro_attribute]
 pub fn trace_call(attr: TokenStream, item: TokenStream) -> TokenStream {
     // item is the function to be injected

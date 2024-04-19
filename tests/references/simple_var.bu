@@ -6,6 +6,6 @@ func main() -> i32 {
     mut a: i32 = 0;
     let b: &mut i32 = &mut a;
     *b = 10;
-    if (a != 10) return a;
+    if (a != 10) return 1;
     return 0;
 }

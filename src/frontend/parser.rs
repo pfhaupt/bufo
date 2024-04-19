@@ -11,7 +11,14 @@ use crate::util::flags::Flags;
 use tracer::trace_call;
 use once_cell::sync::Lazy;
 
-const LOOKAHEAD_LIMIT: usize = 3;
+static FILE_ANONYMOUS: usize = 0;
+static mut FILENAMES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
+    vec![PathBuf::from("anonymous")]
+});
+
+// fill_lookup() fills up to < LOOKAHEAD_LIMIT, we always only check one token ahead
+// This makes our Parser LL(1), wooh! :D
+const LOOKAHEAD_LIMIT: usize = 2;
 
 pub const KEYWORD_BREAK: &str = "break";
 pub const KEYWORD_COMPILER_FLAGS: &str = "compiler_flags";
@@ -54,7 +61,7 @@ enum ParserError {
     InvalidCompilerFlag(String),
     CompilerFlagsNotFirst(Location),
     InvalidArraySize(Location),
-    ArrayWithSpecifiedSizeMoreThanOneElement(Location), // REVIEW: This error name is too long
+    ArrayWithSpecifiedSizeMoreThanOneElement(Location),
 }
 
 impl Display for ParserError {
@@ -142,7 +149,8 @@ pub enum TokenType {
     Semi,
     Comma,
     Dot,
-    VarArg, // REVIEW: This is only allowed in Externs (for now?), maybe handle it differently
+    Exclamation,
+    VarArg,
     Arrow,
     Equal,
     Plus,
@@ -217,6 +225,7 @@ impl Display for TokenType {
             Self::Semi => write!(f, "`;`"),
             Self::Comma => write!(f, "`,`"),
             Self::Dot => write!(f, "`.`"),
+            Self::Exclamation => write!(f, "`!`"),
             Self::VarArg => write!(f, "`...`"),
             Self::Arrow => write!(f, "`->`"),
             Self::Equal => write!(f, "`=`"),
@@ -236,12 +245,6 @@ impl Display for TokenType {
         }
     }
 }
-
-// FIXME: Move this somewhere else
-static FILE_ANONYMOUS: usize = 0;
-static mut FILENAMES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
-    vec![PathBuf::from("anonymous")]
-});
 
 #[derive(Copy, Clone, PartialEq, Eq, Default)]
 pub struct Location {
@@ -323,6 +326,7 @@ pub enum Operation {
     BitwiseXor,
     LogicalAnd,
     LogicalOr,
+    LogicalNot,
     Equal,
     NotEqual,
     LessThan,
@@ -345,8 +349,9 @@ impl Display for Operation {
             Self::BitwiseAnd => write!(f, "&"),
             Self::BitwiseOr => write!(f, "|"),
             Self::BitwiseXor => write!(f, "^"),
-            Self::LogicalAnd => write!(f, "and"),
-            Self::LogicalOr => write!(f, "or"),
+            Self::LogicalAnd => write!(f, "&&"),
+            Self::LogicalOr => write!(f, "||"),
+            Self::LogicalNot => write!(f, "!"),
             Self::Equal => write!(f, "=="),
             Self::NotEqual => write!(f, "!="),
             Self::LessThan => write!(f, "<"),
@@ -365,7 +370,7 @@ impl Display for Operation {
 impl Operation {
     #[trace_call(extra)]
     fn from(s: &str) -> Option<Self> {
-        debug_assert_eq!(Operation::GreaterThanOrEqual as u8 + 1, 21, "Not all Operations are handled in from()");
+        debug_assert_eq!(Operation::GreaterThanOrEqual as u8 + 1, 22, "Not all Operations are handled in from()");
         // TOKEN_TYPE_HANDLE_HERE (if new token is an operator)
         match s {
             "=" => Some(Self::Assign),
@@ -387,6 +392,7 @@ impl Operation {
             "::" => Some(Self::ModuleAccess),
             "&&" => Some(Self::LogicalAnd),
             "||" => Some(Self::LogicalOr),
+            "!" => Some(Self::LogicalNot),
             "[" => Some(Self::IndexedAccess),
             _ => None,
         }
@@ -587,7 +593,7 @@ impl<'flags> Parser<'flags> {
         }
         debug_assert_eq!(
             TokenType::Eof as u8 + 1,
-            54,
+            55,
             "Not all TokenTypes are handled in next_token()"
         );
         self.trim_whitespace();
@@ -709,11 +715,8 @@ impl<'flags> Parser<'flags> {
             '!' => match self.next_char() {
                 '=' => (TokenType::CmpNeq, String::from("!=")),
                 _ => {
-                    self.report_error(ParserError::UnexpectedSymbol(
-                        loc,
-                        c
-                    ));
-                    return self.next_token();
+                    self.current_char -= 1;
+                    (TokenType::Exclamation, String::from(c))
                 },
             },
             '=' => match self.next_char() {
@@ -748,6 +751,17 @@ impl<'flags> Parser<'flags> {
                 '/' => {
                     let _ = fill_buffer!(c, |c: char| { c == '\r' || c == '\n' || c == '\0' });
                     self.current_char += 1;
+                    return self.next_token();
+                }
+                '*' => {
+                    while !self.lexed_eof() {
+                        let nc = self.next_char();
+                        if nc == '*' {
+                            if self.next_char() == '/' {
+                                break;
+                            }
+                        }
+                    }
                     return self.next_token();
                 }
                 _ => {
@@ -803,19 +817,6 @@ impl<'flags> Parser<'flags> {
             '*' => (TokenType::Asterisk, String::from(c)),
             '%' => (TokenType::Percent, String::from(c)),
             '\0' => (TokenType::Eof, String::new()),
-            '$' => {
-                // Block comment
-                // REVIEW: $ is a weird choice for block comments ^^
-                while !self.lexed_eof() {
-                    self.trim_whitespace();
-                    if self.source[self.current_char] == '$' {
-                        self.current_char += 1;
-                        break;
-                    }
-                    self.current_char += 1;
-                }
-                return self.next_token();
-            }
             e => {
                 self.report_error(ParserError::UnexpectedSymbol(
                     loc,
@@ -1253,8 +1254,6 @@ impl<'flags> Parser<'flags> {
 
     #[trace_call(always)]
     fn parse_compiler_flags(&mut self)-> Result<nodes::CompilerFlagsNode, ()> {
-        // FIXME: We should have a way to specify OS-specific flags
-        //        e.g. -lkernel32 doesn't make sense on Linux
         let mut compiler_flags = vec![];
         if self.eat(TokenType::KeywordCompilerFlags) {
             let location = self.current_location();
@@ -1338,6 +1337,7 @@ impl<'flags> Parser<'flags> {
         self.expect(TokenType::OpenCurly)?;
         let mut fields = vec![];
         let mut methods = vec![];
+        let mut valid = true;
         const RECOVER_TOKENS: [TokenType; 2] = [
             TokenType::ClosingCurly,
             TokenType::Semi,
@@ -1353,11 +1353,34 @@ impl<'flags> Parser<'flags> {
                     }
                 }
                 TokenType::KeywordFunc => {
-                    let parsed_method = self.parse_method(&name);
+                    let parsed_method = self.parse_method(&name, false);
                     if parsed_method.is_err() {
                         self.recover(&RECOVER_TOKENS);
                     } else {
                         methods.push(parsed_method.unwrap());
+                    }
+                }
+                TokenType::KeywordUnsafe => {
+                    self.expect(TokenType::KeywordUnsafe)?;
+                    match self.nth(0) {
+                        TokenType::KeywordFunc => {
+                            let parsed_method = self.parse_method(&name, true);
+                            if parsed_method.is_err() {
+                                self.recover(&RECOVER_TOKENS);
+                            } else {
+                                methods.push(parsed_method.unwrap());
+                            }
+                        }
+                        _ => {
+                            valid = false;
+                            let tkn = self.next();
+                            self.report_error(ParserError::UnexpectedTokenMany(
+                                tkn.location,
+                                vec![TokenType::KeywordFunc],
+                                tkn.token_type,
+                            ));
+                            self.recover(&RECOVER_TOKENS);
+                        }
                     }
                 }
                 e => {
@@ -1371,8 +1394,10 @@ impl<'flags> Parser<'flags> {
             }
         }
         self.expect(TokenType::ClosingCurly)?;
-
         self.current_struct = None;
+        if !valid {
+            return Err(());
+        }
         Ok(nodes::StructNode {
             location,
             name,
@@ -1428,7 +1453,7 @@ impl<'flags> Parser<'flags> {
     }
 
     #[trace_call(always)]
-    fn parse_method(&mut self, struct_name: &str) -> Result<nodes::MethodNode, ()> {
+    fn parse_method(&mut self, struct_name: &str, is_unsafe: bool) -> Result<nodes::MethodNode, ()> {
         let location = self.current_location();
         self.expect(TokenType::KeywordFunc)?;
 
@@ -1453,6 +1478,7 @@ impl<'flags> Parser<'flags> {
             return_type,
             parameters,
             block,
+            is_unsafe,
             is_vararg: false,
             #[cfg(feature = "old_codegen")]
             stack_size: 0,
@@ -1845,10 +1871,10 @@ impl<'flags> Parser<'flags> {
     // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Operator_Precedence#table
     // If it works for JS, it should work for us too
     #[trace_call(always)]
-    fn get_precedence(&self, token_type: TokenType) -> usize {
+    fn get_binary_precedence(&self, token_type: TokenType) -> usize {
         // TOKEN_TYPE_HANDLE_HERE
         match token_type {
-            TokenType::DoubleColon => 18, // REVIEW: Can this be same level as Dot?
+            TokenType::DoubleColon => 18,
             TokenType::Dot => 17,
             TokenType::OpenSquare => 16, // Array index
             TokenType::ForwardSlash => 12,
@@ -1856,19 +1882,32 @@ impl<'flags> Parser<'flags> {
             TokenType::Percent => 12,
             TokenType::Plus => 11,
             TokenType::Minus => 11,
-            TokenType::CmpEq => 9,
-            TokenType::CmpNeq => 9,
             TokenType::CmpLt => 9,
             TokenType::CmpLte => 9,
             TokenType::CmpGt => 9,
             TokenType::CmpGte => 9,
+            TokenType::CmpEq => 8,
+            TokenType::CmpNeq => 8,
             TokenType::Ampersand => 7,
             TokenType::Caret => 6,
             TokenType::Pipe => 5,
             TokenType::DoubleAmpersand => 4,
             TokenType::DoublePipe => 3,
             TokenType::Equal => 2,
-            e => todo!("get_precedence({:?})", e),
+            e => internal_panic!("get_binary_precedence({:?}) is not implemented", e),
+        }
+    }
+
+    #[trace_call(always)]
+    fn get_unary_precedence(&self, token_type: TokenType) -> usize {
+        // TOKEN_TYPE_HANDLE_HERE
+        match token_type {
+            TokenType::Minus => 14,
+            TokenType::Ampersand => 14,
+            TokenType::Asterisk => 14,
+            TokenType::DoubleAmpersand => 14,
+            TokenType::Exclamation => 14,
+            e => internal_panic!("get_unary_precedence({:?}) is not implemented", e),
         }
     }
 
@@ -1896,7 +1935,7 @@ impl<'flags> Parser<'flags> {
             TokenType::DoublePipe => Associativity::Left,
             TokenType::OpenSquare => Associativity::Left,
             TokenType::Equal => Associativity::Right,
-            e => todo!("get_associativity({:?})", e),
+            e => internal_panic!("Entered unreachable code: get_associativity({:?})", e),
         }
     }
 
@@ -1907,7 +1946,7 @@ impl<'flags> Parser<'flags> {
         let mut expression = self.parse_primary_expression()?;
 
         while self.matches_binary_expression() {
-            let new_precedence = self.get_precedence(self.nth(0));
+            let new_precedence = self.get_binary_precedence(self.nth(0));
             if new_precedence < min_precedence {
                 break;
             }
@@ -1992,6 +2031,7 @@ impl<'flags> Parser<'flags> {
             TokenType::Ampersand => true,
             TokenType::Asterisk => true,
             TokenType::DoubleAmpersand => true,
+            TokenType::Exclamation => true,
             _ => false,
         }
     }
@@ -2065,12 +2105,11 @@ impl<'flags> Parser<'flags> {
     #[trace_call(always)]
     fn parse_unary_expression(&mut self)-> Result<nodes::UnaryNode, ()> {
         let location = self.current_location();
-        let precedence = self.get_precedence(self.nth(0));
-        let associativity = self.get_associativity(self.nth(0));
+        let precedence = self.get_unary_precedence(self.nth(0));
         match self.nth(0) {
             TokenType::Minus => {
                 self.expect(TokenType::Minus)?;
-                let expression = self.parse_expression(precedence, associativity)?;
+                let expression = self.parse_expression(precedence, Associativity::Left)?;
                 Ok(nodes::UnaryNode {
                     location,
                     operation: Operation::Negate,
@@ -2081,7 +2120,7 @@ impl<'flags> Parser<'flags> {
             TokenType::Ampersand => {
                 self.expect(TokenType::Ampersand)?;
                 let is_mutable = self.eat(TokenType::KeywordMut);
-                let expression = self.parse_expression(precedence, associativity)?;
+                let expression = self.parse_expression(precedence, Associativity::Left)?;
                 Ok(nodes::UnaryNode {
                     location,
                     operation: Operation::Reference,
@@ -2092,7 +2131,7 @@ impl<'flags> Parser<'flags> {
             TokenType::DoubleAmpersand => {
                 self.expect(TokenType::DoubleAmpersand)?;
                 let is_mutable = self.eat(TokenType::KeywordMut);
-                let expression = self.parse_expression(precedence, associativity)?;
+                let expression = self.parse_expression(precedence, Associativity::Left)?;
                 let inner_type = Type::Ref(Box::new(Type::Unknown), is_mutable);
                 let outer_type = Type::Ref(Box::new(inner_type.clone()), false);
                 let inner_ref = nodes::UnaryNode {
@@ -2110,12 +2149,22 @@ impl<'flags> Parser<'flags> {
             }
             TokenType::Asterisk => {
                 self.expect(TokenType::Asterisk)?;
-                let expression = self.parse_expression(precedence, associativity)?;
+                let expression = self.parse_expression(precedence, Associativity::Left)?;
                 Ok(nodes::UnaryNode {
                     location,
                     operation: Operation::Dereference,
                     expression: Box::new(expression),
                     typ: Type::Unknown,
+                })
+            }
+            TokenType::Exclamation => {
+                self.expect(TokenType::Exclamation)?;
+                let expression = self.parse_expression(precedence, Associativity::Left)?;
+                Ok(nodes::UnaryNode {
+                    location,
+                    operation: Operation::LogicalNot,
+                    expression: Box::new(expression),
+                    typ: Type::Bool,
                 })
             }
             _ => {
