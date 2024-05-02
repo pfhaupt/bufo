@@ -2,8 +2,6 @@
 //! RUNTIME
 //! SUCCESS
 
-// NOTE 24_04_30: find_recursive_structs() is too weak for this...
-// Obviously, there is no cycle here and the TypeChecker shouldn't fail.
 struct A { f: B; }
 struct B { b: C; a: D; }
 struct C { i: i32; }

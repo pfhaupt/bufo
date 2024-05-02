@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::fmt::{Display, Formatter};
 
 use crate::frontend::nodes;
@@ -1203,52 +1203,82 @@ impl<'flags> TypeChecker<'flags> {
         struct_info
     }
 
+    fn dfs(strukt: &String, lookup: &BTreeMap<String, BTreeSet<String>>, visited: &mut Vec<String>, finished: &mut BTreeSet<String>) -> bool {
+        if finished.contains(strukt) {
+            return false;
+        }
+        if visited.contains(strukt) {
+            return true;
+        }
+        visited.push(strukt.clone());
+        let mut done = false;
+        for neighbor in lookup.get(strukt).unwrap() {
+            if Self::dfs(neighbor, lookup, visited, finished) {
+                done = true;
+            }
+        }
+        finished.insert(strukt.clone());
+        done
+    }
+
     #[trace_call(always)]
     fn find_recursive_structs(&mut self, current_module: &nodes::ModuleNode) {
-        // FIXME: This function is jank and doesn't work properly
-        // Please implement proper graph algorithm, this abomination has mutated in 10 refactors :^)
+        /*
+        Adapted version of https://en.wikipedia.org/wiki/Cycle_(graph_theory)#Algorithm
+        Key difference is that we also keep track of where we went, for better error reporting
+         */
         let all_structs = current_module.get_all_structs();
         if all_structs.is_empty() {
             return;
         }
-        if self.flags.debug {
-            println!("[DEBUG] All Structs: {:#?}", all_structs);
-        }
-        let mut errors = Vec::new();
-        let mut queue = VecDeque::new();
-        let mut visited: HashMap<String, Location> = HashMap::new();
-
-        queue.push_back(all_structs[0]);
-
-        while let Some(strukt) = queue.pop_front() {
-            let full_name = strukt.get_full_name();
-            println!("Checking: {full_name}");
-            println!("Visited: {:?}", visited.keys());
-            if visited.contains_key(&full_name) {
-                errors.push(TypeError::RecursiveStruct(
-                    strukt.location.clone(),
-                    full_name.clone(),
-                    visited.keys().map(|s| {
-                        let strukt = all_structs.iter().find(|e|e.get_full_name() == *s).unwrap();
-                        (strukt.location, s.clone())
-                    }).collect(),
-                ));
-                continue;
-            }
-            visited.insert(full_name, strukt.location.clone());
+        let mut lookup: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for strukt in &all_structs {
+            let strukt_name = strukt.get_full_name();
+            let mut fields = BTreeSet::new();
             for field in &strukt.fields {
-                if field.type_def.typ.is_struct() {
-                    let full_name = field.type_def.typ.get_struct_name();
-                    if let Some(field_strukt) = all_structs.iter().find(|e|e.get_full_name() == full_name) {
-                        queue.push_back(field_strukt);
-                    } else {
-                        // Unknown struct, handled elsewhere
-                    }
+                let f_type = &field.type_def.typ;
+                if f_type.is_struct() {
+                    fields.insert(f_type.get_struct_name());
                 }
             }
+            if !lookup.contains_key(&strukt_name) {
+                lookup.insert(strukt_name, fields);
+            } else {
+                todo!()
+            }
         }
-        for error in errors {
-            self.report_error(error);
+        if self.flags.debug {
+            println!("[DEBUG] All Structs: {:#?}", all_structs);
+            println!("[DEBUG] Lookup: {:#?}", lookup);
+        }
+
+        let mut visited = Vec::new();
+        let mut finished = BTreeSet::new();
+
+        let mut cycles = vec![];
+        for strukt in lookup.keys() {
+            if Self::dfs(&strukt, &lookup, &mut visited, &mut finished) {
+                cycles.push(visited.clone());
+                visited.clear();
+                finished.clear();
+            }
+        }
+
+        for cycle in &cycles {
+            if self.flags.debug {
+                println!("[DEBUG] Found a cycle: {:?}", cycle);
+            }
+            debug_assert!(cycle.len() > 0);
+            let name = cycle.first().unwrap();
+            let first = all_structs.iter().find(|e|e.get_full_name() == *name).unwrap();
+            self.report_error(TypeError::RecursiveStruct(
+                first.location,
+                name.clone(),
+                cycle.iter().map(|name| {
+                    let strukt = all_structs.iter().find(|e|e.get_full_name() == *name).unwrap();
+                    (strukt.location, name.clone())
+                }).collect()
+            ));
         }
     }
 

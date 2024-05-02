@@ -1,0 +1,34 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Recursive struct `recursive_struct_1.Bar`.
+//! Chain of recursion also includes struct `recursive_struct_1.Bez`.
+//! Chain of recursion also includes struct `recursive_struct_1.Boo`.
+//! Recursive struct `recursive_struct_1.Bez`.
+//! Chain of recursion also includes struct `recursive_struct_1.Bar`.
+//! Chain of recursion also includes struct `recursive_struct_1.Boo`.
+//! Recursive struct `recursive_struct_1.Boo`.
+//! Chain of recursion also includes struct `recursive_struct_1.Bar`.
+//! Chain of recursion also includes struct `recursive_struct_1.Bez`.
+//! Recursive struct `recursive_struct_1.Foo`.
+
+struct Foo {
+    field: Foo;
+}
+
+struct Bar {
+    field: Bez;
+}
+
+struct Bez {
+    field1: Bar;
+    field2: Boo;
+}
+
+struct Boo {
+    field: Bar;
+}
+
+func main() {}
