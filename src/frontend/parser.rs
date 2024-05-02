@@ -1035,7 +1035,7 @@ impl<'flags> Parser<'flags> {
 
         {
             // FIXME: Better way to handle prelude
-            let prelude_path = PathBuf::from("./prelude/prelude.bu");
+            let prelude_path = PathBuf::from("./prelude/prelude.bufo");
             let prelude = self.parse_file(&prelude_path, 0, false);
             assert!(prelude.is_ok(), "Failed to parse prelude");
             let prelude_module = prelude.unwrap();

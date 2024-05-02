@@ -189,7 +189,7 @@ def run_all_tests(exec: bool = True, exit_first_failure: bool = False):
     for root, _, files in os.walk("./tests"):
         for filename in files:
             path = os.path.join(root, filename)
-            if os.path.isfile(path) and path.endswith(".bu"):
+            if os.path.isfile(path) and path.endswith(".bufo"):
                 all_tests.append(path)
 
     if exit_first_failure:

@@ -853,7 +853,7 @@ unsafe func main() -> i32 {
     InitWindow(1600, 900, "Hello World! WOW AMAZING");
     SetTargetFPS(60);
     InitAudioDevice();
-    // only works when run using `cargo run -- -i raylib\lib\raylib\include\raylib_pp.bu -r` in the root directory
+    // only works when run using `cargo run -- -i raylib\lib\raylib\include\raylib_pp.bufo -r` in the root directory
     // if you want to run it from `./out/`, you need to change the path to `../` instead of `./`
     let wav: Wave = LoadWave("./raylib/metal_pipe.wav");
     let sound: Sound = LoadSoundFromWave(wav);
