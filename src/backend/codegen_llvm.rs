@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use crate::frontend::nodes;
@@ -15,7 +15,7 @@ use inkwell::module::Module;
 use inkwell::builder::Builder;
 use inkwell::passes::PassManager;
 use inkwell::targets::{Target, InitializationConfig, CodeModel, RelocMode, TargetTriple, TargetMachine};
-use inkwell::types::{BasicType, BasicTypeEnum};
+use inkwell::types::{BasicType, BasicTypeEnum, StructType};
 use inkwell::values::{BasicValue, PointerValue};
 use inkwell::AddressSpace;
 use inkwell::values::BasicValueEnum;
@@ -41,8 +41,7 @@ macro_rules! fill_function_lookup {
         // Prepare parameter types
         let mut param_types = Vec::new();
         for param in &$function.parameters {
-            let typ = &param.typ.typ;
-            let codegened_type = $codegen.codegen_type(&typ);
+            let codegened_type = $codegen.codegen_type_node(&param.typ);
             if codegened_type.is_struct_type() {
                 let real_type = $codegen.struct_type_for_arg(&codegened_type);
                 param_types.push(real_type.into());
@@ -60,18 +59,20 @@ macro_rules! fill_function_lookup {
             function_type = return_type.fn_type(&param_types, $function.is_vararg);
         }
         let _function = $codegen.module.add_function(&$name, function_type, None);
+        if $codegen.flags.debug {
+            println!("[DEBUG] Added function {0} to module", $name);
+        }
     };
 }
 
 macro_rules! codegen_function_header {
     ($codegen:ident, $function:ident, $name:ident) => {
-        let name = $codegen.get_full_name(&$name);
-        let llvm_func = $codegen.module.get_function(&name).unwrap();
+        let llvm_func = $codegen.module.get_function(&$name).unwrap();
         let entry = $codegen.context.append_basic_block(llvm_func, "entry");
         $codegen.builder.position_at_end(entry);
         for (i, param) in $function.parameters.iter().enumerate() {
             let func_param = llvm_func.get_nth_param(i as u32).unwrap();
-            let param_type = $codegen.codegen_type(&param.typ.typ);
+            let param_type = $codegen.codegen_type_node(&param.typ);
             if param_type.is_struct_type() {
                 let typ = $codegen.struct_type_for_arg(&param_type);
                 if typ.is_pointer_type() {
@@ -137,7 +138,7 @@ pub struct LLVMCodegen<'flags, 'ctx> {
 
     stack_scopes: Vec<HashMap<String, BasicValueEnum<'ctx>>>,
     loop_blocks: Vec<(BasicBlock<'ctx>, BasicBlock<'ctx>)>, // (loop, after_loop)
-    struct_defs: HashMap<String, BasicTypeEnum<'ctx>>,
+    struct_defs: HashMap<String, StructType<'ctx>>,
     struct_info: HashMap<String, StructInfo>,
 
     flags: &'flags Flags,
@@ -211,71 +212,103 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
 
     #[trace_call(always)]
     fn fill_struct_lookup(&mut self, file: &nodes::ModuleNode) -> Result<(), String> {
-        for module in &file.modules {
-            self.module_stack.push(module.name.clone());
-            self.fill_struct_lookup(module)?;
-            self.module_stack.pop();
-        }
-        macro_rules! check_dep {
-            ($typ:expr, $label:tt) => {
-                debug_assert!($typ != &Type::None);
-                if let Type::Struct(name) = $typ {
-                    let real_name = self.get_full_name(&name);
-                    if !self.struct_defs.contains_key(&real_name) {
-                        if self.flags.debug {
-                            println!("[DEBUG] Missing declaration for {:?}, restarting", $typ.to_string());
-                        }
-                        continue $label;
-                    }
-                } else if let Type::Ref(_, _) = $typ {
-                    if $typ.is_struct_ref() {
-                        let real_name = self.get_full_name(&$typ.get_underlying_type().get_struct_name());
-                        if !self.struct_defs.contains_key(&real_name) {
-                            if self.flags.debug {
-                                println!("[DEBUG] Missing declaration for {:?}, restarting", real_name);
-                            }
-                            continue $label;
-                        }
-                    }
-                } else if let Type::Module(_, _) = $typ {
-                    let unfolded_name = $typ.get_unfolded_module_name();
-                    if !self.struct_defs.contains_key(&unfolded_name) {
-                        if self.flags.debug {
-                            println!("[DEBUG] Missing declaration for {:?}, restarting", unfolded_name);
-                        }
-                        continue $label;
-                    }
+        let mut sequence = file.get_all_structs();
+        let seq_len = sequence.len();
+        let mut lookup: HashMap<String, HashSet<String>> = HashMap::new();
+        for strukt in &sequence {
+            let strukt_name = strukt.get_full_name();
+            let mut fields = HashSet::new();
+            for field in &strukt.fields {
+                let f_type = &field.type_def.typ;
+                if f_type.is_struct() {
+                    fields.insert(f_type.get_struct_name());
                 }
-            };
-        }
-        loop {
-            let mut changed = false;
-            'outer: for strukt in &file.structs {
-                let real_name = self.get_full_name(&strukt.name);
-                if self.struct_defs.contains_key(&real_name) {
-                    continue;
-                }
-                let mut fields = Vec::new();
-                let mut field_types = Vec::new();
-                for field in &strukt.fields {
-                    let typ = &field.type_def.typ;
-                    check_dep!(typ, 'outer);
-                    let field_type = self.codegen_type(typ);
-                    fields.push(field_type);
-                    field_types.push((field.name.clone(), typ.clone()));
-                }
-                let struct_struct_type_def = self.context.struct_type(&fields, false);
-                self.struct_defs.insert(real_name.clone(), struct_struct_type_def.into());
-                let mut struct_info = StructInfo::new();
-                for (name, typ) in field_types {
-                    struct_info.add_field(&name, &typ);
-                }
-                self.struct_info.insert(real_name, struct_info);
-                changed = true;
             }
-            if !changed {
+            if !lookup.contains_key(&strukt_name) {
+                lookup.insert(strukt_name, fields);
+            } else {
+                todo!()
+            }
+        }
+        if self.flags.debug {
+            println!("[DEBUG] Struct Lookup: {:#?}", lookup);
+        }
+        /*
+            Code:
+                struct A { f: B; }
+                struct B { b: C; a: D; }
+                struct C { i: i32; }
+                struct D { i: C; }
+                struct E { f: B; }
+
+            Lookup:
+                A -> B
+                B -> C
+                B -> D
+                C -> i32 [ignored]
+                D -> C
+                E -> B
+
+            Sequence:
+                [ A, B, C, D, E ] <- Swap A and B
+                [ B, A, C, D, E ] <- Swap B and C
+                [ C, B, A, D, E ] <- Swap B and D
+                [ C, D, A, B, E ] <- Swap A and B
+                [ C, D, B, A, E ] <- Done
+
+            Codegen:
+                struct C { i: i32; }
+                struct D { i: C; }
+                struct B { b: C; a: D; }
+                struct A { f: B; }
+                struct E { f: B; }
+        */
+        let mut safety = 0;
+        loop {
+            if self.flags.debug {
+                println!("[DEBUG] {safety} {:?}", sequence.iter().map(|s|s.get_full_name()).collect::<Vec<_>>());
+            }
+            // REVIEW: Do we ever need n^2 attempts? Do we even need to loop? (I don't think so)
+            // If we couldn't sort the sequence after a given amount of attempts, we have a cycle
+            if safety > seq_len * seq_len {
+                internal_panic!("Could not resolve order of structs");
+            }
+            let mut done = true;
+            for i in 0..seq_len {
+                for j in (i+1)..seq_len {
+                    let s1 = sequence[i].get_full_name();
+                    let s2 = sequence[j].get_full_name();
+                    let entry = lookup.get(&s1).expect("Whar?");
+                    if entry.contains(&s2) {
+                        (sequence[i], sequence[j]) = (sequence[j], sequence[i]);
+                        done = false;
+                    }
+                }
+            }
+            safety += 1;
+            if done {
                 break;
             }
+        }
+        for strukt in &sequence {
+            let real_name = strukt.get_full_name();
+            let mut fields = Vec::new();
+            let mut field_types = Vec::new();
+            for field in &strukt.fields {
+                let field_type = self.codegen_type(&field.type_def.typ);
+                fields.push(field_type);
+                field_types.push((field.name.clone(), field.type_def.typ.clone()));
+            }
+            let struct_type_def = self.context.struct_type(&fields, false);
+            self.struct_defs.insert(real_name.clone(), struct_type_def.into());
+            let mut struct_info = StructInfo::new();
+            for (name, typ) in field_types {
+                struct_info.add_field(&name, &typ);
+            }
+            self.struct_info.insert(real_name, struct_info);
+        }
+        if self.flags.debug {
+            println!("[DEBUG] Struct Definitions: {:#?}", self.struct_defs);
         }
         Ok(())
     }
@@ -294,14 +327,12 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         }
         for strukt in &file.structs {
             for method in &strukt.methods {
-                let name = self.get_full_name(&strukt.name);
-                let name = format!("{}_{}", name, method.name);
+                let name = method.get_full_name();
                 fill_function_lookup!(self, method, name);
             }
         }
         for function in &file.functions {
-            let name = function.name.clone();
-            let name = self.get_full_name(&name);
+            let name = function.get_full_name();
             fill_function_lookup!(self, function, name);
         }
         if let Some(compiler_flags) = &file.compiler_flags {
@@ -553,7 +584,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     fn codegen_method(&mut self, method: &nodes::MethodNode) -> Result<(), BuilderError> {
         self.enter_scope();
 
-        let name = format!("{}_{}", method.struct_name, method.name);
+        let name = method.get_full_name();
         codegen_function_header!(self, method, name);
 
         self.codegen_block(&method.block)?;
@@ -572,7 +603,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     fn codegen_function(&mut self, function: &nodes::FunctionNode) -> Result<(), BuilderError> {
         self.enter_scope();
 
-        let name = function.name.clone();
+        let name = function.get_full_name();
         codegen_function_header!(self, function, name);
 
         self.codegen_block(&function.block)?;
@@ -669,7 +700,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     #[trace_call(always)]
     /// Wrapper to ensure that `alloca` is always inserted at the end of the entry block.  
     /// This is very important because `mem2reg` only optimizes allocas in the entry block
-    fn allocate<T: BasicType<'ctx>>(&self, typ: T, name: &str) -> Result<PointerValue<'ctx>, BuilderError> {
+    fn allocate(&self, typ: BasicTypeEnum<'ctx>, name: &str) -> Result<PointerValue<'ctx>, BuilderError> {
         let curr_block = self.builder.get_insert_block().unwrap();
         let parent = curr_block.get_parent().unwrap();
         let last_instr = parent.get_first_basic_block().unwrap().get_last_instruction();
@@ -684,7 +715,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
 
     #[trace_call(always)]
     fn codegen_stmt_var_decl(&mut self, let_node: &nodes::VarDeclNode) -> Result<(), BuilderError> {
-        let typ = self.codegen_type(&let_node.typ.typ);
+        let typ = self.codegen_type_node(&let_node.typ);
         let alloca = self.allocate(typ, &let_node.name)?;
         self.add_variable(&let_node.name, alloca.into());
         let value = self.codegen_expression(&let_node.expression, false)?;
@@ -829,9 +860,9 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         for field in &struct_literal.fields {
             expressions.push(self.codegen_expression(&field.1, false)?);
         }
-        let real_name = self.get_full_name(&struct_literal.struct_name);
+        let real_name = struct_literal.typ.get_struct_name();
         let struct_type = self.struct_defs.get(&real_name).unwrap();
-        let mut struct_instance = struct_type.into_struct_type().get_undef();
+        let mut struct_instance = struct_type.get_undef();
         for (i, field) in struct_literal.fields.iter().enumerate() {
             let offset = self.struct_info.get(&real_name).unwrap().get_field_index(&field.0);
             struct_instance = self.builder.build_insert_value(
@@ -842,7 +873,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             )?.into_struct_value();
         }
         if needs_ptr {
-            let struct_alloc = self.allocate(struct_type.into_struct_type(), "codegen_struct_literal")?;
+            let struct_alloc = self.allocate(BasicTypeEnum::StructType(*struct_type), "codegen_struct_literal")?;
             self.builder.build_store(struct_alloc, struct_instance)?;
             Ok(struct_alloc.into())
         } else {
@@ -889,7 +920,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         debug_assert!(struct_type.is_struct_type());
         debug_assert!(struct_instance.is_struct_value());
         let struct_size = self.get_struct_size(&struct_type);
-        let struct_alloc = self.allocate(struct_type.into_struct_type(), "struct_value_for_arg")?;
+        let struct_alloc = self.allocate(struct_type, "struct_value_for_arg")?;
         self.builder.build_store(struct_alloc, struct_instance)?;
         let int = if struct_size == 1 {
             self.context.i8_type()
@@ -980,16 +1011,10 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
 
     #[trace_call(always)]
     fn codegen_function_call(&mut self, function_call: &nodes::CallNode, needs_ptr: bool) -> Result<BasicValueEnum<'ctx>, BuilderError> {
-        let name = function_call.function_name.clone();
-        let real_name = if function_call.is_extern {
-            name.clone()
-        } else {
-            self.get_full_name(&name)
-        };
-        if self.module.get_function(&real_name).is_none() {
+        let real_name = function_call.get_full_name();
+        let Some(function) = self.module.get_function(&real_name) else {
             internal_panic!("Could not find function {}", real_name);
-        }
-        let function = self.module.get_function(&real_name).unwrap();
+        };
         let mut args = Vec::new();
         for arg in &function_call.arguments {
             let expr = self.codegen_expression(arg, false)?;
@@ -1257,24 +1282,19 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             Operation::MemberAccess => {
                 match ((*binary.lhs).get_type(), &(*binary.rhs)) {
                     (ref typ @ Type::Ref(_, _), nodes::Expression::Name(field))
-                    | (ref typ @ Type::Struct(_), nodes::Expression::Name(field))
-                    | (ref typ @ Type::Module(_, _), nodes::Expression::Name(field))=> {
+                    | (ref typ @ Type::Struct(_, _), nodes::Expression::Name(field)) => {
                         let real_name = match typ {
                             Type::Ref(t, _) => {
-                                let Type::Struct(ref struct_name) = **t else {
-                                    internal_panic!("Expected struct, found {:?}", t)
-                                };
-                                self.get_full_name(&struct_name)
+                                debug_assert!(t.is_struct());
+                                t.get_struct_name()
                             }
-                            Type::Struct(struct_name) => self.get_full_name(&struct_name),
-                            Type::Module(_, _) => typ.get_unfolded_module_name(),
-                            _ => internal_panic!("Expected struct or module, found {:?}", typ),
+                            t @ Type::Struct(_, _) => t.get_struct_name(),
+                            _ => internal_panic!("Expected struct, found {:?}", typ),
                         };
                         let lhs = self.codegen_expression(&binary.lhs, !typ.is_struct_ref())?;
                         let Some(struct_type) = self.get_struct_type(&real_name) else {
                             internal_panic!("Could not find struct {}", real_name)
                         };
-                        let struct_type = struct_type.into_struct_type();
                         let Some(struct_lookup) = self.struct_info.get(&real_name) else {
                             internal_panic!("Could not find struct {}", real_name)
                         };
@@ -1297,20 +1317,21 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                         }
                     },
                     (ref typ @ Type::Ref(_, _), nodes::Expression::FunctionCall(method_call))
-                    | (ref typ @ Type::Struct(_), nodes::Expression::FunctionCall(method_call))
-                    | (ref typ @ Type::Module(_, _), nodes::Expression::FunctionCall(method_call)) => {
+                    | (ref typ @ Type::Struct(_, _), nodes::Expression::FunctionCall(method_call)) => {
                         let real_name = match typ {
                             Type::Ref(t, _) => {
-                                let Type::Struct(ref struct_name) = **t else {
-                                    internal_panic!("Expected struct, found {:?}", t)
+                                let Type::Struct(ref name, _) = **t else {
+                                    internal_panic!("Expected Reference to Struct, found Reference to {t}")
                                 };
-                                self.get_full_name(&struct_name)
+                                name
                             }
-                            Type::Struct(struct_name) => self.get_full_name(&struct_name),
-                            Type::Module(_, _) => typ.get_unfolded_module_name(),
+                            Type::Struct(name, _) => name,
                             _ => internal_panic!("Expected struct, found {:?}", typ),
                         };
-                        let method_name = format!("{}_{}", real_name, method_call.function_name);
+                        // FIXME: Would be cooler if we had a MethodCallNode which kept track of the struct
+                        //        so get_full_name() could just do this in one step
+                        let method_name = method_call.get_full_name();
+                        let method_name = format!("{}.{}", real_name, method_name);
                         let Some(method) = self.module.get_function(&method_name) else {
                             internal_panic!("Could not find function {}", method_name)
                         };
@@ -1342,81 +1363,6 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                     },
                     (lhs, rhs) => internal_panic!(
                         "Something went wrong: Found {:?} as lhs and {:?} as rhs of Dot operation!", lhs, rhs
-                    )
-                }
-            }
-            Operation::ModuleAccess => {
-                let mut module_path = Vec::new();
-                let mut current = binary.typ.clone();
-                while let Type::Module(module_name, inner) = current {
-                    module_path.push(module_name);
-                    current = *inner;
-                }
-                let module_name = module_path.join(".");
-                match &*binary.rhs {
-                    nodes::Expression::FunctionCall(call_node) => {
-                        let real_name = if call_node.is_extern {
-                            call_node.function_name.clone()
-                        } else {
-                            format!("{}.{}", module_name, call_node.function_name)
-                        };
-                        let Some(function) = self.module.get_function(&real_name) else {
-                            internal_panic!("Could not find function {}", real_name)
-                        };
-                        let mut args = Vec::new();
-                        for arg in &call_node.arguments {
-                            let expr = self.codegen_expression(arg, false)?;
-                            args.push(expr.into());
-                        }
-                        let result = self.builder.build_call(function, &args, "codegen_function_call")?;
-                        let val = if result.try_as_basic_value().left().is_none() {
-                            // NOTE: The return value doesn't matter, the function returns None
-                            //       it's a workaround for `void_type` not being a BasicValueEnum
-                            self.context.i32_type().const_int(0, false).into()
-                        } else {
-                            result.try_as_basic_value().left().unwrap()
-                        };
-                        if needs_ptr {
-                            let temp_alloc = self.allocate(val.get_type(), "codegen_function_call")?;
-                            self.builder.build_store(temp_alloc, val)?;
-                            Ok(temp_alloc.into())
-                        } else {
-                            Ok(val)
-                        }
-                    }
-                    nodes::Expression::StructLiteral(struct_node) => {
-                        let real_name = format!("{}.{}", module_name, struct_node.struct_name);
-                        let Some(struct_type) = self.get_struct_type(&real_name) else {
-                            internal_panic!("Could not find struct {}", real_name)
-                        };
-                        let mut expressions = Vec::new();
-                        for field in &struct_node.fields {
-                            expressions.push(self.codegen_expression(&field.1, false)?);
-                        }
-                        let struct_alloc = self.allocate(struct_type, "codegen_struct_literal")?;
-                        for (i, field) in struct_node.fields.iter().enumerate() {
-                            let field_alloc = self.builder.build_struct_gep(
-                                struct_type.into_struct_type(),
-                                struct_alloc,
-                                i as u32,
-                                &field.0,
-                            )?;
-                            let value = expressions[i];
-                            self.builder.build_store(field_alloc, value)?;
-                        }
-                        if needs_ptr {
-                            Ok(struct_alloc.into())
-                        } else {
-                            let struct_alloc = self.builder.build_load(
-                                struct_type,
-                                struct_alloc,
-                                "codegen_struct_literal",
-                            )?;
-                            Ok(struct_alloc)
-                        }
-                    }
-                    _ => internal_panic!(
-                        "Something went wrong: Found {:?} as lhs and {:?} as rhs of DoubleColon operation!", binary.lhs, binary.rhs
                     )
                 }
             }
@@ -1560,6 +1506,11 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
+    fn codegen_type_node(&self, type_node: &nodes::TypeNode) -> BasicTypeEnum<'ctx> {
+        self.codegen_type(&type_node.typ)
+    }
+
+    #[trace_call(always)]
     fn codegen_type(&self, typ: &Type) -> BasicTypeEnum<'ctx> {
         match typ {
             Type::Char => self.context.i8_type().as_basic_type_enum(),
@@ -1579,8 +1530,8 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 let ty = self.codegen_type(&*ty);
                 ty.array_type(*size as u32).as_basic_type_enum()
             },
-            Type::Struct(struct_name) => {
-                let real_name = self.get_full_name(struct_name);
+            t @ Type::Struct(..) => {
+                let real_name = t.get_struct_name();
                 let Some(struct_type) = self.get_struct_type(&real_name) else {
                     if self.flags.debug {
                         println!("[DEBUG] Could not find struct {}", real_name);
@@ -1588,26 +1539,11 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                     }
                     internal_panic!("Could not find struct {}", real_name)
                 };
-                struct_type
+                struct_type.into()
             },
             Type::Ref(typ, _) => {
                 let typ = self.codegen_type(&*typ);
                 typ.ptr_type(AddressSpace::default()).as_basic_type_enum()
-            },
-            Type::Module(_, _) => {
-                let mut current = typ.clone();
-                let mut module_path = Vec::new();
-                while let Type::Module(module_name, inner) = current {
-                    module_path.push(module_name);
-                    current = *inner;
-                }
-                let module_name = module_path.join(".");
-                let Type::Struct(struct_name) = current else {
-                    internal_panic!("Module type should always end in a struct type!")
-                };
-                let struct_name = format!("{}.{}", module_name, struct_name);
-                let struct_type = self.get_struct_type(&struct_name).unwrap();
-                struct_type
             },
             Type::Str => self.context.i8_type().ptr_type(AddressSpace::default()).as_basic_type_enum(),
             Type::Any => self.context.i64_type().ptr_type(AddressSpace::default()).as_basic_type_enum(),
@@ -1618,13 +1554,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
-    fn get_full_name(&self, struct_name: &str) -> String {
-        let module_name = self.module_stack.join(".");
-        format!("{}.{}", module_name, struct_name)
-    }
-
-    #[trace_call(always)]
-    fn get_struct_type(&self, struct_name: &str) -> Option<BasicTypeEnum<'ctx>> {
+    fn get_struct_type(&self, struct_name: &str) -> Option<StructType<'ctx>> {
         if let Some(struct_type) = self.struct_defs.get(struct_name) {
             Some(struct_type.clone())
         } else {

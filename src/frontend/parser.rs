@@ -168,6 +168,27 @@ pub enum TokenType {
     Eof,
 }
 
+
+macro_rules! attach_module_specifier {
+    ($node:ident, $name:expr) => {
+        {
+            let module_spec = nodes::ModuleSpecifier {
+                name: $name,
+                sub_module: None
+            };
+            if let Some(sub_mod) = &mut $node.module_path {
+                let mut last = sub_mod;
+                while let Some(ref mut next) = last.sub_module {
+                    last = next;
+                }
+                last.sub_module = Some(Box::new(module_spec));
+            } else {
+                $node.module_path = Some(Box::new(module_spec));
+            }
+        }
+    };
+}
+
 impl TokenType {
     fn is_opening_bracket(&self) -> bool {
         match self {
@@ -315,7 +336,6 @@ pub enum Operation {
     Negate,
     MemberAccess,
     IndexedAccess,
-    ModuleAccess,
     Add,
     Sub,
     Mul,
@@ -360,7 +380,6 @@ impl Display for Operation {
             Self::GreaterThanOrEqual => write!(f, ">="),
             Self::IndexedAccess => write!(f, "[]"),
             Self::MemberAccess => write!(f, "."),
-            Self::ModuleAccess => write!(f, "::"),
             Self::Reference => write!(f, "&"),
             Self::Dereference => write!(f, "*"),
         }
@@ -370,7 +389,7 @@ impl Display for Operation {
 impl Operation {
     #[trace_call(extra)]
     fn from(s: &str) -> Option<Self> {
-        debug_assert_eq!(Operation::GreaterThanOrEqual as u8 + 1, 22, "Not all Operations are handled in from()");
+        debug_assert_eq!(Operation::GreaterThanOrEqual as u8 + 1, 21, "Not all Operations are handled in from()");
         // TOKEN_TYPE_HANDLE_HERE (if new token is an operator)
         match s {
             "=" => Some(Self::Assign),
@@ -389,7 +408,6 @@ impl Operation {
             ">" => Some(Self::GreaterThan),
             ">=" => Some(Self::GreaterThanOrEqual),
             "." => Some(Self::MemberAccess),
-            "::" => Some(Self::ModuleAccess),
             "&&" => Some(Self::LogicalAnd),
             "||" => Some(Self::LogicalOr),
             "!" => Some(Self::LogicalNot),
@@ -452,6 +470,7 @@ enum Associativity {
 pub struct Parser<'flags> {
     filepath: PathBuf,
     files_to_parse: Vec<PathBuf>,
+    module_stack: Vec<String>,
     parsed_files: HashSet<PathBuf>,
     include_locations: HashMap<PathBuf, Vec<Location>>,
     file_id: usize,
@@ -473,6 +492,7 @@ impl<'flags> Parser<'flags> {
     pub fn new(flags: &'flags Flags) -> Self {
         Self {
             filepath: PathBuf::new(),
+            module_stack: Vec::new(),
             files_to_parse: Vec::new(),
             parsed_files: HashSet::new(),
             include_locations: HashMap::new(),
@@ -871,7 +891,7 @@ impl<'flags> Parser<'flags> {
             // Reserved for future use
             "f32" => Type::F32,
             "f64" => Type::F64,
-            _ => Type::Struct(val.to_string()),
+            _ => Type::Struct(val.to_string(), None),
         }
     }
     #[trace_call(always)]
@@ -1016,15 +1036,9 @@ impl<'flags> Parser<'flags> {
         {
             // FIXME: Better way to handle prelude
             let prelude_path = PathBuf::from("./prelude/prelude.bu");
-            let prelude = self.parse_file(&prelude_path, 0);
+            let prelude = self.parse_file(&prelude_path, 0, false);
             assert!(prelude.is_ok(), "Failed to parse prelude");
             let prelude_module = prelude.unwrap();
-            assert!(prelude_module.name.is_empty()); // `./`
-            assert!(prelude_module.modules.len() == 1); // `./prelude` directory
-            let prelude_module = prelude_module.modules[0].clone();
-            assert!(prelude_module.name == "prelude");
-            assert!(prelude_module.modules.len() == 1); // `prelude.bu`
-            let prelude_module = prelude_module.modules[0].clone();
             root.modules.push(prelude_module);
         }
 
@@ -1035,7 +1049,7 @@ impl<'flags> Parser<'flags> {
             if self.parsed_files.contains(&file) {
                 continue;
             }
-            let module = self.parse_file(&file, root_path_count);
+            let module = self.parse_file(&file, root_path_count, true);
             if let Ok(module) = module {
                 self.parsed_files.insert(file.clone());
                 root.modules.push(module);
@@ -1050,7 +1064,7 @@ impl<'flags> Parser<'flags> {
     }
 
     #[trace_call(always)]
-    fn parse_file(&mut self, filepath: &PathBuf, root_path_count: usize) -> Result<nodes::ModuleNode, ()> {
+    fn parse_file(&mut self, filepath: &PathBuf, root_path_count: usize, file_is_module: bool) -> Result<nodes::ModuleNode, ()> {
         if self.flags.verbose {
             println!("[INFO] Parsing `{}`", filepath.to_str().unwrap());
         }
@@ -1070,22 +1084,36 @@ impl<'flags> Parser<'flags> {
         let modules = &modules[..modules.len() - 1];
         self.filepath(filepath.to_str().unwrap());
         self.fill_lookup();
-        let m = self.parse_module(&filepath.file_stem().unwrap().to_str().unwrap());
+        if file_is_module {
+            for module in modules {
+                self.module_stack.push(module.to_string());
+            }
+        }
+        let m = self.parse_module(filepath.file_stem().unwrap().to_str().unwrap().to_string());
+        if file_is_module {
+            for _ in modules {
+                self.module_stack.pop();
+            }
+        }
         let Ok(mut m) = m else {
             return Err(());
         };
-        for module in modules.iter().rev() {
-            let new_module = nodes::ModuleNode {
-                location: Location::anonymous(),
-                name: module.clone(),
-                modules: vec![m],
-                structs: vec![],
-                functions: vec![],
-                externs: vec![],
-                imports: vec![],
-                compiler_flags: None,
-            };
-            m = new_module;
+        // FIXME: This shuffle breaks ModuleSpecifier
+        // It's better to just "parse" directories too :^)
+        if file_is_module {
+            for module in modules.iter().rev() {
+                let new_module = nodes::ModuleNode {
+                    location: Location::anonymous(),
+                    name: module.clone(),
+                    modules: vec![m],
+                    structs: vec![],
+                    functions: vec![],
+                    externs: vec![],
+                    imports: vec![],
+                    compiler_flags: None,
+                };
+                m = new_module;
+            }
         }
         m.imports.push(nodes::ImportNode {
             location: Location::anonymous(),
@@ -1095,7 +1123,8 @@ impl<'flags> Parser<'flags> {
     }
 
     #[trace_call(always)]
-    fn parse_module(&mut self, module_name: &str)-> Result<nodes::ModuleNode, ()> {
+    fn parse_module(&mut self, module_name: String)-> Result<nodes::ModuleNode, ()> {
+        self.module_stack.push(module_name.clone());
         let location = self.current_location();
         let modules = vec![];
         let mut structs = vec![];
@@ -1210,6 +1239,7 @@ impl<'flags> Parser<'flags> {
                 },
             }
         }
+        self.module_stack.pop();
         if !valid {
             return Err(());
         }
@@ -1403,6 +1433,7 @@ impl<'flags> Parser<'flags> {
             name,
             fields,
             methods,
+            module_path: Some(Box::new(nodes::ModuleSpecifier::from_resolved(&self.module_stack)))
         })
     }
 
@@ -1442,6 +1473,7 @@ impl<'flags> Parser<'flags> {
         Ok(nodes::FunctionNode {
             location,
             name: name.value,
+            module_path: Some(Box::new(nodes::ModuleSpecifier::from_resolved(&self.module_stack))),
             return_type,
             parameters,
             block,
@@ -1475,6 +1507,7 @@ impl<'flags> Parser<'flags> {
             location,
             struct_name: struct_name.to_string(),
             name: name.value,
+            module_path: Some(Box::new(nodes::ModuleSpecifier::from_resolved(&self.module_stack))),
             return_type,
             parameters,
             block,
@@ -1543,7 +1576,7 @@ impl<'flags> Parser<'flags> {
                     ));
                     return Err(());
                 }
-                let struct_typ = Type::Struct(self.current_struct.as_ref().unwrap().clone());
+                let struct_typ = Type::Struct(self.current_struct.as_ref().unwrap().clone(), None);
                 let typ = if is_reference {
                     Type::Ref(Box::new(struct_typ), is_mutable)
                 } else {
@@ -1874,7 +1907,6 @@ impl<'flags> Parser<'flags> {
     fn get_binary_precedence(&self, token_type: TokenType) -> usize {
         // TOKEN_TYPE_HANDLE_HERE
         match token_type {
-            TokenType::DoubleColon => 18,
             TokenType::Dot => 17,
             TokenType::OpenSquare => 16, // Array index
             TokenType::ForwardSlash => 12,
@@ -1930,7 +1962,6 @@ impl<'flags> Parser<'flags> {
             TokenType::CmpGt => Associativity::Left,
             TokenType::CmpGte => Associativity::Left,
             TokenType::Dot => Associativity::Left,
-            TokenType::DoubleColon => Associativity::Left,
             TokenType::DoubleAmpersand => Associativity::Left,
             TokenType::DoublePipe => Associativity::Left,
             TokenType::OpenSquare => Associativity::Left,
@@ -2009,7 +2040,7 @@ impl<'flags> Parser<'flags> {
                 let this_literal = nodes::NameNode {
                     location: this_token.location,
                     name: String::from("this"),
-                    typ: Type::Struct(self.current_struct.as_ref().unwrap().clone()),
+                    typ: Type::Struct(self.current_struct.as_ref().unwrap().clone(), None),
                 };
                 Ok(nodes::Expression::Name(this_literal))
             }
@@ -2056,7 +2087,6 @@ impl<'flags> Parser<'flags> {
             TokenType::CmpGt => true,
             TokenType::CmpGte => true,
             TokenType::Dot => true,
-            TokenType::DoubleColon => true,
             TokenType::DoubleAmpersand => true,
             TokenType::DoublePipe => true,
             TokenType::OpenSquare => true,
@@ -2180,7 +2210,24 @@ impl<'flags> Parser<'flags> {
     #[trace_call(always)]
     fn parse_expr_identifier(&mut self)-> Result<nodes::Expression, ()> {
         let ident = self.expect(TokenType::Identifier)?;
-        if self.at(TokenType::OpenRound) {
+        if self.eat(TokenType::DoubleColon) {
+            // REVIEW: Re-introduce ParenExprNode
+            // Expressions such as X::(y) will work here :^)
+            let mut expr = self.parse_expression(0, Associativity::Left)?;
+            match expr {
+                nodes::Expression::StructLiteral(ref mut struct_lit) => {
+                    attach_module_specifier!(struct_lit, ident.value);
+                }
+                nodes::Expression::FunctionCall(ref mut func_call) => {
+                    attach_module_specifier!(func_call, ident.value);
+                }
+                _ => {
+                    // Error
+                    todo!()
+                }
+            }
+            Ok(expr)
+        } else if self.at(TokenType::OpenRound) {
             let fn_call = self.parse_expr_function_call(ident)?;
             Ok(nodes::Expression::FunctionCall(fn_call))
         } else if self.at(TokenType::OpenCurly) {
@@ -2209,10 +2256,11 @@ impl<'flags> Parser<'flags> {
         }
         self.expect(TokenType::ClosingCurly)?;
         Ok(nodes::StructLiteralNode {
-            struct_name: ident.value.clone(),
             location,
+            struct_name: ident.value.clone(),
+            module_path: None,
             fields,
-            typ: Type::Struct(ident.value),
+            typ: Type::Struct(ident.value, None),
         })
     }
 
@@ -2353,6 +2401,7 @@ impl<'flags> Parser<'flags> {
         Ok(nodes::CallNode {
             is_extern,
             function_name,
+            module_path: None,
             location,
             arguments,
             typ: Type::Unknown,
@@ -2383,6 +2432,7 @@ impl<'flags> Parser<'flags> {
             Ok(nodes::TypeNode {
                 location,
                 typ,
+                module_path: None
             })
         } else if self.eat(TokenType::Ampersand) {
             let is_mutable = self.eat(TokenType::KeywordMut);
@@ -2391,6 +2441,7 @@ impl<'flags> Parser<'flags> {
             Ok(nodes::TypeNode {
                 location,
                 typ,
+                module_path: None
             })
         } else if self.eat(TokenType::OpenSquare) {
             let typ = self.parse_type_node()?;
@@ -2409,22 +2460,24 @@ impl<'flags> Parser<'flags> {
             Ok(nodes::TypeNode {
                 location,
                 typ: Type::Array(Box::new(typ.typ), size),
+                module_path: None
             })
         } else {
             let name_token = self.expect(TokenType::Identifier)?;
             if self.eat(TokenType::DoubleColon) {
-                let module_name = name_token.value;
-                let sub_type = self.parse_type_node()?;
-                let typ = Type::Module(module_name, Box::new(sub_type.typ));
-                return Ok(nodes::TypeNode {
-                    location,
-                    typ,
-                });
+                let mut sub_type = self.parse_type_node()?;
+                let Type::Struct(strukt, _) = &sub_type.typ else {
+                    internal_panic!("parse_type_node() returned invalid submodule type")
+                };
+                attach_module_specifier!(sub_type, name_token.value);
+                sub_type.typ = Type::Struct(strukt.clone(), sub_type.module_path.clone());
+                return Ok(sub_type)
             }
             let typ = self.parse_type_str(&name_token.value);
             Ok(nodes::TypeNode {
                 location,
                 typ,
+                module_path: None
             })
         }
     }

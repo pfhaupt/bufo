@@ -66,6 +66,9 @@ impl Printable for nodes::ExternNode {
 impl Printable for nodes::StructNode {
     fn print_ast(&self, indent: usize) {
         println!("{}StructNode {}", " ".repeat(indent), self.name);
+        if let Some(mod_spec) = &self.module_path {
+            mod_spec.print_ast(indent + INDENT_PER_LEVEL);
+        }
         for field in &self.fields {
             field.print_ast(indent + INDENT_PER_LEVEL);
         }
@@ -200,6 +203,9 @@ impl Printable for nodes::ContinueNode {
 impl Printable for nodes::TypeNode {
     fn print_ast(&self, indent: usize) {
         println!("{}TypeNode {}", " ".repeat(indent), self.typ);
+        if let Some(mod_spec) = &self.module_path {
+            mod_spec.print_ast(indent + INDENT_PER_LEVEL);
+        }
     }
 }
 
@@ -234,6 +240,9 @@ impl Printable for nodes::LiteralNode {
 impl Printable for nodes::StructLiteralNode {
     fn print_ast(&self, indent: usize) {
         println!("{}ExpressionStructLiteralNode", " ".repeat(indent));
+        if let Some(mod_spec) = &self.module_path {
+            mod_spec.print_ast(indent + INDENT_PER_LEVEL);
+        }
         println!("{}Type {}", " ".repeat(indent + INDENT_PER_LEVEL), self.typ);
         for field in &self.fields {
             println!("{}Field {}", " ".repeat(indent + INDENT_PER_LEVEL), field.0);
@@ -274,9 +283,21 @@ impl Printable for nodes::BinaryNode {
 impl Printable for nodes::CallNode {
     fn print_ast(&self, indent: usize) {
         println!("{}ExpressionCallNode", " ".repeat(indent));
+        if let Some(mod_spec) = &self.module_path {
+            mod_spec.print_ast(indent + INDENT_PER_LEVEL);
+        }
         println!("{}Function {}", " ".repeat(indent + INDENT_PER_LEVEL), self.function_name);
         for argument in &self.arguments {
             argument.print_ast(indent + INDENT_PER_LEVEL);
+        }
+    }
+}
+
+impl Printable for nodes::ModuleSpecifier {
+    fn print_ast(&self, indent: usize) {
+        println!("{}ModuleSpecifier {}", " ".repeat(indent), self.name);
+        if let Some(sub_module) = &self.sub_module {
+            sub_module.print_ast(indent + INDENT_PER_LEVEL);
         }
     }
 }

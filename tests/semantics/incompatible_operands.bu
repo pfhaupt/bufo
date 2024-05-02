@@ -3,9 +3,11 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Type mismatch in binary expression! Operation `Test + Test` is not defined.
-//! LHS has type `Test`.
-//! RHS has type `Test`.
+//! Type mismatch in binary expression! Operation `incompatible_operands::Test + incompatible_operands::Test` is not defined.
+//! LHS has type `incompatible_operands::Test`.
+//! RHS has type `incompatible_operands::Test`.
+
+// FIXME: Should errors always print the fully specified type?
 
 struct Test {
     a: i64;
@@ -14,5 +16,5 @@ struct Test {
 func main() {
     let t1: Test = Test {a: 0};
     let t2: Test = Test {a: 0};
-    let t3: Test = t1 + t2; // OP_PLUS is not defined for strukt Test
+    let t3: Test = t1 + t2; // OP_PLUS is not defined for struct Test
 }

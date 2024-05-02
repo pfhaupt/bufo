@@ -1,4 +1,24 @@
 # Changelog
+## 2024-05-02
+### General
+- Add ROADMAP.md
+### New Features
+- Implement smarter function and type resolver
+    - Imported modules don't need to be specified using the `::` token anymore
+    - The Typechecker will first scan the current file, and then all imported modules
+### Fixes
+- Refactor the way modules work
+    - The process is now systematic and shouldn't break as easily
+    - Introduce ModuleSpecifier
+        - All expressions of the form `X::Y` are parsed into those ModuleSpecifiers, instead of a BinaryExpr using `Operation::ModuleAccess`
+        - Every Node that needs one has one (e.g. StructLiteralNode, CallNode)
+        - Is used to resolve the name for Codegen
+- Deprecate `Operation::ModuleAccess`
+    - There's no reason why it should be a binary expression instead of unfolding it when parsing
+### Known Issues
+- Typechecker finds recursive structs when there are none
+- There's currently no way to tell if a function was shadowed from another module, the Typechecker always goes first come first served
+    - An error, or at least a warning would be cool to tell the user "hey, there are multiple functions in the modules X, Y, Z with this name"
 ## 2024-03-11
 ### General
 - LLVM is now enabled by default

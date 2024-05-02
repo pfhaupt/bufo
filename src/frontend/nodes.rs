@@ -1,6 +1,7 @@
 use std::fs;
 
 use crate::frontend::parser::{Location, Operation};
+use crate::internal_panic;
 use crate::middleend::type_checker::Type;
 
 use tracer::trace_call;
@@ -15,6 +16,20 @@ pub struct ModuleNode {
     pub functions: Vec<FunctionNode>,
     pub imports: Vec<ImportNode>,
     pub compiler_flags: Option<CompilerFlagsNode>,
+}
+
+impl ModuleNode {
+    #[trace_call(extra)]
+    pub fn get_all_structs(&self) -> Vec<&StructNode> {
+        let mut structs = vec![];
+        for strukt in &self.structs {
+            structs.push(strukt);
+        }
+        for module in &self.modules {
+            structs.extend(module.get_all_structs());
+        }
+        structs
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +95,18 @@ pub struct StructNode {
     pub name: String,
     pub fields: Vec<FieldNode>,
     pub methods: Vec<MethodNode>,
+    pub module_path: Option<Box<ModuleSpecifier>>,
+}
+
+impl StructNode {
+    #[trace_call(extra)]
+    pub fn get_full_name(&self) -> String {
+        if let Some(mod_spec) = &self.module_path {
+            format!("{}.{}", mod_spec.to_codegen_name(), self.name)
+        } else {
+            internal_panic!("Could not retrieve full name for struct {} at {:?}", self.name, self.location)
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -93,6 +120,7 @@ pub struct FieldNode {
 pub struct FunctionNode {
     pub location: Location,
     pub name: String,
+    pub module_path: Option<Box<ModuleSpecifier>>,
     pub return_type: TypeNode,
     pub parameters: Vec<ParameterNode>,
     pub block: BlockNode,
@@ -102,11 +130,23 @@ pub struct FunctionNode {
     pub stack_size: usize,
 }
 
+impl FunctionNode {
+    #[trace_call(extra)]
+    pub fn get_full_name(&self) -> String {
+        if let Some(mod_spec) = &self.module_path {
+            format!("{}.{}", mod_spec.to_codegen_name(), self.name)
+        } else {
+            internal_panic!("ModuleSpecifier of FunctionNode should be set at this point!")
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct MethodNode {
     pub location: Location,
     pub struct_name: String,
     pub name: String,
+    pub module_path: Option<Box<ModuleSpecifier>>,
     pub return_type: TypeNode,
     pub parameters: Vec<ParameterNode>,
     pub block: BlockNode,
@@ -114,6 +154,17 @@ pub struct MethodNode {
     pub is_vararg: bool,
     #[cfg(feature = "old_codegen")]
     pub stack_size: usize,
+}
+
+impl MethodNode {
+    #[trace_call(extra)]
+    pub fn get_full_name(&self) -> String {
+        if let Some(mod_spec) = &self.module_path {
+            format!("{}.{}.{}", self.struct_name, mod_spec.to_codegen_name(), self.name)
+        } else {
+            internal_panic!("ModuleSpecifier of FunctionNode should be set at this point!")
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -207,6 +258,7 @@ pub struct ContinueNode {
 pub struct TypeNode {
     pub location: Location,
     pub typ: Type,
+    pub module_path: Option<Box<ModuleSpecifier>>
 }
 
 impl TypeNode {
@@ -214,14 +266,16 @@ impl TypeNode {
     pub fn none(location: Location) -> Self {
         Self {
             location,
-            typ: Type::None
+            typ: Type::None,
+            module_path: None
         }
     }
     #[trace_call(extra)]
     pub fn this(location: Location, typ: Type) -> Self {
         Self {
             location,
-            typ
+            typ,
+            module_path: None
         }
     }
 }
@@ -316,6 +370,7 @@ pub struct LiteralNode {
 pub struct StructLiteralNode {
     pub location: Location,
     pub struct_name: String,
+    pub module_path: Option<Box<ModuleSpecifier>>,
     pub fields: Vec<(String, Expression)>,
     pub typ: Type,
 }
@@ -380,9 +435,76 @@ impl BinaryNode {
 pub struct CallNode {
     pub location: Location,
     pub function_name: String,
+    pub module_path: Option<Box<ModuleSpecifier>>,
     pub arguments: Vec<Expression>,
     pub typ: Type,
     pub is_extern: bool,
+}
+
+impl CallNode {
+    #[trace_call(extra)]
+    pub fn get_full_name(&self) -> String {
+        if let Some(mod_spec) = &self.module_path {
+            if self.is_extern {
+                self.function_name.clone()
+            } else {
+                format!("{}.{}", mod_spec.to_codegen_name(), self.function_name)
+            }
+        } else {
+            internal_panic!("ModuleSpecifier of FunctionNode should be set at this point!")
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModuleSpecifier {
+    pub name: String,
+    pub sub_module: Option<Box<ModuleSpecifier>>
+}
+
+impl ModuleSpecifier {
+    #[trace_call(extra)]
+    pub fn from_resolved(path: &Vec<String>) -> Self {
+        let mut result = None;
+        for p in path {
+            result = Some(Box::new(ModuleSpecifier {
+                name: p.clone(),
+                sub_module: result
+            }));
+        }
+        let Some(result) = result else {
+            internal_panic!("Could not build ModuleSpecifier from resolved path")
+        };
+        *result
+    }
+
+    #[trace_call(extra)]
+    pub fn to_path(&self) -> Vec<String> {
+        let mut path = vec![self.name.clone()];
+        if let Some(sub_module) = &self.sub_module {
+            path.extend(sub_module.to_path());
+        }
+        path
+    }
+
+    #[trace_call(extra)]
+    pub fn to_codegen_name(&self) -> String {
+        if let Some(sub_module) = &self.sub_module {
+            sub_module.to_codegen_name() + "." + &self.name
+        } else {
+            self.name.clone()
+        }
+    }
+}
+
+impl std::fmt::Display for ModuleSpecifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(sub_mod) = &self.sub_module {
+            write!(f, "{}::{}", sub_mod, self.name)
+        } else {
+            write!(f, "{}", self.name)
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

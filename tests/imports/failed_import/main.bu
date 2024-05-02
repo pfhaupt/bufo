@@ -3,7 +3,7 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Unknown type `other::Foo`.
+//! Unknown module `other`.
 
 // Missing `import other;`
 
