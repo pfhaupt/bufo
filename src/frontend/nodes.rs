@@ -160,7 +160,7 @@ impl MethodNode {
     #[trace_call(extra)]
     pub fn get_full_name(&self) -> String {
         if let Some(mod_spec) = &self.module_path {
-            format!("{}.{}.{}", self.struct_name, mod_spec.to_codegen_name(), self.name)
+            format!("{}.{}.{}", mod_spec.to_codegen_name(), self.struct_name, self.name)
         } else {
             internal_panic!("ModuleSpecifier of FunctionNode should be set at this point!")
         }
@@ -449,6 +449,19 @@ impl CallNode {
                 self.function_name.clone()
             } else {
                 format!("{}.{}", mod_spec.to_codegen_name(), self.function_name)
+            }
+        } else {
+            internal_panic!("ModuleSpecifier of FunctionNode should be set at this point!")
+        }
+    }
+
+    #[trace_call(extra)]
+    pub fn get_method_name(&self, strukt_name: &str) -> String {
+        if let Some(mod_spec) = &self.module_path {
+            if self.is_extern {
+                self.function_name.clone()
+            } else {
+                format!("{}.{}.{}", mod_spec.to_codegen_name(), strukt_name, self.function_name)
             }
         } else {
             internal_panic!("ModuleSpecifier of FunctionNode should be set at this point!")

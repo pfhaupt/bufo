@@ -249,6 +249,10 @@ enum TypeError {
     InvalidMemberAccess(Location, &'static str),
     /// Syntax: Error Loc
     ImmutDerefInMutContext(Location, Location),
+    /// Syntax: Error Loc
+    UnsafePointerArithmetics(Location),
+    /// Syntax: Error Loc, Binary Op
+    InvalidPointerArithmetics(Location, Operation)
 }
 
 impl Display for TypeError {
@@ -525,6 +529,12 @@ impl Display for TypeError {
                     ERR_STR, loc, NOTE_STR, sub_expr_loc
                 )
             }
+            TypeError::UnsafePointerArithmetics(loc) => {
+                write!(f, "{}: {:?}: Pointer Arithmetics are unsafe.\n{}: Use an `unsafe {{}}` block if you really want to do that.", ERR_STR, loc, NOTE_STR)
+            }
+            TypeError::InvalidPointerArithmetics(loc, op) => {
+                write!(f, "{}: {:?}: Operation `{}` is not allowed in the context of pointer arithmetics.", ERR_STR, loc, op)
+            }
         }
     }
 }
@@ -730,6 +740,7 @@ struct Function {
     location: Location,
     return_type: TypeLoc,
     parameters: Vec<Variable>,
+    module_path: Option<Box<nodes::ModuleSpecifier>>,
     has_this: bool,
     is_unsafe: bool,
     is_vararg: bool,
@@ -795,6 +806,7 @@ impl Struct {
         errors.append(&mut param_errors);
         let func = Function {
             location: method.location,
+            module_path: method.module_path.clone(),
             return_type: TypeLoc::new(return_loc, tc.unwrap_type_node_typ(&method.return_type)),
             parameters,
             has_this: true,
@@ -905,7 +917,17 @@ impl Module {
     fn insert_struct(&mut self, strukt: Struct) {
         let index = self.structs.len();
         self.struct_indices.insert(strukt.name.clone(), index);
-        self.structs.push(strukt);
+        self.structs.push(strukt.clone());
+
+        // FIXME: There should be a better way of doing this
+        // This allows us to have static functions
+        let mut struct_module = Module::new(strukt.name);
+        struct_module.functions = strukt.known_methods;
+        // FIXME: By adding the module here, we always have to also specify the filename, e.g
+        // if we have file X, and a struct A with A::new(), we need to call X::A::new()
+        // A proper refactor would be cool, but is not a priority due to selfhost
+        // it gets the job done :sunglasses: :^)
+        self.add_module(struct_module);
     }
 
     #[trace_call(extra)]
@@ -945,6 +967,7 @@ impl Module {
         let (parameters, errors) = check_parameters!(tc, extern_node);
         let func = Function {
             location: extern_node.location,
+            module_path: None,
             return_type: TypeLoc::new(return_loc, return_type.clone()),
             parameters,
             has_this: false,
@@ -996,6 +1019,7 @@ impl Module {
         let (parameters, mut errors) = check_parameters!(tc, function);
         let func = Function {
             location,
+            module_path: function.module_path.clone(),
             return_type: TypeLoc::new(return_loc, tc.unwrap_type_node_typ(return_type)),
             parameters,
             has_this: false,
@@ -1857,6 +1881,13 @@ impl<'flags> TypeChecker<'flags> {
                             Ok(Type::Bool)
                         }
                     }
+                    Operation::Dereference => {
+                        let expr_type =
+                            self.type_check_expression_with_type(&mut unary_node.expression, &Type::Ref(Box::new(typ.clone()), true))?;
+                        debug_assert!(matches!(expr_type, Type::Ref(..)));
+                        unary_node.typ = typ.clone();
+                        Ok(typ.clone())
+                    }
                     _ => internal_panic!(
                         "type_check_expression_with_type for {:?} is not implemented yet!",
                         unary_node.operation
@@ -2037,6 +2068,9 @@ impl<'flags> TypeChecker<'flags> {
                         unary_expr.typ = *t.clone();
                         Ok(*t.clone())
                     }
+                    Type::Any => {
+                        Ok(Type::Unknown)
+                    }
                     Type::Unknown => {
                         // Only case where a type is unknown is integer literals
                         // We can't dereference an integer literal
@@ -2194,9 +2228,72 @@ impl<'flags> TypeChecker<'flags> {
         let lhs_type = self.type_check_expression(&mut binary_expr.lhs, MutState::Immut)?;
         let rhs_type = self.type_check_expression(&mut binary_expr.rhs, MutState::Immut)?;
         match (&lhs_type, &rhs_type) {
+            (typ @ Type::Ref(..), other) => {
+                if *other == Type::Unknown {
+                    self.type_check_expression_with_type(&mut binary_expr.rhs, &Type::Usize)?;
+                } else if *other != Type::Usize {
+                    self.report_error(TypeError::BinaryTypeMismatch(
+                        binary_expr.location,
+                        binary_expr.operation.clone(),
+                        binary_expr.lhs.get_loc(),
+                        lhs_type.clone(),
+                        binary_expr.rhs.get_loc(),
+                        rhs_type.clone(),
+                    ));
+                    return Err(());
+                }
+                let other = binary_expr.rhs.get_type();
+                debug_assert!(other == Type::Usize);
+                if self.unsafe_depth == 0 {
+                    self.report_error(TypeError::UnsafePointerArithmetics(
+                        binary_expr.location
+                    ));
+                    return Err(());
+                }
+                if binary_expr.operation != Operation::Add && binary_expr.operation != Operation::Sub {
+                    self.report_error(TypeError::InvalidPointerArithmetics(
+                        binary_expr.location,
+                        binary_expr.operation.clone()
+                    ));
+                    return Err(());
+                }
+                binary_expr.typ = typ.clone();
+                Ok(typ.clone())
+            }
+            (other, typ @ Type::Ref(..)) => {
+                if *other == Type::Unknown {
+                    self.type_check_expression_with_type(&mut binary_expr.lhs, &Type::Usize)?;
+                } else if *other != Type::Usize {
+                    self.report_error(TypeError::BinaryTypeMismatch(
+                        binary_expr.location,
+                        binary_expr.operation.clone(),
+                        binary_expr.lhs.get_loc(),
+                        lhs_type.clone(),
+                        binary_expr.rhs.get_loc(),
+                        rhs_type.clone(),
+                    ));
+                    return Err(());
+                }
+                let other = binary_expr.lhs.get_type();
+                debug_assert!(other == Type::Usize);
+                if self.unsafe_depth == 0 {
+                    self.report_error(TypeError::UnsafePointerArithmetics(
+                        binary_expr.location
+                    ));
+                    return Err(());
+                }
+                if binary_expr.operation != Operation::Add && binary_expr.operation != Operation::Sub {
+                    self.report_error(TypeError::InvalidPointerArithmetics(
+                        binary_expr.location,
+                        binary_expr.operation.clone()
+                    ));
+                    return Err(());
+                }
+                binary_expr.typ = typ.clone();
+                Ok(typ.clone())
+            }
             (Type::Struct(..), _) | (_, Type::Struct(..))
             | (Type::Array(..), _) | (_, Type::Array(..))
-            | (Type::Ref(..), _) | (_, Type::Ref(..))
             | (Type::Bool, _) | (_, Type::Bool) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 self.report_error(TypeError::BinaryTypeMismatch(
@@ -2439,11 +2536,11 @@ impl<'flags> TypeChecker<'flags> {
                     }
                     let result = check_function!(self, call_node, method, "Method")?;
                     call_node.arguments.remove(0);
-                    call_node.module_path = Some(Box::new(nodes::ModuleSpecifier::from_resolved(&self.module_stack)));
                     result
                 } else {
                     check_function!(self, call_node, method, "Method")?
                 };
+                call_node.module_path = method.module_path.clone();
                 binary_expr.typ = result.clone();
                 Ok(result)
             }

@@ -1,0 +1,12 @@
+import parser;
+import vectors;
+
+func main() {
+    mut vec: VecChar = vectors::VecChar::with_capacity(32);
+    vec.push('c');
+    vec.push('d');
+    vec.push('e');
+    unsafe {
+        printf("%c", vec.get(2));
+    }
+}

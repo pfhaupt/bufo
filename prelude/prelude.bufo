@@ -1,5 +1,11 @@
 // All libc functions are unsafe, because C-compliance is not guaranteed yet.
 
+// Memory
+unsafe extern malloc(bytes: usize) -> Any;
+unsafe extern calloc(num: usize, size: usize) -> Any;
+unsafe extern realloc(ptr: Any, new_size: usize) -> Any;
+unsafe extern free(ptr: Any);
+
 // File IO
 unsafe extern fopen(filename: &str, mode: &str) -> Any;
 // FIXME: Any ignores Mutability :^) We should probably only write to mutable buffers tho...

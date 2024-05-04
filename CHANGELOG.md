@@ -1,4 +1,21 @@
 # Changelog
+## 2024-05-04
+### General
+- Start working on Selfhost Stage 1
+    - Getting a feel for the language, implementing a Vector of chars
+### New Features
+- Static methods
+    - The way we handle them is more than suboptimal, but that's okay for now
+- Pointer Arithmetics
+    - Using `unsafe`, we can now do things like `*(ptr + 10)`
+- Add memory functions to the prelude
+    - `malloc`, `calloc`, `realloc`, `free` are now part of the language :D
+### Fixes
+- Make modules even more stable
+    - All codegen-ed names now follow the same pattern: `<module>[.<struct>].<name>`
+- We only updated the module_path for method calls if the method had a `this`
+- Char literals now work properly
+    - We used to subtract `'0'` from the parsed char value, for whatever reason :^)
 ## 2024-05-02
 ### General
 - Add ROADMAP.md

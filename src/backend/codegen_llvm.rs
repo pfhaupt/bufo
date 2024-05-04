@@ -32,7 +32,13 @@ macro_rules! is_int {
 
 macro_rules! assert_is_int {
     ($lhs:expr, $rhs:expr) => {
-        debug_assert!(is_int!($lhs.get_type()) && is_int!($rhs.get_type()));
+        if !(is_int!($lhs.get_type()) && is_int!($rhs.get_type())) {
+            internal_panic!(
+                "Expected integers as operands of binary operation, got:\nlhs: {:?}\nrhs: {:?}",
+                $lhs.get_type(),
+                $rhs.get_type()
+            );
+        }
     };
 }
 
@@ -1073,13 +1079,39 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                     )?;
                     Ok(result.into())
                 } else {
-                    assert_is_int!(binary.lhs, binary.rhs);
-                    let result = self.builder.build_int_add(
-                        lhs.into_int_value(),
-                        rhs.into_int_value(),
-                        "codegen_binary_add",
-                    )?;
-                    Ok(result.into())
+                    if matches!(binary.typ, Type::Ref(..)) {
+                        if matches!(binary.lhs.get_type(), Type::Ref(..)) {
+                            assert!(binary.rhs.get_type() == Type::Usize); // Type Checker guarantees that
+                            let gep = unsafe {
+                                self.builder.build_gep(
+                                    self.codegen_type(&binary.lhs.get_type()),
+                                    lhs.into_pointer_value(),
+                                    &[rhs.into_int_value()],
+                                    "codegen_ptr_add"
+                                )?
+                            };
+                            Ok(gep.into())
+                        } else {
+                            assert!(binary.lhs.get_type() == Type::Usize); // Type Checker guarantees that
+                            let gep = unsafe {
+                                self.builder.build_gep(
+                                    self.codegen_type(&binary.rhs.get_type()),
+                                    rhs.into_pointer_value(),
+                                    &[lhs.into_int_value()],
+                                    "codegen_ptr_add"
+                                )?
+                            };
+                            Ok(gep.into())
+                        }
+                    } else {
+                        assert_is_int!(binary.lhs, binary.rhs);
+                        let result = self.builder.build_int_add(
+                            lhs.into_int_value(),
+                            rhs.into_int_value(),
+                            "codegen_binary_add",
+                        )?;
+                        Ok(result.into())
+                    }
                 }
             }
             Operation::Sub => {
@@ -1093,13 +1125,31 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                     )?;
                     Ok(result.into())
                 } else {
-                    assert_is_int!(binary.lhs, binary.rhs);
-                    let result = self.builder.build_int_sub(
-                        lhs.into_int_value(),
-                        rhs.into_int_value(),
-                        "codegen_binary_sub",
-                    )?;
-                    Ok(result.into())
+                    if matches!(binary.typ, Type::Ref(..)) {
+                        let gep = if matches!(binary.lhs.get_type(), Type::Ref(..)) {
+                            assert!(binary.rhs.get_type() == Type::Usize); // Type Checker guarantees that
+                            let rhs = self.builder.build_int_neg(rhs.into_int_value(), "codegen_ptr_sub_neg")?;
+                            unsafe {
+                                self.builder.build_gep(
+                                    self.codegen_type(&binary.lhs.get_type()),
+                                    lhs.into_pointer_value(),
+                                    &[rhs],
+                                    "codegen_ptr_sub"
+                                )?
+                            }
+                        } else {
+                            internal_panic!("Expected Ref-Usize, found Usize-Ref");
+                        };
+                        Ok(gep.into())
+                    } else {
+                        assert_is_int!(binary.lhs, binary.rhs);
+                        let result = self.builder.build_int_sub(
+                            lhs.into_int_value(),
+                            rhs.into_int_value(),
+                            "codegen_binary_sub",
+                        )?;
+                        Ok(result.into())
+                    }
                 }
             }
             Operation::Mul => {
@@ -1328,10 +1378,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                             Type::Struct(name, _) => name,
                             _ => internal_panic!("Expected struct, found {:?}", typ),
                         };
-                        // FIXME: Would be cooler if we had a MethodCallNode which kept track of the struct
-                        //        so get_full_name() could just do this in one step
-                        let method_name = method_call.get_full_name();
-                        let method_name = format!("{}.{}", real_name, method_name);
+                        let method_name = method_call.get_method_name(real_name);
                         let Some(method) = self.module.get_function(&method_name) else {
                             internal_panic!("Could not find function {}", method_name)
                         };

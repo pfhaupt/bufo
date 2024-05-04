@@ -1,0 +1,45 @@
+
+
+struct VecChar {
+    buffer: &mut char;
+    length: usize;
+    capacity: usize;
+
+    func with_capacity(cap: usize) -> VecChar {
+        unsafe {
+            let a: Any = calloc(cap, 1);
+            // FIXME: An intrinsic or a way to check that `a` is not null would be cool :^)
+            mut buffer: &mut char = &mut *a;
+            return VecChar {
+                buffer: buffer,
+                length: 0,
+                capacity: cap,
+            };
+        }
+    }
+
+    func resize(&mut this, new_cap: usize) {
+        unsafe {
+            let a: Any = realloc(this.buffer, new_cap);
+            // FIXME: An intrinsic or a way to check that `a` is not null would be cool :^)
+            this.buffer = &mut *a;
+        }
+    }
+
+    func push(&mut this, c: char) {
+        if (this.length >= this.capacity) {
+            this.resize(2 * this.capacity);
+        }
+        unsafe {
+            *(this.buffer + this.length) = c;
+        }
+        this.length = this.length + 1;
+    }
+
+    func get(&this, index: usize) -> char {
+        assert(index >= 0 && index <= this.length, "Index Out Of Bounds for Vector!");
+        unsafe {
+            return *(this.buffer + index);
+        }
+    }
+}
