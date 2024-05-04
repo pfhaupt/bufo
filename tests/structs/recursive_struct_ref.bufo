@@ -1,0 +1,14 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+// Note: Even though this passes the Type Checker, actually instantiating A or B is impossible.
+struct A {
+    b: &B;
+}
+
+struct B {
+    a: A;
+}
+
+func main() {}
