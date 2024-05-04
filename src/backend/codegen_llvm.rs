@@ -1435,7 +1435,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 Ok(value.into())
             }
             Type::Char => {
-                let value = literal.value.chars().next().unwrap() as u8 - '0' as u8;
+                let value = literal.value.chars().next().unwrap() as u8;
                 let value = self.context.i8_type().const_int(value as u64, false);
                 Ok(value.into())
             }
