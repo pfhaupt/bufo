@@ -16,7 +16,7 @@ use inkwell::builder::Builder;
 use inkwell::passes::PassManager;
 use inkwell::targets::{Target, InitializationConfig, CodeModel, RelocMode, TargetTriple, TargetMachine};
 use inkwell::types::{BasicType, BasicTypeEnum, StructType};
-use inkwell::values::{BasicValue, PointerValue};
+use inkwell::values::{BasicValue, InstructionValue, PointerValue};
 use inkwell::AddressSpace;
 use inkwell::values::BasicValueEnum;
 
@@ -84,21 +84,21 @@ macro_rules! codegen_function_header {
                 if typ.is_pointer_type() {
                     debug_assert!(func_param.is_pointer_value());
                     func_param.set_name(&param.name);
-                    let func_param = $codegen.builder.build_load(param_type, func_param.into_pointer_value(), &param.name)?;
+                    let func_param = $codegen.load_value_from_ptr(param_type, func_param.into_pointer_value(), &param.name)?;
                     let param_alloc = $codegen.allocate(func_param.get_type(), &param.name)?;
                     $codegen.add_variable(&param.name, param_alloc.into());
-                    $codegen.builder.build_store(param_alloc, func_param)?;
+                    $codegen.store_value_in_ptr(param_alloc, func_param)?;
                 } else {
                     func_param.set_name(&param.name);
                     let param_alloc = $codegen.allocate(param_type, &param.name)?;
                     $codegen.add_variable(&param.name, param_alloc.into());
-                    $codegen.builder.build_store(param_alloc, func_param)?;
+                    $codegen.store_value_in_ptr(param_alloc, func_param)?;
                 }
             } else {
                 func_param.set_name(&param.name);
                 let param_alloc = $codegen.allocate(param_type, &param.name)?;
                 $codegen.add_variable(&param.name, param_alloc.into());
-                $codegen.builder.build_store(param_alloc, func_param)?;
+                $codegen.store_value_in_ptr(param_alloc, func_param)?;
             }
         }
     };
@@ -704,6 +704,35 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
+    /// Wrapper for storing a value in a given pointer
+    /// Equivalent to build_store() for the moment, but this way we can easily modify the expected behavior
+    fn store_value_in_ptr<V: BasicValue<'ctx>>(&self, ptr: PointerValue<'ctx>, value: V) -> Result<InstructionValue<'ctx>, BuilderError> {
+        // REVIEW: Is setting alignment necessary?
+        let v = self.builder.build_store(ptr, value)?;
+        // if let Err(e) = v.set_alignment(1) {
+        //     internal_panic!("Could not store value in pointer: {e}");
+        // }
+        Ok(v)
+    }
+
+    #[trace_call(always)]
+    /// Wrapper for loading a value in a given pointer
+    /// Equivalent to build_load() for the moment, but this way we can easily modify the expected behavior
+    fn load_value_from_ptr<T: BasicType<'ctx>>(&self, typ: T, value: PointerValue<'ctx>, name: &str) -> Result<BasicValueEnum<'ctx>, BuilderError> {
+        // REVIEW: Is setting alignment necessary?
+        let value = self.builder.build_load(
+            typ,
+            value,
+            name,
+        )?;
+        // value.as_instruction_value()
+        //     .unwrap()
+        //     .set_alignment(1)
+        //     .unwrap();
+        Ok(value)
+    }
+
+    #[trace_call(always)]
     /// Wrapper to ensure that `alloca` is always inserted at the end of the entry block.  
     /// This is very important because `mem2reg` only optimizes allocas in the entry block
     fn allocate(&self, typ: BasicTypeEnum<'ctx>, name: &str) -> Result<PointerValue<'ctx>, BuilderError> {
@@ -725,7 +754,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         let alloca = self.allocate(typ, &let_node.name)?;
         self.add_variable(&let_node.name, alloca.into());
         let value = self.codegen_expression(&let_node.expression, false)?;
-        self.builder.build_store(alloca, value)?;
+        self.store_value_in_ptr(alloca, value)?;
         Ok(())
     }
 
@@ -819,7 +848,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 if needs_ptr {
                     Ok(value)
                 } else {
-                    let value = self.builder.build_load(
+                    let value = self.load_value_from_ptr(
                         self.codegen_type(&unary_node.typ),
                         value.into_pointer_value(),
                         "codegen_unary_dereference",
@@ -838,7 +867,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                             self.codegen_type(&unary_node.expression.get_type()),
                             "codegen_unary_reference",
                         )?;
-                        self.builder.build_store(alloc, value)?;
+                        self.store_value_in_ptr(alloc, value)?;
                         Ok(alloc.into())
                     } else {
                         // Value is already a pointer, so we can just return it
@@ -880,7 +909,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         }
         if needs_ptr {
             let struct_alloc = self.allocate(BasicTypeEnum::StructType(*struct_type), "codegen_struct_literal")?;
-            self.builder.build_store(struct_alloc, struct_instance)?;
+            self.store_value_in_ptr(struct_alloc, struct_instance)?;
             Ok(struct_alloc.into())
         } else {
             Ok(struct_instance.as_basic_value_enum())
@@ -927,7 +956,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         debug_assert!(struct_instance.is_struct_value());
         let struct_size = self.get_struct_size(&struct_type);
         let struct_alloc = self.allocate(struct_type, "struct_value_for_arg")?;
-        self.builder.build_store(struct_alloc, struct_instance)?;
+        self.store_value_in_ptr(struct_alloc, struct_instance)?;
         let int = if struct_size == 1 {
             self.context.i8_type()
         } else if struct_size <= 2 {
@@ -939,7 +968,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         } else {
             return Ok(struct_alloc.into());
         };
-        let int = self.builder.build_load(int, struct_alloc, "struct_value_for_arg")?;
+        let int = self.load_value_from_ptr(int, struct_alloc, "struct_value_for_arg")?;
         Ok(int)
     }
 
@@ -980,7 +1009,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                     &[self.context.i64_type().const_int(0, false), i.as_basic_value().into_int_value()],
                     "codegen_array_literal_array_field_ptr",
                 )?;
-                self.builder.build_store(array_field_ptr, value)?;
+                self.store_value_in_ptr(array_field_ptr, value)?;
             }
             let next_i = self.builder.build_int_add(i.as_basic_value().into_int_value(), self.context.i64_type().const_int(1, false), "codegen_array_literal_next_i")?;
             i.add_incoming(&[
@@ -991,7 +1020,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             if needs_ptr {
                 Ok(array_alloca.into())
             } else {
-                let loaded_instance = self.builder.build_load(underlying_type, array_alloca, "codegen_array_literal_loaded_instance")?;
+                let loaded_instance = self.load_value_from_ptr(underlying_type, array_alloca, "codegen_array_literal_loaded_instance")?;
                 Ok(loaded_instance.into())
             }
         } else {
@@ -1007,7 +1036,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             }
             if needs_ptr {
                 let array_alloc = self.allocate(underlying_type, "codegen_array_literal")?;
-                self.builder.build_store(array_alloc, array_instance)?;
+                self.store_value_in_ptr(array_alloc, array_instance)?;
                 Ok(array_alloc.into())
             } else {
                 Ok(array_instance.as_basic_value_enum())
@@ -1041,7 +1070,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         };
         if needs_ptr {
             let temp_alloc = self.allocate(val.get_type(), "codegen_function_call")?;
-            self.builder.build_store(temp_alloc, val)?;
+            self.store_value_in_ptr(temp_alloc, val)?;
             Ok(temp_alloc.into())
         } else {
             Ok(val)
@@ -1056,7 +1085,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             debug_assert!(var.is_pointer_value());
             Ok(var)
         } else {
-            let var = self.builder.build_load(
+            let var = self.load_value_from_ptr(
                 self.codegen_type(&name.typ),
                 var.into_pointer_value(),
                 "codegen_name",
@@ -1326,7 +1355,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             Operation::Assign => {
                 let var = self.codegen_expression(&binary.lhs, true)?;
                 let value = self.codegen_expression(&binary.rhs, false)?;
-                self.builder.build_store(var.into_pointer_value(), value)?;
+                self.store_value_in_ptr(var.into_pointer_value(), value)?;
                 Ok(value)
             }
             Operation::MemberAccess => {
@@ -1358,7 +1387,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                         if needs_ptr {
                                 Ok(field_ptr.into())
                         } else {
-                            let field_value = self.builder.build_load(
+                            let field_value = self.load_value_from_ptr(
                                 field_type,
                                 field_ptr,
                                 "field_ptr_load",
@@ -1461,7 +1490,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 if needs_ptr {
                     Ok(field_ptr.into())
                 } else {
-                    let field_value = self.builder.build_load(
+                    let field_value = self.load_value_from_ptr(
                         field_type,
                         field_ptr,
                         "field_ptr_load",
