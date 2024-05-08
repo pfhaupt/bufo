@@ -7,11 +7,8 @@ struct VecChar {
 
     func with_capacity(cap: usize) -> VecChar {
         unsafe {
-            let a: Any = calloc(cap, 1);
-            // FIXME: An intrinsic or a way to check that `a` is not null would be cool :^)
-            mut buffer: &mut char = &mut *a;
             return VecChar {
-                buffer: buffer,
+                buffer: calloc(cap, 1),
                 length: 0,
                 capacity: cap,
             };
@@ -20,9 +17,14 @@ struct VecChar {
 
     func resize(&mut this, new_cap: usize) {
         unsafe {
-            let a: Any = realloc(this.buffer, new_cap);
-            // FIXME: An intrinsic or a way to check that `a` is not null would be cool :^)
-            this.buffer = &mut *a;
+            printf("[DEBUG] Before realloc, old ptr: %p old cap: %d\n", this.buffer, this.capacity);
+            let _a: Any = calloc(new_cap, 1);
+            let new_buf: &mut char = &mut *_a;
+            memcpy(new_buf, this.buffer, this.length);
+            free(this.buffer);
+            this.buffer = new_buf;
+            this.capacity = new_cap;
+            printf("[DEBUG] After realloc, new ptr: %p new cap: %d\n", this.buffer, this.capacity);
         }
     }
 

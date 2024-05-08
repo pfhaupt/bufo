@@ -1,10 +1,18 @@
 // All libc functions are unsafe, because C-compliance is not guaranteed yet.
 
+// TODO: Implement safe wrapper for everything :^)
+// TODO: Move all of the externals into `libc.bufo`
+
+// Strings
+unsafe extern strlen(string: &str) -> usize;
+
 // Memory
+// TODO: IMPORTANT: Some way to do null checks
 unsafe extern malloc(bytes: usize) -> Any;
 unsafe extern calloc(num: usize, size: usize) -> Any;
 unsafe extern realloc(ptr: Any, new_size: usize) -> Any;
 unsafe extern free(ptr: Any);
+unsafe extern memcpy(dest: Any, src: Any, count: usize) -> Any;
 
 // File IO
 unsafe extern fopen(filename: &str, mode: &str) -> Any;

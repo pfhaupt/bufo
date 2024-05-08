@@ -1,12 +1,12 @@
 import parser;
-import vectors;
+import string;
 
 func main() {
-    mut vec: VecChar = vectors::VecChar::with_capacity(32);
-    vec.push('c');
-    vec.push('d');
-    vec.push('e');
+    mut s: String = string::String::new();
+    for (mut i: usize = 0; i < 100; i = i + 1) {
+        s.push_str("Hello there!");
+    }
     unsafe {
-        printf("%c", vec.get(2));
+        printf("[DEBUG] String after pushing: `%s`\n", s.as_char_ptr());
     }
 }
