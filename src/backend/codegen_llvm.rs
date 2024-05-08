@@ -1411,8 +1411,8 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                         let Some(method) = self.module.get_function(&method_name) else {
                             internal_panic!("Could not find function {}", method_name)
                         };
-                        let is_ref = matches!(typ, Type::Ref(_, _)) || method.get_first_param().unwrap().get_type().is_pointer_type();
-                        let lhs = self.codegen_expression(&binary.lhs, is_ref)?;
+                        let needs_ref = matches!(typ, Type::Struct(_, _)) && method.get_first_param().unwrap().get_type().is_pointer_type();
+                        let lhs = self.codegen_expression(&binary.lhs, needs_ref)?;
                         let mut args = Vec::new();
                         args.push(lhs);
                         for arg in &method_call.arguments {
