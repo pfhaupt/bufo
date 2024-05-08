@@ -1,0 +1,10 @@
+unsafe func main() {
+    let a: Any = calloc(16, 1);
+    mut buffer: &mut char = &mut *a;
+    *(buffer + 0) = 'a';
+    *(buffer + 1) = 'b';
+    printf("Buffer: <%s>\n", buffer);
+    printf("%p\n", (buffer + 0));
+    printf("%p\n", (buffer + 1));
+    free(a);
+}

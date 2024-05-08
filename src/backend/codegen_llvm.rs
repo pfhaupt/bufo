@@ -1110,10 +1110,13 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 } else {
                     if matches!(binary.typ, Type::Ref(..)) {
                         if matches!(binary.lhs.get_type(), Type::Ref(..)) {
+                            let Type::Ref(underlying, _) = binary.lhs.get_type() else {
+                                unreachable!()
+                            };
                             assert!(binary.rhs.get_type() == Type::Usize); // Type Checker guarantees that
                             let gep = unsafe {
                                 self.builder.build_gep(
-                                    self.codegen_type(&binary.lhs.get_type()),
+                                    self.codegen_type(&underlying),
                                     lhs.into_pointer_value(),
                                     &[rhs.into_int_value()],
                                     "codegen_ptr_add"
@@ -1121,10 +1124,13 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                             };
                             Ok(gep.into())
                         } else {
+                            let Type::Ref(underlying, _) = binary.rhs.get_type() else {
+                                unreachable!()
+                            };
                             assert!(binary.lhs.get_type() == Type::Usize); // Type Checker guarantees that
                             let gep = unsafe {
                                 self.builder.build_gep(
-                                    self.codegen_type(&binary.rhs.get_type()),
+                                    self.codegen_type(&underlying),
                                     rhs.into_pointer_value(),
                                     &[lhs.into_int_value()],
                                     "codegen_ptr_add"
@@ -1156,11 +1162,14 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 } else {
                     if matches!(binary.typ, Type::Ref(..)) {
                         let gep = if matches!(binary.lhs.get_type(), Type::Ref(..)) {
+                            let Type::Ref(underlying, _) = binary.lhs.get_type() else {
+                                unreachable!()
+                            };
                             assert!(binary.rhs.get_type() == Type::Usize); // Type Checker guarantees that
                             let rhs = self.builder.build_int_neg(rhs.into_int_value(), "codegen_ptr_sub_neg")?;
                             unsafe {
                                 self.builder.build_gep(
-                                    self.codegen_type(&binary.lhs.get_type()),
+                                    self.codegen_type(&underlying),
                                     lhs.into_pointer_value(),
                                     &[rhs],
                                     "codegen_ptr_sub"
