@@ -1628,7 +1628,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             },
             // Note: As pointers in LLVM are no longer typed, we can just do that
             Type::Ref(..) | Type::Any => self.context.i64_type().ptr_type(AddressSpace::default()).as_basic_type_enum(),
-            Type::Str => self.context.i8_type().ptr_type(AddressSpace::default()).as_basic_type_enum(),
+            Type::Str => self.context.i8_type().as_basic_type_enum(),
             // Note: Void does not exist as BasicTypeEnum, so void functions are handled differently
             Type::None => internal_panic!("Type::None should never be used!"),
             Type::Unknown => internal_panic!("Type::Unknown should never be used!"),

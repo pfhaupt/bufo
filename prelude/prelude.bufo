@@ -24,8 +24,39 @@ unsafe extern fprintf(stream: Any, msg: &str, ...);
 // Console IO
 unsafe extern printf(msg: &str, ...) -> usize;
 unsafe extern fdopen(fd: i32, mode: &str) -> Any;
+unsafe extern putchar(ch: char) -> char;
+unsafe extern puts(s: &str) -> usize;
 
 unsafe extern exit(code: i32);
+
+unsafe func getChar(s: &str, index: usize) -> char {
+    let _idk: Any = s;
+    let _ch: &char = _idk;
+    let c: char = *(_ch + index);
+    return c;
+}
+
+func isNumeric(ch: char) -> bool {
+    unsafe {
+        // Safety: Safe as long as char is always one byte :^)
+        let _idk: Any = &ch;
+        let _i8: i8 = *_idk;
+        return (_i8 >= 48) && (_i8 <= 57);
+    }
+}
+
+func isAlphabetic(ch: char) -> bool {
+    unsafe {
+        // Safety: Safe as long as char is always one byte :^)
+        let _idk: Any = &ch;
+        let _i8: i8 = *_idk;
+        return (_i8 >= 65) && (_i8 <= 90) || (_i8 >= 97) && (_i8 <= 122);
+    }
+}
+
+func isAlphanumeric(ch: char) -> bool {
+    return isAlphabetic(ch) || isNumeric(ch);
+}
 
 // Internal Runtime Errors
 func index_oob(msg: &str, index: i64) {
@@ -36,7 +67,17 @@ func index_oob(msg: &str, index: i64) {
     }
 }
 
-func assert(cond: bool, msg: &str) {
+func assert(cond: bool) {
+    unsafe {
+        if (!cond) {
+            let stderr: Any = fdopen(2, "w");
+            fprintf(stderr, "ASSERTION FAILED\n");
+            exit(1);
+        }
+    }
+}
+
+func assert_with_msg(cond: bool, msg: &str) {
     unsafe {
         if (!cond) {
             let stderr: Any = fdopen(2, "w");
@@ -44,4 +85,8 @@ func assert(cond: bool, msg: &str) {
             exit(1);
         }
     }
+}
+
+func todo() {
+    assert_with_msg(false, "Not implemented");
 }

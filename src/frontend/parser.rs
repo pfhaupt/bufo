@@ -708,6 +708,7 @@ impl<'flags> Parser<'flags> {
                             't' => new_value.push('\t' as u8),
                             '\\' => new_value.push('\\' as u8),
                             '\'' => new_value.push('\'' as u8),
+                            '0' => new_value.push('\0' as u8),
                             _ => {
                                 self.report_error(ParserError::UnexpectedSymbol(
                                     loc,

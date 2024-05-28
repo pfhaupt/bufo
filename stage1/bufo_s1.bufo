@@ -1,12 +1,221 @@
-import parser;
-import string;
+struct Span {
+    start: usize;
+    end: usize;
+}
 
-func main() {
-    mut s: String = string::String::new();
-    for (mut i: usize = 0; i < 100; i = i + 1) {
-        s.push_str("Hello there!");
+func newSpan(start: usize, end: usize) -> Span {
+    return Span {
+        start: start,
+        end: end
+    };
+}
+
+struct OptionToken {
+    initialized: bool;
+    token: Token;
+
+    func unwrap(&this) -> Token {
+        assert_with_msg(this.isSome(), "Attempted to unwrap uninitialized OptionToken");
+        return this.token;
     }
+    func isSome(&this) -> bool {
+        return this.initialized;
+    }
+}
+
+func newOptionTokenNone() -> OptionToken {
+    return OptionToken {
+        initialized: false,
+        token: defaultToken()
+    };
+}
+
+func newOptionTokenSome(token: Token) -> OptionToken {
+    return OptionToken {
+        initialized: true,
+        token: token
+    };
+}
+
+func TOKEN_UNKNOWN() -> usize { return 0; }
+func TOKEN_IDENT() -> usize { return 1; }
+func TOKEN_NUMBER() -> usize { return 2; }
+func TOKEN_CURLY_OPEN() -> usize { return 3; }
+func TOKEN_CURLY_CLOSE() -> usize { return 4; }
+func TOKEN_PAREN_OPEN() -> usize { return 5; }
+func TOKEN_PAREN_CLOSE() -> usize { return 6; }
+func TOKEN_SEMI_COLON() -> usize { return 7; }
+
+struct Token {
+    content: SubStr;
+    id: usize;
+
+    func print(&this) {
+        unsafe { printf("id=%llu, content=", this.id); }
+        this.content.print();
+    }
+}
+
+func newToken(sub: &SubStr, id: usize) -> Token {
+    return Token {
+        content: *sub,
+        id: id
+    };
+}
+
+func defaultToken() -> Token {
+    return Token {
+        content: defaultSubStr(),
+        id: TOKEN_UNKNOWN(),
+    };
+}
+
+struct SubStr {
+    start: &str;
+    len: usize;
+
+    func print(&this) {
+        unsafe {
+            for (mut i: usize = 0; i < this.len; i = i + 1) {
+                let a: Any = this.start;
+                let c: &char = a;
+                let p: char = *(c + i);
+                assert(p == putchar(p));
+            }
+        }
+    }
+
+    func getChar(&this, index: usize) -> char {
+        assert_with_msg(index <= this.len, "Index out of bounds for String Index.");
+        unsafe {
+            // Safety: index is in bounds.
+            return getChar(this.start, index);
+        }
+    }
+
+    func substring(&this, start: usize, end: usize) -> SubStr {
+        assert_with_msg(end <= this.len, "Index out of bounds for String Substring.");
+        assert_with_msg(end - start <= this.len, "Invalid length for String Substring.");
+        return newSubStr(this.start, start, end);
+    }
+}
+
+func newSubStr(orig: &str, start: usize, end: usize) -> SubStr {
     unsafe {
-        printf("[DEBUG] String after pushing: `%s`\n", s.as_char_ptr());
+        return SubStr {
+            start: orig + start,
+            len: end - start,
+        };
+    }
+}
+
+func defaultSubStr() -> SubStr {
+    unsafe {
+        let s: &str = "You are not supposed to read this. Please issue a bug report.";
+        let l: usize = strlen(s);
+        return newSubStr(s, 0, l);
+    }
+}
+
+struct Lexer {
+    content: SubStr;
+    ptr: usize;
+    len: usize;
+
+    func next(&mut this) -> OptionToken {
+        if (this.ptr == this.len) {
+            return newOptionTokenNone();
+        }
+        mut currChar: char = this.content.getChar(0);
+        while (currChar == ' '
+            || currChar == '\n'
+            || currChar == '\t'
+            || currChar == '\r') {
+            this.ptr = this.ptr + 1;
+            this.content = newSubStr(this.content.start, 1, this.content.len);
+            currChar = this.content.getChar(0);
+            if (this.ptr >= this.len) {
+                return newOptionTokenNone();
+            }
+        }
+        currChar = this.content.getChar(0);
+        if (isAlphabetic(currChar)) {
+            mut len: usize = 0;
+            mut tmp: SubStr = this.content;
+            while (isAlphabetic(tmp.getChar(0))) {
+                len = len + 1;
+                tmp = newSubStr(tmp.start, 1, tmp.len);
+            }
+            let word: SubStr = this.content.substring(0, len);
+            this.ptr = this.ptr + len;
+            this.content = tmp;
+            let t: Token = newToken(&word, TOKEN_IDENT());
+            return newOptionTokenSome(t);
+        } else if (isNumeric(currChar)) {
+            mut len: usize = 0;
+            mut tmp: SubStr = this.content;
+            while (isNumeric(tmp.getChar(0))) {
+                len = len + 1;
+                tmp = newSubStr(tmp.start, 1, tmp.len);
+            }
+            let word: SubStr = this.content.substring(0, len);
+            this.ptr = this.ptr + len;
+            this.content = tmp;
+            let t: Token = newToken(&word, TOKEN_NUMBER());
+            return newOptionTokenSome(t);
+        } else if (currChar == '{') {
+            this.ptr = this.ptr + 1;
+            this.content = this.content.substring(1, this.content.len);
+            return newOptionTokenSome(newToken(&newSubStr("{", 0, 1), TOKEN_CURLY_OPEN()));
+        } else if (currChar == '}') {
+            this.ptr = this.ptr + 1;
+            this.content = this.content.substring(1, this.content.len);
+            return newOptionTokenSome(newToken(&newSubStr("}", 0, 1), TOKEN_CURLY_CLOSE()));
+        } else if (currChar == '(') {
+            this.ptr = this.ptr + 1;
+            this.content = this.content.substring(1, this.content.len);
+            return newOptionTokenSome(newToken(&newSubStr("(", 0, 1), TOKEN_PAREN_OPEN()));
+        } else if (currChar == ')') {
+            this.ptr = this.ptr + 1;
+            this.content = this.content.substring(1, this.content.len);
+            return newOptionTokenSome(newToken(&newSubStr(")", 0, 1), TOKEN_PAREN_CLOSE()));
+        } else if (currChar == ';') {
+            this.ptr = this.ptr + 1;
+            this.content = this.content.substring(1, this.content.len);
+            return newOptionTokenSome(newToken(&newSubStr(";", 0, 1), TOKEN_SEMI_COLON()));
+        } else {
+            unsafe {
+                let stderr: Any = fdopen(2, "w");
+                fprintf(stderr, "error: Unknown character `%c` found.", currChar);
+                exit(1);
+            }
+        }
+        return newOptionTokenNone();
+    }
+}
+
+func newLexer(content: &str) -> Lexer {
+    unsafe {
+        let l: usize = strlen(content);
+        return Lexer {
+            content: newSubStr(content, 0, l),
+            ptr: 0,
+            len: l
+        };
+    }
+}
+
+unsafe func main() {
+    let original: &str = " quirk ABC 123 { func idk(); }";
+    mut lexer: Lexer = newLexer(original);
+    while (true) {
+        let oTkn: OptionToken = lexer.next();
+        if (!oTkn.isSome()) {
+            printf("DONE!\n");
+            break;
+        }
+        let tkn: Token = oTkn.unwrap();
+        tkn.print();
+        printf("\n");
     }
 }
