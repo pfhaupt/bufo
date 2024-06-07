@@ -438,6 +438,67 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
+    fn codegen_intrinsics(&mut self) -> Result<(), BuilderError> {
+        {
+            let global_argv = self.module.add_global(
+                self.context.i8_type().ptr_type(AddressSpace::default()),
+                Some(AddressSpace::default()),
+                "GLOBAL_ARGV"
+            );
+            global_argv.set_initializer(&self.context.i8_type().ptr_type(AddressSpace::default()).const_null());
+            let get_argv = self.module.get_function("GLOBAL_GET_ARGV").unwrap();
+            let argv_body = self.context.append_basic_block(get_argv, "entry");
+            self.builder.position_at_end(argv_body);
+            let argv = self.builder.build_load(
+                self.context.i8_type().ptr_type(AddressSpace::default()),
+                global_argv.as_pointer_value(),
+                "intr_load_argv"
+            )?;
+            self.builder.build_return(Some(&argv))?;
+        }
+        {
+            let global_argc = self.module.add_global(
+                self.context.i32_type(),
+                Some(AddressSpace::default()),
+                "GLOBAL_ARGC"
+            );
+            global_argc.set_initializer(&self.context.i32_type().const_int(0, false));
+            let get_argc = self.module.get_function("GLOBAL_GET_ARGC").unwrap();
+            let argc_body = self.context.append_basic_block(get_argc, "entry");
+            self.builder.position_at_end(argc_body);
+            let argc = self.builder.build_load(
+                self.context.i32_type(),
+                global_argc.as_pointer_value(),
+                "intr_load_argc"
+            )?;
+            let ret = self.builder.build_int_z_extend(
+                argc.into_int_value(),
+                self.context.i64_type(),
+                "intr_ext_argc"
+            )?;
+            self.builder.build_return(Some(&ret))?;
+        }
+        Ok(())
+    }
+
+    #[trace_call(always)]
+    fn codegen_entrypoint_init(&mut self) -> Result<(), BuilderError> {
+        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        assert!(function.get_name().to_str().unwrap() == "main", "Called codegen_entrypoint_init() in wrong context.");
+        let argc = self.module.get_global("GLOBAL_ARGC").expect("Called codegen_entrypoint_init() in wrong context.");
+        self.builder.build_store(
+            argc.as_pointer_value(),
+            function.get_nth_param(0).unwrap()
+        )?;
+        let argv = self.module.get_global("GLOBAL_ARGV").expect("Called codegen_entrypoint_init() in wrong context.");
+        self.builder.build_store(
+            argv.as_pointer_value(),
+            function.get_nth_param(1).unwrap()
+        )?;
+        Ok(())
+    }
+
+    #[trace_call(always)]
     fn codegen_entrypoint(&mut self, file: &nodes::ModuleNode) -> Result<(), BuilderError> {
         let main_name = self.find_main(file).unwrap_or_else(|| {
             println!("[ERROR] Could not find main function!");
@@ -449,10 +510,14 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         } else {
             main_func.get_type().get_return_type().unwrap()
         };
-        let ret_fn_type = ret_type.fn_type(&[], false);
+        let ret_fn_type = ret_type.fn_type(&[
+            self.context.i32_type().into(),
+            self.context.i8_type().ptr_type(AddressSpace::default()).into(),
+        ], false);
         let main = self.module.add_function("main", ret_fn_type, None);
         let entry = self.context.append_basic_block(main, "entry");
         self.builder.position_at_end(entry);
+        self.codegen_entrypoint_init()?;
         let result = self.builder.build_call(main_func, &[], "main_call")?;
         let val = if result.try_as_basic_value().left().is_none() {
             // NOTE: The return value doesn't matter, the function returns None
@@ -1673,6 +1738,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         println!("[INFO] Running {}", self.exename.to_str().unwrap());
         let path = std::path::Path::new(&self.exename);
         let output = std::process::Command::new(path)
+            .args(&self.flags.exe_args)
             .output()
             .expect("Failed to execute program!");
         let exit_code = output.status.code().unwrap();

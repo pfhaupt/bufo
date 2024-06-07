@@ -30,6 +30,8 @@ pub struct Flags {
     pub emit_llvm: bool,
     #[arg(long, default_value = "false")]
     pub emit_asm: bool,
+    #[arg(trailing_var_arg=true, use_value_delimiter=false)]
+    pub exe_args: Vec<String>,
 }
 
 fn valid_opt(opt: &str) -> Result<OptimizationFlags, String> {

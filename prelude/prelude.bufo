@@ -3,6 +3,11 @@
 // TODO: Implement safe wrapper for everything :^)
 // TODO: Move all of the externals into `libc.bufo`
 
+// Intrinsics
+// They are safe because we can directly define their behavior
+extern GLOBAL_GET_ARGC() -> usize;
+extern GLOBAL_GET_ARGV() -> &&str;
+
 // Strings
 unsafe extern strlen(string: &str) -> usize;
 unsafe extern strcmp(s1: &str, s2: &str) -> usize;
