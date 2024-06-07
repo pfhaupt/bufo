@@ -744,6 +744,7 @@ struct Function {
     has_this: bool,
     is_unsafe: bool,
     is_vararg: bool,
+    is_extern: bool,
 }
 
 impl Function {
@@ -812,6 +813,7 @@ impl Struct {
             has_this: true,
             is_unsafe: method.is_unsafe,
             is_vararg: false,
+            is_extern: false,
         };
         if self.known_methods.contains_key(name) {
             let m = &self.known_methods[name];
@@ -973,6 +975,7 @@ impl Module {
             has_this: false,
             is_unsafe: extern_node.is_unsafe,
             is_vararg: extern_node.is_vararg,
+            is_extern: true,
         };
         self.externs.insert(extern_node.name.clone(), func);
         errors
@@ -1025,6 +1028,7 @@ impl Module {
             has_this: false,
             is_unsafe: function.is_unsafe,
             is_vararg: false,
+            is_extern: false,
         };
         if self.externs.contains_key(&name) {
             let external = &self.externs[&name];
@@ -2506,6 +2510,7 @@ impl<'flags> TypeChecker<'flags> {
                     ));
                     return Err(());
                 };
+
                 if method.is_unsafe && self.unsafe_depth == 0 {
                     self.report_error(TypeError::UnsafeCallInSafeContext(
                         "Method",
@@ -2927,6 +2932,7 @@ impl<'flags> TypeChecker<'flags> {
             };
             (func, modp)
         };
+        func_call.is_extern = function.is_extern;
         let mut module_path = None;
         for sub_mod in mod_path.iter().rev() {
             module_path = Some(Box::new(nodes::ModuleSpecifier {

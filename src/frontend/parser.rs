@@ -1504,7 +1504,7 @@ impl<'flags> Parser<'flags> {
 
         let return_type = self.parse_return_type()?;
 
-        let block = self.parse_block(false)?;
+        let block = self.parse_block(is_unsafe)?;
 
         self.current_function = None;
 
@@ -2405,10 +2405,8 @@ impl<'flags> Parser<'flags> {
         let arguments = self.parse_arguments()?;
         self.expect(TokenType::ClosingRound)?;
 
-        let is_extern = self.known_externs.contains(&function_name);
-
         Ok(nodes::CallNode {
-            is_extern,
+            is_extern: false,
             function_name,
             module_path: None,
             location,
