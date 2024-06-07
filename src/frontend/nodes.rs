@@ -291,6 +291,7 @@ pub enum Expression {
     Binary(BinaryNode),
     // Parenthesis(Expression),
     FunctionCall(CallNode),
+    Sizeof(TypeNode),
 }
 
 impl Expression {
@@ -304,6 +305,7 @@ impl Expression {
             Self::Unary(e) => e.location,
             Self::Binary(e) => e.location,
             Self::FunctionCall(e) => e.location,
+            Self::Sizeof(e) => e.location,
         }
     }
 
@@ -317,6 +319,7 @@ impl Expression {
             Self::Unary(e) => e.typ.clone(),
             Self::Binary(e) => e.typ.clone(),
             Self::FunctionCall(e) => e.typ.clone(),
+            Self::Sizeof(_e) => Type::Usize,
         }
     }
 
@@ -331,6 +334,7 @@ impl Expression {
             Self::Unary(e) => e.typ = typ,
             Self::Binary(e) => e.typ = typ,
             Self::FunctionCall(e) => e.typ = typ,
+            Self::Sizeof(e) => todo!(),
         }
     }
 

@@ -33,6 +33,7 @@ pub const KEYWORD_IMPORT: &str = "import";
 pub const KEYWORD_LET: &str = "let";
 pub const KEYWORD_MUT: &str = "mut";
 pub const KEYWORD_RETURN: &str = "return";
+pub const KEYWORD_SIZEOF: &str = "sizeof";
 pub const KEYWORD_STRUCT: &str = "struct";
 pub const KEYWORD_THIS: &str = "this";
 pub const KEYWORD_TRUE: &str = "true";
@@ -79,7 +80,7 @@ impl Display for ParserError {
                 let mut expected_str = String::from("");
                 for (i, e) in expected.iter().enumerate() {
                     expected_str.push_str(&format!("{}", e));
-                    if i == expected.len() - 2 {
+                    if expected.len() > 2 && i == expected.len() - 2 {
                         expected_str.push_str(" or ");
                     } else if i != expected.len() - 1 {
                         expected_str.push_str(", ");
@@ -124,6 +125,7 @@ pub enum TokenType {
     KeywordLet,
     KeywordMut,
     KeywordReturn,
+    KeywordSizeof,
     KeywordStruct,
     KeywordThis,
     KeywordTrue,
@@ -231,6 +233,7 @@ impl Display for TokenType {
             Self::KeywordLet => write!(f, "`{}`", KEYWORD_LET),
             Self::KeywordMut => write!(f, "`{}`", KEYWORD_MUT),
             Self::KeywordReturn => write!(f, "`{}`", KEYWORD_RETURN),
+            Self::KeywordSizeof => write!(f, "`{}`", KEYWORD_SIZEOF),
             Self::KeywordStruct => write!(f, "`{}`", KEYWORD_STRUCT),
             Self::KeywordTrue => write!(f, "`{}`", KEYWORD_TRUE),
             Self::KeywordThis => write!(f, "`{}`", KEYWORD_THIS),
@@ -613,7 +616,7 @@ impl<'flags> Parser<'flags> {
         }
         debug_assert_eq!(
             TokenType::Eof as u8 + 1,
-            55,
+            56,
             "Not all TokenTypes are handled in next_token()"
         );
         self.trim_whitespace();
@@ -643,6 +646,7 @@ impl<'flags> Parser<'flags> {
                     KEYWORD_LET => TokenType::KeywordLet,
                     KEYWORD_MUT => TokenType::KeywordMut,
                     KEYWORD_RETURN => TokenType::KeywordReturn,
+                    KEYWORD_SIZEOF => TokenType::KeywordSizeof,
                     KEYWORD_STRUCT => TokenType::KeywordStruct,
                     KEYWORD_THIS => TokenType::KeywordThis,
                     KEYWORD_TRUE => TokenType::KeywordTrue,
@@ -1995,6 +1999,10 @@ impl<'flags> Parser<'flags> {
     #[trace_call(always)]
     fn parse_primary_expression(&mut self)-> Result<nodes::Expression, ()> {
         // let location = self.current_location();
+        if self.eat(TokenType::KeywordSizeof) {
+            let typ = self.parse_type_node()?;
+            return Ok(nodes::Expression::Sizeof(typ));
+        }
         if self.matches_unary_expression() {
             let unary = self.parse_unary_expression()?;
             return Ok(nodes::Expression::Unary(unary));

@@ -1,0 +1,33 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+struct Foo {
+    f1: usize;
+    f2: usize;
+    f3: usize;
+    f4: usize;
+    f5: usize;
+}
+
+func newFoo() -> Foo {
+    return Foo {
+        f1: 0,
+        f2: 0,
+        f3: 0,
+        f4: 0,
+        f5: 0,
+    };
+}
+
+unsafe func main() -> i32 {
+    if (sizeof Foo != 40) return 1;
+
+    let f: Foo = newFoo();
+    let _idk: Any = calloc(2, sizeof Foo);
+    assert(!isNull(_idk));
+    let _b: &mut Foo = &mut *_idk;
+    *(_b + sizeof Foo) = f;
+    free(_idk);
+    return 0;
+}

@@ -219,6 +219,7 @@ impl Printable for nodes::Expression {
             Self::Unary(node) => node.print_ast(indent),
             Self::Binary(node) => node.print_ast(indent),
             Self::FunctionCall(node) => node.print_ast(indent),
+            Self::Sizeof(node) => node.print_ast(indent),
         }
     }
 }

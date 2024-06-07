@@ -830,6 +830,12 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             nodes::Expression::Unary(unary) => self.codegen_unary(unary, needs_ptr),
             nodes::Expression::StructLiteral(struct_literal) => self.codegen_struct_literal(struct_literal, needs_ptr),
             nodes::Expression::ArrayLiteral(array_literal) => self.codegen_array_literal(array_literal, needs_ptr),
+            nodes::Expression::Sizeof(typ) => {
+                let t = self.codegen_type_node(&typ);
+                let s = self.get_struct_size(&t);
+                let v = self.context.i64_type().const_int(s, false);
+                Ok(v.into())
+            },
         }
     }
 
@@ -918,19 +924,17 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
 
     #[trace_call(always)]
     fn get_struct_size(&self, typ: &BasicTypeEnum<'ctx>) -> u64 {
-        let struct_type = typ.into_struct_type();
-        let struct_size_0 = self.target_machine.get_target_data().get_store_size(&struct_type);
-        let struct_size_1 = self.target_machine.get_target_data().get_abi_size(&struct_type);
-        let struct_size_2 = self.target_machine.get_target_data().get_bit_size(&struct_type) / 8;
-        if struct_size_0 != struct_size_1 || struct_size_1 != struct_size_2 || struct_size_0 != struct_size_2 {
-            println!("type: {:?}", struct_type);
-            println!("size_0: {:?}", struct_size_0);
-            println!("size_1: {:?}", struct_size_1);
-            println!("size_2: {:?}", struct_size_2);
+        let size_0 = self.target_machine.get_target_data().get_store_size(typ);
+        let size_1 = self.target_machine.get_target_data().get_abi_size(typ);
+        let size_2 = self.target_machine.get_target_data().get_bit_size(typ) / 8;
+        if size_0 != size_1 || size_1 != size_2 || size_0 != size_2 {
+            println!("type: {:?}", typ);
+            println!("size_0: {:?}", size_0);
+            println!("size_1: {:?}", size_1);
+            println!("size_2: {:?}", size_2);
             internal_panic!("Struct size mismatch");
         }
-        debug_assert!(struct_size_0 == struct_size_1 && struct_size_1 == struct_size_2 && struct_size_0 == struct_size_2);
-        struct_size_0
+        size_0
     }
 
     #[trace_call(always)]

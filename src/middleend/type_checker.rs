@@ -1744,6 +1744,10 @@ impl<'flags> TypeChecker<'flags> {
             nodes::Expression::ArrayLiteral(literal) => {
                 self.type_check_expr_array_literal(literal, mut_state)
             }
+            nodes::Expression::Sizeof(typ) => {
+                self.type_check_type_node(typ);
+                Ok(Type::Usize)
+            }
         }
     }
 

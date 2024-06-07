@@ -5,6 +5,7 @@
 
 // Strings
 unsafe extern strlen(string: &str) -> usize;
+unsafe extern strcmp(s1: &str, s2: &str) -> usize;
 
 // Memory
 // TODO: IMPORTANT: Some way to do null checks
@@ -14,12 +15,36 @@ unsafe extern realloc(ptr: Any, new_size: usize) -> Any;
 unsafe extern free(ptr: Any);
 unsafe extern memcpy(dest: Any, src: Any, count: usize) -> Any;
 
+unsafe func isNull(ptr: Any) -> bool {
+    let bfr: [char; 20] = ['\0'; 20];
+    let _a: Any = &bfr;
+    let _s: &str = _a;
+    snprintf(&bfr, 17, "%p", ptr);
+    // FIXME: This is not POSIX-compliant
+    // REVIEW: Is the below implementation a valid fix?
+    // let win: usize = strcmp(_s, "0000000000000000");
+    // if (win == 0) return true;
+    // let posix: usize = strcmp(_s, "(nil)");
+    // return posix == 0;
+    let cmp: usize = strcmp(_s, "0000000000000000");
+    return cmp == 0;
+}
+
 // File IO
 unsafe extern fopen(filename: &str, mode: &str) -> Any;
 // FIXME: Any ignores Mutability :^) We should probably only write to mutable buffers tho...
 unsafe extern fread(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
 unsafe extern fclose(stream: Any) -> i32;
 unsafe extern fprintf(stream: Any, msg: &str, ...);
+
+unsafe func NULL() -> Any {
+    // FIXME: This is cursed
+    let p: Any = fopen("kjnasduiwqe", "r");
+    assert_with_msg(isNull(p), "Could not get valid NullPointer.");
+    return p;
+}
+
+unsafe extern snprintf(buffer: Any, size: usize, format: &str, ...) -> usize;
 
 // Console IO
 unsafe extern printf(msg: &str, ...) -> usize;
