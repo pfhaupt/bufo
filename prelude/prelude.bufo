@@ -84,6 +84,10 @@ func isAlphabetic(ch: char) -> bool {
     }
 }
 
+func isWhitespace(ch: char) -> bool {
+    return ch == ' ' || ch == '\r' || ch == '\n' || ch == '\t';
+}
+
 func isAlphanumeric(ch: char) -> bool {
     return isAlphabetic(ch) || isNumeric(ch);
 }
@@ -117,6 +121,10 @@ func assert_with_msg(cond: bool, msg: &str) {
     }
 }
 
-func todo() {
-    assert_with_msg(false, "Not implemented");
+func todo_with_msg(msg: &str) {
+    unsafe {
+        let stderr: Any = fdopen(2, "w");
+        fprintf(stderr, "TODO: %s\n", msg);
+        exit(1);
+    }
 }

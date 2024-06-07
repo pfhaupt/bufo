@@ -1,72 +1,993 @@
 struct Span {
     start: usize;
     end: usize;
+    func print(&this) {
+        let s: String = this.toString();
+        s.print();
+        s.drop();
+    }
+    func toString(&this) -> String {
+        mut s: String = newString();
+        s.pushNumber(this.start);
+        s.pushChar(':');
+        s.pushNumber(this.end);
+        return s;
+    }
 }
 
 func newSpan(start: usize, end: usize) -> Span {
+    assert_with_msg(end >= start + 1, "Invalid size for newSpan()");
+    // FIXME: - 1 is a quick hack because most error messages showed one byte too far.
+    // Is this always the case?
     return Span {
         start: start,
-        end: end
+        end: end - 1,
+    };
+}
+func newSpanBetween(start: &Span, end: &Span) -> Span {
+    // (100:105)+(104:109)
+    assert_with_msg(end.end > start.end, "newSpanBetween: End Span can't end before Start Span.");
+    assert_with_msg(start.start < end.start, "newSpanBetween: Start Span can't start after End Span.");
+    return Span {
+        start: start.start,
+        end: end.end
+    };
+}
+func defaultSpan() -> Span {
+    return Span {
+        start: 0,
+        end: 0
     };
 }
 
-struct OptionToken {
-    initialized: bool;
-    token: Token;
-
-    func unwrap(&this) -> Token {
-        assert_with_msg(this.isSome(), "Attempted to unwrap uninitialized OptionToken");
-        return this.token;
+struct TypeDef {
+    span: Span;
+    name: Type;
+    rhs: Type;
+}
+func newTypeDef(span: &Span, name: &Type, rhs: &Type) -> TypeDef {
+    return TypeDef {
+        span: *span,
+        name: *name,
+        rhs: *rhs
+    };
+}
+struct Quirk {
+    typ: Type;
+    funcDecls: Vec;
+    typeDefs: Vec;
+    func addFuncDecl(&mut this, funcDecl: &FuncDecl) {
+        this.funcDecls.pushFuncDecl(funcDecl);
     }
+    func addTypeDef(&mut this, typeDef: &TypeDef) {
+        this.typeDefs.pushTypeDef(typeDef);
+    }
+}
+func newQuirk(typ: &Type) -> Quirk {
+    return Quirk {
+        typ: *typ,
+        funcDecls: emptyVec(VECTOR_KIND_FUNC_DECL(), sizeof FuncDecl),
+        typeDefs: emptyVec(VECTOR_KIND_TYPE_DEF(), sizeof TypeDef),
+    };
+}
+
+struct Realize {
+    sType: Type;
+    qType: Option;
+    fnDefs: Vec;
+    tyDefs: Vec;
+    generics: Vec;
+    func addFuncDef(&mut this, fnDef: &FuncDef) {
+        this.fnDefs.pushFuncDef(fnDef);
+    }
+    func addTypeDef(&mut this, tDef: &TypeDef) {
+        this.tyDefs.pushTypeDef(tDef);
+    }
+    func setQuirk(&mut this, typ: &Type) {
+        this.qType = newOptionType(typ);
+    }
+    func setGenerics(&mut this, generics: &Vec) {
+        assert(generics.kind == VECTOR_KIND_TYPE());
+        this.generics.drop();
+        this.generics = *generics;
+    }
+}
+func newRealize(sType: &Type) -> Realize {
+    return Realize {
+        sType: *sType,
+        qType: newOptionNone(),
+        fnDefs: emptyVec(VECTOR_KIND_FUNC_DEF(), sizeof FuncDef),
+        generics: emptyVec(VECTOR_KIND_TYPE(), sizeof Type),
+        tyDefs: emptyVec(VECTOR_KIND_TYPE_DEF(), sizeof TypeDef),
+    };
+}
+
+struct Struct {
+    typ: Type;
+    fields: Vec;
+
+    func print(&this) {
+        this.typ.print();
+        unsafe { printf("\n"); }
+        this.fields.print();
+    }
+}
+func newStruct(typ: &Type, fields: &Vec) -> Struct {
+    return Struct {
+        typ: *typ,
+        fields: *fields
+    };
+}
+
+struct Field {
+    span: Span;
+    name: SubStr;
+    typ: Type;
+}
+func newField(span: &Span, name: &SubStr, typ: &Type) -> Field {
+    return Field {
+        span: *span,
+        name: *name,
+        typ: *typ
+    };
+}
+
+func TYPE_KIND_PRIMITIVE() -> usize { return 0; }
+func TYPE_KIND_STRUCT() -> usize { return 1; }
+func TYPE_KIND_REFERENCE() -> usize { return 2; }
+func TYPE_KIND_SELF() -> usize { return 3; }
+func TYPE_KIND_GENERIC() -> usize { return 4; }
+func isPrimitiveType(name: &SubStr) -> bool {
+    return name.equals(&newSubStr("i32", 0, 3));
+}
+/*
+if kind == PRIMITIVE: data is a String reference pointing into the original source code
+if kind == STRUCT: data is a Pointer to a heap-allocated StructType
+if kind == REF: data is a Pointer to a heap-allocated RefType
+if kind == SELF: data is NULL, Typechecker is responsible
+*/
+struct Type {
+    span: Span;
+    kind: usize;
+    data: Any;
+    func getSpan(&this) -> Span {
+        return this.span;
+    }
+    func print(&this) {
+        this.span.print();
+        unsafe { printf(" -> %llu\n", this.kind); }
+    }
+    func asStruct(&this) -> &StructType {
+        assert_with_msg(this.kind == TYPE_KIND_STRUCT(), "Attempted to interpret Non-StructType as StructType.");
+        return this.data;
+    }
+}
+func newTypePrim(span: &Span, name: &SubStr) -> Type {
+    assert(isPrimitiveType(name));
+    unsafe {
+        let _m: Any = calloc(sizeof SubStr, 1);
+        assert_with_msg(!isNull(_m), "Could not allocate memory for newTypePrim()");
+        let _s: &mut SubStr = &mut *_m;
+        *_s = *name;
+        return Type {
+            span: *span,
+            kind: TYPE_KIND_PRIMITIVE(),
+            data: _m
+        };
+    }
+}
+func newTypeRef(ampSpan: &Span, typ: &Type, mutable: bool) -> Type {
+    let s: Span = newSpanBetween(ampSpan, &typ.span);
+    unsafe {
+        let _m: Any = calloc(sizeof RefType, 1);
+        assert_with_msg(!isNull(_m), "Could not allocate memory for newTypeRef()");
+        let _t: &mut RefType = &mut *_m;
+        *_t = RefType {
+            span: *ampSpan,
+            typ: *typ,
+            mutable: mutable
+        };
+        return Type {
+            span: s,
+            kind: TYPE_KIND_REFERENCE(),
+            data: _m
+        };
+    }
+}
+func newTypeSelf(tkn: &Token) -> Type {
+    unsafe {
+        return Type {
+            span: tkn.span,
+            kind: TYPE_KIND_SELF(),
+            data: NULL()
+        };
+    }
+}
+func newTypeStruct(sType: &StructType) -> Type {
+    unsafe {
+        let _m: Any = calloc(sizeof StructType, 1);
+        assert_with_msg(!isNull(_m), "Could not allocate memory for newTypeStruct()");
+        let _s: &mut StructType = &mut *_m;
+        *_s = *sType;
+        return Type {
+            span: sType.span,
+            kind: TYPE_KIND_STRUCT(),
+            data: _m
+        };
+    }
+}
+func newTypeGeneric(gType: &GenericType) -> Type {
+    unsafe {
+        let _m: Any = calloc(sizeof GenericType, 1);
+        assert_with_msg(!isNull(_m), "Could not allocate memory for newTypeGeneric()");
+        let _g: &mut GenericType = &mut *_m;
+        *_g = *gType;
+        return Type {
+            span: gType.span,
+            kind: TYPE_KIND_GENERIC(),
+            data: _m
+        };
+    }
+}
+struct RefType {
+    span: Span;
+    mutable: bool;
+    typ: Type;
+}
+struct GenericType {
+    span: Span;
+    name: SubStr;
+    bounds: Vec;
+    func setBounds(&mut this, bounds: &Vec) {
+        assert(bounds.kind == VECTOR_KIND_TYPE());
+        this.bounds.drop();
+        this.bounds = *bounds;
+    }
+}
+func newGenericType(span: &Span, name: &SubStr) -> GenericType {
+    return GenericType {
+        span: *span,
+        name: *name,
+        bounds: emptyVec(VECTOR_KIND_TYPE(), sizeof Type)
+    };
+}
+struct StructType {
+    span: Span;
+    name: SubStr;
+    generics: Vec;
+    func setGenerics(&mut this, generics: &Vec) {
+        assert(generics.kind == VECTOR_KIND_TYPE());
+        this.generics.drop();
+        this.generics = *generics;
+    }
+}
+func newStructType(span: &Span, name: &SubStr) -> StructType {
+    return StructType {
+        span: *span,
+        name: *name,
+        generics: emptyVec(VECTOR_KIND_TYPE(), sizeof Type)
+    };
+}
+
+struct FuncDecl {
+    name: SubStr;
+    params: Vec;
+    retType: Option;
+    func setParams(&mut this, params: Vec) {
+        this.params.drop();
+        this.params = params;
+    }
+    func setRetType(&mut this, typ: &Type) {
+        this.retType = newOptionType(typ);
+    }
+}
+func newFuncDecl(name: SubStr) -> FuncDecl {
+    return FuncDecl {
+        name: name,
+        params: emptyVec(VECTOR_KIND_FUNC_PARAM(), sizeof FuncParam),
+        retType: newOptionNone(),
+    };
+}
+
+struct FuncDef {
+    name: SubStr;
+    params: Vec;
+    body: Block;
+    retType: Option;
+    func setParams(&mut this, params: Vec) {
+        this.params.drop();
+        this.params = params;
+    }
+    func setBody(&mut this, block: &Block) {
+        this.body = *block;
+    }
+    func setRetType(&mut this, typ: &Type) {
+        this.retType = newOptionType(typ);
+    }
+}
+func newFuncDef(name: SubStr) -> FuncDef {
+    return FuncDef {
+        name: name,
+        params: emptyVec(VECTOR_KIND_FUNC_PARAM(), sizeof FuncParam),
+        body: emptyBlock(),
+        retType: newOptionNone(),
+    };
+}
+
+struct FuncParam {
+    span: Span;
+    name: SubStr;
+    typ: Type;
+}
+
+func newFuncParam(span: &Span, name: &SubStr, typ: &Type) -> FuncParam {
+    return FuncParam {
+        span: *span,
+        name: *name,
+        typ: *typ
+    };
+}
+
+struct Block {
+    stmts: Vec;
+
+    func addStmt(&mut this, stmt: &Stmt) {
+        this.stmts.pushStmt(stmt);
+    }
+}
+func newBlock() -> Block {
+    return Block {
+        stmts: newVec(VECTOR_KIND_STMT(), 8, sizeof Stmt),
+    };
+}
+func emptyBlock() -> Block {
+    return Block {
+        stmts: emptyVec(VECTOR_KIND_STMT(), sizeof Stmt),
+    };
+}
+
+func STMT_KIND_LET() -> usize { return 0; }
+struct Stmt {
+    span: Span;
+    kind: usize;
+    data: Any;
+
+    func asLetStmt(&this) -> LetStmt {
+        assert_with_msg(this.kind == STMT_KIND_LET(), "Attempted to call Stmt.asLetStmt on non-LetStmt value.");
+        unsafe {
+            let _m: &LetStmt = this.data;
+            return *_m;
+        }
+    }
+}
+
+struct LetStmt {
+    name: SubStr;
+    typeDef: Option;
+    expr: Expr;
+}
+func newLetStmt(name: &Token, typ: &Option, expr: &Expr) -> Stmt {
+    let span: Span = newSpanBetween(&name.span, &expr.span);
+    unsafe {
+        let stmt: Any = calloc(sizeof LetStmt, 1);
+        let _idk: &mut LetStmt = &mut *stmt;
+        *_idk = LetStmt {
+            name: name.getSubStr(),
+            typeDef: *typ,
+            expr: *expr
+        };
+        return Stmt {
+            span: span,
+            kind: STMT_KIND_LET(),
+            data: stmt
+        };
+    }
+}
+
+func ASSOC_LEFT() -> u8 { return 0; }
+func ASSOC_RIGHT() -> u8 { return 1; }
+
+func EXPR_INVALID() -> usize { return 0; }
+func EXPR_KIND_NUM_LIT() -> usize { return 1; }
+func EXPR_KIND_IDENT() -> usize { return 2; }
+func EXPR_KIND_BINARY() -> usize { return 3; }
+func EXPR_KIND_STRUCT_LIT() -> usize { return 4; }
+func exprKindToString(kind: usize) -> &str {
+    if (kind == EXPR_INVALID()) return "invalid expression";
+    else if (kind == EXPR_KIND_NUM_LIT()) return "number literal";
+    else if (kind == EXPR_KIND_IDENT()) return "identifier";
+    else if (kind == EXPR_KIND_BINARY()) return "binary expression";
+    else if (kind == EXPR_KIND_STRUCT_LIT()) return "struct literal";
+    assert_with_msg(false, "Unreachable");
+    return "";
+}
+struct Expr {
+    span: Span;
+    kind: usize;
+    data: Any;
+
+    func asExprNumLit(&this) -> ExprNumLit {
+        assert_with_msg(this.kind == EXPR_KIND_NUM_LIT(), "Attempted to call Expr.asExprNumLit on non-ExprNumLit value.");
+        unsafe {
+            let _m: &ExprNumLit = this.data;
+            return *_m;
+        }
+    }
+}
+struct ExprNumLit {
+    number: SubStr;
+}
+struct ExprIdent {
+    name: SubStr;
+}
+struct ExprBinary {
+    op: Token;
+    lhs: Expr;
+    rhs: Expr;
+}
+struct PairTokenExpr {
+    name: Token;
+    value: Expr;
+}
+struct ExprStructLit {
+    name: Token;
+    fields: Vec;
+    func addField(&mut this, nTkn: &Token, expr: &Expr) {
+        let pse: PairTokenExpr = PairTokenExpr {
+            name: *nTkn,
+            value: *expr
+        };
+        for (mut i: usize = 0; i < this.fields.len(); i = i + 1) {
+            let _pse: &PairTokenExpr = this.fields.getPairTokenExpr(i);
+            if (pse.name.getSubStr().equals(&_pse.name.getSubStr())) unsafe {
+                let stderr: Any = fdopen(2, "w");
+                let ol: String = _pse.name.getSpan().toString();
+                let nl: String = pse.name.getSpan().toString();
+                let fn: String = pse.name.getSubStr().toString();
+                fprintf(stderr, "error: %s: Duplication of field `%s` in struct instantiation.\n", nl.buffer, fn.buffer);
+                fprintf(stderr, "note: %s: Field already provided here.", ol.buffer);
+                exit(1);
+            }
+        }
+        this.fields.pushPairTokenExpr(&pse);
+    }
+    func toExpr(&this) -> Expr {
+        unsafe {
+            let expr: Any = calloc(sizeof ExprStructLit, 1);
+            let _idk: &mut ExprStructLit = &mut *expr;
+            *_idk = *this;
+            return Expr {
+                span: this.name.span,
+                kind: EXPR_KIND_STRUCT_LIT(),
+                data: expr
+            };
+        }
+    }
+}
+func invalidExpr() -> Expr {
+    unsafe { return Expr { span: defaultSpan(), kind: EXPR_INVALID(), data: NULL() }; }
+}
+func newExprNumLit(tkn: &Token) -> Expr {
+    assert_with_msg(tkn.kind == TOKEN_NUMBER(), "Tkn is not a number");
+    unsafe {
+        let expr: Any = calloc(sizeof ExprNumLit, 1);
+        let _idk: &mut ExprNumLit = &mut *expr;
+        *_idk = ExprNumLit {
+            number: tkn.content
+        };
+        return Expr {
+            span: tkn.span,
+            kind: EXPR_KIND_NUM_LIT(),
+            data: expr
+        };
+    }
+}
+func newExprIdent(tkn: &Token) -> Expr {
+    assert_with_msg(tkn.kind == TOKEN_IDENT(), "Tkn is not an identifier");
+    unsafe {
+        let expr: Any = calloc(sizeof ExprIdent, 1);
+        let _idk: &mut ExprIdent = &mut *expr;
+        *_idk = ExprIdent {
+            name: tkn.content
+        };
+        return Expr {
+            span: tkn.span,
+            kind: EXPR_KIND_IDENT(),
+            data: expr
+        };
+    }
+}
+func newExprBinary(op: &Token, lhs: &Expr, rhs: &Expr) -> Expr {
+    mut span: Span = newSpanBetween(&lhs.span, &op.span);
+    span = newSpanBetween(&span, &rhs.span);
+    unsafe {
+        let expr: Any = calloc(sizeof ExprBinary, 1);
+        let _idk: &mut ExprBinary = &mut *expr;
+        *_idk = ExprBinary {
+            op: *op,
+            lhs: *lhs,
+            rhs: *rhs
+        };
+        return Expr {
+            span: span,
+            kind: EXPR_KIND_BINARY(),
+            data: expr
+        };
+    }
+}
+func newExprStructLit(name: &Token) -> ExprStructLit {
+    return ExprStructLit {
+        name: *name,
+        fields: emptyVec(VECTOR_KIND_PAIR_STRING_EXPR(), sizeof PairTokenExpr),
+    };
+}
+
+func OPTION_KIND_TYPE() -> usize { return 0; }
+struct Option {
+    kind: usize;
+    initialized: bool;
+    data: Any;
     func isSome(&this) -> bool {
         return this.initialized;
     }
+    func asType(&this) -> &Type {
+        assert_with_msg(this.initialized, "Attempted to access data of uninitialized Option");
+        unsafe {
+            assert_with_msg(!isNull(this.data), "Option.asType: Underlying data is Null!");
+            return this.data;
+        }
+    }
 }
-
-func newOptionTokenNone() -> OptionToken {
-    return OptionToken {
-        initialized: false,
-        token: defaultToken()
-    };
+func newOptionNone() -> Option {
+    unsafe {
+        return Option {
+            kind: 0-1,
+            initialized: false,
+            data: NULL()
+        };
+    }
 }
-
-func newOptionTokenSome(token: Token) -> OptionToken {
-    return OptionToken {
-        initialized: true,
-        token: token
-    };
-}
-
-func TOKEN_UNKNOWN() -> usize { return 0; }
-func TOKEN_IDENT() -> usize { return 1; }
-func TOKEN_NUMBER() -> usize { return 2; }
-func TOKEN_CURLY_OPEN() -> usize { return 3; }
-func TOKEN_CURLY_CLOSE() -> usize { return 4; }
-func TOKEN_PAREN_OPEN() -> usize { return 5; }
-func TOKEN_PAREN_CLOSE() -> usize { return 6; }
-func TOKEN_SEMI_COLON() -> usize { return 7; }
-
-struct Token {
-    content: SubStr;
-    id: usize;
-
-    func print(&this) {
-        unsafe { printf("id=%llu, content=", this.id); }
-        this.content.print();
+func newOptionType(typ: &Type) -> Option {
+    unsafe {
+        let _m: Any = calloc(sizeof Type, 1);
+        assert_with_msg(!isNull(_m), "Could not allocate memory for Option");
+        let _q: &mut Type = &mut *_m;
+        *_q = *typ;
+        return Option {
+            kind: OPTION_KIND_TYPE(),
+            initialized: true,
+            data: _m
+        };
     }
 }
 
-func newToken(sub: &SubStr, id: usize) -> Token {
-    return Token {
-        content: *sub,
-        id: id
+func VECTOR_KIND_TYPE() -> usize { return 0; }
+func VECTOR_KIND_STMT() -> usize { return 1; }
+func VECTOR_KIND_FUNC_PARAM() -> usize { return 2; }
+func VECTOR_KIND_FUNC_DEF() -> usize { return 3; }
+func VECTOR_KIND_FIELD() -> usize { return 4; }
+func VECTOR_KIND_FUNC_DECL() -> usize { return 5; }
+func VECTOR_KIND_REALIZE() -> usize { return 6; }
+func VECTOR_KIND_QUIRK() -> usize { return 7; }
+func VECTOR_KIND_STRUCT() -> usize { return 8; }
+func VECTOR_KIND_MODULE() -> usize { return 9; }
+func VECTOR_KIND_TYPE_DEF() -> usize { return 10; }
+func VECTOR_KIND_PAIR_STRING_EXPR() -> usize { return 11; }
+
+func vecKindToString(kind: usize) -> &str {
+    if (kind == VECTOR_KIND_TYPE()) return "VECTOR_KIND_TYPE";
+    else if (kind == VECTOR_KIND_STMT()) return "VECTOR_KIND_STMT";
+    else if (kind == VECTOR_KIND_FUNC_PARAM()) return "VECTOR_KIND_FUNC_PARAM";
+    else if (kind == VECTOR_KIND_FUNC_DEF()) return "VECTOR_KIND_FUNC_DEF";
+    else if (kind == VECTOR_KIND_FIELD()) return "VECTOR_KIND_FIELD";
+    else if (kind == VECTOR_KIND_FUNC_DECL()) return "VECTOR_KIND_FUNC_DECL";
+    else if (kind == VECTOR_KIND_REALIZE()) return "VECTOR_KIND_REALIZE";
+    else if (kind == VECTOR_KIND_QUIRK()) return "VECTOR_KIND_QUIRK";
+    else if (kind == VECTOR_KIND_STRUCT()) return "VECTOR_KIND_STRUCT";
+    else if (kind == VECTOR_KIND_MODULE()) return "VECTOR_KIND_MODULE";
+    else if (kind == VECTOR_KIND_TYPE_DEF()) return "VECTOR_KIND_TYPE_DEF";
+    else todo_with_msg("Unknown kind in vecKindToString()");
+    return "";
+}
+
+struct Vec {
+    elements: Any;
+    kind: usize;
+    elemSize: usize;
+    length: usize;
+    capacity: usize;
+
+    func print(&this) {
+        unsafe { printf("this: %p\n", this); }
+        unsafe { printf("kind = %s\n", vecKindToString(this.kind)); }
+        unsafe { printf("elemSize = %llu\n", this.elemSize); }
+        unsafe { printf("length = %llu\n", this.length); }
+        unsafe { printf("capacity = %llu\n", this.capacity); }
+    }
+
+    func len(&this) -> usize {
+        return this.length;
+    }
+    func resizeIfNecessary(&mut this) {
+        if (this.length >= this.capacity) this.resize(2 * this.capacity);
+    }
+    func resize(&mut this, mut new_cap: usize) {
+        if (new_cap == 0) new_cap = 1;
+        assert(this.elemSize != 0);
+        unsafe {
+            // printf("[DEBUG] Resizing Vector (kind = %s), old address = %p, old capacity = %llu\n", vecKindToString(this.kind), this.elements, this.capacity);
+            this.elements = realloc(this.elements, new_cap * this.elemSize);
+            assert_with_msg(!isNull(this.elements), "Could not allocate buffer for Vector");
+            this.capacity = new_cap;
+            // printf("[DEBUG] Resize success (kind = %s), new address = %p, new capacity = %llu\n", vecKindToString(this.kind), this.elements, this.capacity);
+        }
+    }
+    func drop(&mut this) {
+        // FIXME: This will not work properly
+        unsafe {
+            free(this.elements);
+        }
+    }
+    func pushType(&mut this, typ: &Type) {
+        assert_with_msg(this.kind == VECTOR_KIND_TYPE(), "Attempted to insert Type into non-Type Vector.");
+        this.resizeIfNecessary();
+        unsafe {
+            let _idk: Any = this.elements;
+            mut _sb: &mut Type = &mut *_idk;
+            *(_sb + this.elemSize * this.length) = *typ;
+        }
+        this.length = this.length + 1;
+    }
+    func pushStruct(&mut this, strukt: &Struct) {
+        assert_with_msg(this.kind == VECTOR_KIND_STRUCT(), "Attempted to insert Struct into non-Struct Vector.");
+        this.resizeIfNecessary();
+        unsafe {
+            let _idk: Any = this.elements;
+            mut _sb: &mut Struct = &mut *_idk;
+            *(_sb + this.elemSize * this.length) = *strukt;
+        }
+        this.length = this.length + 1;
+    }
+    func pushRealize(&mut this, real: &Realize) {
+        assert_with_msg(this.kind == VECTOR_KIND_REALIZE(), "Attempted to insert Realize into non-Realize Vector.");
+        this.resizeIfNecessary();
+        unsafe {
+            let _idk: Any = this.elements;
+            mut _rb: &mut Realize = &mut *_idk;
+            *(_rb + this.elemSize * this.length) = *real;
+        }
+        this.length = this.length + 1;
+    }
+    func pushQuirk(&mut this, quirk: &Quirk) {
+        assert_with_msg(this.kind == VECTOR_KIND_QUIRK(), "Attempted to insert Quirk into non-Quirk Vector.");
+        this.resizeIfNecessary();
+        unsafe {
+            let _idk: Any = this.elements;
+            mut _qb: &mut Quirk = &mut *_idk;
+            *(_qb + this.elemSize * this.length) = *quirk;
+        }
+        this.length = this.length + 1;
+    }
+    func pushFuncDecl(&mut this, funcDecl: &FuncDecl) {
+        assert_with_msg(this.kind == VECTOR_KIND_FUNC_DECL(), "Attempted to insert FuncDecl into non-FuncDecl Vector.");
+        this.resizeIfNecessary();
+        unsafe {
+            let _idk: Any = this.elements;
+            mut _fb: &mut FuncDecl = &mut *_idk;
+            *(_fb + this.elemSize * this.length) = *funcDecl;
+        }
+        this.length = this.length + 1;
+    }
+    func pushFuncDef(&mut this, funcDef: &FuncDef) {
+        assert_with_msg(this.kind == VECTOR_KIND_FUNC_DEF(), "Attempted to insert FuncDef into non-FuncDef Vector.");
+        this.resizeIfNecessary();
+        unsafe {
+            let _idk: Any = this.elements;
+            mut _fb: &mut FuncDef = &mut *_idk;
+            *(_fb + this.elemSize * this.length) = *funcDef;
+        }
+        this.length = this.length + 1;
+    }
+    func pushStmt(&mut this, stmt: &Stmt) {
+        assert_with_msg(this.kind == VECTOR_KIND_STMT(), "Attempted to insert Stmt into non-Stmt Vector.");
+        this.resizeIfNecessary();
+        unsafe {
+            let _idk: Any = this.elements;
+            mut _sb: &mut Stmt = &mut *_idk;
+            *(_sb + this.elemSize * this.length) = *stmt;
+        }
+        this.length = this.length + 1;
+    }
+    func pushField(&mut this, field: &Field) {
+        assert_with_msg(this.kind == VECTOR_KIND_FIELD(), "Attempted to insert Field into non-Field Vector.");
+        this.resizeIfNecessary();
+        unsafe {
+            let _idk: Any = this.elements;
+            mut _fb: &mut Field = &mut *_idk;
+            *(_fb + this.elemSize * this.length) = *field;
+        }
+        this.length = this.length + 1;
+    }
+    func pushFuncParam(&mut this, fParam: &FuncParam) {
+        assert_with_msg(this.kind == VECTOR_KIND_FUNC_PARAM(), "Attempted to insert FuncParam into non-FuncParam Vector.");
+        this.resizeIfNecessary();
+        unsafe {
+            let _idk: Any = this.elements;
+            mut _fb: &mut FuncParam = &mut *_idk;
+            *(_fb + this.elemSize * this.length) = *fParam;
+        }
+        this.length = this.length + 1;
+    }
+    func pushTypeDef(&mut this, tDef: &TypeDef) {
+        assert_with_msg(this.kind == VECTOR_KIND_TYPE_DEF(), "Attempted to insert TypeDef into non-TypeDef Vector.");
+        this.resizeIfNecessary();
+        unsafe {
+            let _idk: Any = this.elements;
+            mut _tb: &mut TypeDef = &mut *_idk;
+            *(_tb + this.elemSize * this.length) = *tDef;
+        }
+        this.length = this.length + 1;
+    }
+    func pushPairTokenExpr(&mut this, pse: &PairTokenExpr) {
+        assert_with_msg(this.kind == VECTOR_KIND_PAIR_STRING_EXPR(), "Attempted to insert PairTokenExpr into non-PairTokenExpr Vector.");
+        this.resizeIfNecessary();
+        unsafe {
+            let _idk: Any = this.elements;
+            mut _pb: &mut PairTokenExpr = &mut *_idk;
+            *(_pb + this.elemSize * this.length) = *pse;
+        }
+        this.length = this.length + 1;
+    }
+    func getModule(&this, index: usize) -> &Module {
+        assert_with_msg(this.kind == VECTOR_KIND_MODULE(), "Attempted to get Module of a non-Module Vector.");
+        assert_with_msg(index < this.length, "Attempted to index out of bounds!");
+        unsafe {
+            let _b: Any = this.elements;
+            let _m: &Module = &*_b;
+            return _m + this.elemSize * index;
+        }
+    }
+    func getStruct(&this, index: usize) -> &Struct {
+        assert_with_msg(this.kind == VECTOR_KIND_STRUCT(), "Attempted to get Struct of a non-Struct Vector.");
+        assert_with_msg(index < this.length, "Attempted to index out of bounds!");
+        unsafe {
+            let _b: Any = this.elements;
+            let _m: &Struct = &*_b;
+            return _m + this.elemSize * index;
+        }
+    }
+    func getQuirk(&this, index: usize) -> &Quirk {
+        assert_with_msg(this.kind == VECTOR_KIND_QUIRK(), "Attempted to get Quirk of a non-Quirk Vector.");
+        assert_with_msg(index < this.length, "Attempted to index out of bounds!");
+        unsafe {
+            let _b: Any = this.elements;
+            let _m: &Quirk = &*_b;
+            return _m + this.elemSize * index;
+        }
+    }
+    func getRealize(&this, index: usize) -> &Realize {
+        assert_with_msg(this.kind == VECTOR_KIND_REALIZE(), "Attempted to get Realize of a non-Realize Vector.");
+        assert_with_msg(index < this.length, "Attempted to index out of bounds!");
+        unsafe {
+            let _b: Any = this.elements;
+            let _m: &Realize = &*_b;
+            return _m + this.elemSize * index;
+        }
+    }
+    func getFuncDef(&this, index: usize) -> &FuncDef {
+        assert_with_msg(this.kind == VECTOR_KIND_FUNC_DEF(), "Attempted to get FuncDef of a non-FuncDef Vector.");
+        assert_with_msg(index < this.length, "Attempted to index out of bounds!");
+        unsafe {
+            let _b: Any = this.elements;
+            let _m: &FuncDef = &*_b;
+            return _m + this.elemSize * index;
+        }
+    }
+    func getFuncDecl(&this, index: usize) -> &FuncDecl {
+        assert_with_msg(this.kind == VECTOR_KIND_FUNC_DECL(), "Attempted to get FuncDecl of a non-FuncDecl Vector.");
+        assert_with_msg(index < this.length, "Attempted to index out of bounds!");
+        unsafe {
+            let _b: Any = this.elements;
+            let _m: &FuncDecl = &*_b;
+            return _m + this.elemSize * index;
+        }
+    }
+    func getFuncParam(&this, index: usize) -> &FuncParam {
+        assert_with_msg(this.kind == VECTOR_KIND_FUNC_PARAM(), "Attempted to get FuncParam of a non-FuncParam Vector.");
+        assert_with_msg(index < this.length, "Attempted to index out of bounds!");
+        unsafe {
+            let _b: Any = this.elements;
+            let _m: &FuncParam = &*_b;
+            return _m + this.elemSize * index;
+        }
+    }
+    func getStmt(&this, index: usize) -> &Stmt {
+        assert_with_msg(this.kind == VECTOR_KIND_STMT(), "Attempted to get Stmt of a non-Stmt Vector.");
+        assert_with_msg(index < this.length, "Attempted to index out of bounds!");
+        unsafe {
+            let _b: Any = this.elements;
+            let _m: &Stmt = &*_b;
+            return _m + this.elemSize * index;
+        }
+    }
+    func getField(&this, index: usize) -> &Field {
+        assert_with_msg(this.kind == VECTOR_KIND_FIELD(), "Attempted to get Field of a non-Field Vector.");
+        assert_with_msg(index < this.length, "Attempted to index out of bounds!");
+        unsafe {
+            let _b: Any = this.elements;
+            let _m: &Field = &*_b;
+            return _m + this.elemSize * index;
+        }
+    }
+    func getPairTokenExpr(&this, index: usize) -> &PairTokenExpr {
+        assert_with_msg(this.kind == VECTOR_KIND_PAIR_STRING_EXPR(), "Attempted to get PairTokenExpr of a non-PairTokenExpr Vector.");
+        assert_with_msg(index < this.length, "Attempted to index out of bounds!");
+        unsafe {
+            let _b: Any = this.elements;
+            let _p: &PairTokenExpr = &*_b;
+            return _p + this.elemSize * index;
+        }
+    }
+    func getType(&this, index: usize) -> &Type {
+        assert_with_msg(this.kind == VECTOR_KIND_TYPE(), "Attempted to get Type of a non-Type Vector.");
+        assert_with_msg(index < this.length, "Attempted to index out of bounds!");
+        unsafe {
+            let _b: Any = this.elements;
+            let _m: &Type = &*_b;
+            return _m + this.elemSize * index;
+        }
+    }
+    func getTypeDef(&this, index: usize) -> &TypeDef {
+        assert_with_msg(this.kind == VECTOR_KIND_TYPE_DEF(), "Attempted to get TypeDef of a non-TypeDef Vector.");
+        assert_with_msg(index < this.length, "Attempted to index out of bounds!");
+        unsafe {
+            let _b: Any = this.elements;
+            let _m: &TypeDef = &*_b;
+            return _m + this.elemSize * index;
+        }
+    }
+}
+
+func emptyVec(kind: usize, elemSize: usize) -> Vec {
+    unsafe {
+        let bfr: Any = NULL();
+        return Vec {
+            elements: bfr,
+            elemSize: elemSize,
+            kind: kind,
+            length: 0,
+            capacity: 0,
+        };
+    }
+}
+func newVec(kind: usize, cap: usize, elemSize: usize) -> Vec {
+    unsafe {
+        let bfr: Any = calloc(cap, elemSize);
+        return Vec {
+            elements: bfr,
+            elemSize: elemSize,
+            kind: kind,
+            length: 0,
+            capacity: cap,
+        };
+    }
+}
+
+struct Module {
+    name: SubStr;
+    modules: Vec;
+    quirks: Vec;
+    reals: Vec;
+    structs: Vec;
+    funcs: Vec;
+    types: Vec;
+
+    func addQuirk(&mut this, quirk: &Quirk) {
+        this.quirks.pushQuirk(quirk);
+    }
+    func addRealize(&mut this, real: &Realize) {
+        this.reals.pushRealize(real);
+    }
+    func addStruct(&mut this, strukt: &Struct) {
+        this.structs.pushStruct(strukt);
+    }
+    func addFuncDef(&mut this, fn: &FuncDef) {
+        this.funcs.pushFuncDef(fn);
+    }
+    func addTypeDef(&mut this, t: &TypeDef) {
+        this.types.pushTypeDef(t);
+    }
+}
+
+func newModule(name: &SubStr) -> Module {
+    return Module {
+        name: *name,
+        modules: emptyVec(VECTOR_KIND_MODULE(), sizeof Module),
+        quirks: emptyVec(VECTOR_KIND_QUIRK(), sizeof Quirk),
+        reals: emptyVec(VECTOR_KIND_REALIZE(), sizeof Realize),
+        structs: emptyVec(VECTOR_KIND_STRUCT(), sizeof Struct),
+        funcs: emptyVec(VECTOR_KIND_FUNC_DEF(), sizeof FuncDef),
+        types: emptyVec(VECTOR_KIND_TYPE_DEF(), sizeof TypeDef),
     };
 }
 
+func TOKEN_EOF() -> usize { return 0; }
+func TOKEN_IDENT() -> usize { return 1; }
+func TOKEN_KEYWORD() -> usize { return 2; }
+func TOKEN_NUMBER() -> usize { return 3; }
+func TOKEN_PAREN_OPEN() -> usize { return 4; }
+func TOKEN_PAREN_CLOSE() -> usize { return 5; }
+func TOKEN_CURLY_OPEN() -> usize { return 6; }
+func TOKEN_CURLY_CLOSE() -> usize { return 7; }
+func TOKEN_SHARP_OPEN() -> usize { return 8; }
+func TOKEN_SHARP_CLOSE() -> usize { return 9; }
+func TOKEN_SEMI_COLON() -> usize { return 10; }
+func TOKEN_COLON() -> usize { return 11; }
+func TOKEN_EQUAL_SINGLE() -> usize { return 12; }
+func TOKEN_EQUAL_DOUBLE() -> usize { return 13; }
+func TOKEN_AMPERSAND() -> usize { return 14; }
+func TOKEN_COMMA() -> usize { return 15; }
+func TOKEN_ARROW() -> usize { return 16; }
+func TOKEN_PLUS_SINGLE() -> usize { return 17; }
+func tokenKindToString(kind: usize) -> &str {
+    if (kind == TOKEN_EOF()) return "end of file";
+    else if (kind == TOKEN_IDENT()) return "identifier";
+    else if (kind == TOKEN_KEYWORD()) return "keyword";
+    else if (kind == TOKEN_NUMBER()) return "number";
+    else if (kind == TOKEN_PAREN_OPEN()) return "`(`";
+    else if (kind == TOKEN_PAREN_CLOSE()) return "`)`";
+    else if (kind == TOKEN_CURLY_OPEN()) return "`{`";
+    else if (kind == TOKEN_CURLY_CLOSE()) return "`}`";
+    else if (kind == TOKEN_SHARP_OPEN()) return "`<`";
+    else if (kind == TOKEN_SHARP_CLOSE()) return "`>`";
+    else if (kind == TOKEN_SEMI_COLON()) return "`;`";
+    else if (kind == TOKEN_COMMA()) return "`,`";
+    else unsafe {
+        printf("Please implement tokenKindToString(%llu)\n", kind);
+        exit(1);
+    }
+    return ""; // Unreachable
+}
+struct Token {
+    span: Span;
+    content: SubStr;
+    kind: usize;
+
+    func print(&this) {
+        unsafe { printf("kind=%llu, content=", this.kind); }
+        this.content.print();
+    }
+    func toString(&this) -> String {
+        return this.content.toString();
+    }
+    func getSubStr(&this) -> SubStr {
+        return this.content;
+    }
+    func getSpan(&this) -> Span {
+        return this.span;
+    }
+}
+
+func newToken(sub: &SubStr, start: usize, kind: usize) -> Token {
+    let s: Span = newSpan(start, start + sub.len);
+    return Token {
+        content: *sub,
+        span: s,
+        kind: kind
+    };
+}
+func newTokenEOF(start: usize) -> Token {
+    return Token {
+        content: newSubStr("End Of File", 0, 11),
+        span: newSpan(start, start + 1),
+        kind: TOKEN_EOF(),
+    };
+}
 func defaultToken() -> Token {
     return Token {
         content: defaultSubStr(),
-        id: TOKEN_UNKNOWN(),
+        span: newSpan(0, 0),
+        kind: TOKEN_EOF(),
     };
 }
 
@@ -74,17 +995,36 @@ struct SubStr {
     start: &str;
     len: usize;
 
+    func equals(&this, other: &SubStr) -> bool {
+        if (this.len != other.len) return false;
+        let l: usize = this.len;
+        for (mut i: usize = 0; i < l; i = i + 1) {
+            let c1: char = this.getChar(i);
+            let c2: char = other.getChar(i);
+            if (c1 != c2) return false;
+        }
+        return true;
+    }
+    func len(&this) -> usize {
+        return this.len;
+    }
     func print(&this) {
         unsafe {
             for (mut i: usize = 0; i < this.len; i = i + 1) {
                 let a: Any = this.start;
                 let c: &char = a;
                 let p: char = *(c + i);
-                assert(p == putchar(p));
+                assert_with_msg(p == putchar(p), "Wrote wrong character in SubStr.print");
             }
         }
     }
-
+    func toString(&this) -> String {
+        mut s: String = newString();
+        for (mut i: usize = 0; i < this.len; i = i + 1) {
+            s.pushChar(this.getChar(i));
+        }
+        return s;
+    }
     func getChar(&this, index: usize) -> char {
         assert_with_msg(index <= this.len, "Index out of bounds for String Index.");
         unsafe {
@@ -92,7 +1032,6 @@ struct SubStr {
             return getChar(this.start, index);
         }
     }
-
     func substring(&this, start: usize, end: usize) -> SubStr {
         assert_with_msg(end <= this.len, "Index out of bounds for String Substring.");
         assert_with_msg(end - start <= this.len, "Invalid length for String Substring.");
@@ -108,7 +1047,16 @@ func newSubStr(orig: &str, start: usize, end: usize) -> SubStr {
         };
     }
 }
-
+func newSubStrOfString(orig: &String, start: usize, end: usize) -> SubStr {
+    unsafe {
+        let _bfr: Any = orig.buffer;
+        let _cbfr: &str = _bfr;
+        return SubStr {
+            start: _cbfr + start,
+            len: end - start,
+        };
+    }
+}
 func defaultSubStr() -> SubStr {
     unsafe {
         let s: &str = "You are not supposed to read this. Please issue a bug report.";
@@ -117,40 +1065,72 @@ func defaultSubStr() -> SubStr {
     }
 }
 
+func BUILD_A_KEYWORD(s: &str) -> SubStr { unsafe { return newSubStr(s, 0, strlen(s)); }}
+func KEYWORD_FUNC() -> SubStr { return BUILD_A_KEYWORD("func"); }
+func KEYWORD_LET() -> SubStr { return BUILD_A_KEYWORD("let"); }
+func KEYWORD_STRUCT() -> SubStr { return BUILD_A_KEYWORD("struct"); }
+func KEYWORD_QUIRK() -> SubStr { return BUILD_A_KEYWORD("quirk"); }
+func KEYWORD_REALIZE() -> SubStr { return BUILD_A_KEYWORD("realize"); }
+func KEYWORD_TYPE() -> SubStr { return BUILD_A_KEYWORD("type"); }
+func KEYWORD_FOR() -> SubStr { return BUILD_A_KEYWORD("for"); }
+func KEYWORD_MUT() -> SubStr { return BUILD_A_KEYWORD("mut"); }
+func KEYWORD_SELF_LOWER() -> SubStr { return BUILD_A_KEYWORD("self"); }
+func KEYWORD_SELF_UPPER() -> SubStr { return BUILD_A_KEYWORD("Self"); }
 struct Lexer {
     content: SubStr;
     ptr: usize;
     len: usize;
 
-    func next(&mut this) -> OptionToken {
+    func isKeyword(&mut this, word: &SubStr) -> bool {
+        if (word.equals(&KEYWORD_FUNC())) return true;
+        if (word.equals(&KEYWORD_LET())) return true;
+        if (word.equals(&KEYWORD_STRUCT())) return true;
+        if (word.equals(&KEYWORD_QUIRK())) return true;
+        if (word.equals(&KEYWORD_REALIZE())) return true;
+        if (word.equals(&KEYWORD_TYPE())) return true;
+        if (word.equals(&KEYWORD_FOR())) return true;
+        if (word.equals(&KEYWORD_MUT())) return true;
+        if (word.equals(&KEYWORD_SELF_LOWER())) return true;
+        if (word.equals(&KEYWORD_SELF_UPPER())) return true;
+        return false;
+    }
+
+    func advance(&mut this) -> bool {
+        this.ptr = this.ptr + 1;
+        this.content = this.content.substring(1, this.content.len);
+        return this.ptr >= this.len;
+    }
+    func peek(&mut this) -> Token {
+        let ptr: usize = this.ptr;
+        let content: SubStr = this.content;
+        let len: usize = this.len;
+        let tkn: Token = this.next();
+        this.ptr = ptr;
+        this.content = content;
+        this.len = len;
+        return tkn;
+    }
+    func next(&mut this) -> Token {
         if (this.ptr == this.len) {
-            return newOptionTokenNone();
+            return newTokenEOF(this.ptr);
         }
         mut currChar: char = this.content.getChar(0);
-        while (currChar == ' '
-            || currChar == '\n'
-            || currChar == '\t'
-            || currChar == '\r') {
-            this.ptr = this.ptr + 1;
-            this.content = newSubStr(this.content.start, 1, this.content.len);
+        while (isWhitespace(currChar)) {
+            if (this.advance()) return newTokenEOF(this.ptr);
             currChar = this.content.getChar(0);
-            if (this.ptr >= this.len) {
-                return newOptionTokenNone();
-            }
         }
-        currChar = this.content.getChar(0);
         if (isAlphabetic(currChar)) {
             mut len: usize = 0;
             mut tmp: SubStr = this.content;
-            while (isAlphabetic(tmp.getChar(0))) {
+            while (isNumeric(tmp.getChar(0)) || isAlphabetic(tmp.getChar(0))) {
                 len = len + 1;
-                tmp = newSubStr(tmp.start, 1, tmp.len);
+                tmp = tmp.substring(1, tmp.len);
             }
             let word: SubStr = this.content.substring(0, len);
             this.ptr = this.ptr + len;
             this.content = tmp;
-            let t: Token = newToken(&word, TOKEN_IDENT());
-            return newOptionTokenSome(t);
+            if (this.isKeyword(&word)) return newToken(&word, this.ptr - len, TOKEN_KEYWORD());
+            return newToken(&word, this.ptr - len, TOKEN_IDENT());
         } else if (isNumeric(currChar)) {
             mut len: usize = 0;
             mut tmp: SubStr = this.content;
@@ -161,61 +1141,687 @@ struct Lexer {
             let word: SubStr = this.content.substring(0, len);
             this.ptr = this.ptr + len;
             this.content = tmp;
-            let t: Token = newToken(&word, TOKEN_NUMBER());
-            return newOptionTokenSome(t);
-        } else if (currChar == '{') {
-            this.ptr = this.ptr + 1;
-            this.content = this.content.substring(1, this.content.len);
-            return newOptionTokenSome(newToken(&newSubStr("{", 0, 1), TOKEN_CURLY_OPEN()));
-        } else if (currChar == '}') {
-            this.ptr = this.ptr + 1;
-            this.content = this.content.substring(1, this.content.len);
-            return newOptionTokenSome(newToken(&newSubStr("}", 0, 1), TOKEN_CURLY_CLOSE()));
+            return newToken(&word, this.ptr - len, TOKEN_NUMBER());
         } else if (currChar == '(') {
-            this.ptr = this.ptr + 1;
-            this.content = this.content.substring(1, this.content.len);
-            return newOptionTokenSome(newToken(&newSubStr("(", 0, 1), TOKEN_PAREN_OPEN()));
+            this.advance();
+            return newToken(&newSubStr("(", 0, 1), this.ptr - 1, TOKEN_PAREN_OPEN());
         } else if (currChar == ')') {
-            this.ptr = this.ptr + 1;
-            this.content = this.content.substring(1, this.content.len);
-            return newOptionTokenSome(newToken(&newSubStr(")", 0, 1), TOKEN_PAREN_CLOSE()));
+            this.advance();
+            return newToken(&newSubStr(")", 0, 1), this.ptr - 1, TOKEN_PAREN_CLOSE());
+        } else if (currChar == '{') {
+            this.advance();
+            return newToken(&newSubStr("{", 0, 1), this.ptr - 1, TOKEN_CURLY_OPEN());
+        } else if (currChar == '}') {
+            this.advance();
+            return newToken(&newSubStr("}", 0, 1), this.ptr - 1, TOKEN_CURLY_CLOSE());
+        } else if (currChar == '<') {
+            this.advance();
+            return newToken(&newSubStr("<", 0, 1), this.ptr - 1, TOKEN_SHARP_OPEN());
+        } else if (currChar == '>') {
+            this.advance();
+            return newToken(&newSubStr(">", 0, 1), this.ptr - 1, TOKEN_SHARP_CLOSE());
         } else if (currChar == ';') {
-            this.ptr = this.ptr + 1;
-            this.content = this.content.substring(1, this.content.len);
-            return newOptionTokenSome(newToken(&newSubStr(";", 0, 1), TOKEN_SEMI_COLON()));
+            this.advance();
+            return newToken(&newSubStr(";", 0, 1), this.ptr - 1, TOKEN_SEMI_COLON());
+        } else if (currChar == ':') {
+            this.advance();
+            return newToken(&newSubStr(":", 0, 1), this.ptr - 1, TOKEN_COLON());
+        } else if (currChar == '=') {
+            this.advance();
+            return newToken(&newSubStr("=", 0, 1), this.ptr - 1, TOKEN_EQUAL_SINGLE());
+        } else if (currChar == '&') {
+            this.advance();
+            return newToken(&newSubStr("&", 0, 1), this.ptr - 1, TOKEN_AMPERSAND());
+        } else if (currChar == ',') {
+            this.advance();
+            return newToken(&newSubStr(",", 0, 1), this.ptr - 1, TOKEN_COMMA());
+        } else if (currChar == '+') {
+            this.advance();
+            return newToken(&newSubStr("+", 0, 1), this.ptr - 1, TOKEN_PLUS_SINGLE());
+        } else if (currChar == '-') {
+            this.advance();
+            if (this.ptr < this.len && this.content.getChar(0) == '>') {
+                this.advance();
+                return newToken(&newSubStr("->", 0, 2), this.ptr - 2, TOKEN_ARROW());
+            } else {
+                todo_with_msg("normal Minus");
+            }
+        } else if (currChar == '/' && this.content.getChar(1) == '*') {
+            while (true) {
+                if (this.advance()) return newTokenEOF(this.ptr);
+                currChar = this.content.getChar(0);
+                let next: char = this.content.getChar(1);
+                if (currChar == '*' && next == '/') break;
+            }
+            this.advance(); // *
+            this.advance(); // /
+            return this.next();
+        } else if (currChar == '/' && this.content.getChar(1) == '/') {
+            while (currChar != '\n') {
+                if (this.advance()) return newTokenEOF(this.ptr);
+                currChar = this.content.getChar(0);
+            }
+            return this.next();
         } else {
             unsafe {
                 let stderr: Any = fdopen(2, "w");
-                fprintf(stderr, "error: Unknown character `%c` found.", currChar);
+                fprintf(stderr, "error: %llu: Unknown character `%c`.\n", this.ptr, currChar);
                 exit(1);
             }
         }
-        return newOptionTokenNone();
+        assert_with_msg(false, "Unexpected fallthrough in Lexer.next()");
+        return defaultToken();
     }
 }
 
-func newLexer(content: &str) -> Lexer {
+func newLexer(content: &SubStr) -> Lexer {
+    return Lexer {
+        content: *content,
+        ptr: 0,
+        len: content.len
+    };
+}
+
+struct Parser {
+    lexer: &mut Lexer;
+
+    func eat(&mut this, kind: usize) -> bool {
+        if (this.at(kind)) {
+            this.lexer.next();
+            return true;
+        }
+        return false;
+    }
+    func at(&mut this, kind: usize) -> bool {
+        let tkn: Token = this.lexer.peek();
+        return tkn.kind == kind;
+    }
+    func expect(&mut this, kind: usize) -> Token {
+        let tkn: Token = this.lexer.next();
+        if (tkn.kind != kind) unsafe {
+            let stderr: Any = fdopen(2, "w");
+            let s: String = tkn.toString();
+            let l: String = tkn.span.toString();
+            fprintf(stderr, "error: %s: Expected %s, found `%s`.\n", l.buffer, tokenKindToString(kind), s.buffer);
+            exit(1);
+        }
+        return tkn;
+    }
+    func expectIdent(&mut this) -> Token {
+        return this.expect(TOKEN_IDENT());
+    }
+    func expectKeyword(&mut this, keyword: &SubStr) -> Token {
+        let tkn: Token = this.expect(TOKEN_KEYWORD());
+        if (!tkn.content.equals(keyword)) unsafe {
+            let stderr: Any = fdopen(2, "w");
+            let ts: String = tkn.toString();
+            let ls: String = tkn.span.toString();
+            let ks: String = keyword.toString();
+            fprintf(stderr, "error: %s: Expected keyword `%s`, found `%s`.\n", ls.buffer, ks.buffer, ts.buffer);
+            exit(1);
+        }
+        return tkn;
+    }
+    func parseModule(&mut this, name: &SubStr) -> Module {
+        mut module: Module = newModule(name);
+        while (this.lexer.peek().kind != TOKEN_EOF()) {
+            let tkn: Token = this.lexer.peek();
+            let kw: SubStr = tkn.getSubStr();
+            if (kw.equals(&KEYWORD_QUIRK())) {
+                let quirk: Quirk = this.parseQuirk();
+                module.addQuirk(&quirk);
+            } else if (kw.equals(&KEYWORD_REALIZE())) {
+                let real: Realize = this.parseRealize();
+                module.addRealize(&real);
+            } else if (kw.equals(&KEYWORD_STRUCT())) {
+                let strukt: Struct = this.parseStruct();
+                module.addStruct(&strukt);
+            } else if (kw.equals(&KEYWORD_FUNC())) {
+                let fn: FuncDef = this.parseFuncDef();
+                module.addFuncDef(&fn);
+            } else if (kw.equals(&KEYWORD_TYPE())) {
+                let t: TypeDef = this.parseTypeDef();
+                module.addTypeDef(&t);
+            } else unsafe {
+                let stderr: Any = fdopen(2, "w");
+                let ts: String = tkn.toString();
+                let ls: String = tkn.span.toString();
+                fprintf(stderr, "error: %s: Expected module-level keyword, found `%s`.\n", ls.buffer, ts.buffer);
+                exit(1);
+            }
+        }
+        return module;
+    }
+    func parseStruct(&mut this) -> Struct {
+        assert(this.expect(TOKEN_KEYWORD()).content.equals(&KEYWORD_STRUCT()));
+        let typ: Type = this.parseType(false, false);
+        mut fields: Vec = emptyVec(VECTOR_KIND_FIELD(), sizeof Field);
+        this.expect(TOKEN_CURLY_OPEN());
+        while (!this.at(TOKEN_CURLY_CLOSE())) {
+            let field: Field = this.parseField(&typ.asStruct().generics);
+            fields.pushField(&field);
+            if (!this.at(TOKEN_CURLY_CLOSE())) this.expect(TOKEN_COMMA());
+        }
+        this.expect(TOKEN_CURLY_CLOSE());
+        return newStruct(&typ, &fields);
+    }
+    func parseField(&mut this, generics: &Vec) -> Field {
+        let nTkn: Token = this.expectIdent();
+        let name: SubStr = nTkn.getSubStr();
+        this.expect(TOKEN_COLON());
+        let typ: Type = this.parseType(true, false);
+        let end: Span = typ.getSpan();
+        let span: Span = newSpanBetween(&nTkn.span, &end);
+        return newField(&span, &name, &typ);
+    }
+    func parseType(&mut this, allowedRef: bool, allowedBounds: bool) -> Type {
+        let tkn: Token = this.lexer.next();
+        if (tkn.kind == TOKEN_IDENT()) {
+            let name: SubStr = tkn.getSubStr();
+            if (isPrimitiveType(&name)) {
+                return newTypePrim(&tkn.getSpan(), &name);
+            } else {
+                if (this.eat(TOKEN_SHARP_OPEN())) {
+                    mut sType: StructType = newStructType(&tkn.getSpan(), &name);
+                    mut generics: Vec = emptyVec(VECTOR_KIND_TYPE(), sizeof Type);
+                    while (!this.at(TOKEN_SHARP_CLOSE())) {
+                        let t: Type = this.parseType(allowedRef, allowedBounds);
+                        generics.pushType(&t);
+                        if (!this.at(TOKEN_SHARP_CLOSE())) this.expect(TOKEN_COMMA());
+                    }
+                    this.expect(TOKEN_SHARP_CLOSE());
+                    sType.setGenerics(&generics);
+                    return newTypeStruct(&sType);
+                } else if (this.eat(TOKEN_COLON())) {
+                    mut gType: GenericType = newGenericType(&tkn.getSpan(), &name);
+                    if (!allowedBounds) unsafe {
+                        let stderr: Any = fdopen(2, "w");
+                        let loc: Span = this.lexer.peek().getSpan();
+                        fprintf(stderr, "%s: error: Unexpected Quirk boundaries where they are not allowed.\n", loc.toString().buffer);
+                        exit(1);
+                    }
+                    mut bounds: Vec = emptyVec(VECTOR_KIND_TYPE(), sizeof Type);
+                    while (!this.at(TOKEN_SHARP_CLOSE())) {
+                        let t: Type = this.parseType(false, false);
+                        bounds.pushType(&t);
+                        if (!this.at(TOKEN_SHARP_CLOSE())) this.expect(TOKEN_PLUS_SINGLE());
+                    }
+                    gType.setBounds(&bounds);
+                    return newTypeGeneric(&gType);
+                } else {
+                    mut sType: StructType = newStructType(&tkn.getSpan(), &name);
+                    return newTypeStruct(&sType);
+                }
+            }
+        } else if (tkn.kind == TOKEN_AMPERSAND()) {
+            if (!allowedRef) unsafe {
+                let stderr: Any = fdopen(2, "w");
+                let loc: Span = tkn.getSpan();
+                fprintf(stderr, "%s: error: Unexpected reference where they are not allowed.\n", loc.toString().buffer);
+                exit(1);
+            }
+            mut mutable: bool = false;
+            let maybe_mut: Token = this.lexer.peek();
+            if (maybe_mut.kind == TOKEN_KEYWORD() && maybe_mut.content.equals(&KEYWORD_MUT())) {
+                this.lexer.next();
+                mutable = true;
+            }
+            let t: Type = this.parseType(true, false);
+            let refType: RefType = RefType {
+                span: newSpanBetween(&tkn.span, &t.span),
+                mutable: mutable,
+                typ: t
+            };
+            unsafe {
+                let _m: Any = calloc(sizeof RefType, 1);
+                let _r: &mut RefType = &mut *_m;
+                *_r = refType;
+                return Type {
+                    span: refType.span,
+                    kind: TYPE_KIND_REFERENCE(),
+                    data: _m
+                };
+            }
+        } else unsafe {
+            let stderr: Any = fdopen(2, "w");
+            let loc: Span = tkn.getSpan();
+            let what: &str = tokenKindToString(tkn.kind);
+            fprintf(stderr, "%s: error: Expected identifier, found %s.\n", loc.toString().buffer, what);
+            exit(1);
+        }
+        assert_with_msg(false, "Fallthrough in Parser.parseType");
+        return Type { span: defaultSpan(), kind: TYPE_KIND_PRIMITIVE(), data: "" };
+    }
+    func parseRealizeBody(&mut this, real: &mut Realize) {
+        this.expect(TOKEN_CURLY_OPEN());
+        while (!this.at(TOKEN_CURLY_CLOSE())) {
+            let tkn: Token = this.lexer.peek();
+            if (tkn.kind != TOKEN_KEYWORD()) unsafe {
+                let stderr: Any = fdopen(2, "w");
+                let t: String = tkn.toString();
+                let s: String = tkn.span.toString();
+                fprintf(stderr, "error: %s: Expected keyword in Realize declaration, found `%s`.\n", s.buffer, t.buffer);
+                exit(1);
+            }
+            if (tkn.content.equals(&KEYWORD_FUNC())) {
+                let fnDef: FuncDef = this.parseFuncDef();
+                real.addFuncDef(&fnDef);
+            } else if (tkn.content.equals(&KEYWORD_TYPE())) {
+                let tDef: TypeDef = this.parseTypeDef();
+                real.addTypeDef(&tDef);
+            } else {
+                todo_with_msg("Parse stuff in realize");
+            }
+        }
+        this.expect(TOKEN_CURLY_CLOSE());
+    }
+    func parseRealize(&mut this) -> Realize {
+        assert(this.expect(TOKEN_KEYWORD()).content.equals(&KEYWORD_REALIZE()));
+        mut generics: Vec = emptyVec(VECTOR_KIND_TYPE(), sizeof Type);
+        if (this.eat(TOKEN_SHARP_OPEN())) {
+            while (!this.at(TOKEN_SHARP_CLOSE())) {
+                let gen: Type = this.parseType(false, true);
+                generics.pushType(&gen);
+            }
+            this.expect(TOKEN_SHARP_CLOSE());
+        }
+        let qType: Type = this.parseType(false, false);
+        let tkn: Token = this.lexer.peek();
+        if (tkn.kind == TOKEN_KEYWORD()) {
+            this.expectKeyword(&KEYWORD_FOR());
+            let sType: Type = this.parseType(false, false);
+            mut real: Realize = newRealize(&sType);
+            real.setQuirk(&qType);
+            real.setGenerics(&generics);
+            this.parseRealizeBody(&mut real);
+            return real;
+        } else {
+            mut real: Realize = newRealize(&qType);
+            real.setGenerics(&generics);
+            this.parseRealizeBody(&mut real);
+            return real;
+        }
+    }
+    func parseTypeDef(&mut this) -> TypeDef {
+        let typTkn: Token = this.expect(TOKEN_KEYWORD());
+        assert(typTkn.content.equals(&KEYWORD_TYPE()));
+        let name: Type = this.parseType(false, false);
+        this.expect(TOKEN_EQUAL_SINGLE());
+        let rhs: Type = this.parseType(true, false);
+        this.expect(TOKEN_SEMI_COLON());
+        let s: Span = newSpanBetween(&typTkn.span, &rhs.span);
+        return newTypeDef(&s, &name, &rhs);
+    }
+    func parseQuirk(&mut this) -> Quirk {
+        assert(this.expect(TOKEN_KEYWORD()).content.equals(&KEYWORD_QUIRK()));
+        let qType: Type = this.parseType(false, true);
+        mut quirk: Quirk = newQuirk(&qType);
+        this.expect(TOKEN_CURLY_OPEN());
+        while (!this.at(TOKEN_CURLY_CLOSE())) {
+            let tkn: Token = this.lexer.peek();
+            if (tkn.kind != TOKEN_KEYWORD()) unsafe {
+                let stderr: Any = fdopen(2, "w");
+                let t: String = tkn.toString();
+                let s: String = tkn.span.toString();
+                fprintf(stderr, "error: %s: Expected keyword in Quirk declaration, found `%s`.\n", s.buffer, t.buffer);
+                exit(1);
+            }
+            if (tkn.content.equals(&KEYWORD_FUNC())) {
+                let fnDecl: FuncDecl = this.parseFuncDecl();
+                quirk.addFuncDecl(&fnDecl);
+            } else if (tkn.content.equals(&KEYWORD_TYPE())) {
+                let typeDef: TypeDef = this.parseTypeDef();
+                quirk.addTypeDef(&typeDef);
+            } else {
+                tkn.print();
+                todo_with_msg("Parse stuff in quirks");
+            }
+        }
+        this.expect(TOKEN_CURLY_CLOSE());
+        return quirk;
+    }
+    func parseFuncParams(&mut this) -> Vec {
+        mut params: Vec = newVec(VECTOR_KIND_FUNC_PARAM(), 8, sizeof FuncParam);
+        this.expect(TOKEN_PAREN_OPEN());
+        while (!this.at(TOKEN_PAREN_CLOSE())) {
+            let tkn: Token = this.lexer.peek();
+            // &self, &mut self, self only allowed as first param
+            if (params.len() == 0 && (tkn.kind == TOKEN_AMPERSAND())) {
+                this.lexer.next(); // &
+                mut mutable: bool = false;
+                let maybe_mut: Token = this.lexer.peek();
+                if (maybe_mut.kind == TOKEN_KEYWORD() && maybe_mut.content.equals(&KEYWORD_MUT())) {
+                    this.lexer.next(); // mut
+                    mutable = true;
+                }
+                let maybe_self: Token = this.lexer.peek();
+                if (maybe_self.kind == TOKEN_KEYWORD() && maybe_self.content.equals(&KEYWORD_SELF_LOWER())) {
+                    this.lexer.next(); // self
+                } else {
+                    todo_with_msg("parseFuncParams.Error: No Self as first Param.");
+                }
+                let t: Type = newTypeRef(&tkn.span, &newTypeSelf(&maybe_self), mutable);
+                let sParam: FuncParam = newFuncParam(&t.span, &maybe_self.getSubStr(), &t);
+                params.pushFuncParam(&sParam);
+            } else if (params.len() == 0 && (tkn.kind == TOKEN_KEYWORD() && tkn.content.equals(&KEYWORD_SELF_LOWER()))) {
+                todo_with_msg("parseFuncParams.Self");
+            } else {
+                let nTkn: Token = this.expectIdent();
+                this.expect(TOKEN_COLON());
+                let t: Type = this.parseType(true, false);
+                let pSpan: Span = newSpanBetween(&nTkn.span, &t.span);
+                let param: FuncParam = newFuncParam(&pSpan, &nTkn.getSubStr(), &t);
+                params.pushFuncParam(&param);
+            }
+            if (!this.at(TOKEN_PAREN_CLOSE())) this.expect(TOKEN_COMMA());
+        }
+        this.expect(TOKEN_PAREN_CLOSE());
+        return params;
+    }
+    func parseFuncDecl(&mut this) -> FuncDecl {
+        assert(this.expect(TOKEN_KEYWORD()).content.equals(&KEYWORD_FUNC()));
+        let name: Token = this.expect(TOKEN_IDENT());
+        mut funcDecl: FuncDecl = newFuncDecl(name.getSubStr());
+        let funcParams: Vec = this.parseFuncParams();
+        funcDecl.setParams(funcParams);
+        if (this.eat(TOKEN_ARROW())) {
+            let t: Type = this.parseType(true, false);
+            funcDecl.setRetType(&t);
+        }
+        this.expect(TOKEN_SEMI_COLON());
+        return funcDecl;
+    }
+    func parseFuncDef(&mut this) -> FuncDef {
+        assert(this.expect(TOKEN_KEYWORD()).content.equals(&KEYWORD_FUNC()));
+        let name: Token = this.expect(TOKEN_IDENT());
+        mut funcDef: FuncDef = newFuncDef(name.getSubStr());
+        let funcParams: Vec = this.parseFuncParams();
+        funcDef.setParams(funcParams);
+        if (this.eat(TOKEN_ARROW())) {
+            let t: Type = this.parseType(true, false);
+            funcDef.setRetType(&t);
+        }
+        let block: Block = this.parseBlock();
+        funcDef.setBody(&block);
+        return funcDef;
+    }
+    func parseBlock(&mut this) -> Block {
+        this.expect(TOKEN_CURLY_OPEN());
+        mut block: Block = newBlock();
+        while (!this.at(TOKEN_CURLY_CLOSE())) {
+            let tkn: Token = this.lexer.peek();
+            if (tkn.kind == TOKEN_KEYWORD()) {
+                let kw: SubStr = tkn.getSubStr();
+                if (kw.equals(&KEYWORD_LET())) {
+                    let letStmt: Stmt = this.parseLetStmt();
+                    block.addStmt(&letStmt);
+                } else if (kw.equals(&KEYWORD_FOR())) {
+                    todo_with_msg("parseBlock.For");
+                } else unsafe {
+                    let stderr: Any = fdopen(2, "w");
+                    let ks: String = kw.toString();
+                    let ls: String = tkn.span.toString();
+                    fprintf(stderr, "error: %s: Expected `let` or `for`, got `%s`.\n", ls.buffer, ks.buffer);
+                    exit(1);
+                }
+            } else {
+                todo_with_msg("parseBlock.nonKeyword");
+            }
+        }
+        this.expect(TOKEN_CURLY_CLOSE());
+        return block;
+    }
+    func parseLetStmt(&mut this) -> Stmt {
+        assert(this.expect(TOKEN_KEYWORD()).content.equals(&KEYWORD_LET()));
+        let name: Token = this.expectIdent();
+        mut typ: Option = newOptionNone();
+        if (this.eat(TOKEN_COLON())) {
+            typ = newOptionType(&this.parseType(true, false));
+        }
+        this.expect(TOKEN_EQUAL_SINGLE());
+        let expr: Expr = this.parseExpr();
+        this.expect(TOKEN_SEMI_COLON());
+        return newLetStmt(&name, &typ, &expr);
+    }
+    func matchesBinary(&mut this) -> bool {
+        let tkn: Token = this.lexer.peek();
+        if (tkn.kind == TOKEN_EOF()) return false;
+        return tkn.kind == TOKEN_PLUS_SINGLE()
+            || tkn.kind == TOKEN_EQUAL_SINGLE()
+            || tkn.kind == TOKEN_EQUAL_DOUBLE()
+            || tkn.kind == TOKEN_SHARP_OPEN()
+            || tkn.kind == TOKEN_SHARP_CLOSE();
+    }
+    func getPrecedence(&mut this, tkn: &Token) -> u8 {
+        if (tkn.kind == TOKEN_PLUS_SINGLE()) return 11;
+        else if (tkn.kind == TOKEN_SHARP_OPEN()) return 9;
+        else if (tkn.kind == TOKEN_SHARP_CLOSE()) return 9;
+        else if (tkn.kind == TOKEN_EQUAL_SINGLE()) return 2;
+        tkn.print();
+        todo_with_msg("getPrecedence for token");
+        return 0;
+    }
+    func getAssociativity(&mut this, tkn: &Token) -> u8 {
+        if (tkn.kind == TOKEN_EQUAL_SINGLE()) return ASSOC_RIGHT();
+        return ASSOC_LEFT();
+    }
+    func parseExpr(&mut this) -> Expr {
+        return this.__parseExprHelper(0, ASSOC_LEFT());
+    }
+    func parseExprStructLit(&mut this, name: &Token) -> Expr {
+        assert(name.kind == TOKEN_IDENT());
+        mut sLit: ExprStructLit = newExprStructLit(name);
+        this.expect(TOKEN_CURLY_OPEN());
+        while (!this.at(TOKEN_CURLY_CLOSE())) {
+            let nTkn: Token = this.expectIdent();
+            mut expr: Expr = invalidExpr();
+            if (!this.at(TOKEN_COLON())) {
+                expr = newExprIdent(&nTkn);
+            } else {
+                this.expect(TOKEN_COLON());
+                expr = this.parseExpr();
+            }
+            assert(expr.kind != EXPR_INVALID());
+            sLit.addField(&nTkn, &expr);
+            if (!this.at(TOKEN_CURLY_CLOSE())) this.expect(TOKEN_COMMA());
+        }
+        this.expect(TOKEN_CURLY_CLOSE());
+        return sLit.toExpr();
+    }
+    func __parseExprHelper(&mut this, minPrec: u8, assoc: u8) -> Expr {
+        let tkn: Token = this.lexer.peek();
+        mut lhs: Expr = invalidExpr();
+        if (tkn.kind == TOKEN_NUMBER()) lhs = newExprNumLit(&this.lexer.next());
+        else if (tkn.kind == TOKEN_IDENT()) lhs = newExprIdent(&this.lexer.next());
+        else todo_with_msg("__parseExprHelper.LHS");
+        assert_with_msg(lhs.kind != EXPR_INVALID(), "LHS is Invalid!");
+
+        if (this.at(TOKEN_PAREN_OPEN())) todo_with_msg("__parseExprHelper.FuncCall");
+        else if (this.at(TOKEN_CURLY_OPEN())) {
+            if (lhs.kind != EXPR_KIND_IDENT()) unsafe {
+                let stderr: Any = fdopen(2, "w");
+                let ls: String = this.lexer.next().getSpan().toString();
+                let lhs_loc: String = lhs.span.toString();
+                fprintf(stderr, "error: %s: Syntax Error: Curly brackets in expressions can only come after identifiers.\n", ls.buffer);
+                fprintf(stderr, "note: %s: The expression that came before was a %s.\n", lhs_loc.buffer, exprKindToString(lhs.kind));
+                exit(1);
+            }
+            lhs = this.parseExprStructLit(&tkn);
+        }
+        while (this.matchesBinary()) {
+            let tkn: Token = this.lexer.peek();
+            let newPrec: u8 = this.getPrecedence(&tkn);
+            if (newPrec < minPrec) break;
+            if (newPrec == minPrec && assoc == ASSOC_LEFT()) break;
+            let newAssoc: u8 = this.getAssociativity(&tkn);
+            lhs = this.__parseExprSec(lhs, newPrec, newAssoc);
+        }
+        return lhs;
+    }
+    func __parseExprSec(&mut this, lhs: Expr, prec: u8, assoc: u8) -> Expr {
+        assert(this.matchesBinary());
+        let op: Token = this.lexer.next();
+        let rhs: Expr = this.__parseExprHelper(prec, assoc);
+        return newExprBinary(&op, &lhs, &rhs);
+    }
+}
+
+func newParser(lexer: &mut Lexer) -> Parser {
+    return Parser {
+        lexer: lexer
+    };
+}
+
+struct String {
+    buffer: &mut char;
+    length: usize;
+    capacity: usize;
+
+    func len(&this) -> usize {
+        return this.length;
+    }
+
+    func drop(&this) {
+        unsafe {
+            free(this.buffer);
+        }
+    }
+    func resize(&mut this, new_cap: usize) {
+        unsafe {
+            let _new: Any = calloc(new_cap, 1);
+            let _old: Any = this.buffer;
+            memcpy(_new, _old, this.length);
+            free(_old);
+            this.capacity = new_cap;
+            this.buffer = _new;
+        }
+    }
+    func print(&this) {
+        unsafe {
+            // Safety: Safe as long as the buffer is calloc-ed
+            let written: usize = printf("%*s", this.length, this.buffer);
+            assert_with_msg(written == this.length, "Failed to write String.");
+        }
+    }
+    func substring(&this, start: usize, end: usize) -> SubStr {
+        unsafe {
+            let _m: Any = this.buffer;
+            let _s: &str = _m;
+            return SubStr {
+                start: _s + start,
+                len: end - start
+            };
+        }
+    }
+    func pushNumber(&mut this, mut num: usize) {
+        unsafe {
+            mut bfr: [char; 50] = ['\0'; 50];
+            let length: usize = snprintf(NULL(), 0, "%d", num);
+            assert_with_msg(length < 50, "Buffer Overflow in String.pushNumber()");
+            snprintf(&bfr, length + 1, "%d", num);
+            for (mut i: usize = 0; i < length; i = i + 1) {
+                this.pushChar(bfr[i]);
+            }
+        }
+    }
+    func pushChar(&mut this, ch: char) {
+        if (this.length >= this.capacity) {
+            this.resize(2 * this.capacity);
+        }
+        unsafe {
+            *(this.buffer + this.length) = ch;
+        }
+        this.length = this.length + 1;
+    }
+    func pushSubStr(&mut this, sub: &SubStr) {
+        for (mut i: usize = 0; i < sub.len(); i = i + 1) {
+            let ch: char = sub.getChar(i);
+            this.pushChar(ch);
+        }
+    }
+}
+
+func newString() -> String {
+    let cap: usize = 16;
     unsafe {
-        let l: usize = strlen(content);
-        return Lexer {
-            content: newSubStr(content, 0, l),
-            ptr: 0,
-            len: l
+        mut _m: Any = calloc(cap, 1);
+        let buff: &mut char = &mut *_m;
+        return String {
+            buffer: buff,
+            length: 0,
+            capacity: 16
         };
     }
 }
 
-unsafe func main() {
-    let original: &str = " quirk ABC 123 { func idk(); }";
-    mut lexer: Lexer = newLexer(original);
-    while (true) {
-        let oTkn: OptionToken = lexer.next();
-        if (!oTkn.isSome()) {
-            printf("DONE!\n");
-            break;
+func readFileToString(path: &str) -> String {
+    mut s: String = newString();
+    unsafe {
+        // `b` needed because otherwise `\r` would be dropped, leading to wrong Spans
+        let file: Any = fopen(path, "rb");
+        if (isNull(file)) {
+            let stderr: Any = fdopen(2, "w");
+            fprintf(stderr, "error: Could not open file `%s`.\n", path);
+            exit(1);
         }
-        let tkn: Token = oTkn.unwrap();
-        tkn.print();
-        printf("\n");
+        let buf: [char; 1024] = ['\0'; 1024];
+        while (true) {
+            let size: usize = fread(&buf, 1, 1024, file);
+            if (size == 0) break;
+            for (mut i: usize = 0; i < size; i = i + 1) {
+                s.pushChar(buf[i]);
+            }
+        }
+        assert(fclose(file) == 0);
     }
+    return s;
+}
+
+func getArg(argv: &&str, argc: usize) -> &str {
+    unsafe { return *(argv + sizeof &str * argc); }
+}
+
+struct Checker {
+    module: &mut Module;
+    func runChecks(&mut this) -> bool {
+        todo_with_msg("Checker.runChecks");
+        return false;
+    }
+}
+func newChecker(mod: &mut Module) -> Checker {
+    return Checker {
+        module: mod
+    };
+}
+
+unsafe func main() {
+    let argv: &&str = GLOBAL_GET_ARGV();
+    let argc: usize = GLOBAL_GET_ARGC();
+    if (argc < 2) unsafe {
+        let stderr: Any = fdopen(2, "w");
+        fprintf(stderr, "error: Expected input file as argument.\n");
+        exit(1);
+    }
+    let _prog: &str = getArg(argv, 0);
+    let file: &str = getArg(argv, 1);
+    let fileSubStr: SubStr = newSubStr(file, 0, strlen(file));
+    let string: String = readFileToString(file);
+    let sub: SubStr = newSubStrOfString(&string, 0, string.length);
+    mut lexer: Lexer = newLexer(&sub);
+    if (false) {
+        while (true) {
+            let tkn: Token = lexer.next();
+            if (tkn.kind == TOKEN_EOF()) break;
+            tkn.print();
+            unsafe { printf("\n"); }
+        }
+    } else unsafe {
+        mut parser: Parser = newParser(&mut lexer);
+        mut module: Module = parser.parseModule(&fileSubStr);
+        // printModule(module);
+
+        mut checker: Checker = newChecker(&mut module);
+        let result: bool = checker.runChecks();
+    }
+    string.drop();
 }
