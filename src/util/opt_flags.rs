@@ -9,6 +9,18 @@ pub enum OptimizationLevel {
     Size,
 }
 
+impl OptimizationLevel {
+    pub fn as_clang_str(&self) -> &str {
+        match self {
+            Self::None => "",
+            Self::Some => "-O1",
+            Self::All => "-O2",
+            Self::Aggressive => "-O3",
+            Self::Size => "-Os"
+        }
+    }
+}
+
 impl From<&OptimizationLevel> for inkwell::OptimizationLevel {
     fn from(level: &OptimizationLevel) -> Self {
         match level {

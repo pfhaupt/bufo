@@ -6,6 +6,14 @@ use crate::middleend::type_checker::Type;
 
 use tracer::trace_call;
 
+macro_rules! fn_is_inlinable {
+    ($func:ident) => {
+        {
+            $func.block.total_len() < 3
+        }
+    };
+}
+
 #[derive(Debug, Clone)]
 pub struct ModuleNode {
     pub location: Location,
@@ -139,6 +147,10 @@ impl FunctionNode {
             internal_panic!("ModuleSpecifier of FunctionNode should be set at this point!")
         }
     }
+
+    pub fn is_inlinable(&self) -> bool {
+        fn_is_inlinable!(self)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -162,8 +174,12 @@ impl MethodNode {
         if let Some(mod_spec) = &self.module_path {
             format!("{}.{}.{}", mod_spec.to_codegen_name(), self.struct_name, self.name)
         } else {
-            internal_panic!("ModuleSpecifier of FunctionNode should be set at this point!")
+            internal_panic!("ModuleSpecifier of MethodNode should be set at this point!")
         }
+    }
+
+    pub fn is_inlinable(&self) -> bool {
+        fn_is_inlinable!(self)
     }
 }
 
@@ -182,6 +198,29 @@ pub struct BlockNode {
     pub is_unsafe: bool,
     #[cfg(not(feature = "old_codegen"))]
     pub llvm_has_terminator: bool,
+}
+
+impl BlockNode {
+    fn total_len(&self) -> usize {
+        let mut size = 0;
+        for stmt in &self.statements {
+            match stmt {
+                Statement::Block(b) => size += b.total_len(),
+                Statement::If(ifn) => {
+                    let t = &ifn.if_body;
+                    size += t.total_len();
+                    if let Some(e) = &ifn.else_body {
+                        size += e.total_len();
+                    }
+                    size += 1;
+                }
+                Statement::While(whl) => size += whl.body.total_len() + 1,
+                _ => size += 1
+            }
+        }
+        debug_assert!(size >= self.statements.len(), "There are at least {} statements in this block, but recursion only found {size}.", self.statements.len());
+        size
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -455,7 +494,7 @@ impl CallNode {
                 format!("{}.{}", mod_spec.to_codegen_name(), self.function_name)
             }
         } else {
-            internal_panic!("ModuleSpecifier of FunctionNode should be set at this point!")
+            internal_panic!("ModuleSpecifier of CallNode should be set at this point!")
         }
     }
 
@@ -468,7 +507,7 @@ impl CallNode {
                 format!("{}.{}.{}", mod_spec.to_codegen_name(), strukt_name, self.function_name)
             }
         } else {
-            internal_panic!("ModuleSpecifier of FunctionNode should be set at this point!")
+            internal_panic!("ModuleSpecifier of CallNode should be set at this point!")
         }
     }
 }

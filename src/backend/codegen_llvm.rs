@@ -8,6 +8,7 @@ use crate::compiler::ERR_STR;
 use crate::internal_panic;
 use crate::util::opt_flags::OptimizationLevel;
 
+use inkwell::attributes::{Attribute, AttributeLoc};
 use inkwell::builder::BuilderError;
 use inkwell::basic_block::BasicBlock;
 use inkwell::context::Context;
@@ -44,29 +45,32 @@ macro_rules! assert_is_int {
 
 macro_rules! fill_function_lookup {
     ($codegen:ident, $function:ident, $name:ident) => {
-        // Prepare parameter types
-        let mut param_types = Vec::new();
-        for param in &$function.parameters {
-            let codegened_type = $codegen.codegen_type_node(&param.typ);
-            if codegened_type.is_struct_type() {
-                let real_type = $codegen.struct_type_for_arg(&codegened_type);
-                param_types.push(real_type.into());
-            } else {
-                param_types.push(codegened_type.into());
+        {
+            // Prepare parameter types
+            let mut param_types = Vec::new();
+            for param in &$function.parameters {
+                let codegened_type = $codegen.codegen_type_node(&param.typ);
+                if codegened_type.is_struct_type() {
+                    let real_type = $codegen.struct_type_for_arg(&codegened_type);
+                    param_types.push(real_type.into());
+                } else {
+                    param_types.push(codegened_type.into());
+                }
             }
-        }
-        // Prepare return type
-        let function_type;
-        if $function.return_type.typ == Type::None {
-            let return_type = $codegen.context.void_type();
-            function_type = return_type.fn_type(&param_types, $function.is_vararg);
-        } else {
-            let return_type = $codegen.codegen_type(&$function.return_type.typ);
-            function_type = return_type.fn_type(&param_types, $function.is_vararg);
-        }
-        let _function = $codegen.module.add_function(&$name, function_type, None);
-        if $codegen.flags.debug {
-            println!("[DEBUG] Added function {0} to module", $name);
+            // Prepare return type
+            let function_type;
+            if $function.return_type.typ == Type::None {
+                let return_type = $codegen.context.void_type();
+                function_type = return_type.fn_type(&param_types, $function.is_vararg);
+            } else {
+                let return_type = $codegen.codegen_type(&$function.return_type.typ);
+                function_type = return_type.fn_type(&param_types, $function.is_vararg);
+            }
+            let _function = $codegen.module.add_function(&$name, function_type, None);
+            if $codegen.flags.debug {
+                println!("[DEBUG] Added function {0} to module", $name);
+            }
+            _function
         }
     };
 }
@@ -334,12 +338,22 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         for strukt in &file.structs {
             for method in &strukt.methods {
                 let name = method.get_full_name();
-                fill_function_lookup!(self, method, name);
+                let llvm_method = fill_function_lookup!(self, method, name);
+                if method.is_inlinable() {
+                    let id = Attribute::get_named_enum_kind_id("alwaysinline");
+                    assert!(id != 0);
+                    llvm_method.add_attribute(AttributeLoc::Function, self.context.create_enum_attribute(id, 1));
+                }
             }
         }
         for function in &file.functions {
             let name = function.get_full_name();
-            fill_function_lookup!(self, function, name);
+            let llvm_func = fill_function_lookup!(self, function, name);
+            if function.is_inlinable() {
+                let id = Attribute::get_named_enum_kind_id("alwaysinline");
+                assert!(id != 0);
+                llvm_func.add_attribute(AttributeLoc::Function, self.context.create_enum_attribute(id, 1));
+            }
         }
         if let Some(compiler_flags) = &file.compiler_flags {
             for comp_flag in &compiler_flags.flags {
@@ -393,12 +407,13 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         debug_assert!(self.module_stack.is_empty());
         self.fill_lookup(file)?;
         debug_assert!(self.module_stack.is_empty());
+        if let Err(e) = self.codegen_intrinsics() {
+            internal_panic!("Module verification failed:\n{}", e.to_string());
+        }
         if let Err(e) = self.codegen_entrypoint(file) {
-            self.module.print_to_stderr();
             internal_panic!("Module verification failed:\n{}", e.to_string());
         }
         if let Err(e) = self.codegen_module(file) {
-            self.module.print_to_stderr();
             internal_panic!("Module verification failed:\n{}", e.to_string());
         }
         self.finalize_executable()
@@ -458,7 +473,6 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         match self.module.verify() {
             Ok(_) => (),
             Err(e) => {
-                self.module.print_to_stderr();
                 internal_panic!("Module verification failed:\n{}", e.to_string())
             },
         }
@@ -481,11 +495,16 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 }
             }
         }
+        // Our heuristic for alwaysinline: frontend::nodes::fn_is_inlinable!()
+        pass_manager.add_always_inliner_pass();
+        if self.flags.optimizations.level != OptimizationLevel::None {
+            pass_manager.add_function_inlining_pass();
+            pass_manager.add_instruction_combining_pass();
+        }
         if self.flags.optimizations.level == OptimizationLevel::Aggressive {
             if self.flags.verbose {
                 println!("[INFO] Running aggressive optimizations");
             }
-            pass_manager.add_instruction_combining_pass();
             pass_manager.add_reassociate_pass();
             pass_manager.add_gvn_pass();
             pass_manager.add_cfg_simplification_pass();
@@ -509,17 +528,6 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             println!("{}", "-".repeat(80));
         }
 
-        if self.flags.emit_asm {
-            let asmname = self.filename.with_extension("s");
-            let path = std::path::Path::new(&asmname);
-            self.target_machine.write_to_file(
-                &self.module,
-                inkwell::targets::FileType::Assembly,
-                &path,
-            ).unwrap();
-            println!("[INFO] Created {}", path.to_str().unwrap());
-        }
-
         let llvmname = self.filename.with_extension("ll");
         let path = std::path::Path::new(&llvmname);
         self.module.print_to_file(path).unwrap();
@@ -527,10 +535,22 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             println!("[INFO] Created {}", path.to_str().unwrap());
         }
 
+        if self.flags.emit_asm {
+            let mut clang_cmd = std::process::Command::new("clang");
+            let asmname = self.filename.with_extension("s");
+            let path = std::path::Path::new(&asmname);
+            clang_cmd.arg("-o").arg(&path).arg(&llvmname).arg("-v").arg("-S");
+            let _ = clang_cmd.output().unwrap();
+            println!("[INFO] Created {}", path.to_str().unwrap());
+        }
+
         let mut clang_cmd = std::process::Command::new("clang");
         clang_cmd.arg("-o").arg(&self.exename).arg(&llvmname).arg("-v");
         for flag in &self.clang_flags {
             clang_cmd.arg(flag);
+        }
+        if self.flags.optimizations.level != OptimizationLevel::None {
+            clang_cmd.arg(self.flags.optimizations.level.as_clang_str());
         }
         if self.flags.verbose {
             let mut s = String::from("clang");
