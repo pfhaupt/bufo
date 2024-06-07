@@ -1198,34 +1198,20 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                     Ok(result.into())
                 } else {
                     if matches!(binary.typ, Type::Ref(..)) {
+                        let t1 = self.context.i64_type();
+                        let t2 = self.context.i8_type().ptr_type(AddressSpace::default());
                         if matches!(binary.lhs.get_type(), Type::Ref(..)) {
-                            let Type::Ref(underlying, _) = binary.lhs.get_type() else {
-                                unreachable!()
-                            };
                             assert!(binary.rhs.get_type() == Type::Usize); // Type Checker guarantees that
-                            let gep = unsafe {
-                                self.builder.build_gep(
-                                    self.codegen_type(&underlying),
-                                    lhs.into_pointer_value(),
-                                    &[rhs.into_int_value()],
-                                    "codegen_ptr_add"
-                                )?
-                            };
-                            Ok(gep.into())
+                            let p2i = self.builder.build_ptr_to_int(lhs.into_pointer_value(), t1, "ptrtoint")?;
+                            let res = self.builder.build_int_add(p2i, rhs.into_int_value(), "codegen_ptr_add")?;
+                            let i2p = self.builder.build_int_to_ptr(res, t2, "inttoptr")?;
+                            Ok(i2p.into())
                         } else {
-                            let Type::Ref(underlying, _) = binary.rhs.get_type() else {
-                                unreachable!()
-                            };
                             assert!(binary.lhs.get_type() == Type::Usize); // Type Checker guarantees that
-                            let gep = unsafe {
-                                self.builder.build_gep(
-                                    self.codegen_type(&underlying),
-                                    rhs.into_pointer_value(),
-                                    &[lhs.into_int_value()],
-                                    "codegen_ptr_add"
-                                )?
-                            };
-                            Ok(gep.into())
+                            let p2i = self.builder.build_ptr_to_int(rhs.into_pointer_value(), t1, "ptrtoint")?;
+                            let res = self.builder.build_int_add(p2i, lhs.into_int_value(), "codegen_ptr_add")?;
+                            let i2p = self.builder.build_int_to_ptr(res, t2, "inttoptr")?;
+                            Ok(i2p.into())
                         }
                     } else {
                         assert_is_int!(binary.lhs, binary.rhs);
@@ -1250,20 +1236,14 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                     Ok(result.into())
                 } else {
                     if matches!(binary.typ, Type::Ref(..)) {
+                        let t1 = self.context.i64_type();
+                        let t2 = self.context.i8_type().ptr_type(AddressSpace::default());
                         let gep = if matches!(binary.lhs.get_type(), Type::Ref(..)) {
-                            let Type::Ref(underlying, _) = binary.lhs.get_type() else {
-                                unreachable!()
-                            };
                             assert!(binary.rhs.get_type() == Type::Usize); // Type Checker guarantees that
-                            let rhs = self.builder.build_int_neg(rhs.into_int_value(), "codegen_ptr_sub_neg")?;
-                            unsafe {
-                                self.builder.build_gep(
-                                    self.codegen_type(&underlying),
-                                    lhs.into_pointer_value(),
-                                    &[rhs],
-                                    "codegen_ptr_sub"
-                                )?
-                            }
+                            let p2i = self.builder.build_ptr_to_int(lhs.into_pointer_value(), t1, "ptrtoint")?;
+                            let res = self.builder.build_int_sub(p2i, rhs.into_int_value(), "codegen_ptr_sub")?;
+                            let i2p = self.builder.build_int_to_ptr(res, t2, "inttoptr")?;
+                            i2p
                         } else {
                             internal_panic!("Expected Ref-Usize, found Usize-Ref");
                         };
@@ -1468,7 +1448,12 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                             t @ Type::Struct(_, _) => t.get_struct_name(),
                             _ => internal_panic!("Expected struct, found {:?}", typ),
                         };
-                        let lhs = self.codegen_expression(&binary.lhs, !typ.is_struct_ref())?;
+                        let mut lhs = self.codegen_expression(&binary.lhs, !typ.is_struct_ref())?;
+                        if !lhs.is_pointer_value() {
+                            let lhs_alloca = self.allocate(lhs.get_type(), "codegen_field")?;
+                            self.store_value_in_ptr(lhs_alloca, lhs)?;
+                            lhs = lhs_alloca.into();
+                        }
                         let Some(struct_type) = self.get_struct_type(&real_name) else {
                             internal_panic!("Could not find struct {}", real_name)
                         };
