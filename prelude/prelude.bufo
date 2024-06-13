@@ -25,14 +25,10 @@ unsafe func isNull(ptr: Any) -> bool {
     let _a: Any = &bfr;
     let _s: &str = _a;
     snprintf(&bfr, 17, "%p", ptr);
-    // FIXME: This is not POSIX-compliant
-    // REVIEW: Is the below implementation a valid fix?
-    // let win: usize = strcmp(_s, "0000000000000000");
-    // if (win == 0) return true;
-    // let posix: usize = strcmp(_s, "(nil)");
-    // return posix == 0;
-    let cmp: usize = strcmp(_s, "0000000000000000");
-    return cmp == 0;
+    let win: usize = strcmp(_s, "0000000000000000");
+    if (win == 0) return true;
+    let posix: usize = strcmp(_s, "(nil)");
+    return posix == 0;
 }
 
 // File IO
