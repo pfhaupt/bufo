@@ -3,16 +3,16 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Recursive struct `recursive_struct_1.Bar`.
-//! Chain of recursion also includes struct `recursive_struct_1.Bez`.
-//! Chain of recursion also includes struct `recursive_struct_1.Boo`.
-//! Recursive struct `recursive_struct_1.Bez`.
-//! Chain of recursion also includes struct `recursive_struct_1.Bar`.
-//! Chain of recursion also includes struct `recursive_struct_1.Boo`.
-//! Recursive struct `recursive_struct_1.Boo`.
-//! Chain of recursion also includes struct `recursive_struct_1.Bar`.
-//! Chain of recursion also includes struct `recursive_struct_1.Bez`.
-//! Recursive struct `recursive_struct_1.Foo`.
+//! Recursive struct `Bar`.
+//! Chain of recursion also includes struct `Bez`.
+//! Chain of recursion also includes struct `Boo`.
+//! Recursive struct `Bez`.
+//! Chain of recursion also includes struct `Bar`.
+//! Chain of recursion also includes struct `Boo`.
+//! Recursive struct `Boo`.
+//! Chain of recursion also includes struct `Bar`.
+//! Chain of recursion also includes struct `Bez`.
+//! Recursive struct `Foo`.
 
 struct Foo {
     field: Foo;

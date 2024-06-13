@@ -35,13 +35,7 @@ impl<'flags> FlowChecker<'flags> {
     }
 
     #[trace_call(always)]
-    pub fn check_file(&mut self, file: &mut nodes::ModuleNode) -> Result<(), String> {
-        for _import in &mut file.imports {
-            // self.check_import(import)?;
-        }
-        for module in &mut file.modules {
-            self.check_file(module)?;
-        }
+    pub fn check_file(&mut self, file: &mut nodes::FileNode) -> Result<(), String> {
         for _ext in &mut file.externs {
             // self.check_extern(ext)?;
         }

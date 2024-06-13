@@ -221,7 +221,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
-    fn fill_struct_lookup(&mut self, file: &nodes::ModuleNode) -> Result<(), String> {
+    fn fill_struct_lookup(&mut self, file: &nodes::FileNode) -> Result<(), String> {
         let mut sequence = file.get_all_structs();
         let seq_len = sequence.len();
         let mut lookup: HashMap<String, HashSet<String>> = HashMap::new();
@@ -324,13 +324,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
-    fn fill_lookup(&mut self, file: &nodes::ModuleNode) -> Result<(), String> {
-        for module in &file.modules {
-            self.module_stack.push(module.name.clone());
-            self.fill_lookup(module)?;
-            self.module_stack.pop();
-        }
-
+    fn fill_lookup(&mut self, file: &nodes::FileNode) -> Result<(), String> {
         for external in &file.externs {
             let name = &external.name;
             fill_function_lookup!(self, external, name);
@@ -347,7 +341,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             }
         }
         for function in &file.functions {
-            let name = function.get_full_name();
+            let name = format!("func.{}", function.name);
             let llvm_func = fill_function_lookup!(self, function, name);
             if function.is_inlinable() {
                 let id = Attribute::get_named_enum_kind_id("alwaysinline");
@@ -355,11 +349,9 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                 llvm_func.add_attribute(AttributeLoc::Function, self.context.create_enum_attribute(id, 1));
             }
         }
-        if let Some(compiler_flags) = &file.compiler_flags {
-            for comp_flag in &compiler_flags.flags {
-                let flag = comp_flag.to_vec();
-                self.clang_flags.extend(flag);
-            }
+        for comp_flag in &file.compiler_flags.flags {
+            let flag = comp_flag.to_vec();
+            self.clang_flags.extend(flag);
         }
         Ok(())
     }
@@ -402,7 +394,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
-    pub fn codegen_project(&mut self, file: &nodes::ModuleNode) -> Result<(), String> {
+    pub fn codegen_project(&mut self, file: &nodes::FileNode) -> Result<(), String> {
         self.fill_struct_lookup(file)?;
         debug_assert!(self.module_stack.is_empty());
         self.fill_lookup(file)?;
@@ -413,25 +405,20 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
         if let Err(e) = self.codegen_entrypoint(file) {
             internal_panic!("Module verification failed:\n{}", e.to_string());
         }
-        if let Err(e) = self.codegen_module(file) {
+        if let Err(e) = self.codegen_file(file) {
             internal_panic!("Module verification failed:\n{}", e.to_string());
         }
         self.finalize_executable()
     }
 
     #[trace_call(always)]
-    fn find_main(&self, file: &nodes::ModuleNode) -> Option<String> {
+    fn find_main(&self, file: &nodes::FileNode) -> Option<&'static str> {
         // First module with a main function is the entrypoint
         // Which is usually the file provided by the user
         // If not, ¯\_(ツ)_/¯
         for function in &file.functions {
             if function.name == "main" {
-                return Some(function.name.clone());
-            }
-        }
-        for module in &file.modules {
-            if let Some(main) = self.find_main(module) {
-                return Some(format!("{}.{}", module.name, main));
+                return Some("func.main");
             }
         }
         None
@@ -484,6 +471,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     #[trace_call(always)]
     fn codegen_entrypoint_init(&mut self) -> Result<(), BuilderError> {
         let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        // Note: main.1 because the actual entrypoint is also called main
         assert!(function.get_name().to_str().unwrap() == "main", "Called codegen_entrypoint_init() in wrong context.");
         let argc = self.module.get_global("GLOBAL_ARGC").expect("Called codegen_entrypoint_init() in wrong context.");
         self.builder.build_store(
@@ -499,9 +487,9 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
-    fn codegen_entrypoint(&mut self, file: &nodes::ModuleNode) -> Result<(), BuilderError> {
+    fn codegen_entrypoint(&mut self, file: &nodes::FileNode) -> Result<(), BuilderError> {
         let main_name = self.find_main(file).unwrap_or_else(|| {
-            println!("[ERROR] Could not find main function!");
+            eprintln!("[ERROR] Could not find main function!");
             std::process::exit(1);
         });
         let main_func = self.module.get_function(&main_name).unwrap();
@@ -514,6 +502,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             self.context.i32_type().into(),
             self.context.i8_type().ptr_type(AddressSpace::default()).into(),
         ], false);
+        assert!(self.module.get_function("main").is_none());
         let main = self.module.add_function("main", ret_fn_type, None);
         let entry = self.context.append_basic_block(main, "entry");
         self.builder.position_at_end(entry);
@@ -644,12 +633,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
-    fn codegen_module(&mut self, file: &nodes::ModuleNode) -> Result<(), BuilderError> {
-        for module in &file.modules {
-            self.module_stack.push(module.name.clone());
-            self.codegen_module(module)?;
-            self.module_stack.pop();
-        }
+    fn codegen_file(&mut self, file: &nodes::FileNode) -> Result<(), BuilderError> {
         // External functions are already added in `fill_lookup`
         // for external in &file.externs {
         //     self.codegen_extern(external)?;
@@ -694,7 +678,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     fn codegen_function(&mut self, function: &nodes::FunctionNode) -> Result<(), BuilderError> {
         self.enter_scope();
 
-        let name = function.get_full_name();
+        let name = format!("func.{}", function.name);
         codegen_function_header!(self, function, name);
 
         self.codegen_block(&function.block)?;
@@ -1135,7 +1119,11 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
 
     #[trace_call(always)]
     fn codegen_function_call(&mut self, function_call: &nodes::CallNode, needs_ptr: bool) -> Result<BasicValueEnum<'ctx>, BuilderError> {
-        let real_name = function_call.get_full_name();
+        let real_name = if function_call.is_extern {
+            function_call.function_name.clone()
+        } else {
+            format!("func.{}", function_call.function_name)
+        };
         let Some(function) = self.module.get_function(&real_name) else {
             internal_panic!("Could not find function {}", real_name);
         };
@@ -1439,13 +1427,13 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             Operation::MemberAccess => {
                 match ((*binary.lhs).get_type(), &(*binary.rhs)) {
                     (ref typ @ Type::Ref(_, _), nodes::Expression::Name(field))
-                    | (ref typ @ Type::Struct(_, _), nodes::Expression::Name(field)) => {
+                    | (ref typ @ Type::Struct(_), nodes::Expression::Name(field)) => {
                         let real_name = match typ {
                             Type::Ref(t, _) => {
                                 debug_assert!(t.is_struct());
                                 t.get_struct_name()
                             }
-                            t @ Type::Struct(_, _) => t.get_struct_name(),
+                            t @ Type::Struct(_) => t.get_struct_name(),
                             _ => internal_panic!("Expected struct, found {:?}", typ),
                         };
                         let mut lhs = self.codegen_expression(&binary.lhs, !typ.is_struct_ref())?;
@@ -1479,22 +1467,22 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                         }
                     },
                     (ref typ @ Type::Ref(_, _), nodes::Expression::FunctionCall(method_call))
-                    | (ref typ @ Type::Struct(_, _), nodes::Expression::FunctionCall(method_call)) => {
+                    | (ref typ @ Type::Struct(_), nodes::Expression::FunctionCall(method_call)) => {
                         let real_name = match typ {
                             Type::Ref(t, _) => {
-                                let Type::Struct(ref name, _) = **t else {
+                                let Type::Struct(ref name) = **t else {
                                     internal_panic!("Expected Reference to Struct, found Reference to {t}")
                                 };
                                 name
                             }
-                            Type::Struct(name, _) => name,
+                            Type::Struct(name) => name,
                             _ => internal_panic!("Expected struct, found {:?}", typ),
                         };
                         let method_name = method_call.get_method_name(real_name);
                         let Some(method) = self.module.get_function(&method_name) else {
                             internal_panic!("Could not find function {}", method_name)
                         };
-                        let needs_ref = matches!(typ, Type::Struct(_, _)) && method.get_first_param().unwrap().get_type().is_pointer_type();
+                        let needs_ref = matches!(typ, Type::Struct(_)) && method.get_first_param().unwrap().get_type().is_pointer_type();
                         let lhs = self.codegen_expression(&binary.lhs, needs_ref)?;
                         let mut args = Vec::new();
                         args.push(lhs);
@@ -1549,7 +1537,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
                     let normal_block = self.context.append_basic_block(current_fn, "codegen_binary_indexedaccess_normal");
                     self.builder.build_conditional_branch(cond, panic_block, normal_block)?;
                     self.builder.position_at_end(panic_block);
-                    let exit_fn = self.module.get_function(&"prelude.index_oob").unwrap();
+                    let exit_fn = self.module.get_function(&"func.index_oob").unwrap();
                     let exit_msg = self.builder.build_global_string_ptr(&format!(
                         "{:?}: RUNTIME ERROR: Index out of bounds: Array of size {} has no index %d\n",
                         binary.location,

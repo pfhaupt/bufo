@@ -129,7 +129,8 @@ impl<'flags, 'ctx> Compiler<'flags, 'ctx> {
     #[trace_call(always)]
     pub fn run_everything(&mut self) -> Result<(), String> {
         let now = Instant::now();
-        let mut parsed_ast = self.parser.parse_project()?;
+        self.parser.initialize()?;
+        let mut parsed_ast = self.parser.parse_project(true)?;
         if self.flags.verbose {
             println!("[INFO] Parsing took {:?}", now.elapsed());
         }
@@ -174,7 +175,8 @@ impl<'flags, 'ctx> Compiler<'flags, 'ctx> {
 #[trace_call(always)]
 fn compile() -> Result<(), String> {
     let now = Instant::now();
-    let flags = Flags::parse_flags();
+    let mut flags = Flags::parse_flags();
+    flags.imports.push(String::from("."));
     if flags.verbose {
         println!("[INFO] Parsing flags took {:?}", now.elapsed());
     }

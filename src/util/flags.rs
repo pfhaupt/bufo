@@ -30,6 +30,8 @@ pub struct Flags {
     pub emit_llvm: bool,
     #[arg(long, default_value = "false")]
     pub emit_asm: bool,
+    #[arg(short='I', long="import")]
+    pub imports: Vec<String>,
     #[arg(trailing_var_arg=true, use_value_delimiter=false)]
     pub exe_args: Vec<String>,
 }

@@ -3,19 +3,19 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Recursive struct `recursive_struct_2.A`.
-//! Chain of recursion also includes struct `recursive_struct_2.B`.
-//! Chain of recursion also includes struct `recursive_struct_2.C`.
-//! Chain of recursion also includes struct `recursive_struct_2.D`.
-//! Recursive struct `recursive_struct_2.B`.
-//! Chain of recursion also includes struct `recursive_struct_2.C`.
-//! Chain of recursion also includes struct `recursive_struct_2.D`.
-//! Recursive struct `recursive_struct_2.C`.
-//! Chain of recursion also includes struct `recursive_struct_2.D`.
-//! Chain of recursion also includes struct `recursive_struct_2.B`.
-//! Recursive struct `recursive_struct_2.D`.
-//! Chain of recursion also includes struct `recursive_struct_2.B`.
-//! Chain of recursion also includes struct `recursive_struct_2.C`.
+//! Recursive struct `A`.
+//! Chain of recursion also includes struct `B`.
+//! Chain of recursion also includes struct `C`.
+//! Chain of recursion also includes struct `D`.
+//! Recursive struct `B`.
+//! Chain of recursion also includes struct `C`.
+//! Chain of recursion also includes struct `D`.
+//! Recursive struct `C`.
+//! Chain of recursion also includes struct `D`.
+//! Chain of recursion also includes struct `B`.
+//! Recursive struct `D`.
+//! Chain of recursion also includes struct `B`.
+//! Chain of recursion also includes struct `C`.
 
 struct A { b: B; }
 struct B { c: C; d: D; }

@@ -2,10 +2,10 @@
 //! RUNTIME
 //! SUCCESS
 
-import other;
+import "./other.bufo";
 
 func main() -> i32 {
-    let s: i32 = other::foo();
+    let s: i32 = foo();
     if (s != 5) return s;
     return 0;
 }

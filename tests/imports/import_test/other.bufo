@@ -1,12 +1,11 @@
 //! IGNORE
 
-import include;
-import foo::bar;
+import "./include.bufo";
 
 struct Foo {
 }
 func square(a: i32) -> Foo {
-    let b: foo::bar::Bez = foo::bar::Bez {i:0};
+    let b: Bez = Bez {i:0};
     return Foo {
     };
 }

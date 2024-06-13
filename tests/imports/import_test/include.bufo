@@ -2,23 +2,23 @@
 //! RUNTIME
 //! SUCCESS
 
-import other;
-import foo::bar;
+import "./other.bufo";
+import "./foo/bar.bufo";
 
 struct Bar {
-    field: other::Foo;
+    field: Foo;
 }
 
-struct Bez {
+struct Biz {
     b: Bar;
 }
 
-func otherFoo(o: foo::bar::Bez) -> i32 {
+func otherFoo(o: Bez) -> i32 {
     return o.i;
 }
 
 func main() -> i32 {
-    let o: foo::bar::Bez = foo();
+    let o: Bez = foo();
     let s: i32 = otherFoo(o);
     if (s != 10) return 1;
     return 0;

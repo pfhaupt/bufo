@@ -1,10 +1,10 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
 use std::fmt::{Debug, Display, Formatter};
 use std::fs;
 use std::path::PathBuf;
 
 use super::nodes::{self, CompilerFlag};
-use crate::compiler::{ERR_STR, FILE_EXT, NOTE_STR, WARN_STR};
+use crate::compiler::{ERR_STR, NOTE_STR, WARN_STR};
 use crate::internal_panic;
 use crate::middleend::type_checker::Type;
 use crate::util::flags::Flags;
@@ -42,8 +42,8 @@ pub const KEYWORD_UNSAFE: &str = "unsafe";
 pub const KEYWORD_WHILE: &str = "while";
 
 
-enum ParserError {
-    FileNotFound(Location, String, String, String),
+pub enum ParserError {
+    UnresolvedImport(Location, String),
     InvalidCharLiteral(Location, String),
     UnterminatedStringLiteral(Location),
     UnterminatedCharLiteral(Location),
@@ -63,12 +63,13 @@ enum ParserError {
     CompilerFlagsNotFirst(Location),
     InvalidArraySize(Location),
     ArrayWithSpecifiedSizeMoreThanOneElement(Location),
+    Redeclaration(&'static str, String, Location, Location),
 }
 
 impl Display for ParserError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         let error_msg = match self {
-            Self::FileNotFound(l, s, e, i) => format!("{l:?}: File not found: {s}\n{NOTE_STR}: {e} when looking for file `{i}`."),
+            Self::UnresolvedImport(loc, path) => format!("{loc:?}: Could not resolve imported file `{path}`"),
             Self::InvalidCharLiteral(l, s) => format!("{l:?}: Invalid Char Literal: `{}`", s),
             Self::UnterminatedStringLiteral(l) => format!("{l:?}: Unterminated String Literal"),
             Self::UnterminatedCharLiteral(l) => format!("{l:?}: Unterminated Char Literal"),
@@ -103,6 +104,7 @@ impl Display for ParserError {
             Self::CompilerFlagsNotFirst(l) => format!("{l:?}: `{KEYWORD_COMPILER_FLAGS}` must be the first statement in a file."),
             Self::InvalidArraySize(l) => format!("{l:?}: Invalid array size."),
             Self::ArrayWithSpecifiedSizeMoreThanOneElement(l) => format!("{l:?}: Arrays with a specified size can only have one element."),
+            Self::Redeclaration(what, name, first, second) => format!("{first:?}: Redeclaration of {what} `{name}`.\n{NOTE_STR}: {second:?}: {what} already declared here."),
         };
         let message = format!("{}: {}", ERR_STR, error_msg);
         write!(f, "{}", message)
@@ -143,7 +145,6 @@ pub enum TokenType {
     OpenSquare,
     ClosingSquare,
     Colon,
-    DoubleColon,
     Ampersand,
     DoubleAmpersand,
     Pipe,
@@ -168,27 +169,6 @@ pub enum TokenType {
     CmpGt,
     CmpGte,
     Eof,
-}
-
-
-macro_rules! attach_module_specifier {
-    ($node:ident, $name:expr) => {
-        {
-            let module_spec = nodes::ModuleSpecifier {
-                name: $name,
-                sub_module: None
-            };
-            if let Some(sub_mod) = &mut $node.module_path {
-                let mut last = sub_mod;
-                while let Some(ref mut next) = last.sub_module {
-                    last = next;
-                }
-                last.sub_module = Some(Box::new(module_spec));
-            } else {
-                $node.module_path = Some(Box::new(module_spec));
-            }
-        }
-    };
 }
 
 impl TokenType {
@@ -241,7 +221,6 @@ impl Display for TokenType {
             Self::KeywordUnsafe => write!(f, "`{}`", KEYWORD_UNSAFE),
             Self::KeywordWhile => write!(f, "`{}`", KEYWORD_WHILE),
             Self::Colon => write!(f, "`:`"),
-            Self::DoubleColon => write!(f, "`::`"),
             Self::Ampersand => write!(f, "`&`"),
             Self::DoubleAmpersand => write!(f, "`&&`"),
             Self::Pipe => write!(f, "`|`"),
@@ -472,10 +451,7 @@ enum Associativity {
 
 pub struct Parser<'flags> {
     filepath: PathBuf,
-    files_to_parse: Vec<PathBuf>,
-    module_stack: Vec<String>,
     parsed_files: HashSet<PathBuf>,
-    include_locations: HashMap<PathBuf, Vec<Location>>,
     file_id: usize,
     source: Vec<char>,
     lookahead: VecDeque<Token>,
@@ -495,10 +471,7 @@ impl<'flags> Parser<'flags> {
     pub fn new(flags: &'flags Flags) -> Self {
         Self {
             filepath: PathBuf::new(),
-            module_stack: Vec::new(),
-            files_to_parse: Vec::new(),
             parsed_files: HashSet::new(),
-            include_locations: HashMap::new(),
             file_id: 0,
             source: Vec::new(),
             lookahead: VecDeque::new(),
@@ -514,30 +487,31 @@ impl<'flags> Parser<'flags> {
         }
     }
 
-    fn filepath(&mut self, filepath: &str) {
-        let pb = PathBuf::from(filepath);
-        let source = match fs::read_to_string(filepath) {
-            Ok(source) => source.chars().collect(),
-            Err(e) => {
-                let locations = self.include_locations.get(&pb).expect("Filepath not found").clone();
-                for loc in locations {
-                    self.report_error(ParserError::FileNotFound(
-                        loc.clone(),
-                        filepath.to_string(),
-                        e.to_string(),
-                        filepath.to_string(),
-                    ));
+    fn filepath(&mut self, filepath: &str) -> Result<(), ()> {
+        let mut found = false;
+        for import_path in &self.flags.imports {
+            let pb = PathBuf::from(&format!("{}/{}", import_path, filepath));
+            if self.flags.debug {
+                println!("[DEBUG] Checking if file {pb:?} exists...");
+            }
+            if fs::metadata(&pb).is_ok_and(|file|file.is_file()) {
+                let source = fs::read_to_string(&pb).expect("fs::metadata(pb).is_ok()");
+                self.file_id = unsafe { FILENAMES.len() };
+                unsafe {
+                    FILENAMES.push(pb.clone());
                 }
-                Vec::new()
-            },
-        };
-        self.file_id = unsafe { FILENAMES.len() };
-        unsafe {
-            FILENAMES.push(pb.clone());
+                self.filepath = pb;
+                self.source = source.chars().collect();
+                found = true;
+                break;
+            }
         }
-        self.filepath = pb;
-        self.source = source;
+        if !found {
+            return Err(());
+        }
         self.reset_state(false);
+        self.fill_lookup();
+        Ok(())
     }
 
     fn reset_state(&mut self, reset_errors: bool) {
@@ -616,7 +590,7 @@ impl<'flags> Parser<'flags> {
         }
         debug_assert_eq!(
             TokenType::Eof as u8 + 1,
-            56,
+            55,
             "Not all TokenTypes are handled in next_token()"
         );
         self.trim_whitespace();
@@ -794,13 +768,7 @@ impl<'flags> Parser<'flags> {
                     (TokenType::ForwardSlash, String::from("/"))
                 }
             },
-            ':' => match self.next_char() {
-                ':' => (TokenType::DoubleColon, String::from("::")),
-                _ => {
-                    self.current_char -= 1;
-                    (TokenType::Colon, String::from(c))
-                }
-            },
+            ':' => (TokenType::Colon, String::from(c)),
             '&' => match self.next_char() {
                 '&' => (TokenType::DoubleAmpersand, String::from("&&")),
                 _ => {
@@ -896,7 +864,7 @@ impl<'flags> Parser<'flags> {
             // Reserved for future use
             "f32" => Type::F32,
             "f64" => Type::F64,
-            _ => Type::Struct(val.to_string(), None),
+            _ => Type::Struct(val.to_string()),
         }
     }
     #[trace_call(always)]
@@ -1024,114 +992,42 @@ impl<'flags> Parser<'flags> {
     // ---------- End of Parser Utility ----------
     // ---------- Start of Parser ----------
     #[trace_call(always)]
-    pub fn parse_project(&mut self) -> Result<nodes::ModuleNode, String> {
-        self.filepath(&self.flags.input);
+    pub fn initialize(&mut self) -> Result<(), String> {
+        let res = self.filepath(&self.flags.input);
+        assert!(res.is_ok()); // Checked by CLI Flag Parser
+        Ok(())
+    }
+    #[trace_call(always)]
+    pub fn parse_project(&mut self, parse_prelude: bool) -> Result<nodes::FileNode, String> {
         let root_path = PathBuf::from(&self.flags.input);
-        let mut root = nodes::ModuleNode {
-            location: Location::anonymous(),
-            name: String::from("root"),
-            modules: vec![],
-            structs: vec![],
-            functions: vec![],
-            externs: vec![],
-            imports: vec![],
-            compiler_flags: None,
-        };
+        self.parsed_files.insert(root_path.clone());
+        let root = self.parse_file(&root_path);
+        if !self.errors.is_empty() || root.is_err() {
+            return Err(self.stringify_errors());
+        }
+        let mut root = root.unwrap();
 
-        {
+        if parse_prelude {
             // FIXME: Better way to handle prelude
-            let prelude_path = PathBuf::from("./prelude/prelude.bufo");
-            let prelude = self.parse_file(&prelude_path, 0, false);
+            let mut flags = self.flags.clone();
+            flags.input = String::from("./prelude/prelude.bufo");
+            let mut prelude_parser = Parser::new(&flags);
+            assert!(prelude_parser.filepath("./prelude/prelude.bufo").is_ok());
+            let prelude = prelude_parser.parse_project(false);
+            self.parsed_files.insert(PathBuf::from(flags.input));
             assert!(prelude.is_ok(), "Failed to parse prelude");
             let prelude_module = prelude.unwrap();
-            root.modules.push(prelude_module);
+            assert!(root.merge_file(prelude_module).is_ok(), "Impossible");
         }
-
-        self.files_to_parse.push(root_path.clone());
-        let root_path = root_path.parent().unwrap();
-        let root_path_count = root_path.components().count();
-        while let Some(file) = self.files_to_parse.pop() {
-            if self.parsed_files.contains(&file) {
-                continue;
-            }
-            let module = self.parse_file(&file, root_path_count, true);
-            if let Ok(module) = module {
-                self.parsed_files.insert(file.clone());
-                root.modules.push(module);
-            }
-        }
-        // let root = self.parse_directory(&root_path.parent().unwrap());
-        if self.errors.is_empty() {
-            Ok(root)
-        } else {
-            Err(self.stringify_errors())
-        }
+        assert!(self.errors.is_empty());
+        Ok(root)
     }
 
     #[trace_call(always)]
-    fn parse_file(&mut self, filepath: &PathBuf, root_path_count: usize, file_is_module: bool) -> Result<nodes::ModuleNode, ()> {
+    fn parse_file(&mut self, filepath: &PathBuf) -> Result<nodes::FileNode, ()> {
         if self.flags.verbose {
             println!("[INFO] Parsing `{}`", filepath.to_str().unwrap());
         }
-        let modules = &filepath.components().map(
-            |c| match c {
-                std::path::Component::Normal(c) => {
-                    let modified = c.to_str().unwrap().to_string();
-                    if modified.ends_with(&format!(".{}", FILE_EXT)) {
-                        modified.strip_suffix(&format!(".{}", FILE_EXT)).unwrap().to_string()
-                    } else {
-                        modified
-                    }
-                },
-                _ => String::new(),
-            }
-        ).collect::<Vec<_>>()[root_path_count..];
-        let modules = &modules[..modules.len() - 1];
-        self.filepath(filepath.to_str().unwrap());
-        self.fill_lookup();
-        if file_is_module {
-            for module in modules {
-                self.module_stack.push(module.to_string());
-            }
-        }
-        let m = self.parse_module(filepath.file_stem().unwrap().to_str().unwrap().to_string());
-        if file_is_module {
-            for _ in modules {
-                self.module_stack.pop();
-            }
-        }
-        let Ok(mut m) = m else {
-            return Err(());
-        };
-        // FIXME: This shuffle breaks ModuleSpecifier
-        // It's better to just "parse" directories too :^)
-        if file_is_module {
-            for module in modules.iter().rev() {
-                let new_module = nodes::ModuleNode {
-                    location: Location::anonymous(),
-                    name: module.clone(),
-                    modules: vec![m],
-                    structs: vec![],
-                    functions: vec![],
-                    externs: vec![],
-                    imports: vec![],
-                    compiler_flags: None,
-                };
-                m = new_module;
-            }
-        }
-        m.imports.push(nodes::ImportNode {
-            location: Location::anonymous(),
-            trace: vec![(String::from("prelude"), Location::anonymous())],
-        });
-        Ok(m)
-    }
-
-    #[trace_call(always)]
-    fn parse_module(&mut self, module_name: String)-> Result<nodes::ModuleNode, ()> {
-        self.module_stack.push(module_name.clone());
-        let location = self.current_location();
-        let modules = vec![];
         let mut structs = vec![];
         let mut functions = vec![];
         let mut imports = vec![];
@@ -1143,14 +1039,7 @@ impl<'flags> Parser<'flags> {
             TokenType::Eof,
         ];
         let mut valid = true;
-        let compiler_flags = match self.parse_compiler_flags() {
-            Ok(compiler_flags) => Some(compiler_flags),
-            Err(_) => {
-                self.recover(&RECOVER_TOKENS);
-                valid = false;
-                None
-            }
-        };
+        let compiler_flags = self.parse_compiler_flags()?;
         while !self.parsed_eof() {
             match self.nth(0) {
                 TokenType::KeywordCompilerFlags => {
@@ -1183,6 +1072,9 @@ impl<'flags> Parser<'flags> {
                         self.recover(&RECOVER_TOKENS);
                         valid = false;
                         continue;
+                    };
+                    let Some(parsed_import) = parsed_import else {
+                        continue; // Already imported
                     };
                     imports.push(parsed_import);
                 }
@@ -1244,47 +1136,62 @@ impl<'flags> Parser<'flags> {
                 },
             }
         }
-        self.module_stack.pop();
         if !valid {
             return Err(());
         }
 
-        Ok(nodes::ModuleNode {
-            location,
-            name: module_name.to_string(),
+        let mut file = nodes::FileNode {
             structs,
             functions,
             externs,
-            modules,
-            imports,
-            compiler_flags,
-        })
+            compiler_flags
+        };
+        for i in imports {
+            if let Err(e) = file.merge_file(i) {
+                self.errors.extend(e);
+            }
+        }
+        Ok(file)
     }
 
     #[trace_call(always)]
-    fn parse_import(&mut self) -> Result<nodes::ImportNode, ()> {
+    fn parse_import(&mut self) -> Result<Option<nodes::FileNode>, ()> {
         self.expect(TokenType::KeywordImport)?;
         let location = self.current_location();
-        let module = self.expect(TokenType::Identifier)?;
-        let mut trace = vec![(module.value, module.location)];
-        while self.eat(TokenType::DoubleColon) {
-            let next = self.expect(TokenType::Identifier)?;
-            trace.push((next.value, next.location));
-        }
+        let path = self.expect(TokenType::LiteralString)?;
         self.expect(TokenType::Semi)?;
-        let filename = trace.iter().map(|(s, _)| s.clone()).collect::<Vec<String>>().join("/");
-        let root_path = self.filepath.parent().unwrap();
-        let path = root_path.join(&filename);
-        let path = path.with_extension(FILE_EXT);
-        if self.flags.verbose {
-            println!("[INFO] Importing `{}`", path.to_str().unwrap());
+        let mut flags = self.flags.clone();
+        let mut comp = self.filepath.components();
+        comp.next_back();
+        flags.imports.push(comp.as_path().to_str().unwrap().to_string());
+        let mut parser = Parser::new(&flags);
+        if parser.filepath(&path.value).is_err() {
+            self.report_error(ParserError::UnresolvedImport(location, path.value.clone()));
+            return Err(());
         }
-        self.include_locations.entry(path.clone()).or_insert(vec![]).push(location.clone());
-        self.files_to_parse.push(path.clone());
-        Ok(nodes::ImportNode {
-            location,
-            trace,
-        })
+        let pb = parser.filepath.clone();
+        let mut contains = false;
+        for pf in &self.parsed_files {
+            if fs::canonicalize(&pb).unwrap() == fs::canonicalize(&pf).unwrap() {
+                contains = true;
+                break;
+            }
+        }
+        if !contains {
+            self.parsed_files.insert(pb.clone());
+            parser.parsed_files = self.parsed_files.clone();
+            let file = parser.parse_file(&pb);
+            self.parsed_files.extend(parser.parsed_files);
+            self.errors.extend(parser.errors);
+            if file.is_ok() {
+                Ok(Some(file.unwrap()))
+            } else {
+                Err(())
+            }
+        } else {
+            println!("{WARN_STR}: {location:?}: File `{}` already imported.", path.value);
+            Ok(None)
+        }
     }
 
     #[trace_call(always)]
@@ -1438,7 +1345,6 @@ impl<'flags> Parser<'flags> {
             name,
             fields,
             methods,
-            module_path: Some(Box::new(nodes::ModuleSpecifier::from_resolved(&self.module_stack)))
         })
     }
 
@@ -1477,8 +1383,7 @@ impl<'flags> Parser<'flags> {
         self.current_function = None;
         Ok(nodes::FunctionNode {
             location,
-            name: name.value,
-            module_path: Some(Box::new(nodes::ModuleSpecifier::from_resolved(&self.module_stack))),
+            name: name.value, 
             return_type,
             parameters,
             block,
@@ -1512,7 +1417,6 @@ impl<'flags> Parser<'flags> {
             location,
             struct_name: struct_name.to_string(),
             name: name.value,
-            module_path: Some(Box::new(nodes::ModuleSpecifier::from_resolved(&self.module_stack))),
             return_type,
             parameters,
             block,
@@ -1581,7 +1485,7 @@ impl<'flags> Parser<'flags> {
                     ));
                     return Err(());
                 }
-                let struct_typ = Type::Struct(self.current_struct.as_ref().unwrap().clone(), None);
+                let struct_typ = Type::Struct(self.current_struct.as_ref().unwrap().clone());
                 let typ = if is_reference {
                     Type::Ref(Box::new(struct_typ), is_mutable)
                 } else {
@@ -2049,7 +1953,7 @@ impl<'flags> Parser<'flags> {
                 let this_literal = nodes::NameNode {
                     location: this_token.location,
                     name: String::from("this"),
-                    typ: Type::Struct(self.current_struct.as_ref().unwrap().clone(), None),
+                    typ: Type::Struct(self.current_struct.as_ref().unwrap().clone()),
                 };
                 Ok(nodes::Expression::Name(this_literal))
             }
@@ -2219,24 +2123,7 @@ impl<'flags> Parser<'flags> {
     #[trace_call(always)]
     fn parse_expr_identifier(&mut self)-> Result<nodes::Expression, ()> {
         let ident = self.expect(TokenType::Identifier)?;
-        if self.eat(TokenType::DoubleColon) {
-            // REVIEW: Re-introduce ParenExprNode
-            // Expressions such as X::(y) will work here :^)
-            let mut expr = self.parse_expression(0, Associativity::Left)?;
-            match expr {
-                nodes::Expression::StructLiteral(ref mut struct_lit) => {
-                    attach_module_specifier!(struct_lit, ident.value);
-                }
-                nodes::Expression::FunctionCall(ref mut func_call) => {
-                    attach_module_specifier!(func_call, ident.value);
-                }
-                _ => {
-                    // Error
-                    todo!()
-                }
-            }
-            Ok(expr)
-        } else if self.at(TokenType::OpenRound) {
+        if self.at(TokenType::OpenRound) {
             let fn_call = self.parse_expr_function_call(ident)?;
             Ok(nodes::Expression::FunctionCall(fn_call))
         } else if self.at(TokenType::OpenCurly) {
@@ -2267,9 +2154,8 @@ impl<'flags> Parser<'flags> {
         Ok(nodes::StructLiteralNode {
             location,
             struct_name: ident.value.clone(),
-            module_path: None,
             fields,
-            typ: Type::Struct(ident.value, None),
+            typ: Type::Struct(ident.value),
         })
     }
 
@@ -2408,7 +2294,6 @@ impl<'flags> Parser<'flags> {
         Ok(nodes::CallNode {
             is_extern: false,
             function_name,
-            module_path: None,
             location,
             arguments,
             typ: Type::Unknown,
@@ -2439,7 +2324,6 @@ impl<'flags> Parser<'flags> {
             Ok(nodes::TypeNode {
                 location,
                 typ,
-                module_path: None
             })
         } else if self.eat(TokenType::Ampersand) {
             let is_mutable = self.eat(TokenType::KeywordMut);
@@ -2448,7 +2332,6 @@ impl<'flags> Parser<'flags> {
             Ok(nodes::TypeNode {
                 location,
                 typ,
-                module_path: None
             })
         } else if self.eat(TokenType::OpenSquare) {
             let typ = self.parse_type_node()?;
@@ -2467,24 +2350,13 @@ impl<'flags> Parser<'flags> {
             Ok(nodes::TypeNode {
                 location,
                 typ: Type::Array(Box::new(typ.typ), size),
-                module_path: None
             })
         } else {
             let name_token = self.expect(TokenType::Identifier)?;
-            if self.eat(TokenType::DoubleColon) {
-                let mut sub_type = self.parse_type_node()?;
-                let Type::Struct(strukt, _) = &sub_type.typ else {
-                    internal_panic!("parse_type_node() returned invalid submodule type")
-                };
-                attach_module_specifier!(sub_type, name_token.value);
-                sub_type.typ = Type::Struct(strukt.clone(), sub_type.module_path.clone());
-                return Ok(sub_type)
-            }
             let typ = self.parse_type_str(&name_token.value);
             Ok(nodes::TypeNode {
                 location,
                 typ,
-                module_path: None
             })
         }
     }

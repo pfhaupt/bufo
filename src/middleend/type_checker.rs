@@ -4,7 +4,7 @@ use std::fmt::{Display, Formatter};
 use crate::frontend::nodes;
 use crate::frontend::parser::{Location, Operation};
 
-use crate::compiler::{ERR_STR, NOTE_STR, WARN_STR};
+use crate::compiler::{ERR_STR, NOTE_STR};
 use crate::internal_panic;
 use crate::util::flags::Flags;
 
@@ -146,7 +146,7 @@ macro_rules! check_parameters {
             let p = Variable {
                 name: param.name.clone(),
                 location: param.location,
-                typ: $tc.unwrap_type_node_typ(&param.typ),
+                typ: param.typ.typ.clone(),
                 mut_state: MutState::mutable(param.is_mutable, param.typ.typ.is_mutable_ref()),
             };
             let index_of = parameters.iter().position(|p| p.name == param.name);
@@ -229,10 +229,6 @@ enum TypeError {
     NestedReferenceNotAllowedYet(Location),
     /// Syntax: Kind, Error Loc, Function Name, Function Loc
     UnsafeCallInSafeContext(&'static str, Location, String, Location),
-    /// Syntax: Error Loc, Module Name
-    UnknownModule(Location, String),
-    /// Syntax: Error Loc, Module Specifier
-    UnknownModuleSpecifier(Location, nodes::ModuleSpecifier),
     /// Syntax: Error Loc
     UnsafeAny(Location),
     /// Syntax: Error Loc, Element Type, Inferred Loc, Inferred Type
@@ -475,12 +471,6 @@ impl Display for TypeError {
                     ERR_STR, error_loc, lowercase_kind, fn_name, NOTE_STR, fn_loc, kind, fn_name, NOTE_STR
                 )
             }
-            TypeError::UnknownModule(loc, name) => {
-                write!(f, "{}: {:?}: Unknown module `{}`.", ERR_STR, loc, name)
-            }
-            TypeError::UnknownModuleSpecifier(loc, mod_spec) => {
-                write!(f, "{}: {:?}: Unknown module `{}`.", ERR_STR, loc, mod_spec)
-            }
             TypeError::UnsafeAny(loc) => {
                 write!(f, "{}: {:?}: Use of `Any` is unsafe.\n{}: Use an `unsafe {{}}` block if you really want to use `Any`.", ERR_STR, loc, NOTE_STR)
             }
@@ -557,7 +547,7 @@ pub enum Type {
     Bool,
     Char,
     // Ptr(Box<Type>),
-    Struct(String, Option<Box<nodes::ModuleSpecifier>>),
+    Struct(String),
     // TODO: More unit tests for references
     Ref(Box<Type>, bool), // bool is mutability
     Array(Box<Type>, usize),
@@ -591,9 +581,7 @@ impl PartialEq for Type {
             (Type::None, _) | (_, Type::None) => false,
             (Type::Any, Type::Ref(_, _)) | (Type::Ref(_, _), Type::Any) => true, // Any is void*, so it can be inferred to any reference
             (Type::Any, _) | (_, Type::Any) => false,
-            (Type::Struct(lhs, lhs_mod), Type::Struct(rhs, rhs_mod)) => {
-                lhs == rhs && lhs_mod == rhs_mod
-            },
+            (Type::Struct(lhs), Type::Struct(rhs)) => lhs == rhs,
             (Type::Ref(lhs, l), Type::Ref(rhs, r)) => lhs == rhs && l == r,
             (Type::Array(lhs, l), Type::Array(rhs, r)) => lhs == rhs && l == r,
             _ => false,
@@ -691,13 +679,7 @@ impl Type {
     #[trace_call(extra)]
     pub fn get_struct_name(&self) -> String {
         match self {
-            Type::Struct(struct_name, mod_path) => {
-                if let Some(path) = &mod_path {
-                    format!("{}.{}", path.to_codegen_name(), struct_name)
-                } else {
-                    struct_name.clone()
-                }
-            }
+            Type::Struct(struct_name) => struct_name.clone(),
             _ => internal_panic!("Expected Struct")
         }
     }
@@ -706,13 +688,7 @@ impl Type {
 impl Display for Type {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
-            Type::Struct(str, module_spec) => {
-                if let Some(module_spec) = module_spec {
-                    write!(fmt, "{}::{}", module_spec, str)
-                } else {
-                    write!(fmt, "{}", str)
-                }
-            },
+            Type::Struct(str) => write!(fmt, "{}", str),
             Type::Ref(t, true) => write!(fmt, "&mut {}", t),
             Type::Ref(t, false) => write!(fmt, "&{}", t),
             Type::Array(t, len) => write!(fmt, "[{}; {}]", t, len),
@@ -740,7 +716,6 @@ struct Function {
     location: Location,
     return_type: TypeLoc,
     parameters: Vec<Variable>,
-    module_path: Option<Box<nodes::ModuleSpecifier>>,
     has_this: bool,
     is_unsafe: bool,
     is_vararg: bool,
@@ -778,7 +753,7 @@ impl Struct {
     }
 
     #[trace_call(extra)]
-    fn add_field(&mut self, tc: &TypeChecker, field: &nodes::FieldNode) -> Result<(), TypeError> {
+    fn add_field(&mut self, field: &nodes::FieldNode) -> Result<(), TypeError> {
         let name = &field.name;
         let location = &field.location;
 
@@ -790,7 +765,7 @@ impl Struct {
                 f.l,
             )),
             None => {
-                let typ = tc.unwrap_type_node_typ(&field.type_def);
+                let typ = field.type_def.typ.clone();
                 self.fields.insert(name.to_string(), TypeLoc::new(*location, typ.clone()));
                 Ok(())
             }
@@ -798,7 +773,7 @@ impl Struct {
     }
 
     #[trace_call(extra)]
-    fn add_method(&mut self, tc: &TypeChecker, method: &nodes::MethodNode) -> Result<(), Vec<TypeError>> {
+    fn add_method(&mut self, method: &nodes::MethodNode) -> Result<(), Vec<TypeError>> {
         let mut errors = Vec::new();
         let name = &method.name;
         let location = &method.location;
@@ -807,8 +782,7 @@ impl Struct {
         errors.append(&mut param_errors);
         let func = Function {
             location: method.location,
-            module_path: method.module_path.clone(),
-            return_type: TypeLoc::new(return_loc, tc.unwrap_type_node_typ(&method.return_type)),
+            return_type: TypeLoc::new(return_loc, method.return_type.typ.clone()),
             parameters,
             has_this: true,
             is_unsafe: method.is_unsafe,
@@ -874,39 +848,36 @@ impl Variable {
     }
 }
 
-#[derive(Debug, Clone)]
-struct Module {
-    name: String,
-    modules: HashMap<String, Module>,
+#[derive(Debug)]
+pub struct TypeChecker<'flags> {
     externs: HashMap<String, Function>,
     struct_indices: HashMap<String, usize>,
     structs: Vec<Struct>,
     functions: HashMap<String, Function>,
+    known_variables: VecDeque<HashMap<String, Variable>>,
+    unsafe_depth: usize,
+    #[cfg(feature = "old_codegen")]
+    current_stack_size: usize,
+    errors: Vec<TypeError>,
+    flags: &'flags Flags,
 }
 
-impl Module {
+impl<'flags> TypeChecker<'flags> {
     #[trace_call(extra)]
-    fn new(name: String) -> Self {
+    pub fn new(flags: &'flags Flags) -> Self {
         Self {
-            name,
-            modules: HashMap::new(),
             externs: HashMap::new(),
             struct_indices: HashMap::new(),
             structs: Vec::new(),
             functions: HashMap::new(),
+            known_variables: VecDeque::new(),
+            unsafe_depth: 0,
+            #[cfg(feature = "old_codegen")]
+            current_stack_size: 0,
+            errors: Vec::new(),
+            flags,
         }
     }
-
-    #[trace_call(always)]
-    fn get_sub_module(&self, name: &str) -> Option<&Module> {
-        self.modules.get(name)
-    }
-
-    #[trace_call(always)]
-    fn add_module(&mut self, module: Module) {
-        self.modules.insert(module.name.clone(), module);
-    }
-
     #[trace_call(extra)]
     fn get_struct(&self, name: &str) -> Option<&Struct> {
         match self.struct_indices.get(name) {
@@ -920,16 +891,6 @@ impl Module {
         let index = self.structs.len();
         self.struct_indices.insert(strukt.name.clone(), index);
         self.structs.push(strukt.clone());
-
-        // FIXME: There should be a better way of doing this
-        // This allows us to have static functions
-        let mut struct_module = Module::new(strukt.name);
-        struct_module.functions = strukt.known_methods;
-        // FIXME: By adding the module here, we always have to also specify the filename, e.g
-        // if we have file X, and a struct A with A::new(), we need to call X::A::new()
-        // A proper refactor would be cool, but is not a priority due to selfhost
-        // it gets the job done :sunglasses: :^)
-        self.add_module(struct_module);
     }
 
     #[trace_call(extra)]
@@ -963,13 +924,12 @@ impl Module {
     }
 
     #[trace_call(always)]
-    fn add_extern(&mut self, tc: &TypeChecker, extern_node: &nodes::ExternNode) -> Vec<TypeError> {
+    fn add_extern(&mut self, extern_node: &nodes::ExternNode) -> Vec<TypeError> {
         let return_type = &extern_node.return_type.typ;
         let return_loc = extern_node.return_type.location;
         let (parameters, errors) = check_parameters!(tc, extern_node);
         let func = Function {
             location: extern_node.location,
-            module_path: None,
             return_type: TypeLoc::new(return_loc, return_type.clone()),
             parameters,
             has_this: false,
@@ -982,19 +942,19 @@ impl Module {
     }
 
     #[trace_call(always)]
-    fn add_struct(&mut self, tc: &TypeChecker, struct_node: &nodes::StructNode) -> Vec<TypeError> {
+    fn add_struct(&mut self, struct_node: &nodes::StructNode) -> Vec<TypeError> {
         let mut errors = Vec::new();
         let name = struct_node.name.clone();
         let location = struct_node.location;
         let mut strukt = Struct::new(name.clone(), location);
         for field in &struct_node.fields {
-            match strukt.add_field(tc, field) {
+            match strukt.add_field(field) {
                 Ok(()) => (),
                 Err(e) => errors.push(e),
             }
         }
         for method in &struct_node.methods {
-            match strukt.add_method(tc, method) {
+            match strukt.add_method(method) {
                 Ok(()) => (),
                 Err(e) => errors.extend(e),
             }
@@ -1014,7 +974,7 @@ impl Module {
     }
 
     #[trace_call(always)]
-    fn add_function(&mut self, tc: &TypeChecker, function: &nodes::FunctionNode) -> Vec<TypeError> {
+    fn add_function(&mut self, function: &nodes::FunctionNode) -> Vec<TypeError> {
         let name = function.name.clone();
         let location = function.location;
         let return_type = &function.return_type;
@@ -1022,8 +982,7 @@ impl Module {
         let (parameters, mut errors) = check_parameters!(tc, function);
         let func = Function {
             location,
-            module_path: function.module_path.clone(),
-            return_type: TypeLoc::new(return_loc, tc.unwrap_type_node_typ(return_type)),
+            return_type: TypeLoc::new(return_loc, return_type.typ.clone()),
             parameters,
             has_this: false,
             is_unsafe: function.is_unsafe,
@@ -1051,75 +1010,27 @@ impl Module {
         }
         errors
     }
-}
-
-#[derive(Debug)]
-pub struct TypeChecker<'flags> {
-    module_tree: Option<Module>,
-    module_stack: Vec<String>,
-    import_stack: Vec<Vec<Vec<String>>>,
-    known_variables: VecDeque<HashMap<String, Variable>>,
-    unsafe_depth: usize,
-    #[cfg(feature = "old_codegen")]
-    current_stack_size: usize,
-    errors: Vec<TypeError>,
-    flags: &'flags Flags,
-}
-
-impl<'flags> TypeChecker<'flags> {
-    #[trace_call(extra)]
-    pub fn new(flags: &'flags Flags) -> Self {
-        Self {
-            module_tree: None,
-            module_stack: Vec::new(),
-            import_stack: Vec::new(),
-            known_variables: VecDeque::new(),
-            unsafe_depth: 0,
-            #[cfg(feature = "old_codegen")]
-            current_stack_size: 0,
-            errors: Vec::new(),
-            flags,
-        }
-    }
 
     #[trace_call(always)]
-    fn get_full_name(&self, struct_name: &str) -> String {
-        let module_name = self.module_stack.join(".");
-        format!("{}.{}", module_name, struct_name)
-    }
-
-    #[trace_call(always)]
-    fn fill_lookup(&mut self, project: &nodes::ModuleNode, root: bool) -> Module {
-        if !root {
-            self.module_stack.push(project.name.clone());
-        }
-        let mut module = Module::new(project.name.clone());
-        for sub_module in &project.modules {
-            let m = self.fill_lookup(sub_module, false);
-            module.add_module(m);
-        }
+    fn fill_lookup(&mut self, project: &nodes::FileNode) {
         for extern_node in &project.externs {
-            let extern_errors = module.add_extern(self, extern_node);
+            let extern_errors = self.add_extern(extern_node);
             for error in extern_errors {
                 self.report_error(error);
             }
         }
         for strukt in &project.structs {
-            let struct_errors = module.add_struct(self, strukt);
+            let struct_errors = self.add_struct(strukt);
             for error in struct_errors {
                 self.report_error(error);
             }
         }
         for func in &project.functions {
-            let func_errors = module.add_function(self, func);
+            let func_errors = self.add_function(func);
             for error in func_errors {
                 self.report_error(error);
             }
         }
-        if !root {
-            self.module_stack.pop();
-        }
-        module
     }
 
     #[trace_call(always)]
@@ -1164,73 +1075,6 @@ impl<'flags> TypeChecker<'flags> {
         None
     }
 
-    #[trace_call(extra)]
-    fn get_module(&self, name: &str) -> Option<&Module> {
-        self.module_tree.as_ref().unwrap().get_sub_module(name)
-    }
-
-    #[trace_call(always)]
-    fn get_current_module(&self) -> &Module {
-        let mut module = self.module_tree.as_ref().unwrap();
-        for name in &self.module_stack {
-            module = module.get_sub_module(name).unwrap();
-        }
-        module
-    }
-
-    #[trace_call(always)]
-    fn resolve_module<'a>(&'a self, trace: &'a[String]) -> Option<(&Module, Vec<String>)> {
-        let mut current: &Module = self.module_tree.as_ref().unwrap();
-        let mut path = vec![];
-        for s in trace {
-            if let Some(sub_module) = current.get_sub_module(s) {
-                path.push(s.clone());
-                current = sub_module;
-            } else {
-                return None;
-            }
-        }
-        path.reverse();
-        Some((current, path))
-    }
-
-    #[trace_call(always)]
-    fn gather_struct_info(
-        &mut self,
-        module: &nodes::ModuleNode,
-        root_module: bool
-    ) -> BTreeMap<String, StructInfo> {
-        if !root_module {
-            self.module_stack.push(module.name.clone());
-        }
-        let mut struct_info = BTreeMap::new();
-        for modu in &module.modules {
-            let info = self.gather_struct_info(modu, false);
-            struct_info.extend(info);
-        }
-        let module = self.get_current_module();
-        for strukt in &module.structs {
-            let real_name = self.get_full_name(&strukt.name);
-            let mut field_types = BTreeMap::new();
-            for (name, typ) in &strukt.fields {
-                let type_name = match &typ.t {
-                    Type::Struct(strukt_name, _) => self.get_full_name(strukt_name),
-                    typ => typ.to_string(),
-                };
-                field_types.insert(name.clone(), (typ.l.clone(), type_name));
-            }
-            let info = StructInfo {
-                location: strukt.location.clone(),
-                fields: field_types,
-            };
-            struct_info.insert(real_name, info);
-        }
-        if !root_module {
-            self.module_stack.pop();
-        }
-        struct_info
-    }
-
     fn dfs(strukt: &String, lookup: &BTreeMap<String, BTreeSet<String>>, visited: &mut Vec<String>, finished: &mut BTreeSet<String>) -> bool {
         if finished.contains(strukt) {
             return false;
@@ -1250,7 +1094,7 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn find_recursive_structs(&mut self, current_module: &nodes::ModuleNode) {
+    fn find_recursive_structs(&mut self, current_module: &nodes::FileNode) {
         /*
         Adapted version of https://en.wikipedia.org/wiki/Cycle_(graph_theory)#Algorithm
         Key difference is that we also keep track of where we went, for better error reporting
@@ -1311,13 +1155,11 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    pub fn type_check_project(&mut self, project: &mut nodes::ModuleNode) -> Result<(), String> {
+    pub fn type_check_project(&mut self, project: &mut nodes::FileNode) -> Result<(), String> {
         macro_rules! perform_step {
             ($step:expr) => {
                 {
-                    debug_assert!(self.module_stack.is_empty());
                     let res = $step;
-                    debug_assert!(self.module_stack.is_empty());
                     if self.errors.len() > 0 {
                         let mut error_string = String::new();
                         for error in &self.errors {
@@ -1329,71 +1171,14 @@ impl<'flags> TypeChecker<'flags> {
                 }
             }
         }
-        let root_module = perform_step!(self.fill_lookup(project, true));
-        self.module_tree = Some(root_module);
-        perform_step!(self.type_check_module(project, true));
+        perform_step!(self.fill_lookup(project));
+        perform_step!(self.type_check_file(project));
         perform_step!(self.find_recursive_structs(project));
         Ok(())
     }
 
     #[trace_call(always)]
-    fn type_check_module(&mut self, module: &mut nodes::ModuleNode, root_module: bool) {
-        if !root_module {
-            self.module_stack.push(module.name.clone());
-            let mut import_errors = Vec::new();
-            let mut allowed_imports: Vec<Vec<(String, Location)>> = Vec::new();
-            for import in &module.imports {
-                let trace = import.trace.clone();
-                let mut module = self.module_tree.as_ref().unwrap();
-                let mut error = false;
-                for (name, location) in &trace {
-                    match module.get_sub_module(name) {
-                        None => {
-                            error = true;
-                            import_errors.push(TypeError::UnknownModule(location.clone(), name.clone()));
-                            break;
-                        }
-                        Some(m) => module = m,
-                    }
-                }
-                if !error {
-                    for imported in &allowed_imports {
-                        if imported.len() == trace.len() {
-                            let mut equal = true;
-                            for (i, (name, _)) in imported.iter().enumerate() {
-                                if name != &trace[i].0 {
-                                    equal = false;
-                                    break;
-                                }
-                            }
-                            if equal {
-                                println!("{}: {:?}: Module already imported.\n{}: {:?}: Here.", WARN_STR, trace[0].1.clone(), NOTE_STR, imported[0].1.clone());
-                                break;
-                            }
-                        }
-
-                    }
-                    allowed_imports.push(trace);
-                }
-            }
-            for error in import_errors {
-                self.report_error(error);
-            }
-            let mut v = vec![];
-            for imp in allowed_imports {
-                let mut v1 = vec![];
-                for (s, _) in imp {
-                    v1.push(s);
-                }
-                v.push(v1);
-            }
-            self.import_stack.push(v);
-        } else {
-            debug_assert!(module.imports.is_empty());
-        }
-        for module in &mut module.modules {
-            self.type_check_module(module, false);
-        }
+    fn type_check_file(&mut self, module: &mut nodes::FileNode) {
         for extern_node in &mut module.externs {
             self.type_check_extern(extern_node);
         }
@@ -1402,10 +1187,6 @@ impl<'flags> TypeChecker<'flags> {
         }
         for f in &mut module.functions {
             self.type_check_function(f);
-        }
-        if !root_module {
-            self.module_stack.pop();
-            self.import_stack.pop();
         }
     }
 
@@ -1438,9 +1219,8 @@ impl<'flags> TypeChecker<'flags> {
 
     #[trace_call(always)]
     fn type_check_method(&mut self, method: &mut nodes::MethodNode, struct_name: &str) {
-        let current_module = self.get_current_module();
         debug_assert!(self.known_variables.is_empty());
-        debug_assert!(current_module.has_struct(&struct_name));
+        debug_assert!(self.has_struct(&struct_name));
         #[cfg(feature = "old_codegen")]
         debug_assert!(self.current_stack_size == 0);
 
@@ -1448,8 +1228,7 @@ impl<'flags> TypeChecker<'flags> {
             self.type_check_parameter(param);
         }
 
-        let current_module = self.get_current_module();
-        let Some(struct_info) = current_module.get_struct(&struct_name) else {
+        let Some(struct_info) = self.get_struct(&struct_name) else {
             // Lookup of structs and methods is done before ever evaluating any methods,
             // so known_structs should always contain the struct
             unreachable!()
@@ -1478,9 +1257,8 @@ impl<'flags> TypeChecker<'flags> {
 
     #[trace_call(always)]
     fn type_check_function(&mut self, function: &mut nodes::FunctionNode) {
-        let current_module = self.get_current_module();
         debug_assert!(self.known_variables.is_empty());
-        debug_assert!(current_module.has_function(&function.name));
+        debug_assert!(self.has_function(&function.name));
         #[cfg(feature = "old_codegen")]
         debug_assert!(self.current_stack_size == 0);
 
@@ -1488,7 +1266,7 @@ impl<'flags> TypeChecker<'flags> {
             self.type_check_parameter(param);
         }
 
-        let function_info = self.get_current_module().get_function(&function.name).unwrap();
+        let function_info = self.get_function(&function.name).unwrap();
 
         // Parameters are now known variables
         let parameters = function_info.get_parameters_as_hashmap();
@@ -1566,7 +1344,7 @@ impl<'flags> TypeChecker<'flags> {
                 let var = Variable {
                     name: let_node.name.clone(),
                     location: let_node.location,
-                    typ: self.unwrap_type_node_typ(&let_node.typ),
+                    typ: let_node.typ.typ.clone(),
                     mut_state: MutState::mutable(let_node.is_mutable, let_node.typ.typ.is_mutable_ref()),
                 };
 
@@ -1632,7 +1410,7 @@ impl<'flags> TypeChecker<'flags> {
 
         let (expected_return_type, location) = if return_node.strukt.is_none() {
             // We're returning from a normal function
-            let Some(function) = self.get_current_module().get_function(&return_node.function) else {
+            let Some(function) = self.get_function(&return_node.function) else {
                 unreachable!()
             };
             let expected_return_type = function.return_type.t.clone();
@@ -1641,7 +1419,7 @@ impl<'flags> TypeChecker<'flags> {
             (expected_return_type, location)
         } else {
             // We're returning from a method or feature
-            let Some(strukt) = self.get_current_module().get_struct(return_node.strukt.as_ref().unwrap()) else { unreachable!() };
+            let Some(strukt) = self.get_struct(return_node.strukt.as_ref().unwrap()) else { unreachable!() };
             let (mut location, mut expected_return_type) = (Location::anonymous(), Type::Unknown);
             if let Some(method) = strukt.known_methods.get(&return_node.function) {
                 expected_return_type = method.return_type.t.clone();
@@ -1794,7 +1572,7 @@ impl<'flags> TypeChecker<'flags> {
                         lit_node.value.clone(),
                     ));
                     Err(())
-                } else if let Type::Struct(_, _) = typ {
+                } else if let Type::Struct(_) = typ {
                     self.report_error(TypeError::UnexpectedLiteral(
                         "struct instance",
                         lit_node.location,
@@ -2439,19 +2217,11 @@ impl<'flags> TypeChecker<'flags> {
         let lhs_type = self.type_check_expression(&mut binary_expr.lhs, mut_state)?;
         let (is_ref, strukt) = match &lhs_type {
             Type::Ref(orig_type, _) => {
-                let Type::Struct(ref struct_name, ref module_path) = **orig_type else {
+                let Type::Struct(ref struct_name) = **orig_type else {
                     self.report_error(TypeError::DotOnNonStruct(binary_expr.lhs.get_loc()));
                     return Err(());
                 };
-                let module = if let Some(module_spec) = module_path {
-                    let Some(module) = self.resolve_module_specifier(module_spec) else {
-                        todo!() // Error, probably from the Compiler
-                    };
-                    module
-                } else {
-                    self.get_current_module()
-                };
-                let Some(strukt) = module.get_struct(struct_name) else {
+                let Some(strukt) = self.get_struct(struct_name) else {
                     self.report_error(TypeError::UnknownType(
                         binary_expr.lhs.get_loc(),
                         (**orig_type).clone()
@@ -2460,16 +2230,8 @@ impl<'flags> TypeChecker<'flags> {
                 };
                 (true, strukt)
             }
-            ref struct_type @ Type::Struct(ref struct_name, module_path) => {
-                let module = if let Some(module_spec) = module_path {
-                    let Some(module) = self.resolve_module_specifier(module_spec) else {
-                        todo!() // Error, probably from the Compiler
-                    };
-                    module
-                } else {
-                    self.get_current_module()
-                };
-                let Some(strukt) = module.get_struct(struct_name) else {
+            ref struct_type @ Type::Struct(ref struct_name) => {
+                let Some(strukt) = self.get_struct(struct_name) else {
                     self.report_error(TypeError::UnknownType(
                         binary_expr.lhs.get_loc(),
                         (*struct_type).clone()
@@ -2549,7 +2311,6 @@ impl<'flags> TypeChecker<'flags> {
                 } else {
                     check_function!(self, call_node, method, "Method")?
                 };
-                call_node.module_path = method.module_path.clone();
                 binary_expr.typ = result.clone();
                 Ok(result)
             }
@@ -2596,61 +2357,6 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn rebuild_module_from_stack(&self, location: &Location, module_stack: &Vec<String>) -> Result<&Module, TypeError> {
-        let Some(mut module) = self.get_module(&module_stack[0]) else {
-            return Err(TypeError::UnknownModule(
-                location.clone(),
-                module_stack[0].clone()
-            ));
-        };
-        for module_name in module_stack.iter().skip(1) {
-            if let Some(sub_module) = module.get_sub_module(module_name) {
-                module = sub_module;
-            } else {
-                return Err(TypeError::UnknownModule(
-                    location.clone(),
-                    module_name.clone()
-                ));
-            }
-        }
-        Ok(module)
-    }
-
-    #[trace_call(always)]
-    fn type_check_expr_module_function_call(
-        &mut self,
-        call_node: &mut nodes::CallNode,
-        module_stack: &mut Vec<String>,
-        mut_state: MutStateVal,
-    ) -> Result<Type, ()> {
-        if mut_state != MutState::Immut {
-            self.report_error(TypeError::CantMutateTemporary(call_node.location.clone()));
-        }
-        let Ok(module) = self.rebuild_module_from_stack(&call_node.location, module_stack) else {
-            self.report_error(TypeError::UnknownModule(
-                call_node.location.clone(),
-                module_stack.join("::")
-            ));
-            return Err(());
-        };
-        if let Some(external) = module.get_extern(&call_node.function_name) {
-            let result = check_function!(self, call_node, external, "External Function")?;
-            call_node.typ = result.clone();
-            Ok(result)
-        } else if let Some(function) = module.get_function(&call_node.function_name) {
-            let result = check_function!(self, call_node, function, "Function")?;
-            call_node.typ = result.clone();
-            Ok(result)
-        } else {
-            self.report_error(TypeError::UndeclaredFunction(
-                call_node.location.clone(),
-                call_node.function_name.clone()
-            ));
-            Err(())
-        }
-    }
-
-    #[trace_call(always)]
     fn type_check_expr_literal(&mut self, literal: &mut nodes::LiteralNode) -> Result<Type, ()> {
         Ok(literal.typ.clone())
     }
@@ -2664,30 +2370,16 @@ impl<'flags> TypeChecker<'flags> {
         if mut_state != MutState::Immut {
             self.report_error(TypeError::CantMutateTemporary(literal.location));
         }
-        let (strukt, module_path) = if let Some(module_path) = &literal.module_path {
-            let Some(module) = self.resolve_module_specifier(module_path) else {
-                todo!() // Error
-            };
-            let Some(strukt) = module.get_struct(&literal.struct_name) else {
-                todo!() // Error
-            };
-            // REVIEW: All should be clear here? Nothing else to do?
-            (strukt, module_path.clone())
-        } else {
-            let Some((strukt, path)) = self.resolve_struct(&literal.struct_name) else {
-                self.report_error(TypeError::UnknownType(
-                    literal.location,
-                    Type::Struct(literal.struct_name.clone(), None),
-                ));
-                return Err(());
-            };
-            let module_spec = nodes::ModuleSpecifier::from_resolved(&path);
-            literal.module_path = Some(Box::new(module_spec.clone()));
-            (strukt, Box::new(module_spec))
+        let Some(strukt) = self.get_struct(&literal.struct_name) else {
+            self.report_error(TypeError::UnknownType(
+                literal.location,
+                Type::Struct(literal.struct_name.clone()),
+            ));
+            return Err(());
         };
         let strukt = strukt.clone();
         self.type_check_struct_literal_fields(literal, &strukt)?;
-        literal.typ = Type::Struct(literal.struct_name.clone(), Some(module_path));
+        literal.typ = Type::Struct(literal.struct_name.clone());
         Ok(literal.typ.clone())
     }
 
@@ -2815,81 +2507,6 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn resolve_function(
-        &self,
-        func_name: &str,
-    ) -> Result<(&Function, Vec<String>), ()> {
-        let current_module: &Module = self.get_current_module();
-        if let Some(func) = current_module.get_function(func_name) {
-            if self.flags.debug {
-                println!("[DEBUG] `{func_name}` is a function defined in this file.");
-            }
-            return Ok((func, self.module_stack.clone()))
-        } else if let Some(ext) = current_module.get_extern(func_name) {
-            if self.flags.debug {
-                println!("[DEBUG] `{func_name}` is an extern defined in this file.");
-            }
-            return Ok((ext, self.module_stack.clone()))
-        }
-        for stack in &self.import_stack {
-            for import in stack {
-                if let Some((module, mod_path)) = self.resolve_module(import) {
-                    if let Some(func) = module.get_function(func_name) {
-                        if self.flags.debug {
-                            println!("[DEBUG] `{func_name}` is a function defined in module `{0}`.", mod_path.join("."));
-                        }
-                        return Ok((func, mod_path))
-                    } else if let Some(ext) = module.get_extern(func_name) {
-                        if self.flags.debug {
-                            println!("[DEBUG] `{func_name}` is an extern defined in module `{0}`.", mod_path.join("."));
-                        }
-                        return Ok((ext, mod_path))
-                    }
-                }
-            }
-        }
-        Err(())
-    }
-
-    #[trace_call(always)]
-    fn resolve_struct(
-        &self,
-        struct_name: &str
-    ) -> Option<(&Struct, Vec<String>)> {
-        // REVIEW: We want relative to root
-        let current_module: &Module = self.get_current_module();
-        if let Some(strukt) = current_module.get_struct(struct_name) {
-            if self.flags.debug {
-                println!("[DEBUG] `{struct_name}` is a struct defined in this file.");
-            }
-            return Some((strukt, self.module_stack.clone()))
-        }
-        for stack in &self.import_stack {
-            for import in stack {
-                if let Some((module, mod_path)) = self.resolve_module(import) {
-                    if let Some(strukt) = module.get_struct(struct_name) {
-                        if self.flags.debug {
-                            println!("[DEBUG] `{struct_name}` is a struct defined in module `{0}`.", module.name);
-                        }
-                        return Some((strukt, mod_path))
-                    }
-                }
-            }
-        }
-        None
-    }
-
-    #[trace_call(always)]
-    fn resolve_module_specifier(&self, module_spec: &nodes::ModuleSpecifier) -> Option<&Module> {
-        if let Some(sub_module) = &module_spec.sub_module {
-            let module = self.resolve_module_specifier(sub_module)?;
-            module.get_sub_module(&module_spec.name)
-        } else {
-            self.get_module(&module_spec.name)
-        }
-    }
-
-    #[trace_call(always)]
     fn type_check_expr_function_call(
         &mut self,
         func_call: &mut nodes::CallNode,
@@ -2900,47 +2517,19 @@ impl<'flags> TypeChecker<'flags> {
                 func_call.location,
             ));
         }
-        let (function, mod_path) = if let Some(specified_path) = &func_call.module_path {
-            let Some(module) = self.resolve_module_specifier(specified_path) else {
-                self.report_error(TypeError::UnknownModuleSpecifier(
-                    func_call.location.clone(),
-                    *specified_path.clone()
-                ));
-                return Err(());
-            };
-            let function = if module.is_function(&func_call.function_name) {
-                let Some(function) = module.get_function(&func_call.function_name) else {
-                    todo!() // Error
-                };
-                function
-            } else if module.is_extern(&func_call.function_name) {
-                let Some(external) = module.get_extern(&func_call.function_name) else {
-                    todo!() // Error
-                };
-                external
-            } else {
-                todo!() // Error
-            };
-            (function, specified_path.to_path())
+        let function;
+        if let Some(e) = self.get_extern(&func_call.function_name) {
+            function = e;
+        } else if let Some(f) = self.get_function(&func_call.function_name) {
+            function = f;
         } else {
-            let Ok((func, modp)) = self.resolve_function(&func_call.function_name) else {
-                self.report_error(TypeError::UndeclaredFunction(
-                    func_call.location.clone(),
-                    func_call.function_name.clone()
-                ));
-                return Err(());
-            };
-            (func, modp)
-        };
-        func_call.is_extern = function.is_extern;
-        let mut module_path = None;
-        for sub_mod in mod_path.iter().rev() {
-            module_path = Some(Box::new(nodes::ModuleSpecifier {
-                name: sub_mod.clone(),
-                sub_module: module_path
-            }));
+            self.report_error(TypeError::UndeclaredFunction(
+                func_call.location,
+                func_call.function_name.clone()
+            ));
+            return Err(());
         }
-        func_call.module_path = module_path;
+        func_call.is_extern = function.is_extern;
         if function.is_unsafe && self.unsafe_depth == 0 {
             self.report_error(TypeError::UnsafeCallInSafeContext(
                 "Function",
@@ -2951,8 +2540,8 @@ impl<'flags> TypeChecker<'flags> {
             return Err(());
         }
         let return_type = function.return_type.clone();
-        if let Type::Struct(struct_name, _) = &return_type.t {
-            if self.resolve_struct(struct_name).is_none() {
+        if let Type::Struct(struct_name) = &return_type.t {
+            if self.get_struct(struct_name).is_none() {
                 self.report_error(TypeError::UnknownType(
                     return_type.l.clone(),
                     return_type.t.clone(),
@@ -2966,85 +2555,34 @@ impl<'flags> TypeChecker<'flags> {
     #[trace_call(always)]
     fn type_check_type_node(&mut self, type_node: &mut nodes::TypeNode) {
         let mut bottom_type = &mut type_node.typ;
-        debug_assert!(self.module_tree.is_some());
         match bottom_type {
-            Type::Struct(name, path) => {
-                if let Some(module_spec) = &path {
-                    let Some(module) = self.resolve_module_specifier(module_spec) else {
-                        self.report_error(TypeError::UnknownModuleSpecifier(
-                            type_node.location,
-                            *module_spec.clone()
-                        ));
-                        return;
-                    };
-                    if !module.has_struct(name) {
-                        todo!() // Error
-                    }
-                    // REVIEW: All should be clear here? Nothing else to do?
-                } else {
-                    let Some((_strukt, path)) = self.resolve_struct(name) else {
+            Type::Struct(name) => {
+                if !self.has_struct(name) {
+                    self.report_error(TypeError::UnknownType(
+                        type_node.location,
+                        bottom_type.clone(),
+                    ));
+                    return;
+                }
+                type_node.typ = Type::Struct(name.to_string());
+            },
+            ref mut typ @ Type::Array(..)
+            | ref mut typ @ Type::Ref(..) => {
+                let underlying = typ.get_underlying_type_ref_mut();
+                if let Type::Struct(name) = underlying {
+                    if !self.has_struct(name) {
                         self.report_error(TypeError::UnknownType(
                             type_node.location,
                             bottom_type.clone(),
                         ));
                         return;
-                    };
-                    type_node.module_path = Some(Box::new(nodes::ModuleSpecifier::from_resolved(&path)));
-                    type_node.typ = Type::Struct(name.to_string(), Some(Box::new(nodes::ModuleSpecifier::from_resolved(&path))));
-                }
-            },
-            ref mut typ @ Type::Array(..)
-            | ref mut typ @ Type::Ref(..) => {
-                let underlying = typ.get_underlying_type_ref_mut();
-                if let Type::Struct(name, path) = underlying {
-                    if let Some(module_spec) = &path {
-                        let Some(module) = self.resolve_module_specifier(module_spec) else {
-                            self.report_error(TypeError::UnknownModuleSpecifier(
-                                type_node.location,
-                                *module_spec.clone()
-                            ));
-                            return;
-                        };
-                        if !module.has_struct(name) {
-                            todo!() // Error
-                        }
-                        // REVIEW: All should be clear here? Nothing else to do?
-                    } else {
-                        let Some((_strukt, path)) = self.resolve_struct(name) else {
-                            self.report_error(TypeError::UnknownType(
-                                type_node.location,
-                                bottom_type.clone(),
-                            ));
-                            return;
-                        };
-                        *underlying = Type::Struct(name.to_string(), Some(Box::new(nodes::ModuleSpecifier::from_resolved(&path))));
                     }
+                    *underlying = Type::Struct(name.to_string());
                 }
             },
             t => {
                 debug_assert!(!t.is_compound(), "{t}");
             }
-        }
-    }
-
-    #[trace_call(always)]
-    fn unwrap_type_node_typ(&self, param_typ: &nodes::TypeNode) -> Type {
-        let module_path = if param_typ.module_path.is_some() {
-            param_typ.module_path.clone()
-        } else {
-            Some(Box::new(nodes::ModuleSpecifier::from_resolved(&self.module_stack)))
-        };
-        if let Type::Struct(name, _path) = &param_typ.typ {
-            Type::Struct(name.clone(), module_path)
-        } else if let Type::Ref(..) = &param_typ.typ {
-            let mut under = param_typ.typ.clone();
-            let underlying = under.get_underlying_type_ref_mut();
-            if let Type::Struct(name, _) = underlying {
-                *underlying = Type::Struct(name.clone(), module_path)
-            }
-            under.clone()
-        } else {
-            param_typ.typ.clone()
         }
     }
 }

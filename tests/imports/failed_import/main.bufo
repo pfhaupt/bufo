@@ -3,12 +3,12 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Unknown module `other`.
+//! Unknown type `Foo`.
 
-// Missing `import other;`
+// Missing `import "./other.bufo";`
 
 struct Bar {
-    field: other::Foo;
+    field: Foo;
 }
 
 func main() -> i32 {

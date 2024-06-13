@@ -3,11 +3,9 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Type mismatch in binary expression! Operation `incompatible_operands::Test + incompatible_operands::Test` is not defined.
-//! LHS has type `incompatible_operands::Test`.
-//! RHS has type `incompatible_operands::Test`.
-
-// FIXME: Should errors always print the fully specified type?
+//! Type mismatch in binary expression! Operation `Test + Test` is not defined.
+//! LHS has type `Test`.
+//! RHS has type `Test`.
 
 struct Test {
     a: i64;
