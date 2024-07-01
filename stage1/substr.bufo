@@ -1,6 +1,6 @@
 
 struct SubStr {
-    start: &str;
+    start: &char;
     len: usize;
 
     func equals(&this, other: &SubStr) -> bool {
@@ -47,7 +47,7 @@ struct SubStr {
     }
 }
 
-func newSubStr(orig: &str, start: usize, end: usize) -> SubStr {
+func newSubStr(orig: &char, start: usize, end: usize) -> SubStr {
     unsafe {
         return SubStr {
             start: orig + start,
@@ -58,7 +58,7 @@ func newSubStr(orig: &str, start: usize, end: usize) -> SubStr {
 func newSubStrOfString(orig: &String, start: usize, end: usize) -> SubStr {
     unsafe {
         let _bfr: Any = orig.buffer;
-        let _cbfr: &str = _bfr;
+        let _cbfr: &char = _bfr;
         return SubStr {
             start: _cbfr + start,
             len: end - start,
@@ -67,7 +67,7 @@ func newSubStrOfString(orig: &String, start: usize, end: usize) -> SubStr {
 }
 func defaultSubStr() -> SubStr {
     unsafe {
-        let s: &str = "You are not supposed to read this. Please issue a bug report.";
+        let s: &char = "You are not supposed to read this. Please issue a bug report.";
         let l: usize = strlen(s);
         return newSubStr(s, 0, l);
     }

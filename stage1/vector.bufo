@@ -13,7 +13,7 @@ func VECTOR_KIND_MODULE() -> usize { return 9; }
 func VECTOR_KIND_TYPE_DEF() -> usize { return 10; }
 func VECTOR_KIND_PAIR_STRING_EXPR() -> usize { return 11; }
 
-func vecKindToString(kind: usize) -> &str {
+func vecKindToString(kind: usize) -> &char {
     if (kind == VECTOR_KIND_TYPE()) return "VECTOR_KIND_TYPE";
     else if (kind == VECTOR_KIND_STMT()) return "VECTOR_KIND_STMT";
     else if (kind == VECTOR_KIND_FUNC_PARAM()) return "VECTOR_KIND_FUNC_PARAM";

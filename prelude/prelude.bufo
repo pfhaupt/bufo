@@ -6,11 +6,11 @@
 // Intrinsics
 // They are safe because we can directly define their behavior
 extern GLOBAL_GET_ARGC() -> usize;
-extern GLOBAL_GET_ARGV() -> &&str;
+extern GLOBAL_GET_ARGV() -> &&char;
 
 // Strings
-unsafe extern strlen(string: &str) -> usize;
-unsafe extern strcmp(s1: &str, s2: &str) -> usize;
+unsafe extern strlen(string: &char) -> usize;
+unsafe extern strcmp(s1: &char, s2: &char) -> i32;
 
 // Memory
 // TODO: IMPORTANT: Some way to do null checks
@@ -23,20 +23,20 @@ unsafe extern memcpy(dest: Any, src: Any, count: usize) -> Any;
 unsafe func isNull(ptr: Any) -> bool {
     let bfr: [char; 20] = ['\0'; 20];
     let _a: Any = &bfr;
-    let _s: &str = _a;
+    let _s: &char = _a;
     snprintf(&bfr, 17, "%p", ptr);
-    let win: usize = strcmp(_s, "0000000000000000");
+    let win: i32 = strcmp(_s, "0000000000000000");
     if (win == 0) return true;
-    let posix: usize = strcmp(_s, "(nil)");
+    let posix: i32 = strcmp(_s, "(nil)");
     return posix == 0;
 }
 
 // File IO
-unsafe extern fopen(filename: &str, mode: &str) -> Any;
+unsafe extern fopen(filename: &char, mode: &char) -> Any;
 // FIXME: Any ignores Mutability :^) We should probably only write to mutable buffers tho...
 unsafe extern fread(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
 unsafe extern fclose(stream: Any) -> i32;
-unsafe extern fprintf(stream: Any, msg: &str, ...);
+unsafe extern fprintf(stream: Any, msg: &char, ...);
 
 unsafe func NULL() -> Any {
     // FIXME: This is cursed
@@ -45,17 +45,17 @@ unsafe func NULL() -> Any {
     return p;
 }
 
-unsafe extern snprintf(buffer: Any, size: usize, format: &str, ...) -> usize;
+unsafe extern snprintf(buffer: Any, size: usize, format: &char, ...) -> usize;
 
 // Console IO
-unsafe extern printf(msg: &str, ...) -> usize;
-unsafe extern fdopen(fd: i32, mode: &str) -> Any;
+unsafe extern printf(msg: &char, ...) -> usize;
+unsafe extern fdopen(fd: i32, mode: &char) -> Any;
 unsafe extern putchar(ch: char) -> char;
-unsafe extern puts(s: &str) -> usize;
+unsafe extern puts(s: &char) -> usize;
 
 unsafe extern exit(code: i32);
 
-unsafe func getChar(s: &str, index: usize) -> char {
+unsafe func getChar(s: &char, index: usize) -> char {
     let _idk: Any = s;
     let _ch: &char = _idk;
     let c: char = *(_ch + index);
@@ -89,7 +89,7 @@ func isAlphanumeric(ch: char) -> bool {
 }
 
 // Internal Runtime Errors
-func index_oob(msg: &str, index: i64) {
+func index_oob(msg: &char, index: i64) {
     unsafe {
         let stderr: Any = fdopen(2, "w");
         fprintf(stderr, msg, index);
@@ -107,7 +107,7 @@ func assert(cond: bool) {
     }
 }
 
-func assert_with_msg(cond: bool, msg: &str) {
+func assert_with_msg(cond: bool, msg: &char) {
     unsafe {
         if (!cond) {
             let stderr: Any = fdopen(2, "w");
@@ -117,7 +117,7 @@ func assert_with_msg(cond: bool, msg: &str) {
     }
 }
 
-func todo_with_msg(msg: &str) {
+func todo_with_msg(msg: &char) {
     unsafe {
         let stderr: Any = fdopen(2, "w");
         fprintf(stderr, "TODO: %s\n", msg);

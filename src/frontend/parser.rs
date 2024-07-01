@@ -860,7 +860,6 @@ impl<'flags> Parser<'flags> {
             "bool" => Type::Bool,
             "char" => Type::Char,
             "Any" => Type::Any,
-            "str" => Type::Str,
             // Reserved for future use
             "f32" => Type::F32,
             "f64" => Type::F64,
@@ -2257,7 +2256,7 @@ impl<'flags> Parser<'flags> {
         Ok(nodes::LiteralNode {
             location,
             value: str_token.value,
-            typ: Type::Ref(Box::new(Type::Str), false),
+            typ: Type::Ref(Box::new(Type::Char), false),
         })
     }
 

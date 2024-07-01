@@ -1,6 +1,5 @@
 import "substr.bufo";
 import "vector.bufo";
-
 struct Span {
     start: usize;
     end: usize;
@@ -395,7 +394,7 @@ func EXPR_KIND_NUM_LIT() -> usize { return 1; }
 func EXPR_KIND_IDENT() -> usize { return 2; }
 func EXPR_KIND_BINARY() -> usize { return 3; }
 func EXPR_KIND_STRUCT_LIT() -> usize { return 4; }
-func exprKindToString(kind: usize) -> &str {
+func exprKindToString(kind: usize) -> &char {
     if (kind == EXPR_INVALID()) return "invalid expression";
     else if (kind == EXPR_KIND_NUM_LIT()) return "number literal";
     else if (kind == EXPR_KIND_IDENT()) return "identifier";
@@ -620,7 +619,7 @@ func TOKEN_AMPERSAND() -> usize { return 14; }
 func TOKEN_COMMA() -> usize { return 15; }
 func TOKEN_ARROW() -> usize { return 16; }
 func TOKEN_PLUS_SINGLE() -> usize { return 17; }
-func tokenKindToString(kind: usize) -> &str {
+func tokenKindToString(kind: usize) -> &char {
     if (kind == TOKEN_EOF()) return "end of file";
     else if (kind == TOKEN_IDENT()) return "identifier";
     else if (kind == TOKEN_KEYWORD()) return "keyword";
@@ -682,7 +681,7 @@ func defaultToken() -> Token {
     };
 }
 
-func BUILD_A_KEYWORD(s: &str) -> SubStr { unsafe { return newSubStr(s, 0, strlen(s)); }}
+func BUILD_A_KEYWORD(s: &char) -> SubStr { unsafe { return newSubStr(s, 0, strlen(s)); }}
 func KEYWORD_FUNC() -> SubStr { return BUILD_A_KEYWORD("func"); }
 func KEYWORD_LET() -> SubStr { return BUILD_A_KEYWORD("let"); }
 func KEYWORD_STRUCT() -> SubStr { return BUILD_A_KEYWORD("struct"); }
@@ -1002,7 +1001,7 @@ struct Parser {
         } else unsafe {
             let stderr: Any = fdopen(2, "w");
             let loc: Span = tkn.getSpan();
-            let what: &str = tokenKindToString(tkn.kind);
+            let what: &char = tokenKindToString(tkn.kind);
             fprintf(stderr, "%s: error: Expected identifier, found %s.\n", loc.toString().buffer, what);
             exit(1);
         }
@@ -1323,7 +1322,7 @@ struct String {
     func substring(&this, start: usize, end: usize) -> SubStr {
         unsafe {
             let _m: Any = this.buffer;
-            let _s: &str = _m;
+            let _s: &char = _m;
             return SubStr {
                 start: _s + start,
                 len: end - start
@@ -1371,7 +1370,7 @@ func newString() -> String {
     }
 }
 
-func readFileToString(path: &str) -> String {
+func readFileToString(path: &char) -> String {
     mut s: String = newString();
     unsafe {
         // `b` needed because otherwise `\r` would be dropped, leading to wrong Spans
@@ -1394,8 +1393,8 @@ func readFileToString(path: &str) -> String {
     return s;
 }
 
-func getArg(argv: &&str, argc: usize) -> &str {
-    unsafe { return *(argv + sizeof &str * argc); }
+func getArg(argv: &&char, argc: usize) -> &char {
+    unsafe { return *(argv + sizeof &char * argc); }
 }
 
 struct Checker {
@@ -1412,15 +1411,15 @@ func newChecker(mod: &mut Module) -> Checker {
 }
 
 unsafe func main() {
-    let argv: &&str = GLOBAL_GET_ARGV();
+    let argv: &&char = GLOBAL_GET_ARGV();
     let argc: usize = GLOBAL_GET_ARGC();
     if (argc < 2) unsafe {
         let stderr: Any = fdopen(2, "w");
         fprintf(stderr, "error: Expected input file as argument.\n");
         exit(1);
     }
-    let _prog: &str = getArg(argv, 0);
-    let file: &str = getArg(argv, 1);
+    let _prog: &char = getArg(argv, 0);
+    let file: &char = getArg(argv, 1);
     let fileSubStr: SubStr = newSubStr(file, 0, strlen(file));
     let string: String = readFileToString(file);
     let sub: SubStr = newSubStrOfString(&string, 0, string.length);

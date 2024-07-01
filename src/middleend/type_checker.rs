@@ -551,7 +551,6 @@ pub enum Type {
     // TODO: More unit tests for references
     Ref(Box<Type>, bool), // bool is mutability
     Array(Box<Type>, usize),
-    Str,
     // Reserved for later use
     F32,
     F64,
@@ -571,7 +570,6 @@ impl PartialEq for Type {
             (Type::Usize, Type::Usize) => true,
             (Type::Bool, Type::Bool) => true,
             (Type::Char, Type::Char) => true,
-            (Type::Str, Type::Str) => true,
             (Type::F32, Type::F32) => true,
             (Type::F64, Type::F64) => true,
             (Type::Unknown, Type::Unknown) => true,
@@ -610,7 +608,6 @@ impl Type {
                 | Type::Char
                 | Type::F32
                 | Type::F64
-                | Type::Str
                 | Type::Any
         )
     }
