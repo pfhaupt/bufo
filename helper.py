@@ -127,9 +127,6 @@ def run_test(path: str, exec: bool) -> TestResult:
             os.remove("./out/" + filename + ".exe")
         # stdout = output.stdout.decode("utf-8").split('\n')
         stderr = output.stderr.decode("utf-8").split('\n')
-        if output.returncode == 101:
-            print(f"{PANIC} {path}", file=sys.stderr)
-            return TestResult(path, STATE.PANIC)
         if expected_mode == "FAILURE":
             if not compare(error_lines, stderr):
                 print(f"{FAIL} {path}", file=sys.stderr)
@@ -138,6 +135,9 @@ def run_test(path: str, exec: bool) -> TestResult:
                 print(f"{FAIL} {path}", file=sys.stderr)
                 return TestResult(path, STATE.FAILURE)
         elif expected_mode == "SUCCESS":
+            if output.returncode == 101:
+                print(f"{PANIC} {path}", file=sys.stderr)
+                return TestResult(path, STATE.PANIC)
             if output.returncode != expected_error_code:
                 print(f"{FAIL} {path}", file=sys.stderr)
                 return TestResult(path, STATE.FAILURE)

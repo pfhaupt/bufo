@@ -1,0 +1,24 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+func main() {
+    let s: &char = "Hello\n, World!\n";
+    unsafe {
+        let _len: usize = strlen(s);
+        assert(_len == 15);
+    }
+    let zero: &char = "\0";
+    unsafe {
+        let _len: usize = strlen(zero);
+        assert(_len == 0);
+    }
+    let tested: [&char; 4] = ["\t", "\n", "\\", "\r"];
+    for (mut index: usize = 0; index < 4; index = index + 1) {
+        let elem: &char = tested[index];
+        unsafe {
+            let _len: usize = strlen(elem);
+            assert(_len == 1);
+        }
+    }
+}

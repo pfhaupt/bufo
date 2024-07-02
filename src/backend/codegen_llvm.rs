@@ -1569,6 +1569,29 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
         }
     }
 
+    fn escape_string_or_char_value(&self, value: &str) -> String {
+        let mut new_value = Vec::new();
+        let mut escaping = false;
+        for ch in value.chars() {
+            if escaping {
+                match ch {
+                    '\\' => new_value.push('\\' as u8),
+                    '0' => new_value.push('\0' as u8),
+                    'r' => new_value.push('\r' as u8),
+                    'n' => new_value.push('\n' as u8),
+                    't' => new_value.push('\t' as u8),
+                    c =>internal_panic!("Can't escape character `{c}`.")
+                }
+                escaping = false;
+            } else if ch == '\\' {
+                escaping = true;
+            } else {
+                new_value.push(ch as u8);
+            }
+        }
+        String::from_utf8(new_value).unwrap()
+    }
+
     #[trace_call(always)]
     fn codegen_literal(&mut self, literal: &nodes::LiteralNode) -> Result<BasicValueEnum<'ctx>, BuilderError> {
         match &literal.typ {
@@ -1578,7 +1601,9 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
                 Ok(value.into())
             }
             Type::Char => {
-                let value = literal.value.chars().next().unwrap() as u8;
+                let escaped = self.escape_string_or_char_value(&literal.value);
+                debug_assert!(escaped.len() == 1);
+                let value = escaped.chars().next().unwrap() as u8;
                 let value = self.context.i8_type().const_int(value as u64, false);
                 Ok(value.into())
             }
@@ -1641,7 +1666,8 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
                 if **t != Type::Char {
                     unimplemented!("codegen_literal: {:?}", literal);
                 }
-                let value = self.builder.build_global_string_ptr(&literal.value, "codegen_str_literal")?;
+                let escaped = self.escape_string_or_char_value(&literal.value);
+                let value = self.builder.build_global_string_ptr(&escaped, "codegen_str_literal")?;
                 Ok(value.as_pointer_value().into())
             }
             e => unimplemented!("codegen_literal: {:?}", e),
