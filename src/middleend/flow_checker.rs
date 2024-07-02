@@ -22,11 +22,10 @@ enum FlowType {
 
 pub struct FlowChecker<'flags> {
     loop_stack: Vec<()>,
-    #[allow(unused)]
     flags: &'flags Flags,
 }
 
-impl<'flags> FlowChecker<'flags> {
+impl<'flags, 'src> FlowChecker<'flags> {
     pub fn new(flags: &'flags Flags) -> FlowChecker {
         FlowChecker {
             loop_stack: Vec::new(),
@@ -35,7 +34,7 @@ impl<'flags> FlowChecker<'flags> {
     }
 
     #[trace_call(always)]
-    pub fn check_file(&mut self, file: &mut nodes::FileNode) -> Result<(), String> {
+    pub fn check_file<'s>(&mut self, file: &'s mut nodes::FileNode<'src>) -> Result<(), String> {
         for _ext in &mut file.externs {
             // self.check_extern(ext)?;
         }

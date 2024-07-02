@@ -8,7 +8,8 @@
 //! Expected Identifier, found `(`
 //! Expected Expression, found `)`
 //! Expected `:`, found `}`
-//! Expected `}`, found End of File
+//! Expected one of Identifier, `func`, found `FILEMARKER_INTERNAL_USE_ONLY`
+//! Unexpected End Of File while parsing.
 
 // Every error inside a struct recovers until it finds a semi colon or a curly bracket with the same
 // bracket level as the error token
@@ -46,5 +47,8 @@ func main() {
 
 }
 
-// 6. Missing a curly bracket,
-// because we're still trying to parse a strukt
+// 6. FILEMARKER_INTERNAL_USE_ONLY is a result of our Preprocessor marking the end of this file.
+// However, we're still trying to parse a struct.
+
+// 7. Missing a curly bracket,
+// because we're still trying to parse a struct.

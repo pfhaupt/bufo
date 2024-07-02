@@ -148,6 +148,7 @@ if kind == STRUCT: data is a Pointer to a heap-allocated StructType
 if kind == REF: data is a Pointer to a heap-allocated RefType
 if kind == SELF: data is NULL, Typechecker is responsible
 */
+
 struct Type {
     span: Span;
     kind: usize;

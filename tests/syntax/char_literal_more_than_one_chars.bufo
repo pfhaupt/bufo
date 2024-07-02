@@ -3,8 +3,7 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Invalid Char Literal: `hello`
-//! Expected Expression, found `;`
+//! Invalid character literal `hello`.
 
 func main() {
     let a: char = 'hello';

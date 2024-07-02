@@ -109,27 +109,27 @@ macro_rules! codegen_function_header {
 }
 
 #[derive(Debug, Clone)]
-struct StructInfo {
-    fields: Vec<(String, Type)>,
+struct StructInfo<'src> {
+    fields: Vec<(&'src str, Type<'src>)>,
 }
 
-impl StructInfo {
+impl<'src> StructInfo<'src> {
     fn new() -> Self {
         Self {
             fields: Vec::new(),
         }
     }
 
-    fn add_field(&mut self, field_name: &str, typ: &Type) {
+    fn add_field(&mut self, field_name: &'src str, typ: &Type<'src>) {
         for (name, _) in &self.fields {
-            debug_assert!(name != field_name);
+            debug_assert!(name != &field_name);
         }
-        self.fields.push((field_name.to_string(), typ.clone()));
+        self.fields.push((field_name, typ.clone()));
     }
 
     fn get_field_index(&self, field_name: &str) -> usize {
         for (i, (name, _)) in self.fields.iter().enumerate() {
-            if name == field_name {
+            if name == &field_name {
                 return i;
             }
         }
@@ -137,24 +137,23 @@ impl StructInfo {
     }
 }
 
-pub struct LLVMCodegen<'flags, 'ctx> {
+pub struct LLVMCodegen<'flags, 'ctx, 'src> {
     filename: PathBuf,
     exename: PathBuf,
     context: &'ctx Context,
-    module_stack: Vec<String>,
     module: Module<'ctx>,
     builder: Builder<'ctx>,
     target_machine: TargetMachine,
 
     stack_scopes: Vec<HashMap<String, BasicValueEnum<'ctx>>>,
     loop_blocks: Vec<(BasicBlock<'ctx>, BasicBlock<'ctx>)>, // (loop, after_loop)
-    struct_defs: HashMap<String, StructType<'ctx>>,
-    struct_info: HashMap<String, StructInfo>,
+    struct_defs: HashMap<&'src str, StructType<'ctx>>,
+    struct_info: HashMap<&'src str, StructInfo<'src>>,
 
     flags: &'flags Flags,
     clang_flags: Vec<String>,
 }
-impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
+impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
     pub fn new(flags: &'flags Flags, context: &'ctx Context) -> Self {
         let filename = PathBuf::from(&flags.input);
         let filename = filename.file_name().unwrap().to_str().unwrap().to_string();
@@ -174,7 +173,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             CodeModel::Default,
         ).unwrap();
         let module_name = flags.input.clone();
-        let module = context.create_module(&module_name);
+        let module = context.create_module(&module_name.to_str().unwrap());
         module.set_triple(&target_triple);
         module.set_data_layout(&target_machine.get_target_data().get_data_layout());
         let builder = context.create_builder();
@@ -182,7 +181,6 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             filename,
             exename,
             context,
-            module_stack: Vec::new(),
             module,
             builder,
             target_machine,
@@ -221,10 +219,10 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
-    fn fill_struct_lookup(&mut self, file: &nodes::FileNode) -> Result<(), String> {
+    fn fill_struct_lookup(&mut self, file: &'src nodes::FileNode) -> Result<(), String> {
         let mut sequence = file.get_all_structs();
         let seq_len = sequence.len();
-        let mut lookup: HashMap<String, HashSet<String>> = HashMap::new();
+        let mut lookup: HashMap<&'src str, HashSet<&'src str>> = HashMap::new();
         for strukt in &sequence {
             let strukt_name = strukt.get_full_name();
             let mut fields = HashSet::new();
@@ -307,10 +305,10 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
             for field in &strukt.fields {
                 let field_type = self.codegen_type(&field.type_def.typ);
                 fields.push(field_type);
-                field_types.push((field.name.clone(), field.type_def.typ.clone()));
+                field_types.push((field.name, field.type_def.typ.clone()));
             }
             let struct_type_def = self.context.struct_type(&fields, false);
-            self.struct_defs.insert(real_name.clone(), struct_type_def.into());
+            self.struct_defs.insert(real_name, struct_type_def.into());
             let mut struct_info = StructInfo::new();
             for (name, typ) in field_types {
                 struct_info.add_field(&name, &typ);
@@ -394,11 +392,9 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     }
 
     #[trace_call(always)]
-    pub fn codegen_project(&mut self, file: &nodes::FileNode) -> Result<(), String> {
+    pub fn codegen_project(&mut self, file: &'src nodes::FileNode) -> Result<(), String> {
         self.fill_struct_lookup(file)?;
-        debug_assert!(self.module_stack.is_empty());
         self.fill_lookup(file)?;
-        debug_assert!(self.module_stack.is_empty());
         if let Err(e) = self.codegen_intrinsics() {
             internal_panic!("Module verification failed:\n{}", e.to_string());
         }
@@ -1120,7 +1116,7 @@ impl<'flags, 'ctx> LLVMCodegen<'flags, 'ctx> {
     #[trace_call(always)]
     fn codegen_function_call(&mut self, function_call: &nodes::CallNode, needs_ptr: bool) -> Result<BasicValueEnum<'ctx>, BuilderError> {
         let real_name = if function_call.is_extern {
-            function_call.function_name.clone()
+            function_call.function_name.to_string()
         } else {
             format!("func.{}", function_call.function_name)
         };

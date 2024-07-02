@@ -10,11 +10,13 @@ use crate::backend::assembler::Assembler;
 use crate::backend::codegen::Codegen;
 #[cfg(not(feature = "old_codegen"))]
 use crate::backend::codegen_llvm::LLVMCodegen;
+use crate::frontend::lexer::Lexer;
 use crate::frontend::parser::Parser;
+use crate::frontend::pp;
 use crate::middleend::flow_checker::FlowChecker;
 use crate::middleend::type_checker::TypeChecker;
 use crate::util::printer::Printer;
-use crate::util::flags::{self, Flags};
+use crate::util::flags::Flags;
 
 pub const ERR_STR: &str = "\x1b[91merror\x1b[0m";
 pub const WARN_STR: &str = "\x1b[93mwarning\x1b[0m";
@@ -106,72 +108,61 @@ impl<'flags> Compiler<'flags> {
 }
 
 #[cfg(not(feature = "old_codegen"))]
-pub struct Compiler<'flags, 'ctx> {
-    parser: Parser<'flags>,
-    type_checker: TypeChecker<'flags>,
-    flow_checker: FlowChecker<'flags>,
-    codegen: LLVMCodegen<'flags, 'ctx>,
-    flags: &'flags Flags,
-}
-
-#[cfg(not(feature = "old_codegen"))]
-impl<'flags, 'ctx> Compiler<'flags, 'ctx> {
-    pub fn new(flags: &'flags Flags, context: &'ctx Context) -> Self {
-        Self {
-            parser: Parser::new(flags),
-            type_checker: TypeChecker::new(flags),
-            flow_checker: FlowChecker::new(flags),
-            codegen: LLVMCodegen::new(flags, context),
-            flags
-        }
+#[trace_call(always)]
+pub fn run_everything(
+    flags: &Flags,
+    context: &Context,
+) -> Result<(), String> {
+    let source_code: String = pp::load_project(&flags)?;
+    if flags.debug {
+        println!("[DEBUG] The preprocessed source:\n{source_code}");
+    }
+    let mut lexer = Lexer::new();
+    let mut parser = Parser::new(&flags, &mut lexer, &source_code);
+    let mut type_checker = TypeChecker::new(&flags);
+    let mut flow_checker = FlowChecker::new(&flags);
+    let mut codegen = LLVMCodegen::new(&flags, &context);
+    let now = Instant::now();
+    let mut parsed_ast = parser.parse_project()?;
+    if flags.verbose {
+        println!("[INFO] Parsing took {:?}", now.elapsed());
     }
 
-    #[trace_call(always)]
-    pub fn run_everything(&mut self) -> Result<(), String> {
-        let now = Instant::now();
-        self.parser.initialize()?;
-        let mut parsed_ast = self.parser.parse_project(true)?;
-        if self.flags.verbose {
-            println!("[INFO] Parsing took {:?}", now.elapsed());
-        }
-
-        if self.flags.print_ast {
-            Printer::print(&parsed_ast);
-        }
-
-        let now = Instant::now();
-        self.type_checker.type_check_project(&mut parsed_ast)?;
-        if self.flags.verbose {
-            println!("[INFO] Type Checking took {:?}", now.elapsed());
-        }
-
-        if self.flags.print_ast {
-            Printer::print(&parsed_ast);
-        }
-
-        let now = Instant::now();
-        self.flow_checker.check_file(&mut parsed_ast)?;
-        if self.flags.verbose {
-            println!("[INFO] Flow Checking took {:?}", now.elapsed());
-        }
-
-        let now = Instant::now();
-        self.codegen.codegen_project(&parsed_ast)?;
-        if self.flags.verbose {
-            println!("[INFO] Codegen took {:?}", now.elapsed());
-        }
-
-        if self.flags.run {
-            let now = Instant::now();
-            self.codegen.run()?;
-            if self.flags.verbose {
-                println!("[INFO] Running took {:?}", now.elapsed());
-            }
-        }
-        Ok(())
+    if flags.print_ast {
+        Printer::print(&parsed_ast);
     }
-}
 
+    let now = Instant::now();
+    type_checker.type_check_project(&mut parsed_ast)?;
+    if flags.verbose {
+        println!("[INFO] Type Checking took {:?}", now.elapsed());
+    }
+
+    if flags.print_ast {
+        Printer::print(&parsed_ast);
+    }
+
+    let now = Instant::now();
+    flow_checker.check_file(&mut parsed_ast)?;
+    if flags.verbose {
+        println!("[INFO] Flow Checking took {:?}", now.elapsed());
+    }
+
+    let now = Instant::now();
+    codegen.codegen_project(&parsed_ast)?;
+    if flags.verbose {
+        println!("[INFO] Codegen took {:?}", now.elapsed());
+    }
+
+    if flags.run {
+        let now = Instant::now();
+        codegen.run()?;
+        if flags.verbose {
+            println!("[INFO] Running took {:?}", now.elapsed());
+        }
+    }
+    Ok(())
+}
 #[trace_call(always)]
 fn compile() -> Result<(), String> {
     let now = Instant::now();
@@ -189,12 +180,6 @@ fn compile() -> Result<(), String> {
         }
         return Ok(());
     }
-    if flags.input == flags::DEFAULT_FILE {
-        return Err(format!(
-            "{}: No input file specified. Use --help for usage information.",
-            ERR_STR
-        ));
-    }
     #[cfg(feature = "old_codegen")]
     {
         let mut compiler = Compiler::new(&flags);
@@ -203,8 +188,7 @@ fn compile() -> Result<(), String> {
     #[cfg(not(feature = "old_codegen"))]
     {
         let context = Context::create();
-        let mut compiler = Compiler::new(&flags, &context);
-        compiler.run_everything()
+        run_everything(&flags, &context)
     }
 }
 #[trace_call(always)]

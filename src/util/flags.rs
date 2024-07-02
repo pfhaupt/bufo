@@ -1,9 +1,9 @@
+use std::path::PathBuf;
+
 use clap::Parser;
 
 use crate::util::opt_flags::OptimizationFlags;
 use crate::compiler::FILE_EXT;
-
-pub const DEFAULT_FILE: &str = "This is the default value, assuming gen_bind is true";
 
 #[derive(Parser, Default, Debug, Clone)]
 #[command(name = "bufo")]
@@ -11,8 +11,8 @@ pub const DEFAULT_FILE: &str = "This is the default value, assuming gen_bind is 
 #[command(version = "0.0.1")]
 #[command(about = "Compiler for the Bufo programming language")]
 pub struct Flags {
-    #[arg(short, long, value_parser = valid_filepath, default_value = DEFAULT_FILE, hide_default_value=true, required_unless_present = "gen_bind")]
-    pub input: String,
+    #[arg(short, long, value_parser = valid_filepath, hide_default_value=true)]
+    pub input: PathBuf,
     #[arg(short, long, default_value = "false")]
     pub run: bool,
     #[arg(short, long, default_value = "false")]
@@ -53,19 +53,14 @@ fn valid_header(header: &str) -> Result<String, String> {
     Ok(header.to_string())
 }
 
-fn valid_filepath(filepath: &str) -> Result<String, String> {
-    if filepath == DEFAULT_FILE {
-        // Assume gen_bind is true, can't be checked here
-        return Ok(filepath.to_string());
-    }
+fn valid_filepath(filepath: &str) -> Result<PathBuf, String> {
     if !std::path::Path::new(filepath).exists() {
         return Err(format!("File `{}` does not exist.", filepath));
     }
     if !filepath.ends_with(FILE_EXT) {
         return Err(format!("File `{}` does not have the correct extension.", filepath));
     }
-
-    Ok(filepath.to_string())
+    Ok(PathBuf::from(filepath))
 }
 
 impl Flags {

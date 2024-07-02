@@ -1,4 +1,18 @@
 # Changelog
+## 2024-07-02
+### General
+- Add Preprocessor
+    - Instead of loading files on the fly, we're now pre-processing the project and insert the content of every imported file at the given location.
+- Outsource Lexer
+    - Instead of the Lexer being part of the Parser, it's now its own thing. That allows us to re-use the Lexer for other things, like the Preprocessor.
+### Fixes
+- The compiler now uses Lifetimes and references into the original source code instead of copying Strings
+    - This should in theory speed up the compiler, because we're not heap-allocating any identifiers and such anymore
+    - As of right now, the Parser is actually slower in debug mode, but decently fast in release mode
+        - The Type Checker is faster in both modes, so something's wrong with the Parser
+        - I suspect it's because of the way we lex tokens, that's currently pretty inefficient
+### Known Issues
+- Escape Sequences in chars and string literals are currently not working, that will be fixed next
 ## 2024-05-04
 ### General
 - Start working on Selfhost Stage 1

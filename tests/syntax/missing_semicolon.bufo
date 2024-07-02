@@ -4,7 +4,8 @@
 //! CODE: 1
 //! ERROR:
 //! Expected `;`, found `}`
-//! Expected `}`, found End of File
+//! Expected Expression, found `FILEMARKER_INTERNAL_USE_ONLY`
+//! Unexpected End Of File while parsing.
 
 func main() {
     let a: i32 = 4

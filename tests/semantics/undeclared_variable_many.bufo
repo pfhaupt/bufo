@@ -3,19 +3,19 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! :9: Use of undeclared variable `d`.
-//! :10: Use of undeclared variable `d`.
-//! :12: Use of undeclared variable `d`.
-//! :13: Use of undeclared variable `d`.
+//! :304: Use of undeclared variable `d`.
+//! :316: Use of undeclared variable `d`.
+//! :371: Use of undeclared variable `d`.
+//! :405: Use of undeclared variable `d`.
 
 func main()->i32 {
     mut a: u32 = 10;
     a = d;
-    if ( d + (d + d + d + (d + d)) == a) {
+    if (d + (d + d + d + (d + d)) == a) {
 
     }
     while (d) {
         
     }
-    return  d;
+    return d;
 }
