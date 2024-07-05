@@ -1,0 +1,43 @@
+
+
+struct Span {
+    start: usize;
+    end: usize;
+    func print(&this) {
+        let s: String = this.toString();
+        s.print();
+        s.drop();
+    }
+    func toString(&this) -> String {
+        mut s: String = newString();
+        s.pushNumber(this.start);
+        s.pushChar(':');
+        s.pushNumber(this.end);
+        return s;
+    }
+}
+
+func newSpan(start: usize, end: usize) -> Span {
+    assert_with_msg(end >= start + 1, "Invalid size for newSpan()");
+    // FIXME: - 1 is a quick hack because most error messages showed one byte too far.
+    // Is this always the case?
+    return Span {
+        start: start,
+        end: end - 1,
+    };
+}
+func newSpanBetween(start: &Span, end: &Span) -> Span {
+    // (100:105)+(104:109)
+    assert_with_msg(end.end > start.end, "newSpanBetween: End Span can't end before Start Span.");
+    assert_with_msg(start.start < end.start, "newSpanBetween: Start Span can't start after End Span.");
+    return Span {
+        start: start.start,
+        end: end.end
+    };
+}
+func defaultSpan() -> Span {
+    return Span {
+        start: 0,
+        end: 0
+    };
+}

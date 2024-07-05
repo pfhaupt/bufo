@@ -1,4 +1,4 @@
-import "bufo_s1.bufo";
+import "frontend/nodes.bufo";
 
 func VECTOR_KIND_TYPE() -> usize { return 0; }
 func VECTOR_KIND_STMT() -> usize { return 1; }
@@ -8,10 +8,12 @@ func VECTOR_KIND_FIELD() -> usize { return 4; }
 func VECTOR_KIND_FUNC_DECL() -> usize { return 5; }
 func VECTOR_KIND_REALIZE() -> usize { return 6; }
 func VECTOR_KIND_QUIRK() -> usize { return 7; }
-func VECTOR_KIND_STRUCT() -> usize { return 8; }
+func VECTOR_KIND_STRUCT_VARIANT() -> usize { return 8; }
 func VECTOR_KIND_MODULE() -> usize { return 9; }
 func VECTOR_KIND_TYPE_DEF() -> usize { return 10; }
 func VECTOR_KIND_PAIR_STRING_EXPR() -> usize { return 11; }
+func VECTOR_KIND_ENUM() -> usize { return 12; }
+func VECTOR_KIND_STRING() -> usize { return 13; }
 
 func vecKindToString(kind: usize) -> &char {
     if (kind == VECTOR_KIND_TYPE()) return "VECTOR_KIND_TYPE";
@@ -22,9 +24,12 @@ func vecKindToString(kind: usize) -> &char {
     else if (kind == VECTOR_KIND_FUNC_DECL()) return "VECTOR_KIND_FUNC_DECL";
     else if (kind == VECTOR_KIND_REALIZE()) return "VECTOR_KIND_REALIZE";
     else if (kind == VECTOR_KIND_QUIRK()) return "VECTOR_KIND_QUIRK";
-    else if (kind == VECTOR_KIND_STRUCT()) return "VECTOR_KIND_STRUCT";
+    else if (kind == VECTOR_KIND_STRUCT_VARIANT()) return "VECTOR_KIND_STRUCT_VARIANT";
     else if (kind == VECTOR_KIND_MODULE()) return "VECTOR_KIND_MODULE";
     else if (kind == VECTOR_KIND_TYPE_DEF()) return "VECTOR_KIND_TYPE_DEF";
+    else if (kind == VECTOR_KIND_ENUM()) return "VECTOR_KIND_ENUM";
+    else if (kind == VECTOR_KIND_STRING()) return "VECTOR_KIND_STRING";
+    else if (kind == VECTOR_KIND_PAIR_STRING_EXPR()) return "VECTOR_KIND_PAIR_STRING_EXPR";
     else todo_with_msg("Unknown kind in vecKindToString()");
     return "";
 }
@@ -44,6 +49,11 @@ struct Vec {
         unsafe { printf("capacity = %llu\n", this.capacity); }
     }
 
+    func reset(&mut this) {
+        this.drop();
+        this.length = 0;
+        this.capacity = 0;
+    }
     func len(&this) -> usize {
         return this.length;
     }
@@ -65,7 +75,23 @@ struct Vec {
         // FIXME: This will not work properly
         unsafe {
             free(this.elements);
+            // set elements to null to prevent heap corruption later when calling resize()
+            this.elements = NULL();
         }
+    }
+    func extend(&mut this, other: &Vec) {
+        assert_with_msg(this.kind == other.kind, "Attempted to extend a Vector with elements of a different Vector.");
+        assert(this.elemSize == other.elemSize);
+        let new_length: usize = this.length + other.length;
+        while (new_length >= this.capacity) this.resize(this.capacity * 2);
+        unsafe {
+            let _src: Any = other.elements;
+            let _e: &u8 = this.elements;
+            let _dst: Any = _e + this.elemSize * this.length;
+            let _res: Any = memcpy(_dst, _src, other.length * this.elemSize);
+            assert(!isNull(_res));
+        }
+        this.length = new_length;
     }
     func pushType(&mut this, typ: &Type) {
         assert_with_msg(this.kind == VECTOR_KIND_TYPE(), "Attempted to insert Type into non-Type Vector.");
@@ -77,13 +103,33 @@ struct Vec {
         }
         this.length = this.length + 1;
     }
-    func pushStruct(&mut this, strukt: &Struct) {
-        assert_with_msg(this.kind == VECTOR_KIND_STRUCT(), "Attempted to insert Struct into non-Struct Vector.");
+    func pushString(&mut this, typ: &String) {
+        assert_with_msg(this.kind == VECTOR_KIND_STRING(), "Attempted to insert String into non-String Vector.");
         this.resizeIfNecessary();
         unsafe {
             let _idk: Any = this.elements;
-            mut _sb: &mut Struct = &mut *_idk;
+            mut _sb: &mut String = &mut *_idk;
+            *(_sb + this.elemSize * this.length) = *typ;
+        }
+        this.length = this.length + 1;
+    }
+    func pushStructVariant(&mut this, strukt: &StructVariant) {
+        assert_with_msg(this.kind == VECTOR_KIND_STRUCT_VARIANT(), "Attempted to insert StructVariant into non-StructVariant Vector.");
+        this.resizeIfNecessary();
+        unsafe {
+            let _idk: Any = this.elements;
+            mut _sb: &mut StructVariant = &mut *_idk;
             *(_sb + this.elemSize * this.length) = *strukt;
+        }
+        this.length = this.length + 1;
+    }
+    func pushEnum(&mut this, eenum: &Enum) {
+        assert_with_msg(this.kind == VECTOR_KIND_ENUM(), "Attempted to insert Enum into non-Enum Vector.");
+        this.resizeIfNecessary();
+        unsafe {
+            let _idk: Any = this.elements;
+            mut _sb: &mut Enum = &mut *_idk;
+            *(_sb + this.elemSize * this.length) = *eenum;
         }
         this.length = this.length + 1;
     }
@@ -186,12 +232,21 @@ struct Vec {
             return _m + this.elemSize * index;
         }
     }
-    func getStruct(&this, index: usize) -> &Struct {
-        assert_with_msg(this.kind == VECTOR_KIND_STRUCT(), "Attempted to get Struct of a non-Struct Vector.");
+    func getStructVariant(&this, index: usize) -> &StructVariant {
+        assert_with_msg(this.kind == VECTOR_KIND_STRUCT_VARIANT(), "Attempted to get StructVariant of a non-StructVariant Vector.");
         assert_with_msg(index < this.length, "Attempted to index out of bounds!");
         unsafe {
             let _b: Any = this.elements;
-            let _m: &Struct = &*_b;
+            let _m: &StructVariant = &*_b;
+            return _m + this.elemSize * index;
+        }
+    }
+    func getEnum(&this, index: usize) -> &Enum {
+        assert_with_msg(this.kind == VECTOR_KIND_ENUM(), "Attempted to get Enum of a non-Enum Vector.");
+        assert_with_msg(index < this.length, "Attempted to index out of bounds!");
+        unsafe {
+            let _b: Any = this.elements;
+            let _m: &Enum = &*_b;
             return _m + this.elemSize * index;
         }
     }
@@ -273,6 +328,15 @@ struct Vec {
         unsafe {
             let _b: Any = this.elements;
             let _m: &Type = &*_b;
+            return _m + this.elemSize * index;
+        }
+    }
+    func getString(&this, index: usize) -> &String {
+        assert_with_msg(this.kind == VECTOR_KIND_STRING(), "Attempted to get String of a non-String Vector.");
+        assert_with_msg(index < this.length, "Attempted to index out of bounds!");
+        unsafe {
+            let _b: Any = this.elements;
+            let _m: &String = &*_b;
             return _m + this.elemSize * index;
         }
     }

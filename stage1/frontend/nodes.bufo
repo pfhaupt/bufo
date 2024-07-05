@@ -1,0 +1,671 @@
+import "util/option.bufo";
+import "util/substr.bufo";
+import "util/span.bufo";
+import "util/vector.bufo";
+import "util/string.bufo";
+import "frontend/token.bufo";
+
+struct Module {
+    name: SubStr;
+    modules: Vec;
+    quirks: Vec;
+    reals: Vec;
+    structs: Vec;
+    enums: Vec;
+    funcs: Vec;
+    types: Vec;
+
+    func addQuirk(&mut this, quirk: &Quirk) {
+        this.quirks.pushQuirk(quirk);
+    }
+    func addRealize(&mut this, real: &Realize) {
+        this.reals.pushRealize(real);
+    }
+    func addStruct(&mut this, strukt: &StructVariant) {
+        this.structs.pushStructVariant(strukt);
+    }
+    func addEnum(&mut this, eenum: &Enum) {
+        this.enums.pushEnum(eenum);
+    }
+    func addFuncDef(&mut this, fn: &FuncDef) {
+        this.funcs.pushFuncDef(fn);
+    }
+    func addTypeDef(&mut this, t: &TypeDef) {
+        this.types.pushTypeDef(t);
+    }
+}
+
+func newModule(name: &SubStr) -> Module {
+    return Module {
+        name: *name,
+        modules: emptyVec(VECTOR_KIND_MODULE(), sizeof Module),
+        quirks: emptyVec(VECTOR_KIND_QUIRK(), sizeof Quirk),
+        reals: emptyVec(VECTOR_KIND_REALIZE(), sizeof Realize),
+        structs: emptyVec(VECTOR_KIND_STRUCT_VARIANT(), sizeof StructVariant),
+        enums: emptyVec(VECTOR_KIND_ENUM(), sizeof Enum),
+        funcs: emptyVec(VECTOR_KIND_FUNC_DEF(), sizeof FuncDef),
+        types: emptyVec(VECTOR_KIND_TYPE_DEF(), sizeof TypeDef),
+    };
+}
+
+struct TypeDef {
+    span: Span;
+    name: Type;
+    rhs: Type;
+}
+func newTypeDef(span: &Span, name: &Type, rhs: &Type) -> TypeDef {
+    return TypeDef {
+        span: *span,
+        name: *name,
+        rhs: *rhs
+    };
+}
+struct Quirk {
+    typ: Type;
+    funcDecls: Vec;
+    typeDefs: Vec;
+    func addFuncDecl(&mut this, funcDecl: &FuncDecl) {
+        this.funcDecls.pushFuncDecl(funcDecl);
+    }
+    func addTypeDef(&mut this, typeDef: &TypeDef) {
+        this.typeDefs.pushTypeDef(typeDef);
+    }
+}
+func newQuirk(typ: &Type) -> Quirk {
+    return Quirk {
+        typ: *typ,
+        funcDecls: emptyVec(VECTOR_KIND_FUNC_DECL(), sizeof FuncDecl),
+        typeDefs: emptyVec(VECTOR_KIND_TYPE_DEF(), sizeof TypeDef),
+    };
+}
+
+struct Realize {
+    sType: Type;
+    qType: Option;
+    fnDefs: Vec;
+    tyDefs: Vec;
+    generics: Vec;
+    func addFuncDef(&mut this, fnDef: &FuncDef) {
+        this.fnDefs.pushFuncDef(fnDef);
+    }
+    func addTypeDef(&mut this, tDef: &TypeDef) {
+        this.tyDefs.pushTypeDef(tDef);
+    }
+    func setQuirk(&mut this, typ: &Type) {
+        this.qType = newOptionType(typ);
+    }
+    func setGenerics(&mut this, generics: &Vec) {
+        assert(generics.kind == VECTOR_KIND_TYPE());
+        this.generics.drop();
+        this.generics = *generics;
+    }
+}
+func newRealize(sType: &Type) -> Realize {
+    return Realize {
+        sType: *sType,
+        qType: newOptionNone(),
+        fnDefs: emptyVec(VECTOR_KIND_FUNC_DEF(), sizeof FuncDef),
+        generics: emptyVec(VECTOR_KIND_TYPE(), sizeof Type),
+        tyDefs: emptyVec(VECTOR_KIND_TYPE_DEF(), sizeof TypeDef),
+    };
+}
+
+struct Enum {
+    name: Type;
+    variants: Vec;
+}
+
+func newEnum(name: &Type, variants: &Vec) -> Enum {
+    return Enum {
+        name: *name,
+        variants: *variants
+    };
+}
+
+struct CStruct {
+    name: Type;
+    fields: Vec;
+
+    func getName(&this) -> SubStr {
+        return this.name.getName();
+    }
+    func getSpan(&this) -> Span {
+        return this.name.getSpan();
+    }
+}
+
+func newCStruct(name: &Type, fields: &Vec) -> CStruct {
+    return CStruct {
+        name: *name,
+        fields: *fields
+    };
+}
+
+struct TupleStruct {
+    name: Type;
+    types: Vec;
+
+    func getName(&this) -> SubStr {
+        return this.name.getName();
+    }
+    func getSpan(&this) -> Span {
+        return this.name.getSpan();
+    }
+}
+
+func newTupleStruct(name: &Type, types: &Vec) -> TupleStruct {
+    return TupleStruct {
+        name: *name,
+        types: *types
+    };
+}
+
+struct EmptyStruct {
+    name: Type;
+
+    func getName(&this) -> SubStr {
+        return this.name.getName();
+    }
+    func getSpan(&this) -> Span {
+        return this.name.getSpan();
+    }
+}
+
+func newEmptyStruct(name: &Type) -> EmptyStruct {
+    return EmptyStruct {
+        name: *name
+    };
+}
+
+func STRUCT_VARIANT_C() -> usize { return 0; }
+func STRUCT_VARIANT_TUPLE() -> usize { return 1; }
+func STRUCT_VARIANT_EMPTY() -> usize { return 2; }
+struct StructVariant {
+    kind: usize;
+    data: Any;
+
+    func getSpan(&this) -> Span {
+        unsafe {
+            assert_with_msg(!isNull(this.data), "Attempted to get Span of uninitialized StructVariant");
+        }
+        if (this.kind == STRUCT_VARIANT_C()) {
+            let c_struct: &CStruct = this.data;
+            return c_struct.getSpan();
+        } else if (this.kind == STRUCT_VARIANT_TUPLE()) {
+            let t_struct: &TupleStruct = this.data;
+            return t_struct.getSpan();
+        } else {
+            assert_with_msg(this.kind == STRUCT_VARIANT_EMPTY(), "StructVariant.getSpan() does not support the given Struct kind");
+            let e_struct: &EmptyStruct = this.data;
+            return e_struct.getSpan();
+        }
+    }
+    func getName(&this) -> SubStr {
+        unsafe {
+            assert_with_msg(!isNull(this.data), "Attempted to get Name of uninitialized StructVariant");
+        }
+        if (this.kind == STRUCT_VARIANT_C()) {
+            let c_struct: &CStruct = this.data;
+            return c_struct.getName();
+        } else if (this.kind == STRUCT_VARIANT_TUPLE()) {
+            let t_struct: &TupleStruct = this.data;
+            return t_struct.getName();
+        } else {
+            assert_with_msg(this.kind == STRUCT_VARIANT_EMPTY(), "StructVariant.getName() does not support the given Struct kind");
+            let e_struct: &EmptyStruct = this.data;
+            return e_struct.getName();
+        }
+    }
+}
+
+func newStructVariantC(strukt: &CStruct) -> StructVariant {
+    unsafe {
+        let _m: Any = calloc(sizeof CStruct, 1);
+        assert_with_msg(!isNull(_m), "Could not allocate memory for newStructVariantC");
+        let _s: &mut CStruct = &mut *_m;
+        *_s = *strukt;
+        return StructVariant {
+            kind: STRUCT_VARIANT_C(),
+            data: _m
+        };
+    }
+}
+func newStructVariantTuple(strukt: &TupleStruct) -> StructVariant {
+    unsafe {
+        let _m: Any = calloc(sizeof TupleStruct, 1);
+        assert_with_msg(!isNull(_m), "Could not allocate memory for newStructVariantTuple");
+        let _s: &mut TupleStruct = &mut *_m;
+        *_s = *strukt;
+        return StructVariant {
+            kind: STRUCT_VARIANT_TUPLE(),
+            data: _m
+        };
+    }
+}
+func newStructVariantEmpty(strukt: &EmptyStruct) -> StructVariant {
+    unsafe {
+        let _m: Any = calloc(sizeof EmptyStruct, 1);
+        assert_with_msg(!isNull(_m), "Could not allocate memory for newStructVariantEmpty");
+        let _s: &mut EmptyStruct = &mut *_m;
+        *_s = *strukt;
+        return StructVariant {
+            kind: STRUCT_VARIANT_EMPTY(),
+            data: _m
+        };
+    }
+}
+struct Field {
+    span: Span;
+    name: SubStr;
+    typ: Type;
+}
+func newField(span: &Span, name: &SubStr, typ: &Type) -> Field {
+    return Field {
+        span: *span,
+        name: *name,
+        typ: *typ
+    };
+}
+
+func TYPE_KIND_PRIMITIVE() -> usize { return 0; }
+func TYPE_KIND_STRUCT() -> usize { return 1; }
+func TYPE_KIND_REFERENCE() -> usize { return 2; }
+func TYPE_KIND_SELF() -> usize { return 3; }
+func TYPE_KIND_GENERIC() -> usize { return 4; }
+func isPrimitiveType(name: &SubStr) -> bool {
+    return name.equals(&newSubStr("i32", 0, 3));
+}
+/*
+if kind == PRIMITIVE: data is a String reference pointing into the original source code
+if kind == STRUCT: data is a Pointer to a heap-allocated StructType
+if kind == REF: data is a Pointer to a heap-allocated RefType
+if kind == SELF: data is NULL, Typechecker is responsible
+*/
+
+struct Type {
+    span: Span;
+    kind: usize;
+    data: Any;
+    func getName(&this) -> SubStr {
+        if (this.kind == TYPE_KIND_STRUCT()) {
+            let _t: &StructType = this.data;
+            return _t.getName();
+        } else {
+            assert_with_msg(false, "Implement Type.getName()");
+            return defaultSubStr();
+        }
+    }
+    func getSpan(&this) -> Span {
+        return this.span;
+    }
+    func print(&this) {
+        this.span.print();
+        unsafe { printf(" -> %llu\n", this.kind); }
+    }
+    func asStruct(&this) -> &StructType {
+        assert_with_msg(this.kind == TYPE_KIND_STRUCT(), "Attempted to interpret Non-StructType as StructType.");
+        return this.data;
+    }
+}
+func newTypePrim(span: &Span, name: &SubStr) -> Type {
+    assert(isPrimitiveType(name));
+    unsafe {
+        let _m: Any = calloc(sizeof SubStr, 1);
+        assert_with_msg(!isNull(_m), "Could not allocate memory for newTypePrim()");
+        let _s: &mut SubStr = &mut *_m;
+        *_s = *name;
+        return Type {
+            span: *span,
+            kind: TYPE_KIND_PRIMITIVE(),
+            data: _m
+        };
+    }
+}
+func newTypeRef(ampSpan: &Span, typ: &Type, mutable: bool) -> Type {
+    let s: Span = newSpanBetween(ampSpan, &typ.span);
+    unsafe {
+        let _m: Any = calloc(sizeof RefType, 1);
+        assert_with_msg(!isNull(_m), "Could not allocate memory for newTypeRef()");
+        let _t: &mut RefType = &mut *_m;
+        *_t = RefType {
+            span: *ampSpan,
+            typ: *typ,
+            mutable: mutable
+        };
+        return Type {
+            span: s,
+            kind: TYPE_KIND_REFERENCE(),
+            data: _m
+        };
+    }
+}
+func newTypeSelf(tkn: &Token) -> Type {
+    unsafe {
+        return Type {
+            span: tkn.span,
+            kind: TYPE_KIND_SELF(),
+            data: NULL()
+        };
+    }
+}
+func newTypeStruct(sType: &StructType) -> Type {
+    unsafe {
+        let _m: Any = calloc(sizeof StructType, 1);
+        assert_with_msg(!isNull(_m), "Could not allocate memory for newTypeStruct()");
+        let _s: &mut StructType = &mut *_m;
+        *_s = *sType;
+        return Type {
+            span: sType.span,
+            kind: TYPE_KIND_STRUCT(),
+            data: _m
+        };
+    }
+}
+func newTypeGeneric(gType: &GenericType) -> Type {
+    unsafe {
+        let _m: Any = calloc(sizeof GenericType, 1);
+        assert_with_msg(!isNull(_m), "Could not allocate memory for newTypeGeneric()");
+        let _g: &mut GenericType = &mut *_m;
+        *_g = *gType;
+        return Type {
+            span: gType.span,
+            kind: TYPE_KIND_GENERIC(),
+            data: _m
+        };
+    }
+}
+struct RefType {
+    span: Span;
+    mutable: bool;
+    typ: Type;
+}
+struct GenericType {
+    span: Span;
+    name: SubStr;
+    bounds: Vec;
+    func setBounds(&mut this, bounds: &Vec) {
+        assert(bounds.kind == VECTOR_KIND_TYPE());
+        this.bounds.drop();
+        this.bounds = *bounds;
+    }
+}
+func newGenericType(span: &Span, name: &SubStr) -> GenericType {
+    return GenericType {
+        span: *span,
+        name: *name,
+        bounds: emptyVec(VECTOR_KIND_TYPE(), sizeof Type)
+    };
+}
+struct StructType {
+    span: Span;
+    name: SubStr;
+    generics: Vec;
+    func getName(&this) -> SubStr {
+        return this.name;
+    }
+    func setGenerics(&mut this, generics: &Vec) {
+        assert(generics.kind == VECTOR_KIND_TYPE());
+        this.generics.drop();
+        this.generics = *generics;
+    }
+}
+func newStructType(span: &Span, name: &SubStr) -> StructType {
+    return StructType {
+        span: *span,
+        name: *name,
+        generics: emptyVec(VECTOR_KIND_TYPE(), sizeof Type)
+    };
+}
+
+struct FuncDecl {
+    name: SubStr;
+    params: Vec;
+    retType: Option;
+    func setParams(&mut this, params: Vec) {
+        this.params.drop();
+        this.params = params;
+    }
+    func setRetType(&mut this, typ: &Type) {
+        this.retType = newOptionType(typ);
+    }
+}
+func newFuncDecl(name: SubStr) -> FuncDecl {
+    return FuncDecl {
+        name: name,
+        params: emptyVec(VECTOR_KIND_FUNC_PARAM(), sizeof FuncParam),
+        retType: newOptionNone(),
+    };
+}
+
+struct FuncDef {
+    name: SubStr;
+    params: Vec;
+    body: Block;
+    retType: Option;
+    func setParams(&mut this, params: Vec) {
+        this.params.drop();
+        this.params = params;
+    }
+    func setBody(&mut this, block: &Block) {
+        this.body = *block;
+    }
+    func setRetType(&mut this, typ: &Type) {
+        this.retType = newOptionType(typ);
+    }
+}
+func newFuncDef(name: SubStr) -> FuncDef {
+    return FuncDef {
+        name: name,
+        params: emptyVec(VECTOR_KIND_FUNC_PARAM(), sizeof FuncParam),
+        body: emptyBlock(),
+        retType: newOptionNone(),
+    };
+}
+
+struct FuncParam {
+    span: Span;
+    name: SubStr;
+    typ: Type;
+}
+
+func newFuncParam(span: &Span, name: &SubStr, typ: &Type) -> FuncParam {
+    return FuncParam {
+        span: *span,
+        name: *name,
+        typ: *typ
+    };
+}
+
+struct Block {
+    stmts: Vec;
+
+    func addStmt(&mut this, stmt: &Stmt) {
+        this.stmts.pushStmt(stmt);
+    }
+}
+func newBlock() -> Block {
+    return Block {
+        stmts: newVec(VECTOR_KIND_STMT(), 8, sizeof Stmt),
+    };
+}
+func emptyBlock() -> Block {
+    return Block {
+        stmts: emptyVec(VECTOR_KIND_STMT(), sizeof Stmt),
+    };
+}
+
+func STMT_KIND_LET() -> usize { return 0; }
+struct Stmt {
+    span: Span;
+    kind: usize;
+    data: Any;
+
+    func asLetStmt(&this) -> LetStmt {
+        assert_with_msg(this.kind == STMT_KIND_LET(), "Attempted to call Stmt.asLetStmt on non-LetStmt value.");
+        unsafe {
+            let _m: &LetStmt = this.data;
+            return *_m;
+        }
+    }
+}
+
+struct LetStmt {
+    name: SubStr;
+    typeDef: Option;
+    expr: Expr;
+}
+func newLetStmt(name: &Token, typ: &Option, expr: &Expr) -> Stmt {
+    let span: Span = newSpanBetween(&name.span, &expr.span);
+    unsafe {
+        let stmt: Any = calloc(sizeof LetStmt, 1);
+        let _idk: &mut LetStmt = &mut *stmt;
+        *_idk = LetStmt {
+            name: name.getSubStr(),
+            typeDef: *typ,
+            expr: *expr
+        };
+        return Stmt {
+            span: span,
+            kind: STMT_KIND_LET(),
+            data: stmt
+        };
+    }
+}
+
+func ASSOC_LEFT() -> u8 { return 0; }
+func ASSOC_RIGHT() -> u8 { return 1; }
+
+func EXPR_INVALID() -> usize { return 0; }
+func EXPR_KIND_NUM_LIT() -> usize { return 1; }
+func EXPR_KIND_IDENT() -> usize { return 2; }
+func EXPR_KIND_BINARY() -> usize { return 3; }
+func EXPR_KIND_STRUCT_LIT() -> usize { return 4; }
+func exprKindToString(kind: usize) -> &char {
+    if (kind == EXPR_INVALID()) return "invalid expression";
+    else if (kind == EXPR_KIND_NUM_LIT()) return "number literal";
+    else if (kind == EXPR_KIND_IDENT()) return "identifier";
+    else if (kind == EXPR_KIND_BINARY()) return "binary expression";
+    else if (kind == EXPR_KIND_STRUCT_LIT()) return "struct literal";
+    assert_with_msg(false, "Unreachable");
+    return "";
+}
+struct Expr {
+    span: Span;
+    kind: usize;
+    data: Any;
+
+    func asExprNumLit(&this) -> ExprNumLit {
+        assert_with_msg(this.kind == EXPR_KIND_NUM_LIT(), "Attempted to call Expr.asExprNumLit on non-ExprNumLit value.");
+        unsafe {
+            let _m: &ExprNumLit = this.data;
+            return *_m;
+        }
+    }
+}
+struct ExprNumLit {
+    number: SubStr;
+}
+struct ExprIdent {
+    name: SubStr;
+}
+struct ExprBinary {
+    op: Token;
+    lhs: Expr;
+    rhs: Expr;
+}
+struct PairTokenExpr {
+    name: Token;
+    value: Expr;
+}
+struct ExprStructLit {
+    name: Token;
+    fields: Vec;
+    func addField(&mut this, nTkn: &Token, expr: &Expr) {
+        let pse: PairTokenExpr = PairTokenExpr {
+            name: *nTkn,
+            value: *expr
+        };
+        for (mut i: usize = 0; i < this.fields.len(); i = i + 1) {
+            let _pse: &PairTokenExpr = this.fields.getPairTokenExpr(i);
+            if (pse.name.getSubStr().equals(&_pse.name.getSubStr())) unsafe {
+                let stderr: Any = fdopen(2, "w");
+                let ol: String = _pse.name.getSpan().toString();
+                let nl: String = pse.name.getSpan().toString();
+                let fn: String = pse.name.getSubStr().toString();
+                fprintf(stderr, "error: %s: Duplication of field `%s` in struct instantiation.\n", nl.buffer, fn.buffer);
+                fprintf(stderr, "note: %s: Field already provided here.", ol.buffer);
+                exit(1);
+            }
+        }
+        this.fields.pushPairTokenExpr(&pse);
+    }
+    func toExpr(&this) -> Expr {
+        unsafe {
+            let expr: Any = calloc(sizeof ExprStructLit, 1);
+            let _idk: &mut ExprStructLit = &mut *expr;
+            *_idk = *this;
+            return Expr {
+                span: this.name.span,
+                kind: EXPR_KIND_STRUCT_LIT(),
+                data: expr
+            };
+        }
+    }
+}
+func invalidExpr() -> Expr {
+    unsafe { return Expr { span: defaultSpan(), kind: EXPR_INVALID(), data: NULL() }; }
+}
+func newExprNumLit(tkn: &Token) -> Expr {
+    assert_with_msg(tkn.kind == TOKEN_NUMBER(), "Tkn is not a number");
+    unsafe {
+        let expr: Any = calloc(sizeof ExprNumLit, 1);
+        let _idk: &mut ExprNumLit = &mut *expr;
+        *_idk = ExprNumLit {
+            number: tkn.content
+        };
+        return Expr {
+            span: tkn.span,
+            kind: EXPR_KIND_NUM_LIT(),
+            data: expr
+        };
+    }
+}
+func newExprIdent(tkn: &Token) -> Expr {
+    assert_with_msg(tkn.kind == TOKEN_IDENT(), "Tkn is not an identifier");
+    unsafe {
+        let expr: Any = calloc(sizeof ExprIdent, 1);
+        let _idk: &mut ExprIdent = &mut *expr;
+        *_idk = ExprIdent {
+            name: tkn.content
+        };
+        return Expr {
+            span: tkn.span,
+            kind: EXPR_KIND_IDENT(),
+            data: expr
+        };
+    }
+}
+func newExprBinary(op: &Token, lhs: &Expr, rhs: &Expr) -> Expr {
+    mut span: Span = newSpanBetween(&lhs.span, &op.span);
+    span = newSpanBetween(&span, &rhs.span);
+    unsafe {
+        let expr: Any = calloc(sizeof ExprBinary, 1);
+        let _idk: &mut ExprBinary = &mut *expr;
+        *_idk = ExprBinary {
+            op: *op,
+            lhs: *lhs,
+            rhs: *rhs
+        };
+        return Expr {
+            span: span,
+            kind: EXPR_KIND_BINARY(),
+            data: expr
+        };
+    }
+}
+func newExprStructLit(name: &Token) -> ExprStructLit {
+    return ExprStructLit {
+        name: *name,
+        fields: emptyVec(VECTOR_KIND_PAIR_STRING_EXPR(), sizeof PairTokenExpr),
+    };
+}

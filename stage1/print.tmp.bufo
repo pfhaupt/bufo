@@ -1,4 +1,3 @@
-// While this code is not used, we keep it here to reduce compile times :^)
 
 unsafe func printSubStr(sub: &SubStr, indent: usize) {
     let s: String = sub.toString();
@@ -178,9 +177,9 @@ unsafe func printRealize(realize: &Realize, indent: usize) {
         }
     }
 }
-unsafe func printStruct(strukt: &Struct, indent: usize) {
-    printf("%*cStruct\n", indent, ' ');
-    printType(&strukt.typ, indent + 2);
+unsafe func printCStruct(strukt: &CStruct, indent: usize) {
+    printf("%*cCStruct\n", indent, ' ');
+    printType(&strukt.name, indent + 2);
     if (strukt.fields.len() > 0) {
         printf("%*cFields\n", indent + 2, ' ');
         for (mut i: usize = 0; i < strukt.fields.len(); i = i + 1) {
@@ -188,6 +187,37 @@ unsafe func printStruct(strukt: &Struct, indent: usize) {
         }
     } else {
         printf("%*c<empty>\n", indent + 2);
+    }
+}
+unsafe func printTupleStruct(strukt: &TupleStruct, indent: usize) {
+    printf("%*cTupleStruct\n", indent, ' ');
+    printType(&strukt.name, indent + 2);
+    if (strukt.types.len() > 0) {
+        printf("%*cFields\n", indent + 2, ' ');
+        for (mut i: usize = 0; i < strukt.types.len(); i = i + 1) {
+            printType(strukt.types.getType(i), indent + 4);
+        }
+    } else {
+        printf("%*c<empty>\n", indent + 2);
+    }
+}
+unsafe func printEmptyStruct(strukt: &EmptyStruct, indent: usize) {
+    printf("%*cEmptyStruct\n", indent, ' ');
+    printType(&strukt.name, indent + 2);
+}
+unsafe func printStructVariant(variant: &StructVariant, indent: usize) {
+    if (variant.kind == STRUCT_VARIANT_C()) printCStruct(variant.data, indent);
+    else if (variant.kind == STRUCT_VARIANT_TUPLE()) printTupleStruct(variant.data, indent);
+    else if (variant.kind == STRUCT_VARIANT_EMPTY()) printEmptyStruct(variant.data, indent);
+    else assert_with_msg(false, "Unreachable");
+}
+unsafe func printEnum(eenum: &Enum, indent: usize) {
+    printf("%*cEnum\n", indent, ' ');
+    printf("%*cName\n", indent + 2, ' ');
+    printType(&eenum.name, indent + 4);
+    printf("%*cVariants\n", indent + 2, ' ');
+    for (mut i: usize = 0; i < eenum.variants.len(); i = i + 1) {
+        printStructVariant(eenum.variants.getStructVariant(i), indent + 4);
     }
 }
 unsafe func printTypeDef(typeDef: &TypeDef, indent: usize) {
@@ -215,7 +245,11 @@ unsafe func printModule(module: &Module, indent: usize) {
     }
     printf("%*cStructs\n", indent, ' ');
     for (mut i: usize = 0; i < module.structs.len(); i = i + 1) {
-        printStruct(module.structs.getStruct(i), indent + 2);
+        printStructVariant(module.structs.getStructVariant(i), indent + 2);
+    }
+    printf("%*cEnums\n", indent, ' ');
+    for (mut i: usize = 0; i < module.enums.len(); i = i + 1) {
+        printEnum(module.enums.getEnum(i), indent + 2);
     }
     printf("%*cTypeDefs\n", indent, ' ');
     for (mut i: usize = 0; i < module.types.len(); i = i + 1) {

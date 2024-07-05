@@ -1,0 +1,114 @@
+import "frontend/nodes.bufo";
+import "print.tmp.bufo";
+import "util/span.bufo";
+import "util/vector.bufo";
+import "util/string.bufo";
+
+func typeErrorStructRedeclaration(errorLoc: Span, struktName: SubStr, existLoc: Span) -> String {
+    mut s: String = newString();
+    s.pushStr("error: ");
+    let _s1: String = errorLoc.toString();
+    s.pushString(&_s1);
+    _s1.drop();
+    s.pushStr(": Struct `");
+    s.pushSubStr(&struktName);
+    s.pushStr("` already declared earlier, at bytes ");
+    let _s2: String = existLoc.toString();
+    s.pushString(&_s2);
+    _s2.drop();
+    return s;
+}
+
+struct Lookup {
+    structs: Vec;
+    errors: Vec;
+
+    func addStruct(&mut this, strukt: &StructVariant) -> bool {
+        mut error: bool = false;
+        for (mut i: usize = 0; i < this.structs.len(); i = i + 1) {
+            let existing: &StructVariant = this.structs.getStructVariant(i);
+            if (existing.getName().equals(&strukt.getName())) {
+                this.errors.pushString(&typeErrorStructRedeclaration(
+                    strukt.getSpan(),
+                    strukt.getName(),
+                    existing.getSpan(),
+                ));
+                error = true;
+            }
+        }
+        if (!error) this.structs.pushStructVariant(strukt);
+        return !error;
+    }
+
+    func verify(&mut this) -> bool {
+        todo_with_msg("Lookup.verify");
+        return false;
+    }
+
+    func getErrors(&this) -> &Vec {
+        return &this.errors;
+    }
+}
+
+func newLookup() -> Lookup {
+    return Lookup {
+        structs: emptyVec(VECTOR_KIND_STRUCT_VARIANT(), sizeof StructVariant),
+        errors: emptyVec(VECTOR_KIND_STRING(), sizeof String),
+    };
+}
+
+struct Checker {
+    module: &mut Module;
+    lookup: Lookup;
+    errors: Vec;
+
+    func addErrors(&mut this) {
+        let errors: &Vec = this.lookup.getErrors();
+        this.errors.extend(errors);
+        this.lookup.errors.reset();
+    }
+
+    func runChecks(&mut this) -> bool {
+        this.fillLookup();
+        this.verifyLookup();
+        if (this.errors.len() > 0) unsafe {
+            let stderr: Any = fdopen(2, "w");
+            for (mut i: usize = 0; i < this.errors.len(); i = i + 1) {
+                fprintf(stderr, "%s\n", this.errors.getString(i).buffer);
+            }
+            assert(fclose(stderr) == 0);
+        }
+        return this.errors.len() == 0;
+    }
+
+    func fillLookup(&mut this) {
+        let m: &mut Module = this.module;
+        for (mut i: usize = 0; i < m.structs.len(); i = i + 1) {
+            this.addStructToLookup(m.structs.getStructVariant(i));
+        }
+    }
+    func verifyLookup(&mut this) {
+        // Now that we have a lookup of all user-created types we can
+        // verify quirk-boundaries and such.
+        // This function does not care about quirk-implementation, it
+        // only does high-level checks of the types.
+        // Other functions are then responsible for verifying the
+        // implementations.
+        if (!this.lookup.verify()) {
+            this.addErrors();
+        }
+    }
+
+    func addStructToLookup(&mut this, strukt: &StructVariant) {
+        if (!this.lookup.addStruct(strukt)) {
+            this.addErrors();
+        }
+    }
+}
+func newChecker(mod: &mut Module) -> Checker {
+    return Checker {
+        module: mod,
+        lookup: newLookup(),
+        errors: emptyVec(VECTOR_KIND_STRING(), sizeof String),
+    };
+}

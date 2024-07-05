@@ -247,6 +247,7 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
     }
     
     fn fix_token_location(&self, token: &mut Token<'src>) {
+        // FIXME: Locations are still wrong
         let (file, offset) = self.filemarkers[self.filemarkers.len() - 1];
         token.location.file_id = file;
         token.location.byte -= offset;

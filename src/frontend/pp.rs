@@ -1,4 +1,4 @@
-use crate::compiler::{FILE_EXT, WARN_STR};
+use crate::compiler::{ERR_STR, FILE_EXT, NOTE_STR};
 use crate::frontend::tokens::{Token, TokenType, KEYWORD_FILEMARKER};
 use crate::internal_panic;
 use crate::util::flags::Flags;
@@ -12,7 +12,7 @@ fn path_buf_to_str(path: &PathBuf) -> &str {
     path.to_str().unwrap()
 }
 enum PpError<'src> {
-    FileNotFoundInImportPaths(String),
+    FileNotFoundInImportPaths(String, String),
     OtherErrors(String),
     UnexpectedEOF,
     UnexpectedToken(TokenType, Token<'src>),
@@ -21,10 +21,10 @@ enum PpError<'src> {
 impl Display for PpError<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::FileNotFoundInImportPaths(filepath) => write!(f, "error: File {filepath} was not found in the list of import paths."), 
-            Self::OtherErrors(_other) => todo!(),
+            Self::FileNotFoundInImportPaths(current, filepath) => write!(f, "{ERR_STR}: File {filepath} was not found in the list of import paths.\n{NOTE_STR}: Error happened when processing {current}."),
+            Self::OtherErrors(other) => write!(f, "{other}"),
             Self::UnexpectedEOF => write!(f, "error: Expected String literal after `import`, found End Of File."),
-            Self::UnexpectedToken(_expected, _received) => todo!(),
+            Self::UnexpectedToken(expected, received) => write!(f, "{ERR_STR}: Unexpected token `{}`, expected `{}` instead.", received, expected),
         }
     }
 }
@@ -83,7 +83,7 @@ impl<'flags, 'lexer, 'src> Preprocessor<'flags, 'lexer, 'src> {
                         let _s = path_buf_to_str(&filepath);
                         internal_panic!("fs::metadata(&{_s}).is_ok() == true, yet reading failed")
                     };
-                    let import = pre_process(origin, &self.flags, imported_files, &self.import_paths, &filepath, &import_data)
+                    let import = pre_process(&self.flags, imported_files, &self.import_paths, &filepath, &import_data)
                         .map_err(|vpe|vec![PpError::OtherErrors(vpe)])?;
                     let fname = filepath.to_str().unwrap();
                     after.push_str(&format!("{KEYWORD_FILEMARKER} START \"{fname}\""));
@@ -95,7 +95,7 @@ impl<'flags, 'lexer, 'src> Preprocessor<'flags, 'lexer, 'src> {
                 }
             }
             if !valid {
-                return Err(vec![PpError::FileNotFoundInImportPaths(filename)]);
+                return Err(vec![PpError::FileNotFoundInImportPaths(path_buf_to_str(origin).to_string(), filename)]);
             }
         }
         Ok(after)
@@ -107,7 +107,6 @@ impl<'flags, 'lexer, 'src> Preprocessor<'flags, 'lexer, 'src> {
 }
 
 fn pre_process(
-    origin: &PathBuf,
     flags: &Flags,
     imported_files: &mut HashSet<PathBuf>,
     imports: &Vec<PathBuf>,
@@ -115,9 +114,6 @@ fn pre_process(
     content: &str
 ) -> Result<String, String> {
     if imported_files.contains(path) {
-        println!("{WARN_STR}: When processing {0}: File {1} is already imported.",
-            path_buf_to_str(origin),
-            path_buf_to_str(path));
         return Ok(String::new());
     }
     imported_files.insert(path.to_path_buf());
@@ -145,7 +141,7 @@ pub fn load_project(flags: &Flags) -> Result<String, String> {
     match fs::read_to_string(&flags.input) {
         Ok(content) => {
             let content = format!("import \"prelude.bufo\";{KEYWORD_FILEMARKER} START \"{0}\"{content} {KEYWORD_FILEMARKER} END \"{0}\"", flags.input.to_str().unwrap());
-            pre_process(&flags.input, flags, &mut HashSet::new(), &imports, &flags.input, &content)
+            pre_process(flags, &mut HashSet::new(), &imports, &flags.input, &content)
         },
         Err(_e) => todo!()
     }

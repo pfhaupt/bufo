@@ -1,3 +1,4 @@
+import "util/string.bufo";
 
 struct SubStr {
     start: &char;

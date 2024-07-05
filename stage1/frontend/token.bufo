@@ -1,0 +1,80 @@
+
+func TOKEN_EOF() -> usize { return 0; }
+func TOKEN_IDENT() -> usize { return 1; }
+func TOKEN_KEYWORD() -> usize { return 2; }
+func TOKEN_NUMBER() -> usize { return 3; }
+func TOKEN_PAREN_OPEN() -> usize { return 4; }
+func TOKEN_PAREN_CLOSE() -> usize { return 5; }
+func TOKEN_CURLY_OPEN() -> usize { return 6; }
+func TOKEN_CURLY_CLOSE() -> usize { return 7; }
+func TOKEN_SHARP_OPEN() -> usize { return 8; }
+func TOKEN_SHARP_CLOSE() -> usize { return 9; }
+func TOKEN_SEMI_COLON() -> usize { return 10; }
+func TOKEN_COLON() -> usize { return 11; }
+func TOKEN_EQUAL_SINGLE() -> usize { return 12; }
+func TOKEN_EQUAL_DOUBLE() -> usize { return 13; }
+func TOKEN_AMPERSAND() -> usize { return 14; }
+func TOKEN_COMMA() -> usize { return 15; }
+func TOKEN_ARROW() -> usize { return 16; }
+func TOKEN_PLUS_SINGLE() -> usize { return 17; }
+func tokenKindToString(kind: usize) -> &char {
+    if (kind == TOKEN_EOF()) return "end of file";
+    else if (kind == TOKEN_IDENT()) return "identifier";
+    else if (kind == TOKEN_KEYWORD()) return "keyword";
+    else if (kind == TOKEN_NUMBER()) return "number";
+    else if (kind == TOKEN_PAREN_OPEN()) return "`(`";
+    else if (kind == TOKEN_PAREN_CLOSE()) return "`)`";
+    else if (kind == TOKEN_CURLY_OPEN()) return "`{`";
+    else if (kind == TOKEN_CURLY_CLOSE()) return "`}`";
+    else if (kind == TOKEN_SHARP_OPEN()) return "`<`";
+    else if (kind == TOKEN_SHARP_CLOSE()) return "`>`";
+    else if (kind == TOKEN_SEMI_COLON()) return "`;`";
+    else if (kind == TOKEN_COMMA()) return "`,`";
+    else unsafe {
+        printf("Please implement tokenKindToString(%llu)\n", kind);
+        exit(1);
+    }
+    return ""; // Unreachable
+}
+struct Token {
+    span: Span;
+    content: SubStr;
+    kind: usize;
+
+    func print(&this) {
+        unsafe { printf("kind=%llu, content=", this.kind); }
+        this.content.print();
+    }
+    func toString(&this) -> String {
+        return this.content.toString();
+    }
+    func getSubStr(&this) -> SubStr {
+        return this.content;
+    }
+    func getSpan(&this) -> Span {
+        return this.span;
+    }
+}
+
+func newToken(sub: &SubStr, start: usize, kind: usize) -> Token {
+    let s: Span = newSpan(start, start + sub.len);
+    return Token {
+        content: *sub,
+        span: s,
+        kind: kind
+    };
+}
+func newTokenEOF(start: usize) -> Token {
+    return Token {
+        content: newSubStr("End Of File", 0, 11),
+        span: newSpan(start, start + 1),
+        kind: TOKEN_EOF(),
+    };
+}
+func defaultToken() -> Token {
+    return Token {
+        content: defaultSubStr(),
+        span: newSpan(0, 0),
+        kind: TOKEN_EOF(),
+    };
+}

@@ -14,22 +14,34 @@ Battle Plan:
 24-06-07: We can parse the below test file
 */
 
+struct Bez(Vec<i32>, u8);
+
+struct Bar;
+
+enum Animal<T> {
+    Cat(Cat<T>),
+    Dog {
+        name: &str
+    },
+    None
+};
+
 quirk ABC {}
 
 struct Idk<T> {
     field: i32,
     val: T,
-}
+};
 
 type Irdk = Idk<i32>;
 
 struct Foo<T> {
     v: T,
-}
+};
 
 struct Vec<Elems> {
     elems: &mut Elems,
-}
+};
 
 realize Idk<T> {
     func foo(&self) {
