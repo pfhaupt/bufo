@@ -127,7 +127,7 @@ impl Display for Operation {
 
 impl Operation {
     #[trace_call(extra)]
-    fn from(s: &str) -> Option<Self> {
+    pub fn from(s: &str) -> Option<Self> {
         debug_assert_eq!(Operation::GreaterThanOrEqual as u8 + 1, 21, "Not all Operations are handled in from()");
         // TOKEN_TYPE_HANDLE_HERE (if new token is an operator)
         match s {
@@ -446,9 +446,10 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
         if self.flags.verbose {
             println!("[INFO] Parsing `{}`", filepath.to_str().unwrap());
         }
+        let mut globals = vec![];
+        let mut externs = vec![];
         let mut structs = vec![];
         let mut functions = vec![];
-        let mut externs = vec![];
 
         const RECOVER_TOKENS: [TokenType; 3] = [
             TokenType::ClosingCurly,
@@ -478,7 +479,7 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
                     externs.push(parsed_extern);
                 }
                 TokenType::KeywordFunc => {
-                    let Ok(parsed_function) = self.parse_function(false) else {
+                    let Ok(parsed_function) = self.parse_function(false, false) else {
                         self.recover(&RECOVER_TOKENS);
                         valid = false;
                         continue;
@@ -496,6 +497,50 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
                     };
                     structs.push(parsed_struct);
                 }
+                t @ TokenType::KeywordMut | t @ TokenType::KeywordLet => {
+                    self.expect(t)?;
+                    let Ok(parsed_global) = self.parse_stmt_var_decl(t == TokenType::KeywordMut, false) else {
+                        self.recover(&RECOVER_TOKENS);
+                        valid = false;
+                        continue;
+                    };
+                    globals.push(parsed_global);
+                }
+                TokenType::KeywordComptime => {
+                    self.expect(TokenType::KeywordComptime)?;
+                    let Some(tkn) = self.peek() else {
+                        self.report_error(ParserError::UnexpectedEOF(self.get_location()));
+                        return Err(());
+                    };
+                    match tkn.token_type {
+                        TokenType::Identifier => {
+                            let Ok(parsed_global) = self.parse_stmt_var_decl(false, true) else {
+                                self.recover(&RECOVER_TOKENS);
+                                valid = false;
+                                continue;
+                            };
+                            globals.push(parsed_global);
+                        }
+                        TokenType::KeywordFunc => {
+                            let Ok(parsed_function) = self.parse_function(false, true) else {
+                                self.recover(&RECOVER_TOKENS);
+                                valid = false;
+                                continue;
+                            };
+                            functions.push(parsed_function);
+                        }
+                        _ => {
+                            let tkn = self.next().unwrap();
+                            valid = false;
+                            self.report_error(ParserError::UnexpectedTokenMany(
+                                tkn.location,
+                                vec![TokenType::KeywordFunc, TokenType::Identifier],
+                                tkn.token_type,
+                            ));
+                            self.recover(&RECOVER_TOKENS);
+                        }
+                    }
+                }
                 TokenType::KeywordUnsafe => {
                     self.expect(TokenType::KeywordUnsafe)?;
                     let Some(tkn) = self.peek() else {
@@ -503,8 +548,35 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
                         return Err(());
                     };
                     match tkn.token_type {
+                        TokenType::KeywordComptime => {
+                            self.expect(TokenType::KeywordComptime)?;
+                            let Some(tkn) = self.peek() else {
+                                self.report_error(ParserError::UnexpectedEOF(self.get_location()));
+                                return Err(());
+                            };
+                            match tkn.token_type {
+                                TokenType::KeywordFunc => {
+                                    let Ok(parsed_function) = self.parse_function(true, true) else {
+                                        self.recover(&RECOVER_TOKENS);
+                                        valid = false;
+                                        continue;
+                                    };
+                                    functions.push(parsed_function);
+                                }
+                                _ => {
+                                    let tkn = self.next().unwrap();
+                                    valid = false;
+                                    self.report_error(ParserError::UnexpectedTokenSingle(
+                                        tkn.location,
+                                        TokenType::KeywordFunc,
+                                        tkn.token_type,
+                                    ));
+                                    self.recover(&RECOVER_TOKENS);
+                                }
+                            }
+                        }
                         TokenType::KeywordFunc => {
-                            let Ok(parsed_function) = self.parse_function(true) else {
+                            let Ok(parsed_function) = self.parse_function(true, false) else {
                                 self.recover(&RECOVER_TOKENS);
                                 valid = false;
                                 continue;
@@ -555,9 +627,10 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
         }
 
         let file = nodes::FileNode {
+            globals,
+            externs,
             structs,
             functions,
-            externs,
             compiler_flags
         };
         Ok(file)
@@ -740,7 +813,7 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
     }
 
     // #[trace_call(always)]
-    fn parse_function(&mut self, is_unsafe: bool) -> Result<nodes::FunctionNode<'src>, ()> {
+    fn parse_function(&mut self, is_unsafe: bool, is_comptime: bool) -> Result<nodes::FunctionNode<'src>, ()> {
         let location = self.get_location();
         self.expect(TokenType::KeywordFunc)?;
 
@@ -765,6 +838,7 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
             block,
             is_unsafe,
             is_vararg: false,
+            is_comptime,
             #[cfg(feature = "old_codegen")]
             stack_size: 0,
         })
@@ -921,12 +995,19 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
             return Err(());
         };
         Ok(match tkn.token_type {
+            TokenType::KeywordComptime => {
+                self.expect(TokenType::KeywordComptime)?;
+                let comp_stmt = self.parse_stmt_var_decl(false, true)?;
+                nodes::Statement::VarDecl(comp_stmt)
+            }
             TokenType::KeywordMut => {
-                let mut_stmt = self.parse_stmt_var_decl(true)?;
+                self.expect(TokenType::KeywordMut)?;
+                let mut_stmt = self.parse_stmt_var_decl(true, false)?;
                 nodes::Statement::VarDecl(mut_stmt)
             }
             TokenType::KeywordLet => {
-                let let_stmt = self.parse_stmt_var_decl(false)?;
+                self.expect(TokenType::KeywordLet)?;
+                let let_stmt = self.parse_stmt_var_decl(false, false)?;
                 nodes::Statement::VarDecl(let_stmt)
             }
             TokenType::KeywordIf => {
@@ -970,13 +1051,8 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
     }
 
     // #[trace_call(always)]
-    fn parse_stmt_var_decl(&mut self, is_mutable: bool)-> Result<nodes::VarDeclNode<'src>, ()> {
+    fn parse_stmt_var_decl(&mut self, is_mutable: bool, is_comptime: bool)-> Result<nodes::VarDeclNode<'src>, ()> {
         let location = self.get_location();
-        if is_mutable {
-            self.expect(TokenType::KeywordMut)?;
-        } else {
-            self.expect(TokenType::KeywordLet)?;
-        }
         let name_token = self.expect(TokenType::Identifier)?;
         self.expect(TokenType::Colon)?;
         let typ = self.parse_type_node()?;
@@ -989,6 +1065,7 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
             typ,
             expression,
             is_mutable,
+            is_comptime,
         })
     }
 

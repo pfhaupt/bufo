@@ -36,7 +36,6 @@ impl From<&OptimizationLevel> for inkwell::OptimizationLevel {
 #[derive(Default, Debug, Clone)]
 pub struct OptimizationFlags {
     pub level: OptimizationLevel,
-    pub dead_code: bool,
 }
 
 impl From<&str> for OptimizationFlags {
@@ -64,7 +63,6 @@ impl OptimizationFlags {
         Self {
             level: OptimizationLevel::Some,
             // Add more optimizations here
-            dead_code: true,
 
             // Also enable all previous optimizations
             ..Self::none()

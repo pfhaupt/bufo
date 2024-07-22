@@ -24,6 +24,8 @@ use inkwell::values::BasicValueEnum;
 use tracer::trace_call;
 use crate::middleend::type_checker::Type;
 
+use super::comptime_eval::{Value, Evaluator};
+
 macro_rules! is_int {
     ($typ:expr) => {
         $typ == Type::I8 || $typ == Type::I16 || $typ == Type::I32 || $typ == Type::I64 ||
@@ -109,8 +111,8 @@ macro_rules! codegen_function_header {
 }
 
 #[derive(Debug, Clone)]
-struct StructInfo<'src> {
-    fields: Vec<(&'src str, Type<'src>)>,
+pub struct StructInfo<'src> {
+    pub fields: Vec<(&'src str, Type<'src>)>,
 }
 
 impl<'src> StructInfo<'src> {
@@ -137,7 +139,7 @@ impl<'src> StructInfo<'src> {
     }
 }
 
-pub struct LLVMCodegen<'flags, 'ctx, 'src> {
+pub struct LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
     filename: PathBuf,
     exename: PathBuf,
     context: &'ctx Context,
@@ -145,6 +147,9 @@ pub struct LLVMCodegen<'flags, 'ctx, 'src> {
     builder: Builder<'ctx>,
     target_machine: TargetMachine,
 
+    comptime_evaluator: Evaluator<'flags, 'src, 'ast>,
+
+    global_values: HashSet<String>,
     stack_scopes: Vec<HashMap<String, BasicValueEnum<'ctx>>>,
     loop_blocks: Vec<(BasicBlock<'ctx>, BasicBlock<'ctx>)>, // (loop, after_loop)
     struct_defs: HashMap<&'src str, StructType<'ctx>>,
@@ -153,7 +158,7 @@ pub struct LLVMCodegen<'flags, 'ctx, 'src> {
     flags: &'flags Flags,
     clang_flags: Vec<String>,
 }
-impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
+impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
     pub fn new(flags: &'flags Flags, context: &'ctx Context) -> Self {
         let filename = PathBuf::from(&flags.input);
         let filename = filename.file_name().unwrap().to_str().unwrap().to_string();
@@ -184,6 +189,8 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
             module,
             builder,
             target_machine,
+            comptime_evaluator: Evaluator::new(flags),
+            global_values: HashSet::new(),
             stack_scopes: Vec::new(),
             loop_blocks: Vec::new(),
             struct_defs: HashMap::new(),
@@ -322,7 +329,7 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
     }
 
     #[trace_call(always)]
-    fn fill_lookup(&mut self, file: &nodes::FileNode) -> Result<(), String> {
+    fn fill_lookup(&mut self, file: &'ast nodes::FileNode<'src>) -> Result<(), String> {
         for external in &file.externs {
             let name = &external.name;
             fill_function_lookup!(self, external, name);
@@ -339,12 +346,16 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
             }
         }
         for function in &file.functions {
-            let name = format!("func.{}", function.name);
-            let llvm_func = fill_function_lookup!(self, function, name);
-            if function.is_inlinable() {
-                let id = Attribute::get_named_enum_kind_id("alwaysinline");
-                assert!(id != 0);
-                llvm_func.add_attribute(AttributeLoc::Function, self.context.create_enum_attribute(id, 1));
+            if function.is_comptime {
+                self.comptime_evaluator.add_function(&function);
+            } else {
+                let name = format!("func.{}", function.name);
+                let llvm_func = fill_function_lookup!(self, function, name);
+                if function.is_inlinable() {
+                    let id = Attribute::get_named_enum_kind_id("alwaysinline");
+                    assert!(id != 0);
+                    llvm_func.add_attribute(AttributeLoc::Function, self.context.create_enum_attribute(id, 1));
+                }
             }
         }
         for comp_flag in &file.compiler_flags.flags {
@@ -356,6 +367,7 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
 
     #[trace_call(extra)]
     fn enter_scope(&mut self) {
+        self.comptime_evaluator.enter_scope();
         self.stack_scopes.push(HashMap::new());
     }
 
@@ -363,6 +375,7 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
     fn exit_scope(&mut self) {
         debug_assert!(self.stack_scopes.len() > 0);
         self.stack_scopes.pop();
+        self.comptime_evaluator.exit_scope();
     }
 
     #[trace_call(extra)]
@@ -374,11 +387,11 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
     #[trace_call(extra)]
     fn known_variable(&self, name: &str) -> bool {
         for scope in &self.stack_scopes {
-            if scope.get(name).is_some() {
+            if scope.contains_key(name) {
                 return true;
             }
         }
-        false
+        self.global_values.contains(name)
     }
 
     #[trace_call(extra)]
@@ -388,6 +401,9 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
                 return *value;
             }
         }
+        if self.global_values.contains(name) {
+            return self.module.get_global(&name).unwrap().as_pointer_value().into();
+        }
         internal_panic!("Variable {} not found!", name);
     }
 
@@ -395,6 +411,7 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
     pub fn codegen_project(&mut self, file: &'src nodes::FileNode) -> Result<(), String> {
         self.fill_struct_lookup(file)?;
         self.fill_lookup(file)?;
+        self.comptime_evaluator.set_struct_lookup(&self.struct_info);
         if let Err(e) = self.codegen_intrinsics() {
             internal_panic!("Module verification failed:\n{}", e.to_string());
         }
@@ -523,15 +540,18 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
         match self.module.verify() {
             Ok(_) => (),
             Err(e) => {
+                if self.flags.debug {
+                    println!("{}", self.module.to_string());
+                }
                 internal_panic!("Module verification failed:\n{}", e.to_string())
             },
         }
 
-        if self.flags.debug {
-            println!("{}", "-".repeat(80));
-            println!("Module before optimizations:");
-            println!("{}", self.module.to_string());
-        }
+        // if self.flags.debug {
+        //     println!("{}", "-".repeat(80));
+        //     println!("Module before optimizations:");
+        //     println!("{}", self.module.to_string());
+        // }
 
         // TODO: We already have an opt-flag, so we should add optimizations accordingly
         //       instead of just adding all of them
@@ -571,12 +591,12 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
             }
         }
 
-        if self.flags.debug {
-            println!("{}", "-".repeat(80));
-            println!("Module after optimizations:");
-            println!("{}", self.module.to_string());
-            println!("{}", "-".repeat(80));
-        }
+        // if self.flags.debug {
+        //     println!("{}", "-".repeat(80));
+        //     println!("Module after optimizations:");
+        //     println!("{}", self.module.to_string());
+        //     println!("{}", "-".repeat(80));
+        // }
 
         let llvmname = self.filename.with_extension("ll");
         let path = std::path::Path::new(&llvmname);
@@ -629,7 +649,10 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
     }
 
     #[trace_call(always)]
-    fn codegen_file(&mut self, file: &nodes::FileNode) -> Result<(), BuilderError> {
+    fn codegen_file(&mut self, file: &nodes::FileNode<'src>) -> Result<(), BuilderError> {
+        for global in &file.globals {
+            self.codegen_global(global)?;
+        }
         // External functions are already added in `fill_lookup`
         // for external in &file.externs {
         //     self.codegen_extern(external)?;
@@ -638,13 +661,21 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
             self.codegen_struct(strukt)?;
         }
         for function in &file.functions {
+            if function.is_comptime {
+                continue;
+            }
             self.codegen_function(function)?;
         }
         Ok(())
     }
 
     #[trace_call(always)]
-    fn codegen_struct(&mut self, strukt: &nodes::StructNode) -> Result<(), BuilderError> {
+    fn codegen_global(&mut self, global: &nodes::VarDeclNode<'src>) -> Result<(), BuilderError> {
+        self.codegen_stmt_var_decl(global, true)
+    }
+
+    #[trace_call(always)]
+    fn codegen_struct(&mut self, strukt: &nodes::StructNode<'src>) -> Result<(), BuilderError> {
         for method in &strukt.methods {
             self.codegen_method(method)?;
         }
@@ -652,7 +683,7 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
     }
 
     #[trace_call(always)]
-    fn codegen_method(&mut self, method: &nodes::MethodNode) -> Result<(), BuilderError> {
+    fn codegen_method(&mut self, method: &nodes::MethodNode<'src>) -> Result<(), BuilderError> {
         self.enter_scope();
 
         let name = method.get_full_name();
@@ -671,7 +702,7 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
     }
 
     #[trace_call(always)]
-    fn codegen_function(&mut self, function: &nodes::FunctionNode) -> Result<(), BuilderError> {
+    fn codegen_function(&mut self, function: &nodes::FunctionNode<'src>) -> Result<(), BuilderError> {
         self.enter_scope();
 
         let name = format!("func.{}", function.name);
@@ -690,7 +721,7 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
     }
 
     #[trace_call(always)]
-    fn codegen_block(&mut self, block: &nodes::BlockNode) -> Result<(), BuilderError> {
+    fn codegen_block(&mut self, block: &nodes::BlockNode<'src>) -> Result<(), BuilderError> {
         self.enter_scope();
         for statement in &block.statements {
             self.codegen_statement(statement)?;
@@ -700,10 +731,10 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
     }
 
     #[trace_call(always)]
-    fn codegen_statement(&mut self, statement: &nodes::Statement) -> Result<(), BuilderError> {
+    fn codegen_statement(&mut self, statement: &nodes::Statement<'src>) -> Result<(), BuilderError> {
         match statement {
             nodes::Statement::Block(block) => self.codegen_block(block),
-            nodes::Statement::VarDecl(var_decl_node) => self.codegen_stmt_var_decl(var_decl_node),
+            nodes::Statement::VarDecl(var_decl_node) => self.codegen_stmt_var_decl(var_decl_node, false),
             nodes::Statement::If(if_node) => self.codegen_stmt_if(if_node),
             nodes::Statement::While(while_node) => self.codegen_stmt_while(while_node),
             nodes::Statement::Return(return_node) => self.codegen_stmt_return(return_node),
@@ -733,7 +764,7 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
     }
 
     #[trace_call(always)]
-    fn codegen_stmt_while(&mut self, while_node: &nodes::WhileNode) -> Result<(), BuilderError> {
+    fn codegen_stmt_while(&mut self, while_node: &nodes::WhileNode<'src>) -> Result<(), BuilderError> {
         let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
         let while_cond = self.context.append_basic_block(function, "codegen_stmt_while_cond");
         self.builder.build_unconditional_branch(while_cond)?;
@@ -814,17 +845,37 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
     }
 
     #[trace_call(always)]
-    fn codegen_stmt_var_decl(&mut self, let_node: &nodes::VarDeclNode) -> Result<(), BuilderError> {
-        let typ = self.codegen_type_node(&let_node.typ);
-        let alloca = self.allocate(typ, &let_node.name)?;
-        self.add_variable(&let_node.name, alloca.into());
-        let value = self.codegen_expression(&let_node.expression, false)?;
-        self.store_value_in_ptr(alloca, value)?;
-        Ok(())
+    fn codegen_stmt_var_decl(&mut self, let_node: &nodes::VarDeclNode<'src>, is_global: bool) -> Result<(), BuilderError> {
+        if let_node.is_comptime {
+            let res = self.comptime_evaluator.add_variable(&let_node);
+            if let Err(eval_error) = res {
+                eprintln!("{ERR_STR}: {eval_error}");
+                std::process::exit(1);
+            } else {
+                Ok(())
+            }
+        } else if is_global {
+            let value = self.codegen_expression(&let_node.expression, false)?;
+            let global_value = self.module.add_global(
+                value.get_type(),
+                Some(AddressSpace::default()),
+                let_node.name
+            );
+            global_value.set_initializer(&value);
+            self.global_values.insert(let_node.name.to_string());
+            Ok(())
+        } else {
+            let typ = self.codegen_type_node(&let_node.typ);
+            let alloca = self.allocate(typ, &let_node.name)?;
+            self.add_variable(&let_node.name, alloca.into());
+            let value = self.codegen_expression(&let_node.expression, false)?;
+            self.store_value_in_ptr(alloca, value)?;
+            Ok(())
+        }
     }
 
     #[trace_call(always)]
-    fn codegen_stmt_if(&mut self, if_node: &nodes::IfNode) -> Result<(), BuilderError> {
+    fn codegen_stmt_if(&mut self, if_node: &nodes::IfNode<'src>) -> Result<(), BuilderError> {
         let condition = self.codegen_expression(&if_node.condition, false)?;
         let parent = self.builder.get_insert_block().unwrap().get_parent().unwrap();
         if let Some(else_body) = &if_node.else_body {
@@ -1150,20 +1201,79 @@ impl<'flags, 'ctx, 'src> LLVMCodegen<'flags, 'ctx, 'src> {
         }
     }
 
+    #[trace_call(extra)]
+    fn comptime_value_in_context(&self, typ: &Type<'src>, value: &Value) -> Result<BasicValueEnum<'ctx>, BuilderError> {
+        match value {
+            Value::Undefined => internal_panic!(),
+            Value::None => internal_panic!(),
+            Value::Bool(b) => {
+                debug_assert!(*typ == Type::Bool);
+                Ok(self.context.bool_type().const_int(*b as u64, false).into())
+            },
+            Value::Char(_) => todo!(),
+            Value::I64(i) => {
+                debug_assert!(value.in_type_bounds(typ));
+                let value = match typ {
+                    Type::I8 => self.context.i8_type().const_int(*i as u64, false),
+                    Type::I16 => self.context.i16_type().const_int(*i as u64, false),
+                    Type::I32 => self.context.i32_type().const_int(*i as u64, false),
+                    Type::I64 => self.context.i64_type().const_int(*i as u64, false),
+                    Type::Usize => self.context.i64_type().const_int(*i as u64, false),
+                    i => todo!("{i}")
+                };
+                Ok(value.into())
+            },
+            Value::F64(_) => todo!(),
+            Value::Ptr(p) => {
+                let memory = self.comptime_evaluator.get_memory_by_ptr(*p);
+                debug_assert!(matches!(typ, Type::Ref(_, _)));
+                debug_assert!(typ.get_underlying_type() == &Type::Char);
+                let s = String::from_utf8_lossy(memory);
+                let value = self.builder.build_global_string_ptr(&s, "comptime_str")?;
+                Ok(value.as_pointer_value().into())
+            },
+            Value::Struct(s) => {
+                debug_assert!(matches!(typ, Type::Struct(_)));
+                let real_name = typ.get_struct_name();
+                let struct_type = self.struct_defs.get(&real_name).unwrap();
+                let struct_info = self.struct_info.get(&real_name).unwrap();
+                let mut struct_instance = struct_type.get_undef();
+                for (field_value, (field_name, typ)) in s.iter().zip(&struct_info.fields) {
+                    let offset = self.struct_info.get(&real_name).unwrap().get_field_index(&field_name);
+                    struct_instance = self.builder.build_insert_value(
+                        struct_instance,
+                        self.comptime_value_in_context(typ, field_value)?,
+                        offset as u32,
+                        field_name,
+                    )?.into_struct_value();
+                }
+                Ok(struct_instance.into())
+            }
+        }
+    }
+
     #[trace_call(always)]
     fn codegen_name(&mut self, name: &nodes::NameNode, needs_ptr: bool) -> Result<BasicValueEnum<'ctx>, BuilderError> {
-        debug_assert!(self.known_variable(&name.name));
-        let var = self.get_variable(&name.name);
-        if needs_ptr {
-            debug_assert!(var.is_pointer_value());
-            Ok(var)
+        if !self.known_variable(&name.name) {
+            let value = self.comptime_evaluator.get_variable_value(name);
+            if let Err(_eval_error) = value {
+                todo!()
+            } else {
+                self.comptime_value_in_context(&name.typ, &value.unwrap())
+            }
         } else {
-            let var = self.load_value_from_ptr(
-                self.codegen_type(&name.typ),
-                var.into_pointer_value(),
-                "codegen_name",
-            )?;
-            Ok(var)
+            let var = self.get_variable(&name.name);
+            if needs_ptr {
+                debug_assert!(var.is_pointer_value());
+                Ok(var)
+            } else {
+                let var = self.load_value_from_ptr(
+                    self.codegen_type(&name.typ),
+                    var.into_pointer_value(),
+                    "codegen_name",
+                )?;
+                Ok(var)
+            }
         }
     }
 

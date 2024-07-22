@@ -817,12 +817,6 @@ impl<'src> Struct<'src> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct StructInfo {
-    location: Location,
-    fields: BTreeMap<String, (Location, String)>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub struct Variable<'src> {
     name: &'src str,
     location: Location,
@@ -863,12 +857,14 @@ pub struct TypeChecker<'flags, 'src> {
 impl<'flags, 'src> TypeChecker<'flags, 'src> {
     #[trace_call(extra)]
     pub fn new(flags: &'flags Flags) -> Self {
+        let mut known_variables = VecDeque::new();
+        known_variables.push_back(HashMap::new()); // Global variables
         Self {
             externs: HashMap::new(),
             struct_indices: HashMap::new(),
             structs: Vec::new(),
             functions: HashMap::new(),
-            known_variables: VecDeque::new(),
+            known_variables,
             unsafe_depth: 0,
             #[cfg(feature = "old_codegen")]
             current_stack_size: 0,
@@ -1178,6 +1174,9 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
 
     #[trace_call(always)]
     fn type_check_file(&mut self, module: &mut nodes::FileNode<'src>) {
+        for global in &mut module.globals {
+            self.type_check_stmt_var_decl(global);
+        }
         for extern_node in &mut module.externs {
             self.type_check_extern(extern_node);
         }
@@ -1218,7 +1217,7 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
 
     #[trace_call(always)]
     fn type_check_method(&mut self, method: &mut nodes::MethodNode<'src>, struct_name: &str) {
-        debug_assert!(self.known_variables.is_empty());
+        debug_assert!(self.known_variables.len() == 1); // Global variables
         debug_assert!(self.has_struct(&struct_name));
         #[cfg(feature = "old_codegen")]
         debug_assert!(self.current_stack_size == 0);
@@ -1251,12 +1250,13 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
 
         self.type_check_type_node(&mut method.return_type);
 
-        self.known_variables.clear();
+        self.known_variables.pop_back();
+        debug_assert!(self.known_variables.len() == 1); // Global variables
     }
 
     #[trace_call(always)]
     fn type_check_function(&mut self, function: &mut nodes::FunctionNode<'src>) {
-        debug_assert!(self.known_variables.is_empty());
+        debug_assert!(self.known_variables.len() == 1); // Global variables
         debug_assert!(self.has_function(&function.name));
         #[cfg(feature = "old_codegen")]
         debug_assert!(self.current_stack_size == 0);
@@ -1280,7 +1280,8 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
 
         self.type_check_type_node(&mut function.return_type);
 
-        self.known_variables.clear();
+        self.known_variables.pop_back();
+        debug_assert!(self.known_variables.len() == 1); // Global variables
     }
 
     #[trace_call(always)]

@@ -1,0 +1,12 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+comptime func function(value: i32) -> i32 {
+    return value;
+}
+
+func main() {
+    comptime value: i32 = function(5);
+    assert(value == 5);
+}

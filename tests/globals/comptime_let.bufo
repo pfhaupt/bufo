@@ -1,0 +1,10 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+comptime CONSTANT: i8 = 12;
+let variable: i8 = CONSTANT;
+func main() {
+    assert(CONSTANT == 12);
+    assert(variable == 12);
+}

@@ -16,6 +16,7 @@ macro_rules! fn_is_inlinable {
 
 #[derive(Debug, Clone)]
 pub struct FileNode<'src> {
+    pub globals: Vec<VarDeclNode<'src>>,
     pub externs: Vec<ExternNode<'src>>,
     pub structs: Vec<StructNode<'src>>,
     pub functions: Vec<FunctionNode<'src>>,
@@ -116,6 +117,7 @@ pub struct FunctionNode<'src> {
     pub block: BlockNode<'src>,
     pub is_unsafe: bool,
     pub is_vararg: bool,
+    pub is_comptime: bool,
     #[cfg(feature = "old_codegen")]
     pub stack_size: usize,
 }
@@ -230,6 +232,7 @@ pub struct VarDeclNode<'src> {
     pub typ: TypeNode<'src>,
     pub expression: Expression<'src>,
     pub is_mutable: bool,
+    pub is_comptime: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -319,7 +322,7 @@ impl<'src> Expression<'src> {
     }
 
     #[trace_call(extra)]
-    pub fn get_type(&self) -> Type {
+    pub fn get_type(&self) -> Type<'src> {
         match &self {
             Self::Name(e) => e.typ.clone(),
             Self::StructLiteral(e) => e.typ.clone(),

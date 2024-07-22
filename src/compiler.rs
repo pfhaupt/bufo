@@ -26,6 +26,15 @@ pub const FILE_EXT: &str = "bufo";
 
 #[macro_export]
 macro_rules! internal_panic {
+    () => {
+        panic!(
+            "INTERNAL PANIC AT {}:{}:{}\n{}: This is a bug in the compiler, please report it in the issue tracker at the GitHub repository.",
+            file!(),
+            line!(),
+            column!(),
+            crate::compiler::ERR_STR
+        )
+    };
     ($($arg:tt)*) => {
         panic!(
             "INTERNAL PANIC AT {}:{}:{}: {}\n{}: This is a bug in the compiler, please report it in the issue tracker at the GitHub repository.",
@@ -143,7 +152,7 @@ pub fn run_everything(
     }
 
     let now = Instant::now();
-    flow_checker.check_file(&mut parsed_ast)?;
+    flow_checker.check_project(&mut parsed_ast)?;
     if flags.verbose {
         println!("[INFO] Flow Checking took {:?}", now.elapsed());
     }

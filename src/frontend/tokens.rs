@@ -40,8 +40,8 @@ impl Location {
 }
 
 impl Display for Location {
-    fn fmt(&self, _f: &mut Formatter<'_>) -> std::fmt::Result {
-        todo!("Implement Location::Display")
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
     }
 }
 impl Debug for Location {
@@ -92,6 +92,7 @@ impl<'src> Token<'src> {
 
 pub const KEYWORD_BREAK: &str = "break";
 pub const KEYWORD_COMPILER_FLAGS: &str = "compiler_flags";
+pub const KEYWORD_COMPTIME: &str = "comptime";
 pub const KEYWORD_CONTINUE: &str = "continue";
 pub const KEYWORD_ELSE: &str = "else";
 pub const KEYWORD_EXTERN: &str = "extern";
@@ -120,6 +121,7 @@ pub enum TokenType {
     Comment,
     KeywordBreak,
     KeywordCompilerFlags,
+    KeywordComptime,
     KeywordContinue,
     KeywordElse,
     KeywordExtern,
@@ -181,6 +183,7 @@ impl TokenType {
         match kw {
             KEYWORD_BREAK => Some(Self::KeywordBreak),
             KEYWORD_COMPILER_FLAGS => Some(Self::KeywordCompilerFlags),
+            KEYWORD_COMPTIME => Some(Self::KeywordComptime),
             KEYWORD_CONTINUE => Some(Self::KeywordContinue),
             KEYWORD_ELSE => Some(Self::KeywordElse),
             KEYWORD_EXTERN => Some(Self::KeywordExtern),
@@ -235,6 +238,7 @@ impl Display for TokenType {
             Self::ClosingSquare => write!(f, "`]`"),
             Self::KeywordBreak => write!(f, "`{}`", KEYWORD_BREAK),
             Self::KeywordCompilerFlags => write!(f, "`{}`", KEYWORD_COMPILER_FLAGS),
+            Self::KeywordComptime => write!(f, "`{}`", KEYWORD_COMPTIME),
             Self::KeywordContinue => write!(f, "`{}`", KEYWORD_CONTINUE),
             Self::KeywordElse => write!(f, "`{}`", KEYWORD_ELSE),
             Self::KeywordExtern => write!(f, "`{}`", KEYWORD_EXTERN),

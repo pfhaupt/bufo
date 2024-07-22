@@ -12,9 +12,6 @@ impl Printer {
 }
 
 pub trait Printable {
-    fn print(&self) {
-        self.print_ast(0);
-    }
     fn print_ast(&self, indent: usize);
 }
 

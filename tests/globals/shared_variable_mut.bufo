@@ -1,0 +1,21 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+mut variable: i8 = 12;
+
+func set(val: i8) {
+    variable = val;
+}
+
+func get() -> i8 {
+    return variable;
+}
+
+func main() {
+    assert(variable == 12);
+    set(42);
+    assert(variable == 42);
+    let v: i8 = get();
+    assert(v == 42);
+}
