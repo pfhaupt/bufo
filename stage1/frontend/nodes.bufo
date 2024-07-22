@@ -616,7 +616,7 @@ func invalidExpr() -> Expr {
     unsafe { return Expr { span: defaultSpan(), kind: EXPR_INVALID(), data: NULL() }; }
 }
 func newExprNumLit(tkn: &Token) -> Expr {
-    assert_with_msg(tkn.kind == TOKEN_NUMBER(), "Tkn is not a number");
+    assert_with_msg(tkn.kind == TOKEN_NUMBER, "Tkn is not a number");
     unsafe {
         let expr: Any = calloc(sizeof ExprNumLit, 1);
         let _idk: &mut ExprNumLit = &mut *expr;
@@ -631,7 +631,7 @@ func newExprNumLit(tkn: &Token) -> Expr {
     }
 }
 func newExprIdent(tkn: &Token) -> Expr {
-    assert_with_msg(tkn.kind == TOKEN_IDENT(), "Tkn is not an identifier");
+    assert_with_msg(tkn.kind == TOKEN_IDENT, "Tkn is not an identifier");
     unsafe {
         let expr: Any = calloc(sizeof ExprIdent, 1);
         let _idk: &mut ExprIdent = &mut *expr;

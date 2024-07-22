@@ -3,36 +3,42 @@ import "util/substr.bufo";
 import "util/string.bufo";
 import "frontend/token.bufo";
 
-func BUILD_A_KEYWORD(s: &char) -> SubStr { unsafe { return newSubStr(s, 0, strlen(s)); }}
-func KEYWORD_FUNC() -> SubStr { return BUILD_A_KEYWORD("func"); }
-func KEYWORD_LET() -> SubStr { return BUILD_A_KEYWORD("let"); }
-func KEYWORD_STRUCT() -> SubStr { return BUILD_A_KEYWORD("struct"); }
-func KEYWORD_ENUM() -> SubStr { return BUILD_A_KEYWORD("enum"); }
-func KEYWORD_QUIRK() -> SubStr { return BUILD_A_KEYWORD("quirk"); }
-func KEYWORD_REALIZE() -> SubStr { return BUILD_A_KEYWORD("realize"); }
-func KEYWORD_TYPE() -> SubStr { return BUILD_A_KEYWORD("type"); }
-func KEYWORD_FOR() -> SubStr { return BUILD_A_KEYWORD("for"); }
-func KEYWORD_MUT() -> SubStr { return BUILD_A_KEYWORD("mut"); }
-func KEYWORD_SELF_LOWER() -> SubStr { return BUILD_A_KEYWORD("self"); }
-func KEYWORD_SELF_UPPER() -> SubStr { return BUILD_A_KEYWORD("Self"); }
+comptime func BUILD_A_KEYWORD(s: &char) -> SubStr {
+    unsafe {
+        return SubStr {
+            start: s,
+            len: comptimeStrlen(s)
+        };
+    }
+}
+comptime KEYWORD_FUNC: SubStr = BUILD_A_KEYWORD("func");
+comptime KEYWORD_LET: SubStr = BUILD_A_KEYWORD("let");
+comptime KEYWORD_STRUCT: SubStr = BUILD_A_KEYWORD("struct");
+comptime KEYWORD_ENUM: SubStr = BUILD_A_KEYWORD("enum");
+comptime KEYWORD_QUIRK: SubStr = BUILD_A_KEYWORD("quirk");
+comptime KEYWORD_REALIZE: SubStr = BUILD_A_KEYWORD("realize");
+comptime KEYWORD_TYPE: SubStr = BUILD_A_KEYWORD("type");
+comptime KEYWORD_FOR: SubStr = BUILD_A_KEYWORD("for");
+comptime KEYWORD_MUT: SubStr = BUILD_A_KEYWORD("mut");
+comptime KEYWORD_SELF_LOWER: SubStr = BUILD_A_KEYWORD("self");
+comptime KEYWORD_SELF_UPPER: SubStr = BUILD_A_KEYWORD("Self");
 struct Lexer {
     content: SubStr;
     ptr: usize;
     len: usize;
 
     func isKeyword(&mut this, word: &SubStr) -> bool {
-        if (word.equals(&KEYWORD_FUNC())) return true;
-        if (word.equals(&KEYWORD_LET())) return true;
-        if (word.equals(&KEYWORD_STRUCT())) return true;
-        if (word.equals(&KEYWORD_ENUM())) return true;
-        if (word.equals(&KEYWORD_QUIRK())) return true;
-        if (word.equals(&KEYWORD_REALIZE())) return true;
-        if (word.equals(&KEYWORD_TYPE())) return true;
-        if (word.equals(&KEYWORD_FOR())) return true;
-        if (word.equals(&KEYWORD_MUT())) return true;
-        if (word.equals(&KEYWORD_SELF_LOWER())) return true;
-        if (word.equals(&KEYWORD_SELF_UPPER())) return true;
-        return false;
+        return word.equals(&KEYWORD_FUNC)
+            || word.equals(&KEYWORD_LET)
+            || word.equals(&KEYWORD_STRUCT)
+            || word.equals(&KEYWORD_ENUM)
+            || word.equals(&KEYWORD_QUIRK)
+            || word.equals(&KEYWORD_REALIZE)
+            || word.equals(&KEYWORD_TYPE)
+            || word.equals(&KEYWORD_FOR)
+            || word.equals(&KEYWORD_MUT)
+            || word.equals(&KEYWORD_SELF_LOWER)
+            || word.equals(&KEYWORD_SELF_UPPER);
     }
 
     func advance(&mut this) -> bool {
@@ -69,8 +75,8 @@ struct Lexer {
             let word: SubStr = this.content.substring(0, len);
             this.ptr = this.ptr + len;
             this.content = tmp;
-            if (this.isKeyword(&word)) return newToken(&word, this.ptr - len, TOKEN_KEYWORD());
-            return newToken(&word, this.ptr - len, TOKEN_IDENT());
+            if (this.isKeyword(&word)) return newToken(&word, this.ptr - len, TOKEN_KEYWORD);
+            return newToken(&word, this.ptr - len, TOKEN_IDENT);
         } else if (isNumeric(currChar)) {
             mut len: usize = 0;
             mut tmp: SubStr = this.content;
@@ -81,48 +87,48 @@ struct Lexer {
             let word: SubStr = this.content.substring(0, len);
             this.ptr = this.ptr + len;
             this.content = tmp;
-            return newToken(&word, this.ptr - len, TOKEN_NUMBER());
+            return newToken(&word, this.ptr - len, TOKEN_NUMBER);
         } else if (currChar == '(') {
             this.advance();
-            return newToken(&newSubStr("(", 0, 1), this.ptr - 1, TOKEN_PAREN_OPEN());
+            return newToken(&newSubStr("(", 0, 1), this.ptr - 1, TOKEN_PAREN_OPEN);
         } else if (currChar == ')') {
             this.advance();
-            return newToken(&newSubStr(")", 0, 1), this.ptr - 1, TOKEN_PAREN_CLOSE());
+            return newToken(&newSubStr(")", 0, 1), this.ptr - 1, TOKEN_PAREN_CLOSE);
         } else if (currChar == '{') {
             this.advance();
-            return newToken(&newSubStr("{", 0, 1), this.ptr - 1, TOKEN_CURLY_OPEN());
+            return newToken(&newSubStr("{", 0, 1), this.ptr - 1, TOKEN_CURLY_OPEN);
         } else if (currChar == '}') {
             this.advance();
-            return newToken(&newSubStr("}", 0, 1), this.ptr - 1, TOKEN_CURLY_CLOSE());
+            return newToken(&newSubStr("}", 0, 1), this.ptr - 1, TOKEN_CURLY_CLOSE);
         } else if (currChar == '<') {
             this.advance();
-            return newToken(&newSubStr("<", 0, 1), this.ptr - 1, TOKEN_SHARP_OPEN());
+            return newToken(&newSubStr("<", 0, 1), this.ptr - 1, TOKEN_SHARP_OPEN);
         } else if (currChar == '>') {
             this.advance();
-            return newToken(&newSubStr(">", 0, 1), this.ptr - 1, TOKEN_SHARP_CLOSE());
+            return newToken(&newSubStr(">", 0, 1), this.ptr - 1, TOKEN_SHARP_CLOSE);
         } else if (currChar == ';') {
             this.advance();
-            return newToken(&newSubStr(";", 0, 1), this.ptr - 1, TOKEN_SEMI_COLON());
+            return newToken(&newSubStr(";", 0, 1), this.ptr - 1, TOKEN_SEMI_COLON);
         } else if (currChar == ':') {
             this.advance();
-            return newToken(&newSubStr(":", 0, 1), this.ptr - 1, TOKEN_COLON());
+            return newToken(&newSubStr(":", 0, 1), this.ptr - 1, TOKEN_COLON);
         } else if (currChar == '=') {
             this.advance();
-            return newToken(&newSubStr("=", 0, 1), this.ptr - 1, TOKEN_EQUAL_SINGLE());
+            return newToken(&newSubStr("=", 0, 1), this.ptr - 1, TOKEN_EQUAL_SINGLE);
         } else if (currChar == '&') {
             this.advance();
-            return newToken(&newSubStr("&", 0, 1), this.ptr - 1, TOKEN_AMPERSAND());
+            return newToken(&newSubStr("&", 0, 1), this.ptr - 1, TOKEN_AMPERSAND);
         } else if (currChar == ',') {
             this.advance();
-            return newToken(&newSubStr(",", 0, 1), this.ptr - 1, TOKEN_COMMA());
+            return newToken(&newSubStr(",", 0, 1), this.ptr - 1, TOKEN_COMMA);
         } else if (currChar == '+') {
             this.advance();
-            return newToken(&newSubStr("+", 0, 1), this.ptr - 1, TOKEN_PLUS_SINGLE());
+            return newToken(&newSubStr("+", 0, 1), this.ptr - 1, TOKEN_PLUS_SINGLE);
         } else if (currChar == '-') {
             this.advance();
             if (this.ptr < this.len && this.content.getChar(0) == '>') {
                 this.advance();
-                return newToken(&newSubStr("->", 0, 2), this.ptr - 2, TOKEN_ARROW());
+                return newToken(&newSubStr("->", 0, 2), this.ptr - 2, TOKEN_ARROW);
             } else {
                 todo_with_msg("normal Minus");
             }

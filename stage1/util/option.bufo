@@ -1,6 +1,6 @@
 import "frontend/nodes.bufo";
 
-func OPTION_KIND_TYPE() -> usize { return 0; }
+comptime OPTION_KIND_TYPE: usize = 0;
 struct Option {
     kind: usize;
     initialized: bool;
@@ -32,7 +32,7 @@ func newOptionType(typ: &Type) -> Option {
         let _q: &mut Type = &mut *_m;
         *_q = *typ;
         return Option {
-            kind: OPTION_KIND_TYPE(),
+            kind: OPTION_KIND_TYPE,
             initialized: true,
             data: _m
         };
