@@ -547,24 +547,12 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
             },
         }
 
-        // if self.flags.debug {
-        //     println!("{}", "-".repeat(80));
-        //     println!("Module before optimizations:");
-        //     println!("{}", self.module.to_string());
-        // }
-
         // TODO: We already have an opt-flag, so we should add optimizations accordingly
         //       instead of just adding all of them
         let pass_manager = PassManager::create(());
-        {
-            // Alloca -> SSA, very important and should always be run
-            pass_manager.add_promote_memory_to_register_pass();
-            for _ in 0..5 {
-                if !pass_manager.run_on(&self.module) {
-                    break;
-                }
-            }
-        }
+        // Alloca -> SSA, very important and should always be run
+        pass_manager.add_promote_memory_to_register_pass();
+
         // Our heuristic for alwaysinline: frontend::nodes::fn_is_inlinable!()
         pass_manager.add_always_inliner_pass();
         if self.flags.optimizations.level != OptimizationLevel::None {
@@ -584,19 +572,12 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
             pass_manager.add_loop_vectorize_pass();
             pass_manager.add_dead_arg_elimination_pass();
             pass_manager.add_global_dce_pass();
-            for _ in 0..10 {
-                if !pass_manager.run_on(&self.module) {
-                    break;
-                }
+        }
+        for _ in 0..10 {
+            if !pass_manager.run_on(&self.module) {
+                break;
             }
         }
-
-        // if self.flags.debug {
-        //     println!("{}", "-".repeat(80));
-        //     println!("Module after optimizations:");
-        //     println!("{}", self.module.to_string());
-        //     println!("{}", "-".repeat(80));
-        // }
 
         let llvmname = self.filename.with_extension("ll");
         let path = std::path::Path::new(&llvmname);
