@@ -1671,6 +1671,8 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
                     'r' => new_value.push('\r' as u8),
                     'n' => new_value.push('\n' as u8),
                     't' => new_value.push('\t' as u8),
+                    '"' => new_value.push('\"' as u8),
+                    '\'' => new_value.push('\'' as u8),
                     c =>internal_panic!("Can't escape character `{c}`.")
                 }
                 escaping = false;

@@ -95,10 +95,19 @@ impl<'src> Lexer<'src> {
         } else if self.content.starts_with('"') {
             let mut len = 0;
             let mut tmp = &self.content[1..];
-            while !tmp.starts_with('"') {
+            let mut escaping = false;
+            loop {
+                if escaping {
+                    escaping = false;
+                } else if tmp.starts_with('\\') {
+                    escaping = true;
+                } else if tmp.starts_with('\"') {
+                    break;
+                }
                 len += 1;
                 tmp = &tmp[1..];
             }
+            debug_assert!(!escaping);
             let word = &self.content[1..(len+1)];
             self.ptr += len + 2;
             self.content = &tmp[1..];
@@ -106,10 +115,19 @@ impl<'src> Lexer<'src> {
         } else if self.content.starts_with('\'') {
             let mut len = 0;
             let mut tmp = &self.content[1..];
-            while !tmp.starts_with('\'') {
+            let mut escaping = false;
+            loop {
+                if escaping {
+                    escaping = false;
+                } else if tmp.starts_with('\\') {
+                    escaping = true;
+                } else if tmp.starts_with('\'') {
+                    break;
+                }
                 len += 1;
                 tmp = &tmp[1..];
             }
+            debug_assert!(!escaping);
             let word = &self.content[1..(len+1)];
             self.ptr += len + 2;
             self.content = &tmp[1..];
