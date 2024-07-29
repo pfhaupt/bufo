@@ -1126,9 +1126,9 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
         for strukt in lookup.keys() {
             if Self::dfs(strukt, &lookup, &mut visited, &mut finished) {
                 cycles.push(visited.clone());
-                visited.clear();
-                finished.clear();
             }
+            visited.clear();
+            finished.clear();
         }
 
         for cycle in &cycles {
