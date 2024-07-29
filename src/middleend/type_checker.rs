@@ -2555,6 +2555,7 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
     #[trace_call(always)]
     fn type_check_type_node(&mut self, type_node: &mut nodes::TypeNode<'src>) {
         let mut bottom_type = &mut type_node.typ;
+        let bt = bottom_type.clone();
         match bottom_type {
             Type::Struct(name) => {
                 if !self.has_struct(name) {
@@ -2562,6 +2563,7 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
                         type_node.location,
                         bottom_type.clone(),
                     ));
+                    type_node.typ = Type::Unknown;
                     return;
                 }
                 type_node.typ = Type::Struct(name);
@@ -2573,8 +2575,9 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
                     if !self.has_struct(name) {
                         self.report_error(TypeError::UnknownType(
                             type_node.location,
-                            bottom_type.clone(),
+                            bt,
                         ));
+                        *underlying = Type::Unknown;
                         return;
                     }
                     *underlying = Type::Struct(name);
