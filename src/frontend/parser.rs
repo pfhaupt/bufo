@@ -355,8 +355,18 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
                     + 2 // spaces between tokens
                     + 2;
                 self.filemarkers.push_back((id, offset));
+                if self.flags.debug {
+                    println!("[DEBUG] FILEMARKER START {id}");
+                }
             },
-            "END" => assert!(self.filemarkers.pop_back().map(|(v, _)|v) == Some(id)),
+            "END" => {
+                let last = self.filemarkers.pop_back();
+                let mapped = last.map(|(v, _)|v).unwrap();
+                if self.flags.debug {
+                    println!("[DEBUG] FILEMARKER END {mapped}");
+                }
+                debug_assert!(mapped == id)
+            },
             m => internal_panic!("Internal Marker has unknown state {m}")
         }
     }

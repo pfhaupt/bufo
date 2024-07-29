@@ -134,7 +134,7 @@ pub fn load_project(flags: &Flags) -> Result<String, String> {
     for i in &flags.imports {
         imports.push(PathBuf::from(i));
     }
-    imports.push(PathBuf::from("./prelude/"));
+    imports.push(PathBuf::from("./std/"));
     if let Some(parent) = flags.input.parent() {
         imports.push(parent.to_path_buf());
     }
