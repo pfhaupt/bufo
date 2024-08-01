@@ -157,7 +157,7 @@ def recompile_compiler(trace: bool = False) -> None:
         sys.exit(1)
     print("Recompilation successful")
 
-def run_all_tests(exec: bool = True, exit_first_failure: bool = False):
+def run_all_tests(specific_tests: List[str], exec: bool = True, exit_first_failure: bool = False):
     start_time = time.time()
     total = 0
     failed_tests = []
@@ -165,11 +165,20 @@ def run_all_tests(exec: bool = True, exit_first_failure: bool = False):
     corrupt_tests = []
     ignored_tests = []
     all_tests = []
-    for root, _, files in os.walk("./tests"):
-        for filename in files:
-            path = os.path.join(root, filename)
-            if os.path.isfile(path) and path.endswith(".bufo"):
-                all_tests.append(path)
+    if len(specific_tests) == 0:
+        for root, _, files in os.walk("./tests"):
+            for filename in files:
+                path = os.path.join(root, filename)
+                if os.path.isfile(path) and path.endswith(".bufo"):
+                    all_tests.append(path)
+    else:
+        for root, _, files in os.walk("./tests"):
+            for filename in files:
+                path = os.path.join(root, filename)
+                for t in specific_tests:
+                    if f"{os.sep}{t}{os.sep}" in path and os.path.isfile(path) and path.endswith(".bufo"):
+                        all_tests.append(path)
+                        break # Any file can only be in one directory
 
     if exit_first_failure:
         for path in all_tests:
@@ -255,7 +264,11 @@ if __name__ == "__main__":
             print("Running tests...")
             no_exec = "--no-exec" in sys.argv
             exit_first_failure = "--exit-first-failure" in sys.argv
-            run_all_tests(exec=not no_exec, exit_first_failure=exit_first_failure)
+            test_dirs: List[str] = []
+            for arg in sys.argv[2:]:
+                if not arg.startswith("-"):
+                    test_dirs.append(arg)
+            run_all_tests(specific_tests=test_dirs, exec=not no_exec, exit_first_failure=exit_first_failure)
         elif mode == "bench":
             recompile_compiler()
             print("Running benchmarks...")
