@@ -61,11 +61,15 @@ def run_test(path: str, exec: bool) -> TestResult:
     The protocol for tests is as follows:
     //! THIS IS A TEST PROGRAM
     //! {RUNTIME|COMPILER}
-    //! {FAILURE|SUCCESS}
+    //! {FAILURE|SUCCESS|DIAGNOSTICS}
     //! CODE: <error code> (only if FAILURE)
     //! ERROR: (only if FAILURE)
     //! <error message> (only if FAILURE)
     //! <error message> (only if FAILURE)
+    //! <...>
+    //! WARNING: (only if DIAGNOSTICS)
+    //! <warning message> (only if DIAGNOSTICS)
+    //! <warning message> (only if DIAGNOSTICS)
     //! <...>
     <mandatory newline>
     <code>
@@ -88,7 +92,7 @@ def run_test(path: str, exec: bool) -> TestResult:
             return TestResult(path, STATE.IGNORED)
 
         expected_mode = lines[2].removeprefix("//! ").upper().strip()
-        if expected_mode not in ["FAILURE", "SUCCESS"]:
+        if expected_mode not in ["FAILURE", "SUCCESS", "DIAGNOSTICS"]:
             print(f"{CORRUPT} {path}", file=sys.stderr)
             return TestResult(path, STATE.CORRUPT)
 
@@ -100,17 +104,29 @@ def run_test(path: str, exec: bool) -> TestResult:
         else:
             expected_error_code = 0
         
+        error_lines = []
+        warn_lines = []
         if expected_mode == "FAILURE":
             if not lines[4].startswith("//! ERROR:"):
                 print(f"{CORRUPT} {path}", file=sys.stderr)
                 return TestResult(path, STATE.CORRUPT)
             index = 5
-            error_lines = []
             while index < len(lines) and lines[index].startswith("//! "):
                 error_lines.append(lines[index].removeprefix("//! ").strip())
                 index += 1
+        elif expected_mode == "DIAGNOSTICS":
+            if not lines[3].startswith("//! WARNING:"):
+                print(f"{CORRUPT} {path}", file=sys.stderr)
+                return TestResult(path, STATE.CORRUPT)
+            index = 4
+            while index < len(lines) and lines[index].startswith("//! "):
+                warn_lines.append(lines[index].removeprefix("//! ").strip())
+                index += 1
+            if len(warn_lines) == 0:
+                print(f"{CORRUPT} {path}", file=sys.stderr)
+                return TestResult(path, STATE.CORRUPT)
         else:
-            error_lines = []
+            pass
 
         output = call_cmd([COMPILER_PATH, "-i", path, "-vd"])
         if point_of_failure == "RUNTIME":
@@ -121,11 +137,17 @@ def run_test(path: str, exec: bool) -> TestResult:
                 print(f"{FAIL} {path}", file=sys.stderr)
                 return TestResult(path, STATE.FAILURE)
             # if on Windows, split path by backslashes, otherwise by forward slashes
-            filename = path.split("\\")[-1].split(".")[0] if os.name == "nt" else path.split("/")[-1].split(".")[0]
+            filename = path.split(os.sep)[-1].split(".")[0]
             output = call_cmd(["./out/" + filename + ".exe"])
             # We're not generating assembly in LLVM mode
             if USE_OLD_CODEGEN: os.remove("./out/" + filename + ".asm")
             os.remove("./out/" + filename + ".exe")
+        if expected_mode == "DIAGNOSTICS":
+            filename = path.split(os.sep)[-1].split(".")[0]
+            # We're not generating assembly in LLVM mode
+            if USE_OLD_CODEGEN: os.remove("./out/" + filename + ".asm")
+            os.remove("./out/" + filename + ".exe")
+
         # stdout = output.stdout.decode("utf-8").split('\n')
         stderr = output.stderr.decode("utf-8").split('\n')
         if expected_mode == "FAILURE":
@@ -136,6 +158,16 @@ def run_test(path: str, exec: bool) -> TestResult:
                 print(f"{FAIL} {path}", file=sys.stderr)
                 return TestResult(path, STATE.FAILURE)
         elif expected_mode == "SUCCESS":
+            if output.returncode == 101:
+                print(f"{PANIC} {path}", file=sys.stderr)
+                return TestResult(path, STATE.PANIC)
+            if output.returncode != expected_error_code:
+                print(f"{FAIL} {path}", file=sys.stderr)
+                return TestResult(path, STATE.FAILURE)
+        elif expected_mode == "DIAGNOSTICS":
+            if not compare(warn_lines, stderr):
+                print(f"{FAIL} {path}", file=sys.stderr)
+                return TestResult(path, STATE.FAILURE)
             if output.returncode == 101:
                 print(f"{PANIC} {path}", file=sys.stderr)
                 return TestResult(path, STATE.PANIC)
