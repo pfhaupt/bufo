@@ -1,4 +1,12 @@
 # Changelog
+## 2024-08-07
+### General
+- Flag `-o` to specify the output filepath
+### New Features
+- `null` keyword to (unsafely) set a "reference" to a nullpointer
+    - This kinda defeats the meaning of "references", that's why a refactor to implement raw pointers is planned
+- `blank` keyword to initialize a memory location with zeros
+    - Memory location can be of any type: Arrays, Structs, Integers (issues a warning), etc.
 ## 2024-08-02
 ### General
 - More support for floating point numbers

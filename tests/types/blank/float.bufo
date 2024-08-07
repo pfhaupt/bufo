@@ -1,0 +1,11 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+func main() {
+    let a: f32 = blank;
+    assert(a == 0);
+    
+    let b: f64 = blank;
+    assert(b == 0);
+}

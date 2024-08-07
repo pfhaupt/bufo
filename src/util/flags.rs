@@ -13,6 +13,8 @@ use crate::compiler::FILE_EXT;
 pub struct Flags {
     #[arg(short, long, value_parser = valid_filepath, hide_default_value=true)]
     pub input: PathBuf,
+    #[arg(short, long)]
+    pub output: Option<String>,
     #[arg(short, long, default_value = "false")]
     pub run: bool,
     #[arg(short, long, default_value = "false")]

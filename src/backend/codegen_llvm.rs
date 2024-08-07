@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use crate::frontend::nodes;
 use crate::frontend::parser::Operation;
+use crate::frontend::tokens::{KEYWORD_BLANK, KEYWORD_NULL};
 use crate::util::flags::Flags;
 use crate::compiler::ERR_STR;
 use crate::internal_panic;
@@ -141,10 +142,15 @@ pub struct LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
 }
 impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
     pub fn new(flags: &'flags Flags, context: &'ctx Context) -> Self {
-        let filename = PathBuf::from(&flags.input);
-        let filename = filename.file_name().unwrap().to_str().unwrap().to_string();
-        let outname = PathBuf::from("./out/");
-        let filename = outname.join(filename);
+        let filename = if let Some(output) = &flags.output {
+            let pb = PathBuf::from(output);
+            pb.with_extension("bufo")
+        } else {
+            let filename = PathBuf::from(&flags.input);
+            let filename = filename.file_name().unwrap().to_str().unwrap().to_string();
+            let outname = PathBuf::from("./out/");
+            outname.join(filename)
+        };
         let exename = filename.with_extension("exe");
         Target::initialize_native(&InitializationConfig::default()).unwrap();
         let target_str = Self::get_target().unwrap();
@@ -1065,7 +1071,7 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
         }
         let real_name = struct_literal.typ.get_struct_name();
         let struct_type = self.struct_defs.get(&real_name).unwrap();
-        let mut struct_instance = struct_type.get_undef();
+        let mut struct_instance = struct_type.const_zero();
         for (i, field) in struct_literal.fields.iter().enumerate() {
             let offset = self.struct_info.get(&real_name).unwrap().get_field_index(&field.0);
             struct_instance = self.builder.build_insert_value(
@@ -1190,7 +1196,7 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
                 Ok(loaded_instance.into())
             }
         } else {
-            let mut array_instance = underlying_type.into_array_type().get_undef();
+            let mut array_instance = underlying_type.into_array_type().const_zero();
             for (i, element) in array_literal.elements.iter().enumerate() {
                 let value = self.codegen_expression(element, false)?;
                 array_instance = self.builder.build_insert_value(
@@ -1287,7 +1293,7 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
                 let real_name = typ.get_struct_name();
                 let struct_type = self.struct_defs.get(&real_name).unwrap();
                 let struct_info = self.struct_info.get(&real_name).unwrap();
-                let mut struct_instance = struct_type.get_undef();
+                let mut struct_instance = struct_type.const_zero();
                 for (field_value, (field_name, typ)) in s.iter().zip(&struct_info.fields) {
                     let offset = self.struct_info.get(&real_name).unwrap().get_field_index(&field_name);
                     struct_instance = self.builder.build_insert_value(
@@ -1305,7 +1311,7 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
                     internal_panic!("Expected Type::Array, got {typ:?}")
                 };
                 debug_assert!(*size == elements.len());
-                let mut array_instance = underlying_type.into_array_type().get_undef();
+                let mut array_instance = underlying_type.into_array_type().const_zero();
                 for (i, element) in elements.iter().enumerate() {
                     let value = self.comptime_value_in_context(&element_type, element)?;
                     array_instance = self.builder.build_insert_value(
@@ -1932,6 +1938,21 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
                 let value = self.builder.build_global_string_ptr(&escaped, "codegen_str_literal")?;
                 Ok(value.as_pointer_value().into())
             }
+            struct_type @ Type::Struct(_) => {
+                debug_assert!(literal.value == KEYWORD_BLANK);
+                let underlying_type = self.codegen_type(&struct_type);
+                Ok(underlying_type.into_struct_type().const_zero().into())
+            }
+            array_type @ Type::Array(_, _) => {
+                debug_assert!(literal.value == KEYWORD_BLANK);
+                let underlying_type = self.codegen_type(&array_type);
+                Ok(underlying_type.into_array_type().const_zero().into())
+            }
+            Type::Any => {
+                debug_assert!(literal.value == KEYWORD_NULL);
+                let ptr = self.context.i64_type().ptr_type(AddressSpace::default());
+                Ok(ptr.const_zero().into())
+            }
             e => unimplemented!("codegen_literal: {:?}", e),
         }
     }
@@ -1977,6 +1998,7 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
             // Note: Void does not exist as BasicTypeEnum, so void functions are handled differently
             Type::None => internal_panic!("Type::None should never be used!"),
             Type::Unknown => internal_panic!("Type::Unknown should never be used!"),
+            Type::Blank => internal_panic!("Type::Blank should never be used!"),
         }
     }
 

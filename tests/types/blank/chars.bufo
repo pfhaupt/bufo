@@ -1,0 +1,9 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! DIAGNOSTICS
+//! WARNING:
+//! Using `blank` to initialize value of type char. Please use `0` instead.
+
+func main() {
+   let a: char = blank; 
+}

@@ -1420,6 +1420,24 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
                 let bool_literal = self.parse_expr_bool_literal()?;
                 Ok(nodes::Expression::Literal(bool_literal))
             }
+            TokenType::KeywordNull => {
+                let null_token = self.next().expect("We just checked EOF a few lines higher");
+                let null_literal = nodes::LiteralNode {
+                    location: null_token.location,
+                    value: "null",
+                    typ: Type::Any,
+                };
+                Ok(nodes::Expression::Literal(null_literal))
+            }
+            TokenType::KeywordBlank => {
+                let blank_token = self.next().expect("We just checked EOF a few lines higher");
+                let blank_literal = nodes::LiteralNode {
+                    location: blank_token.location,
+                    value: "blank",
+                    typ: Type::Blank,
+                };
+                Ok(nodes::Expression::Literal(blank_literal))
+            }
             TokenType::KeywordThis => {
                 let this_token = self.next().expect("We just checked EOF a few lines higher");
                 if self.current_struct.is_none() {

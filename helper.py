@@ -11,8 +11,6 @@ from enum import Enum
 
 COMPILER_PATH = "./target/debug/bufo"
 
-USE_OLD_CODEGEN = False
-
 def format_red(s: str) -> str: return f"\x1b[91m{s}\x1b[0m"
 def format_yellow(s: str) -> str: return f"\x1b[93m{s}\x1b[0m"
 def format_green(s: str) -> str: return f"\x1b[92m{s}\x1b[0m"
@@ -128,7 +126,8 @@ def run_test(path: str, exec: bool) -> TestResult:
         else:
             pass
 
-        output = call_cmd([COMPILER_PATH, "-i", path, "-vd"])
+        filename = "./out/{}.exe".format(path.replace(os.sep, "."))
+        output = call_cmd([COMPILER_PATH, "-i", path, "-vd", "-o", filename])
         if point_of_failure == "RUNTIME":
             if output.returncode == 101:
                 print(f"{PANIC} {path}", file=sys.stderr)
@@ -136,12 +135,8 @@ def run_test(path: str, exec: bool) -> TestResult:
             if output.returncode != 0:
                 print(f"{FAIL} {path}", file=sys.stderr)
                 return TestResult(path, STATE.FAILURE)
-            # if on Windows, split path by backslashes, otherwise by forward slashes
-            filename = path.split(os.sep)[-1].split(".")[0]
-            output = call_cmd(["./out/" + filename + ".exe"])
-            # We're not generating assembly in LLVM mode
-            if USE_OLD_CODEGEN: os.remove("./out/" + filename + ".asm")
-            os.remove("./out/" + filename + ".exe")
+            output = call_cmd([filename])
+            os.remove(filename)
         if expected_mode == "DIAGNOSTICS":
             if output.returncode == 101:
                 print(f"{PANIC} {path}", file=sys.stderr)
@@ -149,10 +144,7 @@ def run_test(path: str, exec: bool) -> TestResult:
             if output.returncode != 0:
                 print(f"{FAIL} {path}", file=sys.stderr)
                 return TestResult(path, STATE.FAILURE)
-            filename = path.split(os.sep)[-1].split(".")[0]
-            # We're not generating assembly in LLVM mode
-            if USE_OLD_CODEGEN: os.remove("./out/" + filename + ".asm")
-            os.remove("./out/" + filename + ".exe")
+            os.remove(filename)
 
         # stdout = output.stdout.decode("utf-8").split('\n')
         stderr = output.stderr.decode("utf-8").split('\n')
@@ -187,7 +179,6 @@ def recompile_compiler(trace: bool = False) -> None:
     print("Recompiling compiler...")
     cargo = ["cargo", "build"]
     cargo = cargo + ["--features=trace"] if trace else cargo
-    cargo = cargo + ["--features=old_codegen"] if USE_OLD_CODEGEN else cargo
     cmd = call_cmd(cargo)
     if cmd.returncode != 0:
         print("Failed to recompile compiler", file=sys.stderr)

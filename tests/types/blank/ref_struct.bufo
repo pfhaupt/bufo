@@ -1,0 +1,14 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+struct Foo {
+    field: usize;
+}
+
+func main() {
+    mut f: Foo = Foo { field: 12 };
+    let r: &mut Foo = &mut f;
+    *r = blank;
+    assert(f.field == 0);
+}

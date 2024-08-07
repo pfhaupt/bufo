@@ -91,6 +91,7 @@ impl<'src> Token<'src> {
 }
 
 pub const KEYWORD_AS: &str = "as";
+pub const KEYWORD_BLANK: &str = "blank";
 pub const KEYWORD_BREAK: &str = "break";
 pub const KEYWORD_COMPILER_FLAGS: &str = "compiler_flags";
 pub const KEYWORD_COMPTIME: &str = "comptime";
@@ -105,6 +106,7 @@ pub const KEYWORD_IF: &str = "if";
 pub const KEYWORD_IMPORT: &str = "import";
 pub const KEYWORD_LET: &str = "let";
 pub const KEYWORD_MUT: &str = "mut";
+pub const KEYWORD_NULL: &str = "null";
 pub const KEYWORD_RETURN: &str = "return";
 pub const KEYWORD_SIZEOF: &str = "sizeof";
 pub const KEYWORD_STRUCT: &str = "struct";
@@ -121,6 +123,7 @@ pub enum TokenType {
     Unknown,
     Comment,
     KeywordAs,
+    KeywordBlank,
     KeywordBreak,
     KeywordCompilerFlags,
     KeywordComptime,
@@ -135,6 +138,7 @@ pub enum TokenType {
     KeywordImport,
     KeywordLet,
     KeywordMut,
+    KeywordNull,
     KeywordReturn,
     KeywordSizeof,
     KeywordStruct,
@@ -184,6 +188,7 @@ impl TokenType {
     pub fn try_from_keyword(kw: &str) -> Option<Self> {
         match kw {
             KEYWORD_AS => Some(Self::KeywordAs),
+            KEYWORD_BLANK => Some(Self::KeywordBlank),
             KEYWORD_BREAK => Some(Self::KeywordBreak),
             KEYWORD_COMPILER_FLAGS => Some(Self::KeywordCompilerFlags),
             KEYWORD_COMPTIME => Some(Self::KeywordComptime),
@@ -198,6 +203,7 @@ impl TokenType {
             KEYWORD_IMPORT => Some(Self::KeywordImport),
             KEYWORD_LET => Some(Self::KeywordLet),
             KEYWORD_MUT => Some(Self::KeywordMut),
+            KEYWORD_NULL => Some(Self::KeywordNull),
             KEYWORD_RETURN => Some(Self::KeywordReturn),
             KEYWORD_SIZEOF => Some(Self::KeywordSizeof),
             KEYWORD_STRUCT => Some(Self::KeywordStruct),
@@ -240,6 +246,7 @@ impl Display for TokenType {
             Self::OpenSquare => write!(f, "`[`"),
             Self::ClosingSquare => write!(f, "`]`"),
             Self::KeywordAs => write!(f, "`{}`", KEYWORD_AS),
+            Self::KeywordBlank => write!(f, "`{}`", KEYWORD_BLANK),
             Self::KeywordBreak => write!(f, "`{}`", KEYWORD_BREAK),
             Self::KeywordCompilerFlags => write!(f, "`{}`", KEYWORD_COMPILER_FLAGS),
             Self::KeywordComptime => write!(f, "`{}`", KEYWORD_COMPTIME),
@@ -254,6 +261,7 @@ impl Display for TokenType {
             Self::KeywordImport => write!(f, "`{}`", KEYWORD_IMPORT),
             Self::KeywordLet => write!(f, "`{}`", KEYWORD_LET),
             Self::KeywordMut => write!(f, "`{}`", KEYWORD_MUT),
+            Self::KeywordNull => write!(f, "`{}`", KEYWORD_NULL),
             Self::KeywordReturn => write!(f, "`{}`", KEYWORD_RETURN),
             Self::KeywordSizeof => write!(f, "`{}`", KEYWORD_SIZEOF),
             Self::KeywordStruct => write!(f, "`{}`", KEYWORD_STRUCT),

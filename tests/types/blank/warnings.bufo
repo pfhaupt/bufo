@@ -1,0 +1,30 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! DIAGNOSTICS
+//! WARNING:
+//! Using `blank` to initialize value of type usize. Please use `0` instead.
+//! Using `blank` to initialize value of type i8. Please use `0` instead.
+//! Using `blank` to initialize value of type u16. Please use `0` instead.
+//! Using `blank` to initialize value of type i32. Please use `0` instead.
+//! Using `blank` to initialize value of type f32. Please use `0` instead.
+//! Using `blank` to initialize value of type f64. Please use `0` instead.
+
+func main() {
+    let a: usize = blank;
+    assert(a == 0);
+
+    let b: i8 = blank;
+    assert(b == 0);
+
+    let c: u16 = blank;
+    assert(c == 0);
+    
+    let d: i32 = blank;
+    assert(d == 0);
+
+    let e: f32 = blank;
+    assert(e == 0);
+
+    let f: f64 = blank;
+    assert(f == 0);
+}

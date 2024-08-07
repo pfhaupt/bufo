@@ -3,11 +3,12 @@ use std::fmt::{Display, Formatter};
 
 use crate::frontend::nodes;
 use crate::frontend::parser::Operation;
-use crate::frontend::tokens::Location;
+use crate::frontend::tokens::{Location, KEYWORD_NULL};
 
 use crate::compiler::{ERR_STR, WARN_STR, NOTE_STR};
 use crate::internal_panic;
 use crate::util::flags::Flags;
+use crate::frontend::tokens::KEYWORD_BLANK;
 
 use tracer::trace_call;
 #[allow(unused)]
@@ -239,6 +240,8 @@ enum TypeError<'src> {
     UnsafeCallInSafeContext(&'static str, Location, &'src str, Location),
     /// Syntax: Error Loc
     UnsafeAny(Location),
+    /// Syntax: Error Loc
+    UnsafeNull(Location),
     /// Syntax: Error Loc, Element Type, Inferred Loc, Inferred Type
     ArrayLiteralElementTypeMismatch(Location, Type<'src>, Location, Type<'src>),
     /// Syntax: Error Loc, Expected Size, Found Size
@@ -261,6 +264,8 @@ enum TypeError<'src> {
     UnsafePointerCast(Location),
     /// Syntax: Error Loc, Expr Loc, Expr Type, Type Loc, Type
     NonPrimitiveTypeCast(Location, Location, Type<'src>, Location, Type<'src>),
+    /// Syntax: Error Loc, Type
+    BlankReference(Location, Type<'src>),
 }
 
 impl<'src> Display for TypeError<'src> {
@@ -486,6 +491,9 @@ impl<'src> Display for TypeError<'src> {
             TypeError::UnsafeAny(loc) => {
                 write!(f, "{}: {:?}: Use of `Any` is unsafe.\n{}: Use an `unsafe {{}}` block if you really want to use `Any`.", ERR_STR, loc, NOTE_STR)
             }
+            TypeError::UnsafeNull(loc) => {
+                write!(f, "{}: {:?}: Use of `{}` is unsafe.\n{}: Use an `unsafe {{}}` block if you really want to use `{}`.", ERR_STR, loc, KEYWORD_NULL, NOTE_STR, KEYWORD_NULL)
+            }
             TypeError::ArrayLiteralElementTypeMismatch(loc, typ, inferred_loc, inferred_typ) => {
                 write!(
                     f,
@@ -547,6 +555,13 @@ impl<'src> Display for TypeError<'src> {
                     ERR_STR, err, e_type, t_type, NOTE_STR, e_loc, NOTE_STR, t_loc
                 )
             }
+            TypeError::BlankReference(err, typ) => {
+                write!(
+                    f,
+                    "{}: {:?}: Invalid initialization of reference of type {}. Use `{}` instead.",
+                    ERR_STR, err, typ, KEYWORD_NULL
+                )
+            }
         }
     }
 }
@@ -555,6 +570,7 @@ impl<'src> Display for TypeError<'src> {
 pub enum Type<'src> {
     None, // For functions that return nothing
     Any,  // C's void*, expected to be used for FFI, not for general use, infers to all references
+    Blank,
     #[default]
     Unknown,
     I8,
@@ -604,6 +620,7 @@ impl<'src> PartialEq for Type<'src> {
             (Type::Struct(lhs), Type::Struct(rhs)) => lhs == rhs,
             (Type::Ref(lhs, l), Type::Ref(rhs, r)) => lhs == rhs && l == r,
             (Type::Array(lhs, l), Type::Array(rhs, r)) => lhs == rhs && l == r,
+            (Type::Blank, Type::Blank) => true,
             _ => false,
         }
     }
@@ -1582,7 +1599,7 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
     #[trace_call(always)]
     fn type_check_stmt_continue(&mut self, _continue_node: &mut nodes::ContinueNode) {}
 
-    // #[trace_call(always)]
+    #[trace_call(always)]
     fn type_check_expression(
         &mut self,
         expression: &mut nodes::Expression<'src>,
@@ -1688,7 +1705,26 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
                 }
             }
             nodes::Expression::Literal(lit_node) => {
-                if lit_node.typ != Type::Unknown && lit_node.typ != *typ {
+                if lit_node.typ == Type::Blank {
+                    if typ.is_integer() || typ.is_float() {
+                        lit_node.value = "0";
+                        eprintln!(
+                            "{}: {:?}: Using `{}` to initialize value of type {}. Please use `0` instead.",
+                            WARN_STR,
+                            lit_node.location,
+                            KEYWORD_BLANK,
+                            typ
+                        );
+                    } else if typ.is_reference() {
+                        self.report_error(TypeError::BlankReference(
+                            lit_node.location,
+                            typ.clone()
+                        ));
+                        return Err(());
+                    }
+                    lit_node.typ = typ.clone();
+                    Ok(typ.clone())
+                } else if lit_node.typ != Type::Unknown && lit_node.typ != *typ {
                     self.report_error(TypeError::TypeMismatch(
                         lit_node.location,
                         typ.clone(),
@@ -2509,7 +2545,17 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
 
     #[trace_call(always)]
     fn type_check_expr_literal(&mut self, literal: &mut nodes::LiteralNode<'src>) -> Result<Type<'src>, ()> {
-        Ok(literal.typ.clone())
+        // Need to use `matches` because `==` treats `Type::Any` as a wildcard for reference types
+        if matches!(literal.typ, Type::Any) && self.unsafe_depth == 0 {
+            debug_assert!(literal.value == KEYWORD_NULL);
+            // Unsafe to use `null` outside of unsafe block
+            self.report_error(TypeError::UnsafeNull(literal.location));
+            Err(())
+        } else if literal.typ == Type::Blank {
+            Ok(Type::Unknown)
+        } else {
+            Ok(literal.typ.clone())
+        }
     }
 
     #[trace_call(always)]
