@@ -1,0 +1,46 @@
+/*
+Functions used in windows.h
+
+They're mostly incomplete, and don't follow the declarations precisely.
+Bufo doesn't have access to actual functions and macro declarations,
+but we need to define some functions at our best guess.
+
+Usage of any of these functions is highly unsafe and might destroy your
+system at any time.
+*/
+
+import "winapi/structs.bufo";
+
+unsafe extern CreateProcessA(
+    lpApplicationName: &char,
+    lpCommandLine: &char,
+    lpProcessAttributes: &SecurityAttributes,
+    lpThreadAttributes: &SecurityAttributes,
+    bInheritHandles: bool,
+    dwCreationFlags: u32,
+    lpEnvironment: Any,
+    lpCurrentDirectory: &char,
+    lpStartupInfo: &StartupInfo,
+    lpProcessInformation: &mut ProcessInformation
+) -> bool;
+
+unsafe extern CreateFileA(
+    lpFileName: &char,
+    dwDesiredAccess: u32,
+    dwShareMode: u32,
+    lpSecurityAttributes: &SecurityAttributes,
+    dwCreationDisposition: u32,
+    dwFlagsAndAttributes: u32,
+    hTemplateFile: Handle,
+) -> Handle;
+unsafe extern GetStdHandle(handle: u32) -> Handle;
+unsafe extern CloseHandle(handle: Handle) -> bool;
+unsafe extern WaitForSingleObject(hHandle: Handle, dwMilliseconds: u32) -> u32;
+unsafe extern GetExitCodeProcess(proc: Handle, exitStatus: &mut u32) -> bool;
+unsafe extern GetLastError() -> u32;
+unsafe extern GetFileTime(
+    hFile: Handle,
+    lpCreationTime: &mut FileTime,
+    lpLastAccessTime: &mut FileTime,
+    lpLastWriteTime: &mut FileTime
+) -> bool;

@@ -1,0 +1,137 @@
+import "cmd.bufo";
+import "string.bufo";
+
+import "winapi/structs.bufo";
+import "winapi/functions.bufo";
+import "winapi/constants.bufo";
+
+func getLastModified(filePath: &char) -> usize {
+    unsafe {
+        let file: Handle = CreateFileA(
+            filePath,
+            GENERIC_READ,
+            FILE_SHARE_WRITE | FILE_SHARE_READ,
+            null,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            INVALID_HANDLE
+        );
+        mut time: FileTime = FileTime { time: 0 };
+        if (!GetFileTime(file, null, null, &mut time)) {
+            let stderr: Any = fdopen(2, "w");
+            fprintf(stderr, "[ERROR] Could not get time of %s: %#010x\n", filePath, GetLastError());
+            fclose(stderr);
+            return 0-1;
+        }
+        let _r: bool = CloseHandle(file);
+        assert(_r);
+        return time.time;
+    }
+}
+
+func waitForProcess(proc: Handle) -> bool {
+    unsafe {
+        let result: u32 = WaitForSingleObject(
+            proc,
+            INFINITE
+        );
+
+        if (result == WAIT_FAILED) {
+            let stderr: Any = fdopen(2, "w");
+            fprintf(stderr, "[ERROR] Could not wait on child process: %#010x\n", GetLastError());
+            fclose(stderr);
+            return false;
+        }
+
+        mut exitStatus: u32 = 0;
+        if (!GetExitCodeProcess(proc, &mut exitStatus)) {
+            let stderr: Any = fdopen(2, "w");
+            fprintf(stderr, "[ERROR] Could not get process exit code: %#010x\n", GetLastError());
+            fclose(stderr);
+            return false;
+        }
+
+        if (exitStatus != 0) {
+            let stderr: Any = fdopen(2, "w");
+            fprintf(stderr, "[ERROR] Command exited with exit code %#010x\n", exitStatus);
+            fclose(stderr);
+            return false;
+        }
+
+        CloseHandle(proc);
+        return true;
+    }
+}
+
+func runCmdSync(cmd: Cmd) -> bool {
+    let proc: Handle = runCmdAsync(cmd);
+    if (proc.ptr == INVALID_HANDLE.ptr) return false;
+    return waitForProcess(proc);
+}
+
+// https://docs.microsoft.com/en-us/windows/win32/procthread/creating-a-child-process-with-redirected-input-and-output
+func runCmdAsync(cmd: Cmd) -> Handle {
+    // Safety? None. This is the wild west of running commands, sorry.
+    unsafe {
+        mut siStartInfo: StartupInfo = StartupInfo {
+            cb: 0,
+            lpReserved: null,
+            lpDesktop: null,
+            lpTitle: null,
+            dwX: 0,
+            dwY: 0,
+            dwXSize: 0,
+            dwYSize: 0,
+            dwXCountChars: 0,
+            dwYCountChars: 0,
+            dwFillAttribute: 0,
+            dwFlags: 0,
+            wShowWindow: 0,
+            cbReserved2: 0,
+            lpReserved2: null,
+            hStdInput: GetStdHandle(STD_INPUT_HANDLE),
+            hStdOutput: GetStdHandle(STD_OUTPUT_HANDLE),
+            hStdError: GetStdHandle(STD_ERROR_HANDLE),
+        };
+        siStartInfo.cb = sizeof StartupInfo as u32;
+        // NOTE: theoretically setting NULL to std handles should not be a problem
+        // https://docs.microsoft.com/en-us/windows/console/getstdhandle?redirectedfrom=MSDN#attachdetach-behavior
+        // TODO: check for errors in GetStdHandle
+        siStartInfo.dwFlags = siStartInfo.dwFlags | STARTF_USESTDHANDLES;
+
+        mut piProcInfo: ProcessInformation = ProcessInformation {
+            hProcess: INVALID_HANDLE,
+            hThread: INVALID_HANDLE,
+            dwProcessId: 0,
+            dwThreadId: 0,
+        };
+
+        mut str: String = cmd.toString();
+        str.pushChar('\0');
+        printf("[CMD] %s\n", str.buffer);
+        let bSuccess: bool = CreateProcessA(
+            null,
+            &*str.buffer,
+            null,
+            null,
+            true,
+            0,
+            null,
+            null,
+            &siStartInfo,
+            &mut piProcInfo
+        );
+        str.drop();
+
+        if (!bSuccess) {
+            let stderr: Any = fdopen(2, "w");
+            fprintf(stderr, "[ERROR] Could not create child process: %#010x\n", GetLastError());
+            fclose(stderr);
+            return INVALID_HANDLE;
+        }
+
+        CloseHandle(piProcInfo.hThread);
+
+        return piProcInfo.hProcess;
+    }
+}

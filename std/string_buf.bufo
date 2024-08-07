@@ -1,0 +1,57 @@
+import "substr.bufo";
+comptime INITIAL_STRINGBUFFER_CAP: usize = 16;
+
+struct StringBuffer {
+    data: &mut SubStr;
+    length: usize;
+    capacity: usize;
+
+    func resize(&mut this, newCap: usize) {
+        unsafe {
+            printf("[DEBUG] Resizing StringBuffer\n");
+            let _new: Any = realloc(this.data, newCap * sizeof SubStr);
+            assert(_new != null);
+            this.data = &mut *_new;
+            this.capacity = newCap;
+        }
+    }
+    func add(&mut this, str: SubStr) {
+        if (this.length >= this.capacity) this.resize(2 * this.capacity);
+        unsafe {
+            *(this.data + this.length * sizeof SubStr) = str;
+        }
+        this.length = this.length + 1;
+    }
+    func extend(&mut this, other: &StringBuffer) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) unsafe {
+            this.add(*(other.data + i * sizeof SubStr));
+        }
+    }
+    func toCmdString(&this) -> String {
+        mut s: String = newString();
+        for (mut i: usize = 0; i < this.length; i = i + 1) unsafe {
+            let str: SubStr = *(this.data + i * sizeof SubStr);
+            if (str.hasSpace()) {
+                s.pushChar('"');
+                s.pushSubStr(&str);
+                s.pushChar('"');
+            } else {
+                s.pushSubStr(&str);
+            }
+            if (i != this.length - 1) s.pushChar(' ');
+        }
+        return s;
+    }
+}
+
+func newStringBuffer() -> StringBuffer {
+    unsafe {
+        let _bfr: Any = calloc(INITIAL_STRINGBUFFER_CAP, sizeof SubStr);
+        let _data: &mut SubStr = &mut *_bfr;
+        return StringBuffer {
+            data: _data,
+            length: 0,
+            capacity: INITIAL_STRINGBUFFER_CAP
+        };
+    }
+}

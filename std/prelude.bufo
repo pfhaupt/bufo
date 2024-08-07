@@ -3,6 +3,23 @@
 extern GLOBAL_GET_ARGC() -> usize;
 extern GLOBAL_GET_ARGV() -> &&char;
 
+func getProgramName() -> &char {
+    let argv: &&char = GLOBAL_GET_ARGV();
+    return *argv;
+}
+
+// func getArg(argv: &&char, argc: usize) -> &char {
+//     unsafe { return *(argv + sizeof &char * argc); }
+// }
+
+func getArg(index: usize) -> &char {
+    let argv: &&char = GLOBAL_GET_ARGV();
+    assert_with_msg(index < GLOBAL_GET_ARGC(), "Attempted to get non-existing argument");
+    unsafe {
+        return *(argv + index * sizeof &char);
+    }
+}
+
 // libc for now is also part of the prelude
 // Eventually, we'd like to use our own wrappers
 import "libc.bufo";
@@ -11,24 +28,6 @@ unsafe comptime func comptimeStrlen(str: &char) -> usize {
     mut len: usize = 0;
     while (*(str + len) != '\0') len = len + 1;
     return len;
-}
-
-unsafe func isNull(ptr: Any) -> bool {
-    let bfr: [char; 20] = ['\0'; 20];
-    let _a: Any = &bfr;
-    let _s: &char = _a;
-    snprintf(&bfr, 17, "%p", ptr);
-    let win: i32 = strcmp(_s, "0000000000000000");
-    if (win == 0) return true;
-    let posix: i32 = strcmp(_s, "(nil)");
-    return posix == 0;
-}
-
-unsafe func NULL() -> Any {
-    // FIXME: This is cursed
-    let p: Any = fopen("kjnasduiwqe", "r");
-    assert_with_msg(isNull(p), "Could not get valid NullPointer.");
-    return p;
 }
 
 unsafe func getChar(s: &char, index: usize) -> char {

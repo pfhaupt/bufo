@@ -1,0 +1,29 @@
+import "cmd.bufo";
+
+struct Handle {
+    ptr: usize;
+}
+
+comptime INVALID_HANDLE: Handle = Handle { ptr: 18446744073709551615 };
+
+func getLastModified(filePath: &char) -> usize {
+    todo_with_msg("linux.getLastModified");
+    return 0;
+}
+
+func waitForProcess(proc: Handle) -> bool {
+    todo_with_msg("linux.waitForProcess");
+    return false;
+}
+
+func runCmdSync(cmd: Cmd) -> bool {
+    todo_with_msg("linux.runCmdSync");
+    let proc: Handle = runCmdAsync(cmd);
+    if (proc.ptr == INVALID_HANDLE.ptr) return false;
+    return waitForProcess(proc);
+}
+
+func runCmdAsync(cmd: Cmd) -> Handle {
+    todo_with_msg("linux.runCmdAsync");
+    return INVALID_HANDLE;
+}

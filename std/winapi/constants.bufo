@@ -1,0 +1,26 @@
+/*
+Constants used in windows.h
+
+Besides constants using opaque structures in windows.h (for example
+INVALID_HANDLE uses `Handle`) where we need to provide *some*
+representation of the underlying data, all constants are taken from
+the official Microsoft documentation.
+
+Usage of any of these constants is moderately unsafe and might destroy
+your system if not treated carefully.
+*/
+
+import "winapi/structs.bufo";
+
+comptime INVALID_HANDLE: Handle = Handle { ptr: 18446744073709551615 };
+comptime STD_INPUT_HANDLE: u32 = 4294967286;
+comptime STD_OUTPUT_HANDLE: u32 = 4294967285;
+comptime STD_ERROR_HANDLE: u32 = 4294967284;
+comptime STARTF_USESTDHANDLES: u32 = 4;
+comptime FILE_SHARE_READ: u32 = 1;
+comptime FILE_SHARE_WRITE: u32 = 2;
+comptime GENERIC_READ: u32 = 2147483648;
+comptime OPEN_EXISTING: u32 = 3;
+comptime FILE_ATTRIBUTE_NORMAL: u32 = 128;
+comptime INFINITE: u32 = 999999999;
+comptime WAIT_FAILED: u32 = 4294967295;

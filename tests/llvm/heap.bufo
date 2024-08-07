@@ -25,7 +25,7 @@ unsafe func main() -> i32 {
 
     let f: Foo = newFoo();
     let _idk: Any = calloc(2, sizeof Foo);
-    assert(!isNull(_idk));
+    assert(_idk != null);
     let _b: &mut Foo = &mut *_idk;
     *(_b + sizeof Foo) = f;
     free(_idk);

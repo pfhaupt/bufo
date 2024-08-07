@@ -1,0 +1,52 @@
+/*
+Data Structures used in windows.h
+
+They're mostly incomplete, and don't follow the declarations precisely.
+Bufo doesn't have access to opaque structures and macro declarations,
+but we need to define some data structures at our best guess.
+
+Usage of any of these structures is highly unsafe and might destroy your
+system at any time.
+*/
+
+struct Handle {
+    ptr: usize;
+}
+
+struct StartupInfo {
+    cb: u32;
+    lpReserved: &char;
+    lpDesktop: &char;
+    lpTitle: &char;
+    dwX: u32;
+    dwY: u32;
+    dwXSize: u32;
+    dwYSize: u32;
+    dwXCountChars: u32;
+    dwYCountChars: u32;
+    dwFillAttribute: u32;
+    dwFlags: u32;
+    wShowWindow: u16;
+    cbReserved2: u16;
+    lpReserved2: &u8;
+    hStdInput: Handle;
+    hStdOutput: Handle;
+    hStdError: Handle;
+}
+
+struct SecurityAttributes {
+    nLength: u32;
+    lpSecurityDescriptor: Any;
+    bInheritHandle: bool;
+}
+
+struct ProcessInformation {
+    hProcess: Handle;
+    hThread: Handle;
+    dwProcessId: u32;
+    dwThreadId: u32;
+}
+
+struct FileTime {
+    time: usize;
+}

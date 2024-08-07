@@ -5,6 +5,7 @@
 // Strings
 unsafe extern strlen(string: &char) -> usize;
 unsafe extern strcmp(s1: &char, s2: &char) -> i32;
+unsafe extern strchr(s: &char, c: char) -> &char;
 
 // Memory
 unsafe extern malloc(bytes: usize) -> Any;
@@ -28,4 +29,5 @@ unsafe extern fdopen(fd: i32, mode: &char) -> Any;
 unsafe extern putchar(ch: char) -> char;
 unsafe extern puts(s: &char) -> usize;
 
+// Process Control
 unsafe extern exit(code: i32);
