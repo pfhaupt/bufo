@@ -1,4 +1,13 @@
 # Changelog
+## 2024-08-02
+### General
+- More support for floating point numbers
+### New Features
+- Type Casting
+    - Using `<expr> as <type>` we can now perform type casts.
+    - Integers are either truncated or sign-extended
+    - Struct and Array casts are non-primitive and disallowed
+    - Reference casts are possible in an `unsafe`-context, including from and to `Any`
 ## 2024-07-02
 ### General
 - Add Preprocessor

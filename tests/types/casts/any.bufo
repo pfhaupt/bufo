@@ -1,0 +1,15 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+unsafe func main() {
+    let a: i8 = -5;
+    let refA: &i8 = &a;
+    let ptr: Any = refA;
+    let refB: &u8 = ptr as &u8;
+    let b: u8 = *refB;
+    assert(b == 251);
+    let addrOfA: usize = ptr as usize;
+    assert(addrOfA != 0);
+    assert(addrOfA == (&a) as usize);
+}

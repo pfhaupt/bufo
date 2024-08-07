@@ -1,0 +1,47 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+unsafe func main() {
+    comptime A: u8 = 5;
+    assert(A as i64 == 5);
+    assert(A as i32 == 5);
+    assert(A as i16 == 5);
+    assert(A as i8 == 5);
+
+    comptime B: i8 = 42;
+    assert(B as u64 == 42);
+    assert(B as u32 == 42);
+    assert(B as u16 == 42);
+    assert(B as u8 == 42);
+
+    comptime C: i8 = 42;
+    assert(C as i64 == 42);
+    assert(C as i32 == 42);
+    assert(C as i16 == 42);
+    assert(C as i8 == 42);
+
+    comptime D: u32 = 42;
+    assert(D as u64 == 42);
+    assert(D as u32 == 42);
+    assert(D as u16 == 42);
+    assert(D as u8 == 42);
+
+    comptime E: i8 = -42;
+    assert(E as u64 == 18446744073709551574);
+    assert(E as u32 == 4294967254);
+    assert(E as u16 == 65494);
+    assert(E as u8 == 214);
+
+    comptime F: i8 = -42;
+    assert(F as i64 == -42);
+    assert(F as i32 == -42);
+    assert(F as i16 == -42);
+    assert(F as i8 == -42);
+
+    comptime G: u32 = 100000;
+    assert(G as u64 == 100000);
+    assert(G as u32 == 100000);
+    assert(G as u16 == 34464);
+    assert(G as u8 == 160);
+}

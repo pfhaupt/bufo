@@ -180,7 +180,7 @@ impl<'src> BlockNode<'src> {
         let mut size = 0;
         for stmt in &self.statements {
             match stmt {
-                Statement::Block(b) => size += b.total_len(),
+                Statement::Block(b) => size += b.total_len() + b.is_unsafe as usize,
                 Statement::If(ifn) => {
                     let t = &ifn.if_body;
                     size += t.total_len();
@@ -304,6 +304,7 @@ pub enum Expression<'src> {
     // Parenthesis(Expression),
     FunctionCall(CallNode<'src>),
     Sizeof(TypeNode<'src>),
+    As(Box<Expression<'src>>, TypeNode<'src>),
 }
 
 impl<'src> Expression<'src> {
@@ -318,6 +319,7 @@ impl<'src> Expression<'src> {
             Self::Binary(e) => e.location,
             Self::FunctionCall(e) => e.location,
             Self::Sizeof(e) => e.location,
+            Self::As(e, _) => e.get_loc(),
         }
     }
 
@@ -332,6 +334,7 @@ impl<'src> Expression<'src> {
             Self::Binary(e) => e.typ.clone(),
             Self::FunctionCall(e) => e.typ.clone(),
             Self::Sizeof(_e) => Type::Usize,
+            Self::As(_, t) => t.typ.clone(),
         }
     }
 
@@ -347,6 +350,7 @@ impl<'src> Expression<'src> {
             Self::Binary(e) => e.typ = typ,
             Self::FunctionCall(e) => e.typ = typ,
             Self::Sizeof(e) => todo!(),
+            Self::As(e, t) => todo!(),
         }
     }
 

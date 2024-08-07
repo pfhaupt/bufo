@@ -57,24 +57,27 @@ impl Display for EvalError<'_> {
 }
 
 type StructType = Vec<Value>;
+type ArrayType = Vec<Value>;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Undefined, // "value" of a block
     None, // Similar to Type::None
     Bool(bool),
     Char(u8),
-    I64(i64),
+    I128(i128),
     F64(f64),
     Ptr(usize),
     Struct(StructType),
+    Array(ArrayType),
 }
 
 impl Value {
     const BOOL_KIND: u8 = 0;
     const PTR_KIND: u8 = 1;
-    const I64_KIND: u8 = 2;
+    const I128_KIND: u8 = 2;
     const STRUCT_KIND: u8 = 3;
     const CHAR_KIND: u8 = 4;
+    const ARRAY_KIND: u8 = 5;
 }
 
 impl Display for Value {
@@ -84,11 +87,14 @@ impl Display for Value {
             Self::None => write!(f, "None"),
             Self::Bool(v) => write!(f, "{v}"),
             Self::Char(v) => write!(f, "{v}"),
-            Self::I64(v) => write!(f, "{v}"),
+            Self::I128(v) => write!(f, "{v}"),
             Self::F64(v) => write!(f, "{v}"),
             Self::Ptr(v) => write!(f, "{v}"),
             Self::Struct(vals) => {
                 write!(f, "{{{}}}", vals.iter().map(|v|format!("{v}")).collect::<Vec<_>>().join(", "))
+            },
+            Self::Array(vals) => {
+                write!(f, "[{}]", vals.iter().map(|v|format!("{v}")).collect::<Vec<_>>().join(", "))
             },
         }
     }
@@ -99,14 +105,19 @@ impl Value {
         match (self, typ) {
             (Self::Bool(_), Type::Bool) => true,
             (Self::Char(_), Type::Char) => true,
-            (Self::I64(_), Type::I64) => true,
-            (Self::I64(val), Type::Usize) => *val >= 0,
-            (Self::I64(val), Type::I32) => *val >= i32::MIN as i64 && *val <= i32::MAX as i64,
-            (Self::I64(val), Type::I16) => *val >= i16::MIN as i64 && *val <= i16::MAX as i64,
-            (Self::I64(val), Type::I8) => *val >= i8::MIN as i64 && *val <= i8::MAX as i64,
+            (Self::I128(_), Type::I64) => true,
+            (Self::I128(val), Type::Usize) => *val >= 0,
+            (Self::I128(val), Type::I32) => *val >= i32::MIN as i128 && *val <= i32::MAX as i128,
+            (Self::I128(val), Type::I16) => *val >= i16::MIN as i128 && *val <= i16::MAX as i128,
+            (Self::I128(val), Type::I8) => *val >= i8::MIN as i128 && *val <= i8::MAX as i128,
+            (Self::I128(val), Type::U32) => *val >= u32::MIN as i128 && *val <= u32::MAX as i128,
+            (Self::I128(val), Type::U16) => *val >= u16::MIN as i128 && *val <= u16::MAX as i128,
+            (Self::I128(val), Type::U8) => *val >= u8::MIN as i128 && *val <= u8::MAX as i128,
             (Self::Ptr(_), Type::Ref(_, _)) => true,
             (Self::Ptr(_), Type::Usize) => true,
+            // FIXME: We need better in_type_bounds-checks for Structs and Arrays
             (Self::Struct(_), Type::Struct(_)) => true,
+            (Self::Array(e), Type::Array(_, s)) => e.len() == *s,
             (v, t) => todo!("{v:?} {t:?}"),
         }
     }
@@ -251,10 +262,10 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
             Type::I16 | Type::U16 |
             Type::I32 | Type::U32 |
             Type::I64 | Type::U64 => {
-                debug_assert!(bytes.len() == std::mem::size_of::<i64>() + 1);
-                debug_assert!(bytes[0] == Value::I64_KIND);
+                debug_assert!(bytes.len() == std::mem::size_of::<i128>() + 1);
+                debug_assert!(bytes[0] == Value::I128_KIND);
                 let bytes = &bytes[1..];
-                Ok(Value::I64(i64::from_ne_bytes(*bytes.first_chunk().unwrap())))
+                Ok(Value::I128(i128::from_ne_bytes(*bytes.first_chunk().unwrap())))
             }
             Type::Ref(_, _) => {
                 debug_assert!(bytes.len() == std::mem::size_of::<usize>() + 1);
@@ -281,6 +292,29 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
                 }
                 Ok(Value::Struct(fields))
             }
+            Type::Bool => {
+                debug_assert!(bytes.len() == 2);
+                debug_assert!(bytes[0] == Value::BOOL_KIND);
+                Ok(Value::Bool(bytes[1] != 0))
+            }
+            Type::Array(typ, size) => {
+                debug_assert!(bytes[0] == Value::ARRAY_KIND);
+                let bytes = &bytes[1..];
+                let len = usize::from_ne_bytes(*bytes.first_chunk::<8>().unwrap());
+                debug_assert!(*size == len);
+                let mut offset = 8;
+                let mut elements: Vec<Value> = Vec::with_capacity(len);
+                for _ in 0..*size {
+                    let size = &bytes[offset..(offset + 8)];
+                    let size = usize::from_ne_bytes(size.try_into().unwrap());
+                    offset += 8;
+                    let element_value = &bytes[offset..(offset + size)];
+                    offset += size;
+                    let val = self.decode_value(element_value, typ)?;
+                    elements.push(val);
+                }
+                Ok(Value::Array(elements))
+            }
             t => todo!("{t:?}")
         }
     }
@@ -293,9 +327,9 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
                 v.extend(usize::to_ne_bytes(*addr).to_vec());
                 v
             }
-            Value::I64(val) => {
-                let mut v = vec![Value::I64_KIND];
-                v.extend(i64::to_ne_bytes(*val).to_vec());
+            Value::I128(val) => {
+                let mut v = vec![Value::I128_KIND];
+                v.extend(i128::to_ne_bytes(*val).to_vec());
                 v
             }
             Value::Struct(fields) => {
@@ -306,6 +340,17 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
                     let field = self.encode_value(&f);
                     v.extend(&field.len().to_ne_bytes());
                     v.extend(field);
+                }
+                v
+            }
+            Value::Array(elements) => {
+                let count = elements.len();
+                let mut v = vec![Value::ARRAY_KIND];
+                v.extend(count.to_ne_bytes().to_vec());
+                for e in elements {
+                    let elem = self.encode_value(&e);
+                    v.extend(&elem.len().to_ne_bytes());
+                    v.extend(elem);
                 }
                 v
             }
@@ -386,6 +431,7 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
             nodes::Expression::FunctionCall(call) => self.evaluate_call(&call),
             nodes::Expression::StructLiteral(strukt) => self.evaluate_struct(&strukt),
             nodes::Expression::Unary(unary) => self.evaluate_unary(&unary),
+            nodes::Expression::ArrayLiteral(lit) => self.evaluate_array_literal(&lit),
             _ => Err(EvalError::ExpressionNotImplemented(expression.get_loc())),
         };
         let value = intermediate?;
@@ -394,6 +440,14 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
         } else {
             Ok(value)
         }
+    }
+    fn evaluate_array_literal(&mut self, literal: &nodes::ArrayLiteralNode<'src>) -> Result<Value, EvalError<'src>> {
+        let mut res = Vec::with_capacity(literal.elements.len());
+        for e in &literal.elements {
+            let val = self.evaluate(&e, false)?;
+            res.push(val);
+        }
+        Ok(Value::Array(res))
     }
     fn evaluate_unary(&mut self, unary: &nodes::UnaryNode<'src>) -> Result<Value, EvalError<'src>> {
         let value = self.evaluate(&unary.expression, false)?;
@@ -407,11 +461,17 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
                     t => todo!("Unary Dereference for {t} at addr {addr}")
                 }
             },
+            Operation::Negate => {
+                let Value::I128(val) = value else {
+                    internal_panic!("Unary Operation expects an integer, the Type Checker should've caught this!")
+                };
+                Ok(Value::I128(-val))
+            }
             o => todo!("{o}")
         }
     }
     fn evaluate_struct(&mut self, strukt: &nodes::StructLiteralNode<'src>) -> Result<Value, EvalError<'src>> {
-        let mut res = vec![];
+        let mut res = Vec::with_capacity(strukt.fields.len());
         for f in &strukt.fields {
             let val = self.evaluate(&f.1, false)?;
             res.push(val);
@@ -455,7 +515,7 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
                             self.memset(*addr, &vals);
                             Ok(rhs.clone())
                         }
-                        (Operation::Add, Value::Ptr(l), Value::I64(r)) => {
+                        (Operation::Add, Value::Ptr(l), Value::I128(r)) => {
                             if !rhs.in_type_bounds(&Type::Usize) {
                                 Err(EvalError::ValueOutOfBounds(binary.location, rhs, Type::Usize))
                             } else {
@@ -469,10 +529,10 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
             };
         }
         enumerate_ops!(
-            [Char I64 F64 Ptr] [Char I64 F64 Ptr] Add +
-            [Char I64 F64 Ptr] [Char I64 F64 Ptr] Sub -
-            [Bool Char I64 F64 Ptr] [Bool Bool Bool Bool Bool] NotEqual !=
-            [Bool Char I64 F64 Ptr] [Bool Bool Bool Bool Bool] Equal ==
+            [Char I128 F64 Ptr] [Char I128 F64 Ptr] Add +
+            [Char I128 F64 Ptr] [Char I128 F64 Ptr] Sub -
+            [Bool Char I128 F64 Ptr] [Bool Bool Bool Bool Bool] NotEqual !=
+            [Bool Char I128 F64 Ptr] [Bool Bool Bool Bool Bool] Equal ==
         )
     }
 
@@ -501,7 +561,7 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
             | Type::U8 | Type::I8
             | Type::U16 | Type::I16
             | Type::U32 | Type::I32
-            | Type::U64 | Type::I64 => Ok(Value::I64(literal.value.parse::<i64>().unwrap())),
+            | Type::U64 | Type::I64 => Ok(Value::I128(literal.value.parse::<i128>().unwrap())),
             Type::F32 | Type::F64 => Ok(Value::F64(literal.value.parse::<f64>().unwrap())),
             Type::Ref(t, false) => {
                 if **t != Type::Char {

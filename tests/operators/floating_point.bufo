@@ -1,0 +1,19 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+func main() {
+    let v1: f32 = 12;
+    let v2: f32 = 13;
+    assert(v1 + v2 == 25);
+    assert(v1 - v2 == -1);
+    assert(v1 * v2 == 156);
+    // TODO: We need floating point literals
+    assert(v1 / v2 != 1);
+    assert(v1 / v2 != 0);
+
+    let v3: f64 = 1 / 10;
+    let v4: f64 = 2 / 10;
+    let v5: f64 = 3 / 10;
+    assert(v3 + v4 != v5);
+}

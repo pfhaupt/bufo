@@ -92,6 +92,7 @@ pub enum Operation {
     LessThanOrEqual,
     GreaterThan,
     GreaterThanOrEqual,
+    As,
     Reference,
     Dereference,
 }
@@ -100,6 +101,9 @@ impl Display for Operation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Assign => write!(f, "="),
+            Self::IndexedAccess => write!(f, "[]"),
+            Self::MemberAccess => write!(f, "."),
+            Self::As => write!(f, "{KEYWORD_AS}"),
             Self::Add => write!(f, "+"),
             Self::Sub | Self::Negate => write!(f, "-"),
             Self::Mul => write!(f, "*"),
@@ -117,8 +121,6 @@ impl Display for Operation {
             Self::LessThanOrEqual => write!(f, "<="),
             Self::GreaterThan => write!(f, ">"),
             Self::GreaterThanOrEqual => write!(f, ">="),
-            Self::IndexedAccess => write!(f, "[]"),
-            Self::MemberAccess => write!(f, "."),
             Self::Reference => write!(f, "&"),
             Self::Dereference => write!(f, "*"),
         }
@@ -146,11 +148,12 @@ impl Operation {
             "<=" => Some(Self::LessThanOrEqual),
             ">" => Some(Self::GreaterThan),
             ">=" => Some(Self::GreaterThanOrEqual),
-            "." => Some(Self::MemberAccess),
             "&&" => Some(Self::LogicalAnd),
             "||" => Some(Self::LogicalOr),
             "!" => Some(Self::LogicalNot),
             "[" => Some(Self::IndexedAccess),
+            "." => Some(Self::MemberAccess),
+            KEYWORD_AS => Some(Self::As),
             _ => None,
         }
     }
@@ -724,7 +727,7 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
         let struct_name = self.expect(TokenType::Identifier)?;
         let name = struct_name.value;
         if !name.as_bytes()[0].is_ascii_uppercase() {
-            println!("{}: {:?}: Struct names must start with an uppercase letter.", WARN_STR, struct_name.location);
+            eprintln!("{}: {:?}: Struct names must start with an uppercase letter.", WARN_STR, struct_name.location);
         }
 
         self.current_struct = Some(name);
@@ -1285,6 +1288,7 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
         match token_type {
             TokenType::Dot => 17,
             TokenType::OpenSquare => 16, // Array index
+            TokenType::KeywordAs => 13,
             TokenType::ForwardSlash => 12,
             TokenType::Asterisk => 12,
             TokenType::Percent => 12,
@@ -1323,6 +1327,7 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
     fn get_associativity(&self, token_type: TokenType) -> Associativity {
         // TOKEN_TYPE_HANDLE_HERE
         match token_type {
+            TokenType::KeywordAs => Associativity::Left,
             TokenType::Plus => Associativity::Left,
             TokenType::Minus => Associativity::Left,
             TokenType::Asterisk => Associativity::Left,
@@ -1365,6 +1370,7 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
             let result = self.parse_secondary_expression(expression, new_precedence, new_associativity)?;
             expression = result;
         }
+
         Ok(expression)
     }
 
@@ -1462,6 +1468,7 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
             return false
         };
         match tkn.token_type {
+            TokenType::KeywordAs => true,
             TokenType::Equal => true,
             TokenType::Plus => true,
             TokenType::Minus => true,
@@ -1496,6 +1503,10 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
         debug_assert!(self.matches_binary_expression());
         let op_token = self.next().expect("Operator in parse_secondary_expression() is safe");
         let op = Operation::from(&op_token.value).expect("matches_binary_expression() is true");
+        if op == Operation::As {
+            let typ = self.parse_type_node()?;
+            return Ok(nodes::Expression::As(Box::new(lhs), typ))
+        }
         let rhs = if op == Operation::IndexedAccess {
             // Precedence 0 is like an imaginary bracket around the expression
             // This is to ensure that the expression is parsed as a single unit

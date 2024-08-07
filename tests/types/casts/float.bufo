@@ -1,0 +1,27 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+func main() {
+    let v1: f32 = 5;
+    let v2: f64 = v1 as f64;
+
+    let v3: f64 = 5;
+    let v4: f32 = v3 as f32;
+
+    assert(v2 == v3);
+    assert(v1 == v4);
+
+    let v5: u32 = v1 as u32;
+    let v6: i8 = v3 as i8;
+    assert(v5 == 5);
+    assert(v6 == 5);
+
+    let v7: f32 = 100000;
+    let v8: u8 = v7 as u8;
+    let v9: i8 = v7 as i8;
+    assert(v8 == 160);
+    assert(v9 == -96);
+    assert(v9 as u8 == v8);
+    assert(v8 as i8 == v9);
+}

@@ -5,7 +5,7 @@ use crate::frontend::nodes;
 use crate::frontend::parser::Operation;
 use crate::frontend::tokens::Location;
 
-use crate::compiler::{ERR_STR, NOTE_STR};
+use crate::compiler::{ERR_STR, WARN_STR, NOTE_STR};
 use crate::internal_panic;
 use crate::util::flags::Flags;
 
@@ -29,6 +29,13 @@ mod MutState {
         if ref_mut { val |= MutRef; }
         val
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PrimitiveKind {
+    Integer,
+    Reference,
+    Float
 }
 
 macro_rules! check_function {
@@ -249,7 +256,11 @@ enum TypeError<'src> {
     /// Syntax: Error Loc
     UnsafePointerArithmetics(Location),
     /// Syntax: Error Loc, Binary Op
-    InvalidPointerArithmetics(Location, Operation)
+    InvalidPointerArithmetics(Location, Operation),
+    /// Syntax: Error Loc
+    UnsafePointerCast(Location),
+    /// Syntax: Error Loc, Expr Loc, Expr Type, Type Loc, Type
+    NonPrimitiveTypeCast(Location, Location, Type<'src>, Location, Type<'src>),
 }
 
 impl<'src> Display for TypeError<'src> {
@@ -294,8 +305,8 @@ impl<'src> Display for TypeError<'src> {
                     f,
                     "{}: {:?}: Type mismatch in binary expression! Operation `{} {} {}` is not defined.\n{}: {:?}: LHS has type `{}`.\n{}: {:?}: RHS has type `{}`.",
                     ERR_STR, error_loc, lhs_typ, op, rhs_typ,
-                    ERR_STR, lhs_loc, lhs_typ,
-                    ERR_STR, rhs_loc, rhs_typ,
+                    NOTE_STR, lhs_loc, lhs_typ,
+                    NOTE_STR, rhs_loc, rhs_typ,
                 )
             }
             TypeError::UndeclaredVariable(loc, name) => {
@@ -526,6 +537,16 @@ impl<'src> Display for TypeError<'src> {
             TypeError::InvalidPointerArithmetics(loc, op) => {
                 write!(f, "{}: {:?}: Operation `{}` is not allowed in the context of pointer arithmetics.", ERR_STR, loc, op)
             }
+            TypeError::UnsafePointerCast(loc) => {
+                write!(f, "{}: {:?}: Pointer type casts are unsafe.\n{}: Use an `unsafe {{}}` block if you really want to do that.", ERR_STR, loc, NOTE_STR)
+            }
+            TypeError::NonPrimitiveTypeCast(err, e_loc, e_type, t_loc, t_type) => {
+                write!(
+                    f,
+                    "{}: {:?}: Non primitive cast from type {} to {}.\n{}: {:?}: Expression to cast is here.\n{}: {:?}: Type to cast to is here.",
+                    ERR_STR, err, e_type, t_type, NOTE_STR, e_loc, NOTE_STR, t_loc
+                )
+            }
         }
     }
 }
@@ -614,6 +635,37 @@ impl<'src> Type<'src> {
     }
 
     #[trace_call(extra)]
+    pub fn is_float(&self) -> bool {
+        *self == Type::F32 || *self == Type::F64
+    }
+
+    #[trace_call(extra)]
+    pub fn is_integer(&self) -> bool {
+        matches!(
+            self,
+            Type::I8
+                | Type::I16
+                | Type::I32
+                | Type::I64
+                | Type::U8
+                | Type::U16
+                | Type::U32
+                | Type::U64
+                | Type::Usize
+                | Type::Char
+        )
+    }
+
+    #[trace_call(extra)]
+    pub fn is_signed(&self) -> bool {
+        match self {
+            Type::I8 | Type::I16 | Type::I32 | Type::I64 => true,
+            Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::Usize => false,
+            _ => internal_panic!("Expected integer")
+        }
+    }
+
+    #[trace_call(extra)]
     pub fn is_compound(&self) -> bool {
         self.is_struct() || self.is_array() || self.is_struct_ref()
     }
@@ -626,6 +678,11 @@ impl<'src> Type<'src> {
     #[trace_call(extra)]
     pub fn is_array(&self) -> bool {
         matches!(self, Type::Array(..))
+    }
+
+    #[trace_call(extra)]
+    pub fn is_reference(&self) -> bool {
+        matches!(self, Type::Ref(..)) || *self == Type::Any
     }
 
     #[trace_call(extra)]
@@ -679,6 +736,30 @@ impl<'src> Type<'src> {
         match self {
             Type::Struct(struct_name) => struct_name,
             _ => internal_panic!("Expected Struct")
+        }
+    }
+
+    #[trace_call(extra)]
+    pub fn get_bit_size(&self) -> usize {
+        match self {
+            Type::I8 | Type::U8 | Type::Char => 8,
+            Type::I16 | Type::U16 => 16,
+            Type::I32 | Type::U32 | Type::F32 => 32,
+            Type::I64 | Type::U64 | Type::F64 | Type::Usize => 64,
+            _ => {
+                debug_assert!(self.is_primitive());
+                internal_panic!("Expected primitive type, got {self}")
+            }
+        }
+    }
+
+    #[trace_call(extra)]
+    pub fn get_primitive_kind(&self) -> PrimitiveKind {
+        if self.is_integer() { PrimitiveKind::Integer }
+        else if self.is_reference() { PrimitiveKind::Reference }
+        else if self.is_float() { PrimitiveKind::Float }
+        else {
+            internal_panic!("Unhandled case in Type::get_primitive_kind")
         }
     }
 }
@@ -1287,7 +1368,6 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
     #[trace_call(always)]
     fn type_check_parameter(&mut self, parameter: &mut nodes::ParameterNode<'src>) {
         self.type_check_type_node(&mut parameter.typ);
-        debug_assert!(parameter.typ.typ != Type::Unknown);
         #[cfg(feature = "old_codegen")]
         {
             let var_size = parameter.typ.typ.size();
@@ -1508,6 +1588,7 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
         expression: &mut nodes::Expression<'src>,
         mut_state: MutStateVal,
     ) -> Result<Type<'src>, ()> {
+        let _error_loc = expression.get_loc();
         match expression {
             nodes::Expression::Name(name_node) => {
                 self.type_check_expr_name(name_node, mut_state)
@@ -1529,6 +1610,62 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
             nodes::Expression::Sizeof(typ) => {
                 self.type_check_type_node(typ);
                 Ok(Type::Usize)
+            }
+            nodes::Expression::As(expr, typ) => {
+                self.type_check_type_node(typ);
+                if typ.typ == Type::Unknown {
+                    return Err(());
+                }
+                let expr_type = self.type_check_expression(expr, mut_state)?;
+                if expr_type == Type::Unknown {
+                    todo!() // Can't cast Type::Unknown to anything
+                }
+                let new_type = typ.typ.clone();
+                match (&expr_type, &new_type) {
+                    (Type::Array(_, _), _) | (_, Type::Array(_, _)) | (Type::Struct(_), _) | (_, Type::Struct(_)) => {
+                        self.report_error(TypeError::NonPrimitiveTypeCast(
+                            _error_loc,
+                            expr.get_loc(),
+                            expr.get_type(),
+                            typ.location,
+                            typ.typ.clone()
+                        ));
+                    },
+                    (Type::Ref(_, _), other) | (other, Type::Ref(_, _)) => {
+                        if *other != Type::Any && *other != Type::Usize && other.is_reference() {
+                            self.report_error(TypeError::NonPrimitiveTypeCast(
+                                _error_loc,
+                                expr.get_loc(),
+                                expr.get_type(),
+                                typ.location,
+                                typ.typ.clone()
+                            ))
+                        }
+                        if self.unsafe_depth == 0 {
+                            self.report_error(TypeError::UnsafePointerCast(
+                                _error_loc,
+                            ))
+                        }
+                    },
+                    (Type::Usize, Type::Any) | (Type::Any, Type::Usize) => {
+                        if self.unsafe_depth == 0 {
+                            self.report_error(TypeError::UnsafePointerCast(
+                                _error_loc,
+                            ))
+                        }
+                    }
+                    (Type::Any, _) | (_, Type::Any) => todo!(), // Unsafe Operation
+                    (e, n) => {
+                        debug_assert!(e.is_primitive());
+                        debug_assert!(n.is_primitive());
+                        let from_size = e.get_bit_size();
+                        let to_size = n.get_bit_size();
+                        if to_size < from_size {
+                            eprintln!("{}: {:?}: Lossy type cast: Target type ({}) is smaller than original type ({}).", WARN_STR, _error_loc, n, e);
+                        }
+                    }
+                }
+                Ok(new_type)
             }
         }
     }
@@ -1592,7 +1729,9 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
                 }
             }
             nodes::Expression::Name(name_node) => {
-                debug_assert!(name_node.typ != Type::Unknown);
+                if name_node.typ == Type::Unknown {
+                    return Err(());
+                }
                 if name_node.typ != *typ {
                     self.report_error(TypeError::TypeMismatch(
                         name_node.location,
@@ -1610,7 +1749,9 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
                         let expr_type =
                             self.type_check_expression_with_type(&mut unary_node.expression, typ)?;
                         debug_assert!(expr_type != Type::Unknown);
-                        if expr_type != Type::I32 && expr_type != Type::I64 {
+                        if expr_type != Type::I8 && expr_type != Type::I16
+                        && expr_type != Type::I32 && expr_type != Type::I64
+                        && expr_type != Type::F32 && expr_type != Type::F64 {
                             self.report_error(TypeError::NegationTypeMismatch(
                                 unary_node.location,
                                 typ.clone(),
@@ -1636,7 +1777,9 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
                         let typ = typ.as_ref();
                         let expr_type =
                             self.type_check_expression_with_type(&mut unary_node.expression, typ)?;
-                        debug_assert!(expr_type != Type::Unknown);
+                        if expr_type == Type::Unknown {
+                            return Err(())
+                        }
                         if expr_type != *typ {
                             self.report_error(TypeError::TypeMismatch(
                                 unary_node.location,
@@ -2014,10 +2157,8 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
         let lhs_type = self.type_check_expression(&mut binary_expr.lhs, MutState::Immut)?;
         let rhs_type = self.type_check_expression(&mut binary_expr.rhs, MutState::Immut)?;
         match (&lhs_type, &rhs_type) {
-            (typ @ Type::Ref(..), other) => {
-                if *other == Type::Unknown {
-                    self.type_check_expression_with_type(&mut binary_expr.rhs, &Type::Usize)?;
-                } else if *other != Type::Usize {
+            (Type::Ref(lhs_t, _), Type::Ref(rhs_t, _)) => {
+                if lhs_t != rhs_t {
                     self.report_error(TypeError::BinaryTypeMismatch(
                         binary_expr.location,
                         binary_expr.operation.clone(),
@@ -2026,7 +2167,27 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
                         binary_expr.rhs.get_loc(),
                         rhs_type.clone(),
                     ));
+                    return Err(())
+                }
+                if self.unsafe_depth == 0 {
+                    self.report_error(TypeError::UnsafePointerArithmetics(
+                        binary_expr.location
+                    ));
                     return Err(());
+                }
+                if binary_expr.operation != Operation::Add && binary_expr.operation != Operation::Sub {
+                    self.report_error(TypeError::InvalidPointerArithmetics(
+                        binary_expr.location,
+                        binary_expr.operation.clone()
+                    ));
+                    return Err(());
+                }
+                binary_expr.typ = Type::Usize;
+                Ok(Type::Usize)
+            }
+            (typ @ Type::Ref(..), other @ Type::Usize) | (typ @ Type::Ref(..), other @ Type::Unknown) => {
+                if *other == Type::Unknown {
+                    self.type_check_expression_with_type(&mut binary_expr.rhs, &Type::Usize)?;
                 }
                 let other = binary_expr.rhs.get_type();
                 debug_assert!(other == Type::Usize);
@@ -2046,19 +2207,9 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
                 binary_expr.typ = typ.clone();
                 Ok(typ.clone())
             }
-            (other, typ @ Type::Ref(..)) => {
+            (other @ Type::Usize, typ @ Type::Ref(..)) | (other @ Type::Unknown, typ @ Type::Ref(..)) => {
                 if *other == Type::Unknown {
                     self.type_check_expression_with_type(&mut binary_expr.lhs, &Type::Usize)?;
-                } else if *other != Type::Usize {
-                    self.report_error(TypeError::BinaryTypeMismatch(
-                        binary_expr.location,
-                        binary_expr.operation.clone(),
-                        binary_expr.lhs.get_loc(),
-                        lhs_type.clone(),
-                        binary_expr.rhs.get_loc(),
-                        rhs_type.clone(),
-                    ));
-                    return Err(());
                 }
                 let other = binary_expr.lhs.get_type();
                 debug_assert!(other == Type::Usize);

@@ -183,7 +183,7 @@ impl<'flags, 'src> FlowChecker<'flags, 'src> {
             };
             if early_exit.contains(&flow) {
                 if index != block.statements.len() - 1 {
-                    println!(
+                    eprintln!(
                         "{}: {:?}: Unreachable code",
                         WARN_STR,
                         block.statements[index + 1].get_loc()
@@ -247,7 +247,7 @@ impl<'flags, 'src> FlowChecker<'flags, 'src> {
     #[trace_call(always)]
     fn check_stmt_var_decl(&mut self, let_node: &nodes::VarDeclNode<'src>, is_comptime: bool) -> Result<FlowType, ()> {
         if is_comptime && let_node.is_comptime {
-            println!(
+            eprintln!(
                 "{WARN_STR}: {}: The {} specifier for variables has no use in {} functions.",
                 let_node.location,
                 KEYWORD_COMPTIME,

@@ -17,33 +17,14 @@ use inkwell::builder::Builder;
 use inkwell::passes::PassManager;
 use inkwell::targets::{Target, InitializationConfig, CodeModel, RelocMode, TargetTriple, TargetMachine};
 use inkwell::types::{BasicType, BasicTypeEnum, StructType};
-use inkwell::values::{BasicValue, InstructionValue, PointerValue};
+use inkwell::values::{BasicValue, InstructionValue, IntValue, PointerValue};
 use inkwell::AddressSpace;
 use inkwell::values::BasicValueEnum;
 
 use tracer::trace_call;
-use crate::middleend::type_checker::Type;
+use crate::middleend::type_checker::{Type, PrimitiveKind};
 
 use super::comptime_eval::{Value, Evaluator};
-
-macro_rules! is_int {
-    ($typ:expr) => {
-        $typ == Type::I8 || $typ == Type::I16 || $typ == Type::I32 || $typ == Type::I64 ||
-        $typ == Type::U8 || $typ == Type::U16 || $typ == Type::U32 || $typ == Type::U64 || $typ == Type::Usize
-    };
-}
-
-macro_rules! assert_is_int {
-    ($lhs:expr, $rhs:expr) => {
-        if !(is_int!($lhs.get_type()) && is_int!($rhs.get_type())) {
-            internal_panic!(
-                "Expected integers as operands of binary operation, got:\nlhs: {:?}\nrhs: {:?}",
-                $lhs.get_type(),
-                $rhs.get_type()
-            );
-        }
-    };
-}
 
 macro_rules! fill_function_lookup {
     ($codegen:ident, $function:ident, $name:ident) => {
@@ -933,6 +914,86 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
                 let v = self.context.i64_type().const_int(s, false);
                 Ok(v.into())
             },
+            nodes::Expression::As(expr, typ) => {
+                let e = self.codegen_expression(expr, false)?;
+                let t = self.codegen_type(&typ.typ);
+                let name = format!("{}.as.{}", expr.get_type(), &typ.typ);
+
+                let f_type = expr.get_type();
+                let f_kind = f_type.get_primitive_kind();
+                let f_size = self.get_struct_size(&e.get_type());
+                debug_assert!(f_size >= 1 && f_size <= 8);
+
+                let t_type = &typ.typ;
+                let t_kind = t_type.get_primitive_kind();
+                let t_size = self.get_struct_size(&t);
+                debug_assert!(t_size >= 1 && t_size <= 8);
+
+                match (f_kind, t_kind) {
+                    (PrimitiveKind::Integer, PrimitiveKind::Integer) => {
+                        if f_size < t_size {
+                            // i8 -> i64
+                            Ok(self.builder.build_int_s_extend(
+                                e.into_int_value(), t.into_int_type(), &name
+                            )?.into())
+                        } else if f_size > t_size {
+                            // i64 -> i8
+                            Ok(self.builder.build_int_truncate(
+                                e.into_int_value(), t.into_int_type(), &name
+                            )?.into())
+                        } else {
+                            // i32 -> u32 or usize -> u64, no-op
+                            Ok(e)
+                        }
+                    },
+                    (PrimitiveKind::Reference, PrimitiveKind::Reference) => Ok(e),
+                    (PrimitiveKind::Float, PrimitiveKind::Float) => {
+                        if f_size < t_size {
+                            // f32 -> f64
+                            Ok(self.builder.build_float_ext(
+                                e.into_float_value(), t.into_float_type(), &name
+                            )?.into())
+                        } else if f_size > t_size {
+                            // f64 -> f32
+                            Ok(self.builder.build_float_trunc(
+                                e.into_float_value(), t.into_float_type(), &name
+                            )?.into())
+                        } else {
+                            // f32 -> f32 or f64 -> f64, no-op
+                            Ok(e)
+                        }
+                    },
+                    (PrimitiveKind::Integer, PrimitiveKind::Reference) => Ok(self.builder.build_int_to_ptr(
+                        e.into_int_value(), t.into_pointer_type(), &name
+                    )?.into()),
+                    (PrimitiveKind::Reference, PrimitiveKind::Integer) => Ok(self.builder.build_ptr_to_int(
+                        e.into_pointer_value(), t.into_int_type(), &name
+                    )?.into()),
+                    (PrimitiveKind::Float, PrimitiveKind::Integer) => {
+                        if t_type.is_signed() {
+                            Ok(self.builder.build_float_to_signed_int(
+                                e.into_float_value(), t.into_int_type(), &name
+                            )?.into())
+                        } else {
+                            Ok(self.builder.build_float_to_unsigned_int(
+                                e.into_float_value(), t.into_int_type(), &name
+                            )?.into())
+                        }
+                    },
+                    (PrimitiveKind::Integer, PrimitiveKind::Float) => {
+                        if f_type.is_signed() {
+                            Ok(self.builder.build_signed_int_to_float(
+                                e.into_int_value(), t.into_float_type(), &name
+                            )?.into())
+                        } else {
+                            Ok(self.builder.build_unsigned_int_to_float(
+                                e.into_int_value(), t.into_float_type(), &name
+                            )?.into())
+                        }
+                    },
+                    (_, _) => todo!()
+                }
+            }
         }
     }
 
@@ -941,9 +1002,13 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
         match unary_node.operation {
             Operation::Negate => {
                 let value = self.codegen_expression(&unary_node.expression, false)?;
-                assert_is_int!(unary_node.expression, unary_node.expression);
-                let result = self.builder.build_int_neg(value.into_int_value(), "codegen_unary_negate")?;
-                Ok(result.into())
+                if unary_node.typ.is_float() {
+                    let result = self.builder.build_float_neg(value.into_float_value(), "codegen_unary_negate")?;
+                    Ok(result.into())
+                } else {
+                    let result = self.builder.build_int_neg(self.try_into_int_value(&value)?, "codegen_unary_negate")?;
+                    Ok(result.into())
+                }
             }
             Operation::Dereference => {
                 let value = self.codegen_expression(&unary_node.expression, false)?;
@@ -1192,13 +1257,17 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
                 Ok(self.context.bool_type().const_int(*b as u64, false).into())
             },
             Value::Char(_) => todo!(),
-            Value::I64(i) => {
+            Value::I128(i) => {
                 debug_assert!(value.in_type_bounds(typ));
                 let value = match typ {
                     Type::I8 => self.context.i8_type().const_int(*i as u64, false),
                     Type::I16 => self.context.i16_type().const_int(*i as u64, false),
                     Type::I32 => self.context.i32_type().const_int(*i as u64, false),
                     Type::I64 => self.context.i64_type().const_int(*i as u64, false),
+                    Type::U8 => self.context.i8_type().const_int(*i as u64, false),
+                    Type::U16 => self.context.i16_type().const_int(*i as u64, false),
+                    Type::U32 => self.context.i32_type().const_int(*i as u64, false),
+                    Type::U64 => self.context.i64_type().const_int(*i as u64, false),
                     Type::Usize => self.context.i64_type().const_int(*i as u64, false),
                     i => todo!("{i}")
                 };
@@ -1229,6 +1298,24 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
                     )?.into_struct_value();
                 }
                 Ok(struct_instance.into())
+            },
+            Value::Array(elements) => {
+                let underlying_type = self.codegen_type(&typ);
+                let Type::Array(element_type, size) = &typ else {
+                    internal_panic!("Expected Type::Array, got {typ:?}")
+                };
+                debug_assert!(*size == elements.len());
+                let mut array_instance = underlying_type.into_array_type().get_undef();
+                for (i, element) in elements.iter().enumerate() {
+                    let value = self.comptime_value_in_context(&element_type, element)?;
+                    array_instance = self.builder.build_insert_value(
+                        array_instance,
+                        value,
+                        i as u32,
+                        "arr_elem",
+                    )?.into_array_value();
+                }
+                Ok(array_instance.into())
             }
         }
     }
@@ -1240,7 +1327,14 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
             if let Err(_eval_error) = value {
                 todo!()
             } else {
-                self.comptime_value_in_context(&name.typ, &value.unwrap())
+                let val = self.comptime_value_in_context(&name.typ, &value.unwrap())?;
+                if needs_ptr {
+                    let alloc = self.allocate(val.get_type(), "comptime_alloc")?;
+                    self.store_value_in_ptr(alloc, val)?;
+                    Ok(alloc.into())
+                } else {
+                    Ok(val)
+                }
             }
         } else {
             let var = self.get_variable(&name.name);
@@ -1264,7 +1358,7 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
             Operation::Add => {
                 let lhs = self.codegen_expression(&binary.lhs, false)?;
                 let rhs = self.codegen_expression(&binary.rhs, false)?;
-                if binary.typ == Type::F32 || binary.typ == Type::F64 {
+                if binary.typ.is_float() {
                     let result = self.builder.build_float_add(
                         lhs.into_float_value(),
                         rhs.into_float_value(),
@@ -1289,10 +1383,9 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
                             Ok(i2p.into())
                         }
                     } else {
-                        assert_is_int!(binary.lhs, binary.rhs);
                         let result = self.builder.build_int_add(
-                            lhs.into_int_value(),
-                            rhs.into_int_value(),
+                            self.try_into_int_value(&lhs)?,
+                            self.try_into_int_value(&rhs)?,
                             "codegen_binary_add",
                         )?;
                         Ok(result.into())
@@ -1302,7 +1395,7 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
             Operation::Sub => {
                 let lhs = self.codegen_expression(&binary.lhs, false)?;
                 let rhs = self.codegen_expression(&binary.rhs, false)?;
-                if binary.typ == Type::F32 || binary.typ == Type::F64 {
+                if binary.typ.is_float() {
                     let result = self.builder.build_float_sub(
                         lhs.into_float_value(),
                         rhs.into_float_value(),
@@ -1324,10 +1417,9 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
                         };
                         Ok(gep.into())
                     } else {
-                        assert_is_int!(binary.lhs, binary.rhs);
                         let result = self.builder.build_int_sub(
-                            lhs.into_int_value(),
-                            rhs.into_int_value(),
+                            self.try_into_int_value(&lhs)?,
+                            self.try_into_int_value(&rhs)?,
                             "codegen_binary_sub",
                         )?;
                         Ok(result.into())
@@ -1337,18 +1429,26 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
             Operation::Mul => {
                 let lhs = self.codegen_expression(&binary.lhs, false)?;
                 let rhs = self.codegen_expression(&binary.rhs, false)?;
-                assert_is_int!(binary.lhs, binary.rhs);
-                let result = self.builder.build_int_mul(
-                    lhs.into_int_value(),
-                    rhs.into_int_value(),
-                    "codegen_binary_mul",
-                )?;
-                Ok(result.into())
+                if binary.typ.is_float() {
+                    let result = self.builder.build_float_mul(
+                        lhs.into_float_value(),
+                        rhs.into_float_value(),
+                        "codegen_binary_mul",
+                    )?;
+                    Ok(result.into())
+                } else {
+                    let result = self.builder.build_int_mul(
+                        self.try_into_int_value(&lhs)?,
+                        self.try_into_int_value(&rhs)?,
+                        "codegen_binary_mul",
+                    )?;
+                    Ok(result.into())
+                }
             }
             Operation::Div => {
                 let lhs = self.codegen_expression(&binary.lhs, false)?;
                 let rhs = self.codegen_expression(&binary.rhs, false)?;
-                if binary.typ == Type::F32 || binary.typ == Type::F64 {
+                if binary.typ.is_float() {
                     let result = self.builder.build_float_div(
                         lhs.into_float_value(),
                         rhs.into_float_value(),
@@ -1356,10 +1456,9 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
                     )?;
                     Ok(result.into())
                 } else {
-                    assert_is_int!(binary.lhs, binary.rhs);
                     let result = self.builder.build_int_signed_div(
-                        lhs.into_int_value(),
-                        rhs.into_int_value(),
+                        self.try_into_int_value(&lhs)?,
+                        self.try_into_int_value(&rhs)?,
                         "codegen_binary_div",
                     )?;
                     Ok(result.into())
@@ -1368,7 +1467,7 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
             Operation::Modulo => {
                 let lhs = self.codegen_expression(&binary.lhs, false)?;
                 let rhs = self.codegen_expression(&binary.rhs, false)?;
-                if binary.typ == Type::F32 || binary.typ == Type::F64 {
+                if binary.typ.is_float() {
                     let result = self.builder.build_float_rem(
                         lhs.into_float_value(),
                         rhs.into_float_value(),
@@ -1376,10 +1475,9 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
                     )?;
                     Ok(result.into())
                 } else {
-                    assert_is_int!(binary.lhs, binary.rhs);
                     let result = self.builder.build_int_signed_rem(
-                        lhs.into_int_value(),
-                        rhs.into_int_value(),
+                        self.try_into_int_value(&lhs)?,
+                        self.try_into_int_value(&rhs)?,
                         "codegen_binary_modulo",
                     )?;
                     Ok(result.into())
@@ -1388,72 +1486,128 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
             Operation::LessThan => {
                 let lhs = self.codegen_expression(&binary.lhs, false)?;
                 let rhs = self.codegen_expression(&binary.rhs, false)?;
-                assert_is_int!(binary.lhs, binary.rhs);
-                let result = self.builder.build_int_compare(
-                    inkwell::IntPredicate::SLT,
-                    lhs.into_int_value(),
-                    rhs.into_int_value(),
-                    "codegen_binary_lessthan",
-                )?;
-                Ok(result.into())
+                if binary.lhs.get_type().is_float() && binary.rhs.get_type().is_float() {
+                    let result = self.builder.build_float_compare(
+                        inkwell::FloatPredicate::ULT,
+                        lhs.into_float_value(),
+                        rhs.into_float_value(),
+                        "codegen_binary_lessthan",
+                    )?;
+                    Ok(result.into())
+                } else {
+                    let result = self.builder.build_int_compare(
+                        inkwell::IntPredicate::SLT,
+                        self.try_into_int_value(&lhs)?,
+                        self.try_into_int_value(&rhs)?,
+                        "codegen_binary_lessthan",
+                    )?;
+                    Ok(result.into())
+                }
             }
             Operation::GreaterThan => {
                 let lhs = self.codegen_expression(&binary.lhs, false)?;
                 let rhs = self.codegen_expression(&binary.rhs, false)?;
-                assert_is_int!(binary.lhs, binary.rhs);
-                let result = self.builder.build_int_compare(
-                    inkwell::IntPredicate::SGT,
-                    lhs.into_int_value(),
-                    rhs.into_int_value(),
-                    "codegen_binary_greaterthan",
-                )?;
-                Ok(result.into())
+                if binary.lhs.get_type().is_float() && binary.rhs.get_type().is_float() {
+                    let result = self.builder.build_float_compare(
+                        inkwell::FloatPredicate::UGT,
+                        lhs.into_float_value(),
+                        rhs.into_float_value(),
+                        "codegen_binary_greaterthan",
+                    )?;
+                    Ok(result.into())
+                } else {
+                    let result = self.builder.build_int_compare(
+                        inkwell::IntPredicate::SGT,
+                        self.try_into_int_value(&lhs)?,
+                        self.try_into_int_value(&rhs)?,
+                        "codegen_binary_greaterthan",
+                    )?;
+                    Ok(result.into())
+                }
             }
             Operation::LessThanOrEqual => {
                 let lhs = self.codegen_expression(&binary.lhs, false)?;
                 let rhs = self.codegen_expression(&binary.rhs, false)?;
-                assert_is_int!(binary.lhs, binary.rhs);
-                let result = self.builder.build_int_compare(
-                    inkwell::IntPredicate::SLE,
-                    lhs.into_int_value(),
-                    rhs.into_int_value(),
-                    "codegen_binary_lessthanequal",
-                )?;
-                Ok(result.into())
+                if binary.lhs.get_type().is_float() && binary.rhs.get_type().is_float() {
+                    let result = self.builder.build_float_compare(
+                        inkwell::FloatPredicate::ULE,
+                        lhs.into_float_value(),
+                        rhs.into_float_value(),
+                        "codegen_binary_lessthanequal",
+                    )?;
+                    Ok(result.into())
+                } else {
+                    let result = self.builder.build_int_compare(
+                        inkwell::IntPredicate::SLE,
+                        self.try_into_int_value(&lhs)?,
+                        self.try_into_int_value(&rhs)?,
+                        "codegen_binary_lessthanequal",
+                    )?;
+                    Ok(result.into())
+                }
             }
             Operation::GreaterThanOrEqual => {
                 let lhs = self.codegen_expression(&binary.lhs, false)?;
                 let rhs = self.codegen_expression(&binary.rhs, false)?;
-                assert_is_int!(binary.lhs, binary.rhs);
-                let result = self.builder.build_int_compare(
-                    inkwell::IntPredicate::SGE,
-                    lhs.into_int_value(),
-                    rhs.into_int_value(),
-                    "codegen_binary_greaterthanequal",
-                )?;
-                Ok(result.into())
+                if binary.lhs.get_type().is_float() && binary.rhs.get_type().is_float() {
+                    let result = self.builder.build_float_compare(
+                        inkwell::FloatPredicate::UGE,
+                        lhs.into_float_value(),
+                        rhs.into_float_value(),
+                        "codegen_binary_greaterthanequal",
+                    )?;
+                    Ok(result.into())
+                } else {
+                    let result = self.builder.build_int_compare(
+                        inkwell::IntPredicate::SGE,
+                        self.try_into_int_value(&lhs)?,
+                        self.try_into_int_value(&rhs)?,
+                        "codegen_binary_greaterthanequal",
+                    )?;
+                    Ok(result.into())
+                }
             }
             Operation::Equal => {
                 let lhs = self.codegen_expression(&binary.lhs, false)?;
                 let rhs = self.codegen_expression(&binary.rhs, false)?;
-                let result = self.builder.build_int_compare(
-                    inkwell::IntPredicate::EQ,
-                    lhs.into_int_value(),
-                    rhs.into_int_value(),
-                    "codegen_binary_equal",
-                )?;
-                Ok(result.into())
+                if binary.lhs.get_type().is_float() && binary.rhs.get_type().is_float() {
+                    let result = self.builder.build_float_compare(
+                        inkwell::FloatPredicate::UEQ,
+                        lhs.into_float_value(),
+                        rhs.into_float_value(),
+                        "codegen_binary_equal",
+                    )?;
+                    Ok(result.into())
+                } else {
+                    let result = self.builder.build_int_compare(
+                        inkwell::IntPredicate::EQ,
+                        self.try_into_int_value(&lhs)?,
+                        self.try_into_int_value(&rhs)?,
+                        "codegen_binary_equal",
+                    )?;
+                    Ok(result.into())
+                }
             }
             Operation::NotEqual => {
                 let lhs = self.codegen_expression(&binary.lhs, false)?;
                 let rhs = self.codegen_expression(&binary.rhs, false)?;
-                let result = self.builder.build_int_compare(
-                    inkwell::IntPredicate::NE,
-                    lhs.into_int_value(),
-                    rhs.into_int_value(),
-                    "codegen_binary_notequal",
-                )?;
-                Ok(result.into())
+                if binary.lhs.get_type().is_float() && binary.rhs.get_type().is_float() {
+                    let result = self.builder.build_float_compare(
+                        inkwell::FloatPredicate::UNE,
+                        lhs.into_float_value(),
+                        rhs.into_float_value(),
+                        "codegen_binary_notequal",
+                    )?;
+                    Ok(result.into())
+                } else {
+                    let result = self.builder.build_int_compare(
+                        inkwell::IntPredicate::NE,
+                        self.try_into_int_value(&lhs)?,
+                        self.try_into_int_value(&rhs)?,
+                        "codegen_binary_notequal",
+                    )?;
+                    Ok(result.into())
+                }
             }
             Operation::BitwiseAnd => {
                 let lhs = self.codegen_expression(&binary.lhs, false)?;
@@ -1683,6 +1837,21 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
             }
         }
         String::from_utf8(new_value).unwrap()
+    }
+
+    #[trace_call(always)]
+    fn try_into_int_value(&self, expr: &BasicValueEnum<'ctx>) -> Result<IntValue<'ctx>, BuilderError> {
+        if expr.is_pointer_value() {
+            self.builder.build_ptr_to_int(
+                expr.into_pointer_value(),
+                self.codegen_type(&Type::Usize).into_int_type(),
+                "into_int"
+            )
+        } else if expr.is_int_value() {
+            Ok(expr.into_int_value())
+        } else {
+            internal_panic!("Expected integer as argument, got expr: {:?}", expr);
+        }
     }
 
     #[trace_call(always)]

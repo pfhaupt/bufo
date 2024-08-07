@@ -90,6 +90,7 @@ impl<'src> Token<'src> {
     }
 }
 
+pub const KEYWORD_AS: &str = "as";
 pub const KEYWORD_BREAK: &str = "break";
 pub const KEYWORD_COMPILER_FLAGS: &str = "compiler_flags";
 pub const KEYWORD_COMPTIME: &str = "comptime";
@@ -119,6 +120,7 @@ pub const KEYWORD_WHILE: &str = "while";
 pub enum TokenType {
     Unknown,
     Comment,
+    KeywordAs,
     KeywordBreak,
     KeywordCompilerFlags,
     KeywordComptime,
@@ -181,6 +183,7 @@ pub enum TokenType {
 impl TokenType {
     pub fn try_from_keyword(kw: &str) -> Option<Self> {
         match kw {
+            KEYWORD_AS => Some(Self::KeywordAs),
             KEYWORD_BREAK => Some(Self::KeywordBreak),
             KEYWORD_COMPILER_FLAGS => Some(Self::KeywordCompilerFlags),
             KEYWORD_COMPTIME => Some(Self::KeywordComptime),
@@ -236,6 +239,7 @@ impl Display for TokenType {
             Self::ClosingCurly => write!(f, "`}}`"),
             Self::OpenSquare => write!(f, "`[`"),
             Self::ClosingSquare => write!(f, "`]`"),
+            Self::KeywordAs => write!(f, "`{}`", KEYWORD_AS),
             Self::KeywordBreak => write!(f, "`{}`", KEYWORD_BREAK),
             Self::KeywordCompilerFlags => write!(f, "`{}`", KEYWORD_COMPILER_FLAGS),
             Self::KeywordComptime => write!(f, "`{}`", KEYWORD_COMPTIME),

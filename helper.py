@@ -143,6 +143,12 @@ def run_test(path: str, exec: bool) -> TestResult:
             if USE_OLD_CODEGEN: os.remove("./out/" + filename + ".asm")
             os.remove("./out/" + filename + ".exe")
         if expected_mode == "DIAGNOSTICS":
+            if output.returncode == 101:
+                print(f"{PANIC} {path}", file=sys.stderr)
+                return TestResult(path, STATE.PANIC)
+            if output.returncode != 0:
+                print(f"{FAIL} {path}", file=sys.stderr)
+                return TestResult(path, STATE.FAILURE)
             filename = path.split(os.sep)[-1].split(".")[0]
             # We're not generating assembly in LLVM mode
             if USE_OLD_CODEGEN: os.remove("./out/" + filename + ".asm")
