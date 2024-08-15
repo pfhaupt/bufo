@@ -7,7 +7,7 @@ unsafe func printSubStr(sub: &SubStr, indent: usize) {
 }
 unsafe func printQuirk(quirk: &Quirk, indent: usize) {
     printf("%*cQuirk\n", indent, ' ');
-    printType(&quirk.typ, indent + 2);
+    printType(&quirk.name, indent + 2);
     printf("%*cTypes\n", indent, ' ');
     for (mut i: usize = 0; i < quirk.typeDefs.len(); i = i + 1) {
         printTypeDef(quirk.typeDefs.getTypeDef(i), indent + 2);
@@ -46,18 +46,18 @@ unsafe func printRefType(rt: &RefType, indent: usize) {
     printType(&rt.typ, 0);
 }
 unsafe func printType(typ: &Type, indent: usize) {
-    if (typ.kind == TYPE_KIND_PRIMITIVE()) {
+    if (typ.kind == TYPE_KIND_PRIMITIVE) {
         printSubStr(typ.data, indent);
-    } else if (typ.kind == TYPE_KIND_STRUCT()) {
+    } else if (typ.kind == TYPE_KIND_STRUCT) {
         let _s: &StructType = typ.data;
         printStructType(_s, indent);
-    } else if (typ.kind == TYPE_KIND_GENERIC()) {
+    } else if (typ.kind == TYPE_KIND_GENERIC) {
         let _g: &GenericType = typ.data;
         printGenericType(_g, indent);
-    } else if (typ.kind == TYPE_KIND_REFERENCE()) {
+    } else if (typ.kind == TYPE_KIND_REFERENCE) {
         let _r: &RefType = typ.data;
         printRefType(_r, indent);
-    } else if (typ.kind == TYPE_KIND_SELF()) {
+    } else if (typ.kind == TYPE_KIND_SELF) {
         printf("%*cSelf\n", indent, ' ');
     } else {
         assert_with_msg(false, "printType: Unreachable");
@@ -206,9 +206,9 @@ unsafe func printEmptyStruct(strukt: &EmptyStruct, indent: usize) {
     printType(&strukt.name, indent + 2);
 }
 unsafe func printStructVariant(variant: &StructVariant, indent: usize) {
-    if (variant.kind == STRUCT_VARIANT_C()) printCStruct(variant.data, indent);
-    else if (variant.kind == STRUCT_VARIANT_TUPLE()) printTupleStruct(variant.data, indent);
-    else if (variant.kind == STRUCT_VARIANT_EMPTY()) printEmptyStruct(variant.data, indent);
+    if (variant.kind == STRUCT_VARIANT_C) printCStruct(variant.data, indent);
+    else if (variant.kind == STRUCT_VARIANT_TUPLE) printTupleStruct(variant.data, indent);
+    else if (variant.kind == STRUCT_VARIANT_EMPTY) printEmptyStruct(variant.data, indent);
     else assert_with_msg(false, "Unreachable");
 }
 unsafe func printEnum(eenum: &Enum, indent: usize) {

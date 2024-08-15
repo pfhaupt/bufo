@@ -1,13 +1,9 @@
-import "util/substr.bufo";
-import "util/string.bufo";
+import "substr.bufo";
+import "string.bufo";
 import "frontend/nodes.bufo";
 import "frontend/lexer.bufo";
 import "frontend/parser.bufo";
 import "middleend/type_checker.bufo";
-
-func getArg(argv: &&char, argc: usize) -> &char {
-    unsafe { return *(argv + sizeof &char * argc); }
-}
 
 unsafe func main() {
     let argv: &&char = GLOBAL_GET_ARGV();
@@ -17,8 +13,8 @@ unsafe func main() {
         fprintf(stderr, "error: Expected input file as argument.\n");
         exit(1);
     }
-    let _prog: &char = getArg(argv, 0);
-    let file: &char = getArg(argv, 1);
+    let _prog: &char = getArg(0);
+    let file: &char = getArg(1);
     let fileSubStr: SubStr = newSubStr(file, 0, strlen(file));
     let string: String = readFileToString(file);
     let sub: SubStr = newSubStrOfString(&string, 0, string.length);
@@ -33,7 +29,7 @@ unsafe func main() {
     } else unsafe {
         mut parser: Parser = newParser(&mut lexer);
         mut module: Module = parser.parseModule(&fileSubStr);
-        // printModule(module);
+        // printAST(&module);
 
         mut checker: Checker = newChecker(&mut module);
         let result: bool = checker.runChecks();

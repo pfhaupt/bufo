@@ -15,6 +15,9 @@ struct Span {
         s.pushNumber(this.end);
         return s;
     }
+    func comesBefore(&this, other: &Span) -> bool {
+        return this.start < other.start;
+    }
 }
 
 func newSpan(start: usize, end: usize) -> Span {

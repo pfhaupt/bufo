@@ -1,35 +1,35 @@
 import "frontend/nodes.bufo";
 
-func VECTOR_KIND_TYPE() -> usize { return 0; }
-func VECTOR_KIND_STMT() -> usize { return 1; }
-func VECTOR_KIND_FUNC_PARAM() -> usize { return 2; }
-func VECTOR_KIND_FUNC_DEF() -> usize { return 3; }
-func VECTOR_KIND_FIELD() -> usize { return 4; }
-func VECTOR_KIND_FUNC_DECL() -> usize { return 5; }
-func VECTOR_KIND_REALIZE() -> usize { return 6; }
-func VECTOR_KIND_QUIRK() -> usize { return 7; }
-func VECTOR_KIND_STRUCT_VARIANT() -> usize { return 8; }
-func VECTOR_KIND_MODULE() -> usize { return 9; }
-func VECTOR_KIND_TYPE_DEF() -> usize { return 10; }
-func VECTOR_KIND_PAIR_STRING_EXPR() -> usize { return 11; }
-func VECTOR_KIND_ENUM() -> usize { return 12; }
-func VECTOR_KIND_STRING() -> usize { return 13; }
+comptime VECTOR_KIND_TYPE: usize = 0;
+comptime VECTOR_KIND_STMT: usize = 1;
+comptime VECTOR_KIND_FUNC_PARAM: usize = 2;
+comptime VECTOR_KIND_FUNC_DEF: usize = 3;
+comptime VECTOR_KIND_FIELD: usize = 4;
+comptime VECTOR_KIND_FUNC_DECL: usize = 5;
+comptime VECTOR_KIND_REALIZE: usize = 6;
+comptime VECTOR_KIND_QUIRK: usize = 7;
+comptime VECTOR_KIND_STRUCT_VARIANT: usize = 8;
+comptime VECTOR_KIND_MODULE: usize = 9;
+comptime VECTOR_KIND_TYPE_DEF: usize = 10;
+comptime VECTOR_KIND_PAIR_STRING_EXPR: usize = 11;
+comptime VECTOR_KIND_ENUM: usize = 12;
+comptime VECTOR_KIND_STRING: usize = 13;
 
 func vecKindToString(kind: usize) -> &char {
-    if (kind == VECTOR_KIND_TYPE()) return "VECTOR_KIND_TYPE";
-    else if (kind == VECTOR_KIND_STMT()) return "VECTOR_KIND_STMT";
-    else if (kind == VECTOR_KIND_FUNC_PARAM()) return "VECTOR_KIND_FUNC_PARAM";
-    else if (kind == VECTOR_KIND_FUNC_DEF()) return "VECTOR_KIND_FUNC_DEF";
-    else if (kind == VECTOR_KIND_FIELD()) return "VECTOR_KIND_FIELD";
-    else if (kind == VECTOR_KIND_FUNC_DECL()) return "VECTOR_KIND_FUNC_DECL";
-    else if (kind == VECTOR_KIND_REALIZE()) return "VECTOR_KIND_REALIZE";
-    else if (kind == VECTOR_KIND_QUIRK()) return "VECTOR_KIND_QUIRK";
-    else if (kind == VECTOR_KIND_STRUCT_VARIANT()) return "VECTOR_KIND_STRUCT_VARIANT";
-    else if (kind == VECTOR_KIND_MODULE()) return "VECTOR_KIND_MODULE";
-    else if (kind == VECTOR_KIND_TYPE_DEF()) return "VECTOR_KIND_TYPE_DEF";
-    else if (kind == VECTOR_KIND_ENUM()) return "VECTOR_KIND_ENUM";
-    else if (kind == VECTOR_KIND_STRING()) return "VECTOR_KIND_STRING";
-    else if (kind == VECTOR_KIND_PAIR_STRING_EXPR()) return "VECTOR_KIND_PAIR_STRING_EXPR";
+    if (kind == VECTOR_KIND_TYPE) return "VECTOR_KIND_TYPE";
+    else if (kind == VECTOR_KIND_STMT) return "VECTOR_KIND_STMT";
+    else if (kind == VECTOR_KIND_FUNC_PARAM) return "VECTOR_KIND_FUNC_PARAM";
+    else if (kind == VECTOR_KIND_FUNC_DEF) return "VECTOR_KIND_FUNC_DEF";
+    else if (kind == VECTOR_KIND_FIELD) return "VECTOR_KIND_FIELD";
+    else if (kind == VECTOR_KIND_FUNC_DECL) return "VECTOR_KIND_FUNC_DECL";
+    else if (kind == VECTOR_KIND_REALIZE) return "VECTOR_KIND_REALIZE";
+    else if (kind == VECTOR_KIND_QUIRK) return "VECTOR_KIND_QUIRK";
+    else if (kind == VECTOR_KIND_STRUCT_VARIANT) return "VECTOR_KIND_STRUCT_VARIANT";
+    else if (kind == VECTOR_KIND_MODULE) return "VECTOR_KIND_MODULE";
+    else if (kind == VECTOR_KIND_TYPE_DEF) return "VECTOR_KIND_TYPE_DEF";
+    else if (kind == VECTOR_KIND_ENUM) return "VECTOR_KIND_ENUM";
+    else if (kind == VECTOR_KIND_STRING) return "VECTOR_KIND_STRING";
+    else if (kind == VECTOR_KIND_PAIR_STRING_EXPR) return "VECTOR_KIND_PAIR_STRING_EXPR";
     else todo_with_msg("Unknown kind in vecKindToString()");
     return "";
 }
@@ -66,7 +66,7 @@ struct Vec {
         unsafe {
             // printf("[DEBUG] Resizing Vector (kind = %s), old address = %p, old capacity = %llu\n", vecKindToString(this.kind), this.elements, this.capacity);
             this.elements = realloc(this.elements, new_cap * this.elemSize);
-            assert_with_msg(!isNull(this.elements), "Could not allocate buffer for Vector");
+            assert_with_msg(this.elements != null, "Could not allocate buffer for Vector");
             this.capacity = new_cap;
             // printf("[DEBUG] Resize success (kind = %s), new address = %p, new capacity = %llu\n", vecKindToString(this.kind), this.elements, this.capacity);
         }
@@ -76,7 +76,7 @@ struct Vec {
         unsafe {
             free(this.elements);
             // set elements to null to prevent heap corruption later when calling resize()
-            this.elements = NULL();
+            this.elements = null;
         }
     }
     func extend(&mut this, other: &Vec) {
@@ -89,12 +89,13 @@ struct Vec {
             let _e: &u8 = this.elements;
             let _dst: Any = _e + this.elemSize * this.length;
             let _res: Any = memcpy(_dst, _src, other.length * this.elemSize);
-            assert(!isNull(_res));
+            assert(_res != null);
+            assert(_res == _dst);
         }
         this.length = new_length;
     }
     func pushType(&mut this, typ: &Type) {
-        assert_with_msg(this.kind == VECTOR_KIND_TYPE(), "Attempted to insert Type into non-Type Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_TYPE, "Attempted to insert Type into non-Type Vector.");
         this.resizeIfNecessary();
         unsafe {
             let _idk: Any = this.elements;
@@ -104,7 +105,7 @@ struct Vec {
         this.length = this.length + 1;
     }
     func pushString(&mut this, typ: &String) {
-        assert_with_msg(this.kind == VECTOR_KIND_STRING(), "Attempted to insert String into non-String Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_STRING, "Attempted to insert String into non-String Vector.");
         this.resizeIfNecessary();
         unsafe {
             let _idk: Any = this.elements;
@@ -114,7 +115,7 @@ struct Vec {
         this.length = this.length + 1;
     }
     func pushStructVariant(&mut this, strukt: &StructVariant) {
-        assert_with_msg(this.kind == VECTOR_KIND_STRUCT_VARIANT(), "Attempted to insert StructVariant into non-StructVariant Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_STRUCT_VARIANT, "Attempted to insert StructVariant into non-StructVariant Vector.");
         this.resizeIfNecessary();
         unsafe {
             let _idk: Any = this.elements;
@@ -124,7 +125,7 @@ struct Vec {
         this.length = this.length + 1;
     }
     func pushEnum(&mut this, eenum: &Enum) {
-        assert_with_msg(this.kind == VECTOR_KIND_ENUM(), "Attempted to insert Enum into non-Enum Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_ENUM, "Attempted to insert Enum into non-Enum Vector.");
         this.resizeIfNecessary();
         unsafe {
             let _idk: Any = this.elements;
@@ -134,7 +135,7 @@ struct Vec {
         this.length = this.length + 1;
     }
     func pushRealize(&mut this, real: &Realize) {
-        assert_with_msg(this.kind == VECTOR_KIND_REALIZE(), "Attempted to insert Realize into non-Realize Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_REALIZE, "Attempted to insert Realize into non-Realize Vector.");
         this.resizeIfNecessary();
         unsafe {
             let _idk: Any = this.elements;
@@ -144,7 +145,7 @@ struct Vec {
         this.length = this.length + 1;
     }
     func pushQuirk(&mut this, quirk: &Quirk) {
-        assert_with_msg(this.kind == VECTOR_KIND_QUIRK(), "Attempted to insert Quirk into non-Quirk Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_QUIRK, "Attempted to insert Quirk into non-Quirk Vector.");
         this.resizeIfNecessary();
         unsafe {
             let _idk: Any = this.elements;
@@ -154,7 +155,7 @@ struct Vec {
         this.length = this.length + 1;
     }
     func pushFuncDecl(&mut this, funcDecl: &FuncDecl) {
-        assert_with_msg(this.kind == VECTOR_KIND_FUNC_DECL(), "Attempted to insert FuncDecl into non-FuncDecl Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_FUNC_DECL, "Attempted to insert FuncDecl into non-FuncDecl Vector.");
         this.resizeIfNecessary();
         unsafe {
             let _idk: Any = this.elements;
@@ -164,7 +165,7 @@ struct Vec {
         this.length = this.length + 1;
     }
     func pushFuncDef(&mut this, funcDef: &FuncDef) {
-        assert_with_msg(this.kind == VECTOR_KIND_FUNC_DEF(), "Attempted to insert FuncDef into non-FuncDef Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_FUNC_DEF, "Attempted to insert FuncDef into non-FuncDef Vector.");
         this.resizeIfNecessary();
         unsafe {
             let _idk: Any = this.elements;
@@ -174,7 +175,7 @@ struct Vec {
         this.length = this.length + 1;
     }
     func pushStmt(&mut this, stmt: &Stmt) {
-        assert_with_msg(this.kind == VECTOR_KIND_STMT(), "Attempted to insert Stmt into non-Stmt Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_STMT, "Attempted to insert Stmt into non-Stmt Vector.");
         this.resizeIfNecessary();
         unsafe {
             let _idk: Any = this.elements;
@@ -184,7 +185,7 @@ struct Vec {
         this.length = this.length + 1;
     }
     func pushField(&mut this, field: &Field) {
-        assert_with_msg(this.kind == VECTOR_KIND_FIELD(), "Attempted to insert Field into non-Field Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_FIELD, "Attempted to insert Field into non-Field Vector.");
         this.resizeIfNecessary();
         unsafe {
             let _idk: Any = this.elements;
@@ -194,7 +195,7 @@ struct Vec {
         this.length = this.length + 1;
     }
     func pushFuncParam(&mut this, fParam: &FuncParam) {
-        assert_with_msg(this.kind == VECTOR_KIND_FUNC_PARAM(), "Attempted to insert FuncParam into non-FuncParam Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_FUNC_PARAM, "Attempted to insert FuncParam into non-FuncParam Vector.");
         this.resizeIfNecessary();
         unsafe {
             let _idk: Any = this.elements;
@@ -204,7 +205,7 @@ struct Vec {
         this.length = this.length + 1;
     }
     func pushTypeDef(&mut this, tDef: &TypeDef) {
-        assert_with_msg(this.kind == VECTOR_KIND_TYPE_DEF(), "Attempted to insert TypeDef into non-TypeDef Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_TYPE_DEF, "Attempted to insert TypeDef into non-TypeDef Vector.");
         this.resizeIfNecessary();
         unsafe {
             let _idk: Any = this.elements;
@@ -214,7 +215,7 @@ struct Vec {
         this.length = this.length + 1;
     }
     func pushPairTokenExpr(&mut this, pse: &PairTokenExpr) {
-        assert_with_msg(this.kind == VECTOR_KIND_PAIR_STRING_EXPR(), "Attempted to insert PairTokenExpr into non-PairTokenExpr Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_PAIR_STRING_EXPR, "Attempted to insert PairTokenExpr into non-PairTokenExpr Vector.");
         this.resizeIfNecessary();
         unsafe {
             let _idk: Any = this.elements;
@@ -224,7 +225,7 @@ struct Vec {
         this.length = this.length + 1;
     }
     func getModule(&this, index: usize) -> &Module {
-        assert_with_msg(this.kind == VECTOR_KIND_MODULE(), "Attempted to get Module of a non-Module Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_MODULE, "Attempted to get Module of a non-Module Vector.");
         assert_with_msg(index < this.length, "Attempted to index out of bounds!");
         unsafe {
             let _b: Any = this.elements;
@@ -233,7 +234,7 @@ struct Vec {
         }
     }
     func getStructVariant(&this, index: usize) -> &StructVariant {
-        assert_with_msg(this.kind == VECTOR_KIND_STRUCT_VARIANT(), "Attempted to get StructVariant of a non-StructVariant Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_STRUCT_VARIANT, "Attempted to get StructVariant of a non-StructVariant Vector.");
         assert_with_msg(index < this.length, "Attempted to index out of bounds!");
         unsafe {
             let _b: Any = this.elements;
@@ -242,7 +243,7 @@ struct Vec {
         }
     }
     func getEnum(&this, index: usize) -> &Enum {
-        assert_with_msg(this.kind == VECTOR_KIND_ENUM(), "Attempted to get Enum of a non-Enum Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_ENUM, "Attempted to get Enum of a non-Enum Vector.");
         assert_with_msg(index < this.length, "Attempted to index out of bounds!");
         unsafe {
             let _b: Any = this.elements;
@@ -251,7 +252,7 @@ struct Vec {
         }
     }
     func getQuirk(&this, index: usize) -> &Quirk {
-        assert_with_msg(this.kind == VECTOR_KIND_QUIRK(), "Attempted to get Quirk of a non-Quirk Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_QUIRK, "Attempted to get Quirk of a non-Quirk Vector.");
         assert_with_msg(index < this.length, "Attempted to index out of bounds!");
         unsafe {
             let _b: Any = this.elements;
@@ -260,7 +261,7 @@ struct Vec {
         }
     }
     func getRealize(&this, index: usize) -> &Realize {
-        assert_with_msg(this.kind == VECTOR_KIND_REALIZE(), "Attempted to get Realize of a non-Realize Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_REALIZE, "Attempted to get Realize of a non-Realize Vector.");
         assert_with_msg(index < this.length, "Attempted to index out of bounds!");
         unsafe {
             let _b: Any = this.elements;
@@ -269,7 +270,7 @@ struct Vec {
         }
     }
     func getFuncDef(&this, index: usize) -> &FuncDef {
-        assert_with_msg(this.kind == VECTOR_KIND_FUNC_DEF(), "Attempted to get FuncDef of a non-FuncDef Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_FUNC_DEF, "Attempted to get FuncDef of a non-FuncDef Vector.");
         assert_with_msg(index < this.length, "Attempted to index out of bounds!");
         unsafe {
             let _b: Any = this.elements;
@@ -278,7 +279,7 @@ struct Vec {
         }
     }
     func getFuncDecl(&this, index: usize) -> &FuncDecl {
-        assert_with_msg(this.kind == VECTOR_KIND_FUNC_DECL(), "Attempted to get FuncDecl of a non-FuncDecl Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_FUNC_DECL, "Attempted to get FuncDecl of a non-FuncDecl Vector.");
         assert_with_msg(index < this.length, "Attempted to index out of bounds!");
         unsafe {
             let _b: Any = this.elements;
@@ -287,7 +288,7 @@ struct Vec {
         }
     }
     func getFuncParam(&this, index: usize) -> &FuncParam {
-        assert_with_msg(this.kind == VECTOR_KIND_FUNC_PARAM(), "Attempted to get FuncParam of a non-FuncParam Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_FUNC_PARAM, "Attempted to get FuncParam of a non-FuncParam Vector.");
         assert_with_msg(index < this.length, "Attempted to index out of bounds!");
         unsafe {
             let _b: Any = this.elements;
@@ -296,7 +297,7 @@ struct Vec {
         }
     }
     func getStmt(&this, index: usize) -> &Stmt {
-        assert_with_msg(this.kind == VECTOR_KIND_STMT(), "Attempted to get Stmt of a non-Stmt Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_STMT, "Attempted to get Stmt of a non-Stmt Vector.");
         assert_with_msg(index < this.length, "Attempted to index out of bounds!");
         unsafe {
             let _b: Any = this.elements;
@@ -305,7 +306,7 @@ struct Vec {
         }
     }
     func getField(&this, index: usize) -> &Field {
-        assert_with_msg(this.kind == VECTOR_KIND_FIELD(), "Attempted to get Field of a non-Field Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_FIELD, "Attempted to get Field of a non-Field Vector.");
         assert_with_msg(index < this.length, "Attempted to index out of bounds!");
         unsafe {
             let _b: Any = this.elements;
@@ -314,7 +315,7 @@ struct Vec {
         }
     }
     func getPairTokenExpr(&this, index: usize) -> &PairTokenExpr {
-        assert_with_msg(this.kind == VECTOR_KIND_PAIR_STRING_EXPR(), "Attempted to get PairTokenExpr of a non-PairTokenExpr Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_PAIR_STRING_EXPR, "Attempted to get PairTokenExpr of a non-PairTokenExpr Vector.");
         assert_with_msg(index < this.length, "Attempted to index out of bounds!");
         unsafe {
             let _b: Any = this.elements;
@@ -323,7 +324,7 @@ struct Vec {
         }
     }
     func getType(&this, index: usize) -> &Type {
-        assert_with_msg(this.kind == VECTOR_KIND_TYPE(), "Attempted to get Type of a non-Type Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_TYPE, "Attempted to get Type of a non-Type Vector.");
         assert_with_msg(index < this.length, "Attempted to index out of bounds!");
         unsafe {
             let _b: Any = this.elements;
@@ -332,7 +333,7 @@ struct Vec {
         }
     }
     func getString(&this, index: usize) -> &String {
-        assert_with_msg(this.kind == VECTOR_KIND_STRING(), "Attempted to get String of a non-String Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_STRING, "Attempted to get String of a non-String Vector.");
         assert_with_msg(index < this.length, "Attempted to index out of bounds!");
         unsafe {
             let _b: Any = this.elements;
@@ -341,7 +342,7 @@ struct Vec {
         }
     }
     func getTypeDef(&this, index: usize) -> &TypeDef {
-        assert_with_msg(this.kind == VECTOR_KIND_TYPE_DEF(), "Attempted to get TypeDef of a non-TypeDef Vector.");
+        assert_with_msg(this.kind == VECTOR_KIND_TYPE_DEF, "Attempted to get TypeDef of a non-TypeDef Vector.");
         assert_with_msg(index < this.length, "Attempted to index out of bounds!");
         unsafe {
             let _b: Any = this.elements;
@@ -353,9 +354,8 @@ struct Vec {
 
 func emptyVec(kind: usize, elemSize: usize) -> Vec {
     unsafe {
-        let bfr: Any = NULL();
         return Vec {
-            elements: bfr,
+            elements: null,
             elemSize: elemSize,
             kind: kind,
             length: 0,

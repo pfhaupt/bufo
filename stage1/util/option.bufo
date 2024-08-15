@@ -11,7 +11,7 @@ struct Option {
     func asType(&this) -> &Type {
         assert_with_msg(this.initialized, "Attempted to access data of uninitialized Option");
         unsafe {
-            assert_with_msg(!isNull(this.data), "Option.asType: Underlying data is Null!");
+            assert_with_msg(this.data != null, "Option.asType: Underlying data is Null!");
             return this.data;
         }
     }
@@ -21,14 +21,14 @@ func newOptionNone() -> Option {
         return Option {
             kind: 0-1,
             initialized: false,
-            data: NULL()
+            data: null 
         };
     }
 }
 func newOptionType(typ: &Type) -> Option {
     unsafe {
         let _m: Any = calloc(sizeof Type, 1);
-        assert_with_msg(!isNull(_m), "Could not allocate memory for Option");
+        assert_with_msg(_m != null, "Could not allocate memory for Option");
         let _q: &mut Type = &mut *_m;
         *_q = *typ;
         return Option {

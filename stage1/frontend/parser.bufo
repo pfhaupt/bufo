@@ -79,7 +79,7 @@ struct Parser {
     func parseEnum(&mut this) -> Enum {
         assert(this.expect(TOKEN_KEYWORD).content.equals(&KEYWORD_ENUM));
         let name: Type = this.parseType(false, true);
-        mut variants: Vec = emptyVec(VECTOR_KIND_STRUCT_VARIANT(), sizeof StructVariant);
+        mut variants: Vec = emptyVec(VECTOR_KIND_STRUCT_VARIANT, sizeof StructVariant);
         this.expect(TOKEN_CURLY_OPEN);
         while (!this.at(TOKEN_CURLY_CLOSE)) {
             let var: StructVariant = this.parseStructVariant();
@@ -91,7 +91,7 @@ struct Parser {
     }
 
     func parseCStruct(&mut this, structType: &Type) -> CStruct {
-        mut fields: Vec = emptyVec(VECTOR_KIND_FIELD(), sizeof Field);
+        mut fields: Vec = emptyVec(VECTOR_KIND_FIELD, sizeof Field);
         this.expect(TOKEN_CURLY_OPEN);
         while (!this.at(TOKEN_CURLY_CLOSE)) {
             let field: Field = this.parseField(&structType.asStruct().generics);
@@ -103,7 +103,7 @@ struct Parser {
     }
 
     func parseTupleStruct(&mut this, structType: &Type) -> TupleStruct {
-        mut fields: Vec = emptyVec(VECTOR_KIND_TYPE(), sizeof Type);
+        mut fields: Vec = emptyVec(VECTOR_KIND_TYPE, sizeof Type);
         this.expect(TOKEN_PAREN_OPEN);
         while (!this.at(TOKEN_PAREN_CLOSE)) {
             let field: Type = this.parseType(false, false);
@@ -149,7 +149,7 @@ struct Parser {
             } else {
                 if (this.eat(TOKEN_SHARP_OPEN)) {
                     mut sType: StructType = newStructType(&tkn.getSpan(), &name);
-                    mut generics: Vec = emptyVec(VECTOR_KIND_TYPE(), sizeof Type);
+                    mut generics: Vec = emptyVec(VECTOR_KIND_TYPE, sizeof Type);
                     while (!this.at(TOKEN_SHARP_CLOSE)) {
                         let t: Type = this.parseType(allowedRef, allowedBounds);
                         generics.pushType(&t);
@@ -166,7 +166,7 @@ struct Parser {
                         fprintf(stderr, "%s: error: Unexpected Quirk boundaries where they are not allowed.\n", loc.toString().buffer);
                         exit(1);
                     }
-                    mut bounds: Vec = emptyVec(VECTOR_KIND_TYPE(), sizeof Type);
+                    mut bounds: Vec = emptyVec(VECTOR_KIND_TYPE, sizeof Type);
                     while (!this.at(TOKEN_SHARP_CLOSE)) {
                         let t: Type = this.parseType(false, false);
                         bounds.pushType(&t);
@@ -204,7 +204,7 @@ struct Parser {
                 *_r = refType;
                 return Type {
                     span: refType.span,
-                    kind: TYPE_KIND_REFERENCE(),
+                    kind: TYPE_KIND_REFERENCE,
                     data: _m
                 };
             }
@@ -216,7 +216,7 @@ struct Parser {
             exit(1);
         }
         assert_with_msg(false, "Fallthrough in Parser.parseType");
-        return Type { span: defaultSpan(), kind: TYPE_KIND_PRIMITIVE(), data: "" };
+        return Type { span: defaultSpan(), kind: TYPE_KIND_PRIMITIVE, data: "" };
     }
     func parseRealizeBody(&mut this, real: &mut Realize) {
         this.expect(TOKEN_CURLY_OPEN);
@@ -243,7 +243,7 @@ struct Parser {
     }
     func parseRealize(&mut this) -> Realize {
         assert(this.expect(TOKEN_KEYWORD).content.equals(&KEYWORD_REALIZE));
-        mut generics: Vec = emptyVec(VECTOR_KIND_TYPE(), sizeof Type);
+        mut generics: Vec = emptyVec(VECTOR_KIND_TYPE, sizeof Type);
         if (this.eat(TOKEN_SHARP_OPEN)) {
             while (!this.at(TOKEN_SHARP_CLOSE)) {
                 let gen: Type = this.parseType(false, true);
@@ -307,7 +307,7 @@ struct Parser {
         return quirk;
     }
     func parseFuncParams(&mut this) -> Vec {
-        mut params: Vec = newVec(VECTOR_KIND_FUNC_PARAM(), 8, sizeof FuncParam);
+        mut params: Vec = newVec(VECTOR_KIND_FUNC_PARAM, 8, sizeof FuncParam);
         this.expect(TOKEN_PAREN_OPEN);
         while (!this.at(TOKEN_PAREN_CLOSE)) {
             let tkn: Token = this.lexer.peek();

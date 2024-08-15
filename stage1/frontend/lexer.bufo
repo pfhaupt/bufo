@@ -1,6 +1,6 @@
+import "substr.bufo";
+import "string.bufo";
 import "util/span.bufo";
-import "util/substr.bufo";
-import "util/string.bufo";
 import "frontend/token.bufo";
 
 comptime func BUILD_A_KEYWORD(s: &char) -> SubStr {

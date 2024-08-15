@@ -1,48 +1,147 @@
+import "string.bufo";
 import "frontend/nodes.bufo";
 import "print.tmp.bufo";
 import "util/span.bufo";
 import "util/vector.bufo";
-import "util/string.bufo";
 
-func typeErrorStructRedeclaration(errorLoc: Span, struktName: SubStr, existLoc: Span) -> String {
+func typeErrorRedeclaration(what: &char, errorLoc: Span, struktName: SubStr, existLoc: Span) -> String {
+    mut _s1: String = newString();
+    mut _s2: String = newString();
+    if (errorLoc.comesBefore(&existLoc)) {
+        _s1 = existLoc.toString();
+        _s2 = errorLoc.toString();
+    } else {
+        _s1 = errorLoc.toString();
+        _s2 = existLoc.toString();
+    }
     mut s: String = newString();
     s.pushStr("error: ");
-    let _s1: String = errorLoc.toString();
     s.pushString(&_s1);
     _s1.drop();
-    s.pushStr(": Struct `");
+    s.pushStr(": Redeclaration error. ");
+    s.pushStr(what);
+    s.pushStr(" `");
     s.pushSubStr(&struktName);
     s.pushStr("` already declared earlier, at bytes ");
-    let _s2: String = existLoc.toString();
     s.pushString(&_s2);
+    s.pushStr(".");
     _s2.drop();
     return s;
 }
 
 struct Lookup {
     structs: Vec;
+    enums: Vec;
+    quirks: Vec;
+    typeDefs: Vec;
     errors: Vec;
 
-    func addStruct(&mut this, strukt: &StructVariant) -> bool {
-        mut error: bool = false;
+    func checkExisting(&mut this, name: SubStr, loc: &Span, report: bool) -> bool {
+        mut exists: bool = false;
         for (mut i: usize = 0; i < this.structs.len(); i = i + 1) {
             let existing: &StructVariant = this.structs.getStructVariant(i);
-            if (existing.getName().equals(&strukt.getName())) {
-                this.errors.pushString(&typeErrorStructRedeclaration(
-                    strukt.getSpan(),
-                    strukt.getName(),
-                    existing.getSpan(),
+            if (existing.getName().equals(&name)) {
+                if (report) this.errors.pushString(&typeErrorRedeclaration(
+                    "Struct", *loc, name, existing.getSpan(),
                 ));
-                error = true;
+                exists = true;
             }
         }
-        if (!error) this.structs.pushStructVariant(strukt);
-        return !error;
+        for (mut i: usize = 0; i < this.enums.len(); i = i + 1) {
+            let existing: &Enum = this.enums.getEnum(i);
+            if (existing.getName().equals(&name)) {
+                if (report) this.errors.pushString(&typeErrorRedeclaration(
+                    "Enum", *loc, name, existing.getSpan(),
+                ));
+                exists = true;
+            }
+        }
+        for (mut i: usize = 0; i < this.quirks.len(); i = i + 1) {
+            let existing: &Quirk = this.quirks.getQuirk(i);
+            if (existing.getName().equals(&name)) {
+                if (report) this.errors.pushString(&typeErrorRedeclaration(
+                    "Quirk", *loc, name, existing.getSpan(),
+                ));
+                exists = true;
+            }
+        }
+        for (mut i: usize = 0; i < this.typeDefs.len(); i = i + 1) {
+            let existing: &TypeDef = this.typeDefs.getTypeDef(i);
+            if (existing.getName().equals(&name)) {
+                if (report) this.errors.pushString(&typeErrorRedeclaration(
+                    "TypeDef", *loc, name, existing.getSpan(),
+                ));
+                exists = true;
+            }
+        }
+        return exists;
+    }
+
+    func addStruct(&mut this, strukt: &StructVariant) -> bool {
+        let valid: bool = !this.checkExisting(strukt.getName(), &strukt.getSpan(), true);
+        if (valid) this.structs.pushStructVariant(strukt);
+        return valid;
+    }
+    func addEnum(&mut this, eenum: &Enum) -> bool {
+        let valid: bool = !this.checkExisting(eenum.getName(), &eenum.getSpan(), true);
+        if (valid) this.enums.pushEnum(eenum);
+        return valid;
+    }
+    func addQuirk(&mut this, quyrk: &Quirk) -> bool {
+        let valid: bool = !this.checkExisting(quyrk.getName(), &quyrk.getSpan(), true);
+        if (valid) this.quirks.pushQuirk(quyrk);
+        return valid;
+    }
+    func addTypeDef(&mut this, typeDef: &TypeDef) -> bool {
+        let valid: bool = !this.checkExisting(typeDef.getName(), &typeDef.getSpan(), true);
+        if (valid) this.typeDefs.pushTypeDef(typeDef);
+        return valid;
+    }
+
+    func verifyCStruct(&mut this, cStruct: &CStruct) -> bool {
+        let typ: &StructType = cStruct.getType().asStruct();
+        assert(this.checkExisting(typ.getName(), &typ.getSpan(), false));
+        let generics: &Vec = typ.getGenerics();
+        let fields: &Vec = cStruct.getFields();
+        for (mut i: usize = 0; i < fields.len(); i = i + 1) {
+            todo_with_msg("Lookup.verifyCStruct");
+        }
+        return false;
+    }
+    func verifyTupleStruct(&mut this, tupleStruct: &TupleStruct) -> bool {
+        let typ: &StructType = tupleStruct.getType().asStruct();
+        assert(this.checkExisting(typ.getName(), &typ.getSpan(), false));
+        todo_with_msg("Lookup.verifyTupleStruct");
+        return false;
+    }
+    func verifyEmptyStruct(&mut this, emptyStruct: &EmptyStruct) -> bool {
+        let typ: &StructType = emptyStruct.getType().asStruct();
+        assert(this.checkExisting(typ.getName(), &typ.getSpan(), false));
+        todo_with_msg("Lookup.verifyEmptyStruct");
+        return false;
     }
 
     func verify(&mut this) -> bool {
-        todo_with_msg("Lookup.verify");
-        return false;
+        mut valid: bool = true;
+        for (mut i: usize = 0; i < this.structs.len(); i = i + 1) {
+            let variant: &StructVariant = this.structs.getStructVariant(i);
+            if (variant.kind == STRUCT_VARIANT_C)
+                valid = valid && this.verifyCStruct(variant.data);
+            else if (variant.kind == STRUCT_VARIANT_TUPLE)
+                valid = valid && this.verifyTupleStruct(variant.data);
+            else if (variant.kind == STRUCT_VARIANT_EMPTY)
+                valid = valid && this.verifyEmptyStruct(variant.data);
+        }
+        for (mut i: usize = 0; i < this.enums.len(); i = i + 1) {
+            todo_with_msg("Lookup.verify<Enum>");
+        }
+        for (mut i: usize = 0; i < this.quirks.len(); i = i + 1) {
+            todo_with_msg("Lookup.verify<Quirk>");
+        }
+        for (mut i: usize = 0; i < this.typeDefs.len(); i = i + 1) {
+            todo_with_msg("Lookup.verify<TypeDef>");
+        }
+        return valid;
     }
 
     func getErrors(&this) -> &Vec {
@@ -52,8 +151,11 @@ struct Lookup {
 
 func newLookup() -> Lookup {
     return Lookup {
-        structs: emptyVec(VECTOR_KIND_STRUCT_VARIANT(), sizeof StructVariant),
-        errors: emptyVec(VECTOR_KIND_STRING(), sizeof String),
+        structs: emptyVec(VECTOR_KIND_STRUCT_VARIANT, sizeof StructVariant),
+        enums: emptyVec(VECTOR_KIND_ENUM, sizeof Enum),
+        quirks: emptyVec(VECTOR_KIND_QUIRK, sizeof Quirk),
+        typeDefs: emptyVec(VECTOR_KIND_TYPE_DEF, sizeof TypeDef),
+        errors: emptyVec(VECTOR_KIND_STRING, sizeof String),
     };
 }
 
@@ -86,6 +188,15 @@ struct Checker {
         for (mut i: usize = 0; i < m.structs.len(); i = i + 1) {
             this.addStructToLookup(m.structs.getStructVariant(i));
         }
+        for (mut i: usize = 0; i < m.enums.len(); i = i + 1) {
+            this.addEnumToLookup(m.enums.getEnum(i));
+        }
+        for (mut i: usize = 0; i < m.quirks.len(); i = i + 1) {
+            this.addQuirkToLookup(m.quirks.getQuirk(i));
+        }
+        for (mut i: usize = 0; i < m.types.len(); i = i + 1) {
+            this.addTypeDefToLookup(m.types.getTypeDef(i));
+        }
     }
     func verifyLookup(&mut this) {
         // Now that we have a lookup of all user-created types we can
@@ -104,11 +215,26 @@ struct Checker {
             this.addErrors();
         }
     }
+    func addEnumToLookup(&mut this, eenum: &Enum) {
+        if (!this.lookup.addEnum(eenum)) {
+            this.addErrors();
+        }
+    }
+    func addQuirkToLookup(&mut this, quyrk: &Quirk) {
+        if (!this.lookup.addQuirk(quyrk)) {
+            this.addErrors();
+        }
+    }
+    func addTypeDefToLookup(&mut this, typeDef: &TypeDef) {
+        if (!this.lookup.addTypeDef(typeDef)) {
+            this.addErrors();
+        }
+    }
 }
 func newChecker(mod: &mut Module) -> Checker {
     return Checker {
         module: mod,
         lookup: newLookup(),
-        errors: emptyVec(VECTOR_KIND_STRING(), sizeof String),
+        errors: emptyVec(VECTOR_KIND_STRING, sizeof String),
     };
 }
