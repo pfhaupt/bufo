@@ -1,0 +1,69 @@
+
+let Foo = struct {
+	field: i32;
+};
+
+let Bar = enum(i32) {
+	A = 1,
+	B = 2,
+};
+
+let Bez = enum(i8) {
+	A,
+	B,
+};
+
+let Idk = union {
+	int: i32,
+	flt: f32
+};
+
+// TODO: Bikeshed about syntax
+let createCool = func (val: type) -> type {
+	return struct {
+		field: val;
+
+		let foo = func () {};
+	};
+};
+let createCool = func (val: type) -> type {
+	return struct {
+		field: val;
+		field2: val;
+
+		let Kind = enum (i32) {
+			Binary,
+			Unary
+		};
+		let Self = @Self();
+		let foo = func (k: Self.Kind) {};
+	};
+};
+let Foo1 = createCool(Foo2);
+let Foo2 = createCool(Foo1);
+
+let ArrayList = func (inner: type) -> type {
+	return struct {
+		let init = func () -> @Self() {};
+	};
+};
+
+// Final boss:
+let createList = func (val: type, capacity: u64) -> ArrayList(val) {
+	let instance = ArrayList(val).init(capacity);
+	// equivalent to:
+	// let list: type = ArrayList(val);
+	// let instance = list.init(capacity);
+	return instance;
+};
+
+let add = func (x: i32, y: i32) -> i32 {
+	return x + y;
+};
+
+let main = func () {
+	let a = 1;
+	let b = 2;
+	let c = add(a, b);
+};
+

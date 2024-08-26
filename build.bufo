@@ -67,6 +67,7 @@ func buildMyself() -> bool {
 
 func buildStage0() -> bool {
     mut cmd: Cmd = newCmdFromStrLit("cargo build");
+    // mut cmd: Cmd = newCmdFromStrLit("cargo build --features=trace");
     if (!DEBUG) cmd.add("--release");
     return cmd.runSync();
 }
@@ -74,12 +75,13 @@ func buildStage0() -> bool {
 func buildStage1() -> bool {
     mut cmd: Cmd = newCmdFromStrLit(STAGE0_PATH);
     cmd.addMany(newCmdFromStrLit("-i ./stage1/bufo_s1.bufo").buf);
-    // cmd.add("-v");
+    cmd.add("-v");
+    // cmd.add("-d");
     return cmd.runSync();
 }
 
 func compileTest() -> bool {
-    let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/test.bufo");
+    let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/dummy.bufo");
     return cmd.runSync();
 }
 

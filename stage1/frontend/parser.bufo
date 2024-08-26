@@ -1,7 +1,15 @@
 
+comptime ASSOC_LEFT: usize = 0;
+comptime ASSOC_RIGHT: usize = 1;
 struct Parser {
     lexer: &mut Lexer;
 
+    func next(&mut this) -> Token {
+        return this.lexer.next();
+    }
+    func peek(&mut this) -> Token {
+        return this.lexer.peek();
+    }
     func eat(&mut this, kind: usize) -> bool {
         if (this.at(kind)) {
             this.lexer.next();
@@ -12,6 +20,9 @@ struct Parser {
     func at(&mut this, kind: usize) -> bool {
         let tkn: Token = this.lexer.peek();
         return tkn.kind == kind;
+    }
+    func atEOF(&mut this) -> bool {
+        return this.at(TOKEN_EOF);
     }
     func expect(&mut this, kind: usize) -> Token {
         let tkn: Token = this.lexer.next();
@@ -39,456 +50,302 @@ struct Parser {
         }
         return tkn;
     }
-    func parseModule(&mut this, name: &SubStr) -> Module {
-        mut module: Module = newModule(name);
-        while (this.lexer.peek().kind != TOKEN_EOF) {
-            let tkn: Token = this.lexer.peek();
-            let kw: SubStr = tkn.getSubStr();
-            if (kw.equals(&KEYWORD_QUIRK)) {
-                let quirk: Quirk = this.parseQuirk();
-                module.addQuirk(&quirk);
-            } else if (kw.equals(&KEYWORD_REALIZE)) {
-                let real: Realize = this.parseRealize();
-                module.addRealize(&real);
-            } else if (kw.equals(&KEYWORD_STRUCT)) {
-                assert(this.expect(TOKEN_KEYWORD).content.equals(&KEYWORD_STRUCT));
-                let strukt: StructVariant = this.parseStructVariant();
-                this.expect(TOKEN_SEMI_COLON);
-                module.addStruct(&strukt);
-            } else if (kw.equals(&KEYWORD_ENUM)) {
-                let eenum: Enum = this.parseEnum();
-                this.expect(TOKEN_SEMI_COLON);
-                module.addEnum(&eenum);
-            } else if (kw.equals(&KEYWORD_FUNC)) {
-                let fn: FuncDef = this.parseFuncDef();
-                module.addFuncDef(&fn);
-            } else if (kw.equals(&KEYWORD_TYPE)) {
-                let t: TypeDef = this.parseTypeDef();
-                module.addTypeDef(&t);
-            } else unsafe {
-                let stderr: Any = fdopen(2, "w");
-                let ts: String = tkn.toString();
-                let ls: String = tkn.span.toString();
-                fprintf(stderr, "error: %s: Expected module-level keyword, found `%s`.\n", ls.buffer, ts.buffer);
-                exit(1);
-            }
-        }
-        return module;
-    }
 
-    func parseEnum(&mut this) -> Enum {
-        assert(this.expect(TOKEN_KEYWORD).content.equals(&KEYWORD_ENUM));
-        let name: Type = this.parseType(false, true);
-        mut variants: Vec = emptyVec(VECTOR_KIND_STRUCT_VARIANT, sizeof StructVariant);
-        this.expect(TOKEN_CURLY_OPEN);
-        while (!this.at(TOKEN_CURLY_CLOSE)) {
-            let var: StructVariant = this.parseStructVariant();
-            variants.pushStructVariant(&var);
-            if (!this.at(TOKEN_CURLY_CLOSE)) this.expect(TOKEN_COMMA);
-        }
-        this.expect(TOKEN_CURLY_CLOSE);
-        return newEnum(&name, &variants);
-    }
-
-    func parseCStruct(&mut this, structType: &Type) -> CStruct {
-        mut fields: Vec = emptyVec(VECTOR_KIND_FIELD, sizeof Field);
-        this.expect(TOKEN_CURLY_OPEN);
-        while (!this.at(TOKEN_CURLY_CLOSE)) {
-            let field: Field = this.parseField(&structType.asStruct().generics);
-            fields.pushField(&field);
-            if (!this.at(TOKEN_CURLY_CLOSE)) this.expect(TOKEN_COMMA);
-        }
-        this.expect(TOKEN_CURLY_CLOSE);
-        return newCStruct(structType, &fields);
-    }
-
-    func parseTupleStruct(&mut this, structType: &Type) -> TupleStruct {
-        mut fields: Vec = emptyVec(VECTOR_KIND_TYPE, sizeof Type);
-        this.expect(TOKEN_PAREN_OPEN);
-        while (!this.at(TOKEN_PAREN_CLOSE)) {
-            let field: Type = this.parseType(false, false);
-            fields.pushType(&field);
-            if (!this.at(TOKEN_PAREN_CLOSE)) this.expect(TOKEN_COMMA);
-        }
-        this.expect(TOKEN_PAREN_CLOSE);
-        return newTupleStruct(structType, &fields);
-    }
-
-    func parseEmptyStruct(&mut this, structType: &Type) -> EmptyStruct {
-        return newEmptyStruct(structType);
-    }
-
-    func parseStructVariant(&mut this) -> StructVariant {
-        let typ: Type = this.parseType(false, true);
-        if (this.at(TOKEN_CURLY_OPEN)) {
-            let strukt: CStruct = this.parseCStruct(&typ);
-            return newStructVariantC(&strukt);
-        } else if (this.at(TOKEN_PAREN_OPEN)) {
-            let strukt: TupleStruct = this.parseTupleStruct(&typ);
-            return newStructVariantTuple(&strukt);
-        } else {
-            let strukt: EmptyStruct = this.parseEmptyStruct(&typ);
-            return newStructVariantEmpty(&strukt);
-        }
-    }
-    func parseField(&mut this, generics: &Vec) -> Field {
-        let nTkn: Token = this.expectIdent();
-        let name: SubStr = nTkn.getSubStr();
-        this.expect(TOKEN_COLON);
-        let typ: Type = this.parseType(true, false);
-        let end: Span = typ.getSpan();
-        let span: Span = newSpanBetween(&nTkn.span, &end);
-        return newField(&span, &name, &typ);
-    }
-    func parseType(&mut this, allowedRef: bool, allowedBounds: bool) -> Type {
-        let tkn: Token = this.lexer.next();
-        if (tkn.kind == TOKEN_IDENT) {
-            let name: SubStr = tkn.getSubStr();
-            if (isPrimitiveType(&name)) {
-                return newTypePrim(&tkn.getSpan(), &name);
-            } else {
-                if (this.eat(TOKEN_SHARP_OPEN)) {
-                    mut sType: StructType = newStructType(&tkn.getSpan(), &name);
-                    mut generics: Vec = emptyVec(VECTOR_KIND_TYPE, sizeof Type);
-                    while (!this.at(TOKEN_SHARP_CLOSE)) {
-                        let t: Type = this.parseType(allowedRef, allowedBounds);
-                        generics.pushType(&t);
-                        if (!this.at(TOKEN_SHARP_CLOSE)) this.expect(TOKEN_COMMA);
-                    }
-                    this.expect(TOKEN_SHARP_CLOSE);
-                    sType.setGenerics(&generics);
-                    return newTypeStruct(&sType);
-                } else if (this.eat(TOKEN_COLON)) {
-                    mut gType: GenericType = newGenericType(&tkn.getSpan(), &name);
-                    if (!allowedBounds) unsafe {
-                        let stderr: Any = fdopen(2, "w");
-                        let loc: Span = this.lexer.peek().getSpan();
-                        fprintf(stderr, "%s: error: Unexpected Quirk boundaries where they are not allowed.\n", loc.toString().buffer);
-                        exit(1);
-                    }
-                    mut bounds: Vec = emptyVec(VECTOR_KIND_TYPE, sizeof Type);
-                    while (!this.at(TOKEN_SHARP_CLOSE)) {
-                        let t: Type = this.parseType(false, false);
-                        bounds.pushType(&t);
-                        if (!this.at(TOKEN_SHARP_CLOSE)) this.expect(TOKEN_PLUS_SINGLE);
-                    }
-                    gType.setBounds(&bounds);
-                    return newTypeGeneric(&gType);
-                } else {
-                    mut sType: StructType = newStructType(&tkn.getSpan(), &name);
-                    return newTypeStruct(&sType);
-                }
-            }
-        } else if (tkn.kind == TOKEN_AMPERSAND) {
-            if (!allowedRef) unsafe {
-                let stderr: Any = fdopen(2, "w");
-                let loc: Span = tkn.getSpan();
-                fprintf(stderr, "%s: error: Unexpected reference where they are not allowed.\n", loc.toString().buffer);
-                exit(1);
-            }
-            mut mutable: bool = false;
-            let maybe_mut: Token = this.lexer.peek();
-            if (maybe_mut.kind == TOKEN_KEYWORD && maybe_mut.content.equals(&KEYWORD_MUT)) {
-                this.lexer.next();
-                mutable = true;
-            }
-            let t: Type = this.parseType(true, false);
-            let refType: RefType = RefType {
-                span: newSpanBetween(&tkn.span, &t.span),
-                mutable: mutable,
-                typ: t
-            };
-            unsafe {
-                let _m: Any = calloc(sizeof RefType, 1);
-                let _r: &mut RefType = &mut *_m;
-                *_r = refType;
-                return Type {
-                    span: refType.span,
-                    kind: TYPE_KIND_REFERENCE,
-                    data: _m
-                };
-            }
-        } else unsafe {
+	func parseModule(&mut this, name: &SubStr) -> Module {
+		while (!this.atEOF()) {
+			let decl: VarDecl = this.parseVarDecl();
+		}
+		return Module {};
+	}
+	func parseVarDecl(&mut this) -> VarDecl {
+		let mutToken: Token = this.expect(TOKEN_KEYWORD);
+		mut mutable: bool = false;
+		if (mutToken.content.equals(&KEYWORD_LET))
+			mutable = false;
+		else if (mutToken.content.equals(&KEYWORD_MUT))
+			mutable = true;
+		else unsafe {
+            let ls: String = mutToken.span.toString();
+			let stderr: Any = fdopen(2, "w");
+			fprintf(stderr, "error: %s: Expected `let` or `mut`, found `%.*s`.\n", ls.buffer, mutToken.content.len, mutToken.content.start);
+			fclose(stderr);
+			exit(1);
+		}
+		let name: Token = this.expect(TOKEN_IDENT);
+		this.expect(TOKEN_EQUAL_SINGLE);
+		let value: DeclValue = this.parseDeclValue();
+        this.expect(TOKEN_SEMI_COLON);
+		return VarDecl {};
+	}
+	func parseDeclValue(&mut this) -> DeclValue {
+		if (this.at(TOKEN_KEYWORD))
+			return this.parseDeclValueKeyword();
+		else
+            return this.parseDeclValueExpr();
+	}
+    func parseDeclValueKeyword(&mut this) -> DeclValue {
+        let kw: Token = this.expect(TOKEN_KEYWORD);
+        if (kw.content.equals(&KEYWORD_STRUCT))
+            return this.parseDeclValueStruct();
+        else if (kw.content.equals(&KEYWORD_FUNC))
+            return this.parseDeclValueFunc();
+        else if (kw.content.equals(&KEYWORD_ENUM))
+            return this.parseDeclValueEnum();
+        else if (kw.content.equals(&KEYWORD_UNION))
+            return this.parseDeclValueUnion();
+        else unsafe {
+            let ls: String = kw.span.toString();
             let stderr: Any = fdopen(2, "w");
-            let loc: Span = tkn.getSpan();
-            let what: &char = tokenKindToString(tkn.kind);
-            fprintf(stderr, "%s: error: Expected identifier, found %s.\n", loc.toString().buffer, what);
+            fprintf(stderr, "error: %s: Expected one of `struct` or `func`, found `%.*s`.\n", ls.buffer, kw.content.len, kw.content.start);
+            fclose(stderr);
             exit(1);
         }
-        assert_with_msg(false, "Fallthrough in Parser.parseType");
-        return Type { span: defaultSpan(), kind: TYPE_KIND_PRIMITIVE, data: "" };
+        return defaultDeclValue();
     }
-    func parseRealizeBody(&mut this, real: &mut Realize) {
+    func parseDeclValueStruct(&mut this) -> DeclValue {
         this.expect(TOKEN_CURLY_OPEN);
+        mut structDecl: StructDecl = StructDecl {};
         while (!this.at(TOKEN_CURLY_CLOSE)) {
-            let tkn: Token = this.lexer.peek();
-            if (tkn.kind != TOKEN_KEYWORD) unsafe {
+            if (this.at(TOKEN_IDENT)) {
+                let structField: StructField = this.parseStructField();
+                structDecl.addField(structField);
+            } else if (this.at(TOKEN_KEYWORD)) {
+                let structAsset: StructAsset = this.parseStructAsset();
+                structDecl.addAsset(structAsset);
+            } else unsafe {
+                let next: Token = this.next();
+                let ls: String = next.span.toString();
                 let stderr: Any = fdopen(2, "w");
-                let t: String = tkn.toString();
-                let s: String = tkn.span.toString();
-                fprintf(stderr, "error: %s: Expected keyword in Realize declaration, found `%s`.\n", s.buffer, t.buffer);
+                fprintf(stderr, "error: %s: Expected identifier or `func`, got `%.*s`.\n", ls.buffer, next.content.len, next.content.start);
+                fclose(stderr);
                 exit(1);
-            }
-            if (tkn.content.equals(&KEYWORD_FUNC)) {
-                let fnDef: FuncDef = this.parseFuncDef();
-                real.addFuncDef(&fnDef);
-            } else if (tkn.content.equals(&KEYWORD_TYPE)) {
-                let tDef: TypeDef = this.parseTypeDef();
-                real.addTypeDef(&tDef);
-            } else {
-                todo_with_msg("Parse stuff in realize");
             }
         }
         this.expect(TOKEN_CURLY_CLOSE);
+        return defaultDeclValue();
     }
-    func parseRealize(&mut this) -> Realize {
-        assert(this.expect(TOKEN_KEYWORD).content.equals(&KEYWORD_REALIZE));
-        mut generics: Vec = emptyVec(VECTOR_KIND_TYPE, sizeof Type);
-        if (this.eat(TOKEN_SHARP_OPEN)) {
-            while (!this.at(TOKEN_SHARP_CLOSE)) {
-                let gen: Type = this.parseType(false, true);
-                generics.pushType(&gen);
-            }
-            this.expect(TOKEN_SHARP_CLOSE);
-        }
-        let qType: Type = this.parseType(false, false);
-        let tkn: Token = this.lexer.peek();
-        if (tkn.kind == TOKEN_KEYWORD) {
-            this.expectKeyword(&KEYWORD_FOR);
-            let sType: Type = this.parseType(false, false);
-            mut real: Realize = newRealize(&sType);
-            real.setQuirk(&qType);
-            real.setGenerics(&generics);
-            this.parseRealizeBody(&mut real);
-            return real;
-        } else {
-            mut real: Realize = newRealize(&qType);
-            real.setGenerics(&generics);
-            this.parseRealizeBody(&mut real);
-            return real;
-        }
-    }
-    func parseTypeDef(&mut this) -> TypeDef {
-        let typTkn: Token = this.expect(TOKEN_KEYWORD);
-        assert(typTkn.content.equals(&KEYWORD_TYPE));
-        let name: Type = this.parseType(false, false);
-        this.expect(TOKEN_EQUAL_SINGLE);
-        let rhs: Type = this.parseType(true, false);
+    func parseStructField(&mut this) -> StructField {
+        let name: Token = this.expect(TOKEN_IDENT);
+        this.expect(TOKEN_COLON);
+        let typ: TypeExpr = this.parseTypeExpr();
         this.expect(TOKEN_SEMI_COLON);
-        let s: Span = newSpanBetween(&typTkn.span, &rhs.span);
-        return newTypeDef(&s, &name, &rhs);
+        return StructField {
+            name: name.content,
+            typ: typ
+        };
     }
-    func parseQuirk(&mut this) -> Quirk {
-        assert(this.expect(TOKEN_KEYWORD).content.equals(&KEYWORD_QUIRK));
-        let qType: Type = this.parseType(false, true);
-        mut quirk: Quirk = newQuirk(&qType);
+    func parseStructAsset(&mut this) -> StructAsset {
+        let decl: VarDecl = this.parseVarDecl();
+        return StructAsset {
+            asset: decl
+        };
+    }
+    func parseDeclValueEnum(&mut this) -> DeclValue {
+        mut fieldType: TypeExpr = defaultTypeExpr();
+        if (this.eat(TOKEN_PAREN_OPEN)) {
+            fieldType = this.parseTypeExpr();
+            this.expect(TOKEN_PAREN_CLOSE);
+        }
         this.expect(TOKEN_CURLY_OPEN);
         while (!this.at(TOKEN_CURLY_CLOSE)) {
-            let tkn: Token = this.lexer.peek();
-            if (tkn.kind != TOKEN_KEYWORD) unsafe {
-                let stderr: Any = fdopen(2, "w");
-                let t: String = tkn.toString();
-                let s: String = tkn.span.toString();
-                fprintf(stderr, "error: %s: Expected keyword in Quirk declaration, found `%s`.\n", s.buffer, t.buffer);
-                exit(1);
-            }
-            if (tkn.content.equals(&KEYWORD_FUNC)) {
-                let fnDecl: FuncDecl = this.parseFuncDecl();
-                quirk.addFuncDecl(&fnDecl);
-            } else if (tkn.content.equals(&KEYWORD_TYPE)) {
-                let typeDef: TypeDef = this.parseTypeDef();
-                quirk.addTypeDef(&typeDef);
-            } else {
-                tkn.print();
-                todo_with_msg("Parse stuff in quirks");
-            }
+            let tkn: Token = this.next();
         }
         this.expect(TOKEN_CURLY_CLOSE);
-        return quirk;
+        return defaultDeclValue();
     }
-    func parseFuncParams(&mut this) -> Vec {
-        mut params: Vec = newVec(VECTOR_KIND_FUNC_PARAM, 8, sizeof FuncParam);
+    func parseDeclValueUnion(&mut this) -> DeclValue {
+        this.expect(TOKEN_CURLY_OPEN);
+        while (!this.at(TOKEN_CURLY_CLOSE)) {
+            let tkn: Token = this.next();
+        }
+        this.expect(TOKEN_CURLY_CLOSE);
+        return defaultDeclValue();
+    }
+    func parseDeclValueFunc(&mut this) -> DeclValue {
         this.expect(TOKEN_PAREN_OPEN);
+        mut args: [Param; 8] = blank;
+        mut argCount: usize = 0;
         while (!this.at(TOKEN_PAREN_CLOSE)) {
-            let tkn: Token = this.lexer.peek();
-            // &self, &mut self, self only allowed as first param
-            if (params.len() == 0 && (tkn.kind == TOKEN_AMPERSAND)) {
-                this.lexer.next(); // &
-                mut mutable: bool = false;
-                let maybe_mut: Token = this.lexer.peek();
-                if (maybe_mut.kind == TOKEN_KEYWORD && maybe_mut.content.equals(&KEYWORD_MUT)) {
-                    this.lexer.next(); // mut
-                    mutable = true;
-                }
-                let maybe_self: Token = this.lexer.peek();
-                if (maybe_self.kind == TOKEN_KEYWORD && maybe_self.content.equals(&KEYWORD_SELF_LOWER)) {
-                    this.lexer.next(); // self
-                } else {
-                    todo_with_msg("parseFuncParams.Error: No Self as first Param.");
-                }
-                let t: Type = newTypeRef(&tkn.span, &newTypeSelf(&maybe_self), mutable);
-                let sParam: FuncParam = newFuncParam(&t.span, &maybe_self.getSubStr(), &t);
-                params.pushFuncParam(&sParam);
-            } else if (params.len() == 0 && (tkn.kind == TOKEN_KEYWORD && tkn.content.equals(&KEYWORD_SELF_LOWER))) {
-                todo_with_msg("parseFuncParams.Self");
-            } else {
-                let nTkn: Token = this.expectIdent();
-                this.expect(TOKEN_COLON);
-                let t: Type = this.parseType(true, false);
-                let pSpan: Span = newSpanBetween(&nTkn.span, &t.span);
-                let param: FuncParam = newFuncParam(&pSpan, &nTkn.getSubStr(), &t);
-                params.pushFuncParam(&param);
-            }
+            let param: Param = this.parseFuncParam();
+            args[argCount] = param;
+            argCount = argCount + 1;
             if (!this.at(TOKEN_PAREN_CLOSE)) this.expect(TOKEN_COMMA);
         }
         this.expect(TOKEN_PAREN_CLOSE);
-        return params;
-    }
-    func parseFuncDecl(&mut this) -> FuncDecl {
-        assert(this.expect(TOKEN_KEYWORD).content.equals(&KEYWORD_FUNC));
-        let name: Token = this.expect(TOKEN_IDENT);
-        mut funcDecl: FuncDecl = newFuncDecl(name.getSubStr());
-        let funcParams: Vec = this.parseFuncParams();
-        funcDecl.setParams(funcParams);
+
+        mut retType: TypeExpr = defaultTypeExpr();
         if (this.eat(TOKEN_ARROW)) {
-            let t: Type = this.parseType(true, false);
-            funcDecl.setRetType(&t);
+            retType = this.parseTypeExpr();
         }
-        this.expect(TOKEN_SEMI_COLON);
-        return funcDecl;
-    }
-    func parseFuncDef(&mut this) -> FuncDef {
-        assert(this.expect(TOKEN_KEYWORD).content.equals(&KEYWORD_FUNC));
-        let name: Token = this.expect(TOKEN_IDENT);
-        mut funcDef: FuncDef = newFuncDef(name.getSubStr());
-        let funcParams: Vec = this.parseFuncParams();
-        funcDef.setParams(funcParams);
-        if (this.eat(TOKEN_ARROW)) {
-            let t: Type = this.parseType(true, false);
-            funcDef.setRetType(&t);
-        }
-        let block: Block = this.parseBlock();
-        funcDef.setBody(&block);
-        return funcDef;
-    }
-    func parseBlock(&mut this) -> Block {
+
         this.expect(TOKEN_CURLY_OPEN);
-        mut block: Block = newBlock();
         while (!this.at(TOKEN_CURLY_CLOSE)) {
-            let tkn: Token = this.lexer.peek();
-            if (tkn.kind == TOKEN_KEYWORD) {
-                let kw: SubStr = tkn.getSubStr();
-                if (kw.equals(&KEYWORD_LET)) {
-                    let letStmt: Stmt = this.parseLetStmt();
-                    block.addStmt(&letStmt);
-                } else if (kw.equals(&KEYWORD_FOR)) {
-                    todo_with_msg("parseBlock.For");
-                } else unsafe {
-                    let stderr: Any = fdopen(2, "w");
-                    let ks: String = kw.toString();
-                    let ls: String = tkn.span.toString();
-                    fprintf(stderr, "error: %s: Expected `let` or `for`, got `%s`.\n", ls.buffer, ks.buffer);
-                    exit(1);
-                }
-            } else {
-                todo_with_msg("parseBlock.nonKeyword");
-            }
+            let expr: Stmt = this.parseStmt();
         }
         this.expect(TOKEN_CURLY_CLOSE);
-        return block;
+
+        return defaultDeclValue();
     }
-    func parseLetStmt(&mut this) -> Stmt {
-        assert(this.expect(TOKEN_KEYWORD).content.equals(&KEYWORD_LET));
-        let name: Token = this.expectIdent();
-        mut typ: Option = newOptionNone();
-        if (this.eat(TOKEN_COLON)) {
-            typ = newOptionType(&this.parseType(true, false));
+    func parseFuncParam(&mut this) -> Param {
+        let name: Token = this.expect(TOKEN_IDENT);
+        this.expect(TOKEN_COLON);
+        let typ: TypeExpr = this.parseTypeExpr();
+        return Param {};
+    }
+    func parseDeclValueExpr(&mut this) -> DeclValue {
+        return this.__parseDeclValueExpr(0, ASSOC_LEFT);
+    }
+    func __parseDeclValueExpr(&mut this, minPrecedence: usize, associativity: usize) -> DeclValue {
+        mut expr: DeclValue = this.parseDeclValueExprPrimary();
+        while (this.matchesBinaryExpression()) {
+            let kind: usize = this.peek().kind;
+            let newPrecedence: usize = this.getBinaryPrecedence(kind);
+            if (newPrecedence < minPrecedence) break;
+            if (newPrecedence == minPrecedence && associativity == ASSOC_LEFT) break;
+            let newAssociativity: usize = this.getAssociativity(kind);
+            let result: DeclValue = this.parseDeclValueExprSecondary(expr, newPrecedence, newAssociativity);
+            expr = result;
         }
-        this.expect(TOKEN_EQUAL_SINGLE);
-        let expr: Expr = this.parseExpr();
-        this.expect(TOKEN_SEMI_COLON);
-        return newLetStmt(&name, &typ, &expr);
+        return expr;
     }
-    func matchesBinary(&mut this) -> bool {
-        let tkn: Token = this.lexer.peek();
-        if (tkn.kind == TOKEN_EOF) return false;
-        return tkn.kind == TOKEN_PLUS_SINGLE
-            || tkn.kind == TOKEN_EQUAL_SINGLE
-            || tkn.kind == TOKEN_EQUAL_DOUBLE
-            || tkn.kind == TOKEN_SHARP_OPEN
-            || tkn.kind == TOKEN_SHARP_CLOSE;
-    }
-    func getPrecedence(&mut this, tkn: &Token) -> u8 {
-        if (tkn.kind == TOKEN_PLUS_SINGLE) return 11;
-        else if (tkn.kind == TOKEN_SHARP_OPEN) return 9;
-        else if (tkn.kind == TOKEN_SHARP_CLOSE) return 9;
-        else if (tkn.kind == TOKEN_EQUAL_SINGLE) return 2;
-        tkn.print();
-        todo_with_msg("getPrecedence for token");
+    func getBinaryPrecedence(&mut this, kind: usize) -> usize {
+        if (kind == TOKEN_DOT) return 17;
+        if (kind == TOKEN_PAREN_OPEN) return 16;
+        if (kind == TOKEN_PLUS_SINGLE) return 11;
+        todo_with_msg("getBinaryPrecedence");
         return 0;
     }
-    func getAssociativity(&mut this, tkn: &Token) -> u8 {
-        if (tkn.kind == TOKEN_EQUAL_SINGLE) return ASSOC_RIGHT();
-        return ASSOC_LEFT();
+    func getAssociativity(&mut this, kind: usize) -> usize {
+        if (kind == TOKEN_EQUAL_SINGLE) return ASSOC_RIGHT;
+        return ASSOC_LEFT;
     }
-    func parseExpr(&mut this) -> Expr {
-        return this.__parseExprHelper(0, ASSOC_LEFT());
-    }
-    func parseExprStructLit(&mut this, name: &Token) -> Expr {
-        assert(name.kind == TOKEN_IDENT);
-        mut sLit: ExprStructLit = newExprStructLit(name);
-        this.expect(TOKEN_CURLY_OPEN);
-        while (!this.at(TOKEN_CURLY_CLOSE)) {
-            let nTkn: Token = this.expectIdent();
-            mut expr: Expr = invalidExpr();
-            if (!this.at(TOKEN_COLON)) {
-                expr = newExprIdent(&nTkn);
-            } else {
-                this.expect(TOKEN_COLON);
-                expr = this.parseExpr();
-            }
-            assert(expr.kind != EXPR_INVALID());
-            sLit.addField(&nTkn, &expr);
-            if (!this.at(TOKEN_CURLY_CLOSE)) this.expect(TOKEN_COMMA);
+    func parseDeclValueExprSecondary(&mut this, lhs: DeclValue, precedence: usize, associativity: usize) -> DeclValue {
+        let opTkn: Token = this.peek();
+        let op: usize = createBinaryOp(&opTkn.content);
+        if (op == BINARY_OP_PAREN) {
+            return this.parseDeclValueCall(lhs);
         }
-        this.expect(TOKEN_CURLY_CLOSE);
-        return sLit.toExpr();
+        this.next();
+        let rhs: DeclValue = this.__parseDeclValueExpr(precedence, associativity);
+        let bin: DeclValueBinary = DeclValueBinary {
+            op: op,
+            lhs: lhs,
+            rhs: rhs
+        };
+        return createDeclValue(DECL_VALUE_BINARY, sizeof DeclValueBinary, &bin);
     }
-    func __parseExprHelper(&mut this, minPrec: u8, assoc: u8) -> Expr {
-        let tkn: Token = this.lexer.peek();
-        mut lhs: Expr = invalidExpr();
-        if (tkn.kind == TOKEN_NUMBER) lhs = newExprNumLit(&this.lexer.next());
-        else if (tkn.kind == TOKEN_IDENT) lhs = newExprIdent(&this.lexer.next());
-        else todo_with_msg("__parseExprHelper.LHS");
-        assert_with_msg(lhs.kind != EXPR_INVALID(), "LHS is Invalid!");
-
-        if (this.at(TOKEN_PAREN_OPEN)) todo_with_msg("__parseExprHelper.FuncCall");
-        else if (this.at(TOKEN_CURLY_OPEN)) {
-            if (lhs.kind != EXPR_KIND_IDENT()) unsafe {
+    func parseDeclValueExprPrimary(&mut this) -> DeclValue {
+        if (this.at(TOKEN_KEYWORD))
+            return this.parseDeclValueKeyword();
+        else if (this.at(TOKEN_AT))
+            return this.parseDeclValueBuiltin();
+        if (this.matchesUnaryExpression())
+            return this.parseDeclValueExprUnary();
+        let tkn: Token = this.peek();
+        if (tkn.kind == TOKEN_NUMBER)
+            return this.parseDeclValueExprIntLiteral();
+        else if (tkn.kind == TOKEN_IDENT)
+            return this.parseDeclValueExprIdentifier();
+        todo_with_msg("primary");
+        return defaultDeclValue();
+    }
+    func parseDeclValueExprIntLiteral(&mut this) -> DeclValue {
+        let number: Token = this.expect(TOKEN_NUMBER);
+        let numbah: DeclValueNumber = DeclValueNumber {
+            number: number.content
+        };
+        return createDeclValue(DECL_VALUE_NUMBER, sizeof DeclValueNumber, &numbah);
+    }
+    func parseDeclValueExprIdentifier(&mut this) -> DeclValue {
+        let ident: Token = this.expect(TOKEN_IDENT);
+        let id: DeclValueIdent = DeclValueIdent {
+            name: ident.content
+        };
+        return createDeclValue(DECL_VALUE_IDENT, sizeof DeclValueIdent, &id);
+    }
+    func matchesBinaryExpression(&mut this) -> bool {
+        let tkn: Token = this.peek();
+        let kind: usize = tkn.kind;
+        return kind == TOKEN_PLUS_SINGLE
+            || kind == TOKEN_DOT
+            || kind == TOKEN_PAREN_OPEN;
+    }
+    func matchesUnaryExpression(&mut this) -> bool {
+        let tkn: Token = this.peek();
+        let kind: usize = tkn.kind;
+        return kind == TOKEN_AMPERSAND;
+    }
+    func parseDeclValueExprUnary(&mut this) -> DeclValue {
+        todo_with_msg("unary");
+        return defaultDeclValue();
+    }
+    func parseDeclValueBuiltin(&mut this) -> DeclValue {
+        // TODO: Instead of assert, report an error
+        //       We don't want to let unknown builtin calls through
+        this.expect(TOKEN_AT);
+        let builtinFn: DeclValue = this.parseDeclValueExpr();
+        assert(builtinFn.kind == DECL_VALUE_CALL);
+        unsafe {
+            let fnName: DeclValue = (builtinFn.data as &DeclValueCall).fn;
+            assert(fnName.kind == DECL_VALUE_IDENT);
+        }
+        return createDeclValue(DECL_VALUE_BUILTIN, sizeof DeclValue, &builtinFn);
+    }
+    func parseDeclValueCall(&mut this, name: DeclValue) -> DeclValue {
+        mut args: [DeclValue; 8] = blank;
+        mut argCount: usize = 0;
+        this.expect(TOKEN_PAREN_OPEN);
+        while (!this.at(TOKEN_PAREN_CLOSE)) {
+            let arg: DeclValue = this.parseDeclValueExpr();
+            args[argCount] = arg;
+            argCount = argCount + 1;
+            if (!this.at(TOKEN_PAREN_CLOSE)) this.expect(TOKEN_COMMA);
+        }
+        this.expect(TOKEN_PAREN_CLOSE);
+        unsafe {
+            let call: DeclValueCall = DeclValueCall {
+                fn: name,
+                args: args,
+                argCount: argCount
+            };
+            return createDeclValue(DECL_VALUE_CALL, sizeof DeclValueCall, &call);
+        }
+    }
+    func parseTypeExpr(&mut this) -> TypeExpr {
+        let expr: DeclValue = this.parseDeclValueExpr();
+        return TypeExpr {
+            expr: expr
+        };
+    }
+    func parseStmt(&mut this) -> Stmt {
+        mut stmt: Stmt = blank;
+        if (this.at(TOKEN_KEYWORD)) {
+            let kw: Token = this.peek();
+            if (kw.content.equals(&KEYWORD_RETURN))
+                stmt = this.parseStmtReturn();
+            else if (kw.content.equals(&KEYWORD_LET))
+                stmt = this.parseStmtVarDecl();
+            else unsafe {
+                let ls: String = kw.span.toString();
                 let stderr: Any = fdopen(2, "w");
-                let ls: String = this.lexer.next().getSpan().toString();
-                let lhs_loc: String = lhs.span.toString();
-                fprintf(stderr, "error: %s: Syntax Error: Curly brackets in expressions can only come after identifiers.\n", ls.buffer);
-                fprintf(stderr, "note: %s: The expression that came before was a %s.\n", lhs_loc.buffer, exprKindToString(lhs.kind));
+                fprintf(stderr, "error: %s: Expected one of `return` or `let`, found `%.*s`.\n", ls.buffer, kw.content.len, kw.content.start);
+                fclose(stderr);
                 exit(1);
             }
-            lhs = this.parseExprStructLit(&tkn);
+        } else {
+            todo_with_msg("not kw stmt");
         }
-        while (this.matchesBinary()) {
-            let tkn: Token = this.lexer.peek();
-            let newPrec: u8 = this.getPrecedence(&tkn);
-            if (newPrec < minPrec) break;
-            if (newPrec == minPrec && assoc == ASSOC_LEFT()) break;
-            let newAssoc: u8 = this.getAssociativity(&tkn);
-            lhs = this.__parseExprSec(lhs, newPrec, newAssoc);
-        }
-        return lhs;
+        return stmt;
     }
-    func __parseExprSec(&mut this, lhs: Expr, prec: u8, assoc: u8) -> Expr {
-        assert(this.matchesBinary());
-        let op: Token = this.lexer.next();
-        let rhs: Expr = this.__parseExprHelper(prec, assoc);
-        return newExprBinary(&op, &lhs, &rhs);
+    func parseStmtReturn(&mut this) -> Stmt {
+        let kw: Token = this.expectKeyword(&KEYWORD_RETURN);
+        let expr: DeclValue = this.parseDeclValueExpr();
+        this.expect(TOKEN_SEMI_COLON);
+        return createStmt(STMT_RETURN, sizeof DeclValue, &expr);
+    }
+    func parseStmtVarDecl(&mut this) -> Stmt {
+        let decl: VarDecl = this.parseVarDecl();
+        return createStmt(STMT_VAR_DECL, sizeof VarDecl, &decl);
     }
 }
 

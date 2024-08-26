@@ -17,6 +17,9 @@ comptime TOKEN_AMPERSAND: usize = 14;
 comptime TOKEN_COMMA: usize = 15;
 comptime TOKEN_ARROW: usize = 16;
 comptime TOKEN_PLUS_SINGLE: usize = 17;
+comptime TOKEN_UNDERSCORE: usize = 18;
+comptime TOKEN_DOT: usize = 19;
+comptime TOKEN_AT: usize = 20;
 func tokenKindToString(kind: usize) -> &char {
     if (kind == TOKEN_EOF) return "TOKEN_EOF";
     else if (kind == TOKEN_IDENT) return "TOKEN_IDENT";
@@ -36,6 +39,9 @@ func tokenKindToString(kind: usize) -> &char {
     else if (kind == TOKEN_COMMA) return "TOKEN_COMMA";
     else if (kind == TOKEN_ARROW) return "TOKEN_ARROW";
     else if (kind == TOKEN_PLUS_SINGLE) return "TOKEN_PLUS_SINGLE";
+    else if (kind == TOKEN_UNDERSCORE) return "TOKEN_UNDERSCORE";
+    else if (kind == TOKEN_DOT) return "TOKEN_DOT";
+    else if (kind == TOKEN_AT) return "TOKEN_AT";
     else unsafe {
         printf("Please implement tokenKindToString(%llu)\n", kind);
         exit(1);

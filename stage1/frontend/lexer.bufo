@@ -11,34 +11,26 @@ comptime func BUILD_A_KEYWORD(s: &char) -> SubStr {
         };
     }
 }
-comptime KEYWORD_FUNC: SubStr = BUILD_A_KEYWORD("func");
 comptime KEYWORD_LET: SubStr = BUILD_A_KEYWORD("let");
+comptime KEYWORD_MUT: SubStr = BUILD_A_KEYWORD("mut");
+comptime KEYWORD_FUNC: SubStr = BUILD_A_KEYWORD("func");
 comptime KEYWORD_STRUCT: SubStr = BUILD_A_KEYWORD("struct");
 comptime KEYWORD_ENUM: SubStr = BUILD_A_KEYWORD("enum");
-comptime KEYWORD_QUIRK: SubStr = BUILD_A_KEYWORD("quirk");
-comptime KEYWORD_REALIZE: SubStr = BUILD_A_KEYWORD("realize");
-comptime KEYWORD_TYPE: SubStr = BUILD_A_KEYWORD("type");
-comptime KEYWORD_FOR: SubStr = BUILD_A_KEYWORD("for");
-comptime KEYWORD_MUT: SubStr = BUILD_A_KEYWORD("mut");
-comptime KEYWORD_SELF_LOWER: SubStr = BUILD_A_KEYWORD("self");
-comptime KEYWORD_SELF_UPPER: SubStr = BUILD_A_KEYWORD("Self");
+comptime KEYWORD_UNION: SubStr = BUILD_A_KEYWORD("union");
+comptime KEYWORD_RETURN: SubStr = BUILD_A_KEYWORD("return");
 struct Lexer {
     content: SubStr;
     ptr: usize;
     len: usize;
 
     func isKeyword(&mut this, word: &SubStr) -> bool {
-        return word.equals(&KEYWORD_FUNC)
-            || word.equals(&KEYWORD_LET)
+        return word.equals(&KEYWORD_LET)
+            || word.equals(&KEYWORD_FUNC)
+			|| word.equals(&KEYWORD_MUT)
             || word.equals(&KEYWORD_STRUCT)
             || word.equals(&KEYWORD_ENUM)
-            || word.equals(&KEYWORD_QUIRK)
-            || word.equals(&KEYWORD_REALIZE)
-            || word.equals(&KEYWORD_TYPE)
-            || word.equals(&KEYWORD_FOR)
-            || word.equals(&KEYWORD_MUT)
-            || word.equals(&KEYWORD_SELF_LOWER)
-            || word.equals(&KEYWORD_SELF_UPPER);
+            || word.equals(&KEYWORD_UNION)
+            || word.equals(&KEYWORD_RETURN);
     }
 
     func advance(&mut this) -> bool {
@@ -118,12 +110,21 @@ struct Lexer {
         } else if (currChar == '&') {
             this.advance();
             return newToken(&newSubStr("&", 0, 1), this.ptr - 1, TOKEN_AMPERSAND);
+        } else if (currChar == '_') {
+            this.advance();
+            return newToken(&newSubStr("_", 0, 1), this.ptr - 1, TOKEN_UNDERSCORE);
+        } else if (currChar == '.') {
+            this.advance();
+            return newToken(&newSubStr(".", 0, 1), this.ptr - 1, TOKEN_DOT);
         } else if (currChar == ',') {
             this.advance();
             return newToken(&newSubStr(",", 0, 1), this.ptr - 1, TOKEN_COMMA);
         } else if (currChar == '+') {
             this.advance();
             return newToken(&newSubStr("+", 0, 1), this.ptr - 1, TOKEN_PLUS_SINGLE);
+        } else if (currChar == '@') {
+            this.advance();
+            return newToken(&newSubStr("@", 0, 1), this.ptr - 1, TOKEN_AT);
         } else if (currChar == '-') {
             this.advance();
             if (this.ptr < this.len && this.content.getChar(0) == '>') {

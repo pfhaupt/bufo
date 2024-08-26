@@ -29,11 +29,6 @@ unsafe func main() {
     } else unsafe {
         mut parser: Parser = newParser(&mut lexer);
         mut module: Module = parser.parseModule(&fileSubStr);
-        // printAST(&module);
-
-        mut checker: Checker = newChecker(&mut module);
-        let result: bool = checker.runChecks();
-        if (!result) exit(1);
     }
     string.drop();
 }
