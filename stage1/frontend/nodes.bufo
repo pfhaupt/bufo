@@ -18,78 +18,78 @@ comptime DECL_VALUE_IDENT: usize = 3;
 comptime DECL_VALUE_BINARY: usize = 4;
 comptime DECL_VALUE_NUMBER: usize = 5;
 struct ParsedDeclValue {
-	kind: usize;
-	data: Any;
+    kind: usize;
+    data: Any;
 }
 
 func defaultDeclValue() -> ParsedDeclValue {
-	unsafe {
-		return ParsedDeclValue {
-			kind: DECL_VALUE_INVALID,
-			data: null
-		};
-	}
+    unsafe {
+        return ParsedDeclValue {
+            kind: DECL_VALUE_INVALID,
+            data: null
+        };
+    }
 }
 
 func createDeclValue(kind: usize, size: usize, data: Any) -> ParsedDeclValue {
-	unsafe {
-		mut mem: Any = calloc(1, size);
-		assert(mem != null);
-		memcpy(mem, data, size);
-		return ParsedDeclValue {
-			kind: kind,
-			data: mem
-		};
-	}
+    unsafe {
+        mut mem: Any = calloc(1, size);
+        assert(mem != null);
+        memcpy(mem, data, size);
+        return ParsedDeclValue {
+            kind: kind,
+            data: mem
+        };
+    }
 }
 
 struct ParsedDeclValueCall {
-	fn: ParsedDeclValue;
-	args: [ParsedDeclValue; 8];
-	argCount: usize;
+    fn: ParsedDeclValue;
+    args: [ParsedDeclValue; 8];
+    argCount: usize;
 }
 
 struct ParsedDeclValueIdent {
-	name: SubStr;
+    name: SubStr;
 }
 struct ParsedDeclValueNumber {
-	number: SubStr;
+    number: SubStr;
 }
 
 comptime BINARY_OP_DOT: usize = 0;
 comptime BINARY_OP_PAREN: usize = 1;
 comptime BINARY_OP_PLUS: usize = 2;
 func createBinaryOp(op: &SubStr) -> usize {
-	comptime DOT: SubStr = BUILD_A_KEYWORD(".");
-	comptime PAREN: SubStr = BUILD_A_KEYWORD("(");
-	comptime PLUS: SubStr = BUILD_A_KEYWORD("+");
-	if (op.equals(&DOT)) return BINARY_OP_DOT;
-	if (op.equals(&PAREN)) return BINARY_OP_PAREN;
-	if (op.equals(&PLUS)) return BINARY_OP_PLUS;
-	todo_with_msg("createBinaryOp for invalid op");
-	return 0;
+    comptime DOT: SubStr = BUILD_A_KEYWORD(".");
+    comptime PAREN: SubStr = BUILD_A_KEYWORD("(");
+    comptime PLUS: SubStr = BUILD_A_KEYWORD("+");
+    if (op.equals(&DOT)) return BINARY_OP_DOT;
+    if (op.equals(&PAREN)) return BINARY_OP_PAREN;
+    if (op.equals(&PLUS)) return BINARY_OP_PLUS;
+    todo_with_msg("createBinaryOp for invalid op");
+    return 0;
 }
 struct ParsedDeclValueBinary {
-	op: usize;
-	lhs: ParsedDeclValue;
-	rhs: ParsedDeclValue;
+    op: usize;
+    lhs: ParsedDeclValue;
+    rhs: ParsedDeclValue;
 }
 
 struct ParsedStructDecl {
-	func addField(&mut this, field: ParsedStructField) {
-	}
-	func addAsset(&mut this, asset: ParsedStructAsset) {
-	}
+    func addField(&mut this, field: ParsedStructField) {
+    }
+    func addAsset(&mut this, asset: ParsedStructAsset) {
+    }
 }
 
 struct ParsedStructField {
-	name: SubStr;
-	typ: ParsedTypeExpr;
+    name: SubStr;
+    typ: ParsedTypeExpr;
 
 }
 
 struct ParsedStructAsset {
-	asset: ParsedVarDecl;
+    asset: ParsedVarDecl;
 }
 
 struct ParsedParam {
@@ -97,36 +97,36 @@ struct ParsedParam {
 }
 
 struct ParsedTypeExpr {
-	expr: ParsedDeclValue;
+    expr: ParsedDeclValue;
 }
 
 func defaultTypeExpr() -> ParsedTypeExpr {
-	let noneCall: ParsedDeclValueCall = ParsedDeclValueCall {
-		fn: defaultDeclValue(),
-		args: blank,
-		argCount: 0
-	};
-	let none: ParsedDeclValue = createDeclValue(DECL_VALUE_BUILTIN, sizeof ParsedDeclValueCall, &noneCall);
-	return ParsedTypeExpr {
-		expr: none
-	};
+    let noneCall: ParsedDeclValueCall = ParsedDeclValueCall {
+        fn: defaultDeclValue(),
+        args: blank,
+        argCount: 0
+    };
+    let none: ParsedDeclValue = createDeclValue(DECL_VALUE_BUILTIN, sizeof ParsedDeclValueCall, &noneCall);
+    return ParsedTypeExpr {
+        expr: none
+    };
 }
 
 comptime STMT_VAR_DECL: usize = 0;
 comptime STMT_RETURN: usize = 1;
 struct ParsedStmt {
-	kind: usize;
-	data: Any;
+    kind: usize;
+    data: Any;
 }
 
 func createStmt(kind: usize, size: usize, data: Any) -> ParsedStmt {
-	unsafe {
-		mut mem: Any = calloc(1, size);
-		assert(mem != null);
-		memcpy(mem, data, size);
-		return ParsedStmt {
-			kind: kind,
-			data: mem
-		};
-	}
+    unsafe {
+        mut mem: Any = calloc(1, size);
+        assert(mem != null);
+        memcpy(mem, data, size);
+        return ParsedStmt {
+            kind: kind,
+            data: mem
+        };
+    }
 }

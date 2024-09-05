@@ -26,7 +26,7 @@ struct Lexer {
     func isKeyword(&mut this, word: &SubStr) -> bool {
         return word.equals(&KEYWORD_LET)
             || word.equals(&KEYWORD_FUNC)
-			|| word.equals(&KEYWORD_MUT)
+            || word.equals(&KEYWORD_MUT)
             || word.equals(&KEYWORD_STRUCT)
             || word.equals(&KEYWORD_ENUM)
             || word.equals(&KEYWORD_UNION)

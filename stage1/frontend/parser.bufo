@@ -51,38 +51,38 @@ struct Parser {
         return tkn;
     }
 
-	func parseModule(&mut this, name: &SubStr) -> ParsedModule {
-		while (!this.atEOF()) {
-			let decl: ParsedVarDecl = this.parseVarDecl();
-		}
-		return ParsedModule {};
-	}
-	func parseVarDecl(&mut this) -> ParsedVarDecl {
-		let mutToken: Token = this.expect(TOKEN_KEYWORD);
-		mut mutable: bool = false;
-		if (mutToken.content.equals(&KEYWORD_LET))
-			mutable = false;
-		else if (mutToken.content.equals(&KEYWORD_MUT))
-			mutable = true;
-		else unsafe {
+    func parseModule(&mut this, name: &SubStr) -> ParsedModule {
+        while (!this.atEOF()) {
+            let decl: ParsedVarDecl = this.parseVarDecl();
+        }
+        return ParsedModule {};
+    }
+    func parseVarDecl(&mut this) -> ParsedVarDecl {
+        let mutToken: Token = this.expect(TOKEN_KEYWORD);
+        mut mutable: bool = false;
+        if (mutToken.content.equals(&KEYWORD_LET))
+            mutable = false;
+        else if (mutToken.content.equals(&KEYWORD_MUT))
+            mutable = true;
+        else unsafe {
             let ls: String = mutToken.span.toString();
-			let stderr: Any = fdopen(2, "w");
-			fprintf(stderr, "error: %s: Expected `let` or `mut`, found `%.*s`.\n", ls.buffer, mutToken.content.len, mutToken.content.start);
-			fclose(stderr);
-			exit(1);
-		}
-		let name: Token = this.expect(TOKEN_IDENT);
-		this.expect(TOKEN_EQUAL_SINGLE);
-		let value: ParsedDeclValue = this.parseDeclValue();
+            let stderr: Any = fdopen(2, "w");
+            fprintf(stderr, "error: %s: Expected `let` or `mut`, found `%.*s`.\n", ls.buffer, mutToken.content.len, mutToken.content.start);
+            fclose(stderr);
+            exit(1);
+        }
+        let name: Token = this.expect(TOKEN_IDENT);
+        this.expect(TOKEN_EQUAL_SINGLE);
+        let value: ParsedDeclValue = this.parseDeclValue();
         this.expect(TOKEN_SEMI_COLON);
-		return ParsedVarDecl {};
-	}
-	func parseDeclValue(&mut this) -> ParsedDeclValue {
-		if (this.at(TOKEN_KEYWORD))
-			return this.parseDeclValueKeyword();
-		else
+        return ParsedVarDecl {};
+    }
+    func parseDeclValue(&mut this) -> ParsedDeclValue {
+        if (this.at(TOKEN_KEYWORD))
+            return this.parseDeclValueKeyword();
+        else
             return this.parseDeclValueExpr();
-	}
+    }
     func parseDeclValueKeyword(&mut this) -> ParsedDeclValue {
         let kw: Token = this.expect(TOKEN_KEYWORD);
         if (kw.content.equals(&KEYWORD_STRUCT))
@@ -166,7 +166,7 @@ struct Parser {
         mut args: [ParsedParam; 8] = blank;
         mut argCount: usize = 0;
         while (!this.at(TOKEN_PAREN_CLOSE)) {
-			assert(argCount < 8);
+            assert(argCount < 8);
             let param: ParsedParam = this.parseFuncParam();
             args[argCount] = param;
             argCount = argCount + 1;
@@ -297,7 +297,7 @@ struct Parser {
         mut argCount: usize = 0;
         this.expect(TOKEN_PAREN_OPEN);
         while (!this.at(TOKEN_PAREN_CLOSE)) {
-			assert(argCount < 8);
+            assert(argCount < 8);
             let arg: ParsedDeclValue = this.parseDeclValueExpr();
             args[argCount] = arg;
             argCount = argCount + 1;
