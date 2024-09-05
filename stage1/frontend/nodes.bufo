@@ -3,11 +3,11 @@ import "string.bufo";
 import "util/span.bufo";
 import "frontend/token.bufo";
 
-struct Module {
+struct ParsedModule {
 
 }
 
-struct VarDecl {
+struct ParsedVarDecl {
 
 }
 
@@ -17,42 +17,42 @@ comptime DECL_VALUE_CALL: usize = 2;
 comptime DECL_VALUE_IDENT: usize = 3;
 comptime DECL_VALUE_BINARY: usize = 4;
 comptime DECL_VALUE_NUMBER: usize = 5;
-struct DeclValue {
+struct ParsedDeclValue {
 	kind: usize;
 	data: Any;
 }
 
-func defaultDeclValue() -> DeclValue {
+func defaultDeclValue() -> ParsedDeclValue {
 	unsafe {
-		return DeclValue {
+		return ParsedDeclValue {
 			kind: DECL_VALUE_INVALID,
 			data: null
 		};
 	}
 }
 
-func createDeclValue(kind: usize, size: usize, data: Any) -> DeclValue {
+func createDeclValue(kind: usize, size: usize, data: Any) -> ParsedDeclValue {
 	unsafe {
 		mut mem: Any = calloc(1, size);
 		assert(mem != null);
 		memcpy(mem, data, size);
-		return DeclValue {
+		return ParsedDeclValue {
 			kind: kind,
 			data: mem
 		};
 	}
 }
 
-struct DeclValueCall {
-	fn: DeclValue;
-	args: [DeclValue; 8];
+struct ParsedDeclValueCall {
+	fn: ParsedDeclValue;
+	args: [ParsedDeclValue; 8];
 	argCount: usize;
 }
 
-struct DeclValueIdent {
+struct ParsedDeclValueIdent {
 	name: SubStr;
 }
-struct DeclValueNumber {
+struct ParsedDeclValueNumber {
 	number: SubStr;
 }
 
@@ -69,62 +69,62 @@ func createBinaryOp(op: &SubStr) -> usize {
 	todo_with_msg("createBinaryOp for invalid op");
 	return 0;
 }
-struct DeclValueBinary {
+struct ParsedDeclValueBinary {
 	op: usize;
-	lhs: DeclValue;
-	rhs: DeclValue;
+	lhs: ParsedDeclValue;
+	rhs: ParsedDeclValue;
 }
 
-struct StructDecl {
-	func addField(&mut this, field: StructField) {
+struct ParsedStructDecl {
+	func addField(&mut this, field: ParsedStructField) {
 	}
-	func addAsset(&mut this, asset: StructAsset) {
+	func addAsset(&mut this, asset: ParsedStructAsset) {
 	}
 }
 
-struct StructField {
+struct ParsedStructField {
 	name: SubStr;
-	typ: TypeExpr;
+	typ: ParsedTypeExpr;
 
 }
 
-struct StructAsset {
-	asset: VarDecl;
+struct ParsedStructAsset {
+	asset: ParsedVarDecl;
 }
 
-struct Param {
+struct ParsedParam {
 
 }
 
-struct TypeExpr {
-	expr: DeclValue;
+struct ParsedTypeExpr {
+	expr: ParsedDeclValue;
 }
 
-func defaultTypeExpr() -> TypeExpr {
-	let noneCall: DeclValueCall = DeclValueCall {
+func defaultTypeExpr() -> ParsedTypeExpr {
+	let noneCall: ParsedDeclValueCall = ParsedDeclValueCall {
 		fn: defaultDeclValue(),
 		args: blank,
 		argCount: 0
 	};
-	let none: DeclValue = createDeclValue(DECL_VALUE_BUILTIN, sizeof DeclValueCall, &noneCall);
-	return TypeExpr {
+	let none: ParsedDeclValue = createDeclValue(DECL_VALUE_BUILTIN, sizeof ParsedDeclValueCall, &noneCall);
+	return ParsedTypeExpr {
 		expr: none
 	};
 }
 
 comptime STMT_VAR_DECL: usize = 0;
 comptime STMT_RETURN: usize = 1;
-struct Stmt {
+struct ParsedStmt {
 	kind: usize;
 	data: Any;
 }
 
-func createStmt(kind: usize, size: usize, data: Any) -> Stmt {
+func createStmt(kind: usize, size: usize, data: Any) -> ParsedStmt {
 	unsafe {
 		mut mem: Any = calloc(1, size);
 		assert(mem != null);
 		memcpy(mem, data, size);
-		return Stmt {
+		return ParsedStmt {
 			kind: kind,
 			data: mem
 		};

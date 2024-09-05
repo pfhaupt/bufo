@@ -51,13 +51,13 @@ struct Parser {
         return tkn;
     }
 
-	func parseModule(&mut this, name: &SubStr) -> Module {
+	func parseModule(&mut this, name: &SubStr) -> ParsedModule {
 		while (!this.atEOF()) {
-			let decl: VarDecl = this.parseVarDecl();
+			let decl: ParsedVarDecl = this.parseVarDecl();
 		}
-		return Module {};
+		return ParsedModule {};
 	}
-	func parseVarDecl(&mut this) -> VarDecl {
+	func parseVarDecl(&mut this) -> ParsedVarDecl {
 		let mutToken: Token = this.expect(TOKEN_KEYWORD);
 		mut mutable: bool = false;
 		if (mutToken.content.equals(&KEYWORD_LET))
@@ -73,17 +73,17 @@ struct Parser {
 		}
 		let name: Token = this.expect(TOKEN_IDENT);
 		this.expect(TOKEN_EQUAL_SINGLE);
-		let value: DeclValue = this.parseDeclValue();
+		let value: ParsedDeclValue = this.parseDeclValue();
         this.expect(TOKEN_SEMI_COLON);
-		return VarDecl {};
+		return ParsedVarDecl {};
 	}
-	func parseDeclValue(&mut this) -> DeclValue {
+	func parseDeclValue(&mut this) -> ParsedDeclValue {
 		if (this.at(TOKEN_KEYWORD))
 			return this.parseDeclValueKeyword();
 		else
             return this.parseDeclValueExpr();
 	}
-    func parseDeclValueKeyword(&mut this) -> DeclValue {
+    func parseDeclValueKeyword(&mut this) -> ParsedDeclValue {
         let kw: Token = this.expect(TOKEN_KEYWORD);
         if (kw.content.equals(&KEYWORD_STRUCT))
             return this.parseDeclValueStruct();
@@ -102,15 +102,15 @@ struct Parser {
         }
         return defaultDeclValue();
     }
-    func parseDeclValueStruct(&mut this) -> DeclValue {
+    func parseDeclValueStruct(&mut this) -> ParsedDeclValue {
         this.expect(TOKEN_CURLY_OPEN);
-        mut structDecl: StructDecl = StructDecl {};
+        mut structDecl: ParsedStructDecl = ParsedStructDecl {};
         while (!this.at(TOKEN_CURLY_CLOSE)) {
             if (this.at(TOKEN_IDENT)) {
-                let structField: StructField = this.parseStructField();
+                let structField: ParsedStructField = this.parseStructField();
                 structDecl.addField(structField);
             } else if (this.at(TOKEN_KEYWORD)) {
-                let structAsset: StructAsset = this.parseStructAsset();
+                let structAsset: ParsedStructAsset = this.parseStructAsset();
                 structDecl.addAsset(structAsset);
             } else unsafe {
                 let next: Token = this.next();
@@ -124,24 +124,24 @@ struct Parser {
         this.expect(TOKEN_CURLY_CLOSE);
         return defaultDeclValue();
     }
-    func parseStructField(&mut this) -> StructField {
+    func parseStructField(&mut this) -> ParsedStructField {
         let name: Token = this.expect(TOKEN_IDENT);
         this.expect(TOKEN_COLON);
-        let typ: TypeExpr = this.parseTypeExpr();
+        let typ: ParsedTypeExpr = this.parseTypeExpr();
         this.expect(TOKEN_SEMI_COLON);
-        return StructField {
+        return ParsedStructField {
             name: name.content,
             typ: typ
         };
     }
-    func parseStructAsset(&mut this) -> StructAsset {
-        let decl: VarDecl = this.parseVarDecl();
-        return StructAsset {
+    func parseStructAsset(&mut this) -> ParsedStructAsset {
+        let decl: ParsedVarDecl = this.parseVarDecl();
+        return ParsedStructAsset {
             asset: decl
         };
     }
-    func parseDeclValueEnum(&mut this) -> DeclValue {
-        mut fieldType: TypeExpr = defaultTypeExpr();
+    func parseDeclValueEnum(&mut this) -> ParsedDeclValue {
+        mut fieldType: ParsedTypeExpr = defaultTypeExpr();
         if (this.eat(TOKEN_PAREN_OPEN)) {
             fieldType = this.parseTypeExpr();
             this.expect(TOKEN_PAREN_CLOSE);
@@ -153,7 +153,7 @@ struct Parser {
         this.expect(TOKEN_CURLY_CLOSE);
         return defaultDeclValue();
     }
-    func parseDeclValueUnion(&mut this) -> DeclValue {
+    func parseDeclValueUnion(&mut this) -> ParsedDeclValue {
         this.expect(TOKEN_CURLY_OPEN);
         while (!this.at(TOKEN_CURLY_CLOSE)) {
             let tkn: Token = this.next();
@@ -161,49 +161,50 @@ struct Parser {
         this.expect(TOKEN_CURLY_CLOSE);
         return defaultDeclValue();
     }
-    func parseDeclValueFunc(&mut this) -> DeclValue {
+    func parseDeclValueFunc(&mut this) -> ParsedDeclValue {
         this.expect(TOKEN_PAREN_OPEN);
-        mut args: [Param; 8] = blank;
+        mut args: [ParsedParam; 8] = blank;
         mut argCount: usize = 0;
         while (!this.at(TOKEN_PAREN_CLOSE)) {
-            let param: Param = this.parseFuncParam();
+			assert(argCount < 8);
+            let param: ParsedParam = this.parseFuncParam();
             args[argCount] = param;
             argCount = argCount + 1;
             if (!this.at(TOKEN_PAREN_CLOSE)) this.expect(TOKEN_COMMA);
         }
         this.expect(TOKEN_PAREN_CLOSE);
 
-        mut retType: TypeExpr = defaultTypeExpr();
+        mut retType: ParsedTypeExpr = defaultTypeExpr();
         if (this.eat(TOKEN_ARROW)) {
             retType = this.parseTypeExpr();
         }
 
         this.expect(TOKEN_CURLY_OPEN);
         while (!this.at(TOKEN_CURLY_CLOSE)) {
-            let expr: Stmt = this.parseStmt();
+            let expr: ParsedStmt = this.parseStmt();
         }
         this.expect(TOKEN_CURLY_CLOSE);
 
         return defaultDeclValue();
     }
-    func parseFuncParam(&mut this) -> Param {
+    func parseFuncParam(&mut this) -> ParsedParam {
         let name: Token = this.expect(TOKEN_IDENT);
         this.expect(TOKEN_COLON);
-        let typ: TypeExpr = this.parseTypeExpr();
-        return Param {};
+        let typ: ParsedTypeExpr = this.parseTypeExpr();
+        return ParsedParam {};
     }
-    func parseDeclValueExpr(&mut this) -> DeclValue {
+    func parseDeclValueExpr(&mut this) -> ParsedDeclValue {
         return this.__parseDeclValueExpr(0, ASSOC_LEFT);
     }
-    func __parseDeclValueExpr(&mut this, minPrecedence: usize, associativity: usize) -> DeclValue {
-        mut expr: DeclValue = this.parseDeclValueExprPrimary();
+    func __parseDeclValueExpr(&mut this, minPrecedence: usize, associativity: usize) -> ParsedDeclValue {
+        mut expr: ParsedDeclValue = this.parseDeclValueExprPrimary();
         while (this.matchesBinaryExpression()) {
             let kind: usize = this.peek().kind;
             let newPrecedence: usize = this.getBinaryPrecedence(kind);
             if (newPrecedence < minPrecedence) break;
             if (newPrecedence == minPrecedence && associativity == ASSOC_LEFT) break;
             let newAssociativity: usize = this.getAssociativity(kind);
-            let result: DeclValue = this.parseDeclValueExprSecondary(expr, newPrecedence, newAssociativity);
+            let result: ParsedDeclValue = this.parseDeclValueExprSecondary(expr, newPrecedence, newAssociativity);
             expr = result;
         }
         return expr;
@@ -219,22 +220,22 @@ struct Parser {
         if (kind == TOKEN_EQUAL_SINGLE) return ASSOC_RIGHT;
         return ASSOC_LEFT;
     }
-    func parseDeclValueExprSecondary(&mut this, lhs: DeclValue, precedence: usize, associativity: usize) -> DeclValue {
+    func parseDeclValueExprSecondary(&mut this, lhs: ParsedDeclValue, precedence: usize, associativity: usize) -> ParsedDeclValue {
         let opTkn: Token = this.peek();
         let op: usize = createBinaryOp(&opTkn.content);
         if (op == BINARY_OP_PAREN) {
             return this.parseDeclValueCall(lhs);
         }
         this.next();
-        let rhs: DeclValue = this.__parseDeclValueExpr(precedence, associativity);
-        let bin: DeclValueBinary = DeclValueBinary {
+        let rhs: ParsedDeclValue = this.__parseDeclValueExpr(precedence, associativity);
+        let bin: ParsedDeclValueBinary = ParsedDeclValueBinary {
             op: op,
             lhs: lhs,
             rhs: rhs
         };
-        return createDeclValue(DECL_VALUE_BINARY, sizeof DeclValueBinary, &bin);
+        return createDeclValue(DECL_VALUE_BINARY, sizeof ParsedDeclValueBinary, &bin);
     }
-    func parseDeclValueExprPrimary(&mut this) -> DeclValue {
+    func parseDeclValueExprPrimary(&mut this) -> ParsedDeclValue {
         if (this.at(TOKEN_KEYWORD))
             return this.parseDeclValueKeyword();
         else if (this.at(TOKEN_AT))
@@ -249,19 +250,19 @@ struct Parser {
         todo_with_msg("primary");
         return defaultDeclValue();
     }
-    func parseDeclValueExprIntLiteral(&mut this) -> DeclValue {
+    func parseDeclValueExprIntLiteral(&mut this) -> ParsedDeclValue {
         let number: Token = this.expect(TOKEN_NUMBER);
-        let numbah: DeclValueNumber = DeclValueNumber {
+        let numbah: ParsedDeclValueNumber = ParsedDeclValueNumber {
             number: number.content
         };
-        return createDeclValue(DECL_VALUE_NUMBER, sizeof DeclValueNumber, &numbah);
+        return createDeclValue(DECL_VALUE_NUMBER, sizeof ParsedDeclValueNumber, &numbah);
     }
-    func parseDeclValueExprIdentifier(&mut this) -> DeclValue {
+    func parseDeclValueExprIdentifier(&mut this) -> ParsedDeclValue {
         let ident: Token = this.expect(TOKEN_IDENT);
-        let id: DeclValueIdent = DeclValueIdent {
+        let id: ParsedDeclValueIdent = ParsedDeclValueIdent {
             name: ident.content
         };
-        return createDeclValue(DECL_VALUE_IDENT, sizeof DeclValueIdent, &id);
+        return createDeclValue(DECL_VALUE_IDENT, sizeof ParsedDeclValueIdent, &id);
     }
     func matchesBinaryExpression(&mut this) -> bool {
         let tkn: Token = this.peek();
@@ -275,50 +276,51 @@ struct Parser {
         let kind: usize = tkn.kind;
         return kind == TOKEN_AMPERSAND;
     }
-    func parseDeclValueExprUnary(&mut this) -> DeclValue {
+    func parseDeclValueExprUnary(&mut this) -> ParsedDeclValue {
         todo_with_msg("unary");
         return defaultDeclValue();
     }
-    func parseDeclValueBuiltin(&mut this) -> DeclValue {
+    func parseDeclValueBuiltin(&mut this) -> ParsedDeclValue {
         // TODO: Instead of assert, report an error
         //       We don't want to let unknown builtin calls through
         this.expect(TOKEN_AT);
-        let builtinFn: DeclValue = this.parseDeclValueExpr();
+        let builtinFn: ParsedDeclValue = this.parseDeclValueExpr();
         assert(builtinFn.kind == DECL_VALUE_CALL);
         unsafe {
-            let fnName: DeclValue = (builtinFn.data as &DeclValueCall).fn;
+            let fnName: ParsedDeclValue = (builtinFn.data as &ParsedDeclValueCall).fn;
             assert(fnName.kind == DECL_VALUE_IDENT);
         }
-        return createDeclValue(DECL_VALUE_BUILTIN, sizeof DeclValue, &builtinFn);
+        return createDeclValue(DECL_VALUE_BUILTIN, sizeof ParsedDeclValue, &builtinFn);
     }
-    func parseDeclValueCall(&mut this, name: DeclValue) -> DeclValue {
-        mut args: [DeclValue; 8] = blank;
+    func parseDeclValueCall(&mut this, name: ParsedDeclValue) -> ParsedDeclValue {
+        mut args: [ParsedDeclValue; 8] = blank;
         mut argCount: usize = 0;
         this.expect(TOKEN_PAREN_OPEN);
         while (!this.at(TOKEN_PAREN_CLOSE)) {
-            let arg: DeclValue = this.parseDeclValueExpr();
+			assert(argCount < 8);
+            let arg: ParsedDeclValue = this.parseDeclValueExpr();
             args[argCount] = arg;
             argCount = argCount + 1;
             if (!this.at(TOKEN_PAREN_CLOSE)) this.expect(TOKEN_COMMA);
         }
         this.expect(TOKEN_PAREN_CLOSE);
         unsafe {
-            let call: DeclValueCall = DeclValueCall {
+            let call: ParsedDeclValueCall = ParsedDeclValueCall {
                 fn: name,
                 args: args,
                 argCount: argCount
             };
-            return createDeclValue(DECL_VALUE_CALL, sizeof DeclValueCall, &call);
+            return createDeclValue(DECL_VALUE_CALL, sizeof ParsedDeclValueCall, &call);
         }
     }
-    func parseTypeExpr(&mut this) -> TypeExpr {
-        let expr: DeclValue = this.parseDeclValueExpr();
-        return TypeExpr {
+    func parseTypeExpr(&mut this) -> ParsedTypeExpr {
+        let expr: ParsedDeclValue = this.parseDeclValueExpr();
+        return ParsedTypeExpr {
             expr: expr
         };
     }
-    func parseStmt(&mut this) -> Stmt {
-        mut stmt: Stmt = blank;
+    func parseStmt(&mut this) -> ParsedStmt {
+        mut stmt: ParsedStmt = blank;
         if (this.at(TOKEN_KEYWORD)) {
             let kw: Token = this.peek();
             if (kw.content.equals(&KEYWORD_RETURN))
@@ -337,15 +339,15 @@ struct Parser {
         }
         return stmt;
     }
-    func parseStmtReturn(&mut this) -> Stmt {
+    func parseStmtReturn(&mut this) -> ParsedStmt {
         let kw: Token = this.expectKeyword(&KEYWORD_RETURN);
-        let expr: DeclValue = this.parseDeclValueExpr();
+        let expr: ParsedDeclValue = this.parseDeclValueExpr();
         this.expect(TOKEN_SEMI_COLON);
-        return createStmt(STMT_RETURN, sizeof DeclValue, &expr);
+        return createStmt(STMT_RETURN, sizeof ParsedDeclValue, &expr);
     }
-    func parseStmtVarDecl(&mut this) -> Stmt {
-        let decl: VarDecl = this.parseVarDecl();
-        return createStmt(STMT_VAR_DECL, sizeof VarDecl, &decl);
+    func parseStmtVarDecl(&mut this) -> ParsedStmt {
+        let decl: ParsedVarDecl = this.parseVarDecl();
+        return createStmt(STMT_VAR_DECL, sizeof ParsedVarDecl, &decl);
     }
 }
 

@@ -1,4 +1,16 @@
 import "string.bufo";
 import "frontend/nodes.bufo";
+import "middleend/nodes.bufo";
 import "util/span.bufo";
 
+struct TypeChecker {
+    func checkModule(&mut this, parsedModule: &ParsedModule) -> CheckedModule {
+        todo_with_msg("TypeChecker.checkModule");
+        return blank;
+    }
+}
+
+func newTypeChecker() -> TypeChecker {
+    return TypeChecker {
+    };
+}
