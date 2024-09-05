@@ -222,8 +222,8 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
             let mut fields = HashSet::new();
             for field in &strukt.fields {
                 let f_type = &field.type_def.typ;
-                if f_type.is_struct() {
-                    fields.insert(f_type.get_struct_name());
+                if f_type.is_struct() || f_type.is_struct_array() {
+                    fields.insert(f_type.get_underlying_struct_name());
                 }
             }
             if !lookup.contains_key(&strukt_name) {
@@ -1069,7 +1069,7 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
         for field in &struct_literal.fields {
             expressions.push(self.codegen_expression(&field.1, false)?);
         }
-        let real_name = struct_literal.typ.get_struct_name();
+        let real_name = struct_literal.typ.get_underlying_struct_name();
         let struct_type = self.struct_defs.get(&real_name).unwrap();
         let mut struct_instance = struct_type.const_zero();
         for (i, field) in struct_literal.fields.iter().enumerate() {
@@ -1290,7 +1290,7 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
             },
             Value::Struct(s) => {
                 debug_assert!(matches!(typ, Type::Struct(_)));
-                let real_name = typ.get_struct_name();
+                let real_name = typ.get_underlying_struct_name();
                 let struct_type = self.struct_defs.get(&real_name).unwrap();
                 let struct_info = self.struct_info.get(&real_name).unwrap();
                 let mut struct_instance = struct_type.const_zero();
@@ -1678,9 +1678,9 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
                         let real_name = match typ {
                             Type::Ref(t, _) => {
                                 debug_assert!(t.is_struct());
-                                t.get_struct_name()
+                                t.get_underlying_struct_name()
                             }
-                            t @ Type::Struct(_) => t.get_struct_name(),
+                            t @ Type::Struct(_) => t.get_underlying_struct_name(),
                             _ => internal_panic!("Expected struct, found {:?}", typ),
                         };
                         let mut lhs = self.codegen_expression(&binary.lhs, !typ.is_struct_ref())?;
@@ -1983,7 +1983,7 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
                 ty.array_type(*size as u32).as_basic_type_enum()
             },
             t @ Type::Struct(..) => {
-                let real_name = t.get_struct_name();
+                let real_name = t.get_underlying_struct_name();
                 let Some(struct_type) = self.get_struct_type(&real_name) else {
                     if self.flags.debug {
                         println!("[DEBUG] Could not find struct {}", real_name);

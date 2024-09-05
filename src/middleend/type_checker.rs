@@ -688,6 +688,15 @@ impl<'src> Type<'src> {
     }
 
     #[trace_call(extra)]
+    pub fn is_struct_array(&self) -> bool {
+        if let Type::Array(t, _) = self {
+            t.is_struct() || t.is_struct_array()
+        } else {
+            false
+        }
+    }
+
+    #[trace_call(extra)]
     pub fn is_struct(&self) -> bool {
         matches!(self, Type::Struct(..))
     }
@@ -749,9 +758,10 @@ impl<'src> Type<'src> {
     }
 
     #[trace_call(extra)]
-    pub fn get_struct_name(&self) -> &'src str {
+    pub fn get_underlying_struct_name(&self) -> &'src str {
         match self {
             Type::Struct(struct_name) => struct_name,
+            Type::Array(t, _) => t.get_underlying_struct_name(),
             _ => internal_panic!("Expected Struct")
         }
     }
@@ -1202,8 +1212,8 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
             let mut fields = BTreeSet::new();
             for field in &strukt.fields {
                 let f_type = &field.type_def.typ;
-                if f_type.is_struct() {
-                    fields.insert(f_type.get_struct_name());
+                if f_type.is_struct() || f_type.is_struct_array() {
+                    fields.insert(f_type.get_underlying_struct_name());
                 }
             }
             if !lookup.contains_key(&strukt_name) {
