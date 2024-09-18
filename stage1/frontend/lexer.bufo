@@ -18,6 +18,7 @@ comptime KEYWORD_STRUCT: SubStr = BUILD_A_KEYWORD("struct");
 comptime KEYWORD_ENUM: SubStr = BUILD_A_KEYWORD("enum");
 comptime KEYWORD_UNION: SubStr = BUILD_A_KEYWORD("union");
 comptime KEYWORD_RETURN: SubStr = BUILD_A_KEYWORD("return");
+comptime KEYWORD_MODULE: SubStr = BUILD_A_KEYWORD("module");
 struct Lexer {
     content: SubStr;
     ptr: usize;
@@ -30,7 +31,8 @@ struct Lexer {
             || word.equals(&KEYWORD_STRUCT)
             || word.equals(&KEYWORD_ENUM)
             || word.equals(&KEYWORD_UNION)
-            || word.equals(&KEYWORD_RETURN);
+            || word.equals(&KEYWORD_RETURN)
+            || word.equals(&KEYWORD_MODULE);
     }
 
     func advance(&mut this) -> bool {
@@ -131,7 +133,7 @@ struct Lexer {
                 this.advance();
                 return newToken(&newSubStr("->", 0, 2), this.ptr - 2, TOKEN_ARROW);
             } else {
-                todo_with_msg("normal Minus");
+                return newToken(&newSubStr("-", 0, 1), this.ptr - 1, TOKEN_MINUS_SINGLE);
             }
         } else if (currChar == '/' && this.content.getChar(1) == '*') {
             while (true) {

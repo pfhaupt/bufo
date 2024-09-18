@@ -1,3 +1,6 @@
+// TODO: Come up with a proper test file
+//       which should include proper code, for example
+//       a String declaration using an ArrayList
 
 let Foo = struct {
     field: i32;
@@ -16,6 +19,15 @@ let Bez = enum(i8) {
 let Idk = union {
     int: i32,
     flt: f32
+};
+
+let std = module {
+    let print = func () {};
+    let math = module {
+        let floor = func (val: f32) -> f32 {
+            return 0;
+        };
+    };
 };
 
 // TODO: Bikeshed about syntax
@@ -44,11 +56,21 @@ let Foo2 = createCool(Foo1);
 
 let ArrayList = func (inner: type) -> type {
     return struct {
-        let init = func () -> @Self() {};
+        let Self = @Self();
+        let init = func () -> Self {};
+        let push = func (self: Self, arg: type) {};
     };
 };
 
 // Final boss:
+/*
+    TypeChecker sees this:
+      mut list = createList(i32, 16);
+      list.push(5);
+    Codegen sees this:
+      mut list = createList.i32(16);
+      ArrayList.i32.push(*mut list, 5);
+*/
 let createList = func (val: type, capacity: u64) -> ArrayList(val) {
     let instance = ArrayList(val).init(capacity);
     // equivalent to:
@@ -61,9 +83,29 @@ let add = func (x: i32, y: i32) -> i32 {
     return x + y;
 };
 
+let sub = func (x: i32, y: i32) -> i32 {
+    return x - y;
+};
+
+let StructName = struct {
+    foo: i32;
+    bar: i32;
+    let init = func (f: i32, b: i32) -> @Self() {
+    };
+};
+
 let main = func () {
-    let a = 1;
+    // Any integer literal is type i32, and must be explicitly cast
+    // either via @cast(value, type) or let a: <type> = <value>;
+    let a = @cast(1, i16);
+    // TODO: Implement parsing for explicit types
+    // let a: i16 = 1;
     let b = 2;
     let c = add(a, b);
+    let s = sub;
+    let d = s(a, b);
+    // REVIEW: Does the compiler generate the correct AST for the below statement?
+    // Maybe a.b should be an identifier instead of a binary op
+    // let str = StructName.init(5, a);
 };
 

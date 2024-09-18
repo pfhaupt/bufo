@@ -4,8 +4,22 @@ import "middleend/nodes.bufo";
 import "util/span.bufo";
 
 struct TypeChecker {
+    func checkProject(&mut this, parsedProject: &ParsedModule) -> CheckedModule {
+        this.fillLookup(parsedProject);
+        return this.checkModule(parsedProject);
+    }
+    func fillLookup(&mut this, parsedProject: &ParsedModule) {
+        for (mut i: usize = 0; i < parsedProject.declCount; i = i + 1) {
+            let decl: &ParsedVarDecl = parsedProject.getDeclAtIndex(i);
+            decl.name.print();
+            unsafe {
+                printf("\n");
+            }
+            let kind: usize = decl.value.kind;
+            assert(kind != 0);
+        }
+    }
     func checkModule(&mut this, parsedModule: &ParsedModule) -> CheckedModule {
-        todo_with_msg("TypeChecker.checkModule");
         return blank;
     }
 }

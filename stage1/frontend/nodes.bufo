@@ -3,20 +3,68 @@ import "string.bufo";
 import "util/span.bufo";
 import "frontend/token.bufo";
 
-struct ParsedModule {
+comptime INITIAL_CAPACITY: usize = 64;
 
+struct ParsedModule {
+    decls: &mut ParsedVarDecl;
+    declCap: usize;
+    declCount: usize;
+
+    func addVarDecl(&mut this, varDecl: ParsedVarDecl) {
+        if (this.declCount >= this.declCap) {
+            todo_with_msg("idk");
+        }
+        unsafe {
+            *(this.decls + this.declCount * sizeof ParsedVarDecl) = varDecl;
+        }
+        this.declCount = this.declCount + 1;
+    }
+
+    func getDeclAtIndex(&this, index: usize) -> &ParsedVarDecl {
+        assert(index < this.declCount);
+        unsafe {
+            let _decl: &mut ParsedVarDecl = this.decls + index * sizeof ParsedVarDecl;
+            return _decl as &ParsedVarDecl;
+        }
+    }
+}
+
+func defaultModule() -> ParsedModule {
+    unsafe {
+        let mem: Any = calloc(INITIAL_CAPACITY, sizeof ParsedVarDecl);
+        assert_with_msg(mem != null, "Could not allocate enough memory in defaultModule()");
+        let decls: &mut ParsedVarDecl = &mut *mem;
+        return ParsedModule {
+            decls: decls,
+            declCap: INITIAL_CAPACITY,
+            declCount: 0
+        };
+    }
 }
 
 struct ParsedVarDecl {
+    name: Token;
+    value: ParsedDeclValue;
+}
 
+func createVarDecl(name: Token, value: ParsedDeclValue) -> ParsedVarDecl {
+    return ParsedVarDecl {
+        name: name,
+        value: value,
+    };
 }
 
 comptime DECL_VALUE_INVALID: usize = 0;
-comptime DECL_VALUE_BUILTIN: usize = 1;
-comptime DECL_VALUE_CALL: usize = 2;
-comptime DECL_VALUE_IDENT: usize = 3;
-comptime DECL_VALUE_BINARY: usize = 4;
-comptime DECL_VALUE_NUMBER: usize = 5;
+comptime DECL_VALUE_MODULE: usize = 1;
+comptime DECL_VALUE_FUNC_DECL: usize = 2;
+comptime DECL_VALUE_STRUCT_DECL: usize = 3;
+comptime DECL_VALUE_ENUM_DECL: usize = 4;
+comptime DECL_VALUE_UNION_DECL: usize = 5;
+comptime DECL_VALUE_BUILTIN: usize = 6;
+comptime DECL_VALUE_CALL: usize = 7;
+comptime DECL_VALUE_IDENT: usize = 8;
+comptime DECL_VALUE_BINARY: usize = 9;
+comptime DECL_VALUE_NUMBER: usize = 10;
 struct ParsedDeclValue {
     kind: usize;
     data: Any;
@@ -59,13 +107,16 @@ struct ParsedDeclValueNumber {
 comptime BINARY_OP_DOT: usize = 0;
 comptime BINARY_OP_PAREN: usize = 1;
 comptime BINARY_OP_PLUS: usize = 2;
+comptime BINARY_OP_MINUS: usize = 3;
 func createBinaryOp(op: &SubStr) -> usize {
     comptime DOT: SubStr = BUILD_A_KEYWORD(".");
     comptime PAREN: SubStr = BUILD_A_KEYWORD("(");
     comptime PLUS: SubStr = BUILD_A_KEYWORD("+");
+    comptime MINUS: SubStr = BUILD_A_KEYWORD("-");
     if (op.equals(&DOT)) return BINARY_OP_DOT;
     if (op.equals(&PAREN)) return BINARY_OP_PAREN;
     if (op.equals(&PLUS)) return BINARY_OP_PLUS;
+    if (op.equals(&MINUS)) return BINARY_OP_MINUS;
     todo_with_msg("createBinaryOp for invalid op");
     return 0;
 }
@@ -75,10 +126,63 @@ struct ParsedDeclValueBinary {
     rhs: ParsedDeclValue;
 }
 
+struct ParsedEnumDecl {
+}
+
+func defaultEnumDecl() -> ParsedEnumDecl {
+    return blank;
+}
+
+struct ParsedUnionDecl {
+}
+
+func defaultUnionDecl() -> ParsedUnionDecl {
+    return blank;
+}
+
 struct ParsedStructDecl {
+    fields: &mut ParsedStructField;
+    fieldCap: usize;
+    fieldCount: usize;
+    assets: &mut ParsedStructAsset;
+    assetCap: usize;
+    assetCount: usize;
     func addField(&mut this, field: ParsedStructField) {
+        if (this.fieldCount >= this.fieldCap) {
+            todo_with_msg("resize fields");
+        }
+        unsafe {
+            *(this.fields + this.fieldCount * sizeof ParsedStructField) = field;
+        }
+        this.fieldCount = this.fieldCount + 1;
     }
     func addAsset(&mut this, asset: ParsedStructAsset) {
+        if (this.assetCount >= this.assetCap) {
+            todo_with_msg("resize assets");
+        }
+        unsafe {
+            *(this.assets + this.assetCount * sizeof ParsedStructAsset) = asset;
+        }
+        this.assetCount = this.assetCount + 1;
+    }
+}
+
+func defaultStructDecl() -> ParsedStructDecl {
+    unsafe {
+        mut mem: Any = calloc(INITIAL_CAPACITY, sizeof ParsedStructField);
+        assert_with_msg(mem != null, "Could not allocate enough memory in defaultStructDecl()");
+        let fields: &mut ParsedStructField = &mut *mem;
+        mem = calloc(INITIAL_CAPACITY, sizeof ParsedStructAsset);
+        assert_with_msg(mem != null, "Could not allocate enough memory in defaultStructDecl()");
+        let assets: &mut ParsedStructAsset = &mut *mem;
+        return ParsedStructDecl {
+            fields: fields,
+            fieldCap: INITIAL_CAPACITY,
+            fieldCount: 0,
+            assets: assets,
+            assetCap: INITIAL_CAPACITY,
+            assetCount: 0
+        };
     }
 }
 
@@ -92,6 +196,56 @@ struct ParsedStructAsset {
     asset: ParsedVarDecl;
 }
 
+struct ParsedFuncDecl {
+    params: &mut ParsedParam;
+    paramCap: usize;
+    paramCount: usize;
+    stmts: &mut ParsedStmt;
+    stmtCap: usize;
+    stmtCount: usize;
+    retType: ParsedTypeExpr;
+    func addParam(&mut this, param: ParsedParam) {
+        if (this.paramCount >= this.paramCap) {
+            todo_with_msg("resize params");
+        }
+        unsafe {
+            *(this.params + this.paramCount * sizeof ParsedParam) = param;
+        }
+        this.paramCount = this.paramCount + 1;
+    }
+    func addStmt(&mut this, stmt: ParsedStmt) {
+        if (this.stmtCount >= this.stmtCap) {
+            todo_with_msg("resize stmts");
+        }
+        unsafe {
+            *(this.stmts + this.stmtCount * sizeof ParsedStmt) = stmt;
+        }
+        this.stmtCount = this.stmtCount + 1;
+    }
+    func setReturnType(&mut this, retType: ParsedTypeExpr) {
+        this.retType = retType;
+    }
+}
+func defaultFuncDecl() -> ParsedFuncDecl {
+    unsafe {
+        mut mem: Any = calloc(INITIAL_CAPACITY, sizeof ParsedParam);
+        assert_with_msg(mem != null, "Could not allocate enough memory in defaultFuncDecl()");
+        let params: &mut ParsedParam = &mut *mem;
+        mem = calloc(INITIAL_CAPACITY, sizeof ParsedStmt);
+        assert_with_msg(mem != null, "Could not allocate enough memory in defaultFuncDecl()");
+        let stmts: &mut ParsedStmt = &mut *mem;
+        let retType: ParsedTypeExpr = defaultTypeExpr();
+        return ParsedFuncDecl {
+            params: params,
+            paramCap: INITIAL_CAPACITY,
+            paramCount: 0,
+            stmts: stmts,
+            stmtCap: INITIAL_CAPACITY,
+            stmtCount: 0,
+            retType: retType
+        };
+    }
+}
 struct ParsedParam {
 
 }
