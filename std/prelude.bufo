@@ -66,7 +66,7 @@ func isAlphanumeric(ch: char) -> bool {
 // Internal Runtime Errors
 func index_oob(msg: &char, index: i64) {
     unsafe {
-        let stderr: Any = fdopen(2, "w");
+        let stderr: Any = fdopen(2, "a");
         fprintf(stderr, msg, index);
         exit(1);
     }
@@ -75,7 +75,7 @@ func index_oob(msg: &char, index: i64) {
 func assert(cond: bool) {
     unsafe {
         if (!cond) {
-            let stderr: Any = fdopen(2, "w");
+            let stderr: Any = fdopen(2, "a");
             fprintf(stderr, "ASSERTION FAILED\n");
             exit(1);
         }
@@ -85,7 +85,7 @@ func assert(cond: bool) {
 func assert_with_msg(cond: bool, msg: &char) {
     unsafe {
         if (!cond) {
-            let stderr: Any = fdopen(2, "w");
+            let stderr: Any = fdopen(2, "a");
             fprintf(stderr, "ASSERTION FAILED: %s\n", msg);
             exit(1);
         }
@@ -94,8 +94,25 @@ func assert_with_msg(cond: bool, msg: &char) {
 
 func todo_with_msg(msg: &char) {
     unsafe {
-        let stderr: Any = fdopen(2, "w");
+        let stderr: Any = fdopen(2, "a");
         fprintf(stderr, "TODO: %s\n", msg);
         exit(1);
+    }
+}
+
+comptime PRINT_DEBUG: bool = false;
+func debug(msg: &char) {
+    if (!PRINT_DEBUG) return;
+    // Safety: Argument must be null-terminated
+    unsafe {
+        printf("[DEBUG] %s\n", msg);
+    }
+}
+comptime PRINT_TRACE: bool = false;
+func trace(msg: &char) {
+    if (!PRINT_TRACE) return;
+    // Safety: Argument must be null-terminated
+    unsafe {
+        printf("[TRACE] %s\n", msg);
     }
 }

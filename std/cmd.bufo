@@ -1,5 +1,6 @@
 import "./string_buf.bufo";
-import "windows.bufo";
+// import "windows.bufo";
+import "linux.bufo";
 
 struct Cmd {
     buf: StringBuffer;
@@ -21,6 +22,19 @@ struct Cmd {
     }
     func toString(&this) -> String {
         return this.buf.toCmdString();
+    }
+    func asCharPtrs(&this) -> &&char {
+        unsafe {
+            let _any: Any = calloc(this.buf.length + 1, sizeof &char);
+            assert(_any != null);
+            let _mut: &mut &char = &mut *_any;
+            for (mut i: usize = 0; i < this.buf.length; i = i + 1) {
+                let elem: String = (*(this.buf.data + i * sizeof SubStr)).toString();
+                elem.print();
+                *(_mut + i * sizeof &char) = elem.buffer as &char;
+            }
+            return _any as &&char;
+        }
     }
 }
 

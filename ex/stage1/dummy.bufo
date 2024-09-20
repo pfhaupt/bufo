@@ -2,10 +2,24 @@
 //       which should include proper code, for example
 //       a String declaration using an ArrayList
 
-let Foo = struct {
-    field: i32;
+@entry(main);
+
+let i32 = @integer(32);
+let i64 = @integer(64);
+let f32 = @float(32);
+
+let Vector2 = struct {
+    x: f32;
+    y: f32;
 };
 
+let Point = struct {
+    x: i32;
+    y: i32;
+};
+
+// TODO: Add EnumValue to TypeChecker
+/*
 let Bar = enum(i32) {
     A = 1,
     B = 2,
@@ -15,12 +29,18 @@ let Bez = enum(i8) {
     A,
     B,
 };
+*/
 
+// TODO: Add UnionValue to TypeChecker
+/*
 let Idk = union {
     int: i32,
     flt: f32
 };
+*/
 
+// TODO: Add ModuleValue to TypeChecker
+/*
 let std = module {
     let print = func () {};
     let math = module {
@@ -29,15 +49,10 @@ let std = module {
         };
     };
 };
+*/
 
 // TODO: Bikeshed about syntax
-let createCool = func (val: type) -> type {
-    return struct {
-        field: val;
-
-        let foo = func () {};
-    };
-};
+let Before = createCool(Foo2);
 let createCool = func (val: type) -> type {
     return struct {
         field: val;
@@ -51,9 +66,7 @@ let createCool = func (val: type) -> type {
         let foo = func (k: Self.Kind) {};
     };
 };
-let Foo1 = createCool(Foo2);
-let Foo2 = createCool(Foo1);
-
+let After = createCool(Foo1);
 let ArrayList = func (inner: type) -> type {
     return struct {
         let Self = @Self();
@@ -108,4 +121,3 @@ let main = func () {
     // Maybe a.b should be an identifier instead of a binary op
     // let str = StructName.init(5, a);
 };
-

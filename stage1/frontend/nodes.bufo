@@ -6,9 +6,13 @@ import "frontend/token.bufo";
 comptime INITIAL_CAPACITY: usize = 64;
 
 struct ParsedModule {
+    span: Span;
     decls: &mut ParsedVarDecl;
     declCap: usize;
     declCount: usize;
+    dirs: &mut ParsedDeclValue;
+    dirCap: usize;
+    dirCount: usize;
 
     func addVarDecl(&mut this, varDecl: ParsedVarDecl) {
         if (this.declCount >= this.declCap) {
@@ -18,6 +22,15 @@ struct ParsedModule {
             *(this.decls + this.declCount * sizeof ParsedVarDecl) = varDecl;
         }
         this.declCount = this.declCount + 1;
+    }
+    func addDirective(&mut this, dir: ParsedDeclValue) {
+        if (this.dirCount >= this.declCap) {
+            todo_with_msg("idk");
+        }
+        unsafe {
+            *(this.dirs + this.declCount * sizeof ParsedDeclValue) = dir;
+        }
+        this.dirCount = this.declCount + 1;
     }
 
     func getDeclAtIndex(&this, index: usize) -> &ParsedVarDecl {
@@ -31,13 +44,21 @@ struct ParsedModule {
 
 func defaultModule() -> ParsedModule {
     unsafe {
-        let mem: Any = calloc(INITIAL_CAPACITY, sizeof ParsedVarDecl);
+        let span: Span = defaultSpan();
+        mut mem: Any = calloc(INITIAL_CAPACITY, sizeof ParsedVarDecl);
         assert_with_msg(mem != null, "Could not allocate enough memory in defaultModule()");
         let decls: &mut ParsedVarDecl = &mut *mem;
+        mem = calloc(INITIAL_CAPACITY, sizeof ParsedDeclValue);
+        assert_with_msg(mem != null, "Could not allocate enough memory in defaultModule()");
+        let dirs: &mut ParsedDeclValue = &mut *mem;
         return ParsedModule {
+            span: span,
             decls: decls,
             declCap: INITIAL_CAPACITY,
-            declCount: 0
+            declCount: 0,
+            dirs: dirs,
+            dirCap: INITIAL_CAPACITY,
+            dirCount: 0
         };
     }
 }
@@ -45,12 +66,14 @@ func defaultModule() -> ParsedModule {
 struct ParsedVarDecl {
     name: Token;
     value: ParsedDeclValue;
+    isMutable: bool;
 }
 
-func createVarDecl(name: Token, value: ParsedDeclValue) -> ParsedVarDecl {
+func createVarDecl(name: Token, value: ParsedDeclValue, mutable: bool) -> ParsedVarDecl {
     return ParsedVarDecl {
         name: name,
         value: value,
+        isMutable: mutable
     };
 }
 
@@ -67,25 +90,59 @@ comptime DECL_VALUE_BINARY: usize = 9;
 comptime DECL_VALUE_NUMBER: usize = 10;
 struct ParsedDeclValue {
     kind: usize;
+    span: Span;
     data: Any;
+
+    func asModule(&this) -> &ParsedModule {
+        assert(this.kind == DECL_VALUE_MODULE);
+        unsafe {
+            return this.data as &ParsedModule;
+        }
+    }
+    func asStruct(&this) -> &ParsedStructDecl {
+        assert(this.kind == DECL_VALUE_STRUCT_DECL);
+        unsafe {
+            return this.data as &ParsedStructDecl;
+        }
+    }
+    func asEnum(&this) -> &ParsedEnumDecl {
+        assert(this.kind == DECL_VALUE_ENUM_DECL);
+        unsafe {
+            return this.data as &ParsedEnumDecl;
+        }
+    }
+    func asUnion(&this) -> &ParsedUnionDecl {
+        assert(this.kind == DECL_VALUE_UNION_DECL);
+        unsafe {
+            return this.data as &ParsedUnionDecl;
+        }
+    }
+    func asFunc(&this) -> &ParsedFuncDecl {
+        assert(this.kind == DECL_VALUE_FUNC_DECL);
+        unsafe {
+            return this.data as &ParsedFuncDecl;
+        }
+    }
 }
 
 func defaultDeclValue() -> ParsedDeclValue {
     unsafe {
         return ParsedDeclValue {
             kind: DECL_VALUE_INVALID,
+            span: defaultSpan(),
             data: null
         };
     }
 }
 
-func createDeclValue(kind: usize, size: usize, data: Any) -> ParsedDeclValue {
+func createDeclValue(kind: usize, span: Span, size: usize, data: Any) -> ParsedDeclValue {
     unsafe {
         mut mem: Any = calloc(1, size);
         assert(mem != null);
         memcpy(mem, data, size);
         return ParsedDeclValue {
             kind: kind,
+            span: span,
             data: mem
         };
     }
@@ -101,6 +158,7 @@ struct ParsedDeclValueIdent {
     name: SubStr;
 }
 struct ParsedDeclValueNumber {
+    span: Span;
     number: SubStr;
 }
 
@@ -141,6 +199,7 @@ func defaultUnionDecl() -> ParsedUnionDecl {
 }
 
 struct ParsedStructDecl {
+    span: Span;
     fields: &mut ParsedStructField;
     fieldCap: usize;
     fieldCount: usize;
@@ -165,6 +224,18 @@ struct ParsedStructDecl {
         }
         this.assetCount = this.assetCount + 1;
     }
+    func getFieldAtIndex(&this, index: usize) -> &ParsedStructField {
+        assert(index < this.fieldCount);
+        unsafe {
+            return (this.fields + index * sizeof ParsedStructField) as &ParsedStructField;
+        }
+    }
+    func getAssetAtIndex(&this, index: usize) -> &ParsedStructAsset {
+        assert(index < this.assetCount);
+        unsafe {
+            return (this.assets + index * sizeof ParsedStructAsset) as &ParsedStructAsset;
+        }
+    }
 }
 
 func defaultStructDecl() -> ParsedStructDecl {
@@ -176,6 +247,7 @@ func defaultStructDecl() -> ParsedStructDecl {
         assert_with_msg(mem != null, "Could not allocate enough memory in defaultStructDecl()");
         let assets: &mut ParsedStructAsset = &mut *mem;
         return ParsedStructDecl {
+            span: defaultSpan(),
             fields: fields,
             fieldCap: INITIAL_CAPACITY,
             fieldCount: 0,
@@ -260,7 +332,8 @@ func defaultTypeExpr() -> ParsedTypeExpr {
         args: blank,
         argCount: 0
     };
-    let none: ParsedDeclValue = createDeclValue(DECL_VALUE_BUILTIN, sizeof ParsedDeclValueCall, &noneCall);
+    let dummySpan: Span = defaultSpan();
+    let none: ParsedDeclValue = createDeclValue(DECL_VALUE_BUILTIN, dummySpan, sizeof ParsedDeclValueCall, &noneCall);
     return ParsedTypeExpr {
         expr: none
     };

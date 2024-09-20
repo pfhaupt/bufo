@@ -1,0 +1,36 @@
+/*
+Data Structures used in POSIX 
+
+They're mostly incomplete, and don't follow the declarations precisely.
+Bufo doesn't have access to opaque structures and macro declarations,
+but we need to define some data structures at our best guess.
+
+Usage of any of these structures is highly unsafe and might destroy your
+system at any time.
+*/
+
+struct pid_t {
+    id: i32;
+}
+
+struct stat {
+	st_dev: u64;
+	st_ino: u64;
+	st_nlink: u64;
+	st_mode: u32;
+	st_uid: u32;
+	st_gid: u32;
+	__pad0: u32;
+	st_rdev: u64;
+	st_size: i64;
+	st_blksize: i64;
+	st_blocks: i64;	/* Number 512-byte blocks allocated. */
+	st_atime: u64;
+	st_atime_nsec: u64;
+	st_mtime: u64;
+	st_mtime_nsec: u64;
+	st_ctime: u64;
+	st_ctime_nsec: u64;
+    __unused: [i64; 3];
+}
+

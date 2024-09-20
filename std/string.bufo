@@ -95,6 +95,25 @@ struct String {
             }
         }
     }
+    func isNumber(&this) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) {
+            let ch: char = this.getChar(i);
+            if (ch == '\0') break;
+            if (!isNumeric(ch)) return false;
+        }
+        // Empty string is not a number
+        return this.length > 0;
+    }
+    func toI64(&this) -> i64 {
+        assert_with_msg(this.isNumber(), "not a number");
+        mut val: i64 = 0;
+        for (mut i: usize = 0; i < this.length - 1; i = i + 1) {
+            let ch: char = this.getChar(i);
+            let digit: i64 = (ch - '0') as i64;
+            val = 10 * val + digit;
+        }
+        return val;
+    }
 }
 
 func newString() -> String {

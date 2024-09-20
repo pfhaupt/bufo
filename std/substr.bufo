@@ -32,6 +32,7 @@ struct SubStr {
         for (mut i: usize = 0; i < this.len; i = i + 1) {
             s.pushChar(this.getChar(i));
         }
+        s.pushChar('\0');
         return s;
     }
     func getChar(&this, index: usize) -> char {

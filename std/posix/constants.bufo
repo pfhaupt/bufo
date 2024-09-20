@@ -1,0 +1,22 @@
+/*
+Constants used in POSIX
+
+Besides constants using opaque structures in windows.h (for example
+INVALID_HANDLE uses `Handle`) where we need to provide *some*
+representation of the underlying data, all constants are taken from
+the official Microsoft documentation.
+
+Usage of any of these constants is moderately unsafe and might destroy
+your system if not treated carefully.
+*/
+
+// REVIEW: Do errors actually write this errno?
+import "posix/functions.bufo";
+func __safe_errno_location() -> &i32 {
+    unsafe {
+        return __errno_location();
+    }
+}
+func errno() -> &i32 { return __safe_errno_location(); }
+
+comptime ENOENT: i32 = 2;

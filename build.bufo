@@ -2,13 +2,19 @@ import "cmd.bufo";
 import "string_buf.bufo";
 
 comptime DEBUG: bool = true;
+comptime LINUX: bool = true;
 comptime func getStage0() -> &char {
-    if (DEBUG) return "./target/debug/bufo.exe";
-    else return "./target/release/bufo.exe";
+    if (LINUX) {
+        if (DEBUG) return "./target/debug/bufo";
+        else return "./target/release/bufo";
+    } else {
+        if (DEBUG) return "./target/debug/bufo.exe";
+        else return "./target/release/bufo.exe";
+    }
 }
 comptime STAGE0_PATH: &char = getStage0();
 
-let DEPENDENCIES: [&char; 10] = [
+let DEPENDENCIES: [&char; 13] = [
     "./build.bufo",
     "./std/cmd.bufo",
     "./std/string_buf.bufo",
@@ -17,6 +23,9 @@ let DEPENDENCIES: [&char; 10] = [
     "./std/winapi/constants.bufo",
     "./std/winapi/functions.bufo",
     "./std/winapi/structs.bufo",
+    "./std/posix/constants.bufo",
+    "./std/posix/functions.bufo",
+    "./std/posix/structs.bufo",
     "./std/prelude.bufo",
     "./std/libc.bufo"
 ];
@@ -25,7 +34,7 @@ func buildMyself() -> bool {
     let myName: &char = getProgramName();
     let lastBuild: usize = getLastModified(myName);
     mut needed: bool = false;
-    for (mut i: usize = 0; i < 10; i = i + 1) {
+    for (mut i: usize = 0; i < 13; i = i + 1) {
         let lastSource: usize = getLastModified(DEPENDENCIES[i]);
         if (lastSource >= lastBuild) unsafe {
             printf("[REBUILD] File %s was changed.\n", DEPENDENCIES[i]);
@@ -82,7 +91,8 @@ func buildStage1() -> bool {
 }
 
 func compileTest() -> bool {
-    let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/dummy.bufo");
+    //let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/dummy.bufo");
+    let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/structs.bufo");
     return cmd.runSync();
 }
 

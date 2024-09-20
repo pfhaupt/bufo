@@ -1,0 +1,12 @@
+
+comptime func BUILD_A_BUILTIN(name: &char) -> SubStr {
+    unsafe {
+        return SubStr {
+            start: name,
+            len: comptimeStrlen(name)
+        };
+    }
+}
+comptime BUILTIN_INTEGER: SubStr = BUILD_A_BUILTIN("integer");
+comptime BUILTIN_FLOAT: SubStr = BUILD_A_BUILTIN("float");
+comptime BUILTIN_SELF: SubStr = BUILD_A_BUILTIN("Self");
