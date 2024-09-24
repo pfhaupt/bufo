@@ -1,0 +1,53 @@
+let i32 = @integer(32);
+let i64 = @integer(64);
+let f32 = @float(32);
+// TODO: Add support for @anytype()
+let type = @anytype();
+// TODO: Add support for @anyvalue()
+let value = @anyvalue();
+
+let Number = enum {
+    Invalid,
+    Integer,
+    Float
+};
+
+let State = enum {
+    On,
+    Off,
+};
+
+let Flags = enum(i32) {
+    Urgent = 1,
+    Fast = 2,
+    Efficient = 4
+};
+
+// TODO: Verify types of variant values
+let Invalid = enum(type) {
+    variant1 = 12,
+    variant2 = Flags
+};
+
+// TODO: Add scopes to resolution
+//       The struct does not know that State is part of itself.
+//       Maybe we can make `@Self()` mandatory for local types?
+//       It would then be `@Self().State` to access the local variant.
+/*
+let Button = struct {
+    let State = enum {
+        On,
+        Off
+    };
+    state: State;
+    rect: Rect;
+};
+*/
+
+// TODO: Add support for expressions
+/*
+let ButtonState = enum (State) {
+    On = State.On,
+    Off = State.Off,
+};
+*/

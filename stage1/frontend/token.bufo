@@ -70,6 +70,10 @@ struct Token {
     }
 }
 
+func dummyToken(kind: usize) -> Token {
+    return newToken(&defaultSubStr(), 0, kind);
+}
+
 func newToken(sub: &SubStr, start: usize, kind: usize) -> Token {
     let s: Span = newSpan(start, start + sub.len);
     return Token {

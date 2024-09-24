@@ -69,15 +69,32 @@ func newStructValue() -> StructValue {
         };
     }
 }
+
+struct EnumValue {
+    variantType: EvaluatedValue;
+
+    func setVariantType(&mut this, typ: &EvaluatedValue) {
+        this.variantType = *typ;
+    }
+}
+
+func newEnumValue() -> EnumValue {
+    return EnumValue {
+        variantType: invalidValue(),
+    };
+}
+
 comptime EVAL_INVALID: usize = 0;
 comptime EVAL_BUILTIN: usize = 1;
 comptime EVAL_STRUCT: usize = 2;
+comptime EVAL_ENUM: usize = 3;
 comptime EVAL_INTEGER: usize = 8;
 comptime EVAL_FLOAT: usize = 9;
 func evalTypeToStr(kind: usize) -> &char {
     if (kind == EVAL_INVALID) return "an invalid value";
     else if (kind == EVAL_BUILTIN) return "a builtin";
     else if (kind == EVAL_STRUCT) return "a struct";
+    else if (kind == EVAL_ENUM) return "an enum";
     else if (kind == EVAL_INTEGER) return "an integer";
     else if (kind == EVAL_FLOAT) return "a float";
     assert_with_msg(false, "unreachable code in evalTypeToStr");
@@ -92,6 +109,7 @@ struct EvaluatedValue {
         // Values that don't allow reassignment
         // e.g. mut Point = struct {}; is disallowed
         return this.kind == EVAL_STRUCT
+            || this.kind == EVAL_ENUM
             || this.kind == EVAL_BUILTIN;
     }
 
@@ -164,14 +182,6 @@ struct TypeChecker {
     func tryEvaluateStruct(&mut this, strukt: &ParsedStructDecl) -> EvaluatedValue {
         trace("tryEvaluateStruct");
         mut structVal: StructValue = newStructValue();
-        for (mut i: usize = 0; i < strukt.fieldCount; i = i + 1) {
-            let field: &ParsedStructField = strukt.getFieldAtIndex(i);
-            debug(field.name.toString().chars());
-            let typ: EvaluatedValue = this.tryEvaluateTypeExpr(&field.typ);
-            if (!typ.isValid())
-                return invalidValue();
-            structVal.addField(field.name, &typ);
-        }
         for (mut i: usize = 0; i < strukt.assetCount; i = i + 1) {
             let asset: &ParsedStructAsset = strukt.getAssetAtIndex(i);
             let typ: EvaluatedValue = this.tryEvaluate(&asset.asset.value);
@@ -180,8 +190,42 @@ struct TypeChecker {
             let name: Token = asset.asset.name;
             structVal.addAsset(name.content, &typ);
         }
+        for (mut i: usize = 0; i < strukt.fieldCount; i = i + 1) {
+            let field: &ParsedStructField = strukt.getFieldAtIndex(i);
+            debug(field.name.toString().chars());
+            let typ: EvaluatedValue = this.tryEvaluateTypeExpr(&field.typ);
+            if (!typ.isValid())
+                return invalidValue();
+            structVal.addField(field.name, &typ);
+        }
 
         return newEvaluatedValue(strukt.span, EVAL_STRUCT, sizeof StructValue, &structVal);
+    }
+    func tryEvaluateEnum(&mut this, eenum: &ParsedEnumDecl) -> EvaluatedValue {
+        trace("tryEvaluateEnum");
+        mut enumVal: EnumValue = newEnumValue();
+        if (eenum.hasVariantType) {
+            let typ: EvaluatedValue = this.tryEvaluateTypeExpr(eenum.variantType);
+            if (!typ.isValid())
+                return invalidValue();
+            enumVal.setVariantType(&typ);
+        } else {
+            // REVIEW: We might get into reference problems here
+            let _inner: ParsedDeclValueIdent = ParsedDeclValueIdent {
+                name: newSubStrOfStrLit("i32")
+            };
+            let i32_type: EvaluatedValue = this.tryEvaluateIdent(&_inner);
+            if (!i32_type.isValid())
+                return invalidValue();
+            enumVal.setVariantType(&i32_type);
+        }
+        for (mut i: usize = 0; i < eenum.variantsLen; i = i + 1) unsafe {
+            let variant: &ParsedEnumVariant = eenum.getVariantAtIndex(i);
+            let val: EvaluatedValue = this.tryEvaluate(&variant.value);
+            if (!val.isValid())
+                return invalidValue();
+        }
+        return newEvaluatedValue(eenum.span, EVAL_ENUM, sizeof EnumValue, &enumVal);
     }
     func tryEvaluateTypeExpr(&mut this, typeExpr: &ParsedTypeExpr) -> EvaluatedValue {
         return this.tryEvaluate(&typeExpr.expr);
@@ -266,7 +310,7 @@ struct TypeChecker {
         } else if (kind == DECL_VALUE_STRUCT_DECL) {
             return this.tryEvaluateStruct(value.data);
         } else if (kind == DECL_VALUE_ENUM_DECL) {
-            todo_with_msg("Enum");
+            return this.tryEvaluateEnum(value.data);
         } else if (kind == DECL_VALUE_UNION_DECL) {
             todo_with_msg("Union");
         } else if (kind == DECL_VALUE_FUNC_DECL) {
@@ -375,14 +419,6 @@ struct TypeChecker {
         }
         this.resolvedLen = this.resolvedLen + 1;
     }
-    func addStructToLookup(&mut this, parsedStruct: &ParsedStructDecl) {
-    }
-    func addEnumToLookup(&mut this, parsedEnum: &ParsedEnumDecl) {
-    }
-    func addUnionToLookup(&mut this, parsedUnion: &ParsedUnionDecl) {
-    }
-    func addFuncToLookup(&mut this, parsedFunc: &ParsedFuncDecl) {
-    }
     func addModuleToLookup(&mut this, parsedModule: &ParsedModule) {
         for (mut i: usize = 0; i < parsedModule.declCount; i = i + 1) {
             let decl: &ParsedVarDecl = parsedModule.getDeclAtIndex(i);
@@ -391,9 +427,11 @@ struct TypeChecker {
     }
 
     func tryResolveRemaining(&mut this) {
+        trace("tryResolveRemaining");
         mut safety: usize = 0;
         assert_with_msg(INITIAL_CAPACITY == 64, "Resize newResolved array");
         while (this.unresolvedLen > 0 && safety < 1024) {
+            debug("Still have types to resolve...");
             mut newResolved: [usize; 64] = blank;
             mut newLen: usize = 0;
             for (mut i: usize = 0; i < this.unresolvedLen; i = i + 1) {
@@ -409,9 +447,13 @@ struct TypeChecker {
             }
             safety = safety + 1;
         }
-        if (this.unresolvedLen > 0) unsafe {
+        for (mut i: usize = 0; i < this.unresolvedLen; i = i + 1) unsafe {
+            let unresolved: &ParsedVarDecl = this.getUnresolvedAtIndex(i);
+            let loc: String = unresolved.name.span.toString();
+            let name: String = unresolved.name.content.toString();
+            // FIXME: We don't actually know which part of the given VarDecl can't be resolved.
             let stderr: Any = fdopen(2, "a");
-            fprintf(stderr, "fatal: Could not resolve all types in the Type Checking phase.\n");
+            fprintf(stderr, "error: %s: Variable %s contains types which could not be resolved.\n", loc.chars(), name.chars());
             this.hadErrorsInLookupStage = true;
         }
     }

@@ -31,8 +31,8 @@ func newSpan(start: usize, end: usize) -> Span {
 }
 func newSpanBetween(start: &Span, end: &Span) -> Span {
     // (100:105)+(104:109)
-    assert_with_msg(end.end > start.end, "newSpanBetween: End Span can't end before Start Span.");
-    assert_with_msg(start.start < end.start, "newSpanBetween: Start Span can't start after End Span.");
+    assert_with_msg(end.end >= start.end, "newSpanBetween: End Span can't end before Start Span.");
+    assert_with_msg(start.start <= end.start, "newSpanBetween: Start Span can't start after End Span.");
     return Span {
         start: start.start,
         end: end.end

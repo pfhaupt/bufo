@@ -184,11 +184,81 @@ struct ParsedDeclValueBinary {
     rhs: ParsedDeclValue;
 }
 
+struct ParsedEnumVariant {
+    span: Span;
+    name: SubStr;
+    value: ParsedDeclValue;
+
+    func setName(&mut this, nameToken: &Token) {
+        this.name = nameToken.content;
+        this.span = nameToken.span;
+    }
+    func setValue(&mut this, value: &ParsedDeclValue) {
+        assert_with_msg(!this.name.equals(&defaultSubStr()), "Name of EnumVariant must be set before setting value");
+        this.value = *value;
+        this.span = newSpanBetween(&this.span, &value.span);
+    }
+}
+
+func defaultEnumVariant() -> ParsedEnumVariant {
+    return ParsedEnumVariant {
+        span: defaultSpan(),
+        name: defaultSubStr(),
+        value: defaultDeclValue()
+    };
+}
+
 struct ParsedEnumDecl {
+    span: Span;
+    hasVariantType: bool;
+    variantType: &ParsedTypeExpr;
+    variants: &mut ParsedEnumVariant;
+    variantsLen: usize;
+    variantsCap: usize;
+
+    func setVariantType(&mut this, variant: &ParsedTypeExpr) {
+        unsafe {
+            assert_with_msg(!this.hasVariantType, "Can only call ParsedEnumDecl.setVariantType once");
+            assert_with_msg(this.variantType == null, "Can only call ParsedEnumDecl.setVariantType once");
+            this.variantType = calloc(sizeof ParsedTypeExpr, 1);
+            assert_with_msg(this.variantType != null, "Could not allocate memory in ParsedEnumDecl.setVariantType");
+            memcpy(this.variantType, variant, sizeof ParsedTypeExpr);
+            this.hasVariantType = true;
+        }
+    }
+
+    func addVariant(&mut this, variant: &ParsedEnumVariant) {
+        if (this.variantsLen >= this.variantsCap) {
+            todo_with_msg("Resize variants");
+        }
+        unsafe {
+            *(this.variants + this.variantsLen * sizeof ParsedEnumVariant) = *variant;
+        }
+        this.variantsLen = this.variantsLen + 1;
+    }
+
+    func getVariantAtIndex(&this, index: usize) -> &ParsedEnumVariant {
+        assert_with_msg(index < this.variantsLen, "Out of bounds access for getVariantAtIndex");
+        unsafe {
+            return (this.variants + index * sizeof ParsedEnumVariant) as &ParsedEnumVariant;
+        }
+    }
 }
 
 func defaultEnumDecl() -> ParsedEnumDecl {
-    return blank;
+    unsafe {
+        let mem: Any = calloc(sizeof ParsedEnumVariant, INITIAL_CAPACITY);
+        assert_with_msg(mem != null, "Could not allocate memory in defaultEnumDecl()");
+        let variants: &mut ParsedEnumVariant = &mut *mem;
+        return ParsedEnumDecl {
+            span: defaultSpan(),
+            hasVariantType: false,
+            variantType: null,
+            variants: variants,
+            variantsLen: 0,
+            variantsCap: INITIAL_CAPACITY
+        };
+    }
 }
 
 struct ParsedUnionDecl {
