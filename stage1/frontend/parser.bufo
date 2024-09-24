@@ -204,6 +204,7 @@ struct Parser {
                     let loc: String = variantVal.span.toString();
                     fprintf(stderr, "error: %s: Enums that don't have an explicit variant type set can't have variant values.\n", loc.chars());
                     loc.drop();
+                    this.encounteredErrors = true;
                 } else {
                     variant.setValue(&variantVal);
                 }
@@ -212,6 +213,7 @@ struct Parser {
                 let loc: String = variant.span.toString();
                 fprintf(stderr, "error: %s: Enums that have an explicit variant type set must provide values for every variant.\n", loc.chars());
                 loc.drop();
+                this.encounteredErrors = true;
             } else {
                 // NOTE: This only works as long as we actively leak the number String
                 mut number: String = newString();

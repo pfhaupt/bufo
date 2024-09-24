@@ -33,3 +33,12 @@ let Point = struct {
         abc: i32;
     };
 };
+
+let Button = struct {
+    pos: Rect;
+
+    let State = enum {
+        Off,
+        On
+    };
+};

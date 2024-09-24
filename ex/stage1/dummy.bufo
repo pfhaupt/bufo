@@ -58,7 +58,7 @@ let createCool = func (val: type) -> type {
         field: val;
         field2: val;
 
-        let Kind = enum (i32) {
+        let Kind = enum {
             Binary,
             Unary
         };

@@ -18,9 +18,8 @@ func getLastModified(filePath: &char) -> usize {
         );
         mut time: FileTime = FileTime { time: 0 };
         if (!GetFileTime(file, null, null, &mut time)) {
-            let stderr: Any = fdopen(2, "w");
+            let stderr: Any = fdopen(2, "a");
             fprintf(stderr, "[ERROR] Could not get time of %s: %#010x\n", filePath, GetLastError());
-            fclose(stderr);
             return 0-1;
         }
         let _r: bool = CloseHandle(file);
@@ -37,24 +36,21 @@ func waitForProcess(proc: Handle) -> bool {
         );
 
         if (result == WAIT_FAILED) {
-            let stderr: Any = fdopen(2, "w");
+            let stderr: Any = fdopen(2, "a");
             fprintf(stderr, "[ERROR] Could not wait on child process: %#010x\n", GetLastError());
-            fclose(stderr);
             return false;
         }
 
         mut exitStatus: u32 = 0;
         if (!GetExitCodeProcess(proc, &mut exitStatus)) {
-            let stderr: Any = fdopen(2, "w");
+            let stderr: Any = fdopen(2, "a");
             fprintf(stderr, "[ERROR] Could not get process exit code: %#010x\n", GetLastError());
-            fclose(stderr);
             return false;
         }
 
         if (exitStatus != 0) {
-            let stderr: Any = fdopen(2, "w");
+            let stderr: Any = fdopen(2, "a");
             fprintf(stderr, "[ERROR] Command exited with exit code %#010x\n", exitStatus);
-            fclose(stderr);
             return false;
         }
 
@@ -124,9 +120,8 @@ func runCmdAsync(cmd: Cmd) -> Handle {
         str.drop();
 
         if (!bSuccess) {
-            let stderr: Any = fdopen(2, "w");
+            let stderr: Any = fdopen(2, "a");
             fprintf(stderr, "[ERROR] Could not create child process: %#010x\n", GetLastError());
-            fclose(stderr);
             return INVALID_HANDLE;
         }
 

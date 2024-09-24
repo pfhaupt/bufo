@@ -10,3 +10,43 @@ comptime func BUILD_A_BUILTIN(name: &char) -> SubStr {
 comptime BUILTIN_INTEGER: SubStr = BUILD_A_BUILTIN("integer");
 comptime BUILTIN_FLOAT: SubStr = BUILD_A_BUILTIN("float");
 comptime BUILTIN_SELF: SubStr = BUILD_A_BUILTIN("Self");
+comptime BUILTIN_ANYTYPE: SubStr = BUILD_A_BUILTIN("anytype");
+comptime BUILTIN_ANYVALUE: SubStr = BUILD_A_BUILTIN("anyvalue");
+
+comptime BUILTIN_KIND_INVALID: usize = 0;
+comptime BUILTIN_KIND_ANYTYPE: usize = 1;
+comptime BUILTIN_KIND_ANYVALUE: usize = 2;
+comptime BUILTIN_KIND_STRUCT: usize = 3;
+struct BuiltinValue {
+    kind: usize;
+    span: Span;
+    data: Any;
+
+    func isType(&this) -> bool {
+        assert_with_msg(this.kind != BUILTIN_KIND_INVALID, "BuiltinValue.isType() got invalid kind");
+        return this.kind == BUILTIN_KIND_ANYTYPE
+            || this.kind == BUILTIN_KIND_STRUCT;
+    }
+
+    func isAnytype(&this) -> bool {
+        return this.kind == BUILTIN_KIND_ANYTYPE;
+    }
+}
+
+func invalidBuiltin() -> BuiltinValue {
+    unsafe {
+        return BuiltinValue {
+            kind: BUILTIN_KIND_INVALID,
+            span: defaultSpan(),
+            data: null
+        };
+    }
+}
+
+func newBuiltinValue(span: Span, kind: usize, size: usize, data: Any) -> BuiltinValue {
+    return BuiltinValue {
+        kind: kind,
+        span: span,
+        data: data
+    };
+}

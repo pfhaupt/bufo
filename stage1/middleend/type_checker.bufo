@@ -72,24 +72,50 @@ func newStructValue() -> StructValue {
 
 struct EnumValue {
     variantType: EvaluatedValue;
-
+    variants: &mut NameValuePair;
+    variantsLen: usize;
+    variantsCap: usize;
     func setVariantType(&mut this, typ: &EvaluatedValue) {
         this.variantType = *typ;
+    }
+
+    func addVariant(&mut this, span: Span, name: SubStr, typ: &EvaluatedValue) {
+        if (this.variantsLen >= this.variantsCap) {
+            todo_with_msg("Resize variants in EnumValue");
+        }
+        let pair: NameValuePair = NameValuePair {
+            name: name,
+            value: *typ
+        };
+        unsafe {
+            *(this.variants + this.variantsLen * sizeof NameValuePair) = pair;
+        }
+        this.variantsLen = this.variantsLen + 1;
     }
 }
 
 func newEnumValue() -> EnumValue {
-    return EnumValue {
-        variantType: invalidValue(),
-    };
+    unsafe {
+        let mem: Any = calloc(INITIAL_CAPACITY, sizeof NameValuePair);
+        assert_with_msg(mem != null, "Could not allocate memory in newEnumValue()");
+        let variants: &mut NameValuePair = &mut *mem;
+        return EnumValue {
+            variantType: invalidValue(),
+            variants: variants,
+            variantsLen: 0,
+            variantsCap: INITIAL_CAPACITY,
+        };
+    }
 }
 
+// TODO: new EVAL_UNKNOWN and unknownValue() to differentiate
+//       between "we dont know the type" and "there was an error"
 comptime EVAL_INVALID: usize = 0;
-comptime EVAL_BUILTIN: usize = 1;
-comptime EVAL_STRUCT: usize = 2;
-comptime EVAL_ENUM: usize = 3;
-comptime EVAL_INTEGER: usize = 8;
-comptime EVAL_FLOAT: usize = 9;
+comptime EVAL_BUILTIN: usize = 3;
+comptime EVAL_STRUCT: usize = 4;
+comptime EVAL_ENUM: usize = 5;
+comptime EVAL_INTEGER: usize = 6;
+comptime EVAL_FLOAT: usize = 7;
 func evalTypeToStr(kind: usize) -> &char {
     if (kind == EVAL_INVALID) return "an invalid value";
     else if (kind == EVAL_BUILTIN) return "a builtin";
@@ -120,6 +146,21 @@ struct EvaluatedValue {
     func isInteger(&this) -> bool {
         return this.kind == EVAL_INTEGER;
     }
+
+    func isType(&this) -> bool {
+        if (this.kind == EVAL_BUILTIN) unsafe {
+            return (this.data as &BuiltinValue).isType();
+        }
+        return this.kind == EVAL_STRUCT
+            || this.kind == EVAL_ENUM;
+    }
+
+    func isAnytype(&this) -> bool {
+        if (this.kind != EVAL_BUILTIN) return false;
+        unsafe {
+            return (this.data as &BuiltinValue).isAnytype();
+        }
+    }
 }
 
 func invalidValue() -> EvaluatedValue {
@@ -139,24 +180,6 @@ func newEvaluatedValue(span: Span, kind: usize, size: usize, data: Any) -> Evalu
             data: mem
         };
     }
-}
-
-func verifyBuiltinArgType(builtin: &ParsedDeclValue, size: &EvaluatedValue, argIndex: usize, expected: usize, builtinName: &char) -> bool {
-    if (size.kind != expected) unsafe {
-        let stderr: Any = fdopen(2, "a");
-        fprintf(stderr, "error: %s: Builtin `%s` expects %s as argument %llu, got %s.\n", builtin.span.toString().chars(), builtinName, evalTypeToStr(expected), argIndex, evalTypeToStr(size.kind));
-        return false;
-    }
-    return true;
-}
-
-func verifyBuiltinArgCount(builtin: &ParsedDeclValue, call: &ParsedDeclValueCall, expectedArgCount: usize, builtinName: &char) -> bool {
-    if (call.argCount != expectedArgCount) unsafe {
-        let stderr: Any = fdopen(2, "a");
-        fprintf(stderr, "error: %s: Builtin `%s` expects exactly %llu argument(s).\n", builtin.span.toString().chars(), builtinName, expectedArgCount);
-        return false;
-    }
-    return true;
 }
 
 struct NameValuePair {
@@ -179,6 +202,26 @@ struct TypeChecker {
         }
         return this.checkModule(parsedProject);
     }
+    func verifyBuiltinArgType(&mut this, builtin: &ParsedDeclValue, size: &EvaluatedValue, argIndex: usize, expected: usize, builtinName: &char) -> bool {
+        if (size.kind != expected) unsafe {
+            let stderr: Any = fdopen(2, "a");
+            fprintf(stderr, "error: %s: Builtin `%s` expects %s as argument %llu, got %s.\n", builtin.span.toString().chars(), builtinName, evalTypeToStr(expected), argIndex, evalTypeToStr(size.kind));
+            this.hadErrorsInLookupStage = true;
+            return false;
+        }
+        return true;
+    }
+
+    func verifyBuiltinArgCount(&mut this, builtin: &ParsedDeclValue, call: &ParsedDeclValueCall, expectedArgCount: usize, builtinName: &char) -> bool {
+        if (call.argCount != expectedArgCount) unsafe {
+            let stderr: Any = fdopen(2, "a");
+            fprintf(stderr, "error: %s: Builtin `%s` expects exactly %llu argument(s).\n", builtin.span.toString().chars(), builtinName, expectedArgCount);
+            this.hadErrorsInLookupStage = true;
+            return false;
+        }
+        return true;
+    }
+
     func tryEvaluateStruct(&mut this, strukt: &ParsedStructDecl) -> EvaluatedValue {
         trace("tryEvaluateStruct");
         mut structVal: StructValue = newStructValue();
@@ -211,6 +254,7 @@ struct TypeChecker {
             enumVal.setVariantType(&typ);
         } else {
             // REVIEW: We might get into reference problems here
+            // REVIEW: Save space for enums by allocating log2(variantCount) bits instead of always i32
             let _inner: ParsedDeclValueIdent = ParsedDeclValueIdent {
                 name: newSubStrOfStrLit("i32")
             };
@@ -221,14 +265,42 @@ struct TypeChecker {
         }
         for (mut i: usize = 0; i < eenum.variantsLen; i = i + 1) unsafe {
             let variant: &ParsedEnumVariant = eenum.getVariantAtIndex(i);
-            let val: EvaluatedValue = this.tryEvaluate(&variant.value);
-            if (!val.isValid())
-                return invalidValue();
+            if (enumVal.variantType.isAnytype()) {
+                mut val: EvaluatedValue = this.tryEvaluate(&variant.value);
+                if (!val.isValid())
+                    return invalidValue();
+                if (!val.isType()) unsafe {
+                    let stderr: Any = fdopen(2, "a");
+                    let evalType: &char = evalTypeToStr(val.kind);
+                    let loc: String = variant.span.toString();
+                    let defLoc: String = val.span.toString();
+                    fprintf(stderr, "error: %s: Generic enum expected a type for every variant, found %s.\nnote: %s: The given expression evaluates to %s.\n", loc.chars(), evalType, defLoc.chars(), evalType);
+                    defLoc.drop();
+                    loc.drop();
+                    this.hadErrorsInLookupStage = true;
+                    val = invalidValue();
+                }
+                enumVal.addVariant(variant.span, variant.name, &val);
+            } else {
+                enumVal.addVariant(variant.span, variant.name, &enumVal.variantType);
+            }
         }
         return newEvaluatedValue(eenum.span, EVAL_ENUM, sizeof EnumValue, &enumVal);
     }
     func tryEvaluateTypeExpr(&mut this, typeExpr: &ParsedTypeExpr) -> EvaluatedValue {
-        return this.tryEvaluate(&typeExpr.expr);
+        let value: EvaluatedValue = this.tryEvaluate(&typeExpr.expr);
+        if (!value.isValid())
+            return invalidValue();
+        if (!value.isType()) unsafe {
+            let stderr: Any = fdopen(2, "a");
+            let loc: String = typeExpr.expr.span.toString();
+            let defLoc: String = value.span.toString();
+            fprintf(stderr, "error: %s: Expected a type value, found %s.\nnote: %s: Value evaluated here.\n", loc.chars(), evalTypeToStr(value.kind), defLoc.chars());
+            defLoc.drop();
+            loc.drop();
+            this.hadErrorsInLookupStage = true;
+        }
+        return value;
     }
     func getResolvedAtIndex(&mut this, index: usize) -> &NameValuePair {
         assert_with_msg(index < this.resolvedLen, "Out of bounds for getResolvedAtIndex");
@@ -276,25 +348,43 @@ struct TypeChecker {
         let ident: &ParsedDeclValueIdent = fn.data;
         let name: SubStr = ident.name;
         if (name.equals(&BUILTIN_INTEGER)) {
-            if (!verifyBuiltinArgCount(builtin, call, 1, "integer"))
+            if (!this.verifyBuiltinArgCount(builtin, call, 1, "integer"))
                 return invalidValue();
             let arg: &ParsedDeclValue = &call.args[0];
             let size: EvaluatedValue = this.tryEvaluate(arg);
             if (!size.isValid()) return invalidValue();
-            if (!verifyBuiltinArgType(builtin, &size, 0, EVAL_INTEGER, "integer"))
+            if (!this.verifyBuiltinArgType(builtin, &size, 0, EVAL_INTEGER, "integer"))
                 return invalidValue();
             let int: StructValue = newBuiltinInteger(&size);
-            return newEvaluatedValue(builtin.span, EVAL_BUILTIN, sizeof StructValue, &int);
+            let btn: BuiltinValue = newBuiltinValue(builtin.span, BUILTIN_KIND_STRUCT, sizeof StructValue, &int);
+            return newEvaluatedValue(builtin.span, EVAL_BUILTIN, sizeof BuiltinValue, &btn);
         } else if (name.equals(&BUILTIN_FLOAT)) {
-            if (!verifyBuiltinArgCount(builtin, call, 1, "float"))
+            if (!this.verifyBuiltinArgCount(builtin, call, 1, "float"))
                 return invalidValue();
             let arg: &ParsedDeclValue = &call.args[0];
             let size: EvaluatedValue = this.tryEvaluate(arg);
             if (!size.isValid()) return invalidValue();
-            if (!verifyBuiltinArgType(builtin, &size, 0, EVAL_INTEGER, "float"))
+            if (!this.verifyBuiltinArgType(builtin, &size, 0, EVAL_INTEGER, "float"))
                 return invalidValue();
             let float: StructValue = newBuiltinFloat(&size);
-            return newEvaluatedValue(builtin.span, EVAL_BUILTIN, sizeof StructValue, &float);
+            let btn: BuiltinValue = newBuiltinValue(builtin.span, BUILTIN_KIND_STRUCT, sizeof StructValue, &float);
+            return newEvaluatedValue(builtin.span, EVAL_BUILTIN, sizeof BuiltinValue, &btn);
+        } else if (name.equals(&BUILTIN_ANYTYPE)) {
+            if (!this.verifyBuiltinArgCount(builtin, call, 0, "anytype"))
+                return invalidValue();
+            // TODO: Create dedicated newBuiltinAnytype()
+            mut anytype: BuiltinValue = invalidBuiltin();
+            anytype.kind = BUILTIN_KIND_ANYTYPE;
+            anytype.span = builtin.span;
+            return newEvaluatedValue(builtin.span, EVAL_BUILTIN, sizeof BuiltinValue, &anytype);
+        } else if (name.equals(&BUILTIN_ANYVALUE)) {
+            if (!this.verifyBuiltinArgCount(builtin, call, 0, "anyvalue"))
+                return invalidValue();
+            // TODO: Create dedicated newBuiltinAnyvalue()
+            mut anyvalue: BuiltinValue = invalidBuiltin();
+            anyvalue.kind = BUILTIN_KIND_ANYVALUE;
+            anyvalue.span = builtin.span;
+            return newEvaluatedValue(builtin.span, EVAL_BUILTIN, sizeof BuiltinValue, &anyvalue);
         } else {
             debug(name.toString().chars());
             todo_with_msg("tryEvaluateBuiltin");
@@ -428,9 +518,9 @@ struct TypeChecker {
 
     func tryResolveRemaining(&mut this) {
         trace("tryResolveRemaining");
-        mut safety: usize = 0;
+        mut currentUnresolved: usize = this.unresolvedLen;
         assert_with_msg(INITIAL_CAPACITY == 64, "Resize newResolved array");
-        while (this.unresolvedLen > 0 && safety < 1024) {
+        while (currentUnresolved > 0) {
             debug("Still have types to resolve...");
             mut newResolved: [usize; 64] = blank;
             mut newLen: usize = 0;
@@ -445,7 +535,12 @@ struct TypeChecker {
             for (mut i: usize = newLen - 1; i >= 0; i = i - 1) {
                 this.removeUnresolvedAtIndex(newResolved[i]);
             }
-            safety = safety + 1;
+            if (currentUnresolved == this.unresolvedLen) {
+                // Could not resolve any new type in this iteration
+                // which means we would loop infinitely
+                break;
+            }
+            currentUnresolved = this.unresolvedLen;
         }
         for (mut i: usize = 0; i < this.unresolvedLen; i = i + 1) unsafe {
             let unresolved: &ParsedVarDecl = this.getUnresolvedAtIndex(i);

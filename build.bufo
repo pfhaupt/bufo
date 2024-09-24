@@ -2,7 +2,7 @@ import "cmd.bufo";
 import "string_buf.bufo";
 
 comptime DEBUG: bool = true;
-comptime LINUX: bool = true;
+comptime LINUX: bool = false;
 comptime func getStage0() -> &char {
     if (LINUX) {
         if (DEBUG) return "./target/debug/bufo";

@@ -1,9 +1,7 @@
 let i32 = @integer(32);
 let i64 = @integer(64);
 let f32 = @float(32);
-// TODO: Add support for @anytype()
 let type = @anytype();
-// TODO: Add support for @anyvalue()
 let value = @anyvalue();
 
 let Number = enum {
@@ -23,11 +21,13 @@ let Flags = enum(i32) {
     Efficient = 4
 };
 
-// TODO: Verify types of variant values
-let Invalid = enum(type) {
-    variant1 = 12,
-    variant2 = Flags
+let Value = enum(type) {
+    Integer = IntegerValue,
+    Float = FloatValue
 };
+
+let IntegerValue = struct {};
+let FloatValue = struct {};
 
 // TODO: Add scopes to resolution
 //       The struct does not know that State is part of itself.
