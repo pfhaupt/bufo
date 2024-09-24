@@ -552,7 +552,7 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
         match &literal.typ {
             Type::Bool => Ok(Value::Bool(literal.value == "true")),
             Type::Char => {
-                let escaped = self.escape_string_or_char_value(&literal.value);
+                let escaped = self.escape_string_or_char_value(&literal.value, false);
                 debug_assert!(escaped.len() == 1);
                 let value = escaped.chars().next().unwrap() as u8;
                 Ok(Value::Char(value as u8))
@@ -567,7 +567,7 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
                 if **t != Type::Char {
                     unimplemented!("codegen_literal: {:?}", literal);
                 }
-                let escaped = self.escape_string_or_char_value(&literal.value);
+                let escaped = self.escape_string_or_char_value(&literal.value, true);
                 let ptr = self.alloc(escaped.len())?;
                 self.memset(ptr, escaped.as_bytes());
                 Ok(Value::Ptr(ptr))
@@ -576,7 +576,7 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
         }
     }
 
-    fn escape_string_or_char_value(&self, value: &str) -> String {
+    fn escape_string_or_char_value(&self, value: &str, null_terminated: bool) -> String {
         let mut new_value = Vec::new();
         let mut escaping = false;
         for ch in value.chars() {
@@ -595,6 +595,9 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
             } else {
                 new_value.push(ch as u8);
             }
+        }
+        if null_terminated {
+            new_value.push('\0' as u8);
         }
         String::from_utf8(new_value).unwrap()
     }
