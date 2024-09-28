@@ -123,6 +123,18 @@ struct ParsedDeclValue {
             return this.data as &ParsedFuncDecl;
         }
     }
+    func asIdent(&this) -> &ParsedDeclValueIdent {
+        assert(this.kind == DECL_VALUE_IDENT);
+        unsafe {
+            return this.data as &ParsedDeclValueIdent;
+        }
+    }
+    func asCall(&this) -> &ParsedDeclValueCall {
+        assert(this.kind == DECL_VALUE_CALL);
+        unsafe {
+            return this.data as &ParsedDeclValueCall;
+        }
+    }
 }
 
 func defaultDeclValue() -> ParsedDeclValue {
@@ -329,9 +341,9 @@ func defaultStructDecl() -> ParsedStructDecl {
 }
 
 struct ParsedStructField {
+    span: Span;
     name: SubStr;
     typ: ParsedTypeExpr;
-
 }
 
 struct ParsedStructAsset {
@@ -339,6 +351,7 @@ struct ParsedStructAsset {
 }
 
 struct ParsedFuncDecl {
+    span: Span;
     params: &mut ParsedParam;
     paramCap: usize;
     paramCount: usize;
@@ -367,6 +380,14 @@ struct ParsedFuncDecl {
     func setReturnType(&mut this, retType: ParsedTypeExpr) {
         this.retType = retType;
     }
+
+    func getParamAtIndex(&this, index: usize) -> &ParsedParam {
+        assert_with_msg(index < this.paramCount, "Out of bounds ac cess in ParsedFuncDecl.getParamAtIndex()");
+        unsafe {
+            let _param: &mut ParsedParam = this.params + index * sizeof ParsedParam;
+            return _param as &ParsedParam;
+        }
+    }
 }
 func defaultFuncDecl() -> ParsedFuncDecl {
     unsafe {
@@ -378,6 +399,7 @@ func defaultFuncDecl() -> ParsedFuncDecl {
         let stmts: &mut ParsedStmt = &mut *mem;
         let retType: ParsedTypeExpr = defaultTypeExpr();
         return ParsedFuncDecl {
+            span: defaultSpan(),
             params: params,
             paramCap: INITIAL_CAPACITY,
             paramCount: 0,
@@ -389,7 +411,9 @@ func defaultFuncDecl() -> ParsedFuncDecl {
     }
 }
 struct ParsedParam {
-
+    span: Span;
+    name: SubStr;
+    typ: ParsedTypeExpr;
 }
 
 struct ParsedTypeExpr {
@@ -397,13 +421,11 @@ struct ParsedTypeExpr {
 }
 
 func defaultTypeExpr() -> ParsedTypeExpr {
-    let noneCall: ParsedDeclValueCall = ParsedDeclValueCall {
-        fn: defaultDeclValue(),
-        args: blank,
-        argCount: 0
+    let noneIdent: ParsedDeclValueIdent = ParsedDeclValueIdent {
+        name: newSubStrOfStrLit("none")
     };
     let dummySpan: Span = defaultSpan();
-    let none: ParsedDeclValue = createDeclValue(DECL_VALUE_BUILTIN, dummySpan, sizeof ParsedDeclValueCall, &noneCall);
+    let none: ParsedDeclValue = createDeclValue(DECL_VALUE_IDENT, dummySpan, sizeof ParsedDeclValueIdent, &noneIdent);
     return ParsedTypeExpr {
         expr: none
     };

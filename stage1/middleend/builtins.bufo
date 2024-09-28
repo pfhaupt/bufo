@@ -12,11 +12,13 @@ comptime BUILTIN_FLOAT: SubStr = BUILD_A_BUILTIN("float");
 comptime BUILTIN_SELF: SubStr = BUILD_A_BUILTIN("Self");
 comptime BUILTIN_ANYTYPE: SubStr = BUILD_A_BUILTIN("anytype");
 comptime BUILTIN_ANYVALUE: SubStr = BUILD_A_BUILTIN("anyvalue");
+comptime BUILTIN_NONE: SubStr = BUILD_A_BUILTIN("none");
 
 comptime BUILTIN_KIND_INVALID: usize = 0;
 comptime BUILTIN_KIND_ANYTYPE: usize = 1;
 comptime BUILTIN_KIND_ANYVALUE: usize = 2;
-comptime BUILTIN_KIND_STRUCT: usize = 3;
+comptime BUILTIN_KIND_NONE: usize = 3;
+comptime BUILTIN_KIND_STRUCT: usize = 4;
 struct BuiltinValue {
     kind: usize;
     span: Span;
@@ -25,7 +27,8 @@ struct BuiltinValue {
     func isType(&this) -> bool {
         assert_with_msg(this.kind != BUILTIN_KIND_INVALID, "BuiltinValue.isType() got invalid kind");
         return this.kind == BUILTIN_KIND_ANYTYPE
-            || this.kind == BUILTIN_KIND_STRUCT;
+            || this.kind == BUILTIN_KIND_STRUCT
+            || this.kind == BUILTIN_KIND_NONE;
     }
 
     func isAnytype(&this) -> bool {
