@@ -1,8 +1,24 @@
 import "string.bufo";
 
+comptime ORDER_LESS: u8 = 0;
+comptime ORDER_EQUAL: u8 = 1;
+comptime ORDER_GREATER: u8 = 2;
 struct SubStr {
     start: &char;
     len: usize;
+
+    func lexOrder(&this, other: &SubStr) -> u8 {
+        if (this.len < other.len) return ORDER_LESS;
+        if (this.len > other.len) return ORDER_GREATER;
+        let l: usize = this.len;
+        for (mut i: usize = 0; i < l; i = i + 1) {
+            let c1: char = this.getChar(i);
+            let c2: char = other.getChar(i);
+            if (c1 < c2) return ORDER_LESS;
+            if (c1 > c2) return ORDER_GREATER;
+        }
+        return ORDER_EQUAL;
+    }
 
     func equals(&this, other: &SubStr) -> bool {
         if (this.len != other.len) return false;

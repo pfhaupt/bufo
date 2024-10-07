@@ -4,9 +4,13 @@
 
 @entry(main);
 
+let i8 = @integer(8);
 let i32 = @integer(32);
 let i64 = @integer(64);
 let f32 = @float(32);
+let type = @anytype();
+let value = @anyvalue();
+let none = @none();
 
 let Vector2 = struct {
     x: f32;
@@ -18,18 +22,15 @@ let Point = struct {
     y: i32;
 };
 
-// TODO: Add EnumValue to TypeChecker
-/*
 let Bar = enum(i32) {
     A = 1,
     B = 2,
 };
 
 let Bez = enum(i8) {
-    A,
-    B,
+    A = 0,
+    B = 1,
 };
-*/
 
 // TODO: Add UnionValue to TypeChecker
 /*
@@ -108,7 +109,7 @@ let StructName = struct {
 };
 
 let main = func () {
-    // Any integer literal is type i32, and must be explicitly cast
+    // Any integer literal is type i64, and must be explicitly cast
     // either via @cast(value, type) or let a: <type> = <value>;
     let a = @cast(1, i16);
     // TODO: Implement parsing for explicit types

@@ -7,58 +7,64 @@ comptime INITIAL_CAPACITY: usize = 64;
 
 struct ParsedModule {
     span: Span;
-    decls: &mut ParsedVarDecl;
+    decls: &mut ParsedGlobalDecl;
     declCap: usize;
     declCount: usize;
-    dirs: &mut ParsedDeclValue;
-    dirCap: usize;
-    dirCount: usize;
 
-    func addVarDecl(&mut this, varDecl: ParsedVarDecl) {
-        if (this.declCount >= this.declCap) {
-            todo_with_msg("idk");
+    func addGlobalDecl(&mut this, varDecl: ParsedGlobalDecl) {
+        if (this.declCount >= this.declCap) unsafe {
+            let mem: Any = calloc(this.declCap * 2, sizeof ParsedGlobalDecl);
+            let _old: Any = this.decls;
+            assert_with_msg(mem != null, "Could not resize in ParsedModule.addGlobalDecl");
+            memcpy(mem, _old, this.declCount * sizeof ParsedGlobalDecl);
+            this.declCap = this.declCap * 2;
+            this.decls = mem;
         }
         unsafe {
-            *(this.decls + this.declCount * sizeof ParsedVarDecl) = varDecl;
+            *(this.decls + this.declCount * sizeof ParsedGlobalDecl) = varDecl;
         }
         this.declCount = this.declCount + 1;
     }
-    func addDirective(&mut this, dir: ParsedDeclValue) {
-        if (this.dirCount >= this.declCap) {
-            todo_with_msg("idk");
-        }
-        unsafe {
-            *(this.dirs + this.declCount * sizeof ParsedDeclValue) = dir;
-        }
-        this.dirCount = this.declCount + 1;
-    }
 
-    func getDeclAtIndex(&this, index: usize) -> &ParsedVarDecl {
+    func getDeclAtIndex(&this, index: usize) -> &ParsedGlobalDecl {
         assert(index < this.declCount);
         unsafe {
-            let _decl: &mut ParsedVarDecl = this.decls + index * sizeof ParsedVarDecl;
-            return _decl as &ParsedVarDecl;
+            let _decl: &mut ParsedGlobalDecl = this.decls + index * sizeof ParsedGlobalDecl;
+            return _decl as &ParsedGlobalDecl;
         }
+    }
+}
+
+comptime GLOBAL_DIR: usize = 0;
+comptime GLOBAL_VAR_DECL: usize = 1;
+struct ParsedGlobalDecl {
+    kind: usize;
+    data: Any;
+}
+
+func createGlobalDecl(kind: usize, size: usize, data: Any) -> ParsedGlobalDecl {
+    unsafe {
+        mut mem: Any = calloc(size, 1);
+        assert_with_msg(mem != null, "Could not allocate enough memory in createGlobalDecl()");
+        memcpy(mem, data, size);
+        return ParsedGlobalDecl {
+            kind: kind,
+            data: mem
+        };
     }
 }
 
 func defaultModule() -> ParsedModule {
     unsafe {
         let span: Span = defaultSpan();
-        mut mem: Any = calloc(INITIAL_CAPACITY, sizeof ParsedVarDecl);
+        mut mem: Any = calloc(INITIAL_CAPACITY, sizeof ParsedGlobalDecl);
         assert_with_msg(mem != null, "Could not allocate enough memory in defaultModule()");
-        let decls: &mut ParsedVarDecl = &mut *mem;
-        mem = calloc(INITIAL_CAPACITY, sizeof ParsedDeclValue);
-        assert_with_msg(mem != null, "Could not allocate enough memory in defaultModule()");
-        let dirs: &mut ParsedDeclValue = &mut *mem;
+        let decls: &mut ParsedGlobalDecl = &mut *mem;
         return ParsedModule {
             span: span,
             decls: decls,
             declCap: INITIAL_CAPACITY,
             declCount: 0,
-            dirs: dirs,
-            dirCap: INITIAL_CAPACITY,
-            dirCount: 0
         };
     }
 }
@@ -88,6 +94,8 @@ comptime DECL_VALUE_CALL: usize = 7;
 comptime DECL_VALUE_IDENT: usize = 8;
 comptime DECL_VALUE_BINARY: usize = 9;
 comptime DECL_VALUE_NUMBER: usize = 10;
+comptime DECL_VALUE_BLOCK: usize = 11;
+comptime DECL_VALUE_IF: usize = 12;
 struct ParsedDeclValue {
     kind: usize;
     span: Span;
@@ -160,6 +168,58 @@ func createDeclValue(kind: usize, span: Span, size: usize, data: Any) -> ParsedD
     }
 }
 
+struct ParsedDeclValueIf {
+    span: Span;
+    cond: ParsedDeclValue;
+    ifBody: ParsedDeclValue;
+    hasElse: bool;
+    elseBody: ParsedDeclValue;
+    func addElseBlock(&mut this, _elseBody: ParsedDeclValue) {
+        this.elseBody = _elseBody;
+        this.span = newSpanBetween(&this.span, &_elseBody.span);
+        this.hasElse = true;
+    }
+}
+
+func createDeclValueIf(cond: ParsedDeclValue, ifBody: ParsedDeclValue) -> ParsedDeclValueIf {
+    return ParsedDeclValueIf {
+        span: newSpanBetween(&cond.span, &ifBody.span),
+        cond: cond,
+        ifBody: ifBody,
+        hasElse: false,
+        elseBody: defaultDeclValue()
+    };
+}
+
+struct ParsedDeclValueBlock {
+    stmts: &mut ParsedStmt;
+    stmtCount: usize;
+    stmtCap: usize;
+
+    func addStmt(&mut this, stmt: ParsedStmt) {
+        if (this.stmtCount >= this.stmtCap) {
+            todo_with_msg("resize stmts");
+        }
+        unsafe {
+            *(this.stmts + this.stmtCount * sizeof ParsedStmt) = stmt;
+        }
+        this.stmtCount = this.stmtCount + 1;
+    }
+}
+
+func createDeclValueBlock() -> ParsedDeclValueBlock {
+    unsafe {
+        let mem: Any = calloc(sizeof ParsedStmt, INITIAL_CAPACITY);
+        assert_with_msg(mem != null, "Could not allocate memory in createDeclValueBlock()");
+        let stmts: &mut ParsedStmt = &mut *mem;
+        return ParsedDeclValueBlock {
+            stmts: stmts,
+            stmtCount: 0,
+            stmtCap: INITIAL_CAPACITY
+        };
+    }
+}
+
 struct ParsedDeclValueCall {
     fn: ParsedDeclValue;
     args: [ParsedDeclValue; 8];
@@ -167,6 +227,7 @@ struct ParsedDeclValueCall {
 }
 
 struct ParsedDeclValueIdent {
+    span: Span;
     name: SubStr;
 }
 struct ParsedDeclValueNumber {
@@ -178,15 +239,18 @@ comptime BINARY_OP_DOT: usize = 0;
 comptime BINARY_OP_PAREN: usize = 1;
 comptime BINARY_OP_PLUS: usize = 2;
 comptime BINARY_OP_MINUS: usize = 3;
+comptime BINARY_OP_EQUAL: usize = 4;
 func createBinaryOp(op: &SubStr) -> usize {
     comptime DOT: SubStr = BUILD_A_KEYWORD(".");
     comptime PAREN: SubStr = BUILD_A_KEYWORD("(");
     comptime PLUS: SubStr = BUILD_A_KEYWORD("+");
     comptime MINUS: SubStr = BUILD_A_KEYWORD("-");
+    comptime EQUAL: SubStr = BUILD_A_KEYWORD("==");
     if (op.equals(&DOT)) return BINARY_OP_DOT;
     if (op.equals(&PAREN)) return BINARY_OP_PAREN;
     if (op.equals(&PLUS)) return BINARY_OP_PLUS;
     if (op.equals(&MINUS)) return BINARY_OP_MINUS;
+    if (op.equals(&EQUAL)) return BINARY_OP_EQUAL;
     todo_with_msg("createBinaryOp for invalid op");
     return 0;
 }
@@ -422,6 +486,7 @@ struct ParsedTypeExpr {
 
 func defaultTypeExpr() -> ParsedTypeExpr {
     let noneIdent: ParsedDeclValueIdent = ParsedDeclValueIdent {
+        span: defaultSpan(),
         name: newSubStrOfStrLit("none")
     };
     let dummySpan: Span = defaultSpan();
@@ -433,6 +498,7 @@ func defaultTypeExpr() -> ParsedTypeExpr {
 
 comptime STMT_VAR_DECL: usize = 0;
 comptime STMT_RETURN: usize = 1;
+comptime STMT_EXPR: usize = 2;
 struct ParsedStmt {
     kind: usize;
     data: Any;

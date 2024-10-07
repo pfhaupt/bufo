@@ -19,6 +19,8 @@ comptime KEYWORD_ENUM: SubStr = BUILD_A_KEYWORD("enum");
 comptime KEYWORD_UNION: SubStr = BUILD_A_KEYWORD("union");
 comptime KEYWORD_RETURN: SubStr = BUILD_A_KEYWORD("return");
 comptime KEYWORD_MODULE: SubStr = BUILD_A_KEYWORD("module");
+comptime KEYWORD_IF: SubStr = BUILD_A_KEYWORD("if");
+comptime KEYWORD_ELSE: SubStr = BUILD_A_KEYWORD("else");
 struct Lexer {
     content: SubStr;
     ptr: usize;
@@ -32,7 +34,9 @@ struct Lexer {
             || word.equals(&KEYWORD_ENUM)
             || word.equals(&KEYWORD_UNION)
             || word.equals(&KEYWORD_RETURN)
-            || word.equals(&KEYWORD_MODULE);
+            || word.equals(&KEYWORD_MODULE)
+            || word.equals(&KEYWORD_IF)
+            || word.equals(&KEYWORD_ELSE);
     }
 
     func advance(&mut this) -> bool {
@@ -108,7 +112,13 @@ struct Lexer {
             return newToken(&newSubStr(":", 0, 1), this.ptr - 1, TOKEN_COLON);
         } else if (currChar == '=') {
             this.advance();
-            return newToken(&newSubStr("=", 0, 1), this.ptr - 1, TOKEN_EQUAL_SINGLE);
+            currChar = this.content.getChar(0);
+            if (currChar == '=') {
+                this.advance();
+                return newToken(&newSubStr("==", 0, 2), this.ptr - 2, TOKEN_EQUAL_DOUBLE);
+            } else {
+                return newToken(&newSubStr("=", 0, 1), this.ptr - 1, TOKEN_EQUAL_SINGLE);
+            }
         } else if (currChar == '&') {
             this.advance();
             return newToken(&newSubStr("&", 0, 1), this.ptr - 1, TOKEN_AMPERSAND);

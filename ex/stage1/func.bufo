@@ -5,6 +5,15 @@ let type = @anytype();
 let value = @anyvalue();
 let none = @none();
 
+// let foo = pow(i32.bitsize, 2);
+// let bar = createList(i32, foo);
+
+let createList = func (t: type, size: i32) -> type {
+    return struct {
+        //elements: [t; size];
+    };
+};
+
 // TODO: Actually call functions
 //let ListI32 = ArrayList(i32);
 
