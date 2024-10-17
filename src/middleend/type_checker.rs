@@ -1601,6 +1601,9 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
             ));
         }
         self.type_check_block(&mut while_node.body);
+        if let Some(ref mut step) = while_node.step {
+            let _ = self.type_check_expression(step, MutState::Immut);
+        }
     }
 
     #[trace_call(always)]

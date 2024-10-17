@@ -257,6 +257,7 @@ pub struct WhileNode<'src> {
     pub location: Location,
     pub condition: Expression<'src>,
     pub body: BlockNode<'src>,
+    pub step: Option<Expression<'src>>,
 }
 
 #[derive(Debug, Clone)]

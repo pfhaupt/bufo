@@ -1,0 +1,13 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+func main() {
+    while (true) break;
+    for (mut i: u8 = 0; i < 5; i = i + 1) continue;
+    for (mut i: u8 = 0; i < 5; i = i + 1) break;
+    for (mut i: u8 = 0; i < 5; i = i + 1) {
+        while (true) break;
+    }
+    while (true) unsafe { exit(0); return; }
+}

@@ -735,18 +735,28 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
     fn codegen_stmt_while(&mut self, while_node: &nodes::WhileNode<'src>) -> Result<(), BuilderError> {
         let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
         let while_cond = self.context.append_basic_block(function, "codegen_stmt_while_cond");
+        let while_body = self.context.append_basic_block(function, "codegen_stmt_while_body");
+        let while_after = self.context.append_basic_block(function, "codegen_stmt_while_after");
+        let while_step = self.context.append_basic_block(function, "codegen_stmt_while_step");
+        self.loop_blocks.push((while_step, while_after));
+
         self.builder.build_unconditional_branch(while_cond)?;
         self.builder.position_at_end(while_cond);
         let condition = self.codegen_expression(&while_node.condition, false)?;
-        let while_body = self.context.append_basic_block(function, "codegen_stmt_while_body");
-        let while_after = self.context.append_basic_block(function, "codegen_stmt_while_after");
-        self.loop_blocks.push((while_cond, while_after));
         self.builder.build_conditional_branch(condition.into_int_value(), while_body, while_after)?;
+
         self.builder.position_at_end(while_body);
         self.codegen_block(&while_node.body)?;
         if !while_node.body.llvm_has_terminator {
-            self.builder.build_unconditional_branch(while_cond)?;
+            self.builder.build_unconditional_branch(while_step)?;
         }
+
+        self.builder.position_at_end(while_step);
+        if let Some(step) = &while_node.step {
+            self.codegen_expression(step, false)?;
+        }
+        self.builder.build_unconditional_branch(while_cond)?;
+
         self.builder.position_at_end(while_after);
         self.loop_blocks.pop();
         Ok(())

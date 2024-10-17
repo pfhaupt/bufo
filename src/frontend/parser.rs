@@ -1108,7 +1108,7 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
                 Some(increment)
             };
             let body = self.parse_statement(is_unsafe)?;
-            let mut body = match body {
+            let body = match body {
                 nodes::Statement::Block(body) => body,
                 _ => {
                     let mut statements = vec![];
@@ -1123,9 +1123,6 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
                     }
                 }
             };
-            if increment.is_some() {
-                body.statements.push(nodes::Statement::Expression(increment.unwrap()));
-            }
             let desugared_while = nodes::WhileNode {
                 location,
                 condition: condition.unwrap_or_else(|| nodes::Expression::Literal(nodes::LiteralNode {
@@ -1134,6 +1131,7 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
                     typ: Type::Bool,
                 })),
                 body,
+                step: increment,
             };
             let mut desugared_block = nodes::BlockNode {
                 location,
@@ -1260,6 +1258,7 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
             location,
             condition,
             body,
+            step: None,
         })
     }
 

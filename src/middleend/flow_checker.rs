@@ -324,6 +324,10 @@ impl<'flags, 'src> FlowChecker<'flags, 'src> {
         }
         if block_flow == FlowType::AlwaysReturn {
             Ok(FlowType::MayReturn)
+        } else if block_flow == FlowType::AlwaysBreak {
+            Ok(FlowType::MayBreak)
+        } else if block_flow == FlowType::AlwaysContinue {
+            Ok(FlowType::MayContinue)
         } else {
             Ok(block_flow)
         }
