@@ -224,6 +224,11 @@ struct ParsedDeclValueCall {
     fn: ParsedDeclValue;
     args: [ParsedDeclValue; 8];
     argCount: usize;
+
+    func getArgAtIndex(&this, index: usize) -> &ParsedDeclValue {
+        assert_with_msg(index < this.argCount, "Out of bounds access for ParsedDeclValueCall.getArgAtIndex");
+        return &this.args[index];
+    }
 }
 
 struct ParsedDeclValueIdent {

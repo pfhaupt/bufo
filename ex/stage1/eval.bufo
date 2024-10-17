@@ -6,6 +6,12 @@ let type = @anytype();
 let value = @anyvalue();
 let none = @none();
 
+let Idk = struct {
+    a: i32;
+};
+
+let Foo = Idk(5);
+
 let getRandomType = func (val: i64) -> type {
     if val == 5 {
         return struct {
@@ -22,6 +28,7 @@ let getRandomType = func (val: i64) -> type {
     }
 };
 
+let val = 5;
 let s1 = getRandomType(val);
 @assert(s1.bitsize == i32.bitsize);
 

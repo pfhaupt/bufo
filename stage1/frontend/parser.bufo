@@ -405,7 +405,34 @@ struct Parser {
             span: number.span,
             number: number.content,
         };
-        return createDeclValue(DECL_VALUE_NUMBER, number.span, sizeof ParsedDeclValueNumber, &numbah);
+        let i32_nam: ParsedDeclValueIdent = ParsedDeclValueIdent {
+            span: number.span,
+            name: newSubStrOfStrLit("__integer"),
+        };
+        unsafe {
+            let i32_name: &ParsedDeclValueIdent = calloc(1, sizeof ParsedDeclValueIdent);
+            assert(i32_name != null);
+            memcpy(i32_name, &i32_nam, sizeof ParsedDeclValueIdent);
+            let numbah_heap: &ParsedDeclValueNumber = calloc(1, sizeof ParsedDeclValueNumber);
+            assert(numbah_heap != null);
+            memcpy(numbah_heap, &numbah, sizeof ParsedDeclValueNumber);
+            mut args: [ParsedDeclValue; 8] = blank;
+            args[0] = ParsedDeclValue {
+                kind: DECL_VALUE_NUMBER,
+                span: numbah.span,
+                data: numbah_heap
+            };
+            let init: ParsedDeclValueCall = ParsedDeclValueCall {
+                fn: ParsedDeclValue {
+                    kind: DECL_VALUE_IDENT,
+                    span: numbah.span,
+                    data: i32_name
+                },
+                args: args,
+                argCount: 1,
+            };
+            return createDeclValue(DECL_VALUE_CALL, number.span, sizeof ParsedDeclValueCall, &init);
+        }
     }
     func parseDeclValueExprIdentifier(&mut this) -> ParsedDeclValue {
         trace("parseDeclValueExprIdentifier");

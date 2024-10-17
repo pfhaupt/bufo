@@ -95,8 +95,8 @@ func compileTest() -> bool {
     // let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/structs.bufo");
     // let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/enums.bufo");
     // let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/func.bufo");
-    // let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/eval.bufo");
-    let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/big.bufo");
+    let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/eval.bufo");
+    // let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/big.bufo");
     return cmd.runSync();
 }
 
