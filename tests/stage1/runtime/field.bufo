@@ -1,0 +1,34 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+struct Test {
+    a: u64;
+    b: i64;
+
+    func get_a(this) -> u64 {
+        return this.a;
+    }
+    func set_a(mut this, a: u64) {
+        this.a = a;
+    }
+}
+
+func destroy(t: Test, counter: u64) -> u64 {
+    if (counter == 0) {
+        return 0;
+    }
+    let tmp: u64 = destroy(t, counter - 1);
+    return tmp + t.get_a();
+}
+
+func main() -> i32 {
+    let b: Test = Test {
+        b: 12,
+        a: 1337,
+    };
+    let result: u64 = destroy(b, 100);
+    if (result != 133700) return 1;
+    return 0;
+}

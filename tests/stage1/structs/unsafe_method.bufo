@@ -1,0 +1,24 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Unsafe method `setI` called in safe context.
+//! Method `setI` is declared here.
+//! Use an `unsafe {}` block to fix this.
+
+struct Foo {
+    i: i32;
+
+    unsafe func setI(&mut this, i: i32) {
+        this.i = i;
+    }
+}
+
+func main() {
+    mut f: Foo = Foo {
+        i: 5
+    };
+    f.setI(10);
+}

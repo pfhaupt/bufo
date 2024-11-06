@@ -1,0 +1,17 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+func refLit(a: &i32) -> i32 {
+    return *a;
+}
+
+func main() -> i32 {
+    let a: i32 = 10;
+    let b: i32 = refLit(&a);
+    if (b != a) return 1;
+    let c: i32 = refLit(&10);
+    if (c != 10) return c;
+    return 0;
+}

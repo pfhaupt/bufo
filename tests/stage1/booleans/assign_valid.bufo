@@ -1,0 +1,20 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+func foo() -> bool {
+    return false;
+}
+
+func main() -> i32 {
+    let a: bool = false;
+    let b: bool = a != a;
+    let c: bool = a == a;
+    if (b) return 1;
+    if (!c) {
+        return 1;
+    }
+    if (foo()) return 1;
+    return 0;
+}

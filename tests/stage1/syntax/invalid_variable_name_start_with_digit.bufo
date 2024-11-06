@@ -1,0 +1,11 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Expected Identifier, found Integer Literal
+
+func main() {
+    let 0c: i32 = 5;
+}

@@ -1,0 +1,22 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+struct Foo {
+    field: i32;
+
+    func print(&this) {
+        unsafe {
+            printf("this: %p\n", this);
+            printf("deref: %p\n", *this);
+            printf("field: %d\n", this.field);
+        }
+    }
+}
+
+func main() {
+    let f: Foo = Foo { field: 12 };
+    unsafe { printf("orig: %p\n", &f); }
+    f.print();
+}

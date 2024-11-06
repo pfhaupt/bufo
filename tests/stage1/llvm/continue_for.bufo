@@ -1,0 +1,15 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+func main() {
+    mut ctr: usize = 0;
+    for (mut i: usize = 0; i < 10; i = i + 1) {
+        if (i == 5) {
+            continue;
+        }
+        ctr = ctr + 1;
+    }
+    assert(ctr == 9);
+}

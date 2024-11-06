@@ -1,0 +1,19 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+struct Foo {
+    field: usize;
+    value: usize;
+    ptr: Any;
+}
+
+func main() {
+    let f: Foo = blank;
+    assert(f.field == 0);
+    assert(f.value == 0);
+    unsafe {
+        assert(f.ptr == null);
+    }
+}

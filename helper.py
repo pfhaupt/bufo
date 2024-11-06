@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from typing import List
+from typing import List, Optional
 import subprocess
 import os
 import sys
@@ -9,7 +9,8 @@ from multiprocessing import Pool
 from dataclasses import dataclass
 from enum import Enum
 
-COMPILER_PATH = "./target/debug/bufo"
+STAGE1_PATH = "./target/debug/bufo"
+STAGE2_PATH = "./out/bufo_s1"
 
 def format_red(s: str) -> str: return f"\x1b[91m{s}\x1b[0m"
 def format_yellow(s: str) -> str: return f"\x1b[93m{s}\x1b[0m"
@@ -54,10 +55,11 @@ class TestResult:
 #       This should be the the default case, however it would be cool
 #       to have a CLI arg like --show-output that then prints the output.
 #       Similarly, --exit-first-failure should also show the output.
-def run_test(path: str, exec: bool) -> TestResult:
+def run_test(path: str, exec: bool, single_stage: Optional[int]) -> TestResult:
     """
     The protocol for tests is as follows:
     //! THIS IS A TEST PROGRAM
+    //! STAGE: {0|1}
     //! {RUNTIME|COMPILER}
     //! {FAILURE|SUCCESS|DIAGNOSTICS}
     //! CODE: <error code> (only if FAILURE)
@@ -72,15 +74,36 @@ def run_test(path: str, exec: bool) -> TestResult:
     <mandatory newline>
     <code>
     """
+
+    def next(l: List[str], pop: bool = True) -> str:
+        assert len(l) != 0
+        return l.pop(0) if pop else l[0]
+
     with open(path, "r") as f:
         lines = f.readlines()
-        if lines[0].startswith("//! IGNORE"):
+        if next(lines, pop=False).startswith("//! IGNORE"):
             return TestResult(path, STATE.DONT_TEST)
-        if not lines[0].startswith("//! THIS IS A TEST PROGRAM"):
+        if not next(lines).startswith("//! THIS IS A TEST PROGRAM"):
             print(f"{CORRUPT} {path}", file=sys.stderr)
             return TestResult(path, STATE.CORRUPT)
 
-        point_of_failure = lines[1].removeprefix("//! ").upper().strip()
+        if not next(lines, pop=False).startswith("//! STAGE:"):
+            print(f"{CORRUPT} {path}", file=sys.stderr)
+            return TestResult(path, STATE.CORRUPT)
+        stage = int(next(lines).removeprefix("//! STAGE: ").strip())
+        compiler_path = ""
+        if stage == 1:
+            compiler_path = STAGE1_PATH
+        elif stage == 2:
+            compiler_path = STAGE2_PATH
+        else:
+            print(f"{CORRUPT} {path}", file=sys.stderr)
+            return TestResult(path, STATE.CORRUPT)
+        if single_stage is not None and stage != single_stage:
+            print(f"{IGNORE} {path}")
+            return TestResult(path, STATE.IGNORED)
+
+        point_of_failure = next(lines).removeprefix("//! ").upper().strip()
         if point_of_failure not in ["RUNTIME", "COMPILER"]:
             print(f"{CORRUPT} {path}", file=sys.stderr)
             return TestResult(path, STATE.CORRUPT)
@@ -89,36 +112,36 @@ def run_test(path: str, exec: bool) -> TestResult:
             print(f"{IGNORE} {path}")
             return TestResult(path, STATE.IGNORED)
 
-        expected_mode = lines[2].removeprefix("//! ").upper().strip()
+        expected_mode = next(lines).removeprefix("//! ").upper().strip()
         if expected_mode not in ["FAILURE", "SUCCESS", "DIAGNOSTICS"]:
             print(f"{CORRUPT} {path}", file=sys.stderr)
             return TestResult(path, STATE.CORRUPT)
 
         if expected_mode == "FAILURE":
-            if not lines[3].startswith("//! CODE: "):
+            if not next(lines, pop=False).startswith("//! CODE: "):
                 print(f"{CORRUPT} {path}", file=sys.stderr)
                 return TestResult(path, STATE.CORRUPT)
-            expected_error_code = int(lines[3].removeprefix("//! CODE: ").strip())
+            expected_error_code = int(next(lines).removeprefix("//! CODE: ").strip())
         else:
             expected_error_code = 0
         
         error_lines = []
         warn_lines = []
         if expected_mode == "FAILURE":
-            if not lines[4].startswith("//! ERROR:"):
+            if not next(lines).startswith("//! ERROR:"):
                 print(f"{CORRUPT} {path}", file=sys.stderr)
                 return TestResult(path, STATE.CORRUPT)
             index = 5
-            while index < len(lines) and lines[index].startswith("//! "):
-                error_lines.append(lines[index].removeprefix("//! ").strip())
+            while index < len(lines) and next(lines).startswith("//! "):
+                error_lines.append(next(lines).removeprefix("//! ").strip())
                 index += 1
         elif expected_mode == "DIAGNOSTICS":
-            if not lines[3].startswith("//! WARNING:"):
+            if not next(lines).startswith("//! WARNING:"):
                 print(f"{CORRUPT} {path}", file=sys.stderr)
                 return TestResult(path, STATE.CORRUPT)
             index = 4
-            while index < len(lines) and lines[index].startswith("//! "):
-                warn_lines.append(lines[index].removeprefix("//! ").strip())
+            while index < len(lines) and next(lines).startswith("//! "):
+                warn_lines.append(next(lines).removeprefix("//! ").strip())
                 index += 1
             if len(warn_lines) == 0:
                 print(f"{CORRUPT} {path}", file=sys.stderr)
@@ -127,7 +150,7 @@ def run_test(path: str, exec: bool) -> TestResult:
             pass
 
         filename = "./out/{}.exe".format(path.replace(os.sep, "."))
-        output = call_cmd([COMPILER_PATH, "-i", path, "-vd", "-o", filename])
+        output = call_cmd([compiler_path, "-i", path, "-vd", "-o", filename])
         if point_of_failure == "RUNTIME":
             if output.returncode == 101:
                 print(f"{PANIC} {path}", file=sys.stderr)
@@ -175,18 +198,25 @@ def run_test(path: str, exec: bool) -> TestResult:
         print(f"{PASS} {path}")
         return TestResult(path, STATE.SUCCESS)
 
-def recompile_compiler(trace: bool = False) -> None:
-    print("Recompiling compiler...")
-    cargo = ["cargo", "build"]
-    cargo = cargo + ["--features=trace"] if trace else cargo
-    cmd = call_cmd(cargo)
-    if cmd.returncode != 0:
-        print("Failed to recompile compiler", file=sys.stderr)
-        print(cmd.stderr.decode("utf-8"), file=sys.stderr)
-        sys.exit(1)
+def recompile_compiler(stage: int, trace: bool = False) -> None:
+    print(f"Recompiling compiler stage {stage}...")
+    if stage == 1:
+        cargo = ["cargo", "build"]
+        cargo = cargo + ["--features=trace"] if trace else cargo
+        cmd = call_cmd(cargo)
+        if cmd.returncode != 0:
+            print("Failed to recompile compiler", file=sys.stderr)
+            print(cmd.stderr.decode("utf-8"), file=sys.stderr)
+            sys.exit(1)
+    else:
+        cmd = call_cmd([STAGE1_PATH, "-i", "./stage1/bufo_s1.bufo"])
+        if cmd.returncode != 0:
+            print("Failed to recompile compiler", file=sys.stderr)
+            print(cmd.stderr.decode("utf-8"), file=sys.stderr)
+            sys.exit(1)
     print("Recompilation successful")
 
-def run_all_tests(specific_tests: List[str], exec: bool = True, exit_first_failure: bool = False):
+def run_all_tests(specific_tests: List[str], exec: bool = True, exit_first_failure: bool = False, single_stage: Optional[int] = None):
     start_time = time.time()
     total = 0
     failed_tests = []
@@ -211,7 +241,7 @@ def run_all_tests(specific_tests: List[str], exec: bool = True, exit_first_failu
 
     if exit_first_failure:
         for path in all_tests:
-            result = run_test(path, exec)
+            result = run_test(path, exec, single_stage)
             total += 1
             match result.success:
                 case STATE.SUCCESS:
@@ -231,7 +261,7 @@ def run_all_tests(specific_tests: List[str], exec: bool = True, exit_first_failu
                     total -= 1
     else:
         with Pool(16) as p:
-            results = p.starmap(run_test, [(path, exec) for path in all_tests])
+            results = p.starmap(run_test, [(path, exec, single_stage) for path in all_tests])
             for result in results:
                 total += 1
                 match result.success:
@@ -270,13 +300,33 @@ def run_all_tests(specific_tests: List[str], exec: bool = True, exit_first_failu
         sys.exit(1)
 
 def print_usage_and_help() -> None:
-    print("Usage: python helper.py [test|bench]")
+    print("Usage: python helper.py [compile|test|bench]")
+    print("Flags for compile mode:")
+    print("  --stage1             -> Only compile stage 1")
+    print("  --stage2             -> Only compile stage 2")
     print("Flags for test mode:")
+    print("  --stage1             -> Only test stage 1")
+    print("  --stage2             -> Only test stage 2")
     print("  --no-exec            -> skip running runtime tests")
     print("  --trace              -> enable tracing in the compiler (useful for debugging)")
     print("  --exit-first-failure -> exit after the first failure, disables parallelism")
     print("Flags for bench mode:")
     print("  Not implemented")
+
+def recompile(trace: bool = False) -> Optional[int]:
+    stage1 = "--stage1" in sys.argv
+    stage2 = "--stage2" in sys.argv
+    print("Compiling compilers...")
+    if stage1:
+        recompile_compiler(1, trace)
+        return 1
+    elif stage2:
+        recompile_compiler(2, trace)
+        return 2
+    else:
+        recompile_compiler(1, trace)
+        recompile_compiler(2, trace)
+        return None
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:
@@ -284,12 +334,12 @@ if __name__ == "__main__":
         exit(1)
     else:
         mode = sys.argv[1]
+        trace = "--trace" in sys.argv
         if mode == "help":
             print_usage_and_help()
             exit(0)
         if mode == "test":
-            trace = "--trace" in sys.argv
-            recompile_compiler(trace=trace)
+            single_stage = recompile(trace)
             print("Running tests...")
             no_exec = "--no-exec" in sys.argv
             exit_first_failure = "--exit-first-failure" in sys.argv
@@ -297,12 +347,14 @@ if __name__ == "__main__":
             for arg in sys.argv[2:]:
                 if not arg.startswith("-"):
                     test_dirs.append(arg)
-            run_all_tests(specific_tests=test_dirs, exec=not no_exec, exit_first_failure=exit_first_failure)
+            run_all_tests(specific_tests=test_dirs, exec=not no_exec, exit_first_failure=exit_first_failure, single_stage=single_stage)
         elif mode == "bench":
-            recompile_compiler()
+            recompile(trace)
             print("Running benchmarks...")
             print(format_red("Not implemented"))
             exit(1)
+        elif mode == "compile":
+            recompile(trace)
         else:
             print("Invalid mode: " + mode)
             print_usage_and_help()

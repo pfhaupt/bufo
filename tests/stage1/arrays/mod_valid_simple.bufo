@@ -1,0 +1,12 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+func main() -> i32 {
+    mut arr: [i32; 3] = [1, 2, 3];
+    if (arr[1] == 4) return 1;
+    arr[1] = 4;
+    if (arr[1] != 4) return 2;
+    return 0;
+}

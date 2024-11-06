@@ -1,0 +1,20 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+func ack(m: u32, n: u32) -> u32 {
+    if (m == 0) { return n + 1; }
+    if (n == 0) { return ack(m - 1, 1); }
+    return ack(m - 1, ack(m, n - 1));
+}
+
+func main() -> u32 {
+    mut b: u32 = ack(3, 5);
+    if (b != 253) return 1;
+    b = ack(3, 3);
+    if (b != 61) return 2;
+    b = ack(3, 2);
+    if (b != 29) return 3;
+    return 0;
+}

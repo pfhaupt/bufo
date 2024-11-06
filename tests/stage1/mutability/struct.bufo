@@ -1,0 +1,19 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Attempted to modify immutable variable `f`.
+//! Variable `f` is declared here.
+
+struct Foo {
+    field: i32;
+}
+
+func main() {
+    let f: Foo = Foo {
+        field: 0
+    };
+    f.field = 10;
+}

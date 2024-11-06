@@ -1,0 +1,18 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+func main() {
+    let a: usize = blank;
+    assert(a == 0);
+
+    let b: i8 = blank;
+    assert(b == 0);
+
+    let c: u16 = blank;
+    assert(c == 0);
+    
+    let d: i32 = blank;
+    assert(d == 0);
+}

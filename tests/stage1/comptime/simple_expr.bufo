@@ -1,0 +1,11 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+func main() {
+    comptime foo: i32 = 12;
+    comptime bar: i32 = 12;
+    comptime bez: i32 = foo + bar;
+    assert(bez == 24);
+}

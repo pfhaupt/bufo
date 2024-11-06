@@ -1,0 +1,13 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Attempted to modify immutable variable `arr`.
+//! Variable `arr` is declared here.
+
+func main() {
+    let arr: [i32; 5] = [0; 5];
+    arr[1] = 5;
+}

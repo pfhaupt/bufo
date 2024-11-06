@@ -1,0 +1,28 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+struct Foo {
+    foo: usize;
+    bar: usize;
+    baz: usize;
+}
+
+func main() {
+    let fArr: [Foo; 5] = blank;
+    for (mut i: usize = 0; i < 5; i = i + 1) {
+        assert(fArr[i].foo == 0);
+        assert(fArr[i].bar == 0);
+        assert(fArr[i].baz == 0);
+    }
+
+    let nestedArray: [[Foo; 4]; 5] = blank;
+    for (mut i: usize = 0; i < 5; i = i + 1) {
+        for (mut j: usize = 0; j < 4; j = j + 1) {
+            assert(nestedArray[i][j].foo == 0);
+            assert(nestedArray[i][j].bar == 0);
+            assert(nestedArray[i][j].baz == 0);
+        }
+    }
+}

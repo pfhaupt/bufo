@@ -1,0 +1,13 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+func main() -> u64 {
+    mut a: u64 = 0;
+    while (a < 10) {
+        a = a + 1;
+    }
+    if (a != 10) return 1;
+    return 0;
+}

@@ -1,0 +1,11 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+func main() -> i32 {
+    mut a: i32 = 0;
+    while (a != 100) a = a + 1;
+    if (a != 100) return a;
+    return 0;
+}

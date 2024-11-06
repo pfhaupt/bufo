@@ -1,0 +1,24 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+struct Foo {
+    field: u32;
+}
+
+func main() {
+    assert(5u8 as i32 == 5);
+    let x: u16 = 20;
+    let y: u64 = 2;
+    assert(x as u32 - 4 * y as u32 == 12);
+    let f: Foo = Foo { field: 15 };
+    assert(f.field as i32 == 15);
+    assert(x as u32 / y as u32 == 10);
+    assert(x as i64 * y as i64 == 40);
+    let arr: [i32; 1] = [-12];
+    assert(arr[(y - 2) as usize] == -12);
+    assert(arr[x as usize / x as usize - 1] == -12);
+    assert(arr[(x / x) as usize - 1] == -12);
+    assert(arr[(y - 2) as usize] as u8 == 244);
+}

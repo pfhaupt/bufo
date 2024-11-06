@@ -1,0 +1,9 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+comptime CONSTANT: i8 = 12;
+func main() {
+    assert(CONSTANT == 12);
+}

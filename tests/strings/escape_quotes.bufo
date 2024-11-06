@@ -1,9 +1,0 @@
-//! THIS IS A TEST PROGRAM
-//! RUNTIME
-//! SUCCESS
-
-func main() {
-    let s: &char = "Hello, \", how are we today? \'";
-    let c1: char = '\"';
-    let c2: char = '\'';
-}
