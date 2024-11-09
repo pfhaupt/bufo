@@ -149,7 +149,7 @@ def run_test(path: str, exec: bool, single_stage: Optional[int]) -> TestResult:
             pass
 
         filename = "./out/{}.exe".format(path.replace(os.sep, "."))
-        output = call_cmd([compiler_path, "-i", path, "-vd", "-o", filename])
+        output = call_cmd([compiler_path, "-i", path, "-v", "-o", filename])
         if point_of_failure == "RUNTIME":
             if output.returncode == 101:
                 print(f"{PANIC} {path}", file=sys.stderr)
