@@ -16,6 +16,7 @@ def format_red(s: str) -> str: return f"\x1b[91m{s}\x1b[0m"
 def format_yellow(s: str) -> str: return f"\x1b[93m{s}\x1b[0m"
 def format_green(s: str) -> str: return f"\x1b[92m{s}\x1b[0m"
 
+INFO: str = format_yellow("INFO")
 CORRUPT: str = format_red("CORRUPT")
 PANIC: str = format_red("PANIC")
 FAIL: str = format_red("FAIL")
@@ -50,12 +51,12 @@ class TestResult:
     path: str
     success: STATE
 
-# TODO: Failed or panicked tests lost their output since the refactor.
-#       We capture stdout and stderr, but don't print it anymore.
-#       This should be the the default case, however it would be cool
-#       to have a CLI arg like --show-output that then prints the output.
-#       Similarly, --exit-first-failure should also show the output.
-def run_test(path: str, exec: bool, single_stage: Optional[int]) -> TestResult:
+def run_test(
+    path: str,
+    exec: bool,
+    single_stage: Optional[int],
+    show_output: bool = False
+) -> TestResult:
     """
     The protocol for tests is as follows:
     //! THIS IS A TEST PROGRAM
@@ -78,6 +79,22 @@ def run_test(path: str, exec: bool, single_stage: Optional[int]) -> TestResult:
     def next(l: List[str], pop: bool = True) -> str:
         assert len(l) != 0
         return l.pop(0) if pop else l[0]
+
+    def print_retcode(output: int, expected: int):
+        if show_output:
+            print(f"{INFO} EXPECTED RETURN CODE:")
+            print(f"  {expected}")
+            print(f"{INFO} GOT:")
+            print(f"  {output}")
+
+    def print_output(stdout: List[str], stderr: List[str]):
+        if show_output:
+            print(f"{INFO} STDOUT:")
+            for out in stdout:
+                print(f"  {out}")
+            print(f"{INFO} STDERR:")
+            for err in stderr:
+                print(f"  {err}")
 
     with open(path, "r") as f:
         lines = f.readlines()
@@ -150,49 +167,52 @@ def run_test(path: str, exec: bool, single_stage: Optional[int]) -> TestResult:
 
         filename = "./out/{}.exe".format(path.replace(os.sep, "."))
         output = call_cmd([compiler_path, "-i", path, "-v", "-o", filename])
+        stdout = output.stdout.decode("utf-8").split('\n')
+        stderr = output.stderr.decode("utf-8").split('\n')
         if point_of_failure == "RUNTIME":
             if output.returncode == 101:
                 print(f"{PANIC} {path}", file=sys.stderr)
+                print_output(stdout, stderr)
                 return TestResult(path, STATE.PANIC)
             if output.returncode != 0:
                 print(f"{FAIL} {path}", file=sys.stderr)
+                print_output(stdout, stderr)
                 return TestResult(path, STATE.FAILURE)
             output = call_cmd([filename])
             os.remove(filename)
-        if expected_mode == "DIAGNOSTICS":
-            if output.returncode == 101:
-                print(f"{PANIC} {path}", file=sys.stderr)
-                return TestResult(path, STATE.PANIC)
-            if output.returncode != 0:
-                print(f"{FAIL} {path}", file=sys.stderr)
-                return TestResult(path, STATE.FAILURE)
-            os.remove(filename)
+            stdout = output.stdout.decode("utf-8").split('\n')
+            stderr = output.stderr.decode("utf-8").split('\n')
 
-        # stdout = output.stdout.decode("utf-8").split('\n')
-        stderr = output.stderr.decode("utf-8").split('\n')
         if expected_mode == "FAILURE":
             if not compare(error_lines, stderr):
                 print(f"{FAIL} {path}", file=sys.stderr)
+                print_output(stdout, stderr)
                 return TestResult(path, STATE.FAILURE)
             if output.returncode != expected_error_code:
                 print(f"{FAIL} {path}", file=sys.stderr)
+                print_retcode(output.returncode, expected_error_code)
                 return TestResult(path, STATE.FAILURE)
         elif expected_mode == "SUCCESS":
             if output.returncode == 101:
                 print(f"{PANIC} {path}", file=sys.stderr)
+                print_retcode(output.returncode, expected_error_code)
                 return TestResult(path, STATE.PANIC)
             if output.returncode != expected_error_code:
                 print(f"{FAIL} {path}", file=sys.stderr)
+                print_retcode(output.returncode, expected_error_code)
                 return TestResult(path, STATE.FAILURE)
         elif expected_mode == "DIAGNOSTICS":
             if not compare(warn_lines, stderr):
                 print(f"{FAIL} {path}", file=sys.stderr)
+                print_output(stdout, stderr)
                 return TestResult(path, STATE.FAILURE)
             if output.returncode == 101:
                 print(f"{PANIC} {path}", file=sys.stderr)
+                print_retcode(output.returncode, expected_error_code)
                 return TestResult(path, STATE.PANIC)
             if output.returncode != expected_error_code:
                 print(f"{FAIL} {path}", file=sys.stderr)
+                print_retcode(output.returncode, expected_error_code)
                 return TestResult(path, STATE.FAILURE)
         print(f"{PASS} {path}")
         return TestResult(path, STATE.SUCCESS)
@@ -215,7 +235,12 @@ def recompile_compiler(stage: int, trace: bool = False) -> None:
             sys.exit(1)
     print("Recompilation successful")
 
-def run_all_tests(specific_tests: List[str], exec: bool = True, exit_first_failure: bool = False, single_stage: Optional[int] = None):
+def run_all_tests(
+    specific_tests: List[str],
+    exec: bool = True,
+    exit_first_failure: bool = False,
+    single_stage: Optional[int] = None,
+):
     start_time = time.time()
     total = 0
     failed_tests = []
@@ -240,7 +265,7 @@ def run_all_tests(specific_tests: List[str], exec: bool = True, exit_first_failu
 
     if exit_first_failure:
         for path in all_tests:
-            result = run_test(path, exec, single_stage)
+            result = run_test(path, exec, single_stage, True)
             total += 1
             match result.success:
                 case STATE.SUCCESS:
@@ -260,7 +285,7 @@ def run_all_tests(specific_tests: List[str], exec: bool = True, exit_first_failu
                     total -= 1
     else:
         with Pool(16) as p:
-            results = p.starmap(run_test, [(path, exec, single_stage) for path in all_tests])
+            results = p.starmap(run_test, [(path, exec, single_stage, False) for path in all_tests])
             for result in results:
                 total += 1
                 match result.success:
@@ -346,7 +371,12 @@ if __name__ == "__main__":
             for arg in sys.argv[2:]:
                 if not arg.startswith("-"):
                     test_dirs.append(arg)
-            run_all_tests(specific_tests=test_dirs, exec=not no_exec, exit_first_failure=exit_first_failure, single_stage=single_stage)
+            run_all_tests(
+                specific_tests=test_dirs,
+                exec=not no_exec,
+                exit_first_failure=exit_first_failure,
+                single_stage=single_stage,
+            )
         elif mode == "bench":
             recompile(trace)
             print("Running benchmarks...")
