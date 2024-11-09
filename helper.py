@@ -131,7 +131,7 @@ def run_test(path: str, exec: bool, single_stage: Optional[int]) -> TestResult:
                 print(f"{CORRUPT} {path}", file=sys.stderr)
                 return TestResult(path, STATE.CORRUPT)
             index = 5
-            while index < len(lines) and next(lines).startswith("//! "):
+            while index < len(lines) and next(lines, pop=False).startswith("//! "):
                 error_lines.append(next(lines).removeprefix("//! ").strip())
                 index += 1
         elif expected_mode == "DIAGNOSTICS":
@@ -139,7 +139,7 @@ def run_test(path: str, exec: bool, single_stage: Optional[int]) -> TestResult:
                 print(f"{CORRUPT} {path}", file=sys.stderr)
                 return TestResult(path, STATE.CORRUPT)
             index = 4
-            while index < len(lines) and next(lines).startswith("//! "):
+            while index < len(lines) and next(lines, pop=False).startswith("//! "):
                 warn_lines.append(next(lines).removeprefix("//! ").strip())
                 index += 1
             if len(warn_lines) == 0:
