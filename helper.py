@@ -100,8 +100,7 @@ def run_test(path: str, exec: bool, single_stage: Optional[int]) -> TestResult:
             print(f"{CORRUPT} {path}", file=sys.stderr)
             return TestResult(path, STATE.CORRUPT)
         if single_stage is not None and stage != single_stage:
-            print(f"{IGNORE} {path}")
-            return TestResult(path, STATE.IGNORED)
+            return TestResult(path, STATE.DONT_TEST)
 
         point_of_failure = next(lines).removeprefix("//! ").upper().strip()
         if point_of_failure not in ["RUNTIME", "COMPILER"]:
