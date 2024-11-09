@@ -49,10 +49,10 @@ func buildMyself() -> bool {
             if (!moveFile(myName, dst.chars())) return false;
         }
         {
-            // ./bufo.exe -i ./build.bufo
+            // ./bufo.exe ./build.bufo
             mut buildCmd: Cmd = newCmd();
             buildCmd.add(STAGE0_PATH);
-            buildCmd.addMany(newCmdFromStrLit("-i ./build.bufo").buf);
+            buildCmd.addMany(newCmdFromStrLit("./build.bufo").buf);
             if (!buildCmd.runSync()) unsafe {
                 printf("[REBUILD] Recompiling myself failed, restoring old executable.\n");
                 assert(moveFile(dst.chars(), myName));
@@ -83,7 +83,7 @@ func buildStage0() -> bool {
 
 func buildStage1() -> bool {
     mut cmd: Cmd = newCmdFromStrLit(STAGE0_PATH);
-    cmd.addMany(newCmdFromStrLit("-i ./stage1/bufo_s1.bufo").buf);
+    cmd.addMany(newCmdFromStrLit("./stage1/bufo_s1.bufo").buf);
     cmd.add("-v");
     // cmd.add("--emit-llvm");
     // cmd.add("-d");

@@ -11,7 +11,7 @@ use crate::compiler::FILE_EXT;
 #[command(version = "0.0.1")]
 #[command(about = "Compiler for the Bufo programming language")]
 pub struct Flags {
-    #[arg(short, long, value_parser = valid_filepath, hide_default_value=true)]
+    #[arg(value_parser = valid_filepath, hide_default_value=true)]
     pub input: PathBuf,
     #[arg(short, long)]
     pub output: Option<String>,
