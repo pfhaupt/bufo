@@ -13,6 +13,7 @@ comptime func BUILD_A_KEYWORD(s: &char) -> SubStr {
 }
 comptime KEYWORD_LET: SubStr = BUILD_A_KEYWORD("let");
 comptime KEYWORD_MUT: SubStr = BUILD_A_KEYWORD("mut");
+comptime KEYWORD_CONST: SubStr = BUILD_A_KEYWORD("const");
 comptime KEYWORD_FUNC: SubStr = BUILD_A_KEYWORD("func");
 comptime KEYWORD_STRUCT: SubStr = BUILD_A_KEYWORD("struct");
 comptime KEYWORD_ENUM: SubStr = BUILD_A_KEYWORD("enum");
@@ -30,6 +31,7 @@ struct Lexer {
         return word.equals(&KEYWORD_LET)
             || word.equals(&KEYWORD_FUNC)
             || word.equals(&KEYWORD_MUT)
+            || word.equals(&KEYWORD_CONST)
             || word.equals(&KEYWORD_STRUCT)
             || word.equals(&KEYWORD_ENUM)
             || word.equals(&KEYWORD_UNION)
@@ -134,6 +136,9 @@ struct Lexer {
         } else if (currChar == '+') {
             this.advance();
             return newToken(&newSubStr("+", 0, 1), this.ptr - 1, TOKEN_PLUS_SINGLE);
+        } else if (currChar == '*') {
+            this.advance();
+            return newToken(&newSubStr("*", 0, 1), this.ptr - 1, TOKEN_ASTERISK_SINGLE);
         } else if (currChar == '@') {
             this.advance();
             return newToken(&newSubStr("@", 0, 1), this.ptr - 1, TOKEN_AT);
@@ -144,6 +149,14 @@ struct Lexer {
                 return newToken(&newSubStr("->", 0, 2), this.ptr - 2, TOKEN_ARROW);
             } else {
                 return newToken(&newSubStr("-", 0, 1), this.ptr - 1, TOKEN_MINUS_SINGLE);
+            }
+        } else if (currChar == '!') {
+            this.advance();
+            if (this.ptr < this.len && this.content.getChar(0) == '=') {
+                this.advance();
+                return newToken(&newSubStr("!=", 0, 2), this.ptr - 2, TOKEN_NOT_EQUAL);
+            } else {
+                return newToken(&newSubStr("!", 0, 1), this.ptr - 1, TOKEN_BANG);
             }
         } else if (currChar == '/' && this.content.getChar(1) == '*') {
             while (true) {

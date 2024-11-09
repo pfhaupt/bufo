@@ -96,6 +96,7 @@ comptime DECL_VALUE_BINARY: usize = 9;
 comptime DECL_VALUE_NUMBER: usize = 10;
 comptime DECL_VALUE_BLOCK: usize = 11;
 comptime DECL_VALUE_IF: usize = 12;
+comptime DECL_VALUE_UNARY: usize = 13;
 struct ParsedDeclValue {
     kind: usize;
     span: Span;
@@ -244,18 +245,24 @@ comptime BINARY_OP_DOT: usize = 0;
 comptime BINARY_OP_PAREN: usize = 1;
 comptime BINARY_OP_PLUS: usize = 2;
 comptime BINARY_OP_MINUS: usize = 3;
-comptime BINARY_OP_EQUAL: usize = 4;
+comptime BINARY_OP_ASSIGN: usize = 4;
+comptime BINARY_OP_EQUAL: usize = 5;
+comptime BINARY_OP_NOT_EQUAL: usize = 6;
 func createBinaryOp(op: &SubStr) -> usize {
     comptime DOT: SubStr = BUILD_A_KEYWORD(".");
     comptime PAREN: SubStr = BUILD_A_KEYWORD("(");
     comptime PLUS: SubStr = BUILD_A_KEYWORD("+");
     comptime MINUS: SubStr = BUILD_A_KEYWORD("-");
+    comptime ASSIGN: SubStr = BUILD_A_KEYWORD("=");
     comptime EQUAL: SubStr = BUILD_A_KEYWORD("==");
+    comptime NOT_EQUAL: SubStr = BUILD_A_KEYWORD("!=");
     if (op.equals(&DOT)) return BINARY_OP_DOT;
     if (op.equals(&PAREN)) return BINARY_OP_PAREN;
     if (op.equals(&PLUS)) return BINARY_OP_PLUS;
     if (op.equals(&MINUS)) return BINARY_OP_MINUS;
+    if (op.equals(&ASSIGN)) return BINARY_OP_ASSIGN;
     if (op.equals(&EQUAL)) return BINARY_OP_EQUAL;
+    if (op.equals(&NOT_EQUAL)) return BINARY_OP_NOT_EQUAL;
     todo_with_msg("createBinaryOp for invalid op");
     return 0;
 }
@@ -263,6 +270,24 @@ struct ParsedDeclValueBinary {
     op: usize;
     lhs: ParsedDeclValue;
     rhs: ParsedDeclValue;
+}
+
+comptime UNARY_OP_REF_IMMUT: usize = 0;
+comptime UNARY_OP_REF_MUT: usize = 1;
+comptime UNARY_OP_DEREF_IMMUT: usize = 2;
+comptime UNARY_OP_DEREF_MUT: usize = 3;
+func createUnaryOp(op: &SubStr) -> usize {
+    comptime AMPERSAND: SubStr = BUILD_A_KEYWORD("&");
+    comptime ASTERISK: SubStr = BUILD_A_KEYWORD("*");
+    if (op.equals(&AMPERSAND)) return UNARY_OP_REF_IMMUT;
+    if (op.equals(&ASTERISK)) return UNARY_OP_DEREF_IMMUT;
+    todo_with_msg("createBinaryOp for invalid op");
+    return 0;
+}
+struct ParsedDeclValueUnary {
+    span: Span;
+    op: usize;
+    expr: ParsedDeclValue;
 }
 
 struct ParsedEnumVariant {
@@ -466,7 +491,7 @@ func defaultFuncDecl() -> ParsedFuncDecl {
         mem = calloc(INITIAL_CAPACITY, sizeof ParsedStmt);
         assert_with_msg(mem != null, "Could not allocate enough memory in defaultFuncDecl()");
         let stmts: &mut ParsedStmt = &mut *mem;
-        let retType: ParsedTypeExpr = defaultTypeExpr();
+        let retType: ParsedTypeExpr = defaultTypeExpr(defaultSpan());
         return ParsedFuncDecl {
             span: defaultSpan(),
             params: params,
@@ -489,16 +514,19 @@ struct ParsedTypeExpr {
     expr: ParsedDeclValue;
 }
 
-func defaultTypeExpr() -> ParsedTypeExpr {
-    let noneIdent: ParsedDeclValueIdent = ParsedDeclValueIdent {
-        span: defaultSpan(),
-        name: newSubStrOfStrLit("none")
-    };
-    let dummySpan: Span = defaultSpan();
-    let none: ParsedDeclValue = createDeclValue(DECL_VALUE_IDENT, dummySpan, sizeof ParsedDeclValueIdent, &noneIdent);
+func defaultTypeExpr(span: Span) -> ParsedTypeExpr {
+    let none: ParsedDeclValue = createEmptyExpr(span);
     return ParsedTypeExpr {
         expr: none
     };
+}
+
+func createEmptyExpr(span: Span) -> ParsedDeclValue {
+    let noneIdent: ParsedDeclValueIdent = ParsedDeclValueIdent {
+        span: span,
+        name: newSubStrOfStrLit("none")
+    };
+    return createDeclValue(DECL_VALUE_IDENT, span, sizeof ParsedDeclValueIdent, &noneIdent);
 }
 
 comptime STMT_VAR_DECL: usize = 0;

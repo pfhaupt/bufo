@@ -311,6 +311,7 @@ comptime TYPE_ENUM: usize = 4;
 comptime TYPE_FUNC: usize = 5;
 comptime TYPE_INTEGER: usize = 6;
 comptime TYPE_FLOAT: usize = 7;
+comptime TYPE_POINTER: usize = 8;
 func evalTypeToStr(kind: usize) -> &char {
     if (kind == TYPE_INVALID) return "an invalid type";
     else if (kind == TYPE_UNRESOLVED) return "an unresolved type";
@@ -320,8 +321,21 @@ func evalTypeToStr(kind: usize) -> &char {
     else if (kind == TYPE_FUNC) return "a function";
     else if (kind == TYPE_INTEGER) return "an integer";
     else if (kind == TYPE_FLOAT) return "a float";
+    else if (kind == TYPE_POINTER) return "a pointer";
     assert_with_msg(false, "unreachable code in evalTypeToStr");
     return "";
+}
+
+struct PointerType {
+    mutable: bool;
+    underlying: Type;
+}
+
+func newPointerType(mutable: bool, underlying: Type) -> PointerType {
+    return PointerType {
+        mutable: mutable,
+        underlying: underlying
+    };
 }
 
 struct Type {
@@ -374,7 +388,8 @@ struct Type {
             return (this.data as &BuiltinType).isType();
         }
         return this.kind == TYPE_STRUCT
-            || this.kind == TYPE_ENUM;
+            || this.kind == TYPE_ENUM
+            || this.kind == TYPE_POINTER;
     }
 
     func isAnytype(&this) -> bool {
@@ -487,6 +502,13 @@ struct TypeChecker {
     }
 
     func checkModule(&mut this, parsedModule: &ParsedModule) -> CheckedModule {
+        for (mut i: usize = 0; i < this.resolvedLen; i = i + 1) {
+            let decl: &NameTypePair = this.getResolvedAtIndex(i);
+            unsafe {
+                decl.name.print();
+                printf("\n");
+            }
+        }
         todo_with_msg("checkModule");
         return blank;
     }
@@ -678,6 +700,22 @@ struct TypeChecker {
         assert_with_msg(index < this.unresolvedLen, "Out of bounds for getUnresolvedAtIndex");
         unsafe {
             return *(this.unresolvedDecls + index * sizeof &ParsedVarDecl) as &ParsedVarDecl;
+        }
+    }
+    func createTypeFromUnary(&mut this, unary: &ParsedDeclValueUnary) -> Type {
+        debug("support createTypeFromUnary lol");
+        if (unary.op == UNARY_OP_DEREF_MUT) {
+            let typ: Type = this.createTypeFrom(&unary.expr);
+            if (typ.isInvalidOrUnresolved())
+                return typ;
+            let ptr: PointerType = newPointerType(true, typ);
+            return newType(unary.span, TYPE_POINTER, sizeof PointerType, &typ);
+        }
+        unsafe {
+            let stderr: Any = fdopen(2, "a");
+            fprintf(stderr, "error: Unary is not supported yet %d\n", unary.op);
+            this.hadErrorsInLookupStage = true;
+            return invalidType();
         }
     }
     func createTypeFromIdent(&mut this, ident: &ParsedDeclValueIdent) -> Type {
@@ -907,10 +945,14 @@ struct TypeChecker {
             typ = this.createTypeFromNumber(value.data);
         } else if (kind == DECL_VALUE_CALL) {
             typ = this.createTypeFromCall(value.data);
+        } else if (kind == DECL_VALUE_UNARY) {
+            typ = this.createTypeFromUnary(value.data);
         } else unsafe {
             printf("%llu\n", kind);
             todo_with_msg("Other");
         }
+        if (typ.isInvalidOrUnresolved())
+            return typ;
         typ.value = value;
         return typ;
     }
@@ -1002,18 +1044,23 @@ struct TypeChecker {
         return false;
     }
     func addModuleToLookup(&mut this, parsedModule: &ParsedModule) {
+        trace("addModuleToLookup");
         for (mut i: usize = 0; i < parsedModule.declCount; i = i + 1) {
             let decl: &ParsedGlobalDecl = parsedModule.getDeclAtIndex(i);
             if (decl.kind == GLOBAL_VAR_DECL)
                 this.addDeclToLookup(decl.data);
             else if (decl.kind == GLOBAL_DIR)
-                todo_with_msg("eval global directive");
+                this.evalGlobalDirective(decl.data);
             else {
                 assert_with_msg(false, "Invalid kind for ParsedGlobalDecl");
             }
         }
     }
+    func evalGlobalDirective(&mut this, parsedDirective: &ParsedGlobalDecl) {
+        debug("Missing support for TypeChecker.evalGlobalDirective");
+    }
     func addDeclToLookup(&mut this, parsedDecl: &ParsedVarDecl) -> bool {
+        trace("addDeclToLookup");
         let typ: Type = this.createTypeFrom(&parsedDecl.value);
         if (typ.isUnresolved()) {
             this.addUnresolvedDecl(parsedDecl);
@@ -1033,6 +1080,7 @@ struct TypeChecker {
         return false;
     }
     func removeUnresolvedAtIndex(&mut this, index: usize) {
+        trace("removeUnresolvedAtIndex");
         assert_with_msg(index < this.unresolvedLen, "Out of bounds index in removeUnresolvedAtIndex");
         let l: usize = this.unresolvedLen - 1;
         unsafe {
@@ -1043,6 +1091,7 @@ struct TypeChecker {
         }
     }
     func isKnownUnresolved(&mut this, decl: &ParsedVarDecl) -> bool {
+        trace("isKnownUnresolved");
         for (mut i: usize = 0; i < this.unresolvedLen; i = i + 1) {
             let unresolved: &ParsedVarDecl = this.getUnresolvedAtIndex(i);
             if (unresolved == decl) return true;
@@ -1068,6 +1117,7 @@ struct TypeChecker {
         this.unresolvedLen = this.unresolvedLen + 1;
     }
     func getGlobalTypeDeclLoc(&mut this, varName: SubStr) -> Span {
+        trace("addDeclToLookup");
         for (mut i: usize = 0; i < this.resolvedLen; i = i + 1) {
             let decl: &NameTypePair = this.getResolvedAtIndex(i);
             if (decl.name.equals(&varName))
@@ -1077,6 +1127,7 @@ struct TypeChecker {
         return defaultSpan();
     }
     func addResolvedDecl(&mut this, tkn: &Token, value: &Type) {
+        trace("addDeclToLookup");
         assert(value.isValid());
         // FIXME: This is better placed in addDeclToLookup() before we even evaluate the value
         //        It's easier to lookup the name first
