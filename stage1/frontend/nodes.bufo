@@ -26,7 +26,7 @@ struct ParsedModule {
         this.declCount = this.declCount + 1;
     }
 
-    func getDeclAtIndex(&this, index: usize) -> &ParsedGlobalDecl {
+    func getDeclAtIndex(&mut this, index: usize) -> &ParsedGlobalDecl {
         assert(index < this.declCount);
         unsafe {
             let _decl: &mut ParsedGlobalDecl = this.decls + index * sizeof ParsedGlobalDecl;
@@ -73,13 +73,15 @@ struct ParsedVarDecl {
     name: Token;
     value: ParsedDeclValue;
     isMutable: bool;
+    typ: Type;
 }
 
 func createVarDecl(name: Token, value: ParsedDeclValue, mutable: bool) -> ParsedVarDecl {
     return ParsedVarDecl {
         name: name,
         value: value,
-        isMutable: mutable
+        isMutable: mutable,
+        typ: invalidType(),
     };
 }
 
@@ -101,6 +103,7 @@ struct ParsedDeclValue {
     kind: usize;
     span: Span;
     data: Any;
+    typ: Type;
 
     func asModule(&this) -> &ParsedModule {
         assert(this.kind == DECL_VALUE_MODULE);
@@ -151,7 +154,8 @@ func defaultDeclValue() -> ParsedDeclValue {
         return ParsedDeclValue {
             kind: DECL_VALUE_INVALID,
             span: defaultSpan(),
-            data: null
+            data: null,
+            typ: invalidType(),
         };
     }
 }
@@ -164,7 +168,8 @@ func createDeclValue(kind: usize, span: Span, size: usize, data: Any) -> ParsedD
         return ParsedDeclValue {
             kind: kind,
             span: span,
-            data: mem
+            data: mem,
+            typ: invalidType()
         };
     }
 }
@@ -193,6 +198,7 @@ func createDeclValueIf(cond: ParsedDeclValue, ifBody: ParsedDeclValue) -> Parsed
 }
 
 struct ParsedDeclValueBlock {
+    span: Span;
     stmts: &mut ParsedStmt;
     stmtCount: usize;
     stmtCap: usize;
@@ -206,6 +212,13 @@ struct ParsedDeclValueBlock {
         }
         this.stmtCount = this.stmtCount + 1;
     }
+    func getStmtAtIndex(&this, index: usize) -> &ParsedStmt {
+        assert_with_msg(index < this.stmtCount, "Out of bounds access in ParsedDeclValueBlock.getStmtAtIndex()");
+        unsafe {
+            let _stmt: &mut ParsedStmt = this.stmts + index * sizeof ParsedStmt;
+            return _stmt as &ParsedStmt;
+        }
+    }
 }
 
 func createDeclValueBlock() -> ParsedDeclValueBlock {
@@ -214,6 +227,7 @@ func createDeclValueBlock() -> ParsedDeclValueBlock {
         assert_with_msg(mem != null, "Could not allocate memory in createDeclValueBlock()");
         let stmts: &mut ParsedStmt = &mut *mem;
         return ParsedDeclValueBlock {
+            span: defaultSpan(),
             stmts: stmts,
             stmtCount: 0,
             stmtCap: INITIAL_CAPACITY
@@ -265,6 +279,18 @@ func createBinaryOp(op: &SubStr) -> usize {
     if (op.equals(&NOT_EQUAL)) return BINARY_OP_NOT_EQUAL;
     todo_with_msg("createBinaryOp for invalid op");
     return 0;
+}
+func binaryOpToStr(op: usize) -> &char {
+    if (op == BINARY_OP_DOT) return ".";
+    if (op == BINARY_OP_PAREN) todo_with_msg("what the hell is BINARY_OP_PAREN");
+    if (op == BINARY_OP_PLUS) return "+";
+    if (op == BINARY_OP_MINUS) return "-";
+    if (op == BINARY_OP_ASSIGN) return "=";
+    if (op == BINARY_OP_EQUAL) return "==";
+    if (op == BINARY_OP_NOT_EQUAL) return "!=";
+    todo_with_msg("binaryOpToStr for invalid op");
+    return "";
+
 }
 struct ParsedDeclValueBinary {
     op: usize;
@@ -476,10 +502,17 @@ struct ParsedFuncDecl {
     }
 
     func getParamAtIndex(&this, index: usize) -> &ParsedParam {
-        assert_with_msg(index < this.paramCount, "Out of bounds ac cess in ParsedFuncDecl.getParamAtIndex()");
+        assert_with_msg(index < this.paramCount, "Out of bounds access in ParsedFuncDecl.getParamAtIndex()");
         unsafe {
             let _param: &mut ParsedParam = this.params + index * sizeof ParsedParam;
             return _param as &ParsedParam;
+        }
+    }
+    func getStmtAtIndex(&this, index: usize) -> &ParsedStmt {
+        assert_with_msg(index < this.stmtCount, "Out of bounds access in ParsedFuncDecl.getStmtAtIndex()");
+        unsafe {
+            let _stmt: &mut ParsedStmt = this.stmts + index * sizeof ParsedStmt;
+            return _stmt as &ParsedStmt;
         }
     }
 }
@@ -506,7 +539,7 @@ func defaultFuncDecl() -> ParsedFuncDecl {
 }
 struct ParsedParam {
     span: Span;
-    name: SubStr;
+    name: Token;
     typ: ParsedTypeExpr;
 }
 

@@ -86,6 +86,7 @@ func buildStage1() -> bool {
     cmd.addMany(newCmdFromStrLit("./stage1/bufo_s1.bufo").buf);
     cmd.add("-v");
     // cmd.add("--emit-llvm");
+    // cmd.add("-O3");
     // cmd.add("-d");
     return cmd.runSync();
 }
@@ -95,8 +96,9 @@ func compileTest() -> bool {
     // let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/structs.bufo");
     // let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/enums.bufo");
     // let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/func.bufo");
-    let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/eval.bufo");
+    // let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/eval.bufo");
     // let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/big.bufo");
+    let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ./tests/stage2/functions/recursive_normal.bufo");
     return cmd.runSync();
 }
 

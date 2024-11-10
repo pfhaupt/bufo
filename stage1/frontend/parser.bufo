@@ -314,7 +314,7 @@ struct Parser {
         let span: Span = newSpanBetween(&name.span, &typ.expr.span);
         return ParsedParam {
             span: span,
-            name: name.content,
+            name: name,
             typ: typ
         };
     }
@@ -408,6 +408,7 @@ struct Parser {
         }
         let end: Token = this.expect(TOKEN_CURLY_CLOSE);
         let span: Span = newSpanBetween(&start.span, &end.span);
+        block.span = span;
         return createDeclValue(DECL_VALUE_BLOCK, span, sizeof ParsedDeclValueBlock, &block);
     }
     func parseDeclValueExprIntLiteral(&mut this) -> ParsedDeclValue {
@@ -432,13 +433,15 @@ struct Parser {
             args[0] = ParsedDeclValue {
                 kind: DECL_VALUE_NUMBER,
                 span: numbah.span,
-                data: numbah_heap
+                data: numbah_heap,
+                typ: invalidType(),
             };
             let init: ParsedDeclValueCall = ParsedDeclValueCall {
                 fn: ParsedDeclValue {
                     kind: DECL_VALUE_IDENT,
                     span: numbah.span,
-                    data: i32_name
+                    data: i32_name,
+                    typ: invalidType(),
                 },
                 args: args,
                 argCount: 1,
