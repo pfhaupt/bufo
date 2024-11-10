@@ -1,0 +1,213 @@
+compiler_flags {
+  library: "LLVMWindowsManifest.lib";
+  library: "LLVMXRay.lib";
+  library: "LLVMLibDriver.lib";
+  library: "LLVMDlltoolDriver.lib";
+  library: "LLVMCoverage.lib";
+  library: "LLVMLineEditor.lib";
+  library: "LLVMXCoreDisassembler.lib";
+  library: "LLVMXCoreCodeGen.lib";
+  library: "LLVMXCoreDesc.lib";
+  library: "LLVMXCoreInfo.lib";
+  library: "LLVMX86TargetMCA.lib";
+  library: "LLVMX86Disassembler.lib";
+  library: "LLVMX86AsmParser.lib";
+  library: "LLVMX86CodeGen.lib";
+  library: "LLVMX86Desc.lib";
+  library: "LLVMX86Info.lib";
+  library: "LLVMWebAssemblyDisassembler.lib";
+  library: "LLVMWebAssemblyAsmParser.lib";
+  library: "LLVMWebAssemblyCodeGen.lib";
+  library: "LLVMWebAssemblyDesc.lib";
+  library: "LLVMWebAssemblyUtils.lib";
+  library: "LLVMWebAssemblyInfo.lib";
+  library: "LLVMVEDisassembler.lib";
+  library: "LLVMVEAsmParser.lib";
+  library: "LLVMVECodeGen.lib";
+  library: "LLVMVEDesc.lib";
+  library: "LLVMVEInfo.lib";
+  library: "LLVMSystemZDisassembler.lib";
+  library: "LLVMSystemZAsmParser.lib";
+  library: "LLVMSystemZCodeGen.lib";
+  library: "LLVMSystemZDesc.lib";
+  library: "LLVMSystemZInfo.lib";
+  library: "LLVMSparcDisassembler.lib";
+  library: "LLVMSparcAsmParser.lib";
+  library: "LLVMSparcCodeGen.lib";
+  library: "LLVMSparcDesc.lib";
+  library: "LLVMSparcInfo.lib";
+  library: "LLVMRISCVTargetMCA.lib";
+  library: "LLVMRISCVDisassembler.lib";
+  library: "LLVMRISCVAsmParser.lib";
+  library: "LLVMRISCVCodeGen.lib";
+  library: "LLVMRISCVDesc.lib";
+  library: "LLVMRISCVInfo.lib";
+  library: "LLVMPowerPCDisassembler.lib";
+  library: "LLVMPowerPCAsmParser.lib";
+  library: "LLVMPowerPCCodeGen.lib";
+  library: "LLVMPowerPCDesc.lib";
+  library: "LLVMPowerPCInfo.lib";
+  library: "LLVMNVPTXCodeGen.lib";
+  library: "LLVMNVPTXDesc.lib";
+  library: "LLVMNVPTXInfo.lib";
+  library: "LLVMMSP430Disassembler.lib";
+  library: "LLVMMSP430AsmParser.lib";
+  library: "LLVMMSP430CodeGen.lib";
+  library: "LLVMMSP430Desc.lib";
+  library: "LLVMMSP430Info.lib";
+  library: "LLVMMipsDisassembler.lib";
+  library: "LLVMMipsAsmParser.lib";
+  library: "LLVMMipsCodeGen.lib";
+  library: "LLVMMipsDesc.lib";
+  library: "LLVMMipsInfo.lib";
+  library: "LLVMLoongArchDisassembler.lib";
+  library: "LLVMLoongArchAsmParser.lib";
+  library: "LLVMLoongArchCodeGen.lib";
+  library: "LLVMLoongArchDesc.lib";
+  library: "LLVMLoongArchInfo.lib";
+  library: "LLVMLanaiDisassembler.lib";
+  library: "LLVMLanaiCodeGen.lib";
+  library: "LLVMLanaiAsmParser.lib";
+  library: "LLVMLanaiDesc.lib";
+  library: "LLVMLanaiInfo.lib";
+  library: "LLVMHexagonDisassembler.lib";
+  library: "LLVMHexagonCodeGen.lib";
+  library: "LLVMHexagonAsmParser.lib";
+  library: "LLVMHexagonDesc.lib";
+  library: "LLVMHexagonInfo.lib";
+  library: "LLVMBPFDisassembler.lib";
+  library: "LLVMBPFAsmParser.lib";
+  library: "LLVMBPFCodeGen.lib";
+  library: "LLVMBPFDesc.lib";
+  library: "LLVMBPFInfo.lib";
+  library: "LLVMAVRDisassembler.lib";
+  library: "LLVMAVRAsmParser.lib";
+  library: "LLVMAVRCodeGen.lib";
+  library: "LLVMAVRDesc.lib";
+  library: "LLVMAVRInfo.lib";
+  library: "LLVMARMDisassembler.lib";
+  library: "LLVMARMAsmParser.lib";
+  library: "LLVMARMCodeGen.lib";
+  library: "LLVMARMDesc.lib";
+  library: "LLVMARMUtils.lib";
+  library: "LLVMARMInfo.lib";
+  library: "LLVMAMDGPUTargetMCA.lib";
+  library: "LLVMAMDGPUDisassembler.lib";
+  library: "LLVMAMDGPUAsmParser.lib";
+  library: "LLVMAMDGPUCodeGen.lib";
+  library: "LLVMAMDGPUDesc.lib";
+  library: "LLVMAMDGPUUtils.lib";
+  library: "LLVMAMDGPUInfo.lib";
+  library: "LLVMAArch64Disassembler.lib";
+  library: "LLVMAArch64AsmParser.lib";
+  library: "LLVMAArch64CodeGen.lib";
+  library: "LLVMAArch64Desc.lib";
+  library: "LLVMAArch64Utils.lib";
+  library: "LLVMAArch64Info.lib";
+  library: "LLVMOrcJIT.lib";
+  library: "LLVMWindowsDriver.lib";
+  library: "LLVMMCJIT.lib";
+  library: "LLVMJITLink.lib";
+  library: "LLVMInterpreter.lib";
+  library: "LLVMExecutionEngine.lib";
+  library: "LLVMRuntimeDyld.lib";
+  library: "LLVMOrcTargetProcess.lib";
+  library: "LLVMOrcShared.lib";
+  library: "LLVMDWP.lib";
+  library: "LLVMDebugInfoLogicalView.lib";
+  library: "LLVMDebugInfoGSYM.lib";
+  library: "LLVMOption.lib";
+  library: "LLVMObjectYAML.lib";
+  library: "LLVMObjCopy.lib";
+  library: "LLVMMCA.lib";
+  library: "LLVMMCDisassembler.lib";
+  library: "LLVMLTO.lib";
+  library: "LLVMPasses.lib";
+  library: "LLVMCFGuard.lib";
+  library: "LLVMCoroutines.lib";
+  library: "LLVMipo.lib";
+  library: "LLVMVectorize.lib";
+  library: "LLVMLinker.lib";
+  library: "LLVMInstrumentation.lib";
+  library: "LLVMFrontendOpenMP.lib";
+  library: "LLVMFrontendOpenACC.lib";
+  library: "LLVMFrontendHLSL.lib";
+  library: "LLVMExtensions.lib";
+  library: "LLVMDWARFLinkerParallel.lib";
+  library: "LLVMDWARFLinker.lib";
+  library: "LLVMGlobalISel.lib";
+  library: "LLVMMIRParser.lib";
+  library: "LLVMAsmPrinter.lib";
+  library: "LLVMSelectionDAG.lib";
+  library: "LLVMCodeGen.lib";
+  library: "LLVMObjCARCOpts.lib";
+  library: "LLVMIRPrinter.lib";
+  library: "LLVMInterfaceStub.lib";
+  library: "LLVMFileCheck.lib";
+  library: "LLVMFuzzMutate.lib";
+  library: "LLVMTarget.lib";
+  library: "LLVMScalarOpts.lib";
+  library: "LLVMInstCombine.lib";
+  library: "LLVMAggressiveInstCombine.lib";
+  library: "LLVMTransformUtils.lib";
+  library: "LLVMBitWriter.lib";
+  library: "LLVMAnalysis.lib";
+  library: "LLVMProfileData.lib";
+  library: "LLVMSymbolize.lib";
+  library: "LLVMDebugInfoPDB.lib";
+  library: "LLVMDebugInfoMSF.lib";
+  library: "LLVMDebugInfoDWARF.lib";
+  library: "LLVMObject.lib";
+  library: "LLVMTextAPI.lib";
+  library: "LLVMMCParser.lib";
+  library: "LLVMIRReader.lib";
+  library: "LLVMAsmParser.lib";
+  library: "LLVMMC.lib";
+  library: "LLVMDebugInfoCodeView.lib";
+  library: "LLVMBitReader.lib";
+  library: "LLVMFuzzerCLI.lib";
+  library: "LLVMCore.lib";
+  library: "LLVMRemarks.lib";
+  library: "LLVMBitstreamReader.lib";
+  library: "LLVMBinaryFormat.lib";
+  library: "LLVMTargetParser.lib";
+  library: "LLVMTableGen.lib";
+  library: "LLVMSupport.lib";
+  library: "LLVMDemangle.lib";
+  libpath: "C:\LLVM\lib";
+}
+
+import "std/string.bufo";
+
+struct LLVMContextRef { ptr: Any; }
+extern LLVMContextCreate() -> LLVMContextRef;
+extern LLVMContextDispose(context: LLVMContextRef);
+extern LLVMAppendBasicBlockInContext(C: LLVMContextRef, FnRef: LLVMValueRef, name: &char) -> LLVMBasicBlockRef;
+
+struct LLVMModuleRef { ptr: Any; }
+extern LLVMModuleCreateWithNameInContext(id: &char, C: LLVMContextRef) -> LLVMModuleRef;
+extern LLVMPrintModuleToString(module: LLVMModuleRef) -> &char;
+
+struct LLVMBuilderRef { ptr: Any; }
+extern LLVMCreateBuilderInContext(context: LLVMContextRef) -> LLVMBuilderRef;
+extern LLVMCreateBuilder() -> LLVMBuilderRef;
+extern LLVMBuildRetVoid(B: LLVMBuilderRef);
+extern LLVMBuildRet(B: LLVMBuilderRef, Value: LLVMValueRef);
+extern LLVMPositionBuilderAtEnd(Builder: LLVMBuilderRef, Block: LLVMBasicBlockRef);
+
+struct LLVMBasicBlockRef { ptr: Any; }
+
+struct LLVMValueRef { ptr: Any; }
+extern LLVMGetNamedFunction(M: LLVMModuleRef, Name: &char) -> LLVMValueRef;
+extern LLVMAddFunction(M: LLVMModuleRef, name: &char, FunctionTy: LLVMTypeRef) -> LLVMValueRef;
+extern LLVMConstInt(IntTy: LLVMTypeRef, N: usize, SignExtend: LLVMBool) -> LLVMValueRef;
+
+struct LLVMBool { val: i32; }
+
+struct LLVMTypeRef { ptr: Any; }
+extern LLVMFunctionType(ReturnType: LLVMTypeRef, ParamTypes: &LLVMTypeRef, ParamCount: u32, IsVarArg: LLVMBool) -> LLVMTypeRef;
+extern LLVMIntTypeInContext(c: LLVMContextRef, bits: u32) -> LLVMTypeRef;
+
+func False() -> LLVMBool {
+    return LLVMBool { val: 0 };
+}

@@ -102,10 +102,22 @@ func compileTest() -> bool {
     return cmd.runSync();
 }
 
+func tryLLVM() -> bool {
+    mut cmd: Cmd = newCmdFromStrLit("python llvm.py");
+    if (!cmd.runSync()) return false;
+    cmd = newCmdFromStrLit(STAGE0_PATH);
+    cmd.add("./llvm_test.bufo");
+    cmd.add("-v");
+    cmd.add("--emit-llvm");
+    cmd.add("-r");
+    return cmd.runSync();
+}
+
 func main() -> i32 {
     if (!buildMyself()) return 1;
     if (!buildStage0()) return 1;
     if (!buildStage1()) return 1;
     if (!compileTest()) return 1;
+    if (!tryLLVM()) return 1;
     return 0;
 }

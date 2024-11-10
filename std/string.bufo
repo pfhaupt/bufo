@@ -150,7 +150,7 @@ func readFileToString(path: &char) -> String {
         // `b` needed because otherwise `\r` would be dropped, leading to wrong Spans
         let file: Any = fopen(path, "rb");
         if (file == null) {
-            let stderr: Any = fdopen(2, "w");
+            let stderr: Any = fdopen(2, "a");
             fprintf(stderr, "error: Could not open file `%s`.\n", path);
             exit(1);
         }
@@ -165,4 +165,18 @@ func readFileToString(path: &char) -> String {
         assert(fclose(file) == 0);
     }
     return s;
+}
+
+func writeStringToFile(path: &char, s: String) {
+    unsafe {
+        // `b` needed because otherwise `\r` would be dropped, leading to wrong Spans
+        let file: Any = fopen(path, "wb");
+        if (file == null) {
+            let stderr: Any = fdopen(2, "a");
+            fprintf(stderr, "error: Could not open file `%s`.\n", path);
+            exit(1);
+        }
+        let size: usize = fwrite(s.buffer, 1, s.length, file);
+        assert(fclose(file) == 0);
+    }
 }

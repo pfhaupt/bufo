@@ -18,6 +18,7 @@ unsafe extern memcpy(dest: Any, src: Any, count: usize) -> Any;
 unsafe extern fopen(filename: &char, mode: &char) -> Any;
 // FIXME: Any ignores Mutability :^) We should probably only write to mutable buffers tho...
 unsafe extern fread(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
+unsafe extern fwrite(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
 unsafe extern fclose(stream: Any) -> i32;
 unsafe extern fprintf(stream: Any, msg: &char, ...);
 

@@ -23,7 +23,6 @@ pub enum ParserError<'src> {
     ForbiddenThisParameter(Location),
     ThisOutsideClass(Location),
     InvalidCompilerFlag(String),
-    CompilerFlagsNotFirst(Location),
     InvalidArraySize(Location),
     ArrayWithSpecifiedSizeMoreThanOneElement(Location),
     InvalidCharLiteral(Location, &'src str),
@@ -59,7 +58,6 @@ impl Display for ParserError<'_> {
             Self::ForbiddenThisParameter(l) => format!("{l:?}: Unexpected `this` parameter.\n{}: `this` parameters are only allowed in methods.", NOTE_STR),
             Self::ThisOutsideClass(l) => format!("{l:?}: Unexpected `this` outside of a struct.\n{}: `this` is only allowed in methods.", NOTE_STR),
             Self::InvalidCompilerFlag(s) => format!("{}", s),
-            Self::CompilerFlagsNotFirst(l) => format!("{l:?}: `{KEYWORD_COMPILER_FLAGS}` must be the first statement in a file."),
             Self::InvalidArraySize(l) => format!("{l:?}: Invalid array size."),
             Self::ArrayWithSpecifiedSizeMoreThanOneElement(l) => format!("{l:?}: Arrays with a specified size can only have one element."),
             Self::InvalidCharLiteral(loc, lit) => format!("{loc:?}: Invalid character literal `{lit}`."),
@@ -470,17 +468,17 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
             TokenType::Eof,
         ];
         let mut valid = true;
-        let compiler_flags = self.parse_compiler_flags()?;
+        let mut compiler_flags = self.parse_compiler_flags()?;
         while let Some(tkn) = self.peek() {
            match tkn.token_type {
                 TokenType::KeywordFilemarker => self.handle_filemarker(),
                 TokenType::KeywordCompilerFlags => {
-                    self.expect(TokenType::KeywordCompilerFlags)?;
-                    self.report_error(ParserError::CompilerFlagsNotFirst(
-                        self.get_location(),
-                    ));
-                    self.recover(&RECOVER_TOKENS);
-                    valid = false;
+                    let Ok(flags) = self.parse_compiler_flags() else {
+                        self.recover(&RECOVER_TOKENS);
+                        valid = false;
+                        continue;
+                    };
+                    compiler_flags.flags.extend(flags.flags);
                 }
                 TokenType::KeywordExtern => {
                     let Ok(parsed_extern) = self.parse_extern(false) else {

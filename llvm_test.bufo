@@ -1,0 +1,45 @@
+import "./stage1/backend/llvm_bindings.bufo";
+
+unsafe func main() {
+    let context: LLVMContextRef = LLVMContextCreate();
+    assert_with_msg(context.ptr != null, "context.ptr != null");
+    printf("Created Context\n");
+
+    let module: LLVMModuleRef = LLVMModuleCreateWithNameInContext("ligma", context);
+    assert_with_msg(module.ptr != null, "module.ptr != null");
+    printf("Created Module\n");
+
+    let builder: LLVMBuilderRef = LLVMCreateBuilderInContext(context);
+    assert_with_msg(builder.ptr != null, "builder.ptr != null");
+    printf("Created Builder\n");
+
+    let retType: LLVMTypeRef = LLVMIntTypeInContext(context, 32);
+    assert_with_msg(retType.ptr != null, "retType.ptr != null");
+    let params: [LLVMTypeRef; 2] = blank;
+    let fnType: LLVMTypeRef = LLVMFunctionType(retType, &params[0], 0, False());
+    assert_with_msg(fnType.ptr != null, "fnType.ptr != null");
+    printf("Created Function Type\n");
+
+    let fnRef: LLVMValueRef = LLVMAddFunction(module, "main", fnType);
+    assert_with_msg(fnRef.ptr != null, "fnRef.ptr != null");
+    printf("Created Function Value\n");
+
+    let entry: LLVMBasicBlockRef = LLVMAppendBasicBlockInContext(context, fnRef, "entry");
+    assert_with_msg(entry.ptr != null, "entry.ptr != null");
+    printf("Created Basic Block\n");
+
+    LLVMPositionBuilderAtEnd(builder, entry);
+
+    let zero: LLVMValueRef = LLVMConstInt(retType, 69, False());
+    assert_with_msg(zero.ptr != null, "zero.ptr != null");
+    printf("Created Zero\n");
+    LLVMBuildRet(builder, zero);
+
+    let mod: &char = LLVMPrintModuleToString(module);
+    assert_with_msg(mod != null, "mod != null");
+    let s: String = newStringFromStrLit(mod);
+    writeStringToFile("./out/test.ll", s);
+    printf("Wrote to ./out/test.ll\n");
+
+    LLVMContextDispose(context);
+}
