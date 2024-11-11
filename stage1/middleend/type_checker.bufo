@@ -12,7 +12,7 @@ func verifyBuiltinArgType(builtin: &ParsedDeclValue, size: &Type, argIndex: usiz
 return true;
 }
 
-func verifyBuiltinArgCount(builtin: &ParsedDeclValue, call: &ParsedDeclValueCall, expectedArgCount: usize, builtinName: &char) -> bool {
+func verifyBuiltinArgCount(builtin: &mut ParsedDeclValue, call: &ParsedDeclValueCall, expectedArgCount: usize, builtinName: &char) -> bool {
     if (call.argCount != expectedArgCount) unsafe {
         let stderr: Any = fdopen(2, "a");
         fprintf(stderr, "error: %s: Builtin `%s` expects exactly %llu argument(s).\n", builtin.span.toString().chars(), builtinName, expectedArgCount);
@@ -1275,7 +1275,7 @@ struct TypeChecker {
             return newType(number.span, TYPE_INTEGER, sizeof i64, &value);
         }
     }
-    func createTypeFromBuiltin(&mut this, builtin: &ParsedDeclValue) -> Type {
+    func createTypeFromBuiltin(&mut this, builtin: &mut ParsedDeclValue) -> Type {
         trace("createTypeFromBuiltin");
         assert_with_msg(builtin.kind == DECL_VALUE_CALL, "createTypeFromBuiltin expected DECL_VALUE_CALL");
         let call: &ParsedDeclValueCall = builtin.data;
@@ -1283,6 +1283,7 @@ struct TypeChecker {
         assert_with_msg(fn.kind == DECL_VALUE_IDENT, "Builtins are expected to be simple ident calls like @builtin()");
         let ident: &ParsedDeclValueIdent = fn.data;
         let name: SubStr = ident.name;
+        mut typ: Type = invalidType();
         if (name.equals(&BUILTIN_INTEGER)) unsafe {
             if (!verifyBuiltinArgCount(builtin, call, 1, "integer")) {
                 this.hadErrorsInLookupStage = true;
@@ -1298,7 +1299,7 @@ struct TypeChecker {
                 return invalidType();
             }
             let int: StructType = this.newBuiltinInteger(&size);
-            return newType(builtin.span, TYPE_STRUCT, sizeof StructType, &int);
+            typ = newType(builtin.span, TYPE_STRUCT, sizeof StructType, &int);
         } else if (name.equals(&BUILTIN_FLOAT)) unsafe {
             if (!verifyBuiltinArgCount(builtin, call, 1, "float")) {
                 this.hadErrorsInLookupStage = true;
@@ -1316,7 +1317,7 @@ struct TypeChecker {
             todo_with_msg("returning a TYPE_BUILTIN seems fucked when we return a TYPE_STRUCT for integers");
             let float: StructType = this.newBuiltinFloat(&size);
             let btn: BuiltinType = newBuiltinType(builtin.span, BUILTIN_KIND_STRUCT, sizeof StructType, &float);
-            return newType(builtin.span, TYPE_BUILTIN, sizeof BuiltinType, &btn);
+            typ = newType(builtin.span, TYPE_BUILTIN, sizeof BuiltinType, &btn);
         } else if (name.equals(&BUILTIN_ANYTYPE)) {
             if (!verifyBuiltinArgCount(builtin, call, 0, "anytype")) {
                 this.hadErrorsInLookupStage = true;
@@ -1326,7 +1327,7 @@ struct TypeChecker {
             mut anytype: BuiltinType = invalidBuiltin();
             anytype.kind = BUILTIN_KIND_ANYTYPE;
             anytype.span = builtin.span;
-            return newType(builtin.span, TYPE_BUILTIN, sizeof BuiltinType, &anytype);
+            typ = newType(builtin.span, TYPE_BUILTIN, sizeof BuiltinType, &anytype);
         } else if (name.equals(&BUILTIN_ANYVALUE)) {
             if (!verifyBuiltinArgCount(builtin, call, 0, "anyvalue")) {
                 this.hadErrorsInLookupStage = true;
@@ -1336,30 +1337,31 @@ struct TypeChecker {
             mut anyvalue: BuiltinType = invalidBuiltin();
             anyvalue.kind = BUILTIN_KIND_ANYVALUE;
             anyvalue.span = builtin.span;
-            return newType(builtin.span, TYPE_BUILTIN, sizeof BuiltinType, &anyvalue);
+            typ = newType(builtin.span, TYPE_BUILTIN, sizeof BuiltinType, &anyvalue);
         } else if (name.equals(&BUILTIN_NONE)) {
             if (!verifyBuiltinArgCount(builtin, call, 0, "none")) {
                 this.hadErrorsInLookupStage = true;
                 return invalidType();
             }
-            return newBuiltinNone(builtin.span);
+            typ = newBuiltinNone(builtin.span);
         } else if (name.equals(&BUILTIN_SELF)) {
             if (!verifyBuiltinArgCount(builtin, call, 0, "Self")) {
                 this.hadErrorsInLookupStage = true;
                 return invalidType();
             }
-            return newBuiltinSelf(builtin.span);
+            typ = newBuiltinSelf(builtin.span);
         } else if (name.equals(&BUILTIN_BOOLEAN)) {
             if (!verifyBuiltinArgCount(builtin, call, 0, "boolean")) {
                 this.hadErrorsInLookupStage = true;
                 return invalidType();
             }
-            return newBuiltinBoolean(builtin.span);
+            typ = newBuiltinBoolean(builtin.span);
         } else {
             debug(name.toString().chars());
             todo_with_msg("createTypeFromBuiltin");
         }
-        return invalidType();
+        (*builtin).typ = typ;
+        return typ;
     }
     func createTypeFromCall(&mut this, mut call: &ParsedDeclValueCall) -> Type {
         trace("createTypeFromCall");
