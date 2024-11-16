@@ -843,10 +843,10 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
             self.global_values.insert(let_node.name.to_string());
             Ok(())
         } else {
+            let value = self.codegen_expression(&let_node.expression, false)?;
             let typ = self.codegen_type_node(&let_node.typ);
             let alloca = self.allocate(typ, &let_node.name)?;
             self.add_variable(&let_node.name, alloca.into());
-            let value = self.codegen_expression(&let_node.expression, false)?;
             self.store_value_in_ptr(alloca, value)?;
             Ok(())
         }
