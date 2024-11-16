@@ -1,0 +1,36 @@
+import "./stage1/backend/LLVM/bindings.bufo";
+
+struct LLVMBasicBlock {
+    ref: LLVMBasicBlockRef;
+    func guardReference(&this) {
+        trace("LLVMBasicBlock.guardReference");
+        assert_with_msg(!this.ref.isNull(), "LLVM Basic Block is null");
+    }
+    func getParent(&this) -> LLVMValue {
+        trace("LLVMBasicBlock.getParent");
+        this.guardReference();
+        unsafe {
+            let parent: LLVMValueRef = LLVMGetBasicBlockParent(this.ref);
+            assert_with_msg(!parent.isNull(), "Could not get parent from basic block");
+            return newLLVMValueFromRef(parent);
+        }
+    }
+    func getLastInstruction(&this, out: &mut LLVMValue) -> bool {
+        trace("LLVMBasicBlock.getLastInstruction");
+        this.guardReference();
+        unsafe {
+            let instr: LLVMValueRef = LLVMGetLastInstruction(this.ref);
+            if (instr.isNull()) return false;
+            *out = newLLVMValueFromRef(instr);
+            return true;
+        }
+    }
+}
+
+unsafe func newLLVMBasicBlockFromRef(ref: LLVMBasicBlockRef) -> LLVMBasicBlock {
+    trace("newLLVMBasicBlockFromRef");
+    assert_with_msg(!ref.isNull(), "Passed invalid reference to newLLVMBasicBlockFromRef");
+    return LLVMBasicBlock {
+        ref: ref
+    };
+}

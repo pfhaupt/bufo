@@ -1,0 +1,86 @@
+import "./stage1/backend/LLVM/bindings.bufo";
+
+struct LLVMBuilder {
+    ref: LLVMBuilderRef;
+    func guardReference(&mut this) {
+        trace("LLVMBuilder.guardReference");
+        assert_with_msg(!this.ref.isNull(), "LLVM Builder is null");
+    }
+    func positionAtEnd(&mut this, block: LLVMBasicBlock) {
+        trace("LLVMBuilder.positionAtEnd");
+        this.guardReference();
+        LLVMPositionBuilderAtEnd(this.ref, block.ref);
+    }
+    func positionBefore(&mut this, instr: LLVMValue) {
+        trace("LLVMBuilder.positionBefore");
+        this.guardReference();
+        LLVMPositionBuilderBefore(this.ref, instr.ref);
+    }
+
+    func getInsertBlock(&mut this) -> LLVMBasicBlock {
+        trace("LLVMBuilder.getInsertBlock");
+        this.guardReference();
+        unsafe {
+            let block: LLVMBasicBlockRef = LLVMGetInsertBlock(this.ref);
+            assert_with_msg(!block.isNull(), "Could not get insert block from builder");
+            return newLLVMBasicBlockFromRef(block);
+        }
+    }
+
+    func buildInsertValue(&mut this, aggregate: LLVMValue, element: LLVMValue, offset: u32, name: &char) -> LLVMValue {
+        trace("LLVMBuilder.buildInsertValue");
+        this.guardReference();
+        unsafe {
+            let val: LLVMValueRef = LLVMBuildInsertValue(this.ref, aggregate.ref, element.ref, offset, name);
+            assert_with_msg(!val.isNull(), "Could not build insert value in builder");
+            return newLLVMValueFromRef(val);
+        }
+    }
+
+    func buildAlloca(&mut this, typ: LLVMType, name: SubStr) -> LLVMValue {
+        trace("LLVMBuilder.buildAlloca");
+        this.guardReference();
+        unsafe {
+            let _n: String = name.toString();
+            let alloced: LLVMValueRef = LLVMBuildAlloca(this.ref, typ.ref, _n.chars());
+            _n.drop();
+            assert_with_msg(!alloced.isNull(), "Could not build alloca in builder");
+            return newLLVMValueFromRef(alloced);
+        }
+    }
+
+    func buildStore(&mut this, ptr: LLVMValue, value: LLVMValue) -> LLVMValue {
+        trace("LLVMBuilder.buildStore");
+        this.guardReference();
+        unsafe {
+            let value: LLVMValueRef = LLVMBuildStore(this.ref, value.ref, ptr.ref);
+            assert_with_msg(!value.isNull(), "Could not build store in builder");
+            return newLLVMValueFromRef(value);
+        }
+    }
+
+    func buildReturn(&mut this, value: LLVMValue) {
+        trace("LLVMBuilder.buildReturn");
+        this.guardReference();
+        unsafe {
+            let value: LLVMValueRef = LLVMBuildRet(this.ref, value.ref);
+            assert_with_msg(!value.isNull(), "Could not build return in builder");
+        }
+    }
+    func buildReturnVoid(&mut this) {
+        trace("LLVMBuilder.buildReturnVoid");
+        this.guardReference();
+        unsafe {
+            let value: LLVMValueRef = LLVMBuildRetVoid(this.ref);
+            assert_with_msg(!value.isNull(), "Could not build return void in builder");
+        }
+    }
+}
+
+unsafe func newLLVMBuilderFromRef(ref: LLVMBuilderRef) -> LLVMBuilder {
+    trace("newLLVMBuilderFromRef");
+    assert_with_msg(!ref.isNull(), "Passed invalid reference to newLLVMBuilderFromRef");
+    return LLVMBuilder {
+        ref: ref,
+    };
+}
