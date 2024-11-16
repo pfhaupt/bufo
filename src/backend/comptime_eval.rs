@@ -531,6 +531,7 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
         enumerate_ops!(
             [Char I128 F64 Ptr] [Char I128 F64 Ptr] Add +
             [Char I128 F64 Ptr] [Char I128 F64 Ptr] Sub -
+            [I128 F64] [I128 F64] Mul *
             [Bool Char I128 F64 Ptr] [Bool Bool Bool Bool Bool] NotEqual !=
             [Bool Char I128 F64 Ptr] [Bool Bool Bool Bool Bool] Equal ==
         )
