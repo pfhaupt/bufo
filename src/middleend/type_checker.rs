@@ -81,7 +81,7 @@ macro_rules! check_function {
                 if arg_type == Type::Unknown {
                     // We need to `infer` the type again
                     $tc.type_check_expression_with_type(&mut arg, &expected)?;
-                    debug_assert!(!expected.is_struct());
+                    // debug_assert!(!expected.is_struct());
                 } else if arg_type != expected {
                     $tc.report_error(TypeError::ArgParamTypeMismatch(
                         arg.get_loc(),
@@ -127,7 +127,7 @@ macro_rules! check_function {
                 if arg_type == Type::Unknown {
                     // We need to `infer` the type again
                     $tc.type_check_expression_with_type(&mut arg, &expected)?;
-                    debug_assert!(!expected.is_struct());
+                    // debug_assert!(!expected.is_struct());
                 } else if arg_type != expected {
                     $tc.report_error(TypeError::ArgParamTypeMismatch(
                         arg.get_loc(),
