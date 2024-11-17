@@ -3,7 +3,8 @@
 //! RUNTIME
 //! SUCCESS
 
-let u32 = @integer(32);
+let false = @boolean()(0);
+let u32 = @integer(32, false);
 
 let main = func () -> u32 {
     let a = 1;

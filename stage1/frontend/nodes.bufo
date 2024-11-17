@@ -26,11 +26,11 @@ struct ParsedModule {
         this.declCount = this.declCount + 1;
     }
 
-    func getDeclAtIndex(&mut this, index: usize) -> &ParsedGlobalDecl {
+    func getDeclAtIndex(&mut this, index: usize) -> &mut ParsedGlobalDecl {
         assert(index < this.declCount);
         unsafe {
             let _decl: &mut ParsedGlobalDecl = this.decls + index * sizeof ParsedGlobalDecl;
-            return _decl as &ParsedGlobalDecl;
+            return _decl;
         }
     }
 }
@@ -71,17 +71,21 @@ func defaultModule() -> ParsedModule {
 
 struct ParsedVarDecl {
     name: Token;
+    span: Span;
     value: ParsedDeclValue;
     isMutable: bool;
-    typ: Type;
+    typ: TCResult;
+    used: bool;
 }
 
-func createVarDecl(name: Token, value: ParsedDeclValue, mutable: bool) -> ParsedVarDecl {
+func createVarDecl(name: Token, span: Span, value: ParsedDeclValue, mutable: bool) -> ParsedVarDecl {
     return ParsedVarDecl {
         name: name,
+        span: span,
         value: value,
         isMutable: mutable,
-        typ: invalidType(),
+        typ: invalidTCResult(),
+        used: false,
     };
 }
 
@@ -103,8 +107,26 @@ struct ParsedDeclValue {
     kind: usize;
     span: Span;
     data: Any;
-    typ: Type;
+    typ: TCResult;
 
+    func isLValue(&this) -> bool {
+        if (this.kind == DECL_VALUE_INVALID) todo_with_msg("lvalue DECL_VALUE_INVALID");
+        else if (this.kind == DECL_VALUE_MODULE) todo_with_msg("lvalue DECL_VALUE_MODULE");
+        else if (this.kind == DECL_VALUE_FUNC_DECL) todo_with_msg("lvalue DECL_VALUE_FUNC_DECL");
+        else if (this.kind == DECL_VALUE_STRUCT_DECL) todo_with_msg("lvalue DECL_VALUE_STRUCT_DECL");
+        else if (this.kind == DECL_VALUE_ENUM_DECL) todo_with_msg("lvalue DECL_VALUE_ENUM_DECL");
+        else if (this.kind == DECL_VALUE_UNION_DECL) todo_with_msg("lvalue DECL_VALUE_UNION_DECL");
+        else if (this.kind == DECL_VALUE_BUILTIN) todo_with_msg("lvalue DECL_VALUE_BUILTIN");
+        else if (this.kind == DECL_VALUE_CALL) todo_with_msg("lvalue DECL_VALUE_CALL");
+        else if (this.kind == DECL_VALUE_IDENT) return true;
+        else if (this.kind == DECL_VALUE_BINARY) todo_with_msg("lvalue DECL_VALUE_BINARY");
+        else if (this.kind == DECL_VALUE_NUMBER) todo_with_msg("lvalue DECL_VALUE_NUMBER");
+        else if (this.kind == DECL_VALUE_BLOCK) todo_with_msg("lvalue DECL_VALUE_BLOCK");
+        else if (this.kind == DECL_VALUE_IF) todo_with_msg("lvalue DECL_VALUE_IF");
+        else if (this.kind == DECL_VALUE_UNARY) return this.asUnary().isLValue();
+        assert_with_msg(false, "exhaustive handling in isLValue");
+        return false;
+    }
     func asModule(&this) -> &ParsedModule {
         assert(this.kind == DECL_VALUE_MODULE);
         unsafe {
@@ -147,6 +169,12 @@ struct ParsedDeclValue {
             return this.data as &ParsedDeclValueCall;
         }
     }
+    func asUnary(&this) -> &ParsedDeclValueUnary {
+        assert(this.kind == DECL_VALUE_UNARY);
+        unsafe {
+            return this.data as &ParsedDeclValueUnary;
+        }
+    }
 }
 
 func defaultDeclValue() -> ParsedDeclValue {
@@ -155,7 +183,7 @@ func defaultDeclValue() -> ParsedDeclValue {
             kind: DECL_VALUE_INVALID,
             span: defaultSpan(),
             data: null,
-            typ: invalidType(),
+            typ: invalidTCResult(),
         };
     }
 }
@@ -169,9 +197,16 @@ func createDeclValue(kind: usize, span: Span, size: usize, data: Any) -> ParsedD
             kind: kind,
             span: span,
             data: mem,
-            typ: invalidType()
+            typ: invalidTCResult()
         };
     }
+}
+
+struct ParsedDeclValueBuiltin {
+    span: Span;
+    name: SubStr;
+    args: [ParsedDeclValue; 8];
+    argCount: usize;
 }
 
 struct ParsedDeclValueIf {
@@ -212,11 +247,11 @@ struct ParsedDeclValueBlock {
         }
         this.stmtCount = this.stmtCount + 1;
     }
-    func getStmtAtIndex(&this, index: usize) -> &ParsedStmt {
+    func getStmtAtIndex(&mut this, index: usize) -> &mut ParsedStmt {
         assert_with_msg(index < this.stmtCount, "Out of bounds access in ParsedDeclValueBlock.getStmtAtIndex()");
         unsafe {
             let _stmt: &mut ParsedStmt = this.stmts + index * sizeof ParsedStmt;
-            return _stmt as &ParsedStmt;
+            return _stmt;
         }
     }
 }
@@ -236,6 +271,7 @@ func createDeclValueBlock() -> ParsedDeclValueBlock {
 }
 
 struct ParsedDeclValueCall {
+    span: Span;
     fn: ParsedDeclValue;
     args: [ParsedDeclValue; 8];
     argCount: usize;
@@ -293,9 +329,11 @@ func binaryOpToStr(op: usize) -> &char {
 
 }
 struct ParsedDeclValueBinary {
+    span: Span;
     op: usize;
     lhs: ParsedDeclValue;
     rhs: ParsedDeclValue;
+    typ: TCResult;
 }
 
 comptime UNARY_OP_REF_IMMUT: usize = 0;
@@ -314,6 +352,10 @@ struct ParsedDeclValueUnary {
     span: Span;
     op: usize;
     expr: ParsedDeclValue;
+
+    func isLValue(&this) -> bool {
+        return this.op == UNARY_OP_DEREF_IMMUT;
+    }
 }
 
 struct ParsedEnumVariant {
@@ -501,18 +543,18 @@ struct ParsedFuncDecl {
         this.retType = retType;
     }
 
-    func getParamAtIndex(&this, index: usize) -> &ParsedParam {
+    func getParamAtIndex(&mut this, index: usize) -> &mut ParsedParam {
         assert_with_msg(index < this.paramCount, "Out of bounds access in ParsedFuncDecl.getParamAtIndex()");
         unsafe {
             let _param: &mut ParsedParam = this.params + index * sizeof ParsedParam;
-            return _param as &ParsedParam;
+            return _param;
         }
     }
-    func getStmtAtIndex(&this, index: usize) -> &ParsedStmt {
+    func getStmtAtIndex(&mut this, index: usize) -> &mut ParsedStmt {
         assert_with_msg(index < this.stmtCount, "Out of bounds access in ParsedFuncDecl.getStmtAtIndex()");
         unsafe {
             let _stmt: &mut ParsedStmt = this.stmts + index * sizeof ParsedStmt;
-            return _stmt as &ParsedStmt;
+            return _stmt;
         }
     }
 }
@@ -566,16 +608,18 @@ comptime STMT_VAR_DECL: usize = 0;
 comptime STMT_RETURN: usize = 1;
 comptime STMT_EXPR: usize = 2;
 struct ParsedStmt {
+    span: Span;
     kind: usize;
     data: Any;
 }
 
-func createStmt(kind: usize, size: usize, data: Any) -> ParsedStmt {
+func createStmt(span: Span, kind: usize, size: usize, data: Any) -> ParsedStmt {
     unsafe {
         mut mem: Any = calloc(1, size);
         assert(mem != null);
         memcpy(mem, data, size);
         return ParsedStmt {
+            span: span,
             kind: kind,
             data: mem
         };

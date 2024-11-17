@@ -13,3 +13,5 @@ comptime BUILTIN_SELF: SubStr = BUILD_A_BUILTIN("Self");
 comptime BUILTIN_ANYTYPE: SubStr = BUILD_A_BUILTIN("anytype");
 comptime BUILTIN_ANYVALUE: SubStr = BUILD_A_BUILTIN("anyvalue");
 comptime BUILTIN_NONE: SubStr = BUILD_A_BUILTIN("none");
+comptime BUILTIN_ENTRY: SubStr = BUILD_A_BUILTIN("entry");
+comptime BUILTIN_CHECK: SubStr = BUILD_A_BUILTIN("check");

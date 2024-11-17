@@ -1,0 +1,32 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 2
+//! RUNTIME
+//! SUCCESS
+
+let false = @boolean()(0);
+let u32 = @integer(32, false);
+
+let main = func () -> u32 {
+    let c = 12;
+    let a = 5;
+    mut d = 0;
+    if a + 7 == c {
+        let b = 9;
+        d = b + 0;
+    } else {
+        let b = 7;
+        d = b + 1;
+    }
+    if d == 9 {
+        // a == 5
+        // c == 12
+        // c - d == 3
+        // a == c - d + 2
+        if a == c - d + 2 {
+            return 0;
+        }
+    }
+    return 1;
+};
+
+@entry(main);

@@ -116,8 +116,9 @@ struct Parser {
         let name: Token = this.expect(TOKEN_IDENT);
         this.expect(TOKEN_EQUAL_SINGLE);
         let value: ParsedDeclValue = this.parseDeclValue();
-        this.expect(TOKEN_SEMI_COLON);
-        return createVarDecl(name, value, mutable);
+        let end: Token = this.expect(TOKEN_SEMI_COLON);
+        let span: Span = newSpanBetween(&mutToken.span, &end.span);
+        return createVarDecl(name, span, value, mutable);
     }
     func parseDeclValue(&mut this) -> ParsedDeclValue {
         trace("parseDeclValue");
@@ -371,9 +372,11 @@ struct Parser {
         let rhs: ParsedDeclValue = this.__parseDeclValueExpr(precedence, associativity);
         let span: Span = newSpanBetween(&lhs.span, &rhs.span);
         let bin: ParsedDeclValueBinary = ParsedDeclValueBinary {
+            span: span,
             op: op,
             lhs: lhs,
-            rhs: rhs
+            rhs: rhs,
+            typ: invalidTCResult(),
         };
         return createDeclValue(DECL_VALUE_BINARY, span, sizeof ParsedDeclValueBinary, &bin);
     }
@@ -393,6 +396,7 @@ struct Parser {
         else if (tkn.kind == TOKEN_CURLY_OPEN)
             return this.parseDeclValueExprBlock();
         this.peek().span.print();
+        this.peek().content.print();
         unsafe {
             printf("\n");
         }
@@ -418,36 +422,7 @@ struct Parser {
             span: number.span,
             number: number.content,
         };
-        let i32_nam: ParsedDeclValueIdent = ParsedDeclValueIdent {
-            span: number.span,
-            name: newSubStrOfStrLit("__integer"),
-        };
-        unsafe {
-            let i32_name: &ParsedDeclValueIdent = calloc(1, sizeof ParsedDeclValueIdent);
-            assert(i32_name != null);
-            memcpy(i32_name, &i32_nam, sizeof ParsedDeclValueIdent);
-            let numbah_heap: &ParsedDeclValueNumber = calloc(1, sizeof ParsedDeclValueNumber);
-            assert(numbah_heap != null);
-            memcpy(numbah_heap, &numbah, sizeof ParsedDeclValueNumber);
-            mut args: [ParsedDeclValue; 8] = blank;
-            args[0] = ParsedDeclValue {
-                kind: DECL_VALUE_NUMBER,
-                span: numbah.span,
-                data: numbah_heap,
-                typ: invalidType(),
-            };
-            let init: ParsedDeclValueCall = ParsedDeclValueCall {
-                fn: ParsedDeclValue {
-                    kind: DECL_VALUE_IDENT,
-                    span: numbah.span,
-                    data: i32_name,
-                    typ: invalidType(),
-                },
-                args: args,
-                argCount: 1,
-            };
-            return createDeclValue(DECL_VALUE_CALL, number.span, sizeof ParsedDeclValueCall, &init);
-        }
+        return createDeclValue(DECL_VALUE_NUMBER, number.span, sizeof ParsedDeclValueNumber, &numbah);
     }
     func parseDeclValueExprIdentifier(&mut this) -> ParsedDeclValue {
         trace("parseDeclValueExprIdentifier");
@@ -506,14 +481,27 @@ struct Parser {
         trace("parseDeclValueBuiltin");
         // TODO: Instead of assert, report an error
         //       We don't want to let unknown builtin calls through
-        this.expect(TOKEN_AT);
-        let builtinFn: ParsedDeclValue = this.parseDeclValueExpr();
-        assert(builtinFn.kind == DECL_VALUE_CALL);
-        unsafe {
-            let fnName: ParsedDeclValue = (builtinFn.data as &ParsedDeclValueCall).fn;
-            assert(fnName.kind == DECL_VALUE_IDENT);
+        let start: Token = this.expect(TOKEN_AT);
+        let name: Token = this.expect(TOKEN_IDENT);
+        mut args: [ParsedDeclValue; 8] = blank;
+        mut argCount: usize = 0;
+        this.expect(TOKEN_PAREN_OPEN);
+        while (!this.at(TOKEN_PAREN_CLOSE)) {
+            assert(argCount < 8);
+            let arg: ParsedDeclValue = this.parseDeclValueExpr();
+            args[argCount] = arg;
+            argCount = argCount + 1;
+            if (!this.at(TOKEN_PAREN_CLOSE)) this.expect(TOKEN_COMMA);
         }
-        return createDeclValue(DECL_VALUE_BUILTIN, builtinFn.span, sizeof ParsedDeclValue, &builtinFn);
+        let end: Token = this.expect(TOKEN_PAREN_CLOSE);
+        let span: Span = newSpanBetween(&start.span, &end.span);
+        let builtin: ParsedDeclValueBuiltin = ParsedDeclValueBuiltin {
+            span: span,
+            name: name.content,
+            args: args,
+            argCount: argCount
+        };
+        return createDeclValue(DECL_VALUE_BUILTIN, builtin.span, sizeof ParsedDeclValueBuiltin, &builtin);
     }
     func parseDeclValueCall(&mut this, name: ParsedDeclValue) -> ParsedDeclValue {
         trace("parseDeclValueCall");
@@ -529,12 +517,13 @@ struct Parser {
         }
         let end: Token = this.expect(TOKEN_PAREN_CLOSE);
         unsafe {
+            let span: Span = newSpanBetween(&name.span, &end.span);
             let call: ParsedDeclValueCall = ParsedDeclValueCall {
+                span: span,
                 fn: name,
                 args: args,
                 argCount: argCount
             };
-            let span: Span = newSpanBetween(&name.span, &end.span);
             return createDeclValue(DECL_VALUE_CALL, span, sizeof ParsedDeclValueCall, &call);
         }
     }
@@ -568,7 +557,7 @@ struct Parser {
         let expr: ParsedDeclValue = this.parseDeclValueExpr();
         if (expr.kind != DECL_VALUE_IF)
             this.expect(TOKEN_SEMI_COLON);
-        return createStmt(STMT_EXPR, sizeof ParsedDeclValue, &expr);
+        return createStmt(expr.span, STMT_EXPR, sizeof ParsedDeclValue, &expr);
     }
     func parseStmtReturn(&mut this) -> ParsedStmt {
         trace("parseStmtReturn");
@@ -577,18 +566,19 @@ struct Parser {
             // return;
             // sugar for return none;
             let none: ParsedDeclValue = createEmptyExpr(kw.span);
-            return createStmt(STMT_RETURN, sizeof ParsedDeclValue, &none);
+            return createStmt(none.span, STMT_RETURN, sizeof ParsedDeclValue, &none);
         } else {
             // return <expr>;
             let expr: ParsedDeclValue = this.parseDeclValueExpr();
-            this.expect(TOKEN_SEMI_COLON);
-            return createStmt(STMT_RETURN, sizeof ParsedDeclValue, &expr);
+            let end: Token = this.expect(TOKEN_SEMI_COLON);
+            let span: Span = newSpanBetween(&kw.span, &end.span);
+            return createStmt(span, STMT_RETURN, sizeof ParsedDeclValue, &expr);
         }
     }
     func parseStmtVarDecl(&mut this) -> ParsedStmt {
         trace("parseStmtVarDecl");
         let decl: ParsedVarDecl = this.parseVarDecl();
-        return createStmt(STMT_VAR_DECL, sizeof ParsedVarDecl, &decl);
+        return createStmt(decl.span, STMT_VAR_DECL, sizeof ParsedVarDecl, &decl);
     }
 }
 

@@ -24,6 +24,7 @@ struct String {
     func resize(&mut this, new_cap: usize) {
         unsafe {
             let _new: Any = calloc(new_cap, sizeof char);
+            assert_with_msg(_new != null, "Could not resize String");
             let _old: Any = this.buffer;
             memcpy(_new, _old, this.length);
             free(_old);

@@ -3,1830 +3,1384 @@ import "frontend/nodes.bufo";
 import "util/span.bufo";
 import "middleend/builtins.bufo";
 
-func verifyBuiltinArgType(builtin: &ParsedDeclValue, size: &Type, argIndex: usize, expected: usize, builtinName: &char) -> bool {
-    if (size.kind != expected) unsafe {
-        let stderr: Any = fdopen(2, "a");
-        fprintf(stderr, "error: %s: Builtin `%s` expects %s as argument %llu, got %s.\n", builtin.span.toString().chars(), builtinName, evalTypeToStr(expected), argIndex, evalTypeToStr(size.kind));
-        return false;
-    }
-return true;
+comptime TYPE_INVALID: u8 = 0;
+comptime TYPE_INTEGER: u8 = 1;
+comptime TYPE_BOOLEAN: u8 = 2;
+comptime TYPE_POINTER: u8 = 3;
+comptime TYPE_FUNCTION: u8 = 4;
+comptime TYPE_NONE: u8 = 5;
+comptime TYPE_ANYTYPE: u8 = 6;
+struct IntType {
+    signed: bool;
+    bitsize: i64;
 }
-
-func verifyBuiltinArgCount(builtin: &mut ParsedDeclValue, call: &ParsedDeclValueCall, expectedArgCount: usize, builtinName: &char) -> bool {
-    if (call.argCount != expectedArgCount) unsafe {
-        let stderr: Any = fdopen(2, "a");
-        fprintf(stderr, "error: %s: Builtin `%s` expects exactly %llu argument(s).\n", builtin.span.toString().chars(), builtinName, expectedArgCount);
-        return false;
-    }
-    return true;
+struct PtrType {
+    underlying: &Type;
+    mutable: bool;
 }
-
-comptime BUILTIN_KIND_INVALID: usize = 0;
-comptime BUILTIN_KIND_ANYTYPE: usize = 1;
-comptime BUILTIN_KIND_ANYVALUE: usize = 2;
-comptime BUILTIN_KIND_NONE: usize = 3;
-comptime BUILTIN_KIND_STRUCT: usize = 4;
-comptime BUILTIN_KIND_SELF: usize = 5;
-comptime BUILTIN_KIND_BOOL: usize = 6;
-struct BuiltinType {
-    kind: usize;
-    span: Span;
-    data: Any;
-
-    func toString(&this) -> String {
-        if (this.kind == BUILTIN_KIND_INVALID)
-            return newStringFromStrLit("@invalid()");
-        else if (this.kind == BUILTIN_KIND_SELF)
-            return newStringFromStrLit("@Self()");
-        else if (this.kind == BUILTIN_KIND_BOOL)
-            return newStringFromStrLit("@boolean()");
-        else if (this.kind == BUILTIN_KIND_NONE)
-            return newStringFromStrLit("@none()");
-        else unsafe {
-            printf("%d\n", this.kind);
-            todo_with_msg("BuiltinType.toString()");
-            return blank;
-        }
-    }
-
-    func equals(&this, other: &BuiltinType) -> bool {
-        trace("BuiltinType.equals");
-        if (this.kind != other.kind) return false;
-        if (this.kind == BUILTIN_KIND_NONE) return true;
-        else unsafe {
-            printf("%d %d\n", this.kind, other.kind);
-            todo_with_msg("BuiltinType.equals with those types");
-        }
-        return false;
-    }
-
-    func isType(&this) -> bool {
-        assert_with_msg(this.kind != BUILTIN_KIND_INVALID, "BuiltinType.isType() got invalid kind");
-        return this.kind == BUILTIN_KIND_ANYTYPE
-            || this.kind == BUILTIN_KIND_STRUCT
-            || this.kind == BUILTIN_KIND_NONE
-            || this.kind == BUILTIN_KIND_SELF;
-    }
-
-    func isBool(&this) -> bool {
-        return this.kind == BUILTIN_KIND_BOOL;
-    }
-
-    func isNone(&this) -> bool {
-        return this.kind == BUILTIN_KIND_NONE;
-    }
-
-    func isSelf(&this) -> bool {
-        return this.kind == BUILTIN_KIND_SELF;
-    }
-
-    func isAnytype(&this) -> bool {
-        return this.kind == BUILTIN_KIND_ANYTYPE;
-    }
-}
-
-func invalidBuiltin() -> BuiltinType {
-    unsafe {
-        return BuiltinType {
-            kind: BUILTIN_KIND_INVALID,
-            span: defaultSpan(),
-            data: null
-        };
-    }
-}
-
-func newBuiltinType(span: Span, kind: usize, size: usize, data: Any) -> BuiltinType {
-    return BuiltinType {
-        kind: kind,
-        span: span,
-        data: data
-    };
-}
-func newBuiltinNone(span: Span) -> Type {
-    mut none: BuiltinType = invalidBuiltin();
-    none.kind = BUILTIN_KIND_NONE;
-    none.span = span;
-    return newType(span, TYPE_BUILTIN, sizeof BuiltinType, &none);
-}
-
-func newBuiltinSelf(span: Span) -> Type {
-    mut self: BuiltinType = invalidBuiltin();
-    self.kind = BUILTIN_KIND_SELF;
-    self.span = span;
-    return newType(span, TYPE_BUILTIN, sizeof BuiltinType, &self);
-}
-
-func newBuiltinBoolean(span: Span) -> Type {
-    mut boool: BuiltinType = invalidBuiltin();
-    boool.kind = BUILTIN_KIND_BOOL;
-    boool.span = span;
-    return newType(span, TYPE_BUILTIN, sizeof BuiltinType, &boool);
-}
-
-// in createTypeFromFunc():
-// - UNSET means we haven't set the return type yet :) You can expect retData to be null
-// - EVAL means that we were able to compute the return type right then and there and
-//   store an Type
-// - NODE means we are missing information (for example generic parameter) and store
-//   the Node for later Interpretation
-comptime RET_KIND_UNSET: usize = 0;
-comptime RET_KIND_EVAL: usize = 1;
-comptime RET_KIND_NODE: usize = 2;
 struct FuncType {
-    metadata: Metadata;
-    node: &ParsedFuncDecl;
-    params: &mut NameTypePair;
-    paramLen: usize;
-    paramCap: usize;
-    retKind: usize;
-    retData: Any;
-    func toString(&this) -> String {
-        mut s: String = newStringFromStrLit("func (");
-        for (mut i: usize = 0; i < this.paramLen; i = i + 1) {
-            let _p: &NameTypePair = this.getParamAtIndex(i);
-            if (i != 0) s.pushStr(", ");
-            let _s: String = _p.value.toString();
-            s.pushString(&_s);
-            _s.drop();
-        }
-        s.pushStr(") -> ");
-        if (this.retKind == RET_KIND_EVAL) unsafe {
-            let _s: String = (this.retData as &Type).toString();
-            s.pushString(&_s);
-            _s.drop();
-        } else {
-            todo_with_msg("FuncType.toString() with non-evaled ret type");
-        }
-        return s;
-    }
-    func hasParameter(&this, name: &SubStr) -> bool {
-        for (mut i: usize = 0; i < this.paramLen; i = i + 1) {
-            let param: &NameTypePair = this.getParamAtIndex(i);
-            if (param.name.equals(name))
-                return true;
+    funcDecl: &mut ParsedFuncDecl;
+    params: &[Type; 8];
+    paramCount: usize;
+    retType: &Type;
+    func containsAnytype(&this) -> bool {
+        if (this.retType.isAnytype()) return true;
+        for (mut i: usize = 0; i < this.paramCount; i = i + 1) {
+            if ((*this.params)[i].isAnytype()) return true;
         }
         return false;
     }
-    func addParameter(&mut this, span: Span, name: SubStr, typ: &Type) {
-        if (this.paramLen >= this.paramCap) {
-            todo_with_msg("Resize params");
-        }
-        if ((&*this).hasParameter(&name)) {
-            todo_with_msg("Report error: Duplicate param");
-        }
-        let pair: NameTypePair = NameTypePair {
-            span: span,
-            name: name,
-            value: *typ
-        };
-        unsafe {
-            *(this.params + this.paramLen * sizeof NameTypePair) = pair;
-        }
-        this.paramLen = this.paramLen + 1;
-    }
-    func getReturnType(&this) -> &Type {
-        assert_with_msg(this.retKind == RET_KIND_EVAL, "Attempted to get unevaled return type");
-        return this.retData;
-    }
-    func getParamAtIndex(&this, index: usize) -> &NameTypePair {
-        assert_with_msg(index < this.paramLen, "Out of bounds ac cess in FuncType.getParamAtIndex()");
-        unsafe {
-            let _param: &mut NameTypePair = this.params + index * sizeof NameTypePair;
-            return _param as &NameTypePair;
-        }
-    }
-    func getParamByName(&this, name: &SubStr) -> &NameTypePair {
-        for (mut i: usize = 0; i < this.paramLen; i = i + 1) {
-            let param: &NameTypePair = this.getParamAtIndex(i);
-            if (param.name.equals(name))
-                return param;
-        }
-        assert_with_msg(this.hasParameter(name), "unreachable");
-        assert_with_msg(false, "unreachable");
-        return &defaultNameTypePair();
-    }
-    func setReturnAST(&mut this, node: &ParsedTypeExpr) {
-        this.retKind = RET_KIND_NODE;
-        this.retData = node;
-    }
-    func setReturnType(&mut this, val: &Type) {
-        unsafe {
-            let mem: Any = calloc(sizeof Type, 1);
-            assert_with_msg(mem != null, "Could not allocate memory in setReturnType");
-            memcpy(mem, val, sizeof Type);
-            this.retKind = RET_KIND_EVAL;
-            this.retData = mem;
-        }
-    }
 }
-
-func newFuncType(node: &ParsedFuncDecl) -> FuncType {
-    unsafe {
-        let mem: Any = calloc(sizeof NameTypePair, INITIAL_CAPACITY);
-        assert_with_msg(mem != null, "Could not allocate memory in newFuncType()");
-        let params: &mut NameTypePair = &mut *mem;
-        return FuncType {
-            metadata: blank,
-            node: node,
-            params: params,
-            paramLen: 0,
-            paramCap: INITIAL_CAPACITY,
-            retKind: RET_KIND_UNSET,
-            retData: null,
-        };
-    }
-}
-
-struct AssetIndices {
-    indices: &mut usize;
-    length: usize;
-    capacity: usize;
-
-    func addIndex(&mut this, index: usize) {
-        if (this.length >= this.capacity) unsafe {
-            let newCap: usize = this.capacity * 2;
-            this.indices = realloc(this.indices, newCap * sizeof usize);
-            assert_with_msg(this.indices != null, "Could not resize AssetIndices.");
-            this.capacity = newCap;
-        }
-        unsafe {
-            *(this.indices + this.length * sizeof usize) = index;
-        }
-        this.length = this.length + 1;
-    }
-
-    func get(&mut this, i: usize) -> usize {
-        assert_with_msg(i < this.length, "Out of bounds access in AssetIndices.get()");
-        unsafe {
-            return *(this.indices + i * sizeof usize);
-        }
-    }
-}
-
-struct Metadata {
-    integerBitsize: i64;
-    isIntrinsic: bool;
-}
-
-struct StructType {
-    metadata: Metadata;
-    fields: &mut NameTypePair;
-    fieldLen: usize;
-    fieldCap: usize;
-    assets: &mut NameTypePair;
-    assetLen: usize;
-    assetCap: usize;
+struct Type {
+    span: Span;
+    kind: u8;
+    int: IntType;
+    ptr: PtrType;
+    fn: FuncType;
 
     func toString(&this) -> String {
-        if (this.isInteger()) {
-            if (this.isIntegerLiteral()) return newStringFromStrLit("__integer");
-            mut s: String = newStringFromStrLit("__integer (");
-            s.pushNumber(this.metadata.integerBitsize as usize);
-            if (this.metadata.integerBitsize == 1)
-                s.pushStr(" bit)");
-            else
-                s.pushStr(" bits)");
+        if (this.kind == TYPE_INTEGER) {
+            mut s: String = newString();
+            if (this.int.bitsize < 0) {
+                s.pushStr("<raw integer>");
+            } else {
+                if (this.int.signed) {
+                    s.pushChar('i');
+                } else {
+                    s.pushChar('u');
+                }
+                s.pushNumber(this.int.bitsize as usize);
+            }
             return s;
+        } else if (this.kind == TYPE_NONE) {
+            return newStringFromStrLit("none");
+        } else if (this.kind == TYPE_BOOLEAN) {
+            return newStringFromStrLit("bool");
+        } else if (this.kind == TYPE_POINTER) {
+            mut s: String = newStringFromStrLit("*");
+            if (this.ptr.mutable) s.pushStr("mut ");
+            let _t: String = this.ptr.underlying.toString();
+            s.pushString(&_t);
+            _t.drop();
+            return s;
+        } else unsafe {
+            printf("%hhu\n", this.kind);
+            todo_with_msg("Type.toString");
         }
-        mut s: String = newStringFromStrLit("{ ");
-        for (mut i: usize = 0; i < this.fieldLen; i = i + 1) {
-            if (i != 0) s.pushStr(", ");
-            let _f: &NameTypePair = this.getFieldAtIndex(i);
-            let _s: String = _f.value.toString();
-            s.pushString(&_s);
-            _s.drop();
-        }
-        for (mut i: usize = 0; i < this.assetLen; i = i + 1) {
-            s.pushStr(", ");
-            let _f: &NameTypePair = this.getAssetAtIndex(i);
-            let _s: String = _f.value.toString();
-            s.pushString(&_s);
-            _s.drop();
-        }
-        s.pushStr(" }");
-        return s;
+        return blank;
     }
 
-    func isInteger(&this) -> bool {
-        return this.metadata.integerBitsize != 0;
-    }
-    func isIntegerLiteral(&this) -> bool {
-        return this.metadata.integerBitsize < 0;
-    }
-    func equals(&this, other: &StructType) -> bool {
-        trace("StructType.equals");
-        /*
-        REVIEW: Types know their span - Right now we allow a lot of ducktyping
-        For example, the following types are equal:
-        > let Foo = struct { x: i32 };
-        > let Bar = struct { x: i32 };
-        > @assert(Foo == Bar);
-        which means that we can pass a Foo to all Bar functions - Which is not good.
-        Maybe we should consider struct types to be equal only when their spans match?
-        This would however allow cases like
-        > let Baz = Foo;
-        > @assert(Foo == Baz);
-        > @assert(Bar != Baz);
-        but at least it would fix the trivial problems that will arise otherwise.
-        Or do we say "Screw it" and allow the ducktyping madness?
-        */
-        if (this.isIntegerLiteral() && other.isIntegerLiteral())
+    func equals(&this, other: &Type) -> bool {
+        if (this.kind == TYPE_ANYTYPE)
             return true;
-        if (this.isInteger() && other.isInteger())
-            return this.metadata.integerBitsize == other.metadata.integerBitsize;
-        if (this.fieldLen != other.fieldLen) return false;
-        if (this.assetLen != other.assetLen) return false;
-        for (mut i: usize = 0; i < this.fieldLen; i = i + 1) {
-            // FIXME: Field names should also match
-            let field: &NameTypePair = this.getFieldAtIndex(i);
-            let otherField: &NameTypePair = other.getFieldAtIndex(i);
-            if (!field.equals(otherField)) return false;
-        }
-        for (mut i: usize = 0; i < this.assetLen; i = i + 1) {
-            let asset: &NameTypePair = this.getAssetAtIndex(i);
-            let otherAsset: &NameTypePair = other.getAssetAtIndex(i);
-            if (!asset.equals(otherAsset)) return false;
+        else if (this.kind != other.kind)
+            return false;
+        else if (this.kind == TYPE_INTEGER)
+            return this.int.signed == other.int.signed
+                && this.int.bitsize == other.int.bitsize;
+        else if (this.kind == TYPE_POINTER)
+            return this.ptr.mutable == other.ptr.mutable
+                && this.ptr.underlying.equals(other.ptr.underlying);
+        else if (this.kind == TYPE_NONE)
+            return true;
+        else if (this.kind == TYPE_BOOLEAN)
+            return true;
+        unsafe {
+            printf("%hhu\n", this.kind);
+            printf("%hhu\n", other.kind);
+            printf("%s\n", this.span.toString().chars());
+            todo_with_msg("Type.equals");
         }
         return true;
     }
-    func toI64(&this) -> i64 {
-        assert_with_msg(this.isIntegerLiteral(), "Expected integer literal for StructType.toI64()");
-        let value: &NameTypePair = this.getFieldAtIndex(0);
-        let typ: &Type = &value.value;
-        assert_with_msg(typ.kind == TYPE_INTEGER, "Expected integer type in toI64");
-        unsafe {
-            return *(typ.data as &i64);
-        }
-    }
-    func getFieldAtIndex(&this, index: usize) -> &NameTypePair {
-        assert_with_msg(index < this.fieldLen, "Out of bounds access in StructType.getFieldAtIndex");
-        unsafe {
-            return (this.fields + index * sizeof NameTypePair) as &NameTypePair;
-        }
-    }
-    func getAssetAtIndex(&this, index: usize) -> &NameTypePair {
-        assert_with_msg(index < this.assetLen, "Out of bounds access in StructType.getAssetAtIndex");
-        unsafe {
-            return (this.assets + index * sizeof NameTypePair) as &NameTypePair;
-        }
-    }
-    func addField(&mut this, span: Span, name: SubStr, field: &Type) {
-        if (this.fieldLen >= this.fieldCap) {
-            todo_with_msg("Resize StructType");
-        }
-        let pair: NameTypePair = NameTypePair {
-            span: span,
-            name: name,
-            value: *field
-        };
-        unsafe {
-            *(this.fields + this.fieldLen * sizeof NameTypePair) = pair;
-        }
-        this.fieldLen = this.fieldLen + 1;
-    }
-    func addAsset(&mut this, span: Span, name: SubStr, asset: &Type) {
-        if (this.assetLen >= this.assetCap) {
-            todo_with_msg("Resize StructType");
-        }
-        let pair: NameTypePair = NameTypePair {
-            span: span,
-            name: name,
-            value: *asset
-        };
-        unsafe {
-            *(this.assets + this.assetLen * sizeof NameTypePair) = pair;
-        }
-        this.assetLen = this.assetLen + 1;
-    }
-    func getAssetsByName(&this, name: SubStr) -> AssetIndices {
-        mut indices: AssetIndices = blank;
-        for (mut i: usize = 0; i < this.assetLen; i = i + 1)
-            if (this.getAssetAtIndex(i).name.equals(&name))
-                indices.addIndex(i);
-        return indices;
-    }
-}
 
-func newStructType() -> StructType {
-    unsafe {
-        mut mem: Any = calloc(INITIAL_CAPACITY, sizeof NameTypePair);
-        assert_with_msg(mem != null, "Could not allocate memory in newStructType()");
-        let fields: &mut NameTypePair = &mut *mem;
-        mem = calloc(INITIAL_CAPACITY, sizeof NameTypePair);
-        assert_with_msg(mem != null, "Could not allocate memory in newStructType()");
-        let assets: &mut NameTypePair = &mut *mem;
-        return StructType {
-            metadata: blank,
-            fields: fields,
-            fieldLen: 0,
-            fieldCap: INITIAL_CAPACITY,
-            assets: assets,
-            assetLen: 0,
-            assetCap: INITIAL_CAPACITY
-        };
-    }
-}
-
-struct EnumType {
-    variantType: Type;
-    variants: &mut NameTypePair;
-    variantsLen: usize;
-    variantsCap: usize;
-    func setVariantType(&mut this, typ: &Type) {
-        this.variantType = *typ;
-    }
-
-    func addVariant(&mut this, span: Span, name: SubStr, typ: &Type) {
-        if (this.variantsLen >= this.variantsCap) {
-            todo_with_msg("Resize variants in EnumType");
-        }
-        let pair: NameTypePair = NameTypePair {
-            span: span,
-            name: name,
-            value: *typ
-        };
-        unsafe {
-            *(this.variants + this.variantsLen * sizeof NameTypePair) = pair;
-        }
-        this.variantsLen = this.variantsLen + 1;
-    }
-}
-
-func newEnumType() -> EnumType {
-    unsafe {
-        let mem: Any = calloc(INITIAL_CAPACITY, sizeof NameTypePair);
-        assert_with_msg(mem != null, "Could not allocate memory in newEnumType()");
-        let variants: &mut NameTypePair = &mut *mem;
-        return EnumType {
-            variantType: invalidType(),
-            variants: variants,
-            variantsLen: 0,
-            variantsCap: INITIAL_CAPACITY,
-        };
-    }
-}
-
-comptime TYPE_INVALID: usize = 0;
-comptime TYPE_UNRESOLVED: usize = 1;
-comptime TYPE_BUILTIN: usize = 2;
-comptime TYPE_STRUCT: usize = 3;
-comptime TYPE_ENUM: usize = 4;
-comptime TYPE_FUNC: usize = 5;
-comptime TYPE_INTEGER: usize = 6;
-comptime TYPE_FLOAT: usize = 7;
-comptime TYPE_POINTER: usize = 8;
-func evalTypeToStr(kind: usize) -> &char {
-    if (kind == TYPE_INVALID) return "an invalid type";
-    else if (kind == TYPE_UNRESOLVED) return "an unresolved type";
-    else if (kind == TYPE_BUILTIN) return "a builtin";
-    else if (kind == TYPE_STRUCT) return "a struct";
-    else if (kind == TYPE_ENUM) return "an enum";
-    else if (kind == TYPE_FUNC) return "a function";
-    else if (kind == TYPE_INTEGER) return "an integer";
-    else if (kind == TYPE_FLOAT) return "a float";
-    else if (kind == TYPE_POINTER) return "a pointer";
-    assert_with_msg(false, "unreachable code in evalTypeToStr");
-    return "";
-}
-
-struct PointerType {
-    mutable: bool;
-    underlying: Type;
-
-    func toString(&this) -> String {
-        mut s: String = newStringFromStrLit("*");
-        if (this.mutable) s.pushStr("mut");
-        s.pushStr(" ");
-        let _s: String = this.underlying.toString();
-        s.pushString(&_s);
-        _s.drop();
-        return s;
-    }
-
-    func equals(&this, other: &PointerType) -> bool {
-        trace("PointerType.equals");
-        return this.mutable == other.mutable
-            && this.underlying.equals(&other.underlying);
-    }
-}
-
-func newPointerType(mutable: bool, underlying: Type) -> PointerType {
-    return PointerType {
-        mutable: mutable,
-        underlying: underlying
-    };
-}
-
-struct Type {
-    kind: usize;
-    span: Span;
-    data: Any;
-    value: &ParsedDeclValue;
-
-    func toString(&this) -> String {
-        if (this.kind == TYPE_STRUCT) unsafe {
-            return (this.data as &StructType).toString();
-        } else if (this.kind == TYPE_FUNC) unsafe {
-            return (this.data as &FuncType).toString();
-        } else if (this.kind == TYPE_BUILTIN) unsafe {
-            return (this.data as &BuiltinType).toString();
-        } else if (this.kind == TYPE_POINTER) unsafe {
-            return (this.data as &PointerType).toString();
-        } else if (this.kind == TYPE_INTEGER) unsafe {
-            mut s: String = newStringFromStrLit("__integer (");
-            s.pushNumber(*(this.data as &i64) as usize);
-            s.pushStr(")");
-            return s;
-        }
-        unsafe {
-            printf("%s\n", evalTypeToStr(this.kind));
-            todo_with_msg("Type.toString");
-            return blank;
-        }
-    }
-
-    func asPointer(&this) -> &PointerType {
-        assert_with_msg(this.isPointer(), "Attempted to cast non-PointerType into PointerType.");
-        return this.data;
-    }
-    func asStruct(&this) -> &StructType {
-        assert_with_msg(this.isStruct(), "Attempted to cast non-StructType into StructType.");
-        return this.data;
-    }
-    func asFunc(&this) -> &FuncType {
-        assert_with_msg(this.isFunc(), "Attempted to cast non-FuncType into FuncType.");
-        return this.data;
-    }
-
-    func requiresImmutable(&this) -> bool {
-        // Values that don't allow reassignment
-        // e.g. mut Point = struct {}; is disallowed
-        return this.kind == TYPE_STRUCT
-            || this.kind == TYPE_ENUM
-            || this.kind == TYPE_FUNC
-            || this.kind == TYPE_BUILTIN;
-    }
-
-    func isValid(&this) -> bool {
+    func isTCValid(&this) -> bool {
         return this.kind != TYPE_INVALID;
     }
-    func isUnresolved(&this) -> bool {
-        return this.kind == TYPE_UNRESOLVED;
-    }
 
-    func isInvalidOrUnresolved(&this) -> bool {
-        return this.kind == TYPE_INVALID || this.kind == TYPE_UNRESOLVED;
-    }
-
-    func isRawInteger(&this) -> bool {
+    func isInteger(&this) -> bool {
         return this.kind == TYPE_INTEGER;
     }
 
-    func isIntegerStruct(&this) -> bool {
-        if (this.isStruct()) unsafe {
-            return (this.data as &StructType).isInteger();
-        }
-        return false;
+    func isBool(&this) -> bool {
+        return this.kind == TYPE_BOOLEAN;
     }
 
-    func isIntegerLiteral(&this) -> bool {
-        if (this.isStruct()) unsafe {
-            return (this.data as &StructType).isIntegerLiteral();
-        }
-        return false;
-    }
-
-    func isSelf(&this) -> bool {
-        if (this.kind == TYPE_BUILTIN) unsafe {
-            return (this.data as &BuiltinType).isSelf();
-        }
-        return false;
+    func isFunction(&this) -> bool {
+        return this.kind == TYPE_FUNCTION;
     }
 
     func isNone(&this) -> bool {
-        if (this.kind == TYPE_BUILTIN) unsafe {
-            return (this.data as &BuiltinType).isNone();
-        }
-        return false;
-    }
-
-    func isBool(&this) -> bool {
-        if (this.kind == TYPE_BUILTIN) unsafe {
-            return (this.data as &BuiltinType).isBool();
-        }
-        return false;
+        return this.kind == TYPE_NONE;
     }
 
     func isPointer(&this) -> bool {
         return this.kind == TYPE_POINTER;
     }
-    func isStruct(&this) -> bool {
-        return this.kind == TYPE_STRUCT;
-    }
-    func isFunc(&this) -> bool {
-        return this.kind == TYPE_FUNC;
-    }
-
-    func isType(&this) -> bool {
-        if (this.kind == TYPE_BUILTIN) unsafe {
-            return (this.data as &BuiltinType).isType();
-        }
-        return this.kind == TYPE_STRUCT
-            || this.kind == TYPE_ENUM
-            || this.kind == TYPE_POINTER;
-    }
 
     func isAnytype(&this) -> bool {
-        if (this.kind != TYPE_BUILTIN) return false;
-        unsafe {
-            return (this.data as &BuiltinType).isAnytype();
-        }
-    }
-
-    func equals(&this, other: &Type) -> bool {
-        trace("Type.equals");
-        if (this.kind != other.kind) return false;
-        else if (this.kind == TYPE_STRUCT) unsafe {
-            return (this.data as &StructType).equals(other.data);
-        } else if (this.kind == TYPE_POINTER) unsafe {
-            return (this.data as &PointerType).equals(other.data);
-        } else if (this.kind == TYPE_BUILTIN) unsafe {
-            return (this.data as &BuiltinType).equals(other.data);
-        } else if (this.kind == TYPE_INTEGER) unsafe {
-            return true;
-        } else unsafe {
-            printf("%s %s\n", evalTypeToStr(this.kind), evalTypeToStr(other.kind));
-            let _lhs: String = this.toString();
-            let _rhs: String = other.toString();
-            printf("%s %s\n", _lhs.chars(), _rhs.chars());
-            _rhs.drop();
-            _lhs.drop();
-            todo_with_msg("Type.equals with those types");
-        }
-        return this.kind == other.kind;
-    }
-
-    func toI64(&this) -> i64 {
-        assert_with_msg(this.isIntegerLiteral(), "Expected integer for Type.toI64");
-        let s: &StructType = this.data;
-        return s.toI64();
+        return this.kind == TYPE_ANYTYPE;
     }
 }
 
-func unresolvedType() -> Type {
-    mut typ: Type = invalidType();
-    typ.kind = TYPE_UNRESOLVED;
-    return typ;
+func newIntType(span: Span, bitsize: i64, signed: bool) -> Type {
+    mut t: Type = invalidType(span);
+    t.kind = TYPE_INTEGER;
+    t.int = IntType {
+        signed: signed,
+        bitsize: bitsize
+    };
+    return t;
 }
 
-func invalidType() -> Type {
+func newBoolType(span: Span) -> Type {
+    mut t: Type = invalidType(span);
+    t.kind = TYPE_BOOLEAN;
+    return t;
+}
+
+func newNoneType(span: Span) -> Type {
+    mut t: Type = invalidType(span);
+    t.kind = TYPE_NONE;
+    return t;
+}
+
+func newAnytypeType(span: Span) -> Type {
+    mut t: Type = invalidType(span);
+    t.kind = TYPE_ANYTYPE;
+    return t;
+}
+
+func newPtrType(span: Span, underlying: &Type, mutable: bool) -> Type {
+    mut t: Type = invalidType(span);
+    t.kind = TYPE_POINTER;
     unsafe {
-        return blank;
-    }
-}
-
-func newType(span: Span, kind: usize, size: usize, data: Any) -> Type {
-    unsafe {
-        let mem: Any = calloc(size, 1);
-        assert_with_msg(mem != null, "Could not allocate memory for newType()");
-        memcpy(mem, data, size);
-        return Type {
-            kind: kind,
-            span: span,
-            data: mem,
-            value: null,
+        let mem: Any = calloc(1, sizeof Type);
+        assert_with_msg(mem != null, "Could not allocate memory in newPtrType");
+        memcpy(mem, underlying, sizeof Type);
+        let copy: &Type = mem;
+        t.ptr = PtrType {
+            underlying: copy,
+            mutable: mutable,
         };
     }
+    return t;
 }
 
-struct NameTypePair {
-    span: Span;
-    name: SubStr;
-    value: Type;
-
-    func equals(&this, other: &NameTypePair) -> bool {
-        if (!this.name.equals(&other.name)) return false;
-        return this.value.equals(&other.value);
+func newFuncType(funcDecl: &mut ParsedFuncDecl, span: Span, params: &[Type; 8], paramCount: usize, retType: &Type) -> Type {
+    mut t: Type = invalidType(span);
+    t.kind = TYPE_FUNCTION;
+    unsafe {
+        mut mem: Any = calloc(1, sizeof Type);
+        assert_with_msg(mem != null, "Could not allocate memory in newFuncType");
+        memcpy(mem, retType, sizeof Type);
+        let retTypeCopy: &Type = mem;
+        mem = calloc(1, sizeof [Type; 8]);
+        assert_with_msg(mem != null, "Could not allocate memory in newFuncType");
+        memcpy(mem, params, sizeof [Type; 8]);
+        let paramsCopy: &[Type; 8] = mem;
+        t.fn = FuncType {
+            funcDecl: funcDecl,
+            params: paramsCopy,
+            paramCount: paramCount,
+            retType: retTypeCopy,
+        };
     }
+    return t;
 }
 
-func defaultNameTypePair() -> NameTypePair {
-    return NameTypePair {
-        span: defaultSpan(),
-        name: defaultSubStr(),
-        value: invalidType(),
+func invalidType(span: Span) -> Type {
+    return Type {
+        span: span,
+        kind: TYPE_INVALID,
+        int: blank,
+        ptr: blank,
+        fn: blank,
     };
 }
 
-
-struct TypeChecker {
-    hadErrorsInLookupStage: bool;
-    hadErrorsInCheckingStage: bool;
-    identLookup: &mut SubStr;
-    identLookupLen: usize;
-    identLookupCap: usize;
-    unresolvedDecls: &mut &ParsedVarDecl;
-    unresolvedLen: usize;
-    unresolvedCap: usize;
-    resolvedDecls: &mut NameTypePair;
-    resolvedLen: usize;
-    resolvedCap: usize;
-
-    func newBuiltinInteger(&mut this, size: &Type) -> StructType {
-        debug("Creating new integer type");
-        let span: Span = size.span;
-        mut int: StructType = newStructType();
-        let bitsize: i64 = size.toI64();
-        int.metadata.integerBitsize = bitsize;
-
-        let baseInteger: Type = this.getTypeFromIdentifier(&newSubStrOfStrLit("__integer"));
-        assert_with_msg(!baseInteger.isInvalidOrUnresolved(), "whoops, can't find __integer");
-        int.addField(span, newSubStrOfStrLit("value"), &baseInteger);
-        int.addAsset(span, newSubStrOfStrLit("bitsize"), size);
-        unsafe {
-            {
-                // methods of the form self.__method__(other) returning @Self()
-                mut _fn: FuncType = newFuncType(null);
-                _fn.metadata.isIntrinsic = true;
-                _fn.addParameter(span, newSubStrOfStrLit("self"), &newBuiltinSelf(span));
-                _fn.addParameter(span, newSubStrOfStrLit("other"), &baseInteger);
-                _fn.setReturnType(&newBuiltinSelf(span));
-                let fn: Type = newType(span, TYPE_FUNC, sizeof FuncType, &_fn);
-                int.addAsset(span, newSubStrOfStrLit("__add__"), &fn);
-                int.addAsset(span, newSubStrOfStrLit("__sub__"), &fn);
-            }
-            {
-                // methods of the form self.__method__(other) returning @boolean()
-                mut _fn: FuncType = newFuncType(null);
-                _fn.metadata.isIntrinsic = true;
-                _fn.addParameter(span, newSubStrOfStrLit("self"), &newBuiltinSelf(span));
-                _fn.addParameter(span, newSubStrOfStrLit("other"), &baseInteger);
-                _fn.setReturnType(&newBuiltinBoolean(span));
-                let fn: Type = newType(span, TYPE_FUNC, sizeof FuncType, &_fn);
-                int.addAsset(span, newSubStrOfStrLit("__equals__"), &fn);
-                int.addAsset(span, newSubStrOfStrLit("__not_equals__"), &fn);
-            }
-        }
-        return int;
+comptime VALUE_INVALID: u8 = 0;
+comptime VALUE_INTEGER: u8 = 1;
+comptime VALUE_BOOLEAN: u8 = 2;
+struct Value {
+    kind: u8;
+    rawInt: i64;
+    bValue: bool;
+    func isTCValid(&this) -> bool {
+        return this.kind != VALUE_INVALID;
     }
-    func newBuiltinFloat(&mut this, size: &Type) -> StructType {
-        debug("Creating new float type");
-        mut float: StructType = newStructType();
-        float.addField(defaultSpan(), newSubStrOfStrLit("bitsize"), size);
-        return float;
+    func isInteger(&this) -> bool {
+        return this.kind == VALUE_INTEGER;
     }
+    func isBool(&this) -> bool {
+        return this.kind == VALUE_BOOLEAN;
+    }
+    func intoBoolValue(&this) -> Value {
+        if (this.kind == VALUE_INTEGER) return newBoolValue(this.rawInt == 1);
+        todo_with_msg("Value.intoBoolValue");
+        return invalidValue();
+    }
+}
 
-    func checkProject(&mut this, parsedProject: &mut ParsedModule) -> bool {
-        this.defineBuiltins();
-        this.collectDeclIdentifiers(parsedProject);
-        this.addModuleToLookup(parsedProject);
-        this.tryResolveRemaining();
-        return !this.hadErrorsInLookupStage;
+func newIntValue(value: i64) -> Value {
+    mut v: Value = invalidValue();
+    v.kind = VALUE_INTEGER;
+    v.rawInt = value;
+    return v;
+}
+
+func newBoolValue(value: bool) -> Value {
+    mut v: Value = invalidValue();
+    v.kind = VALUE_BOOLEAN;
+    v.bValue = value;
+    return v;
+}
+
+func invalidValue() -> Value {
+    return blank; // blank sets kind to VALUE_INVALID
+}
+
+// TCResult.flags is a combination of the below flags
+// TCResult.flags = RESULT_VALID | RESULT_TYPE means TCResult.typ has a valid value
+// TCResult.flags = RESULT_VALID | RESULT_VALUE means TCResult.value has a valid value
+// Combinations are also possible, i.e. a phase might return a valid value with a valid type
+// A default value of 0 indicates error.
+comptime RESULT_ERROR: u8 = 0;
+comptime RESULT_INCOMPLETE: u8 = 1;
+comptime RESULT_VALID: u8 = RESULT_INCOMPLETE * 2;
+comptime RESULT_TYPE: u8 = RESULT_VALID * 2;
+comptime RESULT_VALUE: u8 = RESULT_TYPE * 2;
+struct TCResult {
+    flags: u8;
+    typ: Type;
+    value: Value;
+
+    func isError(&this) -> bool {
+        return (this.flags & RESULT_ERROR) != 0;
     }
 
-    func createTypeFromStruct(&mut this, strukt: &ParsedStructDecl) -> Type {
-        trace("createTypeFromStruct");
-        mut structVal: StructType = newStructType();
-        for (mut i: usize = 0; i < strukt.assetCount; i = i + 1) unsafe {
-            let asset: &ParsedStructAsset = strukt.getAssetAtIndex(i);
-            mut _asset: &mut ParsedVarDecl = &asset.asset as &mut ParsedVarDecl;
-            let typ: Type = this.createTypeFrom(&asset.asset.value as &mut ParsedDeclValue);
-            if (typ.isInvalidOrUnresolved())
-                return typ;
-            _asset.typ = typ;
-            let name: Token = asset.asset.name;
-            structVal.addAsset(name.span, name.content, &typ);
-        }
-        for (mut i: usize = 0; i < strukt.fieldCount; i = i + 1) {
-            let field: &ParsedStructField = strukt.getFieldAtIndex(i);
-            debug(field.name.toString().chars());
-            let typ: Type = this.createTypeFromTypeExpr(&field.typ);
-            if (typ.isInvalidOrUnresolved())
-                return typ;
-            structVal.addField(field.span, field.name, &typ);
-        }
+    func isValid(&this) -> bool {
+        return (this.flags & RESULT_VALID) != 0;
+    }
 
-        return newType(strukt.span, TYPE_STRUCT, sizeof StructType, &structVal);
+    func isType(&this) -> bool {
+        return (this.flags & RESULT_TYPE) != 0;
     }
-    func createTypeFromEnum(&mut this, eenum: &ParsedEnumDecl) -> Type {
-        trace("createTypeFromEnum");
-        mut enumVal: EnumType = newEnumType();
-        if (eenum.hasVariantType) {
-            let typ: Type = this.createTypeFromTypeExpr(eenum.variantType);
-            if (typ.isInvalidOrUnresolved())
-                return typ;
-            enumVal.setVariantType(&typ);
-        } else {
-            // REVIEW: We might get into reference problems here
-            // REVIEW: Save space for enums by allocating log2(variantCount) bits instead of always i32
-            let _inner: ParsedDeclValueIdent = ParsedDeclValueIdent {
-                span: defaultSpan(),
-                name: newSubStrOfStrLit("i32")
-            };
-            let i32_type: Type = this.createTypeFromIdent(&_inner);
-            if (i32_type.isInvalidOrUnresolved())
-                return i32_type;
-            enumVal.setVariantType(&i32_type);
-        }
-        for (mut i: usize = 0; i < eenum.variantsLen; i = i + 1) unsafe {
-            let variant: &ParsedEnumVariant = eenum.getVariantAtIndex(i);
-            if (enumVal.variantType.isAnytype()) unsafe {
-                mut val: Type = this.createTypeFrom(&variant.value as &mut ParsedDeclValue);
-                if (val.isInvalidOrUnresolved())
-                    return val;
-                if (!val.isType()) unsafe {
-                    let stderr: Any = fdopen(2, "a");
-                    let evalType: &char = evalTypeToStr(val.kind);
-                    let loc: String = variant.span.toString();
-                    let defLoc: String = val.span.toString();
-                    fprintf(stderr, "error: %s: Generic enum expected a type for every variant, found %s.\nnote: %s: The given expression evaluates to %s.\n", loc.chars(), evalType, defLoc.chars(), evalType);
-                    defLoc.drop();
-                    loc.drop();
-                    this.hadErrorsInLookupStage = true;
-                    return invalidType();
-                }
-                enumVal.addVariant(variant.span, variant.name, &val);
-            } else {
-                enumVal.addVariant(variant.span, variant.name, &enumVal.variantType);
-            }
-        }
-        return newType(eenum.span, TYPE_ENUM, sizeof EnumType, &enumVal);
+
+    func isValue(&this) -> bool {
+        return (this.flags & RESULT_VALUE) != 0;
     }
-    func createTypeFromStmt(&mut this, stmt: &mut ParsedStmt) -> Type {
-        trace("createTypeFromStmt");
-        if (stmt.kind == STMT_VAR_DECL) {
-            mut _stmt: &mut ParsedVarDecl = stmt.data;
-            let typ: Type = this.createTypeFrom(&mut _stmt.value);
-            if (typ.isInvalidOrUnresolved())
-                return typ;
-            this.collectIdentifier(_stmt);
-            if (!this.addResolvedDecl(&_stmt.name, &typ))
-                return invalidType();
-            _stmt.typ = typ;
-            return typ;
-        } else if (stmt.kind == STMT_RETURN
-                || stmt.kind == STMT_EXPR) {
-            let _expr: &mut ParsedDeclValue = stmt.data;
-            let typ: Type = this.createTypeFrom(_expr);
-            if (typ.isInvalidOrUnresolved())
-                return typ;
-            (*_expr).typ = typ;
-            if (stmt.kind == STMT_RETURN)
-                return newBuiltinNone(_expr.span);
-            return typ;
-        }
-        assert_with_msg(false, "unreachable");
-        return blank;
+
+    func isIncomplete(&this) -> bool {
+        return (this.flags & RESULT_INCOMPLETE) != 0;
     }
-    func createTypeFromFunc(&mut this, funcExpr: &ParsedFuncDecl) -> Type {
-        trace("createTypeFromFunc");
-        mut funcVal: FuncType = newFuncType(funcExpr);
-        mut success: bool = true;
-        for (mut i: usize = 0; i < funcExpr.paramCount; i = i + 1) {
-            let param: &ParsedParam = funcExpr.getParamAtIndex(i);
-            if (funcVal.hasParameter(&param.name.content)) unsafe {
-                let duplicate: &NameTypePair = funcVal.getParamByName(&param.name.content);
-                let stderr: Any = fdopen(2, "a");
-                let name: String = param.name.toString();
-                let loc: String = param.span.toString();
-                let prevLocStr: String = duplicate.span.toString();
-                fprintf(stderr, "error: %s: Redeclaration of variable `%s`.\nnote: %s: Variable already declared here.\n", loc.chars(), name.chars(), prevLocStr.chars());
-                prevLocStr.drop();
-                loc.drop();
-                name.drop();
-                this.hadErrorsInLookupStage = true;
-                success = false;
-                continue;
-            }
-            let typ: Type = this.createTypeFromTypeExpr(&param.typ);
-            if (typ.isInvalidOrUnresolved())
-                return typ;
-            if (!typ.isType()) todo_with_msg("param has value as type");
-            funcVal.addParameter(param.span, param.name.content, &typ);
-        }
-        if (!success) return invalidType();
-        // Step 1: Does any parameter occur in return type?
-        // > If yes, we can't compute type now, must do later when calling the function, on the fly
-        // - Example: func (t: type) -> t {};
-        //   - We only know the type of `t` at the call site
-        // Step 2: Is return type valid?
-        // > If yes, set return type of FuncType
-        // - Example: func (i: i32) -> i32 {};
-        // - Example: func (t: type) -> i32 {};
-        //   - Both examples are trivial, we just know the type. Those are normal functions.
-        // Step 3: Is return type anytype?
-        // > If yes, we can't compute type now, must do later when calling the function, on the fly
-        // - Example: func (t: type) -> type {};
-        //   - Return type may have field `t`
-        // - Example: func (v: i32) -> type {};
-        //   - Return type may be control-flow-dependent on `if v`
-        // - Example: func () -> type {};
-        //   - Return type may be dependent on other values inside the function
-        mut foundMatch: bool = false;
-        assert(funcExpr.paramCount == funcVal.paramLen);
-        for (mut i: usize = 0; i < funcExpr.paramCount; i = i + 1) {
-            let param: &ParsedParam = funcExpr.getParamAtIndex(i);
-            let paramType: &NameTypePair = funcVal.getParamAtIndex(i);
-            if (this.findIdentInTypeExpr(param.name.content, &funcExpr.retType)) {
-                foundMatch = true;
-                break;
-            }
-        }
-        if (foundMatch) {
-            // Case 1 - Return type depends on parameter
-            funcVal.setReturnAST(&funcExpr.retType);
-        } else {
-            let typ: Type = this.createTypeFromTypeExpr(&funcExpr.retType);
-            if (typ.isInvalidOrUnresolved()) {
-                // Return type could not be evaluated
-                // May be due to unknown type identifiers
-                return typ;
-            }
-            if (typ.isAnytype()) {
-                // Case 3 - Return type is generic
-                funcVal.setReturnAST(&funcExpr.retType);
-            } else {
-                // Case 2 - Return type is known
-                funcVal.setReturnType(&typ);
-            }
-        }
-        return newType(funcExpr.span, TYPE_FUNC, sizeof FuncType, &funcVal);
+
+    func markIncomplete(&mut this) {
+        this.flags = this.flags | RESULT_INCOMPLETE;
     }
-    savedIdentLookup: [&mut SubStr; 32];
-    savedIdentLookupLen: [usize; 32];
-    savedIdentLookupCap: [usize; 32];
-    savedResolvedLen: [usize; 32];
-    savedCounter: usize;
-    func saveState(&mut this) {
-        let s: usize = this.savedCounter;
-        assert_with_msg(s < 32, "Reached recursion limit when saving TypeChecker state");
+}
+
+func newTCResult(valid: bool, typ: Type, value: Value) -> TCResult {
+    mut flags: u8 = 0;
+    if (valid) flags = flags | RESULT_VALID;
+    if (typ.isTCValid()) flags = flags | RESULT_TYPE;
+    if (value.isTCValid()) flags = flags | RESULT_VALUE;
+    return TCResult {
+        flags: flags,
+        typ: typ,
+        value: value,
+    };
+}
+
+func invalidTCResult() -> TCResult {
+    trace("invalidTCResult");
+    return blank; // blank sets flags to 0, which indicates RESULT_ERROR
+}
+
+struct ScopeEntry {
+    name: SubStr;
+    span: Span;
+    isChecked: bool;
+    result: TCResult;
+    node: &mut ParsedVarDecl;
+}
+
+func newScopeEntry(decl: &mut ParsedVarDecl) -> ScopeEntry {
+    return ScopeEntry {
+        name: decl.name.content,
+        span: decl.span,
+        isChecked: false,
+        result: invalidTCResult(),
+        node: decl
+    };
+}
+
+struct Scope {
+    entries: &mut ScopeEntry;
+    length: usize;
+    capacity: usize;
+
+    func getEntryAtIndex(&mut this, index: usize) -> &mut ScopeEntry {
+        assert_with_msg(index < this.length, "Out of bounds access in Scope.getEntryAtIndex");
         unsafe {
-            let mem: Any = calloc(this.identLookupCap, sizeof SubStr);
-            assert_with_msg(mem != null, "Could not allocate memory in TypeChecker.saveState");
-            memcpy(mem, this.identLookup, sizeof SubStr * this.identLookupLen);
-            this.savedIdentLookup[s] = &mut *mem;
-        }
-        this.savedResolvedLen[s] = this.resolvedLen;
-        this.savedIdentLookupLen[s] = this.identLookupLen;
-        this.savedIdentLookupCap[s] = this.identLookupCap;
-        this.savedCounter = this.savedCounter + 1;
-    }
-    func restoreState(&mut this) {
-        assert_with_msg(this.savedCounter > 0, "Invalid save counter in TypeChecker.restoreState");
-        this.savedCounter = this.savedCounter - 1;
-        unsafe {
-            let _mem: &mut SubStr = this.identLookup;
-            this.resolvedLen = this.savedResolvedLen[this.savedCounter];
-            this.identLookup = this.savedIdentLookup[this.savedCounter];
-            this.identLookupLen = this.savedIdentLookupLen[this.savedCounter];
-            this.identLookupCap = this.savedIdentLookupCap[this.savedCounter];
-            free(_mem);
+            return this.entries + index * sizeof ScopeEntry;
         }
     }
-    // FIXME: As we will need better pattern matching soon, we should move this to a separate file
-    func findIdentInTypeExpr(&mut this, name: SubStr, node: &ParsedTypeExpr) -> bool {
-        return this.findIdentInDeclValue(name, &node.expr);
-    }
-    func findIdentInDeclValue(&mut this, name: SubStr, node: &ParsedDeclValue) -> bool {
-        assert_with_msg(node.kind != DECL_VALUE_INVALID, "Expected valid DeclValue");
-        if (node.kind == DECL_VALUE_CALL) {
-            let call: &ParsedDeclValueCall = node.asCall();
-            if (this.findIdentInDeclValue(name, &call.fn))
-                return true;
-            for (mut i: usize = 0; i < call.argCount; i = i + 1)
-                if (this.findIdentInDeclValue(name, &call.args[i]))
-                    return true;
-        } else if (node.kind == DECL_VALUE_IDENT) {
-            let ident: &ParsedDeclValueIdent = node.asIdent();
-            return ident.name.equals(&name);
-        } else unsafe {
-            printf("[WARN] Unsupported kind in findIdentInDeclValue: %llu\n", node.kind);
-        }
-        return false;
-    }
-    func createTypeFromTypeExpr(&mut this, typeExpr: &ParsedTypeExpr) -> Type {
-        mut typ: Type = invalidType();
-        unsafe {
-            typ = this.createTypeFrom(&typeExpr.expr as &mut ParsedDeclValue);
-        }
-        if (typ.isInvalidOrUnresolved())
-            return typ;
-        if (!typ.isType()) unsafe {
-            let stderr: Any = fdopen(2, "a");
-            let loc: String = typeExpr.expr.span.toString();
-            let defLoc: String = typ.span.toString();
-            fprintf(stderr, "error: %s: Expected a type value, found %s.\nnote: %s: Value evaluated here.\n", loc.chars(), evalTypeToStr(typ.kind), defLoc.chars());
-            defLoc.drop();
-            loc.drop();
-            this.hadErrorsInLookupStage = true;
-            return invalidType();
-        }
-        return typ;
-    }
-    func getResolvedAtIndex(&mut this, index: usize) -> &NameTypePair {
-        assert_with_msg(index < this.resolvedLen, "Out of bounds for getResolvedAtIndex");
-        unsafe {
-            let pair: &NameTypePair = (this.resolvedDecls + index * sizeof NameTypePair) as &NameTypePair;
-            debug("Get Resolved");
-            debug(pair.name.toString().chars());
-            debug(pair.value.toString().chars());
-            return pair;
-        }
-    }
-    func getUnresolvedAtIndex(&mut this, index: usize) -> &ParsedVarDecl {
-        assert_with_msg(index < this.unresolvedLen, "Out of bounds for getUnresolvedAtIndex");
-        unsafe {
-            return *(this.unresolvedDecls + index * sizeof &ParsedVarDecl) as &ParsedVarDecl;
-        }
-    }
-    func createTypeFromBlock(&mut this, mut block: &ParsedDeclValueBlock) -> Type {
-        trace("createTypeFromBlock");
-        mut typ: Type = newBuiltinNone(block.span);
-        for (mut i: usize = 0; i < block.stmtCount; i = i + 1) unsafe {
-            let stmt: &ParsedStmt = block.getStmtAtIndex(i);
-            typ = this.createTypeFromStmt(stmt as &mut ParsedStmt);
-            if (typ.isInvalidOrUnresolved())
-                return typ;
-        }
-        return typ;
-    }
-    func createTypeFromIf(&mut this, mut iif: &ParsedDeclValueIf) -> Type {
-        trace("createTypeFromIf");
-        let condType: Type = this.createTypeFrom(&mut iif.cond);
-        if (condType.isInvalidOrUnresolved())
-            return condType;
-        if (!condType.isBool()) unsafe {
-            // REVIEW: Do we want to support operator overloads such as toBool()?
-            let stderr: Any = fdopen(2, "a");
-            let loc: String = iif.cond.span.toString();
-            let typ: &char = evalTypeToStr(condType.kind);
-            fprintf(stderr, "error: %s: Condition of an if-expression is expected to evaluate to a boolean, found %s.\n", loc.chars(), typ);
-            loc.drop();
-            this.hadErrorsInLookupStage = true;
-        }
-        let ifBodyType: Type = this.createTypeFrom(&mut iif.ifBody);
-        if (ifBodyType.isInvalidOrUnresolved())
-            return ifBodyType;
-        if (iif.hasElse) {
-            let elseBodyType: Type = this.createTypeFrom(&mut iif.elseBody);
-            if (elseBodyType.isInvalidOrUnresolved())
-                return elseBodyType;
-            if (!ifBodyType.equals(&elseBodyType)) {
-                todo_with_msg("if else branch type mismatch");
-            }
-        } else if (!ifBodyType.isNone()) {
-            todo_with_msg("single if has non-none body type");
-        }
-        return ifBodyType;
-    }
-    func createTypeFromBinary(&mut this, mut binary: &ParsedDeclValueBinary) -> Type {
-        trace("createTypeFromBinary");
-        let OPS: [SubStr; 7] = [
-            newSubStrOfStrLit("__unimplemented__"), // BINARY_OP_DOT
-            newSubStrOfStrLit("__unimplemented__"), // BINARY_OP_PAREN
-            newSubStrOfStrLit("__add__"),           // BINARY_OP_PLUS
-            newSubStrOfStrLit("__sub__"),           // BINARY_OP_MINUS
-            newSubStrOfStrLit("__assign__"),        // BINARY_OP_ASSIGN
-            newSubStrOfStrLit("__equals__"),        // BINARY_OP_EQUAL
-            newSubStrOfStrLit("__not_equals__"),    // BINARY_OP_NOT_EQUAL
-        ];
-        let _method: SubStr = OPS[binary.op];
-        let lhsType: Type = this.createTypeFrom(&mut binary.lhs);
-        if (lhsType.isInvalidOrUnresolved()) return lhsType;
-        if (lhsType.isStruct()) {
-            let lhsStruct: &StructType = lhsType.asStruct();
-            let rhsType: Type = this.createTypeFrom(&mut binary.rhs);
-            if (rhsType.isInvalidOrUnresolved()) return rhsType;
-            mut assetIndices: AssetIndices = lhsStruct.getAssetsByName(_method);
-            for (mut i: usize = 0; i < assetIndices.length; i = i + 1) {
-                let index: usize = assetIndices.get(i);
-                let asset: &NameTypePair = lhsStruct.getAssetAtIndex(index);
-                assert_with_msg(asset.name.equals(&_method), "Asset name expected to match method name");
-                let assetType: &Type = &asset.value;
-                if (!assetType.isFunc()) {
-                    debug("Ignoring non func asset");
-                    continue;
-                }
-                let assetFn: &FuncType = assetType.asFunc();
-                if (assetFn.paramLen != 2) {
-                    debug("Asset doesn't have two args");
-                    continue;
-                }
-                let _this: &NameTypePair = assetFn.getParamAtIndex(0);
-                if (!_this.value.isSelf()) {
-                    debug("Asset is not a method");
-                    continue;
-                }
-                let other: &NameTypePair = assetFn.getParamAtIndex(1);
-                if (other.value.equals(&rhsType)) {
-                    let retType: &Type = assetFn.getReturnType();
-                    // FIXME: Return type is not always @Self()
-                    //        which is assumed by `return lhsType`
-                    assert_with_msg(retType.kind == TYPE_BUILTIN, "Expected return type to be builtin");
-                    debug("Found operator overload");
-                    mut s: String = _method.toString();
-                    debug(s.chars());
-                    s.drop();
-                    s = lhsType.toString();
-                    debug(s.chars());
-                    s.drop();
-                    s = rhsType.toString();
-                    debug(s.chars());
-                    s.drop();
-                    s = retType.toString();
-                    debug(s.chars());
-                    s.drop();
-                    s = other.value.toString();
-                    debug(s.chars());
-                    s.drop();
-                    if (retType.isSelf())
-                        return lhsType;
-                    else
-                        return *retType;
-                }
-            }
-            unsafe {
-                let stderr: Any = fdopen(2, "a");
-                let _loc: Span = newSpanBetween(&binary.lhs.span, &binary.rhs.span);
-                let binaryLoc: String = _loc.toString();
-                let lhsLoc: String = binary.lhs.span.toString();
-                let rhsTypeName: String = rhsType.toString();
-                let lhsTypeName: String = lhsStruct.toString();
-                let methodName: String = _method.toString();
-                fprintf(stderr,
-                    "error: %s: Binary operation `%s %s %s` is not defined.\nnote: Implement the %s-method for type %s to overload the operator.\n",
-                    binaryLoc.chars(), lhsTypeName.chars(), binaryOpToStr(binary.op), rhsTypeName.chars(), methodName.chars(), lhsTypeName.chars());
-                methodName.drop();
-                rhsTypeName.drop();
-                lhsTypeName.drop();
-                lhsLoc.drop();
-                binaryLoc.drop();
-                this.hadErrorsInLookupStage = true;
-                return invalidType();
-            }
-        } else if (lhsType.isPointer()) unsafe {
-            let lhsPointer: &PointerType = lhsType.asPointer();
-            if (binary.op != BINARY_OP_ASSIGN)
-                todo_with_msg("ptr op non-assign");
-            if (!lhsPointer.mutable) todo_with_msg("non mut");
-            let rhsType: Type = this.createTypeFrom(&mut binary.rhs);
-            if (rhsType.isInvalidOrUnresolved()) return rhsType;
-            if (!lhsPointer.underlying.equals(&rhsType)) {
-                let newRhsType: Type = this.tryInferType(&mut binary.rhs, &lhsPointer.underlying);
-                if (newRhsType.isInvalidOrUnresolved()) return newRhsType;
-            }
-            return rhsType;
-        } else {
-            todo_with_msg("createTypeFromBinary non-struct");
-        }
-        assert_with_msg(false, "unreachable");
-        return blank;
-    }
-    func tryInferType(&mut this, expr: &mut ParsedDeclValue, expected: &Type) -> Type {
-        trace("tryInferType");
-        let eType: Type = expr.typ;
-        assert_with_msg(!eType.isInvalidOrUnresolved(), "Can only try to infer type when we know a wrong type");
-        assert_with_msg(!eType.equals(expected), "tryInferType called with correct expected type");
-        debug("Trying to infer type");
-        debug(expected.toString().chars());
-        debug(eType.toString().chars());
-        if (expected.isIntegerStruct() && eType.isIntegerStruct()) {
-            assert_with_msg(eType.isIntegerLiteral(), "Expected integer literal in tryInferType");
-            (*expr).typ = *expected;
-            return *expected;
-        } else unsafe {
-            // Only integer literals can be "inferred" currently
-            return invalidType();
-        }
-    }
-    func createTypeFromUnary(&mut this, unary: &ParsedDeclValueUnary) -> Type {
-        /*
-        FIXME:   Right now we can't differentiate between *type and *value
-                 so we don't know if we want a pointer, or dereference it
-        let a = func (v: *i32) { <-- Construct Ptr(i32)
-            *v = 1; <-- Don't construct Ptr(Ptr(i32)), return the Ptr(i32) of v
-        }
-        let b = func (v: *mut i32) { <-- Construct MutPtr(i32)
-            *v = 1; <-- Return MutPtr(i32)
-        }
-        let c = func (v: *mut i32) {
-            *mut v = 1; <-- REVIEW: bogus syntax?
-        }
-        */
-        trace("createTypeFromUnary");
-        mut typ: Type = invalidType();
-        unsafe {
-            typ = this.createTypeFrom(&unary.expr as &mut ParsedDeclValue);
-        }
-        if (typ.isInvalidOrUnresolved())
-            return typ;
-        if (unary.op == UNARY_OP_REF_IMMUT) {
-            todo_with_msg("createTypeFromUnary ref immut");
-        } else if (unary.op == UNARY_OP_REF_MUT) {
-            let ptr: PointerType = newPointerType(true, typ);
-            return newType(unary.span, TYPE_POINTER, sizeof PointerType, &ptr);
-        } else if (unary.op == UNARY_OP_DEREF_IMMUT) {
-            // FIXME: Consider mutability of LHS assignments and such
-            if (typ.isPointer()) return typ;
-            let ptr: PointerType = newPointerType(false, typ);
-            return newType(unary.span, TYPE_POINTER, sizeof PointerType, &ptr);
-        } else if (unary.op == UNARY_OP_DEREF_MUT) {
-            if (typ.isPointer()) return typ;
-            let ptr: PointerType = newPointerType(true, typ);
-            return newType(unary.span, TYPE_POINTER, sizeof PointerType, &ptr);
-        }
-        assert_with_msg(false, "unreachable in createTypeFromUnary");
-        return invalidType();
-    }
-    func createTypeFromIdent(&mut this, ident: &ParsedDeclValueIdent) -> Type {
-        trace("createTypeFromIdent");
-        let name: SubStr = ident.name;
-        if (!this.isKnownIdentifier(&name)) unsafe {
-            let loc: String = ident.span.toString();
-            let nameLoc: String = name.toString();
-            printf("error: %s: Use of unknown identifier %s.\n", loc.chars(), nameLoc.chars());
-            nameLoc.drop();
-            loc.drop();
-            this.hadErrorsInLookupStage = true;
-            return invalidType();
-        }
-        return this.getTypeFromIdentifier(&name);
-    }
-    func getTypeFromIdentifier(&mut this, name: &SubStr) -> Type {
-        for (mut i: usize = 0; i < this.resolvedLen; i = i + 1) {
-            let pair: &NameTypePair = this.getResolvedAtIndex(i);
-            if (name.equals(&pair.name)) {
-                debug("Match!");
-                let s: String = name.toString();
-                debug(s.chars());
-                s.drop();
-                return pair.value;
-            }
-        }
-        return unresolvedType();
-    }
-    func createTypeFromNumber(&mut this, number: &ParsedDeclValueNumber) -> Type {
-        trace("createTypeFromNumber");
-        let val: String = number.number.toString();
-        assert_with_msg(val.isNumber(), "Could not parse literal into a number");
-        let value: i64 = val.toI64();
-        val.drop();
-        unsafe {
-            return newType(number.span, TYPE_INTEGER, sizeof i64, &value);
-        }
-    }
-    func createTypeFromBuiltin(&mut this, builtin: &mut ParsedDeclValue) -> Type {
-        trace("createTypeFromBuiltin");
-        assert_with_msg(builtin.kind == DECL_VALUE_CALL, "createTypeFromBuiltin expected DECL_VALUE_CALL");
-        let call: &ParsedDeclValueCall = builtin.data;
-        let fn: &ParsedDeclValue = &call.fn;
-        assert_with_msg(fn.kind == DECL_VALUE_IDENT, "Builtins are expected to be simple ident calls like @builtin()");
-        let ident: &ParsedDeclValueIdent = fn.data;
-        let name: SubStr = ident.name;
-        mut typ: Type = invalidType();
-        if (name.equals(&BUILTIN_INTEGER)) unsafe {
-            if (!verifyBuiltinArgCount(builtin, call, 1, "integer")) {
-                this.hadErrorsInLookupStage = true;
-                return invalidType();
-            }
-            let arg: &ParsedDeclValue = &call.args[0];
-            let size: Type = this.createTypeFrom(arg as &mut ParsedDeclValue);
-            if (size.isInvalidOrUnresolved()) return size;
-            if (!size.isIntegerLiteral()) unsafe {
-                let stderr: Any = fdopen(2, "a");
-                fprintf(stderr, "error: %s: Builtin `integer` expects an integer as argument, got %s.\n", builtin.span.toString().chars(), evalTypeToStr(size.kind));
-                this.hadErrorsInLookupStage = true;
-                return invalidType();
-            }
-            let int: StructType = this.newBuiltinInteger(&size);
-            typ = newType(builtin.span, TYPE_STRUCT, sizeof StructType, &int);
-        } else if (name.equals(&BUILTIN_FLOAT)) unsafe {
-            if (!verifyBuiltinArgCount(builtin, call, 1, "float")) {
-                this.hadErrorsInLookupStage = true;
-                return invalidType();
-            }
-            let arg: &ParsedDeclValue = &call.args[0];
-            let size: Type = this.createTypeFrom(arg as &mut ParsedDeclValue);
-            if (size.isInvalidOrUnresolved()) return size;
-            if (!size.isIntegerLiteral()) unsafe {
-                let stderr: Any = fdopen(2, "a");
-                fprintf(stderr, "error: %s: Builtin `float` expects an integer as argument, got %s.\n", builtin.span.toString().chars(), evalTypeToStr(size.kind));
-                this.hadErrorsInLookupStage = true;
-                return invalidType();
-            }
-            todo_with_msg("returning a TYPE_BUILTIN seems fucked when we return a TYPE_STRUCT for integers");
-            let float: StructType = this.newBuiltinFloat(&size);
-            let btn: BuiltinType = newBuiltinType(builtin.span, BUILTIN_KIND_STRUCT, sizeof StructType, &float);
-            typ = newType(builtin.span, TYPE_BUILTIN, sizeof BuiltinType, &btn);
-        } else if (name.equals(&BUILTIN_ANYTYPE)) {
-            if (!verifyBuiltinArgCount(builtin, call, 0, "anytype")) {
-                this.hadErrorsInLookupStage = true;
-                return invalidType();
-            }
-            // TODO: Create dedicated newBuiltinAnytype()
-            mut anytype: BuiltinType = invalidBuiltin();
-            anytype.kind = BUILTIN_KIND_ANYTYPE;
-            anytype.span = builtin.span;
-            typ = newType(builtin.span, TYPE_BUILTIN, sizeof BuiltinType, &anytype);
-        } else if (name.equals(&BUILTIN_ANYVALUE)) {
-            if (!verifyBuiltinArgCount(builtin, call, 0, "anyvalue")) {
-                this.hadErrorsInLookupStage = true;
-                return invalidType();
-            }
-            // TODO: Create dedicated newBuiltinAnyvalue()
-            mut anyvalue: BuiltinType = invalidBuiltin();
-            anyvalue.kind = BUILTIN_KIND_ANYVALUE;
-            anyvalue.span = builtin.span;
-            typ = newType(builtin.span, TYPE_BUILTIN, sizeof BuiltinType, &anyvalue);
-        } else if (name.equals(&BUILTIN_NONE)) {
-            if (!verifyBuiltinArgCount(builtin, call, 0, "none")) {
-                this.hadErrorsInLookupStage = true;
-                return invalidType();
-            }
-            typ = newBuiltinNone(builtin.span);
-        } else if (name.equals(&BUILTIN_SELF)) {
-            if (!verifyBuiltinArgCount(builtin, call, 0, "Self")) {
-                this.hadErrorsInLookupStage = true;
-                return invalidType();
-            }
-            typ = newBuiltinSelf(builtin.span);
-        } else if (name.equals(&BUILTIN_BOOLEAN)) {
-            if (!verifyBuiltinArgCount(builtin, call, 0, "boolean")) {
-                this.hadErrorsInLookupStage = true;
-                return invalidType();
-            }
-            typ = newBuiltinBoolean(builtin.span);
-        } else {
-            debug(name.toString().chars());
-            todo_with_msg("createTypeFromBuiltin");
-        }
-        (*builtin).typ = typ;
-        return typ;
-    }
-    func createTypeFromCall(&mut this, mut call: &ParsedDeclValueCall) -> Type {
-        trace("createTypeFromCall");
-        mut typ: Type = invalidType();
-        unsafe {
-            typ = this.createTypeFrom(&call.fn as &mut ParsedDeclValue);
-        }
-        if (typ.isInvalidOrUnresolved()) {
-            return typ;
-        }
-        if (typ.isFunc()) {
-            let fn: &FuncType = typ.data;
-            if (fn.paramLen != call.argCount) unsafe {
-                let callLoc: String = call.fn.span.toString();
-                let declLoc: String = typ.span.toString();
-                let stderr: Any = fdopen(2, "a");
-                fprintf(stderr, "error: %s: Argument count mismatch. Expected %llu argument(s), got %llu.\nnote: %s: Function declared here.\n", callLoc.chars(), fn.paramLen, call.argCount, declLoc.chars());
-                declLoc.drop();
-                callLoc.drop();
-                return invalidType();
-            }
-            /*
-            We know:
-            - Argument count == Parameter count
-            - Type of return value not known -> Likely that we need to compute it here
-            So, we need to call the function, and evaluate it
-            */
-            for (mut i: usize = 0; i < call.argCount; i = i + 1) unsafe {
-                let param: &NameTypePair = fn.getParamAtIndex(i);
-                let arg: &ParsedDeclValue = call.getArgAtIndex(i);
-                assert(param.value.isValid());
-                if (param.value.isAnytype()) {
-                    todo_with_msg("anytype");
-                } else {
-                    let typ: &Type = &param.value;
-                    let argType: Type = this.createTypeFrom(arg as &mut ParsedDeclValue);
-                    if (argType.isInvalidOrUnresolved())
-                        return argType;
-                    if (!argType.equals(typ)) {
-                        let newRhsType: Type = this.tryInferType(arg as &mut ParsedDeclValue, typ);
-                        if (newRhsType.isInvalidOrUnresolved()) {
-                            let stderr: Any = fdopen(2, "a");
-                            let argLoc: String = arg.span.toString();
-                            let argTypeName: String = argType.toString();
-                            let parLoc: String = param.span.toString();
-                            let parTypeName: String = param.value.toString();
-                            fprintf(stderr,
-                                "error: %s: Type mismatch in function call. Expected argument to be %s, but got %s.\nnote: %s: Parameter declared to be %s here.\n",
-                                argLoc.chars(), parTypeName.chars(), argTypeName.chars(), parLoc.chars(), parTypeName.chars()
-                            );
-                            parTypeName.drop();
-                            parLoc.drop();
-                            argTypeName.drop();
-                            argLoc.drop();
-                            this.hadErrorsInLookupStage = true;
-                        }
-                    }
-                }
-            }
-            if (fn.retKind == RET_KIND_EVAL) unsafe {
-                let ret: &Type = fn.retData;
-                assert_with_msg(ret.isValid(), "RET_KIND_EVAL is invalid");
-                return *ret;
-            }
-            assert(fn.retKind == RET_KIND_NODE);
-            todo_with_msg("createTypeFromCall with function");
-        } else if (typ.isStruct()) {
-            let strukt: &StructType = typ.data;
-            if (strukt.fieldLen != call.argCount) unsafe {
-                let callLoc: String = call.fn.span.toString();
-                let declLoc: String = typ.span.toString();
-                let stderr: Any = fdopen(2, "a");
-                fprintf(stderr, "error: %s: Field count mismatch. Expected %llu field(s), got %llu.\nnote: %s: Struct declared here.\n", callLoc.chars(), strukt.fieldLen, call.argCount, declLoc.chars());
-                declLoc.drop();
-                callLoc.drop();
-                return invalidType();
-            }
-            for (mut i: usize = 0; i < strukt.fieldLen; i = i + 1) {
-                mut field: &NameTypePair = strukt.getFieldAtIndex(i);
-                let arg: &ParsedDeclValue = call.getArgAtIndex(i);
-                assert(field.value.isValid());
-                if (field.value.isAnytype()) {
-                    todo_with_msg("anytype");
-                } else unsafe {
-                    let typ: &Type = &field.value;
-                    let argType: Type = this.createTypeFrom(arg as &mut ParsedDeclValue);
-                    if (argType.isInvalidOrUnresolved())
-                        return argType;
-                    if (!argType.equals(typ)) unsafe {
-                        printf("%s %llu %llu\n", field.name.toString().chars(), argType.kind, typ.kind);
-                        todo_with_msg("wrong type in struct");
-                    }
-                    unsafe {
-                        (field as &mut NameTypePair).value = argType;
-                    }
-                }
-            }
-            return typ;
-        } else unsafe {
-            let stderr: Any = fdopen(2, "a");
-            let loc: String = call.fn.span.toString();
-            fprintf(stderr, "error: %s: Expected function, got %s instead.\n", loc.chars(), evalTypeToStr(typ.kind));
-            loc.drop();
-            this.hadErrorsInLookupStage = true;
-            return invalidType();
-        }
-        return invalidType();
-    }
-    func createTypeFrom(&mut this, value: &mut ParsedDeclValue) -> Type {
-        trace("createTypeFrom");
-        let kind: usize = value.kind;
-        if (PRINT_DEBUG) unsafe {
-            printf("[DEBUG] %s createTypeFrom(%llu)\n", value.span.toString().chars(), kind);
-        }
-        assert_with_msg(kind != DECL_VALUE_INVALID, "Expected valid ParsedDeclValue");
-        mut typ: Type = invalidType();
-        if (kind == DECL_VALUE_MODULE) {
-            todo_with_msg("Module");
-        } else if (kind == DECL_VALUE_STRUCT_DECL) {
-            typ = this.createTypeFromStruct(value.data);
-        } else if (kind == DECL_VALUE_ENUM_DECL) {
-            typ = this.createTypeFromEnum(value.data);
-        } else if (kind == DECL_VALUE_UNION_DECL) {
-            todo_with_msg("Union");
-        } else if (kind == DECL_VALUE_FUNC_DECL) {
-            typ = this.createTypeFromFunc(value.data);
-        } else if (kind == DECL_VALUE_IDENT) {
-            typ = this.createTypeFromIdent(value.data);
-        } else if (kind == DECL_VALUE_BUILTIN) {
-            typ = this.createTypeFromBuiltin(value.data);
-        } else if (kind == DECL_VALUE_NUMBER) {
-            typ = this.createTypeFromNumber(value.data);
-        } else if (kind == DECL_VALUE_CALL) {
-            typ = this.createTypeFromCall(value.data);
-        } else if (kind == DECL_VALUE_BINARY) {
-            typ = this.createTypeFromBinary(value.data);
-        } else if (kind == DECL_VALUE_UNARY) {
-            typ = this.createTypeFromUnary(value.data);
-        } else if (kind == DECL_VALUE_IF) {
-            typ = this.createTypeFromIf(value.data);
-        } else if (kind == DECL_VALUE_BLOCK) {
-            typ = this.createTypeFromBlock(value.data);
-        } else unsafe {
-            printf("%llu\n", kind);
-            todo_with_msg("Other");
-        }
-        if (typ.isInvalidOrUnresolved())
-            return typ;
-        typ.value = &*value;
-        (*value).typ = typ;
-        return typ;
-    }
-    func defineBuiltins(&mut this) {
-        let span: Span = defaultSpan();
-        unsafe {
-            let thirtyTwo: i64 = 69;
-            mut __int: StructType = newStructType();
-            __int.metadata.isIntrinsic = true;
-            __int.metadata.integerBitsize = -1;
-            let int: Type = newType(span, TYPE_INTEGER, sizeof i64, &thirtyTwo);
-            __int.addField(defaultSpan(), newSubStrOfStrLit("value"), &int);
-            let __intType: Type = newType(span, TYPE_STRUCT, sizeof StructType, &__int);
-            let intName: Token = newToken(&newSubStrOfStrLit("__integer"), 0, TOKEN_IDENT);
-            this.addResolvedDecl(&intName, &__intType);
-            this.insertIdentifierAtIndex(0, intName.content);
-        }
-    }
-    func collectDeclIdentifiers(&mut this, parsedModule: &mut ParsedModule) {
-        trace("collectDeclIdentifiers");
-        for (mut i: usize = 0; i < parsedModule.declCount; i = i + 1) unsafe {
-            let decl: &ParsedGlobalDecl = parsedModule.getDeclAtIndex(i);
-            if (decl.kind == GLOBAL_VAR_DECL) {
-                this.collectIdentifier(decl.data);
-            }
-        }
-    }
-    func collectIdentifier(&mut this, decl: &mut ParsedVarDecl) {
-        trace("collectIdentifier");
+
+    func checkExisting(&mut this, decl: &mut ParsedVarDecl) -> bool {
+        trace("Scope.checkExisting");
         let name: SubStr = decl.name.content;
-        if (this.isKnownIdentifier(&name)) unsafe {
-            todo_with_msg("Duplicate global ident");
-        }
-        mut index: usize = 0;
-        let result: bool = this.searchForIdentifier(&name, &mut index);
-        assert(!result);
-        this.insertIdentifierAtIndex(index, name);
-    }
-    func insertIdentifierAtIndex(&mut this, index: usize, name: SubStr) {
-        unsafe {
-            if (this.identLookupLen >= this.identLookupCap) {
-                let _new: Any = calloc(this.identLookupCap * 2, sizeof SubStr);
-                assert_with_msg(_new != null, "Could not resize in TypeChecker.insertIdentifierAtIndex");
-                let _old: Any = this.identLookup;
-                memcpy(_new, _old, this.identLookupLen * sizeof SubStr);
-                free(_old);
-                this.identLookupCap = this.identLookupCap * 2;
-                this.identLookup = _new;
-            }
-            for (mut i: usize = this.identLookupLen - 1; i >= index; i = i - 1) {
-                *(this.identLookup + (i + 1) * sizeof SubStr) = *(this.identLookup + i * sizeof SubStr);
-            }
-            *(this.identLookup + index * sizeof SubStr) = name;
-            this.identLookupLen = this.identLookupLen + 1;
-        }
-    }
-    func isKnownIdentifier(&mut this, name: &SubStr) -> bool {
-        mut _dummy: usize = 0;
-        return this.searchForIdentifier(name, &mut _dummy);
-    }
-    func getIdentifierAtIndex(&mut this, index: i64) -> &SubStr {
-        assert_with_msg(index >= 0, "Out of bounds access in TypeChecker.getIdentifierAtIndex");
-        let _index: usize = index as usize;
-        assert_with_msg(_index < this.identLookupLen, "Out of bounds access in TypeChecker.getIdentifierAtIndex");
-        unsafe {
-            return (this.identLookup + _index * sizeof SubStr) as &SubStr;
-        }
-    }
-    func searchForIdentifier(&mut this, name: &SubStr, index: &mut usize) -> bool {
-        if (this.identLookupLen == 0) return false;
-        mut left: i64 = 0;
-        mut right: i64 = this.identLookupLen as i64 - 1;
-        while (left <= right) {
-            let middle: i64 = (left + right) / 2;
-            let elem: &SubStr = this.getIdentifierAtIndex(middle);
-            let order: u8 = elem.lexOrder(name);
-            if (order == ORDER_LESS)
-                left = middle + 1;
-            else if (order == ORDER_GREATER)
-                right = middle - 1;
-            else {
-                *index = middle as usize;
+        for (mut i: usize = 0; i < this.length; i = i + 1) {
+            let entry: &mut ScopeEntry = this.getEntryAtIndex(i);
+            if (entry.name.equals(&name)) {
                 return true;
             }
         }
-        *index = left as usize;
         return false;
     }
-    func addModuleToLookup(&mut this, parsedModule: &mut ParsedModule) {
-        trace("addModuleToLookup");
-        for (mut i: usize = 0; i < parsedModule.declCount; i = i + 1) {
-            let decl: &ParsedGlobalDecl = parsedModule.getDeclAtIndex(i);
-            if (decl.kind == GLOBAL_VAR_DECL)
-                this.addDeclToLookup(decl.data);
-            else if (decl.kind == GLOBAL_DIR)
-                this.evalGlobalDirective(decl.data);
-            else {
-                assert_with_msg(false, "Invalid kind for ParsedGlobalDecl");
-            }
-        }
-    }
-    func evalGlobalDirective(&mut this, parsedDirective: &ParsedGlobalDecl) {
-        debug("Missing support for TypeChecker.evalGlobalDirective");
-    }
-    func addDeclToLookup(&mut this, parsedDecl: &mut ParsedVarDecl) -> bool {
-        trace("addDeclToLookup");
-        mut typ: Type = invalidType();
-        unsafe {
-            typ = this.createTypeFrom(&parsedDecl.value as &mut ParsedDeclValue);
-        }
-        if (typ.isUnresolved()) {
-            this.addUnresolvedDecl(parsedDecl);
-            return false;
-        }
-        if (typ.isValid()) {
-            this.addResolvedDecl(&parsedDecl.name, &typ);
-            (*parsedDecl).typ = typ;
-            if (parsedDecl.isMutable && typ.requiresImmutable()) unsafe {
-                let stderr: Any = fdopen(2, "a");
-                let loc: String = parsedDecl.name.span.toString();
-                fprintf(stderr, "error: %s: Variables that store %s type can't be mutable.\n", loc.chars(), evalTypeToStr(typ.kind));
-                loc.drop();
-                this.hadErrorsInLookupStage = true;
-            }
-            return true;
-        }
-        return false;
-    }
-    func removeUnresolvedAtIndex(&mut this, index: usize) {
-        trace("removeUnresolvedAtIndex");
-        assert_with_msg(index < this.unresolvedLen, "Out of bounds index in removeUnresolvedAtIndex");
-        let l: usize = this.unresolvedLen - 1;
-        unsafe {
-            let last: &ParsedVarDecl = this.getUnresolvedAtIndex(l);
-            *(this.unresolvedDecls + index * sizeof &ParsedVarDecl) = last;
-            this.unresolvedLen = this.unresolvedLen - 1;
 
-        }
-    }
-    func isKnownUnresolved(&mut this, decl: &mut ParsedVarDecl) -> bool {
-        trace("isKnownUnresolved");
-        for (mut i: usize = 0; i < this.unresolvedLen; i = i + 1) {
-            let unresolved: &ParsedVarDecl = this.getUnresolvedAtIndex(i);
-            if (unresolved == &*decl) return true;
+    func isKnownIdentifier(&mut this, name: SubStr) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) {
+            let entry: &mut ScopeEntry = this.getEntryAtIndex(i);
+            if (entry.name.equals(&name)) {
+                return true;
+            }
         }
         return false;
     }
-    func addUnresolvedDecl(&mut this, decl: &mut ParsedVarDecl) {
-        debug("Add Unresolved");
-        debug(decl.name.span.toString().chars());
-        if (this.unresolvedLen >= this.unresolvedCap) unsafe {
-            let _new: Any = calloc(this.unresolvedCap * 2, sizeof &ParsedVarDecl);
-            assert_with_msg(_new != null, "Could not resize in TypeChecker.addResolvedDecl");
-            let _old: Any = this.unresolvedDecls;
-            memcpy(_new, _old, this.unresolvedLen * sizeof &ParsedVarDecl);
-            free(_old);
-            this.unresolvedCap = this.unresolvedCap * 2;
-            this.unresolvedDecls = _new;
+
+    func getVariableByName(&mut this, name: SubStr) -> &mut ScopeEntry {
+        trace("Scope.getVariableByName");
+        for (mut i: usize = 0; i < this.length; i = i + 1) {
+            let entry: &mut ScopeEntry = this.getEntryAtIndex(i);
+            if (entry.name.equals(&name)) {
+                return entry;
+            }
         }
-        if (this.isKnownUnresolved(decl)) return;
-        unsafe {
-            *(this.unresolvedDecls + this.unresolvedLen * sizeof &ParsedVarDecl) = &*decl;
-        }
-        this.unresolvedLen = this.unresolvedLen + 1;
+        assert_with_msg(!this.isKnownIdentifier(name), "unreachable in Scope.getVariableByName");
+        assert_with_msg(false, "unreachable in Scope.getVariableByName");
+        unsafe { return null; }
     }
-    func getGlobalTypeDeclLoc(&mut this, varName: SubStr) -> Span {
-        trace("getGlobalTypeDeclLoc");
-        for (mut i: usize = 0; i < this.resolvedLen; i = i + 1) {
-            let decl: &NameTypePair = this.getResolvedAtIndex(i);
-            if (decl.name.equals(&varName))
-                return decl.value.span;
-        }
-        assert_with_msg(false, "unreachable: getGlobalTypeDeclLoc() expects a known variable name as input");
-        return defaultSpan();
-    }
-    func addResolvedDecl(&mut this, tkn: &Token, value: &Type) -> bool {
-        trace("addResolvedDecl");
-        assert_with_msg(value.isValid(), "Expected valid type in addResolvedDecl");
-        // FIXME: This is better placed in addDeclToLookup() before we even evaluate the value
-        //        It's easier to lookup the name first
-        if (this.isKnownType(tkn.content)) unsafe {
-            let stderr: Any = fdopen(2, "a");
-            let loc: String = tkn.span.toString();
-            let name: String = tkn.content.toString();
-            let prevLoc: Span = this.getGlobalTypeDeclLoc(tkn.content);
-            let prevLocStr: String = prevLoc.toString();
-            fprintf(stderr, "error: %s: Redeclaration of variable %s.\nnote: %s: Variable already declared here.\n", loc.chars(), name.chars(), prevLocStr.chars());
-            prevLocStr.drop();
-            name.drop();
-            loc.drop();
-            this.hadErrorsInLookupStage = true;
+
+    func addVarDecl(&mut this, decl: &mut ParsedVarDecl) -> bool {
+        trace("Scope.addVarDecl");
+        if (this.length >= this.capacity) todo_with_msg("resize entries");
+        if (this.checkExisting(decl)) {
+            let entry: &mut ScopeEntry = this.getVariableByName(decl.name.content);
             return false;
         }
-        debug("Add Resolved");
-        debug(tkn.span.toString().chars());
-        debug(value.toString().chars());
-        if (this.resolvedLen >= this.resolvedCap) unsafe {
-            let _new: Any = calloc(this.resolvedCap * 2, sizeof NameTypePair);
-            assert_with_msg(_new != null, "Could not resize in TypeChecker.addResolvedDecl");
-            let _old: Any = this.resolvedDecls;
-            memcpy(_new, _old, this.resolvedLen * sizeof NameTypePair);
-            free(_old);
-            this.resolvedCap = this.resolvedCap * 2;
-            this.resolvedDecls = _new;
-        }
-        let pair: NameTypePair = NameTypePair {
-            span: tkn.span,
-            name: tkn.content,
-            value: *value
-        };
         unsafe {
-            *(this.resolvedDecls + this.resolvedLen * sizeof NameTypePair) = pair;
-        }
-        this.resolvedLen = this.resolvedLen + 1;
-        if (value.isFunc()) {
-            assert(value.value.kind == DECL_VALUE_FUNC_DECL);
-            this.saveState();
-            let funcExpr: &ParsedFuncDecl = value.value.data;
-            for (mut i: usize = 0; i < funcExpr.paramCount; i = i + 1) unsafe {
-                let param: &ParsedParam = funcExpr.getParamAtIndex(i);
-                let typ: Type = this.createTypeFromTypeExpr(&param.typ);
-                assert(!typ.isInvalidOrUnresolved());
-                let name: SubStr = param.name.content;
-                mut index: usize = 0;
-                let result: bool = this.searchForIdentifier(&name, &mut index);
-                assert(!result);
-                this.insertIdentifierAtIndex(index, name);
-                this.addResolvedDecl(&param.name, &typ);
-            }
-            for (mut i: usize = 0; i < funcExpr.stmtCount; i = i + 1) unsafe {
-                let stmt: &ParsedStmt = funcExpr.getStmtAtIndex(i);
-                let typ: Type = this.createTypeFromStmt(stmt as &mut ParsedStmt);
-                if (typ.isInvalidOrUnresolved()) {
-                    this.restoreState();
-                    return false;
-                }
-            }
-            this.restoreState();
+            let p: &mut ScopeEntry = this.entries + this.length * sizeof ScopeEntry;
+            *p = newScopeEntry(decl);
+            this.length = this.length + 1;
         }
         return true;
     }
-    func tryResolveRemaining(&mut this) {
-        trace("tryResolveRemaining");
-        mut currentUnresolved: usize = this.unresolvedLen;
-        assert_with_msg(INITIAL_CAPACITY == 64, "Resize newResolved array");
-        while (currentUnresolved > 0) {
-            debug("Still have types to resolve...");
-            mut newResolved: [usize; 64] = blank;
-            mut newLen: usize = 0;
-            for (mut i: usize = 0; i < this.unresolvedLen; i = i + 1) {
-                let decl: &ParsedVarDecl = this.getUnresolvedAtIndex(i);
-                mut success: bool = false;
-                unsafe {
-                    success = this.addDeclToLookup(decl as &mut ParsedVarDecl);
-                }
-                if (success) {
-                    newResolved[newLen] = i;
-                    newLen = newLen + 1;
-                }
-            }
-            for (mut i: usize = newLen - 1; i >= 0; i = i - 1) {
-                this.removeUnresolvedAtIndex(newResolved[i]);
-            }
-            if (currentUnresolved == this.unresolvedLen) {
-                // Could not resolve any new type in this iteration
-                // which means we would loop infinitely
-                break;
-            }
-            currentUnresolved = this.unresolvedLen;
+    func addEntry(&mut this, entry: ScopeEntry) -> bool {
+        if (this.length >= this.capacity) todo_with_msg("resize entries");
+        if (this.isKnownIdentifier(entry.name)) return false;
+        unsafe {
+            let p: &mut ScopeEntry = this.entries + this.length * sizeof ScopeEntry;
+            *p = entry;
+            this.length = this.length + 1;
         }
-        for (mut i: usize = 0; i < this.unresolvedLen; i = i + 1) unsafe {
-            let unresolved: &ParsedVarDecl = this.getUnresolvedAtIndex(i);
-            let loc: String = unresolved.name.span.toString();
-            let name: String = unresolved.name.content.toString();
-            let stderr: Any = fdopen(2, "a");
-            fprintf(stderr, "error: %s: Could not resolve type of variable %s.\n", loc.chars(), name.chars());
-            this.hadErrorsInLookupStage = true;
+        return true;
+    }
+}
+
+func newScope() -> Scope {
+    trace("newScope");
+    unsafe {
+        let m: Any = calloc(32, sizeof ScopeEntry);
+        assert_with_msg(m != null, "Could not allocate memory in newScope");
+        let s: &mut ScopeEntry = &mut *m;
+        return Scope {
+            entries: s,
+            length: 0,
+            capacity: 32
+        };
+    }
+}
+
+struct ScopeList {
+    s: &mut Scope;
+    length: usize;
+    capacity: usize;
+
+    func getScopeAtIndex(&mut this, index: usize) -> &mut Scope {
+        assert_with_msg(index < this.length, "Out of bounds access in ScopeList.getScopeAtIndex");
+        unsafe {
+            return this.s + index * sizeof Scope;
         }
     }
-    func isKnownType(&mut this, name: SubStr) -> bool {
-        for (mut i: usize = 0; i < this.resolvedLen; i = i + 1) {
-            let resolved: &NameTypePair = this.getResolvedAtIndex(i);
-            if (resolved.name.equals(&name)) return true;
+
+    func getCurrentScope(&mut this) -> &mut Scope {
+        return this.getScopeAtIndex(this.length - 1);
+    }
+
+    func addScope(&mut this) -> &mut Scope {
+        trace("ScopeList.addScope");
+        if (this.length >= this.capacity) todo_with_msg("resize scopes");
+        unsafe {
+            let p: &mut Scope = this.s + this.length * sizeof Scope;
+            this.length = this.length + 1;
+            *p = newScope();
+            return p;
+        }
+    }
+
+    func removeScope(&mut this) -> &mut Scope {
+        trace("ScopeList.removeScope");
+        assert_with_msg(this.length > 0, "Attempted to remove scope from empty list");
+        let s: &mut Scope = this.getCurrentScope();
+        this.length = this.length - 1;
+        return s;
+    }
+
+    func isKnownIdentifier(&mut this, name: SubStr) -> bool {
+        trace("ScopeList.isKnownIdentifier");
+        for (mut i: usize = this.length - 1; i >= 0; i = i - 1) {
+            let s: &mut Scope = this.getScopeAtIndex(i);
+            if (s.isKnownIdentifier(name))
+                return true;
         }
         return false;
+    }
+
+    func getVariableByName(&mut this, name: SubStr) -> &mut ScopeEntry {
+        trace("ScopeList.getVariableByName");
+        for (mut i: usize = this.length - 1; i >= 0; i = i - 1) {
+            let s: &mut Scope = this.getScopeAtIndex(i);
+            if (s.isKnownIdentifier(name))
+                return s.getVariableByName(name);
+        }
+        assert_with_msg(this.isKnownIdentifier(name), "unreachable in ScopeList.getVariableByName");
+        assert_with_msg(false, "unreachable in ScopeList.getVariableByName");
+        unsafe { return null; }
+    }
+}
+
+func newScopeList() -> ScopeList {
+    trace("newScopeList");
+    unsafe {
+        let m: Any = calloc(32, sizeof Scope);
+        assert_with_msg(m != null, "Could not allocate memory in newScopeList");
+        let s: &mut Scope = &mut *m;
+        return ScopeList {
+            s: s,
+            length: 0,
+            capacity: 32
+        };
+    }
+}
+
+struct TypeChecker {
+    errors: &mut String;
+    errorCount: usize;
+    errorCapacity: usize;
+    scopes: ScopeList;
+    entry: &mut ParsedDeclValueBuiltin;
+    funcStack: &mut Type;
+    funcStackLen: usize;
+    funcStackCapacity: usize;
+    identStack: Scope; // Identifiers that we currently check are in here, so we can find cycles
+
+    func pushFunctionOnStack(&mut this, fn: Type) {
+        if (this.funcStackLen >= this.funcStackCapacity) unsafe {
+            mut newCap: usize = this.funcStackCapacity * 2;
+            if (newCap == 0) newCap = newCap + 1;
+            this.funcStack = realloc(this.funcStack, newCap * sizeof Type);
+            assert_with_msg(this.funcStack != null, "Could not resize function stack");
+            this.funcStackCapacity = newCap;
+        }
+        unsafe {
+            *(this.funcStack + this.funcStackLen * sizeof Type) = fn;
+            this.funcStackLen = this.funcStackLen + 1;
+        }
+    }
+    func peekFunctionFromStack(&mut this) -> &mut Type {
+        trace("TypeChecker.peekFunctionFromStack");
+        assert_with_msg(this.funcStackLen > 0, "Stack underflow in TypeChecker.peekFunctionFromStack");
+        unsafe {
+            return this.funcStack + (this.funcStackLen - 1) * sizeof Type;
+        }
+    }
+    func popFunctionFromStack(&mut this) {
+        trace("TypeChecker.popFunctionFromStack");
+        assert_with_msg(this.funcStackLen > 0, "Stack underflow in TypeChecker.popFunctionFromStack");
+        this.funcStackLen = this.funcStackLen - 1;
+    }
+    func addError(&mut this, error: String) {
+        if (this.errorCount >= this.errorCapacity) unsafe {
+            mut newCap: usize = this.errorCapacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.errors = realloc(this.errors, newCap * sizeof String);
+            assert_with_msg(this.errors != null, "Could not resize error list");
+            this.errorCapacity = newCap;
+        }
+        unsafe {
+            *(this.errors + this.errorCount * sizeof String) = error;
+            this.errorCount = this.errorCount + 1;
+        }
+    }
+
+    func warnUnreachableCodeBlock(&mut this, ignoredBranch: &mut ParsedDeclValue) {
+        trace("TypeChecker.warnUnreachableCodeBlock");
+        let loc: String = ignoredBranch.span.toString();
+        mut s: String = newString();
+        s.pushString(&loc);
+        s.pushStr(": warning: Analysis indicates that this code block is unreachable.\n");
+        s.pushString(&loc);
+        s.pushStr(": note: Due to the lazy nature of the compiler, unreachable code blocks are not considered for Type Checking and further stages.\n");
+        unsafe {
+            printf("%.*s", s.len(), s.chars());
+        }
+        loc.drop();
+        s.drop();
+    }
+
+    func warnUnusedVarDecl(&mut this, entry: &mut ScopeEntry) {
+        if (this.errorCount > 0) return; // Variable might be unused because its expression caused an error
+        trace("TypeChecker.warnUnusedVarDecl");
+        unsafe {
+            assert_with_msg(entry.node != null, "can only warn if ScopeEntry.node is not null");
+        }
+        let loc: String = entry.span.toString();
+        mut s: String = newString();
+        s.pushString(&loc);
+        s.pushStr(": warning: Unused variable `");
+        s.pushSubStr(&entry.node.name.content);
+        s.pushStr("`.\n");
+        s.pushString(&loc);
+        s.pushStr(": note: Due to the lazy nature of the compiler, unused variables are not considered for Type Checking and further stages.\n");
+        s.pushString(&loc);
+        s.pushStr(": note: To force the compiler to consider the variable, use `@check(");
+        s.pushSubStr(&entry.node.name.content);
+        s.pushStr(")`.\n");
+        unsafe {
+            printf("%.*s", s.len(), s.chars());
+        }
+        loc.drop();
+        s.drop();
+    }
+
+    func printErrorArgumentCountMismatch(&mut this, call: &mut ParsedDeclValueCall, funcDecl: &mut ParsedFuncDecl) {
+        trace("TypeChecker.printErrorArgumentCountMismatch");
+        let argCount: usize = call.argCount;
+        let paramCount: usize = funcDecl.paramCount;
+        let callLoc: String = call.span.toString();
+        let declLoc: String = funcDecl.span.toString();
+        mut s: String = newString();
+        s.pushString(&callLoc);
+        s.pushStr(": error: Function call expected ");
+        s.pushNumber(paramCount);
+        if (paramCount == 1) s.pushStr(" argument");
+        else s.pushStr(" arguments");
+        s.pushStr(", but got ");
+        s.pushNumber(argCount);
+        s.pushStr(" instead.\n");
+        s.pushString(&declLoc);
+        s.pushStr(": note: Function declared here.\n");
+        this.addError(s);
+        declLoc.drop();
+        callLoc.drop();
+    }
+
+    func printErrorRecursiveIdentifiers(&mut this, ident: &mut ParsedDeclValueIdent) {
+        trace("TypeChecker.printErrorRecursiveIdentifiers");
+        assert(this.identStack.length != 0);
+        let entry: &mut ScopeEntry = this.identStack.getEntryAtIndex(0);
+        let loc: String = entry.span.toString();
+        mut s: String = newString();
+        s.pushString(&loc);
+        s.pushStr(": error: Recursive dependency encountered when evaluating the type of identifier `");
+        s.pushSubStr(&entry.name);
+        s.pushStr("`.\n");
+        for (mut i: usize = 1; i < this.identStack.length; i = i + 1) {
+            let e: &mut ScopeEntry = this.identStack.getEntryAtIndex(i);
+            let l: String = e.span.toString();
+            s.pushString(&l);
+            s.pushStr(": note: The previous identifier depends on the type of identifier `");
+            s.pushSubStr(&e.name);
+            s.pushStr("`.\n");
+            l.drop();
+        }
+        let l: String = ident.span.toString();
+        s.pushString(&l);
+        s.pushStr(": note: Which itself depends on the type of identifier `");
+        s.pushSubStr(&ident.name);
+        s.pushStr("`.\n");
+        this.addError(s);
+        l.drop();
+        loc.drop();
+    }
+
+    func printErrorCouldNotFindEntryPoint(&mut this) {
+        trace("TypeChecker.printErrorCouldNotFindEntryPoint");
+        mut s: String = newString();
+        s.pushStr("error: Could not find entry point of the program.\n");
+        s.pushStr("note: The compiler is lazy and only starts compilation when an entry point is provided.\n");
+        s.pushStr("note: Use the `@entry()` builtin to get started, for example:\n");
+        s.pushStr("      > `@entry(main)` where `let main = func () -> i32 { return 0; };`\n");
+        s.pushStr("      > `@entry(func () -> i32 { return 0; })`\n");
+        this.addError(s);
+    }
+
+    func printErrorEntryExpectedOneArgument(&mut this, entry: &mut ParsedDeclValueBuiltin) {
+        trace("TypeChecker.printErrorEntryExpectedOneArgument");
+        let cnt: usize = entry.argCount;
+        let loc: String = entry.span.toString();
+        mut s: String = newString();
+        s.pushString(&loc);
+        s.pushStr(": error: Builtin @entry() expected one argument, got ");
+        s.pushNumber(cnt);
+        s.pushStr(".\n");
+        for (mut i: usize = 0; i < cnt; i = i + 1) {
+            let arg: ParsedDeclValue = entry.args[i];
+            let argLoc: String = arg.span.toString();
+            s.pushString(&argLoc);
+            s.pushStr(": note: Argument ");
+            s.pushNumber(i);
+            s.pushStr(" provided here.\n");
+            argLoc.drop();
+        }
+        this.addError(s);
+        loc.drop();
+    }
+
+    func printErrorUseOfUnknownIdentifier(&mut this, ident: &mut ParsedDeclValueIdent) {
+        trace("TypeChecker.printErrorUseOfUnknownIdentifier");
+        let loc: String = ident.span.toString();
+        mut s: String = newString();
+        s.pushString(&loc);
+        s.pushStr(": error: Use of undeclared variable `");
+        s.pushSubStr(&ident.name);
+        s.pushStr("`.\n");
+        loc.drop();
+        this.addError(s);
+    }
+
+    func printErrorDuplicateIdentifier(&mut this, name: SubStr, newSpan: Span, oldSpan: Span) {
+        trace("TypeChecker.printErrorDuplicateIdentifier");
+        let newLoc: String = newSpan.toString();
+        let oldLoc: String = oldSpan.toString();
+        mut s: String = newString();
+        s.pushString(&newLoc);
+        s.pushStr(": error: Redeclaration of variable ");
+        s.pushSubStr(&name);
+        s.pushStr(".\n");
+        s.pushString(&oldLoc);
+        s.pushStr(": note: Variable already declared here.\n");
+        oldLoc.drop();
+        newLoc.drop();
+        this.addError(s);
+    }
+
+    func printErrorTypeMismatch(&mut this, expected: Type, got: Type) {
+        trace("TypeChecker.printErrorTypeMismatch");
+        let expName: String = expected.toString();
+        let gotName: String = got.toString();
+        let expLoc: String = expected.span.toString();
+        let gotLoc: String = got.span.toString();
+        mut s: String = newString();
+        s.pushString(&gotLoc);
+        s.pushStr(": error: Type mismatch! Expected type ");
+        s.pushString(&expName);
+        s.pushStr(", got ");
+        s.pushString(&gotName);
+        s.pushStr(".\n");
+        s.pushString(&expLoc);
+        s.pushStr(": note: Expected type evaluated here.\n");
+        gotLoc.drop();
+        expLoc.drop();
+        gotName.drop();
+        expName.drop();
+        this.addError(s);
+    }
+
+    func printErrorUnexpectedReturnValue(&mut this, expected: Type, got: Type) {
+        trace("TypeChecker.printErrorUnexpectedReturnValue");
+        assert(expected.isNone());
+        let gotName: String = got.toString();
+        let expLoc: String = expected.span.toString();
+        let gotLoc: String = got.span.toString();
+        mut s: String = newString();
+        s.pushString(&gotLoc);
+        s.pushStr(": error: Unexpected return value of type ");
+        s.pushString(&gotName);
+        s.pushStr(".\n");
+        s.pushString(&expLoc);
+        s.pushStr(": note: Function declared to return nothing here.\n");
+        gotLoc.drop();
+        expLoc.drop();
+        gotName.drop();
+        this.addError(s);
+    }
+
+    func getCurrentScope(&mut this) -> &mut Scope {
+        trace("TypeChecker.getCurrentScope");
+        return this.scopes.getCurrentScope();
+    }
+
+    func addScope(&mut this) -> &mut Scope {
+        trace("TypeChecker.addScope");
+        return this.scopes.addScope();
+    }
+
+    func removeScope(&mut this) -> &mut Scope {
+        trace("TypeChecker.removeScope");
+        return this.scopes.removeScope();
+    }
+
+    func isKnownIdentifier(&mut this, name: SubStr) -> bool {
+        trace("TypeChecker.isKnownIdentifier");
+        return this.scopes.isKnownIdentifier(name);
+    }
+
+    func getVariableByName(&mut this, name: SubStr) -> &mut ScopeEntry {
+        trace("TypeChecker.getVariableByName");
+        return this.scopes.getVariableByName(name);
+    }
+
+    func fillLookup(&mut this, project: &mut ParsedModule) -> bool {
+        trace("TypeChecker.fillLookup");
+        let scope: &mut Scope = this.addScope();
+        for (mut i: usize = 0; i < project.declCount; i = i + 1) {
+            let decl: &mut ParsedGlobalDecl = project.getDeclAtIndex(i);
+            if (decl.kind == GLOBAL_VAR_DECL) {
+                let decl: &mut ParsedVarDecl = decl.data;
+                if (!scope.addVarDecl(decl))
+                    return false;
+            } else if (decl.kind == GLOBAL_DIR) {
+                let dir: &mut ParsedDeclValue = decl.data;
+                let res: TCResult = this.checkAndVerifyAndMaybeCalculate(dir, true, false);
+                if (!res.isValid())
+                    return false;
+            } else {
+                assert_with_msg(false, "exhaustive handling of global declarations");
+            }
+        }
+        return true;
+    }
+
+    func reportErrors(&mut this) {
+        if (this.errorCount > 0) unsafe {
+            let stderr: Any = fdopen(2, "a");
+            for (mut i: usize = 0; i < this.errorCount; i = i + 1) {
+                let s: &String = (this.errors + i * sizeof String) as &String;
+                fprintf(stderr, "%.*s", s.len(), s.chars());
+                s.drop();
+            }
+            free(this.errors);
+            this.errorCapacity = 0;
+            this.errorCount = 0;
+        }
+    }
+
+    func checkForUnusedVariables(&mut this, scope: &mut Scope) -> bool {
+        mut any: bool = false;
+        for (mut i: usize = 0; i < scope.length; i = i + 1) {
+            let entry: &mut ScopeEntry = scope.getEntryAtIndex(i);
+            if (!entry.isChecked) {
+                this.warnUnusedVarDecl(entry);
+                any = true;
+            }
+        }
+        return any;
+    }
+    func checkProject(&mut this, project: &mut ParsedModule) -> bool {
+        trace("TypeChecker.checkProject");
+        if (!this.fillLookup(project)) {
+            this.reportErrors();
+            return false;
+        }
+        if (!this.startCheckFromEntry()) {
+            this.reportErrors();
+            return false;
+        }
+        trace("--- TypeChecker FINISHED ---");
+        // reportErrors() resets this.errorCount
+        let success: bool = this.errorCount == 0;
+        this.reportErrors();
+        return success;
+    }
+
+    func startCheckFromEntry(&mut this) -> bool {
+        trace("TypeChecker.startCheckFromEntry");
+        if (!this.foundEntry()) {
+            this.printErrorCouldNotFindEntryPoint();
+            return false;
+        }
+        let entry: &mut ParsedDeclValueBuiltin = this.entry;
+        if (entry.argCount != 1) {
+            this.printErrorEntryExpectedOneArgument(entry);
+            return false;
+        }
+        let fn: &mut ParsedDeclValue = &mut entry.args[0];
+        let res: TCResult = this.checkAndVerifyAndMaybeCalculate(fn, true, false);
+        assert_with_msg(this.scopes.length == 1, "Expected scope stack to only contain global scope at the end");
+        this.checkForUnusedVariables(this.removeScope());
+        if (!res.isValid()) return false;
+        if (!res.isType()) todo_with_msg("entry point is not a typedef");
+        if (!res.typ.isFunction()) todo_with_msg("entry point isnt function");
+        return true;
+    }
+
+    func foundEntry(&mut this) -> bool {
+        trace("TypeChecker.foundEntry");
+        unsafe {
+            return this.entry != null;
+        }
+    }
+
+    func checkAndVerifyAndMaybeCalculate(&mut this, expr: &mut ParsedDeclValue, complete: bool, typeContext: bool) -> TCResult {
+        trace("TypeChecker.checkAndVerifyAndMaybeCalculate");
+        mut res: TCResult = blank;
+        if (expr.kind == DECL_VALUE_MODULE) todo_with_msg("DECL_VALUE_MODULE");
+        else if (expr.kind == DECL_VALUE_FUNC_DECL)
+            res = this.checkAndVerifyAndMaybeCalculateFuncDecl(expr.data, complete);
+        else if (expr.kind == DECL_VALUE_STRUCT_DECL) todo_with_msg("DECL_VALUE_STRUCT_DECL");
+        else if (expr.kind == DECL_VALUE_ENUM_DECL) todo_with_msg("DECL_VALUE_ENUM_DECL");
+        else if (expr.kind == DECL_VALUE_UNION_DECL) todo_with_msg("DECL_VALUE_UNION_DECL");
+        else if (expr.kind == DECL_VALUE_BUILTIN)
+            res = this.checkAndVerifyAndMaybeCalculateBuiltin(expr.data);
+        else if (expr.kind == DECL_VALUE_CALL)
+            res = this.checkAndVerifyAndMaybeCalculateCall(expr.data);
+        else if (expr.kind == DECL_VALUE_IDENT)
+            res = this.checkAndVerifyAndMaybeCalculateIdent(expr.data);
+        else if (expr.kind == DECL_VALUE_BINARY)
+            res = this.checkAndVerifyAndMaybeCalculateBinary(expr.data);
+        else if (expr.kind == DECL_VALUE_NUMBER)
+            res = this.checkAndVerifyAndMaybeCalculateNumber(expr.data);
+        else if (expr.kind == DECL_VALUE_BLOCK)
+            res = this.checkAndVerifyAndMaybeCalculateBlock(expr.data);
+        else if (expr.kind == DECL_VALUE_IF)
+            res = this.checkAndVerifyAndMaybeCalculateIf(expr.data);
+        else if (expr.kind == DECL_VALUE_UNARY)
+            res = this.checkAndVerifyAndMaybeCalculateUnary(expr.data, typeContext);
+        else {
+            assert_with_msg(false, "exhaustive handling of checkAndVerifyAndMaybeCalculate");
+        }
+        if (!res.isValid()) return res;
+        if (res.isType()) res.typ.span = expr.span;
+        (*expr).typ = res;
+        return res;
+    }
+
+    func checkAndVerifyAndMaybeCalculateBlock(&mut this, block: &mut ParsedDeclValueBlock) -> TCResult {
+        trace("TypeChecker.checkAndVerifyAndMaybeCalculateBlock");
+        // TODO: Allow blocks to return things -> Modify parser to accept the last statement
+        //       missing a semicolon
+        this.addScope();
+        mut res: TCResult = invalidTCResult();
+        for (mut i: usize = 0; i < block.stmtCount; i = i + 1) {
+            let stmt: &mut ParsedStmt = block.getStmtAtIndex(i);
+            res = this.checkAndVerifyAndMaybeCalculateStmt(stmt);
+            if (!res.isValid()) {
+                this.removeScope();
+                return res;
+            }
+        }
+        let scope: &mut Scope = this.removeScope();
+        for (mut i: usize = 0; i < scope.length; i = i + 1) {
+            let entry: &mut ScopeEntry = scope.getEntryAtIndex(i);
+            if (!entry.isChecked) {
+                this.warnUnusedVarDecl(entry);
+            }
+        }
+        return newTCResult(true, newNoneType(block.span), blank);
+    }
+
+    func checkAndVerifyAndMaybeCalculateIf(&mut this, iif: &mut ParsedDeclValueIf) -> TCResult {
+        trace("TypeChecker.checkAndVerifyAndMaybeCalculateIf");
+        let cond: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut iif.cond, false, false);
+        if (!cond.isValid()) return cond;
+        if (!cond.isType()) todo_with_msg("if cond is not a type");
+        let t: Type = cond.typ;
+        if (!t.isBool()) todo_with_msg("if cond not bool");
+        if (cond.isValue()) {
+            let b: bool = cond.value.bValue;
+            if (b) {
+                let block: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut iif.ifBody, false, false);
+                if (!block.isValid()) return block;
+                if (!block.isType()) todo_with_msg("if body is not a type");
+                let blockType: Type = block.typ;
+                if (iif.hasElse) {
+                    this.warnUnreachableCodeBlock(&mut iif.elseBody);
+                }
+                return block;
+            } else if (iif.hasElse) {
+                let block: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut iif.elseBody, false, false);
+                if (!block.isValid()) return block;
+                if (!block.isType()) todo_with_msg("else body is not a type");
+                let blockType: Type = block.typ;
+                if (iif.hasElse) {
+                    this.warnUnreachableCodeBlock(&mut iif.ifBody);
+                }
+                return block;
+            } else {
+                todo_with_msg("cond is false and no else");
+                return blank;
+            }
+        } else {
+            let block: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut iif.ifBody, false, false);
+            if (!block.isValid()) return block;
+            if (!block.isType()) todo_with_msg("if body is not a type");
+            let blockType: Type = block.typ;
+            if (iif.hasElse) {
+                let elze: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut iif.elseBody, false, false);
+                if (!elze.isValid()) return elze;
+                if (!elze.isType()) todo_with_msg("else body is not a type");
+                let elseType: Type = elze.typ;
+                if (!blockType.equals(&elseType)) {
+                    this.printErrorTypeMismatch(blockType, elze.typ);
+                    return invalidTCResult();
+                }
+                return block;
+            } else {
+                if (!blockType.isNone()) todo_with_msg("if body no else not none");
+                return block;
+            }
+        }
+    }
+
+    func checkAndVerifyAndMaybeCalculateBinary(&mut this, binary: &mut ParsedDeclValueBinary) -> TCResult {
+        trace("TypeChecker.checkAndVerifyAndMaybeCalculateBinary");
+        let lhsResult: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut binary.lhs, false, false);
+        if (!lhsResult.isValid()) return lhsResult;
+        let rhsResult: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut binary.rhs, false, false);
+        if (!rhsResult.isValid()) return rhsResult;
+        mut result: TCResult = invalidTCResult();
+        if (binary.op == BINARY_OP_EQUAL
+            || binary.op == BINARY_OP_NOT_EQUAL
+            || binary.op == BINARY_OP_PLUS
+            || binary.op == BINARY_OP_MINUS) {
+            if (lhsResult.isType() && rhsResult.isType()) {
+                let lhsType: Type = lhsResult.typ;
+                mut rhsType: Type = rhsResult.typ;
+                if (!lhsType.equals(&rhsType)) {
+                    if (lhsType.isInteger() && rhsType.isInteger() && rhsType.int.bitsize == -1) {
+                        debug("Inferred binary type on raw integer");
+                        rhsType.int = lhsType.int;
+                        (*binary).rhs.typ.typ.int = lhsType.int;
+                    } else {
+                        // TODO: Operator overloads
+                        this.printErrorTypeMismatch(lhsType, rhsType);
+                        return invalidTCResult();
+                    }
+                }
+                assert_with_msg(lhsType.equals(&rhsType), "maybe this assert is wrong, idk");
+                if (binary.op == BINARY_OP_EQUAL || binary.op == BINARY_OP_NOT_EQUAL) {
+                    result = newTCResult(true, newBoolType(binary.span), blank);
+                }
+                else
+                    result = newTCResult(true, lhsType, blank);
+            } else if (lhsResult.isValue() && rhsResult.isValue()) {
+                // possible in expressions such as `10 == 10`
+                todo_with_msg("both values");
+            } else {
+                todo_with_msg("ons is type, one is value?");
+            }
+        } else if (binary.op == BINARY_OP_ASSIGN) {
+            let lhsType: Type = lhsResult.typ;
+            mut rhsType: Type = rhsResult.typ;
+            if (!binary.lhs.isLValue()) todo_with_msg("assign to non-lvalue");
+            if (!lhsType.equals(&rhsType)) {
+                if (lhsType.isInteger() && rhsType.isInteger() && rhsType.int.bitsize == -1) {
+                    debug("Inferred binary type on raw integer");
+                    rhsType.int = lhsType.int;
+                    (*binary).rhs.typ.typ.int = lhsType.int;
+                } else {
+                    // TODO: Operator overloads
+                    this.printErrorTypeMismatch(lhsType, rhsType);
+                    return invalidTCResult();
+                }
+                assert_with_msg(lhsType.equals(&rhsType), "maybe this assert is wrong, idk");
+            }
+            result = newTCResult(true, rhsType, blank);
+        } else unsafe {
+            printf("%llu\n", binary.op);
+            todo_with_msg("binary");
+        }
+        if (!result.isValid()) return result;
+        (*binary).typ = result;
+        return result;
+    }
+
+    func checkAndVerifyAndMaybeCalculateUnary(&mut this, unary: &mut ParsedDeclValueUnary, typeContext: bool) -> TCResult {
+        trace("TypeChecker.checkAndVerifyAndMaybeCalculateUnary");
+        let expr: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut unary.expr, false, typeContext);
+        if (!expr.isValid()) return expr;
+        if (unary.op == UNARY_OP_DEREF_IMMUT) {
+            if (typeContext) {
+                let ptr: Type = newPtrType(unary.span, &expr.typ, false);
+                return newTCResult(true, ptr, blank);
+            } else {
+                assert_with_msg(expr.isType(), "of course this can also be a value");
+                let t: Type = expr.typ;
+                if (!t.isPointer()) todo_with_msg("deref non ptr");
+                // FIXME: Mutability
+                let underlying: &Type = t.ptr.underlying;
+                return newTCResult(true, *underlying, blank);
+            }
+        } else if (unary.op == UNARY_OP_DEREF_MUT) {
+            if (typeContext) {
+                let ptr: Type = newPtrType(unary.span, &expr.typ, true);
+                return newTCResult(true, ptr, blank);
+            } else {
+                todo_with_msg("deref mut");
+                return blank;
+            }
+        } else if (unary.op == UNARY_OP_REF_MUT) {
+            if (typeContext) todo_with_msg("&mut in a type context");
+            let ptr: Type = newPtrType(unary.span, &expr.typ, true);
+            return newTCResult(true, ptr, blank);
+        } else if (unary.op == UNARY_OP_REF_IMMUT) {
+            if (typeContext) todo_with_msg("& in a type context");
+            let ptr: Type = newPtrType(unary.span, &expr.typ, false);
+            return newTCResult(true, ptr, blank);
+        } else {
+            assert_with_msg(false, "exhaustive handling of unary ops");
+            return blank;
+        }
+    }
+
+    func checkAndVerifyAndMaybeCalculateCall(&mut this, call: &mut ParsedDeclValueCall) -> TCResult {
+        trace("TypeChecker.checkAndVerifyAndMaybeCalculateCall");
+        let base: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut call.fn, true, false);
+        if (!base.isValid()) return base;
+        if (base.isType()) {
+            assert_with_msg(!base.isValue(), "Call is both type and value?");
+            let t: Type = base.typ;
+            if (t.isInteger()) {
+                if (call.argCount != 1) todo_with_msg("int() wrong arg count");
+                let size: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut call.args[0], false, false);
+                if (!size.isValid()) return size;
+                if (!size.isValue()) todo_with_msg("passed type to int()");
+                let _v: Value = size.value;
+                if (!_v.isInteger()) todo_with_msg("passed non-int value to int()");
+                let v: i64 = _v.rawInt;
+                if (!t.int.signed && v < 0) todo_with_msg("negative int in int()");
+                return newTCResult(true, t, _v);
+            } else if (t.isBool()) {
+                if (call.argCount != 1) todo_with_msg("bool() wrong arg count");
+                let size: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut call.args[0], false, false);
+                if (!size.isValid()) return size;
+                if (!size.isValue()) todo_with_msg("passed type to bool()");
+                let _v: Value = size.value;
+                if (!_v.isInteger()) todo_with_msg("passed non-int value to bool()");
+                let v: i64 = _v.rawInt;
+                if (v == 0 || v == 1) return newTCResult(true, t, _v.intoBoolValue());
+                todo_with_msg("passed int that's not 0 or 1 to bool()");
+            } else if (t.isFunction()) {
+                let fn: FuncType = t.fn;
+                if (call.argCount != fn.paramCount) {
+                    this.printErrorArgumentCountMismatch(call, fn.funcDecl);
+                    return invalidTCResult();
+                }
+                if (fn.containsAnytype()) {
+                    todo_with_msg("we need to get busy now :^)");
+                } else {
+                    // No generic parameters, no generic return type, we can simply check everything here
+                    for (mut i: usize = 0; i < call.argCount; i = i + 1) {
+                        let result: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut call.args[i], false, false);
+                        if (!result.isValid()) return result;
+                        if (!result.isType()) todo_with_msg("arg is not a type?");
+                        let expected: Type = (*fn.params)[i];
+                        mut got: Type = result.typ;
+                        if (!expected.equals(&got)) {
+                            if (expected.isInteger() && got.isInteger() && got.int.bitsize == -1) {
+                                debug("Inferred argument type on raw integer");
+                                got.int = expected.int;
+                                assert((*call).args[i].typ.isType());
+                                assert((*call).args[i].typ.typ.isInteger());
+                                (*call).args[i].typ.typ.int = expected.int;
+                            } else {
+                                this.printErrorTypeMismatch(expected, got);
+                            }
+                        }
+                    }
+                    return newTCResult(true, *fn.retType, blank);
+                }
+            } else unsafe {
+                printf("%d\n", t.kind);
+                todo_with_msg("cringe");
+            }
+        }
+        todo_with_msg("call");
+        return blank;
+    }
+
+    func checkAndVerifyAndMaybeCalculateFuncDecl(&mut this, funcDecl: &mut ParsedFuncDecl, complete: bool) -> TCResult {
+        trace("TypeChecker.checkAndVerifyAndMaybeCalculateFuncDecl");
+        mut paramTypes: [Type; 8] = blank;
+        let scope: &mut Scope = this.addScope();
+        for (mut i: usize = 0; i < funcDecl.paramCount; i = i + 1) {
+            let param: &mut ParsedParam = funcDecl.getParamAtIndex(i);
+            let result: TCResult = this.checkAndVerifyAndMaybeCalculateTypeExpr(&mut param.typ);
+            if (!result.isValid()) {
+                this.removeScope();
+                return result;
+            }
+            if (!result.isType()) todo_with_msg("param is not type");
+            unsafe {
+                let entry: ScopeEntry = ScopeEntry {
+                    name: param.name.content,
+                    span: param.span,
+                    isChecked: true,
+                    result: result,
+                    node: null,
+                };
+                if (!scope.addEntry(entry)) {
+                    this.removeScope();
+                    return invalidTCResult();
+                }
+                paramTypes[i] = result.typ;
+            }
+        }
+        let retResult: TCResult = this.checkAndVerifyAndMaybeCalculateTypeExpr(&mut funcDecl.retType);
+        if (!retResult.isValid()) {
+            this.removeScope();
+            return retResult;
+        }
+        if (!retResult.isType()) todo_with_msg("return expr is not type");
+        let retType: Type = retResult.typ;
+        let fn: Type = newFuncType(funcDecl, funcDecl.span, &paramTypes, funcDecl.paramCount, &retType);
+        mut res: TCResult = newTCResult(true, fn, blank);
+        if (complete) {
+            this.pushFunctionOnStack(fn);
+            mut valid: bool = true;
+            for (mut i: usize = 0; i < funcDecl.stmtCount; i = i + 1) {
+                let stmt: &mut ParsedStmt = funcDecl.getStmtAtIndex(i);
+                let result: TCResult = this.checkAndVerifyAndMaybeCalculateStmt(stmt);
+                if (!result.isValid()) valid = false;
+            }
+            this.popFunctionFromStack();
+        } else {
+            res.markIncomplete();
+        }
+        let _scope: &mut Scope = this.removeScope();
+        assert_with_msg(_scope == scope, "Scope inbalance detected");
+        this.checkForUnusedVariables(_scope);
+        return res;
+    }
+
+    func checkAndVerifyAndMaybeCalculateStmt(&mut this, stmt: &mut ParsedStmt) -> TCResult {
+        trace("TypeChecker.checkAndVerifyAndMaybeCalculateStmt");
+        if (stmt.kind == STMT_VAR_DECL) {
+            trace("TypeChecker.checkAndVerifyAndMaybeCalculateStmt - VarDecl");
+            let scope: &mut Scope = this.getCurrentScope();
+            let decl: &mut ParsedVarDecl = stmt.data;
+            if (!scope.addVarDecl(decl)) {
+                let entry: &mut ScopeEntry = this.getVariableByName(decl.name.content);
+                this.printErrorDuplicateIdentifier(decl.name.content, decl.name.span, entry.node.name.span);
+                return invalidTCResult();
+            }
+            return newTCResult(true, newNoneType(stmt.span), blank);
+        } else if (stmt.kind == STMT_RETURN) {
+            trace("TypeChecker.checkAndVerifyAndMaybeCalculateStmt - return");
+            // FIXME: 2nd argument (typeContext) is true if the function returns a type
+            let result: TCResult = this.checkAndVerifyAndMaybeCalculate(stmt.data, false, false);
+            if (!result.isValid()) return result;
+            if (!result.isType()) todo_with_msg("ret expr is not type");
+            let _fn: &mut Type = this.peekFunctionFromStack();
+            assert((&*_fn).isFunction());
+            let fn: &FuncType = &_fn.fn;
+            let retType: &Type = fn.retType;
+            mut gotType: Type = result.typ;
+            if (retType.isNone() && !gotType.isNone()) {
+                this.printErrorUnexpectedReturnValue(*retType, gotType);
+                return invalidTCResult();
+            }
+            if (!retType.equals(&gotType)) {
+                debug("mismatch in return type and gotten type");
+                // Super basic raw int inference
+                if (retType.isInteger() && gotType.isInteger() && gotType.int.bitsize == -1) unsafe {
+                    debug("Inferred return type on raw integer");
+                    gotType.int = retType.int;
+                    assert(stmt != null);
+                    assert(((*stmt).data as &mut ParsedDeclValue).typ.isType());
+                    assert(((*stmt).data as &mut ParsedDeclValue).typ.typ.isInteger());
+                    ((*stmt).data as &mut ParsedDeclValue).typ.typ.int = retType.int;
+                }
+                if (!retType.equals(&gotType)) {
+                    this.printErrorTypeMismatch(*retType, gotType);
+                    return invalidTCResult();
+                }
+            }
+            return newTCResult(true, newNoneType(retType.span), blank);
+        } else if (stmt.kind == STMT_EXPR) {
+            trace("TypeChecker.checkAndVerifyAndMaybeCalculateStmt - expr");
+            let result: TCResult = this.checkAndVerifyAndMaybeCalculate(stmt.data, false, false);
+            if (!result.isValid()) return result;
+            return result;
+        }
+        assert_with_msg(false, "exhaustive handling of statements");
+        return blank;
+    }
+
+    func checkAndVerifyAndMaybeCalculateTypeExpr(&mut this, typeExpr: &mut ParsedTypeExpr) -> TCResult {
+        trace("TypeChecker.checkAndVerifyAndMaybeCalculateTypeExpr");
+        let result: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut typeExpr.expr, true, true);
+        if (!result.isValid()) return result;
+        if (!result.isType()) todo_with_msg("TypeExpr is not a type");
+        return result;
+    }
+
+    func addComputedValueToStack(&mut this, span: Span, name: SubStr, value: TCResult) {
+        trace("TypeChecker.addComputedValueToStack");
+        assert(value.isValid());
+        assert(value.isValue());
+        mut scope: &mut Scope = this.getCurrentScope();
+        assert(!scope.isKnownIdentifier(name));
+        unsafe {
+            scope.addEntry(ScopeEntry {
+                name: name,
+                span: span,
+                isChecked: true,
+                result: value,
+                node: null
+            });
+        }
+    }
+
+    func removeLastIdentifierFromList(&mut this) {
+        trace("TypeChecker.removeLastIdentifierFromList");
+        assert_with_msg(this.identStack.length > 0, "Attempted to remove identifier from empty list");
+        this.identStack.length = this.identStack.length - 1;
+    }
+
+    func addCurrentIdentifierToList(&mut this, ident: &mut ParsedDeclValueIdent) -> bool {
+        trace("TypeChecker.addCurrentIdentifierToList");
+        let exists: bool = this.identStack.isKnownIdentifier(ident.name);
+        unsafe {
+            this.identStack.addEntry(ScopeEntry {
+                name: ident.name,
+                span: ident.span,
+                isChecked: false,
+                result: blank,
+                node: null
+            });
+        }
+        return exists;
+    }
+
+    func checkAndVerifyAndMaybeCalculateIdent(&mut this, ident: &mut ParsedDeclValueIdent) -> TCResult {
+        trace("TypeChecker.checkAndVerifyAndMaybeCalculateIdent");
+        let name: SubStr = ident.name;
+        if (!this.isKnownIdentifier(name)) {
+            this.printErrorUseOfUnknownIdentifier(ident);
+            return invalidTCResult();
+        }
+        let entry: &mut ScopeEntry = this.getVariableByName(name);
+        if (entry.isChecked) {
+            debug("Identifier is already checked, returning the result");
+            debug(entry.name.toString().chars());
+            assert_with_msg(entry.result.isValid(), "Attempted to return invalid result from already checked identifier");
+            return entry.result;
+        }
+        let expr: &mut ParsedDeclValue = &mut entry.node.value;
+        if (this.addCurrentIdentifierToList(ident)) {
+            this.printErrorRecursiveIdentifiers(ident);
+            return invalidTCResult();
+        }
+        mut result: TCResult = this.checkAndVerifyAndMaybeCalculate(expr, false, false);
+        this.removeLastIdentifierFromList();
+        if (!result.isValid()) {
+            return result;
+        }
+        debug("Successfully checked identifier");
+        (*entry).result = result;
+        (*expr).typ = result;
+        mut generic: bool = false;
+        if (result.isType()) {
+            if (result.typ.isFunction()) {
+                if (result.isIncomplete()) {
+                    if (!result.typ.fn.containsAnytype()) {
+                        (*entry).isChecked = true; // Temporarily set to true so we can check recursive functions
+                        result = this.checkAndVerifyAndMaybeCalculate(expr, true, false);
+                    } else {
+                        debug("Identifier is generic function");
+                        generic = true;
+                    }
+                }
+            }
+        }
+        let checked: bool = !generic;
+        (*entry).isChecked = checked; // We can reuse all identifier types, except generic ones
+        (*entry).node.used = checked;
+        return result;
+    }
+
+    func checkAndVerifyAndMaybeCalculateNumber(&mut this, number: &mut ParsedDeclValueNumber) -> TCResult {
+        trace("TypeChecker.checkAndVerifyAndMaybeCalculateNumber");
+        let n: String = number.number.toString();
+        let i: i64 = n.toI64();
+        n.drop();
+        let v: Value = newIntValue(i);
+        let t: Type = newIntType(number.span, -1, true);
+        return newTCResult(true, t, v);
+    }
+
+    func checkAndVerifyAndMaybeCalculateBuiltin(&mut this, builtin: &mut ParsedDeclValueBuiltin) -> TCResult {
+        trace("TypeChecker.checkAndVerifyAndMaybeCalculateBuiltin");
+        let name: SubStr = builtin.name;
+        if (name.equals(&BUILTIN_INTEGER)) {
+            if (builtin.argCount != 2) todo_with_msg("@integer() wrong arg count");
+            let size: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut builtin.args[0], false, false);
+            if (!size.isValid()) return size;
+            if (!size.isValue()) todo_with_msg("first arg to @integer() is type");
+            let sizeValue: Value = size.value;
+            if (!sizeValue.isInteger()) todo_with_msg("first arg to @integer() is non-int");
+            let signed: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut builtin.args[1], false, false);
+            if (!signed.isValid()) return signed;
+            if (!signed.isValue()) todo_with_msg("second arg to @integer() is type");
+            let signedValue: Value = signed.value;
+            if (!signedValue.isBool()) todo_with_msg("second arg to @integer() is non-bool");
+            let isSigned: bool = signedValue.bValue;
+            let bitsize: i64 = sizeValue.rawInt;
+            return newTCResult(true, newIntType(builtin.span, bitsize, isSigned), blank);
+        } else if (name.equals(&BUILTIN_FLOAT)) todo_with_msg("BUILTIN_FLOAT");
+        else if (name.equals(&BUILTIN_BOOLEAN)) {
+            if (builtin.argCount != 0) todo_with_msg("@boolean() wrong arg count");
+            return newTCResult(true, newBoolType(builtin.span), blank);
+        } else if (name.equals(&BUILTIN_SELF)) todo_with_msg("BUILTIN_SELF");
+        else if (name.equals(&BUILTIN_ANYTYPE)) { 
+            if (builtin.argCount != 0) todo_with_msg("@anytype() wrong arg count");
+            return newTCResult(true, newAnytypeType(builtin.span), blank);
+        } else if (name.equals(&BUILTIN_ANYVALUE)) todo_with_msg("BUILTIN_ANYVALUE");
+        else if (name.equals(&BUILTIN_NONE)) {
+            if (builtin.argCount != 0) todo_with_msg("@none() wrong arg count");
+            return newTCResult(true, newNoneType(builtin.span), blank);
+        } else if (name.equals(&BUILTIN_ENTRY)) {
+            this.entry = builtin;
+            return newTCResult(true, blank, blank);
+        } else if (name.equals(&BUILTIN_CHECK)) {
+            mut valid: bool = true;
+            for (mut i: usize = 0; i < builtin.argCount; i = i + 1) {
+                let res: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut builtin.args[i], false, false);
+                if (!res.isValid()) valid = false;
+            }
+            if (!valid) return invalidTCResult();
+            return newTCResult(true, newNoneType(builtin.span), blank);
+        } else todo_with_msg("unknown");
+        return blank;
     }
 }
 
 func newTypeChecker() -> TypeChecker {
+    trace("newTypeChecker");
     unsafe {
-        mut mem: Any = calloc(INITIAL_CAPACITY, sizeof &ParsedVarDecl);
-        assert_with_msg(mem != null, "Could not allocate enough memory in newTypeChecker()");
-        let unresolvedDecls: &mut &ParsedVarDecl = &mut *mem;
-        mem = calloc(INITIAL_CAPACITY, sizeof NameTypePair);
-        assert_with_msg(mem != null, "Could not allocate enough memory in newTypeChecker()");
-        let resolvedDecls: &mut NameTypePair = &mut *mem;
-        mem = calloc(INITIAL_CAPACITY, sizeof SubStr);
-        assert_with_msg(mem != null, "Could not allocate enough memory in newTypeChecker()");
-        let identLookup: &mut SubStr = &mut *mem;
         return TypeChecker {
-            hadErrorsInLookupStage: false,
-            hadErrorsInCheckingStage: false,
-            identLookup: identLookup,
-            identLookupLen: 0,
-            identLookupCap: INITIAL_CAPACITY,
-            unresolvedDecls: unresolvedDecls,
-            unresolvedLen: 0,
-            unresolvedCap: INITIAL_CAPACITY,
-            resolvedDecls: resolvedDecls,
-            resolvedLen: 0,
-            resolvedCap: INITIAL_CAPACITY,
-            savedIdentLookup: blank,
-            savedResolvedLen: blank,
-            savedIdentLookupLen: blank,
-            savedIdentLookupCap: blank,
-            savedCounter: 0,
+            errors: null,
+            errorCount: 0,
+            errorCapacity: 0,
+            scopes: newScopeList(),
+            entry: null,
+            funcStack: null,
+            funcStackLen: 0,
+            funcStackCapacity: 0,
+            identStack: newScope(),
         };
     }
 }
