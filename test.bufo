@@ -10,6 +10,7 @@ let u32 = @integer(32, false);
 let u64 = @integer(64, false);
 
 let i32 = @integer(32, true);
+let i64 = @integer(64, true);
 
 // FIXME: This should evaluate `usize` instead of saying "error, if-branch is u64 and else-branch is u32"
 // Ideally, all of these `let`s should be `const` to indicate compile time known values
@@ -21,12 +22,13 @@ let i32 = @integer(32, true);
 */
 
 // Shut up the Type Checker :^)
-@check(type);
-@check(u64);
 @check(true);
-@check(i32);
+@check(type);
 @check(none);
 @check(u8);
+@check(u64);
+@check(i32);
+@check(i64);
 
 let ack = func (m: u32, n: u32) -> u32 {
     return if m == 0 n + 1
@@ -42,9 +44,30 @@ let test1 = func () -> u32 {
 
 let test2 = test1;
 
+let other = func (a: *i32, b: i32) -> i32 {
+    let old = *a;
+    *a = b;
+    return old;
+};
+
 let main = func () -> i32 {
     let value = test2();
-    return if value != 29 1 else 0;
+    if value != 29 {
+        return 1;
+    }
+    let a = i32(5);
+    let b = i32(10);
+    let c = other(&a, b);
+    if c != b {
+        return 2;
+    }
+    if c != a {
+        return 3;
+    }
+    if a != b {
+        return 4;
+    }
+    return 0;
 };
 
 @entry(main);

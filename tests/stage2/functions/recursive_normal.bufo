@@ -10,7 +10,7 @@ let i32 = @integer(32, true);
 let i64 = @integer(64, true);
 let none = @none();
 
-let a = func (e: *mut i32, ctr: i64) {
+let a = func (e: *i32, ctr: i64) {
     if ctr == 10 {
         return;
     }
@@ -19,8 +19,8 @@ let a = func (e: *mut i32, ctr: i64) {
 };
 
 let main = func () -> i32 {
-    mut v = i32(0);
-    a(&mut v, 0);
+    let v = i32(0);
+    a(&v, 0);
     if v != 10 {
         return 1;
     }

@@ -1011,7 +1011,7 @@ struct TypeChecker {
         trace("TypeChecker.checkAndVerifyAndMaybeCalculateUnary");
         let expr: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut unary.expr, false, typeContext);
         if (!expr.isValid()) return expr;
-        if (unary.op == UNARY_OP_DEREF_IMMUT) {
+        if (unary.op == UNARY_OP_DEREF) {
             if (typeContext) {
                 let ptr: Type = newPtrType(unary.span, &expr.typ, false);
                 return newTCResult(true, ptr, blank);
@@ -1019,23 +1019,10 @@ struct TypeChecker {
                 assert_with_msg(expr.isType(), "of course this can also be a value");
                 let t: Type = expr.typ;
                 if (!t.isPointer()) todo_with_msg("deref non ptr");
-                // FIXME: Mutability
                 let underlying: &Type = t.ptr.underlying;
                 return newTCResult(true, *underlying, blank);
             }
-        } else if (unary.op == UNARY_OP_DEREF_MUT) {
-            if (typeContext) {
-                let ptr: Type = newPtrType(unary.span, &expr.typ, true);
-                return newTCResult(true, ptr, blank);
-            } else {
-                todo_with_msg("deref mut");
-                return blank;
-            }
-        } else if (unary.op == UNARY_OP_REF_MUT) {
-            if (typeContext) todo_with_msg("&mut in a type context");
-            let ptr: Type = newPtrType(unary.span, &expr.typ, true);
-            return newTCResult(true, ptr, blank);
-        } else if (unary.op == UNARY_OP_REF_IMMUT) {
+        } else if (unary.op == UNARY_OP_REF) {
             if (typeContext) todo_with_msg("& in a type context");
             let ptr: Type = newPtrType(unary.span, &expr.typ, false);
             return newTCResult(true, ptr, blank);

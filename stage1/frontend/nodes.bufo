@@ -73,17 +73,17 @@ struct ParsedVarDecl {
     name: Token;
     span: Span;
     value: ParsedDeclValue;
-    isMutable: bool;
+    isConst: bool;
     typ: TCResult;
     used: bool;
 }
 
-func createVarDecl(name: Token, span: Span, value: ParsedDeclValue, mutable: bool) -> ParsedVarDecl {
+func createVarDecl(name: Token, span: Span, value: ParsedDeclValue, isConst: bool) -> ParsedVarDecl {
     return ParsedVarDecl {
         name: name,
         span: span,
         value: value,
-        isMutable: mutable,
+        isConst: isConst,
         typ: invalidTCResult(),
         used: false,
     };
@@ -336,15 +336,13 @@ struct ParsedDeclValueBinary {
     typ: TCResult;
 }
 
-comptime UNARY_OP_REF_IMMUT: usize = 0;
-comptime UNARY_OP_REF_MUT: usize = 1;
-comptime UNARY_OP_DEREF_IMMUT: usize = 2;
-comptime UNARY_OP_DEREF_MUT: usize = 3;
+comptime UNARY_OP_REF: usize = 0;
+comptime UNARY_OP_DEREF: usize = 1;
 func createUnaryOp(op: &SubStr) -> usize {
     comptime AMPERSAND: SubStr = BUILD_A_KEYWORD("&");
     comptime ASTERISK: SubStr = BUILD_A_KEYWORD("*");
-    if (op.equals(&AMPERSAND)) return UNARY_OP_REF_IMMUT;
-    if (op.equals(&ASTERISK)) return UNARY_OP_DEREF_IMMUT;
+    if (op.equals(&AMPERSAND)) return UNARY_OP_REF;
+    if (op.equals(&ASTERISK)) return UNARY_OP_DEREF;
     todo_with_msg("createBinaryOp for invalid op");
     return 0;
 }
@@ -354,7 +352,7 @@ struct ParsedDeclValueUnary {
     expr: ParsedDeclValue;
 
     func isLValue(&this) -> bool {
-        return this.op == UNARY_OP_DEREF_IMMUT;
+        return this.op == UNARY_OP_DEREF;
     }
 }
 

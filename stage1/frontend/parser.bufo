@@ -100,15 +100,15 @@ struct Parser {
     func parseVarDecl(&mut this) -> ParsedVarDecl {
         trace("parseVarDecl");
         let mutToken: Token = this.next();
-        mut mutable: bool = false;
+        mut constVar: bool = false;
         if (mutToken.content.equals(&KEYWORD_LET))
-            mutable = false;
-        else if (mutToken.content.equals(&KEYWORD_MUT))
-            mutable = true;
+            constVar = false;
+        else if (mutToken.content.equals(&KEYWORD_CONST))
+            constVar = true;
         else unsafe {
             let ls: String = mutToken.span.toString();
             let stderr: Any = fdopen(2, "a");
-            fprintf(stderr, "error: %s: Expected `let` or `mut`, found `%.*s`.\n", ls.buffer, mutToken.content.len, mutToken.content.start);
+            fprintf(stderr, "error: %s: Expected `let` or `const`, found `%.*s`.\n", ls.buffer, mutToken.content.len, mutToken.content.start);
             this.encounteredErrors = true;
             this.recover(TOKEN_SEMI_COLON);
             return this.parseVarDecl();
@@ -118,7 +118,7 @@ struct Parser {
         let value: ParsedDeclValue = this.parseDeclValue();
         let end: Token = this.expect(TOKEN_SEMI_COLON);
         let span: Span = newSpanBetween(&mutToken.span, &end.span);
-        return createVarDecl(name, span, value, mutable);
+        return createVarDecl(name, span, value, constVar);
     }
     func parseDeclValue(&mut this) -> ParsedDeclValue {
         trace("parseDeclValue");
@@ -456,15 +456,7 @@ struct Parser {
         let opTkn: Token = this.next();
         mut op: usize = createUnaryOp(&opTkn.content);
         let precedence: usize = this.getUnaryPrecedence(opTkn.kind);
-        if (op == UNARY_OP_REF_IMMUT || op == UNARY_OP_DEREF_IMMUT) {
-            let maybeMut: Token = this.peek();
-            if (maybeMut.kind == TOKEN_KEYWORD
-                && maybeMut.content.equals(&KEYWORD_MUT)) {
-                // ref is 0, mut ref is 1
-                // deref is 2, mut deref is 3
-                op = op + 1;
-                this.next();
-            }
+        if (op == UNARY_OP_REF || op == UNARY_OP_DEREF) {
             let expr: ParsedDeclValue = this.__parseDeclValueExpr(precedence, ASSOC_LEFT);
             let span: Span = newSpanBetween(&opTkn.span, &expr.span);
             let unary: ParsedDeclValueUnary = ParsedDeclValueUnary {
@@ -542,9 +534,10 @@ struct Parser {
             if (kw.content.equals(&KEYWORD_RETURN))
                 stmt = this.parseStmtReturn();
             else if (kw.content.equals(&KEYWORD_LET)
-                || kw.content.equals(&KEYWORD_MUT)
                 || kw.content.equals(&KEYWORD_CONST))
                 stmt = this.parseStmtVarDecl();
+            else if (kw.content.equals(&KEYWORD_MUT))
+                todo_with_msg("`mut` is deprecated, use `let` instead");
             else 
                 stmt = this.parseStmtExpr();
         } else {
