@@ -122,9 +122,10 @@ pub fn run_everything(
     flags: &Flags,
     context: &Context,
 ) -> Result<(), String> {
+    let now = Instant::now();
     let source_code: String = pp::load_project(&flags)?;
-    if flags.debug {
-        println!("[DEBUG] The preprocessed source:\n{source_code}");
+    if flags.verbose {
+        println!("[INFO] Preprocessing took {:?}", now.elapsed());
     }
     let mut lexer = Lexer::new();
     let mut parser = Parser::new(&flags, &mut lexer, &source_code);
