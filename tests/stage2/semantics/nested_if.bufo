@@ -3,13 +3,13 @@
 //! RUNTIME
 //! SUCCESS
 
-let false = @boolean()(0);
-let u32 = @integer(32, false);
+const false = @boolean()(0);
+const u32 = @integer(32, false);
 
-let main = func () -> u32 {
+const main = func () -> u32 {
     let c = 12;
     let a = 5;
-    mut d = 0;
+    let d = 0;
     if a + 7 == c {
         let b = 9;
         d = b + 0;

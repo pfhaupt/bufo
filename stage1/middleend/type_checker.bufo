@@ -280,8 +280,14 @@ struct Value {
         if (this.isInteger())
             if (op == BINARY_OP_PLUS)
                 return newIntValue(this.rawInt + rhs.rawInt);
+            else if (op == BINARY_OP_MINUS)
+                return newIntValue(this.rawInt - rhs.rawInt);
+            else if (op == BINARY_OP_MULT)
+                return newIntValue(this.rawInt * rhs.rawInt);
             else if (op == BINARY_OP_EQUAL)
                 return newBoolValue(this.rawInt == rhs.rawInt);
+            else if (op == BINARY_OP_NOT_EQUAL)
+                return newBoolValue(this.rawInt != rhs.rawInt);
             else
                 todo_with_msg("int apply op");
         else
@@ -376,6 +382,10 @@ struct ScopeEntry {
     isChecked: bool;
     result: TCResult;
     node: &mut ParsedVarDecl;
+
+    func hasNode(&mut this) -> bool {
+        unsafe { return this.node != null; }
+    }
 }
 
 func newScopeEntry(decl: &mut ParsedVarDecl) -> ScopeEntry {
@@ -675,19 +685,21 @@ struct TypeChecker {
         loc.drop();
     }
 
-    func printErrorLetInConstContext(&mut this, node: &mut ParsedVarDecl) {
+    func printErrorLetInConstContext(&mut this, span: Span, node: &mut ParsedVarDecl) {
         trace("TypeChecker.printErrorLetInConstContext");
         assert_with_msg(!node.isConst, "expected let-var");
+        let identLoc: String = span.toString();
         let loc: String = node.name.span.toString();
         mut s: String = newString();
-        s.pushString(&loc);
+        s.pushString(&identLoc);
         s.pushStr(": error: Variable `");
         s.pushSubStr(&node.name.content);
         s.pushStr("` is used in a `const` context, however it only exists at runtime.\n");
         s.pushString(&loc);
-        s.pushStr(": note: `const` variables only exist at compile time.\n");
+        s.pushStr(": note: Variable declared here.\n");
         this.addError(s);
         loc.drop();
+        identLoc.drop();
     }
 
     func printErrorArgumentCountMismatch(&mut this, call: &mut ParsedDeclValueCall, funcDecl: &mut ParsedFuncDecl) {
@@ -1204,16 +1216,21 @@ struct TypeChecker {
             || binary.op == BINARY_OP_MULT
             || binary.op == BINARY_OP_DIV) {
             if (lhsResult.isType() && rhsResult.isType()) {
-                let lhsType: Type = lhsResult.typ;
+                mut lhsType: Type = lhsResult.typ;
                 mut rhsType: Type = rhsResult.typ;
                 if (!lhsType.equals(&rhsType)) {
-                    let res: TCResult = this.matchTypeAndVerify(&mut binary.rhs, &lhsType, constContext);
+                    mut res: TCResult = this.matchTypeAndVerify(&mut binary.rhs, &lhsType, constContext);
                     if (!res.isValid()) {
-                        // TODO: Operator overloads
-                        this.printErrorTypeMismatch(lhsType, rhsType);
-                        return invalidTCResult();
+                        res = this.matchTypeAndVerify(&mut binary.lhs, &rhsType, constContext);
+                        if (!res.isValid()) {
+                            // TODO: Operator overloads
+                            this.printErrorTypeMismatch(lhsType, rhsType);
+                            return invalidTCResult();
+                        }
+                        lhsType = res.typ;
+                    } else {
+                        rhsType = res.typ;
                     }
-                    rhsType = res.typ;
                 }
                 assert_with_msg(lhsType.equals(&rhsType), "maybe this assert is wrong, idk");
                 mut val: Value = blank;
@@ -1526,6 +1543,14 @@ struct TypeChecker {
             return invalidTCResult();
         }
         let entry: &mut ScopeEntry = this.getVariableByName(name);
+        mut isConst: bool = false;
+        if (entry.hasNode()) {
+            isConst = entry.node.isConst;
+            if (constContext && !isConst) {
+                this.printErrorLetInConstContext(ident.span, entry.node);
+                return invalidTCResult();
+            }
+        }
         if (entry.isChecked) {
             debug("Identifier is already checked, returning the result");
             debug(entry.name.toString().chars());
@@ -1535,11 +1560,6 @@ struct TypeChecker {
         let expr: &mut ParsedDeclValue = &mut entry.node.value;
         if (this.addCurrentIdentifierToList(ident)) {
             this.printErrorRecursiveIdentifiers(ident);
-            return invalidTCResult();
-        }
-        let isConst: bool = entry.node.isConst;
-        if (constContext && !isConst) {
-            this.printErrorLetInConstContext(entry.node);
             return invalidTCResult();
         }
         mut result: TCResult = this.checkAndVerifyAndMaybeCalculate(expr, false, false, isConst);

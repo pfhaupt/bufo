@@ -1,0 +1,31 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 2
+//! COMPILER
+//! SUCCESS
+
+const false = @boolean()(0);
+const u8 = @integer(8, false);
+const u32 = @integer(32, false);
+const none = @none();
+
+const i1 = u8(10);
+const i2 = u8(15);
+const usize = if i1 + i2 == 20 u64 else u32;
+@assert(usize == u32);
+
+const main = func () {
+    const a = u32(10);
+    const b = u32(15);
+    const c = u32(25);
+    @assert(a * b != a + b);
+    @assert(a * b + a + b == 175);
+    @assert(175 - b == a * b + a);
+
+    @assert(@typeof(a) == @typeof(b));
+    @assert(@typeof(b) == @typeof(c));
+    @assert(@typeof(a) == @typeof(c));
+
+    @assert(@typeof(false) != @typeof(b));
+};
+
+@entry(main);

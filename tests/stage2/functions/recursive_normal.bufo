@@ -3,12 +3,12 @@
 //! RUNTIME
 //! SUCCESS
 
-let bool = @boolean();
-let true = bool(1);
+const bool = @boolean();
+const true = bool(1);
 
-let i32 = @integer(32, true);
-let i64 = @integer(64, true);
-let none = @none();
+const i32 = @integer(32, true);
+const i64 = @integer(64, true);
+const none = @none();
 
 let a = func (e: *i32, ctr: i64) {
     if ctr == 10 {
@@ -18,7 +18,7 @@ let a = func (e: *i32, ctr: i64) {
     *e = 10;
 };
 
-let main = func () -> i32 {
+const main = func () -> i32 {
     let v = i32(0);
     a(&v, 0);
     if v != 10 {
