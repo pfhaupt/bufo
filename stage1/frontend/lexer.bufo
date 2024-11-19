@@ -168,12 +168,17 @@ struct Lexer {
             this.advance(); // *
             this.advance(); // /
             return this.next();
-        } else if (currChar == '/' && this.content.getChar(1) == '/') {
-            while (currChar != '\n') {
-                if (this.advance()) return newTokenEOF(this.ptr);
-                currChar = this.content.getChar(0);
+        } else if (currChar == '/') {
+            if (this.content.getChar(1) == '/') {
+                while (currChar != '\n') {
+                    if (this.advance()) return newTokenEOF(this.ptr);
+                    currChar = this.content.getChar(0);
+                }
+                return this.next();
+            } else {
+                this.advance();
+                return newToken(&newSubStr("/", 0, 1), this.ptr - 1, TOKEN_SLASH_SINGLE);
             }
-            return this.next();
         } else {
             unsafe {
                 let stderr: Any = fdopen(2, "w");

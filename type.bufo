@@ -23,6 +23,11 @@ const main = func () -> u32 {
     let a = u32(1);
     let foo1 = if @typeof(&a) == &u64 1;
     @assert(@typeof(foo1) == none);
+
+    let factorial = func (n: @typeof(a)) -> @typeof(a) {
+        return if n == 1 @typeof(a)(1) else n * factorial(n - 1);
+    };
+    @check(factorial);
     let b = usize(2);
     if a != foo(a) {
         return b;

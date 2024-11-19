@@ -1078,7 +1078,9 @@ struct TypeChecker {
         if (binary.op == BINARY_OP_EQUAL
             || binary.op == BINARY_OP_NOT_EQUAL
             || binary.op == BINARY_OP_PLUS
-            || binary.op == BINARY_OP_MINUS) {
+            || binary.op == BINARY_OP_MINUS
+            || binary.op == BINARY_OP_MULT
+            || binary.op == BINARY_OP_DIV) {
             if (lhsResult.isType() && rhsResult.isType()) {
                 let lhsType: Type = lhsResult.typ;
                 mut rhsType: Type = rhsResult.typ;

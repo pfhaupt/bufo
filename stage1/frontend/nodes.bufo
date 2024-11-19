@@ -295,14 +295,18 @@ comptime BINARY_OP_DOT: usize = 0;
 comptime BINARY_OP_PAREN: usize = 1;
 comptime BINARY_OP_PLUS: usize = 2;
 comptime BINARY_OP_MINUS: usize = 3;
-comptime BINARY_OP_ASSIGN: usize = 4;
-comptime BINARY_OP_EQUAL: usize = 5;
-comptime BINARY_OP_NOT_EQUAL: usize = 6;
+comptime BINARY_OP_MULT: usize = 4;
+comptime BINARY_OP_DIV: usize = 5;
+comptime BINARY_OP_ASSIGN: usize = 6;
+comptime BINARY_OP_EQUAL: usize = 7;
+comptime BINARY_OP_NOT_EQUAL: usize = 8;
 func createBinaryOp(op: &SubStr) -> usize {
     comptime DOT: SubStr = BUILD_A_KEYWORD(".");
     comptime PAREN: SubStr = BUILD_A_KEYWORD("(");
     comptime PLUS: SubStr = BUILD_A_KEYWORD("+");
     comptime MINUS: SubStr = BUILD_A_KEYWORD("-");
+    comptime MULT: SubStr = BUILD_A_KEYWORD("*");
+    comptime DIV: SubStr = BUILD_A_KEYWORD("/");
     comptime ASSIGN: SubStr = BUILD_A_KEYWORD("=");
     comptime EQUAL: SubStr = BUILD_A_KEYWORD("==");
     comptime NOT_EQUAL: SubStr = BUILD_A_KEYWORD("!=");
@@ -310,6 +314,8 @@ func createBinaryOp(op: &SubStr) -> usize {
     if (op.equals(&PAREN)) return BINARY_OP_PAREN;
     if (op.equals(&PLUS)) return BINARY_OP_PLUS;
     if (op.equals(&MINUS)) return BINARY_OP_MINUS;
+    if (op.equals(&MULT)) return BINARY_OP_MULT;
+    if (op.equals(&DIV)) return BINARY_OP_DIV;
     if (op.equals(&ASSIGN)) return BINARY_OP_ASSIGN;
     if (op.equals(&EQUAL)) return BINARY_OP_EQUAL;
     if (op.equals(&NOT_EQUAL)) return BINARY_OP_NOT_EQUAL;
@@ -321,6 +327,8 @@ func binaryOpToStr(op: usize) -> &char {
     if (op == BINARY_OP_PAREN) todo_with_msg("what the hell is BINARY_OP_PAREN");
     if (op == BINARY_OP_PLUS) return "+";
     if (op == BINARY_OP_MINUS) return "-";
+    if (op == BINARY_OP_MULT) return "*";
+    if (op == BINARY_OP_DIV) return "/";
     if (op == BINARY_OP_ASSIGN) return "=";
     if (op == BINARY_OP_EQUAL) return "==";
     if (op == BINARY_OP_NOT_EQUAL) return "!=";
@@ -340,9 +348,9 @@ comptime UNARY_OP_REF: usize = 0;
 comptime UNARY_OP_DEREF: usize = 1;
 func createUnaryOp(op: &SubStr) -> usize {
     comptime AMPERSAND: SubStr = BUILD_A_KEYWORD("&");
-    comptime ASTERISK: SubStr = BUILD_A_KEYWORD("*");
+    comptime MULT: SubStr = BUILD_A_KEYWORD("*");
     if (op.equals(&AMPERSAND)) return UNARY_OP_REF;
-    if (op.equals(&ASTERISK)) return UNARY_OP_DEREF;
+    if (op.equals(&MULT)) return UNARY_OP_DEREF;
     todo_with_msg("createBinaryOp for invalid op");
     return 0;
 }

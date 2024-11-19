@@ -24,6 +24,7 @@ comptime TOKEN_MINUS_SINGLE: usize = 21;
 comptime TOKEN_ASTERISK_SINGLE: usize = 22;
 comptime TOKEN_NOT_EQUAL: usize = 23;
 comptime TOKEN_BANG: usize = 24;
+comptime TOKEN_SLASH_SINGLE: usize = 25;
 func tokenKindToString(kind: usize) -> &char {
     if (kind == TOKEN_EOF) return "TOKEN_EOF";
     else if (kind == TOKEN_IDENT) return "TOKEN_IDENT";
@@ -50,6 +51,7 @@ func tokenKindToString(kind: usize) -> &char {
     else if (kind == TOKEN_ASTERISK_SINGLE) return "TOKEN_ASTERISK_SINGLE";
     else if (kind == TOKEN_NOT_EQUAL) return "TOKEN_NOT_EQUAL";
     else if (kind == TOKEN_BANG) return "TOKEN_BANG";
+    else if (kind == TOKEN_SLASH_SINGLE) return "TOKEN_SLASH_SINGLE";
     else unsafe {
         printf("Please implement tokenKindToString(%llu)\n", kind);
         exit(1);
