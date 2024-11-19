@@ -1,25 +1,24 @@
-let bool = @boolean();
-let true = bool(1);
-let false = bool(0);
+const bool = @boolean();
+const true = bool(1);
+const false = bool(0);
 
-let type = @anytype();
-let none = @none();
+const type = @anytype();
+const none = @none();
 
-let u8 = @integer(8, false);
-let u32 = @integer(32, false);
-let u64 = @integer(64, false);
+const u8 = @integer(8, false);
+const u32 = @integer(32, false);
+const u64 = @integer(64, false);
 
-let i32 = @integer(32, true);
-let i64 = @integer(64, true);
+const i32 = @integer(32, true);
+const i64 = @integer(64, true);
 
 // FIXME: This should evaluate `usize` instead of saying "error, if-branch is u64 and else-branch is u32"
 // Ideally, all of these `let`s should be `const` to indicate compile time known values
-/*
-    let i1 = u8(1);
-    let i2 = u8(2);
-    let usize = if i1 == i2 u64 else u32;
-    @check(usize);
-*/
+
+// const i1 = u8(1);
+// const i2 = u8(2);
+// const usize = if i1 == i2 u64 else u32;
+// @check(usize);
 
 // Shut up the Type Checker :^)
 @check(true);
@@ -50,8 +49,9 @@ let other = func (a: *i32, b: i32) -> i32 {
     return old;
 };
 
-let main = func () -> i32 {
+const main = func () -> i32 {
     let value = test2();
+    i32 = 1;
     if value != 29 {
         return 1;
     }

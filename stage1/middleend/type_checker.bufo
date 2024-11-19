@@ -3,13 +3,14 @@ import "frontend/nodes.bufo";
 import "util/span.bufo";
 import "middleend/builtins.bufo";
 
-comptime TYPE_INVALID: u8 = 0;
-comptime TYPE_INTEGER: u8 = 1;
-comptime TYPE_BOOLEAN: u8 = 2;
-comptime TYPE_POINTER: u8 = 3;
-comptime TYPE_FUNCTION: u8 = 4;
-comptime TYPE_NONE: u8 = 5;
-comptime TYPE_ANYTYPE: u8 = 6;
+comptime TYPE_INVALID : u8 = 0; // Error
+comptime TYPE_TYPE    : u8 = 1; // let a = i32;
+comptime TYPE_INTEGER : u8 = 2; // let a = i32(0);
+comptime TYPE_BOOLEAN : u8 = 3; // let a = false;
+comptime TYPE_POINTER : u8 = 4; // let a = &b;
+comptime TYPE_FUNCTION: u8 = 5; // let a = func () {};
+comptime TYPE_NONE    : u8 = 6; // let a = @none();
+comptime TYPE_ANYTYPE : u8 = 7; // let a = @anytype();
 struct IntType {
     signed: bool;
     bitsize: i64;
@@ -31,9 +32,13 @@ struct FuncType {
         return false;
     }
 }
+struct TypeType {
+    actual: &Type;
+}
 struct Type {
     span: Span;
     kind: u8;
+    typ: TypeType;
     int: IntType;
     ptr: PtrType;
     fn: FuncType;
@@ -56,6 +61,13 @@ struct Type {
             return newStringFromStrLit("none");
         } else if (this.kind == TYPE_BOOLEAN) {
             return newStringFromStrLit("bool");
+        } else if (this.kind == TYPE_TYPE) {
+            mut s: String = newStringFromStrLit("type<");
+            let _t: String = this.typ.actual.toString();
+            s.pushString(&_t);
+            _t.drop();
+            s.pushChar('>');
+            return s;
         } else if (this.kind == TYPE_POINTER) {
             mut s: String = newStringFromStrLit("*");
             if (this.ptr.mutable) s.pushStr("mut ");
@@ -75,6 +87,8 @@ struct Type {
             return true;
         else if (this.kind != other.kind)
             return false;
+        else if (this.kind == TYPE_TYPE)
+            return true;
         else if (this.kind == TYPE_INTEGER)
             return this.int.signed == other.int.signed
                 && this.int.bitsize == other.int.bitsize;
@@ -94,8 +108,12 @@ struct Type {
         return true;
     }
 
-    func isTCValid(&this) -> bool {
+    func isValid(&this) -> bool {
         return this.kind != TYPE_INVALID;
+    }
+
+    func isType(&this) -> bool {
+        return this.kind == TYPE_TYPE;
     }
 
     func isInteger(&this) -> bool {
@@ -121,6 +139,21 @@ struct Type {
     func isAnytype(&this) -> bool {
         return this.kind == TYPE_ANYTYPE;
     }
+}
+
+func newTypeType(span: Span, actual: &Type) -> Type {
+    mut t: Type = invalidType(span);
+    t.kind = TYPE_TYPE;
+    unsafe {
+        let mem: Any = calloc(1, sizeof Type);
+        assert_with_msg(mem != null, "Could not allocate memory in newPtrType");
+        memcpy(mem, actual, sizeof Type);
+        let copy: &Type = mem;
+        t.typ = TypeType {
+            actual: copy
+        };
+    }
+    return t;
 }
 
 func newIntType(span: Span, bitsize: i64, signed: bool) -> Type {
@@ -193,6 +226,7 @@ func invalidType(span: Span) -> Type {
     return Type {
         span: span,
         kind: TYPE_INVALID,
+        typ: blank,
         int: blank,
         ptr: blank,
         fn: blank,
@@ -206,7 +240,7 @@ struct Value {
     kind: u8;
     rawInt: i64;
     bValue: bool;
-    func isTCValid(&this) -> bool {
+    func isValid(&this) -> bool {
         return this.kind != VALUE_INVALID;
     }
     func isInteger(&this) -> bool {
@@ -218,6 +252,20 @@ struct Value {
     func intoBoolValue(&this) -> Value {
         if (this.kind == VALUE_INTEGER) return newBoolValue(this.rawInt == 1);
         todo_with_msg("Value.intoBoolValue");
+        return invalidValue();
+    }
+    func applyBinaryOperator(&this, op: usize, rhs: &Value) -> Value {
+        trace("Value.applyBinaryOperator");
+        if (this.kind != rhs.kind) return invalidValue();
+        if (this.isInteger())
+            if (op == BINARY_OP_PLUS)
+                return newIntValue(this.rawInt + rhs.rawInt);
+            else if (op == BINARY_OP_EQUAL)
+                return newBoolValue(this.rawInt == rhs.rawInt);
+            else
+                todo_with_msg("int apply op");
+        else
+            todo_with_msg("not int apply op");
         return invalidValue();
     }
 }
@@ -250,6 +298,7 @@ comptime RESULT_INCOMPLETE: u8 = 1;
 comptime RESULT_VALID: u8 = RESULT_INCOMPLETE * 2;
 comptime RESULT_TYPE: u8 = RESULT_VALID * 2;
 comptime RESULT_VALUE: u8 = RESULT_TYPE * 2;
+comptime RESULT_CONST: u8 = RESULT_VALUE * 2;
 struct TCResult {
     flags: u8;
     typ: Type;
@@ -271,6 +320,10 @@ struct TCResult {
         return (this.flags & RESULT_VALUE) != 0;
     }
 
+    func isConst(&this) -> bool {
+        return (this.flags & RESULT_CONST) != 0;
+    }
+
     func isIncomplete(&this) -> bool {
         return (this.flags & RESULT_INCOMPLETE) != 0;
     }
@@ -283,8 +336,8 @@ struct TCResult {
 func newTCResult(valid: bool, typ: Type, value: Value) -> TCResult {
     mut flags: u8 = 0;
     if (valid) flags = flags | RESULT_VALID;
-    if (typ.isTCValid()) flags = flags | RESULT_TYPE;
-    if (value.isTCValid()) flags = flags | RESULT_VALUE;
+    if (typ.isValid()) flags = flags | RESULT_TYPE;
+    if (value.isValid()) flags = flags | RESULT_VALUE;
     return TCResult {
         flags: flags,
         typ: typ,
@@ -365,10 +418,7 @@ struct Scope {
     func addVarDecl(&mut this, decl: &mut ParsedVarDecl) -> bool {
         trace("Scope.addVarDecl");
         if (this.length >= this.capacity) todo_with_msg("resize entries");
-        if (this.checkExisting(decl)) {
-            let entry: &mut ScopeEntry = this.getVariableByName(decl.name.content);
-            return false;
-        }
+        if (this.checkExisting(decl)) return false;
         unsafe {
             let p: &mut ScopeEntry = this.entries + this.length * sizeof ScopeEntry;
             *p = newScopeEntry(decl);
@@ -551,17 +601,73 @@ struct TypeChecker {
         s.pushStr(": warning: Unused variable `");
         s.pushSubStr(&entry.node.name.content);
         s.pushStr("`.\n");
-        s.pushString(&loc);
-        s.pushStr(": note: Due to the lazy nature of the compiler, unused variables are not considered for Type Checking and further stages.\n");
-        s.pushString(&loc);
-        s.pushStr(": note: To force the compiler to consider the variable, use `@check(");
-        s.pushSubStr(&entry.node.name.content);
-        s.pushStr(")`.\n");
+        // s.pushString(&loc);
+        // s.pushStr(": note: Due to the lazy nature of the compiler, unused variables are not considered for Type Checking and further stages.\n");
+        // s.pushString(&loc);
+        // s.pushStr(": note: To force the compiler to consider the variable, use `@check(");
+        // s.pushSubStr(&entry.node.name.content);
+        // s.pushStr(")`.\n");
         unsafe {
             printf("%.*s", s.len(), s.chars());
         }
         loc.drop();
         s.drop();
+    }
+
+    func printErrorStaticAssertFailed(&mut this, assert: &mut ParsedDeclValueBuiltin) {
+        trace("TypeChecker.printErrorStaticAssertFailed");
+        mut s: String = newString();
+        let loc: String = assert.span.toString();
+        s.pushString(&loc);
+        s.pushStr(": error: Static assertion failed!\n");
+        this.addError(s);
+        loc.drop();
+    }
+
+    func printErrorAssignToConst(&mut this, assignOp: &mut ParsedDeclValueBinary) {
+        trace("TypeChecker.printErrorAssignToConst");
+        assert_with_msg(assignOp.op == BINARY_OP_ASSIGN, "expected assign op");
+        mut s: String = newString();
+        let binLoc: String = assignOp.span.toString();
+        s.pushString(&binLoc);
+        s.pushStr(": error: Attempted to assign to a const lvalue.\n");
+        this.addError(s);
+        binLoc.drop();
+    }
+
+    func printErrorTypeDeclWithLet(&mut this, node: &mut ParsedVarDecl, result: TCResult) {
+        trace("TypeChecker.printErrorTypeDeclWithLet");
+        assert_with_msg(!node.isConst, "expected let-var");
+        assert_with_msg(result.isValid(), "expected valid result");
+        assert_with_msg(result.isType(), "expected valid result");
+        assert_with_msg(result.typ.isType(), "expected valid result");
+        mut s: String = newString();
+        let loc: String = node.name.span.toString();
+        let t: String = result.typ.typ.actual.toString();
+        s.pushString(&loc);
+        s.pushStr(": error: Attempted to assign type `");
+        s.pushString(&t);
+        s.pushStr("` to a variable which only exists at runtime.\n");
+        s.pushString(&loc);
+        s.pushStr(": note: Types only exist at compile time.\n");
+        this.addError(s);
+        t.drop();
+        loc.drop();
+    }
+
+    func printErrorLetInConstContext(&mut this, node: &mut ParsedVarDecl) {
+        trace("TypeChecker.printErrorLetInConstContext");
+        assert_with_msg(!node.isConst, "expected let-var");
+        let loc: String = node.name.span.toString();
+        mut s: String = newString();
+        s.pushString(&loc);
+        s.pushStr(": error: Variable `");
+        s.pushSubStr(&node.name.content);
+        s.pushStr("` is used in a `const` context, however it only exists at runtime.\n");
+        s.pushString(&loc);
+        s.pushStr(": note: `const` variables only exist at compile time.\n");
+        this.addError(s);
+        loc.drop();
     }
 
     func printErrorArgumentCountMismatch(&mut this, call: &mut ParsedDeclValueCall, funcDecl: &mut ParsedFuncDecl) {
@@ -749,15 +855,27 @@ struct TypeChecker {
             let decl: &mut ParsedGlobalDecl = project.getDeclAtIndex(i);
             if (decl.kind == GLOBAL_VAR_DECL) {
                 let decl: &mut ParsedVarDecl = decl.data;
-                if (!scope.addVarDecl(decl))
+                if (!scope.addVarDecl(decl)) {
+                    let entry: &mut ScopeEntry = this.getVariableByName(decl.name.content);
+                    this.printErrorDuplicateIdentifier(decl.name.content, decl.name.span, entry.node.name.span);
                     return false;
-            } else if (decl.kind == GLOBAL_DIR) {
+                }
+            }
+        }
+        return true;
+    }
+
+    func evaluateGlobalDirectives(&mut this, project: &mut ParsedModule) -> bool {
+        trace("TypeChecker.evaluateGlobalDirectives");
+        for (mut i: usize = 0; i < project.declCount; i = i + 1) {
+            let decl: &mut ParsedGlobalDecl = project.getDeclAtIndex(i);
+            if (decl.kind == GLOBAL_DIR) {
                 let dir: &mut ParsedDeclValue = decl.data;
-                let res: TCResult = this.checkAndVerifyAndMaybeCalculate(dir, true, false);
+                // context arguments don't really matter, as we instantly overwrite them in
+                // checkAndVerifyAndMaybeCalculateBuiltin() anyway
+                let res: TCResult = this.checkAndVerifyAndMaybeCalculate(dir, true, true, true);
                 if (!res.isValid())
                     return false;
-            } else {
-                assert_with_msg(false, "exhaustive handling of global declarations");
             }
         }
         return true;
@@ -794,6 +912,10 @@ struct TypeChecker {
             this.reportErrors();
             return false;
         }
+        if (!this.evaluateGlobalDirectives(project)) {
+            this.reportErrors();
+            return false;
+        }
         if (!this.startCheckFromEntry()) {
             this.reportErrors();
             return false;
@@ -817,7 +939,7 @@ struct TypeChecker {
             return false;
         }
         let fn: &mut ParsedDeclValue = &mut entry.args[0];
-        let res: TCResult = this.checkAndVerifyAndMaybeCalculate(fn, true, false);
+        let res: TCResult = this.checkAndVerifyAndMaybeCalculate(fn, true, false, true);
         assert_with_msg(this.scopes.length == 1, "Expected scope stack to only contain global scope at the end");
         this.checkForUnusedVariables(this.removeScope());
         if (!res.isValid()) return false;
@@ -833,41 +955,42 @@ struct TypeChecker {
         }
     }
 
-    func checkAndVerifyAndMaybeCalculate(&mut this, expr: &mut ParsedDeclValue, complete: bool, typeContext: bool) -> TCResult {
+    func checkAndVerifyAndMaybeCalculate(&mut this, expr: &mut ParsedDeclValue, complete: bool, typeContext: bool, constContext: bool) -> TCResult {
         trace("TypeChecker.checkAndVerifyAndMaybeCalculate");
         mut res: TCResult = blank;
         if (expr.kind == DECL_VALUE_MODULE) todo_with_msg("DECL_VALUE_MODULE");
         else if (expr.kind == DECL_VALUE_FUNC_DECL)
-            res = this.checkAndVerifyAndMaybeCalculateFuncDecl(expr.data, complete);
+            res = this.checkAndVerifyAndMaybeCalculateFuncDecl(expr.data, complete, false);
         else if (expr.kind == DECL_VALUE_STRUCT_DECL) todo_with_msg("DECL_VALUE_STRUCT_DECL");
         else if (expr.kind == DECL_VALUE_ENUM_DECL) todo_with_msg("DECL_VALUE_ENUM_DECL");
         else if (expr.kind == DECL_VALUE_UNION_DECL) todo_with_msg("DECL_VALUE_UNION_DECL");
         else if (expr.kind == DECL_VALUE_BUILTIN)
-            res = this.checkAndVerifyAndMaybeCalculateBuiltin(expr.data);
+            res = this.checkAndVerifyAndMaybeCalculateBuiltin(expr.data, constContext);
         else if (expr.kind == DECL_VALUE_CALL)
-            res = this.checkAndVerifyAndMaybeCalculateCall(expr.data);
+            res = this.checkAndVerifyAndMaybeCalculateCall(expr.data, constContext);
         else if (expr.kind == DECL_VALUE_IDENT)
-            res = this.checkAndVerifyAndMaybeCalculateIdent(expr.data);
+            res = this.checkAndVerifyAndMaybeCalculateIdent(expr.data, constContext);
         else if (expr.kind == DECL_VALUE_BINARY)
-            res = this.checkAndVerifyAndMaybeCalculateBinary(expr.data);
+            res = this.checkAndVerifyAndMaybeCalculateBinary(expr.data, constContext);
         else if (expr.kind == DECL_VALUE_NUMBER)
-            res = this.checkAndVerifyAndMaybeCalculateNumber(expr.data);
+            res = this.checkAndVerifyAndMaybeCalculateNumber(expr.data, constContext);
         else if (expr.kind == DECL_VALUE_BLOCK)
-            res = this.checkAndVerifyAndMaybeCalculateBlock(expr.data);
+            res = this.checkAndVerifyAndMaybeCalculateBlock(expr.data, constContext);
         else if (expr.kind == DECL_VALUE_IF)
-            res = this.checkAndVerifyAndMaybeCalculateIf(expr.data);
+            res = this.checkAndVerifyAndMaybeCalculateIf(expr.data, constContext);
         else if (expr.kind == DECL_VALUE_UNARY)
-            res = this.checkAndVerifyAndMaybeCalculateUnary(expr.data, typeContext);
+            res = this.checkAndVerifyAndMaybeCalculateUnary(expr.data, typeContext, constContext);
         else {
             assert_with_msg(false, "exhaustive handling of checkAndVerifyAndMaybeCalculate");
         }
         if (!res.isValid()) return res;
         if (res.isType()) res.typ.span = expr.span;
+        if (constContext) res.flags = res.flags | RESULT_CONST;
         (*expr).typ = res;
         return res;
     }
 
-    func checkAndVerifyAndMaybeCalculateBlock(&mut this, block: &mut ParsedDeclValueBlock) -> TCResult {
+    func checkAndVerifyAndMaybeCalculateBlock(&mut this, block: &mut ParsedDeclValueBlock, constContext: bool) -> TCResult {
         trace("TypeChecker.checkAndVerifyAndMaybeCalculateBlock");
         // TODO: Allow blocks to return things -> Modify parser to accept the last statement
         //       missing a semicolon
@@ -875,7 +998,7 @@ struct TypeChecker {
         mut res: TCResult = invalidTCResult();
         for (mut i: usize = 0; i < block.stmtCount; i = i + 1) {
             let stmt: &mut ParsedStmt = block.getStmtAtIndex(i);
-            res = this.checkAndVerifyAndMaybeCalculateStmt(stmt);
+            res = this.checkAndVerifyAndMaybeCalculateStmt(stmt, constContext);
             if (!res.isValid()) {
                 this.removeScope();
                 return res;
@@ -891,9 +1014,9 @@ struct TypeChecker {
         return newTCResult(true, newNoneType(block.span), blank);
     }
 
-    func checkAndVerifyAndMaybeCalculateIf(&mut this, iif: &mut ParsedDeclValueIf) -> TCResult {
+    func checkAndVerifyAndMaybeCalculateIf(&mut this, iif: &mut ParsedDeclValueIf, constContext: bool) -> TCResult {
         trace("TypeChecker.checkAndVerifyAndMaybeCalculateIf");
-        let cond: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut iif.cond, false, false);
+        let cond: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut iif.cond, false, false, constContext);
         if (!cond.isValid()) return cond;
         if (!cond.isType()) todo_with_msg("if cond is not a type");
         let t: Type = cond.typ;
@@ -901,7 +1024,7 @@ struct TypeChecker {
         if (cond.isValue()) {
             let b: bool = cond.value.bValue;
             if (b) {
-                let block: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut iif.ifBody, false, false);
+                let block: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut iif.ifBody, false, false, constContext);
                 if (!block.isValid()) return block;
                 if (!block.isType()) todo_with_msg("if body is not a type");
                 let blockType: Type = block.typ;
@@ -910,7 +1033,7 @@ struct TypeChecker {
                 }
                 return block;
             } else if (iif.hasElse) {
-                let block: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut iif.elseBody, false, false);
+                let block: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut iif.elseBody, false, false, constContext);
                 if (!block.isValid()) return block;
                 if (!block.isType()) todo_with_msg("else body is not a type");
                 let blockType: Type = block.typ;
@@ -919,20 +1042,21 @@ struct TypeChecker {
                 }
                 return block;
             } else {
-                todo_with_msg("cond is false and no else");
-                return blank;
+                return newTCResult(true, newNoneType(iif.span), blank);
             }
         } else {
-            let block: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut iif.ifBody, false, false);
+            let block: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut iif.ifBody, false, false, constContext);
             if (!block.isValid()) return block;
             if (!block.isType()) todo_with_msg("if body is not a type");
             let blockType: Type = block.typ;
             if (iif.hasElse) {
-                let elze: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut iif.elseBody, false, false);
+                let elze: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut iif.elseBody, false, false, constContext);
                 if (!elze.isValid()) return elze;
                 if (!elze.isType()) todo_with_msg("else body is not a type");
                 let elseType: Type = elze.typ;
                 if (!blockType.equals(&elseType)) {
+                    // FIXME: We should probably not say expected type, but instead just state both
+                    // types and say they don't match
                     this.printErrorTypeMismatch(blockType, elze.typ);
                     return invalidTCResult();
                 }
@@ -944,11 +1068,11 @@ struct TypeChecker {
         }
     }
 
-    func checkAndVerifyAndMaybeCalculateBinary(&mut this, binary: &mut ParsedDeclValueBinary) -> TCResult {
+    func checkAndVerifyAndMaybeCalculateBinary(&mut this, binary: &mut ParsedDeclValueBinary, constContext: bool) -> TCResult {
         trace("TypeChecker.checkAndVerifyAndMaybeCalculateBinary");
-        let lhsResult: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut binary.lhs, false, false);
+        let lhsResult: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut binary.lhs, false, false, constContext);
         if (!lhsResult.isValid()) return lhsResult;
-        let rhsResult: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut binary.rhs, false, false);
+        let rhsResult: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut binary.rhs, false, false, constContext);
         if (!rhsResult.isValid()) return rhsResult;
         mut result: TCResult = invalidTCResult();
         if (binary.op == BINARY_OP_EQUAL
@@ -970,11 +1094,21 @@ struct TypeChecker {
                     }
                 }
                 assert_with_msg(lhsType.equals(&rhsType), "maybe this assert is wrong, idk");
-                if (binary.op == BINARY_OP_EQUAL || binary.op == BINARY_OP_NOT_EQUAL) {
-                    result = newTCResult(true, newBoolType(binary.span), blank);
+                mut val: Value = blank;
+                if (lhsType.isType() && rhsType.isType())
+                    val = newBoolValue(lhsType.typ.actual.equals(rhsType.typ.actual));
+                else if (constContext) {
+                    assert(lhsResult.isValue());
+                    assert(rhsResult.isValue());
+                    let res: Value = lhsResult.value.applyBinaryOperator(binary.op, &rhsResult.value);
+                    if (!res.isValid()) todo_with_msg("const bin op not valid");
+                    val = res;
                 }
-                else
-                    result = newTCResult(true, lhsType, blank);
+                if (binary.op == BINARY_OP_EQUAL || binary.op == BINARY_OP_NOT_EQUAL) {
+                    result = newTCResult(true, newBoolType(binary.span), val);
+                } else {
+                    result = newTCResult(true, lhsType, val);
+                }
             } else if (lhsResult.isValue() && rhsResult.isValue()) {
                 // possible in expressions such as `10 == 10`
                 todo_with_msg("both values");
@@ -982,6 +1116,10 @@ struct TypeChecker {
                 todo_with_msg("ons is type, one is value?");
             }
         } else if (binary.op == BINARY_OP_ASSIGN) {
+            if (lhsResult.isConst()) {
+                this.printErrorAssignToConst(binary);
+                return invalidTCResult();
+            }
             let lhsType: Type = lhsResult.typ;
             mut rhsType: Type = rhsResult.typ;
             if (!binary.lhs.isLValue()) todo_with_msg("assign to non-lvalue");
@@ -1007,9 +1145,9 @@ struct TypeChecker {
         return result;
     }
 
-    func checkAndVerifyAndMaybeCalculateUnary(&mut this, unary: &mut ParsedDeclValueUnary, typeContext: bool) -> TCResult {
+    func checkAndVerifyAndMaybeCalculateUnary(&mut this, unary: &mut ParsedDeclValueUnary, typeContext: bool, constContext: bool) -> TCResult {
         trace("TypeChecker.checkAndVerifyAndMaybeCalculateUnary");
-        let expr: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut unary.expr, false, typeContext);
+        let expr: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut unary.expr, false, typeContext, constContext);
         if (!expr.isValid()) return expr;
         if (unary.op == UNARY_OP_DEREF) {
             if (typeContext) {
@@ -1024,7 +1162,12 @@ struct TypeChecker {
             }
         } else if (unary.op == UNARY_OP_REF) {
             if (typeContext) todo_with_msg("& in a type context");
-            let ptr: Type = newPtrType(unary.span, &expr.typ, false);
+            if (!expr.isType()) todo_with_msg("& uses non type");
+            mut t: Type = expr.typ;
+            let typeType: bool = t.isType();
+            if (typeType) t = *t.typ.actual;
+            mut ptr: Type = newPtrType(unary.span, &t, false);
+            if (typeType) ptr = newTypeType(unary.span, &ptr);
             return newTCResult(true, ptr, blank);
         } else {
             assert_with_msg(false, "exhaustive handling of unary ops");
@@ -1032,33 +1175,39 @@ struct TypeChecker {
         }
     }
 
-    func checkAndVerifyAndMaybeCalculateCall(&mut this, call: &mut ParsedDeclValueCall) -> TCResult {
+    func checkAndVerifyAndMaybeCalculateCall(&mut this, call: &mut ParsedDeclValueCall, constContext: bool) -> TCResult {
         trace("TypeChecker.checkAndVerifyAndMaybeCalculateCall");
-        let base: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut call.fn, true, false);
+        let base: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut call.fn, true, false, constContext);
         if (!base.isValid()) return base;
         if (base.isType()) {
             assert_with_msg(!base.isValue(), "Call is both type and value?");
             let t: Type = base.typ;
-            if (t.isInteger()) {
-                if (call.argCount != 1) todo_with_msg("int() wrong arg count");
-                let size: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut call.args[0], false, false);
-                if (!size.isValid()) return size;
-                if (!size.isValue()) todo_with_msg("passed type to int()");
-                let _v: Value = size.value;
-                if (!_v.isInteger()) todo_with_msg("passed non-int value to int()");
-                let v: i64 = _v.rawInt;
-                if (!t.int.signed && v < 0) todo_with_msg("negative int in int()");
-                return newTCResult(true, t, _v);
-            } else if (t.isBool()) {
-                if (call.argCount != 1) todo_with_msg("bool() wrong arg count");
-                let size: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut call.args[0], false, false);
-                if (!size.isValid()) return size;
-                if (!size.isValue()) todo_with_msg("passed type to bool()");
-                let _v: Value = size.value;
-                if (!_v.isInteger()) todo_with_msg("passed non-int value to bool()");
-                let v: i64 = _v.rawInt;
-                if (v == 0 || v == 1) return newTCResult(true, t, _v.intoBoolValue());
-                todo_with_msg("passed int that's not 0 or 1 to bool()");
+            if (t.isType()) {
+                let t: &Type = t.typ.actual;
+                if (t.isInteger()) {
+                    if (call.argCount != 1) todo_with_msg("int() wrong arg count");
+                    let size: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut call.args[0], false, false, constContext);
+                    if (!size.isValid()) return size;
+                    if (!size.isValue()) todo_with_msg("passed type to int()");
+                    let _v: Value = size.value;
+                    if (!_v.isInteger()) todo_with_msg("passed non-int value to int()");
+                    let v: i64 = _v.rawInt;
+                    if (!t.int.signed && v < 0) todo_with_msg("negative int in int()");
+                    return newTCResult(true, *t, _v);
+                } else if (t.isBool()) {
+                    if (call.argCount != 1) todo_with_msg("bool() wrong arg count");
+                    let size: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut call.args[0], false, false, constContext);
+                    if (!size.isValid()) return size;
+                    if (!size.isValue()) todo_with_msg("passed type to bool()");
+                    let _v: Value = size.value;
+                    if (!_v.isInteger()) todo_with_msg("passed non-int value to bool()");
+                    let v: i64 = _v.rawInt;
+                    if (v == 0 || v == 1) return newTCResult(true, *t, _v.intoBoolValue());
+                    todo_with_msg("passed int that's not 0 or 1 to bool()");
+                } else unsafe {
+                    printf("%hhu\n", t.kind);
+                    todo_with_msg("type call idk");
+                }
             } else if (t.isFunction()) {
                 let fn: FuncType = t.fn;
                 if (call.argCount != fn.paramCount) {
@@ -1068,9 +1217,10 @@ struct TypeChecker {
                 if (fn.containsAnytype()) {
                     todo_with_msg("we need to get busy now :^)");
                 } else {
+                    assert_with_msg(fn.retType.isType(), "Expected return type to be a TypeType");
                     // No generic parameters, no generic return type, we can simply check everything here
                     for (mut i: usize = 0; i < call.argCount; i = i + 1) {
-                        let result: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut call.args[i], false, false);
+                        let result: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut call.args[i], false, false, constContext);
                         if (!result.isValid()) return result;
                         if (!result.isType()) todo_with_msg("arg is not a type?");
                         let expected: Type = (*fn.params)[i];
@@ -1087,10 +1237,11 @@ struct TypeChecker {
                             }
                         }
                     }
-                    return newTCResult(true, *fn.retType, blank);
+                    let retType: &Type = fn.retType.typ.actual;
+                    return newTCResult(true, *retType, blank);
                 }
             } else unsafe {
-                printf("%d\n", t.kind);
+                printf("%hhu\n", t.kind);
                 todo_with_msg("cringe");
             }
         }
@@ -1098,18 +1249,21 @@ struct TypeChecker {
         return blank;
     }
 
-    func checkAndVerifyAndMaybeCalculateFuncDecl(&mut this, funcDecl: &mut ParsedFuncDecl, complete: bool) -> TCResult {
+    func checkAndVerifyAndMaybeCalculateFuncDecl(&mut this, funcDecl: &mut ParsedFuncDecl, complete: bool, constContext: bool) -> TCResult {
         trace("TypeChecker.checkAndVerifyAndMaybeCalculateFuncDecl");
         mut paramTypes: [Type; 8] = blank;
         let scope: &mut Scope = this.addScope();
         for (mut i: usize = 0; i < funcDecl.paramCount; i = i + 1) {
             let param: &mut ParsedParam = funcDecl.getParamAtIndex(i);
-            let result: TCResult = this.checkAndVerifyAndMaybeCalculateTypeExpr(&mut param.typ);
+            mut result: TCResult = this.checkAndVerifyAndMaybeCalculateTypeExpr(&mut param.typ, constContext);
             if (!result.isValid()) {
                 this.removeScope();
                 return result;
             }
             if (!result.isType()) todo_with_msg("param is not type");
+            let rt: Type = result.typ;
+            if (!rt.isType()) todo_with_msg("param type is not Type Type");
+            result.typ = *rt.typ.actual;
             unsafe {
                 let entry: ScopeEntry = ScopeEntry {
                     name: param.name.content,
@@ -1125,13 +1279,14 @@ struct TypeChecker {
                 paramTypes[i] = result.typ;
             }
         }
-        let retResult: TCResult = this.checkAndVerifyAndMaybeCalculateTypeExpr(&mut funcDecl.retType);
+        let retResult: TCResult = this.checkAndVerifyAndMaybeCalculateTypeExpr(&mut funcDecl.retType, constContext);
         if (!retResult.isValid()) {
             this.removeScope();
             return retResult;
         }
         if (!retResult.isType()) todo_with_msg("return expr is not type");
         let retType: Type = retResult.typ;
+        if (!retType.isType()) todo_with_msg("return type is not a Type Type");
         let fn: Type = newFuncType(funcDecl, funcDecl.span, &paramTypes, funcDecl.paramCount, &retType);
         mut res: TCResult = newTCResult(true, fn, blank);
         if (complete) {
@@ -1139,7 +1294,7 @@ struct TypeChecker {
             mut valid: bool = true;
             for (mut i: usize = 0; i < funcDecl.stmtCount; i = i + 1) {
                 let stmt: &mut ParsedStmt = funcDecl.getStmtAtIndex(i);
-                let result: TCResult = this.checkAndVerifyAndMaybeCalculateStmt(stmt);
+                let result: TCResult = this.checkAndVerifyAndMaybeCalculateStmt(stmt, constContext);
                 if (!result.isValid()) valid = false;
             }
             this.popFunctionFromStack();
@@ -1152,7 +1307,7 @@ struct TypeChecker {
         return res;
     }
 
-    func checkAndVerifyAndMaybeCalculateStmt(&mut this, stmt: &mut ParsedStmt) -> TCResult {
+    func checkAndVerifyAndMaybeCalculateStmt(&mut this, stmt: &mut ParsedStmt, constContext: bool) -> TCResult {
         trace("TypeChecker.checkAndVerifyAndMaybeCalculateStmt");
         if (stmt.kind == STMT_VAR_DECL) {
             trace("TypeChecker.checkAndVerifyAndMaybeCalculateStmt - VarDecl");
@@ -1167,7 +1322,7 @@ struct TypeChecker {
         } else if (stmt.kind == STMT_RETURN) {
             trace("TypeChecker.checkAndVerifyAndMaybeCalculateStmt - return");
             // FIXME: 2nd argument (typeContext) is true if the function returns a type
-            let result: TCResult = this.checkAndVerifyAndMaybeCalculate(stmt.data, false, false);
+            let result: TCResult = this.checkAndVerifyAndMaybeCalculate(stmt.data, false, false, constContext);
             if (!result.isValid()) return result;
             if (!result.isType()) todo_with_msg("ret expr is not type");
             let _fn: &mut Type = this.peekFunctionFromStack();
@@ -1179,26 +1334,28 @@ struct TypeChecker {
                 this.printErrorUnexpectedReturnValue(*retType, gotType);
                 return invalidTCResult();
             }
-            if (!retType.equals(&gotType)) {
+            if (!retType.isType()) todo_with_msg("ret type is not a TYPE_TYPE");
+            let actual: &Type = retType.typ.actual;
+            if (!actual.equals(&gotType)) {
                 debug("mismatch in return type and gotten type");
                 // Super basic raw int inference
-                if (retType.isInteger() && gotType.isInteger() && gotType.int.bitsize == -1) unsafe {
+                if (actual.isInteger() && gotType.isInteger() && gotType.int.bitsize == -1) unsafe {
                     debug("Inferred return type on raw integer");
-                    gotType.int = retType.int;
+                    gotType.int = actual.int;
                     assert(stmt != null);
                     assert(((*stmt).data as &mut ParsedDeclValue).typ.isType());
                     assert(((*stmt).data as &mut ParsedDeclValue).typ.typ.isInteger());
-                    ((*stmt).data as &mut ParsedDeclValue).typ.typ.int = retType.int;
+                    ((*stmt).data as &mut ParsedDeclValue).typ.typ.int = actual.int;
                 }
-                if (!retType.equals(&gotType)) {
-                    this.printErrorTypeMismatch(*retType, gotType);
+                if (!actual.equals(&gotType)) {
+                    this.printErrorTypeMismatch(*actual, gotType);
                     return invalidTCResult();
                 }
             }
             return newTCResult(true, newNoneType(retType.span), blank);
         } else if (stmt.kind == STMT_EXPR) {
             trace("TypeChecker.checkAndVerifyAndMaybeCalculateStmt - expr");
-            let result: TCResult = this.checkAndVerifyAndMaybeCalculate(stmt.data, false, false);
+            let result: TCResult = this.checkAndVerifyAndMaybeCalculate(stmt.data, false, false, constContext);
             if (!result.isValid()) return result;
             return result;
         }
@@ -1206,9 +1363,9 @@ struct TypeChecker {
         return blank;
     }
 
-    func checkAndVerifyAndMaybeCalculateTypeExpr(&mut this, typeExpr: &mut ParsedTypeExpr) -> TCResult {
+    func checkAndVerifyAndMaybeCalculateTypeExpr(&mut this, typeExpr: &mut ParsedTypeExpr, constContext: bool) -> TCResult {
         trace("TypeChecker.checkAndVerifyAndMaybeCalculateTypeExpr");
-        let result: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut typeExpr.expr, true, true);
+        let result: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut typeExpr.expr, true, true, constContext);
         if (!result.isValid()) return result;
         if (!result.isType()) todo_with_msg("TypeExpr is not a type");
         return result;
@@ -1252,7 +1409,7 @@ struct TypeChecker {
         return exists;
     }
 
-    func checkAndVerifyAndMaybeCalculateIdent(&mut this, ident: &mut ParsedDeclValueIdent) -> TCResult {
+    func checkAndVerifyAndMaybeCalculateIdent(&mut this, ident: &mut ParsedDeclValueIdent, constContext: bool) -> TCResult {
         trace("TypeChecker.checkAndVerifyAndMaybeCalculateIdent");
         let name: SubStr = ident.name;
         if (!this.isKnownIdentifier(name)) {
@@ -1271,10 +1428,23 @@ struct TypeChecker {
             this.printErrorRecursiveIdentifiers(ident);
             return invalidTCResult();
         }
-        mut result: TCResult = this.checkAndVerifyAndMaybeCalculate(expr, false, false);
+        let isConst: bool = entry.node.isConst;
+        if (constContext && !isConst) {
+            this.printErrorLetInConstContext(entry.node);
+            return invalidTCResult();
+        }
+        mut result: TCResult = this.checkAndVerifyAndMaybeCalculate(expr, false, false, isConst);
         this.removeLastIdentifierFromList();
         if (!result.isValid()) {
             return result;
+        }
+        if (result.isType()) {
+            if (result.typ.isType()) {
+                if (!isConst) {
+                    this.printErrorTypeDeclWithLet(entry.node, result);
+                    return invalidTCResult();
+                }
+            }
         }
         debug("Successfully checked identifier");
         (*entry).result = result;
@@ -1285,7 +1455,7 @@ struct TypeChecker {
                 if (result.isIncomplete()) {
                     if (!result.typ.fn.containsAnytype()) {
                         (*entry).isChecked = true; // Temporarily set to true so we can check recursive functions
-                        result = this.checkAndVerifyAndMaybeCalculate(expr, true, false);
+                        result = this.checkAndVerifyAndMaybeCalculate(expr, true, false, constContext);
                     } else {
                         debug("Identifier is generic function");
                         generic = true;
@@ -1299,7 +1469,7 @@ struct TypeChecker {
         return result;
     }
 
-    func checkAndVerifyAndMaybeCalculateNumber(&mut this, number: &mut ParsedDeclValueNumber) -> TCResult {
+    func checkAndVerifyAndMaybeCalculateNumber(&mut this, number: &mut ParsedDeclValueNumber, constContext: bool) -> TCResult {
         trace("TypeChecker.checkAndVerifyAndMaybeCalculateNumber");
         let n: String = number.number.toString();
         let i: i64 = n.toI64();
@@ -1309,47 +1479,73 @@ struct TypeChecker {
         return newTCResult(true, t, v);
     }
 
-    func checkAndVerifyAndMaybeCalculateBuiltin(&mut this, builtin: &mut ParsedDeclValueBuiltin) -> TCResult {
+    func checkAndVerifyAndMaybeCalculateBuiltin(&mut this, builtin: &mut ParsedDeclValueBuiltin, constContext: bool) -> TCResult {
         trace("TypeChecker.checkAndVerifyAndMaybeCalculateBuiltin");
         let name: SubStr = builtin.name;
         if (name.equals(&BUILTIN_INTEGER)) {
             if (builtin.argCount != 2) todo_with_msg("@integer() wrong arg count");
-            let size: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut builtin.args[0], false, false);
+            let size: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut builtin.args[0], false, false, true);
             if (!size.isValid()) return size;
             if (!size.isValue()) todo_with_msg("first arg to @integer() is type");
             let sizeValue: Value = size.value;
             if (!sizeValue.isInteger()) todo_with_msg("first arg to @integer() is non-int");
-            let signed: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut builtin.args[1], false, false);
+            let signed: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut builtin.args[1], false, false, true);
             if (!signed.isValid()) return signed;
             if (!signed.isValue()) todo_with_msg("second arg to @integer() is type");
             let signedValue: Value = signed.value;
             if (!signedValue.isBool()) todo_with_msg("second arg to @integer() is non-bool");
             let isSigned: bool = signedValue.bValue;
             let bitsize: i64 = sizeValue.rawInt;
-            return newTCResult(true, newIntType(builtin.span, bitsize, isSigned), blank);
+            let int: Type = newIntType(builtin.span, bitsize, isSigned);
+            return newTCResult(true, newTypeType(builtin.span, &int), blank);
         } else if (name.equals(&BUILTIN_FLOAT)) todo_with_msg("BUILTIN_FLOAT");
         else if (name.equals(&BUILTIN_BOOLEAN)) {
             if (builtin.argCount != 0) todo_with_msg("@boolean() wrong arg count");
-            return newTCResult(true, newBoolType(builtin.span), blank);
+            let boolean: Type = newBoolType(builtin.span);
+            return newTCResult(true, newTypeType(builtin.span, &boolean), blank);
         } else if (name.equals(&BUILTIN_SELF)) todo_with_msg("BUILTIN_SELF");
         else if (name.equals(&BUILTIN_ANYTYPE)) { 
             if (builtin.argCount != 0) todo_with_msg("@anytype() wrong arg count");
-            return newTCResult(true, newAnytypeType(builtin.span), blank);
+            let anytype: Type = newAnytypeType(builtin.span);
+            return newTCResult(true, newTypeType(builtin.span, &anytype), blank);
         } else if (name.equals(&BUILTIN_ANYVALUE)) todo_with_msg("BUILTIN_ANYVALUE");
         else if (name.equals(&BUILTIN_NONE)) {
             if (builtin.argCount != 0) todo_with_msg("@none() wrong arg count");
-            return newTCResult(true, newNoneType(builtin.span), blank);
+            let none: Type = newNoneType(builtin.span);
+            return newTCResult(true, newTypeType(builtin.span, &none), blank);
         } else if (name.equals(&BUILTIN_ENTRY)) {
             this.entry = builtin;
             return newTCResult(true, blank, blank);
         } else if (name.equals(&BUILTIN_CHECK)) {
             mut valid: bool = true;
             for (mut i: usize = 0; i < builtin.argCount; i = i + 1) {
-                let res: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut builtin.args[i], false, false);
+                let res: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut builtin.args[i], false, false, false);
                 if (!res.isValid()) valid = false;
             }
             if (!valid) return invalidTCResult();
             return newTCResult(true, newNoneType(builtin.span), blank);
+        } else if (name.equals(&BUILTIN_ASSERT)) {
+            if (builtin.argCount != 1) todo_with_msg("@assert() wrong arg count");
+            let res: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut builtin.args[0], false, false, true);
+            if (!res.isValid()) return res;
+            if (!res.isType()) todo_with_msg("assert not a type, but do we care");
+            if (!res.isValue()) todo_with_msg("assert not a value, we do care");
+            let val: Value = res.value;
+            if (!val.isBool()) todo_with_msg("assert value not a bool");
+            let success: bool = val.bValue;
+            if (!success) {
+                this.printErrorStaticAssertFailed(builtin);
+                return invalidTCResult();
+            }
+            return newTCResult(true, newNoneType(builtin.span), blank);
+        } else if (name.equals(&BUILTIN_TYPEOF)) {
+            if (builtin.argCount != 1) todo_with_msg("@typeof() wrong arg count");
+            let res: TCResult = this.checkAndVerifyAndMaybeCalculate(&mut builtin.args[0], false, false, false);
+            if (!res.isValid()) return res;
+            if (!res.isType()) todo_with_msg("typeof not a type");
+            let typ: Type = res.typ;
+            if (typ.isType()) todo_with_msg("@typeof(TypeType) == ??? Maybe anytype? Idk");
+            return newTCResult(true, newTypeType(builtin.span, &typ), blank);
         } else todo_with_msg("unknown");
         return blank;
     }
