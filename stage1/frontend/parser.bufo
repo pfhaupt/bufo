@@ -378,7 +378,6 @@ struct Parser {
             op: op,
             lhs: lhs,
             rhs: rhs,
-            typ: invalidTCResult(),
         };
         return createDeclValue(DECL_VALUE_BINARY, span, sizeof ParsedDeclValueBinary, &bin);
     }

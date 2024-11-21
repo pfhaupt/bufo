@@ -12,7 +12,6 @@ const none = @none();
 const main = func () {
     let a = 1;
     const c = a;
-    @check(c);
 };
 
 @entry(main);

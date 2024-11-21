@@ -3,7 +3,7 @@ import "string.bufo";
 import "frontend/nodes.bufo";
 import "frontend/lexer.bufo";
 import "frontend/parser.bufo";
-import "middleend/type_checker.bufo";
+import "middleend/checker.bufo";
 
 unsafe func main() {
     let argv: &&char = GLOBAL_GET_ARGV();
@@ -31,8 +31,9 @@ unsafe func main() {
     } else unsafe {
         mut parser: Parser = newParser(&mut lexer);
         mut module: ParsedModule = parser.parseProject();
-        mut checker: TypeChecker = newTypeChecker();
-        if (!checker.checkProject(&mut module)) exit(1);
+        mut checker: Checker = newChecker();
+        if (!checker.generateBytecode(&mut module)) exit(1);
+        if (!checker.verifyBytecode()) exit(1);
     }
     string.drop();
 }

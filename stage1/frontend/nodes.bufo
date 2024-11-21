@@ -74,7 +74,6 @@ struct ParsedVarDecl {
     span: Span;
     value: ParsedDeclValue;
     isConst: bool;
-    typ: TCResult;
     used: bool;
 }
 
@@ -84,7 +83,6 @@ func createVarDecl(name: Token, span: Span, value: ParsedDeclValue, isConst: boo
         span: span,
         value: value,
         isConst: isConst,
-        typ: invalidTCResult(),
         used: false,
     };
 }
@@ -107,7 +105,6 @@ struct ParsedDeclValue {
     kind: usize;
     span: Span;
     data: Any;
-    typ: TCResult;
 
     func isLValue(&this) -> bool {
         if (this.kind == DECL_VALUE_INVALID) todo_with_msg("lvalue DECL_VALUE_INVALID");
@@ -183,7 +180,6 @@ func defaultDeclValue() -> ParsedDeclValue {
             kind: DECL_VALUE_INVALID,
             span: defaultSpan(),
             data: null,
-            typ: invalidTCResult(),
         };
     }
 }
@@ -197,7 +193,6 @@ func createDeclValue(kind: usize, span: Span, size: usize, data: Any) -> ParsedD
             kind: kind,
             span: span,
             data: mem,
-            typ: invalidTCResult()
         };
     }
 }
@@ -341,7 +336,6 @@ struct ParsedDeclValueBinary {
     op: usize;
     lhs: ParsedDeclValue;
     rhs: ParsedDeclValue;
-    typ: TCResult;
 }
 
 comptime UNARY_OP_REF: usize = 0;

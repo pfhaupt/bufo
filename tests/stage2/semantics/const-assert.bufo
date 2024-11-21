@@ -6,6 +6,7 @@
 const false = @boolean()(0);
 const u8 = @integer(8, false);
 const u32 = @integer(32, false);
+const u64 = @integer(64, false);
 const none = @none();
 
 const i1 = u8(10);

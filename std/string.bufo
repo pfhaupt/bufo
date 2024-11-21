@@ -26,7 +26,7 @@ struct String {
             let _new: Any = calloc(new_cap, sizeof char);
             assert_with_msg(_new != null, "Could not resize String");
             let _old: Any = this.buffer;
-            memcpy(_new, _old, this.length);
+            memcpy(_new, _old, this.length * sizeof char);
             free(_old);
             this.capacity = new_cap;
             this.buffer = _new;
@@ -41,7 +41,7 @@ struct String {
     func print(&this) {
         unsafe {
             // Safety: Safe as long as the buffer is calloc-ed
-            let written: usize = printf("%*s", this.length, this.buffer);
+            let written: usize = printf("%.*s", this.length, this.buffer);
             assert_with_msg(written == this.length, "Failed to write String.");
         }
     }
@@ -58,20 +58,27 @@ struct String {
     func pushNumber(&mut this, mut num: usize) {
         unsafe {
             mut bfr: [char; 50] = ['\0'; 50];
-            let length: usize = snprintf(null, 0, "%d", num);
+            let length: usize = snprintf(null, 0, "%llu", num);
             assert_with_msg(length < 50, "Buffer Overflow in String.pushNumber()");
-            snprintf(&bfr, length + 1, "%d", num);
+            snprintf(&bfr, length + 1, "%llu", num);
             for (mut i: usize = 0; i < length; i = i + 1) {
                 this.pushChar(bfr[i]);
             }
         }
+    }
+    func pushI64(&mut this, mut i: i64) {
+        if (i < 0) {
+            this.pushChar('-');
+            i = -i;
+        }
+        this.pushNumber(i as usize);
     }
     func pushChar(&mut this, ch: char) {
         if (this.length >= this.capacity) {
             this.resize(2 * this.capacity);
         }
         unsafe {
-            *(this.buffer + this.length) = ch;
+            *(this.buffer + this.length * sizeof char) = ch;
         }
         this.length = this.length + 1;
     }
