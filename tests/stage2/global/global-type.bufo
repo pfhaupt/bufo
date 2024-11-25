@@ -1,0 +1,13 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 2
+//! COMPILER
+//! SUCCESS
+
+const none = @none();
+
+const foo = bez;
+const bez = bar;
+const bar = func () {};
+
+@entry(foo);
+

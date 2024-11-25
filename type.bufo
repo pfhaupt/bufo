@@ -7,15 +7,6 @@ const u8 = @integer(8, false);
 const u16 = @integer(16, false);
 const u32 = @integer(32, false);
 
-// FIXME: Order of global declarations doesn't matter
-//        But Bytecode starts at the top, so this evaluates to a wrong i12
-// FIX:   Dependency graph? Sort global declarations?
-const f = func () {
-    @assert(a == 12); // Will currently fail
-};
-const i12 = @integer(a, false);
-const a = 12;
-
 const i32 = @integer(32, true);
 
 const foo = func (a: i32) -> i32 {

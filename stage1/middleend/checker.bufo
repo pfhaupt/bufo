@@ -8,7 +8,72 @@ mut functions: [BCFunction; 640000] = blank;
 
 struct NameVarIndexPair {
     name: SubStr;
-    index: VarIndex;
+    index: RegIndex;
+}
+
+struct GlobalEntry {
+    node: &mut ParsedVarDecl;
+    computed: bool;
+    register: RegIndex;
+}
+
+struct GlobalScope {
+    variables: &mut GlobalEntry;
+    varLength: usize;
+    varCapacity: usize;
+
+    func checkExisting(&mut this, newVar: &mut ParsedVarDecl) -> bool {
+        for (mut i: usize = 0; i < this.varLength; i = i + 1) {
+            let var: &mut GlobalEntry = this.getEntryAtIndex(i);
+            if (var.node.name.content.equals(&newVar.name.content)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func getEntryAtIndex(&mut this, index: usize) -> &mut GlobalEntry {
+        assert_with_msg(index < this.varLength, "Out of bounds access in getEntryAtIndex");
+        unsafe {
+            return this.variables + index * sizeof GlobalEntry;
+        }
+    }
+
+    func getVariableByName(&mut this, name: SubStr) -> &mut GlobalEntry {
+        for (mut i: usize = 0; i < this.varLength; i = i + 1) {
+            let entry: &mut GlobalEntry = this.getEntryAtIndex(i);
+            if (entry.node.name.content.equals(&name))
+                return entry;
+        }
+        unsafe {
+            return null;
+        }
+    }
+
+    func addVarDecl(&mut this, decl: &mut ParsedVarDecl) -> bool {
+        trace("GlobalScope.addVarDecl");
+        if (this.varLength >= this.varCapacity) unsafe {
+            mut newCap: usize = this.varCapacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.variables = realloc(this.variables, newCap * sizeof GlobalEntry);
+            assert_with_msg(this.variables != null, "Could not resize variables");
+            this.varCapacity = newCap;
+        }
+        if (this.checkExisting(decl)) {
+            debug("todo: report error duplicate global var");
+            return false;
+        }
+        unsafe {
+            let entry: GlobalEntry = GlobalEntry {
+                node: decl,
+                computed: false,
+                register: blank
+            };
+            *(this.variables + this.varLength * sizeof GlobalEntry) = entry;
+            this.varLength = this.varLength + 1;
+        }
+        return true;
+    }
 }
 
 struct Checker {
@@ -17,6 +82,7 @@ struct Checker {
     // all the way, but I think we should stop at a reasonable level
     funcStack: [FnIndex; 256];
     stackLen: usize;
+    globalScope: GlobalScope;
     func dumpAllFunctions(&mut this) {
         unsafe {
             printf("GLOBAL SCOPE:\n");
@@ -49,10 +115,15 @@ struct Checker {
         assert_with_msg(index < this.funcCount, what);
         return index;
     }
-    func allocateInFunction(&mut this, currFn: FnIndex, val: BCValue) -> RegIndex {
-        trace("Checker.allocateInFunction");
-        let index: usize = this.assertValidFunction(currFn, "Can not allocate in invalid fn index");
-        return functions[index].allocate(val);
+    func allocateVariable(&mut this, currFn: FnIndex, where: Span, name: SubStr) -> bool {
+        trace("Checker.allocateVariable");
+        let index: usize = this.assertValidFunction(currFn, "Can not allocate variable in invalid fn index");
+        return functions[index].allocateVariable(where, name);
+    }
+    func createValueInFunction(&mut this, currFn: FnIndex, val: BCValue) -> RegIndex {
+        trace("Checker.createValueInFunction");
+        let index: usize = this.assertValidFunction(currFn, "Can not create value in invalid fn index");
+        return functions[index].createValue(val);
     }
     func callFunction(&mut this, currFn: FnIndex, where: Span, call: RegIndex, args: &[RegIndex; 8], argCount: usize) -> RegIndex {
         trace("Checker.callFunction");
@@ -72,13 +143,29 @@ struct Checker {
     func storeVariable(&mut this, currFn: FnIndex, origin: Span, name: SubStr, val: RegIndex, newVar: bool) -> bool {
         trace("Checker.storeVariable");
         let index: usize = this.assertValidFunction(currFn, "Can not generate store in invalid fn index");
-        return functions[index].buildStore(origin, name, val, newVar);
+        if (newVar) {
+            if (!this.allocateVariable(currFn, origin, name)) return false;
+        }
+        return functions[index].buildStore(origin, name, val);
     }
     func loadVariable(&mut this, currFn: FnIndex, origin: Span, name: SubStr) -> RegIndex {
         trace("Checker.loadVariable");
         let index: usize = this.assertValidFunction(currFn, "Can not generate load in invalid fn index");
-        mut load: BCInstr = blank;
-        return functions[index].buildLoad(origin, name);
+        mut reg: RegIndex = blank;
+        let success: bool = functions[index].buildLoad(origin, name, &mut reg);
+        if (!success) unsafe {
+            let entry: &mut GlobalEntry = this.globalScope.getVariableByName(name);
+            if (entry == null) todo_with_msg("no variable found");
+            if (entry.computed) return entry.register;
+            let global: FnIndex = FnIndex { _i: 0 };
+            assert(this.allocateVariable(global, entry.node.span, name));
+            let success: bool = this.generateBytecodeVarDecl(global, entry.node);
+            if (!success) todo_with_msg("failed to generate global");
+            assert(functions[index].buildLoad(origin, name, &mut reg));
+            (*entry).computed = true;
+            (*entry).register = reg;
+        }
+        return reg;
     }
     func verifyMatchesType(&mut this, currFn: FnIndex, origin: Span, what: RegIndex, shouldBe: RegIndex) {
         trace("Checker.verifyMatchesType");
@@ -130,30 +217,30 @@ struct Checker {
         let index: usize = this.assertValidFunction(currFn, "Can not replace instr in invalid fn index");
         functions[index].replaceInstr(instrIndex, newInstr);
     }
-    func generateBytecode(&mut this, project: &mut ParsedModule) -> bool {
-        trace("Checker.generateBytecode");
-        let fnIndex: FnIndex = this.addFunction(project.span);
-        assert_with_msg(fnIndex.isGlobalFn(), "generateBytecode called in wrong context");
+
+    func generateGlobalDeclarations(&mut this, globalFn: FnIndex, project: &mut ParsedModule) -> bool {
+        trace("Checker.generateGlobalDeclarations");
+        assert_with_msg(globalFn.isGlobalFn(), "generateGlobalDeclarations called in wrong context");
         for (mut i: usize = 0; i < project.declCount; i = i + 1) {
             let decl: &mut ParsedGlobalDecl = project.getDeclAtIndex(i);
             if (decl.kind == GLOBAL_VAR_DECL) unsafe {
-                let decl: &mut ParsedVarDecl = decl.data;
-                let none: RegIndex = this.allocateInFunction(fnIndex, newInvalidValue(decl.name.span));
-                if (!this.storeVariable(fnIndex, decl.name.span, decl.name.content, none, true))
+                if (!this.globalScope.addVarDecl(decl.data))
+                    return false;
+            } else if (decl.kind == GLOBAL_DIR) unsafe {
+                if (!this.generateBytecodeDirective(globalFn, decl.data))
                     return false;
             }
         }
-        for (mut i: usize = 0; i < project.declCount; i = i + 1) {
-            let decl: &mut ParsedGlobalDecl = project.getDeclAtIndex(i);
-            if (decl.kind == GLOBAL_VAR_DECL) {
-                if (!this.generateBytecodeVarDecl(fnIndex, decl.data))
-                    return false;
-            } else if (decl.kind == GLOBAL_DIR) {
-                if (!this.generateBytecodeDirective(fnIndex, decl.data))
-                    return false;
-            }
-        }
-        this.leaveFunction(fnIndex);
+        return true;
+    }
+
+    func generateBytecode(&mut this, project: &mut ParsedModule) -> bool {
+        trace("Checker.generateBytecode");
+        let globalFn: FnIndex = this.addFunction(project.span);
+        assert_with_msg(globalFn.isGlobalFn(), "generateBytecode called in wrong context");
+        if (!this.generateGlobalDeclarations(globalFn, project))
+            return false;
+        this.leaveFunction(globalFn);
         assert_with_msg(this.stackLen == 0, "Stack imbalance detected");
         this.dumpAllFunctions();
         return true;
@@ -168,10 +255,9 @@ struct Checker {
 
     func generateBytecodeVarDecl(&mut this, currFn: FnIndex, decl: &mut ParsedVarDecl) -> bool {
         trace("Checker.generateBytecodeVarDecl");
-        let dummy: RegIndex = this.allocateInFunction(currFn, newNoneValue(decl.span));
         if (!currFn.isGlobalFn()) {
             // Global declarations have already been added
-            let reserve: bool = this.storeVariable(currFn, decl.name.span, decl.name.content, dummy, !currFn.isGlobalFn());
+            let reserve: bool = this.allocateVariable(currFn, decl.name.span, decl.name.content);
             if (!reserve) return false;
         }
         let register: RegIndex = this.generateBytecodeDeclValue(currFn, &mut decl.value);
@@ -220,7 +306,7 @@ struct Checker {
             let fn: BCValue = newFuncValue(decl.span, newFn);
             this.leaveFunction(newFn);
             assert_with_msg(this.stackLen == _stackLen, "Stack imbalance detected");
-            return this.allocateInFunction(currFn, fn);
+            return this.createValueInFunction(currFn, fn);
         }
         else if (expr.kind == DECL_VALUE_STRUCT_DECL) todo_with_msg("bytecode DECL_VALUE_STRUCT_DECL");
         else if (expr.kind == DECL_VALUE_ENUM_DECL) todo_with_msg("bytecode DECL_VALUE_ENUM_DECL");
@@ -246,11 +332,11 @@ struct Checker {
             let int: i64 = _n.toI64();
             _n.drop();
             let v: BCValue = newIntegerValue(number.span, int);
-            return this.allocateInFunction(currFn, v);
+            return this.createValueInFunction(currFn, v);
         } else if (expr.kind == DECL_VALUE_BLOCK) todo_with_msg("bytecode DECL_VALUE_BLOCK");
         else if (expr.kind == DECL_VALUE_IF) {
             let iif: &mut ParsedDeclValueIf = expr.data;
-            let result: RegIndex = this.allocateInFunction(currFn, newNoneValue(iif.span));
+            let result: RegIndex = this.createValueInFunction(currFn, newNoneValue(iif.span));
             let cond: RegIndex = this.generateBytecodeDeclValue(currFn, &mut iif.cond);
             let br: InstrIndex = this.placeDummyInstr(currFn);
             if (iif.hasElse) {
@@ -303,7 +389,7 @@ struct Checker {
             if (builtin.argCount != 0) todo_with_msg("boolean() arg count");
             let t: BCType = newBoolType(builtin.span);
             let v: BCValue = newValueFromType(t);
-            return this.allocateInFunction(currFn, v);
+            return this.createValueInFunction(currFn, v);
         } else if (name.equals(&BUILTIN_SELF)) todo_with_msg("BUILTIN_SELF");
         else if (name.equals(&BUILTIN_ANYTYPE)) todo_with_msg("BUILTIN_ANYTYPE");
         else if (name.equals(&BUILTIN_ANYVALUE)) todo_with_msg("BUILTIN_ANYVALUE");
@@ -311,7 +397,7 @@ struct Checker {
             if (builtin.argCount != 0) todo_with_msg("none() arg count");
             let t: BCType = newNoneType(builtin.span);
             let v: BCValue = newValueFromType(t);
-            return this.allocateInFunction(currFn, v);
+            return this.createValueInFunction(currFn, v);
         } else if (name.equals(&BUILTIN_ENTRY)) {
             if (builtin.argCount != 1) todo_with_msg("entry() arg count");
             let entry: RegIndex = this.generateBytecodeDeclValue(currFn, &mut builtin.args[0]);
@@ -320,7 +406,7 @@ struct Checker {
             if (builtin.argCount != 1) todo_with_msg("assert() arg count");
             let what: RegIndex = this.generateBytecodeDeclValue(currFn, &mut builtin.args[0]);
             this.staticAssert(currFn, builtin.span, what);
-            return this.allocateInFunction(currFn, newNoneValue(builtin.span));
+            return this.createValueInFunction(currFn, newNoneValue(builtin.span));
         } else if (name.equals(&BUILTIN_TYPEOF)) {
             if (builtin.argCount != 1) todo_with_msg("typeof() arg count");
             let what: RegIndex = this.generateBytecodeDeclValue(currFn, &mut builtin.args[0]);
@@ -342,5 +428,6 @@ func newChecker() -> Checker {
         funcCount: 0,
         funcStack: blank,
         stackLen: 0,
+        globalScope: blank,
     };
 }
