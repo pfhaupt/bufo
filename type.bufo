@@ -2,10 +2,17 @@ const false = @boolean()(0);
 const true = @boolean()(1);
 
 const none = @none();
+const type = @anytype();
 
 const u8 = @integer(8, false);
 const u16 = @integer(16, false);
 const u32 = @integer(32, false);
+const u64 = @integer(64, false);
+
+const a = 12;
+const b = 12;
+const usize = if @typeof(a) == @typeof(b) u32 else u64;
+@assert(usize == u32);
 
 const i32 = @integer(32, true);
 
@@ -20,8 +27,16 @@ const ack = func (m: u32, n: u32) -> u32 {
         else ack(m - 1, ack(m, n - 1));
 };
 
+const gimme = func (t: type) -> type {
+    return t;
+};
+
 const main = func () -> u32 {
+    let a1 = usize(12);
     let a = u16(1);
+    const ta = @typeof(a);
+    const f = gimme(ta);
+    @assert(f == ta);
     const factorial = func (n: @typeof(a)) -> @typeof(a) {
         return if n == 1 1 else n * factorial(n - 1);
     };

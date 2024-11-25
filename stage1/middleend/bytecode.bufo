@@ -94,18 +94,18 @@ struct BCFunction {
         this.instrLength = this.instrLength + 1;
     }
 
-    func buildBinaryOp(&mut this, span: Span, lhs: RegIndex, rhs: RegIndex, op: usize) -> RegIndex {
+    func buildBinaryOp(&mut this, mustEval: bool, span: Span, lhs: RegIndex, rhs: RegIndex, op: usize) -> RegIndex {
         trace("BCFunction.buildBinaryOp");
         let reg: RegIndex = this.createValue(newNoneValue(span));
-        let op: BCInstr = newBinaryOpInstr(reg, lhs, rhs, op);
+        let op: BCInstr = newBinaryOpInstr(mustEval, reg, lhs, rhs, op);
         this.appendInstr(op);
         return reg;
     }
 
-    func buildCall(&mut this, span: Span, base: RegIndex, args: &[RegIndex; 8], argCount: usize) -> RegIndex {
+    func buildCall(&mut this, mustEval: bool, span: Span, base: RegIndex, args: &[RegIndex; 8], argCount: usize) -> RegIndex {
         trace("BCFunction.buildCall");
         let reg: RegIndex = this.createValue(newNoneValue(span));
-        let call: BCInstr = newCallInstr(reg, base, args, argCount);
+        let call: BCInstr = newCallInstr(mustEval, reg, base, args, argCount);
         this.appendInstr(call);
         return reg;
     }
@@ -159,7 +159,7 @@ struct BCFunction {
         return reg;
     }
 
-    func allocateVariable(&mut this, span: Span, name: SubStr) -> bool {
+    func allocateVariable(&mut this, span: Span, name: SubStr, isConst: bool) -> bool {
         trace("BCFunction.allocateVariable");
         if (this.varLength >= this.varCapacity) unsafe {
             mut newCap: usize = this.varCapacity * 2;
@@ -179,7 +179,7 @@ struct BCFunction {
             name: name,
             reg: reg,
         };
-        let alloc: BCInstr = newAllocInstr(reg);
+        let alloc: BCInstr = newAllocInstr(reg, isConst);
         this.appendInstr(alloc);
         unsafe {
             *(this.variables + this.varLength * sizeof NameRegPair) = entry;
@@ -188,14 +188,14 @@ struct BCFunction {
         return true;
     }
 
-    func buildStore(&mut this, span: Span, name: SubStr, value: RegIndex) -> bool {
+    func buildStore(&mut this, span: Span, name: SubStr, value: RegIndex, mustEval: bool) -> bool {
         trace("BCFunction.buildStore");
         for (mut i: usize = this.scopeLen - 1; i >= 0; i = i - 1) {
             let fn: &BCFunction = &functions[this.allowedScopes[i]._i];
             for (mut vi: usize = 0; vi < fn.varLength; vi = vi + 1) unsafe {
                 let pair: NameRegPair = *(fn.variables + vi * sizeof NameRegPair);
                 if (pair.name.equals(&name)) {
-                    let store: BCInstr = newStoreInstr(pair.reg, value, this.allowedScopes[i]);
+                    mut store: BCInstr = newStoreInstr(mustEval, pair.reg, value, this.allowedScopes[i]);
                     this.appendInstr(store);
                     return true;
                 }
@@ -203,7 +203,7 @@ struct BCFunction {
         }
         return false; // Variable doesn't exist in any possible scope
     }
-    func buildLoad(&mut this, span: Span, name: SubStr, out: &mut RegIndex) -> bool {
+    func buildLoad(&mut this, mustEval: bool, span: Span, name: SubStr, out: &mut RegIndex) -> bool {
         trace("BCFunction.buildLoad");
         for (mut i: usize = this.scopeLen - 1; i >= 0; i = i - 1) {
             let fn: &BCFunction = &functions[this.allowedScopes[i]._i];
@@ -211,7 +211,7 @@ struct BCFunction {
                 let pair: NameRegPair = *(fn.variables + vi * sizeof NameRegPair);
                 if (pair.name.equals(&name)) {
                     let reg: RegIndex = this.createValue(newNoneValue(span));
-                    let load: BCInstr = newLoadInstr(reg, pair.reg, this.allowedScopes[i]);
+                    let load: BCInstr = newLoadInstr(mustEval, reg, pair.reg, this.allowedScopes[i]);
                     this.appendInstr(load);
                     *out = reg;
                     return true;
@@ -221,9 +221,9 @@ struct BCFunction {
         return false;
     }
 
-    func buildMove(&mut this, dst: RegIndex, src: RegIndex) {
+    func buildMove(&mut this, mustEval: bool, dst: RegIndex, src: RegIndex) {
         trace("BCFunction.buildMove");
-        let move: BCInstr = newMoveInstr(dst, src);
+        let move: BCInstr = newMoveInstr(mustEval, dst, src);
         this.appendInstr(move);
     }
 
@@ -323,19 +323,24 @@ struct BCInstrCondExtra {
 }
 struct BCInstr {
     kind: usize;
+    mustEval: bool;
     dst: RegIndex;
     src: RegIndex;
     extra: Any;
-    
+
     func toString(&mut this) -> String {
+        mut ret: String = blank;
         if (this.kind == INSTR_KIND_INVALID) {
-            return newStringFromStrLit("<invalid>");
+            ret = newStringFromStrLit("<invalid>");
         } else if (this.kind == INSTR_KIND_ALLOC) {
             let _dst: String = this.dst.toString();
-            mut s: String = newStringFromStrLit("Alloc ");
+            mut s: String = newStringFromStrLit("Alloc const=");
+            if (this.src._i == 1) s.pushStr("true ");
+            else if (this.src._i == 0) s.pushStr("false ");
+            else assert_with_msg(false, "Alloc expected either 0 or 1");
             s.pushString(&_dst);
             _dst.drop();
-            return s;
+            ret = s;
         } else if (this.kind == INSTR_KIND_STORE) unsafe {
             let extra: &mut BCInstrLoadStoreExtra = this.extra;
             let _dst: String = this.dst.toString();
@@ -348,7 +353,7 @@ struct BCInstr {
             s.pushString(&_src);
             _src.drop();
             _dst.drop();
-            return s;
+            ret = s;
         } else if (this.kind == INSTR_KIND_LOAD) {
             let extra: &mut BCInstrLoadStoreExtra = this.extra;
             let _dst: String = this.dst.toString();
@@ -361,7 +366,7 @@ struct BCInstr {
             s.pushString(&_src);
             _src.drop();
             _dst.drop();
-            return s;
+            ret = s;
         } else if (this.kind == INSTR_KIND_LOAD_PARAM) {
             let _dst: String = this.dst.toString();
             mut s: String = newString();
@@ -369,7 +374,7 @@ struct BCInstr {
             s.pushStr(" = LoadParam ");
             s.pushNumber(this.src._i);
             _dst.drop();
-            return s;
+            ret = s;
         } else if (this.kind == INSTR_KIND_MOVE) {
             let _dst: String = this.dst.toString();
             let _src: String = this.src.toString();
@@ -379,7 +384,7 @@ struct BCInstr {
             s.pushString(&_src);
             _src.drop();
             _dst.drop();
-            return s;
+            ret = s;
         } else if (this.kind == INSTR_KIND_BINARY_OP) unsafe {
             let extra: &mut BCInstrBinaryOpExtra = this.extra;
             let _dst: String = this.dst.toString();
@@ -405,7 +410,7 @@ struct BCInstr {
             _rhs.drop();
             _lhs.drop();
             _dst.drop();
-            return s;
+            ret = s;
         } else if (this.kind == INSTR_KIND_CALL) unsafe {
             let extra: &mut BCInstrCallExtra = this.extra;
             let _dst: String = this.dst.toString();
@@ -422,7 +427,7 @@ struct BCInstr {
             }
             _src.drop();
             _dst.drop();
-            return s;
+            ret = s;
         } else if (this.kind == INSTR_KIND_VERIFY_MATCHES_TYPE) {
             let _shouldBe: String = this.dst.toString();
             let _what: String = this.src.toString();
@@ -432,29 +437,29 @@ struct BCInstr {
             s.pushString(&_shouldBe);
             _what.drop();
             _shouldBe.drop();
-            return s;
+            ret = s;
         } else if (this.kind == INSTR_KIND_VERIFY_IS_TYPE) {
             let _what: String = this.src.toString();
             mut s: String = newStringFromStrLit("VerifyIsType ");
             s.pushString(&_what);
             _what.drop();
-            return s;
+            ret = s;
         } else if (this.kind == INSTR_KIND_ASSERT) {
             let _what: String = this.src.toString();
             mut s: String = newStringFromStrLit("Assert ");
             s.pushString(&_what);
             _what.drop();
-            return s;
+            ret = s;
         } else if (this.kind == INSTR_KIND_RETURN) {
             let _what: String = this.src.toString();
             mut s: String = newStringFromStrLit("Ret ");
             s.pushString(&_what);
             _what.drop();
-            return s;
+            ret = s;
         } else if (this.kind == INSTR_KIND_BR) {
             mut s: String = newStringFromStrLit("Br ");
             s.pushNumber(this.dst._i);
-            return s;
+            ret = s;
         } else if (this.kind == INSTR_KIND_BRCOND) unsafe {
             let extra: &mut BCInstrCondExtra = this.extra;
             mut s: String = newStringFromStrLit("BrCond cond=");
@@ -465,7 +470,7 @@ struct BCInstr {
             s.pushStr(", false=");
             s.pushNumber(this.src._i);
             _c.drop();
-            return s;
+            ret = s;
         } else if (this.kind == INSTR_KIND_TYPEOF) {
             let _dst: String = this.dst.toString();
             let _what: String = this.src.toString();
@@ -475,7 +480,7 @@ struct BCInstr {
             s.pushString(&_what);
             _what.drop();
             _dst.drop();
-            return s;
+            ret = s;
         } else if (this.kind == INSTR_KIND_CONSTRUCT_INT_TYPE) unsafe {
             let extra: &mut BCInstrConstrIntExtra = this.extra;
             let _dst: String = this.dst.toString();
@@ -490,12 +495,19 @@ struct BCInstr {
             _signed.drop();
             _size.drop();
             _dst.drop();
-            return s;
+            ret = s;
         } else unsafe {
             printf("%llu\n", this.kind);
             assert_with_msg(false, "exhaustive handling in BCInstr.toString");
-            return blank;
+            ret = blank;
         }
+        if (this.mustEval) {
+            mut s: String = newStringFromStrLit("\x1b[32m");
+            s.pushString(&ret);
+            s.pushStr("\x1b[37m");
+            return s;
+        }
+        return ret;
     }
 }
 
@@ -503,6 +515,7 @@ func newLoadParamInstr(dst: RegIndex, param: RegIndex) -> BCInstr {
     unsafe {
         return BCInstr {
             kind: INSTR_KIND_LOAD_PARAM,
+            mustEval: false, // REVIEW: Doesn't really matter?
             dst: dst,
             src: param,
             extra: null
@@ -510,18 +523,21 @@ func newLoadParamInstr(dst: RegIndex, param: RegIndex) -> BCInstr {
     }
 }
 
-func newAllocInstr(dst: RegIndex) -> BCInstr {
+func newAllocInstr(dst: RegIndex, isConst: bool) -> BCInstr {
     unsafe {
+        mut id: usize = 0;
+        if (isConst) id = 1;
         return BCInstr {
             kind: INSTR_KIND_ALLOC,
+            mustEval: isConst, // REVIEW: Doesn't really matter?
             dst: dst,
-            src: blank,
+            src: RegIndex { _i : id },
             extra: null
         };
     }
 }
 
-func newStoreInstr(dst: RegIndex, var: RegIndex, scope: FnIndex) -> BCInstr {
+func newStoreInstr(mustEval: bool, dst: RegIndex, var: RegIndex, scope: FnIndex) -> BCInstr {
     unsafe {
         let m: Any = calloc(1, sizeof BCInstrLoadStoreExtra);
         assert_with_msg(m != null, "Could not allocate memory for store instr");
@@ -531,6 +547,7 @@ func newStoreInstr(dst: RegIndex, var: RegIndex, scope: FnIndex) -> BCInstr {
         };
         return BCInstr {
             kind: INSTR_KIND_STORE,
+            mustEval: mustEval,
             dst: dst,
             src: var,
             extra: m
@@ -538,7 +555,7 @@ func newStoreInstr(dst: RegIndex, var: RegIndex, scope: FnIndex) -> BCInstr {
     }
 }
 
-func newLoadInstr(dst: RegIndex, var: RegIndex, scope: FnIndex) -> BCInstr {
+func newLoadInstr(mustEval: bool, dst: RegIndex, var: RegIndex, scope: FnIndex) -> BCInstr {
     unsafe {
         let m: Any = calloc(1, sizeof BCInstrLoadStoreExtra);
         assert_with_msg(m != null, "Could not allocate memory for load instr");
@@ -548,6 +565,7 @@ func newLoadInstr(dst: RegIndex, var: RegIndex, scope: FnIndex) -> BCInstr {
         };
         return BCInstr {
             kind: INSTR_KIND_LOAD,
+            mustEval: mustEval,
             dst: dst,
             src: var,
             extra: m
@@ -555,10 +573,11 @@ func newLoadInstr(dst: RegIndex, var: RegIndex, scope: FnIndex) -> BCInstr {
     }
 }
 
-func newMoveInstr(dst: RegIndex, src: RegIndex) -> BCInstr {
+func newMoveInstr(mustEval: bool, dst: RegIndex, src: RegIndex) -> BCInstr {
     unsafe {
         return BCInstr {
             kind: INSTR_KIND_MOVE,
+            mustEval: mustEval,
             dst: dst,
             src: src,
             extra: null
@@ -577,6 +596,7 @@ func newConstructIntegerType(dst: RegIndex, size: RegIndex, signed: RegIndex) ->
         };
         return BCInstr {
             kind: INSTR_KIND_CONSTRUCT_INT_TYPE,
+            mustEval: true,
             dst: dst,
             src: blank,
             extra: m
@@ -588,6 +608,7 @@ func newVerifyIsTypeInstr(what: RegIndex) -> BCInstr {
     unsafe {
         return BCInstr {
             kind: INSTR_KIND_VERIFY_IS_TYPE,
+            mustEval: true,
             dst: blank,
             src: what,
             extra: null
@@ -599,6 +620,7 @@ func newVerifyMatchesTypeInstr(what: RegIndex, shouldBe: RegIndex) -> BCInstr {
     unsafe {
         return BCInstr {
             kind: INSTR_KIND_VERIFY_MATCHES_TYPE,
+            mustEval: true,
             dst: shouldBe,
             src: what,
             extra: null
@@ -610,6 +632,7 @@ func newTypeOfInstr(dst: RegIndex, what: RegIndex) -> BCInstr {
     unsafe {
         return BCInstr {
             kind: INSTR_KIND_TYPEOF,
+            mustEval: true,
             dst: dst,
             src: what,
             extra: null
@@ -621,6 +644,7 @@ func newAssertInstr(what: RegIndex) -> BCInstr {
     unsafe {
         return BCInstr {
             kind: INSTR_KIND_ASSERT,
+            mustEval: true,
             dst: blank,
             src: what,
             extra: null
@@ -628,7 +652,7 @@ func newAssertInstr(what: RegIndex) -> BCInstr {
     }
 }
 
-func newBinaryOpInstr(dst: RegIndex, lhs: RegIndex, rhs: RegIndex, op: usize) -> BCInstr {
+func newBinaryOpInstr(mustEval: bool, dst: RegIndex, lhs: RegIndex, rhs: RegIndex, op: usize) -> BCInstr {
     unsafe {
         let m: Any = calloc(1, sizeof BCInstrBinaryOpExtra);
         assert_with_msg(m != null, "Could not allocate memory for binary op instr");
@@ -639,6 +663,7 @@ func newBinaryOpInstr(dst: RegIndex, lhs: RegIndex, rhs: RegIndex, op: usize) ->
         };
         return BCInstr {
             kind: INSTR_KIND_BINARY_OP,
+            mustEval: mustEval,
             dst: dst,
             src: lhs,
             extra: extra
@@ -646,7 +671,7 @@ func newBinaryOpInstr(dst: RegIndex, lhs: RegIndex, rhs: RegIndex, op: usize) ->
     }
 }
 
-func newCallInstr(dst: RegIndex, base: RegIndex, args: &[RegIndex; 8], argCount: usize) -> BCInstr {
+func newCallInstr(mustEval: bool, dst: RegIndex, base: RegIndex, args: &[RegIndex; 8], argCount: usize) -> BCInstr {
     unsafe {
         let m: Any = calloc(1, sizeof BCInstrCallExtra);
         assert_with_msg(m != null, "Could not allocate memory for call instr");
@@ -657,6 +682,7 @@ func newCallInstr(dst: RegIndex, base: RegIndex, args: &[RegIndex; 8], argCount:
         };
         return BCInstr {
             kind: INSTR_KIND_CALL,
+            mustEval: mustEval,
             dst: dst,
             src: base,
             extra: extra
@@ -668,6 +694,7 @@ func newReturnInstr(val: RegIndex) -> BCInstr {
     unsafe {
         return BCInstr {
             kind: INSTR_KIND_RETURN,
+            mustEval: false, // REVIEW: Doesn't really matter?
             dst: blank,
             src: val,
             extra: null
@@ -679,10 +706,11 @@ func newDummyInstr() -> BCInstr {
     return blank;
 }
 
-func newBrAbsolute(instr: InstrIndex) -> BCInstr {
+func newBrAbsolute(mustEval: bool, instr: InstrIndex) -> BCInstr {
     unsafe {
         return BCInstr {
             kind: INSTR_KIND_BR,
+            mustEval: mustEval,
             dst: RegIndex { _i: instr._i },
             src: blank,
             extra: null
@@ -690,7 +718,7 @@ func newBrAbsolute(instr: InstrIndex) -> BCInstr {
     }
 }
 
-func newBrCondAbsolute(cond: RegIndex, ifInstr: InstrIndex, elseInstr: InstrIndex) -> BCInstr {
+func newBrCondAbsolute(mustEval: bool, cond: RegIndex, ifInstr: InstrIndex, elseInstr: InstrIndex) -> BCInstr {
     unsafe {
         let m: Any = calloc(1, sizeof BCInstrCondExtra);
         assert_with_msg(m != null, "Could not allocate memory for br cond");
@@ -700,6 +728,7 @@ func newBrCondAbsolute(cond: RegIndex, ifInstr: InstrIndex, elseInstr: InstrInde
         };
         return BCInstr {
             kind: INSTR_KIND_BRCOND,
+            mustEval: mustEval,
             dst: RegIndex { _i: ifInstr._i },
             src: RegIndex { _i: elseInstr._i },
             extra: m
@@ -708,9 +737,10 @@ func newBrCondAbsolute(cond: RegIndex, ifInstr: InstrIndex, elseInstr: InstrInde
 }
 
 comptime TYPE_KIND_INVALID: usize = 0;
-comptime TYPE_KIND_BOOLEAN: usize = 1;
-comptime TYPE_KIND_NONE: usize = 2;
-comptime TYPE_KIND_INTEGER: usize = 3;
+comptime TYPE_KIND_ANYTYPE: usize = 1;
+comptime TYPE_KIND_BOOLEAN: usize = 2;
+comptime TYPE_KIND_NONE: usize = 3;
+comptime TYPE_KIND_INTEGER: usize = 4;
 struct TypeInfoInt {
     size: RegIndex;
     signed: RegIndex;
@@ -723,6 +753,8 @@ struct BCType {
     func toString(&mut this) -> String {
         if (this.kind == TYPE_KIND_INVALID) {
             return newStringFromStrLit("<invalid>");
+        } else if (this.kind == TYPE_KIND_ANYTYPE) {
+            return newStringFromStrLit("type");
         } else if (this.kind == TYPE_KIND_BOOLEAN) {
             return newStringFromStrLit("boolean");
         } else if (this.kind == TYPE_KIND_NONE) {
@@ -759,6 +791,14 @@ func newBoolType(span: Span) -> BCType {
     return BCType {
         origin: span,
         kind: TYPE_KIND_BOOLEAN,
+        int: blank,
+    };
+}
+
+func newTypeType(span: Span) -> BCType {
+    return BCType {
+        origin: span,
+        kind: TYPE_KIND_ANYTYPE,
         int: blank,
     };
 }
