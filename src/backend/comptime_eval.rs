@@ -580,7 +580,10 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
     fn escape_string_or_char_value(&self, value: &str, null_terminated: bool) -> String {
         let mut new_value = Vec::new();
         let mut escaping = false;
-        for ch in value.chars() {
+        let mut index = 0;
+        let chars = value.chars().collect::<Vec<_>>();
+        while index < value.len() {
+            let ch = chars[index];
             if escaping {
                 match ch {
                     '\\' => new_value.push('\\' as u8),
@@ -588,6 +591,14 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
                     'r' => new_value.push('\r' as u8),
                     'n' => new_value.push('\n' as u8),
                     't' => new_value.push('\t' as u8),
+                    'x' => {
+                        let lower = chars[index + 1];
+                        let upper = chars[index + 2];
+                        debug_assert!(lower.is_ascii_hexdigit());
+                        debug_assert!(upper.is_ascii_hexdigit());
+                        new_value.push((lower.to_digit(16).unwrap() * 16 + upper.to_digit(16).unwrap()) as u8);
+                        index += 2;
+                    }
                     c =>internal_panic!("Can't escape character `{c}`.")
                 }
                 escaping = false;
@@ -596,6 +607,7 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
             } else {
                 new_value.push(ch as u8);
             }
+            index += 1;
         }
         if null_terminated {
             new_value.push('\0' as u8);
