@@ -92,15 +92,8 @@ func buildStage1() -> bool {
 }
 
 func compileTest() -> bool {
-    // let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/dummy.bufo");
-    // let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/structs.bufo");
-    // let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/enums.bufo");
-    // let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/func.bufo");
-    // let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/eval.bufo");
-    // let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ex/stage1/big.bufo");
-    // let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe ./tests/stage2/functions/recursive_normal.bufo");
-    // let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe test.bufo");
-    let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe type.bufo");
+    // let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe type.bufo");
+    let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe tests/stage2/0/0/0/4-simple_addition.bufo");
     return cmd.runSync();
 }
 

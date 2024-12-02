@@ -8,6 +8,10 @@ func getProgramName() -> &char {
     return *argv;
 }
 
+comptime ERR_STR: &char = "\x1b[91merror\x1b[0m";
+comptime WARN_STR: &char = "\x1b[93mwarning\x1b[0m";
+comptime NOTE_STR: &char = "\x1b[92mnote\x1b[0m";
+
 // func getArg(argv: &&char, argc: usize) -> &char {
 //     unsafe { return *(argv + sizeof &char * argc); }
 // }
@@ -100,7 +104,7 @@ func todo_with_msg(msg: &char) {
     }
 }
 
-comptime PRINT_DEBUG: bool = true;
+comptime PRINT_DEBUG: bool = false;
 func debug(msg: &char) {
     if (!PRINT_DEBUG) return;
     // Safety: Argument must be null-terminated
@@ -108,11 +112,19 @@ func debug(msg: &char) {
         printf("[DEBUG] %s\n", msg);
     }
 }
-comptime PRINT_TRACE: bool = true;
+comptime PRINT_TRACE: bool = false;
 func trace(msg: &char) {
     if (!PRINT_TRACE) return;
     // Safety: Argument must be null-terminated
     unsafe {
         printf("[TRACE] %s\n", msg);
+    }
+}
+comptime PRINT_WARNING: bool = true;
+func warning(msg: &char) {
+    if (!PRINT_WARNING) return;
+    // Safety: Argument must be null-terminated
+    unsafe {
+        printf("\x1b[93m[WARNING]\x1b[0m %s\n", msg);
     }
 }

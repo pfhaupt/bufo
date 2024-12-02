@@ -34,6 +34,7 @@ unsafe func main() {
         mut checker: Checker = newChecker();
         if (!checker.generateBytecode(&mut module)) exit(1);
         if (!checker.verifyBytecode()) exit(1);
+        warning("technically we should codegen now :^)");
     }
     string.drop();
 }

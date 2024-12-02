@@ -6,7 +6,6 @@ struct FnIndex {
         return this._i == 0;
     }
 }
-struct BlockIndex { _i: usize; }
 struct InstrIndex { _i: usize; }
 struct RegIndex {
     _i: usize;
@@ -18,64 +17,117 @@ struct RegIndex {
     }
 }
 
+struct TypeIndex {
+    _i: usize;
+    func toString(&mut this) -> String {
+        warning("Can't really do TypeIndex.toString() yet");
+        if (this._i == 0) return newStringFromStrLit("i64");
+        if (this._i == 1) return newStringFromStrLit("bool");
+        mut s: String = newStringFromStrLit("type-id=");
+        s.pushNumber(this._i);
+        return s;
+    }
+
+    func getSize(&mut this) -> usize {
+        if (this._i == 0) return 8;
+        if (this._i == 1) return 1;
+        todo_with_msg("actually implement TypeIndex.getSize");
+        return types[assertValidType(*this, "TypeIndex.getSize")].getSize();
+    }
+
+    func equals(this, other: TypeIndex) -> bool {
+        // REVIEW: Is this short-circuit valid?
+        if (this._i == other._i) return true;
+        let _t: &mut BCType = &mut types[assertValidType(this, "TypeIndex.equals")];
+        let _o: &mut BCType = &mut types[assertValidType(other, "TypeIndex.equals")];
+        return _t.equals(_o);
+    }
+}
+
 struct NameRegPair {
     name: SubStr;
     reg: RegIndex;
 }
 
+struct BCReg {
+    origin: Span;
+    value: &mut u8;
+    size: usize;
+    typ: TypeIndex;
+
+    func toString(&mut this) -> String {
+        assert(sizeof char == sizeof u8);
+        if (this.size == 0) return newStringFromStrLit("<uninit>");
+        mut s: String = newString();
+        let _t: String = this.typ.toString();
+        s.pushString(&_t);
+        let size: usize = this.typ.getSize();
+        s.pushStr(", raw-value=");
+        for (mut i: usize = 0; i < size; i = i + 1) unsafe {
+            if (i >= 25 && size - i > 0) {
+                s.pushStr(" <and ");
+                s.pushNumber(size - i);
+                s.pushStr(" more...>");
+                break;
+            }
+            s.pushChar(*(this.value + i * sizeof u8) as char);
+        }
+        _t.drop();
+        return s;
+    }
+
+    func isInitialized(&mut this) -> bool {
+        return this.size != 0;
+    }
+}
+
+struct BCType {
+
+    func getSize(&mut this) -> usize {
+        todo_with_msg("BCType.getSize");
+        return 0;
+    }
+
+    func equals(&mut this, other: &mut BCType) -> bool {
+        warning("Can't really do BCTypes.equals() yet");
+        return false;
+    }
+}
+
 struct BCFunction {
     origin: Span;
-    retType: RegIndex;
-    allowedScopes: [FnIndex; 256];
-    scopeLen: usize;
     variables: &mut NameRegPair;
     varLength: usize;
     varCapacity: usize;
-    registers: &mut BCValue;
+    registers: &mut BCReg;
     regLength: usize;
     regCapacity: usize;
     instructions: &mut BCInstr;
     instrLength: usize;
     instrCapacity: usize;
-    blockIndices: &mut InstrIndex;
-    blockLength: usize;
-    blockCapacity: usize;
 
-    func setReturnType(&mut this, ret: RegIndex) {
-        trace("BCFunction.setReturnType");
-        this.retType = ret;
-    }
-    func getReturnType(&mut this) -> RegIndex {
-        trace("BCFunction.getReturnType");
-        return this.retType;
-    }
-    func hasVariable(&mut this, name: SubStr) -> bool {
-        trace("BCFunction.hasVariable");
-        for (mut i: usize = 0; i < this.varLength; i = i + 1) unsafe {
-            debug("-> another check");
-            let pair: NameRegPair = *(this.variables + i * sizeof NameRegPair);
-            if (pair.name.equals(&name)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func createValue(&mut this, val: BCValue) -> RegIndex {
-        trace("BCFunction.createValue");
-        if (this.regLength >= this.regCapacity) unsafe {
-            mut newCap: usize = this.regCapacity * 2;
-            if (newCap == 0) newCap = newCap + 1;
-            this.registers = realloc(this.registers, newCap * sizeof BCValue);
-            assert_with_msg(this.registers != null, "Could not resize registers");
-            this.regCapacity = newCap;
-        }
-        let id: usize = this.regLength;
+    func getVarAtIndex(&mut this, index: VarIndex) -> &mut NameRegPair {
+        trace("BCFunction.getVarAtIndex");
+        assert_with_msg(index._i < this.varLength, "Out of bounds access in BCFunction.getVarAtIndex");
         unsafe {
-            *(this.registers + id * sizeof BCValue) = val;
+            return this.variables + index._i * sizeof NameRegPair;
         }
-        this.regLength = this.regLength + 1;
-        return RegIndex { _i: id };
+    }
+
+    func getInstrAtIndex(&mut this, index: InstrIndex) -> &mut BCInstr {
+        trace("BCFunction.getInstrAtIndex");
+        assert_with_msg(index._i < this.instrLength, "Out of bounds access in BCFunction.getInstrAtIndex");
+        unsafe {
+            return this.instructions + index._i * sizeof BCInstr;
+        }
+    }
+
+    func getRegAtIndex(&mut this, index: RegIndex) -> &mut BCReg {
+        trace("BCFunction.getRegAtIndex");
+        assert_with_msg(index._i < this.regLength, "Out of bounds access in BCFunction.getRegAtIndex");
+        unsafe {
+            return this.registers + index._i * sizeof BCReg;
+        }
     }
 
     func appendInstr(&mut this, instr: BCInstr) {
@@ -94,72 +146,7 @@ struct BCFunction {
         this.instrLength = this.instrLength + 1;
     }
 
-    func buildBinaryOp(&mut this, mustEval: bool, span: Span, lhs: RegIndex, rhs: RegIndex, op: usize) -> RegIndex {
-        trace("BCFunction.buildBinaryOp");
-        let reg: RegIndex = this.createValue(newNoneValue(span));
-        let op: BCInstr = newBinaryOpInstr(mustEval, reg, lhs, rhs, op);
-        this.appendInstr(op);
-        return reg;
-    }
-
-    func buildCall(&mut this, mustEval: bool, span: Span, base: RegIndex, args: &[RegIndex; 8], argCount: usize) -> RegIndex {
-        trace("BCFunction.buildCall");
-        let reg: RegIndex = this.createValue(newNoneValue(span));
-        let call: BCInstr = newCallInstr(mustEval, reg, base, args, argCount);
-        this.appendInstr(call);
-        return reg;
-    }
-
-    func buildReturn(&mut this, val: RegIndex) {
-        trace("BCFunction.buildReturn");
-        let call: BCInstr = newReturnInstr(val);
-        this.appendInstr(call);
-    }
-
-    func buildVerifyIsType(&mut this, span: Span, what: RegIndex) {
-        trace("BCFunction.buildVerifyIsType");
-        let call: BCInstr = newVerifyIsTypeInstr(what);
-        this.appendInstr(call);
-    }
-
-    func buildVerifyMatchesType(&mut this, span: Span, what: RegIndex, shouldBe: RegIndex) {
-        trace("BCFunction.buildVerifyMatchesType");
-        let call: BCInstr = newVerifyMatchesTypeInstr(what, shouldBe);
-        this.appendInstr(call);
-    }
-
-    func buildTypeOf(&mut this, span: Span, what: RegIndex) -> RegIndex {
-        trace("BCFunction.buildTypeOf");
-        let reg: RegIndex = this.createValue(newValueFromType(newNoneType(span)));
-        let call: BCInstr = newTypeOfInstr(reg, what);
-        this.appendInstr(call);
-        return reg;
-    }
-
-    func buildAssert(&mut this, span: Span, what: RegIndex) {
-        trace("BCFunction.buildAssert");
-        let call: BCInstr = newAssertInstr(what);
-        this.appendInstr(call);
-    }
-
-    func constructInteger(&mut this, span: Span, size: RegIndex, signed: RegIndex) -> RegIndex {
-        trace("BCFunction.constructInteger");
-        let reg: RegIndex = this.createValue(newNoneValue(span));
-        let call: BCInstr = newConstructIntegerType(reg, size, signed);
-        this.appendInstr(call);
-        return reg;
-    }
-
-    func buildLoadParam(&mut this, span: Span, param: usize) -> RegIndex {
-        trace("BCFunction.buildLoadParam");
-        let reg: RegIndex = this.createValue(newNoneValue(span));
-        let _p: RegIndex = RegIndex { _i: param };
-        let p: BCInstr = newLoadParamInstr(reg, _p);
-        this.appendInstr(p);
-        return reg;
-    }
-
-    func allocateVariable(&mut this, span: Span, name: SubStr, isConst: bool) -> bool {
+    func allocateVariable(&mut this, name: SubStr, reg: RegIndex) {
         trace("BCFunction.allocateVariable");
         if (this.varLength >= this.varCapacity) unsafe {
             mut newCap: usize = this.varCapacity * 2;
@@ -168,89 +155,100 @@ struct BCFunction {
             assert_with_msg(this.variables != null, "Could not resize variables");
             this.varCapacity = newCap;
         }
-        for (mut vi: usize = 0; vi < this.varLength; vi = vi + 1) unsafe {
-            let pair: NameRegPair = *(this.variables + vi * sizeof NameRegPair);
-            if (pair.name.equals(&name)) {
-                todo_with_msg("redecl");
-            }
-        }
-        let reg: RegIndex = this.createValue(newInvalidValue(span));
-        let entry: NameRegPair = NameRegPair {
-            name: name,
-            reg: reg,
-        };
-        let alloc: BCInstr = newAllocInstr(reg, isConst);
-        this.appendInstr(alloc);
+        let index: usize = this.varLength;
         unsafe {
-            *(this.variables + this.varLength * sizeof NameRegPair) = entry;
+            let entry: NameRegPair = NameRegPair {
+                name: name,
+                reg: reg
+            };
+            *(this.variables + index * sizeof NameRegPair) = entry;
         }
         this.varLength = this.varLength + 1;
-        return true;
     }
 
-    func buildStore(&mut this, span: Span, name: SubStr, value: RegIndex, mustEval: bool) -> bool {
-        trace("BCFunction.buildStore");
-        for (mut i: usize = this.scopeLen - 1; i >= 0; i = i - 1) {
-            let fn: &BCFunction = &functions[this.allowedScopes[i]._i];
-            for (mut vi: usize = 0; vi < fn.varLength; vi = vi + 1) unsafe {
-                let pair: NameRegPair = *(fn.variables + vi * sizeof NameRegPair);
-                if (pair.name.equals(&name)) {
-                    mut store: BCInstr = newStoreInstr(mustEval, pair.reg, value, this.allowedScopes[i]);
-                    this.appendInstr(store);
-                    return true;
-                }
-            }
+    func allocateRegister(&mut this, span: Span) -> RegIndex {
+        trace("BCFunction.allocateRegister");
+        if (this.regLength >= this.regCapacity) unsafe {
+            mut newCap: usize = this.regCapacity * 2;
+            if (newCap == 0) newCap = newCap + 1;
+            this.registers = realloc(this.registers, newCap * sizeof BCReg);
+            assert_with_msg(this.registers != null, "Could not resize registers");
+            this.regCapacity = newCap;
         }
-        return false; // Variable doesn't exist in any possible scope
+        let index: usize = this.regLength;
+        unsafe {
+            mut reg: BCReg = blank;
+            reg.origin = span;
+            *(this.registers + index * sizeof BCReg) = reg;
+        }
+        this.regLength = this.regLength + 1;
+        return RegIndex { _i: index };
     }
-    func buildLoad(&mut this, mustEval: bool, span: Span, name: SubStr, out: &mut RegIndex) -> bool {
+
+    func buildLoad(&mut this, span: Span, name: SubStr, target: &mut RegIndex) -> bool {
         trace("BCFunction.buildLoad");
-        for (mut i: usize = this.scopeLen - 1; i >= 0; i = i - 1) {
-            let fn: &BCFunction = &functions[this.allowedScopes[i]._i];
-            for (mut vi: usize = 0; vi < fn.varLength; vi = vi + 1) unsafe {
-                let pair: NameRegPair = *(fn.variables + vi * sizeof NameRegPair);
-                if (pair.name.equals(&name)) {
-                    let reg: RegIndex = this.createValue(newNoneValue(span));
-                    let load: BCInstr = newLoadInstr(mustEval, reg, pair.reg, this.allowedScopes[i]);
-                    this.appendInstr(load);
-                    *out = reg;
-                    return true;
-                }
+        for (mut i: usize = 0; i < this.varLength; i = i + 1) {
+            let var: &mut NameRegPair = this.getVarAtIndex(VarIndex { _i: i });
+            if (var.name.equals(&name)) {
+                let reg: RegIndex = this.allocateRegister(span);
+                let load: BCInstr = newLoadInstr(span, reg, var.reg);
+                this.appendInstr(load);
+                *target = reg;
+                return true;
             }
         }
         return false;
     }
 
-    func buildMove(&mut this, mustEval: bool, dst: RegIndex, src: RegIndex) {
-        trace("BCFunction.buildMove");
-        let move: BCInstr = newMoveInstr(mustEval, dst, src);
-        this.appendInstr(move);
-    }
-
-    func buildDummy(&mut this) -> InstrIndex {
-        trace("BCFunction.buildDummy");
-        let len: InstrIndex = this.getCurrentInstrIndex();
-        let dummy: BCInstr = newDummyInstr();
-        this.appendInstr(dummy);
-        return len;
-    }
-
-    func replaceInstr(&mut this, index: InstrIndex, other: BCInstr) {
-        assert_with_msg(index._i < this.getCurrentInstrIndex()._i, "Out of bounds replacement of instructions");
-        unsafe {
-            *(this.instructions + index._i * sizeof BCInstr) = other;
+    func buildConstStore(&mut this, span: Span, name: SubStr, value: RegIndex) -> bool {
+        trace("BCFunction.buildConstStore");
+        for (mut i: usize = 0; i < this.varLength; i = i + 1) {
+            let var: &mut NameRegPair = this.getVarAtIndex(VarIndex { _i: i });
+            if (var.name.equals(&name)) {
+                todo_with_msg("redecl");
+                return false;
+            }
         }
+        let var: RegIndex = this.allocateRegister(span);
+        let store: BCInstr = newStoreConstInstr(span, var, value);
+        this.appendInstr(store);
+        this.allocateVariable(name, var);
+        return true;
     }
 
-    func getCurrentInstrIndex(&mut this) -> InstrIndex {
-        return InstrIndex { _i: this.instrLength };
+    func buildNumberLiteral(&mut this, span: Span, val: i64) -> RegIndex {
+        trace("BCFunction.buildNumberLiteral");
+        let index: RegIndex = this.allocateRegister(span);
+        let n: BCInstr = newLoadNumberInstr(span, index, val);
+        this.appendInstr(n);
+        return index;
+    }
+
+    func buildBinaryOp(&mut this, span: Span, lhs: RegIndex, rhs: RegIndex, op: usize) -> RegIndex {
+        trace("BCFunction.buildBinaryOp");
+        let dst: RegIndex = this.allocateRegister(span);
+        mut binop: BCInstr = blank;
+        if (op == BINARY_OP_PLUS) binop = newAddInstr(span, dst, lhs, rhs);
+        else if (op == BINARY_OP_EQUAL) binop = newEqualInstr(span, dst, lhs, rhs);
+        else if (op == BINARY_OP_NOT_EQUAL) binop = newNotEqualInstr(span, dst, lhs, rhs);
+        else todo_with_msg("build binary op");
+        this.appendInstr(binop);
+        return dst;
+    }
+
+    func buildConstAssert(&mut this, span: Span, what: RegIndex) -> RegIndex {
+        trace("BCFunction.buildConstAssert");
+        let dst: RegIndex = this.allocateRegister(span);
+        let assert: BCInstr = newConstAssertInstr(span, dst, what);
+        this.appendInstr(assert);
+        return dst;
     }
 
     func dump(&mut this) {
         unsafe {
             printf(" --- REGISTERS ---\n");
             for (mut i: usize = 0; i < this.regLength; i = i + 1) {
-                let _reg: String = (*(this.registers + i * sizeof BCValue)).toString();
+                let _reg: String = (*(this.registers + i * sizeof BCReg)).toString();
                 printf(" @%llu: %.*s\n", i, _reg.len(), _reg.chars());
                 _reg.drop();
             }
@@ -264,13 +262,10 @@ struct BCFunction {
     }
 }
 
-func newEmptyFunction(span: Span, scopes: [FnIndex; 256], scopeLen: usize) -> BCFunction {
+func newEmptyFunction(span: Span) -> BCFunction {
     unsafe {
         return BCFunction {
             origin: span,
-            allowedScopes: scopes,
-            scopeLen: scopeLen,
-            retType: blank,
             variables: null,
             varLength: 0,
             varCapacity: 0,
@@ -280,74 +275,34 @@ func newEmptyFunction(span: Span, scopes: [FnIndex; 256], scopeLen: usize) -> BC
             instructions: null,
             instrLength: 0,
             instrCapacity: 0,
-            blockIndices: null,
-            blockLength: 0,
-            blockCapacity: 0
         };
     }
 }
 
 comptime INSTR_KIND_INVALID: usize = 0;
-comptime INSTR_KIND_ALLOC: usize = 1;
-comptime INSTR_KIND_STORE: usize = 2;
+comptime INSTR_KIND_LOAD_NUMBER: usize = 1;
+comptime INSTR_KIND_STORE_CONST: usize = 2;
 comptime INSTR_KIND_LOAD: usize = 3;
-comptime INSTR_KIND_LOAD_PARAM: usize = 4;
-comptime INSTR_KIND_MOVE: usize = 5;
-comptime INSTR_KIND_CALL: usize = 6;
-comptime INSTR_KIND_RETURN: usize = 7;
-comptime INSTR_KIND_VERIFY_MATCHES_TYPE: usize = 8;
-comptime INSTR_KIND_VERIFY_IS_TYPE: usize = 9;
-comptime INSTR_KIND_CONSTRUCT_INT_TYPE: usize = 10;
-comptime INSTR_KIND_BINARY_OP: usize = 11;
-comptime INSTR_KIND_TYPEOF: usize = 12;
-comptime INSTR_KIND_ASSERT: usize = 13;
-comptime INSTR_KIND_BR: usize = 14;
-comptime INSTR_KIND_BRCOND: usize = 15;
-struct BCInstrCallExtra {
-    args: [RegIndex; 8];
-    argCount: usize;
-}
-struct BCInstrConstrIntExtra {
-    size: RegIndex;
-    signed: RegIndex;
-}
-struct BCInstrBinaryOpExtra {
-    op: usize;
-    rhs: RegIndex;
-}
-struct BCInstrLoadStoreExtra {
-    scope: FnIndex;
-}
-struct BCInstrCondExtra {
-    cond: RegIndex;
-}
+comptime INSTR_KIND_ADD: usize = 4;
+comptime INSTR_KIND_EQUAL: usize = 5;
+comptime INSTR_KIND_NOT_EQUAL: usize = 6;
+comptime INSTR_KIND_CONST_ASSERT: usize = 7;
 struct BCInstr {
+    origin: Span;
     kind: usize;
-    mustEval: bool;
     dst: RegIndex;
     src: RegIndex;
-    extra: Any;
+    // FIXME: Maybe it's better to not waste this memory for any non-binary instruction
+    op1: RegIndex;
 
     func toString(&mut this) -> String {
         mut ret: String = blank;
         if (this.kind == INSTR_KIND_INVALID) {
             ret = newStringFromStrLit("<invalid>");
-        } else if (this.kind == INSTR_KIND_ALLOC) {
-            let _dst: String = this.dst.toString();
-            mut s: String = newStringFromStrLit("Alloc const=");
-            if (this.src._i == 1) s.pushStr("true ");
-            else if (this.src._i == 0) s.pushStr("false ");
-            else assert_with_msg(false, "Alloc expected either 0 or 1");
-            s.pushString(&_dst);
-            _dst.drop();
-            ret = s;
-        } else if (this.kind == INSTR_KIND_STORE) unsafe {
-            let extra: &mut BCInstrLoadStoreExtra = this.extra;
+        } else if (this.kind == INSTR_KIND_STORE_CONST) {
             let _dst: String = this.dst.toString();
             let _src: String = this.src.toString();
-            mut s: String = newStringFromStrLit("Store(scope=");
-            s.pushNumber(extra.scope._i);
-            s.pushStr(") ");
+            mut s: String = newStringFromStrLit("StoreConst ");
             s.pushString(&_dst);
             s.pushStr(", ");
             s.pushString(&_src);
@@ -355,546 +310,153 @@ struct BCInstr {
             _dst.drop();
             ret = s;
         } else if (this.kind == INSTR_KIND_LOAD) {
-            let extra: &mut BCInstrLoadStoreExtra = this.extra;
-            let _dst: String = this.dst.toString();
-            let _src: String = this.src.toString();
-            mut s: String = newStringFromStrLit("Load(scope=");
-            s.pushNumber(extra.scope._i);
-            s.pushStr(") ");
-            s.pushString(&_dst);
-            s.pushStr(", ");
-            s.pushString(&_src);
-            _src.drop();
-            _dst.drop();
-            ret = s;
-        } else if (this.kind == INSTR_KIND_LOAD_PARAM) {
-            let _dst: String = this.dst.toString();
-            mut s: String = newString();
-            s.pushString(&_dst);
-            s.pushStr(" = LoadParam ");
-            s.pushNumber(this.src._i);
-            _dst.drop();
-            ret = s;
-        } else if (this.kind == INSTR_KIND_MOVE) {
             let _dst: String = this.dst.toString();
             let _src: String = this.src.toString();
             mut s: String = newString();
             s.pushString(&_dst);
-            s.pushStr(" = ");
+            s.pushStr(" = Load ");
             s.pushString(&_src);
             _src.drop();
             _dst.drop();
             ret = s;
-        } else if (this.kind == INSTR_KIND_BINARY_OP) unsafe {
-            let extra: &mut BCInstrBinaryOpExtra = this.extra;
-            let _dst: String = this.dst.toString();
-            let _lhs: String = this.src.toString();
-            let _rhs: String = extra.rhs.toString();
-            let _op: usize = extra.op;
+        } else if (this.kind == INSTR_KIND_LOAD_NUMBER) unsafe {
+            let n: i64 = *(&this.src._i as &i64);
             mut s: String = newString();
+            let _dst: String = this.dst.toString();
             s.pushString(&_dst);
-            s.pushStr(" = ");
-            if (_op == BINARY_OP_DOT) todo_with_msg("BINARY_OP_DOT");
-            else if (_op == BINARY_OP_PAREN) todo_with_msg("BINARY_OP_PAREN");
-            else if (_op == BINARY_OP_PLUS) s.pushStr("Add ");
-            else if (_op == BINARY_OP_MINUS) s.pushStr("Sub ");
-            else if (_op == BINARY_OP_MULT) s.pushStr("Mul ");
-            else if (_op == BINARY_OP_DIV) todo_with_msg("BINARY_OP_DIV");
-            else if (_op == BINARY_OP_ASSIGN) todo_with_msg("BINARY_OP_ASSIGN");
-            else if (_op == BINARY_OP_EQUAL) s.pushStr("CmpEq ");
-            else if (_op == BINARY_OP_NOT_EQUAL) s.pushStr("CmpNeq ");
-            else assert_with_msg(false, "exhaustive handling of binary ops");
-            s.pushString(&_lhs);
-            s.pushStr(", ");
-            s.pushString(&_rhs);
-            _rhs.drop();
-            _lhs.drop();
             _dst.drop();
+            s.pushStr(" = LoadNumber ");
+            s.pushI64(n);
             ret = s;
-        } else if (this.kind == INSTR_KIND_CALL) unsafe {
-            let extra: &mut BCInstrCallExtra = this.extra;
+        } else if (this.kind == INSTR_KIND_ADD) {
+            mut s: String = newString();
             let _dst: String = this.dst.toString();
             let _src: String = this.src.toString();
-            mut s: String = newString();
+            let _op1: String = this.op1.toString();
             s.pushString(&_dst);
-            s.pushStr(" = Call ");
+            s.pushStr(" = Add ");
             s.pushString(&_src);
-            for (mut i: usize = 0; i < extra.argCount; i = i + 1) {
-                s.pushStr(", ");
-                let _arg: String = extra.args[i].toString();
-                s.pushString(&_arg);
-                _arg.drop();
-            }
+            s.pushStr(", ");
+            s.pushString(&_op1);
+            _dst.drop();
             _src.drop();
-            _dst.drop();
+            _op1.drop();
             ret = s;
-        } else if (this.kind == INSTR_KIND_VERIFY_MATCHES_TYPE) {
-            let _shouldBe: String = this.dst.toString();
-            let _what: String = this.src.toString();
-            mut s: String = newStringFromStrLit("VerifyMatchesType ");
-            s.pushString(&_what);
+        } else if (this.kind == INSTR_KIND_EQUAL) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            let _src: String = this.src.toString();
+            let _op1: String = this.op1.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = Equal ");
+            s.pushString(&_src);
             s.pushStr(", ");
-            s.pushString(&_shouldBe);
-            _what.drop();
-            _shouldBe.drop();
+            s.pushString(&_op1);
+            _dst.drop();
+            _src.drop();
+            _op1.drop();
             ret = s;
-        } else if (this.kind == INSTR_KIND_VERIFY_IS_TYPE) {
-            let _what: String = this.src.toString();
-            mut s: String = newStringFromStrLit("VerifyIsType ");
-            s.pushString(&_what);
-            _what.drop();
+        } else if (this.kind == INSTR_KIND_NOT_EQUAL) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            let _src: String = this.src.toString();
+            let _op1: String = this.op1.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = NotEqual ");
+            s.pushString(&_src);
+            s.pushStr(", ");
+            s.pushString(&_op1);
+            _dst.drop();
+            _src.drop();
+            _op1.drop();
             ret = s;
-        } else if (this.kind == INSTR_KIND_ASSERT) {
-            let _what: String = this.src.toString();
-            mut s: String = newStringFromStrLit("Assert ");
-            s.pushString(&_what);
-            _what.drop();
-            ret = s;
-        } else if (this.kind == INSTR_KIND_RETURN) {
-            let _what: String = this.src.toString();
-            mut s: String = newStringFromStrLit("Ret ");
-            s.pushString(&_what);
-            _what.drop();
-            ret = s;
-        } else if (this.kind == INSTR_KIND_BR) {
-            mut s: String = newStringFromStrLit("Br ");
-            s.pushNumber(this.dst._i);
-            ret = s;
-        } else if (this.kind == INSTR_KIND_BRCOND) unsafe {
-            let extra: &mut BCInstrCondExtra = this.extra;
-            mut s: String = newStringFromStrLit("BrCond cond=");
-            let _c: String = extra.cond.toString();
-            s.pushString(&_c);
-            s.pushStr(", true=");
-            s.pushNumber(this.dst._i);
-            s.pushStr(", false=");
-            s.pushNumber(this.src._i);
-            _c.drop();
-            ret = s;
-        } else if (this.kind == INSTR_KIND_TYPEOF) {
+        } else if (this.kind == INSTR_KIND_CONST_ASSERT) {
+            mut s: String = newString();
             let _dst: String = this.dst.toString();
             let _what: String = this.src.toString();
-            mut s: String = newString();
             s.pushString(&_dst);
-            s.pushStr(" = TypeOf ");
+            s.pushStr(" = ConstAssert ");
             s.pushString(&_what);
+            _dst.drop();
             _what.drop();
-            _dst.drop();
-            ret = s;
-        } else if (this.kind == INSTR_KIND_CONSTRUCT_INT_TYPE) unsafe {
-            let extra: &mut BCInstrConstrIntExtra = this.extra;
-            let _dst: String = this.dst.toString();
-            let _size: String = extra.size.toString();
-            let _signed: String = extra.signed.toString();
-            mut s: String = newString();
-            s.pushString(&_dst);
-            s.pushStr(" = ConstructInteger ");
-            s.pushString(&_size);
-            s.pushStr(", ");
-            s.pushString(&_signed);
-            _signed.drop();
-            _size.drop();
-            _dst.drop();
             ret = s;
         } else unsafe {
             printf("%llu\n", this.kind);
             assert_with_msg(false, "exhaustive handling in BCInstr.toString");
             ret = blank;
         }
-        if (this.mustEval) {
-            mut s: String = newStringFromStrLit("\x1b[32m");
-            s.pushString(&ret);
-            s.pushStr("\x1b[37m");
-            return s;
-        }
         return ret;
     }
 }
 
-func newLoadParamInstr(dst: RegIndex, param: RegIndex) -> BCInstr {
+func newLoadNumberInstr(span: Span, dst: RegIndex, val: i64) -> BCInstr {
     unsafe {
         return BCInstr {
-            kind: INSTR_KIND_LOAD_PARAM,
-            mustEval: false, // REVIEW: Doesn't really matter?
+            origin: span,
+            kind: INSTR_KIND_LOAD_NUMBER,
             dst: dst,
-            src: param,
-            extra: null
+            src: RegIndex { _i: *(&val as &usize) },
+            op1: blank,
         };
     }
 }
 
-func newAllocInstr(dst: RegIndex, isConst: bool) -> BCInstr {
-    unsafe {
-        mut id: usize = 0;
-        if (isConst) id = 1;
-        return BCInstr {
-            kind: INSTR_KIND_ALLOC,
-            mustEval: isConst, // REVIEW: Doesn't really matter?
-            dst: dst,
-            src: RegIndex { _i : id },
-            extra: null
-        };
-    }
-}
-
-func newStoreInstr(mustEval: bool, dst: RegIndex, var: RegIndex, scope: FnIndex) -> BCInstr {
-    unsafe {
-        let m: Any = calloc(1, sizeof BCInstrLoadStoreExtra);
-        assert_with_msg(m != null, "Could not allocate memory for store instr");
-        let extra: &mut BCInstrLoadStoreExtra = &mut *m;
-        *extra = BCInstrLoadStoreExtra {
-            scope: scope
-        };
-        return BCInstr {
-            kind: INSTR_KIND_STORE,
-            mustEval: mustEval,
-            dst: dst,
-            src: var,
-            extra: m
-        };
-    }
-}
-
-func newLoadInstr(mustEval: bool, dst: RegIndex, var: RegIndex, scope: FnIndex) -> BCInstr {
-    unsafe {
-        let m: Any = calloc(1, sizeof BCInstrLoadStoreExtra);
-        assert_with_msg(m != null, "Could not allocate memory for load instr");
-        let extra: &mut BCInstrLoadStoreExtra = &mut *m;
-        *extra = BCInstrLoadStoreExtra {
-            scope: scope
-        };
-        return BCInstr {
-            kind: INSTR_KIND_LOAD,
-            mustEval: mustEval,
-            dst: dst,
-            src: var,
-            extra: m
-        };
-    }
-}
-
-func newMoveInstr(mustEval: bool, dst: RegIndex, src: RegIndex) -> BCInstr {
-    unsafe {
-        return BCInstr {
-            kind: INSTR_KIND_MOVE,
-            mustEval: mustEval,
-            dst: dst,
-            src: src,
-            extra: null
-        };
-    }
-}
-
-func newConstructIntegerType(dst: RegIndex, size: RegIndex, signed: RegIndex) -> BCInstr {
-    unsafe {
-        let m: Any = calloc(1, sizeof BCInstrConstrIntExtra);
-        assert_with_msg(m != null, "Could not allocate memory for constructInteger instr");
-        let extra: &mut BCInstrConstrIntExtra = &mut *m;
-        *extra = BCInstrConstrIntExtra {
-            size: size,
-            signed: signed,
-        };
-        return BCInstr {
-            kind: INSTR_KIND_CONSTRUCT_INT_TYPE,
-            mustEval: true,
-            dst: dst,
-            src: blank,
-            extra: m
-        };
-    }
-}
-
-func newVerifyIsTypeInstr(what: RegIndex) -> BCInstr {
-    unsafe {
-        return BCInstr {
-            kind: INSTR_KIND_VERIFY_IS_TYPE,
-            mustEval: true,
-            dst: blank,
-            src: what,
-            extra: null
-        };
-    }
-}
-
-func newVerifyMatchesTypeInstr(what: RegIndex, shouldBe: RegIndex) -> BCInstr {
-    unsafe {
-        return BCInstr {
-            kind: INSTR_KIND_VERIFY_MATCHES_TYPE,
-            mustEval: true,
-            dst: shouldBe,
-            src: what,
-            extra: null
-        };
-    }
-}
-
-func newTypeOfInstr(dst: RegIndex, what: RegIndex) -> BCInstr {
-    unsafe {
-        return BCInstr {
-            kind: INSTR_KIND_TYPEOF,
-            mustEval: true,
-            dst: dst,
-            src: what,
-            extra: null
-        };
-    }
-}
-
-func newAssertInstr(what: RegIndex) -> BCInstr {
-    unsafe {
-        return BCInstr {
-            kind: INSTR_KIND_ASSERT,
-            mustEval: true,
-            dst: blank,
-            src: what,
-            extra: null
-        };
-    }
-}
-
-func newBinaryOpInstr(mustEval: bool, dst: RegIndex, lhs: RegIndex, rhs: RegIndex, op: usize) -> BCInstr {
-    unsafe {
-        let m: Any = calloc(1, sizeof BCInstrBinaryOpExtra);
-        assert_with_msg(m != null, "Could not allocate memory for binary op instr");
-        let extra: &mut BCInstrBinaryOpExtra = &mut *m;
-        *extra = BCInstrBinaryOpExtra {
-            op: op,
-            rhs: rhs,
-        };
-        return BCInstr {
-            kind: INSTR_KIND_BINARY_OP,
-            mustEval: mustEval,
-            dst: dst,
-            src: lhs,
-            extra: extra
-        };
-    }
-}
-
-func newCallInstr(mustEval: bool, dst: RegIndex, base: RegIndex, args: &[RegIndex; 8], argCount: usize) -> BCInstr {
-    unsafe {
-        let m: Any = calloc(1, sizeof BCInstrCallExtra);
-        assert_with_msg(m != null, "Could not allocate memory for call instr");
-        let extra: &mut BCInstrCallExtra = &mut *m;
-        *extra = BCInstrCallExtra {
-            args: *args,
-            argCount: argCount
-        };
-        return BCInstr {
-            kind: INSTR_KIND_CALL,
-            mustEval: mustEval,
-            dst: dst,
-            src: base,
-            extra: extra
-        };
-    }
-}
-
-func newReturnInstr(val: RegIndex) -> BCInstr {
-    unsafe {
-        return BCInstr {
-            kind: INSTR_KIND_RETURN,
-            mustEval: false, // REVIEW: Doesn't really matter?
-            dst: blank,
-            src: val,
-            extra: null
-        };
-    }
-}
-
-func newDummyInstr() -> BCInstr {
-    return blank;
-}
-
-func newBrAbsolute(mustEval: bool, instr: InstrIndex) -> BCInstr {
-    unsafe {
-        return BCInstr {
-            kind: INSTR_KIND_BR,
-            mustEval: mustEval,
-            dst: RegIndex { _i: instr._i },
-            src: blank,
-            extra: null
-        };
-    }
-}
-
-func newBrCondAbsolute(mustEval: bool, cond: RegIndex, ifInstr: InstrIndex, elseInstr: InstrIndex) -> BCInstr {
-    unsafe {
-        let m: Any = calloc(1, sizeof BCInstrCondExtra);
-        assert_with_msg(m != null, "Could not allocate memory for br cond");
-        let extra: &mut BCInstrCondExtra = &mut *m;
-        *extra = BCInstrCondExtra {
-            cond: cond
-        };
-        return BCInstr {
-            kind: INSTR_KIND_BRCOND,
-            mustEval: mustEval,
-            dst: RegIndex { _i: ifInstr._i },
-            src: RegIndex { _i: elseInstr._i },
-            extra: m
-        };
-    }
-}
-
-comptime TYPE_KIND_INVALID: usize = 0;
-comptime TYPE_KIND_ANYTYPE: usize = 1;
-comptime TYPE_KIND_BOOLEAN: usize = 2;
-comptime TYPE_KIND_NONE: usize = 3;
-comptime TYPE_KIND_INTEGER: usize = 4;
-struct TypeInfoInt {
-    size: RegIndex;
-    signed: RegIndex;
-}
-struct BCType {
-    origin: Span;
-    kind: usize;
-    int: TypeInfoInt;
-
-    func toString(&mut this) -> String {
-        if (this.kind == TYPE_KIND_INVALID) {
-            return newStringFromStrLit("<invalid>");
-        } else if (this.kind == TYPE_KIND_ANYTYPE) {
-            return newStringFromStrLit("type");
-        } else if (this.kind == TYPE_KIND_BOOLEAN) {
-            return newStringFromStrLit("boolean");
-        } else if (this.kind == TYPE_KIND_NONE) {
-            return newStringFromStrLit("none");
-        } else if (this.kind == TYPE_KIND_INTEGER) {
-            return newStringFromStrLit("integer");
-        } else {
-            assert_with_msg(false, "exhaustive handling in BCType.toString");
-            return blank;
-        }
-    }
-}
-
-func newNoneType(span: Span) -> BCType {
-    return BCType {
+func newStoreConstInstr(span: Span, dst: RegIndex, src: RegIndex) -> BCInstr {
+    return BCInstr {
         origin: span,
-        kind: TYPE_KIND_NONE,
-        int: blank,
+        kind: INSTR_KIND_STORE_CONST,
+        dst: dst,
+        src: src,
+        op1: blank,
     };
 }
 
-func newIntType(span: Span, size: RegIndex, signed: RegIndex) -> BCType {
-    return BCType {
+func newLoadInstr(span: Span, dst: RegIndex, src: RegIndex) -> BCInstr {
+    return BCInstr {
         origin: span,
-        kind: TYPE_KIND_INTEGER,
-        int: TypeInfoInt {
-            size: size,
-            signed: signed
-        }
+        kind: INSTR_KIND_LOAD,
+        dst: dst,
+        src: src,
+        op1: blank,
     };
 }
 
-func newBoolType(span: Span) -> BCType {
-    return BCType {
+func newAddInstr(span: Span, dst: RegIndex, lhs: RegIndex, rhs: RegIndex) -> BCInstr {
+    return BCInstr {
         origin: span,
-        kind: TYPE_KIND_BOOLEAN,
-        int: blank,
+        kind: INSTR_KIND_ADD,
+        dst: dst,
+        src: lhs,
+        op1: rhs
     };
 }
 
-func newTypeType(span: Span) -> BCType {
-    return BCType {
+func newEqualInstr(span: Span, dst: RegIndex, lhs: RegIndex, rhs: RegIndex) -> BCInstr {
+    return BCInstr {
         origin: span,
-        kind: TYPE_KIND_ANYTYPE,
-        int: blank,
+        kind: INSTR_KIND_EQUAL,
+        dst: dst,
+        src: lhs,
+        op1: rhs
     };
 }
 
-comptime VALUE_KIND_INVALID: usize = 0;
-comptime VALUE_KIND_TYPE: usize = 1;
-comptime VALUE_KIND_INTEGER: usize = 2;
-comptime VALUE_KIND_NONE: usize = 3;
-comptime VALUE_KIND_BOOLEAN: usize = 4;
-comptime VALUE_KIND_FUNC: usize = 5;
-struct BCValue {
-    origin: Span;
-    checked: bool;
-    kind: usize;
-    typ: BCType;
-    int: i64;
-    boolean: bool;
-    fn: FnIndex;
-
-    func toString(&mut this) -> String {
-        if (this.kind == VALUE_KIND_INVALID) {
-            return newStringFromStrLit("<invalid>");
-        } else if (this.kind == VALUE_KIND_TYPE) {
-            mut s: String = newStringFromStrLit("type=");
-            let _t: String = this.typ.toString();
-            s.pushString(&_t);
-            _t.drop();
-            return s;
-        } else if (this.kind == VALUE_KIND_INTEGER) {
-            mut s: String = newStringFromStrLit("integer=");
-            s.pushI64(this.int);
-            return s;
-        } else if (this.kind == VALUE_KIND_FUNC) {
-            mut s: String = newStringFromStrLit("fnIndex=");
-            s.pushNumber(this.fn._i);
-            return s;
-        } else if (this.kind == VALUE_KIND_NONE) {
-            return newStringFromStrLit("<none>");
-        } else if (this.kind == VALUE_KIND_BOOLEAN) {
-            mut s: String = newStringFromStrLit("boolean=");
-            if (this.boolean) s.pushStr("true");
-            else s.pushStr("false");
-            return s;
-        } else {
-            assert_with_msg(false, "exhaustive handling in BCValue.toString");
-            return blank;
-        }
-    }
-}
-
-func newFuncValue(span: Span, index: FnIndex) -> BCValue {
-    mut v: BCValue = newUncheckedValue(span);
-    v.kind = VALUE_KIND_FUNC;
-    v.fn = index;
-    return v;
-}
-
-func newNoneValue(span: Span) -> BCValue {
-    mut v: BCValue = newUncheckedValue(span);
-    v.kind = VALUE_KIND_NONE;
-    return v;
-}
-
-func newInvalidValue(span: Span) -> BCValue {
-    return newUncheckedValue(span);
-}
-
-func newBooleanValue(span: Span, val: bool) -> BCValue {
-    mut v: BCValue = newUncheckedValue(span);
-    v.kind = VALUE_KIND_BOOLEAN;
-    v.boolean = val;
-    return v;
-}
-
-func newIntegerValue(span: Span, int: i64) -> BCValue {
-    mut v: BCValue = newUncheckedValue(span);
-    v.kind = VALUE_KIND_INTEGER;
-    v.int = int;
-    return v;
-}
-
-func newValueFromType(t: BCType) -> BCValue {
-    mut v: BCValue = newUncheckedValue(t.origin);
-    v.kind = VALUE_KIND_TYPE;
-    v.typ = t;
-    return v;
-}
-
-func newUncheckedValue(span: Span) -> BCValue {
-    return BCValue {
+func newNotEqualInstr(span: Span, dst: RegIndex, lhs: RegIndex, rhs: RegIndex) -> BCInstr {
+    return BCInstr {
         origin: span,
-        checked: false,
-        kind: VALUE_KIND_INVALID,
-        typ: blank,
-        int: -1,
-        boolean: false,
-        fn: blank,
+        kind: INSTR_KIND_NOT_EQUAL,
+        dst: dst,
+        src: lhs,
+        op1: rhs
+    };
+}
+
+func newConstAssertInstr(span: Span, dst: RegIndex, what: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_CONST_ASSERT,
+        dst: dst,
+        src: what,
+        op1: blank
     };
 }

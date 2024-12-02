@@ -13,6 +13,7 @@ unsafe extern calloc(num: usize, size: usize) -> Any;
 unsafe extern realloc(ptr: Any, new_size: usize) -> Any;
 unsafe extern free(ptr: Any);
 unsafe extern memcpy(dest: Any, src: Any, count: usize) -> Any;
+unsafe extern memcmp(lhs: Any, rhs: Any, count: usize) -> i32;
 
 // File IO
 unsafe extern fopen(filename: &char, mode: &char) -> Any;

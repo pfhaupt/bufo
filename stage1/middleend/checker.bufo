@@ -5,6 +5,27 @@ import "stage1/middleend/builtins.bufo";
 // 640.000 functions should be enough for now
 // NOTE: Index 0 is reserved for the global scope!
 mut functions: [BCFunction; 640000] = blank;
+mut funcCount: usize = 0;
+func assertValidFunction(currFn: FnIndex, what: &char) -> usize {
+    trace("assertValidFunction");
+    let index: usize = currFn._i;
+    assert_with_msg(index < funcCount, what);
+    return index;
+}
+
+// 640.000 Typedefs should be enough for now
+// FIXME: A lot of reservations are going on
+// REVIEW: How useful is @integer() and @boolean() and stuff like that?
+// NOTE: Index 0 is reserved for integer literals!
+// NOTE: Index 1 is reserved for booleans!
+mut types: [BCType; 640000] = blank;
+mut typeCount: usize = 2;
+func assertValidType(ty: TypeIndex, what: &char) -> usize {
+    trace("assertValidType");
+    let index: usize = ty._i;
+    assert_with_msg(index < typeCount, what);
+    return index;
+}
 
 struct NameVarIndexPair {
     name: SubStr;
@@ -59,8 +80,17 @@ struct GlobalScope {
             assert_with_msg(this.variables != null, "Could not resize variables");
             this.varCapacity = newCap;
         }
-        if (this.checkExisting(decl)) {
-            debug("todo: report error duplicate global var");
+        if (this.checkExisting(decl)) unsafe {
+            let entry: &mut GlobalEntry = this.getVariableByName(decl.name.content);
+            assert(entry != null);
+            let stderr: Any = fdopen(2, "a");
+            let loc: String = decl.span.toString();
+            let oLoc: String = entry.node.span.toString();
+            let name: String = decl.name.toString();
+            fprintf(stderr, "%s: %s: Redeclaration of global variable `%s`.\n%s: %s: Variable already declared here.\n", loc.chars(), ERR_STR, name.chars(), oLoc.chars(), NOTE_STR);
+            loc.drop();
+            oLoc.drop();
+            name.drop();
             return false;
         }
         unsafe {
@@ -76,18 +106,229 @@ struct GlobalScope {
     }
 }
 
+mut interpStack: [u8; 32000000] = blank;
+struct BCInterp {
+    stackPtr: &mut u8;
+
+    func typeCheckBCLoadNumber(&mut this, fn: &mut BCFunction, loadNumber: &mut BCInstr) -> bool {
+        trace("BCInterp.typeCheckBCLoadNumber");
+        assert(loadNumber.kind == INSTR_KIND_LOAD_NUMBER);
+        let dst: RegIndex = loadNumber.dst;
+        let reg: &mut BCReg = fn.getRegAtIndex(dst);
+        if (reg.isInitialized()) {
+            todo_with_msg("impossible: initialized register");
+        }
+        (*reg).value = this.stackPtr;
+        (*reg).size = sizeof i64;
+        // FIXME: Where do we actually store typedefs? Idk for now
+        //        i64 *must* be the first type we add, or this index is invalid
+        (*reg).typ = TypeIndex { _i: 0 };
+        unsafe {
+            *(this.stackPtr as &mut i64) = *(&loadNumber.src._i as &i64);
+            this.stackPtr = this.stackPtr + sizeof i64;
+        }
+        return true;
+    }
+
+    func typeCheckBCStoreConst(&mut this, fn: &mut BCFunction, storeConst: &mut BCInstr) -> bool {
+        trace("BCInterp.typeCheckBCStoreConst");
+        assert(storeConst.kind == INSTR_KIND_STORE_CONST);
+        let dst: RegIndex = storeConst.dst;
+        let src: RegIndex = storeConst.src;
+        let dstReg: &mut BCReg = fn.getRegAtIndex(dst);
+        let srcReg: &mut BCReg = fn.getRegAtIndex(src);
+        assert_with_msg(srcReg.isInitialized(), "expected valid src in StoreConst");
+        if (dstReg.isInitialized()) {
+            todo_with_msg("report error: const var is initialized");
+        }
+        (*dstReg).value = this.stackPtr;
+        (*dstReg).size = srcReg.size;
+        (*dstReg).typ = srcReg.typ;
+        unsafe {
+            memcpy(dstReg.value, srcReg.value, srcReg.size);
+            this.stackPtr = this.stackPtr + srcReg.size;
+        }
+        return true;
+    }
+
+    func typeCheckBCLoad(&mut this, fn: &mut BCFunction, load: &mut BCInstr) -> bool {
+        trace("BCInterp.typeCheckBCLoad");
+        assert(load.kind == INSTR_KIND_LOAD);
+        let dst: RegIndex = load.dst;
+        let src: RegIndex = load.src;
+        let dstReg: &mut BCReg = fn.getRegAtIndex(dst);
+        let srcReg: &mut BCReg = fn.getRegAtIndex(src);
+        assert_with_msg(srcReg.isInitialized(), "expected valid src in Load");
+        if (dstReg.isInitialized()) {
+            todo_with_msg("impossible: initialized register");
+        }
+        (*dstReg).value = this.stackPtr;
+        (*dstReg).size = srcReg.size;
+        (*dstReg).typ = srcReg.typ;
+        unsafe {
+            memcpy(dstReg.value, srcReg.value, srcReg.size);
+            this.stackPtr = this.stackPtr + srcReg.size;
+        }
+        return true;
+    }
+
+    func typeCheckBCAdd(&mut this, fn: &mut BCFunction, add: &mut BCInstr) -> bool {
+        trace("BCInterp.typeCheckBCAdd");
+        assert(add.kind == INSTR_KIND_ADD);
+        let dst: RegIndex = add.dst;
+        let lhs: RegIndex = add.src;
+        let rhs: RegIndex = add.op1;
+        let dstReg: &mut BCReg = fn.getRegAtIndex(dst);
+        let lhsReg: &mut BCReg = fn.getRegAtIndex(lhs);
+        let rhsReg: &mut BCReg = fn.getRegAtIndex(rhs);
+        assert_with_msg(lhsReg.isInitialized(), "expected valid lhs in Add");
+        assert_with_msg(rhsReg.isInitialized(), "expected valid rhs in Add");
+        if (!lhsReg.typ.equals(rhsReg.typ)) unsafe {
+            let stderr: Any = fdopen(2, "a");
+            let loc: String = add.origin.toString();
+            let lhsLoc: String = lhsReg.origin.toString();
+            let rhsLoc: String = rhsReg.origin.toString();
+            let lhsTyp: String = lhsReg.typ.toString();
+            let rhsTyp: String = rhsReg.typ.toString();
+            fprintf(stderr, "%s: %s: Type mismatch in binary addition!\n%s: %s: LHS has type %s.\n%s: %s: RHS has type %s.\n",
+                loc.chars(), ERR_STR,
+                lhsLoc.chars(), NOTE_STR, lhsTyp.chars(),
+                rhsLoc.chars(), NOTE_STR, rhsTyp.chars()
+            );
+            loc.drop();
+            return false;
+        }
+        assert(lhsReg.size == rhsReg.size);
+        if (lhsReg.typ._i == 0) {
+            assert(lhsReg.size == 8);
+            (*dstReg).value = this.stackPtr;
+            (*dstReg).size = lhsReg.size;
+            (*dstReg).typ = lhsReg.typ;
+            unsafe {
+                let lhs: i64 = *(lhsReg.value as &i64);
+                let rhs: i64 = *(rhsReg.value as &i64);
+                let sum: i64 = lhs + rhs;
+                memcpy(dstReg.value, &sum, lhsReg.size);
+                this.stackPtr = this.stackPtr + lhsReg.size;
+            }
+            return true;
+        } else {
+            todo_with_msg("add for non-literals");
+        }
+        return false; // unreachable
+    }
+
+    func typeCheckBCEqual(&mut this, fn: &mut BCFunction, equal: &mut BCInstr) -> bool {
+        trace("BCInterp.typeCheckBCEqual");
+        assert(equal.kind == INSTR_KIND_EQUAL || equal.kind == INSTR_KIND_NOT_EQUAL);
+        let not: bool = equal.kind == INSTR_KIND_NOT_EQUAL;
+        let dst: RegIndex = equal.dst;
+        let lhs: RegIndex = equal.src;
+        let rhs: RegIndex = equal.op1;
+        let dstReg: &mut BCReg = fn.getRegAtIndex(dst);
+        let lhsReg: &mut BCReg = fn.getRegAtIndex(lhs);
+        let rhsReg: &mut BCReg = fn.getRegAtIndex(rhs);
+        assert_with_msg(lhsReg.isInitialized(), "expected valid lhs in Equal");
+        assert_with_msg(rhsReg.isInitialized(), "expected valid rhs in Equal");
+        if (!lhsReg.typ.equals(rhsReg.typ)) {
+            todo_with_msg("report error: Type mismatch in typeCheckEqual");
+        }
+        assert(lhsReg.size == rhsReg.size);
+        (*dstReg).value = this.stackPtr;
+        (*dstReg).size = 1;
+        (*dstReg).typ = TypeIndex { _i: 1 };
+        unsafe {
+            let areEqual: bool = memcmp(lhsReg.value, rhsReg.value, lhsReg.size) == 0;
+            mut res: u8 = 0;
+            if (areEqual) res = 1;
+            if (not) res = 1 - res;
+            *((*dstReg).value) = res;
+            this.stackPtr = this.stackPtr + 1;
+        }
+        return true;
+    }
+
+    func typeCheckBCConstAssert(&mut this, fn: &mut BCFunction, assert: &mut BCInstr) -> bool {
+        trace("BCInterp.typeCheckBCConstAssert");
+        assert(assert.kind == INSTR_KIND_CONST_ASSERT);
+        let what: RegIndex = assert.src;
+        let whatReg: &mut BCReg = fn.getRegAtIndex(what);
+        assert_with_msg(whatReg.isInitialized(), "expected valid reg in ConstAssert");
+        // FIXME: Better way of detecting if this is a bool
+        if (whatReg.typ._i != 1) {
+            todo_with_msg("report error: Condition in ConstAssert is not bool");
+        }
+        unsafe {
+            let success: bool = *whatReg.value == 1;
+            if (!success) unsafe {
+                let stderr: Any = fdopen(2, "a");
+                let loc: String = assert.origin.toString();
+                fprintf(stderr, "%s: %s: Static assertion failed!\n", loc.chars(), ERR_STR);
+                loc.drop();
+                return false;
+            }
+        }
+        return true;
+    }
+
+
+    func typeCheckFunction(&mut this, fnIndex: FnIndex) -> bool {
+        unsafe { assert(this.stackPtr != null); }
+        trace("BCInterp.typeCheckFunction");
+        let fn: &mut BCFunction = &mut functions[assertValidFunction(fnIndex, "typeCheckFunction")];
+        // TODO: We don't want to `getRegAtIndex()` for registers, we want to get their stack values
+        //       It's not important for now, but will be once we add functions
+        for (mut i: usize = 0; i < fn.instrLength; i = i + 1) {
+            if (PRINT_DEBUG) {
+                fn.dump();
+            }
+            let instr: &mut BCInstr = fn.getInstrAtIndex(InstrIndex { _i: i });
+            if (instr.kind == INSTR_KIND_LOAD_NUMBER) {
+                if (!this.typeCheckBCLoadNumber(fn, instr)) {
+                    return false;
+                }
+            } else if (instr.kind == INSTR_KIND_STORE_CONST) {
+                if (!this.typeCheckBCStoreConst(fn, instr)) {
+                    return false;
+                }
+            } else if (instr.kind == INSTR_KIND_LOAD) {
+                if (!this.typeCheckBCLoad(fn, instr)) {
+                    return false;
+                }
+            } else if (instr.kind == INSTR_KIND_ADD) {
+                if (!this.typeCheckBCAdd(fn, instr)) {
+                    return false;
+                }
+            } else if (instr.kind == INSTR_KIND_EQUAL || instr.kind == INSTR_KIND_NOT_EQUAL) {
+                if (!this.typeCheckBCEqual(fn, instr)) {
+                    return false;
+                }
+            } else if (instr.kind == INSTR_KIND_CONST_ASSERT) {
+                if (!this.typeCheckBCConstAssert(fn, instr)) {
+                    return false;
+                }
+            } else {
+                debug(instr.toString().chars());
+                todo_with_msg("can't check unknown BCInstr");
+            }
+        }
+        return true;
+    }
+}
+
+func newBCInterp() -> BCInterp {
+    return BCInterp {
+        stackPtr: &mut interpStack[0],
+    };
+}
+
 struct Checker {
-    funcCount: usize;
-    // The language is generic and flexible, you could define functions in functions in functions in functions...
-    // all the way, but I think we should stop at a reasonable level
-    funcStack: [FnIndex; 256];
-    stackLen: usize;
     globalScope: GlobalScope;
     func dumpAllFunctions(&mut this) {
         unsafe {
             printf("GLOBAL SCOPE:\n");
             functions[0].dump();
-            for (mut i: usize = 1; i < this.funcCount; i = i + 1) {
+            for (mut i: usize = 1; i < funcCount; i = i + 1) {
                 printf("Function %llu:\n", i);
                 functions[i].dump();
             }
@@ -95,127 +336,43 @@ struct Checker {
     }
     func addFunction(&mut this, span: Span) -> FnIndex {
         trace("Checker.addFunction");
-        let index: FnIndex = FnIndex { _i: this.funcCount };
-        this.funcStack[this.stackLen] = index;
-        this.stackLen = this.stackLen + 1;
-        functions[this.funcCount] = newEmptyFunction(span, this.funcStack, this.stackLen);
-        this.funcCount = this.funcCount + 1;
+        let index: FnIndex = FnIndex { _i: funcCount };
+        functions[funcCount] = newEmptyFunction(span);
+        funcCount = funcCount + 1;
         return index;
     }
     func leaveFunction(&mut this, fn: FnIndex) {
         trace("Checker.leaveFunction");
-        assert_with_msg(this.stackLen > 0, "Stack underflow when leaving function");
-        this.stackLen = this.stackLen - 1;
-        let f: FnIndex = this.funcStack[this.stackLen];
-        assert_with_msg(f._i == fn._i, "Stack inbalance detected");
     }
-    func assertValidFunction(&mut this, currFn: FnIndex, what: &char) -> usize {
-        trace("Checker.assertValidFunction");
-        let index: usize = currFn._i;
-        assert_with_msg(index < this.funcCount, what);
-        return index;
-    }
-    func allocateVariable(&mut this, currFn: FnIndex, where: Span, name: SubStr, isConst: bool) -> bool {
-        trace("Checker.allocateVariable");
-        let index: usize = this.assertValidFunction(currFn, "Can not allocate variable in invalid fn index");
-        return functions[index].allocateVariable(where, name, isConst);
-    }
-    func createValueInFunction(&mut this, currFn: FnIndex, val: BCValue) -> RegIndex {
-        trace("Checker.createValueInFunction");
-        let index: usize = this.assertValidFunction(currFn, "Can not create value in invalid fn index");
-        return functions[index].createValue(val);
-    }
-    func callFunction(&mut this, mustEval: bool, currFn: FnIndex, where: Span, call: RegIndex, args: &[RegIndex; 8], argCount: usize) -> RegIndex {
-        trace("Checker.callFunction");
-        let index: usize = this.assertValidFunction(currFn, "Can not generate call in invalid fn index");
-        return functions[index].buildCall(mustEval, where, call, args, argCount);
-    }
-    func loadParameter(&mut this, currFn: FnIndex, origin: Span, param: usize) -> RegIndex {
-        trace("Checker.loadParameter");
-        let index: usize = this.assertValidFunction(currFn, "Can not generate call in invalid fn index");
-        return functions[index].buildLoadParam(origin, param);
-    }
-    func moveRegisters(&mut this, mustEval: bool, currFn: FnIndex, dst: RegIndex, src: RegIndex) {
-        trace("Checker.moveRegisters");
-        let index: usize = this.assertValidFunction(currFn, "Can not generate move in invalid fn index");
-        functions[index].buildMove(mustEval, dst, src);
-    }
-    func storeVariable(&mut this, currFn: FnIndex, origin: Span, name: SubStr, val: RegIndex, mustEval: bool) -> bool {
+    func storeVariable(&mut this, currFn: FnIndex, origin: Span, name: SubStr, val: RegIndex, isConst: bool) -> bool {
         trace("Checker.storeVariable");
-        let index: usize = this.assertValidFunction(currFn, "Can not generate store in invalid fn index");
-        return functions[index].buildStore(origin, name, val, mustEval);
+        let index: usize = assertValidFunction(currFn, "Can not generate store in invalid fn index");
+        if (isConst) {
+            return functions[index].buildConstStore(origin, name, val);
+        } else {
+            todo_with_msg("storeVariable let");
+            return false;
+        }
     }
-    func loadVariable(&mut this, mustEval: bool, currFn: FnIndex, origin: Span, name: SubStr) -> RegIndex {
-        trace("Checker.loadVariable");
-        let index: usize = this.assertValidFunction(currFn, "Can not generate load in invalid fn index");
+    func loadVariable(&mut this, currFn: FnIndex, ident: &mut ParsedDeclValueIdent) -> RegIndex {
+        let index: usize = assertValidFunction(currFn, "Can not generate load in invalid fn index");
         mut reg: RegIndex = blank;
-        let success: bool = functions[index].buildLoad(mustEval, origin, name, &mut reg);
+        let success: bool = functions[index].buildLoad(ident.span, ident.name, &mut reg);
         if (!success) unsafe {
-            let entry: &mut GlobalEntry = this.globalScope.getVariableByName(name);
+            let entry: &mut GlobalEntry = this.globalScope.getVariableByName(ident.name);
             if (entry == null) {
-                name.print();
+                ident.name.print();
                 todo_with_msg("no variable found");
             }
             if (entry.computed) return entry.register;
             let global: FnIndex = FnIndex { _i: 0 };
-            assert(this.allocateVariable(global, entry.node.span, name, entry.node.isConst));
             let success: bool = this.generateBytecodeVarDecl(global, entry.node);
             if (!success) todo_with_msg("failed to generate global");
-            assert(functions[index].buildLoad(mustEval, origin, name, &mut reg));
+            assert(functions[index].buildLoad(ident.span, ident.name, &mut reg));
             (*entry).computed = true;
             (*entry).register = reg;
         }
         return reg;
-    }
-    func verifyMatchesType(&mut this, currFn: FnIndex, origin: Span, what: RegIndex, shouldBe: RegIndex) {
-        trace("Checker.verifyMatchesType");
-        let index: usize = this.assertValidFunction(currFn, "Can not generate verifyMatchesType in invalid fn index");
-        functions[index].buildVerifyMatchesType(origin, what, shouldBe);
-    }
-    func verifyIsType(&mut this, currFn: FnIndex, origin: Span, what: RegIndex) {
-        trace("Checker.verifyIsType");
-        let index: usize = this.assertValidFunction(currFn, "Can not generate verifyIsType in invalid fn index");
-        functions[index].buildVerifyIsType(origin, what);
-    }
-    func getTypeOf(&mut this, currFn: FnIndex, origin: Span, what: RegIndex) -> RegIndex {
-        trace("Checker.getTypeOf");
-        let index: usize = this.assertValidFunction(currFn, "Can not generate getTypeOf in invalid fn index");
-        return functions[index].buildTypeOf(origin, what);
-    }
-    func staticAssert(&mut this, currFn: FnIndex, origin: Span, what: RegIndex) {
-        trace("Checker.staticAssert");
-        let index: usize = this.assertValidFunction(currFn, "Can not generate staticAssert in invalid fn index");
-        functions[index].buildAssert(origin, what);
-    }
-    func constructIntegerType(&mut this, currFn: FnIndex, origin: Span, size: RegIndex, signed: RegIndex) -> RegIndex {
-        trace("Checker.constructIntegerType");
-        let index: usize = this.assertValidFunction(currFn, "Can not generate constructInteger in invalid fn index");
-        return functions[index].constructInteger(origin, size, signed);
-    }
-    func getReturnType(&mut this, currFn: FnIndex) -> RegIndex {
-        trace("Checker.getReturnType");
-        let index: usize = this.assertValidFunction(currFn, "Can not generate getReturnType in invalid fn index");
-        return functions[index].getReturnType();
-    }
-    func returnValue(&mut this, currFn: FnIndex, val: RegIndex) {
-        trace("Checker.returnValue");
-        let index: usize = this.assertValidFunction(currFn, "Can not generate returnValue in invalid fn index");
-        functions[index].buildReturn(val);
-    }
-    func placeDummyInstr(&mut this, currFn: FnIndex) -> InstrIndex {
-        trace("Checker.placeDummyInstr");
-        let index: usize = this.assertValidFunction(currFn, "Can not generate dummy instr in invalid fn index");
-        return functions[index].buildDummy();
-    }
-    func getCurrentInstrIndex(&mut this, currFn: FnIndex) -> InstrIndex {
-        trace("Checker.getCurrentInstrIndex");
-        let index: usize = this.assertValidFunction(currFn, "Can not get instr index in invalid fn index");
-        return functions[index].getCurrentInstrIndex();
-    }
-    func replaceInstr(&mut this, currFn: FnIndex, instrIndex: InstrIndex, newInstr: BCInstr) {
-        trace("Checker.replaceInstr");
-        let index: usize = this.assertValidFunction(currFn, "Can not replace instr in invalid fn index");
-        functions[index].replaceInstr(instrIndex, newInstr);
     }
 
     func warnUnusedGlobals(&mut this) {
@@ -251,7 +408,6 @@ struct Checker {
             }
         }
         this.leaveFunction(globalFn);
-        assert_with_msg(this.stackLen == 0, "Stack imbalance detected");
         return true;
     }
 
@@ -260,7 +416,7 @@ struct Checker {
         if (!this.generateGlobalDeclarations(project))
             return false;
         this.warnUnusedGlobals();
-        this.dumpAllFunctions();
+        if (PRINT_DEBUG) this.dumpAllFunctions();
         return true;
     }
 
@@ -275,107 +431,37 @@ struct Checker {
         trace("Checker.generateBytecodeVarDecl");
         let isConst: bool = decl.isConst;
         if (!currFn.isGlobalFn()) {
+            todo_with_msg("local var");
             // Global declarations have already been added
-            let reserve: bool = this.allocateVariable(currFn, decl.name.span, decl.name.content, isConst);
-            if (!reserve) return false;
         }
-        let register: RegIndex = this.generateBytecodeDeclValue(currFn, &mut decl.value, isConst);
+        let register: RegIndex = this.generateBytecodeDeclValue(currFn, &mut decl.value);
         return this.storeVariable(currFn, decl.name.span, decl.name.content, register, isConst);
     }
-
-    func generateBytecodeStmt(&mut this, currFn: FnIndex, stmt: &mut ParsedStmt) {
-        trace("Checker.generateBytecodeStmt");
-        if (stmt.kind == STMT_RETURN) {
-            let reg: RegIndex = this.generateBytecodeDeclValue(currFn, stmt.data, false);
-            let _ret: RegIndex = this.getReturnType(currFn);
-            this.verifyMatchesType(currFn, stmt.span, reg, _ret);
-            this.returnValue(currFn, reg);
-        } else if (stmt.kind == STMT_VAR_DECL) unsafe {
-            let _res: bool = this.generateBytecodeVarDecl(currFn, stmt.data);
-            if (!_res) todo_with_msg("duplicate var");
-        } else if (stmt.kind == STMT_EXPR) unsafe {
-            let _res: RegIndex = this.generateBytecodeDeclValue(currFn, stmt.data, false);
-        } else {
-            assert_with_msg(false, "exhaustive handling in generateBytecodeStmt");
-        }
-    }
-
-    func generateBytecodeDeclValue(&mut this, currFn: FnIndex, expr: &mut ParsedDeclValue, mustEval: bool) -> RegIndex {
+    func generateBytecodeDeclValue(&mut this, currFn: FnIndex, expr: &mut ParsedDeclValue) -> RegIndex {
         trace("Checker.generateBytecodeDeclValue");
         if (expr.kind == DECL_VALUE_INVALID) todo_with_msg("bytecode DECL_VALUE_INVALID");
         else if (expr.kind == DECL_VALUE_MODULE) todo_with_msg("bytecode DECL_VALUE_MODULE");
-        else if (expr.kind == DECL_VALUE_FUNC_DECL) unsafe {
-            let decl: &mut ParsedFuncDecl = expr.data;
-            let _stackLen: usize = this.stackLen;
-            let newFn: FnIndex = this.addFunction(expr.span);
-            for (mut i: usize = 0; i < decl.paramCount; i = i + 1) {
-                let _param: &mut ParsedParam = decl.getParamAtIndex(i);
-                let _typ: RegIndex = this.generateBytecodeTypeExpr(newFn, &mut _param.typ);
-                let reg: RegIndex = this.loadParameter(newFn, _param.span, i);
-                this.verifyMatchesType(newFn, _param.span, reg, _typ);
-                if (!this.allocateVariable(newFn, _param.span, _param.name.content, false))
-                    todo_with_msg("could not alloc param");
-                if (!this.storeVariable(newFn, _param.span, _param.name.content, reg, false))
-                    todo_with_msg("could not store param");
-            }
-            let _ret: RegIndex = this.generateBytecodeTypeExpr(newFn, &mut decl.retType);
-            functions[newFn._i].setReturnType(_ret);
-            for (mut i: usize = 0; i < decl.stmtCount; i = i + 1) {
-                let stmt: &mut ParsedStmt = decl.getStmtAtIndex(i);
-                this.generateBytecodeStmt(newFn, stmt);
-            }
-            let fn: BCValue = newFuncValue(decl.span, newFn);
-            this.leaveFunction(newFn);
-            assert_with_msg(this.stackLen == _stackLen, "Stack imbalance detected");
-            return this.createValueInFunction(currFn, fn);
-        }
+        else if (expr.kind == DECL_VALUE_FUNC_DECL) todo_with_msg("bytecode DECL_VALUE_FUNC_DECL");
         else if (expr.kind == DECL_VALUE_STRUCT_DECL) todo_with_msg("bytecode DECL_VALUE_STRUCT_DECL");
         else if (expr.kind == DECL_VALUE_ENUM_DECL) todo_with_msg("bytecode DECL_VALUE_ENUM_DECL");
         else if (expr.kind == DECL_VALUE_UNION_DECL) todo_with_msg("bytecode DECL_VALUE_UNION_DECL");
         else if (expr.kind == DECL_VALUE_BUILTIN)
             return this.generateBytecodeBuiltin(currFn, expr.data);
-        else if (expr.kind == DECL_VALUE_CALL) unsafe {
-            let base: &mut ParsedDeclValueCall = expr.data;
-            let call: RegIndex = this.generateBytecodeDeclValue(currFn, &mut base.fn, mustEval);
-            mut args: [RegIndex; 8] = blank;
-            for (mut i: usize = 0; i < base.argCount; i = i + 1) {
-                args[i] = this.generateBytecodeDeclValue(currFn, &mut base.args[i], mustEval);
-            }
-            return this.callFunction(mustEval, currFn, base.span, call, &args, base.argCount);
-        } else if (expr.kind == DECL_VALUE_IDENT) unsafe {
+        else if (expr.kind == DECL_VALUE_CALL) todo_with_msg("bytecode DECL_VALUE_CALL");
+        else if (expr.kind == DECL_VALUE_IDENT) unsafe {
             let ident: &mut ParsedDeclValueIdent = expr.data;
-            return this.loadVariable(mustEval, currFn, ident.span, ident.name);
+            return this.loadVariable(currFn, ident);
         } else if (expr.kind == DECL_VALUE_BINARY)
-            return this.generateBytecodeBinary(currFn, expr.data, mustEval);
+            return this.generateBytecodeBinary(currFn, expr.data);
         else if (expr.kind == DECL_VALUE_NUMBER) unsafe {
             let number: &mut ParsedDeclValueNumber = expr.data;
             let _n: String = number.number.toString();
             let int: i64 = _n.toI64();
             _n.drop();
-            let v: BCValue = newIntegerValue(number.span, int);
-            return this.createValueInFunction(currFn, v);
+            return functions[assertValidFunction(currFn, "number literal")].buildNumberLiteral(number.span, int);
         } else if (expr.kind == DECL_VALUE_BLOCK) todo_with_msg("bytecode DECL_VALUE_BLOCK");
-        else if (expr.kind == DECL_VALUE_IF) {
-            let iif: &mut ParsedDeclValueIf = expr.data;
-            let result: RegIndex = this.createValueInFunction(currFn, newNoneValue(iif.span));
-            let cond: RegIndex = this.generateBytecodeDeclValue(currFn, &mut iif.cond, mustEval);
-            let br: InstrIndex = this.placeDummyInstr(currFn);
-            if (iif.hasElse) {
-                let ifIndex: InstrIndex = this.getCurrentInstrIndex(currFn);
-                let ifBlock: RegIndex = this.generateBytecodeDeclValue(currFn, &mut iif.ifBody, mustEval);
-                this.moveRegisters(mustEval, currFn, result, ifBlock);
-                let jmp: InstrIndex = this.placeDummyInstr(currFn);
-                let elseIndex: InstrIndex = this.getCurrentInstrIndex(currFn);
-                let elseBlock: RegIndex = this.generateBytecodeDeclValue(currFn, &mut iif.elseBody, mustEval);
-                this.moveRegisters(mustEval, currFn, result, elseBlock);
-                let index: InstrIndex = this.getCurrentInstrIndex(currFn);
-                this.replaceInstr(currFn, jmp, newBrAbsolute(mustEval, index));
-                this.replaceInstr(currFn, br, newBrCondAbsolute(mustEval, cond, ifIndex, elseIndex));
-            } else {
-                todo_with_msg("no else");
-            }
-            return result;
-        } else if (expr.kind == DECL_VALUE_UNARY) todo_with_msg("bytecode DECL_VALUE_UNARY");
+        else if (expr.kind == DECL_VALUE_IF) todo_with_msg("bytecode DECL_VALUE_IF");
+        else if (expr.kind == DECL_VALUE_UNARY) todo_with_msg("bytecode DECL_VALUE_UNARY");
         else {
             assert_with_msg(false, "exhaustive handling in generateBytecodeDeclValue");
         }
@@ -383,77 +469,44 @@ struct Checker {
         return blank;
     }
 
-    func generateBytecodeBinary(&mut this, currFn: FnIndex, binary: &mut ParsedDeclValueBinary, mustEval: bool) -> RegIndex {
+    func generateBytecodeBinary(&mut this, currFn: FnIndex, binary: &mut ParsedDeclValueBinary) -> RegIndex {
         trace("Checker.generateBytecodeBinary");
         if (binary.op == BINARY_OP_ASSIGN) todo_with_msg("binary assignment");
-        let lhs: RegIndex = this.generateBytecodeDeclValue(currFn, &mut binary.lhs, mustEval);
-        let rhs: RegIndex = this.generateBytecodeDeclValue(currFn, &mut binary.rhs, mustEval);
-        return functions[this.assertValidFunction(currFn, "binary operation")].buildBinaryOp(mustEval, binary.span, lhs, rhs, binary.op);
-    }
-
-    func generateBytecodeTypeExpr(&mut this, currFn: FnIndex, typeExpr: &mut ParsedTypeExpr) -> RegIndex {
-        trace("Checker.generateBytecodeTypeExpr");
-        let val: RegIndex = this.generateBytecodeDeclValue(currFn, &mut typeExpr.expr, true);
-        this.verifyIsType(currFn, typeExpr.expr.span, val);
-        return val;
+        let lhs: RegIndex = this.generateBytecodeDeclValue(currFn, &mut binary.lhs);
+        let rhs: RegIndex = this.generateBytecodeDeclValue(currFn, &mut binary.rhs);
+        return functions[assertValidFunction(currFn, "binary operation")].buildBinaryOp(binary.span, lhs, rhs, binary.op);
     }
 
     func generateBytecodeBuiltin(&mut this, currFn: FnIndex, builtin: &mut ParsedDeclValueBuiltin) -> RegIndex {
         trace("Checker.generateBytecodeBuiltin");
         let name: SubStr = builtin.name;
-        if (name.equals(&BUILTIN_INTEGER)) {
-            if (builtin.argCount != 2) todo_with_msg("integer() arg count");
-            let size: RegIndex = this.generateBytecodeDeclValue(currFn, &mut builtin.args[0], true);
-            let signed: RegIndex = this.generateBytecodeDeclValue(currFn, &mut builtin.args[1], true);
-            return this.constructIntegerType(currFn, builtin.args[0].span, size, signed);
-        } else if (name.equals(&BUILTIN_FLOAT)) todo_with_msg("BUILTIN_FLOAT");
-        else if (name.equals(&BUILTIN_BOOLEAN)) {
-            if (builtin.argCount != 0) todo_with_msg("boolean() arg count");
-            let t: BCType = newBoolType(builtin.span);
-            let v: BCValue = newValueFromType(t);
-            return this.createValueInFunction(currFn, v);
-        } else if (name.equals(&BUILTIN_SELF)) todo_with_msg("BUILTIN_SELF");
-        else if (name.equals(&BUILTIN_ANYTYPE)) {
-            if (builtin.argCount != 0) todo_with_msg("anytype() arg count");
-            let t: BCType = newTypeType(builtin.span);
-            let v: BCValue = newValueFromType(t);
-            return this.createValueInFunction(currFn, v);
-        } else if (name.equals(&BUILTIN_ANYVALUE)) todo_with_msg("BUILTIN_ANYVALUE");
-        else if (name.equals(&BUILTIN_NONE)) {
-            if (builtin.argCount != 0) todo_with_msg("none() arg count");
-            let t: BCType = newNoneType(builtin.span);
-            let v: BCValue = newValueFromType(t);
-            return this.createValueInFunction(currFn, v);
-        } else if (name.equals(&BUILTIN_ENTRY)) {
-            if (builtin.argCount != 1) todo_with_msg("entry() arg count");
-            let entry: RegIndex = this.generateBytecodeDeclValue(currFn, &mut builtin.args[0], false);
-            return this.callFunction(false, currFn, builtin.span, entry, &blank, 0);
-        } else if (name.equals(&BUILTIN_ASSERT)) {
-            if (builtin.argCount != 1) todo_with_msg("assert() arg count");
-            let what: RegIndex = this.generateBytecodeDeclValue(currFn, &mut builtin.args[0], true);
-            this.staticAssert(currFn, builtin.span, what);
-            return this.createValueInFunction(currFn, newNoneValue(builtin.span));
-        } else if (name.equals(&BUILTIN_TYPEOF)) {
-            if (builtin.argCount != 1) todo_with_msg("typeof() arg count");
-            let what: RegIndex = this.generateBytecodeDeclValue(currFn, &mut builtin.args[0], false);
-            return this.getTypeOf(currFn, builtin.span, what);
-        }
+        if (name.equals(&BUILTIN_INTEGER)) todo_with_msg("BUILTIN");
+        else if (name.equals(&BUILTIN_FLOAT)) todo_with_msg("BUILTIN_FLOAT");
+        else if (name.equals(&BUILTIN_BOOLEAN)) todo_with_msg("BUILTIN");
+        else if (name.equals(&BUILTIN_SELF)) todo_with_msg("BUILTIN_SELF");
+        else if (name.equals(&BUILTIN_ANYTYPE)) todo_with_msg("BUILTIN");
+        else if (name.equals(&BUILTIN_ANYVALUE)) todo_with_msg("BUILTIN_ANYVALUE");
+        else if (name.equals(&BUILTIN_NONE)) todo_with_msg("BUILTIN");
+        else if (name.equals(&BUILTIN_ENTRY)) todo_with_msg("BUILTIN");
+        else if (name.equals(&BUILTIN_ASSERT)) {
+            if (builtin.argCount != 1) todo_with_msg("@assert() wrong arg count");
+            let what: RegIndex = this.generateBytecodeDeclValue(currFn, &mut builtin.args[0]);
+            return functions[assertValidFunction(currFn, "@assert()")].buildConstAssert(builtin.span, what);
+        } else if (name.equals(&BUILTIN_TYPEOF)) todo_with_msg("BUILTIN");
         else todo_with_msg("unknown builtin");
         return blank;
     }
 
     func verifyBytecode(&mut this) -> bool {
         trace("Checker.verifyBytecode");
-        todo_with_msg("verifyBytecode");
-        return true;
+        mut interp: BCInterp = newBCInterp();
+        let globalFn: FnIndex = FnIndex { _i: 0 };
+        return interp.typeCheckFunction(globalFn);
     }
 }
 
 func newChecker() -> Checker {
     return Checker {
-        funcCount: 0,
-        funcStack: blank,
-        stackLen: 0,
         globalScope: blank,
     };
 }
