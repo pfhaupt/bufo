@@ -2722,7 +2722,7 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
         func_call: &mut nodes::CallNode<'src>,
         mut_state: MutStateVal,
     ) -> Result<Type<'src>, ()> {
-        if mut_state != MutState::Immut {
+        if mut_state == MutState::MutVar {
             self.report_error(TypeError::CantMutateTemporary(
                 func_call.location,
             ));
