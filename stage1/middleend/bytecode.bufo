@@ -20,12 +20,7 @@ struct RegIndex {
 struct TypeIndex {
     _i: usize;
     func toString(&mut this) -> String {
-        warning("Can't really do TypeIndex.toString() yet");
-        if (this._i == 0) return newStringFromStrLit("i64");
-        if (this._i == 1) return newStringFromStrLit("bool");
-        mut s: String = newStringFromStrLit("type-id=");
-        s.pushNumber(this._i);
-        return s;
+        return types[assertValidType(*this, "TypeIndex.toString")].toString();
     }
 
     func getSize(&mut this) -> usize {
@@ -81,7 +76,41 @@ struct BCReg {
     }
 }
 
+comptime TYPE_INVALID: usize = 0;
+comptime TYPE_INTEGER: usize = 1;
+struct BCTypeInt {
+    bitsize: u32;
+    signed: bool;
+}
 struct BCType {
+    kind: usize;
+    intInfo: BCTypeInt;
+
+    func isValid(&mut this) -> bool {
+        return this.kind != TYPE_INVALID;
+    }
+
+    func toString(&mut this) -> String {
+        if (this.kind == TYPE_INTEGER) {
+            mut s: String = newString();
+            if (this.intInfo.signed) s.pushChar('i');
+            else s.pushChar('u');
+            s.pushNumber(this.intInfo.bitsize as usize);
+            return s;
+        } else {
+            let id: TypeIndex = getTypeID(this);
+            if (id._i == 1) return newStringFromStrLit("bool");
+            assert_with_msg(false, "unreachable in BCType.toString()");
+            return blank;
+        }
+    }
+
+    func makeIntegerType(&mut this, bitsize: u32, signed: bool) {
+        assert_with_msg(this.kind == TYPE_INVALID, "attempted to turn valid type into integer type");
+        this.kind = TYPE_INTEGER;
+        this.intInfo.bitsize = bitsize;
+        this.intInfo.signed = signed;
+    }
 
     func getSize(&mut this) -> usize {
         todo_with_msg("BCType.getSize");
@@ -244,6 +273,13 @@ struct BCFunction {
         return dst;
     }
 
+    func buildCreateInteger(&mut this, span: Span, size: RegIndex, signed: RegIndex) -> RegIndex {
+        trace("BCFunction.buildCreateInteger");
+        let dst: RegIndex = this.allocateRegister(span);
+        let int: BCInstr = newCreateIntType(span, dst, size, signed);
+        this.appendInstr(int);
+        return dst;
+    }
     func dump(&mut this) {
         unsafe {
             printf(" --- REGISTERS ---\n");
@@ -287,12 +323,13 @@ comptime INSTR_KIND_ADD: usize = 4;
 comptime INSTR_KIND_EQUAL: usize = 5;
 comptime INSTR_KIND_NOT_EQUAL: usize = 6;
 comptime INSTR_KIND_CONST_ASSERT: usize = 7;
+comptime INSTR_KIND_CREATE_INT_TYPE: usize = 8;
 struct BCInstr {
     origin: Span;
     kind: usize;
     dst: RegIndex;
     src: RegIndex;
-    // FIXME: Maybe it's better to not waste this memory for any non-binary instruction
+    // FIXME: Maybe it's better to not waste this memory for any instruction that doesn't need it
     op1: RegIndex;
 
     func toString(&mut this) -> String {
@@ -380,6 +417,20 @@ struct BCInstr {
             _dst.drop();
             _what.drop();
             ret = s;
+        } else if (this.kind == INSTR_KIND_CREATE_INT_TYPE) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            let _size: String = this.src.toString();
+            let _sign: String = this.op1.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = CreateIntType ");
+            s.pushString(&_size);
+            s.pushStr(", ");
+            s.pushString(&_sign);
+            _dst.drop();
+            _size.drop();
+            _sign.drop();
+            ret = s;
         } else unsafe {
             printf("%llu\n", this.kind);
             assert_with_msg(false, "exhaustive handling in BCInstr.toString");
@@ -458,5 +509,15 @@ func newConstAssertInstr(span: Span, dst: RegIndex, what: RegIndex) -> BCInstr {
         dst: dst,
         src: what,
         op1: blank
+    };
+}
+
+func newCreateIntType(span: Span, dst: RegIndex, size: RegIndex, signed: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_CREATE_INT_TYPE,
+        dst: dst,
+        src: size,
+        op1: signed
     };
 }

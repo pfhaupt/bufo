@@ -14,17 +14,43 @@ func assertValidFunction(currFn: FnIndex, what: &char) -> usize {
 }
 
 // 640.000 Typedefs should be enough for now
-// FIXME: A lot of reservations are going on
-// REVIEW: How useful is @integer() and @boolean() and stuff like that?
-// NOTE: Index 0 is reserved for integer literals!
-// NOTE: Index 1 is reserved for booleans!
 mut types: [BCType; 640000] = blank;
-mut typeCount: usize = 2;
+mut typeCount: usize = 0;
 func assertValidType(ty: TypeIndex, what: &char) -> usize {
     trace("assertValidType");
     let index: usize = ty._i;
     assert_with_msg(index < typeCount, what);
     return index;
+}
+
+func initializeGlobalTypes() {
+    // FIXME: bool and anytype should create real BCTypes later on
+    let i64: &mut BCType = createBlankType();
+    assert_with_msg(getTypeID(i64)._i == 0, "initializeGlobalTypes() called in wrong context");
+    assert_with_msg(!i64.isValid(), "initializeGlobalTypes() called in wrong context");
+    i64.makeIntegerType(64, true);
+    let bool: &mut BCType = createBlankType();
+    assert_with_msg(getTypeID(bool)._i == 1, "initializeGlobalTypes() called in wrong context");
+    let anytype: &mut BCType = createBlankType();
+    assert_with_msg(getTypeID(anytype)._i == 2, "initializeGlobalTypes() called in wrong context");
+}
+
+func createBlankType() -> &mut BCType {
+    let index: usize = typeCount;
+    assert_with_msg(!types[index].isValid(), "Attempted to overwrite valid BCType in createBlankType()");
+    types[index] = blank;
+    typeCount = typeCount + 1;
+    return &mut types[index];
+}
+
+func getTypeID(typ: &mut BCType) -> TypeIndex {
+    unsafe {
+        let base: &mut BCType = &mut types[0];
+        let diff: usize = typ - base;
+        assert(diff % sizeof BCType == 0);
+        let id: usize = diff / sizeof BCType;
+        return TypeIndex { _i: id };
+    }
 }
 
 struct NameVarIndexPair {
@@ -271,6 +297,44 @@ struct BCInterp {
         return true;
     }
 
+    func typeCheckBCCreateIntType(&mut this, fn: &mut BCFunction, int: &mut BCInstr) -> bool {
+        trace("BCInterp.typeCheckBCCreateIntType");
+        assert(int.kind == INSTR_KIND_CREATE_INT_TYPE);
+        let dst: RegIndex = int.dst;
+        let size: RegIndex = int.src;
+        let sign: RegIndex = int.op1;
+        let sizeReg: &mut BCReg = fn.getRegAtIndex(size);
+        let signReg: &mut BCReg = fn.getRegAtIndex(sign);
+        let dstReg: &mut BCReg = fn.getRegAtIndex(dst);
+        assert_with_msg(sizeReg.isInitialized(), "expected valid size in CreateIntType");
+        assert_with_msg(signReg.isInitialized(), "expected valid sign in CreateIntType");
+        // FIXME: Better way of checking these types
+        if (sizeReg.typ._i != 0) {
+            todo_with_msg("report error: Size in CreateIntType is not int");
+        }
+        if (signReg.typ._i != 1) {
+            todo_with_msg("report error: Sign in CreateIntType is not bool");
+        }
+        assert(sizeReg.size == 8);
+        assert(signReg.size == 1);
+        (*dstReg).value = this.stackPtr;
+        (*dstReg).size = 8;
+        // FIXME: This should be indexof(TYPE_TYPE), which is currently hardcoded in initializeGlobalTypes()
+        (*dstReg).typ = TypeIndex { _i: 2 };
+        unsafe {
+            let bitsize: i64 = *(sizeReg.value as &i64);
+            if (bitsize < 0 || bitsize > 65536) {
+                todo_with_msg("report error: Integer bitsize invalid");
+            }
+            let signed: bool = *signReg.value == 1;
+            let int: &mut BCType = createBlankType();
+            int.makeIntegerType(bitsize as u32, signed);
+            let id: TypeIndex = getTypeID(int);
+            *(dstReg.value as &mut usize) = id._i;
+            this.stackPtr = this.stackPtr + 8;
+        }
+        return true;
+    }
 
     func typeCheckFunction(&mut this, fnIndex: FnIndex) -> bool {
         unsafe { assert(this.stackPtr != null); }
@@ -307,6 +371,10 @@ struct BCInterp {
                 if (!this.typeCheckBCConstAssert(fn, instr)) {
                     return false;
                 }
+            } else if (instr.kind == INSTR_KIND_CREATE_INT_TYPE) {
+                if (!this.typeCheckBCCreateIntType(fn, instr)) {
+                    return false;
+                }
             } else {
                 debug(instr.toString().chars());
                 todo_with_msg("can't check unknown BCInstr");
@@ -335,6 +403,7 @@ struct Checker {
         }
     }
     func addFunction(&mut this, span: Span) -> FnIndex {
+        // FIXME: This function should be in the global scope
         trace("Checker.addFunction");
         let index: FnIndex = FnIndex { _i: funcCount };
         functions[funcCount] = newEmptyFunction(span);
@@ -413,6 +482,7 @@ struct Checker {
 
     func generateBytecode(&mut this, project: &mut ParsedModule) -> bool {
         trace("Checker.generateBytecode");
+        initializeGlobalTypes();
         if (!this.generateGlobalDeclarations(project))
             return false;
         this.warnUnusedGlobals();
@@ -480,8 +550,12 @@ struct Checker {
     func generateBytecodeBuiltin(&mut this, currFn: FnIndex, builtin: &mut ParsedDeclValueBuiltin) -> RegIndex {
         trace("Checker.generateBytecodeBuiltin");
         let name: SubStr = builtin.name;
-        if (name.equals(&BUILTIN_INTEGER)) todo_with_msg("BUILTIN");
-        else if (name.equals(&BUILTIN_FLOAT)) todo_with_msg("BUILTIN_FLOAT");
+        if (name.equals(&BUILTIN_INTEGER)) {
+            if (builtin.argCount != 2) todo_with_msg("@integer() wrong arg count");
+            let size: RegIndex = this.generateBytecodeDeclValue(currFn, &mut builtin.args[0]);
+            let signed: RegIndex = this.generateBytecodeDeclValue(currFn, &mut builtin.args[1]);
+            return functions[assertValidFunction(currFn, "@integer()")].buildCreateInteger(builtin.span, size, signed);
+        } else if (name.equals(&BUILTIN_FLOAT)) todo_with_msg("BUILTIN_FLOAT");
         else if (name.equals(&BUILTIN_BOOLEAN)) todo_with_msg("BUILTIN");
         else if (name.equals(&BUILTIN_SELF)) todo_with_msg("BUILTIN_SELF");
         else if (name.equals(&BUILTIN_ANYTYPE)) todo_with_msg("BUILTIN");

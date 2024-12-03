@@ -93,7 +93,7 @@ func buildStage1() -> bool {
 
 func compileTest() -> bool {
     // let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe type.bufo");
-    let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe tests/stage2/0/0/0/4-simple_addition.bufo");
+    let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe tests/stage2/0/0/0/6-simple_int_not.bufo");
     return cmd.runSync();
 }
 
