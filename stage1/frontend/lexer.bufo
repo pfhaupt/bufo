@@ -97,8 +97,11 @@ struct Lexer {
             this.advance();
             mut len: usize = 0;
             mut tmp: SubStr = this.content;
-            mut s: String = newString();
             if (tmp.len == 0) todo_with_msg("unbalanced \"");
+            // When peeking we don't care about the precise contents of the String Literal
+            // So we don't need to heap allocate anything just now
+            if (peek) return newToken(&newSubStr("\"", 0, 1), this.ptr - 1, TOKEN_STRING_LITERAL);
+            mut s: String = newString();
             mut c: char = tmp.getChar(0);
             while (c != '"') {
                 mut escaped: bool = false;
@@ -123,7 +126,6 @@ struct Lexer {
             this.ptr = this.ptr + len;
             this.content = tmp;
             this.advance();
-            if (peek) s.drop();
             return newToken(&word, this.ptr - len, TOKEN_STRING_LITERAL);
         } else if (currChar == '(') {
             this.advance();

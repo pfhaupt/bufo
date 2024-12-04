@@ -383,14 +383,14 @@ struct Parser {
     }
     func parseDeclValueExprPrimary(&mut this) -> ParsedDeclValue {
         trace("parseDeclValueExprPrimary");
-        if (this.at(TOKEN_KEYWORD))
-            return this.parseDeclValueKeyword();
-        else if (this.at(TOKEN_AT))
-            return this.parseDeclValueBuiltin();
-        if (this.matchesUnaryExpression())
-            return this.parseDeclValueExprUnary();
         let tkn: Token = this.peek();
-        if (tkn.kind == TOKEN_NUMBER)
+        if (this.matchesUnaryExpression(&tkn))
+            return this.parseDeclValueExprUnary();
+        if (tkn.kind == TOKEN_KEYWORD)
+            return this.parseDeclValueKeyword();
+        else if (tkn.kind == TOKEN_AT)
+            return this.parseDeclValueBuiltin();
+        else if (tkn.kind == TOKEN_NUMBER)
             return this.parseDeclValueExprIntLiteral();
         else if (tkn.kind == TOKEN_IDENT)
             return this.parseDeclValueExprIdentifier();
@@ -459,9 +459,8 @@ struct Parser {
             || kind == TOKEN_NOT_EQUAL
             || kind == TOKEN_EQUAL_SINGLE;
     }
-    func matchesUnaryExpression(&mut this) -> bool {
+    func matchesUnaryExpression(&mut this, tkn: &Token) -> bool {
         trace("matchesUnaryExpression");
-        let tkn: Token = this.peek();
         let kind: usize = tkn.kind;
         return kind == TOKEN_AMPERSAND || kind == TOKEN_ASTERISK_SINGLE;
     }
