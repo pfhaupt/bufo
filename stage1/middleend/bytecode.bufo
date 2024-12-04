@@ -54,6 +54,7 @@ struct TypeIndex {
         if (this._i == 0) return 8;
         if (this._i == 1) return 1;
         if (this._i == 2) return 8;
+        if (this._i == 3) return sizeof SubStr;
         todo_with_msg("actually implement TypeIndex.getSize");
         return types[assertValidType(*this, "TypeIndex.getSize")].getSize();
     }
@@ -98,11 +99,7 @@ struct BCReg {
         s.pushStr(", addr=");
         unsafe {
             mut ptr: usize = this.value as usize;
-            for (mut i: usize = 0; i < 8; i = i + 1) {
-                let byte: u8 = (ptr % 256) as u8;
-                s.pushHex(byte);
-                ptr = ptr / 256;
-            }
+            s.pushNumberAsHex(ptr);
         }
         _t.drop();
         return s;
@@ -115,16 +112,30 @@ struct BCReg {
 
 comptime TYPE_INVALID: usize = 0;
 comptime TYPE_INTEGER: usize = 1;
+comptime TYPE_STRUCT: usize = 2;
 struct BCTypeInt {
     bitsize: u32;
     signed: bool;
 }
+// FIXME: This should be heap allocated
+//        We waste *a lot* of memory for our global type table
+struct BCTypeStruct {
+    fieldSpans: [Span; 16];
+    fieldNames: [SubStr; 16];
+    fieldTypes: [TypeIndex; 16];
+    fieldCount: usize;
+}
 struct BCType {
     kind: usize;
     intInfo: BCTypeInt;
+    structInfo: BCTypeStruct;
 
     func isValid(&mut this) -> bool {
         return this.kind != TYPE_INVALID;
+    }
+
+    func isStruct(&mut this) -> bool {
+        return this.kind == TYPE_STRUCT;
     }
 
     func toString(&mut this) -> String {
@@ -138,6 +149,7 @@ struct BCType {
             let id: TypeIndex = getTypeID(this);
             if (id._i == 1) return newStringFromStrLit("bool");
             if (id._i == 2) return newStringFromStrLit("type");
+            if (id._i == 3) return newStringFromStrLit("string");
             assert_with_msg(false, "unreachable in BCType.toString()");
             return blank;
         }
@@ -148,6 +160,28 @@ struct BCType {
         this.kind = TYPE_INTEGER;
         this.intInfo.bitsize = bitsize;
         this.intInfo.signed = signed;
+    }
+
+    func makeStructType(&mut this) {
+        assert_with_msg(this.kind == TYPE_INVALID, "attempted to turn valid type into struct type");
+        this.kind = TYPE_STRUCT;
+    }
+
+    func addField(&mut this, fieldSpan: Span, fieldName: SubStr, fieldType: TypeIndex) -> bool {
+        assert_with_msg(this.kind == TYPE_STRUCT, "attempted to add field to non-struct type");
+        if (this.structInfo.fieldCount >= 16) {
+            todo_with_msg("report error: Struct can't have more fields");
+        }
+        for (mut i: usize = 0; i < this.structInfo.fieldCount; i = i + 1) {
+            if (this.structInfo.fieldNames[i].equals(&fieldName)) {
+                todo_with_msg("report error: Field redeclaration");
+            }
+        }
+        this.structInfo.fieldSpans[this.structInfo.fieldCount] = fieldSpan;
+        this.structInfo.fieldNames[this.structInfo.fieldCount] = fieldName;
+        this.structInfo.fieldTypes[this.structInfo.fieldCount] = fieldType;
+        this.structInfo.fieldCount = this.structInfo.fieldCount + 1;
+        return true;
     }
 
     func getSize(&mut this) -> usize {
@@ -295,6 +329,14 @@ struct BCFunction {
         return index;
     }
 
+    func buildStringLiteral(&mut this, span: Span, val: SubStr) -> RegIndex {
+        trace("BCFunction.buildStringLiteral");
+        let index: RegIndex = this.allocateRegister(span);
+        let s: BCInstr = newLoadStringInstr(span, index, val);
+        this.appendInstr(s);
+        return index;
+    }
+
     func buildBinaryOp(&mut this, span: Span, lhs: RegIndex, rhs: RegIndex, op: usize) -> RegIndex {
         trace("BCFunction.buildBinaryOp");
         let dst: RegIndex = this.allocateRegister(span);
@@ -339,6 +381,26 @@ struct BCFunction {
         return dst;
     }
 
+    func buildCreateStruct(&mut this, span: Span) -> RegIndex {
+        trace("BCFunction.buildCreateStruct");
+        let dst: RegIndex = this.allocateRegister(span);
+        let strukt: BCInstr = newCreateStructType(span, dst);
+        this.appendInstr(strukt);
+        return dst;
+    }
+
+    func buildVerifyType(&mut this, span: Span, what: RegIndex) {
+        trace("BCFunction.buildVerifyType");
+        let verify: BCInstr = newVerifyType(span, what);
+        this.appendInstr(verify);
+    }
+
+    func buildAddField(&mut this, span: Span, base: RegIndex, fieldName: RegIndex, fieldType: RegIndex) {
+        trace("BCFunction.buildAddField");
+        let field: BCInstr = newAddField(span, base, fieldName, fieldType);
+        this.appendInstr(field);
+    }
+
     func dump(&mut this) {
         unsafe {
             printf(" --- REGISTERS ---\n");
@@ -376,15 +438,20 @@ func newEmptyFunction(span: Span) -> BCFunction {
 
 comptime INSTR_KIND_INVALID: usize = 0;
 comptime INSTR_KIND_LOAD_NUMBER: usize = 1;
-comptime INSTR_KIND_STORE_CONST: usize = 2;
-comptime INSTR_KIND_LOAD: usize = 3;
-comptime INSTR_KIND_ADD: usize = 4;
-comptime INSTR_KIND_EQUAL: usize = 5;
-comptime INSTR_KIND_NOT_EQUAL: usize = 6;
-comptime INSTR_KIND_CONST_ASSERT: usize = 7;
-comptime INSTR_KIND_CREATE_INT_TYPE: usize = 8;
-comptime INSTR_KIND_ADDR_OF: usize = 9;
-comptime INSTR_KIND_LOAD_ADDR: usize = 10;
+comptime INSTR_KIND_LOAD_STRING: usize = 2;
+comptime INSTR_KIND_STORE_CONST: usize = 3;
+comptime INSTR_KIND_LOAD: usize = 4;
+comptime INSTR_KIND_ADD: usize = 5;
+comptime INSTR_KIND_EQUAL: usize = 6;
+comptime INSTR_KIND_NOT_EQUAL: usize = 7;
+comptime INSTR_KIND_CONST_ASSERT: usize = 8;
+// FIXME: This should be a single instruction
+comptime INSTR_KIND_CREATE_INT_TYPE: usize = 9;
+comptime INSTR_KIND_CREATE_STRUCT_TYPE: usize = 10;
+comptime INSTR_KIND_ADDR_OF: usize = 11;
+comptime INSTR_KIND_LOAD_ADDR: usize = 12;
+comptime INSTR_KIND_VERIFY_TYPE: usize = 13;
+comptime INSTR_KIND_ADD_FIELD: usize = 14;
 struct BCInstr {
     origin: Span;
     kind: usize;
@@ -425,6 +492,18 @@ struct BCInstr {
             _dst.drop();
             s.pushStr(" = LoadNumber ");
             s.pushI64(n);
+            ret = s;
+        } else if (this.kind == INSTR_KIND_LOAD_STRING) unsafe {
+            let ptr: usize = this.src._i;
+            let len: usize = this.op1._i;
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            s.pushString(&_dst);
+            _dst.drop();
+            s.pushStr(" = LoadString ");
+            s.pushNumberAsHex(ptr);
+            s.pushStr(", ");
+            s.pushNumber(len);
             ret = s;
         } else if (this.kind == INSTR_KIND_ADD) {
             mut s: String = newString();
@@ -492,6 +571,13 @@ struct BCInstr {
             _size.drop();
             _sign.drop();
             ret = s;
+        } else if (this.kind == INSTR_KIND_CREATE_STRUCT_TYPE) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = CreateStructType");
+            _dst.drop();
+            ret = s;
         } else if (this.kind == INSTR_KIND_ADDR_OF) {
             mut s: String = newString();
             let _dst: String = this.dst.toString();
@@ -512,6 +598,28 @@ struct BCInstr {
             _dst.drop();
             _src.drop();
             ret = s;
+        } else if (this.kind == INSTR_KIND_VERIFY_TYPE) {
+            mut s: String = newString();
+            let _src: String = this.src.toString();
+            s.pushStr("VerifyType ");
+            s.pushString(&_src);
+            _src.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_ADD_FIELD) {
+            mut s: String = newString();
+            let _base: String = this.dst.toString();
+            let _name: String = this.src.toString();
+            let _type: String = this.op1.toString();
+            s.pushStr("AddField ");
+            s.pushString(&_base);
+            s.pushStr(", ");
+            s.pushString(&_name);
+            s.pushStr(", ");
+            s.pushString(&_type);
+            _base.drop();
+            _name.drop();
+            _type.drop();
+            ret = s;
         } else unsafe {
             printf("%llu\n", this.kind);
             assert_with_msg(false, "exhaustive handling in BCInstr.toString");
@@ -529,6 +637,18 @@ func newLoadNumberInstr(span: Span, dst: RegIndex, val: i64) -> BCInstr {
             dst: dst,
             src: RegIndex { _i: *(&val as &usize) },
             op1: blank,
+        };
+    }
+}
+
+func newLoadStringInstr(span: Span, dst: RegIndex, val: SubStr) -> BCInstr {
+    unsafe {
+        return BCInstr {
+            origin: span,
+            kind: INSTR_KIND_LOAD_STRING,
+            dst: dst,
+            src: RegIndex { _i: val.start as usize },
+            op1: RegIndex { _i: val.len as usize },
         };
     }
 }
@@ -603,6 +723,16 @@ func newCreateIntType(span: Span, dst: RegIndex, size: RegIndex, signed: RegInde
     };
 }
 
+func newCreateStructType(span: Span, dst: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_CREATE_STRUCT_TYPE,
+        dst: dst,
+        src: blank,
+        op1: blank
+    };
+}
+
 func newAddrOf(span: Span, dst: RegIndex, src: RegIndex) -> BCInstr {
     return BCInstr {
         origin: span,
@@ -620,5 +750,25 @@ func newLoadAddr(span: Span, dst: RegIndex, src: RegIndex) -> BCInstr {
         dst: dst,
         src: src,
         op1: blank
+    };
+}
+
+func newVerifyType(span: Span, what: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_VERIFY_TYPE,
+        dst: blank,
+        src: what,
+        op1: blank
+    };
+}
+
+func newAddField(span: Span, base: RegIndex, name: RegIndex, typ: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_ADD_FIELD,
+        dst: base,
+        src: name,
+        op1: typ
     };
 }

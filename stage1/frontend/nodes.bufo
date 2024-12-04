@@ -99,6 +99,7 @@ comptime DECL_VALUE_NUMBER: usize = 10;
 comptime DECL_VALUE_BLOCK: usize = 11;
 comptime DECL_VALUE_IF: usize = 12;
 comptime DECL_VALUE_UNARY: usize = 13;
+comptime DECL_VALUE_STRING: usize = 14;
 struct ParsedDeclValue {
     kind: usize;
     span: Span;
@@ -284,6 +285,10 @@ struct ParsedDeclValueNumber {
     number: SubStr;
 }
 
+struct ParsedDeclValueString {
+    span: Span;
+    string: SubStr;
+}
 comptime BINARY_OP_DOT: usize = 0;
 comptime BINARY_OP_PAREN: usize = 1;
 comptime BINARY_OP_PLUS: usize = 2;
@@ -466,16 +471,16 @@ struct ParsedStructDecl {
         }
         this.assetCount = this.assetCount + 1;
     }
-    func getFieldAtIndex(&this, index: usize) -> &ParsedStructField {
+    func getFieldAtIndex(&mut this, index: usize) -> &mut ParsedStructField {
         assert(index < this.fieldCount);
         unsafe {
-            return (this.fields + index * sizeof ParsedStructField) as &ParsedStructField;
+            return (this.fields + index * sizeof ParsedStructField);
         }
     }
-    func getAssetAtIndex(&this, index: usize) -> &ParsedStructAsset {
+    func getAssetAtIndex(&mut this, index: usize) -> &mut ParsedStructAsset {
         assert(index < this.assetCount);
         unsafe {
-            return (this.assets + index * sizeof ParsedStructAsset) as &ParsedStructAsset;
+            return (this.assets + index * sizeof ParsedStructAsset);
         }
     }
 }
@@ -584,12 +589,14 @@ struct ParsedParam {
 }
 
 struct ParsedTypeExpr {
+    span: Span;
     expr: ParsedDeclValue;
 }
 
 func defaultTypeExpr(span: Span) -> ParsedTypeExpr {
     let none: ParsedDeclValue = createEmptyExpr(span);
     return ParsedTypeExpr {
+        span: span,
         expr: none
     };
 }

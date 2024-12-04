@@ -67,6 +67,17 @@ struct String {
             }
         }
     }
+    func pushNumberAsHex(&mut this, mut num: usize) {
+        unsafe {
+            mut bfr: [char; 50] = ['\0'; 50];
+            let length: usize = snprintf(null, 0, "0x%llX", num);
+            assert_with_msg(length < 50, "Buffer Overflow in String.pushNumberAsHex()");
+            snprintf(&bfr, length + 1, "0x%llX", num);
+            for (mut i: usize = 0; i < length; i = i + 1) {
+                this.pushChar(bfr[i]);
+            }
+        }
+    }
     func pushI64(&mut this, mut i: i64) {
         if (i < 0) {
             this.pushChar('-');

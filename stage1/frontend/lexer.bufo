@@ -47,16 +47,21 @@ struct Lexer {
         return this.ptr >= this.len;
     }
     func peek(&mut this) -> Token {
+        trace("Lexer.peek");
         let ptr: usize = this.ptr;
         let content: SubStr = this.content;
         let len: usize = this.len;
-        let tkn: Token = this.next();
+        let tkn: Token = this.__next(true);
         this.ptr = ptr;
         this.content = content;
         this.len = len;
         return tkn;
     }
     func next(&mut this) -> Token {
+        return this.__next(false);
+    }
+    func __next(&mut this, peek: bool) -> Token {
+        trace("Lexer.next");
         if (this.ptr == this.len) {
             return newTokenEOF(this.ptr);
         }
@@ -88,6 +93,38 @@ struct Lexer {
             this.ptr = this.ptr + len;
             this.content = tmp;
             return newToken(&word, this.ptr - len, TOKEN_NUMBER);
+        } else if (currChar == '"') {
+            this.advance();
+            mut len: usize = 0;
+            mut tmp: SubStr = this.content;
+            mut s: String = newString();
+            if (tmp.len == 0) todo_with_msg("unbalanced \"");
+            mut c: char = tmp.getChar(0);
+            while (c != '"') {
+                mut escaped: bool = false;
+                if (c == '\\') {
+                    c = tmp.getChar(1);
+                    if (c == 'n') {
+                        s.pushChar('\n');
+                    } else unsafe {
+                        todo_with_msg("unknown escape");
+                    }
+                    escaped = true;
+                } else {
+                    s.pushChar(c);
+                }
+                mut s: usize = 1;
+                if (escaped) s = 2;
+                len = len + s;
+                tmp = tmp.substring(s, tmp.len);
+                c = tmp.getChar(0);
+            }
+            let word: SubStr = s.substring(0, s.length);
+            this.ptr = this.ptr + len;
+            this.content = tmp;
+            this.advance();
+            if (peek) s.drop();
+            return newToken(&word, this.ptr - len, TOKEN_STRING_LITERAL);
         } else if (currChar == '(') {
             this.advance();
             return newToken(&newSubStr("(", 0, 1), this.ptr - 1, TOKEN_PAREN_OPEN);

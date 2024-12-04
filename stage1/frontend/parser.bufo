@@ -396,6 +396,8 @@ struct Parser {
             return this.parseDeclValueExprIdentifier();
         else if (tkn.kind == TOKEN_CURLY_OPEN)
             return this.parseDeclValueExprBlock();
+        else if (tkn.kind == TOKEN_STRING_LITERAL)
+            return this.parseDeclValueExprStringLiteral();
         this.peek().span.print();
         this.peek().content.print();
         unsafe {
@@ -424,6 +426,15 @@ struct Parser {
             number: number.content,
         };
         return createDeclValue(DECL_VALUE_NUMBER, number.span, sizeof ParsedDeclValueNumber, &numbah);
+    }
+    func parseDeclValueExprStringLiteral(&mut this) -> ParsedDeclValue {
+        trace("parseDeclValueExprStringLiteral");
+        let string: Token = this.expect(TOKEN_STRING_LITERAL);
+        let strung: ParsedDeclValueString = ParsedDeclValueString {
+            span: string.span,
+            string: string.content,
+        };
+        return createDeclValue(DECL_VALUE_STRING, string.span, sizeof ParsedDeclValueString, &strung);
     }
     func parseDeclValueExprIdentifier(&mut this) -> ParsedDeclValue {
         trace("parseDeclValueExprIdentifier");
@@ -526,6 +537,7 @@ struct Parser {
         trace("parseTypeExpr");
         let expr: ParsedDeclValue = this.parseDeclValueExpr();
         return ParsedTypeExpr {
+            span: expr.span,
             expr: expr
         };
     }

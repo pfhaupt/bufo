@@ -16,3 +16,4 @@ comptime BUILTIN_NONE: SubStr = BUILD_A_BUILTIN("none");
 comptime BUILTIN_ENTRY: SubStr = BUILD_A_BUILTIN("entry");
 comptime BUILTIN_ASSERT: SubStr = BUILD_A_BUILTIN("assert");
 comptime BUILTIN_TYPEOF: SubStr = BUILD_A_BUILTIN("typeof");
+comptime BUILTIN_CHECK: SubStr = BUILD_A_BUILTIN("check");

@@ -1,0 +1,27 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 2
+//! COMPILER
+//! SUCCESS
+
+const true = 1 == 1;
+const i32 = @integer(32, true);
+
+const Vector = struct {
+    x: i32;
+    y: i32;
+};
+
+const ref = &Vector;
+@assert(*ref == Vector);
+@assert(ref == &Vector);
+
+// NOTE: This is an implementation detail
+//       Bytecode registers are also stored on the stack, so while
+//       @1 = AddrOf Vector works as intended, the second reference
+//       computes @2 = AddrOf @1, which is different than @3 = AddrOf ref
+//       This is similar behavior to test stage2/0/0/0/8-pointer_types.bufo
+// NOTE: This is also intended
+//       If you're going out of your way to define a custom ref type
+//       You're probably intending to not switch ref and &Vector up?
+@assert(&ref != &&Vector);
+
