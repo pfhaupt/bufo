@@ -1,0 +1,30 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 2
+//! COMPILER
+//! SUCCESS
+
+const true = 1 == 1;
+
+const i32 = @integer(32, true);
+const ptr = &i32;
+@assert(ptr == &i32);
+@assert(*ptr == i32);
+
+// NOTE: This is intended
+// REASON: Types are not a special construct of the compiler
+//         Variables like i32 are a simple pointer into a global type table
+//         which means that i32 and FnIndex are also stored on the Stack
+//         &value is defined as AddrOf(value), for that definition we don't
+//         care about the underlying types, we care about the stack addr
+const FnIndex = i32;
+// FnIndex is a weak copy of i32
+@assert(FnIndex == i32);
+@assert(&FnIndex != &i32);
+
+const ref = &FnIndex;
+@assert(*ref == i32);
+
+const alsoI32 = @integer(32, true);
+@assert(i32 != alsoI32);
+@assert(&i32 != &alsoI32);
+

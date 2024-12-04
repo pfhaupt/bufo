@@ -18,7 +18,7 @@ mut types: [BCType; 640000] = blank;
 mut typeCount: usize = 0;
 func assertValidType(ty: TypeIndex, what: &char) -> usize {
     trace("assertValidType");
-    let index: usize = ty._i;
+    let index: usize = ty._i as usize;
     assert_with_msg(index < typeCount, what);
     return index;
 }
@@ -49,7 +49,8 @@ func getTypeID(typ: &mut BCType) -> TypeIndex {
         let diff: usize = typ - base;
         assert(diff % sizeof BCType == 0);
         let id: usize = diff / sizeof BCType;
-        return TypeIndex { _i: id };
+        assert(id < typeCount);
+        return TypeIndex { _i: id as u32, ptrData: 0 };
     }
 }
 
@@ -146,9 +147,7 @@ struct BCInterp {
         }
         (*reg).value = this.stackPtr;
         (*reg).size = sizeof i64;
-        // FIXME: Where do we actually store typedefs? Idk for now
-        //        i64 *must* be the first type we add, or this index is invalid
-        (*reg).typ = TypeIndex { _i: 0 };
+        (*reg).typ = TypeIndex { _i: 0, ptrData: 0 };
         unsafe {
             *(this.stackPtr as &mut i64) = *(&loadNumber.src._i as &i64);
             this.stackPtr = this.stackPtr + sizeof i64;
@@ -262,7 +261,7 @@ struct BCInterp {
         assert(lhsReg.size == rhsReg.size);
         (*dstReg).value = this.stackPtr;
         (*dstReg).size = 1;
-        (*dstReg).typ = TypeIndex { _i: 1 };
+        (*dstReg).typ = TypeIndex { _i: 1, ptrData: 0 };
         unsafe {
             let areEqual: bool = memcmp(lhsReg.value, rhsReg.value, lhsReg.size) == 0;
             mut res: u8 = 0;
@@ -320,7 +319,7 @@ struct BCInterp {
         (*dstReg).value = this.stackPtr;
         (*dstReg).size = 8;
         // FIXME: This should be indexof(TYPE_TYPE), which is currently hardcoded in initializeGlobalTypes()
-        (*dstReg).typ = TypeIndex { _i: 2 };
+        (*dstReg).typ = TypeIndex { _i: 2, ptrData: 0 };
         unsafe {
             let bitsize: i64 = *(sizeReg.value as &i64);
             if (bitsize < 0 || bitsize > 65536) {
@@ -330,8 +329,50 @@ struct BCInterp {
             let int: &mut BCType = createBlankType();
             int.makeIntegerType(bitsize as u32, signed);
             let id: TypeIndex = getTypeID(int);
-            *(dstReg.value as &mut usize) = id._i;
+            *(dstReg.value as &mut TypeIndex) = id;
             this.stackPtr = this.stackPtr + 8;
+        }
+        return true;
+    }
+
+    func typeCheckBCAddrOf(&mut this, fn: &mut BCFunction, addrof: &mut BCInstr) -> bool {
+        trace("BCInterp.typeCheckBCAddrOf");
+        assert(addrof.kind == INSTR_KIND_ADDR_OF);
+        let dst: RegIndex = addrof.dst;
+        let src: RegIndex = addrof.src;
+        let dstReg: &mut BCReg = fn.getRegAtIndex(dst);
+        let srcReg: &mut BCReg = fn.getRegAtIndex(src);
+        assert_with_msg(srcReg.isInitialized(), "expected valid size in AddrOf");
+        (*dstReg).value = this.stackPtr;
+        (*dstReg).size = 8;
+        (*dstReg).typ = srcReg.typ;
+        (*dstReg).typ.makePointer();
+        unsafe {
+            // dstReg.value = &srcReg.value
+            *((*dstReg).value as &mut usize) = srcReg.value as usize;
+            this.stackPtr = this.stackPtr + 8;
+        }
+        return true;
+    }
+
+    func typeCheckBCLoadAddr(&mut this, fn: &mut BCFunction, loadaddr: &mut BCInstr) -> bool {
+        trace("BCInterp.typeCheckBCLoadAddr");
+        assert(loadaddr.kind == INSTR_KIND_LOAD_ADDR);
+        let dst: RegIndex = loadaddr.dst;
+        let src: RegIndex = loadaddr.src;
+        let dstReg: &mut BCReg = fn.getRegAtIndex(dst);
+        let srcReg: &mut BCReg = fn.getRegAtIndex(src);
+        assert_with_msg(srcReg.isInitialized(), "expected valid size in LoadAddr");
+        if (!srcReg.typ.isPointer()) {
+            todo_with_msg("report error: LoadAddr has non-pointer");
+        }
+        (*dstReg).value = this.stackPtr;
+        (*dstReg).typ = srcReg.typ.getUnderlying();
+        let size: usize = dstReg.typ.getSize();
+        (*dstReg).size = size;
+        unsafe {
+            *((*dstReg).value as &mut usize) = *(*(srcReg.value as &mut usize) as &mut usize);
+            this.stackPtr = this.stackPtr + size;
         }
         return true;
     }
@@ -373,6 +414,14 @@ struct BCInterp {
                 }
             } else if (instr.kind == INSTR_KIND_CREATE_INT_TYPE) {
                 if (!this.typeCheckBCCreateIntType(fn, instr)) {
+                    return false;
+                }
+            } else if (instr.kind == INSTR_KIND_ADDR_OF) {
+                if (!this.typeCheckBCAddrOf(fn, instr)) {
+                    return false;
+                }
+            } else if (instr.kind == INSTR_KIND_LOAD_ADDR) {
+                if (!this.typeCheckBCLoadAddr(fn, instr)) {
                     return false;
                 }
             } else {
@@ -423,10 +472,10 @@ struct Checker {
             return false;
         }
     }
-    func loadVariable(&mut this, currFn: FnIndex, ident: &mut ParsedDeclValueIdent) -> RegIndex {
+    func loadVariable(&mut this, currFn: FnIndex, ident: &mut ParsedDeclValueIdent, wantsAddr: bool) -> RegIndex {
         let index: usize = assertValidFunction(currFn, "Can not generate load in invalid fn index");
         mut reg: RegIndex = blank;
-        let success: bool = functions[index].buildLoad(ident.span, ident.name, &mut reg);
+        let success: bool = functions[index].buildLoad(ident.span, ident.name, &mut reg, wantsAddr);
         if (!success) unsafe {
             let entry: &mut GlobalEntry = this.globalScope.getVariableByName(ident.name);
             if (entry == null) {
@@ -437,7 +486,7 @@ struct Checker {
             let global: FnIndex = FnIndex { _i: 0 };
             let success: bool = this.generateBytecodeVarDecl(global, entry.node);
             if (!success) todo_with_msg("failed to generate global");
-            assert(functions[index].buildLoad(ident.span, ident.name, &mut reg));
+            assert(functions[index].buildLoad(ident.span, ident.name, &mut reg, wantsAddr));
             (*entry).computed = true;
             (*entry).register = reg;
         }
@@ -504,10 +553,10 @@ struct Checker {
             todo_with_msg("local var");
             // Global declarations have already been added
         }
-        let register: RegIndex = this.generateBytecodeDeclValue(currFn, &mut decl.value);
+        let register: RegIndex = this.generateBytecodeDeclValue(currFn, &mut decl.value, false);
         return this.storeVariable(currFn, decl.name.span, decl.name.content, register, isConst);
     }
-    func generateBytecodeDeclValue(&mut this, currFn: FnIndex, expr: &mut ParsedDeclValue) -> RegIndex {
+    func generateBytecodeDeclValue(&mut this, currFn: FnIndex, expr: &mut ParsedDeclValue, wantsAddr: bool) -> RegIndex {
         trace("Checker.generateBytecodeDeclValue");
         if (expr.kind == DECL_VALUE_INVALID) todo_with_msg("bytecode DECL_VALUE_INVALID");
         else if (expr.kind == DECL_VALUE_MODULE) todo_with_msg("bytecode DECL_VALUE_MODULE");
@@ -520,7 +569,7 @@ struct Checker {
         else if (expr.kind == DECL_VALUE_CALL) todo_with_msg("bytecode DECL_VALUE_CALL");
         else if (expr.kind == DECL_VALUE_IDENT) unsafe {
             let ident: &mut ParsedDeclValueIdent = expr.data;
-            return this.loadVariable(currFn, ident);
+            return this.loadVariable(currFn, ident, wantsAddr);
         } else if (expr.kind == DECL_VALUE_BINARY)
             return this.generateBytecodeBinary(currFn, expr.data);
         else if (expr.kind == DECL_VALUE_NUMBER) unsafe {
@@ -531,19 +580,31 @@ struct Checker {
             return functions[assertValidFunction(currFn, "number literal")].buildNumberLiteral(number.span, int);
         } else if (expr.kind == DECL_VALUE_BLOCK) todo_with_msg("bytecode DECL_VALUE_BLOCK");
         else if (expr.kind == DECL_VALUE_IF) todo_with_msg("bytecode DECL_VALUE_IF");
-        else if (expr.kind == DECL_VALUE_UNARY) todo_with_msg("bytecode DECL_VALUE_UNARY");
-        else {
+        else if (expr.kind == DECL_VALUE_UNARY) unsafe {
+            return this.generateBytecodeUnary(currFn, expr.data);
+        } else {
             assert_with_msg(false, "exhaustive handling in generateBytecodeDeclValue");
         }
         todo_with_msg("decl value");
         return blank;
     }
 
+    func generateBytecodeUnary(&mut this, currFn: FnIndex, unary: &mut ParsedDeclValueUnary) -> RegIndex {
+        trace("Checker.generateBytecodeUnary");
+        if (unary.op == UNARY_OP_REF) {
+            let reg: RegIndex = this.generateBytecodeDeclValue(currFn, &mut unary.expr, true);
+            return functions[assertValidFunction(currFn, "unary operation")].buildAddrOf(unary.span, reg);
+        } else {
+            let reg: RegIndex = this.generateBytecodeDeclValue(currFn, &mut unary.expr, false);
+            return functions[assertValidFunction(currFn, "unary operation")].buildLoadAddr(unary.span, reg);
+        }
+    }
+
     func generateBytecodeBinary(&mut this, currFn: FnIndex, binary: &mut ParsedDeclValueBinary) -> RegIndex {
         trace("Checker.generateBytecodeBinary");
         if (binary.op == BINARY_OP_ASSIGN) todo_with_msg("binary assignment");
-        let lhs: RegIndex = this.generateBytecodeDeclValue(currFn, &mut binary.lhs);
-        let rhs: RegIndex = this.generateBytecodeDeclValue(currFn, &mut binary.rhs);
+        let lhs: RegIndex = this.generateBytecodeDeclValue(currFn, &mut binary.lhs, false);
+        let rhs: RegIndex = this.generateBytecodeDeclValue(currFn, &mut binary.rhs, false);
         return functions[assertValidFunction(currFn, "binary operation")].buildBinaryOp(binary.span, lhs, rhs, binary.op);
     }
 
@@ -552,8 +613,8 @@ struct Checker {
         let name: SubStr = builtin.name;
         if (name.equals(&BUILTIN_INTEGER)) {
             if (builtin.argCount != 2) todo_with_msg("@integer() wrong arg count");
-            let size: RegIndex = this.generateBytecodeDeclValue(currFn, &mut builtin.args[0]);
-            let signed: RegIndex = this.generateBytecodeDeclValue(currFn, &mut builtin.args[1]);
+            let size: RegIndex = this.generateBytecodeDeclValue(currFn, &mut builtin.args[0], false);
+            let signed: RegIndex = this.generateBytecodeDeclValue(currFn, &mut builtin.args[1], false);
             return functions[assertValidFunction(currFn, "@integer()")].buildCreateInteger(builtin.span, size, signed);
         } else if (name.equals(&BUILTIN_FLOAT)) todo_with_msg("BUILTIN_FLOAT");
         else if (name.equals(&BUILTIN_BOOLEAN)) todo_with_msg("BUILTIN");
@@ -564,7 +625,7 @@ struct Checker {
         else if (name.equals(&BUILTIN_ENTRY)) todo_with_msg("BUILTIN");
         else if (name.equals(&BUILTIN_ASSERT)) {
             if (builtin.argCount != 1) todo_with_msg("@assert() wrong arg count");
-            let what: RegIndex = this.generateBytecodeDeclValue(currFn, &mut builtin.args[0]);
+            let what: RegIndex = this.generateBytecodeDeclValue(currFn, &mut builtin.args[0], false);
             return functions[assertValidFunction(currFn, "@assert()")].buildConstAssert(builtin.span, what);
         } else if (name.equals(&BUILTIN_TYPEOF)) todo_with_msg("BUILTIN");
         else todo_with_msg("unknown builtin");

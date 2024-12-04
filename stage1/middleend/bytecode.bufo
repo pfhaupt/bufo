@@ -17,15 +17,43 @@ struct RegIndex {
     }
 }
 
+//                  _i    | ptrData
+// int          = 00000001|00000000
+// bool         = 00000010|00000000
+// ptr(int)     = 00000001|00000001
+// ptr(ptr(int) = 00000001|00000010
 struct TypeIndex {
-    _i: usize;
+    _i: u32;
+    ptrData: u32;
     func toString(&mut this) -> String {
-        return types[assertValidType(*this, "TypeIndex.toString")].toString();
+        mut s: String = newString();
+        for (mut i: u32 = 0; i < this.ptrData; i = i + 1) {
+            s.pushChar('&');
+        }
+        let _t: String = types[assertValidType(*this, "TypeIndex.toString")].toString();
+        s.pushString(&_t);
+        _t.drop();
+        return s;
+    }
+
+    func isPointer(&mut this) -> bool {
+        return this.ptrData > 0;
+    }
+
+    func getUnderlying(&mut this) -> TypeIndex {
+        assert_with_msg(this.isPointer(), "Attempted to get underlying type of non-pointer");
+        return TypeIndex { _i: this._i, ptrData: this.ptrData - 1 };
+    }
+
+    func makePointer(&mut this) {
+        this.ptrData = this.ptrData + 1;
     }
 
     func getSize(&mut this) -> usize {
+        if (this.ptrData > 0) return 8;
         if (this._i == 0) return 8;
         if (this._i == 1) return 1;
+        if (this._i == 2) return 8;
         todo_with_msg("actually implement TypeIndex.getSize");
         return types[assertValidType(*this, "TypeIndex.getSize")].getSize();
     }
@@ -65,7 +93,16 @@ struct BCReg {
                 s.pushStr(" more...>");
                 break;
             }
-            s.pushChar(*(this.value + i * sizeof u8) as char);
+            s.pushHex(*(this.value + i * sizeof u8));
+        }
+        s.pushStr(", addr=");
+        unsafe {
+            mut ptr: usize = this.value as usize;
+            for (mut i: usize = 0; i < 8; i = i + 1) {
+                let byte: u8 = (ptr % 256) as u8;
+                s.pushHex(byte);
+                ptr = ptr / 256;
+            }
         }
         _t.drop();
         return s;
@@ -100,6 +137,7 @@ struct BCType {
         } else {
             let id: TypeIndex = getTypeID(this);
             if (id._i == 1) return newStringFromStrLit("bool");
+            if (id._i == 2) return newStringFromStrLit("type");
             assert_with_msg(false, "unreachable in BCType.toString()");
             return blank;
         }
@@ -214,15 +252,19 @@ struct BCFunction {
         return RegIndex { _i: index };
     }
 
-    func buildLoad(&mut this, span: Span, name: SubStr, target: &mut RegIndex) -> bool {
+    func buildLoad(&mut this, span: Span, name: SubStr, target: &mut RegIndex, wantsAddr: bool) -> bool {
         trace("BCFunction.buildLoad");
         for (mut i: usize = 0; i < this.varLength; i = i + 1) {
             let var: &mut NameRegPair = this.getVarAtIndex(VarIndex { _i: i });
             if (var.name.equals(&name)) {
-                let reg: RegIndex = this.allocateRegister(span);
-                let load: BCInstr = newLoadInstr(span, reg, var.reg);
-                this.appendInstr(load);
-                *target = reg;
+                if (wantsAddr) {
+                    *target = var.reg;
+                } else {
+                    let reg: RegIndex = this.allocateRegister(span);
+                    let load: BCInstr = newLoadInstr(span, reg, var.reg);
+                    this.appendInstr(load);
+                    *target = reg;
+                }
                 return true;
             }
         }
@@ -280,6 +322,23 @@ struct BCFunction {
         this.appendInstr(int);
         return dst;
     }
+
+    func buildAddrOf(&mut this, span: Span, val: RegIndex) -> RegIndex {
+        trace("BCFunction.buildAddrOf");
+        let dst: RegIndex = this.allocateRegister(span);
+        let addrof: BCInstr = newAddrOf(span, dst, val);
+        this.appendInstr(addrof);
+        return dst;
+    }
+
+    func buildLoadAddr(&mut this, span: Span, val: RegIndex) -> RegIndex {
+        trace("BCFunction.buildLoadAddr");
+        let dst: RegIndex = this.allocateRegister(span);
+        let addrof: BCInstr = newLoadAddr(span, dst, val);
+        this.appendInstr(addrof);
+        return dst;
+    }
+
     func dump(&mut this) {
         unsafe {
             printf(" --- REGISTERS ---\n");
@@ -324,6 +383,8 @@ comptime INSTR_KIND_EQUAL: usize = 5;
 comptime INSTR_KIND_NOT_EQUAL: usize = 6;
 comptime INSTR_KIND_CONST_ASSERT: usize = 7;
 comptime INSTR_KIND_CREATE_INT_TYPE: usize = 8;
+comptime INSTR_KIND_ADDR_OF: usize = 9;
+comptime INSTR_KIND_LOAD_ADDR: usize = 10;
 struct BCInstr {
     origin: Span;
     kind: usize;
@@ -431,6 +492,26 @@ struct BCInstr {
             _size.drop();
             _sign.drop();
             ret = s;
+        } else if (this.kind == INSTR_KIND_ADDR_OF) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            let _src: String = this.src.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = AddrOf ");
+            s.pushString(&_src);
+            _dst.drop();
+            _src.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_LOAD_ADDR) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            let _src: String = this.src.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = LoadAddr ");
+            s.pushString(&_src);
+            _dst.drop();
+            _src.drop();
+            ret = s;
         } else unsafe {
             printf("%llu\n", this.kind);
             assert_with_msg(false, "exhaustive handling in BCInstr.toString");
@@ -519,5 +600,25 @@ func newCreateIntType(span: Span, dst: RegIndex, size: RegIndex, signed: RegInde
         dst: dst,
         src: size,
         op1: signed
+    };
+}
+
+func newAddrOf(span: Span, dst: RegIndex, src: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_ADDR_OF,
+        dst: dst,
+        src: src,
+        op1: blank
+    };
+}
+
+func newLoadAddr(span: Span, dst: RegIndex, src: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_LOAD_ADDR,
+        dst: dst,
+        src: src,
+        op1: blank
     };
 }
