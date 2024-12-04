@@ -1,5 +1,6 @@
 import "substr.bufo";
 
+let HEX_CHAR: [char; 16] = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'];
 struct String {
     buffer: &mut char;
     length: usize;
@@ -81,6 +82,16 @@ struct String {
             *(this.buffer + this.length * sizeof char) = ch;
         }
         this.length = this.length + 1;
+    }
+    func pushHex(&mut this, hex: u8) {
+        let lower: u8 = hex % 16;
+        let upper: u8 = (hex / 16) % 16;
+        assert(lower < 16);
+        assert(upper < 16);
+        this.pushChar('\\');
+        this.pushChar('x');
+        this.pushChar(HEX_CHAR[upper as usize]);
+        this.pushChar(HEX_CHAR[lower as usize]);
     }
     func pushSubStr(&mut this, sub: &SubStr) {
         for (mut i: usize = 0; i < sub.len(); i = i + 1) {

@@ -1490,8 +1490,15 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
                         "codegen_binary_modulo",
                     )?;
                     Ok(result.into())
-                } else {
+                } else if binary.typ.is_signed() {
                     let result = self.builder.build_int_signed_rem(
+                        self.try_into_int_value(&lhs)?,
+                        self.try_into_int_value(&rhs)?,
+                        "codegen_binary_modulo",
+                    )?;
+                    Ok(result.into())
+                } else {
+                    let result = self.builder.build_int_unsigned_rem(
                         self.try_into_int_value(&lhs)?,
                         self.try_into_int_value(&rhs)?,
                         "codegen_binary_modulo",
