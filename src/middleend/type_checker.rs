@@ -826,6 +826,7 @@ struct Function<'src> {
     is_unsafe: bool,
     is_vararg: bool,
     is_extern: bool,
+    is_used: bool,
 }
 
 impl<'src> Function<'src> {
@@ -894,6 +895,7 @@ impl<'src> Struct<'src> {
             is_unsafe: method.is_unsafe,
             is_vararg: false,
             is_extern: false,
+            is_used: false,
         };
         if self.known_methods.contains_key(name) {
             let m = &self.known_methods[name];
@@ -921,6 +923,10 @@ impl<'src> Struct<'src> {
     #[trace_call(extra)]
     fn get_method(&self, name: &str) -> Option<&Function<'src>> {
         self.known_methods.get(name)
+    }
+
+    fn get_method_mut(&mut self, name: &str) -> Option<&mut Function<'src>> {
+        self.known_methods.get_mut(name)
     }
 }
 
@@ -988,6 +994,13 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
         }
     }
 
+    fn get_struct_mut(&mut self, name: &str) -> Option<&mut Struct<'src>> {
+        match self.struct_indices.get(name) {
+            Some(index) => Some(&mut self.structs[*index]),
+            None => None,
+        }
+    }
+
     #[trace_call(extra)]
     fn insert_struct(&mut self, strukt: Struct<'src>) {
         let index = self.structs.len();
@@ -1025,6 +1038,14 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
         self.externs.get(name)
     }
 
+    fn get_function_mut(&mut self, name: &str) -> Option<&mut Function<'src>> {
+        self.functions.get_mut(name)
+    }
+
+    fn get_extern_mut(&mut self, name: &str) -> Option<&mut Function<'src>> {
+        self.externs.get_mut(name)
+    }
+
     #[trace_call(always)]
     fn add_extern(&mut self, extern_node: &nodes::ExternNode<'src>) -> Vec<TypeError<'src>> {
         let return_type = &extern_node.return_type.typ;
@@ -1038,6 +1059,7 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
             is_unsafe: extern_node.is_unsafe,
             is_vararg: extern_node.is_vararg,
             is_extern: true,
+            is_used: true,
         };
         self.externs.insert(extern_node.name, func);
         errors
@@ -1090,6 +1112,7 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
             is_unsafe: function.is_unsafe,
             is_vararg: false,
             is_extern: false,
+            is_used: function.name == "main" || function.name == "index_oob",
         };
         if self.externs.contains_key(&name) {
             let external = &self.externs[&name];
@@ -1257,6 +1280,69 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
         }
     }
 
+    #[trace_call(always)]
+    fn warn_and_remove_unused(&self, project: &mut nodes::FileNode<'src>) {
+        let mut unused = vec![];
+        for (i, extern_node) in project.externs.iter().enumerate() {
+            let Some(func) = self.get_extern(extern_node.name) else {
+                unreachable!()
+            };
+            if !func.is_used {
+                unused.push(i);
+                eprintln!(
+                    "{}: {:?}: Unused external function {}",
+                    WARN_STR,
+                    extern_node.location,
+                    extern_node.name
+                );
+            }
+        }
+        for i in unused.iter().rev() {
+            project.externs.remove(*i);
+        }
+        for (_i, struct_node) in project.structs.iter_mut().enumerate() {
+            let Some(strukt) = self.get_struct(struct_node.name) else {
+                unreachable!()
+            };
+            unused.clear();
+            for (i, method_node) in struct_node.methods.iter().enumerate() {
+                let Some(method) = strukt.get_method(&method_node.name) else {
+                    unreachable!()
+                };
+                if !method.is_used {
+                    unused.push(i);
+                    eprintln!(
+                        "{}: {:?}: Unused method {}",
+                        WARN_STR,
+                        method_node.location,
+                        method_node.get_full_name()
+                    );
+                }
+            }
+            for i in unused.iter().rev() {
+                struct_node.methods.remove(*i);
+            }
+        }
+        unused.clear();
+        for (i, func_node) in project.functions.iter().enumerate() {
+            let Some(func) = self.get_function(func_node.name) else {
+                unreachable!()
+            };
+            if !func.is_used {
+                unused.push(i);
+                eprintln!(
+                    "{}: {:?}: Unused function {}",
+                    WARN_STR,
+                    func_node.location,
+                    func_node.get_full_name()
+                );
+            }
+        }
+        for i in unused.iter().rev() {
+            project.functions.remove(*i);
+        }
+    }
+
     // #[trace_call(always)]
     pub fn type_check_project<'s>(&mut self, project: &'s mut nodes::FileNode<'src>) -> Result<(), String> {
         macro_rules! perform_step {
@@ -1277,6 +1363,7 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
         perform_step!(self.fill_lookup(project));
         perform_step!(self.type_check_file(project));
         perform_step!(self.find_recursive_structs(project));
+        perform_step!(self.warn_and_remove_unused(project));
         Ok(())
     }
 
@@ -2472,6 +2559,12 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
                     ));
                     return Err(());
                 };
+                if let Some(strukt) = self.get_struct_mut(strukt.name) {
+                    let Some(method) = strukt.get_method_mut(call_node.function_name) else {
+                        unreachable!()
+                    };
+                    method.is_used = true;
+                }
 
                 if method.is_unsafe && self.unsafe_depth == 0 {
                     self.report_error(TypeError::UnsafeCallInSafeContext(
@@ -2727,17 +2820,24 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
                 func_call.location,
             ));
         }
-        let function;
-        if let Some(e) = self.get_extern(&func_call.function_name) {
-            function = e;
-        } else if let Some(f) = self.get_function(&func_call.function_name) {
-            function = f;
+        if let Some(e) = self.get_extern_mut(&func_call.function_name) {
+            e.is_used = true;
+        } else if let Some(f) = self.get_function_mut(&func_call.function_name) {
+            f.is_used = true;
         } else {
             self.report_error(TypeError::UndeclaredFunction(
                 func_call.location,
                 func_call.function_name
             ));
             return Err(());
+        }
+        let function;
+        if let Some(e) = self.get_extern(&func_call.function_name) {
+            function = e;
+        } else if let Some(f) = self.get_function(&func_call.function_name) {
+            function = f;
+        } else {
+            unreachable!()
         }
         func_call.is_extern = function.is_extern;
         if function.is_unsafe && self.unsafe_depth == 0 {

@@ -9,10 +9,13 @@
 
 func f2() {}
 
-comptime func f1() {
+comptime func f1() -> i32 {
     // f2 is not marked as comptime
     f2();
+    return 0;
 }
 
 func main() {
+    // Hack so the flow checker doesn't remove f1 :^)
+    comptime _foo: i32 = f1();
 }
