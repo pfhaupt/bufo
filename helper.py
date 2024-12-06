@@ -38,6 +38,10 @@ def compare(expected: List[str], actual: List[str]) -> bool:
 def call_cmd(cmd: List) -> subprocess.CompletedProcess[bytes]:
     return subprocess.run(cmd, capture_output=True)
 
+def log_cmd_call(cmd: List) -> subprocess.CompletedProcess[bytes]:
+    print("[CMD]", *cmd)
+    return call_cmd(cmd)
+
 class STATE(Enum):
     SUCCESS = 0
     FAILURE = 1
@@ -55,7 +59,8 @@ def run_test(
     path: str,
     exec: bool,
     single_stage: Optional[int],
-    show_output: bool = False
+    show_output: bool = False,
+    validation_only: bool = False,
 ) -> TestResult:
     """
     The protocol for tests is as follows:
@@ -98,6 +103,8 @@ def run_test(
 
     with open(path, "r") as f:
         lines = f.readlines()
+        if len(lines) == 0:
+            return TestResult(path, STATE.CORRUPT)
         if next(lines, pop=False).startswith("//! IGNORE"):
             return TestResult(path, STATE.DONT_TEST)
         if not next(lines).startswith("//! THIS IS A TEST PROGRAM"):
@@ -164,6 +171,9 @@ def run_test(
                 return TestResult(path, STATE.CORRUPT)
         else:
             pass
+
+        if validation_only:
+            return TestResult(path, STATE.SUCCESS)
 
         filename = "./out/{}.exe".format(path.replace(os.sep, "."))
         output = call_cmd([compiler_path, path, "-v", "-o", filename])
@@ -323,12 +333,49 @@ def run_all_tests(
     if failure > 0 or panicked > 0 or corrupt > 0:
         sys.exit(1)
 
+def get_current_stage2_test_number() -> int:
+    current: int = -1
+    for root, dirname, files in os.walk("./tests/stage2"):
+        for f in files:
+            full = root + "/".join(dirname) + "/" + f
+            full = full.replace("\\", "/")
+            full = full.removeprefix("./tests/stage2/")
+            full = full.split("-")[0]
+            full = full.replace("/", "")
+            index = int(full)
+            assert index == current + 1, f"Missing index {index} in tests of stage2"
+            current = index
+    return current + 1
+
+def get_stage2_prefix(index: int) -> str:
+    assert index < 10000, "We need another nested directory!!"
+    spilled = f"{index:04d}"
+    actual = ""
+    for s in spilled:
+        actual += "/"
+        actual += s
+    return f"./tests/stage2{actual}-"
+
+def add_test_file(path: str) -> None:
+    index: int = get_current_stage2_test_number()
+    prefix: str = get_stage2_prefix(index)
+    target: str = prefix + path
+    validate: TestResult = run_test(path, False, 2, validation_only=True)
+    if validate.success != STATE.SUCCESS:
+        print(f"{FAIL} Can't add file {path} to the tests. Reason: Corrupt protocol.")
+        exit(1)
+    else:
+        log_cmd_call(["mv", path, target])
+        log_cmd_call(["git", "add", target])
+        print(f"{PASS} Added file {path} as new test at {target}.")
+
 def print_usage_and_help() -> None:
     print("Usage: python helper.py [compile|test|bench]")
     print("Flags for compile mode:")
     print("  --stage1             -> Only compile stage 1")
     print("  --stage2             -> Only compile stage 2")
     print("Flags for test mode:")
+    print("  add <file1> [files]  -> Convenience utility for creating stage 2 tests")
     print("  --stage1             -> Only test stage 1")
     print("  --stage2             -> Only test stage 2")
     print("  --no-exec            -> skip running runtime tests")
@@ -363,6 +410,14 @@ if __name__ == "__main__":
             print_usage_and_help()
             exit(0)
         if mode == "test":
+            if len(sys.argv) > 2 and sys.argv[2] == "add":
+                if len(sys.argv) == 3:
+                    print("error: `test add` expected at least one file to add.", file=sys.stderr)
+                    print_usage_and_help()
+                    exit(1)
+                for f in sys.argv[3:]:
+                    add_test_file(f)
+                exit()
             single_stage = recompile(trace)
             print("Running tests...")
             no_exec = "--no-exec" in sys.argv
