@@ -315,7 +315,7 @@ struct Parser {
         let span: Span = newSpanBetween(&name.span, &typ.expr.span);
         return ParsedParam {
             span: span,
-            name: name,
+            name: name.content,
             typ: typ
         };
     }

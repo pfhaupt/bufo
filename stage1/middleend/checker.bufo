@@ -12,6 +12,12 @@ func assertValidFunction(currFn: FnIndex, what: &char) -> usize {
     assert_with_msg(index < funcCount, what);
     return index;
 }
+func createBlankFunction() -> &mut BCFunction {
+    let index: usize = funcCount;
+    functions[index] = blank;
+    funcCount = funcCount + 1;
+    return &mut functions[index];
+}
 
 // 640.000 Typedefs should be enough for now
 mut types: [BCType; 640000] = blank;
@@ -37,6 +43,8 @@ func initializeGlobalTypes() {
     assert_with_msg(getTypeID(anytype)._i == 2, "initializeGlobalTypes() called in wrong context");
     let string: &mut BCType = createBlankType();
     assert_with_msg(getTypeID(string)._i == 3, "initializeGlobalTypes() called in wrong context");
+    let fun: &mut BCType = createBlankType();
+    assert_with_msg(getTypeID(fun)._i == 4, "initializeGlobalTypes() called in wrong context");
 }
 
 func createBlankType() -> &mut BCType {
@@ -388,6 +396,44 @@ struct BCInterp {
         }
         return true;
     }
+
+    func typeCheckBCCreateFuncType(&mut this, fn: &mut BCFunction, createFunc: &mut BCInstr) -> bool {
+        trace("BCInterp.typeCheckBCCreateFuncType");
+        assert(createFunc.kind == INSTR_KIND_CREATE_FUNC_TYPE);
+        let dst: RegIndex = createFunc.dst;
+        let dstReg: &mut BCReg = fn.getRegAtIndex(dst);
+        (*dstReg).size = 8;
+        (*dstReg).offset = fn.addOffset(dstReg.size);
+        // FIXME: This should be indexof(TYPE_FUNC), which is currently hardcoded in initializeGlobalTypes()
+        (*dstReg).typ = TypeIndex { _i: 4, ptrData: 0 };
+        unsafe {
+            let fType: &mut BCType = createBlankType();
+            let fun: &mut BCFunction = createBlankFunction();
+            fType.makeFuncType(fun);
+            let id: TypeIndex = getTypeID(fType);
+            *(this.getStackAddr(dstReg.offset) as &mut TypeIndex) = id;
+        }
+        return true;
+    }
+
+    func typeCheckBCCreateNoneType(&mut this, fn: &mut BCFunction, createNone: &mut BCInstr) -> bool {
+        trace("BCInterp.typeCheckBCCreateNoneType");
+        assert(createNone.kind == INSTR_KIND_CREATE_NONE_TYPE);
+        let dst: RegIndex = createNone.dst;
+        let dstReg: &mut BCReg = fn.getRegAtIndex(dst);
+        (*dstReg).size = 8;
+        (*dstReg).offset = fn.addOffset(dstReg.size);
+        // FIXME: This should be indexof(TYPE_TYPE), which is currently hardcoded in initializeGlobalTypes()
+        (*dstReg).typ = TypeIndex { _i: 2, ptrData: 0 };
+        unsafe {
+            let fType: &mut BCType = createBlankType();
+            fType.makeNoneType();
+            let id: TypeIndex = getTypeID(fType);
+            *(this.getStackAddr(dstReg.offset) as &mut TypeIndex) = id;
+        }
+        return true;
+    }
+
     func typeCheckBCAddrOf(&mut this, fn: &mut BCFunction, addrof: &mut BCInstr) -> bool {
         trace("BCInterp.typeCheckBCAddrOf");
         assert(addrof.kind == INSTR_KIND_ADDR_OF);
@@ -435,8 +481,12 @@ struct BCInterp {
         let src: RegIndex = verify.src;
         let srcReg: &mut BCReg = fn.getRegAtIndex(src);
         assert_with_msg(srcReg.isInitialized(), "expected valid reg in VerifyType");
-        if (srcReg.typ._i != 2) {
-            todo_with_msg("report error: VerifyType failed: The given expr was not a type");
+        if (srcReg.typ._i != 2) unsafe {
+            let stderr: Any = fdopen(2, "a");
+            let loc: String = verify.origin.toString();
+            fprintf(stderr, "%s: %s: Expected expression to evaluate to a type.\n", loc.chars(), ERR_STR);
+            loc.drop();
+            return false;
         }
         return true;
     }
@@ -470,6 +520,82 @@ struct BCInterp {
             }
             return structType.addField(addField.origin, fieldName, fieldType);
         }
+    }
+
+    func typeCheckBCAddParam(&mut this, fn: &mut BCFunction, addParam: &mut BCInstr) -> bool {
+        trace("BCInterp.typeCheckBCAddParam");
+        assert(addParam.kind == INSTR_KIND_ADD_PARAM);
+        let base: RegIndex = addParam.dst;
+        let name: RegIndex = addParam.src;
+        let typ: RegIndex = addParam.op1;
+        let baseReg: &mut BCReg = fn.getRegAtIndex(base);
+        let nameReg: &mut BCReg = fn.getRegAtIndex(name);
+        let typReg: &mut BCReg = fn.getRegAtIndex(typ);
+        assert_with_msg(baseReg.isInitialized(), "expected valid base in AddParam");
+        assert_with_msg(nameReg.isInitialized(), "expected valid name in AddParam");
+        assert_with_msg(typReg.isInitialized(), "expected valid type in AddParam");
+        // FIXME: Unhardcode the Type IDs
+        if (baseReg.typ._i != 4) {
+            todo_with_msg("AddParam got non-func as base");
+        }
+        if (nameReg.typ._i != 3) {
+            todo_with_msg("AddParam got non-string as name");
+        }
+        unsafe {
+            let baseType: TypeIndex = *(this.getStackAddr(baseReg.offset) as &TypeIndex);
+            let fieldName: SubStr = *(this.getStackAddr(nameReg.offset) as &SubStr);
+            let fieldType: TypeIndex = *(this.getStackAddr(typReg.offset) as &TypeIndex);
+            let funcType: &mut BCType = &mut types[assertValidType(baseType, "AddParam")];
+            if (!funcType.isFunc()) {
+                todo_with_msg("huh, this is actually unreachable. If you see this, there is a compiler bug :^)");
+            }
+            return funcType.addParam(addParam.origin, fieldName, fieldType);
+        }
+    }
+
+    func typeCheckBCAddFuncNode(&mut this, fn: &mut BCFunction, addFn: &mut BCInstr) -> bool {
+        trace("BCInterp.typeCheckBCAddFuncNode");
+        assert(addFn.kind == INSTR_KIND_ADD_FUNC_NODE);
+        let base: RegIndex = addFn.dst;
+        let baseReg: &mut BCReg = fn.getRegAtIndex(base);
+        assert_with_msg(baseReg.isInitialized(), "expected valid base in AddFuncNode");
+        if (baseReg.typ._i != 4) {
+            todo_with_msg("AddFuncNode got non-func as base");
+        }
+        unsafe {
+            let baseType: TypeIndex = *(this.getStackAddr(baseReg.offset) as &TypeIndex);
+            let node: &mut ParsedFuncDecl = addFn.src._i as &mut ParsedFuncDecl;
+            let funcType: &mut BCType = &mut types[assertValidType(baseType, "AddFuncNode")];
+            assert(funcType.isFunc()); // TypeID is 4, so this is a function
+            funcType.funcInfo.function.setFuncNode(node);
+        }
+        return true;
+    }
+
+    func typeCheckBCAddRetType(&mut this, fn: &mut BCFunction, addRetType: &mut BCInstr) -> bool {
+        trace("BCInterp.typeCheckBCAddRetType");
+        assert(addRetType.kind == INSTR_KIND_ADD_RET_TYPE);
+        let base: RegIndex = addRetType.dst;
+        let typ: RegIndex = addRetType.src;
+        let baseReg: &mut BCReg = fn.getRegAtIndex(base);
+        let typReg: &mut BCReg = fn.getRegAtIndex(typ);
+        assert_with_msg(typReg.isInitialized(), "expected valid type in AddReturnType");
+        assert_with_msg(baseReg.isInitialized(), "expected valid base in AddReturnType");
+        // FIXME: Unhardcode those IDs :^)
+        if (typReg.typ._i != 2) {
+            todo_with_msg("AddReturnType got non-type as type???");
+        }
+        if (baseReg.typ._i != 4) {
+            todo_with_msg("AddReturnType got non-func as base");
+        }
+        unsafe {
+            let baseType: TypeIndex = *(this.getStackAddr(baseReg.offset) as &TypeIndex);
+            let retType: TypeIndex = *(this.getStackAddr(typReg.offset) as &TypeIndex);
+            let funcType: &mut BCType = &mut types[assertValidType(baseType, "AddReturnType")];
+            assert(funcType.isFunc()); // TypeID is 4, so this is a function
+            funcType.addReturnType(retType);
+        }
+        return true;
     }
 
     func typeCheckFunction(&mut this, fnIndex: FnIndex) -> bool {
@@ -519,6 +645,14 @@ struct BCInterp {
                 if (!this.typeCheckBCCreateStructType(fn, instr)) {
                     return false;
                 }
+            } else if (instr.kind == INSTR_KIND_CREATE_FUNC_TYPE) {
+                if (!this.typeCheckBCCreateFuncType(fn, instr)) {
+                    return false;
+                }
+            } else if (instr.kind == INSTR_KIND_CREATE_NONE_TYPE) {
+                if (!this.typeCheckBCCreateNoneType(fn, instr)) {
+                    return false;
+                }
             } else if (instr.kind == INSTR_KIND_ADDR_OF) {
                 if (!this.typeCheckBCAddrOf(fn, instr)) {
                     return false;
@@ -535,10 +669,26 @@ struct BCInterp {
                 if (!this.typeCheckBCAddField(fn, instr)) {
                     return false;
                 }
+            } else if (instr.kind == INSTR_KIND_ADD_PARAM) {
+                if (!this.typeCheckBCAddParam(fn, instr)) {
+                    return false;
+                }
+            } else if (instr.kind == INSTR_KIND_ADD_FUNC_NODE) {
+                if (!this.typeCheckBCAddFuncNode(fn, instr)) {
+                    return false;
+                }
+            } else if (instr.kind == INSTR_KIND_ADD_RET_TYPE) {
+                if (!this.typeCheckBCAddRetType(fn, instr)) {
+                    return false;
+                }
             } else {
                 debug(instr.toString().chars());
                 todo_with_msg("can't check unknown BCInstr");
             }
+        }
+        if (PRINT_DEBUG) unsafe {
+            printf("--- AFTER TYPE CHECK ---\n");
+            fn.dump();
         }
         return true;
     }
@@ -683,8 +833,9 @@ struct Checker {
         trace("Checker.generateBytecodeDeclValue");
         if (expr.kind == DECL_VALUE_INVALID) todo_with_msg("bytecode DECL_VALUE_INVALID");
         else if (expr.kind == DECL_VALUE_MODULE) todo_with_msg("bytecode DECL_VALUE_MODULE");
-        else if (expr.kind == DECL_VALUE_FUNC_DECL) todo_with_msg("bytecode DECL_VALUE_FUNC_DECL");
-        else if (expr.kind == DECL_VALUE_STRUCT_DECL) {
+        else if (expr.kind == DECL_VALUE_FUNC_DECL) {
+            return this.generateBytecodeFuncDecl(currFn, expr.data);
+        } else if (expr.kind == DECL_VALUE_STRUCT_DECL) {
             return this.generateBytecodeStructDecl(currFn, expr.data);
         } else if (expr.kind == DECL_VALUE_ENUM_DECL) todo_with_msg("bytecode DECL_VALUE_ENUM_DECL");
         else if (expr.kind == DECL_VALUE_UNION_DECL) todo_with_msg("bytecode DECL_VALUE_UNION_DECL");
@@ -714,6 +865,21 @@ struct Checker {
         }
         todo_with_msg("decl value");
         return blank;
+    }
+
+    func generateBytecodeFuncDecl(&mut this, currFn: FnIndex, funcDecl: &mut ParsedFuncDecl) -> RegIndex {
+        trace("Checker.generateBytecodeFuncDecl");
+        let base: RegIndex = functions[assertValidFunction(currFn, "func decl")].buildCreateFunc(funcDecl.span);
+        for (mut i: usize = 0; i < funcDecl.paramCount; i = i + 1) {
+            let param: &mut ParsedParam = funcDecl.getParamAtIndex(i);
+            let reg: RegIndex = this.generateBytecodeTypeExpr(currFn, &mut param.typ);
+            let name: RegIndex = functions[assertValidFunction(currFn, "func decl param name")].buildStringLiteral(param.span, param.name);
+            functions[assertValidFunction(currFn, "func decl param")].buildAddParam(param.span, base, name, reg);
+        }
+        let ret: RegIndex = this.generateBytecodeTypeExpr(currFn, &mut funcDecl.retType);
+        functions[assertValidFunction(currFn, "func decl ret type")].buildAddReturnType(funcDecl.retType.span, base, ret);
+        functions[assertValidFunction(currFn, "func decl node")].buildAddFuncNode(funcDecl.span, base, funcDecl);
+        return base;
     }
 
     func generateBytecodeStructDecl(&mut this, currFn: FnIndex, structDecl: &mut ParsedStructDecl) -> RegIndex {
@@ -772,8 +938,10 @@ struct Checker {
         else if (name.equals(&BUILTIN_SELF)) todo_with_msg("BUILTIN_SELF");
         else if (name.equals(&BUILTIN_ANYTYPE)) todo_with_msg("BUILTIN");
         else if (name.equals(&BUILTIN_ANYVALUE)) todo_with_msg("BUILTIN_ANYVALUE");
-        else if (name.equals(&BUILTIN_NONE)) todo_with_msg("BUILTIN");
-        else if (name.equals(&BUILTIN_ENTRY)) todo_with_msg("BUILTIN");
+        else if (name.equals(&BUILTIN_NONE)) {
+            if (builtin.argCount != 0) todo_with_msg("@none() wrong arg count");
+            return functions[assertValidFunction(currFn, "@none()")].buildCreateNone(builtin.span);
+        } else if (name.equals(&BUILTIN_ENTRY)) todo_with_msg("BUILTIN");
         else if (name.equals(&BUILTIN_ASSERT)) {
             if (builtin.argCount != 1) todo_with_msg("@assert() wrong arg count");
             let what: RegIndex = this.generateBytecodeDeclValue(currFn, &mut builtin.args[0], false);

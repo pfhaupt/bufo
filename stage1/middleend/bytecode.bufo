@@ -55,6 +55,7 @@ struct TypeIndex {
         if (this._i == 1) return 1;
         if (this._i == 2) return 8;
         if (this._i == 3) return sizeof SubStr;
+        if (this._i == 4) return 8;
         todo_with_msg("actually implement TypeIndex.getSize");
         return types[assertValidType(*this, "TypeIndex.getSize")].getSize();
     }
@@ -103,6 +104,8 @@ struct BCReg {
 comptime TYPE_INVALID: usize = 0;
 comptime TYPE_INTEGER: usize = 1;
 comptime TYPE_STRUCT: usize = 2;
+comptime TYPE_FUNC: usize = 3;
+comptime TYPE_NONE: usize = 4;
 struct BCTypeInt {
     bitsize: u32;
     signed: bool;
@@ -115,10 +118,19 @@ struct BCTypeStruct {
     fieldTypes: [TypeIndex; 16];
     fieldCount: usize;
 }
+struct BCTypeFunc {
+    function: &mut BCFunction;
+    paramSpans: [Span; 16];
+    paramNames: [SubStr; 16];
+    paramTypes: [TypeIndex; 16];
+    paramCount: usize;
+    retType: TypeIndex;
+}
 struct BCType {
     kind: usize;
     intInfo: BCTypeInt;
     structInfo: BCTypeStruct;
+    funcInfo: BCTypeFunc;
 
     func isValid(&mut this) -> bool {
         return this.kind != TYPE_INVALID;
@@ -126,6 +138,10 @@ struct BCType {
 
     func isStruct(&mut this) -> bool {
         return this.kind == TYPE_STRUCT;
+    }
+
+    func isFunc(&mut this) -> bool {
+        return this.kind == TYPE_FUNC;
     }
 
     func toString(&mut this) -> String {
@@ -140,6 +156,7 @@ struct BCType {
             if (id._i == 1) return newStringFromStrLit("bool");
             if (id._i == 2) return newStringFromStrLit("type");
             if (id._i == 3) return newStringFromStrLit("string");
+            if (id._i == 4) return newStringFromStrLit("func");
             assert_with_msg(false, "unreachable in BCType.toString()");
             return blank;
         }
@@ -155,6 +172,22 @@ struct BCType {
     func makeStructType(&mut this) {
         assert_with_msg(this.kind == TYPE_INVALID, "attempted to turn valid type into struct type");
         this.kind = TYPE_STRUCT;
+    }
+
+    func makeFuncType(&mut this, fn: &mut BCFunction) {
+        assert_with_msg(this.kind == TYPE_INVALID, "attempted to turn valid type into function type");
+        this.kind = TYPE_FUNC;
+        this.funcInfo.function = fn;
+    }
+
+    func makeNoneType(&mut this) {
+        assert_with_msg(this.kind == TYPE_INVALID, "attempted to turn valid type into none type");
+        this.kind = TYPE_NONE;
+    }
+
+    func addReturnType(&mut this, typ: TypeIndex) {
+        assert_with_msg(this.kind == TYPE_FUNC, "attempted to add return type to non-func type");
+        this.funcInfo.retType = typ;
     }
 
     func addField(&mut this, fieldSpan: Span, fieldName: SubStr, fieldType: TypeIndex) -> bool {
@@ -174,6 +207,34 @@ struct BCType {
         return true;
     }
 
+    func addParam(&mut this, paramSpan: Span, paramName: SubStr, paramType: TypeIndex) -> bool {
+        assert_with_msg(this.kind == TYPE_FUNC, "attempted to add param to non-func type");
+        if (this.funcInfo.paramCount >= 16) {
+            todo_with_msg("report error: Function can't have more params");
+        }
+        for (mut i: usize = 0; i < this.funcInfo.paramCount; i = i + 1) {
+            if (this.funcInfo.paramNames[i].equals(&paramName)) unsafe {
+                let stderr: Any = fdopen(2, "a");
+                let loc: String = paramSpan.toString();
+                let declLoc: String = this.funcInfo.paramSpans[i].toString();
+                let name: String = paramName.toString();
+                fprintf(stderr,
+                    "%s: %s: Redeclaration of parameter %s.\n%s: %s: Parameter already declared here.\n",
+                    loc.chars(), ERR_STR, name.chars(), declLoc.chars(), NOTE_STR
+                );
+                name.drop();
+                declLoc.drop();
+                loc.drop();
+                return false;
+            }
+        }
+        this.funcInfo.paramSpans[this.funcInfo.paramCount] = paramSpan;
+        this.funcInfo.paramNames[this.funcInfo.paramCount] = paramName;
+        this.funcInfo.paramTypes[this.funcInfo.paramCount] = paramType;
+        this.funcInfo.paramCount = this.funcInfo.paramCount + 1;
+        return true;
+    }
+
     func getSize(&mut this) -> usize {
         todo_with_msg("BCType.getSize");
         return 0;
@@ -187,6 +248,11 @@ struct BCType {
 
 struct BCFunction {
     origin: Span;
+    // When we encounter a function declaration, we only generate bytecode for parameters and the
+    // return type. We're pretty lazy, and don't go into the function until we actually call it,
+    // in which case (hopefully) .funcDecl != null and .isGenerated == false
+    funcDecl: &mut ParsedFuncDecl;
+    isGenerated: bool;
     stackSize: usize;
     variables: &mut NameRegPair;
     varLength: usize;
@@ -197,6 +263,14 @@ struct BCFunction {
     instructions: &mut BCInstr;
     instrLength: usize;
     instrCapacity: usize;
+
+    func setFuncNode(&mut this, node: &mut ParsedFuncDecl) {
+        unsafe {
+            assert_with_msg(this.funcDecl == null, "attempted to overwrite func node");
+            assert_with_msg(!this.isGenerated, "expected to set node of a not-yet generated function");
+            this.funcDecl = node;
+        }
+    }
 
     func addOffset(&mut this, offset: usize) -> usize {
         assert_with_msg(offset != 0, "attempted to offset function stack by 0 bytes");
@@ -399,6 +473,39 @@ struct BCFunction {
         this.appendInstr(field);
     }
 
+    func buildCreateFunc(&mut this, span: Span) -> RegIndex {
+        trace("BCFunction.buildCreateFunc");
+        let dst: RegIndex = this.allocateRegister(span);
+        let fun: BCInstr = newCreateFuncType(span, dst);
+        this.appendInstr(fun);
+        return dst;
+    }
+
+    func buildAddParam(&mut this, span: Span, fn: RegIndex, paramName: RegIndex, paramType: RegIndex) {
+        trace("BCFunction.buildAddParam");
+        let param: BCInstr = newAddParam(span, fn, paramName, paramType);
+        this.appendInstr(param);
+    }
+
+    func buildAddFuncNode(&mut this, span: Span, fn: RegIndex, node: &mut ParsedFuncDecl) {
+        trace("BCFunction.buildAddFuncNode");
+        let fn: BCInstr = newAddFuncNode(span, fn, node);
+        this.appendInstr(fn);
+    }
+
+    func buildAddReturnType(&mut this, span: Span, fn: RegIndex, typ: RegIndex) {
+        trace("BCFunction.buildAddReturnType");
+        let ret: BCInstr = newAddReturnType(span, fn, typ);
+        this.appendInstr(ret);
+    }
+
+    func buildCreateNone(&mut this, span: Span) -> RegIndex {
+        trace("BCFunction.buildCreateNone");
+        let dst: RegIndex = this.allocateRegister(span);
+        let none: BCInstr = newCreateNoneType(span, dst);
+        this.appendInstr(none);
+        return dst;
+    }
     func dump(&mut this) {
         unsafe {
             printf(" --- REGISTERS ---\n");
@@ -421,6 +528,8 @@ func newEmptyFunction(span: Span) -> BCFunction {
     unsafe {
         return BCFunction {
             origin: span,
+            funcDecl: null,
+            isGenerated: false,
             stackSize: 0,
             variables: null,
             varLength: 0,
@@ -447,10 +556,16 @@ comptime INSTR_KIND_CONST_ASSERT: usize = 8;
 // FIXME: This should be a single instruction
 comptime INSTR_KIND_CREATE_INT_TYPE: usize = 9;
 comptime INSTR_KIND_CREATE_STRUCT_TYPE: usize = 10;
-comptime INSTR_KIND_ADDR_OF: usize = 11;
-comptime INSTR_KIND_LOAD_ADDR: usize = 12;
-comptime INSTR_KIND_VERIFY_TYPE: usize = 13;
-comptime INSTR_KIND_ADD_FIELD: usize = 14;
+comptime INSTR_KIND_CREATE_FUNC_TYPE: usize = 11;
+comptime INSTR_KIND_CREATE_NONE_TYPE: usize = 12;
+comptime INSTR_KIND_ADDR_OF: usize = 13;
+comptime INSTR_KIND_LOAD_ADDR: usize = 14;
+comptime INSTR_KIND_VERIFY_TYPE: usize = 15;
+// REVIEW: Both can be the same instruction
+comptime INSTR_KIND_ADD_FIELD: usize = 16;
+comptime INSTR_KIND_ADD_PARAM: usize = 17;
+comptime INSTR_KIND_ADD_FUNC_NODE: usize = 18;
+comptime INSTR_KIND_ADD_RET_TYPE: usize = 19;
 struct BCInstr {
     origin: Span;
     kind: usize;
@@ -577,6 +692,20 @@ struct BCInstr {
             s.pushStr(" = CreateStructType");
             _dst.drop();
             ret = s;
+        } else if (this.kind == INSTR_KIND_CREATE_FUNC_TYPE) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = CreateFuncType");
+            _dst.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_CREATE_NONE_TYPE) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = CreateNoneType");
+            _dst.drop();
+            ret = s;
         } else if (this.kind == INSTR_KIND_ADDR_OF) {
             mut s: String = newString();
             let _dst: String = this.dst.toString();
@@ -619,6 +748,42 @@ struct BCInstr {
             _name.drop();
             _type.drop();
             ret = s;
+        } else if (this.kind == INSTR_KIND_ADD_PARAM) {
+            mut s: String = newString();
+            let _base: String = this.dst.toString();
+            let _name: String = this.src.toString();
+            let _type: String = this.op1.toString();
+            s.pushStr("AddParam ");
+            s.pushString(&_base);
+            s.pushStr(", ");
+            s.pushString(&_name);
+            s.pushStr(", ");
+            s.pushString(&_type);
+            _base.drop();
+            _name.drop();
+            _type.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_ADD_FUNC_NODE) {
+            mut s: String = newString();
+            let _base: String = this.dst.toString();
+            let _node: usize = this.src._i;
+            s.pushStr("AddFuncNode ");
+            s.pushString(&_base);
+            s.pushStr(", ");
+            s.pushNumberAsHex(_node);
+            _base.drop();
+            return s;
+        } else if (this.kind == INSTR_KIND_ADD_RET_TYPE) {
+            mut s: String = newString();
+            let _base: String = this.dst.toString();
+            let _typ: String = this.src.toString();
+            s.pushStr("AddReturnType ");
+            s.pushString(&_base);
+            s.pushStr(", ");
+            s.pushString(&_typ);
+            _typ.drop();
+            _base.drop();
+            return s;
         } else unsafe {
             printf("%llu\n", this.kind);
             assert_with_msg(false, "exhaustive handling in BCInstr.toString");
@@ -732,6 +897,26 @@ func newCreateStructType(span: Span, dst: RegIndex) -> BCInstr {
     };
 }
 
+func newCreateFuncType(span: Span, dst: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_CREATE_FUNC_TYPE,
+        dst: dst,
+        src: blank,
+        op1: blank
+    };
+}
+
+func newCreateNoneType(span: Span, dst: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_CREATE_NONE_TYPE,
+        dst: dst,
+        src: blank,
+        op1: blank
+    };
+}
+
 func newAddrOf(span: Span, dst: RegIndex, src: RegIndex) -> BCInstr {
     return BCInstr {
         origin: span,
@@ -769,5 +954,37 @@ func newAddField(span: Span, base: RegIndex, name: RegIndex, typ: RegIndex) -> B
         dst: base,
         src: name,
         op1: typ
+    };
+}
+
+func newAddParam(span: Span, base: RegIndex, name: RegIndex, typ: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_ADD_PARAM,
+        dst: base,
+        src: name,
+        op1: typ
+    };
+}
+
+func newAddFuncNode(span: Span, fn: RegIndex, node: &mut ParsedFuncDecl) -> BCInstr {
+    unsafe {
+        return BCInstr {
+            origin: span,
+            kind: INSTR_KIND_ADD_FUNC_NODE,
+            dst: fn,
+            src: RegIndex { _i: node as usize },
+            op1: blank
+        };
+    }
+}
+
+func newAddReturnType(span: Span, fn: RegIndex, typ: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_ADD_RET_TYPE,
+        dst: fn,
+        src: typ,
+        op1: blank
     };
 }

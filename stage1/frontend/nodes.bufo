@@ -584,7 +584,7 @@ func defaultFuncDecl() -> ParsedFuncDecl {
 }
 struct ParsedParam {
     span: Span;
-    name: Token;
+    name: SubStr;
     typ: ParsedTypeExpr;
 }
 
