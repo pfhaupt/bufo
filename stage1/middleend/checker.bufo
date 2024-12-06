@@ -139,8 +139,17 @@ struct GlobalScope {
 
 mut interpStack: [u8; 32000000] = blank;
 struct BCInterp {
-    stackPtr: &mut u8;
-
+    stackBase: &mut u8;
+    unsafe func getStackAddr(&mut this, offset: usize) -> &mut u8 {
+        return this.stackBase + offset;
+    }
+    func localStackCopy(&mut this, dstOffset: usize, srcOffset: usize, size: usize) {
+        unsafe {
+            let d: &mut u8 = this.getStackAddr(dstOffset);
+            let s: &mut u8 = this.getStackAddr(srcOffset);
+            memcpy(d, s, size);
+        }
+    }
     func typeCheckBCLoadNumber(&mut this, fn: &mut BCFunction, loadNumber: &mut BCInstr) -> bool {
         trace("BCInterp.typeCheckBCLoadNumber");
         assert(loadNumber.kind == INSTR_KIND_LOAD_NUMBER);
@@ -149,12 +158,11 @@ struct BCInterp {
         if (reg.isInitialized()) {
             todo_with_msg("impossible: initialized register");
         }
-        (*reg).value = this.stackPtr;
         (*reg).size = sizeof i64;
+        (*reg).offset = fn.addOffset(reg.size);
         (*reg).typ = TypeIndex { _i: 0, ptrData: 0 };
         unsafe {
-            *(this.stackPtr as &mut i64) = *(&loadNumber.src._i as &i64);
-            this.stackPtr = this.stackPtr + sizeof i64;
+            *(this.getStackAddr(reg.offset) as &mut i64) = *(&loadNumber.src._i as &i64);
         }
         return true;
     }
@@ -169,9 +177,10 @@ struct BCInterp {
         if (reg.isInitialized()) {
             todo_with_msg("impossible: initialized register");
         }
-        (*reg).value = this.stackPtr;
-        assert_with_msg(sizeof SubStr == 16, "LoadString expected sizeof SubStr == 16");
-        (*reg).size = sizeof SubStr;
+        let size: usize = sizeof SubStr;
+        assert_with_msg(size == 16, "LoadString expected sizeof SubStr == 16");
+        (*reg).size = size;
+        (*reg).offset = fn.addOffset(size);
         // FIXME: This should be a dedicated TYPE_STRING instead of a hardcoded value
         (*reg).typ = TypeIndex { _i: 3, ptrData: 0 };
         unsafe {
@@ -179,8 +188,7 @@ struct BCInterp {
                 start: ptr._i as &char,
                 len: len._i
             };
-            *((*reg).value as &mut SubStr) = s;
-            this.stackPtr = this.stackPtr + sizeof SubStr;
+            *(this.getStackAddr(reg.offset) as &mut SubStr) = s;
         }
         return true;
     }
@@ -196,13 +204,12 @@ struct BCInterp {
         if (dstReg.isInitialized()) {
             todo_with_msg("report error: const var is initialized");
         }
-        (*dstReg).value = this.stackPtr;
         (*dstReg).size = srcReg.size;
+        (*dstReg).offset = fn.addOffset(dstReg.size);
         (*dstReg).typ = srcReg.typ;
-        unsafe {
-            memcpy(dstReg.value, srcReg.value, srcReg.size);
-            this.stackPtr = this.stackPtr + srcReg.size;
-        }
+
+        this.localStackCopy(dstReg.offset, srcReg.offset, srcReg.size);
+
         return true;
     }
 
@@ -217,13 +224,12 @@ struct BCInterp {
         if (dstReg.isInitialized()) {
             todo_with_msg("impossible: initialized register");
         }
-        (*dstReg).value = this.stackPtr;
         (*dstReg).size = srcReg.size;
+        (*dstReg).offset = fn.addOffset(dstReg.size);
         (*dstReg).typ = srcReg.typ;
-        unsafe {
-            memcpy(dstReg.value, srcReg.value, srcReg.size);
-            this.stackPtr = this.stackPtr + srcReg.size;
-        }
+
+        this.localStackCopy(dstReg.offset, srcReg.offset, srcReg.size);
+
         return true;
     }
 
@@ -256,15 +262,15 @@ struct BCInterp {
         assert(lhsReg.size == rhsReg.size);
         if (lhsReg.typ._i == 0) {
             assert(lhsReg.size == 8);
-            (*dstReg).value = this.stackPtr;
             (*dstReg).size = lhsReg.size;
+            (*dstReg).offset = fn.addOffset(dstReg.size);
             (*dstReg).typ = lhsReg.typ;
             unsafe {
-                let lhs: i64 = *(lhsReg.value as &i64);
-                let rhs: i64 = *(rhsReg.value as &i64);
+                let lhs: i64 = *(this.getStackAddr(lhsReg.offset) as &i64);
+                let rhs: i64 = *(this.getStackAddr(rhsReg.offset) as &i64);
                 let sum: i64 = lhs + rhs;
-                memcpy(dstReg.value, &sum, lhsReg.size);
-                this.stackPtr = this.stackPtr + lhsReg.size;
+                let d: &mut u8 = this.getStackAddr(dstReg.offset);
+                memcpy(d, &sum, lhsReg.size);
             }
             return true;
         } else {
@@ -289,16 +295,17 @@ struct BCInterp {
             todo_with_msg("report error: Type mismatch in typeCheckEqual");
         }
         assert(lhsReg.size == rhsReg.size);
-        (*dstReg).value = this.stackPtr;
         (*dstReg).size = 1;
+        (*dstReg).offset = fn.addOffset(dstReg.size);
         (*dstReg).typ = TypeIndex { _i: 1, ptrData: 0 };
         unsafe {
-            let areEqual: bool = memcmp(lhsReg.value, rhsReg.value, lhsReg.size) == 0;
+            let l: &mut u8 = this.getStackAddr(lhsReg.offset);
+            let r: &mut u8 = this.getStackAddr(rhsReg.offset);
+            let areEqual: bool = memcmp(l, r, lhsReg.size) == 0;
             mut res: u8 = 0;
             if (areEqual) res = 1;
             if (not) res = 1 - res;
-            *((*dstReg).value) = res;
-            this.stackPtr = this.stackPtr + 1;
+            *(this.getStackAddr(dstReg.offset)) = res;
         }
         return true;
     }
@@ -314,7 +321,7 @@ struct BCInterp {
             todo_with_msg("report error: Condition in ConstAssert is not bool");
         }
         unsafe {
-            let success: bool = *whatReg.value == 1;
+            let success: bool = *(this.getStackAddr(whatReg.offset)) == 1;
             if (!success) unsafe {
                 let stderr: Any = fdopen(2, "a");
                 let loc: String = assert.origin.toString();
@@ -346,21 +353,20 @@ struct BCInterp {
         }
         assert(sizeReg.size == 8);
         assert(signReg.size == 1);
-        (*dstReg).value = this.stackPtr;
         (*dstReg).size = 8;
+        (*dstReg).offset = fn.addOffset(dstReg.size);
         // FIXME: This should be indexof(TYPE_TYPE), which is currently hardcoded in initializeGlobalTypes()
         (*dstReg).typ = TypeIndex { _i: 2, ptrData: 0 };
         unsafe {
-            let bitsize: i64 = *(sizeReg.value as &i64);
+            let bitsize: i64 = *(this.getStackAddr(sizeReg.offset) as &i64);
             if (bitsize < 0 || bitsize > 65536) {
                 todo_with_msg("report error: Integer bitsize invalid");
             }
-            let signed: bool = *signReg.value == 1;
+            let signed: bool = *(this.getStackAddr(sizeReg.offset)) == 1;
             let int: &mut BCType = createBlankType();
             int.makeIntegerType(bitsize as u32, signed);
             let id: TypeIndex = getTypeID(int);
-            *(dstReg.value as &mut TypeIndex) = id;
-            this.stackPtr = this.stackPtr + 8;
+            *(this.getStackAddr(dstReg.offset) as &mut TypeIndex) = id;
         }
         return true;
     }
@@ -370,16 +376,15 @@ struct BCInterp {
         assert(strukt.kind == INSTR_KIND_CREATE_STRUCT_TYPE);
         let dst: RegIndex = strukt.dst;
         let dstReg: &mut BCReg = fn.getRegAtIndex(dst);
-        (*dstReg).value = this.stackPtr;
         (*dstReg).size = 8;
+        (*dstReg).offset = fn.addOffset(dstReg.size);
         // FIXME: This should be indexof(TYPE_TYPE), which is currently hardcoded in initializeGlobalTypes()
         (*dstReg).typ = TypeIndex { _i: 2, ptrData: 0 };
         unsafe {
             let sType: &mut BCType = createBlankType();
             sType.makeStructType();
             let id: TypeIndex = getTypeID(sType);
-            *(dstReg.value as &mut TypeIndex) = id;
-            this.stackPtr = this.stackPtr + 8;
+            *(this.getStackAddr(dstReg.offset) as &mut TypeIndex) = id;
         }
         return true;
     }
@@ -391,14 +396,13 @@ struct BCInterp {
         let dstReg: &mut BCReg = fn.getRegAtIndex(dst);
         let srcReg: &mut BCReg = fn.getRegAtIndex(src);
         assert_with_msg(srcReg.isInitialized(), "expected valid size in AddrOf");
-        (*dstReg).value = this.stackPtr;
         (*dstReg).size = 8;
+        (*dstReg).offset = fn.addOffset(dstReg.size);
         (*dstReg).typ = srcReg.typ;
         (*dstReg).typ.makePointer();
         unsafe {
-            // dstReg.value = &srcReg.value
-            *((*dstReg).value as &mut usize) = srcReg.value as usize;
-            this.stackPtr = this.stackPtr + 8;
+            let addr: &mut u8 = this.getStackAddr(srcReg.offset);
+            *(this.getStackAddr(dstReg.offset) as &mut usize) = addr as usize;
         }
         return true;
     }
@@ -414,13 +418,13 @@ struct BCInterp {
         if (!srcReg.typ.isPointer()) {
             todo_with_msg("report error: LoadAddr has non-pointer");
         }
-        (*dstReg).value = this.stackPtr;
         (*dstReg).typ = srcReg.typ.getUnderlying();
         let size: usize = dstReg.typ.getSize();
         (*dstReg).size = size;
+        (*dstReg).offset = fn.addOffset(size);
         unsafe {
-            *((*dstReg).value as &mut usize) = *(*(srcReg.value as &mut usize) as &mut usize);
-            this.stackPtr = this.stackPtr + size;
+            let addr: usize = *(*(this.getStackAddr(srcReg.offset) as &usize) as &usize);
+            *(this.getStackAddr(dstReg.offset) as &mut usize) = addr;
         }
         return true;
     }
@@ -457,9 +461,9 @@ struct BCInterp {
             todo_with_msg("AddField got non-string as name");
         }
         unsafe {
-            mut baseType: TypeIndex = *(baseReg.value as &mut TypeIndex);
-            mut fieldName: SubStr = *(nameReg.value as &mut SubStr);
-            mut fieldType: TypeIndex = *(typReg.value as &mut TypeIndex);
+            let baseType: TypeIndex = *(this.getStackAddr(baseReg.offset) as &TypeIndex);
+            let fieldName: SubStr = *(this.getStackAddr(nameReg.offset) as &SubStr);
+            let fieldType: TypeIndex = *(this.getStackAddr(typReg.offset) as &TypeIndex);
             let structType: &mut BCType = &mut types[assertValidType(baseType, "AddField")];
             if (!structType.isStruct()) {
                 todo_with_msg("huh, this is actually unreachable. If you see this, there is a compiler bug :^)");
@@ -469,7 +473,7 @@ struct BCInterp {
     }
 
     func typeCheckFunction(&mut this, fnIndex: FnIndex) -> bool {
-        unsafe { assert(this.stackPtr != null); }
+        unsafe { assert(this.stackBase != null); }
         trace("BCInterp.typeCheckFunction");
         let fn: &mut BCFunction = &mut functions[assertValidFunction(fnIndex, "typeCheckFunction")];
         // TODO: We don't want to `getRegAtIndex()` for registers, we want to get their stack values
@@ -542,7 +546,7 @@ struct BCInterp {
 
 func newBCInterp() -> BCInterp {
     return BCInterp {
-        stackPtr: &mut interpStack[0],
+        stackBase: &mut interpStack[0],
     };
 }
 

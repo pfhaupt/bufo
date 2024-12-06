@@ -75,7 +75,7 @@ struct NameRegPair {
 
 struct BCReg {
     origin: Span;
-    value: &mut u8;
+    offset: usize;
     size: usize;
     typ: TypeIndex;
 
@@ -85,22 +85,12 @@ struct BCReg {
         mut s: String = newString();
         let _t: String = this.typ.toString();
         s.pushString(&_t);
+        s.pushStr(", offset=");
+        s.pushNumber(this.offset);
         let size: usize = this.typ.getSize();
-        s.pushStr(", raw-value=");
-        for (mut i: usize = 0; i < size; i = i + 1) unsafe {
-            if (i >= 25 && size - i > 0) {
-                s.pushStr(" <and ");
-                s.pushNumber(size - i);
-                s.pushStr(" more...>");
-                break;
-            }
-            s.pushHex(*(this.value + i * sizeof u8));
-        }
-        s.pushStr(", addr=");
-        unsafe {
-            mut ptr: usize = this.value as usize;
-            s.pushNumberAsHex(ptr);
-        }
+        assert_with_msg(size == this.size, "Sanity check in BCReg.toString() violated");
+        s.pushStr(", size=");
+        s.pushNumber(size);
         _t.drop();
         return s;
     }
@@ -197,6 +187,7 @@ struct BCType {
 
 struct BCFunction {
     origin: Span;
+    stackSize: usize;
     variables: &mut NameRegPair;
     varLength: usize;
     varCapacity: usize;
@@ -206,6 +197,13 @@ struct BCFunction {
     instructions: &mut BCInstr;
     instrLength: usize;
     instrCapacity: usize;
+
+    func addOffset(&mut this, offset: usize) -> usize {
+        assert_with_msg(offset != 0, "attempted to offset function stack by 0 bytes");
+        let o: usize = this.stackSize;
+        this.stackSize = this.stackSize + offset;
+        return o;
+    }
 
     func getVarAtIndex(&mut this, index: VarIndex) -> &mut NameRegPair {
         trace("BCFunction.getVarAtIndex");
@@ -423,6 +421,7 @@ func newEmptyFunction(span: Span) -> BCFunction {
     unsafe {
         return BCFunction {
             origin: span,
+            stackSize: 0,
             variables: null,
             varLength: 0,
             varCapacity: 0,
