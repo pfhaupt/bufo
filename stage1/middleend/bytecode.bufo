@@ -178,6 +178,7 @@ struct BCType {
         assert_with_msg(this.kind == TYPE_INVALID, "attempted to turn valid type into function type");
         this.kind = TYPE_FUNC;
         this.funcInfo.function = fn;
+        (*fn).funcType = getTypeID(this);
     }
 
     func makeNoneType(&mut this) {
@@ -253,6 +254,7 @@ struct BCFunction {
     // in which case (hopefully) .funcDecl != null and .isGenerated == false
     funcDecl: &mut ParsedFuncDecl;
     isGenerated: bool;
+    funcType: TypeIndex;
     stackSize: usize;
     variables: &mut NameRegPair;
     varLength: usize;
@@ -377,12 +379,30 @@ struct BCFunction {
         return false;
     }
 
+    func buildParamStore(&mut this, span: Span, name: SubStr, mut typ: TypeIndex) -> bool {
+        trace("BCFunction.buildParamStore");
+        for (mut i: usize = 0; i < this.varLength; i = i + 1) {
+            let var: &mut NameRegPair = this.getVarAtIndex(VarIndex { _i: i });
+            if (var.name.equals(&name)) {
+                todo_with_msg("param redecl");
+                return false;
+            }
+        }
+        let var: RegIndex = this.allocateRegister(span);
+        // Because of generic functions, we need to also store the type
+        let typeSize: usize = typ.getSize() + sizeof TypeIndex;
+        let store: BCInstr = newStoreParamInstr(span, var, typeSize);
+        this.appendInstr(store);
+        this.allocateVariable(name, var);
+        return true;
+    }
+
     func buildConstStore(&mut this, span: Span, name: SubStr, value: RegIndex) -> bool {
         trace("BCFunction.buildConstStore");
         for (mut i: usize = 0; i < this.varLength; i = i + 1) {
             let var: &mut NameRegPair = this.getVarAtIndex(VarIndex { _i: i });
             if (var.name.equals(&name)) {
-                todo_with_msg("redecl");
+                todo_with_msg("const redecl");
                 return false;
             }
         }
@@ -506,6 +526,38 @@ struct BCFunction {
         this.appendInstr(none);
         return dst;
     }
+
+    func buildCreateAnytype(&mut this, span: Span) -> RegIndex {
+        trace("BCFunction.buildCreateAnytype");
+        let dst: RegIndex = this.allocateRegister(span);
+        let none: BCInstr = newCreateAnytypeType(span, dst);
+        this.appendInstr(none);
+        return dst;
+    }
+
+    func buildAddCallArgument(&mut this, span: Span, call: RegIndex, index: usize, arg: RegIndex) {
+        trace("BCFunction.buildAddCallArgument");
+        let addArg: BCInstr = newAddCallArgument(span, call, index, arg);
+        this.appendInstr(addArg);
+    }
+
+    func buildCall(&mut this, span: Span, call: RegIndex) -> RegIndex {
+        trace("BCFunction.buildCall");
+        let dst: RegIndex = this.allocateRegister(span);
+        let call: BCInstr = newCall(span, dst, call);
+        this.appendInstr(call);
+        return dst;
+    }
+
+    func buildReturn(&mut this, span: Span, val: RegIndex) -> bool {
+        if (getFnIndex(this).isGlobalFn()) {
+            todo_with_msg("no return in global context");
+        }
+        let ret: BCInstr = newReturn(span, val);
+        this.appendInstr(ret);
+        return true;
+    }
+
     func dump(&mut this) {
         unsafe {
             printf(" --- REGISTERS ---\n");
@@ -530,6 +582,7 @@ func newEmptyFunction(span: Span) -> BCFunction {
             origin: span,
             funcDecl: null,
             isGenerated: false,
+            funcType: blank,
             stackSize: 0,
             variables: null,
             varLength: 0,
@@ -554,18 +607,24 @@ comptime INSTR_KIND_EQUAL: usize = 6;
 comptime INSTR_KIND_NOT_EQUAL: usize = 7;
 comptime INSTR_KIND_CONST_ASSERT: usize = 8;
 // FIXME: This should be a single instruction
+// NOTE:  All 5 of them :^)
 comptime INSTR_KIND_CREATE_INT_TYPE: usize = 9;
 comptime INSTR_KIND_CREATE_STRUCT_TYPE: usize = 10;
 comptime INSTR_KIND_CREATE_FUNC_TYPE: usize = 11;
 comptime INSTR_KIND_CREATE_NONE_TYPE: usize = 12;
-comptime INSTR_KIND_ADDR_OF: usize = 13;
-comptime INSTR_KIND_LOAD_ADDR: usize = 14;
-comptime INSTR_KIND_VERIFY_TYPE: usize = 15;
+comptime INSTR_KIND_CREATE_ANYTYPE_TYPE: usize = 13;
+comptime INSTR_KIND_ADDR_OF: usize = 14;
+comptime INSTR_KIND_LOAD_ADDR: usize = 15;
+comptime INSTR_KIND_VERIFY_TYPE: usize = 16;
 // REVIEW: Both can be the same instruction
-comptime INSTR_KIND_ADD_FIELD: usize = 16;
-comptime INSTR_KIND_ADD_PARAM: usize = 17;
-comptime INSTR_KIND_ADD_FUNC_NODE: usize = 18;
-comptime INSTR_KIND_ADD_RET_TYPE: usize = 19;
+comptime INSTR_KIND_ADD_FIELD: usize = 17;
+comptime INSTR_KIND_ADD_PARAM: usize = 18;
+comptime INSTR_KIND_ADD_FUNC_NODE: usize = 19;
+comptime INSTR_KIND_ADD_RET_TYPE: usize = 20;
+comptime INSTR_KIND_ADD_CALL_ARG: usize = 21;
+comptime INSTR_KIND_CALL: usize = 22;
+comptime INSTR_KIND_STORE_PARAM: usize = 23;
+comptime INSTR_KIND_RETURN: usize = 24;
 struct BCInstr {
     origin: Span;
     kind: usize;
@@ -706,6 +765,13 @@ struct BCInstr {
             s.pushStr(" = CreateNoneType");
             _dst.drop();
             ret = s;
+        } else if (this.kind == INSTR_KIND_CREATE_ANYTYPE_TYPE) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = CreateAnytypeType");
+            _dst.drop();
+            ret = s;
         } else if (this.kind == INSTR_KIND_ADDR_OF) {
             mut s: String = newString();
             let _dst: String = this.dst.toString();
@@ -784,6 +850,46 @@ struct BCInstr {
             _typ.drop();
             _base.drop();
             return s;
+        } else if (this.kind == INSTR_KIND_ADD_CALL_ARG) {
+            mut s: String = newString();
+            let _base: String = this.dst.toString();
+            let _index: usize = this.src._i;
+            let _arg: String = this.op1.toString();
+            s.pushStr("AddCallArg ");
+            s.pushString(&_base);
+            s.pushStr(", ");
+            s.pushNumber(_index);
+            s.pushStr(", ");
+            s.pushString(&_arg);
+            _arg.drop();
+            _base.drop();
+            return s;
+        } else if (this.kind == INSTR_KIND_CALL) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            let _src: String = this.src.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = Call ");
+            s.pushString(&_src);
+            _dst.drop();
+            _src.drop();
+            return s;
+        } else if (this.kind == INSTR_KIND_STORE_PARAM) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            let _size: usize = this.src._i;
+            s.pushString(&_dst);
+            s.pushStr(" = StoreParam ");
+            s.pushNumber(_size);
+            _dst.drop();
+            return s;
+        } else if (this.kind == INSTR_KIND_RETURN) {
+            mut s: String = newString();
+            let _val: String = this.src.toString();
+            s.pushStr("Ret ");
+            s.pushString(&_val);
+            _val.drop();
+            return s;
         } else unsafe {
             printf("%llu\n", this.kind);
             assert_with_msg(false, "exhaustive handling in BCInstr.toString");
@@ -823,6 +929,16 @@ func newStoreConstInstr(span: Span, dst: RegIndex, src: RegIndex) -> BCInstr {
         kind: INSTR_KIND_STORE_CONST,
         dst: dst,
         src: src,
+        op1: blank,
+    };
+}
+
+func newStoreParamInstr(span: Span, dst: RegIndex, size: usize) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_STORE_PARAM,
+        dst: dst,
+        src: RegIndex { _i: size },
         op1: blank,
     };
 }
@@ -917,6 +1033,16 @@ func newCreateNoneType(span: Span, dst: RegIndex) -> BCInstr {
     };
 }
 
+func newCreateAnytypeType(span: Span, dst: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_CREATE_ANYTYPE_TYPE,
+        dst: dst,
+        src: blank,
+        op1: blank
+    };
+}
+
 func newAddrOf(span: Span, dst: RegIndex, src: RegIndex) -> BCInstr {
     return BCInstr {
         origin: span,
@@ -985,6 +1111,36 @@ func newAddReturnType(span: Span, fn: RegIndex, typ: RegIndex) -> BCInstr {
         kind: INSTR_KIND_ADD_RET_TYPE,
         dst: fn,
         src: typ,
+        op1: blank
+    };
+}
+
+func newAddCallArgument(span: Span, call: RegIndex, index: usize, arg: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_ADD_CALL_ARG,
+        dst: call,
+        src: RegIndex { _i: index },
+        op1: arg,
+    };
+}
+
+func newCall(span: Span, dst: RegIndex, call: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_CALL,
+        dst: dst,
+        src: call,
+        op1: blank
+    };
+}
+
+func newReturn(span: Span, val: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_RETURN,
+        dst: blank,
+        src: val,
         op1: blank
     };
 }

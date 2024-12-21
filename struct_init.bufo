@@ -1,0 +1,10 @@
+
+const true = 1 == 1;
+const i32 = @integer(32, true);
+
+const Vector = struct {
+    x: i32;
+    y: i32;
+};
+const zero = Vector(i32(0), i32(0));
+

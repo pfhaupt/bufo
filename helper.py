@@ -365,8 +365,10 @@ def add_test_file(path: str) -> None:
         print(f"{FAIL} Can't add file {path} to the tests. Reason: Corrupt protocol.")
         exit(1)
     else:
-        log_cmd_call(["mv", path, target])
-        log_cmd_call(["git", "add", target])
+        if index % 10 == 0:
+            assert log_cmd_call(["mkdir", "-p", prefix.removesuffix("0-")]).returncode == 0, "Could not create target directory"
+        assert log_cmd_call(["mv", path, target]).returncode == 0, "Could not move file"
+        assert log_cmd_call(["git", "add", target]).returncode == 0, "Could not add test to git"
         print(f"{PASS} Added file {path} as new test at {target}.")
 
 def print_usage_and_help() -> None:

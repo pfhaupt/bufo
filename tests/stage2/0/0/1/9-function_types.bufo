@@ -1,0 +1,34 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 2
+//! COMPILER
+//! SUCCESS
+
+const none = @none();
+const true = 1 == 1;
+const i32 = @integer(32, true);
+const i64 = @integer(64, true);
+
+const type = @anytype();
+
+const f = func (a: type) -> type {
+    return a;
+};
+
+const g = func (b: type) -> type {
+    return b;
+};
+
+const many = func (a: type, b: type, c: type) -> type {
+    return c;
+};
+
+@assert(f(i32) == i32);
+@assert(f(none) != i32);
+
+@assert(f(f(i32)) == i32);
+@assert(f(f(i32)) == f(i32));
+@assert(f(f(i32)) == g(f(f(i32))));
+@assert(f(f(i32)) == f(f(g(i32))));
+
+@assert(many(f(none), g(i64), i32) == i32);
+
