@@ -16,7 +16,7 @@ use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::builder::Builder;
 use inkwell::passes::PassManager;
-use inkwell::targets::{Target, InitializationConfig, CodeModel, RelocMode, TargetTriple, TargetMachine};
+use inkwell::targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine, TargetTriple};
 use inkwell::types::{BasicType, BasicTypeEnum, StructType};
 use inkwell::values::{BasicValue, InstructionValue, IntValue, PointerValue};
 use inkwell::AddressSpace;
@@ -138,7 +138,7 @@ pub struct LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
     struct_info: HashMap<&'src str, StructInfo<'src>>,
 
     flags: &'flags Flags,
-    clang_flags: Vec<String>,
+    link_flags: Vec<String>,
 }
 impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
     pub fn new(flags: &'flags Flags, context: &'ctx Context) -> Self {
@@ -183,7 +183,7 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
             struct_defs: HashMap::new(),
             struct_info: HashMap::new(),
             flags,
-            clang_flags: Vec::new(),
+            link_flags: Vec::new(),
         }
     }
 
@@ -347,7 +347,7 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
         }
         for comp_flag in &file.compiler_flags.flags {
             let flag = comp_flag.to_vec();
-            self.clang_flags.extend(flag);
+            self.link_flags.extend(flag);
         }
         Ok(())
     }
@@ -566,53 +566,61 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
             }
         }
 
-        let llvmname = self.filename.with_extension("ll");
-        let path = std::path::Path::new(&llvmname);
-        self.module.print_to_file(path).unwrap();
+        // link urmom.o /NODEFAULTLIB:libcmt /LIBPATH:"./raylib/lib" raylib.lib WinMM.lib Gdi32.lib msvcrt.lib Gdi32.lib User32.lib Shell32.lib /OUT:urmom.exe
+
+        let objname = self.filename.with_extension("o");
+        let path = std::path::Path::new(&objname);
+        self.target_machine.write_to_file(&self.module, FileType::Object, path).unwrap();
+        println!("[INFO] Created {}", path.to_str().unwrap());
         if self.flags.emit_llvm {
+            let llvmname = self.filename.with_extension("ll");
+            let path = std::path::Path::new(&llvmname);
+            self.module.print_to_file(path).unwrap();
             println!("[INFO] Created {}", path.to_str().unwrap());
         }
 
         if self.flags.emit_asm {
-            let mut clang_cmd = std::process::Command::new("clang");
-            let asmname = self.filename.with_extension("s");
-            let path = std::path::Path::new(&asmname);
-            clang_cmd.arg("-o").arg(&path).arg(&llvmname).arg("-v").arg("-S");
-            let _ = clang_cmd.output().unwrap();
+            let objname = self.filename.with_extension("s");
+            let path = std::path::Path::new(&objname);
+            self.target_machine.write_to_file(&self.module, FileType::Assembly, path).unwrap();
             println!("[INFO] Created {}", path.to_str().unwrap());
         }
 
-        let mut clang_cmd = std::process::Command::new("clang");
-        clang_cmd.arg("-o").arg(&self.exename).arg(&llvmname).arg("-v");
-        for flag in &self.clang_flags {
-            clang_cmd.arg(flag);
-        }
-        if self.flags.optimizations.level != OptimizationLevel::None {
-            clang_cmd.arg(self.flags.optimizations.level.as_clang_str());
+        self.link_executable(&path)
+    }
+
+    fn link_executable(&mut self, objpath: &std::path::Path) -> Result<(), String> {
+        let mut link_cmd = std::process::Command::new("link");
+        link_cmd.arg(&objpath);
+        link_cmd.arg(format!("/OUT:{}", self.exename.as_path().to_str().unwrap()));
+        link_cmd.arg("/DEFAULTLIB:libcmt");
+        for flag in &self.link_flags {
+            link_cmd.arg(flag);
         }
         if self.flags.verbose {
-            let mut s = String::from("clang");
-            for arg in clang_cmd.get_args() {
+            let mut s = String::from("link");
+            for arg in link_cmd.get_args() {
                 s.push(' ');
                 s.push_str(arg.to_str().unwrap());
             }
             println!("[INFO] Running `{}`", s);
         }
-        let clang_output = clang_cmd.output().unwrap();
+        let link_output = link_cmd.output().unwrap();
 
-        if !self.flags.emit_llvm {
-            std::fs::remove_file(&llvmname).unwrap();
-        }
         if self.flags.verbose {
-            println!("[INFO] Clang output:");
-            println!("[INFO] {}", String::from_utf8_lossy(&clang_output.stdout));
+            println!("[INFO] Linker output:");
+            println!("[INFO] {}", String::from_utf8_lossy(&link_output.stdout));
         }
-        if !clang_output.status.success() {
-            println!("[ERROR] Clang failed!");
-            println!("[ERROR] {}", String::from_utf8_lossy(&clang_output.stderr));
-            return Err("Clang failed!".to_string());
+        if !link_output.status.success() {
+            println!("[ERROR] Linker failed!");
+            println!("[ERROR] {}", String::from_utf8_lossy(&link_output.stderr));
+            return Err("Linker  failed!".to_string());
         }
         println!("[INFO] Created {}", self.exename.to_str().unwrap());
+        if !self.flags.emit_obj {
+            std::fs::remove_file(objpath).unwrap();
+            println!("[INFO] Removed {}", objpath.to_str().unwrap());
+        }
         Ok(())
     }
 

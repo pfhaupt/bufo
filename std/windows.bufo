@@ -5,6 +5,12 @@ import "winapi/structs.bufo";
 import "winapi/functions.bufo";
 import "winapi/constants.bufo";
 
+// Windows is stupid :^)
+unsafe func fdopen(fd: i32, mode: &char) -> Any {
+    return _fdopen(fd, mode);
+}
+unsafe extern _fdopen(fd: i32, mode: &char) -> Any;
+
 func getLastModified(filePath: &char) -> usize {
     unsafe {
         let file: Handle = CreateFileA(

@@ -3,6 +3,8 @@ import "posix/structs.bufo";
 import "posix/functions.bufo";
 import "posix/constants.bufo";
 
+unsafe extern fdopen(fd: i32, mode: &char) -> Any;
+
 struct Handle {
     ptr: usize;
 }

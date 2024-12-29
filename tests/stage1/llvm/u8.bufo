@@ -3,7 +3,7 @@
 //! RUNTIME
 //! SUCCESS
 
-let HEX_CHAR: [char; 16] = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'];
+let _HEX_CHAR: [char; 16] = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'];
 
 func toHex(hex: u8) {
     // Modulo used to be srem instead of taking sign into consideration
@@ -14,8 +14,8 @@ func toHex(hex: u8) {
     mut bfr: [char; 5] = blank;
     bfr[0] = '\\';
     bfr[1] = 'x';
-    bfr[2] = HEX_CHAR[upper as usize];
-    bfr[3] = HEX_CHAR[lower as usize];
+    bfr[2] = _HEX_CHAR[upper as usize];
+    bfr[3] = _HEX_CHAR[lower as usize];
     unsafe {
         printf("%s\n", &bfr);
     }

@@ -2,6 +2,9 @@
 
 // TODO: Implement safe wrapper for everything :^)
 
+import "windows.bufo";
+// import "linux.bufo";
+
 // Strings
 unsafe extern strlen(string: &char) -> usize;
 unsafe extern strcmp(s1: &char, s2: &char) -> i32;
@@ -27,7 +30,6 @@ unsafe extern snprintf(buffer: Any, size: usize, format: &char, ...) -> usize;
 
 // Console IO
 unsafe extern printf(msg: &char, ...) -> usize;
-unsafe extern fdopen(fd: i32, mode: &char) -> Any;
 unsafe extern putchar(ch: char) -> char;
 unsafe extern puts(s: &char) -> usize;
 

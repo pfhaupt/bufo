@@ -212,6 +212,7 @@ def run_test(
                 print_retcode(output.returncode, expected_error_code)
                 return TestResult(path, STATE.FAILURE)
         elif expected_mode == "DIAGNOSTICS":
+            os.remove(filename)
             if not compare(warn_lines, stderr):
                 print(f"{FAIL} {path}", file=sys.stderr)
                 print_output(stdout, stderr)
