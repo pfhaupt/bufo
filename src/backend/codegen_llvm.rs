@@ -589,6 +589,7 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
         self.link_executable(&path)
     }
 
+    #[cfg(windows)]
     fn link_executable(&mut self, objpath: &std::path::Path) -> Result<(), String> {
         let mut link_cmd = std::process::Command::new("link");
         link_cmd.arg(&objpath);
@@ -599,6 +600,48 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
         }
         if self.flags.verbose {
             let mut s = String::from("link");
+            for arg in link_cmd.get_args() {
+                s.push(' ');
+                s.push_str(arg.to_str().unwrap());
+            }
+            println!("[INFO] Running `{}`", s);
+        }
+        let link_output = link_cmd.output().unwrap();
+
+        if self.flags.verbose {
+            println!("[INFO] Linker output:");
+            println!("[INFO] {}", String::from_utf8_lossy(&link_output.stdout));
+        }
+        if !link_output.status.success() {
+            println!("[ERROR] Linker failed!");
+            println!("[ERROR] {}", String::from_utf8_lossy(&link_output.stderr));
+            return Err("Linker  failed!".to_string());
+        }
+        println!("[INFO] Created {}", self.exename.to_str().unwrap());
+        if !self.flags.emit_obj {
+            std::fs::remove_file(objpath).unwrap();
+            println!("[INFO] Removed {}", objpath.to_str().unwrap());
+        }
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    fn link_executable(&mut self, objpath: &std::path::Path) -> Result<(), String> {
+        let mut link_cmd = std::process::Command::new("ld");
+        link_cmd.arg("-dynamic-linker");
+        link_cmd.arg("/lib64/ld-linux-x86-64.so.2");
+        link_cmd.arg("/lib/x86_64-linux-gnu/crt1.o");
+        link_cmd.arg("/lib/x86_64-linux-gnu/crti.o");
+        link_cmd.arg(&objpath);
+        link_cmd.arg("/lib/x86_64-linux-gnu/crtn.o");
+        link_cmd.arg("-lc");
+        for flag in &self.link_flags {
+            link_cmd.arg(flag);
+        }
+        link_cmd.arg("-o");
+        link_cmd.arg(self.exename.as_path().to_str().unwrap());
+        if self.flags.verbose {
+            let mut s = String::from("ld");
             for arg in link_cmd.get_args() {
                 s.push(' ');
                 s.push_str(arg.to_str().unwrap());

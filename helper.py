@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 STAGE1_PATH = "./target/debug/bufo"
-STAGE2_PATH = "./out/bufo_s1"
+STAGE2_PATH = "./out/bufo_s1.exe"
 
 def format_red(s: str) -> str: return f"\x1b[91m{s}\x1b[0m"
 def format_yellow(s: str) -> str: return f"\x1b[93m{s}\x1b[0m"

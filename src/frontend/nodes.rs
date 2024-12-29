@@ -59,12 +59,22 @@ impl<'src> CompilerFlag<'src> {
         }
     }
 
+    #[cfg(windows)]
     #[trace_call(extra)]
     pub fn to_vec(&self) -> Vec<String> {
         match self {
             Self::LibPath(_, value) => vec![format!("/LIBPATH:{}", value)],
             Self::Library(_, value) => vec![format!("{}.lib", value)],
             Self::Linker(_, value) => vec!["-Xlinker".to_string(), value.to_string()],
+        }
+    }
+    #[cfg(unix)]
+    #[trace_call(extra)]
+    pub fn to_vec(&self) -> Vec<String> {
+        match self {
+            Self::LibPath(_, value) => vec![format!("-L{}", value)],
+            Self::Library(_, value) => vec![format!("{}", value)],
+            Self::Linker(_, _) => unimplemented!(),
         }
     }
 }

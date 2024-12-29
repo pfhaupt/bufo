@@ -70,7 +70,7 @@ func isAlphanumeric(ch: char) -> bool {
 // Internal Runtime Errors
 func index_oob(msg: &char, index: i64) {
     unsafe {
-        let stderr: Any = _fdopen(2, "a");
+        let stderr: Any = fdopen(2, "a");
         fprintf(stderr, msg, index);
         exit(1);
     }
@@ -79,7 +79,7 @@ func index_oob(msg: &char, index: i64) {
 func assert(cond: bool) {
     unsafe {
         if (!cond) {
-            let stderr: Any = _fdopen(2, "a");
+            let stderr: Any = fdopen(2, "a");
             fprintf(stderr, "ASSERTION FAILED\n");
             exit(1);
         }
@@ -89,7 +89,7 @@ func assert(cond: bool) {
 func assert_with_msg(cond: bool, msg: &char) {
     unsafe {
         if (!cond) {
-            let stderr: Any = _fdopen(2, "a");
+            let stderr: Any = fdopen(2, "a");
             fprintf(stderr, "ASSERTION FAILED: %s\n", msg);
             exit(1);
         }
@@ -98,7 +98,7 @@ func assert_with_msg(cond: bool, msg: &char) {
 
 func todo_with_msg(msg: &char) {
     unsafe {
-        let stderr: Any = _fdopen(2, "a");
+        let stderr: Any = fdopen(2, "a");
         fprintf(stderr, "TODO: %s\n", msg);
         exit(1);
     }
