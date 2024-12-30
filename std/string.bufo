@@ -180,7 +180,6 @@ func readFileToString(path: &char) -> String {
         // `b` needed because otherwise `\r` would be dropped, leading to wrong Spans
         let file: Any = fopen(path, "rb");
         if (file == null) {
-            let stderr: Any = fdopen(2, "a");
             fprintf(stderr, "error: Could not open file `%s`.\n", path);
             exit(1);
         }
@@ -202,7 +201,6 @@ func writeStringToFile(path: &char, s: String) {
         // `b` needed because otherwise `\r` would be dropped, leading to wrong Spans
         let file: Any = fopen(path, "wb");
         if (file == null) {
-            let stderr: Any = fdopen(2, "a");
             fprintf(stderr, "error: Could not open file `%s`.\n", path);
             exit(1);
         }

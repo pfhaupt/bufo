@@ -133,7 +133,6 @@ struct GlobalScope {
         if (this.checkExisting(decl)) unsafe {
             let entry: &mut GlobalEntry = this.getVariableByName(decl.name.content);
             assert(entry != null);
-            let stderr: Any = fdopen(2, "a");
             let loc: String = decl.span.toString();
             let oLoc: String = entry.node.span.toString();
             let name: String = decl.name.toString();
@@ -254,7 +253,6 @@ struct BCInterp {
         assert_with_msg(lhsReg.isInitialized(), "expected valid lhs in Add");
         assert_with_msg(rhsReg.isInitialized(), "expected valid rhs in Add");
         if (!lhsReg.typ.equals(rhsReg.typ)) unsafe {
-            let stderr: Any = fdopen(2, "a");
             let loc: String = add.origin.toString();
             let lhsLoc: String = lhsReg.origin.toString();
             let rhsLoc: String = rhsReg.origin.toString();
@@ -332,7 +330,6 @@ struct BCInterp {
         unsafe {
             let success: bool = *(this.getStackAddr(whatReg.offset)) == 1;
             if (!success) unsafe {
-                let stderr: Any = fdopen(2, "a");
                 let loc: String = assert.origin.toString();
                 fprintf(stderr, "%s: %s: Static assertion failed!\n", loc.chars(), ERR_STR);
                 loc.drop();
@@ -500,7 +497,6 @@ struct BCInterp {
         let srcReg: &mut BCReg = fn.getRegAtIndex(src);
         assert_with_msg(srcReg.isInitialized(), "expected valid reg in VerifyType");
         if (srcReg.typ._i != 2) unsafe {
-            let stderr: Any = fdopen(2, "a");
             let loc: String = verify.origin.toString();
             fprintf(stderr, "%s: %s: Expected expression to evaluate to a type.\n", loc.chars(), ERR_STR);
             loc.drop();
@@ -634,7 +630,6 @@ struct BCInterp {
             let fnType: &mut BCType = &mut types[assertValidType(fnTypeIndex, "func call")];
             assert(fnType.isFunc()); // TypeID is 4
             if (argNr >= fnType.funcInfo.paramCount) unsafe {
-                let stderr: Any = fdopen(2, "a");
                 let loc: String = addCallArg.origin.toString();
                 // FIXME: This is not necessarily a function, it could also be a struct?
                 fprintf(stderr, "%s: %s: Received too many arguments for call to function.\n", loc.chars(), ERR_STR);
@@ -925,7 +920,6 @@ struct Checker {
                 //       We can use it for this check, because GlobalEntry's are initialized with `blank`, setting the register to 0.
                 if (entry.register._i == 0) unsafe {
                     assert_with_msg(entry.node != null, "fatal error when trying to report an error: GlobalEntry-Node is null :^) Can't get location");
-                    let stderr: Any = fdopen(2, "a");
                     let loc: String = entry.node.span.toString();
                     fprintf(stderr, "%s: %s: Recursive global declaration.\n", loc.chars(), ERR_STR);
                     loc.drop();

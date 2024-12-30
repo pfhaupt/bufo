@@ -243,6 +243,7 @@ pub struct VarDeclNode<'src> {
     pub expression: Expression<'src>,
     pub is_mutable: bool,
     pub is_comptime: bool,
+    pub is_unsafe: bool,
 }
 
 #[derive(Debug, Clone)]

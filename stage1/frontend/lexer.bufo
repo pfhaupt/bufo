@@ -220,7 +220,6 @@ struct Lexer {
             }
         } else {
             unsafe {
-                let stderr: Any = fdopen(2, "w");
                 fprintf(stderr, "error: %llu: Unknown character `%c`.\n", this.ptr, currChar);
                 exit(1);
             }

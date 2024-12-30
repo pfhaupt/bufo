@@ -510,7 +510,7 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
                 }
                 t @ TokenType::KeywordMut | t @ TokenType::KeywordLet => {
                     self.expect(t)?;
-                    let Ok(parsed_global) = self.parse_stmt_var_decl(t == TokenType::KeywordMut, false) else {
+                    let Ok(parsed_global) = self.parse_stmt_var_decl(t == TokenType::KeywordMut, false, false) else {
                         self.recover(&RECOVER_TOKENS);
                         valid = false;
                         continue;
@@ -525,7 +525,7 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
                     };
                     match tkn.token_type {
                         TokenType::Identifier => {
-                            let Ok(parsed_global) = self.parse_stmt_var_decl(false, true) else {
+                            let Ok(parsed_global) = self.parse_stmt_var_decl(false, true, false) else {
                                 self.recover(&RECOVER_TOKENS);
                                 valid = false;
                                 continue;
@@ -602,6 +602,17 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
                             };
                             self.known_externs.push(parsed_extern.name);
                             externs.push(parsed_extern);
+                        }
+                        TokenType::KeywordLet | TokenType::KeywordMut => {
+                            let is_mutable = tkn.token_type == TokenType::KeywordMut;
+                            if is_mutable { self.expect(TokenType::KeywordMut)?; }
+                            else { self.expect(TokenType::KeywordLet)?; }
+                            let Ok(parsed_var_decl) = self.parse_stmt_var_decl(is_mutable, false, true) else {
+                                self.recover(&RECOVER_TOKENS);
+                                valid = false;
+                                continue;
+                            };
+                            globals.push(parsed_var_decl);
                         }
                         _ => {
                             let tkn = self.next().unwrap();
@@ -1008,17 +1019,17 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
         Ok(match tkn.token_type {
             TokenType::KeywordComptime => {
                 self.expect(TokenType::KeywordComptime)?;
-                let comp_stmt = self.parse_stmt_var_decl(false, true)?;
+                let comp_stmt = self.parse_stmt_var_decl(false, true, false)?;
                 nodes::Statement::VarDecl(comp_stmt)
             }
             TokenType::KeywordMut => {
                 self.expect(TokenType::KeywordMut)?;
-                let mut_stmt = self.parse_stmt_var_decl(true, false)?;
+                let mut_stmt = self.parse_stmt_var_decl(true, false, false)?;
                 nodes::Statement::VarDecl(mut_stmt)
             }
             TokenType::KeywordLet => {
                 self.expect(TokenType::KeywordLet)?;
-                let let_stmt = self.parse_stmt_var_decl(false, false)?;
+                let let_stmt = self.parse_stmt_var_decl(false, false, false)?;
                 nodes::Statement::VarDecl(let_stmt)
             }
             TokenType::KeywordIf => {
@@ -1062,7 +1073,7 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
     }
 
     // #[trace_call(always)]
-    fn parse_stmt_var_decl(&mut self, is_mutable: bool, is_comptime: bool)-> Result<nodes::VarDeclNode<'src>, ()> {
+    fn parse_stmt_var_decl(&mut self, is_mutable: bool, is_comptime: bool, is_unsafe: bool)-> Result<nodes::VarDeclNode<'src>, ()> {
         let location = self.get_location();
         let name_token = self.expect(TokenType::Identifier)?;
         self.expect(TokenType::Colon)?;
@@ -1077,6 +1088,7 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
             expression,
             is_mutable,
             is_comptime,
+            is_unsafe,
         })
     }
 

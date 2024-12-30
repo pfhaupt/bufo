@@ -17,9 +17,7 @@ func getLastModified(filePath: &char) -> usize {
 
         if (stat(filePath, &mut statbuf) < 0) {
             // NOTE: if output does not exist it 100% must be rebuilt
-            printf("Sadge\n");
             if (*errno() == ENOENT) return 0;
-            let stderr: Any = fdopen(2, "a");
             fprintf(stderr, "[ERROR] Could not get time of %s: %#010x\n", filePath, strerror(*errno()));
             return 0;
         }
@@ -32,7 +30,6 @@ func waitForProcess(proc: Handle) -> bool {
     while (true) unsafe {
         mut wstatus: i32 = 0;
         if (waitpid(proc, &mut wstatus, 0) < 0) unsafe {
-            let stderr: Any = fdopen(2, "a");
             fprintf(stderr, "[ERROR] Could not wait on command (pid %d): %s\n", proc, strerror(*errno()));
             return false;
         }
@@ -40,7 +37,6 @@ func waitForProcess(proc: Handle) -> bool {
         if (WIFEXITED(wstatus)) {
             let exit_status: i32 = WEXITSTATUS(wstatus);
             if (exit_status != 0) unsafe {
-                let stderr: Any = fdopen(2, "a");
                 fprintf(stderr, "[ERROR] Command exited with exit code %d\n", exit_status);
                 return false;
             }
@@ -48,7 +44,6 @@ func waitForProcess(proc: Handle) -> bool {
         }
 
         if (WIFSIGNALED(wstatus)) {
-            let stderr: Any = fdopen(2, "a");
             fprintf(stderr, "[ERROR] Command process was terminated by %s\n", strsignal(WTERMSIG(wstatus)));
             return false;
         }
@@ -66,7 +61,6 @@ func runCmdAsync(cmd: Cmd) -> Handle {
     unsafe {
         let cpid: i32 = fork();
         if (cpid < 0) unsafe {
-            let stderr: Any = fdopen(2, "a");
             fprintf(stderr, "[ERROR] Could not fork child process: %s\n", strerror(*errno()));
             return INVALID_HANDLE;
         }
@@ -80,7 +74,6 @@ func runCmdAsync(cmd: Cmd) -> Handle {
             let progName: String = (cmd.buf.data as &SubStr).toString();
             let args: &&char = cmd.asCharPtrs();
             if (execvp(progName.buffer as &char, args) < 0) unsafe {
-                let stderr: Any = fdopen(2, "a");
                 fprintf(stderr, "[ERROR] Could not exec child process: %s\n", strerror(*errno()));
                 exit(1);
             }

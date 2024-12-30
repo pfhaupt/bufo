@@ -507,6 +507,10 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
         let entry = self.context.append_basic_block(main, "entry");
         self.builder.position_at_end(entry);
         self.codegen_entrypoint_init()?;
+        let _ = self.builder.build_call(
+            self.module.get_function("func.setupStdHandles").expect("setupStdHandles is part of the prelude and should always be found"),
+            &[], "setup_std"
+        )?;
         let result = self.builder.build_call(main_func, &[], "main_call")?;
         let val = if result.try_as_basic_value().left().is_none() {
             // NOTE: The return value doesn't matter, the function returns None

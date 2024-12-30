@@ -1112,7 +1112,7 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
             is_unsafe: function.is_unsafe,
             is_vararg: false,
             is_extern: false,
-            is_used: function.name == "main" || function.name == "index_oob",
+            is_used: function.name == "main" || function.name == "index_oob" || function.name == "setupStdHandles",
         };
         if self.externs.contains_key(&name) {
             let external = &self.externs[&name];
@@ -1542,6 +1542,9 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
                     mut_state: MutState::mutable(let_node.is_mutable, let_node.typ.typ.is_mutable_ref()),
                 };
 
+                if let_node.is_unsafe {
+                    self.unsafe_depth += 1;
+                }
                 // Need to use `matches` because `==` treats `Type::Any` as a wildcard for reference types
                 if matches!(var.typ, Type::Any) && self.unsafe_depth == 0 {
                     // Unsafe to use `Any` outside of unsafe block
@@ -1552,6 +1555,9 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
                 let mut_state = if needs_mutable { MutState::MutRef } else { MutState::Immut };
                 let expr_type = self.type_check_expression(&mut let_node.expression, mut_state);
 
+                if let_node.is_unsafe {
+                    self.unsafe_depth -= 1;
+                }
                 let current_scope = self.get_current_scope();
                 if current_scope.insert(let_node.name, var.clone()).is_some() {
                     internal_panic!(

@@ -8,6 +8,7 @@ func getProgramName() -> &char {
     return *argv;
 }
 
+comptime FATAL_STR: &char = "\x1b[95m[FATAL]\x1b[0m";
 comptime ERR_STR: &char = "\x1b[91merror\x1b[0m";
 comptime WARN_STR: &char = "\x1b[93mwarning\x1b[0m";
 comptime NOTE_STR: &char = "\x1b[92mnote\x1b[0m";
@@ -15,6 +16,19 @@ comptime NOTE_STR: &char = "\x1b[92mnote\x1b[0m";
 // func getArg(argv: &&char, argc: usize) -> &char {
 //     unsafe { return *(argv + sizeof &char * argc); }
 // }
+
+unsafe mut stdin: Any = null;
+unsafe mut stdout: Any = null;
+unsafe mut stderr: Any = null;
+// Called by the compiler before calling main()
+unsafe func setupStdHandles() {
+    if (stdin == null) stdin = fdopen(0, "a");
+    assert_with_msg(stdin != null, "Could not initialize STDIN!");
+    if (stdout == null) stdout = fdopen(1, "a");
+    assert_with_msg(stdout != null, "Could not initialize STDOUT!");
+    if (stderr == null) stderr = fdopen(2, "a");
+    assert_with_msg(stderr != null, "Could not initialize STDERR!");
+}
 
 func getArg(index: usize) -> &char {
     let argv: &&char = GLOBAL_GET_ARGV();
@@ -70,7 +84,6 @@ func isAlphanumeric(ch: char) -> bool {
 // Internal Runtime Errors
 func index_oob(msg: &char, index: i64) {
     unsafe {
-        let stderr: Any = fdopen(2, "a");
         fprintf(stderr, msg, index);
         exit(1);
     }
@@ -79,8 +92,12 @@ func index_oob(msg: &char, index: i64) {
 func assert(cond: bool) {
     unsafe {
         if (!cond) {
-            let stderr: Any = fdopen(2, "a");
-            fprintf(stderr, "ASSERTION FAILED\n");
+            if (stderr == null) {
+                printf("ASSERTION FAILED\n");
+                printf("%s Could not print to STDERR because STDERR is NULL!\n", FATAL_STR);
+            } else {
+                fprintf(stderr, "ASSERTION FAILED\n");
+            }
             exit(1);
         }
     }
@@ -89,8 +106,12 @@ func assert(cond: bool) {
 func assert_with_msg(cond: bool, msg: &char) {
     unsafe {
         if (!cond) {
-            let stderr: Any = fdopen(2, "a");
-            fprintf(stderr, "ASSERTION FAILED: %s\n", msg);
+            if (stderr == null) {
+                printf("ASSERTION FAILED: %s\n", msg);
+                printf("%s Could not print to STDERR because STDERR is NULL!\n", FATAL_STR);
+            } else {
+                fprintf(stderr, "ASSERTION FAILED: %s\n", msg);
+            }
             exit(1);
         }
     }
@@ -98,8 +119,12 @@ func assert_with_msg(cond: bool, msg: &char) {
 
 func todo_with_msg(msg: &char) {
     unsafe {
-        let stderr: Any = fdopen(2, "a");
-        fprintf(stderr, "TODO: %s\n", msg);
+        if (stderr == null) {
+            printf("TODO: %s\n", msg);
+            printf("%s Could not print to STDERR because STDERR is NULL!\n", FATAL_STR);
+        } else {
+            fprintf(stderr, "TODO: %s\n", msg);
+        }
         exit(1);
     }
 }

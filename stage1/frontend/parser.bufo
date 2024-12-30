@@ -30,7 +30,6 @@ struct Parser {
         while (tkn.kind != stop) {
             tkn = this.lexer.next();
             if (tkn.kind == TOKEN_EOF) unsafe {
-                let stderr: Any = fdopen(2, "a");
                 fprintf(stderr, "error: Reached End Of File while recovering from previous syntax error.\n");
                 exit(1);
             }
@@ -39,7 +38,6 @@ struct Parser {
     func expect(&mut this, kind: usize) -> Token {
         let tkn: Token = this.lexer.next();
         if (tkn.kind != kind) unsafe {
-            let stderr: Any = fdopen(2, "a");
             let s: String = tkn.toString();
             let l: String = tkn.span.toString();
             fprintf(stderr, "error: %s: Expected %s, found `%s`.\n", l.buffer, tokenKindToString(kind), s.buffer);
@@ -55,7 +53,6 @@ struct Parser {
     func expectKeyword(&mut this, keyword: &SubStr) -> Token {
         let tkn: Token = this.expect(TOKEN_KEYWORD);
         if (!tkn.content.equals(keyword)) unsafe {
-            let stderr: Any = fdopen(2, "a");
             let ts: String = tkn.toString();
             let ls: String = tkn.span.toString();
             let ks: String = keyword.toString();
@@ -107,7 +104,6 @@ struct Parser {
             constVar = true;
         else unsafe {
             let ls: String = mutToken.span.toString();
-            let stderr: Any = fdopen(2, "a");
             fprintf(stderr, "error: %s: Expected `let` or `const`, found `%.*s`.\n", ls.buffer, mutToken.content.len, mutToken.content.start);
             this.encounteredErrors = true;
             this.recover(TOKEN_SEMI_COLON);
@@ -144,7 +140,6 @@ struct Parser {
             return this.parseDeclValueIf();
         else unsafe {
             let ls: String = kw.span.toString();
-            let stderr: Any = fdopen(2, "a");
             fprintf(stderr, "error: %s: Expected one of `struct`, `func`, `enum`, `union` or `module`, found `%.*s`.\n", ls.buffer, kw.content.len, kw.content.start);
             this.encounteredErrors = true;
             this.recover(TOKEN_SEMI_COLON);
@@ -187,7 +182,6 @@ struct Parser {
             } else unsafe {
                 let next: Token = this.next();
                 let ls: String = next.span.toString();
-                let stderr: Any = fdopen(2, "a");
                 fprintf(stderr, "error: %s: Expected identifier or `func`, got `%.*s`.\n", ls.buffer, next.content.len, next.content.start);
                 exit(1);
             }
@@ -233,7 +227,6 @@ struct Parser {
             if (this.eat(TOKEN_EQUAL_SINGLE)) {
                 let variantVal: ParsedDeclValue = this.parseDeclValueExpr();
                 if (!enumDecl.hasVariantType) unsafe {
-                    let stderr: Any = fdopen(2, "a");
                     let loc: String = variantVal.span.toString();
                     fprintf(stderr, "error: %s: Enums that don't have an explicit variant type set can't have variant values.\n", loc.chars());
                     loc.drop();
@@ -242,7 +235,6 @@ struct Parser {
                     variant.setValue(&variantVal);
                 }
             } else if (enumDecl.hasVariantType) unsafe {
-                let stderr: Any = fdopen(2, "a");
                 let loc: String = variant.span.toString();
                 fprintf(stderr, "error: %s: Enums that have an explicit variant type set must provide values for every variant.\n", loc.chars());
                 loc.drop();

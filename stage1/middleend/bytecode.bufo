@@ -215,7 +215,6 @@ struct BCType {
         }
         for (mut i: usize = 0; i < this.funcInfo.paramCount; i = i + 1) {
             if (this.funcInfo.paramNames[i].equals(&paramName)) unsafe {
-                let stderr: Any = fdopen(2, "a");
                 let loc: String = paramSpan.toString();
                 let declLoc: String = this.funcInfo.paramSpans[i].toString();
                 let name: String = paramName.toString();

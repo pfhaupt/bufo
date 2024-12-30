@@ -9,7 +9,6 @@ unsafe func main() {
     let argv: &&char = GLOBAL_GET_ARGV();
     let argc: usize = GLOBAL_GET_ARGC();
     if (argc < 2) unsafe {
-        let stderr: Any = fdopen(2, "w");
         fprintf(stderr, "error: Expected input file as argument.\n");
         exit(1);
     }
