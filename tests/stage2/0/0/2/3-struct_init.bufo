@@ -1,0 +1,49 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 2
+//! COMPILER
+//! SUCCESS
+
+const true = 1 == 1;
+const i32 = @integer(32, true);
+
+const Vector = struct {
+    x: i32;
+    y: i32;
+};
+
+const v34 = Vector(i32(3), i32(4));
+const v56 = Vector(i32(5), i32(6));
+@assert(v34 != v56);
+@assert(v34 == v34);
+
+const three = i32(3);
+const four = i32(4);
+@assert(v34 == Vector(three, four));
+
+const Rect = struct {
+    origin: Vector;
+    size: Vector;
+};
+
+const r1 = Rect(v34, v56);
+@assert(r1 == Rect(v34, v56));
+@assert(r1 != Rect(v56, v34));
+@assert(r1 == Rect(Vector(i32(3), i32(4)), Vector(i32(5), i32(6))));
+
+const r2 = r1;
+@assert(r1 == r2);
+@assert(r2 == Rect(Vector(i32(3), i32(4)), Vector(i32(5), i32(6))));
+@assert(r2 != Rect(Vector(i32(5), i32(6)), Vector(i32(3), i32(4))));
+
+const Ptr = struct {
+    ptr: &Rect;
+};
+
+const p1 = Ptr(&r1);
+@assert(p1 == Ptr(&r1));
+
+const p2 = Ptr(&r2);
+@assert(p2 == Ptr(&r2));
+@assert(p1 != p2);
+
+@assert(Ptr(&r1) != Ptr(&r2));

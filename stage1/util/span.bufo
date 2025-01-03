@@ -3,6 +3,9 @@
 struct Span {
     start: usize;
     end: usize;
+    func equals(&this, other: &Span) -> bool {
+        return this.start == other.start && this.end == other.end;
+    }
     func print(&this) {
         let s: String = this.toString();
         s.print();

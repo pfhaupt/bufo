@@ -170,6 +170,21 @@ struct BCInterp {
             memcpy(d, s, size);
         }
     }
+    unsafe func storeArgument(&mut this, typ: TypeIndex, value: &mut u8, size: usize) -> &mut u8 {
+        let _a: &mut u8 = this.argBase;
+        *(this.argBase as &mut TypeIndex) = typ;
+        this.argBase = this.argBase + sizeof TypeIndex;
+        memcpy(this.argBase, value, size);
+        this.argBase = this.argBase + size;
+        return _a;
+    }
+    unsafe func loadArgument(&mut this, size: usize, typ: &mut TypeIndex) -> &mut u8 {
+        let argStart: &mut u8 = this.argBase - size;
+        memcpy(typ, argStart, sizeof TypeIndex);
+        assertValidType(*typ, "loadArgument");
+        this.argBase = argStart;
+        return argStart + sizeof TypeIndex;
+    }
     func typeCheckBCLoadNumber(&mut this, fn: &mut BCFunction, loadNumber: &mut BCInstr) -> bool {
         trace("BCInterp.typeCheckBCLoadNumber");
         assert(loadNumber.kind == INSTR_KIND_LOAD_NUMBER);
@@ -298,8 +313,20 @@ struct BCInterp {
         let rhsReg: &mut BCReg = fn.getRegAtIndex(rhs);
         assert_with_msg(lhsReg.isInitialized(), "expected valid lhs in Equal");
         assert_with_msg(rhsReg.isInitialized(), "expected valid rhs in Equal");
-        if (!lhsReg.typ.equals(rhsReg.typ)) {
-            todo_with_msg("report error: Type mismatch in typeCheckEqual");
+        if (!lhsReg.typ.equals(rhsReg.typ)) unsafe {
+            let loc: String = equal.origin.toString();
+            let lhsLoc: String = lhsReg.origin.toString();
+            let rhsLoc: String = rhsReg.origin.toString();
+            let lhsId: u32 = lhsReg.typ._i;
+            let rhsId: u32 = rhsReg.typ._i;
+            fprintf(stderr, "%s: %s: Type Mismatch in binary operation `==`.\n", ERR_STR, loc.chars());
+            // TODO: Have a verbose flag that prints the type info aswell.
+            fprintf(stderr, "%s: %s: Left hand side has type ID %lu.\n", NOTE_STR, lhsLoc.chars(), lhsId);
+            fprintf(stderr, "%s: %s: Right hand side has type ID %lu.\n", NOTE_STR, rhsLoc.chars(), rhsId);
+            rhsLoc.drop();
+            lhsLoc.drop();
+            loc.drop();
+            return false;
         }
         assert(lhsReg.size == rhsReg.size);
         (*dstReg).size = 1;
@@ -365,10 +392,10 @@ struct BCInterp {
         (*dstReg).typ = TypeIndex { _i: 2, ptrData: 0 };
         unsafe {
             let bitsize: i64 = *(this.getStackAddr(sizeReg.offset) as &i64);
-            if (bitsize < 0 || bitsize > 65536) {
+            if (bitsize <= 0 || bitsize > 65536) {
                 todo_with_msg("report error: Integer bitsize invalid");
             }
-            let signed: bool = *(this.getStackAddr(sizeReg.offset)) == 1;
+            let signed: bool = *(this.getStackAddr(signReg.offset)) == 1;
             let int: &mut BCType = createBlankType();
             int.makeIntegerType(bitsize as u32, signed);
             let id: TypeIndex = getTypeID(int);
@@ -461,7 +488,12 @@ struct BCInterp {
         (*dstReg).offset = fn.addOffset(dstReg.size);
         (*dstReg).typ = srcReg.typ;
         (*dstReg).typ.makePointer();
-        unsafe {
+        if (srcReg.typ._i == 2 ) unsafe {
+            assert_with_msg(sizeof TypeIndex == 8, "TypeIndex doesn't fit into dst register");
+            let typ: TypeIndex = *(this.getStackAddr(srcReg.offset) as &TypeIndex);
+            assertValidType(typ, "AddrOf Type");
+            *(this.getStackAddr(dstReg.offset) as &mut TypeIndex) = typ;
+        } else unsafe {
             let addr: &mut u8 = this.getStackAddr(srcReg.offset);
             *(this.getStackAddr(dstReg.offset) as &mut usize) = addr as usize;
         }
@@ -483,7 +515,12 @@ struct BCInterp {
         let size: usize = dstReg.typ.getSize();
         (*dstReg).size = size;
         (*dstReg).offset = fn.addOffset(size);
-        unsafe {
+        if (srcReg.typ._i == 2 ) unsafe {
+            assert_with_msg(sizeof TypeIndex == 8, "TypeIndex doesn't fit into dst register");
+            let typ: TypeIndex = *(this.getStackAddr(srcReg.offset) as &TypeIndex);
+            assertValidType(typ, "AddrOf Type");
+            *(this.getStackAddr(dstReg.offset) as &mut TypeIndex) = typ;
+        } else unsafe {
             let addr: usize = *(*(this.getStackAddr(srcReg.offset) as &usize) as &usize);
             *(this.getStackAddr(dstReg.offset) as &mut usize) = addr;
         }
@@ -622,16 +659,13 @@ struct BCInterp {
         let argReg: &mut BCReg = fn.getRegAtIndex(arg);
         assert_with_msg(argReg.isInitialized(), "expected valid arg in AddCallArg");
         assert_with_msg(baseReg.isInitialized(), "expected valid base in AddCallArg");
-        if (baseReg.typ._i != 4) {
-            todo_with_msg("add call arg not a func");
-        }
-        unsafe {
+        // FIXME: Way too many magic numbers (2... 4...)
+        if (baseReg.typ._i == 4) unsafe {
             let fnTypeIndex: TypeIndex = *(this.getStackAddr(baseReg.offset) as &TypeIndex);
             let fnType: &mut BCType = &mut types[assertValidType(fnTypeIndex, "func call")];
             assert(fnType.isFunc()); // TypeID is 4
             if (argNr >= fnType.funcInfo.paramCount) unsafe {
                 let loc: String = addCallArg.origin.toString();
-                // FIXME: This is not necessarily a function, it could also be a struct?
                 fprintf(stderr, "%s: %s: Received too many arguments for call to function.\n", loc.chars(), ERR_STR);
                 return false;
             }
@@ -639,10 +673,39 @@ struct BCInterp {
             if (!argType.equals(fnType.funcInfo.paramTypes[argNr])) {
                 todo_with_msg("call arg type wrong");
             }
-            *(this.argBase as &mut TypeIndex) = argType;
-            this.argBase = this.argBase + sizeof TypeIndex;
-            memcpy(this.argBase, this.getStackAddr(argReg.offset), argReg.size);
-            this.argBase = this.argBase + argReg.size;
+            this.storeArgument(argType, this.getStackAddr(argReg.offset), argReg.size);
+        } else if (baseReg.typ._i == 2) unsafe {
+            let structTypeIndex: TypeIndex = *(this.getStackAddr(baseReg.offset) as &TypeIndex);
+            let structType: &mut BCType = &mut types[assertValidType(structTypeIndex, "type init")];
+            if (structType.isInteger()) {
+                if (argNr >= 1) unsafe {
+                    let loc: String = addCallArg.origin.toString();
+                    fprintf(stderr, "%s: %s: Received too many arguments for integer initialization.\n", loc.chars(), ERR_STR);
+                    return false;
+                }
+                let argType: TypeIndex = argReg.typ;
+                // FIXME: As of right now raw integers have ID 0, but that might change at any point :^)
+                if (!argType.equals(TypeIndex { _i: 0, ptrData: 0 })) {
+                    todo_with_msg("int() expected raw int as arg");
+                }
+                this.storeArgument(argType, this.getStackAddr(argReg.offset), argReg.size);
+            } else if (structType.isStruct()) {
+                if (argNr >= structType.structInfo.fieldCount) unsafe {
+                    let loc: String = addCallArg.origin.toString();
+                    fprintf(stderr, "%s: %s: Received too many arguments for struct initialization.\n", loc.chars(), ERR_STR);
+                    loc.drop();
+                    return false;
+                }
+                let argType: TypeIndex = argReg.typ;
+                if (!argType.equals(structType.structInfo.fieldTypes[argNr])) {
+                    todo_with_msg("struct arg type wrong");
+                }
+                this.storeArgument(argType, this.getStackAddr(argReg.offset), argReg.size);
+            } else {
+                todo_with_msg("neither int nor struct, what is it");
+            }
+        } else {
+            todo_with_msg("add call arg not a func or type");
         }
         return true;
     }
@@ -655,15 +718,14 @@ struct BCInterp {
         let dstReg: &mut BCReg = fn.getRegAtIndex(dst);
         let baseReg: &mut BCReg = fn.getRegAtIndex(base);
         assert_with_msg(baseReg.isInitialized(), "expected valid base in Call");
-        if (baseReg.typ._i != 4) {
-            todo_with_msg("call base not a func");
-        }
-        unsafe {
+        // FIXME: Way too many magic numbers (2... 4...)
+        if (baseReg.typ._i == 4) unsafe {
             let fnTypeIndex: TypeIndex = *(this.getStackAddr(baseReg.offset) as &TypeIndex);
             let fnType: &mut BCType = &mut types[assertValidType(fnTypeIndex, "func call")];
             assert(fnType.isFunc()); // TypeID is 4
             let fun: &mut BCFunction = fnType.funcInfo.function;
             if (!fun.isGenerated) {
+                // FIXME: Outsource this to a dedicated function
                 assert(fun.varLength == 0);
                 assert(fun.regLength == 0);
                 assert(fun.instrLength == 0);
@@ -701,6 +763,58 @@ struct BCInterp {
                 assertValidType(retType, "call return");
                 (*dstReg).typ = retType;
             }
+        } else if (baseReg.typ._i == 2) unsafe {
+            let structTypeIndex: TypeIndex = *(this.getStackAddr(baseReg.offset) as &TypeIndex);
+            let structType: &mut BCType = &mut types[assertValidType(structTypeIndex, "type init")];
+            if (structType.isInteger()) {
+                mut rawInt: TypeIndex = TypeIndex { _i: 0, ptrData: 0 };
+                let size: usize = rawInt.getSize() + sizeof TypeIndex;
+                mut paramType: TypeIndex = blank;
+                let paramStart: &mut u8 = this.loadArgument(size, &mut paramType);
+                let valuePtr: &mut i64 = paramStart as &mut i64;
+                let value: i64 = *valuePtr;
+                // TODO: We can also have negative integers :^)
+                assert_with_msg(value >= 0, "expected positive integer for init");
+                mut bitsize: usize = 0;
+                if (value == 0) bitsize = 1;
+                mut _val: i64 = value;
+                while (_val > 0) {
+                    _val = _val / 2;
+                    bitsize = bitsize + 1;
+                }
+                assert(bitsize != 0);
+                let intSize: usize = structType.getSize();
+                assert(intSize != 0);
+                if (bitsize > 8 * intSize) {
+                    let loc: String = call.origin.toString();
+                    fprintf(stderr, "%s: %s: Number literal doesn't fit into the desired integer type.\n", ERR_STR, loc.chars());
+                    loc.drop();
+                    return false;
+                }
+                (*dstReg).size = intSize;
+                (*dstReg).offset = fn.addOffset(dstReg.size);
+                (*dstReg).typ = structTypeIndex;
+                memcpy(this.getStackAddr(dstReg.offset), paramStart, intSize);
+            } else if (structType.isStruct()) {
+                let structSize: usize = structType.getSize();
+                (*dstReg).size = structSize;
+                (*dstReg).offset = fn.addOffset(dstReg.size);
+                (*dstReg).typ = structTypeIndex;
+                mut argOffset: usize = 0;
+                for (mut i: usize = structType.structInfo.fieldCount - 1; i >= 0; i = i - 1) {
+                    let fs: usize = structType.structInfo.fieldTypes[i].getSize();
+                    let argSize: usize = fs + sizeof TypeIndex;
+                    mut argType: TypeIndex = blank;
+                    let argStart: &mut u8 = this.loadArgument(argSize, &mut argType);
+                    argOffset = argOffset + fs;
+                    memcpy(this.getStackAddr(dstReg.offset) + structSize - argOffset, argStart, fs);
+                }
+                assert(argOffset == structSize);
+            } else {
+                todo_with_msg("neither int nor struct, what is it");
+            }
+        } else {
+            todo_with_msg("call to non-func");
         }
         return true;
     }
@@ -976,6 +1090,7 @@ struct Checker {
                 (*entry).computed = true;
                 if (!this.generateBytecodeVarDecl(globalFn, decl.data))
                     return false;
+                // FIXME: We dont set the register of the entry
             } else if (decl.kind == GLOBAL_DIR) {
                 if (!this.generateBytecodeDirective(globalFn, decl.data))
                     return false;

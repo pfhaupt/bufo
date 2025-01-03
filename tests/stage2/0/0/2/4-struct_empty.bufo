@@ -1,0 +1,17 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 2
+//! COMPILER
+//! SUCCESS
+
+const Empty = struct {};
+const a = Empty();
+const b = Empty();
+@assert(a == b);
+
+const Foo = struct {};
+@assert(Foo != Empty);
+
+const c = Foo();
+const d = Foo();
+@assert(c == d);
+

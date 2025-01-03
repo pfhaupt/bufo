@@ -56,15 +56,15 @@ struct TypeIndex {
         if (this._i == 2) return 8;
         if (this._i == 3) return sizeof SubStr;
         if (this._i == 4) return 8;
-        todo_with_msg("actually implement TypeIndex.getSize");
         return types[assertValidType(*this, "TypeIndex.getSize")].getSize();
     }
 
     func equals(this, other: TypeIndex) -> bool {
+        trace("TypeIndex.equals");
         // REVIEW: Is this short-circuit valid?
-        if (this._i == other._i) return true;
-        let _t: &mut BCType = &mut types[assertValidType(this, "TypeIndex.equals")];
-        let _o: &mut BCType = &mut types[assertValidType(other, "TypeIndex.equals")];
+        if (this._i == other._i && this.ptrData == other.ptrData) return true;
+        let _t: &mut BCType = &mut types[assertValidType(this, "TypeIndex.equals(this)")];
+        let _o: &mut BCType = &mut types[assertValidType(other, "TypeIndex.equals(other)")];
         return _t.equals(_o);
     }
 }
@@ -97,7 +97,10 @@ struct BCReg {
     }
 
     func isInitialized(&mut this) -> bool {
-        return this.size != 0;
+        // REVIEW: You could theoretically have a register with offset=0 and size=0
+        //         But at the same time I don't want to add a boolean field to BCReg
+        //         What's a safe way to check if a given register is initialized?
+        return this.offset != 0 || this.size != 0;
     }
 }
 
@@ -117,6 +120,32 @@ struct BCTypeStruct {
     fieldNames: [SubStr; 16];
     fieldTypes: [TypeIndex; 16];
     fieldCount: usize;
+
+    func toString(&mut this) -> String {
+        mut s: String = newStringFromStrLit("struct {");
+        for (mut i: usize = 0; i < this.fieldCount; i = i + 1) {
+            let _s: String = this.fieldTypes[i].toString();
+            s.pushString(&_s);
+            _s.drop();
+            if (i != this.fieldCount - 1) {
+                s.pushStr(", ");
+            }
+        }
+        s.pushChar('}');
+        return s;
+    }
+    func equals(&this, other: &BCTypeStruct) -> bool {
+        if (this.fieldCount != other.fieldCount) return false;
+        for (mut i: usize = 0; i < this.fieldCount; i = i + 1) {
+            if (!this.fieldSpans[i].equals(&other.fieldSpans[i]))
+                return false;
+            if (!this.fieldNames[i].equals(&other.fieldNames[i]))
+                return false;
+            if (!this.fieldTypes[i].equals(other.fieldTypes[i]))
+                return false;
+        }
+        return true;
+    }
 }
 struct BCTypeFunc {
     function: &mut BCFunction;
@@ -134,6 +163,10 @@ struct BCType {
 
     func isValid(&mut this) -> bool {
         return this.kind != TYPE_INVALID;
+    }
+
+    func isInteger(&mut this) -> bool {
+        return this.kind == TYPE_INTEGER;
     }
 
     func isStruct(&mut this) -> bool {
@@ -157,6 +190,7 @@ struct BCType {
             if (id._i == 2) return newStringFromStrLit("type");
             if (id._i == 3) return newStringFromStrLit("string");
             if (id._i == 4) return newStringFromStrLit("func");
+            if (this.kind == TYPE_STRUCT) return this.structInfo.toString();
             assert_with_msg(false, "unreachable in BCType.toString()");
             return blank;
         }
@@ -236,12 +270,39 @@ struct BCType {
     }
 
     func getSize(&mut this) -> usize {
+        if (this.kind == TYPE_INTEGER) {
+            return this.intInfo.bitsize as usize / 8;
+        } else if (this.kind == TYPE_STRUCT) {
+            mut size: usize = 0;
+            for (mut i: usize = 0; i < this.structInfo.fieldCount; i = i + 1) {
+                size = size + this.structInfo.fieldTypes[i].getSize();
+            }
+            return size;
+        }
         todo_with_msg("BCType.getSize");
         return 0;
     }
 
     func equals(&mut this, other: &mut BCType) -> bool {
-        warning("Can't really do BCTypes.equals() yet");
+        // TYPE_BOOL != TYPE_FUNC
+        if (this.kind != other.kind) return false;
+        // const A = struct {};
+        // const B = struct {};
+        // A != B
+        if (getTypeID(this)._i != getTypeID(other)._i) return false;
+        if (this.kind == TYPE_INTEGER) {
+            todo_with_msg("BCType.equals(TYPE_INTEGER)");
+        } else if (this.kind == TYPE_FUNC) {
+            todo_with_msg("BCType.equals(TYPE_FUNC)");
+        } else if (this.kind == TYPE_STRUCT) {
+            let _s1: &BCTypeStruct = &this.structInfo;
+            let _s2: &BCTypeStruct = &other.structInfo;
+            return _s1.equals(_s2);
+        } else if (this.kind == TYPE_NONE) {
+            todo_with_msg("BCType.equals(TYPE_NONE)");
+        } else {
+            assert_with_msg(false, "Exhaustive handling in BCType.equals");
+        }
         return false;
     }
 }
@@ -274,7 +335,6 @@ struct BCFunction {
     }
 
     func addOffset(&mut this, offset: usize) -> usize {
-        assert_with_msg(offset != 0, "attempted to offset function stack by 0 bytes");
         let o: usize = this.stackSize;
         this.stackSize = this.stackSize + offset;
         return o;
