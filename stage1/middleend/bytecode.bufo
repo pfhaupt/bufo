@@ -348,6 +348,12 @@ struct BCFunction {
         }
     }
 
+    func getLastInstruction(&this) -> &BCInstr {
+        trace("BCFunction.getLastInstruction");
+        unsafe {
+            return (this.instructions + (this.instrLength - 1) * sizeof BCInstr) as &BCInstr;
+        }
+    }
     func getInstrAtIndex(&mut this, index: InstrIndex) -> &mut BCInstr {
         trace("BCFunction.getInstrAtIndex");
         assert_with_msg(index._i < this.instrLength, "Out of bounds access in BCFunction.getInstrAtIndex");

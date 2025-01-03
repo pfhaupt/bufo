@@ -1090,7 +1090,9 @@ struct Checker {
                 (*entry).computed = true;
                 if (!this.generateBytecodeVarDecl(globalFn, decl.data))
                     return false;
-                // FIXME: We dont set the register of the entry
+                let instr: &BCInstr = functions[globalFn._i].getLastInstruction();
+                assert_with_msg(instr.kind == INSTR_KIND_STORE_CONST, "Expected StoreConst as last instruction");
+                (*entry).register = instr.dst;
             } else if (decl.kind == GLOBAL_DIR) {
                 if (!this.generateBytecodeDirective(globalFn, decl.data))
                     return false;
