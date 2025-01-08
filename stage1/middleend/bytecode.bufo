@@ -76,7 +76,6 @@ struct NameRegPair {
 
 struct BCReg {
     origin: Span;
-    offset: usize;
     size: usize;
     typ: TypeIndex;
 
@@ -86,10 +85,14 @@ struct BCReg {
         mut s: String = newString();
         let _t: String = this.typ.toString();
         s.pushString(&_t);
-        s.pushStr(", offset=");
-        s.pushNumber(this.offset);
         let size: usize = this.typ.getSize();
-        assert_with_msg(size == this.size, "Sanity check in BCReg.toString() violated");
+        if (size != this.size) unsafe {
+            fprintf(stderr, "%s Sanity check in BCReg.toString() violated\n", FATAL_STR);
+            fprintf(stderr, "type size: %llu\n", size);
+            fprintf(stderr, "this.size: %llu\n", this.size);
+            fprintf(stderr, "type: %s\n", this.typ.toString().chars());
+            exit(1);
+        }
         s.pushStr(", size=");
         s.pushNumber(size);
         _t.drop();
@@ -97,10 +100,12 @@ struct BCReg {
     }
 
     func isInitialized(&mut this) -> bool {
-        // REVIEW: You could theoretically have a register with offset=0 and size=0
+        // REVIEW: You could theoretically have a register with size=0
         //         But at the same time I don't want to add a boolean field to BCReg
         //         What's a safe way to check if a given register is initialized?
-        return this.offset != 0 || this.size != 0;
+        // UPDATE: It's either a raw integer, in which case it has a size
+        //         Or it is not a raw integer, in which case it can be zero-sized
+        return this.size != 0 || this.typ._i != 0;
     }
 }
 
@@ -315,7 +320,6 @@ struct BCFunction {
     funcDecl: &mut ParsedFuncDecl;
     isGenerated: bool;
     funcType: TypeIndex;
-    stackSize: usize;
     variables: &mut NameRegPair;
     varLength: usize;
     varCapacity: usize;
@@ -325,6 +329,9 @@ struct BCFunction {
     instructions: &mut BCInstr;
     instrLength: usize;
     instrCapacity: usize;
+    scopes: &mut FnIndex;
+    scopeLength: usize;
+    scopeCapacity: usize;
 
     func setFuncNode(&mut this, node: &mut ParsedFuncDecl) {
         unsafe {
@@ -332,12 +339,6 @@ struct BCFunction {
             assert_with_msg(!this.isGenerated, "expected to set node of a not-yet generated function");
             this.funcDecl = node;
         }
-    }
-
-    func addOffset(&mut this, offset: usize) -> usize {
-        let o: usize = this.stackSize;
-        this.stackSize = this.stackSize + offset;
-        return o;
     }
 
     func getVarAtIndex(&mut this, index: VarIndex) -> &mut NameRegPair {
@@ -348,10 +349,23 @@ struct BCFunction {
         }
     }
 
-    func getLastInstruction(&this) -> &BCInstr {
+    func getVariableIndex(&mut this, name: SubStr, index: &mut VarIndex) -> bool {
+        trace("BCFunction.getVariableIndex");
+        for (mut i: usize = 0; i < this.varLength; i = i + 1) {
+            let vi: VarIndex = VarIndex { _i: i };
+            let _var: &mut NameRegPair = this.getVarAtIndex(vi);
+            if (_var.name.equals(&name)) {
+                *index = vi;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func getLastInstruction(&mut this) -> &mut BCInstr {
         trace("BCFunction.getLastInstruction");
         unsafe {
-            return (this.instructions + (this.instrLength - 1) * sizeof BCInstr) as &BCInstr;
+            return this.instructions + (this.instrLength - 1) * sizeof BCInstr;
         }
     }
     func getInstrAtIndex(&mut this, index: InstrIndex) -> &mut BCInstr {
@@ -361,6 +375,9 @@ struct BCFunction {
             return this.instructions + index._i * sizeof BCInstr;
         }
     }
+    func getCurrentInstructionIndex(&mut this) -> InstrIndex {
+        return InstrIndex { _i: this.instrLength };
+    }
 
     func getRegAtIndex(&mut this, index: RegIndex) -> &mut BCReg {
         trace("BCFunction.getRegAtIndex");
@@ -368,6 +385,37 @@ struct BCFunction {
         unsafe {
             return this.registers + index._i * sizeof BCReg;
         }
+    }
+
+    func addScope(&mut this, scope: FnIndex) {
+        trace("BCFunction.addScope");
+        if (this.scopeLength >= this.scopeCapacity) unsafe {
+            mut newCap: usize = this.scopeCapacity * 2;
+            if (newCap == 0) newCap = newCap + 1;
+            this.scopes = realloc(this.scopes, newCap * sizeof FnIndex);
+            assert_with_msg(this.scopes != null, "Could not resize scopes");
+            this.scopeCapacity = newCap;
+        }
+        unsafe {
+            *(this.scopes + this.scopeLength * sizeof FnIndex) = scope;
+            this.scopeLength = this.scopeLength + 1;
+        }
+    }
+
+    func getScopeAtIndex(&mut this, index: usize) -> FnIndex {
+        assert_with_msg(index < this.scopeLength, "Out of bounds access in BCFunction.getScopeAtIndex");
+        unsafe {
+            return *(this.scopes + index * sizeof FnIndex);
+        }
+    }
+
+    func inheritScopesFrom(&mut this, parent: &mut BCFunction) -> bool {
+        trace("BCFunction.inheritScopesFrom");
+        this.addScope(getFnIndex(parent));
+        for (mut i: usize = 0; i < parent.scopeLength; i = i + 1) {
+            this.addScope(parent.getScopeAtIndex(i));
+        }
+        return true;
     }
 
     func appendInstr(&mut this, instr: BCInstr) {
@@ -441,7 +489,17 @@ struct BCFunction {
                 return true;
             }
         }
+        let name: RegIndex = this.buildStringLiteral(span, name);
+        let reg: RegIndex = this.allocateRegister(span);
+        let load: BCInstr = newScopedLoadInstr(span, reg, name, wantsAddr);
+        this.appendInstr(load);
+        *target = reg;
         return false;
+    }
+
+    func buildMove(&mut this, span: Span, dst: RegIndex, src: RegIndex) {
+        let move: BCInstr = newMoveInstr(span, dst, src);
+        this.appendInstr(move);
     }
 
     func buildParamStore(&mut this, span: Span, name: SubStr, mut typ: TypeIndex) -> bool {
@@ -499,6 +557,7 @@ struct BCFunction {
         let dst: RegIndex = this.allocateRegister(span);
         mut binop: BCInstr = blank;
         if (op == BINARY_OP_PLUS) binop = newAddInstr(span, dst, lhs, rhs);
+        else if (op == BINARY_OP_MINUS) binop = newSubInstr(span, dst, lhs, rhs);
         else if (op == BINARY_OP_EQUAL) binop = newEqualInstr(span, dst, lhs, rhs);
         else if (op == BINARY_OP_NOT_EQUAL) binop = newNotEqualInstr(span, dst, lhs, rhs);
         else todo_with_msg("build binary op");
@@ -615,12 +674,32 @@ struct BCFunction {
     }
 
     func buildReturn(&mut this, span: Span, val: RegIndex) -> bool {
+        trace("BCFunction.buildReturn");
         if (getFnIndex(this).isGlobalFn()) {
             todo_with_msg("no return in global context");
         }
         let ret: BCInstr = newReturn(span, val);
         this.appendInstr(ret);
         return true;
+    }
+
+    func buildInheritScopes(&mut this, span: Span, current: RegIndex, parent: FnIndex) {
+        trace("BCFunction.buildInheritScopes");
+        let inherit: BCInstr = newInheritScopes(span, current);
+        this.appendInstr(inherit);
+    }
+
+    func buildDummy(&mut this) -> InstrIndex {
+        trace("BCFunction.buildDummy");
+        let _i: InstrIndex = this.getCurrentInstructionIndex();
+        let instr: BCInstr = blank;
+        this.appendInstr(instr);
+        return _i;
+    }
+
+    func backpatch(&mut this, index: InstrIndex, instr: BCInstr) {
+        trace("BCFunction.backpatch");
+        *(this.getInstrAtIndex(index)) = instr;
     }
 
     func dump(&mut this) {
@@ -648,7 +727,6 @@ func newEmptyFunction(span: Span) -> BCFunction {
             funcDecl: null,
             isGenerated: false,
             funcType: blank,
-            stackSize: 0,
             variables: null,
             varLength: 0,
             varCapacity: 0,
@@ -658,6 +736,9 @@ func newEmptyFunction(span: Span) -> BCFunction {
             instructions: null,
             instrLength: 0,
             instrCapacity: 0,
+            scopes: null,
+            scopeLength: 0,
+            scopeCapacity: 0,
         };
     }
 }
@@ -667,29 +748,35 @@ comptime INSTR_KIND_LOAD_NUMBER: usize = 1;
 comptime INSTR_KIND_LOAD_STRING: usize = 2;
 comptime INSTR_KIND_STORE_CONST: usize = 3;
 comptime INSTR_KIND_LOAD: usize = 4;
-comptime INSTR_KIND_ADD: usize = 5;
-comptime INSTR_KIND_EQUAL: usize = 6;
-comptime INSTR_KIND_NOT_EQUAL: usize = 7;
-comptime INSTR_KIND_CONST_ASSERT: usize = 8;
+comptime INSTR_KIND_SCOPED_LOAD: usize = 5;
+comptime INSTR_KIND_MOVE: usize = 6;
+comptime INSTR_KIND_ADD: usize = 7;
+comptime INSTR_KIND_SUB: usize = 8;
+comptime INSTR_KIND_EQUAL: usize = 9;
+comptime INSTR_KIND_NOT_EQUAL: usize = 10;
+comptime INSTR_KIND_CONST_ASSERT: usize = 11;
 // FIXME: This should be a single instruction
-// NOTE:  All 5 of them :^)
-comptime INSTR_KIND_CREATE_INT_TYPE: usize = 9;
-comptime INSTR_KIND_CREATE_STRUCT_TYPE: usize = 10;
-comptime INSTR_KIND_CREATE_FUNC_TYPE: usize = 11;
-comptime INSTR_KIND_CREATE_NONE_TYPE: usize = 12;
-comptime INSTR_KIND_CREATE_ANYTYPE_TYPE: usize = 13;
-comptime INSTR_KIND_ADDR_OF: usize = 14;
-comptime INSTR_KIND_LOAD_ADDR: usize = 15;
-comptime INSTR_KIND_VERIFY_TYPE: usize = 16;
+// NOTE:  All 8 of them :^)
+comptime INSTR_KIND_CREATE_INT_TYPE: usize = 12;
+comptime INSTR_KIND_CREATE_STRUCT_TYPE: usize = 13;
+comptime INSTR_KIND_CREATE_FUNC_TYPE: usize = 14;
+comptime INSTR_KIND_CREATE_NONE_TYPE: usize = 15;
+comptime INSTR_KIND_CREATE_ANYTYPE_TYPE: usize = 16;
+comptime INSTR_KIND_ADDR_OF: usize = 17;
+comptime INSTR_KIND_LOAD_ADDR: usize = 18;
+comptime INSTR_KIND_VERIFY_TYPE: usize = 19;
 // REVIEW: Both can be the same instruction
-comptime INSTR_KIND_ADD_FIELD: usize = 17;
-comptime INSTR_KIND_ADD_PARAM: usize = 18;
-comptime INSTR_KIND_ADD_FUNC_NODE: usize = 19;
-comptime INSTR_KIND_ADD_RET_TYPE: usize = 20;
-comptime INSTR_KIND_ADD_CALL_ARG: usize = 21;
-comptime INSTR_KIND_CALL: usize = 22;
-comptime INSTR_KIND_STORE_PARAM: usize = 23;
-comptime INSTR_KIND_RETURN: usize = 24;
+comptime INSTR_KIND_ADD_FIELD: usize = 20;
+comptime INSTR_KIND_ADD_PARAM: usize = 21;
+comptime INSTR_KIND_ADD_FUNC_NODE: usize = 22;
+comptime INSTR_KIND_ADD_RET_TYPE: usize = 23;
+comptime INSTR_KIND_ADD_CALL_ARG: usize = 24;
+comptime INSTR_KIND_CALL: usize = 25;
+comptime INSTR_KIND_STORE_PARAM: usize = 26;
+comptime INSTR_KIND_RETURN: usize = 27;
+comptime INSTR_KIND_INHERIT_SCOPES: usize = 28;
+comptime INSTR_KIND_COND_BR: usize = 29;
+comptime INSTR_KIND_BR: usize = 30;
 struct BCInstr {
     origin: Span;
     kind: usize;
@@ -722,6 +809,29 @@ struct BCInstr {
             _src.drop();
             _dst.drop();
             ret = s;
+        } else if (this.kind == INSTR_KIND_MOVE) {
+            let _dst: String = this.dst.toString();
+            let _src: String = this.src.toString();
+            mut s: String = newString();
+            s.pushString(&_dst);
+            s.pushStr(" = Move ");
+            s.pushString(&_src);
+            _src.drop();
+            _dst.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_SCOPED_LOAD) {
+            let _dst: String = this.dst.toString();
+            let _src: String = this.src.toString();
+            let addr: bool = this.op1._i == 1;
+            mut s: String = newString();
+            s.pushString(&_dst);
+            s.pushStr(" = ScopedLoad ");
+            s.pushString(&_src);
+            if (addr) s.pushStr(", addr=true");
+            else s.pushStr(", addr=false");
+            _src.drop();
+            _dst.drop();
+            ret = s;
         } else if (this.kind == INSTR_KIND_LOAD_NUMBER) unsafe {
             let n: i64 = *(&this.src._i as &i64);
             mut s: String = newString();
@@ -750,6 +860,20 @@ struct BCInstr {
             let _op1: String = this.op1.toString();
             s.pushString(&_dst);
             s.pushStr(" = Add ");
+            s.pushString(&_src);
+            s.pushStr(", ");
+            s.pushString(&_op1);
+            _dst.drop();
+            _src.drop();
+            _op1.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_SUB) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            let _src: String = this.src.toString();
+            let _op1: String = this.op1.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = Sub ");
             s.pushString(&_src);
             s.pushStr(", ");
             s.pushString(&_op1);
@@ -955,6 +1079,29 @@ struct BCInstr {
             s.pushString(&_val);
             _val.drop();
             return s;
+        } else if (this.kind == INSTR_KIND_INHERIT_SCOPES) {
+            mut s: String = newString();
+            let _base: String = this.dst.toString();
+            s.pushStr("InheritScopes ");
+            s.pushString(&_base);
+            _base.drop();
+            return s;
+        } else if (this.kind == INSTR_KIND_COND_BR) {
+            mut s: String = newString();
+            let _cond: String = this.dst.toString();
+            s.pushStr("CondBr ");
+            s.pushString(&_cond);
+            s.pushStr(", true=");
+            s.pushNumber(this.src._i);
+            s.pushStr(", false=");
+            s.pushNumber(this.op1._i);
+            _cond.drop();
+            return s;
+        } else if (this.kind == INSTR_KIND_BR) {
+            mut s: String = newString();
+            s.pushStr("Br ");
+            s.pushNumber(this.dst._i);
+            return s;
         } else unsafe {
             printf("%llu\n", this.kind);
             assert_with_msg(false, "exhaustive handling in BCInstr.toString");
@@ -1018,10 +1165,42 @@ func newLoadInstr(span: Span, dst: RegIndex, src: RegIndex) -> BCInstr {
     };
 }
 
+func newMoveInstr(span: Span, dst: RegIndex, src: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_MOVE,
+        dst: dst,
+        src: src,
+        op1: blank,
+    };
+}
+
+func newScopedLoadInstr(span: Span, dst: RegIndex, name: RegIndex, wantsAddr: bool) -> BCInstr {
+    mut i: usize = 0;
+    if (wantsAddr) i = 1;
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_SCOPED_LOAD,
+        dst: dst,
+        src: name,
+        op1: RegIndex { _i: i },
+    };
+}
+
 func newAddInstr(span: Span, dst: RegIndex, lhs: RegIndex, rhs: RegIndex) -> BCInstr {
     return BCInstr {
         origin: span,
         kind: INSTR_KIND_ADD,
+        dst: dst,
+        src: lhs,
+        op1: rhs
+    };
+}
+
+func newSubInstr(span: Span, dst: RegIndex, lhs: RegIndex, rhs: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_SUB,
         dst: dst,
         src: lhs,
         op1: rhs
@@ -1206,6 +1385,36 @@ func newReturn(span: Span, val: RegIndex) -> BCInstr {
         kind: INSTR_KIND_RETURN,
         dst: blank,
         src: val,
+        op1: blank
+    };
+}
+
+func newInheritScopes(span: Span, base: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_INHERIT_SCOPES,
+        dst: base,
+        src: blank,
+        op1: blank
+    };
+}
+
+func newCondBrInstr(span: Span, cond: RegIndex, then: InstrIndex, elze: InstrIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_COND_BR,
+        dst: cond,
+        src: RegIndex { _i: then._i },
+        op1: RegIndex { _i: elze._i }
+    };
+}
+
+func newBrInstr(span: Span, where: InstrIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_BR,
+        dst: RegIndex { _i: where._i },
+        src: blank,
         op1: blank
     };
 }

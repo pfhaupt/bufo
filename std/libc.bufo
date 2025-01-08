@@ -17,6 +17,7 @@ unsafe extern realloc(ptr: Any, new_size: usize) -> Any;
 unsafe extern free(ptr: Any);
 unsafe extern memcpy(dest: Any, src: Any, count: usize) -> Any;
 unsafe extern memcmp(lhs: Any, rhs: Any, count: usize) -> i32;
+unsafe extern memset(s: Any, b: i32, count: usize) -> Any;
 
 // File IO
 unsafe extern fopen(filename: &char, mode: &char) -> Any;

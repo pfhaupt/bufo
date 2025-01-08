@@ -4,7 +4,7 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! [91merror[0m: Type mismatch in binary addition!
+//! [91merror[0m: Type mismatch in binary operation!
 //! [92mnote[0m: LHS has type bool.
 //! [92mnote[0m: RHS has type i64.
 

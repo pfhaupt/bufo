@@ -85,7 +85,6 @@ struct NameVarIndexPair {
 struct GlobalEntry {
     node: &mut ParsedVarDecl;
     computed: bool;
-    register: RegIndex;
 }
 
 struct GlobalScope {
@@ -146,7 +145,6 @@ struct GlobalScope {
             let entry: GlobalEntry = GlobalEntry {
                 node: decl,
                 computed: false,
-                register: blank
             };
             *(this.variables + this.varLength * sizeof GlobalEntry) = entry;
             this.varLength = this.varLength + 1;
@@ -155,13 +153,99 @@ struct GlobalScope {
     }
 }
 
+// FIXME: Better name for this?
+struct CallStackElem {
+    fnIndex: FnIndex;
+    stackStart: &mut u8;
+    offsetStart: &mut usize;
+    offsetSize: usize;
+}
 mut interpStack: [u8; 32000000] = blank;
 mut argStack: [u8; 640000] = blank;
+mut offsetStack: [usize; 640000] = blank;
+mut callStack: [CallStackElem; 2048] = blank;
+mut callStackLen: usize = 0;
+
+func updateOffset(index: RegIndex, size: usize) {
+    assert_with_msg(callStackLen != 0, "updateOffset called in wrong context");
+    unsafe {
+        let elem: &mut CallStackElem = &mut callStack[callStackLen - 1];
+        *(elem.offsetStart + index._i * sizeof usize) = elem.offsetSize;
+        (*elem).offsetSize = elem.offsetSize + size;
+        if (PRINT_DEBUG) printf("New offset size %llu after adding size %llu\n", elem.offsetSize, size);
+    }
+}
+func getOffset(index: RegIndex) -> usize {
+    assert_with_msg(callStackLen != 0, "getOffset called in wrong context");
+    unsafe {
+        let cs: &CallStackElem = &callStack[callStackLen - 1];
+        // let _off: usize = *(cs.offsetStart + index._i * sizeof usize);
+        let _off: usize = (*(cs.offsetStart as &[usize; 640000]))[index._i];
+        if (_off > cs.offsetSize) {
+            fprintf(stderr, "%s Offset %llu (%llX) is bigger than CallStack size %llu\n", FATAL_STR, _off, _off, cs.offsetSize);
+            exit(1);
+        }
+        return _off;
+    }
+}
+func getOffsetFromFunction(fnIndex: FnIndex, regIndex: RegIndex) -> usize {
+    for (mut i: usize = callStackLen - 1; i >= 0; i = i - 1) {
+        let cs: &CallStackElem = &callStack[i];
+        if (cs.fnIndex._i == fnIndex._i) unsafe {
+            let _off: usize = (*(cs.offsetStart as &[usize; 640000]))[regIndex._i];
+            if (PRINT_DEBUG) printf("In function %llu, Register %llu has offset %llu\n", fnIndex._i, regIndex._i, _off);
+            assert_with_msg(_off < cs.offsetSize, "Offset bigger than CallStack remembers it to be");
+            return _off;
+        }
+    }
+    assert_with_msg(false, "unreachable: Could not find function in callstack");
+    return 0;
+}
+
 struct BCInterp {
     stackBase: &mut u8;
     argBase: &mut u8;
+    offsetBase: &mut usize;
     unsafe func getStackAddr(&mut this, offset: usize) -> &mut u8 {
-        return this.stackBase + offset;
+        assert_with_msg(callStackLen != 0, "called getStackAddr in wrong context");
+        return callStack[callStackLen - 1].stackStart + offset;
+    }
+    unsafe func enterFunction(&mut this, fnIndex: FnIndex) {
+        trace("BCInterp.enterFunction");
+        mut stackOffset: &mut u8 = this.stackBase;
+        mut baseOffset: &mut usize = this.offsetBase;
+        if (fnIndex._i != 0) {
+            assert(callStackLen != 0);
+            let cs: &CallStackElem = &callStack[callStackLen - 1];
+            stackOffset = cs.stackStart + cs.offsetSize;
+            baseOffset = cs.offsetStart + functions[assertValidFunction(cs.fnIndex, "enterFunction")].regLength * sizeof usize;
+        }
+        callStack[callStackLen] = CallStackElem {
+            fnIndex: fnIndex,
+            stackStart: stackOffset,
+            offsetStart: baseOffset,
+            offsetSize: 0,
+        };
+        callStackLen = callStackLen + 1;
+    }
+    unsafe func leaveFunction(&mut this, fnIndex: FnIndex) {
+        trace("BCInterp.leaveFunction");
+        assert(callStackLen > 0);
+        callStackLen = callStackLen - 1;
+        assert_with_msg(callStack[callStackLen].fnIndex._i == fnIndex._i, "Unbalanced call stack");
+        // REVIEW: Is this necessary
+        memset(callStack[callStackLen].offsetStart, 0, functions[assertValidFunction(fnIndex, "leaveFunction")].regLength * sizeof usize);
+    }
+    unsafe func findFunctionBase(&mut this, fnIndex: FnIndex) -> &mut u8 {
+        for (mut i: usize = callStackLen - 1; i >= 0; i = i - 1) {
+            let cs: &mut CallStackElem = &mut callStack[i];
+            if (cs.fnIndex._i == fnIndex._i) {
+                let _s: &mut u8 = cs.stackStart;
+                if (PRINT_DEBUG) printf("Function %llu starts at %p\n", fnIndex._i, _s);
+                return _s;
+            }
+        }
+        return null;
     }
     func localStackCopy(&mut this, dstOffset: usize, srcOffset: usize, size: usize) {
         unsafe {
@@ -172,6 +256,7 @@ struct BCInterp {
     }
     unsafe func storeArgument(&mut this, typ: TypeIndex, value: &mut u8, size: usize) -> &mut u8 {
         let _a: &mut u8 = this.argBase;
+        if (PRINT_DEBUG) printf("Storing at %p (%llu bytes)\n", _a, size + sizeof TypeIndex);
         *(this.argBase as &mut TypeIndex) = typ;
         this.argBase = this.argBase + sizeof TypeIndex;
         memcpy(this.argBase, value, size);
@@ -180,6 +265,7 @@ struct BCInterp {
     }
     unsafe func loadArgument(&mut this, size: usize, typ: &mut TypeIndex) -> &mut u8 {
         let argStart: &mut u8 = this.argBase - size;
+        if (PRINT_DEBUG) printf("Loading from %p (%llu bytes)\n", argStart, size);
         memcpy(typ, argStart, sizeof TypeIndex);
         assertValidType(*typ, "loadArgument");
         this.argBase = argStart;
@@ -191,10 +277,10 @@ struct BCInterp {
         let dst: RegIndex = loadNumber.dst;
         let reg: &mut BCReg = fn.getRegAtIndex(dst);
         (*reg).size = sizeof i64;
-        (*reg).offset = fn.addOffset(reg.size);
+        updateOffset(dst, reg.size);
         (*reg).typ = TypeIndex { _i: 0, ptrData: 0 };
         unsafe {
-            *(this.getStackAddr(reg.offset) as &mut i64) = *(&loadNumber.src._i as &i64);
+            *(this.getStackAddr(getOffset(dst)) as &mut i64) = *(&loadNumber.src._i as &i64);
         }
         return true;
     }
@@ -209,7 +295,7 @@ struct BCInterp {
         let size: usize = sizeof SubStr;
         assert_with_msg(size == 16, "LoadString expected sizeof SubStr == 16");
         (*reg).size = size;
-        (*reg).offset = fn.addOffset(size);
+        updateOffset(dst, size);
         // FIXME: This should be a dedicated TYPE_STRING instead of a hardcoded value
         (*reg).typ = TypeIndex { _i: 3, ptrData: 0 };
         unsafe {
@@ -217,7 +303,7 @@ struct BCInterp {
                 start: ptr._i as &char,
                 len: len._i
             };
-            *(this.getStackAddr(reg.offset) as &mut SubStr) = s;
+            *(this.getStackAddr(getOffset(dst)) as &mut SubStr) = s;
         }
         return true;
     }
@@ -231,10 +317,10 @@ struct BCInterp {
         let srcReg: &mut BCReg = fn.getRegAtIndex(src);
         assert_with_msg(srcReg.isInitialized(), "expected valid src in StoreConst");
         (*dstReg).size = srcReg.size;
-        (*dstReg).offset = fn.addOffset(dstReg.size);
+        updateOffset(dst, dstReg.size);
         (*dstReg).typ = srcReg.typ;
 
-        this.localStackCopy(dstReg.offset, srcReg.offset, srcReg.size);
+        this.localStackCopy(getOffset(dst), getOffset(src), srcReg.size);
 
         return true;
     }
@@ -248,32 +334,109 @@ struct BCInterp {
         let srcReg: &mut BCReg = fn.getRegAtIndex(src);
         assert_with_msg(srcReg.isInitialized(), "expected valid src in Load");
         (*dstReg).size = srcReg.size;
-        (*dstReg).offset = fn.addOffset(dstReg.size);
+        updateOffset(dst, dstReg.size);
         (*dstReg).typ = srcReg.typ;
 
-        this.localStackCopy(dstReg.offset, srcReg.offset, srcReg.size);
+        this.localStackCopy(getOffset(dst), getOffset(src), srcReg.size);
 
         return true;
     }
 
-    func typeCheckBCAdd(&mut this, fn: &mut BCFunction, add: &mut BCInstr) -> bool {
-        trace("BCInterp.typeCheckBCAdd");
-        assert(add.kind == INSTR_KIND_ADD);
-        let dst: RegIndex = add.dst;
-        let lhs: RegIndex = add.src;
-        let rhs: RegIndex = add.op1;
+    func typeCheckBCMove(&mut this, fn: &mut BCFunction, load: &mut BCInstr) -> bool {
+        trace("BCInterp.typeCheckBCMove");
+        assert(load.kind == INSTR_KIND_MOVE);
+        let dst: RegIndex = load.dst;
+        let src: RegIndex = load.src;
+        let dstReg: &mut BCReg = fn.getRegAtIndex(dst);
+        let srcReg: &mut BCReg = fn.getRegAtIndex(src);
+        assert_with_msg(srcReg.isInitialized(), "expected valid src in Move");
+        (*dstReg).size = srcReg.size;
+        updateOffset(dst, dstReg.size);
+        (*dstReg).typ = srcReg.typ;
+
+        this.localStackCopy(getOffset(dst), getOffset(src), srcReg.size);
+
+        return true;
+    }
+
+    func _f(&mut this, fn: &mut BCFunction, _fn: &mut BCFunction, dst: RegIndex, dstReg: &mut BCReg, name: SubStr, wantsAddr: bool) -> bool {
+        // FIXME: Give this function a name :^)
+        // Given a function _fn, check if ScopedLoad can load a variable with a given name from it
+        mut vi: VarIndex = blank;
+        if (_fn.getVariableIndex(name, &mut vi)) unsafe {
+            let _fnIndex: FnIndex = getFnIndex(_fn);
+            let base: &mut u8 = this.findFunctionBase(_fnIndex);
+            let var: &mut NameRegPair = _fn.getVarAtIndex(vi);
+            assert(base != null);
+            assert(var != null);
+            let _reg: RegIndex = var.reg;
+            let reg: &mut BCReg = _fn.getRegAtIndex(_reg);
+            // Can't load a variable before we initialized it
+            if (!reg.isInitialized()) return false;
+            let varAddr: &mut u8 = base + getOffsetFromFunction(_fnIndex, _reg);
+            if (wantsAddr) {
+                mut t: TypeIndex = reg.typ;
+                t.makePointer();
+                (*dstReg).size = 8;
+                updateOffset(dst, dstReg.size);
+                (*dstReg).typ = t;
+                *(this.getStackAddr(getOffset(dst)) as &mut usize) = varAddr as usize;
+            } else {
+                (*dstReg).size = reg.size;
+                updateOffset(dst, dstReg.size);
+                (*dstReg).typ = reg.typ;
+                memcpy(this.getStackAddr(getOffset(dst)), varAddr, reg.size);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    func typeCheckBCScopedLoad(&mut this, fn: &mut BCFunction, load: &mut BCInstr) -> bool {
+        trace("BCInterp.typeCheckBCScopedLoad");
+        assert(load.kind == INSTR_KIND_SCOPED_LOAD);
+        let dst: RegIndex = load.dst;
+        let src: RegIndex = load.src;
+        let dstReg: &mut BCReg = fn.getRegAtIndex(dst);
+        let srcReg: &mut BCReg = fn.getRegAtIndex(src);
+        let wantsAddr: bool = load.op1._i == 1;
+        assert_with_msg(srcReg.isInitialized(), "expected valid src in Load");
+        // FIXME: This should be indexof(TYPE_STRING), which is currently hardcoded in initializeGlobalTypes()
+        assert(srcReg.typ._i == 3);
+        assert(srcReg.size == sizeof SubStr);
+        unsafe {
+            let name: SubStr = *(this.getStackAddr(getOffset(src)) as &SubStr);
+            for (mut i: usize = 0; i < fn.scopeLength; i = i + 1) {
+                let fnIndex: FnIndex = fn.getScopeAtIndex(i);
+                let _fn: &mut BCFunction = &mut functions[assertValidFunction(fnIndex, "ScopedLoad")];
+                if (this._f(fn, _fn, dst, dstReg, name, wantsAddr)) return true;
+            }
+            if (this._f(fn, fn, dst, dstReg, name, wantsAddr)) return true;
+            let loc: String = load.origin.toString();
+            fprintf(stderr, "%s: %s: Use of unknown variable `%.*s`.\n", loc.chars(), ERR_STR, name.len, name.start);
+            loc.drop();
+        }
+        return false;
+    }
+
+    func typeCheckBCBinaryOp(&mut this, fn: &mut BCFunction, binop: &mut BCInstr) -> bool {
+        trace("BCInterp.typeCheckBCBinaryOp");
+        assert(binop.kind == INSTR_KIND_ADD || binop.kind == INSTR_KIND_SUB);
+        let dst: RegIndex = binop.dst;
+        let lhs: RegIndex = binop.src;
+        let rhs: RegIndex = binop.op1;
         let dstReg: &mut BCReg = fn.getRegAtIndex(dst);
         let lhsReg: &mut BCReg = fn.getRegAtIndex(lhs);
         let rhsReg: &mut BCReg = fn.getRegAtIndex(rhs);
-        assert_with_msg(lhsReg.isInitialized(), "expected valid lhs in Add");
-        assert_with_msg(rhsReg.isInitialized(), "expected valid rhs in Add");
+        assert_with_msg(lhsReg.isInitialized(), "expected valid lhs in BinaryOp");
+        assert_with_msg(rhsReg.isInitialized(), "expected valid rhs in BinaryOp");
         if (!lhsReg.typ.equals(rhsReg.typ)) unsafe {
-            let loc: String = add.origin.toString();
+            let loc: String = binop.origin.toString();
             let lhsLoc: String = lhsReg.origin.toString();
             let rhsLoc: String = rhsReg.origin.toString();
             let lhsTyp: String = lhsReg.typ.toString();
             let rhsTyp: String = rhsReg.typ.toString();
-            fprintf(stderr, "%s: %s: Type mismatch in binary addition!\n%s: %s: LHS has type %s.\n%s: %s: RHS has type %s.\n",
+            fprintf(stderr, "%s: %s: Type mismatch in binary operation!\n%s: %s: LHS has type %s.\n%s: %s: RHS has type %s.\n",
                 loc.chars(), ERR_STR,
                 lhsLoc.chars(), NOTE_STR, lhsTyp.chars(),
                 rhsLoc.chars(), NOTE_STR, rhsTyp.chars()
@@ -285,20 +448,53 @@ struct BCInterp {
         if (lhsReg.typ._i == 0) {
             assert(lhsReg.size == 8);
             (*dstReg).size = lhsReg.size;
-            (*dstReg).offset = fn.addOffset(dstReg.size);
+            updateOffset(dst, lhsReg.size);
             (*dstReg).typ = lhsReg.typ;
             unsafe {
-                let lhs: i64 = *(this.getStackAddr(lhsReg.offset) as &i64);
-                let rhs: i64 = *(this.getStackAddr(rhsReg.offset) as &i64);
-                let sum: i64 = lhs + rhs;
-                let d: &mut u8 = this.getStackAddr(dstReg.offset);
-                memcpy(d, &sum, lhsReg.size);
+                let lhs: i64 = *(this.getStackAddr(getOffset(lhs)) as &i64);
+                let rhs: i64 = *(this.getStackAddr(getOffset(rhs)) as &i64);
+                mut result: i64 = 0;
+                if (binop.kind == INSTR_KIND_ADD) result = lhs + rhs;
+                else todo_with_msg("binop literal");
+                let d: &mut u8 = this.getStackAddr(getOffset(dst));
+                *(d as &mut i64) = result;
             }
             return true;
         } else {
-            todo_with_msg("add for non-literals");
+            (*dstReg).size = lhsReg.size;
+            updateOffset(dst, dstReg.size);
+            (*dstReg).typ = lhsReg.typ;
+            // FIXME: A more general approach would be cool
+            let _t: &mut BCType = &mut types[assertValidType(lhsReg.typ, "binop")];
+            if (_t.isInteger()) {
+                let bs: u32 = _t.intInfo.bitsize;
+                if (bs == 32) unsafe {
+                    let d: &mut u8 = this.getStackAddr(getOffset(dst));
+                    if (_t.intInfo.signed) {
+                        let lhs: i32 = *(this.getStackAddr(getOffset(lhs)) as &i32);
+                        let rhs: i32 = *(this.getStackAddr(getOffset(rhs)) as &i32);
+                        mut result: i32 = 0;
+                        if (binop.kind == INSTR_KIND_ADD) result = lhs + rhs;
+                        else if (binop.kind == INSTR_KIND_SUB) result = lhs - rhs;
+                        else todo_with_msg("binop ints");
+                        *(d as &mut i32) = result;
+                    } else {
+                        let lhs: u32 = *(this.getStackAddr(getOffset(lhs)) as &u32);
+                        let rhs: u32 = *(this.getStackAddr(getOffset(rhs)) as &u32);
+                        mut result: u32 = 0;
+                        if (binop.kind == INSTR_KIND_ADD) result = lhs + rhs;
+                        else if (binop.kind == INSTR_KIND_SUB) result = lhs - rhs;
+                        else todo_with_msg("binop ints");
+                        *(d as &mut u32) = result;
+                    }
+                } else if (bs == 64) {
+                    todo_with_msg("add for 64bit int");
+                } else {
+                    todo_with_msg("add support for arbitrary ints");
+                }
+            }
+            return true;
         }
-        return false; // unreachable
     }
 
     func typeCheckBCEqual(&mut this, fn: &mut BCFunction, equal: &mut BCInstr) -> bool {
@@ -319,10 +515,10 @@ struct BCInterp {
             let rhsLoc: String = rhsReg.origin.toString();
             let lhsId: u32 = lhsReg.typ._i;
             let rhsId: u32 = rhsReg.typ._i;
-            fprintf(stderr, "%s: %s: Type Mismatch in binary operation `==`.\n", ERR_STR, loc.chars());
+            fprintf(stderr, "%s: %s: Type Mismatch in binary operation `==`.\n", loc.chars(), ERR_STR);
             // TODO: Have a verbose flag that prints the type info aswell.
-            fprintf(stderr, "%s: %s: Left hand side has type ID %lu.\n", NOTE_STR, lhsLoc.chars(), lhsId);
-            fprintf(stderr, "%s: %s: Right hand side has type ID %lu.\n", NOTE_STR, rhsLoc.chars(), rhsId);
+            fprintf(stderr, "%s: %s: Left hand side has type ID %lu.\n", lhsLoc.chars(), NOTE_STR, lhsId);
+            fprintf(stderr, "%s: %s: Right hand side has type ID %lu.\n", rhsLoc.chars(), NOTE_STR, rhsId);
             rhsLoc.drop();
             lhsLoc.drop();
             loc.drop();
@@ -330,16 +526,16 @@ struct BCInterp {
         }
         assert(lhsReg.size == rhsReg.size);
         (*dstReg).size = 1;
-        (*dstReg).offset = fn.addOffset(dstReg.size);
+        updateOffset(dst, dstReg.size);
         (*dstReg).typ = TypeIndex { _i: 1, ptrData: 0 };
         unsafe {
-            let l: &mut u8 = this.getStackAddr(lhsReg.offset);
-            let r: &mut u8 = this.getStackAddr(rhsReg.offset);
+            let l: &mut u8 = this.getStackAddr(getOffset(lhs));
+            let r: &mut u8 = this.getStackAddr(getOffset(rhs));
             let areEqual: bool = memcmp(l, r, lhsReg.size) == 0;
             mut res: u8 = 0;
             if (areEqual) res = 1;
             if (not) res = 1 - res;
-            *(this.getStackAddr(dstReg.offset)) = res;
+            *(this.getStackAddr(getOffset(dst))) = res;
         }
         return true;
     }
@@ -355,7 +551,7 @@ struct BCInterp {
             todo_with_msg("report error: Condition in ConstAssert is not bool");
         }
         unsafe {
-            let success: bool = *(this.getStackAddr(whatReg.offset)) == 1;
+            let success: bool = *(this.getStackAddr(getOffset(what))) == 1;
             if (!success) unsafe {
                 let loc: String = assert.origin.toString();
                 fprintf(stderr, "%s: %s: Static assertion failed!\n", loc.chars(), ERR_STR);
@@ -387,19 +583,19 @@ struct BCInterp {
         assert(sizeReg.size == 8);
         assert(signReg.size == 1);
         (*dstReg).size = 8;
-        (*dstReg).offset = fn.addOffset(dstReg.size);
+        updateOffset(dst, dstReg.size);
         // FIXME: This should be indexof(TYPE_TYPE), which is currently hardcoded in initializeGlobalTypes()
         (*dstReg).typ = TypeIndex { _i: 2, ptrData: 0 };
         unsafe {
-            let bitsize: i64 = *(this.getStackAddr(sizeReg.offset) as &i64);
+            let bitsize: i64 = *(this.getStackAddr(getOffset(size)) as &i64);
             if (bitsize <= 0 || bitsize > 65536) {
                 todo_with_msg("report error: Integer bitsize invalid");
             }
-            let signed: bool = *(this.getStackAddr(signReg.offset)) == 1;
+            let signed: bool = *(this.getStackAddr(getOffset(sign))) == 1;
             let int: &mut BCType = createBlankType();
             int.makeIntegerType(bitsize as u32, signed);
             let id: TypeIndex = getTypeID(int);
-            *(this.getStackAddr(dstReg.offset) as &mut TypeIndex) = id;
+            *(this.getStackAddr(getOffset(dst)) as &mut TypeIndex) = id;
         }
         return true;
     }
@@ -410,14 +606,14 @@ struct BCInterp {
         let dst: RegIndex = strukt.dst;
         let dstReg: &mut BCReg = fn.getRegAtIndex(dst);
         (*dstReg).size = 8;
-        (*dstReg).offset = fn.addOffset(dstReg.size);
+        updateOffset(dst, dstReg.size);
         // FIXME: This should be indexof(TYPE_TYPE), which is currently hardcoded in initializeGlobalTypes()
         (*dstReg).typ = TypeIndex { _i: 2, ptrData: 0 };
         unsafe {
             let sType: &mut BCType = createBlankType();
             sType.makeStructType();
             let id: TypeIndex = getTypeID(sType);
-            *(this.getStackAddr(dstReg.offset) as &mut TypeIndex) = id;
+            *(this.getStackAddr(getOffset(dst)) as &mut TypeIndex) = id;
         }
         return true;
     }
@@ -428,7 +624,7 @@ struct BCInterp {
         let dst: RegIndex = createFunc.dst;
         let dstReg: &mut BCReg = fn.getRegAtIndex(dst);
         (*dstReg).size = 8;
-        (*dstReg).offset = fn.addOffset(dstReg.size);
+        updateOffset(dst, dstReg.size);
         // FIXME: This should be indexof(TYPE_FUNC), which is currently hardcoded in initializeGlobalTypes()
         (*dstReg).typ = TypeIndex { _i: 4, ptrData: 0 };
         unsafe {
@@ -436,7 +632,7 @@ struct BCInterp {
             let fun: &mut BCFunction = createBlankFunction();
             fType.makeFuncType(fun);
             let id: TypeIndex = getTypeID(fType);
-            *(this.getStackAddr(dstReg.offset) as &mut TypeIndex) = id;
+            *(this.getStackAddr(getOffset(dst)) as &mut TypeIndex) = id;
         }
         return true;
     }
@@ -447,14 +643,14 @@ struct BCInterp {
         let dst: RegIndex = createNone.dst;
         let dstReg: &mut BCReg = fn.getRegAtIndex(dst);
         (*dstReg).size = 8;
-        (*dstReg).offset = fn.addOffset(dstReg.size);
+        updateOffset(dst, dstReg.size);
         // FIXME: This should be indexof(TYPE_TYPE), which is currently hardcoded in initializeGlobalTypes()
         (*dstReg).typ = TypeIndex { _i: 2, ptrData: 0 };
         unsafe {
             let fType: &mut BCType = createBlankType();
             fType.makeNoneType();
             let id: TypeIndex = getTypeID(fType);
-            *(this.getStackAddr(dstReg.offset) as &mut TypeIndex) = id;
+            *(this.getStackAddr(getOffset(dst)) as &mut TypeIndex) = id;
         }
         return true;
     }
@@ -465,13 +661,13 @@ struct BCInterp {
         let dst: RegIndex = createAnytype.dst;
         let dstReg: &mut BCReg = fn.getRegAtIndex(dst);
         (*dstReg).size = 8;
-        (*dstReg).offset = fn.addOffset(dstReg.size);
+        updateOffset(dst, dstReg.size);
         // FIXME: This should be indexof(TYPE_TYPE), which is currently hardcoded in initializeGlobalTypes()
         (*dstReg).typ = TypeIndex { _i: 2, ptrData: 0 };
         unsafe {
             // REVIEW: This feels wrong
             let id: TypeIndex = TypeIndex { _i: 2, ptrData: 0 };
-            *(this.getStackAddr(dstReg.offset) as &mut TypeIndex) = id;
+            *(this.getStackAddr(getOffset(dst)) as &mut TypeIndex) = id;
         }
         return true;
     }
@@ -485,17 +681,17 @@ struct BCInterp {
         let srcReg: &mut BCReg = fn.getRegAtIndex(src);
         assert_with_msg(srcReg.isInitialized(), "expected valid size in AddrOf");
         (*dstReg).size = 8;
-        (*dstReg).offset = fn.addOffset(dstReg.size);
+        updateOffset(dst, dstReg.size);
         (*dstReg).typ = srcReg.typ;
         (*dstReg).typ.makePointer();
         if (srcReg.typ._i == 2 ) unsafe {
             assert_with_msg(sizeof TypeIndex == 8, "TypeIndex doesn't fit into dst register");
-            let typ: TypeIndex = *(this.getStackAddr(srcReg.offset) as &TypeIndex);
+            let typ: TypeIndex = *(this.getStackAddr(getOffset(src)) as &TypeIndex);
             assertValidType(typ, "AddrOf Type");
-            *(this.getStackAddr(dstReg.offset) as &mut TypeIndex) = typ;
+            *(this.getStackAddr(getOffset(dst)) as &mut TypeIndex) = typ;
         } else unsafe {
-            let addr: &mut u8 = this.getStackAddr(srcReg.offset);
-            *(this.getStackAddr(dstReg.offset) as &mut usize) = addr as usize;
+            let addr: &mut u8 = this.getStackAddr(getOffset(src));
+            *(this.getStackAddr(getOffset(dst)) as &mut usize) = addr as usize;
         }
         return true;
     }
@@ -514,15 +710,15 @@ struct BCInterp {
         (*dstReg).typ = srcReg.typ.getUnderlying();
         let size: usize = dstReg.typ.getSize();
         (*dstReg).size = size;
-        (*dstReg).offset = fn.addOffset(size);
+        updateOffset(dst, size);
         if (srcReg.typ._i == 2 ) unsafe {
             assert_with_msg(sizeof TypeIndex == 8, "TypeIndex doesn't fit into dst register");
-            let typ: TypeIndex = *(this.getStackAddr(srcReg.offset) as &TypeIndex);
+            let typ: TypeIndex = *(this.getStackAddr(getOffset(src)) as &TypeIndex);
             assertValidType(typ, "AddrOf Type");
-            *(this.getStackAddr(dstReg.offset) as &mut TypeIndex) = typ;
+            *(this.getStackAddr(getOffset(dst)) as &mut TypeIndex) = typ;
         } else unsafe {
-            let addr: usize = *(*(this.getStackAddr(srcReg.offset) as &usize) as &usize);
-            *(this.getStackAddr(dstReg.offset) as &mut usize) = addr;
+            let addr: usize = *(*(this.getStackAddr(getOffset(src)) as &usize) as &usize);
+            *(this.getStackAddr(getOffset(dst)) as &mut usize) = addr;
         }
         return true;
     }
@@ -562,9 +758,9 @@ struct BCInterp {
             todo_with_msg("AddField got non-string as name");
         }
         unsafe {
-            let baseType: TypeIndex = *(this.getStackAddr(baseReg.offset) as &TypeIndex);
-            let fieldName: SubStr = *(this.getStackAddr(nameReg.offset) as &SubStr);
-            let fieldType: TypeIndex = *(this.getStackAddr(typReg.offset) as &TypeIndex);
+            let baseType: TypeIndex = *(this.getStackAddr(getOffset(base)) as &TypeIndex);
+            let fieldName: SubStr = *(this.getStackAddr(getOffset(name)) as &SubStr);
+            let fieldType: TypeIndex = *(this.getStackAddr(getOffset(typ)) as &TypeIndex);
             let structType: &mut BCType = &mut types[assertValidType(baseType, "AddField")];
             if (!structType.isStruct()) {
                 todo_with_msg("huh, this is actually unreachable. If you see this, there is a compiler bug :^)");
@@ -593,9 +789,9 @@ struct BCInterp {
             todo_with_msg("AddParam got non-string as name");
         }
         unsafe {
-            let baseType: TypeIndex = *(this.getStackAddr(baseReg.offset) as &TypeIndex);
-            let fieldName: SubStr = *(this.getStackAddr(nameReg.offset) as &SubStr);
-            let fieldType: TypeIndex = *(this.getStackAddr(typReg.offset) as &TypeIndex);
+            let baseType: TypeIndex = *(this.getStackAddr(getOffset(base)) as &TypeIndex);
+            let fieldName: SubStr = *(this.getStackAddr(getOffset(name)) as &SubStr);
+            let fieldType: TypeIndex = *(this.getStackAddr(getOffset(typ)) as &TypeIndex);
             let funcType: &mut BCType = &mut types[assertValidType(baseType, "AddParam")];
             if (!funcType.isFunc()) {
                 todo_with_msg("huh, this is actually unreachable. If you see this, there is a compiler bug :^)");
@@ -614,7 +810,7 @@ struct BCInterp {
             todo_with_msg("AddFuncNode got non-func as base");
         }
         unsafe {
-            let baseType: TypeIndex = *(this.getStackAddr(baseReg.offset) as &TypeIndex);
+            let baseType: TypeIndex = *(this.getStackAddr(getOffset(base)) as &TypeIndex);
             let node: &mut ParsedFuncDecl = addFn.src._i as &mut ParsedFuncDecl;
             let funcType: &mut BCType = &mut types[assertValidType(baseType, "AddFuncNode")];
             assert(funcType.isFunc()); // TypeID is 4, so this is a function
@@ -640,8 +836,8 @@ struct BCInterp {
             todo_with_msg("AddReturnType got non-func as base");
         }
         unsafe {
-            let baseType: TypeIndex = *(this.getStackAddr(baseReg.offset) as &TypeIndex);
-            let retType: TypeIndex = *(this.getStackAddr(typReg.offset) as &TypeIndex);
+            let baseType: TypeIndex = *(this.getStackAddr(getOffset(base)) as &TypeIndex);
+            let retType: TypeIndex = *(this.getStackAddr(getOffset(typ)) as &TypeIndex);
             let funcType: &mut BCType = &mut types[assertValidType(baseType, "AddReturnType")];
             assert(funcType.isFunc()); // TypeID is 4, so this is a function
             funcType.addReturnType(retType);
@@ -661,7 +857,7 @@ struct BCInterp {
         assert_with_msg(baseReg.isInitialized(), "expected valid base in AddCallArg");
         // FIXME: Way too many magic numbers (2... 4...)
         if (baseReg.typ._i == 4) unsafe {
-            let fnTypeIndex: TypeIndex = *(this.getStackAddr(baseReg.offset) as &TypeIndex);
+            let fnTypeIndex: TypeIndex = *(this.getStackAddr(getOffset(base)) as &TypeIndex);
             let fnType: &mut BCType = &mut types[assertValidType(fnTypeIndex, "func call")];
             assert(fnType.isFunc()); // TypeID is 4
             if (argNr >= fnType.funcInfo.paramCount) unsafe {
@@ -670,13 +866,22 @@ struct BCInterp {
                 return false;
             }
             let argType: TypeIndex = argReg.typ;
-            if (!argType.equals(fnType.funcInfo.paramTypes[argNr])) {
-                todo_with_msg("call arg type wrong");
+            if (!argType.equals(fnType.funcInfo.paramTypes[argNr])) unsafe {
+                let loc: String = addCallArg.origin.toString();
+                let argLoc: String = argReg.origin.toString();
+                let parLoc: String = fnType.funcInfo.paramSpans[argNr].toString();
+                let argId: u32 = argType._i;
+                let parId: u32 = fnType.funcInfo.paramTypes[argNr]._i;
+                fprintf(stderr, "%s: %s: Type Mismatch in function call.\n", loc.chars(), ERR_STR);
+                // TODO: Have a verbose flag that prints the type info aswell.
+                fprintf(stderr, "%s: %s: Argument has type ID %lu.\n", argLoc.chars(), NOTE_STR, argId);
+                fprintf(stderr, "%s: %s: Parameter has type ID %lu.\n", parLoc.chars(), NOTE_STR, parId);
+                return false;
             }
-            this.storeArgument(argType, this.getStackAddr(argReg.offset), argReg.size);
+            this.storeArgument(argType, this.getStackAddr(getOffset(arg)), argReg.size);
         } else if (baseReg.typ._i == 2) unsafe {
-            let structTypeIndex: TypeIndex = *(this.getStackAddr(baseReg.offset) as &TypeIndex);
-            let structType: &mut BCType = &mut types[assertValidType(structTypeIndex, "type init")];
+            let structTypeIndex: TypeIndex = *(this.getStackAddr(getOffset(base)) as &TypeIndex);
+            let structType: &mut BCType = &mut types[assertValidType(structTypeIndex, "type init add call arg")];
             if (structType.isInteger()) {
                 if (argNr >= 1) unsafe {
                     let loc: String = addCallArg.origin.toString();
@@ -688,7 +893,7 @@ struct BCInterp {
                 if (!argType.equals(TypeIndex { _i: 0, ptrData: 0 })) {
                     todo_with_msg("int() expected raw int as arg");
                 }
-                this.storeArgument(argType, this.getStackAddr(argReg.offset), argReg.size);
+                this.storeArgument(argType, this.getStackAddr(getOffset(arg)), argReg.size);
             } else if (structType.isStruct()) {
                 if (argNr >= structType.structInfo.fieldCount) unsafe {
                     let loc: String = addCallArg.origin.toString();
@@ -700,7 +905,7 @@ struct BCInterp {
                 if (!argType.equals(structType.structInfo.fieldTypes[argNr])) {
                     todo_with_msg("struct arg type wrong");
                 }
-                this.storeArgument(argType, this.getStackAddr(argReg.offset), argReg.size);
+                this.storeArgument(argType, this.getStackAddr(getOffset(arg)), argReg.size);
             } else {
                 todo_with_msg("neither int nor struct, what is it");
             }
@@ -720,7 +925,7 @@ struct BCInterp {
         assert_with_msg(baseReg.isInitialized(), "expected valid base in Call");
         // FIXME: Way too many magic numbers (2... 4...)
         if (baseReg.typ._i == 4) unsafe {
-            let fnTypeIndex: TypeIndex = *(this.getStackAddr(baseReg.offset) as &TypeIndex);
+            let fnTypeIndex: TypeIndex = *(this.getStackAddr(getOffset(base)) as &TypeIndex);
             let fnType: &mut BCType = &mut types[assertValidType(fnTypeIndex, "func call")];
             assert(fnType.isFunc()); // TypeID is 4
             let fun: &mut BCFunction = fnType.funcInfo.function;
@@ -742,30 +947,24 @@ struct BCInterp {
                 }
                 (*fun).isGenerated = true;
             }
-            let stack: &mut u8 = this.stackBase;
-            unsafe { this.stackBase = this.stackBase + fn.stackSize; }
             if (!this.typeCheckFunction(checker, getFnIndex(fun))) {
                 // Assume error is already reported
                 return false;
             }
-            this.stackBase = stack;
             mut _retType: TypeIndex = fnType.funcInfo.retType;
             unsafe {
                 let size: usize = _retType.getSize();
                 (*dstReg).size = size;
-                (*dstReg).offset = fn.addOffset(dstReg.size);
-                this.argBase = this.argBase - size;
-                memcpy(this.getStackAddr(dstReg.offset), this.argBase, size);
+                updateOffset(dst, dstReg.size);
                 mut retType: TypeIndex = blank;
-                mut retStart: &mut u8 = this.argBase - size;
-                this.argBase = this.argBase - sizeof TypeIndex;
-                memcpy(&mut retType, retStart, sizeof TypeIndex);
-                assertValidType(retType, "call return");
-                (*dstReg).typ = retType;
+                let retStart: &mut u8 = this.loadArgument(size + sizeof TypeIndex, &mut retType);
+                assert_with_msg(retType.equals(_retType), "Type mismatch in return");
+                memcpy(this.getStackAddr(getOffset(dst)), retStart, size);
+                (*dstReg).typ = _retType;
             }
         } else if (baseReg.typ._i == 2) unsafe {
-            let structTypeIndex: TypeIndex = *(this.getStackAddr(baseReg.offset) as &TypeIndex);
-            let structType: &mut BCType = &mut types[assertValidType(structTypeIndex, "type init")];
+            let structTypeIndex: TypeIndex = *(this.getStackAddr(getOffset(base)) as &TypeIndex);
+            let structType: &mut BCType = &mut types[assertValidType(structTypeIndex, "type init actual call")];
             if (structType.isInteger()) {
                 mut rawInt: TypeIndex = TypeIndex { _i: 0, ptrData: 0 };
                 let size: usize = rawInt.getSize() + sizeof TypeIndex;
@@ -792,13 +991,13 @@ struct BCInterp {
                     return false;
                 }
                 (*dstReg).size = intSize;
-                (*dstReg).offset = fn.addOffset(dstReg.size);
+                updateOffset(dst, dstReg.size);
                 (*dstReg).typ = structTypeIndex;
-                memcpy(this.getStackAddr(dstReg.offset), paramStart, intSize);
+                memcpy(this.getStackAddr(getOffset(dst)), paramStart, intSize);
             } else if (structType.isStruct()) {
                 let structSize: usize = structType.getSize();
                 (*dstReg).size = structSize;
-                (*dstReg).offset = fn.addOffset(dstReg.size);
+                updateOffset(dst, dstReg.size);
                 (*dstReg).typ = structTypeIndex;
                 mut argOffset: usize = 0;
                 for (mut i: usize = structType.structInfo.fieldCount - 1; i >= 0; i = i - 1) {
@@ -807,7 +1006,7 @@ struct BCInterp {
                     mut argType: TypeIndex = blank;
                     let argStart: &mut u8 = this.loadArgument(argSize, &mut argType);
                     argOffset = argOffset + fs;
-                    memcpy(this.getStackAddr(dstReg.offset) + structSize - argOffset, argStart, fs);
+                    memcpy(this.getStackAddr(getOffset(dst)) + structSize - argOffset, argStart, fs);
                 }
                 assert(argOffset == structSize);
             } else {
@@ -827,15 +1026,13 @@ struct BCInterp {
         let dstReg: &mut BCReg = fn.getRegAtIndex(dst);
         unsafe {
             mut paramType: TypeIndex = blank;
-            mut paramStart: &mut u8 = this.argBase - size;
-            memcpy(&mut paramType, paramStart, sizeof TypeIndex);
+            // No need for `+ sizeof TypeIndex` because StoreParam includes that in size
+            let paramStart: &mut u8 = this.loadArgument(size, &mut paramType);
             assertValidType(paramType, "store param");
-            paramStart = paramStart + sizeof TypeIndex;
             (*dstReg).size = size - sizeof TypeIndex;
-            (*dstReg).offset = fn.addOffset(dstReg.size);
-            memcpy(this.getStackAddr(dstReg.offset), paramStart, dstReg.size);
             (*dstReg).typ = paramType;
-            this.argBase = this.argBase - size;
+            updateOffset(dst, dstReg.size);
+            memcpy(this.getStackAddr(getOffset(dst)), paramStart, dstReg.size);
         }
         return true;
     }
@@ -851,28 +1048,83 @@ struct BCInterp {
         let typ: &mut BCType = &mut types[assertValidType(fnType, "return")];
         assert(typ.isFunc());
         mut retType: TypeIndex = typ.funcInfo.retType;
-        if (!retType.equals(srcReg.typ)) {
-            todo_with_msg("return type mismatch");
+        if (!retType.equals(srcReg.typ)) unsafe {
+            let loc: String = ret.origin.toString();
+            let typLoc: String = typ.funcInfo.function.origin.toString();
+            let srcLoc: String = srcReg.origin.toString();
+            let typId: u32 = retType._i;
+            let srcId: u32 = srcReg.typ._i;
+            fprintf(stderr, "%s: %s: Type Mismatch in return expression.\n", loc.chars(), ERR_STR);
+            // TODO: Have a verbose flag that prints the type info aswell.
+            fprintf(stderr, "%s: %s: Return type has type ID %lu.\n", typLoc.chars(), NOTE_STR, typId);
+            fprintf(stderr, "%s: %s: Expression has type ID %lu.\n", srcLoc.chars(), NOTE_STR, srcId);
+            srcLoc.drop();
+            typLoc.drop();
+            loc.drop();
+            return false;
         }
         unsafe {
             let size: usize = retType.getSize();
             assert(size == srcReg.size);
-            *(this.argBase as &mut TypeIndex) = retType;
-            this.argBase = this.argBase + sizeof TypeIndex;
-            memcpy(this.argBase, this.getStackAddr(srcReg.offset), size);
-            this.argBase = this.argBase + size;
+            this.storeArgument(retType, this.getStackAddr(getOffset(src)), size);
         }
         return true;
     }
 
+    func typeCheckBCInheritScopes(&mut this, fn: &mut BCFunction, inherit: &mut BCInstr) -> bool {
+        trace("BCInterp.typeCheckBCInheritScopes");
+        let base: RegIndex = inherit.dst;
+        let baseReg: &mut BCReg = fn.getRegAtIndex(base);
+        assert_with_msg(baseReg.isInitialized(), "expected valid base in InheritScopes");
+        // FIXME: This should be indexof(TYPE_FUNC), which is currently hardcoded in initializeGlobalTypes()
+        assert_with_msg(baseReg.typ._i == 4, "Expected function in InheritScopes");
+        unsafe {
+            let index: TypeIndex = *(this.getStackAddr(getOffset(base)) as &TypeIndex);
+            let typ: &mut BCType = &mut types[assertValidType(index, "expected valid base in InheritScopes")];
+            assert_with_msg(typ.isFunc(), "expected base to be a function in InheritScopes");
+            let f: &mut BCFunction = typ.funcInfo.function;
+            return f.inheritScopesFrom(fn);
+        }
+    }
+
+    func typeCheckBCCondBr(&mut this, fn: &mut BCFunction, condBr: &mut BCInstr, ip: &mut usize) -> bool {
+        trace("BCInterp.typeCheckBCCondBr");
+        let cond: RegIndex = condBr.dst;
+        let condReg: &mut BCReg = fn.getRegAtIndex(cond);
+        assert_with_msg(condReg.isInitialized(), "expected valid cond in CondBr");
+        // FIXME: This should be indexof(TYPE_BOOL), which is currently hardcoded in initializeGlobalTypes()
+        if (condReg.typ._i != 1) {
+            todo_with_msg("error: cond br didn't get a bool");
+        }
+        unsafe {
+            let val: u8 = *(this.getStackAddr(getOffset(cond)));
+            if (val == 1) {
+                *ip = condBr.src._i;
+            } else if (val == 0) {
+                *ip = condBr.op1._i;
+            } else {
+                assert_with_msg(false, "unreachable: Condition is neither 0 nor 1.");
+            }
+            if (*ip == 0) todo_with_msg("cond br just set IP to 0 - Is this ever valid?");
+        }
+        return true;
+    }
+
+    func typeCheckBCBr(&mut this, fn: &mut BCFunction, br: &mut BCInstr, ip: &mut usize) -> bool {
+        trace("BCInterp.typeCheckBCBr");
+        *ip = br.dst._i;
+        if (*ip == 0) todo_with_msg("br just set IP to 0 - Is this ever valid?");
+        return true;
+    }
     func typeCheckFunction(&mut this, checker: &mut Checker, fnIndex: FnIndex) -> bool {
         unsafe { assert_with_msg(this.stackBase != null, "typeCheckFunction called in wrong context"); }
         trace("BCInterp.typeCheckFunction");
+        unsafe { this.enterFunction(fnIndex); }
         let fn: &mut BCFunction = &mut functions[assertValidFunction(fnIndex, "typeCheckFunction")];
         for (mut i: usize = 0; i < fn.instrLength; i = i + 1) {
             let instr: &mut BCInstr = fn.getInstrAtIndex(InstrIndex { _i: i });
             if (PRINT_DEBUG) unsafe {
-                printf("%s\n", instr.toString().chars());
+                printf("%04llu %s\n", i, instr.toString().chars());
             }
             if (instr.kind == INSTR_KIND_LOAD_NUMBER) {
                 if (!this.typeCheckBCLoadNumber(fn, instr)) {
@@ -890,8 +1142,16 @@ struct BCInterp {
                 if (!this.typeCheckBCLoad(fn, instr)) {
                     return false;
                 }
-            } else if (instr.kind == INSTR_KIND_ADD) {
-                if (!this.typeCheckBCAdd(fn, instr)) {
+            } else if (instr.kind == INSTR_KIND_MOVE) {
+                if (!this.typeCheckBCMove(fn, instr)) {
+                    return false;
+                }
+            } else if (instr.kind == INSTR_KIND_SCOPED_LOAD) {
+                if (!this.typeCheckBCScopedLoad(fn, instr)) {
+                    return false;
+                }
+            } else if (instr.kind == INSTR_KIND_ADD || instr.kind == INSTR_KIND_SUB) {
+                if (!this.typeCheckBCBinaryOp(fn, instr)) {
                     return false;
                 }
             } else if (instr.kind == INSTR_KIND_EQUAL || instr.kind == INSTR_KIND_NOT_EQUAL) {
@@ -966,11 +1226,25 @@ struct BCInterp {
                 if (!this.typeCheckBCReturn(fn, instr)) {
                     return false;
                 }
+                break;
+            } else if (instr.kind == INSTR_KIND_INHERIT_SCOPES) {
+                if (!this.typeCheckBCInheritScopes(fn, instr)) {
+                    return false;
+                }
+            } else if (instr.kind == INSTR_KIND_COND_BR) {
+                if (!this.typeCheckBCCondBr(fn, instr, &mut i)) {
+                    return false;
+                }
+            } else if (instr.kind == INSTR_KIND_BR) {
+                if (!this.typeCheckBCBr(fn, instr, &mut i)) {
+                    return false;
+                }
             } else {
                 debug(instr.toString().chars());
                 todo_with_msg("can't check unknown BCInstr");
             }
         }
+        unsafe { this.leaveFunction(fnIndex); }
         if (PRINT_DEBUG) unsafe {
             printf("--- AFTER TYPE CHECK ---\n");
             fn.dump();
@@ -983,6 +1257,7 @@ func newBCInterp() -> BCInterp {
     return BCInterp {
         stackBase: &mut interpStack[0],
         argBase: &mut argStack[0],
+        offsetBase: &mut offsetStack[0],
     };
 }
 
@@ -1029,24 +1304,13 @@ struct Checker {
                 ident.name.print();
                 todo_with_msg("no variable found");
             }
-            if (entry.computed) {
-                // NOTE: Register Index 0 implies that the value that we'd store was located at Index -1 or lower.
-                //       We can use it for this check, because GlobalEntry's are initialized with `blank`, setting the register to 0.
-                if (entry.register._i == 0) unsafe {
-                    assert_with_msg(entry.node != null, "fatal error when trying to report an error: GlobalEntry-Node is null :^) Can't get location");
-                    let loc: String = entry.node.span.toString();
-                    fprintf(stderr, "%s: %s: Recursive global declaration.\n", loc.chars(), ERR_STR);
-                    loc.drop();
-                    exit(1);
-                }
-                return entry.register;
+            if (!entry.computed) {
+                let global: FnIndex = FnIndex { _i: 0 };
+                let success: bool = this.generateBytecodeVarDecl(global, entry.node);
+                if (!success) todo_with_msg("failed to generate global");
             }
             (*entry).computed = true;
-            let global: FnIndex = FnIndex { _i: 0 };
-            let success: bool = this.generateBytecodeVarDecl(global, entry.node);
-            if (!success) todo_with_msg("failed to generate global");
-            assert(functions[index].buildLoad(ident.span, ident.name, &mut reg, wantsAddr));
-            (*entry).register = reg;
+            functions[index].buildLoad(ident.span, ident.name, &mut reg, wantsAddr);
         }
         return reg;
     }
@@ -1090,9 +1354,6 @@ struct Checker {
                 (*entry).computed = true;
                 if (!this.generateBytecodeVarDecl(globalFn, decl.data))
                     return false;
-                let instr: &BCInstr = functions[globalFn._i].getLastInstruction();
-                assert_with_msg(instr.kind == INSTR_KIND_STORE_CONST, "Expected StoreConst as last instruction");
-                (*entry).register = instr.dst;
             } else if (decl.kind == GLOBAL_DIR) {
                 if (!this.generateBytecodeDirective(globalFn, decl.data))
                     return false;
@@ -1176,8 +1437,32 @@ struct Checker {
             let number: &mut ParsedDeclValueString = expr.data;
             return functions[assertValidFunction(currFn, "number literal")].buildStringLiteral(number.span, number.string);
         } else if (expr.kind == DECL_VALUE_BLOCK) todo_with_msg("bytecode DECL_VALUE_BLOCK");
-        else if (expr.kind == DECL_VALUE_IF) todo_with_msg("bytecode DECL_VALUE_IF");
-        else if (expr.kind == DECL_VALUE_UNARY) unsafe {
+        else if (expr.kind == DECL_VALUE_IF) unsafe {
+            // cond: ParsedDeclValue;
+            // ifBody: ParsedDeclValue;
+            // hasElse: bool;
+            // elseBody: ParsedDeclValue;
+            let f: &mut BCFunction = &mut functions[assertValidFunction(currFn, "if")];
+            let iif: &mut ParsedDeclValueIf = expr.data;
+            // expr result
+            let reg: RegIndex = f.allocateRegister(iif.span);
+            // condition
+            let cond: RegIndex = this.generateBytecodeDeclValue(currFn, &mut iif.cond, false);
+            // if block
+            let thenInstr: InstrIndex = f.buildDummy();
+            let then: RegIndex = this.generateBytecodeDeclValue(currFn, &mut iif.ifBody, false);
+            f.buildMove(iif.span, reg, then);
+            let elseInstr: InstrIndex = f.buildDummy();
+            // else block
+            if (iif.hasElse) {
+                let elze: RegIndex = this.generateBytecodeDeclValue(currFn, &mut iif.elseBody, false);
+                let after: InstrIndex = f.getCurrentInstructionIndex();
+                f.buildMove(iif.span, reg, elze);
+                f.backpatch(elseInstr, newBrInstr(iif.span, after));
+            }
+            f.backpatch(thenInstr, newCondBrInstr(iif.span, cond, thenInstr, elseInstr));
+            return reg;
+        } else if (expr.kind == DECL_VALUE_UNARY) unsafe {
             return this.generateBytecodeUnary(currFn, expr.data);
         } else {
             assert_with_msg(false, "exhaustive handling in generateBytecodeDeclValue");
@@ -1189,6 +1474,7 @@ struct Checker {
     func generateBytecodeFuncDecl(&mut this, currFn: FnIndex, funcDecl: &mut ParsedFuncDecl) -> RegIndex {
         trace("Checker.generateBytecodeFuncDecl");
         let base: RegIndex = functions[assertValidFunction(currFn, "func decl")].buildCreateFunc(funcDecl.span);
+        functions[assertValidFunction(currFn, "func decl inherit func indices")].buildInheritScopes(funcDecl.span, base, currFn);
         for (mut i: usize = 0; i < funcDecl.paramCount; i = i + 1) {
             let param: &mut ParsedParam = funcDecl.getParamAtIndex(i);
             let reg: RegIndex = this.generateBytecodeTypeExpr(currFn, &mut param.typ);

@@ -4,7 +4,7 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! [91merror[0m: Recursive global declaration.
+//! [91merror[0m: Use of unknown variable `Foo`.
 
 // FIXME: Somehow don't print colors when running tests
 

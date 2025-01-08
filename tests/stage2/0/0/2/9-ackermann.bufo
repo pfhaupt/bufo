@@ -1,0 +1,23 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 2
+//! COMPILER
+//! SUCCESS
+
+// FIXME: We need a better way to use integers :^)
+
+const false = 0 == 1;
+const u32 = @integer(32, false);
+
+const ack = func (m: u32, n: u32) -> u32 {
+    return if m == u32(0) n + u32(1)
+        else if n == u32(0) ack(m - u32(1), u32(1))
+        else ack(m - u32(1), ack(m, n - u32(1)));
+};
+
+@assert(ack(u32(3), u32(3)) == u32(61));
+// FIXME: There's no reason why we should overflow the stack here
+//        We have bytecode, the only reason we overflow is because we recursively call
+//        typeCheckFunction() in typeCheckBCCall(), which isn't really necessary
+// @assert(ack(u32(4), u32(3)) == u32(125));
+@assert(ack(u32(0), u32(12)) == u32(13));
+@assert(ack(u32(0), u32(0)) == u32(1));
