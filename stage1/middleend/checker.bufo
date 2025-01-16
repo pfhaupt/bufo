@@ -524,7 +524,11 @@ struct BCInterp {
             loc.drop();
             return false;
         }
-        assert(lhsReg.size == rhsReg.size);
+        if (lhsReg.size != rhsReg.size) unsafe {
+            equal.origin.print();
+            printf(" -> %llu %llu\n", lhsReg.size, rhsReg.size);
+            assert_with_msg(false, "LHS and RHS have the same type, but not the same size");
+        }
         (*dstReg).size = 1;
         updateOffset(dst, dstReg.size);
         (*dstReg).typ = TypeIndex { _i: 1, ptrData: 0 };
@@ -684,7 +688,7 @@ struct BCInterp {
         updateOffset(dst, dstReg.size);
         (*dstReg).typ = srcReg.typ;
         (*dstReg).typ.makePointer();
-        if (srcReg.typ._i == 2 ) unsafe {
+        if (srcReg.typ._i == 2) unsafe {
             assert_with_msg(sizeof TypeIndex == 8, "TypeIndex doesn't fit into dst register");
             let typ: TypeIndex = *(this.getStackAddr(getOffset(src)) as &TypeIndex);
             assertValidType(typ, "AddrOf Type");
@@ -1073,6 +1077,7 @@ struct BCInterp {
 
     func typeCheckBCInheritScopes(&mut this, fn: &mut BCFunction, inherit: &mut BCInstr) -> bool {
         trace("BCInterp.typeCheckBCInheritScopes");
+        assert(inherit.kind == INSTR_KIND_INHERIT_SCOPES);
         let base: RegIndex = inherit.dst;
         let baseReg: &mut BCReg = fn.getRegAtIndex(base);
         assert_with_msg(baseReg.isInitialized(), "expected valid base in InheritScopes");
@@ -1089,6 +1094,7 @@ struct BCInterp {
 
     func typeCheckBCCondBr(&mut this, fn: &mut BCFunction, condBr: &mut BCInstr, ip: &mut usize) -> bool {
         trace("BCInterp.typeCheckBCCondBr");
+        assert(condBr.kind == INSTR_KIND_COND_BR);
         let cond: RegIndex = condBr.dst;
         let condReg: &mut BCReg = fn.getRegAtIndex(cond);
         assert_with_msg(condReg.isInitialized(), "expected valid cond in CondBr");
@@ -1112,9 +1118,50 @@ struct BCInterp {
 
     func typeCheckBCBr(&mut this, fn: &mut BCFunction, br: &mut BCInstr, ip: &mut usize) -> bool {
         trace("BCInterp.typeCheckBCBr");
+        assert(br.kind == INSTR_KIND_BR);
         *ip = br.dst._i;
         if (*ip == 0) todo_with_msg("br just set IP to 0 - Is this ever valid?");
         return true;
+    }
+
+    func typeCheckBCGetAssetOrFieldPtr(&mut this, fn: &mut BCFunction, get: &mut BCInstr) -> bool {
+        trace("BCInterp.typeCheckBCGetAssetOrFieldPtr");
+        assert(get.kind == INSTR_KIND_GET_ASSET_OR_FIELD_PTR);
+        let dst: RegIndex = get.dst;
+        let orig: RegIndex = get.src;
+        let name: RegIndex = get.op1;
+        let dstReg: &mut BCReg = fn.getRegAtIndex(dst);
+        let origReg: &mut BCReg = fn.getRegAtIndex(orig);
+        let nameReg: &mut BCReg = fn.getRegAtIndex(name);
+        assert_with_msg(origReg.isInitialized(), "Expected valid LHS in GetAssetOrFieldPtr");
+        assert_with_msg(nameReg.isInitialized(), "Expected valid name in GetAssetOrFieldPtr");
+        // FIXME: This should be indexof(TYPE_STRING), which is currently hardcoded in initializeGlobalTypes()
+        if (nameReg.typ._i != 3) {
+            todo_with_msg("can this ever happen? We generated this code!");
+        }
+        if (origReg.typ._i == 2) {
+            todo_with_msg("This is an asset");
+        } else unsafe {
+            let typ: &mut BCType = &mut types[assertValidType(origReg.typ, "GetAssetOrFieldPtr")];
+            if (!typ.isStruct()) {
+                todo_with_msg("Only structs are supported for now");
+            }
+            assert_with_msg(nameReg.size == sizeof SubStr, "Size mismatch in GetAssetOrFieldPtr");
+            let fieldName: SubStr = *(this.getStackAddr(getOffset(name)) as &SubStr);
+            mut fieldOffset: usize = 0;
+            mut fieldType: TypeIndex = blank;
+            if (!typ.getFieldOffset(fieldName, &mut fieldOffset, &mut fieldType)) {
+                todo_with_msg("Could not find a field with the name");
+            }
+            fieldType.makePointer();
+            (*dstReg).size = fieldType.getSize();
+            assert(dstReg.size == 8); // It's a pointer
+            updateOffset(dst, dstReg.size);
+            *(this.getStackAddr(getOffset(dst)) as &mut usize) = (this.getStackAddr(getOffset(orig)) + fieldOffset) as usize;
+            (*dstReg).typ = fieldType;
+            return true;
+        }
+        return false;
     }
     func typeCheckFunction(&mut this, checker: &mut Checker, fnIndex: FnIndex) -> bool {
         unsafe { assert_with_msg(this.stackBase != null, "typeCheckFunction called in wrong context"); }
@@ -1124,7 +1171,7 @@ struct BCInterp {
         for (mut i: usize = 0; i < fn.instrLength; i = i + 1) {
             let instr: &mut BCInstr = fn.getInstrAtIndex(InstrIndex { _i: i });
             if (PRINT_DEBUG) unsafe {
-                printf("%04llu %s\n", i, instr.toString().chars());
+                printf("\x1b[92m%04llu %s\n\x1b[0m", i, instr.toString().chars());
             }
             if (instr.kind == INSTR_KIND_LOAD_NUMBER) {
                 if (!this.typeCheckBCLoadNumber(fn, instr)) {
@@ -1237,6 +1284,10 @@ struct BCInterp {
                 }
             } else if (instr.kind == INSTR_KIND_BR) {
                 if (!this.typeCheckBCBr(fn, instr, &mut i)) {
+                    return false;
+                }
+            } else if (instr.kind == INSTR_KIND_GET_ASSET_OR_FIELD_PTR) {
+                if (!this.typeCheckBCGetAssetOrFieldPtr(fn, instr)) {
                     return false;
                 }
             } else {
@@ -1426,7 +1477,7 @@ struct Checker {
             let ident: &mut ParsedDeclValueIdent = expr.data;
             return this.loadVariable(currFn, ident, wantsAddr);
         } else if (expr.kind == DECL_VALUE_BINARY)
-            return this.generateBytecodeBinary(currFn, expr.data);
+            return this.generateBytecodeBinary(currFn, expr.data, wantsAddr);
         else if (expr.kind == DECL_VALUE_NUMBER) unsafe {
             let number: &mut ParsedDeclValueNumber = expr.data;
             let _n: String = number.number.toString();
@@ -1522,12 +1573,29 @@ struct Checker {
         }
     }
 
-    func generateBytecodeBinary(&mut this, currFn: FnIndex, binary: &mut ParsedDeclValueBinary) -> RegIndex {
+    func generateBytecodeBinary(&mut this, currFn: FnIndex, binary: &mut ParsedDeclValueBinary, wantsAddr: bool) -> RegIndex {
         trace("Checker.generateBytecodeBinary");
-        if (binary.op == BINARY_OP_ASSIGN) todo_with_msg("binary assignment");
-        let lhs: RegIndex = this.generateBytecodeDeclValue(currFn, &mut binary.lhs, false);
-        let rhs: RegIndex = this.generateBytecodeDeclValue(currFn, &mut binary.rhs, false);
-        return functions[assertValidFunction(currFn, "binary operation")].buildBinaryOp(binary.span, lhs, rhs, binary.op);
+        if (binary.op == BINARY_OP_ASSIGN) {
+            todo_with_msg("binary assignment");
+            return blank;
+        } else if (binary.op == BINARY_OP_DOT) unsafe {
+            // comptime DECL_VALUE_IDENT: usize = 8;
+            // Passing along wantsAddr here is kinda sus and will surely not go wrong once we add assignments
+            let lhs: RegIndex = this.generateBytecodeDeclValue(currFn, &mut binary.lhs, wantsAddr);
+            if (binary.rhs.kind != DECL_VALUE_IDENT) {
+                todo_with_msg("RHS of dot op is not an identifier");
+            }
+            let ident: &mut ParsedDeclValueIdent = binary.rhs.data;
+            let name: RegIndex = functions[assertValidFunction(currFn, "dot op")].buildStringLiteral(ident.span, ident.name);
+            let ptr: RegIndex = functions[assertValidFunction(currFn, "dot op")].buildGetAssetOrFieldPtr(binary.span, lhs, name);
+            if (wantsAddr) return ptr;
+            else return functions[assertValidFunction(currFn, "load field")].buildLoadAddr(binary.span, ptr);
+        } else {
+            // default: Generate both sides, apply operator
+            let lhs: RegIndex = this.generateBytecodeDeclValue(currFn, &mut binary.lhs, false);
+            let rhs: RegIndex = this.generateBytecodeDeclValue(currFn, &mut binary.rhs, false);
+            return functions[assertValidFunction(currFn, "binary operation")].buildBinaryOp(binary.span, lhs, rhs, binary.op);
+        }
     }
 
     func generateBytecodeBuiltin(&mut this, currFn: FnIndex, builtin: &mut ParsedDeclValueBuiltin) -> RegIndex {

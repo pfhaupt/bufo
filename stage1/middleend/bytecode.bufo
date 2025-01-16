@@ -117,6 +117,9 @@ comptime TYPE_NONE: usize = 4;
 struct BCTypeInt {
     bitsize: u32;
     signed: bool;
+    func equals(&this, other: &BCTypeInt) -> bool {
+        return this.bitsize == other.bitsize && this.signed == other.signed;
+    }
 }
 // FIXME: This should be heap allocated
 //        We waste *a lot* of memory for our global type table
@@ -151,6 +154,18 @@ struct BCTypeStruct {
         }
         return true;
     }
+    func getFieldOffset(&mut this, name: SubStr, offset: &mut usize, typ: &mut TypeIndex) -> bool {
+        mut _offset: usize = 0;
+        for (mut i: usize = 0; i < this.fieldCount; i = i + 1) {
+            if (this.fieldNames[i].equals(&name)) {
+                *offset = _offset;
+                *typ = this.fieldTypes[i];
+                return true;
+            }
+            _offset = _offset + this.fieldTypes[i].getSize();
+        }
+        return false;
+    }
 }
 struct BCTypeFunc {
     function: &mut BCFunction;
@@ -180,6 +195,11 @@ struct BCType {
 
     func isFunc(&mut this) -> bool {
         return this.kind == TYPE_FUNC;
+    }
+
+    func getFieldOffset(&mut this, name: SubStr, offset: &mut usize, typ: &mut TypeIndex) -> bool {
+        assert_with_msg(this.kind == TYPE_STRUCT, "getFieldOffset() only works on structs for now");
+        return this.structInfo.getFieldOffset(name, offset, typ);
     }
 
     func toString(&mut this) -> String {
@@ -296,7 +316,9 @@ struct BCType {
         // A != B
         if (getTypeID(this)._i != getTypeID(other)._i) return false;
         if (this.kind == TYPE_INTEGER) {
-            todo_with_msg("BCType.equals(TYPE_INTEGER)");
+            let _s1: &BCTypeInt = &this.intInfo;
+            let _s2: &BCTypeInt = &other.intInfo;
+            return _s1.equals(_s2);
         } else if (this.kind == TYPE_FUNC) {
             todo_with_msg("BCType.equals(TYPE_FUNC)");
         } else if (this.kind == TYPE_STRUCT) {
@@ -306,7 +328,7 @@ struct BCType {
         } else if (this.kind == TYPE_NONE) {
             todo_with_msg("BCType.equals(TYPE_NONE)");
         } else {
-            assert_with_msg(false, "Exhaustive handling in BCType.equals");
+            assert_with_msg(this.kind == TYPE_INVALID, "Exhaustive handling in BCType.equals");
         }
         return false;
     }
@@ -702,6 +724,13 @@ struct BCFunction {
         *(this.getInstrAtIndex(index)) = instr;
     }
 
+    func buildGetAssetOrFieldPtr(&mut this, span: Span, lhs: RegIndex, name: RegIndex) -> RegIndex {
+        trace("BCFunction.buildGetAssetOrFieldPtr");
+        let reg: RegIndex = this.allocateRegister(span);
+        let get: BCInstr = newGetAssetOrFieldPtr(span, reg, lhs, name);
+        this.appendInstr(get);
+        return reg;
+    }
     func dump(&mut this) {
         unsafe {
             printf(" --- REGISTERS ---\n");
@@ -777,6 +806,7 @@ comptime INSTR_KIND_RETURN: usize = 27;
 comptime INSTR_KIND_INHERIT_SCOPES: usize = 28;
 comptime INSTR_KIND_COND_BR: usize = 29;
 comptime INSTR_KIND_BR: usize = 30;
+comptime INSTR_KIND_GET_ASSET_OR_FIELD_PTR: usize = 31;
 struct BCInstr {
     origin: Span;
     kind: usize;
@@ -1102,6 +1132,20 @@ struct BCInstr {
             s.pushStr("Br ");
             s.pushNumber(this.dst._i);
             return s;
+        } else if (this.kind == INSTR_KIND_GET_ASSET_OR_FIELD_PTR) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            let _lhs: String = this.src.toString();
+            let _name: String = this.op1.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = GetAssetOrFieldPtr ");
+            s.pushString(&_lhs);
+            s.pushStr(", ");
+            s.pushString(&_name);
+            _name.drop();
+            _lhs.drop();
+            _dst.drop();
+            return s;
         } else unsafe {
             printf("%llu\n", this.kind);
             assert_with_msg(false, "exhaustive handling in BCInstr.toString");
@@ -1416,5 +1460,15 @@ func newBrInstr(span: Span, where: InstrIndex) -> BCInstr {
         dst: RegIndex { _i: where._i },
         src: blank,
         op1: blank
+    };
+}
+
+func newGetAssetOrFieldPtr(span: Span, dst: RegIndex, lhs: RegIndex, name: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_GET_ASSET_OR_FIELD_PTR,
+        dst: dst,
+        src: lhs,
+        op1: name,
     };
 }

@@ -129,7 +129,7 @@ func todo_with_msg(msg: &char) {
     }
 }
 
-comptime PRINT_DEBUG: bool = true;
+comptime PRINT_DEBUG: bool = false;
 func debug(msg: &char) {
     if (!PRINT_DEBUG) return;
     // Safety: Argument must be null-terminated
