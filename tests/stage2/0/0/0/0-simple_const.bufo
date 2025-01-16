@@ -1,0 +1,9 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 2
+//! COMPILER
+//! SUCCESS
+
+const a = 2;
+const b = 1;
+@assert(a + b == 3);
+

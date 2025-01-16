@@ -1,0 +1,22 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 2
+//! COMPILER
+//! SUCCESS
+
+// FIXME: We need a better way to use integers :^)
+
+const false = 0 == 1;
+const u32 = @integer(32, false);
+
+const fib = func (n: u32) -> u32 {
+    return if n == u32(0) u32(0)
+        else if n == u32(1) u32(1)
+        else fib(n - u32(2)) + fib(n - u32(1));
+};
+
+@assert(fib(u32(0)) == u32(0));
+@assert(fib(u32(1)) == u32(1));
+@assert(fib(u32(2)) == u32(1));
+@assert(fib(u32(3)) == u32(2));
+@assert(fib(u32(13)) == u32(233));
+@assert(fib(u32(19)) == u32(4181));

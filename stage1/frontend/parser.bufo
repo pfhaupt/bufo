@@ -1,0 +1,589 @@
+
+comptime ASSOC_LEFT: usize = 0;
+comptime ASSOC_RIGHT: usize = 1;
+struct Parser {
+    encounteredErrors: bool;
+    lexer: &mut Lexer;
+
+    func next(&mut this) -> Token {
+        return this.lexer.next();
+    }
+    func peek(&mut this) -> Token {
+        return this.lexer.peek();
+    }
+    func eat(&mut this, kind: usize) -> bool {
+        if (this.at(kind)) {
+            this.lexer.next();
+            return true;
+        }
+        return false;
+    }
+    func at(&mut this, kind: usize) -> bool {
+        let tkn: Token = this.lexer.peek();
+        return tkn.kind == kind;
+    }
+    func atEOF(&mut this) -> bool {
+        return this.at(TOKEN_EOF);
+    }
+    func recover(&mut this, stop: usize) {
+        mut tkn: Token = this.lexer.next();
+        while (tkn.kind != stop) {
+            tkn = this.lexer.next();
+            if (tkn.kind == TOKEN_EOF) unsafe {
+                fprintf(stderr, "error: Reached End Of File while recovering from previous syntax error.\n");
+                exit(1);
+            }
+        }
+    }
+    func expect(&mut this, kind: usize) -> Token {
+        let tkn: Token = this.lexer.next();
+        if (tkn.kind != kind) unsafe {
+            let s: String = tkn.toString();
+            let l: String = tkn.span.toString();
+            fprintf(stderr, "error: %s: Expected %s, found `%s`.\n", l.buffer, tokenKindToString(kind), s.buffer);
+            l.drop();
+            s.drop();
+            this.encounteredErrors = true;
+        }
+        return tkn;
+    }
+    func expectIdent(&mut this) -> Token {
+        return this.expect(TOKEN_IDENT);
+    }
+    func expectKeyword(&mut this, keyword: &SubStr) -> Token {
+        let tkn: Token = this.expect(TOKEN_KEYWORD);
+        if (!tkn.content.equals(keyword)) unsafe {
+            let ts: String = tkn.toString();
+            let ls: String = tkn.span.toString();
+            let ks: String = keyword.toString();
+            fprintf(stderr, "error: %s: Expected keyword `%s`, found `%s`.\n", ls.buffer, ks.buffer, ts.buffer);
+            ks.drop();
+            ls.drop();
+            ts.drop();
+            this.encounteredErrors = true;
+        }
+        return tkn;
+    }
+
+    func parseProject(&mut this) -> ParsedModule {
+        trace("parseProject");
+        let module: ParsedModule = this.parseModule();
+        if (this.encounteredErrors) unsafe {
+            // Errors are already reported while parsing
+            exit(1);
+        }
+        return module;
+    }
+
+    func parseModule(&mut this) -> ParsedModule {
+        trace("parseModule");
+        mut module: ParsedModule = defaultModule();
+        while (!this.atEOF() && !this.at(TOKEN_CURLY_CLOSE)) {
+            let global: ParsedGlobalDecl = this.parseGlobalDecl();
+            module.addGlobalDecl(global);
+        }
+        return module;
+    }
+    func parseGlobalDecl(&mut this) -> ParsedGlobalDecl {
+        if (this.at(TOKEN_AT)) {
+            let dir: ParsedDeclValue = this.parseDeclValueBuiltin();
+            this.expect(TOKEN_SEMI_COLON);
+            return createGlobalDecl(GLOBAL_DIR, sizeof ParsedDeclValue, &dir);
+        } else {
+            let decl: ParsedVarDecl = this.parseVarDecl();
+            return createGlobalDecl(GLOBAL_VAR_DECL, sizeof ParsedVarDecl, &decl);
+        }
+    }
+    func parseVarDecl(&mut this) -> ParsedVarDecl {
+        trace("parseVarDecl");
+        let mutToken: Token = this.next();
+        mut constVar: bool = false;
+        if (mutToken.content.equals(&KEYWORD_LET))
+            constVar = false;
+        else if (mutToken.content.equals(&KEYWORD_CONST))
+            constVar = true;
+        else unsafe {
+            let ls: String = mutToken.span.toString();
+            fprintf(stderr, "error: %s: Expected `let` or `const`, found `%.*s`.\n", ls.buffer, mutToken.content.len, mutToken.content.start);
+            this.encounteredErrors = true;
+            this.recover(TOKEN_SEMI_COLON);
+            return this.parseVarDecl();
+        }
+        let name: Token = this.expect(TOKEN_IDENT);
+        this.expect(TOKEN_EQUAL_SINGLE);
+        let value: ParsedDeclValue = this.parseDeclValue();
+        let end: Token = this.expect(TOKEN_SEMI_COLON);
+        let span: Span = newSpanBetween(&mutToken.span, &end.span);
+        return createVarDecl(name, span, value, constVar);
+    }
+    func parseDeclValue(&mut this) -> ParsedDeclValue {
+        trace("parseDeclValue");
+        if (this.at(TOKEN_KEYWORD))
+            return this.parseDeclValueKeyword();
+        else
+            return this.parseDeclValueExpr();
+    }
+    func parseDeclValueKeyword(&mut this) -> ParsedDeclValue {
+        trace("parseDeclValueKeyword");
+        let kw: Token = this.next();
+        if (kw.content.equals(&KEYWORD_STRUCT))
+            return this.parseDeclValueStruct();
+        else if (kw.content.equals(&KEYWORD_FUNC))
+            return this.parseDeclValueFunc();
+        else if (kw.content.equals(&KEYWORD_ENUM))
+            return this.parseDeclValueEnum();
+        else if (kw.content.equals(&KEYWORD_UNION))
+            return this.parseDeclValueUnion();
+        else if (kw.content.equals(&KEYWORD_MODULE))
+            return this.parseDeclValueModule();
+        else if (kw.content.equals(&KEYWORD_IF))
+            return this.parseDeclValueIf();
+        else unsafe {
+            let ls: String = kw.span.toString();
+            fprintf(stderr, "error: %s: Expected one of `struct`, `func`, `enum`, `union` or `module`, found `%.*s`.\n", ls.buffer, kw.content.len, kw.content.start);
+            this.encounteredErrors = true;
+            this.recover(TOKEN_SEMI_COLON);
+        }
+        return defaultDeclValue();
+    }
+    func parseDeclValueIf(&mut this) -> ParsedDeclValue {
+        trace("parseDeclValueIf");
+        let cond: ParsedDeclValue = this.parseDeclValueExpr();
+        let body: ParsedDeclValue = this.parseDeclValueExpr();
+        mut ifExpr: ParsedDeclValueIf = createDeclValueIf(cond, body);
+        if (this.at(TOKEN_KEYWORD)) {
+            let maybeElze: Token = this.peek();
+            if (maybeElze.content.equals(&KEYWORD_ELSE)) {
+                let elze: Token = this.next();
+                let elseBody: ParsedDeclValue = this.parseDeclValueExpr();
+                ifExpr.addElseBlock(elseBody);
+            }
+        }
+        return createDeclValue(DECL_VALUE_IF, ifExpr.span, sizeof ParsedDeclValueIf, &ifExpr);
+    }
+    func parseDeclValueModule(&mut this) -> ParsedDeclValue {
+        trace("parseDeclValueModule");
+        this.expect(TOKEN_CURLY_OPEN);
+        let module: ParsedModule = this.parseModule();
+        this.expect(TOKEN_CURLY_CLOSE);
+        return createDeclValue(DECL_VALUE_MODULE, module.span, sizeof ParsedModule, &module);
+    }
+    func parseDeclValueStruct(&mut this) -> ParsedDeclValue {
+        trace("parseDeclValueStruct");
+        let start: Token = this.expect(TOKEN_CURLY_OPEN);
+        mut structDecl: ParsedStructDecl = defaultStructDecl();
+        while (!this.at(TOKEN_CURLY_CLOSE)) {
+            if (this.at(TOKEN_IDENT)) {
+                let structField: ParsedStructField = this.parseStructField();
+                structDecl.addField(structField);
+            } else if (this.at(TOKEN_KEYWORD)) {
+                let structAsset: ParsedStructAsset = this.parseStructAsset();
+                structDecl.addAsset(structAsset);
+            } else unsafe {
+                let next: Token = this.next();
+                let ls: String = next.span.toString();
+                fprintf(stderr, "error: %s: Expected identifier or `func`, got `%.*s`.\n", ls.buffer, next.content.len, next.content.start);
+                exit(1);
+            }
+        }
+        let end: Token = this.expect(TOKEN_CURLY_CLOSE);
+        let span: Span = newSpanBetween(&start.span, &end.span);
+        structDecl.span = span;
+        return createDeclValue(DECL_VALUE_STRUCT_DECL, span, sizeof ParsedStructDecl, &structDecl);
+    }
+    func parseStructField(&mut this) -> ParsedStructField {
+        trace("parseStructField");
+        let name: Token = this.expect(TOKEN_IDENT);
+        this.expect(TOKEN_COLON);
+        let typ: ParsedTypeExpr = this.parseTypeExpr();
+        this.expect(TOKEN_SEMI_COLON);
+        return ParsedStructField {
+            span: name.span,
+            name: name.content,
+            typ: typ
+        };
+    }
+    func parseStructAsset(&mut this) -> ParsedStructAsset {
+        trace("parseStructAsset");
+        let decl: ParsedVarDecl = this.parseVarDecl();
+        return ParsedStructAsset {
+            asset: decl
+        };
+    }
+    func parseDeclValueEnum(&mut this) -> ParsedDeclValue {
+        trace("parseDeclValueEnum");
+        mut enumDecl: ParsedEnumDecl = defaultEnumDecl();
+        if (this.eat(TOKEN_PAREN_OPEN)) {
+            let fieldType: ParsedTypeExpr = this.parseTypeExpr();
+            enumDecl.setVariantType(&fieldType);
+            this.expect(TOKEN_PAREN_CLOSE);
+        }
+        let start: Token = this.expect(TOKEN_CURLY_OPEN);
+        mut count: usize = 0;
+        while (!this.at(TOKEN_CURLY_CLOSE)) {
+            mut variant: ParsedEnumVariant = defaultEnumVariant();
+            let variantName: Token = this.expect(TOKEN_IDENT);
+            variant.setName(&variantName);
+            if (this.eat(TOKEN_EQUAL_SINGLE)) {
+                let variantVal: ParsedDeclValue = this.parseDeclValueExpr();
+                if (!enumDecl.hasVariantType) unsafe {
+                    let loc: String = variantVal.span.toString();
+                    fprintf(stderr, "error: %s: Enums that don't have an explicit variant type set can't have variant values.\n", loc.chars());
+                    loc.drop();
+                    this.encounteredErrors = true;
+                } else {
+                    variant.setValue(&variantVal);
+                }
+            } else if (enumDecl.hasVariantType) unsafe {
+                let loc: String = variant.span.toString();
+                fprintf(stderr, "error: %s: Enums that have an explicit variant type set must provide values for every variant.\n", loc.chars());
+                loc.drop();
+                this.encounteredErrors = true;
+            } else {
+                // NOTE: This only works as long as we actively leak the number String
+                mut number: String = newString();
+                number.pushNumber(count);
+                let counted: ParsedDeclValueNumber = ParsedDeclValueNumber {
+                    number: number.substring(0, number.length),
+                    span: variantName.span,
+                };
+                let countedVal: ParsedDeclValue = createDeclValue(DECL_VALUE_NUMBER, counted.span, sizeof ParsedDeclValueNumber, &counted);
+                variant.setValue(&countedVal);
+            }
+            enumDecl.addVariant(&variant);
+            this.eat(TOKEN_COMMA);
+        }
+        let end: Token = this.expect(TOKEN_CURLY_CLOSE);
+        let span: Span = newSpanBetween(&start.span, &end.span);
+        enumDecl.span = span;
+        return createDeclValue(DECL_VALUE_ENUM_DECL, span, sizeof ParsedEnumDecl, &enumDecl);
+    }
+    func parseDeclValueUnion(&mut this) -> ParsedDeclValue {
+        trace("parseDeclValueUnion");
+        unsafe {
+            printf("TODO: Properly parse union\n");
+        }
+        mut unionDecl: ParsedUnionDecl = defaultUnionDecl();
+        this.expect(TOKEN_CURLY_OPEN);
+        while (!this.at(TOKEN_CURLY_CLOSE)) {
+            let tkn: Token = this.next();
+        }
+        let end: Token = this.expect(TOKEN_CURLY_CLOSE);
+        return createDeclValue(DECL_VALUE_UNION_DECL, end.span, sizeof ParsedUnionDecl, &unionDecl);
+    }
+    func parseDeclValueFunc(&mut this) -> ParsedDeclValue {
+        trace("parseDeclValueFunc");
+        let start: Token = this.expect(TOKEN_PAREN_OPEN);
+        mut funcDecl: ParsedFuncDecl = defaultFuncDecl();
+        while (!this.at(TOKEN_PAREN_CLOSE)) {
+            let param: ParsedParam = this.parseFuncParam();
+            funcDecl.addParam(param);
+            if (!this.at(TOKEN_PAREN_CLOSE)) this.expect(TOKEN_COMMA);
+        }
+        let paren: Token = this.expect(TOKEN_PAREN_CLOSE);
+
+        mut retType: ParsedTypeExpr = defaultTypeExpr(paren.span);
+        if (this.eat(TOKEN_ARROW)) {
+            retType = this.parseTypeExpr();
+        }
+        funcDecl.setReturnType(retType);
+
+        // TODO: Use this.parseDeclValueExprBlock() instead
+        this.expect(TOKEN_CURLY_OPEN);
+        while (!this.at(TOKEN_CURLY_CLOSE)) {
+            let stmt: ParsedStmt = this.parseStmt();
+            funcDecl.addStmt(stmt);
+        }
+        let end: Token = this.expect(TOKEN_CURLY_CLOSE);
+        let span: Span = newSpanBetween(&start.span, &end.span);
+        funcDecl.span = span;
+        return createDeclValue(DECL_VALUE_FUNC_DECL, span, sizeof ParsedFuncDecl, &funcDecl);
+    }
+    func parseFuncParam(&mut this) -> ParsedParam {
+        trace("parseFuncParam");
+        let name: Token = this.expect(TOKEN_IDENT);
+        this.expect(TOKEN_COLON);
+        let typ: ParsedTypeExpr = this.parseTypeExpr();
+        let span: Span = newSpanBetween(&name.span, &typ.expr.span);
+        return ParsedParam {
+            span: span,
+            name: name.content,
+            typ: typ
+        };
+    }
+    func parseDeclValueExpr(&mut this) -> ParsedDeclValue {
+        trace("parseDeclValueExpr");
+        return this.__parseDeclValueExpr(0, ASSOC_LEFT);
+    }
+    func __parseDeclValueExpr(&mut this, minPrecedence: usize, associativity: usize) -> ParsedDeclValue {
+        trace("__parseDeclValueExpr");
+        mut expr: ParsedDeclValue = this.parseDeclValueExprPrimary();
+        while (this.matchesBinaryExpression()) {
+            let kind: usize = this.peek().kind;
+            let newPrecedence: usize = this.getBinaryPrecedence(kind);
+            if (newPrecedence < minPrecedence) break;
+            if (newPrecedence == minPrecedence && associativity == ASSOC_LEFT) break;
+            let newAssociativity: usize = this.getAssociativity(kind);
+            let result: ParsedDeclValue = this.parseDeclValueExprSecondary(expr, newPrecedence, newAssociativity);
+            expr = result;
+        }
+        return expr;
+    }
+    func getBinaryPrecedence(&mut this, kind: usize) -> usize {
+        trace("getBinaryPrecedence");
+        if (kind == TOKEN_DOT) return 17;
+        if (kind == TOKEN_PAREN_OPEN) return 16;
+        if (kind == TOKEN_ASTERISK_SINGLE) return 12;
+        if (kind == TOKEN_SLASH_SINGLE) return 12;
+        if (kind == TOKEN_PLUS_SINGLE) return 11;
+        if (kind == TOKEN_MINUS_SINGLE) return 11;
+        if (kind == TOKEN_EQUAL_DOUBLE) return 8;
+        if (kind == TOKEN_NOT_EQUAL) return 8;
+        if (kind == TOKEN_EQUAL_SINGLE) return 2;
+        todo_with_msg("getBinaryPrecedence");
+        return 0;
+    }
+    func getUnaryPrecedence(&mut this, kind: usize) -> usize {
+        trace("getUnaryPrecedence");
+        if (kind == TOKEN_ASTERISK_SINGLE) return 14;
+        if (kind == TOKEN_AMPERSAND) return 14;
+        todo_with_msg("getUnaryPrecedence");
+        return 0;
+    }
+    func getAssociativity(&mut this, kind: usize) -> usize {
+        trace("getAssociativity");
+        if (kind == TOKEN_EQUAL_SINGLE) return ASSOC_RIGHT;
+        return ASSOC_LEFT;
+    }
+    func parseDeclValueExprSecondary(&mut this, lhs: ParsedDeclValue, precedence: usize, associativity: usize) -> ParsedDeclValue {
+        trace("parseDeclValueExprSecondary");
+        let opTkn: Token = this.peek();
+        let op: usize = createBinaryOp(&opTkn.content);
+        if (op == BINARY_OP_PAREN) {
+            return this.parseDeclValueCall(lhs);
+        }
+        this.next();
+        let rhs: ParsedDeclValue = this.__parseDeclValueExpr(precedence, associativity);
+        let span: Span = newSpanBetween(&lhs.span, &rhs.span);
+        let bin: ParsedDeclValueBinary = ParsedDeclValueBinary {
+            span: span,
+            op: op,
+            lhs: lhs,
+            rhs: rhs,
+        };
+        return createDeclValue(DECL_VALUE_BINARY, span, sizeof ParsedDeclValueBinary, &bin);
+    }
+    func parseDeclValueExprPrimary(&mut this) -> ParsedDeclValue {
+        trace("parseDeclValueExprPrimary");
+        let tkn: Token = this.peek();
+        if (this.matchesUnaryExpression(&tkn))
+            return this.parseDeclValueExprUnary();
+        if (tkn.kind == TOKEN_KEYWORD)
+            return this.parseDeclValueKeyword();
+        else if (tkn.kind == TOKEN_AT)
+            return this.parseDeclValueBuiltin();
+        else if (tkn.kind == TOKEN_NUMBER)
+            return this.parseDeclValueExprIntLiteral();
+        else if (tkn.kind == TOKEN_IDENT)
+            return this.parseDeclValueExprIdentifier();
+        else if (tkn.kind == TOKEN_CURLY_OPEN)
+            return this.parseDeclValueExprBlock();
+        else if (tkn.kind == TOKEN_STRING_LITERAL)
+            return this.parseDeclValueExprStringLiteral();
+        this.peek().span.print();
+        this.peek().content.print();
+        unsafe {
+            printf("\n");
+        }
+        todo_with_msg("primary");
+        return defaultDeclValue();
+    }
+    func parseDeclValueExprBlock(&mut this) -> ParsedDeclValue {
+        mut block: ParsedDeclValueBlock = createDeclValueBlock();
+        let start: Token = this.expect(TOKEN_CURLY_OPEN);
+        while (!this.at(TOKEN_CURLY_CLOSE)) {
+            let stmt: ParsedStmt = this.parseStmt();
+            block.addStmt(stmt);
+        }
+        let end: Token = this.expect(TOKEN_CURLY_CLOSE);
+        let span: Span = newSpanBetween(&start.span, &end.span);
+        block.span = span;
+        return createDeclValue(DECL_VALUE_BLOCK, span, sizeof ParsedDeclValueBlock, &block);
+    }
+    func parseDeclValueExprIntLiteral(&mut this) -> ParsedDeclValue {
+        trace("parseDeclValueExprIntLiteral");
+        let number: Token = this.expect(TOKEN_NUMBER);
+        let numbah: ParsedDeclValueNumber = ParsedDeclValueNumber {
+            span: number.span,
+            number: number.content,
+        };
+        return createDeclValue(DECL_VALUE_NUMBER, number.span, sizeof ParsedDeclValueNumber, &numbah);
+    }
+    func parseDeclValueExprStringLiteral(&mut this) -> ParsedDeclValue {
+        trace("parseDeclValueExprStringLiteral");
+        let string: Token = this.expect(TOKEN_STRING_LITERAL);
+        let strung: ParsedDeclValueString = ParsedDeclValueString {
+            span: string.span,
+            string: string.content,
+        };
+        return createDeclValue(DECL_VALUE_STRING, string.span, sizeof ParsedDeclValueString, &strung);
+    }
+    func parseDeclValueExprIdentifier(&mut this) -> ParsedDeclValue {
+        trace("parseDeclValueExprIdentifier");
+        let ident: Token = this.expect(TOKEN_IDENT);
+        let id: ParsedDeclValueIdent = ParsedDeclValueIdent {
+            span: ident.span,
+            name: ident.content
+        };
+        return createDeclValue(DECL_VALUE_IDENT, ident.span, sizeof ParsedDeclValueIdent, &id);
+    }
+    func matchesBinaryExpression(&mut this) -> bool {
+        trace("matchesBinaryExpression");
+        let tkn: Token = this.peek();
+        let kind: usize = tkn.kind;
+        return kind == TOKEN_PLUS_SINGLE
+            || kind == TOKEN_DOT
+            || kind == TOKEN_PAREN_OPEN
+            || kind == TOKEN_MINUS_SINGLE
+            || kind == TOKEN_ASTERISK_SINGLE
+            || kind == TOKEN_SLASH_SINGLE
+            || kind == TOKEN_EQUAL_DOUBLE
+            || kind == TOKEN_NOT_EQUAL
+            || kind == TOKEN_EQUAL_SINGLE;
+    }
+    func matchesUnaryExpression(&mut this, tkn: &Token) -> bool {
+        trace("matchesUnaryExpression");
+        let kind: usize = tkn.kind;
+        return kind == TOKEN_AMPERSAND || kind == TOKEN_ASTERISK_SINGLE;
+    }
+    func parseDeclValueExprUnary(&mut this) -> ParsedDeclValue {
+        trace("parseDeclValueExprUnary");
+        let opTkn: Token = this.next();
+        mut op: usize = createUnaryOp(&opTkn.content);
+        let precedence: usize = this.getUnaryPrecedence(opTkn.kind);
+        if (op == UNARY_OP_REF || op == UNARY_OP_DEREF) {
+            let expr: ParsedDeclValue = this.__parseDeclValueExpr(precedence, ASSOC_LEFT);
+            let span: Span = newSpanBetween(&opTkn.span, &expr.span);
+            let unary: ParsedDeclValueUnary = ParsedDeclValueUnary {
+                span: span,
+                op: op,
+                expr: expr,
+            };
+            return createDeclValue(DECL_VALUE_UNARY, span, sizeof ParsedDeclValueUnary, &unary);
+        }
+        assert_with_msg(false, "unreachable");
+        return defaultDeclValue();
+    }
+    func parseDeclValueBuiltin(&mut this) -> ParsedDeclValue {
+        trace("parseDeclValueBuiltin");
+        // TODO: Instead of assert, report an error
+        //       We don't want to let unknown builtin calls through
+        let start: Token = this.expect(TOKEN_AT);
+        let name: Token = this.expect(TOKEN_IDENT);
+        mut args: [ParsedDeclValue; 8] = blank;
+        mut argCount: usize = 0;
+        this.expect(TOKEN_PAREN_OPEN);
+        while (!this.at(TOKEN_PAREN_CLOSE)) {
+            assert(argCount < 8);
+            let arg: ParsedDeclValue = this.parseDeclValueExpr();
+            args[argCount] = arg;
+            argCount = argCount + 1;
+            if (!this.at(TOKEN_PAREN_CLOSE)) this.expect(TOKEN_COMMA);
+        }
+        let end: Token = this.expect(TOKEN_PAREN_CLOSE);
+        let span: Span = newSpanBetween(&start.span, &end.span);
+        let builtin: ParsedDeclValueBuiltin = ParsedDeclValueBuiltin {
+            span: span,
+            name: name.content,
+            args: args,
+            argCount: argCount
+        };
+        return createDeclValue(DECL_VALUE_BUILTIN, builtin.span, sizeof ParsedDeclValueBuiltin, &builtin);
+    }
+    func parseDeclValueCall(&mut this, name: ParsedDeclValue) -> ParsedDeclValue {
+        trace("parseDeclValueCall");
+        mut args: [ParsedDeclValue; 8] = blank;
+        mut argCount: usize = 0;
+        this.expect(TOKEN_PAREN_OPEN);
+        while (!this.at(TOKEN_PAREN_CLOSE)) {
+            assert(argCount < 8);
+            let arg: ParsedDeclValue = this.parseDeclValueExpr();
+            args[argCount] = arg;
+            argCount = argCount + 1;
+            if (!this.at(TOKEN_PAREN_CLOSE)) this.expect(TOKEN_COMMA);
+        }
+        let end: Token = this.expect(TOKEN_PAREN_CLOSE);
+        unsafe {
+            let span: Span = newSpanBetween(&name.span, &end.span);
+            let call: ParsedDeclValueCall = ParsedDeclValueCall {
+                span: span,
+                fn: name,
+                args: args,
+                argCount: argCount
+            };
+            return createDeclValue(DECL_VALUE_CALL, span, sizeof ParsedDeclValueCall, &call);
+        }
+    }
+    func parseTypeExpr(&mut this) -> ParsedTypeExpr {
+        trace("parseTypeExpr");
+        let expr: ParsedDeclValue = this.parseDeclValueExpr();
+        return ParsedTypeExpr {
+            span: expr.span,
+            expr: expr
+        };
+    }
+    func parseStmt(&mut this) -> ParsedStmt {
+        trace("parseStmt");
+        mut stmt: ParsedStmt = blank;
+        if (this.at(TOKEN_KEYWORD)) {
+            let kw: Token = this.peek();
+            if (kw.content.equals(&KEYWORD_RETURN))
+                stmt = this.parseStmtReturn();
+            else if (kw.content.equals(&KEYWORD_LET)
+                || kw.content.equals(&KEYWORD_CONST))
+                stmt = this.parseStmtVarDecl();
+            else if (kw.content.equals(&KEYWORD_MUT))
+                todo_with_msg("`mut` is deprecated, use `let` instead");
+            else 
+                stmt = this.parseStmtExpr();
+        } else {
+            stmt = this.parseStmtExpr();
+        }
+        return stmt;
+    }
+    func parseStmtExpr(&mut this) -> ParsedStmt {
+        trace("parseStmtExpr");
+        let expr: ParsedDeclValue = this.parseDeclValueExpr();
+        if (expr.kind != DECL_VALUE_IF)
+            this.expect(TOKEN_SEMI_COLON);
+        return createStmt(expr.span, STMT_EXPR, sizeof ParsedDeclValue, &expr);
+    }
+    func parseStmtReturn(&mut this) -> ParsedStmt {
+        trace("parseStmtReturn");
+        let kw: Token = this.expectKeyword(&KEYWORD_RETURN);
+        if (this.eat(TOKEN_SEMI_COLON)) {
+            // return;
+            // sugar for return none;
+            let none: ParsedDeclValue = createEmptyExpr(kw.span);
+            return createStmt(none.span, STMT_RETURN, sizeof ParsedDeclValue, &none);
+        } else {
+            // return <expr>;
+            let expr: ParsedDeclValue = this.parseDeclValueExpr();
+            let end: Token = this.expect(TOKEN_SEMI_COLON);
+            let span: Span = newSpanBetween(&kw.span, &end.span);
+            return createStmt(span, STMT_RETURN, sizeof ParsedDeclValue, &expr);
+        }
+    }
+    func parseStmtVarDecl(&mut this) -> ParsedStmt {
+        trace("parseStmtVarDecl");
+        let decl: ParsedVarDecl = this.parseVarDecl();
+        return createStmt(decl.span, STMT_VAR_DECL, sizeof ParsedVarDecl, &decl);
+    }
+}
+
+func newParser(lexer: &mut Lexer) -> Parser {
+    return Parser {
+        encounteredErrors: false,
+        lexer: lexer
+    };
+}

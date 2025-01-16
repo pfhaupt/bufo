@@ -1,0 +1,37 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 2
+//! COMPILER
+//! SUCCESS
+
+const true = 1 == 1;
+const i32 = @integer(32, true);
+
+const Vector = struct {
+    x: i32;
+    y: i32;
+};
+
+const foo = func (v: Vector) -> i32 {
+    return v.x;
+};
+
+const v = Vector(i32(42), i32(35));
+@assert(foo(v) == v.x);
+@assert(foo(v) == i32(42));
+
+const bar = func (v: Vector) -> Vector {
+    return Vector(v.y, v.x);
+};
+
+const v1 = bar(v);
+const v2 = bar(v1);
+@assert(v2 == v);
+@assert(v1.x == v.y);
+@assert(v1.y == v.x);
+@assert(v2.x == v1.y);
+@assert(v2.y == v1.x);
+
+@assert(bar(bar(bar(bar(bar(v))))).x == v.y);
+@assert(bar(bar(bar(bar(bar(v))))).y == v.x);
+
+

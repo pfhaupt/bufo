@@ -1,0 +1,12 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! RUNTIME ERROR: Index out of bounds: Array of size 3 has no index 4
+
+func main() {
+    let arr: [i32; 3] = [1, 2, 3];
+    let val: i32 = arr[4];
+}

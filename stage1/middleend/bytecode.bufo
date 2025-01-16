@@ -1,0 +1,1474 @@
+
+struct VarIndex { _i: usize; }
+struct FnIndex {
+    _i: usize;
+    func isGlobalFn(&this) -> bool {
+        return this._i == 0;
+    }
+}
+struct InstrIndex { _i: usize; }
+struct RegIndex {
+    _i: usize;
+
+    func toString(&mut this) -> String {
+        mut s: String = newStringFromStrLit("@");
+        s.pushNumber(this._i);
+        return s;
+    }
+}
+
+//                  _i    | ptrData
+// int          = 00000001|00000000
+// bool         = 00000010|00000000
+// ptr(int)     = 00000001|00000001
+// ptr(ptr(int) = 00000001|00000010
+struct TypeIndex {
+    _i: u32;
+    ptrData: u32;
+    func toString(&mut this) -> String {
+        mut s: String = newString();
+        for (mut i: u32 = 0; i < this.ptrData; i = i + 1) {
+            s.pushChar('&');
+        }
+        let _t: String = types[assertValidType(*this, "TypeIndex.toString")].toString();
+        s.pushString(&_t);
+        _t.drop();
+        return s;
+    }
+
+    func isPointer(&mut this) -> bool {
+        return this.ptrData > 0;
+    }
+
+    func getUnderlying(&mut this) -> TypeIndex {
+        assert_with_msg(this.isPointer(), "Attempted to get underlying type of non-pointer");
+        return TypeIndex { _i: this._i, ptrData: this.ptrData - 1 };
+    }
+
+    func makePointer(&mut this) {
+        this.ptrData = this.ptrData + 1;
+    }
+
+    func getSize(&mut this) -> usize {
+        if (this.ptrData > 0) return 8;
+        if (this._i == 0) return 8;
+        if (this._i == 1) return 1;
+        if (this._i == 2) return 8;
+        if (this._i == 3) return sizeof SubStr;
+        if (this._i == 4) return 8;
+        return types[assertValidType(*this, "TypeIndex.getSize")].getSize();
+    }
+
+    func equals(this, other: TypeIndex) -> bool {
+        trace("TypeIndex.equals");
+        // REVIEW: Is this short-circuit valid?
+        if (this._i == other._i && this.ptrData == other.ptrData) return true;
+        let _t: &mut BCType = &mut types[assertValidType(this, "TypeIndex.equals(this)")];
+        let _o: &mut BCType = &mut types[assertValidType(other, "TypeIndex.equals(other)")];
+        return _t.equals(_o);
+    }
+}
+
+struct NameRegPair {
+    name: SubStr;
+    reg: RegIndex;
+}
+
+struct BCReg {
+    origin: Span;
+    size: usize;
+    typ: TypeIndex;
+
+    func toString(&mut this) -> String {
+        assert(sizeof char == sizeof u8);
+        if (this.size == 0) return newStringFromStrLit("<uninit>");
+        mut s: String = newString();
+        let _t: String = this.typ.toString();
+        s.pushString(&_t);
+        let size: usize = this.typ.getSize();
+        if (size != this.size) unsafe {
+            fprintf(stderr, "%s Sanity check in BCReg.toString() violated\n", FATAL_STR);
+            fprintf(stderr, "type size: %llu\n", size);
+            fprintf(stderr, "this.size: %llu\n", this.size);
+            fprintf(stderr, "type: %s\n", this.typ.toString().chars());
+            exit(1);
+        }
+        s.pushStr(", size=");
+        s.pushNumber(size);
+        _t.drop();
+        return s;
+    }
+
+    func isInitialized(&mut this) -> bool {
+        // REVIEW: You could theoretically have a register with size=0
+        //         But at the same time I don't want to add a boolean field to BCReg
+        //         What's a safe way to check if a given register is initialized?
+        // UPDATE: It's either a raw integer, in which case it has a size
+        //         Or it is not a raw integer, in which case it can be zero-sized
+        return this.size != 0 || this.typ._i != 0;
+    }
+}
+
+comptime TYPE_INVALID: usize = 0;
+comptime TYPE_INTEGER: usize = 1;
+comptime TYPE_STRUCT: usize = 2;
+comptime TYPE_FUNC: usize = 3;
+comptime TYPE_NONE: usize = 4;
+struct BCTypeInt {
+    bitsize: u32;
+    signed: bool;
+    func equals(&this, other: &BCTypeInt) -> bool {
+        return this.bitsize == other.bitsize && this.signed == other.signed;
+    }
+}
+// FIXME: This should be heap allocated
+//        We waste *a lot* of memory for our global type table
+struct BCTypeStruct {
+    fieldSpans: [Span; 16];
+    fieldNames: [SubStr; 16];
+    fieldTypes: [TypeIndex; 16];
+    fieldCount: usize;
+
+    func toString(&mut this) -> String {
+        mut s: String = newStringFromStrLit("struct {");
+        for (mut i: usize = 0; i < this.fieldCount; i = i + 1) {
+            let _s: String = this.fieldTypes[i].toString();
+            s.pushString(&_s);
+            _s.drop();
+            if (i != this.fieldCount - 1) {
+                s.pushStr(", ");
+            }
+        }
+        s.pushChar('}');
+        return s;
+    }
+    func equals(&this, other: &BCTypeStruct) -> bool {
+        if (this.fieldCount != other.fieldCount) return false;
+        for (mut i: usize = 0; i < this.fieldCount; i = i + 1) {
+            if (!this.fieldSpans[i].equals(&other.fieldSpans[i]))
+                return false;
+            if (!this.fieldNames[i].equals(&other.fieldNames[i]))
+                return false;
+            if (!this.fieldTypes[i].equals(other.fieldTypes[i]))
+                return false;
+        }
+        return true;
+    }
+    func getFieldOffset(&mut this, name: SubStr, offset: &mut usize, typ: &mut TypeIndex) -> bool {
+        mut _offset: usize = 0;
+        for (mut i: usize = 0; i < this.fieldCount; i = i + 1) {
+            if (this.fieldNames[i].equals(&name)) {
+                *offset = _offset;
+                *typ = this.fieldTypes[i];
+                return true;
+            }
+            _offset = _offset + this.fieldTypes[i].getSize();
+        }
+        return false;
+    }
+}
+struct BCTypeFunc {
+    function: &mut BCFunction;
+    paramSpans: [Span; 16];
+    paramNames: [SubStr; 16];
+    paramTypes: [TypeIndex; 16];
+    paramCount: usize;
+    retType: TypeIndex;
+}
+struct BCType {
+    kind: usize;
+    intInfo: BCTypeInt;
+    structInfo: BCTypeStruct;
+    funcInfo: BCTypeFunc;
+
+    func isValid(&mut this) -> bool {
+        return this.kind != TYPE_INVALID;
+    }
+
+    func isInteger(&mut this) -> bool {
+        return this.kind == TYPE_INTEGER;
+    }
+
+    func isStruct(&mut this) -> bool {
+        return this.kind == TYPE_STRUCT;
+    }
+
+    func isFunc(&mut this) -> bool {
+        return this.kind == TYPE_FUNC;
+    }
+
+    func getFieldOffset(&mut this, name: SubStr, offset: &mut usize, typ: &mut TypeIndex) -> bool {
+        assert_with_msg(this.kind == TYPE_STRUCT, "getFieldOffset() only works on structs for now");
+        return this.structInfo.getFieldOffset(name, offset, typ);
+    }
+
+    func toString(&mut this) -> String {
+        if (this.kind == TYPE_INTEGER) {
+            mut s: String = newString();
+            if (this.intInfo.signed) s.pushChar('i');
+            else s.pushChar('u');
+            s.pushNumber(this.intInfo.bitsize as usize);
+            return s;
+        } else {
+            let id: TypeIndex = getTypeID(this);
+            if (id._i == 1) return newStringFromStrLit("bool");
+            if (id._i == 2) return newStringFromStrLit("type");
+            if (id._i == 3) return newStringFromStrLit("string");
+            if (id._i == 4) return newStringFromStrLit("func");
+            if (this.kind == TYPE_STRUCT) return this.structInfo.toString();
+            assert_with_msg(false, "unreachable in BCType.toString()");
+            return blank;
+        }
+    }
+
+    func makeIntegerType(&mut this, bitsize: u32, signed: bool) {
+        assert_with_msg(this.kind == TYPE_INVALID, "attempted to turn valid type into integer type");
+        this.kind = TYPE_INTEGER;
+        this.intInfo.bitsize = bitsize;
+        this.intInfo.signed = signed;
+    }
+
+    func makeStructType(&mut this) {
+        assert_with_msg(this.kind == TYPE_INVALID, "attempted to turn valid type into struct type");
+        this.kind = TYPE_STRUCT;
+    }
+
+    func makeFuncType(&mut this, fn: &mut BCFunction) {
+        assert_with_msg(this.kind == TYPE_INVALID, "attempted to turn valid type into function type");
+        this.kind = TYPE_FUNC;
+        this.funcInfo.function = fn;
+        (*fn).funcType = getTypeID(this);
+    }
+
+    func makeNoneType(&mut this) {
+        assert_with_msg(this.kind == TYPE_INVALID, "attempted to turn valid type into none type");
+        this.kind = TYPE_NONE;
+    }
+
+    func addReturnType(&mut this, typ: TypeIndex) {
+        assert_with_msg(this.kind == TYPE_FUNC, "attempted to add return type to non-func type");
+        this.funcInfo.retType = typ;
+    }
+
+    func addField(&mut this, fieldSpan: Span, fieldName: SubStr, fieldType: TypeIndex) -> bool {
+        assert_with_msg(this.kind == TYPE_STRUCT, "attempted to add field to non-struct type");
+        if (this.structInfo.fieldCount >= 16) {
+            todo_with_msg("report error: Struct can't have more fields");
+        }
+        for (mut i: usize = 0; i < this.structInfo.fieldCount; i = i + 1) {
+            if (this.structInfo.fieldNames[i].equals(&fieldName)) {
+                todo_with_msg("report error: Field redeclaration");
+            }
+        }
+        this.structInfo.fieldSpans[this.structInfo.fieldCount] = fieldSpan;
+        this.structInfo.fieldNames[this.structInfo.fieldCount] = fieldName;
+        this.structInfo.fieldTypes[this.structInfo.fieldCount] = fieldType;
+        this.structInfo.fieldCount = this.structInfo.fieldCount + 1;
+        return true;
+    }
+
+    func addParam(&mut this, paramSpan: Span, paramName: SubStr, paramType: TypeIndex) -> bool {
+        assert_with_msg(this.kind == TYPE_FUNC, "attempted to add param to non-func type");
+        if (this.funcInfo.paramCount >= 16) {
+            todo_with_msg("report error: Function can't have more params");
+        }
+        for (mut i: usize = 0; i < this.funcInfo.paramCount; i = i + 1) {
+            if (this.funcInfo.paramNames[i].equals(&paramName)) unsafe {
+                let loc: String = paramSpan.toString();
+                let declLoc: String = this.funcInfo.paramSpans[i].toString();
+                let name: String = paramName.toString();
+                fprintf(stderr,
+                    "%s: %s: Redeclaration of parameter %s.\n%s: %s: Parameter already declared here.\n",
+                    loc.chars(), ERR_STR, name.chars(), declLoc.chars(), NOTE_STR
+                );
+                name.drop();
+                declLoc.drop();
+                loc.drop();
+                return false;
+            }
+        }
+        this.funcInfo.paramSpans[this.funcInfo.paramCount] = paramSpan;
+        this.funcInfo.paramNames[this.funcInfo.paramCount] = paramName;
+        this.funcInfo.paramTypes[this.funcInfo.paramCount] = paramType;
+        this.funcInfo.paramCount = this.funcInfo.paramCount + 1;
+        return true;
+    }
+
+    func getSize(&mut this) -> usize {
+        if (this.kind == TYPE_INTEGER) {
+            return this.intInfo.bitsize as usize / 8;
+        } else if (this.kind == TYPE_STRUCT) {
+            mut size: usize = 0;
+            for (mut i: usize = 0; i < this.structInfo.fieldCount; i = i + 1) {
+                size = size + this.structInfo.fieldTypes[i].getSize();
+            }
+            return size;
+        }
+        todo_with_msg("BCType.getSize");
+        return 0;
+    }
+
+    func equals(&mut this, other: &mut BCType) -> bool {
+        // TYPE_BOOL != TYPE_FUNC
+        if (this.kind != other.kind) return false;
+        // const A = struct {};
+        // const B = struct {};
+        // A != B
+        if (getTypeID(this)._i != getTypeID(other)._i) return false;
+        if (this.kind == TYPE_INTEGER) {
+            let _s1: &BCTypeInt = &this.intInfo;
+            let _s2: &BCTypeInt = &other.intInfo;
+            return _s1.equals(_s2);
+        } else if (this.kind == TYPE_FUNC) {
+            todo_with_msg("BCType.equals(TYPE_FUNC)");
+        } else if (this.kind == TYPE_STRUCT) {
+            let _s1: &BCTypeStruct = &this.structInfo;
+            let _s2: &BCTypeStruct = &other.structInfo;
+            return _s1.equals(_s2);
+        } else if (this.kind == TYPE_NONE) {
+            todo_with_msg("BCType.equals(TYPE_NONE)");
+        } else {
+            assert_with_msg(this.kind == TYPE_INVALID, "Exhaustive handling in BCType.equals");
+        }
+        return false;
+    }
+}
+
+struct BCFunction {
+    origin: Span;
+    // When we encounter a function declaration, we only generate bytecode for parameters and the
+    // return type. We're pretty lazy, and don't go into the function until we actually call it,
+    // in which case (hopefully) .funcDecl != null and .isGenerated == false
+    funcDecl: &mut ParsedFuncDecl;
+    isGenerated: bool;
+    funcType: TypeIndex;
+    variables: &mut NameRegPair;
+    varLength: usize;
+    varCapacity: usize;
+    registers: &mut BCReg;
+    regLength: usize;
+    regCapacity: usize;
+    instructions: &mut BCInstr;
+    instrLength: usize;
+    instrCapacity: usize;
+    scopes: &mut FnIndex;
+    scopeLength: usize;
+    scopeCapacity: usize;
+
+    func setFuncNode(&mut this, node: &mut ParsedFuncDecl) {
+        unsafe {
+            assert_with_msg(this.funcDecl == null, "attempted to overwrite func node");
+            assert_with_msg(!this.isGenerated, "expected to set node of a not-yet generated function");
+            this.funcDecl = node;
+        }
+    }
+
+    func getVarAtIndex(&mut this, index: VarIndex) -> &mut NameRegPair {
+        trace("BCFunction.getVarAtIndex");
+        assert_with_msg(index._i < this.varLength, "Out of bounds access in BCFunction.getVarAtIndex");
+        unsafe {
+            return this.variables + index._i * sizeof NameRegPair;
+        }
+    }
+
+    func getVariableIndex(&mut this, name: SubStr, index: &mut VarIndex) -> bool {
+        trace("BCFunction.getVariableIndex");
+        for (mut i: usize = 0; i < this.varLength; i = i + 1) {
+            let vi: VarIndex = VarIndex { _i: i };
+            let _var: &mut NameRegPair = this.getVarAtIndex(vi);
+            if (_var.name.equals(&name)) {
+                *index = vi;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func getLastInstruction(&mut this) -> &mut BCInstr {
+        trace("BCFunction.getLastInstruction");
+        unsafe {
+            return this.instructions + (this.instrLength - 1) * sizeof BCInstr;
+        }
+    }
+    func getInstrAtIndex(&mut this, index: InstrIndex) -> &mut BCInstr {
+        trace("BCFunction.getInstrAtIndex");
+        assert_with_msg(index._i < this.instrLength, "Out of bounds access in BCFunction.getInstrAtIndex");
+        unsafe {
+            return this.instructions + index._i * sizeof BCInstr;
+        }
+    }
+    func getCurrentInstructionIndex(&mut this) -> InstrIndex {
+        return InstrIndex { _i: this.instrLength };
+    }
+
+    func getRegAtIndex(&mut this, index: RegIndex) -> &mut BCReg {
+        trace("BCFunction.getRegAtIndex");
+        assert_with_msg(index._i < this.regLength, "Out of bounds access in BCFunction.getRegAtIndex");
+        unsafe {
+            return this.registers + index._i * sizeof BCReg;
+        }
+    }
+
+    func addScope(&mut this, scope: FnIndex) {
+        trace("BCFunction.addScope");
+        if (this.scopeLength >= this.scopeCapacity) unsafe {
+            mut newCap: usize = this.scopeCapacity * 2;
+            if (newCap == 0) newCap = newCap + 1;
+            this.scopes = realloc(this.scopes, newCap * sizeof FnIndex);
+            assert_with_msg(this.scopes != null, "Could not resize scopes");
+            this.scopeCapacity = newCap;
+        }
+        unsafe {
+            *(this.scopes + this.scopeLength * sizeof FnIndex) = scope;
+            this.scopeLength = this.scopeLength + 1;
+        }
+    }
+
+    func getScopeAtIndex(&mut this, index: usize) -> FnIndex {
+        assert_with_msg(index < this.scopeLength, "Out of bounds access in BCFunction.getScopeAtIndex");
+        unsafe {
+            return *(this.scopes + index * sizeof FnIndex);
+        }
+    }
+
+    func inheritScopesFrom(&mut this, parent: &mut BCFunction) -> bool {
+        trace("BCFunction.inheritScopesFrom");
+        this.addScope(getFnIndex(parent));
+        for (mut i: usize = 0; i < parent.scopeLength; i = i + 1) {
+            this.addScope(parent.getScopeAtIndex(i));
+        }
+        return true;
+    }
+
+    func appendInstr(&mut this, instr: BCInstr) {
+        trace("BCFunction.appendInstr");
+        if (this.instrLength >= this.instrCapacity) unsafe {
+            mut newCap: usize = this.instrCapacity * 2;
+            if (newCap == 0) newCap = newCap + 1;
+            this.instructions = realloc(this.instructions, newCap * sizeof BCInstr);
+            assert_with_msg(this.instructions != null, "Could not resize instructions");
+            this.instrCapacity = newCap;
+        }
+        let id: usize = this.instrLength;
+        unsafe {
+            *(this.instructions + id * sizeof BCInstr) = instr;
+        }
+        this.instrLength = this.instrLength + 1;
+    }
+
+    func allocateVariable(&mut this, name: SubStr, reg: RegIndex) {
+        trace("BCFunction.allocateVariable");
+        if (this.varLength >= this.varCapacity) unsafe {
+            mut newCap: usize = this.varCapacity * 2;
+            if (newCap == 0) newCap = newCap + 1;
+            this.variables = realloc(this.variables, newCap * sizeof NameRegPair);
+            assert_with_msg(this.variables != null, "Could not resize variables");
+            this.varCapacity = newCap;
+        }
+        let index: usize = this.varLength;
+        unsafe {
+            let entry: NameRegPair = NameRegPair {
+                name: name,
+                reg: reg
+            };
+            *(this.variables + index * sizeof NameRegPair) = entry;
+        }
+        this.varLength = this.varLength + 1;
+    }
+
+    func allocateRegister(&mut this, span: Span) -> RegIndex {
+        trace("BCFunction.allocateRegister");
+        if (this.regLength >= this.regCapacity) unsafe {
+            mut newCap: usize = this.regCapacity * 2;
+            if (newCap == 0) newCap = newCap + 1;
+            this.registers = realloc(this.registers, newCap * sizeof BCReg);
+            assert_with_msg(this.registers != null, "Could not resize registers");
+            this.regCapacity = newCap;
+        }
+        let index: usize = this.regLength;
+        unsafe {
+            mut reg: BCReg = blank;
+            reg.origin = span;
+            *(this.registers + index * sizeof BCReg) = reg;
+        }
+        this.regLength = this.regLength + 1;
+        return RegIndex { _i: index };
+    }
+
+    func buildLoad(&mut this, span: Span, name: SubStr, target: &mut RegIndex, wantsAddr: bool) -> bool {
+        trace("BCFunction.buildLoad");
+        for (mut i: usize = 0; i < this.varLength; i = i + 1) {
+            let var: &mut NameRegPair = this.getVarAtIndex(VarIndex { _i: i });
+            if (var.name.equals(&name)) {
+                if (wantsAddr) {
+                    *target = var.reg;
+                } else {
+                    let reg: RegIndex = this.allocateRegister(span);
+                    let load: BCInstr = newLoadInstr(span, reg, var.reg);
+                    this.appendInstr(load);
+                    *target = reg;
+                }
+                return true;
+            }
+        }
+        let name: RegIndex = this.buildStringLiteral(span, name);
+        let reg: RegIndex = this.allocateRegister(span);
+        let load: BCInstr = newScopedLoadInstr(span, reg, name, wantsAddr);
+        this.appendInstr(load);
+        *target = reg;
+        return false;
+    }
+
+    func buildMove(&mut this, span: Span, dst: RegIndex, src: RegIndex) {
+        let move: BCInstr = newMoveInstr(span, dst, src);
+        this.appendInstr(move);
+    }
+
+    func buildParamStore(&mut this, span: Span, name: SubStr, mut typ: TypeIndex) -> bool {
+        trace("BCFunction.buildParamStore");
+        for (mut i: usize = 0; i < this.varLength; i = i + 1) {
+            let var: &mut NameRegPair = this.getVarAtIndex(VarIndex { _i: i });
+            if (var.name.equals(&name)) {
+                todo_with_msg("param redecl");
+                return false;
+            }
+        }
+        let var: RegIndex = this.allocateRegister(span);
+        // Because of generic functions, we need to also store the type
+        let typeSize: usize = typ.getSize() + sizeof TypeIndex;
+        let store: BCInstr = newStoreParamInstr(span, var, typeSize);
+        this.appendInstr(store);
+        this.allocateVariable(name, var);
+        return true;
+    }
+
+    func buildConstStore(&mut this, span: Span, name: SubStr, value: RegIndex) -> bool {
+        trace("BCFunction.buildConstStore");
+        for (mut i: usize = 0; i < this.varLength; i = i + 1) {
+            let var: &mut NameRegPair = this.getVarAtIndex(VarIndex { _i: i });
+            if (var.name.equals(&name)) {
+                todo_with_msg("const redecl");
+                return false;
+            }
+        }
+        let var: RegIndex = this.allocateRegister(span);
+        let store: BCInstr = newStoreConstInstr(span, var, value);
+        this.appendInstr(store);
+        this.allocateVariable(name, var);
+        return true;
+    }
+
+    func buildNumberLiteral(&mut this, span: Span, val: i64) -> RegIndex {
+        trace("BCFunction.buildNumberLiteral");
+        let index: RegIndex = this.allocateRegister(span);
+        let n: BCInstr = newLoadNumberInstr(span, index, val);
+        this.appendInstr(n);
+        return index;
+    }
+
+    func buildStringLiteral(&mut this, span: Span, val: SubStr) -> RegIndex {
+        trace("BCFunction.buildStringLiteral");
+        let index: RegIndex = this.allocateRegister(span);
+        let s: BCInstr = newLoadStringInstr(span, index, val);
+        this.appendInstr(s);
+        return index;
+    }
+
+    func buildBinaryOp(&mut this, span: Span, lhs: RegIndex, rhs: RegIndex, op: usize) -> RegIndex {
+        trace("BCFunction.buildBinaryOp");
+        let dst: RegIndex = this.allocateRegister(span);
+        mut binop: BCInstr = blank;
+        if (op == BINARY_OP_PLUS) binop = newAddInstr(span, dst, lhs, rhs);
+        else if (op == BINARY_OP_MINUS) binop = newSubInstr(span, dst, lhs, rhs);
+        else if (op == BINARY_OP_EQUAL) binop = newEqualInstr(span, dst, lhs, rhs);
+        else if (op == BINARY_OP_NOT_EQUAL) binop = newNotEqualInstr(span, dst, lhs, rhs);
+        else todo_with_msg("build binary op");
+        this.appendInstr(binop);
+        return dst;
+    }
+
+    func buildConstAssert(&mut this, span: Span, what: RegIndex) -> RegIndex {
+        trace("BCFunction.buildConstAssert");
+        let dst: RegIndex = this.allocateRegister(span);
+        let assert: BCInstr = newConstAssertInstr(span, dst, what);
+        this.appendInstr(assert);
+        return dst;
+    }
+
+    func buildCreateInteger(&mut this, span: Span, size: RegIndex, signed: RegIndex) -> RegIndex {
+        trace("BCFunction.buildCreateInteger");
+        let dst: RegIndex = this.allocateRegister(span);
+        let int: BCInstr = newCreateIntType(span, dst, size, signed);
+        this.appendInstr(int);
+        return dst;
+    }
+
+    func buildAddrOf(&mut this, span: Span, val: RegIndex) -> RegIndex {
+        trace("BCFunction.buildAddrOf");
+        let dst: RegIndex = this.allocateRegister(span);
+        let addrof: BCInstr = newAddrOf(span, dst, val);
+        this.appendInstr(addrof);
+        return dst;
+    }
+
+    func buildLoadAddr(&mut this, span: Span, val: RegIndex) -> RegIndex {
+        trace("BCFunction.buildLoadAddr");
+        let dst: RegIndex = this.allocateRegister(span);
+        let addrof: BCInstr = newLoadAddr(span, dst, val);
+        this.appendInstr(addrof);
+        return dst;
+    }
+
+    func buildCreateStruct(&mut this, span: Span) -> RegIndex {
+        trace("BCFunction.buildCreateStruct");
+        let dst: RegIndex = this.allocateRegister(span);
+        let strukt: BCInstr = newCreateStructType(span, dst);
+        this.appendInstr(strukt);
+        return dst;
+    }
+
+    func buildVerifyType(&mut this, span: Span, what: RegIndex) {
+        trace("BCFunction.buildVerifyType");
+        let verify: BCInstr = newVerifyType(span, what);
+        this.appendInstr(verify);
+    }
+
+    func buildAddField(&mut this, span: Span, base: RegIndex, fieldName: RegIndex, fieldType: RegIndex) {
+        trace("BCFunction.buildAddField");
+        let field: BCInstr = newAddField(span, base, fieldName, fieldType);
+        this.appendInstr(field);
+    }
+
+    func buildCreateFunc(&mut this, span: Span) -> RegIndex {
+        trace("BCFunction.buildCreateFunc");
+        let dst: RegIndex = this.allocateRegister(span);
+        let fun: BCInstr = newCreateFuncType(span, dst);
+        this.appendInstr(fun);
+        return dst;
+    }
+
+    func buildAddParam(&mut this, span: Span, fn: RegIndex, paramName: RegIndex, paramType: RegIndex) {
+        trace("BCFunction.buildAddParam");
+        let param: BCInstr = newAddParam(span, fn, paramName, paramType);
+        this.appendInstr(param);
+    }
+
+    func buildAddFuncNode(&mut this, span: Span, fn: RegIndex, node: &mut ParsedFuncDecl) {
+        trace("BCFunction.buildAddFuncNode");
+        let fn: BCInstr = newAddFuncNode(span, fn, node);
+        this.appendInstr(fn);
+    }
+
+    func buildAddReturnType(&mut this, span: Span, fn: RegIndex, typ: RegIndex) {
+        trace("BCFunction.buildAddReturnType");
+        let ret: BCInstr = newAddReturnType(span, fn, typ);
+        this.appendInstr(ret);
+    }
+
+    func buildCreateNone(&mut this, span: Span) -> RegIndex {
+        trace("BCFunction.buildCreateNone");
+        let dst: RegIndex = this.allocateRegister(span);
+        let none: BCInstr = newCreateNoneType(span, dst);
+        this.appendInstr(none);
+        return dst;
+    }
+
+    func buildCreateAnytype(&mut this, span: Span) -> RegIndex {
+        trace("BCFunction.buildCreateAnytype");
+        let dst: RegIndex = this.allocateRegister(span);
+        let none: BCInstr = newCreateAnytypeType(span, dst);
+        this.appendInstr(none);
+        return dst;
+    }
+
+    func buildAddCallArgument(&mut this, span: Span, call: RegIndex, index: usize, arg: RegIndex) {
+        trace("BCFunction.buildAddCallArgument");
+        let addArg: BCInstr = newAddCallArgument(span, call, index, arg);
+        this.appendInstr(addArg);
+    }
+
+    func buildCall(&mut this, span: Span, call: RegIndex) -> RegIndex {
+        trace("BCFunction.buildCall");
+        let dst: RegIndex = this.allocateRegister(span);
+        let call: BCInstr = newCall(span, dst, call);
+        this.appendInstr(call);
+        return dst;
+    }
+
+    func buildReturn(&mut this, span: Span, val: RegIndex) -> bool {
+        trace("BCFunction.buildReturn");
+        if (getFnIndex(this).isGlobalFn()) {
+            todo_with_msg("no return in global context");
+        }
+        let ret: BCInstr = newReturn(span, val);
+        this.appendInstr(ret);
+        return true;
+    }
+
+    func buildInheritScopes(&mut this, span: Span, current: RegIndex, parent: FnIndex) {
+        trace("BCFunction.buildInheritScopes");
+        let inherit: BCInstr = newInheritScopes(span, current);
+        this.appendInstr(inherit);
+    }
+
+    func buildDummy(&mut this) -> InstrIndex {
+        trace("BCFunction.buildDummy");
+        let _i: InstrIndex = this.getCurrentInstructionIndex();
+        let instr: BCInstr = blank;
+        this.appendInstr(instr);
+        return _i;
+    }
+
+    func backpatch(&mut this, index: InstrIndex, instr: BCInstr) {
+        trace("BCFunction.backpatch");
+        *(this.getInstrAtIndex(index)) = instr;
+    }
+
+    func buildGetAssetOrFieldPtr(&mut this, span: Span, lhs: RegIndex, name: RegIndex) -> RegIndex {
+        trace("BCFunction.buildGetAssetOrFieldPtr");
+        let reg: RegIndex = this.allocateRegister(span);
+        let get: BCInstr = newGetAssetOrFieldPtr(span, reg, lhs, name);
+        this.appendInstr(get);
+        return reg;
+    }
+    func dump(&mut this) {
+        unsafe {
+            printf(" --- REGISTERS ---\n");
+            for (mut i: usize = 0; i < this.regLength; i = i + 1) {
+                let _reg: String = (*(this.registers + i * sizeof BCReg)).toString();
+                printf(" @%llu: %.*s\n", i, _reg.len(), _reg.chars());
+                _reg.drop();
+            }
+            printf(" --- INSTRUCTIONS ---\n");
+            for (mut i: usize = 0; i < this.instrLength; i = i + 1) {
+                let _ins: String = (*(this.instructions + i * sizeof BCInstr)).toString();
+                printf("  %llu: %.*s\n", i, _ins.len(), _ins.chars());
+                _ins.drop();
+            }
+        }
+    }
+}
+
+func newEmptyFunction(span: Span) -> BCFunction {
+    unsafe {
+        return BCFunction {
+            origin: span,
+            funcDecl: null,
+            isGenerated: false,
+            funcType: blank,
+            variables: null,
+            varLength: 0,
+            varCapacity: 0,
+            registers: null,
+            regLength: 0,
+            regCapacity: 0,
+            instructions: null,
+            instrLength: 0,
+            instrCapacity: 0,
+            scopes: null,
+            scopeLength: 0,
+            scopeCapacity: 0,
+        };
+    }
+}
+
+comptime INSTR_KIND_INVALID: usize = 0;
+comptime INSTR_KIND_LOAD_NUMBER: usize = 1;
+comptime INSTR_KIND_LOAD_STRING: usize = 2;
+comptime INSTR_KIND_STORE_CONST: usize = 3;
+comptime INSTR_KIND_LOAD: usize = 4;
+comptime INSTR_KIND_SCOPED_LOAD: usize = 5;
+comptime INSTR_KIND_MOVE: usize = 6;
+comptime INSTR_KIND_ADD: usize = 7;
+comptime INSTR_KIND_SUB: usize = 8;
+comptime INSTR_KIND_EQUAL: usize = 9;
+comptime INSTR_KIND_NOT_EQUAL: usize = 10;
+comptime INSTR_KIND_CONST_ASSERT: usize = 11;
+// FIXME: This should be a single instruction
+// NOTE:  All 8 of them :^)
+comptime INSTR_KIND_CREATE_INT_TYPE: usize = 12;
+comptime INSTR_KIND_CREATE_STRUCT_TYPE: usize = 13;
+comptime INSTR_KIND_CREATE_FUNC_TYPE: usize = 14;
+comptime INSTR_KIND_CREATE_NONE_TYPE: usize = 15;
+comptime INSTR_KIND_CREATE_ANYTYPE_TYPE: usize = 16;
+comptime INSTR_KIND_ADDR_OF: usize = 17;
+comptime INSTR_KIND_LOAD_ADDR: usize = 18;
+comptime INSTR_KIND_VERIFY_TYPE: usize = 19;
+// REVIEW: Both can be the same instruction
+comptime INSTR_KIND_ADD_FIELD: usize = 20;
+comptime INSTR_KIND_ADD_PARAM: usize = 21;
+comptime INSTR_KIND_ADD_FUNC_NODE: usize = 22;
+comptime INSTR_KIND_ADD_RET_TYPE: usize = 23;
+comptime INSTR_KIND_ADD_CALL_ARG: usize = 24;
+comptime INSTR_KIND_CALL: usize = 25;
+comptime INSTR_KIND_STORE_PARAM: usize = 26;
+comptime INSTR_KIND_RETURN: usize = 27;
+comptime INSTR_KIND_INHERIT_SCOPES: usize = 28;
+comptime INSTR_KIND_COND_BR: usize = 29;
+comptime INSTR_KIND_BR: usize = 30;
+comptime INSTR_KIND_GET_ASSET_OR_FIELD_PTR: usize = 31;
+struct BCInstr {
+    origin: Span;
+    kind: usize;
+    dst: RegIndex;
+    src: RegIndex;
+    // FIXME: Maybe it's better to not waste this memory for any instruction that doesn't need it
+    op1: RegIndex;
+
+    func toString(&mut this) -> String {
+        mut ret: String = blank;
+        if (this.kind == INSTR_KIND_INVALID) {
+            ret = newStringFromStrLit("<invalid>");
+        } else if (this.kind == INSTR_KIND_STORE_CONST) {
+            let _dst: String = this.dst.toString();
+            let _src: String = this.src.toString();
+            mut s: String = newStringFromStrLit("StoreConst ");
+            s.pushString(&_dst);
+            s.pushStr(", ");
+            s.pushString(&_src);
+            _src.drop();
+            _dst.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_LOAD) {
+            let _dst: String = this.dst.toString();
+            let _src: String = this.src.toString();
+            mut s: String = newString();
+            s.pushString(&_dst);
+            s.pushStr(" = Load ");
+            s.pushString(&_src);
+            _src.drop();
+            _dst.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_MOVE) {
+            let _dst: String = this.dst.toString();
+            let _src: String = this.src.toString();
+            mut s: String = newString();
+            s.pushString(&_dst);
+            s.pushStr(" = Move ");
+            s.pushString(&_src);
+            _src.drop();
+            _dst.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_SCOPED_LOAD) {
+            let _dst: String = this.dst.toString();
+            let _src: String = this.src.toString();
+            let addr: bool = this.op1._i == 1;
+            mut s: String = newString();
+            s.pushString(&_dst);
+            s.pushStr(" = ScopedLoad ");
+            s.pushString(&_src);
+            if (addr) s.pushStr(", addr=true");
+            else s.pushStr(", addr=false");
+            _src.drop();
+            _dst.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_LOAD_NUMBER) unsafe {
+            let n: i64 = *(&this.src._i as &i64);
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            s.pushString(&_dst);
+            _dst.drop();
+            s.pushStr(" = LoadNumber ");
+            s.pushI64(n);
+            ret = s;
+        } else if (this.kind == INSTR_KIND_LOAD_STRING) unsafe {
+            let ptr: usize = this.src._i;
+            let len: usize = this.op1._i;
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            s.pushString(&_dst);
+            _dst.drop();
+            s.pushStr(" = LoadString ");
+            s.pushNumberAsHex(ptr);
+            s.pushStr(", ");
+            s.pushNumber(len);
+            ret = s;
+        } else if (this.kind == INSTR_KIND_ADD) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            let _src: String = this.src.toString();
+            let _op1: String = this.op1.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = Add ");
+            s.pushString(&_src);
+            s.pushStr(", ");
+            s.pushString(&_op1);
+            _dst.drop();
+            _src.drop();
+            _op1.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_SUB) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            let _src: String = this.src.toString();
+            let _op1: String = this.op1.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = Sub ");
+            s.pushString(&_src);
+            s.pushStr(", ");
+            s.pushString(&_op1);
+            _dst.drop();
+            _src.drop();
+            _op1.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_EQUAL) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            let _src: String = this.src.toString();
+            let _op1: String = this.op1.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = Equal ");
+            s.pushString(&_src);
+            s.pushStr(", ");
+            s.pushString(&_op1);
+            _dst.drop();
+            _src.drop();
+            _op1.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_NOT_EQUAL) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            let _src: String = this.src.toString();
+            let _op1: String = this.op1.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = NotEqual ");
+            s.pushString(&_src);
+            s.pushStr(", ");
+            s.pushString(&_op1);
+            _dst.drop();
+            _src.drop();
+            _op1.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_CONST_ASSERT) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            let _what: String = this.src.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = ConstAssert ");
+            s.pushString(&_what);
+            _dst.drop();
+            _what.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_CREATE_INT_TYPE) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            let _size: String = this.src.toString();
+            let _sign: String = this.op1.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = CreateIntType ");
+            s.pushString(&_size);
+            s.pushStr(", ");
+            s.pushString(&_sign);
+            _dst.drop();
+            _size.drop();
+            _sign.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_CREATE_STRUCT_TYPE) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = CreateStructType");
+            _dst.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_CREATE_FUNC_TYPE) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = CreateFuncType");
+            _dst.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_CREATE_NONE_TYPE) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = CreateNoneType");
+            _dst.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_CREATE_ANYTYPE_TYPE) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = CreateAnytypeType");
+            _dst.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_ADDR_OF) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            let _src: String = this.src.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = AddrOf ");
+            s.pushString(&_src);
+            _dst.drop();
+            _src.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_LOAD_ADDR) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            let _src: String = this.src.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = LoadAddr ");
+            s.pushString(&_src);
+            _dst.drop();
+            _src.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_VERIFY_TYPE) {
+            mut s: String = newString();
+            let _src: String = this.src.toString();
+            s.pushStr("VerifyType ");
+            s.pushString(&_src);
+            _src.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_ADD_FIELD) {
+            mut s: String = newString();
+            let _base: String = this.dst.toString();
+            let _name: String = this.src.toString();
+            let _type: String = this.op1.toString();
+            s.pushStr("AddField ");
+            s.pushString(&_base);
+            s.pushStr(", ");
+            s.pushString(&_name);
+            s.pushStr(", ");
+            s.pushString(&_type);
+            _base.drop();
+            _name.drop();
+            _type.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_ADD_PARAM) {
+            mut s: String = newString();
+            let _base: String = this.dst.toString();
+            let _name: String = this.src.toString();
+            let _type: String = this.op1.toString();
+            s.pushStr("AddParam ");
+            s.pushString(&_base);
+            s.pushStr(", ");
+            s.pushString(&_name);
+            s.pushStr(", ");
+            s.pushString(&_type);
+            _base.drop();
+            _name.drop();
+            _type.drop();
+            ret = s;
+        } else if (this.kind == INSTR_KIND_ADD_FUNC_NODE) {
+            mut s: String = newString();
+            let _base: String = this.dst.toString();
+            let _node: usize = this.src._i;
+            s.pushStr("AddFuncNode ");
+            s.pushString(&_base);
+            s.pushStr(", ");
+            s.pushNumberAsHex(_node);
+            _base.drop();
+            return s;
+        } else if (this.kind == INSTR_KIND_ADD_RET_TYPE) {
+            mut s: String = newString();
+            let _base: String = this.dst.toString();
+            let _typ: String = this.src.toString();
+            s.pushStr("AddReturnType ");
+            s.pushString(&_base);
+            s.pushStr(", ");
+            s.pushString(&_typ);
+            _typ.drop();
+            _base.drop();
+            return s;
+        } else if (this.kind == INSTR_KIND_ADD_CALL_ARG) {
+            mut s: String = newString();
+            let _base: String = this.dst.toString();
+            let _index: usize = this.src._i;
+            let _arg: String = this.op1.toString();
+            s.pushStr("AddCallArg ");
+            s.pushString(&_base);
+            s.pushStr(", ");
+            s.pushNumber(_index);
+            s.pushStr(", ");
+            s.pushString(&_arg);
+            _arg.drop();
+            _base.drop();
+            return s;
+        } else if (this.kind == INSTR_KIND_CALL) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            let _src: String = this.src.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = Call ");
+            s.pushString(&_src);
+            _dst.drop();
+            _src.drop();
+            return s;
+        } else if (this.kind == INSTR_KIND_STORE_PARAM) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            let _size: usize = this.src._i;
+            s.pushString(&_dst);
+            s.pushStr(" = StoreParam ");
+            s.pushNumber(_size);
+            _dst.drop();
+            return s;
+        } else if (this.kind == INSTR_KIND_RETURN) {
+            mut s: String = newString();
+            let _val: String = this.src.toString();
+            s.pushStr("Ret ");
+            s.pushString(&_val);
+            _val.drop();
+            return s;
+        } else if (this.kind == INSTR_KIND_INHERIT_SCOPES) {
+            mut s: String = newString();
+            let _base: String = this.dst.toString();
+            s.pushStr("InheritScopes ");
+            s.pushString(&_base);
+            _base.drop();
+            return s;
+        } else if (this.kind == INSTR_KIND_COND_BR) {
+            mut s: String = newString();
+            let _cond: String = this.dst.toString();
+            s.pushStr("CondBr ");
+            s.pushString(&_cond);
+            s.pushStr(", true=");
+            s.pushNumber(this.src._i);
+            s.pushStr(", false=");
+            s.pushNumber(this.op1._i);
+            _cond.drop();
+            return s;
+        } else if (this.kind == INSTR_KIND_BR) {
+            mut s: String = newString();
+            s.pushStr("Br ");
+            s.pushNumber(this.dst._i);
+            return s;
+        } else if (this.kind == INSTR_KIND_GET_ASSET_OR_FIELD_PTR) {
+            mut s: String = newString();
+            let _dst: String = this.dst.toString();
+            let _lhs: String = this.src.toString();
+            let _name: String = this.op1.toString();
+            s.pushString(&_dst);
+            s.pushStr(" = GetAssetOrFieldPtr ");
+            s.pushString(&_lhs);
+            s.pushStr(", ");
+            s.pushString(&_name);
+            _name.drop();
+            _lhs.drop();
+            _dst.drop();
+            return s;
+        } else unsafe {
+            printf("%llu\n", this.kind);
+            assert_with_msg(false, "exhaustive handling in BCInstr.toString");
+            ret = blank;
+        }
+        return ret;
+    }
+}
+
+func newLoadNumberInstr(span: Span, dst: RegIndex, val: i64) -> BCInstr {
+    unsafe {
+        return BCInstr {
+            origin: span,
+            kind: INSTR_KIND_LOAD_NUMBER,
+            dst: dst,
+            src: RegIndex { _i: *(&val as &usize) },
+            op1: blank,
+        };
+    }
+}
+
+func newLoadStringInstr(span: Span, dst: RegIndex, val: SubStr) -> BCInstr {
+    unsafe {
+        return BCInstr {
+            origin: span,
+            kind: INSTR_KIND_LOAD_STRING,
+            dst: dst,
+            src: RegIndex { _i: val.start as usize },
+            op1: RegIndex { _i: val.len as usize },
+        };
+    }
+}
+
+func newStoreConstInstr(span: Span, dst: RegIndex, src: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_STORE_CONST,
+        dst: dst,
+        src: src,
+        op1: blank,
+    };
+}
+
+func newStoreParamInstr(span: Span, dst: RegIndex, size: usize) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_STORE_PARAM,
+        dst: dst,
+        src: RegIndex { _i: size },
+        op1: blank,
+    };
+}
+
+func newLoadInstr(span: Span, dst: RegIndex, src: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_LOAD,
+        dst: dst,
+        src: src,
+        op1: blank,
+    };
+}
+
+func newMoveInstr(span: Span, dst: RegIndex, src: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_MOVE,
+        dst: dst,
+        src: src,
+        op1: blank,
+    };
+}
+
+func newScopedLoadInstr(span: Span, dst: RegIndex, name: RegIndex, wantsAddr: bool) -> BCInstr {
+    mut i: usize = 0;
+    if (wantsAddr) i = 1;
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_SCOPED_LOAD,
+        dst: dst,
+        src: name,
+        op1: RegIndex { _i: i },
+    };
+}
+
+func newAddInstr(span: Span, dst: RegIndex, lhs: RegIndex, rhs: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_ADD,
+        dst: dst,
+        src: lhs,
+        op1: rhs
+    };
+}
+
+func newSubInstr(span: Span, dst: RegIndex, lhs: RegIndex, rhs: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_SUB,
+        dst: dst,
+        src: lhs,
+        op1: rhs
+    };
+}
+
+func newEqualInstr(span: Span, dst: RegIndex, lhs: RegIndex, rhs: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_EQUAL,
+        dst: dst,
+        src: lhs,
+        op1: rhs
+    };
+}
+
+func newNotEqualInstr(span: Span, dst: RegIndex, lhs: RegIndex, rhs: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_NOT_EQUAL,
+        dst: dst,
+        src: lhs,
+        op1: rhs
+    };
+}
+
+func newConstAssertInstr(span: Span, dst: RegIndex, what: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_CONST_ASSERT,
+        dst: dst,
+        src: what,
+        op1: blank
+    };
+}
+
+func newCreateIntType(span: Span, dst: RegIndex, size: RegIndex, signed: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_CREATE_INT_TYPE,
+        dst: dst,
+        src: size,
+        op1: signed
+    };
+}
+
+func newCreateStructType(span: Span, dst: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_CREATE_STRUCT_TYPE,
+        dst: dst,
+        src: blank,
+        op1: blank
+    };
+}
+
+func newCreateFuncType(span: Span, dst: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_CREATE_FUNC_TYPE,
+        dst: dst,
+        src: blank,
+        op1: blank
+    };
+}
+
+func newCreateNoneType(span: Span, dst: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_CREATE_NONE_TYPE,
+        dst: dst,
+        src: blank,
+        op1: blank
+    };
+}
+
+func newCreateAnytypeType(span: Span, dst: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_CREATE_ANYTYPE_TYPE,
+        dst: dst,
+        src: blank,
+        op1: blank
+    };
+}
+
+func newAddrOf(span: Span, dst: RegIndex, src: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_ADDR_OF,
+        dst: dst,
+        src: src,
+        op1: blank
+    };
+}
+
+func newLoadAddr(span: Span, dst: RegIndex, src: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_LOAD_ADDR,
+        dst: dst,
+        src: src,
+        op1: blank
+    };
+}
+
+func newVerifyType(span: Span, what: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_VERIFY_TYPE,
+        dst: blank,
+        src: what,
+        op1: blank
+    };
+}
+
+func newAddField(span: Span, base: RegIndex, name: RegIndex, typ: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_ADD_FIELD,
+        dst: base,
+        src: name,
+        op1: typ
+    };
+}
+
+func newAddParam(span: Span, base: RegIndex, name: RegIndex, typ: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_ADD_PARAM,
+        dst: base,
+        src: name,
+        op1: typ
+    };
+}
+
+func newAddFuncNode(span: Span, fn: RegIndex, node: &mut ParsedFuncDecl) -> BCInstr {
+    unsafe {
+        return BCInstr {
+            origin: span,
+            kind: INSTR_KIND_ADD_FUNC_NODE,
+            dst: fn,
+            src: RegIndex { _i: node as usize },
+            op1: blank
+        };
+    }
+}
+
+func newAddReturnType(span: Span, fn: RegIndex, typ: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_ADD_RET_TYPE,
+        dst: fn,
+        src: typ,
+        op1: blank
+    };
+}
+
+func newAddCallArgument(span: Span, call: RegIndex, index: usize, arg: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_ADD_CALL_ARG,
+        dst: call,
+        src: RegIndex { _i: index },
+        op1: arg,
+    };
+}
+
+func newCall(span: Span, dst: RegIndex, call: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_CALL,
+        dst: dst,
+        src: call,
+        op1: blank
+    };
+}
+
+func newReturn(span: Span, val: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_RETURN,
+        dst: blank,
+        src: val,
+        op1: blank
+    };
+}
+
+func newInheritScopes(span: Span, base: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_INHERIT_SCOPES,
+        dst: base,
+        src: blank,
+        op1: blank
+    };
+}
+
+func newCondBrInstr(span: Span, cond: RegIndex, then: InstrIndex, elze: InstrIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_COND_BR,
+        dst: cond,
+        src: RegIndex { _i: then._i },
+        op1: RegIndex { _i: elze._i }
+    };
+}
+
+func newBrInstr(span: Span, where: InstrIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_BR,
+        dst: RegIndex { _i: where._i },
+        src: blank,
+        op1: blank
+    };
+}
+
+func newGetAssetOrFieldPtr(span: Span, dst: RegIndex, lhs: RegIndex, name: RegIndex) -> BCInstr {
+    return BCInstr {
+        origin: span,
+        kind: INSTR_KIND_GET_ASSET_OR_FIELD_PTR,
+        dst: dst,
+        src: lhs,
+        op1: name,
+    };
+}

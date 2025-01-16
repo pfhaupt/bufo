@@ -1,0 +1,14 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 2
+//! COMPILER
+//! SUCCESS
+
+const a = 12;
+const b = &a;
+@assert(b == &a);
+@assert(*b == a);
+
+const c = 13;
+@assert(b != &c);
+@assert(*b != c);
+

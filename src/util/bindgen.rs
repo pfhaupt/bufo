@@ -6,7 +6,8 @@ use std::collections::{HashMap, VecDeque};
 use tracer::trace_call;
 
 use super::flags::Flags;
-use crate::{compiler::{FILE_EXT, WARN_STR}, frontend::{nodes::CompilerFlag, parser::{self, Location}}, internal_panic};
+use crate::{compiler::{FILE_EXT, WARN_STR}, frontend::nodes::CompilerFlag, internal_panic};
+use crate::frontend::tokens;
 
 #[allow(unused)]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,16 +32,16 @@ enum CType {
 
 #[allow(unused)]
 #[derive(Debug, Clone)]
-enum CNode {
-    Flags(Vec<CompilerFlag>),
-    AST(Vec<CNode>),
+enum CNode<'src> {
+    Flags(Vec<CompilerFlag<'src>>),
+    AST(Vec<CNode<'src>>),
     Enum {
         name: String,
-        values: Vec<CNode>,
+        values: Vec<CNode<'src>>,
     },
     EnumVariant {
         name: String,
-        value: Option<Box<CNode>>,
+        value: Option<Box<CNode<'src>>>,
     },
     Field {
         name: String,
@@ -48,13 +49,13 @@ enum CNode {
     },
     FuncPtr {
         name: String,
-        ret: Box<CNode>,
-        args: Vec<CNode>,
+        ret: Box<CNode<'src>>,
+        args: Vec<CNode<'src>>,
     },
     FuncDecl {
         name: String,
-        ret: Box<CNode>,
-        args: Vec<CNode>,
+        ret: Box<CNode<'src>>,
+        args: Vec<CNode<'src>>,
         vararg: bool,
     },
     Number(String),
@@ -62,11 +63,11 @@ enum CNode {
     TypeAlias {},
     Typedef {
         name: String,
-        ty: Box<CNode>,
+        ty: Box<CNode<'src>>,
     },
     Struct {
         name: String,
-        fields: Vec<CNode>,
+        fields: Vec<CNode<'src>>,
     },
 }
 
@@ -123,7 +124,7 @@ pub struct Bindgen<'flags> {
     flags: &'flags Flags,
 }
 
-impl<'flags> Bindgen<'flags> {
+impl<'flags, 'src> Bindgen<'flags> {
     pub fn new(flags: &'flags Flags) -> Bindgen<'flags> {
         Bindgen {
             input_path: String::new(),
@@ -390,7 +391,7 @@ impl<'flags> Bindgen<'flags> {
         let mut result = String::new();
         match ast {
             CNode::Flags(flags) => {
-                result += &format!( "{} {{\n", parser::KEYWORD_COMPILER_FLAGS);
+                result += &format!( "{} {{\n", tokens::KEYWORD_COMPILER_FLAGS);
                 for flag in flags {
                     match flag {
                         CompilerFlag::LibPath(_, val) => result += &format!( "    libpath: \"{}\"", val),
@@ -486,60 +487,61 @@ impl<'flags> Bindgen<'flags> {
     }
 
     #[trace_call(always)]
-    fn ask_user_for_flags(&self) -> Result<CNode, String> {
-        if self.flags.gen_bind.is_none() {
-            return Err("gen_bind is not set".to_string());
-        }
-        let mut flags = Vec::new();
-        if self.flags.debug {
-            println!("[DEBUG] Asking user for flags");
-        }
-        println!("The compiler is about to parse the header file `{}`", self.input_path);
-        println!("Please only enter one flag per line, or leave empty to skip this step");
+    fn ask_user_for_flags(&self) -> Result<CNode<'src>, String> {
+        // if self.flags.gen_bind.is_none() {
+        //     return Err("gen_bind is not set".to_string());
+        // }
+        // let mut flags = Vec::new();
+        // if self.flags.debug {
+        //     println!("[DEBUG] Asking user for flags");
+        // }
+        // println!("The compiler is about to parse the header file `{}`", self.input_path);
+        // println!("Please only enter one flag per line, or leave empty to skip this step");
 
-        println!("Please enter the library paths that should be used to compile this file");
-        println!("Note: This is the same as the `-L` flag in gcc or clang.");
-        loop {
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input).unwrap();
-            let flag = input.trim();
-            if flag.is_empty() {
-                break;
-            }
-            let flag = CompilerFlag::LibPath(Location::anonymous(), flag.to_string());
-            flags.push(flag);            
-        }
+        // println!("Please enter the library paths that should be used to compile this file");
+        // println!("Note: This is the same as the `-L` flag in gcc or clang.");
+        // loop {
+        //     let mut input = String::new();
+        //     std::io::stdin().read_line(&mut input).unwrap();
+        //     let flag = input.trim();
+        //     if flag.is_empty() {
+        //         break;
+        //     }
+        //     let flag = CompilerFlag::LibPath(Location::anonymous(), flag);
+        //     flags.push(flag);            
+        // }
 
-        println!("Please enter the libraries that should be linked to compile this file");
-        println!("Note: This is the same as the `-l` flag in gcc or clang.");
-        loop {
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input).unwrap();
-            let flag = input.trim();
-            if flag.is_empty() {
-                break;
-            }
-            let flag = CompilerFlag::Library(Location::anonymous(), flag.to_string());
-            flags.push(flag);            
-        }
+        // println!("Please enter the libraries that should be linked to compile this file");
+        // println!("Note: This is the same as the `-l` flag in gcc or clang.");
+        // loop {
+        //     let mut input = String::new();
+        //     std::io::stdin().read_line(&mut input).unwrap();
+        //     let flag = input.trim();
+        //     if flag.is_empty() {
+        //         break;
+        //     }
+        //     let flag = CompilerFlag::Library(Location::anonymous(), flag);
+        //     flags.push(flag);            
+        // }
 
-        println!("Please enter the linker flags that should be used to compile this file");
-        println!("Note: This is the same as the `-Xlinker` flag in gcc or clang.");
-        loop {
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input).unwrap();
-            let flag = input.trim();
-            if flag.is_empty() {
-                break;
-            }
-            let flag = CompilerFlag::Linker(Location::anonymous(), flag.to_string());
-            flags.push(flag);            
-        }
-        Ok(CNode::Flags(flags))
+        // println!("Please enter the linker flags that should be used to compile this file");
+        // println!("Note: This is the same as the `-Xlinker` flag in gcc or clang.");
+        // loop {
+        //     let mut input = String::new();
+        //     std::io::stdin().read_line(&mut input).unwrap();
+        //     let flag = input.trim();
+        //     if flag.is_empty() {
+        //         break;
+        //     }
+        //     let flag = CompilerFlag::Linker(Location::anonymous(), flag);
+        //     flags.push(flag);
+        // }
+        panic!("This is literally a dead end with the current lifetime setup :^)")
+        // Ok(CNode::Flags(flags))
     }
 
     #[trace_call(always)]
-    fn parse_header(&mut self) -> Result<CNode, String> {
+    fn parse_header(&mut self) -> Result<CNode<'src>, String> {
         self.fill_lookup();
         let mut ast = Vec::new();
         let flags = self.ask_user_for_flags()?;
@@ -567,7 +569,7 @@ impl<'flags> Bindgen<'flags> {
     }
 
     #[trace_call(always)]
-    fn parse_func_decl(&mut self) -> Result<CNode, String> {
+    fn parse_func_decl(&mut self) -> Result<CNode<'src>, String> {
         let ty = self.parse_type(true)?;
         let name = self.next();
         let name = match name {
@@ -607,7 +609,7 @@ impl<'flags> Bindgen<'flags> {
     }
 
     #[trace_call(always)]
-    fn parse_typedef(&mut self) -> Result<CNode, String> {
+    fn parse_typedef(&mut self) -> Result<CNode<'src>, String> {
         self.expect(CToken::Typedef)?;
         let next = self.peek(0);
         let tkn = match next {
@@ -712,7 +714,7 @@ impl<'flags> Bindgen<'flags> {
     }
 
     #[trace_call(always)]
-    fn parse_enum(&mut self) -> Result<CNode, String> {
+    fn parse_enum(&mut self) -> Result<CNode<'src>, String> {
         self.expect(CToken::Enum)?;
         if !self.at(CToken::OpenCurly) {
             return Err(format!("Expected open curly, found {:?}", self.peek(0)));
@@ -758,7 +760,7 @@ impl<'flags> Bindgen<'flags> {
     }
 
     #[trace_call(always)]
-    fn parse_struct(&mut self) -> Result<CNode, String> {
+    fn parse_struct(&mut self) -> Result<CNode<'src>, String> {
         self.expect(CToken::Struct)?;
         let name = self.next();
         let name = match name {

@@ -1,0 +1,59 @@
+import "./stage1/backend/LLVM/bindings.bufo";
+
+struct LLVMValue {
+    ref: LLVMValueRef;
+    func guardReference(&this) {
+        trace("LLVMValue.guardReference");
+        assert_with_msg(!this.ref.isNull(), "LLVM Value is null");
+    }
+
+    func getNthParam(&this, index: usize) -> LLVMValue {
+        trace("LLVMValue.getNthParam");
+        unsafe {
+            let param: LLVMValueRef = LLVMGetParam(this.ref, index as u32);
+            assert_with_msg(!param.isNull(), "Could not get parameter of LLVMValue");
+            return newLLVMValueFromRef(param);
+        }
+    }
+
+    func getFirstBasicBlock(&this) -> LLVMBasicBlock {
+        trace("LLVMValue.getFirstBasicBlock");
+        unsafe {
+            let block: LLVMBasicBlockRef = LLVMGetFirstBasicBlock(this.ref);
+            assert_with_msg(!block.isNull(), "Could not get first basic block from LLVMValue");
+            return newLLVMBasicBlockFromRef(block);
+        }
+    }
+
+    func getType(&this) -> LLVMType {
+        trace("LLVMValue.getType");
+        unsafe {
+            let t: LLVMTypeRef = LLVMTypeOf(this.ref);
+            assert_with_msg(!t.isNull(), "Coult not get type of LLVMValue");
+            return newLLVMTypeFromRef(t);
+        }
+    }
+    func setName(&mut this, name: SubStr) {
+        trace("LLVMValue.setName");
+        unsafe {
+            LLVMSetValueName2(this.ref, name.start, name.len);
+        }
+    }
+
+    func getName(&this) -> SubStr {
+        trace("LLVMValue.getName");
+        unsafe {
+            mut len: usize = 0;
+            let name: &char = LLVMGetValueName2(this.ref, &mut len);
+            return newSubStr(name, 0, len);
+        }
+    }
+}
+
+unsafe func newLLVMValueFromRef(ref: LLVMValueRef) -> LLVMValue {
+    trace("newLLVMValueFromRef");
+    assert_with_msg(!ref.isNull(), "Passed invalid reference to newLLVMValueFromRef");
+    return LLVMValue {
+        ref: ref
+    };
+}

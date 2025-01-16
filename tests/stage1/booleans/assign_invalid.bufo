@@ -1,0 +1,17 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Type mismatch! Expected type `u32`, found type `bool`.
+//! Type mismatch! Expected type `u64`, found type `bool`.
+//! Type mismatch! Expected type `i32`, found type `bool`.
+//! Type mismatch! Expected type `i64`, found type `bool`.
+
+func main() {
+    let a: u32 = true;
+    let d: u64 = false;
+    let f: i32 = false;
+    let h: i64 = true;
+}

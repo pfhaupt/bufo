@@ -1,0 +1,18 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+func main() -> u32 {
+    let a: i32 = 0;
+    let b: u32 = 1337;
+    if (a == 0) {
+        let b: i64 = 0;
+        if (b == 1337) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+    return 2;
+}

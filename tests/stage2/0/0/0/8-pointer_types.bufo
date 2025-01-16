@@ -1,0 +1,23 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 2
+//! COMPILER
+//! SUCCESS
+
+const true = 1 == 1;
+
+const i32 = @integer(32, true);
+const ptr = &i32;
+@assert(ptr == &i32);
+@assert(*ptr == i32);
+
+const FnIndex = i32;
+@assert(FnIndex == i32);
+@assert(&FnIndex == &i32);
+
+const ref = &FnIndex;
+@assert(*ref == i32);
+
+const alsoI32 = @integer(32, true);
+@assert(i32 != alsoI32);
+@assert(&i32 != &alsoI32);
+

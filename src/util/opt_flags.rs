@@ -9,6 +9,18 @@ pub enum OptimizationLevel {
     Size,
 }
 
+impl OptimizationLevel {
+    pub fn as_clang_str(&self) -> &str {
+        match self {
+            Self::None => "",
+            Self::Some => "-O1",
+            Self::All => "-O2",
+            Self::Aggressive => "-O3",
+            Self::Size => "-Os"
+        }
+    }
+}
+
 impl From<&OptimizationLevel> for inkwell::OptimizationLevel {
     fn from(level: &OptimizationLevel) -> Self {
         match level {
@@ -24,7 +36,6 @@ impl From<&OptimizationLevel> for inkwell::OptimizationLevel {
 #[derive(Default, Debug, Clone)]
 pub struct OptimizationFlags {
     pub level: OptimizationLevel,
-    pub dead_code: bool,
 }
 
 impl From<&str> for OptimizationFlags {
@@ -52,7 +63,6 @@ impl OptimizationFlags {
         Self {
             level: OptimizationLevel::Some,
             // Add more optimizations here
-            dead_code: true,
 
             // Also enable all previous optimizations
             ..Self::none()

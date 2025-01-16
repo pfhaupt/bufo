@@ -1,40 +1,52 @@
 use std::fs;
 
-use crate::frontend::parser::{Location, Operation};
+use crate::frontend::tokens::Location;
+use crate::frontend::parser::Operation;
 use crate::middleend::type_checker::Type;
 
 use tracer::trace_call;
 
-#[derive(Debug, Clone)]
-pub struct ModuleNode {
-    pub location: Location,
-    pub name: String,
-    pub modules: Vec<ModuleNode>,
-    pub externs: Vec<ExternNode>,
-    pub structs: Vec<StructNode>,
-    pub functions: Vec<FunctionNode>,
-    pub imports: Vec<ImportNode>,
-    pub compiler_flags: Option<CompilerFlagsNode>,
+macro_rules! fn_is_inlinable {
+    ($func:ident) => {
+        {
+            $func.block.total_len() < 3
+        }
+    };
 }
 
 #[derive(Debug, Clone)]
-pub struct ImportNode {
-    pub location: Location,
-    pub trace: Vec<(String, Location)>,
+pub struct FileNode<'src> {
+    pub globals: Vec<VarDeclNode<'src>>,
+    pub externs: Vec<ExternNode<'src>>,
+    pub structs: Vec<StructNode<'src>>,
+    pub functions: Vec<FunctionNode<'src>>,
+    pub compiler_flags: CompilerFlagsNode<'src>,
 }
+
+impl<'src> FileNode<'src> {
+    #[trace_call(extra)]
+    pub fn get_all_structs(&self) -> Vec<&StructNode> {
+        let mut structs = vec![];
+        for strukt in &self.structs {
+            structs.push(strukt);
+        }
+        structs
+    }
+}
+
 
 #[allow(unused)]
 #[derive(Debug, Clone)]
-pub enum CompilerFlag {
-    LibPath(Location, String),
-    Library(Location, String),
-    Linker(Location, String),
+pub enum CompilerFlag<'src> {
+    LibPath(Location, &'src str),
+    Library(Location, &'src str),
+    Linker(Location, &'src str),
 }
 
-impl CompilerFlag {
+impl<'src> CompilerFlag<'src> {
     #[trace_call(extra)]
-    pub fn from(location: Location, flag: String, value: String) -> Result<Self, String> {
-        match flag.as_str() {
+    pub fn from(location: Location, flag: &'src str, value: &'src str) -> Result<Self, String> {
+        match flag {
             "library" => Ok(Self::Library(location, value)),
             "libpath" => {
                 if fs::metadata(&value).is_err() {
@@ -47,105 +59,168 @@ impl CompilerFlag {
         }
     }
 
+    #[cfg(windows)]
     #[trace_call(extra)]
     pub fn to_vec(&self) -> Vec<String> {
         match self {
-            Self::LibPath(_, value) => vec![format!("-L{}", value.clone())],
-            Self::Library(_, value) => vec![format!("-l{}", value.clone())],
-            Self::Linker(_, value) => vec!["-Xlinker".to_string(), value.clone()],
+            Self::LibPath(_, value) => vec![format!("/LIBPATH:{}", value)],
+            Self::Library(_, value) => vec![format!("{}.lib", value)],
+            Self::Linker(_, value) => vec!["-Xlinker".to_string(), value.to_string()],
+        }
+    }
+    #[cfg(unix)]
+    #[trace_call(extra)]
+    pub fn to_vec(&self) -> Vec<String> {
+        match self {
+            Self::LibPath(_, value) => vec![format!("-L{}", value)],
+            Self::Library(_, value) => vec![format!("{}", value)],
+            Self::Linker(_, _) => unimplemented!(),
         }
     }
 }
 
 #[allow(unused)]
 #[derive(Debug, Clone)]
-pub struct CompilerFlagsNode {
+pub struct CompilerFlagsNode<'src> {
     pub location: Location,
-    pub flags: Vec<CompilerFlag>,
+    pub flags: Vec<CompilerFlag<'src>>,
 }
 
 #[derive(Debug, Clone)]
-pub struct ExternNode {
+pub struct ExternNode<'src> {
     pub location: Location,
-    pub name: String,
-    pub return_type: TypeNode,
-    pub parameters: Vec<ParameterNode>,
+    pub name: &'src str,
+    pub return_type: TypeNode<'src>,
+    pub parameters: Vec<ParameterNode<'src>>,
     pub is_unsafe: bool,
     pub is_vararg: bool,
 }
 
 #[derive(Debug, Clone)]
-pub struct StructNode {
+pub struct StructNode<'src> {
     pub location: Location,
-    pub name: String,
-    pub fields: Vec<FieldNode>,
-    pub methods: Vec<MethodNode>,
+    pub name: &'src str,
+    pub fields: Vec<FieldNode<'src>>,
+    pub methods: Vec<MethodNode<'src>>,
+}
+
+impl<'src> StructNode<'src> {
+    #[trace_call(extra)]
+    pub fn get_full_name(&self) -> &'src str {
+        self.name
+    }
 }
 
 #[derive(Debug, Clone)]
-pub struct FieldNode {
+pub struct FieldNode<'src> {
     pub location: Location,
-    pub name: String,
-    pub type_def: TypeNode,
+    pub name: &'src str,
+    pub type_def: TypeNode<'src>,
 }
 
 #[derive(Debug, Clone)]
-pub struct FunctionNode {
+pub struct FunctionNode<'src> {
     pub location: Location,
-    pub name: String,
-    pub return_type: TypeNode,
-    pub parameters: Vec<ParameterNode>,
-    pub block: BlockNode,
+    pub name: &'src str,
+    pub return_type: TypeNode<'src>,
+    pub parameters: Vec<ParameterNode<'src>>,
+    pub block: BlockNode<'src>,
+    pub is_unsafe: bool,
+    pub is_vararg: bool,
+    pub is_comptime: bool,
+    #[cfg(feature = "old_codegen")]
+    pub stack_size: usize,
+}
+
+impl<'src> FunctionNode<'src> {
+    #[trace_call(extra)]
+    pub fn get_full_name(&self) -> &'src str {
+        self.name
+    }
+
+    pub fn is_inlinable(&self) -> bool {
+        fn_is_inlinable!(self)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MethodNode<'src> {
+    pub location: Location,
+    pub struct_name: &'src str,
+    pub name: &'src str,
+    pub return_type: TypeNode<'src>,
+    pub parameters: Vec<ParameterNode<'src>>,
+    pub block: BlockNode<'src>,
     pub is_unsafe: bool,
     pub is_vararg: bool,
     #[cfg(feature = "old_codegen")]
     pub stack_size: usize,
 }
 
-#[derive(Debug, Clone)]
-pub struct MethodNode {
-    pub location: Location,
-    pub struct_name: String,
-    pub name: String,
-    pub return_type: TypeNode,
-    pub parameters: Vec<ParameterNode>,
-    pub block: BlockNode,
-    pub is_unsafe: bool,
-    pub is_vararg: bool,
-    #[cfg(feature = "old_codegen")]
-    pub stack_size: usize,
+impl<'src> MethodNode<'src> {
+    #[trace_call(extra)]
+    pub fn get_full_name(&self) -> String {
+        format!("{}.{}", self.struct_name, self.name)
+    }
+
+    pub fn is_inlinable(&self) -> bool {
+        fn_is_inlinable!(self)
+    }
 }
 
 #[derive(Debug, Clone)]
-pub struct ParameterNode {
+pub struct ParameterNode<'src> {
     pub location: Location,
-    pub name: String,
-    pub typ: TypeNode,
+    pub name: &'src str,
+    pub typ: TypeNode<'src>,
     pub is_mutable: bool,
 }
 
 #[derive(Debug, Clone)]
-pub struct BlockNode {
+pub struct BlockNode<'src> {
     pub location: Location,
-    pub statements: Vec<Statement>,
+    pub statements: Vec<Statement<'src>>,
     pub is_unsafe: bool,
     #[cfg(not(feature = "old_codegen"))]
     pub llvm_has_terminator: bool,
 }
 
+impl<'src> BlockNode<'src> {
+    fn total_len(&self) -> usize {
+        let mut size = 0;
+        for stmt in &self.statements {
+            match stmt {
+                Statement::Block(b) => size += b.total_len() + b.is_unsafe as usize,
+                Statement::If(ifn) => {
+                    let t = &ifn.if_body;
+                    size += t.total_len();
+                    if let Some(e) = &ifn.else_body {
+                        size += e.total_len();
+                    }
+                    size += 1;
+                }
+                Statement::While(whl) => size += whl.body.total_len() + 1,
+                _ => size += 1
+            }
+        }
+        debug_assert!(size >= self.statements.len(), "There are at least {} statements in this block, but recursion only found {size}.", self.statements.len());
+        size
+    }
+}
+
 #[derive(Debug, Clone)]
-pub enum Statement {
-    Block(BlockNode),
-    Expression(Expression),
-    VarDecl(VarDeclNode),
-    If(IfNode),
-    Return(ReturnNode),
-    While(WhileNode),
+pub enum Statement<'src> {
+    Block(BlockNode<'src>),
+    Expression(Expression<'src>),
+    VarDecl(VarDeclNode<'src>),
+    If(IfNode<'src>),
+    Return(ReturnNode<'src>),
+    While(WhileNode<'src>),
     Break(BreakNode),
     Continue(ContinueNode),
 }
 
-impl Statement {
+impl<'src> Statement<'src> {
     pub fn get_loc(&self) -> Location {
         match self {
             Self::Block(e) => e.location,
@@ -161,36 +236,39 @@ impl Statement {
 }
 
 #[derive(Debug, Clone)]
-pub struct VarDeclNode {
+pub struct VarDeclNode<'src> {
     pub location: Location,
-    pub name: String,
-    pub typ: TypeNode,
-    pub expression: Expression,
+    pub name: &'src str,
+    pub typ: TypeNode<'src>,
+    pub expression: Expression<'src>,
     pub is_mutable: bool,
+    pub is_comptime: bool,
+    pub is_unsafe: bool,
 }
 
 #[derive(Debug, Clone)]
-pub struct IfNode {
+pub struct IfNode<'src> {
     pub location: Location,
-    pub condition: Expression,
-    pub if_body: Box<BlockNode>,
-    pub else_body: Option<BlockNode>,
+    pub condition: Expression<'src>,
+    pub if_body: Box<BlockNode<'src>>,
+    pub else_body: Option<BlockNode<'src>>,
 }
 
 #[derive(Debug, Clone)]
-pub struct ReturnNode {
+pub struct ReturnNode<'src> {
     pub location: Location,
-    pub return_value: Option<Expression>,
-    pub typ: Type,
-    pub function: String,
-    pub strukt: Option<String>,
+    pub return_value: Option<Expression<'src>>,
+    pub typ: Type<'src>,
+    pub function: &'src str,
+    pub strukt: Option<&'src str>,
 }
 
 #[derive(Debug, Clone)]
-pub struct WhileNode {
+pub struct WhileNode<'src> {
     pub location: Location,
-    pub condition: Expression,
-    pub body: BlockNode,
+    pub condition: Expression<'src>,
+    pub body: BlockNode<'src>,
+    pub step: Option<Expression<'src>>,
 }
 
 #[derive(Debug, Clone)]
@@ -204,42 +282,44 @@ pub struct ContinueNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct TypeNode {
+pub struct TypeNode<'src> {
     pub location: Location,
-    pub typ: Type,
+    pub typ: Type<'src>,
 }
 
-impl TypeNode {
+impl<'src> TypeNode<'src> {
     #[trace_call(extra)]
     pub fn none(location: Location) -> Self {
         Self {
             location,
-            typ: Type::None
+            typ: Type::None,
         }
     }
     #[trace_call(extra)]
-    pub fn this(location: Location, typ: Type) -> Self {
+    pub fn this(location: Location, typ: Type<'src>) -> Self {
         Self {
             location,
-            typ
+            typ,
         }
     }
 }
 
 #[allow(unused)]
 #[derive(Debug, Clone)]
-pub enum Expression {
-    Name(NameNode),
-    Literal(LiteralNode),
-    StructLiteral(StructLiteralNode),
-    ArrayLiteral(ArrayLiteralNode),
-    Unary(UnaryNode),
-    Binary(BinaryNode),
+pub enum Expression<'src> {
+    Name(NameNode<'src>),
+    Literal(LiteralNode<'src>),
+    StructLiteral(StructLiteralNode<'src>),
+    ArrayLiteral(ArrayLiteralNode<'src>),
+    Unary(UnaryNode<'src>),
+    Binary(BinaryNode<'src>),
     // Parenthesis(Expression),
-    FunctionCall(CallNode),
+    FunctionCall(CallNode<'src>),
+    Sizeof(TypeNode<'src>),
+    As(Box<Expression<'src>>, TypeNode<'src>),
 }
 
-impl Expression {
+impl<'src> Expression<'src> {
     #[trace_call(extra)]
     pub fn get_loc(&self) -> Location {
         match &self {
@@ -250,11 +330,13 @@ impl Expression {
             Self::Unary(e) => e.location,
             Self::Binary(e) => e.location,
             Self::FunctionCall(e) => e.location,
+            Self::Sizeof(e) => e.location,
+            Self::As(e, _) => e.get_loc(),
         }
     }
 
     #[trace_call(extra)]
-    pub fn get_type(&self) -> Type {
+    pub fn get_type(&self) -> Type<'src> {
         match &self {
             Self::Name(e) => e.typ.clone(),
             Self::StructLiteral(e) => e.typ.clone(),
@@ -263,12 +345,14 @@ impl Expression {
             Self::Unary(e) => e.typ.clone(),
             Self::Binary(e) => e.typ.clone(),
             Self::FunctionCall(e) => e.typ.clone(),
+            Self::Sizeof(_e) => Type::Usize,
+            Self::As(_, t) => t.typ.clone(),
         }
     }
 
     #[trace_call(extra)]
     #[allow(unused)]
-    pub fn set_type(&mut self, typ: Type) {
+    pub fn set_type(&mut self, typ: Type<'src>) {
         match self {
             Self::Name(e) => e.typ = typ,
             Self::StructLiteral(e) => e.typ = typ,
@@ -277,6 +361,8 @@ impl Expression {
             Self::Unary(e) => e.typ = typ,
             Self::Binary(e) => e.typ = typ,
             Self::FunctionCall(e) => e.typ = typ,
+            Self::Sizeof(e) => todo!(),
+            Self::As(e, t) => todo!(),
         }
     }
 
@@ -306,25 +392,25 @@ impl Expression {
 }
 
 #[derive(Debug, Clone)]
-pub struct LiteralNode {
+pub struct LiteralNode<'src> {
     pub location: Location,
-    pub value: String,
-    pub typ: Type,
+    pub value: &'src str,
+    pub typ: Type<'src>,
 }
 
 #[derive(Debug, Clone)]
-pub struct StructLiteralNode {
+pub struct StructLiteralNode<'src> {
     pub location: Location,
-    pub struct_name: String,
-    pub fields: Vec<(String, Expression)>,
-    pub typ: Type,
+    pub struct_name: &'src str,
+    pub fields: Vec<(&'src str, Expression<'src>)>,
+    pub typ: Type<'src>,
 }
 
 #[derive(Debug, Clone)]
-pub struct ArrayLiteralNode {
+pub struct ArrayLiteralNode<'src> {
     pub location: Location,
-    pub elements: Vec<Expression>,
-    pub typ: Type,
+    pub elements: Vec<Expression<'src>>,
+    pub typ: Type<'src>,
     // Small optimization so we don't need to typecheck
     // and codegen the same array elements multiple times
     // [elem; n] => size = Some(n), len(elements)=1
@@ -333,23 +419,23 @@ pub struct ArrayLiteralNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct UnaryNode {
+pub struct UnaryNode<'src> {
     pub location: Location,
     pub operation: Operation,
-    pub expression: Box<Expression>,
-    pub typ: Type,
+    pub expression: Box<Expression<'src>>,
+    pub typ: Type<'src>,
 }
 
 #[derive(Debug, Clone)]
-pub struct BinaryNode {
+pub struct BinaryNode<'src> {
     pub location: Location,
     pub operation: Operation,
-    pub lhs: Box<Expression>,
-    pub rhs: Box<Expression>,
-    pub typ: Type,
+    pub lhs: Box<Expression<'src>>,
+    pub rhs: Box<Expression<'src>>,
+    pub typ: Type<'src>,
 }
 
-impl BinaryNode {
+impl<'src> BinaryNode<'src> {
     #[trace_call(extra)]
     pub fn is_comparison(&self) -> bool {
         self.operation.is_comparison()
@@ -377,17 +463,29 @@ impl BinaryNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct CallNode {
+pub struct CallNode<'src> {
     pub location: Location,
-    pub function_name: String,
-    pub arguments: Vec<Expression>,
-    pub typ: Type,
+    pub function_name: &'src str,
+    pub arguments: Vec<Expression<'src>>,
+    pub typ: Type<'src>,
     pub is_extern: bool,
 }
 
+impl<'src> CallNode<'src> {
+    #[trace_call(extra)]
+    pub fn get_full_name(&self) -> &'src str {
+        self.function_name
+    }
+
+    #[trace_call(extra)]
+    pub fn get_method_name(&self, strukt_name: &str) -> String {
+        format!("{}.{}", strukt_name, self.function_name)
+    }
+}
+
 #[derive(Debug, Clone)]
-pub struct NameNode {
+pub struct NameNode<'src> {
     pub location: Location,
-    pub name: String,
-    pub typ: Type,
+    pub name: &'src str,
+    pub typ: Type<'src>,
 }

@@ -1,0 +1,15 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 2
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! [91merror[0m: Received too many arguments for call to function.
+
+const none = @none();
+const type = @anytype();
+
+const f = func (a: type) {
+};
+
+const a = f(none, none);

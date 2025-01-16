@@ -1,0 +1,8 @@
+
+func main() {
+    let argv: &&str = GLOBAL_GET_ARGV();
+    let argc: usize = GLOBAL_GET_ARGC();
+    for (mut i: usize = 0; i < argc; i = i + 1) {
+        unsafe { printf("%s\n", *(argv + 8 * i)); }
+    }
+}

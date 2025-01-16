@@ -1,0 +1,10 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Use of undeclared function `testfunction`.
+func main() {
+    testfunction();
+}

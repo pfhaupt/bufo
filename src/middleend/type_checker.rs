@@ -1,12 +1,14 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::fmt::{Display, Formatter};
 
 use crate::frontend::nodes;
-use crate::frontend::parser::{Location, Operation};
+use crate::frontend::parser::Operation;
+use crate::frontend::tokens::{Location, KEYWORD_NULL};
 
-use crate::compiler::{ERR_STR, NOTE_STR, WARN_STR};
+use crate::compiler::{ERR_STR, WARN_STR, NOTE_STR};
 use crate::internal_panic;
 use crate::util::flags::Flags;
+use crate::frontend::tokens::KEYWORD_BLANK;
 
 use tracer::trace_call;
 #[allow(unused)]
@@ -30,6 +32,13 @@ mod MutState {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PrimitiveKind {
+    Integer,
+    Reference,
+    Float
+}
+
 macro_rules! check_function {
     ($tc:ident, $call_node:ident, $func_info:ident, $typ:expr) => {{
         let return_type = $func_info.return_type.t.clone();
@@ -38,7 +47,7 @@ macro_rules! check_function {
                 $tc.report_error(TypeError::NotEnoughArguments(
                     $typ,
                     $call_node.location,
-                    $call_node.function_name.clone(),
+                    $call_node.function_name,
                     $call_node.arguments.len(),
                     $func_info.location,
                     $func_info.parameters.len(),
@@ -50,7 +59,7 @@ macro_rules! check_function {
                     $tc.report_error(TypeError::TooManyArguments(
                         $typ,
                         $call_node.location,
-                        $call_node.function_name.clone(),
+                        $call_node.function_name,
                         $call_node.arguments.len(),
                         $func_info.location,
                         $func_info.parameters.len(),
@@ -72,13 +81,13 @@ macro_rules! check_function {
                 if arg_type == Type::Unknown {
                     // We need to `infer` the type again
                     $tc.type_check_expression_with_type(&mut arg, &expected)?;
-                    debug_assert!(!expected.is_struct());
+                    // debug_assert!(!expected.is_struct());
                 } else if arg_type != expected {
                     $tc.report_error(TypeError::ArgParamTypeMismatch(
                         arg.get_loc(),
                         arg_type.clone(),
                         param.location,
-                        param.name.clone(),
+                        param.name,
                         expected.clone(),
                     ));
                 } else {
@@ -118,7 +127,7 @@ macro_rules! check_function {
                 if arg_type == Type::Unknown {
                     // We need to `infer` the type again
                     $tc.type_check_expression_with_type(&mut arg, &expected)?;
-                    debug_assert!(!expected.is_struct());
+                    // debug_assert!(!expected.is_struct());
                 } else if arg_type != expected {
                     $tc.report_error(TypeError::ArgParamTypeMismatch(
                         arg.get_loc(),
@@ -144,7 +153,7 @@ macro_rules! check_parameters {
         let mut errors: Vec<TypeError> = Vec::new();
         for param in &$function.parameters {
             let p = Variable {
-                name: param.name.clone(),
+                name: param.name,
                 location: param.location,
                 typ: param.typ.typ.clone(),
                 mut_state: MutState::mutable(param.is_mutable, param.typ.typ.is_mutable_ref()),
@@ -156,7 +165,7 @@ macro_rules! check_parameters {
                 errors.push(TypeError::Redeclaration(
                     "Parameter",
                     param.location,
-                    param.name.clone(),
+                    param.name,
                     p2.location,
                 ));
             } else {
@@ -173,85 +182,93 @@ macro_rules! check_parameters {
 }
 
 #[derive(Debug)]
-enum TypeError {
+enum TypeError<'src> {
     /// Syntax: Decl Type, Error Loc, Name, Decl Loc
-    Redeclaration(&'static str, Location, String, Location),
+    Redeclaration(&'static str, Location, &'src str, Location),
     /// Syntax: Error Loc, Fn Name, Extern Loc
-    ExternFunction(Location, String, Location),
+    ExternFunction(Location, &'src str, Location),
     /// Syntax: Error Loc, Type Name
-    UnknownType(Location, Type),
+    UnknownType(Location, Type<'src>),
     /// Syntax: Fn Type, Error Loc
     #[cfg(feature = "old_codegen")]
     TooManyParameters(&'static str, Location),
     /// Syntax: Error Loc, Expected, Found
-    TypeMismatch(Location, Type, Type),
+    TypeMismatch(Location, Type<'src>, Type<'src>),
     /// Syntax: Error Loc, Binary Op, LHS Loc, LHS Type, RHS Loc, RHS Type
-    BinaryTypeMismatch(Location, Operation, Location, Type, Location, Type),
+    BinaryTypeMismatch(Location, Operation, Location, Type<'src>, Location, Type<'src>),
     /// Syntax: Error Loc, Var Name
-    UndeclaredVariable(Location, String),
+    UndeclaredVariable(Location, &'src str),
     /// Syntax: Error Loc, Fn Name
-    UndeclaredFunction(Location, String),
+    UndeclaredFunction(Location, &'src str),
     /// Syntax: Fn Type, Error Loc, Fn Name, Arg Count, Fn Decl, Param Count
-    NotEnoughArguments(&'static str, Location, String, usize, Location, usize),
+    NotEnoughArguments(&'static str, Location, &'src str, usize, Location, usize),
     /// Syntax: Fn Type, Error Loc, Fn Name, Arg Count, Fn Decl, Param Count
-    TooManyArguments(&'static str, Location, String, usize, Location, usize),
+    TooManyArguments(&'static str, Location, &'src str, usize, Location, usize),
     /// Syntax: Arg Decl, Arg Type, Param Decl, Param Name, Param Type
-    ArgParamTypeMismatch(Location, Type, Location, String, Type),
+    ArgParamTypeMismatch(Location, Type<'src>, Location, &'src str, Type<'src>),
     /// Syntax: Error Loc, Found Type, Decl Loc, Decl Type
-    WrongReturnType(Location, Type, Location, Type),
+    WrongReturnType(Location, Type<'src>, Location, Type<'src>),
     /// Syntax: Error Loc, Decl Loc, Decl Type
-    MissingReturn(Location, Location, Type),
+    MissingReturn(Location, Location, Type<'src>),
     /// Syntax: Error Loc, Var Decl, Var Name, Field Name, Struct Loc, Struct Name
-    UnknownField(Location, String, Location, String),
+    UnknownField(Location, &'src str, Location, &'src str),
     /// Syntax: Error Loc, Var Name, Struct Loc, Struct Name
-    UnknownMethod(Location, String, Location, String),
+    UnknownMethod(Location, &'src str, Location, &'src str),
     /// Syntax: Expected, Error Loc, Found Literal
-    UnexpectedLiteral(&'static str, Location, String),
+    UnexpectedLiteral(&'static str, Location, &'src str),
     /// Syntax: Error Loc
     DotOnNonStruct(Location),
     /// Syntax: Error Loc
     InvalidLValue(Location),
     /// Syntax: Error Loc, Type
-    NegationTypeMismatch(Location, Type),
+    NegationTypeMismatch(Location, Type<'src>),
     /// Syntax: Error Loc, Var Name, Decl Loc
-    ImmutableModification(Location, String, Location),
+    ImmutableModification(Location, &'src str, Location),
     /// Syntax: Error Loc
     CantMutateTemporary(Location),
     /// Syntax: Error Loc, Struct Name, Previous Struct Info
     RecursiveStruct(Location, String, Vec<(Location, String)>),
     /// Syntax: Error Loc, Field Name, Struct Loc, Struct Name
-    MissingField(Location, String, Location, String),
+    MissingField(Location, &'src str, Location, &'src str),
     /// Syntax: Error Loc, Type, Type
-    DereferenceTypeMismatch(Location, Type),
+    DereferenceTypeMismatch(Location, Type<'src>),
     /// Syntax: Error Loc
     DereferenceIntegerLiteral(Location),
     /// Syntax: Error Loc
     NestedReferenceNotAllowedYet(Location),
     /// Syntax: Kind, Error Loc, Function Name, Function Loc
-    UnsafeCallInSafeContext(&'static str, Location, String, Location),
-    /// Syntax: Error Loc, Module Name
-    UnknownModule(Location, String),
-    /// Syntax: Error Loc, Message
-    InvalidModuleAccess(Location, &'static str),
+    UnsafeCallInSafeContext(&'static str, Location, &'src str, Location),
     /// Syntax: Error Loc
     UnsafeAny(Location),
+    /// Syntax: Error Loc
+    UnsafeNull(Location),
     /// Syntax: Error Loc, Element Type, Inferred Loc, Inferred Type
-    ArrayLiteralElementTypeMismatch(Location, Type, Location, Type),
+    ArrayLiteralElementTypeMismatch(Location, Type<'src>, Location, Type<'src>),
     /// Syntax: Error Loc, Expected Size, Found Size
     ArraySizeMismatch(Location, usize, usize),
     /// Syntax: Error Loc, Type
-    InvalidIndexedAccess(Location, Type),
+    InvalidIndexedAccess(Location, Type<'src>),
     /// Syntax: Error Loc, Type
-    ArrayIndexRequiresUsize(Location, Type),
+    ArrayIndexRequiresUsize(Location, Type<'src>),
     /// Syntax: Error Loc, Type
-    LogicalNotTypeMismatch(Location, Type),
+    LogicalNotTypeMismatch(Location, Type<'src>),
     /// Syntax: Error Loc, Message
     InvalidMemberAccess(Location, &'static str),
     /// Syntax: Error Loc
     ImmutDerefInMutContext(Location, Location),
+    /// Syntax: Error Loc
+    UnsafePointerArithmetics(Location),
+    /// Syntax: Error Loc, Binary Op
+    InvalidPointerArithmetics(Location, Operation),
+    /// Syntax: Error Loc
+    UnsafePointerCast(Location),
+    /// Syntax: Error Loc, Expr Loc, Expr Type, Type Loc, Type
+    NonPrimitiveTypeCast(Location, Location, Type<'src>, Location, Type<'src>),
+    /// Syntax: Error Loc, Type
+    BlankReference(Location, Type<'src>),
 }
 
-impl Display for TypeError {
+impl<'src> Display for TypeError<'src> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             TypeError::Redeclaration(kind, loc1, name, loc2) => {
@@ -293,8 +310,8 @@ impl Display for TypeError {
                     f,
                     "{}: {:?}: Type mismatch in binary expression! Operation `{} {} {}` is not defined.\n{}: {:?}: LHS has type `{}`.\n{}: {:?}: RHS has type `{}`.",
                     ERR_STR, error_loc, lhs_typ, op, rhs_typ,
-                    ERR_STR, lhs_loc, lhs_typ,
-                    ERR_STR, rhs_loc, rhs_typ,
+                    NOTE_STR, lhs_loc, lhs_typ,
+                    NOTE_STR, rhs_loc, rhs_typ,
                 )
             }
             TypeError::UndeclaredVariable(loc, name) => {
@@ -429,7 +446,7 @@ impl Display for TypeError {
                 );
                 for (loc, name) in struct_locs.iter().skip(1) {
                     message.push_str(&format!(
-                        "\n{}: {:?}: Chain of recursion also includes Struct `{}`.",
+                        "\n{}: {:?}: Chain of recursion also includes struct `{}`.",
                         NOTE_STR, loc, name
                     ));
                 }
@@ -471,14 +488,11 @@ impl Display for TypeError {
                     ERR_STR, error_loc, lowercase_kind, fn_name, NOTE_STR, fn_loc, kind, fn_name, NOTE_STR
                 )
             }
-            TypeError::UnknownModule(loc, name) => {
-                write!(f, "{}: {:?}: Unknown module `{}`.", ERR_STR, loc, name)
-            }
-            TypeError::InvalidModuleAccess(loc, msg) => {
-                write!(f, "{}: {:?}: {} is not allowed.", ERR_STR, loc, msg)
-            }
             TypeError::UnsafeAny(loc) => {
                 write!(f, "{}: {:?}: Use of `Any` is unsafe.\n{}: Use an `unsafe {{}}` block if you really want to use `Any`.", ERR_STR, loc, NOTE_STR)
+            }
+            TypeError::UnsafeNull(loc) => {
+                write!(f, "{}: {:?}: Use of `{}` is unsafe.\n{}: Use an `unsafe {{}}` block if you really want to use `{}`.", ERR_STR, loc, KEYWORD_NULL, NOTE_STR, KEYWORD_NULL)
             }
             TypeError::ArrayLiteralElementTypeMismatch(loc, typ, inferred_loc, inferred_typ) => {
                 write!(
@@ -525,14 +539,38 @@ impl Display for TypeError {
                     ERR_STR, loc, NOTE_STR, sub_expr_loc
                 )
             }
+            TypeError::UnsafePointerArithmetics(loc) => {
+                write!(f, "{}: {:?}: Pointer Arithmetics are unsafe.\n{}: Use an `unsafe {{}}` block if you really want to do that.", ERR_STR, loc, NOTE_STR)
+            }
+            TypeError::InvalidPointerArithmetics(loc, op) => {
+                write!(f, "{}: {:?}: Operation `{}` is not allowed in the context of pointer arithmetics.", ERR_STR, loc, op)
+            }
+            TypeError::UnsafePointerCast(loc) => {
+                write!(f, "{}: {:?}: Pointer type casts are unsafe.\n{}: Use an `unsafe {{}}` block if you really want to do that.", ERR_STR, loc, NOTE_STR)
+            }
+            TypeError::NonPrimitiveTypeCast(err, e_loc, e_type, t_loc, t_type) => {
+                write!(
+                    f,
+                    "{}: {:?}: Non primitive cast from type {} to {}.\n{}: {:?}: Expression to cast is here.\n{}: {:?}: Type to cast to is here.",
+                    ERR_STR, err, e_type, t_type, NOTE_STR, e_loc, NOTE_STR, t_loc
+                )
+            }
+            TypeError::BlankReference(err, typ) => {
+                write!(
+                    f,
+                    "{}: {:?}: Invalid initialization of reference of type {}. Use `{}` instead.",
+                    ERR_STR, err, typ, KEYWORD_NULL
+                )
+            }
         }
     }
 }
 
 #[derive(Debug, Clone, Default)]
-pub enum Type {
+pub enum Type<'src> {
     None, // For functions that return nothing
     Any,  // C's void*, expected to be used for FFI, not for general use, infers to all references
+    Blank,
     #[default]
     Unknown,
     I8,
@@ -547,18 +585,16 @@ pub enum Type {
     Bool,
     Char,
     // Ptr(Box<Type>),
-    Struct(String),
+    Struct(&'src str),
     // TODO: More unit tests for references
-    Ref(Box<Type>, bool), // bool is mutability
-    Array(Box<Type>, usize),
-    Module(String, Box<Type>), // Type <arg 2> defined in module <arg 1>
-    Str,
+    Ref(Box<Type<'src>>, bool), // bool is mutability
+    Array(Box<Type<'src>>, usize),
     // Reserved for later use
     F32,
     F64,
 }
 
-impl PartialEq for Type {
+impl<'src> PartialEq for Type<'src> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Type::I8, Type::I8) => true,
@@ -572,7 +608,6 @@ impl PartialEq for Type {
             (Type::Usize, Type::Usize) => true,
             (Type::Bool, Type::Bool) => true,
             (Type::Char, Type::Char) => true,
-            (Type::Str, Type::Str) => true,
             (Type::F32, Type::F32) => true,
             (Type::F64, Type::F64) => true,
             (Type::Unknown, Type::Unknown) => true,
@@ -582,18 +617,10 @@ impl PartialEq for Type {
             (Type::None, _) | (_, Type::None) => false,
             (Type::Any, Type::Ref(_, _)) | (Type::Ref(_, _), Type::Any) => true, // Any is void*, so it can be inferred to any reference
             (Type::Any, _) | (_, Type::Any) => false,
-            (own @ Type::Module(_, typ), other) | (other, own @ Type::Module(_, typ)) => {
-                let typ = &**typ;
-                if typ.is_primitive() && other.is_primitive() {
-                    return typ == other;
-                }
-                let own = own.get_unfolded_module_name();
-                let other = other.get_unfolded_module_name();
-                own == other
-            }
             (Type::Struct(lhs), Type::Struct(rhs)) => lhs == rhs,
             (Type::Ref(lhs, l), Type::Ref(rhs, r)) => lhs == rhs && l == r,
             (Type::Array(lhs, l), Type::Array(rhs, r)) => lhs == rhs && l == r,
+            (Type::Blank, Type::Blank) => true,
             _ => false,
         }
     }
@@ -602,7 +629,7 @@ impl PartialEq for Type {
     }
 }
 
-impl Type {
+impl<'src> Type<'src> {
     #[trace_call(extra)]
     pub fn is_primitive(&self) -> bool {
         matches!(
@@ -620,14 +647,55 @@ impl Type {
                 | Type::Char
                 | Type::F32
                 | Type::F64
-                | Type::Str
                 | Type::Any
         )
     }
+
     #[trace_call(extra)]
-    pub fn is_module(&self) -> bool {
-        matches!(self, Type::Module(..))
+    pub fn is_float(&self) -> bool {
+        *self == Type::F32 || *self == Type::F64
     }
+
+    #[trace_call(extra)]
+    pub fn is_integer(&self) -> bool {
+        matches!(
+            self,
+            Type::I8
+                | Type::I16
+                | Type::I32
+                | Type::I64
+                | Type::U8
+                | Type::U16
+                | Type::U32
+                | Type::U64
+                | Type::Usize
+                | Type::Char
+        )
+    }
+
+    #[trace_call(extra)]
+    pub fn is_signed(&self) -> bool {
+        match self {
+            Type::I8 | Type::I16 | Type::I32 | Type::I64 => true,
+            Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::Usize => false,
+            _ => internal_panic!("Expected integer")
+        }
+    }
+
+    #[trace_call(extra)]
+    pub fn is_compound(&self) -> bool {
+        self.is_struct() || self.is_array() || self.is_struct_ref()
+    }
+
+    #[trace_call(extra)]
+    pub fn is_struct_array(&self) -> bool {
+        if let Type::Array(t, _) = self {
+            t.is_struct() || t.is_struct_array()
+        } else {
+            false
+        }
+    }
+
     #[trace_call(extra)]
     pub fn is_struct(&self) -> bool {
         matches!(self, Type::Struct(..))
@@ -636,6 +704,11 @@ impl Type {
     #[trace_call(extra)]
     pub fn is_array(&self) -> bool {
         matches!(self, Type::Array(..))
+    }
+
+    #[trace_call(extra)]
+    pub fn is_reference(&self) -> bool {
+        matches!(self, Type::Ref(..)) || *self == Type::Any
     }
 
     #[trace_call(extra)]
@@ -659,32 +732,66 @@ impl Type {
     }
 
     #[trace_call(extra)]
-    pub fn get_struct_name(&self) -> String {
+    pub fn get_underlying_type_ref(&self) -> &Type {
         match self {
-            Type::Struct(name) => name.clone(),
-            e => internal_panic!("Expected struct, found {:?}", e),
+            Type::Ref(t, _) => t.get_underlying_type_ref(),
+            Type::Array(t, _) => t.get_underlying_type_ref(),
+            _ => self,
+        }
+    }
+
+    pub fn get_underlying_type_ref_mut(&mut self) -> &mut Type<'src> {
+        match self {
+            Type::Ref(ref mut t, _) => t.get_underlying_type_ref_mut(),
+            Type::Array(ref mut t, _) => t.get_underlying_type_ref_mut(),
+            _ => self,
         }
     }
 
     #[trace_call(extra)]
-    pub fn get_underlying_type(&self) -> Type {
+    pub fn get_underlying_type(&self) -> &Type {
         match self {
             Type::Ref(t, _) => t.get_underlying_type(),
             Type::Array(t, _) => t.get_underlying_type(),
-            _ => self.clone(),
+            _ => self,
         }
     }
 
     #[trace_call(extra)]
-    pub fn get_unfolded_module_name(&self) -> String {
+    pub fn get_underlying_struct_name(&self) -> &'src str {
         match self {
-            Type::Module(module, t) => format!("{}.{}", module, t.get_unfolded_module_name()),
-            e => e.to_string(),
+            Type::Struct(struct_name) => struct_name,
+            Type::Array(t, _) => t.get_underlying_struct_name(),
+            _ => internal_panic!("Expected Struct")
+        }
+    }
+
+    #[trace_call(extra)]
+    pub fn get_bit_size(&self) -> usize {
+        match self {
+            Type::I8 | Type::U8 | Type::Char => 8,
+            Type::I16 | Type::U16 => 16,
+            Type::I32 | Type::U32 | Type::F32 => 32,
+            Type::I64 | Type::U64 | Type::F64 | Type::Usize => 64,
+            _ => {
+                debug_assert!(self.is_primitive());
+                internal_panic!("Expected primitive type, got {self}")
+            }
+        }
+    }
+
+    #[trace_call(extra)]
+    pub fn get_primitive_kind(&self) -> PrimitiveKind {
+        if self.is_integer() { PrimitiveKind::Integer }
+        else if self.is_reference() { PrimitiveKind::Reference }
+        else if self.is_float() { PrimitiveKind::Float }
+        else {
+            internal_panic!("Unhandled case in Type::get_primitive_kind")
         }
     }
 }
 
-impl Display for Type {
+impl<'src> Display for Type<'src> {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
             Type::Struct(str) => write!(fmt, "{}", str),
@@ -692,57 +799,58 @@ impl Display for Type {
             Type::Ref(t, false) => write!(fmt, "&{}", t),
             Type::Array(t, len) => write!(fmt, "[{}; {}]", t, len),
             Type::Any => write!(fmt, "Any"),
-            Type::Module(module, t) => write!(fmt, "{}::{}", module, t),
             _ => write!(fmt, "{}", format!("{:?}", self).to_lowercase()),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct TypeLoc {
-    t: Type,
+struct TypeLoc<'src> {
+    t: Type<'src>,
     l: Location,
 }
 
-impl TypeLoc {
+impl<'src> TypeLoc<'src> {
     #[trace_call(extra)]
-    fn new(l: Location, t: Type) -> Self {
+    fn new(l: Location, t: Type<'src>) -> Self {
         Self { l, t }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct Function {
+struct Function<'src> {
     location: Location,
-    return_type: TypeLoc,
-    parameters: Vec<Variable>,
+    return_type: TypeLoc<'src>,
+    parameters: Vec<Variable<'src>>,
     has_this: bool,
     is_unsafe: bool,
     is_vararg: bool,
+    is_extern: bool,
+    is_used: bool,
 }
 
-impl Function {
+impl<'src> Function<'src> {
     #[trace_call(extra)]
-    fn get_parameters_as_hashmap(&self) -> HashMap<String, Variable> {
+    fn get_parameters_as_hashmap(&self) -> HashMap<&'src str, Variable<'src>> {
         let mut parameters = HashMap::new();
         for param in &self.parameters {
-            parameters.insert(param.name.clone(), param.clone());
+            parameters.insert(param.name, param.clone());
         }
         parameters
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Struct {
-    name: String,
+pub struct Struct<'src> {
+    name: &'src str,
     location: Location,
-    fields: HashMap<String, TypeLoc>,
-    known_methods: HashMap<String, Function>,
+    fields: HashMap<&'src str, TypeLoc<'src>>,
+    known_methods: HashMap<&'src str, Function<'src>>,
 }
 
-impl Struct {
+impl<'src> Struct<'src> {
     #[trace_call(extra)]
-    fn new(name: String, location: Location) -> Self {
+    fn new(name: &'src str, location: Location) -> Self {
         Self {
             name,
             location,
@@ -752,7 +860,7 @@ impl Struct {
     }
 
     #[trace_call(extra)]
-    fn add_field(&mut self, field: &nodes::FieldNode) -> Result<(), TypeError> {
+    fn add_field(&mut self, field: &nodes::FieldNode<'src>) -> Result<(), TypeError<'src>> {
         let name = &field.name;
         let location = &field.location;
 
@@ -760,44 +868,45 @@ impl Struct {
             Some(f) => Err(TypeError::Redeclaration(
                 "Field",
                 *location,
-                name.clone(),
+                name,
                 f.l,
             )),
             None => {
-                let typ = &field.type_def.typ;
-                self.fields.insert(name.to_string(), TypeLoc::new(*location, typ.clone()));
+                let typ = field.type_def.typ.clone();
+                self.fields.insert(name, TypeLoc::new(*location, typ.clone()));
                 Ok(())
             }
         }
     }
 
     #[trace_call(extra)]
-    fn add_method(&mut self, method: &nodes::MethodNode) -> Result<(), Vec<TypeError>> {
+    fn add_method(&mut self, method: &nodes::MethodNode<'src>) -> Result<(), Vec<TypeError<'src>>> {
         let mut errors = Vec::new();
         let name = &method.name;
         let location = &method.location;
-        let return_type = &method.return_type.typ;
         let return_loc = method.return_type.location;
-        let (parameters, mut param_errors) = check_parameters!(self, method);
+        let (parameters, mut param_errors) = check_parameters!(tc, method);
         errors.append(&mut param_errors);
         let func = Function {
             location: method.location,
-            return_type: TypeLoc::new(return_loc, return_type.clone()),
+            return_type: TypeLoc::new(return_loc, method.return_type.typ.clone()),
             parameters,
             has_this: true,
             is_unsafe: method.is_unsafe,
             is_vararg: false,
+            is_extern: false,
+            is_used: false,
         };
         if self.known_methods.contains_key(name) {
             let m = &self.known_methods[name];
             errors.push(TypeError::Redeclaration(
                 "Method",
                 *location,
-                name.clone(),
+                name,
                 m.location,
             ));
         } else {
-            self.known_methods.insert(name.clone(), func);
+            self.known_methods.insert(name, func);
         }
         if errors.is_empty() {
             Ok(())
@@ -807,33 +916,31 @@ impl Struct {
     }
 
     #[trace_call(extra)]
-    fn get_field(&self, name: &str) -> Option<TypeLoc> {
+    fn get_field(&self, name: &str) -> Option<TypeLoc<'src>> {
         self.fields.get(name).cloned()
     }
 
     #[trace_call(extra)]
-    fn get_method(&self, name: &str) -> Option<&Function> {
+    fn get_method(&self, name: &str) -> Option<&Function<'src>> {
         self.known_methods.get(name)
+    }
+
+    fn get_method_mut(&mut self, name: &str) -> Option<&mut Function<'src>> {
+        self.known_methods.get_mut(name)
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct StructInfo {
+pub struct Variable<'src> {
+    name: &'src str,
     location: Location,
-    fields: BTreeMap<String, (Location, String)>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Variable {
-    name: String,
-    location: Location,
-    typ: Type,
+    typ: Type<'src>,
     mut_state: MutStateVal,
 }
 
-impl Variable {
+impl<'src> Variable<'src> {
     #[trace_call(extra)]
-    fn new(name: String, location: Location, typ: Type, mut_state: MutStateVal) -> Self {
+    fn new(name: &'src str, location: Location, typ: Type<'src>, mut_state: MutStateVal) -> Self {
         Self {
             name,
             location,
@@ -845,61 +952,60 @@ impl Variable {
     fn is_struct_instance(&self) -> bool {
         matches!(&self.typ, Type::Struct(..))
     }
-    #[trace_call(extra)]
-    fn get_struct_name(&self) -> String {
-        match &self.typ {
-            Type::Struct(name) => name.clone(),
-            _ => panic!(),
-        }
-    }
 }
 
-#[derive(Debug, Clone)]
-struct Module {
-    name: String,
-    modules: HashMap<String, Module>,
-    externs: HashMap<String, Function>,
-    struct_indices: HashMap<String, usize>,
-    structs: Vec<Struct>,
-    functions: HashMap<String, Function>,
+#[derive(Debug)]
+pub struct TypeChecker<'flags, 'src> {
+    externs: HashMap<&'src str, Function<'src>>,
+    struct_indices: HashMap<&'src str, usize>,
+    structs: Vec<Struct<'src>>,
+    functions: HashMap<&'src str, Function<'src>>,
+    known_variables: VecDeque<HashMap<&'src str, Variable<'src>>>,
+    unsafe_depth: usize,
+    #[cfg(feature = "old_codegen")]
+    current_stack_size: usize,
+    errors: Vec<TypeError<'src>>,
+    flags: &'flags Flags,
 }
 
-impl Module {
+impl<'flags, 'src> TypeChecker<'flags, 'src> {
     #[trace_call(extra)]
-    fn new(name: String) -> Self {
+    pub fn new(flags: &'flags Flags) -> Self {
+        let mut known_variables = VecDeque::new();
+        known_variables.push_back(HashMap::new()); // Global variables
         Self {
-            name,
-            modules: HashMap::new(),
             externs: HashMap::new(),
             struct_indices: HashMap::new(),
             structs: Vec::new(),
             functions: HashMap::new(),
+            known_variables,
+            unsafe_depth: 0,
+            #[cfg(feature = "old_codegen")]
+            current_stack_size: 0,
+            errors: Vec::new(),
+            flags,
         }
     }
-
-    #[trace_call(always)]
-    fn get_sub_module(&self, name: &str) -> Option<&Module> {
-        self.modules.get(name)
-    }
-
-    #[trace_call(always)]
-    fn add_module(&mut self, module: Module) {
-        self.modules.insert(module.name.clone(), module);
-    }
-
     #[trace_call(extra)]
-    fn get_struct(&self, name: &str) -> Option<&Struct> {
+    fn get_struct(&self, name: &str) -> Option<&Struct<'src>> {
         match self.struct_indices.get(name) {
             Some(index) => Some(&self.structs[*index]),
             None => None,
         }
     }
 
+    fn get_struct_mut(&mut self, name: &str) -> Option<&mut Struct<'src>> {
+        match self.struct_indices.get(name) {
+            Some(index) => Some(&mut self.structs[*index]),
+            None => None,
+        }
+    }
+
     #[trace_call(extra)]
-    fn insert_struct(&mut self, strukt: Struct) {
+    fn insert_struct(&mut self, strukt: Struct<'src>) {
         let index = self.structs.len();
-        self.struct_indices.insert(strukt.name.clone(), index);
-        self.structs.push(strukt);
+        self.struct_indices.insert(strukt.name, index);
+        self.structs.push(strukt.clone());
     }
 
     #[trace_call(extra)]
@@ -913,20 +1019,38 @@ impl Module {
     }
 
     #[trace_call(extra)]
-    fn get_function(&self, name: &str) -> Option<&Function> {
+    fn is_function(&self, name: &str) -> bool {
+        self.functions.contains_key(name)
+    }
+
+    #[trace_call(extra)]
+    fn is_extern(&self, name: &str) -> bool {
+        self.externs.contains_key(name)
+    }
+
+    #[trace_call(extra)]
+    fn get_function(&self, name: &str) -> Option<&Function<'src>> {
         self.functions.get(name)
     }
 
     #[trace_call(extra)]
-    fn get_extern(&self, name: &str) -> Option<&Function> {
+    fn get_extern(&self, name: &str) -> Option<&Function<'src>> {
         self.externs.get(name)
     }
 
+    fn get_function_mut(&mut self, name: &str) -> Option<&mut Function<'src>> {
+        self.functions.get_mut(name)
+    }
+
+    fn get_extern_mut(&mut self, name: &str) -> Option<&mut Function<'src>> {
+        self.externs.get_mut(name)
+    }
+
     #[trace_call(always)]
-    fn add_extern(&mut self, extern_node: &nodes::ExternNode) -> Vec<TypeError> {
+    fn add_extern(&mut self, extern_node: &nodes::ExternNode<'src>) -> Vec<TypeError<'src>> {
         let return_type = &extern_node.return_type.typ;
         let return_loc = extern_node.return_type.location;
-        let (parameters, errors) = check_parameters!(self, extern_node);
+        let (parameters, errors) = check_parameters!(tc, extern_node);
         let func = Function {
             location: extern_node.location,
             return_type: TypeLoc::new(return_loc, return_type.clone()),
@@ -934,17 +1058,19 @@ impl Module {
             has_this: false,
             is_unsafe: extern_node.is_unsafe,
             is_vararg: extern_node.is_vararg,
+            is_extern: true,
+            is_used: true,
         };
-        self.externs.insert(extern_node.name.clone(), func);
+        self.externs.insert(extern_node.name, func);
         errors
     }
 
     #[trace_call(always)]
-    fn add_struct(&mut self, struct_node: &nodes::StructNode) -> Vec<TypeError> {
+    fn add_struct(&mut self, struct_node: &nodes::StructNode<'src>) -> Vec<TypeError<'src>> {
         let mut errors = Vec::new();
-        let name = struct_node.name.clone();
+        let name = struct_node.name;
         let location = struct_node.location;
-        let mut strukt = Struct::new(name.clone(), location);
+        let mut strukt = Struct::new(name, location);
         for field in &struct_node.fields {
             match strukt.add_field(field) {
                 Ok(()) => (),
@@ -962,7 +1088,7 @@ impl Module {
             errors.push(TypeError::Redeclaration(
                 "Struct",
                 location,
-                name.clone(),
+                name,
                 strukt.location,
             ));
         } else {
@@ -972,25 +1098,27 @@ impl Module {
     }
 
     #[trace_call(always)]
-    fn add_function(&mut self, function: &nodes::FunctionNode) -> Vec<TypeError> {
-        let name = function.name.clone();
+    fn add_function(&mut self, function: &nodes::FunctionNode<'src>) -> Vec<TypeError<'src>> {
+        let name = function.name;
         let location = function.location;
-        let return_type = &function.return_type.typ;
+        let return_type = &function.return_type;
         let return_loc = function.return_type.location;
-        let (parameters, mut errors) = check_parameters!(self, function);
+        let (parameters, mut errors) = check_parameters!(tc, function);
         let func = Function {
             location,
-            return_type: TypeLoc::new(return_loc, return_type.clone()),
+            return_type: TypeLoc::new(return_loc, return_type.typ.clone()),
             parameters,
             has_this: false,
             is_unsafe: function.is_unsafe,
             is_vararg: false,
+            is_extern: false,
+            is_used: function.name == "main" || function.name == "index_oob" || function.name == "setupStdHandles",
         };
         if self.externs.contains_key(&name) {
             let external = &self.externs[&name];
             errors.push(TypeError::ExternFunction(
                 location,
-                name.clone(),
+                name,
                 external.location,
             ));
         }
@@ -999,82 +1127,43 @@ impl Module {
             errors.push(TypeError::Redeclaration(
                 "Function",
                 location,
-                name.clone(),
+                name,
                 f.location,
             ));
         } else {
-            self.functions.insert(name.clone(), func);
+            self.functions.insert(name, func);
         }
         errors
     }
-}
-
-#[derive(Debug)]
-pub struct TypeChecker<'flags> {
-    module_tree: Option<Module>,
-    module_stack: Vec<String>,
-    known_variables: VecDeque<HashMap<String, Variable>>,
-    unsafe_depth: usize,
-    #[cfg(feature = "old_codegen")]
-    current_stack_size: usize,
-    errors: Vec<TypeError>,
-    flags: &'flags Flags,
-}
-
-impl<'flags> TypeChecker<'flags> {
-    #[trace_call(extra)]
-    pub fn new(flags: &'flags Flags) -> Self {
-        Self {
-            module_tree: None,
-            module_stack: Vec::new(),
-            known_variables: VecDeque::new(),
-            unsafe_depth: 0,
-            #[cfg(feature = "old_codegen")]
-            current_stack_size: 0,
-            errors: Vec::new(),
-            flags,
-        }
-    }
 
     #[trace_call(always)]
-    fn get_full_name(&self, struct_name: &str) -> String {
-        let module_name = self.module_stack.join(".");
-        format!("{}.{}", module_name, struct_name)
-    }
-
-    #[trace_call(always)]
-    fn fill_lookup(&mut self, project: &nodes::ModuleNode) -> Module {
-        let mut module = Module::new(project.name.clone());
-        for sub_module in &project.modules {
-            let m = self.fill_lookup(sub_module);
-            module.add_module(m);
-        }
+    fn fill_lookup(&mut self, project: &nodes::FileNode<'src>) {
         for extern_node in &project.externs {
-            let extern_errors = module.add_extern(extern_node);
+            let extern_errors = self.add_extern(extern_node);
             for error in extern_errors {
                 self.report_error(error);
             }
         }
         for strukt in &project.structs {
-            let struct_errors = module.add_struct(strukt);
+            let struct_errors = self.add_struct(strukt);
             for error in struct_errors {
                 self.report_error(error);
             }
         }
         for func in &project.functions {
-            let func_errors = module.add_function(func);
+            let func_errors = self.add_function(func);
             for error in func_errors {
                 self.report_error(error);
             }
         }
-        module
     }
 
     #[trace_call(always)]
-    fn report_error(&mut self, error: TypeError) {
+    fn report_error(&mut self, error: TypeError<'src>) {
         if self.flags.debug {
             println!("[DEBUG] Error: {}", error);
         }
+        trace_panic!();
         self.errors.push(error);
     }
 
@@ -1090,20 +1179,20 @@ impl<'flags> TypeChecker<'flags> {
         self.known_variables.pop_back();
     }
 
-    fn get_current_scope(&mut self) -> &mut HashMap<String, Variable> {
+    fn get_current_scope(&mut self) -> &mut HashMap<&'src str, Variable<'src>> {
         let len = self.known_variables.len();
         &mut self.known_variables[len - 1]
     }
 
     #[trace_call(extra)]
-    fn get_variable_in_current_scope(&self, name: &str) -> Option<Variable> {
+    fn get_variable_in_current_scope(&self, name: &str) -> Option<Variable<'src>> {
         self.known_variables[self.known_variables.len() - 1]
             .get(name)
             .cloned()
     }
 
     #[trace_call(extra)]
-    fn get_variable(&self, name: &String) -> Option<Variable> {
+    fn get_variable(&self, name: &str) -> Option<Variable<'src>> {
         for scope in self.known_variables.iter().rev() {
             if let Some(t) = scope.get(name) {
                 return Some(t.clone());
@@ -1112,108 +1201,154 @@ impl<'flags> TypeChecker<'flags> {
         None
     }
 
-    #[trace_call(extra)]
-    fn get_module(&self, name: &str) -> Option<&Module> {
-        self.module_tree.as_ref().unwrap().get_sub_module(name)
-    }
-
-    #[trace_call(always)]
-    fn get_current_module(&self) -> &Module {
-        let mut module = self.module_tree.as_ref().unwrap();
-        for name in &self.module_stack {
-            module = module.get_sub_module(name).unwrap();
+    fn dfs<'s>(strukt: &'s str, lookup: &BTreeMap<&'s str, BTreeSet<&'s str>>, visited: &mut Vec<&'s str>, finished: &mut BTreeSet<&'s str>) -> bool {
+        if finished.contains(strukt) {
+            return false;
         }
-        module
-    }
-
-    #[trace_call(always)]
-    fn gather_struct_info(
-        &mut self,
-        module: &nodes::ModuleNode,
-        root_module: bool
-    ) -> BTreeMap<String, StructInfo> {
-        if !root_module {
-            self.module_stack.push(module.name.clone());
+        if visited.contains(&strukt) {
+            return true;
         }
-        let mut struct_info = BTreeMap::new();
-        for modu in &module.modules {
-            let info = self.gather_struct_info(modu, false);
-            struct_info.extend(info);
-        }
-        let module = self.get_current_module();
-        for strukt in &module.structs {
-            let real_name = self.get_full_name(&strukt.name);
-            let mut field_types = BTreeMap::new();
-            for (name, typ) in &strukt.fields {
-                let type_name = match &typ.t {
-                    typ @ Type::Module(_, _) => typ.get_unfolded_module_name(),
-                    Type::Struct(strukt_name) => self.get_full_name(strukt_name),
-                    typ => typ.to_string(),
-                };
-                field_types.insert(name.clone(), (typ.l.clone(), type_name));
+        visited.push(strukt);
+        let mut done = false;
+        for neighbor in lookup.get(strukt).unwrap() {
+            if Self::dfs(neighbor, lookup, visited, finished) {
+                done = true;
             }
-            let info = StructInfo {
-                location: strukt.location.clone(),
-                fields: field_types,
-            };
-            struct_info.insert(real_name, info);
         }
-        if !root_module {
-            self.module_stack.pop();
-        }
-        struct_info
+        finished.insert(strukt);
+        done
     }
 
     #[trace_call(always)]
-    fn find_recursive_structs(&mut self, current_module: &nodes::ModuleNode) {
-        let all_structs = self.gather_struct_info(current_module, true);
+    fn find_recursive_structs<'s>(&mut self, current_module: &'s nodes::FileNode<'src>) {
+        /*
+        Adapted version of https://en.wikipedia.org/wiki/Cycle_(graph_theory)#Algorithm
+        Key difference is that we also keep track of where we went, for better error reporting
+         */
+        let all_structs = current_module.get_all_structs();
         if all_structs.is_empty() {
             return;
         }
-        if self.flags.debug {
-            println!("[DEBUG] All Structs: {:#?}", all_structs);
-        }
-        let mut errors = Vec::new();
-        let mut queue = VecDeque::new();
-        let mut visited = Vec::new();
-
-        let first = all_structs.iter().next().unwrap();
-        queue.push_back((first.0.clone(), first.1));
-
-        while let Some((name, strukt)) = queue.pop_front() {
-            if visited.contains(&name) {
-                errors.push(TypeError::RecursiveStruct(
-                    strukt.location.clone(),
-                    name.clone(),
-                    visited.iter().map(|s| {
-                        let strukt = all_structs.get(s).unwrap();
-                        (strukt.location, s.clone())
-                    }).collect(),
-                ));
-                continue;
-            }
-            visited.push(name.clone());
-            for (_, field) in &strukt.fields {
-                if let Some(field_strukt) = all_structs.get(&field.1) {
-                    queue.push_back((field.1.clone(), field_strukt));
-                } else {
-                    // Unknown struct, handled elsewhere
+        let mut lookup: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+        for strukt in &all_structs {
+            let strukt_name = strukt.get_full_name();
+            let mut fields = BTreeSet::new();
+            for field in &strukt.fields {
+                let f_type = &field.type_def.typ;
+                if f_type.is_struct() || f_type.is_struct_array() {
+                    fields.insert(f_type.get_underlying_struct_name());
                 }
             }
+            if !lookup.contains_key(&strukt_name) {
+                lookup.insert(strukt_name, fields);
+            } else {
+                todo!()
+            }
         }
-        for error in errors {
-            self.report_error(error);
+        if self.flags.debug {
+            println!("[DEBUG] All Structs: {:#?}", all_structs);
+            println!("[DEBUG] Lookup: {:#?}", lookup);
+        }
+
+        let mut visited = Vec::new();
+        let mut finished = BTreeSet::new();
+
+        let mut cycles = vec![];
+        for strukt in lookup.keys() {
+            if Self::dfs(strukt, &lookup, &mut visited, &mut finished) {
+                cycles.push(visited.clone());
+            }
+            visited.clear();
+            finished.clear();
+        }
+
+        for cycle in &cycles {
+            if self.flags.debug {
+                println!("[DEBUG] Found a cycle: {:?}", cycle);
+            }
+            debug_assert!(cycle.len() > 0);
+            let name = cycle.first().unwrap();
+            let first = all_structs.iter().find(|e|e.get_full_name() == *name).unwrap();
+            self.report_error(TypeError::RecursiveStruct(
+                first.location,
+                name.to_string(),
+                cycle.iter().map(|name| {
+                    let strukt = all_structs.iter().find(|e|e.get_full_name() == *name).unwrap();
+                    (strukt.location, name.to_string())
+                }).collect()
+            ));
         }
     }
 
     #[trace_call(always)]
-    pub fn type_check_project(&mut self, project: &mut nodes::ModuleNode) -> Result<(), String> {
+    fn warn_and_remove_unused(&self, project: &mut nodes::FileNode<'src>) {
+        let mut unused = vec![];
+        for (i, extern_node) in project.externs.iter().enumerate() {
+            let Some(func) = self.get_extern(extern_node.name) else {
+                unreachable!()
+            };
+            if !func.is_used {
+                unused.push(i);
+                eprintln!(
+                    "{}: {:?}: Unused external function {}",
+                    WARN_STR,
+                    extern_node.location,
+                    extern_node.name
+                );
+            }
+        }
+        for i in unused.iter().rev() {
+            project.externs.remove(*i);
+        }
+        for (_i, struct_node) in project.structs.iter_mut().enumerate() {
+            let Some(strukt) = self.get_struct(struct_node.name) else {
+                unreachable!()
+            };
+            unused.clear();
+            for (i, method_node) in struct_node.methods.iter().enumerate() {
+                let Some(method) = strukt.get_method(&method_node.name) else {
+                    unreachable!()
+                };
+                if !method.is_used {
+                    unused.push(i);
+                    eprintln!(
+                        "{}: {:?}: Unused method {}",
+                        WARN_STR,
+                        method_node.location,
+                        method_node.get_full_name()
+                    );
+                }
+            }
+            for i in unused.iter().rev() {
+                struct_node.methods.remove(*i);
+            }
+        }
+        unused.clear();
+        for (i, func_node) in project.functions.iter().enumerate() {
+            let Some(func) = self.get_function(func_node.name) else {
+                unreachable!()
+            };
+            if !func.is_used {
+                unused.push(i);
+                eprintln!(
+                    "{}: {:?}: Unused function {}",
+                    WARN_STR,
+                    func_node.location,
+                    func_node.get_full_name()
+                );
+            }
+        }
+        for i in unused.iter().rev() {
+            project.functions.remove(*i);
+        }
+    }
+
+    // #[trace_call(always)]
+    pub fn type_check_project<'s>(&mut self, project: &'s mut nodes::FileNode<'src>) -> Result<(), String> {
         macro_rules! perform_step {
             ($step:expr) => {
                 {
-                    debug_assert!(self.module_stack.is_empty());
                     let res = $step;
-                    debug_assert!(self.module_stack.is_empty());
                     if self.errors.len() > 0 {
                         let mut error_string = String::new();
                         for error in &self.errors {
@@ -1225,60 +1360,17 @@ impl<'flags> TypeChecker<'flags> {
                 }
             }
         }
-        let root_module = perform_step!(self.fill_lookup(project));
-        self.module_tree = Some(root_module);
+        perform_step!(self.fill_lookup(project));
+        perform_step!(self.type_check_file(project));
         perform_step!(self.find_recursive_structs(project));
-        Ok(perform_step!(self.type_check_module(project, true)))
+        perform_step!(self.warn_and_remove_unused(project));
+        Ok(())
     }
 
     #[trace_call(always)]
-    fn type_check_module(&mut self, module: &mut nodes::ModuleNode, root_module: bool) {
-        if !root_module {
-            self.module_stack.push(module.name.clone());
-            let mut import_errors = Vec::new();
-            let mut allowed_imports: Vec<Vec<(String, Location)>> = Vec::new();
-            for import in &module.imports {
-                let trace = import.trace.clone();
-                let mut module = self.module_tree.as_ref().unwrap();
-                let mut error = false;
-                for (name, location) in &trace {
-                    match module.get_sub_module(name) {
-                        None => {
-                            error = true;
-                            import_errors.push(TypeError::UnknownModule(location.clone(), name.clone()));
-                            break;
-                        }
-                        Some(m) => module = m,
-                    }
-                }
-                if !error {
-                    for imported in &allowed_imports {
-                        if imported.len() == trace.len() {
-                            let mut equal = true;
-                            for (i, (name, _)) in imported.iter().enumerate() {
-                                if name != &trace[i].0 {
-                                    equal = false;
-                                    break;
-                                }
-                            }
-                            if equal {
-                                println!("{}: {:?}: Module already imported.\n{}: {:?}: Here.", WARN_STR, trace[0].1.clone(), NOTE_STR, imported[0].1.clone());
-                                break;
-                            }
-                        }
-
-                    }
-                    allowed_imports.push(trace);
-                }
-            }
-            for error in import_errors {
-                self.report_error(error);
-            }
-        } else {
-            debug_assert!(module.imports.is_empty());
-        }
-        for module in &mut module.modules {
-            self.type_check_module(module, false);
+    fn type_check_file(&mut self, module: &mut nodes::FileNode<'src>) {
+        for global in &mut module.globals {
+            self.type_check_stmt_var_decl(global);
         }
         for extern_node in &mut module.externs {
             self.type_check_extern(extern_node);
@@ -1289,13 +1381,10 @@ impl<'flags> TypeChecker<'flags> {
         for f in &mut module.functions {
             self.type_check_function(f);
         }
-        if !root_module {
-            self.module_stack.pop();
-        }
     }
 
     #[trace_call(always)]
-    fn type_check_extern(&mut self, extern_node: &mut nodes::ExternNode) {
+    fn type_check_extern(&mut self, extern_node: &mut nodes::ExternNode<'src>) {
         for p in &mut extern_node.parameters {
             self.type_check_parameter(p);
         }
@@ -1307,7 +1396,7 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_struct(&mut self, struct_node: &mut nodes::StructNode) {
+    fn type_check_struct(&mut self, struct_node: &mut nodes::StructNode<'src>) {
         for field in &mut struct_node.fields {
             self.type_check_field(field);
         }
@@ -1317,15 +1406,14 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_field(&mut self, field: &mut nodes::FieldNode) {
+    fn type_check_field(&mut self, field: &mut nodes::FieldNode<'src>) {
         self.type_check_type_node(&mut field.type_def)
     }
 
     #[trace_call(always)]
-    fn type_check_method(&mut self, method: &mut nodes::MethodNode, struct_name: &str) {
-        let current_module = self.get_current_module();
-        debug_assert!(self.known_variables.is_empty());
-        debug_assert!(current_module.has_struct(&struct_name));
+    fn type_check_method(&mut self, method: &mut nodes::MethodNode<'src>, struct_name: &str) {
+        debug_assert!(self.known_variables.len() == 1); // Global variables
+        debug_assert!(self.has_struct(&struct_name));
         #[cfg(feature = "old_codegen")]
         debug_assert!(self.current_stack_size == 0);
 
@@ -1333,8 +1421,7 @@ impl<'flags> TypeChecker<'flags> {
             self.type_check_parameter(param);
         }
 
-        let current_module = self.get_current_module();
-        let Some(struct_info) = current_module.get_struct(&struct_name) else {
+        let Some(struct_info) = self.get_struct(&struct_name) else {
             // Lookup of structs and methods is done before ever evaluating any methods,
             // so known_structs should always contain the struct
             unreachable!()
@@ -1356,14 +1443,16 @@ impl<'flags> TypeChecker<'flags> {
             self.current_stack_size = 0;
         }
 
-        self.known_variables.clear();
+        self.type_check_type_node(&mut method.return_type);
+
+        self.known_variables.pop_back();
+        debug_assert!(self.known_variables.len() == 1); // Global variables
     }
 
     #[trace_call(always)]
-    fn type_check_function(&mut self, function: &mut nodes::FunctionNode) {
-        let current_module = self.get_current_module();
-        debug_assert!(self.known_variables.is_empty());
-        debug_assert!(current_module.has_function(&function.name));
+    fn type_check_function(&mut self, function: &mut nodes::FunctionNode<'src>) {
+        debug_assert!(self.known_variables.len() == 1); // Global variables
+        debug_assert!(self.has_function(&function.name));
         #[cfg(feature = "old_codegen")]
         debug_assert!(self.current_stack_size == 0);
 
@@ -1371,7 +1460,7 @@ impl<'flags> TypeChecker<'flags> {
             self.type_check_parameter(param);
         }
 
-        let function_info = self.get_current_module().get_function(&function.name).unwrap();
+        let function_info = self.get_function(&function.name).unwrap();
 
         // Parameters are now known variables
         let parameters = function_info.get_parameters_as_hashmap();
@@ -1384,13 +1473,15 @@ impl<'flags> TypeChecker<'flags> {
             self.current_stack_size = 0;
         }
 
-        self.known_variables.clear();
+        self.type_check_type_node(&mut function.return_type);
+
+        self.known_variables.pop_back();
+        debug_assert!(self.known_variables.len() == 1); // Global variables
     }
 
     #[trace_call(always)]
-    fn type_check_parameter(&mut self, parameter: &mut nodes::ParameterNode) {
-        self.type_check_type_node(&parameter.typ);
-        debug_assert!(parameter.typ.typ != Type::Unknown);
+    fn type_check_parameter(&mut self, parameter: &mut nodes::ParameterNode<'src>) {
+        self.type_check_type_node(&mut parameter.typ);
         #[cfg(feature = "old_codegen")]
         {
             let var_size = parameter.typ.typ.size();
@@ -1399,7 +1490,7 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_block(&mut self, block: &mut nodes::BlockNode) {
+    fn type_check_block(&mut self, block: &mut nodes::BlockNode<'src>) {
         self.add_scope(block.is_unsafe);
         for statement in &mut block.statements {
             self.type_check_statement(statement);
@@ -1408,7 +1499,7 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_statement(&mut self, statement: &mut nodes::Statement) {
+    fn type_check_statement(&mut self, statement: &mut nodes::Statement<'src>) {
         match statement {
             nodes::Statement::Block(block_node) => self.type_check_block(block_node),
             nodes::Statement::VarDecl(var_node) => self.type_check_stmt_var_decl(var_node),
@@ -1426,18 +1517,18 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_stmt_var_decl(&mut self, let_node: &mut nodes::VarDeclNode) {
+    fn type_check_stmt_var_decl(&mut self, let_node: &mut nodes::VarDeclNode<'src>) {
         match self.get_variable_in_current_scope(&let_node.name) {
             Some(var) => {
                 self.report_error(TypeError::Redeclaration(
                     "Variable",
                     let_node.location,
-                    let_node.name.clone(),
+                    let_node.name,
                     var.location,
                 ));
             }
             None => {
-                self.type_check_type_node(&let_node.typ);
+                self.type_check_type_node(&mut let_node.typ);
                 #[cfg(feature = "old_codegen")]
                 {
                     let var_size = let_node.typ.typ.size();
@@ -1445,25 +1536,30 @@ impl<'flags> TypeChecker<'flags> {
                 }
 
                 let var = Variable {
-                    name: let_node.name.clone(),
+                    name: let_node.name,
                     location: let_node.location,
                     typ: let_node.typ.typ.clone(),
                     mut_state: MutState::mutable(let_node.is_mutable, let_node.typ.typ.is_mutable_ref()),
                 };
-                let expected_type = &let_node.typ.typ;
 
+                if let_node.is_unsafe {
+                    self.unsafe_depth += 1;
+                }
                 // Need to use `matches` because `==` treats `Type::Any` as a wildcard for reference types
-                if matches!(*expected_type, Type::Any) && self.unsafe_depth == 0 {
+                if matches!(var.typ, Type::Any) && self.unsafe_depth == 0 {
                     // Unsafe to use `Any` outside of unsafe block
                     self.report_error(TypeError::UnsafeAny(let_node.location));
                 }
 
-                let needs_mutable = expected_type.is_mutable_ref();
+                let needs_mutable = var.typ.is_mutable_ref();
                 let mut_state = if needs_mutable { MutState::MutRef } else { MutState::Immut };
                 let expr_type = self.type_check_expression(&mut let_node.expression, mut_state);
 
+                if let_node.is_unsafe {
+                    self.unsafe_depth -= 1;
+                }
                 let current_scope = self.get_current_scope();
-                if current_scope.insert(let_node.name.clone(), var).is_some() {
+                if current_scope.insert(let_node.name, var.clone()).is_some() {
                     internal_panic!(
                         "Variable `{}` already exists in current scope",
                         let_node.name
@@ -1476,12 +1572,12 @@ impl<'flags> TypeChecker<'flags> {
                 if expr_type == Type::Unknown {
                     // Couldnt determine type of expression
                     // We need to `infer` it
-                    let _res = self.type_check_expression_with_type(&mut let_node.expression, expected_type);
+                    let _res = self.type_check_expression_with_type(&mut let_node.expression, &var.typ);
                 } else {
-                    if expr_type != *expected_type {
+                    if expr_type != var.typ {
                         self.report_error(TypeError::TypeMismatch(
                             let_node.expression.get_loc(),
-                            expected_type.clone(),
+                            var.typ.clone(),
                             expr_type,
                         ));
                     }
@@ -1491,7 +1587,7 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_stmt_if(&mut self, if_node: &mut nodes::IfNode) {
+    fn type_check_stmt_if(&mut self, if_node: &mut nodes::IfNode<'src>) {
         let Ok(cond_type) = self.type_check_expression(&mut if_node.condition, MutState::Immut) else {
             return;
         };
@@ -1509,12 +1605,12 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_stmt_return(&mut self, return_node: &mut nodes::ReturnNode) {
+    fn type_check_stmt_return(&mut self, return_node: &mut nodes::ReturnNode<'src>) {
         debug_assert!(return_node.typ == Type::Unknown);
 
         let (expected_return_type, location) = if return_node.strukt.is_none() {
             // We're returning from a normal function
-            let Some(function) = self.get_current_module().get_function(&return_node.function) else {
+            let Some(function) = self.get_function(&return_node.function) else {
                 unreachable!()
             };
             let expected_return_type = function.return_type.t.clone();
@@ -1523,7 +1619,7 @@ impl<'flags> TypeChecker<'flags> {
             (expected_return_type, location)
         } else {
             // We're returning from a method or feature
-            let Some(strukt) = self.get_current_module().get_struct(return_node.strukt.as_ref().unwrap()) else { unreachable!() };
+            let Some(strukt) = self.get_struct(return_node.strukt.as_ref().unwrap()) else { unreachable!() };
             let (mut location, mut expected_return_type) = (Location::anonymous(), Type::Unknown);
             if let Some(method) = strukt.known_methods.get(&return_node.function) {
                 expected_return_type = method.return_type.t.clone();
@@ -1586,7 +1682,7 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_stmt_while(&mut self, while_node: &mut nodes::WhileNode) {
+    fn type_check_stmt_while(&mut self, while_node: &mut nodes::WhileNode<'src>) {
         let Ok(cond_type) = self.type_check_expression(&mut while_node.condition, MutState::Immut) else {
             return;
         };
@@ -1598,6 +1694,9 @@ impl<'flags> TypeChecker<'flags> {
             ));
         }
         self.type_check_block(&mut while_node.body);
+        if let Some(ref mut step) = while_node.step {
+            let _ = self.type_check_expression(step, MutState::Immut);
+        }
     }
 
     #[trace_call(always)]
@@ -1609,9 +1708,10 @@ impl<'flags> TypeChecker<'flags> {
     #[trace_call(always)]
     fn type_check_expression(
         &mut self,
-        expression: &mut nodes::Expression,
+        expression: &mut nodes::Expression<'src>,
         mut_state: MutStateVal,
-    ) -> Result<Type, ()> {
+    ) -> Result<Type<'src>, ()> {
+        let _error_loc = expression.get_loc();
         match expression {
             nodes::Expression::Name(name_node) => {
                 self.type_check_expr_name(name_node, mut_state)
@@ -1630,15 +1730,75 @@ impl<'flags> TypeChecker<'flags> {
             nodes::Expression::ArrayLiteral(literal) => {
                 self.type_check_expr_array_literal(literal, mut_state)
             }
+            nodes::Expression::Sizeof(typ) => {
+                self.type_check_type_node(typ);
+                Ok(Type::Usize)
+            }
+            nodes::Expression::As(expr, typ) => {
+                self.type_check_type_node(typ);
+                if typ.typ == Type::Unknown {
+                    return Err(());
+                }
+                let expr_type = self.type_check_expression(expr, mut_state)?;
+                if expr_type == Type::Unknown {
+                    todo!() // Can't cast Type::Unknown to anything
+                }
+                let new_type = typ.typ.clone();
+                match (&expr_type, &new_type) {
+                    (Type::Array(_, _), _) | (_, Type::Array(_, _)) | (Type::Struct(_), _) | (_, Type::Struct(_)) => {
+                        self.report_error(TypeError::NonPrimitiveTypeCast(
+                            _error_loc,
+                            expr.get_loc(),
+                            expr.get_type(),
+                            typ.location,
+                            typ.typ.clone()
+                        ));
+                    },
+                    (Type::Ref(_, _), other) | (other, Type::Ref(_, _)) => {
+                        if *other != Type::Any && *other != Type::Usize && other.is_reference() {
+                            self.report_error(TypeError::NonPrimitiveTypeCast(
+                                _error_loc,
+                                expr.get_loc(),
+                                expr.get_type(),
+                                typ.location,
+                                typ.typ.clone()
+                            ))
+                        }
+                        if self.unsafe_depth == 0 {
+                            self.report_error(TypeError::UnsafePointerCast(
+                                _error_loc,
+                            ))
+                        }
+                    },
+                    (Type::Usize, Type::Any) | (Type::Any, Type::Usize) => {
+                        if self.unsafe_depth == 0 {
+                            self.report_error(TypeError::UnsafePointerCast(
+                                _error_loc,
+                            ))
+                        }
+                    }
+                    (Type::Any, _) | (_, Type::Any) => todo!(), // Unsafe Operation
+                    (e, n) => {
+                        debug_assert!(e.is_primitive());
+                        debug_assert!(n.is_primitive());
+                        let from_size = e.get_bit_size();
+                        let to_size = n.get_bit_size();
+                        if to_size < from_size {
+                            eprintln!("{}: {:?}: Lossy type cast: Target type ({}) is smaller than original type ({}).", WARN_STR, _error_loc, n, e);
+                        }
+                    }
+                }
+                Ok(new_type)
+            }
         }
     }
 
     #[trace_call(always)]
     fn type_check_expression_with_type(
         &mut self,
-        expression: &mut nodes::Expression,
-        typ: &Type,
-    ) -> Result<Type, ()> {
+        expression: &mut nodes::Expression<'src>,
+        typ: &Type<'src>,
+    ) -> Result<Type<'src>, ()> {
         match expression {
             nodes::Expression::Binary(binary_node) => {
                 if binary_node.operation == Operation::IndexedAccess {
@@ -1651,7 +1811,26 @@ impl<'flags> TypeChecker<'flags> {
                 }
             }
             nodes::Expression::Literal(lit_node) => {
-                if lit_node.typ != Type::Unknown && lit_node.typ != *typ {
+                if lit_node.typ == Type::Blank {
+                    if typ.is_integer() || typ.is_float() {
+                        lit_node.value = "0";
+                        eprintln!(
+                            "{}: {:?}: Using `{}` to initialize value of type {}. Please use `0` instead.",
+                            WARN_STR,
+                            lit_node.location,
+                            KEYWORD_BLANK,
+                            typ
+                        );
+                    } else if typ.is_reference() {
+                        self.report_error(TypeError::BlankReference(
+                            lit_node.location,
+                            typ.clone()
+                        ));
+                        return Err(());
+                    }
+                    lit_node.typ = typ.clone();
+                    Ok(typ.clone())
+                } else if lit_node.typ != Type::Unknown && lit_node.typ != *typ {
                     self.report_error(TypeError::TypeMismatch(
                         lit_node.location,
                         typ.clone(),
@@ -1662,28 +1841,28 @@ impl<'flags> TypeChecker<'flags> {
                     self.report_error(TypeError::UnexpectedLiteral(
                         "reference",
                         lit_node.location,
-                        lit_node.value.clone(),
+                        lit_node.value,
                     ));
                     Err(())
                 } else if let Type::Array(_, _) = typ {
                     self.report_error(TypeError::UnexpectedLiteral(
                         "array",
                         lit_node.location,
-                        lit_node.value.clone(),
+                        lit_node.value,
                     ));
                     Err(())
                 } else if let Type::Struct(_) = typ {
                     self.report_error(TypeError::UnexpectedLiteral(
                         "struct instance",
                         lit_node.location,
-                        lit_node.value.clone(),
+                        lit_node.value,
                     ));
                     Err(())
                 } else if *typ == Type::Bool {
                     self.report_error(TypeError::UnexpectedLiteral(
                         "boolean",
                         lit_node.location,
-                        lit_node.value.clone(),
+                        lit_node.value,
                     ));
                     Err(())
                 } else {
@@ -1692,7 +1871,9 @@ impl<'flags> TypeChecker<'flags> {
                 }
             }
             nodes::Expression::Name(name_node) => {
-                debug_assert!(name_node.typ != Type::Unknown);
+                if name_node.typ == Type::Unknown {
+                    return Err(());
+                }
                 if name_node.typ != *typ {
                     self.report_error(TypeError::TypeMismatch(
                         name_node.location,
@@ -1710,7 +1891,9 @@ impl<'flags> TypeChecker<'flags> {
                         let expr_type =
                             self.type_check_expression_with_type(&mut unary_node.expression, typ)?;
                         debug_assert!(expr_type != Type::Unknown);
-                        if expr_type != Type::I32 && expr_type != Type::I64 {
+                        if expr_type != Type::I8 && expr_type != Type::I16
+                        && expr_type != Type::I32 && expr_type != Type::I64
+                        && expr_type != Type::F32 && expr_type != Type::F64 {
                             self.report_error(TypeError::NegationTypeMismatch(
                                 unary_node.location,
                                 typ.clone(),
@@ -1736,7 +1919,9 @@ impl<'flags> TypeChecker<'flags> {
                         let typ = typ.as_ref();
                         let expr_type =
                             self.type_check_expression_with_type(&mut unary_node.expression, typ)?;
-                        debug_assert!(expr_type != Type::Unknown);
+                        if expr_type == Type::Unknown {
+                            return Err(())
+                        }
                         if expr_type != *typ {
                             self.report_error(TypeError::TypeMismatch(
                                 unary_node.location,
@@ -1766,6 +1951,13 @@ impl<'flags> TypeChecker<'flags> {
                             unary_node.typ = Type::Bool;
                             Ok(Type::Bool)
                         }
+                    }
+                    Operation::Dereference => {
+                        let expr_type =
+                            self.type_check_expression_with_type(&mut unary_node.expression, &Type::Ref(Box::new(typ.clone()), true))?;
+                        debug_assert!(matches!(expr_type, Type::Ref(..)));
+                        unary_node.typ = typ.clone();
+                        Ok(typ.clone())
                     }
                     _ => internal_panic!(
                         "type_check_expression_with_type for {:?} is not implemented yet!",
@@ -1813,9 +2005,9 @@ impl<'flags> TypeChecker<'flags> {
     #[trace_call(always)]
     fn type_check_expr_indexed_access_with_type(
         &mut self,
-        indexed_access: &mut nodes::Expression,
-        typ: &Type,
-    ) -> Result<Type, ()> {
+        indexed_access: &mut nodes::Expression<'src>,
+        typ: &Type<'src>,
+    ) -> Result<Type<'src>, ()> {
         match indexed_access {
             nodes::Expression::Binary(indexed_access) => {
                 // LHS can be anything (Expression::Binary, etc), so we call this function again
@@ -1833,7 +2025,7 @@ impl<'flags> TypeChecker<'flags> {
                 let Some(var) = self.get_variable(&name_node.name) else {
                     self.report_error(TypeError::UndeclaredVariable(
                         name_node.location,
-                        name_node.name.clone(),
+                        name_node.name,
                     ));
                     return Err(());
                 };
@@ -1865,9 +2057,9 @@ impl<'flags> TypeChecker<'flags> {
     #[trace_call(always)]
     fn type_check_expr_name(
         &mut self,
-        name_node: &mut nodes::NameNode,
+        name_node: &mut nodes::NameNode<'src>,
         mut_state: MutStateVal,
-    ) -> Result<Type, ()> {
+    ) -> Result<Type<'src>, ()> {
         let var = self.get_variable(&name_node.name);
         match var {
             Some(var) => {
@@ -1877,7 +2069,7 @@ impl<'flags> TypeChecker<'flags> {
                     // (it still might be MutVar, but in this case that doesn't matter)
                     self.report_error(TypeError::ImmutableModification(
                         name_node.location,
-                        name_node.name.clone(),
+                        name_node.name,
                         var.location,
                     ));
                     return Err(());
@@ -1888,7 +2080,7 @@ impl<'flags> TypeChecker<'flags> {
             None => {
                 self.report_error(TypeError::UndeclaredVariable(
                     name_node.location,
-                    name_node.name.clone(),
+                    name_node.name,
                 ));
                 Err(())
             }
@@ -1896,7 +2088,7 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_expr_unary(&mut self, unary_expr: &mut nodes::UnaryNode, mut_state: MutStateVal) -> Result<Type, ()> {
+    fn type_check_expr_unary(&mut self, unary_expr: &mut nodes::UnaryNode<'src>, mut_state: MutStateVal) -> Result<Type<'src>, ()> {
         match unary_expr.operation {
             Operation::Negate => {
                 let expr_type = self.type_check_expression(&mut unary_expr.expression, MutState::Immut)?;
@@ -1947,6 +2139,9 @@ impl<'flags> TypeChecker<'flags> {
                         unary_expr.typ = *t.clone();
                         Ok(*t.clone())
                     }
+                    Type::Any => {
+                        Ok(Type::Unknown)
+                    }
                     Type::Unknown => {
                         // Only case where a type is unknown is integer literals
                         // We can't dereference an integer literal
@@ -1990,13 +2185,12 @@ impl<'flags> TypeChecker<'flags> {
     #[trace_call(always)]
     fn type_check_expr_binary(
         &mut self,
-        binary_expr: &mut nodes::BinaryNode,
+        binary_expr: &mut nodes::BinaryNode<'src>,
         mut_state: MutStateVal,
-    ) -> Result<Type, ()> {
+    ) -> Result<Type<'src>, ()> {
         match binary_expr.operation {
             Operation::MemberAccess => self.type_check_expr_member_access(binary_expr, mut_state),
             Operation::IndexedAccess => self.type_check_expr_indexed_access(binary_expr, mut_state),
-            Operation::ModuleAccess => self.type_check_expr_module_access(binary_expr, &mut vec![], mut_state),
             Operation::Assign => self.type_check_expr_assign(binary_expr),
             _ if binary_expr.is_comparison() => self.type_check_expr_binary_comparison(binary_expr),
             _ if binary_expr.is_arithmetic() => self.type_check_expr_binary_arithmetic(binary_expr),
@@ -2007,7 +2201,7 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_expr_binary_logical(&mut self, binary_expr: &mut nodes::BinaryNode) -> Result<Type, ()> {
+    fn type_check_expr_binary_logical(&mut self, binary_expr: &mut nodes::BinaryNode<'src>) -> Result<Type<'src>, ()> {
         assert!(binary_expr.is_logical());
         let lhs_type = self.type_check_expression(&mut binary_expr.lhs, MutState::Immut)?;
         let rhs_type = self.type_check_expression(&mut binary_expr.rhs, MutState::Immut)?;
@@ -2032,7 +2226,7 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_expr_binary_bitwise(&mut self, binary_expr: &mut nodes::BinaryNode) -> Result<Type, ()> {
+    fn type_check_expr_binary_bitwise(&mut self, binary_expr: &mut nodes::BinaryNode<'src>) -> Result<Type<'src>, ()> {
         assert!(binary_expr.is_bitwise());
         let lhs_type = self.type_check_expression(&mut binary_expr.lhs, MutState::Immut)?;
         let rhs_type = self.type_check_expression(&mut binary_expr.rhs, MutState::Immut)?;
@@ -2100,14 +2294,85 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_expr_binary_arithmetic(&mut self, binary_expr: &mut nodes::BinaryNode) -> Result<Type, ()> {
+    fn type_check_expr_binary_arithmetic(&mut self, binary_expr: &mut nodes::BinaryNode<'src>) -> Result<Type<'src>, ()> {
         assert!(binary_expr.is_arithmetic());
         let lhs_type = self.type_check_expression(&mut binary_expr.lhs, MutState::Immut)?;
         let rhs_type = self.type_check_expression(&mut binary_expr.rhs, MutState::Immut)?;
         match (&lhs_type, &rhs_type) {
+            (Type::Ref(lhs_t, _), Type::Ref(rhs_t, _)) => {
+                if lhs_t != rhs_t {
+                    self.report_error(TypeError::BinaryTypeMismatch(
+                        binary_expr.location,
+                        binary_expr.operation.clone(),
+                        binary_expr.lhs.get_loc(),
+                        lhs_type.clone(),
+                        binary_expr.rhs.get_loc(),
+                        rhs_type.clone(),
+                    ));
+                    return Err(())
+                }
+                if self.unsafe_depth == 0 {
+                    self.report_error(TypeError::UnsafePointerArithmetics(
+                        binary_expr.location
+                    ));
+                    return Err(());
+                }
+                if binary_expr.operation != Operation::Add && binary_expr.operation != Operation::Sub {
+                    self.report_error(TypeError::InvalidPointerArithmetics(
+                        binary_expr.location,
+                        binary_expr.operation.clone()
+                    ));
+                    return Err(());
+                }
+                binary_expr.typ = Type::Usize;
+                Ok(Type::Usize)
+            }
+            (typ @ Type::Ref(..), other @ Type::Usize) | (typ @ Type::Ref(..), other @ Type::Unknown) => {
+                if *other == Type::Unknown {
+                    self.type_check_expression_with_type(&mut binary_expr.rhs, &Type::Usize)?;
+                }
+                let other = binary_expr.rhs.get_type();
+                debug_assert!(other == Type::Usize);
+                if self.unsafe_depth == 0 {
+                    self.report_error(TypeError::UnsafePointerArithmetics(
+                        binary_expr.location
+                    ));
+                    return Err(());
+                }
+                if binary_expr.operation != Operation::Add && binary_expr.operation != Operation::Sub {
+                    self.report_error(TypeError::InvalidPointerArithmetics(
+                        binary_expr.location,
+                        binary_expr.operation.clone()
+                    ));
+                    return Err(());
+                }
+                binary_expr.typ = typ.clone();
+                Ok(typ.clone())
+            }
+            (other @ Type::Usize, typ @ Type::Ref(..)) | (other @ Type::Unknown, typ @ Type::Ref(..)) => {
+                if *other == Type::Unknown {
+                    self.type_check_expression_with_type(&mut binary_expr.lhs, &Type::Usize)?;
+                }
+                let other = binary_expr.lhs.get_type();
+                debug_assert!(other == Type::Usize);
+                if self.unsafe_depth == 0 {
+                    self.report_error(TypeError::UnsafePointerArithmetics(
+                        binary_expr.location
+                    ));
+                    return Err(());
+                }
+                if binary_expr.operation != Operation::Add && binary_expr.operation != Operation::Sub {
+                    self.report_error(TypeError::InvalidPointerArithmetics(
+                        binary_expr.location,
+                        binary_expr.operation.clone()
+                    ));
+                    return Err(());
+                }
+                binary_expr.typ = typ.clone();
+                Ok(typ.clone())
+            }
             (Type::Struct(..), _) | (_, Type::Struct(..))
             | (Type::Array(..), _) | (_, Type::Array(..))
-            | (Type::Ref(..), _) | (_, Type::Ref(..))
             | (Type::Bool, _) | (_, Type::Bool) => {
                 // NOTE: Modify this once more features (ahem, operator overload) exist
                 self.report_error(TypeError::BinaryTypeMismatch(
@@ -2152,7 +2417,7 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_expr_binary_comparison(&mut self, binary_expr: &mut nodes::BinaryNode) -> Result<Type, ()> {
+    fn type_check_expr_binary_comparison(&mut self, binary_expr: &mut nodes::BinaryNode<'src>) -> Result<Type<'src>, ()> {
         assert!(binary_expr.is_comparison());
         let lhs_type = self.type_check_expression(&mut binary_expr.lhs, MutState::Immut)?;
         let rhs_type = self.type_check_expression(&mut binary_expr.rhs, MutState::Immut)?;
@@ -2209,7 +2474,7 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_expr_assign(&mut self, assign_expr: &mut nodes::BinaryNode) -> Result<Type, ()> {
+    fn type_check_expr_assign(&mut self, assign_expr: &mut nodes::BinaryNode<'src>) -> Result<Type<'src>, ()> {
         if !assign_expr.lhs.is_lvalue() {
             self.report_error(TypeError::InvalidLValue(assign_expr.lhs.get_loc()));
             return Err(());
@@ -2239,9 +2504,9 @@ impl<'flags> TypeChecker<'flags> {
     #[trace_call(always)]
     fn type_check_expr_member_access(
         &mut self,
-        binary_expr: &mut nodes::BinaryNode,
+        binary_expr: &mut nodes::BinaryNode<'src>,
         mut_state: MutStateVal,
-    ) -> Result<Type, ()> {
+    ) -> Result<Type<'src>, ()> {
         let lhs_type = self.type_check_expression(&mut binary_expr.lhs, mut_state)?;
         let (is_ref, strukt) = match &lhs_type {
             Type::Ref(orig_type, _) => {
@@ -2249,7 +2514,7 @@ impl<'flags> TypeChecker<'flags> {
                     self.report_error(TypeError::DotOnNonStruct(binary_expr.lhs.get_loc()));
                     return Err(());
                 };
-                let Some(strukt) = self.get_current_module().get_struct(struct_name) else {
+                let Some(strukt) = self.get_struct(struct_name) else {
                     self.report_error(TypeError::UnknownType(
                         binary_expr.lhs.get_loc(),
                         (**orig_type).clone()
@@ -2259,36 +2524,10 @@ impl<'flags> TypeChecker<'flags> {
                 (true, strukt)
             }
             ref struct_type @ Type::Struct(ref struct_name) => {
-                let Some(strukt) = self.get_current_module().get_struct(struct_name) else {
+                let Some(strukt) = self.get_struct(struct_name) else {
                     self.report_error(TypeError::UnknownType(
                         binary_expr.lhs.get_loc(),
                         (*struct_type).clone()
-                    ));
-                    return Err(());
-                };
-                (false, strukt)
-            }
-            mut orig_type @ Type::Module(_, _) => {
-                let mut module_stack = vec![];
-                while let Type::Module(module, sub_type) = orig_type {
-                    module_stack.push(module.clone());
-                    orig_type = sub_type.as_ref();
-                }
-                let Type::Struct(ref struct_name) = orig_type else {
-                    self.report_error(TypeError::DotOnNonStruct(binary_expr.lhs.get_loc()));
-                    return Err(());
-                };
-                let Ok(module) = self.rebuild_module_from_stack(&binary_expr.lhs.get_loc(), &module_stack) else {
-                    self.report_error(TypeError::UnknownModule(
-                        binary_expr.lhs.get_loc(),
-                        module_stack.join("::")
-                    ));
-                    return Err(());
-                };
-                let Some(strukt) = module.get_struct(struct_name) else {
-                    self.report_error(TypeError::UnknownType(
-                        binary_expr.lhs.get_loc(),
-                        (*orig_type).clone()
                     ));
                     return Err(());
                 };
@@ -2309,9 +2548,9 @@ impl<'flags> TypeChecker<'flags> {
                 } else {
                     self.report_error(TypeError::UnknownField(
                         name_node.location,
-                        name_node.name.clone(),
+                        name_node.name,
                         strukt.location,
-                        strukt.name.clone(),
+                        strukt.name,
                     ));
                     Err(())
                 }
@@ -2320,17 +2559,24 @@ impl<'flags> TypeChecker<'flags> {
                 let Some(method) = strukt.get_method(&call_node.function_name) else {
                     self.report_error(TypeError::UnknownMethod(
                         call_node.location,
-                        call_node.function_name.clone(),
+                        call_node.function_name,
                         strukt.location,
-                        strukt.name.clone(),
+                        strukt.name,
                     ));
                     return Err(());
                 };
+                if let Some(strukt) = self.get_struct_mut(strukt.name) {
+                    let Some(method) = strukt.get_method_mut(call_node.function_name) else {
+                        unreachable!()
+                    };
+                    method.is_used = true;
+                }
+
                 if method.is_unsafe && self.unsafe_depth == 0 {
                     self.report_error(TypeError::UnsafeCallInSafeContext(
                         "Method",
                         call_node.location,
-                        call_node.function_name.clone(),
+                        call_node.function_name,
                         method.location,
                     ));
                     return Err(());
@@ -2378,158 +2624,11 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_expr_module_access(
-        &mut self,
-        binary_expr: &mut nodes::BinaryNode,
-        module_stack: &mut Vec<String>,
-        mut_state: MutStateVal,
-    ) -> Result<Type, ()> {
-        // FIXME: Module Access sucks right now
-        // If we define `Foo` in `bar`, and a function `bar::bez` returns `Foo`,
-        // If we call `bar::bez` in `main`, it returns `Foo`, which can't be assigned to `bar::Foo`
-        // (`Foo` is not the same as `bar::Foo`, and not defined in `main`)
-        //
-        // Also, if we define `Foo` in `bar` and a function returns `&Foo`,
-        // If we call that function in `main`, it returns `bar::&Foo`
-        // Which is also an error in our current implementation
-
-        /*
-        Example Layout
-                    mod(5)
-                    /  \
-                mod(3)  bez(4)
-                /   |
-            foo(1) bar(2)
-
-                    mod(6)
-                    /  \
-                bel(7)  buz(8)
-        In the code below the corresponding numbers are where we are in the match statement
-         */
-
-        match &mut *binary_expr.lhs {
-            // 5 - LHS is 3 and a BinaryNode
-            nodes::Expression::Binary(ref mut binary_node) => {
-                if binary_node.operation != Operation::ModuleAccess {
-                    self.report_error(TypeError::InvalidModuleAccess(
-                        binary_node.lhs.get_loc(),
-                        "Non-`::` Binary Operation on LHS"
-                    ));
-                    return Err(());
-                }
-                let lhs_type = self.type_check_expr_module_access(binary_node, module_stack, mut_state)?;
-                let mut lhs_type_copy = lhs_type.clone();
-                let prev_module_stack = module_stack.clone();
-                while let Type::Module(sub_module, sub_type) = lhs_type_copy {
-                    module_stack.push(sub_module.clone());
-                    lhs_type_copy = *sub_type;
-                }
-                let rhs_type = match &mut *binary_expr.rhs {
-                    // 5 - RHS is 4 and a FunctionCall
-                    nodes::Expression::FunctionCall(call_node) => {
-                        self.type_check_expr_module_function_call(
-                            call_node,
-                            module_stack,
-                            mut_state
-                        )?
-                    }
-                    nodes::Expression::StructLiteral(struct_node) => {
-                        self.type_check_expr_module_struct_literal(
-                            struct_node,
-                            module_stack,
-                            mut_state
-                        )?
-                    }
-                    e => {
-                        self.report_error(TypeError::InvalidModuleAccess(
-                            e.get_loc(),
-                            "Non-Function Call or Non-Struct Literal on RHS"
-                        ));
-                        return Err(());
-                    }
-                };
-                let mut rebuilt_type = rhs_type.clone();
-                for module in module_stack.iter().rev() {
-                    rebuilt_type = Type::Module(module.clone(), Box::new(rebuilt_type));
-                }
-                *module_stack = prev_module_stack;
-                binary_expr.typ = rebuilt_type.clone();
-                if rhs_type.is_primitive() {
-                    return Ok(rhs_type);
-                }
-                Ok(rebuilt_type)
-            }
-            // 3 - LHS is 1 and a NameNode
-            // 6 - LHS is 7 and a NameNode
-            nodes::Expression::Name(name_node) => {
-                let Some(module) = self.get_module(&name_node.name) else {
-                    self.report_error(TypeError::UnknownModule(
-                        name_node.location.clone(),
-                        name_node.name.clone()
-                    ));
-                    return Err(());
-                };
-                module_stack.push(name_node.name.clone());
-                let rhs_type = match &mut *binary_expr.rhs {
-                    // 3 - RHS is 2 and a NameNode
-                    nodes::Expression::Name(name_node) => {
-                        if module.get_sub_module(&name_node.name).is_none() {
-                            self.report_error(TypeError::UnknownModule(
-                                name_node.location.clone(),
-                                name_node.name.clone()
-                            ));
-                            return Err(());
-                        };
-                        name_node.typ = Type::Module(name_node.name.clone(), Box::new(Type::Unknown));
-                        name_node.typ.clone()
-                    }
-                    // 6 - RHS is 8 and a FunctionCall
-                    nodes::Expression::FunctionCall(call_node) => {
-                        self.type_check_expr_module_function_call(
-                            call_node,
-                            module_stack,
-                            mut_state
-                        )?
-                    }
-                    nodes::Expression::StructLiteral(struct_node) => {
-                        self.type_check_expr_module_struct_literal(
-                            struct_node,
-                            module_stack,
-                            mut_state
-                        )?
-                    }
-                    e => {
-                        self.report_error(TypeError::InvalidModuleAccess(
-                            e.get_loc(),
-                            "Non-Function Call, Non-Struct Literal or Non-Module on RHS"
-                        ));
-                        return Err(());
-                    }
-                };
-                module_stack.pop();
-                let typ = Type::Module(name_node.name.clone(), Box::new(rhs_type.clone()));
-                binary_expr.typ = typ.clone();
-                if rhs_type.is_primitive() {
-                    return Ok(rhs_type);
-                }
-                Ok(typ)
-            }
-            _ => {
-                self.report_error(TypeError::InvalidModuleAccess(
-                    binary_expr.lhs.get_loc(),
-                    "Non-Module or Non-`::` Binary Operation on LHS"
-                ));
-                Err(())
-            }
-        }
-    }
-
-    #[trace_call(always)]
     fn type_check_expr_indexed_access(
         &mut self,
-        binary_expr: &mut nodes::BinaryNode,
+        binary_expr: &mut nodes::BinaryNode<'src>,
         mut_state: MutStateVal,
-    ) -> Result<Type, ()> {
+    ) -> Result<Type<'src>, ()> {
         assert!(binary_expr.is_indexed_access());
         let lhs_type = self.type_check_expression(&mut binary_expr.lhs, mut_state)?;
         let rhs_type = self.type_check_expression(&mut binary_expr.rhs, MutState::Immut)?;
@@ -2557,132 +2656,56 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn rebuild_module_from_stack(&self, location: &Location, module_stack: &Vec<String>) -> Result<&Module, TypeError> {
-        let Some(mut module) = self.get_module(&module_stack[0]) else {
-            return Err(TypeError::UnknownModule(
-                location.clone(),
-                module_stack[0].clone()
-            ));
-        };
-        for module_name in module_stack.iter().skip(1) {
-            if let Some(sub_module) = module.get_sub_module(module_name) {
-                module = sub_module;
-            } else {
-                return Err(TypeError::UnknownModule(
-                    location.clone(),
-                    module_name.clone()
-                ));
-            }
-        }
-        Ok(module)
-    }
-
-    #[trace_call(always)]
-    fn type_check_expr_module_function_call(
-        &mut self,
-        call_node: &mut nodes::CallNode,
-        module_stack: &mut Vec<String>,
-        mut_state: MutStateVal,
-    ) -> Result<Type, ()> {
-        if mut_state != MutState::Immut {
-            self.report_error(TypeError::CantMutateTemporary(call_node.location.clone()));
-        }
-        let Ok(module) = self.rebuild_module_from_stack(&call_node.location, module_stack) else {
-            self.report_error(TypeError::UnknownModule(
-                call_node.location.clone(),
-                module_stack.join("::")
-            ));
-            return Err(());
-        };
-        if let Some(external) = module.get_extern(&call_node.function_name) {
-            let result = check_function!(self, call_node, external, "External Function")?;
-            call_node.typ = result.clone();
-            Ok(result)
-        } else if let Some(function) = module.get_function(&call_node.function_name) {
-            let result = check_function!(self, call_node, function, "Function")?;
-            call_node.typ = result.clone();
-            Ok(result)
-        } else {
-            self.report_error(TypeError::UndeclaredFunction(
-                call_node.location.clone(),
-                call_node.function_name.clone()
-            ));
+    fn type_check_expr_literal(&mut self, literal: &mut nodes::LiteralNode<'src>) -> Result<Type<'src>, ()> {
+        // Need to use `matches` because `==` treats `Type::Any` as a wildcard for reference types
+        if matches!(literal.typ, Type::Any) && self.unsafe_depth == 0 {
+            debug_assert!(literal.value == KEYWORD_NULL);
+            // Unsafe to use `null` outside of unsafe block
+            self.report_error(TypeError::UnsafeNull(literal.location));
             Err(())
+        } else if literal.typ == Type::Blank {
+            Ok(Type::Unknown)
+        } else {
+            Ok(literal.typ.clone())
         }
-    }
-
-    #[trace_call(always)]
-    fn type_check_expr_module_struct_literal(
-        &mut self,
-        struct_node: &mut nodes::StructLiteralNode,
-        module_stack: &mut Vec<String>,
-        mut_state: MutStateVal,
-    ) -> Result<Type, ()> {
-        if mut_state != MutState::Immut {
-            self.report_error(TypeError::CantMutateTemporary(struct_node.location.clone()));
-        }
-        let Ok(module) = self.rebuild_module_from_stack(&struct_node.location, module_stack) else {
-            self.report_error(TypeError::UnknownModule(
-                struct_node.location.clone(),
-                module_stack.join("::")
-            ));
-            return Err(());
-        };
-        let Some(strukt) = module.get_struct(&struct_node.struct_name) else {
-            self.report_error(TypeError::UnknownType(
-                struct_node.location.clone(),
-                Type::Module(module.name.clone(), Box::new(Type::Struct(struct_node.struct_name.clone()))),
-            ));
-            return Err(());
-        };
-        let strukt = strukt.clone();
-        self.type_check_struct_literal_fields(struct_node, &strukt)?;
-        struct_node.typ = Type::Struct(struct_node.struct_name.clone());
-        Ok(struct_node.typ.clone())
-    }
-
-    #[trace_call(always)]
-    fn type_check_expr_literal(&mut self, literal: &mut nodes::LiteralNode) -> Result<Type, ()> {
-        Ok(literal.typ.clone())
     }
 
     #[trace_call(always)]
     fn type_check_expr_struct_literal(
         &mut self,
-        literal: &mut nodes::StructLiteralNode,
+        literal: &mut nodes::StructLiteralNode<'src>,
         mut_state: MutStateVal,
-    ) -> Result<Type, ()> {
+    ) -> Result<Type<'src>, ()> {
         if mut_state != MutState::Immut {
             self.report_error(TypeError::CantMutateTemporary(literal.location));
         }
-        let current_module = self.get_current_module();
-        let Some(strukt) = current_module.get_struct(&literal.struct_name) else {
+        let Some(strukt) = self.get_struct(&literal.struct_name) else {
             self.report_error(TypeError::UnknownType(
                 literal.location,
-                Type::Struct(literal.struct_name.clone()),
+                Type::Struct(literal.struct_name),
             ));
             return Err(());
         };
         let strukt = strukt.clone();
         self.type_check_struct_literal_fields(literal, &strukt)?;
-        literal.typ = Type::Struct(literal.struct_name.clone());
+        literal.typ = Type::Struct(literal.struct_name);
         Ok(literal.typ.clone())
     }
 
     #[trace_call(always)]
     fn type_check_struct_literal_fields(
         &mut self,
-        literal: &mut nodes::StructLiteralNode,
-        strukt: &Struct,
+        literal: &mut nodes::StructLiteralNode<'src>,
+        strukt: &Struct<'src>,
     ) -> Result<(), ()> {
         let mut fields = HashMap::new();
         for field in &mut literal.fields {
             let Some(field_info) = strukt.get_field(&field.0) else {
                 self.report_error(TypeError::UnknownField(
                     field.1.get_loc(),
-                    field.0.clone(),
+                    field.0,
                     strukt.location,
-                    strukt.name.clone(),
+                    strukt.name,
                 ));
                 continue;
             };
@@ -2702,16 +2725,16 @@ impl<'flags> TypeChecker<'flags> {
                     expr_type,
                 ));
             }
-            fields.insert(field.0.clone(), field_type);
+            fields.insert(field.0, field_type);
         }
         let mut errors = vec![];
         for field in strukt.fields.iter() {
             if !fields.contains_key(field.0) {
                 errors.push(TypeError::MissingField(
                     literal.location,
-                    field.0.clone(),
+                    field.0,
                     strukt.location,
-                    literal.struct_name.clone(),
+                    literal.struct_name,
                 ));
             }
         }
@@ -2724,9 +2747,9 @@ impl<'flags> TypeChecker<'flags> {
     #[trace_call(always)]
     fn type_check_expr_array_literal(
         &mut self,
-        literal: &mut nodes::ArrayLiteralNode,
+        literal: &mut nodes::ArrayLiteralNode<'src>,
         mut_state: MutStateVal,
-    ) -> Result<Type, ()> {
+    ) -> Result<Type<'src>, ()> {
         if mut_state != MutState::Immut {
             self.report_error(TypeError::CantMutateTemporary(
                 literal.location
@@ -2795,45 +2818,46 @@ impl<'flags> TypeChecker<'flags> {
     #[trace_call(always)]
     fn type_check_expr_function_call(
         &mut self,
-        func_call: &mut nodes::CallNode,
+        func_call: &mut nodes::CallNode<'src>,
         mut_state: MutStateVal,
-    ) -> Result<Type, ()> {
-        if mut_state != MutState::Immut {
+    ) -> Result<Type<'src>, ()> {
+        if mut_state == MutState::MutVar {
             self.report_error(TypeError::CantMutateTemporary(
                 func_call.location,
             ));
         }
-        let current_module = self.get_current_module();
-        let function = if func_call.is_extern {
-            let Some(external) = current_module.get_extern(&func_call.function_name) else {
-                // is_builtin -> Parser says this is an external function
-                // known_externs -> Filled by type_check_file, so it should contain all externs
-                // This is unreachable, or the parser is broken
-                unreachable!()
-            };
-            external
+        if let Some(e) = self.get_extern_mut(&func_call.function_name) {
+            e.is_used = true;
+        } else if let Some(f) = self.get_function_mut(&func_call.function_name) {
+            f.is_used = true;
         } else {
-            let Some(function) = current_module.get_function(&func_call.function_name) else {
-                self.report_error(TypeError::UndeclaredFunction(
-                    func_call.location,
-                    func_call.function_name.clone(),
-                ));
-                return Err(());
-            };
-            function
-        };
+            self.report_error(TypeError::UndeclaredFunction(
+                func_call.location,
+                func_call.function_name
+            ));
+            return Err(());
+        }
+        let function;
+        if let Some(e) = self.get_extern(&func_call.function_name) {
+            function = e;
+        } else if let Some(f) = self.get_function(&func_call.function_name) {
+            function = f;
+        } else {
+            unreachable!()
+        }
+        func_call.is_extern = function.is_extern;
         if function.is_unsafe && self.unsafe_depth == 0 {
             self.report_error(TypeError::UnsafeCallInSafeContext(
                 "Function",
                 func_call.location,
-                func_call.function_name.clone(),
+                func_call.function_name,
                 function.location,
             ));
             return Err(());
         }
         let return_type = function.return_type.clone();
         if let Type::Struct(struct_name) = &return_type.t {
-            if !current_module.has_struct(struct_name) {
+            if self.get_struct(struct_name).is_none() {
                 self.report_error(TypeError::UnknownType(
                     return_type.l.clone(),
                     return_type.t.clone(),
@@ -2845,60 +2869,39 @@ impl<'flags> TypeChecker<'flags> {
     }
 
     #[trace_call(always)]
-    fn type_check_type_node(&mut self, type_node: &nodes::TypeNode) {
-        let bottom_type = type_node.typ.get_underlying_type();
-        debug_assert!(!matches!(bottom_type, Type::Ref(_, _)));
-        debug_assert!(!matches!(bottom_type, Type::Array(_, _)));
-        debug_assert!(self.module_tree.is_some());
-        if let Type::Struct(struct_name) = &bottom_type {
-            let tree = self.get_current_module();
-            if !tree.has_struct(struct_name) {
-                self.report_error(TypeError::UnknownType(
-                    type_node.location,
-                    bottom_type.clone(),
-                ));
+    fn type_check_type_node(&mut self, type_node: &mut nodes::TypeNode<'src>) {
+        let mut bottom_type = &mut type_node.typ;
+        let bt = bottom_type.clone();
+        match bottom_type {
+            Type::Struct(name) => {
+                if !self.has_struct(name) {
+                    self.report_error(TypeError::UnknownType(
+                        type_node.location,
+                        bottom_type.clone(),
+                    ));
+                    type_node.typ = Type::Unknown;
+                    return;
+                }
+                type_node.typ = Type::Struct(name);
+            },
+            ref mut typ @ Type::Array(..)
+            | ref mut typ @ Type::Ref(..) => {
+                let underlying = typ.get_underlying_type_ref_mut();
+                if let Type::Struct(name) = underlying {
+                    if !self.has_struct(name) {
+                        self.report_error(TypeError::UnknownType(
+                            type_node.location,
+                            bt,
+                        ));
+                        *underlying = Type::Unknown;
+                        return;
+                    }
+                    *underlying = Type::Struct(name);
+                }
+            },
+            t => {
+                debug_assert!(!t.is_compound(), "{t}");
             }
-        } else if let Type::Module(..) = &bottom_type {
-            let valid_type = self.validate_module_type(&bottom_type);
-            if !valid_type {
-                self.report_error(TypeError::UnknownType(
-                    type_node.location,
-                    bottom_type.clone(),
-                ));
-            }
         }
-    }
-
-    #[trace_call(always)]
-    fn validate_module_type(&self, module_type: &Type) -> bool {
-        // It's up to the caller to ensure that this function is only called with a Type::Module
-        debug_assert!(matches!(module_type, Type::Module(..)));
-        debug_assert!(self.module_tree.is_some());
-        let Type::Module(origin, ty) = module_type else {
-            unreachable!();
-        };
-        let module = self.module_tree.as_ref().unwrap();
-        let sub_module = module.get_sub_module(origin);
-        if sub_module.is_none() {
-            return false;
-        }
-        let mut sub_module = sub_module.unwrap();
-        let mut sub_type = ty.clone();
-        while let Type::Module(origin, ty) = *sub_type {
-            let optional_sub_module = sub_module.get_sub_module(&origin);
-            if optional_sub_module.is_none() {
-                return false;
-            }
-            sub_module = optional_sub_module.unwrap();
-            sub_type = ty;
-        }
-        let Type::Struct(struct_name) = *sub_type else {
-            return false;
-        };
-        if !sub_module.has_struct(&struct_name) {
-            return false;
-        }
-        true
-
     }
 }

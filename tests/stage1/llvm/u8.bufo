@@ -1,0 +1,28 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+let _HEX_CHAR: [char; 16] = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'];
+
+func toHex(hex: u8) {
+    // Modulo used to be srem instead of taking sign into consideration
+    let lower: u8 = hex % 16;
+    let upper: u8 = (hex / 16) % 16;
+    assert(lower < 16);
+    assert(upper < 16);
+    mut bfr: [char; 5] = blank;
+    bfr[0] = '\\';
+    bfr[1] = 'x';
+    bfr[2] = _HEX_CHAR[upper as usize];
+    bfr[3] = _HEX_CHAR[lower as usize];
+    unsafe {
+        printf("%s\n", &bfr);
+    }
+}
+
+func main() {
+    toHex(12);
+    toHex(64);
+    toHex(231);
+}

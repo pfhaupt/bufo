@@ -1,0 +1,15 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+func main() {
+    mut s: &char = "Hello, how are you?";
+    unsafe {
+        assert(strlen(s)== 19);
+    }
+    s = "I am fine, thanks for asking!";
+    unsafe {
+        assert(strlen(s) == 29);
+    }
+}

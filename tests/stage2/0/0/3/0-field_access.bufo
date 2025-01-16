@@ -1,0 +1,40 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 2
+//! COMPILER
+//! SUCCESS
+
+const true = 1 == 1;
+const i32 = @integer(32, true);
+
+const Vector = struct {
+    x: i32;
+    y: i32;
+};
+
+const v1 = Vector(i32(5), i32(13));
+const x = v1.x;
+@assert(x == i32(5));
+@assert(v1.y == i32(13));
+
+const v2 = Vector(v1.x, v1.y);
+@assert(v1 == v2);
+@assert(v1.x == v2.x);
+@assert(v1.y == v2.y);
+
+const Rect = struct {
+    v: Vector;
+};
+
+const r = Rect(v1);
+@assert(r.v == v1);
+@assert(r.v.x == x);
+@assert(r.v.y == v1.y);
+
+const Nested = struct {
+    field: Rect;
+};
+
+const n = Nested(Rect(Vector(i32(420), i32(5))));
+@assert(n.field.v.y == i32(5));
+@assert(n.field.v.x == i32(420));
+

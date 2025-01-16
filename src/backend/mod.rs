@@ -7,3 +7,4 @@ pub mod codegen;
 pub mod instr;
 #[cfg(not(feature = "old_codegen"))]
 pub mod codegen_llvm;
+pub mod comptime_eval;

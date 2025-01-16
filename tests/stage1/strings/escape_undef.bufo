@@ -1,0 +1,15 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! COMPILER
+//! FAILURE
+//! CODE: 101
+//! ERROR:
+//! Can't escape character `7`.
+
+// FIXME: It'd be cool if the compiler didn't throw an internal_panic,
+//        but I don't want to refactor the code to handle unknown escape
+//        sequences right now.
+
+func main() {
+    let s: &char = "\7";
+}

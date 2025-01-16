@@ -1,0 +1,27 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+// Tests that scoping assigns the right LLVM variables.
+// A previous bug caused `curr.b` to take the new `curr` instead of the one from outside the scope,
+// which causes segmentation faults.
+
+struct A {
+    a: i32;
+}
+
+struct B {
+    b: Any;
+}
+
+func main() {
+    let a: A = A { a: 12 };
+    let curr: B = B { b: &a };
+    if (a.a == 12) {
+        let curr: &A = curr.b;
+        assert(curr.a == 12);
+    } else {
+        assert(false);
+    }
+}

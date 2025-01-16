@@ -1,0 +1,8 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 2
+//! COMPILER
+//! SUCCESS
+
+const a = "Hello, World!\n";
+@check(a);
+

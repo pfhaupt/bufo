@@ -1,0 +1,13 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Expected `;`, found `}`
+//! Expected Expression, found `FILEMARKER_INTERNAL_USE_ONLY`
+//! Unexpected End Of File while parsing.
+
+func main() {
+    let a: i32 = 4
+}

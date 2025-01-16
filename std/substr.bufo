@@ -1,0 +1,104 @@
+import "string.bufo";
+
+comptime ORDER_LESS: u8 = 0;
+comptime ORDER_EQUAL: u8 = 1;
+comptime ORDER_GREATER: u8 = 2;
+struct SubStr {
+    start: &char;
+    len: usize;
+
+    func lexOrder(&this, other: &SubStr) -> u8 {
+        if (this.len < other.len) return ORDER_LESS;
+        if (this.len > other.len) return ORDER_GREATER;
+        let l: usize = this.len;
+        for (mut i: usize = 0; i < l; i = i + 1) {
+            let c1: char = this.getChar(i);
+            let c2: char = other.getChar(i);
+            if (c1 < c2) return ORDER_LESS;
+            if (c1 > c2) return ORDER_GREATER;
+        }
+        return ORDER_EQUAL;
+    }
+
+    func equals(&this, other: &SubStr) -> bool {
+        if (this.len != other.len) return false;
+        let l: usize = this.len;
+        for (mut i: usize = 0; i < l; i = i + 1) {
+            let c1: char = this.getChar(i);
+            let c2: char = other.getChar(i);
+            if (c1 != c2) return false;
+        }
+        return true;
+    }
+    func len(&this) -> usize {
+        return this.len;
+    }
+    func print(&this) {
+        unsafe {
+            for (mut i: usize = 0; i < this.len; i = i + 1) {
+                let a: Any = this.start;
+                let c: &char = a;
+                let p: char = *(c + i);
+                assert_with_msg(p == putchar(p), "Wrote wrong character in SubStr.print");
+            }
+        }
+    }
+    func toString(&this) -> String {
+        mut s: String = newString();
+        for (mut i: usize = 0; i < this.len; i = i + 1) {
+            s.pushChar(this.getChar(i));
+        }
+        s.pushChar('\0');
+        return s;
+    }
+    func getChar(&this, index: usize) -> char {
+        assert_with_msg(index <= this.len, "Index out of bounds for String Index.");
+        unsafe {
+            // Safety: index is in bounds.
+            return getChar(this.start, index);
+        }
+    }
+    func substring(&this, start: usize, end: usize) -> SubStr {
+        assert_with_msg(end <= this.len, "Index out of bounds for String Substring.");
+        assert_with_msg(end - start <= this.len, "Invalid length for String Substring.");
+        return newSubStr(this.start, start, end);
+    }
+    func hasSpace(&this) -> bool {
+        for (mut i: usize = 0; i < this.len; i = i + 1) {
+            if (this.getChar(i) == ' ') return true;
+        }
+        return false;
+    }
+}
+
+func newSubStrOfStrLit(orig: &char) -> SubStr {
+    unsafe {
+        return newSubStr(orig, 0, strlen(orig));
+    }
+}
+
+func newSubStr(orig: &char, start: usize, end: usize) -> SubStr {
+    unsafe {
+        return SubStr {
+            start: orig + start,
+            len: end - start,
+        };
+    }
+}
+func newSubStrOfString(orig: &String, start: usize, end: usize) -> SubStr {
+    unsafe {
+        let _bfr: Any = orig.buffer;
+        let _cbfr: &char = _bfr;
+        return SubStr {
+            start: _cbfr + start,
+            len: end - start,
+        };
+    }
+}
+func defaultSubStr() -> SubStr {
+    unsafe {
+        let s: &char = "You are not supposed to read this. Please issue a bug report.";
+        let l: usize = strlen(s);
+        return newSubStr(s, 0, l);
+    }
+}

@@ -1,0 +1,19 @@
+comptime func BUILD_A_BUILTIN(name: &char) -> SubStr {
+    unsafe {
+        return SubStr {
+            start: name,
+            len: comptimeStrlen(name)
+        };
+    }
+}
+comptime BUILTIN_INTEGER: SubStr = BUILD_A_BUILTIN("integer");
+comptime BUILTIN_FLOAT: SubStr = BUILD_A_BUILTIN("float");
+comptime BUILTIN_BOOLEAN: SubStr = BUILD_A_BUILTIN("boolean");
+comptime BUILTIN_SELF: SubStr = BUILD_A_BUILTIN("Self");
+comptime BUILTIN_ANYTYPE: SubStr = BUILD_A_BUILTIN("anytype");
+comptime BUILTIN_ANYVALUE: SubStr = BUILD_A_BUILTIN("anyvalue");
+comptime BUILTIN_NONE: SubStr = BUILD_A_BUILTIN("none");
+comptime BUILTIN_ENTRY: SubStr = BUILD_A_BUILTIN("entry");
+comptime BUILTIN_ASSERT: SubStr = BUILD_A_BUILTIN("assert");
+comptime BUILTIN_TYPEOF: SubStr = BUILD_A_BUILTIN("typeof");
+comptime BUILTIN_CHECK: SubStr = BUILD_A_BUILTIN("check");

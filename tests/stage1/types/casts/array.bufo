@@ -1,0 +1,30 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Non primitive cast from type [i32; 3] to [u8; 3].
+//! Non primitive cast from type [u8; 3] to [i16; 3].
+//! Non primitive cast from type [i16; 3] to [usize; 3].
+//! Non primitive cast from type [u8; 2] to u16.
+//! Non primitive cast from type u64 to [u8; 8].
+//! Non primitive cast from type [u8; 8] to u64.
+//! Non primitive cast from type i32 to [u8; 4].
+
+func main() {
+    let a1: [i32; 3] = [0, 1, 2];
+    let a2: [u8; 3] = a1 as [u8; 3];
+    let a3: [i16; 3] = a2 as [i16; 3];
+    let a4: [usize; 3] = a3 as [usize; 3];
+
+    let b1: [u8; 2] = [12, 34];
+    let v1: u16 = b1 as u16;
+
+    let v2: u64 = 42;
+    let b2: [u8; 8] = v2 as [u8; 8];
+    let v3: u64 = b2 as u64;
+
+    let v4: i32 = 24;
+    let b3: [u8; 4] = v4 as [u8; 4];
+}

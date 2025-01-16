@@ -1,0 +1,39 @@
+import "substr.bufo";
+import "string.bufo";
+import "frontend/nodes.bufo";
+import "frontend/lexer.bufo";
+import "frontend/parser.bufo";
+import "middleend/checker.bufo";
+
+unsafe func main() {
+    let argv: &&char = GLOBAL_GET_ARGV();
+    let argc: usize = GLOBAL_GET_ARGC();
+    if (argc < 2) unsafe {
+        fprintf(stderr, "error: Expected input file as argument.\n");
+        exit(1);
+    }
+    let _prog: &char = getArg(0);
+    let file: &char = getArg(1);
+    // TODO: Handle other arguments such as -v and -o
+    // TODO: Handle arguments in any order
+    let fileSubStr: SubStr = newSubStr(file, 0, strlen(file));
+    let string: String = readFileToString(file);
+    let sub: SubStr = newSubStrOfString(&string, 0, string.length);
+    mut lexer: Lexer = newLexer(&sub);
+    if (false) {
+        while (true) {
+            let tkn: Token = lexer.next();
+            if (tkn.kind == TOKEN_EOF) break;
+            tkn.print();
+            unsafe { printf("\n"); }
+        }
+    } else unsafe {
+        mut parser: Parser = newParser(&mut lexer);
+        mut module: ParsedModule = parser.parseProject();
+        mut checker: Checker = newChecker();
+        if (!checker.generateBytecode(&mut module)) exit(1);
+        if (!checker.verifyBytecode()) exit(1);
+        warning("technically we should codegen now :^)");
+    }
+    string.drop();
+}

@@ -1,4 +1,72 @@
 # Changelog
+## 2024-08-07
+### General
+- Flag `-o` to specify the output filepath
+### New Features
+- `null` keyword to (unsafely) set a "reference" to a nullpointer
+    - This kinda defeats the meaning of "references", that's why a refactor to implement raw pointers is planned
+- `blank` keyword to initialize a memory location with zeros
+    - Memory location can be of any type: Arrays, Structs, Integers (issues a warning), etc.
+## 2024-08-02
+### General
+- More support for floating point numbers
+### New Features
+- Type Casting
+    - Using `<expr> as <type>` we can now perform type casts.
+    - Integers are either truncated or sign-extended
+    - Struct and Array casts are non-primitive and disallowed
+    - Reference casts are possible in an `unsafe`-context, including from and to `Any`
+## 2024-07-02
+### General
+- Add Preprocessor
+    - Instead of loading files on the fly, we're now pre-processing the project and insert the content of every imported file at the given location.
+- Outsource Lexer
+    - Instead of the Lexer being part of the Parser, it's now its own thing. That allows us to re-use the Lexer for other things, like the Preprocessor.
+### Fixes
+- The compiler now uses Lifetimes and references into the original source code instead of copying Strings
+    - This should in theory speed up the compiler, because we're not heap-allocating any identifiers and such anymore
+    - As of right now, the Parser is actually slower in debug mode, but decently fast in release mode
+        - The Type Checker is faster in both modes, so something's wrong with the Parser
+        - I suspect it's because of the way we lex tokens, that's currently pretty inefficient
+### Known Issues
+- Escape Sequences in chars and string literals are currently not working, that will be fixed next
+## 2024-05-04
+### General
+- Start working on Selfhost Stage 1
+    - Getting a feel for the language, implementing a Vector of chars
+### New Features
+- Static methods
+    - The way we handle them is more than suboptimal, but that's okay for now
+- Pointer Arithmetics
+    - Using `unsafe`, we can now do things like `*(ptr + 10)`
+- Add memory functions to the prelude
+    - `malloc`, `calloc`, `realloc`, `free` are now part of the language :D
+### Fixes
+- Make modules even more stable
+    - All codegen-ed names now follow the same pattern: `<module>[.<struct>].<name>`
+- We only updated the module_path for method calls if the method had a `this`
+- Char literals now work properly
+    - We used to subtract `'0'` from the parsed char value, for whatever reason :^)
+## 2024-05-02
+### General
+- Add ROADMAP.md
+### New Features
+- Implement smarter function and type resolver
+    - Imported modules don't need to be specified using the `::` token anymore
+    - The Typechecker will first scan the current file, and then all imported modules
+### Fixes
+- Refactor the way modules work
+    - The process is now systematic and shouldn't break as easily
+    - Introduce ModuleSpecifier
+        - All expressions of the form `X::Y` are parsed into those ModuleSpecifiers, instead of a BinaryExpr using `Operation::ModuleAccess`
+        - Every Node that needs one has one (e.g. StructLiteralNode, CallNode)
+        - Is used to resolve the name for Codegen
+- Deprecate `Operation::ModuleAccess`
+    - There's no reason why it should be a binary expression instead of unfolding it when parsing
+### Known Issues
+- Typechecker finds recursive structs when there are none
+- There's currently no way to tell if a function was shadowed from another module, the Typechecker always goes first come first served
+    - An error, or at least a warning would be cool to tell the user "hey, there are multiple functions in the modules X, Y, Z with this name"
 ## 2024-03-11
 ### General
 - LLVM is now enabled by default

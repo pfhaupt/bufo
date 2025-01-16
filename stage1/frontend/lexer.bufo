@@ -1,0 +1,238 @@
+import "substr.bufo";
+import "string.bufo";
+import "util/span.bufo";
+import "frontend/token.bufo";
+
+comptime func BUILD_A_KEYWORD(s: &char) -> SubStr {
+    unsafe {
+        return SubStr {
+            start: s,
+            len: comptimeStrlen(s)
+        };
+    }
+}
+comptime KEYWORD_LET: SubStr = BUILD_A_KEYWORD("let");
+comptime KEYWORD_MUT: SubStr = BUILD_A_KEYWORD("mut");
+comptime KEYWORD_CONST: SubStr = BUILD_A_KEYWORD("const");
+comptime KEYWORD_FUNC: SubStr = BUILD_A_KEYWORD("func");
+comptime KEYWORD_STRUCT: SubStr = BUILD_A_KEYWORD("struct");
+comptime KEYWORD_ENUM: SubStr = BUILD_A_KEYWORD("enum");
+comptime KEYWORD_UNION: SubStr = BUILD_A_KEYWORD("union");
+comptime KEYWORD_RETURN: SubStr = BUILD_A_KEYWORD("return");
+comptime KEYWORD_MODULE: SubStr = BUILD_A_KEYWORD("module");
+comptime KEYWORD_IF: SubStr = BUILD_A_KEYWORD("if");
+comptime KEYWORD_ELSE: SubStr = BUILD_A_KEYWORD("else");
+struct Lexer {
+    content: SubStr;
+    ptr: usize;
+    len: usize;
+
+    func isKeyword(&mut this, word: &SubStr) -> bool {
+        return word.equals(&KEYWORD_LET)
+            || word.equals(&KEYWORD_FUNC)
+            || word.equals(&KEYWORD_MUT)
+            || word.equals(&KEYWORD_CONST)
+            || word.equals(&KEYWORD_STRUCT)
+            || word.equals(&KEYWORD_ENUM)
+            || word.equals(&KEYWORD_UNION)
+            || word.equals(&KEYWORD_RETURN)
+            || word.equals(&KEYWORD_MODULE)
+            || word.equals(&KEYWORD_IF)
+            || word.equals(&KEYWORD_ELSE);
+    }
+
+    func advance(&mut this) -> bool {
+        this.ptr = this.ptr + 1;
+        this.content = this.content.substring(1, this.content.len);
+        return this.ptr >= this.len;
+    }
+    func peek(&mut this) -> Token {
+        trace("Lexer.peek");
+        let ptr: usize = this.ptr;
+        let content: SubStr = this.content;
+        let len: usize = this.len;
+        let tkn: Token = this.__next(true);
+        this.ptr = ptr;
+        this.content = content;
+        this.len = len;
+        return tkn;
+    }
+    func next(&mut this) -> Token {
+        return this.__next(false);
+    }
+    func __next(&mut this, peek: bool) -> Token {
+        trace("Lexer.next");
+        if (this.ptr == this.len) {
+            return newTokenEOF(this.ptr);
+        }
+        mut currChar: char = this.content.getChar(0);
+        while (isWhitespace(currChar)) {
+            if (this.advance()) return newTokenEOF(this.ptr);
+            currChar = this.content.getChar(0);
+        }
+        if (isAlphabetic(currChar)) {
+            mut len: usize = 0;
+            mut tmp: SubStr = this.content;
+            while (isNumeric(tmp.getChar(0)) || isAlphabetic(tmp.getChar(0))) {
+                len = len + 1;
+                tmp = tmp.substring(1, tmp.len);
+            }
+            let word: SubStr = this.content.substring(0, len);
+            this.ptr = this.ptr + len;
+            this.content = tmp;
+            if (this.isKeyword(&word)) return newToken(&word, this.ptr - len, TOKEN_KEYWORD);
+            return newToken(&word, this.ptr - len, TOKEN_IDENT);
+        } else if (isNumeric(currChar)) {
+            mut len: usize = 0;
+            mut tmp: SubStr = this.content;
+            while (isNumeric(tmp.getChar(0))) {
+                len = len + 1;
+                tmp = newSubStr(tmp.start, 1, tmp.len);
+            }
+            let word: SubStr = this.content.substring(0, len);
+            this.ptr = this.ptr + len;
+            this.content = tmp;
+            return newToken(&word, this.ptr - len, TOKEN_NUMBER);
+        } else if (currChar == '"') {
+            this.advance();
+            mut len: usize = 0;
+            mut tmp: SubStr = this.content;
+            if (tmp.len == 0) todo_with_msg("unbalanced \"");
+            // When peeking we don't care about the precise contents of the String Literal
+            // So we don't need to heap allocate anything just now
+            if (peek) return newToken(&newSubStr("\"", 0, 1), this.ptr - 1, TOKEN_STRING_LITERAL);
+            mut s: String = newString();
+            mut c: char = tmp.getChar(0);
+            while (c != '"') {
+                mut escaped: bool = false;
+                if (c == '\\') {
+                    c = tmp.getChar(1);
+                    if (c == 'n') {
+                        s.pushChar('\n');
+                    } else unsafe {
+                        todo_with_msg("unknown escape");
+                    }
+                    escaped = true;
+                } else {
+                    s.pushChar(c);
+                }
+                mut s: usize = 1;
+                if (escaped) s = 2;
+                len = len + s;
+                tmp = tmp.substring(s, tmp.len);
+                c = tmp.getChar(0);
+            }
+            let word: SubStr = s.substring(0, s.length);
+            this.ptr = this.ptr + len;
+            this.content = tmp;
+            this.advance();
+            return newToken(&word, this.ptr - len, TOKEN_STRING_LITERAL);
+        } else if (currChar == '(') {
+            this.advance();
+            return newToken(&newSubStr("(", 0, 1), this.ptr - 1, TOKEN_PAREN_OPEN);
+        } else if (currChar == ')') {
+            this.advance();
+            return newToken(&newSubStr(")", 0, 1), this.ptr - 1, TOKEN_PAREN_CLOSE);
+        } else if (currChar == '{') {
+            this.advance();
+            return newToken(&newSubStr("{", 0, 1), this.ptr - 1, TOKEN_CURLY_OPEN);
+        } else if (currChar == '}') {
+            this.advance();
+            return newToken(&newSubStr("}", 0, 1), this.ptr - 1, TOKEN_CURLY_CLOSE);
+        } else if (currChar == '<') {
+            this.advance();
+            return newToken(&newSubStr("<", 0, 1), this.ptr - 1, TOKEN_SHARP_OPEN);
+        } else if (currChar == '>') {
+            this.advance();
+            return newToken(&newSubStr(">", 0, 1), this.ptr - 1, TOKEN_SHARP_CLOSE);
+        } else if (currChar == ';') {
+            this.advance();
+            return newToken(&newSubStr(";", 0, 1), this.ptr - 1, TOKEN_SEMI_COLON);
+        } else if (currChar == ':') {
+            this.advance();
+            return newToken(&newSubStr(":", 0, 1), this.ptr - 1, TOKEN_COLON);
+        } else if (currChar == '=') {
+            this.advance();
+            currChar = this.content.getChar(0);
+            if (currChar == '=') {
+                this.advance();
+                return newToken(&newSubStr("==", 0, 2), this.ptr - 2, TOKEN_EQUAL_DOUBLE);
+            } else {
+                return newToken(&newSubStr("=", 0, 1), this.ptr - 1, TOKEN_EQUAL_SINGLE);
+            }
+        } else if (currChar == '&') {
+            this.advance();
+            return newToken(&newSubStr("&", 0, 1), this.ptr - 1, TOKEN_AMPERSAND);
+        } else if (currChar == '_') {
+            this.advance();
+            return newToken(&newSubStr("_", 0, 1), this.ptr - 1, TOKEN_UNDERSCORE);
+        } else if (currChar == '.') {
+            this.advance();
+            return newToken(&newSubStr(".", 0, 1), this.ptr - 1, TOKEN_DOT);
+        } else if (currChar == ',') {
+            this.advance();
+            return newToken(&newSubStr(",", 0, 1), this.ptr - 1, TOKEN_COMMA);
+        } else if (currChar == '+') {
+            this.advance();
+            return newToken(&newSubStr("+", 0, 1), this.ptr - 1, TOKEN_PLUS_SINGLE);
+        } else if (currChar == '*') {
+            this.advance();
+            return newToken(&newSubStr("*", 0, 1), this.ptr - 1, TOKEN_ASTERISK_SINGLE);
+        } else if (currChar == '@') {
+            this.advance();
+            return newToken(&newSubStr("@", 0, 1), this.ptr - 1, TOKEN_AT);
+        } else if (currChar == '-') {
+            this.advance();
+            if (this.ptr < this.len && this.content.getChar(0) == '>') {
+                this.advance();
+                return newToken(&newSubStr("->", 0, 2), this.ptr - 2, TOKEN_ARROW);
+            } else {
+                return newToken(&newSubStr("-", 0, 1), this.ptr - 1, TOKEN_MINUS_SINGLE);
+            }
+        } else if (currChar == '!') {
+            this.advance();
+            if (this.ptr < this.len && this.content.getChar(0) == '=') {
+                this.advance();
+                return newToken(&newSubStr("!=", 0, 2), this.ptr - 2, TOKEN_NOT_EQUAL);
+            } else {
+                return newToken(&newSubStr("!", 0, 1), this.ptr - 1, TOKEN_BANG);
+            }
+        } else if (currChar == '/' && this.content.getChar(1) == '*') {
+            while (true) {
+                if (this.advance()) return newTokenEOF(this.ptr);
+                currChar = this.content.getChar(0);
+                let next: char = this.content.getChar(1);
+                if (currChar == '*' && next == '/') break;
+            }
+            this.advance(); // *
+            this.advance(); // /
+            return this.next();
+        } else if (currChar == '/') {
+            if (this.content.getChar(1) == '/') {
+                while (currChar != '\n') {
+                    if (this.advance()) return newTokenEOF(this.ptr);
+                    currChar = this.content.getChar(0);
+                }
+                return this.next();
+            } else {
+                this.advance();
+                return newToken(&newSubStr("/", 0, 1), this.ptr - 1, TOKEN_SLASH_SINGLE);
+            }
+        } else {
+            unsafe {
+                fprintf(stderr, "error: %llu: Unknown character `%c`.\n", this.ptr, currChar);
+                exit(1);
+            }
+        }
+        assert_with_msg(false, "Unexpected fallthrough in Lexer.next()");
+        return defaultToken();
+    }
+}
+
+func newLexer(content: &SubStr) -> Lexer {
+    return Lexer {
+        content: *content,
+        ptr: 0,
+        len: content.len
+    };
+}

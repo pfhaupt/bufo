@@ -1,0 +1,25 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+// We used to not pass `this` correctly
+// We kept passing the stack location of `this`, not the original ptr
+// This test catches that and should hopefully never fail
+
+struct A {
+    a: i32;
+
+    func a(&mut this, ctr: usize) {
+        if (ctr == 10) return;
+        this.a(ctr + 1);
+        this.a = 10;
+    }
+}
+
+func main() -> i32 {
+    mut a: A = A { a: 5 };
+    a.a(0);
+    if (a.a != 10) return 1;
+    return 0;
+}

@@ -1,0 +1,111 @@
+import "cmd.bufo";
+import "string_buf.bufo";
+
+comptime DEBUG: bool = true;
+comptime LINUX: bool = false;
+comptime func getStage0() -> &char {
+    if (LINUX) {
+        if (DEBUG) return "./target/debug/bufo";
+        else return "./target/release/bufo";
+    } else {
+        if (DEBUG) return "./target/debug/bufo.exe";
+        else return "./target/release/bufo.exe";
+    }
+}
+comptime STAGE0_PATH: &char = getStage0();
+
+let DEPENDENCIES: [&char; 13] = [
+    "./build.bufo",
+    "./std/cmd.bufo",
+    "./std/string_buf.bufo",
+    "./std/linux.bufo",
+    "./std/windows.bufo",
+    "./std/winapi/constants.bufo",
+    "./std/winapi/functions.bufo",
+    "./std/winapi/structs.bufo",
+    "./std/posix/constants.bufo",
+    "./std/posix/functions.bufo",
+    "./std/posix/structs.bufo",
+    "./std/prelude.bufo",
+    "./std/libc.bufo"
+];
+
+func buildMyself() -> bool {
+    let myName: &char = getProgramName();
+    let lastBuild: usize = getLastModified(myName);
+    mut needed: bool = false;
+    for (mut i: usize = 0; i < 13; i = i + 1) {
+        let lastSource: usize = getLastModified(DEPENDENCIES[i]);
+        if (lastSource >= lastBuild) unsafe {
+            printf("[REBUILD] File %s was changed.\n", DEPENDENCIES[i]);
+            needed = true;
+        }
+    }
+    if (needed) {
+        mut dst: String = newStringFromStrLit(myName);
+        dst.pushStr(".old");
+        {
+            // mv ./build.exe ./build.exe.old
+            if (!moveFile(myName, dst.chars())) return false;
+        }
+        {
+            // ./bufo.exe ./build.bufo
+            mut buildCmd: Cmd = newCmd();
+            buildCmd.add(STAGE0_PATH);
+            buildCmd.addMany(newCmdFromStrLit("./build.bufo").buf);
+            if (!buildCmd.runSync()) unsafe {
+                printf("[REBUILD] Recompiling myself failed, restoring old executable.\n");
+                assert(moveFile(dst.chars(), myName));
+                return false;
+            }
+        }
+        {
+            // ./build.exe <args>
+            mut newCmd: Cmd = newCmdFromStrLit(myName);
+            for (mut i: usize = 1; i < GLOBAL_GET_ARGC(); i = i + 1) {
+                let arg: &char = getArg(i);
+                newCmd.add(arg);
+            }
+            if (!newCmd.runSync()) return false;
+        }
+        // Old script can exit here, the above call to the new version handles everything else
+        unsafe { exit(0); }
+    }
+    return true;
+}
+
+func buildStage0() -> bool {
+    mut cmd: Cmd = newCmdFromStrLit("cargo build");
+    // mut cmd: Cmd = newCmdFromStrLit("cargo build --features=trace");
+    if (!DEBUG) cmd.add("--release");
+    return cmd.runSync();
+}
+
+func buildStage1() -> bool {
+    mut cmd: Cmd = newCmdFromStrLit(STAGE0_PATH);
+    cmd.addMany(newCmdFromStrLit("./stage1/bufo_s1.bufo").buf);
+    cmd.add("-v");
+    // cmd.add("--emit-llvm");
+    // cmd.add("-O3");
+    // cmd.add("-d");
+    return cmd.runSync();
+}
+
+func compileTest() -> bool {
+    let cmd: Cmd = newCmdFromStrLit("./out/bufo_s1.exe struct_init.bufo");
+    return cmd.runSync();
+}
+
+func tryLLVM() -> bool {
+    mut cmd: Cmd = newCmdFromStrLit("python llvm.py");
+    return cmd.runSync();
+}
+
+func main() -> i32 {
+    if (!tryLLVM()) return 1;
+    if (!buildMyself()) return 1;
+    if (!buildStage0()) return 1;
+    if (!buildStage1()) return 1;
+    if (!compileTest()) return 1;
+    return 0;
+}

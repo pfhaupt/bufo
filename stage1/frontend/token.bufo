@@ -1,0 +1,107 @@
+
+comptime TOKEN_EOF: usize = 0;
+comptime TOKEN_IDENT: usize = 1;
+comptime TOKEN_KEYWORD: usize = 2;
+comptime TOKEN_NUMBER: usize = 3;
+comptime TOKEN_STRING_LITERAL: usize = 4;
+comptime TOKEN_PAREN_OPEN: usize = 5;
+comptime TOKEN_PAREN_CLOSE: usize = 6;
+comptime TOKEN_CURLY_OPEN: usize = 7;
+comptime TOKEN_CURLY_CLOSE: usize = 8;
+comptime TOKEN_SHARP_OPEN: usize = 9;
+comptime TOKEN_SHARP_CLOSE: usize = 10;
+comptime TOKEN_SEMI_COLON: usize = 11;
+comptime TOKEN_COLON: usize = 12;
+comptime TOKEN_EQUAL_SINGLE: usize = 13;
+comptime TOKEN_EQUAL_DOUBLE: usize = 14;
+comptime TOKEN_AMPERSAND: usize = 15;
+comptime TOKEN_COMMA: usize = 16;
+comptime TOKEN_ARROW: usize = 17;
+comptime TOKEN_PLUS_SINGLE: usize = 18;
+comptime TOKEN_UNDERSCORE: usize = 19;
+comptime TOKEN_DOT: usize = 20;
+comptime TOKEN_AT: usize = 21;
+comptime TOKEN_MINUS_SINGLE: usize = 22;
+comptime TOKEN_ASTERISK_SINGLE: usize = 23;
+comptime TOKEN_NOT_EQUAL: usize = 24;
+comptime TOKEN_BANG: usize = 25;
+comptime TOKEN_SLASH_SINGLE: usize = 26;
+func tokenKindToString(kind: usize) -> &char {
+    if (kind == TOKEN_EOF) return "TOKEN_EOF";
+    else if (kind == TOKEN_IDENT) return "TOKEN_IDENT";
+    else if (kind == TOKEN_KEYWORD) return "TOKEN_KEYWORD";
+    else if (kind == TOKEN_NUMBER) return "TOKEN_NUMBER";
+    else if (kind == TOKEN_PAREN_OPEN) return "TOKEN_PAREN_OPEN";
+    else if (kind == TOKEN_PAREN_CLOSE) return "TOKEN_PAREN_CLOSE";
+    else if (kind == TOKEN_CURLY_OPEN) return "TOKEN_CURLY_OPEN";
+    else if (kind == TOKEN_CURLY_CLOSE) return "TOKEN_CURLY_CLOSE";
+    else if (kind == TOKEN_SHARP_OPEN) return "TOKEN_SHARP_OPEN";
+    else if (kind == TOKEN_SHARP_CLOSE) return "TOKEN_SHARP_CLOSE";
+    else if (kind == TOKEN_SEMI_COLON) return "TOKEN_SEMI_COLON";
+    else if (kind == TOKEN_COLON) return "TOKEN_COLON";
+    else if (kind == TOKEN_EQUAL_SINGLE) return "TOKEN_EQUAL_SINGLE";
+    else if (kind == TOKEN_EQUAL_DOUBLE) return "TOKEN_EQUAL_DOUBLE";
+    else if (kind == TOKEN_AMPERSAND) return "TOKEN_AMPERSAND";
+    else if (kind == TOKEN_COMMA) return "TOKEN_COMMA";
+    else if (kind == TOKEN_ARROW) return "TOKEN_ARROW";
+    else if (kind == TOKEN_PLUS_SINGLE) return "TOKEN_PLUS_SINGLE";
+    else if (kind == TOKEN_UNDERSCORE) return "TOKEN_UNDERSCORE";
+    else if (kind == TOKEN_DOT) return "TOKEN_DOT";
+    else if (kind == TOKEN_AT) return "TOKEN_AT";
+    else if (kind == TOKEN_MINUS_SINGLE) return "TOKEN_MINUS_SINGLE";
+    else if (kind == TOKEN_ASTERISK_SINGLE) return "TOKEN_ASTERISK_SINGLE";
+    else if (kind == TOKEN_NOT_EQUAL) return "TOKEN_NOT_EQUAL";
+    else if (kind == TOKEN_BANG) return "TOKEN_BANG";
+    else if (kind == TOKEN_SLASH_SINGLE) return "TOKEN_SLASH_SINGLE";
+    else unsafe {
+        printf("Please implement tokenKindToString(%llu)\n", kind);
+        exit(1);
+    }
+    return ""; // Unreachable
+}
+struct Token {
+    span: Span;
+    content: SubStr;
+    kind: usize;
+
+    func print(&this) {
+        unsafe { printf("kind=%llu, content=", this.kind); }
+        this.content.print();
+    }
+    func toString(&this) -> String {
+        return this.content.toString();
+    }
+    func getSubStr(&this) -> SubStr {
+        return this.content;
+    }
+    func getSpan(&this) -> Span {
+        return this.span;
+    }
+}
+
+func dummyToken(kind: usize) -> Token {
+    return newToken(&defaultSubStr(), 0, kind);
+}
+
+func newToken(sub: &SubStr, start: usize, kind: usize) -> Token {
+    let s: Span = newSpan(start, start + sub.len);
+    return Token {
+        content: *sub,
+        span: s,
+        kind: kind
+    };
+}
+func newTokenEOF(start: usize) -> Token {
+    return Token {
+        content: newSubStr("End Of File", 0, 11),
+        span: newSpan(start, start + 1),
+        kind: TOKEN_EOF,
+    };
+}
+func defaultToken() -> Token {
+    return Token {
+        content: defaultSubStr(),
+        span: newSpan(0, 0),
+        kind: TOKEN_EOF,
+    };
+}

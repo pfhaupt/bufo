@@ -6,28 +6,18 @@ pub struct Printer {
 }
 
 impl Printer {
-    pub fn print(ast: &nodes::ModuleNode) {
+    pub fn print(ast: &nodes::FileNode) {
         ast.print_ast(0);
     }
 }
 
 pub trait Printable {
-    fn print(&self) {
-        self.print_ast(0);
-    }
     fn print_ast(&self, indent: usize);
 }
 
-impl Printable for nodes::ModuleNode {
+impl Printable for nodes::FileNode<'_> {
     fn print_ast(&self, indent: usize) {
-        println!("{}ModuleNode", " ".repeat(indent));
-        println!("{}Name {}", " ".repeat(indent + INDENT_PER_LEVEL), self.name);
-        for import in &self.imports {
-            import.print_ast(indent + INDENT_PER_LEVEL);
-        }
-        for module in &self.modules {
-            module.print_ast(indent + INDENT_PER_LEVEL);
-        }
+        println!("{}FileNode", " ".repeat(indent));
         for ext in &self.externs {
             ext.print_ast(indent + INDENT_PER_LEVEL);
         }
@@ -40,17 +30,7 @@ impl Printable for nodes::ModuleNode {
     }
 }
 
-impl Printable for nodes::ImportNode {
-    fn print_ast(&self, indent: usize) {
-        println!("{}ImportNode", " ".repeat(indent));
-        println!("{}Module", " ".repeat(indent + INDENT_PER_LEVEL));
-        for module in &self.trace {
-            println!("{}{}", " ".repeat(indent + 2 * INDENT_PER_LEVEL), module.0);
-        }
-    }
-}
-
-impl Printable for nodes::ExternNode {
+impl Printable for nodes::ExternNode<'_> {
     fn print_ast(&self, indent: usize) {
         println!("{}ExternNode {}", " ".repeat(indent), self.name);
         println!("{}Return Type", " ".repeat(indent + INDENT_PER_LEVEL));
@@ -63,7 +43,7 @@ impl Printable for nodes::ExternNode {
     }
 }
 
-impl Printable for nodes::StructNode {
+impl Printable for nodes::StructNode<'_> {
     fn print_ast(&self, indent: usize) {
         println!("{}StructNode {}", " ".repeat(indent), self.name);
         for field in &self.fields {
@@ -75,14 +55,14 @@ impl Printable for nodes::StructNode {
     }
 }
 
-impl Printable for nodes::FieldNode {
+impl Printable for nodes::FieldNode<'_> {
     fn print_ast(&self, indent: usize) {
         println!("{}FieldNode {}", " ".repeat(indent), self.name);
         self.type_def.print_ast(indent + INDENT_PER_LEVEL);
     }
 }
 
-impl Printable for nodes::FunctionNode {
+impl Printable for nodes::FunctionNode<'_> {
     fn print_ast(&self, indent: usize) {
         println!("{}FunctionNode {}", " ".repeat(indent), self.name);
         println!("{}Return Type", " ".repeat(indent + INDENT_PER_LEVEL));
@@ -97,7 +77,7 @@ impl Printable for nodes::FunctionNode {
     }
 }
 
-impl Printable for nodes::MethodNode {
+impl Printable for nodes::MethodNode<'_> {
     fn print_ast(&self, indent: usize) {
         println!("{}MethodNode {}", " ".repeat(indent), self.name);
         println!("{}Return Type", " ".repeat(indent + INDENT_PER_LEVEL));
@@ -112,7 +92,7 @@ impl Printable for nodes::MethodNode {
     }
 }
 
-impl Printable for nodes::ParameterNode {
+impl Printable for nodes::ParameterNode<'_> {
     fn print_ast(&self, indent: usize) {
         println!("{}ParameterNode {}", " ".repeat(indent), self.name);
         self.typ.print_ast(indent + INDENT_PER_LEVEL);
@@ -120,7 +100,7 @@ impl Printable for nodes::ParameterNode {
     }
 }
 
-impl Printable for nodes::BlockNode {
+impl Printable for nodes::BlockNode<'_> {
     fn print_ast(&self, indent: usize) {
         println!("{}BlockNode", " ".repeat(indent));
         for statement in &self.statements {
@@ -129,7 +109,7 @@ impl Printable for nodes::BlockNode {
     }
 }
 
-impl Printable for nodes::Statement {
+impl Printable for nodes::Statement<'_> {
     fn print_ast(&self, indent: usize) {
         match self {
             nodes::Statement::Block(node) => node.print_ast(indent),
@@ -144,7 +124,7 @@ impl Printable for nodes::Statement {
     }
 }
 
-impl Printable for nodes::VarDeclNode {
+impl Printable for nodes::VarDeclNode<'_> {
     fn print_ast(&self, indent: usize) {
         println!("{}VarDeclNode {}", " ".repeat(indent), self.name);
         self.typ.print_ast(indent + INDENT_PER_LEVEL);
@@ -153,7 +133,7 @@ impl Printable for nodes::VarDeclNode {
     }
 }
 
-impl Printable for nodes::IfNode {
+impl Printable for nodes::IfNode<'_> {
     fn print_ast(&self, indent: usize) {
         println!("{}IfNode", " ".repeat(indent));
         self.condition.print_ast(indent + INDENT_PER_LEVEL);
@@ -164,7 +144,7 @@ impl Printable for nodes::IfNode {
     }
 }
 
-impl Printable for nodes::ReturnNode {
+impl Printable for nodes::ReturnNode<'_> {
     fn print_ast(&self, indent: usize) {
         println!("{}ReturnNode", " ".repeat(indent));
         if let Some(return_value) = &self.return_value {
@@ -175,7 +155,7 @@ impl Printable for nodes::ReturnNode {
     }
 }
 
-impl Printable for nodes::WhileNode {
+impl Printable for nodes::WhileNode<'_> {
     fn print_ast(&self, indent: usize) {
         println!("{}WhileNode", " ".repeat(indent));
         println!("{}Condition", " ".repeat(indent + INDENT_PER_LEVEL));
@@ -197,13 +177,13 @@ impl Printable for nodes::ContinueNode {
     }
 }
 
-impl Printable for nodes::TypeNode {
+impl Printable for nodes::TypeNode<'_> {
     fn print_ast(&self, indent: usize) {
         println!("{}TypeNode {}", " ".repeat(indent), self.typ);
     }
 }
 
-impl Printable for nodes::Expression {
+impl Printable for nodes::Expression<'_> {
     fn print_ast(&self, indent: usize) {
         match self {
             Self::Name(node) => node.print_ast(indent),
@@ -213,17 +193,19 @@ impl Printable for nodes::Expression {
             Self::Unary(node) => node.print_ast(indent),
             Self::Binary(node) => node.print_ast(indent),
             Self::FunctionCall(node) => node.print_ast(indent),
+            Self::Sizeof(node) => node.print_ast(indent),
+            Self::As(_, _) => todo!("Expression::As.print_ast()"),
         }
     }
 }
 
-impl Printable for nodes::NameNode {
+impl Printable for nodes::NameNode<'_> {
     fn print_ast(&self, indent: usize) {
         println!("{}NameNode {}", " ".repeat(indent), self.name);
     }
 }
 
-impl Printable for nodes::LiteralNode {
+impl Printable for nodes::LiteralNode<'_> {
     fn print_ast(&self, indent: usize) {
         println!("{}ExpressionLiteralNode", " ".repeat(indent));
         println!("{}Type {}", " ".repeat(indent + INDENT_PER_LEVEL), self.typ);
@@ -231,7 +213,7 @@ impl Printable for nodes::LiteralNode {
     }
 }
 
-impl Printable for nodes::StructLiteralNode {
+impl Printable for nodes::StructLiteralNode<'_> {
     fn print_ast(&self, indent: usize) {
         println!("{}ExpressionStructLiteralNode", " ".repeat(indent));
         println!("{}Type {}", " ".repeat(indent + INDENT_PER_LEVEL), self.typ);
@@ -242,7 +224,7 @@ impl Printable for nodes::StructLiteralNode {
     }
 }
 
-impl Printable for nodes::ArrayLiteralNode {
+impl Printable for nodes::ArrayLiteralNode<'_> {
     fn print_ast(&self, indent: usize) {
         println!("{}ExpressionArrayLiteralNode", " ".repeat(indent));
         println!("{}Type {}", " ".repeat(indent + INDENT_PER_LEVEL), self.typ);
@@ -252,7 +234,7 @@ impl Printable for nodes::ArrayLiteralNode {
     }
 }
 
-impl Printable for nodes::UnaryNode {
+impl Printable for nodes::UnaryNode<'_> {
     fn print_ast(&self, indent: usize) {
         println!("{}ExpressionUnaryNode", " ".repeat(indent));
         println!("{}Operator {}", " ".repeat(indent + INDENT_PER_LEVEL), self.operation);
@@ -261,7 +243,7 @@ impl Printable for nodes::UnaryNode {
     }
 }
 
-impl Printable for nodes::BinaryNode {
+impl Printable for nodes::BinaryNode<'_> {
     fn print_ast(&self, indent: usize) {
         println!("{}ExpressionBinaryNode", " ".repeat(indent));
         println!("{}Operator {}", " ".repeat(indent + INDENT_PER_LEVEL), self.operation);
@@ -271,7 +253,7 @@ impl Printable for nodes::BinaryNode {
     }
 }
 
-impl Printable for nodes::CallNode {
+impl Printable for nodes::CallNode<'_> {
     fn print_ast(&self, indent: usize) {
         println!("{}ExpressionCallNode", " ".repeat(indent));
         println!("{}Function {}", " ".repeat(indent + INDENT_PER_LEVEL), self.function_name);

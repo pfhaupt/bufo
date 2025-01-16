@@ -1,0 +1,34 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 2
+//! COMPILER
+//! SUCCESS
+
+const a = 1;            // 1
+const b = 2;            // 2
+const c = a + b;        // 3
+const d = b + c;        // 5
+const e = c + d;        // 8
+const f = d + e;        // 13
+const g = e + f;        // 21
+const h = f + g;        // 34
+@assert(h == 34);
+const h1 = h + g;       // 55
+const h2 = h1 + h;      // 89
+const h3 = h2 + h1;     // 144
+const h4 = h3 + h2;     // 233
+const h5 = h4 + h3;     // 377
+const h6 = h5 + h4;     // 610
+const h7 = h6 + h5;     // 987
+@assert(h7 == 987);
+const h8 = h7 + h6;     // 1597
+const h9 = h8 + h7;     // 2584
+const h10 = h9 + h8;    // 4181
+const h11 = h10 + h9;   // 6765
+const h12 = h11 + h10;  // 10946
+const h13 = h12 + h11;  // 17711
+const h14 = h13 + h12;  // 28657
+const h15 = h14 + h13;  // 46368
+const h16 = h15 + h14;  // 75025
+const h17 = h16 + h15;  // 121393
+@assert(h17 == 121393);
+@assert(h17 != h16);

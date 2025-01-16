@@ -1,0 +1,12 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+import "./other.bufo";
+
+func main() -> i32 {
+    let s: i32 = foo();
+    if (s != 5) return s;
+    return 0;
+}

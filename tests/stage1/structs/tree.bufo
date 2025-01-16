@@ -1,0 +1,12 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+struct A { f: B; }
+struct B { b: C; a: D; }
+struct C { i: i32; }
+struct D { i: C; }
+struct E { f: B; }
+
+func main() {}

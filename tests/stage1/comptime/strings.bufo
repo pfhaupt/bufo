@@ -1,0 +1,31 @@
+//! THIS IS A TEST PROGRAM
+//! STAGE: 1
+//! RUNTIME
+//! SUCCESS
+
+struct CompSubStr {
+    start: &char;
+    length: usize;
+}
+
+unsafe comptime func _strlen(str: &char) -> usize {
+    mut len: usize = 0;
+    while (*(str + len) != '\0') len = len + 1;
+    return len;
+}
+
+unsafe comptime func buildCompSubStr(input: &char) -> CompSubStr {
+    return CompSubStr {
+        start: input,
+        length: _strlen(input)
+    };
+}
+
+func main() {
+    unsafe {
+        comptime substr: CompSubStr = buildCompSubStr("Hello World!");
+        assert(substr.length == 12);
+        let written: usize = printf("%.*s\n", substr.length, substr.start);
+        assert(written == 13); // +1 for newline
+    }
+}

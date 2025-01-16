@@ -1,0 +1,155 @@
+// Intrinsics
+// They are safe because we can directly define their behavior
+extern GLOBAL_GET_ARGC() -> usize;
+extern GLOBAL_GET_ARGV() -> &&char;
+
+func getProgramName() -> &char {
+    let argv: &&char = GLOBAL_GET_ARGV();
+    return *argv;
+}
+
+comptime FATAL_STR: &char = "\x1b[95m[FATAL]\x1b[0m";
+comptime ERR_STR: &char = "\x1b[91merror\x1b[0m";
+comptime WARN_STR: &char = "\x1b[93mwarning\x1b[0m";
+comptime NOTE_STR: &char = "\x1b[92mnote\x1b[0m";
+
+// func getArg(argv: &&char, argc: usize) -> &char {
+//     unsafe { return *(argv + sizeof &char * argc); }
+// }
+
+unsafe mut stdin: Any = null;
+unsafe mut stdout: Any = null;
+unsafe mut stderr: Any = null;
+// Called by the compiler before calling main()
+unsafe func setupStdHandles() {
+    if (stdin == null) stdin = fdopen(0, "a");
+    assert_with_msg(stdin != null, "Could not initialize STDIN!");
+    if (stdout == null) stdout = fdopen(1, "a");
+    assert_with_msg(stdout != null, "Could not initialize STDOUT!");
+    if (stderr == null) stderr = fdopen(2, "a");
+    assert_with_msg(stderr != null, "Could not initialize STDERR!");
+}
+
+func getArg(index: usize) -> &char {
+    let argv: &&char = GLOBAL_GET_ARGV();
+    assert_with_msg(index < GLOBAL_GET_ARGC(), "Attempted to get non-existing argument");
+    unsafe {
+        return *(argv + index * sizeof &char);
+    }
+}
+
+// libc for now is also part of the prelude
+// Eventually, we'd like to use our own wrappers
+import "libc.bufo";
+
+unsafe comptime func comptimeStrlen(str: &char) -> usize {
+    mut len: usize = 0;
+    while (*(str + len) != '\0') len = len + 1;
+    return len;
+}
+
+unsafe func getChar(s: &char, index: usize) -> char {
+    let _idk: Any = s;
+    let _ch: &char = _idk;
+    let c: char = *(_ch + index);
+    return c;
+}
+
+func isNumeric(ch: char) -> bool {
+    unsafe {
+        // Safety: Safe as long as char is always one byte :^)
+        let _idk: Any = &ch;
+        let _i8: i8 = *_idk;
+        return (_i8 >= 48) && (_i8 <= 57);
+    }
+}
+
+func isAlphabetic(ch: char) -> bool {
+    unsafe {
+        // Safety: Safe as long as char is always one byte :^)
+        let _idk: Any = &ch;
+        let _i8: i8 = *_idk;
+        return (_i8 >= 65) && (_i8 <= 90) || (_i8 >= 97) && (_i8 <= 122);
+    }
+}
+
+func isWhitespace(ch: char) -> bool {
+    return ch == ' ' || ch == '\r' || ch == '\n' || ch == '\t';
+}
+
+func isAlphanumeric(ch: char) -> bool {
+    return isAlphabetic(ch) || isNumeric(ch);
+}
+
+// Internal Runtime Errors
+func index_oob(msg: &char, index: i64) {
+    unsafe {
+        fprintf(stderr, msg, index);
+        exit(1);
+    }
+}
+
+func assert(cond: bool) {
+    unsafe {
+        if (!cond) {
+            if (stderr == null) {
+                printf("ASSERTION FAILED\n");
+                printf("%s Could not print to STDERR because STDERR is NULL!\n", FATAL_STR);
+            } else {
+                fprintf(stderr, "ASSERTION FAILED\n");
+            }
+            exit(1);
+        }
+    }
+}
+
+func assert_with_msg(cond: bool, msg: &char) {
+    unsafe {
+        if (!cond) {
+            if (stderr == null) {
+                printf("ASSERTION FAILED: %s\n", msg);
+                printf("%s Could not print to STDERR because STDERR is NULL!\n", FATAL_STR);
+            } else {
+                fprintf(stderr, "ASSERTION FAILED: %s\n", msg);
+            }
+            exit(1);
+        }
+    }
+}
+
+func todo_with_msg(msg: &char) {
+    unsafe {
+        if (stderr == null) {
+            printf("TODO: %s\n", msg);
+            printf("%s Could not print to STDERR because STDERR is NULL!\n", FATAL_STR);
+        } else {
+            fprintf(stderr, "TODO: %s\n", msg);
+        }
+        exit(1);
+    }
+}
+
+comptime PRINT_DEBUG: bool = false;
+func debug(msg: &char) {
+    if (!PRINT_DEBUG) return;
+    // Safety: Argument must be null-terminated
+    unsafe {
+        printf("[DEBUG] %s\n", msg);
+    }
+}
+comptime PRINT_TRACE: bool = false;
+func trace(msg: &char) {
+    if (!PRINT_TRACE) return;
+    // Safety: Argument must be null-terminated
+    unsafe {
+        printf("[TRACE] %s\n", msg);
+    }
+}
+comptime PRINT_WARNING: bool = true;
+func warning(msg: &char) {
+    if (!PRINT_WARNING) return;
+    // Safety: Argument must be null-terminated
+    unsafe {
+        printf("\x1b[93m[WARNING]\x1b[0m %s\n", msg);
+    }
+}
