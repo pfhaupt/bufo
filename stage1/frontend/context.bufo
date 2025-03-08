@@ -1,0 +1,231 @@
+import "prelude.bufo";
+import "libc.bufo";
+import "substr.bufo";
+import "./token.bufo";
+import "./nodes.bufo";
+import "./lexer.bufo";
+import "../middleend/types.bufo";
+
+struct VarDeclContext {
+    name: Token;
+    typeID: usize;
+    exprID: usize;
+    isComptime: bool;
+}
+
+// FIXME: This name is misleading, given that we also use it for function calls
+struct ArrayContext {
+    elemList: &mut usize;
+    elemLength: usize;
+    elemCapacity: usize;
+    size: usize;
+
+    func addElement(&mut this, elem: &mut ParsedExpr) {
+        trace("ArrayContext.addElement");
+        if (this.elemLength >= this.elemCapacity) unsafe {
+            mut newCap: usize = this.elemCapacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elemList = realloc(this.elemList, newCap * sizeof usize);
+            assert_with_msg(this.elemList != null, "Could not resize elem list");
+            this.elemCapacity = newCap;
+        }
+        unsafe {
+            *(this.elemList + this.elemLength * sizeof usize) = elem.getID();
+            this.elemLength = this.elemLength + 1;
+        }
+    }
+
+    func getElementAtIndex(&mut this, index: usize) -> usize {
+        assert_with_msg(index < this.elemLength, "Out of bounds access in ArrayContext.getElementAtIndex");
+        unsafe {
+            return *(this.elemList + index * sizeof usize);
+        }
+    }
+}
+
+struct StructContext {
+    fieldNames: &mut Token;
+    fieldTypes: &mut usize;
+    fieldLength: usize;
+    fieldCapacity: usize;
+    methods: &mut usize;
+    methodLength: usize;
+    methodCapacity: usize;
+    func addField(&mut this, name: Token, typ: &mut ParsedTypeDecl) {
+        trace("StructContext.addField");
+        if (this.fieldLength >= this.fieldCapacity) unsafe {
+            mut newCap: usize = this.fieldCapacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.fieldNames = realloc(this.fieldNames, newCap * sizeof Token);
+            this.fieldTypes = realloc(this.fieldTypes, newCap * sizeof usize);
+            assert_with_msg(this.fieldNames != null, "Could not resize field list");
+            assert_with_msg(this.fieldTypes != null, "Could not resize field list");
+            this.fieldCapacity = newCap;
+        }
+        unsafe {
+            *(this.fieldNames + this.fieldLength * sizeof Token) = name;
+            *(this.fieldTypes + this.fieldLength * sizeof usize) = typ.getID();
+            this.fieldLength = this.fieldLength + 1;
+        }
+    }
+    func addMethod(&mut this, method: &mut ParsedMethod) {
+        trace("StructContext.addMethod");
+        if (this.methodLength >= this.methodCapacity) unsafe {
+            mut newCap: usize = this.methodCapacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.methods = realloc(this.methods, newCap * sizeof usize);
+            assert_with_msg(this.methods != null, "Could not resize method list");
+            this.methodCapacity = newCap;
+        }
+        unsafe {
+            *(this.methods + this.methodLength * sizeof usize) = method.getID();
+            this.methodLength = this.methodLength + 1;
+        }
+    }
+    func getFieldNameAtIndex(&mut this, index: usize) -> Token {
+        trace("StructContext.getFieldNameAtIndex");
+        assert_with_msg(index < this.fieldLength, "Out of bounds access in StructContext.getFieldNameAtIndex");
+        unsafe {
+            return *(this.fieldNames + index * sizeof Token);
+        }
+    }
+    func getFieldTypeAtIndex(&mut this, index: usize) -> usize {
+        trace("StructContext.getFieldTypeAtIndex");
+        assert_with_msg(index < this.fieldLength, "Out of bounds access in StructContext.getFieldTypeAtIndex");
+        unsafe {
+            return *(this.fieldTypes + index * sizeof usize);
+        }
+    }
+    func getMethodAtIndex(&mut this, index: usize) -> usize {
+        trace("StructContext.getMethodAtIndex");
+        assert_with_msg(index < this.methodLength, "Out of bounds access in StructContext.getMethodAtIndex");
+        unsafe {
+            return *(this.methods + index * sizeof usize);
+        }
+    }
+    func getFieldIndex(&mut this, name: &SubStr) -> usize {
+        trace("StructContext.getFieldIndex");
+        for (mut i: usize = 0; i < this.fieldLength; i = i + 1) {
+            let f: Token = this.getFieldNameAtIndex(i);
+            if (f.content.equals(name)) {
+                return i;
+            }
+        }
+        unreachable("Expected to find field index at this point");
+        return 0;
+    }
+    func getFieldOffset(&mut this, name: &SubStr) -> usize {
+        trace("StructContext.getFieldOffset");
+        mut offset: usize = 0;
+        for (mut i: usize = 0; i < this.fieldLength; i = i + 1) {
+            let f: Token = this.getFieldNameAtIndex(i);
+            let _t: &mut ParsedTypeDecl = getTypeDeclByID(this.getFieldTypeAtIndex(i));
+            assert_with_msg(_t.typeState.isSuccess(), "Expected valid field type in getFieldOffset");
+            let t: &mut Type = getTypeByID(_t.typeState.getType());
+            if (f.content.equals(name)) {
+                return offset;
+            }
+            offset = offset + t.getSize();
+        }
+        unreachable("Expected to find field offset at this point");
+        return 0;
+    }
+}
+
+struct StructInitContext {
+    fieldNames: &mut Token;
+    fieldExprs: &mut usize;
+    fieldLength: usize;
+    fieldCapacity: usize;
+    func addField(&mut this, name: Token, expr: &mut ParsedExpr) {
+        trace("StructInitContext.addField");
+        if (this.fieldLength >= this.fieldCapacity) unsafe {
+            mut newCap: usize = this.fieldCapacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.fieldNames = realloc(this.fieldNames, newCap * sizeof Token);
+            this.fieldExprs = realloc(this.fieldExprs, newCap * sizeof usize);
+            assert_with_msg(this.fieldNames != null, "Could not resize field list");
+            assert_with_msg(this.fieldExprs != null, "Could not resize field list");
+            this.fieldCapacity = newCap;
+        }
+        unsafe {
+            *(this.fieldNames + this.fieldLength * sizeof Token) = name;
+            *(this.fieldExprs + this.fieldLength * sizeof usize) = expr.getID();
+            this.fieldLength = this.fieldLength + 1;
+        }
+    }
+    func getFieldNameAtIndex(&mut this, index: usize) -> Token {
+        trace("StructInitContext.getFieldNameAtIndex");
+        assert_with_msg(index < this.fieldLength, "Out of bounds access in StructInitContext.getFieldNameAtIndex");
+        unsafe {
+            return *(this.fieldNames + index * sizeof Token);
+        }
+    }
+    func getFieldExprAtIndex(&mut this, index: usize) -> usize {
+        trace("StructInitContext.getFieldExprAtIndex");
+        assert_with_msg(index < this.fieldLength, "Out of bounds access in StructInitContext.getFieldExprAtIndex");
+        unsafe {
+            return *(this.fieldExprs + index * sizeof usize);
+        }
+    }
+}
+
+struct ParamContext {
+    paramNames: &mut Token;
+    paramTypes: &mut usize;
+    paramLength: usize;
+    paramCapacity: usize;
+    isVarArg: bool;
+    func addParameter(&mut this, name: Token, typ: &mut ParsedTypeDecl) {
+        trace("ParamContext.addParameter");
+        if (this.paramLength >= this.paramCapacity) unsafe {
+            mut newCap: usize = this.paramCapacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.paramNames = realloc(this.paramNames, newCap * sizeof Token);
+            this.paramTypes = realloc(this.paramTypes, newCap * sizeof usize);
+            assert_with_msg(this.paramNames != null, "Could not resize param list");
+            assert_with_msg(this.paramTypes != null, "Could not resize param list");
+            this.paramCapacity = newCap;
+        }
+        unsafe {
+            *(this.paramNames + this.paramLength * sizeof Token) = name;
+            *(this.paramTypes + this.paramLength * sizeof usize) = typ.getID();
+            this.paramLength = this.paramLength + 1;
+        }
+    }
+
+    func hasThis(&mut this) -> bool {
+        if (this.paramLength == 0) return false;
+        return this.getNameAtIndex(0).content.equals(&KEYWORD_THIS);
+    }
+
+    func getNameAtIndex(&mut this, index: usize) -> Token {
+        trace("ParamContext.getNameAtIndex");
+        assert_with_msg(index < this.paramLength, "Out of bounds access in ParamContext.getNameAtIndex");
+        unsafe {
+            return *(this.paramNames + index * sizeof Token);
+        }
+    }
+    func getTypeAtIndex(&mut this, index: usize) -> usize {
+        trace("ParamContext.getTypeAtIndex");
+        assert_with_msg(index < this.paramLength, "Out of bounds access in ParamContext.getTypeAtIndex");
+        unsafe {
+            return *(this.paramTypes + index * sizeof usize);
+        }
+    }
+}
+
+comptime ELSE_BIT: usize = pow2(20);
+// condition is implicitly stored in ParsedStmt.expr
+struct IfContext {
+    thenBody: usize;
+    elseBody: usize;
+    hasElse: bool;
+}
+
+struct ForContext {
+    init: usize;
+    cond: usize;
+    step: usize;
+    body: usize;
+}

@@ -1057,8 +1057,16 @@ impl<'flags: 'src, 'lexer, 'src> Parser<'flags, 'lexer, 'src> {
             }
             TokenType::KeywordUnsafe => {
                 self.expect(TokenType::KeywordUnsafe)?;
-                let block = self.parse_block(true)?;
-                nodes::Statement::Block(block)
+                if self.at(TokenType::KeywordLet) || self.at(TokenType::KeywordMut) || self.at(TokenType::KeywordComptime) {
+                    let is_mutable = self.at(TokenType::KeywordMut);
+                    let is_comptime = self.at(TokenType::KeywordComptime);
+                    let _ = self.next(); // parse_stmt_var_decl() doesn't expect the let|mut|comptime
+                    let var = self.parse_stmt_var_decl(is_mutable, is_comptime, true)?;
+                    nodes::Statement::VarDecl(var)
+                } else {
+                    let block = self.parse_block(true)?;
+                    nodes::Statement::Block(block)
+                }
             }
             TokenType::OpenCurly => {
                 let block = self.parse_block(is_unsafe)?;

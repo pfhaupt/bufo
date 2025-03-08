@@ -1,4 +1,5 @@
-
+import "prelude.bufo";
+import "string.bufo";
 
 struct Span {
     start: usize;
@@ -24,12 +25,10 @@ struct Span {
 }
 
 func newSpan(start: usize, end: usize) -> Span {
-    assert_with_msg(end >= start + 1, "Invalid size for newSpan()");
-    // FIXME: - 1 is a quick hack because most error messages showed one byte too far.
-    // Is this always the case?
+    assert_with_msg(end >= start, "Invalid size for newSpan()");
     return Span {
         start: start,
-        end: end - 1,
+        end: end,
     };
 }
 func newSpanBetween(start: &Span, end: &Span) -> Span {

@@ -153,6 +153,13 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
         }
     }
 
+    fn get_type_size(&self, typ: &Type<'src>) -> usize {
+        if typ.is_primitive() {
+            return typ.get_bit_size() / 8;
+        }
+        todo!("type size")
+    }
+
     pub fn set_struct_lookup(&mut self, struct_info: &HashMap<&'src str, StructInfo<'src>>) {
         self.struct_info = struct_info.clone();
     }
@@ -432,6 +439,7 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
             nodes::Expression::StructLiteral(strukt) => self.evaluate_struct(&strukt),
             nodes::Expression::Unary(unary) => self.evaluate_unary(&unary),
             nodes::Expression::ArrayLiteral(lit) => self.evaluate_array_literal(&lit),
+            nodes::Expression::Sizeof(typ) => self.evaluate_sizeof(&typ),
             _ => Err(EvalError::ExpressionNotImplemented(expression.get_loc())),
         };
         let value = intermediate?;
@@ -440,6 +448,11 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
         } else {
             Ok(value)
         }
+    }
+    fn evaluate_sizeof(&mut self, typ: &nodes::TypeNode<'src>) -> Result<Value, EvalError<'src>> {
+        let _t = &typ.typ;
+        let size = self.get_type_size(_t);
+        return Ok(Value::I128(size as i128))
     }
     fn evaluate_array_literal(&mut self, literal: &nodes::ArrayLiteralNode<'src>) -> Result<Value, EvalError<'src>> {
         let mut res = Vec::with_capacity(literal.elements.len());
@@ -534,6 +547,7 @@ impl<'flags, 'src, 'ast> Evaluator<'flags, 'src, 'ast> {
             [I128 F64] [I128 F64] Mul *
             [Bool Char I128 F64 Ptr] [Bool Bool Bool Bool Bool] NotEqual !=
             [Bool Char I128 F64 Ptr] [Bool Bool Bool Bool Bool] Equal ==
+            [Char I128 F64 Ptr] [Bool Bool Bool Bool] GreaterThan >
         )
     }
 

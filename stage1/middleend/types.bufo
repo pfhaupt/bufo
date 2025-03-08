@@ -1,0 +1,264 @@
+import "prelude.bufo";
+import "libc.bufo";
+import "string.bufo";
+import "../frontend/nodes.bufo";
+
+comptime TYPE_INVALID: usize = 0;
+comptime TYPE_UNKNOWN: usize = 1;
+comptime TYPE_U8: usize      = 2;
+comptime TYPE_U16: usize     = 3;
+comptime TYPE_U32: usize     = 4;
+comptime TYPE_U64: usize     = 5;
+comptime TYPE_I8: usize      = 6;
+comptime TYPE_I16: usize     = 7;
+comptime TYPE_I32: usize     = 8;
+comptime TYPE_I64: usize     = 9;
+comptime TYPE_USIZE: usize   = 10;
+comptime TYPE_ANY: usize     = 11;
+comptime TYPE_BOOL: usize    = 12;
+comptime TYPE_NONE: usize    = 13;
+comptime TYPE_CHAR: usize    = 14;
+comptime TYPE_F32: usize     = 15;
+comptime TYPE_F64: usize     = 16;
+comptime TYPE_COUNT: usize   = 17;
+
+mut types: [Type; 64000] = blank;
+mut typeCount: usize = TYPE_COUNT;
+
+func getTypeByID(index: usize) -> &mut Type {
+    assert_with_msg(index < typeCount, "Out of bounds access in getTypeByID");
+    let t: &mut Type = &mut types[index];
+    assert_with_msg(t.kind != TYPE_KIND_UNKNOWN, "getTypeByID() fetched unknown type");
+    return t;
+}
+
+comptime TYPE_KIND_UNKNOWN: usize = 0;
+comptime TYPE_KIND_PRIMITIVE: usize = 1;
+comptime TYPE_KIND_POINTER: usize = 2;
+comptime TYPE_KIND_STRUCT: usize = 3;
+comptime TYPE_KIND_ARRAY: usize = 4;
+struct Type {
+    kind: usize;
+    typeIndex: usize;
+    arraySize: usize;
+
+    func getMangledName(&mut this) -> String {
+        if (this.kind == TYPE_KIND_PRIMITIVE) {
+            // OPT: Make these Strings comptime
+            if (this.typeIndex == TYPE_U8) return newStringFromStrLit("u8");
+            else if (this.typeIndex == TYPE_U16) todo_with_msg("mangle TYPE_U16");
+            else if (this.typeIndex == TYPE_U32) return newStringFromStrLit("u32");
+            else if (this.typeIndex == TYPE_U64) return newStringFromStrLit("u64");
+            else if (this.typeIndex == TYPE_I8) todo_with_msg("mangle TYPE_I8");
+            else if (this.typeIndex == TYPE_I16) todo_with_msg("mangle TYPE_I16");
+            else if (this.typeIndex == TYPE_I32) return newStringFromStrLit("i32");
+            else if (this.typeIndex == TYPE_I64) return newStringFromStrLit("i64");
+            else if (this.typeIndex == TYPE_USIZE) return newStringFromStrLit("U");
+            else if (this.typeIndex == TYPE_ANY) return newStringFromStrLit("A");
+            else if (this.typeIndex == TYPE_BOOL) return newStringFromStrLit("B");
+            else if (this.typeIndex == TYPE_NONE) return newStringFromStrLit("N");
+            else if (this.typeIndex == TYPE_CHAR) return newStringFromStrLit("c");
+            else if (this.typeIndex == TYPE_F32) return newStringFromStrLit("f32");
+            else if (this.typeIndex == TYPE_F64) return newStringFromStrLit("f64");
+            else todo_with_msg("what type is this");
+        } else if (this.kind == TYPE_KIND_POINTER) {
+            mut s: String = newStringFromStrLit("P");
+            let _s: String = getTypeByID(this.typeIndex).getMangledName();
+            s.pushString(&_s);
+            _s.drop();
+            return s;
+        } else if (this.kind == TYPE_KIND_STRUCT) {
+            mut s: String = newStringFromStrLit("S");
+            let decl: &mut ParsedStructDecl = getStructDeclByID(this.typeIndex);
+            let hash: usize = decl.name.content.hash(2);
+            if (hash < 10) s.pushNumber(0);
+            s.pushNumber(hash);
+            return s;
+        } else if (this.kind == TYPE_KIND_ARRAY) {
+            todo_with_msg("mangled type array");
+        } else if (this.kind == TYPE_KIND_UNKNOWN) {
+            todo_with_msg("mangled type unknown???");
+        } else {
+            unreachable("Exhaustive handling of types in Type.getMangledName");
+        }
+        return blank;
+    }
+
+    func getID(&mut this) -> usize {
+        unsafe {
+            let offset: usize = this - &types[0];
+            assert_with_msg(offset % sizeof Type == 0, "Got invalid type offset");
+            let index: usize = offset / sizeof Type;
+            assert_with_msg(index < typeCount, "Got invalid type ID");
+            return index;
+        }
+    }
+
+    func equals(&mut this, other: &mut Type) -> bool {
+        if (this.kind == TYPE_KIND_POINTER) {
+            if (other.kind == TYPE_KIND_PRIMITIVE)
+                if (other.typeIndex == TYPE_ANY)
+                    return true;
+            if (other.kind != TYPE_KIND_POINTER) return false;
+            return getTypeByID(this.typeIndex).equals(getTypeByID(other.typeIndex));
+        }
+        if (this.kind == TYPE_KIND_PRIMITIVE)
+            if (other.kind == TYPE_KIND_POINTER)
+                if (this.typeIndex == TYPE_ANY)
+                    return true;
+        if (this.kind != other.kind)
+            return false;
+        if (this.kind == TYPE_KIND_ARRAY) {
+            return getTypeByID(this.typeIndex).equals(getTypeByID(other.typeIndex));
+        }
+        if (this.kind == TYPE_KIND_PRIMITIVE
+            || this.kind == TYPE_KIND_ARRAY
+            || this.kind == TYPE_KIND_STRUCT)
+            return this.typeIndex == other.typeIndex;
+        todo_with_msg("Type.equals");
+        return false;
+    }
+
+    func isFloat(&mut this) -> bool {
+        if (this.kind != TYPE_KIND_PRIMITIVE) return false;
+        return this.typeIndex == TYPE_F32
+            || this.typeIndex == TYPE_F64;
+    }
+    func isInteger(&mut this) -> bool {
+        if (this.kind != TYPE_KIND_PRIMITIVE) return false;
+        if (this.isSignedInteger()) return true;
+        return this.isUnsignedInteger();
+    }
+    func isSignedInteger(&mut this) -> bool {
+        return this.typeIndex == TYPE_I8
+            || this.typeIndex == TYPE_I16
+            || this.typeIndex == TYPE_I32
+            || this.typeIndex == TYPE_I64;
+    }
+    func isUnsignedInteger(&mut this) -> bool {
+        return this.typeIndex == TYPE_U8
+            || this.typeIndex == TYPE_U16
+            || this.typeIndex == TYPE_U32
+            || this.typeIndex == TYPE_U64
+            || this.typeIndex == TYPE_USIZE;
+    }
+    func isChar(&mut this) -> bool {
+        if (this.kind != TYPE_KIND_PRIMITIVE) return false;
+        return this.typeIndex == TYPE_CHAR;
+    }
+    func isBoolean(&mut this) -> bool {
+        if (this.kind != TYPE_KIND_PRIMITIVE) return false;
+        return this.typeIndex == TYPE_BOOL;
+    }
+    func isNone(&mut this) -> bool {
+        if (this.kind != TYPE_KIND_PRIMITIVE) return false;
+        return this.typeIndex == TYPE_NONE;
+    }
+    func isAny(&mut this) -> bool {
+        if (this.kind != TYPE_KIND_PRIMITIVE) return false;
+        return this.typeIndex == TYPE_ANY;
+    }
+    func isPrimitive(&mut this) -> bool {
+        return this.kind == TYPE_KIND_PRIMITIVE;
+    }
+    func isPointer(&mut this) -> bool {
+        if (this.kind == TYPE_KIND_POINTER) return true;
+        if (this.kind == TYPE_KIND_PRIMITIVE)
+            return this.typeIndex == TYPE_ANY;
+        return false;
+    }
+    func isStructPointer(&mut this) -> bool {
+        if (!this.isPointer()) return false;
+        return this.getUnderlyingType(false).isStruct();
+    }
+    func isPointerTo(&mut this, typ: usize) -> bool {
+        if (!this.isPointer()) return false;
+        return this.typeIndex == typ;
+    }
+    func isStruct(&mut this) -> bool {
+        return this.kind == TYPE_KIND_STRUCT;
+    }
+    func isArray(&mut this) -> bool {
+        return this.kind == TYPE_KIND_ARRAY;
+    }
+    func getUnderlyingType(&mut this, deep: bool) -> &mut Type {
+        mut underlying: &mut Type = this;
+        if (this.kind == TYPE_KIND_PRIMITIVE)
+            assert_with_msg(this.typeIndex != TYPE_ANY, "Type.getUnderlyingType() is not defined for Any");
+        assert_with_msg(this.isPointer() || this.isArray(), "type.getUnderlyingType() called on non-pointer non-array");
+        while (underlying.isPointer()) {
+            underlying = getTypeByID(underlying.typeIndex);
+            if (!deep) break;
+        }
+        return underlying;
+    }
+    func getSize(&mut this) -> usize {
+        if (this.kind == TYPE_KIND_POINTER) {
+            return 8;
+        } else if (this.kind == TYPE_KIND_PRIMITIVE) {
+            if (this.typeIndex == TYPE_UNKNOWN) todo_with_msg("TYPE_UNKNOWN");
+            else if (this.typeIndex == TYPE_NONE)
+                return 0;
+            else if (this.typeIndex == TYPE_I8 || this.typeIndex == TYPE_U8 || this.typeIndex == TYPE_CHAR)
+                return 1;
+            else if (this.typeIndex == TYPE_BOOL)
+                return 1;
+            else if (this.typeIndex == TYPE_I16 || this.typeIndex == TYPE_U16)
+                return 2;
+            else if (this.typeIndex == TYPE_I32 || this.typeIndex == TYPE_U32 || this.typeIndex == TYPE_F32)
+                return 4;
+            else if (this.typeIndex == TYPE_I64 || this.typeIndex == TYPE_U64 || this.typeIndex == TYPE_F64)
+                return 8;
+            else if (this.typeIndex == TYPE_USIZE || this.typeIndex == TYPE_ANY)
+                return 8;
+            else {
+                unreachable("Exhaustive handling of primitive types in Type.getSize");
+            }
+        } else if (this.kind == TYPE_KIND_ARRAY) {
+            let t: &mut Type = getTypeByID(this.typeIndex);
+            return t.getSize() * this.arraySize;
+        } else if (this.kind == TYPE_KIND_STRUCT) {
+            let info: &mut ParsedStructDecl = getStructDeclByID(this.typeIndex);
+            assert_with_msg(info.typeState.isSuccess(), "Can only get size of valid structs");
+            mut size: usize = 0;
+            for (mut i: usize = 0; i < info.context.fieldLength; i = i + 1) {
+                let td: &mut ParsedTypeDecl = getTypeDeclByID(info.context.getFieldTypeAtIndex(i));
+                assert_with_msg(td.typeState.isSuccess(), "Expected valid field type");
+                size = size + getTypeByID(td.typeState.getType()).getSize();
+            }
+            return size;
+        }
+        todo_with_msg("size");
+        return 0;
+    }
+    func getMaxFloatValue(&mut this) -> f64 {
+        assert_with_msg(this.isFloat(), "Type.getMaxFloatValue() called on non-Float");
+        if (this.typeIndex == TYPE_F32) unsafe {
+            let VAL: i32 = 2139095039;
+            return *(&VAL as &f32) as f64;
+        } else unsafe {
+            let VAL: i64 = 9218868437227405311;
+            return *(&VAL as &f64);
+        }
+    }
+    func intoPointer(&mut this) -> usize {
+        return newType(TYPE_KIND_POINTER, this.getID()).getID();
+    }
+}
+
+func newType(kind: usize, id: usize) -> &mut Type {
+    if (kind == TYPE_KIND_PRIMITIVE) {
+        assert_with_msg(id < TYPE_COUNT, "newType() attempted to use general purpose types");
+        let t: &mut Type = &mut types[id];
+        (*t).kind = kind;
+        (*t).typeIndex = id;
+        return t;
+    }
+    let t: &mut Type = &mut types[typeCount];
+    assert_with_msg(t.kind == TYPE_KIND_UNKNOWN, "Overwrote type");
+    (*t).kind = kind;
+    (*t).typeIndex = id;
+    typeCount = typeCount + 1;
+    return t;
+}
+

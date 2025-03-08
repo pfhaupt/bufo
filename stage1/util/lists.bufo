@@ -1,0 +1,1741 @@
+import "prelude.bufo";
+import "libc.bufo";
+import "string.bufo";
+import "substr.bufo";
+import "../frontend/nodes.bufo";
+import "../middleend/lookup.bufo";
+import "../middleend/checker.bufo";
+import "../backend/irgen.bufo";
+import "../backend/codegen_llvm.bufo";
+import "../backend/interp.bufo";
+import "../backend/LLVM/basic_block.bufo";
+import "../backend/LLVM/values.bufo";
+import "../backend/LLVM/types.bufo";
+
+struct ModuleLookupList {
+    elements: &mut ModuleLookup;
+    length: usize;
+    capacity: usize;
+
+    func push(&mut this, element: ModuleLookup) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof ModuleLookup);
+            assert_with_msg(this.elements != null, "Could not allocate memory in ModuleLookupList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof ModuleLookup) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut ModuleLookup {
+        let l: &mut ModuleLookup = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut ModuleLookup {
+        assert_with_msg(index < this.length, "Out of bounds access in ModuleLookupList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in ModuleLookupList.at");
+            return this.elements + index * sizeof ModuleLookup;
+        }
+    }
+
+    func contains(&mut this, element: &ModuleLookup) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) {
+            if (this.at(i).equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut ModuleLookup {
+        assert_with_msg(this.length != 0, "Called last() on empty ModuleLookupList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut ModuleLookupList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct ImportLookupList {
+    elements: &mut ImportLookup;
+    length: usize;
+    capacity: usize;
+
+    func push(&mut this, element: ImportLookup) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof ImportLookup);
+            assert_with_msg(this.elements != null, "Could not allocate memory in ImportLookupList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof ImportLookup) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut ImportLookup {
+        let l: &mut ImportLookup = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut ImportLookup {
+        assert_with_msg(index < this.length, "Out of bounds access in ImportLookupList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in ImportLookupList.at");
+            return this.elements + index * sizeof ImportLookup;
+        }
+    }
+
+    func contains(&mut this, element: &ImportLookup) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) {
+            if (this.at(i).equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut ImportLookup {
+        assert_with_msg(this.length != 0, "Called last() on empty ImportLookupList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut ImportLookupList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct FunctionLookupList {
+    elements: &mut FunctionLookup;
+    length: usize;
+    capacity: usize;
+
+    func push(&mut this, element: FunctionLookup) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof FunctionLookup);
+            assert_with_msg(this.elements != null, "Could not allocate memory in FunctionLookupList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof FunctionLookup) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut FunctionLookup {
+        let l: &mut FunctionLookup = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut FunctionLookup {
+        assert_with_msg(index < this.length, "Out of bounds access in FunctionLookupList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in FunctionLookupList.at");
+            return this.elements + index * sizeof FunctionLookup;
+        }
+    }
+
+    func contains(&mut this, element: &FunctionLookup) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) {
+            if (this.at(i).equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut FunctionLookup {
+        assert_with_msg(this.length != 0, "Called last() on empty FunctionLookupList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut FunctionLookupList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct StructLookupList {
+    elements: &mut StructLookup;
+    length: usize;
+    capacity: usize;
+
+    func push(&mut this, element: StructLookup) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof StructLookup);
+            assert_with_msg(this.elements != null, "Could not allocate memory in StructLookupList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof StructLookup) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut StructLookup {
+        let l: &mut StructLookup = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut StructLookup {
+        assert_with_msg(index < this.length, "Out of bounds access in StructLookupList.at");
+        unsafe {
+            return this.elements + index * sizeof StructLookup;
+        }
+    }
+
+    func contains(&mut this, element: &StructLookup) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) {
+            if (this.at(i).equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut StructLookup {
+        assert_with_msg(this.length != 0, "Called last() on empty StructLookupList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut StructLookupList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct MethodLookupList {
+    elements: &mut MethodLookup;
+    length: usize;
+    capacity: usize;
+
+    func push(&mut this, element: MethodLookup) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof MethodLookup);
+            assert_with_msg(this.elements != null, "Could not allocate memory in MethodLookupList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof MethodLookup) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut MethodLookup {
+        let l: &mut MethodLookup = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut MethodLookup {
+        assert_with_msg(index < this.length, "Out of bounds access in MethodLookupList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in MethodLookupList.at");
+            return this.elements + index * sizeof MethodLookup;
+        }
+    }
+
+    func contains(&mut this, element: &MethodLookup) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) {
+            if (this.at(i).equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut MethodLookup {
+        assert_with_msg(this.length != 0, "Called last() on empty MethodLookupList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut MethodLookupList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct VariableLookupList {
+    elements: &mut VariableLookup;
+    length: usize;
+    capacity: usize;
+
+    func push(&mut this, element: VariableLookup) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof VariableLookup);
+            assert_with_msg(this.elements != null, "Could not allocate memory in VariableLookupList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof VariableLookup) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut VariableLookup {
+        let l: &mut VariableLookup = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut VariableLookup {
+        assert_with_msg(index < this.length, "Out of bounds access in VariableLookupList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in VariableLookupList.at");
+            return this.elements + index * sizeof VariableLookup;
+        }
+    }
+
+    func contains(&mut this, element: &VariableLookup) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) {
+            if (this.at(i).equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut VariableLookup {
+        assert_with_msg(this.length != 0, "Called last() on empty VariableLookupList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut VariableLookupList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct ScopeLookupList {
+    elements: &mut ScopeLookup;
+    length: usize;
+    capacity: usize;
+
+    func push(&mut this, element: ScopeLookup) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof ScopeLookup);
+            assert_with_msg(this.elements != null, "Could not allocate memory in ScopeLookupList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof ScopeLookup) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut ScopeLookup {
+        let l: &mut ScopeLookup = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut ScopeLookup {
+        assert_with_msg(index < this.length, "Out of bounds access in ScopeLookupList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in ScopeLookupList.at");
+            return this.elements + index * sizeof ScopeLookup;
+        }
+    }
+
+    func contains(&mut this, element: &ScopeLookup) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) {
+            if (this.at(i).equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut ScopeLookup {
+        assert_with_msg(this.length != 0, "Called last() on empty ScopeLookupList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut ScopeLookupList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct TCStateList {
+    elements: &mut TCState;
+    length: usize;
+    capacity: usize;
+
+    func push(&mut this, element: TCState) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof TCState);
+            assert_with_msg(this.elements != null, "Could not allocate memory in TCStateList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof TCState) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut TCState {
+        let l: &mut TCState = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut TCState {
+        assert_with_msg(index < this.length, "Out of bounds access in TCStateList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in TCStateList.at");
+            return this.elements + index * sizeof TCState;
+        }
+    }
+
+    func contains(&mut this, element: &TCState) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) {
+            if (this.at(i).equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut TCState {
+        assert_with_msg(this.length != 0, "Called last() on empty TCStateList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut TCStateList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct TypeLookupList {
+    elements: &mut TypeLookup;
+    length: usize;
+    capacity: usize;
+
+    func push(&mut this, element: TypeLookup) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof TypeLookup);
+            assert_with_msg(this.elements != null, "Could not allocate memory in TypeLookupList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof TypeLookup) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut TypeLookup {
+        let l: &mut TypeLookup = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut TypeLookup {
+        assert_with_msg(index < this.length, "Out of bounds access in TypeLookupList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in TypeLookupList.at");
+            return this.elements + index * sizeof TypeLookup;
+        }
+    }
+
+    func contains(&mut this, element: &TypeLookup) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) {
+            if (this.at(i).equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut TypeLookup {
+        assert_with_msg(this.length != 0, "Called last() on empty TypeLookupList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut TypeLookupList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct StringList {
+    elements: &mut String;
+    length: usize;
+    capacity: usize;
+
+    func push(&mut this, element: String) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof String);
+            assert_with_msg(this.elements != null, "Could not allocate memory in StringList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof String) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut String {
+        let l: &mut String = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut String {
+        assert_with_msg(index < this.length, "Out of bounds access in StringList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in StringList.at");
+            return this.elements + index * sizeof String;
+        }
+    }
+
+    func contains(&mut this, element: &String) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) unsafe {
+            let _s: &String = this.at(i) as &String;
+            if (_s.equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut String {
+        assert_with_msg(this.length != 0, "Called last() on empty StringList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut StringList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct IRScopeList {
+    elements: &mut IRScope;
+    length: usize;
+    capacity: usize;
+
+    func push(&mut this, element: IRScope) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof IRScope);
+            assert_with_msg(this.elements != null, "Could not allocate memory in IRScopeList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof IRScope) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut IRScope {
+        let l: &mut IRScope = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut IRScope {
+        assert_with_msg(index < this.length, "Out of bounds access in IRScopeList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in IRScopeList.at");
+            return this.elements + index * sizeof IRScope;
+        }
+    }
+
+    func contains(&mut this, element: &IRScope) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) unsafe {
+            let _s: &IRScope = this.at(i) as &IRScope;
+            if (_s.equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut IRScope {
+        assert_with_msg(this.length != 0, "Called last() on empty IRScopeList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut IRScopeList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct IRRegList {
+    elements: &mut IRReg;
+    length: usize;
+    capacity: usize;
+
+    func push(&mut this, element: IRReg) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof IRReg);
+            assert_with_msg(this.elements != null, "Could not allocate memory in IRRegList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof IRReg) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut IRReg {
+        let l: &mut IRReg = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut IRReg {
+        assert_with_msg(index < this.length, "Out of bounds access in IRRegList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in IRRegList.at");
+            return this.elements + index * sizeof IRReg;
+        }
+    }
+
+    func contains(&mut this, element: &IRReg) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) unsafe {
+            let _s: &IRReg = this.at(i) as &IRReg;
+            if (_s.equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut IRReg {
+        assert_with_msg(this.length != 0, "Called last() on empty IRRegList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut IRRegList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct RegIndexList {
+    elements: &mut RegIndex;
+    length: usize;
+    capacity: usize;
+
+    func push(&mut this, element: RegIndex) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof RegIndex);
+            assert_with_msg(this.elements != null, "Could not allocate memory in RegIndexList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof RegIndex) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut RegIndex {
+        let l: &mut RegIndex = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut RegIndex {
+        assert_with_msg(index < this.length, "Out of bounds access in RegIndexList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in RegIndexList.at");
+            return this.elements + index * sizeof RegIndex;
+        }
+    }
+
+    func contains(&mut this, element: &RegIndex) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) unsafe {
+            let _s: &RegIndex = this.at(i) as &RegIndex;
+            if (_s.equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut RegIndex {
+        assert_with_msg(this.length != 0, "Called last() on empty RegIndexList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut RegIndexList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct IRInstrList {
+    elements: &mut IRInstr;
+    length: usize;
+    capacity: usize;
+
+    func push(&mut this, element: IRInstr) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof IRInstr);
+            assert_with_msg(this.elements != null, "Could not allocate memory in IRInstrList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof IRInstr) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut IRInstr {
+        let l: &mut IRInstr = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut IRInstr {
+        assert_with_msg(index < this.length, "Out of bounds access in IRInstrList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in IRInstrList.at");
+            return this.elements + index * sizeof IRInstr;
+        }
+    }
+
+    func contains(&mut this, element: &IRInstr) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) unsafe {
+            let _s: &IRInstr = this.at(i) as &IRInstr;
+            if (_s.equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut IRInstr {
+        assert_with_msg(this.length != 0, "Called last() on empty IRInstrList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut IRInstrList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct SubStrList {
+    elements: &mut SubStr;
+    length: usize;
+    capacity: usize;
+
+    func push(&mut this, element: SubStr) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof SubStr);
+            assert_with_msg(this.elements != null, "Could not allocate memory in SubStrList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof SubStr) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut SubStr {
+        let l: &mut SubStr = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut SubStr {
+        assert_with_msg(index < this.length, "Out of bounds access in SubStrList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in SubStrList.at");
+            return this.elements + index * sizeof SubStr;
+        }
+    }
+
+    func contains(&mut this, element: &SubStr) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) unsafe {
+            let _s: &SubStr = this.at(i) as &SubStr;
+            if (_s.equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut SubStr {
+        assert_with_msg(this.length != 0, "Called last() on empty SubStrList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut SubStrList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct RegValueList {
+    elements: &mut RegValue;
+    length: usize;
+    capacity: usize;
+
+    func initBlank(&mut this, newCap: usize) {
+        unsafe {
+            if (this.elements != null) free(this.elements);
+            this.elements = calloc(newCap, sizeof RegValue);
+            assert_with_msg(this.elements != null, "Could not allocate memory in RegValueList.initBlank");
+            this.capacity = newCap;
+            this.length = newCap;
+        }
+    }
+
+    func push(&mut this, element: RegValue) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof RegValue);
+            assert_with_msg(this.elements != null, "Could not allocate memory in RegValueList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof RegValue) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut RegValue {
+        let l: &mut RegValue = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut RegValue {
+        assert_with_msg(index < this.length, "Out of bounds access in RegValueList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in RegValueList.at");
+            return this.elements + index * sizeof RegValue;
+        }
+    }
+
+    func contains(&mut this, element: &RegValue) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) unsafe {
+            let _s: &RegValue = this.at(i) as &RegValue;
+            if (_s.equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut RegValue {
+        assert_with_msg(this.length != 0, "Called last() on empty RegValueList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut RegValueList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct InterpRegList {
+    elements: &mut InterpReg;
+    length: usize;
+    capacity: usize;
+
+    func initBlank(&mut this, newCap: usize) {
+        unsafe {
+            this.elements = realloc(this.elements, newCap * sizeof InterpReg);
+            assert_with_msg(this.elements != null, "Could not allocate memory in InterpRegList.initBlank");
+            this.capacity = newCap;
+            this.length = newCap;
+        }
+    }
+
+    func push(&mut this, element: InterpReg) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof InterpReg);
+            assert_with_msg(this.elements != null, "Could not allocate memory in InterpRegList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof InterpReg) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut InterpReg {
+        let l: &mut InterpReg = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut InterpReg {
+        assert_with_msg(index < this.length, "Out of bounds access in InterpRegList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in InterpRegList.at");
+            return this.elements + index * sizeof InterpReg;
+        }
+    }
+
+    func contains(&mut this, element: &InterpReg) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) unsafe {
+            let _s: &InterpReg = this.at(i) as &InterpReg;
+            if (_s.equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut InterpReg {
+        assert_with_msg(this.length != 0, "Called last() on empty InterpRegList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut InterpRegList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct IRFuncList {
+    elements: &mut IRFunc;
+    length: usize;
+    capacity: usize;
+
+    func initBlank(&mut this, newCap: usize) {
+        unsafe {
+            this.elements = realloc(this.elements, newCap * sizeof IRFunc);
+            assert_with_msg(this.elements != null, "Could not allocate memory in IRFuncList.initBlank");
+            this.capacity = newCap;
+            this.length = newCap;
+        }
+    }
+
+    func push(&mut this, element: IRFunc) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof IRFunc);
+            assert_with_msg(this.elements != null, "Could not allocate memory in IRFuncList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof IRFunc) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut IRFunc {
+        let l: &mut IRFunc = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut IRFunc {
+        assert_with_msg(index < this.length, "Out of bounds access in IRFuncList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in IRFuncList.at");
+            return this.elements + index * sizeof IRFunc;
+        }
+    }
+
+    func contains(&mut this, element: &IRFunc) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) unsafe {
+            let _s: &IRFunc = this.at(i) as &IRFunc;
+            if (_s.equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut IRFunc {
+        assert_with_msg(this.length != 0, "Called last() on empty IRFuncList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut IRFuncList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct LLVMBasicBlockList {
+    elements: &mut LLVMBasicBlock;
+    length: usize;
+    capacity: usize;
+
+    func initBlank(&mut this, newCap: usize) {
+        unsafe {
+            this.elements = realloc(this.elements, newCap * sizeof LLVMBasicBlock);
+            assert_with_msg(this.elements != null, "Could not allocate memory in LLVMBasicBlockList.initBlank");
+            this.capacity = newCap;
+            this.length = newCap;
+        }
+    }
+
+    func push(&mut this, element: LLVMBasicBlock) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof LLVMBasicBlock);
+            assert_with_msg(this.elements != null, "Could not allocate memory in LLVMBasicBlockList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof LLVMBasicBlock) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut LLVMBasicBlock {
+        let l: &mut LLVMBasicBlock = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut LLVMBasicBlock {
+        assert_with_msg(index < this.length, "Out of bounds access in LLVMBasicBlockList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in LLVMBasicBlockList.at");
+            return this.elements + index * sizeof LLVMBasicBlock;
+        }
+    }
+
+    func contains(&mut this, element: &LLVMBasicBlock) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) unsafe {
+            let _s: &LLVMBasicBlock = this.at(i) as &LLVMBasicBlock;
+            if (_s.equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut LLVMBasicBlock {
+        assert_with_msg(this.length != 0, "Called last() on empty LLVMBasicBlockList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut LLVMBasicBlockList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct LLVMValueList {
+    elements: &mut LLVMValue;
+    length: usize;
+    capacity: usize;
+
+    func initBlank(&mut this, newCap: usize) {
+        unsafe {
+            this.elements = realloc(this.elements, newCap * sizeof LLVMValue);
+            assert_with_msg(this.elements != null, "Could not allocate memory in LLVMValueList.initBlank");
+            this.capacity = newCap;
+            this.length = newCap;
+        }
+    }
+
+    func push(&mut this, element: LLVMValue) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof LLVMValue);
+            assert_with_msg(this.elements != null, "Could not allocate memory in LLVMValueList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof LLVMValue) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut LLVMValue {
+        let l: &mut LLVMValue = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut LLVMValue {
+        assert_with_msg(index < this.length, "Out of bounds access in LLVMValueList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in LLVMValueList.at");
+            return this.elements + index * sizeof LLVMValue;
+        }
+    }
+
+    func contains(&mut this, element: &LLVMValue) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) unsafe {
+            let _s: &LLVMValue = this.at(i) as &LLVMValue;
+            if (_s.equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut LLVMValue {
+        assert_with_msg(this.length != 0, "Called last() on empty LLVMValueList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut LLVMValueList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct LLVMTypeList {
+    elements: &mut LLVMType;
+    length: usize;
+    capacity: usize;
+
+    func initBlank(&mut this, newCap: usize) {
+        unsafe {
+            this.elements = realloc(this.elements, newCap * sizeof LLVMType);
+            assert_with_msg(this.elements != null, "Could not allocate memory in LLVMTypeList.initBlank");
+            this.capacity = newCap;
+            this.length = newCap;
+        }
+    }
+
+    func push(&mut this, element: LLVMType) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof LLVMType);
+            assert_with_msg(this.elements != null, "Could not allocate memory in LLVMTypeList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof LLVMType) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut LLVMType {
+        let l: &mut LLVMType = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut LLVMType {
+        assert_with_msg(index < this.length, "Out of bounds access in LLVMTypeList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in LLVMTypeList.at");
+            return this.elements + index * sizeof LLVMType;
+        }
+    }
+
+    func contains(&mut this, element: &LLVMType) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) unsafe {
+            let _s: &LLVMType = this.at(i) as &LLVMType;
+            if (_s.equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut LLVMType {
+        assert_with_msg(this.length != 0, "Called last() on empty LLVMTypeList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut LLVMTypeList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct ParsedCompilerFlagList {
+    elements: &mut ParsedCompilerFlag;
+    length: usize;
+    capacity: usize;
+
+    func initBlank(&mut this, newCap: usize) {
+        unsafe {
+            this.elements = realloc(this.elements, newCap * sizeof ParsedCompilerFlag);
+            assert_with_msg(this.elements != null, "Could not allocate memory in ParsedCompilerFlagList.initBlank");
+            this.capacity = newCap;
+            this.length = newCap;
+        }
+    }
+
+    func push(&mut this, element: ParsedCompilerFlag) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof ParsedCompilerFlag);
+            assert_with_msg(this.elements != null, "Could not allocate memory in ParsedCompilerFlagList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof ParsedCompilerFlag) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut ParsedCompilerFlag {
+        let l: &mut ParsedCompilerFlag = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut ParsedCompilerFlag {
+        assert_with_msg(index < this.length, "Out of bounds access in ParsedCompilerFlagList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in ParsedCompilerFlagList.at");
+            return this.elements + index * sizeof ParsedCompilerFlag;
+        }
+    }
+
+    func contains(&mut this, element: &ParsedCompilerFlag) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) unsafe {
+            let _s: &ParsedCompilerFlag = this.at(i) as &ParsedCompilerFlag;
+            if (_s.equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut ParsedCompilerFlag {
+        assert_with_msg(this.length != 0, "Called last() on empty ParsedCompilerFlagList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut ParsedCompilerFlagList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct IRBlockList {
+    elements: &mut IRBlock;
+    length: usize;
+    capacity: usize;
+
+    func initBlank(&mut this, newCap: usize) {
+        unsafe {
+            this.elements = realloc(this.elements, newCap * sizeof IRBlock);
+            assert_with_msg(this.elements != null, "Could not allocate memory in IRBlockList.initBlank");
+            this.capacity = newCap;
+            this.length = newCap;
+        }
+    }
+
+    func push(&mut this, element: IRBlock) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof IRBlock);
+            assert_with_msg(this.elements != null, "Could not allocate memory in IRBlockList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof IRBlock) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut IRBlock {
+        let l: &mut IRBlock = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut IRBlock {
+        assert_with_msg(index < this.length, "Out of bounds access in IRBlockList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in IRBlockList.at");
+            return this.elements + index * sizeof IRBlock;
+        }
+    }
+
+    func contains(&mut this, element: &IRBlock) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) unsafe {
+            let _s: &IRBlock = this.at(i) as &IRBlock;
+            if (_s.equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut IRBlock {
+        assert_with_msg(this.length != 0, "Called last() on empty IRBlockList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut IRBlockList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct LoopBlockList {
+    elements: &mut LoopBlock;
+    length: usize;
+    capacity: usize;
+
+    func initBlank(&mut this, newCap: usize) {
+        unsafe {
+            this.elements = realloc(this.elements, newCap * sizeof LoopBlock);
+            assert_with_msg(this.elements != null, "Could not allocate memory in LoopBlockList.initBlank");
+            this.capacity = newCap;
+            this.length = newCap;
+        }
+    }
+
+    func push(&mut this, element: LoopBlock) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof LoopBlock);
+            assert_with_msg(this.elements != null, "Could not allocate memory in LoopBlockList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof LoopBlock) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut LoopBlock {
+        let l: &mut LoopBlock = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut LoopBlock {
+        assert_with_msg(index < this.length, "Out of bounds access in LoopBlockList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in LoopBlockList.at");
+            return this.elements + index * sizeof LoopBlock;
+        }
+    }
+
+    func contains(&mut this, element: &LoopBlock) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) unsafe {
+            let _s: &LoopBlock = this.at(i) as &LoopBlock;
+            if (_s.equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut LoopBlock {
+        assert_with_msg(this.length != 0, "Called last() on empty LoopBlockList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut LoopBlockList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}

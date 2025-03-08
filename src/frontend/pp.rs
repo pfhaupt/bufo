@@ -5,7 +5,7 @@ use crate::util::flags::Flags;
 use crate::frontend::lexer::Lexer;
 use std::collections::HashSet;
 use std::fmt::Display;
-use std::fs;
+use std::{fs, path};
 use std::path::PathBuf;
 
 fn path_buf_to_str(path: &PathBuf) -> &str {
@@ -78,6 +78,7 @@ impl<'flags, 'lexer, 'src> Preprocessor<'flags, 'lexer, 'src> {
                 let mut filepath = path.clone();
                 filepath.push(&filename);
                 let filepath = PathBuf::from(filepath);
+                let filepath = path::absolute(filepath).unwrap();
                 if fs::metadata(&filepath).is_ok() {
                     let Ok(import_data) = fs::read_to_string(&filepath) else {
                         let _s = path_buf_to_str(&filepath);
@@ -125,6 +126,9 @@ fn pre_process(
     for path in imports {
         pp.add_import(path.to_path_buf());
     }
+    if let Some(parent) = path.parent() {
+        pp.add_import(parent.to_path_buf());
+    }
     let tmp = pp.process(imported_files, &path, &content);
     tmp.map_err(|vpe|vpe.iter().map(|e|e.to_string()).collect::<Vec<_>>().join("\n"))
 }
@@ -135,9 +139,6 @@ pub fn load_project(flags: &Flags) -> Result<String, String> {
         imports.push(PathBuf::from(i));
     }
     imports.push(PathBuf::from("./std/"));
-    if let Some(parent) = flags.input.parent() {
-        imports.push(parent.to_path_buf());
-    }
     match fs::read_to_string(&flags.input) {
         Ok(content) => {
             let content = format!("import \"prelude.bufo\";{KEYWORD_FILEMARKER} START \"{0}\"{content} {KEYWORD_FILEMARKER} END \"{0}\"", flags.input.to_str().unwrap());

@@ -1,7 +1,12 @@
-import "./stage1/backend/LLVM/bindings.bufo";
+import "prelude.bufo";
+import "./bindings.bufo";
+import "./values.bufo";
 
 struct LLVMBasicBlock {
     ref: LLVMBasicBlockRef;
+    func equals(&this, other: &LLVMBasicBlock) -> bool {
+        return this.ref.ptr == other.ref.ptr;
+    }
     func guardReference(&this) {
         trace("LLVMBasicBlock.guardReference");
         assert_with_msg(!this.ref.isNull(), "LLVM Basic Block is null");

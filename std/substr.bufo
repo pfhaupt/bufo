@@ -1,3 +1,5 @@
+import "prelude.bufo";
+import "libc.bufo";
 import "string.bufo";
 
 comptime ORDER_LESS: u8 = 0;
@@ -7,26 +9,53 @@ struct SubStr {
     start: &char;
     len: usize;
 
+    func isEmpty(&this) -> bool {
+        unsafe { return this.start == null; }
+    }
+
+    func hash(&this, length: usize) -> usize {
+        mut h: usize = 0;
+        mut d: usize = pow(10, length);
+        for (mut i: usize = 0; i < this.len; i = i + 1) {
+            let c: char = this.getChar(i);
+            h = h + (c as usize);
+            h = h % d;
+        }
+        return h;
+    }
+
     func lexOrder(&this, other: &SubStr) -> u8 {
-        if (this.len < other.len) return ORDER_LESS;
-        if (this.len > other.len) return ORDER_GREATER;
+        if (this.len < other.len) {
+            return ORDER_LESS;
+        }
+        if (this.len > other.len) {
+            return ORDER_GREATER;
+        }
         let l: usize = this.len;
         for (mut i: usize = 0; i < l; i = i + 1) {
             let c1: char = this.getChar(i);
             let c2: char = other.getChar(i);
-            if (c1 < c2) return ORDER_LESS;
-            if (c1 > c2) return ORDER_GREATER;
+            if (c1 < c2) {
+                return ORDER_LESS;
+            }
+            if (c1 > c2) {
+                return ORDER_GREATER;
+            }
         }
         return ORDER_EQUAL;
     }
 
     func equals(&this, other: &SubStr) -> bool {
-        if (this.len != other.len) return false;
+        if (this.len != other.len) {
+            return false;
+        }
         let l: usize = this.len;
         for (mut i: usize = 0; i < l; i = i + 1) {
             let c1: char = this.getChar(i);
             let c2: char = other.getChar(i);
-            if (c1 != c2) return false;
+            if (c1 != c2) {
+                return false;
+            }
         }
         return true;
     }
@@ -43,12 +72,23 @@ struct SubStr {
             }
         }
     }
+    func getPathParent(&this) -> String {
+        mut s: String = this.toString();
+        while (s.length > 0) {
+            let c: char = s.getChar(s.length - 1);
+            if (c == '/' || c == '\\') {
+                break;
+            }
+            s.pushChar('\0');
+            s.length = s.length - 2;
+        }
+        return s;
+    }
     func toString(&this) -> String {
         mut s: String = newString();
         for (mut i: usize = 0; i < this.len; i = i + 1) {
             s.pushChar(this.getChar(i));
         }
-        s.pushChar('\0');
         return s;
     }
     func getChar(&this, index: usize) -> char {
@@ -65,9 +105,38 @@ struct SubStr {
     }
     func hasSpace(&this) -> bool {
         for (mut i: usize = 0; i < this.len; i = i + 1) {
-            if (this.getChar(i) == ' ') return true;
+            if (this.getChar(i) == ' ') {
+                return true;
+            }
         }
         return false;
+    }
+    func isNumber(&this) -> bool {
+        for (mut i: usize = 0; i < this.len; i = i + 1) {
+            let ch: char = this.getChar(i);
+            if (ch == '\0') {
+                break;
+            }
+            if (!isNumeric(ch)) {
+                return false;
+            }
+        }
+        // Empty substr is not a number
+        return this.len > 0;
+    }
+    func toU64(&this) -> u64 {
+        assert_with_msg(this.isNumber(), "not a number");
+        mut val: u64 = 0;
+        for (mut i: usize = 0; i < this.len; i = i + 1) {
+            let ch: char = this.getChar(i);
+            let digit: u64 = (ch - '0') as u64;
+            val = 10 * val + digit;
+        }
+        return val;
+    }
+    func toF64(&this) -> f64 {
+        // FIXME: Support literals such as 1.5
+        return this.toU64() as f64;
     }
 }
 

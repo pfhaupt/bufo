@@ -1,4 +1,10 @@
-import "./string_buf.bufo";
+import "prelude.bufo";
+import "libc.bufo";
+import "string_buf.bufo";
+import "string.bufo";
+import "substr.bufo";
+import "winapi/structs.bufo";
+import "windows.bufo";
 
 struct Cmd {
     buf: StringBuffer;

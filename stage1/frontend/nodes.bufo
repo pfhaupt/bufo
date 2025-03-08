@@ -1,632 +1,848 @@
+import "prelude.bufo";
+import "libc.bufo";
 import "substr.bufo";
 import "string.bufo";
-import "util/span.bufo";
-import "frontend/token.bufo";
+import "../util/span.bufo";
+import "../util/lists.bufo";
+import "./context.bufo";
+import "./token.bufo";
+import "./lexer.bufo";
+import "../middleend/checker.bufo";
+import "../middleend/types.bufo";
 
-comptime INITIAL_CAPACITY: usize = 64;
+func mangleVariableName(
+    moduleID: usize,
+    name: &Token,
+) -> String {
+    if (moduleID == 64000) {
+        return name.content.toString();
+    } else {
+        mut mangledName: String = blank;
+        mangledName.pushNumber(moduleID);
+        mangledName.pushSubStr(&name.content);
+        return mangledName;
+    }
+}
+
+func mangleFunctionName(
+    parentID: usize,
+    name: &Token,
+    params: &mut ParamContext,
+    retTypeID: usize,
+    isMethod: bool,
+    isComptime: bool,
+    isExtern: bool
+) -> String {
+    mut mangledName: String = blank;
+    if (isExtern) return name.content.toString();
+    // Method  : StructName-Name-ParamsTypeID-.RetTypeID
+    // Function: ModID     -Name-ParamsTypeID-.RetTypeID-[0|1]-[0|1]
+    if (isMethod) {
+        let strukt: &mut ParsedStructDecl = getStructDeclByID(parentID);
+        mangledName.pushSubStr(&strukt.name.content);
+    } else {
+        mangledName.pushNumber(parentID);
+    }
+    mangledName.pushSubStr(&name.content);
+    for (mut i: usize = 0; i < params.paramLength; i = i + 1) {
+        let name: Token = params.getNameAtIndex(i);
+        let id: usize = params.getTypeAtIndex(i);
+        let typeNode: &mut ParsedTypeDecl = getTypeDeclByID(id);
+        assert_with_msg(typeNode.typeState.isSuccess(), "Expected valid parameter type for mangling");
+        let typ: &mut Type = getTypeByID(typeNode.typeState.getType());
+        let _typ: String = typ.getMangledName();
+        mangledName.pushString(&_typ);
+        _typ.drop();
+    }
+    mangledName.pushChar('r');
+    if (retTypeID != 0) {
+        let retNode: &mut ParsedTypeDecl = getTypeDeclByID(retTypeID);
+        assert_with_msg(retNode.typeState.isSuccess(), "Expected valid return type for mangling");
+        let typ: &mut Type = getTypeByID(retNode.typeState.getType());
+        let _typ: String = typ.getMangledName();
+        mangledName.pushString(&_typ);
+        _typ.drop();
+    } else {
+        mangledName.pushChar('n');
+    }
+    if (!isMethod) {
+        mangledName.pushChar('f');
+        mut n: usize = 0;
+        if (isComptime) n = 1;
+        mangledName.pushNumber(n);
+        if (isExtern) n = 1;
+        else n = 0;
+        mangledName.pushNumber(n);
+    }
+    return mangledName;
+}
+
+// TODO: Refactor all nodes to use Lists instead of managing pointers and length manually
+
+// TODO: Dynamically allocate these arenas
+
+// NOTE: Replacing those 64000s with bigger values is not enough,
+//       other parts of the compiler also depend on that size.
+//       Better make sure to grep for 64000 and replace all occurrences.
+mut modules: [ParsedModule; 64000] = blank;
+mut moduleCount: usize = 0;
+mut topLevelItems: [ParsedTopLevelItem; 64000] = blank;
+mut tliCount: usize = 0;
+mut structs: [ParsedStructDecl; 64000] = blank;
+mut structCount: usize = 0;
+mut funcDecls: [ParsedFuncDecl; 64000] = blank;
+mut funcCount: usize = 0;
+mut methods: [ParsedMethod; 64000] = blank;
+mut methodCount: usize = 0;
+mut blocks: [ParsedBlock; 64000] = blank;
+mut blockCount: usize = 0;
+mut stmts: [ParsedStmt; 64000] = blank;
+mut stmtCount: usize = 0;
+mut typeDecls: [ParsedTypeDecl; 64000] = blank;
+mut typeDeclCount: usize = 21;
+mut exprs: [ParsedExpr; 64000] = blank;
+mut exprCount: usize = 0;
+mut compilerFlags: [ParsedCompilerFlag; 64000] = blank;
+mut compilerFlagCount: usize = 0;
+
+func getModuleByID(index: usize) -> &mut ParsedModule {
+    assert_with_msg(index < moduleCount, "Out of bounds access in getModuleByID");
+    return &mut modules[index];
+}
+func getTopLevelItemByID(index: usize) -> &mut ParsedTopLevelItem {
+    assert_with_msg(index < tliCount, "Out of bounds access in getTopLevelItemByID");
+    return &mut topLevelItems[index];
+}
+func getFuncDeclByID(index: usize) -> &mut ParsedFuncDecl {
+    assert_with_msg(index < funcCount, "Out of bounds access in getFuncDeclByID");
+    return &mut funcDecls[index];
+}
+func getStructDeclByID(index: usize) -> &mut ParsedStructDecl {
+    assert_with_msg(index < structCount, "Out of bounds access in getStructDeclByID");
+    return &mut structs[index];
+}
+func getMethodByID(index: usize) -> &mut ParsedMethod {
+    assert_with_msg(index < methodCount, "Out of bounds access in getMethodByID");
+    return &mut methods[index];
+}
+func getBlockByID(index: usize) -> &mut ParsedBlock {
+    assert_with_msg(index < blockCount, "Out of bounds access in getBlockByID");
+    return &mut blocks[index];
+}
+func getStmtByID(index: usize) -> &mut ParsedStmt {
+    assert_with_msg(index < stmtCount, "Out of bounds access in getStmtByID");
+    return &mut stmts[index];
+}
+func getTypeDeclByID(index: usize) -> &mut ParsedTypeDecl {
+    assert_with_msg(index < typeDeclCount, "Out of bounds access in getTypeDeclByID");
+    return &mut typeDecls[index];
+}
+func getExprByID(index: usize) -> &mut ParsedExpr {
+    assert_with_msg(index < exprCount, "Out of bounds access in getExprByID");
+    return &mut exprs[index];
+}
+func getModuleByFilePath(path: SubStr, moduleID: &mut usize) -> bool {
+    for (mut i: usize = 0; i < moduleCount; i = i + 1) {
+        let mod: &mut ParsedModule = getModuleByID(i);
+        if (mod.origin.equals(&path)) {
+            *moduleID = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+comptime COMPILER_FLAG_LIBRARY: SubStr = BUILD_A_KEYWORD("library");
+comptime COMPILER_FLAG_LIBPATH: SubStr = BUILD_A_KEYWORD("libpath");
+comptime COMPILER_FLAG_LINKER: SubStr = BUILD_A_KEYWORD("linker");
+struct ParsedCompilerFlag {
+    flag: Token;
+    value: Token;
+    func equals(&this, other: &ParsedCompilerFlag) -> bool {
+        if (!this.flag.content.equals(&other.flag.content)) return false;
+        return this.value.content.equals(&other.value.content);
+    }
+}
+
+func newParsedCompilerFlag(flag: Token, value: Token) -> &mut ParsedCompilerFlag {
+    let f: &SubStr = &flag.content;
+    if (!f.equals(&COMPILER_FLAG_LIBRARY)
+        && !f.equals(&COMPILER_FLAG_LIBPATH)
+        && !f.equals(&COMPILER_FLAG_LINKER)) {
+        todo_with_msg("unknown compiler_flag");
+    }
+    let c: &mut ParsedCompilerFlag = &mut compilerFlags[compilerFlagCount];
+    (*c).flag = flag;
+    (*c).value = value;
+    compilerFlagCount = compilerFlagCount + 1;
+    return c;
+}
 
 struct ParsedModule {
-    span: Span;
-    decls: &mut ParsedGlobalDecl;
-    declCap: usize;
-    declCount: usize;
+    origin: SubStr;
+    tliList: &mut usize;
+    tliLength: usize;
+    tliCapacity: usize;
 
-    func addGlobalDecl(&mut this, varDecl: ParsedGlobalDecl) {
-        if (this.declCount >= this.declCap) unsafe {
-            let mem: Any = calloc(this.declCap * 2, sizeof ParsedGlobalDecl);
-            let _old: Any = this.decls;
-            assert_with_msg(mem != null, "Could not resize in ParsedModule.addGlobalDecl");
-            memcpy(mem, _old, this.declCount * sizeof ParsedGlobalDecl);
-            this.declCap = this.declCap * 2;
-            this.decls = mem;
-        }
+    func getID(&mut this) -> usize {
+        trace("ParsedModule.getID");
         unsafe {
-            *(this.decls + this.declCount * sizeof ParsedGlobalDecl) = varDecl;
+            let offset: usize = this - &modules[0];
+            assert_with_msg(offset % sizeof ParsedModule == 0, "Got invalid module offset");
+            let index: usize = offset / sizeof ParsedModule;
+            assert_with_msg(index < moduleCount, "Got invalid module ID");
+            return index;
         }
-        this.declCount = this.declCount + 1;
     }
 
-    func getDeclAtIndex(&mut this, index: usize) -> &mut ParsedGlobalDecl {
-        assert(index < this.declCount);
+    func addTopLevelItem(&mut this, tli: &mut ParsedTopLevelItem) {
+        trace("ParsedModule.addTopLevelItem");
+        if (this.tliLength >= this.tliCapacity) unsafe {
+            mut newCap: usize = this.tliCapacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.tliList = realloc(this.tliList, newCap * sizeof usize);
+            assert_with_msg(this.tliList != null, "Could not resize tli list");
+            this.tliCapacity = newCap;
+        }
         unsafe {
-            let _decl: &mut ParsedGlobalDecl = this.decls + index * sizeof ParsedGlobalDecl;
-            return _decl;
+            *(this.tliList + this.tliLength * sizeof usize) = tli.getID();
+            this.tliLength = this.tliLength + 1;
+        }
+    }
+
+    func getTopLevelItemAtIndex(&mut this, index: usize) -> usize {
+        assert_with_msg(index < this.tliLength, "Out of bounds access in getTopLevelItemAtIndex");
+        unsafe {
+            return *(this.tliList + index * sizeof usize);
         }
     }
 }
 
-comptime GLOBAL_DIR: usize = 0;
-comptime GLOBAL_VAR_DECL: usize = 1;
-struct ParsedGlobalDecl {
+func newParsedModule(origin: SubStr) -> &mut ParsedModule {
+    trace("newParsedModule");
+    let m: &mut ParsedModule = &mut modules[moduleCount];
+    (*m).origin = origin;
+    moduleCount = moduleCount + 1;
+    return m;
+}
+
+comptime TLI_INVALID: usize = 0;
+comptime TLI_IMPORT: usize = 1;
+comptime TLI_VAR_DECL: usize = 2;
+comptime TLI_STRUCT_DECL: usize = 3;
+comptime TLI_FUNC_DECL: usize = 4;
+struct ParsedTopLevelItem {
     kind: usize;
-    data: Any;
-}
-
-func createGlobalDecl(kind: usize, size: usize, data: Any) -> ParsedGlobalDecl {
-    unsafe {
-        mut mem: Any = calloc(size, 1);
-        assert_with_msg(mem != null, "Could not allocate enough memory in createGlobalDecl()");
-        memcpy(mem, data, size);
-        return ParsedGlobalDecl {
-            kind: kind,
-            data: mem
-        };
-    }
-}
-
-func defaultModule() -> ParsedModule {
-    unsafe {
-        let span: Span = defaultSpan();
-        mut mem: Any = calloc(INITIAL_CAPACITY, sizeof ParsedGlobalDecl);
-        assert_with_msg(mem != null, "Could not allocate enough memory in defaultModule()");
-        let decls: &mut ParsedGlobalDecl = &mut *mem;
-        return ParsedModule {
-            span: span,
-            decls: decls,
-            declCap: INITIAL_CAPACITY,
-            declCount: 0,
-        };
-    }
-}
-
-struct ParsedVarDecl {
-    name: Token;
     span: Span;
-    value: ParsedDeclValue;
-    isConst: bool;
+    nodeID: usize;
+    typeState: TCState;
+
+    func getID(&mut this) -> usize {
+        trace("ParsedTopLevelItem.getID");
+        unsafe {
+            let offset: usize = this - &topLevelItems[0];
+            assert_with_msg(offset % sizeof ParsedTopLevelItem == 0, "Got invalid tli offset");
+            let index: usize = offset / sizeof ParsedTopLevelItem;
+            assert_with_msg(index < tliCount, "Got invalid tli ID");
+            return index;
+        }
+    }
 }
 
-func createVarDecl(name: Token, span: Span, value: ParsedDeclValue, isConst: bool) -> ParsedVarDecl {
-    return ParsedVarDecl {
-        name: name,
+func newParsedTopLevelItem(span: Span, kind: usize, nodeID: usize) -> &mut ParsedTopLevelItem {
+    trace("newParsedTopLevelItem");
+    let i: &mut ParsedTopLevelItem = &mut topLevelItems[tliCount];
+    *i = ParsedTopLevelItem {
+        kind: kind,
         span: span,
-        value: value,
-        isConst: isConst,
+        nodeID: nodeID,
+        typeState: blank,
     };
-}
-
-comptime DECL_VALUE_INVALID: usize = 0;
-comptime DECL_VALUE_MODULE: usize = 1;
-comptime DECL_VALUE_FUNC_DECL: usize = 2;
-comptime DECL_VALUE_STRUCT_DECL: usize = 3;
-comptime DECL_VALUE_ENUM_DECL: usize = 4;
-comptime DECL_VALUE_UNION_DECL: usize = 5;
-comptime DECL_VALUE_BUILTIN: usize = 6;
-comptime DECL_VALUE_CALL: usize = 7;
-comptime DECL_VALUE_IDENT: usize = 8;
-comptime DECL_VALUE_BINARY: usize = 9;
-comptime DECL_VALUE_NUMBER: usize = 10;
-comptime DECL_VALUE_BLOCK: usize = 11;
-comptime DECL_VALUE_IF: usize = 12;
-comptime DECL_VALUE_UNARY: usize = 13;
-comptime DECL_VALUE_STRING: usize = 14;
-struct ParsedDeclValue {
-    kind: usize;
-    span: Span;
-    data: Any;
-
-    func isLValue(&this) -> bool {
-        if (this.kind == DECL_VALUE_INVALID) todo_with_msg("lvalue DECL_VALUE_INVALID");
-        else if (this.kind == DECL_VALUE_MODULE) todo_with_msg("lvalue DECL_VALUE_MODULE");
-        else if (this.kind == DECL_VALUE_FUNC_DECL) todo_with_msg("lvalue DECL_VALUE_FUNC_DECL");
-        else if (this.kind == DECL_VALUE_STRUCT_DECL) todo_with_msg("lvalue DECL_VALUE_STRUCT_DECL");
-        else if (this.kind == DECL_VALUE_ENUM_DECL) todo_with_msg("lvalue DECL_VALUE_ENUM_DECL");
-        else if (this.kind == DECL_VALUE_UNION_DECL) todo_with_msg("lvalue DECL_VALUE_UNION_DECL");
-        else if (this.kind == DECL_VALUE_BUILTIN) todo_with_msg("lvalue DECL_VALUE_BUILTIN");
-        else if (this.kind == DECL_VALUE_CALL) todo_with_msg("lvalue DECL_VALUE_CALL");
-        else if (this.kind == DECL_VALUE_IDENT) return true;
-        else if (this.kind == DECL_VALUE_BINARY) todo_with_msg("lvalue DECL_VALUE_BINARY");
-        else if (this.kind == DECL_VALUE_NUMBER) todo_with_msg("lvalue DECL_VALUE_NUMBER");
-        else if (this.kind == DECL_VALUE_BLOCK) todo_with_msg("lvalue DECL_VALUE_BLOCK");
-        else if (this.kind == DECL_VALUE_IF) todo_with_msg("lvalue DECL_VALUE_IF");
-        else if (this.kind == DECL_VALUE_UNARY) return this.asUnary().isLValue();
-        assert_with_msg(false, "exhaustive handling in isLValue");
-        return false;
-    }
-    func asModule(&this) -> &ParsedModule {
-        assert(this.kind == DECL_VALUE_MODULE);
-        unsafe {
-            return this.data as &ParsedModule;
-        }
-    }
-    func asStruct(&this) -> &ParsedStructDecl {
-        assert(this.kind == DECL_VALUE_STRUCT_DECL);
-        unsafe {
-            return this.data as &ParsedStructDecl;
-        }
-    }
-    func asEnum(&this) -> &ParsedEnumDecl {
-        assert(this.kind == DECL_VALUE_ENUM_DECL);
-        unsafe {
-            return this.data as &ParsedEnumDecl;
-        }
-    }
-    func asUnion(&this) -> &ParsedUnionDecl {
-        assert(this.kind == DECL_VALUE_UNION_DECL);
-        unsafe {
-            return this.data as &ParsedUnionDecl;
-        }
-    }
-    func asFunc(&this) -> &ParsedFuncDecl {
-        assert(this.kind == DECL_VALUE_FUNC_DECL);
-        unsafe {
-            return this.data as &ParsedFuncDecl;
-        }
-    }
-    func asIdent(&this) -> &ParsedDeclValueIdent {
-        assert(this.kind == DECL_VALUE_IDENT);
-        unsafe {
-            return this.data as &ParsedDeclValueIdent;
-        }
-    }
-    func asCall(&this) -> &ParsedDeclValueCall {
-        assert(this.kind == DECL_VALUE_CALL);
-        unsafe {
-            return this.data as &ParsedDeclValueCall;
-        }
-    }
-    func asUnary(&this) -> &ParsedDeclValueUnary {
-        assert(this.kind == DECL_VALUE_UNARY);
-        unsafe {
-            return this.data as &ParsedDeclValueUnary;
-        }
-    }
-}
-
-func defaultDeclValue() -> ParsedDeclValue {
-    unsafe {
-        return ParsedDeclValue {
-            kind: DECL_VALUE_INVALID,
-            span: defaultSpan(),
-            data: null,
-        };
-    }
-}
-
-func createDeclValue(kind: usize, span: Span, size: usize, data: Any) -> ParsedDeclValue {
-    unsafe {
-        mut mem: Any = calloc(1, size);
-        assert(mem != null);
-        memcpy(mem, data, size);
-        return ParsedDeclValue {
-            kind: kind,
-            span: span,
-            data: mem,
-        };
-    }
-}
-
-struct ParsedDeclValueBuiltin {
-    span: Span;
-    name: SubStr;
-    args: [ParsedDeclValue; 8];
-    argCount: usize;
-}
-
-struct ParsedDeclValueIf {
-    span: Span;
-    cond: ParsedDeclValue;
-    ifBody: ParsedDeclValue;
-    hasElse: bool;
-    elseBody: ParsedDeclValue;
-    func addElseBlock(&mut this, _elseBody: ParsedDeclValue) {
-        this.elseBody = _elseBody;
-        this.span = newSpanBetween(&this.span, &_elseBody.span);
-        this.hasElse = true;
-    }
-}
-
-func createDeclValueIf(cond: ParsedDeclValue, ifBody: ParsedDeclValue) -> ParsedDeclValueIf {
-    return ParsedDeclValueIf {
-        span: newSpanBetween(&cond.span, &ifBody.span),
-        cond: cond,
-        ifBody: ifBody,
-        hasElse: false,
-        elseBody: defaultDeclValue()
-    };
-}
-
-struct ParsedDeclValueBlock {
-    span: Span;
-    stmts: &mut ParsedStmt;
-    stmtCount: usize;
-    stmtCap: usize;
-
-    func addStmt(&mut this, stmt: ParsedStmt) {
-        if (this.stmtCount >= this.stmtCap) {
-            todo_with_msg("resize stmts");
-        }
-        unsafe {
-            *(this.stmts + this.stmtCount * sizeof ParsedStmt) = stmt;
-        }
-        this.stmtCount = this.stmtCount + 1;
-    }
-    func getStmtAtIndex(&mut this, index: usize) -> &mut ParsedStmt {
-        assert_with_msg(index < this.stmtCount, "Out of bounds access in ParsedDeclValueBlock.getStmtAtIndex()");
-        unsafe {
-            let _stmt: &mut ParsedStmt = this.stmts + index * sizeof ParsedStmt;
-            return _stmt;
-        }
-    }
-}
-
-func createDeclValueBlock() -> ParsedDeclValueBlock {
-    unsafe {
-        let mem: Any = calloc(sizeof ParsedStmt, INITIAL_CAPACITY);
-        assert_with_msg(mem != null, "Could not allocate memory in createDeclValueBlock()");
-        let stmts: &mut ParsedStmt = &mut *mem;
-        return ParsedDeclValueBlock {
-            span: defaultSpan(),
-            stmts: stmts,
-            stmtCount: 0,
-            stmtCap: INITIAL_CAPACITY
-        };
-    }
-}
-
-struct ParsedDeclValueCall {
-    span: Span;
-    fn: ParsedDeclValue;
-    args: [ParsedDeclValue; 8];
-    argCount: usize;
-
-    func getArgAtIndex(&this, index: usize) -> &ParsedDeclValue {
-        assert_with_msg(index < this.argCount, "Out of bounds access for ParsedDeclValueCall.getArgAtIndex");
-        return &this.args[index];
-    }
-}
-
-struct ParsedDeclValueIdent {
-    span: Span;
-    name: SubStr;
-}
-struct ParsedDeclValueNumber {
-    span: Span;
-    number: SubStr;
-}
-
-struct ParsedDeclValueString {
-    span: Span;
-    string: SubStr;
-}
-comptime BINARY_OP_DOT: usize = 0;
-comptime BINARY_OP_PAREN: usize = 1;
-comptime BINARY_OP_PLUS: usize = 2;
-comptime BINARY_OP_MINUS: usize = 3;
-comptime BINARY_OP_MULT: usize = 4;
-comptime BINARY_OP_DIV: usize = 5;
-comptime BINARY_OP_ASSIGN: usize = 6;
-comptime BINARY_OP_EQUAL: usize = 7;
-comptime BINARY_OP_NOT_EQUAL: usize = 8;
-func createBinaryOp(op: &SubStr) -> usize {
-    comptime DOT: SubStr = BUILD_A_KEYWORD(".");
-    comptime PAREN: SubStr = BUILD_A_KEYWORD("(");
-    comptime PLUS: SubStr = BUILD_A_KEYWORD("+");
-    comptime MINUS: SubStr = BUILD_A_KEYWORD("-");
-    comptime MULT: SubStr = BUILD_A_KEYWORD("*");
-    comptime DIV: SubStr = BUILD_A_KEYWORD("/");
-    comptime ASSIGN: SubStr = BUILD_A_KEYWORD("=");
-    comptime EQUAL: SubStr = BUILD_A_KEYWORD("==");
-    comptime NOT_EQUAL: SubStr = BUILD_A_KEYWORD("!=");
-    if (op.equals(&DOT)) return BINARY_OP_DOT;
-    if (op.equals(&PAREN)) return BINARY_OP_PAREN;
-    if (op.equals(&PLUS)) return BINARY_OP_PLUS;
-    if (op.equals(&MINUS)) return BINARY_OP_MINUS;
-    if (op.equals(&MULT)) return BINARY_OP_MULT;
-    if (op.equals(&DIV)) return BINARY_OP_DIV;
-    if (op.equals(&ASSIGN)) return BINARY_OP_ASSIGN;
-    if (op.equals(&EQUAL)) return BINARY_OP_EQUAL;
-    if (op.equals(&NOT_EQUAL)) return BINARY_OP_NOT_EQUAL;
-    todo_with_msg("createBinaryOp for invalid op");
-    return 0;
-}
-func binaryOpToStr(op: usize) -> &char {
-    if (op == BINARY_OP_DOT) return ".";
-    if (op == BINARY_OP_PAREN) todo_with_msg("what the hell is BINARY_OP_PAREN");
-    if (op == BINARY_OP_PLUS) return "+";
-    if (op == BINARY_OP_MINUS) return "-";
-    if (op == BINARY_OP_MULT) return "*";
-    if (op == BINARY_OP_DIV) return "/";
-    if (op == BINARY_OP_ASSIGN) return "=";
-    if (op == BINARY_OP_EQUAL) return "==";
-    if (op == BINARY_OP_NOT_EQUAL) return "!=";
-    todo_with_msg("binaryOpToStr for invalid op");
-    return "";
-
-}
-struct ParsedDeclValueBinary {
-    span: Span;
-    op: usize;
-    lhs: ParsedDeclValue;
-    rhs: ParsedDeclValue;
-}
-
-comptime UNARY_OP_REF: usize = 0;
-comptime UNARY_OP_DEREF: usize = 1;
-func createUnaryOp(op: &SubStr) -> usize {
-    comptime AMPERSAND: SubStr = BUILD_A_KEYWORD("&");
-    comptime MULT: SubStr = BUILD_A_KEYWORD("*");
-    if (op.equals(&AMPERSAND)) return UNARY_OP_REF;
-    if (op.equals(&MULT)) return UNARY_OP_DEREF;
-    todo_with_msg("createBinaryOp for invalid op");
-    return 0;
-}
-struct ParsedDeclValueUnary {
-    span: Span;
-    op: usize;
-    expr: ParsedDeclValue;
-
-    func isLValue(&this) -> bool {
-        return this.op == UNARY_OP_DEREF;
-    }
-}
-
-struct ParsedEnumVariant {
-    span: Span;
-    name: SubStr;
-    value: ParsedDeclValue;
-
-    func setName(&mut this, nameToken: &Token) {
-        this.name = nameToken.content;
-        this.span = nameToken.span;
-    }
-    func setValue(&mut this, value: &ParsedDeclValue) {
-        assert_with_msg(!this.name.equals(&defaultSubStr()), "Name of EnumVariant must be set before setting value");
-        this.value = *value;
-        this.span = newSpanBetween(&this.span, &value.span);
-    }
-}
-
-func defaultEnumVariant() -> ParsedEnumVariant {
-    return ParsedEnumVariant {
-        span: defaultSpan(),
-        name: defaultSubStr(),
-        value: defaultDeclValue()
-    };
-}
-
-struct ParsedEnumDecl {
-    span: Span;
-    hasVariantType: bool;
-    variantType: &ParsedTypeExpr;
-    variants: &mut ParsedEnumVariant;
-    variantsLen: usize;
-    variantsCap: usize;
-
-    func setVariantType(&mut this, variant: &ParsedTypeExpr) {
-        unsafe {
-            assert_with_msg(!this.hasVariantType, "Can only call ParsedEnumDecl.setVariantType once");
-            assert_with_msg(this.variantType == null, "Can only call ParsedEnumDecl.setVariantType once");
-            this.variantType = calloc(sizeof ParsedTypeExpr, 1);
-            assert_with_msg(this.variantType != null, "Could not allocate memory in ParsedEnumDecl.setVariantType");
-            memcpy(this.variantType, variant, sizeof ParsedTypeExpr);
-            this.hasVariantType = true;
-        }
-    }
-
-    func addVariant(&mut this, variant: &ParsedEnumVariant) {
-        if (this.variantsLen >= this.variantsCap) {
-            todo_with_msg("Resize variants");
-        }
-        unsafe {
-            *(this.variants + this.variantsLen * sizeof ParsedEnumVariant) = *variant;
-        }
-        this.variantsLen = this.variantsLen + 1;
-    }
-
-    func getVariantAtIndex(&this, index: usize) -> &ParsedEnumVariant {
-        assert_with_msg(index < this.variantsLen, "Out of bounds access for getVariantAtIndex");
-        unsafe {
-            return (this.variants + index * sizeof ParsedEnumVariant) as &ParsedEnumVariant;
-        }
-    }
-}
-
-func defaultEnumDecl() -> ParsedEnumDecl {
-    unsafe {
-        let mem: Any = calloc(sizeof ParsedEnumVariant, INITIAL_CAPACITY);
-        assert_with_msg(mem != null, "Could not allocate memory in defaultEnumDecl()");
-        let variants: &mut ParsedEnumVariant = &mut *mem;
-        return ParsedEnumDecl {
-            span: defaultSpan(),
-            hasVariantType: false,
-            variantType: null,
-            variants: variants,
-            variantsLen: 0,
-            variantsCap: INITIAL_CAPACITY
-        };
-    }
-}
-
-struct ParsedUnionDecl {
-}
-
-func defaultUnionDecl() -> ParsedUnionDecl {
-    return blank;
+    tliCount = tliCount + 1;
+    return i;
 }
 
 struct ParsedStructDecl {
+    parentModule: usize;
+    name: Token;
     span: Span;
-    fields: &mut ParsedStructField;
-    fieldCap: usize;
-    fieldCount: usize;
-    assets: &mut ParsedStructAsset;
-    assetCap: usize;
-    assetCount: usize;
-    func addField(&mut this, field: ParsedStructField) {
-        if (this.fieldCount >= this.fieldCap) {
-            todo_with_msg("resize fields");
-        }
+    context: StructContext;
+    typeState: TCState;
+    func getID(&mut this) -> usize {
+        trace("ParsedStructDecl.getID");
         unsafe {
-            *(this.fields + this.fieldCount * sizeof ParsedStructField) = field;
-        }
-        this.fieldCount = this.fieldCount + 1;
-    }
-    func addAsset(&mut this, asset: ParsedStructAsset) {
-        if (this.assetCount >= this.assetCap) {
-            todo_with_msg("resize assets");
-        }
-        unsafe {
-            *(this.assets + this.assetCount * sizeof ParsedStructAsset) = asset;
-        }
-        this.assetCount = this.assetCount + 1;
-    }
-    func getFieldAtIndex(&mut this, index: usize) -> &mut ParsedStructField {
-        assert(index < this.fieldCount);
-        unsafe {
-            return (this.fields + index * sizeof ParsedStructField);
+            let offset: usize = this - &structs[0];
+            assert_with_msg(offset % sizeof ParsedStructDecl == 0, "Got invalid struct offset");
+            let index: usize = offset / sizeof ParsedStructDecl;
+            assert_with_msg(index < structCount, "Got invalid struct ID");
+            return index;
         }
     }
-    func getAssetAtIndex(&mut this, index: usize) -> &mut ParsedStructAsset {
-        assert(index < this.assetCount);
-        unsafe {
-            return (this.assets + index * sizeof ParsedStructAsset);
+    func asTLI(&mut this) -> &mut ParsedTopLevelItem {
+        trace("ParsedStructDecl.asTLI");
+        return newParsedTopLevelItem(this.span, TLI_STRUCT_DECL, this.getID());
+    }
+
+    func getFieldIndex(&mut this, name: &SubStr) -> usize {
+        return this.context.getFieldIndex(name);
+    }
+    func getFieldOffset(&mut this, name: &SubStr) -> usize {
+        return this.context.getFieldOffset(name);
+    }
+    func getFieldOffsetAndSize(&mut this, index: usize, offset: &mut usize, size: &mut usize) {
+        trace("ParsedStructDecl.getFieldOffsetAndSize");
+        mut o: usize = 0;
+        for (mut i: usize = 0; i < this.context.fieldLength; i = i + 1) {
+            let field: usize = this.context.getFieldTypeAtIndex(i);
+            let f1: &mut ParsedTypeDecl = getTypeDeclByID(field);
+            let f: &mut Type = getTypeByID(f1.typeState.getType());
+            let s: usize = f.getSize();
+            if (i == index) {
+                *offset = o;
+                *size = s;
+                return;
+            }
+            o = o + s;
         }
+        unreachable("Expected to find field offset and size");
     }
 }
 
-func defaultStructDecl() -> ParsedStructDecl {
-    unsafe {
-        mut mem: Any = calloc(INITIAL_CAPACITY, sizeof ParsedStructField);
-        assert_with_msg(mem != null, "Could not allocate enough memory in defaultStructDecl()");
-        let fields: &mut ParsedStructField = &mut *mem;
-        mem = calloc(INITIAL_CAPACITY, sizeof ParsedStructAsset);
-        assert_with_msg(mem != null, "Could not allocate enough memory in defaultStructDecl()");
-        let assets: &mut ParsedStructAsset = &mut *mem;
-        return ParsedStructDecl {
-            span: defaultSpan(),
-            fields: fields,
-            fieldCap: INITIAL_CAPACITY,
-            fieldCount: 0,
-            assets: assets,
-            assetCap: INITIAL_CAPACITY,
-            assetCount: 0
-        };
+func newParsedStructDecl(parent: usize, span: Span, name: Token) -> &mut ParsedStructDecl {
+    trace("newParsedStructDecl");
+    let s: &mut ParsedStructDecl = &mut structs[structCount];
+    *s = ParsedStructDecl {
+        parentModule: parent,
+        name: name,
+        span: span,
+        context: blank,
+        typeState: blank,
+    };
+    structCount = structCount + 1;
+    return s;
+}
+
+struct ParsedMethod {
+    parentID: usize;
+    name: Token;
+    isStatic: bool;
+    params: ParamContext;
+    retTypeID: usize;
+    body: usize;
+    typeState: TCState;
+
+    func getID(&mut this) -> usize {
+        trace("ParsedMethod.getID");
+        unsafe {
+            let offset: usize = this - &methods[0];
+            assert_with_msg(offset % sizeof ParsedMethod == 0, "Got invalid method offset");
+            let index: usize = offset / sizeof ParsedMethod;
+            assert_with_msg(index < methodCount, "Got invalid method ID");
+            return index;
+        }
+    }
+
+    func getMangledName(&mut this) -> String {
+        trace("ParsedMethod.getMangledName");
+        assert_with_msg(this.typeState.isSuccess(), "Mangling can only be done after type checks");
+        return mangleFunctionName(
+            this.parentID,
+            &this.name,
+            &mut this.params,
+            this.retTypeID,
+            true,  // isMethod
+            false, // isComptime,
+            false, // isExtern,
+        );
     }
 }
 
-struct ParsedStructField {
-    span: Span;
-    name: SubStr;
-    typ: ParsedTypeExpr;
-}
-
-struct ParsedStructAsset {
-    asset: ParsedVarDecl;
+func newParsedMethod(parentID: usize, name: Token, mut params: ParamContext, retType: &mut ParsedTypeDecl, body: usize) -> &mut ParsedMethod {
+    let m: &mut ParsedMethod = &mut methods[methodCount];
+    methodCount = methodCount + 1;
+    *m = ParsedMethod {
+        parentID: parentID,
+        name: name,
+        params: params,
+        typeState: blank,
+        retTypeID: retType.getID(),
+        body: body,
+        isStatic: !params.hasThis(),
+    };
+    return m;
 }
 
 struct ParsedFuncDecl {
+    parentID: usize;
+    name: Token;
     span: Span;
-    params: &mut ParsedParam;
-    paramCap: usize;
-    paramCount: usize;
-    stmts: &mut ParsedStmt;
-    stmtCap: usize;
-    stmtCount: usize;
-    retType: ParsedTypeExpr;
-    func addParam(&mut this, param: ParsedParam) {
-        if (this.paramCount >= this.paramCap) {
-            todo_with_msg("resize params");
-        }
+    params: ParamContext;
+    retTypeID: usize;
+    body: usize;
+    isComptime: bool;
+    isExtern: bool;
+    typeState: TCState;
+
+    func getID(&mut this) -> usize {
+        trace("ParsedFuncDecl.getID");
         unsafe {
-            *(this.params + this.paramCount * sizeof ParsedParam) = param;
+            let offset: usize = this - &funcDecls[0];
+            assert_with_msg(offset % sizeof ParsedFuncDecl == 0, "Got invalid func offset");
+            let index: usize = offset / sizeof ParsedFuncDecl;
+            assert_with_msg(index < funcCount, "Got invalid func ID");
+            return index;
         }
-        this.paramCount = this.paramCount + 1;
-    }
-    func addStmt(&mut this, stmt: ParsedStmt) {
-        if (this.stmtCount >= this.stmtCap) {
-            todo_with_msg("resize stmts");
-        }
-        unsafe {
-            *(this.stmts + this.stmtCount * sizeof ParsedStmt) = stmt;
-        }
-        this.stmtCount = this.stmtCount + 1;
-    }
-    func setReturnType(&mut this, retType: ParsedTypeExpr) {
-        this.retType = retType;
     }
 
-    func getParamAtIndex(&mut this, index: usize) -> &mut ParsedParam {
-        assert_with_msg(index < this.paramCount, "Out of bounds access in ParsedFuncDecl.getParamAtIndex()");
+    func getMangledName(&mut this) -> String {
+        trace("ParsedFuncDecl.getMangledName");
+        assert_with_msg(this.typeState.isSuccess(), "Mangling can only be done after type checks");
+        return mangleFunctionName(
+            this.parentID,
+            &this.name,
+            &mut this.params,
+            this.retTypeID,
+            false, // isMethod
+            this.isComptime,
+            this.isExtern,
+        );
+    }
+
+    func asTLI(&mut this) -> &mut ParsedTopLevelItem {
+        trace("ParsedFuncDecl.asTLI");
+        return newParsedTopLevelItem(this.span, TLI_FUNC_DECL, this.getID());
+    }
+}
+
+func newParsedFuncDecl(parentID: usize, span: Span, name: Token, params: ParamContext, retType: &mut ParsedTypeDecl, body: usize, isExtern: bool) -> &mut ParsedFuncDecl {
+    let f: &mut ParsedFuncDecl = &mut funcDecls[funcCount];
+    *f = ParsedFuncDecl {
+        parentID: parentID,
+        name: name,
+        span: span,
+        params: params,
+        retTypeID: retType.getID(),
+        body: body,
+        isComptime: false,
+        isExtern: isExtern,
+        typeState: blank,
+    };
+    funcCount = funcCount + 1;
+    return f;
+}
+
+struct ParsedBlock {
+    span: Span;
+    stmtList: &mut usize;
+    stmtLength: usize;
+    stmtCapacity: usize;
+    typeState: TCState;
+
+    func getID(&mut this) -> usize {
+        trace("ParsedBlock.getID");
         unsafe {
-            let _param: &mut ParsedParam = this.params + index * sizeof ParsedParam;
-            return _param;
+            let offset: usize = this - &blocks[0];
+            assert_with_msg(offset % sizeof ParsedBlock == 0, "Got invalid block offset");
+            let index: usize = offset / sizeof ParsedBlock;
+            assert_with_msg(index < blockCount, "Got invalid block ID");
+            return index;
         }
     }
-    func getStmtAtIndex(&mut this, index: usize) -> &mut ParsedStmt {
-        assert_with_msg(index < this.stmtCount, "Out of bounds access in ParsedFuncDecl.getStmtAtIndex()");
+    func addStmt(&mut this, stmt: &mut ParsedStmt) {
+        trace("ParsedBlock.addStmt");
+        if (this.stmtLength >= this.stmtCapacity) unsafe {
+            mut newCap: usize = this.stmtCapacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.stmtList = realloc(this.stmtList, newCap * sizeof usize);
+            assert_with_msg(this.stmtList != null, "Could not resize stmt list");
+            this.stmtCapacity = newCap;
+        }
         unsafe {
-            let _stmt: &mut ParsedStmt = this.stmts + index * sizeof ParsedStmt;
-            return _stmt;
+            *(this.stmtList + this.stmtLength * sizeof usize) = stmt.getID();
+            this.stmtLength = this.stmtLength + 1;
+        }
+    }
+
+    func getStmtAtIndex(&mut this, index: usize) -> usize {
+        trace("ParsedBlock.getStmtAtIndex");
+        assert_with_msg(index < this.stmtLength, "Out of bounds access in ParsedBlock.getStmtAtIndex");
+        unsafe {
+            return *(this.stmtList + index * sizeof usize);
         }
     }
 }
-func defaultFuncDecl() -> ParsedFuncDecl {
+
+func newParsedBlock() -> &mut ParsedBlock {
+    let b: &mut ParsedBlock = &mut blocks[blockCount];
+    (*b).typeState = blank;
+    blockCount = blockCount + 1;
+    return b;
+}
+
+comptime STMT_INVALID: usize = 0;
+// if VarDecl is global, set block to moduleID, otherwise, set block to MAX
+comptime STMT_VAR_DECL: usize = 1;
+comptime STMT_RETURN_EMPTY: usize = 2;
+comptime STMT_RETURN_EXPR: usize = 3;
+comptime STMT_EXPR: usize = 4;
+comptime STMT_BLOCK: usize = 5;
+comptime STMT_IF: usize = 6;
+comptime STMT_WHILE: usize = 7;
+comptime STMT_BREAK: usize = 8;
+comptime STMT_CONTINUE: usize = 9;
+// FIXME: The amount of memory wasted here is crazy
+struct ParsedStmt {
+    kind: usize;
+    span: Span;
+    varDeclContext: VarDeclContext;
+    expr: usize;
+    block: usize;
+    step: usize;
+    ifContext: IfContext;
+    typeState: TCState;
+
+    func getID(&mut this) -> usize {
+        trace("ParsedStmt.getID");
+        unsafe {
+            let offset: usize = this - &stmts[0];
+            assert_with_msg(offset % sizeof ParsedStmt == 0, "Got invalid stmt offset");
+            let index: usize = offset / sizeof ParsedStmt;
+            assert_with_msg(index < stmtCount, "Got invalid stmt ID");
+            return index;
+        }
+    }
+
+    func asTLI(&mut this) -> &mut ParsedTopLevelItem {
+        trace("ParsedStmt.asTLI");
+        if (this.kind == STMT_VAR_DECL) {
+            return newParsedTopLevelItem(this.span, TLI_VAR_DECL, this.getID());
+        } else {
+            todo_with_msg("Can't convert stmt to tli");
+            unsafe { return null; }
+        }
+    }
+
+    func getMangledName(&mut this) -> String {
+        assert_with_msg(this.kind == STMT_VAR_DECL, "Only variable declarations can get their names mangled");
+        assert_with_msg(this.block < 64000, "Only global variable declarations can get their names mangled");
+        return mangleVariableName(this.block, &this.varDeclContext.name);
+    }
+}
+
+func newParsedStmt(span: Span, kind: usize) -> &mut ParsedStmt {
+    trace("newParsedStmt");
+    let s: &mut ParsedStmt = &mut stmts[stmtCount];
+    (*s).span = span;
+    (*s).kind = kind;
+    stmtCount = stmtCount + 1;
+    return s;
+}
+
+// REVIEW: These names might need changing once we make it to the Type Checker
+comptime PARSED_TYPE_INVALID: usize = 0;
+comptime PARSED_TYPE_UNKNOWN: usize = 1;
+comptime PARSED_TYPE_NONE: usize = 2;
+comptime PARSED_TYPE_ANY: usize = 3;
+comptime PARSED_TYPE_BLANK: usize = 4;
+comptime PARSED_TYPE_I8: usize = 5;
+comptime PARSED_TYPE_I16: usize = 6;
+comptime PARSED_TYPE_I32: usize = 7;
+comptime PARSED_TYPE_I64: usize = 8;
+comptime PARSED_TYPE_U8: usize = 9;
+comptime PARSED_TYPE_U16: usize = 10;
+comptime PARSED_TYPE_U32: usize = 11;
+comptime PARSED_TYPE_U64: usize = 12;
+comptime PARSED_TYPE_USIZE: usize = 13;
+comptime PARSED_TYPE_BOOL: usize = 14;
+comptime PARSED_TYPE_CHAR: usize = 15;
+comptime PARSED_TYPE_IDENT: usize = 16;
+comptime PARSED_TYPE_REF: usize = 17;
+comptime PARSED_TYPE_ARRAY: usize = 18;
+comptime PARSED_TYPE_F32: usize = 19;
+comptime PARSED_TYPE_F64: usize = 20;
+comptime PARSED_TYPE_BUILTIN: usize = 21;
+comptime func BUILD_A_TYPE(s: &char) -> SubStr {
     unsafe {
-        mut mem: Any = calloc(INITIAL_CAPACITY, sizeof ParsedParam);
-        assert_with_msg(mem != null, "Could not allocate enough memory in defaultFuncDecl()");
-        let params: &mut ParsedParam = &mut *mem;
-        mem = calloc(INITIAL_CAPACITY, sizeof ParsedStmt);
-        assert_with_msg(mem != null, "Could not allocate enough memory in defaultFuncDecl()");
-        let stmts: &mut ParsedStmt = &mut *mem;
-        let retType: ParsedTypeExpr = defaultTypeExpr(defaultSpan());
-        return ParsedFuncDecl {
-            span: defaultSpan(),
-            params: params,
-            paramCap: INITIAL_CAPACITY,
-            paramCount: 0,
-            stmts: stmts,
-            stmtCap: INITIAL_CAPACITY,
-            stmtCount: 0,
-            retType: retType
+        return SubStr {
+            start: s,
+            len: comptimeStrlen(s)
         };
     }
 }
-struct ParsedParam {
-    span: Span;
-    name: SubStr;
-    typ: ParsedTypeExpr;
-}
 
-struct ParsedTypeExpr {
-    span: Span;
-    expr: ParsedDeclValue;
+comptime ANY: SubStr = BUILD_A_TYPE("Any");
+comptime I8: SubStr = BUILD_A_TYPE("i8");
+comptime I16: SubStr = BUILD_A_TYPE("i16");
+comptime I32: SubStr = BUILD_A_TYPE("i32");
+comptime I64: SubStr = BUILD_A_TYPE("i64");
+comptime U8: SubStr = BUILD_A_TYPE("u8");
+comptime U16: SubStr = BUILD_A_TYPE("u16");
+comptime U32: SubStr = BUILD_A_TYPE("u32");
+comptime U64: SubStr = BUILD_A_TYPE("u64");
+comptime USIZE: SubStr = BUILD_A_TYPE("usize");
+comptime F32: SubStr = BUILD_A_TYPE("f32");
+comptime F64: SubStr = BUILD_A_TYPE("f64");
+comptime BOOL: SubStr = BUILD_A_TYPE("bool");
+comptime CHAR: SubStr = BUILD_A_TYPE("char");
+func getBuiltinTypeKind(name: Token) -> usize {
+    if (name.content.equals(&ANY)) return PARSED_TYPE_ANY;
+    else if (name.content.equals(&I8)) return PARSED_TYPE_I8;
+    else if (name.content.equals(&I16)) return PARSED_TYPE_I16;
+    else if (name.content.equals(&I32)) return PARSED_TYPE_I32;
+    else if (name.content.equals(&I64)) return PARSED_TYPE_I64;
+    else if (name.content.equals(&U8)) return PARSED_TYPE_U8;
+    else if (name.content.equals(&U16)) return PARSED_TYPE_U16;
+    else if (name.content.equals(&U32)) return PARSED_TYPE_U32;
+    else if (name.content.equals(&U64)) return PARSED_TYPE_U64;
+    else if (name.content.equals(&USIZE)) return PARSED_TYPE_USIZE;
+    else if (name.content.equals(&F32)) return PARSED_TYPE_F32;
+    else if (name.content.equals(&F64)) return PARSED_TYPE_F64;
+    else if (name.content.equals(&BOOL)) return PARSED_TYPE_BOOL;
+    else if (name.content.equals(&CHAR)) return PARSED_TYPE_CHAR;
+    return PARSED_TYPE_INVALID;
 }
-
-func defaultTypeExpr(span: Span) -> ParsedTypeExpr {
-    let none: ParsedDeclValue = createEmptyExpr(span);
-    return ParsedTypeExpr {
-        span: span,
-        expr: none
-    };
-}
-
-func createEmptyExpr(span: Span) -> ParsedDeclValue {
-    let noneIdent: ParsedDeclValueIdent = ParsedDeclValueIdent {
-        span: span,
-        name: newSubStrOfStrLit("none")
-    };
-    return createDeclValue(DECL_VALUE_IDENT, span, sizeof ParsedDeclValueIdent, &noneIdent);
-}
-
-comptime STMT_VAR_DECL: usize = 0;
-comptime STMT_RETURN: usize = 1;
-comptime STMT_EXPR: usize = 2;
-struct ParsedStmt {
+struct ParsedTypeDecl {
     span: Span;
     kind: usize;
-    data: Any;
-}
+    underlyingID: usize;
+    arraySize: usize;
+    nameTkn: Token;
+    typeState: TCState;
 
-func createStmt(span: Span, kind: usize, size: usize, data: Any) -> ParsedStmt {
-    unsafe {
-        mut mem: Any = calloc(1, size);
-        assert(mem != null);
-        memcpy(mem, data, size);
-        return ParsedStmt {
-            span: span,
-            kind: kind,
-            data: mem
-        };
+    func getID(&mut this) -> usize {
+        trace("ParsedTypeDecl.getID");
+        unsafe {
+            let offset: usize = this - &typeDecls[0];
+            assert_with_msg(offset % sizeof ParsedTypeDecl == 0, "Got invalid typeDecl offset");
+            let index: usize = offset / sizeof ParsedTypeDecl;
+            assert_with_msg(index < typeDeclCount, "Got invalid typeDecl ID");
+            return index;
+        }
     }
 }
+
+func newParsedTypeDecl(span: Span, kind: usize) -> &mut ParsedTypeDecl {
+    trace("newParsedTypeDecl");
+    let t: &mut ParsedTypeDecl = &mut typeDecls[typeDeclCount];
+    (*t).span = span;
+    (*t).kind = kind;
+    typeDeclCount = typeDeclCount + 1;
+    return t;
+}
+
+func newBuiltinTypeDecl(span: Span, kind: usize) -> &mut ParsedTypeDecl {
+    trace("newBuiltinTypeDecl");
+    let t: &mut ParsedTypeDecl = &mut typeDecls[kind];
+    (*t).span = span;
+    (*t).kind = PARSED_TYPE_BUILTIN;
+    return t;
+}
+
+comptime ASSOC_LEFT: usize = 0;
+comptime ASSOC_RIGHT: usize = 1;
+
+comptime EXPR_INVALID: usize = 0;
+comptime EXPR_EMPTY: usize = 1;
+comptime EXPR_INT_LIT: usize = 2;
+comptime EXPR_STRING_LIT: usize = 3;
+comptime EXPR_CHAR_LIT: usize = 4;
+comptime EXPR_ARRAY_LIT: usize = 5;
+// name -> op is 1 if it's a global variable
+// name -> LHS is ID of VarDecl, set by TypeChecker
+//      -> if name is a parameter, set LHS to MAX+param#
+comptime EXPR_NAME: usize = 6;
+// unary -> op and LHS is set
+comptime EXPR_UNARY: usize = 7;
+comptime EXPR_BINARY: usize = 8;
+// call -> origToken is fn name, arrayContext is args
+// call -> LHS is ID of FuncDecl we call, set by TypeChecker
+comptime EXPR_CALL: usize = 9;
+// sizeof -> LHS is set
+comptime EXPR_SIZEOF: usize = 10;
+comptime EXPR_STRUCT_INIT: usize = 11;
+// as -> LHS is expr, RHS is type ID
+comptime EXPR_AS: usize = 12;
+comptime EXPR_NULL: usize = 13;
+comptime EXPR_BLANK: usize = 14;
+comptime EXPR_TRUE: usize = 15;
+comptime EXPR_FALSE: usize = 16;
+struct ParsedExpr {
+    span: Span;
+    kind: usize;
+    origToken: Token;
+    // REVIEW: We don't need to waste all that memory
+    arrayContext: ArrayContext;
+    structInitContext: StructInitContext;
+    // FIXME: Do we need to waste that memory for all expressions, even if they're not binary ops?
+    // REVIEW: We could store binOp in origToken and compute the op on the fly?
+    op: usize;
+    lhs: usize;
+    rhs: usize;
+    typeState: TCState;
+    func getID(&mut this) -> usize {
+        trace("ParsedExpr.getID");
+        unsafe {
+            let offset: usize = this - &exprs[0];
+            assert_with_msg(offset % sizeof ParsedExpr == 0, "Got invalid expr offset");
+            let index: usize = offset / sizeof ParsedExpr;
+            assert_with_msg(index < exprCount, "Got invalid expr ID");
+            return index;
+        }
+    }
+
+    func intoPointer(&mut this) -> usize {
+        let unary: &mut ParsedExpr = newParsedExpr(this.span, EXPR_UNARY);
+        (*unary).op = UNARY_REF;
+        (*unary).lhs = this.getID();
+        return unary.getID();
+    }
+
+    func isLValue(&mut this) -> bool {
+        if (this.kind == EXPR_UNARY) {
+            return this.op == UNARY_DEREF;
+        } else if (this.kind == EXPR_BINARY) {
+            if (this.op == BIN_DOT) {
+                return getExprByID(this.rhs).kind == EXPR_NAME;
+            }
+            if (this.op == BIN_INDEXED_ACCESS) return true;
+            return false;
+        } else {
+            return this.kind == EXPR_NAME;
+        }
+    }
+
+    func isBlank(&mut this) -> bool {
+        return this.kind == EXPR_BLANK;
+    }
+    func isIdentifier(&mut this) -> bool {
+        return this.kind == EXPR_NAME;
+    }
+    func isLiteral(&mut this) -> bool {
+        return this.kind == EXPR_INT_LIT
+            || this.kind == EXPR_STRING_LIT
+            || this.kind == EXPR_CHAR_LIT
+            || this.kind == EXPR_ARRAY_LIT
+            || this.kind == EXPR_NULL
+            || this.kind == EXPR_TRUE
+            || this.kind == EXPR_FALSE;
+    }
+
+    func isUnary(&mut this) -> bool {
+        return this.kind == EXPR_UNARY;
+    }
+
+    func isCall(&mut this) -> bool {
+        return this.kind == EXPR_CALL;
+    }
+
+    func isAssignment(&mut this) -> bool {
+        if (this.kind != EXPR_BINARY) return false;
+        return this.op == BIN_ASSIGN;
+    }
+
+    func isArithmetic(&mut this) -> bool {
+        if (this.kind != EXPR_BINARY) return false;
+        return this.op == BIN_PLUS
+            || this.op == BIN_SUB
+            || this.op == BIN_MULT
+            || this.op == BIN_DIV
+            || this.op == BIN_MOD;
+    }
+
+    func isComparison(&mut this) -> bool {
+        if (this.kind != EXPR_BINARY) return false;
+        return this.op == BIN_CMP_GTE
+            || this.op == BIN_CMP_GT
+            || this.op == BIN_CMP_LTE
+            || this.op == BIN_CMP_LT
+            || this.op == BIN_CMP_EQ
+            || this.op == BIN_CMP_NEQ;
+    }
+
+    func isLogical(&mut this) -> bool {
+        if (this.kind != EXPR_BINARY) return false;
+        return this.op == BIN_LAND
+            || this.op == BIN_LOR;
+    }
+
+    func isBitwise(&mut this) -> bool {
+        if (this.kind != EXPR_BINARY) return false;
+        return this.op == BIN_BAND
+            || this.op == BIN_BOR;
+    }
+}
+
+comptime BIN_INVALID: usize = 0;
+comptime BIN_PLUS: usize = 1;
+comptime BIN_SUB: usize = 2;
+comptime BIN_MULT: usize = 3;
+comptime BIN_DIV: usize = 4;
+comptime BIN_DOT: usize = 5;
+comptime BIN_CMP_GTE: usize = 6;
+comptime BIN_CMP_GT: usize = 7;
+comptime BIN_CMP_LTE: usize = 8;
+comptime BIN_CMP_LT: usize = 9;
+comptime BIN_CMP_NEQ: usize = 10;
+comptime BIN_CMP_EQ: usize = 11;
+comptime BIN_ASSIGN: usize = 12;
+comptime BIN_AS: usize = 13;
+comptime BIN_INDEXED_ACCESS: usize = 14;
+comptime BIN_MOD: usize = 15;
+// FIXME: Those names are pretty easy to mix up
+comptime BIN_LAND: usize = 16;
+comptime BIN_LOR: usize = 17;
+comptime BIN_BAND: usize = 18;
+comptime BIN_BOR: usize = 19;
+func binOpFromKind(kind: usize) -> usize {
+    trace("binOpFromKind");
+    if (kind == TOKEN_PLUS_SINGLE) return BIN_PLUS;
+    else if (kind == TOKEN_MINUS_SINGLE) return BIN_SUB;
+    else if (kind == TOKEN_ASTERISK_SINGLE) return BIN_MULT;
+    else if (kind == TOKEN_SLASH_SINGLE) return BIN_DIV;
+    else if (kind == TOKEN_DOT) return BIN_DOT;
+    else if (kind == TOKEN_GREATER_THAN_EQUAL) return BIN_CMP_GTE;
+    else if (kind == TOKEN_GREATER_THAN) return BIN_CMP_GT;
+    else if (kind == TOKEN_LESS_THAN_EQUAL) return BIN_CMP_LTE;
+    else if (kind == TOKEN_LESS_THAN) return BIN_CMP_LT;
+    else if (kind == TOKEN_NOT_EQUAL) return BIN_CMP_NEQ;
+    else if (kind == TOKEN_EQUAL_DOUBLE) return BIN_CMP_EQ;
+    else if (kind == TOKEN_EQUAL_SINGLE) return BIN_ASSIGN;
+    // FIXME: We can't know if this is actually KEYWORD_AS
+    else if (kind == TOKEN_KEYWORD) return BIN_AS;
+    else if (kind == TOKEN_SQUARE_OPEN) return BIN_INDEXED_ACCESS;
+    else if (kind == TOKEN_PERCENT) return BIN_MOD;
+    else if (kind == TOKEN_PIPE_SINGLE) return BIN_BOR;
+    else if (kind == TOKEN_PIPE_DOUBLE) return BIN_LOR;
+    else if (kind == TOKEN_AMPERSAND_SINGLE) return BIN_BAND;
+    else if (kind == TOKEN_AMPERSAND_DOUBLE) return BIN_LAND;
+    else unsafe {
+        printf("%llu\n", kind);
+        todo_with_msg("binOpFromKind");
+    }
+    return 0;
+}
+
+comptime UNARY_INVALID: usize = 0;
+comptime UNARY_DEREF: usize = 1;
+comptime UNARY_REF: usize = 2;
+comptime UNARY_MINUS: usize = 3;
+comptime UNARY_NOT: usize = 4;
+func unaryOpFromKind(kind: usize) -> usize {
+    trace("unaryOpFromKind");
+    if (kind == TOKEN_ASTERISK_SINGLE) return UNARY_DEREF;
+    else if (kind == TOKEN_AMPERSAND_SINGLE) return UNARY_REF;
+    else if (kind == TOKEN_MINUS_SINGLE) return UNARY_MINUS;
+    else if (kind == TOKEN_BANG) return UNARY_NOT;
+    todo_with_msg("unaryOpFromKind");
+    return 0;
+}
+
+func newParsedExpr(span: Span, kind: usize) -> &mut ParsedExpr {
+    trace("newParsedExpr");
+    let e: &mut ParsedExpr = &mut exprs[exprCount];
+    (*e).kind = kind;
+    (*e).span = span;
+    exprCount = exprCount + 1;
+    return e;
+}
+

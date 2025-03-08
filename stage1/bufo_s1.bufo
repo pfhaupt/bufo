@@ -1,39 +1,79 @@
+import "prelude.bufo";
+import "libc.bufo";
 import "substr.bufo";
 import "string.bufo";
+import "cmd.bufo";
 import "frontend/nodes.bufo";
 import "frontend/lexer.bufo";
 import "frontend/parser.bufo";
 import "middleend/checker.bufo";
+import "backend/irgen.bufo";
+import "backend/interp.bufo";
+import "backend/codegen_llvm.bufo";
 
-unsafe func main() {
-    let argv: &&char = GLOBAL_GET_ARGV();
-    let argc: usize = GLOBAL_GET_ARGC();
-    if (argc < 2) unsafe {
-        fprintf(stderr, "error: Expected input file as argument.\n");
+func getArg(argv: &&char, i: usize) -> &char {
+    unsafe {
+        return *(argv + i * sizeof &char);
+    }
+}
+
+unsafe func main(argc: usize, argv: &&char) -> i32 {
+    setupStdHandles();
+    if (argc < 3) unsafe {
+        fprintf(stderr, "error: Expected input and output files.\n");
         exit(1);
     }
-    let _prog: &char = getArg(0);
-    let file: &char = getArg(1);
     // TODO: Handle other arguments such as -v and -o
     // TODO: Handle arguments in any order
-    let fileSubStr: SubStr = newSubStr(file, 0, strlen(file));
-    let string: String = readFileToString(file);
+    let _prog: &char = getArg(argv, 0);
+    let file: &char = getArg(argv, 1);
+    let out: &char = getArg(argv, 2);
+    mut filepath: String = newStringFromStrLit(file);
+    filepath = filepath.toAbsolutePath();
+    let fileSubStr: SubStr = filepath.asSubStr();
+    mut string: String = readFileToString(file);
     let sub: SubStr = newSubStrOfString(&string, 0, string.length);
-    mut lexer: Lexer = newLexer(&sub);
-    if (false) {
-        while (true) {
-            let tkn: Token = lexer.next();
-            if (tkn.kind == TOKEN_EOF) break;
-            tkn.print();
-            unsafe { printf("\n"); }
-        }
-    } else unsafe {
-        mut parser: Parser = newParser(&mut lexer);
-        mut module: ParsedModule = parser.parseProject();
-        mut checker: Checker = newChecker();
-        if (!checker.generateBytecode(&mut module)) exit(1);
-        if (!checker.verifyBytecode()) exit(1);
-        warning("technically we should codegen now :^)");
+    mut parser: Parser = newParserFromSource(0, sub);
+    parser.addImportRoot(newSubStrOfStrLit("./std/"));
+    mut project: ParsedModule = parser.parseProject(fileSubStr);
+    mut checker: TypeChecker = newTypeChecker();
+    if (!checker.typeCheckProject(&mut project)) return 1;
+    mut generator: IRGen = newIRGenerator();
+    if (!generator.generateBytecode(&mut project)) return 1;
+    mut interp: IRInterp = newIRInterpreter(&mut generator);
+    mut llvmCodegen: LLVMCodegen = newLLVMCodegen(fileSubStr, &mut generator, &mut interp);
+    if (!llvmCodegen.generateExecutable()) return 1;
+    if (PRINT_DEBUG) {
+        printf("moduleCount   = %llu\n", moduleCount);
+        printf("tliCount      = %llu\n", tliCount);
+        printf("structCount   = %llu\n", structCount);
+        printf("funcCount     = %llu\n", funcCount);
+        printf("methodCount   = %llu\n", methodCount);
+        printf("blockCount    = %llu\n", blockCount);
+        printf("stmtCount     = %llu\n", stmtCount);
+        printf("typeDeclCount = %llu\n", typeDeclCount);
+        printf("exprCount     = %llu\n", exprCount);
     }
+    mut s: String = newStringFromStrLit("link.exe test.obj /DEFAULTLIB:libcmt /OUT:");
+    s.pushStr(out);
+    for (mut i: usize = 0; i < compilerFlagCount; i = i + 1) {
+        s.pushChar(' ');
+        let flag: ParsedCompilerFlag = compilerFlags[i];
+        if (flag.flag.content.equals(&COMPILER_FLAG_LIBRARY)) {
+            s.pushSubStr(&flag.value.content);
+            s.pushStr(".lib");
+        } else if (flag.flag.content.equals(&COMPILER_FLAG_LIBPATH)) {
+            s.pushStr("/LIBPATH:");
+            s.pushSubStr(&flag.value.content);
+        } else if (flag.flag.content.equals(&COMPILER_FLAG_LINKER)) {
+            todo_with_msg("add link");
+        } else {
+            unreachable("Exhaustive handling of compiler_flags");
+        }
+    }
+    let cmd: Cmd = newCmdFromStrLit(s.chars());
+    if (!cmd.runSync()) return 1;
+    printf("%s: Successfully compiled code and saved it in %s :^)\n", NOTE_STR, out);
     string.drop();
+    return 0;
 }

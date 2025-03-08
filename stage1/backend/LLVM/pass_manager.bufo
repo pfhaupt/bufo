@@ -1,0 +1,43 @@
+import "prelude.bufo";
+import "./module.bufo";
+import "./bindings.bufo";
+
+struct LLVMPassManager {
+    ref: LLVMPassManagerRef;
+    func addPromoteMemoryToRegisterPass(&mut this) {
+        trace("LLVMPassManager.addPromoteMemoryToRegisterPass");
+        unsafe {
+            LLVMAddPromoteMemoryToRegisterPass(this.ref);
+        }
+    }
+    func addAlwaysInlinerPass(&mut this) {
+        trace("LLVMPassManager.addAlwaysInlinerPass");
+        unsafe {
+            LLVMAddAlwaysInlinerPass(this.ref);
+        }
+    }
+    func addCFGSimplificationPass(&mut this) {
+        trace("LLVMPassManager.addCFGSimplificationPass");
+        unsafe {
+            LLVMAddCFGSimplificationPass(this.ref);
+        }
+    }
+    func addGlobalDCEPass(&mut this) {
+        trace("LLVMPassManager.addGlobalDCEPass");
+        unsafe {
+            LLVMAddGlobalDCEPass(this.ref);
+        }
+    }
+
+    func runOn(&mut this, mut mod: LLVMModule) -> bool {
+        trace("LLVMPassManager.runOn");
+        return mod.runInPassManager(*this);
+    }
+}
+
+func newLLVMPassManagerFromRef(ref: LLVMPassManagerRef) -> LLVMPassManager {
+    assert_with_msg(!ref.isNull(), "Called newLLVMPassManagerFromRef with invalid reference");
+    return LLVMPassManager {
+        ref: ref,
+    };
+}

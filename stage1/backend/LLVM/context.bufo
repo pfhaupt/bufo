@@ -1,7 +1,13 @@
-import "./stage1/backend/LLVM/bindings.bufo";
-import "./stage1/backend/LLVM/module.bufo";
-import "./stage1/backend/LLVM/builder.bufo";
-import "./stage1/backend/LLVM/types.bufo";
+import "prelude.bufo";
+import "string.bufo";
+import "substr.bufo";
+import "./bindings.bufo";
+import "./module.bufo";
+import "./builder.bufo";
+import "./types.bufo";
+import "./values.bufo";
+import "./basic_block.bufo";
+import "./target.bufo";
 
 struct LLVMContext {
     ref: LLVMContextRef;
@@ -12,6 +18,28 @@ struct LLVMContext {
 
     func guardReference(&mut this) {
         assert_with_msg(!this.ref.isNull(), "LLVM Context is null");
+    }
+
+    func initializeTargets(&mut this) {
+        assert_with_msg(LLVM_InitializeNativeAsmParser() == 0, "Could not initialize Targets");
+        assert_with_msg(LLVM_InitializeNativeAsmPrinter() == 0, "Could not initialize Targets");
+        assert_with_msg(LLVM_InitializeNativeDisassembler() == 0, "Could not initialize Targets");
+        assert_with_msg(LLVM_InitializeNativeTarget() == 0, "Could not initialize Targets");
+    }
+
+    func createTarget(&mut this, name: &char) -> LLVMTarget {
+        trace("LLVMContext.createTarget");
+        unsafe {
+            let target: LLVMTargetRef = LLVMGetTargetFromName(name);
+            assert_with_msg(!target.isNull(), "Could not create target triple");
+            return newLLVMTargetFromRef(target);
+        }
+    }
+
+    func createTargetTriple(&mut this, name: &char) -> &char {
+        trace("LLVMContext.createTargetTriple");
+        warning("Target Triple is currently hardcoded!");
+        return "x86_64-pc-windows-msvc";
     }
 
     func createModuleWithName(&mut this, name: SubStr) -> LLVMModule {
@@ -45,6 +73,24 @@ struct LLVMContext {
             let int: LLVMTypeRef = LLVMIntTypeInContext(this.ref, bitsize as u32);
             assert_with_msg(!int.isNull(), "Could not create integer type in context");
             return newLLVMTypeFromRef(int);
+        }
+    }
+
+    func createFloatType(&mut this) -> LLVMType {
+        trace("LLVMContext.createFloatType");
+        unsafe {
+            let float: LLVMTypeRef = LLVMFloatTypeInContext(this.ref);
+            assert_with_msg(!float.isNull(), "Could not create float type in context");
+            return newLLVMTypeFromRef(float);
+        }
+    }
+
+    func createDoubleType(&mut this) -> LLVMType {
+        trace("LLVMContext.createDoubleType");
+        unsafe {
+            let double: LLVMTypeRef = LLVMDoubleTypeInContext(this.ref);
+            assert_with_msg(!double.isNull(), "Could not create double type in context");
+            return newLLVMTypeFromRef(double);
         }
     }
 

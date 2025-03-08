@@ -399,9 +399,6 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
         self.fill_struct_lookup(file)?;
         self.fill_lookup(file)?;
         self.comptime_evaluator.set_struct_lookup(&self.struct_info);
-        if let Err(e) = self.codegen_intrinsics() {
-            internal_panic!("Module verification failed:\n{}", e.to_string());
-        }
         if let Err(e) = self.codegen_entrypoint(file) {
             internal_panic!("Module verification failed:\n{}", e.to_string());
         }
@@ -425,68 +422,6 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
     }
 
     #[trace_call(always)]
-    fn codegen_intrinsics(&mut self) -> Result<(), BuilderError> {
-        {
-            let global_argv = self.module.add_global(
-                self.context.i8_type().ptr_type(AddressSpace::default()),
-                Some(AddressSpace::default()),
-                "GLOBAL_ARGV"
-            );
-            global_argv.set_initializer(&self.context.i8_type().ptr_type(AddressSpace::default()).const_null());
-            let get_argv = self.module.get_function("GLOBAL_GET_ARGV").unwrap();
-            let argv_body = self.context.append_basic_block(get_argv, "entry");
-            self.builder.position_at_end(argv_body);
-            let argv = self.builder.build_load(
-                self.context.i8_type().ptr_type(AddressSpace::default()),
-                global_argv.as_pointer_value(),
-                "intr_load_argv"
-            )?;
-            self.builder.build_return(Some(&argv))?;
-        }
-        {
-            let global_argc = self.module.add_global(
-                self.context.i32_type(),
-                Some(AddressSpace::default()),
-                "GLOBAL_ARGC"
-            );
-            global_argc.set_initializer(&self.context.i32_type().const_int(0, false));
-            let get_argc = self.module.get_function("GLOBAL_GET_ARGC").unwrap();
-            let argc_body = self.context.append_basic_block(get_argc, "entry");
-            self.builder.position_at_end(argc_body);
-            let argc = self.builder.build_load(
-                self.context.i32_type(),
-                global_argc.as_pointer_value(),
-                "intr_load_argc"
-            )?;
-            let ret = self.builder.build_int_z_extend(
-                argc.into_int_value(),
-                self.context.i64_type(),
-                "intr_ext_argc"
-            )?;
-            self.builder.build_return(Some(&ret))?;
-        }
-        Ok(())
-    }
-
-    #[trace_call(always)]
-    fn codegen_entrypoint_init(&mut self) -> Result<(), BuilderError> {
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
-        // Note: main.1 because the actual entrypoint is also called main
-        assert!(function.get_name().to_str().unwrap() == "main", "Called codegen_entrypoint_init() in wrong context.");
-        let argc = self.module.get_global("GLOBAL_ARGC").expect("Called codegen_entrypoint_init() in wrong context.");
-        self.builder.build_store(
-            argc.as_pointer_value(),
-            function.get_nth_param(0).unwrap()
-        )?;
-        let argv = self.module.get_global("GLOBAL_ARGV").expect("Called codegen_entrypoint_init() in wrong context.");
-        self.builder.build_store(
-            argv.as_pointer_value(),
-            function.get_nth_param(1).unwrap()
-        )?;
-        Ok(())
-    }
-
-    #[trace_call(always)]
     fn codegen_entrypoint(&mut self, file: &nodes::FileNode) -> Result<(), BuilderError> {
         let main_name = self.find_main(file).unwrap_or_else(|| {
             eprintln!("[ERROR] Could not find main function!");
@@ -499,19 +434,21 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
             main_func.get_type().get_return_type().unwrap()
         };
         let ret_fn_type = ret_type.fn_type(&[
-            self.context.i32_type().into(),
+            self.context.i64_type().into(),
             self.context.i8_type().ptr_type(AddressSpace::default()).into(),
         ], false);
         assert!(self.module.get_function("main").is_none());
         let main = self.module.add_function("main", ret_fn_type, None);
         let entry = self.context.append_basic_block(main, "entry");
         self.builder.position_at_end(entry);
-        self.codegen_entrypoint_init()?;
         let _ = self.builder.build_call(
             self.module.get_function("func.setupStdHandles").expect("setupStdHandles is part of the prelude and should always be found"),
             &[], "setup_std"
         )?;
-        let result = self.builder.build_call(main_func, &[], "main_call")?;
+        let result = self.builder.build_call(main_func, &[
+            main.get_nth_param(0).unwrap().into(),
+            main.get_nth_param(1).unwrap().into()
+        ], "main_call")?;
         let val = if result.try_as_basic_value().left().is_none() {
             // NOTE: The return value doesn't matter, the function returns None
             //       it's a workaround for `void_type` not being a BasicValueEnum
@@ -1573,8 +1510,15 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
                     )?;
                     Ok(result.into())
                 } else {
+                    let mode = if binary.lhs.get_type().is_reference() {
+                        inkwell::IntPredicate::ULT
+                    } else if binary.lhs.get_type().is_signed() {
+                        inkwell::IntPredicate::SLT
+                    } else {
+                        inkwell::IntPredicate::ULT
+                    };
                     let result = self.builder.build_int_compare(
-                        inkwell::IntPredicate::SLT,
+                        mode,
                         self.try_into_int_value(&lhs)?,
                         self.try_into_int_value(&rhs)?,
                         "codegen_binary_lessthan",
@@ -1594,8 +1538,15 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
                     )?;
                     Ok(result.into())
                 } else {
+                    let mode = if binary.lhs.get_type().is_reference() {
+                        inkwell::IntPredicate::UGT
+                    } else if binary.lhs.get_type().is_signed() {
+                        inkwell::IntPredicate::SGT
+                    } else {
+                        inkwell::IntPredicate::UGT
+                    };
                     let result = self.builder.build_int_compare(
-                        inkwell::IntPredicate::SGT,
+                        mode,
                         self.try_into_int_value(&lhs)?,
                         self.try_into_int_value(&rhs)?,
                         "codegen_binary_greaterthan",
@@ -1615,8 +1566,13 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
                     )?;
                     Ok(result.into())
                 } else {
+                    let mode = if binary.lhs.get_type().is_signed() {
+                        inkwell::IntPredicate::SLE
+                    } else {
+                        inkwell::IntPredicate::ULE
+                    };
                     let result = self.builder.build_int_compare(
-                        inkwell::IntPredicate::SLE,
+                        mode,
                         self.try_into_int_value(&lhs)?,
                         self.try_into_int_value(&rhs)?,
                         "codegen_binary_lessthanequal",
@@ -1636,8 +1592,15 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
                     )?;
                     Ok(result.into())
                 } else {
+                    let mode = if binary.lhs.get_type().is_reference() {
+                        inkwell::IntPredicate::UGE
+                    } else if binary.lhs.get_type().is_signed() {
+                        inkwell::IntPredicate::SGE
+                    } else {
+                        inkwell::IntPredicate::UGE
+                    };
                     let result = self.builder.build_int_compare(
-                        inkwell::IntPredicate::SGE,
+                        mode,
                         self.try_into_int_value(&lhs)?,
                         self.try_into_int_value(&rhs)?,
                         "codegen_binary_greaterthanequal",

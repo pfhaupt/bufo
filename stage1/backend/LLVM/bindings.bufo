@@ -1,180 +1,217 @@
 compiler_flags {
-  library: "LLVMWindowsManifest.lib";
-  library: "LLVMXRay.lib";
-  library: "LLVMLibDriver.lib";
-  library: "LLVMDlltoolDriver.lib";
-  library: "LLVMCoverage.lib";
-  library: "LLVMLineEditor.lib";
-  library: "LLVMXCoreDisassembler.lib";
-  library: "LLVMXCoreCodeGen.lib";
-  library: "LLVMXCoreDesc.lib";
-  library: "LLVMXCoreInfo.lib";
-  library: "LLVMX86TargetMCA.lib";
-  library: "LLVMX86Disassembler.lib";
-  library: "LLVMX86AsmParser.lib";
-  library: "LLVMX86CodeGen.lib";
-  library: "LLVMX86Desc.lib";
-  library: "LLVMX86Info.lib";
-  library: "LLVMWebAssemblyDisassembler.lib";
-  library: "LLVMWebAssemblyAsmParser.lib";
-  library: "LLVMWebAssemblyCodeGen.lib";
-  library: "LLVMWebAssemblyDesc.lib";
-  library: "LLVMWebAssemblyUtils.lib";
-  library: "LLVMWebAssemblyInfo.lib";
-  library: "LLVMVEDisassembler.lib";
-  library: "LLVMVEAsmParser.lib";
-  library: "LLVMVECodeGen.lib";
-  library: "LLVMVEDesc.lib";
-  library: "LLVMVEInfo.lib";
-  library: "LLVMSystemZDisassembler.lib";
-  library: "LLVMSystemZAsmParser.lib";
-  library: "LLVMSystemZCodeGen.lib";
-  library: "LLVMSystemZDesc.lib";
-  library: "LLVMSystemZInfo.lib";
-  library: "LLVMSparcDisassembler.lib";
-  library: "LLVMSparcAsmParser.lib";
-  library: "LLVMSparcCodeGen.lib";
-  library: "LLVMSparcDesc.lib";
-  library: "LLVMSparcInfo.lib";
-  library: "LLVMRISCVTargetMCA.lib";
-  library: "LLVMRISCVDisassembler.lib";
-  library: "LLVMRISCVAsmParser.lib";
-  library: "LLVMRISCVCodeGen.lib";
-  library: "LLVMRISCVDesc.lib";
-  library: "LLVMRISCVInfo.lib";
-  library: "LLVMPowerPCDisassembler.lib";
-  library: "LLVMPowerPCAsmParser.lib";
-  library: "LLVMPowerPCCodeGen.lib";
-  library: "LLVMPowerPCDesc.lib";
-  library: "LLVMPowerPCInfo.lib";
-  library: "LLVMNVPTXCodeGen.lib";
-  library: "LLVMNVPTXDesc.lib";
-  library: "LLVMNVPTXInfo.lib";
-  library: "LLVMMSP430Disassembler.lib";
-  library: "LLVMMSP430AsmParser.lib";
-  library: "LLVMMSP430CodeGen.lib";
-  library: "LLVMMSP430Desc.lib";
-  library: "LLVMMSP430Info.lib";
-  library: "LLVMMipsDisassembler.lib";
-  library: "LLVMMipsAsmParser.lib";
-  library: "LLVMMipsCodeGen.lib";
-  library: "LLVMMipsDesc.lib";
-  library: "LLVMMipsInfo.lib";
-  library: "LLVMLoongArchDisassembler.lib";
-  library: "LLVMLoongArchAsmParser.lib";
-  library: "LLVMLoongArchCodeGen.lib";
-  library: "LLVMLoongArchDesc.lib";
-  library: "LLVMLoongArchInfo.lib";
-  library: "LLVMLanaiDisassembler.lib";
-  library: "LLVMLanaiCodeGen.lib";
-  library: "LLVMLanaiAsmParser.lib";
-  library: "LLVMLanaiDesc.lib";
-  library: "LLVMLanaiInfo.lib";
-  library: "LLVMHexagonDisassembler.lib";
-  library: "LLVMHexagonCodeGen.lib";
-  library: "LLVMHexagonAsmParser.lib";
-  library: "LLVMHexagonDesc.lib";
-  library: "LLVMHexagonInfo.lib";
-  library: "LLVMBPFDisassembler.lib";
-  library: "LLVMBPFAsmParser.lib";
-  library: "LLVMBPFCodeGen.lib";
-  library: "LLVMBPFDesc.lib";
-  library: "LLVMBPFInfo.lib";
-  library: "LLVMAVRDisassembler.lib";
-  library: "LLVMAVRAsmParser.lib";
-  library: "LLVMAVRCodeGen.lib";
-  library: "LLVMAVRDesc.lib";
-  library: "LLVMAVRInfo.lib";
-  library: "LLVMARMDisassembler.lib";
-  library: "LLVMARMAsmParser.lib";
-  library: "LLVMARMCodeGen.lib";
-  library: "LLVMARMDesc.lib";
-  library: "LLVMARMUtils.lib";
-  library: "LLVMARMInfo.lib";
-  library: "LLVMAMDGPUTargetMCA.lib";
-  library: "LLVMAMDGPUDisassembler.lib";
-  library: "LLVMAMDGPUAsmParser.lib";
-  library: "LLVMAMDGPUCodeGen.lib";
-  library: "LLVMAMDGPUDesc.lib";
-  library: "LLVMAMDGPUUtils.lib";
-  library: "LLVMAMDGPUInfo.lib";
-  library: "LLVMAArch64Disassembler.lib";
-  library: "LLVMAArch64AsmParser.lib";
-  library: "LLVMAArch64CodeGen.lib";
-  library: "LLVMAArch64Desc.lib";
-  library: "LLVMAArch64Utils.lib";
-  library: "LLVMAArch64Info.lib";
-  library: "LLVMOrcJIT.lib";
-  library: "LLVMWindowsDriver.lib";
-  library: "LLVMMCJIT.lib";
-  library: "LLVMJITLink.lib";
-  library: "LLVMInterpreter.lib";
-  library: "LLVMExecutionEngine.lib";
-  library: "LLVMRuntimeDyld.lib";
-  library: "LLVMOrcTargetProcess.lib";
-  library: "LLVMOrcShared.lib";
-  library: "LLVMDWP.lib";
-  library: "LLVMDebugInfoLogicalView.lib";
-  library: "LLVMDebugInfoGSYM.lib";
-  library: "LLVMOption.lib";
-  library: "LLVMObjectYAML.lib";
-  library: "LLVMObjCopy.lib";
-  library: "LLVMMCA.lib";
-  library: "LLVMMCDisassembler.lib";
-  library: "LLVMLTO.lib";
-  library: "LLVMPasses.lib";
-  library: "LLVMCFGuard.lib";
-  library: "LLVMCoroutines.lib";
-  library: "LLVMipo.lib";
-  library: "LLVMVectorize.lib";
-  library: "LLVMLinker.lib";
-  library: "LLVMInstrumentation.lib";
-  library: "LLVMFrontendOpenMP.lib";
-  library: "LLVMFrontendOpenACC.lib";
-  library: "LLVMFrontendHLSL.lib";
-  library: "LLVMExtensions.lib";
-  library: "LLVMDWARFLinkerParallel.lib";
-  library: "LLVMDWARFLinker.lib";
-  library: "LLVMGlobalISel.lib";
-  library: "LLVMMIRParser.lib";
-  library: "LLVMAsmPrinter.lib";
-  library: "LLVMSelectionDAG.lib";
-  library: "LLVMCodeGen.lib";
-  library: "LLVMObjCARCOpts.lib";
-  library: "LLVMIRPrinter.lib";
-  library: "LLVMInterfaceStub.lib";
-  library: "LLVMFileCheck.lib";
-  library: "LLVMFuzzMutate.lib";
-  library: "LLVMTarget.lib";
-  library: "LLVMScalarOpts.lib";
-  library: "LLVMInstCombine.lib";
-  library: "LLVMAggressiveInstCombine.lib";
-  library: "LLVMTransformUtils.lib";
-  library: "LLVMBitWriter.lib";
-  library: "LLVMAnalysis.lib";
-  library: "LLVMProfileData.lib";
-  library: "LLVMSymbolize.lib";
-  library: "LLVMDebugInfoPDB.lib";
-  library: "LLVMDebugInfoMSF.lib";
-  library: "LLVMDebugInfoDWARF.lib";
-  library: "LLVMObject.lib";
-  library: "LLVMTextAPI.lib";
-  library: "LLVMMCParser.lib";
-  library: "LLVMIRReader.lib";
-  library: "LLVMAsmParser.lib";
-  library: "LLVMMC.lib";
-  library: "LLVMDebugInfoCodeView.lib";
-  library: "LLVMBitReader.lib";
-  library: "LLVMFuzzerCLI.lib";
-  library: "LLVMCore.lib";
-  library: "LLVMRemarks.lib";
-  library: "LLVMBitstreamReader.lib";
-  library: "LLVMBinaryFormat.lib";
-  library: "LLVMTargetParser.lib";
-  library: "LLVMTableGen.lib";
-  library: "LLVMSupport.lib";
-  library: "LLVMDemangle.lib";
-  libpath: "C:\LLVM\lib";
+  library: "llvm_wrapper";
+  library: "LLVMWindowsManifest";
+  library: "LLVMXRay";
+  library: "LLVMLibDriver";
+  library: "LLVMDlltoolDriver";
+  library: "LLVMCoverage";
+  library: "LLVMLineEditor";
+  library: "LLVMXCoreDisassembler";
+  library: "LLVMXCoreCodeGen";
+  library: "LLVMXCoreDesc";
+  library: "LLVMXCoreInfo";
+  library: "LLVMX86TargetMCA";
+  library: "LLVMX86Disassembler";
+  library: "LLVMX86AsmParser";
+  library: "LLVMX86CodeGen";
+  library: "LLVMX86Desc";
+  library: "LLVMX86Info";
+  library: "LLVMWebAssemblyDisassembler";
+  library: "LLVMWebAssemblyAsmParser";
+  library: "LLVMWebAssemblyCodeGen";
+  library: "LLVMWebAssemblyDesc";
+  library: "LLVMWebAssemblyUtils";
+  library: "LLVMWebAssemblyInfo";
+  library: "LLVMVEDisassembler";
+  library: "LLVMVEAsmParser";
+  library: "LLVMVECodeGen";
+  library: "LLVMVEDesc";
+  library: "LLVMVEInfo";
+  library: "LLVMSystemZDisassembler";
+  library: "LLVMSystemZAsmParser";
+  library: "LLVMSystemZCodeGen";
+  library: "LLVMSystemZDesc";
+  library: "LLVMSystemZInfo";
+  library: "LLVMSparcDisassembler";
+  library: "LLVMSparcAsmParser";
+  library: "LLVMSparcCodeGen";
+  library: "LLVMSparcDesc";
+  library: "LLVMSparcInfo";
+  library: "LLVMRISCVTargetMCA";
+  library: "LLVMRISCVDisassembler";
+  library: "LLVMRISCVAsmParser";
+  library: "LLVMRISCVCodeGen";
+  library: "LLVMRISCVDesc";
+  library: "LLVMRISCVInfo";
+  library: "LLVMPowerPCDisassembler";
+  library: "LLVMPowerPCAsmParser";
+  library: "LLVMPowerPCCodeGen";
+  library: "LLVMPowerPCDesc";
+  library: "LLVMPowerPCInfo";
+  library: "LLVMNVPTXCodeGen";
+  library: "LLVMNVPTXDesc";
+  library: "LLVMNVPTXInfo";
+  library: "LLVMMSP430Disassembler";
+  library: "LLVMMSP430AsmParser";
+  library: "LLVMMSP430CodeGen";
+  library: "LLVMMSP430Desc";
+  library: "LLVMMSP430Info";
+  library: "LLVMMipsDisassembler";
+  library: "LLVMMipsAsmParser";
+  library: "LLVMMipsCodeGen";
+  library: "LLVMMipsDesc";
+  library: "LLVMMipsInfo";
+  library: "LLVMLoongArchDisassembler";
+  library: "LLVMLoongArchAsmParser";
+  library: "LLVMLoongArchCodeGen";
+  library: "LLVMLoongArchDesc";
+  library: "LLVMLoongArchInfo";
+  library: "LLVMLanaiDisassembler";
+  library: "LLVMLanaiCodeGen";
+  library: "LLVMLanaiAsmParser";
+  library: "LLVMLanaiDesc";
+  library: "LLVMLanaiInfo";
+  library: "LLVMHexagonDisassembler";
+  library: "LLVMHexagonCodeGen";
+  library: "LLVMHexagonAsmParser";
+  library: "LLVMHexagonDesc";
+  library: "LLVMHexagonInfo";
+  library: "LLVMBPFDisassembler";
+  library: "LLVMBPFAsmParser";
+  library: "LLVMBPFCodeGen";
+  library: "LLVMBPFDesc";
+  library: "LLVMBPFInfo";
+  library: "LLVMAVRDisassembler";
+  library: "LLVMAVRAsmParser";
+  library: "LLVMAVRCodeGen";
+  library: "LLVMAVRDesc";
+  library: "LLVMAVRInfo";
+  library: "LLVMARMDisassembler";
+  library: "LLVMARMAsmParser";
+  library: "LLVMARMCodeGen";
+  library: "LLVMARMDesc";
+  library: "LLVMARMUtils";
+  library: "LLVMARMInfo";
+  library: "LLVMAMDGPUTargetMCA";
+  library: "LLVMAMDGPUDisassembler";
+  library: "LLVMAMDGPUAsmParser";
+  library: "LLVMAMDGPUCodeGen";
+  library: "LLVMAMDGPUDesc";
+  library: "LLVMAMDGPUUtils";
+  library: "LLVMAMDGPUInfo";
+  library: "LLVMAArch64Disassembler";
+  library: "LLVMAArch64AsmParser";
+  library: "LLVMAArch64CodeGen";
+  library: "LLVMAArch64Desc";
+  library: "LLVMAArch64Utils";
+  library: "LLVMAArch64Info";
+  library: "LLVMOrcJIT";
+  library: "LLVMWindowsDriver";
+  library: "LLVMMCJIT";
+  library: "LLVMJITLink";
+  library: "LLVMInterpreter";
+  library: "LLVMExecutionEngine";
+  library: "LLVMRuntimeDyld";
+  library: "LLVMOrcTargetProcess";
+  library: "LLVMOrcShared";
+  library: "LLVMDWP";
+  library: "LLVMDebugInfoLogicalView";
+  library: "LLVMDebugInfoGSYM";
+  library: "LLVMOption";
+  library: "LLVMObjectYAML";
+  library: "LLVMObjCopy";
+  library: "LLVMMCA";
+  library: "LLVMMCDisassembler";
+  library: "LLVMLTO";
+  library: "LLVMPasses";
+  library: "LLVMCFGuard";
+  library: "LLVMCoroutines";
+  library: "LLVMipo";
+  library: "LLVMVectorize";
+  library: "LLVMLinker";
+  library: "LLVMInstrumentation";
+  library: "LLVMFrontendOpenMP";
+  library: "LLVMFrontendOpenACC";
+  library: "LLVMFrontendHLSL";
+  library: "LLVMExtensions";
+  library: "LLVMDWARFLinkerParallel";
+  library: "LLVMDWARFLinker";
+  library: "LLVMGlobalISel";
+  library: "LLVMMIRParser";
+  library: "LLVMAsmPrinter";
+  library: "LLVMSelectionDAG";
+  library: "LLVMCodeGen";
+  library: "LLVMObjCARCOpts";
+  library: "LLVMIRPrinter";
+  library: "LLVMInterfaceStub";
+  library: "LLVMFileCheck";
+  library: "LLVMFuzzMutate";
+  library: "LLVMTarget";
+  library: "LLVMScalarOpts";
+  library: "LLVMInstCombine";
+  library: "LLVMAggressiveInstCombine";
+  library: "LLVMTransformUtils";
+  library: "LLVMBitWriter";
+  library: "LLVMAnalysis";
+  library: "LLVMProfileData";
+  library: "LLVMSymbolize";
+  library: "LLVMDebugInfoPDB";
+  library: "LLVMDebugInfoMSF";
+  library: "LLVMDebugInfoDWARF";
+  library: "LLVMObject";
+  library: "LLVMTextAPI";
+  library: "LLVMMCParser";
+  library: "LLVMIRReader";
+  library: "LLVMAsmParser";
+  library: "LLVMMC";
+  library: "LLVMDebugInfoCodeView";
+  library: "LLVMBitReader";
+  library: "LLVMFuzzerCLI";
+  library: "LLVMCore";
+  library: "LLVMRemarks";
+  library: "LLVMBitstreamReader";
+  library: "LLVMBinaryFormat";
+  library: "LLVMTargetParser";
+  library: "LLVMTableGen";
+  library: "LLVMSupport";
+  library: "LLVMDemangle";
+  libpath: "C:\\LLVM\\lib";
+}
+
+struct LLVMTargetMachineRef {
+    ptr: Any;
+    func isNull(&this) -> bool {
+        unsafe {
+            return this.ptr == null;
+        }
+    }
+}
+
+struct LLVMTargetRef {
+    ptr: Any;
+    func isNull(&this) -> bool {
+        unsafe {
+            return this.ptr == null;
+        }
+    }
+}
+
+struct LLVMTargetDataRef {
+    ptr: Any;
+    func isNull(&this) -> bool {
+        unsafe {
+            return this.ptr == null;
+        }
+    }
+}
+
+struct LLVMPassManagerRef {
+    ptr: Any;
+    func isNull(&this) -> bool {
+        unsafe {
+            return this.ptr == null;
+        }
+    }
 }
 
 struct LLVMContextRef {
@@ -231,18 +268,45 @@ struct LLVMTypeRef {
     }
 }
 
+// LLVMTarget
+extern LLVMGetTargetFromName(name: &char) -> LLVMTargetRef;
+extern LLVM_InitializeNativeAsmParser() -> i32;
+extern LLVM_InitializeNativeAsmPrinter() -> i32;
+extern LLVM_InitializeNativeDisassembler() -> i32;
+extern LLVM_InitializeNativeTarget() -> i32;
+extern LLVMCreateTargetMachine(T: LLVMTargetRef, Triple: &char, CPU: &char, Features: &char, Level: i32, Reloc: i32, CodeModel: i32) -> LLVMTargetMachineRef;
+extern LLVMTargetMachineEmitToFile(T: LLVMTargetMachineRef, M: LLVMModuleRef, path: &char, opts: i32, err: &mut LLVMString) -> i32;
+extern LLVMCreateTargetDataLayout(T: LLVMTargetMachineRef) -> LLVMTargetDataRef;
+extern LLVMStoreSizeOfType(T: LLVMTargetDataRef, Ty: LLVMTypeRef) -> usize;
+extern LLVMABISizeOfType(T: LLVMTargetDataRef, Ty: LLVMTypeRef) -> usize;
+extern LLVMSizeOfTypeInBits(T: LLVMTargetDataRef, Ty: LLVMTypeRef) -> usize;
+
 // LLVMContext
 extern LLVMContextCreate() -> LLVMContextRef;
 extern LLVMContextDispose(context: LLVMContextRef);
 extern LLVMModuleCreateWithNameInContext(id: &char, C: LLVMContextRef) -> LLVMModuleRef;
 extern LLVMIntTypeInContext(c: LLVMContextRef, bits: u32) -> LLVMTypeRef;
+extern LLVMFloatTypeInContext(c: LLVMContextRef) -> LLVMTypeRef;
+extern LLVMDoubleTypeInContext(c: LLVMContextRef) -> LLVMTypeRef;
 extern LLVMVoidTypeInContext(c: LLVMContextRef) -> LLVMTypeRef;
 extern LLVMStructTypeInContext(c: LLVMContextRef, ElementTypes: &LLVMTypeRef, ElementCount: u32, Packed: LLVMBool) -> LLVMTypeRef;
 
 // LLVMModule
-extern LLVMPrintModuleToString(module: LLVMModuleRef) -> &char;
+extern LLVMPrintModuleToString(M: LLVMModuleRef) -> &char;
+extern LLVMPrintModuleToFile(M: LLVMModuleRef, Filename: &char, ErrorMessage: &mut LLVMString) -> LLVMBool;
 extern LLVMGetNamedFunction(M: LLVMModuleRef, Name: &char) -> LLVMValueRef;
 extern LLVMAddFunction(M: LLVMModuleRef, name: &char, FunctionTy: LLVMTypeRef) -> LLVMValueRef;
+extern LLVMAddGlobalInAddressSpace(M: LLVMModuleRef, Ty: LLVMTypeRef, Name: &char, AddressSpace: u32) -> LLVMValueRef;
+extern LLVMGetNamedGlobal(M: LLVMModuleRef, Name: &char) -> LLVMValueRef;
+extern LLVMVerifyModule(M: LLVMModuleRef, mode: i32, code: &mut LLVMString) -> LLVMBool;
+
+// LLVMPassManager
+extern LLVMCreatePassManager() -> LLVMPassManagerRef;
+extern LLVMAddPromoteMemoryToRegisterPass(P: LLVMPassManagerRef);
+extern LLVMAddAlwaysInlinerPass(P: LLVMPassManagerRef);
+extern LLVMAddCFGSimplificationPass(P: LLVMPassManagerRef);
+extern LLVMAddGlobalDCEPass(P: LLVMPassManagerRef);
+extern LLVMRunPassManager(P: LLVMPassManagerRef, M: LLVMModuleRef) -> i32;
 
 // LLVMBasicBlock
 extern LLVMAppendBasicBlockInContext(C: LLVMContextRef, FnRef: LLVMValueRef, name: &char) -> LLVMBasicBlockRef;
@@ -261,11 +325,51 @@ extern LLVMPositionBuilderBefore(Builder: LLVMBuilderRef, Instr: LLVMValueRef);
 extern LLVMBuildAlloca(B: LLVMBuilderRef, Ty: LLVMTypeRef, Name: &char) -> LLVMValueRef;
 extern LLVMBuildStore(B: LLVMBuilderRef, Value: LLVMValueRef, Ptr: LLVMValueRef) -> LLVMValueRef;
 extern LLVMBuildInsertValue(B: LLVMBuilderRef, AggVal: LLVMValueRef, EltVal: LLVMValueRef, Index: u32, Name: &char) -> LLVMValueRef;
+extern LLVMBuildBr(B: LLVMBuilderRef, Dest: LLVMBasicBlockRef) -> LLVMValueRef;
+extern LLVMBuildCondBr(B: LLVMBuilderRef, If: LLVMValueRef, Then: LLVMBasicBlockRef, Else: LLVMBasicBlockRef) -> LLVMValueRef;
+extern LLVMBuildLoad2(B: LLVMBuilderRef, Ty: LLVMTypeRef, Ptr: LLVMValueRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildAdd(B: LLVMBuilderRef, LHS: LLVMValueRef, RHS: LLVMValueRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildSub(B: LLVMBuilderRef, LHS: LLVMValueRef, RHS: LLVMValueRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildMul(B: LLVMBuilderRef, LHS: LLVMValueRef, RHS: LLVMValueRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildSDiv(B: LLVMBuilderRef, LHS: LLVMValueRef, RHS: LLVMValueRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildUDiv(B: LLVMBuilderRef, LHS: LLVMValueRef, RHS: LLVMValueRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildSRem(B: LLVMBuilderRef, LHS: LLVMValueRef, RHS: LLVMValueRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildURem(B: LLVMBuilderRef, LHS: LLVMValueRef, RHS: LLVMValueRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildFAdd(B: LLVMBuilderRef, LHS: LLVMValueRef, RHS: LLVMValueRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildFSub(B: LLVMBuilderRef, LHS: LLVMValueRef, RHS: LLVMValueRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildFMul(B: LLVMBuilderRef, LHS: LLVMValueRef, RHS: LLVMValueRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildFDiv(B: LLVMBuilderRef, LHS: LLVMValueRef, RHS: LLVMValueRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildFRem(B: LLVMBuilderRef, LHS: LLVMValueRef, RHS: LLVMValueRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildICmp(B: LLVMBuilderRef, pred: i32, LHS: LLVMValueRef, RHS: LLVMValueRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildFCmp(B: LLVMBuilderRef, pred: i32, LHS: LLVMValueRef, RHS: LLVMValueRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildNot(B: LLVMBuilderRef, Val: LLVMValueRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildOr(B: LLVMBuilderRef, LHS: LLVMValueRef, RHS: LLVMValueRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildAnd(B: LLVMBuilderRef, LHS: LLVMValueRef, RHS: LLVMValueRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildPtrToInt(B: LLVMBuilderRef, Ptr: LLVMValueRef, Int: LLVMTypeRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildIntToPtr(B: LLVMBuilderRef, Ptr: LLVMValueRef, Int: LLVMTypeRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildSIToFP(B: LLVMBuilderRef, Val: LLVMValueRef, DestTy: LLVMTypeRef, Name: &char) -> LLVMValueRef;
+extern LLVMBuildUIToFP(B: LLVMBuilderRef, Val: LLVMValueRef, DestTy: LLVMTypeRef, Name: &char) -> LLVMValueRef;
+extern LLVMBuildFPToSI(B: LLVMBuilderRef, Val: LLVMValueRef, DestTy: LLVMTypeRef, Name: &char) -> LLVMValueRef;
+extern LLVMBuildFPToUI(B: LLVMBuilderRef, Val: LLVMValueRef, DestTy: LLVMTypeRef, Name: &char) -> LLVMValueRef;
+extern LLVMBuildCall2(B: LLVMBuilderRef, Ty: LLVMTypeRef, Fn: LLVMValueRef, Args: &LLVMValueRef, NumArgs: u32, Name: &char) -> LLVMValueRef;
+extern LLVMBuildGlobalStringPtr(B: LLVMBuilderRef, Str: &char, Name: &char) -> LLVMValueRef;
+extern LLVMBuildZExt(B: LLVMBuilderRef, Val: LLVMValueRef, Typ: LLVMTypeRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildTrunc(B: LLVMBuilderRef, Val: LLVMValueRef, Typ: LLVMTypeRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildStructGEP2(B: LLVMBuilderRef, Ty: LLVMTypeRef, Pointer: LLVMValueRef, Idx: u32, Name: &char) -> LLVMValueRef;
+extern LLVMBuildGEP2(B: LLVMBuilderRef, Ty: LLVMTypeRef, Pointer: LLVMValueRef, Indices: &LLVMValueRef, Length: u32, Name: &char) -> LLVMValueRef;
+extern LLVMBuildFPExt(B: LLVMBuilderRef, Val: LLVMValueRef, Typ: LLVMTypeRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildFPTrunc(B: LLVMBuilderRef, Val: LLVMValueRef, Typ: LLVMTypeRef, name: &char) -> LLVMValueRef;
 
 // LLVMValue
 extern LLVMTypeOf(Val: LLVMValueRef) -> LLVMTypeRef;
 extern LLVMConstInt(IntTy: LLVMTypeRef, N: usize, SignExtend: LLVMBool) -> LLVMValueRef;
+extern LLVMConstReal(RealTy: LLVMTypeRef, F: f64) -> LLVMValueRef;
 extern LLVMConstNull(Ty: LLVMTypeRef) -> LLVMValueRef;
+extern LLVMDumpValue(V: LLVMValueRef);
+extern LLVMGlobalGetValueType(Val: LLVMValueRef) -> LLVMTypeRef;
+
+// LLVM Globals
+extern LLVMSetInitializer(GlobalVar: LLVMValueRef, ConstantVal: LLVMValueRef);
 
 extern LLVMGetParam(FnRef: LLVMValueRef, index: u32) -> LLVMValueRef;
 extern LLVMSetValueName2(Val: LLVMValueRef, Name: &char, NameLen: usize);
@@ -279,33 +383,72 @@ func newLLVMBool(b: bool) -> LLVMBool {
     return LLVMBool { val: 0 };
 }
 
+struct LLVMString { chars: &char; }
+
 // LLVMType
 extern LLVMFunctionType(ReturnType: LLVMTypeRef, ParamTypes: &LLVMTypeRef, ParamCount: u32, IsVarArg: LLVMBool) -> LLVMTypeRef;
 extern LLVMPointerType(ElementType: LLVMTypeRef, AddressSpace: u32) -> LLVMTypeRef;
+extern LLVMArrayType(ElementType: LLVMTypeRef, size: u32) -> LLVMTypeRef;
 extern LLVMGetParamTypes(FunctionTy: LLVMTypeRef, Dest: &mut LLVMTypeRef);
-extern LLVMCountParamTypes(FunctioNTy: LLVMTypeRef) -> u32;
+extern LLVMCountParamTypes(FunctionTy: LLVMTypeRef) -> u32;
+extern LLVMGetReturnType(FunctionTy: LLVMTypeRef) -> LLVMTypeRef;
 extern LLVMPrintTypeToString(Ty: LLVMTypeRef) -> &char;
 
-comptime LLVMVoidTypeKind: u32 = 0;
-comptime LLVMHalfTypeKind: u32 = 1;
-comptime LLVMFloatTypeKind: u32 = 2;
-comptime LLVMDoubleTypeKind: u32 = 3;
-comptime LLVMX86_FP80TypeKind: u32 = 4;
-comptime LLVMFP128TypeKind: u32 = 5;
-comptime LLVMPPC_FP128TypeKind: u32 = 6;
-comptime LLVMLabelTypeKind: u32 = 7;
-comptime LLVMIntegerTypeKind: u32 = 8;
-comptime LLVMFunctionTypeKind: u32 = 9;
-comptime LLVMStructTypeKind: u32 = 10;
-comptime LLVMArrayTypeKind: u32 = 11;
-comptime LLVMPointerTypeKind: u32 = 12;
-comptime LLVMVectorTypeKind: u32 = 13;
-comptime LLVMMetadataTypeKind: u32 = 14;
+comptime LLVMVoidTypeKind: i32 = 0;
+comptime LLVMHalfTypeKind: i32 = 1;
+comptime LLVMFloatTypeKind: i32 = 2;
+comptime LLVMDoubleTypeKind: i32 = 3;
+comptime LLVMX86_FP80TypeKind: i32 = 4;
+comptime LLVMFP128TypeKind: i32 = 5;
+comptime LLVMPPC_FP128TypeKind: i32 = 6;
+comptime LLVMLabelTypeKind: i32 = 7;
+comptime LLVMIntegerTypeKind: i32 = 8;
+comptime LLVMFunctionTypeKind: i32 = 9;
+comptime LLVMStructTypeKind: i32 = 10;
+comptime LLVMArrayTypeKind: i32 = 11;
+comptime LLVMPointerTypeKind: i32 = 12;
+comptime LLVMVectorTypeKind: i32 = 13;
+comptime LLVMMetadataTypeKind: i32 = 14;
 // Unused according to https://llvm.org/doxygen/llvm-c_2Core_8h_source.html line 164
-// comptime LLVMX86_MMXTypeKind: u32 = 15;
-comptime LLVMTokenTypeKind: u32 = 16;
-comptime LLVMScalableVectorTypeKind: u32 = 17;
-comptime LLVMBFloatTypeKind: u32 = 18;
-comptime LLVMX86_AMXTypeKind: u32 = 19;
-comptime LLVMTargetExtTypeKind: u32 = 20;
-extern LLVMGetTypeKind(Ty: LLVMTypeRef) -> u32;
+// comptime LLVMX86_MMXTypeKind: i32 = 15;
+comptime LLVMTokenTypeKind: i32 = 16;
+comptime LLVMScalableVectorTypeKind: i32 = 17;
+comptime LLVMBFloatTypeKind: i32 = 18;
+comptime LLVMX86_AMXTypeKind: i32 = 19;
+comptime LLVMTargetExtTypeKind: i32 = 20;
+extern LLVMGetTypeKind(Ty: LLVMTypeRef) -> i32;
+
+comptime LLVMIntEQ : i32 = 32;
+comptime LLVMIntNE : i32 = 33;
+comptime LLVMIntUGT: i32 = 34;
+comptime LLVMIntUGE: i32 = 35;
+comptime LLVMIntULT: i32 = 36;
+comptime LLVMIntULE: i32 = 37;
+comptime LLVMIntSGT: i32 = 38;
+comptime LLVMIntSGE: i32 = 39;
+comptime LLVMIntSLT: i32 = 40;
+comptime LLVMIntSLE: i32 = 41;
+
+comptime LLVMRealPredicateFalse: i32 = 0;  /**< Always false (always folded) */
+comptime LLVMRealOEQ           : i32 = 1;  /**< True if ordered and equal */
+comptime LLVMRealOGT           : i32 = 2;  /**< True if ordered and greater than */
+comptime LLVMRealOGE           : i32 = 3;  /**< True if ordered and greater than or equal */
+comptime LLVMRealOLT           : i32 = 4;  /**< True if ordered and less than */
+comptime LLVMRealOLE           : i32 = 5;  /**< True if ordered and less than or equal */
+comptime LLVMRealONE           : i32 = 6;  /**< True if ordered and operands are unequal */
+comptime LLVMRealORD           : i32 = 7;  /**< True if ordered (no nans) */
+comptime LLVMRealUNO           : i32 = 8;  /**< True if unordered: isnan(X) | isnan(Y) */
+comptime LLVMRealUEQ           : i32 = 9;  /**< True if unordered or equal */
+comptime LLVMRealUGT           : i32 = 10; /**< True if unordered or greater than */
+comptime LLVMRealUGE           : i32 = 11; /**< True if unordered, greater than, or equal */
+comptime LLVMRealULT           : i32 = 12; /**< True if unordered or less than */
+comptime LLVMRealULE           : i32 = 13; /**< True if unordered, less than, or equal */
+comptime LLVMRealUNE           : i32 = 14; /**< True if unordered or not equal */
+comptime LLVMRealPredicateTrue : i32 = 15; /**< Always true (always folded) */
+
+comptime LLVMAbortProcessAction: i32 = 0; /* verifier will print to stderr and abort() */
+comptime LLVMPrintMessageAction: i32 = 1; /* verifier will print to stderr and return 1 */
+comptime LLVMReturnStatusAction: i32 = 2; /* verifier will just return 1 */
+
+comptime LLVMAssemblyFile: i32 = 0;
+comptime LLVMObjectFile: i32 = 1;

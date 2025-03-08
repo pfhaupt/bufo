@@ -4,7 +4,7 @@ import random
 
 from sys import argv
 
-CMD = ["git", "grep", "-nE", "(todo!|TODO|FIXME|REVIEW)", "--", ":!todo.py"]
+CMD = ["git", "grep", "-nE", "(todo!|TODO|FIXME|REVIEW|todo_with_msg)", "--", ":!todo.py"]
 
 def call_cmd(cmd: List) -> int:
     return subprocess.check_output(cmd).split(b'\n')

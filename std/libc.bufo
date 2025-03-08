@@ -2,8 +2,14 @@
 
 // TODO: Implement safe wrapper for everything :^)
 
-import "windows.bufo";
-// import "linux.bufo";
+// Windows is stupid :^)
+unsafe func fdopen(fd: i32, mode: &char) -> Any {
+    return _fdopen(fd, mode);
+}
+unsafe extern _fdopen(fd: i32, mode: &char) -> Any;
+unsafe extern _fullpath(absPath: &char, relPath: &char, maxLength: i32) -> &char;
+
+// unsafe extern fdopen(fd: i32, mode: &char) -> Any;
 
 // Strings
 unsafe extern strlen(string: &char) -> usize;

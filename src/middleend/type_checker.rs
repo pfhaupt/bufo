@@ -2063,7 +2063,7 @@ impl<'flags, 'src> TypeChecker<'flags, 'src> {
         let var = self.get_variable(&name_node.name);
         match var {
             Some(var) => {
-                if mut_state != MutState::Immut && mut_state & var.mut_state == 0 {
+                if mut_state != MutState::Immut && (mut_state & var.mut_state) == 0 {
                     // mut_state & var.mut_state == 0 means mismatch in required mutability
                     // e.g. if mut_state = MutRef, that means original Variable isn't MutRef
                     // (it still might be MutVar, but in this case that doesn't matter)

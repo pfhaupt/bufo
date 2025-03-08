@@ -1,0 +1,144 @@
+import "prelude.bufo";
+import "libc.bufo";
+import "string.bufo";
+import "./lists.bufo";
+import "../backend/irgen.bufo";
+
+struct String_IRFuncEntry {
+    set: bool;
+    key: String;
+    value: IRFunc;
+}
+
+struct String_IRFuncHashMap {
+    elements: &mut String_IRFuncEntry;
+    length: usize;
+    capacity: usize;
+    locked: bool;
+
+    func asList(&mut this) -> IRFuncList {
+        mut l: IRFuncList = blank;
+        for (mut i: usize = 0; i < this.capacity; i = i + 1) {
+            let elem: &mut String_IRFuncEntry = this.getAtIndex(i);
+            if (elem.set) {
+                l.push(elem.value);
+            }
+        }
+        return l;
+    }
+
+    func needsResize(&mut this) -> bool {
+        if (this.capacity == 0) {
+            return true;
+        } else {
+            let loadFactor: f64 = this.length as f64 / this.capacity as f64;
+            assert(loadFactor <= 1);
+            // loadFactor > 0.6, but we don't have floating point literals yet :^)
+            return 10 * loadFactor > 6;
+        }
+    }
+
+    func indexOf(&mut this, key: &String) -> usize {
+        this.locked = true;
+        let elem: &mut String_IRFuncEntry = this.getEntry(key);
+        unsafe {
+            return (elem - this.elements) / sizeof String_IRFuncEntry;
+        }
+    }
+
+    func at(&mut this, index: usize) -> &mut IRFunc {
+        assert_with_msg(this.locked, "Can only get elements at an index if the HashMap is locked");
+        let elem: &mut String_IRFuncEntry = this.getAtIndex(index);
+        unsafe {
+            assert_with_msg(elem != null, "Expected to find element at the given index");
+            assert_with_msg(elem.set, "Expected set element at the given index");
+            return &mut elem.value;
+        }
+    }
+
+    func resizeIfNecessary(&mut this) {
+        if (this.needsResize()) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 256;
+            let newElements: &mut String_IRFuncEntry = calloc(newCap, sizeof String_IRFuncEntry);
+            assert_with_msg(newElements != null, "Could not allocate memory in String_IRFuncHashMap.resizeIfNecessary");
+            mut newThis: String_IRFuncHashMap = String_IRFuncHashMap {
+                elements: newElements,
+                length: 0,
+                capacity: newCap,
+                locked: this.locked,
+            };
+            for (mut i: usize = 0; i < this.capacity; i = i + 1) {
+                let elem: &mut String_IRFuncEntry = this.getAtIndex(i);
+                if (elem.set) newThis.add(elem.key, elem.value);
+            }
+            free(this.elements);
+            *this = newThis;
+        }
+    }
+
+    func add(&mut this, key: String, value: IRFunc) {
+        trace("String_IRFuncHashMap.add");
+        if (this.locked) {
+            todo_with_msg("HashMap is locked, can't add elements");
+        }
+        this.resizeIfNecessary();
+        assert(this.capacity > 0);
+        let hash: usize = key.hash() % this.capacity;
+        mut index: usize = hash;
+        mut stop: usize = hash - 1;
+        if (hash == 0) stop = this.capacity - 1;
+        while (index != stop) {
+            let elem: &mut String_IRFuncEntry = this.getAtIndex(index);
+            if (!elem.set) {
+                *elem = String_IRFuncEntry {
+                    set: true,
+                    key: key,
+                    value: value
+                };
+                this.length = this.length + 1;
+                return;
+            }
+            index = (index + 1) % this.capacity;
+        }
+        unreachable("Could not insert element into HashMap");
+    }
+
+    func get(&mut this, key: &String) -> &mut IRFunc {
+        trace("String_IRFuncHashMap.get");
+        let entry: &mut String_IRFuncEntry = this.getEntry(key);
+        unsafe {
+            if (entry == null) return null;
+            return &mut entry.value;
+        }
+    }
+
+    func getEntry(&mut this, key: &String) -> &mut String_IRFuncEntry {
+        unsafe {
+            if (this.length == 0) return null;
+            assert(this.capacity > 0);
+            mut hash: usize = key.hash() % this.capacity;
+            mut stop: usize = hash - 1;
+            if (hash == 0) stop = this.capacity - 1;
+            while (hash != stop) {
+                let elem: &mut String_IRFuncEntry = this.getAtIndex(hash);
+                if (!elem.set) return null;
+                if (elem.key.equals(key)) return elem;
+                hash = (hash + 1) % this.capacity;
+            }
+            unreachable("Load Factor guarantees that there's always at least one unset Entry in the HashMap.");
+            return null;
+        }
+    }
+
+    func getAtIndex(&mut this, index: usize) -> &mut String_IRFuncEntry {
+        unsafe {
+            assert_with_msg(index < this.capacity, "Out of bounds access in String_IRFuncHashMap.getAtIndex");
+            return this.elements + index * sizeof String_IRFuncEntry;
+        }
+    }
+    func containsKey(&mut this, key: &String) -> bool {
+        trace("String_IRFuncHashMap.containsKey");
+        unsafe { return this.get(key) != null; }
+    }
+}

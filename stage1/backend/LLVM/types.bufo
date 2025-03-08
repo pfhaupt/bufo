@@ -1,20 +1,55 @@
-import "./stage1/backend/LLVM/bindings.bufo";
+import "prelude.bufo";
+import "libc.bufo";
+import "../../util/lists.bufo";
+import "./bindings.bufo";
+import "./context.bufo";
+import "./values.bufo";
+
 struct LLVMType {
     ref: LLVMTypeRef;
+    func equals(&this, other: &LLVMType) -> bool {
+        return this.ref.ptr == other.ref.ptr;
+    }
 
     func isFunction(&this) -> bool {
         trace("LLVMType.isFunction");
         unsafe {
-            let kind: u32 = LLVMGetTypeKind(this.ref);
+            let kind: i32 = LLVMGetTypeKind(this.ref);
             return kind == LLVMFunctionTypeKind;
+        }
+    }
+
+    func getReturnType(&this) -> LLVMType {
+        trace("LLVMType.getReturnType");
+        assert_with_msg(this.isFunction(), "LLVM.getReturnType() called on non-function");
+        unsafe {
+            let t: LLVMTypeRef = LLVMGetReturnType(this.ref);
+            assert_with_msg(!t.isNull(), "Could not get return type");
+            return newLLVMTypeFromRef(t);
+        }
+    }
+
+    func isVoid(&this) -> bool {
+        trace("LLVMType.isVoid");
+        unsafe {
+            let kind: i32 = LLVMGetTypeKind(this.ref);
+            return kind == LLVMVoidTypeKind;
         }
     }
 
     func isStruct(&this) -> bool {
         trace("LLVMType.isStruct");
         unsafe {
-            let kind: u32 = LLVMGetTypeKind(this.ref);
+            let kind: i32 = LLVMGetTypeKind(this.ref);
             return kind == LLVMStructTypeKind;
+        }
+    }
+
+    func isPointer(&this) -> bool {
+        trace("LLVMType.isPointer");
+        unsafe {
+            let kind: i32 = LLVMGetTypeKind(this.ref);
+            return kind == LLVMPointerTypeKind;
         }
     }
 
@@ -24,10 +59,11 @@ struct LLVMType {
         }
     }
 
-    func intoFunctionType(&this, params: &mut LLVMType, paramCount: usize, varArg: bool) -> LLVMType {
+    func intoFunctionType(&this, params: LLVMTypeList, varArg: bool) -> LLVMType {
         trace("LLVMType.intoFunctionType");
         unsafe {
-            let fn: LLVMTypeRef = LLVMFunctionType(this.ref, params as &LLVMTypeRef, paramCount as u32, newLLVMBool(varArg));
+            assert(sizeof LLVMType == 8);
+            let fn: LLVMTypeRef = LLVMFunctionType(this.ref, params.elements as &LLVMTypeRef, params.length as u32, newLLVMBool(varArg));
             assert_with_msg(!fn.isNull(), "Could not turn LLVMType into a FunctionType");
             return newLLVMTypeFromRef(fn);
         }
@@ -43,8 +79,18 @@ struct LLVMType {
         }
     }
 
+    func intoArrayType(&this, size: u32) -> LLVMType {
+        trace("LLVMType.intoArrayType");
+        unsafe {
+            // FIXME: Other address spaces
+            let arr: LLVMTypeRef = LLVMArrayType(this.ref, size);
+            assert_with_msg(!arr.isNull(), "Could not turn LLVMType into a ArrayType");
+            return newLLVMTypeFromRef(arr);
+        }
+    }
+
     func getParamTypes(&this) -> &LLVMType {
-        trace("LLVMValue.getParamTypes");
+        trace("LLVMType.getParamTypes");
         unsafe {
             let count: u32 = LLVMCountParamTypes(this.ref);
             let _p: Any = calloc(count as usize, sizeof LLVMTypeRef);
@@ -57,7 +103,7 @@ struct LLVMType {
     }
 
     func constInt(&this, value: usize, signExtend: bool) -> LLVMValue {
-        trace("LLVMValue.constInt");
+        trace("LLVMType.constInt");
         unsafe {
             let s: LLVMBool = newLLVMBool(signExtend);
             let val: LLVMValueRef = LLVMConstInt(this.ref, value, s);
@@ -67,10 +113,19 @@ struct LLVMType {
     }
 
     func constZero(&this) -> LLVMValue {
-        trace("LLVMValue.constZero");
+        trace("LLVMType.constZero");
         unsafe {
             let val: LLVMValueRef = LLVMConstNull(this.ref);
             assert_with_msg(!val.isNull(), "Could not get constant zero");
+            return newLLVMValueFromRef(val);
+        }
+    }
+
+    func constFloat(&this, value: f64) -> LLVMValue {
+        trace("LLVMType.constFloat");
+        unsafe {
+            let val: LLVMValueRef = LLVMConstReal(this.ref, value);
+            assert_with_msg(!val.isNull(), "Could not get constant float");
             return newLLVMValueFromRef(val);
         }
     }

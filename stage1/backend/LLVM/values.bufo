@@ -1,10 +1,38 @@
-import "./stage1/backend/LLVM/bindings.bufo";
+import "prelude.bufo";
+import "substr.bufo";
+import "./bindings.bufo";
+import "./basic_block.bufo";
+import "./types.bufo";
 
 struct LLVMValue {
     ref: LLVMValueRef;
+    func equals(&this, other: &LLVMValue) -> bool {
+        todo_with_msg("LLVMValue.equals");
+        return false;
+    }
     func guardReference(&this) {
         trace("LLVMValue.guardReference");
         assert_with_msg(!this.ref.isNull(), "LLVM Value is null");
+    }
+
+    func isStructValue(&this) -> bool {
+        let t: LLVMType = this.getType();
+        return t.isStruct();
+    }
+
+    func dump(&this) {
+        unsafe {
+            LLVMDumpValue(this.ref);
+        }
+    }
+
+    func getGlobalType(&this) -> LLVMType {
+        trace("LLVMValue.getGlobalType");
+        unsafe {
+            let t: LLVMTypeRef = LLVMGlobalGetValueType(this.ref);
+            assert_with_msg(!t.isNull(), "Could not get global type of LLVMValue");
+            return newLLVMTypeFromRef(t);
+        }
     }
 
     func getNthParam(&this, index: usize) -> LLVMValue {
@@ -46,6 +74,14 @@ struct LLVMValue {
             mut len: usize = 0;
             let name: &char = LLVMGetValueName2(this.ref, &mut len);
             return newSubStr(name, 0, len);
+        }
+    }
+
+    func setInitializer(&mut this, val: LLVMValue) {
+        trace("LLVMValue.setInitializer");
+        assert_with_msg(!val.ref.isNull(), "Expected valid LLVMValue in LLVMValue.setInitializer");
+        unsafe {
+            LLVMSetInitializer(this.ref, val.ref);
         }
     }
 }
