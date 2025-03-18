@@ -1,5 +1,4 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! RUNTIME
 //! SUCCESS
 
@@ -171,4 +170,4 @@ func f76(a:C76) -> C76{return a;}
 func f77(a:C77) -> C77{return a;}
 func f78(a:C78) -> C78{return a;}
 func f79(a:C79) -> C79{return a;}
-func main()->i32{mut i:i32=0;while(i<100){let v:C79=C79{f:C78{f:C77{f:C76{f:C75{f:C74{f:C73{f:C72{f:C71{f:C70{f:C69{f:C68{f:C67{f:C66{f:C65{f:C64{f:C63{f:C62{f:C61{f:C60{f:C59{f:C58{f:C57{f:C56{f:C55{f:C54{f:C53{f:C52{f:C51{f:C50{f:C49{f:C48{f:C47{f:C46{f:C45{f:C44{f:C43{f:C42{f:C41{f:C40{f:C39{f:C38{f:C37{f:C36{f:C35{f:C34{f:C33{f:C32{f:C31{f:C30{f:C29{f:C28{f:C27{f:C26{f:C25{f:C24{f:C23{f:C22{f:C21{f:C20{f:C19{f:C18{f:C17{f:C16{f:C15{f:C14{f:C13{f:C12{f:C11{f:C10{f:C9{f:C8{f:C7{f:C6{f:C5{f:C4{f:C3{f:C2{f:C1{f:C0{f:0}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}};let r:C79=f79(v);i=i+1;}return 0;}
+func main(argc:i32,argv:&&char)->i32{mut i:i32=0;while(i<100){let v:C79=C79{f:C78{f:C77{f:C76{f:C75{f:C74{f:C73{f:C72{f:C71{f:C70{f:C69{f:C68{f:C67{f:C66{f:C65{f:C64{f:C63{f:C62{f:C61{f:C60{f:C59{f:C58{f:C57{f:C56{f:C55{f:C54{f:C53{f:C52{f:C51{f:C50{f:C49{f:C48{f:C47{f:C46{f:C45{f:C44{f:C43{f:C42{f:C41{f:C40{f:C39{f:C38{f:C37{f:C36{f:C35{f:C34{f:C33{f:C32{f:C31{f:C30{f:C29{f:C28{f:C27{f:C26{f:C25{f:C24{f:C23{f:C22{f:C21{f:C20{f:C19{f:C18{f:C17{f:C16{f:C15{f:C14{f:C13{f:C12{f:C11{f:C10{f:C9{f:C8{f:C7{f:C6{f:C5{f:C4{f:C3{f:C2{f:C1{f:C0{f:0}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}};let r:C79=f79(v);i=i+1;}return 0;}

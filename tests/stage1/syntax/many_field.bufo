@@ -1,5 +1,4 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! COMPILER
 //! FAILURE
 //! CODE: 1
@@ -10,10 +9,8 @@
 //! Field `b` already declared here.
 //! Field redeclaration.
 //! Field `c` already declared here.
-//! Method redeclaration.
-//! Method `foo` already declared here.
-//! Method redeclaration.
-//! Method `bar` already declared here.
+//! Field redeclaration.
+//! Field `d` already declared here.
 
 struct Foo {
     a: i32;
@@ -24,9 +21,4 @@ struct Foo {
     b: u32;
     c: u32;
     d: u32;
-
-    func foo() {}
-    func foo() {}
-    func bar() {}
-    func bar() {}
 }

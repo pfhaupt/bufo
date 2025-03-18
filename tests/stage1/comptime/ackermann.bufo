@@ -1,9 +1,10 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! RUNTIME
 //! SUCCESS
 
 // REVIEW: I'd like to evaluate n=5, but the Evaluator overflows the Rust stack
+
+import "prelude.bufo";
 
 comptime func ack(m: usize, n: usize) -> usize {
     if (m == 0) return n + 1;
@@ -11,9 +12,10 @@ comptime func ack(m: usize, n: usize) -> usize {
     return ack(m - 1, ack(m, n - 1));
 }
 
-func main() {
+func main(argc: i32, argv: &&char) -> i32 {
     comptime m: usize = 3;
     comptime n: usize = 2;
     comptime value: usize = ack(m, n);
     assert(value == 29);
+    return 0;
 }

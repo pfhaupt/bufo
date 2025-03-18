@@ -1,10 +1,9 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! COMPILER
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Array index requires type `usize`, found type `i32`.
+//! Expected index of array access to be type `usize`, got `i32`.
 
 func main() {
     let arr: [i32; 3] = [1, 2, 3];

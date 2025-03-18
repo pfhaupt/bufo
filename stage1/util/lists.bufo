@@ -202,6 +202,11 @@ struct FunctionLookupList {
         other.free();
     }
 
+    func remove(&mut this, index: usize) {
+        *this.at(index) = *this.last();
+        this.length = this.length - 1;
+    }
+
     func free(&mut this) {
         unsafe {
             free(this.elements);
@@ -1720,6 +1725,84 @@ struct LoopBlockList {
     }
 
     func extend(&mut this, other: &mut LoopBlockList) {
+        for (mut i: usize = 0; i < other.length; i = i + 1) {
+            this.push(*(other.at(i)));
+        }
+        other.free();
+    }
+
+    func free(&mut this) {
+        unsafe {
+            free(this.elements);
+            this.elements = null;
+            this.length = 0;
+            this.capacity = 0;
+        }
+    }
+
+    func clear(&mut this) {
+        this.length = 0;
+    }
+}
+
+struct IRScopeEntryList {
+    elements: &mut IRScopeEntry;
+    length: usize;
+    capacity: usize;
+
+    func initBlank(&mut this, newCap: usize) {
+        unsafe {
+            this.elements = realloc(this.elements, newCap * sizeof IRScopeEntry);
+            assert_with_msg(this.elements != null, "Could not allocate memory in IRScopeEntryList.initBlank");
+            this.capacity = newCap;
+            this.length = newCap;
+        }
+    }
+
+    func push(&mut this, element: IRScopeEntry) {
+        if (this.length >= this.capacity) unsafe {
+            mut newCap: usize = this.capacity * 2;
+            if (newCap == 0) newCap = 1;
+            this.elements = realloc(this.elements, newCap * sizeof IRScopeEntry);
+            assert_with_msg(this.elements != null, "Could not allocate memory in IRScopeEntryList.push");
+            this.capacity = newCap;
+        }
+        unsafe {
+            *(this.elements + this.length * sizeof IRScopeEntry) = element;
+            this.length = this.length + 1;
+        }
+    }
+
+    func pop(&mut this) -> &mut IRScopeEntry {
+        let l: &mut IRScopeEntry = this.last();
+        this.length = this.length - 1;
+        return l;
+    }
+
+    func at(&mut this, index: usize) -> &mut IRScopeEntry {
+        assert_with_msg(index < this.length, "Out of bounds access in IRScopeEntryList.at");
+        unsafe {
+            assert_with_msg(this.elements != null, "Element pointer is NULL in IRScopeEntryList.at");
+            return this.elements + index * sizeof IRScopeEntry;
+        }
+    }
+
+    func contains(&mut this, element: &IRScopeEntry) -> bool {
+        for (mut i: usize = 0; i < this.length; i = i + 1) unsafe {
+            let _s: &IRScopeEntry = this.at(i) as &IRScopeEntry;
+            if (_s.equals(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    func last(&mut this) -> &mut IRScopeEntry {
+        assert_with_msg(this.length != 0, "Called last() on empty IRScopeEntryList");
+        return this.at(this.length - 1);
+    }
+
+    func extend(&mut this, other: &mut IRScopeEntryList) {
         for (mut i: usize = 0; i < other.length; i = i + 1) {
             this.push(*(other.at(i)));
         }

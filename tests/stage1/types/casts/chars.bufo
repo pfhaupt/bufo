@@ -1,9 +1,10 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! RUNTIME
 //! SUCCESS
 
-func main() {
+import "prelude.bufo";
+
+func main(argc: i32, argv: &&char) -> i32 {
     comptime A: usize = 53;
     assert(A as char == '5');
 
@@ -27,8 +28,10 @@ func main() {
 
     let str: &char = "Hello, World!";
     let cmp: [u8; 13] = [72, 101, 108, 108, 111, 44, 32, 87, 111, 114, 108, 100, 33];
-    for (mut i: usize = 0; i < 13; i = i + 1) unsafe {
+    for (let i: usize = 0; i < 13; i = i + 1) {
         let ch: char = *(str + sizeof char * i);
         assert(ch as u8 == cmp[i]);
     }
+
+    return 0;
 }

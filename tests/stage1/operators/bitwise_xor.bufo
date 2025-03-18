@@ -1,37 +1,38 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! RUNTIME
 //! SUCCESS
 
-func and_i32() -> i32 {
+import "prelude.bufo";
+
+func xor_i32() -> i32 {
     let a: i32 = 178;
     let b: i32 = 147;
     if ((a ^ b) != 33) return 1;
     if ((a ^ b) != (b ^ a)) return 2;
     return 0;
 }
-func and_u32() -> u32 {
+func xor_u32() -> u32 {
     let a: u32 = 178;
     let b: u32 = 147;
     if ((a ^ b) != 33) return 1;
     if ((a ^ b) != (b ^ a)) return 2;
     return 0;
 }
-func and_i64() -> i64 {
+func xor_i64() -> i64 {
     let a: i64 = 178;
     let b: i64 = 147;
     if ((a ^ b) != 33) return 1;
     if ((a ^ b) != (b ^ a)) return 2;
     return 0;
 }
-func and_u64() -> u64 {
+func xor_u64() -> u64 {
     let a: u64 = 178;
     let b: u64 = 147;
     if ((a ^ b) != 33) return 1;
     if ((a ^ b) != (b ^ a)) return 2;
     return 0;
 }
-func and_ident() -> u32 {
+func xor_ident() -> u32 {
     let a: u32 = 19803;
     let b: u32 = 12093;
     let expected: u32 = 25190;
@@ -44,12 +45,11 @@ func and_ident() -> u32 {
     return 0;
 }
 
-func main() -> u32 {
-    if (and_i32() != 0) return 1;
-    if (and_u32() != 0) return 2;
-    if (and_i64() != 0) return 3;
-    if (and_u64() != 0) return 4;
-    let a: u32 = and_ident();
-    if (a != 0) return a;
+func main(argc: i32, argv: &&char) -> i32 {
+    assert(xor_i32() == 0);
+    assert(xor_u32() == 0);
+    assert(xor_i64() == 0);
+    assert(xor_u64() == 0);
+    assert(xor_ident() == 0);
     return 0;
 }

@@ -1,13 +1,11 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! COMPILER
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Expected Identifier, found `true`
-//! Expected Identifier, found `false`
-//! Expected `;`, found `(`
+//! Expected Identifier, found `true` instead.
 
+// Compiler stops after the first syntax error
 func true() {
 
 }

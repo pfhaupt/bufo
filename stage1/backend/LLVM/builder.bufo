@@ -289,6 +289,17 @@ struct LLVMBuilder {
             return newLLVMValueFromRef(value);
         }
     }
+    func buildXor(&mut this, lhs: LLVMValue, rhs: LLVMValue, name: SubStr) -> LLVMValue {
+        trace("LLVMBuilder.buildXor");
+        this.guardReference();
+        unsafe {
+            let _n: String = name.toString();
+            let value: LLVMValueRef = LLVMBuildXor(this.ref, lhs.ref, rhs.ref, _n.chars());
+            _n.drop();
+            assert_with_msg(!value.isNull(), "Could not build logical xor");
+            return newLLVMValueFromRef(value);
+        }
+    }
     func buildPtrToInt(&mut this, val: LLVMValue, typ: LLVMType, name: SubStr) -> LLVMValue {
         trace("LLVMBuilder.buildPtrToInt");
         this.guardReference();
@@ -340,6 +351,17 @@ struct LLVMBuilder {
             }
             _n.drop();
             assert_with_msg(!value.isNull(), "Could not build float to int");
+            return newLLVMValueFromRef(value);
+        }
+    }
+    func buildIntSignExtend(&mut this, val: LLVMValue, typ: LLVMType, name: SubStr) -> LLVMValue {
+        trace("LLVMBuilder.buildIntSignExtend");
+        this.guardReference();
+        unsafe {
+            let _n: String = name.toString();
+            let value: LLVMValueRef = LLVMBuildSExt(this.ref, val.ref, typ.ref, _n.chars());
+            _n.drop();
+            assert_with_msg(!value.isNull(), "Could not build int sign extend");
             return newLLVMValueFromRef(value);
         }
     }
@@ -442,6 +464,15 @@ struct LLVMBuilder {
             indices.clear();
             assert_with_msg(!s.isNull(), "Could not build GEP");
             return newLLVMValueFromRef(s);
+        }
+    }
+
+    func buildUnreachable(&mut this) {
+        trace("LLVMBuilder.buildUnreachable");
+        this.guardReference();
+        unsafe {
+            let v: LLVMValueRef = LLVMBuildUnreachable(this.ref);
+            assert_with_msg(!v.isNull(), "Could not build unreachable");
         }
     }
 }

@@ -17,7 +17,7 @@ func getArg(argv: &&char, i: usize) -> &char {
     }
 }
 
-unsafe func main(argc: usize, argv: &&char) -> i32 {
+unsafe func main(argc: i32, argv: &&char) -> i32 {
     setupStdHandles();
     if (argc < 3) unsafe {
         fprintf(stderr, "error: Expected input and output files.\n");
@@ -42,7 +42,7 @@ unsafe func main(argc: usize, argv: &&char) -> i32 {
     if (!generator.generateBytecode(&mut project)) return 1;
     mut interp: IRInterp = newIRInterpreter(&mut generator);
     mut llvmCodegen: LLVMCodegen = newLLVMCodegen(fileSubStr, &mut generator, &mut interp);
-    if (!llvmCodegen.generateExecutable()) return 1;
+    if (!llvmCodegen.generateExecutable(newSubStrOfStrLit(out))) return 1;
     if (PRINT_DEBUG) {
         printf("moduleCount   = %llu\n", moduleCount);
         printf("tliCount      = %llu\n", tliCount);
@@ -54,7 +54,10 @@ unsafe func main(argc: usize, argv: &&char) -> i32 {
         printf("typeDeclCount = %llu\n", typeDeclCount);
         printf("exprCount     = %llu\n", exprCount);
     }
-    mut s: String = newStringFromStrLit("link.exe test.obj /DEFAULTLIB:libcmt /OUT:");
+    mut s: String = newStringFromStrLit("link.exe ");
+    s.pushStr(out);
+    s.pushStr(".obj");
+    s.pushStr(" /DEFAULTLIB:libcmt /OUT:");
     s.pushStr(out);
     for (mut i: usize = 0; i < compilerFlagCount; i = i + 1) {
         s.pushChar(' ');

@@ -1,7 +1,8 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! RUNTIME
 //! SUCCESS
+
+import "prelude.bufo";
 
 struct Test {
     a: u64;
@@ -10,7 +11,7 @@ struct Test {
     func get_a(this) -> u64 {
         return this.a;
     }
-    func set_a(mut this, a: u64) {
+    func set_a(this, a: u64) {
         this.a = a;
     }
 }
@@ -23,12 +24,12 @@ func destroy(t: Test, counter: u64) -> u64 {
     return tmp + t.get_a();
 }
 
-func main() -> i32 {
+func main(argc: i32, argv: &&char) -> i32 {
     let b: Test = Test {
         b: 12,
         a: 1337,
     };
     let result: u64 = destroy(b, 100);
-    if (result != 133700) return 1;
+    assert(result == 133700);
     return 0;
 }

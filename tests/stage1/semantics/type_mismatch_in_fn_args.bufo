@@ -1,17 +1,24 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! COMPILER
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Type mismatch! Argument is expected to be of type `i32`, found type `u32`.
-//! Parameter `a` is declared to be of type `i32`.
+//! Could not find matching signature for call to function `foo`.
+//! Could not find matching signature for call to function `bar`.
 
-func bla(a: i32) {
+func foo(a: u64) {
+}
 
+func bar(a: i32) {
+}
+
+func bar(a: u8) {
 }
 
 func main() {
+    let a: i8 = 0;
+    foo(a);
     let b: u32 = 0;
-    bla(b);
+    bar(b);
 }
+

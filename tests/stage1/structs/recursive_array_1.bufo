@@ -1,13 +1,12 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! COMPILER
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Recursive struct `Bar`.
-//! Chain of recursion also includes struct `Foo`.
-//! Recursive struct `Foo`.
-//! Chain of recursion also includes struct `Bar`.
+//! Recursive type `Bar`.
+//! Chain of recursion also includes type `Foo`.
+//! Recursive type `Foo`.
+//! Chain of recursion also includes type `Bar`.
 
 struct Bar {
     foos: [Foo; 8];

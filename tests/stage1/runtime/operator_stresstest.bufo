@@ -1,7 +1,8 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! RUNTIME
 //! SUCCESS
+
+import "prelude.bufo";
 
 func test_easy() -> i32 {
     let a: i32 = 5;
@@ -119,18 +120,10 @@ func test_extreme() -> i32 {
 
 }
 
-func main() -> i32 {
-    if (test_easy() != 0) {
-        return 1;
-    }
-    if (test_medium() != 0) {
-        return 2;
-    }
-    if (test_hard() != 0) {
-        return 3;
-    }
-    if (test_extreme() != 0) {
-        return 4;
-    }
+func main(argc: i32, argv: &&char) -> i32 {
+    assert(test_easy() == 0);
+    assert(test_medium() == 0);
+    assert(test_hard() == 0);
+    assert(test_extreme() == 0);
     return 0;
 }

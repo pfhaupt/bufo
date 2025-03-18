@@ -1,12 +1,13 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! RUNTIME
 //! SUCCESS
 
-func main() -> u64 {
-    mut a: u64 = 0;
+import "prelude.bufo";
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a: i32 = 0;
     return a;
-    let c: u64 = 0;
+    let c: i32 = 0;
     while (a < 100) {
         if (a == 15) {
             break;
@@ -20,7 +21,7 @@ func main() -> u64 {
         if (a == 1) {
             return a;
         } else {
-            let d: u64 = 0;
+            let d: i32 = 0;
             return d;
             let e: i32 = 0;
         }

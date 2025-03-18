@@ -434,7 +434,7 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
             main_func.get_type().get_return_type().unwrap()
         };
         let ret_fn_type = ret_type.fn_type(&[
-            self.context.i64_type().into(),
+            self.context.i32_type().into(),
             self.context.i8_type().ptr_type(AddressSpace::default()).into(),
         ], false);
         assert!(self.module.get_function("main").is_none());

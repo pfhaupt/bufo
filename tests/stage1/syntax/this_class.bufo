@@ -1,30 +1,28 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! COMPILER
 //! FAILURE
 //! CODE: 1
 //! ERROR:
 //! `this` parameter must be the first parameter of a method.
-//! `this` parameter must be the first parameter of a method.
-//! `this` parameter must be the first parameter of a method.
+//! Unexpected type for `this` parameter.
+//! The type of `this` is always the struct the method is defined in.
 //! Unexpected `this` parameter.
-//! `this` parameters are only allowed in methods.
-//! Expected Identifier, found `this`
+//! `this` is only allowed in methods.
+//! Expected Identifier, found `this` instead.
 
 struct Foo {
     field: u32;
-    func foo(mut this) {
+    func foo(this) {
         this.field = 5;
     }
     func foo2(a: i32, this) {}
-    func foo3(a: i32, mut this) {}
-    func foo4(a: i32, mut this: Foo) {}
+    func foo4(a: i32, this: Foo) {}
     func bar(this) {}
     func bar2() {}
 }
 func illegal(this) {}
 func foo(a: i32) {}
-func bar(mut a: i32) {}
+func bar(a: i32) {}
 
 func main() {
     let this: i32 = 0;

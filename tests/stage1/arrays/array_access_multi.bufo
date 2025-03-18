@@ -1,9 +1,10 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! RUNTIME
 //! SUCCESS
 
-func main() -> i32 {
+import "prelude.bufo"; // Index OOB handler
+
+func main(argc: i32, argv: &&char) -> i32 {
     let arr: [[i32; 5]; 5] = [
         [01, 02, 03, 04, 05],
         [06, 07, 08, 09, 10],

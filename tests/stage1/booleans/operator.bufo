@@ -1,5 +1,4 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! COMPILER
 //! FAILURE
 //! CODE: 1
@@ -13,7 +12,8 @@
 //! Type mismatch in binary expression! Operation `bool + bool` is not defined.
 
 func main() {
-    let a: u32 = true + 54i32;
+    let _i: i32 = 53;
+    let a: u32 = true + _i;
     let b: u64 = a + (a == 1);
 
     let c: bool = (a == 1) + (a == 0);

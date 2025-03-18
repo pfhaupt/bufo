@@ -1,5 +1,4 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! COMPILER
 //! FAILURE
 //! CODE: 1
@@ -12,10 +11,10 @@
 //! Parameter `a` already declared here.
 
 struct Foo {
-    func method(this, d: i32, d: i32){}
+    func method(this, d: i32, d: i32) {}
 }
 
 func foo(f: i32, f: i32) {}
 func bar(a: i32, b: i32, a: i32) {}
 
-func main(){}
+func main() {}

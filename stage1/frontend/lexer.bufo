@@ -74,6 +74,55 @@ struct Lexer {
             || word.equals(&KEYWORD_COMPILER_FLAGS);
     }
 
+    func escapeCharSequence(&mut this, tmp: &mut SubStr, s: &mut String, len: &mut usize) -> char {
+        mut escaped: bool = false;
+        mut extraOffset: usize = 0;
+        mut c: char = (&*tmp).getChar(0);
+        if (c == '\\') {
+            c = (&*tmp).getChar(1);
+            if (c == 'n') {
+                s.pushChar('\n');
+            } else if (c == 'r') {
+                s.pushChar('\r');
+            } else if (c == 't') {
+                s.pushChar('\t');
+            } else if (c == '0') {
+                s.pushChar('\0');
+            } else if (c == '\\') {
+                s.pushChar('\\');
+            } else if (c == '\'') {
+                s.pushChar('\'');
+            } else if (c == '\"') {
+                s.pushChar('\"');
+            } else if (c == 'x') {
+                let lower: char = (&*tmp).getChar(2);
+                let upper: char = (&*tmp).getChar(3);
+                assert_with_msg(isHexDigit(lower), "Expected hex digits for \\x");
+                assert_with_msg(isHexDigit(upper), "Expected hex digits for \\x");
+                let byte: char = (asHex(lower) * 16 + asHex(upper)) as char;
+                s.pushChar(byte);
+                extraOffset = 2;
+            } else unsafe {
+                let t: Token = newToken(this.moduleID, &newSubStr(&c, 0, 1), this.ptr + 1, TOKEN_IDENT);
+                let loc: String = t.span.toString();
+                fprintf(stderr, "%s: %s: Can't escape character `%c`.\n", loc.chars(), ERR_STR, c);
+                loc.drop();
+                exit(1);
+            }
+            escaped = true;
+        } else {
+            s.pushChar(c);
+        }
+        mut s: usize = 1;
+        if (escaped) {
+            s = 2;
+        }
+        s = s + extraOffset;
+        *len = *len + s;
+        *tmp = (&*tmp).substring(s, tmp.len);
+        return (&*tmp).getChar(0);
+    }
+
     func advance(&mut this) -> bool {
         this.ptr = this.ptr + 1;
         this.content = this.content.substring(1, this.content.len);
@@ -132,9 +181,7 @@ struct Lexer {
             return newToken(this.moduleID, &word, this.ptr - len, TOKEN_INT_LITERAL);
         } else if (currChar == '"') {
             this.advance();
-            mut len: usize = 0;
-            mut tmp: SubStr = this.content;
-            if (tmp.len == 0) {
+            if (this.content.len == 0) {
                 todo_with_msg("unbalanced \"");
             }
             // When peeking we don't care about the precise contents of the String Literal
@@ -142,99 +189,36 @@ struct Lexer {
             if (peek) {
                 return newToken(this.moduleID, &newSubStr("\"", 0, 1), this.ptr - 1, TOKEN_STRING_LITERAL);
             }
+            mut len: usize = 0;
             mut s: String = newString();
-            mut c: char = tmp.getChar(0);
-            // FIXME: Code duplication a few lines below
+            mut c: char = this.content.getChar(0);
             while (c != '"') {
-                mut escaped: bool = false;
-                mut extraOffset: usize = 0;
-                if (c == '\\') {
-                    c = tmp.getChar(1);
-                    if (c == 'n') {
-                        s.pushChar('\n');
-                    } else if (c == '0') {
-                        s.pushChar('\0');
-                    } else if (c == '\\') {
-                        s.pushChar('\\');
-                    } else if (c == '\'') {
-                        s.pushChar('\'');
-                    } else if (c == '\"') {
-                        s.pushChar('\"');
-                    } else if (c == 'x') {
-                        let lower: char = tmp.getChar(2);
-                        let upper: char = tmp.getChar(3);
-                        assert_with_msg(isHexDigit(lower), "Expected hex digits for \\x");
-                        assert_with_msg(isHexDigit(upper), "Expected hex digits for \\x");
-                        let byte: char = (asHex(lower) * 16 + asHex(upper)) as char;
-                        s.pushChar(byte);
-                        extraOffset = 2;
-                    } else unsafe {
-                        todo_with_msg("unknown escape string");
-                    }
-                    escaped = true;
-                } else {
-                    s.pushChar(c);
-                }
-                mut s: usize = 1;
-                if (escaped) {
-                    s = 2;
-                }
-                s = s + extraOffset;
-                len = len + s;
-                tmp = tmp.substring(s, tmp.len);
-                c = tmp.getChar(0);
+                mut l: usize = 0;
+                c = this.escapeCharSequence(&mut this.content, &mut s, &mut l);
+                this.ptr = this.ptr + l;
+                len = len + l;
             }
             let word: SubStr = s.substring(0, s.length);
-            this.ptr = this.ptr + len;
-            this.content = tmp;
             this.advance();
             return newToken(this.moduleID, &word, this.ptr - len, TOKEN_STRING_LITERAL);
         } else if (currChar == '\'') {
             this.advance();
+            if (this.content.len == 0) {
+                todo_with_msg("unbalanced \'");
+            }
             mut len: usize = 0;
-            mut tmp: SubStr = this.content;
             mut s: String = newString();
-            mut c: char = tmp.getChar(0);
-            // FIXME: Code duplication a few lines above
+            mut c: char = this.content.getChar(0);
             while (c != '\'') {
-                mut escaped: bool = false;
-                if (c == '\\') {
-                    c = tmp.getChar(1);
-                    if (c == 'n') {
-                        s.pushChar('\n');
-                    } else if (c == 't') {
-                        s.pushChar('\t');
-                    } else if (c == 'r') {
-                        s.pushChar('\r');
-                    } else if (c == '0') {
-                        s.pushChar('\0');
-                    } else if (c == '\\') {
-                        s.pushChar('\\');
-                    } else if (c == '\'') {
-                        s.pushChar('\'');
-                    } else if (c == '\"') {
-                        s.pushChar('\"');
-                    } else unsafe {
-                        todo_with_msg("unknown escape char");
-                    }
-                    escaped = true;
-                } else {
-                    s.pushChar(c);
-                }
-                mut s: usize = 1;
-                if (escaped) {
-                    s = 2;
-                }
-                len = len + s;
-                tmp = tmp.substring(s, tmp.len);
-                c = tmp.getChar(0);
+                mut l: usize = 0;
+                c = this.escapeCharSequence(&mut this.content, &mut s, &mut l);
+                this.ptr = this.ptr + l;
+                len = len + l;
             }
             let word: SubStr = s.substring(0, s.length);
             if (word.len != 1) {
                 todo_with_msg("invalid char literal");
             }
-            this.ptr = this.ptr + len;
-            this.content = tmp;
             this.advance();
             return newToken(this.moduleID, &word, this.ptr - len, TOKEN_CHAR_LITERAL);
         } else if (currChar == '(') {
@@ -321,6 +305,9 @@ struct Lexer {
         } else if (currChar == '%') {
             this.advance();
             return newToken(this.moduleID, &newSubStr("%", 0, 1), this.ptr - 1, TOKEN_PERCENT);
+        } else if (currChar == '^') {
+            this.advance();
+            return newToken(this.moduleID, &newSubStr("^", 0, 1), this.ptr - 1, TOKEN_CARET);
         } else if (currChar == '|') {
             this.advance();
             if (this.ptr < this.len && this.content.getChar(0) == '|') {
@@ -372,11 +359,12 @@ struct Lexer {
                 this.advance();
                 return newToken(this.moduleID, &newSubStr("/", 0, 1), this.ptr - 1, TOKEN_SLASH_SINGLE);
             }
-        } else {
-            unsafe {
-                fprintf(stderr, "error: %llu: Unknown character `%c`.\n", this.ptr, currChar);
-                exit(1);
-            }
+        } else unsafe {
+            let t: Token = newToken(this.moduleID, &newSubStr(&currChar, 0, 1), this.ptr + 1, TOKEN_IDENT);
+            let loc: String = t.span.toString();
+            fprintf(stderr, "%s: %s: Unknown character `%c`.\n", loc.chars(), ERR_STR, currChar);
+            loc.drop();
+            exit(1);
         }
         assert_with_msg(false, "Unexpected fallthrough in Lexer.next()");
         return defaultToken();

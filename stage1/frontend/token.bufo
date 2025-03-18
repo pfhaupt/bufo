@@ -17,66 +17,64 @@ comptime TOKEN_CURLY_OPEN: usize = 8;
 comptime TOKEN_CURLY_CLOSE: usize = 9;
 comptime TOKEN_SQUARE_OPEN: usize = 10;
 comptime TOKEN_SQUARE_CLOSE: usize = 11;
-comptime TOKEN_SHARP_OPEN: usize = 12;
-comptime TOKEN_SHARP_CLOSE: usize = 13;
-comptime TOKEN_SEMI_COLON: usize = 14;
-comptime TOKEN_COLON: usize = 15;
-comptime TOKEN_EQUAL_SINGLE: usize = 16;
-comptime TOKEN_EQUAL_DOUBLE: usize = 17;
-comptime TOKEN_AMPERSAND_SINGLE: usize = 18;
-comptime TOKEN_AMPERSAND_DOUBLE: usize = 19;
-comptime TOKEN_COMMA: usize = 20;
-comptime TOKEN_ARROW: usize = 21;
-comptime TOKEN_PLUS_SINGLE: usize = 22;
-comptime TOKEN_UNDERSCORE: usize = 23;
-comptime TOKEN_DOT: usize = 24;
-comptime TOKEN_AT: usize = 25;
-comptime TOKEN_MINUS_SINGLE: usize = 26;
-comptime TOKEN_ASTERISK_SINGLE: usize = 27;
-comptime TOKEN_NOT_EQUAL: usize = 28;
-comptime TOKEN_BANG: usize = 29;
-comptime TOKEN_SLASH_SINGLE: usize = 30;
-comptime TOKEN_LESS_THAN_EQUAL: usize = 31;
-comptime TOKEN_LESS_THAN: usize = 32;
-comptime TOKEN_GREATER_THAN_EQUAL: usize = 33;
-comptime TOKEN_GREATER_THAN: usize = 34;
-comptime TOKEN_PERCENT: usize = 35;
-comptime TOKEN_PIPE_SINGLE: usize = 36;
-comptime TOKEN_PIPE_DOUBLE: usize = 37;
-comptime TOKEN_DOTDOTDOT: usize = 38;
+comptime TOKEN_SEMI_COLON: usize = 12;
+comptime TOKEN_COLON: usize = 13;
+comptime TOKEN_EQUAL_SINGLE: usize = 14;
+comptime TOKEN_EQUAL_DOUBLE: usize = 15;
+comptime TOKEN_AMPERSAND_SINGLE: usize = 16;
+comptime TOKEN_AMPERSAND_DOUBLE: usize = 17;
+comptime TOKEN_COMMA: usize = 18;
+comptime TOKEN_ARROW: usize = 19;
+comptime TOKEN_PLUS_SINGLE: usize = 20;
+comptime TOKEN_UNDERSCORE: usize = 21;
+comptime TOKEN_DOT: usize = 22;
+comptime TOKEN_AT: usize = 23;
+comptime TOKEN_MINUS_SINGLE: usize = 24;
+comptime TOKEN_ASTERISK_SINGLE: usize = 25;
+comptime TOKEN_NOT_EQUAL: usize = 26;
+comptime TOKEN_BANG: usize = 27;
+comptime TOKEN_SLASH_SINGLE: usize = 28;
+comptime TOKEN_LESS_THAN_EQUAL: usize = 29;
+comptime TOKEN_LESS_THAN: usize = 30;
+comptime TOKEN_GREATER_THAN_EQUAL: usize = 31;
+comptime TOKEN_GREATER_THAN: usize = 32;
+comptime TOKEN_PERCENT: usize = 33;
+comptime TOKEN_PIPE_SINGLE: usize = 34;
+comptime TOKEN_PIPE_DOUBLE: usize = 35;
+comptime TOKEN_DOTDOTDOT: usize = 36;
+comptime TOKEN_CARET: usize = 37;
 func tokenKindToString(kind: usize) -> &char {
     if (kind == TOKEN_EOF) { return "TOKEN_EOF"; }
-    else if (kind == TOKEN_IDENT) { return "TOKEN_IDENT"; }
-    else if (kind == TOKEN_KEYWORD) { return "TOKEN_KEYWORD"; }
-    else if (kind == TOKEN_INT_LITERAL) { return "TOKEN_INT_LITERAL"; }
-    else if (kind == TOKEN_PAREN_OPEN) { return "TOKEN_PAREN_OPEN"; }
-    else if (kind == TOKEN_PAREN_CLOSE) { return "TOKEN_PAREN_CLOSE"; }
-    else if (kind == TOKEN_CURLY_OPEN) { return "TOKEN_CURLY_OPEN"; }
-    else if (kind == TOKEN_CURLY_CLOSE) { return "TOKEN_CURLY_CLOSE"; }
-    else if (kind == TOKEN_SHARP_OPEN) { return "TOKEN_SHARP_OPEN"; }
-    else if (kind == TOKEN_SHARP_CLOSE) { return "TOKEN_SHARP_CLOSE"; }
-    else if (kind == TOKEN_SQUARE_OPEN) { return "TOKEN_SQUARE_OPEN"; }
-    else if (kind == TOKEN_SQUARE_CLOSE) { return "TOKEN_SQUARE_CLOSE"; }
-    else if (kind == TOKEN_SEMI_COLON) { return "TOKEN_SEMI_COLON"; }
-    else if (kind == TOKEN_COLON) { return "TOKEN_COLON"; }
-    else if (kind == TOKEN_EQUAL_SINGLE) { return "TOKEN_EQUAL_SINGLE"; }
-    else if (kind == TOKEN_EQUAL_DOUBLE) { return "TOKEN_EQUAL_DOUBLE"; }
-    else if (kind == TOKEN_AMPERSAND_SINGLE) { return "TOKEN_AMPERSAND_SINGLE"; }
-    else if (kind == TOKEN_AMPERSAND_DOUBLE) { return "TOKEN_AMPERSAND_DOUBLE"; }
-    else if (kind == TOKEN_COMMA) { return "TOKEN_COMMA"; }
-    else if (kind == TOKEN_ARROW) { return "TOKEN_ARROW"; }
-    else if (kind == TOKEN_PLUS_SINGLE) { return "TOKEN_PLUS_SINGLE"; }
-    else if (kind == TOKEN_UNDERSCORE) { return "TOKEN_UNDERSCORE"; }
-    else if (kind == TOKEN_DOT) { return "TOKEN_DOT"; }
-    else if (kind == TOKEN_AT) { return "TOKEN_AT"; }
-    else if (kind == TOKEN_MINUS_SINGLE) { return "TOKEN_MINUS_SINGLE"; }
-    else if (kind == TOKEN_ASTERISK_SINGLE) { return "TOKEN_ASTERISK_SINGLE"; }
-    else if (kind == TOKEN_NOT_EQUAL) { return "TOKEN_NOT_EQUAL"; }
-    else if (kind == TOKEN_BANG) { return "TOKEN_BANG"; }
-    else if (kind == TOKEN_SLASH_SINGLE) { return "TOKEN_SLASH_SINGLE"; }
-    else if (kind == TOKEN_PERCENT) { return "TOKEN_PERCENT"; }
-    else if (kind == TOKEN_PIPE_DOUBLE) { return "TOKEN_PIPE_DOUBLE"; }
-    else if (kind == TOKEN_DOTDOTDOT) { return "TOKEN_DOTDOTDOT"; }
+    else if (kind == TOKEN_IDENT) { return "Identifier"; }
+    else if (kind == TOKEN_KEYWORD) { return "Keyword"; }
+    else if (kind == TOKEN_INT_LITERAL) { return "Integer literal"; }
+    else if (kind == TOKEN_PAREN_OPEN) { return "`(`"; }
+    else if (kind == TOKEN_PAREN_CLOSE) { return "`)`"; }
+    else if (kind == TOKEN_CURLY_OPEN) { return "`{`"; }
+    else if (kind == TOKEN_CURLY_CLOSE) { return "`}`"; }
+    else if (kind == TOKEN_SQUARE_OPEN) { return "`[`"; }
+    else if (kind == TOKEN_SQUARE_CLOSE) { return "`]`"; }
+    else if (kind == TOKEN_SEMI_COLON) { return "`;`"; }
+    else if (kind == TOKEN_COLON) { return "`:`"; }
+    else if (kind == TOKEN_EQUAL_SINGLE) { return "`=`"; }
+    else if (kind == TOKEN_EQUAL_DOUBLE) { return "`==`"; }
+    else if (kind == TOKEN_AMPERSAND_SINGLE) { return "`&`"; }
+    else if (kind == TOKEN_AMPERSAND_DOUBLE) { return "`&&`"; }
+    else if (kind == TOKEN_COMMA) { return "`,`"; }
+    else if (kind == TOKEN_ARROW) { return "`->`"; }
+    else if (kind == TOKEN_PLUS_SINGLE) { return "`+`"; }
+    else if (kind == TOKEN_UNDERSCORE) { return "`_`"; }
+    else if (kind == TOKEN_DOT) { return "`.`"; }
+    else if (kind == TOKEN_AT) { return "`@`"; }
+    else if (kind == TOKEN_MINUS_SINGLE) { return "`-`"; }
+    else if (kind == TOKEN_ASTERISK_SINGLE) { return "`*`"; }
+    else if (kind == TOKEN_NOT_EQUAL) { return "`!=`"; }
+    else if (kind == TOKEN_BANG) { return "`!`"; }
+    else if (kind == TOKEN_SLASH_SINGLE) { return "`/`"; }
+    else if (kind == TOKEN_PERCENT) { return "`%`"; }
+    else if (kind == TOKEN_PIPE_DOUBLE) { return "`||`"; }
+    else if (kind == TOKEN_DOTDOTDOT) { return "`...`"; }
+    else if (kind == TOKEN_CARET) { return "`^`"; }
     else unsafe {
         printf("Please implement tokenKindToString(%llu)\n", kind);
         exit(1);
@@ -84,7 +82,6 @@ func tokenKindToString(kind: usize) -> &char {
     return ""; // Unreachable
 }
 struct Token {
-    moduleID: usize;
     span: Span;
     content: SubStr;
     kind: usize;
@@ -94,13 +91,7 @@ struct Token {
         this.content.print();
     }
     func getLocation(&this) -> String {
-        // FIXME: The spans report in bytes, but the formatting makes it look like line and column
-        mut s: String = modules[this.moduleID].origin.toString();
-        s.pushChar(':');
-        let _s: String = this.span.toString();
-        s.pushString(&_s);
-        _s.drop();
-        return s;
+        return this.span.toString();
     }
     func toString(&this) -> String {
         return this.content.toString();
@@ -113,7 +104,6 @@ struct Token {
     }
     func equals(&mut this, other: &Token) -> bool {
         if (this.kind != other.kind) return false;
-        if (this.moduleID != other.moduleID) return false;
         if (!this.span.equals(&other.span)) return false;
         if (!this.content.equals(&other.content)) return false;
         return true;
@@ -125,9 +115,8 @@ func dummyToken(kind: usize) -> Token {
 }
 
 func newToken(moduleID: usize, sub: &SubStr, start: usize, kind: usize) -> Token {
-    let s: Span = newSpan(start, start + sub.len);
+    let s: Span = newSpan(moduleID, start, start + sub.len);
     return Token {
-        moduleID: moduleID,
         content: *sub,
         span: s,
         kind: kind
@@ -135,17 +124,15 @@ func newToken(moduleID: usize, sub: &SubStr, start: usize, kind: usize) -> Token
 }
 func newTokenEOF(moduleID: usize, start: usize) -> Token {
     return Token {
-        moduleID: moduleID,
         content: newSubStr("End Of File", 0, 11),
-        span: newSpan(start, start + 1),
+        span: newSpan(moduleID, start, start + 1),
         kind: TOKEN_EOF,
     };
 }
 func defaultToken() -> Token {
     return Token {
-        moduleID: 0,
         content: defaultSubStr(),
-        span: newSpan(0, 0),
+        span: defaultSpan(),
         kind: TOKEN_EOF,
     };
 }

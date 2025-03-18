@@ -1,14 +1,11 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! RUNTIME
 //! SUCCESS
 
+import "prelude.bufo";
+
 struct Foo {
     b: Bar;
-
-    func doStuff(this) -> i32 {
-        return 1;
-    }
 }
 
 struct Bar {
@@ -18,13 +15,13 @@ struct Bar {
     }
 }
 
-func main() -> i32 {
+func main(argc: i32, argv: &&char) -> i32 {
     mut f: Foo = Foo {
         b: Bar {
             f: 10
         }
     };
     f.b.setF(5);
-    if (f.b.f != 5) return f.b.f;
+    assert(f.b.f == 5);
     return 0;
 }

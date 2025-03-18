@@ -1,24 +1,23 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! RUNTIME
 //! SUCCESS
+
+import "prelude.bufo";
 
 struct Foo {
     ptr: &i32;
 
     func getValue(&this) -> i32 {
-        unsafe {
-            if (this.ptr != null) {
-                return *(this.ptr);
-            } else {
-                return -1;
-            }
+        if (this.ptr != null) {
+            return *(this.ptr);
+        } else {
+            return -1;
         }
     }
 }
 
-unsafe func main() {
-    mut f: Foo = Foo {
+func main(argc: i32, argv: &&char) -> i32 {
+    let f: Foo = Foo {
         ptr: null
     };
     assert(f.getValue() == -1);
@@ -26,4 +25,6 @@ unsafe func main() {
     assert(f.getValue() == 5);
     f.ptr = null;
     assert(f.getValue() == -1);
+
+    return 0;
 }

@@ -46,11 +46,11 @@ struct Type {
         if (this.kind == TYPE_KIND_PRIMITIVE) {
             // OPT: Make these Strings comptime
             if (this.typeIndex == TYPE_U8) return newStringFromStrLit("u8");
-            else if (this.typeIndex == TYPE_U16) todo_with_msg("mangle TYPE_U16");
+            else if (this.typeIndex == TYPE_U16) return newStringFromStrLit("u16");
             else if (this.typeIndex == TYPE_U32) return newStringFromStrLit("u32");
             else if (this.typeIndex == TYPE_U64) return newStringFromStrLit("u64");
-            else if (this.typeIndex == TYPE_I8) todo_with_msg("mangle TYPE_I8");
-            else if (this.typeIndex == TYPE_I16) todo_with_msg("mangle TYPE_I16");
+            else if (this.typeIndex == TYPE_I8) return newStringFromStrLit("i8");
+            else if (this.typeIndex == TYPE_I16) return newStringFromStrLit("i16");
             else if (this.typeIndex == TYPE_I32) return newStringFromStrLit("i32");
             else if (this.typeIndex == TYPE_I64) return newStringFromStrLit("i64");
             else if (this.typeIndex == TYPE_USIZE) return newStringFromStrLit("U");
@@ -181,16 +181,65 @@ struct Type {
     func isArray(&mut this) -> bool {
         return this.kind == TYPE_KIND_ARRAY;
     }
+    func isStructArray(&mut this) -> bool {
+        if (!this.isArray()) return false;
+        return this.getUnderlyingType(false).isStruct();
+    }
     func getUnderlyingType(&mut this, deep: bool) -> &mut Type {
         mut underlying: &mut Type = this;
         if (this.kind == TYPE_KIND_PRIMITIVE)
             assert_with_msg(this.typeIndex != TYPE_ANY, "Type.getUnderlyingType() is not defined for Any");
         assert_with_msg(this.isPointer() || this.isArray(), "type.getUnderlyingType() called on non-pointer non-array");
-        while (underlying.isPointer()) {
+        while (underlying.isPointer() || underlying.isArray()) {
             underlying = getTypeByID(underlying.typeIndex);
             if (!deep) break;
         }
         return underlying;
+    }
+    func toString(&mut this) -> String {
+        if (this.kind == TYPE_KIND_PRIMITIVE) {
+            // OPT: Make these Strings comptime
+            if (this.typeIndex == TYPE_U8) return newStringFromStrLit("u8");
+            else if (this.typeIndex == TYPE_U16) return newStringFromStrLit("u16");
+            else if (this.typeIndex == TYPE_U32) return newStringFromStrLit("u32");
+            else if (this.typeIndex == TYPE_U64) return newStringFromStrLit("u64");
+            else if (this.typeIndex == TYPE_I8) return newStringFromStrLit("i8");
+            else if (this.typeIndex == TYPE_I16) return newStringFromStrLit("i16");
+            else if (this.typeIndex == TYPE_I32) return newStringFromStrLit("i32");
+            else if (this.typeIndex == TYPE_I64) return newStringFromStrLit("i64");
+            else if (this.typeIndex == TYPE_USIZE) return newStringFromStrLit("usize");
+            else if (this.typeIndex == TYPE_ANY) return newStringFromStrLit("Any");
+            else if (this.typeIndex == TYPE_BOOL) return newStringFromStrLit("bool");
+            else if (this.typeIndex == TYPE_NONE) return newStringFromStrLit("none");
+            else if (this.typeIndex == TYPE_CHAR) return newStringFromStrLit("char");
+            else if (this.typeIndex == TYPE_F32) return newStringFromStrLit("f32");
+            else if (this.typeIndex == TYPE_F64) return newStringFromStrLit("f64");
+            else todo_with_msg("what type is this");
+        } else if (this.kind == TYPE_KIND_POINTER) {
+            mut s: String = newStringFromStrLit("&");
+            let _s: String = getTypeByID(this.typeIndex).toString();
+            s.pushString(&_s);
+            _s.drop();
+            return s;
+        } else if (this.kind == TYPE_KIND_STRUCT) {
+            let decl: &mut ParsedStructDecl = getStructDeclByID(this.typeIndex);
+            return decl.name.content.toString();
+        } else if (this.kind == TYPE_KIND_ARRAY) {
+            mut s: String = newStringFromStrLit("[");
+            let _s: String = getTypeByID(this.typeIndex).toString();
+            s.pushString(&_s);
+            _s.drop();
+            s.pushChar(';');
+            s.pushChar(' ');
+            s.pushNumber(this.arraySize);
+            s.pushChar(']');
+            return s;
+        } else if (this.kind == TYPE_KIND_UNKNOWN) {
+            todo_with_msg("toString type unknown???");
+        } else {
+            unreachable("Exhaustive handling of types in Type.getMangledName");
+        }
+        return blank;
     }
     func getSize(&mut this) -> usize {
         if (this.kind == TYPE_KIND_POINTER) {

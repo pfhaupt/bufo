@@ -1,11 +1,13 @@
 import "prelude.bufo";
 import "string.bufo";
+import "../frontend/nodes.bufo";
 
 struct Span {
+    mod: usize;
     start: usize;
     end: usize;
     func equals(&this, other: &Span) -> bool {
-        return this.start == other.start && this.end == other.end;
+        return this.mod == other.mod && this.start == other.start && this.end == other.end;
     }
     func print(&this) {
         let s: String = this.toString();
@@ -13,7 +15,9 @@ struct Span {
         s.drop();
     }
     func toString(&this) -> String {
-        mut s: String = newString();
+        // FIXME: The spans report in bytes, but the formatting makes it look like line and column
+        mut s: String = modules[this.mod].origin.toString();
+        s.pushChar(':');
         s.pushNumber(this.start);
         s.pushChar(':');
         s.pushNumber(this.end);
@@ -24,9 +28,10 @@ struct Span {
     }
 }
 
-func newSpan(start: usize, end: usize) -> Span {
+func newSpan(mod: usize, start: usize, end: usize) -> Span {
     assert_with_msg(end >= start, "Invalid size for newSpan()");
     return Span {
+        mod: mod,
         start: start,
         end: end,
     };
@@ -35,13 +40,16 @@ func newSpanBetween(start: &Span, end: &Span) -> Span {
     // (100:105)+(104:109)
     assert_with_msg(end.end >= start.end, "newSpanBetween: End Span can't end before Start Span.");
     assert_with_msg(start.start <= end.start, "newSpanBetween: Start Span can't start after End Span.");
+    assert_with_msg(start.mod == end.mod, "newSpanBetween: Spans can't be in different modules.");
     return Span {
+        mod: start.mod,
         start: start.start,
         end: end.end
     };
 }
 func defaultSpan() -> Span {
     return Span {
+        mod: 0,
         start: 0,
         end: 0
     };

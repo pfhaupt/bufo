@@ -44,7 +44,7 @@ struct LLVMCodegen {
     interp: &mut IRInterp;
     global: RegValueList;
 
-    func generateExecutable(&mut this) -> bool {
+    func generateExecutable(&mut this, outPath: SubStr) -> bool {
         // struct IRGen {
         //     globalScope: IRFunc;
         //     functions: String_IRFuncHashMap;
@@ -67,7 +67,7 @@ struct LLVMCodegen {
                 let f: &mut IRFunc = &mut *fns.at(i);
                 if (!this.generateFunction(i, f)) return false;
             }
-            this.llvmModule.writeToFile(newSubStrOfStrLit("debug_before.ll"));
+            if (PRINT_DEBUG) this.llvmModule.writeToFile(newSubStrOfStrLit("debug_before.ll"));
             if (!this.llvmModule.verify()) return false;
             mut pm: LLVMPassManager = this.llvmModule.createPassManager();
             pm.addPromoteMemoryToRegisterPass();
@@ -75,10 +75,10 @@ struct LLVMCodegen {
             pm.addCFGSimplificationPass();
             pm.addGlobalDCEPass();
             while (true) if (!pm.runOn(this.llvmModule)) break;
-            this.llvmModule.writeToFile(newSubStrOfStrLit("debug_after.ll"));
-            let path: &char = "test.obj";
-            this.llvmTargetMachine.writeToFile(this.llvmModule, LLVMObjectFile, path);
-            printf("Wrote to %s\n", path);
+            if (PRINT_DEBUG) this.llvmModule.writeToFile(newSubStrOfStrLit("debug_after.ll"));
+            mut path: String = outPath.toString();
+            path.pushStr(".obj");
+            this.llvmTargetMachine.writeToFile(this.llvmModule, LLVMObjectFile, path.chars());
         }
         return true;
     }
@@ -88,17 +88,17 @@ struct LLVMCodegen {
         //        It would be cooler if the prelude or standard library did that.
         //        Needs more features though, like being able to provide custom
         //        names that overwrite the mangling
-        let mainName: SubStr = newSubStrOfStrLit("0mainUPPcri32f00");
+        let mainName: SubStr = newSubStrOfStrLit("maini32PPcri32f00");
         if (!this.llvmModule.hasFunction(mainName)) {
             fprintf(stderr, "%s Could not find main function!\n", FATAL_STR);
             fprintf(stderr, "%s: The compiler currently requires that the input file also defines a main function.\n", NOTE_STR);
-            fprintf(stderr, "%s: The compiler is looking for a function with the signature `func main(argc: usize, argv: &&char) -> i32`.\n", NOTE_STR);
+            fprintf(stderr, "%s: The compiler is looking for a function with the signature `func main(argc: i32, argv: &&char) -> i32`.\n", NOTE_STR);
             return false;
         }
         let mainFunc: LLVMValue = this.llvmModule.getFunction(mainName);
         let retType: LLVMType = this.llvmContext.createIntegerType(32);
         mut params: LLVMTypeList = blank;
-        params.push(this.llvmContext.createIntegerType(64));
+        params.push(this.llvmContext.createIntegerType(32));
         let _p: LLVMType = this.llvmContext.createIntegerType(8);
         params.push(_p.intoPointerType());
         let retFnType: LLVMType = retType.intoFunctionType(params, false);
@@ -310,14 +310,27 @@ struct LLVMCodegen {
                 let typ: &mut Type = irFunc.getRegister(instr.dst).typ;
                 return this.generateLLVMValueFromComptimePtr(typ, reg);
             }
-        } else if (instr.kind == INSTR_FETCH_GLOBAL_VAL) {
+        } else if (instr.kind == INSTR_FETCH_GLOBAL_VALUE) {
             let val: &mut RegValue = this.global.at(instr.src.i);
             let typ: &mut Type = irFunc.getRegister(instr.dst).typ;
-            if (val.isLLVM) {
-                let dstTyp: LLVMType = this.generateLLVMType(typ);
-                let reg: LLVMValue = val.asLLVM("We just checked if it is LLVM");
-                return this.llvmBuilder.buildLoad(dstTyp, reg, newSubStrOfStrLit("fetchglobalval"));
+            assert_with_msg(val.isLLVM, "FetchGlobalValue got non-LLVM src");
+            let dstTyp: LLVMType = this.generateLLVMType(typ);
+            let reg: LLVMValue = val.asLLVM("We just checked if it is LLVM");
+            return this.llvmBuilder.buildLoad(dstTyp, reg, newSubStrOfStrLit("fetchglobalval"));
+        } else if (instr.kind == INSTR_FETCH_COMPTIME_VALUE) {
+            if (instr.op1.i == 1) {
+                // Global fetch
+                let val: &mut RegValue = this.global.at(instr.src.i);
+                let typ: &mut Type = irFunc.getRegister(instr.dst).typ;
+                assert_with_msg(!val.isLLVM, "FetchComptimeValue global=1 got non-Interp src");
+                let reg: InterpReg = val.asInterp("We just checked if it is Interp");
+                let start: &mut u8 = this.interp.getGlobalPointer(&reg);
+                return this.generateLLVMValueFromComptimeValue(typ, start);
             } else {
+                // Local fetch
+                let val: &mut RegValue = regs.at(instr.src.i);
+                let typ: &mut Type = irFunc.getRegister(instr.dst).typ;
+                assert_with_msg(!val.isLLVM, "FetchComptimeValue global=0 got non-Interp src");
                 let reg: InterpReg = val.asInterp("We just checked if it is Interp");
                 let start: &mut u8 = this.getComptimePointer(&reg);
                 return this.generateLLVMValueFromComptimeValue(typ, start);
@@ -378,25 +391,25 @@ struct LLVMCodegen {
         } else if (instr.kind == INSTR_INT_CMP_LT) {
             let lhsVal: LLVMValue = regs.at(instr.src.i).asLLVM("LLVM ICmpLt");
             let rhsVal: LLVMValue = regs.at(instr.op1.i).asLLVM("LLVM ICmpLt");
-            let signed: bool = irFunc.getRegister(instr.dst).typ.isSignedInteger();
+            let signed: bool = irFunc.getRegister(instr.src).typ.isSignedInteger();
             if (signed) return this.llvmBuilder.buildIntCompare(LLVMIntSLT, lhsVal, rhsVal, newSubStrOfStrLit("icmpslt"));
             else return this.llvmBuilder.buildIntCompare(LLVMIntULT, lhsVal, rhsVal, newSubStrOfStrLit("icmpult"));
         } else if (instr.kind == INSTR_INT_CMP_LTE) {
             let lhsVal: LLVMValue = regs.at(instr.src.i).asLLVM("LLVM ICmpLte");
             let rhsVal: LLVMValue = regs.at(instr.op1.i).asLLVM("LLVM ICmpLte");
-            let signed: bool = irFunc.getRegister(instr.dst).typ.isSignedInteger();
+            let signed: bool = irFunc.getRegister(instr.src).typ.isSignedInteger();
             if (signed) return this.llvmBuilder.buildIntCompare(LLVMIntSLE, lhsVal, rhsVal, newSubStrOfStrLit("icmpsle"));
             else return this.llvmBuilder.buildIntCompare(LLVMIntULE, lhsVal, rhsVal, newSubStrOfStrLit("icmpule"));
         } else if (instr.kind == INSTR_INT_CMP_GT) {
             let lhsVal: LLVMValue = regs.at(instr.src.i).asLLVM("LLVM ICmpGt");
             let rhsVal: LLVMValue = regs.at(instr.op1.i).asLLVM("LLVM ICmpGt");
-            let signed: bool = irFunc.getRegister(instr.dst).typ.isSignedInteger();
+            let signed: bool = irFunc.getRegister(instr.src).typ.isSignedInteger();
             if (signed) return this.llvmBuilder.buildIntCompare(LLVMIntSGT, lhsVal, rhsVal, newSubStrOfStrLit("icmpsgt"));
             else return this.llvmBuilder.buildIntCompare(LLVMIntUGT, lhsVal, rhsVal, newSubStrOfStrLit("icmpugt"));
         } else if (instr.kind == INSTR_INT_CMP_GTE) {
             let lhsVal: LLVMValue = regs.at(instr.src.i).asLLVM("LLVM ICmpGte");
             let rhsVal: LLVMValue = regs.at(instr.op1.i).asLLVM("LLVM ICmpGte");
-            let signed: bool = irFunc.getRegister(instr.dst).typ.isSignedInteger();
+            let signed: bool = irFunc.getRegister(instr.src).typ.isSignedInteger();
             if (signed) return this.llvmBuilder.buildIntCompare(LLVMIntSGE, lhsVal, rhsVal, newSubStrOfStrLit("icmpsge"));
             else return this.llvmBuilder.buildIntCompare(LLVMIntUGE, lhsVal, rhsVal, newSubStrOfStrLit("icmpuge"));
         } else if (instr.kind == INSTR_FLOAT_CMP_NEQ) {
@@ -434,6 +447,10 @@ struct LLVMCodegen {
             let lhsVal: LLVMValue = regs.at(instr.src.i).asLLVM("LLVM Logical And");
             let rhsVal: LLVMValue = regs.at(instr.op1.i).asLLVM("LLVM Logical And");
             return this.llvmBuilder.buildAnd(lhsVal, rhsVal, newSubStrOfStrLit("land"));
+        } else if (instr.kind == INSTR_BITWISE_XOR) {
+            let lhsVal: LLVMValue = regs.at(instr.src.i).asLLVM("LLVM Bitwise Xor");
+            let rhsVal: LLVMValue = regs.at(instr.op1.i).asLLVM("LLVM Bitwise Xor");
+            return this.llvmBuilder.buildXor(lhsVal, rhsVal, newSubStrOfStrLit("bxor"));
         } else if (instr.kind == INSTR_CALL) {
             let called: &mut IRFunc = this.irGen.functions.at(instr.src.i);
             let calledFunc: LLVMValue = this.llvmModule.getFunction(called.name.asSubStr());
@@ -451,6 +468,9 @@ struct LLVMCodegen {
             let cond: LLVMValue = regs.at(instr.src.i).asLLVM("LLVM CondBr");
             this.llvmBuilder.buildCondBr(cond, *blocks.at(instr.dst.i), *blocks.at(instr.op1.i));
             return blank;
+        } else if (instr.kind == INSTR_UNREACHABLE) {
+            this.llvmBuilder.buildUnreachable();
+            return blank;
         } else if (instr.kind == INSTR_BR) {
             this.llvmBuilder.buildBr(*blocks.at(instr.dst.i));
             return blank;
@@ -459,7 +479,6 @@ struct LLVMCodegen {
             this.llvmBuilder.buildReturn(val);
             return blank;
         } else if (instr.kind == INSTR_RETURN_VOID) {
-            let val: LLVMValue = regs.at(instr.src.i).asLLVM("LLVM RetVoid");
             this.llvmBuilder.buildReturnVoid();
             return blank;
         } else if (instr.kind == INSTR_LOAD_I8) {
@@ -553,6 +572,10 @@ struct LLVMCodegen {
             let val: LLVMValue = regs.at(instr.src.i).asLLVM("LLVM F64ToF32");
             let typ: LLVMType = this.llvmContext.createFloatType();
             return this.llvmBuilder.buildFloatTruncate(val, typ, newSubStrOfStrLit("f64tof32"));
+        } else if (instr.kind == INSTR_INT_SIGN_EXTEND) {
+            let val: LLVMValue = regs.at(instr.src.i).asLLVM("LLVM IntSignExt");
+            let typ: LLVMType = this.llvmContext.createIntegerType(instr.op1.i as i64);
+            return this.llvmBuilder.buildIntSignExtend(val, typ, newSubStrOfStrLit("sext"));
         } else if (instr.kind == INSTR_INT_ZERO_EXTEND) {
             let val: LLVMValue = regs.at(instr.src.i).asLLVM("LLVM IntZeroExt");
             let typ: LLVMType = this.llvmContext.createIntegerType(instr.op1.i as i64);
@@ -598,11 +621,9 @@ struct LLVMCodegen {
 
     unsafe func getComptimePointer(&mut this, reg: &InterpReg) -> &mut u8 {
         trace("LLVMCodegen.getComptimePointer");
-        let _start: &mut u8 = this.interp.getGlobalPointer(reg);
-        // For now we assume that every `comptime` value is also allocated on the stack, which means _start is a pointer to a pointer
-        let start: &mut u8 = *(_start as &mut usize) as &mut u8;
-        assert_with_msg(start >= this.interp.realStackStart, "Expected comptime value to be allocated on Interp Stack");
-        assert_with_msg(start < this.interp.realStackStart + STACK_SIZE, "Expected comptime value to be allocated on Interp Stack");
+        let start: &mut u8 = this.interp.getRegStackPointer(reg);
+        assert_with_msg(start >= this.interp.regStackStart, "Expected comptime value to be allocated on Interp Reg Stack");
+        assert_with_msg(start < this.interp.regStackStart + REG_STACK_SIZE, "Expected comptime value to be allocated on Interp Reg Stack");
         return start;
     }
 
@@ -629,8 +650,9 @@ struct LLVMCodegen {
         let size: usize = typ.getSize();
         if (typ.isPrimitive()) {
             if (typ.isInteger()) {
+                // Note: LLVM doesn't care about signedness for integers, that's all handled in the instructions
                 if (size == 1) {
-                    mut val: u8 = *(start as &u8);
+                    let val: u8 = *(start as &u8);
                     let t: LLVMType = this.llvmContext.createIntegerType(8);
                     return t.constInt(val as usize, false);
                 } else if (size == 2) {

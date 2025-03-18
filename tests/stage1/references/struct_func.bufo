@@ -1,21 +1,22 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! RUNTIME
 //! SUCCESS
+
+import "prelude.bufo";
 
 struct Foo {
     a: i32;
 }
 
-func byRef(f: &mut Foo) {
+func byRef(f: &Foo) {
     (*f).a = 20;
 }
 
-func main() -> i32 {
-    mut f: Foo = Foo {
+func main(argc: i32, argv: &&char) -> i32 {
+    let f: Foo = Foo {
         a: 10
     };
-    byRef(&mut f);
-    if (f.a != 20) return f.a;
+    byRef(&f);
+    assert(f.a == 20);
     return 0;
 }

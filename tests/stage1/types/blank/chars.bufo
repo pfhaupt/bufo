@@ -1,10 +1,10 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! COMPILER
 //! DIAGNOSTICS
 //! WARNING:
 //! Using `blank` to initialize value of type char. Please use `0` instead.
 
-func main() {
-   let a: char = blank; 
+func main(argc: i32, argv: &&char) -> i32 {
+   let a: char = blank;
+   return 0;
 }

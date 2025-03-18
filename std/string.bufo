@@ -59,7 +59,7 @@ struct String {
     }
     func resize(&mut this, mut newCap: usize) {
         unsafe {
-            if (newCap == 0) newCap = 256;
+            if (newCap < 256) newCap = 256;
             let old: &mut char = this.buffer;
             this.buffer = calloc(newCap, sizeof char);
             assert_with_msg(this.buffer != null, "Could not resize String");
@@ -70,8 +70,7 @@ struct String {
     }
     func chars(&this) -> &char {
         unsafe {
-            // Safety: Safe as long as the buffer is calloc-ed
-            return (this.buffer) as &char;
+            return this.buffer as &char;
         }
     }
     func print(&this) {
@@ -117,7 +116,7 @@ struct String {
         this.pushNumber(i as usize);
     }
     func pushChar(&mut this, ch: char) {
-        if (this.length >= this.capacity) {
+        if (this.length >= this.capacity || this.capacity < 256) {
             this.resize(2 * this.capacity);
         }
         unsafe {

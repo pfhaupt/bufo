@@ -9,9 +9,6 @@ from multiprocessing import Pool
 from dataclasses import dataclass
 from enum import Enum
 
-STAGE1_PATH = "./target/debug/bufo"
-STAGE2_PATH = "./out/bufo_s1.exe"
-
 def format_red(s: str) -> str: return f"\x1b[91m{s}\x1b[0m"
 def format_yellow(s: str) -> str: return f"\x1b[93m{s}\x1b[0m"
 def format_green(s: str) -> str: return f"\x1b[92m{s}\x1b[0m"
@@ -58,7 +55,6 @@ class TestResult:
 def run_test(
     path: str,
     exec: bool,
-    single_stage: Optional[int],
     show_output: bool = False,
     validation_only: bool = False,
 ) -> TestResult:
@@ -111,21 +107,6 @@ def run_test(
             print(f"{CORRUPT} {path}", file=sys.stderr)
             return TestResult(path, STATE.CORRUPT)
 
-        if not next(lines, pop=False).startswith("//! STAGE:"):
-            print(f"{CORRUPT} {path}", file=sys.stderr)
-            return TestResult(path, STATE.CORRUPT)
-        stage = int(next(lines).removeprefix("//! STAGE: ").strip())
-        compiler_path = ""
-        if stage == 1:
-            compiler_path = STAGE1_PATH
-        elif stage == 2:
-            compiler_path = STAGE2_PATH
-        else:
-            print(f"{CORRUPT} {path}", file=sys.stderr)
-            return TestResult(path, STATE.CORRUPT)
-        if single_stage is not None and stage != single_stage:
-            return TestResult(path, STATE.DONT_TEST)
-
         point_of_failure = next(lines).removeprefix("//! ").upper().strip()
         if point_of_failure not in ["RUNTIME", "COMPILER"]:
             print(f"{CORRUPT} {path}", file=sys.stderr)
@@ -175,8 +156,8 @@ def run_test(
         if validation_only:
             return TestResult(path, STATE.SUCCESS)
 
-        filename = "./out/{}.exe".format(path.replace(os.sep, "."))
-        output = call_cmd([compiler_path, path, "-v", "-o", filename])
+        filename = "./{}.exe".format(path.replace(os.sep, "."))
+        output = call_cmd(["./selfhost.exe", path, filename])
         stdout = output.stdout.decode("utf-8").split('\n')
         stderr = output.stderr.decode("utf-8").split('\n')
         if point_of_failure == "RUNTIME":
@@ -189,6 +170,7 @@ def run_test(
                 print_output(stdout, stderr)
                 return TestResult(path, STATE.FAILURE)
             output = call_cmd([filename])
+            os.remove(filename + ".obj")
             os.remove(filename)
             stdout = output.stdout.decode("utf-8").split('\n')
             stderr = output.stderr.decode("utf-8").split('\n')
@@ -212,6 +194,11 @@ def run_test(
                 print_retcode(output.returncode, expected_error_code)
                 return TestResult(path, STATE.FAILURE)
         elif expected_mode == "DIAGNOSTICS":
+            if not os.path.isfile(filename):
+                print(f"{FAIL} {path}", file=sys.stderr)
+                print_output(stdout, stderr)
+                return TestResult(path, STATE.FAILURE)
+            os.remove(filename + ".obj")
             os.remove(filename)
             if not compare(warn_lines, stderr):
                 print(f"{FAIL} {path}", file=sys.stderr)
@@ -239,7 +226,12 @@ def recompile_compiler(stage: int, trace: bool = False) -> None:
             print(cmd.stderr.decode("utf-8"), file=sys.stderr)
             sys.exit(1)
     else:
-        cmd = call_cmd([STAGE1_PATH, "./stage1/bufo_s1.bufo"])
+        cmd = call_cmd(["./target/debug/bufo.exe", "./stage1/bufo_s1.bufo", "-o", "./out/bufo_s1.exe"])
+        if cmd.returncode != 0:
+            print("Failed to bootstrap compiler", file=sys.stderr)
+            print(cmd.stderr.decode("utf-8"), file=sys.stderr)
+            sys.exit(1)
+        cmd = call_cmd(["./out/bufo_s1.exe", "./stage1/bufo_s1.bufo", "selfhost.exe"])
         if cmd.returncode != 0:
             print("Failed to recompile compiler", file=sys.stderr)
             print(cmd.stderr.decode("utf-8"), file=sys.stderr)
@@ -250,7 +242,6 @@ def run_all_tests(
     specific_tests: List[str],
     exec: bool = True,
     exit_first_failure: bool = False,
-    single_stage: Optional[int] = None,
 ):
     start_time = time.time()
     total = 0
@@ -276,7 +267,7 @@ def run_all_tests(
 
     if exit_first_failure:
         for path in all_tests:
-            result = run_test(path, exec, single_stage, True)
+            result = run_test(path, exec, True)
             total += 1
             match result.success:
                 case STATE.SUCCESS:
@@ -296,7 +287,7 @@ def run_all_tests(
                     total -= 1
     else:
         with Pool(16) as p:
-            results = p.starmap(run_test, [(path, exec, single_stage, False) for path in all_tests])
+            results = p.starmap(run_test, [(path, exec, False) for path in all_tests])
             for result in results:
                 total += 1
                 match result.success:
@@ -334,34 +325,34 @@ def run_all_tests(
     if failure > 0 or panicked > 0 or corrupt > 0:
         sys.exit(1)
 
-def get_current_stage2_test_number() -> int:
+def get_current_test_number() -> int:
     current: int = -1
-    for root, dirname, files in os.walk("./tests/stage2"):
+    for root, dirname, files in os.walk("./tests/selfhost/"):
         for f in files:
             full = root + "/".join(dirname) + "/" + f
             full = full.replace("\\", "/")
-            full = full.removeprefix("./tests/stage2/")
+            full = full.removeprefix("./tests/selfhost/")
             full = full.split("-")[0]
             full = full.replace("/", "")
             index = int(full)
-            assert index == current + 1, f"Missing index {index} in tests of stage2"
+            assert index == current + 1, f"Missing index {index} in tests"
             current = index
     return current + 1
 
-def get_stage2_prefix(index: int) -> str:
+def get_prefix(index: int) -> str:
     assert index < 10000, "We need another nested directory!!"
     spilled = f"{index:04d}"
     actual = ""
     for s in spilled:
         actual += "/"
         actual += s
-    return f"./tests/stage2{actual}-"
+    return f"./tests/selfhost/{actual}-"
 
 def add_test_file(path: str) -> None:
-    index: int = get_current_stage2_test_number()
-    prefix: str = get_stage2_prefix(index)
+    index: int = get_current_test_number()
+    prefix: str = get_prefix(index)
     target: str = prefix + path
-    validate: TestResult = run_test(path, False, 2, validation_only=True)
+    validate: TestResult = run_test(path, True, validation_only=True)
     if validate.success != STATE.SUCCESS:
         print(f"{FAIL} Can't add file {path} to the tests. Reason: Corrupt protocol.")
         exit(1)
@@ -375,32 +366,25 @@ def add_test_file(path: str) -> None:
 def print_usage_and_help() -> None:
     print("Usage: python helper.py [compile|test|bench]")
     print("Flags for compile mode:")
-    print("  --stage1             -> Only compile stage 1")
-    print("  --stage2             -> Only compile stage 2")
+    print("  <none>")
     print("Flags for test mode:")
-    print("  add <file1> [files]  -> Convenience utility for creating stage 2 tests")
-    print("  --stage1             -> Only test stage 1")
-    print("  --stage2             -> Only test stage 2")
+    print("  add <file1> [files]  -> Convenience utility for creating tests")
     print("  --no-exec            -> skip running runtime tests")
     print("  --trace              -> enable tracing in the compiler (useful for debugging)")
     print("  --exit-first-failure -> exit after the first failure, disables parallelism")
     print("Flags for bench mode:")
     print("  Not implemented")
 
-def recompile(trace: bool = False) -> Optional[int]:
-    stage1 = "--stage1" in sys.argv
-    stage2 = "--stage2" in sys.argv
+def recompile(trace: bool = False) -> bool:
+    selfhost = "--selfhost" in sys.argv
     print("Compiling compilers...")
-    if stage1:
-        recompile_compiler(1, trace)
-        return 1
-    elif stage2:
+    if selfhost:
         recompile_compiler(2, trace)
-        return 2
+        return True
     else:
         recompile_compiler(1, trace)
         recompile_compiler(2, trace)
-        return None
+        return False
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:
@@ -421,7 +405,7 @@ if __name__ == "__main__":
                 for f in sys.argv[3:]:
                     add_test_file(f)
                 exit()
-            single_stage = recompile(trace)
+            selfhost = recompile(trace)
             print("Running tests...")
             no_exec = "--no-exec" in sys.argv
             exit_first_failure = "--exit-first-failure" in sys.argv
@@ -433,7 +417,6 @@ if __name__ == "__main__":
                 specific_tests=test_dirs,
                 exec=not no_exec,
                 exit_first_failure=exit_first_failure,
-                single_stage=single_stage,
             )
         elif mode == "bench":
             recompile(trace)

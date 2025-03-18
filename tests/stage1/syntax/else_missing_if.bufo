@@ -1,11 +1,9 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! COMPILER
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Expected Expression, found `else`
-//! Expected one of `extern`, `func`, `import`, `struct` or `unsafe`, found `}`
+//! Expected Expression, found `else`.
 
 func main() {
     else {

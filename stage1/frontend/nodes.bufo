@@ -40,8 +40,6 @@ func mangleFunctionName(
     if (isMethod) {
         let strukt: &mut ParsedStructDecl = getStructDeclByID(parentID);
         mangledName.pushSubStr(&strukt.name.content);
-    } else {
-        mangledName.pushNumber(parentID);
     }
     mangledName.pushSubStr(&name.content);
     for (mut i: usize = 0; i < params.paramLength; i = i + 1) {
@@ -768,7 +766,8 @@ struct ParsedExpr {
     func isBitwise(&mut this) -> bool {
         if (this.kind != EXPR_BINARY) return false;
         return this.op == BIN_BAND
-            || this.op == BIN_BOR;
+            || this.op == BIN_BOR
+            || this.op == BIN_BXOR;
     }
 }
 
@@ -793,6 +792,7 @@ comptime BIN_LAND: usize = 16;
 comptime BIN_LOR: usize = 17;
 comptime BIN_BAND: usize = 18;
 comptime BIN_BOR: usize = 19;
+comptime BIN_BXOR: usize = 20;
 func binOpFromKind(kind: usize) -> usize {
     trace("binOpFromKind");
     if (kind == TOKEN_PLUS_SINGLE) return BIN_PLUS;
@@ -815,11 +815,36 @@ func binOpFromKind(kind: usize) -> usize {
     else if (kind == TOKEN_PIPE_DOUBLE) return BIN_LOR;
     else if (kind == TOKEN_AMPERSAND_SINGLE) return BIN_BAND;
     else if (kind == TOKEN_AMPERSAND_DOUBLE) return BIN_LAND;
+    else if (kind == TOKEN_CARET) return BIN_BXOR;
     else unsafe {
         printf("%llu\n", kind);
         todo_with_msg("binOpFromKind");
     }
     return 0;
+}
+
+func binOpAsStr(op: usize) -> &char {
+    if (op == BIN_PLUS) return "+";
+    else if (op == BIN_SUB) return "-";
+    else if (op == BIN_MULT) return "*";
+    else if (op == BIN_DIV) return "/";
+    else if (op == BIN_DOT) return ".";
+    else if (op == BIN_CMP_GTE) return ">=";
+    else if (op == BIN_CMP_GT) return ">";
+    else if (op == BIN_CMP_LTE) return "<=";
+    else if (op == BIN_CMP_LT) return "<";
+    else if (op == BIN_CMP_NEQ) return "!=";
+    else if (op == BIN_CMP_EQ) return "==";
+    else if (op == BIN_ASSIGN) return "=";
+    else if (op == BIN_AS) return "as";
+    else if (op == BIN_INDEXED_ACCESS) return "[]";
+    else if (op == BIN_MOD) return "%";
+    else if (op == BIN_LAND) return "&&";
+    else if (op == BIN_LOR) return "||";
+    else if (op == BIN_BAND) return "&";
+    else if (op == BIN_BOR) return "|";
+    unreachable("Exhaustive handling of binary ops in binOpAsStr");
+    return "";
 }
 
 comptime UNARY_INVALID: usize = 0;

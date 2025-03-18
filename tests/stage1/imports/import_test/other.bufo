@@ -1,6 +1,7 @@
 //! IGNORE
 
 import "./include.bufo";
+import "./foo/bar.bufo";
 
 struct Foo {
 }

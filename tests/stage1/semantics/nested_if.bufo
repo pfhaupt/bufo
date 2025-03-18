@@ -1,12 +1,13 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! RUNTIME
 //! SUCCESS
 
-func main() -> u32 {
+import "prelude.bufo";
+
+func main(argc: i32, argv: &&char) -> i32 {
     let c: i32 = 12;
     let a: i32 = 5;
-    mut d: i32 = 0;
+    let d: i32 = 0;
     if (a + 7 == c) {
         let b: i32 = 9;
         d = b + 0;
@@ -23,5 +24,6 @@ func main() -> u32 {
             return 0;
         }
     }
+    unreachable("We should've exited above");
     return 1;
 }

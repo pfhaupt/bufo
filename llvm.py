@@ -140,6 +140,7 @@ extern LLVMBuildFCmp(B: LLVMBuilderRef, pred: i32, LHS: LLVMValueRef, RHS: LLVMV
 extern LLVMBuildNot(B: LLVMBuilderRef, Val: LLVMValueRef, name: &char) -> LLVMValueRef;
 extern LLVMBuildOr(B: LLVMBuilderRef, LHS: LLVMValueRef, RHS: LLVMValueRef, name: &char) -> LLVMValueRef;
 extern LLVMBuildAnd(B: LLVMBuilderRef, LHS: LLVMValueRef, RHS: LLVMValueRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildXor(B: LLVMBuilderRef, LHS: LLVMValueRef, RHS: LLVMValueRef, name: &char) -> LLVMValueRef;
 extern LLVMBuildPtrToInt(B: LLVMBuilderRef, Ptr: LLVMValueRef, Int: LLVMTypeRef, name: &char) -> LLVMValueRef;
 extern LLVMBuildIntToPtr(B: LLVMBuilderRef, Ptr: LLVMValueRef, Int: LLVMTypeRef, name: &char) -> LLVMValueRef;
 extern LLVMBuildSIToFP(B: LLVMBuilderRef, Val: LLVMValueRef, DestTy: LLVMTypeRef, Name: &char) -> LLVMValueRef;
@@ -148,12 +149,14 @@ extern LLVMBuildFPToSI(B: LLVMBuilderRef, Val: LLVMValueRef, DestTy: LLVMTypeRef
 extern LLVMBuildFPToUI(B: LLVMBuilderRef, Val: LLVMValueRef, DestTy: LLVMTypeRef, Name: &char) -> LLVMValueRef;
 extern LLVMBuildCall2(B: LLVMBuilderRef, Ty: LLVMTypeRef, Fn: LLVMValueRef, Args: &LLVMValueRef, NumArgs: u32, Name: &char) -> LLVMValueRef;
 extern LLVMBuildGlobalStringPtr(B: LLVMBuilderRef, Str: &char, Name: &char) -> LLVMValueRef;
+extern LLVMBuildSExt(B: LLVMBuilderRef, Val: LLVMValueRef, Typ: LLVMTypeRef, name: &char) -> LLVMValueRef;
 extern LLVMBuildZExt(B: LLVMBuilderRef, Val: LLVMValueRef, Typ: LLVMTypeRef, name: &char) -> LLVMValueRef;
 extern LLVMBuildTrunc(B: LLVMBuilderRef, Val: LLVMValueRef, Typ: LLVMTypeRef, name: &char) -> LLVMValueRef;
 extern LLVMBuildStructGEP2(B: LLVMBuilderRef, Ty: LLVMTypeRef, Pointer: LLVMValueRef, Idx: u32, Name: &char) -> LLVMValueRef;
 extern LLVMBuildGEP2(B: LLVMBuilderRef, Ty: LLVMTypeRef, Pointer: LLVMValueRef, Indices: &LLVMValueRef, Length: u32, Name: &char) -> LLVMValueRef;
 extern LLVMBuildFPExt(B: LLVMBuilderRef, Val: LLVMValueRef, Typ: LLVMTypeRef, name: &char) -> LLVMValueRef;
 extern LLVMBuildFPTrunc(B: LLVMBuilderRef, Val: LLVMValueRef, Typ: LLVMTypeRef, name: &char) -> LLVMValueRef;
+extern LLVMBuildUnreachable(B: LLVMBuilderRef) -> LLVMValueRef;
 
 // LLVMValue
 extern LLVMTypeOf(Val: LLVMValueRef) -> LLVMTypeRef;

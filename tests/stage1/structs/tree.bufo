@@ -1,5 +1,4 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! RUNTIME
 //! SUCCESS
 
@@ -9,4 +8,6 @@ struct C { i: i32; }
 struct D { i: C; }
 struct E { f: B; }
 
-func main() {}
+func main(argc: i32, argv: &&char) -> i32 {
+    return 0;
+}

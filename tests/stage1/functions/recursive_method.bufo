@@ -1,5 +1,4 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! RUNTIME
 //! SUCCESS
 
@@ -17,7 +16,7 @@ struct A {
     }
 }
 
-func main() -> i32 {
+func main(argc: i32, argv: &&char) -> i32 {
     mut a: A = A { a: 5 };
     a.a(0);
     if (a.a != 10) return 1;

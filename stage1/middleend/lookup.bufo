@@ -1,5 +1,6 @@
 import "prelude.bufo";
 import "substr.bufo";
+import "string.bufo";
 import "../util/lists.bufo";
 import "../frontend/token.bufo";
 import "../frontend/nodes.bufo";
@@ -100,7 +101,7 @@ struct Lookup {
         trace("Lookup.getTypeLookupForType");
         if (typ.isStruct()) {
             let strukt: &mut ParsedStructDecl = getStructDeclByID(typ.typeIndex);
-            let modID: usize = strukt.name.moduleID;
+            let modID: usize = strukt.parentModule;
             let s: &mut StructLookup = this.modules.at(modID).getStructByGlobalID(strukt.getID());
             return newTypeLookup(TYPE_LOOKUP_STRUCT, s);
         } else {
@@ -231,6 +232,26 @@ struct ModuleLookup {
         }
     }
 
+    // FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
+    func containsDuplicateFunction(&mut this, function: &mut FunctionLookup, dupl: &mut usize) -> bool {
+        trace("ModuleLookup.containsDuplicateFunction");
+        let name: String = getFuncDeclByID(function.globalID).getMangledName();
+        mut duplicate: bool = false;
+        for (mut i: usize = 0; !duplicate && i < this.functions.length; i = i + 1) {
+            let f: &mut FunctionLookup = this.functions.at(i);
+            // REVIEW: is FUNC_DUPLICATE_CHECK always correct, or is it better to check FUNC_READY_TO_USE
+            if (f == function) continue;
+            if (!f.getReadyState(FUNC_DUPLICATE_CHECK)) continue;
+            let n: String = getFuncDeclByID(f.globalID).getMangledName();
+            if (name.equals(&n)) unsafe {
+                *dupl = f as usize;
+                duplicate = true;
+            }
+            n.drop();
+        }
+        return duplicate;
+    }
+
     func getFunctionByGlobalID(&mut this, funcID: usize) -> &mut FunctionLookup {
         trace("ModuleLookup.getFunctionByGlobalID");
         for (mut i: usize = 0; i < this.functions.length; i = i + 1) {
@@ -293,7 +314,8 @@ comptime FUNC_ERROR            : usize = pow2(1);
 comptime FUNC_PARAMS_COMPLETE  : usize = pow2(2);
 comptime FUNC_RETTYPE_COMPLETE : usize = pow2(3);
 comptime FUNC_READY_TO_USE     : usize = pow2(4);
-comptime FUNC_BODY_COMPLETE    : usize = pow2(5);
+comptime FUNC_DUPLICATE_CHECK  : usize = pow2(5);
+comptime FUNC_BODY_COMPLETE    : usize = pow2(6);
 struct FunctionLookup {
     globalID: usize;
     parentModule: usize;
@@ -327,12 +349,12 @@ struct FunctionLookup {
         });
     }
 
-    func checkForDuplicateParam(&mut this, name: &Token) -> bool {
+    func checkForDuplicateParam(&mut this, name: &Token, dupl: &mut VariableLookup) -> bool {
         trace("FunctionLookup.checkForDuplicateParam");
         for (mut i: usize = 0; i < this.params.length; i = i + 1) {
             let param: &mut VariableLookup = this.params.at(i);
             if (param.name.content.equals(&name.content)) {
-                todo_with_msg("duplicate param function");
+                *dupl = *param;
                 return true;
             }
         }
@@ -350,6 +372,24 @@ comptime TYPE_LOOKUP_STRUCT: usize = 1;
 struct TypeLookup {
     kind: usize;
     actual: Any;
+
+    func getName(&mut this) -> String {
+        if (this.kind == TYPE_LOOKUP_STRUCT) {
+            return this.asStruct().name.content.toString();
+        } else {
+            unreachable("Exhaustive handling in TypeLookup.getName");
+            return blank;
+        }
+    }
+
+    func getLocation(&mut this) -> String {
+        if (this.kind == TYPE_LOOKUP_STRUCT) {
+            return this.asStruct().name.span.toString();
+        } else {
+            unreachable("Exhaustive handling in TypeLookup.getLocation");
+            return blank;
+        }
+    }
 
     func equals(&mut this, other: &TypeLookup) -> bool {
         if (this.kind != other.kind) return false;
@@ -424,6 +464,37 @@ struct StructLookup {
         return false;
     }
 
+    func hasField(&mut this, name: &SubStr) -> bool {
+        trace("StructLookup.hasField");
+        for (mut i: usize = 0; i < this.fields.length; i = i + 1) {
+            let f: &mut VariableLookup = this.fields.at(i);
+            if (f.name.content.equals(name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
+    func containsDuplicateMethod(&mut this, method: &mut MethodLookup, dupl: &mut usize) -> bool {
+        trace("StructLookup.containsDuplicateMethod");
+        let name: String = getMethodByID(method.globalID).getMangledName();
+        mut duplicate: bool = false;
+        for (mut i: usize = 0; !duplicate && i < this.methods.length; i = i + 1) {
+            let f: &mut MethodLookup = this.methods.at(i);
+            // REVIEW: is METHOD_DUPLICATE_CHECK always correct, or is it better to check METHOD_READY_TO_USE
+            if (f == method) continue;
+            if (!f.getReadyState(METHOD_DUPLICATE_CHECK)) continue;
+            let n: String = getMethodByID(f.globalID).getMangledName();
+            if (name.equals(&n)) unsafe {
+                *dupl = f as usize;
+                duplicate = true;
+            }
+            n.drop();
+        }
+        return duplicate;
+    }
+
     func resolveMethodByName(&mut this, name: &Token) -> MethodLookupList {
         trace("StructLookup.resolveMethodByName");
         mut methods: MethodLookupList = blank;
@@ -444,15 +515,17 @@ struct StructLookup {
                 return i;
             }
         }
+        assert_with_msg(this.hasField(&name.content), "StructLookup.getIndexByName() called when StructLookup.hasField() == false");
         unreachable("StructLookup.getIndexByName does not have a field with the given name");
         return 0;
     }
 
-    func checkForDuplicateField(&mut this, name: &Token) -> bool {
+    func checkForDuplicateField(&mut this, name: &Token, dupl: &mut VariableLookup) -> bool {
         trace("StructLookup.checkForDuplicateField");
         for (mut i: usize = 0; i < this.fields.length; i = i + 1) {
             let f: &mut VariableLookup = this.fields.at(i);
             if (f.name.content.equals(&name.content)) {
+                *dupl = *f;
                 return true;
             }
         }
@@ -487,7 +560,8 @@ comptime METHOD_ERROR            : usize = pow2(1);
 comptime METHOD_PARAMS_COMPLETE  : usize = pow2(2);
 comptime METHOD_RETTYPE_COMPLETE : usize = pow2(3);
 comptime METHOD_READY_TO_USE     : usize = pow2(4);
-comptime METHOD_BODY_COMPLETE    : usize = pow2(5);
+comptime METHOD_DUPLICATE_CHECK  : usize = pow2(5);
+comptime METHOD_BODY_COMPLETE    : usize = pow2(6);
 struct MethodLookup {
     globalID: usize;
     name: Token;
@@ -509,12 +583,12 @@ struct MethodLookup {
         return false;
     }
 
-    func checkForDuplicateParam(&mut this, name: &Token) -> bool {
+    func checkForDuplicateParam(&mut this, name: &Token, dupl: &mut VariableLookup) -> bool {
         trace("MethodLookup.checkForDuplicateParam");
         for (mut i: usize = 0; i < this.params.length; i = i + 1) {
             let param: &mut VariableLookup = this.params.at(i);
             if (param.name.content.equals(&name.content)) {
-                todo_with_msg("duplicate param method");
+                *dupl = *param;
                 return true;
             }
         }

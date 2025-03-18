@@ -1,8 +1,8 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! RUNTIME
 //! SUCCESS
 
+import "prelude.bufo";
 
 struct Foo {
     a: i32;
@@ -13,11 +13,11 @@ struct Foo {
     }
 }
 
-func main() -> i32 {
+func main(argc: i32, argv: &&char) -> i32 {
     let f: Foo = Foo {
         a: 10,
         b: 10
     };
-    if (f.getA() != 10) return 1;
+    assert(f.getA() == 10);
     return 0;
 }

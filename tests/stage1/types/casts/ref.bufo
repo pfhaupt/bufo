@@ -1,10 +1,11 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! RUNTIME
 //! SUCCESS
 
 // NOTE: I would not be surprised if this fails on different
 // architectures, but that's what you get from `unsafe` :^)
+
+import "prelude.bufo";
 
 struct Foo {
     field: usize;
@@ -15,9 +16,10 @@ struct Bar {
     second: u32;
 }
 
-unsafe func main() {
+func main(argc: i32, argv: &&char) -> i32 {
     let f: Foo = Foo { field: 12 };
-    let b: &mut Bar = (&f) as &mut Bar;
+    let b: &Bar = (&f) as &Bar;
     (*b).first = 40;
     assert(f.field == 40);
+    return 0;
 }

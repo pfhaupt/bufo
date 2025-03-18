@@ -1,10 +1,9 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! COMPILER
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Use of undeclared variable `a`.
+//! Use of undeclared identifier `a`.
 
 func main() {
     if (1 == 1) {

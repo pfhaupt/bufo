@@ -4,10 +4,15 @@
 
 import "prelude.bufo";
 
-comptime CONSTANT: i8 = 12;
-let variable: i8 = CONSTANT;
+let foo: i32 = 0;
+
+func getFoo() -> &i32 {
+    return &foo;
+}
+
 func main(argc: i32, argv: &&char) -> i32 {
-    assert(CONSTANT == 12);
-    assert(variable == 12);
+    let f: &i32 = getFoo();
+    *f = 12;
+    assert(foo == 12);
     return 0;
 }

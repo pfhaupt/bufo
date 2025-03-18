@@ -1,16 +1,17 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! COMPILER
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Expected Identifier, found `;`
-//! Expected `:`, found Identifier
-//! Expected Identifier, found `(`
-//! Expected Expression, found `)`
-//! Expected `:`, found `}`
-//! Expected one of Identifier, `func`, found `FILEMARKER_INTERNAL_USE_ONLY`
-//! Unexpected End Of File while parsing.
+//! Expected Identifier, found `;` instead.
+
+// REVIEW: Do we want to stop or continue after a syntax error?
+// Expected `:`, found Identifier
+// Expected Identifier, found `(`
+// Expected Expression, found `)`
+// Expected `:`, found `}`
+// Expected one of Identifier, `func`, found `FILEMARKER_INTERNAL_USE_ONLY`
+// Unexpected End Of File while parsing.
 
 // Every error inside a struct recovers until it finds a semi colon or a curly bracket with the same
 // bracket level as the error token

@@ -1,7 +1,8 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! RUNTIME
 //! SUCCESS
+
+import "prelude.bufo";
 
 func is_prime(n: u64) -> bool {
     if (n == 2) return true;
@@ -10,7 +11,7 @@ func is_prime(n: u64) -> bool {
     if (n % 2 == 0) return false;
     if (n < 9) return true;
     if (n % 3 == 0) return false;
-    mut f: u64 = 5;
+    let f: u64 = 5;
     while (f * f <= n) {
         if (n % f == 0) return false;
         if (n % (f + 2) == 0) return false;
@@ -19,13 +20,13 @@ func is_prime(n: u64) -> bool {
     return true;
 }
 
-func main() -> u64 {
-    if (!is_prime(2)) return 2;
-    if (!is_prime(3)) return 3;
-    if (!is_prime(19381)) return 19381;
-    if (is_prime(19382)) return 19382;
-    if (!is_prime(192806849)) return 192806849;
-    if (!is_prime(192801989593)) return 192801989593;
-    if (is_prime(1928019895934)) return 1928019895934;
+func main(argc: i32, argv: &&char) -> i32 {
+    assert(is_prime(2));
+    assert(is_prime(3));
+    assert(is_prime(19381));
+    assert(!is_prime(19382));
+    assert(is_prime(192806849));
+    assert(is_prime(192801989593));
+    assert(!is_prime(1928019895934));
     return 0;
 }

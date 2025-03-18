@@ -1,16 +1,15 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! COMPILER
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Not enough arguments for Function `bla`.
-//! Function `bla` expects 3 arguments, found 2.
+//! Could not find matching signature for call to function `bla`.
+//! A function with that name is located here.
 
 func bla(a: i32, b: i32, c: i32) {
-
 }
 
-func main() {
+func main(argc: i32, argv: &&char) -> i32 {
     bla(1, 2);
+    return 0;
 }

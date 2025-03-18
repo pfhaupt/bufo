@@ -1,19 +1,18 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! COMPILER
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Recursive struct `Bar`.
-//! Chain of recursion also includes struct `Bez`.
-//! Chain of recursion also includes struct `Boo`.
-//! Recursive struct `Bez`.
-//! Chain of recursion also includes struct `Bar`.
-//! Chain of recursion also includes struct `Boo`.
-//! Recursive struct `Boo`.
-//! Chain of recursion also includes struct `Bar`.
-//! Chain of recursion also includes struct `Bez`.
-//! Recursive struct `Foo`.
+//! Recursive type `Bar`.
+//! Chain of recursion also includes type `Bez`.
+//! Chain of recursion also includes type `Boo`.
+//! Recursive type `Bez`.
+//! Chain of recursion also includes type `Bar`.
+//! Chain of recursion also includes type `Boo`.
+//! Recursive type `Boo`.
+//! Chain of recursion also includes type `Bar`.
+//! Chain of recursion also includes type `Bez`.
+//! Recursive type `Foo`.
 
 struct Foo {
     field: Foo;

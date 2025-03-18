@@ -1,0 +1,37 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+
+func check() -> bool {
+    let v1: f32 = 5;
+    let v2: f64 = v1 as f64;
+
+    let v3: f64 = 5;
+    let v4: f32 = v3 as f32;
+
+    if (v2 != v3) return false;
+    if (v1 != v4) return false;
+
+    let v5: u32 = v1 as u32;
+    let v6: i8 = v3 as i8;
+    if (v5 != 5) return false;
+    if (v6 != 5) return false;
+
+    let v7: f32 = 100000;
+    let v8: u8 = v7 as u8;
+    let v9: i8 = v7 as i8;
+    if (v8 != 160) return false;
+    if (v9 != -96) return false;
+    if (v9 as u8 != v8) return false;
+    if (v8 as i8 != v9) return false;
+    return true;
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    comptime c = check();
+    assert(c);
+    assert(check());
+    return 0;
+}

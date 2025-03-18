@@ -1,12 +1,9 @@
 //! THIS IS A TEST PROGRAM
-//! STAGE: 1
 //! COMPILER
 //! FAILURE
 //! CODE: 1
 //! ERROR:
 //! Non primitive cast from type Foo to Bar.
-//! Expression to cast is here.
-//! Type to cast to is here.
 
 struct Foo {
     field: u8;

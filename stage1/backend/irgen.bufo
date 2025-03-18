@@ -33,70 +33,74 @@ comptime INSTR_ALLOCA: usize = 1;
 comptime INSTR_GET_PARAM: usize = 2;
 comptime INSTR_STORE: usize = 3;
 comptime INSTR_FETCH_GLOBAL_PTR: usize = 4;
-comptime INSTR_FETCH_GLOBAL_VAL: usize = 5;
-comptime INSTR_LOAD: usize = 6;
-comptime INSTR_MOVE: usize = 7;
-comptime INSTR_CALL: usize = 8;
-comptime INSTR_RETURN_EXPR: usize = 9;
-comptime INSTR_RETURN_VOID: usize = 10;
-comptime INSTR_LOAD_STRING: usize = 11;
-comptime INSTR_LOAD_BOOL: usize = 12;
-comptime INSTR_LOAD_I8: usize = 13;
-comptime INSTR_LOAD_U8: usize = 14;
-comptime INSTR_LOAD_I16: usize = 15;
-comptime INSTR_LOAD_U16: usize = 16;
-comptime INSTR_LOAD_I32: usize = 17;
-comptime INSTR_LOAD_U32: usize = 18;
-comptime INSTR_LOAD_I64: usize = 19;
-comptime INSTR_LOAD_U64: usize = 20;
-comptime INSTR_LOAD_NULL: usize = 21;
-comptime INSTR_LOAD_F32: usize = 22;
-comptime INSTR_LOAD_F64: usize = 23;
-comptime INSTR_LOAD_BLANK: usize = 24;
-comptime INSTR_COND_BR: usize = 25;
-comptime INSTR_BR: usize = 26;
-comptime INSTR_INT_ADD: usize = 27;
-comptime INSTR_INT_SUB: usize = 28;
-comptime INSTR_INT_MUL: usize = 29;
-comptime INSTR_INT_DIV: usize = 30;
-comptime INSTR_INT_MOD: usize = 31;
-comptime INSTR_INT_CMP_EQ: usize = 32;
-comptime INSTR_INT_CMP_NEQ: usize = 33;
-comptime INSTR_INT_CMP_GT: usize = 34;
-comptime INSTR_INT_CMP_GTE: usize = 35;
-comptime INSTR_INT_CMP_LT: usize = 36;
-comptime INSTR_INT_CMP_LTE: usize = 37;
-comptime INSTR_FLOAT_ADD: usize = 38;
-comptime INSTR_FLOAT_SUB: usize = 39;
-comptime INSTR_FLOAT_MUL: usize = 40;
-comptime INSTR_FLOAT_DIV: usize = 41;
-comptime INSTR_FLOAT_MOD: usize = 42;
-comptime INSTR_FLOAT_CMP_EQ: usize = 43;
-comptime INSTR_FLOAT_CMP_NEQ: usize = 44;
-comptime INSTR_FLOAT_CMP_GT: usize = 45;
-comptime INSTR_FLOAT_CMP_GTE: usize = 46;
-comptime INSTR_FLOAT_CMP_LT: usize = 47;
-comptime INSTR_FLOAT_CMP_LTE: usize = 48;
-comptime INSTR_LOGICAL_NOT: usize = 49;
-comptime INSTR_LOGICAL_AND: usize = 50;
-comptime INSTR_LOGICAL_OR: usize = 51;
-comptime INSTR_BITWISE_AND: usize = 52;
-comptime INSTR_BITWISE_OR: usize = 53;
-comptime INSTR_INSERT_VALUE: usize = 54;
-comptime INSTR_INT_ZERO_EXTEND: usize = 55;
-comptime INSTR_INT_TRUNCATE: usize = 56;
-comptime INSTR_INT_TO_F32: usize = 57;
-comptime INSTR_INT_TO_F64: usize = 58;
-comptime INSTR_F32_TO_INT: usize = 59;
-comptime INSTR_F64_TO_INT: usize = 60;
-comptime INSTR_F32_TO_F64: usize = 61;
-comptime INSTR_F64_TO_F32: usize = 62;
-comptime INSTR_CREATE_ARRAY: usize = 63;
-comptime INSTR_CREATE_STRUCT: usize = 64;
-comptime INSTR_PTR_TO_INT: usize = 65;
-comptime INSTR_INT_TO_PTR: usize = 66;
-comptime INSTR_GET_FIELD_PTR: usize = 67;
-comptime INSTR_GET_ELEMENT_PTR: usize = 68;
+comptime INSTR_FETCH_GLOBAL_VALUE: usize = 5;
+comptime INSTR_FETCH_COMPTIME_VALUE: usize = 6;
+comptime INSTR_LOAD: usize = 8;
+comptime INSTR_MOVE: usize = 9;
+comptime INSTR_CALL: usize = 10;
+comptime INSTR_RETURN_EXPR: usize = 11;
+comptime INSTR_RETURN_VOID: usize = 12;
+comptime INSTR_LOAD_STRING: usize = 13;
+comptime INSTR_LOAD_BOOL: usize = 14;
+comptime INSTR_LOAD_I8: usize = 15;
+comptime INSTR_LOAD_U8: usize = 16;
+comptime INSTR_LOAD_I16: usize = 17;
+comptime INSTR_LOAD_U16: usize = 18;
+comptime INSTR_LOAD_I32: usize = 19;
+comptime INSTR_LOAD_U32: usize = 20;
+comptime INSTR_LOAD_I64: usize = 21;
+comptime INSTR_LOAD_U64: usize = 22;
+comptime INSTR_LOAD_NULL: usize = 23;
+comptime INSTR_LOAD_F32: usize = 24;
+comptime INSTR_LOAD_F64: usize = 25;
+comptime INSTR_LOAD_BLANK: usize = 26;
+comptime INSTR_COND_BR: usize = 27;
+comptime INSTR_BR: usize = 28;
+comptime INSTR_INT_ADD: usize = 29;
+comptime INSTR_INT_SUB: usize = 30;
+comptime INSTR_INT_MUL: usize = 31;
+comptime INSTR_INT_DIV: usize = 32;
+comptime INSTR_INT_MOD: usize = 33;
+comptime INSTR_INT_CMP_EQ: usize = 34;
+comptime INSTR_INT_CMP_NEQ: usize = 35;
+comptime INSTR_INT_CMP_GT: usize = 36;
+comptime INSTR_INT_CMP_GTE: usize = 37;
+comptime INSTR_INT_CMP_LT: usize = 38;
+comptime INSTR_INT_CMP_LTE: usize = 39;
+comptime INSTR_FLOAT_ADD: usize = 40;
+comptime INSTR_FLOAT_SUB: usize = 41;
+comptime INSTR_FLOAT_MUL: usize = 42;
+comptime INSTR_FLOAT_DIV: usize = 43;
+comptime INSTR_FLOAT_MOD: usize = 44;
+comptime INSTR_FLOAT_CMP_EQ: usize = 45;
+comptime INSTR_FLOAT_CMP_NEQ: usize = 46;
+comptime INSTR_FLOAT_CMP_GT: usize = 47;
+comptime INSTR_FLOAT_CMP_GTE: usize = 48;
+comptime INSTR_FLOAT_CMP_LT: usize = 49;
+comptime INSTR_FLOAT_CMP_LTE: usize = 50;
+comptime INSTR_LOGICAL_NOT: usize = 51;
+comptime INSTR_LOGICAL_AND: usize = 52;
+comptime INSTR_LOGICAL_OR: usize = 53;
+comptime INSTR_BITWISE_AND: usize = 54;
+comptime INSTR_BITWISE_OR: usize = 55;
+comptime INSTR_BITWISE_XOR: usize = 56;
+comptime INSTR_INSERT_VALUE: usize = 57;
+comptime INSTR_INT_SIGN_EXTEND: usize = 58;
+comptime INSTR_INT_ZERO_EXTEND: usize = 59;
+comptime INSTR_INT_TRUNCATE: usize = 60;
+comptime INSTR_INT_TO_F32: usize = 61;
+comptime INSTR_INT_TO_F64: usize = 62;
+comptime INSTR_F32_TO_INT: usize = 63;
+comptime INSTR_F64_TO_INT: usize = 64;
+comptime INSTR_F32_TO_F64: usize = 65;
+comptime INSTR_F64_TO_F32: usize = 66;
+comptime INSTR_CREATE_ARRAY: usize = 67;
+comptime INSTR_CREATE_STRUCT: usize = 68;
+comptime INSTR_PTR_TO_INT: usize = 69;
+comptime INSTR_INT_TO_PTR: usize = 70;
+comptime INSTR_GET_FIELD_PTR: usize = 71;
+comptime INSTR_GET_ELEMENT_PTR: usize = 72;
+comptime INSTR_UNREACHABLE: usize = 73;
 struct IRInstr {
     kind: usize;
     isComptime: bool;
@@ -112,93 +116,98 @@ struct IRInstr {
         return this.kind == INSTR_RETURN_EXPR
             || this.kind == INSTR_RETURN_VOID
             || this.kind == INSTR_COND_BR
-            || this.kind == INSTR_BR;
+            || this.kind == INSTR_BR
+            || this.kind == INSTR_UNREACHABLE;
     }
     func dump(&mut this) {
         unsafe {
-            if (this.kind == INSTR_ALLOCA) printf("r%llu = Alloca %llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_GET_PARAM) printf("r%llu = GetParam %llu (%llu bytes)\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_STORE) printf("Store r%llu, r%llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_FETCH_GLOBAL_PTR) printf("r%llu = FetchGlobalPtr r%llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_FETCH_GLOBAL_VAL) printf("r%llu = FetchGlobalValue r%llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_LOAD) printf("r%llu = Load r%llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_MOVE) printf("r%llu = Move r%llu\n", this.dst.i, this.src.i);
+            if (this.isComptime) printf("\x1b[92m");
+            if (this.kind == INSTR_ALLOCA) printf("r%llu = Alloca %llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_GET_PARAM) printf("r%llu = GetParam %llu (%llu bytes)", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_STORE) printf("Store r%llu, r%llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_FETCH_GLOBAL_PTR) printf("r%llu = FetchGlobalPtr r%llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_FETCH_GLOBAL_VALUE) printf("r%llu = FetchGlobalValue r%llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_FETCH_COMPTIME_VALUE) printf("r%llu = FetchComptimeValue r%llu, global=%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_LOAD) printf("r%llu = Load r%llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_MOVE) printf("r%llu = Move r%llu", this.dst.i, this.src.i);
             else if (this.kind == INSTR_CALL) {
                 printf("r%llu = Call %llu", this.dst.i, this.src.i);
                 for (mut i: usize = 0; i < this.args.length; i = i + 1) {
                     printf(", r%llu", this.args.at(i).i);
                 }
-                printf("\n");
-            } else if (this.kind == INSTR_RETURN_EXPR) printf("RetExpr r%llu\n", this.src.i);
-            else if (this.kind == INSTR_RETURN_VOID) printf("RetVoid\n");
-            else if (this.kind == INSTR_LOAD_STRING) printf("r%llu = LoadString %p, %llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_LOAD_BOOL) printf("r%llu = Load Bool %hhu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_LOAD_I8) printf("r%llu = Load I8 %llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_LOAD_U8) printf("r%llu = Load U8 %llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_LOAD_I16) printf("r%llu = Load I16 %llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_LOAD_U16) printf("r%llu = Load U16 %llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_LOAD_I32) printf("r%llu = Load I32 %llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_LOAD_U32) printf("r%llu = Load U32 %llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_LOAD_I64) printf("r%llu = Load I64 %llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_LOAD_U64) printf("r%llu = Load U64 %llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_LOAD_NULL) printf("r%llu = Load Null\n", this.dst.i);
-            else if (this.kind == INSTR_LOAD_F32) printf("r%llu = Load F32 %f\n", this.dst.i, *(&this.src.i as &f32));
-            else if (this.kind == INSTR_LOAD_F64) printf("r%llu = Load F64 %f\n", this.dst.i, *(&this.src.i as &f64));
-            else if (this.kind == INSTR_LOAD_BLANK) printf("r%llu = Load Blank\n", this.dst.i);
-            else if (this.kind == INSTR_COND_BR) printf("CondBr r%llu, true=%llu, false=%llu\n", this.src.i, this.dst.i, this.op1.i);
-            else if (this.kind == INSTR_BR) printf("Br %llu\n", this.dst.i);
-            else if (this.kind == INSTR_INT_ADD) printf("r%llu = AddInt r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_INT_SUB) printf("r%llu = SubInt r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_INT_MUL) printf("r%llu = MulInt r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_INT_DIV) printf("r%llu = DivInt r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_INT_MOD) printf("r%llu = ModInt r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_INT_CMP_EQ) printf("r%llu = ICmpEq r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_INT_CMP_NEQ) printf("r%llu = ICmpNeq r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_INT_CMP_GT) printf("r%llu = ICmpGt r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_INT_CMP_GTE) printf("r%llu = ICmpGte r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_INT_CMP_LT) printf("r%llu = ICmpLt r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_INT_CMP_LTE) printf("r%llu = ICmpLte r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_FLOAT_ADD) printf("r%llu = AddFloat r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_FLOAT_SUB) printf("r%llu = SubFloat r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_FLOAT_MUL) printf("r%llu = MulFloat r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_FLOAT_DIV) printf("r%llu = DivFloat r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_FLOAT_MOD) printf("r%llu = ModFloat r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_FLOAT_CMP_EQ) printf("r%llu = FCmpEq r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_FLOAT_CMP_NEQ) printf("r%llu = FCmpNeq r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_FLOAT_CMP_GT) printf("r%llu = FCmpGt r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_FLOAT_CMP_GTE) printf("r%llu = FCmpGte r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_FLOAT_CMP_LT) printf("r%llu = FCmpLt r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_FLOAT_CMP_LTE) printf("r%llu = FCmpLte r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_LOGICAL_NOT) printf("r%llu = LNot r%llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_LOGICAL_AND) printf("r%llu = LAnd r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_LOGICAL_OR) printf("r%llu = LOr r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_BITWISE_AND) printf("r%llu = BAnd r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_BITWISE_OR) printf("r%llu = BOr r%llu, r%llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_INSERT_VALUE) printf("r%llu = InsertValue r%llu, %llu, r%llu\n", this.dst.i, this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_INT_ZERO_EXTEND) printf("r%llu = IntZExt r%llu, %llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_INT_TRUNCATE) printf("r%llu = IntTrunc r%llu, %llu\n", this.dst.i, this.src.i, this.op1.i);
-            else if (this.kind == INSTR_INT_TO_F32) printf("r%llu = IntToF32 r%llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_INT_TO_F64) printf("r%llu = IntToF64 r%llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_F32_TO_INT) printf("r%llu = F32ToInt r%llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_F64_TO_INT) printf("r%llu = F64ToInt r%llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_INT_TO_F64) printf("r%llu = IntToF64 r%llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_F32_TO_F64) printf("r%llu = FloatExt r%llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_F64_TO_F32) printf("r%llu = FloatTrunc r%llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_CREATE_ARRAY) printf("r%llu = CreateArray\n", this.dst.i);
-            else if (this.kind == INSTR_CREATE_STRUCT) printf("r%llu = CreateStruct\n", this.dst.i);
-            else if (this.kind == INSTR_PTR_TO_INT) printf("r%llu = PtrToInt r%llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_INT_TO_PTR) printf("r%llu = IntToPtr r%llu\n", this.dst.i, this.src.i);
-            else if (this.kind == INSTR_GET_FIELD_PTR) printf("r%llu = GetFieldPtr r%llu, %llu\n", this.dst.i, this.src.i, this.op1.i);
+            } else if (this.kind == INSTR_RETURN_EXPR) printf("RetExpr r%llu", this.src.i);
+            else if (this.kind == INSTR_RETURN_VOID) printf("RetVoid");
+            else if (this.kind == INSTR_LOAD_STRING) printf("r%llu = LoadString %p, %llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_LOAD_BOOL) printf("r%llu = Load Bool %hhu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_LOAD_I8) printf("r%llu = Load I8 %llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_LOAD_U8) printf("r%llu = Load U8 %llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_LOAD_I16) printf("r%llu = Load I16 %llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_LOAD_U16) printf("r%llu = Load U16 %llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_LOAD_I32) printf("r%llu = Load I32 %llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_LOAD_U32) printf("r%llu = Load U32 %llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_LOAD_I64) printf("r%llu = Load I64 %llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_LOAD_U64) printf("r%llu = Load U64 %llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_LOAD_NULL) printf("r%llu = Load Null", this.dst.i);
+            else if (this.kind == INSTR_LOAD_F32) printf("r%llu = Load F32 %f", this.dst.i, *(&this.src.i as &f32) as f64);
+            else if (this.kind == INSTR_LOAD_F64) printf("r%llu = Load F64 %f", this.dst.i, *(&this.src.i as &f64));
+            else if (this.kind == INSTR_LOAD_BLANK) printf("r%llu = Load Blank", this.dst.i);
+            else if (this.kind == INSTR_COND_BR) printf("CondBr r%llu, true=%llu, false=%llu", this.src.i, this.dst.i, this.op1.i);
+            else if (this.kind == INSTR_BR) printf("Br %llu", this.dst.i);
+            else if (this.kind == INSTR_INT_ADD) printf("r%llu = AddInt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_INT_SUB) printf("r%llu = SubInt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_INT_MUL) printf("r%llu = MulInt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_INT_DIV) printf("r%llu = DivInt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_INT_MOD) printf("r%llu = ModInt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_INT_CMP_EQ) printf("r%llu = ICmpEq r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_INT_CMP_NEQ) printf("r%llu = ICmpNeq r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_INT_CMP_GT) printf("r%llu = ICmpGt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_INT_CMP_GTE) printf("r%llu = ICmpGte r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_INT_CMP_LT) printf("r%llu = ICmpLt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_INT_CMP_LTE) printf("r%llu = ICmpLte r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_FLOAT_ADD) printf("r%llu = AddFloat r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_FLOAT_SUB) printf("r%llu = SubFloat r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_FLOAT_MUL) printf("r%llu = MulFloat r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_FLOAT_DIV) printf("r%llu = DivFloat r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_FLOAT_MOD) printf("r%llu = ModFloat r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_FLOAT_CMP_EQ) printf("r%llu = FCmpEq r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_FLOAT_CMP_NEQ) printf("r%llu = FCmpNeq r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_FLOAT_CMP_GT) printf("r%llu = FCmpGt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_FLOAT_CMP_GTE) printf("r%llu = FCmpGte r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_FLOAT_CMP_LT) printf("r%llu = FCmpLt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_FLOAT_CMP_LTE) printf("r%llu = FCmpLte r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_LOGICAL_NOT) printf("r%llu = LNot r%llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_LOGICAL_AND) printf("r%llu = LAnd r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_LOGICAL_OR) printf("r%llu = LOr r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_BITWISE_AND) printf("r%llu = BAnd r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_BITWISE_OR) printf("r%llu = BOr r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_BITWISE_XOR) printf("r%llu = BXOr r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_INSERT_VALUE) printf("r%llu = InsertValue r%llu, %llu, r%llu", this.dst.i, this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_INT_SIGN_EXTEND) printf("r%llu = IntSExt r%llu, %llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_INT_ZERO_EXTEND) printf("r%llu = IntZExt r%llu, %llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_INT_TRUNCATE) printf("r%llu = IntTrunc r%llu, %llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_INT_TO_F32) printf("r%llu = IntToF32 r%llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_INT_TO_F64) printf("r%llu = IntToF64 r%llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_F32_TO_INT) printf("r%llu = F32ToInt r%llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_F64_TO_INT) printf("r%llu = F64ToInt r%llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_INT_TO_F64) printf("r%llu = IntToF64 r%llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_F32_TO_F64) printf("r%llu = FloatExt r%llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_F64_TO_F32) printf("r%llu = FloatTrunc r%llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_CREATE_ARRAY) printf("r%llu = CreateArray", this.dst.i);
+            else if (this.kind == INSTR_CREATE_STRUCT) printf("r%llu = CreateStruct", this.dst.i);
+            else if (this.kind == INSTR_PTR_TO_INT) printf("r%llu = PtrToInt r%llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_INT_TO_PTR) printf("r%llu = IntToPtr r%llu", this.dst.i, this.src.i);
+            else if (this.kind == INSTR_GET_FIELD_PTR) printf("r%llu = GetFieldPtr r%llu, %llu", this.dst.i, this.src.i, this.op1.i);
+            else if (this.kind == INSTR_UNREACHABLE) printf("unreachable");
             else if (this.kind == INSTR_GET_ELEMENT_PTR) {
                 printf("r%llu = GetElementPtr r%llu", this.dst.i, this.src.i);
                 for (mut i: usize = 0; i < this.args.length; i = i + 1) {
                     printf(", r%llu", this.args.at(i).i);
                 }
-                printf("\n");
             } else unsafe {
                 fprintf(stderr, "kind: %llu\n", this.kind);
                 unreachable("Exhaustive handling in IRInstr.dump()");
             }
+            if (this.isComptime) printf("\x1b[0m\n"); else printf("\n");
         }
     }
 }
@@ -355,15 +364,18 @@ struct IRFunc {
         assert_with_msg(index.i < this.registers.length, "Out of bounds access in IRFunc.getRegister");
         return this.registers.at(index.i);
     }
-    func getIdentifierByName(&mut this, name: SubStr, out: &mut RegIndex) -> bool {
+    func getIdentifierByName(&mut this, name: SubStr) -> &mut IRScopeEntry {
         trace("IRFunc.getIdentifierByName");
-        for (mut _i: usize = 0; _i < this.scopes.length; _i = _i + 1) {
+        for (mut _i: usize = 0; _i < this.scopes.length; _i = _i + 1) unsafe {
             let i: usize = this.scopes.length - _i - 1;
-            if (this.scopes.at(i).getIdentifierByName(name, out)) {
-                return true;
+            let entry: &mut IRScopeEntry = this.scopes.at(i).getIdentifierByName(name);
+            if (entry != null) {
+                return entry;
             }
         }
-        return false;
+        unsafe {
+            return null;
+        }
     }
     func pushInstruction(&mut this, mut instr: IRInstr) {
         trace("IRFunc.pushInstruction");
@@ -404,13 +416,33 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildFetchGlobalValue(&mut this, dst: RegIndex, globalIndex: RegIndex) {
+    func buildFetchGlobalRuntimeValue(&mut this, dst: RegIndex, globalIndex: RegIndex) {
         this.pushInstruction(IRInstr {
-            kind: INSTR_FETCH_GLOBAL_VAL,
+            kind: INSTR_FETCH_GLOBAL_VALUE,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: globalIndex,
             op1: blank,
+            args: blank,
+        });
+    }
+    func buildFetchGlobalComptimeValue(&mut this, dst: RegIndex, globalIndex: RegIndex) {
+        this.pushInstruction(IRInstr {
+            kind: INSTR_FETCH_COMPTIME_VALUE,
+            isComptime: this.comptimeLevel > 0,
+            dst: dst,
+            src: globalIndex,
+            op1: RegIndex { i: 1 },
+            args: blank,
+        });
+    }
+    func buildFetchLocalComptimeValue(&mut this, dst: RegIndex, globalIndex: RegIndex) {
+        this.pushInstruction(IRInstr {
+            kind: INSTR_FETCH_COMPTIME_VALUE,
+            isComptime: this.comptimeLevel > 0,
+            dst: dst,
+            src: globalIndex,
+            op1: RegIndex { i: 0 },
             args: blank,
         });
     }
@@ -601,6 +633,16 @@ struct IRFunc {
             args: blank,
         });
     }
+    func buildUnreachable(&mut this) {
+        this.pushInstruction(IRInstr {
+            kind: INSTR_UNREACHABLE,
+            isComptime: this.comptimeLevel > 0,
+            dst: blank,
+            src: blank,
+            op1: blank,
+            args: blank,
+        });
+    }
     func buildBr(&mut this, block: IRBlockID) {
         assert_with_msg(block.i < this.blocks.length, "buildBr called with invalid ID");
         this.pushInstruction(IRInstr {
@@ -635,6 +677,16 @@ struct IRFunc {
         let block: &mut LoopBlock = this.loopBlocks.last();
         this.buildBr(block.before);
         return true;
+    }
+    func buildIntSignExtend(&mut this, dst: RegIndex, src: RegIndex, bits: usize) {
+        this.pushInstruction(IRInstr {
+            kind: INSTR_INT_SIGN_EXTEND,
+            isComptime: this.comptimeLevel > 0,
+            dst: dst,
+            src: src,
+            op1: RegIndex { i: bits },
+            args: blank,
+        });
     }
     func buildIntZeroExtend(&mut this, dst: RegIndex, src: RegIndex, bits: usize) {
         this.pushInstruction(IRInstr {
@@ -778,46 +830,62 @@ struct IRFunc {
     }
 }
 
+struct IRScopeEntry {
+    name: SubStr;
+    ptr: RegIndex;
+    isComptime: bool;
+    func equals(&this, other: &IRScopeEntry) -> bool {
+        todo_with_msg("IRScopeEntry.equals");
+        return false;
+    }
+}
+
 struct IRScope {
-    names: SubStrList;
-    ptrs: RegIndexList;
+    entries: IRScopeEntryList;
     func equals(&this, other: &IRScope) -> bool {
         todo_with_msg("IRScope.equals");
         return false;
     }
-    func addEntry(&mut this, name: SubStr, ptr: RegIndex) {
-        this.names.push(name);
-        this.ptrs.push(ptr);
+    func addEntry(&mut this, name: SubStr, ptr: RegIndex, isComptime: bool) {
+        this.entries.push(IRScopeEntry {
+            name: name,
+            ptr: ptr,
+            isComptime: isComptime,
+        });
     }
-    func getIdentifierByName(&mut this, name: SubStr, ptr: &mut RegIndex) -> bool {
-        assert(this.names.length == this.ptrs.length);
-        for (mut i: usize = 0; i < this.names.length; i = i + 1) {
-            if (name.equals(&*this.names.at(i))) {
-                *ptr = *this.ptrs.at(i);
-                return true;
+    func getIdentifierByName(&mut this, name: SubStr) -> &mut IRScopeEntry {
+        for (mut i: usize = 0; i < this.entries.length; i = i + 1) {
+            let entry: &mut IRScopeEntry = this.entries.at(i);
+            if (name.equals(&entry.name)) {
+                return entry;
             }
         }
-        return false;
+        unsafe {
+            return null;
+        }
     }
 }
 
 struct IRGen {
     globalScope: IRFunc;
     functions: String_IRFuncHashMap;
-    func getIdentifierByName(&mut this, function: &mut IRFunc, name: SubStr, global: &mut bool) -> RegIndex {
+    func getIdentifierByName(&mut this, function: &mut IRFunc, name: SubStr, isGlobal: &mut bool) -> &mut IRScopeEntry {
         trace("IRGen.getIdentifierByName");
-        mut ptr: RegIndex = blank;
-        if (function.getIdentifierByName(name, &mut ptr)) {
-            *global = false;
-            return ptr;
+        unsafe {
+            mut entry: &mut IRScopeEntry = function.getIdentifierByName(name);
+            if (entry != null) {
+                *isGlobal = false;
+                return entry;
+            }
+            entry = this.globalScope.getIdentifierByName(name);
+            if (entry != null) {
+                *isGlobal = true;
+                return entry;
+            }
+            name.print();
+            unreachable("Could not find identifier anywhere.");
+            return null;
         }
-        if (this.globalScope.getIdentifierByName(name, &mut ptr)) {
-            *global = true;
-            return ptr;
-        }
-        name.print();
-        unreachable("Could not find identifier anywhere.");
-        return blank;
     }
     func getFunctionByName(&mut this, name: &String) -> usize {
         return this.functions.indexOf(name);
@@ -911,7 +979,7 @@ struct IRGen {
 
     func generateFunctionBody(&mut this, function: &mut IRFunc, body: &mut ParsedBlock, retTypeNode: &mut ParsedTypeDecl) {
         trace("IRGen.generateFunctionBody");
-        this.generateBytecodeBody(function, body);
+        this.generateBytecodeBlock(function, body);
         let curr: &mut IRBlock = function.getCurrentBlockAsRef();
         if (!curr.isTerminated()) {
             let t: &mut Type = getTypeByID(retTypeNode.typeState.getType());
@@ -959,9 +1027,9 @@ struct IRGen {
         this.generateFunctionBody(function, getBlockByID(methDecl.body), getTypeDeclByID(methDecl.retTypeID));
     }
 
-    func generateBytecodeBody(&mut this, function: &mut IRFunc, body: &mut ParsedBlock) {
-        trace("IRGen.generateBytecodeBody");
-        assert_with_msg(body.typeState.isSuccess(), "Expected valid Body type in IRGen");
+    func generateBytecodeBlock(&mut this, function: &mut IRFunc, block: &mut ParsedBlock) {
+        trace("IRGen.generateBytecodeBlock");
+        assert_with_msg(block.typeState.isSuccess(), "Expected valid Block type in IRGen");
         let scope: usize = function.enterScope();
         mut modID: usize = 0;
         if (function.isMethod) {
@@ -973,13 +1041,13 @@ struct IRGen {
             modID = f.parentID;
         }
         mut s: String = modules[modID].origin.toString();
-        for (mut i: usize = 0; i < body.stmtLength; i = i + 1) {
-            let stmt: &mut ParsedStmt = getStmtByID(body.getStmtAtIndex(i));
+        for (mut i: usize = 0; i < block.stmtLength; i = i + 1) {
+            let stmt: &mut ParsedStmt = getStmtByID(block.getStmtAtIndex(i));
             this.generateBytecodeStmt(function, stmt);
             let curr: &mut IRBlock = function.getCurrentBlockAsRef();
             if (curr.isTerminated()) {
-                if (i != body.stmtLength - 1) unsafe {
-                    let _s: String = getStmtByID(body.getStmtAtIndex(i + 1)).span.toString();
+                if (i != block.stmtLength - 1) unsafe {
+                    let _s: String = getStmtByID(block.getStmtAtIndex(i + 1)).span.toString();
                     s.pushChar(':');
                     s.pushString(&_s);
                     fprintf(stderr, "%s: %s: Unreachable code.\n", s.chars(), WARN_STR);
@@ -998,17 +1066,23 @@ struct IRGen {
         assert_with_msg(stmt.typeState.isSuccess(), "Expected valid Stmt type in IRGen");
         if (stmt.kind == STMT_VAR_DECL) {
             let exprID: usize = stmt.varDeclContext.exprID;
-            if (stmt.varDeclContext.isComptime) function.startComptime();
             let expr: &mut ParsedExpr = getExprByID(exprID);
-            let result: RegIndex = this.generateBytecodeExpr(function, expr, false);
-            let typ: &mut Type = getTypeByID(stmt.typeState.getType());
-            let allocaType: &mut Type = getTypeByID(typ.intoPointer());
-            let ptr: RegIndex = function.allocateRegister(allocaType);
-            function.buildAlloca(ptr, typ.getSize());
-            function.buildStore(ptr, result);
-            let scope: &mut IRScope = function.scopes.last();
-            scope.addEntry(stmt.varDeclContext.name.content, ptr);
-            if (stmt.varDeclContext.isComptime) function.endComptime();
+            if (stmt.varDeclContext.isComptime) {
+                function.startComptime();
+                let result: RegIndex = this.generateBytecodeExpr(function, expr, false);
+                let scope: &mut IRScope = function.scopes.last();
+                scope.addEntry(stmt.varDeclContext.name.content, result, true);
+                function.endComptime();
+            } else {
+                let result: RegIndex = this.generateBytecodeExpr(function, expr, false);
+                let typ: &mut Type = getTypeByID(stmt.typeState.getType());
+                let allocaType: &mut Type = getTypeByID(typ.intoPointer());
+                let ptr: RegIndex = function.allocateRegister(allocaType);
+                function.buildAlloca(ptr, typ.getSize());
+                function.buildStore(ptr, result);
+                let scope: &mut IRScope = function.scopes.last();
+                scope.addEntry(stmt.varDeclContext.name.content, ptr, false);
+            }
         } else if (stmt.kind == STMT_IF) {
             let context: &mut IfContext = &mut stmt.ifContext;
             let cond: RegIndex = this.generateBytecodeExpr(function, getExprByID(stmt.expr), false);
@@ -1095,7 +1169,7 @@ struct IRGen {
         } else if (stmt.kind == STMT_RETURN_EMPTY) {
             function.buildReturnEmpty();
         } else if (stmt.kind == STMT_BLOCK) {
-            this.generateBytecodeBody(function, getBlockByID(stmt.block));
+            this.generateBytecodeBlock(function, getBlockByID(stmt.block));
         } else if (stmt.kind == STMT_EXPR) {
             this.generateBytecodeExpr(function, getExprByID(stmt.expr), false);
         } else if (stmt.kind == STMT_BREAK) {
@@ -1183,7 +1257,11 @@ struct IRGen {
                 function.buildMove(dst, result);
             } else if ((current.isChar() || current.isInteger()) && (target.isChar() || target.isInteger())) {
                 if (current.getSize() < target.getSize()) {
-                    function.buildIntZeroExtend(dst, result, target.getSize() * 8);
+                    if (current.isSignedInteger()) {
+                        function.buildIntSignExtend(dst, result, target.getSize() * 8);
+                    } else {
+                        function.buildIntZeroExtend(dst, result, target.getSize() * 8);
+                    }
                 } else if (current.getSize() > target.getSize()) {
                     function.buildIntTruncate(dst, result, target.getSize() * 8);
                 } else {
@@ -1283,7 +1361,7 @@ struct IRGen {
                 return dst;
             }
         } else if (rhs.kind == EXPR_CALL) {
-            let result: RegIndex = this.generateBytecodeExpr(function, lhs, instance.getSize() > 8);
+            let result: RegIndex = this.generateBytecodeExpr(function, lhs, false);
             let instance: RegIndex = this.prepareArgument(function, result, instance);
             let method: &mut ParsedMethod = getMethodByID(rhs.lhs);
             let name: String = method.getMangledName();
@@ -1321,14 +1399,57 @@ struct IRGen {
         trace("IRGen.generateBytecodeExprIndexedAccess");
         assert(expr.kind == EXPR_BINARY);
         assert(expr.op == BIN_INDEXED_ACCESS);
-        let lhs: RegIndex = this.generateBytecodeExpr(function, getExprByID(expr.lhs), true);
+        let arrExpr: &mut ParsedExpr = getExprByID(expr.lhs);
+        let lhs: RegIndex = this.generateBytecodeExpr(function, arrExpr, true);
         let rhs: RegIndex = this.generateBytecodeExpr(function, getExprByID(expr.rhs), false);
         assert_with_msg(function.getRegister(lhs).typ.isPointer(), "Expected Ptr as LHS in IndexedAccess");
         assert_with_msg(function.getRegister(rhs).typ.isInteger(), "Expected Int as RHS in IndexedAccess");
         let elemType: &mut Type = getTypeByID(expr.typeState.getType());
+        let usizeType: &mut Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
+        let boolType: &mut Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
+        {
+            // if (index >= size) panic("Index out of bounds");
+            let arrType: &mut Type = getTypeByID(arrExpr.typeState.getType());
+            let elemCount: usize = arrType.getSize() / elemType.getSize();
+            let cond: RegIndex = function.allocateRegister(boolType);
+            let size: RegIndex = function.allocateRegister(usizeType);
+            let panic: IRBlockID = function.appendBlock();
+            let normal: IRBlockID = function.appendBlock();
+            function.buildLoadInteger(size, usizeType, elemCount);
+            function.buildBinaryOp(INSTR_INT_CMP_GTE, cond, rhs, size);
+            function.buildCondBr(cond, panic, normal);
+
+            function.setCurrentBlock(panic);
+            let err: RegIndex = function.allocateRegister(newType(TYPE_KIND_POINTER, TYPE_CHAR));
+            // FIXME: Don't use mangled name?
+            mut s: String = function.name.copy();
+            let _s: String = expr.span.toString();
+            s.pushChar(':');
+            s.pushString(&_s);
+            s.pushStr(": RUNTIME ERROR: Index out of bounds: Array of size ");
+            s.pushNumber(elemCount);
+            s.pushStr(" has no index %d\n");
+            _s.drop();
+            function.buildLoadString(err, s.asSubStr());
+            // FIXME: Using the module ID in mangling is awkward
+            let indexoob: String = newStringFromStrLit("index_oobPci64rNf00");
+            if (!this.functions.containsKey(&indexoob)) unsafe {
+                fprintf(stderr, "%s Could not generate index check for array access!\n", FATAL_STR);
+                fprintf(stderr, "%s: Reason: Could not find function `index_oob`!\n", NOTE_STR);
+                fprintf(stderr, "%s: Please import `prelude.bufo` and try again.\n", NOTE_STR);
+                exit(1);
+            }
+            let funcID: usize = this.getFunctionByName(&indexoob);
+            mut args: RegIndexList = blank;
+            args.push(err);
+            args.push(rhs);
+            let reg: RegIndex = function.allocateRegister(newType(TYPE_KIND_PRIMITIVE, TYPE_NONE));
+            function.buildCall(reg, RegIndex { i: funcID }, args);
+            function.buildUnreachable();
+            function.setCurrentBlock(normal);
+        }
         let elemPtr: RegIndex = function.allocateRegister(getTypeByID(elemType.intoPointer()));
         mut indices: RegIndexList = blank;
-        let usizeType: &mut Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
         let index: RegIndex = function.allocateRegister(usizeType);
         function.buildLoadInteger(index, usizeType, 0);
         indices.push(index);
@@ -1346,23 +1467,56 @@ struct IRGen {
     func generateBytecodeExprIdentifier(&mut this, function: &mut IRFunc, expr: &mut ParsedExpr, needsPtr: bool) -> RegIndex {
         trace("IRGen.generateBytecodeExprIdentifier");
         assert(expr.isIdentifier());
-        mut global: bool = false;
-        let ptr: RegIndex = this.getIdentifierByName(function, expr.origToken.content, &mut global);
+        mut isGlobal: bool = false;
+        let entry: &mut IRScopeEntry = this.getIdentifierByName(function, expr.origToken.content, &mut isGlobal);
+        unsafe {
+            assert_with_msg(entry != null, "Could not find identifier in generateBytecodeExprIdentifier");
+        }
         let varType: &mut Type = getTypeByID(expr.typeState.getType());
+        if (function.comptimeLevel > 0 && !entry.isComptime) {
+            // REVIEW: This should've been handled before here?
+            todo_with_msg("Crossing the boundary: comptime IR needs runtime value :^)");
+        }
         if (needsPtr) {
-            if (global) {
+            if (isGlobal) {
                 let ptrType: &mut Type = getTypeByID(varType.intoPointer());
                 let global: RegIndex = function.allocateRegister(ptrType);
-                function.buildFetchGlobalPointer(global, ptr);
+                if (entry.isComptime) {
+                    let val: RegIndex = function.allocateRegister(varType);
+                    function.buildAlloca(global, varType.getSize());
+                    function.buildFetchGlobalComptimeValue(val, entry.ptr);
+                    function.buildStore(global, val);
+                } else {
+                    function.buildFetchGlobalPointer(global, entry.ptr);
+                }
                 return global;
+            } else {
+                if (entry.isComptime) {
+                    let ptrType: &mut Type = getTypeByID(varType.intoPointer());
+                    let global: RegIndex = function.allocateRegister(ptrType);
+                    let val: RegIndex = function.allocateRegister(varType);
+                    function.buildAlloca(global, varType.getSize());
+                    function.buildFetchLocalComptimeValue(val, entry.ptr);
+                    function.buildStore(global, val);
+                    return global;
+                } else {
+                    return entry.ptr;
+                }
             }
-            return ptr;
         } else {
             let val: RegIndex = function.allocateRegister(varType);
-            if (global) {
-                function.buildFetchGlobalValue(val, ptr);
+            if (isGlobal) {
+                if (entry.isComptime) {
+                    function.buildFetchGlobalComptimeValue(val, entry.ptr);
+                } else {
+                    function.buildFetchGlobalRuntimeValue(val, entry.ptr);
+                }
             } else {
-                function.buildLoad(val, ptr);
+                if (entry.isComptime) {
+                    function.buildFetchLocalComptimeValue(val, entry.ptr);
+                } else {
+                    function.buildLoad(val, entry.ptr);
+                }
             }
             return val;
         }
@@ -1379,7 +1533,7 @@ struct IRGen {
         let dst: RegIndex = function.allocateRegister(res);
         // OPT: Specialized 8bit, 16bit, etc. variations
         if (expr.op == BIN_PLUS) {
-            if (res.isInteger()) {
+            if ((lhsType.isInteger() || lhsType.isChar()) && (rhsType.isInteger() || rhsType.isChar())) {
                 function.buildBinaryOp(INSTR_INT_ADD, dst, lhs, rhs);
             } else if (lhsType.isPointer() && rhsType.isInteger()) {
                 assert_with_msg(res.isPointer(), "PTR + INT expected to be PTR");
@@ -1398,7 +1552,7 @@ struct IRGen {
             }
         } else if (expr.op == BIN_SUB) {
             let usizeType: &mut Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
-            if (!lhsType.isPointer() && !rhsType.isPointer()) {
+            if ((lhsType.isInteger() || lhsType.isChar()) && (rhsType.isInteger() || rhsType.isChar())) {
                 function.buildBinaryOp(INSTR_INT_SUB, dst, lhs, rhs);
             } else if (lhsType.isPointer() && rhsType.isInteger()) {
                 assert_with_msg(res.isPointer(), "PTR - INT expected to be PTR");
@@ -1421,6 +1575,8 @@ struct IRGen {
                 function.buildPtrToInt(tmp1, lhs);
                 function.buildPtrToInt(tmp2, rhs);
                 function.buildBinaryOp(INSTR_INT_SUB, dst, tmp1, tmp2);
+            } else if (lhsType.isFloat() && rhsType.isFloat()) {
+                function.buildBinaryOp(INSTR_FLOAT_SUB, dst, lhs, rhs);
             } else {
                 todo_with_msg("non-int sub");
             }
@@ -1463,7 +1619,7 @@ struct IRGen {
         // OPT: Specialized 8bit, 16bit, etc. variations
         let t: &mut Type = function.getRegister(lhs).typ;
         if (expr.op == BIN_CMP_EQ) {
-            if (t.isInteger() || t.isChar() || t.isPointer()) {
+            if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
                 function.buildBinaryOp(INSTR_INT_CMP_EQ, dst, lhs, rhs);
             } else if (t.isFloat()) {
                 function.buildBinaryOp(INSTR_FLOAT_CMP_EQ, dst, lhs, rhs);
@@ -1471,7 +1627,7 @@ struct IRGen {
                 todo_with_msg("IRGen CMP_EQ");
             }
         } else if (expr.op == BIN_CMP_NEQ) {
-            if (t.isInteger() || t.isChar() || t.isPointer()) {
+            if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
                 function.buildBinaryOp(INSTR_INT_CMP_NEQ, dst, lhs, rhs);
             } else if (t.isFloat()) {
                 function.buildBinaryOp(INSTR_FLOAT_CMP_NEQ, dst, lhs, rhs);
@@ -1479,7 +1635,7 @@ struct IRGen {
                 todo_with_msg("IRGen CMP_NEQ");
             }
         } else if (expr.op == BIN_CMP_GT) {
-            if (t.isInteger() || t.isChar() || t.isPointer()) {
+            if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
                 function.buildBinaryOp(INSTR_INT_CMP_GT, dst, lhs, rhs);
             } else if (t.isFloat()) {
                 function.buildBinaryOp(INSTR_FLOAT_CMP_GT, dst, lhs, rhs);
@@ -1487,7 +1643,7 @@ struct IRGen {
                 todo_with_msg("IRGen CMP_GT");
             }
         } else if (expr.op == BIN_CMP_GTE) {
-            if (t.isInteger() || t.isChar() || t.isPointer()) {
+            if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
                 function.buildBinaryOp(INSTR_INT_CMP_GTE, dst, lhs, rhs);
             } else if (t.isFloat()) {
                 function.buildBinaryOp(INSTR_FLOAT_CMP_GTE, dst, lhs, rhs);
@@ -1495,13 +1651,13 @@ struct IRGen {
                 todo_with_msg("IRGen CMP_GTE");
             }
         } else if (expr.op == BIN_CMP_LT) {
-            if (t.isInteger() || t.isChar() || t.isPointer()) {
+            if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
                 function.buildBinaryOp(INSTR_INT_CMP_LT, dst, lhs, rhs);
             } else {
                 todo_with_msg("IRGen CMP_LT");
             }
         } else if (expr.op == BIN_CMP_LTE) {
-            if (t.isInteger() || t.isChar() || t.isPointer()) {
+            if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
                 function.buildBinaryOp(INSTR_INT_CMP_LTE, dst, lhs, rhs);
             } else if (t.isFloat()) {
                 function.buildBinaryOp(INSTR_FLOAT_CMP_LTE, dst, lhs, rhs);
@@ -1542,6 +1698,8 @@ struct IRGen {
             function.buildBinaryOp(INSTR_BITWISE_AND, dst, lhs, rhs);
         } else if (expr.op == BIN_BOR) {
             function.buildBinaryOp(INSTR_BITWISE_OR, dst, lhs, rhs);
+        } else if (expr.op == BIN_BXOR) {
+            function.buildBinaryOp(INSTR_BITWISE_XOR, dst, lhs, rhs);
         } else {
             unreachable("Exhaustive handling of ops in generateBytecodeExprBitwise");
         }
@@ -1688,21 +1846,16 @@ struct IRGen {
             }
         } else if (expr.op == UNARY_REF) {
             let subExpr: &mut ParsedExpr = getExprByID(expr.lhs);
-            if (needsPtr) {
-                return this.generateBytecodeExpr(function, subExpr, true);
+            let result: RegIndex = this.generateBytecodeExpr(function, subExpr, true);
+            let ptrReg: &mut IRReg = function.getRegister(result);
+            if (needsPtr || !ptrReg.typ.isPointer()) {
+                let subType: &mut Type = getTypeByID(ptrReg.typ.intoPointer());
+                let ptr: RegIndex = function.allocateRegister(subType);
+                function.buildAlloca(ptr, ptrReg.typ.getSize());
+                function.buildStore(ptr, result);
+                return ptr;
             } else {
-                let result: RegIndex = this.generateBytecodeExpr(function, subExpr, true);
-                let ptrReg: &mut IRReg = function.getRegister(result);
-                if (!ptrReg.typ.isPointer()) {
-                    // Value not a pointer (e.g. literal), conversion is necessary
-                    let subType: &mut Type = getTypeByID(ptrReg.typ.intoPointer());
-                    let ptr: RegIndex = function.allocateRegister(subType);
-                    function.buildAlloca(ptr, ptrReg.typ.getSize());
-                    function.buildStore(ptr, result);
-                    return ptr;
-                } else {
-                    return result;
-                }
+                return result;
             }
         } else if (expr.op == UNARY_NOT) {
             let result: RegIndex = this.generateBytecodeExpr(function, getExprByID(expr.lhs), false);
@@ -1760,11 +1913,11 @@ struct IRGen {
 
                 function.buildAlloca(allocReg, typ.getSize());
                 function.buildStore(allocReg, instance);
-                function.scopes.last().addEntry(name, allocReg);
+                function.scopes.last().addEntry(name, allocReg, false);
             } else {
                 function.buildAlloca(allocReg, typ.getSize());
                 function.buildStore(allocReg, value);
-                function.scopes.last().addEntry(name, allocReg);
+                function.scopes.last().addEntry(name, allocReg, false);
             }
         } else if (typ.getSize() > 8) {
             todo_with_msg("prepare urmom");
@@ -1776,7 +1929,7 @@ struct IRGen {
 
             function.buildAlloca(allocReg, typ.getSize());
             function.buildStore(allocReg, value);
-            function.scopes.last().addEntry(name, allocReg);
+            function.scopes.last().addEntry(name, allocReg, false);
         }
     }
 
