@@ -6,5 +6,8 @@
 /.mypy_cache/
 
 /tracer/Cargo.lock
-/wrapper/
-llvm_wrapper.lib
+*.exe
+*.lib
+*.obj
+*.ll
+*.s
