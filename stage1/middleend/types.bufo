@@ -3,6 +3,11 @@ import "libc.bufo";
 import "string.bufo";
 import "../frontend/nodes.bufo";
 
+func nextMultipleOf(a: usize, b: usize) -> usize {
+    if (a % b == 0) return a;
+    return a + (b - (a % b));
+}
+
 comptime TYPE_INVALID: usize = 0;
 comptime TYPE_UNKNOWN: usize = 1;
 comptime TYPE_U8: usize      = 2;
@@ -241,6 +246,47 @@ struct Type {
         }
         return blank;
     }
+    func getAlignment(&mut this) -> usize {
+        if (this.kind == TYPE_KIND_POINTER) {
+            return 8;
+        } else if (this.kind == TYPE_KIND_PRIMITIVE) {
+            if (this.typeIndex == TYPE_UNKNOWN) todo_with_msg("TYPE_UNKNOWN");
+            else if (this.typeIndex == TYPE_NONE)
+                return 0;
+            else if (this.typeIndex == TYPE_I8 || this.typeIndex == TYPE_U8 || this.typeIndex == TYPE_CHAR)
+                return 1;
+            else if (this.typeIndex == TYPE_BOOL)
+                return 1;
+            else if (this.typeIndex == TYPE_I16 || this.typeIndex == TYPE_U16)
+                return 2;
+            else if (this.typeIndex == TYPE_I32 || this.typeIndex == TYPE_U32 || this.typeIndex == TYPE_F32)
+                return 4;
+            else if (this.typeIndex == TYPE_I64 || this.typeIndex == TYPE_U64 || this.typeIndex == TYPE_F64)
+                return 8;
+            else if (this.typeIndex == TYPE_USIZE || this.typeIndex == TYPE_ANY)
+                return 8;
+            else {
+                unreachable("Exhaustive handling of primitive types in Type.getAlignment");
+            }
+        } else if (this.kind == TYPE_KIND_ARRAY) {
+            let t: &mut Type = getTypeByID(this.typeIndex);
+            return t.getAlignment();
+        } else if (this.kind == TYPE_KIND_STRUCT) {
+            let info: &mut ParsedStructDecl = getStructDeclByID(this.typeIndex);
+            assert_with_msg(info.typeState.isSuccess(), "Can only get alignment of valid structs");
+            mut maxAlign: usize = 1;
+            for (mut i: usize = 0; i < info.context.fieldLength; i = i + 1) {
+                let td: &mut ParsedTypeDecl = getTypeDeclByID(info.context.getFieldTypeAtIndex(i));
+                assert_with_msg(td.typeState.isSuccess(), "Expected valid field type");
+                let tt: &mut Type = getTypeByID(td.typeState.getType());
+                let _a: usize = tt.getAlignment();
+                if (_a > maxAlign) maxAlign = _a;
+            }
+            return maxAlign;
+        }
+        todo_with_msg("align");
+        return 0;
+    }
     func getSize(&mut this) -> usize {
         if (this.kind == TYPE_KIND_POINTER) {
             return 8;
@@ -270,11 +316,17 @@ struct Type {
             let info: &mut ParsedStructDecl = getStructDeclByID(this.typeIndex);
             assert_with_msg(info.typeState.isSuccess(), "Can only get size of valid structs");
             mut size: usize = 0;
+            mut maxAlign: usize = 1;
             for (mut i: usize = 0; i < info.context.fieldLength; i = i + 1) {
                 let td: &mut ParsedTypeDecl = getTypeDeclByID(info.context.getFieldTypeAtIndex(i));
                 assert_with_msg(td.typeState.isSuccess(), "Expected valid field type");
-                size = size + getTypeByID(td.typeState.getType()).getSize();
+                let tt: &mut Type = getTypeByID(td.typeState.getType());
+                let _a: usize = tt.getAlignment();
+                size = size + tt.getSize();
+                size = nextMultipleOf(size, _a);
+                if (_a > maxAlign) maxAlign = _a;
             }
+            size = nextMultipleOf(size, maxAlign);
             return size;
         }
         todo_with_msg("size");

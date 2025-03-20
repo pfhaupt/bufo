@@ -75,6 +75,7 @@ extern LLVMCreateTargetDataLayout(T: LLVMTargetMachineRef) -> LLVMTargetDataRef;
 extern LLVMStoreSizeOfType(T: LLVMTargetDataRef, Ty: LLVMTypeRef) -> usize;
 extern LLVMABISizeOfType(T: LLVMTargetDataRef, Ty: LLVMTypeRef) -> usize;
 extern LLVMSizeOfTypeInBits(T: LLVMTargetDataRef, Ty: LLVMTypeRef) -> usize;
+extern LLVMCopyStringRepOfTargetData(T: LLVMTargetDataRef) -> &char;
 
 // LLVMContext
 extern LLVMContextCreate() -> LLVMContextRef;
@@ -94,6 +95,8 @@ extern LLVMAddFunction(M: LLVMModuleRef, name: &char, FunctionTy: LLVMTypeRef) -
 extern LLVMAddGlobalInAddressSpace(M: LLVMModuleRef, Ty: LLVMTypeRef, Name: &char, AddressSpace: u32) -> LLVMValueRef;
 extern LLVMGetNamedGlobal(M: LLVMModuleRef, Name: &char) -> LLVMValueRef;
 extern LLVMVerifyModule(M: LLVMModuleRef, mode: i32, code: &mut LLVMString) -> LLVMBool;
+extern LLVMSetDataLayout(M: LLVMModuleRef, Data: &char);
+extern LLVMSetTarget(M: LLVMModuleRef, Target: &char);
 
 // LLVMPassManager
 extern LLVMCreatePassManager() -> LLVMPassManagerRef;

@@ -6,6 +6,7 @@ import "./bindings.bufo";
 import "./types.bufo";
 import "./values.bufo";
 import "./pass_manager.bufo";
+import "./target.bufo";
 
 struct LLVMModule {
     ref: LLVMModuleRef;
@@ -14,6 +15,20 @@ struct LLVMModule {
         let s: &char = LLVMPrintModuleToString(this.ref);
         unsafe {
             printf("%s\n", s);
+        }
+    }
+
+    func setTriple(&mut this, triple: &char) {
+        trace("LLVMModule.setTriple");
+        unsafe {
+            LLVMSetTarget(this.ref, triple);
+        }
+    }
+
+    func setDataLayout(&mut this, layout: LLVMDataLayout) {
+        trace("LLVMModule.setDataLayout");
+        unsafe {
+            LLVMSetDataLayout(this.ref, layout.ref);
         }
     }
 

@@ -285,7 +285,10 @@ struct ParsedStructDecl {
         return this.context.getFieldIndex(name);
     }
     func getFieldOffset(&mut this, name: &SubStr) -> usize {
-        return this.context.getFieldOffset(name);
+        mut offset: usize = 0;
+        mut _idc: usize = 0;
+        this.getFieldOffsetAndSize(this.getFieldIndex(name), &mut offset, &mut _idc);
+        return offset;
     }
     func getFieldOffsetAndSize(&mut this, index: usize, offset: &mut usize, size: &mut usize) {
         trace("ParsedStructDecl.getFieldOffsetAndSize");
@@ -294,7 +297,8 @@ struct ParsedStructDecl {
             let field: usize = this.context.getFieldTypeAtIndex(i);
             let f1: &mut ParsedTypeDecl = getTypeDeclByID(field);
             let f: &mut Type = getTypeByID(f1.typeState.getType());
-            let s: usize = f.getSize();
+            mut s: usize = f.getSize();
+            s = nextMultipleOf(s, f.getAlignment());
             if (i == index) {
                 *offset = o;
                 *size = s;

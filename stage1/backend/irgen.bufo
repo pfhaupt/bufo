@@ -264,6 +264,7 @@ struct IRFunc {
     loopBlocks: LoopBlockList;
     currentBlock: IRBlockID;
     llvmFunc: LLVMValue;
+    retPtr: RegIndex;
     func appendBlock(&mut this) -> IRBlockID {
         let id: IRBlockID = IRBlockID { i: this.blocks.length };
         this.blocks.push(IRBlock {
@@ -910,6 +911,7 @@ struct IRGen {
                 loopBlocks: blank,
                 currentBlock: blank,
                 llvmFunc: blank,
+                retPtr: blank,
             };
             this.functions.add(name, irfunc);
         }
@@ -931,6 +933,7 @@ struct IRGen {
                 loopBlocks: blank,
                 currentBlock: blank,
                 llvmFunc: blank,
+                retPtr: blank,
             };
             this.functions.add(name, irmeth);
         }
@@ -964,16 +967,21 @@ struct IRGen {
         return true;
     }
 
-    func generateFunctionHeader(&mut this, function: &mut IRFunc, params: &mut ParamContext) {
+    func generateFunctionHeader(&mut this, function: &mut IRFunc, retType: &mut Type, params: &mut ParamContext) {
         trace("IRGen.generateFunctionHeader");
         let entry: IRBlockID = function.appendBlock();
         function.setCurrentBlock(entry);
+        mut offset: usize = 0;
+        if (retType.getSize() > 8) {
+            offset = 1;
+            this.prepareParameter(function, 0, newSubStrOfStrLit("ret"), getTypeByID(retType.intoPointer()), true);
+        }
         for (mut i: usize = 0; i < params.paramLength; i = i + 1) {
             let name: Token = params.getNameAtIndex(i);
             let typ: usize = params.getTypeAtIndex(i);
             let typDecl: &mut ParsedTypeDecl = getTypeDeclByID(typ);
             let pType: &mut Type = getTypeByID(typDecl.typeState.getType());
-            this.prepareParameter(function, i, name.content, pType);
+            this.prepareParameter(function, i + offset, name.content, pType, false);
         }
     }
 
@@ -1009,7 +1017,8 @@ struct IRGen {
         }
         let scope: usize = function.enterScope();
         assert_with_msg(scope == 1, "Expected function to enter first scope");
-        this.generateFunctionHeader(function, &mut funcDecl.params);
+        let retDecl: &mut ParsedTypeDecl = getTypeDeclByID(funcDecl.retTypeID);
+        this.generateFunctionHeader(function, getTypeByID(retDecl.typeState.getType()), &mut funcDecl.params);
         this.generateFunctionBody(function, getBlockByID(funcDecl.body), getTypeDeclByID(funcDecl.retTypeID));
     }
 
@@ -1023,7 +1032,8 @@ struct IRGen {
         name.drop();
         let scope: usize = function.enterScope();
         assert_with_msg(scope == 1, "Expected method to enter first scope");
-        this.generateFunctionHeader(function, &mut methDecl.params);
+        let retDecl: &mut ParsedTypeDecl = getTypeDeclByID(methDecl.retTypeID);
+        this.generateFunctionHeader(function, getTypeByID(retDecl.typeState.getType()), &mut methDecl.params);
         this.generateFunctionBody(function, getBlockByID(methDecl.body), getTypeDeclByID(methDecl.retTypeID));
     }
 
@@ -1164,8 +1174,26 @@ struct IRGen {
         } else if (stmt.kind == STMT_RETURN_EXPR) {
             let exprID: usize = stmt.expr;
             let expr: &mut ParsedExpr = getExprByID(exprID);
+            let typ: &mut Type = getTypeByID(expr.typeState.getType());
             let result: RegIndex = this.generateBytecodeExpr(function, expr, false);
-            function.buildReturnExpr(result);
+            if (typ.getSize() > 8) {
+                function.buildStore(function.retPtr, result);
+                function.buildReturnExpr(function.retPtr);
+            } else {
+                if (typ.isStruct()) {
+                    let v: RegIndex = this.getRegisterForSize(function, typ.getSize());
+                    let t: &mut Type = function.getRegister(v).typ;
+                    let r: RegIndex = function.allocateRegister(getTypeByID(t.intoPointer()));
+                    let s: usize = t.getSize();
+                    assert(s <= 8);
+                    function.buildAlloca(r, s);
+                    function.buildStore(r, result);
+                    function.buildLoad(v, r);
+                    function.buildReturnExpr(v);
+                } else {
+                    function.buildReturnExpr(result);
+                }
+            }
         } else if (stmt.kind == STMT_RETURN_EMPTY) {
             function.buildReturnEmpty();
         } else if (stmt.kind == STMT_BLOCK) {
@@ -1367,13 +1395,18 @@ struct IRGen {
             let name: String = method.getMangledName();
             let funcID: usize = this.getFunctionByName(&name);
             name.drop();
+            let typ: &mut Type = getTypeByID(expr.typeState.getType());
             mut args: RegIndexList = blank;
-            mut paramStart: usize = 0;
+            mut retPtr: RegIndex = blank;
+            if (typ.getSize() > 8) {
+                retPtr = function.allocateRegister(getTypeByID(typ.intoPointer()));
+                function.buildAlloca(retPtr, typ.getSize());
+                args.push(retPtr);
+            }
             if (method.isStatic) {
                 unreachable("Actually... How did we get here so far?");
                 assert_with_msg(rhs.arrayContext.elemLength == method.params.paramLength, "args != params");
             } else {
-                paramStart = 1;
                 assert_with_msg(rhs.arrayContext.elemLength == method.params.paramLength - 1, "args != params - this");
                 args.push(instance);
             }
@@ -1383,16 +1416,55 @@ struct IRGen {
                 let result: RegIndex = this.generateBytecodeExpr(function, arg, false);
                 args.push(this.prepareArgument(function, result, argType));
             }
-            let typ: &mut Type = getTypeByID(expr.typeState.getType());
-            let reg: RegIndex = function.allocateRegister(typ);
-            function.buildCall(reg, RegIndex { i: funcID }, args);
-            return reg;
+            return this.prepareReturnValue(function, funcID, args, typ, retPtr, needsPtr);
         } else {
             unreachable("Expected name or call in generateBytecodeExprMemberAccess");
             return blank;
         }
         todo_with_msg("member");
         return blank;
+    }
+
+    func prepareReturnValue(&mut this, function: &mut IRFunc, funcID: usize, args: RegIndexList, retType: &mut Type, retPtr: RegIndex, needsPtr: bool) -> RegIndex {
+        if (retType.getSize() > 8) {
+            let reg: RegIndex = function.allocateRegister(retType);
+            function.buildCall(retPtr, RegIndex { i: funcID }, args);
+            if (needsPtr) {
+                return retPtr;
+            } else {
+                function.buildLoad(reg, retPtr);
+                return reg;
+            }
+        } else {
+            if (retType.isStruct()) {
+                let reg: RegIndex = this.getRegisterForSize(function, retType.getSize());
+                function.buildCall(reg, RegIndex { i: funcID }, args);
+                let v: RegIndex = function.allocateRegister(retType);
+                let t: &mut Type = function.getRegister(v).typ;
+                let r: RegIndex = function.allocateRegister(getTypeByID(t.intoPointer()));
+                let s: usize = t.getSize();
+                assert(s <= 8);
+                function.buildAlloca(r, s);
+                function.buildStore(r, reg);
+                if (needsPtr) {
+                    return r;
+                } else {
+                    function.buildLoad(v, r);
+                }
+                return v;
+            } else {
+                let reg: RegIndex = function.allocateRegister(retType);
+                function.buildCall(reg, RegIndex { i: funcID }, args);
+                if (needsPtr) {
+                    let tempAlloc: RegIndex = function.allocateRegister(getTypeByID(retType.intoPointer()));
+                    function.buildAlloca(tempAlloc, retType.getSize());
+                    function.buildStore(tempAlloc, reg);
+                    return tempAlloc;
+                } else {
+                    return reg;
+                }
+            }
+        }
     }
 
     func generateBytecodeExprIndexedAccess(&mut this, function: &mut IRFunc, expr: &mut ParsedExpr, needsPtr: bool) -> RegIndex {
@@ -1886,7 +1958,7 @@ struct IRGen {
         return blank;
     }
 
-    func prepareParameter(&mut this, function: &mut IRFunc, index: usize, name: SubStr, typ: &mut Type) {
+    func prepareParameter(&mut this, function: &mut IRFunc, index: usize, name: SubStr, typ: &mut Type, retValue: bool) {
         trace("IRGen.prepareParameter");
         if (typ.isStruct()) unsafe {
             let size: usize = typ.getSize();
@@ -1927,10 +1999,32 @@ struct IRGen {
             let value: RegIndex = function.allocateRegister(typ);
             function.buildGetParam(value, index, typ.getSize());
 
-            function.buildAlloca(allocReg, typ.getSize());
-            function.buildStore(allocReg, value);
-            function.scopes.last().addEntry(name, allocReg, false);
+            if (retValue) {
+                assert(index == 0);
+                (*function).retPtr = value;
+            } else {
+                function.buildAlloca(allocReg, typ.getSize());
+                function.buildStore(allocReg, value);
+                function.scopes.last().addEntry(name, allocReg, false);
+            }
         }
+    }
+
+    func getRegisterForSize(&mut this, function: &mut IRFunc, size: usize) -> RegIndex {
+        trace("IRGen.getRegisterForSize");
+        mut v: RegIndex = blank;
+        if (size <= 1) {
+            v = function.allocateRegister(newType(TYPE_KIND_PRIMITIVE, TYPE_U8));
+        } else if (size <= 2) {
+            v = function.allocateRegister(newType(TYPE_KIND_PRIMITIVE, TYPE_U16));
+        } else if (size <= 4) {
+            v = function.allocateRegister(newType(TYPE_KIND_PRIMITIVE, TYPE_U32));
+        } else if (size <= 8) {
+            v = function.allocateRegister(newType(TYPE_KIND_PRIMITIVE, TYPE_U64));
+        } else {
+            unreachable("getRegisterForSize called with size > 8");
+        }
+        return v;
     }
 
     func prepareArgument(&mut this, function: &mut IRFunc, value: RegIndex, typ: &mut Type) -> RegIndex {
@@ -1940,18 +2034,8 @@ struct IRGen {
             let alloc: RegIndex = function.allocateRegister(getTypeByID(typ.intoPointer()));
             function.buildAlloca(alloc, size);
             function.buildStore(alloc, value);
-            mut v: RegIndex = blank;
-            if (size <= 1) {
-                v = function.allocateRegister(newType(TYPE_KIND_PRIMITIVE, TYPE_U8));
-            } else if (size <= 2) {
-                v = function.allocateRegister(newType(TYPE_KIND_PRIMITIVE, TYPE_U16));
-            } else if (size <= 4) {
-                v = function.allocateRegister(newType(TYPE_KIND_PRIMITIVE, TYPE_U32));
-            } else if (size <= 8) {
-                v = function.allocateRegister(newType(TYPE_KIND_PRIMITIVE, TYPE_U64));
-            } else {
-                return alloc;
-            }
+            if (size > 8) return alloc;
+            let v: RegIndex = this.getRegisterForSize(function, size);
             function.buildLoad(v, alloc);
             return v;
         } else if (typ.getSize() > 8) {
@@ -1969,8 +2053,14 @@ struct IRGen {
         trace("IRGen.generateBytecodeExprCall");
         assert(expr.isCall());
         let typ: &mut Type = getTypeByID(expr.typeState.getType());
-        let reg: RegIndex = function.allocateRegister(typ);
         mut args: RegIndexList = blank;
+        let reg: RegIndex = function.allocateRegister(typ);
+        mut retPtr: RegIndex = blank;
+        if (typ.getSize() > 8) {
+            retPtr = function.allocateRegister(getTypeByID(typ.intoPointer()));
+            function.buildAlloca(retPtr, typ.getSize());
+            args.push(retPtr);
+        }
         for (mut i: usize = 0; i < expr.arrayContext.elemLength; i = i + 1) {
             let arg: &mut ParsedExpr = getExprByID(expr.arrayContext.getElementAtIndex(i));
             let argType: &mut Type = getTypeByID(arg.typeState.getType());
@@ -1980,8 +2070,7 @@ struct IRGen {
         let name: String = getFuncDeclByID(expr.lhs).getMangledName();
         let funcID: usize = this.getFunctionByName(&name);
         name.drop();
-        function.buildCall(reg, RegIndex { i: funcID }, args);
-        return reg;
+        return this.prepareReturnValue(function, funcID, args, typ, retPtr, needsPtr);
     }
 }
 
@@ -1999,6 +2088,7 @@ func newIRGenerator() -> IRGen {
             loopBlocks: blank,
             currentBlock: blank,
             llvmFunc: blank,
+            retPtr: blank,
         },
         functions: blank,
     };

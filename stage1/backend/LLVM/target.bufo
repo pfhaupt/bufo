@@ -3,6 +3,10 @@ import "./types.bufo";
 import "./module.bufo";
 import "./bindings.bufo";
 
+struct LLVMDataLayout {
+    ref: &char;
+}
+
 struct LLVMTargetData {
     ref: LLVMTargetDataRef;
 
@@ -22,6 +26,15 @@ struct LLVMTargetData {
         trace("LLVMTargetData.getStoreSize");
         unsafe {
             return LLVMStoreSizeOfType(this.ref, typ.ref);
+        }
+    }
+    func getDataLayout(&this) -> LLVMDataLayout {
+        trace("LLVMTargetData.getDataLayout");
+        unsafe {
+            let c: &char = LLVMCopyStringRepOfTargetData(this.ref);
+            return LLVMDataLayout {
+                ref: c
+            };
         }
     }
 }

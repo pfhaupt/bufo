@@ -78,7 +78,12 @@ struct LLVMCodegen {
             if (PRINT_DEBUG) this.llvmModule.writeToFile(newSubStrOfStrLit("debug_after.ll"));
             mut path: String = outPath.toString();
             path.pushStr(".obj");
+            printf("written to: %s\n", path.chars());
             this.llvmTargetMachine.writeToFile(this.llvmModule, LLVMObjectFile, path.chars());
+            // path = outPath.toString();
+            // path.pushStr(".s");
+            // printf("written to: %s\n", path.chars());
+            // this.llvmTargetMachine.writeToFile(this.llvmModule, LLVMAssemblyFile, path.chars());
         }
         return true;
     }
@@ -136,6 +141,10 @@ struct LLVMCodegen {
             let method: &mut ParsedMethod = irFunc.getMethodNode();
             let typeDecl: &mut ParsedTypeDecl = getTypeDeclByID(method.retTypeID);
             retType = getTypeByID(typeDecl.typeState.getType());
+            if (retType.getSize() > 8) {
+                retType = getTypeByID(retType.intoPointer());
+                params.push(this.prepareParameter(retType));
+            }
             for (mut i: usize = 0; i < method.params.paramLength; i = i + 1) {
                 let tDecl: &mut ParsedTypeDecl = getTypeDeclByID(method.params.getTypeAtIndex(i));
                 let t: &mut Type = getTypeByID(tDecl.typeState.getType());
@@ -146,6 +155,10 @@ struct LLVMCodegen {
             let function: &mut ParsedFuncDecl = irFunc.getFuncNode();
             let typeDecl: &mut ParsedTypeDecl = getTypeDeclByID(function.retTypeID);
             retType = getTypeByID(typeDecl.typeState.getType());
+            if (retType.getSize() > 8) {
+                retType = getTypeByID(retType.intoPointer());
+                params.push(this.prepareParameter(retType));
+            }
             for (mut i: usize = 0; i < function.params.paramLength; i = i + 1) {
                 let tDecl: &mut ParsedTypeDecl = getTypeDeclByID(function.params.getTypeAtIndex(i));
                 let t: &mut Type = getTypeByID(tDecl.typeState.getType());
@@ -153,12 +166,35 @@ struct LLVMCodegen {
             }
             isVarArg = function.params.isVarArg;
         }
-        let llvmType: LLVMType = this.generateLLVMType(retType);
+        let llvmType: LLVMType = this.prepareReturnType(retType);
         let llvmFuncType: LLVMType = llvmType.intoFunctionType(params, isVarArg);
         let llvmFuncValue: LLVMValue = this.llvmModule.addFunction(irFunc.name.asSubStr(), llvmFuncType);
         (*irFunc).llvmFunc = llvmFuncValue;
         let origFunc: &mut IRFunc = this.irGen.functions.get(&irFunc.name);
         (*origFunc).llvmFunc = llvmFuncValue;
+    }
+
+    unsafe func prepareReturnType(&mut this, typ: &mut Type) -> LLVMType {
+        trace("LLVMCodegen.prepareReturnType");
+        // FIXME: Kinda sucks that we have to do this both in the IRGen and here
+        if (typ.isStruct()) {
+            let size: usize = typ.getSize();
+            mut t: &mut Type = null;
+            if (size <= 1) {
+                t = newType(TYPE_KIND_PRIMITIVE, TYPE_U8);
+            } else if (size <= 2) {
+                t = newType(TYPE_KIND_PRIMITIVE, TYPE_U16);
+            } else if (size <= 4) {
+                t = newType(TYPE_KIND_PRIMITIVE, TYPE_U32);
+            } else if (size <= 8) {
+                t = newType(TYPE_KIND_PRIMITIVE, TYPE_U64);
+            } else {
+                t = newType(TYPE_KIND_POINTER, TYPE_U8);
+            }
+            return this.generateLLVMType(t);
+        } else {
+            return this.generateLLVMType(typ);
+        }
     }
 
     unsafe func prepareParameter(&mut this, typ: &mut Type) -> LLVMType {
@@ -750,7 +786,7 @@ struct LLVMCodegen {
                 let tDecl: &mut ParsedTypeDecl = getTypeDeclByID(decl.context.getFieldTypeAtIndex(i));
                 *(fields + i * sizeof LLVMType) = this.generateLLVMType(getTypeByID(tDecl.typeState.getType()));
             }
-            let t: LLVMType = this.llvmContext.createStructType(&*fields, decl.context.fieldLength as u32, true);
+            let t: LLVMType = this.llvmContext.createStructType(&*fields, decl.context.fieldLength as u32, false);
             free(fields);
             return t;
         } else {
@@ -762,12 +798,15 @@ struct LLVMCodegen {
 
 func newLLVMCodegen(name: SubStr, irGen: &mut IRGen, interp: &mut IRInterp) -> LLVMCodegen {
     mut llvmContext: LLVMContext = newLLVMContext();
-    let llvmModule: LLVMModule = llvmContext.createModuleWithName(name);
+    mut llvmModule: LLVMModule = llvmContext.createModuleWithName(name);
     let llvmBuilder: LLVMBuilder = llvmContext.createBuilder();
     llvmContext.initializeTargets();
     mut target: LLVMTarget = llvmContext.createTarget("x86-64");
     let triple: &char = llvmContext.createTargetTriple("x86-64");
-    let targetMachine: LLVMTargetMachine = target.createTargetMachine(triple, "x86-64", "");
+    mut targetMachine: LLVMTargetMachine = target.createTargetMachine(triple, "x86-64", "");
+    llvmModule.setTriple(triple);
+    let l: LLVMTargetData = targetMachine.getTargetData();
+    llvmModule.setDataLayout(l.getDataLayout());
     return LLVMCodegen {
         llvmContext: llvmContext,
         llvmModule: llvmModule,
