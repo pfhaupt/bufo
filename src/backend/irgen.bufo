@@ -1885,7 +1885,24 @@ struct IRGen {
     func generateBytecodeExprUnary(&this, function: &IRFunc, expr: &ParsedExpr, needsPtr: bool) -> RegIndex {
         trace("IRGen.generateBytecodeExprUnary");
         assert(expr.isUnary());
-        if (expr.op == UNARY_DEREF) {
+        if (expr.op == UNARY_COMPTIME) {
+            function.startComptime();
+            let subexpr: &ParsedExpr = exprs.at(expr.lhs);
+            let result: RegIndex = this.generateBytecodeExpr(function, subexpr, false);
+            let exprType = types.at(expr.typeState.getType());
+            let r: RegIndex = function.allocateRegister(exprType);
+            function.endComptime();
+            function.buildFetchLocalComptimeValue(r, result);
+            if (needsPtr) {
+                let subType: &Type = types.at(exprType.intoPointer());
+                let ptr: RegIndex = function.allocateRegister(subType);
+                function.buildAlloca(ptr, exprType.getSize());
+                function.buildStore(ptr, r);
+                return ptr;
+            } else {
+                return r;
+            }
+        } else if (expr.op == UNARY_DEREF) {
             let subexpr: &ParsedExpr = exprs.at(expr.lhs);
             let result: RegIndex = this.generateBytecodeExpr(function, subexpr, false);
             let ptr: &IRReg = function.getRegister(result);

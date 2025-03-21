@@ -1068,7 +1068,9 @@ struct TypeChecker {
         let exprState: TCState = this.typeCheckExpr(expr.lhs, scopes);
         if (exprState.isError()) return exprState;
         if (exprState.wantsInfer()) return exprState; // Can't be done in here
-        if (expr.op == UNARY_DEREF) {
+        if (expr.op == UNARY_COMPTIME) {
+            return exprState;
+        } else if (expr.op == UNARY_DEREF) {
             let exprType: &Type = types.at(exprState.getType());
             if (exprType.isPrimitive()) {
                 if (exprType.typeIndex == TYPE_ANY) {

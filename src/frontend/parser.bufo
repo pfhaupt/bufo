@@ -791,7 +791,17 @@ struct Parser {
     func parseUnaryExpr(&this) -> &ParsedExpr {
         trace("Parser.parseUnaryExpr");
         let tkn: Token = this.lexer.peek();
-        if (tkn.kind == TOKEN_AMPERSAND_DOUBLE) {
+        if (tkn.kind == TOKEN_KEYWORD) {
+            this.lexer.next();
+            assert_with_msg(tkn.content.equals(&KEYWORD_COMPTIME), "Expected `comptime`");
+            let precedence: usize = this.getUnaryPrecedence(tkn.kind);
+            let expr: &ParsedExpr = this.__parseExpr(precedence, ASSOC_LEFT);
+            let span: Span = newSpanBetween(&tkn.span, &expr.span);
+            let unary: &ParsedExpr = newParsedExpr(span, EXPR_UNARY);
+            (*unary).op = unaryOpFromKind(tkn.kind);
+            (*unary).lhs = expr.getID();
+            return unary;
+        } else if (tkn.kind == TOKEN_AMPERSAND_DOUBLE) {
             this.lexer.next();
             let precedence: usize = this.getUnaryPrecedence(TOKEN_AMPERSAND_SINGLE);
             let expr: &ParsedExpr = this.__parseExpr(precedence, ASSOC_LEFT);
@@ -850,6 +860,8 @@ struct Parser {
     func matchesUnaryExpr(&this) -> bool {
         trace("Parser.matchesUnaryExpr");
         let tknKind: usize = this.lexer.peek().kind;
+        if (tknKind == TOKEN_KEYWORD)
+            return this.lexer.peek().content.equals(&KEYWORD_COMPTIME);
         return tknKind == TOKEN_MINUS_SINGLE
             || tknKind == TOKEN_AMPERSAND_SINGLE
             // FIXME: Would be cooler if peek() could return split tokens too
@@ -892,7 +904,9 @@ struct Parser {
         return ASSOC_LEFT;
     }
     func getUnaryPrecedence(&this, tknKind: usize) -> usize {
-        if (tknKind == TOKEN_MINUS_SINGLE) return 14;
+        // FIXME: We can't know if this is actually KEYWORD_COMPTIME
+        if (tknKind == TOKEN_KEYWORD) return 14;
+        else if (tknKind == TOKEN_MINUS_SINGLE) return 14;
         else if (tknKind == TOKEN_ASTERISK_SINGLE) return 14;
         else if (tknKind == TOKEN_AMPERSAND_SINGLE) return 14;
         else if (tknKind == TOKEN_BANG) return 14;

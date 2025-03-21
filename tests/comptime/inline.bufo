@@ -1,0 +1,14 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+
+func add(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    assert(comptime add(2, 3) == 5);
+    return 0;
+}

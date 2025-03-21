@@ -731,13 +731,16 @@ func binOpAsStr(op: usize) -> &char {
 }
 
 comptime UNARY_INVALID: usize = 0;
-comptime UNARY_DEREF: usize = 1;
-comptime UNARY_REF: usize = 2;
-comptime UNARY_MINUS: usize = 3;
-comptime UNARY_NOT: usize = 4;
+comptime UNARY_COMPTIME: usize = 1;
+comptime UNARY_DEREF: usize = 2;
+comptime UNARY_REF: usize = 3;
+comptime UNARY_MINUS: usize = 4;
+comptime UNARY_NOT: usize = 5;
 func unaryOpFromKind(kind: usize) -> usize {
     trace("unaryOpFromKind");
-    if (kind == TOKEN_ASTERISK_SINGLE) return UNARY_DEREF;
+    // FIXME: We can't know if this is actually KEYWORD_COMPTIME
+    if (kind == TOKEN_KEYWORD) return UNARY_COMPTIME;
+    else if (kind == TOKEN_ASTERISK_SINGLE) return UNARY_DEREF;
     else if (kind == TOKEN_AMPERSAND_SINGLE) return UNARY_REF;
     else if (kind == TOKEN_MINUS_SINGLE) return UNARY_MINUS;
     else if (kind == TOKEN_BANG) return UNARY_NOT;
