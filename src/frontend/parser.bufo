@@ -141,7 +141,7 @@ struct Parser {
         } else if (tkn.content.equals(&KEYWORD_UNSAFE)) unsafe {
             this.lexer.next();
             let loc: String = tkn.getLocation();
-            fprintf(stderr, "%s: %s: The use of `unsafe` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
+            // fprintf(stderr, "%s: %s: The use of `unsafe` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
             loc.drop();
             return this.parseTopLevelItem();
         } else if (tkn.content.equals(&KEYWORD_COMPTIME)) {
@@ -233,7 +233,7 @@ struct Parser {
                 if (tkn.content.equals(&KEYWORD_UNSAFE)) unsafe {
                     this.lexer.next();
                     let loc: String = tkn.getLocation();
-                    fprintf(stderr, "%s: %s: The use of `unsafe` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
+                    // fprintf(stderr, "%s: %s: The use of `unsafe` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
                     loc.drop();
                 }
                 let tkn: Token = this.lexer.peek();
@@ -308,7 +308,7 @@ struct Parser {
             if (maybeThis.content.equals(&KEYWORD_MUT)) unsafe {
                 this.lexer.next();
                 let loc: String = maybeThis.getLocation();
-                fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
+                // fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
                 loc.drop();
                 maybeThis = this.lexer.peek();
             }
@@ -407,7 +407,7 @@ struct Parser {
             } else if (tkn.content.equals(&KEYWORD_UNSAFE)) unsafe {
                 this.lexer.next();
                 let loc: String = tkn.getLocation();
-                fprintf(stderr, "%s: %s: The use of `unsafe` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
+                // fprintf(stderr, "%s: %s: The use of `unsafe` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
                 loc.drop();
                 return this.parseStmt();
             }
@@ -526,7 +526,7 @@ struct Parser {
         let isComptime: bool = kw.content.equals(&KEYWORD_COMPTIME);
         if (isMutable) unsafe {
             let loc: String = kw.getLocation();
-            fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler. Please use `let` instead.\n", loc.chars(), WARN_STR);
+            // fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler. Please use `let` instead.\n", loc.chars(), WARN_STR);
             loc.drop();
         }
         mut data: VarDeclContext = blank;
@@ -557,7 +557,7 @@ struct Parser {
             if (kw.content.equals(&KEYWORD_MUT)) unsafe {
                 this.lexer.next();
                 let loc: String = kw.getLocation();
-                fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
+                // fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
                 loc.drop();
             }
             let typ: &mut ParsedTypeNode = this.parseTypeDecl();
@@ -572,7 +572,7 @@ struct Parser {
             if (kw.content.equals(&KEYWORD_MUT)) unsafe {
                 this.lexer.next();
                 let loc: String = kw.getLocation();
-                fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
+                // fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
                 loc.drop();
             }
             let typ: &mut ParsedTypeNode = this.parseTypeDecl();
@@ -746,7 +746,7 @@ struct Parser {
                 return expr;
             } else if (kw.content.equals(&KEYWORD_MUT)) unsafe {
                 let loc: String = kw.getLocation();
-                fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
+                // fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
                 loc.drop();
                 return this.parsePrimaryExpr();
             } else unsafe {

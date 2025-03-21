@@ -460,6 +460,32 @@ struct IRInterp {
                 unreachable("int mod with sus bitsize");
             }
             return dst;
+        } else if (instr.kind == INSTR_FLOAT_DIV) {
+            // OPT: Specialized 8bit, 16bit, etc. variations
+            let lhs: &mut RegValue = regs.at(instr.src.i);
+            let rhs: &mut RegValue = regs.at(instr.op1.i);
+            let rLhs: InterpReg = lhs.asInterp("FloatDiv LHS");
+            let rRhs: InterpReg = rhs.asInterp("FloatDiv RHS");
+            let t1: &mut Type = irFunc.getRegister(instr.src).typ;
+            let s1: usize = rLhs.size;
+            let s2: usize = rRhs.size;
+            assert_with_msg(s1 == s2, "FloatDiv expected LHS and RHS to be the same size");
+            let dstReg: &mut IRReg = irFunc.getRegister(instr.dst);
+            let dst: InterpReg = InterpReg {
+                offset: dstReg.offset,
+                size: s1,
+            };
+            let start: &mut u8 = this.getRegStackPointer(&dst);
+            let lhsStart: &mut u8 = this.getRegStackPointer(&rLhs);
+            let rhsStart: &mut u8 = this.getRegStackPointer(&rRhs);
+            if (s1 == 4) {
+                *(start as &mut f32) = *(lhsStart as &f32) / *(rhsStart as &f32);
+            } else if (s1 == 8) {
+                *(start as &mut f64) = *(lhsStart as &f64) / *(rhsStart as &f64);
+            } else {
+                unreachable("float div with sus bitsize");
+            }
+            return dst;
         } else if (instr.kind == INSTR_INT_CMP_EQ || instr.kind == INSTR_INT_CMP_NEQ) {
             let lhs: &mut RegValue = regs.at(instr.src.i);
             let rhs: &mut RegValue = regs.at(instr.op1.i);
@@ -663,6 +689,36 @@ struct IRInterp {
             let dstStart: &mut u8 = this.getRegStackPointer(&dst);
             let v: f32 = *(srcStart as &f32);
             *(dstStart as &mut f64) = v as f64;
+            return dst;
+        } else if (instr.kind == INSTR_INT_TO_F32) {
+            let dstReg: &mut IRReg = irFunc.getRegister(instr.dst);
+            let src: InterpReg = regs.at(instr.src.i).asInterp("Interp IntToF32");
+            let dst: InterpReg = InterpReg {
+                offset: dstReg.offset,
+                size: 4,
+            };
+            let srcStart: &mut u8 = this.getRegStackPointer(&src);
+            let dstStart: &mut u8 = this.getRegStackPointer(&dst);
+            let t: &mut Type = irFunc.getRegister(instr.src).typ;
+            let signed: bool = t.isSignedInteger();
+            let s: usize = t.getSize();
+            let v: f32 = 0;
+            if (s == 1) {
+                if (signed) v = *(srcStart as &i8) as f32;
+                else v = *(srcStart as &u8) as f32;
+            } else if (s == 2) {
+                if (signed) v = *(srcStart as &i16) as f32;
+                else v = *(srcStart as &u16) as f32;
+            } else if (s == 4) {
+                if (signed) v = *(srcStart as &i32) as f32;
+                else v = *(srcStart as &u32) as f32;
+            } else if (s == 8) {
+                if (signed) v = *(srcStart as &i64) as f32;
+                else v = *(srcStart as &u64) as f32;
+            } else {
+                unreachable("Interp unexpected size in IntToF32");
+            }
+            *(dstStart as &mut f32) = v;
             return dst;
         } else if (instr.kind == INSTR_F64_TO_F32) {
             let dstReg: &mut IRReg = irFunc.getRegister(instr.dst);

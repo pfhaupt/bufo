@@ -217,7 +217,7 @@ def run_test(
 
 def recompile_compiler(stage: int, trace: bool = False) -> None:
     print(f"Recompiling compiler stage {stage}...")
-    cmd = call_cmd(["bufo.exe", "./stage1/bufo.bufo", "bufo1.exe"])
+    cmd = call_cmd(["bufo.exe", "./src/bufo.bufo", "bufo1.exe"])
     if cmd.returncode != 0:
         print("Failed to recompile compiler", file=sys.stderr)
         print(cmd.stderr.decode("utf-8"), file=sys.stderr)

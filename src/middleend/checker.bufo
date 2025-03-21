@@ -925,6 +925,7 @@ struct TypeChecker {
         if (context.typeID == TYPE_INVALID) {
             // let var = expr;
             assert_with_msg(typeState.isInvalid(), "`let var = expr;` got valid type state??");
+            if (exprState.isError()) return exprState;
             if (exprState.wantsInfer()) {
                 todo_with_msg("`let var = expr;` wants inferred expr");
             }

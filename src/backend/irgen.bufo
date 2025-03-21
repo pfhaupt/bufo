@@ -1671,6 +1671,8 @@ struct IRGen {
         } else if (expr.op == BIN_MOD) {
             if (res.isInteger()) {
                 function.buildBinaryOp(INSTR_INT_MOD, dst, lhs, rhs);
+            } else if (res.isFloat()) {
+                function.buildBinaryOp(INSTR_FLOAT_MOD, dst, lhs, rhs);
             } else {
                 todo_with_msg("non-int mod");
             }

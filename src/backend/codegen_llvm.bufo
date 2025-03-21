@@ -706,6 +706,18 @@ struct LLVMCodegen {
                 } else {
                     unreachable("unexpected int size");
                 }
+            } else if (typ.isFloat()) {
+                if (size == 4) {
+                    let val = *(start as &f32);
+                    let t = this.llvmContext.createFloatType();
+                    return t.constFloat(val as f64);
+                } else if (size == 8) {
+                    let val = *(start as &f64);
+                    let t = this.llvmContext.createDoubleType();
+                    return t.constFloat(val);
+                } else {
+                    unreachable("unexpected float size");
+                }
             } else if (typ.isBoolean()) {
                 let val: u8 = *(start as &u8);
                 assert_with_msg(val == 0 || val == 1, "comptime bool is not 0 or 1");
