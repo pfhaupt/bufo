@@ -50,7 +50,7 @@ struct LLVMTarget {
             0,
             0
         );
-        assert_with_msg(!target.isNull(), "Could not create target machine");
+        assert(!target.isNull(), "Could not create target machine");
         return newLLVMTargetMachineFromRef(target);
     }
 }
@@ -75,7 +75,7 @@ struct LLVMTargetMachine {
     func getTargetData(&this) -> LLVMTargetData {
         trace("LLVMTargetMachine.getTargetData");
         let data: LLVMTargetDataRef = LLVMCreateTargetDataLayout(this.ref);
-        assert_with_msg(!data.isNull(), "Could not get TargetData");
+        assert(!data.isNull(), "Could not get TargetData");
         return newLLVMTargetDataFromRef(data);
     }
 }

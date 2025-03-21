@@ -20,7 +20,7 @@ struct ModuleLookupList {
     func initBlank(&this, newCap: usize) {
         if (this.elements != null) free(this.elements);
         this.elements = calloc(newCap, sizeof ModuleLookup);
-        assert_with_msg(this.elements != null, "Could not allocate memory in ModuleLookupList.initBlank");
+        assert(this.elements != null, "Could not allocate memory in ModuleLookupList.initBlank");
         this.capacity = newCap;
         this.length = newCap;
     }
@@ -30,7 +30,7 @@ struct ModuleLookupList {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 1;
             this.elements = realloc(this.elements, newCap * sizeof ModuleLookup);
-            assert_with_msg(this.elements != null, "Could not allocate memory in ModuleLookupList.push");
+            assert(this.elements != null, "Could not allocate memory in ModuleLookupList.push");
             this.capacity = newCap;
         }
         *(this.elements + this.length * sizeof ModuleLookup) = element;
@@ -44,8 +44,8 @@ struct ModuleLookupList {
     }
 
     func at(&this, index: usize) -> &ModuleLookup {
-        assert_with_msg(index < this.length, "Out of bounds access in ModuleLookupList.at");
-        assert_with_msg(this.elements != null, "Element pointer is NULL in ModuleLookupList.at");
+        assert(index < this.length, "Out of bounds access in ModuleLookupList.at");
+        assert(this.elements != null, "Element pointer is NULL in ModuleLookupList.at");
         return this.elements + index * sizeof ModuleLookup;
     }
 
@@ -59,7 +59,7 @@ struct ModuleLookupList {
     }
 
     func last(&this) -> &ModuleLookup {
-        assert_with_msg(this.length != 0, "Called last() on empty ModuleLookupList");
+        assert(this.length != 0, "Called last() on empty ModuleLookupList");
         return this.at(this.length - 1);
     }
 
@@ -90,7 +90,7 @@ struct ImportLookupList {
     func initBlank(&this, newCap: usize) {
         if (this.elements != null) free(this.elements);
         this.elements = calloc(newCap, sizeof ImportLookup);
-        assert_with_msg(this.elements != null, "Could not allocate memory in ImportLookupList.initBlank");
+        assert(this.elements != null, "Could not allocate memory in ImportLookupList.initBlank");
         this.capacity = newCap;
         this.length = newCap;
     }
@@ -100,7 +100,7 @@ struct ImportLookupList {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 1;
             this.elements = realloc(this.elements, newCap * sizeof ImportLookup);
-            assert_with_msg(this.elements != null, "Could not allocate memory in ImportLookupList.push");
+            assert(this.elements != null, "Could not allocate memory in ImportLookupList.push");
             this.capacity = newCap;
         }
         *(this.elements + this.length * sizeof ImportLookup) = element;
@@ -114,8 +114,8 @@ struct ImportLookupList {
     }
 
     func at(&this, index: usize) -> &ImportLookup {
-        assert_with_msg(index < this.length, "Out of bounds access in ImportLookupList.at");
-        assert_with_msg(this.elements != null, "Element pointer is NULL in ImportLookupList.at");
+        assert(index < this.length, "Out of bounds access in ImportLookupList.at");
+        assert(this.elements != null, "Element pointer is NULL in ImportLookupList.at");
         return this.elements + index * sizeof ImportLookup;
     }
 
@@ -129,7 +129,7 @@ struct ImportLookupList {
     }
 
     func last(&this) -> &ImportLookup {
-        assert_with_msg(this.length != 0, "Called last() on empty ImportLookupList");
+        assert(this.length != 0, "Called last() on empty ImportLookupList");
         return this.at(this.length - 1);
     }
 
@@ -160,7 +160,7 @@ struct FunctionLookupList {
     func initBlank(&this, newCap: usize) {
         if (this.elements != null) free(this.elements);
         this.elements = calloc(newCap, sizeof FunctionLookup);
-        assert_with_msg(this.elements != null, "Could not allocate memory in FunctionLookupList.initBlank");
+        assert(this.elements != null, "Could not allocate memory in FunctionLookupList.initBlank");
         this.capacity = newCap;
         this.length = newCap;
     }
@@ -170,7 +170,7 @@ struct FunctionLookupList {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 1;
             this.elements = realloc(this.elements, newCap * sizeof FunctionLookup);
-            assert_with_msg(this.elements != null, "Could not allocate memory in FunctionLookupList.push");
+            assert(this.elements != null, "Could not allocate memory in FunctionLookupList.push");
             this.capacity = newCap;
         }
         *(this.elements + this.length * sizeof FunctionLookup) = element;
@@ -184,8 +184,8 @@ struct FunctionLookupList {
     }
 
     func at(&this, index: usize) -> &FunctionLookup {
-        assert_with_msg(index < this.length, "Out of bounds access in FunctionLookupList.at");
-        assert_with_msg(this.elements != null, "Element pointer is NULL in FunctionLookupList.at");
+        assert(index < this.length, "Out of bounds access in FunctionLookupList.at");
+        assert(this.elements != null, "Element pointer is NULL in FunctionLookupList.at");
         return this.elements + index * sizeof FunctionLookup;
     }
 
@@ -199,7 +199,7 @@ struct FunctionLookupList {
     }
 
     func last(&this) -> &FunctionLookup {
-        assert_with_msg(this.length != 0, "Called last() on empty FunctionLookupList");
+        assert(this.length != 0, "Called last() on empty FunctionLookupList");
         return this.at(this.length - 1);
     }
 
@@ -230,7 +230,7 @@ struct StructLookupList {
     func initBlank(&this, newCap: usize) {
         if (this.elements != null) free(this.elements);
         this.elements = calloc(newCap, sizeof StructLookup);
-        assert_with_msg(this.elements != null, "Could not allocate memory in StructLookupList.initBlank");
+        assert(this.elements != null, "Could not allocate memory in StructLookupList.initBlank");
         this.capacity = newCap;
         this.length = newCap;
     }
@@ -240,7 +240,7 @@ struct StructLookupList {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 1;
             this.elements = realloc(this.elements, newCap * sizeof StructLookup);
-            assert_with_msg(this.elements != null, "Could not allocate memory in StructLookupList.push");
+            assert(this.elements != null, "Could not allocate memory in StructLookupList.push");
             this.capacity = newCap;
         }
         *(this.elements + this.length * sizeof StructLookup) = element;
@@ -254,8 +254,8 @@ struct StructLookupList {
     }
 
     func at(&this, index: usize) -> &StructLookup {
-        assert_with_msg(index < this.length, "Out of bounds access in StructLookupList.at");
-        assert_with_msg(this.elements != null, "Element pointer is NULL in StructLookupList.at");
+        assert(index < this.length, "Out of bounds access in StructLookupList.at");
+        assert(this.elements != null, "Element pointer is NULL in StructLookupList.at");
         return this.elements + index * sizeof StructLookup;
     }
 
@@ -269,7 +269,7 @@ struct StructLookupList {
     }
 
     func last(&this) -> &StructLookup {
-        assert_with_msg(this.length != 0, "Called last() on empty StructLookupList");
+        assert(this.length != 0, "Called last() on empty StructLookupList");
         return this.at(this.length - 1);
     }
 
@@ -300,7 +300,7 @@ struct TypeLookupList {
     func initBlank(&this, newCap: usize) {
         if (this.elements != null) free(this.elements);
         this.elements = calloc(newCap, sizeof TypeLookup);
-        assert_with_msg(this.elements != null, "Could not allocate memory in TypeLookupList.initBlank");
+        assert(this.elements != null, "Could not allocate memory in TypeLookupList.initBlank");
         this.capacity = newCap;
         this.length = newCap;
     }
@@ -310,7 +310,7 @@ struct TypeLookupList {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 1;
             this.elements = realloc(this.elements, newCap * sizeof TypeLookup);
-            assert_with_msg(this.elements != null, "Could not allocate memory in TypeLookupList.push");
+            assert(this.elements != null, "Could not allocate memory in TypeLookupList.push");
             this.capacity = newCap;
         }
         *(this.elements + this.length * sizeof TypeLookup) = element;
@@ -324,8 +324,8 @@ struct TypeLookupList {
     }
 
     func at(&this, index: usize) -> &TypeLookup {
-        assert_with_msg(index < this.length, "Out of bounds access in TypeLookupList.at");
-        assert_with_msg(this.elements != null, "Element pointer is NULL in TypeLookupList.at");
+        assert(index < this.length, "Out of bounds access in TypeLookupList.at");
+        assert(this.elements != null, "Element pointer is NULL in TypeLookupList.at");
         return this.elements + index * sizeof TypeLookup;
     }
 
@@ -339,7 +339,7 @@ struct TypeLookupList {
     }
 
     func last(&this) -> &TypeLookup {
-        assert_with_msg(this.length != 0, "Called last() on empty TypeLookupList");
+        assert(this.length != 0, "Called last() on empty TypeLookupList");
         return this.at(this.length - 1);
     }
 
@@ -370,7 +370,7 @@ struct ScopeLookupList {
     func initBlank(&this, newCap: usize) {
         if (this.elements != null) free(this.elements);
         this.elements = calloc(newCap, sizeof ScopeLookup);
-        assert_with_msg(this.elements != null, "Could not allocate memory in ScopeLookupList.initBlank");
+        assert(this.elements != null, "Could not allocate memory in ScopeLookupList.initBlank");
         this.capacity = newCap;
         this.length = newCap;
     }
@@ -380,7 +380,7 @@ struct ScopeLookupList {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 1;
             this.elements = realloc(this.elements, newCap * sizeof ScopeLookup);
-            assert_with_msg(this.elements != null, "Could not allocate memory in ScopeLookupList.push");
+            assert(this.elements != null, "Could not allocate memory in ScopeLookupList.push");
             this.capacity = newCap;
         }
         *(this.elements + this.length * sizeof ScopeLookup) = element;
@@ -394,8 +394,8 @@ struct ScopeLookupList {
     }
 
     func at(&this, index: usize) -> &ScopeLookup {
-        assert_with_msg(index < this.length, "Out of bounds access in ScopeLookupList.at");
-        assert_with_msg(this.elements != null, "Element pointer is NULL in ScopeLookupList.at");
+        assert(index < this.length, "Out of bounds access in ScopeLookupList.at");
+        assert(this.elements != null, "Element pointer is NULL in ScopeLookupList.at");
         return this.elements + index * sizeof ScopeLookup;
     }
 
@@ -409,7 +409,7 @@ struct ScopeLookupList {
     }
 
     func last(&this) -> &ScopeLookup {
-        assert_with_msg(this.length != 0, "Called last() on empty ScopeLookupList");
+        assert(this.length != 0, "Called last() on empty ScopeLookupList");
         return this.at(this.length - 1);
     }
 
@@ -440,7 +440,7 @@ struct VariableLookupList {
     func initBlank(&this, newCap: usize) {
         if (this.elements != null) free(this.elements);
         this.elements = calloc(newCap, sizeof VariableLookup);
-        assert_with_msg(this.elements != null, "Could not allocate memory in VariableLookupList.initBlank");
+        assert(this.elements != null, "Could not allocate memory in VariableLookupList.initBlank");
         this.capacity = newCap;
         this.length = newCap;
     }
@@ -450,7 +450,7 @@ struct VariableLookupList {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 1;
             this.elements = realloc(this.elements, newCap * sizeof VariableLookup);
-            assert_with_msg(this.elements != null, "Could not allocate memory in VariableLookupList.push");
+            assert(this.elements != null, "Could not allocate memory in VariableLookupList.push");
             this.capacity = newCap;
         }
         *(this.elements + this.length * sizeof VariableLookup) = element;
@@ -464,8 +464,8 @@ struct VariableLookupList {
     }
 
     func at(&this, index: usize) -> &VariableLookup {
-        assert_with_msg(index < this.length, "Out of bounds access in VariableLookupList.at");
-        assert_with_msg(this.elements != null, "Element pointer is NULL in VariableLookupList.at");
+        assert(index < this.length, "Out of bounds access in VariableLookupList.at");
+        assert(this.elements != null, "Element pointer is NULL in VariableLookupList.at");
         return this.elements + index * sizeof VariableLookup;
     }
 
@@ -479,7 +479,7 @@ struct VariableLookupList {
     }
 
     func last(&this) -> &VariableLookup {
-        assert_with_msg(this.length != 0, "Called last() on empty VariableLookupList");
+        assert(this.length != 0, "Called last() on empty VariableLookupList");
         return this.at(this.length - 1);
     }
 
@@ -510,7 +510,7 @@ struct MethodLookupList {
     func initBlank(&this, newCap: usize) {
         if (this.elements != null) free(this.elements);
         this.elements = calloc(newCap, sizeof MethodLookup);
-        assert_with_msg(this.elements != null, "Could not allocate memory in MethodLookupList.initBlank");
+        assert(this.elements != null, "Could not allocate memory in MethodLookupList.initBlank");
         this.capacity = newCap;
         this.length = newCap;
     }
@@ -520,7 +520,7 @@ struct MethodLookupList {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 1;
             this.elements = realloc(this.elements, newCap * sizeof MethodLookup);
-            assert_with_msg(this.elements != null, "Could not allocate memory in MethodLookupList.push");
+            assert(this.elements != null, "Could not allocate memory in MethodLookupList.push");
             this.capacity = newCap;
         }
         *(this.elements + this.length * sizeof MethodLookup) = element;
@@ -534,8 +534,8 @@ struct MethodLookupList {
     }
 
     func at(&this, index: usize) -> &MethodLookup {
-        assert_with_msg(index < this.length, "Out of bounds access in MethodLookupList.at");
-        assert_with_msg(this.elements != null, "Element pointer is NULL in MethodLookupList.at");
+        assert(index < this.length, "Out of bounds access in MethodLookupList.at");
+        assert(this.elements != null, "Element pointer is NULL in MethodLookupList.at");
         return this.elements + index * sizeof MethodLookup;
     }
 
@@ -549,7 +549,7 @@ struct MethodLookupList {
     }
 
     func last(&this) -> &MethodLookup {
-        assert_with_msg(this.length != 0, "Called last() on empty MethodLookupList");
+        assert(this.length != 0, "Called last() on empty MethodLookupList");
         return this.at(this.length - 1);
     }
 
@@ -580,7 +580,7 @@ struct TCStateList {
     func initBlank(&this, newCap: usize) {
         if (this.elements != null) free(this.elements);
         this.elements = calloc(newCap, sizeof TCState);
-        assert_with_msg(this.elements != null, "Could not allocate memory in TCStateList.initBlank");
+        assert(this.elements != null, "Could not allocate memory in TCStateList.initBlank");
         this.capacity = newCap;
         this.length = newCap;
     }
@@ -590,7 +590,7 @@ struct TCStateList {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 1;
             this.elements = realloc(this.elements, newCap * sizeof TCState);
-            assert_with_msg(this.elements != null, "Could not allocate memory in TCStateList.push");
+            assert(this.elements != null, "Could not allocate memory in TCStateList.push");
             this.capacity = newCap;
         }
         *(this.elements + this.length * sizeof TCState) = element;
@@ -604,8 +604,8 @@ struct TCStateList {
     }
 
     func at(&this, index: usize) -> &TCState {
-        assert_with_msg(index < this.length, "Out of bounds access in TCStateList.at");
-        assert_with_msg(this.elements != null, "Element pointer is NULL in TCStateList.at");
+        assert(index < this.length, "Out of bounds access in TCStateList.at");
+        assert(this.elements != null, "Element pointer is NULL in TCStateList.at");
         return this.elements + index * sizeof TCState;
     }
 
@@ -619,7 +619,7 @@ struct TCStateList {
     }
 
     func last(&this) -> &TCState {
-        assert_with_msg(this.length != 0, "Called last() on empty TCStateList");
+        assert(this.length != 0, "Called last() on empty TCStateList");
         return this.at(this.length - 1);
     }
 
@@ -650,7 +650,7 @@ struct RegIndexList {
     func initBlank(&this, newCap: usize) {
         if (this.elements != null) free(this.elements);
         this.elements = calloc(newCap, sizeof RegIndex);
-        assert_with_msg(this.elements != null, "Could not allocate memory in RegIndexList.initBlank");
+        assert(this.elements != null, "Could not allocate memory in RegIndexList.initBlank");
         this.capacity = newCap;
         this.length = newCap;
     }
@@ -660,7 +660,7 @@ struct RegIndexList {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 1;
             this.elements = realloc(this.elements, newCap * sizeof RegIndex);
-            assert_with_msg(this.elements != null, "Could not allocate memory in RegIndexList.push");
+            assert(this.elements != null, "Could not allocate memory in RegIndexList.push");
             this.capacity = newCap;
         }
         *(this.elements + this.length * sizeof RegIndex) = element;
@@ -674,8 +674,8 @@ struct RegIndexList {
     }
 
     func at(&this, index: usize) -> &RegIndex {
-        assert_with_msg(index < this.length, "Out of bounds access in RegIndexList.at");
-        assert_with_msg(this.elements != null, "Element pointer is NULL in RegIndexList.at");
+        assert(index < this.length, "Out of bounds access in RegIndexList.at");
+        assert(this.elements != null, "Element pointer is NULL in RegIndexList.at");
         return this.elements + index * sizeof RegIndex;
     }
 
@@ -689,7 +689,7 @@ struct RegIndexList {
     }
 
     func last(&this) -> &RegIndex {
-        assert_with_msg(this.length != 0, "Called last() on empty RegIndexList");
+        assert(this.length != 0, "Called last() on empty RegIndexList");
         return this.at(this.length - 1);
     }
 
@@ -720,7 +720,7 @@ struct IRInstrList {
     func initBlank(&this, newCap: usize) {
         if (this.elements != null) free(this.elements);
         this.elements = calloc(newCap, sizeof IRInstr);
-        assert_with_msg(this.elements != null, "Could not allocate memory in IRInstrList.initBlank");
+        assert(this.elements != null, "Could not allocate memory in IRInstrList.initBlank");
         this.capacity = newCap;
         this.length = newCap;
     }
@@ -730,7 +730,7 @@ struct IRInstrList {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 1;
             this.elements = realloc(this.elements, newCap * sizeof IRInstr);
-            assert_with_msg(this.elements != null, "Could not allocate memory in IRInstrList.push");
+            assert(this.elements != null, "Could not allocate memory in IRInstrList.push");
             this.capacity = newCap;
         }
         *(this.elements + this.length * sizeof IRInstr) = element;
@@ -744,8 +744,8 @@ struct IRInstrList {
     }
 
     func at(&this, index: usize) -> &IRInstr {
-        assert_with_msg(index < this.length, "Out of bounds access in IRInstrList.at");
-        assert_with_msg(this.elements != null, "Element pointer is NULL in IRInstrList.at");
+        assert(index < this.length, "Out of bounds access in IRInstrList.at");
+        assert(this.elements != null, "Element pointer is NULL in IRInstrList.at");
         return this.elements + index * sizeof IRInstr;
     }
 
@@ -759,7 +759,7 @@ struct IRInstrList {
     }
 
     func last(&this) -> &IRInstr {
-        assert_with_msg(this.length != 0, "Called last() on empty IRInstrList");
+        assert(this.length != 0, "Called last() on empty IRInstrList");
         return this.at(this.length - 1);
     }
 
@@ -790,7 +790,7 @@ struct IRScopeList {
     func initBlank(&this, newCap: usize) {
         if (this.elements != null) free(this.elements);
         this.elements = calloc(newCap, sizeof IRScope);
-        assert_with_msg(this.elements != null, "Could not allocate memory in IRScopeList.initBlank");
+        assert(this.elements != null, "Could not allocate memory in IRScopeList.initBlank");
         this.capacity = newCap;
         this.length = newCap;
     }
@@ -800,7 +800,7 @@ struct IRScopeList {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 1;
             this.elements = realloc(this.elements, newCap * sizeof IRScope);
-            assert_with_msg(this.elements != null, "Could not allocate memory in IRScopeList.push");
+            assert(this.elements != null, "Could not allocate memory in IRScopeList.push");
             this.capacity = newCap;
         }
         *(this.elements + this.length * sizeof IRScope) = element;
@@ -814,8 +814,8 @@ struct IRScopeList {
     }
 
     func at(&this, index: usize) -> &IRScope {
-        assert_with_msg(index < this.length, "Out of bounds access in IRScopeList.at");
-        assert_with_msg(this.elements != null, "Element pointer is NULL in IRScopeList.at");
+        assert(index < this.length, "Out of bounds access in IRScopeList.at");
+        assert(this.elements != null, "Element pointer is NULL in IRScopeList.at");
         return this.elements + index * sizeof IRScope;
     }
 
@@ -829,7 +829,7 @@ struct IRScopeList {
     }
 
     func last(&this) -> &IRScope {
-        assert_with_msg(this.length != 0, "Called last() on empty IRScopeList");
+        assert(this.length != 0, "Called last() on empty IRScopeList");
         return this.at(this.length - 1);
     }
 
@@ -860,7 +860,7 @@ struct IRRegList {
     func initBlank(&this, newCap: usize) {
         if (this.elements != null) free(this.elements);
         this.elements = calloc(newCap, sizeof IRReg);
-        assert_with_msg(this.elements != null, "Could not allocate memory in IRRegList.initBlank");
+        assert(this.elements != null, "Could not allocate memory in IRRegList.initBlank");
         this.capacity = newCap;
         this.length = newCap;
     }
@@ -870,7 +870,7 @@ struct IRRegList {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 1;
             this.elements = realloc(this.elements, newCap * sizeof IRReg);
-            assert_with_msg(this.elements != null, "Could not allocate memory in IRRegList.push");
+            assert(this.elements != null, "Could not allocate memory in IRRegList.push");
             this.capacity = newCap;
         }
         *(this.elements + this.length * sizeof IRReg) = element;
@@ -884,8 +884,8 @@ struct IRRegList {
     }
 
     func at(&this, index: usize) -> &IRReg {
-        assert_with_msg(index < this.length, "Out of bounds access in IRRegList.at");
-        assert_with_msg(this.elements != null, "Element pointer is NULL in IRRegList.at");
+        assert(index < this.length, "Out of bounds access in IRRegList.at");
+        assert(this.elements != null, "Element pointer is NULL in IRRegList.at");
         return this.elements + index * sizeof IRReg;
     }
 
@@ -899,7 +899,7 @@ struct IRRegList {
     }
 
     func last(&this) -> &IRReg {
-        assert_with_msg(this.length != 0, "Called last() on empty IRRegList");
+        assert(this.length != 0, "Called last() on empty IRRegList");
         return this.at(this.length - 1);
     }
 
@@ -930,7 +930,7 @@ struct IRBlockList {
     func initBlank(&this, newCap: usize) {
         if (this.elements != null) free(this.elements);
         this.elements = calloc(newCap, sizeof IRBlock);
-        assert_with_msg(this.elements != null, "Could not allocate memory in IRBlockList.initBlank");
+        assert(this.elements != null, "Could not allocate memory in IRBlockList.initBlank");
         this.capacity = newCap;
         this.length = newCap;
     }
@@ -940,7 +940,7 @@ struct IRBlockList {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 1;
             this.elements = realloc(this.elements, newCap * sizeof IRBlock);
-            assert_with_msg(this.elements != null, "Could not allocate memory in IRBlockList.push");
+            assert(this.elements != null, "Could not allocate memory in IRBlockList.push");
             this.capacity = newCap;
         }
         *(this.elements + this.length * sizeof IRBlock) = element;
@@ -954,8 +954,8 @@ struct IRBlockList {
     }
 
     func at(&this, index: usize) -> &IRBlock {
-        assert_with_msg(index < this.length, "Out of bounds access in IRBlockList.at");
-        assert_with_msg(this.elements != null, "Element pointer is NULL in IRBlockList.at");
+        assert(index < this.length, "Out of bounds access in IRBlockList.at");
+        assert(this.elements != null, "Element pointer is NULL in IRBlockList.at");
         return this.elements + index * sizeof IRBlock;
     }
 
@@ -969,7 +969,7 @@ struct IRBlockList {
     }
 
     func last(&this) -> &IRBlock {
-        assert_with_msg(this.length != 0, "Called last() on empty IRBlockList");
+        assert(this.length != 0, "Called last() on empty IRBlockList");
         return this.at(this.length - 1);
     }
 
@@ -1000,7 +1000,7 @@ struct LoopBlockList {
     func initBlank(&this, newCap: usize) {
         if (this.elements != null) free(this.elements);
         this.elements = calloc(newCap, sizeof LoopBlock);
-        assert_with_msg(this.elements != null, "Could not allocate memory in LoopBlockList.initBlank");
+        assert(this.elements != null, "Could not allocate memory in LoopBlockList.initBlank");
         this.capacity = newCap;
         this.length = newCap;
     }
@@ -1010,7 +1010,7 @@ struct LoopBlockList {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 1;
             this.elements = realloc(this.elements, newCap * sizeof LoopBlock);
-            assert_with_msg(this.elements != null, "Could not allocate memory in LoopBlockList.push");
+            assert(this.elements != null, "Could not allocate memory in LoopBlockList.push");
             this.capacity = newCap;
         }
         *(this.elements + this.length * sizeof LoopBlock) = element;
@@ -1024,8 +1024,8 @@ struct LoopBlockList {
     }
 
     func at(&this, index: usize) -> &LoopBlock {
-        assert_with_msg(index < this.length, "Out of bounds access in LoopBlockList.at");
-        assert_with_msg(this.elements != null, "Element pointer is NULL in LoopBlockList.at");
+        assert(index < this.length, "Out of bounds access in LoopBlockList.at");
+        assert(this.elements != null, "Element pointer is NULL in LoopBlockList.at");
         return this.elements + index * sizeof LoopBlock;
     }
 
@@ -1039,7 +1039,7 @@ struct LoopBlockList {
     }
 
     func last(&this) -> &LoopBlock {
-        assert_with_msg(this.length != 0, "Called last() on empty LoopBlockList");
+        assert(this.length != 0, "Called last() on empty LoopBlockList");
         return this.at(this.length - 1);
     }
 
@@ -1070,7 +1070,7 @@ struct IRScopeEntryList {
     func initBlank(&this, newCap: usize) {
         if (this.elements != null) free(this.elements);
         this.elements = calloc(newCap, sizeof IRScopeEntry);
-        assert_with_msg(this.elements != null, "Could not allocate memory in IRScopeEntryList.initBlank");
+        assert(this.elements != null, "Could not allocate memory in IRScopeEntryList.initBlank");
         this.capacity = newCap;
         this.length = newCap;
     }
@@ -1080,7 +1080,7 @@ struct IRScopeEntryList {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 1;
             this.elements = realloc(this.elements, newCap * sizeof IRScopeEntry);
-            assert_with_msg(this.elements != null, "Could not allocate memory in IRScopeEntryList.push");
+            assert(this.elements != null, "Could not allocate memory in IRScopeEntryList.push");
             this.capacity = newCap;
         }
         *(this.elements + this.length * sizeof IRScopeEntry) = element;
@@ -1094,8 +1094,8 @@ struct IRScopeEntryList {
     }
 
     func at(&this, index: usize) -> &IRScopeEntry {
-        assert_with_msg(index < this.length, "Out of bounds access in IRScopeEntryList.at");
-        assert_with_msg(this.elements != null, "Element pointer is NULL in IRScopeEntryList.at");
+        assert(index < this.length, "Out of bounds access in IRScopeEntryList.at");
+        assert(this.elements != null, "Element pointer is NULL in IRScopeEntryList.at");
         return this.elements + index * sizeof IRScopeEntry;
     }
 
@@ -1109,7 +1109,7 @@ struct IRScopeEntryList {
     }
 
     func last(&this) -> &IRScopeEntry {
-        assert_with_msg(this.length != 0, "Called last() on empty IRScopeEntryList");
+        assert(this.length != 0, "Called last() on empty IRScopeEntryList");
         return this.at(this.length - 1);
     }
 
@@ -1140,7 +1140,7 @@ struct IRFuncList {
     func initBlank(&this, newCap: usize) {
         if (this.elements != null) free(this.elements);
         this.elements = calloc(newCap, sizeof IRFunc);
-        assert_with_msg(this.elements != null, "Could not allocate memory in IRFuncList.initBlank");
+        assert(this.elements != null, "Could not allocate memory in IRFuncList.initBlank");
         this.capacity = newCap;
         this.length = newCap;
     }
@@ -1150,7 +1150,7 @@ struct IRFuncList {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 1;
             this.elements = realloc(this.elements, newCap * sizeof IRFunc);
-            assert_with_msg(this.elements != null, "Could not allocate memory in IRFuncList.push");
+            assert(this.elements != null, "Could not allocate memory in IRFuncList.push");
             this.capacity = newCap;
         }
         *(this.elements + this.length * sizeof IRFunc) = element;
@@ -1164,8 +1164,8 @@ struct IRFuncList {
     }
 
     func at(&this, index: usize) -> &IRFunc {
-        assert_with_msg(index < this.length, "Out of bounds access in IRFuncList.at");
-        assert_with_msg(this.elements != null, "Element pointer is NULL in IRFuncList.at");
+        assert(index < this.length, "Out of bounds access in IRFuncList.at");
+        assert(this.elements != null, "Element pointer is NULL in IRFuncList.at");
         return this.elements + index * sizeof IRFunc;
     }
 
@@ -1179,7 +1179,7 @@ struct IRFuncList {
     }
 
     func last(&this) -> &IRFunc {
-        assert_with_msg(this.length != 0, "Called last() on empty IRFuncList");
+        assert(this.length != 0, "Called last() on empty IRFuncList");
         return this.at(this.length - 1);
     }
 
@@ -1210,7 +1210,7 @@ struct LLVMTypeList {
     func initBlank(&this, newCap: usize) {
         if (this.elements != null) free(this.elements);
         this.elements = calloc(newCap, sizeof LLVMType);
-        assert_with_msg(this.elements != null, "Could not allocate memory in LLVMTypeList.initBlank");
+        assert(this.elements != null, "Could not allocate memory in LLVMTypeList.initBlank");
         this.capacity = newCap;
         this.length = newCap;
     }
@@ -1220,7 +1220,7 @@ struct LLVMTypeList {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 1;
             this.elements = realloc(this.elements, newCap * sizeof LLVMType);
-            assert_with_msg(this.elements != null, "Could not allocate memory in LLVMTypeList.push");
+            assert(this.elements != null, "Could not allocate memory in LLVMTypeList.push");
             this.capacity = newCap;
         }
         *(this.elements + this.length * sizeof LLVMType) = element;
@@ -1234,8 +1234,8 @@ struct LLVMTypeList {
     }
 
     func at(&this, index: usize) -> &LLVMType {
-        assert_with_msg(index < this.length, "Out of bounds access in LLVMTypeList.at");
-        assert_with_msg(this.elements != null, "Element pointer is NULL in LLVMTypeList.at");
+        assert(index < this.length, "Out of bounds access in LLVMTypeList.at");
+        assert(this.elements != null, "Element pointer is NULL in LLVMTypeList.at");
         return this.elements + index * sizeof LLVMType;
     }
 
@@ -1249,7 +1249,7 @@ struct LLVMTypeList {
     }
 
     func last(&this) -> &LLVMType {
-        assert_with_msg(this.length != 0, "Called last() on empty LLVMTypeList");
+        assert(this.length != 0, "Called last() on empty LLVMTypeList");
         return this.at(this.length - 1);
     }
 
@@ -1280,7 +1280,7 @@ struct RegValueList {
     func initBlank(&this, newCap: usize) {
         if (this.elements != null) free(this.elements);
         this.elements = calloc(newCap, sizeof RegValue);
-        assert_with_msg(this.elements != null, "Could not allocate memory in RegValueList.initBlank");
+        assert(this.elements != null, "Could not allocate memory in RegValueList.initBlank");
         this.capacity = newCap;
         this.length = newCap;
     }
@@ -1290,7 +1290,7 @@ struct RegValueList {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 1;
             this.elements = realloc(this.elements, newCap * sizeof RegValue);
-            assert_with_msg(this.elements != null, "Could not allocate memory in RegValueList.push");
+            assert(this.elements != null, "Could not allocate memory in RegValueList.push");
             this.capacity = newCap;
         }
         *(this.elements + this.length * sizeof RegValue) = element;
@@ -1304,8 +1304,8 @@ struct RegValueList {
     }
 
     func at(&this, index: usize) -> &RegValue {
-        assert_with_msg(index < this.length, "Out of bounds access in RegValueList.at");
-        assert_with_msg(this.elements != null, "Element pointer is NULL in RegValueList.at");
+        assert(index < this.length, "Out of bounds access in RegValueList.at");
+        assert(this.elements != null, "Element pointer is NULL in RegValueList.at");
         return this.elements + index * sizeof RegValue;
     }
 
@@ -1319,7 +1319,7 @@ struct RegValueList {
     }
 
     func last(&this) -> &RegValue {
-        assert_with_msg(this.length != 0, "Called last() on empty RegValueList");
+        assert(this.length != 0, "Called last() on empty RegValueList");
         return this.at(this.length - 1);
     }
 
@@ -1350,7 +1350,7 @@ struct LLVMBasicBlockList {
     func initBlank(&this, newCap: usize) {
         if (this.elements != null) free(this.elements);
         this.elements = calloc(newCap, sizeof LLVMBasicBlock);
-        assert_with_msg(this.elements != null, "Could not allocate memory in LLVMBasicBlockList.initBlank");
+        assert(this.elements != null, "Could not allocate memory in LLVMBasicBlockList.initBlank");
         this.capacity = newCap;
         this.length = newCap;
     }
@@ -1360,7 +1360,7 @@ struct LLVMBasicBlockList {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 1;
             this.elements = realloc(this.elements, newCap * sizeof LLVMBasicBlock);
-            assert_with_msg(this.elements != null, "Could not allocate memory in LLVMBasicBlockList.push");
+            assert(this.elements != null, "Could not allocate memory in LLVMBasicBlockList.push");
             this.capacity = newCap;
         }
         *(this.elements + this.length * sizeof LLVMBasicBlock) = element;
@@ -1374,8 +1374,8 @@ struct LLVMBasicBlockList {
     }
 
     func at(&this, index: usize) -> &LLVMBasicBlock {
-        assert_with_msg(index < this.length, "Out of bounds access in LLVMBasicBlockList.at");
-        assert_with_msg(this.elements != null, "Element pointer is NULL in LLVMBasicBlockList.at");
+        assert(index < this.length, "Out of bounds access in LLVMBasicBlockList.at");
+        assert(this.elements != null, "Element pointer is NULL in LLVMBasicBlockList.at");
         return this.elements + index * sizeof LLVMBasicBlock;
     }
 
@@ -1389,7 +1389,7 @@ struct LLVMBasicBlockList {
     }
 
     func last(&this) -> &LLVMBasicBlock {
-        assert_with_msg(this.length != 0, "Called last() on empty LLVMBasicBlockList");
+        assert(this.length != 0, "Called last() on empty LLVMBasicBlockList");
         return this.at(this.length - 1);
     }
 
@@ -1420,7 +1420,7 @@ struct LLVMValueList {
     func initBlank(&this, newCap: usize) {
         if (this.elements != null) free(this.elements);
         this.elements = calloc(newCap, sizeof LLVMValue);
-        assert_with_msg(this.elements != null, "Could not allocate memory in LLVMValueList.initBlank");
+        assert(this.elements != null, "Could not allocate memory in LLVMValueList.initBlank");
         this.capacity = newCap;
         this.length = newCap;
     }
@@ -1430,7 +1430,7 @@ struct LLVMValueList {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 1;
             this.elements = realloc(this.elements, newCap * sizeof LLVMValue);
-            assert_with_msg(this.elements != null, "Could not allocate memory in LLVMValueList.push");
+            assert(this.elements != null, "Could not allocate memory in LLVMValueList.push");
             this.capacity = newCap;
         }
         *(this.elements + this.length * sizeof LLVMValue) = element;
@@ -1444,8 +1444,8 @@ struct LLVMValueList {
     }
 
     func at(&this, index: usize) -> &LLVMValue {
-        assert_with_msg(index < this.length, "Out of bounds access in LLVMValueList.at");
-        assert_with_msg(this.elements != null, "Element pointer is NULL in LLVMValueList.at");
+        assert(index < this.length, "Out of bounds access in LLVMValueList.at");
+        assert(this.elements != null, "Element pointer is NULL in LLVMValueList.at");
         return this.elements + index * sizeof LLVMValue;
     }
 
@@ -1459,7 +1459,7 @@ struct LLVMValueList {
     }
 
     func last(&this) -> &LLVMValue {
-        assert_with_msg(this.length != 0, "Called last() on empty LLVMValueList");
+        assert(this.length != 0, "Called last() on empty LLVMValueList");
         return this.at(this.length - 1);
     }
 

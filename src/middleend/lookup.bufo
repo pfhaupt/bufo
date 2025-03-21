@@ -220,7 +220,7 @@ struct ModuleLookup {
                 typeState: blank,
                 isComptime: varDecl.varDeclContext.isComptime,
             };
-            assert_with_msg(this.variables.length == 1, "expected to find only the global scope");
+            assert(this.variables.length == 1, "expected to find only the global scope");
             let globalScope: &ScopeLookup = this.variables.last();
             let loc: Token = blank;
             if (globalScope.isKnownVariable(lookup.name.content, &loc)) {
@@ -329,7 +329,7 @@ struct FunctionLookup {
         return (this.readyState & state) != 0;
     }
     func setReadyState(&this, state: usize) {
-        assert_with_msg(!this.getReadyState(state), "FunctionLookup.readyState is already set");
+        assert(!this.getReadyState(state), "FunctionLookup.readyState is already set");
         this.readyState = this.readyState | state;
     }
 
@@ -407,7 +407,7 @@ struct TypeLookup {
     }
 
     func asStruct(&this) -> &StructLookup {
-        assert_with_msg(this.isStruct(), "Attempted to convert non-struct TypeLookup into StructLookup");
+        assert(this.isStruct(), "Attempted to convert non-struct TypeLookup into StructLookup");
         return this.actual as &StructLookup;
     }
 }
@@ -438,7 +438,7 @@ struct StructLookup {
         return (this.readyState & state) != 0;
     }
     func setReadyState(&this, state: usize) {
-        assert_with_msg(!this.getReadyState(state), "StructLookup.readyState is already set");
+        assert(!this.getReadyState(state), "StructLookup.readyState is already set");
         this.readyState = this.readyState | state;
     }
 
@@ -513,7 +513,7 @@ struct StructLookup {
                 return i;
             }
         }
-        assert_with_msg(this.hasField(&name.content), "StructLookup.getIndexByName() called when StructLookup.hasField() == false");
+        assert(this.hasField(&name.content), "StructLookup.getIndexByName() called when StructLookup.hasField() == false");
         unreachable("StructLookup.getIndexByName does not have a field with the given name");
         return 0;
     }
@@ -572,7 +572,7 @@ struct MethodLookup {
         return (this.readyState & state) != 0;
     }
     func setReadyState(&this, state: usize) {
-        assert_with_msg(!this.getReadyState(state), "MethodLookup.readyState is already set");
+        assert(!this.getReadyState(state), "MethodLookup.readyState is already set");
         this.readyState = this.readyState | state;
     }
 
@@ -595,7 +595,7 @@ struct MethodLookup {
 
     func addParameter(&this, globalID: usize, name: Token, typeState: TCState) {
         trace("MethodLookup.addParameter");
-        assert_with_msg(typeState.isType(), "MethodLookup received non-type parameter type");
+        assert(typeState.isType(), "MethodLookup received non-type parameter type");
         this.params.push(VariableLookup {
             globalID: globalID,
             name: name,
@@ -607,7 +607,7 @@ struct MethodLookup {
 
     func setReturnType(&this, typ: TCState) {
         trace("MethodLookup.setReturnType");
-        assert_with_msg(typ.isType(), "MethodLookup received non-type return type");
+        assert(typ.isType(), "MethodLookup received non-type return type");
         this.returnType = typ;
     }
 }

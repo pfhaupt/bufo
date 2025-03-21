@@ -95,8 +95,8 @@ struct Lexer {
             } else if (c == 'x') {
                 let lower: char = (&*tmp).getChar(2);
                 let upper: char = (&*tmp).getChar(3);
-                assert_with_msg(isHexDigit(lower), "Expected hex digits for \\x");
-                assert_with_msg(isHexDigit(upper), "Expected hex digits for \\x");
+                assert(isHexDigit(lower), "Expected hex digits for \\x");
+                assert(isHexDigit(upper), "Expected hex digits for \\x");
                 let byte: char = (asHex(lower) * 16 + asHex(upper)) as char;
                 s.pushChar(byte);
                 extraOffset = 2;
@@ -364,7 +364,7 @@ struct Lexer {
             loc.drop();
             exit(1);
         }
-        assert_with_msg(false, "Unexpected fallthrough in Lexer.next()");
+        assert(false, "Unexpected fallthrough in Lexer.next()");
         return defaultToken();
     }
 }

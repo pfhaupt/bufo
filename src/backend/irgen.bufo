@@ -271,22 +271,22 @@ struct IRFunc {
         return id;
     }
     func setCurrentBlock(&this, id: IRBlockID) {
-        assert_with_msg(id.i < this.blocks.length, "setCurrentBlock called with invalid ID");
+        assert(id.i < this.blocks.length, "setCurrentBlock called with invalid ID");
         this.currentBlock = id;
     }
     func getCurrentBlock(&this) -> IRBlockID {
-        assert_with_msg(this.blocks.length > 0, "getCurrentBlock called on empty IRFunc");
-        assert_with_msg(this.currentBlock.i < this.blocks.length, "getCurrentBlock points to invalid block");
+        assert(this.blocks.length > 0, "getCurrentBlock called on empty IRFunc");
+        assert(this.currentBlock.i < this.blocks.length, "getCurrentBlock points to invalid block");
         return this.currentBlock;
     }
     func getCurrentBlockAsRef(&this) -> &IRBlock {
-        assert_with_msg(this.blocks.length > 0, "getCurrentBlockAsRef called on empty IRFunc");
-        assert_with_msg(this.currentBlock.i < this.blocks.length, "getCurrentBlockAsRef points to invalid block");
+        assert(this.blocks.length > 0, "getCurrentBlockAsRef called on empty IRFunc");
+        assert(this.currentBlock.i < this.blocks.length, "getCurrentBlockAsRef points to invalid block");
         return this.blocks.at(this.currentBlock.i);
     }
     func getBlockByID(&this, id: IRBlockID) -> &IRBlock {
-        assert_with_msg(this.blocks.length > 0, "getBlockByID called on empty IRFunc");
-        assert_with_msg(id.i < this.blocks.length, "getBlockByID called with invalid ID");
+        assert(this.blocks.length > 0, "getBlockByID called on empty IRFunc");
+        assert(id.i < this.blocks.length, "getBlockByID called with invalid ID");
         return this.blocks.at(id.i);
     }
     func pushLoopBlocks(&this, before: IRBlockID, after: IRBlockID) {
@@ -299,11 +299,11 @@ struct IRFunc {
         this.loopBlocks.pop();
     }
     func getFuncNode(&this) -> &ParsedFuncDecl {
-        assert_with_msg(!this.isMethod, "IRFunc.getFuncNode called on Method");
+        assert(!this.isMethod, "IRFunc.getFuncNode called on Method");
         return funcDecls.at(this.originalID);
     }
     func getMethodNode(&this) -> &ParsedMethod {
-        assert_with_msg(this.isMethod, "IRFunc.getMethodNode called on Function");
+        assert(this.isMethod, "IRFunc.getMethodNode called on Function");
         return methods.at(this.originalID);
     }
     func dumpInstructions(&this) {
@@ -356,7 +356,7 @@ struct IRFunc {
         return RegIndex { i: size };
     }
     func getRegister(&this, index: RegIndex) -> &IRReg {
-        assert_with_msg(index.i < this.registers.length, "Out of bounds access in IRFunc.getRegister");
+        assert(index.i < this.registers.length, "Out of bounds access in IRFunc.getRegister");
         return this.registers.at(index.i);
     }
     func getIdentifierByName(&this, name: SubStr) -> &IRScopeEntry {
@@ -534,7 +534,7 @@ struct IRFunc {
         if (t.isChar()) {
             kind = INSTR_LOAD_U8;
         } else {
-            assert_with_msg(t.isInteger(), "IRFunc.buildLoadInteger got non-int type");
+            assert(t.isInteger(), "IRFunc.buildLoadInteger got non-int type");
             let size: usize = t.getSize();
             if (size == 2) kind = INSTR_LOAD_I16;
             if (size == 4) kind = INSTR_LOAD_I32;
@@ -631,7 +631,7 @@ struct IRFunc {
         });
     }
     func buildBr(&this, block: IRBlockID) {
-        assert_with_msg(block.i < this.blocks.length, "buildBr called with invalid ID");
+        assert(block.i < this.blocks.length, "buildBr called with invalid ID");
         this.pushInstruction(IRInstr {
             kind: INSTR_BR,
             isComptime: this.comptimeLevel > 0,
@@ -642,8 +642,8 @@ struct IRFunc {
         });
     }
     func buildCondBr(&this, cond: RegIndex, drue: IRBlockID, falze: IRBlockID) {
-        assert_with_msg(drue.i < this.blocks.length, "buildCondBr called with invalid ID");
-        assert_with_msg(falze.i < this.blocks.length, "buildCondBr called with invalid ID");
+        assert(drue.i < this.blocks.length, "buildCondBr called with invalid ID");
+        assert(falze.i < this.blocks.length, "buildCondBr called with invalid ID");
         this.pushInstruction(IRInstr {
             kind: INSTR_COND_BR,
             isComptime: this.comptimeLevel > 0,
@@ -926,7 +926,7 @@ struct IRGen {
         if (!this.fillLookup(project))
             return false;
         let scope: usize = this.globalScope.enterScope();
-        assert_with_msg(this.globalScope.scopes.length == 1, "Expected only one valid scope");
+        assert(this.globalScope.scopes.length == 1, "Expected only one valid scope");
         let entry: IRBlockID = this.globalScope.appendBlock();
         this.globalScope.setCurrentBlock(entry);
         for (let i: usize = 0; i < modules.length; i = i + 1) {
@@ -983,22 +983,22 @@ struct IRGen {
             }
         }
         let after: usize = function.leaveScope();
-        assert_with_msg(after == 1, "Scope imbalance detected");
+        assert(after == 1, "Scope imbalance detected");
     }
 
     func generateFunction(&this, funcDecl: &ParsedFuncDecl) {
         trace("IRGen.generateFunction");
-        assert_with_msg(funcDecl.typeState.isSuccess(), "Expected valid FuncDecl type in IRGen");
+        assert(funcDecl.typeState.isSuccess(), "Expected valid FuncDecl type in IRGen");
         let name: String = funcDecl.getMangledName();
         let function: &IRFunc = this.functions.get(&name);
-        assert_with_msg(function != null, "Expected to find function in lookup");
-        assert_with_msg(function.name.equals(&name), "functions.get() retrieved wrong IRFunc");
+        assert(function != null, "Expected to find function in lookup");
+        assert(function.name.equals(&name), "functions.get() retrieved wrong IRFunc");
         name.drop();
         if (funcDecl.isExtern) {
             return;
         }
         let scope: usize = function.enterScope();
-        assert_with_msg(scope == 1, "Expected function to enter first scope");
+        assert(scope == 1, "Expected function to enter first scope");
         let retDecl: &ParsedTypeNode = typeNodes.at(funcDecl.retTypeID);
         this.generateFunctionHeader(function, types.at(retDecl.typeState.getType()), &funcDecl.params);
         this.generateFunctionBody(function, blocks.at(funcDecl.body), typeNodes.at(funcDecl.retTypeID));
@@ -1006,14 +1006,14 @@ struct IRGen {
 
     func generateMethod(&this, methDecl: &ParsedMethod) {
         trace("IRGen.generateMethod");
-        assert_with_msg(methDecl.typeState.isSuccess(), "Expected valid Method type in IRGen");
+        assert(methDecl.typeState.isSuccess(), "Expected valid Method type in IRGen");
         let name: String = methDecl.getMangledName();
         let function: &IRFunc = this.functions.get(&name);
-        assert_with_msg(function != null, "Expected to find function in lookup");
-        assert_with_msg(function.name.equals(&name), "functions.get() retrieved wrong IRFunc");
+        assert(function != null, "Expected to find function in lookup");
+        assert(function.name.equals(&name), "functions.get() retrieved wrong IRFunc");
         name.drop();
         let scope: usize = function.enterScope();
-        assert_with_msg(scope == 1, "Expected method to enter first scope");
+        assert(scope == 1, "Expected method to enter first scope");
         let retDecl: &ParsedTypeNode = typeNodes.at(methDecl.retTypeID);
         this.generateFunctionHeader(function, types.at(retDecl.typeState.getType()), &methDecl.params);
         this.generateFunctionBody(function, blocks.at(methDecl.body), typeNodes.at(methDecl.retTypeID));
@@ -1021,7 +1021,7 @@ struct IRGen {
 
     func generateBytecodeBlock(&this, function: &IRFunc, block: &ParsedBlock) {
         trace("IRGen.generateBytecodeBlock");
-        assert_with_msg(block.typeState.isSuccess(), "Expected valid Block type in IRGen");
+        assert(block.typeState.isSuccess(), "Expected valid Block type in IRGen");
         let scope: usize = function.enterScope();
         let modID: usize = 0;
         if (function.isMethod) {
@@ -1050,12 +1050,12 @@ struct IRGen {
         }
         s.drop();
         let after: usize = function.leaveScope();
-        assert_with_msg(scope == after, "Scope imbalance detected");
+        assert(scope == after, "Scope imbalance detected");
     }
 
     func generateBytecodeStmt(&this, function: &IRFunc, stmt: &ParsedStmt) {
         trace("IRGen.generateBytecodeStmt");
-        assert_with_msg(stmt.typeState.isSuccess(), "Expected valid Stmt type in IRGen");
+        assert(stmt.typeState.isSuccess(), "Expected valid Stmt type in IRGen");
         if (stmt.kind == STMT_VAR_DECL) {
             let exprID: usize = stmt.varDeclContext.exprID;
             let expr: &ParsedExpr = exprs.at(exprID);
@@ -1197,7 +1197,7 @@ struct IRGen {
 
     func generateBytecodeExpr(&this, function: &IRFunc, expr: &ParsedExpr, needsPtr: bool) -> RegIndex {
         trace("IRGen.generateBytecodeExpr");
-        assert_with_msg(expr.typeState.isSuccess(), "Expected valid Expr type in IRGen");
+        assert(expr.typeState.isSuccess(), "Expected valid Expr type in IRGen");
         if (expr.kind == EXPR_EMPTY) {
             return blank;
         } else if (expr.isIdentifier()) {
@@ -1305,7 +1305,7 @@ struct IRGen {
             return dst;
         } else if (expr.kind == EXPR_STRUCT_INIT) {
             let strukt: &Type = types.at(expr.typeState.getType());
-            assert_with_msg(strukt.isStruct(), "Expected Struct Type in EXPR_STRUCT_INIT");
+            assert(strukt.isStruct(), "Expected Struct Type in EXPR_STRUCT_INIT");
             let structDecl: &ParsedStructDecl = structDecls.at(strukt.typeIndex);
             let reg: RegIndex = function.allocateRegister(strukt);
             function.buildCreateStruct(reg);
@@ -1337,15 +1337,15 @@ struct IRGen {
         trace("IRGen.generateBytecodeExprMemberAccess");
         assert(expr.kind == EXPR_BINARY);
         assert(expr.op == BIN_DOT);
-        assert_with_msg(expr.typeState.isSuccess(), "Expected valid Member state in IRGen");
+        assert(expr.typeState.isSuccess(), "Expected valid Member state in IRGen");
         let lhs: &ParsedExpr = exprs.at(expr.lhs);
         let rhs: &ParsedExpr = exprs.at(expr.rhs);
         let instance: &Type = types.at(lhs.typeState.getType());
-        assert_with_msg(instance.isStruct() || instance.isStructPointer(), "Expected (ptr to) struct in MemberAccess");
+        assert(instance.isStruct() || instance.isStructPointer(), "Expected (ptr to) struct in MemberAccess");
         if (rhs.kind == EXPR_NAME) {
             let result: RegIndex = this.generateBytecodeExpr(function, lhs, !instance.isStructPointer());
             let _t: &Type = function.getRegister(result).typ;
-            assert_with_msg(_t.isStruct() || _t.isStructPointer(), "Expected (ptr to) struct in Field Access");
+            assert(_t.isStruct() || _t.isStructPointer(), "Expected (ptr to) struct in Field Access");
             if (!_t.isStructPointer()) {
                 let t1: &Type = types.at(_t.intoPointer());
                 let alloca: RegIndex = function.allocateRegister(t1);
@@ -1354,7 +1354,7 @@ struct IRGen {
                 result = alloca;
                 _t = t1;
             }
-            assert_with_msg(_t.isStructPointer(), "Expected ptr to struct in Field Access");
+            assert(_t.isStructPointer(), "Expected ptr to struct in Field Access");
             let structType: &Type = _t.getUnderlyingType(false);
             // `result` contains a pointer to a struct instance at this point
             let decl: &ParsedStructDecl = structDecls.at(structType.typeIndex);
@@ -1387,9 +1387,9 @@ struct IRGen {
             }
             if (method.isStatic) {
                 unreachable("Actually... How did we get here so far?");
-                assert_with_msg(rhs.arrayContext.elemLength == method.params.paramLength, "args != params");
+                assert(rhs.arrayContext.elemLength == method.params.paramLength, "args != params");
             } else {
-                assert_with_msg(rhs.arrayContext.elemLength == method.params.paramLength - 1, "args != params - this");
+                assert(rhs.arrayContext.elemLength == method.params.paramLength - 1, "args != params - this");
                 args.push(instance);
             }
             for (let i: usize = 0; i < rhs.arrayContext.elemLength; i = i + 1) {
@@ -1456,8 +1456,8 @@ struct IRGen {
         let arrExpr: &ParsedExpr = exprs.at(expr.lhs);
         let lhs: RegIndex = this.generateBytecodeExpr(function, arrExpr, true);
         let rhs: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.rhs), false);
-        assert_with_msg(function.getRegister(lhs).typ.isPointer(), "Expected Ptr as LHS in IndexedAccess");
-        assert_with_msg(function.getRegister(rhs).typ.isInteger(), "Expected Int as RHS in IndexedAccess");
+        assert(function.getRegister(lhs).typ.isPointer(), "Expected Ptr as LHS in IndexedAccess");
+        assert(function.getRegister(rhs).typ.isInteger(), "Expected Int as RHS in IndexedAccess");
         let elemType: &Type = types.at(expr.typeState.getType());
         let usizeType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
         let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
@@ -1523,7 +1523,7 @@ struct IRGen {
         assert(expr.isIdentifier());
         let isGlobal: bool = false;
         let entry: &IRScopeEntry = this.getIdentifierByName(function, expr.origToken.content, &isGlobal);
-        assert_with_msg(entry != null, "Could not find identifier in generateBytecodeExprIdentifier");
+        assert(entry != null, "Could not find identifier in generateBytecodeExprIdentifier");
         let varType: &Type = types.at(expr.typeState.getType());
         if (function.comptimeLevel > 0 && !entry.isComptime) {
             // REVIEW: This should've been handled before here?
@@ -1588,12 +1588,12 @@ struct IRGen {
             if ((lhsType.isInteger() || lhsType.isChar()) && (rhsType.isInteger() || rhsType.isChar())) {
                 function.buildBinaryOp(INSTR_INT_ADD, dst, lhs, rhs);
             } else if (lhsType.isPointer() && rhsType.isInteger()) {
-                assert_with_msg(res.isPointer(), "PTR + INT expected to be PTR");
+                assert(res.isPointer(), "PTR + INT expected to be PTR");
                 function.buildPtrToInt(lhs, lhs);
                 function.buildBinaryOp(INSTR_INT_ADD, dst, lhs, rhs);
                 function.buildIntToPtr(dst, dst);
             } else if (lhsType.isInteger() && rhsType.isPointer()) {
-                assert_with_msg(res.isPointer(), "INT + PTR expected to be PTR");
+                assert(res.isPointer(), "INT + PTR expected to be PTR");
                 function.buildPtrToInt(rhs, rhs);
                 function.buildBinaryOp(INSTR_INT_ADD, dst, lhs, rhs);
                 function.buildIntToPtr(dst, dst);
@@ -1607,21 +1607,21 @@ struct IRGen {
             if ((lhsType.isInteger() || lhsType.isChar()) && (rhsType.isInteger() || rhsType.isChar())) {
                 function.buildBinaryOp(INSTR_INT_SUB, dst, lhs, rhs);
             } else if (lhsType.isPointer() && rhsType.isInteger()) {
-                assert_with_msg(res.isPointer(), "PTR - INT expected to be PTR");
+                assert(res.isPointer(), "PTR - INT expected to be PTR");
                 let tmp1: RegIndex = function.allocateRegister(usizeType);
                 let tmp2: RegIndex = function.allocateRegister(usizeType);
                 function.buildPtrToInt(tmp1, lhs);
                 function.buildBinaryOp(INSTR_INT_SUB, tmp2, tmp1, rhs);
                 function.buildIntToPtr(dst, tmp2);
             } else if (lhsType.isInteger() && rhsType.isPointer()) {
-                assert_with_msg(res.isPointer(), "INT - PTR expected to be PTR");
+                assert(res.isPointer(), "INT - PTR expected to be PTR");
                 let tmp1: RegIndex = function.allocateRegister(usizeType);
                 let tmp2: RegIndex = function.allocateRegister(usizeType);
                 function.buildPtrToInt(tmp1, rhs);
                 function.buildBinaryOp(INSTR_INT_SUB, tmp2, lhs, tmp1);
                 function.buildIntToPtr(dst, tmp2);
             } else if (lhsType.isPointer() && rhsType.isPointer()) {
-                assert_with_msg(res.isInteger(), "PTR - PTR expected to be INT");
+                assert(res.isInteger(), "PTR - PTR expected to be INT");
                 let tmp1: RegIndex = function.allocateRegister(usizeType);
                 let tmp2: RegIndex = function.allocateRegister(usizeType);
                 function.buildPtrToInt(tmp1, lhs);
@@ -1668,7 +1668,7 @@ struct IRGen {
         let lhs: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.lhs), false);
         let rhs: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.rhs), false);
         let res: &Type = types.at(expr.typeState.getType());
-        assert_with_msg(res.isBoolean(), "Comparison expected to evaluate to Bool");
+        assert(res.isBoolean(), "Comparison expected to evaluate to Bool");
         let dst: RegIndex = function.allocateRegister(res);
         // OPT: Specialized 8bit, 16bit, etc. variations
         let t: &Type = function.getRegister(lhs).typ;
@@ -1778,7 +1778,7 @@ struct IRGen {
                 function.buildLoadInteger(reg, t, value);
             } else if (t.isFloat()) {
                 let value: f64 = expr.origToken.content.toF64();
-                assert_with_msg(value >= 0, "Expected FloatLit value to be positive");
+                assert(value >= 0, "Expected FloatLit value to be positive");
                 let typmax: f64 = t.getMaxFloatValue();
                 if (value >= typmax) {
                     todo_with_msg("float literal bigger than type can hold");
@@ -1790,22 +1790,22 @@ struct IRGen {
                 unreachable("EXPR_LIT expected to be int or float");
             }
         } else if (expr.kind == EXPR_STRING_LIT) {
-            assert_with_msg(t.isPointerTo(TYPE_CHAR), "StrLit expected to be &char");
+            assert(t.isPointerTo(TYPE_CHAR), "StrLit expected to be &char");
             let name: SubStr = expr.origToken.content;
             function.buildLoadString(reg, name);
         } else if (expr.kind == EXPR_TRUE || expr.kind == EXPR_FALSE) {
-            assert_with_msg(t.isBoolean(), "true and false expected to be bool");
+            assert(t.isBoolean(), "true and false expected to be bool");
             let v: usize = 0;
             if (expr.kind == EXPR_TRUE) v = 1;
             function.buildLoadBool(reg, v);
         } else if (expr.kind == EXPR_NULL) {
-            assert_with_msg(t.isPointer(), "null expected to be pointer");
+            assert(t.isPointer(), "null expected to be pointer");
             function.buildLoadNull(reg);
         } else if (expr.kind == EXPR_CHAR_LIT) {
-            assert_with_msg(t.isChar(), "CharLit expected to be char");
+            assert(t.isChar(), "CharLit expected to be char");
             function.buildLoadInteger(reg, t, expr.origToken.content.getChar(0) as usize);
         } else if (expr.kind == EXPR_ARRAY_LIT) {
-            assert_with_msg(t.isArray(), "ArrayLit expected to be array");
+            assert(t.isArray(), "ArrayLit expected to be array");
             if (t.getSize() > 4096) warning("Array Literal is big and slows down the IR");
             if (expr.arrayContext.size == 0) {
                 function.buildCreateArray(reg);
@@ -1877,7 +1877,7 @@ struct IRGen {
         assert(expr.isAssignment());
         let lhs: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.lhs), true);
         let rhs: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.rhs), false);
-        assert_with_msg(function.getRegister(lhs).typ.isPointer(), "Assignment expected Ptr as LHS");
+        assert(function.getRegister(lhs).typ.isPointer(), "Assignment expected Ptr as LHS");
         function.buildStore(lhs, rhs);
         return rhs;
     }
@@ -1906,7 +1906,7 @@ struct IRGen {
             let subexpr: &ParsedExpr = exprs.at(expr.lhs);
             let result: RegIndex = this.generateBytecodeExpr(function, subexpr, false);
             let ptr: &IRReg = function.getRegister(result);
-            assert_with_msg(ptr.typ.isPointer(), "Expected Ptr SubExpr in Unary Deref");
+            assert(ptr.typ.isPointer(), "Expected Ptr SubExpr in Unary Deref");
             if (needsPtr) {
                 return result;
             } else {

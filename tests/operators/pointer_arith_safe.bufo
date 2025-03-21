@@ -8,8 +8,8 @@ func main(argc: i32, argv: &&char) -> i32 {
     let a: i32 = 5;
     let b: &i32 = &a;
     *(b + 5 - 5) = 10;
-    assert_with_msg(a == 10, "a is not 10!");
+    assert(a == 10, "a is not 10!");
     *(5 + b - 5) = 20;
-    assert_with_msg(a == 20, "a is not 20!");
+    assert(a == 20, "a is not 20!");
     return 0;
 }

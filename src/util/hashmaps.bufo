@@ -45,10 +45,10 @@ struct String_IRFuncHashMap {
     }
 
     func at(&this, index: usize) -> &IRFunc {
-        assert_with_msg(this.locked, "Can only get elements at an index if the HashMap is locked");
+        assert(this.locked, "Can only get elements at an index if the HashMap is locked");
         let elem: &String_IRFuncEntry = this.getAtIndex(index);
-        assert_with_msg(elem != null, "Expected to find element at the given index");
-        assert_with_msg(elem.set, "Expected set element at the given index");
+        assert(elem != null, "Expected to find element at the given index");
+        assert(elem.set, "Expected set element at the given index");
         return &elem.value;
     }
 
@@ -57,7 +57,7 @@ struct String_IRFuncHashMap {
             let newCap: usize = this.capacity * 2;
             if (newCap == 0) newCap = 256;
             let newElements: &String_IRFuncEntry = calloc(newCap, sizeof String_IRFuncEntry);
-            assert_with_msg(newElements != null, "Could not allocate memory in String_IRFuncHashMap.resizeIfNecessary");
+            assert(newElements != null, "Could not allocate memory in String_IRFuncHashMap.resizeIfNecessary");
             let newThis: String_IRFuncHashMap = String_IRFuncHashMap {
                 elements: newElements,
                 length: 0,
@@ -124,7 +124,7 @@ struct String_IRFuncHashMap {
     }
 
     func getAtIndex(&this, index: usize) -> &String_IRFuncEntry {
-        assert_with_msg(index < this.capacity, "Out of bounds access in String_IRFuncHashMap.getAtIndex");
+        assert(index < this.capacity, "Out of bounds access in String_IRFuncHashMap.getAtIndex");
         return this.elements + index * sizeof String_IRFuncEntry;
     }
     func containsKey(&this, key: &String) -> bool {

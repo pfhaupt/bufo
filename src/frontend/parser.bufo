@@ -23,7 +23,7 @@ struct Parser {
             let newCap: usize = this.importRootCapacity * 2;
             if (newCap == 0) newCap = 1;
             this.importRoots = realloc(this.importRoots, newCap * sizeof String);
-            assert_with_msg(this.importRoots != null, "Could not resize import roots");
+            assert(this.importRoots != null, "Could not resize import roots");
             this.importRootCapacity = newCap;
         }
         *(this.importRoots + this.importRootLength * sizeof String) = root;
@@ -79,9 +79,9 @@ struct Parser {
 
     func parseProject(&this, root: SubStr) -> ParsedModule {
         trace("Parser.parseProject");
-        assert_with_msg(this.lexer.moduleID == 0, "Expected Parser.parseProject to be the root");
+        assert(this.lexer.moduleID == 0, "Expected Parser.parseProject to be the root");
         let rootModule: &ParsedModule = newParsedModule(root);
-        assert_with_msg(rootModule.getID() == 0, "Expected Parser.parseProject result to be the root");
+        assert(rootModule.getID() == 0, "Expected Parser.parseProject result to be the root");
         this.parseModule(root, rootModule);
         if (this.syntaxError) {
             // All errors are reported at this point
@@ -793,7 +793,7 @@ struct Parser {
         let tkn: Token = this.lexer.peek();
         if (tkn.kind == TOKEN_KEYWORD) {
             this.lexer.next();
-            assert_with_msg(tkn.content.equals(&KEYWORD_COMPTIME), "Expected `comptime`");
+            assert(tkn.content.equals(&KEYWORD_COMPTIME), "Expected `comptime`");
             let precedence: usize = this.getUnaryPrecedence(tkn.kind);
             let expr: &ParsedExpr = this.__parseExpr(precedence, ASSOC_LEFT);
             let span: Span = newSpanBetween(&tkn.span, &expr.span);
@@ -875,7 +875,7 @@ struct Parser {
         if (tknKind == TOKEN_DOT) return 17;
         else if (tknKind == TOKEN_SQUARE_OPEN) return 16;
         else if (tknKind == TOKEN_KEYWORD) {
-            assert_with_msg(tkn.content.equals(&KEYWORD_AS), "unsupported keyword in getBinaryPrecedence");
+            assert(tkn.content.equals(&KEYWORD_AS), "unsupported keyword in getBinaryPrecedence");
             return 13;
         } else if (tknKind == TOKEN_SLASH_SINGLE) return 12;
         else if (tknKind == TOKEN_ASTERISK_SINGLE) return 12;

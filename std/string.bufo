@@ -23,14 +23,14 @@ struct String {
         let buf: &char = calloc(1024, 1);
         assert(buf != null);
         let abs: &char = _fullpath(buf, this.chars(), 1024);
-        assert_with_msg(abs != null, "Could not get absolute path");
+        assert(abs != null, "Could not get absolute path");
         let s: String = newStringFromStrLit(buf);
         free(buf);
         return s;
     }
 
     func getChar(&this, index: usize) -> char {
-        assert_with_msg(index <= this.length, "Index out of bounds for String.getChar()");
+        assert(index <= this.length, "Index out of bounds for String.getChar()");
         return *(this.buffer + index);
     }
 
@@ -39,7 +39,7 @@ struct String {
     }
     func copy(&this) -> String {
         let bfr: Any = calloc(this.capacity, sizeof char);
-        assert_with_msg(bfr != null, "Could not copy String");
+        assert(bfr != null, "Could not copy String");
         let _bfr: Any = memcpy(bfr, this.buffer, this.capacity);
         assert(_bfr != null);
         assert(bfr == _bfr);
@@ -53,7 +53,7 @@ struct String {
         if (newCap < 256) newCap = 256;
         let old: &char = this.buffer;
         this.buffer = calloc(newCap, sizeof char);
-        assert_with_msg(this.buffer != null, "Could not resize String");
+        assert(this.buffer != null, "Could not resize String");
         memcpy(this.buffer, old, this.length);
         free(old);
         this.capacity = newCap;
@@ -75,7 +75,7 @@ struct String {
     func pushNumber(&this, num: usize) {
         let bfr: [char; 50] = ['\0'; 50];
         let length: usize = snprintf(null, 0, "%llu", num);
-        assert_with_msg(length < 50, "Buffer Overflow in String.pushNumber()");
+        assert(length < 50, "Buffer Overflow in String.pushNumber()");
         snprintf(&bfr, length + 1, "%llu", num);
         for (let i: usize = 0; i < length; i = i + 1) {
             this.pushChar(bfr[i]);
@@ -84,7 +84,7 @@ struct String {
     func pushNumberAsHex(&this, num: usize) {
         let bfr: [char; 50] = ['\0'; 50];
         let length: usize = snprintf(null, 0, "0x%llX", num);
-        assert_with_msg(length < 50, "Buffer Overflow in String.pushNumberAsHex()");
+        assert(length < 50, "Buffer Overflow in String.pushNumberAsHex()");
         snprintf(&bfr, length + 1, "0x%llX", num);
         for (let i: usize = 0; i < length; i = i + 1) {
             this.pushChar(bfr[i]);
@@ -147,7 +147,7 @@ struct String {
         return this.length > 0;
     }
     func toI64(&this) -> i64 {
-        assert_with_msg(this.isNumber(), "not a number");
+        assert(this.isNumber(), "not a number");
         let val: i64 = 0;
         for (let i: usize = 0; i < this.length - 1; i = i + 1) {
             let ch: char = this.getChar(i);
@@ -157,7 +157,7 @@ struct String {
         return val;
     }
     func toU64(&this) -> u64 {
-        assert_with_msg(this.isNumber(), "not a number");
+        assert(this.isNumber(), "not a number");
         let val: u64 = 0;
         for (let i: usize = 0; i < this.length; i = i + 1) {
             let ch: char = this.getChar(i);

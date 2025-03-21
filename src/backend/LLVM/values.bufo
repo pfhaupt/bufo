@@ -12,7 +12,7 @@ struct LLVMValue {
     }
     func guardReference(&this) {
         trace("LLVMValue.guardReference");
-        assert_with_msg(!this.ref.isNull(), "LLVM Value is null");
+        assert(!this.ref.isNull(), "LLVM Value is null");
     }
 
     func isStructValue(&this) -> bool {
@@ -27,28 +27,28 @@ struct LLVMValue {
     func getGlobalType(&this) -> LLVMType {
         trace("LLVMValue.getGlobalType");
         let t: LLVMTypeRef = LLVMGlobalGetValueType(this.ref);
-        assert_with_msg(!t.isNull(), "Could not get global type of LLVMValue");
+        assert(!t.isNull(), "Could not get global type of LLVMValue");
         return newLLVMTypeFromRef(t);
     }
 
     func getNthParam(&this, index: usize) -> LLVMValue {
         trace("LLVMValue.getNthParam");
         let param: LLVMValueRef = LLVMGetParam(this.ref, index as u32);
-        assert_with_msg(!param.isNull(), "Could not get parameter of LLVMValue");
+        assert(!param.isNull(), "Could not get parameter of LLVMValue");
         return newLLVMValueFromRef(param);
     }
 
     func getFirstBasicBlock(&this) -> LLVMBasicBlock {
         trace("LLVMValue.getFirstBasicBlock");
         let block: LLVMBasicBlockRef = LLVMGetFirstBasicBlock(this.ref);
-        assert_with_msg(!block.isNull(), "Could not get first basic block from LLVMValue");
+        assert(!block.isNull(), "Could not get first basic block from LLVMValue");
         return newLLVMBasicBlockFromRef(block);
     }
 
     func getType(&this) -> LLVMType {
         trace("LLVMValue.getType");
         let t: LLVMTypeRef = LLVMTypeOf(this.ref);
-        assert_with_msg(!t.isNull(), "Coult not get type of LLVMValue");
+        assert(!t.isNull(), "Coult not get type of LLVMValue");
         return newLLVMTypeFromRef(t);
     }
     func setName(&this, name: SubStr) {
@@ -65,14 +65,14 @@ struct LLVMValue {
 
     func setInitializer(&this, val: LLVMValue) {
         trace("LLVMValue.setInitializer");
-        assert_with_msg(!val.ref.isNull(), "Expected valid LLVMValue in LLVMValue.setInitializer");
+        assert(!val.ref.isNull(), "Expected valid LLVMValue in LLVMValue.setInitializer");
         LLVMSetInitializer(this.ref, val.ref);
     }
 }
 
 func newLLVMValueFromRef(ref: LLVMValueRef) -> LLVMValue {
     trace("newLLVMValueFromRef");
-    assert_with_msg(!ref.isNull(), "Passed invalid reference to newLLVMValueFromRef");
+    assert(!ref.isNull(), "Passed invalid reference to newLLVMValueFromRef");
     return LLVMValue {
         ref: ref
     };

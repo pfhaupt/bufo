@@ -9,13 +9,13 @@ struct LLVMBasicBlock {
     }
     func guardReference(&this) {
         trace("LLVMBasicBlock.guardReference");
-        assert_with_msg(!this.ref.isNull(), "LLVM Basic Block is null");
+        assert(!this.ref.isNull(), "LLVM Basic Block is null");
     }
     func getParent(&this) -> LLVMValue {
         trace("LLVMBasicBlock.getParent");
         this.guardReference();
         let parent: LLVMValueRef = LLVMGetBasicBlockParent(this.ref);
-        assert_with_msg(!parent.isNull(), "Could not get parent from basic block");
+        assert(!parent.isNull(), "Could not get parent from basic block");
         return newLLVMValueFromRef(parent);
     }
     func getLastInstruction(&this, out: &LLVMValue) -> bool {
@@ -30,7 +30,7 @@ struct LLVMBasicBlock {
 
 func newLLVMBasicBlockFromRef(ref: LLVMBasicBlockRef) -> LLVMBasicBlock {
     trace("newLLVMBasicBlockFromRef");
-    assert_with_msg(!ref.isNull(), "Passed invalid reference to newLLVMBasicBlockFromRef");
+    assert(!ref.isNull(), "Passed invalid reference to newLLVMBasicBlockFromRef");
     return LLVMBasicBlock {
         ref: ref
     };

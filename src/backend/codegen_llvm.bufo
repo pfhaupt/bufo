@@ -26,11 +26,11 @@ struct RegValue {
         return false;
     }
     func asInterp(&this, err: &char) -> InterpReg {
-        assert_with_msg(!this.isLLVM, err);
+        assert(!this.isLLVM, err);
         return this.regValue;
     }
     func asLLVM(&this, err: &char) -> LLVMValue {
-        assert_with_msg(this.isLLVM, err);
+        assert(this.isLLVM, err);
         return this.llvmValue;
     }
 }
@@ -125,7 +125,7 @@ struct LLVMCodegen {
         let blocks: LLVMBasicBlockList = blank;
         this.interp.pushRegisterStack(funcSize);
         this.interp.globalRegBase = this.interp.regStackBase;
-        assert_with_msg(global.blocks.length == 1, "Expected to only find one IRBlock in global scope");
+        assert(global.blocks.length == 1, "Expected to only find one IRBlock in global scope");
         this.generateBlock(&llvmFunc, global, &blocks, global.blocks.at(0), &this.global);
         return true;
     }
@@ -226,7 +226,7 @@ struct LLVMCodegen {
         let s1: usize = data.getStoreSize(typ);
         let s2: usize = data.getABISize(typ);
         let s3: usize = data.getBitSize(typ) / 8;
-        assert_with_msg(s1 == s2 && s1 == s3 && s2 == s3, "LLVMTargetData returned different type sizes");
+        assert(s1 == s2 && s1 == s3 && s2 == s3, "LLVMTargetData returned different type sizes");
         return s1;
     }
 
@@ -237,7 +237,7 @@ struct LLVMCodegen {
         assert(!llvmFuncValue.ref.isNull());
         let blocks: LLVMBasicBlockList = blank;
         blocks.initBlank(irFunc.blocks.length);
-        assert_with_msg(blocks.length != 0, "Every IRFunc has at least one instruction");
+        assert(blocks.length != 0, "Every IRFunc has at least one instruction");
         *(blocks.at(0)) = this.llvmContext.appendBasicBlock(llvmFuncValue, newSubStrOfStrLit("entry"));
         for (let i: usize = 1; i < irFunc.blocks.length; i = i + 1) {
             *(blocks.at(i)) = this.llvmContext.appendBasicBlock(llvmFuncValue, newSubStrOfStrLit("b"));
@@ -296,7 +296,7 @@ struct LLVMCodegen {
         let isGlobal: bool = llvmFunc.ref.isNull();
         if (instr.kind == INSTR_ALLOCA) {
             let reg: &IRReg = irFunc.getRegister(instr.dst);
-            assert_with_msg(reg.typ.isPointer(), "LLVM Alloca expected ptr dst");
+            assert(reg.typ.isPointer(), "LLVM Alloca expected ptr dst");
             let t: &Type = reg.typ.getUnderlyingType(false);
             let typ: LLVMType = this.generateLLVMType(t);
             if (isGlobal) {
@@ -347,7 +347,7 @@ struct LLVMCodegen {
         } else if (instr.kind == INSTR_FETCH_GLOBAL_VALUE) {
             let val: &RegValue = this.global.at(instr.src.i);
             let typ: &Type = irFunc.getRegister(instr.dst).typ;
-            assert_with_msg(val.isLLVM, "FetchGlobalValue got non-LLVM src");
+            assert(val.isLLVM, "FetchGlobalValue got non-LLVM src");
             let dstTyp: LLVMType = this.generateLLVMType(typ);
             let reg: LLVMValue = val.asLLVM("We just checked if it is LLVM");
             return this.llvmBuilder.buildLoad(dstTyp, reg, newSubStrOfStrLit("fetchglobalval"));
@@ -356,7 +356,7 @@ struct LLVMCodegen {
                 // Global fetch
                 let val: &RegValue = this.global.at(instr.src.i);
                 let typ: &Type = irFunc.getRegister(instr.dst).typ;
-                assert_with_msg(!val.isLLVM, "FetchComptimeValue global=1 got non-Interp src");
+                assert(!val.isLLVM, "FetchComptimeValue global=1 got non-Interp src");
                 let reg: InterpReg = val.asInterp("We just checked if it is Interp");
                 let start: &u8 = this.interp.getGlobalPointer(&reg);
                 return this.generateLLVMValueFromComptimeValue(typ, start);
@@ -364,7 +364,7 @@ struct LLVMCodegen {
                 // Local fetch
                 let val: &RegValue = regs.at(instr.src.i);
                 let typ: &Type = irFunc.getRegister(instr.dst).typ;
-                assert_with_msg(!val.isLLVM, "FetchComptimeValue global=0 got non-Interp src");
+                assert(!val.isLLVM, "FetchComptimeValue global=0 got non-Interp src");
                 let reg: InterpReg = val.asInterp("We just checked if it is Interp");
                 let start: &u8 = this.getComptimePointer(&reg);
                 return this.generateLLVMValueFromComptimeValue(typ, start);
@@ -488,7 +488,7 @@ struct LLVMCodegen {
         } else if (instr.kind == INSTR_CALL) {
             let called: &IRFunc = this.irGen.functions.at(instr.src.i);
             let calledFunc: LLVMValue = this.llvmModule.getFunction(called.name.asSubStr());
-            assert_with_msg(!calledFunc.ref.isNull(), "Call tried to call invalid LLVMValue");
+            assert(!calledFunc.ref.isNull(), "Call tried to call invalid LLVMValue");
             let args: LLVMValueList = blank;
             args.initBlank(instr.args.length);
             for (let i: usize = 0; i < instr.args.length; i = i + 1) {
@@ -558,7 +558,7 @@ struct LLVMCodegen {
             return typ.constZero();
         } else if (instr.kind == INSTR_CREATE_ARRAY) {
             let reg: &IRReg = irFunc.getRegister(instr.dst);
-            assert_with_msg(reg.typ.isArray(), "LLVM Expected Array in INSTR_CREATE_ARRAY");
+            assert(reg.typ.isArray(), "LLVM Expected Array in INSTR_CREATE_ARRAY");
             let typ: LLVMType = this.generateLLVMType(reg.typ);
             return typ.constZero();
         } else if (instr.kind == INSTR_CREATE_STRUCT) {
@@ -633,17 +633,17 @@ struct LLVMCodegen {
             let reg: &IRReg = irFunc.getRegister(instr.src);
             let ptr: &Type = reg.typ;
             let underlying: &Type = ptr.getUnderlyingType(false);
-            assert_with_msg(underlying.isArray(), "LLVM GetElementPtr wants ptr to array");
+            assert(underlying.isArray(), "LLVM GetElementPtr wants ptr to array");
             return this.llvmBuilder.buildGEP(this.generateLLVMType(underlying), aggr, indices, newSubStrOfStrLit("gep"));
         } else if (instr.kind == INSTR_GET_FIELD_PTR) {
             let aggr: LLVMValue = regs.at(instr.src.i).asLLVM("LLVM GetFieldPtr");
             let reg: &IRReg = irFunc.getRegister(instr.src);
             let ptr: &Type = reg.typ;
-            assert_with_msg(ptr.isPointer(), "LLVM GetFieldPtr wants ptr reg");
+            assert(ptr.isPointer(), "LLVM GetFieldPtr wants ptr reg");
             let aggrType: LLVMType = aggr.getType();
-            assert_with_msg(aggrType.isPointer(), "Expected Pointer to Struct in GetFieldPtr");
+            assert(aggrType.isPointer(), "Expected Pointer to Struct in GetFieldPtr");
             let underlying: &Type = ptr.getUnderlyingType(false);
-            assert_with_msg(underlying.isStruct(), "LLVM GetFieldPtr wants ptr to struct");
+            assert(underlying.isStruct(), "LLVM GetFieldPtr wants ptr to struct");
             return this.llvmBuilder.buildStructGEP(this.generateLLVMType(underlying), aggr, instr.op1.i, newSubStrOfStrLit("field_ptr"));
         } else {
             printf("LLVM %llu\n", instr.kind);
@@ -656,15 +656,15 @@ struct LLVMCodegen {
     func getComptimePointer(&this, reg: &InterpReg) -> &u8 {
         trace("LLVMCodegen.getComptimePointer");
         let start: &u8 = this.interp.getRegStackPointer(reg);
-        assert_with_msg(start >= this.interp.regStackStart, "Expected comptime value to be allocated on Interp Reg Stack");
-        assert_with_msg(start < this.interp.regStackStart + REG_STACK_SIZE, "Expected comptime value to be allocated on Interp Reg Stack");
+        assert(start >= this.interp.regStackStart, "Expected comptime value to be allocated on Interp Reg Stack");
+        assert(start < this.interp.regStackStart + REG_STACK_SIZE, "Expected comptime value to be allocated on Interp Reg Stack");
         return start;
     }
 
     func generateLLVMValueFromComptimePtr(&this, typ: &Type, reg: InterpReg) -> LLVMValue {
         trace("LLVMCodegen.generateLLVMValueFromComptimePtr");
-        assert_with_msg(typ.isPointer(), "generateLLVMValueFromComptimePtr expected Pointer");
-        assert_with_msg(reg.size == 8, "generateLLVMValueFromComptimePtr expected Pointer sized register");
+        assert(typ.isPointer(), "generateLLVMValueFromComptimePtr expected Pointer");
+        assert(reg.size == 8, "generateLLVMValueFromComptimePtr expected Pointer sized register");
         let underlying: &Type = typ.getUnderlyingType(false);
         // load value from interp
         let start: &u8 = this.getComptimePointer(&reg);
@@ -678,7 +678,7 @@ struct LLVMCodegen {
     }
     func generateLLVMValueFromComptimeValue(&this, typ: &Type, start: &u8) -> LLVMValue {
         trace("LLVMCodegen.generateLLVMValueFromComptimeValue");
-        assert_with_msg(start != null, "generateLLVMValueFromComptimeValue got nullptr");
+        assert(start != null, "generateLLVMValueFromComptimeValue got nullptr");
         let size: usize = typ.getSize();
         if (typ.isPrimitive()) {
             if (typ.isInteger()) {
@@ -716,7 +716,7 @@ struct LLVMCodegen {
                 }
             } else if (typ.isBoolean()) {
                 let val: u8 = *(start as &u8);
-                assert_with_msg(val == 0 || val == 1, "comptime bool is not 0 or 1");
+                assert(val == 0 || val == 1, "comptime bool is not 0 or 1");
                 let t: LLVMType = this.llvmContext.createIntegerType(1);
                 return t.constInt(val as usize, false);
             } else {
@@ -725,7 +725,7 @@ struct LLVMCodegen {
         } else if (typ.isStruct()) {
             let decl: &ParsedStructDecl = structDecls.at(typ.typeIndex);
             let lType: LLVMType = this.generateLLVMType(typ);
-            assert_with_msg(lType.isStruct(), "Expected LLVMType to be struct for comptime struct");
+            assert(lType.isStruct(), "Expected LLVMType to be struct for comptime struct");
             let strukt: LLVMValue = lType.constZero();
             let offset: usize = 0;
             let _size: usize = 0;
@@ -789,7 +789,7 @@ struct LLVMCodegen {
         } else if (typ.isStruct()) {
             let decl: &ParsedStructDecl = structDecls.at(typ.typeIndex);
             let fields: &LLVMType = malloc(decl.context.fieldLength * sizeof LLVMType);
-            assert_with_msg(fields != null, "Could not allocate memory in LLVMCodegen.generateLLVMType");
+            assert(fields != null, "Could not allocate memory in LLVMCodegen.generateLLVMType");
             for (let i: usize = 0; i < decl.context.fieldLength; i = i + 1) {
                 let tDecl: &ParsedTypeNode = typeNodes.at(decl.context.getFieldTypeAtIndex(i));
                 *(fields + i * sizeof LLVMType) = this.generateLLVMType(types.at(tDecl.typeState.getType()));

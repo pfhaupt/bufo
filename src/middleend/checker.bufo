@@ -250,11 +250,11 @@ struct TypeChecker {
     func reportNoCallCandidate(&this, callID: usize, arguments: &TCStateList, functions: &FunctionLookupList) -> TCState {
         trace("TypeChecker.reportNoCallCandidate");
         let callExpr: &ParsedExpr = exprs.at(callID);
-        assert_with_msg(callExpr.kind == EXPR_CALL, "reportNoCallCandidate: Expected expr to be a call");
+        assert(callExpr.kind == EXPR_CALL, "reportNoCallCandidate: Expected expr to be a call");
         let loc: String = callExpr.origToken.span.toString();
         let name: String = callExpr.origToken.content.toString();
         fprintf(stderr, "%s: %s: Could not find matching signature for call to function `%s`.\n", loc.chars(), ERR_STR, name.chars());
-        assert_with_msg(functions.length != 0, "reportNoCallCandidate: Expected at least one declaration");
+        assert(functions.length != 0, "reportNoCallCandidate: Expected at least one declaration");
         // REVIEW: It was suggested that we could hide this extra info behind a `--verbose` flag, which sounds interesting.
         for (let i: usize = 0; i < functions.length; i = i + 1) {
             let f: &FunctionLookup = functions.at(i);
@@ -287,7 +287,7 @@ struct TypeChecker {
         let loc: String = checked.getLocation();
         let name: String = checked.getName();
         fprintf(stderr, "%s: %s: Recursive type `%s`.\n", loc.chars(), ERR_STR, name.chars());
-        assert_with_msg(cycle.length >= 1, "Cycle is empty");
+        assert(cycle.length >= 1, "Cycle is empty");
         for (let i: usize = 1; i < cycle.length; i = i + 1) {
             loc = cycle.at(i).getLocation();
             name = cycle.at(i).getName();
@@ -355,7 +355,7 @@ struct TypeChecker {
             let strukt: &StructLookup = (&typeLookup).asStruct();
             for (let i: usize = 0; i < strukt.fields.length; i = i + 1) {
                 let field: &VariableLookup = strukt.fields.at(i);
-                assert_with_msg(field.typeState.isSuccess(), "Expected valid field type in DFS");
+                assert(field.typeState.isSuccess(), "Expected valid field type in DFS");
                 let fieldTypeID: usize = field.typeState.getType();
                 let fieldType: &Type = types.at(fieldTypeID);
                 if (fieldType.isStructArray()) {
@@ -430,7 +430,7 @@ struct TypeChecker {
                 assert(mod.getID() == i);
                 this.currentModule = i;
                 let currModule: &ModuleLookup = this.lookup.modules.at(i);
-                assert_with_msg(currModule.variables.length == 1, "still deez");
+                assert(currModule.variables.length == 1, "still deez");
                 for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
                     let tliID: usize = mod.getTopLevelItemAtIndex(j);
                     let tli: &ParsedTopLevelItem = topLevelItems.at(tliID);
@@ -460,7 +460,7 @@ struct TypeChecker {
         this.currentFunction = null;
         this.currentMethod = null;
         let currentModule: &ModuleLookup = this.lookup.modules.at(this.currentModule);
-        assert_with_msg(currentModule.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
+        assert(currentModule.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
         if (tli.kind == TLI_IMPORT) {
             return newTCStateSuccess();
         } else if (tli.kind == TLI_FUNC_DECL) {
@@ -550,7 +550,7 @@ struct TypeChecker {
         let structLookup: &StructLookup = moduleLookup.getStructByGlobalID(structID);
         let methodLookup: &MethodLookup = structLookup.getMethodByGlobalID(methodID);
         if (methodLookup.getReadyState(METHOD_BODY_COMPLETE)) {
-            assert_with_msg(methodLookup.getReadyState(METHOD_READY_TO_USE), "Method should be ready to use at this point");
+            assert(methodLookup.getReadyState(METHOD_READY_TO_USE), "Method should be ready to use at this point");
             return method.typeState;
         }
         this.currentMethod = methodLookup;
@@ -586,7 +586,7 @@ struct TypeChecker {
             methodLookup.setReadyState(METHOD_READY_TO_USE);
         }
         if (onlySignature) {
-            assert_with_msg(methodLookup.getReadyState(METHOD_READY_TO_USE), "expected method to be ready for use after checking signature");
+            assert(methodLookup.getReadyState(METHOD_READY_TO_USE), "expected method to be ready for use after checking signature");
             return newTCStateSuccess();
         }
         (*method).typeState = newTCStateSuccess();
@@ -594,7 +594,7 @@ struct TypeChecker {
             // FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
             let _dupl: usize = 0;
             if (structLookup.containsDuplicateMethod(methodLookup, &_dupl)) {
-                assert_with_msg(_dupl != 0, "Duplicate MethodLookup is null");
+                assert(_dupl != 0, "Duplicate MethodLookup is null");
                 return this.reportDuplicateMethod(methodLookup, _dupl as &MethodLookup);
             }
             methodLookup.setReadyState(METHOD_DUPLICATE_CHECK);
@@ -620,7 +620,7 @@ struct TypeChecker {
         let moduleLookup: &ModuleLookup = this.lookup.modules.at(this.currentModule);
         let funcLookup: &FunctionLookup = moduleLookup.getFunctionByGlobalID(funcID);
         if (funcLookup.getReadyState(FUNC_BODY_COMPLETE)) {
-            assert_with_msg(funcLookup.getReadyState(FUNC_READY_TO_USE), "Function should be ready to use at this point");
+            assert(funcLookup.getReadyState(FUNC_READY_TO_USE), "Function should be ready to use at this point");
             return function.typeState;
         }
         this.currentFunction = funcLookup;
@@ -660,7 +660,7 @@ struct TypeChecker {
             // FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
             let _dupl: usize = 0;
             if (moduleLookup.containsDuplicateFunction(funcLookup, &_dupl)) {
-                assert_with_msg(_dupl != 0, "Duplicate FunctionLookup is null");
+                assert(_dupl != 0, "Duplicate FunctionLookup is null");
                 return this.reportDuplicateFunction(funcLookup, _dupl as &FunctionLookup);
             }
             funcLookup.setReadyState(FUNC_DUPLICATE_CHECK);
@@ -709,7 +709,7 @@ struct TypeChecker {
         }
         let after: usize = scopes.length;
         scopes.pop();
-        assert_with_msg(after == curr, "Stack imbalance");
+        assert(after == curr, "Stack imbalance");
         if (blockState.isError()) return blockState;
         (*block).typeState = newTCStateSuccess();
         return block.typeState;
@@ -759,7 +759,7 @@ struct TypeChecker {
             let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
             if (condState.wantsInfer()) {
                 condState = this.inferTypeOntoExpr(stmt.expr, boolType.getID());
-                assert_with_msg(condState.isType(), "Could not infer type onto if-condition");
+                assert(condState.isType(), "Could not infer type onto if-condition");
             }
             let condType: &Type = types.at(condState.getType());
             if (!condType.isBoolean()) {
@@ -774,16 +774,16 @@ struct TypeChecker {
             let exprState: TCState = this.typeCheckExpr(stmt.expr, scopes);
             if (exprState.isError()) return exprState;
             if (this.currentFunction != null) {
-                assert_with_msg(this.currentFunction.getReadyState(FUNC_READY_TO_USE), "Function is not ready");
+                assert(this.currentFunction.getReadyState(FUNC_READY_TO_USE), "Function is not ready");
                 let _retType: &Type = types.at(this.currentFunction.returnType.getType());
                 if (_retType.isNone()) todo_with_msg("unexpected ret expr where empty function");
                 let retState: &TCState = &this.currentFunction.returnType;
-                assert_with_msg(retState.isSuccess(), "ready to use function has invalid return type");
-                assert_with_msg(retState.isType(), "ready to use function has non-type as return type");
+                assert(retState.isSuccess(), "ready to use function has invalid return type");
+                assert(retState.isType(), "ready to use function has non-type as return type");
                 if (exprState.wantsInfer()) {
                     exprState = this.inferTypeOntoExpr(stmt.expr, retState.getType());
                     if (exprState.isError()) return exprState;
-                    assert_with_msg(exprState.isType(), "Failed to infer type of return expression");
+                    assert(exprState.isType(), "Failed to infer type of return expression");
                 }
                 let exprType: &Type = types.at(exprState.getType());
                 let retType: &Type = types.at(retState.getType());
@@ -793,16 +793,16 @@ struct TypeChecker {
                 (*stmt).typeState = *retState;
                 return newTCStateSuccess();
             } else if (this.currentMethod != null) {
-                assert_with_msg(this.currentMethod.getReadyState(METHOD_READY_TO_USE), "Method is not ready");
+                assert(this.currentMethod.getReadyState(METHOD_READY_TO_USE), "Method is not ready");
                 let _retType: &Type = types.at(this.currentMethod.returnType.getType());
                 if (_retType.isNone()) todo_with_msg("unexpected ret expr where empty method");
                 let retState: &TCState = &this.currentMethod.returnType;
-                assert_with_msg(retState.isSuccess(), "ready to use method has invalid return type");
-                assert_with_msg(retState.isType(), "ready to use method has non-type as return type");
+                assert(retState.isSuccess(), "ready to use method has invalid return type");
+                assert(retState.isType(), "ready to use method has non-type as return type");
                 if (exprState.wantsInfer()) {
                     exprState = this.inferTypeOntoExpr(stmt.expr, retState.getType());
                     if (exprState.isError()) return exprState;
-                    assert_with_msg(exprState.isType(), "Failed to infer type of return expression");
+                    assert(exprState.isType(), "Failed to infer type of return expression");
                 }
                 let exprType: &Type = types.at(exprState.getType());
                 let retType: &Type = types.at(retState.getType());
@@ -817,13 +817,13 @@ struct TypeChecker {
             todo_with_msg("return expr");
         } else if (stmt.kind == STMT_RETURN_EMPTY) {
             if (this.currentFunction != null) {
-                assert_with_msg(this.currentFunction.getReadyState(FUNC_READY_TO_USE), "Function is not ready");
+                assert(this.currentFunction.getReadyState(FUNC_READY_TO_USE), "Function is not ready");
                 let retType: &Type = types.at(this.currentFunction.returnType.getType());
                 if (!retType.isNone()) todo_with_msg("function returns something, but we wrote return;");
                 (*stmt).typeState = newTCStateSuccess();
                 return newTCStateSuccess();
             } else if (this.currentMethod != null) {
-                assert_with_msg(this.currentMethod.getReadyState(METHOD_READY_TO_USE), "Method is not ready");
+                assert(this.currentMethod.getReadyState(METHOD_READY_TO_USE), "Method is not ready");
                 let retType: &Type = types.at(this.currentMethod.returnType.getType());
                 if (!retType.isNone()) todo_with_msg("method returns something, but we wrote return;");
                 (*stmt).typeState = newTCStateSuccess();
@@ -843,7 +843,7 @@ struct TypeChecker {
             let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
             if (condState.wantsInfer()) {
                 condState = this.inferTypeOntoExpr(stmt.expr, boolType.getID());
-                assert_with_msg(condState.isType(), "Could not infer type onto while-condition");
+                assert(condState.isType(), "Could not infer type onto while-condition");
             }
             let condType: &Type = types.at(condState.getType());
             if (!condType.isBoolean()) {
@@ -865,7 +865,7 @@ struct TypeChecker {
     func typeCheckVarDecl(&this, varDeclID: usize, scopes: &ScopeLookupList, globalScope: bool) -> TCState {
         trace("TypeChecker.typeCheckVarDecl");
         let varDecl: &ParsedStmt = stmts.at(varDeclID);
-        assert_with_msg(varDecl.kind == STMT_VAR_DECL, "Stmt expected to be a VarDecl");
+        assert(varDecl.kind == STMT_VAR_DECL, "Stmt expected to be a VarDecl");
         let context: VarDeclContext = varDecl.varDeclContext;
         let last: &ScopeLookup = scopes.last();
         if (varDecl.typeState.isSuccess()) {
@@ -894,7 +894,7 @@ struct TypeChecker {
         this.isComptimeContext = false;
         if (context.typeID == TYPE_INVALID) {
             // let var = expr;
-            assert_with_msg(typeState.isInvalid(), "`let var = expr;` got valid type state??");
+            assert(typeState.isInvalid(), "`let var = expr;` got valid type state??");
             if (exprState.isError()) return exprState;
             if (exprState.wantsInfer()) {
                 todo_with_msg("`let var = expr;` wants inferred expr");
@@ -917,7 +917,7 @@ struct TypeChecker {
         }
         if (globalScope) {
             let index: usize = 0;
-            assert_with_msg(last.getVarIndexByName(context.name.content, &index), "Could not find variable in global scope");
+            assert(last.getVarIndexByName(context.name.content, &index), "Could not find variable in global scope");
             let var: &VariableLookup = last.getVariableAtIndex(index);
             (*var).typeState = typeState;
         } else {
@@ -951,7 +951,7 @@ struct TypeChecker {
             state = newTCStateType(t.getID());
         } else if (expr.kind == EXPR_ARRAY_LIT) {
             let context: &ArrayContext = &expr.arrayContext;
-            assert_with_msg(context.elemLength != 0, "Zero sized Array Literal spotted");
+            assert(context.elemLength != 0, "Zero sized Array Literal spotted");
             let elemIndex: usize = context.getElementAtIndex(0);
             let elemState: TCState = this.typeCheckExpr(elemIndex, scopes);
             if (elemState.isError()) return elemState;
@@ -1180,14 +1180,14 @@ struct TypeChecker {
                 let argState: TCState = *arguments.at(j);
                 let param: &VariableLookup = f.params.at(j);
                 let paramState: &TCState = &param.typeState;
-                assert_with_msg(paramState.isSuccess(), "Expected valid function parameter");
+                assert(paramState.isSuccess(), "Expected valid function parameter");
                 let paramType: &Type = types.at(paramState.getType());
                 if (argState.wantsInfer()) {
                     argState = this.tryInferTypeOntoExpr(callContext.getElementAtIndex(j), paramType.getID(), true);
                     if (argState.isError()) {
                         todo_with_msg("error when inferring type of param onto argument");
                     }
-                    assert_with_msg(argState.isType(), "Did not infer type of param onto argument properly");
+                    assert(argState.isType(), "Did not infer type of param onto argument properly");
                 }
                 let argType: &Type = types.at(argState.getType());
                 if (!argType.equals(paramType)) {
@@ -1218,26 +1218,26 @@ struct TypeChecker {
         } else if (candidates.length > 1) {
             todo_with_msg("selectCallCandidate: too many candidates");
         }
-        assert_with_msg(candidates.length == 1, "selectCallCandidate: Expected exactly one candidate");
+        assert(candidates.length == 1, "selectCallCandidate: Expected exactly one candidate");
         let f: &FunctionLookup = &*(candidates.at(0));
-        assert_with_msg(f.getReadyState(FUNC_READY_TO_USE), "Expected markCallCandidates to validate FUNC_READY_TO_USE");
+        assert(f.getReadyState(FUNC_READY_TO_USE), "Expected markCallCandidates to validate FUNC_READY_TO_USE");
         for (let j: usize = 0; j < f.params.length; j = j + 1) {
             let argState: &TCState = &*arguments.at(j);
             let param: &VariableLookup = f.params.at(j);
             let paramState: &TCState = &param.typeState;
-            assert_with_msg(paramState.isSuccess(), "Expected valid function parameter");
+            assert(paramState.isSuccess(), "Expected valid function parameter");
             let paramType: &Type = types.at(paramState.getType());
             if (argState.wantsInfer()) {
                 *argState = this.inferTypeOntoExpr(callContext.getElementAtIndex(j), paramType.getID());
-                assert_with_msg(!argState.isError(), "selectCallCandidate: Expected infer to be success");
-                assert_with_msg(argState.isType(), "selectCallCandidate: Expected infer to be success");
+                assert(!argState.isError(), "selectCallCandidate: Expected infer to be success");
+                assert(argState.isType(), "selectCallCandidate: Expected infer to be success");
             }
             let argType: &Type = types.at(argState.getType());
-            assert_with_msg(argType.equals(paramType), "selectCallCandidate: Expected argument to match parameter");
+            assert(argType.equals(paramType), "selectCallCandidate: Expected argument to match parameter");
         }
         *funcID = f.globalID;
         let retType: TCState = f.returnType;
-        assert_with_msg(retType.isSuccess(), "selectCallCandidate: Expected valid function return type");
+        assert(retType.isSuccess(), "selectCallCandidate: Expected valid function return type");
         return retType;
     }
 
@@ -1272,7 +1272,7 @@ struct TypeChecker {
             if (!structLookup.getReadyState(STRUCT_FIELDS_COMPLETE))
                 return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
             let hits: usize = 0;
-            assert_with_msg(structLookup.fields.length < 50, "Sorry, I need to hack this for now");
+            assert(structLookup.fields.length < 50, "Sorry, I need to hack this for now");
             for (let i: usize = 0; i < context.fieldLength; i = i + 1) {
                 let name: Token = context.getFieldNameAtIndex(i);
                 let exprID: usize = context.getFieldExprAtIndex(i);
@@ -1290,8 +1290,8 @@ struct TypeChecker {
                 }
                 let field: &VariableLookup = structLookup.fields.at(fieldIndex);
                 let fieldState: &TCState = &field.typeState;
-                assert_with_msg(fieldState.isSuccess(), "Struct is ready to go, but field type is invalid?");
-                assert_with_msg(name.content.equals(&field.name.content), "Seems like my hack doesn't work");
+                assert(fieldState.isSuccess(), "Struct is ready to go, but field type is invalid?");
+                assert(name.content.equals(&field.name.content), "Seems like my hack doesn't work");
                 let fieldType: &Type = types.at(fieldState.getType());
                 if (exprState.wantsInfer())
                     exprState = this.inferTypeOntoExpr(exprID, fieldType.getID());
@@ -1349,7 +1349,7 @@ struct TypeChecker {
     func typeCheckExprBinary(&this, binID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckExprBinary");
         let expr: &ParsedExpr = exprs.at(binID);
-        assert_with_msg(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
+        assert(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
         if (expr.op == BIN_DOT) {
             return this.typeCheckExprMemberAccess(binID, scopes);
         } else if (expr.op == BIN_ASSIGN) {
@@ -1482,7 +1482,7 @@ struct TypeChecker {
     func typeCheckExprMemberAccess(&this, dotID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckExprMemberAccess");
         let expr: &ParsedExpr = exprs.at(dotID);
-        assert_with_msg(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
+        assert(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
         assert(expr.op == BIN_DOT);
         let instance: TCState = this.typeCheckExpr(expr.lhs, scopes);
         if (instance.isError()) return instance;
@@ -1504,7 +1504,7 @@ struct TypeChecker {
                     return this.reportUnknownField(fieldName, structLookup);
                 }
                 let fieldState: TCState = field.typeState;
-                assert_with_msg(fieldState.isSuccess(), "Expected valid field type");
+                assert(fieldState.isSuccess(), "Expected valid field type");
                 return fieldState;
             } else if (rhs.kind == EXPR_CALL) {
                 if (!structLookup.getReadyState(STRUCT_SIGNATURE_COMPLETE))
@@ -1548,18 +1548,18 @@ struct TypeChecker {
                         indexOffset = 1;
                         let thisParam: &VariableLookup = m.params.at(0);
                         let thisParamState: TCState = thisParam.typeState;
-                        assert_with_msg(thisParamState.isSuccess(), "Expected valid this parameter");
+                        assert(thisParamState.isSuccess(), "Expected valid this parameter");
                         let paramType: &Type = types.at(thisParamState.getType());
                         let instType: &Type = types.at(instance.getType());
                         if (!instType.equals(paramType)) {
                             if (paramType.isPointer() && !instType.isPointer()) {
                                 let under: &Type = paramType.getUnderlyingType(false);
-                                assert_with_msg(instType.equals(under), "method call instance type doesn't match");
+                                assert(instType.equals(under), "method call instance type doesn't match");
                                 (*expr).lhs = exprs.at(expr.lhs).intoPointer();
                                 let patched: TCState = this.typeCheckExpr(expr.lhs, scopes);
-                                assert_with_msg(patched.isSuccess(), "patched instance failed");
-                                assert_with_msg(patched.isType(), "patched instance state is not a type");
-                                assert_with_msg(types.at(patched.getType()).equals(paramType), "patched instance type does not match");
+                                assert(patched.isSuccess(), "patched instance failed");
+                                assert(patched.isType(), "patched instance state is not a type");
+                                assert(types.at(patched.getType()).equals(paramType), "patched instance type does not match");
                             } else {
                                 this.emergencyPrint(rhs.span);
                                 todo_with_msg("how can this happen");
@@ -1571,7 +1571,7 @@ struct TypeChecker {
                         let argState: &TCState = &*arguments.at(j);
                         let param: &VariableLookup = m.params.at(j + indexOffset);
                         let paramState: &TCState = &param.typeState;
-                        assert_with_msg(paramState.isSuccess(), "Expected valid method parameter");
+                        assert(paramState.isSuccess(), "Expected valid method parameter");
                         let paramType: &Type = types.at(paramState.getType());
                         if (argState.wantsInfer()) {
                             let old: TCState = *argState;
@@ -1580,7 +1580,7 @@ struct TypeChecker {
                                 *argState = old;
                                 todo_with_msg("error when inferring type of param onto argument");
                             }
-                            assert_with_msg(argState.isType(), "Did not infer type of param onto argument properly");
+                            assert(argState.isType(), "Did not infer type of param onto argument properly");
                         }
                         let argType: &Type = types.at(argState.getType());
                         if (!argType.equals(paramType)) {
@@ -1592,7 +1592,7 @@ struct TypeChecker {
                     //         pick the first match
                     (*rhs).lhs = m.globalID;
                     let retType: TCState = m.returnType;
-                    assert_with_msg(retType.isSuccess(), "Expected valid method return type");
+                    assert(retType.isSuccess(), "Expected valid method return type");
                     return retType;
                 }
                 todo_with_msg("method call");
@@ -1682,7 +1682,7 @@ struct TypeChecker {
             tid = newTCStateType(typ.getID());
         } else if (expr.kind == EXPR_ARRAY_LIT) {
             if (!typ.isArray()) todo_with_msg("can't infer non-array type onto array literal");
-            assert_with_msg(expr.arrayContext.elemLength > 0, "Got empty array literal");
+            assert(expr.arrayContext.elemLength > 0, "Got empty array literal");
             if (expr.arrayContext.size == 0) {
                 if (typ.arraySize != expr.arrayContext.elemLength) {
                     if (!checkOnly) {
@@ -1780,9 +1780,9 @@ struct TypeChecker {
                 }
                 tid = this.tryInferTypeOntoExpr(expr.lhs, typeID, checkOnly);
                 if (tid.isError()) return tid;
-                assert_with_msg(tid.isType(), "infer non-error expected to be a type");
+                assert(tid.isType(), "infer non-error expected to be a type");
                 let subType: &Type = types.at(tid.getType());
-                assert_with_msg(subType.equals(typ), "Infer: SubExpr of UNARY_MINUS is expected to have same type as Expr");
+                assert(subType.equals(typ), "Infer: SubExpr of UNARY_MINUS is expected to have same type as Expr");
                 tid = newTCStateType(typeID);
             } else if (expr.op == UNARY_NOT) {
                 let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
@@ -1811,8 +1811,8 @@ struct TypeChecker {
     func typeCheckExprArithmetic(&this, binID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckExprArithmetic");
         let expr: &ParsedExpr = exprs.at(binID);
-        assert_with_msg(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
-        assert_with_msg(expr.isArithmetic(), "Expr expected to be arithmetic");
+        assert(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
+        assert(expr.isArithmetic(), "Expr expected to be arithmetic");
         let lhsState: TCState = this.typeCheckExpr(expr.lhs, scopes);
         let rhsState: TCState = this.typeCheckExpr(expr.rhs, scopes);
         if (lhsState.isError()) return lhsState;
@@ -1847,7 +1847,7 @@ struct TypeChecker {
                 let t: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
                 resultState = newTCStateType(t.getID());
             } else {
-                assert_with_msg(lhsType.getID() == rhsType.getID(), "Arithmetic LHS and RHS are different types");
+                assert(lhsType.getID() == rhsType.getID(), "Arithmetic LHS and RHS are different types");
                 resultState = newTCStateType(lhsType.getID());
             }
         } else if (lhsType.isPointer() && rhsType.isInteger()) {
@@ -1875,8 +1875,8 @@ struct TypeChecker {
     func typeCheckExprComparison(&this, binID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckExprComparison");
         let expr: &ParsedExpr = exprs.at(binID);
-        assert_with_msg(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
-        assert_with_msg(expr.isComparison(), "Expr expected to be comparison");
+        assert(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
+        assert(expr.isComparison(), "Expr expected to be comparison");
         let lhsState: TCState = this.typeCheckExpr(expr.lhs, scopes);
         let rhsState: TCState = this.typeCheckExpr(expr.rhs, scopes);
         if (lhsState.isError()) return lhsState;
@@ -1947,9 +1947,9 @@ struct TypeChecker {
             if (typeLookup.isStruct()) {
                 let structLookup: &StructLookup = &*typeLookup.asStruct();
                 let _tid: usize = structLookup.typeID;
-                assert_with_msg(_tid != 0, "Ready to use Struct Lookup has Type ID 0");
+                assert(_tid != 0, "Ready to use Struct Lookup has Type ID 0");
                 let t: &Type = types.at(_tid);
-                assert_with_msg(t.isStruct(), "Struct Lookup links to non-Struct type");
+                assert(t.isStruct(), "Struct Lookup links to non-Struct type");
                 tid = t.getID();
             } else {
                 todo_with_msg("check ident");

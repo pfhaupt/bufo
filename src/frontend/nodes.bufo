@@ -52,7 +52,7 @@ func mangleFunctionName(
         let name: Token = params.getNameAtIndex(i);
         let id: usize = params.getTypeAtIndex(i);
         let typeNode: &ParsedTypeNode = typeNodes.at(id);
-        assert_with_msg(typeNode.typeState.isSuccess(), "Expected valid parameter type for mangling");
+        assert(typeNode.typeState.isSuccess(), "Expected valid parameter type for mangling");
         let typ: &Type = types.at(typeNode.typeState.getType());
         let _typ: String = typ.getMangledName();
         mangledName.pushString(&_typ);
@@ -61,7 +61,7 @@ func mangleFunctionName(
     mangledName.pushChar('r');
     if (retTypeID != 0) {
         let retNode: &ParsedTypeNode = typeNodes.at(retTypeID);
-        assert_with_msg(retNode.typeState.isSuccess(), "Expected valid return type for mangling");
+        assert(retNode.typeState.isSuccess(), "Expected valid return type for mangling");
         let typ: &Type = types.at(retNode.typeState.getType());
         let _typ: String = typ.getMangledName();
         mangledName.pushString(&_typ);
@@ -146,7 +146,7 @@ struct ParsedModule {
             let newCap: usize = this.tliCapacity * 2;
             if (newCap == 0) newCap = 1;
             this.tliList = realloc(this.tliList, newCap * sizeof usize);
-            assert_with_msg(this.tliList != null, "Could not resize tli list");
+            assert(this.tliList != null, "Could not resize tli list");
             this.tliCapacity = newCap;
         }
         *(this.tliList + this.tliLength * sizeof usize) = tli.getID();
@@ -154,7 +154,7 @@ struct ParsedModule {
     }
 
     func getTopLevelItemAtIndex(&this, index: usize) -> usize {
-        assert_with_msg(index < this.tliLength, "Out of bounds access in getTopLevelItemAtIndex");
+        assert(index < this.tliLength, "Out of bounds access in getTopLevelItemAtIndex");
         return *(this.tliList + index * sizeof usize);
     }
 }
@@ -267,7 +267,7 @@ struct ParsedMethod {
 
     func getMangledName(&this) -> String {
         trace("ParsedMethod.getMangledName");
-        assert_with_msg(this.typeState.isSuccess(), "Mangling can only be done after type checks");
+        assert(this.typeState.isSuccess(), "Mangling can only be done after type checks");
         return mangleFunctionName(
             this.parentID,
             &this.name,
@@ -311,7 +311,7 @@ struct ParsedFuncDecl {
 
     func getMangledName(&this) -> String {
         trace("ParsedFuncDecl.getMangledName");
-        assert_with_msg(this.typeState.isSuccess(), "Mangling can only be done after type checks");
+        assert(this.typeState.isSuccess(), "Mangling can only be done after type checks");
         return mangleFunctionName(
             this.parentID,
             &this.name,
@@ -361,7 +361,7 @@ struct ParsedBlock {
             let newCap: usize = this.stmtCapacity * 2;
             if (newCap == 0) newCap = 1;
             this.stmtList = realloc(this.stmtList, newCap * sizeof usize);
-            assert_with_msg(this.stmtList != null, "Could not resize stmt list");
+            assert(this.stmtList != null, "Could not resize stmt list");
             this.stmtCapacity = newCap;
         }
         *(this.stmtList + this.stmtLength * sizeof usize) = stmt.getID();
@@ -370,7 +370,7 @@ struct ParsedBlock {
 
     func getStmtAtIndex(&this, index: usize) -> usize {
         trace("ParsedBlock.getStmtAtIndex");
-        assert_with_msg(index < this.stmtLength, "Out of bounds access in ParsedBlock.getStmtAtIndex");
+        assert(index < this.stmtLength, "Out of bounds access in ParsedBlock.getStmtAtIndex");
         return *(this.stmtList + index * sizeof usize);
     }
 }
@@ -418,8 +418,8 @@ struct ParsedStmt {
     }
 
     func getMangledName(&this) -> String {
-        assert_with_msg(this.kind == STMT_VAR_DECL, "Only variable declarations can get their names mangled");
-        assert_with_msg(this.block < NODE_ID_OFFSET, "Only global variable declarations can get their names mangled");
+        assert(this.kind == STMT_VAR_DECL, "Only variable declarations can get their names mangled");
+        assert(this.block < NODE_ID_OFFSET, "Only global variable declarations can get their names mangled");
         return mangleVariableName(this.block, &this.varDeclContext.name);
     }
 }

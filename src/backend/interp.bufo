@@ -41,15 +41,15 @@ struct IRInterp {
     }
     func getRegStackPointer(&this, reg: &InterpReg) -> &u8 {
         let ptr: &u8 = this.regStackBase - reg.offset - reg.size;
-        assert_with_msg(ptr < this.regStackStart + REG_STACK_SIZE, "Stack Overflow in IRInterp.getRegStackPointer");
-        assert_with_msg(ptr >= this.regStackStart, "Stack Underflow in IRInterp.getRegStackPointer");
+        assert(ptr < this.regStackStart + REG_STACK_SIZE, "Stack Overflow in IRInterp.getRegStackPointer");
+        assert(ptr >= this.regStackStart, "Stack Underflow in IRInterp.getRegStackPointer");
         return ptr;
     }
     func advanceRealStack(&this, size: usize) -> &u8 {
         let _p: &u8 = this.realStackPointer;
         let new: &u8 = this.realStackPointer + size;
         // FIXME: Instead of asserting, report an error
-        assert_with_msg(new < this.realStackStart + STACK_SIZE, "Stack Overflow in IRInterp.advanceRealStack");
+        assert(new < this.realStackStart + STACK_SIZE, "Stack Overflow in IRInterp.advanceRealStack");
         this.realStackPointer = new;
         return _p;
     }
@@ -68,14 +68,14 @@ struct IRInterp {
     func evaluateSingle(&this, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
         trace("IRInterp.evaluateSingle");
         if (!forcedComptime) {
-            assert_with_msg(instr.isComptime, "Expected comptime instr in IRInterp.evaluateSingle");
+            assert(instr.isComptime, "Expected comptime instr in IRInterp.evaluateSingle");
         }
-        assert_with_msg(this.regStackBase < this.regStackStart + REG_STACK_SIZE, "Stack Cursor Overflow in IRInterp.evaluateSingle");
+        assert(this.regStackBase < this.regStackStart + REG_STACK_SIZE, "Stack Cursor Overflow in IRInterp.evaluateSingle");
         if (instr.kind == INSTR_ALLOCA) {
             // dst: dst,
             // src: RegIndex { i: size },
             let fReg: &IRReg = irFunc.getRegister(instr.dst);
-            assert_with_msg(fReg.typ.isPointer(), "Alloca got non-pointer");
+            assert(fReg.typ.isPointer(), "Alloca got non-pointer");
             let reg: InterpReg = InterpReg {
                 offset: fReg.offset,
                 size: 8,
@@ -87,7 +87,7 @@ struct IRInterp {
             // src: val,
             let dst: &IRReg = irFunc.getRegister(instr.dst);
             let src: &RegValue = regs.at(instr.src.i);
-            assert_with_msg(dst.typ.isPointer(), "Store expected Ptr Dst");
+            assert(dst.typ.isPointer(), "Store expected Ptr Dst");
             let dstReg: InterpReg = InterpReg {
                 offset: dst.offset,
                 size: dst.typ.getSize(),
@@ -105,7 +105,7 @@ struct IRInterp {
             // size of arg -> instr.src.i
             // param ptr -> reg[instr.dst]
             let size: usize = instr.op1.i;
-            assert_with_msg(size <= 8, "Interp: Expected small size for GetParam");
+            assert(size <= 8, "Interp: Expected small size for GetParam");
             let dst: InterpReg = InterpReg {
                 offset: irFunc.getRegister(instr.dst).offset,
                 size: size,
@@ -118,7 +118,7 @@ struct IRInterp {
             let dst: &IRReg = irFunc.getRegister(instr.dst);
             let src: &RegValue = regs.at(instr.src.i);
             let srcReg: InterpReg = src.asInterp("Load src");
-            assert_with_msg(srcReg.size == 8, "Load expected Ptr Src");
+            assert(srcReg.size == 8, "Load expected Ptr Src");
             let dstReg: InterpReg = InterpReg {
                 offset: dst.offset,
                 size: dst.typ.getSize(),
@@ -143,7 +143,7 @@ struct IRInterp {
             return dstReg;
         } else if (instr.kind == INSTR_LOAD_I8) {
             let fReg: &IRReg = irFunc.getRegister(instr.dst);
-            assert_with_msg(fReg.typ.isInteger(), "LoadI8 got non-int");
+            assert(fReg.typ.isInteger(), "LoadI8 got non-int");
             let reg: InterpReg = InterpReg {
                 offset: fReg.offset,
                 size: 1,
@@ -153,7 +153,7 @@ struct IRInterp {
             return reg;
         } else if (instr.kind == INSTR_LOAD_U8) {
             let fReg: &IRReg = irFunc.getRegister(instr.dst);
-            assert_with_msg(fReg.typ.isInteger() || fReg.typ.isChar(), "LoadU8 got non-int non-char");
+            assert(fReg.typ.isInteger() || fReg.typ.isChar(), "LoadU8 got non-int non-char");
             let reg: InterpReg = InterpReg {
                 offset: fReg.offset,
                 size: 1,
@@ -167,7 +167,7 @@ struct IRInterp {
             todo_with_msg("INSTR_LOAD_U16");
         } else if (instr.kind == INSTR_LOAD_I32) {
             let fReg: &IRReg = irFunc.getRegister(instr.dst);
-            assert_with_msg(fReg.typ.isInteger(), "LoadI32 got non-int");
+            assert(fReg.typ.isInteger(), "LoadI32 got non-int");
             let reg: InterpReg = InterpReg {
                 offset: fReg.offset,
                 size: 4,
@@ -177,7 +177,7 @@ struct IRInterp {
             return reg;
         } else if (instr.kind == INSTR_LOAD_U32) {
             let fReg: &IRReg = irFunc.getRegister(instr.dst);
-            assert_with_msg(fReg.typ.isInteger(), "LoadU32 got non-int");
+            assert(fReg.typ.isInteger(), "LoadU32 got non-int");
             let reg: InterpReg = InterpReg {
                 offset: fReg.offset,
                 size: 4,
@@ -189,7 +189,7 @@ struct IRInterp {
             todo_with_msg("INSTR_LOAD_I64");
         } else if (instr.kind == INSTR_LOAD_U64) {
             let fReg: &IRReg = irFunc.getRegister(instr.dst);
-            assert_with_msg(fReg.typ.isInteger(), "LoadU64 got non-int");
+            assert(fReg.typ.isInteger(), "LoadU64 got non-int");
             let reg: InterpReg = InterpReg {
                 offset: fReg.offset,
                 size: 8,
@@ -199,7 +199,7 @@ struct IRInterp {
             return reg;
         } else if (instr.kind == INSTR_LOAD_F32) {
             let fReg: &IRReg = irFunc.getRegister(instr.dst);
-            assert_with_msg(fReg.typ.isFloat(), "LoadF32 got non-float");
+            assert(fReg.typ.isFloat(), "LoadF32 got non-float");
             let reg: InterpReg = InterpReg {
                 offset: fReg.offset,
                 size: 4,
@@ -209,7 +209,7 @@ struct IRInterp {
             return reg;
         } else if (instr.kind == INSTR_LOAD_F64) {
             let fReg: &IRReg = irFunc.getRegister(instr.dst);
-            assert_with_msg(fReg.typ.isFloat(), "LoadF64 got non-float");
+            assert(fReg.typ.isFloat(), "LoadF64 got non-float");
             let reg: InterpReg = InterpReg {
                 offset: fReg.offset,
                 size: 8,
@@ -219,7 +219,7 @@ struct IRInterp {
             return reg;
         } else if (instr.kind == INSTR_LOAD_BOOL) {
             let isTrue: u8 = instr.src.i as u8;
-            assert_with_msg(isTrue == 0 || isTrue == 1, "LoadBool expected 0 or 1");
+            assert(isTrue == 0 || isTrue == 1, "LoadBool expected 0 or 1");
             let fReg: &IRReg = irFunc.getRegister(instr.dst);
             let reg: InterpReg = InterpReg {
                 offset: fReg.offset,
@@ -230,7 +230,7 @@ struct IRInterp {
             return reg;
         } else if (instr.kind == INSTR_LOAD_NULL) {
             let fReg: &IRReg = irFunc.getRegister(instr.dst);
-            assert_with_msg(fReg.typ.isPointer(), "LoadNull got non-ptr");
+            assert(fReg.typ.isPointer(), "LoadNull got non-ptr");
             let reg: InterpReg = InterpReg {
                 offset: fReg.offset,
                 size: 8,
@@ -259,8 +259,8 @@ struct IRInterp {
             // src: RegIndex { i: str.start as usize },
             // op1: RegIndex { i: str.len },
             let fReg: &IRReg = irFunc.getRegister(instr.dst);
-            assert_with_msg(fReg.typ.isPointer(), "LoadString expected Ptr");
-            assert_with_msg(fReg.typ.getUnderlyingType(false).isChar(), "LoadString expected Ptr to Char");
+            assert(fReg.typ.isPointer(), "LoadString expected Ptr");
+            assert(fReg.typ.getUnderlyingType(false).isChar(), "LoadString expected Ptr to Char");
             let reg: InterpReg = InterpReg {
                 offset: fReg.offset,
                 size: 8,
@@ -291,9 +291,9 @@ struct IRInterp {
                 size: size,
             };
             this.popArgument(this.getRegStackPointer(&dst), size);
-            assert_with_msg(argSize == this.argStackLength, "Imbalanced argument stack after calling IRInterp.evaluateCall");
-            assert_with_msg(stackStart == this.realStackStart, "Imbalanced real stack after calling IRInterp.evaluateCall");
-            assert_with_msg(regStackStart == this.regStackStart, "Imbalanced reg stack after calling IRInterp.evaluateCall");
+            assert(argSize == this.argStackLength, "Imbalanced argument stack after calling IRInterp.evaluateCall");
+            assert(stackStart == this.realStackStart, "Imbalanced real stack after calling IRInterp.evaluateCall");
+            assert(regStackStart == this.regStackStart, "Imbalanced reg stack after calling IRInterp.evaluateCall");
             return dst;
         } else if (instr.kind == INSTR_INSERT_VALUE) {
             // dst: aggr,
@@ -314,7 +314,7 @@ struct IRInterp {
                 let fieldSize: usize = 0;
                 s.getFieldOffsetAndSize(instr.src.i, &offset, &fieldSize);
                 let valReg: InterpReg = regs.at(instr.op1.i).asInterp("Interp InsertValue Struct");
-                assert_with_msg(valReg.size == fieldSize, "field size mismatch in Interp InsertValue");
+                assert(valReg.size == fieldSize, "field size mismatch in Interp InsertValue");
                 memcpy(dstStart + offset, this.getRegStackPointer(&valReg), fieldSize);
                 return dst;
             } else {
@@ -330,7 +330,7 @@ struct IRInterp {
             let signed: bool = t1.isSignedInteger();
             let s1: usize = rLhs.size;
             let s2: usize = rRhs.size;
-            assert_with_msg(s1 == s2, "AddInt expected LHS and RHS to be the same size");
+            assert(s1 == s2, "AddInt expected LHS and RHS to be the same size");
             let dstReg: &IRReg = irFunc.getRegister(instr.dst);
             let dst: InterpReg = InterpReg {
                 offset: dstReg.offset,
@@ -365,7 +365,7 @@ struct IRInterp {
             let signed: bool = t1.isSignedInteger();
             let s1: usize = rLhs.size;
             let s2: usize = rRhs.size;
-            assert_with_msg(s1 == s2, "SubInt expected LHS and RHS to be the same size");
+            assert(s1 == s2, "SubInt expected LHS and RHS to be the same size");
             let dstReg: &IRReg = irFunc.getRegister(instr.dst);
             let dst: InterpReg = InterpReg {
                 offset: dstReg.offset,
@@ -400,7 +400,7 @@ struct IRInterp {
             let signed: bool = t1.isSignedInteger();
             let s1: usize = rLhs.size;
             let s2: usize = rRhs.size;
-            assert_with_msg(s1 == s2, "MulInt expected LHS and RHS to be the same size");
+            assert(s1 == s2, "MulInt expected LHS and RHS to be the same size");
             let dstReg: &IRReg = irFunc.getRegister(instr.dst);
             let dst: InterpReg = InterpReg {
                 offset: dstReg.offset,
@@ -435,7 +435,7 @@ struct IRInterp {
             let signed: bool = t1.isSignedInteger();
             let s1: usize = rLhs.size;
             let s2: usize = rRhs.size;
-            assert_with_msg(s1 == s2, "ModInt expected LHS and RHS to be the same size");
+            assert(s1 == s2, "ModInt expected LHS and RHS to be the same size");
             let dstReg: &IRReg = irFunc.getRegister(instr.dst);
             let dst: InterpReg = InterpReg {
                 offset: dstReg.offset,
@@ -469,7 +469,7 @@ struct IRInterp {
             let t1: &Type = irFunc.getRegister(instr.src).typ;
             let s1: usize = rLhs.size;
             let s2: usize = rRhs.size;
-            assert_with_msg(s1 == s2, "FloatDiv expected LHS and RHS to be the same size");
+            assert(s1 == s2, "FloatDiv expected LHS and RHS to be the same size");
             let dstReg: &IRReg = irFunc.getRegister(instr.dst);
             let dst: InterpReg = InterpReg {
                 offset: dstReg.offset,
@@ -495,7 +495,7 @@ struct IRInterp {
             let t2: &Type = irFunc.getRegister(instr.op1).typ;
             let s1: usize = t1.getSize();
             let s2: usize = t2.getSize();
-            assert_with_msg(s1 == s2, "ICmpNeq/ICmpEq got differently sized operands");
+            assert(s1 == s2, "ICmpNeq/ICmpEq got differently sized operands");
             let dstReg: &IRReg = irFunc.getRegister(instr.dst);
             let dst: InterpReg = InterpReg {
                 offset: dstReg.offset,
@@ -539,7 +539,7 @@ struct IRInterp {
             let t2: &Type = irFunc.getRegister(instr.op1).typ;
             let s1: usize = t1.getSize();
             let s2: usize = t2.getSize();
-            assert_with_msg(s1 == s2, "ICmpGt/ICmpLte got differently sized operands");
+            assert(s1 == s2, "ICmpGt/ICmpLte got differently sized operands");
             let dstReg: &IRReg = irFunc.getRegister(instr.dst);
             let dst: InterpReg = InterpReg {
                 offset: dstReg.offset,
@@ -583,7 +583,7 @@ struct IRInterp {
             let t2: &Type = irFunc.getRegister(instr.op1).typ;
             let s1: usize = t1.getSize();
             let s2: usize = t2.getSize();
-            assert_with_msg(s1 == s2, "ICmpLt/ICmpGte got differently sized operands");
+            assert(s1 == s2, "ICmpLt/ICmpGte got differently sized operands");
             let dstReg: &IRReg = irFunc.getRegister(instr.dst);
             let dst: InterpReg = InterpReg {
                 offset: dstReg.offset,
@@ -627,7 +627,7 @@ struct IRInterp {
             let t2: &Type = irFunc.getRegister(instr.op1).typ;
             let s1: usize = t1.getSize();
             let s2: usize = t2.getSize();
-            assert_with_msg(s1 == s2, "FCmpNeq/FCmpEq got differently sized operands");
+            assert(s1 == s2, "FCmpNeq/FCmpEq got differently sized operands");
             let dstReg: &IRReg = irFunc.getRegister(instr.dst);
             let dst: InterpReg = InterpReg {
                 offset: dstReg.offset,
@@ -661,7 +661,7 @@ struct IRInterp {
             let dstReg: &IRReg = irFunc.getRegister(instr.dst);
             let t1: &Type = irFunc.getRegister(instr.src).typ;
             let s1: usize = t1.getSize();
-            assert_with_msg(s1 == 1, "Idk");
+            assert(s1 == 1, "Idk");
             let dst: InterpReg = InterpReg {
                 offset: dstReg.offset,
                 size: s1,
@@ -669,7 +669,7 @@ struct IRInterp {
             let dstStart: &u8 = this.getRegStackPointer(&dst);
             let srcStart: &u8 = this.getRegStackPointer(&rSrc);
             let val: u8 = *srcStart;
-            assert_with_msg(val == 0 || val == 1, "Logical Not got non-zero non-one");
+            assert(val == 0 || val == 1, "Logical Not got non-zero non-one");
             *dstStart = 1 - val;
             return dst;
         } else if (instr.kind == INSTR_PTR_TO_INT) {
@@ -805,7 +805,7 @@ struct IRInterp {
             let fReg: &IRReg = irFunc.getRegister(instr.dst);
             let fAggr: InterpReg = regs.at(instr.src.i).asInterp("IRInterp: GetFieldPtr");
             let t: &Type = irFunc.getRegister(instr.src).typ;
-            assert_with_msg(t.isStructPointer(), "IRInterp: GetFieldPtr got non-struct pointer");
+            assert(t.isStructPointer(), "IRInterp: GetFieldPtr got non-struct pointer");
             let u: &Type = t.getUnderlyingType(false);
             assert(u.isStruct());
             let decl: &ParsedStructDecl = structDecls.at(u.typeIndex);
@@ -830,21 +830,21 @@ struct IRInterp {
     func evaluateBlock(&this, blockID: &IRBlockID, irFunc: &IRFunc, regs: &RegValueList, forcedComptime: bool) -> bool {
         trace("IRInterp.evaluateBlock");
         let block: &IRBlock = irFunc.getBlockByID(*blockID);
-        assert_with_msg(block.instructions.length > 0, "Interp: Encountered empty block");
+        assert(block.instructions.length > 0, "Interp: Encountered empty block");
         for (let ip: usize = 0; ip < block.instructions.length; ip = ip + 1) {
             let instr: &IRInstr = block.instructions.at(ip);
             if (ip == block.instructions.length - 1) {
-                assert_with_msg(instr.isTerminator(), "Interp: Unexpected non-terminator at the end of a block");
+                assert(instr.isTerminator(), "Interp: Unexpected non-terminator at the end of a block");
                 if (instr.kind == INSTR_BR) {
                     *blockID = IRBlockID { i: instr.dst.i };
                     return true;
                 } else if (instr.kind == INSTR_COND_BR) {
                     let cond: &RegValue = &*regs.at(instr.src.i);
                     let rCond: InterpReg = cond.asInterp("CondBr");
-                    assert_with_msg(rCond.size == 1, "comptime CondBr expected single byte Cond");
+                    assert(rCond.size == 1, "comptime CondBr expected single byte Cond");
                     let condLoc: &u8 = this.getRegStackPointer(&rCond);
                     let v: u8 = *condLoc;
-                    assert_with_msg(v == 0 || v == 1, "condition is not 0 or 1");
+                    assert(v == 0 || v == 1, "condition is not 0 or 1");
                     if (v == 1) {
                         *blockID = IRBlockID { i: instr.dst.i };
                     } else {
@@ -862,7 +862,7 @@ struct IRInterp {
                     unreachable("Interp: Exhaustive handling of Terminators");
                 }
             } else {
-                assert_with_msg(!instr.isTerminator(), "Interp: Unexpected terminator in the middle of a block");
+                assert(!instr.isTerminator(), "Interp: Unexpected terminator in the middle of a block");
                 *(regs.at(instr.dst.i)) = RegValue {
                     isLLVM: false,
                     regValue: this.evaluateSingle(irFunc, instr, regs, true),
@@ -899,17 +899,17 @@ struct IRInterp {
             todo_with_msg("stack underflow");
         }
         this.regStackBase = new;
-        assert_with_msg(this.regStackBase >= this.globalRegBase, "Register Stack overwrote global stack");
+        assert(this.regStackBase >= this.globalRegBase, "Register Stack overwrote global stack");
     }
 }
 
 func newIRInterpreter(irGen: &IRGen) -> IRInterp {
     let regStack: &u8 = malloc(REG_STACK_SIZE);
-    assert_with_msg(regStack != null, "Could not prepare IRInterp.regStack");
+    assert(regStack != null, "Could not prepare IRInterp.regStack");
     let realStack: &u8 = malloc(STACK_SIZE);
-    assert_with_msg(realStack != null, "Could not prepare IRInterp.realStack");
+    assert(realStack != null, "Could not prepare IRInterp.realStack");
     let argStack: &u8 = malloc(640000);
-    assert_with_msg(argStack != null, "Could not prepare IRInterp.argStack");
+    assert(argStack != null, "Could not prepare IRInterp.argStack");
     return IRInterp {
         irGen: irGen,
         regStackStart: regStack,

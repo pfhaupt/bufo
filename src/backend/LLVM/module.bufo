@@ -56,11 +56,11 @@ struct LLVMModule {
 
     func addFunction(&this, name: SubStr, function: LLVMType) -> LLVMValue {
         trace("LLVMModule.addFunction");
-        assert_with_msg(!function.ref.isNull(), "Expected valid LLVMType in LLVMModule.addFunction");
+        assert(!function.ref.isNull(), "Expected valid LLVMType in LLVMModule.addFunction");
         let _n: String = name.toString();
         let f: LLVMValueRef = LLVMAddFunction(this.ref, _n.chars(), function.ref);
         _n.drop();
-        assert_with_msg(!f.isNull(), "Could not add function to module");
+        assert(!f.isNull(), "Could not add function to module");
         return newLLVMValueFromRef(f);
     }
     func hasFunction(&this, name: SubStr) -> bool {
@@ -75,16 +75,16 @@ struct LLVMModule {
         let _n: String = name.toString();
         let f: LLVMValueRef = LLVMGetNamedFunction(this.ref, _n.chars());
         _n.drop();
-        assert_with_msg(!f.isNull(), "Could not get function from module");
+        assert(!f.isNull(), "Could not get function from module");
         return newLLVMValueFromRef(f);
     }
     func addGlobal(&this, typ: LLVMType, space: u32, name: SubStr) -> LLVMValue {
         trace("LLVMModule.addGlobal");
-        assert_with_msg(!typ.ref.isNull(), "Expected valid LLVMType in LLVMModule.addGlobal");
+        assert(!typ.ref.isNull(), "Expected valid LLVMType in LLVMModule.addGlobal");
         let _n: String = name.toString();
         let g: LLVMValueRef = LLVMAddGlobalInAddressSpace(this.ref, typ.ref, _n.chars(), space);
         _n.drop();
-        assert_with_msg(!g.isNull(), "Could not add global in module");
+        assert(!g.isNull(), "Could not add global in module");
         return newLLVMValueFromRef(g);
     }
     func getGlobal(&this, name: SubStr) -> LLVMValue {
@@ -92,14 +92,14 @@ struct LLVMModule {
         let _n: String = name.toString();
         let g: LLVMValueRef = LLVMGetNamedGlobal(this.ref, _n.chars());
         _n.drop();
-        assert_with_msg(!g.isNull(), "Could not get global in module");
+        assert(!g.isNull(), "Could not get global in module");
         return newLLVMValueFromRef(g);
     }
 
     func createPassManager(&this) -> LLVMPassManager {
         trace("LLVMModule.createPassManager");
         let pm: LLVMPassManagerRef = LLVMCreatePassManager();
-        assert_with_msg(!pm.isNull(), "Could not create pass manager for module");
+        assert(!pm.isNull(), "Could not create pass manager for module");
         return newLLVMPassManagerFromRef(pm);
     }
     func runInPassManager(&this, pm: LLVMPassManager) -> bool {
@@ -112,7 +112,7 @@ struct LLVMModule {
 
 func newLLVMModuleFromRef(ref: LLVMModuleRef) -> LLVMModule {
     trace("newLLVMModuleFromRef");
-    assert_with_msg(!ref.isNull(), "Passed invalid reference to newLLVMModuleFromRef");
+    assert(!ref.isNull(), "Passed invalid reference to newLLVMModuleFromRef");
     return LLVMModule {
         ref: ref
     };

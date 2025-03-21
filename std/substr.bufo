@@ -67,7 +67,7 @@ struct SubStr {
             let a: Any = this.start;
             let c: &char = a;
             let p: char = *(c + i);
-            assert_with_msg(p == putchar(p), "Wrote wrong character in SubStr.print");
+            assert(p == putchar(p), "Wrote wrong character in SubStr.print");
         }
     }
     func getPathParent(&this) -> String {
@@ -90,12 +90,12 @@ struct SubStr {
         return s;
     }
     func getChar(&this, index: usize) -> char {
-        assert_with_msg(index <= this.len, "Index out of bounds for String Index.");
+        assert(index <= this.len, "Index out of bounds for String Index.");
         return getChar(this.start, index);
     }
     func substring(&this, start: usize, end: usize) -> SubStr {
-        assert_with_msg(end <= this.len, "Index out of bounds for String Substring.");
-        assert_with_msg(end - start <= this.len, "Invalid length for String Substring.");
+        assert(end <= this.len, "Index out of bounds for String Substring.");
+        assert(end - start <= this.len, "Invalid length for String Substring.");
         return newSubStr(this.start, start, end);
     }
     func hasSpace(&this) -> bool {
@@ -120,7 +120,7 @@ struct SubStr {
         return this.len > 0;
     }
     func toU64(&this) -> u64 {
-        assert_with_msg(this.isNumber(), "not a number");
+        assert(this.isNumber(), "not a number");
         let val: u64 = 0;
         for (let i: usize = 0; i < this.len; i = i + 1) {
             let ch: char = this.getChar(i);

@@ -180,8 +180,8 @@ struct Type {
     func getUnderlyingType(&this, deep: bool) -> &Type {
         let underlying: &Type = this;
         if (this.kind == TYPE_KIND_PRIMITIVE)
-            assert_with_msg(this.typeIndex != TYPE_ANY, "Type.getUnderlyingType() is not defined for Any");
-        assert_with_msg(this.isPointer() || this.isArray(), "type.getUnderlyingType() called on non-pointer non-array");
+            assert(this.typeIndex != TYPE_ANY, "Type.getUnderlyingType() is not defined for Any");
+        assert(this.isPointer() || this.isArray(), "type.getUnderlyingType() called on non-pointer non-array");
         while (underlying.isPointer() || underlying.isArray()) {
             underlying = types.at(underlying.typeIndex);
             if (!deep) break;
@@ -260,11 +260,11 @@ struct Type {
             return t.getAlignment();
         } else if (this.kind == TYPE_KIND_STRUCT) {
             let info: &ParsedStructDecl = structDecls.at(this.typeIndex);
-            assert_with_msg(info.typeState.isSuccess(), "Can only get alignment of valid structs");
+            assert(info.typeState.isSuccess(), "Can only get alignment of valid structs");
             let maxAlign: usize = 1;
             for (let i: usize = 0; i < info.context.fieldLength; i = i + 1) {
                 let td: &ParsedTypeNode = typeNodes.at(info.context.getFieldTypeAtIndex(i));
-                assert_with_msg(td.typeState.isSuccess(), "Expected valid field type");
+                assert(td.typeState.isSuccess(), "Expected valid field type");
                 let tt: &Type = types.at(td.typeState.getType());
                 let _a: usize = tt.getAlignment();
                 if (_a > maxAlign) maxAlign = _a;
@@ -301,12 +301,12 @@ struct Type {
             return t.getSize() * this.arraySize;
         } else if (this.kind == TYPE_KIND_STRUCT) {
             let info: &ParsedStructDecl = structDecls.at(this.typeIndex);
-            assert_with_msg(info.typeState.isSuccess(), "Can only get size of valid structs");
+            assert(info.typeState.isSuccess(), "Can only get size of valid structs");
             let size: usize = 0;
             let maxAlign: usize = 1;
             for (let i: usize = 0; i < info.context.fieldLength; i = i + 1) {
                 let td: &ParsedTypeNode = typeNodes.at(info.context.getFieldTypeAtIndex(i));
-                assert_with_msg(td.typeState.isSuccess(), "Expected valid field type");
+                assert(td.typeState.isSuccess(), "Expected valid field type");
                 let tt: &Type = types.at(td.typeState.getType());
                 let _a: usize = tt.getAlignment();
                 size = size + tt.getSize();
@@ -320,7 +320,7 @@ struct Type {
         return 0;
     }
     func getMaxFloatValue(&this) -> f64 {
-        assert_with_msg(this.isFloat(), "Type.getMaxFloatValue() called on non-Float");
+        assert(this.isFloat(), "Type.getMaxFloatValue() called on non-Float");
         if (this.typeIndex == TYPE_F32) {
             let VAL: i32 = 2139095039;
             return *(&VAL as &f32) as f64;
@@ -336,7 +336,7 @@ struct Type {
 
 func newType(kind: usize, id: usize) -> &Type {
     if (kind == TYPE_KIND_PRIMITIVE) {
-        assert_with_msg(id < TYPE_COUNT, "newType() attempted to use general purpose types");
+        assert(id < TYPE_COUNT, "newType() attempted to use general purpose types");
         let t: &Type = types.at(id);
         (*t).kind = kind;
         (*t).typeIndex = id;

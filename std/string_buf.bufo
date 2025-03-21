@@ -21,7 +21,7 @@ struct StringBuffer {
         this.length = this.length + 1;
     }
     func getNthAsCharPtr(&this, index: usize) -> &char {
-        assert_with_msg(index < this.length, "Out of bounds access in StringBuf.getNthAsCharPtr()");
+        assert(index < this.length, "Out of bounds access in StringBuf.getNthAsCharPtr()");
         return (*(this.data + index * sizeof SubStr)).start;
     }
     func extend(&this, other: &StringBuffer) {

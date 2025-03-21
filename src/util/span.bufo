@@ -29,7 +29,7 @@ struct Span {
 }
 
 func newSpan(mod: usize, start: usize, end: usize) -> Span {
-    assert_with_msg(end >= start, "Invalid size for newSpan()");
+    assert(end >= start, "Invalid size for newSpan()");
     return Span {
         mod: mod,
         start: start,
@@ -38,9 +38,9 @@ func newSpan(mod: usize, start: usize, end: usize) -> Span {
 }
 func newSpanBetween(start: &Span, end: &Span) -> Span {
     // (100:105)+(104:109)
-    assert_with_msg(end.end >= start.end, "newSpanBetween: End Span can't end before Start Span.");
-    assert_with_msg(start.start <= end.start, "newSpanBetween: Start Span can't start after End Span.");
-    assert_with_msg(start.mod == end.mod, "newSpanBetween: Spans can't be in different modules.");
+    assert(end.end >= start.end, "newSpanBetween: End Span can't end before Start Span.");
+    assert(start.start <= end.start, "newSpanBetween: Start Span can't start after End Span.");
+    assert(start.mod == end.mod, "newSpanBetween: Spans can't be in different modules.");
     return Span {
         mod: start.mod,
         start: start.start,

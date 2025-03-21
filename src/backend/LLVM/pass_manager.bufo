@@ -28,7 +28,7 @@ struct LLVMPassManager {
 }
 
 func newLLVMPassManagerFromRef(ref: LLVMPassManagerRef) -> LLVMPassManager {
-    assert_with_msg(!ref.isNull(), "Called newLLVMPassManagerFromRef with invalid reference");
+    assert(!ref.isNull(), "Called newLLVMPassManagerFromRef with invalid reference");
     return LLVMPassManager {
         ref: ref,
     };
