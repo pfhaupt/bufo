@@ -11,9 +11,9 @@ import "./types.bufo";
 struct Lookup {
     modules: ModuleLookupList;
 
-    func insertModule(&mut this, mod: &mut ParsedModule) -> &mut ModuleLookup {
+    func insertModule(&this, mod: &ParsedModule) -> &ModuleLookup {
         trace("Lookup.insertModule");
-        mut lookup: ModuleLookup = ModuleLookup {
+        let lookup: ModuleLookup = ModuleLookup {
             globalID: mod.getID(),
             origin: mod.origin,
             imports: blank,
@@ -27,40 +27,40 @@ struct Lookup {
         return this.modules.last();
     }
 
-    func resolveFunctionByName(&mut this, currentModule: usize, name: &Token) -> FunctionLookupList {
+    func resolveFunctionByName(&this, currentModule: usize, name: &Token) -> FunctionLookupList {
         trace("Lookup.resolveFunctionByName");
         // FIXME: Would be cool if this method didn't create copies of the FunctionLookups
-        let currModule: &mut ModuleLookup = this.modules.at(currentModule);
-        mut list: FunctionLookupList = currModule.resolveFunctionByName(name);
-        for (mut i: usize = 0; i < currModule.imports.length; i = i + 1) {
-            let imp: &mut ImportLookup = currModule.imports.at(i);
-            let importedModule: &mut ModuleLookup = this.modules.at(imp.moduleID);
-            mut importList: FunctionLookupList = importedModule.resolveFunctionByName(name);
-            list.extend(&mut importList);
+        let currModule: &ModuleLookup = this.modules.at(currentModule);
+        let list: FunctionLookupList = currModule.resolveFunctionByName(name);
+        for (let i: usize = 0; i < currModule.imports.length; i = i + 1) {
+            let imp: &ImportLookup = currModule.imports.at(i);
+            let importedModule: &ModuleLookup = this.modules.at(imp.moduleID);
+            let importList: FunctionLookupList = importedModule.resolveFunctionByName(name);
+            list.extend(&importList);
         }
         return list;
     }
 
-    func resolveVariableByName(&mut this, currentModule: usize, name: &Token, scopes: &mut ScopeLookupList, var: &mut VariableLookup) -> bool {
+    func resolveVariableByName(&this, currentModule: usize, name: &Token, scopes: &ScopeLookupList, var: &VariableLookup) -> bool {
         trace("Lookup.resolveVariableByName");
         debug(name.content.toString().chars());
         // FIXME: The commented loop underflows
-        // for (mut i: usize = scopes.length - 1; i >= 0; i = i - 1) unsafe {
-        for (mut _i: usize = 0; _i < scopes.length; _i = _i + 1) unsafe {
+        // for (let i: usize = scopes.length - 1; i >= 0; i = i - 1) {
+        for (let _i: usize = 0; _i < scopes.length; _i = _i + 1) {
             let i: usize = scopes.length - _i - 1;
-            let s: &mut ScopeLookup = scopes.at(i);
-            for (mut j: usize = 0; j < s.variables.length; j = j + 1) {
-                let v: &mut VariableLookup = s.variables.at(j);
-                if (v.name.content.equals(&name.content)) unsafe {
+            let s: &ScopeLookup = scopes.at(i);
+            for (let j: usize = 0; j < s.variables.length; j = j + 1) {
+                let v: &VariableLookup = s.variables.at(j);
+                if (v.name.content.equals(&name.content)) {
                     debug("Variable found in current module");
                     *var = *v;
                     return true;
                 }
             }
         }
-        let mod: &mut ModuleLookup = this.modules.at(currentModule);
-        let globalScope: &mut ScopeLookup = mod.variables.at(0);
-        for (mut j: usize = 0; j < globalScope.variables.length; j = j + 1) {
+        let mod: &ModuleLookup = this.modules.at(currentModule);
+        let globalScope: &ScopeLookup = mod.variables.at(0);
+        for (let j: usize = 0; j < globalScope.variables.length; j = j + 1) {
             let v: VariableLookup = *globalScope.variables.at(j);
             if (v.name.content.equals(&name.content)) {
                 debug("Variable found in global scope");
@@ -68,11 +68,11 @@ struct Lookup {
                 return true;
             }
         }
-        for (mut i: usize = 0; i < mod.imports.length; i = i + 1) {
+        for (let i: usize = 0; i < mod.imports.length; i = i + 1) {
             let imp: usize = mod.imports.at(i).moduleID;
-            let mod: &mut ModuleLookup = this.modules.at(imp);
-            let globalScope: &mut ScopeLookup = mod.variables.at(0);
-            for (mut j: usize = 0; j < globalScope.variables.length; j = j + 1) {
+            let mod: &ModuleLookup = this.modules.at(imp);
+            let globalScope: &ScopeLookup = mod.variables.at(0);
+            for (let j: usize = 0; j < globalScope.variables.length; j = j + 1) {
                 let v: VariableLookup = *globalScope.variables.at(j);
                 if (v.name.content.equals(&name.content)) {
                     debug("Variable found in import");
@@ -85,24 +85,24 @@ struct Lookup {
         return false;
     }
 
-    func resolveTypeByName(&mut this, currentModule: usize, name: &Token, typ: &mut TypeLookup) -> bool {
+    func resolveTypeByName(&this, currentModule: usize, name: &Token, typ: &TypeLookup) -> bool {
         trace("Lookup.resolveTypeByName");
-        let currModule: &mut ModuleLookup = this.modules.at(currentModule);
+        let currModule: &ModuleLookup = this.modules.at(currentModule);
         if (currModule.resolveTypeByName(name, typ)) return true;
-        for (mut i: usize = 0; i < currModule.imports.length; i = i + 1) {
-            let imp: &mut ImportLookup = currModule.imports.at(i);
-            let importedModule: &mut ModuleLookup = this.modules.at(imp.moduleID);
+        for (let i: usize = 0; i < currModule.imports.length; i = i + 1) {
+            let imp: &ImportLookup = currModule.imports.at(i);
+            let importedModule: &ModuleLookup = this.modules.at(imp.moduleID);
             if (importedModule.resolveTypeByName(name, typ)) return true;
         }
         return false;
     }
 
-    func getTypeLookupForType(&mut this, typ: &mut Type) -> TypeLookup {
+    func getTypeLookupForType(&this, typ: &Type) -> TypeLookup {
         trace("Lookup.getTypeLookupForType");
         if (typ.isStruct()) {
-            let strukt: &mut ParsedStructDecl = structDecls.at(typ.typeIndex);
+            let strukt: &ParsedStructDecl = structDecls.at(typ.typeIndex);
             let modID: usize = strukt.parentModule;
-            let s: &mut StructLookup = this.modules.at(modID).getStructByGlobalID(strukt.getID());
+            let s: &StructLookup = this.modules.at(modID).getStructByGlobalID(strukt.getID());
             return newTypeLookup(TYPE_LOOKUP_STRUCT, s);
         } else {
             todo_with_msg("getTypeLookupFromTypeID for non-struct");
@@ -110,35 +110,35 @@ struct Lookup {
         }
     }
 
-    func searchAllModulesForTypeName(&mut this, name: &Token) -> TypeLookupList {
+    func searchAllModulesForTypeName(&this, name: &Token) -> TypeLookupList {
         trace("Lookup.searchAllModulesForTypeName");
-        mut list: TypeLookupList = blank;
-        for (mut i: usize = 0; i < this.modules.length; i = i + 1) {
-            mut t: TypeLookup = blank;
-            if (this.modules.at(i).resolveTypeByName(name, &mut t)) {
+        let list: TypeLookupList = blank;
+        for (let i: usize = 0; i < this.modules.length; i = i + 1) {
+            let t: TypeLookup = blank;
+            if (this.modules.at(i).resolveTypeByName(name, &t)) {
                 list.push(t);
             }
         }
         return list;
     }
-    func searchAllModulesForFunctionName(&mut this, name: &Token) -> FunctionLookupList {
+    func searchAllModulesForFunctionName(&this, name: &Token) -> FunctionLookupList {
         trace("Lookup.searchAllModulesForFunctionName");
-        mut list: FunctionLookupList = blank;
-        for (mut i: usize = 0; i < this.modules.length; i = i + 1) {
-            mut t: FunctionLookupList = this.modules.at(i).resolveFunctionByName(name);
-            list.extend(&mut t);
+        let list: FunctionLookupList = blank;
+        for (let i: usize = 0; i < this.modules.length; i = i + 1) {
+            let t: FunctionLookupList = this.modules.at(i).resolveFunctionByName(name);
+            list.extend(&t);
         }
         return list;
     }
-    func searchAllModulesForIdentifier(&mut this, name: &Token) -> VariableLookupList {
+    func searchAllModulesForIdentifier(&this, name: &Token) -> VariableLookupList {
         trace("Lookup.searchAllModulesForIdentifier");
-        mut list: VariableLookupList = blank;
-        for (mut i: usize = 0; i < this.modules.length; i = i + 1) {
-            let m: &mut ModuleLookup = this.modules.at(i);
-            for (mut j: usize = 0; j < m.variables.length; j = j + 1) {
-                let s: &mut ScopeLookup = m.variables.at(j);
-                mut v: VariableLookup = blank;
-                if (s.getVariableByName(name.content, &mut v)) {
+        let list: VariableLookupList = blank;
+        for (let i: usize = 0; i < this.modules.length; i = i + 1) {
+            let m: &ModuleLookup = this.modules.at(i);
+            for (let j: usize = 0; j < m.variables.length; j = j + 1) {
+                let s: &ScopeLookup = m.variables.at(j);
+                let v: VariableLookup = blank;
+                if (s.getVariableByName(name.content, &v)) {
                     list.push(v);
                 }
             }
@@ -155,14 +155,14 @@ struct ModuleLookup {
     structs: StructLookupList;
     variables: ScopeLookupList;
 
-    func equals(&mut this, other: &ModuleLookup) -> bool {
+    func equals(&this, other: &ModuleLookup) -> bool {
         return this.origin.equals(&other.origin);
     }
 
-    func insertTLI(&mut this, tli: &mut ParsedTopLevelItem) {
+    func insertTLI(&this, tli: &ParsedTopLevelItem) {
         trace("ModuleLookup.insertTLI");
         if (tli.kind == TLI_FUNC_DECL) {
-            let fun: &mut ParsedFuncDecl = funcDecls.at(tli.nodeID);
+            let fun: &ParsedFuncDecl = funcDecls.at(tli.nodeID);
             let lookup: FunctionLookup = FunctionLookup {
                 globalID: tli.nodeID,
                 parentModule: this.globalID,
@@ -184,8 +184,8 @@ struct ModuleLookup {
             }
             this.imports.push(lookup);
         } else if (tli.kind == TLI_STRUCT_DECL) {
-            let strukt: &mut ParsedStructDecl = structDecls.at(tli.nodeID);
-            mut lookup: StructLookup = StructLookup {
+            let strukt: &ParsedStructDecl = structDecls.at(tli.nodeID);
+            let lookup: StructLookup = StructLookup {
                 globalID: tli.nodeID,
                 parentModule: this.globalID,
                 name: strukt.name,
@@ -194,9 +194,9 @@ struct ModuleLookup {
                 methods: blank,
                 typeID: newType(TYPE_KIND_STRUCT, tli.nodeID).getID(),
             };
-            for (mut i: usize = 0; i < strukt.context.methodLength; i = i + 1) {
+            for (let i: usize = 0; i < strukt.context.methodLength; i = i + 1) {
                 let id: usize = strukt.context.getMethodAtIndex(i);
-                let method: &mut ParsedMethod = methods.at(id);
+                let method: &ParsedMethod = methods.at(id);
                 let mLookup: MethodLookup = MethodLookup {
                     globalID: id,
                     name: method.name,
@@ -212,7 +212,7 @@ struct ModuleLookup {
             }
             this.structs.push(lookup);
         } else if (tli.kind == TLI_VAR_DECL) {
-            let varDecl: &mut ParsedStmt = stmts.at(tli.nodeID);
+            let varDecl: &ParsedStmt = stmts.at(tli.nodeID);
             assert(varDecl.kind == STMT_VAR_DECL);
             let lookup: VariableLookup = VariableLookup {
                 globalID: tli.nodeID,
@@ -221,9 +221,9 @@ struct ModuleLookup {
                 isComptime: varDecl.varDeclContext.isComptime,
             };
             assert_with_msg(this.variables.length == 1, "expected to find only the global scope");
-            let globalScope: &mut ScopeLookup = this.variables.last();
-            mut loc: Token = blank;
-            if (globalScope.isKnownVariable(lookup.name.content, &mut loc)) {
+            let globalScope: &ScopeLookup = this.variables.last();
+            let loc: Token = blank;
+            if (globalScope.isKnownVariable(lookup.name.content, &loc)) {
                 todo_with_msg("double global var");
             }
             globalScope.addVariable(lookup);
@@ -233,17 +233,17 @@ struct ModuleLookup {
     }
 
     // FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
-    func containsDuplicateFunction(&mut this, function: &mut FunctionLookup, dupl: &mut usize) -> bool {
+    func containsDuplicateFunction(&this, function: &FunctionLookup, dupl: &usize) -> bool {
         trace("ModuleLookup.containsDuplicateFunction");
         let name: String = funcDecls.at(function.globalID).getMangledName();
-        mut duplicate: bool = false;
-        for (mut i: usize = 0; !duplicate && i < this.functions.length; i = i + 1) {
-            let f: &mut FunctionLookup = this.functions.at(i);
+        let duplicate: bool = false;
+        for (let i: usize = 0; !duplicate && i < this.functions.length; i = i + 1) {
+            let f: &FunctionLookup = this.functions.at(i);
             // REVIEW: is FUNC_DUPLICATE_CHECK always correct, or is it better to check FUNC_READY_TO_USE
             if (f == function) continue;
             if (!f.getReadyState(FUNC_DUPLICATE_CHECK)) continue;
             let n: String = funcDecls.at(f.globalID).getMangledName();
-            if (name.equals(&n)) unsafe {
+            if (name.equals(&n)) {
                 *dupl = f as usize;
                 duplicate = true;
             }
@@ -252,35 +252,35 @@ struct ModuleLookup {
         return duplicate;
     }
 
-    func getFunctionByGlobalID(&mut this, funcID: usize) -> &mut FunctionLookup {
+    func getFunctionByGlobalID(&this, funcID: usize) -> &FunctionLookup {
         trace("ModuleLookup.getFunctionByGlobalID");
-        for (mut i: usize = 0; i < this.functions.length; i = i + 1) {
-            let f: &mut FunctionLookup = this.functions.at(i);
+        for (let i: usize = 0; i < this.functions.length; i = i + 1) {
+            let f: &FunctionLookup = this.functions.at(i);
             if (f.globalID == funcID) {
                 return f;
             }
         }
         unreachable("Lookup failed to find function based on global ID!");
-        unsafe { return null; }
+        return null;
     }
 
-    func getStructByGlobalID(&mut this, structID: usize) -> &mut StructLookup {
+    func getStructByGlobalID(&this, structID: usize) -> &StructLookup {
         trace("ModuleLookup.getStructByGlobalID");
-        for (mut i: usize = 0; i < this.structs.length; i = i + 1) {
-            let s: &mut StructLookup = this.structs.at(i);
+        for (let i: usize = 0; i < this.structs.length; i = i + 1) {
+            let s: &StructLookup = this.structs.at(i);
             if (s.globalID == structID) {
                 return s;
             }
         }
         unreachable("Lookup failed to find struct based on global ID!");
-        unsafe { return null; }
+        return null;
     }
 
-    func resolveFunctionByName(&mut this, name: &Token) -> FunctionLookupList {
+    func resolveFunctionByName(&this, name: &Token) -> FunctionLookupList {
         trace("ModuleLookup.resolveFunctionByName");
-        mut list: FunctionLookupList = blank;
-        for (mut i: usize = 0; i < this.functions.length; i = i + 1) {
-            let f: &mut FunctionLookup = this.functions.at(i);
+        let list: FunctionLookupList = blank;
+        for (let i: usize = 0; i < this.functions.length; i = i + 1) {
+            let f: &FunctionLookup = this.functions.at(i);
             if (f.name.content.equals(&name.content)) {
                 list.push(*f);
             }
@@ -288,10 +288,10 @@ struct ModuleLookup {
         return list;
     }
 
-    func resolveTypeByName(&mut this, name: &Token, typ: &mut TypeLookup) -> bool {
+    func resolveTypeByName(&this, name: &Token, typ: &TypeLookup) -> bool {
         trace("ModuleLookup.resolveTypeByName");
-        for (mut i: usize = 0; i < this.structs.length; i = i + 1) {
-            let s: &mut StructLookup = this.structs.at(i);
+        for (let i: usize = 0; i < this.structs.length; i = i + 1) {
+            let s: &StructLookup = this.structs.at(i);
             if (s.name.content.equals(&name.content)) {
                 *typ = newTypeLookup(TYPE_LOOKUP_STRUCT, s);
                 return true;
@@ -304,7 +304,7 @@ struct ModuleLookup {
 struct ImportLookup {
     moduleID: usize;
 
-    func equals(&mut this, other: &ImportLookup) -> bool {
+    func equals(&this, other: &ImportLookup) -> bool {
         return this.moduleID == other.moduleID;
     }
 }
@@ -325,20 +325,20 @@ struct FunctionLookup {
     readyState: usize;
     isVarArg: bool;
 
-    func getReadyState(&mut this, state: usize) -> bool {
+    func getReadyState(&this, state: usize) -> bool {
         return (this.readyState & state) != 0;
     }
-    func setReadyState(&mut this, state: usize) {
+    func setReadyState(&this, state: usize) {
         assert_with_msg(!this.getReadyState(state), "FunctionLookup.readyState is already set");
         this.readyState = this.readyState | state;
     }
 
-    func setReturnType(&mut this, typ: TCState) {
+    func setReturnType(&this, typ: TCState) {
         trace("FunctionLookup.setReturnType");
         this.returnType = typ;
     }
 
-    func addParameter(&mut this, globalID: usize, name: Token, typeState: TCState) {
+    func addParameter(&this, globalID: usize, name: Token, typeState: TCState) {
         trace("FunctionLookup.addParameter");
         this.params.push(VariableLookup {
             globalID: globalID,
@@ -349,10 +349,10 @@ struct FunctionLookup {
         });
     }
 
-    func checkForDuplicateParam(&mut this, name: &Token, dupl: &mut VariableLookup) -> bool {
+    func checkForDuplicateParam(&this, name: &Token, dupl: &VariableLookup) -> bool {
         trace("FunctionLookup.checkForDuplicateParam");
-        for (mut i: usize = 0; i < this.params.length; i = i + 1) {
-            let param: &mut VariableLookup = this.params.at(i);
+        for (let i: usize = 0; i < this.params.length; i = i + 1) {
+            let param: &VariableLookup = this.params.at(i);
             if (param.name.content.equals(&name.content)) {
                 *dupl = *param;
                 return true;
@@ -361,7 +361,7 @@ struct FunctionLookup {
         return false;
     }
 
-    func equals(&mut this, other: &FunctionLookup) -> bool {
+    func equals(&this, other: &FunctionLookup) -> bool {
         warning("When are two functions equal");
         return this.name.equals(&other.name);
     }
@@ -373,7 +373,7 @@ struct TypeLookup {
     kind: usize;
     actual: Any;
 
-    func getName(&mut this) -> String {
+    func getName(&this) -> String {
         if (this.kind == TYPE_LOOKUP_STRUCT) {
             return this.asStruct().name.content.toString();
         } else {
@@ -382,7 +382,7 @@ struct TypeLookup {
         }
     }
 
-    func getLocation(&mut this) -> String {
+    func getLocation(&this) -> String {
         if (this.kind == TYPE_LOOKUP_STRUCT) {
             return this.asStruct().name.span.toString();
         } else {
@@ -391,26 +391,24 @@ struct TypeLookup {
         }
     }
 
-    func equals(&mut this, other: &TypeLookup) -> bool {
+    func equals(&this, other: &TypeLookup) -> bool {
         if (this.kind != other.kind) return false;
-        if (this.kind == TYPE_LOOKUP_STRUCT) unsafe {
+        if (this.kind == TYPE_LOOKUP_STRUCT) {
             let _other: Any = other;
-            let other: &mut TypeLookup = &mut *_other;
+            let other: &TypeLookup = &*_other;
             return this.asStruct().equals(other.asStruct() as &StructLookup);
         }
         unreachable("Exhaustive handling in TypeLookup.equals");
         return false;
     }
 
-    func isStruct(&mut this) -> bool {
+    func isStruct(&this) -> bool {
         return this.kind == TYPE_LOOKUP_STRUCT;
     }
 
-    func asStruct(&mut this) -> &mut StructLookup {
+    func asStruct(&this) -> &StructLookup {
         assert_with_msg(this.isStruct(), "Attempted to convert non-struct TypeLookup into StructLookup");
-        unsafe {
-            return this.actual as &mut StructLookup;
-        }
+        return this.actual as &StructLookup;
     }
 }
 
@@ -436,26 +434,26 @@ struct StructLookup {
     methods: MethodLookupList;
     typeID: usize;
 
-    func getReadyState(&mut this, state: usize) -> bool {
+    func getReadyState(&this, state: usize) -> bool {
         return (this.readyState & state) != 0;
     }
-    func setReadyState(&mut this, state: usize) {
+    func setReadyState(&this, state: usize) {
         assert_with_msg(!this.getReadyState(state), "StructLookup.readyState is already set");
         this.readyState = this.readyState | state;
     }
 
-    func asTypeLookup(&mut this) -> TypeLookup {
+    func asTypeLookup(&this) -> TypeLookup {
         return newTypeLookup(TYPE_LOOKUP_STRUCT, this);
     }
-    func equals(&mut this, other: &StructLookup) -> bool {
+    func equals(&this, other: &StructLookup) -> bool {
         if (this.parentModule != other.parentModule) return false;
         return this.name.content.equals(&other.name.content);
     }
 
-    func resolveFieldByName(&mut this, name: &Token, out: &mut VariableLookup) -> bool {
+    func resolveFieldByName(&this, name: &Token, out: &VariableLookup) -> bool {
         trace("StructLookup.resolveFieldByName");
-        for (mut i: usize = 0; i < this.fields.length; i = i + 1) {
-            let f: &mut VariableLookup = this.fields.at(i);
+        for (let i: usize = 0; i < this.fields.length; i = i + 1) {
+            let f: &VariableLookup = this.fields.at(i);
             if (f.name.content.equals(&name.content)) {
                 *out = *f;
                 return true;
@@ -464,10 +462,10 @@ struct StructLookup {
         return false;
     }
 
-    func hasField(&mut this, name: &SubStr) -> bool {
+    func hasField(&this, name: &SubStr) -> bool {
         trace("StructLookup.hasField");
-        for (mut i: usize = 0; i < this.fields.length; i = i + 1) {
-            let f: &mut VariableLookup = this.fields.at(i);
+        for (let i: usize = 0; i < this.fields.length; i = i + 1) {
+            let f: &VariableLookup = this.fields.at(i);
             if (f.name.content.equals(name)) {
                 return true;
             }
@@ -476,17 +474,17 @@ struct StructLookup {
     }
 
     // FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
-    func containsDuplicateMethod(&mut this, method: &mut MethodLookup, dupl: &mut usize) -> bool {
+    func containsDuplicateMethod(&this, method: &MethodLookup, dupl: &usize) -> bool {
         trace("StructLookup.containsDuplicateMethod");
         let name: String = methods.at(method.globalID).getMangledName();
-        mut duplicate: bool = false;
-        for (mut i: usize = 0; !duplicate && i < this.methods.length; i = i + 1) {
-            let f: &mut MethodLookup = this.methods.at(i);
+        let duplicate: bool = false;
+        for (let i: usize = 0; !duplicate && i < this.methods.length; i = i + 1) {
+            let f: &MethodLookup = this.methods.at(i);
             // REVIEW: is METHOD_DUPLICATE_CHECK always correct, or is it better to check METHOD_READY_TO_USE
             if (f == method) continue;
             if (!f.getReadyState(METHOD_DUPLICATE_CHECK)) continue;
             let n: String = methods.at(f.globalID).getMangledName();
-            if (name.equals(&n)) unsafe {
+            if (name.equals(&n)) {
                 *dupl = f as usize;
                 duplicate = true;
             }
@@ -495,11 +493,11 @@ struct StructLookup {
         return duplicate;
     }
 
-    func resolveMethodByName(&mut this, name: &Token) -> MethodLookupList {
+    func resolveMethodByName(&this, name: &Token) -> MethodLookupList {
         trace("StructLookup.resolveMethodByName");
-        mut methods: MethodLookupList = blank;
-        for (mut i: usize = 0; i < this.methods.length; i = i + 1) {
-            let m: &mut MethodLookup = this.methods.at(i);
+        let methods: MethodLookupList = blank;
+        for (let i: usize = 0; i < this.methods.length; i = i + 1) {
+            let m: &MethodLookup = this.methods.at(i);
             if (m.name.content.equals(&name.content)) {
                 methods.push(*m);
             }
@@ -507,10 +505,10 @@ struct StructLookup {
         return methods;
     }
 
-    func getIndexByName(&mut this, name: &Token) -> usize {
+    func getIndexByName(&this, name: &Token) -> usize {
         trace("StructLookup.getIndexByName");
-        for (mut i: usize = 0; i < this.fields.length; i = i + 1) {
-            let f: &mut VariableLookup = this.fields.at(i);
+        for (let i: usize = 0; i < this.fields.length; i = i + 1) {
+            let f: &VariableLookup = this.fields.at(i);
             if (f.name.content.equals(&name.content)) {
                 return i;
             }
@@ -520,10 +518,10 @@ struct StructLookup {
         return 0;
     }
 
-    func checkForDuplicateField(&mut this, name: &Token, dupl: &mut VariableLookup) -> bool {
+    func checkForDuplicateField(&this, name: &Token, dupl: &VariableLookup) -> bool {
         trace("StructLookup.checkForDuplicateField");
-        for (mut i: usize = 0; i < this.fields.length; i = i + 1) {
-            let f: &mut VariableLookup = this.fields.at(i);
+        for (let i: usize = 0; i < this.fields.length; i = i + 1) {
+            let f: &VariableLookup = this.fields.at(i);
             if (f.name.content.equals(&name.content)) {
                 *dupl = *f;
                 return true;
@@ -532,7 +530,7 @@ struct StructLookup {
         return false;
     }
 
-    func addField(&mut this, globalID: usize, name: Token, typeState: TCState) {
+    func addField(&this, globalID: usize, name: Token, typeState: TCState) {
         trace("StructLookup.addField");
         this.fields.push(VariableLookup {
             globalID: globalID,
@@ -542,16 +540,16 @@ struct StructLookup {
             isComptime: false,
         });
     }
-    func getMethodByGlobalID(&mut this, methodID: usize) -> &mut MethodLookup {
+    func getMethodByGlobalID(&this, methodID: usize) -> &MethodLookup {
         trace("StructLookup.getMethodByGlobalID");
-        for (mut i: usize = 0; i < this.methods.length; i = i + 1) {
-            let f: &mut MethodLookup = this.methods.at(i);
+        for (let i: usize = 0; i < this.methods.length; i = i + 1) {
+            let f: &MethodLookup = this.methods.at(i);
             if (f.globalID == methodID) {
                 return f;
             }
         }
         unreachable("Lookup failed to find method based on global ID!");
-        unsafe { return null; }
+        return null;
     }
 }
 
@@ -570,23 +568,23 @@ struct MethodLookup {
     params: VariableLookupList;
     readyState: usize;
 
-    func getReadyState(&mut this, state: usize) -> bool {
+    func getReadyState(&this, state: usize) -> bool {
         return (this.readyState & state) != 0;
     }
-    func setReadyState(&mut this, state: usize) {
+    func setReadyState(&this, state: usize) {
         assert_with_msg(!this.getReadyState(state), "MethodLookup.readyState is already set");
         this.readyState = this.readyState | state;
     }
 
-    func equals(&mut this, other: &MethodLookup) -> bool {
+    func equals(&this, other: &MethodLookup) -> bool {
         todo_with_msg("MethodLookup.equals");
         return false;
     }
 
-    func checkForDuplicateParam(&mut this, name: &Token, dupl: &mut VariableLookup) -> bool {
+    func checkForDuplicateParam(&this, name: &Token, dupl: &VariableLookup) -> bool {
         trace("MethodLookup.checkForDuplicateParam");
-        for (mut i: usize = 0; i < this.params.length; i = i + 1) {
-            let param: &mut VariableLookup = this.params.at(i);
+        for (let i: usize = 0; i < this.params.length; i = i + 1) {
+            let param: &VariableLookup = this.params.at(i);
             if (param.name.content.equals(&name.content)) {
                 *dupl = *param;
                 return true;
@@ -595,7 +593,7 @@ struct MethodLookup {
         return false;
     }
 
-    func addParameter(&mut this, globalID: usize, name: Token, mut typeState: TCState) {
+    func addParameter(&this, globalID: usize, name: Token, typeState: TCState) {
         trace("MethodLookup.addParameter");
         assert_with_msg(typeState.isType(), "MethodLookup received non-type parameter type");
         this.params.push(VariableLookup {
@@ -607,7 +605,7 @@ struct MethodLookup {
         });
     }
 
-    func setReturnType(&mut this, mut typ: TCState) {
+    func setReturnType(&this, typ: TCState) {
         trace("MethodLookup.setReturnType");
         assert_with_msg(typ.isType(), "MethodLookup received non-type return type");
         this.returnType = typ;
@@ -620,11 +618,11 @@ struct VariableLookup {
     typeState: TCState;
     isComptime: bool;
 
-    func isParameter(&mut this) -> bool {
+    func isParameter(&this) -> bool {
         return this.globalID >= NODE_ID_OFFSET;
     }
 
-    func equals(&mut this, other: &VariableLookup) -> bool {
+    func equals(&this, other: &VariableLookup) -> bool {
         return this.name.content.equals(&other.name.content);
     }
 }
@@ -632,19 +630,19 @@ struct VariableLookup {
 struct ScopeLookup {
     variables: VariableLookupList;
 
-    func equals(&mut this, other: &ScopeLookup) -> bool {
+    func equals(&this, other: &ScopeLookup) -> bool {
         todo_with_msg("when are two scopes equal");
         return false;
     }
-    func addVariable(&mut this, variable: VariableLookup) {
+    func addVariable(&this, variable: VariableLookup) {
         trace("ScopeLookup.addVariable");
         this.variables.push(variable);
     }
 
-    func isKnownVariable(&mut this, name: SubStr, existing: &mut Token) -> bool {
+    func isKnownVariable(&this, name: SubStr, existing: &Token) -> bool {
         trace("ScopeLookup.isKnownVariable");
-        for (mut i: usize = 0; i < this.variables.length; i = i + 1) {
-            let v: &mut VariableLookup = this.variables.at(i);
+        for (let i: usize = 0; i < this.variables.length; i = i + 1) {
+            let v: &VariableLookup = this.variables.at(i);
             if (v.name.content.equals(&name)) {
                 *existing = v.name;
                 return true;
@@ -653,11 +651,11 @@ struct ScopeLookup {
         return false;
     }
 
-    func getVarIndexByName(&mut this, name: SubStr, index: &mut usize) -> bool {
+    func getVarIndexByName(&this, name: SubStr, index: &usize) -> bool {
         trace("ScopeLookup.getVarIndexByName");
-        for (mut i: usize = 0; i < this.variables.length; i = i + 1) {
-            let v: &mut VariableLookup = this.variables.at(i);
-            if (v.name.content.equals(&name)) unsafe {
+        for (let i: usize = 0; i < this.variables.length; i = i + 1) {
+            let v: &VariableLookup = this.variables.at(i);
+            if (v.name.content.equals(&name)) {
                 *index = i;
                 return true;
             }
@@ -665,11 +663,11 @@ struct ScopeLookup {
         return false;
     }
 
-    func getVariableByName(&mut this, name: SubStr, var: &mut VariableLookup) -> bool {
+    func getVariableByName(&this, name: SubStr, var: &VariableLookup) -> bool {
         trace("ScopeLookup.getVariableByName");
-        for (mut i: usize = 0; i < this.variables.length; i = i + 1) {
-            let v: &mut VariableLookup = this.variables.at(i);
-            if (v.name.content.equals(&name)) unsafe {
+        for (let i: usize = 0; i < this.variables.length; i = i + 1) {
+            let v: &VariableLookup = this.variables.at(i);
+            if (v.name.content.equals(&name)) {
                 *var = *v;
                 return true;
             }
@@ -677,12 +675,12 @@ struct ScopeLookup {
         return false;
     }
 
-    func getVariableAtIndex(&mut this, index: usize) -> &mut VariableLookup {
+    func getVariableAtIndex(&this, index: usize) -> &VariableLookup {
         trace("ScopeLookup.getVariableAtIndex");
         return this.variables.at(index);
     }
 
-    func clear(&mut this) {
+    func clear(&this) {
         this.variables.clear();
     }
 }

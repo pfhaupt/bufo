@@ -16,7 +16,7 @@ struct Span {
     }
     func toString(&this) -> String {
         // FIXME: The spans report in bytes, but the formatting makes it look like line and column
-        mut s: String = modules.at(this.mod).origin.toString();
+        let s: String = modules.at(this.mod).origin.toString();
         s.pushChar(':');
         s.pushNumber(this.start);
         s.pushChar(':');

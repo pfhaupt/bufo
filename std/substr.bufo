@@ -10,13 +10,13 @@ struct SubStr {
     len: usize;
 
     func isEmpty(&this) -> bool {
-        unsafe { return this.start == null; }
+        return this.start == null;
     }
 
     func hash(&this, length: usize) -> usize {
-        mut h: usize = 0;
-        mut d: usize = pow(10, length);
-        for (mut i: usize = 0; i < this.len; i = i + 1) {
+        let h: usize = 0;
+        let d: usize = pow(10, length);
+        for (let i: usize = 0; i < this.len; i = i + 1) {
             let c: char = this.getChar(i);
             h = h + (c as usize);
             h = h % d;
@@ -32,7 +32,7 @@ struct SubStr {
             return ORDER_GREATER;
         }
         let l: usize = this.len;
-        for (mut i: usize = 0; i < l; i = i + 1) {
+        for (let i: usize = 0; i < l; i = i + 1) {
             let c1: char = this.getChar(i);
             let c2: char = other.getChar(i);
             if (c1 < c2) {
@@ -50,7 +50,7 @@ struct SubStr {
             return false;
         }
         let l: usize = this.len;
-        for (mut i: usize = 0; i < l; i = i + 1) {
+        for (let i: usize = 0; i < l; i = i + 1) {
             let c1: char = this.getChar(i);
             let c2: char = other.getChar(i);
             if (c1 != c2) {
@@ -63,17 +63,15 @@ struct SubStr {
         return this.len;
     }
     func print(&this) {
-        unsafe {
-            for (mut i: usize = 0; i < this.len; i = i + 1) {
-                let a: Any = this.start;
-                let c: &char = a;
-                let p: char = *(c + i);
-                assert_with_msg(p == putchar(p), "Wrote wrong character in SubStr.print");
-            }
+        for (let i: usize = 0; i < this.len; i = i + 1) {
+            let a: Any = this.start;
+            let c: &char = a;
+            let p: char = *(c + i);
+            assert_with_msg(p == putchar(p), "Wrote wrong character in SubStr.print");
         }
     }
     func getPathParent(&this) -> String {
-        mut s: String = this.toString();
+        let s: String = this.toString();
         while (s.length > 0) {
             let c: char = s.getChar(s.length - 1);
             if (c == '/' || c == '\\') {
@@ -85,18 +83,15 @@ struct SubStr {
         return s;
     }
     func toString(&this) -> String {
-        mut s: String = newString();
-        for (mut i: usize = 0; i < this.len; i = i + 1) {
+        let s: String = newString();
+        for (let i: usize = 0; i < this.len; i = i + 1) {
             s.pushChar(this.getChar(i));
         }
         return s;
     }
     func getChar(&this, index: usize) -> char {
         assert_with_msg(index <= this.len, "Index out of bounds for String Index.");
-        unsafe {
-            // Safety: index is in bounds.
-            return getChar(this.start, index);
-        }
+        return getChar(this.start, index);
     }
     func substring(&this, start: usize, end: usize) -> SubStr {
         assert_with_msg(end <= this.len, "Index out of bounds for String Substring.");
@@ -104,7 +99,7 @@ struct SubStr {
         return newSubStr(this.start, start, end);
     }
     func hasSpace(&this) -> bool {
-        for (mut i: usize = 0; i < this.len; i = i + 1) {
+        for (let i: usize = 0; i < this.len; i = i + 1) {
             if (this.getChar(i) == ' ') {
                 return true;
             }
@@ -112,7 +107,7 @@ struct SubStr {
         return false;
     }
     func isNumber(&this) -> bool {
-        for (mut i: usize = 0; i < this.len; i = i + 1) {
+        for (let i: usize = 0; i < this.len; i = i + 1) {
             let ch: char = this.getChar(i);
             if (ch == '\0') {
                 break;
@@ -126,8 +121,8 @@ struct SubStr {
     }
     func toU64(&this) -> u64 {
         assert_with_msg(this.isNumber(), "not a number");
-        mut val: u64 = 0;
-        for (mut i: usize = 0; i < this.len; i = i + 1) {
+        let val: u64 = 0;
+        for (let i: usize = 0; i < this.len; i = i + 1) {
             let ch: char = this.getChar(i);
             let digit: u64 = (ch - '0') as u64;
             val = 10 * val + digit;
@@ -141,33 +136,25 @@ struct SubStr {
 }
 
 func newSubStrOfStrLit(orig: &char) -> SubStr {
-    unsafe {
-        return newSubStr(orig, 0, strlen(orig));
-    }
+    return newSubStr(orig, 0, strlen(orig));
 }
 
 func newSubStr(orig: &char, start: usize, end: usize) -> SubStr {
-    unsafe {
-        return SubStr {
-            start: orig + start,
-            len: end - start,
-        };
-    }
+    return SubStr {
+        start: orig + start,
+        len: end - start,
+    };
 }
 func newSubStrOfString(orig: &String, start: usize, end: usize) -> SubStr {
-    unsafe {
-        let _bfr: Any = orig.buffer;
-        let _cbfr: &char = _bfr;
-        return SubStr {
-            start: _cbfr + start,
-            len: end - start,
-        };
-    }
+    let _bfr: Any = orig.buffer;
+    let _cbfr: &char = _bfr;
+    return SubStr {
+        start: _cbfr + start,
+        len: end - start,
+    };
 }
 func defaultSubStr() -> SubStr {
-    unsafe {
-        let s: &char = "You are not supposed to read this. Please issue a bug report.";
-        let l: usize = strlen(s);
-        return newSubStr(s, 0, l);
-    }
+    let s: &char = "You are not supposed to read this. Please issue a bug report.";
+    let l: usize = strlen(s);
+    return newSubStr(s, 0, l);
 }

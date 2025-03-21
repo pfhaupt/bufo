@@ -9,7 +9,7 @@
 struct A {
     a: i32;
 
-    func a(&mut this, ctr: usize) {
+    func a(&this, ctr: usize) {
         if (ctr == 10) return;
         this.a(ctr + 1);
         this.a = 10;
@@ -17,7 +17,7 @@ struct A {
 }
 
 func main(argc: i32, argv: &&char) -> i32 {
-    mut a: A = A { a: 5 };
+    let a: A = A { a: 5 };
     a.a(0);
     if (a.a != 10) return 1;
     return 0;

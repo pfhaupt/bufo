@@ -10,13 +10,13 @@ struct Foo {
 
 struct Bar {
     f: i32;
-    func setF(&mut this, f: i32) {
+    func setF(&this, f: i32) {
         this.f = f;
     }
 }
 
 func main(argc: i32, argv: &&char) -> i32 {
-    mut f: Foo = Foo {
+    let f: Foo = Foo {
         b: Bar {
             f: 10
         }

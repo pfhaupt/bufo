@@ -5,7 +5,7 @@
 import "prelude.bufo"; // Index OOB handler
 
 func main(argc: i32, argv: &&char) -> i32 {
-    mut arr: [i32; 3] = [1, 2, 3];
+    let arr: [i32; 3] = [1, 2, 3];
     if (arr[1] == 4) return 1;
     arr[1] = 4;
     if (arr[1] != 4) return 2;

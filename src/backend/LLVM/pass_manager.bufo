@@ -4,32 +4,24 @@ import "./bindings.bufo";
 
 struct LLVMPassManager {
     ref: LLVMPassManagerRef;
-    func addPromoteMemoryToRegisterPass(&mut this) {
+    func addPromoteMemoryToRegisterPass(&this) {
         trace("LLVMPassManager.addPromoteMemoryToRegisterPass");
-        unsafe {
-            LLVMAddPromoteMemoryToRegisterPass(this.ref);
-        }
+        LLVMAddPromoteMemoryToRegisterPass(this.ref);
     }
-    func addAlwaysInlinerPass(&mut this) {
+    func addAlwaysInlinerPass(&this) {
         trace("LLVMPassManager.addAlwaysInlinerPass");
-        unsafe {
-            LLVMAddAlwaysInlinerPass(this.ref);
-        }
+        LLVMAddAlwaysInlinerPass(this.ref);
     }
-    func addCFGSimplificationPass(&mut this) {
+    func addCFGSimplificationPass(&this) {
         trace("LLVMPassManager.addCFGSimplificationPass");
-        unsafe {
-            LLVMAddCFGSimplificationPass(this.ref);
-        }
+        LLVMAddCFGSimplificationPass(this.ref);
     }
-    func addGlobalDCEPass(&mut this) {
+    func addGlobalDCEPass(&this) {
         trace("LLVMPassManager.addGlobalDCEPass");
-        unsafe {
-            LLVMAddGlobalDCEPass(this.ref);
-        }
+        LLVMAddGlobalDCEPass(this.ref);
     }
 
-    func runOn(&mut this, mut mod: LLVMModule) -> bool {
+    func runOn(&this, mod: LLVMModule) -> bool {
         trace("LLVMPassManager.runOn");
         return mod.runInPassManager(*this);
     }

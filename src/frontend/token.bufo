@@ -75,7 +75,7 @@ func tokenKindToString(kind: usize) -> &char {
     else if (kind == TOKEN_PIPE_DOUBLE) { return "`||`"; }
     else if (kind == TOKEN_DOTDOTDOT) { return "`...`"; }
     else if (kind == TOKEN_CARET) { return "`^`"; }
-    else unsafe {
+    else {
         printf("Please implement tokenKindToString(%llu)\n", kind);
         exit(1);
     }
@@ -87,7 +87,7 @@ struct Token {
     kind: usize;
 
     func print(&this) {
-        unsafe { printf("kind=%llu, content=", this.kind); }
+        printf("kind=%llu, content=", this.kind);
         this.content.print();
     }
     func getLocation(&this) -> String {
@@ -102,7 +102,7 @@ struct Token {
     func getSpan(&this) -> Span {
         return this.span;
     }
-    func equals(&mut this, other: &Token) -> bool {
+    func equals(&this, other: &Token) -> bool {
         if (this.kind != other.kind) return false;
         if (!this.span.equals(&other.span)) return false;
         if (!this.content.equals(&other.content)) return false;

@@ -9,13 +9,13 @@ import "windows.bufo";
 struct Cmd {
     buf: StringBuffer;
 
-    func add(&mut this, arg: &char) {
+    func add(&this, arg: &char) {
         this.buf.add(newSubStrOfStrLit(arg));
     }
-    func addSubStr(&mut this, arg: SubStr) {
+    func addSubStr(&this, arg: SubStr) {
         this.buf.add(arg);
     }
-    func addMany(&mut this, args: StringBuffer) {
+    func addMany(&this, args: StringBuffer) {
         this.buf.extend(&args);
     }
     func runSync(&this) -> bool {
@@ -28,17 +28,15 @@ struct Cmd {
         return this.buf.toCmdString();
     }
     func asCharPtrs(&this) -> &&char {
-        unsafe {
-            let _any: Any = calloc(this.buf.length + 1, sizeof &char);
-            assert(_any != null);
-            let _mut: &mut &char = &mut *_any;
-            for (mut i: usize = 0; i < this.buf.length; i = i + 1) {
-                let elem: String = (*(this.buf.data + i * sizeof SubStr)).toString();
-                elem.print();
-                *(_mut + i * sizeof &char) = elem.buffer as &char;
-            }
-            return _any as &&char;
+        let _any: Any = calloc(this.buf.length + 1, sizeof &char);
+        assert(_any != null);
+        let _mut: &&char = &*_any;
+        for (let i: usize = 0; i < this.buf.length; i = i + 1) {
+            let elem: String = (*(this.buf.data + i * sizeof SubStr)).toString();
+            elem.print();
+            *(_mut + i * sizeof &char) = elem.buffer as &char;
         }
+        return _any as &&char;
     }
 }
 
@@ -48,38 +46,36 @@ func newCmd() -> Cmd {
     };
 }
 
-func newCmdFromStrLit(mut command: &char) -> Cmd {
-    mut cmd: Cmd = newCmd();
-    unsafe {
-        mut pos: usize = 0;
-        let len: usize = strlen(command);
-        while (pos < len) {
-            let nextSpace: &char = strchr(command, ' ');
-            if (nextSpace == null) break;
-            let offset: usize = nextSpace - command;
-            let substr: SubStr = newSubStr(command, 0, offset);
-            cmd.addSubStr(substr);
-            command = command + offset + 1;
-            pos = pos + offset + 1;
-        }
-        if (pos < len) {
-            // Rest of command, for example `help` in `cargo help`
-            let rest: SubStr = newSubStr(command, 0, strlen(command));
-            cmd.addSubStr(rest);
-        }
-        return cmd;
+func newCmdFromStrLit(command: &char) -> Cmd {
+    let cmd: Cmd = newCmd();
+    let pos: usize = 0;
+    let len: usize = strlen(command);
+    while (pos < len) {
+        let nextSpace: &char = strchr(command, ' ');
+        if (nextSpace == null) break;
+        let offset: usize = nextSpace - command;
+        let substr: SubStr = newSubStr(command, 0, offset);
+        cmd.addSubStr(substr);
+        command = command + offset + 1;
+        pos = pos + offset + 1;
     }
+    if (pos < len) {
+        // Rest of command, for example `help` in `cargo help`
+        let rest: SubStr = newSubStr(command, 0, strlen(command));
+        cmd.addSubStr(rest);
+    }
+    return cmd;
 }
 
 func moveFile(from: &char, to: &char) -> bool {
-    mut moveCmd: Cmd = newCmdFromStrLit("mv");
+    let moveCmd: Cmd = newCmdFromStrLit("mv");
     moveCmd.add(from);
     moveCmd.add(to);
     return moveCmd.runSync();
 }
 
 func deleteFile(path: &char) -> bool {
-    mut delCmd: Cmd = newCmdFromStrLit("rm");
+    let delCmd: Cmd = newCmdFromStrLit("rm");
     delCmd.add(path);
     return delCmd.runSync();
 }

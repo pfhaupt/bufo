@@ -5,39 +5,33 @@ import "string.bufo";
 comptime INITIAL_STRINGBUFFER_CAP: usize = 16;
 
 struct StringBuffer {
-    data: &mut SubStr;
+    data: &SubStr;
     length: usize;
     capacity: usize;
 
-    func resize(&mut this, newCap: usize) {
-        unsafe {
-            let _new: Any = realloc(this.data, newCap * sizeof SubStr);
-            assert(_new != null);
-            this.data = &mut *_new;
-            this.capacity = newCap;
-        }
+    func resize(&this, newCap: usize) {
+        let _new: Any = realloc(this.data, newCap * sizeof SubStr);
+        assert(_new != null);
+        this.data = &*_new;
+        this.capacity = newCap;
     }
-    func add(&mut this, str: SubStr) {
+    func add(&this, str: SubStr) {
         if (this.length >= this.capacity) this.resize(2 * this.capacity);
-        unsafe {
-            *(this.data + this.length * sizeof SubStr) = str;
-        }
+        *(this.data + this.length * sizeof SubStr) = str;
         this.length = this.length + 1;
     }
     func getNthAsCharPtr(&this, index: usize) -> &char {
         assert_with_msg(index < this.length, "Out of bounds access in StringBuf.getNthAsCharPtr()");
-        unsafe {
-            return (*(this.data + index * sizeof SubStr)).start;
-        }
+        return (*(this.data + index * sizeof SubStr)).start;
     }
-    func extend(&mut this, other: &StringBuffer) {
-        for (mut i: usize = 0; i < other.length; i = i + 1) unsafe {
+    func extend(&this, other: &StringBuffer) {
+        for (let i: usize = 0; i < other.length; i = i + 1) {
             this.add(*(other.data + i * sizeof SubStr));
         }
     }
     func toCmdString(&this) -> String {
-        mut s: String = newString();
-        for (mut i: usize = 0; i < this.length; i = i + 1) unsafe {
+        let s: String = newString();
+        for (let i: usize = 0; i < this.length; i = i + 1) {
             let str: SubStr = *(this.data + i * sizeof SubStr);
             if (str.hasSpace()) {
                 s.pushChar('"');
@@ -53,13 +47,11 @@ struct StringBuffer {
 }
 
 func newStringBuffer() -> StringBuffer {
-    unsafe {
-        let _bfr: Any = calloc(INITIAL_STRINGBUFFER_CAP, sizeof SubStr);
-        let _data: &mut SubStr = &mut *_bfr;
-        return StringBuffer {
-            data: _data,
-            length: 0,
-            capacity: INITIAL_STRINGBUFFER_CAP
-        };
-    }
+    let _bfr: Any = calloc(INITIAL_STRINGBUFFER_CAP, sizeof SubStr);
+    let _data: &SubStr = &*_bfr;
+    return StringBuffer {
+        data: _data,
+        length: 0,
+        capacity: INITIAL_STRINGBUFFER_CAP
+    };
 }

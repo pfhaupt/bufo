@@ -4,7 +4,7 @@ import "substr.bufo";
 
 let HEX_CHAR: [char; 16] = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'];
 struct String {
-    buffer: &mut char;
+    buffer: &char;
     length: usize;
     capacity: usize;
 
@@ -12,72 +12,58 @@ struct String {
         return this.length;
     }
     func hash(&this) -> usize {
-        mut hash: usize = 5381;
-        for (mut i: usize = 0; i < this.length; i = i + 1) {
+        let hash: usize = 5381;
+        for (let i: usize = 0; i < this.length; i = i + 1) {
             hash = (shiftLeft(hash, 5) + hash) + (this.getChar(i) as usize);
         }
         return hash;
     }
 
     func toAbsolutePath(&this) -> String {
-        unsafe {
-            let buf: &char = calloc(1024, 1);
-            assert(buf != null);
-            let abs: &char = _fullpath(buf, this.chars(), 1024);
-            assert_with_msg(abs != null, "Could not get absolute path");
-            let s: String = newStringFromStrLit(buf);
-            free(buf);
-            return s;
-        }
+        let buf: &char = calloc(1024, 1);
+        assert(buf != null);
+        let abs: &char = _fullpath(buf, this.chars(), 1024);
+        assert_with_msg(abs != null, "Could not get absolute path");
+        let s: String = newStringFromStrLit(buf);
+        free(buf);
+        return s;
     }
 
     func getChar(&this, index: usize) -> char {
         assert_with_msg(index <= this.length, "Index out of bounds for String.getChar()");
-        unsafe {
-            return *(this.buffer + index);
-        }
+        return *(this.buffer + index);
     }
 
     func drop(&this) {
-        unsafe {
-            free(this.buffer);
-        }
+        free(this.buffer);
     }
     func copy(&this) -> String {
-        unsafe {
-            let bfr: Any = calloc(this.capacity, sizeof char);
-            assert_with_msg(bfr != null, "Could not copy String");
-            let _bfr: Any = memcpy(bfr, this.buffer, this.capacity);
-            assert(_bfr != null);
-            assert(bfr == _bfr);
-            return String {
-                buffer: bfr,
-                length: this.length,
-                capacity: this.capacity,
-            };
-        }
+        let bfr: Any = calloc(this.capacity, sizeof char);
+        assert_with_msg(bfr != null, "Could not copy String");
+        let _bfr: Any = memcpy(bfr, this.buffer, this.capacity);
+        assert(_bfr != null);
+        assert(bfr == _bfr);
+        return String {
+            buffer: bfr,
+            length: this.length,
+            capacity: this.capacity,
+        };
     }
-    func resize(&mut this, mut newCap: usize) {
-        unsafe {
-            if (newCap < 256) newCap = 256;
-            let old: &mut char = this.buffer;
-            this.buffer = calloc(newCap, sizeof char);
-            assert_with_msg(this.buffer != null, "Could not resize String");
-            memcpy(this.buffer, old, this.length);
-            free(old);
-            this.capacity = newCap;
-        }
+    func resize(&this, newCap: usize) {
+        if (newCap < 256) newCap = 256;
+        let old: &char = this.buffer;
+        this.buffer = calloc(newCap, sizeof char);
+        assert_with_msg(this.buffer != null, "Could not resize String");
+        memcpy(this.buffer, old, this.length);
+        free(old);
+        this.capacity = newCap;
     }
     func chars(&this) -> &char {
-        unsafe {
-            return this.buffer as &char;
-        }
+        return this.buffer;
     }
     func print(&this) {
-        unsafe {
-            for (mut i: usize = 0; i < this.length; i = i + 1) {
-                printf("%c", *(this.buffer + i));
-            }
+        for (let i: usize = 0; i < this.length; i = i + 1) {
+            printf("%c", *(this.buffer + i));
         }
     }
     func asSubStr(&this) -> SubStr {
@@ -86,45 +72,39 @@ struct String {
     func substring(&this, start: usize, end: usize) -> SubStr {
         return newSubStrOfString(this, start, end);
     }
-    func pushNumber(&mut this, mut num: usize) {
-        unsafe {
-            mut bfr: [char; 50] = ['\0'; 50];
-            let length: usize = snprintf(null, 0, "%llu", num);
-            assert_with_msg(length < 50, "Buffer Overflow in String.pushNumber()");
-            snprintf(&bfr, length + 1, "%llu", num);
-            for (mut i: usize = 0; i < length; i = i + 1) {
-                this.pushChar(bfr[i]);
-            }
+    func pushNumber(&this, num: usize) {
+        let bfr: [char; 50] = ['\0'; 50];
+        let length: usize = snprintf(null, 0, "%llu", num);
+        assert_with_msg(length < 50, "Buffer Overflow in String.pushNumber()");
+        snprintf(&bfr, length + 1, "%llu", num);
+        for (let i: usize = 0; i < length; i = i + 1) {
+            this.pushChar(bfr[i]);
         }
     }
-    func pushNumberAsHex(&mut this, mut num: usize) {
-        unsafe {
-            mut bfr: [char; 50] = ['\0'; 50];
-            let length: usize = snprintf(null, 0, "0x%llX", num);
-            assert_with_msg(length < 50, "Buffer Overflow in String.pushNumberAsHex()");
-            snprintf(&bfr, length + 1, "0x%llX", num);
-            for (mut i: usize = 0; i < length; i = i + 1) {
-                this.pushChar(bfr[i]);
-            }
+    func pushNumberAsHex(&this, num: usize) {
+        let bfr: [char; 50] = ['\0'; 50];
+        let length: usize = snprintf(null, 0, "0x%llX", num);
+        assert_with_msg(length < 50, "Buffer Overflow in String.pushNumberAsHex()");
+        snprintf(&bfr, length + 1, "0x%llX", num);
+        for (let i: usize = 0; i < length; i = i + 1) {
+            this.pushChar(bfr[i]);
         }
     }
-    func pushI64(&mut this, mut i: i64) {
+    func pushI64(&this, i: i64) {
         if (i < 0) {
             this.pushChar('-');
             i = -i;
         }
         this.pushNumber(i as usize);
     }
-    func pushChar(&mut this, ch: char) {
+    func pushChar(&this, ch: char) {
         if (this.length >= this.capacity || this.capacity < 256) {
             this.resize(2 * this.capacity);
         }
-        unsafe {
-            *(this.buffer + this.length * sizeof char) = ch;
-        }
+        *(this.buffer + this.length * sizeof char) = ch;
         this.length = this.length + 1;
     }
-    func pushHex(&mut this, hex: u8) {
+    func pushHex(&this, hex: u8) {
         let lower: u8 = hex % 16;
         let upper: u8 = (hex / 16) % 16;
         assert(lower < 16);
@@ -134,29 +114,27 @@ struct String {
         this.pushChar(HEX_CHAR[upper as usize]);
         this.pushChar(HEX_CHAR[lower as usize]);
     }
-    func pushSubStr(&mut this, sub: &SubStr) {
-        for (mut i: usize = 0; i < sub.len(); i = i + 1) {
+    func pushSubStr(&this, sub: &SubStr) {
+        for (let i: usize = 0; i < sub.len(); i = i + 1) {
             let ch: char = sub.getChar(i);
             this.pushChar(ch);
         }
     }
-    func pushString(&mut this, s: &String) {
-        for (mut i: usize = 0; i < s.len(); i = i + 1) {
+    func pushString(&this, s: &String) {
+        for (let i: usize = 0; i < s.len(); i = i + 1) {
             let ch: char = s.getChar(i);
             this.pushChar(ch);
         }
     }
-    func pushStr(&mut this, s: &char) {
-        unsafe {
-            let _len: usize = strlen(s);
-            for (mut i: usize = 0; i < _len; i = i + 1) {
-                let ch: char = *(s + i);
-                this.pushChar(ch);
-            }
+    func pushStr(&this, s: &char) {
+        let _len: usize = strlen(s);
+        for (let i: usize = 0; i < _len; i = i + 1) {
+            let ch: char = *(s + i);
+            this.pushChar(ch);
         }
     }
     func isNumber(&this) -> bool {
-        for (mut i: usize = 0; i < this.length; i = i + 1) {
+        for (let i: usize = 0; i < this.length; i = i + 1) {
             let ch: char = this.getChar(i);
             if (ch == '\0') {
                 break;
@@ -170,8 +148,8 @@ struct String {
     }
     func toI64(&this) -> i64 {
         assert_with_msg(this.isNumber(), "not a number");
-        mut val: i64 = 0;
-        for (mut i: usize = 0; i < this.length - 1; i = i + 1) {
+        let val: i64 = 0;
+        for (let i: usize = 0; i < this.length - 1; i = i + 1) {
             let ch: char = this.getChar(i);
             let digit: i64 = (ch - '0') as i64;
             val = 10 * val + digit;
@@ -180,8 +158,8 @@ struct String {
     }
     func toU64(&this) -> u64 {
         assert_with_msg(this.isNumber(), "not a number");
-        mut val: u64 = 0;
-        for (mut i: usize = 0; i < this.length; i = i + 1) {
+        let val: u64 = 0;
+        for (let i: usize = 0; i < this.length; i = i + 1) {
             let ch: char = this.getChar(i);
             let digit: u64 = (ch - '0') as u64;
             val = 10 * val + digit;
@@ -196,86 +174,76 @@ struct String {
 
 func newString() -> String {
     let cap: usize = 16;
-    unsafe {
-        mut _m: Any = calloc(cap, sizeof char);
-        let buff: &mut char = &mut *_m;
-        return String {
-            buffer: buff,
-            length: 0,
-            capacity: 16
-        };
-    }
+    let _m: Any = calloc(cap, sizeof char);
+    let buff: &char = &*_m;
+    return String {
+        buffer: buff,
+        length: 0,
+        capacity: 16
+    };
 }
 
 func newStringFromStrLit(s: &char) -> String {
-    unsafe {
-        let len: usize = strlen(s);
-        let buff: &char = calloc(len + 1, sizeof char);
-        assert(buff != null);
-        memcpy(buff, s, len);
-        return String {
-            buffer: buff as &mut char,
-            length: len,
-            capacity: len
-        };
-    }
+    let len: usize = strlen(s);
+    let buff: &char = calloc(len + 1, sizeof char);
+    assert(buff != null);
+    memcpy(buff, s, len);
+    return String {
+        buffer: buff as &char,
+        length: len,
+        capacity: len
+    };
 }
 
-func canReadFileToString(path: &char, source: &mut String) -> bool {
-    unsafe {
-        // `b` needed because otherwise `\r` would be dropped, leading to wrong Spans
-        let file: Any = fopen(path, "rb");
-        if (file == null) {
-            return false;
-        }
-        let buf: [char; 1024] = ['\0'; 1024];
-        while (true) {
-            let size: usize = fread(&buf, 1, 1024, file);
-            if (size == 0) {
-                break;
-            }
-            for (mut i: usize = 0; i < size; i = i + 1) {
-                source.pushChar(buf[i]);
-            }
-        }
-        assert(fclose(file) == 0);
+func canReadFileToString(path: &char, source: &String) -> bool {
+    // `b` needed because otherwise `\r` would be dropped, leading to wrong Spans
+    let file: Any = fopen(path, "rb");
+    if (file == null) {
+        return false;
     }
+    let buf: [char; 1024] = ['\0'; 1024];
+    while (true) {
+        let size: usize = fread(&buf, 1, 1024, file);
+        if (size == 0) {
+            break;
+        }
+        for (let i: usize = 0; i < size; i = i + 1) {
+            source.pushChar(buf[i]);
+        }
+    }
+    assert(fclose(file) == 0);
     return true;
 }
 
 func readFileToString(path: &char) -> String {
-    mut s: String = newString();
-    unsafe {
-        // `b` needed because otherwise `\r` would be dropped, leading to wrong Spans
-        let file: Any = fopen(path, "rb");
-        if (file == null) {
-            fprintf(stderr, "error: Could not open file `%s`.\n", path);
-            exit(1);
-        }
-        let buf: [char; 1024] = ['\0'; 1024];
-        while (true) {
-            let size: usize = fread(&buf, 1, 1024, file);
-            if (size == 0) {
-                break;
-            }
-            for (mut i: usize = 0; i < size; i = i + 1) {
-                s.pushChar(buf[i]);
-            }
-        }
-        assert(fclose(file) == 0);
+    let s: String = newString();
+    // `b` needed because otherwise `\r` would be dropped, leading to wrong Spans
+    let file: Any = fopen(path, "rb");
+    if (file == null) {
+        fprintf(stderr, "error: Could not open file `%s`.\n", path);
+        exit(1);
     }
+    let buf: [char; 1024] = ['\0'; 1024];
+    while (true) {
+        let size: usize = fread(&buf, 1, 1024, file);
+        if (size == 0) {
+            break;
+        }
+        for (let i: usize = 0; i < size; i = i + 1) {
+            s.pushChar(buf[i]);
+        }
+    }
+    assert(fclose(file) == 0);
     return s;
 }
 
 func writeStringToFile(path: &char, s: String) {
-    unsafe {
-        // `b` needed because otherwise `\r` would be dropped, leading to wrong Spans
-        let file: Any = fopen(path, "wb");
-        if (file == null) {
-            fprintf(stderr, "error: Could not open file `%s`.\n", path);
-            exit(1);
-        }
-        let size: usize = fwrite(s.buffer, 1, s.length, file);
-        assert(fclose(file) == 0);
+    // `b` needed because otherwise `\r` would be dropped, leading to wrong Spans
+    let file: Any = fopen(path, "wb");
+    if (file == null) {
+        fprintf(stderr, "error: Could not open file `%s`.\n", path);
+        exit(1);
     }
+    let size: usize = fwrite(s.buffer, 1, s.length, file);
+    assert(fclose(file) == 0);
 }

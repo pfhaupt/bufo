@@ -3,42 +3,42 @@
 // TODO: Implement safe wrapper for everything :^)
 
 // Windows is stupid :^)
-unsafe func fdopen(fd: i32, mode: &char) -> Any {
+func fdopen(fd: i32, mode: &char) -> Any {
     return _fdopen(fd, mode);
 }
-unsafe extern _fdopen(fd: i32, mode: &char) -> Any;
-unsafe extern _fullpath(absPath: &char, relPath: &char, maxLength: i32) -> &char;
+extern _fdopen(fd: i32, mode: &char) -> Any;
+extern _fullpath(absPath: &char, relPath: &char, maxLength: i32) -> &char;
 
-// unsafe extern fdopen(fd: i32, mode: &char) -> Any;
+// extern fdopen(fd: i32, mode: &char) -> Any;
 
 // Strings
-unsafe extern strlen(string: &char) -> usize;
-unsafe extern strcmp(s1: &char, s2: &char) -> i32;
-unsafe extern strchr(s: &char, c: char) -> &char;
+extern strlen(string: &char) -> usize;
+extern strcmp(s1: &char, s2: &char) -> i32;
+extern strchr(s: &char, c: char) -> &char;
 
 // Memory
-unsafe extern malloc(bytes: usize) -> Any;
-unsafe extern calloc(num: usize, size: usize) -> Any;
-unsafe extern realloc(ptr: Any, new_size: usize) -> Any;
-unsafe extern free(ptr: Any);
-unsafe extern memcpy(dest: Any, src: Any, count: usize) -> Any;
-unsafe extern memcmp(lhs: Any, rhs: Any, count: usize) -> i32;
-unsafe extern memset(s: Any, b: i32, count: usize) -> Any;
+extern malloc(bytes: usize) -> Any;
+extern calloc(num: usize, size: usize) -> Any;
+extern realloc(ptr: Any, new_size: usize) -> Any;
+extern free(ptr: Any);
+extern memcpy(dest: Any, src: Any, count: usize) -> Any;
+extern memcmp(lhs: Any, rhs: Any, count: usize) -> i32;
+extern memset(s: Any, b: i32, count: usize) -> Any;
 
 // File IO
-unsafe extern fopen(filename: &char, mode: &char) -> Any;
+extern fopen(filename: &char, mode: &char) -> Any;
 // FIXME: Any ignores Mutability :^) We should probably only write to mutable buffers tho...
-unsafe extern fread(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
-unsafe extern fwrite(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
-unsafe extern fclose(stream: Any) -> i32;
-unsafe extern fprintf(stream: Any, msg: &char, ...);
+extern fread(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
+extern fwrite(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
+extern fclose(stream: Any) -> i32;
+extern fprintf(stream: Any, msg: &char, ...);
 
-unsafe extern snprintf(buffer: Any, size: usize, format: &char, ...) -> usize;
+extern snprintf(buffer: Any, size: usize, format: &char, ...) -> usize;
 
 // Console IO
-unsafe extern printf(msg: &char, ...) -> usize;
-unsafe extern putchar(ch: char) -> char;
-unsafe extern puts(s: &char) -> usize;
+extern printf(msg: &char, ...) -> usize;
+extern putchar(ch: char) -> char;
+extern puts(s: &char) -> usize;
 
 // Process Control
-unsafe extern exit(code: i32);
+extern exit(code: i32);

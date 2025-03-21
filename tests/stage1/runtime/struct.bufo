@@ -11,14 +11,14 @@ struct Foo {
         return this.var;
     }
 
-    func setVar(mut this, var: i32) {
+    func setVar(this, var: i32) {
         // Will not work, because `setVar` copies the instance
         this.var = var;
     }
 }
 
 func main(argc: i32, argv: &&char) -> i32 {
-    mut f: Foo = Foo {
+    let f: Foo = Foo {
         value: 420,
         var: 69
     };

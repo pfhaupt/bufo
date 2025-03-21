@@ -11,7 +11,7 @@ system at any time.
 
 import "winapi/structs.bufo";
 
-unsafe extern CreateProcessA(
+extern CreateProcessA(
     lpApplicationName: &char,
     lpCommandLine: &char,
     lpProcessAttributes: &SecurityAttributes,
@@ -21,10 +21,10 @@ unsafe extern CreateProcessA(
     lpEnvironment: Any,
     lpCurrentDirectory: &char,
     lpStartupInfo: &StartupInfo,
-    lpProcessInformation: &mut ProcessInformation
+    lpProcessInformation: &ProcessInformation
 ) -> bool;
 
-unsafe extern CreateFileA(
+extern CreateFileA(
     lpFileName: &char,
     dwDesiredAccess: u32,
     dwShareMode: u32,
@@ -33,14 +33,14 @@ unsafe extern CreateFileA(
     dwFlagsAndAttributes: u32,
     hTemplateFile: Handle,
 ) -> Handle;
-unsafe extern GetStdHandle(handle: u32) -> Handle;
-unsafe extern CloseHandle(handle: Handle) -> bool;
-unsafe extern WaitForSingleObject(hHandle: Handle, dwMilliseconds: u32) -> u32;
-unsafe extern GetExitCodeProcess(proc: Handle, exitStatus: &mut u32) -> bool;
-unsafe extern GetLastError() -> u32;
-unsafe extern GetFileTime(
+extern GetStdHandle(handle: u32) -> Handle;
+extern CloseHandle(handle: Handle) -> bool;
+extern WaitForSingleObject(hHandle: Handle, dwMilliseconds: u32) -> u32;
+extern GetExitCodeProcess(proc: Handle, exitStatus: &u32) -> bool;
+extern GetLastError() -> u32;
+extern GetFileTime(
     hFile: Handle,
-    lpCreationTime: &mut FileTime,
-    lpLastAccessTime: &mut FileTime,
-    lpLastWriteTime: &mut FileTime
+    lpCreationTime: &FileTime,
+    lpLastAccessTime: &FileTime,
+    lpLastWriteTime: &FileTime
 ) -> bool;

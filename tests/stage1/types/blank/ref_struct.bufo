@@ -10,7 +10,7 @@ struct Foo {
 
 func main(argc: i32, argv: &&char) -> i32 {
     let f: Foo = Foo { field: 12 };
-    let r: &Foo = &mut f;
+    let r: &Foo = &f;
     *r = blank;
     assert(f.field == 0);
 

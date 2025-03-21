@@ -12,15 +12,15 @@ struct Foo {
 
 func main(argc: i32, argv: &&char) -> i32 {
     let fArr: [Foo; 5] = blank;
-    for (mut i: usize = 0; i < 5; i = i + 1) {
+    for (let i: usize = 0; i < 5; i = i + 1) {
         assert(fArr[i].foo == 0);
         assert(fArr[i].bar == 0);
         assert(fArr[i].baz == 0);
     }
 
     let nestedArray: [[Foo; 4]; 5] = blank;
-    for (mut i: usize = 0; i < 5; i = i + 1) {
-        for (mut j: usize = 0; j < 4; j = j + 1) {
+    for (let i: usize = 0; i < 5; i = i + 1) {
+        for (let j: usize = 0; j < 4; j = j + 1) {
             assert(nestedArray[i][j].foo == 0);
             assert(nestedArray[i][j].bar == 0);
             assert(nestedArray[i][j].baz == 0);

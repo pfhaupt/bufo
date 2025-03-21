@@ -43,7 +43,7 @@ struct TCState {
     typ: usize;
     name: Token;
 
-    func equals(&mut this, other: &TCState) -> bool {
+    func equals(&this, other: &TCState) -> bool {
         todo_with_msg("TCState.equals");
         return false;
     }
@@ -51,10 +51,10 @@ struct TCState {
     func isInvalid(&this) -> bool {
         return this.kind == TCSTATE_INVALID;
     }
-    func wantsInfer(&mut this) -> bool {
+    func wantsInfer(&this) -> bool {
         return this.kind == TCSTATE_PLEASE_INFER;
     }
-    func isCriticalError(&mut this) -> bool {
+    func isCriticalError(&this) -> bool {
         if (!this.isError()) return false;
         let err: usize = this.getError();
         return err == ERROR_NO_SUCH_IDENTIFIER
@@ -64,27 +64,27 @@ struct TCState {
             || err == ERROR_DUPLICATE_METHOD
             || err == ERROR_DUPLICATE_FIELD;
     }
-    func isError(&mut this) -> bool {
+    func isError(&this) -> bool {
         return this.kind == TCSTATE_ERROR;
     }
 
-    func isSuccess(&mut this) -> bool {
+    func isSuccess(&this) -> bool {
         return this.kind == TCSTATE_TYPE;
     }
 
-    func isType(&mut this) -> bool {
+    func isType(&this) -> bool {
         return this.kind == TCSTATE_TYPE;
     }
 
-    func getType(&mut this) -> usize {
-        if (!this.isType()) unsafe {
+    func getType(&this) -> usize {
+        if (!this.isType()) {
             fprintf(stderr, "ERROR: TCState.getType() called on non-type TCState with kind=%llu\n", this.kind);
             assert(false);
         }
         return this.typ;
     }
-    func getError(&mut this) -> usize {
-        if (!this.isError()) unsafe {
+    func getError(&this) -> usize {
+        if (!this.isError()) {
             fprintf(stderr, "ERROR: TCState.getError() called on non-error TCState with kind=%llu\n", this.kind);
             assert(false);
         }
@@ -127,241 +127,215 @@ func newTCStatePleaseInfer() -> TCState {
 struct TypeChecker {
     isComptimeContext: bool;
     currentModule: usize;
-    currentFunction: &mut FunctionLookup;
-    currentMethod: &mut MethodLookup;
+    currentFunction: &FunctionLookup;
+    currentMethod: &MethodLookup;
     lookup: Lookup;
     typeError: bool;
 
-    func reportTypeMismatch(&mut this, span: Span, expected: &mut Type, got: &mut Type) -> TCState {
+    func reportTypeMismatch(&this, span: Span, expected: &Type, got: &Type) -> TCState {
         trace("TypeChecker.reportTypeMismatch");
-        unsafe {
-            let loc: String = span.toString();
-            let typ1: String = expected.toString();
-            let typ2: String = got.toString();
-            fprintf(stderr, "%s: %s: Type mismatch! Expected type `%s`, found type `%s`.\n",
-                loc.chars(), ERR_STR, typ1.chars(), typ2.chars());
-            typ1.drop();
-            typ2.drop();
-            loc.drop();
-        }
+        let loc: String = span.toString();
+        let typ1: String = expected.toString();
+        let typ2: String = got.toString();
+        fprintf(stderr, "%s: %s: Type mismatch! Expected type `%s`, found type `%s`.\n",
+            loc.chars(), ERR_STR, typ1.chars(), typ2.chars());
+        typ1.drop();
+        typ2.drop();
+        loc.drop();
         this.typeError = true;
         return newTCStateFailure(ERROR_TYPE_MISMATCH);
     }
 
-    func reportBinaryTypeMismatch(&mut this, op: usize, lhsSpan: Span, lhsType: &mut Type, rhsSpan: Span, rhsType: &mut Type) -> TCState {
+    func reportBinaryTypeMismatch(&this, op: usize, lhsSpan: Span, lhsType: &Type, rhsSpan: Span, rhsType: &Type) -> TCState {
         trace("TypeChecker.reportBinaryTypeMismatch");
-        unsafe {
-            let loc: String = newSpanBetween(&lhsSpan, &rhsSpan).toString();
-            let loc1: String = lhsSpan.toString();
-            let loc2: String = lhsSpan.toString();
-            let typ1: String = lhsType.toString();
-            let typ2: String = rhsType.toString();
-            fprintf(stderr, "%s: %s: Type mismatch in binary expression! Operation `%s %s %s` is not defined.\n",
-                loc.chars(), ERR_STR, typ1.chars(), binOpAsStr(op), typ2.chars());
-            fprintf(stderr, "%s: %s: LHS has type `%s`.\n", loc1.chars(), NOTE_STR, typ1.chars());
-            fprintf(stderr, "%s: %s: RHS has type `%s`.\n", loc2.chars(), NOTE_STR, typ2.chars());
-            typ2.drop();
-            typ1.drop();
-            loc2.drop();
-            loc1.drop();
-            loc.drop();
-        }
+        let loc: String = newSpanBetween(&lhsSpan, &rhsSpan).toString();
+        let loc1: String = lhsSpan.toString();
+        let loc2: String = lhsSpan.toString();
+        let typ1: String = lhsType.toString();
+        let typ2: String = rhsType.toString();
+        fprintf(stderr, "%s: %s: Type mismatch in binary expression! Operation `%s %s %s` is not defined.\n",
+            loc.chars(), ERR_STR, typ1.chars(), binOpAsStr(op), typ2.chars());
+        fprintf(stderr, "%s: %s: LHS has type `%s`.\n", loc1.chars(), NOTE_STR, typ1.chars());
+        fprintf(stderr, "%s: %s: RHS has type `%s`.\n", loc2.chars(), NOTE_STR, typ2.chars());
+        typ2.drop();
+        typ1.drop();
+        loc2.drop();
+        loc1.drop();
+        loc.drop();
         this.typeError = true;
         return newTCStateFailure(ERROR_TYPE_MISMATCH);
     }
 
-    func reportInvalidPointerArithmetics(&mut this, op: usize, lhsSpan: Span, rhsSpan: Span) -> TCState {
+    func reportInvalidPointerArithmetics(&this, op: usize, lhsSpan: Span, rhsSpan: Span) -> TCState {
         trace("TypeChecker.reportInvalidPointerArithmetics");
-        unsafe {
-            let loc: String = newSpanBetween(&lhsSpan, &rhsSpan).toString();
-            fprintf(stderr, "%s: %s: Operation `%s` is not allowed in the context of pointer arithmetics.\n",
-                loc.chars(), ERR_STR, binOpAsStr(op));
-            loc.drop();
-        }
+        let loc: String = newSpanBetween(&lhsSpan, &rhsSpan).toString();
+        fprintf(stderr, "%s: %s: Operation `%s` is not allowed in the context of pointer arithmetics.\n",
+            loc.chars(), ERR_STR, binOpAsStr(op));
+        loc.drop();
         this.typeError = true;
         return newTCStateFailure(ERROR_INVALID_POINTER_ARITHMETIC);
     }
 
-    func reportDuplicateField(&mut this, fieldToken: Token, declSpan: Span) -> TCState {
+    func reportDuplicateField(&this, fieldToken: Token, declSpan: Span) -> TCState {
         trace("TypeChecker.reportDuplicateField");
-        unsafe {
-            let duplLoc: String = fieldToken.span.toString();
-            let origLoc: String = declSpan.toString();
-            let name: String = fieldToken.content.toString();
-            fprintf(stderr, "%s: %s: Field redeclaration.\n", duplLoc.chars(), ERR_STR);
-            fprintf(stderr, "%s: %s: Field `%s` already declared here.\n", origLoc.chars(), NOTE_STR, name.chars());
-            name.drop();
-            origLoc.drop();
-            duplLoc.drop();
-        }
+        let duplLoc: String = fieldToken.span.toString();
+        let origLoc: String = declSpan.toString();
+        let name: String = fieldToken.content.toString();
+        fprintf(stderr, "%s: %s: Field redeclaration.\n", duplLoc.chars(), ERR_STR);
+        fprintf(stderr, "%s: %s: Field `%s` already declared here.\n", origLoc.chars(), NOTE_STR, name.chars());
+        name.drop();
+        origLoc.drop();
+        duplLoc.drop();
         this.typeError = true;
         return newTCStateFailure(ERROR_DUPLICATE_FIELD);
     }
 
-    func reportDuplicateParameter(&mut this, paramToken: Token, declSpan: Span) -> TCState {
+    func reportDuplicateParameter(&this, paramToken: Token, declSpan: Span) -> TCState {
         trace("TypeChecker.reportDuplicateParameter");
-        unsafe {
-            let duplLoc: String = paramToken.span.toString();
-            let origLoc: String = declSpan.toString();
-            let name: String = paramToken.content.toString();
-            fprintf(stderr, "%s: %s: Parameter redeclaration.\n", duplLoc.chars(), ERR_STR);
-            fprintf(stderr, "%s: %s: Parameter `%s` already declared here.\n", origLoc.chars(), NOTE_STR, name.chars());
-            name.drop();
-            origLoc.drop();
-            duplLoc.drop();
-        }
+        let duplLoc: String = paramToken.span.toString();
+        let origLoc: String = declSpan.toString();
+        let name: String = paramToken.content.toString();
+        fprintf(stderr, "%s: %s: Parameter redeclaration.\n", duplLoc.chars(), ERR_STR);
+        fprintf(stderr, "%s: %s: Parameter `%s` already declared here.\n", origLoc.chars(), NOTE_STR, name.chars());
+        name.drop();
+        origLoc.drop();
+        duplLoc.drop();
         this.typeError = true;
         return newTCStateFailure(ERROR_DUPLICATE_PARAMETER);
     }
 
-    func reportUnknownField(&mut this, name: Token, decl: &mut StructLookup) -> TCState {
+    func reportUnknownField(&this, name: Token, decl: &StructLookup) -> TCState {
         trace("TypeChecker.reportUnknownField");
-        unsafe {
-            let errLoc: String = name.span.toString();
-            let declLoc: String = decl.name.span.toString();
-            let strukt: String = decl.name.content.toString();
-            let field: String = name.content.toString();
-            fprintf(stderr, "%s: %s: Attempted to access unknown field `%s` of instance of struct `%s`.\n", errLoc.chars(), ERR_STR, field.chars(), strukt.chars());
-            fprintf(stderr, "%s: %s: Struct `%s` is declared here.\n", declLoc.chars(), NOTE_STR, strukt.chars());
-            field.drop();
-            strukt.drop();
-            declLoc.drop();
-            errLoc.drop();
-        }
+        let errLoc: String = name.span.toString();
+        let declLoc: String = decl.name.span.toString();
+        let strukt: String = decl.name.content.toString();
+        let field: String = name.content.toString();
+        fprintf(stderr, "%s: %s: Attempted to access unknown field `%s` of instance of struct `%s`.\n", errLoc.chars(), ERR_STR, field.chars(), strukt.chars());
+        fprintf(stderr, "%s: %s: Struct `%s` is declared here.\n", declLoc.chars(), NOTE_STR, strukt.chars());
+        field.drop();
+        strukt.drop();
+        declLoc.drop();
+        errLoc.drop();
         this.typeError = true;
         return newTCStateFailure(ERROR_UNKNOWN_FIELD);
     }
 
-    func reportDuplicateFunction(&mut this, f1: &mut FunctionLookup, f2: &FunctionLookup) -> TCState {
+    func reportDuplicateFunction(&this, f1: &FunctionLookup, f2: &FunctionLookup) -> TCState {
         trace("TypeChecker.reportDuplicateFunction");
-        unsafe {
-            let errLoc: String = f1.name.span.toString();
-            let duplLoc: String = f2.name.span.toString();
-            let name: String = f1.name.content.toString();
-            fprintf(stderr, "%s: %s: Function redeclaration.\n", errLoc.chars(), ERR_STR);
-            fprintf(stderr, "%s: %s: A function named `%s` with that signature is already declared here.\n", duplLoc.chars(), ERR_STR, name.chars());
-            name.drop();
-            duplLoc.drop();
-            errLoc.drop();
-        }
+        let errLoc: String = f1.name.span.toString();
+        let duplLoc: String = f2.name.span.toString();
+        let name: String = f1.name.content.toString();
+        fprintf(stderr, "%s: %s: Function redeclaration.\n", errLoc.chars(), ERR_STR);
+        fprintf(stderr, "%s: %s: A function named `%s` with that signature is already declared here.\n", duplLoc.chars(), ERR_STR, name.chars());
+        name.drop();
+        duplLoc.drop();
+        errLoc.drop();
         this.typeError = true;
         return newTCStateFailure(ERROR_DUPLICATE_FUNCTION);
     }
 
-    func reportDuplicateMethod(&mut this, m1: &mut MethodLookup, m2: &MethodLookup) -> TCState {
+    func reportDuplicateMethod(&this, m1: &MethodLookup, m2: &MethodLookup) -> TCState {
         trace("TypeChecker.reportDuplicateMethod");
-        unsafe {
-            let errLoc: String = m1.name.span.toString();
-            let duplLoc: String = m2.name.span.toString();
-            let name: String = m1.name.content.toString();
-            fprintf(stderr, "%s: %s: Method redeclaration.\n", errLoc.chars(), ERR_STR);
-            fprintf(stderr, "%s: %s: A method named `%s` with that signature is already declared here.\n", duplLoc.chars(), ERR_STR, name.chars());
-            name.drop();
-            duplLoc.drop();
-            errLoc.drop();
-        }
+        let errLoc: String = m1.name.span.toString();
+        let duplLoc: String = m2.name.span.toString();
+        let name: String = m1.name.content.toString();
+        fprintf(stderr, "%s: %s: Method redeclaration.\n", errLoc.chars(), ERR_STR);
+        fprintf(stderr, "%s: %s: A method named `%s` with that signature is already declared here.\n", duplLoc.chars(), ERR_STR, name.chars());
+        name.drop();
+        duplLoc.drop();
+        errLoc.drop();
         return newTCStateFailure(ERROR_DUPLICATE_METHOD);
     }
 
-    func reportNoCallCandidate(&mut this, callID: usize, arguments: &mut TCStateList, functions: &mut FunctionLookupList) -> TCState {
+    func reportNoCallCandidate(&this, callID: usize, arguments: &TCStateList, functions: &FunctionLookupList) -> TCState {
         trace("TypeChecker.reportNoCallCandidate");
-        unsafe {
-            let callExpr: &mut ParsedExpr = exprs.at(callID);
-            assert_with_msg(callExpr.kind == EXPR_CALL, "reportNoCallCandidate: Expected expr to be a call");
-            let loc: String = callExpr.origToken.span.toString();
-            let name: String = callExpr.origToken.content.toString();
-            fprintf(stderr, "%s: %s: Could not find matching signature for call to function `%s`.\n", loc.chars(), ERR_STR, name.chars());
-            assert_with_msg(functions.length != 0, "reportNoCallCandidate: Expected at least one declaration");
-            // REVIEW: It was suggested that we could hide this extra info behind a `--verbose` flag, which sounds interesting.
-            for (mut i: usize = 0; i < functions.length; i = i + 1) {
-                let f: &mut FunctionLookup = functions.at(i);
-                let loc: String = f.name.span.toString();
-                fprintf(stderr, "%s: %s: A function with that name is located here.\n", loc.chars(), NOTE_STR);
-                loc.drop();
-            }
-            name.drop();
+        let callExpr: &ParsedExpr = exprs.at(callID);
+        assert_with_msg(callExpr.kind == EXPR_CALL, "reportNoCallCandidate: Expected expr to be a call");
+        let loc: String = callExpr.origToken.span.toString();
+        let name: String = callExpr.origToken.content.toString();
+        fprintf(stderr, "%s: %s: Could not find matching signature for call to function `%s`.\n", loc.chars(), ERR_STR, name.chars());
+        assert_with_msg(functions.length != 0, "reportNoCallCandidate: Expected at least one declaration");
+        // REVIEW: It was suggested that we could hide this extra info behind a `--verbose` flag, which sounds interesting.
+        for (let i: usize = 0; i < functions.length; i = i + 1) {
+            let f: &FunctionLookup = functions.at(i);
+            let loc: String = f.name.span.toString();
+            fprintf(stderr, "%s: %s: A function with that name is located here.\n", loc.chars(), NOTE_STR);
             loc.drop();
         }
+        name.drop();
+        loc.drop();
         this.typeError = true;
         return newTCStateFailure(ERROR_NO_CALL_CANDIDATE);
     }
 
-    func reportVariableRedeclaration(&mut this, newDecl: Token, oldDecl: Token) -> TCState {
+    func reportVariableRedeclaration(&this, newDecl: Token, oldDecl: Token) -> TCState {
         trace("TypeChecker.reportVariableRedeclaration");
-        unsafe {
-            let newLoc: String = newDecl.span.toString();
-            let oldLoc: String = oldDecl.span.toString();
-            let name: String = newDecl.content.toString();
-            fprintf(stderr, "%s: %s: Variable redeclaration.\n", newLoc.chars(), ERR_STR);
-            fprintf(stderr, "%s: %s: Variable `%s` already declared here.\n", oldLoc.chars(), NOTE_STR, name.chars());
-            name.drop();
-            oldLoc.drop();
-            newLoc.drop();
-        }
+        let newLoc: String = newDecl.span.toString();
+        let oldLoc: String = oldDecl.span.toString();
+        let name: String = newDecl.content.toString();
+        fprintf(stderr, "%s: %s: Variable redeclaration.\n", newLoc.chars(), ERR_STR);
+        fprintf(stderr, "%s: %s: Variable `%s` already declared here.\n", oldLoc.chars(), NOTE_STR, name.chars());
+        name.drop();
+        oldLoc.drop();
+        newLoc.drop();
         this.typeError = true;
         return newTCStateFailure(ERROR_VARIABLE_REDECLARATION);
     }
 
-    func reportRecursiveType(&mut this, checked: &mut TypeLookup, cycle: &mut TypeLookupList) -> TCState {
+    func reportRecursiveType(&this, checked: &TypeLookup, cycle: &TypeLookupList) -> TCState {
         trace("TypeChecker.reportRecursiveType");
-        unsafe {
-            mut loc: String = checked.getLocation();
-            mut name: String = checked.getName();
-            fprintf(stderr, "%s: %s: Recursive type `%s`.\n", loc.chars(), ERR_STR, name.chars());
-            assert_with_msg(cycle.length >= 1, "Cycle is empty");
-            for (mut i: usize = 1; i < cycle.length; i = i + 1) {
-                loc = cycle.at(i).getLocation();
-                name = cycle.at(i).getName();
-                fprintf(stderr, "%s: %s: Chain of recursion also includes type `%s`.\n", loc.chars(), NOTE_STR, name.chars());
-            }
-            name.drop();
-            loc.drop();
+        let loc: String = checked.getLocation();
+        let name: String = checked.getName();
+        fprintf(stderr, "%s: %s: Recursive type `%s`.\n", loc.chars(), ERR_STR, name.chars());
+        assert_with_msg(cycle.length >= 1, "Cycle is empty");
+        for (let i: usize = 1; i < cycle.length; i = i + 1) {
+            loc = cycle.at(i).getLocation();
+            name = cycle.at(i).getName();
+            fprintf(stderr, "%s: %s: Chain of recursion also includes type `%s`.\n", loc.chars(), NOTE_STR, name.chars());
         }
+        name.drop();
+        loc.drop();
         this.typeError = true;
         return newTCStateFailure(ERROR_RECURSIVE_TYPE);
     }
 
-    func reportNonPrimitiveCast(&mut this, span: Span, from: &mut Type, to: &mut Type) -> TCState {
+    func reportNonPrimitiveCast(&this, span: Span, from: &Type, to: &Type) -> TCState {
         trace("TypeChecker.reportNonPrimitiveCast");
-        unsafe {
-            let loc: String = span.toString();
-            let typ1: String = from.toString();
-            let typ2: String = to.toString();
-            fprintf(stderr, "%s: %s: Non primitive cast from type %s to %s.\n",
-                loc.chars(), ERR_STR, typ1.chars(), typ2.chars());
-            typ1.drop();
-            typ2.drop();
-            loc.drop();
-        }
+        let loc: String = span.toString();
+        let typ1: String = from.toString();
+        let typ2: String = to.toString();
+        fprintf(stderr, "%s: %s: Non primitive cast from type %s to %s.\n",
+            loc.chars(), ERR_STR, typ1.chars(), typ2.chars());
+        typ1.drop();
+        typ2.drop();
+        loc.drop();
         this.typeError = true;
         return newTCStateFailure(ERROR_NON_PRIMITIVE_CAST);
     }
 
-    func reportIndexedAccessOnNonArray(&mut this, span: Span, typ: &mut Type) -> TCState {
+    func reportIndexedAccessOnNonArray(&this, span: Span, typ: &Type) -> TCState {
         trace("TypeChecker.reportIndexedAccessOnNonArray");
-        unsafe {
-            let loc: String = span.toString();
-            let name: String = typ.toString();
-            fprintf(stderr, "%s: %s: Indexed Access is only supported for arrays.\n", loc.chars(), ERR_STR);
-            fprintf(stderr, "%s: %s: Expression has type %s.\n", loc.chars(), NOTE_STR, name.chars());
-            name.drop();
-            loc.drop();
-        }
+        let loc: String = span.toString();
+        let name: String = typ.toString();
+        fprintf(stderr, "%s: %s: Indexed Access is only supported for arrays.\n", loc.chars(), ERR_STR);
+        fprintf(stderr, "%s: %s: Expression has type %s.\n", loc.chars(), NOTE_STR, name.chars());
+        name.drop();
+        loc.drop();
         this.typeError = true;
         return newTCStateFailure(ERROR_INDEXED_ACCESS_ON_NON_ARRAY);
     }
 
-    func emergencyPrint(&mut this, where: Span) {
+    func emergencyPrint(&this, where: Span) {
         let t: Token = Token {
             span: where,
             content: newSubStrOfStrLit(""),
             kind: TOKEN_EOF
         };
         t.getLocation().print();
-        unsafe { printf("\n"); }
+        printf("\n");
     }
 
-    func typeCheckProject(&mut this, project: &mut ParsedModule) -> bool {
+    func typeCheckProject(&this, project: &ParsedModule) -> bool {
         trace("TypeChecker.typeCheckProject");
         if (!this.fillLookup()) return false;
         if (!this.typeCheckModules()) return false;
@@ -369,37 +343,37 @@ struct TypeChecker {
         return !this.typeError;
     }
 
-    func dfs(&mut this, mut typeLookup: TypeLookup, visited: &mut TypeLookupList, finished: &mut TypeLookupList) -> bool {
+    func dfs(&this, typeLookup: TypeLookup, visited: &TypeLookupList, finished: &TypeLookupList) -> bool {
         trace("TypeChecker.dfs");
         if (finished.contains(&typeLookup))
             return false;
         if (visited.contains(&typeLookup))
             return true;
         visited.push(typeLookup);
-        mut done: bool = false;
+        let done: bool = false;
         if (typeLookup.isStruct()) {
-            let strukt: &mut StructLookup = (&mut typeLookup).asStruct();
-            for (mut i: usize = 0; i < strukt.fields.length; i = i + 1) {
-                let field: &mut VariableLookup = strukt.fields.at(i);
+            let strukt: &StructLookup = (&typeLookup).asStruct();
+            for (let i: usize = 0; i < strukt.fields.length; i = i + 1) {
+                let field: &VariableLookup = strukt.fields.at(i);
                 assert_with_msg(field.typeState.isSuccess(), "Expected valid field type in DFS");
                 let fieldTypeID: usize = field.typeState.getType();
-                let fieldType: &mut Type = types.at(fieldTypeID);
+                let fieldType: &Type = types.at(fieldTypeID);
                 if (fieldType.isStructArray()) {
                     let typeID: usize = fieldType.typeIndex;
-                    let elemType: &mut Type = types.at(typeID);
+                    let elemType: &Type = types.at(typeID);
                     assert(elemType.isStruct());
                     let structID: usize = elemType.typeIndex;
-                    let decl: &mut ParsedStructDecl = structDecls.at(structID);
-                    let mod: &mut ModuleLookup = this.lookup.modules.at(decl.parentModule);
-                    let strukt: &mut StructLookup = mod.getStructByGlobalID(structID);
+                    let decl: &ParsedStructDecl = structDecls.at(structID);
+                    let mod: &ModuleLookup = this.lookup.modules.at(decl.parentModule);
+                    let strukt: &StructLookup = mod.getStructByGlobalID(structID);
                     if (this.dfs(strukt.asTypeLookup(), visited, finished)) {
                         done = true;
                     }
                 } else if (fieldType.isStruct()) {
                     let structID: usize = fieldType.typeIndex;
-                    let decl: &mut ParsedStructDecl = structDecls.at(structID);
-                    let mod: &mut ModuleLookup = this.lookup.modules.at(decl.parentModule);
-                    let strukt: &mut StructLookup = mod.getStructByGlobalID(structID);
+                    let decl: &ParsedStructDecl = structDecls.at(structID);
+                    let mod: &ModuleLookup = this.lookup.modules.at(decl.parentModule);
+                    let strukt: &StructLookup = mod.getStructByGlobalID(structID);
                     if (this.dfs(strukt.asTypeLookup(), visited, finished)) {
                         done = true;
                     }
@@ -412,56 +386,56 @@ struct TypeChecker {
         return done;
     }
 
-    func findRecursiveTypes(&mut this) -> bool {
+    func findRecursiveTypes(&this) -> bool {
         trace("TypeChecker.findRecursiveTypes");
-        mut recursive: bool = false;
-        for (mut i: usize = 0; i < structDecls.length; i = i + 1) {
-            let decl: &mut ParsedStructDecl = structDecls.at(i);
-            let mod: &mut ModuleLookup = this.lookup.modules.at(decl.parentModule);
-            let strukt: &mut StructLookup = mod.getStructByGlobalID(i);
-            mut visited: TypeLookupList = blank;
-            mut finished: TypeLookupList = blank;
-            if (this.dfs(strukt.asTypeLookup(), &mut visited, &mut finished)) {
-                this.reportRecursiveType(&mut strukt.asTypeLookup(), &mut visited);
+        let recursive: bool = false;
+        for (let i: usize = 0; i < structDecls.length; i = i + 1) {
+            let decl: &ParsedStructDecl = structDecls.at(i);
+            let mod: &ModuleLookup = this.lookup.modules.at(decl.parentModule);
+            let strukt: &StructLookup = mod.getStructByGlobalID(i);
+            let visited: TypeLookupList = blank;
+            let finished: TypeLookupList = blank;
+            if (this.dfs(strukt.asTypeLookup(), &visited, &finished)) {
+                this.reportRecursiveType(&strukt.asTypeLookup(), &visited);
                 recursive = true;
             }
         }
         return recursive;
     }
 
-    func fillLookup(&mut this) -> bool {
+    func fillLookup(&this) -> bool {
         trace("TypeChecker.fillLookup");
-        for (mut i: usize = 0; i < modules.length; i = i + 1) {
-            let mod: &mut ParsedModule = modules.at(i);
+        for (let i: usize = 0; i < modules.length; i = i + 1) {
+            let mod: &ParsedModule = modules.at(i);
             assert(mod.getID() == i);
             this.currentModule = i;
-            let lookup: &mut ModuleLookup = this.lookup.insertModule(mod);
-            for (mut j: usize = 0; j < mod.tliLength; j = j + 1) unsafe {
+            let lookup: &ModuleLookup = this.lookup.insertModule(mod);
+            for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
                 let tliID: usize = mod.getTopLevelItemAtIndex(j);
-                let tli: &mut ParsedTopLevelItem = topLevelItems.at(tliID);
+                let tli: &ParsedTopLevelItem = topLevelItems.at(tliID);
                 lookup.insertTLI(tli);
             }
         }
         return true;
     }
 
-    func typeCheckModules(&mut this) -> bool {
+    func typeCheckModules(&this) -> bool {
         trace("TypeChecker.typeCheckModules");
-        mut done: bool = false;
-        mut success: bool = true;
+        let done: bool = false;
+        let success: bool = true;
         while (!done) {
             done = true;
-            for (mut i: usize = 0; i < modules.length; i = i + 1) {
-                let mod: &mut ParsedModule = modules.at(i);
+            for (let i: usize = 0; i < modules.length; i = i + 1) {
+                let mod: &ParsedModule = modules.at(i);
                 assert(mod.getID() == i);
                 this.currentModule = i;
-                let currModule: &mut ModuleLookup = this.lookup.modules.at(i);
+                let currModule: &ModuleLookup = this.lookup.modules.at(i);
                 assert_with_msg(currModule.variables.length == 1, "still deez");
-                for (mut j: usize = 0; j < mod.tliLength; j = j + 1) unsafe {
+                for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
                     let tliID: usize = mod.getTopLevelItemAtIndex(j);
-                    let tli: &mut ParsedTopLevelItem = topLevelItems.at(tliID);
+                    let tli: &ParsedTopLevelItem = topLevelItems.at(tliID);
                     if (tli.typeState.isSuccess()) continue;
-                    mut state: TCState = this.typeCheckTLI(tli);
+                    let state: TCState = this.typeCheckTLI(tli);
                     (*tli).typeState = state;
                     if (state.isError()) {
                         let err: usize = state.getError();
@@ -481,20 +455,20 @@ struct TypeChecker {
         return success;
     }
 
-    func typeCheckTLI(&mut this, tli: &mut ParsedTopLevelItem) -> TCState {
+    func typeCheckTLI(&this, tli: &ParsedTopLevelItem) -> TCState {
         trace("TypeChecker.typeCheckTLI");
-        unsafe { this.currentFunction = null; }
-        unsafe { this.currentMethod = null; }
-        let currentModule: &mut ModuleLookup = this.lookup.modules.at(this.currentModule);
+        this.currentFunction = null;
+        this.currentMethod = null;
+        let currentModule: &ModuleLookup = this.lookup.modules.at(this.currentModule);
         assert_with_msg(currentModule.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
         if (tli.kind == TLI_IMPORT) {
             return newTCStateSuccess();
         } else if (tli.kind == TLI_FUNC_DECL) {
-            return this.typeCheckFunction(tli.nodeID, &mut currentModule.variables);
+            return this.typeCheckFunction(tli.nodeID, &currentModule.variables);
         } else if (tli.kind == TLI_STRUCT_DECL) {
             return this.typeCheckStructDecl(tli.nodeID);
         } else if (tli.kind == TLI_VAR_DECL) {
-            return this.typeCheckVarDecl(tli.nodeID, &mut currentModule.variables, true);
+            return this.typeCheckVarDecl(tli.nodeID, &currentModule.variables, true);
         } else {
             todo_with_msg("unknown TLI");
         }
@@ -502,25 +476,25 @@ struct TypeChecker {
         return blank;
     }
 
-    func typeCheckStructDecl(&mut this, structID: usize) -> TCState {
+    func typeCheckStructDecl(&this, structID: usize) -> TCState {
         trace("TypeChecker.typeCheckStructDecl");
-        let strukt: &mut ParsedStructDecl = structDecls.at(structID);
-        let moduleLookup: &mut ModuleLookup = this.lookup.modules.at(this.currentModule);
-        let structLookup: &mut StructLookup = moduleLookup.getStructByGlobalID(structID);
-        let context: &mut StructContext = &mut strukt.context;
-        mut result: TCState = newTCStateSuccess();
+        let strukt: &ParsedStructDecl = structDecls.at(structID);
+        let moduleLookup: &ModuleLookup = this.lookup.modules.at(this.currentModule);
+        let structLookup: &StructLookup = moduleLookup.getStructByGlobalID(structID);
+        let context: &StructContext = &strukt.context;
+        let result: TCState = newTCStateSuccess();
         if (!structLookup.getReadyState(STRUCT_READY_TO_USE)) {
             if (!structLookup.getReadyState(STRUCT_FIELDS_COMPLETE)) {
-                mut failure: TCState = blank;
-                for (mut i: usize = 0; i < context.fieldLength; i = i + 1) {
+                let failure: TCState = blank;
+                for (let i: usize = 0; i < context.fieldLength; i = i + 1) {
                     let name: Token = context.getFieldNameAtIndex(i);
                     let typ: usize = context.getFieldTypeAtIndex(i);
-                    mut dupl: VariableLookup = blank;
-                    if (structLookup.checkForDuplicateField(&name, &mut dupl)) {
+                    let dupl: VariableLookup = blank;
+                    if (structLookup.checkForDuplicateField(&name, &dupl)) {
                         failure = this.reportDuplicateField(name, dupl.name.span);
                         continue;
                     }
-                    mut state: TCState = this.typeCheckTypeNode(typ);
+                    let state: TCState = this.typeCheckTypeNode(typ);
                     if (state.isError()) {
                         failure = state;
                         continue;
@@ -531,11 +505,11 @@ struct TypeChecker {
                 structLookup.setReadyState(STRUCT_FIELDS_COMPLETE);
             }
             if (!structLookup.getReadyState(STRUCT_SIGNATURE_COMPLETE)) {
-                mut lookup: bool = false;
-                mut error: usize = 0;
-                for (mut i: usize = 0; i < context.methodLength; i = i + 1) {
+                let lookup: bool = false;
+                let error: usize = 0;
+                for (let i: usize = 0; i < context.methodLength; i = i + 1) {
                     let methodID: usize = context.getMethodAtIndex(i);
-                    mut state: TCState = this.typeCheckMethod(structID, methodID, true);
+                    let state: TCState = this.typeCheckMethod(structID, methodID, true);
                     if (state.isError()) {
                         let err: usize = state.getError();
                         if (err == ERROR_LOOKUP_NOT_READY) lookup = true;
@@ -549,10 +523,10 @@ struct TypeChecker {
                 structLookup.setReadyState(STRUCT_SIGNATURE_COMPLETE);
             }
             if (!structLookup.getReadyState(STRUCT_METHODS_COMPLETE)) {
-                mut lookup: bool = false;
-                for (mut i: usize = 0; i < context.methodLength; i = i + 1) {
+                let lookup: bool = false;
+                for (let i: usize = 0; i < context.methodLength; i = i + 1) {
                     let methodID: usize = context.getMethodAtIndex(i);
-                    mut state: TCState = this.typeCheckMethod(structID, methodID, false);
+                    let state: TCState = this.typeCheckMethod(structID, methodID, false);
                     if (state.isError()) {
                         let err: usize = state.getError();
                         if (err == ERROR_LOOKUP_NOT_READY) lookup = true;
@@ -568,13 +542,13 @@ struct TypeChecker {
         return result;
     }
 
-    func typeCheckMethod(&mut this, structID: usize, methodID: usize, onlySignature: bool) -> TCState {
+    func typeCheckMethod(&this, structID: usize, methodID: usize, onlySignature: bool) -> TCState {
         trace("TypeChecker.typeCheckMethod");
         // REVIEW: We can improve performance by passing the StructLookup instead of the ID
-        let method: &mut ParsedMethod = methods.at(methodID);
-        let moduleLookup: &mut ModuleLookup = this.lookup.modules.at(this.currentModule);
-        let structLookup: &mut StructLookup = moduleLookup.getStructByGlobalID(structID);
-        let methodLookup: &mut MethodLookup = structLookup.getMethodByGlobalID(methodID);
+        let method: &ParsedMethod = methods.at(methodID);
+        let moduleLookup: &ModuleLookup = this.lookup.modules.at(this.currentModule);
+        let structLookup: &StructLookup = moduleLookup.getStructByGlobalID(structID);
+        let methodLookup: &MethodLookup = structLookup.getMethodByGlobalID(methodID);
         if (methodLookup.getReadyState(METHOD_BODY_COMPLETE)) {
             assert_with_msg(methodLookup.getReadyState(METHOD_READY_TO_USE), "Method should be ready to use at this point");
             return method.typeState;
@@ -582,18 +556,18 @@ struct TypeChecker {
         this.currentMethod = methodLookup;
         if (!methodLookup.getReadyState(METHOD_READY_TO_USE)) {
             if (!methodLookup.getReadyState(METHOD_PARAMS_COMPLETE)) {
-                mut failure: TCState = blank;
+                let failure: TCState = blank;
                 methodLookup.params.clear();
-                for (mut i: usize = 0; i < method.params.paramLength; i = i + 1) {
+                for (let i: usize = 0; i < method.params.paramLength; i = i + 1) {
                     let typ: usize = method.params.getTypeAtIndex(i);
                     let name: Token = method.params.getNameAtIndex(i);
-                    mut dupl: VariableLookup = blank;
-                    if (methodLookup.checkForDuplicateParam(&name, &mut dupl)) {
+                    let dupl: VariableLookup = blank;
+                    if (methodLookup.checkForDuplicateParam(&name, &dupl)) {
                         failure = this.reportDuplicateParameter(name, dupl.name.span);
                         methodLookup.setReadyState(METHOD_PARAMS_COMPLETE);
                         continue;
                     }
-                    mut state: TCState = this.typeCheckTypeNode(typ);
+                    let state: TCState = this.typeCheckTypeNode(typ);
                     if (state.isError()) {
                         failure = state;
                         continue;
@@ -604,7 +578,7 @@ struct TypeChecker {
                 methodLookup.setReadyState(METHOD_PARAMS_COMPLETE);
             }
             if (!methodLookup.getReadyState(METHOD_RETTYPE_COMPLETE)) {
-                mut retState: TCState = this.typeCheckTypeNode(method.retTypeID);
+                let retState: TCState = this.typeCheckTypeNode(method.retTypeID);
                 if (retState.isError()) return retState;
                 methodLookup.setReturnType(retState);
                 methodLookup.setReadyState(METHOD_RETTYPE_COMPLETE);
@@ -616,23 +590,23 @@ struct TypeChecker {
             return newTCStateSuccess();
         }
         (*method).typeState = newTCStateSuccess();
-        if (!methodLookup.getReadyState(METHOD_DUPLICATE_CHECK)) unsafe {
+        if (!methodLookup.getReadyState(METHOD_DUPLICATE_CHECK)) {
             // FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
-            mut _dupl: usize = 0;
-            if (structLookup.containsDuplicateMethod(methodLookup, &mut _dupl)) {
+            let _dupl: usize = 0;
+            if (structLookup.containsDuplicateMethod(methodLookup, &_dupl)) {
                 assert_with_msg(_dupl != 0, "Duplicate MethodLookup is null");
                 return this.reportDuplicateMethod(methodLookup, _dupl as &MethodLookup);
             }
             methodLookup.setReadyState(METHOD_DUPLICATE_CHECK);
         }
         if (!methodLookup.getReadyState(METHOD_BODY_COMPLETE)) {
-            mut scopes: ScopeLookupList = blank;
-            mut scope: ScopeLookup = blank;
-            for (mut i: usize = 0; i < methodLookup.params.length; i = i + 1) {
+            let scopes: ScopeLookupList = blank;
+            let scope: ScopeLookup = blank;
+            for (let i: usize = 0; i < methodLookup.params.length; i = i + 1) {
                 scope.addVariable(*(methodLookup.params.at(i)));
             }
             scopes.push(scope);
-            mut blockState: TCState = this.typeCheckBlock(method.body, &mut scopes);
+            let blockState: TCState = this.typeCheckBlock(method.body, &scopes);
             scopes.pop();
             if (blockState.isError()) return blockState;
             methodLookup.setReadyState(METHOD_BODY_COMPLETE);
@@ -640,11 +614,11 @@ struct TypeChecker {
         return method.typeState;
     }
 
-    func typeCheckFunction(&mut this, funcID: usize, scopes: &mut ScopeLookupList) -> TCState {
+    func typeCheckFunction(&this, funcID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckFunction");
-        let function: &mut ParsedFuncDecl = funcDecls.at(funcID);
-        let moduleLookup: &mut ModuleLookup = this.lookup.modules.at(this.currentModule);
-        let funcLookup: &mut FunctionLookup = moduleLookup.getFunctionByGlobalID(funcID);
+        let function: &ParsedFuncDecl = funcDecls.at(funcID);
+        let moduleLookup: &ModuleLookup = this.lookup.modules.at(this.currentModule);
+        let funcLookup: &FunctionLookup = moduleLookup.getFunctionByGlobalID(funcID);
         if (funcLookup.getReadyState(FUNC_BODY_COMPLETE)) {
             assert_with_msg(funcLookup.getReadyState(FUNC_READY_TO_USE), "Function should be ready to use at this point");
             return function.typeState;
@@ -652,18 +626,18 @@ struct TypeChecker {
         this.currentFunction = funcLookup;
         if (!funcLookup.getReadyState(FUNC_READY_TO_USE)) {
             if (!funcLookup.getReadyState(FUNC_PARAMS_COMPLETE)) {
-                mut failure: TCState = blank;
+                let failure: TCState = blank;
                 funcLookup.params.clear();
-                for (mut i: usize = 0; i < function.params.paramLength; i = i + 1) {
+                for (let i: usize = 0; i < function.params.paramLength; i = i + 1) {
                     let typ: usize = function.params.getTypeAtIndex(i);
                     let name: Token = function.params.getNameAtIndex(i);
-                    mut dupl: VariableLookup = blank;
-                    if (funcLookup.checkForDuplicateParam(&name, &mut dupl)) {
+                    let dupl: VariableLookup = blank;
+                    if (funcLookup.checkForDuplicateParam(&name, &dupl)) {
                         failure = this.reportDuplicateParameter(name, dupl.name.span);
                         funcLookup.setReadyState(FUNC_PARAMS_COMPLETE);
                         continue;
                     }
-                    mut state: TCState = this.typeCheckTypeNode(typ);
+                    let state: TCState = this.typeCheckTypeNode(typ);
                     if (state.isError()) {
                         failure = state;
                         continue;
@@ -674,7 +648,7 @@ struct TypeChecker {
                 funcLookup.setReadyState(FUNC_PARAMS_COMPLETE);
             }
             if (!funcLookup.getReadyState(FUNC_RETTYPE_COMPLETE)) {
-                mut retState: TCState = this.typeCheckTypeNode(function.retTypeID);
+                let retState: TCState = this.typeCheckTypeNode(function.retTypeID);
                 if (retState.isError()) return retState;
                 funcLookup.setReturnType(retState);
                 funcLookup.setReadyState(FUNC_RETTYPE_COMPLETE);
@@ -682,23 +656,23 @@ struct TypeChecker {
             funcLookup.setReadyState(FUNC_READY_TO_USE);
         }
         (*function).typeState = newTCStateSuccess();
-        if (!funcLookup.getReadyState(FUNC_DUPLICATE_CHECK)) unsafe {
+        if (!funcLookup.getReadyState(FUNC_DUPLICATE_CHECK)) {
             // FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
-            mut _dupl: usize = 0;
-            if (moduleLookup.containsDuplicateFunction(funcLookup, &mut _dupl)) {
+            let _dupl: usize = 0;
+            if (moduleLookup.containsDuplicateFunction(funcLookup, &_dupl)) {
                 assert_with_msg(_dupl != 0, "Duplicate FunctionLookup is null");
                 return this.reportDuplicateFunction(funcLookup, _dupl as &FunctionLookup);
             }
             funcLookup.setReadyState(FUNC_DUPLICATE_CHECK);
         }
         if (!funcLookup.getReadyState(FUNC_BODY_COMPLETE)) {
-            mut scope: ScopeLookup = blank;
-            for (mut i: usize = 0; i < funcLookup.params.length; i = i + 1) {
+            let scope: ScopeLookup = blank;
+            for (let i: usize = 0; i < funcLookup.params.length; i = i + 1) {
                 scope.addVariable(*(funcLookup.params.at(i)));
             }
             if (!function.isExtern) {
                 scopes.push(scope);
-                mut blockState: TCState = this.typeCheckBlock(function.body, scopes);
+                let blockState: TCState = this.typeCheckBlock(function.body, scopes);
                 scopes.pop();
                 if (blockState.isError()) {
                     return blockState;
@@ -709,9 +683,9 @@ struct TypeChecker {
         return function.typeState;
     }
 
-    func typeCheckBlock(&mut this, blockID: usize, scopes: &mut ScopeLookupList) -> TCState {
+    func typeCheckBlock(&this, blockID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckBlock");
-        let block: &mut ParsedBlock = blocks.at(blockID);
+        let block: &ParsedBlock = blocks.at(blockID);
         if (block.typeState.isSuccess()) {
             return block.typeState;
         }
@@ -720,9 +694,9 @@ struct TypeChecker {
         });
         let curr: usize = scopes.length;
         // REVIEW: Do we want to make blocks expressions?
-        mut blockState: TCState = newTCStateSuccess();
-        for (mut i: usize = 0; i < block.stmtLength; i = i + 1) {
-            mut stmtState: TCState = this.typeCheckStmt(block.getStmtAtIndex(i), scopes);
+        let blockState: TCState = newTCStateSuccess();
+        for (let i: usize = 0; i < block.stmtLength; i = i + 1) {
+            let stmtState: TCState = this.typeCheckStmt(block.getStmtAtIndex(i), scopes);
             if (stmtState.isError()) {
                 let err: usize = stmtState.getError();
                 if (err == ERROR_LOOKUP_NOT_READY) {
@@ -741,11 +715,11 @@ struct TypeChecker {
         return block.typeState;
     }
 
-    func typeCheckStmt(&mut this, stmtID: usize, scopes: &mut ScopeLookupList) -> TCState {
+    func typeCheckStmt(&this, stmtID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckStmt");
-        let stmt: &mut ParsedStmt = stmts.at(stmtID);
+        let stmt: &ParsedStmt = stmts.at(stmtID);
         if (stmt.kind == STMT_BLOCK) {
-            mut blockState: TCState = this.typeCheckBlock(stmt.block, scopes);
+            let blockState: TCState = this.typeCheckBlock(stmt.block, scopes);
             if (blockState.isError()) return blockState;
             (*stmt).typeState = blockState;
             return blockState;
@@ -754,16 +728,16 @@ struct TypeChecker {
         } else if (stmt.kind == STMT_EXPR) {
             if (stmt.typeState.isSuccess())
                 return stmt.typeState;
-            mut exprState: TCState = this.typeCheckExpr(stmt.expr, scopes);
+            let exprState: TCState = this.typeCheckExpr(stmt.expr, scopes);
             if (exprState.isError()) return exprState;
             if (exprState.wantsInfer()) todo_with_msg("stmt expr infer");
-            let expr: &mut ParsedExpr = exprs.at(stmt.expr);
-            if (!exprState.isType()) unsafe {
+            let expr: &ParsedExpr = exprs.at(stmt.expr);
+            if (!exprState.isType()) {
                 printf("%llu\n", exprState.kind);
                 todo_with_msg("what is it then");
             }
-            let exprType: &mut Type = types.at(exprState.getType());
-            if (!exprType.isNone() && !expr.isAssignment()) unsafe {
+            let exprType: &Type = types.at(exprState.getType());
+            if (!exprType.isNone() && !expr.isAssignment()) {
                 let loc: String = expr.span.toString();
                 fprintf(stderr, "%s: %s: Unused expression value.\n", loc.chars(), WARN_STR);
                 loc.drop();
@@ -773,21 +747,21 @@ struct TypeChecker {
         } else if (stmt.kind == STMT_IF) {
             if (stmt.typeState.isSuccess())
                 return stmt.typeState;
-            mut condState: TCState = this.typeCheckExpr(stmt.expr, scopes);
-            mut thenState: TCState = this.typeCheckStmt(stmt.ifContext.thenBody, scopes);
-            mut elseState: TCState = newTCStateSuccess();
+            let condState: TCState = this.typeCheckExpr(stmt.expr, scopes);
+            let thenState: TCState = this.typeCheckStmt(stmt.ifContext.thenBody, scopes);
+            let elseState: TCState = newTCStateSuccess();
             if (stmt.ifContext.hasElse) {
                 elseState = this.typeCheckStmt(stmt.ifContext.elseBody, scopes);
             }
             if (condState.isError()) return condState;
             if (thenState.isError()) return thenState;
             if (elseState.isError()) return elseState;
-            let boolType: &mut Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
+            let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
             if (condState.wantsInfer()) {
                 condState = this.inferTypeOntoExpr(stmt.expr, boolType.getID());
                 assert_with_msg(condState.isType(), "Could not infer type onto if-condition");
             }
-            let condType: &mut Type = types.at(condState.getType());
+            let condType: &Type = types.at(condState.getType());
             if (!condType.isBoolean()) {
                 return this.reportTypeMismatch(exprs.at(stmt.expr).span, boolType, condType);
             }
@@ -797,85 +771,81 @@ struct TypeChecker {
         } else if (stmt.kind == STMT_RETURN_EXPR) {
             if (stmt.typeState.isSuccess())
                 return stmt.typeState;
-            mut exprState: TCState = this.typeCheckExpr(stmt.expr, scopes);
+            let exprState: TCState = this.typeCheckExpr(stmt.expr, scopes);
             if (exprState.isError()) return exprState;
-            unsafe {
-                if (this.currentFunction != null) {
-                    assert_with_msg(this.currentFunction.getReadyState(FUNC_READY_TO_USE), "Function is not ready");
-                    let _retType: &mut Type = types.at(this.currentFunction.returnType.getType());
-                    if (_retType.isNone()) todo_with_msg("unexpected ret expr where empty function");
-                    let retState: &mut TCState = &mut this.currentFunction.returnType;
-                    assert_with_msg(retState.isSuccess(), "ready to use function has invalid return type");
-                    assert_with_msg(retState.isType(), "ready to use function has non-type as return type");
-                    if (exprState.wantsInfer()) {
-                        exprState = this.inferTypeOntoExpr(stmt.expr, retState.getType());
-                        if (exprState.isError()) return exprState;
-                        assert_with_msg(exprState.isType(), "Failed to infer type of return expression");
-                    }
-                    let exprType: &mut Type = types.at(exprState.getType());
-                    let retType: &mut Type = types.at(retState.getType());
-                    if (!exprType.equals(retType)) {
-                        return this.reportTypeMismatch(stmt.span, retType, exprType);
-                    }
-                    (*stmt).typeState = *retState;
-                    return newTCStateSuccess();
-                } else if (this.currentMethod != null) {
-                    assert_with_msg(this.currentMethod.getReadyState(METHOD_READY_TO_USE), "Method is not ready");
-                    let _retType: &mut Type = types.at(this.currentMethod.returnType.getType());
-                    if (_retType.isNone()) todo_with_msg("unexpected ret expr where empty method");
-                    let retState: &mut TCState = &mut this.currentMethod.returnType;
-                    assert_with_msg(retState.isSuccess(), "ready to use method has invalid return type");
-                    assert_with_msg(retState.isType(), "ready to use method has non-type as return type");
-                    if (exprState.wantsInfer()) {
-                        exprState = this.inferTypeOntoExpr(stmt.expr, retState.getType());
-                        if (exprState.isError()) return exprState;
-                        assert_with_msg(exprState.isType(), "Failed to infer type of return expression");
-                    }
-                    let exprType: &mut Type = types.at(exprState.getType());
-                    let retType: &mut Type = types.at(retState.getType());
-                    if (!exprType.equals(retType)) {
-                        return this.reportTypeMismatch(stmt.span, retType, exprType);
-                    }
-                    (*stmt).typeState = *retState;
-                    return newTCStateSuccess();
-                } else {
-                    unreachable("Expected to be either in a method or function, got none of both");
+            if (this.currentFunction != null) {
+                assert_with_msg(this.currentFunction.getReadyState(FUNC_READY_TO_USE), "Function is not ready");
+                let _retType: &Type = types.at(this.currentFunction.returnType.getType());
+                if (_retType.isNone()) todo_with_msg("unexpected ret expr where empty function");
+                let retState: &TCState = &this.currentFunction.returnType;
+                assert_with_msg(retState.isSuccess(), "ready to use function has invalid return type");
+                assert_with_msg(retState.isType(), "ready to use function has non-type as return type");
+                if (exprState.wantsInfer()) {
+                    exprState = this.inferTypeOntoExpr(stmt.expr, retState.getType());
+                    if (exprState.isError()) return exprState;
+                    assert_with_msg(exprState.isType(), "Failed to infer type of return expression");
                 }
+                let exprType: &Type = types.at(exprState.getType());
+                let retType: &Type = types.at(retState.getType());
+                if (!exprType.equals(retType)) {
+                    return this.reportTypeMismatch(stmt.span, retType, exprType);
+                }
+                (*stmt).typeState = *retState;
+                return newTCStateSuccess();
+            } else if (this.currentMethod != null) {
+                assert_with_msg(this.currentMethod.getReadyState(METHOD_READY_TO_USE), "Method is not ready");
+                let _retType: &Type = types.at(this.currentMethod.returnType.getType());
+                if (_retType.isNone()) todo_with_msg("unexpected ret expr where empty method");
+                let retState: &TCState = &this.currentMethod.returnType;
+                assert_with_msg(retState.isSuccess(), "ready to use method has invalid return type");
+                assert_with_msg(retState.isType(), "ready to use method has non-type as return type");
+                if (exprState.wantsInfer()) {
+                    exprState = this.inferTypeOntoExpr(stmt.expr, retState.getType());
+                    if (exprState.isError()) return exprState;
+                    assert_with_msg(exprState.isType(), "Failed to infer type of return expression");
+                }
+                let exprType: &Type = types.at(exprState.getType());
+                let retType: &Type = types.at(retState.getType());
+                if (!exprType.equals(retType)) {
+                    return this.reportTypeMismatch(stmt.span, retType, exprType);
+                }
+                (*stmt).typeState = *retState;
+                return newTCStateSuccess();
+            } else {
+                unreachable("Expected to be either in a method or function, got none of both");
             }
             todo_with_msg("return expr");
         } else if (stmt.kind == STMT_RETURN_EMPTY) {
-            unsafe {
-                if (this.currentFunction != null) {
-                    assert_with_msg(this.currentFunction.getReadyState(FUNC_READY_TO_USE), "Function is not ready");
-                    let retType: &mut Type = types.at(this.currentFunction.returnType.getType());
-                    if (!retType.isNone()) todo_with_msg("function returns something, but we wrote return;");
-                    (*stmt).typeState = newTCStateSuccess();
-                    return newTCStateSuccess();
-                } else if (this.currentMethod != null) {
-                    assert_with_msg(this.currentMethod.getReadyState(METHOD_READY_TO_USE), "Method is not ready");
-                    let retType: &mut Type = types.at(this.currentMethod.returnType.getType());
-                    if (!retType.isNone()) todo_with_msg("method returns something, but we wrote return;");
-                    (*stmt).typeState = newTCStateSuccess();
-                    return newTCStateSuccess();
-                } else {
-                    unreachable("Expected to be either in a method or function, got none of both");
-                }
+            if (this.currentFunction != null) {
+                assert_with_msg(this.currentFunction.getReadyState(FUNC_READY_TO_USE), "Function is not ready");
+                let retType: &Type = types.at(this.currentFunction.returnType.getType());
+                if (!retType.isNone()) todo_with_msg("function returns something, but we wrote return;");
+                (*stmt).typeState = newTCStateSuccess();
+                return newTCStateSuccess();
+            } else if (this.currentMethod != null) {
+                assert_with_msg(this.currentMethod.getReadyState(METHOD_READY_TO_USE), "Method is not ready");
+                let retType: &Type = types.at(this.currentMethod.returnType.getType());
+                if (!retType.isNone()) todo_with_msg("method returns something, but we wrote return;");
+                (*stmt).typeState = newTCStateSuccess();
+                return newTCStateSuccess();
+            } else {
+                unreachable("Expected to be either in a method or function, got none of both");
             }
         } else if (stmt.kind == STMT_WHILE) {
             if (stmt.typeState.isSuccess())
                 return stmt.typeState;
-            mut condState: TCState = this.typeCheckExpr(stmt.expr, scopes);
-            mut bodyState: TCState = this.typeCheckStmt(stmt.block, scopes);
-            mut stepState: TCState = this.typeCheckExpr(stmt.step, scopes);
+            let condState: TCState = this.typeCheckExpr(stmt.expr, scopes);
+            let bodyState: TCState = this.typeCheckStmt(stmt.block, scopes);
+            let stepState: TCState = this.typeCheckExpr(stmt.step, scopes);
             if (condState.isError()) return condState;
             if (bodyState.isError()) return bodyState;
             if (stepState.isError()) return stepState;
-            let boolType: &mut Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
+            let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
             if (condState.wantsInfer()) {
                 condState = this.inferTypeOntoExpr(stmt.expr, boolType.getID());
                 assert_with_msg(condState.isType(), "Could not infer type onto while-condition");
             }
-            let condType: &mut Type = types.at(condState.getType());
+            let condType: &Type = types.at(condState.getType());
             if (!condType.isBoolean()) {
                 return this.reportTypeMismatch(exprs.at(stmt.expr).span, boolType, condType);
             }
@@ -892,12 +862,12 @@ struct TypeChecker {
         return blank;
     }
 
-    func typeCheckVarDecl(&mut this, varDeclID: usize, scopes: &mut ScopeLookupList, globalScope: bool) -> TCState {
+    func typeCheckVarDecl(&this, varDeclID: usize, scopes: &ScopeLookupList, globalScope: bool) -> TCState {
         trace("TypeChecker.typeCheckVarDecl");
-        let varDecl: &mut ParsedStmt = stmts.at(varDeclID);
+        let varDecl: &ParsedStmt = stmts.at(varDeclID);
         assert_with_msg(varDecl.kind == STMT_VAR_DECL, "Stmt expected to be a VarDecl");
         let context: VarDeclContext = varDecl.varDeclContext;
-        let last: &mut ScopeLookup = scopes.last();
+        let last: &ScopeLookup = scopes.last();
         if (varDecl.typeState.isSuccess()) {
             if (globalScope) todo_with_msg("cached var decl global scope");
             last.addVariable(VariableLookup {
@@ -908,19 +878,19 @@ struct TypeChecker {
             });
             return varDecl.typeState;
         }
-        mut loc: Token = blank;
+        let loc: Token = blank;
         // REVIEW: Warn about shadowing?
-        if (!globalScope && last.isKnownVariable(context.name.content, &mut loc)) {
+        if (!globalScope && last.isKnownVariable(context.name.content, &loc)) {
             return this.reportVariableRedeclaration(context.name, loc);
         }
-        mut typeState: TCState = blank;
+        let typeState: TCState = blank;
         if (context.typeID != TYPE_INVALID) {
             typeState = this.typeCheckTypeNode(context.typeID);
             if (typeState.isError()) return typeState;
             if (!typeState.isType()) todo_with_msg("let type is not a type");
         }
         this.isComptimeContext = context.isComptime;
-        mut exprState: TCState = this.typeCheckExpr(context.exprID, scopes);
+        let exprState: TCState = this.typeCheckExpr(context.exprID, scopes);
         this.isComptimeContext = false;
         if (context.typeID == TYPE_INVALID) {
             // let var = expr;
@@ -937,20 +907,20 @@ struct TypeChecker {
                 exprState = this.inferTypeOntoExpr(context.exprID, typeState.getType());
             }
             if (exprState.isType()) {
-                let typeType: &mut Type = types.at(typeState.getType());
-                let exprType: &mut Type = types.at(exprState.getType());
-                if (!typeType.equals(exprType)) unsafe {
-                    let exprNode: &mut ParsedExpr = exprs.at(context.exprID);
+                let typeType: &Type = types.at(typeState.getType());
+                let exprType: &Type = types.at(exprState.getType());
+                if (!typeType.equals(exprType)) {
+                    let exprNode: &ParsedExpr = exprs.at(context.exprID);
                     exprState = this.reportTypeMismatch(exprNode.span, typeType, exprType);
                 }
             }
         }
         if (globalScope) {
-            mut index: usize = 0;
-            assert_with_msg(last.getVarIndexByName(context.name.content, &mut index), "Could not find variable in global scope");
-            let var: &mut VariableLookup = last.getVariableAtIndex(index);
+            let index: usize = 0;
+            assert_with_msg(last.getVarIndexByName(context.name.content, &index), "Could not find variable in global scope");
+            let var: &VariableLookup = last.getVariableAtIndex(index);
             (*var).typeState = typeState;
-        } else unsafe {
+        } else {
             last.addVariable(VariableLookup {
                 globalID: varDecl.getID(),
                 name: context.name,
@@ -963,51 +933,51 @@ struct TypeChecker {
         return typeState;
     }
 
-    func typeCheckExpr(&mut this, exprID: usize, scopes: &mut ScopeLookupList) -> TCState {
+    func typeCheckExpr(&this, exprID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckExpr");
-        let expr: &mut ParsedExpr = exprs.at(exprID);
+        let expr: &ParsedExpr = exprs.at(exprID);
         if (expr.typeState.isSuccess()) return expr.typeState;
-        mut state: TCState = blank;
+        let state: TCState = blank;
         if (expr.kind == EXPR_EMPTY) {
             state = newTCStateSuccess();
         } else if (expr.kind == EXPR_INT_LIT) {
             state = newTCStatePleaseInfer();
         } else if (expr.kind == EXPR_STRING_LIT) {
-            let ct: &mut Type = newType(TYPE_KIND_PRIMITIVE, TYPE_CHAR);
-            let st: &mut Type = newType(TYPE_KIND_POINTER, ct.getID());
+            let ct: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_CHAR);
+            let st: &Type = newType(TYPE_KIND_POINTER, ct.getID());
             state = newTCStateType(st.getID());
         } else if (expr.kind == EXPR_CHAR_LIT) {
-            let t: &mut Type = newType(TYPE_KIND_PRIMITIVE, TYPE_CHAR);
+            let t: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_CHAR);
             state = newTCStateType(t.getID());
         } else if (expr.kind == EXPR_ARRAY_LIT) {
-            let context: &mut ArrayContext = &mut expr.arrayContext;
+            let context: &ArrayContext = &expr.arrayContext;
             assert_with_msg(context.elemLength != 0, "Zero sized Array Literal spotted");
             let elemIndex: usize = context.getElementAtIndex(0);
-            mut elemState: TCState = this.typeCheckExpr(elemIndex, scopes);
+            let elemState: TCState = this.typeCheckExpr(elemIndex, scopes);
             if (elemState.isError()) return elemState;
             if (elemState.wantsInfer()) return elemState;
             let elemTypeID: usize = elemState.getType();
             if (context.size == 0) {
-                let elemType: &mut Type = types.at(elemTypeID);
-                mut lastErrState: TCState = blank;
-                for (mut i: usize = 1; i < context.elemLength; i = i + 1) {
+                let elemType: &Type = types.at(elemTypeID);
+                let lastErrState: TCState = blank;
+                for (let i: usize = 1; i < context.elemLength; i = i + 1) {
                     let nextIndex: usize = context.getElementAtIndex(i);
-                    mut nextState: TCState = this.typeCheckExpr(nextIndex, scopes);
+                    let nextState: TCState = this.typeCheckExpr(nextIndex, scopes);
                     if (nextState.isError()) {
                         lastErrState = nextState;
                         continue;
                     }
-                    let nextType: &mut Type = types.at(nextState.getType());
+                    let nextType: &Type = types.at(nextState.getType());
                     if (!nextType.equals(elemType)) {
                         todo_with_msg("array elem type mismatch");
                     }
                 }
                 if (!lastErrState.isInvalid()) return lastErrState;
-                let t: &mut Type = newType(TYPE_KIND_ARRAY, elemTypeID);
+                let t: &Type = newType(TYPE_KIND_ARRAY, elemTypeID);
                 (*t).arraySize = context.elemLength;
                 state = newTCStateType(t.getID());
             } else {
-                let t: &mut Type = newType(TYPE_KIND_ARRAY, elemTypeID);
+                let t: &Type = newType(TYPE_KIND_ARRAY, elemTypeID);
                 (*t).arraySize = context.size;
                 state = newTCStateType(t.getID());
             }
@@ -1030,7 +1000,7 @@ struct TypeChecker {
         } else if (expr.kind == EXPR_BLANK) {
             state = newTCStatePleaseInfer();
         } else if (expr.kind == EXPR_TRUE || expr.kind == EXPR_FALSE) {
-            let t: &mut Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
+            let t: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
             state = newTCStateType(t.getID());
         } else {
             todo_with_msg("unexpected expr kind");
@@ -1040,27 +1010,27 @@ struct TypeChecker {
         return state;
     }
 
-    func typeCheckExprSizeof(&mut this, exprID: usize, scopes: &mut ScopeLookupList) -> TCState {
+    func typeCheckExprSizeof(&this, exprID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckExprSizeof");
-        let expr: &mut ParsedExpr = exprs.at(exprID);
+        let expr: &ParsedExpr = exprs.at(exprID);
         if (expr.typeState.isSuccess()) return expr.typeState;
         assert(expr.kind == EXPR_SIZEOF);
-        mut typeState: TCState = this.typeCheckTypeNode(expr.lhs);
+        let typeState: TCState = this.typeCheckTypeNode(expr.lhs);
         if (typeState.isError()) return typeState;
-        let ut: &mut Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
+        let ut: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
         return newTCStateType(ut.getID());
     }
 
-    func typeCheckExprAs(&mut this, exprID: usize, scopes: &mut ScopeLookupList) -> TCState {
+    func typeCheckExprAs(&this, exprID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckExprAs");
-        let expr: &mut ParsedExpr = exprs.at(exprID);
+        let expr: &ParsedExpr = exprs.at(exprID);
         assert(expr.kind == EXPR_AS);
-        mut exprState: TCState = this.typeCheckExpr(expr.lhs, scopes);
-        mut typeState: TCState = this.typeCheckTypeNode(expr.rhs);
+        let exprState: TCState = this.typeCheckExpr(expr.lhs, scopes);
+        let typeState: TCState = this.typeCheckTypeNode(expr.rhs);
         if (exprState.isError()) return exprState;
         if (typeState.isError()) return typeState;
-        let exprType: &mut Type = types.at(exprState.getType());
-        let typeType: &mut Type = types.at(typeState.getType());
+        let exprType: &Type = types.at(exprState.getType());
+        let typeType: &Type = types.at(typeState.getType());
         if (typeType.isPointer() && exprType.isPointer()) {
             // PTR as PTR is allowed
         } else if (exprType.isPointer() && typeType.isInteger()) {
@@ -1078,7 +1048,7 @@ struct TypeChecker {
         } else if (!exprType.isPrimitive()) {
             return this.reportNonPrimitiveCast(expr.span, exprType, typeType);
         }
-        if (typeType.getSize() < exprType.getSize()) unsafe {
+        if (typeType.getSize() < exprType.getSize()) {
             let loc: String = expr.span.toString();
             let tName: String = typeType.toString();
             let oName: String = exprType.toString();
@@ -1091,15 +1061,15 @@ struct TypeChecker {
         return typeState;
     }
 
-    func typeCheckUnary(&mut this, exprID: usize, scopes: &mut ScopeLookupList) -> TCState {
+    func typeCheckUnary(&this, exprID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckUnary");
-        let expr: &mut ParsedExpr = exprs.at(exprID);
+        let expr: &ParsedExpr = exprs.at(exprID);
         assert(expr.kind == EXPR_UNARY);
-        mut exprState: TCState = this.typeCheckExpr(expr.lhs, scopes);
+        let exprState: TCState = this.typeCheckExpr(expr.lhs, scopes);
         if (exprState.isError()) return exprState;
         if (exprState.wantsInfer()) return exprState; // Can't be done in here
         if (expr.op == UNARY_DEREF) {
-            let exprType: &mut Type = types.at(exprState.getType());
+            let exprType: &Type = types.at(exprState.getType());
             if (exprType.isPrimitive()) {
                 if (exprType.typeIndex == TYPE_ANY) {
                     return newTCStatePleaseInfer();
@@ -1108,15 +1078,15 @@ struct TypeChecker {
             if (!exprType.isPointer()) {
                 todo_with_msg("deref non-pointer");
             }
-            let underlying: &mut Type = exprType.getUnderlyingType(false);
+            let underlying: &Type = exprType.getUnderlyingType(false);
             return newTCStateType(underlying.getID());
         } else if (expr.op == UNARY_REF) {
-            let exprType: &mut Type = types.at(exprState.getType());
-            let t: &mut Type = newType(TYPE_KIND_POINTER, exprType.getID());
+            let exprType: &Type = types.at(exprState.getType());
+            let t: &Type = newType(TYPE_KIND_POINTER, exprType.getID());
             return newTCStateType(t.getID());
         } else if (expr.op == UNARY_NOT) {
-            let exprType: &mut Type = types.at(exprState.getType());
-            if (!exprType.isBoolean()) unsafe {
+            let exprType: &Type = types.at(exprState.getType());
+            if (!exprType.isBoolean()) {
                 let loc: String = expr.span.toString();
                 let t: String = exprType.toString();
                 fprintf(stderr, "%s: %s: Logical Not is not defined for type `%s`.\n", loc.chars(), ERR_STR, t.chars());
@@ -1126,8 +1096,8 @@ struct TypeChecker {
             }
             return exprState;
         } else if (expr.op == UNARY_MINUS) {
-            let exprType: &mut Type = types.at(exprState.getType());
-            if (!exprType.isSignedInteger() && !exprType.isFloat()) unsafe {
+            let exprType: &Type = types.at(exprState.getType());
+            if (!exprType.isSignedInteger() && !exprType.isFloat()) {
                 let loc: String = expr.span.toString();
                 let t: String = exprType.toString();
                 fprintf(stderr, "%s: %s: Negation is not defined for type `%s`.\n", loc.chars(), ERR_STR, t.chars());
@@ -1142,20 +1112,20 @@ struct TypeChecker {
         }
     }
 
-    func typeCheckExprCall(&mut this, exprID: usize, scopes: &mut ScopeLookupList) -> TCState {
+    func typeCheckExprCall(&this, exprID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckExprCall");
         // REVIEW: Would be cool if the call base could be any expression, not just an identifier
-        let expr: &mut ParsedExpr = exprs.at(exprID);
+        let expr: &ParsedExpr = exprs.at(exprID);
         assert(expr.kind == EXPR_CALL);
         let name: Token = expr.origToken;
-        mut functions: FunctionLookupList = this.lookup.resolveFunctionByName(this.currentModule, &name);
-        if (functions.length == 0) unsafe {
+        let functions: FunctionLookupList = this.lookup.resolveFunctionByName(this.currentModule, &name);
+        if (functions.length == 0) {
             let loc: String = name.getLocation();
             let n: String = name.content.toString();
             fprintf(stderr, "%s: %s: Call to unknown function `%s`.\n", loc.chars(), ERR_STR, n.chars());
-            mut alternatives: FunctionLookupList = this.lookup.searchAllModulesForFunctionName(&name);
-            for (mut i: usize = 0; i < alternatives.length; i = i + 1) {
-                let t: &mut FunctionLookup = &mut *alternatives.at(i);
+            let alternatives: FunctionLookupList = this.lookup.searchAllModulesForFunctionName(&name);
+            for (let i: usize = 0; i < alternatives.length; i = i + 1) {
+                let t: &FunctionLookup = &*alternatives.at(i);
                 let loc: String = t.name.getLocation();
                 fprintf(stderr, "%s: %s: A function with that name is located here. Import the module to use it.\n", loc.chars(), NOTE_STR);
                 loc.drop();
@@ -1164,23 +1134,23 @@ struct TypeChecker {
             loc.drop();
             return newTCStateFailure(ERROR_NO_SUCH_FUNCTION);
         }
-        let callContext: &mut ArrayContext = &mut expr.arrayContext;
-        mut arguments: TCStateList = blank;
-        for (mut i: usize = 0; i < callContext.elemLength; i = i + 1) {
+        let callContext: &ArrayContext = &expr.arrayContext;
+        let arguments: TCStateList = blank;
+        for (let i: usize = 0; i < callContext.elemLength; i = i + 1) {
             let argID: usize = callContext.getElementAtIndex(i);
-            mut arg: TCState = this.typeCheckExpr(argID, scopes);
+            let arg: TCState = this.typeCheckExpr(argID, scopes);
             if (arg.isError()) return arg;
             arguments.push(arg);
         }
         assert(arguments.length == callContext.elemLength);
-        mut candidates: FunctionLookupList = blank;
-        mut mark: TCState = this.markCallCandidates(callContext, &mut functions, &mut candidates, &mut arguments);
+        let candidates: FunctionLookupList = blank;
+        let mark: TCState = this.markCallCandidates(callContext, &functions, &candidates, &arguments);
         if (mark.isError()) return mark;
         // functions contains all functions with the same amount of arguments and
         // candidates where infer-semantics could validate the function
         // e.g. foo(i: i32) + foo(i: u64) for foo(5)
-        mut globalID: usize = 0;
-        mut sweep: TCState = this.selectCallCandidate(exprID, callContext, &mut functions, &mut candidates, &mut arguments, &mut globalID);
+        let globalID: usize = 0;
+        let sweep: TCState = this.selectCallCandidate(exprID, callContext, &functions, &candidates, &arguments, &globalID);
         if (sweep.isError()) return sweep;
         assert(sweep.isType());
         (*expr).lhs = globalID;
@@ -1188,28 +1158,28 @@ struct TypeChecker {
     }
 
     func markCallCandidates(
-        &mut this,
-        callContext: &mut ArrayContext,
-        functions: &mut FunctionLookupList,
-        candidates: &mut FunctionLookupList,
-        arguments: &mut TCStateList,
+        &this,
+        callContext: &ArrayContext,
+        functions: &FunctionLookupList,
+        candidates: &FunctionLookupList,
+        arguments: &TCStateList,
     ) -> TCState {
         trace("TypeChecker.markCallCandidates");
-        for (mut i: usize = 0; i < functions.length; i = i + 1) {
-            let f: &mut FunctionLookup = &mut *(functions.at(i));
+        for (let i: usize = 0; i < functions.length; i = i + 1) {
+            let f: &FunctionLookup = &*(functions.at(i));
             if (!f.getReadyState(FUNC_READY_TO_USE)) {
                 return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
             }
             if (!f.isVarArg && f.params.length != arguments.length) {
                 continue;
             }
-            mut match: bool = true;
-            for (mut j: usize = 0; j < f.params.length; j = j + 1) {
-                mut argState: TCState = *arguments.at(j);
-                let param: &mut VariableLookup = f.params.at(j);
-                let paramState: &mut TCState = &mut param.typeState;
+            let match: bool = true;
+            for (let j: usize = 0; j < f.params.length; j = j + 1) {
+                let argState: TCState = *arguments.at(j);
+                let param: &VariableLookup = f.params.at(j);
+                let paramState: &TCState = &param.typeState;
                 assert_with_msg(paramState.isSuccess(), "Expected valid function parameter");
-                let paramType: &mut Type = types.at(paramState.getType());
+                let paramType: &Type = types.at(paramState.getType());
                 if (argState.wantsInfer()) {
                     argState = this.tryInferTypeOntoExpr(callContext.getElementAtIndex(j), paramType.getID(), true);
                     if (argState.isError()) {
@@ -1217,7 +1187,7 @@ struct TypeChecker {
                     }
                     assert_with_msg(argState.isType(), "Did not infer type of param onto argument properly");
                 }
-                let argType: &mut Type = types.at(argState.getType());
+                let argType: &Type = types.at(argState.getType());
                 if (!argType.equals(paramType)) {
                     match = false;
                     break;
@@ -1232,13 +1202,13 @@ struct TypeChecker {
     }
 
     func selectCallCandidate(
-        &mut this,
+        &this,
         exprID: usize,
-        callContext: &mut ArrayContext,
-        functions: &mut FunctionLookupList,
-        candidates: &mut FunctionLookupList,
-        arguments: &mut TCStateList,
-        funcID: &mut usize,
+        callContext: &ArrayContext,
+        functions: &FunctionLookupList,
+        candidates: &FunctionLookupList,
+        arguments: &TCStateList,
+        funcID: &usize,
     ) -> TCState {
         trace("TypeChecker.selectCallCandidate");
         if (candidates.length == 0) {
@@ -1247,44 +1217,44 @@ struct TypeChecker {
             todo_with_msg("selectCallCandidate: too many candidates");
         }
         assert_with_msg(candidates.length == 1, "selectCallCandidate: Expected exactly one candidate");
-        let f: &mut FunctionLookup = &mut *(candidates.at(0));
+        let f: &FunctionLookup = &*(candidates.at(0));
         assert_with_msg(f.getReadyState(FUNC_READY_TO_USE), "Expected markCallCandidates to validate FUNC_READY_TO_USE");
-        for (mut j: usize = 0; j < f.params.length; j = j + 1) {
-            let argState: &mut TCState = &mut *arguments.at(j);
-            let param: &mut VariableLookup = f.params.at(j);
-            let paramState: &mut TCState = &mut param.typeState;
+        for (let j: usize = 0; j < f.params.length; j = j + 1) {
+            let argState: &TCState = &*arguments.at(j);
+            let param: &VariableLookup = f.params.at(j);
+            let paramState: &TCState = &param.typeState;
             assert_with_msg(paramState.isSuccess(), "Expected valid function parameter");
-            let paramType: &mut Type = types.at(paramState.getType());
+            let paramType: &Type = types.at(paramState.getType());
             if (argState.wantsInfer()) {
                 *argState = this.inferTypeOntoExpr(callContext.getElementAtIndex(j), paramType.getID());
                 assert_with_msg(!argState.isError(), "selectCallCandidate: Expected infer to be success");
                 assert_with_msg(argState.isType(), "selectCallCandidate: Expected infer to be success");
             }
-            let argType: &mut Type = types.at(argState.getType());
+            let argType: &Type = types.at(argState.getType());
             assert_with_msg(argType.equals(paramType), "selectCallCandidate: Expected argument to match parameter");
         }
         *funcID = f.globalID;
-        mut retType: TCState = f.returnType;
+        let retType: TCState = f.returnType;
         assert_with_msg(retType.isSuccess(), "selectCallCandidate: Expected valid function return type");
         return retType;
     }
 
-    func typeCheckExprStructInit(&mut this, exprID: usize, scopes: &mut ScopeLookupList) -> TCState {
+    func typeCheckExprStructInit(&this, exprID: usize, scopes: &ScopeLookupList) -> TCState {
         // REVIEW: This function will later also do union declarations
         trace("TypeChecker.typeCheckExprStructInit");
-        let expr: &mut ParsedExpr = exprs.at(exprID);
+        let expr: &ParsedExpr = exprs.at(exprID);
         assert(expr.kind == EXPR_STRUCT_INIT);
         let name: Token = expr.origToken;
-        mut lookup: TypeLookup = blank;
-        if (!this.lookup.resolveTypeByName(this.currentModule, &name, &mut lookup)) unsafe {
+        let lookup: TypeLookup = blank;
+        if (!this.lookup.resolveTypeByName(this.currentModule, &name, &lookup)) {
             let loc: String = name.getLocation();
             let _n: String = name.content.toString();
             fprintf(stderr, "%s: %s: Use of undeclared type identifier `%s`.\n", loc.chars(), ERR_STR, _n.chars());
-            mut alternatives: TypeLookupList = this.lookup.searchAllModulesForTypeName(&name);
-            for (mut i: usize = 0; i < alternatives.length; i = i + 1) {
-                let t: &mut TypeLookup = &mut *alternatives.at(i);
+            let alternatives: TypeLookupList = this.lookup.searchAllModulesForTypeName(&name);
+            for (let i: usize = 0; i < alternatives.length; i = i + 1) {
+                let t: &TypeLookup = &*alternatives.at(i);
                 if (t.isStruct()) {
-                    let s: &mut StructLookup = t.asStruct();
+                    let s: &StructLookup = t.asStruct();
                     let loc: String = s.name.getLocation();
                     fprintf(stderr, "%s: %s: A struct with that name is located here. Import the module to use it.\n", loc.chars(), NOTE_STR);
                     loc.drop();
@@ -1295,16 +1265,16 @@ struct TypeChecker {
             return newTCStateFailure(ERROR_NO_SUCH_IDENTIFIER);
         }
         if (lookup.isStruct()) {
-            let context: &mut StructInitContext = &mut expr.structInitContext;
-            let structLookup: &mut StructLookup = &mut *lookup.asStruct();
+            let context: &StructInitContext = &expr.structInitContext;
+            let structLookup: &StructLookup = &*lookup.asStruct();
             if (!structLookup.getReadyState(STRUCT_FIELDS_COMPLETE))
                 return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
-            mut hits: usize = 0;
+            let hits: usize = 0;
             assert_with_msg(structLookup.fields.length < 50, "Sorry, I need to hack this for now");
-            for (mut i: usize = 0; i < context.fieldLength; i = i + 1) {
+            for (let i: usize = 0; i < context.fieldLength; i = i + 1) {
                 let name: Token = context.getFieldNameAtIndex(i);
                 let exprID: usize = context.getFieldExprAtIndex(i);
-                mut exprState: TCState = this.typeCheckExpr(exprID, scopes);
+                let exprState: TCState = this.typeCheckExpr(exprID, scopes);
                 if (exprState.isError()) return exprState;
                 if (!structLookup.hasField(&name.content)) {
                     return this.reportUnknownField(name, structLookup);
@@ -1316,15 +1286,15 @@ struct TypeChecker {
                 } else {
                     hits = hits | bit;
                 }
-                let field: &mut VariableLookup = structLookup.fields.at(fieldIndex);
-                let fieldState: &mut TCState = &mut field.typeState;
+                let field: &VariableLookup = structLookup.fields.at(fieldIndex);
+                let fieldState: &TCState = &field.typeState;
                 assert_with_msg(fieldState.isSuccess(), "Struct is ready to go, but field type is invalid?");
                 assert_with_msg(name.content.equals(&field.name.content), "Seems like my hack doesn't work");
-                let fieldType: &mut Type = types.at(fieldState.getType());
+                let fieldType: &Type = types.at(fieldState.getType());
                 if (exprState.wantsInfer())
                     exprState = this.inferTypeOntoExpr(exprID, fieldType.getID());
-                let exprType: &mut Type = types.at(exprState.getType());
-                if (!fieldType.equals(exprType)) unsafe {
+                let exprType: &Type = types.at(exprState.getType());
+                if (!fieldType.equals(exprType)) {
                     return this.reportTypeMismatch(exprs.at(exprID).span, fieldType, exprType);
                 }
             }
@@ -1335,19 +1305,19 @@ struct TypeChecker {
         }
     }
 
-    func typeCheckIdentifier(&mut this, exprID: usize, scopes: &mut ScopeLookupList) -> TCState {
+    func typeCheckIdentifier(&this, exprID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckIdentifier");
-        let expr: &mut ParsedExpr = exprs.at(exprID);
+        let expr: &ParsedExpr = exprs.at(exprID);
         assert(expr.kind == EXPR_NAME);
         let name: Token = expr.origToken;
-        mut var: VariableLookup = blank;
-        if (!this.lookup.resolveVariableByName(this.currentModule, &name, scopes, &mut var)) unsafe {
+        let var: VariableLookup = blank;
+        if (!this.lookup.resolveVariableByName(this.currentModule, &name, scopes, &var)) {
             let loc: String = name.getLocation();
             let _name: String = name.content.toString();
             fprintf(stderr, "%s: %s: Use of undeclared identifier `%s`.\n", loc.chars(), ERR_STR, _name.chars());
-            mut alternatives: VariableLookupList = this.lookup.searchAllModulesForIdentifier(&name);
-            for (mut i: usize = 0; i < alternatives.length; i = i + 1) {
-                let t: &mut VariableLookup = &mut *alternatives.at(i);
+            let alternatives: VariableLookupList = this.lookup.searchAllModulesForIdentifier(&name);
+            for (let i: usize = 0; i < alternatives.length; i = i + 1) {
+                let t: &VariableLookup = &*alternatives.at(i);
                 let loc: String = t.name.getLocation();
                 fprintf(stderr, "%s: %s: A variable with that name is located here. Import the module to use it.\n", loc.chars(), NOTE_STR);
                 loc.drop();
@@ -1359,14 +1329,14 @@ struct TypeChecker {
         if (this.isComptimeContext && !var.isComptime) {
             todo_with_msg("shit my pants");
         }
-        mut state: TCState = var.typeState;
+        let state: TCState = var.typeState;
         if (state.isInvalid()) {
             return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
         }
         if (state.isError()) return state;
         assert(expr.op == 0);
-        mut _loc: Token = blank;
-        if (scopes.at(0).isKnownVariable(name.content, &mut _loc)) {
+        let _loc: Token = blank;
+        if (scopes.at(0).isKnownVariable(name.content, &_loc)) {
             (*expr).op = 1;
         }
         (*expr).lhs = var.globalID;
@@ -1374,9 +1344,9 @@ struct TypeChecker {
         return state;
     }
 
-    func typeCheckExprBinary(&mut this, binID: usize, scopes: &mut ScopeLookupList) -> TCState {
+    func typeCheckExprBinary(&this, binID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckExprBinary");
-        let expr: &mut ParsedExpr = exprs.at(binID);
+        let expr: &ParsedExpr = exprs.at(binID);
         assert_with_msg(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
         if (expr.op == BIN_DOT) {
             return this.typeCheckExprMemberAccess(binID, scopes);
@@ -1400,32 +1370,32 @@ struct TypeChecker {
         return blank;
     }
 
-    func typeCheckExprIndexedAccess(&mut this, binID: usize, scopes: &mut ScopeLookupList) -> TCState {
+    func typeCheckExprIndexedAccess(&this, binID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckExprIndexedAccess");
-        let expr: &mut ParsedExpr = exprs.at(binID);
+        let expr: &ParsedExpr = exprs.at(binID);
         assert(expr.kind == EXPR_BINARY);
         assert(expr.op == BIN_INDEXED_ACCESS);
-        mut lhsState: TCState = this.typeCheckExpr(expr.lhs, scopes);
-        mut rhsState: TCState = this.typeCheckExpr(expr.rhs, scopes);
+        let lhsState: TCState = this.typeCheckExpr(expr.lhs, scopes);
+        let rhsState: TCState = this.typeCheckExpr(expr.rhs, scopes);
         if (lhsState.isError()) return lhsState;
         if (rhsState.isError()) return rhsState;
         if (!lhsState.isType()) todo_with_msg("indexed access, original LHS is not a type");
         let lhsTypeID: usize = lhsState.getType();
-        let lhsType: &mut Type = types.at(lhsTypeID);
+        let lhsType: &Type = types.at(lhsTypeID);
         // REVIEW: Support for indexing pointers would be cool
         if (lhsType.isPointer()) todo_with_msg("indexed access, LHS is a pointer");
         if (!lhsType.isArray()) {
             return this.reportIndexedAccessOnNonArray(expr.span, lhsType);
         }
         if (rhsState.wantsInfer()) {
-            let usizeType: &mut Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
+            let usizeType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
             rhsState = this.inferTypeOntoExpr(expr.rhs, usizeType.getID());
         }
         if (!rhsState.isType()) todo_with_msg("indexed access, could not infer type to RHS");
         let rhsTypeID: usize = rhsState.getType();
-        let rhsType: &mut Type = types.at(rhsTypeID);
+        let rhsType: &Type = types.at(rhsTypeID);
         // FIXME: Put those into a single check
-        if (!rhsType.isPrimitive() || rhsTypeID != TYPE_USIZE) unsafe {
+        if (!rhsType.isPrimitive() || rhsTypeID != TYPE_USIZE) {
             let loc: String = expr.span.toString();
             let typ: String = rhsType.toString();
             fprintf(stderr, "%s: %s: Expected index of array access to be type `usize`, got `%s`.\n", loc.chars(), ERR_STR, typ.chars());
@@ -1434,43 +1404,43 @@ struct TypeChecker {
             return newTCStateFailure(ERROR_INDEXED_TYPE_MISMATCH);
         }
         let underlyingID: usize = lhsType.typeIndex;
-        let underlyingType: &mut Type = types.at(underlyingID);
+        let underlyingType: &Type = types.at(underlyingID);
         assert(underlyingType.getID() == underlyingID);
         return newTCStateType(underlyingID);
     }
 
-    func typeCheckExprLogical(&mut this, binID: usize, scopes: &mut ScopeLookupList) -> TCState {
+    func typeCheckExprLogical(&this, binID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckExprLogical");
-        let expr: &mut ParsedExpr = exprs.at(binID);
+        let expr: &ParsedExpr = exprs.at(binID);
         assert(expr.kind == EXPR_BINARY);
         assert(expr.isLogical());
-        mut lhsState: TCState = this.typeCheckExpr(expr.lhs, scopes);
-        mut rhsState: TCState = this.typeCheckExpr(expr.rhs, scopes);
+        let lhsState: TCState = this.typeCheckExpr(expr.lhs, scopes);
+        let rhsState: TCState = this.typeCheckExpr(expr.rhs, scopes);
         if (lhsState.isError()) return lhsState;
         if (rhsState.isError()) return rhsState;
-        let lhsType: &mut Type = types.at(lhsState.getType());
-        let rhsType: &mut Type = types.at(rhsState.getType());
+        let lhsType: &Type = types.at(lhsState.getType());
+        let rhsType: &Type = types.at(rhsState.getType());
         if (!lhsType.equals(rhsType)) {
             todo_with_msg("logical type mismatch");
         }
         if (!lhsType.isBoolean()) {
             todo_with_msg("logical expects bool");
         }
-        let t: &mut Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
+        let t: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
         return newTCStateType(t.getID());
     }
 
-    func typeCheckExprBitwise(&mut this, binID: usize, scopes: &mut ScopeLookupList) -> TCState {
+    func typeCheckExprBitwise(&this, binID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckExprBitwise");
-        let expr: &mut ParsedExpr = exprs.at(binID);
+        let expr: &ParsedExpr = exprs.at(binID);
         assert(expr.kind == EXPR_BINARY);
         assert(expr.isBitwise());
-        mut lhsState: TCState = this.typeCheckExpr(expr.lhs, scopes);
-        mut rhsState: TCState = this.typeCheckExpr(expr.rhs, scopes);
+        let lhsState: TCState = this.typeCheckExpr(expr.lhs, scopes);
+        let rhsState: TCState = this.typeCheckExpr(expr.rhs, scopes);
         if (lhsState.isError()) return lhsState;
         if (rhsState.isError()) return rhsState;
-        let lhsType: &mut Type = types.at(lhsState.getType());
-        let rhsType: &mut Type = types.at(rhsState.getType());
+        let lhsType: &Type = types.at(lhsState.getType());
+        let rhsType: &Type = types.at(rhsState.getType());
         if (!lhsType.equals(rhsType)) {
             todo_with_msg("bitwise type mismatch");
         }
@@ -1481,65 +1451,65 @@ struct TypeChecker {
         return lhsState;
     }
 
-    func typeCheckExprAssign(&mut this, binID: usize, scopes: &mut ScopeLookupList) -> TCState {
+    func typeCheckExprAssign(&this, binID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckExprAssign");
-        let expr: &mut ParsedExpr = exprs.at(binID);
+        let expr: &ParsedExpr = exprs.at(binID);
         assert(expr.kind == EXPR_BINARY);
         assert(expr.op == BIN_ASSIGN);
-        let lhsExpr: &mut ParsedExpr = exprs.at(expr.lhs);
+        let lhsExpr: &ParsedExpr = exprs.at(expr.lhs);
         if (!lhsExpr.isLValue()) {
             this.emergencyPrint(lhsExpr.span);
             todo_with_msg("invalid l-value");
         }
-        mut lhsState: TCState = this.typeCheckExpr(expr.lhs, scopes);
-        mut rhsState: TCState = this.typeCheckExpr(expr.rhs, scopes);
+        let lhsState: TCState = this.typeCheckExpr(expr.lhs, scopes);
+        let rhsState: TCState = this.typeCheckExpr(expr.rhs, scopes);
         if (lhsState.isError()) return lhsState;
         if (rhsState.isError()) return rhsState;
         if (!lhsState.isType()) todo_with_msg("assignment LHS is not a type");
         if (!rhsState.isType())
             rhsState = this.inferTypeOntoExpr(expr.rhs, lhsState.getType());
         if (!rhsState.isType()) todo_with_msg("assignment, could not infer type to RHS");
-        let lhsType: &mut Type = types.at(lhsState.getType());
-        let rhsType: &mut Type = types.at(rhsState.getType());
+        let lhsType: &Type = types.at(lhsState.getType());
+        let rhsType: &Type = types.at(rhsState.getType());
         if (!lhsType.equals(rhsType)) {
             todo_with_msg("assignment type mismatch");
         }
         return rhsState;
     }
 
-    func typeCheckExprMemberAccess(&mut this, dotID: usize, scopes: &mut ScopeLookupList) -> TCState {
+    func typeCheckExprMemberAccess(&this, dotID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckExprMemberAccess");
-        let expr: &mut ParsedExpr = exprs.at(dotID);
+        let expr: &ParsedExpr = exprs.at(dotID);
         assert_with_msg(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
         assert(expr.op == BIN_DOT);
-        mut instance: TCState = this.typeCheckExpr(expr.lhs, scopes);
+        let instance: TCState = this.typeCheckExpr(expr.lhs, scopes);
         if (instance.isError()) return instance;
         let instanceTypeID: usize = instance.getType();
-        let instanceType: &mut Type = types.at(instanceTypeID);
-        mut underlying: &mut Type = instanceType;
+        let instanceType: &Type = types.at(instanceTypeID);
+        let underlying: &Type = instanceType;
         if (!underlying.isStruct()) underlying = instanceType.getUnderlyingType(true);
-        mut lookup: TypeLookup = this.lookup.getTypeLookupForType(underlying);
+        let lookup: TypeLookup = this.lookup.getTypeLookupForType(underlying);
         if (underlying.isStruct()) {
             assert(lookup.isStruct());
-            let structLookup: &mut StructLookup = &mut *lookup.asStruct();
-            let rhs: &mut ParsedExpr = exprs.at(expr.rhs);
+            let structLookup: &StructLookup = &*lookup.asStruct();
+            let rhs: &ParsedExpr = exprs.at(expr.rhs);
             if (rhs.kind == EXPR_NAME) {
                 if (!structLookup.getReadyState(STRUCT_FIELDS_COMPLETE))
                     return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
                 let fieldName: Token = rhs.origToken;
-                mut field: VariableLookup = blank;
-                if (!structLookup.resolveFieldByName(&fieldName, &mut field)) unsafe {
+                let field: VariableLookup = blank;
+                if (!structLookup.resolveFieldByName(&fieldName, &field)) {
                     return this.reportUnknownField(fieldName, structLookup);
                 }
-                mut fieldState: TCState = field.typeState;
+                let fieldState: TCState = field.typeState;
                 assert_with_msg(fieldState.isSuccess(), "Expected valid field type");
                 return fieldState;
             } else if (rhs.kind == EXPR_CALL) {
                 if (!structLookup.getReadyState(STRUCT_SIGNATURE_COMPLETE))
                     return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
                 let methodName: Token = rhs.origToken;
-                mut methods: MethodLookupList = structLookup.resolveMethodByName(&methodName);
-                if (methods.length == 0) unsafe {
+                let methods: MethodLookupList = structLookup.resolveMethodByName(&methodName);
+                if (methods.length == 0) {
                     let loc: String = methodName.getLocation();
                     let structName: String = structLookup.name.toString();
                     let structLoc: String = structLookup.name.getLocation();
@@ -1554,37 +1524,37 @@ struct TypeChecker {
                     loc.drop();
                     return newTCStateFailure(ERROR_NO_SUCH_METHOD);
                 }
-                let callContext: &mut ArrayContext = &mut rhs.arrayContext;
-                mut arguments: TCStateList = blank;
-                for (mut i: usize = 0; i < callContext.elemLength; i = i + 1) {
+                let callContext: &ArrayContext = &rhs.arrayContext;
+                let arguments: TCStateList = blank;
+                for (let i: usize = 0; i < callContext.elemLength; i = i + 1) {
                     let argID: usize = callContext.getElementAtIndex(i);
-                    mut arg: TCState = this.typeCheckExpr(argID, scopes);
+                    let arg: TCState = this.typeCheckExpr(argID, scopes);
                     if (arg.isError()) return arg;
                     arguments.push(arg);
                 }
                 assert(arguments.length == callContext.elemLength);
                 let callArgCount: usize = arguments.length + 1;
-                for (mut i: usize = 0; i < methods.length; i = i + 1) {
-                    let m: &mut MethodLookup = &mut *methods.at(i);
+                for (let i: usize = 0; i < methods.length; i = i + 1) {
+                    let m: &MethodLookup = &*methods.at(i);
                     if (!m.getReadyState(METHOD_READY_TO_USE)) return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
                     let hasThis: bool = !m.isStatic;
-                    mut argCount: usize = m.params.length;
+                    let argCount: usize = m.params.length;
                     if (callArgCount != argCount) continue;
-                    mut indexOffset: usize = 0;
+                    let indexOffset: usize = 0;
                     if (hasThis) {
                         assert(m.params.length != 0);
                         indexOffset = 1;
-                        let thisParam: &mut VariableLookup = m.params.at(0);
-                        mut thisParamState: TCState = thisParam.typeState;
+                        let thisParam: &VariableLookup = m.params.at(0);
+                        let thisParamState: TCState = thisParam.typeState;
                         assert_with_msg(thisParamState.isSuccess(), "Expected valid this parameter");
-                        let paramType: &mut Type = types.at(thisParamState.getType());
-                        let instType: &mut Type = types.at(instance.getType());
+                        let paramType: &Type = types.at(thisParamState.getType());
+                        let instType: &Type = types.at(instance.getType());
                         if (!instType.equals(paramType)) {
                             if (paramType.isPointer() && !instType.isPointer()) {
-                                let under: &mut Type = paramType.getUnderlyingType(false);
+                                let under: &Type = paramType.getUnderlyingType(false);
                                 assert_with_msg(instType.equals(under), "method call instance type doesn't match");
                                 (*expr).lhs = exprs.at(expr.lhs).intoPointer();
-                                mut patched: TCState = this.typeCheckExpr(expr.lhs, scopes);
+                                let patched: TCState = this.typeCheckExpr(expr.lhs, scopes);
                                 assert_with_msg(patched.isSuccess(), "patched instance failed");
                                 assert_with_msg(patched.isType(), "patched instance state is not a type");
                                 assert_with_msg(types.at(patched.getType()).equals(paramType), "patched instance type does not match");
@@ -1595,12 +1565,12 @@ struct TypeChecker {
                         }
                     }
                     // REVIEW: The index offset looks incorrect
-                    for (mut j: usize = 0; j < argCount - indexOffset; j = j + 1) {
-                        mut argState: &mut TCState = &mut *arguments.at(j);
-                        let param: &mut VariableLookup = m.params.at(j + indexOffset);
-                        let paramState: &mut TCState = &mut param.typeState;
+                    for (let j: usize = 0; j < argCount - indexOffset; j = j + 1) {
+                        let argState: &TCState = &*arguments.at(j);
+                        let param: &VariableLookup = m.params.at(j + indexOffset);
+                        let paramState: &TCState = &param.typeState;
                         assert_with_msg(paramState.isSuccess(), "Expected valid method parameter");
-                        let paramType: &mut Type = types.at(paramState.getType());
+                        let paramType: &Type = types.at(paramState.getType());
                         if (argState.wantsInfer()) {
                             let old: TCState = *argState;
                             *argState = this.inferTypeOntoExpr(callContext.getElementAtIndex(j), paramType.getID());
@@ -1610,7 +1580,7 @@ struct TypeChecker {
                             }
                             assert_with_msg(argState.isType(), "Did not infer type of param onto argument properly");
                         }
-                        let argType: &mut Type = types.at(argState.getType());
+                        let argType: &Type = types.at(argState.getType());
                         if (!argType.equals(paramType)) {
                             todo_with_msg("method arg mismatch");
                         }
@@ -1619,7 +1589,7 @@ struct TypeChecker {
                     // REVIEW: Do we want to make Overload selection smarter? Right now we only
                     //         pick the first match
                     (*rhs).lhs = m.globalID;
-                    mut retType: TCState = m.returnType;
+                    let retType: TCState = m.returnType;
                     assert_with_msg(retType.isSuccess(), "Expected valid method return type");
                     return retType;
                 }
@@ -1634,10 +1604,10 @@ struct TypeChecker {
         return blank;
     }
 
-    func checkIfInferIsNeeded(&mut this, lhsID: usize, lhsState: &mut TCState, rhsID: usize, rhsState: &mut TCState) -> TCState {
+    func checkIfInferIsNeeded(&this, lhsID: usize, lhsState: &TCState, rhsID: usize, rhsState: &TCState) -> TCState {
         trace("TypeChecker.checkIfInferIsNeeded");
-        let lhsExpr: &mut ParsedExpr = exprs.at(lhsID);
-        let rhsExpr: &mut ParsedExpr = exprs.at(rhsID);
+        let lhsExpr: &ParsedExpr = exprs.at(lhsID);
+        let rhsExpr: &ParsedExpr = exprs.at(rhsID);
         if (lhsState.isType() && rhsState.isType()) {
             return newTCStateSuccess();
         } else if (lhsState.isType() && !rhsState.isType()) {
@@ -1655,32 +1625,32 @@ struct TypeChecker {
         return blank;
     }
 
-    func inferTypeOntoExpr(&mut this, exprID: usize, typeID: usize) -> TCState {
+    func inferTypeOntoExpr(&this, exprID: usize, typeID: usize) -> TCState {
         trace("TypeChecker.inferTypeOntoExpr");
         return this.tryInferTypeOntoExpr(exprID, typeID, false);
     }
 
-    func tryInferTypeOntoExpr(&mut this, exprID: usize, typeID: usize, checkOnly: bool) -> TCState {
+    func tryInferTypeOntoExpr(&this, exprID: usize, typeID: usize, checkOnly: bool) -> TCState {
         trace("TypeChecker.tryInferTypeOntoExpr");
-        let expr: &mut ParsedExpr = exprs.at(exprID);
+        let expr: &ParsedExpr = exprs.at(exprID);
         if (expr.typeState.isSuccess()) {
-            let exprType: &mut Type = types.at(expr.typeState.getType());
-            let wantType: &mut Type = types.at(typeID);
+            let exprType: &Type = types.at(expr.typeState.getType());
+            let wantType: &Type = types.at(typeID);
             if (!exprType.equals(wantType)) todo_with_msg("infer failed");
             return newTCStateType(typeID);
         }
-        let typ: &mut Type = types.at(typeID);
-        mut tid: TCState = blank;
+        let typ: &Type = types.at(typeID);
+        let tid: TCState = blank;
         if (expr.kind == EXPR_INT_LIT) {
             if (typ.isInteger() || typ.isFloat()) {
                 tid = newTCStateType(typ.getID());
-            } else if (typ.isPointer()) unsafe {
+            } else if (typ.isPointer()) {
                 // REVIEW: This is... More than debatable?
                 // Context requires a pointer, we have an integer literal.. Now this literal is type `usize`
                 // Question: Is there ever a situation where we actually want this literal to be type `ptr`?
-                let usizeType: &mut Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
+                let usizeType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
                 tid = newTCStateType(usizeType.getID());
-            } else if (typ.isBoolean()) unsafe {
+            } else if (typ.isBoolean()) {
                 if (!checkOnly) {
                     let s: String = expr.origToken.content.toString();
                     let l: String = expr.origToken.getLocation();
@@ -1690,7 +1660,7 @@ struct TypeChecker {
                     s.drop();
                 }
                 return newTCStateFailure(ERROR_UNEXPECTED_LITERAL);
-            } else if (typ.isArray()) unsafe {
+            } else if (typ.isArray()) {
                 if (!checkOnly) {
                     let s: String = expr.origToken.content.toString();
                     let l: String = expr.origToken.getLocation();
@@ -1700,7 +1670,7 @@ struct TypeChecker {
                     s.drop();
                 }
                 return newTCStateFailure(ERROR_UNEXPECTED_LITERAL);
-            } else unsafe {
+            } else {
                 todo_with_msg("can't infer non-int non-float type onto int literal");
                 return blank;
             }
@@ -1712,7 +1682,7 @@ struct TypeChecker {
             if (!typ.isArray()) todo_with_msg("can't infer non-array type onto array literal");
             assert_with_msg(expr.arrayContext.elemLength > 0, "Got empty array literal");
             if (expr.arrayContext.size == 0) {
-                if (typ.arraySize != expr.arrayContext.elemLength) unsafe {
+                if (typ.arraySize != expr.arrayContext.elemLength) {
                     if (!checkOnly) {
                         let loc: String = expr.span.toString();
                         fprintf(stderr, "%s: %s: Array size mismatch! Expected to find %llu element(s), got %llu instead.\n",
@@ -1721,8 +1691,8 @@ struct TypeChecker {
                     }
                     return newTCStateFailure(ERROR_ARRAY_SIZE_MISMATCH);
                 }
-                mut lastErrState: TCState = blank;
-                for (mut i: usize = 0; i < expr.arrayContext.elemLength; i = i + 1) {
+                let lastErrState: TCState = blank;
+                for (let i: usize = 0; i < expr.arrayContext.elemLength; i = i + 1) {
                     tid = this.tryInferTypeOntoExpr(expr.arrayContext.getElementAtIndex(i), typ.typeIndex, checkOnly);
                     if (tid.isError()) {
                         lastErrState = tid;
@@ -1730,7 +1700,7 @@ struct TypeChecker {
                 }
                 if (!lastErrState.isInvalid()) return lastErrState;
             } else {
-                if (typ.arraySize != expr.arrayContext.size) unsafe {
+                if (typ.arraySize != expr.arrayContext.size) {
                     if (!checkOnly) {
                         let loc: String = expr.span.toString();
                         fprintf(stderr, "%s: %s: Array size mismatch! Expected to find %llu element(s), got %llu instead.\n",
@@ -1744,7 +1714,7 @@ struct TypeChecker {
             }
             tid = newTCStateType(typeID);
         } else if (expr.kind == EXPR_BLANK) {
-            if (typ.isPointer()) unsafe {
+            if (typ.isPointer()) {
                 let loc: String = expr.span.toString();
                 let name: String = typ.toString();
                 fprintf(stderr, "%s: %s: Invalid initialization of reference of type %s. Please use `null` instead.\n",
@@ -1752,7 +1722,7 @@ struct TypeChecker {
                 name.drop();
                 loc.drop();
                 return newTCStateFailure(ERROR_BLANK_FOR_NULL);
-            } else if (typ.isPrimitive()) unsafe {
+            } else if (typ.isPrimitive()) {
                 let loc: String = expr.span.toString();
                 let name: String = typ.toString();
                 fprintf(stderr, "%s: %s: Using `blank` to initialize value of type %s. Please use `0` instead.\n",
@@ -1771,7 +1741,7 @@ struct TypeChecker {
             } else if (expr.isComparison()) {
                 // Assuming that neither side has a type (otherwise typeCheckExprComparison would've handled the infer step)
                 // So all that's left is whack things like `1 == 1`, for which we blindly try to infer usize onto both sides
-                let usizeType: &mut Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
+                let usizeType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
                 tid = this.tryInferTypeOntoExpr(expr.lhs, usizeType.getID(), checkOnly);
                 if (tid.isError()) return tid;
                 tid = this.tryInferTypeOntoExpr(expr.rhs, usizeType.getID(), checkOnly);
@@ -1783,20 +1753,20 @@ struct TypeChecker {
             }
         } else if (expr.kind == EXPR_UNARY) {
             if (expr.op == UNARY_DEREF) {
-                let newType: &mut Type = newType(TYPE_KIND_POINTER, typeID);
+                let newType: &Type = newType(TYPE_KIND_POINTER, typeID);
                 tid = this.tryInferTypeOntoExpr(expr.lhs, newType.getID(), checkOnly);
                 if (tid.isError()) return tid;
                 tid = newTCStateType(typeID);
             } else if (expr.op == UNARY_REF) {
                 if (!typ.isPointer()) todo_with_msg("can't infer non-pointer type onto reference");
-                let underlying: &mut Type = typ.getUnderlyingType(false);
+                let underlying: &Type = typ.getUnderlyingType(false);
                 tid = this.tryInferTypeOntoExpr(expr.lhs, underlying.getID(), checkOnly);
                 if (tid.isError()) return tid;
                 tid = newTCStateType(typeID);
             } else if (expr.op == UNARY_MINUS) {
                 // -expr
                 // typeof(expr) == typeof(-expr)
-                if (!typ.isSignedInteger() && !typ.isFloat()) unsafe {
+                if (!typ.isSignedInteger() && !typ.isFloat()) {
                     if (!checkOnly) {
                         let loc: String = expr.span.toString();
                         let t: String = typ.toString();
@@ -1809,11 +1779,11 @@ struct TypeChecker {
                 tid = this.tryInferTypeOntoExpr(expr.lhs, typeID, checkOnly);
                 if (tid.isError()) return tid;
                 assert_with_msg(tid.isType(), "infer non-error expected to be a type");
-                let subType: &mut Type = types.at(tid.getType());
+                let subType: &Type = types.at(tid.getType());
                 assert_with_msg(subType.equals(typ), "Infer: SubExpr of UNARY_MINUS is expected to have same type as Expr");
                 tid = newTCStateType(typeID);
             } else if (expr.op == UNARY_NOT) {
-                let boolType: &mut Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
+                let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
                 tid = this.tryInferTypeOntoExpr(expr.lhs, boolType.getID(), checkOnly);
                 if (tid.isError()) return tid;
                 todo_with_msg("unary not infer");
@@ -1825,7 +1795,7 @@ struct TypeChecker {
         } else if (expr.kind == EXPR_NULL) {
             if (!typ.isPointer()) todo_with_msg("tried to infer non-ptr to null");
             tid = newTCStateType(typeID);
-        } else unsafe {
+        } else {
             this.emergencyPrint(expr.span);
             todo_with_msg("unhandled case in inferTypeOntoExpr");
             return blank;
@@ -1836,17 +1806,17 @@ struct TypeChecker {
         return tid;
     }
 
-    func typeCheckExprArithmetic(&mut this, binID: usize, scopes: &mut ScopeLookupList) -> TCState {
+    func typeCheckExprArithmetic(&this, binID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckExprArithmetic");
-        let expr: &mut ParsedExpr = exprs.at(binID);
+        let expr: &ParsedExpr = exprs.at(binID);
         assert_with_msg(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
         assert_with_msg(expr.isArithmetic(), "Expr expected to be arithmetic");
-        mut lhsState: TCState = this.typeCheckExpr(expr.lhs, scopes);
-        mut rhsState: TCState = this.typeCheckExpr(expr.rhs, scopes);
+        let lhsState: TCState = this.typeCheckExpr(expr.lhs, scopes);
+        let rhsState: TCState = this.typeCheckExpr(expr.rhs, scopes);
         if (lhsState.isError()) return lhsState;
         if (rhsState.isError()) return rhsState;
-        mut lhsPointer: bool = false;
-        mut rhsPointer: bool = false;
+        let lhsPointer: bool = false;
+        let rhsPointer: bool = false;
         if (lhsState.isType()) if (types.at(lhsState.getType()).isPointer()) lhsPointer = true;
         if (rhsState.isType()) if (types.at(rhsState.getType()).isPointer()) rhsPointer = true;
         if (lhsPointer || rhsPointer) {
@@ -1858,12 +1828,12 @@ struct TypeChecker {
                 );
             }
         }
-        mut maybeInfer: TCState = this.checkIfInferIsNeeded(expr.lhs, &mut lhsState, expr.rhs, &mut rhsState);
+        let maybeInfer: TCState = this.checkIfInferIsNeeded(expr.lhs, &lhsState, expr.rhs, &rhsState);
         if (maybeInfer.isError()) return maybeInfer;
         if (maybeInfer.wantsInfer()) return maybeInfer;
-        let lhsType: &mut Type = types.at(lhsState.getType());
-        let rhsType: &mut Type = types.at(rhsState.getType());
-        mut resultState: TCState = blank;
+        let lhsType: &Type = types.at(lhsState.getType());
+        let rhsType: &Type = types.at(rhsState.getType());
+        let resultState: TCState = blank;
         if (lhsType.equals(rhsType)) {
             if (lhsType.isStruct() || lhsType.isArray()) {
                 return this.reportBinaryTypeMismatch(
@@ -1872,7 +1842,7 @@ struct TypeChecker {
                     exprs.at(expr.rhs).span, rhsType,
                 );
             } else if (lhsType.isPointer()) {
-                let t: &mut Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
+                let t: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
                 resultState = newTCStateType(t.getID());
             } else {
                 assert_with_msg(lhsType.getID() == rhsType.getID(), "Arithmetic LHS and RHS are different types");
@@ -1900,22 +1870,22 @@ struct TypeChecker {
         return resultState;
     }
 
-    func typeCheckExprComparison(&mut this, binID: usize, scopes: &mut ScopeLookupList) -> TCState {
+    func typeCheckExprComparison(&this, binID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckExprComparison");
-        let expr: &mut ParsedExpr = exprs.at(binID);
+        let expr: &ParsedExpr = exprs.at(binID);
         assert_with_msg(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
         assert_with_msg(expr.isComparison(), "Expr expected to be comparison");
-        mut lhsState: TCState = this.typeCheckExpr(expr.lhs, scopes);
-        mut rhsState: TCState = this.typeCheckExpr(expr.rhs, scopes);
+        let lhsState: TCState = this.typeCheckExpr(expr.lhs, scopes);
+        let rhsState: TCState = this.typeCheckExpr(expr.rhs, scopes);
         if (lhsState.isError()) return lhsState;
         if (rhsState.isError()) return rhsState;
-        mut maybeInfer: TCState = this.checkIfInferIsNeeded(expr.lhs, &mut lhsState, expr.rhs, &mut rhsState);
+        let maybeInfer: TCState = this.checkIfInferIsNeeded(expr.lhs, &lhsState, expr.rhs, &rhsState);
         if (maybeInfer.isError()) {
             todo_with_msg("couldn't infer in comp");
         }
         if (maybeInfer.wantsInfer()) return maybeInfer;
-        let lhsType: &mut Type = types.at(lhsState.getType());
-        let rhsType: &mut Type = types.at(rhsState.getType());
+        let lhsType: &Type = types.at(lhsState.getType());
+        let rhsType: &Type = types.at(rhsState.getType());
         if (!lhsType.equals(rhsType)) {
             return this.reportBinaryTypeMismatch(
                 expr.op,
@@ -1927,42 +1897,42 @@ struct TypeChecker {
             || lhsType.isArray() || rhsType.isArray()) {
             todo_with_msg("report error, can't compare structs or arrays using == or similar.");
         }
-        let t: &mut Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
+        let t: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
         return newTCStateType(t.getID());
     }
 
 
-    func typeCheckTypeNode(&mut this, typeID: usize) -> TCState {
+    func typeCheckTypeNode(&this, typeID: usize) -> TCState {
         trace("TypeChecker.typeCheckTypeNode");
-        let typ: &mut ParsedTypeNode = typeNodes.at(typeID);
+        let typ: &ParsedTypeNode = typeNodes.at(typeID);
         if (typ.typeState.isSuccess()) return typ.typeState;
-        mut tid: usize = 0;
+        let tid: usize = 0;
         if (typ.kind == PARSED_TYPE_REF) {
-            mut under: TCState = this.typeCheckTypeNode(typ.underlyingID);
+            let under: TCState = this.typeCheckTypeNode(typ.underlyingID);
             if (under.isError()) return under;
             let underlyingType: usize = under.getType();
-            let t: &mut Type = newType(TYPE_KIND_POINTER, underlyingType);
+            let t: &Type = newType(TYPE_KIND_POINTER, underlyingType);
             tid = t.getID();
         } else if (typ.kind == PARSED_TYPE_ARRAY) {
             if (typ.arraySize == 0) todo_with_msg("0 elements in mah array");
-            mut under: TCState = this.typeCheckTypeNode(typ.underlyingID);
+            let under: TCState = this.typeCheckTypeNode(typ.underlyingID);
             if (under.isError()) return under;
             let underlyingType: usize = under.getType();
-            let t: &mut Type = newType(TYPE_KIND_ARRAY, underlyingType);
+            let t: &Type = newType(TYPE_KIND_ARRAY, underlyingType);
             (*t).arraySize = typ.arraySize;
             tid = t.getID();
         } else if (typ.kind == PARSED_TYPE_IDENT) {
             let name: Token = typ.nameTkn;
-            mut typeLookup: TypeLookup = blank;
-            if (!this.lookup.resolveTypeByName(this.currentModule, &name, &mut typeLookup)) unsafe {
+            let typeLookup: TypeLookup = blank;
+            if (!this.lookup.resolveTypeByName(this.currentModule, &name, &typeLookup)) {
                 let loc: String = name.getLocation();
                 let _n: String = name.content.toString();
                 fprintf(stderr, "%s: %s: Use of undeclared type identifier `%s`.\n", loc.chars(), ERR_STR, _n.chars());
-                mut alternatives: TypeLookupList = this.lookup.searchAllModulesForTypeName(&name);
-                for (mut i: usize = 0; i < alternatives.length; i = i + 1) {
-                    let t: &mut TypeLookup = &mut *alternatives.at(i);
+                let alternatives: TypeLookupList = this.lookup.searchAllModulesForTypeName(&name);
+                for (let i: usize = 0; i < alternatives.length; i = i + 1) {
+                    let t: &TypeLookup = &*alternatives.at(i);
                     if (t.isStruct()) {
-                        let s: &mut StructLookup = t.asStruct();
+                        let s: &StructLookup = t.asStruct();
                         let loc: String = s.name.getLocation();
                         fprintf(stderr, "%s: %s: A struct with that name is located here. Import the module to use it.\n", loc.chars(), NOTE_STR);
                         loc.drop();
@@ -1973,10 +1943,10 @@ struct TypeChecker {
                 return newTCStateFailure(ERROR_NO_SUCH_IDENTIFIER);
             }
             if (typeLookup.isStruct()) {
-                let structLookup: &mut StructLookup = &mut *typeLookup.asStruct();
+                let structLookup: &StructLookup = &*typeLookup.asStruct();
                 let _tid: usize = structLookup.typeID;
                 assert_with_msg(_tid != 0, "Ready to use Struct Lookup has Type ID 0");
-                let t: &mut Type = types.at(_tid);
+                let t: &Type = types.at(_tid);
                 assert_with_msg(t.isStruct(), "Struct Lookup links to non-Struct type");
                 tid = t.getID();
             } else {
@@ -1984,7 +1954,7 @@ struct TypeChecker {
             }
         } else if (typ.kind == PARSED_TYPE_BUILTIN) {
             let id: usize = typ.getID();
-            mut typeID: usize = 0;
+            let typeID: usize = 0;
             if (id == PARSED_TYPE_INVALID) typeID = TYPE_INVALID;
             else if (id == PARSED_TYPE_UNKNOWN) typeID = TYPE_UNKNOWN;
             else if (id == PARSED_TYPE_NONE) typeID = TYPE_NONE;
@@ -2006,7 +1976,7 @@ struct TypeChecker {
                 this.emergencyPrint(typ.span);
                 todo_with_msg("handle other parsed -> checked type conversion");
             }
-            let t: &mut Type = newType(TYPE_KIND_PRIMITIVE, typeID);
+            let t: &Type = newType(TYPE_KIND_PRIMITIVE, typeID);
             tid = t.getID();
         } else {
             todo_with_msg("unknown type kind");
@@ -2018,14 +1988,12 @@ struct TypeChecker {
 }
 
 func newTypeChecker() -> TypeChecker {
-    unsafe {
-        return TypeChecker {
-            isComptimeContext: false,
-            currentModule: 0,
-            currentFunction: null,
-            currentMethod: null,
-            lookup: blank,
-            typeError: false,
-        };
-    }
+    return TypeChecker {
+        isComptimeContext: false,
+        currentModule: 0,
+        currentFunction: null,
+        currentMethod: null,
+        lookup: blank,
+        typeError: false,
+    };
 }

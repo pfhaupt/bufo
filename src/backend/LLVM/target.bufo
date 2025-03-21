@@ -12,30 +12,22 @@ struct LLVMTargetData {
 
     func getBitSize(&this, typ: &LLVMType) -> usize {
         trace("LLVMTargetData.getBitSize");
-        unsafe {
-            return LLVMSizeOfTypeInBits(this.ref, typ.ref);
-        }
+        return LLVMSizeOfTypeInBits(this.ref, typ.ref);
     }
     func getABISize(&this, typ: &LLVMType) -> usize {
         trace("LLVMTargetData.getABISize");
-        unsafe {
-            return LLVMABISizeOfType(this.ref, typ.ref);
-        }
+        return LLVMABISizeOfType(this.ref, typ.ref);
     }
     func getStoreSize(&this, typ: &LLVMType) -> usize {
         trace("LLVMTargetData.getStoreSize");
-        unsafe {
-            return LLVMStoreSizeOfType(this.ref, typ.ref);
-        }
+        return LLVMStoreSizeOfType(this.ref, typ.ref);
     }
     func getDataLayout(&this) -> LLVMDataLayout {
         trace("LLVMTargetData.getDataLayout");
-        unsafe {
-            let c: &char = LLVMCopyStringRepOfTargetData(this.ref);
-            return LLVMDataLayout {
-                ref: c
-            };
-        }
+        let c: &char = LLVMCopyStringRepOfTargetData(this.ref);
+        return LLVMDataLayout {
+            ref: c
+        };
     }
 }
 
@@ -47,21 +39,19 @@ func newLLVMTargetDataFromRef(ref: LLVMTargetDataRef) -> LLVMTargetData {
 
 struct LLVMTarget {
     ref: LLVMTargetRef;
-    func createTargetMachine(&mut this, triple: &char, cpu: &char, features: &char) -> LLVMTargetMachine {
+    func createTargetMachine(&this, triple: &char, cpu: &char, features: &char) -> LLVMTargetMachine {
         trace("LLVMTarget.createTargetMachine");
-        unsafe {
-            let target: LLVMTargetMachineRef = LLVMCreateTargetMachine(
-                this.ref,
-                triple,
-                cpu,
-                features,
-                0,
-                0,
-                0
-            );
-            assert_with_msg(!target.isNull(), "Could not create target machine");
-            return newLLVMTargetMachineFromRef(target);
-        }
+        let target: LLVMTargetMachineRef = LLVMCreateTargetMachine(
+            this.ref,
+            triple,
+            cpu,
+            features,
+            0,
+            0,
+            0
+        );
+        assert_with_msg(!target.isNull(), "Could not create target machine");
+        return newLLVMTargetMachineFromRef(target);
     }
 }
 
@@ -74,23 +64,19 @@ func newLLVMTargetFromRef(ref: LLVMTargetRef) -> LLVMTarget {
 struct LLVMTargetMachine {
     ref: LLVMTargetMachineRef;
 
-    func writeToFile(&mut this, mod: LLVMModule, mode: i32, filepath: &char) {
+    func writeToFile(&this, mod: LLVMModule, mode: i32, filepath: &char) {
         trace("LLVMTargetMachine.writeToFile");
-        unsafe {
-            mut err: LLVMString = blank;
-            if (LLVMTargetMachineEmitToFile(this.ref, mod.ref, filepath, mode, &mut err) != 0) {
-                todo_with_msg("couldnt write file");
-            }
+        let err: LLVMString = blank;
+        if (LLVMTargetMachineEmitToFile(this.ref, mod.ref, filepath, mode, &err) != 0) {
+            todo_with_msg("couldnt write file");
         }
     }
 
-    func getTargetData(&mut this) -> LLVMTargetData {
+    func getTargetData(&this) -> LLVMTargetData {
         trace("LLVMTargetMachine.getTargetData");
-        unsafe {
-            let data: LLVMTargetDataRef = LLVMCreateTargetDataLayout(this.ref);
-            assert_with_msg(!data.isNull(), "Could not get TargetData");
-            return newLLVMTargetDataFromRef(data);
-        }
+        let data: LLVMTargetDataRef = LLVMCreateTargetDataLayout(this.ref);
+        assert_with_msg(!data.isNull(), "Could not get TargetData");
+        return newLLVMTargetDataFromRef(data);
     }
 }
 

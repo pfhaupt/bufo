@@ -10,48 +10,44 @@ import "../util/span.bufo";
 
 struct Parser {
     lexer: Lexer;
-    importRoots: &mut String;
+    importRoots: &String;
     importRootLength: usize;
     importRootCapacity: usize;
     currentStruct: SubStr;
     syntaxError: bool;
 
-    func addImportRoot(&mut this, filePath: SubStr) {
+    func addImportRoot(&this, filePath: SubStr) {
         trace("Parser.addImportRoot");
         let root: String = filePath.getPathParent();
-        if (this.importRootLength >= this.importRootCapacity) unsafe {
-            mut newCap: usize = this.importRootCapacity * 2;
+        if (this.importRootLength >= this.importRootCapacity) {
+            let newCap: usize = this.importRootCapacity * 2;
             if (newCap == 0) newCap = 1;
             this.importRoots = realloc(this.importRoots, newCap * sizeof String);
             assert_with_msg(this.importRoots != null, "Could not resize import roots");
             this.importRootCapacity = newCap;
         }
-        unsafe {
-            *(this.importRoots + this.importRootLength * sizeof String) = root;
-            this.importRootLength = this.importRootLength + 1;
-        }
+        *(this.importRoots + this.importRootLength * sizeof String) = root;
+        this.importRootLength = this.importRootLength + 1;
     }
 
-    func getImportRootAtIndex(&mut this, index: usize) -> String {
+    func getImportRootAtIndex(&this, index: usize) -> String {
         trace("Parser.getImportRootAtIndex");
-        unsafe {
-            let s: String = *(this.importRoots + index * sizeof String);
-            return s.copy();
-        }
+        let s: String = *(this.importRoots + index * sizeof String);
+        return s.copy();
     }
 
-    func inheritImportRoots(&mut this, parent: &mut Parser) {
-        for (mut i: usize = 0; i < parent.importRootLength; i = i + 1) {
+    func inheritImportRoots(&this, parent: &Parser) {
+        for (let i: usize = 0; i < parent.importRootLength; i = i + 1) {
             let root: String = parent.getImportRootAtIndex(i);
             this.addImportRoot(root.asSubStr());
             root.drop();
         }
     }
 
-    func expect(&mut this, tknKind: usize) -> Token {
+    func expect(&this, tknKind: usize) -> Token {
         trace("Parser.expect");
         let tkn: Token = this.lexer.next();
-        if (tkn.kind != tknKind) unsafe {
+        if (tkn.kind != tknKind) {
             let loc: String = tkn.getLocation();
             let exp: &char = tokenKindToString(tknKind);
             let name: String = tkn.content.toString();
@@ -63,38 +59,38 @@ struct Parser {
         return tkn;
     }
 
-    func eat(&mut this, tknKind: usize) -> bool {
+    func eat(&this, tknKind: usize) -> bool {
         if (this.at(tknKind)) {
             this.lexer.next();
             return true;
         }
         return false;
     }
-    func at(&mut this, tknKind: usize) -> bool {
+    func at(&this, tknKind: usize) -> bool {
         if (this.lexer.peek().kind == tknKind) {
             return true;
         }
         return false;
     }
 
-    func parsedEOF(&mut this) -> bool {
+    func parsedEOF(&this) -> bool {
         return this.lexer.peek().kind == TOKEN_EOF;
     }
 
-    func parseProject(&mut this, root: SubStr) -> ParsedModule {
+    func parseProject(&this, root: SubStr) -> ParsedModule {
         trace("Parser.parseProject");
         assert_with_msg(this.lexer.moduleID == 0, "Expected Parser.parseProject to be the root");
-        let rootModule: &mut ParsedModule = newParsedModule(root);
+        let rootModule: &ParsedModule = newParsedModule(root);
         assert_with_msg(rootModule.getID() == 0, "Expected Parser.parseProject result to be the root");
         this.parseModule(root, rootModule);
-        if (this.syntaxError) unsafe {
+        if (this.syntaxError) {
             // All errors are reported at this point
             exit(1);
         }
         return *rootModule;
     }
 
-    func parseModule(&mut this, root: SubStr, mod: &mut ParsedModule) {
+    func parseModule(&this, root: SubStr, mod: &ParsedModule) {
         trace("Parser.parseModule");
         this.addImportRoot(root);
         if (this.at(TOKEN_KEYWORD)) {
@@ -106,7 +102,7 @@ struct Parser {
                     let flag: Token = this.expect(TOKEN_IDENT);
                     this.expect(TOKEN_COLON);
                     let value: Token = this.expect(TOKEN_STRING_LITERAL);
-                    let _flag: &mut ParsedCompilerFlag = newParsedCompilerFlag(flag, value);
+                    let _flag: &ParsedCompilerFlag = newParsedCompilerFlag(flag, value);
                     if (!this.at(TOKEN_CURLY_CLOSE)) {
                         this.expect(TOKEN_SEMI_COLON);
                     }
@@ -115,15 +111,15 @@ struct Parser {
             }
         }
         while (!this.parsedEOF()) {
-            let item: &mut ParsedTopLevelItem = this.parseTopLevelItem();
+            let item: &ParsedTopLevelItem = this.parseTopLevelItem();
             mod.addTopLevelItem(item);
         }
     }
 
-    func parseTopLevelItem(&mut this) -> &mut ParsedTopLevelItem {
+    func parseTopLevelItem(&this) -> &ParsedTopLevelItem {
         trace("Parser.parseTopLevelItem");
         let tkn: Token = this.lexer.peek();
-        if (tkn.kind != TOKEN_KEYWORD) unsafe {
+        if (tkn.kind != TOKEN_KEYWORD) {
             let loc: String = tkn.span.toString();
             let name: String = tkn.content.toString();
             fprintf(stderr, "%s: %s: Expected Top Level Keyword, found `%s` instead.\n", loc.chars(), ERR_STR, name.chars());
@@ -138,18 +134,19 @@ struct Parser {
                 || tkn.content.equals(&KEYWORD_MUT)) {
             this.lexer.next();
             return this.parseVarDeclStmt(tkn, true).asTLI();
-        } else if (tkn.content.equals(&KEYWORD_UNSAFE)) unsafe {
+        } else if (tkn.content.equals(&KEYWORD_UNSAFE)) {
             this.lexer.next();
             let loc: String = tkn.getLocation();
-            // fprintf(stderr, "%s: %s: The use of `unsafe` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
+            fprintf(stderr, "%s: %s: The use of `unsafe` has no effect in this version of the compiler.\n", loc.chars(), ERR_STR);
             loc.drop();
+            exit(1);
             return this.parseTopLevelItem();
         } else if (tkn.content.equals(&KEYWORD_COMPTIME)) {
             this.lexer.next();
             if (this.at(TOKEN_KEYWORD)) {
                 let maybeFunc: Token = this.lexer.peek();
                 if (maybeFunc.content.equals(&KEYWORD_FUNC)) {
-                    let funcDecl: &mut ParsedFuncDecl = this.parseFuncDecl();
+                    let funcDecl: &ParsedFuncDecl = this.parseFuncDecl();
                     (*funcDecl).isComptime = true;
                     return funcDecl.asTLI();
                 } else {
@@ -167,51 +164,49 @@ struct Parser {
         }
         tkn.content.print();
         todo_with_msg("top level");
-        unsafe { return null; }
+        return null;
     }
 
-    func parseImport(&mut this) -> &mut ParsedTopLevelItem {
+    func parseImport(&this) -> &ParsedTopLevelItem {
         trace("Parser.parseImport");
         let impTkn: Token = this.expect(TOKEN_KEYWORD);
         assert(impTkn.content.equals(&KEYWORD_IMPORT));
         let tkn: Token = this.expect(TOKEN_STRING_LITERAL);
         let file: String = tkn.content.toString();
-        mut src: String = blank;
-        for (mut i: usize = 0; i < this.importRootLength; i = i + 1) {
-            mut path: String = this.getImportRootAtIndex(i);
+        let src: String = blank;
+        for (let i: usize = 0; i < this.importRootLength; i = i + 1) {
+            let path: String = this.getImportRootAtIndex(i);
             path.pushString(&file);
             path = path.toAbsolutePath();
-            if (canReadFileToString(path.chars(), &mut src)) unsafe {
+            if (canReadFileToString(path.chars(), &src)) {
                 debug("Found file");
                 debug(path.chars());
-                mut moduleID: usize = 0;
-                mut mod: &mut ParsedModule = null;
-                if (getModuleByFilePath(path.asSubStr(), &mut moduleID)) {
+                let moduleID: usize = 0;
+                let mod: &ParsedModule = null;
+                if (getModuleByFilePath(path.asSubStr(), &moduleID)) {
                     mod = modules.at(moduleID);
                 } else {
                     mod = newParsedModule(path.asSubStr());
                     moduleID = mod.getID();
                     // Note: We leak the source code of the imported file here :^)
-                    mut parser: Parser = newParserFromSource(mod.getID(), src.asSubStr());
+                    let parser: Parser = newParserFromSource(mod.getID(), src.asSubStr());
                     parser.inheritImportRoots(this);
                     parser.parseModule(path.asSubStr(), mod);
                 }
                 let end: Token = this.expect(TOKEN_SEMI_COLON);
                 let span: Span = newSpanBetween(&impTkn.span, &end.span);
-                let item: &mut ParsedTopLevelItem = newParsedTopLevelItem(span, TLI_IMPORT, moduleID);
+                let item: &ParsedTopLevelItem = newParsedTopLevelItem(span, TLI_IMPORT, moduleID);
                 return item;
             }
             path.drop();
         }
-        unsafe {
-            let loc: String = tkn.getLocation();
-            fprintf(stderr, "%s: %s: Could not import file %s.\n", loc.chars(), ERR_STR, file.chars());
-            exit(1);
-            return null;
-        }
+        let loc: String = tkn.getLocation();
+        fprintf(stderr, "%s: %s: Could not import file %s.\n", loc.chars(), ERR_STR, file.chars());
+        exit(1);
+        return null;
     }
 
-    func parseStructDecl(&mut this) -> &mut ParsedStructDecl {
+    func parseStructDecl(&this) -> &ParsedStructDecl {
         trace("Parser.parseStructDecl");
         let kw: Token = this.expect(TOKEN_KEYWORD);
         let nameTkn: Token = this.expect(TOKEN_IDENT);
@@ -219,26 +214,27 @@ struct Parser {
             todo_with_msg("whine about struct not being capitalized");
         this.currentStruct = nameTkn.content;
         this.expect(TOKEN_CURLY_OPEN);
-        let decl: &mut ParsedStructDecl = newParsedStructDecl(this.lexer.moduleID, defaultSpan(), nameTkn);
-        mut structContext: StructContext = blank;
+        let decl: &ParsedStructDecl = newParsedStructDecl(this.lexer.moduleID, defaultSpan(), nameTkn);
+        let structContext: StructContext = blank;
         while (!this.parsedEOF() && !this.at(TOKEN_CURLY_CLOSE)) {
             let tkn: Token = this.lexer.peek();
             if (tkn.kind == TOKEN_IDENT) {
                 this.lexer.next();
                 this.expect(TOKEN_COLON);
-                let typ: &mut ParsedTypeNode = this.parseTypeDecl();
+                let typ: &ParsedTypeNode = this.parseTypeDecl();
                 structContext.addField(tkn, typ);
                 this.expect(TOKEN_SEMI_COLON);
             } else if (tkn.kind == TOKEN_KEYWORD) {
-                if (tkn.content.equals(&KEYWORD_UNSAFE)) unsafe {
+                if (tkn.content.equals(&KEYWORD_UNSAFE)) {
                     this.lexer.next();
                     let loc: String = tkn.getLocation();
-                    // fprintf(stderr, "%s: %s: The use of `unsafe` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
+                    fprintf(stderr, "%s: %s: The use of `unsafe` has no effect in this version of the compiler.\n", loc.chars(), ERR_STR);
                     loc.drop();
+                    exit(1);
                 }
                 let tkn: Token = this.lexer.peek();
                 if (tkn.content.equals(&KEYWORD_FUNC)) {
-                    let method: &mut ParsedMethod = this.parseMethod(decl);
+                    let method: &ParsedMethod = this.parseMethod(decl);
                     structContext.addMethod(method);
                 } else {
                     todo_with_msg("ayo, not a method???");
@@ -255,89 +251,89 @@ struct Parser {
         return decl;
     }
 
-    func parseMethod(&mut this, structDecl: &mut ParsedStructDecl) -> &mut ParsedMethod {
+    func parseMethod(&this, structDecl: &ParsedStructDecl) -> &ParsedMethod {
         trace("Parser.parseMethod");
         let tkn: Token = this.expect(TOKEN_KEYWORD);
         assert(tkn.content.equals(&KEYWORD_FUNC));
         let name: Token = this.expect(TOKEN_IDENT);
         let params: ParamContext = this.parseParameters(structDecl.name, true);
-        let retType: &mut ParsedTypeNode = this.parseReturnType();
-        let body: &mut ParsedBlock = this.parseBlock();
+        let retType: &ParsedTypeNode = this.parseReturnType();
+        let body: &ParsedBlock = this.parseBlock();
         return newParsedMethod(structDecl.getID(), name, params, retType, body.getID());
     }
 
-    func parseFuncDecl(&mut this) -> &mut ParsedFuncDecl {
+    func parseFuncDecl(&this) -> &ParsedFuncDecl {
         trace("Parser.parseFuncDecl");
         let tkn: Token = this.expect(TOKEN_KEYWORD);
         let isExtern: bool = tkn.content.equals(&KEYWORD_EXTERN);
         if (!isExtern) assert(tkn.content.equals(&KEYWORD_FUNC));
         let name: Token = this.expect(TOKEN_IDENT);
         let params: ParamContext = this.parseParameters(blank, false);
-        let retType: &mut ParsedTypeNode = this.parseReturnType();
+        let retType: &ParsedTypeNode = this.parseReturnType();
         if (isExtern) {
             let end: Token = this.expect(TOKEN_SEMI_COLON);
             let span: Span = newSpanBetween(&tkn.span, &end.span);
             return newParsedFuncDecl(this.lexer.moduleID, span, name, params, retType, 0, true);
         } else {
-            let body: &mut ParsedBlock = this.parseBlock();
+            let body: &ParsedBlock = this.parseBlock();
             let span: Span = newSpanBetween(&tkn.span, &body.span);
             return newParsedFuncDecl(this.lexer.moduleID, span, name, params, retType, body.getID(), isExtern);
         }
     }
 
-    func parseReturnType(&mut this) -> &mut ParsedTypeNode {
+    func parseReturnType(&this) -> &ParsedTypeNode {
         trace("Parser.parseReturnType");
         if (this.eat(TOKEN_ARROW)) {
             return this.parseTypeDecl();
-        } else unsafe {
+        } else {
             return newBuiltinTypeDecl(this.lexer.peek().span, PARSED_TYPE_NONE);
         }
     }
 
-    func parseParameters(&mut this, parentName: Token, allowedThis: bool) -> ParamContext {
+    func parseParameters(&this, parentName: Token, allowedThis: bool) -> ParamContext {
         trace("Parser.parseParameters");
         this.expect(TOKEN_PAREN_OPEN);
-        mut context: ParamContext = blank;
+        let context: ParamContext = blank;
         while (!this.parsedEOF() && !this.at(TOKEN_PAREN_CLOSE)) {
             if (this.eat(TOKEN_DOTDOTDOT)) {
                 context.isVarArg = true;
                 break;
             }
             let isRef: bool = this.eat(TOKEN_AMPERSAND_SINGLE);
-            mut maybeThis: Token = this.lexer.peek();
-            if (maybeThis.content.equals(&KEYWORD_MUT)) unsafe {
+            let maybeThis: Token = this.lexer.peek();
+            if (maybeThis.content.equals(&KEYWORD_MUT)) {
                 this.lexer.next();
                 let loc: String = maybeThis.getLocation();
-                // fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
+                fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler.\n", loc.chars(), ERR_STR);
                 loc.drop();
-                maybeThis = this.lexer.peek();
+                exit(1);
             }
             let isThis: bool = maybeThis.content.equals(&KEYWORD_THIS);
             if (isThis) {
                 let dis: Token = this.expect(TOKEN_KEYWORD);
-                if (!allowedThis) unsafe {
+                if (!allowedThis) {
                     let loc: String = dis.span.toString();
                     fprintf(stderr, "%s: %s: Unexpected `this` parameter.\n", loc.chars(), ERR_STR);
                     fprintf(stderr, "%s: %s: `this` is only allowed in methods.\n", loc.chars(), NOTE_STR);
                     loc.drop();
                     this.syntaxError = true;
-                } else if (this.eat(TOKEN_COLON)) unsafe {
+                } else if (this.eat(TOKEN_COLON)) {
                     let loc: String = dis.span.toString();
                     fprintf(stderr, "%s: %s: Unexpected type for `this` parameter.\n", loc.chars(), ERR_STR);
                     fprintf(stderr, "%s: %s: The type of `this` is always the struct the method is defined in.\n", loc.chars(), NOTE_STR);
                     loc.drop();
-                    let _type: &mut ParsedTypeNode = this.parseTypeDecl();
+                    let _type: &ParsedTypeNode = this.parseTypeDecl();
                     this.syntaxError = true;
-                } else if (context.paramLength > 0) unsafe {
+                } else if (context.paramLength > 0) {
                     let loc: String = dis.span.toString();
                     fprintf(stderr, "%s: %s: `this` parameter must be the first parameter of a method.\n", loc.chars(), ERR_STR);
                     loc.drop();
                     this.syntaxError = true;
                 } else {
-                    let thisType: &mut ParsedTypeNode = newParsedTypeNode(maybeThis.span, PARSED_TYPE_IDENT);
+                    let thisType: &ParsedTypeNode = newParsedTypeNode(maybeThis.span, PARSED_TYPE_IDENT);
                     (*thisType).nameTkn = parentName;
                     if (isRef) {
-                        let ptr: &mut ParsedTypeNode = newParsedTypeNode(maybeThis.span, PARSED_TYPE_REF);
+                        let ptr: &ParsedTypeNode = newParsedTypeNode(maybeThis.span, PARSED_TYPE_REF);
                         (*ptr).underlyingID = thisType.getID();
                         context.addParameter(maybeThis, ptr);
                     } else {
@@ -347,7 +343,7 @@ struct Parser {
             } else {
                 let name: Token = this.expect(TOKEN_IDENT);
                 this.expect(TOKEN_COLON);
-                let typ: &mut ParsedTypeNode = this.parseTypeDecl();
+                let typ: &ParsedTypeNode = this.parseTypeDecl();
                 context.addParameter(name, typ);
             }
             if (!this.eat(TOKEN_COMMA))
@@ -357,12 +353,12 @@ struct Parser {
         return context;
     }
 
-    func parseBlock(&mut this) -> &mut ParsedBlock {
+    func parseBlock(&this) -> &ParsedBlock {
         trace("Parser.parseBlock");
-        let block: &mut ParsedBlock = newParsedBlock();
+        let block: &ParsedBlock = newParsedBlock();
         let start: Token = this.expect(TOKEN_CURLY_OPEN);
         while (!this.parsedEOF() && !this.at(TOKEN_CURLY_CLOSE)) {
-            let stmt: &mut ParsedStmt = this.parseStmt();
+            let stmt: &ParsedStmt = this.parseStmt();
             block.addStmt(stmt);
         }
         let end: Token = this.expect(TOKEN_CURLY_CLOSE);
@@ -370,7 +366,7 @@ struct Parser {
         return block;
     }
 
-    func parseStmt(&mut this) -> &mut ParsedStmt {
+    func parseStmt(&this) -> &ParsedStmt {
         trace("Parser.parseStmt");
         let tkn: Token = this.lexer.peek();
         if (tkn.kind == TOKEN_KEYWORD) {
@@ -404,112 +400,110 @@ struct Parser {
                 let end: Token = this.expect(TOKEN_SEMI_COLON);
                 let span: Span = newSpanBetween(&tkn.span, &end.span);
                 return newParsedStmt(span, STMT_CONTINUE);
-            } else if (tkn.content.equals(&KEYWORD_UNSAFE)) unsafe {
+            } else if (tkn.content.equals(&KEYWORD_UNSAFE)) {
                 this.lexer.next();
                 let loc: String = tkn.getLocation();
-                // fprintf(stderr, "%s: %s: The use of `unsafe` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
+                fprintf(stderr, "%s: %s: The use of `unsafe` has no effect in this version of the compiler.\n", loc.chars(), ERR_STR);
                 loc.drop();
-                return this.parseStmt();
+                exit(1);
             }
         } else if (tkn.kind == TOKEN_CURLY_OPEN) {
-            let block: &mut ParsedBlock = this.parseBlock();
-            let bl: &mut ParsedStmt = newParsedStmt(block.span, STMT_BLOCK);
+            let block: &ParsedBlock = this.parseBlock();
+            let bl: &ParsedStmt = newParsedStmt(block.span, STMT_BLOCK);
             (*bl).block = block.getID();
             return bl;
         }
-        let value: &mut ParsedExpr = this.parseExpr();
+        let value: &ParsedExpr = this.parseExpr();
         let end: Token = this.expect(TOKEN_SEMI_COLON);
         let span: Span = newSpanBetween(&value.span, &end.span);
-        let expr: &mut ParsedStmt = newParsedStmt(span, STMT_EXPR);
+        let expr: &ParsedStmt = newParsedStmt(span, STMT_EXPR);
         (*expr).expr = value.getID();
         return expr;
     }
 
-    func parseForStmt(&mut this, kw: Token) -> &mut ParsedStmt {
+    func parseForStmt(&this, kw: Token) -> &ParsedStmt {
         trace("Parser.parseForStmt");
         assert(kw.kind == TOKEN_KEYWORD);
         if (!this.eat(TOKEN_PAREN_OPEN)) {
             todo_with_msg("for in loop");
         } else {
             // FIXME: parseStmt() expects the ;
-            let block: &mut ParsedBlock = newParsedBlock();
-            let init: &mut ParsedStmt = this.parseStmt();
-            let cond: &mut ParsedExpr = this.parseExpr();
+            let block: &ParsedBlock = newParsedBlock();
+            let init: &ParsedStmt = this.parseStmt();
+            let cond: &ParsedExpr = this.parseExpr();
             this.expect(TOKEN_SEMI_COLON);
-            let step: &mut ParsedExpr = this.parseExpr();
+            let step: &ParsedExpr = this.parseExpr();
             this.expect(TOKEN_PAREN_CLOSE);
-            let body: &mut ParsedStmt = this.parseStmt();
+            let body: &ParsedStmt = this.parseStmt();
             let span: Span = newSpanBetween(&kw.span, &body.span);
-            let whileNode: &mut ParsedStmt = newParsedStmt(span, STMT_WHILE);
+            let whileNode: &ParsedStmt = newParsedStmt(span, STMT_WHILE);
             (*whileNode).expr = cond.getID();
             (*whileNode).block = body.getID();
             (*whileNode).step = step.getID();
             block.addStmt(init);
             block.addStmt(whileNode);
-            let blockStmt: &mut ParsedStmt = newParsedStmt(span, STMT_BLOCK);
+            let blockStmt: &ParsedStmt = newParsedStmt(span, STMT_BLOCK);
             (*blockStmt).block = block.getID();
             return blockStmt;
         }
-        unsafe { return null; }
+        return null;
     }
 
-    func parseWhileStmt(&mut this, kw: Token) -> &mut ParsedStmt {
+    func parseWhileStmt(&this, kw: Token) -> &ParsedStmt {
         trace("Parser.parseWhileStmt");
         assert(kw.kind == TOKEN_KEYWORD);
         this.expect(TOKEN_PAREN_OPEN);
-        let cond: &mut ParsedExpr = this.parseExpr();
+        let cond: &ParsedExpr = this.parseExpr();
         this.expect(TOKEN_PAREN_CLOSE);
-        let body: &mut ParsedStmt = this.parseStmt();
+        let body: &ParsedStmt = this.parseStmt();
         let span: Span = newSpanBetween(&kw.span, &body.span);
-        let stmt: &mut ParsedStmt = newParsedStmt(span, STMT_WHILE);
+        let stmt: &ParsedStmt = newParsedStmt(span, STMT_WHILE);
         (*stmt).expr = cond.getID();
         (*stmt).block = body.getID();
         (*stmt).step = newParsedExpr(span, EXPR_EMPTY).getID();
         return stmt;
     }
 
-    func parseReturnStmt(&mut this, kw: Token) -> &mut ParsedStmt {
+    func parseReturnStmt(&this, kw: Token) -> &ParsedStmt {
         trace("Parser.parseReturnStmt");
         assert(kw.kind == TOKEN_KEYWORD);
-        unsafe mut value: &mut ParsedExpr = null;
+        let value: &ParsedExpr = null;
         if (!this.at(TOKEN_SEMI_COLON))
             value = this.parseExpr();
         let end: Token = this.expect(TOKEN_SEMI_COLON);
         let span: Span = newSpanBetween(&kw.span, &end.span);
-        unsafe {
-            if (value != null) {
-                let ret: &mut ParsedStmt = newParsedStmt(span, STMT_RETURN_EXPR);
-                (*ret).expr = value.getID();
-                return ret;
-            } else {
-                return newParsedStmt(span, STMT_RETURN_EMPTY);
-            }
+        if (value != null) {
+            let ret: &ParsedStmt = newParsedStmt(span, STMT_RETURN_EXPR);
+            (*ret).expr = value.getID();
+            return ret;
+        } else {
+            return newParsedStmt(span, STMT_RETURN_EMPTY);
         }
     }
 
-    func parseIfStmt(&mut this, kw: Token) -> &mut ParsedStmt {
+    func parseIfStmt(&this, kw: Token) -> &ParsedStmt {
         trace("Parser.parseIfStmt");
         assert(kw.kind == TOKEN_KEYWORD);
         this.expect(TOKEN_PAREN_OPEN);
-        let cond: &mut ParsedExpr = this.parseExpr();
+        let cond: &ParsedExpr = this.parseExpr();
         this.expect(TOKEN_PAREN_CLOSE);
-        let ifBody: &mut ParsedStmt = this.parseStmt();
+        let ifBody: &ParsedStmt = this.parseStmt();
         let maybeElse: Token = this.lexer.peek();
         let ifID: usize = ifBody.getID();
-        mut elseID: usize = 0;
-        mut hasElse: bool = false;
-        mut end: Span = ifBody.span;
+        let elseID: usize = 0;
+        let hasElse: bool = false;
+        let end: Span = ifBody.span;
         if (maybeElse.kind == TOKEN_KEYWORD) {
             if (maybeElse.content.equals(&KEYWORD_ELSE)) {
                 this.expect(TOKEN_KEYWORD);
-                let elseBody: &mut ParsedStmt = this.parseStmt();
+                let elseBody: &ParsedStmt = this.parseStmt();
                 end = elseBody.span;
                 elseID = elseBody.getID();
                 hasElse = true;
             }
         }
         let span: Span = newSpanBetween(&kw.span, &end);
-        let ifStmt: &mut ParsedStmt = newParsedStmt(span, STMT_IF);
+        let ifStmt: &ParsedStmt = newParsedStmt(span, STMT_IF);
         (*ifStmt).expr = cond.getID();
         (*ifStmt).ifContext = IfContext {
             thenBody: ifID,
@@ -519,17 +513,18 @@ struct Parser {
         return ifStmt;
     }
 
-    func parseVarDeclStmt(&mut this, kw: Token, isGlobal: bool) -> &mut ParsedStmt {
+    func parseVarDeclStmt(&this, kw: Token, isGlobal: bool) -> &ParsedStmt {
         trace("Parser.parseVarDeclStmt");
         let nameTkn: Token = this.expect(TOKEN_IDENT);
         let isMutable: bool = kw.content.equals(&KEYWORD_MUT);
         let isComptime: bool = kw.content.equals(&KEYWORD_COMPTIME);
-        if (isMutable) unsafe {
+        if (isMutable) {
             let loc: String = kw.getLocation();
-            // fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler. Please use `let` instead.\n", loc.chars(), WARN_STR);
+            fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler. Please use `let` instead.\n", loc.chars(), ERR_STR);
             loc.drop();
+            exit(1);
         }
-        mut data: VarDeclContext = blank;
+        let data: VarDeclContext = blank;
         data.name = nameTkn;
         if (this.eat(TOKEN_COLON)) {
             data.typeID = this.parseTypeDecl().getID();
@@ -539,7 +534,7 @@ struct Parser {
         data.isComptime = isComptime;
         let end: Token = this.expect(TOKEN_SEMI_COLON);
         let span: Span = newSpanBetween(&kw.span, &end.span);
-        let decl: &mut ParsedStmt = newParsedStmt(span, STMT_VAR_DECL);
+        let decl: &ParsedStmt = newParsedStmt(span, STMT_VAR_DECL);
         if (isGlobal) {
             (*decl).block = this.lexer.moduleID;
         } else {
@@ -549,45 +544,47 @@ struct Parser {
         return decl;
     }
 
-    func parseTypeDecl(&mut this) -> &mut ParsedTypeNode {
+    func parseTypeDecl(&this) -> &ParsedTypeNode {
         trace("Parser.parseTypeDecl");
         let loc: Token = this.lexer.peek();
         if (this.eat(TOKEN_AMPERSAND_DOUBLE)) {
             let kw: Token = this.lexer.peek();
-            if (kw.content.equals(&KEYWORD_MUT)) unsafe {
+            if (kw.content.equals(&KEYWORD_MUT)) {
                 this.lexer.next();
                 let loc: String = kw.getLocation();
-                // fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
+                fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler.\n", loc.chars(), ERR_STR);
                 loc.drop();
+                exit(1);
             }
-            let typ: &mut ParsedTypeNode = this.parseTypeDecl();
+            let typ: &ParsedTypeNode = this.parseTypeDecl();
             let span: Span = newSpanBetween(&loc.span, &typ.span);
-            let ptr1: &mut ParsedTypeNode = newParsedTypeNode(span, PARSED_TYPE_REF);
+            let ptr1: &ParsedTypeNode = newParsedTypeNode(span, PARSED_TYPE_REF);
             (*ptr1).underlyingID = typ.getID();
-            let ptr: &mut ParsedTypeNode = newParsedTypeNode(span, PARSED_TYPE_REF);
+            let ptr: &ParsedTypeNode = newParsedTypeNode(span, PARSED_TYPE_REF);
             (*ptr).underlyingID = ptr1.getID();
             return ptr;
         } else if (this.eat(TOKEN_AMPERSAND_SINGLE)) {
             let kw: Token = this.lexer.peek();
-            if (kw.content.equals(&KEYWORD_MUT)) unsafe {
+            if (kw.content.equals(&KEYWORD_MUT)) {
                 this.lexer.next();
                 let loc: String = kw.getLocation();
-                // fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
+                fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler.\n", loc.chars(), ERR_STR);
                 loc.drop();
+                exit(1);
             }
-            let typ: &mut ParsedTypeNode = this.parseTypeDecl();
+            let typ: &ParsedTypeNode = this.parseTypeDecl();
             let span: Span = newSpanBetween(&loc.span, &typ.span);
-            let ptr: &mut ParsedTypeNode = newParsedTypeNode(span, PARSED_TYPE_REF);
+            let ptr: &ParsedTypeNode = newParsedTypeNode(span, PARSED_TYPE_REF);
             (*ptr).underlyingID = typ.getID();
             return ptr;
         } else if (this.eat(TOKEN_SQUARE_OPEN)) {
-            let typ: &mut ParsedTypeNode = this.parseTypeDecl();
+            let typ: &ParsedTypeNode = this.parseTypeDecl();
             this.expect(TOKEN_SEMI_COLON);
             let size: Token = this.expect(TOKEN_INT_LITERAL);
             let _size: String = size.content.toString();
             let end: Token = this.expect(TOKEN_SQUARE_CLOSE);
             let span: Span = newSpanBetween(&loc.span, &end.span);
-            let arr: &mut ParsedTypeNode = newParsedTypeNode(span, PARSED_TYPE_ARRAY);
+            let arr: &ParsedTypeNode = newParsedTypeNode(span, PARSED_TYPE_ARRAY);
             (*arr).underlyingID = typ.getID();
             (*arr).arraySize = _size.toU64() as usize;
             _size.drop();
@@ -597,7 +594,7 @@ struct Parser {
             let maybeBuiltin: usize = getBuiltinTypeKind(nameTkn);
             if (maybeBuiltin == 0) {
                 // Not a builtin, must resolve later
-                let typ: &mut ParsedTypeNode = newParsedTypeNode(nameTkn.span, PARSED_TYPE_IDENT);
+                let typ: &ParsedTypeNode = newParsedTypeNode(nameTkn.span, PARSED_TYPE_IDENT);
                 (*typ).nameTkn = nameTkn;
                 return typ;
             } else {
@@ -606,13 +603,13 @@ struct Parser {
         }
     }
 
-    func parseExpr(&mut this) -> &mut ParsedExpr {
+    func parseExpr(&this) -> &ParsedExpr {
         trace("Parser.parseExpr");
         return this.__parseExpr(0, ASSOC_LEFT);
     }
-    func __parseExpr(&mut this, precedence: usize, associativity: usize) -> &mut ParsedExpr {
+    func __parseExpr(&this, precedence: usize, associativity: usize) -> &ParsedExpr {
         trace("Parser.__parseExpr");
-        mut expr: &mut ParsedExpr = this.parsePrimaryExpr();
+        let expr: &ParsedExpr = this.parsePrimaryExpr();
         while (this.matchesBinaryExpr()) {
             let tkn: Token = this.lexer.peek();
             let newPrec: usize = this.getBinaryPrecedence(&tkn);
@@ -625,35 +622,35 @@ struct Parser {
         }
         return expr;
     }
-    func parsePrimaryExpr(&mut this) -> &mut ParsedExpr {
+    func parsePrimaryExpr(&this) -> &ParsedExpr {
         trace("Parser.parsePrimaryExpr");
         if (this.matchesUnaryExpr())
             return this.parseUnaryExpr();
         let tknKind: usize = this.lexer.peek().kind;
         if (tknKind == TOKEN_INT_LITERAL) {
             let number: Token = this.expect(TOKEN_INT_LITERAL);
-            let expr: &mut ParsedExpr = newParsedExpr(number.span, EXPR_INT_LIT);
+            let expr: &ParsedExpr = newParsedExpr(number.span, EXPR_INT_LIT);
             (*expr).origToken = number;
             return expr;
         } else if (tknKind == TOKEN_PAREN_OPEN) {
             this.expect(TOKEN_PAREN_OPEN);
-            let expr: &mut ParsedExpr = this.parseExpr();
+            let expr: &ParsedExpr = this.parseExpr();
             this.expect(TOKEN_PAREN_CLOSE);
             return expr;
         } else if (tknKind == TOKEN_IDENT) {
             let ident: Token = this.expect(TOKEN_IDENT);
             if (this.at(TOKEN_PAREN_OPEN)) {
                 this.expect(TOKEN_PAREN_OPEN);
-                mut context: ArrayContext = blank;
+                let context: ArrayContext = blank;
                 while (!this.parsedEOF() && !this.at(TOKEN_PAREN_CLOSE)) {
-                    let expr: &mut ParsedExpr = this.parseExpr();
+                    let expr: &ParsedExpr = this.parseExpr();
                     context.addElement(expr);
                     if (!this.eat(TOKEN_COMMA))
                         break;
                 }
                 let end: Token = this.expect(TOKEN_PAREN_CLOSE);
                 let span: Span = newSpanBetween(&ident.span, &end.span);
-                let expr: &mut ParsedExpr = newParsedExpr(span, EXPR_CALL);
+                let expr: &ParsedExpr = newParsedExpr(span, EXPR_CALL);
                 // REVIEW: This assumes that we will only ever have idents as call bases
                 //         However I'd like to treat functions as first class citizen soon
                 (*expr).origToken = ident;
@@ -661,41 +658,41 @@ struct Parser {
                 return expr;
             } else if (this.at(TOKEN_CURLY_OPEN)) {
                 this.expect(TOKEN_CURLY_OPEN);
-                mut context: StructInitContext = blank;
+                let context: StructInitContext = blank;
                 while (!this.parsedEOF() && !this.at(TOKEN_CURLY_CLOSE)) {
                     let name: Token = this.expect(TOKEN_IDENT);
                     this.expect(TOKEN_COLON);
-                    let expr: &mut ParsedExpr = this.parseExpr();
+                    let expr: &ParsedExpr = this.parseExpr();
                     context.addField(name, expr);
                     if (!this.eat(TOKEN_COMMA))
                         break;
                 }
                 let end: Token = this.expect(TOKEN_CURLY_CLOSE);
                 let span: Span = newSpanBetween(&ident.span, &end.span);
-                let expr: &mut ParsedExpr = newParsedExpr(span, EXPR_STRUCT_INIT);
+                let expr: &ParsedExpr = newParsedExpr(span, EXPR_STRUCT_INIT);
                 (*expr).origToken = ident;
                 (*expr).structInitContext = context;
                 return expr;
             } else {
-                let expr: &mut ParsedExpr = newParsedExpr(ident.span, EXPR_NAME);
+                let expr: &ParsedExpr = newParsedExpr(ident.span, EXPR_NAME);
                 (*expr).origToken = ident;
                 return expr;
             }
         } else if (tknKind == TOKEN_STRING_LITERAL) {
             let str: Token = this.expect(TOKEN_STRING_LITERAL);
-            let expr: &mut ParsedExpr = newParsedExpr(str.span, EXPR_STRING_LIT);
+            let expr: &ParsedExpr = newParsedExpr(str.span, EXPR_STRING_LIT);
             (*expr).origToken = str;
             return expr;
         } else if (tknKind == TOKEN_CHAR_LITERAL) {
             let ch: Token = this.expect(TOKEN_CHAR_LITERAL);
-            let expr: &mut ParsedExpr = newParsedExpr(ch.span, EXPR_CHAR_LIT);
+            let expr: &ParsedExpr = newParsedExpr(ch.span, EXPR_CHAR_LIT);
             (*expr).origToken = ch;
             return expr;
         } else if (tknKind == TOKEN_SQUARE_OPEN) {
             let start: Token = this.expect(TOKEN_SQUARE_OPEN);
-            mut arrayContext: ArrayContext = blank;
+            let arrayContext: ArrayContext = blank;
             while (!this.parsedEOF() && !this.at(TOKEN_SQUARE_CLOSE)) {
-                let expr: &mut ParsedExpr = this.parseExpr();
+                let expr: &ParsedExpr = this.parseExpr();
                 arrayContext.addElement(expr);
                 if (this.eat(TOKEN_SEMI_COLON)) {
                     if (arrayContext.elemLength != 1) todo_with_msg("array lit with given size too many elements");
@@ -710,7 +707,7 @@ struct Parser {
             }
             let end: Token = this.expect(TOKEN_SQUARE_CLOSE);
             let span: Span = newSpanBetween(&start.span, &end.span);
-            let expr: &mut ParsedExpr = newParsedExpr(span, EXPR_ARRAY_LIT);
+            let expr: &ParsedExpr = newParsedExpr(span, EXPR_ARRAY_LIT);
             (*expr).arrayContext = arrayContext;
             return expr;
         } else if (tknKind == TOKEN_KEYWORD) {
@@ -719,37 +716,37 @@ struct Parser {
                 if (this.currentStruct.isEmpty()) {
                     todo_with_msg("use of this outside of a struct");
                 }
-                let expr: &mut ParsedExpr = newParsedExpr(kw.span, EXPR_NAME);
+                let expr: &ParsedExpr = newParsedExpr(kw.span, EXPR_NAME);
                 (*expr).origToken = kw;
                 return expr;
             } else if (kw.content.equals(&KEYWORD_NULL)) {
-                let expr: &mut ParsedExpr = newParsedExpr(kw.span, EXPR_NULL);
+                let expr: &ParsedExpr = newParsedExpr(kw.span, EXPR_NULL);
                 (*expr).origToken = kw;
                 return expr;
             } else if (kw.content.equals(&KEYWORD_TRUE)) {
-                let expr: &mut ParsedExpr = newParsedExpr(kw.span, EXPR_TRUE);
+                let expr: &ParsedExpr = newParsedExpr(kw.span, EXPR_TRUE);
                 (*expr).origToken = kw;
                 return expr;
             } else if (kw.content.equals(&KEYWORD_FALSE)) {
-                let expr: &mut ParsedExpr = newParsedExpr(kw.span, EXPR_FALSE);
+                let expr: &ParsedExpr = newParsedExpr(kw.span, EXPR_FALSE);
                 (*expr).origToken = kw;
                 return expr;
             } else if (kw.content.equals(&KEYWORD_BLANK)) {
-                let expr: &mut ParsedExpr = newParsedExpr(kw.span, EXPR_BLANK);
+                let expr: &ParsedExpr = newParsedExpr(kw.span, EXPR_BLANK);
                 (*expr).origToken = kw;
                 return expr;
             } else if (kw.content.equals(&KEYWORD_SIZEOF)) {
-                let typ: &mut ParsedTypeNode = this.parseTypeDecl();
+                let typ: &ParsedTypeNode = this.parseTypeDecl();
                 let span: Span = newSpanBetween(&kw.span, &typ.span);
-                let expr: &mut ParsedExpr = newParsedExpr(span, EXPR_SIZEOF);
+                let expr: &ParsedExpr = newParsedExpr(span, EXPR_SIZEOF);
                 (*expr).lhs = typ.getID();
                 return expr;
-            } else if (kw.content.equals(&KEYWORD_MUT)) unsafe {
+            } else if (kw.content.equals(&KEYWORD_MUT)) {
                 let loc: String = kw.getLocation();
-                // fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
+                fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler.\n", loc.chars(), ERR_STR);
                 loc.drop();
-                return this.parsePrimaryExpr();
-            } else unsafe {
+                exit(1);
+            } else {
                 // FIXME: Code duplication, but we expect() the KEYWORD above :^)
                 let loc: String = kw.getLocation();
                 let name: String = kw.content.toString();
@@ -760,32 +757,30 @@ struct Parser {
                 return null;
             }
         }
-        unsafe {
-            let t: Token = this.lexer.peek();
-            let loc: String = t.getLocation();
-            let name: String = t.content.toString();
-            fprintf(stderr, "%s: %s: Expected Expression, found `%s`.\n", loc.chars(), ERR_STR, name.chars());
-            name.drop();
-            loc.drop();
-            exit(1);
-            return null;
-        }
+        let t: Token = this.lexer.peek();
+        let loc: String = t.getLocation();
+        let name: String = t.content.toString();
+        fprintf(stderr, "%s: %s: Expected Expression, found `%s`.\n", loc.chars(), ERR_STR, name.chars());
+        name.drop();
+        loc.drop();
+        exit(1);
+        return null;
     }
-    func parseSecondaryExpr(&mut this, lhs: &mut ParsedExpr, precedence: usize, associativity: usize) -> &mut ParsedExpr {
+    func parseSecondaryExpr(&this, lhs: &ParsedExpr, precedence: usize, associativity: usize) -> &ParsedExpr {
         trace("Parser.parseSecondaryExpr");
         assert(this.matchesBinaryExpr());
         let opTkn: Token = this.lexer.next();
         let op: usize = binOpFromKind(opTkn.kind);
         if (op == BIN_AS) {
-            let typ: &mut ParsedTypeNode = this.parseTypeDecl();
+            let typ: &ParsedTypeNode = this.parseTypeDecl();
             let span: Span = newSpanBetween(&lhs.span, &typ.span);
-            mut asop: &mut ParsedExpr = newParsedExpr(span, EXPR_AS);
+            let asop: &ParsedExpr = newParsedExpr(span, EXPR_AS);
             (*asop).op = op;
             (*asop).lhs = lhs.getID();
             (*asop).rhs = typ.getID();
             return asop;
         }
-        unsafe mut rhs: &mut ParsedExpr = null;
+        let rhs: &ParsedExpr = null;
         if (op == BIN_INDEXED_ACCESS) {
             rhs = this.__parseExpr(0, associativity);
             this.expect(TOKEN_SQUARE_CLOSE);
@@ -798,24 +793,24 @@ struct Parser {
             }
         }
         let span: Span = newSpanBetween(&lhs.span, &rhs.span);
-        let binop: &mut ParsedExpr = newParsedExpr(span, EXPR_BINARY);
+        let binop: &ParsedExpr = newParsedExpr(span, EXPR_BINARY);
         (*binop).op = op;
         (*binop).lhs = lhs.getID();
         (*binop).rhs = rhs.getID();
         return binop;
     }
-    func parseUnaryExpr(&mut this) -> &mut ParsedExpr {
+    func parseUnaryExpr(&this) -> &ParsedExpr {
         trace("Parser.parseUnaryExpr");
         let tkn: Token = this.lexer.peek();
         if (tkn.kind == TOKEN_AMPERSAND_DOUBLE) {
             this.lexer.next();
             let precedence: usize = this.getUnaryPrecedence(TOKEN_AMPERSAND_SINGLE);
-            let expr: &mut ParsedExpr = this.__parseExpr(precedence, ASSOC_LEFT);
+            let expr: &ParsedExpr = this.__parseExpr(precedence, ASSOC_LEFT);
             let span: Span = newSpanBetween(&tkn.span, &expr.span);
-            let inner: &mut ParsedExpr = newParsedExpr(span, EXPR_UNARY);
+            let inner: &ParsedExpr = newParsedExpr(span, EXPR_UNARY);
             (*inner).op = unaryOpFromKind(TOKEN_AMPERSAND_SINGLE);
             (*inner).lhs = expr.getID();
-            let unary: &mut ParsedExpr = newParsedExpr(span, EXPR_UNARY);
+            let unary: &ParsedExpr = newParsedExpr(span, EXPR_UNARY);
             (*unary).op = unaryOpFromKind(TOKEN_AMPERSAND_SINGLE);
             (*unary).lhs = inner.getID();
             return unary;
@@ -825,9 +820,9 @@ struct Parser {
             || tkn.kind == TOKEN_BANG) {
             this.lexer.next();
             let precedence: usize = this.getUnaryPrecedence(tkn.kind);
-            let expr: &mut ParsedExpr = this.__parseExpr(precedence, ASSOC_LEFT);
+            let expr: &ParsedExpr = this.__parseExpr(precedence, ASSOC_LEFT);
             let span: Span = newSpanBetween(&tkn.span, &expr.span);
-            let unary: &mut ParsedExpr = newParsedExpr(span, EXPR_UNARY);
+            let unary: &ParsedExpr = newParsedExpr(span, EXPR_UNARY);
             (*unary).op = unaryOpFromKind(tkn.kind);
             (*unary).lhs = expr.getID();
             return unary;
@@ -835,9 +830,9 @@ struct Parser {
             tkn.getLocation().print();
             todo_with_msg("unray");
         }
-        unsafe { return null; }
+        return null;
     }
-    func matchesBinaryExpr(&mut this) -> bool {
+    func matchesBinaryExpr(&this) -> bool {
         trace("Parser.matchesBinaryExpr");
         let tknKind: usize = this.lexer.peek().kind;
         if (tknKind == TOKEN_KEYWORD)
@@ -863,7 +858,7 @@ struct Parser {
             || tknKind == TOKEN_SQUARE_OPEN
             || tknKind == TOKEN_PERCENT;
     }
-    func matchesUnaryExpr(&mut this) -> bool {
+    func matchesUnaryExpr(&this) -> bool {
         trace("Parser.matchesUnaryExpr");
         let tknKind: usize = this.lexer.peek().kind;
         return tknKind == TOKEN_MINUS_SINGLE
@@ -873,7 +868,7 @@ struct Parser {
             || tknKind == TOKEN_ASTERISK_SINGLE
             || tknKind == TOKEN_BANG;
     }
-    func getBinaryPrecedence(&mut this, tkn: &Token) -> usize {
+    func getBinaryPrecedence(&this, tkn: &Token) -> usize {
         trace("Parser.getBinaryPrecedence");
         let tknKind: usize = tkn.kind;
         if (tknKind == TOKEN_DOT) return 17;
@@ -901,13 +896,13 @@ struct Parser {
         todo_with_msg("Precedence");
         return 0;
     }
-    func getBinaryAssociativity(&mut this, tkn: &Token) -> usize {
+    func getBinaryAssociativity(&this, tkn: &Token) -> usize {
         trace("Parser.getBinaryAssociativity");
         let tknKind: usize = tkn.kind;
         if (tknKind == TOKEN_EQUAL_SINGLE) return ASSOC_RIGHT;
         return ASSOC_LEFT;
     }
-    func getUnaryPrecedence(&mut this, tknKind: usize) -> usize {
+    func getUnaryPrecedence(&this, tknKind: usize) -> usize {
         if (tknKind == TOKEN_MINUS_SINGLE) return 14;
         else if (tknKind == TOKEN_ASTERISK_SINGLE) return 14;
         else if (tknKind == TOKEN_AMPERSAND_SINGLE) return 14;
@@ -918,14 +913,12 @@ struct Parser {
 }
 
 func newParserFromSource(moduleID: usize, src: SubStr) -> Parser {
-    unsafe {
-        return Parser {
-            lexer: newLexer(moduleID, src),
-            importRoots: null,
-            importRootLength: 0,
-            importRootCapacity: 0,
-            currentStruct: blank,
-            syntaxError: false,
-        };
-    }
+    return Parser {
+        lexer: newLexer(moduleID, src),
+        importRoots: null,
+        importRootLength: 0,
+        importRootCapacity: 0,
+        currentStruct: blank,
+        syntaxError: false,
+    };
 }

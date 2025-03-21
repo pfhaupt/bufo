@@ -17,9 +17,7 @@ def enumeratePtrs(ptrs: List[str]) -> str:
 struct {p} {{
     ptr: Any;
     func isNull(&this) -> bool {{
-        unsafe {{
-            return this.ptr == null;
-        }}
+        return this.ptr == null;
     }}
 }}
 """
@@ -36,7 +34,7 @@ def compile_wrapper(llvm_path, libs):
     proc = call_cmd(cmd)
     assert proc.returncode == 0, proc.stdout.decode("utf-8")
 
-with open("./stage1/backend/LLVM/bindings.bufo", "w") as file:
+with open("./src/backend/LLVM/bindings.bufo", "w") as file:
     path = get("--libdir")[0]
     libs = get("--libnames", " ")
     content = "compiler_flags {\n"
@@ -70,7 +68,7 @@ extern LLVM_InitializeNativeAsmPrinter() -> i32;
 extern LLVM_InitializeNativeDisassembler() -> i32;
 extern LLVM_InitializeNativeTarget() -> i32;
 extern LLVMCreateTargetMachine(T: LLVMTargetRef, Triple: &char, CPU: &char, Features: &char, Level: i32, Reloc: i32, CodeModel: i32) -> LLVMTargetMachineRef;
-extern LLVMTargetMachineEmitToFile(T: LLVMTargetMachineRef, M: LLVMModuleRef, path: &char, opts: i32, err: &mut LLVMString) -> i32;
+extern LLVMTargetMachineEmitToFile(T: LLVMTargetMachineRef, M: LLVMModuleRef, path: &char, opts: i32, err: &LLVMString) -> i32;
 extern LLVMCreateTargetDataLayout(T: LLVMTargetMachineRef) -> LLVMTargetDataRef;
 extern LLVMStoreSizeOfType(T: LLVMTargetDataRef, Ty: LLVMTypeRef) -> usize;
 extern LLVMABISizeOfType(T: LLVMTargetDataRef, Ty: LLVMTypeRef) -> usize;
@@ -89,12 +87,12 @@ extern LLVMStructTypeInContext(c: LLVMContextRef, ElementTypes: &LLVMTypeRef, El
 
 // LLVMModule
 extern LLVMPrintModuleToString(M: LLVMModuleRef) -> &char;
-extern LLVMPrintModuleToFile(M: LLVMModuleRef, Filename: &char, ErrorMessage: &mut LLVMString) -> LLVMBool;
+extern LLVMPrintModuleToFile(M: LLVMModuleRef, Filename: &char, ErrorMessage: &LLVMString) -> LLVMBool;
 extern LLVMGetNamedFunction(M: LLVMModuleRef, Name: &char) -> LLVMValueRef;
 extern LLVMAddFunction(M: LLVMModuleRef, name: &char, FunctionTy: LLVMTypeRef) -> LLVMValueRef;
 extern LLVMAddGlobalInAddressSpace(M: LLVMModuleRef, Ty: LLVMTypeRef, Name: &char, AddressSpace: u32) -> LLVMValueRef;
 extern LLVMGetNamedGlobal(M: LLVMModuleRef, Name: &char) -> LLVMValueRef;
-extern LLVMVerifyModule(M: LLVMModuleRef, mode: i32, code: &mut LLVMString) -> LLVMBool;
+extern LLVMVerifyModule(M: LLVMModuleRef, mode: i32, code: &LLVMString) -> LLVMBool;
 extern LLVMSetDataLayout(M: LLVMModuleRef, Data: &char);
 extern LLVMSetTarget(M: LLVMModuleRef, Target: &char);
 
@@ -175,7 +173,7 @@ extern LLVMSetInitializer(GlobalVar: LLVMValueRef, ConstantVal: LLVMValueRef);
 extern LLVMGetParam(FnRef: LLVMValueRef, index: u32) -> LLVMValueRef;
 extern LLVMSetValueName2(Val: LLVMValueRef, Name: &char, NameLen: usize);
 extern LLVMSetValueName(Val: LLVMValueRef, Name: &char);
-extern LLVMGetValueName2(Val: LLVMValueRef, Length: &mut usize) -> &char;
+extern LLVMGetValueName2(Val: LLVMValueRef, Length: &usize) -> &char;
 extern LLVMGetValueName(Val: LLVMValueRef) -> &char;
 
 struct LLVMBool { val: i32; }
@@ -190,7 +188,7 @@ struct LLVMString { chars: &char; }
 extern LLVMFunctionType(ReturnType: LLVMTypeRef, ParamTypes: &LLVMTypeRef, ParamCount: u32, IsVarArg: LLVMBool) -> LLVMTypeRef;
 extern LLVMPointerType(ElementType: LLVMTypeRef, AddressSpace: u32) -> LLVMTypeRef;
 extern LLVMArrayType(ElementType: LLVMTypeRef, size: u32) -> LLVMTypeRef;
-extern LLVMGetParamTypes(FunctionTy: LLVMTypeRef, Dest: &mut LLVMTypeRef);
+extern LLVMGetParamTypes(FunctionTy: LLVMTypeRef, Dest: &LLVMTypeRef);
 extern LLVMCountParamTypes(FunctionTy: LLVMTypeRef) -> u32;
 extern LLVMGetReturnType(FunctionTy: LLVMTypeRef) -> LLVMTypeRef;
 extern LLVMPrintTypeToString(Ty: LLVMTypeRef) -> &char;

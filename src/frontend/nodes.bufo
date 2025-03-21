@@ -23,7 +23,7 @@ func mangleVariableName(
     if (moduleID == NODE_ID_OFFSET) {
         return name.content.toString();
     } else {
-        mut mangledName: String = blank;
+        let mangledName: String = blank;
         mangledName.pushNumber(moduleID);
         mangledName.pushSubStr(&name.content);
         return mangledName;
@@ -33,36 +33,36 @@ func mangleVariableName(
 func mangleFunctionName(
     parentID: usize,
     name: &Token,
-    params: &mut ParamContext,
+    params: &ParamContext,
     retTypeID: usize,
     isMethod: bool,
     isComptime: bool,
     isExtern: bool
 ) -> String {
-    mut mangledName: String = blank;
+    let mangledName: String = blank;
     if (isExtern) return name.content.toString();
     // Method  : StructName-Name-ParamsTypeID-.RetTypeID
     // Function: ModID     -Name-ParamsTypeID-.RetTypeID-[0|1]-[0|1]
     if (isMethod) {
-        let strukt: &mut ParsedStructDecl = structDecls.at(parentID);
+        let strukt: &ParsedStructDecl = structDecls.at(parentID);
         mangledName.pushSubStr(&strukt.name.content);
     }
     mangledName.pushSubStr(&name.content);
-    for (mut i: usize = 0; i < params.paramLength; i = i + 1) {
+    for (let i: usize = 0; i < params.paramLength; i = i + 1) {
         let name: Token = params.getNameAtIndex(i);
         let id: usize = params.getTypeAtIndex(i);
-        let typeNode: &mut ParsedTypeNode = typeNodes.at(id);
+        let typeNode: &ParsedTypeNode = typeNodes.at(id);
         assert_with_msg(typeNode.typeState.isSuccess(), "Expected valid parameter type for mangling");
-        let typ: &mut Type = types.at(typeNode.typeState.getType());
+        let typ: &Type = types.at(typeNode.typeState.getType());
         let _typ: String = typ.getMangledName();
         mangledName.pushString(&_typ);
         _typ.drop();
     }
     mangledName.pushChar('r');
     if (retTypeID != 0) {
-        let retNode: &mut ParsedTypeNode = typeNodes.at(retTypeID);
+        let retNode: &ParsedTypeNode = typeNodes.at(retTypeID);
         assert_with_msg(retNode.typeState.isSuccess(), "Expected valid return type for mangling");
-        let typ: &mut Type = types.at(retNode.typeState.getType());
+        let typ: &Type = types.at(retNode.typeState.getType());
         let _typ: String = typ.getMangledName();
         mangledName.pushString(&_typ);
         _typ.drop();
@@ -71,7 +71,7 @@ func mangleFunctionName(
     }
     if (!isMethod) {
         mangledName.pushChar('f');
-        mut n: usize = 0;
+        let n: usize = 0;
         if (isComptime) n = 1;
         mangledName.pushNumber(n);
         if (isExtern) n = 1;
@@ -81,20 +81,20 @@ func mangleFunctionName(
     return mangledName;
 }
 
-mut modules: ParsedModuleArena = blank;
-mut topLevelItems: ParsedTopLevelItemArena = blank;
-mut structDecls: ParsedStructDeclArena = blank;
-mut funcDecls: ParsedFuncDeclArena = blank;
-mut methods: ParsedMethodArena = blank;
-mut blocks: ParsedBlockArena = blank;
-mut stmts: ParsedStmtArena = blank;
-mut typeNodes: ParsedTypeNodeArena = blank;
-mut exprs: ParsedExprArena = blank;
-mut compilerFlags: ParsedCompilerFlagArena = blank;
+let modules: ParsedModuleArena = blank;
+let topLevelItems: ParsedTopLevelItemArena = blank;
+let structDecls: ParsedStructDeclArena = blank;
+let funcDecls: ParsedFuncDeclArena = blank;
+let methods: ParsedMethodArena = blank;
+let blocks: ParsedBlockArena = blank;
+let stmts: ParsedStmtArena = blank;
+let typeNodes: ParsedTypeNodeArena = blank;
+let exprs: ParsedExprArena = blank;
+let compilerFlags: ParsedCompilerFlagArena = blank;
 
-func getModuleByFilePath(path: SubStr, moduleID: &mut usize) -> bool {
-    for (mut i: usize = 0; i < modules.length; i = i + 1) {
-        let mod: &mut ParsedModule = modules.at(i);
+func getModuleByFilePath(path: SubStr, moduleID: &usize) -> bool {
+    for (let i: usize = 0; i < modules.length; i = i + 1) {
+        let mod: &ParsedModule = modules.at(i);
         if (mod.origin.equals(&path)) {
             *moduleID = i;
             return true;
@@ -115,7 +115,7 @@ struct ParsedCompilerFlag {
     }
 }
 
-func newParsedCompilerFlag(flag: Token, value: Token) -> &mut ParsedCompilerFlag {
+func newParsedCompilerFlag(flag: Token, value: Token) -> &ParsedCompilerFlag {
     let f: &SubStr = &flag.content;
     if (!f.equals(&COMPILER_FLAG_LIBRARY)
         && !f.equals(&COMPILER_FLAG_LIBPATH)
@@ -131,39 +131,35 @@ func newParsedCompilerFlag(flag: Token, value: Token) -> &mut ParsedCompilerFlag
 
 struct ParsedModule {
     origin: SubStr;
-    tliList: &mut usize;
+    tliList: &usize;
     tliLength: usize;
     tliCapacity: usize;
 
-    func getID(&mut this) -> usize {
+    func getID(&this) -> usize {
         trace("ParsedModule.getID");
         return modules.indexOf(this);
     }
 
-    func addTopLevelItem(&mut this, tli: &mut ParsedTopLevelItem) {
+    func addTopLevelItem(&this, tli: &ParsedTopLevelItem) {
         trace("ParsedModule.addTopLevelItem");
-        if (this.tliLength >= this.tliCapacity) unsafe {
-            mut newCap: usize = this.tliCapacity * 2;
+        if (this.tliLength >= this.tliCapacity) {
+            let newCap: usize = this.tliCapacity * 2;
             if (newCap == 0) newCap = 1;
             this.tliList = realloc(this.tliList, newCap * sizeof usize);
             assert_with_msg(this.tliList != null, "Could not resize tli list");
             this.tliCapacity = newCap;
         }
-        unsafe {
-            *(this.tliList + this.tliLength * sizeof usize) = tli.getID();
-            this.tliLength = this.tliLength + 1;
-        }
+        *(this.tliList + this.tliLength * sizeof usize) = tli.getID();
+        this.tliLength = this.tliLength + 1;
     }
 
-    func getTopLevelItemAtIndex(&mut this, index: usize) -> usize {
+    func getTopLevelItemAtIndex(&this, index: usize) -> usize {
         assert_with_msg(index < this.tliLength, "Out of bounds access in getTopLevelItemAtIndex");
-        unsafe {
-            return *(this.tliList + index * sizeof usize);
-        }
+        return *(this.tliList + index * sizeof usize);
     }
 }
 
-func newParsedModule(origin: SubStr) -> &mut ParsedModule {
+func newParsedModule(origin: SubStr) -> &ParsedModule {
     trace("newParsedModule");
     modules.push(ParsedModule {
         origin: origin,
@@ -182,13 +178,13 @@ struct ParsedTopLevelItem {
     nodeID: usize;
     typeState: TCState;
 
-    func getID(&mut this) -> usize {
+    func getID(&this) -> usize {
         trace("ParsedTopLevelItem.getID");
         return topLevelItems.indexOf(this);
     }
 }
 
-func newParsedTopLevelItem(span: Span, kind: usize, nodeID: usize) -> &mut ParsedTopLevelItem {
+func newParsedTopLevelItem(span: Span, kind: usize, nodeID: usize) -> &ParsedTopLevelItem {
     trace("newParsedTopLevelItem");
     topLevelItems.push(ParsedTopLevelItem {
         kind: kind,
@@ -205,32 +201,32 @@ struct ParsedStructDecl {
     span: Span;
     context: StructContext;
     typeState: TCState;
-    func getID(&mut this) -> usize {
+    func getID(&this) -> usize {
         trace("ParsedStructDecl.getID");
         return structDecls.indexOf(this);
     }
-    func asTLI(&mut this) -> &mut ParsedTopLevelItem {
+    func asTLI(&this) -> &ParsedTopLevelItem {
         trace("ParsedStructDecl.asTLI");
         return newParsedTopLevelItem(this.span, TLI_STRUCT_DECL, this.getID());
     }
 
-    func getFieldIndex(&mut this, name: &SubStr) -> usize {
+    func getFieldIndex(&this, name: &SubStr) -> usize {
         return this.context.getFieldIndex(name);
     }
-    func getFieldOffset(&mut this, name: &SubStr) -> usize {
-        mut offset: usize = 0;
-        mut _idc: usize = 0;
-        this.getFieldOffsetAndSize(this.getFieldIndex(name), &mut offset, &mut _idc);
+    func getFieldOffset(&this, name: &SubStr) -> usize {
+        let offset: usize = 0;
+        let _idc: usize = 0;
+        this.getFieldOffsetAndSize(this.getFieldIndex(name), &offset, &_idc);
         return offset;
     }
-    func getFieldOffsetAndSize(&mut this, index: usize, offset: &mut usize, size: &mut usize) {
+    func getFieldOffsetAndSize(&this, index: usize, offset: &usize, size: &usize) {
         trace("ParsedStructDecl.getFieldOffsetAndSize");
-        mut o: usize = 0;
-        for (mut i: usize = 0; i < this.context.fieldLength; i = i + 1) {
+        let o: usize = 0;
+        for (let i: usize = 0; i < this.context.fieldLength; i = i + 1) {
             let field: usize = this.context.getFieldTypeAtIndex(i);
-            let f1: &mut ParsedTypeNode = typeNodes.at(field);
-            let f: &mut Type = types.at(f1.typeState.getType());
-            mut s: usize = f.getSize();
+            let f1: &ParsedTypeNode = typeNodes.at(field);
+            let f: &Type = types.at(f1.typeState.getType());
+            let s: usize = f.getSize();
             s = nextMultipleOf(s, f.getAlignment());
             if (i == index) {
                 *offset = o;
@@ -243,7 +239,7 @@ struct ParsedStructDecl {
     }
 }
 
-func newParsedStructDecl(parent: usize, span: Span, name: Token) -> &mut ParsedStructDecl {
+func newParsedStructDecl(parent: usize, span: Span, name: Token) -> &ParsedStructDecl {
     trace("newParsedStructDecl");
     structDecls.push(ParsedStructDecl {
         parentModule: parent,
@@ -264,18 +260,18 @@ struct ParsedMethod {
     body: usize;
     typeState: TCState;
 
-    func getID(&mut this) -> usize {
+    func getID(&this) -> usize {
         trace("ParsedMethod.getID");
         return methods.indexOf(this);
     }
 
-    func getMangledName(&mut this) -> String {
+    func getMangledName(&this) -> String {
         trace("ParsedMethod.getMangledName");
         assert_with_msg(this.typeState.isSuccess(), "Mangling can only be done after type checks");
         return mangleFunctionName(
             this.parentID,
             &this.name,
-            &mut this.params,
+            &this.params,
             this.retTypeID,
             true,  // isMethod
             false, // isComptime,
@@ -284,7 +280,7 @@ struct ParsedMethod {
     }
 }
 
-func newParsedMethod(parentID: usize, name: Token, mut params: ParamContext, retType: &mut ParsedTypeNode, body: usize) -> &mut ParsedMethod {
+func newParsedMethod(parentID: usize, name: Token, params: ParamContext, retType: &ParsedTypeNode, body: usize) -> &ParsedMethod {
     methods.push(ParsedMethod {
         parentID: parentID,
         name: name,
@@ -308,18 +304,18 @@ struct ParsedFuncDecl {
     isExtern: bool;
     typeState: TCState;
 
-    func getID(&mut this) -> usize {
+    func getID(&this) -> usize {
         trace("ParsedFuncDecl.getID");
         return funcDecls.indexOf(this);
     }
 
-    func getMangledName(&mut this) -> String {
+    func getMangledName(&this) -> String {
         trace("ParsedFuncDecl.getMangledName");
         assert_with_msg(this.typeState.isSuccess(), "Mangling can only be done after type checks");
         return mangleFunctionName(
             this.parentID,
             &this.name,
-            &mut this.params,
+            &this.params,
             this.retTypeID,
             false, // isMethod
             this.isComptime,
@@ -327,13 +323,13 @@ struct ParsedFuncDecl {
         );
     }
 
-    func asTLI(&mut this) -> &mut ParsedTopLevelItem {
+    func asTLI(&this) -> &ParsedTopLevelItem {
         trace("ParsedFuncDecl.asTLI");
         return newParsedTopLevelItem(this.span, TLI_FUNC_DECL, this.getID());
     }
 }
 
-func newParsedFuncDecl(parentID: usize, span: Span, name: Token, params: ParamContext, retType: &mut ParsedTypeNode, body: usize, isExtern: bool) -> &mut ParsedFuncDecl {
+func newParsedFuncDecl(parentID: usize, span: Span, name: Token, params: ParamContext, retType: &ParsedTypeNode, body: usize, isExtern: bool) -> &ParsedFuncDecl {
     funcDecls.push(ParsedFuncDecl {
         parentID: parentID,
         name: name,
@@ -350,40 +346,36 @@ func newParsedFuncDecl(parentID: usize, span: Span, name: Token, params: ParamCo
 
 struct ParsedBlock {
     span: Span;
-    stmtList: &mut usize;
+    stmtList: &usize;
     stmtLength: usize;
     stmtCapacity: usize;
     typeState: TCState;
 
-    func getID(&mut this) -> usize {
+    func getID(&this) -> usize {
         trace("ParsedBlock.getID");
         return blocks.indexOf(this);
     }
-    func addStmt(&mut this, stmt: &mut ParsedStmt) {
+    func addStmt(&this, stmt: &ParsedStmt) {
         trace("ParsedBlock.addStmt");
-        if (this.stmtLength >= this.stmtCapacity) unsafe {
-            mut newCap: usize = this.stmtCapacity * 2;
+        if (this.stmtLength >= this.stmtCapacity) {
+            let newCap: usize = this.stmtCapacity * 2;
             if (newCap == 0) newCap = 1;
             this.stmtList = realloc(this.stmtList, newCap * sizeof usize);
             assert_with_msg(this.stmtList != null, "Could not resize stmt list");
             this.stmtCapacity = newCap;
         }
-        unsafe {
-            *(this.stmtList + this.stmtLength * sizeof usize) = stmt.getID();
-            this.stmtLength = this.stmtLength + 1;
-        }
+        *(this.stmtList + this.stmtLength * sizeof usize) = stmt.getID();
+        this.stmtLength = this.stmtLength + 1;
     }
 
-    func getStmtAtIndex(&mut this, index: usize) -> usize {
+    func getStmtAtIndex(&this, index: usize) -> usize {
         trace("ParsedBlock.getStmtAtIndex");
         assert_with_msg(index < this.stmtLength, "Out of bounds access in ParsedBlock.getStmtAtIndex");
-        unsafe {
-            return *(this.stmtList + index * sizeof usize);
-        }
+        return *(this.stmtList + index * sizeof usize);
     }
 }
 
-func newParsedBlock() -> &mut ParsedBlock {
+func newParsedBlock() -> &ParsedBlock {
     blocks.push(ParsedBlock {});
     return blocks.last();
 }
@@ -410,29 +402,29 @@ struct ParsedStmt {
     ifContext: IfContext;
     typeState: TCState;
 
-    func getID(&mut this) -> usize {
+    func getID(&this) -> usize {
         trace("ParsedStmt.getID");
         return stmts.indexOf(this);
     }
 
-    func asTLI(&mut this) -> &mut ParsedTopLevelItem {
+    func asTLI(&this) -> &ParsedTopLevelItem {
         trace("ParsedStmt.asTLI");
         if (this.kind == STMT_VAR_DECL) {
             return newParsedTopLevelItem(this.span, TLI_VAR_DECL, this.getID());
         } else {
             todo_with_msg("Can't convert stmt to tli");
-            unsafe { return null; }
+            return null;
         }
     }
 
-    func getMangledName(&mut this) -> String {
+    func getMangledName(&this) -> String {
         assert_with_msg(this.kind == STMT_VAR_DECL, "Only variable declarations can get their names mangled");
         assert_with_msg(this.block < NODE_ID_OFFSET, "Only global variable declarations can get their names mangled");
         return mangleVariableName(this.block, &this.varDeclContext.name);
     }
 }
 
-func newParsedStmt(span: Span, kind: usize) -> &mut ParsedStmt {
+func newParsedStmt(span: Span, kind: usize) -> &ParsedStmt {
     trace("newParsedStmt");
     stmts.push(ParsedStmt {
         span: span,
@@ -464,13 +456,11 @@ comptime PARSED_TYPE_ARRAY: usize = 18;
 comptime PARSED_TYPE_F32: usize = 19;
 comptime PARSED_TYPE_F64: usize = 20;
 comptime PARSED_TYPE_BUILTIN: usize = 21;
-comptime func BUILD_A_TYPE(s: &char) -> SubStr {
-    unsafe {
-        return SubStr {
-            start: s,
-            len: comptimeStrlen(s)
-        };
-    }
+func BUILD_A_TYPE(s: &char) -> SubStr {
+    return SubStr {
+        start: s,
+        len: comptimeStrlen(s)
+    };
 }
 
 comptime ANY: SubStr = BUILD_A_TYPE("Any");
@@ -512,13 +502,13 @@ struct ParsedTypeNode {
     nameTkn: Token;
     typeState: TCState;
 
-    func getID(&mut this) -> usize {
+    func getID(&this) -> usize {
         trace("ParsedTypeNode.getID");
         return typeNodes.indexOf(this);
     }
 }
 
-func newParsedTypeNode(span: Span, kind: usize) -> &mut ParsedTypeNode {
+func newParsedTypeNode(span: Span, kind: usize) -> &ParsedTypeNode {
     trace("newParsedTypeNode");
     typeNodes.push(ParsedTypeNode {
         span: span,
@@ -527,9 +517,9 @@ func newParsedTypeNode(span: Span, kind: usize) -> &mut ParsedTypeNode {
     return typeNodes.last();
 }
 
-func newBuiltinTypeDecl(span: Span, kind: usize) -> &mut ParsedTypeNode {
+func newBuiltinTypeDecl(span: Span, kind: usize) -> &ParsedTypeNode {
     trace("newBuiltinTypeDecl");
-    let t: &mut ParsedTypeNode = typeNodes.at(kind);
+    let t: &ParsedTypeNode = typeNodes.at(kind);
     (*t).span = span;
     (*t).kind = PARSED_TYPE_BUILTIN;
     return t;
@@ -576,19 +566,19 @@ struct ParsedExpr {
     lhs: usize;
     rhs: usize;
     typeState: TCState;
-    func getID(&mut this) -> usize {
+    func getID(&this) -> usize {
         trace("ParsedExpr.getID");
         return exprs.indexOf(this);
     }
 
-    func intoPointer(&mut this) -> usize {
-        let unary: &mut ParsedExpr = newParsedExpr(this.span, EXPR_UNARY);
+    func intoPointer(&this) -> usize {
+        let unary: &ParsedExpr = newParsedExpr(this.span, EXPR_UNARY);
         (*unary).op = UNARY_REF;
         (*unary).lhs = this.getID();
         return unary.getID();
     }
 
-    func isLValue(&mut this) -> bool {
+    func isLValue(&this) -> bool {
         if (this.kind == EXPR_UNARY) {
             return this.op == UNARY_DEREF;
         } else if (this.kind == EXPR_BINARY) {
@@ -602,13 +592,13 @@ struct ParsedExpr {
         }
     }
 
-    func isBlank(&mut this) -> bool {
+    func isBlank(&this) -> bool {
         return this.kind == EXPR_BLANK;
     }
-    func isIdentifier(&mut this) -> bool {
+    func isIdentifier(&this) -> bool {
         return this.kind == EXPR_NAME;
     }
-    func isLiteral(&mut this) -> bool {
+    func isLiteral(&this) -> bool {
         return this.kind == EXPR_INT_LIT
             || this.kind == EXPR_STRING_LIT
             || this.kind == EXPR_CHAR_LIT
@@ -618,20 +608,20 @@ struct ParsedExpr {
             || this.kind == EXPR_FALSE;
     }
 
-    func isUnary(&mut this) -> bool {
+    func isUnary(&this) -> bool {
         return this.kind == EXPR_UNARY;
     }
 
-    func isCall(&mut this) -> bool {
+    func isCall(&this) -> bool {
         return this.kind == EXPR_CALL;
     }
 
-    func isAssignment(&mut this) -> bool {
+    func isAssignment(&this) -> bool {
         if (this.kind != EXPR_BINARY) return false;
         return this.op == BIN_ASSIGN;
     }
 
-    func isArithmetic(&mut this) -> bool {
+    func isArithmetic(&this) -> bool {
         if (this.kind != EXPR_BINARY) return false;
         return this.op == BIN_PLUS
             || this.op == BIN_SUB
@@ -640,7 +630,7 @@ struct ParsedExpr {
             || this.op == BIN_MOD;
     }
 
-    func isComparison(&mut this) -> bool {
+    func isComparison(&this) -> bool {
         if (this.kind != EXPR_BINARY) return false;
         return this.op == BIN_CMP_GTE
             || this.op == BIN_CMP_GT
@@ -650,13 +640,13 @@ struct ParsedExpr {
             || this.op == BIN_CMP_NEQ;
     }
 
-    func isLogical(&mut this) -> bool {
+    func isLogical(&this) -> bool {
         if (this.kind != EXPR_BINARY) return false;
         return this.op == BIN_LAND
             || this.op == BIN_LOR;
     }
 
-    func isBitwise(&mut this) -> bool {
+    func isBitwise(&this) -> bool {
         if (this.kind != EXPR_BINARY) return false;
         return this.op == BIN_BAND
             || this.op == BIN_BOR
@@ -709,7 +699,7 @@ func binOpFromKind(kind: usize) -> usize {
     else if (kind == TOKEN_AMPERSAND_SINGLE) return BIN_BAND;
     else if (kind == TOKEN_AMPERSAND_DOUBLE) return BIN_LAND;
     else if (kind == TOKEN_CARET) return BIN_BXOR;
-    else unsafe {
+    else {
         printf("%llu\n", kind);
         todo_with_msg("binOpFromKind");
     }
@@ -755,7 +745,7 @@ func unaryOpFromKind(kind: usize) -> usize {
     return 0;
 }
 
-func newParsedExpr(span: Span, kind: usize) -> &mut ParsedExpr {
+func newParsedExpr(span: Span, kind: usize) -> &ParsedExpr {
     trace("newParsedExpr");
     exprs.push(ParsedExpr {
         kind: kind,

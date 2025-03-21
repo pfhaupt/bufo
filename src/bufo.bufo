@@ -13,23 +13,21 @@ import "backend/interp.bufo";
 import "backend/codegen_llvm.bufo";
 
 func getArg(argv: &&char, i: usize) -> &char {
-    unsafe {
-        return *(argv + i * sizeof &char);
-    }
+    return *(argv + i * sizeof &char);
 }
 
-unsafe func main(argc: i32, argv: &&char) -> i32 {
-    for (mut i: usize = 0; i < PARSED_TYPE_BUILTIN; i = i + 1) {
+func main(argc: i32, argv: &&char) -> i32 {
+    for (let i: usize = 0; i < PARSED_TYPE_BUILTIN; i = i + 1) {
         typeNodes.push(ParsedTypeNode {
             span: blank,
             kind: PARSED_TYPE_BUILTIN,
         });
     }
-    for (mut i: usize = 0; i < TYPE_COUNT; i = i + 1) {
+    for (let i: usize = 0; i < TYPE_COUNT; i = i + 1) {
         types.push(blank);
     }
     setupStdHandles();
-    if (argc < 3) unsafe {
+    if (argc < 3) {
         fprintf(stderr, "error: Expected input and output files.\n");
         exit(1);
     }
@@ -38,20 +36,20 @@ unsafe func main(argc: i32, argv: &&char) -> i32 {
     let _prog: &char = getArg(argv, 0);
     let file: &char = getArg(argv, 1);
     let out: &char = getArg(argv, 2);
-    mut filepath: String = newStringFromStrLit(file);
+    let filepath: String = newStringFromStrLit(file);
     filepath = filepath.toAbsolutePath();
     let fileSubStr: SubStr = filepath.asSubStr();
-    mut string: String = readFileToString(file);
+    let string: String = readFileToString(file);
     let sub: SubStr = newSubStrOfString(&string, 0, string.length);
-    mut parser: Parser = newParserFromSource(0, sub);
+    let parser: Parser = newParserFromSource(0, sub);
     parser.addImportRoot(newSubStrOfStrLit("./std/"));
-    mut project: ParsedModule = parser.parseProject(fileSubStr);
-    mut checker: TypeChecker = newTypeChecker();
-    if (!checker.typeCheckProject(&mut project)) return 1;
-    mut generator: IRGen = newIRGenerator();
-    if (!generator.generateBytecode(&mut project)) return 1;
-    mut interp: IRInterp = newIRInterpreter(&mut generator);
-    mut llvmCodegen: LLVMCodegen = newLLVMCodegen(fileSubStr, &mut generator, &mut interp);
+    let project: ParsedModule = parser.parseProject(fileSubStr);
+    let checker: TypeChecker = newTypeChecker();
+    if (!checker.typeCheckProject(&project)) return 1;
+    let generator: IRGen = newIRGenerator();
+    if (!generator.generateBytecode(&project)) return 1;
+    let interp: IRInterp = newIRInterpreter(&generator);
+    let llvmCodegen: LLVMCodegen = newLLVMCodegen(fileSubStr, &generator, &interp);
     if (!llvmCodegen.generateExecutable(newSubStrOfStrLit(out))) return 1;
     if (PRINT_DEBUG) {
         printf("modules.length       = %llu\n", modules.length);
@@ -64,14 +62,14 @@ unsafe func main(argc: i32, argv: &&char) -> i32 {
         printf("typeNodes.length     = %llu\n", typeNodes.length);
         printf("exprs.length         = %llu\n", exprs.length);
     }
-    mut s: String = newStringFromStrLit("link.exe ");
+    let s: String = newStringFromStrLit("link.exe ");
     s.pushStr(out);
     s.pushStr(".obj");
     s.pushStr(" /DEFAULTLIB:libcmt /OUT:");
     s.pushStr(out);
-    for (mut i: usize = 0; i < compilerFlags.length; i = i + 1) {
+    for (let i: usize = 0; i < compilerFlags.length; i = i + 1) {
         s.pushChar(' ');
-        let flag: &mut ParsedCompilerFlag = &mut *compilerFlags.at(i);
+        let flag: &ParsedCompilerFlag = &*compilerFlags.at(i);
         if (flag.flag.content.equals(&COMPILER_FLAG_LIBRARY)) {
             s.pushSubStr(&flag.value.content);
             s.pushStr(".lib");

@@ -2,15 +2,15 @@
 //! RUNTIME
 //! SUCCESS
 
-func a(e: &mut i32, ctr: usize) {
+func a(e: &i32, ctr: usize) {
     if (ctr == 10) return;
     a(e, ctr + 1);
     *e = 10;
 }
 
 func main(argc: i32, argv: &&char) -> i32 {
-    mut v: i32 = 0;
-    a(&mut v, 0);
+    let v: i32 = 0;
+    a(&v, 0);
     if (v != 10) return 1;
     return 0;
 }

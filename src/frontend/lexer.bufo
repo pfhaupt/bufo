@@ -5,13 +5,11 @@ import "string.bufo";
 import "../util/span.bufo";
 import "./token.bufo";
 
-comptime func BUILD_A_KEYWORD(s: &char) -> SubStr {
-    unsafe {
-        return SubStr {
-            start: s,
-            len: comptimeStrlen(s)
-        };
-    }
+func BUILD_A_KEYWORD(s: &char) -> SubStr {
+    return SubStr {
+        start: s,
+        len: comptimeStrlen(s)
+    };
 }
 comptime KEYWORD_LET: SubStr = BUILD_A_KEYWORD("let");
 comptime KEYWORD_MUT: SubStr = BUILD_A_KEYWORD("mut");
@@ -45,7 +43,7 @@ struct Lexer {
     ptr: usize;
     len: usize;
 
-    func isKeyword(&mut this, word: &SubStr) -> bool {
+    func isKeyword(&this, word: &SubStr) -> bool {
         return word.equals(&KEYWORD_LET)
             || word.equals(&KEYWORD_FUNC)
             || word.equals(&KEYWORD_MUT)
@@ -74,10 +72,10 @@ struct Lexer {
             || word.equals(&KEYWORD_COMPILER_FLAGS);
     }
 
-    func escapeCharSequence(&mut this, tmp: &mut SubStr, s: &mut String, len: &mut usize) -> char {
-        mut escaped: bool = false;
-        mut extraOffset: usize = 0;
-        mut c: char = (&*tmp).getChar(0);
+    func escapeCharSequence(&this, tmp: &SubStr, s: &String, len: &usize) -> char {
+        let escaped: bool = false;
+        let extraOffset: usize = 0;
+        let c: char = (&*tmp).getChar(0);
         if (c == '\\') {
             c = (&*tmp).getChar(1);
             if (c == 'n') {
@@ -102,7 +100,7 @@ struct Lexer {
                 let byte: char = (asHex(lower) * 16 + asHex(upper)) as char;
                 s.pushChar(byte);
                 extraOffset = 2;
-            } else unsafe {
+            } else {
                 let t: Token = newToken(this.moduleID, &newSubStr(&c, 0, 1), this.ptr + 1, TOKEN_IDENT);
                 let loc: String = t.span.toString();
                 fprintf(stderr, "%s: %s: Can't escape character `%c`.\n", loc.chars(), ERR_STR, c);
@@ -113,7 +111,7 @@ struct Lexer {
         } else {
             s.pushChar(c);
         }
-        mut s: usize = 1;
+        let s: usize = 1;
         if (escaped) {
             s = 2;
         }
@@ -123,12 +121,12 @@ struct Lexer {
         return (&*tmp).getChar(0);
     }
 
-    func advance(&mut this) -> bool {
+    func advance(&this) -> bool {
         this.ptr = this.ptr + 1;
         this.content = this.content.substring(1, this.content.len);
         return this.ptr >= this.len;
     }
-    func peek(&mut this) -> Token {
+    func peek(&this) -> Token {
         let ptr: usize = this.ptr;
         let content: SubStr = this.content;
         let len: usize = this.len;
@@ -138,14 +136,14 @@ struct Lexer {
         this.len = len;
         return tkn;
     }
-    func next(&mut this) -> Token {
+    func next(&this) -> Token {
         return this.__next(false);
     }
-    func __next(&mut this, peek: bool) -> Token {
+    func __next(&this, peek: bool) -> Token {
         if (this.ptr == this.len) {
             return newTokenEOF(this.moduleID, this.ptr);
         }
-        mut currChar: char = this.content.getChar(0);
+        let currChar: char = this.content.getChar(0);
         while (isWhitespace(currChar)) {
             if (this.advance()) {
                 return newTokenEOF(this.moduleID, this.ptr);
@@ -153,9 +151,9 @@ struct Lexer {
             currChar = this.content.getChar(0);
         }
         if (isAlphabetic(currChar) || currChar == '_') {
-            mut len: usize = 0;
-            mut tmp: SubStr = this.content;
-            mut c: char = tmp.getChar(0);
+            let len: usize = 0;
+            let tmp: SubStr = this.content;
+            let c: char = tmp.getChar(0);
             while (isNumeric(c) || isAlphabetic(c) || c == '_') {
                 len = len + 1;
                 tmp = tmp.substring(1, tmp.len);
@@ -169,8 +167,8 @@ struct Lexer {
             }
             return newToken(this.moduleID, &word, this.ptr - len, TOKEN_IDENT);
         } else if (isNumeric(currChar)) {
-            mut len: usize = 0;
-            mut tmp: SubStr = this.content;
+            let len: usize = 0;
+            let tmp: SubStr = this.content;
             while (isNumeric(tmp.getChar(0))) {
                 len = len + 1;
                 tmp = newSubStr(tmp.start, 1, tmp.len);
@@ -189,12 +187,12 @@ struct Lexer {
             if (peek) {
                 return newToken(this.moduleID, &newSubStr("\"", 0, 1), this.ptr - 1, TOKEN_STRING_LITERAL);
             }
-            mut len: usize = 0;
-            mut s: String = newString();
-            mut c: char = this.content.getChar(0);
+            let len: usize = 0;
+            let s: String = newString();
+            let c: char = this.content.getChar(0);
             while (c != '"') {
-                mut l: usize = 0;
-                c = this.escapeCharSequence(&mut this.content, &mut s, &mut l);
+                let l: usize = 0;
+                c = this.escapeCharSequence(&this.content, &s, &l);
                 this.ptr = this.ptr + l;
                 len = len + l;
             }
@@ -206,12 +204,12 @@ struct Lexer {
             if (this.content.len == 0) {
                 todo_with_msg("unbalanced \'");
             }
-            mut len: usize = 0;
-            mut s: String = newString();
-            mut c: char = this.content.getChar(0);
+            let len: usize = 0;
+            let s: String = newString();
+            let c: char = this.content.getChar(0);
             while (c != '\'') {
-                mut l: usize = 0;
-                c = this.escapeCharSequence(&mut this.content, &mut s, &mut l);
+                let l: usize = 0;
+                c = this.escapeCharSequence(&this.content, &s, &l);
                 this.ptr = this.ptr + l;
                 len = len + l;
             }
@@ -359,7 +357,7 @@ struct Lexer {
                 this.advance();
                 return newToken(this.moduleID, &newSubStr("/", 0, 1), this.ptr - 1, TOKEN_SLASH_SINGLE);
             }
-        } else unsafe {
+        } else {
             let t: Token = newToken(this.moduleID, &newSubStr(&currChar, 0, 1), this.ptr + 1, TOKEN_IDENT);
             let loc: String = t.span.toString();
             fprintf(stderr, "%s: %s: Unknown character `%c`.\n", loc.chars(), ERR_STR, currChar);

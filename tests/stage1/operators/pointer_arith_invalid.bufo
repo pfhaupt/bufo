@@ -6,13 +6,9 @@
 //! Operation `*` is not allowed in the context of pointer arithmetics.
 
 func main() -> i32 {
-    mut a: i32 = 5;
-    let b: &mut i32 = &mut a;
-    unsafe {
-        *(5 * b) = 10;
-        //  ^-- this one (OLD)
-        //^---- this one (NEW)
-    }
+    let a: i32 = 5;
+    let b: &i32 = &a;
+    *(5 * b) = 10;
     if (a != 10) return 1;
     if (a != 20) return 1;
     return 0;
