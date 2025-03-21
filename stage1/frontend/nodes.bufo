@@ -4,17 +4,23 @@ import "substr.bufo";
 import "string.bufo";
 import "../util/span.bufo";
 import "../util/lists.bufo";
+import "../util/arena.bufo";
 import "./context.bufo";
 import "./token.bufo";
 import "./lexer.bufo";
 import "../middleend/checker.bufo";
 import "../middleend/types.bufo";
 
+// Arbitrary number chosen as a magic constant for various things
+// idea: We'll never have more than that many expressions or type nodes
+//       if you ever have 10 billion expressions, please tell me how :^)
+comptime NODE_ID_OFFSET: usize = 10000000000;
+
 func mangleVariableName(
     moduleID: usize,
     name: &Token,
 ) -> String {
-    if (moduleID == 64000) {
+    if (moduleID == NODE_ID_OFFSET) {
         return name.content.toString();
     } else {
         mut mangledName: String = blank;
@@ -38,25 +44,25 @@ func mangleFunctionName(
     // Method  : StructName-Name-ParamsTypeID-.RetTypeID
     // Function: ModID     -Name-ParamsTypeID-.RetTypeID-[0|1]-[0|1]
     if (isMethod) {
-        let strukt: &mut ParsedStructDecl = getStructDeclByID(parentID);
+        let strukt: &mut ParsedStructDecl = structDecls.at(parentID);
         mangledName.pushSubStr(&strukt.name.content);
     }
     mangledName.pushSubStr(&name.content);
     for (mut i: usize = 0; i < params.paramLength; i = i + 1) {
         let name: Token = params.getNameAtIndex(i);
         let id: usize = params.getTypeAtIndex(i);
-        let typeNode: &mut ParsedTypeDecl = getTypeDeclByID(id);
+        let typeNode: &mut ParsedTypeNode = typeNodes.at(id);
         assert_with_msg(typeNode.typeState.isSuccess(), "Expected valid parameter type for mangling");
-        let typ: &mut Type = getTypeByID(typeNode.typeState.getType());
+        let typ: &mut Type = types.at(typeNode.typeState.getType());
         let _typ: String = typ.getMangledName();
         mangledName.pushString(&_typ);
         _typ.drop();
     }
     mangledName.pushChar('r');
     if (retTypeID != 0) {
-        let retNode: &mut ParsedTypeDecl = getTypeDeclByID(retTypeID);
+        let retNode: &mut ParsedTypeNode = typeNodes.at(retTypeID);
         assert_with_msg(retNode.typeState.isSuccess(), "Expected valid return type for mangling");
-        let typ: &mut Type = getTypeByID(retNode.typeState.getType());
+        let typ: &mut Type = types.at(retNode.typeState.getType());
         let _typ: String = typ.getMangledName();
         mangledName.pushString(&_typ);
         _typ.drop();
@@ -75,73 +81,20 @@ func mangleFunctionName(
     return mangledName;
 }
 
-// TODO: Refactor all nodes to use Lists instead of managing pointers and length manually
+mut modules: ParsedModuleArena = blank;
+mut topLevelItems: ParsedTopLevelItemArena = blank;
+mut structDecls: ParsedStructDeclArena = blank;
+mut funcDecls: ParsedFuncDeclArena = blank;
+mut methods: ParsedMethodArena = blank;
+mut blocks: ParsedBlockArena = blank;
+mut stmts: ParsedStmtArena = blank;
+mut typeNodes: ParsedTypeNodeArena = blank;
+mut exprs: ParsedExprArena = blank;
+mut compilerFlags: ParsedCompilerFlagArena = blank;
 
-// TODO: Dynamically allocate these arenas
-
-// NOTE: Replacing those 64000s with bigger values is not enough,
-//       other parts of the compiler also depend on that size.
-//       Better make sure to grep for 64000 and replace all occurrences.
-mut modules: [ParsedModule; 64000] = blank;
-mut moduleCount: usize = 0;
-mut topLevelItems: [ParsedTopLevelItem; 64000] = blank;
-mut tliCount: usize = 0;
-mut structs: [ParsedStructDecl; 64000] = blank;
-mut structCount: usize = 0;
-mut funcDecls: [ParsedFuncDecl; 64000] = blank;
-mut funcCount: usize = 0;
-mut methods: [ParsedMethod; 64000] = blank;
-mut methodCount: usize = 0;
-mut blocks: [ParsedBlock; 64000] = blank;
-mut blockCount: usize = 0;
-mut stmts: [ParsedStmt; 64000] = blank;
-mut stmtCount: usize = 0;
-mut typeDecls: [ParsedTypeDecl; 64000] = blank;
-mut typeDeclCount: usize = 21;
-mut exprs: [ParsedExpr; 64000] = blank;
-mut exprCount: usize = 0;
-mut compilerFlags: [ParsedCompilerFlag; 64000] = blank;
-mut compilerFlagCount: usize = 0;
-
-func getModuleByID(index: usize) -> &mut ParsedModule {
-    assert_with_msg(index < moduleCount, "Out of bounds access in getModuleByID");
-    return &mut modules[index];
-}
-func getTopLevelItemByID(index: usize) -> &mut ParsedTopLevelItem {
-    assert_with_msg(index < tliCount, "Out of bounds access in getTopLevelItemByID");
-    return &mut topLevelItems[index];
-}
-func getFuncDeclByID(index: usize) -> &mut ParsedFuncDecl {
-    assert_with_msg(index < funcCount, "Out of bounds access in getFuncDeclByID");
-    return &mut funcDecls[index];
-}
-func getStructDeclByID(index: usize) -> &mut ParsedStructDecl {
-    assert_with_msg(index < structCount, "Out of bounds access in getStructDeclByID");
-    return &mut structs[index];
-}
-func getMethodByID(index: usize) -> &mut ParsedMethod {
-    assert_with_msg(index < methodCount, "Out of bounds access in getMethodByID");
-    return &mut methods[index];
-}
-func getBlockByID(index: usize) -> &mut ParsedBlock {
-    assert_with_msg(index < blockCount, "Out of bounds access in getBlockByID");
-    return &mut blocks[index];
-}
-func getStmtByID(index: usize) -> &mut ParsedStmt {
-    assert_with_msg(index < stmtCount, "Out of bounds access in getStmtByID");
-    return &mut stmts[index];
-}
-func getTypeDeclByID(index: usize) -> &mut ParsedTypeDecl {
-    assert_with_msg(index < typeDeclCount, "Out of bounds access in getTypeDeclByID");
-    return &mut typeDecls[index];
-}
-func getExprByID(index: usize) -> &mut ParsedExpr {
-    assert_with_msg(index < exprCount, "Out of bounds access in getExprByID");
-    return &mut exprs[index];
-}
 func getModuleByFilePath(path: SubStr, moduleID: &mut usize) -> bool {
-    for (mut i: usize = 0; i < moduleCount; i = i + 1) {
-        let mod: &mut ParsedModule = getModuleByID(i);
+    for (mut i: usize = 0; i < modules.length; i = i + 1) {
+        let mod: &mut ParsedModule = modules.at(i);
         if (mod.origin.equals(&path)) {
             *moduleID = i;
             return true;
@@ -169,11 +122,11 @@ func newParsedCompilerFlag(flag: Token, value: Token) -> &mut ParsedCompilerFlag
         && !f.equals(&COMPILER_FLAG_LINKER)) {
         todo_with_msg("unknown compiler_flag");
     }
-    let c: &mut ParsedCompilerFlag = &mut compilerFlags[compilerFlagCount];
-    (*c).flag = flag;
-    (*c).value = value;
-    compilerFlagCount = compilerFlagCount + 1;
-    return c;
+    compilerFlags.push(ParsedCompilerFlag {
+        flag: flag,
+        value: value,
+    });
+    return compilerFlags.last();
 }
 
 struct ParsedModule {
@@ -184,13 +137,7 @@ struct ParsedModule {
 
     func getID(&mut this) -> usize {
         trace("ParsedModule.getID");
-        unsafe {
-            let offset: usize = this - &modules[0];
-            assert_with_msg(offset % sizeof ParsedModule == 0, "Got invalid module offset");
-            let index: usize = offset / sizeof ParsedModule;
-            assert_with_msg(index < moduleCount, "Got invalid module ID");
-            return index;
-        }
+        return modules.indexOf(this);
     }
 
     func addTopLevelItem(&mut this, tli: &mut ParsedTopLevelItem) {
@@ -218,10 +165,10 @@ struct ParsedModule {
 
 func newParsedModule(origin: SubStr) -> &mut ParsedModule {
     trace("newParsedModule");
-    let m: &mut ParsedModule = &mut modules[moduleCount];
-    (*m).origin = origin;
-    moduleCount = moduleCount + 1;
-    return m;
+    modules.push(ParsedModule {
+        origin: origin,
+    });
+    return modules.last();
 }
 
 comptime TLI_INVALID: usize = 0;
@@ -237,27 +184,19 @@ struct ParsedTopLevelItem {
 
     func getID(&mut this) -> usize {
         trace("ParsedTopLevelItem.getID");
-        unsafe {
-            let offset: usize = this - &topLevelItems[0];
-            assert_with_msg(offset % sizeof ParsedTopLevelItem == 0, "Got invalid tli offset");
-            let index: usize = offset / sizeof ParsedTopLevelItem;
-            assert_with_msg(index < tliCount, "Got invalid tli ID");
-            return index;
-        }
+        return topLevelItems.indexOf(this);
     }
 }
 
 func newParsedTopLevelItem(span: Span, kind: usize, nodeID: usize) -> &mut ParsedTopLevelItem {
     trace("newParsedTopLevelItem");
-    let i: &mut ParsedTopLevelItem = &mut topLevelItems[tliCount];
-    *i = ParsedTopLevelItem {
+    topLevelItems.push(ParsedTopLevelItem {
         kind: kind,
         span: span,
         nodeID: nodeID,
         typeState: blank,
-    };
-    tliCount = tliCount + 1;
-    return i;
+    });
+    return topLevelItems.last();
 }
 
 struct ParsedStructDecl {
@@ -268,13 +207,7 @@ struct ParsedStructDecl {
     typeState: TCState;
     func getID(&mut this) -> usize {
         trace("ParsedStructDecl.getID");
-        unsafe {
-            let offset: usize = this - &structs[0];
-            assert_with_msg(offset % sizeof ParsedStructDecl == 0, "Got invalid struct offset");
-            let index: usize = offset / sizeof ParsedStructDecl;
-            assert_with_msg(index < structCount, "Got invalid struct ID");
-            return index;
-        }
+        return structDecls.indexOf(this);
     }
     func asTLI(&mut this) -> &mut ParsedTopLevelItem {
         trace("ParsedStructDecl.asTLI");
@@ -295,8 +228,8 @@ struct ParsedStructDecl {
         mut o: usize = 0;
         for (mut i: usize = 0; i < this.context.fieldLength; i = i + 1) {
             let field: usize = this.context.getFieldTypeAtIndex(i);
-            let f1: &mut ParsedTypeDecl = getTypeDeclByID(field);
-            let f: &mut Type = getTypeByID(f1.typeState.getType());
+            let f1: &mut ParsedTypeNode = typeNodes.at(field);
+            let f: &mut Type = types.at(f1.typeState.getType());
             mut s: usize = f.getSize();
             s = nextMultipleOf(s, f.getAlignment());
             if (i == index) {
@@ -312,16 +245,14 @@ struct ParsedStructDecl {
 
 func newParsedStructDecl(parent: usize, span: Span, name: Token) -> &mut ParsedStructDecl {
     trace("newParsedStructDecl");
-    let s: &mut ParsedStructDecl = &mut structs[structCount];
-    *s = ParsedStructDecl {
+    structDecls.push(ParsedStructDecl {
         parentModule: parent,
         name: name,
         span: span,
         context: blank,
         typeState: blank,
-    };
-    structCount = structCount + 1;
-    return s;
+    });
+    return structDecls.last();
 }
 
 struct ParsedMethod {
@@ -335,13 +266,7 @@ struct ParsedMethod {
 
     func getID(&mut this) -> usize {
         trace("ParsedMethod.getID");
-        unsafe {
-            let offset: usize = this - &methods[0];
-            assert_with_msg(offset % sizeof ParsedMethod == 0, "Got invalid method offset");
-            let index: usize = offset / sizeof ParsedMethod;
-            assert_with_msg(index < methodCount, "Got invalid method ID");
-            return index;
-        }
+        return methods.indexOf(this);
     }
 
     func getMangledName(&mut this) -> String {
@@ -359,10 +284,8 @@ struct ParsedMethod {
     }
 }
 
-func newParsedMethod(parentID: usize, name: Token, mut params: ParamContext, retType: &mut ParsedTypeDecl, body: usize) -> &mut ParsedMethod {
-    let m: &mut ParsedMethod = &mut methods[methodCount];
-    methodCount = methodCount + 1;
-    *m = ParsedMethod {
+func newParsedMethod(parentID: usize, name: Token, mut params: ParamContext, retType: &mut ParsedTypeNode, body: usize) -> &mut ParsedMethod {
+    methods.push(ParsedMethod {
         parentID: parentID,
         name: name,
         params: params,
@@ -370,8 +293,8 @@ func newParsedMethod(parentID: usize, name: Token, mut params: ParamContext, ret
         retTypeID: retType.getID(),
         body: body,
         isStatic: !params.hasThis(),
-    };
-    return m;
+    });
+    return methods.last();
 }
 
 struct ParsedFuncDecl {
@@ -387,13 +310,7 @@ struct ParsedFuncDecl {
 
     func getID(&mut this) -> usize {
         trace("ParsedFuncDecl.getID");
-        unsafe {
-            let offset: usize = this - &funcDecls[0];
-            assert_with_msg(offset % sizeof ParsedFuncDecl == 0, "Got invalid func offset");
-            let index: usize = offset / sizeof ParsedFuncDecl;
-            assert_with_msg(index < funcCount, "Got invalid func ID");
-            return index;
-        }
+        return funcDecls.indexOf(this);
     }
 
     func getMangledName(&mut this) -> String {
@@ -416,9 +333,8 @@ struct ParsedFuncDecl {
     }
 }
 
-func newParsedFuncDecl(parentID: usize, span: Span, name: Token, params: ParamContext, retType: &mut ParsedTypeDecl, body: usize, isExtern: bool) -> &mut ParsedFuncDecl {
-    let f: &mut ParsedFuncDecl = &mut funcDecls[funcCount];
-    *f = ParsedFuncDecl {
+func newParsedFuncDecl(parentID: usize, span: Span, name: Token, params: ParamContext, retType: &mut ParsedTypeNode, body: usize, isExtern: bool) -> &mut ParsedFuncDecl {
+    funcDecls.push(ParsedFuncDecl {
         parentID: parentID,
         name: name,
         span: span,
@@ -428,9 +344,8 @@ func newParsedFuncDecl(parentID: usize, span: Span, name: Token, params: ParamCo
         isComptime: false,
         isExtern: isExtern,
         typeState: blank,
-    };
-    funcCount = funcCount + 1;
-    return f;
+    });
+    return funcDecls.last();
 }
 
 struct ParsedBlock {
@@ -442,13 +357,7 @@ struct ParsedBlock {
 
     func getID(&mut this) -> usize {
         trace("ParsedBlock.getID");
-        unsafe {
-            let offset: usize = this - &blocks[0];
-            assert_with_msg(offset % sizeof ParsedBlock == 0, "Got invalid block offset");
-            let index: usize = offset / sizeof ParsedBlock;
-            assert_with_msg(index < blockCount, "Got invalid block ID");
-            return index;
-        }
+        return blocks.indexOf(this);
     }
     func addStmt(&mut this, stmt: &mut ParsedStmt) {
         trace("ParsedBlock.addStmt");
@@ -475,10 +384,8 @@ struct ParsedBlock {
 }
 
 func newParsedBlock() -> &mut ParsedBlock {
-    let b: &mut ParsedBlock = &mut blocks[blockCount];
-    (*b).typeState = blank;
-    blockCount = blockCount + 1;
-    return b;
+    blocks.push(ParsedBlock {});
+    return blocks.last();
 }
 
 comptime STMT_INVALID: usize = 0;
@@ -505,13 +412,7 @@ struct ParsedStmt {
 
     func getID(&mut this) -> usize {
         trace("ParsedStmt.getID");
-        unsafe {
-            let offset: usize = this - &stmts[0];
-            assert_with_msg(offset % sizeof ParsedStmt == 0, "Got invalid stmt offset");
-            let index: usize = offset / sizeof ParsedStmt;
-            assert_with_msg(index < stmtCount, "Got invalid stmt ID");
-            return index;
-        }
+        return stmts.indexOf(this);
     }
 
     func asTLI(&mut this) -> &mut ParsedTopLevelItem {
@@ -526,18 +427,18 @@ struct ParsedStmt {
 
     func getMangledName(&mut this) -> String {
         assert_with_msg(this.kind == STMT_VAR_DECL, "Only variable declarations can get their names mangled");
-        assert_with_msg(this.block < 64000, "Only global variable declarations can get their names mangled");
+        assert_with_msg(this.block < NODE_ID_OFFSET, "Only global variable declarations can get their names mangled");
         return mangleVariableName(this.block, &this.varDeclContext.name);
     }
 }
 
 func newParsedStmt(span: Span, kind: usize) -> &mut ParsedStmt {
     trace("newParsedStmt");
-    let s: &mut ParsedStmt = &mut stmts[stmtCount];
-    (*s).span = span;
-    (*s).kind = kind;
-    stmtCount = stmtCount + 1;
-    return s;
+    stmts.push(ParsedStmt {
+        span: span,
+        kind: kind,
+    });
+    return stmts.last();
 }
 
 // REVIEW: These names might need changing once we make it to the Type Checker
@@ -603,7 +504,7 @@ func getBuiltinTypeKind(name: Token) -> usize {
     else if (name.content.equals(&CHAR)) return PARSED_TYPE_CHAR;
     return PARSED_TYPE_INVALID;
 }
-struct ParsedTypeDecl {
+struct ParsedTypeNode {
     span: Span;
     kind: usize;
     underlyingID: usize;
@@ -612,29 +513,23 @@ struct ParsedTypeDecl {
     typeState: TCState;
 
     func getID(&mut this) -> usize {
-        trace("ParsedTypeDecl.getID");
-        unsafe {
-            let offset: usize = this - &typeDecls[0];
-            assert_with_msg(offset % sizeof ParsedTypeDecl == 0, "Got invalid typeDecl offset");
-            let index: usize = offset / sizeof ParsedTypeDecl;
-            assert_with_msg(index < typeDeclCount, "Got invalid typeDecl ID");
-            return index;
-        }
+        trace("ParsedTypeNode.getID");
+        return typeNodes.indexOf(this);
     }
 }
 
-func newParsedTypeDecl(span: Span, kind: usize) -> &mut ParsedTypeDecl {
-    trace("newParsedTypeDecl");
-    let t: &mut ParsedTypeDecl = &mut typeDecls[typeDeclCount];
-    (*t).span = span;
-    (*t).kind = kind;
-    typeDeclCount = typeDeclCount + 1;
-    return t;
+func newParsedTypeNode(span: Span, kind: usize) -> &mut ParsedTypeNode {
+    trace("newParsedTypeNode");
+    typeNodes.push(ParsedTypeNode {
+        span: span,
+        kind: kind,
+    });
+    return typeNodes.last();
 }
 
-func newBuiltinTypeDecl(span: Span, kind: usize) -> &mut ParsedTypeDecl {
+func newBuiltinTypeDecl(span: Span, kind: usize) -> &mut ParsedTypeNode {
     trace("newBuiltinTypeDecl");
-    let t: &mut ParsedTypeDecl = &mut typeDecls[kind];
+    let t: &mut ParsedTypeNode = typeNodes.at(kind);
     (*t).span = span;
     (*t).kind = PARSED_TYPE_BUILTIN;
     return t;
@@ -683,13 +578,7 @@ struct ParsedExpr {
     typeState: TCState;
     func getID(&mut this) -> usize {
         trace("ParsedExpr.getID");
-        unsafe {
-            let offset: usize = this - &exprs[0];
-            assert_with_msg(offset % sizeof ParsedExpr == 0, "Got invalid expr offset");
-            let index: usize = offset / sizeof ParsedExpr;
-            assert_with_msg(index < exprCount, "Got invalid expr ID");
-            return index;
-        }
+        return exprs.indexOf(this);
     }
 
     func intoPointer(&mut this) -> usize {
@@ -704,7 +593,7 @@ struct ParsedExpr {
             return this.op == UNARY_DEREF;
         } else if (this.kind == EXPR_BINARY) {
             if (this.op == BIN_DOT) {
-                return getExprByID(this.rhs).kind == EXPR_NAME;
+                return exprs.at(this.rhs).kind == EXPR_NAME;
             }
             if (this.op == BIN_INDEXED_ACCESS) return true;
             return false;
@@ -868,10 +757,10 @@ func unaryOpFromKind(kind: usize) -> usize {
 
 func newParsedExpr(span: Span, kind: usize) -> &mut ParsedExpr {
     trace("newParsedExpr");
-    let e: &mut ParsedExpr = &mut exprs[exprCount];
-    (*e).kind = kind;
-    (*e).span = span;
-    exprCount = exprCount + 1;
-    return e;
+    exprs.push(ParsedExpr {
+        kind: kind,
+        span: span,
+    });
+    return exprs.last();
 }
 

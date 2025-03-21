@@ -51,7 +51,7 @@ struct StructContext {
     methods: &mut usize;
     methodLength: usize;
     methodCapacity: usize;
-    func addField(&mut this, name: Token, typ: &mut ParsedTypeDecl) {
+    func addField(&mut this, name: Token, typ: &mut ParsedTypeNode) {
         trace("StructContext.addField");
         if (this.fieldLength >= this.fieldCapacity) unsafe {
             mut newCap: usize = this.fieldCapacity * 2;
@@ -119,9 +119,9 @@ struct StructContext {
         mut offset: usize = 0;
         for (mut i: usize = 0; i < this.fieldLength; i = i + 1) {
             let f: Token = this.getFieldNameAtIndex(i);
-            let _t: &mut ParsedTypeDecl = getTypeDeclByID(this.getFieldTypeAtIndex(i));
+            let _t: &mut ParsedTypeNode = typeNodes.at(this.getFieldTypeAtIndex(i));
             assert_with_msg(_t.typeState.isSuccess(), "Expected valid field type in getFieldOffset");
-            let t: &mut Type = getTypeByID(_t.typeState.getType());
+            let t: &mut Type = types.at(_t.typeState.getType());
             if (f.content.equals(name)) {
                 return offset;
             }
@@ -176,7 +176,7 @@ struct ParamContext {
     paramLength: usize;
     paramCapacity: usize;
     isVarArg: bool;
-    func addParameter(&mut this, name: Token, typ: &mut ParsedTypeDecl) {
+    func addParameter(&mut this, name: Token, typ: &mut ParsedTypeNode) {
         trace("ParamContext.addParameter");
         if (this.paramLength >= this.paramCapacity) unsafe {
             mut newCap: usize = this.paramCapacity * 2;

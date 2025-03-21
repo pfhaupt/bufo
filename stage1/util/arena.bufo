@@ -1,0 +1,525 @@
+import "prelude.bufo";
+import "libc.bufo";
+import "./span.bufo";
+import "../frontend/nodes.bufo";
+import "../middleend/types.bufo";
+
+struct ArenaBlock {
+    elements: Any;
+    length: usize;
+    capacity: usize;
+    elemSize: usize;
+    next: &mut ArenaBlock;
+
+    unsafe func push(&mut this, elem: Any, newCap: usize) {
+        trace("ArenaBlock.push");
+        if (this.next != null) {
+            this.next.push(elem, newCap);
+            return;
+        } else if (this.length == this.capacity) {
+            this.next = allocateBlock(newCap, this.elemSize);
+            this.next.push(elem, newCap);
+            return;
+        }
+        assert(this.length < this.capacity);
+        memcpy((this.elements as &usize) + this.length * this.elemSize, elem, this.elemSize);
+        this.length = this.length + 1;
+    }
+    unsafe func at(&mut this, index: usize) -> Any {
+        trace("ArenaBlock.at");
+        if (index >= this.capacity) {
+            assert_with_msg(this.next != null, "Out of bounds access in ArenaBlock");
+            return this.next.at(index - this.capacity);
+        }
+        assert_with_msg(index < this.length, "Out of bounds access in ArenaBlock");
+        return (this.elements as &usize) + index * this.elemSize;
+    }
+    unsafe func last(&mut this) -> Any {
+        trace("ArenaBlock.last");
+        assert_with_msg(this.length > 0, "ArenaBlock.last() called on empty Arena");
+        assert_with_msg(this.next == null, "ArenaBlock.last() called on block in the middle of a chain");
+        return this.at(this.length - 1);
+    }
+    unsafe func indexOf(&mut this, elem: Any) -> usize {
+        if (this.elements <= elem && (elem as usize) <= (this.elements as usize) + this.capacity * this.elemSize) {
+            let index: usize = ((elem as usize) - (this.elements as usize)) / this.elemSize;
+            assert_with_msg(index < this.length, "ArenaBlock.indexOf() does not contain the element");
+            return index;
+        } else {
+            assert_with_msg(this.next != null, "ArenaBlock.indexOf() does not contain the element");
+            return this.capacity + this.next.indexOf(elem);
+        }
+    }
+}
+
+comptime ARENA_SIZE_SMALL: usize = 16;
+comptime ARENA_SIZE_MEDIUM: usize = 128;
+comptime ARENA_SIZE_LARGE: usize = 1024;
+comptime ARENA_SIZE_HUGE: usize = 8192;
+unsafe func allocateBlock(cap: usize, size: usize) -> &mut ArenaBlock {
+    let mem: Any = calloc(1, sizeof ArenaBlock);
+    assert_with_msg(mem != null, "Could not allocate ArenaBlock instance");
+    let elements: Any = calloc(cap, size);
+    assert_with_msg(elements != null, "Could not allocate ArenaBlock elements");
+    let block: &mut ArenaBlock = &mut *mem;
+    *block = ArenaBlock {
+        elements: elements,
+        length: 0,
+        capacity: cap,
+        next: null,
+        elemSize: size,
+    };
+    return block;
+}
+
+struct ParsedCompilerFlagArena {
+    start: &mut ArenaBlock;
+    end: &mut ArenaBlock;
+    length: usize;
+
+    func push(&mut this, elem: ParsedCompilerFlag) {
+        trace("ParsedCompilerFlagArena.push");
+        unsafe {
+            if (this.start == null) {
+                this.start = allocateBlock(ARENA_SIZE_SMALL, sizeof ParsedCompilerFlag);
+                assert(this.end == null);
+                this.end = this.start;
+            }
+            this.end.push(&elem, ARENA_SIZE_SMALL);
+            if (this.end.next != null) this.end = this.end.next;
+            this.length = this.length + 1;
+        }
+    }
+    func at(&mut this, index: usize) -> &mut ParsedCompilerFlag {
+        trace("ParsedCompilerFlagArena.at");
+        unsafe {
+            assert_with_msg(this.start != null, "ParsedCompilerFlagArena.at() called on empty Arena");
+            return this.start.at(index) as &mut ParsedCompilerFlag;
+        }
+    }
+    func last(&mut this) -> &mut ParsedCompilerFlag {
+        trace("ParsedCompilerFlagArena.last");
+        unsafe {
+            assert_with_msg(this.end != null, "ParsedCompilerFlagArena.last() called on empty Arena");
+            return this.end.last() as &mut ParsedCompilerFlag;
+        }
+    }
+    func indexOf(&mut this, elem: &mut ParsedCompilerFlag) -> usize {
+        trace("ParsedCompilerFlagArena.indexOf");
+        unsafe {
+            assert_with_msg(this.start != null, "ParsedCompilerFlagArena.indexOf() called on empty Arena");
+            return this.start.indexOf(elem);
+        }
+    }
+}
+
+struct ParsedModuleArena {
+    start: &mut ArenaBlock;
+    end: &mut ArenaBlock;
+    length: usize;
+
+    func push(&mut this, elem: ParsedModule) {
+        trace("ParsedModuleArena.push");
+        unsafe {
+            if (this.start == null) {
+                this.start = allocateBlock(ARENA_SIZE_MEDIUM, sizeof ParsedModule);
+                assert(this.end == null);
+                this.end = this.start;
+            }
+            this.end.push(&elem, ARENA_SIZE_MEDIUM);
+            if (this.end.next != null) this.end = this.end.next;
+            this.length = this.length + 1;
+        }
+    }
+    func at(&mut this, index: usize) -> &mut ParsedModule {
+        trace("ParsedModuleArena.at");
+        unsafe {
+            assert_with_msg(this.start != null, "ParsedModuleArena.at() called on empty Arena");
+            return this.start.at(index) as &mut ParsedModule;
+        }
+    }
+    func last(&mut this) -> &mut ParsedModule {
+        trace("ParsedModuleArena.last");
+        unsafe {
+            assert_with_msg(this.end != null, "ParsedModuleArena.last() called on empty Arena");
+            return this.end.last() as &mut ParsedModule;
+        }
+    }
+    func indexOf(&mut this, elem: &mut ParsedModule) -> usize {
+        trace("ParsedModuleArena.indexOf");
+        unsafe {
+            assert_with_msg(this.start != null, "ParsedModuleArena.indexOf() called on empty Arena");
+            return this.start.indexOf(elem);
+        }
+    }
+}
+
+struct ParsedTopLevelItemArena {
+    start: &mut ArenaBlock;
+    end: &mut ArenaBlock;
+    length: usize;
+
+    func push(&mut this, elem: ParsedTopLevelItem) {
+        trace("ParsedTopLevelItemArena.push");
+        unsafe {
+            if (this.start == null) {
+                this.start = allocateBlock(ARENA_SIZE_MEDIUM, sizeof ParsedTopLevelItem);
+                assert(this.end == null);
+                this.end = this.start;
+            }
+            this.end.push(&elem, ARENA_SIZE_MEDIUM);
+            if (this.end.next != null) this.end = this.end.next;
+            this.length = this.length + 1;
+        }
+    }
+    func at(&mut this, index: usize) -> &mut ParsedTopLevelItem {
+        trace("ParsedTopLevelItemArena.at");
+        unsafe {
+            assert_with_msg(this.start != null, "ParsedTopLevelItemArena.at() called on empty Arena");
+            return this.start.at(index) as &mut ParsedTopLevelItem;
+        }
+    }
+    func last(&mut this) -> &mut ParsedTopLevelItem {
+        trace("ParsedTopLevelItemArena.last");
+        unsafe {
+            assert_with_msg(this.end != null, "ParsedTopLevelItemArena.last() called on empty Arena");
+            return this.end.last() as &mut ParsedTopLevelItem;
+        }
+    }
+    func indexOf(&mut this, elem: &mut ParsedTopLevelItem) -> usize {
+        trace("ParsedTopLevelItemArena.indexOf");
+        unsafe {
+            assert_with_msg(this.start != null, "ParsedTopLevelItemArena.indexOf() called on empty Arena");
+            return this.start.indexOf(elem);
+        }
+    }
+}
+
+struct ParsedStructDeclArena {
+    start: &mut ArenaBlock;
+    end: &mut ArenaBlock;
+    length: usize;
+
+    func push(&mut this, elem: ParsedStructDecl) {
+        trace("ParsedStructDeclArena.push");
+        unsafe {
+            if (this.start == null) {
+                this.start = allocateBlock(ARENA_SIZE_SMALL, sizeof ParsedStructDecl);
+                assert(this.end == null);
+                this.end = this.start;
+            }
+            this.end.push(&elem, ARENA_SIZE_SMALL);
+            if (this.end.next != null) this.end = this.end.next;
+            this.length = this.length + 1;
+        }
+    }
+    func at(&mut this, index: usize) -> &mut ParsedStructDecl {
+        trace("ParsedStructDeclArena.at");
+        unsafe {
+            assert_with_msg(this.start != null, "ParsedStructDeclArena.at() called on empty Arena");
+            return this.start.at(index) as &mut ParsedStructDecl;
+        }
+    }
+    func last(&mut this) -> &mut ParsedStructDecl {
+        trace("ParsedStructDeclArena.last");
+        unsafe {
+            assert_with_msg(this.end != null, "ParsedStructDeclArena.last() called on empty Arena");
+            return this.end.last() as &mut ParsedStructDecl;
+        }
+    }
+    func indexOf(&mut this, elem: &mut ParsedStructDecl) -> usize {
+        trace("ParsedStructDeclArena.indexOf");
+        unsafe {
+            assert_with_msg(this.start != null, "ParsedStructDeclArena.indexOf() called on empty Arena");
+            return this.start.indexOf(elem);
+        }
+    }
+}
+
+struct ParsedFuncDeclArena {
+    start: &mut ArenaBlock;
+    end: &mut ArenaBlock;
+    length: usize;
+
+    func push(&mut this, elem: ParsedFuncDecl) {
+        trace("ParsedFuncDeclArena.push");
+        unsafe {
+            if (this.start == null) {
+                this.start = allocateBlock(ARENA_SIZE_SMALL, sizeof ParsedFuncDecl);
+                assert(this.end == null);
+                this.end = this.start;
+            }
+            this.end.push(&elem, ARENA_SIZE_SMALL);
+            if (this.end.next != null) this.end = this.end.next;
+            this.length = this.length + 1;
+        }
+    }
+    func at(&mut this, index: usize) -> &mut ParsedFuncDecl {
+        trace("ParsedFuncDeclArena.at");
+        unsafe {
+            assert_with_msg(this.start != null, "ParsedFuncDeclArena.at() called on empty Arena");
+            return this.start.at(index) as &mut ParsedFuncDecl;
+        }
+    }
+    func last(&mut this) -> &mut ParsedFuncDecl {
+        trace("ParsedFuncDeclArena.last");
+        unsafe {
+            assert_with_msg(this.end != null, "ParsedFuncDeclArena.last() called on empty Arena");
+            return this.end.last() as &mut ParsedFuncDecl;
+        }
+    }
+    func indexOf(&mut this, elem: &mut ParsedFuncDecl) -> usize {
+        trace("ParsedFuncDeclArena.indexOf");
+        unsafe {
+            assert_with_msg(this.start != null, "ParsedFuncDeclArena.indexOf() called on empty Arena");
+            return this.start.indexOf(elem);
+        }
+    }
+}
+
+struct ParsedMethodArena {
+    start: &mut ArenaBlock;
+    end: &mut ArenaBlock;
+    length: usize;
+
+    func push(&mut this, elem: ParsedMethod) {
+        trace("ParsedMethodArena.push");
+        unsafe {
+            if (this.start == null) {
+                this.start = allocateBlock(ARENA_SIZE_SMALL, sizeof ParsedMethod);
+                assert(this.end == null);
+                this.end = this.start;
+            }
+            this.end.push(&elem, ARENA_SIZE_SMALL);
+            if (this.end.next != null) this.end = this.end.next;
+            this.length = this.length + 1;
+        }
+    }
+    func at(&mut this, index: usize) -> &mut ParsedMethod {
+        trace("ParsedMethodArena.at");
+        unsafe {
+            assert_with_msg(this.start != null, "ParsedMethodArena.at() called on empty Arena");
+            return this.start.at(index) as &mut ParsedMethod;
+        }
+    }
+    func last(&mut this) -> &mut ParsedMethod {
+        trace("ParsedMethodArena.last");
+        unsafe {
+            assert_with_msg(this.end != null, "ParsedMethodArena.last() called on empty Arena");
+            return this.end.last() as &mut ParsedMethod;
+        }
+    }
+    func indexOf(&mut this, elem: &mut ParsedMethod) -> usize {
+        trace("ParsedMethodArena.indexOf");
+        unsafe {
+            assert_with_msg(this.start != null, "ParsedMethodArena.indexOf() called on empty Arena");
+            return this.start.indexOf(elem);
+        }
+    }
+}
+
+struct ParsedBlockArena {
+    start: &mut ArenaBlock;
+    end: &mut ArenaBlock;
+    length: usize;
+
+    func push(&mut this, elem: ParsedBlock) {
+        trace("ParsedBlockArena.push");
+        unsafe {
+            if (this.start == null) {
+                this.start = allocateBlock(ARENA_SIZE_MEDIUM, sizeof ParsedBlock);
+                assert(this.end == null);
+                this.end = this.start;
+            }
+            this.end.push(&elem, ARENA_SIZE_MEDIUM);
+            if (this.end.next != null) this.end = this.end.next;
+            this.length = this.length + 1;
+        }
+    }
+    func at(&mut this, index: usize) -> &mut ParsedBlock {
+        trace("ParsedBlockArena.at");
+        unsafe {
+            assert_with_msg(this.start != null, "ParsedBlockArena.at() called on empty Arena");
+            return this.start.at(index) as &mut ParsedBlock;
+        }
+    }
+    func last(&mut this) -> &mut ParsedBlock {
+        trace("ParsedBlockArena.last");
+        unsafe {
+            assert_with_msg(this.end != null, "ParsedBlockArena.last() called on empty Arena");
+            return this.end.last() as &mut ParsedBlock;
+        }
+    }
+    func indexOf(&mut this, elem: &mut ParsedBlock) -> usize {
+        trace("ParsedBlockArena.indexOf");
+        unsafe {
+            assert_with_msg(this.start != null, "ParsedBlockArena.indexOf() called on empty Arena");
+            return this.start.indexOf(elem);
+        }
+    }
+}
+
+struct ParsedStmtArena {
+    start: &mut ArenaBlock;
+    end: &mut ArenaBlock;
+    length: usize;
+
+    func push(&mut this, elem: ParsedStmt) {
+        trace("ParsedStmtArena.push");
+        unsafe {
+            if (this.start == null) {
+                this.start = allocateBlock(ARENA_SIZE_LARGE, sizeof ParsedStmt);
+                assert(this.end == null);
+                this.end = this.start;
+            }
+            this.end.push(&elem, ARENA_SIZE_LARGE);
+            if (this.end.next != null) this.end = this.end.next;
+            this.length = this.length + 1;
+        }
+    }
+    func at(&mut this, index: usize) -> &mut ParsedStmt {
+        trace("ParsedStmtArena.at");
+        unsafe {
+            assert_with_msg(this.start != null, "ParsedStmtArena.at() called on empty Arena");
+            return this.start.at(index) as &mut ParsedStmt;
+        }
+    }
+    func last(&mut this) -> &mut ParsedStmt {
+        trace("ParsedStmtArena.last");
+        unsafe {
+            assert_with_msg(this.end != null, "ParsedStmtArena.last() called on empty Arena");
+            return this.end.last() as &mut ParsedStmt;
+        }
+    }
+    func indexOf(&mut this, elem: &mut ParsedStmt) -> usize {
+        trace("ParsedStmtArena.indexOf");
+        unsafe {
+            assert_with_msg(this.start != null, "ParsedStmtArena.indexOf() called on empty Arena");
+            return this.start.indexOf(elem);
+        }
+    }
+}
+
+struct ParsedExprArena {
+    start: &mut ArenaBlock;
+    end: &mut ArenaBlock;
+    length: usize;
+
+    func push(&mut this, elem: ParsedExpr) {
+        trace("ParsedExprArena.push");
+        unsafe {
+            if (this.start == null) {
+                this.start = allocateBlock(ARENA_SIZE_HUGE, sizeof ParsedExpr);
+                assert(this.end == null);
+                this.end = this.start;
+            }
+            this.end.push(&elem, ARENA_SIZE_HUGE);
+            if (this.end.next != null) this.end = this.end.next;
+            this.length = this.length + 1;
+        }
+    }
+    func at(&mut this, index: usize) -> &mut ParsedExpr {
+        trace("ParsedExprArena.at");
+        unsafe {
+            assert_with_msg(this.start != null, "ParsedExprArena.at() called on empty Arena");
+            return this.start.at(index) as &mut ParsedExpr;
+        }
+    }
+    func last(&mut this) -> &mut ParsedExpr {
+        trace("ParsedExprArena.last");
+        unsafe {
+            assert_with_msg(this.end != null, "ParsedExprArena.last() called on empty Arena");
+            return this.end.last() as &mut ParsedExpr;
+        }
+    }
+    func indexOf(&mut this, elem: &mut ParsedExpr) -> usize {
+        trace("ParsedExprArena.indexOf");
+        unsafe {
+            assert_with_msg(this.start != null, "ParsedExprArena.indexOf() called on empty Arena");
+            return this.start.indexOf(elem);
+        }
+    }
+}
+
+struct ParsedTypeNodeArena {
+    start: &mut ArenaBlock;
+    end: &mut ArenaBlock;
+    length: usize;
+
+    func push(&mut this, elem: ParsedTypeNode) {
+        trace("ParsedTypeNodeArena.push");
+        unsafe {
+            if (this.start == null) {
+                this.start = allocateBlock(ARENA_SIZE_HUGE, sizeof ParsedTypeNode);
+                assert(this.end == null);
+                this.end = this.start;
+            }
+            this.end.push(&elem, ARENA_SIZE_HUGE);
+            if (this.end.next != null) this.end = this.end.next;
+            this.length = this.length + 1;
+        }
+    }
+    func at(&mut this, index: usize) -> &mut ParsedTypeNode {
+        trace("ParsedTypeNodeArena.at");
+        unsafe {
+            assert_with_msg(this.start != null, "ParsedTypeNodeArena.at() called on empty Arena");
+            return this.start.at(index) as &mut ParsedTypeNode;
+        }
+    }
+    func last(&mut this) -> &mut ParsedTypeNode {
+        trace("ParsedTypeNodeArena.last");
+        unsafe {
+            assert_with_msg(this.end != null, "ParsedTypeNodeArena.last() called on empty Arena");
+            return this.end.last() as &mut ParsedTypeNode;
+        }
+    }
+    func indexOf(&mut this, elem: &mut ParsedTypeNode) -> usize {
+        trace("ParsedTypeNodeArena.indexOf");
+        unsafe {
+            assert_with_msg(this.start != null, "ParsedTypeNodeArena.indexOf() called on empty Arena");
+            return this.start.indexOf(elem);
+        }
+    }
+}
+
+struct TypeArena {
+    start: &mut ArenaBlock;
+    end: &mut ArenaBlock;
+    length: usize;
+
+    func push(&mut this, elem: Type) {
+        trace("TypeArena.push");
+        unsafe {
+            if (this.start == null) {
+                this.start = allocateBlock(ARENA_SIZE_HUGE, sizeof Type);
+                assert(this.end == null);
+                this.end = this.start;
+            }
+            this.end.push(&elem, ARENA_SIZE_HUGE);
+            if (this.end.next != null) this.end = this.end.next;
+            this.length = this.length + 1;
+        }
+    }
+    func at(&mut this, index: usize) -> &mut Type {
+        trace("TypeArena.at");
+        unsafe {
+            assert_with_msg(this.start != null, "TypeArena.at() called on empty Arena");
+            return this.start.at(index) as &mut Type;
+        }
+    }
+    func last(&mut this) -> &mut Type {
+        trace("TypeArena.last");
+        unsafe {
+            assert_with_msg(this.end != null, "TypeArena.last() called on empty Arena");
+            return this.end.last() as &mut Type;
+        }
+    }
+    func indexOf(&mut this, elem: &mut Type) -> usize {
+        trace("TypeArena.indexOf");
+        unsafe {
+            assert_with_msg(this.start != null, "TypeArena.indexOf() called on empty Arena");
+            return this.start.indexOf(elem);
+        }
+    }
+}
+

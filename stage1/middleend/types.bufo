@@ -2,6 +2,7 @@ import "prelude.bufo";
 import "libc.bufo";
 import "string.bufo";
 import "../frontend/nodes.bufo";
+import "../util/arena.bufo";
 
 func nextMultipleOf(a: usize, b: usize) -> usize {
     if (a % b == 0) return a;
@@ -27,15 +28,7 @@ comptime TYPE_F32: usize     = 15;
 comptime TYPE_F64: usize     = 16;
 comptime TYPE_COUNT: usize   = 17;
 
-mut types: [Type; 64000] = blank;
-mut typeCount: usize = TYPE_COUNT;
-
-func getTypeByID(index: usize) -> &mut Type {
-    assert_with_msg(index < typeCount, "Out of bounds access in getTypeByID");
-    let t: &mut Type = &mut types[index];
-    assert_with_msg(t.kind != TYPE_KIND_UNKNOWN, "getTypeByID() fetched unknown type");
-    return t;
-}
+mut types: TypeArena = blank;
 
 comptime TYPE_KIND_UNKNOWN: usize = 0;
 comptime TYPE_KIND_PRIMITIVE: usize = 1;
@@ -68,13 +61,13 @@ struct Type {
             else todo_with_msg("what type is this");
         } else if (this.kind == TYPE_KIND_POINTER) {
             mut s: String = newStringFromStrLit("P");
-            let _s: String = getTypeByID(this.typeIndex).getMangledName();
+            let _s: String = types.at(this.typeIndex).getMangledName();
             s.pushString(&_s);
             _s.drop();
             return s;
         } else if (this.kind == TYPE_KIND_STRUCT) {
             mut s: String = newStringFromStrLit("S");
-            let decl: &mut ParsedStructDecl = getStructDeclByID(this.typeIndex);
+            let decl: &mut ParsedStructDecl = structDecls.at(this.typeIndex);
             let hash: usize = decl.name.content.hash(2);
             if (hash < 10) s.pushNumber(0);
             s.pushNumber(hash);
@@ -90,13 +83,7 @@ struct Type {
     }
 
     func getID(&mut this) -> usize {
-        unsafe {
-            let offset: usize = this - &types[0];
-            assert_with_msg(offset % sizeof Type == 0, "Got invalid type offset");
-            let index: usize = offset / sizeof Type;
-            assert_with_msg(index < typeCount, "Got invalid type ID");
-            return index;
-        }
+        return types.indexOf(this);
     }
 
     func equals(&mut this, other: &mut Type) -> bool {
@@ -105,7 +92,7 @@ struct Type {
                 if (other.typeIndex == TYPE_ANY)
                     return true;
             if (other.kind != TYPE_KIND_POINTER) return false;
-            return getTypeByID(this.typeIndex).equals(getTypeByID(other.typeIndex));
+            return types.at(this.typeIndex).equals(types.at(other.typeIndex));
         }
         if (this.kind == TYPE_KIND_PRIMITIVE)
             if (other.kind == TYPE_KIND_POINTER)
@@ -114,7 +101,7 @@ struct Type {
         if (this.kind != other.kind)
             return false;
         if (this.kind == TYPE_KIND_ARRAY) {
-            return getTypeByID(this.typeIndex).equals(getTypeByID(other.typeIndex));
+            return types.at(this.typeIndex).equals(types.at(other.typeIndex));
         }
         if (this.kind == TYPE_KIND_PRIMITIVE
             || this.kind == TYPE_KIND_ARRAY
@@ -196,7 +183,7 @@ struct Type {
             assert_with_msg(this.typeIndex != TYPE_ANY, "Type.getUnderlyingType() is not defined for Any");
         assert_with_msg(this.isPointer() || this.isArray(), "type.getUnderlyingType() called on non-pointer non-array");
         while (underlying.isPointer() || underlying.isArray()) {
-            underlying = getTypeByID(underlying.typeIndex);
+            underlying = types.at(underlying.typeIndex);
             if (!deep) break;
         }
         return underlying;
@@ -222,16 +209,16 @@ struct Type {
             else todo_with_msg("what type is this");
         } else if (this.kind == TYPE_KIND_POINTER) {
             mut s: String = newStringFromStrLit("&");
-            let _s: String = getTypeByID(this.typeIndex).toString();
+            let _s: String = types.at(this.typeIndex).toString();
             s.pushString(&_s);
             _s.drop();
             return s;
         } else if (this.kind == TYPE_KIND_STRUCT) {
-            let decl: &mut ParsedStructDecl = getStructDeclByID(this.typeIndex);
+            let decl: &mut ParsedStructDecl = structDecls.at(this.typeIndex);
             return decl.name.content.toString();
         } else if (this.kind == TYPE_KIND_ARRAY) {
             mut s: String = newStringFromStrLit("[");
-            let _s: String = getTypeByID(this.typeIndex).toString();
+            let _s: String = types.at(this.typeIndex).toString();
             s.pushString(&_s);
             _s.drop();
             s.pushChar(';');
@@ -269,16 +256,16 @@ struct Type {
                 unreachable("Exhaustive handling of primitive types in Type.getAlignment");
             }
         } else if (this.kind == TYPE_KIND_ARRAY) {
-            let t: &mut Type = getTypeByID(this.typeIndex);
+            let t: &mut Type = types.at(this.typeIndex);
             return t.getAlignment();
         } else if (this.kind == TYPE_KIND_STRUCT) {
-            let info: &mut ParsedStructDecl = getStructDeclByID(this.typeIndex);
+            let info: &mut ParsedStructDecl = structDecls.at(this.typeIndex);
             assert_with_msg(info.typeState.isSuccess(), "Can only get alignment of valid structs");
             mut maxAlign: usize = 1;
             for (mut i: usize = 0; i < info.context.fieldLength; i = i + 1) {
-                let td: &mut ParsedTypeDecl = getTypeDeclByID(info.context.getFieldTypeAtIndex(i));
+                let td: &mut ParsedTypeNode = typeNodes.at(info.context.getFieldTypeAtIndex(i));
                 assert_with_msg(td.typeState.isSuccess(), "Expected valid field type");
-                let tt: &mut Type = getTypeByID(td.typeState.getType());
+                let tt: &mut Type = types.at(td.typeState.getType());
                 let _a: usize = tt.getAlignment();
                 if (_a > maxAlign) maxAlign = _a;
             }
@@ -310,17 +297,17 @@ struct Type {
                 unreachable("Exhaustive handling of primitive types in Type.getSize");
             }
         } else if (this.kind == TYPE_KIND_ARRAY) {
-            let t: &mut Type = getTypeByID(this.typeIndex);
+            let t: &mut Type = types.at(this.typeIndex);
             return t.getSize() * this.arraySize;
         } else if (this.kind == TYPE_KIND_STRUCT) {
-            let info: &mut ParsedStructDecl = getStructDeclByID(this.typeIndex);
+            let info: &mut ParsedStructDecl = structDecls.at(this.typeIndex);
             assert_with_msg(info.typeState.isSuccess(), "Can only get size of valid structs");
             mut size: usize = 0;
             mut maxAlign: usize = 1;
             for (mut i: usize = 0; i < info.context.fieldLength; i = i + 1) {
-                let td: &mut ParsedTypeDecl = getTypeDeclByID(info.context.getFieldTypeAtIndex(i));
+                let td: &mut ParsedTypeNode = typeNodes.at(info.context.getFieldTypeAtIndex(i));
                 assert_with_msg(td.typeState.isSuccess(), "Expected valid field type");
-                let tt: &mut Type = getTypeByID(td.typeState.getType());
+                let tt: &mut Type = types.at(td.typeState.getType());
                 let _a: usize = tt.getAlignment();
                 size = size + tt.getSize();
                 size = nextMultipleOf(size, _a);
@@ -350,16 +337,15 @@ struct Type {
 func newType(kind: usize, id: usize) -> &mut Type {
     if (kind == TYPE_KIND_PRIMITIVE) {
         assert_with_msg(id < TYPE_COUNT, "newType() attempted to use general purpose types");
-        let t: &mut Type = &mut types[id];
+        let t: &mut Type = types.at(id);
         (*t).kind = kind;
         (*t).typeIndex = id;
         return t;
     }
-    let t: &mut Type = &mut types[typeCount];
-    assert_with_msg(t.kind == TYPE_KIND_UNKNOWN, "Overwrote type");
-    (*t).kind = kind;
-    (*t).typeIndex = id;
-    typeCount = typeCount + 1;
-    return t;
+    types.push(Type {
+        kind: kind,
+        typeIndex: id,
+    });
+    return types.last();
 }
 

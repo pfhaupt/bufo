@@ -309,7 +309,7 @@ struct IRInterp {
             if (t.isArray()) {
                 todo_with_msg("InsertValue Array");
             } else if (t.isStruct()) {
-                let s: &mut ParsedStructDecl = getStructDeclByID(t.typeIndex);
+                let s: &mut ParsedStructDecl = structDecls.at(t.typeIndex);
                 mut offset: usize = 0;
                 mut fieldSize: usize = 0;
                 s.getFieldOffsetAndSize(instr.src.i, &mut offset, &mut fieldSize);
@@ -752,7 +752,7 @@ struct IRInterp {
             assert_with_msg(t.isStructPointer(), "IRInterp: GetFieldPtr got non-struct pointer");
             let u: &mut Type = t.getUnderlyingType(false);
             assert(u.isStruct());
-            let decl: &mut ParsedStructDecl = getStructDeclByID(u.typeIndex);
+            let decl: &mut ParsedStructDecl = structDecls.at(u.typeIndex);
             mut offset: usize = 0;
             mut size: usize = 0;
             decl.getFieldOffsetAndSize(instr.op1.i, &mut offset, &mut size);

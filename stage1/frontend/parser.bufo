@@ -187,7 +187,7 @@ struct Parser {
                 mut moduleID: usize = 0;
                 mut mod: &mut ParsedModule = null;
                 if (getModuleByFilePath(path.asSubStr(), &mut moduleID)) {
-                    mod = getModuleByID(moduleID);
+                    mod = modules.at(moduleID);
                 } else {
                     mod = newParsedModule(path.asSubStr());
                     moduleID = mod.getID();
@@ -226,7 +226,7 @@ struct Parser {
             if (tkn.kind == TOKEN_IDENT) {
                 this.lexer.next();
                 this.expect(TOKEN_COLON);
-                let typ: &mut ParsedTypeDecl = this.parseTypeDecl();
+                let typ: &mut ParsedTypeNode = this.parseTypeDecl();
                 structContext.addField(tkn, typ);
                 this.expect(TOKEN_SEMI_COLON);
             } else if (tkn.kind == TOKEN_KEYWORD) {
@@ -261,7 +261,7 @@ struct Parser {
         assert(tkn.content.equals(&KEYWORD_FUNC));
         let name: Token = this.expect(TOKEN_IDENT);
         let params: ParamContext = this.parseParameters(structDecl.name, true);
-        let retType: &mut ParsedTypeDecl = this.parseReturnType();
+        let retType: &mut ParsedTypeNode = this.parseReturnType();
         let body: &mut ParsedBlock = this.parseBlock();
         return newParsedMethod(structDecl.getID(), name, params, retType, body.getID());
     }
@@ -273,7 +273,7 @@ struct Parser {
         if (!isExtern) assert(tkn.content.equals(&KEYWORD_FUNC));
         let name: Token = this.expect(TOKEN_IDENT);
         let params: ParamContext = this.parseParameters(blank, false);
-        let retType: &mut ParsedTypeDecl = this.parseReturnType();
+        let retType: &mut ParsedTypeNode = this.parseReturnType();
         if (isExtern) {
             let end: Token = this.expect(TOKEN_SEMI_COLON);
             let span: Span = newSpanBetween(&tkn.span, &end.span);
@@ -285,7 +285,7 @@ struct Parser {
         }
     }
 
-    func parseReturnType(&mut this) -> &mut ParsedTypeDecl {
+    func parseReturnType(&mut this) -> &mut ParsedTypeNode {
         trace("Parser.parseReturnType");
         if (this.eat(TOKEN_ARROW)) {
             return this.parseTypeDecl();
@@ -326,7 +326,7 @@ struct Parser {
                     fprintf(stderr, "%s: %s: Unexpected type for `this` parameter.\n", loc.chars(), ERR_STR);
                     fprintf(stderr, "%s: %s: The type of `this` is always the struct the method is defined in.\n", loc.chars(), NOTE_STR);
                     loc.drop();
-                    let _type: &mut ParsedTypeDecl = this.parseTypeDecl();
+                    let _type: &mut ParsedTypeNode = this.parseTypeDecl();
                     this.syntaxError = true;
                 } else if (context.paramLength > 0) unsafe {
                     let loc: String = dis.span.toString();
@@ -334,10 +334,10 @@ struct Parser {
                     loc.drop();
                     this.syntaxError = true;
                 } else {
-                    let thisType: &mut ParsedTypeDecl = newParsedTypeDecl(maybeThis.span, PARSED_TYPE_IDENT);
+                    let thisType: &mut ParsedTypeNode = newParsedTypeNode(maybeThis.span, PARSED_TYPE_IDENT);
                     (*thisType).nameTkn = parentName;
                     if (isRef) {
-                        let ptr: &mut ParsedTypeDecl = newParsedTypeDecl(maybeThis.span, PARSED_TYPE_REF);
+                        let ptr: &mut ParsedTypeNode = newParsedTypeNode(maybeThis.span, PARSED_TYPE_REF);
                         (*ptr).underlyingID = thisType.getID();
                         context.addParameter(maybeThis, ptr);
                     } else {
@@ -347,7 +347,7 @@ struct Parser {
             } else {
                 let name: Token = this.expect(TOKEN_IDENT);
                 this.expect(TOKEN_COLON);
-                let typ: &mut ParsedTypeDecl = this.parseTypeDecl();
+                let typ: &mut ParsedTypeNode = this.parseTypeDecl();
                 context.addParameter(name, typ);
             }
             if (!this.eat(TOKEN_COMMA))
@@ -543,13 +543,13 @@ struct Parser {
         if (isGlobal) {
             (*decl).block = this.lexer.moduleID;
         } else {
-            (*decl).block = 64000;
+            (*decl).block = NODE_ID_OFFSET;
         }
         (*decl).varDeclContext = data;
         return decl;
     }
 
-    func parseTypeDecl(&mut this) -> &mut ParsedTypeDecl {
+    func parseTypeDecl(&mut this) -> &mut ParsedTypeNode {
         trace("Parser.parseTypeDecl");
         let loc: Token = this.lexer.peek();
         if (this.eat(TOKEN_AMPERSAND_DOUBLE)) {
@@ -560,11 +560,11 @@ struct Parser {
                 fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
                 loc.drop();
             }
-            let typ: &mut ParsedTypeDecl = this.parseTypeDecl();
+            let typ: &mut ParsedTypeNode = this.parseTypeDecl();
             let span: Span = newSpanBetween(&loc.span, &typ.span);
-            let ptr1: &mut ParsedTypeDecl = newParsedTypeDecl(span, PARSED_TYPE_REF);
+            let ptr1: &mut ParsedTypeNode = newParsedTypeNode(span, PARSED_TYPE_REF);
             (*ptr1).underlyingID = typ.getID();
-            let ptr: &mut ParsedTypeDecl = newParsedTypeDecl(span, PARSED_TYPE_REF);
+            let ptr: &mut ParsedTypeNode = newParsedTypeNode(span, PARSED_TYPE_REF);
             (*ptr).underlyingID = ptr1.getID();
             return ptr;
         } else if (this.eat(TOKEN_AMPERSAND_SINGLE)) {
@@ -575,19 +575,19 @@ struct Parser {
                 fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler.\n", loc.chars(), WARN_STR);
                 loc.drop();
             }
-            let typ: &mut ParsedTypeDecl = this.parseTypeDecl();
+            let typ: &mut ParsedTypeNode = this.parseTypeDecl();
             let span: Span = newSpanBetween(&loc.span, &typ.span);
-            let ptr: &mut ParsedTypeDecl = newParsedTypeDecl(span, PARSED_TYPE_REF);
+            let ptr: &mut ParsedTypeNode = newParsedTypeNode(span, PARSED_TYPE_REF);
             (*ptr).underlyingID = typ.getID();
             return ptr;
         } else if (this.eat(TOKEN_SQUARE_OPEN)) {
-            let typ: &mut ParsedTypeDecl = this.parseTypeDecl();
+            let typ: &mut ParsedTypeNode = this.parseTypeDecl();
             this.expect(TOKEN_SEMI_COLON);
             let size: Token = this.expect(TOKEN_INT_LITERAL);
             let _size: String = size.content.toString();
             let end: Token = this.expect(TOKEN_SQUARE_CLOSE);
             let span: Span = newSpanBetween(&loc.span, &end.span);
-            let arr: &mut ParsedTypeDecl = newParsedTypeDecl(span, PARSED_TYPE_ARRAY);
+            let arr: &mut ParsedTypeNode = newParsedTypeNode(span, PARSED_TYPE_ARRAY);
             (*arr).underlyingID = typ.getID();
             (*arr).arraySize = _size.toU64() as usize;
             _size.drop();
@@ -597,7 +597,7 @@ struct Parser {
             let maybeBuiltin: usize = getBuiltinTypeKind(nameTkn);
             if (maybeBuiltin == 0) {
                 // Not a builtin, must resolve later
-                let typ: &mut ParsedTypeDecl = newParsedTypeDecl(nameTkn.span, PARSED_TYPE_IDENT);
+                let typ: &mut ParsedTypeNode = newParsedTypeNode(nameTkn.span, PARSED_TYPE_IDENT);
                 (*typ).nameTkn = nameTkn;
                 return typ;
             } else {
@@ -739,7 +739,7 @@ struct Parser {
                 (*expr).origToken = kw;
                 return expr;
             } else if (kw.content.equals(&KEYWORD_SIZEOF)) {
-                let typ: &mut ParsedTypeDecl = this.parseTypeDecl();
+                let typ: &mut ParsedTypeNode = this.parseTypeDecl();
                 let span: Span = newSpanBetween(&kw.span, &typ.span);
                 let expr: &mut ParsedExpr = newParsedExpr(span, EXPR_SIZEOF);
                 (*expr).lhs = typ.getID();
@@ -777,7 +777,7 @@ struct Parser {
         let opTkn: Token = this.lexer.next();
         let op: usize = binOpFromKind(opTkn.kind);
         if (op == BIN_AS) {
-            let typ: &mut ParsedTypeDecl = this.parseTypeDecl();
+            let typ: &mut ParsedTypeNode = this.parseTypeDecl();
             let span: Span = newSpanBetween(&lhs.span, &typ.span);
             mut asop: &mut ParsedExpr = newParsedExpr(span, EXPR_AS);
             (*asop).op = op;

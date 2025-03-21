@@ -157,7 +157,7 @@ def run_test(
             return TestResult(path, STATE.SUCCESS)
 
         filename = "./{}.exe".format(path.replace(os.sep, "."))
-        output = call_cmd(["./selfhost.exe", path, filename])
+        output = call_cmd(["./bufo.exe", path, filename])
         stdout = output.stdout.decode("utf-8").split('\n')
         stderr = output.stderr.decode("utf-8").split('\n')
         if point_of_failure == "RUNTIME":
@@ -217,25 +217,12 @@ def run_test(
 
 def recompile_compiler(stage: int, trace: bool = False) -> None:
     print(f"Recompiling compiler stage {stage}...")
-    if stage == 1:
-        cargo = ["cargo", "build"]
-        cargo = cargo + ["--features=trace"] if trace else cargo
-        cmd = call_cmd(cargo)
-        if cmd.returncode != 0:
-            print("Failed to recompile compiler", file=sys.stderr)
-            print(cmd.stderr.decode("utf-8"), file=sys.stderr)
-            sys.exit(1)
-    else:
-        cmd = call_cmd(["./target/debug/bufo.exe", "./stage1/bufo_s1.bufo", "-o", "./out/bufo_s1.exe"])
-        if cmd.returncode != 0:
-            print("Failed to bootstrap compiler", file=sys.stderr)
-            print(cmd.stderr.decode("utf-8"), file=sys.stderr)
-            sys.exit(1)
-        cmd = call_cmd(["./out/bufo_s1.exe", "./stage1/bufo_s1.bufo", "selfhost.exe"])
-        if cmd.returncode != 0:
-            print("Failed to recompile compiler", file=sys.stderr)
-            print(cmd.stderr.decode("utf-8"), file=sys.stderr)
-            sys.exit(1)
+    cmd = call_cmd(["bufo.exe", "./stage1/bufo.bufo", "bufo1.exe"])
+    if cmd.returncode != 0:
+        print("Failed to recompile compiler", file=sys.stderr)
+        print(cmd.stderr.decode("utf-8"), file=sys.stderr)
+        sys.exit(1)
+    call_cmd(["mv", "bufo1.exe", "bufo.exe"])
     print("Recompilation successful")
 
 def run_all_tests(
@@ -327,11 +314,11 @@ def run_all_tests(
 
 def get_current_test_number() -> int:
     current: int = -1
-    for root, dirname, files in os.walk("./tests/selfhost/"):
+    for root, dirname, files in os.walk("./tests/bufo/"):
         for f in files:
             full = root + "/".join(dirname) + "/" + f
             full = full.replace("\\", "/")
-            full = full.removeprefix("./tests/selfhost/")
+            full = full.removeprefix("./tests/bufo/")
             full = full.split("-")[0]
             full = full.replace("/", "")
             index = int(full)
@@ -346,7 +333,7 @@ def get_prefix(index: int) -> str:
     for s in spilled:
         actual += "/"
         actual += s
-    return f"./tests/selfhost/{actual}-"
+    return f"./tests/bufo/{actual}-"
 
 def add_test_file(path: str) -> None:
     index: int = get_current_test_number()
@@ -376,9 +363,9 @@ def print_usage_and_help() -> None:
     print("  Not implemented")
 
 def recompile(trace: bool = False) -> bool:
-    selfhost = "--selfhost" in sys.argv
+    bufo = "--bufo" in sys.argv
     print("Compiling compilers...")
-    if selfhost:
+    if bufo:
         recompile_compiler(2, trace)
         return True
     else:
@@ -405,7 +392,7 @@ if __name__ == "__main__":
                 for f in sys.argv[3:]:
                     add_test_file(f)
                 exit()
-            selfhost = recompile(trace)
+            bufo = recompile(trace)
             print("Running tests...")
             no_exec = "--no-exec" in sys.argv
             exit_first_failure = "--exit-first-failure" in sys.argv

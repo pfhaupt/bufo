@@ -6,6 +6,7 @@ import "cmd.bufo";
 import "frontend/nodes.bufo";
 import "frontend/lexer.bufo";
 import "frontend/parser.bufo";
+import "middleend/types.bufo";
 import "middleend/checker.bufo";
 import "backend/irgen.bufo";
 import "backend/interp.bufo";
@@ -18,6 +19,15 @@ func getArg(argv: &&char, i: usize) -> &char {
 }
 
 unsafe func main(argc: i32, argv: &&char) -> i32 {
+    for (mut i: usize = 0; i < PARSED_TYPE_BUILTIN; i = i + 1) {
+        typeNodes.push(ParsedTypeNode {
+            span: blank,
+            kind: PARSED_TYPE_BUILTIN,
+        });
+    }
+    for (mut i: usize = 0; i < TYPE_COUNT; i = i + 1) {
+        types.push(blank);
+    }
     setupStdHandles();
     if (argc < 3) unsafe {
         fprintf(stderr, "error: Expected input and output files.\n");
@@ -44,24 +54,24 @@ unsafe func main(argc: i32, argv: &&char) -> i32 {
     mut llvmCodegen: LLVMCodegen = newLLVMCodegen(fileSubStr, &mut generator, &mut interp);
     if (!llvmCodegen.generateExecutable(newSubStrOfStrLit(out))) return 1;
     if (PRINT_DEBUG) {
-        printf("moduleCount   = %llu\n", moduleCount);
-        printf("tliCount      = %llu\n", tliCount);
-        printf("structCount   = %llu\n", structCount);
-        printf("funcCount     = %llu\n", funcCount);
-        printf("methodCount   = %llu\n", methodCount);
-        printf("blockCount    = %llu\n", blockCount);
-        printf("stmtCount     = %llu\n", stmtCount);
-        printf("typeDeclCount = %llu\n", typeDeclCount);
-        printf("exprCount     = %llu\n", exprCount);
+        printf("modules.length       = %llu\n", modules.length);
+        printf("topLevelItems.length = %llu\n", topLevelItems.length);
+        printf("structDecls.length   = %llu\n", structDecls.length);
+        printf("funcDecls.length     = %llu\n", funcDecls.length);
+        printf("methods.length       = %llu\n", methods.length);
+        printf("blocks.length        = %llu\n", blocks.length);
+        printf("stmts.length         = %llu\n", stmts.length);
+        printf("typeNodes.length     = %llu\n", typeNodes.length);
+        printf("exprs.length         = %llu\n", exprs.length);
     }
     mut s: String = newStringFromStrLit("link.exe ");
     s.pushStr(out);
     s.pushStr(".obj");
     s.pushStr(" /DEFAULTLIB:libcmt /OUT:");
     s.pushStr(out);
-    for (mut i: usize = 0; i < compilerFlagCount; i = i + 1) {
+    for (mut i: usize = 0; i < compilerFlags.length; i = i + 1) {
         s.pushChar(' ');
-        let flag: ParsedCompilerFlag = compilerFlags[i];
+        let flag: &mut ParsedCompilerFlag = &mut *compilerFlags.at(i);
         if (flag.flag.content.equals(&COMPILER_FLAG_LIBRARY)) {
             s.pushSubStr(&flag.value.content);
             s.pushStr(".lib");

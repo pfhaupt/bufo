@@ -139,29 +139,29 @@ struct LLVMCodegen {
         mut isVarArg: bool = false;
         if (irFunc.isMethod) {
             let method: &mut ParsedMethod = irFunc.getMethodNode();
-            let typeDecl: &mut ParsedTypeDecl = getTypeDeclByID(method.retTypeID);
-            retType = getTypeByID(typeDecl.typeState.getType());
+            let typeDecl: &mut ParsedTypeNode = typeNodes.at(method.retTypeID);
+            retType = types.at(typeDecl.typeState.getType());
             if (retType.getSize() > 8) {
-                retType = getTypeByID(retType.intoPointer());
+                retType = types.at(retType.intoPointer());
                 params.push(this.prepareParameter(retType));
             }
             for (mut i: usize = 0; i < method.params.paramLength; i = i + 1) {
-                let tDecl: &mut ParsedTypeDecl = getTypeDeclByID(method.params.getTypeAtIndex(i));
-                let t: &mut Type = getTypeByID(tDecl.typeState.getType());
+                let tDecl: &mut ParsedTypeNode = typeNodes.at(method.params.getTypeAtIndex(i));
+                let t: &mut Type = types.at(tDecl.typeState.getType());
                 params.push(this.prepareParameter(t));
             }
             isVarArg = method.params.isVarArg;
         } else {
             let function: &mut ParsedFuncDecl = irFunc.getFuncNode();
-            let typeDecl: &mut ParsedTypeDecl = getTypeDeclByID(function.retTypeID);
-            retType = getTypeByID(typeDecl.typeState.getType());
+            let typeDecl: &mut ParsedTypeNode = typeNodes.at(function.retTypeID);
+            retType = types.at(typeDecl.typeState.getType());
             if (retType.getSize() > 8) {
-                retType = getTypeByID(retType.intoPointer());
+                retType = types.at(retType.intoPointer());
                 params.push(this.prepareParameter(retType));
             }
             for (mut i: usize = 0; i < function.params.paramLength; i = i + 1) {
-                let tDecl: &mut ParsedTypeDecl = getTypeDeclByID(function.params.getTypeAtIndex(i));
-                let t: &mut Type = getTypeByID(tDecl.typeState.getType());
+                let tDecl: &mut ParsedTypeNode = typeNodes.at(function.params.getTypeAtIndex(i));
+                let t: &mut Type = types.at(tDecl.typeState.getType());
                 params.push(this.prepareParameter(t));
             }
             isVarArg = function.params.isVarArg;
@@ -216,7 +216,7 @@ struct LLVMCodegen {
             }
             return this.generateLLVMType(t);
         } else if (typ.getSize() > 8) {
-            return this.generateLLVMType(getTypeByID(typ.intoPointer()));
+            return this.generateLLVMType(types.at(typ.intoPointer()));
         } else {
             return this.generateLLVMType(typ);
         }
@@ -715,15 +715,15 @@ struct LLVMCodegen {
                 todo_with_msg("prim");
             }
         } else if (typ.isStruct()) {
-            let decl: &mut ParsedStructDecl = getStructDeclByID(typ.typeIndex);
+            let decl: &mut ParsedStructDecl = structDecls.at(typ.typeIndex);
             let lType: LLVMType = this.generateLLVMType(typ);
             assert_with_msg(lType.isStruct(), "Expected LLVMType to be struct for comptime struct");
             mut strukt: LLVMValue = lType.constZero();
             mut offset: usize = 0;
             mut _size: usize = 0;
             for (mut i: usize = 0; i < decl.context.fieldLength; i = i + 1) {
-                let tDecl: &mut ParsedTypeDecl = getTypeDeclByID(decl.context.getFieldTypeAtIndex(i));
-                let fType: &mut Type = getTypeByID(tDecl.typeState.getType());
+                let tDecl: &mut ParsedTypeNode = typeNodes.at(decl.context.getFieldTypeAtIndex(i));
+                let fType: &mut Type = types.at(tDecl.typeState.getType());
                 decl.getFieldOffsetAndSize(i, &mut offset, &mut _size);
                 let elemVal: LLVMValue = this.generateLLVMValueFromComptimeValue(fType, start + offset);
                 strukt = this.llvmBuilder.buildInsertValue(
@@ -776,15 +776,15 @@ struct LLVMCodegen {
             let t: LLVMType = this.llvmContext.createIntegerType(64);
             return t.intoPointerType();
         } else if (typ.isArray()) {
-            let t: LLVMType = this.generateLLVMType(getTypeByID(typ.typeIndex));
+            let t: LLVMType = this.generateLLVMType(types.at(typ.typeIndex));
             return t.intoArrayType(typ.arraySize as u32);
         } else if (typ.isStruct()) unsafe {
-            let decl: &mut ParsedStructDecl = getStructDeclByID(typ.typeIndex);
+            let decl: &mut ParsedStructDecl = structDecls.at(typ.typeIndex);
             mut fields: &mut LLVMType = malloc(decl.context.fieldLength * sizeof LLVMType);
             assert_with_msg(fields != null, "Could not allocate memory in LLVMCodegen.generateLLVMType");
             for (mut i: usize = 0; i < decl.context.fieldLength; i = i + 1) {
-                let tDecl: &mut ParsedTypeDecl = getTypeDeclByID(decl.context.getFieldTypeAtIndex(i));
-                *(fields + i * sizeof LLVMType) = this.generateLLVMType(getTypeByID(tDecl.typeState.getType()));
+                let tDecl: &mut ParsedTypeNode = typeNodes.at(decl.context.getFieldTypeAtIndex(i));
+                *(fields + i * sizeof LLVMType) = this.generateLLVMType(types.at(tDecl.typeState.getType()));
             }
             let t: LLVMType = this.llvmContext.createStructType(&*fields, decl.context.fieldLength as u32, false);
             free(fields);

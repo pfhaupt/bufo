@@ -1566,7 +1566,9 @@ impl<'flags, 'ctx, 'src, 'ast> LLVMCodegen<'flags, 'ctx, 'src, 'ast> {
                     )?;
                     Ok(result.into())
                 } else {
-                    let mode = if binary.lhs.get_type().is_signed() {
+                    let mode = if binary.lhs.get_type().is_reference() {
+                        inkwell::IntPredicate::ULT
+                    } else if binary.lhs.get_type().is_signed() {
                         inkwell::IntPredicate::SLE
                     } else {
                         inkwell::IntPredicate::ULE

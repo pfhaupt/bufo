@@ -100,7 +100,7 @@ struct Lookup {
     func getTypeLookupForType(&mut this, typ: &mut Type) -> TypeLookup {
         trace("Lookup.getTypeLookupForType");
         if (typ.isStruct()) {
-            let strukt: &mut ParsedStructDecl = getStructDeclByID(typ.typeIndex);
+            let strukt: &mut ParsedStructDecl = structDecls.at(typ.typeIndex);
             let modID: usize = strukt.parentModule;
             let s: &mut StructLookup = this.modules.at(modID).getStructByGlobalID(strukt.getID());
             return newTypeLookup(TYPE_LOOKUP_STRUCT, s);
@@ -162,7 +162,7 @@ struct ModuleLookup {
     func insertTLI(&mut this, tli: &mut ParsedTopLevelItem) {
         trace("ModuleLookup.insertTLI");
         if (tli.kind == TLI_FUNC_DECL) {
-            let fun: &mut ParsedFuncDecl = getFuncDeclByID(tli.nodeID);
+            let fun: &mut ParsedFuncDecl = funcDecls.at(tli.nodeID);
             let lookup: FunctionLookup = FunctionLookup {
                 globalID: tli.nodeID,
                 parentModule: this.globalID,
@@ -175,7 +175,7 @@ struct ModuleLookup {
             this.functions.push(lookup);
         } else if (tli.kind == TLI_IMPORT) {
             let modID: usize = tli.nodeID;
-            assert(modID < moduleCount);
+            assert(modID < modules.length);
             let lookup: ImportLookup = ImportLookup {
                 moduleID: modID
             };
@@ -184,7 +184,7 @@ struct ModuleLookup {
             }
             this.imports.push(lookup);
         } else if (tli.kind == TLI_STRUCT_DECL) {
-            let strukt: &mut ParsedStructDecl = getStructDeclByID(tli.nodeID);
+            let strukt: &mut ParsedStructDecl = structDecls.at(tli.nodeID);
             mut lookup: StructLookup = StructLookup {
                 globalID: tli.nodeID,
                 parentModule: this.globalID,
@@ -196,7 +196,7 @@ struct ModuleLookup {
             };
             for (mut i: usize = 0; i < strukt.context.methodLength; i = i + 1) {
                 let id: usize = strukt.context.getMethodAtIndex(i);
-                let method: &mut ParsedMethod = getMethodByID(id);
+                let method: &mut ParsedMethod = methods.at(id);
                 let mLookup: MethodLookup = MethodLookup {
                     globalID: id,
                     name: method.name,
@@ -212,7 +212,7 @@ struct ModuleLookup {
             }
             this.structs.push(lookup);
         } else if (tli.kind == TLI_VAR_DECL) {
-            let varDecl: &mut ParsedStmt = getStmtByID(tli.nodeID);
+            let varDecl: &mut ParsedStmt = stmts.at(tli.nodeID);
             assert(varDecl.kind == STMT_VAR_DECL);
             let lookup: VariableLookup = VariableLookup {
                 globalID: tli.nodeID,
@@ -235,14 +235,14 @@ struct ModuleLookup {
     // FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
     func containsDuplicateFunction(&mut this, function: &mut FunctionLookup, dupl: &mut usize) -> bool {
         trace("ModuleLookup.containsDuplicateFunction");
-        let name: String = getFuncDeclByID(function.globalID).getMangledName();
+        let name: String = funcDecls.at(function.globalID).getMangledName();
         mut duplicate: bool = false;
         for (mut i: usize = 0; !duplicate && i < this.functions.length; i = i + 1) {
             let f: &mut FunctionLookup = this.functions.at(i);
             // REVIEW: is FUNC_DUPLICATE_CHECK always correct, or is it better to check FUNC_READY_TO_USE
             if (f == function) continue;
             if (!f.getReadyState(FUNC_DUPLICATE_CHECK)) continue;
-            let n: String = getFuncDeclByID(f.globalID).getMangledName();
+            let n: String = funcDecls.at(f.globalID).getMangledName();
             if (name.equals(&n)) unsafe {
                 *dupl = f as usize;
                 duplicate = true;
@@ -478,14 +478,14 @@ struct StructLookup {
     // FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
     func containsDuplicateMethod(&mut this, method: &mut MethodLookup, dupl: &mut usize) -> bool {
         trace("StructLookup.containsDuplicateMethod");
-        let name: String = getMethodByID(method.globalID).getMangledName();
+        let name: String = methods.at(method.globalID).getMangledName();
         mut duplicate: bool = false;
         for (mut i: usize = 0; !duplicate && i < this.methods.length; i = i + 1) {
             let f: &mut MethodLookup = this.methods.at(i);
             // REVIEW: is METHOD_DUPLICATE_CHECK always correct, or is it better to check METHOD_READY_TO_USE
             if (f == method) continue;
             if (!f.getReadyState(METHOD_DUPLICATE_CHECK)) continue;
-            let n: String = getMethodByID(f.globalID).getMangledName();
+            let n: String = methods.at(f.globalID).getMangledName();
             if (name.equals(&n)) unsafe {
                 *dupl = f as usize;
                 duplicate = true;
@@ -621,7 +621,7 @@ struct VariableLookup {
     isComptime: bool;
 
     func isParameter(&mut this) -> bool {
-        return this.globalID >= 64000;
+        return this.globalID >= NODE_ID_OFFSET;
     }
 
     func equals(&mut this, other: &VariableLookup) -> bool {
