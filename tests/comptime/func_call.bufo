@@ -4,7 +4,7 @@
 
 import "prelude.bufo";
 
-comptime func function(value: i32) -> i32 {
+func function(value: i32) -> i32 {
     return value;
 }
 

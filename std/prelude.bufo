@@ -24,13 +24,13 @@ func setupStdHandles() {
 // Eventually, we'd like to use our own wrappers
 import "libc.bufo";
 
-comptime func comptimeStrlen(str: &char) -> usize {
+func comptimeStrlen(str: &char) -> usize {
     let len: usize = 0;
     while (*(str + len) != '\0') len = len + 1;
     return len;
 }
 
-comptime func pow2(exp: usize) -> usize {
+func pow2(exp: usize) -> usize {
     let result: usize = 1;
     while (exp > 0) {
         result = result * 2;

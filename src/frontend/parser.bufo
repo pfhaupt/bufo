@@ -143,18 +143,7 @@ struct Parser {
             return this.parseTopLevelItem();
         } else if (tkn.content.equals(&KEYWORD_COMPTIME)) {
             this.lexer.next();
-            if (this.at(TOKEN_KEYWORD)) {
-                let maybeFunc: Token = this.lexer.peek();
-                if (maybeFunc.content.equals(&KEYWORD_FUNC)) {
-                    let funcDecl: &ParsedFuncDecl = this.parseFuncDecl();
-                    (*funcDecl).isComptime = true;
-                    return funcDecl.asTLI();
-                } else {
-                    todo_with_msg("comptime <not-func>");
-                }
-            } else {
-                return this.parseVarDeclStmt(tkn, true).asTLI();
-            }
+            return this.parseVarDeclStmt(tkn, true).asTLI();
         } else if (tkn.content.equals(&KEYWORD_STRUCT)) {
             // REVIEW: Do we want to support structs outside of TLIs?
             return this.parseStructDecl().asTLI();
