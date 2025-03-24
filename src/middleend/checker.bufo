@@ -1420,6 +1420,11 @@ struct TypeChecker {
         let rhsState: TCState = this.typeCheckExpr(expr.rhs, scopes);
         if (lhsState.isError()) return lhsState;
         if (rhsState.isError()) return rhsState;
+        let maybeInfer: TCState = this.checkIfInferIsNeeded(expr.lhs, &lhsState, expr.rhs, &rhsState);
+        if (maybeInfer.isError()) {
+            todo_with_msg("couldn't infer in logical");
+        }
+        if (maybeInfer.wantsInfer()) return maybeInfer;
         let lhsType: &Type = types.at(lhsState.getType());
         let rhsType: &Type = types.at(rhsState.getType());
         if (!lhsType.equals(rhsType)) {
@@ -1441,6 +1446,11 @@ struct TypeChecker {
         let rhsState: TCState = this.typeCheckExpr(expr.rhs, scopes);
         if (lhsState.isError()) return lhsState;
         if (rhsState.isError()) return rhsState;
+        let maybeInfer: TCState = this.checkIfInferIsNeeded(expr.lhs, &lhsState, expr.rhs, &rhsState);
+        if (maybeInfer.isError()) {
+            todo_with_msg("couldn't infer in bitwise");
+        }
+        if (maybeInfer.wantsInfer()) return maybeInfer;
         let lhsType: &Type = types.at(lhsState.getType());
         let rhsType: &Type = types.at(rhsState.getType());
         if (!lhsType.equals(rhsType)) {
@@ -1734,7 +1744,7 @@ struct TypeChecker {
             }
             tid = newTCStateType(typ.getID());
         } else if (expr.kind == EXPR_BINARY) {
-            if (expr.isArithmetic()) {
+            if (expr.isArithmetic() || expr.isBitwise()) {
                 tid = this.tryInferTypeOntoExpr(expr.lhs, typeID, checkOnly);
                 if (tid.isError()) return tid;
                 tid = this.tryInferTypeOntoExpr(expr.rhs, typeID, checkOnly);
