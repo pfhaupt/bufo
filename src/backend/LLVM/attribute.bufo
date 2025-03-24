@@ -1,0 +1,13 @@
+import "prelude.bufo";
+import "../LLVM/bindings.bufo";
+
+struct LLVMAttribute {
+    ref: LLVMAttributeRef;
+}
+
+func newLLVMAttributeFromRef(ref: LLVMAttributeRef) -> LLVMAttribute {
+    assert(!ref.isNull(), "newLLVMAttributeFromRef called with invalid reference");
+    return LLVMAttribute {
+        ref: ref,
+    };
+}
