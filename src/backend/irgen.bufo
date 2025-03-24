@@ -24,7 +24,6 @@ struct IRReg {
     typ: &Type;
     func equals(&this, other: &IRReg) -> bool {
         todo_with_msg("IRReg.equals");
-        return false;
     }
 }
 
@@ -110,7 +109,6 @@ struct IRInstr {
     args: RegIndexList;
     func equals(&this, other: &IRInstr) -> bool {
         todo_with_msg("IRInstr.equals");
-        return false;
     }
     func isTerminator(&this) -> bool {
         return this.kind == INSTR_RETURN_EXPR
@@ -325,7 +323,6 @@ struct IRFunc {
     }
     func equals(&this, other: &IRFunc) -> bool {
         todo_with_msg("IRFunc.equals");
-        return false;
     }
     func enterScope(&this) -> usize {
         this.scopes.push(blank);
@@ -834,7 +831,6 @@ struct IRScopeEntry {
     isComptime: bool;
     func equals(&this, other: &IRScopeEntry) -> bool {
         todo_with_msg("IRScopeEntry.equals");
-        return false;
     }
 }
 
@@ -842,7 +838,6 @@ struct IRScope {
     entries: IRScopeEntryList;
     func equals(&this, other: &IRScope) -> bool {
         todo_with_msg("IRScope.equals");
-        return false;
     }
     func addEntry(&this, name: SubStr, ptr: RegIndex, isComptime: bool) {
         this.entries.push(IRScopeEntry {
@@ -879,7 +874,6 @@ struct IRGen {
         }
         name.print();
         unreachable("Could not find identifier anywhere.");
-        return null;
     }
     func getFunctionByName(&this, name: &String) -> usize {
         return this.functions.indexOf(name);
@@ -991,9 +985,9 @@ struct IRGen {
                 function.buildReturnEmpty();
             } else {
                 todo_with_msg("this is sus and an error lol");
-                let b: RegIndex = function.allocateRegister(t);
-                function.buildLoadBlank(b, t.getSize());
-                function.buildReturnExpr(b);
+                // let b: RegIndex = function.allocateRegister(t);
+                // function.buildLoadBlank(b, t.getSize());
+                // function.buildReturnExpr(b);
             }
         }
         let after: usize = function.leaveScope();
@@ -1344,8 +1338,6 @@ struct IRGen {
             printf("\n%llu\n", expr.kind);
             todo_with_msg("unknown expr");
         }
-        todo_with_msg("gen expr");
-        return blank;
     }
 
     func generateBytecodeExprMemberAccess(&this, function: &IRFunc, expr: &ParsedExpr, needsPtr: bool) -> RegIndex {
@@ -1402,7 +1394,6 @@ struct IRGen {
             }
             if (method.isStatic) {
                 unreachable("Actually... How did we get here so far?");
-                assert(rhs.arrayContext.elemLength == method.params.paramLength, "args != params");
             } else {
                 assert(rhs.arrayContext.elemLength == method.params.paramLength - 1, "args != params - this");
                 args.push(instance);
@@ -1416,10 +1407,7 @@ struct IRGen {
             return this.prepareReturnValue(function, funcID, args, typ, retPtr, needsPtr);
         } else {
             unreachable("Expected name or call in generateBytecodeExprMemberAccess");
-            return blank;
         }
-        todo_with_msg("member");
-        return blank;
     }
 
     func prepareReturnValue(&this, function: &IRFunc, funcID: usize, args: RegIndexList, retType: &Type, retPtr: RegIndex, needsPtr: bool) -> RegIndex {
@@ -1975,8 +1963,6 @@ struct IRGen {
         } else {
             todo_with_msg("unknown unary");
         }
-        todo_with_msg("gen Unary");
-        return blank;
     }
 
     func prepareParameter(&this, function: &IRFunc, index: usize, name: SubStr, typ: &Type, retValue: bool) {

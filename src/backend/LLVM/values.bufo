@@ -9,7 +9,6 @@ struct LLVMValue {
     ref: LLVMValueRef;
     func equals(&this, other: &LLVMValue) -> bool {
         todo_with_msg("LLVMValue.equals");
-        return false;
     }
     func guardReference(&this) {
         trace("LLVMValue.guardReference");

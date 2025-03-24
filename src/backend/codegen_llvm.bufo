@@ -23,7 +23,6 @@ struct RegValue {
     llvmValue: LLVMValue;
     func equals(&this, other: &RegValue) -> bool {
         todo_with_msg("RegValue.equals");
-        return false;
     }
     func asInterp(&this, err: &char) -> InterpReg {
         assert(!this.isLLVM, err);
@@ -655,8 +654,6 @@ struct LLVMCodegen {
             printf("LLVM %llu\n", instr.kind);
             todo_with_msg("unknown llvm kind");
         }
-        todo_with_msg("llvm instr");
-        return blank;
     }
 
     func getComptimePointer(&this, reg: &InterpReg) -> &u8 {
@@ -759,8 +756,6 @@ struct LLVMCodegen {
         } else {
             unreachable("Exhaustive handling in generateLLVMValueFromComptime");
         }
-        todo_with_msg("gen");
-        return blank;
     }
 
     func generateLLVMType(&this, typ: &Type) -> LLVMType {
@@ -776,7 +771,6 @@ struct LLVMCodegen {
                 if (typ.typeIndex == TYPE_F32) return this.llvmContext.createFloatType();
                 else if (typ.typeIndex == TYPE_F64) return this.llvmContext.createDoubleType();
                 unreachable("Expected TYPE_F32 or TYPE_F64");
-                return blank;
             } else if (typ.isNone()) {
                 return this.llvmContext.createVoidType();
             } else if (typ.isAny()) {
@@ -806,7 +800,6 @@ struct LLVMCodegen {
         } else {
             todo_with_msg("generate llvm type");
         }
-        return blank;
     }
 }
 

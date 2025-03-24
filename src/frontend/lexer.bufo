@@ -364,8 +364,6 @@ struct Lexer {
             loc.drop();
             exit(1);
         }
-        assert(false, "Unexpected fallthrough in Lexer.next()");
-        return defaultToken();
     }
 }
 

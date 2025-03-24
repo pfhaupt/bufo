@@ -45,7 +45,6 @@ struct TCState {
 
     func equals(&this, other: &TCState) -> bool {
         todo_with_msg("TCState.equals");
-        return false;
     }
 
     func isInvalid(&this) -> bool {
@@ -471,10 +470,8 @@ struct TypeChecker {
         } else if (tli.kind == TLI_VAR_DECL) {
             return this.typeCheckVarDecl(tli.nodeID, &currentModule.variables, true);
         } else {
-            todo_with_msg("unknown TLI");
+            unreachable("Exhaustive handling of TLI in typeCheckTLI");
         }
-        unreachable("Exhaustive handling of TLI in typeCheckTLI");
-        return blank;
     }
 
     func typeCheckStructDecl(&this, structID: usize) -> TCState {
@@ -820,7 +817,6 @@ struct TypeChecker {
             } else {
                 unreachable("Expected to be either in a method or function, got none of both");
             }
-            todo_with_msg("return expr");
         } else if (stmt.kind == STMT_RETURN_EMPTY) {
             if (this.currentFunction != null) {
                 assert(this.currentFunction.getReadyState(FUNC_READY_TO_USE), "Function is not ready");
@@ -866,10 +862,8 @@ struct TypeChecker {
             return newTCStateSuccess();
         } else {
             this.emergencyPrint(stmt.span);
-            todo_with_msg("unknown stmt");
+            unreachable("Exhaustive handling of stmts in typeCheckStmt");
         }
-        unreachable("Exhaustive handling of stmts in typeCheckStmt");
-        return blank;
     }
 
     func typeCheckVarDecl(&this, varDeclID: usize, scopes: &ScopeLookupList, globalScope: bool) -> TCState {
@@ -1120,7 +1114,6 @@ struct TypeChecker {
             return exprState;
         } else {
             unreachable("Exhaustive handling of ops in typeCheckUnary");
-            return blank;
         }
     }
 
@@ -1315,7 +1308,6 @@ struct TypeChecker {
             return newTCStateType(structLookup.typeID);
         } else {
             todo_with_msg("struct init but it's not a struct?");
-            return blank;
         }
     }
 
@@ -1379,10 +1371,8 @@ struct TypeChecker {
             return this.typeCheckExprBitwise(binID, scopes);
         } else {
             this.emergencyPrint(expr.span);
-            todo_with_msg("EXPR_BINARY");
+            unreachable("Exhaustive handling of ops in typeCheckExprBinary");
         }
-        unreachable("Exhaustive handling of ops in typeCheckExprBinary");
-        return blank;
     }
 
     func typeCheckExprIndexedAccess(&this, binID: usize, scopes: &ScopeLookupList) -> TCState {
@@ -1627,8 +1617,6 @@ struct TypeChecker {
         } else {
             todo_with_msg("LHS of dot is sus");
         }
-        todo_with_msg("member");
-        return blank;
     }
 
     func checkIfInferIsNeeded(&this, lhsID: usize, lhsState: &TCState, rhsID: usize, rhsState: &TCState) -> TCState {
@@ -1648,8 +1636,6 @@ struct TypeChecker {
         } else {
             return newTCStatePleaseInfer();
         }
-        unreachable("Exhaustive handling of cases in checkIfInferIsNeeded");
-        return blank;
     }
 
     func inferTypeOntoExpr(&this, exprID: usize, typeID: usize) -> TCState {
@@ -1701,7 +1687,6 @@ struct TypeChecker {
                 return newTCStateFailure(ERROR_UNEXPECTED_LITERAL);
             } else {
                 todo_with_msg("can't infer non-int non-float type onto int literal");
-                return blank;
             }
         } else if (expr.kind == EXPR_CHAR_LIT) {
             if (typ.kind != TYPE_KIND_PRIMITIVE && typ.typeIndex != TYPE_CHAR)
@@ -1781,7 +1766,6 @@ struct TypeChecker {
                 tid = newTCStateType(typeID);
             } else {
                 todo_with_msg("inferTypeOntoExpr for non-arith non-comp binary");
-                return blank;
             }
         } else if (expr.kind == EXPR_UNARY) {
             if (expr.op == UNARY_DEREF) {
@@ -1820,10 +1804,8 @@ struct TypeChecker {
                 tid = this.tryInferTypeOntoExpr(expr.lhs, boolType.getID(), checkOnly);
                 if (tid.isError()) return tid;
                 todo_with_msg("unary not infer");
-                return blank;
             } else {
                 unreachable("Exhaustive handling of unary ops in inferTypeOntoExpr");
-                return blank;
             }
         } else if (expr.kind == EXPR_NULL) {
             if (!typ.isPointer()) todo_with_msg("tried to infer non-ptr to null");
@@ -1831,7 +1813,6 @@ struct TypeChecker {
         } else {
             this.emergencyPrint(expr.span);
             todo_with_msg("unhandled case in inferTypeOntoExpr");
-            return blank;
         }
         if (!checkOnly) {
             (*expr).typeState = tid;

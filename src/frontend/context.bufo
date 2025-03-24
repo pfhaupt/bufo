@@ -98,7 +98,6 @@ struct StructContext {
             }
         }
         unreachable("Expected to find field index at this point");
-        return 0;
     }
     func getFieldOffset(&this, name: &SubStr) -> usize {
         trace("StructContext.getFieldOffset");
@@ -114,7 +113,6 @@ struct StructContext {
             offset = offset + t.getSize();
         }
         unreachable("Expected to find field offset at this point");
-        return 0;
     }
 }
 

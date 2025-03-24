@@ -67,17 +67,6 @@ struct LLVMType {
         return newLLVMTypeFromRef(arr);
     }
 
-    func getParamTypes(&this) -> &LLVMType {
-        trace("LLVMType.getParamTypes");
-        let count: u32 = LLVMCountParamTypes(this.ref);
-        let _p: Any = calloc(count as usize, sizeof LLVMTypeRef);
-        assert(_p != null, "Could not allocate memory in LLVMType.getParamTypes");
-        let params: &LLVMTypeRef = &*_p;
-        LLVMGetParamTypes(this.ref, params);
-        todo_with_msg("conv");
-        return null;
-    }
-
     func constInt(&this, value: usize, signExtend: bool) -> LLVMValue {
         trace("LLVMType.constInt");
         let s: LLVMBool = newLLVMBool(signExtend);

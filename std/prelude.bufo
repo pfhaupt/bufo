@@ -129,7 +129,7 @@ func isAsciiUppercase(ch: char) -> bool {
 }
 
 // Internal Runtime Errors
-func index_oob(msg: &char, index: i64) {
+@noreturn func index_oob(msg: &char, index: i64) {
     setupStdHandles();
     fprintf(stderr, msg, index);
     exit(1);
@@ -172,7 +172,7 @@ func assert(cond: bool, msg: &char) {
     }
 }
 
-func unreachable(msg: &char) {
+@noreturn func unreachable(msg: &char) {
     setupStdHandles();
     if (stderr == null) {
         printf("%s Entered unreachable code: %s", FATAL_STR, msg);
@@ -183,7 +183,7 @@ func unreachable(msg: &char) {
     exit(1);
 }
 
-func todo_with_msg(msg: &char) {
+@noreturn func todo_with_msg(msg: &char) {
     setupStdHandles();
     if (stderr == null) {
         printf("TODO: %s\n", msg);

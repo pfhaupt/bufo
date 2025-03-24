@@ -123,7 +123,6 @@ struct ParsedAttribute {
 
     func equals(&this, other: &ParsedAttribute) -> bool {
         todo_with_msg("ParsedAttribute.equals");
-        return false;
     }
 }
 
@@ -462,7 +461,6 @@ struct ParsedStmt {
             return newParsedTopLevelItem(this.span, TLI_VAR_DECL, this.getID());
         } else {
             todo_with_msg("Can't convert stmt to tli");
-            return null;
         }
     }
 
@@ -756,7 +754,6 @@ func binOpFromKind(kind: usize) -> usize {
         printf("%llu\n", kind);
         todo_with_msg("binOpFromKind");
     }
-    return 0;
 }
 
 func binOpAsStr(op: usize) -> &char {
@@ -780,7 +777,6 @@ func binOpAsStr(op: usize) -> &char {
     else if (op == BIN_BAND) return "&";
     else if (op == BIN_BOR) return "|";
     unreachable("Exhaustive handling of binary ops in binOpAsStr");
-    return "";
 }
 
 comptime UNARY_INVALID: usize = 0;
@@ -798,7 +794,6 @@ func unaryOpFromKind(kind: usize) -> usize {
     else if (kind == TOKEN_MINUS_SINGLE) return UNARY_MINUS;
     else if (kind == TOKEN_BANG) return UNARY_NOT;
     todo_with_msg("unaryOpFromKind");
-    return 0;
 }
 
 func newParsedExpr(span: Span, kind: usize) -> &ParsedExpr {

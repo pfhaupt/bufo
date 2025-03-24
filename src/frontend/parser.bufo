@@ -269,7 +269,6 @@ struct Parser {
             fprintf(stderr, "%s: %s: The use of `unsafe` has no effect in this version of the compiler.\n", loc.chars(), ERR_STR);
             loc.drop();
             exit(1);
-            return this.parseTopLevelItem(attributes);
         } else if (tkn.content.equals(&KEYWORD_COMPTIME)) {
             this.lexer.next();
             return this.parseVarDeclStmt(tkn, true).asTLI();
@@ -304,7 +303,6 @@ struct Parser {
         }
         tkn.content.print();
         todo_with_msg("top level");
-        return null;
     }
 
     func parseImport(&this) -> &ParsedTopLevelItem {
@@ -343,15 +341,15 @@ struct Parser {
         let loc: String = tkn.getLocation();
         fprintf(stderr, "%s: %s: Could not import file %s.\n", loc.chars(), ERR_STR, file.chars());
         exit(1);
-        return null;
     }
 
     func parseStructDecl(&this) -> &ParsedStructDecl {
         trace("Parser.parseStructDecl");
         let kw: Token = this.expect(TOKEN_KEYWORD);
         let nameTkn: Token = this.expect(TOKEN_IDENT);
-        if (!isAsciiUppercase(nameTkn.content.getChar(0)))
+        if (!isAsciiUppercase(nameTkn.content.getChar(0))) {
             todo_with_msg("whine about struct not being capitalized");
+        }
         this.currentStruct = nameTkn.content;
         this.expect(TOKEN_CURLY_OPEN);
         let decl: &ParsedStructDecl = newParsedStructDecl(this.lexer.moduleID, defaultSpan(), nameTkn);
@@ -594,7 +592,6 @@ struct Parser {
             (*blockStmt).block = block.getID();
             return blockStmt;
         }
-        return null;
     }
 
     func parseWhileStmt(&this, kw: Token) -> &ParsedStmt {
@@ -902,7 +899,6 @@ struct Parser {
                 name.drop();
                 loc.drop();
                 exit(1);
-                return null;
             }
         }
         let t: Token = this.lexer.peek();
@@ -912,7 +908,6 @@ struct Parser {
         name.drop();
         loc.drop();
         exit(1);
-        return null;
     }
     func parseSecondaryExpr(&this, lhs: &ParsedExpr, precedence: usize, associativity: usize) -> &ParsedExpr {
         trace("Parser.parseSecondaryExpr");
@@ -988,7 +983,6 @@ struct Parser {
             tkn.getLocation().print();
             todo_with_msg("unray");
         }
-        return null;
     }
     func matchesBinaryExpr(&this) -> bool {
         trace("Parser.matchesBinaryExpr");
@@ -1054,7 +1048,6 @@ struct Parser {
         else if (tknKind == TOKEN_PIPE_DOUBLE) return 3;
         else if (tknKind == TOKEN_EQUAL_SINGLE) return 2;
         todo_with_msg("Precedence");
-        return 0;
     }
     func getBinaryAssociativity(&this, tkn: &Token) -> usize {
         trace("Parser.getBinaryAssociativity");
@@ -1070,7 +1063,6 @@ struct Parser {
         else if (tknKind == TOKEN_AMPERSAND_SINGLE) return 14;
         else if (tknKind == TOKEN_BANG) return 14;
         todo_with_msg("unary precedence");
-        return 0;
     }
 }
 

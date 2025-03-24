@@ -106,7 +106,6 @@ struct Lookup {
             return newTypeLookup(TYPE_LOOKUP_STRUCT, s);
         } else {
             todo_with_msg("getTypeLookupFromTypeID for non-struct");
-            return blank;
         }
     }
 
@@ -261,7 +260,6 @@ struct ModuleLookup {
             }
         }
         unreachable("Lookup failed to find function based on global ID!");
-        return null;
     }
 
     func getStructByGlobalID(&this, structID: usize) -> &StructLookup {
@@ -273,7 +271,6 @@ struct ModuleLookup {
             }
         }
         unreachable("Lookup failed to find struct based on global ID!");
-        return null;
     }
 
     func resolveFunctionByName(&this, name: &Token) -> FunctionLookupList {
@@ -378,7 +375,6 @@ struct TypeLookup {
             return this.asStruct().name.content.toString();
         } else {
             unreachable("Exhaustive handling in TypeLookup.getName");
-            return blank;
         }
     }
 
@@ -387,7 +383,6 @@ struct TypeLookup {
             return this.asStruct().name.span.toString();
         } else {
             unreachable("Exhaustive handling in TypeLookup.getLocation");
-            return blank;
         }
     }
 
@@ -399,7 +394,6 @@ struct TypeLookup {
             return this.asStruct().equals(other.asStruct() as &StructLookup);
         }
         unreachable("Exhaustive handling in TypeLookup.equals");
-        return false;
     }
 
     func isStruct(&this) -> bool {
@@ -515,7 +509,6 @@ struct StructLookup {
         }
         assert(this.hasField(&name.content), "StructLookup.getIndexByName() called when StructLookup.hasField() == false");
         unreachable("StructLookup.getIndexByName does not have a field with the given name");
-        return 0;
     }
 
     func checkForDuplicateField(&this, name: &Token, dupl: &VariableLookup) -> bool {
@@ -549,7 +542,6 @@ struct StructLookup {
             }
         }
         unreachable("Lookup failed to find method based on global ID!");
-        return null;
     }
 }
 
@@ -578,7 +570,6 @@ struct MethodLookup {
 
     func equals(&this, other: &MethodLookup) -> bool {
         todo_with_msg("MethodLookup.equals");
-        return false;
     }
 
     func checkForDuplicateParam(&this, name: &Token, dupl: &VariableLookup) -> bool {
@@ -632,7 +623,6 @@ struct ScopeLookup {
 
     func equals(&this, other: &ScopeLookup) -> bool {
         todo_with_msg("when are two scopes equal");
-        return false;
     }
     func addVariable(&this, variable: VariableLookup) {
         trace("ScopeLookup.addVariable");

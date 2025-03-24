@@ -79,7 +79,6 @@ struct Type {
         } else {
             unreachable("Exhaustive handling of types in Type.getMangledName");
         }
-        return blank;
     }
 
     func getID(&this) -> usize {
@@ -108,7 +107,6 @@ struct Type {
             || this.kind == TYPE_KIND_STRUCT)
             return this.typeIndex == other.typeIndex;
         todo_with_msg("Type.equals");
-        return false;
     }
 
     func isFloat(&this) -> bool {
@@ -231,7 +229,6 @@ struct Type {
         } else {
             unreachable("Exhaustive handling of types in Type.getMangledName");
         }
-        return blank;
     }
     func getAlignment(&this) -> usize {
         if (this.kind == TYPE_KIND_POINTER) {
@@ -272,7 +269,6 @@ struct Type {
             return maxAlign;
         }
         todo_with_msg("align");
-        return 0;
     }
     func getSize(&this) -> usize {
         if (this.kind == TYPE_KIND_POINTER) {
@@ -317,7 +313,6 @@ struct Type {
             return size;
         }
         todo_with_msg("size");
-        return 0;
     }
     func getMaxFloatValue(&this) -> f64 {
         assert(this.isFloat(), "Type.getMaxFloatValue() called on non-Float");

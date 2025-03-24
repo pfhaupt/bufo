@@ -120,7 +120,6 @@ struct String_IRFuncHashMap {
             hash = (hash + 1) % this.capacity;
         }
         unreachable("Load Factor guarantees that there's always at least one unset Entry in the HashMap.");
-        return null;
     }
 
     func getAtIndex(&this, index: usize) -> &String_IRFuncEntry {

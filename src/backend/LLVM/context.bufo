@@ -39,8 +39,6 @@ struct LLVMContext {
         trace("LLVMContext.createTargetTriple");
         @os(WINDOWS) return "x86_64-pc-windows-msvc";
         @os(LINUX) return "x86_64-unknown-linux-gnu";
-        unreachable("Exhaustive handling of operating systems in LLVMContext.createTargetTriple");
-        return "";
     }
 
     func createModuleWithName(&this, name: SubStr) -> LLVMModule {

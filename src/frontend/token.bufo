@@ -78,7 +78,6 @@ func tokenKindToString(kind: usize) -> &char {
         printf("Please implement tokenKindToString(%llu)\n", kind);
         exit(1);
     }
-    return ""; // Unreachable
 }
 struct Token {
     span: Span;

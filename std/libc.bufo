@@ -37,4 +37,4 @@
 @extern("puts") func puts(s: &char) -> usize;
 
 // Process Control
-@extern("exit") func exit(code: i32);
+@noreturn @extern("exit") func exit(code: i32);
