@@ -36,8 +36,10 @@ struct LLVMContext {
 
     func createTargetTriple(&this, name: &char) -> &char {
         trace("LLVMContext.createTargetTriple");
-        warning("Target Triple is currently hardcoded!");
-        return "x86_64-pc-windows-msvc";
+        @os(WINDOWS) return "x86_64-pc-windows-msvc";
+        @os(LINUX) return "x86_64-unknown-linux-gnu";
+        unreachable("Exhaustive handling of operating systems in LLVMContext.createTargetTriple");
+        return "";
     }
 
     func createModuleWithName(&this, name: SubStr) -> LLVMModule {

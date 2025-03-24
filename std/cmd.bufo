@@ -3,8 +3,8 @@ import "libc.bufo";
 import "string_buf.bufo";
 import "string.bufo";
 import "substr.bufo";
-import "winapi/structs.bufo";
-import "windows.bufo";
+@os(WINDOWS) import "winapi/structs.bufo";
+@os(WINDOWS) import "windows.bufo";
 
 struct Cmd {
     buf: StringBuffer;

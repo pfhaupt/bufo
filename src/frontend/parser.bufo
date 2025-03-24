@@ -281,8 +281,10 @@ struct Parser {
                 }
             }
             if (tkn.content.equals(&KEYWORD_EXTERN)) {
-                warning("`extern` is deprecated, use `@extern(<name>)` instead");
-                isExtern = true;
+                let loc = tkn.span.toString();
+                fprintf(stderr, "%s: %s: `extern <name>()` is deprecated, please use `@extern(<name>) func <alias>()` instead.\n", loc.chars(), ERR_STR);
+                loc.drop();
+                exit(1);
             }
             let decl = this.parseFuncDecl(isExtern);
             if (tkn.content.equals(&KEYWORD_EXTERN)) {

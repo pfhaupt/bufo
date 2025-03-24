@@ -11,7 +11,7 @@ system at any time.
 
 import "winapi/structs.bufo";
 
-extern CreateProcessA(
+@extern("CreateProcessA") func CreateProcessA(
     lpApplicationName: &char,
     lpCommandLine: &char,
     lpProcessAttributes: &SecurityAttributes,
@@ -24,7 +24,7 @@ extern CreateProcessA(
     lpProcessInformation: &ProcessInformation
 ) -> bool;
 
-extern CreateFileA(
+@extern("CreateFileA") func CreateFileA(
     lpFileName: &char,
     dwDesiredAccess: u32,
     dwShareMode: u32,
@@ -33,12 +33,12 @@ extern CreateFileA(
     dwFlagsAndAttributes: u32,
     hTemplateFile: Handle,
 ) -> Handle;
-extern GetStdHandle(handle: u32) -> Handle;
-extern CloseHandle(handle: Handle) -> bool;
-extern WaitForSingleObject(hHandle: Handle, dwMilliseconds: u32) -> u32;
-extern GetExitCodeProcess(proc: Handle, exitStatus: &u32) -> bool;
-extern GetLastError() -> u32;
-extern GetFileTime(
+@extern("GetStdHandle") func GetStdHandle(handle: u32) -> Handle;
+@extern("CloseHandle") func CloseHandle(handle: Handle) -> bool;
+@extern("WaitForSingleObject") func WaitForSingleObject(hHandle: Handle, dwMilliseconds: u32) -> u32;
+@extern("GetExitCodeProcess") func GetExitCodeProcess(proc: Handle, exitStatus: &u32) -> bool;
+@extern("GetLastError") func GetLastError() -> u32;
+@extern("GetFileTime") func GetFileTime(
     hFile: Handle,
     lpCreationTime: &FileTime,
     lpLastAccessTime: &FileTime,

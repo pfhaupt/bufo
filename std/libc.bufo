@@ -2,43 +2,39 @@
 
 // TODO: Implement safe wrapper for everything :^)
 
-// Windows is stupid :^)
-func fdopen(fd: i32, mode: &char) -> Any {
-    return _fdopen(fd, mode);
-}
-extern _fdopen(fd: i32, mode: &char) -> Any;
-extern _fullpath(absPath: &char, relPath: &char, maxLength: i32) -> &char;
+@os(WINDOWS) @extern("_fdopen") func fdopen(fd: i32, mode: &char) -> Any;
+@os(WINDOWS) @extern("_fullpath") func _fullpath(absPath: &char, relPath: &char, maxLength: i32) -> &char;
 
-// extern fdopen(fd: i32, mode: &char) -> Any;
+@os(LINUX) @extern("fdopen") func fdopen(fd: i32, mode: &char) -> Any;
 
 // Strings
-extern strlen(string: &char) -> usize;
-extern strcmp(s1: &char, s2: &char) -> i32;
-extern strchr(s: &char, c: char) -> &char;
+@extern("strlen") func strlen(string: &char) -> usize;
+@extern("strcmp") func strcmp(s1: &char, s2: &char) -> i32;
+@extern("strchr") func strchr(s: &char, c: char) -> &char;
 
 // Memory
-extern malloc(bytes: usize) -> Any;
-extern calloc(num: usize, size: usize) -> Any;
-extern realloc(ptr: Any, new_size: usize) -> Any;
-extern free(ptr: Any);
-extern memcpy(dest: Any, src: Any, count: usize) -> Any;
-extern memcmp(lhs: Any, rhs: Any, count: usize) -> i32;
-extern memset(s: Any, b: i32, count: usize) -> Any;
+@extern("malloc") func malloc(bytes: usize) -> Any;
+@extern("calloc") func calloc(num: usize, size: usize) -> Any;
+@extern("realloc") func realloc(ptr: Any, new_size: usize) -> Any;
+@extern("free") func free(ptr: Any);
+@extern("memcpy") func memcpy(dest: Any, src: Any, count: usize) -> Any;
+@extern("memcmp") func memcmp(lhs: Any, rhs: Any, count: usize) -> i32;
+@extern("memset") func memset(s: Any, b: i32, count: usize) -> Any;
 
 // File IO
-extern fopen(filename: &char, mode: &char) -> Any;
+@extern("fopen") func fopen(filename: &char, mode: &char) -> Any;
 // FIXME: Any ignores Mutability :^) We should probably only write to mutable buffers tho...
-extern fread(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
-extern fwrite(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
-extern fclose(stream: Any) -> i32;
-extern fprintf(stream: Any, msg: &char, ...);
+@extern("fread") func fread(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
+@extern("fwrite") func fwrite(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
+@extern("fclose") func fclose(stream: Any) -> i32;
+@extern("fprintf") func fprintf(stream: Any, msg: &char, ...);
 
-extern snprintf(buffer: Any, size: usize, format: &char, ...) -> usize;
+@extern("snprintf") func snprintf(buffer: Any, size: usize, format: &char, ...) -> usize;
 
 // Console IO
-extern printf(msg: &char, ...) -> usize;
-extern putchar(ch: char) -> char;
-extern puts(s: &char) -> usize;
+@extern("printf") func printf(msg: &char, ...) -> usize;
+@extern("putchar") func putchar(ch: char) -> char;
+@extern("puts") func puts(s: &char) -> usize;
 
 // Process Control
-extern exit(code: i32);
+@extern("exit") func exit(code: i32);
