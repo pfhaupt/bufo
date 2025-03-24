@@ -252,7 +252,6 @@ struct IRFunc {
     originalID: usize;
     name: String;
     comptimeLevel: usize;
-    isExtern: bool;
     isMethod: bool;
     scopes: IRScopeList;
     registers: IRRegList;
@@ -261,6 +260,10 @@ struct IRFunc {
     currentBlock: IRBlockID;
     llvmFunc: LLVMValue;
     retPtr: RegIndex;
+    func isExtern(&this) -> bool {
+        if (this.isMethod) return false;
+        return this.getFuncNode().isExtern();
+    }
     func appendBlock(&this) -> IRBlockID {
         let id: IRBlockID = IRBlockID { i: this.blocks.length };
         this.blocks.push(IRBlock {
@@ -877,13 +880,13 @@ struct IRGen {
         trace("IRGen.fillLookup");
         for (let i: usize = 0; i < funcDecls.length; i = i + 1) {
             let function: &ParsedFuncDecl = funcDecls.at(i);
+            if (function.ignored) continue;
             let name: String = function.getMangledName();
             if (this.functions.containsKey(&name)) {
                 todo_with_msg("lookup already contains function with name");
             }
             let irfunc: IRFunc = IRFunc {
                 name: name,
-                isExtern: function.isExtern,
                 isMethod: false,
                 originalID: function.getID(),
                 comptimeLevel: 0,
@@ -899,13 +902,13 @@ struct IRGen {
         }
         for (let i: usize = 0; i < methods.length; i = i + 1) {
             let method: &ParsedMethod = methods.at(i);
+            if (method.ignored) continue;
             let name: String = method.getMangledName();
             if (this.functions.containsKey(&name)) {
                 todo_with_msg("lookup already contains method with name");
             }
             let irmeth: IRFunc = IRFunc {
                 name: name,
-                isExtern: false,
                 isMethod: true,
                 originalID: method.getID(),
                 comptimeLevel: 0,
@@ -933,6 +936,7 @@ struct IRGen {
             let mod: &ParsedModule = modules.at(i);
             for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
                 let tli: &ParsedTopLevelItem = topLevelItems.at(mod.getTopLevelItemAtIndex(j));
+                if (tli.ignored) continue;
                 if (tli.kind == TLI_VAR_DECL) {
                     this.generateBytecodeStmt(&this.globalScope, stmts.at(tli.nodeID));
                 }
@@ -988,13 +992,14 @@ struct IRGen {
 
     func generateFunction(&this, funcDecl: &ParsedFuncDecl) {
         trace("IRGen.generateFunction");
+        if (funcDecl.ignored) return;
         assert(funcDecl.typeState.isSuccess(), "Expected valid FuncDecl type in IRGen");
         let name: String = funcDecl.getMangledName();
         let function: &IRFunc = this.functions.get(&name);
         assert(function != null, "Expected to find function in lookup");
         assert(function.name.equals(&name), "functions.get() retrieved wrong IRFunc");
         name.drop();
-        if (funcDecl.isExtern) {
+        if (funcDecl.isExtern()) {
             return;
         }
         let scope: usize = function.enterScope();
@@ -1006,6 +1011,7 @@ struct IRGen {
 
     func generateMethod(&this, methDecl: &ParsedMethod) {
         trace("IRGen.generateMethod");
+        if (methDecl.ignored) return;
         assert(methDecl.typeState.isSuccess(), "Expected valid Method type in IRGen");
         let name: String = methDecl.getMangledName();
         let function: &IRFunc = this.functions.get(&name);
@@ -1021,6 +1027,7 @@ struct IRGen {
 
     func generateBytecodeBlock(&this, function: &IRFunc, block: &ParsedBlock) {
         trace("IRGen.generateBytecodeBlock");
+        if (block.ignored) return;
         assert(block.typeState.isSuccess(), "Expected valid Block type in IRGen");
         let scope: usize = function.enterScope();
         let modID: usize = 0;
@@ -1055,6 +1062,7 @@ struct IRGen {
 
     func generateBytecodeStmt(&this, function: &IRFunc, stmt: &ParsedStmt) {
         trace("IRGen.generateBytecodeStmt");
+        if (stmt.ignored) return;
         assert(stmt.typeState.isSuccess(), "Expected valid Stmt type in IRGen");
         if (stmt.kind == STMT_VAR_DECL) {
             let exprID: usize = stmt.varDeclContext.exprID;
@@ -1197,6 +1205,7 @@ struct IRGen {
 
     func generateBytecodeExpr(&this, function: &IRFunc, expr: &ParsedExpr, needsPtr: bool) -> RegIndex {
         trace("IRGen.generateBytecodeExpr");
+        if (expr.ignored) return blank;
         assert(expr.typeState.isSuccess(), "Expected valid Expr type in IRGen");
         if (expr.kind == EXPR_EMPTY) {
             return blank;
@@ -1486,7 +1495,7 @@ struct IRGen {
             _s.drop();
             function.buildLoadString(err, s.asSubStr());
             // FIXME: Using the module ID in mangling is awkward
-            let indexoob: String = newStringFromStrLit("index_oobPci64rNf00");
+            let indexoob: String = newStringFromStrLit("index_oobPci64rNf0");
             if (!this.functions.containsKey(&indexoob)) {
                 fprintf(stderr, "%s Could not generate index check for array access!\n", FATAL_STR);
                 fprintf(stderr, "%s: Reason: Could not find function `index_oob`!\n", NOTE_STR);
@@ -2077,7 +2086,6 @@ func newIRGenerator() -> IRGen {
     return IRGen {
         globalScope: IRFunc {
             name: newStringFromStrLit("__global__"),
-            isExtern: false,
             isMethod: false,
             originalID: funcDecls.length + 1,
             comptimeLevel: 0,

@@ -1,7 +1,15 @@
-// Intrinsics
-// They are safe because we can directly define their behavior
-extern GLOBAL_GET_ARGC() -> usize;
-extern GLOBAL_GET_ARGV() -> &&char;
+import "substr.bufo";
+
+func comptimeSubStr(s: &char) -> SubStr {
+    return SubStr {
+        start: s,
+        len: comptimeStrlen(s)
+    };
+}
+comptime OS_WINDOWS: SubStr = comptimeSubStr("WINDOWS");
+comptime OS_LINUX: SubStr = comptimeSubStr("LINUX");
+// FIXME: Make this a flag
+comptime TARGET_OS: SubStr = OS_WINDOWS;
 
 comptime FATAL_STR: &char = "\x1b[95m[FATAL]\x1b[0m";
 comptime ERR_STR: &char = "\x1b[91merror\x1b[0m";

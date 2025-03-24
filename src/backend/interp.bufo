@@ -20,6 +20,7 @@ comptime STACK_SIZE: usize = 4194304;
 struct IRInterp {
     irGen: &IRGen;
     regStackStart: &u8;
+    globalRegisters: &RegValueList;
     globalRegBase: &u8;
     regStackBase: &u8;
     realStackStart: &u8;
@@ -71,6 +72,7 @@ struct IRInterp {
             assert(instr.isComptime, "Expected comptime instr in IRInterp.evaluateSingle");
         }
         assert(this.regStackBase < this.regStackStart + REG_STACK_SIZE, "Stack Cursor Overflow in IRInterp.evaluateSingle");
+        if (PRINT_DEBUG) instr.dump();
         if (instr.kind == INSTR_ALLOCA) {
             // dst: dst,
             // src: RegIndex { i: size },
@@ -284,7 +286,9 @@ struct IRInterp {
                 let arg: InterpReg = reg.asInterp("call arg");
                 this.pushArgument(this.getRegStackPointer(&arg), arg.size);
             }
-            this.evaluateCall(calledFunc);
+            let regs: RegValueList = blank;
+            regs.initBlank(calledFunc.registers.length);
+            this.evaluateCall(calledFunc, &regs);
             let size: usize = dstReg.typ.getSize();
             let dst: InterpReg = InterpReg {
                 offset: dstReg.offset,
@@ -792,8 +796,15 @@ struct IRInterp {
             // noop in interpreter
             if (instr.op1.i == 1) {
                 // Global fetch
-                todo_with_msg("IRInterp: global comptime fetch");
-                // return regs.at(instr.src.i).asInterp("Interp FetchComptimeValue");
+                let fReg = irFunc.getRegister(instr.dst);
+                let ptr = this.getGlobalPointer(&this.globalRegisters.at(instr.src.i).asInterp("Interp FetchComptimeValue"));
+                let size = fReg.typ.getSize();
+                let reg = InterpReg {
+                    offset: fReg.offset,
+                    size: size,
+                };
+                memcpy(this.getRegStackPointer(&reg), ptr, size);
+                return reg;
             } else {
                 // Local fetch
                 return regs.at(instr.src.i).asInterp("Interp FetchComptimeValue");
@@ -834,6 +845,7 @@ struct IRInterp {
         for (let ip: usize = 0; ip < block.instructions.length; ip = ip + 1) {
             let instr: &IRInstr = block.instructions.at(ip);
             if (ip == block.instructions.length - 1) {
+                if (PRINT_DEBUG) instr.dump();
                 assert(instr.isTerminator(), "Interp: Unexpected non-terminator at the end of a block");
                 if (instr.kind == INSTR_BR) {
                     *blockID = IRBlockID { i: instr.dst.i };
@@ -872,14 +884,12 @@ struct IRInterp {
         }
         return false;
     }
-    func evaluateCall(&this, irFunc: &IRFunc) {
+    func evaluateCall(&this, irFunc: &IRFunc, regs: &RegValueList) {
         trace("IRInterp.evaluateCall");
-        let regs: RegValueList = blank;
-        regs.initBlank(irFunc.registers.length);
         let funcSize: usize = irFunc.getRegisterSizeInBytes();
         this.pushRegisterStack(funcSize);
         let blockID: IRBlockID = IRBlockID { i: 0 };
-        while (this.evaluateBlock(&blockID, irFunc, &regs, true)) {
+        while (this.evaluateBlock(&blockID, irFunc, regs, true)) {
         }
         this.popRegisterStack(funcSize);
         return;
@@ -912,6 +922,7 @@ func newIRInterpreter(irGen: &IRGen) -> IRInterp {
     assert(argStack != null, "Could not prepare IRInterp.argStack");
     return IRInterp {
         irGen: irGen,
+        globalRegisters: null,
         regStackStart: regStack,
         globalRegBase: regStack,
         regStackBase: regStack,

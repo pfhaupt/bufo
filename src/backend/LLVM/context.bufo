@@ -1,13 +1,13 @@
 import "prelude.bufo";
 import "string.bufo";
 import "substr.bufo";
-import "./bindings.bufo";
-import "./module.bufo";
-import "./builder.bufo";
-import "./types.bufo";
-import "./values.bufo";
-import "./basic_block.bufo";
-import "./target.bufo";
+import "../LLVM/bindings.bufo";
+import "../LLVM/module.bufo";
+import "../LLVM/builder.bufo";
+import "../LLVM/types.bufo";
+import "../LLVM/values.bufo";
+import "../LLVM/basic_block.bufo";
+import "../LLVM/target.bufo";
 
 struct LLVMContext {
     ref: LLVMContextRef;

@@ -1,7 +1,7 @@
 import "prelude.bufo";
-import "./types.bufo";
-import "./module.bufo";
-import "./bindings.bufo";
+import "../LLVM/types.bufo";
+import "../LLVM/module.bufo";
+import "../LLVM/bindings.bufo";
 
 struct LLVMDataLayout {
     ref: &char;

@@ -3,7 +3,6 @@ import "prelude.bufo";
 import "substr.bufo";
 import "../util/span.bufo";
 import "string.bufo";
-import "./nodes.bufo";
 
 comptime TOKEN_EOF: usize = 0;
 comptime TOKEN_IDENT: usize = 1;

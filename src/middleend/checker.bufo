@@ -413,6 +413,7 @@ struct TypeChecker {
             for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
                 let tliID: usize = mod.getTopLevelItemAtIndex(j);
                 let tli: &ParsedTopLevelItem = topLevelItems.at(tliID);
+                if (tli.ignored) continue;
                 lookup.insertTLI(tli);
             }
         }
@@ -434,7 +435,6 @@ struct TypeChecker {
                 for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
                     let tliID: usize = mod.getTopLevelItemAtIndex(j);
                     let tli: &ParsedTopLevelItem = topLevelItems.at(tliID);
-                    if (tli.typeState.isSuccess()) continue;
                     let state: TCState = this.typeCheckTLI(tli);
                     (*tli).typeState = state;
                     if (state.isError()) {
@@ -457,6 +457,7 @@ struct TypeChecker {
 
     func typeCheckTLI(&this, tli: &ParsedTopLevelItem) -> TCState {
         trace("TypeChecker.typeCheckTLI");
+        if (tli.ignored) return blank;
         this.currentFunction = null;
         this.currentMethod = null;
         let currentModule: &ModuleLookup = this.lookup.modules.at(this.currentModule);
@@ -479,6 +480,7 @@ struct TypeChecker {
     func typeCheckStructDecl(&this, structID: usize) -> TCState {
         trace("TypeChecker.typeCheckStructDecl");
         let strukt: &ParsedStructDecl = structDecls.at(structID);
+        if (strukt.ignored) return blank;
         let moduleLookup: &ModuleLookup = this.lookup.modules.at(this.currentModule);
         let structLookup: &StructLookup = moduleLookup.getStructByGlobalID(structID);
         let context: &StructContext = &strukt.context;
@@ -546,6 +548,7 @@ struct TypeChecker {
         trace("TypeChecker.typeCheckMethod");
         // REVIEW: We can improve performance by passing the StructLookup instead of the ID
         let method: &ParsedMethod = methods.at(methodID);
+        if (method.ignored) return blank;
         let moduleLookup: &ModuleLookup = this.lookup.modules.at(this.currentModule);
         let structLookup: &StructLookup = moduleLookup.getStructByGlobalID(structID);
         let methodLookup: &MethodLookup = structLookup.getMethodByGlobalID(methodID);
@@ -617,6 +620,7 @@ struct TypeChecker {
     func typeCheckFunction(&this, funcID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckFunction");
         let function: &ParsedFuncDecl = funcDecls.at(funcID);
+        if (function.ignored) return blank;
         let moduleLookup: &ModuleLookup = this.lookup.modules.at(this.currentModule);
         let funcLookup: &FunctionLookup = moduleLookup.getFunctionByGlobalID(funcID);
         if (funcLookup.getReadyState(FUNC_BODY_COMPLETE)) {
@@ -670,7 +674,7 @@ struct TypeChecker {
             for (let i: usize = 0; i < funcLookup.params.length; i = i + 1) {
                 scope.addVariable(*(funcLookup.params.at(i)));
             }
-            if (!function.isExtern) {
+            if (!function.isExtern()) {
                 scopes.push(scope);
                 let blockState: TCState = this.typeCheckBlock(function.body, scopes);
                 scopes.pop();
@@ -686,6 +690,7 @@ struct TypeChecker {
     func typeCheckBlock(&this, blockID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckBlock");
         let block: &ParsedBlock = blocks.at(blockID);
+        if (block.ignored) return blank;
         if (block.typeState.isSuccess()) {
             return block.typeState;
         }
@@ -718,6 +723,7 @@ struct TypeChecker {
     func typeCheckStmt(&this, stmtID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckStmt");
         let stmt: &ParsedStmt = stmts.at(stmtID);
+        if (stmt.ignored) return blank;
         if (stmt.kind == STMT_BLOCK) {
             let blockState: TCState = this.typeCheckBlock(stmt.block, scopes);
             if (blockState.isError()) return blockState;
@@ -819,7 +825,11 @@ struct TypeChecker {
             if (this.currentFunction != null) {
                 assert(this.currentFunction.getReadyState(FUNC_READY_TO_USE), "Function is not ready");
                 let retType: &Type = types.at(this.currentFunction.returnType.getType());
-                if (!retType.isNone()) todo_with_msg("function returns something, but we wrote return;");
+                if (!retType.isNone()) {
+                    printf("%s\n", stmt.span.toString().chars());
+                    printf("%llu %llu\n", retType.kind, retType.typeIndex);
+                    todo_with_msg("function returns something, but we wrote return;");
+                }
                 (*stmt).typeState = newTCStateSuccess();
                 return newTCStateSuccess();
             } else if (this.currentMethod != null) {
@@ -865,53 +875,50 @@ struct TypeChecker {
     func typeCheckVarDecl(&this, varDeclID: usize, scopes: &ScopeLookupList, globalScope: bool) -> TCState {
         trace("TypeChecker.typeCheckVarDecl");
         let varDecl: &ParsedStmt = stmts.at(varDeclID);
+        if (varDecl.ignored) return blank;
         assert(varDecl.kind == STMT_VAR_DECL, "Stmt expected to be a VarDecl");
         let context: VarDeclContext = varDecl.varDeclContext;
         let last: &ScopeLookup = scopes.last();
-        if (varDecl.typeState.isSuccess()) {
-            if (globalScope) todo_with_msg("cached var decl global scope");
-            last.addVariable(VariableLookup {
-                globalID: varDecl.getID(),
-                name: context.name,
-                typeState: varDecl.typeState,
-                isComptime: context.isComptime,
-            });
-            return varDecl.typeState;
-        }
-        let loc: Token = blank;
-        // REVIEW: Warn about shadowing?
-        if (!globalScope && last.isKnownVariable(context.name.content, &loc)) {
-            return this.reportVariableRedeclaration(context.name, loc);
-        }
         let typeState: TCState = blank;
-        if (context.typeID != TYPE_INVALID) {
-            typeState = this.typeCheckTypeNode(context.typeID);
-            if (typeState.isError()) return typeState;
-            if (!typeState.isType()) todo_with_msg("let type is not a type");
-        }
-        this.isComptimeContext = context.isComptime;
-        let exprState: TCState = this.typeCheckExpr(context.exprID, scopes);
-        this.isComptimeContext = false;
-        if (context.typeID == TYPE_INVALID) {
-            // let var = expr;
-            assert(typeState.isInvalid(), "`let var = expr;` got valid type state??");
-            if (exprState.isError()) return exprState;
-            if (exprState.wantsInfer()) {
-                todo_with_msg("`let var = expr;` wants inferred expr");
-            }
-            if (!exprState.isType()) todo_with_msg("let expr is not a type");
-            typeState = exprState;
+        let exprState: TCState = blank;
+        if (varDecl.typeState.isSuccess()) {
+            typeState = varDecl.typeState;
+            exprState = varDecl.typeState;
         } else {
-            // let var: type = expr;
-            if (exprState.wantsInfer()) {
-                exprState = this.inferTypeOntoExpr(context.exprID, typeState.getType());
+            let loc: Token = blank;
+            // REVIEW: Warn about shadowing?
+            if (!globalScope && last.isKnownVariable(context.name.content, &loc)) {
+                return this.reportVariableRedeclaration(context.name, loc);
             }
-            if (exprState.isType()) {
-                let typeType: &Type = types.at(typeState.getType());
-                let exprType: &Type = types.at(exprState.getType());
-                if (!typeType.equals(exprType)) {
-                    let exprNode: &ParsedExpr = exprs.at(context.exprID);
-                    exprState = this.reportTypeMismatch(exprNode.span, typeType, exprType);
+            if (context.typeID != TYPE_INVALID) {
+                typeState = this.typeCheckTypeNode(context.typeID);
+                if (typeState.isError()) return typeState;
+                if (!typeState.isType()) todo_with_msg("let type is not a type");
+            }
+            this.isComptimeContext = context.isComptime;
+            exprState = this.typeCheckExpr(context.exprID, scopes);
+            this.isComptimeContext = false;
+            if (context.typeID == TYPE_INVALID) {
+                // let var = expr;
+                assert(typeState.isInvalid(), "`let var = expr;` got valid type state??");
+                if (exprState.isError()) return exprState;
+                if (exprState.wantsInfer()) {
+                    todo_with_msg("`let var = expr;` wants inferred expr");
+                }
+                if (!exprState.isType()) todo_with_msg("let expr is not a type");
+                typeState = exprState;
+            } else {
+                // let var: type = expr;
+                if (exprState.wantsInfer()) {
+                    exprState = this.inferTypeOntoExpr(context.exprID, typeState.getType());
+                }
+                if (exprState.isType()) {
+                    let typeType: &Type = types.at(typeState.getType());
+                    let exprType: &Type = types.at(exprState.getType());
+                    if (!typeType.equals(exprType)) {
+                        let exprNode: &ParsedExpr = exprs.at(context.exprID);
+                        exprState = this.reportTypeMismatch(exprNode.span, typeType, exprType);
+                    }
                 }
             }
         }
@@ -936,6 +943,7 @@ struct TypeChecker {
     func typeCheckExpr(&this, exprID: usize, scopes: &ScopeLookupList) -> TCState {
         trace("TypeChecker.typeCheckExpr");
         let expr: &ParsedExpr = exprs.at(exprID);
+        if (expr.ignored) return blank;
         if (expr.typeState.isSuccess()) return expr.typeState;
         let state: TCState = blank;
         if (expr.kind == EXPR_EMPTY) {
@@ -1094,6 +1102,7 @@ struct TypeChecker {
                 fprintf(stderr, "%s: %s: Logical Not is not defined for type `%s`.\n", loc.chars(), ERR_STR, t.chars());
                 t.drop();
                 loc.drop();
+                this.typeError = true;
                 return newTCStateFailure(ERROR_TYPE_MISMATCH);
             }
             return exprState;
@@ -1105,6 +1114,7 @@ struct TypeChecker {
                 fprintf(stderr, "%s: %s: Negation is not defined for type `%s`.\n", loc.chars(), ERR_STR, t.chars());
                 t.drop();
                 loc.drop();
+                this.typeError = true;
                 return newTCStateFailure(ERROR_TYPE_MISMATCH);
             }
             return exprState;
@@ -1134,6 +1144,7 @@ struct TypeChecker {
             }
             n.drop();
             loc.drop();
+            this.typeError = true;
             return newTCStateFailure(ERROR_NO_SUCH_FUNCTION);
         }
         let callContext: &ArrayContext = &expr.arrayContext;
@@ -1264,6 +1275,7 @@ struct TypeChecker {
             }
             _n.drop();
             loc.drop();
+            this.typeError = true;
             return newTCStateFailure(ERROR_NO_SUCH_IDENTIFIER);
         }
         if (lookup.isStruct()) {
@@ -1326,6 +1338,7 @@ struct TypeChecker {
             }
             _name.drop();
             loc.drop();
+            this.typeError = true;
             return newTCStateFailure(ERROR_NO_SUCH_IDENTIFIER);
         }
         if (this.isComptimeContext && !var.isComptime) {
@@ -1403,6 +1416,7 @@ struct TypeChecker {
             fprintf(stderr, "%s: %s: Expected index of array access to be type `usize`, got `%s`.\n", loc.chars(), ERR_STR, typ.chars());
             typ.drop();
             loc.drop();
+            this.typeError = true;
             return newTCStateFailure(ERROR_INDEXED_TYPE_MISMATCH);
         }
         let underlyingID: usize = lhsType.typeIndex;
@@ -1534,6 +1548,7 @@ struct TypeChecker {
                     structLoc.drop();
                     structName.drop();
                     loc.drop();
+                    this.typeError = true;
                     return newTCStateFailure(ERROR_NO_SUCH_METHOD);
                 }
                 let callContext: &ArrayContext = &rhs.arrayContext;
@@ -1670,6 +1685,7 @@ struct TypeChecker {
                         l.chars(), ERR_STR, s.chars());
                     l.drop();
                     s.drop();
+                    this.typeError = true;
                 }
                 return newTCStateFailure(ERROR_UNEXPECTED_LITERAL);
             } else if (typ.isArray()) {
@@ -1680,6 +1696,7 @@ struct TypeChecker {
                         l.chars(), ERR_STR, s.chars());
                     l.drop();
                     s.drop();
+                    this.typeError = true;
                 }
                 return newTCStateFailure(ERROR_UNEXPECTED_LITERAL);
             } else {
@@ -1700,6 +1717,7 @@ struct TypeChecker {
                         fprintf(stderr, "%s: %s: Array size mismatch! Expected to find %llu element(s), got %llu instead.\n",
                             loc.chars(), ERR_STR, typ.arraySize, expr.arrayContext.elemLength);
                         loc.drop();
+                        this.typeError = true;
                     }
                     return newTCStateFailure(ERROR_ARRAY_SIZE_MISMATCH);
                 }
@@ -1718,6 +1736,7 @@ struct TypeChecker {
                         fprintf(stderr, "%s: %s: Array size mismatch! Expected to find %llu element(s), got %llu instead.\n",
                             loc.chars(), ERR_STR, typ.arraySize, expr.arrayContext.size);
                         loc.drop();
+                        this.typeError = true;
                     }
                     return newTCStateFailure(ERROR_ARRAY_SIZE_MISMATCH);
                 }
@@ -1733,6 +1752,7 @@ struct TypeChecker {
                     loc.chars(), ERR_STR, name.chars());
                 name.drop();
                 loc.drop();
+                this.typeError = true;
                 return newTCStateFailure(ERROR_BLANK_FOR_NULL);
             } else if (typ.isPrimitive()) {
                 let loc: String = expr.span.toString();
@@ -1785,6 +1805,7 @@ struct TypeChecker {
                         fprintf(stderr, "%s: %s: Negation is not defined for type `%s`.\n", loc.chars(), ERR_STR, t.chars());
                         t.drop();
                         loc.drop();
+                        this.typeError = true;
                     }
                     return newTCStateFailure(ERROR_TYPE_MISMATCH);
                 }
@@ -1917,6 +1938,7 @@ struct TypeChecker {
     func typeCheckTypeNode(&this, typeID: usize) -> TCState {
         trace("TypeChecker.typeCheckTypeNode");
         let typ: &ParsedTypeNode = typeNodes.at(typeID);
+        if (typ.ignored) return blank;
         if (typ.typeState.isSuccess()) return typ.typeState;
         let tid: usize = 0;
         if (typ.kind == PARSED_TYPE_REF) {
@@ -1952,6 +1974,7 @@ struct TypeChecker {
                 }
                 _n.drop();
                 loc.drop();
+                this.typeError = true;
                 return newTCStateFailure(ERROR_NO_SUCH_IDENTIFIER);
             }
             if (typeLookup.isStruct()) {

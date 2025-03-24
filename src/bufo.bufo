@@ -3,14 +3,15 @@ import "libc.bufo";
 import "substr.bufo";
 import "string.bufo";
 import "cmd.bufo";
-import "frontend/nodes.bufo";
-import "frontend/lexer.bufo";
-import "frontend/parser.bufo";
-import "middleend/types.bufo";
-import "middleend/checker.bufo";
-import "backend/irgen.bufo";
-import "backend/interp.bufo";
-import "backend/codegen_llvm.bufo";
+import "./util/span.bufo";
+import "./frontend/nodes.bufo";
+import "./frontend/lexer.bufo";
+import "./frontend/parser.bufo";
+import "./middleend/types.bufo";
+import "./middleend/checker.bufo";
+import "./backend/irgen.bufo";
+import "./backend/interp.bufo";
+import "./backend/codegen_llvm.bufo";
 
 func getArg(argv: &&char, i: usize) -> &char {
     return *(argv + i * sizeof &char);

@@ -1,0 +1,17 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! FAILURE
+//! CODE: 5
+//! ERROR:
+
+// NOTE: Only fails because we call exit(5) :^)
+
+@extern("printf") func p(fmt: &char, ...) -> i32;
+@extern("exit") func e(code: i32);
+
+func main(argc: i32, argv: &&char) -> i32 {
+    p("Hello World!\n");
+    p("%u\n", argc);
+    e(5);
+    return 0;
+}

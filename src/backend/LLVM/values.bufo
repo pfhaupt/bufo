@@ -2,7 +2,7 @@ import "prelude.bufo";
 import "substr.bufo";
 import "./bindings.bufo";
 import "./basic_block.bufo";
-import "./types.bufo";
+import "../LLVM/types.bufo";
 
 struct LLVMValue {
     ref: LLVMValueRef;

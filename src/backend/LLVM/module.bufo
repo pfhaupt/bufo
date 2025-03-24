@@ -2,11 +2,11 @@ import "prelude.bufo";
 import "libc.bufo";
 import "string.bufo";
 import "substr.bufo";
-import "./bindings.bufo";
-import "./types.bufo";
-import "./values.bufo";
-import "./pass_manager.bufo";
-import "./target.bufo";
+import "../LLVM/bindings.bufo";
+import "../LLVM/types.bufo";
+import "../LLVM/values.bufo";
+import "../LLVM/pass_manager.bufo";
+import "../LLVM/target.bufo";
 
 struct LLVMModule {
     ref: LLVMModuleRef;

@@ -3,10 +3,10 @@ import "libc.bufo";
 import "substr.bufo";
 import "string.bufo";
 import "../../util/lists.bufo";
-import "./bindings.bufo";
-import "./types.bufo";
-import "./basic_block.bufo";
-import "./values.bufo";
+import "../LLVM/bindings.bufo";
+import "../LLVM/types.bufo";
+import "../LLVM/basic_block.bufo";
+import "../LLVM/values.bufo";
 
 struct LLVMBuilder {
     ref: LLVMBuilderRef;

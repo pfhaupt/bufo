@@ -91,7 +91,7 @@ struct LLVMCodegen {
         //        It would be cooler if the prelude or standard library did that.
         //        Needs more features though, like being able to provide custom
         //        names that overwrite the mangling
-        let mainName: SubStr = newSubStrOfStrLit("maini32PPcri32f00");
+        let mainName: SubStr = newSubStrOfStrLit("maini32PPcri32f0");
         if (!this.llvmModule.hasFunction(mainName)) {
             fprintf(stderr, "%s Could not find main function!\n", FATAL_STR);
             fprintf(stderr, "%s: The compiler currently requires that the input file also defines a main function.\n", NOTE_STR);
@@ -124,6 +124,7 @@ struct LLVMCodegen {
         let llvmFunc: LLVMValue = blank;
         let blocks: LLVMBasicBlockList = blank;
         this.interp.pushRegisterStack(funcSize);
+        this.interp.globalRegisters = &this.global;
         this.interp.globalRegBase = this.interp.regStackBase;
         assert(global.blocks.length == 1, "Expected to only find one IRBlock in global scope");
         this.generateBlock(&llvmFunc, global, &blocks, global.blocks.at(0), &this.global);
@@ -232,7 +233,7 @@ struct LLVMCodegen {
 
     func generateFunction(&this, index: usize, irFunc: &IRFunc) -> bool {
         trace("LLVMCodegen.generateFunction");
-        if (irFunc.isExtern) return true;
+        if (irFunc.isExtern()) return true;
         let llvmFuncValue: LLVMValue = irFunc.llvmFunc;
         assert(!llvmFuncValue.ref.isNull());
         let blocks: LLVMBasicBlockList = blank;

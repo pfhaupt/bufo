@@ -2,11 +2,18 @@ import "prelude.bufo";
 import "libc.bufo";
 import "substr.bufo";
 import "string.bufo";
+import "bufo.bufo";
 import "./lexer.bufo";
 import "./token.bufo";
 import "./nodes.bufo";
 import "./context.bufo";
+import "../util/lists.bufo";
 import "../util/span.bufo";
+import "../middleend/checker.bufo";
+import "../middleend/types.bufo";
+import "../backend/irgen.bufo";
+import "../backend/interp.bufo";
+import "../backend/codegen_llvm.bufo";
 
 struct Parser {
     lexer: Lexer;
@@ -42,6 +49,20 @@ struct Parser {
             this.addImportRoot(root.asSubStr());
             root.drop();
         }
+    }
+
+    func expectSoftIdentifier(&this) -> Token {
+        trace("Parser.expectSoftIdentifier");
+        let tkn: Token = this.lexer.next();
+        if (tkn.kind != TOKEN_KEYWORD && tkn.kind != TOKEN_IDENT) {
+            let loc: String = tkn.getLocation();
+            let name: String = tkn.content.toString();
+            fprintf(stderr, "%s: %s: Expected identifier, found `%s` instead.\n", loc.chars(), ERR_STR, name.chars());
+            name.drop();
+            loc.drop();
+            exit(1);
+        }
+        return tkn;
     }
 
     func expect(&this, tknKind: usize) -> Token {
@@ -111,12 +132,115 @@ struct Parser {
             }
         }
         while (!this.parsedEOF()) {
-            let item: &ParsedTopLevelItem = this.parseTopLevelItem();
-            mod.addTopLevelItem(item);
+            let attributes: ParsedAttributeList = blank;
+            let skip = this.parseAttributes(&attributes);
+            if (skip) {
+                debug("Parsed TopLevelItem, but skipping it because of @if()");
+                toggleIgnoringNodes();
+                let item: &ParsedTopLevelItem = this.parseTopLevelItem(attributes);
+                toggleIgnoringNodes();
+            } else {
+                let item: &ParsedTopLevelItem = this.parseTopLevelItem(attributes);
+                mod.addTopLevelItem(item);
+            }
         }
     }
 
-    func parseTopLevelItem(&this) -> &ParsedTopLevelItem {
+    func parseAttributes(&this, attrs: &ParsedAttributeList) -> bool {
+        trace("Parser.parseAttributes");
+        let skip: bool = false;
+        while (this.eat(TOKEN_AT)) {
+            let name = this.expectSoftIdentifier();
+            if (name.content.equals(&KEYWORD_EXTERN)) {
+                this.expect(TOKEN_PAREN_OPEN);
+                let v = this.expect(TOKEN_STRING_LITERAL);
+                let end = this.expect(TOKEN_PAREN_CLOSE);
+                attrs.push(ParsedAttribute {
+                    span: newSpanBetween(&name.span, &end.span),
+                    kind: ATTR_EXTERN,
+                    name: v,
+                });
+            } else if (name.content.equals(&newSubStrOfStrLit("os"))) {
+                this.expect(TOKEN_PAREN_OPEN);
+                let os = this.expect(TOKEN_IDENT);
+                this.expect(TOKEN_PAREN_CLOSE);
+                if (!os.content.equals(&OS_WINDOWS) && !os.content.equals(&OS_LINUX)) {
+                    fprintf(stderr, "%s\n", os.content.toString().chars());
+                    todo_with_msg("Unknown os");
+                }
+                skip = !os.content.equals(&TARGET_OS);
+            } else if (name.content.equals(&newSubStrOfStrLit("if"))) {
+                todo_with_msg("@if() needs refactor of the parser first");
+                // this.expect(TOKEN_PAREN_OPEN);
+                // let expr = this.parseExpr();
+                // let end = this.expect(TOKEN_PAREN_CLOSE);
+                // let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
+                // let bSize = boolType.getSize();
+                // let m = modules.at(this.lexer.moduleID);
+                // let checker = newTypeChecker();
+                // if (!this.currentStruct.isEmpty()) checker.setIncompleteStruct(this.currentStruct);
+                // printf("%llu\n", modules.length);
+                // if (!checker.typeCheckProject(m)) {
+                //     let loc = expr.span.toString();
+                //     fprintf(stderr, "%s: %s: Could not evaluate condition of @if(). There were type errors.\n", loc.chars(), ERR_STR);
+                //     loc.drop();
+                //     exit(1);
+                // }
+                // checker.setIncompleteStruct(blank);
+                // let scopes: ScopeLookupList = blank;
+                // scopes.push(blank);
+                // let t = checker.typeCheckExpr(expr.getID(), &scopes);
+                // if (!t.isSuccess()) todo_with_msg("@if() expr failed");
+                // let typ = types.at(t.getType());
+                // if (!typ.isBoolean()) todo_with_msg("@if() expr not bool");
+                // let irgen = newIRGenerator();
+                // if (!irgen.generateBytecode(m)) {
+                //     todo_with_msg("module: error when generating @if() context");
+                // }
+                // let interp = newIRInterpreter(&irgen);
+                // {
+                //     let regs: RegValueList = blank;
+                //     regs.initBlank(irgen.globalScope.registers.length);
+                //     interp.pushRegisterStack(irgen.globalScope.getRegisterSizeInBytes());
+                //     interp.globalRegisters = &regs;
+                //     interp.globalRegBase = interp.regStackBase;
+                //     assert(irgen.globalScope.blocks.length == 1);
+                //     let b = irgen.globalScope.blocks.at(0);
+                //     for (let i: usize = 0; i < b.instructions.length; i = i + 1) {
+                //         let instr = b.instructions.at(i);
+                //         if (instr.isComptime) {
+                //             *(regs.at(instr.dst.i)) = RegValue {
+                //                 isLLVM: false,
+                //                 regValue: interp.evaluateSingle(&irgen.globalScope, instr, &regs, false),
+                //                 llvmValue: blank,
+                //             };
+                //         }
+                //     }
+                // }
+                // {
+                //     let function: IRFunc = blank;
+                //     function.appendBlock();
+                //     let v = irgen.generateBytecodeExpr(&function, expr, false);
+                //     function.buildReturnExpr(v);
+                //     let regs: RegValueList = blank;
+                //     regs.initBlank(function.registers.length);
+                //     interp.evaluateCall(&function, &regs);
+                // }
+                // let res = InterpReg {
+                //     offset: 0,
+                //     size: bSize,
+                // };
+                // interp.popArgument(interp.getRegStackPointer(&res), bSize);
+                // let ptr = interp.getRegStackPointer(&res);
+                // skip = *ptr == 0;
+            } else {
+                todo_with_msg("unknown attribute");
+            }
+        }
+        return skip;
+    }
+
+    func parseTopLevelItem(&this, attributes: ParsedAttributeList) -> &ParsedTopLevelItem {
         trace("Parser.parseTopLevelItem");
         let tkn: Token = this.lexer.peek();
         if (tkn.kind != TOKEN_KEYWORD) {
@@ -140,16 +264,36 @@ struct Parser {
             fprintf(stderr, "%s: %s: The use of `unsafe` has no effect in this version of the compiler.\n", loc.chars(), ERR_STR);
             loc.drop();
             exit(1);
-            return this.parseTopLevelItem();
+            return this.parseTopLevelItem(attributes);
         } else if (tkn.content.equals(&KEYWORD_COMPTIME)) {
             this.lexer.next();
             return this.parseVarDeclStmt(tkn, true).asTLI();
         } else if (tkn.content.equals(&KEYWORD_STRUCT)) {
             // REVIEW: Do we want to support structs outside of TLIs?
             return this.parseStructDecl().asTLI();
-        } else if (tkn.content.equals(&KEYWORD_EXTERN) || tkn.content.equals(&KEYWORD_FUNC)) {
+        } else if (tkn.content.equals(&KEYWORD_FUNC) || tkn.content.equals(&KEYWORD_EXTERN)) {
             // REVIEW: Do we want to support functions outside of TLIs?
-            return this.parseFuncDecl().asTLI();
+            let isExtern: bool = false;
+            for (let i: usize = 0; i < attributes.length; i = i + 1) {
+                if (attributes.at(i).kind == ATTR_EXTERN) {
+                    isExtern = true;
+                    break;
+                }
+            }
+            if (tkn.content.equals(&KEYWORD_EXTERN)) {
+                warning("`extern` is deprecated, use `@extern(<name>)` instead");
+                isExtern = true;
+            }
+            let decl = this.parseFuncDecl(isExtern);
+            if (tkn.content.equals(&KEYWORD_EXTERN)) {
+                attributes.push(ParsedAttribute {
+                    span: decl.span,
+                    kind: ATTR_EXTERN,
+                    name: decl.name,
+                });
+            }
+            decl.attrs = attributes;
+            return decl.asTLI();
         }
         tkn.content.print();
         todo_with_msg("top level");
@@ -251,10 +395,9 @@ struct Parser {
         return newParsedMethod(structDecl.getID(), name, params, retType, body.getID());
     }
 
-    func parseFuncDecl(&this) -> &ParsedFuncDecl {
+    func parseFuncDecl(&this, isExtern: bool) -> &ParsedFuncDecl {
         trace("Parser.parseFuncDecl");
         let tkn: Token = this.expect(TOKEN_KEYWORD);
-        let isExtern: bool = tkn.content.equals(&KEYWORD_EXTERN);
         if (!isExtern) assert(tkn.content.equals(&KEYWORD_FUNC));
         let name: Token = this.expect(TOKEN_IDENT);
         let params: ParamContext = this.parseParameters(blank, false);
@@ -262,11 +405,11 @@ struct Parser {
         if (isExtern) {
             let end: Token = this.expect(TOKEN_SEMI_COLON);
             let span: Span = newSpanBetween(&tkn.span, &end.span);
-            return newParsedFuncDecl(this.lexer.moduleID, span, name, params, retType, 0, true);
+            return newParsedFuncDecl(this.lexer.moduleID, span, name, params, retType, 0);
         } else {
             let body: &ParsedBlock = this.parseBlock();
             let span: Span = newSpanBetween(&tkn.span, &body.span);
-            return newParsedFuncDecl(this.lexer.moduleID, span, name, params, retType, body.getID(), isExtern);
+            return newParsedFuncDecl(this.lexer.moduleID, span, name, params, retType, body.getID());
         }
     }
 
@@ -347,8 +490,17 @@ struct Parser {
         let block: &ParsedBlock = newParsedBlock();
         let start: Token = this.expect(TOKEN_CURLY_OPEN);
         while (!this.parsedEOF() && !this.at(TOKEN_CURLY_CLOSE)) {
-            let stmt: &ParsedStmt = this.parseStmt();
-            block.addStmt(stmt);
+            let attributes: ParsedAttributeList = blank;
+            let skip = this.parseAttributes(&attributes);
+            if (skip) {
+                debug("Parsed Stmt, but skipping it because of @if()");
+                toggleIgnoringNodes();
+                let stmt: &ParsedStmt = this.parseStmt();
+                toggleIgnoringNodes();
+            } else {
+                let stmt: &ParsedStmt = this.parseStmt();
+                block.addStmt(stmt);
+            }
         }
         let end: Token = this.expect(TOKEN_CURLY_CLOSE);
         (*block).span = newSpanBetween(&start.span, &end.span);

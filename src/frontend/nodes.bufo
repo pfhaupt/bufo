@@ -16,6 +16,11 @@ import "../middleend/types.bufo";
 //       if you ever have 10 billion expressions, please tell me how :^)
 comptime NODE_ID_OFFSET: usize = 10000000000;
 
+let ignoringNodes = false;
+func toggleIgnoringNodes() {
+    ignoringNodes = !ignoringNodes;
+}
+
 func mangleVariableName(
     moduleID: usize,
     name: &Token,
@@ -37,10 +42,13 @@ func mangleFunctionName(
     retTypeID: usize,
     isMethod: bool,
     isComptime: bool,
-    isExtern: bool
+    attrs: &ParsedAttributeList,
 ) -> String {
     let mangledName: String = blank;
-    if (isExtern) return name.content.toString();
+    for (let i: usize = 0; i < attrs.length; i = i + 1) {
+        let a = attrs.at(i);
+        if (a.kind == ATTR_EXTERN) return a.name.content.toString();
+    }
     // Method  : StructName-Name-ParamsTypeID-.RetTypeID
     // Function: ModID     -Name-ParamsTypeID-.RetTypeID-[0|1]-[0|1]
     if (isMethod) {
@@ -74,9 +82,6 @@ func mangleFunctionName(
         let n: usize = 0;
         if (isComptime) n = 1;
         mangledName.pushNumber(n);
-        if (isExtern) n = 1;
-        else n = 0;
-        mangledName.pushNumber(n);
     }
     return mangledName;
 }
@@ -101,6 +106,19 @@ func getModuleByFilePath(path: SubStr, moduleID: &usize) -> bool {
         }
     }
     return false;
+}
+
+comptime ATTR_INVALID: usize = 0;
+comptime ATTR_EXTERN: usize = 1;
+struct ParsedAttribute {
+    kind: usize;
+    span: Span;
+    name: Token;
+
+    func equals(&this, other: &ParsedAttribute) -> bool {
+        todo_with_msg("ParsedAttribute.equals");
+        return false;
+    }
 }
 
 comptime COMPILER_FLAG_LIBRARY: SubStr = BUILD_A_KEYWORD("library");
@@ -130,6 +148,7 @@ func newParsedCompilerFlag(flag: Token, value: Token) -> &ParsedCompilerFlag {
 }
 
 struct ParsedModule {
+    ignored: bool;
     origin: SubStr;
     tliList: &usize;
     tliLength: usize;
@@ -162,6 +181,7 @@ struct ParsedModule {
 func newParsedModule(origin: SubStr) -> &ParsedModule {
     trace("newParsedModule");
     modules.push(ParsedModule {
+        ignored: ignoringNodes,
         origin: origin,
     });
     return modules.last();
@@ -173,9 +193,11 @@ comptime TLI_VAR_DECL: usize = 2;
 comptime TLI_STRUCT_DECL: usize = 3;
 comptime TLI_FUNC_DECL: usize = 4;
 struct ParsedTopLevelItem {
+    ignored: bool;
     kind: usize;
     span: Span;
     nodeID: usize;
+    attributes: ParsedAttributeList;
     typeState: TCState;
 
     func getID(&this) -> usize {
@@ -187,6 +209,7 @@ struct ParsedTopLevelItem {
 func newParsedTopLevelItem(span: Span, kind: usize, nodeID: usize) -> &ParsedTopLevelItem {
     trace("newParsedTopLevelItem");
     topLevelItems.push(ParsedTopLevelItem {
+        ignored: ignoringNodes,
         kind: kind,
         span: span,
         nodeID: nodeID,
@@ -196,6 +219,7 @@ func newParsedTopLevelItem(span: Span, kind: usize, nodeID: usize) -> &ParsedTop
 }
 
 struct ParsedStructDecl {
+    ignored: bool;
     parentModule: usize;
     name: Token;
     span: Span;
@@ -242,6 +266,7 @@ struct ParsedStructDecl {
 func newParsedStructDecl(parent: usize, span: Span, name: Token) -> &ParsedStructDecl {
     trace("newParsedStructDecl");
     structDecls.push(ParsedStructDecl {
+        ignored: ignoringNodes,
         parentModule: parent,
         name: name,
         span: span,
@@ -252,12 +277,14 @@ func newParsedStructDecl(parent: usize, span: Span, name: Token) -> &ParsedStruc
 }
 
 struct ParsedMethod {
+    ignored: bool;
     parentID: usize;
     name: Token;
     isStatic: bool;
     params: ParamContext;
     retTypeID: usize;
     body: usize;
+    attrs: ParsedAttributeList;
     typeState: TCState;
 
     func getID(&this) -> usize {
@@ -267,6 +294,7 @@ struct ParsedMethod {
 
     func getMangledName(&this) -> String {
         trace("ParsedMethod.getMangledName");
+        if (this.ignored) return this.name.content.toString();
         assert(this.typeState.isSuccess(), "Mangling can only be done after type checks");
         return mangleFunctionName(
             this.parentID,
@@ -275,13 +303,14 @@ struct ParsedMethod {
             this.retTypeID,
             true,  // isMethod
             false, // isComptime,
-            false, // isExtern,
+            &this.attrs,
         );
     }
 }
 
 func newParsedMethod(parentID: usize, name: Token, params: ParamContext, retType: &ParsedTypeNode, body: usize) -> &ParsedMethod {
     methods.push(ParsedMethod {
+        ignored: ignoringNodes,
         parentID: parentID,
         name: name,
         params: params,
@@ -294,14 +323,15 @@ func newParsedMethod(parentID: usize, name: Token, params: ParamContext, retType
 }
 
 struct ParsedFuncDecl {
+    ignored: bool;
     parentID: usize;
     name: Token;
     span: Span;
     params: ParamContext;
     retTypeID: usize;
     body: usize;
+    attrs: ParsedAttributeList;
     isComptime: bool;
-    isExtern: bool;
     typeState: TCState;
 
     func getID(&this) -> usize {
@@ -309,8 +339,17 @@ struct ParsedFuncDecl {
         return funcDecls.indexOf(this);
     }
 
+    func isExtern(&this) -> bool {
+        trace("ParsedFuncDecl.isExtern");
+        for (let i: usize = 0; i < this.attrs.length; i = i + 1) {
+            if (this.attrs.at(i).kind == ATTR_EXTERN) return true;
+        }
+        return false;
+    }
+
     func getMangledName(&this) -> String {
         trace("ParsedFuncDecl.getMangledName");
+        if (this.ignored) return this.name.content.toString();
         assert(this.typeState.isSuccess(), "Mangling can only be done after type checks");
         return mangleFunctionName(
             this.parentID,
@@ -319,7 +358,7 @@ struct ParsedFuncDecl {
             this.retTypeID,
             false, // isMethod
             this.isComptime,
-            this.isExtern,
+            &this.attrs,
         );
     }
 
@@ -329,8 +368,9 @@ struct ParsedFuncDecl {
     }
 }
 
-func newParsedFuncDecl(parentID: usize, span: Span, name: Token, params: ParamContext, retType: &ParsedTypeNode, body: usize, isExtern: bool) -> &ParsedFuncDecl {
+func newParsedFuncDecl(parentID: usize, span: Span, name: Token, params: ParamContext, retType: &ParsedTypeNode, body: usize) -> &ParsedFuncDecl {
     funcDecls.push(ParsedFuncDecl {
+        ignored: ignoringNodes,
         parentID: parentID,
         name: name,
         span: span,
@@ -338,13 +378,13 @@ func newParsedFuncDecl(parentID: usize, span: Span, name: Token, params: ParamCo
         retTypeID: retType.getID(),
         body: body,
         isComptime: false,
-        isExtern: isExtern,
         typeState: blank,
     });
     return funcDecls.last();
 }
 
 struct ParsedBlock {
+    ignored: bool;
     span: Span;
     stmtList: &usize;
     stmtLength: usize;
@@ -376,7 +416,9 @@ struct ParsedBlock {
 }
 
 func newParsedBlock() -> &ParsedBlock {
-    blocks.push(ParsedBlock {});
+    blocks.push(ParsedBlock {
+        ignored: ignoringNodes,
+    });
     return blocks.last();
 }
 
@@ -393,6 +435,7 @@ comptime STMT_BREAK: usize = 8;
 comptime STMT_CONTINUE: usize = 9;
 // FIXME: The amount of memory wasted here is crazy
 struct ParsedStmt {
+    ignored: bool;
     kind: usize;
     span: Span;
     varDeclContext: VarDeclContext;
@@ -427,6 +470,7 @@ struct ParsedStmt {
 func newParsedStmt(span: Span, kind: usize) -> &ParsedStmt {
     trace("newParsedStmt");
     stmts.push(ParsedStmt {
+        ignored: ignoringNodes,
         span: span,
         kind: kind,
     });
@@ -495,6 +539,7 @@ func getBuiltinTypeKind(name: Token) -> usize {
     return PARSED_TYPE_INVALID;
 }
 struct ParsedTypeNode {
+    ignored: bool;
     span: Span;
     kind: usize;
     underlyingID: usize;
@@ -511,6 +556,7 @@ struct ParsedTypeNode {
 func newParsedTypeNode(span: Span, kind: usize) -> &ParsedTypeNode {
     trace("newParsedTypeNode");
     typeNodes.push(ParsedTypeNode {
+        ignored: ignoringNodes,
         span: span,
         kind: kind,
     });
@@ -554,6 +600,7 @@ comptime EXPR_BLANK: usize = 14;
 comptime EXPR_TRUE: usize = 15;
 comptime EXPR_FALSE: usize = 16;
 struct ParsedExpr {
+    ignored: bool;
     span: Span;
     kind: usize;
     origToken: Token;
@@ -751,6 +798,7 @@ func unaryOpFromKind(kind: usize) -> usize {
 func newParsedExpr(span: Span, kind: usize) -> &ParsedExpr {
     trace("newParsedExpr");
     exprs.push(ParsedExpr {
+        ignored: ignoringNodes,
         kind: kind,
         span: span,
     });
