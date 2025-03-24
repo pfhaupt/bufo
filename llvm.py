@@ -59,6 +59,7 @@ with open("./src/backend/LLVM/bindings.bufo", "w") as file:
         "LLVMBasicBlockRef",
         "LLVMValueRef",
         "LLVMTypeRef",
+        "LLVMAttributeRef",
     ])
     content += """
 // LLVMTarget
@@ -84,6 +85,7 @@ with open("./src/backend/LLVM/bindings.bufo", "w") as file:
 @extern("LLVMDoubleTypeInContext") func LLVMDoubleTypeInContext(c: LLVMContextRef) -> LLVMTypeRef;
 @extern("LLVMVoidTypeInContext") func LLVMVoidTypeInContext(c: LLVMContextRef) -> LLVMTypeRef;
 @extern("LLVMStructTypeInContext") func LLVMStructTypeInContext(c: LLVMContextRef, ElementTypes: &LLVMTypeRef, ElementCount: u32, Packed: LLVMBool) -> LLVMTypeRef;
+@extern("LLVMCreateEnumAttribute") func LLVMCreateEnumAttribute(c: LLVMContextRef, KindID: u32, Val: u64) -> LLVMAttributeRef;
 
 // LLVMModule
 @extern("LLVMPrintModuleToString") func LLVMPrintModuleToString(M: LLVMModuleRef) -> &char;
@@ -166,6 +168,7 @@ with open("./src/backend/LLVM/bindings.bufo", "w") as file:
 @extern("LLVMConstNull") func LLVMConstNull(Ty: LLVMTypeRef) -> LLVMValueRef;
 @extern("LLVMDumpValue") func LLVMDumpValue(V: LLVMValueRef);
 @extern("LLVMGlobalGetValueType") func LLVMGlobalGetValueType(Val: LLVMValueRef) -> LLVMTypeRef;
+@extern("LLVMAddAttributeAtIndex") func LLVMAddAttributeAtIndex(Val: LLVMValueRef, index: u32, Attr: LLVMAttributeRef);
 
 // LLVM Globals
 @extern("LLVMSetInitializer") func LLVMSetInitializer(GlobalVar: LLVMValueRef, ConstantVal: LLVMValueRef);
@@ -175,6 +178,9 @@ with open("./src/backend/LLVM/bindings.bufo", "w") as file:
 @extern("LLVMSetValueName") func LLVMSetValueName(Val: LLVMValueRef, Name: &char);
 @extern("LLVMGetValueName2") func LLVMGetValueName2(Val: LLVMValueRef, Length: &usize) -> &char;
 @extern("LLVMGetValueName") func LLVMGetValueName(Val: LLVMValueRef) -> &char;
+
+// LLVMAttribute
+@extern("LLVMGetEnumAttributeKindForName") func LLVMGetEnumAttributeKindForName(Name: &char, SLen: usize) -> u32;
 
 struct LLVMBool { val: i32; }
 func newLLVMBool(b: bool) -> LLVMBool {

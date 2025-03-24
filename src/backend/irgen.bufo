@@ -260,6 +260,14 @@ struct IRFunc {
     currentBlock: IRBlockID;
     llvmFunc: LLVMValue;
     retPtr: RegIndex;
+    attrs: ParsedAttributeList;
+    func hasAttribute(&this, attr: usize) -> bool {
+        trace("IRFunc.hasAttribute");
+        for (let i: usize = 0; i < this.attrs.length; i = i + 1) {
+            if (this.attrs.at(i).kind == attr) return true;
+        }
+        return false;
+    }
     func isExtern(&this) -> bool {
         if (this.isMethod) return false;
         return this.getFuncNode().isExtern();
@@ -897,6 +905,7 @@ struct IRGen {
                 currentBlock: blank,
                 llvmFunc: blank,
                 retPtr: blank,
+                attrs: function.attrs,
             };
             this.functions.add(name, irfunc);
         }
@@ -919,6 +928,7 @@ struct IRGen {
                 currentBlock: blank,
                 llvmFunc: blank,
                 retPtr: blank,
+                attrs: method.attrs,
             };
             this.functions.add(name, irmeth);
         }
@@ -1039,23 +1049,19 @@ struct IRGen {
             let f: &ParsedFuncDecl = function.getFuncNode();
             modID = f.parentID;
         }
-        let s: String = modules.at(modID).origin.toString();
         for (let i: usize = 0; i < block.stmtLength; i = i + 1) {
             let stmt: &ParsedStmt = stmts.at(block.getStmtAtIndex(i));
             this.generateBytecodeStmt(function, stmt);
             let curr: &IRBlock = function.getCurrentBlockAsRef();
             if (curr.isTerminated()) {
                 if (i != block.stmtLength - 1) {
-                    let _s: String = stmts.at(block.getStmtAtIndex(i + 1)).span.toString();
-                    s.pushChar(':');
-                    s.pushString(&_s);
-                    fprintf(stderr, "%s: %s: Unreachable code.\n", s.chars(), WARN_STR);
-                    _s.drop();
+                    let loc: String = stmts.at(block.getStmtAtIndex(i + 1)).span.toString();
+                    fprintf(stderr, "%s: %s: Unreachable code.\n", loc.chars(), WARN_STR);
+                    loc.drop();
                 }
                 break;
             }
         }
-        s.drop();
         let after: usize = function.leaveScope();
         assert(scope == after, "Scope imbalance detected");
     }
@@ -1417,14 +1423,15 @@ struct IRGen {
     }
 
     func prepareReturnValue(&this, function: &IRFunc, funcID: usize, args: RegIndexList, retType: &Type, retPtr: RegIndex, needsPtr: bool) -> RegIndex {
+        let retVal: RegIndex = blank;
         if (retType.getSize() > 8) {
             let reg: RegIndex = function.allocateRegister(retType);
             function.buildCall(retPtr, RegIndex { i: funcID }, args);
             if (needsPtr) {
-                return retPtr;
+                retVal = retPtr;
             } else {
                 function.buildLoad(reg, retPtr);
-                return reg;
+                retVal = reg;
             }
         } else {
             if (retType.isStruct()) {
@@ -1438,11 +1445,11 @@ struct IRGen {
                 function.buildAlloca(r, s);
                 function.buildStore(r, reg);
                 if (needsPtr) {
-                    return r;
+                    retVal = r;
                 } else {
                     function.buildLoad(v, r);
                 }
-                return v;
+                retVal = v;
             } else {
                 let reg: RegIndex = function.allocateRegister(retType);
                 function.buildCall(reg, RegIndex { i: funcID }, args);
@@ -1450,12 +1457,18 @@ struct IRGen {
                     let tempAlloc: RegIndex = function.allocateRegister(types.at(retType.intoPointer()));
                     function.buildAlloca(tempAlloc, retType.getSize());
                     function.buildStore(tempAlloc, reg);
-                    return tempAlloc;
+                    retVal = tempAlloc;
                 } else {
-                    return reg;
+                    retVal = reg;
                 }
             }
         }
+        let f = this.functions.at(funcID);
+        assert(f != null);
+        if (f.hasAttribute(ATTR_NORETURN)) {
+            function.buildUnreachable();
+        }
+        return retVal;
     }
 
     func generateBytecodeExprIndexedAccess(&this, function: &IRFunc, expr: &ParsedExpr, needsPtr: bool) -> RegIndex {
@@ -2096,6 +2109,7 @@ func newIRGenerator() -> IRGen {
             currentBlock: blank,
             llvmFunc: blank,
             retPtr: blank,
+            attrs: blank,
         },
         functions: blank,
     };

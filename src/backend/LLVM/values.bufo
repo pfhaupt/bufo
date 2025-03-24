@@ -3,6 +3,7 @@ import "substr.bufo";
 import "./bindings.bufo";
 import "./basic_block.bufo";
 import "../LLVM/types.bufo";
+import "../LLVM/attribute.bufo";
 
 struct LLVMValue {
     ref: LLVMValueRef;
@@ -67,6 +68,11 @@ struct LLVMValue {
         trace("LLVMValue.setInitializer");
         assert(!val.ref.isNull(), "Expected valid LLVMValue in LLVMValue.setInitializer");
         LLVMSetInitializer(this.ref, val.ref);
+    }
+
+    func addAttribute(&this, index: u32, attr: LLVMAttribute) {
+        trace("LLVMValue.addAttribute");
+        LLVMAddAttributeAtIndex(this.ref, index, attr.ref);
     }
 }
 

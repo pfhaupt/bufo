@@ -108,8 +108,14 @@ func getModuleByFilePath(path: SubStr, moduleID: &usize) -> bool {
     return false;
 }
 
+comptime _ATTR_EXTERN: SubStr = BUILD_A_KEYWORD("extern");
+comptime _ATTR_OS: SubStr = BUILD_A_KEYWORD("os");
+comptime _ATTR_NORETURN: SubStr = BUILD_A_KEYWORD("noreturn");
+
 comptime ATTR_INVALID: usize = 0;
 comptime ATTR_EXTERN: usize = 1;
+comptime ATTR_OS: usize = 2; // not used, handled in parser directly
+comptime ATTR_NORETURN: usize = 3;
 struct ParsedAttribute {
     kind: usize;
     span: Span;

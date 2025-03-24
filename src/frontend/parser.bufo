@@ -151,7 +151,7 @@ struct Parser {
         let skip: bool = false;
         while (this.eat(TOKEN_AT)) {
             let name = this.expectSoftIdentifier();
-            if (name.content.equals(&KEYWORD_EXTERN)) {
+            if (name.content.equals(&_ATTR_EXTERN)) {
                 this.expect(TOKEN_PAREN_OPEN);
                 let v = this.expect(TOKEN_STRING_LITERAL);
                 let end = this.expect(TOKEN_PAREN_CLOSE);
@@ -160,7 +160,7 @@ struct Parser {
                     kind: ATTR_EXTERN,
                     name: v,
                 });
-            } else if (name.content.equals(&newSubStrOfStrLit("os"))) {
+            } else if (name.content.equals(&_ATTR_OS)) {
                 this.expect(TOKEN_PAREN_OPEN);
                 let os = this.expect(TOKEN_IDENT);
                 this.expect(TOKEN_PAREN_CLOSE);
@@ -169,6 +169,11 @@ struct Parser {
                     todo_with_msg("Unknown os");
                 }
                 skip = !os.content.equals(&TARGET_OS);
+            } else if (name.content.equals(&_ATTR_NORETURN)) {
+                attrs.push(ParsedAttribute {
+                    span: name.span,
+                    kind: ATTR_NORETURN,
+                });
             } else if (name.content.equals(&newSubStrOfStrLit("if"))) {
                 todo_with_msg("@if() needs refactor of the parser first");
                 // this.expect(TOKEN_PAREN_OPEN);

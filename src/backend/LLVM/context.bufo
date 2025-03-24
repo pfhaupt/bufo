@@ -8,6 +8,7 @@ import "../LLVM/types.bufo";
 import "../LLVM/values.bufo";
 import "../LLVM/basic_block.bufo";
 import "../LLVM/target.bufo";
+import "../LLVM/attribute.bufo";
 
 struct LLVMContext {
     ref: LLVMContextRef;
@@ -106,6 +107,13 @@ struct LLVMContext {
         _name.drop();
         assert(!block.isNull(), "Could not append basic block in context");
         return newLLVMBasicBlockFromRef(block);
+    }
+
+    func createEnumAttribute(&this, id: u32, val: u64) -> LLVMAttribute {
+        trace("LLVMContext.createEnumAttribute");
+        let attr = LLVMCreateEnumAttribute(this.ref, id, val);
+        assert(!attr.isNull(), "Could not create enum attribute in context");
+        return newLLVMAttributeFromRef(attr);
     }
 }
 

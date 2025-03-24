@@ -168,6 +168,11 @@ struct LLVMCodegen {
         let llvmType: LLVMType = this.prepareReturnType(retType);
         let llvmFuncType: LLVMType = llvmType.intoFunctionType(params, isVarArg);
         let llvmFuncValue: LLVMValue = this.llvmModule.addFunction(irFunc.name.asSubStr(), llvmFuncType);
+        if (irFunc.hasAttribute(ATTR_NORETURN)) {
+            let id = LLVMGetEnumAttributeKindForName("noreturn", 8 /* sizeof "noreturn" */);
+            assert(id != 0, "Could not get noreturn attribute from LLVM");
+            llvmFuncValue.addAttribute(U32_MAX, this.llvmContext.createEnumAttribute(id, 1));
+        }
         (*irFunc).llvmFunc = llvmFuncValue;
         let origFunc: &IRFunc = this.irGen.functions.get(&irFunc.name);
         (*origFunc).llvmFunc = llvmFuncValue;

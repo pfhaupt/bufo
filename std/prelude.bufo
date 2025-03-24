@@ -17,6 +17,8 @@ comptime ERR_STR: &char = "\x1b[91merror\x1b[0m";
 comptime WARN_STR: &char = "\x1b[93mwarning\x1b[0m";
 comptime NOTE_STR: &char = "\x1b[92mnote\x1b[0m";
 
+comptime U32_MAX: u32 = 0 - 1;
+
 let stdin: Any = null;
 let stdout: Any = null;
 let stderr: Any = null;
