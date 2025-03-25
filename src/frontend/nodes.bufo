@@ -773,6 +773,7 @@ func binOpAsStr(op: usize) -> &char {
     else if (op == BIN_LOR) return "||";
     else if (op == BIN_BAND) return "&";
     else if (op == BIN_BOR) return "|";
+    else if (op == BIN_BXOR) return "^";
     unreachable("Exhaustive handling of binary ops in binOpAsStr");
 }
 

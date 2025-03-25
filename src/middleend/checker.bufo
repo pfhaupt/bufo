@@ -35,6 +35,7 @@ comptime ERROR_NON_PRIMITIVE_CAST: usize = 21;
 comptime ERROR_INDEXED_ACCESS_ON_NON_ARRAY: usize = 22;
 comptime ERROR_RUNTIME_VALUE_IN_COMPTIME_CONTEXT: usize = 23;
 comptime ERROR_ANY_DEREF: usize = 24;
+comptime ERROR_MEMBER_ACCESS_NON_STRUCT: usize = 25;
 
 comptime TCSTATE_INVALID: usize = 0;
 comptime TCSTATE_ERROR: usize = 1;
@@ -370,6 +371,17 @@ struct TypeChecker {
         loc.drop();
         this.typeError = true;
         return newTCStateFailure(ERROR_ANY_DEREF);
+    }
+
+    func reportMemberAccessOnNonStruct(&this, expr: &ParsedExpr, instance: &Type) -> TCState {
+        trace("TypeChecker.reportMemberAccessOnNonStruct");
+        let loc = expr.span.toString();
+        let t = instance.toString();
+        fprintf(stderr, "%s: %s: The Dot-Operator is not defined for values of type %s.\n", loc.chars(), ERR_STR, t.chars());
+        t.drop();
+        loc.drop();
+        this.typeError = true;
+        return newTCStateFailure(ERROR_MEMBER_ACCESS_NON_STRUCT);
     }
 
     func emergencyPrint(&this, where: Span) {
@@ -1019,7 +1031,12 @@ struct TypeChecker {
                     }
                     let nextType: &Type = types.at(nextState.getType());
                     if (!nextType.equals(elemType)) {
-                        todo_with_msg("array elem type mismatch");
+                        let loc = exprs.at(elemIndex).span.toString();
+                        let t = elemType.toString();
+                        lastErrState = this.reportTypeMismatch(exprs.at(nextIndex).span, elemType, nextType);
+                        fprintf(stderr, "%s: %s: Array elements inferred to be type %s here.\n", loc.chars(), NOTE_STR, t.chars());
+                        t.drop();
+                        loc.drop();
                     }
                 }
                 if (!lastErrState.isInvalid()) return lastErrState;
@@ -1088,14 +1105,26 @@ struct TypeChecker {
         if (typeType.isPointer() && exprType.isPointer()) {
             // PTR as PTR is allowed
         } else if (exprType.isPointer() && typeType.isInteger()) {
-            // PTR as INT is allowed if INT is pointer-sized
             if (typeType.getSize() != exprType.getSize()) {
-                todo_with_msg("PTR as INT with sizeof(INT) < sizeof(PTR)");
+                let loc = expr.span.toString();
+                let from = exprType.toString();
+                let to = typeType.toString();
+                fprintf(stderr, "%s: %s: Casting pointer of type %s to integer of type %s.\n",
+                    loc.chars(), WARN_STR, from.chars(), to.chars());
+                to.drop();
+                from.drop();
+                loc.drop();
             }
         } else if (exprType.isInteger() && typeType.isPointer()) {
-            // INT as PTR is allowed if INT is pointer-sized
             if (typeType.getSize() != exprType.getSize()) {
-                todo_with_msg("INT as PTR with sizeof(INT) < sizeof(PTR)");
+                let loc = expr.span.toString();
+                let from = exprType.toString();
+                let to = typeType.toString();
+                fprintf(stderr, "%s: %s: Casting integer of type %s to pointer of type %s.\n",
+                    loc.chars(), WARN_STR, from.chars(), to.chars());
+                to.drop();
+                from.drop();
+                loc.drop();
             }
         } else if (!typeType.isPrimitive()) {
             return this.reportNonPrimitiveCast(expr.span, exprType, typeType);
@@ -1603,14 +1632,15 @@ struct TypeChecker {
         if (maybeInfer.wantsInfer()) return maybeInfer;
         let lhsType: &Type = types.at(lhsState.getType());
         let rhsType: &Type = types.at(rhsState.getType());
-        if (!lhsType.equals(rhsType)) {
-            todo_with_msg("logical type mismatch");
-        }
+        let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
+        let result = newTCStateType(boolType.getID());
         if (!lhsType.isBoolean()) {
-            todo_with_msg("logical expects bool");
+            result = this.reportTypeMismatch(exprs.at(expr.lhs).span, boolType, lhsType);
         }
-        let t: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
-        return newTCStateType(t.getID());
+        if (!rhsType.isBoolean()) {
+            result = this.reportTypeMismatch(exprs.at(expr.rhs).span, boolType, rhsType);
+        }
+        return result;
     }
 
     func typeCheckExprBitwise(&this, binID: usize, scopes: &ScopeLookupList) -> TCState {
@@ -1629,12 +1659,12 @@ struct TypeChecker {
         if (maybeInfer.wantsInfer()) return maybeInfer;
         let lhsType: &Type = types.at(lhsState.getType());
         let rhsType: &Type = types.at(rhsState.getType());
-        if (!lhsType.equals(rhsType)) {
-            todo_with_msg("bitwise type mismatch");
-        }
-        if (!lhsType.isInteger()) {
-            this.emergencyPrint(expr.span);
-            todo_with_msg("bitwise is only supported for integers");
+        if (!lhsType.equals(rhsType) || !lhsType.isInteger() || !rhsType.isInteger()) {
+            return this.reportBinaryTypeMismatch(
+                expr.op,
+                exprs.at(expr.lhs).span, lhsType,
+                exprs.at(expr.rhs).span, rhsType,
+            );
         }
         return lhsState;
     }
@@ -1662,7 +1692,7 @@ struct TypeChecker {
         let lhsType: &Type = types.at(lhsState.getType());
         let rhsType: &Type = types.at(rhsState.getType());
         if (!lhsType.equals(rhsType)) {
-            todo_with_msg("assignment type mismatch");
+            return this.reportTypeMismatch(exprs.at(expr.rhs).span, lhsType, rhsType);
         }
         return rhsState;
     }
@@ -1674,8 +1704,12 @@ struct TypeChecker {
         assert(expr.op == BIN_DOT);
         let instance: TCState = this.typeCheckExpr(expr.lhs, scopes);
         if (instance.isError()) return instance;
+        if (instance.wantsInfer()) return instance;
         let instanceTypeID: usize = instance.getType();
         let instanceType: &Type = types.at(instanceTypeID);
+        if (!instanceType.isStruct() && !instanceType.isStructPointer()) {
+            return this.reportMemberAccessOnNonStruct(expr, instanceType);
+        }
         let underlying: &Type = instanceType;
         if (!underlying.isStruct()) underlying = instanceType.getUnderlyingType(true);
         let lookup: TypeLookup = this.lookup.getTypeLookupForType(underlying);
@@ -1741,7 +1775,7 @@ struct TypeChecker {
                 unreachable("Got non-field non-call RHS in the dot operation.");
             }
         } else {
-            todo_with_msg("LHS of dot is sus");
+            unreachable("MemberAccess expected Struct as LHS");
         }
     }
 

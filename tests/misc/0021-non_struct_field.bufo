@@ -1,0 +1,13 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! The Dot-Operator is not defined for values of type i32.
+//! The Dot-Operator is not defined for values of type &char.
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a = argc.a;
+    let b = (*argv).size;
+    return 0;
+}

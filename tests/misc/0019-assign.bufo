@@ -1,0 +1,15 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Type mismatch! Expected type u8, found type i16.
+//! Type mismatch! Expected type i16, found type u8.
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a: u8 = 1;
+    let b: i16 = 2;
+    a = b;
+    b = a;
+    return 0;
+}

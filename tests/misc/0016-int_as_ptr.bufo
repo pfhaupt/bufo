@@ -1,0 +1,14 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! DIAGNOSTICS
+//! WARNING:
+//! Casting integer of type u8 to pointer of type &char.
+//! Casting pointer of type &char to integer of type i8.
+//! Lossy type cast: Target type (i8) is smaller than original type (&char).
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a: u8 = 0;
+    let b = a as &char;
+    let c: i8 = b as i8;
+    return 0;
+}

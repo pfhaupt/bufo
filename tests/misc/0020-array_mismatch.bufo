@@ -1,0 +1,17 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Type mismatch! Expected type u8, found type i8.
+//! Array elements inferred to be type u8 here.
+//! Type mismatch! Expected type u8, found type i8.
+//! Array elements inferred to be type u8 here.
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a: u8 = 1;
+    let b: i8 = 2;
+    let c: i8 = 3;
+    let d = [a, b, c];
+    return 0;
+}
