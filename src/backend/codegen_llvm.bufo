@@ -792,7 +792,7 @@ struct LLVMCodegen {
             assert(fields != null, "Could not allocate memory in LLVMCodegen.generateLLVMType");
             for (let i: usize = 0; i < decl.context.fieldLength; i = i + 1) {
                 let tDecl: &ParsedTypeNode = typeNodes.at(decl.context.getFieldTypeAtIndex(i));
-                *(fields + i * sizeof LLVMType) = this.generateLLVMType(types.at(tDecl.typeState.getType()));
+                fields[i] = this.generateLLVMType(types.at(tDecl.typeState.getType()));
             }
             let t: LLVMType = this.llvmContext.createStructType(&*fields, decl.context.fieldLength as u32, false);
             free(fields);

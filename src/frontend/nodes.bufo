@@ -168,13 +168,13 @@ struct ParsedModule {
             assert(this.tliList != null, "Could not resize tli list");
             this.tliCapacity = newCap;
         }
-        *(this.tliList + this.tliLength * sizeof usize) = tli.getID();
+        this.tliList[this.tliLength] = tli.getID();
         this.tliLength = this.tliLength + 1;
     }
 
     func getTopLevelItemAtIndex(&this, index: usize) -> usize {
         assert(index < this.tliLength, "Out of bounds access in getTopLevelItemAtIndex");
-        return *(this.tliList + index * sizeof usize);
+        return this.tliList[index];
     }
 }
 
@@ -406,14 +406,14 @@ struct ParsedBlock {
             assert(this.stmtList != null, "Could not resize stmt list");
             this.stmtCapacity = newCap;
         }
-        *(this.stmtList + this.stmtLength * sizeof usize) = stmt.getID();
+        this.stmtList[this.stmtLength] = stmt.getID();
         this.stmtLength = this.stmtLength + 1;
     }
 
     func getStmtAtIndex(&this, index: usize) -> usize {
         trace("ParsedBlock.getStmtAtIndex");
         assert(index < this.stmtLength, "Out of bounds access in ParsedBlock.getStmtAtIndex");
-        return *(this.stmtList + index * sizeof usize);
+        return this.stmtList[index];
     }
 }
 

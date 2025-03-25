@@ -33,7 +33,7 @@ struct ModuleLookupList {
             assert(this.elements != null, "Could not allocate memory in ModuleLookupList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof ModuleLookup) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -46,7 +46,7 @@ struct ModuleLookupList {
     func at(&this, index: usize) -> &ModuleLookup {
         assert(index < this.length, "Out of bounds access in ModuleLookupList.at");
         assert(this.elements != null, "Element pointer is NULL in ModuleLookupList.at");
-        return this.elements + index * sizeof ModuleLookup;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &ModuleLookup) -> bool {
@@ -103,7 +103,7 @@ struct ImportLookupList {
             assert(this.elements != null, "Could not allocate memory in ImportLookupList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof ImportLookup) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -116,7 +116,7 @@ struct ImportLookupList {
     func at(&this, index: usize) -> &ImportLookup {
         assert(index < this.length, "Out of bounds access in ImportLookupList.at");
         assert(this.elements != null, "Element pointer is NULL in ImportLookupList.at");
-        return this.elements + index * sizeof ImportLookup;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &ImportLookup) -> bool {
@@ -173,7 +173,7 @@ struct FunctionLookupList {
             assert(this.elements != null, "Could not allocate memory in FunctionLookupList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof FunctionLookup) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -186,7 +186,7 @@ struct FunctionLookupList {
     func at(&this, index: usize) -> &FunctionLookup {
         assert(index < this.length, "Out of bounds access in FunctionLookupList.at");
         assert(this.elements != null, "Element pointer is NULL in FunctionLookupList.at");
-        return this.elements + index * sizeof FunctionLookup;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &FunctionLookup) -> bool {
@@ -243,7 +243,7 @@ struct StructLookupList {
             assert(this.elements != null, "Could not allocate memory in StructLookupList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof StructLookup) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -256,7 +256,7 @@ struct StructLookupList {
     func at(&this, index: usize) -> &StructLookup {
         assert(index < this.length, "Out of bounds access in StructLookupList.at");
         assert(this.elements != null, "Element pointer is NULL in StructLookupList.at");
-        return this.elements + index * sizeof StructLookup;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &StructLookup) -> bool {
@@ -313,7 +313,7 @@ struct TypeLookupList {
             assert(this.elements != null, "Could not allocate memory in TypeLookupList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof TypeLookup) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -326,7 +326,7 @@ struct TypeLookupList {
     func at(&this, index: usize) -> &TypeLookup {
         assert(index < this.length, "Out of bounds access in TypeLookupList.at");
         assert(this.elements != null, "Element pointer is NULL in TypeLookupList.at");
-        return this.elements + index * sizeof TypeLookup;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &TypeLookup) -> bool {
@@ -383,7 +383,7 @@ struct ScopeLookupList {
             assert(this.elements != null, "Could not allocate memory in ScopeLookupList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof ScopeLookup) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -396,7 +396,7 @@ struct ScopeLookupList {
     func at(&this, index: usize) -> &ScopeLookup {
         assert(index < this.length, "Out of bounds access in ScopeLookupList.at");
         assert(this.elements != null, "Element pointer is NULL in ScopeLookupList.at");
-        return this.elements + index * sizeof ScopeLookup;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &ScopeLookup) -> bool {
@@ -453,7 +453,7 @@ struct VariableLookupList {
             assert(this.elements != null, "Could not allocate memory in VariableLookupList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof VariableLookup) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -466,7 +466,7 @@ struct VariableLookupList {
     func at(&this, index: usize) -> &VariableLookup {
         assert(index < this.length, "Out of bounds access in VariableLookupList.at");
         assert(this.elements != null, "Element pointer is NULL in VariableLookupList.at");
-        return this.elements + index * sizeof VariableLookup;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &VariableLookup) -> bool {
@@ -523,7 +523,7 @@ struct MethodLookupList {
             assert(this.elements != null, "Could not allocate memory in MethodLookupList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof MethodLookup) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -536,7 +536,7 @@ struct MethodLookupList {
     func at(&this, index: usize) -> &MethodLookup {
         assert(index < this.length, "Out of bounds access in MethodLookupList.at");
         assert(this.elements != null, "Element pointer is NULL in MethodLookupList.at");
-        return this.elements + index * sizeof MethodLookup;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &MethodLookup) -> bool {
@@ -593,7 +593,7 @@ struct TCStateList {
             assert(this.elements != null, "Could not allocate memory in TCStateList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof TCState) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -606,7 +606,7 @@ struct TCStateList {
     func at(&this, index: usize) -> &TCState {
         assert(index < this.length, "Out of bounds access in TCStateList.at");
         assert(this.elements != null, "Element pointer is NULL in TCStateList.at");
-        return this.elements + index * sizeof TCState;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &TCState) -> bool {
@@ -663,7 +663,7 @@ struct RegIndexList {
             assert(this.elements != null, "Could not allocate memory in RegIndexList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof RegIndex) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -676,7 +676,7 @@ struct RegIndexList {
     func at(&this, index: usize) -> &RegIndex {
         assert(index < this.length, "Out of bounds access in RegIndexList.at");
         assert(this.elements != null, "Element pointer is NULL in RegIndexList.at");
-        return this.elements + index * sizeof RegIndex;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &RegIndex) -> bool {
@@ -733,7 +733,7 @@ struct IRInstrList {
             assert(this.elements != null, "Could not allocate memory in IRInstrList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof IRInstr) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -746,7 +746,7 @@ struct IRInstrList {
     func at(&this, index: usize) -> &IRInstr {
         assert(index < this.length, "Out of bounds access in IRInstrList.at");
         assert(this.elements != null, "Element pointer is NULL in IRInstrList.at");
-        return this.elements + index * sizeof IRInstr;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &IRInstr) -> bool {
@@ -803,7 +803,7 @@ struct IRScopeList {
             assert(this.elements != null, "Could not allocate memory in IRScopeList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof IRScope) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -816,7 +816,7 @@ struct IRScopeList {
     func at(&this, index: usize) -> &IRScope {
         assert(index < this.length, "Out of bounds access in IRScopeList.at");
         assert(this.elements != null, "Element pointer is NULL in IRScopeList.at");
-        return this.elements + index * sizeof IRScope;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &IRScope) -> bool {
@@ -873,7 +873,7 @@ struct IRRegList {
             assert(this.elements != null, "Could not allocate memory in IRRegList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof IRReg) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -886,7 +886,7 @@ struct IRRegList {
     func at(&this, index: usize) -> &IRReg {
         assert(index < this.length, "Out of bounds access in IRRegList.at");
         assert(this.elements != null, "Element pointer is NULL in IRRegList.at");
-        return this.elements + index * sizeof IRReg;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &IRReg) -> bool {
@@ -943,7 +943,7 @@ struct IRBlockList {
             assert(this.elements != null, "Could not allocate memory in IRBlockList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof IRBlock) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -956,7 +956,7 @@ struct IRBlockList {
     func at(&this, index: usize) -> &IRBlock {
         assert(index < this.length, "Out of bounds access in IRBlockList.at");
         assert(this.elements != null, "Element pointer is NULL in IRBlockList.at");
-        return this.elements + index * sizeof IRBlock;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &IRBlock) -> bool {
@@ -1013,7 +1013,7 @@ struct LoopBlockList {
             assert(this.elements != null, "Could not allocate memory in LoopBlockList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof LoopBlock) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -1026,7 +1026,7 @@ struct LoopBlockList {
     func at(&this, index: usize) -> &LoopBlock {
         assert(index < this.length, "Out of bounds access in LoopBlockList.at");
         assert(this.elements != null, "Element pointer is NULL in LoopBlockList.at");
-        return this.elements + index * sizeof LoopBlock;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &LoopBlock) -> bool {
@@ -1083,7 +1083,7 @@ struct IRScopeEntryList {
             assert(this.elements != null, "Could not allocate memory in IRScopeEntryList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof IRScopeEntry) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -1096,7 +1096,7 @@ struct IRScopeEntryList {
     func at(&this, index: usize) -> &IRScopeEntry {
         assert(index < this.length, "Out of bounds access in IRScopeEntryList.at");
         assert(this.elements != null, "Element pointer is NULL in IRScopeEntryList.at");
-        return this.elements + index * sizeof IRScopeEntry;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &IRScopeEntry) -> bool {
@@ -1153,7 +1153,7 @@ struct IRFuncList {
             assert(this.elements != null, "Could not allocate memory in IRFuncList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof IRFunc) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -1166,7 +1166,7 @@ struct IRFuncList {
     func at(&this, index: usize) -> &IRFunc {
         assert(index < this.length, "Out of bounds access in IRFuncList.at");
         assert(this.elements != null, "Element pointer is NULL in IRFuncList.at");
-        return this.elements + index * sizeof IRFunc;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &IRFunc) -> bool {
@@ -1223,7 +1223,7 @@ struct LLVMTypeList {
             assert(this.elements != null, "Could not allocate memory in LLVMTypeList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof LLVMType) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -1236,7 +1236,7 @@ struct LLVMTypeList {
     func at(&this, index: usize) -> &LLVMType {
         assert(index < this.length, "Out of bounds access in LLVMTypeList.at");
         assert(this.elements != null, "Element pointer is NULL in LLVMTypeList.at");
-        return this.elements + index * sizeof LLVMType;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &LLVMType) -> bool {
@@ -1293,7 +1293,7 @@ struct RegValueList {
             assert(this.elements != null, "Could not allocate memory in RegValueList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof RegValue) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -1306,7 +1306,7 @@ struct RegValueList {
     func at(&this, index: usize) -> &RegValue {
         assert(index < this.length, "Out of bounds access in RegValueList.at");
         assert(this.elements != null, "Element pointer is NULL in RegValueList.at");
-        return this.elements + index * sizeof RegValue;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &RegValue) -> bool {
@@ -1363,7 +1363,7 @@ struct LLVMBasicBlockList {
             assert(this.elements != null, "Could not allocate memory in LLVMBasicBlockList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof LLVMBasicBlock) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -1376,7 +1376,7 @@ struct LLVMBasicBlockList {
     func at(&this, index: usize) -> &LLVMBasicBlock {
         assert(index < this.length, "Out of bounds access in LLVMBasicBlockList.at");
         assert(this.elements != null, "Element pointer is NULL in LLVMBasicBlockList.at");
-        return this.elements + index * sizeof LLVMBasicBlock;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &LLVMBasicBlock) -> bool {
@@ -1433,7 +1433,7 @@ struct LLVMValueList {
             assert(this.elements != null, "Could not allocate memory in LLVMValueList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof LLVMValue) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -1446,7 +1446,7 @@ struct LLVMValueList {
     func at(&this, index: usize) -> &LLVMValue {
         assert(index < this.length, "Out of bounds access in LLVMValueList.at");
         assert(this.elements != null, "Element pointer is NULL in LLVMValueList.at");
-        return this.elements + index * sizeof LLVMValue;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &LLVMValue) -> bool {
@@ -1503,7 +1503,7 @@ struct ParsedAttributeList {
             assert(this.elements != null, "Could not allocate memory in ParsedAttributeList.push");
             this.capacity = newCap;
         }
-        *(this.elements + this.length * sizeof ParsedAttribute) = element;
+        this.elements[this.length] = element;
         this.length = this.length + 1;
     }
 
@@ -1516,7 +1516,7 @@ struct ParsedAttributeList {
     func at(&this, index: usize) -> &ParsedAttribute {
         assert(index < this.length, "Out of bounds access in ParsedAttributeList.at");
         assert(this.elements != null, "Element pointer is NULL in ParsedAttributeList.at");
-        return this.elements + index * sizeof ParsedAttribute;
+        return &this.elements[index];
     }
 
     func contains(&this, element: &ParsedAttribute) -> bool {

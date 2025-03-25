@@ -33,14 +33,13 @@ struct Parser {
             assert(this.importRoots != null, "Could not resize import roots");
             this.importRootCapacity = newCap;
         }
-        *(this.importRoots + this.importRootLength * sizeof String) = root;
+        this.importRoots[this.importRootLength] = root;
         this.importRootLength = this.importRootLength + 1;
     }
 
     func getImportRootAtIndex(&this, index: usize) -> String {
         trace("Parser.getImportRootAtIndex");
-        let s: String = *(this.importRoots + index * sizeof String);
-        return s.copy();
+        return this.importRoots[index].copy();
     }
 
     func inheritImportRoots(&this, parent: &Parser) {
