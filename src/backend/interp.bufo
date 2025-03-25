@@ -1,5 +1,6 @@
 import "prelude.bufo";
 import "libc.bufo";
+import "../util/span.bufo";
 import "../util/lists.bufo";
 import "../frontend/nodes.bufo";
 import "../middleend/types.bufo";
@@ -14,7 +15,7 @@ struct InterpReg {
     }
 }
 
-comptime REG_STACK_SIZE: usize = 134217728;
+comptime REG_STACK_SIZE: usize = 16777216;
 comptime STACK_SIZE: usize = 4194304;
 struct IRInterp {
     irGen: &IRGen;
@@ -45,11 +46,17 @@ struct IRInterp {
         assert(ptr >= this.regStackStart, "Stack Underflow in IRInterp.getRegStackPointer");
         return ptr;
     }
-    func advanceRealStack(&this, size: usize) -> &u8 {
+    func advanceRealStack(&this, span: Span, size: usize) -> &u8 {
         let _p: &u8 = this.realStackPointer;
         let new: &u8 = this.realStackPointer + size;
-        // FIXME: Instead of asserting, report an error
-        assert(new < this.realStackStart + STACK_SIZE, "Stack Overflow in IRInterp.advanceRealStack");
+        if (new >= this.realStackStart + STACK_SIZE) {
+            let loc = span.toString();
+            fprintf(stderr, "%s: %s: Stack Overflow in the comptime interpreter.\n", loc.chars(), ERR_STR);
+            fprintf(stderr, "%s: %s: Last allocation tried to allocate %llu byte(s), but only %llu were available.\n",
+                loc.chars(), NOTE_STR, size, size - (new - (this.realStackStart + STACK_SIZE)));
+            loc.drop();
+            exit(2);
+        }
         this.realStackPointer = new;
         return _p;
     }
@@ -81,7 +88,7 @@ struct IRInterp {
                 offset: fReg.offset,
                 size: 8,
             };
-            *(this.getRegStackPointer(&reg) as &usize) = this.advanceRealStack(instr.src.i) as usize;
+            *(this.getRegStackPointer(&reg) as &usize) = this.advanceRealStack(instr.span, instr.src.i) as usize;
             return reg;
         } else if (instr.kind == INSTR_STORE) {
             // dst: ptr,
@@ -303,7 +310,7 @@ struct IRInterp {
             }
             let regs: RegValueList = blank;
             regs.initBlank(calledFunc.registers.length);
-            this.evaluateCall(calledFunc, &regs);
+            this.evaluateCall(instr.span, calledFunc, &regs);
             let size: usize = dstReg.typ.getSize();
             let dst: InterpReg = InterpReg {
                 offset: dstReg.offset,
@@ -897,29 +904,37 @@ struct IRInterp {
         }
         return false;
     }
-    func evaluateCall(&this, irFunc: &IRFunc, regs: &RegValueList) {
+    func evaluateCall(&this, span: Span, irFunc: &IRFunc, regs: &RegValueList) {
         trace("IRInterp.evaluateCall");
         let funcSize: usize = irFunc.getRegisterSizeInBytes();
-        this.pushRegisterStack(funcSize);
+        this.pushRegisterStack(span, funcSize);
         let blockID: IRBlockID = IRBlockID { i: 0 };
         while (this.evaluateBlock(&blockID, irFunc, regs, true)) {
         }
-        this.popRegisterStack(funcSize);
+        this.popRegisterStack(span, funcSize);
         return;
     }
-    func pushRegisterStack(&this, size: usize) {
+    func pushRegisterStack(&this, span: Span, size: usize) {
         trace("IRInterp.pushRegisterStack");
         let new: &u8 = this.regStackBase + size;
         if (new > this.regStackStart + REG_STACK_SIZE) {
-            todo_with_msg("stack overflow");
+            let loc = span.toString();
+            fprintf(stderr, "%s: %s Register Stack Overflow in the comptime interpreter.\n", loc.chars(), FATAL_STR);
+            fprintf(stderr, "%s: %s Tried to reserve %llu byte(s), but only %llu were available.\n",
+                loc.chars(), FATAL_STR, size, size - (new - (this.regStackStart + REG_STACK_SIZE)));
+            loc.drop();
+            exit(2);
         }
         this.regStackBase = new;
     }
-    func popRegisterStack(&this, size: usize) {
+    func popRegisterStack(&this, span: Span, size: usize) {
         trace("IRInterp.popRegisterStack");
         let new: &u8 = this.regStackBase - size;
         if (new < this.regStackStart) {
-            todo_with_msg("stack underflow");
+            let loc = span.toString();
+            fprintf(stderr, "%s: %s Register Stack Underflow in the comptime interpreter.\n", loc.chars(), FATAL_STR);
+            loc.drop();
+            exit(2);
         }
         this.regStackBase = new;
         assert(this.regStackBase >= this.globalRegBase, "Register Stack overwrote global stack");

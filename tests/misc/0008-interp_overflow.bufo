@@ -1,0 +1,18 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 2
+//! ERROR:
+//! Stack Overflow in the comptime interpreter.
+//! Last allocation tried to allocate 32768 byte(s), but only 32256 were available.
+
+func foo(a: i32) -> i32 {
+    let b: [usize; 4096] = blank;
+    return foo(a);
+}
+
+comptime a = foo(0);
+
+func main(argc: i32, argv: &&char) -> i32 {
+    return 0;
+}

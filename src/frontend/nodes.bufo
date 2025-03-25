@@ -49,11 +49,12 @@ func mangleFunctionName(
         let a = attrs.at(i);
         if (a.kind == ATTR_EXTERN) return a.name.content.toString();
     }
-    // Method  : StructName-Name-ParamsTypeID-.RetTypeID
-    // Function: ModID     -Name-ParamsTypeID-.RetTypeID-[0|1]-[0|1]
+    // Method  : StructName-Name-ParamsTypeID-rRetTypeID
+    // Function: Name-ParamsTypeID-rRetTypeID
     if (isMethod) {
         let strukt: &ParsedStructDecl = structDecls.at(parentID);
         mangledName.pushSubStr(&strukt.name.content);
+        mangledName.pushChar('.');
     }
     mangledName.pushSubStr(&name.content);
     for (let i: usize = 0; i < params.paramLength; i = i + 1) {
@@ -76,12 +77,6 @@ func mangleFunctionName(
         _typ.drop();
     } else {
         mangledName.pushChar('n');
-    }
-    if (!isMethod) {
-        mangledName.pushChar('f');
-        let n: usize = 0;
-        if (isComptime) n = 1;
-        mangledName.pushNumber(n);
     }
     return mangledName;
 }
@@ -285,6 +280,7 @@ struct ParsedMethod {
     ignored: bool;
     parentID: usize;
     name: Token;
+    span: Span;
     isStatic: bool;
     params: ParamContext;
     retTypeID: usize;
@@ -313,11 +309,12 @@ struct ParsedMethod {
     }
 }
 
-func newParsedMethod(parentID: usize, name: Token, params: ParamContext, retType: &ParsedTypeNode, body: usize) -> &ParsedMethod {
+func newParsedMethod(parentID: usize, span: Span, name: Token, params: ParamContext, retType: &ParsedTypeNode, body: usize) -> &ParsedMethod {
     methods.push(ParsedMethod {
         ignored: ignoringNodes,
         parentID: parentID,
         name: name,
+        span: span,
         params: params,
         typeState: blank,
         retTypeID: retType.getID(),

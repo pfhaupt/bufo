@@ -105,7 +105,7 @@ struct Lookup {
             let s: &StructLookup = this.modules.at(modID).getStructByGlobalID(strukt.getID());
             return newTypeLookup(TYPE_LOOKUP_STRUCT, s);
         } else {
-            todo_with_msg("getTypeLookupFromTypeID for non-struct");
+            unreachable("Lookup.getTypeLookupForType got non-struct type");
         }
     }
 

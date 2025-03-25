@@ -1,0 +1,24 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Could not find matching signature for call to method `get`.
+//! A method with that name is located here.
+//! A method with that name is located here.
+
+struct Foo {
+    dummy: u8;
+    func get(&this, a: i32) -> i32 {
+        return a;
+    }
+    func get(&this, a: usize) -> usize {
+        return a;
+    }
+}
+func main(argc: i32, argv: &&char) -> i32 {
+    let f: Foo = blank;
+    let i: i8 = 2;
+    f.get(i);
+    return 0;
+}

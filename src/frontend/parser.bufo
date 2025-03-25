@@ -174,72 +174,13 @@ struct Parser {
                     span: name.span,
                     kind: ATTR_NORETURN,
                 });
-            } else if (name.content.equals(&newSubStrOfStrLit("if"))) {
-                todo_with_msg("@if() needs refactor of the parser first");
-                // this.expect(TOKEN_PAREN_OPEN);
-                // let expr = this.parseExpr();
-                // let end = this.expect(TOKEN_PAREN_CLOSE);
-                // let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
-                // let bSize = boolType.getSize();
-                // let m = modules.at(this.lexer.moduleID);
-                // let checker = newTypeChecker();
-                // if (!this.currentStruct.isEmpty()) checker.setIncompleteStruct(this.currentStruct);
-                // printf("%llu\n", modules.length);
-                // if (!checker.typeCheckProject(m)) {
-                //     let loc = expr.span.toString();
-                //     fprintf(stderr, "%s: %s: Could not evaluate condition of @if(). There were type errors.\n", loc.chars(), ERR_STR);
-                //     loc.drop();
-                //     exit(1);
-                // }
-                // checker.setIncompleteStruct(blank);
-                // let scopes: ScopeLookupList = blank;
-                // scopes.push(blank);
-                // let t = checker.typeCheckExpr(expr.getID(), &scopes);
-                // if (!t.isSuccess()) todo_with_msg("@if() expr failed");
-                // let typ = types.at(t.getType());
-                // if (!typ.isBoolean()) todo_with_msg("@if() expr not bool");
-                // let irgen = newIRGenerator();
-                // if (!irgen.generateBytecode(m)) {
-                //     todo_with_msg("module: error when generating @if() context");
-                // }
-                // let interp = newIRInterpreter(&irgen);
-                // {
-                //     let regs: RegValueList = blank;
-                //     regs.initBlank(irgen.globalScope.registers.length);
-                //     interp.pushRegisterStack(irgen.globalScope.getRegisterSizeInBytes());
-                //     interp.globalRegisters = &regs;
-                //     interp.globalRegBase = interp.regStackBase;
-                //     assert(irgen.globalScope.blocks.length == 1);
-                //     let b = irgen.globalScope.blocks.at(0);
-                //     for (let i: usize = 0; i < b.instructions.length; i = i + 1) {
-                //         let instr = b.instructions.at(i);
-                //         if (instr.isComptime) {
-                //             *(regs.at(instr.dst.i)) = RegValue {
-                //                 isLLVM: false,
-                //                 regValue: interp.evaluateSingle(&irgen.globalScope, instr, &regs, false),
-                //                 llvmValue: blank,
-                //             };
-                //         }
-                //     }
-                // }
-                // {
-                //     let function: IRFunc = blank;
-                //     function.appendBlock();
-                //     let v = irgen.generateBytecodeExpr(&function, expr, false);
-                //     function.buildReturnExpr(v);
-                //     let regs: RegValueList = blank;
-                //     regs.initBlank(function.registers.length);
-                //     interp.evaluateCall(&function, &regs);
-                // }
-                // let res = InterpReg {
-                //     offset: 0,
-                //     size: bSize,
-                // };
-                // interp.popArgument(interp.getRegStackPointer(&res), bSize);
-                // let ptr = interp.getRegStackPointer(&res);
-                // skip = *ptr == 0;
             } else {
-                todo_with_msg("unknown attribute");
+                let loc = name.span.toString();
+                let n = name.content.toString();
+                fprintf(stderr, "%s: %s: Use of unknown attribute `%s`.\n", loc.chars(), ERR_STR, n.chars());
+                n.drop();
+                loc.drop();
+                this.syntaxError = true;
             }
         }
         return skip;
@@ -397,7 +338,7 @@ struct Parser {
         let params: ParamContext = this.parseParameters(structDecl.name, true);
         let retType: &ParsedTypeNode = this.parseReturnType();
         let body: &ParsedBlock = this.parseBlock();
-        return newParsedMethod(structDecl.getID(), name, params, retType, body.getID());
+        return newParsedMethod(structDecl.getID(), newSpanBetween(&tkn.span, &body.span), name, params, retType, body.getID());
     }
 
     func parseFuncDecl(&this, isExtern: bool) -> &ParsedFuncDecl {
@@ -1047,7 +988,7 @@ struct Parser {
         else if (tknKind == TOKEN_AMPERSAND_DOUBLE) return 4;
         else if (tknKind == TOKEN_PIPE_DOUBLE) return 3;
         else if (tknKind == TOKEN_EQUAL_SINGLE) return 2;
-        todo_with_msg("Precedence");
+        unreachable("Exhaustive handling of binary operators in Parser.getBinaryPrecedence");
     }
     func getBinaryAssociativity(&this, tkn: &Token) -> usize {
         trace("Parser.getBinaryAssociativity");
@@ -1062,7 +1003,7 @@ struct Parser {
         else if (tknKind == TOKEN_ASTERISK_SINGLE) return 14;
         else if (tknKind == TOKEN_AMPERSAND_SINGLE) return 14;
         else if (tknKind == TOKEN_BANG) return 14;
-        todo_with_msg("unary precedence");
+        unreachable("Exhaustive handling of unary operators in Parser.getUnaryPrecedence");
     }
 }
 

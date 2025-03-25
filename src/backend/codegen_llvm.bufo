@@ -2,6 +2,7 @@ import "prelude.bufo";
 import "libc.bufo";
 import "string.bufo";
 import "substr.bufo";
+import "../util/span.bufo";
 import "../util/lists.bufo";
 import "../frontend/nodes.bufo";
 import "../middleend/types.bufo";
@@ -90,7 +91,7 @@ struct LLVMCodegen {
         //        It would be cooler if the prelude or standard library did that.
         //        Needs more features though, like being able to provide custom
         //        names that overwrite the mangling
-        let mainName: SubStr = newSubStrOfStrLit("maini32PPcri32f0");
+        let mainName: SubStr = newSubStrOfStrLit("maini32PPcri32");
         if (!this.llvmModule.hasFunction(mainName)) {
             fprintf(stderr, "%s Could not find main function!\n", FATAL_STR);
             fprintf(stderr, "%s: The compiler currently requires that the input file also defines a main function.\n", NOTE_STR);
@@ -122,7 +123,7 @@ struct LLVMCodegen {
         let funcSize: usize = global.getRegisterSizeInBytes();
         let llvmFunc: LLVMValue = blank;
         let blocks: LLVMBasicBlockList = blank;
-        this.interp.pushRegisterStack(funcSize);
+        this.interp.pushRegisterStack(defaultSpan(), funcSize);
         this.interp.globalRegisters = &this.global;
         this.interp.globalRegBase = this.interp.regStackBase;
         assert(global.blocks.length == 1, "Expected to only find one IRBlock in global scope");
@@ -250,13 +251,13 @@ struct LLVMCodegen {
         let regs: RegValueList = blank;
         regs.initBlank(irFunc.registers.length);
         let funcSize: usize = irFunc.getRegisterSizeInBytes();
-        this.interp.pushRegisterStack(funcSize);
+        this.interp.pushRegisterStack(irFunc.span, funcSize);
         for (let i: usize = 0; i < irFunc.blocks.length; i = i + 1) {
             let block: &IRBlock = irFunc.getBlockByID(IRBlockID { i: i });
             this.llvmBuilder.positionAtEnd(*blocks.at(i));
             this.generateBlock(&llvmFuncValue, irFunc, &blocks, block, &regs);
         }
-        this.interp.popRegisterStack(funcSize);
+        this.interp.popRegisterStack(irFunc.span, funcSize);
         return true;
     }
     func generateBlock(

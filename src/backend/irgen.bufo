@@ -23,7 +23,7 @@ struct IRReg {
     offset: usize;
     typ: &Type;
     func equals(&this, other: &IRReg) -> bool {
-        todo_with_msg("IRReg.equals");
+        unreachable("IRReg.equals is not implemented yet");
     }
 }
 
@@ -102,13 +102,14 @@ comptime INSTR_GET_ELEMENT_PTR: usize = 72;
 comptime INSTR_UNREACHABLE: usize = 73;
 struct IRInstr {
     kind: usize;
+    span: Span;
     isComptime: bool;
     dst: RegIndex;
     src: RegIndex;
     op1: RegIndex;
     args: RegIndexList;
     func equals(&this, other: &IRInstr) -> bool {
-        todo_with_msg("IRInstr.equals");
+        unreachable("IRInstr.equals is not implemented yet");
     }
     func isTerminator(&this) -> bool {
         return this.kind == INSTR_RETURN_EXPR
@@ -249,6 +250,7 @@ struct IRBlock {
 struct IRFunc {
     originalID: usize;
     name: String;
+    span: Span;
     comptimeLevel: usize;
     isMethod: bool;
     scopes: IRScopeList;
@@ -322,7 +324,7 @@ struct IRFunc {
         }
     }
     func equals(&this, other: &IRFunc) -> bool {
-        todo_with_msg("IRFunc.equals");
+        unreachable("IRFunc.equals is not implemented yet");
     }
     func enterScope(&this) -> usize {
         this.scopes.push(blank);
@@ -384,9 +386,10 @@ struct IRFunc {
         if (this.currentBlock.i >= this.blocks.length) todo_with_msg("overflow");
         this.blocks.at(this.currentBlock.i).pushInstruction(instr);
     }
-    func buildAlloca(&this, dst: RegIndex, size: usize) {
+    func buildAlloca(&this, span: Span, dst: RegIndex, size: usize) {
         let alloca: IRInstr = IRInstr {
             kind: INSTR_ALLOCA,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: RegIndex { i: size },
@@ -407,9 +410,10 @@ struct IRFunc {
             entry.pushInstruction(alloca);
         }
     }
-    func buildFetchGlobalPointer(&this, dst: RegIndex, globalIndex: RegIndex) {
+    func buildFetchGlobalPointer(&this, span: Span, dst: RegIndex, globalIndex: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: INSTR_FETCH_GLOBAL_PTR,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: globalIndex,
@@ -417,9 +421,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildFetchGlobalRuntimeValue(&this, dst: RegIndex, globalIndex: RegIndex) {
+    func buildFetchGlobalRuntimeValue(&this, span: Span, dst: RegIndex, globalIndex: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: INSTR_FETCH_GLOBAL_VALUE,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: globalIndex,
@@ -427,9 +432,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildFetchGlobalComptimeValue(&this, dst: RegIndex, globalIndex: RegIndex) {
+    func buildFetchGlobalComptimeValue(&this, span: Span, dst: RegIndex, globalIndex: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: INSTR_FETCH_COMPTIME_VALUE,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: globalIndex,
@@ -437,9 +443,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildFetchLocalComptimeValue(&this, dst: RegIndex, globalIndex: RegIndex) {
+    func buildFetchLocalComptimeValue(&this, span: Span, dst: RegIndex, globalIndex: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: INSTR_FETCH_COMPTIME_VALUE,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: globalIndex,
@@ -447,9 +454,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildLoad(&this, dst: RegIndex, src: RegIndex) {
+    func buildLoad(&this, span: Span, dst: RegIndex, src: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: INSTR_LOAD,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: src,
@@ -457,9 +465,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildMove(&this, dst: RegIndex, src: RegIndex) {
+    func buildMove(&this, span: Span, dst: RegIndex, src: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: INSTR_MOVE,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: src,
@@ -467,9 +476,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildGetParam(&this, dst: RegIndex, index: usize, size: usize) {
+    func buildGetParam(&this, span: Span, dst: RegIndex, index: usize, size: usize) {
         this.pushInstruction(IRInstr {
             kind: INSTR_GET_PARAM,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: RegIndex { i: index },
@@ -477,9 +487,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildStore(&this, dst: RegIndex, src: RegIndex) {
+    func buildStore(&this, span: Span, dst: RegIndex, src: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: INSTR_STORE,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: src,
@@ -487,9 +498,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildCall(&this, dst: RegIndex, funcID: RegIndex, args: RegIndexList) {
+    func buildCall(&this, span: Span, dst: RegIndex, funcID: RegIndex, args: RegIndexList) {
         this.pushInstruction(IRInstr {
             kind: INSTR_CALL,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: funcID,
@@ -497,9 +509,10 @@ struct IRFunc {
             args: args,
         });
     }
-    func buildReturnExpr(&this, val: RegIndex) {
+    func buildReturnExpr(&this, span: Span, val: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: INSTR_RETURN_EXPR,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: blank,
             src: val,
@@ -507,9 +520,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildReturnEmpty(&this) {
+    func buildReturnEmpty(&this, span: Span) {
         this.pushInstruction(IRInstr {
             kind: INSTR_RETURN_VOID,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: blank,
             src: blank,
@@ -517,9 +531,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildLoadString(&this, dst: RegIndex, str: SubStr) {
+    func buildLoadString(&this, span: Span, dst: RegIndex, str: SubStr) {
         this.pushInstruction(IRInstr {
             kind: INSTR_LOAD_STRING,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: RegIndex { i: str.start as usize },
@@ -527,9 +542,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildLoadBool(&this, dst: RegIndex, val: usize) {
+    func buildLoadBool(&this, span: Span, dst: RegIndex, val: usize) {
         this.pushInstruction(IRInstr {
             kind: INSTR_LOAD_BOOL,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: RegIndex { i: val },
@@ -537,7 +553,7 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildLoadInteger(&this, dst: RegIndex, t: &Type, val: usize) {
+    func buildLoadInteger(&this, span: Span, dst: RegIndex, t: &Type, val: usize) {
         let kind: usize = INSTR_LOAD_I8;
         if (t.isChar()) {
             kind = INSTR_LOAD_U8;
@@ -551,6 +567,7 @@ struct IRFunc {
         }
         this.pushInstruction(IRInstr {
             kind: kind,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: RegIndex { i: val },
@@ -558,9 +575,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildLoadNull(&this, dst: RegIndex) {
+    func buildLoadNull(&this, span: Span, dst: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: INSTR_LOAD_NULL,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: blank,
@@ -568,9 +586,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildLoadF32(&this, dst: RegIndex, val: f32) {
+    func buildLoadF32(&this, span: Span, dst: RegIndex, val: f32) {
         this.pushInstruction(IRInstr {
             kind: INSTR_LOAD_F32,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: RegIndex { i: *(&val as &usize) },
@@ -578,9 +597,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildLoadF64(&this, dst: RegIndex, val: f64) {
+    func buildLoadF64(&this, span: Span, dst: RegIndex, val: f64) {
         this.pushInstruction(IRInstr {
             kind: INSTR_LOAD_F64,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: RegIndex { i: *(&val as &usize) },
@@ -588,9 +608,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildLoadBlank(&this, dst: RegIndex, size: usize) {
+    func buildLoadBlank(&this, span: Span, dst: RegIndex, size: usize) {
         this.pushInstruction(IRInstr {
             kind: INSTR_LOAD_BLANK,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: RegIndex { i: size },
@@ -598,9 +619,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildLogicalNot(&this, dst: RegIndex, src: RegIndex) {
+    func buildLogicalNot(&this, span: Span, dst: RegIndex, src: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: INSTR_LOGICAL_NOT,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: src,
@@ -608,9 +630,10 @@ struct IRFunc {
             args: blank
         });
     }
-    func buildBinaryOp(&this, kind: usize, dst: RegIndex, lhs: RegIndex, rhs: RegIndex) {
+    func buildBinaryOp(&this, span: Span, kind: usize, dst: RegIndex, lhs: RegIndex, rhs: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: kind,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: lhs,
@@ -618,9 +641,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildInsertValue(&this, aggr: RegIndex, index: usize, val: RegIndex) {
+    func buildInsertValue(&this, span: Span, aggr: RegIndex, index: usize, val: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: INSTR_INSERT_VALUE,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: aggr,
             src: RegIndex { i: index },
@@ -628,9 +652,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildUnreachable(&this) {
+    func buildUnreachable(&this, span: Span) {
         this.pushInstruction(IRInstr {
             kind: INSTR_UNREACHABLE,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: blank,
             src: blank,
@@ -638,10 +663,11 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildBr(&this, block: IRBlockID) {
+    func buildBr(&this, span: Span, block: IRBlockID) {
         assert(block.i < this.blocks.length, "buildBr called with invalid ID");
         this.pushInstruction(IRInstr {
             kind: INSTR_BR,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: RegIndex { i: block.i },
             src: blank,
@@ -649,11 +675,12 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildCondBr(&this, cond: RegIndex, drue: IRBlockID, falze: IRBlockID) {
+    func buildCondBr(&this, span: Span, cond: RegIndex, drue: IRBlockID, falze: IRBlockID) {
         assert(drue.i < this.blocks.length, "buildCondBr called with invalid ID");
         assert(falze.i < this.blocks.length, "buildCondBr called with invalid ID");
         this.pushInstruction(IRInstr {
             kind: INSTR_COND_BR,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: RegIndex { i: drue.i },
             src: cond,
@@ -661,21 +688,22 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildBreak(&this) -> bool {
+    func buildBreak(&this, span: Span) -> bool {
         if (this.loopBlocks.length == 0) return false;
         let block: &LoopBlock = this.loopBlocks.last();
-        this.buildBr(block.after);
+        this.buildBr(span, block.after);
         return true;
     }
-    func buildContinue(&this) -> bool {
+    func buildContinue(&this, span: Span) -> bool {
         if (this.loopBlocks.length == 0) return false;
         let block: &LoopBlock = this.loopBlocks.last();
-        this.buildBr(block.before);
+        this.buildBr(span, block.before);
         return true;
     }
-    func buildIntSignExtend(&this, dst: RegIndex, src: RegIndex, bits: usize) {
+    func buildIntSignExtend(&this, span: Span, dst: RegIndex, src: RegIndex, bits: usize) {
         this.pushInstruction(IRInstr {
             kind: INSTR_INT_SIGN_EXTEND,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: src,
@@ -683,9 +711,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildIntZeroExtend(&this, dst: RegIndex, src: RegIndex, bits: usize) {
+    func buildIntZeroExtend(&this, span: Span, dst: RegIndex, src: RegIndex, bits: usize) {
         this.pushInstruction(IRInstr {
             kind: INSTR_INT_ZERO_EXTEND,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: src,
@@ -693,9 +722,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildIntTruncate(&this, dst: RegIndex, src: RegIndex, bits: usize) {
+    func buildIntTruncate(&this, span: Span, dst: RegIndex, src: RegIndex, bits: usize) {
         this.pushInstruction(IRInstr {
             kind: INSTR_INT_TRUNCATE,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: src,
@@ -703,9 +733,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildF32ToF64(&this, dst: RegIndex, src: RegIndex) {
+    func buildF32ToF64(&this, span: Span, dst: RegIndex, src: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: INSTR_F32_TO_F64,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: src,
@@ -713,9 +744,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildF64ToF32(&this, dst: RegIndex, src: RegIndex) {
+    func buildF64ToF32(&this, span: Span, dst: RegIndex, src: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: INSTR_F64_TO_F32,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: src,
@@ -723,9 +755,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildIntToF32(&this, dst: RegIndex, src: RegIndex) {
+    func buildIntToF32(&this, span: Span, dst: RegIndex, src: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: INSTR_INT_TO_F32,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: src,
@@ -733,9 +766,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildIntToF64(&this, dst: RegIndex, src: RegIndex) {
+    func buildIntToF64(&this, span: Span, dst: RegIndex, src: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: INSTR_INT_TO_F64,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: src,
@@ -743,9 +777,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildF32ToInt(&this, dst: RegIndex, src: RegIndex) {
+    func buildF32ToInt(&this, span: Span, dst: RegIndex, src: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: INSTR_F32_TO_INT,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: src,
@@ -753,9 +788,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildF64ToInt(&this, dst: RegIndex, src: RegIndex) {
+    func buildF64ToInt(&this, span: Span, dst: RegIndex, src: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: INSTR_F64_TO_INT,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: src,
@@ -763,9 +799,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildCreateArray(&this, dst: RegIndex) {
+    func buildCreateArray(&this, span: Span, dst: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: INSTR_CREATE_ARRAY,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: blank,
@@ -773,9 +810,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildCreateStruct(&this, dst: RegIndex) {
+    func buildCreateStruct(&this, span: Span, dst: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: INSTR_CREATE_STRUCT,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: blank,
@@ -783,9 +821,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildPtrToInt(&this, dst: RegIndex, src: RegIndex) {
+    func buildPtrToInt(&this, span: Span, dst: RegIndex, src: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: INSTR_PTR_TO_INT,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: src,
@@ -793,9 +832,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildIntToPtr(&this, dst: RegIndex, src: RegIndex) {
+    func buildIntToPtr(&this, span: Span, dst: RegIndex, src: RegIndex) {
         this.pushInstruction(IRInstr {
             kind: INSTR_INT_TO_PTR,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: dst,
             src: src,
@@ -803,9 +843,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildGetFieldPtr(&this, elem: RegIndex, aggr: RegIndex, index: usize) {
+    func buildGetFieldPtr(&this, span: Span, elem: RegIndex, aggr: RegIndex, index: usize) {
         this.pushInstruction(IRInstr {
             kind: INSTR_GET_FIELD_PTR,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: elem,
             src: aggr,
@@ -813,9 +854,10 @@ struct IRFunc {
             args: blank,
         });
     }
-    func buildGetElementPtr(&this, elem: RegIndex, aggr: RegIndex, indices: RegIndexList) {
+    func buildGetElementPtr(&this, span: Span, elem: RegIndex, aggr: RegIndex, indices: RegIndexList) {
         this.pushInstruction(IRInstr {
             kind: INSTR_GET_ELEMENT_PTR,
+            span: span,
             isComptime: this.comptimeLevel > 0,
             dst: elem,
             src: aggr,
@@ -830,14 +872,14 @@ struct IRScopeEntry {
     ptr: RegIndex;
     isComptime: bool;
     func equals(&this, other: &IRScopeEntry) -> bool {
-        todo_with_msg("IRScopeEntry.equals");
+        unreachable("IRScopeEntry.equals is not implemented yet");
     }
 }
 
 struct IRScope {
     entries: IRScopeEntryList;
     func equals(&this, other: &IRScope) -> bool {
-        todo_with_msg("IRScope.equals");
+        unreachable("IRScope.equals is not implemented yet");
     }
     func addEntry(&this, name: SubStr, ptr: RegIndex, isComptime: bool) {
         this.entries.push(IRScopeEntry {
@@ -889,6 +931,7 @@ struct IRGen {
             }
             let irfunc: IRFunc = IRFunc {
                 name: name,
+                span: function.span,
                 isMethod: false,
                 originalID: function.getID(),
                 comptimeLevel: 0,
@@ -912,6 +955,7 @@ struct IRGen {
             }
             let irmeth: IRFunc = IRFunc {
                 name: name,
+                span: method.span,
                 isMethod: true,
                 originalID: method.getID(),
                 comptimeLevel: 0,
@@ -964,14 +1008,14 @@ struct IRGen {
         let offset: usize = 0;
         if (retType.getSize() > 8) {
             offset = 1;
-            this.prepareParameter(function, 0, newSubStrOfStrLit("ret"), types.at(retType.intoPointer()), true);
+            this.prepareParameter(function, 0, blank, newSubStrOfStrLit("ret"), types.at(retType.intoPointer()), true);
         }
         for (let i: usize = 0; i < params.paramLength; i = i + 1) {
             let name: Token = params.getNameAtIndex(i);
             let typ: usize = params.getTypeAtIndex(i);
             let typDecl: &ParsedTypeNode = typeNodes.at(typ);
             let pType: &Type = types.at(typDecl.typeState.getType());
-            this.prepareParameter(function, i + offset, name.content, pType, false);
+            this.prepareParameter(function, i + offset, name.span, name.content, pType, false);
         }
     }
 
@@ -982,7 +1026,7 @@ struct IRGen {
         if (!curr.isTerminated()) {
             let t: &Type = types.at(retTypeNode.typeState.getType());
             if (t.isNone()) {
-                function.buildReturnEmpty();
+                function.buildReturnEmpty(body.span);
             } else {
                 todo_with_msg("this is sus and an error lol");
                 // let b: RegIndex = function.allocateRegister(t);
@@ -1078,8 +1122,8 @@ struct IRGen {
                 let typ: &Type = types.at(stmt.typeState.getType());
                 let allocaType: &Type = types.at(typ.intoPointer());
                 let ptr: RegIndex = function.allocateRegister(allocaType);
-                function.buildAlloca(ptr, typ.getSize());
-                function.buildStore(ptr, result);
+                function.buildAlloca(stmt.span, ptr, typ.getSize());
+                function.buildStore(stmt.span, ptr, result);
                 let scope: &IRScope = function.scopes.last();
                 scope.addEntry(stmt.varDeclContext.name.content, ptr, false);
             }
@@ -1089,7 +1133,7 @@ struct IRGen {
             if (context.hasElse) {
                 let then: IRBlockID = function.appendBlock();
                 let elze: IRBlockID = function.appendBlock();
-                function.buildCondBr(cond, then, elze);
+                function.buildCondBr(stmt.span, cond, then, elze);
 
                 function.setCurrentBlock(then);
                 this.generateBytecodeStmt(function, stmts.at(context.thenBody));
@@ -1108,31 +1152,31 @@ struct IRGen {
                 } else if (thenTerm && !elseTerm) {
                     let after: IRBlockID = function.appendBlock();
                     function.setCurrentBlock(elze);
-                    function.buildBr(after);
+                    function.buildBr(stmt.span, after);
                     function.setCurrentBlock(after);
                 } else if (!thenTerm && elseTerm) {
                     let after: IRBlockID = function.appendBlock();
                     function.setCurrentBlock(then);
-                    function.buildBr(after);
+                    function.buildBr(stmt.span, after);
                     function.setCurrentBlock(after);
                 } else {
                     let after: IRBlockID = function.appendBlock();
                     function.setCurrentBlock(then);
-                    function.buildBr(after);
+                    function.buildBr(stmt.span, after);
                     function.setCurrentBlock(elze);
-                    function.buildBr(after);
+                    function.buildBr(stmt.span, after);
                     function.setCurrentBlock(after);
                 }
             } else {
                 let then: IRBlockID = function.appendBlock();
                 let cont: IRBlockID = function.appendBlock();
-                function.buildCondBr(cond, then, cont);
+                function.buildCondBr(stmt.span, cond, then, cont);
 
                 function.setCurrentBlock(then);
                 this.generateBytecodeStmt(function, stmts.at(context.thenBody));
                 let curr: &IRBlock = function.getCurrentBlockAsRef();
                 if (!curr.isTerminated()) {
-                    function.buildBr(cont);
+                    function.buildBr(stmt.span, cont);
                 }
                 function.setCurrentBlock(cont);
             }
@@ -1142,22 +1186,22 @@ struct IRGen {
             let afterBlock: IRBlockID = function.appendBlock();
             let stepBlock: IRBlockID = function.appendBlock();
             function.pushLoopBlocks(stepBlock, afterBlock);
-            function.buildBr(condBlock);
+            function.buildBr(stmt.span, condBlock);
 
             function.setCurrentBlock(condBlock);
             let cond: RegIndex = this.generateBytecodeExpr(function, exprs.at(stmt.expr), false);
-            function.buildCondBr(cond, bodyBlock, afterBlock);
+            function.buildCondBr(stmt.span, cond, bodyBlock, afterBlock);
 
             function.setCurrentBlock(bodyBlock);
             this.generateBytecodeStmt(function, stmts.at(stmt.block));
             let curr: &IRBlock = function.getCurrentBlockAsRef();
             if (!curr.isTerminated()) {
-                function.buildBr(stepBlock);
+                function.buildBr(stmt.span, stepBlock);
             }
 
             function.setCurrentBlock(stepBlock);
             this.generateBytecodeExpr(function, exprs.at(stmt.step), false);
-            function.buildBr(condBlock);
+            function.buildBr(stmt.span, condBlock);
 
             function.setCurrentBlock(afterBlock);
             function.popLoopBlocks();
@@ -1167,8 +1211,8 @@ struct IRGen {
             let typ: &Type = types.at(expr.typeState.getType());
             let result: RegIndex = this.generateBytecodeExpr(function, expr, false);
             if (typ.getSize() > 8) {
-                function.buildStore(function.retPtr, result);
-                function.buildReturnExpr(function.retPtr);
+                function.buildStore(stmt.span, function.retPtr, result);
+                function.buildReturnExpr(stmt.span, function.retPtr);
             } else {
                 if (typ.isStruct()) {
                     let v: RegIndex = this.getRegisterForSize(function, typ.getSize());
@@ -1176,26 +1220,26 @@ struct IRGen {
                     let r: RegIndex = function.allocateRegister(types.at(t.intoPointer()));
                     let s: usize = t.getSize();
                     assert(s <= 8);
-                    function.buildAlloca(r, s);
-                    function.buildStore(r, result);
-                    function.buildLoad(v, r);
-                    function.buildReturnExpr(v);
+                    function.buildAlloca(stmt.span, r, s);
+                    function.buildStore(stmt.span, r, result);
+                    function.buildLoad(stmt.span, v, r);
+                    function.buildReturnExpr(stmt.span, v);
                 } else {
-                    function.buildReturnExpr(result);
+                    function.buildReturnExpr(stmt.span, result);
                 }
             }
         } else if (stmt.kind == STMT_RETURN_EMPTY) {
-            function.buildReturnEmpty();
+            function.buildReturnEmpty(stmt.span);
         } else if (stmt.kind == STMT_BLOCK) {
             this.generateBytecodeBlock(function, blocks.at(stmt.block));
         } else if (stmt.kind == STMT_EXPR) {
             this.generateBytecodeExpr(function, exprs.at(stmt.expr), false);
         } else if (stmt.kind == STMT_BREAK) {
-            if (!function.buildBreak()) {
+            if (!function.buildBreak(stmt.span)) {
                 todo_with_msg("break outside of loop");
             }
         } else if (stmt.kind == STMT_CONTINUE) {
-            if (!function.buildContinue()) {
+            if (!function.buildContinue(stmt.span)) {
                 todo_with_msg("continue outside of loop");
             }
         } else {
@@ -1240,11 +1284,11 @@ struct IRGen {
             let size: usize = t.getSize();
             if (size == 0) warning("blank of type of size 0");
             let reg: RegIndex = function.allocateRegister(t);
-            function.buildLoadBlank(reg, size);
+            function.buildLoadBlank(expr.span, reg, size);
             if (needsPtr) {
                 let tempAlloc: RegIndex = function.allocateRegister(types.at(t.intoPointer()));
-                function.buildAlloca(tempAlloc, size);
-                function.buildStore(tempAlloc, reg);
+                function.buildAlloca(expr.span, tempAlloc, size);
+                function.buildStore(expr.span, tempAlloc, reg);
                 return tempAlloc;
             }
             return reg;
@@ -1253,11 +1297,11 @@ struct IRGen {
             let target: &Type = types.at(typeNodes.at(expr.lhs).typeState.getType());
             let reg: RegIndex = function.allocateRegister(t);
             let size: usize = target.getSize();
-            function.buildLoadInteger(reg, t, size);
+            function.buildLoadInteger(expr.span, reg, t, size);
             if (needsPtr) {
                 let tempAlloc: RegIndex = function.allocateRegister(types.at(t.intoPointer()));
-                function.buildAlloca(tempAlloc, size);
-                function.buildStore(tempAlloc, reg);
+                function.buildAlloca(expr.span, tempAlloc, size);
+                function.buildStore(expr.span, tempAlloc, reg);
                 return tempAlloc;
             }
             return reg;
@@ -1269,40 +1313,40 @@ struct IRGen {
             assert(target.equals(exType));
             let dst: RegIndex = function.allocateRegister(target);
             if (current.isInteger() && target.isPointer()) {
-                function.buildIntToPtr(dst, result);
+                function.buildIntToPtr(expr.span, dst, result);
             } else if (current.isPointer() && target.isInteger()) {
-                function.buildPtrToInt(dst, result);
+                function.buildPtrToInt(expr.span, dst, result);
             } else if (current.isPointer() && target.isPointer()) {
-                function.buildMove(dst, result);
+                function.buildMove(expr.span, dst, result);
             } else if ((current.isChar() || current.isInteger()) && (target.isChar() || target.isInteger())) {
                 if (current.getSize() < target.getSize()) {
                     if (current.isSignedInteger()) {
-                        function.buildIntSignExtend(dst, result, target.getSize() * 8);
+                        function.buildIntSignExtend(expr.span, dst, result, target.getSize() * 8);
                     } else {
-                        function.buildIntZeroExtend(dst, result, target.getSize() * 8);
+                        function.buildIntZeroExtend(expr.span, dst, result, target.getSize() * 8);
                     }
                 } else if (current.getSize() > target.getSize()) {
-                    function.buildIntTruncate(dst, result, target.getSize() * 8);
+                    function.buildIntTruncate(expr.span, dst, result, target.getSize() * 8);
                 } else {
-                    function.buildMove(dst, result);
+                    function.buildMove(expr.span, dst, result);
                 }
             } else if (current.isInteger() && target.isFloat()) {
-                if (target.getSize() == 4) function.buildIntToF32(dst, result);
-                else if (target.getSize() == 8) function.buildIntToF64(dst, result);
+                if (target.getSize() == 4) function.buildIntToF32(expr.span, dst, result);
+                else if (target.getSize() == 8) function.buildIntToF64(expr.span, dst, result);
                 else unreachable("int to float");
             } else if (current.isFloat() && target.isInteger()) {
-                if (current.getSize() == 4) function.buildF32ToInt(dst, result);
-                else if (current.getSize() == 8) function.buildF64ToInt(dst, result);
+                if (current.getSize() == 4) function.buildF32ToInt(expr.span, dst, result);
+                else if (current.getSize() == 8) function.buildF64ToInt(expr.span, dst, result);
                 else unreachable("int to float");
             } else if (current.isFloat() && target.isFloat()) {
                 if (current.getSize() < target.getSize()) {
                     assert(current.getSize() == 4);
                     assert(target.getSize() == 8);
-                    function.buildF32ToF64(dst, result);
+                    function.buildF32ToF64(expr.span, dst, result);
                 } else if (current.getSize() > target.getSize()) {
                     assert(current.getSize() == 8);
                     assert(target.getSize() == 4);
-                    function.buildF64ToF32(dst, result);
+                    function.buildF64ToF32(expr.span, dst, result);
                 } else {
                     todo_with_msg("same float to same float");
                 }
@@ -1317,18 +1361,18 @@ struct IRGen {
             assert(strukt.isStruct(), "Expected Struct Type in EXPR_STRUCT_INIT");
             let structDecl: &ParsedStructDecl = structDecls.at(strukt.typeIndex);
             let reg: RegIndex = function.allocateRegister(strukt);
-            function.buildCreateStruct(reg);
+            function.buildCreateStruct(expr.span, reg);
             for (let i: usize = 0; i < expr.structInitContext.fieldLength; i = i + 1) {
                 let name: Token = expr.structInitContext.getFieldNameAtIndex(i);
                 let expr: &ParsedExpr = exprs.at(expr.structInitContext.getFieldExprAtIndex(i));
                 let index: usize = structDecl.getFieldIndex(&name.content);
                 let result: RegIndex = this.generateBytecodeExpr(function, expr, false);
-                function.buildInsertValue(reg, index, result);
+                function.buildInsertValue(expr.span, reg, index, result);
             }
             if (needsPtr) {
                 let structAlloc: RegIndex = function.allocateRegister(types.at(strukt.intoPointer()));
-                function.buildAlloca(structAlloc, strukt.getSize());
-                function.buildStore(structAlloc, reg);
+                function.buildAlloca(expr.span, structAlloc, strukt.getSize());
+                function.buildStore(expr.span, structAlloc, reg);
                 return structAlloc;
             }
             return reg;
@@ -1336,7 +1380,7 @@ struct IRGen {
             function.name.print();
             expr.span.print();
             printf("\n%llu\n", expr.kind);
-            todo_with_msg("unknown expr");
+            unreachable("Exhaustive handling of expressions in IRGen.generateBytecodeExpr");
         }
     }
 
@@ -1356,8 +1400,8 @@ struct IRGen {
             if (!_t.isStructPointer()) {
                 let t1: &Type = types.at(_t.intoPointer());
                 let alloca: RegIndex = function.allocateRegister(t1);
-                function.buildAlloca(alloca, _t.getSize());
-                function.buildStore(alloca, result);
+                function.buildAlloca(expr.span, alloca, _t.getSize());
+                function.buildStore(expr.span, alloca, result);
                 result = alloca;
                 _t = t1;
             }
@@ -1369,17 +1413,17 @@ struct IRGen {
             let _f: &ParsedTypeNode = typeNodes.at(decl.context.getFieldTypeAtIndex(index));
             let fieldType: &Type = types.at(_f.typeState.getType());
             let fieldPtr: RegIndex = function.allocateRegister(types.at(fieldType.intoPointer()));
-            function.buildGetFieldPtr(fieldPtr, result, index);
+            function.buildGetFieldPtr(expr.span, fieldPtr, result, index);
             if (needsPtr) {
                 return fieldPtr;
             } else {
                 let dst: RegIndex = function.allocateRegister(fieldType);
-                function.buildLoad(dst, fieldPtr);
+                function.buildLoad(expr.span, dst, fieldPtr);
                 return dst;
             }
         } else if (rhs.kind == EXPR_CALL) {
             let result: RegIndex = this.generateBytecodeExpr(function, lhs, false);
-            let instance: RegIndex = this.prepareArgument(function, result, instance);
+            let instance: RegIndex = this.prepareArgument(function, lhs.span, result, instance);
             let method: &ParsedMethod = methods.at(rhs.lhs);
             let name: String = method.getMangledName();
             let funcID: usize = this.getFunctionByName(&name);
@@ -1389,7 +1433,7 @@ struct IRGen {
             let retPtr: RegIndex = blank;
             if (typ.getSize() > 8) {
                 retPtr = function.allocateRegister(types.at(typ.intoPointer()));
-                function.buildAlloca(retPtr, typ.getSize());
+                function.buildAlloca(expr.span, retPtr, typ.getSize());
                 args.push(retPtr);
             }
             if (method.isStatic) {
@@ -1402,49 +1446,49 @@ struct IRGen {
                 let arg: &ParsedExpr = exprs.at(rhs.arrayContext.getElementAtIndex(i));
                 let argType: &Type = types.at(arg.typeState.getType());
                 let result: RegIndex = this.generateBytecodeExpr(function, arg, false);
-                args.push(this.prepareArgument(function, result, argType));
+                args.push(this.prepareArgument(function, arg.span, result, argType));
             }
-            return this.prepareReturnValue(function, funcID, args, typ, retPtr, needsPtr);
+            return this.prepareReturnValue(rhs.span, function, funcID, args, typ, retPtr, needsPtr);
         } else {
             unreachable("Expected name or call in generateBytecodeExprMemberAccess");
         }
     }
 
-    func prepareReturnValue(&this, function: &IRFunc, funcID: usize, args: RegIndexList, retType: &Type, retPtr: RegIndex, needsPtr: bool) -> RegIndex {
+    func prepareReturnValue(&this, span: Span, function: &IRFunc, funcID: usize, args: RegIndexList, retType: &Type, retPtr: RegIndex, needsPtr: bool) -> RegIndex {
         let retVal: RegIndex = blank;
         if (retType.getSize() > 8) {
             let reg: RegIndex = function.allocateRegister(retType);
-            function.buildCall(retPtr, RegIndex { i: funcID }, args);
+            function.buildCall(span, retPtr, RegIndex { i: funcID }, args);
             if (needsPtr) {
                 retVal = retPtr;
             } else {
-                function.buildLoad(reg, retPtr);
+                function.buildLoad(span, reg, retPtr);
                 retVal = reg;
             }
         } else {
             if (retType.isStruct()) {
                 let reg: RegIndex = this.getRegisterForSize(function, retType.getSize());
-                function.buildCall(reg, RegIndex { i: funcID }, args);
+                function.buildCall(span, reg, RegIndex { i: funcID }, args);
                 let v: RegIndex = function.allocateRegister(retType);
                 let t: &Type = function.getRegister(v).typ;
                 let r: RegIndex = function.allocateRegister(types.at(t.intoPointer()));
                 let s: usize = t.getSize();
                 assert(s <= 8);
-                function.buildAlloca(r, s);
-                function.buildStore(r, reg);
+                function.buildAlloca(span, r, s);
+                function.buildStore(span, r, reg);
                 if (needsPtr) {
                     retVal = r;
                 } else {
-                    function.buildLoad(v, r);
+                    function.buildLoad(span, v, r);
                 }
                 retVal = v;
             } else {
                 let reg: RegIndex = function.allocateRegister(retType);
-                function.buildCall(reg, RegIndex { i: funcID }, args);
+                function.buildCall(span, reg, RegIndex { i: funcID }, args);
                 if (needsPtr) {
                     let tempAlloc: RegIndex = function.allocateRegister(types.at(retType.intoPointer()));
-                    function.buildAlloca(tempAlloc, retType.getSize());
-                    function.buildStore(tempAlloc, reg);
+                    function.buildAlloca(span, tempAlloc, retType.getSize());
+                    function.buildStore(span, tempAlloc, reg);
                     retVal = tempAlloc;
                 } else {
                     retVal = reg;
@@ -1454,7 +1498,7 @@ struct IRGen {
         let f = this.functions.at(funcID);
         assert(f != null);
         if (f.hasAttribute(ATTR_NORETURN)) {
-            function.buildUnreachable();
+            function.buildUnreachable(span);
         }
         return retVal;
     }
@@ -1479,9 +1523,9 @@ struct IRGen {
             let size: RegIndex = function.allocateRegister(usizeType);
             let panic: IRBlockID = function.appendBlock();
             let normal: IRBlockID = function.appendBlock();
-            function.buildLoadInteger(size, usizeType, elemCount);
-            function.buildBinaryOp(INSTR_INT_CMP_GTE, cond, rhs, size);
-            function.buildCondBr(cond, panic, normal);
+            function.buildLoadInteger(expr.span, size, usizeType, elemCount);
+            function.buildBinaryOp(expr.span, INSTR_INT_CMP_GTE, cond, rhs, size);
+            function.buildCondBr(expr.span, cond, panic, normal);
 
             function.setCurrentBlock(panic);
             let err: RegIndex = function.allocateRegister(newType(TYPE_KIND_POINTER, TYPE_CHAR));
@@ -1494,9 +1538,8 @@ struct IRGen {
             s.pushNumber(elemCount);
             s.pushStr(" has no index %d\n");
             _s.drop();
-            function.buildLoadString(err, s.asSubStr());
-            // FIXME: Using the module ID in mangling is awkward
-            let indexoob: String = newStringFromStrLit("index_oobPci64rNf0");
+            function.buildLoadString(expr.span, err, s.asSubStr());
+            let indexoob: String = newStringFromStrLit("index_oobPci64rN");
             if (!this.functions.containsKey(&indexoob)) {
                 fprintf(stderr, "%s Could not generate index check for array access!\n", FATAL_STR);
                 fprintf(stderr, "%s: Reason: Could not find function `index_oob`!\n", NOTE_STR);
@@ -1508,22 +1551,22 @@ struct IRGen {
             args.push(err);
             args.push(rhs);
             let reg: RegIndex = function.allocateRegister(newType(TYPE_KIND_PRIMITIVE, TYPE_NONE));
-            function.buildCall(reg, RegIndex { i: funcID }, args);
-            function.buildUnreachable();
+            function.buildCall(expr.span, reg, RegIndex { i: funcID }, args);
+            function.buildUnreachable(expr.span);
             function.setCurrentBlock(normal);
         }
         let elemPtr: RegIndex = function.allocateRegister(types.at(elemType.intoPointer()));
         let indices: RegIndexList = blank;
         let index: RegIndex = function.allocateRegister(usizeType);
-        function.buildLoadInteger(index, usizeType, 0);
+        function.buildLoadInteger(expr.span, index, usizeType, 0);
         indices.push(index);
         indices.push(rhs);
-        function.buildGetElementPtr(elemPtr, lhs, indices);
+        function.buildGetElementPtr(expr.span, elemPtr, lhs, indices);
         if (needsPtr) {
             return elemPtr;
         } else {
             let dst: RegIndex = function.allocateRegister(elemType);
-            function.buildLoad(dst, elemPtr);
+            function.buildLoad(expr.span, dst, elemPtr);
             return dst;
         }
     }
@@ -1536,8 +1579,7 @@ struct IRGen {
         assert(entry != null, "Could not find identifier in generateBytecodeExprIdentifier");
         let varType: &Type = types.at(expr.typeState.getType());
         if (function.comptimeLevel > 0 && !entry.isComptime) {
-            // REVIEW: This should've been handled before here?
-            todo_with_msg("Crossing the boundary: comptime IR needs runtime value :^)");
+            unreachable("Crossing the boundary: comptime IR needs runtime value - The Checker should've caught this");
         }
         if (needsPtr) {
             if (isGlobal) {
@@ -1545,11 +1587,11 @@ struct IRGen {
                 let global: RegIndex = function.allocateRegister(ptrType);
                 if (entry.isComptime) {
                     let val: RegIndex = function.allocateRegister(varType);
-                    function.buildAlloca(global, varType.getSize());
-                    function.buildFetchGlobalComptimeValue(val, entry.ptr);
-                    function.buildStore(global, val);
+                    function.buildAlloca(expr.span, global, varType.getSize());
+                    function.buildFetchGlobalComptimeValue(expr.span, val, entry.ptr);
+                    function.buildStore(expr.span, global, val);
                 } else {
-                    function.buildFetchGlobalPointer(global, entry.ptr);
+                    function.buildFetchGlobalPointer(expr.span, global, entry.ptr);
                 }
                 return global;
             } else {
@@ -1557,9 +1599,9 @@ struct IRGen {
                     let ptrType: &Type = types.at(varType.intoPointer());
                     let global: RegIndex = function.allocateRegister(ptrType);
                     let val: RegIndex = function.allocateRegister(varType);
-                    function.buildAlloca(global, varType.getSize());
-                    function.buildFetchLocalComptimeValue(val, entry.ptr);
-                    function.buildStore(global, val);
+                    function.buildAlloca(expr.span, global, varType.getSize());
+                    function.buildFetchLocalComptimeValue(expr.span, val, entry.ptr);
+                    function.buildStore(expr.span, global, val);
                     return global;
                 } else {
                     return entry.ptr;
@@ -1569,15 +1611,15 @@ struct IRGen {
             let val: RegIndex = function.allocateRegister(varType);
             if (isGlobal) {
                 if (entry.isComptime) {
-                    function.buildFetchGlobalComptimeValue(val, entry.ptr);
+                    function.buildFetchGlobalComptimeValue(expr.span, val, entry.ptr);
                 } else {
-                    function.buildFetchGlobalRuntimeValue(val, entry.ptr);
+                    function.buildFetchGlobalRuntimeValue(expr.span, val, entry.ptr);
                 }
             } else {
                 if (entry.isComptime) {
-                    function.buildFetchLocalComptimeValue(val, entry.ptr);
+                    function.buildFetchLocalComptimeValue(expr.span, val, entry.ptr);
                 } else {
-                    function.buildLoad(val, entry.ptr);
+                    function.buildLoad(expr.span, val, entry.ptr);
                 }
             }
             return val;
@@ -1596,73 +1638,73 @@ struct IRGen {
         // OPT: Specialized 8bit, 16bit, etc. variations
         if (expr.op == BIN_PLUS) {
             if ((lhsType.isInteger() || lhsType.isChar()) && (rhsType.isInteger() || rhsType.isChar())) {
-                function.buildBinaryOp(INSTR_INT_ADD, dst, lhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_INT_ADD, dst, lhs, rhs);
             } else if (lhsType.isPointer() && rhsType.isInteger()) {
                 assert(res.isPointer(), "PTR + INT expected to be PTR");
-                function.buildPtrToInt(lhs, lhs);
-                function.buildBinaryOp(INSTR_INT_ADD, dst, lhs, rhs);
-                function.buildIntToPtr(dst, dst);
+                function.buildPtrToInt(expr.span, lhs, lhs);
+                function.buildBinaryOp(expr.span, INSTR_INT_ADD, dst, lhs, rhs);
+                function.buildIntToPtr(expr.span, dst, dst);
             } else if (lhsType.isInteger() && rhsType.isPointer()) {
                 assert(res.isPointer(), "INT + PTR expected to be PTR");
-                function.buildPtrToInt(rhs, rhs);
-                function.buildBinaryOp(INSTR_INT_ADD, dst, lhs, rhs);
-                function.buildIntToPtr(dst, dst);
+                function.buildPtrToInt(expr.span, rhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_INT_ADD, dst, lhs, rhs);
+                function.buildIntToPtr(expr.span, dst, dst);
             } else if (lhsType.isFloat() && rhsType.isFloat()) {
-                function.buildBinaryOp(INSTR_FLOAT_ADD, dst, lhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_FLOAT_ADD, dst, lhs, rhs);
             } else {
                 todo_with_msg("non-int add");
             }
         } else if (expr.op == BIN_SUB) {
             let usizeType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
             if ((lhsType.isInteger() || lhsType.isChar()) && (rhsType.isInteger() || rhsType.isChar())) {
-                function.buildBinaryOp(INSTR_INT_SUB, dst, lhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_INT_SUB, dst, lhs, rhs);
             } else if (lhsType.isPointer() && rhsType.isInteger()) {
                 assert(res.isPointer(), "PTR - INT expected to be PTR");
                 let tmp1: RegIndex = function.allocateRegister(usizeType);
                 let tmp2: RegIndex = function.allocateRegister(usizeType);
-                function.buildPtrToInt(tmp1, lhs);
-                function.buildBinaryOp(INSTR_INT_SUB, tmp2, tmp1, rhs);
-                function.buildIntToPtr(dst, tmp2);
+                function.buildPtrToInt(expr.span, tmp1, lhs);
+                function.buildBinaryOp(expr.span, INSTR_INT_SUB, tmp2, tmp1, rhs);
+                function.buildIntToPtr(expr.span, dst, tmp2);
             } else if (lhsType.isInteger() && rhsType.isPointer()) {
                 assert(res.isPointer(), "INT - PTR expected to be PTR");
                 let tmp1: RegIndex = function.allocateRegister(usizeType);
                 let tmp2: RegIndex = function.allocateRegister(usizeType);
-                function.buildPtrToInt(tmp1, rhs);
-                function.buildBinaryOp(INSTR_INT_SUB, tmp2, lhs, tmp1);
-                function.buildIntToPtr(dst, tmp2);
+                function.buildPtrToInt(expr.span, tmp1, rhs);
+                function.buildBinaryOp(expr.span, INSTR_INT_SUB, tmp2, lhs, tmp1);
+                function.buildIntToPtr(expr.span, dst, tmp2);
             } else if (lhsType.isPointer() && rhsType.isPointer()) {
                 assert(res.isInteger(), "PTR - PTR expected to be INT");
                 let tmp1: RegIndex = function.allocateRegister(usizeType);
                 let tmp2: RegIndex = function.allocateRegister(usizeType);
-                function.buildPtrToInt(tmp1, lhs);
-                function.buildPtrToInt(tmp2, rhs);
-                function.buildBinaryOp(INSTR_INT_SUB, dst, tmp1, tmp2);
+                function.buildPtrToInt(expr.span, tmp1, lhs);
+                function.buildPtrToInt(expr.span, tmp2, rhs);
+                function.buildBinaryOp(expr.span, INSTR_INT_SUB, dst, tmp1, tmp2);
             } else if (lhsType.isFloat() && rhsType.isFloat()) {
-                function.buildBinaryOp(INSTR_FLOAT_SUB, dst, lhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_FLOAT_SUB, dst, lhs, rhs);
             } else {
                 todo_with_msg("non-int sub");
             }
         } else if (expr.op == BIN_MULT) {
             if (res.isInteger()) {
-                function.buildBinaryOp(INSTR_INT_MUL, dst, lhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_INT_MUL, dst, lhs, rhs);
             } else if (res.isFloat()) {
-                function.buildBinaryOp(INSTR_FLOAT_MUL, dst, lhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_FLOAT_MUL, dst, lhs, rhs);
             } else {
                 todo_with_msg("non-int mul");
             }
         } else if (expr.op == BIN_DIV) {
             if (res.isInteger()) {
-                function.buildBinaryOp(INSTR_INT_DIV, dst, lhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_INT_DIV, dst, lhs, rhs);
             } else if (res.isFloat()) {
-                function.buildBinaryOp(INSTR_FLOAT_DIV, dst, lhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_FLOAT_DIV, dst, lhs, rhs);
             } else {
                 todo_with_msg("non-int non-float div");
             }
         } else if (expr.op == BIN_MOD) {
             if (res.isInteger()) {
-                function.buildBinaryOp(INSTR_INT_MOD, dst, lhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_INT_MOD, dst, lhs, rhs);
             } else if (res.isFloat()) {
-                function.buildBinaryOp(INSTR_FLOAT_MOD, dst, lhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_FLOAT_MOD, dst, lhs, rhs);
             } else {
                 todo_with_msg("non-int mod");
             }
@@ -1684,47 +1726,49 @@ struct IRGen {
         let t: &Type = function.getRegister(lhs).typ;
         if (expr.op == BIN_CMP_EQ) {
             if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
-                function.buildBinaryOp(INSTR_INT_CMP_EQ, dst, lhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_INT_CMP_EQ, dst, lhs, rhs);
             } else if (t.isFloat()) {
-                function.buildBinaryOp(INSTR_FLOAT_CMP_EQ, dst, lhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_FLOAT_CMP_EQ, dst, lhs, rhs);
             } else {
                 todo_with_msg("IRGen CMP_EQ");
             }
         } else if (expr.op == BIN_CMP_NEQ) {
             if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
-                function.buildBinaryOp(INSTR_INT_CMP_NEQ, dst, lhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_INT_CMP_NEQ, dst, lhs, rhs);
             } else if (t.isFloat()) {
-                function.buildBinaryOp(INSTR_FLOAT_CMP_NEQ, dst, lhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_FLOAT_CMP_NEQ, dst, lhs, rhs);
             } else {
                 todo_with_msg("IRGen CMP_NEQ");
             }
         } else if (expr.op == BIN_CMP_GT) {
             if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
-                function.buildBinaryOp(INSTR_INT_CMP_GT, dst, lhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_INT_CMP_GT, dst, lhs, rhs);
             } else if (t.isFloat()) {
-                function.buildBinaryOp(INSTR_FLOAT_CMP_GT, dst, lhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_FLOAT_CMP_GT, dst, lhs, rhs);
             } else {
                 todo_with_msg("IRGen CMP_GT");
             }
         } else if (expr.op == BIN_CMP_GTE) {
             if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
-                function.buildBinaryOp(INSTR_INT_CMP_GTE, dst, lhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_INT_CMP_GTE, dst, lhs, rhs);
             } else if (t.isFloat()) {
-                function.buildBinaryOp(INSTR_FLOAT_CMP_GTE, dst, lhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_FLOAT_CMP_GTE, dst, lhs, rhs);
             } else {
                 todo_with_msg("IRGen CMP_GTE");
             }
         } else if (expr.op == BIN_CMP_LT) {
             if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
-                function.buildBinaryOp(INSTR_INT_CMP_LT, dst, lhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_INT_CMP_LT, dst, lhs, rhs);
+            } else if (t.isFloat()) {
+                function.buildBinaryOp(expr.span, INSTR_FLOAT_CMP_LT, dst, lhs, rhs);
             } else {
                 todo_with_msg("IRGen CMP_LT");
             }
         } else if (expr.op == BIN_CMP_LTE) {
             if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
-                function.buildBinaryOp(INSTR_INT_CMP_LTE, dst, lhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_INT_CMP_LTE, dst, lhs, rhs);
             } else if (t.isFloat()) {
-                function.buildBinaryOp(INSTR_FLOAT_CMP_LTE, dst, lhs, rhs);
+                function.buildBinaryOp(expr.span, INSTR_FLOAT_CMP_LTE, dst, lhs, rhs);
             } else {
                 todo_with_msg("IRGen CMP_LTE");
             }
@@ -1742,9 +1786,9 @@ struct IRGen {
         let t: &Type = types.at(expr.typeState.getType());
         let dst: RegIndex = function.allocateRegister(t);
         if (expr.op == BIN_LAND) {
-            function.buildBinaryOp(INSTR_LOGICAL_AND, dst, lhs, rhs);
+            function.buildBinaryOp(expr.span, INSTR_LOGICAL_AND, dst, lhs, rhs);
         } else if (expr.op == BIN_LOR) {
-            function.buildBinaryOp(INSTR_LOGICAL_OR, dst, lhs, rhs);
+            function.buildBinaryOp(expr.span, INSTR_LOGICAL_OR, dst, lhs, rhs);
         } else {
             unreachable("Exhaustive handling of ops in generateBytecodeExprLogical");
         }
@@ -1759,11 +1803,11 @@ struct IRGen {
         let t: &Type = types.at(expr.typeState.getType());
         let dst: RegIndex = function.allocateRegister(t);
         if (expr.op == BIN_BAND) {
-            function.buildBinaryOp(INSTR_BITWISE_AND, dst, lhs, rhs);
+            function.buildBinaryOp(expr.span, INSTR_BITWISE_AND, dst, lhs, rhs);
         } else if (expr.op == BIN_BOR) {
-            function.buildBinaryOp(INSTR_BITWISE_OR, dst, lhs, rhs);
+            function.buildBinaryOp(expr.span, INSTR_BITWISE_OR, dst, lhs, rhs);
         } else if (expr.op == BIN_BXOR) {
-            function.buildBinaryOp(INSTR_BITWISE_XOR, dst, lhs, rhs);
+            function.buildBinaryOp(expr.span, INSTR_BITWISE_XOR, dst, lhs, rhs);
         } else {
             unreachable("Exhaustive handling of ops in generateBytecodeExprBitwise");
         }
@@ -1785,7 +1829,7 @@ struct IRGen {
                     fprintf(stderr, "%llu %llu\n", size, typsize);
                     todo_with_msg("int literal bigger than type can hold");
                 }
-                function.buildLoadInteger(reg, t, value);
+                function.buildLoadInteger(expr.span, reg, t, value);
             } else if (t.isFloat()) {
                 let value: f64 = expr.origToken.content.toF64();
                 assert(value >= 0, "Expected FloatLit value to be positive");
@@ -1793,8 +1837,8 @@ struct IRGen {
                 if (value >= typmax) {
                     todo_with_msg("float literal bigger than type can hold");
                 }
-                if (t.getSize() == 4) function.buildLoadF32(reg, value as f32);
-                else if (t.getSize() == 8) function.buildLoadF64(reg, value);
+                if (t.getSize() == 4) function.buildLoadF32(expr.span, reg, value as f32);
+                else if (t.getSize() == 8) function.buildLoadF64(expr.span, reg, value);
                 else unreachable("load float");
             } else {
                 unreachable("EXPR_LIT expected to be int or float");
@@ -1802,27 +1846,27 @@ struct IRGen {
         } else if (expr.kind == EXPR_STRING_LIT) {
             assert(t.isPointerTo(TYPE_CHAR), "StrLit expected to be &char");
             let name: SubStr = expr.origToken.content;
-            function.buildLoadString(reg, name);
+            function.buildLoadString(expr.span, reg, name);
         } else if (expr.kind == EXPR_TRUE || expr.kind == EXPR_FALSE) {
             assert(t.isBoolean(), "true and false expected to be bool");
             let v: usize = 0;
             if (expr.kind == EXPR_TRUE) v = 1;
-            function.buildLoadBool(reg, v);
+            function.buildLoadBool(expr.span, reg, v);
         } else if (expr.kind == EXPR_NULL) {
             assert(t.isPointer(), "null expected to be pointer");
-            function.buildLoadNull(reg);
+            function.buildLoadNull(expr.span, reg);
         } else if (expr.kind == EXPR_CHAR_LIT) {
             assert(t.isChar(), "CharLit expected to be char");
-            function.buildLoadInteger(reg, t, expr.origToken.content.getChar(0) as usize);
+            function.buildLoadInteger(expr.span, reg, t, expr.origToken.content.getChar(0) as usize);
         } else if (expr.kind == EXPR_ARRAY_LIT) {
             assert(t.isArray(), "ArrayLit expected to be array");
             if (t.getSize() > 4096) warning("Array Literal is big and slows down the IR");
             if (expr.arrayContext.size == 0) {
-                function.buildCreateArray(reg);
+                function.buildCreateArray(expr.span, reg);
                 for (let i: usize = 0; i < expr.arrayContext.elemLength; i = i + 1) {
                     let elem: &ParsedExpr = exprs.at(expr.arrayContext.getElementAtIndex(i));
                     let result: RegIndex = this.generateBytecodeExpr(function, elem, false);
-                    function.buildInsertValue(reg, i, result);
+                    function.buildInsertValue(expr.span, reg, i, result);
                 }
             } else {
                 let elem: &ParsedExpr = exprs.at(expr.arrayContext.getElementAtIndex(0));
@@ -1843,36 +1887,36 @@ struct IRGen {
                 let body: IRBlockID = function.appendBlock();
                 let end: IRBlockID = function.appendBlock();
 
-                function.buildAlloca(arrayPtr, t.getSize());
-                function.buildAlloca(indexPtr, usizeType.getSize());
-                function.buildLoadInteger(zero, usizeType, 0);
-                function.buildLoadInteger(one, usizeType, 1);
-                function.buildStore(indexPtr, zero);
-                function.buildLoadInteger(size, usizeType, expr.arrayContext.size);
-                function.buildBr(start);
+                function.buildAlloca(expr.span, arrayPtr, t.getSize());
+                function.buildAlloca(expr.span, indexPtr, usizeType.getSize());
+                function.buildLoadInteger(expr.span, zero, usizeType, 0);
+                function.buildLoadInteger(expr.span, one, usizeType, 1);
+                function.buildStore(expr.span, indexPtr, zero);
+                function.buildLoadInteger(expr.span, size, usizeType, expr.arrayContext.size);
+                function.buildBr(expr.span, start);
 
                 function.setCurrentBlock(start);
-                function.buildLoad(index, indexPtr);
-                function.buildBinaryOp(INSTR_INT_CMP_LT, cond, index, size);
-                function.buildCondBr(cond, body, end);
+                function.buildLoad(expr.span, index, indexPtr);
+                function.buildBinaryOp(expr.span, INSTR_INT_CMP_LT, cond, index, size);
+                function.buildCondBr(expr.span, cond, body, end);
 
                 function.setCurrentBlock(body);
                 let indices: RegIndexList = blank;
                 indices.push(zero);
                 indices.push(index);
-                function.buildGetElementPtr(elemPtr, arrayPtr, indices);
-                function.buildStore(elemPtr, value);
+                function.buildGetElementPtr(expr.span, elemPtr, arrayPtr, indices);
+                function.buildStore(expr.span, elemPtr, value);
 
-                function.buildLoad(index, indexPtr);
-                function.buildBinaryOp(INSTR_INT_ADD, index, index, one);
-                function.buildStore(indexPtr, index);
-                function.buildBr(start);
+                function.buildLoad(expr.span, index, indexPtr);
+                function.buildBinaryOp(expr.span, INSTR_INT_ADD, index, index, one);
+                function.buildStore(expr.span, indexPtr, index);
+                function.buildBr(expr.span, start);
 
                 function.setCurrentBlock(end);
                 if (needsPtr) {
                     return arrayPtr;
                 } else {
-                    function.buildLoad(reg, arrayPtr);
+                    function.buildLoad(expr.span, reg, arrayPtr);
                     return reg;
                 }
             }
@@ -1888,7 +1932,7 @@ struct IRGen {
         let lhs: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.lhs), true);
         let rhs: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.rhs), false);
         assert(function.getRegister(lhs).typ.isPointer(), "Assignment expected Ptr as LHS");
-        function.buildStore(lhs, rhs);
+        function.buildStore(expr.span, lhs, rhs);
         return rhs;
     }
 
@@ -1902,12 +1946,12 @@ struct IRGen {
             let exprType = types.at(expr.typeState.getType());
             let r: RegIndex = function.allocateRegister(exprType);
             function.endComptime();
-            function.buildFetchLocalComptimeValue(r, result);
+            function.buildFetchLocalComptimeValue(expr.span, r, result);
             if (needsPtr) {
                 let subType: &Type = types.at(exprType.intoPointer());
                 let ptr: RegIndex = function.allocateRegister(subType);
-                function.buildAlloca(ptr, exprType.getSize());
-                function.buildStore(ptr, r);
+                function.buildAlloca(expr.span, ptr, exprType.getSize());
+                function.buildStore(expr.span, ptr, r);
                 return ptr;
             } else {
                 return r;
@@ -1922,7 +1966,7 @@ struct IRGen {
             } else {
                 let t: &Type = types.at(expr.typeState.getType());
                 let val: RegIndex = function.allocateRegister(t);
-                function.buildLoad(val, result);
+                function.buildLoad(expr.span, val, result);
                 return val;
             }
         } else if (expr.op == UNARY_REF) {
@@ -1932,8 +1976,8 @@ struct IRGen {
             if (needsPtr || !ptrReg.typ.isPointer()) {
                 let subType: &Type = types.at(ptrReg.typ.intoPointer());
                 let ptr: RegIndex = function.allocateRegister(subType);
-                function.buildAlloca(ptr, ptrReg.typ.getSize());
-                function.buildStore(ptr, result);
+                function.buildAlloca(expr.span, ptr, ptrReg.typ.getSize());
+                function.buildStore(expr.span, ptr, result);
                 return ptr;
             } else {
                 return result;
@@ -1941,21 +1985,21 @@ struct IRGen {
         } else if (expr.op == UNARY_NOT) {
             let result: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.lhs), false);
             let r: RegIndex = function.allocateRegister(types.at(expr.typeState.getType()));
-            function.buildLogicalNot(r, result);
+            function.buildLogicalNot(expr.span, r, result);
             return r;
         } else if (expr.op == UNARY_MINUS) {
             let result: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.lhs), false);
             let t: &Type = types.at(expr.typeState.getType());
             if (t.isInteger()) {
                 let zero: RegIndex = function.allocateRegister(t);
-                function.buildLoadInteger(zero, t, 0);
-                function.buildBinaryOp(INSTR_INT_SUB, result, zero, result);
+                function.buildLoadInteger(expr.span, zero, t, 0);
+                function.buildBinaryOp(expr.span, INSTR_INT_SUB, result, zero, result);
             } else if (t.isFloat()) {
                 let zero: RegIndex = function.allocateRegister(t);
-                if (t.getSize() == 4) function.buildLoadF32(zero, 0);
-                else if (t.getSize() == 8) function.buildLoadF64(zero, 0);
+                if (t.getSize() == 4) function.buildLoadF32(expr.span, zero, 0);
+                else if (t.getSize() == 8) function.buildLoadF64(expr.span, zero, 0);
                 else unreachable("negation float");
-                function.buildBinaryOp(INSTR_FLOAT_SUB, result, zero, result);
+                function.buildBinaryOp(expr.span, INSTR_FLOAT_SUB, result, zero, result);
             } else {
                 todo_with_msg("neg non-int");
             }
@@ -1965,7 +2009,7 @@ struct IRGen {
         }
     }
 
-    func prepareParameter(&this, function: &IRFunc, index: usize, name: SubStr, typ: &Type, retValue: bool) {
+    func prepareParameter(&this, function: &IRFunc, index: usize, span: Span, name: SubStr, typ: &Type, retValue: bool) {
         trace("IRGen.prepareParameter");
         if (typ.isStruct()) {
             let size: usize = typ.getSize();
@@ -1982,20 +2026,20 @@ struct IRGen {
                 t = newType(TYPE_KIND_POINTER, TYPE_U8);
             }
             let value: RegIndex = function.allocateRegister(t);
-            function.buildGetParam(value, index, t.getSize());
+            function.buildGetParam(span, value, index, t.getSize());
             // value contains prepared struct
             let allocType: &Type = types.at(typ.intoPointer());
             let allocReg: RegIndex = function.allocateRegister(allocType);
             if (t.isPointer()) {
                 let instance: RegIndex = function.allocateRegister(typ);
-                function.buildLoad(instance, value);
+                function.buildLoad(span, instance, value);
 
-                function.buildAlloca(allocReg, typ.getSize());
-                function.buildStore(allocReg, instance);
+                function.buildAlloca(span, allocReg, typ.getSize());
+                function.buildStore(span, allocReg, instance);
                 function.scopes.last().addEntry(name, allocReg, false);
             } else {
-                function.buildAlloca(allocReg, typ.getSize());
-                function.buildStore(allocReg, value);
+                function.buildAlloca(span, allocReg, typ.getSize());
+                function.buildStore(span, allocReg, value);
                 function.scopes.last().addEntry(name, allocReg, false);
             }
         } else if (typ.getSize() > 8) {
@@ -2004,14 +2048,14 @@ struct IRGen {
             let allocType: &Type = types.at(typ.intoPointer());
             let allocReg: RegIndex = function.allocateRegister(allocType);
             let value: RegIndex = function.allocateRegister(typ);
-            function.buildGetParam(value, index, typ.getSize());
+            function.buildGetParam(span, value, index, typ.getSize());
 
             if (retValue) {
                 assert(index == 0);
                 (*function).retPtr = value;
             } else {
-                function.buildAlloca(allocReg, typ.getSize());
-                function.buildStore(allocReg, value);
+                function.buildAlloca(span, allocReg, typ.getSize());
+                function.buildStore(span, allocReg, value);
                 function.scopes.last().addEntry(name, allocReg, false);
             }
         }
@@ -2034,22 +2078,22 @@ struct IRGen {
         return v;
     }
 
-    func prepareArgument(&this, function: &IRFunc, value: RegIndex, typ: &Type) -> RegIndex {
+    func prepareArgument(&this, function: &IRFunc, span: Span, value: RegIndex, typ: &Type) -> RegIndex {
         trace("IRGen.prepareArgument");
         if (typ.isStruct()) {
             let size: usize = typ.getSize();
             let alloc: RegIndex = function.allocateRegister(types.at(typ.intoPointer()));
-            function.buildAlloca(alloc, size);
-            function.buildStore(alloc, value);
+            function.buildAlloca(span, alloc, size);
+            function.buildStore(span, alloc, value);
             if (size > 8) return alloc;
             let v: RegIndex = this.getRegisterForSize(function, size);
-            function.buildLoad(v, alloc);
+            function.buildLoad(span, v, alloc);
             return v;
         } else if (typ.getSize() > 8) {
             // Following the ABI, all parameters that don't fit in a register get passed by pointer
             let tempAlloc: RegIndex = function.allocateRegister(types.at(typ.intoPointer()));
-            function.buildAlloca(tempAlloc, typ.getSize());
-            function.buildStore(tempAlloc, value);
+            function.buildAlloca(span, tempAlloc, typ.getSize());
+            function.buildStore(span, tempAlloc, value);
             return tempAlloc;
         } else {
             return value;
@@ -2065,19 +2109,19 @@ struct IRGen {
         let retPtr: RegIndex = blank;
         if (typ.getSize() > 8) {
             retPtr = function.allocateRegister(types.at(typ.intoPointer()));
-            function.buildAlloca(retPtr, typ.getSize());
+            function.buildAlloca(expr.span, retPtr, typ.getSize());
             args.push(retPtr);
         }
         for (let i: usize = 0; i < expr.arrayContext.elemLength; i = i + 1) {
             let arg: &ParsedExpr = exprs.at(expr.arrayContext.getElementAtIndex(i));
             let argType: &Type = types.at(arg.typeState.getType());
             let result: RegIndex = this.generateBytecodeExpr(function, arg, false);
-            args.push(this.prepareArgument(function, result, argType));
+            args.push(this.prepareArgument(function, arg.span, result, argType));
         }
         let name: String = funcDecls.at(expr.lhs).getMangledName();
         let funcID: usize = this.getFunctionByName(&name);
         name.drop();
-        return this.prepareReturnValue(function, funcID, args, typ, retPtr, needsPtr);
+        return this.prepareReturnValue(expr.span, function, funcID, args, typ, retPtr, needsPtr);
     }
 }
 
@@ -2085,6 +2129,7 @@ func newIRGenerator() -> IRGen {
     return IRGen {
         globalScope: IRFunc {
             name: newStringFromStrLit("__global__"),
+            span: blank,
             isMethod: false,
             originalID: funcDecls.length + 1,
             comptimeLevel: 0,

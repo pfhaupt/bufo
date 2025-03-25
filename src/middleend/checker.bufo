@@ -248,19 +248,42 @@ struct TypeChecker {
         return newTCStateFailure(ERROR_DUPLICATE_METHOD);
     }
 
-    func reportNoCallCandidate(&this, callID: usize, arguments: &TCStateList, functions: &FunctionLookupList) -> TCState {
-        trace("TypeChecker.reportNoCallCandidate");
+    func reportNoFunctionCallCandidate(&this, callID: usize, arguments: &TCStateList, functions: &FunctionLookupList) -> TCState {
+        trace("TypeChecker.reportNoFunctionCallCandidate");
         let callExpr: &ParsedExpr = exprs.at(callID);
-        assert(callExpr.kind == EXPR_CALL, "reportNoCallCandidate: Expected expr to be a call");
+        assert(callExpr.kind == EXPR_CALL, "reportNoFunctionCallCandidate: Expected expr to be a call");
         let loc: String = callExpr.origToken.span.toString();
         let name: String = callExpr.origToken.content.toString();
         fprintf(stderr, "%s: %s: Could not find matching signature for call to function `%s`.\n", loc.chars(), ERR_STR, name.chars());
-        assert(functions.length != 0, "reportNoCallCandidate: Expected at least one declaration");
+        assert(functions.length != 0, "reportNoFunctionCallCandidate: Expected at least one declaration");
         // REVIEW: It was suggested that we could hide this extra info behind a `--verbose` flag, which sounds interesting.
         for (let i: usize = 0; i < functions.length; i = i + 1) {
             let f: &FunctionLookup = functions.at(i);
             let loc: String = f.name.span.toString();
             fprintf(stderr, "%s: %s: A function with that name is located here.\n", loc.chars(), NOTE_STR);
+            loc.drop();
+        }
+        name.drop();
+        loc.drop();
+        this.typeError = true;
+        return newTCStateFailure(ERROR_NO_CALL_CANDIDATE);
+    }
+
+    func reportNoMethodCallCandidate(&this, callID: usize, arguments: &TCStateList, methods: &MethodLookupList) -> TCState {
+        trace("TypeChecker.reportNoMethodCallCandidate");
+        let binExpr = exprs.at(callID);
+        assert(binExpr.kind == EXPR_BINARY);
+        let callExpr: &ParsedExpr = exprs.at(binExpr.rhs);
+        assert(callExpr.kind == EXPR_CALL, "reportNoMethodCallCandidate: Expected expr to be a call");
+        let loc: String = callExpr.origToken.span.toString();
+        let name: String = callExpr.origToken.content.toString();
+        fprintf(stderr, "%s: %s: Could not find matching signature for call to method `%s`.\n", loc.chars(), ERR_STR, name.chars());
+        assert(methods.length != 0, "reportNoMethodCallCandidate: Expected at least one declaration");
+        // REVIEW: It was suggested that we could hide this extra info behind a `--verbose` flag, which sounds interesting.
+        for (let i: usize = 0; i < methods.length; i = i + 1) {
+            let f: &MethodLookup = methods.at(i);
+            let loc: String = f.name.span.toString();
+            fprintf(stderr, "%s: %s: A method with that name is located here.\n", loc.chars(), NOTE_STR);
             loc.drop();
         }
         name.drop();
@@ -1030,7 +1053,7 @@ struct TypeChecker {
             let t: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
             state = newTCStateType(t.getID());
         } else {
-            todo_with_msg("unexpected expr kind");
+            unreachable("Exhaustive handling of expressions in typeCheckExpr");
         }
         if (state.isError()) return state;
         (*expr).typeState = state;
@@ -1059,7 +1082,8 @@ struct TypeChecker {
         assert(typeState.isType(), "typeCheckExprAs Type is not a Type");
         let typeType: &Type = types.at(typeState.getType());
         if (exprState.wantsInfer()) exprState = this.inferTypeOntoExpr(expr.lhs, typeType.getID());
-        if (!exprState.isType()) todo_with_msg("as infer: expr is not a type");
+        if (exprState.isError()) return exprState;
+        assert(exprState.isType(), "Expected <expr> in `<expr> as <type>` to have a valid type after infer");
         let exprType: &Type = types.at(exprState.getType());
         if (typeType.isPointer() && exprType.isPointer()) {
             // PTR as PTR is allowed
@@ -1178,27 +1202,27 @@ struct TypeChecker {
         }
         assert(arguments.length == callContext.elemLength);
         let candidates: FunctionLookupList = blank;
-        let mark: TCState = this.markCallCandidates(callContext, &functions, &candidates, &arguments);
+        let mark: TCState = this.markFunctionCallCandidates(callContext, &functions, &candidates, &arguments);
         if (mark.isError()) return mark;
         // functions contains all functions with the same amount of arguments and
         // candidates where infer-semantics could validate the function
         // e.g. foo(i: i32) + foo(i: u64) for foo(5)
         let globalID: usize = 0;
-        let sweep: TCState = this.selectCallCandidate(exprID, callContext, &functions, &candidates, &arguments, &globalID);
+        let sweep: TCState = this.selectFunctionCallCandidate(exprID, callContext, &functions, &candidates, &arguments, &globalID);
         if (sweep.isError()) return sweep;
         assert(sweep.isType());
         (*expr).lhs = globalID;
         return sweep;
     }
 
-    func markCallCandidates(
+    func markFunctionCallCandidates(
         &this,
         callContext: &ArrayContext,
         functions: &FunctionLookupList,
         candidates: &FunctionLookupList,
         arguments: &TCStateList,
     ) -> TCState {
-        trace("TypeChecker.markCallCandidates");
+        trace("TypeChecker.markFunctionCallCandidates");
         for (let i: usize = 0; i < functions.length; i = i + 1) {
             let f: &FunctionLookup = &*(functions.at(i));
             if (!f.getReadyState(FUNC_READY_TO_USE)) {
@@ -1235,7 +1259,7 @@ struct TypeChecker {
         return newTCStateSuccess();
     }
 
-    func selectCallCandidate(
+    func selectFunctionCallCandidate(
         &this,
         exprID: usize,
         callContext: &ArrayContext,
@@ -1244,15 +1268,15 @@ struct TypeChecker {
         arguments: &TCStateList,
         funcID: &usize,
     ) -> TCState {
-        trace("TypeChecker.selectCallCandidate");
+        trace("TypeChecker.selectFunctionCallCandidate");
         if (candidates.length == 0) {
-            return this.reportNoCallCandidate(exprID, arguments, functions);
+            return this.reportNoFunctionCallCandidate(exprID, arguments, functions);
         } else if (candidates.length > 1) {
-            todo_with_msg("selectCallCandidate: too many candidates");
+            todo_with_msg("selectFunctionCallCandidate: too many candidates");
         }
-        assert(candidates.length == 1, "selectCallCandidate: Expected exactly one candidate");
+        assert(candidates.length == 1, "selectFunctionCallCandidate: Expected exactly one candidate");
         let f: &FunctionLookup = &*(candidates.at(0));
-        assert(f.getReadyState(FUNC_READY_TO_USE), "Expected markCallCandidates to validate FUNC_READY_TO_USE");
+        assert(f.getReadyState(FUNC_READY_TO_USE), "Expected markFunctionCallCandidates to validate FUNC_READY_TO_USE");
         for (let j: usize = 0; j < f.params.length; j = j + 1) {
             let argState: &TCState = &*arguments.at(j);
             let param: &VariableLookup = f.params.at(j);
@@ -1261,15 +1285,137 @@ struct TypeChecker {
             let paramType: &Type = types.at(paramState.getType());
             if (argState.wantsInfer()) {
                 *argState = this.inferTypeOntoExpr(callContext.getElementAtIndex(j), paramType.getID());
-                assert(!argState.isError(), "selectCallCandidate: Expected infer to be success");
-                assert(argState.isType(), "selectCallCandidate: Expected infer to be success");
+                assert(!argState.isError(), "selectFunctionCallCandidate: Expected infer to be success");
+                assert(argState.isType(), "selectFunctionCallCandidate: Expected infer to be success");
             }
             let argType: &Type = types.at(argState.getType());
-            assert(argType.equals(paramType), "selectCallCandidate: Expected argument to match parameter");
+            assert(argType.equals(paramType), "selectFunctionCallCandidate: Expected argument to match parameter");
         }
         *funcID = f.globalID;
         let retType: TCState = f.returnType;
-        assert(retType.isSuccess(), "selectCallCandidate: Expected valid function return type");
+        assert(retType.isSuccess(), "selectFunctionCallCandidate: Expected valid function return type");
+        return retType;
+    }
+
+    func markMethodCallCandidates(
+        &this,
+        callContext: &ArrayContext,
+        methods: &MethodLookupList,
+        candidates: &MethodLookupList,
+        arguments: &TCStateList,
+    ) -> TCState {
+        trace("TypeChecker.markMethodCallCandidates");
+        for (let i: usize = 0; i < methods.length; i = i + 1) {
+            let m: &MethodLookup = &*(methods.at(i));
+            if (!m.getReadyState(METHOD_READY_TO_USE)) {
+                return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
+            }
+            if (m.isStatic) {
+                // Not handled here
+                continue;
+            }
+            if (m.params.length != arguments.length) {
+                continue;
+            }
+            assert(m.params.length != 0, "not a static method");
+            let thisParam: &VariableLookup = m.params.at(0);
+            let thisParamState: TCState = thisParam.typeState;
+            assert(thisParamState.isSuccess(), "Expected valid this parameter");
+            let paramType: &Type = types.at(thisParamState.getType());
+            let instType: &Type = types.at(arguments.at(0).getType());
+            if (!instType.equals(paramType)) {
+                if (paramType.isPointer() && !instType.isPointer()) {
+                    let under: &Type = paramType.getUnderlyingType(false);
+                    if (!instType.equals(under)) {
+                        continue;
+                    }
+                } else {
+                    todo_with_msg("how can this happen");
+                }
+            }
+            let match = true;
+            for (let j: usize = 1; j < m.params.length; j = j + 1) {
+                let argState: TCState = *arguments.at(j);
+                let param: &VariableLookup = m.params.at(j);
+                let paramState: &TCState = &param.typeState;
+                assert(paramState.isSuccess(), "Expected valid method parameter");
+                let paramType: &Type = types.at(paramState.getType());
+                if (argState.wantsInfer()) {
+                    argState = this.tryInferTypeOntoExpr(callContext.getElementAtIndex(j - 1), paramType.getID(), true);
+                    if (argState.isError()) {
+                        todo_with_msg("error when inferring type of param onto argument");
+                    }
+                    assert(argState.isType(), "Did not infer type of param onto argument properly");
+                }
+                let argType: &Type = types.at(argState.getType());
+                if (!argType.equals(paramType)) {
+                    match = false;
+                    break;
+                }
+            }
+            if (!match) {
+                continue;
+            }
+            candidates.push(*m);
+        }
+        return newTCStateSuccess();
+    }
+
+    func selectMethodCallCandidate(
+        &this,
+        exprID: usize,
+        callContext: &ArrayContext,
+        methods: &MethodLookupList,
+        candidates: &MethodLookupList,
+        arguments: &TCStateList,
+        funcID: &usize,
+        scopes: &ScopeLookupList,
+    ) -> TCState {
+        trace("TypeChecker.selectMethodCallCandidate");
+        if (candidates.length == 0) {
+            return this.reportNoMethodCallCandidate(exprID, arguments, methods);
+        } else if (candidates.length > 1) {
+            todo_with_msg("selectMethodCallCandidate: too many candidates");
+        }
+        assert(candidates.length == 1, "selectMethodCallCandidate: Expected exactly one candidate");
+        let m: &MethodLookup = &*(candidates.at(0));
+        assert(m.getReadyState(METHOD_READY_TO_USE), "Expected markMethodCallCandidates to validate METHOD_READY_TO_USE");
+        let thisParam: &VariableLookup = m.params.at(0);
+        let thisParamState: TCState = thisParam.typeState;
+        assert(thisParamState.isSuccess(), "Expected valid this parameter");
+        let paramType: &Type = types.at(thisParamState.getType());
+        let instType: &Type = types.at(arguments.at(0).getType());
+        if (!instType.equals(paramType)) {
+            if (paramType.isPointer() && !instType.isPointer()) {
+                let under: &Type = paramType.getUnderlyingType(false);
+                assert(instType.equals(under), "method call instance type doesn't match");
+                let expr = exprs.at(exprID);
+                (*expr).lhs = exprs.at(expr.lhs).intoPointer();
+                let patched: TCState = this.typeCheckExpr(expr.lhs, scopes);
+                assert(patched.isSuccess(), "patched instance failed");
+                assert(patched.isType(), "patched instance state is not a type");
+                assert(types.at(patched.getType()).equals(paramType), "patched instance type does not match");
+            } else {
+                todo_with_msg("how can this happen");
+            }
+        }
+        for (let j: usize = 1; j < m.params.length; j = j + 1) {
+            let argState: &TCState = &*arguments.at(j);
+            let param: &VariableLookup = m.params.at(j);
+            let paramState: &TCState = &param.typeState;
+            assert(paramState.isSuccess(), "Expected valid method parameter");
+            let paramType: &Type = types.at(paramState.getType());
+            if (argState.wantsInfer()) {
+                *argState = this.inferTypeOntoExpr(callContext.getElementAtIndex(j - 1), paramType.getID());
+                assert(!argState.isError(), "selectMethodCallCandidate: Expected infer to be success");
+                assert(argState.isType(), "selectMethodCallCandidate: Expected infer to be success");
+            }
+            let argType: &Type = types.at(argState.getType());
+            assert(argType.equals(paramType), "selectMethodCallCandidate: Expected argument to match parameter");
+        }
+        *funcID = m.globalID;
+        let retType: TCState = m.returnType;
+        assert(retType.isSuccess(), "selectMethodCallCandidate: Expected valid method return type");
         return retType;
     }
 
@@ -1573,74 +1719,26 @@ struct TypeChecker {
                 }
                 let callContext: &ArrayContext = &rhs.arrayContext;
                 let arguments: TCStateList = blank;
+                arguments.push(instance);
                 for (let i: usize = 0; i < callContext.elemLength; i = i + 1) {
                     let argID: usize = callContext.getElementAtIndex(i);
                     let arg: TCState = this.typeCheckExpr(argID, scopes);
                     if (arg.isError()) return arg;
                     arguments.push(arg);
                 }
-                assert(arguments.length == callContext.elemLength);
-                let callArgCount: usize = arguments.length + 1;
-                for (let i: usize = 0; i < methods.length; i = i + 1) {
-                    let m: &MethodLookup = &*methods.at(i);
-                    if (!m.getReadyState(METHOD_READY_TO_USE)) return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
-                    let hasThis: bool = !m.isStatic;
-                    let argCount: usize = m.params.length;
-                    if (callArgCount != argCount) continue;
-                    let indexOffset: usize = 0;
-                    if (hasThis) {
-                        assert(m.params.length != 0);
-                        indexOffset = 1;
-                        let thisParam: &VariableLookup = m.params.at(0);
-                        let thisParamState: TCState = thisParam.typeState;
-                        assert(thisParamState.isSuccess(), "Expected valid this parameter");
-                        let paramType: &Type = types.at(thisParamState.getType());
-                        let instType: &Type = types.at(instance.getType());
-                        if (!instType.equals(paramType)) {
-                            if (paramType.isPointer() && !instType.isPointer()) {
-                                let under: &Type = paramType.getUnderlyingType(false);
-                                assert(instType.equals(under), "method call instance type doesn't match");
-                                (*expr).lhs = exprs.at(expr.lhs).intoPointer();
-                                let patched: TCState = this.typeCheckExpr(expr.lhs, scopes);
-                                assert(patched.isSuccess(), "patched instance failed");
-                                assert(patched.isType(), "patched instance state is not a type");
-                                assert(types.at(patched.getType()).equals(paramType), "patched instance type does not match");
-                            } else {
-                                this.emergencyPrint(rhs.span);
-                                todo_with_msg("how can this happen");
-                            }
-                        }
-                    }
-                    // REVIEW: The index offset looks incorrect
-                    for (let j: usize = 0; j < argCount - indexOffset; j = j + 1) {
-                        let argState: &TCState = &*arguments.at(j);
-                        let param: &VariableLookup = m.params.at(j + indexOffset);
-                        let paramState: &TCState = &param.typeState;
-                        assert(paramState.isSuccess(), "Expected valid method parameter");
-                        let paramType: &Type = types.at(paramState.getType());
-                        if (argState.wantsInfer()) {
-                            let old: TCState = *argState;
-                            *argState = this.inferTypeOntoExpr(callContext.getElementAtIndex(j), paramType.getID());
-                            if (argState.isError()) {
-                                *argState = old;
-                                todo_with_msg("error when inferring type of param onto argument");
-                            }
-                            assert(argState.isType(), "Did not infer type of param onto argument properly");
-                        }
-                        let argType: &Type = types.at(argState.getType());
-                        if (!argType.equals(paramType)) {
-                            todo_with_msg("method arg mismatch");
-                        }
-                    }
-                    // By this point, `m` fits all criteria for being called
-                    // REVIEW: Do we want to make Overload selection smarter? Right now we only
-                    //         pick the first match
-                    (*rhs).lhs = m.globalID;
-                    let retType: TCState = m.returnType;
-                    assert(retType.isSuccess(), "Expected valid method return type");
-                    return retType;
-                }
-                todo_with_msg("method call");
+                assert(arguments.length == callContext.elemLength + 1);
+                let candidates: MethodLookupList = blank;
+                let mark: TCState = this.markMethodCallCandidates(callContext, &methods, &candidates, &arguments);
+                if (mark.isError()) return mark;
+                // methods contains all methods with the same amount of arguments and
+                // candidates where infer-semantics could validate the function
+                // e.g. foo(i: i32) + foo(i: u64) for foo(5)
+                let globalID: usize = 0;
+                let sweep: TCState = this.selectMethodCallCandidate(dotID, callContext, &methods, &candidates, &arguments, &globalID, scopes);
+                if (sweep.isError()) return sweep;
+                assert(sweep.isType());
+                (*rhs).lhs = globalID;
+                return sweep;
             } else {
                 unreachable("Got non-field non-call RHS in the dot operation.");
             }
@@ -1687,12 +1785,10 @@ struct TypeChecker {
         if (expr.kind == EXPR_INT_LIT) {
             if (typ.isChar()) {
                 if (!checkOnly) {
-                    let s: String = expr.origToken.content.toString();
                     let l: String = expr.origToken.getLocation();
                     fprintf(stderr, "%s: %s: Using integer literal to initialize value of type char.\n",
-                        l.chars(), WARN_STR, s.chars());
+                        l.chars(), WARN_STR);
                     l.drop();
-                    s.drop();
                 }
                 tid = newTCStateType(typ.getID());
             } else if (typ.isInteger() || typ.isFloat()) {
