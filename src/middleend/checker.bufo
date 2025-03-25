@@ -1918,7 +1918,16 @@ struct TypeChecker {
                 todo_with_msg("can't infer non-char type onto char literal");
             tid = newTCStateType(typ.getID());
         } else if (expr.kind == EXPR_ARRAY_LIT) {
-            if (!typ.isArray()) todo_with_msg("can't infer non-array type onto array literal");
+            if (!typ.isArray()) {
+                if (!checkOnly) {
+                    let loc = expr.span.toString();
+                    let t = typ.toString();
+                    fprintf(stderr, "%s: %s: Expected expression of type %s, found array literal.\n", loc.chars(), ERR_STR, t.chars());
+                    t.drop();
+                    loc.drop();
+                }
+                return newTCStateFailure(ERROR_TYPE_MISMATCH);
+            }
             assert(expr.arrayContext.elemLength > 0, "Got empty array literal");
             if (expr.arrayContext.size == 0) {
                 if (typ.arraySize != expr.arrayContext.elemLength) {

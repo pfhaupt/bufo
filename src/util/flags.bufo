@@ -93,7 +93,10 @@ struct FlagParser {
                         if (f.kind == FLAG_BOOL) {
                             f.asBool = true;
                         } else if (f.kind == FLAG_STRING) {
-                            if (argc == 0) todo_with_msg("arg missing long string");
+                            if (argc == 0) {
+                                fprintf(stderr, "%s: Expected one more positional argument for flag --%s.\n", ERR_STR, f.long);
+                                return false;
+                            }
                             let val = this.shiftArgument(&argc, &argv);
                             f.asString = newStringFromStrLit(val);
                         } else {
@@ -113,7 +116,10 @@ struct FlagParser {
                         if (f.kind == FLAG_BOOL) {
                             f.asBool = true;
                         } else if (f.kind == FLAG_STRING) {
-                            if (argc == 0) todo_with_msg("arg missing short string");
+                            if (argc == 0) {
+                                fprintf(stderr, "%s: Expected one more positional argument for flag -%s.\n", ERR_STR, f.short);
+                                return false;
+                            }
                             let val = this.shiftArgument(&argc, &argv);
                             f.asString = newStringFromStrLit(val);
                         } else {

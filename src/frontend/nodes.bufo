@@ -117,7 +117,7 @@ struct ParsedAttribute {
     name: Token;
 
     func equals(&this, other: &ParsedAttribute) -> bool {
-        todo_with_msg("ParsedAttribute.equals");
+        unreachable("ParsedAttribute.equals is not implemented yet");
     }
 }
 

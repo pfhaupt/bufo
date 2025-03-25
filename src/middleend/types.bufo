@@ -234,7 +234,7 @@ struct Type {
         if (this.kind == TYPE_KIND_POINTER) {
             return 8;
         } else if (this.kind == TYPE_KIND_PRIMITIVE) {
-            if (this.typeIndex == TYPE_UNKNOWN) todo_with_msg("TYPE_UNKNOWN");
+            if (this.typeIndex == TYPE_UNKNOWN) unreachable("Type.getAlignment(TYPE_UNKNOWN) called");
             else if (this.typeIndex == TYPE_NONE)
                 return 0;
             else if (this.typeIndex == TYPE_I8 || this.typeIndex == TYPE_U8 || this.typeIndex == TYPE_CHAR)
@@ -267,14 +267,15 @@ struct Type {
                 if (_a > maxAlign) maxAlign = _a;
             }
             return maxAlign;
+        } else {
+            unreachable("Exhaustive handling of type kinds in Type.getAlignment");
         }
-        todo_with_msg("align");
     }
     func getSize(&this) -> usize {
         if (this.kind == TYPE_KIND_POINTER) {
             return 8;
         } else if (this.kind == TYPE_KIND_PRIMITIVE) {
-            if (this.typeIndex == TYPE_UNKNOWN) todo_with_msg("TYPE_UNKNOWN");
+            if (this.typeIndex == TYPE_UNKNOWN) unreachable("Type.getSize(TYPE_UNKNOWN) called");
             else if (this.typeIndex == TYPE_NONE)
                 return 0;
             else if (this.typeIndex == TYPE_I8 || this.typeIndex == TYPE_U8 || this.typeIndex == TYPE_CHAR)
@@ -311,8 +312,9 @@ struct Type {
             }
             size = nextMultipleOf(size, maxAlign);
             return size;
+        } else {
+            unreachable("Exhaustive handling of type kinds in Type.getSize");
         }
-        todo_with_msg("size");
     }
     func getMaxFloatValue(&this) -> f64 {
         assert(this.isFloat(), "Type.getMaxFloatValue() called on non-Float");

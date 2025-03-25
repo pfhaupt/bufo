@@ -1,0 +1,13 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Expected expression of type i32, found array literal.
+//! Expected expression of type &char, found array literal.
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a: i32 = [1, 2];
+    let b: &char = [1, 2];
+    return 0;
+}
