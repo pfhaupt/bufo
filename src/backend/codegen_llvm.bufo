@@ -639,7 +639,6 @@ struct LLVMCodegen {
             let reg: &IRReg = irFunc.getRegister(instr.src);
             let ptr: &Type = reg.typ;
             let underlying: &Type = ptr.getUnderlyingType(false);
-            assert(underlying.isArray(), "LLVM GetElementPtr wants ptr to array");
             return this.llvmBuilder.buildGEP(this.generateLLVMType(underlying), aggr, indices, newSubStrOfStrLit("gep"));
         } else if (instr.kind == INSTR_GET_FIELD_PTR) {
             let aggr: LLVMValue = regs.at(instr.src.i).asLLVM("LLVM GetFieldPtr");

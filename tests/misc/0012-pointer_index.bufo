@@ -1,0 +1,17 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+import "libc.bufo";
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a = malloc(2 * sizeof usize) as &usize;
+    assert(a != null);
+    a[0] = 2;
+    a[1] = 3;
+    assert(*(a + sizeof usize) == 3);
+    assert(*a == 2);
+    return 0;
+}
+

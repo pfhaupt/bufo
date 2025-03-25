@@ -1508,14 +1508,16 @@ struct IRGen {
         assert(expr.kind == EXPR_BINARY);
         assert(expr.op == BIN_INDEXED_ACCESS);
         let arrExpr: &ParsedExpr = exprs.at(expr.lhs);
-        let lhs: RegIndex = this.generateBytecodeExpr(function, arrExpr, true);
+        let lhsType: &Type = types.at(arrExpr.typeState.getType());
+        assert(lhsType.isArray() || lhsType.isPointer(), "Expected Ptr or Array as LHS in IndexedAccess");
+        let lhs: RegIndex = this.generateBytecodeExpr(function, arrExpr, lhsType.isArray());
         let rhs: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.rhs), false);
         assert(function.getRegister(lhs).typ.isPointer(), "Expected Ptr as LHS in IndexedAccess");
         assert(function.getRegister(rhs).typ.isInteger(), "Expected Int as RHS in IndexedAccess");
         let elemType: &Type = types.at(expr.typeState.getType());
         let usizeType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
         let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
-        {
+        if (lhsType.isArray()) {
             // if (index >= size) panic("Index out of bounds");
             let arrType: &Type = types.at(arrExpr.typeState.getType());
             let elemCount: usize = arrType.getSize() / elemType.getSize();
@@ -1557,9 +1559,11 @@ struct IRGen {
         }
         let elemPtr: RegIndex = function.allocateRegister(types.at(elemType.intoPointer()));
         let indices: RegIndexList = blank;
-        let index: RegIndex = function.allocateRegister(usizeType);
-        function.buildLoadInteger(expr.span, index, usizeType, 0);
-        indices.push(index);
+        if (lhsType.isArray()) {
+            let index: RegIndex = function.allocateRegister(usizeType);
+            function.buildLoadInteger(expr.span, index, usizeType, 0);
+            indices.push(index);
+        }
         indices.push(rhs);
         function.buildGetElementPtr(expr.span, elemPtr, lhs, indices);
         if (needsPtr) {

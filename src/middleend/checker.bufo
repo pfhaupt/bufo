@@ -1561,9 +1561,7 @@ struct TypeChecker {
         if (!lhsState.isType()) todo_with_msg("indexed access, original LHS is not a type");
         let lhsTypeID: usize = lhsState.getType();
         let lhsType: &Type = types.at(lhsTypeID);
-        // REVIEW: Support for indexing pointers would be cool
-        if (lhsType.isPointer()) todo_with_msg("indexed access, LHS is a pointer");
-        if (!lhsType.isArray()) {
+        if (!lhsType.isArray() && !lhsType.isPointer()) {
             return this.reportIndexedAccessOnNonArray(expr.span, lhsType);
         }
         if (rhsState.wantsInfer()) {

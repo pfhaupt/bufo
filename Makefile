@@ -10,5 +10,5 @@ all:
 	rm *.obj
 
 brick:
-	working.exe src/bufo.bufo bufo.exe
+	working.exe src/bufo.bufo -o bufo.exe
 
