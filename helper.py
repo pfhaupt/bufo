@@ -157,7 +157,7 @@ def run_test(
             return TestResult(path, STATE.SUCCESS)
 
         filename = "./{}.exe".format(path.replace(os.sep, "."))
-        output = call_cmd(["./bufo.exe", path, filename])
+        output = call_cmd(["./bufo.exe", path, "-o", filename])
         stdout = output.stdout.decode("utf-8").split('\n')
         stderr = output.stderr.decode("utf-8").split('\n')
         if point_of_failure == "RUNTIME":
@@ -217,7 +217,7 @@ def run_test(
 
 def recompile_compiler(stage: int) -> None:
     print(f"Recompiling compiler stage {stage}...")
-    cmd = call_cmd(["bufo.exe", "./src/bufo.bufo", "bufo1.exe"])
+    cmd = call_cmd(["bufo.exe", "./src/bufo.bufo", "-o", "bufo1.exe"])
     if cmd.returncode != 0:
         print("Failed to recompile compiler", file=sys.stderr)
         print(cmd.stderr.decode("utf-8"), file=sys.stderr)

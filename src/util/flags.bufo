@@ -1,0 +1,165 @@
+import "prelude.bufo";
+import "libc.bufo";
+import "string.bufo";
+
+comptime FLAG_INVALID: usize = 0;
+comptime FLAG_STRING: usize = 1;
+comptime FLAG_BOOL: usize = 2;
+
+comptime FLAG_MODE_DEFAULT: usize   = 0;
+comptime FLAG_MODE_SINGLE: usize    = pow2(0);
+comptime FLAG_MODE_MANDATORY: usize = pow2(1);
+
+struct Flag {
+    kind: usize;
+    found: bool;
+    mode: usize;
+    short: &char;
+    long: &char;
+    descr: &char;
+    asString: String;
+    asBool: bool;
+}
+
+struct FlagParser {
+    programName: String;
+    flags: [Flag; 32];
+    flagCount: usize;
+    func addDefaultFlag(&this, kind: usize, short: &char, long: &char, descr: &char, mode: usize) -> &Flag {
+        assert(this.flagCount < 32, "Could not add flag: Too many flags");
+        let f = &this.flags[this.flagCount];
+        assert(f.kind == FLAG_INVALID);
+        this.flagCount = this.flagCount + 1;
+        f.kind = kind;
+        f.mode = mode;
+        f.short = short;
+        f.long = long;
+        f.descr = descr;
+        return f;
+    }
+    func addStringFlag(&this, descr: &char, mode: usize) -> &String {
+        return this.addStringFlag(null, null, descr, mode);
+    }
+    func addStringFlag(&this, short: &char, long: &char, descr: &char) -> &String {
+        return this.addStringFlag(short, long, descr, FLAG_MODE_DEFAULT);
+    }
+    func addStringFlag(&this, short: &char, long: &char, descr: &char, mode: usize) -> &String {
+        let f = this.addDefaultFlag(FLAG_STRING, short, long, descr, mode);
+        return &f.asString;
+    }
+    func addBoolFlag(&this, short: &char, long: &char, descr: &char) -> &bool {
+        return this.addBoolFlag(short, long, descr, FLAG_MODE_DEFAULT);
+    }
+    func addBoolFlag(&this, short: &char, long: &char, descr: &char, mode: usize) -> &bool {
+        let f = this.addDefaultFlag(FLAG_BOOL, short, long, descr, mode);
+        return &f.asBool;
+    }
+    func shiftArgument(&this, argc: &i32, argv: &&&char) -> &char {
+        assert(*argc > 0);
+        let result = **argv;
+        *argv = *argv + sizeof &&char;
+        *argc = *argc - 1;
+        return result;
+    }
+    func runOn(&this, argc: i32, argv: &&char) -> bool {
+        if (this.programName.chars() == null) {
+            let name = this.shiftArgument(&argc, &argv);
+            this.programName = newStringFromStrLit(name);
+        }
+        while (argc > 0) {
+            let flag = this.shiftArgument(&argc, &argv);
+            let long = false;
+            let short = false;
+            let standalone = false;
+            if (strcmp(flag, "--") == 0) {
+                flag = flag + 2;
+                long = true;
+            } else if (*flag == '-') {
+                flag = flag + 1;
+                short = true;
+            } else {
+                standalone = true;
+            }
+            let found = false;
+            for (let i: usize = 0; i < this.flagCount; i = i + 1) {
+                let f = &this.flags[i];
+                if (long) {
+                    if (f.long == null) continue;
+                    if (strcmp(flag, f.long) == 0) {
+                        if (f.found && ((f.mode & FLAG_MODE_SINGLE) != 0)) {
+                            fprintf(stderr, "%s: Value for flag `--%s` was already provided.\n", ERR_STR, f.long);
+                            return false;
+                        }
+                        if (f.kind == FLAG_BOOL) {
+                            f.asBool = true;
+                        } else if (f.kind == FLAG_STRING) {
+                            if (argc == 0) todo_with_msg("arg missing long string");
+                            let val = this.shiftArgument(&argc, &argv);
+                            f.asString = newStringFromStrLit(val);
+                        } else {
+                            unreachable("Exhaustive handling of long flag kinds");
+                        }
+                        f.found = true;
+                        found = true;
+                        break;
+                    }
+                } else if (short) {
+                    if (f.short == null) continue;
+                    if (strcmp(flag, f.short) == 0) {
+                        if (f.found && ((f.mode & FLAG_MODE_SINGLE) != 0)) {
+                            fprintf(stderr, "%s: Value for flag `-%s` was already provided.\n", ERR_STR, f.short);
+                            return false;
+                        }
+                        if (f.kind == FLAG_BOOL) {
+                            f.asBool = true;
+                        } else if (f.kind == FLAG_STRING) {
+                            if (argc == 0) todo_with_msg("arg missing short string");
+                            let val = this.shiftArgument(&argc, &argv);
+                            f.asString = newStringFromStrLit(val);
+                        } else {
+                            unreachable("Exhaustive handling of short flag kinds");
+                        }
+                        f.found = true;
+                        found = true;
+                        break;
+                    }
+                } else if (standalone) {
+                    if (f.short != null) continue;
+                    if (f.long != null) continue;
+                    if (f.found && ((f.mode & FLAG_MODE_SINGLE) != 0)) {
+                        fprintf(stderr, "%s: Value for standalone flag was already provided.\n", ERR_STR);
+                        fprintf(stderr, "%s: Description of flag: %s\n", NOTE_STR, f.descr);
+                        return false;
+                    }
+                    if (f.kind == FLAG_BOOL) {
+                        f.asBool = true;
+                    } else if (f.kind == FLAG_STRING) {
+                        f.asString = newStringFromStrLit(flag);
+                    } else {
+                        unreachable("Exhaustive handling of standalone flag kinds");
+                    }
+                    f.found = true;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) todo_with_msg("unknown flag");
+        }
+        let allGotten = true;
+        for (let i: usize = 0; i < this.flagCount; i = i + 1) {
+            let f = &this.flags[i];
+            if (!f.found && ((f.mode & FLAG_MODE_MANDATORY) != 0)) {
+                let name = f.long;
+                if (name == null) name = f.short;
+                if (name == null) {
+                    fprintf(stderr, "%s: Mandatory standalone flag not provided.\n", ERR_STR);
+                    fprintf(stderr, "%s: Description of flag: %s\n", NOTE_STR, f.descr);
+                } else {
+                    fprintf(stderr, "%s: No value for flag `%s` was provided.\n", ERR_STR, name);
+                }
+                allGotten = false;
+            }
+        }
+        return allGotten;
+    }
+}

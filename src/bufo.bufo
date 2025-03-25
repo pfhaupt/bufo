@@ -4,6 +4,7 @@ import "substr.bufo";
 import "string.bufo";
 import "cmd.bufo";
 import "./util/span.bufo";
+import "./util/flags.bufo";
 import "./frontend/nodes.bufo";
 import "./frontend/lexer.bufo";
 import "./frontend/parser.bufo";
@@ -17,7 +18,9 @@ func getArg(argv: &&char, i: usize) -> &char {
     return *(argv + i * sizeof &char);
 }
 
+let flagParser = FlagParser {};
 func main(argc: i32, argv: &&char) -> i32 {
+    setupStdHandles();
     for (let i: usize = 0; i < PARSED_TYPE_BUILTIN; i = i + 1) {
         typeNodes.push(ParsedTypeNode {
             span: blank,
@@ -27,20 +30,14 @@ func main(argc: i32, argv: &&char) -> i32 {
     for (let i: usize = 0; i < TYPE_COUNT; i = i + 1) {
         types.push(blank);
     }
-    setupStdHandles();
-    if (argc < 3) {
-        fprintf(stderr, "error: Expected input and output files.\n");
-        exit(1);
-    }
-    // TODO: Handle other arguments such as -v and -o
-    // TODO: Handle arguments in any order
-    let _prog: &char = getArg(argv, 0);
-    let file: &char = getArg(argv, 1);
-    let out: &char = getArg(argv, 2);
-    let filepath: String = newStringFromStrLit(file);
+    let file = flagParser.addStringFlag("The input file", FLAG_MODE_MANDATORY);
+    let out = flagParser.addStringFlag("o", "output", "The output file", FLAG_MODE_SINGLE | FLAG_MODE_MANDATORY);
+    let verbose = flagParser.addBoolFlag("v", "verbose", "Enable verbose output");
+    if (!flagParser.runOn(argc, argv)) return 1;
+    let filepath: String = *file;
     filepath = filepath.toAbsolutePath();
     let fileSubStr: SubStr = filepath.asSubStr();
-    let string: String = readFileToString(file);
+    let string: String = readFileToString(file.chars());
     let sub: SubStr = newSubStrOfString(&string, 0, string.length);
     let parser: Parser = newParserFromSource(0, sub);
     parser.addImportRoot(newSubStrOfStrLit("./std/"));
@@ -51,7 +48,7 @@ func main(argc: i32, argv: &&char) -> i32 {
     if (!generator.generateBytecode(&project)) return 1;
     let interp: IRInterp = newIRInterpreter(&generator);
     let llvmCodegen: LLVMCodegen = newLLVMCodegen(fileSubStr, &generator, &interp);
-    if (!llvmCodegen.generateExecutable(newSubStrOfStrLit(out))) return 1;
+    if (!llvmCodegen.generateExecutable(out.asSubStr())) return 1;
     if (PRINT_DEBUG) {
         printf("modules.length       = %llu\n", modules.length);
         printf("topLevelItems.length = %llu\n", topLevelItems.length);
@@ -64,10 +61,10 @@ func main(argc: i32, argv: &&char) -> i32 {
         printf("exprs.length         = %llu\n", exprs.length);
     }
     let s: String = newStringFromStrLit("link.exe ");
-    s.pushStr(out);
+    s.pushString(out);
     s.pushStr(".obj");
     s.pushStr(" /DEFAULTLIB:libcmt /OUT:");
-    s.pushStr(out);
+    s.pushString(out);
     for (let i: usize = 0; i < compilerFlags.length; i = i + 1) {
         s.pushChar(' ');
         let flag: &ParsedCompilerFlag = &*compilerFlags.at(i);
@@ -85,7 +82,7 @@ func main(argc: i32, argv: &&char) -> i32 {
     }
     let cmd: Cmd = newCmdFromStrLit(s.chars());
     if (!cmd.runSync()) return 1;
-    printf("%s: Successfully compiled code and saved it in %s :^)\n", NOTE_STR, out);
+    printf("%s: Successfully compiled code and saved it in %s :^)\n", NOTE_STR, out.chars());
     string.drop();
     return 0;
 }
