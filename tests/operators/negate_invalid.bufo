@@ -3,9 +3,9 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Type mismatch! Expected type `u64`, found type `i32`.
-//! Negation is not defined for type `u64`.
-//! Negation is not defined for type `u32`.
+//! Type mismatch! Expected type u64, found type i32.
+//! Negation is not defined for type u64.
+//! Negation is not defined for type u32.
 
 func main() -> u32 {
     let a: i32 = 9;

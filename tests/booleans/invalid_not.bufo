@@ -4,10 +4,10 @@
 //! CODE: 1
 //! ERROR:
 //! Unexpected Literal! Expected boolean, found `5`.
-//! Logical Not is not defined for type `i32`.
+//! Logical Not is not defined for type i32.
 //! Type mismatch in binary expression! Operation `u8 - i32` is not defined.
-//! LHS has type `u8`.
-//! RHS has type `i32`.
+//! LHS has type u8.
+//! RHS has type i32.
 
 func main() {
     let a: i32 = !5;

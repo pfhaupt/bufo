@@ -3,8 +3,8 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Type mismatch! Expected type `i32`, found type `u32`.
-//! Type mismatch! Expected type `i32`, found type `u64`.
+//! Type mismatch! Expected type i32, found type u32.
+//! Type mismatch! Expected type i32, found type u64.
 
 func bla() -> i32 {
     let a: u32 = 1;

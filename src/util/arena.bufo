@@ -61,7 +61,7 @@ func allocateBlock(cap: usize, size: usize) -> &ArenaBlock {
     assert(mem != null, "Could not allocate ArenaBlock instance");
     let elements: Any = calloc(cap, size);
     assert(elements != null, "Could not allocate ArenaBlock elements");
-    let block: &ArenaBlock = &*mem;
+    let block: &ArenaBlock = mem as &ArenaBlock;
     *block = ArenaBlock {
         elements: elements,
         length: 0,

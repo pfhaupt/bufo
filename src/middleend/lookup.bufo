@@ -389,8 +389,6 @@ struct TypeLookup {
     func equals(&this, other: &TypeLookup) -> bool {
         if (this.kind != other.kind) return false;
         if (this.kind == TYPE_LOOKUP_STRUCT) {
-            let _other: Any = other;
-            let other: &TypeLookup = &*_other;
             return this.asStruct().equals(other.asStruct() as &StructLookup);
         }
         unreachable("Exhaustive handling in TypeLookup.equals");

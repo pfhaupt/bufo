@@ -3,16 +3,16 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Recursive type `Bar`.
-//! Chain of recursion also includes type `Bez`.
-//! Chain of recursion also includes type `Boo`.
-//! Recursive type `Bez`.
-//! Chain of recursion also includes type `Bar`.
-//! Chain of recursion also includes type `Boo`.
-//! Recursive type `Boo`.
-//! Chain of recursion also includes type `Bar`.
-//! Chain of recursion also includes type `Bez`.
-//! Recursive type `Foo`.
+//! Recursive type Bar.
+//! Chain of recursion also includes type Bez.
+//! Chain of recursion also includes type Boo.
+//! Recursive type Bez.
+//! Chain of recursion also includes type Bar.
+//! Chain of recursion also includes type Boo.
+//! Recursive type Boo.
+//! Chain of recursion also includes type Bar.
+//! Chain of recursion also includes type Bez.
+//! Recursive type Foo.
 
 struct Foo {
     field: Foo;

@@ -4,11 +4,11 @@
 //! CODE: 1
 //! ERROR:
 //! Type mismatch in binary expression! Operation `bool + i32` is not defined.
-//! LHS has type `bool`.
-//! RHS has type `i32`.
+//! LHS has type bool.
+//! RHS has type i32.
 //! Type mismatch in binary expression! Operation `u32 + bool` is not defined.
-//! LHS has type `u32`.
-//! RHS has type `bool`.
+//! LHS has type u32.
+//! RHS has type bool.
 //! Type mismatch in binary expression! Operation `bool + bool` is not defined.
 
 func main() {

@@ -1,0 +1,13 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Variables declared with `let` can't be used in a comptime context.
+//! Variable `a` is declared here.
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a: i32 = 0;
+    comptime b = a;
+    return 0;
+}

@@ -175,7 +175,7 @@ struct String {
 func newString() -> String {
     let cap: usize = 16;
     let _m: Any = calloc(cap, sizeof char);
-    let buff: &char = &*_m;
+    let buff: &char = _m as &char;
     return String {
         buffer: buff,
         length: 0,

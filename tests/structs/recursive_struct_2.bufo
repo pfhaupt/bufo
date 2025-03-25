@@ -3,19 +3,19 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Recursive type `A`.
-//! Chain of recursion also includes type `B`.
-//! Chain of recursion also includes type `C`.
-//! Chain of recursion also includes type `D`.
-//! Recursive type `B`.
-//! Chain of recursion also includes type `C`.
-//! Chain of recursion also includes type `D`.
-//! Recursive type `C`.
-//! Chain of recursion also includes type `D`.
-//! Chain of recursion also includes type `B`.
-//! Recursive type `D`.
-//! Chain of recursion also includes type `B`.
-//! Chain of recursion also includes type `C`.
+//! Recursive type A.
+//! Chain of recursion also includes type B.
+//! Chain of recursion also includes type C.
+//! Chain of recursion also includes type D.
+//! Recursive type B.
+//! Chain of recursion also includes type C.
+//! Chain of recursion also includes type D.
+//! Recursive type C.
+//! Chain of recursion also includes type D.
+//! Chain of recursion also includes type B.
+//! Recursive type D.
+//! Chain of recursion also includes type B.
+//! Chain of recursion also includes type C.
 
 struct A { b: B; }
 struct B { c: C; d: D; }

@@ -33,6 +33,8 @@ comptime ERROR_DUPLICATE_METHOD: usize = 19;
 comptime ERROR_BLANK_FOR_NULL: usize = 20;
 comptime ERROR_NON_PRIMITIVE_CAST: usize = 21;
 comptime ERROR_INDEXED_ACCESS_ON_NON_ARRAY: usize = 22;
+comptime ERROR_RUNTIME_VALUE_IN_COMPTIME_CONTEXT: usize = 23;
+comptime ERROR_ANY_DEREF: usize = 24;
 
 comptime TCSTATE_INVALID: usize = 0;
 comptime TCSTATE_ERROR: usize = 1;
@@ -136,7 +138,7 @@ struct TypeChecker {
         let loc: String = span.toString();
         let typ1: String = expected.toString();
         let typ2: String = got.toString();
-        fprintf(stderr, "%s: %s: Type mismatch! Expected type `%s`, found type `%s`.\n",
+        fprintf(stderr, "%s: %s: Type mismatch! Expected type %s, found type %s.\n",
             loc.chars(), ERR_STR, typ1.chars(), typ2.chars());
         typ1.drop();
         typ2.drop();
@@ -149,13 +151,13 @@ struct TypeChecker {
         trace("TypeChecker.reportBinaryTypeMismatch");
         let loc: String = newSpanBetween(&lhsSpan, &rhsSpan).toString();
         let loc1: String = lhsSpan.toString();
-        let loc2: String = lhsSpan.toString();
+        let loc2: String = rhsSpan.toString();
         let typ1: String = lhsType.toString();
         let typ2: String = rhsType.toString();
         fprintf(stderr, "%s: %s: Type mismatch in binary expression! Operation `%s %s %s` is not defined.\n",
             loc.chars(), ERR_STR, typ1.chars(), binOpAsStr(op), typ2.chars());
-        fprintf(stderr, "%s: %s: LHS has type `%s`.\n", loc1.chars(), NOTE_STR, typ1.chars());
-        fprintf(stderr, "%s: %s: RHS has type `%s`.\n", loc2.chars(), NOTE_STR, typ2.chars());
+        fprintf(stderr, "%s: %s: LHS has type %s.\n", loc1.chars(), NOTE_STR, typ1.chars());
+        fprintf(stderr, "%s: %s: RHS has type %s.\n", loc2.chars(), NOTE_STR, typ2.chars());
         typ2.drop();
         typ1.drop();
         loc2.drop();
@@ -209,8 +211,8 @@ struct TypeChecker {
         let declLoc: String = decl.name.span.toString();
         let strukt: String = decl.name.content.toString();
         let field: String = name.content.toString();
-        fprintf(stderr, "%s: %s: Attempted to access unknown field `%s` of instance of struct `%s`.\n", errLoc.chars(), ERR_STR, field.chars(), strukt.chars());
-        fprintf(stderr, "%s: %s: Struct `%s` is declared here.\n", declLoc.chars(), NOTE_STR, strukt.chars());
+        fprintf(stderr, "%s: %s: Attempted to access unknown field `%s` of instance of struct %s.\n", errLoc.chars(), ERR_STR, field.chars(), strukt.chars());
+        fprintf(stderr, "%s: %s: Struct %s is declared here.\n", declLoc.chars(), NOTE_STR, strukt.chars());
         field.drop();
         strukt.drop();
         declLoc.drop();
@@ -285,12 +287,12 @@ struct TypeChecker {
         trace("TypeChecker.reportRecursiveType");
         let loc: String = checked.getLocation();
         let name: String = checked.getName();
-        fprintf(stderr, "%s: %s: Recursive type `%s`.\n", loc.chars(), ERR_STR, name.chars());
+        fprintf(stderr, "%s: %s: Recursive type %s.\n", loc.chars(), ERR_STR, name.chars());
         assert(cycle.length >= 1, "Cycle is empty");
         for (let i: usize = 1; i < cycle.length; i = i + 1) {
             loc = cycle.at(i).getLocation();
             name = cycle.at(i).getName();
-            fprintf(stderr, "%s: %s: Chain of recursion also includes type `%s`.\n", loc.chars(), NOTE_STR, name.chars());
+            fprintf(stderr, "%s: %s: Chain of recursion also includes type %s.\n", loc.chars(), NOTE_STR, name.chars());
         }
         name.drop();
         loc.drop();
@@ -322,6 +324,29 @@ struct TypeChecker {
         loc.drop();
         this.typeError = true;
         return newTCStateFailure(ERROR_INDEXED_ACCESS_ON_NON_ARRAY);
+    }
+
+    func reportRuntimeValueInComptimeContext(&this, ident: Token, var: &VariableLookup) -> TCState {
+        trace("TypeChecker.reportRuntimeValueInComptimeContext");
+        let loc = ident.span.toString();
+        let otherLoc = var.name.span.toString();
+        let name = ident.content.toString();
+        fprintf(stderr, "%s: %s: Variables declared with `let` can't be used in a comptime context.\n", loc.chars(), ERR_STR);
+        fprintf(stderr, "%s: %s: Variable `%s` is declared here.\n", otherLoc.chars(), NOTE_STR, name.chars());
+        name.drop();
+        otherLoc.drop();
+        loc.drop();
+        this.typeError = true;
+        return newTCStateFailure(ERROR_RUNTIME_VALUE_IN_COMPTIME_CONTEXT);
+    }
+
+    func reportAnyDereference(&this, expr: &ParsedExpr) -> TCState {
+        trace("TypeChecker.reportAnyDereference");
+        let loc = expr.span.toString();
+        fprintf(stderr, "%s: %s: Can't dereference expression of type Any.\n", loc.chars(), ERR_STR);
+        loc.drop();
+        this.typeError = true;
+        return newTCStateFailure(ERROR_ANY_DEREF);
     }
 
     func emergencyPrint(&this, where: Span) {
@@ -1031,8 +1056,11 @@ struct TypeChecker {
         let typeState: TCState = this.typeCheckTypeNode(expr.rhs);
         if (exprState.isError()) return exprState;
         if (typeState.isError()) return typeState;
-        let exprType: &Type = types.at(exprState.getType());
+        assert(typeState.isType(), "typeCheckExprAs Type is not a Type");
         let typeType: &Type = types.at(typeState.getType());
+        if (exprState.wantsInfer()) exprState = this.inferTypeOntoExpr(expr.lhs, typeType.getID());
+        if (!exprState.isType()) todo_with_msg("as infer: expr is not a type");
+        let exprType: &Type = types.at(exprState.getType());
         if (typeType.isPointer() && exprType.isPointer()) {
             // PTR as PTR is allowed
         } else if (exprType.isPointer() && typeType.isInteger()) {
@@ -1076,7 +1104,7 @@ struct TypeChecker {
             let exprType: &Type = types.at(exprState.getType());
             if (exprType.isPrimitive()) {
                 if (exprType.typeIndex == TYPE_ANY) {
-                    return newTCStatePleaseInfer();
+                    return this.reportAnyDereference(expr);
                 }
             }
             if (!exprType.isPointer()) {
@@ -1093,7 +1121,7 @@ struct TypeChecker {
             if (!exprType.isBoolean()) {
                 let loc: String = expr.span.toString();
                 let t: String = exprType.toString();
-                fprintf(stderr, "%s: %s: Logical Not is not defined for type `%s`.\n", loc.chars(), ERR_STR, t.chars());
+                fprintf(stderr, "%s: %s: Logical Not is not defined for type %s.\n", loc.chars(), ERR_STR, t.chars());
                 t.drop();
                 loc.drop();
                 this.typeError = true;
@@ -1105,7 +1133,7 @@ struct TypeChecker {
             if (!exprType.isSignedInteger() && !exprType.isFloat()) {
                 let loc: String = expr.span.toString();
                 let t: String = exprType.toString();
-                fprintf(stderr, "%s: %s: Negation is not defined for type `%s`.\n", loc.chars(), ERR_STR, t.chars());
+                fprintf(stderr, "%s: %s: Negation is not defined for type %s.\n", loc.chars(), ERR_STR, t.chars());
                 t.drop();
                 loc.drop();
                 this.typeError = true;
@@ -1307,7 +1335,7 @@ struct TypeChecker {
             }
             return newTCStateType(structLookup.typeID);
         } else {
-            todo_with_msg("struct init but it's not a struct?");
+            unreachable("typeCheckExprStructInit got non-struct");
         }
     }
 
@@ -1334,7 +1362,7 @@ struct TypeChecker {
             return newTCStateFailure(ERROR_NO_SUCH_IDENTIFIER);
         }
         if (this.isComptimeContext && !var.isComptime) {
-            todo_with_msg("shit my pants");
+            this.reportRuntimeValueInComptimeContext(name, &var);
         }
         let state: TCState = var.typeState;
         if (state.isInvalid()) {
@@ -1403,7 +1431,7 @@ struct TypeChecker {
         if (!rhsType.isPrimitive() || rhsTypeID != TYPE_USIZE) {
             let loc: String = expr.span.toString();
             let typ: String = rhsType.toString();
-            fprintf(stderr, "%s: %s: Expected index of array access to be type `usize`, got `%s`.\n", loc.chars(), ERR_STR, typ.chars());
+            fprintf(stderr, "%s: %s: Expected index of array access to be type usize, got %s.\n", loc.chars(), ERR_STR, typ.chars());
             typ.drop();
             loc.drop();
             this.typeError = true;
@@ -1481,9 +1509,11 @@ struct TypeChecker {
         let rhsState: TCState = this.typeCheckExpr(expr.rhs, scopes);
         if (lhsState.isError()) return lhsState;
         if (rhsState.isError()) return rhsState;
-        if (!lhsState.isType()) todo_with_msg("assignment LHS is not a type");
-        if (!rhsState.isType())
-            rhsState = this.inferTypeOntoExpr(expr.rhs, lhsState.getType());
+        let maybeInfer: TCState = this.checkIfInferIsNeeded(expr.lhs, &lhsState, expr.rhs, &rhsState);
+        if (maybeInfer.isError()) {
+            todo_with_msg("couldn't infer in assignment");
+        }
+        if (!lhsState.isType()) todo_with_msg("assignment, could not infer type to LHS");
         if (!rhsState.isType()) todo_with_msg("assignment, could not infer type to RHS");
         let lhsType: &Type = types.at(lhsState.getType());
         let rhsType: &Type = types.at(rhsState.getType());
@@ -1655,12 +1685,22 @@ struct TypeChecker {
         let typ: &Type = types.at(typeID);
         let tid: TCState = blank;
         if (expr.kind == EXPR_INT_LIT) {
-            if (typ.isInteger() || typ.isFloat()) {
+            if (typ.isChar()) {
+                if (!checkOnly) {
+                    let s: String = expr.origToken.content.toString();
+                    let l: String = expr.origToken.getLocation();
+                    fprintf(stderr, "%s: %s: Using integer literal to initialize value of type char.\n",
+                        l.chars(), WARN_STR, s.chars());
+                    l.drop();
+                    s.drop();
+                }
+                tid = newTCStateType(typ.getID());
+            } else if (typ.isInteger() || typ.isFloat()) {
                 tid = newTCStateType(typ.getID());
             } else if (typ.isPointer()) {
                 // REVIEW: This is... More than debatable?
-                // Context requires a pointer, we have an integer literal.. Now this literal is type `usize`
-                // Question: Is there ever a situation where we actually want this literal to be type `ptr`?
+                // Context requires a pointer, we have an integer literal.. Now this literal is type usize
+                // Question: Is there ever a situation where we actually want this literal to be type ptr?
                 let usizeType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
                 tid = newTCStateType(usizeType.getID());
             } else if (typ.isBoolean()) {
@@ -1786,7 +1826,7 @@ struct TypeChecker {
                     if (!checkOnly) {
                         let loc: String = expr.span.toString();
                         let t: String = typ.toString();
-                        fprintf(stderr, "%s: %s: Negation is not defined for type `%s`.\n", loc.chars(), ERR_STR, t.chars());
+                        fprintf(stderr, "%s: %s: Negation is not defined for type %s.\n", loc.chars(), ERR_STR, t.chars());
                         t.drop();
                         loc.drop();
                         this.typeError = true;
@@ -1866,13 +1906,31 @@ struct TypeChecker {
             if (rhsType.typeIndex == TYPE_USIZE) {
                 resultState = lhsState;
             } else {
-                todo_with_msg("ptr + non-usize");
+                let rhs = exprs.at(expr.rhs).span;
+                let err = this.reportBinaryTypeMismatch(
+                    expr.op,
+                    exprs.at(expr.lhs).span, lhsType,
+                    rhs, rhsType,
+                );
+                let loc = rhs.toString();
+                fprintf(stderr, "%s: %s: Pointer offsets must be of type usize.\n", loc.chars(), NOTE_STR);
+                loc.drop();
+                return err;
             }
         } else if (lhsType.isInteger() && rhsType.isPointer()) {
             if (lhsType.typeIndex == TYPE_USIZE) {
                 resultState = rhsState;
             } else {
-                todo_with_msg("non-usize + ptr");
+                let lhs = exprs.at(expr.lhs).span;
+                let err = this.reportBinaryTypeMismatch(
+                    expr.op,
+                    lhs, lhsType,
+                    exprs.at(expr.rhs).span, rhsType,
+                );
+                let loc = lhs.toString();
+                fprintf(stderr, "%s: %s: Pointer offsets must be of type usize.\n", loc.chars(), NOTE_STR);
+                loc.drop();
+                return err;
             }
         } else {
             return this.reportBinaryTypeMismatch(

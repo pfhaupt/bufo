@@ -1,0 +1,15 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Type mismatch in binary expression! Operation `i8 + &&char` is not defined.
+//! LHS has type i8.
+//! RHS has type &&char.
+//! Pointer offsets must be of type usize.
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a: i8 = 3;
+    let arg = a + argv;
+    return 0;
+}

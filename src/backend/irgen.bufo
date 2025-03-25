@@ -1776,7 +1776,7 @@ struct IRGen {
         let t: &Type = types.at(expr.typeState.getType());
         let reg: RegIndex = function.allocateRegister(t);
         if (expr.kind == EXPR_INT_LIT) {
-            if (t.isInteger()) {
+            if (t.isInteger() || t.isChar()) {
                 let _value: u64 = expr.origToken.content.toU64();
                 let value: usize = _value as usize;
                 let size: usize = bitCount(value);

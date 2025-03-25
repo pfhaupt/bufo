@@ -3,9 +3,9 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Type mismatch! Expected type `i32`, found type `u32`.
-//! Attempted to access unknown field `c` of instance of struct `Foo`.
-//! Struct `Foo` is declared here.
+//! Type mismatch! Expected type i32, found type u32.
+//! Attempted to access unknown field `c` of instance of struct Foo.
+//! Struct Foo is declared here.
 
 struct Foo {
     a: i32;

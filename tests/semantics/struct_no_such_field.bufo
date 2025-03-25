@@ -3,8 +3,8 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Attempted to access unknown field `b` of instance of struct `Test`.
-//! Struct `Test` is declared here.
+//! Attempted to access unknown field `b` of instance of struct Test.
+//! Struct Test is declared here.
 
 struct Test {
     a: i32;

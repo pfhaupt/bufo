@@ -12,7 +12,7 @@ struct StringBuffer {
     func resize(&this, newCap: usize) {
         let _new: Any = realloc(this.data, newCap * sizeof SubStr);
         assert(_new != null);
-        this.data = &*_new;
+        this.data = _new as &SubStr;
         this.capacity = newCap;
     }
     func add(&this, str: SubStr) {
@@ -48,7 +48,7 @@ struct StringBuffer {
 
 func newStringBuffer() -> StringBuffer {
     let _bfr: Any = calloc(INITIAL_STRINGBUFFER_CAP, sizeof SubStr);
-    let _data: &SubStr = &*_bfr;
+    let _data: &SubStr = _bfr as &SubStr;
     return StringBuffer {
         data: _data,
         length: 0,

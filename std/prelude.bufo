@@ -91,15 +91,13 @@ func getChar(s: &char, index: usize) -> char {
 }
 
 func isNumeric(ch: char) -> bool {
-    let _idk: Any = &ch;
-    let _i8: i8 = *_idk;
-    return (_i8 >= 48) && (_i8 <= 57);
+    let _u8 = ch as u8;
+    return (_u8 >= 48) && (_u8 <= 57);
 }
 
 func isAlphabetic(ch: char) -> bool {
-    let _idk: Any = &ch;
-    let _i8: i8 = *_idk;
-    return (_i8 >= 65) && (_i8 <= 90) || (_i8 >= 97) && (_i8 <= 122);
+    let _u8 = ch as u8;
+    return (_u8 >= 65) && (_u8 <= 90) || (_u8 >= 97) && (_u8 <= 122);
 }
 
 func asHex(ch: char) -> u8 {

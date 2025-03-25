@@ -3,10 +3,10 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Recursive type `Bar`.
-//! Chain of recursion also includes type `Foo`.
-//! Recursive type `Foo`.
-//! Chain of recursion also includes type `Bar`.
+//! Recursive type Bar.
+//! Chain of recursion also includes type Foo.
+//! Recursive type Foo.
+//! Chain of recursion also includes type Bar.
 
 struct Foo {
     bar: Bar;

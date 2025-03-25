@@ -4,8 +4,8 @@
 //! CODE: 1
 //! ERROR:
 //! Type mismatch in binary expression! Operation `Test + Test` is not defined.
-//! LHS has type `Test`.
-//! RHS has type `Test`.
+//! LHS has type Test.
+//! RHS has type Test.
 
 struct Test {
     a: i64;

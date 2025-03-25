@@ -163,9 +163,25 @@ struct IRInterp {
             *(regStackLoc as &u8) = instr.src.i as u8;
             return reg;
         } else if (instr.kind == INSTR_LOAD_I16) {
-            todo_with_msg("INSTR_LOAD_I16");
+            let fReg: &IRReg = irFunc.getRegister(instr.dst);
+            assert(fReg.typ.isInteger(), "LoadI16 got non-int");
+            let reg: InterpReg = InterpReg {
+                offset: fReg.offset,
+                size: 2,
+            };
+            let regStackLoc: &u8 = this.getRegStackPointer(&reg);
+            *(regStackLoc as &i16) = instr.src.i as i16;
+            return reg;
         } else if (instr.kind == INSTR_LOAD_U16) {
-            todo_with_msg("INSTR_LOAD_U16");
+            let fReg: &IRReg = irFunc.getRegister(instr.dst);
+            assert(fReg.typ.isInteger(), "LoadU16 got non-int");
+            let reg: InterpReg = InterpReg {
+                offset: fReg.offset,
+                size: 2,
+            };
+            let regStackLoc: &u8 = this.getRegStackPointer(&reg);
+            *(regStackLoc as &u16) = instr.src.i as u16;
+            return reg;
         } else if (instr.kind == INSTR_LOAD_I32) {
             let fReg: &IRReg = irFunc.getRegister(instr.dst);
             assert(fReg.typ.isInteger(), "LoadI32 got non-int");

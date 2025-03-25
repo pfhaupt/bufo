@@ -215,7 +215,7 @@ def run_test(
         print(f"{PASS} {path}")
         return TestResult(path, STATE.SUCCESS)
 
-def recompile_compiler(stage: int, trace: bool = False) -> None:
+def recompile_compiler(stage: int) -> None:
     print(f"Recompiling compiler stage {stage}...")
     cmd = call_cmd(["bufo.exe", "./src/bufo.bufo", "bufo1.exe"])
     if cmd.returncode != 0:
@@ -314,11 +314,11 @@ def run_all_tests(
 
 def get_current_test_number() -> int:
     current: int = -1
-    for root, dirname, files in os.walk("./tests/bufo/"):
+    for root, dirname, files in os.walk("./tests/misc/"):
         for f in files:
             full = root + "/".join(dirname) + "/" + f
             full = full.replace("\\", "/")
-            full = full.removeprefix("./tests/bufo/")
+            full = full.removeprefix("./tests/misc/")
             full = full.split("-")[0]
             full = full.replace("/", "")
             index = int(full)
@@ -327,13 +327,9 @@ def get_current_test_number() -> int:
     return current + 1
 
 def get_prefix(index: int) -> str:
-    assert index < 10000, "We need another nested directory!!"
+    assert index < 10000, "We need another zero!!"
     spilled = f"{index:04d}"
-    actual = ""
-    for s in spilled:
-        actual += "/"
-        actual += s
-    return f"./tests/bufo/{actual}-"
+    return f"./tests/misc/{spilled}-"
 
 def add_test_file(path: str) -> None:
     index: int = get_current_test_number()
@@ -344,8 +340,6 @@ def add_test_file(path: str) -> None:
         print(f"{FAIL} Can't add file {path} to the tests. Reason: Corrupt protocol.")
         exit(1)
     else:
-        if index % 10 == 0:
-            assert log_cmd_call(["mkdir", "-p", prefix.removesuffix("0-")]).returncode == 0, "Could not create target directory"
         assert log_cmd_call(["mv", path, target]).returncode == 0, "Could not move file"
         assert log_cmd_call(["git", "add", target]).returncode == 0, "Could not add test to git"
         print(f"{PASS} Added file {path} as new test at {target}.")
@@ -357,21 +351,18 @@ def print_usage_and_help() -> None:
     print("Flags for test mode:")
     print("  add <file1> [files]  -> Convenience utility for creating tests")
     print("  --no-exec            -> skip running runtime tests")
-    print("  --trace              -> enable tracing in the compiler (useful for debugging)")
     print("  --exit-first-failure -> exit after the first failure, disables parallelism")
+    print("  --dont-compile       -> Just run tests without compiling the compiler")
     print("Flags for bench mode:")
     print("  Not implemented")
 
-def recompile(trace: bool = False) -> bool:
-    bufo = "--bufo" in sys.argv
+def recompile(dont_compile: bool = False):
+    if dont_compile:
+        print("[INFO] --dont-compile provided, skipping compilation")
+        return
     print("Compiling compilers...")
-    if bufo:
-        recompile_compiler(2, trace)
-        return True
-    else:
-        recompile_compiler(1, trace)
-        recompile_compiler(2, trace)
-        return False
+    recompile_compiler(1)
+    recompile_compiler(2)
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:
@@ -379,7 +370,6 @@ if __name__ == "__main__":
         exit(1)
     else:
         mode = sys.argv[1]
-        trace = "--trace" in sys.argv
         if mode == "help":
             print_usage_and_help()
             exit(0)
@@ -392,10 +382,11 @@ if __name__ == "__main__":
                 for f in sys.argv[3:]:
                     add_test_file(f)
                 exit()
-            bufo = recompile(trace)
-            print("Running tests...")
             no_exec = "--no-exec" in sys.argv
             exit_first_failure = "--exit-first-failure" in sys.argv
+            no_compile = "--dont-compile" in sys.argv
+            recompile(no_compile)
+            print("Running tests...")
             test_dirs: List[str] = []
             for arg in sys.argv[2:]:
                 if not arg.startswith("-"):
@@ -406,12 +397,12 @@ if __name__ == "__main__":
                 exit_first_failure=exit_first_failure,
             )
         elif mode == "bench":
-            recompile(trace)
+            recompile()
             print("Running benchmarks...")
             print(format_red("Not implemented"))
             exit(1)
         elif mode == "compile":
-            recompile(trace)
+            recompile()
         else:
             print("Invalid mode: " + mode)
             print_usage_and_help()

@@ -225,7 +225,7 @@ struct Type {
             s.pushChar(']');
             return s;
         } else if (this.kind == TYPE_KIND_UNKNOWN) {
-            todo_with_msg("toString type unknown???");
+            return newStringFromStrLit("<unknown>");
         } else {
             unreachable("Exhaustive handling of types in Type.getMangledName");
         }

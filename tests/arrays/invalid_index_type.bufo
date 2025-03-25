@@ -3,7 +3,7 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Expected index of array access to be type `usize`, got `i32`.
+//! Expected index of array access to be type usize, got i32.
 
 func main() {
     let arr: [i32; 3] = [1, 2, 3];

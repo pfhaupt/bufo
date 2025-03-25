@@ -30,7 +30,7 @@ struct Cmd {
     func asCharPtrs(&this) -> &&char {
         let _any: Any = calloc(this.buf.length + 1, sizeof &char);
         assert(_any != null);
-        let _mut: &&char = &*_any;
+        let _mut: &&char = _any as &&char;
         for (let i: usize = 0; i < this.buf.length; i = i + 1) {
             let elem: String = (*(this.buf.data + i * sizeof SubStr)).toString();
             elem.print();

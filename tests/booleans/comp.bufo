@@ -4,8 +4,8 @@
 //! CODE: 1
 //! ERROR:
 //! Type mismatch in binary expression! Operation `bool == u32` is not defined.
-//! LHS has type `bool`.
-//! RHS has type `u32`.
+//! LHS has type bool.
+//! RHS has type u32.
 
 func main() -> u32 {
     let a: u32 = 2;
