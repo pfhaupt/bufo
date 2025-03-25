@@ -1983,6 +1983,13 @@ struct TypeChecker {
         let rhsType: &Type = types.at(rhsState.getType());
         let resultState: TCState = blank;
         if (lhsType.equals(rhsType)) {
+            if (lhsType.isChar() && expr.op != BIN_PLUS && expr.op != BIN_SUB) {
+                return this.reportBinaryTypeMismatch(
+                    expr.op,
+                    exprs.at(expr.lhs).span, lhsType,
+                    exprs.at(expr.rhs).span, rhsType,
+                );
+            }
             if (lhsType.isStruct() || lhsType.isArray()) {
                 return this.reportBinaryTypeMismatch(
                     expr.op,

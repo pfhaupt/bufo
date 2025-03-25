@@ -382,8 +382,8 @@ struct IRFunc {
     }
     func pushInstruction(&this, instr: IRInstr) {
         trace("IRFunc.pushInstruction");
-        if (this.blocks.length == 0) todo_with_msg("no block");
-        if (this.currentBlock.i >= this.blocks.length) todo_with_msg("overflow");
+        assert(this.blocks.length > 0, "IRFunc.pushInstruction called on empty block list");
+        assert(this.currentBlock.i < this.blocks.length, "IRFunc.pushInstruction: Current block was invalid");
         this.blocks.at(this.currentBlock.i).pushInstruction(instr);
     }
     func buildAlloca(&this, span: Span, dst: RegIndex, size: usize) {
@@ -902,8 +902,9 @@ struct IRScope {
 struct IRGen {
     globalScope: IRFunc;
     functions: String_IRFuncHashMap;
+    error: bool;
     func getIdentifierByName(&this, function: &IRFunc, name: SubStr, isGlobal: &bool) -> &IRScopeEntry {
-    trace("IRGen.getIdentifierByName");
+        trace("IRGen.getIdentifierByName");
         let entry: &IRScopeEntry = function.getIdentifierByName(name);
         if (entry != null) {
             *isGlobal = false;
@@ -927,7 +928,14 @@ struct IRGen {
             if (function.ignored) continue;
             let name: String = function.getMangledName();
             if (this.functions.containsKey(&name)) {
-                todo_with_msg("lookup already contains function with name");
+                let fn = this.functions.get(&name);
+                let loc = function.span.toString();
+                let loc1 = fn.span.toString();
+                fprintf(stderr, "%s: %s Hash collision - Function Lookup already contains function!\n", loc.chars(), FATAL_STR);
+                fprintf(stderr, "%s: %s Function with mangled name %s already defined here!\n", loc1.chars(), FATAL_STR, name.chars());
+                loc1.drop();
+                loc.drop();
+                exit(2);
             }
             let irfunc: IRFunc = IRFunc {
                 name: name,
@@ -951,7 +959,14 @@ struct IRGen {
             if (method.ignored) continue;
             let name: String = method.getMangledName();
             if (this.functions.containsKey(&name)) {
-                todo_with_msg("lookup already contains method with name");
+                let fn = this.functions.get(&name);
+                let loc = method.span.toString();
+                let loc1 = fn.span.toString();
+                fprintf(stderr, "%s: %s Hash collision - Function Lookup already contains function!\n", loc.chars(), FATAL_STR);
+                fprintf(stderr, "%s: %s Function with mangled name %s already defined here!\n", loc1.chars(), FATAL_STR, name.chars());
+                loc1.drop();
+                loc.drop();
+                exit(2);
             }
             let irmeth: IRFunc = IRFunc {
                 name: name,
@@ -998,7 +1013,7 @@ struct IRGen {
             let meth: &ParsedMethod = methods.at(i);
             this.generateMethod(meth);
         }
-        return true;
+        return !this.error;
     }
 
     func generateFunctionHeader(&this, function: &IRFunc, retType: &Type, params: &ParamContext) {
@@ -1243,7 +1258,7 @@ struct IRGen {
                 todo_with_msg("continue outside of loop");
             }
         } else {
-            todo_with_msg("unknown stmt");
+            unreachable("Exhaustive handling of statements in IRGen.generateBytecodeStmt");
         }
     }
 
@@ -1306,56 +1321,7 @@ struct IRGen {
             }
             return reg;
         } else if (expr.kind == EXPR_AS) {
-            let result: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.lhs), false);
-            let current: &Type = types.at(exprs.at(expr.lhs).typeState.getType());
-            let target: &Type = types.at(typeNodes.at(expr.rhs).typeState.getType());
-            let exType: &Type = types.at(expr.typeState.getType());
-            assert(target.equals(exType));
-            let dst: RegIndex = function.allocateRegister(target);
-            if (current.isInteger() && target.isPointer()) {
-                function.buildIntToPtr(expr.span, dst, result);
-            } else if (current.isPointer() && target.isInteger()) {
-                function.buildPtrToInt(expr.span, dst, result);
-            } else if (current.isPointer() && target.isPointer()) {
-                function.buildMove(expr.span, dst, result);
-            } else if ((current.isChar() || current.isInteger()) && (target.isChar() || target.isInteger())) {
-                if (current.getSize() < target.getSize()) {
-                    if (current.isSignedInteger()) {
-                        function.buildIntSignExtend(expr.span, dst, result, target.getSize() * 8);
-                    } else {
-                        function.buildIntZeroExtend(expr.span, dst, result, target.getSize() * 8);
-                    }
-                } else if (current.getSize() > target.getSize()) {
-                    function.buildIntTruncate(expr.span, dst, result, target.getSize() * 8);
-                } else {
-                    function.buildMove(expr.span, dst, result);
-                }
-            } else if (current.isInteger() && target.isFloat()) {
-                if (target.getSize() == 4) function.buildIntToF32(expr.span, dst, result);
-                else if (target.getSize() == 8) function.buildIntToF64(expr.span, dst, result);
-                else unreachable("int to float");
-            } else if (current.isFloat() && target.isInteger()) {
-                if (current.getSize() == 4) function.buildF32ToInt(expr.span, dst, result);
-                else if (current.getSize() == 8) function.buildF64ToInt(expr.span, dst, result);
-                else unreachable("int to float");
-            } else if (current.isFloat() && target.isFloat()) {
-                if (current.getSize() < target.getSize()) {
-                    assert(current.getSize() == 4);
-                    assert(target.getSize() == 8);
-                    function.buildF32ToF64(expr.span, dst, result);
-                } else if (current.getSize() > target.getSize()) {
-                    assert(current.getSize() == 8);
-                    assert(target.getSize() == 4);
-                    function.buildF64ToF32(expr.span, dst, result);
-                } else {
-                    todo_with_msg("same float to same float");
-                }
-            } else {
-                printf("ligma %llu %llu\n", current.kind, current.typeIndex);
-                printf("ligma %llu %llu\n", target.kind, target.typeIndex);
-                todo_with_msg("idk as idk");
-            }
-            return dst;
+            return this.generateBytecodeExprAs(function, expr);
         } else if (expr.kind == EXPR_STRUCT_INIT) {
             let strukt: &Type = types.at(expr.typeState.getType());
             assert(strukt.isStruct(), "Expected Struct Type in EXPR_STRUCT_INIT");
@@ -1377,11 +1343,60 @@ struct IRGen {
             }
             return reg;
         } else {
-            function.name.print();
-            expr.span.print();
-            printf("\n%llu\n", expr.kind);
             unreachable("Exhaustive handling of expressions in IRGen.generateBytecodeExpr");
         }
+    }
+
+    func generateBytecodeExprAs(&this, function: &IRFunc, expr: &ParsedExpr) -> RegIndex {
+        trace("IRGen.generateBytecodeExprAs");
+        let result: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.lhs), false);
+        let current: &Type = types.at(exprs.at(expr.lhs).typeState.getType());
+        let target: &Type = types.at(typeNodes.at(expr.rhs).typeState.getType());
+        let exType: &Type = types.at(expr.typeState.getType());
+        assert(target.equals(exType));
+        let dst: RegIndex = function.allocateRegister(target);
+        if (current.isInteger() && target.isPointer()) {
+            function.buildIntToPtr(expr.span, dst, result);
+        } else if (current.isPointer() && target.isInteger()) {
+            function.buildPtrToInt(expr.span, dst, result);
+        } else if (current.isPointer() && target.isPointer()) {
+            function.buildMove(expr.span, dst, result);
+        } else if ((current.isChar() || current.isInteger()) && (target.isChar() || target.isInteger())) {
+            if (current.getSize() < target.getSize()) {
+                if (current.isSignedInteger()) {
+                    function.buildIntSignExtend(expr.span, dst, result, target.getSize() * 8);
+                } else {
+                    function.buildIntZeroExtend(expr.span, dst, result, target.getSize() * 8);
+                }
+            } else if (current.getSize() > target.getSize()) {
+                function.buildIntTruncate(expr.span, dst, result, target.getSize() * 8);
+            } else {
+                function.buildMove(expr.span, dst, result);
+            }
+        } else if (current.isInteger() && target.isFloat()) {
+            if (target.getSize() == 4) function.buildIntToF32(expr.span, dst, result);
+            else if (target.getSize() == 8) function.buildIntToF64(expr.span, dst, result);
+            else unreachable("int to float");
+        } else if (current.isFloat() && target.isInteger()) {
+            if (current.getSize() == 4) function.buildF32ToInt(expr.span, dst, result);
+            else if (current.getSize() == 8) function.buildF64ToInt(expr.span, dst, result);
+            else unreachable("float to int");
+        } else if (current.isFloat() && target.isFloat()) {
+            if (current.getSize() < target.getSize()) {
+                assert(current.getSize() == 4);
+                assert(target.getSize() == 8);
+                function.buildF32ToF64(expr.span, dst, result);
+            } else if (current.getSize() > target.getSize()) {
+                assert(current.getSize() == 8);
+                assert(target.getSize() == 4);
+                function.buildF64ToF32(expr.span, dst, result);
+            } else {
+                function.buildMove(expr.span, dst, result);
+            }
+        } else {
+            unreachable("Exhaustive handling of variations in generateBytecodeExprAs");
+        }
+        return dst;
     }
 
     func generateBytecodeExprMemberAccess(&this, function: &IRFunc, expr: &ParsedExpr, needsPtr: bool) -> RegIndex {
@@ -1656,7 +1671,7 @@ struct IRGen {
             } else if (lhsType.isFloat() && rhsType.isFloat()) {
                 function.buildBinaryOp(expr.span, INSTR_FLOAT_ADD, dst, lhs, rhs);
             } else {
-                todo_with_msg("non-int add");
+                unreachable("IRGen: Exhaustive handling of types for BIN_PLUS");
             }
         } else if (expr.op == BIN_SUB) {
             let usizeType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
@@ -1686,7 +1701,7 @@ struct IRGen {
             } else if (lhsType.isFloat() && rhsType.isFloat()) {
                 function.buildBinaryOp(expr.span, INSTR_FLOAT_SUB, dst, lhs, rhs);
             } else {
-                todo_with_msg("non-int sub");
+                unreachable("IRGen: Exhaustive handling of types for BIN_SUB");
             }
         } else if (expr.op == BIN_MULT) {
             if (res.isInteger()) {
@@ -1694,7 +1709,7 @@ struct IRGen {
             } else if (res.isFloat()) {
                 function.buildBinaryOp(expr.span, INSTR_FLOAT_MUL, dst, lhs, rhs);
             } else {
-                todo_with_msg("non-int mul");
+                unreachable("IRGen: Exhaustive handling of types for BIN_MULT");
             }
         } else if (expr.op == BIN_DIV) {
             if (res.isInteger()) {
@@ -1702,7 +1717,7 @@ struct IRGen {
             } else if (res.isFloat()) {
                 function.buildBinaryOp(expr.span, INSTR_FLOAT_DIV, dst, lhs, rhs);
             } else {
-                todo_with_msg("non-int non-float div");
+                unreachable("IRGen: Exhaustive handling of types for BIN_DIV");
             }
         } else if (expr.op == BIN_MOD) {
             if (res.isInteger()) {
@@ -1710,10 +1725,10 @@ struct IRGen {
             } else if (res.isFloat()) {
                 function.buildBinaryOp(expr.span, INSTR_FLOAT_MOD, dst, lhs, rhs);
             } else {
-                todo_with_msg("non-int mod");
+                unreachable("IRGen: Exhaustive handling of types for BIN_MOD");
             }
         } else {
-            unreachable("Exhaustive handling of ops in generateBytecodeExprArithmetic (I think)");
+            unreachable("Exhaustive handling of ops in generateBytecodeExprArithmetic");
         }
         return dst;
     }
@@ -1734,7 +1749,7 @@ struct IRGen {
             } else if (t.isFloat()) {
                 function.buildBinaryOp(expr.span, INSTR_FLOAT_CMP_EQ, dst, lhs, rhs);
             } else {
-                todo_with_msg("IRGen CMP_EQ");
+                unreachable("IRGen: Exhaustive handling of types for BIN_CMP_EQ");
             }
         } else if (expr.op == BIN_CMP_NEQ) {
             if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
@@ -1742,7 +1757,7 @@ struct IRGen {
             } else if (t.isFloat()) {
                 function.buildBinaryOp(expr.span, INSTR_FLOAT_CMP_NEQ, dst, lhs, rhs);
             } else {
-                todo_with_msg("IRGen CMP_NEQ");
+                unreachable("IRGen: Exhaustive handling of types for BIN_CMP_NEQ");
             }
         } else if (expr.op == BIN_CMP_GT) {
             if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
@@ -1750,7 +1765,7 @@ struct IRGen {
             } else if (t.isFloat()) {
                 function.buildBinaryOp(expr.span, INSTR_FLOAT_CMP_GT, dst, lhs, rhs);
             } else {
-                todo_with_msg("IRGen CMP_GT");
+                unreachable("IRGen: Exhaustive handling of types for BIN_CMP_GT");
             }
         } else if (expr.op == BIN_CMP_GTE) {
             if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
@@ -1758,7 +1773,7 @@ struct IRGen {
             } else if (t.isFloat()) {
                 function.buildBinaryOp(expr.span, INSTR_FLOAT_CMP_GTE, dst, lhs, rhs);
             } else {
-                todo_with_msg("IRGen CMP_GTE");
+                unreachable("IRGen: Exhaustive handling of types for BIN_CMP_GTE");
             }
         } else if (expr.op == BIN_CMP_LT) {
             if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
@@ -1766,7 +1781,7 @@ struct IRGen {
             } else if (t.isFloat()) {
                 function.buildBinaryOp(expr.span, INSTR_FLOAT_CMP_LT, dst, lhs, rhs);
             } else {
-                todo_with_msg("IRGen CMP_LT");
+                unreachable("IRGen: Exhaustive handling of types for BIN_CMP_LT");
             }
         } else if (expr.op == BIN_CMP_LTE) {
             if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
@@ -1774,7 +1789,7 @@ struct IRGen {
             } else if (t.isFloat()) {
                 function.buildBinaryOp(expr.span, INSTR_FLOAT_CMP_LTE, dst, lhs, rhs);
             } else {
-                todo_with_msg("IRGen CMP_LTE");
+                unreachable("IRGen: Exhaustive handling of types for BIN_CMP_LTE");
             }
         } else {
             unreachable("Exhaustive handling of ops in generateBytecodeExprComparison");
@@ -1829,9 +1844,15 @@ struct IRGen {
                 let value: usize = _value as usize;
                 let size: usize = bitCount(value);
                 let typsize: usize = t.getSize() * 8;
+                if (t.isSignedInteger()) size = size + 1;
                 if (size > typsize) {
-                    fprintf(stderr, "%llu %llu\n", size, typsize);
-                    todo_with_msg("int literal bigger than type can hold");
+                    let loc = expr.span.toString();
+                    let ts = t.toString();
+                    fprintf(stderr, "%s: %s: Integer literal (value=%llu) is too big for target type %s.\n",
+                        loc.chars(), ERR_STR, _value, ts.chars());
+                    ts.drop();
+                    loc.drop();
+                    this.error = true;
                 }
                 function.buildLoadInteger(expr.span, reg, t, value);
             } else if (t.isFloat()) {
@@ -1925,7 +1946,7 @@ struct IRGen {
                 }
             }
         } else {
-            todo_with_msg("gen Literal");
+            unreachable("Exhaustive handling of ops in generateBytecodeExprLiteral");
         }
         return reg;
     }
@@ -2005,11 +2026,11 @@ struct IRGen {
                 else unreachable("negation float");
                 function.buildBinaryOp(expr.span, INSTR_FLOAT_SUB, result, zero, result);
             } else {
-                todo_with_msg("neg non-int");
+                unreachable("Exhaustive handling of negation variants in generateBytecodeExprUnary");
             }
             return result;
         } else {
-            todo_with_msg("unknown unary");
+            unreachable("Exhaustive handling of ops in generateBytecodeExprUnary");
         }
     }
 
@@ -2047,7 +2068,7 @@ struct IRGen {
                 function.scopes.last().addEntry(name, allocReg, false);
             }
         } else if (typ.getSize() > 8) {
-            todo_with_msg("prepare urmom");
+            unreachable("IRGen.prepareParameter: The only types that are bigger than 8 bytes are structs");
         } else {
             let allocType: &Type = types.at(typ.intoPointer());
             let allocReg: RegIndex = function.allocateRegister(allocType);

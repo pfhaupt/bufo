@@ -1,0 +1,14 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Integer literal (value=300) is too big for target type u8.
+//! Integer literal (value=600000) is too big for target type u16.
+//! Integer literal (value=150) is too big for target type i8.
+func main(argc: i32, argv: &&char) -> i32 {
+    let a: u8 = 300;
+    let b: u16 = 600000;
+    let c: i8 = 150;
+    return 0;
+}
