@@ -1,0 +1,25 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Could not infer which type to use for expression.
+//! Context allows struct Vector2 to be used.
+//! Context allows struct Vector3 to be used.
+
+struct Vector2 {
+    x: f32;
+    y: f32;
+}
+
+struct Vector3 {
+    x: f32;
+    y: f32;
+    z: f32;
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a: f32 = blank.x;
+    return 0;
+}
+

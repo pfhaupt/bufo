@@ -1,0 +1,21 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+
+func foo() -> i32 {
+    return 12;
+}
+
+func foo() -> u8 {
+    return 7;
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a: i32 = foo();
+    let b: u8 = foo();
+    assert(a == 12);
+    assert(b == 7);
+    return 0;
+}

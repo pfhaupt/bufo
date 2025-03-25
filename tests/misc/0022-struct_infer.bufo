@@ -1,0 +1,30 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+import "libc.bufo";
+
+struct Vector {
+    x: f32;
+    y: f32;
+}
+
+struct Foo {
+    x: i32;
+    b: i32;
+}
+
+func foo() -> Foo {
+    return Foo { x: 12 };
+}
+func foo() -> Vector {
+    return Vector { x: 13 };
+}
+func main(argc: i32, argv: &&char) -> i32 {
+    // Infers the correct function to choose solely on the `: f32`
+    let a: f32 = foo().x;
+    assert(a == 13);
+    return 0;
+}
+

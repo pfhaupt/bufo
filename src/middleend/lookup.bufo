@@ -41,6 +41,37 @@ struct Lookup {
         return list;
     }
 
+    func resolveAllFunctionsWithReturnType(&this, currentModule: usize, name: &Token, typ: &Type, list: &FunctionLookupList) -> bool {
+        trace("Lookup.resolveAllFunctionsWithReturnType");
+        // FIXME: Would be cool if this method didn't create copies of the FunctionLookups
+        let currModule: &ModuleLookup = this.modules.at(currentModule);
+        if (!currModule.resolveAllFunctionsWithReturnType(name, typ, list)) {
+            return false;
+        }
+        for (let i: usize = 0; i < currModule.imports.length; i = i + 1) {
+            let imp: &ImportLookup = currModule.imports.at(i);
+            let importedModule: &ModuleLookup = this.modules.at(imp.moduleID);
+            if (!importedModule.resolveAllFunctionsWithReturnType(name, typ, list)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    func resolveAllStructsWithField(&this, currentModule: usize, name: &Token, typ: &Type) -> StructLookupList {
+        trace("Lookup.resolveAllStructsWithField");
+        // FIXME: Would be cool if this method didn't create copies of the StructLookups
+        let currModule = this.modules.at(currentModule);
+        let list = currModule.resolveAllStructsWithField(name, typ);
+        for (let i: usize = 0; i < currModule.imports.length; i = i + 1) {
+            let imp = currModule.imports.at(i);
+            let importedModule = this.modules.at(imp.moduleID);
+            let importList = importedModule.resolveAllStructsWithField(name, typ);
+            list.extend(&importList);
+        }
+        return list;
+    }
+
     func resolveVariableByName(&this, currentModule: usize, name: &Token, scopes: &ScopeLookupList, var: &VariableLookup) -> bool {
         trace("Lookup.resolveVariableByName");
         debug(name.content.toString().chars());
@@ -280,6 +311,41 @@ struct ModuleLookup {
             let f: &FunctionLookup = this.functions.at(i);
             if (f.name.content.equals(&name.content)) {
                 list.push(*f);
+            }
+        }
+        return list;
+    }
+
+    func resolveAllFunctionsWithReturnType(&this, name: &Token, typ: &Type, list: &FunctionLookupList) -> bool {
+        trace("ModuleLookup.resolveAllFunctionsWithReturnType");
+        for (let i: usize = 0; i < this.functions.length; i = i + 1) {
+            let f: &FunctionLookup = this.functions.at(i);
+            if (!f.getReadyState(FUNC_RETTYPE_COMPLETE)) {
+                return false;
+            }
+            if (!f.name.content.equals(&name.content)) {
+                continue;
+            }
+            let t = types.at(f.returnType.getType());
+            if (t.equals(typ)) {
+                list.push(*f);
+            }
+        }
+        return true;
+    }
+
+    func resolveAllStructsWithField(&this, name: &Token, typ: &Type) -> StructLookupList {
+        trace("ModuleLookup.resolveAllStructsWithField");
+        let list: StructLookupList = blank;
+        for (let i: usize = 0; i < this.structs.length; i = i + 1) {
+            let s: &StructLookup = this.structs.at(i);
+            let v: VariableLookup = blank;
+            if (s.resolveFieldByName(name, &v)) {
+                assert(v.typeState.isType());
+                let t = types.at(v.typeState.getType());
+                if (t.equals(typ)) {
+                    list.push(*s);
+                }
             }
         }
         return list;

@@ -1,0 +1,29 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Could not infer which function to call.
+//! Context allows this function to be called.
+//! Context allows this function to be called.
+//! Could not find matching signature for call to function `foo`.
+//! A function with that name is located here.
+//! A function with that name is located here.
+
+import "prelude.bufo";
+
+func foo(a: u8) -> i32 {
+    return 12;
+}
+
+func foo(a: i32) -> i32 {
+    return 7;
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a: i32 = foo(5);
+    let b: u8 = foo(5);
+    assert(a == 12);
+    assert(b == 7);
+    return 0;
+}

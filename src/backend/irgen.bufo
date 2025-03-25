@@ -1495,8 +1495,8 @@ struct IRGen {
                     retVal = r;
                 } else {
                     function.buildLoad(span, v, r);
+                    retVal = v;
                 }
-                retVal = v;
             } else {
                 let reg: RegIndex = function.allocateRegister(retType);
                 function.buildCall(span, reg, RegIndex { i: funcID }, args);
