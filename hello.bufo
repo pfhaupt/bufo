@@ -62,25 +62,25 @@ struct Vector2 {
     y: f32;
 }
 
-extern InitWindow(width: i32, height: i32, title: &char);
-extern InitAudioDevice();
-extern WindowShouldClose() -> bool;
-extern BeginDrawing();
-extern EndDrawing();
-extern ClearBackground(c: Color);
-extern DrawRectangleV(pos: Vector2, size: Vector2, col: Color);
-extern ColorFromHSV(h: f32, s: f32, v: f32) -> Color;
-extern GetColor(val: u32) -> Color;
-extern LoadImageFromScreen() -> Image;
-extern ExportImage(i: Image, name: &char) -> bool;
-extern PlaySound(sound: Sound);
-extern LoadSound(fileName: &char) -> Sound;
-extern IsSoundValid(sound: Sound) -> bool;
-extern LoadWave(fileName: &char) -> Wave;
-extern LoadSoundFromWave(wave: Wave) -> Sound;
-extern SetSoundVolume(sound: Sound, volume: f32);
-extern GetTime() -> f64;
-extern SetTargetFPS(fps: i32);
+@extern("InitWindow") func InitWindow(width: i32, height: i32, title: &char);
+@extern("InitAudioDevice") func InitAudioDevice();
+@extern("WindowShouldClose") func WindowShouldClose() -> bool;
+@extern("BeginDrawing") func BeginDrawing();
+@extern("EndDrawing") func EndDrawing();
+@extern("ClearBackground") func ClearBackground(c: Color);
+@extern("DrawRectangleV") func DrawRectangleV(pos: Vector2, size: Vector2, col: Color);
+@extern("ColorFromHSV") func ColorFromHSV(h: f32, s: f32, v: f32) -> Color;
+@extern("GetColor") func GetColor(val: u32) -> Color;
+@extern("LoadImageFromScreen") func LoadImageFromScreen() -> Image;
+@extern("ExportImage") func ExportImage(i: Image, name: &char) -> bool;
+@extern("PlaySound") func PlaySound(sound: Sound);
+@extern("LoadSound") func LoadSound(fileName: &char) -> Sound;
+@extern("IsSoundValid") func IsSoundValid(sound: Sound) -> bool;
+@extern("LoadWave") func LoadWave(fileName: &char) -> Wave;
+@extern("LoadSoundFromWave") func LoadSoundFromWave(wave: Wave) -> Sound;
+@extern("SetSoundVolume") func SetSoundVolume(sound: Sound, volume: f32);
+@extern("GetTime") func GetTime() -> f64;
+@extern("SetTargetFPS") func SetTargetFPS(fps: i32);
 
 func main(argc: i32, argv: &&char) -> i32 {
     comptime WIDTH: i32 = 800;
