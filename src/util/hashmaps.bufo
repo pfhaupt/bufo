@@ -21,7 +21,7 @@ struct String_IRFuncHashMap {
         for (let i: usize = 0; i < this.capacity; i = i + 1) {
             let elem: &String_IRFuncEntry = this.getAtIndex(i);
             if (elem.set) {
-                l.push(elem.value);
+                push(&l, elem.value);
             }
         }
         return l;

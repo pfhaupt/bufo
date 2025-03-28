@@ -23,21 +23,21 @@ struct Lookup {
             variables: blank,
         };
         // Global Scope
-        lookup.variables.push(blank);
-        this.modules.push(lookup);
-        return this.modules.last();
+        push(&lookup.variables, blank);
+        push(&this.modules, lookup);
+        return last(&this.modules);
     }
 
     func resolveFunctionByName(&this, currentModule: usize, name: &Token) -> FunctionLookupList {
         trace("Lookup.resolveFunctionByName");
         // FIXME: Would be cool if this method didn't create copies of the FunctionLookups
-        let currModule: &ModuleLookup = this.modules.at(currentModule);
-        let list: FunctionLookupList = currModule.resolveFunctionByName(name);
+        let currModule: &ModuleLookup = at(&this.modules, currentModule);
+        let list: FunctionLookupList = resolveFunctionByName(currModule, name);
         for (let i: usize = 0; i < currModule.imports.length; i = i + 1) {
-            let imp: &ImportLookup = currModule.imports.at(i);
-            let importedModule: &ModuleLookup = this.modules.at(imp.moduleID);
-            let importList: FunctionLookupList = importedModule.resolveFunctionByName(name);
-            list.extend(&importList);
+            let imp: &ImportLookup = at(&currModule.imports, i);
+            let importedModule: &ModuleLookup = at(&this.modules, imp.moduleID);
+            let importList: FunctionLookupList = resolveFunctionByName(importedModule, name);
+            extend(&list, &importList);
         }
         return list;
     }
@@ -45,14 +45,14 @@ struct Lookup {
     func resolveAllFunctionsWithReturnType(&this, currentModule: usize, name: &Token, typ: &Type, list: &FunctionLookupList) -> bool {
         trace("Lookup.resolveAllFunctionsWithReturnType");
         // FIXME: Would be cool if this method didn't create copies of the FunctionLookups
-        let currModule: &ModuleLookup = this.modules.at(currentModule);
-        if (!currModule.resolveAllFunctionsWithReturnType(name, typ, list)) {
+        let currModule: &ModuleLookup = at(&this.modules, currentModule);
+        if (!resolveAllFunctionsWithReturnType(currModule, name, typ, list)) {
             return false;
         }
         for (let i: usize = 0; i < currModule.imports.length; i = i + 1) {
-            let imp: &ImportLookup = currModule.imports.at(i);
-            let importedModule: &ModuleLookup = this.modules.at(imp.moduleID);
-            if (!importedModule.resolveAllFunctionsWithReturnType(name, typ, list)) {
+            let imp: &ImportLookup = at(&currModule.imports, i);
+            let importedModule: &ModuleLookup = at(&this.modules, imp.moduleID);
+            if (!resolveAllFunctionsWithReturnType(importedModule, name, typ, list)) {
                 return false;
             }
         }
@@ -62,13 +62,13 @@ struct Lookup {
     func resolveAllStructsWithField(&this, currentModule: usize, name: &Token, typ: &Type) -> StructLookupList {
         trace("Lookup.resolveAllStructsWithField");
         // FIXME: Would be cool if this method didn't create copies of the StructLookups
-        let currModule = this.modules.at(currentModule);
-        let list = currModule.resolveAllStructsWithField(name, typ);
+        let currModule = at(&this.modules, currentModule);
+        let list = resolveAllStructsWithField(currModule, name, typ);
         for (let i: usize = 0; i < currModule.imports.length; i = i + 1) {
-            let imp = currModule.imports.at(i);
-            let importedModule = this.modules.at(imp.moduleID);
-            let importList = importedModule.resolveAllStructsWithField(name, typ);
-            list.extend(&importList);
+            let imp = at(&currModule.imports, i);
+            let importedModule = at(&this.modules, imp.moduleID);
+            let importList = resolveAllStructsWithField(importedModule, name, typ);
+            extend(&list, &importList);
         }
         return list;
     }
@@ -80,9 +80,9 @@ struct Lookup {
         // for (let i: usize = scopes.length - 1; i >= 0; i = i - 1) {
         for (let _i: usize = 0; _i < scopes.length; _i = _i + 1) {
             let i: usize = scopes.length - _i - 1;
-            let s: &ScopeLookup = scopes.at(i);
+            let s: &ScopeLookup = at(scopes, i);
             for (let j: usize = 0; j < s.variables.length; j = j + 1) {
-                let v: &VariableLookup = s.variables.at(j);
+                let v: &VariableLookup = at(&s.variables, j);
                 if (v.name.content.equals(&name.content)) {
                     debug("Variable found in current module");
                     *var = *v;
@@ -90,25 +90,25 @@ struct Lookup {
                 }
             }
         }
-        let mod: &ModuleLookup = this.modules.at(currentModule);
-        let globalScope: &ScopeLookup = mod.variables.at(0);
+        let mod: &ModuleLookup = at(&this.modules, currentModule);
+        let globalScope: &ScopeLookup = at(&mod.variables, 0);
         for (let j: usize = 0; j < globalScope.variables.length; j = j + 1) {
-            let v: VariableLookup = *globalScope.variables.at(j);
+            let v: &VariableLookup = at(&globalScope.variables, j);
             if (v.name.content.equals(&name.content)) {
                 debug("Variable found in global scope");
-                *var = v;
+                *var = *v;
                 return true;
             }
         }
         for (let i: usize = 0; i < mod.imports.length; i = i + 1) {
-            let imp: usize = mod.imports.at(i).moduleID;
-            let mod: &ModuleLookup = this.modules.at(imp);
-            let globalScope: &ScopeLookup = mod.variables.at(0);
+            let imp: usize = at(&mod.imports, i).moduleID;
+            let mod: &ModuleLookup = at(&this.modules, imp);
+            let globalScope: &ScopeLookup = at(&mod.variables, 0);
             for (let j: usize = 0; j < globalScope.variables.length; j = j + 1) {
-                let v: VariableLookup = *globalScope.variables.at(j);
+                let v: &VariableLookup = at(&globalScope.variables, j);
                 if (v.name.content.equals(&name.content)) {
                     debug("Variable found in import");
-                    *var = v;
+                    *var = *v;
                     return true;
                 }
             }
@@ -119,12 +119,12 @@ struct Lookup {
 
     func resolveTypeByName(&this, currentModule: usize, name: &Token, typ: &TypeLookup) -> bool {
         trace("Lookup.resolveTypeByName");
-        let currModule: &ModuleLookup = this.modules.at(currentModule);
-        if (currModule.resolveTypeByName(name, typ)) return true;
+        let currModule: &ModuleLookup = at(&this.modules, currentModule);
+        if (resolveTypeByName(currModule, name, typ)) return true;
         for (let i: usize = 0; i < currModule.imports.length; i = i + 1) {
-            let imp: &ImportLookup = currModule.imports.at(i);
-            let importedModule: &ModuleLookup = this.modules.at(imp.moduleID);
-            if (importedModule.resolveTypeByName(name, typ)) return true;
+            let imp: &ImportLookup = at(&currModule.imports, i);
+            let importedModule: &ModuleLookup = at(&this.modules, imp.moduleID);
+            if (resolveTypeByName(importedModule, name, typ)) return true;
         }
         return false;
     }
@@ -134,7 +134,7 @@ struct Lookup {
         if (typ.isStruct()) {
             let strukt: &ParsedStructDecl = structDecls.at(typ.typeIndex);
             let modID: usize = strukt.parentModule;
-            let s: &StructLookup = this.modules.at(modID).getStructByGlobalID(getID(strukt));
+            let s: &StructLookup = getStructByGlobalID(at(&this.modules, modID), getID(strukt));
             return newTypeLookup(TYPE_LOOKUP_STRUCT, s);
         } else {
             unreachable("Lookup.getTypeLookupForType got non-struct type");
@@ -146,8 +146,8 @@ struct Lookup {
         let list: TypeLookupList = blank;
         for (let i: usize = 0; i < this.modules.length; i = i + 1) {
             let t: TypeLookup = blank;
-            if (this.modules.at(i).resolveTypeByName(name, &t)) {
-                list.push(t);
+            if (resolveTypeByName(at(&this.modules, i), name, &t)) {
+                push(&list, t);
             }
         }
         return list;
@@ -156,8 +156,8 @@ struct Lookup {
         trace("Lookup.searchAllModulesForFunctionName");
         let list: FunctionLookupList = blank;
         for (let i: usize = 0; i < this.modules.length; i = i + 1) {
-            let t: FunctionLookupList = this.modules.at(i).resolveFunctionByName(name);
-            list.extend(&t);
+            let t: FunctionLookupList = resolveFunctionByName(at(&this.modules, i), name);
+            extend(&list, &t);
         }
         return list;
     }
@@ -165,12 +165,12 @@ struct Lookup {
         trace("Lookup.searchAllModulesForIdentifier");
         let list: VariableLookupList = blank;
         for (let i: usize = 0; i < this.modules.length; i = i + 1) {
-            let m: &ModuleLookup = this.modules.at(i);
+            let m: &ModuleLookup = at(&this.modules, i);
             for (let j: usize = 0; j < m.variables.length; j = j + 1) {
-                let s: &ScopeLookup = m.variables.at(j);
+                let s: &ScopeLookup = at(&m.variables, j);
                 let v: VariableLookup = blank;
-                if (s.getVariableByName(name.content, &v)) {
-                    list.push(v);
+                if (getVariableByName(s, name.content, &v)) {
+                    push(&list, v);
                 }
             }
         }
@@ -185,192 +185,192 @@ struct ModuleLookup {
     functions: FunctionLookupList;
     structs: StructLookupList;
     variables: ScopeLookupList;
+}
 
-    func equals(&this, other: &ModuleLookup) -> bool {
-        return this.origin.equals(&other.origin);
-    }
+func equals(this: &ModuleLookup, other: &ModuleLookup) -> bool {
+    return this.origin.equals(&other.origin);
+}
 
-    func insertTLI(&this, tli: &ParsedTopLevelItem) {
-        trace("ModuleLookup.insertTLI");
-        if (tli.kind == TLI_FUNC_DECL) {
-            let fun: &ParsedFuncDecl = funcDecls.at(tli.nodeID);
-            let lookup: FunctionLookup = FunctionLookup {
-                globalID: tli.nodeID,
-                parentModule: this.globalID,
-                name: fun.name,
+func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) {
+    trace("ModuleLookup.insertTLI");
+    if (tli.kind == TLI_FUNC_DECL) {
+        let fun: &ParsedFuncDecl = funcDecls.at(tli.nodeID);
+        let lookup: FunctionLookup = FunctionLookup {
+            globalID: tli.nodeID,
+            parentModule: this.globalID,
+            name: fun.name,
+            returnType: blank,
+            params: blank,
+            readyState: FUNC_INCOMPLETE,
+            isVarArg: fun.params.isVarArg,
+        };
+        push(&this.functions, lookup);
+    } else if (tli.kind == TLI_IMPORT) {
+        let modID: usize = tli.nodeID;
+        assert(modID < modules.length);
+        let lookup: ImportLookup = ImportLookup {
+            moduleID: modID
+        };
+        if (contains(&this.imports, &lookup)) {
+            todo_with_msg("double import");
+        }
+        push(&this.imports, lookup);
+    } else if (tli.kind == TLI_STRUCT_DECL) {
+        let strukt: &ParsedStructDecl = structDecls.at(tli.nodeID);
+        let lookup: StructLookup = StructLookup {
+            globalID: tli.nodeID,
+            parentModule: this.globalID,
+            name: strukt.name,
+            readyState: STRUCT_INCOMPLETE,
+            fields: blank,
+            methods: blank,
+            typeID: newType(TYPE_KIND_STRUCT, tli.nodeID).getID(),
+        };
+        for (let i: usize = 0; i < strukt.context.methodLength; i = i + 1) {
+            let id: usize = strukt.context.getMethodAtIndex(i);
+            let method: &ParsedMethod = methods.at(id);
+            let mLookup: MethodLookup = MethodLookup {
+                globalID: id,
+                name: method.name,
+                isStatic: false,
                 returnType: blank,
                 params: blank,
-                readyState: FUNC_INCOMPLETE,
-                isVarArg: fun.params.isVarArg,
+                readyState: METHOD_INCOMPLETE,
             };
-            this.functions.push(lookup);
-        } else if (tli.kind == TLI_IMPORT) {
-            let modID: usize = tli.nodeID;
-            assert(modID < modules.length);
-            let lookup: ImportLookup = ImportLookup {
-                moduleID: modID
-            };
-            if (this.imports.contains(&lookup)) {
-                todo_with_msg("double import");
-            }
-            this.imports.push(lookup);
-        } else if (tli.kind == TLI_STRUCT_DECL) {
-            let strukt: &ParsedStructDecl = structDecls.at(tli.nodeID);
-            let lookup: StructLookup = StructLookup {
-                globalID: tli.nodeID,
-                parentModule: this.globalID,
-                name: strukt.name,
-                readyState: STRUCT_INCOMPLETE,
-                fields: blank,
-                methods: blank,
-                typeID: newType(TYPE_KIND_STRUCT, tli.nodeID).getID(),
-            };
-            for (let i: usize = 0; i < strukt.context.methodLength; i = i + 1) {
-                let id: usize = strukt.context.getMethodAtIndex(i);
-                let method: &ParsedMethod = methods.at(id);
-                let mLookup: MethodLookup = MethodLookup {
-                    globalID: id,
-                    name: method.name,
-                    isStatic: false,
-                    returnType: blank,
-                    params: blank,
-                    readyState: METHOD_INCOMPLETE,
-                };
-                lookup.methods.push(mLookup);
-            }
-            if (this.structs.contains(&lookup)) {
-                todo_with_msg("double struct");
-            }
-            this.structs.push(lookup);
-        } else if (tli.kind == TLI_VAR_DECL) {
-            let varDecl: &ParsedStmt = stmts.at(tli.nodeID);
-            assert(varDecl.kind == STMT_VAR_DECL);
-            let lookup: VariableLookup = VariableLookup {
-                globalID: tli.nodeID,
-                name: varDecl.varDeclContext.name,
-                typeState: blank,
-                isComptime: varDecl.varDeclContext.isComptime,
-            };
-            assert(this.variables.length == 1, "expected to find only the global scope");
-            let globalScope: &ScopeLookup = this.variables.last();
-            let loc: Token = blank;
-            if (globalScope.isKnownVariable(lookup.name.content, &loc)) {
-                todo_with_msg("double global var");
-            }
-            globalScope.addVariable(lookup);
-        } else {
-            todo_with_msg("insert tli");
+            push(&lookup.methods, mLookup);
+        }
+        if (contains(&this.structs, &lookup)) {
+            todo_with_msg("double struct");
+        }
+        push(&this.structs, lookup);
+    } else if (tli.kind == TLI_VAR_DECL) {
+        let varDecl: &ParsedStmt = stmts.at(tli.nodeID);
+        assert(varDecl.kind == STMT_VAR_DECL);
+        let lookup: VariableLookup = VariableLookup {
+            globalID: tli.nodeID,
+            name: varDecl.varDeclContext.name,
+            typeState: blank,
+            isComptime: varDecl.varDeclContext.isComptime,
+        };
+        assert(this.variables.length == 1, "expected to find only the global scope");
+        let globalScope: &ScopeLookup = last(&this.variables);
+        let loc: Token = blank;
+        if (isKnownVariable(globalScope, lookup.name.content, &loc)) {
+            todo_with_msg("double global var");
+        }
+        addVariable(globalScope, lookup);
+    } else {
+        todo_with_msg("insert tli");
+    }
+}
+
+// FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
+func containsDuplicateFunction(this: &ModuleLookup, function: &FunctionLookup, dupl: &usize) -> bool {
+    trace("ModuleLookup.containsDuplicateFunction");
+    let name: String = getMangledName(funcDecls.at(function.globalID));
+    let duplicate: bool = false;
+    for (let i: usize = 0; !duplicate && i < this.functions.length; i = i + 1) {
+        let f: &FunctionLookup = at(&this.functions, i);
+        // REVIEW: is FUNC_DUPLICATE_CHECK always correct, or is it better to check FUNC_READY_TO_USE
+        if (f == function) continue;
+        if (!getReadyState(f, FUNC_DUPLICATE_CHECK)) continue;
+        let n: String = getMangledName(funcDecls.at(f.globalID));
+        if (name.equals(&n)) {
+            *dupl = f as usize;
+            duplicate = true;
+        }
+        n.drop();
+    }
+    return duplicate;
+}
+
+func getFunctionByGlobalID(this: &ModuleLookup, funcID: usize) -> &FunctionLookup {
+    trace("ModuleLookup.getFunctionByGlobalID");
+    for (let i: usize = 0; i < this.functions.length; i = i + 1) {
+        let f: &FunctionLookup = at(&this.functions, i);
+        if (f.globalID == funcID) {
+            return f;
         }
     }
+    unreachable("Lookup failed to find function based on global ID!");
+}
 
-    // FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
-    func containsDuplicateFunction(&this, function: &FunctionLookup, dupl: &usize) -> bool {
-        trace("ModuleLookup.containsDuplicateFunction");
-        let name: String = getMangledName(funcDecls.at(function.globalID));
-        let duplicate: bool = false;
-        for (let i: usize = 0; !duplicate && i < this.functions.length; i = i + 1) {
-            let f: &FunctionLookup = this.functions.at(i);
-            // REVIEW: is FUNC_DUPLICATE_CHECK always correct, or is it better to check FUNC_READY_TO_USE
-            if (f == function) continue;
-            if (!f.getReadyState(FUNC_DUPLICATE_CHECK)) continue;
-            let n: String = getMangledName(funcDecls.at(f.globalID));
-            if (name.equals(&n)) {
-                *dupl = f as usize;
-                duplicate = true;
-            }
-            n.drop();
+func getStructByGlobalID(this: &ModuleLookup, structID: usize) -> &StructLookup {
+    trace("ModuleLookup.getStructByGlobalID");
+    for (let i: usize = 0; i < this.structs.length; i = i + 1) {
+        let s: &StructLookup = at(&this.structs, i);
+        if (s.globalID == structID) {
+            return s;
         }
-        return duplicate;
     }
+    unreachable("Lookup failed to find struct based on global ID!");
+}
 
-    func getFunctionByGlobalID(&this, funcID: usize) -> &FunctionLookup {
-        trace("ModuleLookup.getFunctionByGlobalID");
-        for (let i: usize = 0; i < this.functions.length; i = i + 1) {
-            let f: &FunctionLookup = this.functions.at(i);
-            if (f.globalID == funcID) {
-                return f;
-            }
+func resolveFunctionByName(this: &ModuleLookup, name: &Token) -> FunctionLookupList {
+    trace("ModuleLookup.resolveFunctionByName");
+    let list: FunctionLookupList = blank;
+    for (let i: usize = 0; i < this.functions.length; i = i + 1) {
+        let f: &FunctionLookup = at(&this.functions, i);
+        if (f.name.content.equals(&name.content)) {
+            push(&list, *f);
         }
-        unreachable("Lookup failed to find function based on global ID!");
     }
+    return list;
+}
 
-    func getStructByGlobalID(&this, structID: usize) -> &StructLookup {
-        trace("ModuleLookup.getStructByGlobalID");
-        for (let i: usize = 0; i < this.structs.length; i = i + 1) {
-            let s: &StructLookup = this.structs.at(i);
-            if (s.globalID == structID) {
-                return s;
-            }
+func resolveAllFunctionsWithReturnType(this: &ModuleLookup, name: &Token, typ: &Type, list: &FunctionLookupList) -> bool {
+    trace("ModuleLookup.resolveAllFunctionsWithReturnType");
+    for (let i: usize = 0; i < this.functions.length; i = i + 1) {
+        let f: &FunctionLookup = at(&this.functions, i);
+        if (!getReadyState(f, FUNC_RETTYPE_COMPLETE)) {
+            return false;
         }
-        unreachable("Lookup failed to find struct based on global ID!");
-    }
-
-    func resolveFunctionByName(&this, name: &Token) -> FunctionLookupList {
-        trace("ModuleLookup.resolveFunctionByName");
-        let list: FunctionLookupList = blank;
-        for (let i: usize = 0; i < this.functions.length; i = i + 1) {
-            let f: &FunctionLookup = this.functions.at(i);
-            if (f.name.content.equals(&name.content)) {
-                list.push(*f);
-            }
+        if (!f.name.content.equals(&name.content)) {
+            continue;
         }
-        return list;
+        let t = types.at(getType(&f.returnType));
+        if (t.equals(typ)) {
+            push(list, *f);
+        }
     }
+    return true;
+}
 
-    func resolveAllFunctionsWithReturnType(&this, name: &Token, typ: &Type, list: &FunctionLookupList) -> bool {
-        trace("ModuleLookup.resolveAllFunctionsWithReturnType");
-        for (let i: usize = 0; i < this.functions.length; i = i + 1) {
-            let f: &FunctionLookup = this.functions.at(i);
-            if (!f.getReadyState(FUNC_RETTYPE_COMPLETE)) {
-                return false;
-            }
-            if (!f.name.content.equals(&name.content)) {
-                continue;
-            }
-            let t = types.at(f.returnType.getType());
+func resolveAllStructsWithField(this: &ModuleLookup, name: &Token, typ: &Type) -> StructLookupList {
+    trace("ModuleLookup.resolveAllStructsWithField");
+    let list: StructLookupList = blank;
+    for (let i: usize = 0; i < this.structs.length; i = i + 1) {
+        let s: &StructLookup = at(&this.structs, i);
+        let v: VariableLookup = blank;
+        if (resolveFieldByName(s, name, &v)) {
+            assert(isType(&v.typeState));
+            let t = types.at(getType(&v.typeState));
             if (t.equals(typ)) {
-                list.push(*f);
+                push(&list, *s);
             }
         }
-        return true;
     }
+    return list;
+}
 
-    func resolveAllStructsWithField(&this, name: &Token, typ: &Type) -> StructLookupList {
-        trace("ModuleLookup.resolveAllStructsWithField");
-        let list: StructLookupList = blank;
-        for (let i: usize = 0; i < this.structs.length; i = i + 1) {
-            let s: &StructLookup = this.structs.at(i);
-            let v: VariableLookup = blank;
-            if (s.resolveFieldByName(name, &v)) {
-                assert(v.typeState.isType());
-                let t = types.at(v.typeState.getType());
-                if (t.equals(typ)) {
-                    list.push(*s);
-                }
-            }
+func resolveTypeByName(this: &ModuleLookup, name: &Token, typ: &TypeLookup) -> bool {
+    trace("ModuleLookup.resolveTypeByName");
+    for (let i: usize = 0; i < this.structs.length; i = i + 1) {
+        let s: &StructLookup = at(&this.structs, i);
+        if (s.name.content.equals(&name.content)) {
+            *typ = newTypeLookup(TYPE_LOOKUP_STRUCT, s);
+            return true;
         }
-        return list;
     }
-
-    func resolveTypeByName(&this, name: &Token, typ: &TypeLookup) -> bool {
-        trace("ModuleLookup.resolveTypeByName");
-        for (let i: usize = 0; i < this.structs.length; i = i + 1) {
-            let s: &StructLookup = this.structs.at(i);
-            if (s.name.content.equals(&name.content)) {
-                *typ = newTypeLookup(TYPE_LOOKUP_STRUCT, s);
-                return true;
-            }
-        }
-        return false;
-    }
+    return false;
 }
 
 struct ImportLookup {
     moduleID: usize;
+}
 
-    func equals(&this, other: &ImportLookup) -> bool {
-        return this.moduleID == other.moduleID;
-    }
+func equals(this: &ImportLookup, other: &ImportLookup) -> bool {
+    return this.moduleID == other.moduleID;
 }
 
 comptime FUNC_INCOMPLETE       : usize = pow2(0);
@@ -388,47 +388,47 @@ struct FunctionLookup {
     params: VariableLookupList;
     readyState: usize;
     isVarArg: bool;
+}
 
-    func getReadyState(&this, state: usize) -> bool {
-        return (this.readyState & state) != 0;
-    }
-    func setReadyState(&this, state: usize) {
-        assert(!this.getReadyState(state), "FunctionLookup.readyState is already set");
-        this.readyState = this.readyState | state;
-    }
+func getReadyState(this: &FunctionLookup, state: usize) -> bool {
+    return (this.readyState & state) != 0;
+}
+func setReadyState(this: &FunctionLookup, state: usize) {
+    assert(!getReadyState(this, state), "FunctionLookup.readyState is already set");
+    this.readyState = this.readyState | state;
+}
 
-    func setReturnType(&this, typ: TCState) {
-        trace("FunctionLookup.setReturnType");
-        this.returnType = typ;
-    }
+func setReturnType(this: &FunctionLookup, typ: TCState) {
+    trace("FunctionLookup.setReturnType");
+    this.returnType = typ;
+}
 
-    func addParameter(&this, globalID: usize, name: Token, typeState: TCState) {
-        trace("FunctionLookup.addParameter");
-        this.params.push(VariableLookup {
-            globalID: globalID,
-            name: name,
-            typeState: typeState,
-            // REVIEW: Comptime params?
-            isComptime: false,
-        });
-    }
+func addParameter(this: &FunctionLookup, globalID: usize, name: Token, typeState: TCState) {
+    trace("FunctionLookup.addParameter");
+    push(&this.params, VariableLookup {
+        globalID: globalID,
+        name: name,
+        typeState: typeState,
+        // REVIEW: Comptime params?
+        isComptime: false,
+    });
+}
 
-    func checkForDuplicateParam(&this, name: &Token, dupl: &VariableLookup) -> bool {
-        trace("FunctionLookup.checkForDuplicateParam");
-        for (let i: usize = 0; i < this.params.length; i = i + 1) {
-            let param: &VariableLookup = this.params.at(i);
-            if (param.name.content.equals(&name.content)) {
-                *dupl = *param;
-                return true;
-            }
+func checkForDuplicateParam(this: &FunctionLookup, name: &Token, dupl: &VariableLookup) -> bool {
+    trace("FunctionLookup.checkForDuplicateParam");
+    for (let i: usize = 0; i < this.params.length; i = i + 1) {
+        let param: &VariableLookup = at(&this.params, i);
+        if (param.name.content.equals(&name.content)) {
+            *dupl = *param;
+            return true;
         }
-        return false;
     }
+    return false;
+}
 
-    func equals(&this, other: &FunctionLookup) -> bool {
-        warning("When are two functions equal");
-        return this.name.equals(&other.name);
-    }
+func equals(this: &FunctionLookup, other: &FunctionLookup) -> bool {
+    warning("When are two functions equal");
+    return this.name.equals(&other.name);
 }
 
 comptime TYPE_LOOKUP_INVALID: usize = 0;
@@ -436,39 +436,39 @@ comptime TYPE_LOOKUP_STRUCT: usize = 1;
 struct TypeLookup {
     kind: usize;
     actual: Any;
+}
 
-    func getName(&this) -> String {
-        if (this.kind == TYPE_LOOKUP_STRUCT) {
-            return this.asStruct().name.content.toString();
-        } else {
-            unreachable("Exhaustive handling in TypeLookup.getName");
-        }
+func getName(this: &TypeLookup) -> String {
+    if (this.kind == TYPE_LOOKUP_STRUCT) {
+        return asStruct(this).name.content.toString();
+    } else {
+        unreachable("Exhaustive handling in TypeLookup.getName");
     }
+}
 
-    func getLocation(&this) -> String {
-        if (this.kind == TYPE_LOOKUP_STRUCT) {
-            return toString(&this.asStruct().name.span);
-        } else {
-            unreachable("Exhaustive handling in TypeLookup.getLocation");
-        }
+func getLocation(this: &TypeLookup) -> String {
+    if (this.kind == TYPE_LOOKUP_STRUCT) {
+        return toString(&asStruct(this).name.span);
+    } else {
+        unreachable("Exhaustive handling in TypeLookup.getLocation");
     }
+}
 
-    func equals(&this, other: &TypeLookup) -> bool {
-        if (this.kind != other.kind) return false;
-        if (this.kind == TYPE_LOOKUP_STRUCT) {
-            return this.asStruct().equals(other.asStruct() as &StructLookup);
-        }
-        unreachable("Exhaustive handling in TypeLookup.equals");
+func equals(this: &TypeLookup, other: &TypeLookup) -> bool {
+    if (this.kind != other.kind) return false;
+    if (this.kind == TYPE_LOOKUP_STRUCT) {
+        return equals(asStruct(this), asStruct(other));
     }
+    unreachable("Exhaustive handling in TypeLookup.equals");
+}
 
-    func isStruct(&this) -> bool {
-        return this.kind == TYPE_LOOKUP_STRUCT;
-    }
+func isStruct(this: &TypeLookup) -> bool {
+    return this.kind == TYPE_LOOKUP_STRUCT;
+}
 
-    func asStruct(&this) -> &StructLookup {
-        assert(this.isStruct(), "Attempted to convert non-struct TypeLookup into StructLookup");
-        return this.actual as &StructLookup;
-    }
+func asStruct(this: &TypeLookup) -> &StructLookup {
+    assert(isStruct(this), "Attempted to convert non-struct TypeLookup into StructLookup");
+    return this.actual as &StructLookup;
 }
 
 func newTypeLookup(kind: usize, actual: Any) -> TypeLookup {
@@ -492,122 +492,122 @@ struct StructLookup {
     fields: VariableLookupList;
     methods: MethodLookupList;
     typeID: usize;
+}
 
-    func getReadyState(&this, state: usize) -> bool {
-        return (this.readyState & state) != 0;
-    }
-    func setReadyState(&this, state: usize) {
-        assert(!this.getReadyState(state), "StructLookup.readyState is already set");
-        this.readyState = this.readyState | state;
-    }
+func getReadyState(this: &StructLookup, state: usize) -> bool {
+    return (this.readyState & state) != 0;
+}
+func setReadyState(this: &StructLookup, state: usize) {
+    assert(!getReadyState(this, state), "StructLookup.readyState is already set");
+    this.readyState = this.readyState | state;
+}
 
-    func asTypeLookup(&this) -> TypeLookup {
-        return newTypeLookup(TYPE_LOOKUP_STRUCT, this);
-    }
-    func equals(&this, other: &StructLookup) -> bool {
-        if (this.parentModule != other.parentModule) return false;
-        return this.name.content.equals(&other.name.content);
-    }
+func asTypeLookup(this: &StructLookup) -> TypeLookup {
+    return newTypeLookup(TYPE_LOOKUP_STRUCT, this);
+}
+func equals(this: &StructLookup, other: &StructLookup) -> bool {
+    if (this.parentModule != other.parentModule) return false;
+    return this.name.content.equals(&other.name.content);
+}
 
-    func resolveFieldByName(&this, name: &Token, out: &VariableLookup) -> bool {
-        trace("StructLookup.resolveFieldByName");
-        for (let i: usize = 0; i < this.fields.length; i = i + 1) {
-            let f: &VariableLookup = this.fields.at(i);
-            if (f.name.content.equals(&name.content)) {
-                *out = *f;
-                return true;
-            }
+func resolveFieldByName(this: &StructLookup, name: &Token, out: &VariableLookup) -> bool {
+    trace("StructLookup.resolveFieldByName");
+    for (let i: usize = 0; i < this.fields.length; i = i + 1) {
+        let f: &VariableLookup = at(&this.fields, i);
+        if (f.name.content.equals(&name.content)) {
+            *out = *f;
+            return true;
         }
-        return false;
     }
+    return false;
+}
 
-    func hasField(&this, name: &SubStr) -> bool {
-        trace("StructLookup.hasField");
-        for (let i: usize = 0; i < this.fields.length; i = i + 1) {
-            let f: &VariableLookup = this.fields.at(i);
-            if (f.name.content.equals(name)) {
-                return true;
-            }
+func hasField(this: &StructLookup, name: &SubStr) -> bool {
+    trace("StructLookup.hasField");
+    for (let i: usize = 0; i < this.fields.length; i = i + 1) {
+        let f: &VariableLookup = at(&this.fields, i);
+        if (f.name.content.equals(name)) {
+            return true;
         }
-        return false;
     }
+    return false;
+}
 
-    // FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
-    func containsDuplicateMethod(&this, method: &MethodLookup, dupl: &usize) -> bool {
-        trace("StructLookup.containsDuplicateMethod");
-        let name: String = getMangledName(methods.at(method.globalID));
-        let duplicate: bool = false;
-        for (let i: usize = 0; !duplicate && i < this.methods.length; i = i + 1) {
-            let f: &MethodLookup = this.methods.at(i);
-            // REVIEW: is METHOD_DUPLICATE_CHECK always correct, or is it better to check METHOD_READY_TO_USE
-            if (f == method) continue;
-            if (!f.getReadyState(METHOD_DUPLICATE_CHECK)) continue;
-            let n: String = getMangledName(methods.at(f.globalID));
-            if (name.equals(&n)) {
-                *dupl = f as usize;
-                duplicate = true;
-            }
-            n.drop();
+// FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
+func containsDuplicateMethod(this: &StructLookup, method: &MethodLookup, dupl: &usize) -> bool {
+    trace("StructLookup.containsDuplicateMethod");
+    let name: String = getMangledName(methods.at(method.globalID));
+    let duplicate: bool = false;
+    for (let i: usize = 0; !duplicate && i < this.methods.length; i = i + 1) {
+        let m: &MethodLookup = at(&this.methods, i);
+        // REVIEW: is METHOD_DUPLICATE_CHECK always correct, or is it better to check METHOD_READY_TO_USE
+        if (m == method) continue;
+        if (!getReadyState(m, METHOD_DUPLICATE_CHECK)) continue;
+        let n: String = getMangledName(methods.at(m.globalID));
+        if (name.equals(&n)) {
+            *dupl = m as usize;
+            duplicate = true;
         }
-        return duplicate;
+        n.drop();
     }
+    return duplicate;
+}
 
-    func resolveMethodByName(&this, name: &Token) -> MethodLookupList {
-        trace("StructLookup.resolveMethodByName");
-        let methods: MethodLookupList = blank;
-        for (let i: usize = 0; i < this.methods.length; i = i + 1) {
-            let m: &MethodLookup = this.methods.at(i);
-            if (m.name.content.equals(&name.content)) {
-                methods.push(*m);
-            }
+func resolveMethodByName(this: &StructLookup, name: &Token) -> MethodLookupList {
+    trace("StructLookup.resolveMethodByName");
+    let methods: MethodLookupList = blank;
+    for (let i: usize = 0; i < this.methods.length; i = i + 1) {
+        let m: &MethodLookup = at(&this.methods, i);
+        if (m.name.content.equals(&name.content)) {
+            push(&methods, *m);
         }
-        return methods;
     }
+    return methods;
+}
 
-    func getIndexByName(&this, name: &Token) -> usize {
-        trace("StructLookup.getIndexByName");
-        for (let i: usize = 0; i < this.fields.length; i = i + 1) {
-            let f: &VariableLookup = this.fields.at(i);
-            if (f.name.content.equals(&name.content)) {
-                return i;
-            }
+func getIndexByName(this: &StructLookup, name: &Token) -> usize {
+    trace("StructLookup.getIndexByName");
+    for (let i: usize = 0; i < this.fields.length; i = i + 1) {
+        let f: &VariableLookup = at(&this.fields, i);
+        if (f.name.content.equals(&name.content)) {
+            return i;
         }
-        assert(this.hasField(&name.content), "StructLookup.getIndexByName() called when StructLookup.hasField() == false");
-        unreachable("StructLookup.getIndexByName does not have a field with the given name");
     }
+    assert(hasField(this, &name.content), "StructLookup.getIndexByName() called when StructLookup.hasField() == false");
+    unreachable("StructLookup.getIndexByName does not have a field with the given name");
+}
 
-    func checkForDuplicateField(&this, name: &Token, dupl: &VariableLookup) -> bool {
-        trace("StructLookup.checkForDuplicateField");
-        for (let i: usize = 0; i < this.fields.length; i = i + 1) {
-            let f: &VariableLookup = this.fields.at(i);
-            if (f.name.content.equals(&name.content)) {
-                *dupl = *f;
-                return true;
-            }
+func checkForDuplicateField(this: &StructLookup, name: &Token, dupl: &VariableLookup) -> bool {
+    trace("StructLookup.checkForDuplicateField");
+    for (let i: usize = 0; i < this.fields.length; i = i + 1) {
+        let f: &VariableLookup = at(&this.fields, i);
+        if (f.name.content.equals(&name.content)) {
+            *dupl = *f;
+            return true;
         }
-        return false;
     }
+    return false;
+}
 
-    func addField(&this, globalID: usize, name: Token, typeState: TCState) {
-        trace("StructLookup.addField");
-        this.fields.push(VariableLookup {
-            globalID: globalID,
-            name: name,
-            typeState: typeState,
-            // REVIEW: Comptime fields?
-            isComptime: false,
-        });
-    }
-    func getMethodByGlobalID(&this, methodID: usize) -> &MethodLookup {
-        trace("StructLookup.getMethodByGlobalID");
-        for (let i: usize = 0; i < this.methods.length; i = i + 1) {
-            let f: &MethodLookup = this.methods.at(i);
-            if (f.globalID == methodID) {
-                return f;
-            }
+func addField(this: &StructLookup, globalID: usize, name: Token, typeState: TCState) {
+    trace("StructLookup.addField");
+    push(&this.fields, VariableLookup {
+        globalID: globalID,
+        name: name,
+        typeState: typeState,
+        // REVIEW: Comptime fields?
+        isComptime: false,
+    });
+}
+func getMethodByGlobalID(this: &StructLookup, methodID: usize) -> &MethodLookup {
+    trace("StructLookup.getMethodByGlobalID");
+    for (let i: usize = 0; i < this.methods.length; i = i + 1) {
+        let f: &MethodLookup = at(&this.methods, i);
+        if (f.globalID == methodID) {
+            return f;
         }
-        unreachable("Lookup failed to find method based on global ID!");
     }
+    unreachable("Lookup failed to find method based on global ID!");
 }
 
 comptime METHOD_INCOMPLETE       : usize = pow2(0);
@@ -624,48 +624,48 @@ struct MethodLookup {
     returnType: TCState;
     params: VariableLookupList;
     readyState: usize;
+}
 
-    func getReadyState(&this, state: usize) -> bool {
-        return (this.readyState & state) != 0;
-    }
-    func setReadyState(&this, state: usize) {
-        assert(!this.getReadyState(state), "MethodLookup.readyState is already set");
-        this.readyState = this.readyState | state;
-    }
+func getReadyState(this: &MethodLookup, state: usize) -> bool {
+    return (this.readyState & state) != 0;
+}
+func setReadyState(this: &MethodLookup, state: usize) {
+    assert(!getReadyState(this, state), "MethodLookup.readyState is already set");
+    this.readyState = this.readyState | state;
+}
 
-    func equals(&this, other: &MethodLookup) -> bool {
-        todo_with_msg("MethodLookup.equals");
-    }
+func equals(this: &MethodLookup, other: &MethodLookup) -> bool {
+    todo_with_msg("MethodLookup.equals");
+}
 
-    func checkForDuplicateParam(&this, name: &Token, dupl: &VariableLookup) -> bool {
-        trace("MethodLookup.checkForDuplicateParam");
-        for (let i: usize = 0; i < this.params.length; i = i + 1) {
-            let param: &VariableLookup = this.params.at(i);
-            if (param.name.content.equals(&name.content)) {
-                *dupl = *param;
-                return true;
-            }
+func checkForDuplicateParam(this: &MethodLookup, name: &Token, dupl: &VariableLookup) -> bool {
+    trace("MethodLookup.checkForDuplicateParam");
+    for (let i: usize = 0; i < this.params.length; i = i + 1) {
+        let param: &VariableLookup = at(&this.params, i);
+        if (param.name.content.equals(&name.content)) {
+            *dupl = *param;
+            return true;
         }
-        return false;
     }
+    return false;
+}
 
-    func addParameter(&this, globalID: usize, name: Token, typeState: TCState) {
-        trace("MethodLookup.addParameter");
-        assert(typeState.isType(), "MethodLookup received non-type parameter type");
-        this.params.push(VariableLookup {
-            globalID: globalID,
-            name: name,
-            typeState: typeState,
-            // REVIEW: Comptime params?
-            isComptime: false,
-        });
-    }
+func addParameter(this: &MethodLookup, globalID: usize, name: Token, typeState: TCState) {
+    trace("MethodLookup.addParameter");
+    assert(isType(&typeState), "MethodLookup received non-type parameter type");
+    push(&this.params, VariableLookup {
+        globalID: globalID,
+        name: name,
+        typeState: typeState,
+        // REVIEW: Comptime params?
+        isComptime: false,
+    });
+}
 
-    func setReturnType(&this, typ: TCState) {
-        trace("MethodLookup.setReturnType");
-        assert(typ.isType(), "MethodLookup received non-type return type");
-        this.returnType = typ;
-    }
+func setReturnType(this: &MethodLookup, typ: TCState) {
+    trace("MethodLookup.setReturnType");
+    assert(isType(&typ), "MethodLookup received non-type return type");
+    this.returnType = typ;
 }
 
 struct VariableLookup {
@@ -673,70 +673,70 @@ struct VariableLookup {
     name: Token;
     typeState: TCState;
     isComptime: bool;
+}
 
-    func isParameter(&this) -> bool {
-        return this.globalID >= NODE_ID_OFFSET;
-    }
+func isParameter(this: &VariableLookup) -> bool {
+    return this.globalID >= NODE_ID_OFFSET;
+}
 
-    func equals(&this, other: &VariableLookup) -> bool {
-        return this.name.content.equals(&other.name.content);
-    }
+func equals(this: &VariableLookup, other: &VariableLookup) -> bool {
+    return this.name.content.equals(&other.name.content);
 }
 
 struct ScopeLookup {
     variables: VariableLookupList;
+}
 
-    func equals(&this, other: &ScopeLookup) -> bool {
-        todo_with_msg("when are two scopes equal");
-    }
-    func addVariable(&this, variable: VariableLookup) {
-        trace("ScopeLookup.addVariable");
-        this.variables.push(variable);
-    }
+func equals(this: &ScopeLookup, other: &ScopeLookup) -> bool {
+    todo_with_msg("when are two scopes equal");
+}
+func addVariable(this: &ScopeLookup, variable: VariableLookup) {
+    trace("ScopeLookup.addVariable");
+    push(&this.variables, variable);
+}
 
-    func isKnownVariable(&this, name: SubStr, existing: &Token) -> bool {
-        trace("ScopeLookup.isKnownVariable");
-        for (let i: usize = 0; i < this.variables.length; i = i + 1) {
-            let v: &VariableLookup = this.variables.at(i);
-            if (v.name.content.equals(&name)) {
-                *existing = v.name;
-                return true;
-            }
+func isKnownVariable(this: &ScopeLookup, name: SubStr, existing: &Token) -> bool {
+    trace("ScopeLookup.isKnownVariable");
+    for (let i: usize = 0; i < this.variables.length; i = i + 1) {
+        let v: &VariableLookup = at(&this.variables, i);
+        if (v.name.content.equals(&name)) {
+            *existing = v.name;
+            return true;
         }
-        return false;
     }
+    return false;
+}
 
-    func getVarIndexByName(&this, name: SubStr, index: &usize) -> bool {
-        trace("ScopeLookup.getVarIndexByName");
-        for (let i: usize = 0; i < this.variables.length; i = i + 1) {
-            let v: &VariableLookup = this.variables.at(i);
-            if (v.name.content.equals(&name)) {
-                *index = i;
-                return true;
-            }
+func getVarIndexByName(this: &ScopeLookup, name: SubStr, index: &usize) -> bool {
+    trace("ScopeLookup.getVarIndexByName");
+    for (let i: usize = 0; i < this.variables.length; i = i + 1) {
+        let v: &VariableLookup = at(&this.variables, i);
+        if (v.name.content.equals(&name)) {
+            *index = i;
+            return true;
         }
-        return false;
     }
+    return false;
+}
 
-    func getVariableByName(&this, name: SubStr, var: &VariableLookup) -> bool {
-        trace("ScopeLookup.getVariableByName");
-        for (let i: usize = 0; i < this.variables.length; i = i + 1) {
-            let v: &VariableLookup = this.variables.at(i);
-            if (v.name.content.equals(&name)) {
-                *var = *v;
-                return true;
-            }
+func getVariableByName(this: &ScopeLookup, name: SubStr, var: &VariableLookup) -> bool {
+    trace("ScopeLookup.getVariableByName");
+    for (let i: usize = 0; i < this.variables.length; i = i + 1) {
+        let v: &VariableLookup = at(&this.variables, i);
+        if (v.name.content.equals(&name)) {
+            *var = *v;
+            return true;
         }
-        return false;
     }
+    return false;
+}
 
-    func getVariableAtIndex(&this, index: usize) -> &VariableLookup {
-        trace("ScopeLookup.getVariableAtIndex");
-        return this.variables.at(index);
-    }
+func getVariableAtIndex(this: &ScopeLookup, index: usize) -> &VariableLookup {
+    trace("ScopeLookup.getVariableAtIndex");
+    return at(&this.variables, index);
+}
 
-    func clear(&this) {
-        this.variables.clear();
-    }
+func clear(this: &ScopeLookup) {
+    clear(&this.variables);
 }
 

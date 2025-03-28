@@ -78,11 +78,11 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         assert(instr.isComptime, "Expected comptime instr in IRInterp.evaluateSingle");
     }
     assert(this.regStackBase < this.regStackStart + REG_STACK_SIZE, "Stack Cursor Overflow in IRInterp.evaluateSingle");
-    if (PRINT_DEBUG) instr.dump();
+    if (PRINT_DEBUG) dump(instr);
     if (instr.kind == INSTR_ALLOCA) {
         // dst: dst,
         // src: RegIndex { i: size },
-        let fReg: &IRReg = irFunc.getRegister(instr.dst);
+        let fReg: &IRReg = getRegister(irFunc, instr.dst);
         assert(fReg.typ.isPointer(), "Alloca got non-pointer");
         let reg: InterpReg = InterpReg {
             offset: fReg.offset,
@@ -93,8 +93,8 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
     } else if (instr.kind == INSTR_STORE) {
         // dst: ptr,
         // src: val,
-        let dst: &IRReg = irFunc.getRegister(instr.dst);
-        let src: &RegValue = regs.at(instr.src.i);
+        let dst: &IRReg = getRegister(irFunc, instr.dst);
+        let src: &RegValue = at(regs, instr.src.i);
         assert(dst.typ.isPointer(), "Store expected Ptr Dst");
         let dstReg: InterpReg = InterpReg {
             offset: dst.offset,
@@ -115,7 +115,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         let size: usize = instr.op1.i;
         assert(size <= 8, "Interp: Expected small size for GetParam");
         let dst: InterpReg = InterpReg {
-            offset: irFunc.getRegister(instr.dst).offset,
+            offset: getRegister(irFunc, instr.dst).offset,
             size: size,
         };
         popArgument(this, getRegStackPointer(this, &dst), size);
@@ -123,8 +123,8 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
     } else if (instr.kind == INSTR_LOAD) {
         // dst: reg,
         // src: ptr,
-        let dst: &IRReg = irFunc.getRegister(instr.dst);
-        let src: &RegValue = regs.at(instr.src.i);
+        let dst: &IRReg = getRegister(irFunc, instr.dst);
+        let src: &RegValue = at(regs, instr.src.i);
         let srcReg: InterpReg =  asInterp(src, "Load src");
         assert(srcReg.size == 8, "Load expected Ptr Src");
         let dstReg: InterpReg = InterpReg {
@@ -138,8 +138,8 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
     } else if (instr.kind == INSTR_MOVE) {
         // dst: reg,
         // src: ptr,
-        let dst: &IRReg = irFunc.getRegister(instr.dst);
-        let src: &RegValue = regs.at(instr.src.i);
+        let dst: &IRReg = getRegister(irFunc, instr.dst);
+        let src: &RegValue = at(regs, instr.src.i);
         let srcReg: InterpReg =  asInterp(src, "Interp Move src");
         let dstReg: InterpReg = InterpReg {
             offset: dst.offset,
@@ -150,7 +150,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         memcpy(dstLoc, srcLoc, dstReg.size);
         return dstReg;
     } else if (instr.kind == INSTR_LOAD_I8) {
-        let fReg: &IRReg = irFunc.getRegister(instr.dst);
+        let fReg: &IRReg = getRegister(irFunc, instr.dst);
         assert(fReg.typ.isInteger(), "LoadI8 got non-int");
         let reg: InterpReg = InterpReg {
             offset: fReg.offset,
@@ -160,7 +160,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         *(regStackLoc as &i8) = instr.src.i as i8;
         return reg;
     } else if (instr.kind == INSTR_LOAD_U8) {
-        let fReg: &IRReg = irFunc.getRegister(instr.dst);
+        let fReg: &IRReg = getRegister(irFunc, instr.dst);
         assert(fReg.typ.isInteger() || fReg.typ.isChar(), "LoadU8 got non-int non-char");
         let reg: InterpReg = InterpReg {
             offset: fReg.offset,
@@ -170,7 +170,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         *(regStackLoc as &u8) = instr.src.i as u8;
         return reg;
     } else if (instr.kind == INSTR_LOAD_I16) {
-        let fReg: &IRReg = irFunc.getRegister(instr.dst);
+        let fReg: &IRReg = getRegister(irFunc, instr.dst);
         assert(fReg.typ.isInteger(), "LoadI16 got non-int");
         let reg: InterpReg = InterpReg {
             offset: fReg.offset,
@@ -180,7 +180,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         *(regStackLoc as &i16) = instr.src.i as i16;
         return reg;
     } else if (instr.kind == INSTR_LOAD_U16) {
-        let fReg: &IRReg = irFunc.getRegister(instr.dst);
+        let fReg: &IRReg = getRegister(irFunc, instr.dst);
         assert(fReg.typ.isInteger(), "LoadU16 got non-int");
         let reg: InterpReg = InterpReg {
             offset: fReg.offset,
@@ -190,7 +190,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         *(regStackLoc as &u16) = instr.src.i as u16;
         return reg;
     } else if (instr.kind == INSTR_LOAD_I32) {
-        let fReg: &IRReg = irFunc.getRegister(instr.dst);
+        let fReg: &IRReg = getRegister(irFunc, instr.dst);
         assert(fReg.typ.isInteger(), "LoadI32 got non-int");
         let reg: InterpReg = InterpReg {
             offset: fReg.offset,
@@ -200,7 +200,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         *(regStackLoc as &i32) = instr.src.i as i32;
         return reg;
     } else if (instr.kind == INSTR_LOAD_U32) {
-        let fReg: &IRReg = irFunc.getRegister(instr.dst);
+        let fReg: &IRReg = getRegister(irFunc, instr.dst);
         assert(fReg.typ.isInteger(), "LoadU32 got non-int");
         let reg: InterpReg = InterpReg {
             offset: fReg.offset,
@@ -212,7 +212,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
     } else if (instr.kind == INSTR_LOAD_I64) {
         todo_with_msg("INSTR_LOAD_I64");
     } else if (instr.kind == INSTR_LOAD_U64) {
-        let fReg: &IRReg = irFunc.getRegister(instr.dst);
+        let fReg: &IRReg = getRegister(irFunc, instr.dst);
         assert(fReg.typ.isInteger(), "LoadU64 got non-int");
         let reg: InterpReg = InterpReg {
             offset: fReg.offset,
@@ -222,7 +222,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         *(regStackLoc as &usize) = instr.src.i;
         return reg;
     } else if (instr.kind == INSTR_LOAD_F32) {
-        let fReg: &IRReg = irFunc.getRegister(instr.dst);
+        let fReg: &IRReg = getRegister(irFunc, instr.dst);
         assert(fReg.typ.isFloat(), "LoadF32 got non-float");
         let reg: InterpReg = InterpReg {
             offset: fReg.offset,
@@ -232,7 +232,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         *(regStackLoc as &f32) = *(&instr.src.i as &f32);
         return reg;
     } else if (instr.kind == INSTR_LOAD_F64) {
-        let fReg: &IRReg = irFunc.getRegister(instr.dst);
+        let fReg: &IRReg = getRegister(irFunc, instr.dst);
         assert(fReg.typ.isFloat(), "LoadF64 got non-float");
         let reg: InterpReg = InterpReg {
             offset: fReg.offset,
@@ -244,7 +244,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
     } else if (instr.kind == INSTR_LOAD_BOOL) {
         let isTrue: u8 = instr.src.i as u8;
         assert(isTrue == 0 || isTrue == 1, "LoadBool expected 0 or 1");
-        let fReg: &IRReg = irFunc.getRegister(instr.dst);
+        let fReg: &IRReg = getRegister(irFunc, instr.dst);
         let reg: InterpReg = InterpReg {
             offset: fReg.offset,
             size: 1,
@@ -253,7 +253,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         *(regStackLoc as &u8) = isTrue;
         return reg;
     } else if (instr.kind == INSTR_LOAD_NULL) {
-        let fReg: &IRReg = irFunc.getRegister(instr.dst);
+        let fReg: &IRReg = getRegister(irFunc, instr.dst);
         assert(fReg.typ.isPointer(), "LoadNull got non-ptr");
         let reg: InterpReg = InterpReg {
             offset: fReg.offset,
@@ -263,7 +263,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         *(regStackLoc as &usize) = 0;
         return reg;
     } else if (instr.kind == INSTR_LOAD_BLANK) {
-        let dstReg: &IRReg = irFunc.getRegister(instr.dst);
+        let dstReg: &IRReg = getRegister(irFunc, instr.dst);
         let dst: InterpReg = InterpReg {
             offset: dstReg.offset,
             size: dstReg.typ.getSize(),
@@ -271,7 +271,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         memset(getRegStackPointer(this, &dst), 0, dst.size);
         return dst;
     } else if (instr.kind == INSTR_CREATE_STRUCT) {
-        let dstReg: &IRReg = irFunc.getRegister(instr.dst);
+        let dstReg: &IRReg = getRegister(irFunc, instr.dst);
         let dst: InterpReg = InterpReg {
             offset: dstReg.offset,
             size: dstReg.typ.getSize(),
@@ -282,7 +282,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         // dst: dst,
         // src: RegIndex { i: str.start as usize },
         // op1: RegIndex { i: str.len },
-        let fReg: &IRReg = irFunc.getRegister(instr.dst);
+        let fReg: &IRReg = getRegister(irFunc, instr.dst);
         assert(fReg.typ.isPointer(), "LoadString expected Ptr");
         assert(fReg.typ.getUnderlyingType(false).isChar(), "LoadString expected Ptr to Char");
         let reg: InterpReg = InterpReg {
@@ -297,19 +297,19 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         // src: funcID,
         // op1: blank,
         // args: args,
-        let dstReg: &IRReg = irFunc.getRegister(instr.dst);
+        let dstReg: &IRReg = getRegister(irFunc, instr.dst);
         let calledFunc: &IRFunc = this.irGen.functions.at(instr.src.i);
         let argSize: usize = this.argStackLength;
         let stackStart: &u8 = this.realStackStart;
         let regStackStart: &u8 = this.regStackStart;
         for (let _i: usize = 0; _i < instr.args.length; _i = _i + 1) {
             let i: usize = instr.args.length - _i - 1;
-            let reg: &RegValue = regs.at(instr.args.at(i).i);
+            let reg: &RegValue = at(regs, at(&instr.args, i).i);
             let arg: InterpReg = asInterp(reg, "call arg");
             pushArgument(this, getRegStackPointer(this, &arg), arg.size);
         }
         let regs: RegValueList = blank;
-        regs.initBlank(calledFunc.registers.length);
+        initBlank(&regs, calledFunc.registers.length);
         evaluateCall(this, instr.span, calledFunc, &regs);
         let size: usize = dstReg.typ.getSize();
         let dst: InterpReg = InterpReg {
@@ -325,7 +325,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         // dst: aggr,
         // src: RegIndex { i: index },
         // op1: val,
-        let dstReg: &IRReg = irFunc.getRegister(instr.dst);
+        let dstReg: &IRReg = getRegister(irFunc, instr.dst);
         let dst: InterpReg = InterpReg {
             offset: dstReg.offset,
             size: dstReg.typ.getSize(),
@@ -339,7 +339,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
             let offset: usize = 0;
             let fieldSize: usize = 0;
             getFieldOffsetAndSize(s, instr.src.i, &offset, &fieldSize);
-            let valReg: InterpReg = asInterp(regs.at(instr.op1.i), "Interp InsertValue Struct");
+            let valReg: InterpReg = asInterp(at(regs, instr.op1.i), "Interp InsertValue Struct");
             assert(valReg.size == fieldSize, "field size mismatch in Interp InsertValue");
             memcpy(dstStart + offset, getRegStackPointer(this, &valReg), fieldSize);
             return dst;
@@ -348,16 +348,16 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         }
     } else if (instr.kind == INSTR_INT_ADD) {
         // OPT: Specialized 8bit, 16bit, etc. variations
-        let lhs: &RegValue = regs.at(instr.src.i);
-        let rhs: &RegValue = regs.at(instr.op1.i);
+        let lhs: &RegValue = at(regs, instr.src.i);
+        let rhs: &RegValue = at(regs, instr.op1.i);
         let rLhs: InterpReg =  asInterp(lhs, "AddInt LHS");
         let rRhs: InterpReg =  asInterp(rhs, "AddInt RHS");
-        let t1: &Type = irFunc.getRegister(instr.src).typ;
+        let t1: &Type = getRegister(irFunc, instr.src).typ;
         let signed: bool = t1.isSignedInteger();
         let s1: usize = rLhs.size;
         let s2: usize = rRhs.size;
         assert(s1 == s2, "AddInt expected LHS and RHS to be the same size");
-        let dstReg: &IRReg = irFunc.getRegister(instr.dst);
+        let dstReg: &IRReg = getRegister(irFunc, instr.dst);
         let dst: InterpReg = InterpReg {
             offset: dstReg.offset,
             size: s1,
@@ -383,16 +383,16 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         return dst;
     } else if (instr.kind == INSTR_INT_SUB) {
         // OPT: Specialized 8bit, 16bit, etc. variations
-        let lhs: &RegValue = regs.at(instr.src.i);
-        let rhs: &RegValue = regs.at(instr.op1.i);
+        let lhs: &RegValue = at(regs, instr.src.i);
+        let rhs: &RegValue = at(regs, instr.op1.i);
         let rLhs: InterpReg =  asInterp(lhs, "SubInt LHS");
         let rRhs: InterpReg =  asInterp(rhs, "SubInt RHS");
-        let t1: &Type = irFunc.getRegister(instr.src).typ;
+        let t1: &Type = getRegister(irFunc, instr.src).typ;
         let signed: bool = t1.isSignedInteger();
         let s1: usize = rLhs.size;
         let s2: usize = rRhs.size;
         assert(s1 == s2, "SubInt expected LHS and RHS to be the same size");
-        let dstReg: &IRReg = irFunc.getRegister(instr.dst);
+        let dstReg: &IRReg = getRegister(irFunc, instr.dst);
         let dst: InterpReg = InterpReg {
             offset: dstReg.offset,
             size: s1,
@@ -418,16 +418,16 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         return dst;
     } else if (instr.kind == INSTR_INT_MUL) {
         // OPT: Specialized 8bit, 16bit, etc. variations
-        let lhs: &RegValue = regs.at(instr.src.i);
-        let rhs: &RegValue = regs.at(instr.op1.i);
+        let lhs: &RegValue = at(regs, instr.src.i);
+        let rhs: &RegValue = at(regs, instr.op1.i);
         let rLhs: InterpReg =  asInterp(lhs, "MulInt LHS");
         let rRhs: InterpReg =  asInterp(rhs, "MulInt RHS");
-        let t1: &Type = irFunc.getRegister(instr.src).typ;
+        let t1: &Type = getRegister(irFunc, instr.src).typ;
         let signed: bool = t1.isSignedInteger();
         let s1: usize = rLhs.size;
         let s2: usize = rRhs.size;
         assert(s1 == s2, "MulInt expected LHS and RHS to be the same size");
-        let dstReg: &IRReg = irFunc.getRegister(instr.dst);
+        let dstReg: &IRReg = getRegister(irFunc, instr.dst);
         let dst: InterpReg = InterpReg {
             offset: dstReg.offset,
             size: s1,
@@ -453,16 +453,16 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         return dst;
     } else if (instr.kind == INSTR_INT_MOD) {
         // OPT: Specialized 8bit, 16bit, etc. variations
-        let lhs: &RegValue = regs.at(instr.src.i);
-        let rhs: &RegValue = regs.at(instr.op1.i);
+        let lhs: &RegValue = at(regs, instr.src.i);
+        let rhs: &RegValue = at(regs, instr.op1.i);
         let rLhs: InterpReg =  asInterp(lhs, "ModInt LHS");
         let rRhs: InterpReg =  asInterp(rhs, "ModInt RHS");
-        let t1: &Type = irFunc.getRegister(instr.src).typ;
+        let t1: &Type = getRegister(irFunc, instr.src).typ;
         let signed: bool = t1.isSignedInteger();
         let s1: usize = rLhs.size;
         let s2: usize = rRhs.size;
         assert(s1 == s2, "ModInt expected LHS and RHS to be the same size");
-        let dstReg: &IRReg = irFunc.getRegister(instr.dst);
+        let dstReg: &IRReg = getRegister(irFunc, instr.dst);
         let dst: InterpReg = InterpReg {
             offset: dstReg.offset,
             size: s1,
@@ -488,15 +488,15 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         return dst;
     } else if (instr.kind == INSTR_FLOAT_DIV) {
         // OPT: Specialized 8bit, 16bit, etc. variations
-        let lhs: &RegValue = regs.at(instr.src.i);
-        let rhs: &RegValue = regs.at(instr.op1.i);
+        let lhs: &RegValue = at(regs, instr.src.i);
+        let rhs: &RegValue = at(regs, instr.op1.i);
         let rLhs: InterpReg =  asInterp(lhs, "FloatDiv LHS");
         let rRhs: InterpReg =  asInterp(rhs, "FloatDiv RHS");
-        let t1: &Type = irFunc.getRegister(instr.src).typ;
+        let t1: &Type = getRegister(irFunc, instr.src).typ;
         let s1: usize = rLhs.size;
         let s2: usize = rRhs.size;
         assert(s1 == s2, "FloatDiv expected LHS and RHS to be the same size");
-        let dstReg: &IRReg = irFunc.getRegister(instr.dst);
+        let dstReg: &IRReg = getRegister(irFunc, instr.dst);
         let dst: InterpReg = InterpReg {
             offset: dstReg.offset,
             size: s1,
@@ -513,16 +513,16 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         }
         return dst;
     } else if (instr.kind == INSTR_INT_CMP_EQ || instr.kind == INSTR_INT_CMP_NEQ) {
-        let lhs: &RegValue = regs.at(instr.src.i);
-        let rhs: &RegValue = regs.at(instr.op1.i);
+        let lhs: &RegValue = at(regs, instr.src.i);
+        let rhs: &RegValue = at(regs, instr.op1.i);
         let rLhs: InterpReg =  asInterp(lhs, "ICmpNeq/ICmpEq LHS");
         let rRhs: InterpReg =  asInterp(rhs, "ICmpNeq/ICmpEq RHS");
-        let t1: &Type = irFunc.getRegister(instr.src).typ;
-        let t2: &Type = irFunc.getRegister(instr.op1).typ;
+        let t1: &Type = getRegister(irFunc, instr.src).typ;
+        let t2: &Type = getRegister(irFunc, instr.op1).typ;
         let s1: usize = t1.getSize();
         let s2: usize = t2.getSize();
         assert(s1 == s2, "ICmpNeq/ICmpEq got differently sized operands");
-        let dstReg: &IRReg = irFunc.getRegister(instr.dst);
+        let dstReg: &IRReg = getRegister(irFunc, instr.dst);
         let dst: InterpReg = InterpReg {
             offset: dstReg.offset,
             size: 1,
@@ -557,16 +557,16 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         *start = r;
         return dst;
     } else if (instr.kind == INSTR_INT_CMP_GT || instr.kind == INSTR_INT_CMP_LTE) {
-        let lhs: &RegValue = regs.at(instr.src.i);
-        let rhs: &RegValue = regs.at(instr.op1.i);
+        let lhs: &RegValue = at(regs, instr.src.i);
+        let rhs: &RegValue = at(regs, instr.op1.i);
         let rLhs: InterpReg =  asInterp(lhs, "ICmpGt/ICmpLte LHS");
         let rRhs: InterpReg =  asInterp(rhs, "ICmpGt/ICmpLte RHS");
-        let t1: &Type = irFunc.getRegister(instr.src).typ;
-        let t2: &Type = irFunc.getRegister(instr.op1).typ;
+        let t1: &Type = getRegister(irFunc, instr.src).typ;
+        let t2: &Type = getRegister(irFunc, instr.op1).typ;
         let s1: usize = t1.getSize();
         let s2: usize = t2.getSize();
         assert(s1 == s2, "ICmpGt/ICmpLte got differently sized operands");
-        let dstReg: &IRReg = irFunc.getRegister(instr.dst);
+        let dstReg: &IRReg = getRegister(irFunc, instr.dst);
         let dst: InterpReg = InterpReg {
             offset: dstReg.offset,
             size: 1,
@@ -601,16 +601,16 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         *start = r;
         return dst;
     } else if (instr.kind == INSTR_INT_CMP_LT || instr.kind == INSTR_INT_CMP_GTE) {
-        let lhs: &RegValue = regs.at(instr.src.i);
-        let rhs: &RegValue = regs.at(instr.op1.i);
+        let lhs: &RegValue = at(regs, instr.src.i);
+        let rhs: &RegValue = at(regs, instr.op1.i);
         let rLhs: InterpReg =  asInterp(lhs, "ICmpLt/ICmpGte LHS");
         let rRhs: InterpReg =  asInterp(rhs, "ICmpLt/ICmpGte RHS");
-        let t1: &Type = irFunc.getRegister(instr.src).typ;
-        let t2: &Type = irFunc.getRegister(instr.op1).typ;
+        let t1: &Type = getRegister(irFunc, instr.src).typ;
+        let t2: &Type = getRegister(irFunc, instr.op1).typ;
         let s1: usize = t1.getSize();
         let s2: usize = t2.getSize();
         assert(s1 == s2, "ICmpLt/ICmpGte got differently sized operands");
-        let dstReg: &IRReg = irFunc.getRegister(instr.dst);
+        let dstReg: &IRReg = getRegister(irFunc, instr.dst);
         let dst: InterpReg = InterpReg {
             offset: dstReg.offset,
             size: 1,
@@ -645,16 +645,16 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         *start = r;
         return dst;
     } else if (instr.kind == INSTR_FLOAT_CMP_EQ || instr.kind == INSTR_FLOAT_CMP_NEQ) {
-        let lhs: &RegValue = regs.at(instr.src.i);
-        let rhs: &RegValue = regs.at(instr.op1.i);
+        let lhs: &RegValue = at(regs, instr.src.i);
+        let rhs: &RegValue = at(regs, instr.op1.i);
         let rLhs: InterpReg =  asInterp(lhs, "FCmpNeq/FCmpEq LHS");
         let rRhs: InterpReg =  asInterp(rhs, "FCmpNeq/FCmpEq RHS");
-        let t1: &Type = irFunc.getRegister(instr.src).typ;
-        let t2: &Type = irFunc.getRegister(instr.op1).typ;
+        let t1: &Type = getRegister(irFunc, instr.src).typ;
+        let t2: &Type = getRegister(irFunc, instr.op1).typ;
         let s1: usize = t1.getSize();
         let s2: usize = t2.getSize();
         assert(s1 == s2, "FCmpNeq/FCmpEq got differently sized operands");
-        let dstReg: &IRReg = irFunc.getRegister(instr.dst);
+        let dstReg: &IRReg = getRegister(irFunc, instr.dst);
         let dst: InterpReg = InterpReg {
             offset: dstReg.offset,
             size: 1,
@@ -682,10 +682,10 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
     } else if (instr.kind == INSTR_LOGICAL_NOT) {
         // dst: dst,
         // src: src,
-        let src: &RegValue = regs.at(instr.src.i);
+        let src: &RegValue = at(regs, instr.src.i);
         let rSrc: InterpReg = asInterp(src, "LNot SRC");
-        let dstReg: &IRReg = irFunc.getRegister(instr.dst);
-        let t1: &Type = irFunc.getRegister(instr.src).typ;
+        let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+        let t1: &Type = getRegister(irFunc, instr.src).typ;
         let s1: usize = t1.getSize();
         assert(s1 == 1, "Idk");
         let dst: InterpReg = InterpReg {
@@ -700,13 +700,13 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         return dst;
     } else if (instr.kind == INSTR_PTR_TO_INT) {
         // noop in interpreter
-         return asInterp(regs.at(instr.src.i), "Interp PtrToInt");
+         return asInterp(at(regs, instr.src.i), "Interp PtrToInt");
     } else if (instr.kind == INSTR_INT_TO_PTR) {
         // noop in interpreter
-         return asInterp(regs.at(instr.src.i), "Interp IntToPtr");
+         return asInterp(at(regs, instr.src.i), "Interp IntToPtr");
     } else if (instr.kind == INSTR_F32_TO_F64) {
-        let dstReg: &IRReg = irFunc.getRegister(instr.dst);
-        let src: InterpReg = asInterp(regs.at(instr.src.i), "Interp F32ToF64");
+        let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+        let src: InterpReg = asInterp(at(regs, instr.src.i), "Interp F32ToF64");
         let dst: InterpReg = InterpReg {
             offset: dstReg.offset,
             size: 8,
@@ -717,15 +717,15 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         *(dstStart as &f64) = v as f64;
         return dst;
     } else if (instr.kind == INSTR_INT_TO_F32) {
-        let dstReg: &IRReg = irFunc.getRegister(instr.dst);
-        let src: InterpReg = asInterp(regs.at(instr.src.i), "Interp IntToF32");
+        let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+        let src: InterpReg = asInterp(at(regs, instr.src.i), "Interp IntToF32");
         let dst: InterpReg = InterpReg {
             offset: dstReg.offset,
             size: 4,
         };
         let srcStart: &u8 = getRegStackPointer(this, &src);
         let dstStart: &u8 = getRegStackPointer(this, &dst);
-        let t: &Type = irFunc.getRegister(instr.src).typ;
+        let t: &Type = getRegister(irFunc, instr.src).typ;
         let signed: bool = t.isSignedInteger();
         let s: usize = t.getSize();
         let v: f32 = 0;
@@ -747,8 +747,8 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         *(dstStart as &f32) = v;
         return dst;
     } else if (instr.kind == INSTR_F64_TO_F32) {
-        let dstReg: &IRReg = irFunc.getRegister(instr.dst);
-        let src: InterpReg = asInterp(regs.at(instr.src.i), "Interp F64ToF32");
+        let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+        let src: InterpReg = asInterp(at(regs, instr.src.i), "Interp F64ToF32");
         let dst: InterpReg = InterpReg {
             offset: dstReg.offset,
             size: 4,
@@ -759,8 +759,8 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         *(dstStart as &f32) = v as f32;
         return dst;
     } else if (instr.kind == INSTR_F32_TO_INT) {
-        let dstReg: &IRReg = irFunc.getRegister(instr.dst);
-        let src: InterpReg = asInterp(regs.at(instr.src.i), "Interp F32ToInt");
+        let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+        let src: InterpReg = asInterp(at(regs, instr.src.i), "Interp F32ToInt");
         let size: usize = dstReg.typ.getSize();
         let signed: bool = dstReg.typ.isSignedInteger();
         let dst: InterpReg = InterpReg {
@@ -787,8 +787,8 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         }
         return dst;
     } else if (instr.kind == INSTR_F64_TO_INT) {
-        let dstReg: &IRReg = irFunc.getRegister(instr.dst);
-        let src: InterpReg = asInterp(regs.at(instr.src.i), "Interp F64ToInt");
+        let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+        let src: InterpReg = asInterp(at(regs, instr.src.i), "Interp F64ToInt");
         let size: usize = dstReg.typ.getSize();
         let signed: bool = dstReg.typ.isSignedInteger();
         let dst: InterpReg = InterpReg {
@@ -818,8 +818,8 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         // noop in interpreter
         if (instr.op1.i == 1) {
             // Global fetch
-            let fReg = irFunc.getRegister(instr.dst);
-            let ptr = getGlobalPointer(this, &asInterp(this.globalRegisters.at(instr.src.i), "Interp FetchComptimeValue"));
+            let fReg = getRegister(irFunc, instr.dst);
+            let ptr = getGlobalPointer(this, &asInterp(at(this.globalRegisters, instr.src.i), "Interp FetchComptimeValue"));
             let size = fReg.typ.getSize();
             let reg = InterpReg {
                 offset: fReg.offset,
@@ -829,15 +829,15 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
             return reg;
         } else {
             // Local fetch
-             return asInterp(regs.at(instr.src.i), "Interp FetchComptimeValue");
+             return asInterp(at(regs, instr.src.i), "Interp FetchComptimeValue");
         }
     } else if (instr.kind == INSTR_GET_FIELD_PTR) {
         // dst: elem,
         // src: aggr,
         // op1: RegIndex { i: index },
-        let fReg: &IRReg = irFunc.getRegister(instr.dst);
-        let fAggr: InterpReg = asInterp(regs.at(instr.src.i), "IRInterp: GetFieldPtr");
-        let t: &Type = irFunc.getRegister(instr.src).typ;
+        let fReg: &IRReg = getRegister(irFunc, instr.dst);
+        let fAggr: InterpReg = asInterp(at(regs, instr.src.i), "IRInterp: GetFieldPtr");
+        let t: &Type = getRegister(irFunc, instr.src).typ;
         assert(t.isStructPointer(), "IRInterp: GetFieldPtr got non-struct pointer");
         let u: &Type = t.getUnderlyingType(false);
         assert(u.isStruct());
@@ -860,18 +860,18 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
 }
 func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: &RegValueList, forcedComptime: bool) -> bool {
     trace("IRInterp.evaluateBlock");
-    let block: &IRBlock = irFunc.getBlockByID(*blockID);
+    let block: &IRBlock = getBlockByID(irFunc, *blockID);
     assert(block.instructions.length > 0, "Interp: Encountered empty block");
     for (let ip: usize = 0; ip < block.instructions.length; ip = ip + 1) {
-        let instr: &IRInstr = block.instructions.at(ip);
+        let instr: &IRInstr = at(&block.instructions, ip);
         if (ip == block.instructions.length - 1) {
-            if (PRINT_DEBUG) instr.dump();
-            assert(instr.isTerminator(), "Interp: Unexpected non-terminator at the end of a block");
+            if (PRINT_DEBUG) dump(instr);
+            assert(isTerminator(instr), "Interp: Unexpected non-terminator at the end of a block");
             if (instr.kind == INSTR_BR) {
                 *blockID = IRBlockID { i: instr.dst.i };
                 return true;
             } else if (instr.kind == INSTR_COND_BR) {
-                let cond: &RegValue = &*regs.at(instr.src.i);
+                let cond: &RegValue = &*at(regs, instr.src.i);
                 let rCond: InterpReg =  asInterp(cond, "CondBr");
                 assert(rCond.size == 1, "comptime CondBr expected single byte Cond");
                 let condLoc: &u8 = getRegStackPointer(this, &rCond);
@@ -884,7 +884,7 @@ func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: 
                 }
                 return true;
             } else if (instr.kind == INSTR_RETURN_EXPR) {
-                let expr: &RegValue = &*regs.at(instr.src.i);
+                let expr: &RegValue = &*at(regs, instr.src.i);
                 let rExpr: InterpReg =  asInterp(expr, "ReturnExpr");
                 pushArgument(this, getRegStackPointer(this, &rExpr), rExpr.size);
                 return false;
@@ -894,8 +894,8 @@ func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: 
                 unreachable("Interp: Exhaustive handling of Terminators");
             }
         } else {
-            assert(!instr.isTerminator(), "Interp: Unexpected terminator in the middle of a block");
-            *(regs.at(instr.dst.i)) = RegValue {
+            assert(!isTerminator(instr), "Interp: Unexpected terminator in the middle of a block");
+            *(at(regs, instr.dst.i)) = RegValue {
                 isLLVM: false,
                 regValue: evaluateSingle(this, irFunc, instr, regs, true),
                 llvmValue: blank,
@@ -906,7 +906,7 @@ func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: 
 }
 func evaluateCall(this: &IRInterp, span: Span, irFunc: &IRFunc, regs: &RegValueList) {
     trace("IRInterp.evaluateCall");
-    let funcSize: usize = irFunc.getRegisterSizeInBytes();
+    let funcSize: usize = getRegisterSizeInBytes(irFunc);
     pushRegisterStack(this, span, funcSize);
     let blockID: IRBlockID = IRBlockID { i: 0 };
     while (evaluateBlock(this, &blockID, irFunc, regs, true)) {

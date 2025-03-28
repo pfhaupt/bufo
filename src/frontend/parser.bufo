@@ -155,7 +155,7 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList) -> bool {
             expect(this, TOKEN_PAREN_OPEN);
             let v = expect(this, TOKEN_STRING_LITERAL);
             let end = expect(this, TOKEN_PAREN_CLOSE);
-            attrs.push(ParsedAttribute {
+            push(attrs, ParsedAttribute {
                 span: newSpanBetween(&name.span, &end.span),
                 kind: ATTR_EXTERN,
                 name: v,
@@ -170,7 +170,7 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList) -> bool {
             }
             skip = !os.content.equals(&TARGET_OS);
         } else if (name.content.equals(&_ATTR_NORETURN)) {
-            attrs.push(ParsedAttribute {
+            push(attrs, ParsedAttribute {
                 span: name.span,
                 kind: ATTR_NORETURN,
             });
@@ -220,7 +220,7 @@ func parseTopLevelItem(this: &Parser, attributes: ParsedAttributeList) -> &Parse
         // REVIEW: Do we want to support functions outside of TLIs?
         let isExtern: bool = false;
         for (let i: usize = 0; i < attributes.length; i = i + 1) {
-            if (attributes.at(i).kind == ATTR_EXTERN) {
+            if (at(&attributes, i).kind == ATTR_EXTERN) {
                 isExtern = true;
                 break;
             }
@@ -233,7 +233,7 @@ func parseTopLevelItem(this: &Parser, attributes: ParsedAttributeList) -> &Parse
         }
         let decl = parseFuncDecl(this, isExtern);
         if (tkn.content.equals(&KEYWORD_EXTERN)) {
-            attributes.push(ParsedAttribute {
+            push(&attributes, ParsedAttribute {
                 span: decl.span,
                 kind: ATTR_EXTERN,
                 name: decl.name,

@@ -16,1539 +16,1539 @@ struct ModuleLookupList {
     elements: &ModuleLookup;
     length: usize;
     capacity: usize;
-
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof ModuleLookup);
-        assert(this.elements != null, "Could not allocate memory in ModuleLookupList.initBlank");
-        this.capacity = newCap;
-        this.length = newCap;
-    }
-
-    func push(&this, element: ModuleLookup) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof ModuleLookup);
-            assert(this.elements != null, "Could not allocate memory in ModuleLookupList.push");
-            this.capacity = newCap;
-        }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
-    }
-
-    func pop(&this) -> &ModuleLookup {
-        let l: &ModuleLookup = this.last();
-        this.length = this.length - 1;
-        return l;
-    }
-
-    func at(&this, index: usize) -> &ModuleLookup {
-        assert(index < this.length, "Out of bounds access in ModuleLookupList.at");
-        assert(this.elements != null, "Element pointer is NULL in ModuleLookupList.at");
-        return &this.elements[index];
-    }
-
-    func contains(&this, element: &ModuleLookup) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (this.at(i).equals(element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func last(&this) -> &ModuleLookup {
-        assert(this.length != 0, "Called last() on empty ModuleLookupList");
-        return this.at(this.length - 1);
-    }
-
-    func extend(&this, other: &ModuleLookupList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
-        }
-        other.free();
-    }
-
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
-
-    func clear(&this) {
-        this.length = 0;
-    }
 }
 
-struct ImportLookupList {
-    elements: &ImportLookup;
-    length: usize;
-    capacity: usize;
-
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof ImportLookup);
-        assert(this.elements != null, "Could not allocate memory in ImportLookupList.initBlank");
-        this.capacity = newCap;
-        this.length = newCap;
-    }
-
-    func push(&this, element: ImportLookup) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof ImportLookup);
-            assert(this.elements != null, "Could not allocate memory in ImportLookupList.push");
-            this.capacity = newCap;
-        }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
-    }
-
-    func pop(&this) -> &ImportLookup {
-        let l: &ImportLookup = this.last();
-        this.length = this.length - 1;
-        return l;
-    }
-
-    func at(&this, index: usize) -> &ImportLookup {
-        assert(index < this.length, "Out of bounds access in ImportLookupList.at");
-        assert(this.elements != null, "Element pointer is NULL in ImportLookupList.at");
-        return &this.elements[index];
-    }
-
-    func contains(&this, element: &ImportLookup) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (this.at(i).equals(element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func last(&this) -> &ImportLookup {
-        assert(this.length != 0, "Called last() on empty ImportLookupList");
-        return this.at(this.length - 1);
-    }
-
-    func extend(&this, other: &ImportLookupList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
-        }
-        other.free();
-    }
-
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
-
-    func clear(&this) {
-        this.length = 0;
-    }
+func initBlank(this: &ModuleLookupList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof ModuleLookup);
+    assert(this.elements != null, "Could not allocate memory in ModuleLookupList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
 }
 
-struct FunctionLookupList {
-    elements: &FunctionLookup;
-    length: usize;
-    capacity: usize;
-
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof FunctionLookup);
-        assert(this.elements != null, "Could not allocate memory in FunctionLookupList.initBlank");
+func push(this: &ModuleLookupList, element: ModuleLookup) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof ModuleLookup);
+        assert(this.elements != null, "Could not allocate memory in ModuleLookupList.push");
         this.capacity = newCap;
-        this.length = newCap;
     }
-
-    func push(&this, element: FunctionLookup) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof FunctionLookup);
-            assert(this.elements != null, "Could not allocate memory in FunctionLookupList.push");
-            this.capacity = newCap;
-        }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
-    }
-
-    func pop(&this) -> &FunctionLookup {
-        let l: &FunctionLookup = this.last();
-        this.length = this.length - 1;
-        return l;
-    }
-
-    func at(&this, index: usize) -> &FunctionLookup {
-        assert(index < this.length, "Out of bounds access in FunctionLookupList.at");
-        assert(this.elements != null, "Element pointer is NULL in FunctionLookupList.at");
-        return &this.elements[index];
-    }
-
-    func contains(&this, element: &FunctionLookup) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (this.at(i).equals(element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func last(&this) -> &FunctionLookup {
-        assert(this.length != 0, "Called last() on empty FunctionLookupList");
-        return this.at(this.length - 1);
-    }
-
-    func extend(&this, other: &FunctionLookupList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
-        }
-        other.free();
-    }
-
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
-
-    func clear(&this) {
-        this.length = 0;
-    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
 }
 
-struct StructLookupList {
-    elements: &StructLookup;
-    length: usize;
-    capacity: usize;
-
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof StructLookup);
-        assert(this.elements != null, "Could not allocate memory in StructLookupList.initBlank");
-        this.capacity = newCap;
-        this.length = newCap;
-    }
-
-    func push(&this, element: StructLookup) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof StructLookup);
-            assert(this.elements != null, "Could not allocate memory in StructLookupList.push");
-            this.capacity = newCap;
-        }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
-    }
-
-    func pop(&this) -> &StructLookup {
-        let l: &StructLookup = this.last();
-        this.length = this.length - 1;
-        return l;
-    }
-
-    func at(&this, index: usize) -> &StructLookup {
-        assert(index < this.length, "Out of bounds access in StructLookupList.at");
-        assert(this.elements != null, "Element pointer is NULL in StructLookupList.at");
-        return &this.elements[index];
-    }
-
-    func contains(&this, element: &StructLookup) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (this.at(i).equals(element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func last(&this) -> &StructLookup {
-        assert(this.length != 0, "Called last() on empty StructLookupList");
-        return this.at(this.length - 1);
-    }
-
-    func extend(&this, other: &StructLookupList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
-        }
-        other.free();
-    }
-
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
-
-    func clear(&this) {
-        this.length = 0;
-    }
+func pop(this: &ModuleLookupList) -> &ModuleLookup {
+    let l: &ModuleLookup = last(this);
+    this.length = this.length - 1;
+    return l;
 }
 
-struct TypeLookupList {
-    elements: &TypeLookup;
-    length: usize;
-    capacity: usize;
-
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof TypeLookup);
-        assert(this.elements != null, "Could not allocate memory in TypeLookupList.initBlank");
-        this.capacity = newCap;
-        this.length = newCap;
-    }
-
-    func push(&this, element: TypeLookup) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof TypeLookup);
-            assert(this.elements != null, "Could not allocate memory in TypeLookupList.push");
-            this.capacity = newCap;
-        }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
-    }
-
-    func pop(&this) -> &TypeLookup {
-        let l: &TypeLookup = this.last();
-        this.length = this.length - 1;
-        return l;
-    }
-
-    func at(&this, index: usize) -> &TypeLookup {
-        assert(index < this.length, "Out of bounds access in TypeLookupList.at");
-        assert(this.elements != null, "Element pointer is NULL in TypeLookupList.at");
-        return &this.elements[index];
-    }
-
-    func contains(&this, element: &TypeLookup) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (this.at(i).equals(element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func last(&this) -> &TypeLookup {
-        assert(this.length != 0, "Called last() on empty TypeLookupList");
-        return this.at(this.length - 1);
-    }
-
-    func extend(&this, other: &TypeLookupList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
-        }
-        other.free();
-    }
-
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
-
-    func clear(&this) {
-        this.length = 0;
-    }
+func at(this: &ModuleLookupList, index: usize) -> &ModuleLookup {
+    assert(index < this.length, "Out of bounds access in ModuleLookupList.at");
+    assert(this.elements != null, "Element pointer is NULL in ModuleLookupList.at");
+    return &this.elements[index];
 }
 
-struct ScopeLookupList {
-    elements: &ScopeLookup;
-    length: usize;
-    capacity: usize;
-
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof ScopeLookup);
-        assert(this.elements != null, "Could not allocate memory in ScopeLookupList.initBlank");
-        this.capacity = newCap;
-        this.length = newCap;
-    }
-
-    func push(&this, element: ScopeLookup) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof ScopeLookup);
-            assert(this.elements != null, "Could not allocate memory in ScopeLookupList.push");
-            this.capacity = newCap;
+func contains(this: &ModuleLookupList, element: &ModuleLookup) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
         }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
     }
-
-    func pop(&this) -> &ScopeLookup {
-        let l: &ScopeLookup = this.last();
-        this.length = this.length - 1;
-        return l;
-    }
-
-    func at(&this, index: usize) -> &ScopeLookup {
-        assert(index < this.length, "Out of bounds access in ScopeLookupList.at");
-        assert(this.elements != null, "Element pointer is NULL in ScopeLookupList.at");
-        return &this.elements[index];
-    }
-
-    func contains(&this, element: &ScopeLookup) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (this.at(i).equals(element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func last(&this) -> &ScopeLookup {
-        assert(this.length != 0, "Called last() on empty ScopeLookupList");
-        return this.at(this.length - 1);
-    }
-
-    func extend(&this, other: &ScopeLookupList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
-        }
-        other.free();
-    }
-
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
-
-    func clear(&this) {
-        this.length = 0;
-    }
+    return false;
 }
 
-struct VariableLookupList {
-    elements: &VariableLookup;
-    length: usize;
-    capacity: usize;
-
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof VariableLookup);
-        assert(this.elements != null, "Could not allocate memory in VariableLookupList.initBlank");
-        this.capacity = newCap;
-        this.length = newCap;
-    }
-
-    func push(&this, element: VariableLookup) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof VariableLookup);
-            assert(this.elements != null, "Could not allocate memory in VariableLookupList.push");
-            this.capacity = newCap;
-        }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
-    }
-
-    func pop(&this) -> &VariableLookup {
-        let l: &VariableLookup = this.last();
-        this.length = this.length - 1;
-        return l;
-    }
-
-    func at(&this, index: usize) -> &VariableLookup {
-        assert(index < this.length, "Out of bounds access in VariableLookupList.at");
-        assert(this.elements != null, "Element pointer is NULL in VariableLookupList.at");
-        return &this.elements[index];
-    }
-
-    func contains(&this, element: &VariableLookup) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (this.at(i).equals(element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func last(&this) -> &VariableLookup {
-        assert(this.length != 0, "Called last() on empty VariableLookupList");
-        return this.at(this.length - 1);
-    }
-
-    func extend(&this, other: &VariableLookupList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
-        }
-        other.free();
-    }
-
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
-
-    func clear(&this) {
-        this.length = 0;
-    }
+func last(this: &ModuleLookupList) -> &ModuleLookup {
+    assert(this.length != 0, "Called last() on empty ModuleLookupList");
+    return at(this, this.length - 1);
 }
 
-struct MethodLookupList {
-    elements: &MethodLookup;
-    length: usize;
-    capacity: usize;
-
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof MethodLookup);
-        assert(this.elements != null, "Could not allocate memory in MethodLookupList.initBlank");
-        this.capacity = newCap;
-        this.length = newCap;
+func extend(this: &ModuleLookupList, other: &ModuleLookupList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
     }
-
-    func push(&this, element: MethodLookup) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof MethodLookup);
-            assert(this.elements != null, "Could not allocate memory in MethodLookupList.push");
-            this.capacity = newCap;
-        }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
-    }
-
-    func pop(&this) -> &MethodLookup {
-        let l: &MethodLookup = this.last();
-        this.length = this.length - 1;
-        return l;
-    }
-
-    func at(&this, index: usize) -> &MethodLookup {
-        assert(index < this.length, "Out of bounds access in MethodLookupList.at");
-        assert(this.elements != null, "Element pointer is NULL in MethodLookupList.at");
-        return &this.elements[index];
-    }
-
-    func contains(&this, element: &MethodLookup) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (this.at(i).equals(element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func last(&this) -> &MethodLookup {
-        assert(this.length != 0, "Called last() on empty MethodLookupList");
-        return this.at(this.length - 1);
-    }
-
-    func extend(&this, other: &MethodLookupList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
-        }
-        other.free();
-    }
-
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
-
-    func clear(&this) {
-        this.length = 0;
-    }
+    drop(other);
 }
 
-struct TCStateList {
-    elements: &TCState;
-    length: usize;
-    capacity: usize;
-
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof TCState);
-        assert(this.elements != null, "Could not allocate memory in TCStateList.initBlank");
-        this.capacity = newCap;
-        this.length = newCap;
-    }
-
-    func push(&this, element: TCState) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof TCState);
-            assert(this.elements != null, "Could not allocate memory in TCStateList.push");
-            this.capacity = newCap;
-        }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
-    }
-
-    func pop(&this) -> &TCState {
-        let l: &TCState = this.last();
-        this.length = this.length - 1;
-        return l;
-    }
-
-    func at(&this, index: usize) -> &TCState {
-        assert(index < this.length, "Out of bounds access in TCStateList.at");
-        assert(this.elements != null, "Element pointer is NULL in TCStateList.at");
-        return &this.elements[index];
-    }
-
-    func contains(&this, element: &TCState) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (this.at(i).equals(element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func last(&this) -> &TCState {
-        assert(this.length != 0, "Called last() on empty TCStateList");
-        return this.at(this.length - 1);
-    }
-
-    func extend(&this, other: &TCStateList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
-        }
-        other.free();
-    }
-
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
-
-    func clear(&this) {
-        this.length = 0;
-    }
+func drop(this: &ModuleLookupList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
 }
 
-struct RegIndexList {
-    elements: &RegIndex;
-    length: usize;
-    capacity: usize;
-
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof RegIndex);
-        assert(this.elements != null, "Could not allocate memory in RegIndexList.initBlank");
-        this.capacity = newCap;
-        this.length = newCap;
-    }
-
-    func push(&this, element: RegIndex) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof RegIndex);
-            assert(this.elements != null, "Could not allocate memory in RegIndexList.push");
-            this.capacity = newCap;
-        }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
-    }
-
-    func pop(&this) -> &RegIndex {
-        let l: &RegIndex = this.last();
-        this.length = this.length - 1;
-        return l;
-    }
-
-    func at(&this, index: usize) -> &RegIndex {
-        assert(index < this.length, "Out of bounds access in RegIndexList.at");
-        assert(this.elements != null, "Element pointer is NULL in RegIndexList.at");
-        return &this.elements[index];
-    }
-
-    func contains(&this, element: &RegIndex) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (this.at(i).equals(element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func last(&this) -> &RegIndex {
-        assert(this.length != 0, "Called last() on empty RegIndexList");
-        return this.at(this.length - 1);
-    }
-
-    func extend(&this, other: &RegIndexList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
-        }
-        other.free();
-    }
-
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
-
-    func clear(&this) {
-        this.length = 0;
-    }
-}
-
-struct IRInstrList {
-    elements: &IRInstr;
-    length: usize;
-    capacity: usize;
-
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof IRInstr);
-        assert(this.elements != null, "Could not allocate memory in IRInstrList.initBlank");
-        this.capacity = newCap;
-        this.length = newCap;
-    }
-
-    func push(&this, element: IRInstr) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof IRInstr);
-            assert(this.elements != null, "Could not allocate memory in IRInstrList.push");
-            this.capacity = newCap;
-        }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
-    }
-
-    func pop(&this) -> &IRInstr {
-        let l: &IRInstr = this.last();
-        this.length = this.length - 1;
-        return l;
-    }
-
-    func at(&this, index: usize) -> &IRInstr {
-        assert(index < this.length, "Out of bounds access in IRInstrList.at");
-        assert(this.elements != null, "Element pointer is NULL in IRInstrList.at");
-        return &this.elements[index];
-    }
-
-    func contains(&this, element: &IRInstr) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (this.at(i).equals(element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func last(&this) -> &IRInstr {
-        assert(this.length != 0, "Called last() on empty IRInstrList");
-        return this.at(this.length - 1);
-    }
-
-    func extend(&this, other: &IRInstrList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
-        }
-        other.free();
-    }
-
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
-
-    func clear(&this) {
-        this.length = 0;
-    }
-}
-
-struct IRScopeList {
-    elements: &IRScope;
-    length: usize;
-    capacity: usize;
-
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof IRScope);
-        assert(this.elements != null, "Could not allocate memory in IRScopeList.initBlank");
-        this.capacity = newCap;
-        this.length = newCap;
-    }
-
-    func push(&this, element: IRScope) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof IRScope);
-            assert(this.elements != null, "Could not allocate memory in IRScopeList.push");
-            this.capacity = newCap;
-        }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
-    }
-
-    func pop(&this) -> &IRScope {
-        let l: &IRScope = this.last();
-        this.length = this.length - 1;
-        return l;
-    }
-
-    func at(&this, index: usize) -> &IRScope {
-        assert(index < this.length, "Out of bounds access in IRScopeList.at");
-        assert(this.elements != null, "Element pointer is NULL in IRScopeList.at");
-        return &this.elements[index];
-    }
-
-    func contains(&this, element: &IRScope) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (this.at(i).equals(element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func last(&this) -> &IRScope {
-        assert(this.length != 0, "Called last() on empty IRScopeList");
-        return this.at(this.length - 1);
-    }
-
-    func extend(&this, other: &IRScopeList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
-        }
-        other.free();
-    }
-
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
-
-    func clear(&this) {
-        this.length = 0;
-    }
-}
-
-struct IRRegList {
-    elements: &IRReg;
-    length: usize;
-    capacity: usize;
-
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof IRReg);
-        assert(this.elements != null, "Could not allocate memory in IRRegList.initBlank");
-        this.capacity = newCap;
-        this.length = newCap;
-    }
-
-    func push(&this, element: IRReg) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof IRReg);
-            assert(this.elements != null, "Could not allocate memory in IRRegList.push");
-            this.capacity = newCap;
-        }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
-    }
-
-    func pop(&this) -> &IRReg {
-        let l: &IRReg = this.last();
-        this.length = this.length - 1;
-        return l;
-    }
-
-    func at(&this, index: usize) -> &IRReg {
-        assert(index < this.length, "Out of bounds access in IRRegList.at");
-        assert(this.elements != null, "Element pointer is NULL in IRRegList.at");
-        return &this.elements[index];
-    }
-
-    func contains(&this, element: &IRReg) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (this.at(i).equals(element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func last(&this) -> &IRReg {
-        assert(this.length != 0, "Called last() on empty IRRegList");
-        return this.at(this.length - 1);
-    }
-
-    func extend(&this, other: &IRRegList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
-        }
-        other.free();
-    }
-
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
-
-    func clear(&this) {
-        this.length = 0;
-    }
-}
-
-struct IRBlockList {
-    elements: &IRBlock;
-    length: usize;
-    capacity: usize;
-
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof IRBlock);
-        assert(this.elements != null, "Could not allocate memory in IRBlockList.initBlank");
-        this.capacity = newCap;
-        this.length = newCap;
-    }
-
-    func push(&this, element: IRBlock) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof IRBlock);
-            assert(this.elements != null, "Could not allocate memory in IRBlockList.push");
-            this.capacity = newCap;
-        }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
-    }
-
-    func pop(&this) -> &IRBlock {
-        let l: &IRBlock = this.last();
-        this.length = this.length - 1;
-        return l;
-    }
-
-    func at(&this, index: usize) -> &IRBlock {
-        assert(index < this.length, "Out of bounds access in IRBlockList.at");
-        assert(this.elements != null, "Element pointer is NULL in IRBlockList.at");
-        return &this.elements[index];
-    }
-
-    func contains(&this, element: &IRBlock) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (this.at(i).equals(element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func last(&this) -> &IRBlock {
-        assert(this.length != 0, "Called last() on empty IRBlockList");
-        return this.at(this.length - 1);
-    }
-
-    func extend(&this, other: &IRBlockList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
-        }
-        other.free();
-    }
-
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
-
-    func clear(&this) {
-        this.length = 0;
-    }
-}
-
-struct LoopBlockList {
-    elements: &LoopBlock;
-    length: usize;
-    capacity: usize;
-
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof LoopBlock);
-        assert(this.elements != null, "Could not allocate memory in LoopBlockList.initBlank");
-        this.capacity = newCap;
-        this.length = newCap;
-    }
-
-    func push(&this, element: LoopBlock) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof LoopBlock);
-            assert(this.elements != null, "Could not allocate memory in LoopBlockList.push");
-            this.capacity = newCap;
-        }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
-    }
-
-    func pop(&this) -> &LoopBlock {
-        let l: &LoopBlock = this.last();
-        this.length = this.length - 1;
-        return l;
-    }
-
-    func at(&this, index: usize) -> &LoopBlock {
-        assert(index < this.length, "Out of bounds access in LoopBlockList.at");
-        assert(this.elements != null, "Element pointer is NULL in LoopBlockList.at");
-        return &this.elements[index];
-    }
-
-    func contains(&this, element: &LoopBlock) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (this.at(i).equals(element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func last(&this) -> &LoopBlock {
-        assert(this.length != 0, "Called last() on empty LoopBlockList");
-        return this.at(this.length - 1);
-    }
-
-    func extend(&this, other: &LoopBlockList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
-        }
-        other.free();
-    }
-
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
-
-    func clear(&this) {
-        this.length = 0;
-    }
-}
-
-struct IRScopeEntryList {
-    elements: &IRScopeEntry;
-    length: usize;
-    capacity: usize;
-
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof IRScopeEntry);
-        assert(this.elements != null, "Could not allocate memory in IRScopeEntryList.initBlank");
-        this.capacity = newCap;
-        this.length = newCap;
-    }
-
-    func push(&this, element: IRScopeEntry) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof IRScopeEntry);
-            assert(this.elements != null, "Could not allocate memory in IRScopeEntryList.push");
-            this.capacity = newCap;
-        }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
-    }
-
-    func pop(&this) -> &IRScopeEntry {
-        let l: &IRScopeEntry = this.last();
-        this.length = this.length - 1;
-        return l;
-    }
-
-    func at(&this, index: usize) -> &IRScopeEntry {
-        assert(index < this.length, "Out of bounds access in IRScopeEntryList.at");
-        assert(this.elements != null, "Element pointer is NULL in IRScopeEntryList.at");
-        return &this.elements[index];
-    }
-
-    func contains(&this, element: &IRScopeEntry) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (this.at(i).equals(element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func last(&this) -> &IRScopeEntry {
-        assert(this.length != 0, "Called last() on empty IRScopeEntryList");
-        return this.at(this.length - 1);
-    }
-
-    func extend(&this, other: &IRScopeEntryList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
-        }
-        other.free();
-    }
-
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
-
-    func clear(&this) {
-        this.length = 0;
-    }
-}
-
-struct IRFuncList {
-    elements: &IRFunc;
-    length: usize;
-    capacity: usize;
-
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof IRFunc);
-        assert(this.elements != null, "Could not allocate memory in IRFuncList.initBlank");
-        this.capacity = newCap;
-        this.length = newCap;
-    }
-
-    func push(&this, element: IRFunc) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof IRFunc);
-            assert(this.elements != null, "Could not allocate memory in IRFuncList.push");
-            this.capacity = newCap;
-        }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
-    }
-
-    func pop(&this) -> &IRFunc {
-        let l: &IRFunc = this.last();
-        this.length = this.length - 1;
-        return l;
-    }
-
-    func at(&this, index: usize) -> &IRFunc {
-        assert(index < this.length, "Out of bounds access in IRFuncList.at");
-        assert(this.elements != null, "Element pointer is NULL in IRFuncList.at");
-        return &this.elements[index];
-    }
-
-    func contains(&this, element: &IRFunc) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (this.at(i).equals(element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func last(&this) -> &IRFunc {
-        assert(this.length != 0, "Called last() on empty IRFuncList");
-        return this.at(this.length - 1);
-    }
-
-    func extend(&this, other: &IRFuncList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
-        }
-        other.free();
-    }
-
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
-
-    func clear(&this) {
-        this.length = 0;
-    }
-}
-
-struct LLVMTypeList {
-    elements: &LLVMType;
-    length: usize;
-    capacity: usize;
-
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof LLVMType);
-        assert(this.elements != null, "Could not allocate memory in LLVMTypeList.initBlank");
-        this.capacity = newCap;
-        this.length = newCap;
-    }
-
-    func push(&this, element: LLVMType) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof LLVMType);
-            assert(this.elements != null, "Could not allocate memory in LLVMTypeList.push");
-            this.capacity = newCap;
-        }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
-    }
-
-    func pop(&this) -> &LLVMType {
-        let l: &LLVMType = this.last();
-        this.length = this.length - 1;
-        return l;
-    }
-
-    func at(&this, index: usize) -> &LLVMType {
-        assert(index < this.length, "Out of bounds access in LLVMTypeList.at");
-        assert(this.elements != null, "Element pointer is NULL in LLVMTypeList.at");
-        return &this.elements[index];
-    }
-
-    func contains(&this, element: &LLVMType) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (this.at(i).equals(element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func last(&this) -> &LLVMType {
-        assert(this.length != 0, "Called last() on empty LLVMTypeList");
-        return this.at(this.length - 1);
-    }
-
-    func extend(&this, other: &LLVMTypeList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
-        }
-        other.free();
-    }
-
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
-
-    func clear(&this) {
-        this.length = 0;
-    }
-}
-
-struct RegValueList {
-    elements: &RegValue;
-    length: usize;
-    capacity: usize;
-
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof RegValue);
-        assert(this.elements != null, "Could not allocate memory in RegValueList.initBlank");
-        this.capacity = newCap;
-        this.length = newCap;
-    }
-
-    func push(&this, element: RegValue) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof RegValue);
-            assert(this.elements != null, "Could not allocate memory in RegValueList.push");
-            this.capacity = newCap;
-        }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
-    }
-
-    func pop(&this) -> &RegValue {
-        let l: &RegValue = this.last();
-        this.length = this.length - 1;
-        return l;
-    }
-
-    func at(&this, index: usize) -> &RegValue {
-        assert(index < this.length, "Out of bounds access in RegValueList.at");
-        assert(this.elements != null, "Element pointer is NULL in RegValueList.at");
-        return &this.elements[index];
-    }
-
-    func contains(&this, element: &RegValue) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (equals(this.at(i), element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func last(&this) -> &RegValue {
-        assert(this.length != 0, "Called last() on empty RegValueList");
-        return this.at(this.length - 1);
-    }
-
-    func extend(&this, other: &RegValueList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
-        }
-        other.free();
-    }
-
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
-
-    func clear(&this) {
-        this.length = 0;
-    }
-}
-
-struct LLVMBasicBlockList {
-    elements: &LLVMBasicBlock;
-    length: usize;
-    capacity: usize;
-
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof LLVMBasicBlock);
-        assert(this.elements != null, "Could not allocate memory in LLVMBasicBlockList.initBlank");
-        this.capacity = newCap;
-        this.length = newCap;
-    }
-
-    func push(&this, element: LLVMBasicBlock) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof LLVMBasicBlock);
-            assert(this.elements != null, "Could not allocate memory in LLVMBasicBlockList.push");
-            this.capacity = newCap;
-        }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
-    }
-
-    func pop(&this) -> &LLVMBasicBlock {
-        let l: &LLVMBasicBlock = this.last();
-        this.length = this.length - 1;
-        return l;
-    }
-
-    func at(&this, index: usize) -> &LLVMBasicBlock {
-        assert(index < this.length, "Out of bounds access in LLVMBasicBlockList.at");
-        assert(this.elements != null, "Element pointer is NULL in LLVMBasicBlockList.at");
-        return &this.elements[index];
-    }
-
-    func contains(&this, element: &LLVMBasicBlock) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (this.at(i).equals(element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func last(&this) -> &LLVMBasicBlock {
-        assert(this.length != 0, "Called last() on empty LLVMBasicBlockList");
-        return this.at(this.length - 1);
-    }
-
-    func extend(&this, other: &LLVMBasicBlockList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
-        }
-        other.free();
-    }
-
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
-
-    func clear(&this) {
-        this.length = 0;
-    }
-}
-
-struct LLVMValueList {
-    elements: &LLVMValue;
-    length: usize;
-    capacity: usize;
-
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof LLVMValue);
-        assert(this.elements != null, "Could not allocate memory in LLVMValueList.initBlank");
-        this.capacity = newCap;
-        this.length = newCap;
-    }
-
-    func push(&this, element: LLVMValue) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof LLVMValue);
-            assert(this.elements != null, "Could not allocate memory in LLVMValueList.push");
-            this.capacity = newCap;
-        }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
-    }
-
-    func pop(&this) -> &LLVMValue {
-        let l: &LLVMValue = this.last();
-        this.length = this.length - 1;
-        return l;
-    }
-
-    func at(&this, index: usize) -> &LLVMValue {
-        assert(index < this.length, "Out of bounds access in LLVMValueList.at");
-        assert(this.elements != null, "Element pointer is NULL in LLVMValueList.at");
-        return &this.elements[index];
-    }
-
-    func contains(&this, element: &LLVMValue) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (this.at(i).equals(element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    func last(&this) -> &LLVMValue {
-        assert(this.length != 0, "Called last() on empty LLVMValueList");
-        return this.at(this.length - 1);
-    }
-
-    func extend(&this, other: &LLVMValueList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
-        }
-        other.free();
-    }
-
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
-
-    func clear(&this) {
-        this.length = 0;
-    }
+func clear(this: &ModuleLookupList) {
+    this.length = 0;
 }
 
 struct ParsedAttributeList {
     elements: &ParsedAttribute;
     length: usize;
     capacity: usize;
+}
 
-    func initBlank(&this, newCap: usize) {
-        if (this.elements != null) free(this.elements);
-        this.elements = calloc(newCap, sizeof ParsedAttribute);
-        assert(this.elements != null, "Could not allocate memory in ParsedAttributeList.initBlank");
+func initBlank(this: &ParsedAttributeList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof ParsedAttribute);
+    assert(this.elements != null, "Could not allocate memory in ParsedAttributeList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
+
+func push(this: &ParsedAttributeList, element: ParsedAttribute) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof ParsedAttribute);
+        assert(this.elements != null, "Could not allocate memory in ParsedAttributeList.push");
         this.capacity = newCap;
-        this.length = newCap;
     }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
 
-    func push(&this, element: ParsedAttribute) {
-        if (this.length >= this.capacity) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elements = realloc(this.elements, newCap * sizeof ParsedAttribute);
-            assert(this.elements != null, "Could not allocate memory in ParsedAttributeList.push");
-            this.capacity = newCap;
+func pop(this: &ParsedAttributeList) -> &ParsedAttribute {
+    let l: &ParsedAttribute = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &ParsedAttributeList, index: usize) -> &ParsedAttribute {
+    assert(index < this.length, "Out of bounds access in ParsedAttributeList.at");
+    assert(this.elements != null, "Element pointer is NULL in ParsedAttributeList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &ParsedAttributeList, element: &ParsedAttribute) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
         }
-        this.elements[this.length] = element;
-        this.length = this.length + 1;
     }
+    return false;
+}
 
-    func pop(&this) -> &ParsedAttribute {
-        let l: &ParsedAttribute = this.last();
-        this.length = this.length - 1;
-        return l;
+func last(this: &ParsedAttributeList) -> &ParsedAttribute {
+    assert(this.length != 0, "Called last() on empty ParsedAttributeList");
+    return at(this, this.length - 1);
+}
+
+func extend(this: &ParsedAttributeList, other: &ParsedAttributeList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
     }
+    drop(other);
+}
 
-    func at(&this, index: usize) -> &ParsedAttribute {
-        assert(index < this.length, "Out of bounds access in ParsedAttributeList.at");
-        assert(this.elements != null, "Element pointer is NULL in ParsedAttributeList.at");
-        return &this.elements[index];
+func drop(this: &ParsedAttributeList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
+}
+
+func clear(this: &ParsedAttributeList) {
+    this.length = 0;
+}
+
+struct FunctionLookupList {
+    elements: &FunctionLookup;
+    length: usize;
+    capacity: usize;
+}
+
+func initBlank(this: &FunctionLookupList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof FunctionLookup);
+    assert(this.elements != null, "Could not allocate memory in FunctionLookupList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
+
+func push(this: &FunctionLookupList, element: FunctionLookup) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof FunctionLookup);
+        assert(this.elements != null, "Could not allocate memory in FunctionLookupList.push");
+        this.capacity = newCap;
     }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
 
-    func contains(&this, element: &ParsedAttribute) -> bool {
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (equals(this.at(i), element)) {
-                return true;
-            }
+func pop(this: &FunctionLookupList) -> &FunctionLookup {
+    let l: &FunctionLookup = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &FunctionLookupList, index: usize) -> &FunctionLookup {
+    assert(index < this.length, "Out of bounds access in FunctionLookupList.at");
+    assert(this.elements != null, "Element pointer is NULL in FunctionLookupList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &FunctionLookupList, element: &FunctionLookup) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
         }
-        return false;
     }
+    return false;
+}
 
-    func last(&this) -> &ParsedAttribute {
-        assert(this.length != 0, "Called last() on empty ParsedAttributeList");
-        return this.at(this.length - 1);
+func last(this: &FunctionLookupList) -> &FunctionLookup {
+    assert(this.length != 0, "Called last() on empty FunctionLookupList");
+    return at(this, this.length - 1);
+}
+
+func extend(this: &FunctionLookupList, other: &FunctionLookupList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
     }
+    drop(other);
+}
 
-    func extend(&this, other: &ParsedAttributeList) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.push(*(other.at(i)));
+func drop(this: &FunctionLookupList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
+}
+
+func clear(this: &FunctionLookupList) {
+    this.length = 0;
+}
+
+struct StructLookupList {
+    elements: &StructLookup;
+    length: usize;
+    capacity: usize;
+}
+
+func initBlank(this: &StructLookupList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof StructLookup);
+    assert(this.elements != null, "Could not allocate memory in StructLookupList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
+
+func push(this: &StructLookupList, element: StructLookup) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof StructLookup);
+        assert(this.elements != null, "Could not allocate memory in StructLookupList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+func pop(this: &StructLookupList) -> &StructLookup {
+    let l: &StructLookup = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &StructLookupList, index: usize) -> &StructLookup {
+    assert(index < this.length, "Out of bounds access in StructLookupList.at");
+    assert(this.elements != null, "Element pointer is NULL in StructLookupList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &StructLookupList, element: &StructLookup) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
         }
-        other.free();
     }
+    return false;
+}
 
-    func free(&this) {
-        free(this.elements);
-        this.elements = null;
-        this.length = 0;
-        this.capacity = 0;
-    }
+func last(this: &StructLookupList) -> &StructLookup {
+    assert(this.length != 0, "Called last() on empty StructLookupList");
+    return at(this, this.length - 1);
+}
 
-    func clear(&this) {
-        this.length = 0;
+func extend(this: &StructLookupList, other: &StructLookupList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
     }
+    drop(other);
+}
+
+func drop(this: &StructLookupList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
+}
+
+func clear(this: &StructLookupList) {
+    this.length = 0;
+}
+
+struct ScopeLookupList {
+    elements: &ScopeLookup;
+    length: usize;
+    capacity: usize;
+}
+
+func initBlank(this: &ScopeLookupList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof ScopeLookup);
+    assert(this.elements != null, "Could not allocate memory in ScopeLookupList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
+
+func push(this: &ScopeLookupList, element: ScopeLookup) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof ScopeLookup);
+        assert(this.elements != null, "Could not allocate memory in ScopeLookupList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+func pop(this: &ScopeLookupList) -> &ScopeLookup {
+    let l: &ScopeLookup = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &ScopeLookupList, index: usize) -> &ScopeLookup {
+    assert(index < this.length, "Out of bounds access in ScopeLookupList.at");
+    assert(this.elements != null, "Element pointer is NULL in ScopeLookupList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &ScopeLookupList, element: &ScopeLookup) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+func last(this: &ScopeLookupList) -> &ScopeLookup {
+    assert(this.length != 0, "Called last() on empty ScopeLookupList");
+    return at(this, this.length - 1);
+}
+
+func extend(this: &ScopeLookupList, other: &ScopeLookupList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
+    }
+    drop(other);
+}
+
+func drop(this: &ScopeLookupList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
+}
+
+func clear(this: &ScopeLookupList) {
+    this.length = 0;
+}
+
+struct TypeLookupList {
+    elements: &TypeLookup;
+    length: usize;
+    capacity: usize;
+}
+
+func initBlank(this: &TypeLookupList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof TypeLookup);
+    assert(this.elements != null, "Could not allocate memory in TypeLookupList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
+
+func push(this: &TypeLookupList, element: TypeLookup) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof TypeLookup);
+        assert(this.elements != null, "Could not allocate memory in TypeLookupList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+func pop(this: &TypeLookupList) -> &TypeLookup {
+    let l: &TypeLookup = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &TypeLookupList, index: usize) -> &TypeLookup {
+    assert(index < this.length, "Out of bounds access in TypeLookupList.at");
+    assert(this.elements != null, "Element pointer is NULL in TypeLookupList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &TypeLookupList, element: &TypeLookup) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+func last(this: &TypeLookupList) -> &TypeLookup {
+    assert(this.length != 0, "Called last() on empty TypeLookupList");
+    return at(this, this.length - 1);
+}
+
+func extend(this: &TypeLookupList, other: &TypeLookupList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
+    }
+    drop(other);
+}
+
+func drop(this: &TypeLookupList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
+}
+
+func clear(this: &TypeLookupList) {
+    this.length = 0;
+}
+
+struct VariableLookupList {
+    elements: &VariableLookup;
+    length: usize;
+    capacity: usize;
+}
+
+func initBlank(this: &VariableLookupList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof VariableLookup);
+    assert(this.elements != null, "Could not allocate memory in VariableLookupList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
+
+func push(this: &VariableLookupList, element: VariableLookup) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof VariableLookup);
+        assert(this.elements != null, "Could not allocate memory in VariableLookupList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+func pop(this: &VariableLookupList) -> &VariableLookup {
+    let l: &VariableLookup = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &VariableLookupList, index: usize) -> &VariableLookup {
+    assert(index < this.length, "Out of bounds access in VariableLookupList.at");
+    assert(this.elements != null, "Element pointer is NULL in VariableLookupList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &VariableLookupList, element: &VariableLookup) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+func last(this: &VariableLookupList) -> &VariableLookup {
+    assert(this.length != 0, "Called last() on empty VariableLookupList");
+    return at(this, this.length - 1);
+}
+
+func extend(this: &VariableLookupList, other: &VariableLookupList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
+    }
+    drop(other);
+}
+
+func drop(this: &VariableLookupList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
+}
+
+func clear(this: &VariableLookupList) {
+    this.length = 0;
+}
+
+struct ImportLookupList {
+    elements: &ImportLookup;
+    length: usize;
+    capacity: usize;
+}
+
+func initBlank(this: &ImportLookupList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof ImportLookup);
+    assert(this.elements != null, "Could not allocate memory in ImportLookupList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
+
+func push(this: &ImportLookupList, element: ImportLookup) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof ImportLookup);
+        assert(this.elements != null, "Could not allocate memory in ImportLookupList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+func pop(this: &ImportLookupList) -> &ImportLookup {
+    let l: &ImportLookup = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &ImportLookupList, index: usize) -> &ImportLookup {
+    assert(index < this.length, "Out of bounds access in ImportLookupList.at");
+    assert(this.elements != null, "Element pointer is NULL in ImportLookupList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &ImportLookupList, element: &ImportLookup) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+func last(this: &ImportLookupList) -> &ImportLookup {
+    assert(this.length != 0, "Called last() on empty ImportLookupList");
+    return at(this, this.length - 1);
+}
+
+func extend(this: &ImportLookupList, other: &ImportLookupList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
+    }
+    drop(other);
+}
+
+func drop(this: &ImportLookupList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
+}
+
+func clear(this: &ImportLookupList) {
+    this.length = 0;
+}
+
+struct MethodLookupList {
+    elements: &MethodLookup;
+    length: usize;
+    capacity: usize;
+}
+
+func initBlank(this: &MethodLookupList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof MethodLookup);
+    assert(this.elements != null, "Could not allocate memory in MethodLookupList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
+
+func push(this: &MethodLookupList, element: MethodLookup) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof MethodLookup);
+        assert(this.elements != null, "Could not allocate memory in MethodLookupList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+func pop(this: &MethodLookupList) -> &MethodLookup {
+    let l: &MethodLookup = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &MethodLookupList, index: usize) -> &MethodLookup {
+    assert(index < this.length, "Out of bounds access in MethodLookupList.at");
+    assert(this.elements != null, "Element pointer is NULL in MethodLookupList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &MethodLookupList, element: &MethodLookup) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+func last(this: &MethodLookupList) -> &MethodLookup {
+    assert(this.length != 0, "Called last() on empty MethodLookupList");
+    return at(this, this.length - 1);
+}
+
+func extend(this: &MethodLookupList, other: &MethodLookupList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
+    }
+    drop(other);
+}
+
+func drop(this: &MethodLookupList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
+}
+
+func clear(this: &MethodLookupList) {
+    this.length = 0;
+}
+
+struct TCStateList {
+    elements: &TCState;
+    length: usize;
+    capacity: usize;
+}
+
+func initBlank(this: &TCStateList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof TCState);
+    assert(this.elements != null, "Could not allocate memory in TCStateList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
+
+func push(this: &TCStateList, element: TCState) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof TCState);
+        assert(this.elements != null, "Could not allocate memory in TCStateList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+func pop(this: &TCStateList) -> &TCState {
+    let l: &TCState = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &TCStateList, index: usize) -> &TCState {
+    assert(index < this.length, "Out of bounds access in TCStateList.at");
+    assert(this.elements != null, "Element pointer is NULL in TCStateList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &TCStateList, element: &TCState) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+func last(this: &TCStateList) -> &TCState {
+    assert(this.length != 0, "Called last() on empty TCStateList");
+    return at(this, this.length - 1);
+}
+
+func extend(this: &TCStateList, other: &TCStateList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
+    }
+    drop(other);
+}
+
+func drop(this: &TCStateList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
+}
+
+func clear(this: &TCStateList) {
+    this.length = 0;
+}
+
+struct RegIndexList {
+    elements: &RegIndex;
+    length: usize;
+    capacity: usize;
+}
+
+func initBlank(this: &RegIndexList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof RegIndex);
+    assert(this.elements != null, "Could not allocate memory in RegIndexList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
+
+func push(this: &RegIndexList, element: RegIndex) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof RegIndex);
+        assert(this.elements != null, "Could not allocate memory in RegIndexList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+func pop(this: &RegIndexList) -> &RegIndex {
+    let l: &RegIndex = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &RegIndexList, index: usize) -> &RegIndex {
+    assert(index < this.length, "Out of bounds access in RegIndexList.at");
+    assert(this.elements != null, "Element pointer is NULL in RegIndexList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &RegIndexList, element: &RegIndex) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+func last(this: &RegIndexList) -> &RegIndex {
+    assert(this.length != 0, "Called last() on empty RegIndexList");
+    return at(this, this.length - 1);
+}
+
+func extend(this: &RegIndexList, other: &RegIndexList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
+    }
+    drop(other);
+}
+
+func drop(this: &RegIndexList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
+}
+
+func clear(this: &RegIndexList) {
+    this.length = 0;
+}
+
+struct IRInstrList {
+    elements: &IRInstr;
+    length: usize;
+    capacity: usize;
+}
+
+func initBlank(this: &IRInstrList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof IRInstr);
+    assert(this.elements != null, "Could not allocate memory in IRInstrList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
+
+func push(this: &IRInstrList, element: IRInstr) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof IRInstr);
+        assert(this.elements != null, "Could not allocate memory in IRInstrList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+func pop(this: &IRInstrList) -> &IRInstr {
+    let l: &IRInstr = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &IRInstrList, index: usize) -> &IRInstr {
+    assert(index < this.length, "Out of bounds access in IRInstrList.at");
+    assert(this.elements != null, "Element pointer is NULL in IRInstrList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &IRInstrList, element: &IRInstr) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+func last(this: &IRInstrList) -> &IRInstr {
+    assert(this.length != 0, "Called last() on empty IRInstrList");
+    return at(this, this.length - 1);
+}
+
+func extend(this: &IRInstrList, other: &IRInstrList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
+    }
+    drop(other);
+}
+
+func drop(this: &IRInstrList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
+}
+
+func clear(this: &IRInstrList) {
+    this.length = 0;
+}
+
+struct IRScopeList {
+    elements: &IRScope;
+    length: usize;
+    capacity: usize;
+}
+
+func initBlank(this: &IRScopeList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof IRScope);
+    assert(this.elements != null, "Could not allocate memory in IRScopeList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
+
+func push(this: &IRScopeList, element: IRScope) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof IRScope);
+        assert(this.elements != null, "Could not allocate memory in IRScopeList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+func pop(this: &IRScopeList) -> &IRScope {
+    let l: &IRScope = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &IRScopeList, index: usize) -> &IRScope {
+    assert(index < this.length, "Out of bounds access in IRScopeList.at");
+    assert(this.elements != null, "Element pointer is NULL in IRScopeList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &IRScopeList, element: &IRScope) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+func last(this: &IRScopeList) -> &IRScope {
+    assert(this.length != 0, "Called last() on empty IRScopeList");
+    return at(this, this.length - 1);
+}
+
+func extend(this: &IRScopeList, other: &IRScopeList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
+    }
+    drop(other);
+}
+
+func drop(this: &IRScopeList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
+}
+
+func clear(this: &IRScopeList) {
+    this.length = 0;
+}
+
+struct IRRegList {
+    elements: &IRReg;
+    length: usize;
+    capacity: usize;
+}
+
+func initBlank(this: &IRRegList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof IRReg);
+    assert(this.elements != null, "Could not allocate memory in IRRegList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
+
+func push(this: &IRRegList, element: IRReg) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof IRReg);
+        assert(this.elements != null, "Could not allocate memory in IRRegList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+func pop(this: &IRRegList) -> &IRReg {
+    let l: &IRReg = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &IRRegList, index: usize) -> &IRReg {
+    assert(index < this.length, "Out of bounds access in IRRegList.at");
+    assert(this.elements != null, "Element pointer is NULL in IRRegList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &IRRegList, element: &IRReg) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+func last(this: &IRRegList) -> &IRReg {
+    assert(this.length != 0, "Called last() on empty IRRegList");
+    return at(this, this.length - 1);
+}
+
+func extend(this: &IRRegList, other: &IRRegList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
+    }
+    drop(other);
+}
+
+func drop(this: &IRRegList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
+}
+
+func clear(this: &IRRegList) {
+    this.length = 0;
+}
+
+struct IRBlockList {
+    elements: &IRBlock;
+    length: usize;
+    capacity: usize;
+}
+
+func initBlank(this: &IRBlockList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof IRBlock);
+    assert(this.elements != null, "Could not allocate memory in IRBlockList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
+
+func push(this: &IRBlockList, element: IRBlock) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof IRBlock);
+        assert(this.elements != null, "Could not allocate memory in IRBlockList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+func pop(this: &IRBlockList) -> &IRBlock {
+    let l: &IRBlock = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &IRBlockList, index: usize) -> &IRBlock {
+    assert(index < this.length, "Out of bounds access in IRBlockList.at");
+    assert(this.elements != null, "Element pointer is NULL in IRBlockList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &IRBlockList, element: &IRBlock) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+func last(this: &IRBlockList) -> &IRBlock {
+    assert(this.length != 0, "Called last() on empty IRBlockList");
+    return at(this, this.length - 1);
+}
+
+func extend(this: &IRBlockList, other: &IRBlockList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
+    }
+    drop(other);
+}
+
+func drop(this: &IRBlockList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
+}
+
+func clear(this: &IRBlockList) {
+    this.length = 0;
+}
+
+struct LoopBlockList {
+    elements: &LoopBlock;
+    length: usize;
+    capacity: usize;
+}
+
+func initBlank(this: &LoopBlockList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof LoopBlock);
+    assert(this.elements != null, "Could not allocate memory in LoopBlockList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
+
+func push(this: &LoopBlockList, element: LoopBlock) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof LoopBlock);
+        assert(this.elements != null, "Could not allocate memory in LoopBlockList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+func pop(this: &LoopBlockList) -> &LoopBlock {
+    let l: &LoopBlock = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &LoopBlockList, index: usize) -> &LoopBlock {
+    assert(index < this.length, "Out of bounds access in LoopBlockList.at");
+    assert(this.elements != null, "Element pointer is NULL in LoopBlockList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &LoopBlockList, element: &LoopBlock) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+func last(this: &LoopBlockList) -> &LoopBlock {
+    assert(this.length != 0, "Called last() on empty LoopBlockList");
+    return at(this, this.length - 1);
+}
+
+func extend(this: &LoopBlockList, other: &LoopBlockList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
+    }
+    drop(other);
+}
+
+func drop(this: &LoopBlockList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
+}
+
+func clear(this: &LoopBlockList) {
+    this.length = 0;
+}
+
+struct IRScopeEntryList {
+    elements: &IRScopeEntry;
+    length: usize;
+    capacity: usize;
+}
+
+func initBlank(this: &IRScopeEntryList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof IRScopeEntry);
+    assert(this.elements != null, "Could not allocate memory in IRScopeEntryList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
+
+func push(this: &IRScopeEntryList, element: IRScopeEntry) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof IRScopeEntry);
+        assert(this.elements != null, "Could not allocate memory in IRScopeEntryList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+func pop(this: &IRScopeEntryList) -> &IRScopeEntry {
+    let l: &IRScopeEntry = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &IRScopeEntryList, index: usize) -> &IRScopeEntry {
+    assert(index < this.length, "Out of bounds access in IRScopeEntryList.at");
+    assert(this.elements != null, "Element pointer is NULL in IRScopeEntryList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &IRScopeEntryList, element: &IRScopeEntry) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+func last(this: &IRScopeEntryList) -> &IRScopeEntry {
+    assert(this.length != 0, "Called last() on empty IRScopeEntryList");
+    return at(this, this.length - 1);
+}
+
+func extend(this: &IRScopeEntryList, other: &IRScopeEntryList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
+    }
+    drop(other);
+}
+
+func drop(this: &IRScopeEntryList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
+}
+
+func clear(this: &IRScopeEntryList) {
+    this.length = 0;
+}
+
+struct IRFuncList {
+    elements: &IRFunc;
+    length: usize;
+    capacity: usize;
+}
+
+func initBlank(this: &IRFuncList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof IRFunc);
+    assert(this.elements != null, "Could not allocate memory in IRFuncList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
+
+func push(this: &IRFuncList, element: IRFunc) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof IRFunc);
+        assert(this.elements != null, "Could not allocate memory in IRFuncList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+func pop(this: &IRFuncList) -> &IRFunc {
+    let l: &IRFunc = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &IRFuncList, index: usize) -> &IRFunc {
+    assert(index < this.length, "Out of bounds access in IRFuncList.at");
+    assert(this.elements != null, "Element pointer is NULL in IRFuncList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &IRFuncList, element: &IRFunc) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+func last(this: &IRFuncList) -> &IRFunc {
+    assert(this.length != 0, "Called last() on empty IRFuncList");
+    return at(this, this.length - 1);
+}
+
+func extend(this: &IRFuncList, other: &IRFuncList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
+    }
+    drop(other);
+}
+
+func drop(this: &IRFuncList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
+}
+
+func clear(this: &IRFuncList) {
+    this.length = 0;
+}
+
+struct LLVMTypeList {
+    elements: &LLVMType;
+    length: usize;
+    capacity: usize;
+}
+
+func initBlank(this: &LLVMTypeList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof LLVMType);
+    assert(this.elements != null, "Could not allocate memory in LLVMTypeList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
+
+func push(this: &LLVMTypeList, element: LLVMType) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof LLVMType);
+        assert(this.elements != null, "Could not allocate memory in LLVMTypeList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+func pop(this: &LLVMTypeList) -> &LLVMType {
+    let l: &LLVMType = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &LLVMTypeList, index: usize) -> &LLVMType {
+    assert(index < this.length, "Out of bounds access in LLVMTypeList.at");
+    assert(this.elements != null, "Element pointer is NULL in LLVMTypeList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &LLVMTypeList, element: &LLVMType) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+func last(this: &LLVMTypeList) -> &LLVMType {
+    assert(this.length != 0, "Called last() on empty LLVMTypeList");
+    return at(this, this.length - 1);
+}
+
+func extend(this: &LLVMTypeList, other: &LLVMTypeList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
+    }
+    drop(other);
+}
+
+func drop(this: &LLVMTypeList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
+}
+
+func clear(this: &LLVMTypeList) {
+    this.length = 0;
+}
+
+struct RegValueList {
+    elements: &RegValue;
+    length: usize;
+    capacity: usize;
+}
+
+func initBlank(this: &RegValueList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof RegValue);
+    assert(this.elements != null, "Could not allocate memory in RegValueList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
+
+func push(this: &RegValueList, element: RegValue) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof RegValue);
+        assert(this.elements != null, "Could not allocate memory in RegValueList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+func pop(this: &RegValueList) -> &RegValue {
+    let l: &RegValue = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &RegValueList, index: usize) -> &RegValue {
+    assert(index < this.length, "Out of bounds access in RegValueList.at");
+    assert(this.elements != null, "Element pointer is NULL in RegValueList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &RegValueList, element: &RegValue) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+func last(this: &RegValueList) -> &RegValue {
+    assert(this.length != 0, "Called last() on empty RegValueList");
+    return at(this, this.length - 1);
+}
+
+func extend(this: &RegValueList, other: &RegValueList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
+    }
+    drop(other);
+}
+
+func drop(this: &RegValueList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
+}
+
+func clear(this: &RegValueList) {
+    this.length = 0;
+}
+
+struct LLVMBasicBlockList {
+    elements: &LLVMBasicBlock;
+    length: usize;
+    capacity: usize;
+}
+
+func initBlank(this: &LLVMBasicBlockList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof LLVMBasicBlock);
+    assert(this.elements != null, "Could not allocate memory in LLVMBasicBlockList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
+
+func push(this: &LLVMBasicBlockList, element: LLVMBasicBlock) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof LLVMBasicBlock);
+        assert(this.elements != null, "Could not allocate memory in LLVMBasicBlockList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+func pop(this: &LLVMBasicBlockList) -> &LLVMBasicBlock {
+    let l: &LLVMBasicBlock = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &LLVMBasicBlockList, index: usize) -> &LLVMBasicBlock {
+    assert(index < this.length, "Out of bounds access in LLVMBasicBlockList.at");
+    assert(this.elements != null, "Element pointer is NULL in LLVMBasicBlockList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &LLVMBasicBlockList, element: &LLVMBasicBlock) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+func last(this: &LLVMBasicBlockList) -> &LLVMBasicBlock {
+    assert(this.length != 0, "Called last() on empty LLVMBasicBlockList");
+    return at(this, this.length - 1);
+}
+
+func extend(this: &LLVMBasicBlockList, other: &LLVMBasicBlockList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
+    }
+    drop(other);
+}
+
+func drop(this: &LLVMBasicBlockList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
+}
+
+func clear(this: &LLVMBasicBlockList) {
+    this.length = 0;
+}
+
+struct LLVMValueList {
+    elements: &LLVMValue;
+    length: usize;
+    capacity: usize;
+}
+
+func initBlank(this: &LLVMValueList, newCap: usize) {
+    if (this.elements != null) free(this.elements);
+    this.elements = calloc(newCap, sizeof LLVMValue);
+    assert(this.elements != null, "Could not allocate memory in LLVMValueList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
+
+func push(this: &LLVMValueList, element: LLVMValue) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof LLVMValue);
+        assert(this.elements != null, "Could not allocate memory in LLVMValueList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+func pop(this: &LLVMValueList) -> &LLVMValue {
+    let l: &LLVMValue = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &LLVMValueList, index: usize) -> &LLVMValue {
+    assert(index < this.length, "Out of bounds access in LLVMValueList.at");
+    assert(this.elements != null, "Element pointer is NULL in LLVMValueList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &LLVMValueList, element: &LLVMValue) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+func last(this: &LLVMValueList) -> &LLVMValue {
+    assert(this.length != 0, "Called last() on empty LLVMValueList");
+    return at(this, this.length - 1);
+}
+
+func extend(this: &LLVMValueList, other: &LLVMValueList) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(this, *(at(other, i)));
+    }
+    drop(other);
+}
+
+func drop(this: &LLVMValueList) {
+    free(this.elements);
+    this.elements = null;
+    this.length = 0;
+    this.capacity = 0;
+}
+
+func clear(this: &LLVMValueList) {
+    this.length = 0;
 }
 

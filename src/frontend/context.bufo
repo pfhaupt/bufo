@@ -5,6 +5,7 @@ import "./token.bufo";
 import "./nodes.bufo";
 import "./lexer.bufo";
 import "../middleend/types.bufo";
+import "../middleend/checker.bufo";
 
 struct VarDeclContext {
     name: Token;
@@ -105,8 +106,8 @@ struct StructContext {
         for (let i: usize = 0; i < this.fieldLength; i = i + 1) {
             let f: Token = this.getFieldNameAtIndex(i);
             let _t: &ParsedTypeNode = typeNodes.at(this.getFieldTypeAtIndex(i));
-            assert(_t.typeState.isSuccess(), "Expected valid field type in getFieldOffset");
-            let t: &Type = types.at(_t.typeState.getType());
+            assert(isSuccess(&_t.typeState), "Expected valid field type in getFieldOffset");
+            let t: &Type = types.at(getType(&_t.typeState));
             if (f.content.equals(name)) {
                 return offset;
             }

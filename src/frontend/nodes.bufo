@@ -46,7 +46,7 @@ func mangleFunctionName(
 ) -> String {
     let mangledName: String = blank;
     for (let i: usize = 0; i < attrs.length; i = i + 1) {
-        let a = attrs.at(i);
+        let a = at(attrs, i);
         if (a.kind == ATTR_EXTERN) return a.name.content.toString();
     }
     // Method  : StructName-Name-ParamsTypeID-rRetTypeID
@@ -61,8 +61,8 @@ func mangleFunctionName(
         let name: Token = params.getNameAtIndex(i);
         let id: usize = params.getTypeAtIndex(i);
         let typeNode: &ParsedTypeNode = typeNodes.at(id);
-        assert(typeNode.typeState.isSuccess(), "Expected valid parameter type for mangling");
-        let typ: &Type = types.at(typeNode.typeState.getType());
+        assert(isSuccess(&typeNode.typeState), "Expected valid parameter type for mangling");
+        let typ: &Type = types.at(getType(&typeNode.typeState));
         let _typ: String = typ.getMangledName();
         mangledName.pushString(&_typ);
         _typ.drop();
@@ -70,8 +70,8 @@ func mangleFunctionName(
     mangledName.pushChar('r');
     if (retTypeID != 0) {
         let retNode: &ParsedTypeNode = typeNodes.at(retTypeID);
-        assert(retNode.typeState.isSuccess(), "Expected valid return type for mangling");
-        let typ: &Type = types.at(retNode.typeState.getType());
+        assert(isSuccess(&retNode.typeState), "Expected valid return type for mangling");
+        let typ: &Type = types.at(getType(&retNode.typeState));
         let _typ: String = typ.getMangledName();
         mangledName.pushString(&_typ);
         _typ.drop();
@@ -250,7 +250,7 @@ func getFieldOffsetAndSize(this: &ParsedStructDecl, index: usize, offset: &usize
     for (let i: usize = 0; i < this.context.fieldLength; i = i + 1) {
         let field: usize = this.context.getFieldTypeAtIndex(i);
         let f1: &ParsedTypeNode = typeNodes.at(field);
-        let f: &Type = types.at(f1.typeState.getType());
+        let f: &Type = types.at(getType(&f1.typeState));
         let s: usize = f.getSize();
         s = nextMultipleOf(s, f.getAlignment());
         if (i == index) {
@@ -297,7 +297,7 @@ func getID(this: &ParsedMethod) -> usize {
 func getMangledName(this: &ParsedMethod) -> String {
     trace("ParsedMethod.getMangledName");
     if (this.ignored) return this.name.content.toString();
-    assert(this.typeState.isSuccess(), "Mangling can only be done after type checks");
+    assert(isSuccess(&this.typeState), "Mangling can only be done after type checks");
     return mangleFunctionName(
         this.parentID,
         &this.name,
@@ -345,7 +345,7 @@ func getID(this: &ParsedFuncDecl) -> usize {
 func isExtern(this: &ParsedFuncDecl) -> bool {
     trace("ParsedFuncDecl.isExtern");
     for (let i: usize = 0; i < this.attrs.length; i = i + 1) {
-        if (this.attrs.at(i).kind == ATTR_EXTERN) return true;
+        if (at(&this.attrs, i).kind == ATTR_EXTERN) return true;
     }
     return false;
 }
@@ -353,7 +353,7 @@ func isExtern(this: &ParsedFuncDecl) -> bool {
 func getMangledName(this: &ParsedFuncDecl) -> String {
     trace("ParsedFuncDecl.getMangledName");
     if (this.ignored) return this.name.content.toString();
-    assert(this.typeState.isSuccess(), "Mangling can only be done after type checks");
+    assert(isSuccess(&this.typeState), "Mangling can only be done after type checks");
     return mangleFunctionName(
         this.parentID,
         &this.name,
