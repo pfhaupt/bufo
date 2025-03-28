@@ -272,7 +272,7 @@ struct IRFunc {
     }
     func isExtern(&this) -> bool {
         if (this.isMethod) return false;
-        return this.getFuncNode().isExtern();
+        return isExtern(this.getFuncNode());
     }
     func appendBlock(&this) -> IRBlockID {
         let id: IRBlockID = IRBlockID { i: this.blocks.length };
@@ -928,7 +928,7 @@ struct IRGen {
         for (let i: usize = 0; i < funcDecls.length; i = i + 1) {
             let function: &ParsedFuncDecl = funcDecls.at(i);
             if (function.ignored) continue;
-            let name: String = function.getMangledName();
+            let name: String = getMangledName(function);
             if (this.functions.containsKey(&name)) {
                 let fn = this.functions.get(&name);
                 let loc = toString(&function.span);
@@ -943,7 +943,7 @@ struct IRGen {
                 name: name,
                 span: function.span,
                 isMethod: false,
-                originalID: function.getID(),
+                originalID: getID(function),
                 comptimeLevel: 0,
                 scopes: blank,
                 registers: blank,
@@ -959,7 +959,7 @@ struct IRGen {
         for (let i: usize = 0; i < methods.length; i = i + 1) {
             let method: &ParsedMethod = methods.at(i);
             if (method.ignored) continue;
-            let name: String = method.getMangledName();
+            let name: String = getMangledName(method);
             if (this.functions.containsKey(&name)) {
                 let fn = this.functions.get(&name);
                 let loc = toString(&method.span);
@@ -974,7 +974,7 @@ struct IRGen {
                 name: name,
                 span: method.span,
                 isMethod: true,
-                originalID: method.getID(),
+                originalID: getID(method),
                 comptimeLevel: 0,
                 scopes: blank,
                 registers: blank,
@@ -1000,7 +1000,7 @@ struct IRGen {
         for (let i: usize = 0; i < modules.length; i = i + 1) {
             let mod: &ParsedModule = modules.at(i);
             for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
-                let tli: &ParsedTopLevelItem = topLevelItems.at(mod.getTopLevelItemAtIndex(j));
+                let tli: &ParsedTopLevelItem = topLevelItems.at(getTopLevelItemAtIndex(mod, j));
                 if (tli.ignored) continue;
                 if (tli.kind == TLI_VAR_DECL) {
                     this.generateBytecodeStmt(&this.globalScope, stmts.at(tli.nodeID));
@@ -1093,12 +1093,12 @@ struct IRGen {
         trace("IRGen.generateFunction");
         if (funcDecl.ignored) return;
         assert(funcDecl.typeState.isSuccess(), "Expected valid FuncDecl type in IRGen");
-        let name: String = funcDecl.getMangledName();
+        let name: String = getMangledName(funcDecl);
         let function: &IRFunc = this.functions.get(&name);
         assert(function != null, "Expected to find function in lookup");
         assert(function.name.equals(&name), "functions.get() retrieved wrong IRFunc");
         name.drop();
-        if (funcDecl.isExtern()) {
+        if (isExtern(funcDecl)) {
             return;
         }
         let scope: usize = function.enterScope();
@@ -1112,7 +1112,7 @@ struct IRGen {
         trace("IRGen.generateMethod");
         if (methDecl.ignored) return;
         assert(methDecl.typeState.isSuccess(), "Expected valid Method type in IRGen");
-        let name: String = methDecl.getMangledName();
+        let name: String = getMangledName(methDecl);
         let function: &IRFunc = this.functions.get(&name);
         assert(function != null, "Expected to find function in lookup");
         assert(function.name.equals(&name), "functions.get() retrieved wrong IRFunc");
@@ -1139,12 +1139,12 @@ struct IRGen {
             modID = f.parentID;
         }
         for (let i: usize = 0; i < block.stmtLength; i = i + 1) {
-            let stmt: &ParsedStmt = stmts.at(block.getStmtAtIndex(i));
+            let stmt: &ParsedStmt = stmts.at(getStmtAtIndex(block, i));
             this.generateBytecodeStmt(function, stmt);
             let curr: &IRBlock = function.getCurrentBlockAsRef();
             if (curr.isTerminated()) {
                 if (i != block.stmtLength - 1) {
-                    let loc: String = toString(&stmts.at(block.getStmtAtIndex(i + 1)).span);
+                    let loc: String = toString(&stmts.at(getStmtAtIndex(block, i + 1)).span);
                     fprintf(stderr, "%s: %s: Unreachable code.\n", loc.chars(), WARN_STR);
                     loc.drop();
                 }
@@ -1288,19 +1288,19 @@ struct IRGen {
         assert(expr.typeState.isSuccess(), "Expected valid Expr type in IRGen");
         if (expr.kind == EXPR_EMPTY) {
             return blank;
-        } else if (expr.isIdentifier()) {
+        } else if (isIdentifier(expr)) {
             return this.generateBytecodeExprIdentifier(function, expr, needsPtr);
-        } else if (expr.isArithmetic()) {
+        } else if (isArithmetic(expr)) {
             return this.generateBytecodeExprArithmetic(function, expr);
-        } else if (expr.isComparison()) {
+        } else if (isComparison(expr)) {
             return this.generateBytecodeExprComparison(function, expr);
-        } else if (expr.isLogical()) {
+        } else if (isLogical(expr)) {
             return this.generateBytecodeExprLogical(function, expr);
-        } else if (expr.isBitwise()) {
+        } else if (isBitwise(expr)) {
             return this.generateBytecodeExprBitwise(function, expr);
-        } else if (expr.isLiteral()) {
+        } else if (isLiteral(expr)) {
             return this.generateBytecodeExprLiteral(function, expr, needsPtr);
-        } else if (expr.isAssignment()) {
+        } else if (isAssignment(expr)) {
             return this.generateBytecodeExprAssignment(function, expr);
         } else if (expr.kind == EXPR_BINARY) {
             if (expr.op == BIN_DOT) {
@@ -1310,11 +1310,11 @@ struct IRGen {
             } else {
                 unreachable("op should've been handled by now");
             }
-        } else if (expr.isCall()) {
+        } else if (isCall(expr)) {
             return this.generateBytecodeExprCall(function, expr, needsPtr);
-        } else if (expr.isUnary()) {
+        } else if (isUnary(expr)) {
             return this.generateBytecodeExprUnary(function, expr, needsPtr);
-        } else if (expr.isBlank()) {
+        } else if (isBlank(expr)) {
             let t: &Type = types.at(expr.typeState.getType());
             let size: usize = t.getSize();
             if (size == 0) warning("blank of type of size 0");
@@ -1351,7 +1351,7 @@ struct IRGen {
             for (let i: usize = 0; i < expr.structInitContext.fieldLength; i = i + 1) {
                 let name: Token = expr.structInitContext.getFieldNameAtIndex(i);
                 let expr: &ParsedExpr = exprs.at(expr.structInitContext.getFieldExprAtIndex(i));
-                let index: usize = structDecl.getFieldIndex(&name.content);
+                let index: usize = getFieldIndex(structDecl, &name.content);
                 let result: RegIndex = this.generateBytecodeExpr(function, expr, false);
                 function.buildInsertValue(expr.span, reg, index, result);
             }
@@ -1444,7 +1444,7 @@ struct IRGen {
             let structType: &Type = _t.getUnderlyingType(false);
             // `result` contains a pointer to a struct instance at this point
             let decl: &ParsedStructDecl = structDecls.at(structType.typeIndex);
-            let index: usize = decl.getFieldIndex(&rhs.origToken.content);
+            let index: usize = getFieldIndex(decl, &rhs.origToken.content);
             let _f: &ParsedTypeNode = typeNodes.at(decl.context.getFieldTypeAtIndex(index));
             let fieldType: &Type = types.at(_f.typeState.getType());
             let fieldPtr: RegIndex = function.allocateRegister(types.at(fieldType.intoPointer()));
@@ -1460,7 +1460,7 @@ struct IRGen {
             let result: RegIndex = this.generateBytecodeExpr(function, lhs, false);
             let instance: RegIndex = this.prepareArgument(function, lhs.span, result, instance);
             let method: &ParsedMethod = methods.at(rhs.lhs);
-            let name: String = method.getMangledName();
+            let name: String = getMangledName(method);
             let funcID: usize = this.getFunctionByName(&name);
             name.drop();
             let typ: &Type = types.at(expr.typeState.getType());
@@ -1612,7 +1612,7 @@ struct IRGen {
 
     func generateBytecodeExprIdentifier(&this, function: &IRFunc, expr: &ParsedExpr, needsPtr: bool) -> RegIndex {
         trace("IRGen.generateBytecodeExprIdentifier");
-        assert(expr.isIdentifier());
+        assert(isIdentifier(expr));
         let isGlobal: bool = false;
         let entry: &IRScopeEntry = this.getIdentifierByName(function, expr.origToken.content, &isGlobal);
         assert(entry != null, "Could not find identifier in generateBytecodeExprIdentifier");
@@ -1667,7 +1667,7 @@ struct IRGen {
 
     func generateBytecodeExprArithmetic(&this, function: &IRFunc, expr: &ParsedExpr) -> RegIndex {
         trace("IRGen.generateBytecodeExprArithmetic");
-        assert(expr.isArithmetic());
+        assert(isArithmetic(expr));
         let lhs: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.lhs), false);
         let rhs: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.rhs), false);
         let lhsType: &Type = types.at(exprs.at(expr.lhs).typeState.getType());
@@ -1755,7 +1755,7 @@ struct IRGen {
 
     func generateBytecodeExprComparison(&this, function: &IRFunc, expr: &ParsedExpr) -> RegIndex {
         trace("IRGen.generateBytecodeExprComparison");
-        assert(expr.isComparison());
+        assert(isComparison(expr));
         let lhs: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.lhs), false);
         let rhs: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.rhs), false);
         let res: &Type = types.at(expr.typeState.getType());
@@ -1819,7 +1819,7 @@ struct IRGen {
 
     func generateBytecodeExprLogical(&this, function: &IRFunc, expr: &ParsedExpr) -> RegIndex {
         trace("IRGen.generateBytecodeExprLogical");
-        assert(expr.isLogical());
+        assert(isLogical(expr));
         let lhs: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.lhs), false);
         let rhs: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.rhs), false);
         let t: &Type = types.at(expr.typeState.getType());
@@ -1836,7 +1836,7 @@ struct IRGen {
 
     func generateBytecodeExprBitwise(&this, function: &IRFunc, expr: &ParsedExpr) -> RegIndex {
         trace("IRGen.generateBytecodeExprBitwise");
-        assert(expr.isBitwise());
+        assert(isBitwise(expr));
         let lhs: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.lhs), false);
         let rhs: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.rhs), false);
         let t: &Type = types.at(expr.typeState.getType());
@@ -1855,7 +1855,7 @@ struct IRGen {
 
     func generateBytecodeExprLiteral(&this, function: &IRFunc, expr: &ParsedExpr, needsPtr: bool) -> RegIndex {
         trace("IRGen.generateBytecodeExprLiteral");
-        assert(expr.isLiteral());
+        assert(isLiteral(expr));
         let t: &Type = types.at(expr.typeState.getType());
         let reg: RegIndex = function.allocateRegister(t);
         if (expr.kind == EXPR_INT_LIT) {
@@ -1973,7 +1973,7 @@ struct IRGen {
 
     func generateBytecodeExprAssignment(&this, function: &IRFunc, expr: &ParsedExpr) -> RegIndex {
         trace("IRGen.generateBytecodeExprAssignment");
-        assert(expr.isAssignment());
+        assert(isAssignment(expr));
         let lhs: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.lhs), true);
         let rhs: RegIndex = this.generateBytecodeExpr(function, exprs.at(expr.rhs), false);
         assert(function.getRegister(lhs).typ.isPointer(), "Assignment expected Ptr as LHS");
@@ -1983,7 +1983,7 @@ struct IRGen {
 
     func generateBytecodeExprUnary(&this, function: &IRFunc, expr: &ParsedExpr, needsPtr: bool) -> RegIndex {
         trace("IRGen.generateBytecodeExprUnary");
-        assert(expr.isUnary());
+        assert(isUnary(expr));
         if (expr.op == UNARY_COMPTIME) {
             function.startComptime();
             let subexpr: &ParsedExpr = exprs.at(expr.lhs);
@@ -2147,7 +2147,7 @@ struct IRGen {
 
     func generateBytecodeExprCall(&this, function: &IRFunc, expr: &ParsedExpr, needsPtr: bool) -> RegIndex {
         trace("IRGen.generateBytecodeExprCall");
-        assert(expr.isCall());
+        assert(isCall(expr));
         let typ: &Type = types.at(expr.typeState.getType());
         let args: RegIndexList = blank;
         let reg: RegIndex = function.allocateRegister(typ);
@@ -2163,7 +2163,7 @@ struct IRGen {
             let result: RegIndex = this.generateBytecodeExpr(function, arg, false);
             args.push(this.prepareArgument(function, arg.span, result, argType));
         }
-        let name: String = funcDecls.at(expr.lhs).getMangledName();
+        let name: String = getMangledName(funcDecls.at(expr.lhs));
         let funcID: usize = this.getFunctionByName(&name);
         name.drop();
         return this.prepareReturnValue(expr.span, function, funcID, args, typ, retPtr, needsPtr);

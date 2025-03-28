@@ -338,7 +338,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
             let s: &ParsedStructDecl = structDecls.at(t.typeIndex);
             let offset: usize = 0;
             let fieldSize: usize = 0;
-            s.getFieldOffsetAndSize(instr.src.i, &offset, &fieldSize);
+            getFieldOffsetAndSize(s, instr.src.i, &offset, &fieldSize);
             let valReg: InterpReg = asInterp(regs.at(instr.op1.i), "Interp InsertValue Struct");
             assert(valReg.size == fieldSize, "field size mismatch in Interp InsertValue");
             memcpy(dstStart + offset, getRegStackPointer(this, &valReg), fieldSize);
@@ -844,7 +844,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         let decl: &ParsedStructDecl = structDecls.at(u.typeIndex);
         let offset: usize = 0;
         let size: usize = 0;
-        decl.getFieldOffsetAndSize(instr.op1.i, &offset, &size);
+        getFieldOffsetAndSize(decl, instr.op1.i, &offset, &size);
         let reg: InterpReg = InterpReg {
             offset: fReg.offset,
             size: 8,

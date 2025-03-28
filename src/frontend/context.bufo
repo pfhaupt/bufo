@@ -29,7 +29,7 @@ struct ArrayContext {
             assert(this.elemList != null, "Could not resize elem list");
             this.elemCapacity = newCap;
         }
-        this.elemList[this.elemLength] = elem.getID();
+        this.elemList[this.elemLength] = getID(elem);
         this.elemLength = this.elemLength + 1;
     }
 
@@ -59,7 +59,7 @@ struct StructContext {
             this.fieldCapacity = newCap;
         }
         this.fieldNames[this.fieldLength] = name;
-        this.fieldTypes[this.fieldLength] = typ.getID();
+        this.fieldTypes[this.fieldLength] = getID(typ);
         this.fieldLength = this.fieldLength + 1;
     }
     func addMethod(&this, method: &ParsedMethod) {
@@ -71,7 +71,7 @@ struct StructContext {
             assert(this.methods != null, "Could not resize method list");
             this.methodCapacity = newCap;
         }
-        this.methods[this.methodLength] = method.getID();
+        this.methods[this.methodLength] = getID(method);
         this.methodLength = this.methodLength + 1;
     }
     func getFieldNameAtIndex(&this, index: usize) -> Token {
@@ -133,7 +133,7 @@ struct StructInitContext {
             this.fieldCapacity = newCap;
         }
         this.fieldNames[this.fieldLength] = name;
-        this.fieldExprs[this.fieldLength] = expr.getID();
+        this.fieldExprs[this.fieldLength] = getID(expr);
         this.fieldLength = this.fieldLength + 1;
     }
     func getFieldNameAtIndex(&this, index: usize) -> Token {
@@ -166,7 +166,7 @@ struct ParamContext {
             this.paramCapacity = newCap;
         }
         this.paramNames[this.paramLength] = name;
-        this.paramTypes[this.paramLength] = typ.getID();
+        this.paramTypes[this.paramLength] = getID(typ);
         this.paramLength = this.paramLength + 1;
     }
 

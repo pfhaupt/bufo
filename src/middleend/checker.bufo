@@ -505,11 +505,11 @@ struct TypeChecker {
         trace("TypeChecker.fillLookup");
         for (let i: usize = 0; i < modules.length; i = i + 1) {
             let mod: &ParsedModule = modules.at(i);
-            assert(mod.getID() == i);
+            assert(getID(mod) == i);
             this.currentModule = i;
             let lookup: &ModuleLookup = this.lookup.insertModule(mod);
             for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
-                let tliID: usize = mod.getTopLevelItemAtIndex(j);
+                let tliID: usize = getTopLevelItemAtIndex(mod, j);
                 let tli: &ParsedTopLevelItem = topLevelItems.at(tliID);
                 if (tli.ignored) continue;
                 lookup.insertTLI(tli);
@@ -526,12 +526,12 @@ struct TypeChecker {
             done = true;
             for (let i: usize = 0; i < modules.length; i = i + 1) {
                 let mod: &ParsedModule = modules.at(i);
-                assert(mod.getID() == i);
+                assert(getID(mod) == i);
                 this.currentModule = i;
                 let currModule: &ModuleLookup = this.lookup.modules.at(i);
                 assert(currModule.variables.length == 1, "still deez");
                 for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
-                    let tliID: usize = mod.getTopLevelItemAtIndex(j);
+                    let tliID: usize = getTopLevelItemAtIndex(mod, j);
                     let tli: &ParsedTopLevelItem = topLevelItems.at(tliID);
                     let state: TCState = this.typeCheckTLI(tli);
                     (*tli).typeState = state;
@@ -770,7 +770,7 @@ struct TypeChecker {
             for (let i: usize = 0; i < funcLookup.params.length; i = i + 1) {
                 scope.addVariable(*(funcLookup.params.at(i)));
             }
-            if (!function.isExtern()) {
+            if (!isExtern(function)) {
                 scopes.push(scope);
                 let blockState: TCState = this.typeCheckBlock(function.body, scopes);
                 scopes.pop();
@@ -797,7 +797,7 @@ struct TypeChecker {
         // REVIEW: Do we want to make blocks expressions?
         let blockState: TCState = newTCStateSuccess();
         for (let i: usize = 0; i < block.stmtLength; i = i + 1) {
-            let stmtState: TCState = this.typeCheckStmt(block.getStmtAtIndex(i), scopes);
+            let stmtState: TCState = this.typeCheckStmt(getStmtAtIndex(block, i), scopes);
             if (stmtState.isError()) {
                 let err: usize = stmtState.getError();
                 if (err == ERROR_LOOKUP_NOT_READY) {
@@ -839,7 +839,7 @@ struct TypeChecker {
                 todo_with_msg("what is it then");
             }
             let exprType: &Type = types.at(exprState.getType());
-            if (!exprType.isNone() && !expr.isAssignment() && *flags.verbose) {
+            if (!exprType.isNone() && !isAssignment(expr) && *flags.verbose) {
                 let loc: String = toString(&expr.span);
                 fprintf(stderr, "%s: %s: Unused expression value.\n", loc.chars(), WARN_STR);
                 loc.drop();
@@ -1022,7 +1022,7 @@ struct TypeChecker {
             (*var).typeState = typeState;
         } else {
             last.addVariable(VariableLookup {
-                globalID: varDecl.getID(),
+                globalID: getID(varDecl),
                 name: context.name,
                 typeState: typeState,
                 isComptime: context.isComptime,
@@ -1476,7 +1476,7 @@ struct TypeChecker {
                 let under: &Type = paramType.getUnderlyingType(false);
                 assert(instType.equals(under), "method call instance type doesn't match");
                 let expr = exprs.at(exprID);
-                (*expr).lhs = exprs.at(expr.lhs).intoPointer();
+                (*expr).lhs = intoPointer(exprs.at(expr.lhs));
                 let patched: TCState = this.typeCheckExpr(expr.lhs, scopes);
                 assert(patched.isSuccess(), "patched instance failed");
                 assert(patched.isType(), "patched instance state is not a type");
@@ -1621,13 +1621,13 @@ struct TypeChecker {
             return this.typeCheckExprAssign(binID, scopes);
         } else if (expr.op == BIN_INDEXED_ACCESS) {
             return this.typeCheckExprIndexedAccess(binID, scopes);
-        } else if (expr.isArithmetic()) {
+        } else if (isArithmetic(expr)) {
             return this.typeCheckExprArithmetic(binID, scopes);
-        } else if (expr.isComparison()) {
+        } else if (isComparison(expr)) {
             return this.typeCheckExprComparison(binID, scopes);
-        } else if (expr.isLogical()) {
+        } else if (isLogical(expr)) {
             return this.typeCheckExprLogical(binID, scopes);
-        } else if (expr.isBitwise()) {
+        } else if (isBitwise(expr)) {
             return this.typeCheckExprBitwise(binID, scopes);
         } else {
             this.emergencyPrint(expr.span);
@@ -1677,7 +1677,7 @@ struct TypeChecker {
         trace("TypeChecker.typeCheckExprLogical");
         let expr: &ParsedExpr = exprs.at(binID);
         assert(expr.kind == EXPR_BINARY);
-        assert(expr.isLogical());
+        assert(isLogical(expr));
         let lhsState: TCState = this.typeCheckExpr(expr.lhs, scopes);
         let rhsState: TCState = this.typeCheckExpr(expr.rhs, scopes);
         if (lhsState.isError()) return lhsState;
@@ -1704,7 +1704,7 @@ struct TypeChecker {
         trace("TypeChecker.typeCheckExprBitwise");
         let expr: &ParsedExpr = exprs.at(binID);
         assert(expr.kind == EXPR_BINARY);
-        assert(expr.isBitwise());
+        assert(isBitwise(expr));
         let lhsState: TCState = this.typeCheckExpr(expr.lhs, scopes);
         let rhsState: TCState = this.typeCheckExpr(expr.rhs, scopes);
         if (lhsState.isError()) return lhsState;
@@ -1732,7 +1732,7 @@ struct TypeChecker {
         assert(expr.kind == EXPR_BINARY);
         assert(expr.op == BIN_ASSIGN);
         let lhsExpr: &ParsedExpr = exprs.at(expr.lhs);
-        if (!lhsExpr.isLValue()) {
+        if (!isLValue(lhsExpr)) {
             this.emergencyPrint(lhsExpr.span);
             todo_with_msg("invalid l-value");
         }
@@ -1984,13 +1984,13 @@ struct TypeChecker {
             }
             tid = newTCStateType(typ.getID());
         } else if (expr.kind == EXPR_BINARY) {
-            if (expr.isArithmetic() || expr.isBitwise()) {
+            if (isArithmetic(expr) || isBitwise(expr)) {
                 tid = this.tryInferTypeOntoExpr(expr.lhs, typeID, checkOnly);
                 if (tid.isError()) return tid;
                 tid = this.tryInferTypeOntoExpr(expr.rhs, typeID, checkOnly);
                 if (tid.isError()) return tid;
                 tid = newTCStateType(typeID);
-            } else if (expr.isComparison()) {
+            } else if (isComparison(expr)) {
                 // Assuming that neither side has a type (otherwise typeCheckExprComparison would've handled the infer step)
                 // So all that's left is whack things like `1 == 1`, for which we blindly try to infer usize onto both sides
                 let usizeType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
@@ -2099,7 +2099,7 @@ struct TypeChecker {
         } else if (actual.length == 0) {
             if (!checkOnly) {
                 let functions: FunctionLookupList = this.lookup.resolveFunctionByName(this.currentModule, &expr.origToken);
-                return this.reportNoFunctionCallCandidate(expr.getID(), &functions);
+                return this.reportNoFunctionCallCandidate(getID(expr), &functions);
             }
             return newTCStateFailure(ERROR_TYPE_MISMATCH);
         } else {
@@ -2146,7 +2146,7 @@ struct TypeChecker {
         trace("TypeChecker.typeCheckExprArithmetic");
         let expr: &ParsedExpr = exprs.at(binID);
         assert(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
-        assert(expr.isArithmetic(), "Expr expected to be arithmetic");
+        assert(isArithmetic(expr), "Expr expected to be arithmetic");
         let lhsState: TCState = this.typeCheckExpr(expr.lhs, scopes);
         let rhsState: TCState = this.typeCheckExpr(expr.rhs, scopes);
         if (lhsState.isError()) return lhsState;
@@ -2235,7 +2235,7 @@ struct TypeChecker {
         trace("TypeChecker.typeCheckExprComparison");
         let expr: &ParsedExpr = exprs.at(binID);
         assert(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
-        assert(expr.isComparison(), "Expr expected to be comparison");
+        assert(isComparison(expr), "Expr expected to be comparison");
         let lhsState: TCState = this.typeCheckExpr(expr.lhs, scopes);
         let rhsState: TCState = this.typeCheckExpr(expr.rhs, scopes);
         if (lhsState.isError()) return lhsState;
@@ -2316,7 +2316,7 @@ struct TypeChecker {
                 todo_with_msg("check ident");
             }
         } else if (typ.kind == PARSED_TYPE_BUILTIN) {
-            let id: usize = typ.getID();
+            let id: usize = getID(typ);
             let typeID: usize = 0;
             if (id == PARSED_TYPE_INVALID) typeID = TYPE_INVALID;
             else if (id == PARSED_TYPE_UNKNOWN) typeID = TYPE_UNKNOWN;

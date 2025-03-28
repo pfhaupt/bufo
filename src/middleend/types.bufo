@@ -68,8 +68,9 @@ struct Type {
         } else if (this.kind == TYPE_KIND_STRUCT) {
             let s: String = newStringFromStrLit("S");
             let decl: &ParsedStructDecl = structDecls.at(this.typeIndex);
-            let hash: usize = decl.name.content.hash(2);
+            let hash: usize = decl.name.content.hash(3);
             if (hash < 10) s.pushNumber(0);
+            if (hash < 100) s.pushNumber(0);
             s.pushNumber(hash);
             return s;
         } else if (this.kind == TYPE_KIND_ARRAY) {

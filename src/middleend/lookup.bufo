@@ -15,7 +15,7 @@ struct Lookup {
     func insertModule(&this, mod: &ParsedModule) -> &ModuleLookup {
         trace("Lookup.insertModule");
         let lookup: ModuleLookup = ModuleLookup {
-            globalID: mod.getID(),
+            globalID: getID(mod),
             origin: mod.origin,
             imports: blank,
             functions: blank,
@@ -134,7 +134,7 @@ struct Lookup {
         if (typ.isStruct()) {
             let strukt: &ParsedStructDecl = structDecls.at(typ.typeIndex);
             let modID: usize = strukt.parentModule;
-            let s: &StructLookup = this.modules.at(modID).getStructByGlobalID(strukt.getID());
+            let s: &StructLookup = this.modules.at(modID).getStructByGlobalID(getID(strukt));
             return newTypeLookup(TYPE_LOOKUP_STRUCT, s);
         } else {
             unreachable("Lookup.getTypeLookupForType got non-struct type");
@@ -266,14 +266,14 @@ struct ModuleLookup {
     // FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
     func containsDuplicateFunction(&this, function: &FunctionLookup, dupl: &usize) -> bool {
         trace("ModuleLookup.containsDuplicateFunction");
-        let name: String = funcDecls.at(function.globalID).getMangledName();
+        let name: String = getMangledName(funcDecls.at(function.globalID));
         let duplicate: bool = false;
         for (let i: usize = 0; !duplicate && i < this.functions.length; i = i + 1) {
             let f: &FunctionLookup = this.functions.at(i);
             // REVIEW: is FUNC_DUPLICATE_CHECK always correct, or is it better to check FUNC_READY_TO_USE
             if (f == function) continue;
             if (!f.getReadyState(FUNC_DUPLICATE_CHECK)) continue;
-            let n: String = funcDecls.at(f.globalID).getMangledName();
+            let n: String = getMangledName(funcDecls.at(f.globalID));
             if (name.equals(&n)) {
                 *dupl = f as usize;
                 duplicate = true;
@@ -535,14 +535,14 @@ struct StructLookup {
     // FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
     func containsDuplicateMethod(&this, method: &MethodLookup, dupl: &usize) -> bool {
         trace("StructLookup.containsDuplicateMethod");
-        let name: String = methods.at(method.globalID).getMangledName();
+        let name: String = getMangledName(methods.at(method.globalID));
         let duplicate: bool = false;
         for (let i: usize = 0; !duplicate && i < this.methods.length; i = i + 1) {
             let f: &MethodLookup = this.methods.at(i);
             // REVIEW: is METHOD_DUPLICATE_CHECK always correct, or is it better to check METHOD_READY_TO_USE
             if (f == method) continue;
             if (!f.getReadyState(METHOD_DUPLICATE_CHECK)) continue;
-            let n: String = methods.at(f.globalID).getMangledName();
+            let n: String = getMangledName(methods.at(f.globalID));
             if (name.equals(&n)) {
                 *dupl = f as usize;
                 duplicate = true;

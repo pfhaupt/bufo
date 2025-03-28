@@ -739,7 +739,7 @@ func generateLLVMValueFromComptimeValue(this: &LLVMCodegen, typ: &Type, start: &
         for (let i: usize = 0; i < decl.context.fieldLength; i = i + 1) {
             let tDecl: &ParsedTypeNode = typeNodes.at(decl.context.getFieldTypeAtIndex(i));
             let fType: &Type = types.at(tDecl.typeState.getType());
-            decl.getFieldOffsetAndSize(i, &offset, &_size);
+            getFieldOffsetAndSize(decl, i, &offset, &_size);
             let elemVal: LLVMValue = generateLLVMValueFromComptimeValue(this, fType, start + offset);
             strukt = this.llvmBuilder.buildInsertValue(
                 strukt,

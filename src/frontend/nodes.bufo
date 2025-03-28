@@ -115,10 +115,10 @@ struct ParsedAttribute {
     kind: usize;
     span: Span;
     name: Token;
+}
 
-    func equals(&this, other: &ParsedAttribute) -> bool {
-        unreachable("ParsedAttribute.equals is not implemented yet");
-    }
+func equals(this: &ParsedAttribute, other: &ParsedAttribute) -> bool {
+    unreachable("ParsedAttribute.equals is not implemented yet");
 }
 
 comptime COMPILER_FLAG_LIBRARY: SubStr = BUILD_A_KEYWORD("library");
@@ -127,10 +127,10 @@ comptime COMPILER_FLAG_LINKER: SubStr = BUILD_A_KEYWORD("linker");
 struct ParsedCompilerFlag {
     flag: Token;
     value: Token;
-    func equals(&this, other: &ParsedCompilerFlag) -> bool {
-        if (!this.flag.content.equals(&other.flag.content)) return false;
-        return this.value.content.equals(&other.value.content);
-    }
+}
+func equals(this: &ParsedCompilerFlag, other: &ParsedCompilerFlag) -> bool {
+    if (!this.flag.content.equals(&other.flag.content)) return false;
+    return this.value.content.equals(&other.value.content);
 }
 
 func newParsedCompilerFlag(flag: Token, value: Token) -> &ParsedCompilerFlag {
@@ -153,29 +153,29 @@ struct ParsedModule {
     tliList: &usize;
     tliLength: usize;
     tliCapacity: usize;
+}
 
-    func getID(&this) -> usize {
-        trace("ParsedModule.getID");
-        return modules.indexOf(this);
-    }
+func getID(this: &ParsedModule) -> usize {
+    trace("ParsedModule.getID");
+    return modules.indexOf(this);
+}
 
-    func addTopLevelItem(&this, tli: &ParsedTopLevelItem) {
-        trace("ParsedModule.addTopLevelItem");
-        if (this.tliLength >= this.tliCapacity) {
-            let newCap: usize = this.tliCapacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.tliList = realloc(this.tliList, newCap * sizeof usize);
-            assert(this.tliList != null, "Could not resize tli list");
-            this.tliCapacity = newCap;
-        }
-        this.tliList[this.tliLength] = tli.getID();
-        this.tliLength = this.tliLength + 1;
+func addTopLevelItem(this: &ParsedModule, tli: &ParsedTopLevelItem) {
+    trace("ParsedModule.addTopLevelItem");
+    if (this.tliLength >= this.tliCapacity) {
+        let newCap: usize = this.tliCapacity * 2;
+        if (newCap == 0) newCap = 1;
+        this.tliList = realloc(this.tliList, newCap * sizeof usize);
+        assert(this.tliList != null, "Could not resize tli list");
+        this.tliCapacity = newCap;
     }
+    this.tliList[this.tliLength] = getID(tli);
+    this.tliLength = this.tliLength + 1;
+}
 
-    func getTopLevelItemAtIndex(&this, index: usize) -> usize {
-        assert(index < this.tliLength, "Out of bounds access in getTopLevelItemAtIndex");
-        return this.tliList[index];
-    }
+func getTopLevelItemAtIndex(this: &ParsedModule, index: usize) -> usize {
+    assert(index < this.tliLength, "Out of bounds access in getTopLevelItemAtIndex");
+    return this.tliList[index];
 }
 
 func newParsedModule(origin: SubStr) -> &ParsedModule {
@@ -199,11 +199,11 @@ struct ParsedTopLevelItem {
     nodeID: usize;
     attributes: ParsedAttributeList;
     typeState: TCState;
+}
 
-    func getID(&this) -> usize {
-        trace("ParsedTopLevelItem.getID");
-        return topLevelItems.indexOf(this);
-    }
+func getID(this: &ParsedTopLevelItem) -> usize {
+    trace("ParsedTopLevelItem.getID");
+    return topLevelItems.indexOf(this);
 }
 
 func newParsedTopLevelItem(span: Span, kind: usize, nodeID: usize) -> &ParsedTopLevelItem {
@@ -225,42 +225,42 @@ struct ParsedStructDecl {
     span: Span;
     context: StructContext;
     typeState: TCState;
-    func getID(&this) -> usize {
-        trace("ParsedStructDecl.getID");
-        return structDecls.indexOf(this);
-    }
-    func asTLI(&this) -> &ParsedTopLevelItem {
-        trace("ParsedStructDecl.asTLI");
-        return newParsedTopLevelItem(this.span, TLI_STRUCT_DECL, this.getID());
-    }
+}
+func getID(this: &ParsedStructDecl) -> usize {
+    trace("ParsedStructDecl.getID");
+    return structDecls.indexOf(this);
+}
+func asTLI(this: &ParsedStructDecl) -> &ParsedTopLevelItem {
+    trace("ParsedStructDecl.asTLI");
+    return newParsedTopLevelItem(this.span, TLI_STRUCT_DECL, getID(this));
+}
 
-    func getFieldIndex(&this, name: &SubStr) -> usize {
-        return this.context.getFieldIndex(name);
-    }
-    func getFieldOffset(&this, name: &SubStr) -> usize {
-        let offset: usize = 0;
-        let _idc: usize = 0;
-        this.getFieldOffsetAndSize(this.getFieldIndex(name), &offset, &_idc);
-        return offset;
-    }
-    func getFieldOffsetAndSize(&this, index: usize, offset: &usize, size: &usize) {
-        trace("ParsedStructDecl.getFieldOffsetAndSize");
-        let o: usize = 0;
-        for (let i: usize = 0; i < this.context.fieldLength; i = i + 1) {
-            let field: usize = this.context.getFieldTypeAtIndex(i);
-            let f1: &ParsedTypeNode = typeNodes.at(field);
-            let f: &Type = types.at(f1.typeState.getType());
-            let s: usize = f.getSize();
-            s = nextMultipleOf(s, f.getAlignment());
-            if (i == index) {
-                *offset = o;
-                *size = s;
-                return;
-            }
-            o = o + s;
+func getFieldIndex(this: &ParsedStructDecl, name: &SubStr) -> usize {
+    return this.context.getFieldIndex(name);
+}
+func getFieldOffset(this: &ParsedStructDecl, name: &SubStr) -> usize {
+    let offset: usize = 0;
+    let _idc: usize = 0;
+    getFieldOffsetAndSize(this, getFieldIndex(this, name), &offset, &_idc);
+    return offset;
+}
+func getFieldOffsetAndSize(this: &ParsedStructDecl, index: usize, offset: &usize, size: &usize) {
+    trace("ParsedStructDecl.getFieldOffsetAndSize");
+    let o: usize = 0;
+    for (let i: usize = 0; i < this.context.fieldLength; i = i + 1) {
+        let field: usize = this.context.getFieldTypeAtIndex(i);
+        let f1: &ParsedTypeNode = typeNodes.at(field);
+        let f: &Type = types.at(f1.typeState.getType());
+        let s: usize = f.getSize();
+        s = nextMultipleOf(s, f.getAlignment());
+        if (i == index) {
+            *offset = o;
+            *size = s;
+            return;
         }
-        unreachable("Expected to find field offset and size");
+        o = o + s;
     }
+    unreachable("Expected to find field offset and size");
 }
 
 func newParsedStructDecl(parent: usize, span: Span, name: Token) -> &ParsedStructDecl {
@@ -287,26 +287,26 @@ struct ParsedMethod {
     body: usize;
     attrs: ParsedAttributeList;
     typeState: TCState;
+}
 
-    func getID(&this) -> usize {
-        trace("ParsedMethod.getID");
-        return methods.indexOf(this);
-    }
+func getID(this: &ParsedMethod) -> usize {
+    trace("ParsedMethod.getID");
+    return methods.indexOf(this);
+}
 
-    func getMangledName(&this) -> String {
-        trace("ParsedMethod.getMangledName");
-        if (this.ignored) return this.name.content.toString();
-        assert(this.typeState.isSuccess(), "Mangling can only be done after type checks");
-        return mangleFunctionName(
-            this.parentID,
-            &this.name,
-            &this.params,
-            this.retTypeID,
-            true,  // isMethod
-            false, // isComptime,
-            &this.attrs,
-        );
-    }
+func getMangledName(this: &ParsedMethod) -> String {
+    trace("ParsedMethod.getMangledName");
+    if (this.ignored) return this.name.content.toString();
+    assert(this.typeState.isSuccess(), "Mangling can only be done after type checks");
+    return mangleFunctionName(
+        this.parentID,
+        &this.name,
+        &this.params,
+        this.retTypeID,
+        true,  // isMethod
+        false, // isComptime,
+        &this.attrs,
+    );
 }
 
 func newParsedMethod(parentID: usize, span: Span, name: Token, params: ParamContext, retType: &ParsedTypeNode, body: usize) -> &ParsedMethod {
@@ -317,7 +317,7 @@ func newParsedMethod(parentID: usize, span: Span, name: Token, params: ParamCont
         span: span,
         params: params,
         typeState: blank,
-        retTypeID: retType.getID(),
+        retTypeID: getID(retType),
         body: body,
         isStatic: !params.hasThis(),
     });
@@ -335,39 +335,39 @@ struct ParsedFuncDecl {
     attrs: ParsedAttributeList;
     isComptime: bool;
     typeState: TCState;
+}
 
-    func getID(&this) -> usize {
-        trace("ParsedFuncDecl.getID");
-        return funcDecls.indexOf(this);
-    }
+func getID(this: &ParsedFuncDecl) -> usize {
+    trace("ParsedFuncDecl.getID");
+    return funcDecls.indexOf(this);
+}
 
-    func isExtern(&this) -> bool {
-        trace("ParsedFuncDecl.isExtern");
-        for (let i: usize = 0; i < this.attrs.length; i = i + 1) {
-            if (this.attrs.at(i).kind == ATTR_EXTERN) return true;
-        }
-        return false;
+func isExtern(this: &ParsedFuncDecl) -> bool {
+    trace("ParsedFuncDecl.isExtern");
+    for (let i: usize = 0; i < this.attrs.length; i = i + 1) {
+        if (this.attrs.at(i).kind == ATTR_EXTERN) return true;
     }
+    return false;
+}
 
-    func getMangledName(&this) -> String {
-        trace("ParsedFuncDecl.getMangledName");
-        if (this.ignored) return this.name.content.toString();
-        assert(this.typeState.isSuccess(), "Mangling can only be done after type checks");
-        return mangleFunctionName(
-            this.parentID,
-            &this.name,
-            &this.params,
-            this.retTypeID,
-            false, // isMethod
-            this.isComptime,
-            &this.attrs,
-        );
-    }
+func getMangledName(this: &ParsedFuncDecl) -> String {
+    trace("ParsedFuncDecl.getMangledName");
+    if (this.ignored) return this.name.content.toString();
+    assert(this.typeState.isSuccess(), "Mangling can only be done after type checks");
+    return mangleFunctionName(
+        this.parentID,
+        &this.name,
+        &this.params,
+        this.retTypeID,
+        false, // isMethod
+        this.isComptime,
+        &this.attrs,
+    );
+}
 
-    func asTLI(&this) -> &ParsedTopLevelItem {
-        trace("ParsedFuncDecl.asTLI");
-        return newParsedTopLevelItem(this.span, TLI_FUNC_DECL, this.getID());
-    }
+func asTLI(this: &ParsedFuncDecl) -> &ParsedTopLevelItem {
+    trace("ParsedFuncDecl.asTLI");
+    return newParsedTopLevelItem(this.span, TLI_FUNC_DECL, getID(this));
 }
 
 func newParsedFuncDecl(parentID: usize, span: Span, name: Token, params: ParamContext, retType: &ParsedTypeNode, body: usize) -> &ParsedFuncDecl {
@@ -377,7 +377,7 @@ func newParsedFuncDecl(parentID: usize, span: Span, name: Token, params: ParamCo
         name: name,
         span: span,
         params: params,
-        retTypeID: retType.getID(),
+        retTypeID: getID(retType),
         body: body,
         isComptime: false,
         typeState: blank,
@@ -392,29 +392,29 @@ struct ParsedBlock {
     stmtLength: usize;
     stmtCapacity: usize;
     typeState: TCState;
+}
 
-    func getID(&this) -> usize {
-        trace("ParsedBlock.getID");
-        return blocks.indexOf(this);
+func getID(this: &ParsedBlock) -> usize {
+    trace("ParsedBlock.getID");
+    return blocks.indexOf(this);
+}
+func addStmt(this: &ParsedBlock, stmt: &ParsedStmt) {
+    trace("ParsedBlock.addStmt");
+    if (this.stmtLength >= this.stmtCapacity) {
+        let newCap: usize = this.stmtCapacity * 2;
+        if (newCap == 0) newCap = 1;
+        this.stmtList = realloc(this.stmtList, newCap * sizeof usize);
+        assert(this.stmtList != null, "Could not resize stmt list");
+        this.stmtCapacity = newCap;
     }
-    func addStmt(&this, stmt: &ParsedStmt) {
-        trace("ParsedBlock.addStmt");
-        if (this.stmtLength >= this.stmtCapacity) {
-            let newCap: usize = this.stmtCapacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.stmtList = realloc(this.stmtList, newCap * sizeof usize);
-            assert(this.stmtList != null, "Could not resize stmt list");
-            this.stmtCapacity = newCap;
-        }
-        this.stmtList[this.stmtLength] = stmt.getID();
-        this.stmtLength = this.stmtLength + 1;
-    }
+    this.stmtList[this.stmtLength] = getID(stmt);
+    this.stmtLength = this.stmtLength + 1;
+}
 
-    func getStmtAtIndex(&this, index: usize) -> usize {
-        trace("ParsedBlock.getStmtAtIndex");
-        assert(index < this.stmtLength, "Out of bounds access in ParsedBlock.getStmtAtIndex");
-        return this.stmtList[index];
-    }
+func getStmtAtIndex(this: &ParsedBlock, index: usize) -> usize {
+    trace("ParsedBlock.getStmtAtIndex");
+    assert(index < this.stmtLength, "Out of bounds access in ParsedBlock.getStmtAtIndex");
+    return this.stmtList[index];
 }
 
 func newParsedBlock() -> &ParsedBlock {
@@ -446,26 +446,26 @@ struct ParsedStmt {
     step: usize;
     ifContext: IfContext;
     typeState: TCState;
+}
 
-    func getID(&this) -> usize {
-        trace("ParsedStmt.getID");
-        return stmts.indexOf(this);
-    }
+func getID(this: &ParsedStmt) -> usize {
+    trace("ParsedStmt.getID");
+    return stmts.indexOf(this);
+}
 
-    func asTLI(&this) -> &ParsedTopLevelItem {
-        trace("ParsedStmt.asTLI");
-        if (this.kind == STMT_VAR_DECL) {
-            return newParsedTopLevelItem(this.span, TLI_VAR_DECL, this.getID());
-        } else {
-            todo_with_msg("Can't convert stmt to tli");
-        }
+func asTLI(this: &ParsedStmt) -> &ParsedTopLevelItem {
+    trace("ParsedStmt.asTLI");
+    if (this.kind == STMT_VAR_DECL) {
+        return newParsedTopLevelItem(this.span, TLI_VAR_DECL, getID(this));
+    } else {
+        todo_with_msg("Can't convert stmt to tli");
     }
+}
 
-    func getMangledName(&this) -> String {
-        assert(this.kind == STMT_VAR_DECL, "Only variable declarations can get their names mangled");
-        assert(this.block < NODE_ID_OFFSET, "Only global variable declarations can get their names mangled");
-        return mangleVariableName(this.block, &this.varDeclContext.name);
-    }
+func getMangledName(this: &ParsedStmt) -> String {
+    assert(this.kind == STMT_VAR_DECL, "Only variable declarations can get their names mangled");
+    assert(this.block < NODE_ID_OFFSET, "Only global variable declarations can get their names mangled");
+    return mangleVariableName(this.block, &this.varDeclContext.name);
 }
 
 func newParsedStmt(span: Span, kind: usize) -> &ParsedStmt {
@@ -547,11 +547,11 @@ struct ParsedTypeNode {
     arraySize: usize;
     nameTkn: Token;
     typeState: TCState;
+}
 
-    func getID(&this) -> usize {
-        trace("ParsedTypeNode.getID");
-        return typeNodes.indexOf(this);
-    }
+func getID(this: &ParsedTypeNode) -> usize {
+    trace("ParsedTypeNode.getID");
+    return typeNodes.indexOf(this);
 }
 
 func newParsedTypeNode(span: Span, kind: usize) -> &ParsedTypeNode {
@@ -614,92 +614,92 @@ struct ParsedExpr {
     lhs: usize;
     rhs: usize;
     typeState: TCState;
-    func getID(&this) -> usize {
-        trace("ParsedExpr.getID");
-        return exprs.indexOf(this);
-    }
+}
+func getID(this: &ParsedExpr) -> usize {
+    trace("ParsedExpr.getID");
+    return exprs.indexOf(this);
+}
 
-    func intoPointer(&this) -> usize {
-        let unary: &ParsedExpr = newParsedExpr(this.span, EXPR_UNARY);
-        (*unary).op = UNARY_REF;
-        (*unary).lhs = this.getID();
-        return unary.getID();
-    }
+func intoPointer(this: &ParsedExpr) -> usize {
+    let unary: &ParsedExpr = newParsedExpr(this.span, EXPR_UNARY);
+    (*unary).op = UNARY_REF;
+    (*unary).lhs = getID(this);
+    return getID(unary);
+}
 
-    func isLValue(&this) -> bool {
-        if (this.kind == EXPR_UNARY) {
-            return this.op == UNARY_DEREF;
-        } else if (this.kind == EXPR_BINARY) {
-            if (this.op == BIN_DOT) {
-                return exprs.at(this.rhs).kind == EXPR_NAME;
-            }
-            if (this.op == BIN_INDEXED_ACCESS) return true;
-            return false;
-        } else {
-            return this.kind == EXPR_NAME;
+func isLValue(this: &ParsedExpr) -> bool {
+    if (this.kind == EXPR_UNARY) {
+        return this.op == UNARY_DEREF;
+    } else if (this.kind == EXPR_BINARY) {
+        if (this.op == BIN_DOT) {
+            return exprs.at(this.rhs).kind == EXPR_NAME;
         }
-    }
-
-    func isBlank(&this) -> bool {
-        return this.kind == EXPR_BLANK;
-    }
-    func isIdentifier(&this) -> bool {
+        if (this.op == BIN_INDEXED_ACCESS) return true;
+        return false;
+    } else {
         return this.kind == EXPR_NAME;
     }
-    func isLiteral(&this) -> bool {
-        return this.kind == EXPR_INT_LIT
-            || this.kind == EXPR_STRING_LIT
-            || this.kind == EXPR_CHAR_LIT
-            || this.kind == EXPR_ARRAY_LIT
-            || this.kind == EXPR_NULL
-            || this.kind == EXPR_TRUE
-            || this.kind == EXPR_FALSE;
-    }
+}
 
-    func isUnary(&this) -> bool {
-        return this.kind == EXPR_UNARY;
-    }
+func isBlank(this: &ParsedExpr) -> bool {
+    return this.kind == EXPR_BLANK;
+}
+func isIdentifier(this: &ParsedExpr) -> bool {
+    return this.kind == EXPR_NAME;
+}
+func isLiteral(this: &ParsedExpr) -> bool {
+    return this.kind == EXPR_INT_LIT
+        || this.kind == EXPR_STRING_LIT
+        || this.kind == EXPR_CHAR_LIT
+        || this.kind == EXPR_ARRAY_LIT
+        || this.kind == EXPR_NULL
+        || this.kind == EXPR_TRUE
+        || this.kind == EXPR_FALSE;
+}
 
-    func isCall(&this) -> bool {
-        return this.kind == EXPR_CALL;
-    }
+func isUnary(this: &ParsedExpr) -> bool {
+    return this.kind == EXPR_UNARY;
+}
 
-    func isAssignment(&this) -> bool {
-        if (this.kind != EXPR_BINARY) return false;
-        return this.op == BIN_ASSIGN;
-    }
+func isCall(this: &ParsedExpr) -> bool {
+    return this.kind == EXPR_CALL;
+}
 
-    func isArithmetic(&this) -> bool {
-        if (this.kind != EXPR_BINARY) return false;
-        return this.op == BIN_PLUS
-            || this.op == BIN_SUB
-            || this.op == BIN_MULT
-            || this.op == BIN_DIV
-            || this.op == BIN_MOD;
-    }
+func isAssignment(this: &ParsedExpr) -> bool {
+    if (this.kind != EXPR_BINARY) return false;
+    return this.op == BIN_ASSIGN;
+}
 
-    func isComparison(&this) -> bool {
-        if (this.kind != EXPR_BINARY) return false;
-        return this.op == BIN_CMP_GTE
-            || this.op == BIN_CMP_GT
-            || this.op == BIN_CMP_LTE
-            || this.op == BIN_CMP_LT
-            || this.op == BIN_CMP_EQ
-            || this.op == BIN_CMP_NEQ;
-    }
+func isArithmetic(this: &ParsedExpr) -> bool {
+    if (this.kind != EXPR_BINARY) return false;
+    return this.op == BIN_PLUS
+        || this.op == BIN_SUB
+        || this.op == BIN_MULT
+        || this.op == BIN_DIV
+        || this.op == BIN_MOD;
+}
 
-    func isLogical(&this) -> bool {
-        if (this.kind != EXPR_BINARY) return false;
-        return this.op == BIN_LAND
-            || this.op == BIN_LOR;
-    }
+func isComparison(this: &ParsedExpr) -> bool {
+    if (this.kind != EXPR_BINARY) return false;
+    return this.op == BIN_CMP_GTE
+        || this.op == BIN_CMP_GT
+        || this.op == BIN_CMP_LTE
+        || this.op == BIN_CMP_LT
+        || this.op == BIN_CMP_EQ
+        || this.op == BIN_CMP_NEQ;
+}
 
-    func isBitwise(&this) -> bool {
-        if (this.kind != EXPR_BINARY) return false;
-        return this.op == BIN_BAND
-            || this.op == BIN_BOR
-            || this.op == BIN_BXOR;
-    }
+func isLogical(this: &ParsedExpr) -> bool {
+    if (this.kind != EXPR_BINARY) return false;
+    return this.op == BIN_LAND
+        || this.op == BIN_LOR;
+}
+
+func isBitwise(this: &ParsedExpr) -> bool {
+    if (this.kind != EXPR_BINARY) return false;
+    return this.op == BIN_BAND
+        || this.op == BIN_BOR
+        || this.op == BIN_BXOR;
 }
 
 comptime BIN_INVALID: usize = 0;
