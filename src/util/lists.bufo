@@ -1311,7 +1311,7 @@ struct RegValueList {
 
     func contains(&this, element: &RegValue) -> bool {
         for (let i: usize = 0; i < this.length; i = i + 1) {
-            if (this.at(i).equals(element)) {
+            if (equals(this.at(i), element)) {
                 return true;
             }
         }

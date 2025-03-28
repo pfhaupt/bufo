@@ -50,7 +50,7 @@ func main(argc: i32, argv: &&char) -> i32 {
     if (!generator.generateBytecode(&project)) return 1;
     let interp: IRInterp = newIRInterpreter(&generator);
     let llvmCodegen: LLVMCodegen = newLLVMCodegen(fileSubStr, &generator, &interp);
-    if (!llvmCodegen.generateExecutable(flags.out.asSubStr())) return 1;
+    if (!generateExecutable(&llvmCodegen, flags.out.asSubStr())) return 1;
     if (PRINT_DEBUG) {
         printf("modules.length       = %llu\n", modules.length);
         printf("topLevelItems.length = %llu\n", topLevelItems.length);
