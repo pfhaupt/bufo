@@ -312,6 +312,7 @@ struct Parser {
                 }
                 let tkn: Token = this.lexer.peek();
                 if (tkn.content.equals(&KEYWORD_FUNC)) {
+                    fprintf(stderr, "%s: %s: Methods are deprecated.\n", tkn.getLocation().chars(), WARN_STR);
                     let method: &ParsedMethod = this.parseMethod(decl);
                     structContext.addMethod(method);
                 } else {
@@ -385,9 +386,9 @@ struct Parser {
                 loc.drop();
                 exit(1);
             }
-            let isThis: bool = maybeThis.content.equals(&KEYWORD_THIS);
+            let isThis: bool = maybeThis.content.equals(&comptime BUILD_A_KEYWORD("this"));
             if (isThis) {
-                let dis: Token = this.expect(TOKEN_KEYWORD);
+                let dis: Token = this.expect(TOKEN_IDENT);
                 if (!allowedThis) {
                     let loc: String = dis.span.toString();
                     fprintf(stderr, "%s: %s: Unexpected `this` parameter.\n", loc.chars(), ERR_STR);
@@ -797,14 +798,7 @@ struct Parser {
             return expr;
         } else if (tknKind == TOKEN_KEYWORD) {
             let kw: Token = this.expect(TOKEN_KEYWORD);
-            if (kw.content.equals(&KEYWORD_THIS)) {
-                if (this.currentStruct.isEmpty()) {
-                    todo_with_msg("use of this outside of a struct");
-                }
-                let expr: &ParsedExpr = newParsedExpr(kw.span, EXPR_NAME);
-                (*expr).origToken = kw;
-                return expr;
-            } else if (kw.content.equals(&KEYWORD_NULL)) {
+            if (kw.content.equals(&KEYWORD_NULL)) {
                 let expr: &ParsedExpr = newParsedExpr(kw.span, EXPR_NULL);
                 (*expr).origToken = kw;
                 return expr;

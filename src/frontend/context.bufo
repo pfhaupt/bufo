@@ -172,7 +172,7 @@ struct ParamContext {
 
     func hasThis(&this) -> bool {
         if (this.paramLength == 0) return false;
-        return this.getNameAtIndex(0).content.equals(&KEYWORD_THIS);
+        return this.getNameAtIndex(0).content.equals(&comptime BUILD_A_KEYWORD("this"));
     }
 
     func getNameAtIndex(&this, index: usize) -> Token {

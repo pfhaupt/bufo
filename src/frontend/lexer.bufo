@@ -23,7 +23,6 @@ comptime KEYWORD_MODULE: SubStr = BUILD_A_KEYWORD("module");
 comptime KEYWORD_IMPORT: SubStr = BUILD_A_KEYWORD("import");
 comptime KEYWORD_IF: SubStr = BUILD_A_KEYWORD("if");
 comptime KEYWORD_ELSE: SubStr = BUILD_A_KEYWORD("else");
-comptime KEYWORD_THIS: SubStr = BUILD_A_KEYWORD("this");
 comptime KEYWORD_WHILE: SubStr = BUILD_A_KEYWORD("while");
 comptime KEYWORD_UNSAFE: SubStr = BUILD_A_KEYWORD("unsafe");
 comptime KEYWORD_SIZEOF: SubStr = BUILD_A_KEYWORD("sizeof");
@@ -56,7 +55,6 @@ struct Lexer {
             || word.equals(&KEYWORD_IMPORT)
             || word.equals(&KEYWORD_IF)
             || word.equals(&KEYWORD_ELSE)
-            || word.equals(&KEYWORD_THIS)
             || word.equals(&KEYWORD_WHILE)
             || word.equals(&KEYWORD_UNSAFE)
             || word.equals(&KEYWORD_SIZEOF)
