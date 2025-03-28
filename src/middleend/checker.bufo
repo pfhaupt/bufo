@@ -2070,11 +2070,11 @@ struct TypeChecker {
             functions.clear();
             return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
         }
+        let callContext: &ArrayContext = &expr.arrayContext;
         let actual: FunctionLookupList = blank;
         for (let i: usize = 0; i < functions.length; i = i + 1) {
             let f = functions.at(i);
             assert(f.getReadyState(FUNC_PARAMS_COMPLETE));
-            let callContext: &ArrayContext = &expr.arrayContext;
             let arguments: TCStateList = blank;
             let state = this.typeCheckFunctionArguments(&f.params, callContext, &arguments, true);
             if (state.isError()) {
@@ -2088,8 +2088,12 @@ struct TypeChecker {
         }
         if (actual.length == 1) {
             let f = actual.at(0);
-            if (checkOnly) return newTCStateSuccess();
-            (*expr).lhs = f.globalID;
+            if (!checkOnly) {
+                let arguments: TCStateList = blank;
+                let state = this.typeCheckFunctionArguments(&f.params, callContext, &arguments, false);
+                assert(state.isSuccess());
+                (*expr).lhs = f.globalID;
+            }
             return f.returnType;
         } else if (actual.length == 0) {
             if (!checkOnly) {
