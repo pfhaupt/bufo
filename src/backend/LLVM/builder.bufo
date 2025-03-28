@@ -13,7 +13,7 @@ struct LLVMBuilder {
 }
 func guardReference(this: &LLVMBuilder) {
     trace("LLVMBuilder.guardReference");
-    assert(!this.ref.isNull(), "LLVM Builder is null");
+    assert(!isNull(this.ref), "LLVM Builder is null");
 }
 func positionAtEnd(this: &LLVMBuilder, block: LLVMBasicBlock) {
     trace("LLVMBuilder.positionAtEnd");
@@ -30,7 +30,7 @@ func getInsertBlock(this: &LLVMBuilder) -> LLVMBasicBlock {
     trace("LLVMBuilder.getInsertBlock");
     guardReference(this);
     let block: LLVMBasicBlockRef = LLVMGetInsertBlock(this.ref);
-    assert(!block.isNull(), "Could not get insert block from builder");
+    assert(!isNull(block), "Could not get insert block from builder");
     return newLLVMBasicBlockFromRef(block);
 }
 
@@ -38,7 +38,7 @@ func buildInsertValue(this: &LLVMBuilder, aggregate: LLVMValue, element: LLVMVal
     trace("LLVMBuilder.buildInsertValue");
     guardReference(this);
     let val: LLVMValueRef = LLVMBuildInsertValue(this.ref, aggregate.ref, element.ref, offset, name);
-    assert(!val.isNull(), "Could not build insert value in builder");
+    assert(!isNull(val), "Could not build insert value in builder");
     return newLLVMValueFromRef(val);
 }
 
@@ -48,7 +48,7 @@ func buildAlloca(this: &LLVMBuilder, typ: LLVMType, name: SubStr) -> LLVMValue {
     let _n: String = name.toString();
     let alloced: LLVMValueRef = LLVMBuildAlloca(this.ref, typ.ref, _n.chars());
     _n.drop();
-    assert(!alloced.isNull(), "Could not build alloca in builder");
+    assert(!isNull(alloced), "Could not build alloca in builder");
     return newLLVMValueFromRef(alloced);
 }
 
@@ -56,7 +56,7 @@ func buildStore(this: &LLVMBuilder, ptr: LLVMValue, value: LLVMValue) -> LLVMVal
     trace("LLVMBuilder.buildStore");
     guardReference(this);
     let value: LLVMValueRef = LLVMBuildStore(this.ref, value.ref, ptr.ref);
-    assert(!value.isNull(), "Could not build store in builder");
+    assert(!isNull(value), "Could not build store in builder");
     return newLLVMValueFromRef(value);
 }
 
@@ -66,7 +66,7 @@ func buildLoad(this: &LLVMBuilder, pType: LLVMType, ptr: LLVMValue, name: SubStr
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildLoad2(this.ref, pType.ref, ptr.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build load in builder");
+    assert(!isNull(value), "Could not build load in builder");
     return newLLVMValueFromRef(value);
 }
 
@@ -74,27 +74,27 @@ func buildReturn(this: &LLVMBuilder, value: LLVMValue) {
     trace("LLVMBuilder.buildReturn");
     guardReference(this);
     let value: LLVMValueRef = LLVMBuildRet(this.ref, value.ref);
-    assert(!value.isNull(), "Could not build return in builder");
+    assert(!isNull(value), "Could not build return in builder");
 }
 func buildReturnVoid(this: &LLVMBuilder) {
     trace("LLVMBuilder.buildReturnVoid");
     guardReference(this);
     let value: LLVMValueRef = LLVMBuildRetVoid(this.ref);
-    assert(!value.isNull(), "Could not build return void in builder");
+    assert(!isNull(value), "Could not build return void in builder");
 }
 func buildBr(this: &LLVMBuilder, dest: LLVMBasicBlock) -> LLVMValue {
     trace("LLVMBuilder.buildBr");
     guardReference(this);
-    assert(!dest.ref.isNull(), "Destination for Br is null!");
+    assert(!isNull(dest.ref), "Destination for Br is null!");
     let value: LLVMValueRef = LLVMBuildBr(this.ref, dest.ref);
-    assert(!value.isNull(), "Could not build Br");
+    assert(!isNull(value), "Could not build Br");
     return newLLVMValueFromRef(value);
 }
 func buildCondBr(this: &LLVMBuilder, cond: LLVMValue, tru: LLVMBasicBlock, fals: LLVMBasicBlock) -> LLVMValue {
     trace("LLVMBuilder.buildCondBr");
     guardReference(this);
     let value: LLVMValueRef = LLVMBuildCondBr(this.ref, cond.ref, tru.ref, fals.ref);
-    assert(!value.isNull(), "Could not build CondBr");
+    assert(!isNull(value), "Could not build CondBr");
     return newLLVMValueFromRef(value);
 }
 func buildIntAdd(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, signed: bool, name: SubStr) -> LLVMValue {
@@ -103,7 +103,7 @@ func buildIntAdd(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, signed: boo
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildAdd(this.ref, lhs.ref, rhs.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build int add");
+    assert(!isNull(value), "Could not build int add");
     return newLLVMValueFromRef(value);
 }
 func buildIntSub(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, signed: bool, name: SubStr) -> LLVMValue {
@@ -112,7 +112,7 @@ func buildIntSub(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, signed: boo
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildSub(this.ref, lhs.ref, rhs.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build int sub");
+    assert(!isNull(value), "Could not build int sub");
     return newLLVMValueFromRef(value);
 }
 func buildIntMul(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, signed: bool, name: SubStr) -> LLVMValue {
@@ -121,7 +121,7 @@ func buildIntMul(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, signed: boo
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildMul(this.ref, lhs.ref, rhs.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build int mul");
+    assert(!isNull(value), "Could not build int mul");
     return newLLVMValueFromRef(value);
 }
 func buildIntDiv(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, signed: bool, name: SubStr) -> LLVMValue {
@@ -135,7 +135,7 @@ func buildIntDiv(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, signed: boo
         value = LLVMBuildUDiv(this.ref, lhs.ref, rhs.ref, _n.chars());
     }
     _n.drop();
-    assert(!value.isNull(), "Could not build int div");
+    assert(!isNull(value), "Could not build int div");
     return newLLVMValueFromRef(value);
 }
 func buildIntMod(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, signed: bool, name: SubStr) -> LLVMValue {
@@ -149,7 +149,7 @@ func buildIntMod(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, signed: boo
         value = LLVMBuildURem(this.ref, lhs.ref, rhs.ref, _n.chars());
     }
     _n.drop();
-    assert(!value.isNull(), "Could not build int mod");
+    assert(!isNull(value), "Could not build int mod");
     return newLLVMValueFromRef(value);
 }
 func buildFloatAdd(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, name: SubStr) -> LLVMValue {
@@ -158,7 +158,7 @@ func buildFloatAdd(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, name: Sub
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildFAdd(this.ref, lhs.ref, rhs.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build float add");
+    assert(!isNull(value), "Could not build float add");
     return newLLVMValueFromRef(value);
 }
 func buildFloatSub(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, name: SubStr) -> LLVMValue {
@@ -167,7 +167,7 @@ func buildFloatSub(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, name: Sub
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildFSub(this.ref, lhs.ref, rhs.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build float sub");
+    assert(!isNull(value), "Could not build float sub");
     return newLLVMValueFromRef(value);
 }
 func buildFloatMul(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, name: SubStr) -> LLVMValue {
@@ -176,7 +176,7 @@ func buildFloatMul(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, name: Sub
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildFMul(this.ref, lhs.ref, rhs.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build float mul");
+    assert(!isNull(value), "Could not build float mul");
     return newLLVMValueFromRef(value);
 }
 func buildFloatDiv(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, name: SubStr) -> LLVMValue {
@@ -185,7 +185,7 @@ func buildFloatDiv(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, name: Sub
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildFDiv(this.ref, lhs.ref, rhs.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build float div");
+    assert(!isNull(value), "Could not build float div");
     return newLLVMValueFromRef(value);
 }
 func buildFloatMod(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, name: SubStr) -> LLVMValue {
@@ -194,7 +194,7 @@ func buildFloatMod(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, name: Sub
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildFRem(this.ref, lhs.ref, rhs.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build float mod");
+    assert(!isNull(value), "Could not build float mod");
     return newLLVMValueFromRef(value);
 }
 func buildIntCompare(this: &LLVMBuilder, predicate: i32, lhs: LLVMValue, rhs: LLVMValue, name: SubStr) -> LLVMValue {
@@ -203,7 +203,7 @@ func buildIntCompare(this: &LLVMBuilder, predicate: i32, lhs: LLVMValue, rhs: LL
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildICmp(this.ref, predicate, lhs.ref, rhs.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build int compare");
+    assert(!isNull(value), "Could not build int compare");
     return newLLVMValueFromRef(value);
 }
 func buildFloatCompare(this: &LLVMBuilder, predicate: i32, lhs: LLVMValue, rhs: LLVMValue, name: SubStr) -> LLVMValue {
@@ -212,7 +212,7 @@ func buildFloatCompare(this: &LLVMBuilder, predicate: i32, lhs: LLVMValue, rhs: 
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildFCmp(this.ref, predicate, lhs.ref, rhs.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build float compare");
+    assert(!isNull(value), "Could not build float compare");
     return newLLVMValueFromRef(value);
 }
 func buildNot(this: &LLVMBuilder, val: LLVMValue, name: SubStr) -> LLVMValue {
@@ -221,7 +221,7 @@ func buildNot(this: &LLVMBuilder, val: LLVMValue, name: SubStr) -> LLVMValue {
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildNot(this.ref, val.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build logical not");
+    assert(!isNull(value), "Could not build logical not");
     return newLLVMValueFromRef(value);
 }
 func buildOr(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, name: SubStr) -> LLVMValue {
@@ -230,7 +230,7 @@ func buildOr(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, name: SubStr) -
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildOr(this.ref, lhs.ref, rhs.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build logical or");
+    assert(!isNull(value), "Could not build logical or");
     return newLLVMValueFromRef(value);
 }
 func buildAnd(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, name: SubStr) -> LLVMValue {
@@ -239,7 +239,7 @@ func buildAnd(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, name: SubStr) 
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildAnd(this.ref, lhs.ref, rhs.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build logical and");
+    assert(!isNull(value), "Could not build logical and");
     return newLLVMValueFromRef(value);
 }
 func buildXor(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, name: SubStr) -> LLVMValue {
@@ -248,7 +248,7 @@ func buildXor(this: &LLVMBuilder, lhs: LLVMValue, rhs: LLVMValue, name: SubStr) 
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildXor(this.ref, lhs.ref, rhs.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build logical xor");
+    assert(!isNull(value), "Could not build logical xor");
     return newLLVMValueFromRef(value);
 }
 func buildPtrToInt(this: &LLVMBuilder, val: LLVMValue, typ: LLVMType, name: SubStr) -> LLVMValue {
@@ -257,7 +257,7 @@ func buildPtrToInt(this: &LLVMBuilder, val: LLVMValue, typ: LLVMType, name: SubS
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildPtrToInt(this.ref, val.ref, typ.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build ptr to int");
+    assert(!isNull(value), "Could not build ptr to int");
     return newLLVMValueFromRef(value);
 }
 func buildIntToPtr(this: &LLVMBuilder, val: LLVMValue, typ: LLVMType, name: SubStr) -> LLVMValue {
@@ -266,7 +266,7 @@ func buildIntToPtr(this: &LLVMBuilder, val: LLVMValue, typ: LLVMType, name: SubS
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildIntToPtr(this.ref, val.ref, typ.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build int to ptr");
+    assert(!isNull(value), "Could not build int to ptr");
     return newLLVMValueFromRef(value);
 }
 func buildIntToFloat(this: &LLVMBuilder, val: LLVMValue, typ: LLVMType, signed: bool, name: SubStr) -> LLVMValue {
@@ -280,7 +280,7 @@ func buildIntToFloat(this: &LLVMBuilder, val: LLVMValue, typ: LLVMType, signed: 
         value = LLVMBuildUIToFP(this.ref, val.ref, typ.ref, _n.chars());
     }
     _n.drop();
-    assert(!value.isNull(), "Could not build int to float");
+    assert(!isNull(value), "Could not build int to float");
     return newLLVMValueFromRef(value);
 }
 func buildFloatToInt(this: &LLVMBuilder, val: LLVMValue, typ: LLVMType, signed: bool, name: SubStr) -> LLVMValue {
@@ -294,7 +294,7 @@ func buildFloatToInt(this: &LLVMBuilder, val: LLVMValue, typ: LLVMType, signed: 
         value = LLVMBuildFPToUI(this.ref, val.ref, typ.ref, _n.chars());
     }
     _n.drop();
-    assert(!value.isNull(), "Could not build float to int");
+    assert(!isNull(value), "Could not build float to int");
     return newLLVMValueFromRef(value);
 }
 func buildIntSignExtend(this: &LLVMBuilder, val: LLVMValue, typ: LLVMType, name: SubStr) -> LLVMValue {
@@ -303,7 +303,7 @@ func buildIntSignExtend(this: &LLVMBuilder, val: LLVMValue, typ: LLVMType, name:
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildSExt(this.ref, val.ref, typ.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build int sign extend");
+    assert(!isNull(value), "Could not build int sign extend");
     return newLLVMValueFromRef(value);
 }
 func buildIntZeroExtend(this: &LLVMBuilder, val: LLVMValue, typ: LLVMType, name: SubStr) -> LLVMValue {
@@ -312,7 +312,7 @@ func buildIntZeroExtend(this: &LLVMBuilder, val: LLVMValue, typ: LLVMType, name:
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildZExt(this.ref, val.ref, typ.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build int zero extend");
+    assert(!isNull(value), "Could not build int zero extend");
     return newLLVMValueFromRef(value);
 }
 func buildFloatExtend(this: &LLVMBuilder, val: LLVMValue, typ: LLVMType, name: SubStr) -> LLVMValue {
@@ -321,7 +321,7 @@ func buildFloatExtend(this: &LLVMBuilder, val: LLVMValue, typ: LLVMType, name: S
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildFPExt(this.ref, val.ref, typ.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build float extend");
+    assert(!isNull(value), "Could not build float extend");
     return newLLVMValueFromRef(value);
 }
 func buildFloatTruncate(this: &LLVMBuilder, val: LLVMValue, typ: LLVMType, name: SubStr) -> LLVMValue {
@@ -330,7 +330,7 @@ func buildFloatTruncate(this: &LLVMBuilder, val: LLVMValue, typ: LLVMType, name:
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildFPTrunc(this.ref, val.ref, typ.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build float truncate");
+    assert(!isNull(value), "Could not build float truncate");
     return newLLVMValueFromRef(value);
 }
 func buildIntTruncate(this: &LLVMBuilder, val: LLVMValue, typ: LLVMType, name: SubStr) -> LLVMValue {
@@ -339,7 +339,7 @@ func buildIntTruncate(this: &LLVMBuilder, val: LLVMValue, typ: LLVMType, name: S
     let _n: String = name.toString();
     let value: LLVMValueRef = LLVMBuildTrunc(this.ref, val.ref, typ.ref, _n.chars());
     _n.drop();
-    assert(!value.isNull(), "Could not build int truncate");
+    assert(!isNull(value), "Could not build int truncate");
     return newLLVMValueFromRef(value);
 }
 func buildCall(this: &LLVMBuilder, fn: LLVMValue, args: LLVMValueList, name: SubStr) -> LLVMValue {
@@ -359,7 +359,7 @@ func buildCall(this: &LLVMBuilder, fn: LLVMValue, args: LLVMValueList, name: Sub
     let value: LLVMValueRef = LLVMBuildCall2(this.ref, typ.ref, fn.ref, args.elements as &LLVMValueRef, args.length as u32, _n.chars());
     _n.drop();
     clear(&args);
-    assert(!value.isNull(), "Could not build call");
+    assert(!isNull(value), "Could not build call");
     return newLLVMValueFromRef(value);
 }
 func buildGlobalStringPtr(this: &LLVMBuilder, start: &char, name: SubStr) -> LLVMValue {
@@ -368,7 +368,7 @@ func buildGlobalStringPtr(this: &LLVMBuilder, start: &char, name: SubStr) -> LLV
     let _n: String = name.toString();
     let s: LLVMValueRef = LLVMBuildGlobalStringPtr(this.ref, start, _n.chars());
     _n.drop();
-    assert(!s.isNull(), "Could not build global string");
+    assert(!isNull(s), "Could not build global string");
     return newLLVMValueFromRef(s);
 }
 func buildStructGEP(this: &LLVMBuilder, typ: LLVMType, aggr: LLVMValue, index: usize, name: SubStr) -> LLVMValue {
@@ -377,7 +377,7 @@ func buildStructGEP(this: &LLVMBuilder, typ: LLVMType, aggr: LLVMValue, index: u
     let _n: String = name.toString();
     let s: LLVMValueRef = LLVMBuildStructGEP2(this.ref, typ.ref, aggr.ref, index as u32, _n.chars());
     _n.drop();
-    assert(!s.isNull(), "Could not build struct GEP");
+    assert(!isNull(s), "Could not build struct GEP");
     return newLLVMValueFromRef(s);
 }
 func buildGEP(this: &LLVMBuilder, typ: LLVMType, aggr: LLVMValue, indices: LLVMValueList, name: SubStr) -> LLVMValue {
@@ -388,7 +388,7 @@ func buildGEP(this: &LLVMBuilder, typ: LLVMType, aggr: LLVMValue, indices: LLVMV
     let s: LLVMValueRef = LLVMBuildGEP2(this.ref, typ.ref, aggr.ref, indices.elements as &LLVMValueRef, indices.length as u32, _n.chars());
     _n.drop();
     clear(&indices);
-    assert(!s.isNull(), "Could not build GEP");
+    assert(!isNull(s), "Could not build GEP");
     return newLLVMValueFromRef(s);
 }
 
@@ -396,12 +396,12 @@ func buildUnreachable(this: &LLVMBuilder) {
     trace("LLVMBuilder.buildUnreachable");
     guardReference(this);
     let v: LLVMValueRef = LLVMBuildUnreachable(this.ref);
-    assert(!v.isNull(), "Could not build unreachable");
+    assert(!isNull(v), "Could not build unreachable");
 }
 
 func newLLVMBuilderFromRef(ref: LLVMBuilderRef) -> LLVMBuilder {
     trace("newLLVMBuilderFromRef");
-    assert(!ref.isNull(), "Passed invalid reference to newLLVMBuilderFromRef");
+    assert(!isNull(ref), "Passed invalid reference to newLLVMBuilderFromRef");
     return LLVMBuilder {
         ref: ref,
     };

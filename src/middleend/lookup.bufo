@@ -11,171 +11,171 @@ import "./types.bufo";
 
 struct Lookup {
     modules: ModuleLookupList;
+}
 
-    func insertModule(&this, mod: &ParsedModule) -> &ModuleLookup {
-        trace("Lookup.insertModule");
-        let lookup: ModuleLookup = ModuleLookup {
-            globalID: getID(mod),
-            origin: mod.origin,
-            imports: blank,
-            functions: blank,
-            structs: blank,
-            variables: blank,
-        };
-        // Global Scope
-        push(&lookup.variables, blank);
-        push(&this.modules, lookup);
-        return last(&this.modules);
+func insertModule(this: &Lookup, mod: &ParsedModule) -> &ModuleLookup {
+    trace("Lookup.insertModule");
+    let lookup: ModuleLookup = ModuleLookup {
+        globalID: getID(mod),
+        origin: mod.origin,
+        imports: blank,
+        functions: blank,
+        structs: blank,
+        variables: blank,
+    };
+    // Global Scope
+    push(&lookup.variables, blank);
+    push(&this.modules, lookup);
+    return last(&this.modules);
+}
+
+func resolveFunctionByName(this: &Lookup, currentModule: usize, name: &Token) -> FunctionLookupList {
+    trace("Lookup.resolveFunctionByName");
+    // FIXME: Would be cool if this method didn't create copies of the FunctionLookups
+    let currModule: &ModuleLookup = at(&this.modules, currentModule);
+    let list: FunctionLookupList = resolveFunctionByName(currModule, name);
+    for (let i: usize = 0; i < currModule.imports.length; i = i + 1) {
+        let imp: &ImportLookup = at(&currModule.imports, i);
+        let importedModule: &ModuleLookup = at(&this.modules, imp.moduleID);
+        let importList: FunctionLookupList = resolveFunctionByName(importedModule, name);
+        extend(&list, &importList);
     }
+    return list;
+}
 
-    func resolveFunctionByName(&this, currentModule: usize, name: &Token) -> FunctionLookupList {
-        trace("Lookup.resolveFunctionByName");
-        // FIXME: Would be cool if this method didn't create copies of the FunctionLookups
-        let currModule: &ModuleLookup = at(&this.modules, currentModule);
-        let list: FunctionLookupList = resolveFunctionByName(currModule, name);
-        for (let i: usize = 0; i < currModule.imports.length; i = i + 1) {
-            let imp: &ImportLookup = at(&currModule.imports, i);
-            let importedModule: &ModuleLookup = at(&this.modules, imp.moduleID);
-            let importList: FunctionLookupList = resolveFunctionByName(importedModule, name);
-            extend(&list, &importList);
-        }
-        return list;
+func resolveAllFunctionsWithReturnType(this: &Lookup, currentModule: usize, name: &Token, typ: &Type, list: &FunctionLookupList) -> bool {
+    trace("Lookup.resolveAllFunctionsWithReturnType");
+    // FIXME: Would be cool if this method didn't create copies of the FunctionLookups
+    let currModule: &ModuleLookup = at(&this.modules, currentModule);
+    if (!resolveAllFunctionsWithReturnType(currModule, name, typ, list)) {
+        return false;
     }
-
-    func resolveAllFunctionsWithReturnType(&this, currentModule: usize, name: &Token, typ: &Type, list: &FunctionLookupList) -> bool {
-        trace("Lookup.resolveAllFunctionsWithReturnType");
-        // FIXME: Would be cool if this method didn't create copies of the FunctionLookups
-        let currModule: &ModuleLookup = at(&this.modules, currentModule);
-        if (!resolveAllFunctionsWithReturnType(currModule, name, typ, list)) {
+    for (let i: usize = 0; i < currModule.imports.length; i = i + 1) {
+        let imp: &ImportLookup = at(&currModule.imports, i);
+        let importedModule: &ModuleLookup = at(&this.modules, imp.moduleID);
+        if (!resolveAllFunctionsWithReturnType(importedModule, name, typ, list)) {
             return false;
         }
-        for (let i: usize = 0; i < currModule.imports.length; i = i + 1) {
-            let imp: &ImportLookup = at(&currModule.imports, i);
-            let importedModule: &ModuleLookup = at(&this.modules, imp.moduleID);
-            if (!resolveAllFunctionsWithReturnType(importedModule, name, typ, list)) {
-                return false;
-            }
-        }
-        return true;
     }
+    return true;
+}
 
-    func resolveAllStructsWithField(&this, currentModule: usize, name: &Token, typ: &Type) -> StructLookupList {
-        trace("Lookup.resolveAllStructsWithField");
-        // FIXME: Would be cool if this method didn't create copies of the StructLookups
-        let currModule = at(&this.modules, currentModule);
-        let list = resolveAllStructsWithField(currModule, name, typ);
-        for (let i: usize = 0; i < currModule.imports.length; i = i + 1) {
-            let imp = at(&currModule.imports, i);
-            let importedModule = at(&this.modules, imp.moduleID);
-            let importList = resolveAllStructsWithField(importedModule, name, typ);
-            extend(&list, &importList);
-        }
-        return list;
+func resolveAllStructsWithField(this: &Lookup, currentModule: usize, name: &Token, typ: &Type) -> StructLookupList {
+    trace("Lookup.resolveAllStructsWithField");
+    // FIXME: Would be cool if this method didn't create copies of the StructLookups
+    let currModule = at(&this.modules, currentModule);
+    let list = resolveAllStructsWithField(currModule, name, typ);
+    for (let i: usize = 0; i < currModule.imports.length; i = i + 1) {
+        let imp = at(&currModule.imports, i);
+        let importedModule = at(&this.modules, imp.moduleID);
+        let importList = resolveAllStructsWithField(importedModule, name, typ);
+        extend(&list, &importList);
     }
+    return list;
+}
 
-    func resolveVariableByName(&this, currentModule: usize, name: &Token, scopes: &ScopeLookupList, var: &VariableLookup) -> bool {
-        trace("Lookup.resolveVariableByName");
-        debug(name.content.toString().chars());
-        // FIXME: The commented loop underflows
-        // for (let i: usize = scopes.length - 1; i >= 0; i = i - 1) {
-        for (let _i: usize = 0; _i < scopes.length; _i = _i + 1) {
-            let i: usize = scopes.length - _i - 1;
-            let s: &ScopeLookup = at(scopes, i);
-            for (let j: usize = 0; j < s.variables.length; j = j + 1) {
-                let v: &VariableLookup = at(&s.variables, j);
-                if (v.name.content.equals(&name.content)) {
-                    debug("Variable found in current module");
-                    *var = *v;
-                    return true;
-                }
-            }
-        }
-        let mod: &ModuleLookup = at(&this.modules, currentModule);
-        let globalScope: &ScopeLookup = at(&mod.variables, 0);
-        for (let j: usize = 0; j < globalScope.variables.length; j = j + 1) {
-            let v: &VariableLookup = at(&globalScope.variables, j);
+func resolveVariableByName(this: &Lookup, currentModule: usize, name: &Token, scopes: &ScopeLookupList, var: &VariableLookup) -> bool {
+    trace("Lookup.resolveVariableByName");
+    debug(name.content.toString().chars());
+    // FIXME: The commented loop underflows
+    // for (let i: usize = scopes.length - 1; i >= 0; i = i - 1) {
+    for (let _i: usize = 0; _i < scopes.length; _i = _i + 1) {
+        let i: usize = scopes.length - _i - 1;
+        let s: &ScopeLookup = at(scopes, i);
+        for (let j: usize = 0; j < s.variables.length; j = j + 1) {
+            let v: &VariableLookup = at(&s.variables, j);
             if (v.name.content.equals(&name.content)) {
-                debug("Variable found in global scope");
+                debug("Variable found in current module");
                 *var = *v;
                 return true;
             }
         }
-        for (let i: usize = 0; i < mod.imports.length; i = i + 1) {
-            let imp: usize = at(&mod.imports, i).moduleID;
-            let mod: &ModuleLookup = at(&this.modules, imp);
-            let globalScope: &ScopeLookup = at(&mod.variables, 0);
-            for (let j: usize = 0; j < globalScope.variables.length; j = j + 1) {
-                let v: &VariableLookup = at(&globalScope.variables, j);
-                if (v.name.content.equals(&name.content)) {
-                    debug("Variable found in import");
-                    *var = *v;
-                    return true;
-                }
+    }
+    let mod: &ModuleLookup = at(&this.modules, currentModule);
+    let globalScope: &ScopeLookup = at(&mod.variables, 0);
+    for (let j: usize = 0; j < globalScope.variables.length; j = j + 1) {
+        let v: &VariableLookup = at(&globalScope.variables, j);
+        if (v.name.content.equals(&name.content)) {
+            debug("Variable found in global scope");
+            *var = *v;
+            return true;
+        }
+    }
+    for (let i: usize = 0; i < mod.imports.length; i = i + 1) {
+        let imp: usize = at(&mod.imports, i).moduleID;
+        let mod: &ModuleLookup = at(&this.modules, imp);
+        let globalScope: &ScopeLookup = at(&mod.variables, 0);
+        for (let j: usize = 0; j < globalScope.variables.length; j = j + 1) {
+            let v: &VariableLookup = at(&globalScope.variables, j);
+            if (v.name.content.equals(&name.content)) {
+                debug("Variable found in import");
+                *var = *v;
+                return true;
             }
         }
-        debug("Variable not found");
-        return false;
     }
+    debug("Variable not found");
+    return false;
+}
 
-    func resolveTypeByName(&this, currentModule: usize, name: &Token, typ: &TypeLookup) -> bool {
-        trace("Lookup.resolveTypeByName");
-        let currModule: &ModuleLookup = at(&this.modules, currentModule);
-        if (resolveTypeByName(currModule, name, typ)) return true;
-        for (let i: usize = 0; i < currModule.imports.length; i = i + 1) {
-            let imp: &ImportLookup = at(&currModule.imports, i);
-            let importedModule: &ModuleLookup = at(&this.modules, imp.moduleID);
-            if (resolveTypeByName(importedModule, name, typ)) return true;
+func resolveTypeByName(this: &Lookup, currentModule: usize, name: &Token, typ: &TypeLookup) -> bool {
+    trace("Lookup.resolveTypeByName");
+    let currModule: &ModuleLookup = at(&this.modules, currentModule);
+    if (resolveTypeByName(currModule, name, typ)) return true;
+    for (let i: usize = 0; i < currModule.imports.length; i = i + 1) {
+        let imp: &ImportLookup = at(&currModule.imports, i);
+        let importedModule: &ModuleLookup = at(&this.modules, imp.moduleID);
+        if (resolveTypeByName(importedModule, name, typ)) return true;
+    }
+    return false;
+}
+
+func getTypeLookupForType(this: &Lookup, typ: &Type) -> TypeLookup {
+    trace("Lookup.getTypeLookupForType");
+    if (typ.isStruct()) {
+        let strukt: &ParsedStructDecl = structDecls.at(typ.typeIndex);
+        let modID: usize = strukt.parentModule;
+        let s: &StructLookup = getStructByGlobalID(at(&this.modules, modID), getID(strukt));
+        return newTypeLookup(TYPE_LOOKUP_STRUCT, s);
+    } else {
+        unreachable("Lookup.getTypeLookupForType got non-struct type");
+    }
+}
+
+func searchAllModulesForTypeName(this: &Lookup, name: &Token) -> TypeLookupList {
+    trace("Lookup.searchAllModulesForTypeName");
+    let list: TypeLookupList = blank;
+    for (let i: usize = 0; i < this.modules.length; i = i + 1) {
+        let t: TypeLookup = blank;
+        if (resolveTypeByName(at(&this.modules, i), name, &t)) {
+            push(&list, t);
         }
-        return false;
     }
-
-    func getTypeLookupForType(&this, typ: &Type) -> TypeLookup {
-        trace("Lookup.getTypeLookupForType");
-        if (typ.isStruct()) {
-            let strukt: &ParsedStructDecl = structDecls.at(typ.typeIndex);
-            let modID: usize = strukt.parentModule;
-            let s: &StructLookup = getStructByGlobalID(at(&this.modules, modID), getID(strukt));
-            return newTypeLookup(TYPE_LOOKUP_STRUCT, s);
-        } else {
-            unreachable("Lookup.getTypeLookupForType got non-struct type");
-        }
+    return list;
+}
+func searchAllModulesForFunctionName(this: &Lookup, name: &Token) -> FunctionLookupList {
+    trace("Lookup.searchAllModulesForFunctionName");
+    let list: FunctionLookupList = blank;
+    for (let i: usize = 0; i < this.modules.length; i = i + 1) {
+        let t: FunctionLookupList = resolveFunctionByName(at(&this.modules, i), name);
+        extend(&list, &t);
     }
-
-    func searchAllModulesForTypeName(&this, name: &Token) -> TypeLookupList {
-        trace("Lookup.searchAllModulesForTypeName");
-        let list: TypeLookupList = blank;
-        for (let i: usize = 0; i < this.modules.length; i = i + 1) {
-            let t: TypeLookup = blank;
-            if (resolveTypeByName(at(&this.modules, i), name, &t)) {
-                push(&list, t);
+    return list;
+}
+func searchAllModulesForIdentifier(this: &Lookup, name: &Token) -> VariableLookupList {
+    trace("Lookup.searchAllModulesForIdentifier");
+    let list: VariableLookupList = blank;
+    for (let i: usize = 0; i < this.modules.length; i = i + 1) {
+        let m: &ModuleLookup = at(&this.modules, i);
+        for (let j: usize = 0; j < m.variables.length; j = j + 1) {
+            let s: &ScopeLookup = at(&m.variables, j);
+            let v: VariableLookup = blank;
+            if (getVariableByName(s, name.content, &v)) {
+                push(&list, v);
             }
         }
-        return list;
     }
-    func searchAllModulesForFunctionName(&this, name: &Token) -> FunctionLookupList {
-        trace("Lookup.searchAllModulesForFunctionName");
-        let list: FunctionLookupList = blank;
-        for (let i: usize = 0; i < this.modules.length; i = i + 1) {
-            let t: FunctionLookupList = resolveFunctionByName(at(&this.modules, i), name);
-            extend(&list, &t);
-        }
-        return list;
-    }
-    func searchAllModulesForIdentifier(&this, name: &Token) -> VariableLookupList {
-        trace("Lookup.searchAllModulesForIdentifier");
-        let list: VariableLookupList = blank;
-        for (let i: usize = 0; i < this.modules.length; i = i + 1) {
-            let m: &ModuleLookup = at(&this.modules, i);
-            for (let j: usize = 0; j < m.variables.length; j = j + 1) {
-                let s: &ScopeLookup = at(&m.variables, j);
-                let v: VariableLookup = blank;
-                if (getVariableByName(s, name.content, &v)) {
-                    push(&list, v);
-                }
-            }
-        }
-        return list;
-    }
+    return list;
 }
 
 struct ModuleLookup {

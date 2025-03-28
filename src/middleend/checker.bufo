@@ -507,7 +507,7 @@ struct TypeChecker {
             let mod: &ParsedModule = modules.at(i);
             assert(getID(mod) == i);
             this.currentModule = i;
-            let lookup: &ModuleLookup = this.lookup.insertModule(mod);
+            let lookup: &ModuleLookup = insertModule(&this.lookup, mod);
             for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
                 let tliID: usize = getTopLevelItemAtIndex(mod, j);
                 let tli: &ParsedTopLevelItem = topLevelItems.at(tliID);
@@ -1246,12 +1246,12 @@ struct TypeChecker {
         let expr: &ParsedExpr = exprs.at(exprID);
         assert(expr.kind == EXPR_CALL);
         let name: Token = expr.origToken;
-        let functions: FunctionLookupList = this.lookup.resolveFunctionByName(this.currentModule, &name);
+        let functions: FunctionLookupList = resolveFunctionByName(&this.lookup, this.currentModule, &name);
         if (functions.length == 0) {
             let loc: String = name.getLocation();
             let n: String = name.content.toString();
             fprintf(stderr, "%s: %s: Call to unknown function `%s`.\n", loc.chars(), ERR_STR, n.chars());
-            let alternatives: FunctionLookupList = this.lookup.searchAllModulesForFunctionName(&name);
+            let alternatives: FunctionLookupList = searchAllModulesForFunctionName(&this.lookup, &name);
             for (let i: usize = 0; i < alternatives.length; i = i + 1) {
                 let t: &FunctionLookup = at(&alternatives, i);
                 let loc: String = t.name.getLocation();
@@ -1515,11 +1515,11 @@ struct TypeChecker {
         assert(expr.kind == EXPR_STRUCT_INIT);
         let name: Token = expr.origToken;
         let lookup: TypeLookup = blank;
-        if (!this.lookup.resolveTypeByName(this.currentModule, &name, &lookup)) {
+        if (!resolveTypeByName(&this.lookup, this.currentModule, &name, &lookup)) {
             let loc: String = name.getLocation();
             let _n: String = name.content.toString();
             fprintf(stderr, "%s: %s: Use of undeclared type identifier `%s`.\n", loc.chars(), ERR_STR, _n.chars());
-            let alternatives: TypeLookupList = this.lookup.searchAllModulesForTypeName(&name);
+            let alternatives: TypeLookupList = searchAllModulesForTypeName(&this.lookup, &name);
             for (let i: usize = 0; i < alternatives.length; i = i + 1) {
                 let t: &TypeLookup = at(&alternatives, i);
                 if (isStruct(t)) {
@@ -1580,11 +1580,11 @@ struct TypeChecker {
         assert(expr.kind == EXPR_NAME);
         let name: Token = expr.origToken;
         let var: VariableLookup = blank;
-        if (!this.lookup.resolveVariableByName(this.currentModule, &name, scopes, &var)) {
+        if (!resolveVariableByName(&this.lookup, this.currentModule, &name, scopes, &var)) {
             let loc: String = name.getLocation();
             let _name: String = name.content.toString();
             fprintf(stderr, "%s: %s: Use of undeclared identifier `%s`.\n", loc.chars(), ERR_STR, _name.chars());
-            let alternatives: VariableLookupList = this.lookup.searchAllModulesForIdentifier(&name);
+            let alternatives: VariableLookupList = searchAllModulesForIdentifier(&this.lookup, &name);
             for (let i: usize = 0; i < alternatives.length; i = i + 1) {
                 let t: &VariableLookup = at(&alternatives, i);
                 let loc: String = t.name.getLocation();
@@ -1772,7 +1772,7 @@ struct TypeChecker {
         }
         let underlying: &Type = instanceType;
         if (!underlying.isStruct()) underlying = instanceType.getUnderlyingType(true);
-        let lookup: TypeLookup = this.lookup.getTypeLookupForType(underlying);
+        let lookup: TypeLookup = getTypeLookupForType(&this.lookup, underlying);
         if (underlying.isStruct()) {
             assert(isStruct(&lookup));
             let structLookup: &StructLookup = asStruct(&lookup);
@@ -2070,7 +2070,7 @@ struct TypeChecker {
         let typ = types.at(typeID);
         assert(expr.kind == EXPR_CALL);
         let functions: FunctionLookupList = blank;
-        if (!this.lookup.resolveAllFunctionsWithReturnType(this.currentModule, &expr.origToken, typ, &functions)) {
+        if (!resolveAllFunctionsWithReturnType(&this.lookup, this.currentModule, &expr.origToken, typ, &functions)) {
             clear(&functions);
             return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
         }
@@ -2101,7 +2101,7 @@ struct TypeChecker {
             return f.returnType;
         } else if (actual.length == 0) {
             if (!checkOnly) {
-                let functions: FunctionLookupList = this.lookup.resolveFunctionByName(this.currentModule, &expr.origToken);
+                let functions: FunctionLookupList = resolveFunctionByName(&this.lookup, this.currentModule, &expr.origToken);
                 return this.reportNoFunctionCallCandidate(getID(expr), &functions);
             }
             return newTCStateFailure(ERROR_TYPE_MISMATCH);
@@ -2123,7 +2123,7 @@ struct TypeChecker {
         let rhs = exprs.at(expr.rhs);
         if (rhs.kind == EXPR_NAME) {
             let name = rhs.origToken;
-            let structs = this.lookup.resolveAllStructsWithField(this.currentModule, &name, typ);
+            let structs = resolveAllStructsWithField(&this.lookup, this.currentModule, &name, typ);
             if (structs.length == 0) {
                 todo_with_msg("tryInferTypeOntoMemberAccess: 0 struct with field");
             } else if (structs.length == 1) {
@@ -2289,11 +2289,11 @@ struct TypeChecker {
         } else if (typ.kind == PARSED_TYPE_IDENT) {
             let name: Token = typ.nameTkn;
             let typeLookup: TypeLookup = blank;
-            if (!this.lookup.resolveTypeByName(this.currentModule, &name, &typeLookup)) {
+            if (!resolveTypeByName(&this.lookup, this.currentModule, &name, &typeLookup)) {
                 let loc: String = name.getLocation();
                 let _n: String = name.content.toString();
                 fprintf(stderr, "%s: %s: Use of undeclared type identifier `%s`.\n", loc.chars(), ERR_STR, _n.chars());
-                let alternatives: TypeLookupList = this.lookup.searchAllModulesForTypeName(&name);
+                let alternatives: TypeLookupList = searchAllModulesForTypeName(&this.lookup, &name);
                 for (let i: usize = 0; i < alternatives.length; i = i + 1) {
                     let t: &TypeLookup = at(&alternatives, i);
                     if (isStruct(t)) {

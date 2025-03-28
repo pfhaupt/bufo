@@ -12,112 +12,112 @@ import "../LLVM/attribute.bufo";
 
 struct LLVMContext {
     ref: LLVMContextRef;
+}
 
-    func drop(&this) {
-        LLVMContextDispose(this.ref);
-    }
+func drop(this: &LLVMContext) {
+    LLVMContextDispose(this.ref);
+}
 
-    func guardReference(&this) {
-        assert(!this.ref.isNull(), "LLVM Context is null");
-    }
+func guardReference(this: &LLVMContext) {
+    assert(!isNull(this.ref), "LLVM Context is null");
+}
 
-    func initializeTargets(&this) {
-        assert(LLVM_InitializeNativeAsmParser() == 0, "Could not initialize Targets");
-        assert(LLVM_InitializeNativeAsmPrinter() == 0, "Could not initialize Targets");
-        assert(LLVM_InitializeNativeDisassembler() == 0, "Could not initialize Targets");
-        assert(LLVM_InitializeNativeTarget() == 0, "Could not initialize Targets");
-    }
+func initializeTargets(this: &LLVMContext) {
+    assert(LLVM_InitializeNativeAsmParser() == 0, "Could not initialize Targets");
+    assert(LLVM_InitializeNativeAsmPrinter() == 0, "Could not initialize Targets");
+    assert(LLVM_InitializeNativeDisassembler() == 0, "Could not initialize Targets");
+    assert(LLVM_InitializeNativeTarget() == 0, "Could not initialize Targets");
+}
 
-    func createTarget(&this, name: &char) -> LLVMTarget {
-        trace("LLVMContext.createTarget");
-        let target: LLVMTargetRef = LLVMGetTargetFromName(name);
-        assert(!target.isNull(), "Could not create target triple");
-        return newLLVMTargetFromRef(target);
-    }
+func createTarget(this: &LLVMContext, name: &char) -> LLVMTarget {
+    trace("LLVMContext.createTarget");
+    let target: LLVMTargetRef = LLVMGetTargetFromName(name);
+    assert(!isNull(target), "Could not create target triple");
+    return newLLVMTargetFromRef(target);
+}
 
-    func createTargetTriple(&this, name: &char) -> &char {
-        trace("LLVMContext.createTargetTriple");
-        @os(WINDOWS) return "x86_64-pc-windows-msvc";
-        @os(LINUX) return "x86_64-unknown-linux-gnu";
-    }
+func createTargetTriple(this: &LLVMContext, name: &char) -> &char {
+    trace("LLVMContext.createTargetTriple");
+    @os(WINDOWS) return "x86_64-pc-windows-msvc";
+    @os(LINUX) return "x86_64-unknown-linux-gnu";
+}
 
-    func createModuleWithName(&this, name: SubStr) -> LLVMModule {
-        trace("LLVMContext.createModuleWithName");
-        this.guardReference();
-        let _name: String = name.toString();
-        let mod: LLVMModuleRef = LLVMModuleCreateWithNameInContext(_name.chars(), this.ref);
-        _name.drop();
-        assert(!mod.isNull(), "Could not create module in context");
-        return newLLVMModuleFromRef(mod);
-    }
+func createModuleWithName(this: &LLVMContext, name: SubStr) -> LLVMModule {
+    trace("LLVMContext.createModuleWithName");
+    guardReference(this);
+    let _name: String = name.toString();
+    let mod: LLVMModuleRef = LLVMModuleCreateWithNameInContext(_name.chars(), this.ref);
+    _name.drop();
+    assert(!isNull(mod), "Could not create module in context");
+    return newLLVMModuleFromRef(mod);
+}
 
-    func createBuilder(&this) -> LLVMBuilder {
-        trace("LLVMContext.createBuilder");
-        this.guardReference();
-        let builder: LLVMBuilderRef = LLVMCreateBuilderInContext(this.ref);
-        assert(!builder.isNull(), "Could not create builder in context");
-        return newLLVMBuilderFromRef(builder);
-    }
+func createBuilder(this: &LLVMContext) -> LLVMBuilder {
+    trace("LLVMContext.createBuilder");
+    guardReference(this);
+    let builder: LLVMBuilderRef = LLVMCreateBuilderInContext(this.ref);
+    assert(!isNull(builder), "Could not create builder in context");
+    return newLLVMBuilderFromRef(builder);
+}
 
-    func createIntegerType(&this, bitsize: i64) -> LLVMType {
-        trace("LLVMContext.createIntegerType");
-        assert(bitsize > 0, "Got invalid bitsize in createIntegerType");
-        // LLVM max limit is 2^23-1 bits
-        assert(bitsize <= 8388607, "Got invalid bitsize in createIntegerType");
-        let int: LLVMTypeRef = LLVMIntTypeInContext(this.ref, bitsize as u32);
-        assert(!int.isNull(), "Could not create integer type in context");
-        return newLLVMTypeFromRef(int);
-    }
+func createIntegerType(this: &LLVMContext, bitsize: i64) -> LLVMType {
+    trace("LLVMContext.createIntegerType");
+    assert(bitsize > 0, "Got invalid bitsize in createIntegerType");
+    // LLVM max limit is 2^23-1 bits
+    assert(bitsize <= 8388607, "Got invalid bitsize in createIntegerType");
+    let int: LLVMTypeRef = LLVMIntTypeInContext(this.ref, bitsize as u32);
+    assert(!isNull(int), "Could not create integer type in context");
+    return newLLVMTypeFromRef(int);
+}
 
-    func createFloatType(&this) -> LLVMType {
-        trace("LLVMContext.createFloatType");
-        let float: LLVMTypeRef = LLVMFloatTypeInContext(this.ref);
-        assert(!float.isNull(), "Could not create float type in context");
-        return newLLVMTypeFromRef(float);
-    }
+func createFloatType(this: &LLVMContext) -> LLVMType {
+    trace("LLVMContext.createFloatType");
+    let float: LLVMTypeRef = LLVMFloatTypeInContext(this.ref);
+    assert(!isNull(float), "Could not create float type in context");
+    return newLLVMTypeFromRef(float);
+}
 
-    func createDoubleType(&this) -> LLVMType {
-        trace("LLVMContext.createDoubleType");
-        let double: LLVMTypeRef = LLVMDoubleTypeInContext(this.ref);
-        assert(!double.isNull(), "Could not create double type in context");
-        return newLLVMTypeFromRef(double);
-    }
+func createDoubleType(this: &LLVMContext) -> LLVMType {
+    trace("LLVMContext.createDoubleType");
+    let double: LLVMTypeRef = LLVMDoubleTypeInContext(this.ref);
+    assert(!isNull(double), "Could not create double type in context");
+    return newLLVMTypeFromRef(double);
+}
 
-    func createStructType(&this, elements: &LLVMType, count: u32, packed: bool) -> LLVMType {
-        trace("LLVMContext.createStructType");
-        let b: LLVMBool = newLLVMBool(packed);
-        let strukt: LLVMTypeRef = LLVMStructTypeInContext(this.ref, elements as &LLVMTypeRef, count, b);
-        assert(!strukt.isNull(), "Could not create struct type in context");
-        return newLLVMTypeFromRef(strukt);
-    }
+func createStructType(this: &LLVMContext, elements: &LLVMType, count: u32, packed: bool) -> LLVMType {
+    trace("LLVMContext.createStructType");
+    let b: LLVMBool = newLLVMBool(packed);
+    let strukt: LLVMTypeRef = LLVMStructTypeInContext(this.ref, elements as &LLVMTypeRef, count, b);
+    assert(!isNull(strukt), "Could not create struct type in context");
+    return newLLVMTypeFromRef(strukt);
+}
 
-    func createVoidType(&this) -> LLVMType {
-        trace("LLVMContext.createVoidType");
-        let void: LLVMTypeRef = LLVMVoidTypeInContext(this.ref);
-        assert(!void.isNull(), "Could not create void type in context");
-        return newLLVMTypeFromRef(void);
-    }
+func createVoidType(this: &LLVMContext) -> LLVMType {
+    trace("LLVMContext.createVoidType");
+    let void: LLVMTypeRef = LLVMVoidTypeInContext(this.ref);
+    assert(!isNull(void), "Could not create void type in context");
+    return newLLVMTypeFromRef(void);
+}
 
-    func appendBasicBlock(&this, fn: LLVMValue, name: SubStr) -> LLVMBasicBlock {
-        trace("LLVMContext.appendBasicBlock");
-        let _name: String = name.toString();
-        let block: LLVMBasicBlockRef = LLVMAppendBasicBlockInContext(this.ref, fn.ref, _name.chars());
-        _name.drop();
-        assert(!block.isNull(), "Could not append basic block in context");
-        return newLLVMBasicBlockFromRef(block);
-    }
+func appendBasicBlock(this: &LLVMContext, fn: LLVMValue, name: SubStr) -> LLVMBasicBlock {
+    trace("LLVMContext.appendBasicBlock");
+    let _name: String = name.toString();
+    let block: LLVMBasicBlockRef = LLVMAppendBasicBlockInContext(this.ref, fn.ref, _name.chars());
+    _name.drop();
+    assert(!isNull(block), "Could not append basic block in context");
+    return newLLVMBasicBlockFromRef(block);
+}
 
-    func createEnumAttribute(&this, id: u32, val: u64) -> LLVMAttribute {
-        trace("LLVMContext.createEnumAttribute");
-        let attr = LLVMCreateEnumAttribute(this.ref, id, val);
-        assert(!attr.isNull(), "Could not create enum attribute in context");
-        return newLLVMAttributeFromRef(attr);
-    }
+func createEnumAttribute(this: &LLVMContext, id: u32, val: u64) -> LLVMAttribute {
+    trace("LLVMContext.createEnumAttribute");
+    let attr = LLVMCreateEnumAttribute(this.ref, id, val);
+    assert(!isNull(attr), "Could not create enum attribute in context");
+    return newLLVMAttributeFromRef(attr);
 }
 
 func newLLVMContext() -> LLVMContext {
     let ref: LLVMContextRef = LLVMContextCreate();
-    assert(!ref.isNull(), "Could not create LLVM Context");
+    assert(!isNull(ref), "Could not create LLVM Context");
     return LLVMContext {
         ref: ref,
     };

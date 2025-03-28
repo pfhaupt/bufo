@@ -180,79 +180,79 @@ compiler_flags {
 
 struct LLVMTargetMachineRef {
     ptr: Any;
-    func isNull(&this) -> bool {
-        return this.ptr == null;
-    }
+}
+func isNull(this: LLVMTargetMachineRef) -> bool {
+    return this.ptr == null;
 }
 
 struct LLVMTargetRef {
     ptr: Any;
-    func isNull(&this) -> bool {
-        return this.ptr == null;
-    }
+}
+func isNull(this: LLVMTargetRef) -> bool {
+    return this.ptr == null;
 }
 
 struct LLVMTargetDataRef {
     ptr: Any;
-    func isNull(&this) -> bool {
-        return this.ptr == null;
-    }
+}
+func isNull(this: LLVMTargetDataRef) -> bool {
+    return this.ptr == null;
 }
 
 struct LLVMPassManagerRef {
     ptr: Any;
-    func isNull(&this) -> bool {
-        return this.ptr == null;
-    }
+}
+func isNull(this: LLVMPassManagerRef) -> bool {
+    return this.ptr == null;
 }
 
 struct LLVMContextRef {
     ptr: Any;
-    func isNull(&this) -> bool {
-        return this.ptr == null;
-    }
+}
+func isNull(this: LLVMContextRef) -> bool {
+    return this.ptr == null;
 }
 
 struct LLVMModuleRef {
     ptr: Any;
-    func isNull(&this) -> bool {
-        return this.ptr == null;
-    }
+}
+func isNull(this: LLVMModuleRef) -> bool {
+    return this.ptr == null;
 }
 
 struct LLVMBuilderRef {
     ptr: Any;
-    func isNull(&this) -> bool {
-        return this.ptr == null;
-    }
+}
+func isNull(this: LLVMBuilderRef) -> bool {
+    return this.ptr == null;
 }
 
 struct LLVMBasicBlockRef {
     ptr: Any;
-    func isNull(&this) -> bool {
-        return this.ptr == null;
-    }
+}
+func isNull(this: LLVMBasicBlockRef) -> bool {
+    return this.ptr == null;
 }
 
 struct LLVMValueRef {
     ptr: Any;
-    func isNull(&this) -> bool {
-        return this.ptr == null;
-    }
+}
+func isNull(this: LLVMValueRef) -> bool {
+    return this.ptr == null;
 }
 
 struct LLVMTypeRef {
     ptr: Any;
-    func isNull(&this) -> bool {
-        return this.ptr == null;
-    }
+}
+func isNull(this: LLVMTypeRef) -> bool {
+    return this.ptr == null;
 }
 
 struct LLVMAttributeRef {
     ptr: Any;
-    func isNull(&this) -> bool {
-        return this.ptr == null;
-    }
+}
+func isNull(this: LLVMAttributeRef) -> bool {
+    return this.ptr == null;
 }
 
 // LLVMTarget

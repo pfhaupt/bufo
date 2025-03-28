@@ -10,109 +10,109 @@ import "../LLVM/target.bufo";
 
 struct LLVMModule {
     ref: LLVMModuleRef;
+}
 
-    func print(&this) {
-        let s: &char = LLVMPrintModuleToString(this.ref);
-        printf("%s\n", s);
-    }
+func print(this: &LLVMModule) {
+    let s: &char = LLVMPrintModuleToString(this.ref);
+    printf("%s\n", s);
+}
 
-    func setTriple(&this, triple: &char) {
-        trace("LLVMModule.setTriple");
-        LLVMSetTarget(this.ref, triple);
-    }
+func setTriple(this: &LLVMModule, triple: &char) {
+    trace("LLVMModule.setTriple");
+    LLVMSetTarget(this.ref, triple);
+}
 
-    func setDataLayout(&this, layout: LLVMDataLayout) {
-        trace("LLVMModule.setDataLayout");
-        LLVMSetDataLayout(this.ref, layout.ref);
-    }
+func setDataLayout(this: &LLVMModule, layout: LLVMDataLayout) {
+    trace("LLVMModule.setDataLayout");
+    LLVMSetDataLayout(this.ref, layout.ref);
+}
 
-    func writeToFile(&this, path: SubStr) -> bool {
-        trace("LLVMModule.writeToFile");
-        let err: LLVMString = blank;
-        let _n: String = path.toString();
-        let code: LLVMBool = LLVMPrintModuleToFile(this.ref, _n.chars(), &err);
-        if (code.val != 0) {
-            fprintf(stderr, "%s Could not write LLVM Module to file!\n", FATAL_STR);
-            fprintf(stderr, "%s\n", err.chars);
-            _n.drop();
-            return false;
-        }
-        printf("%s: Written LLVM Module to %s\n", NOTE_STR, _n.chars());
+func writeToFile(this: &LLVMModule, path: SubStr) -> bool {
+    trace("LLVMModule.writeToFile");
+    let err: LLVMString = blank;
+    let _n: String = path.toString();
+    let code: LLVMBool = LLVMPrintModuleToFile(this.ref, _n.chars(), &err);
+    if (code.val != 0) {
+        fprintf(stderr, "%s Could not write LLVM Module to file!\n", FATAL_STR);
+        fprintf(stderr, "%s\n", err.chars);
         _n.drop();
-        return true;
+        return false;
     }
+    printf("%s: Written LLVM Module to %s\n", NOTE_STR, _n.chars());
+    _n.drop();
+    return true;
+}
 
-    func verify(&this) -> bool {
-        trace("LLVMModule.verify");
-        let err: LLVMString = blank;
-        let code: LLVMBool = LLVMVerifyModule(this.ref, LLVMReturnStatusAction, &err);
-        if (code.val != 0) {
-            fprintf(stderr, "%s LLVM Module verification failed!\n", FATAL_STR);
-            fprintf(stderr, "%s\n", err.chars);
-            return false;
-        }
-        return true;
+func verify(this: &LLVMModule) -> bool {
+    trace("LLVMModule.verify");
+    let err: LLVMString = blank;
+    let code: LLVMBool = LLVMVerifyModule(this.ref, LLVMReturnStatusAction, &err);
+    if (code.val != 0) {
+        fprintf(stderr, "%s LLVM Module verification failed!\n", FATAL_STR);
+        fprintf(stderr, "%s\n", err.chars);
+        return false;
     }
+    return true;
+}
 
-    func addFunction(&this, name: SubStr, function: LLVMType) -> LLVMValue {
-        trace("LLVMModule.addFunction");
-        assert(!function.ref.isNull(), "Expected valid LLVMType in LLVMModule.addFunction");
-        let _n: String = name.toString();
-        let f: LLVMValueRef = LLVMAddFunction(this.ref, _n.chars(), function.ref);
-        _n.drop();
-        assert(!f.isNull(), "Could not add function to module");
-        return newLLVMValueFromRef(f);
-    }
-    func hasFunction(&this, name: SubStr) -> bool {
-        trace("LLVMModule.hasFunction");
-        let _n: String = name.toString();
-        let f: LLVMValueRef = LLVMGetNamedFunction(this.ref, _n.chars());
-        _n.drop();
-        return !f.isNull();
-    }
-    func getFunction(&this, name: SubStr) -> LLVMValue {
-        trace("LLVMModule.getFunction");
-        let _n: String = name.toString();
-        let f: LLVMValueRef = LLVMGetNamedFunction(this.ref, _n.chars());
-        _n.drop();
-        assert(!f.isNull(), "Could not get function from module");
-        return newLLVMValueFromRef(f);
-    }
-    func addGlobal(&this, typ: LLVMType, space: u32, name: SubStr) -> LLVMValue {
-        trace("LLVMModule.addGlobal");
-        assert(!typ.ref.isNull(), "Expected valid LLVMType in LLVMModule.addGlobal");
-        let _n: String = name.toString();
-        let g: LLVMValueRef = LLVMAddGlobalInAddressSpace(this.ref, typ.ref, _n.chars(), space);
-        _n.drop();
-        assert(!g.isNull(), "Could not add global in module");
-        return newLLVMValueFromRef(g);
-    }
-    func getGlobal(&this, name: SubStr) -> LLVMValue {
-        trace("LLVMModule.getGlobal");
-        let _n: String = name.toString();
-        let g: LLVMValueRef = LLVMGetNamedGlobal(this.ref, _n.chars());
-        _n.drop();
-        assert(!g.isNull(), "Could not get global in module");
-        return newLLVMValueFromRef(g);
-    }
+func addFunction(this: &LLVMModule, name: SubStr, function: LLVMType) -> LLVMValue {
+    trace("LLVMModule.addFunction");
+    assert(!isNull(function.ref), "Expected valid LLVMType in LLVMModule.addFunction");
+    let _n: String = name.toString();
+    let f: LLVMValueRef = LLVMAddFunction(this.ref, _n.chars(), function.ref);
+    _n.drop();
+    assert(!isNull(f), "Could not add function to module");
+    return newLLVMValueFromRef(f);
+}
+func hasFunction(this: &LLVMModule, name: SubStr) -> bool {
+    trace("LLVMModule.hasFunction");
+    let _n: String = name.toString();
+    let f: LLVMValueRef = LLVMGetNamedFunction(this.ref, _n.chars());
+    _n.drop();
+    return !isNull(f);
+}
+func getFunction(this: &LLVMModule, name: SubStr) -> LLVMValue {
+    trace("LLVMModule.getFunction");
+    let _n: String = name.toString();
+    let f: LLVMValueRef = LLVMGetNamedFunction(this.ref, _n.chars());
+    _n.drop();
+    assert(!isNull(f), "Could not get function from module");
+    return newLLVMValueFromRef(f);
+}
+func addGlobal(this: &LLVMModule, typ: LLVMType, space: u32, name: SubStr) -> LLVMValue {
+    trace("LLVMModule.addGlobal");
+    assert(!isNull(typ.ref), "Expected valid LLVMType in LLVMModule.addGlobal");
+    let _n: String = name.toString();
+    let g: LLVMValueRef = LLVMAddGlobalInAddressSpace(this.ref, typ.ref, _n.chars(), space);
+    _n.drop();
+    assert(!isNull(g), "Could not add global in module");
+    return newLLVMValueFromRef(g);
+}
+func getGlobal(this: &LLVMModule, name: SubStr) -> LLVMValue {
+    trace("LLVMModule.getGlobal");
+    let _n: String = name.toString();
+    let g: LLVMValueRef = LLVMGetNamedGlobal(this.ref, _n.chars());
+    _n.drop();
+    assert(!isNull(g), "Could not get global in module");
+    return newLLVMValueFromRef(g);
+}
 
-    func createPassManager(&this) -> LLVMPassManager {
-        trace("LLVMModule.createPassManager");
-        let pm: LLVMPassManagerRef = LLVMCreatePassManager();
-        assert(!pm.isNull(), "Could not create pass manager for module");
-        return newLLVMPassManagerFromRef(pm);
-    }
-    func runInPassManager(&this, pm: LLVMPassManager) -> bool {
-        trace("LLVMModule.runInPassManager");
-        assert(!this.ref.isNull());
-        assert(!pm.ref.isNull());
-        return LLVMRunPassManager(pm.ref, this.ref) == 1;
-    }
+func createPassManager(this: &LLVMModule) -> LLVMPassManager {
+    trace("LLVMModule.createPassManager");
+    let pm: LLVMPassManagerRef = LLVMCreatePassManager();
+    assert(!isNull(pm), "Could not create pass manager for module");
+    return newLLVMPassManagerFromRef(pm);
+}
+func runInPassManager(this: &LLVMModule, pm: LLVMPassManager) -> bool {
+    trace("LLVMModule.runInPassManager");
+    assert(!isNull(this.ref));
+    assert(!isNull(pm.ref));
+    return LLVMRunPassManager(pm.ref, this.ref) == 1;
 }
 
 func newLLVMModuleFromRef(ref: LLVMModuleRef) -> LLVMModule {
     trace("newLLVMModuleFromRef");
-    assert(!ref.isNull(), "Passed invalid reference to newLLVMModuleFromRef");
+    assert(!isNull(ref), "Passed invalid reference to newLLVMModuleFromRef");
     return LLVMModule {
         ref: ref
     };
