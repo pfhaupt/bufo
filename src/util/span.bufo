@@ -6,26 +6,26 @@ struct Span {
     mod: usize;
     start: usize;
     end: usize;
-    func equals(&this, other: &Span) -> bool {
-        return this.mod == other.mod && this.start == other.start && this.end == other.end;
-    }
-    func print(&this) {
-        let s: String = this.toString();
-        s.print();
-        s.drop();
-    }
-    func toString(&this) -> String {
-        // FIXME: The spans report in bytes, but the formatting makes it look like line and column
-        let s: String = modules.at(this.mod).origin.toString();
-        s.pushChar(':');
-        s.pushNumber(this.start);
-        s.pushChar(':');
-        s.pushNumber(this.end);
-        return s;
-    }
-    func comesBefore(&this, other: &Span) -> bool {
-        return this.start < other.start;
-    }
+}
+func equals(this: &Span, other: &Span) -> bool {
+    return this.mod == other.mod && this.start == other.start && this.end == other.end;
+}
+func print(this: &Span) {
+    let s: String = toString(this);
+    s.print();
+    s.drop();
+}
+func toString(this: &Span) -> String {
+    // FIXME: The spans report in bytes, but the formatting makes it look like line and column
+    let s: String = modules.at(this.mod).origin.toString();
+    s.pushChar(':');
+    s.pushNumber(this.start);
+    s.pushChar(':');
+    s.pushNumber(this.end);
+    return s;
+}
+func comesBefore(this: &Span, other: &Span) -> bool {
+    return this.start < other.start;
 }
 
 func newSpan(mod: usize, start: usize, end: usize) -> Span {

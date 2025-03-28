@@ -139,7 +139,7 @@ struct TypeChecker {
 
     func reportTypeMismatch(&this, span: Span, expected: &Type, got: &Type) -> TCState {
         trace("TypeChecker.reportTypeMismatch");
-        let loc: String = span.toString();
+        let loc: String = toString(&span);
         let typ1: String = expected.toString();
         let typ2: String = got.toString();
         fprintf(stderr, "%s: %s: Type mismatch! Expected type %s, found type %s.\n",
@@ -153,9 +153,9 @@ struct TypeChecker {
 
     func reportBinaryTypeMismatch(&this, op: usize, lhsSpan: Span, lhsType: &Type, rhsSpan: Span, rhsType: &Type) -> TCState {
         trace("TypeChecker.reportBinaryTypeMismatch");
-        let loc: String = newSpanBetween(&lhsSpan, &rhsSpan).toString();
-        let loc1: String = lhsSpan.toString();
-        let loc2: String = rhsSpan.toString();
+        let loc: String = toString(&newSpanBetween(&lhsSpan, &rhsSpan));
+        let loc1: String = toString(&lhsSpan);
+        let loc2: String = toString(&rhsSpan);
         let typ1: String = lhsType.toString();
         let typ2: String = rhsType.toString();
         fprintf(stderr, "%s: %s: Type mismatch in binary expression! Operation `%s %s %s` is not defined.\n",
@@ -173,7 +173,7 @@ struct TypeChecker {
 
     func reportInvalidPointerArithmetics(&this, op: usize, lhsSpan: Span, rhsSpan: Span) -> TCState {
         trace("TypeChecker.reportInvalidPointerArithmetics");
-        let loc: String = newSpanBetween(&lhsSpan, &rhsSpan).toString();
+        let loc: String = toString(&newSpanBetween(&lhsSpan, &rhsSpan));
         fprintf(stderr, "%s: %s: Operation `%s` is not allowed in the context of pointer arithmetics.\n",
             loc.chars(), ERR_STR, binOpAsStr(op));
         loc.drop();
@@ -183,8 +183,8 @@ struct TypeChecker {
 
     func reportDuplicateField(&this, fieldToken: Token, declSpan: Span) -> TCState {
         trace("TypeChecker.reportDuplicateField");
-        let duplLoc: String = fieldToken.span.toString();
-        let origLoc: String = declSpan.toString();
+        let duplLoc: String = toString(&fieldToken.span);
+        let origLoc: String = toString(&declSpan);
         let name: String = fieldToken.content.toString();
         fprintf(stderr, "%s: %s: Field redeclaration.\n", duplLoc.chars(), ERR_STR);
         fprintf(stderr, "%s: %s: Field `%s` already declared here.\n", origLoc.chars(), NOTE_STR, name.chars());
@@ -197,8 +197,8 @@ struct TypeChecker {
 
     func reportDuplicateParameter(&this, paramToken: Token, declSpan: Span) -> TCState {
         trace("TypeChecker.reportDuplicateParameter");
-        let duplLoc: String = paramToken.span.toString();
-        let origLoc: String = declSpan.toString();
+        let duplLoc: String = toString(&paramToken.span);
+        let origLoc: String = toString(&declSpan);
         let name: String = paramToken.content.toString();
         fprintf(stderr, "%s: %s: Parameter redeclaration.\n", duplLoc.chars(), ERR_STR);
         fprintf(stderr, "%s: %s: Parameter `%s` already declared here.\n", origLoc.chars(), NOTE_STR, name.chars());
@@ -211,8 +211,8 @@ struct TypeChecker {
 
     func reportUnknownField(&this, name: Token, decl: &StructLookup) -> TCState {
         trace("TypeChecker.reportUnknownField");
-        let errLoc: String = name.span.toString();
-        let declLoc: String = decl.name.span.toString();
+        let errLoc: String = toString(&name.span);
+        let declLoc: String = toString(&decl.name.span);
         let strukt: String = decl.name.content.toString();
         let field: String = name.content.toString();
         fprintf(stderr, "%s: %s: Attempted to access unknown field `%s` of instance of struct %s.\n", errLoc.chars(), ERR_STR, field.chars(), strukt.chars());
@@ -227,8 +227,8 @@ struct TypeChecker {
 
     func reportDuplicateFunction(&this, f1: &FunctionLookup, f2: &FunctionLookup) -> TCState {
         trace("TypeChecker.reportDuplicateFunction");
-        let errLoc: String = f1.name.span.toString();
-        let duplLoc: String = f2.name.span.toString();
+        let errLoc: String = toString(&f1.name.span);
+        let duplLoc: String = toString(&f2.name.span);
         let name: String = f1.name.content.toString();
         fprintf(stderr, "%s: %s: Function redeclaration.\n", errLoc.chars(), ERR_STR);
         fprintf(stderr, "%s: %s: A function named `%s` with that signature is already declared here.\n", duplLoc.chars(), ERR_STR, name.chars());
@@ -241,8 +241,8 @@ struct TypeChecker {
 
     func reportDuplicateMethod(&this, m1: &MethodLookup, m2: &MethodLookup) -> TCState {
         trace("TypeChecker.reportDuplicateMethod");
-        let errLoc: String = m1.name.span.toString();
-        let duplLoc: String = m2.name.span.toString();
+        let errLoc: String = toString(&m1.name.span);
+        let duplLoc: String = toString(&m2.name.span);
         let name: String = m1.name.content.toString();
         fprintf(stderr, "%s: %s: Method redeclaration.\n", errLoc.chars(), ERR_STR);
         fprintf(stderr, "%s: %s: A method named `%s` with that signature is already declared here.\n", duplLoc.chars(), ERR_STR, name.chars());
@@ -256,14 +256,14 @@ struct TypeChecker {
         trace("TypeChecker.reportNoFunctionCallCandidate");
         let callExpr: &ParsedExpr = exprs.at(callID);
         assert(callExpr.kind == EXPR_CALL, "reportNoFunctionCallCandidate: Expected expr to be a call");
-        let loc: String = callExpr.origToken.span.toString();
+        let loc: String = toString(&callExpr.origToken.span);
         let name: String = callExpr.origToken.content.toString();
         fprintf(stderr, "%s: %s: Could not find matching signature for call to function `%s`.\n", loc.chars(), ERR_STR, name.chars());
         assert(functions.length != 0, "reportNoFunctionCallCandidate: Expected at least one declaration");
         // REVIEW: It was suggested that we could hide this extra info behind a `--verbose` flag, which sounds interesting.
         for (let i: usize = 0; i < functions.length; i = i + 1) {
             let f: &FunctionLookup = functions.at(i);
-            let loc: String = f.name.span.toString();
+            let loc: String = toString(&f.name.span);
             fprintf(stderr, "%s: %s: A function with that name is located here.\n", loc.chars(), NOTE_STR);
             loc.drop();
         }
@@ -279,14 +279,14 @@ struct TypeChecker {
         assert(binExpr.kind == EXPR_BINARY);
         let callExpr: &ParsedExpr = exprs.at(binExpr.rhs);
         assert(callExpr.kind == EXPR_CALL, "reportNoMethodCallCandidate: Expected expr to be a call");
-        let loc: String = callExpr.origToken.span.toString();
+        let loc: String = toString(&callExpr.origToken.span);
         let name: String = callExpr.origToken.content.toString();
         fprintf(stderr, "%s: %s: Could not find matching signature for call to method `%s`.\n", loc.chars(), ERR_STR, name.chars());
         assert(methods.length != 0, "reportNoMethodCallCandidate: Expected at least one declaration");
         // REVIEW: It was suggested that we could hide this extra info behind a `--verbose` flag, which sounds interesting.
         for (let i: usize = 0; i < methods.length; i = i + 1) {
             let f: &MethodLookup = methods.at(i);
-            let loc: String = f.name.span.toString();
+            let loc: String = toString(&f.name.span);
             fprintf(stderr, "%s: %s: A method with that name is located here.\n", loc.chars(), NOTE_STR);
             loc.drop();
         }
@@ -298,8 +298,8 @@ struct TypeChecker {
 
     func reportVariableRedeclaration(&this, newDecl: Token, oldDecl: Token) -> TCState {
         trace("TypeChecker.reportVariableRedeclaration");
-        let newLoc: String = newDecl.span.toString();
-        let oldLoc: String = oldDecl.span.toString();
+        let newLoc: String = toString(&newDecl.span);
+        let oldLoc: String = toString(&oldDecl.span);
         let name: String = newDecl.content.toString();
         fprintf(stderr, "%s: %s: Variable redeclaration.\n", newLoc.chars(), ERR_STR);
         fprintf(stderr, "%s: %s: Variable `%s` already declared here.\n", oldLoc.chars(), NOTE_STR, name.chars());
@@ -329,7 +329,7 @@ struct TypeChecker {
 
     func reportNonPrimitiveCast(&this, span: Span, from: &Type, to: &Type) -> TCState {
         trace("TypeChecker.reportNonPrimitiveCast");
-        let loc: String = span.toString();
+        let loc: String = toString(&span);
         let typ1: String = from.toString();
         let typ2: String = to.toString();
         fprintf(stderr, "%s: %s: Non primitive cast from type %s to %s.\n",
@@ -343,7 +343,7 @@ struct TypeChecker {
 
     func reportIndexedAccessOnNonArray(&this, span: Span, typ: &Type) -> TCState {
         trace("TypeChecker.reportIndexedAccessOnNonArray");
-        let loc: String = span.toString();
+        let loc: String = toString(&span);
         let name: String = typ.toString();
         fprintf(stderr, "%s: %s: Indexed Access is only supported for arrays.\n", loc.chars(), ERR_STR);
         fprintf(stderr, "%s: %s: Expression has type %s.\n", loc.chars(), NOTE_STR, name.chars());
@@ -355,8 +355,8 @@ struct TypeChecker {
 
     func reportRuntimeValueInComptimeContext(&this, ident: Token, var: &VariableLookup) -> TCState {
         trace("TypeChecker.reportRuntimeValueInComptimeContext");
-        let loc = ident.span.toString();
-        let otherLoc = var.name.span.toString();
+        let loc = toString(&ident.span);
+        let otherLoc = toString(&var.name.span);
         let name = ident.content.toString();
         fprintf(stderr, "%s: %s: Variables declared with `let` can't be used in a comptime context.\n", loc.chars(), ERR_STR);
         fprintf(stderr, "%s: %s: Variable `%s` is declared here.\n", otherLoc.chars(), NOTE_STR, name.chars());
@@ -369,7 +369,7 @@ struct TypeChecker {
 
     func reportAnyDereference(&this, expr: &ParsedExpr) -> TCState {
         trace("TypeChecker.reportAnyDereference");
-        let loc = expr.span.toString();
+        let loc = toString(&expr.span);
         fprintf(stderr, "%s: %s: Can't dereference expression of type Any.\n", loc.chars(), ERR_STR);
         loc.drop();
         this.typeError = true;
@@ -378,7 +378,7 @@ struct TypeChecker {
 
     func reportMemberAccessOnNonStruct(&this, expr: &ParsedExpr, instance: &Type) -> TCState {
         trace("TypeChecker.reportMemberAccessOnNonStruct");
-        let loc = expr.span.toString();
+        let loc = toString(&expr.span);
         let t = instance.toString();
         fprintf(stderr, "%s: %s: The Dot-Operator is not defined for values of type %s.\n", loc.chars(), ERR_STR, t.chars());
         t.drop();
@@ -390,11 +390,11 @@ struct TypeChecker {
     func reportMemberAccessTooManyOptions(&this, expr: &ParsedExpr, structs: &StructLookupList) -> TCState {
         trace("TypeChecker.reportMemberAccessTooManyOptions");
         assert(structs.length > 0);
-        let loc = expr.span.toString();
+        let loc = toString(&expr.span);
         fprintf(stderr, "%s: %s: Could not infer which type to use for expression.\n", loc.chars(), ERR_STR);
         for (let i: usize = 0; i < structs.length; i = i + 1) {
             let s = structs.at(i);
-            let l = s.name.span.toString();
+            let l = toString(&s.name.span);
             let n = s.name.content.toString();
             fprintf(stderr, "%s: %s: Context allows struct %s to be used.\n", l.chars(), NOTE_STR, n.chars());
             n.drop();
@@ -408,11 +408,11 @@ struct TypeChecker {
     func reportFunctionCallTooManyOptions(&this, expr: &ParsedExpr, functions: &FunctionLookupList) -> TCState {
         trace("TypeChecker.reportFunctionCallTooManyOptions");
         assert(functions.length > 0);
-        let loc = expr.span.toString();
+        let loc = toString(&expr.span);
         fprintf(stderr, "%s: %s: Could not infer which function to call.\n", loc.chars(), ERR_STR);
         for (let i: usize = 0; i < functions.length; i = i + 1) {
             let f = functions.at(i);
-            let l = f.name.span.toString();
+            let l = toString(&f.name.span);
             let n = f.name.content.toString();
             fprintf(stderr, "%s: %s: Context allows this function to be called.\n", l.chars(), NOTE_STR, n.chars());
             n.drop();
@@ -840,7 +840,7 @@ struct TypeChecker {
             }
             let exprType: &Type = types.at(exprState.getType());
             if (!exprType.isNone() && !expr.isAssignment() && *flags.verbose) {
-                let loc: String = expr.span.toString();
+                let loc: String = toString(&expr.span);
                 fprintf(stderr, "%s: %s: Unused expression value.\n", loc.chars(), WARN_STR);
                 loc.drop();
             }
@@ -921,7 +921,7 @@ struct TypeChecker {
                 assert(this.currentFunction.getReadyState(FUNC_READY_TO_USE), "Function is not ready");
                 let retType: &Type = types.at(this.currentFunction.returnType.getType());
                 if (!retType.isNone()) {
-                    printf("%s\n", stmt.span.toString().chars());
+                    printf("%s\n", toString(&stmt.span).chars());
                     printf("%llu %llu\n", retType.kind, retType.typeIndex);
                     todo_with_msg("function returns something, but we wrote return;");
                 }
@@ -1070,7 +1070,7 @@ struct TypeChecker {
                     }
                     let nextType: &Type = types.at(nextState.getType());
                     if (!nextType.equals(elemType)) {
-                        let loc = exprs.at(elemIndex).span.toString();
+                        let loc = toString(&exprs.at(elemIndex).span);
                         let t = elemType.toString();
                         lastErrState = this.reportTypeMismatch(exprs.at(nextIndex).span, elemType, nextType);
                         fprintf(stderr, "%s: %s: Array elements inferred to be type %s here.\n", loc.chars(), NOTE_STR, t.chars());
@@ -1145,7 +1145,7 @@ struct TypeChecker {
             // PTR as PTR is allowed
         } else if (exprType.isPointer() && typeType.isInteger()) {
             if (typeType.getSize() != exprType.getSize()) {
-                let loc = expr.span.toString();
+                let loc = toString(&expr.span);
                 let from = exprType.toString();
                 let to = typeType.toString();
                 fprintf(stderr, "%s: %s: Casting pointer of type %s to integer of type %s.\n",
@@ -1156,7 +1156,7 @@ struct TypeChecker {
             }
         } else if (exprType.isInteger() && typeType.isPointer()) {
             if (typeType.getSize() != exprType.getSize()) {
-                let loc = expr.span.toString();
+                let loc = toString(&expr.span);
                 let from = exprType.toString();
                 let to = typeType.toString();
                 fprintf(stderr, "%s: %s: Casting integer of type %s to pointer of type %s.\n",
@@ -1171,7 +1171,7 @@ struct TypeChecker {
             return this.reportNonPrimitiveCast(expr.span, exprType, typeType);
         }
         if (typeType.getSize() < exprType.getSize() && *flags.verbose) {
-            let loc: String = expr.span.toString();
+            let loc: String = toString(&expr.span);
             let tName: String = typeType.toString();
             let oName: String = exprType.toString();
             fprintf(stderr, "%s: %s: Lossy type cast: Target type (%s) is smaller than original type (%s).\n",
@@ -1211,7 +1211,7 @@ struct TypeChecker {
         } else if (expr.op == UNARY_NOT) {
             let exprType: &Type = types.at(exprState.getType());
             if (!exprType.isBoolean()) {
-                let loc: String = expr.span.toString();
+                let loc: String = toString(&expr.span);
                 let t: String = exprType.toString();
                 fprintf(stderr, "%s: %s: Logical Not is not defined for type %s.\n", loc.chars(), ERR_STR, t.chars());
                 t.drop();
@@ -1223,7 +1223,7 @@ struct TypeChecker {
         } else if (expr.op == UNARY_MINUS) {
             let exprType: &Type = types.at(exprState.getType());
             if (!exprType.isSignedInteger() && !exprType.isFloat()) {
-                let loc: String = expr.span.toString();
+                let loc: String = toString(&expr.span);
                 let t: String = exprType.toString();
                 fprintf(stderr, "%s: %s: Negation is not defined for type %s.\n", loc.chars(), ERR_STR, t.chars());
                 t.drop();
@@ -1659,7 +1659,7 @@ struct TypeChecker {
         let rhsType: &Type = types.at(rhsTypeID);
         // FIXME: Put those into a single check
         if (!rhsType.isPrimitive() || rhsTypeID != TYPE_USIZE) {
-            let loc: String = expr.span.toString();
+            let loc: String = toString(&expr.span);
             let typ: String = rhsType.toString();
             fprintf(stderr, "%s: %s: Expected index of array access to be type usize, got %s.\n", loc.chars(), ERR_STR, typ.chars());
             typ.drop();
@@ -1921,7 +1921,7 @@ struct TypeChecker {
         } else if (expr.kind == EXPR_ARRAY_LIT) {
             if (!typ.isArray()) {
                 if (!checkOnly) {
-                    let loc = expr.span.toString();
+                    let loc = toString(&expr.span);
                     let t = typ.toString();
                     fprintf(stderr, "%s: %s: Expected expression of type %s, found array literal.\n", loc.chars(), ERR_STR, t.chars());
                     t.drop();
@@ -1933,7 +1933,7 @@ struct TypeChecker {
             if (expr.arrayContext.size == 0) {
                 if (typ.arraySize != expr.arrayContext.elemLength) {
                     if (!checkOnly) {
-                        let loc: String = expr.span.toString();
+                        let loc: String = toString(&expr.span);
                         fprintf(stderr, "%s: %s: Array size mismatch! Expected to find %llu element(s), got %llu instead.\n",
                             loc.chars(), ERR_STR, typ.arraySize, expr.arrayContext.elemLength);
                         loc.drop();
@@ -1952,7 +1952,7 @@ struct TypeChecker {
             } else {
                 if (typ.arraySize != expr.arrayContext.size) {
                     if (!checkOnly) {
-                        let loc: String = expr.span.toString();
+                        let loc: String = toString(&expr.span);
                         fprintf(stderr, "%s: %s: Array size mismatch! Expected to find %llu element(s), got %llu instead.\n",
                             loc.chars(), ERR_STR, typ.arraySize, expr.arrayContext.size);
                         loc.drop();
@@ -1966,7 +1966,7 @@ struct TypeChecker {
             tid = newTCStateType(typeID);
         } else if (expr.kind == EXPR_BLANK) {
             if (typ.isPointer()) {
-                let loc: String = expr.span.toString();
+                let loc: String = toString(&expr.span);
                 let name: String = typ.toString();
                 fprintf(stderr, "%s: %s: Invalid initialization of reference of type %s. Please use `null` instead.\n",
                     loc.chars(), ERR_STR, name.chars());
@@ -1975,7 +1975,7 @@ struct TypeChecker {
                 this.typeError = true;
                 return newTCStateFailure(ERROR_BLANK_FOR_NULL);
             } else if (typ.isPrimitive()) {
-                let loc: String = expr.span.toString();
+                let loc: String = toString(&expr.span);
                 let name: String = typ.toString();
                 fprintf(stderr, "%s: %s: Using `blank` to initialize value of type %s. Please use `0` instead.\n",
                     loc.chars(), WARN_STR, name.chars());
@@ -2022,7 +2022,7 @@ struct TypeChecker {
                 // typeof(expr) == typeof(-expr)
                 if (!typ.isSignedInteger() && !typ.isFloat()) {
                     if (!checkOnly) {
-                        let loc: String = expr.span.toString();
+                        let loc: String = toString(&expr.span);
                         let t: String = typ.toString();
                         fprintf(stderr, "%s: %s: Negation is not defined for type %s.\n", loc.chars(), ERR_STR, t.chars());
                         t.drop();
@@ -2201,7 +2201,7 @@ struct TypeChecker {
                     exprs.at(expr.lhs).span, lhsType,
                     rhs, rhsType,
                 );
-                let loc = rhs.toString();
+                let loc = toString(&rhs);
                 fprintf(stderr, "%s: %s: Pointer offsets must be of type usize.\n", loc.chars(), NOTE_STR);
                 loc.drop();
                 return err;
@@ -2216,7 +2216,7 @@ struct TypeChecker {
                     lhs, lhsType,
                     exprs.at(expr.rhs).span, rhsType,
                 );
-                let loc = lhs.toString();
+                let loc = toString(&lhs);
                 fprintf(stderr, "%s: %s: Pointer offsets must be of type usize.\n", loc.chars(), NOTE_STR);
                 loc.drop();
                 return err;

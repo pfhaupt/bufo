@@ -101,7 +101,7 @@ func escapeCharSequence(this: &Lexer, tmp: &SubStr, s: &String, len: &usize) -> 
             extraOffset = 2;
         } else {
             let t: Token = newToken(this.moduleID, &newSubStr(&c, 0, 1), this.ptr + 1, TOKEN_IDENT);
-            let loc: String = t.span.toString();
+            let loc: String = toString(&t.span);
             fprintf(stderr, "%s: %s: Can't escape character `%c`.\n", loc.chars(), ERR_STR, c);
             loc.drop();
             exit(1);
@@ -358,7 +358,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
         }
     } else {
         let t: Token = newToken(this.moduleID, &newSubStr(&currChar, 0, 1), this.ptr + 1, TOKEN_IDENT);
-        let loc: String = t.span.toString();
+        let loc: String = toString(&t.span);
         fprintf(stderr, "%s: %s: Unknown character `%c`.\n", loc.chars(), ERR_STR, currChar);
         loc.drop();
         exit(1);

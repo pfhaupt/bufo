@@ -51,7 +51,7 @@ func advanceRealStack(this: &IRInterp, span: Span, size: usize) -> &u8 {
     let _p: &u8 = this.realStackPointer;
     let new: &u8 = this.realStackPointer + size;
     if (new >= this.realStackStart + STACK_SIZE) {
-        let loc = span.toString();
+        let loc = toString(&span);
         fprintf(stderr, "%s: %s: Stack Overflow in the comptime interpreter.\n", loc.chars(), ERR_STR);
         fprintf(stderr, "%s: %s: Last allocation tried to allocate %llu byte(s).\n", loc.chars(), NOTE_STR, size);
         loc.drop();
@@ -918,7 +918,7 @@ func pushRegisterStack(this: &IRInterp, span: Span, size: usize) {
     trace("IRInterp.pushRegisterStack");
     let new: &u8 = this.regStackBase + size;
     if (new > this.regStackStart + REG_STACK_SIZE) {
-        let loc = span.toString();
+        let loc = toString(&span);
         fprintf(stderr, "%s: %s Register Stack Overflow in the comptime interpreter.\n", loc.chars(), FATAL_STR);
         fprintf(stderr, "%s: %s Tried to reserve %llu byte(s).\n", loc.chars(), FATAL_STR, size);
         loc.drop();
@@ -930,7 +930,7 @@ func popRegisterStack(this: &IRInterp, span: Span, size: usize) {
     trace("IRInterp.popRegisterStack");
     let new: &u8 = this.regStackBase - size;
     if (new < this.regStackStart) {
-        let loc = span.toString();
+        let loc = toString(&span);
         fprintf(stderr, "%s: %s Register Stack Underflow in the comptime interpreter.\n", loc.chars(), FATAL_STR);
         loc.drop();
         exit(2);

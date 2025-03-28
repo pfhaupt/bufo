@@ -89,7 +89,7 @@ struct Token {
         this.content.print();
     }
     func getLocation(&this) -> String {
-        return this.span.toString();
+        return toString(&this.span);
     }
     func toString(&this) -> String {
         return this.content.toString();
@@ -102,7 +102,7 @@ struct Token {
     }
     func equals(&this, other: &Token) -> bool {
         if (this.kind != other.kind) return false;
-        if (!this.span.equals(&other.span)) return false;
+        if (!equals(&this.span, &other.span)) return false;
         if (!this.content.equals(&other.content)) return false;
         return true;
     }

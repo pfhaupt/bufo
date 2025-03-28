@@ -931,8 +931,8 @@ struct IRGen {
             let name: String = function.getMangledName();
             if (this.functions.containsKey(&name)) {
                 let fn = this.functions.get(&name);
-                let loc = function.span.toString();
-                let loc1 = fn.span.toString();
+                let loc = toString(&function.span);
+                let loc1 = toString(&fn.span);
                 fprintf(stderr, "%s: %s Hash collision - Function Lookup already contains function!\n", loc.chars(), FATAL_STR);
                 fprintf(stderr, "%s: %s Function with mangled name %s already defined here!\n", loc1.chars(), FATAL_STR, name.chars());
                 loc1.drop();
@@ -962,8 +962,8 @@ struct IRGen {
             let name: String = method.getMangledName();
             if (this.functions.containsKey(&name)) {
                 let fn = this.functions.get(&name);
-                let loc = method.span.toString();
-                let loc1 = fn.span.toString();
+                let loc = toString(&method.span);
+                let loc1 = toString(&fn.span);
                 fprintf(stderr, "%s: %s Hash collision - Function Lookup already contains function!\n", loc.chars(), FATAL_STR);
                 fprintf(stderr, "%s: %s Function with mangled name %s already defined here!\n", loc1.chars(), FATAL_STR, name.chars());
                 loc1.drop();
@@ -1144,7 +1144,7 @@ struct IRGen {
             let curr: &IRBlock = function.getCurrentBlockAsRef();
             if (curr.isTerminated()) {
                 if (i != block.stmtLength - 1) {
-                    let loc: String = stmts.at(block.getStmtAtIndex(i + 1)).span.toString();
+                    let loc: String = toString(&stmts.at(block.getStmtAtIndex(i + 1)).span);
                     fprintf(stderr, "%s: %s: Unreachable code.\n", loc.chars(), WARN_STR);
                     loc.drop();
                 }
@@ -1568,7 +1568,7 @@ struct IRGen {
             let err: RegIndex = function.allocateRegister(newType(TYPE_KIND_POINTER, TYPE_CHAR));
             // FIXME: Don't use mangled name?
             let s: String = function.name.copy();
-            let _s: String = expr.span.toString();
+            let _s: String = toString(&expr.span);
             s.pushChar(':');
             s.pushString(&_s);
             s.pushStr(": RUNTIME ERROR: Index out of bounds: Array of size ");
@@ -1866,7 +1866,7 @@ struct IRGen {
                 let typsize: usize = t.getSize() * 8;
                 if (t.isSignedInteger()) size = size + 1;
                 if (size > typsize) {
-                    let loc = expr.span.toString();
+                    let loc = toString(&expr.span);
                     let ts = t.toString();
                     fprintf(stderr, "%s: %s: Integer literal (value=%llu) is too big for target type %s.\n",
                         loc.chars(), ERR_STR, _value, ts.chars());

@@ -175,7 +175,7 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList) -> bool {
                 kind: ATTR_NORETURN,
             });
         } else {
-            let loc = name.span.toString();
+            let loc = toString(&name.span);
             let n = name.content.toString();
             fprintf(stderr, "%s: %s: Use of unknown attribute `%s`.\n", loc.chars(), ERR_STR, n.chars());
             n.drop();
@@ -190,7 +190,7 @@ func parseTopLevelItem(this: &Parser, attributes: ParsedAttributeList) -> &Parse
     trace("Parser.parseTopLevelItem");
     let tkn: Token = peek(&this.lexer);
     if (tkn.kind != TOKEN_KEYWORD) {
-        let loc: String = tkn.span.toString();
+        let loc: String = toString(&tkn.span);
         let name: String = tkn.content.toString();
         fprintf(stderr, "%s: %s: Expected Top Level Keyword, found `%s` instead.\n", loc.chars(), ERR_STR, name.chars());
         fprintf(stderr, "%s: %s: A non-exhaustive list of TLK: `import`, `let`, `comptime`, `struct`, `extern`, `func`.\n", loc.chars(), NOTE_STR);
@@ -226,7 +226,7 @@ func parseTopLevelItem(this: &Parser, attributes: ParsedAttributeList) -> &Parse
             }
         }
         if (tkn.content.equals(&KEYWORD_EXTERN)) {
-            let loc = tkn.span.toString();
+            let loc = toString(&tkn.span);
             fprintf(stderr, "%s: %s: `extern <name>()` is deprecated, please use `@extern(<name>) func <alias>()` instead.\n", loc.chars(), ERR_STR);
             loc.drop();
             exit(1);

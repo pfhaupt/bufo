@@ -1,6 +1,7 @@
 import "prelude.bufo";
 import "substr.bufo";
 import "string.bufo";
+import "../util/span.bufo";
 import "../util/lists.bufo";
 import "../frontend/token.bufo";
 import "../frontend/nodes.bufo";
@@ -446,7 +447,7 @@ struct TypeLookup {
 
     func getLocation(&this) -> String {
         if (this.kind == TYPE_LOOKUP_STRUCT) {
-            return this.asStruct().name.span.toString();
+            return toString(&this.asStruct().name.span);
         } else {
             unreachable("Exhaustive handling in TypeLookup.getLocation");
         }
