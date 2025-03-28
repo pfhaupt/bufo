@@ -32,10 +32,10 @@ func main(argc: i32, argv: &&char) -> i32 {
     for (let i: usize = 0; i < TYPE_COUNT; i = i + 1) {
         types.push(blank);
     }
-    flags.file = flagParser.addStringFlag("The input file", FLAG_MODE_MANDATORY);
-    flags.out = flagParser.addStringFlag("o", "output", "The output file", FLAG_MODE_SINGLE | FLAG_MODE_MANDATORY);
-    flags.verbose = flagParser.addBoolFlag("v", "verbose", "Enable verbose output");
-    if (!flagParser.runOn(argc, argv)) return 1;
+    flags.file = addStringFlag(&flagParser, "The input file", FLAG_MODE_MANDATORY);
+    flags.out = addStringFlag(&flagParser, "o", "output", "The output file", FLAG_MODE_SINGLE | FLAG_MODE_MANDATORY);
+    flags.verbose = addBoolFlag(&flagParser, "v", "verbose", "Enable verbose output");
+    if (!runOn(&flagParser, argc, argv)) return 1;
     let filepath: String = *flags.file;
     filepath = filepath.toAbsolutePath();
     let fileSubStr: SubStr = filepath.asSubStr();
