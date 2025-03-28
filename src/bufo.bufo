@@ -47,7 +47,7 @@ func main(argc: i32, argv: &&char) -> i32 {
     let checker: TypeChecker = newTypeChecker();
     if (!checker.typeCheckProject(&project)) return 1;
     let generator: IRGen = newIRGenerator();
-    if (!generator.generateBytecode(&project)) return 1;
+    if (!generateBytecode(&generator, &project)) return 1;
     let interp: IRInterp = newIRInterpreter(&generator);
     let llvmCodegen: LLVMCodegen = newLLVMCodegen(fileSubStr, &generator, &interp);
     if (!generateExecutable(&llvmCodegen, flags.out.asSubStr())) return 1;
