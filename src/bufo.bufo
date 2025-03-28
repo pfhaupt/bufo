@@ -42,8 +42,8 @@ func main(argc: i32, argv: &&char) -> i32 {
     let string: String = readFileToString(flags.file.chars());
     let sub: SubStr = newSubStrOfString(&string, 0, string.length);
     let parser: Parser = newParserFromSource(0, sub);
-    parser.addImportRoot(newSubStrOfStrLit("./std/"));
-    let project: ParsedModule = parser.parseProject(fileSubStr);
+    addImportRoot(&parser, newSubStrOfStrLit("./std/"));
+    let project: ParsedModule = parseProject(&parser, fileSubStr);
     let checker: TypeChecker = newTypeChecker();
     if (!checker.typeCheckProject(&project)) return 1;
     let generator: IRGen = newIRGenerator();
