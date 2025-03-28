@@ -4,7 +4,7 @@
 //! CODE: 2
 //! ERROR:
 //! Stack Overflow in the comptime interpreter.
-//! Last allocation tried to allocate 32768 byte(s), but only 32256 were available.
+//! Last allocation tried to allocate 32768 byte(s).
 
 func foo(a: i32) -> i32 {
     let b: [usize; 4096] = blank;

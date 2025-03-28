@@ -4,7 +4,7 @@
 //! CODE: 2
 //! ERROR:
 //! Register Stack Overflow in the comptime interpreter.
-//! Tried to reserve 33554448 byte(s), but only 16777200 were available.
+//! Tried to reserve 33554464 byte(s).
 
 func foo() -> usize {
     let b: [usize; 1048576] = blank;

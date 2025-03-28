@@ -261,6 +261,8 @@ struct IRFunc {
     llvmFunc: LLVMValue;
     retPtr: RegIndex;
     attrs: ParsedAttributeList;
+    returnBlockID: IRBlockID;
+    returnAlloc: RegIndex;
     func hasAttribute(&this, attr: usize) -> bool {
         trace("IRFunc.hasAttribute");
         for (let i: usize = 0; i < this.attrs.length; i = i + 1) {
@@ -1036,10 +1038,44 @@ struct IRGen {
 
     func generateFunctionBody(&this, function: &IRFunc, body: &ParsedBlock, retTypeNode: &ParsedTypeNode) {
         trace("IRGen.generateFunctionBody");
+        let t: &Type = types.at(retTypeNode.typeState.getType());
+        if (function.returnBlockID.i == 0) {
+            let curr = function.getCurrentBlock();
+            function.returnBlockID = function.appendBlock();
+            if (t.isNone()) {
+                function.setCurrentBlock(function.returnBlockID);
+                function.buildReturnEmpty(retTypeNode.span);
+                function.setCurrentBlock(curr);
+            } else {
+                function.returnAlloc = function.allocateRegister(types.at(t.intoPointer()));
+                function.buildAlloca(retTypeNode.span, function.returnAlloc, t.getSize());
+                function.setCurrentBlock(function.returnBlockID);
+                let result = function.allocateRegister(t);
+                function.buildLoad(retTypeNode.span, result, function.returnAlloc);
+                if (t.getSize() > 8) {
+                    function.buildStore(retTypeNode.span, function.retPtr, result);
+                    function.buildReturnExpr(retTypeNode.span, function.retPtr);
+                } else {
+                    if (t.isStruct()) {
+                        let v: RegIndex = this.getRegisterForSize(function, t.getSize());
+                        let t: &Type = function.getRegister(v).typ;
+                        let r: RegIndex = function.allocateRegister(types.at(t.intoPointer()));
+                        let s: usize = t.getSize();
+                        assert(s <= 8);
+                        function.buildAlloca(retTypeNode.span, r, s);
+                        function.buildStore(retTypeNode.span, r, result);
+                        function.buildLoad(retTypeNode.span, v, r);
+                        function.buildReturnExpr(retTypeNode.span, v);
+                    } else {
+                        function.buildReturnExpr(retTypeNode.span, result);
+                    }
+                }
+                function.setCurrentBlock(curr);
+            }
+        }
         this.generateBytecodeBlock(function, body);
         let curr: &IRBlock = function.getCurrentBlockAsRef();
         if (!curr.isTerminated()) {
-            let t: &Type = types.at(retTypeNode.typeState.getType());
             if (t.isNone()) {
                 function.buildReturnEmpty(body.span);
             } else {
@@ -1225,26 +1261,10 @@ struct IRGen {
             let expr: &ParsedExpr = exprs.at(exprID);
             let typ: &Type = types.at(expr.typeState.getType());
             let result: RegIndex = this.generateBytecodeExpr(function, expr, false);
-            if (typ.getSize() > 8) {
-                function.buildStore(stmt.span, function.retPtr, result);
-                function.buildReturnExpr(stmt.span, function.retPtr);
-            } else {
-                if (typ.isStruct()) {
-                    let v: RegIndex = this.getRegisterForSize(function, typ.getSize());
-                    let t: &Type = function.getRegister(v).typ;
-                    let r: RegIndex = function.allocateRegister(types.at(t.intoPointer()));
-                    let s: usize = t.getSize();
-                    assert(s <= 8);
-                    function.buildAlloca(stmt.span, r, s);
-                    function.buildStore(stmt.span, r, result);
-                    function.buildLoad(stmt.span, v, r);
-                    function.buildReturnExpr(stmt.span, v);
-                } else {
-                    function.buildReturnExpr(stmt.span, result);
-                }
-            }
+            function.buildStore(stmt.span, function.returnAlloc, result);
+            function.buildBr(stmt.span, function.returnBlockID);
         } else if (stmt.kind == STMT_RETURN_EMPTY) {
-            function.buildReturnEmpty(stmt.span);
+            function.buildBr(stmt.span, function.returnBlockID);
         } else if (stmt.kind == STMT_BLOCK) {
             this.generateBytecodeBlock(function, blocks.at(stmt.block));
         } else if (stmt.kind == STMT_EXPR) {

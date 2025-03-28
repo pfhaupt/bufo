@@ -52,8 +52,7 @@ struct IRInterp {
         if (new >= this.realStackStart + STACK_SIZE) {
             let loc = span.toString();
             fprintf(stderr, "%s: %s: Stack Overflow in the comptime interpreter.\n", loc.chars(), ERR_STR);
-            fprintf(stderr, "%s: %s: Last allocation tried to allocate %llu byte(s), but only %llu were available.\n",
-                loc.chars(), NOTE_STR, size, size - (new - (this.realStackStart + STACK_SIZE)));
+            fprintf(stderr, "%s: %s: Last allocation tried to allocate %llu byte(s).\n", loc.chars(), NOTE_STR, size);
             loc.drop();
             exit(2);
         }
@@ -920,8 +919,7 @@ struct IRInterp {
         if (new > this.regStackStart + REG_STACK_SIZE) {
             let loc = span.toString();
             fprintf(stderr, "%s: %s Register Stack Overflow in the comptime interpreter.\n", loc.chars(), FATAL_STR);
-            fprintf(stderr, "%s: %s Tried to reserve %llu byte(s), but only %llu were available.\n",
-                loc.chars(), FATAL_STR, size, size - (new - (this.regStackStart + REG_STACK_SIZE)));
+            fprintf(stderr, "%s: %s Tried to reserve %llu byte(s).\n", loc.chars(), FATAL_STR, size);
             loc.drop();
             exit(2);
         }
