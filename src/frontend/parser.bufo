@@ -335,7 +335,7 @@ struct Parser {
         let tkn: Token = this.expect(TOKEN_KEYWORD);
         assert(tkn.content.equals(&KEYWORD_FUNC));
         let name: Token = this.expect(TOKEN_IDENT);
-        let params: ParamContext = this.parseParameters(structDecl.name, true);
+        let params: ParamContext = this.parseParameters(structDecl.name);
         let retType: &ParsedTypeNode = this.parseReturnType();
         let body: &ParsedBlock = this.parseBlock();
         return newParsedMethod(structDecl.getID(), newSpanBetween(&tkn.span, &body.span), name, params, retType, body.getID());
@@ -346,7 +346,7 @@ struct Parser {
         let tkn: Token = this.expect(TOKEN_KEYWORD);
         if (!isExtern) assert(tkn.content.equals(&KEYWORD_FUNC));
         let name: Token = this.expect(TOKEN_IDENT);
-        let params: ParamContext = this.parseParameters(blank, false);
+        let params: ParamContext = this.parseParameters(blank);
         let retType: &ParsedTypeNode = this.parseReturnType();
         if (isExtern) {
             let end: Token = this.expect(TOKEN_SEMI_COLON);
@@ -368,7 +368,7 @@ struct Parser {
         }
     }
 
-    func parseParameters(&this, parentName: Token, allowedThis: bool) -> ParamContext {
+    func parseParameters(&this, parentName: Token) -> ParamContext {
         trace("Parser.parseParameters");
         this.expect(TOKEN_PAREN_OPEN);
         let context: ParamContext = blank;
@@ -389,24 +389,9 @@ struct Parser {
             let isThis: bool = maybeThis.content.equals(&comptime BUILD_A_KEYWORD("this"));
             if (isThis) {
                 let dis: Token = this.expect(TOKEN_IDENT);
-                if (!allowedThis) {
-                    let loc: String = dis.span.toString();
-                    fprintf(stderr, "%s: %s: Unexpected `this` parameter.\n", loc.chars(), ERR_STR);
-                    fprintf(stderr, "%s: %s: `this` is only allowed in methods.\n", loc.chars(), NOTE_STR);
-                    loc.drop();
-                    this.syntaxError = true;
-                } else if (this.eat(TOKEN_COLON)) {
-                    let loc: String = dis.span.toString();
-                    fprintf(stderr, "%s: %s: Unexpected type for `this` parameter.\n", loc.chars(), ERR_STR);
-                    fprintf(stderr, "%s: %s: The type of `this` is always the struct the method is defined in.\n", loc.chars(), NOTE_STR);
-                    loc.drop();
-                    let _type: &ParsedTypeNode = this.parseTypeDecl();
-                    this.syntaxError = true;
-                } else if (context.paramLength > 0) {
-                    let loc: String = dis.span.toString();
-                    fprintf(stderr, "%s: %s: `this` parameter must be the first parameter of a method.\n", loc.chars(), ERR_STR);
-                    loc.drop();
-                    this.syntaxError = true;
+                if (this.eat(TOKEN_COLON)) {
+                    let t = this.parseTypeDecl();
+                    context.addParameter(maybeThis, t);
                 } else {
                     let thisType: &ParsedTypeNode = newParsedTypeNode(maybeThis.span, PARSED_TYPE_IDENT);
                     (*thisType).nameTkn = parentName;
