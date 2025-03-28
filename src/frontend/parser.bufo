@@ -53,7 +53,7 @@ func inheritImportRoots(this: &Parser, parent: &Parser) {
 
 func expectSoftIdentifier(this: &Parser) -> Token {
     trace("Parser.expectSoftIdentifier");
-    let tkn: Token = this.lexer.next();
+    let tkn: Token = next(&this.lexer);
     if (tkn.kind != TOKEN_KEYWORD && tkn.kind != TOKEN_IDENT) {
         let loc: String = tkn.getLocation();
         let name: String = tkn.content.toString();
@@ -67,7 +67,7 @@ func expectSoftIdentifier(this: &Parser) -> Token {
 
 func expect(this: &Parser, tknKind: usize) -> Token {
     trace("Parser.expect");
-    let tkn: Token = this.lexer.next();
+    let tkn: Token = next(&this.lexer);
     if (tkn.kind != tknKind) {
         let loc: String = tkn.getLocation();
         let exp: &char = tokenKindToString(tknKind);
@@ -82,20 +82,20 @@ func expect(this: &Parser, tknKind: usize) -> Token {
 
 func eat(this: &Parser, tknKind: usize) -> bool {
     if (at(this, tknKind)) {
-        this.lexer.next();
+        next(&this.lexer);
         return true;
     }
     return false;
 }
 func at(this: &Parser, tknKind: usize) -> bool {
-    if (this.lexer.peek().kind == tknKind) {
+    if (peek(&this.lexer).kind == tknKind) {
         return true;
     }
     return false;
 }
 
 func parsedEOF(this: &Parser) -> bool {
-    return this.lexer.peek().kind == TOKEN_EOF;
+    return peek(&this.lexer).kind == TOKEN_EOF;
 }
 
 func parseProject(this: &Parser, root: SubStr) -> ParsedModule {
@@ -115,9 +115,9 @@ func parseModule(this: &Parser, root: SubStr, mod: &ParsedModule) {
     trace("Parser.parseModule");
     addImportRoot(this, root);
     if (at(this, TOKEN_KEYWORD)) {
-        let maybeFlags: Token = this.lexer.peek();
+        let maybeFlags: Token = peek(&this.lexer);
         if (maybeFlags.content.equals(&KEYWORD_COMPILER_FLAGS)) {
-            this.lexer.next();
+            next(&this.lexer);
             expect(this, TOKEN_CURLY_OPEN);
             while (!at(this, TOKEN_CURLY_CLOSE)) {
                 let flag: Token = expect(this, TOKEN_IDENT);
@@ -188,7 +188,7 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList) -> bool {
 
 func parseTopLevelItem(this: &Parser, attributes: ParsedAttributeList) -> &ParsedTopLevelItem {
     trace("Parser.parseTopLevelItem");
-    let tkn: Token = this.lexer.peek();
+    let tkn: Token = peek(&this.lexer);
     if (tkn.kind != TOKEN_KEYWORD) {
         let loc: String = tkn.span.toString();
         let name: String = tkn.content.toString();
@@ -202,16 +202,16 @@ func parseTopLevelItem(this: &Parser, attributes: ParsedAttributeList) -> &Parse
         return parseImport(this, );
     } else if (tkn.content.equals(&KEYWORD_LET)
             || tkn.content.equals(&KEYWORD_MUT)) {
-        this.lexer.next();
+        next(&this.lexer);
         return parseVarDeclStmt(this, tkn, true).asTLI();
     } else if (tkn.content.equals(&KEYWORD_UNSAFE)) {
-        this.lexer.next();
+        next(&this.lexer);
         let loc: String = tkn.getLocation();
         fprintf(stderr, "%s: %s: The use of `unsafe` has no effect in this version of the compiler.\n", loc.chars(), ERR_STR);
         loc.drop();
         exit(1);
     } else if (tkn.content.equals(&KEYWORD_COMPTIME)) {
-        this.lexer.next();
+        next(&this.lexer);
         return parseVarDeclStmt(this, tkn, true).asTLI();
     } else if (tkn.content.equals(&KEYWORD_STRUCT)) {
         // REVIEW: Do we want to support structs outside of TLIs?
@@ -296,22 +296,22 @@ func parseStructDecl(this: &Parser) -> &ParsedStructDecl {
     let decl: &ParsedStructDecl = newParsedStructDecl(this.lexer.moduleID, defaultSpan(), nameTkn);
     let structContext: StructContext = blank;
     while (!parsedEOF(this, ) && !at(this, TOKEN_CURLY_CLOSE)) {
-        let tkn: Token = this.lexer.peek();
+        let tkn: Token = peek(&this.lexer);
         if (tkn.kind == TOKEN_IDENT) {
-            this.lexer.next();
+            next(&this.lexer);
             expect(this, TOKEN_COLON);
             let typ: &ParsedTypeNode = parseTypeDecl(this, );
             structContext.addField(tkn, typ);
             expect(this, TOKEN_SEMI_COLON);
         } else if (tkn.kind == TOKEN_KEYWORD) {
             if (tkn.content.equals(&KEYWORD_UNSAFE)) {
-                this.lexer.next();
+                next(&this.lexer);
                 let loc: String = tkn.getLocation();
                 fprintf(stderr, "%s: %s: The use of `unsafe` has no effect in this version of the compiler.\n", loc.chars(), ERR_STR);
                 loc.drop();
                 exit(1);
             }
-            let tkn: Token = this.lexer.peek();
+            let tkn: Token = peek(&this.lexer);
             if (tkn.content.equals(&KEYWORD_FUNC)) {
                 fprintf(stderr, "%s: %s: Methods are deprecated.\n", tkn.getLocation().chars(), WARN_STR);
                 let method: &ParsedMethod = parseMethod(this, decl);
@@ -365,7 +365,7 @@ func parseReturnType(this: &Parser) -> &ParsedTypeNode {
     if (eat(this, TOKEN_ARROW)) {
         return parseTypeDecl(this, );
     } else {
-        return newBuiltinTypeDecl(this.lexer.peek().span, PARSED_TYPE_NONE);
+        return newBuiltinTypeDecl(peek(&this.lexer).span, PARSED_TYPE_NONE);
     }
 }
 
@@ -379,9 +379,9 @@ func parseParameters(this: &Parser, parentName: Token) -> ParamContext {
             break;
         }
         let isRef: bool = eat(this, TOKEN_AMPERSAND_SINGLE);
-        let maybeThis: Token = this.lexer.peek();
+        let maybeThis: Token = peek(&this.lexer);
         if (maybeThis.content.equals(&KEYWORD_MUT)) {
-            this.lexer.next();
+            next(&this.lexer);
             let loc: String = maybeThis.getLocation();
             fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler.\n", loc.chars(), ERR_STR);
             loc.drop();
@@ -441,40 +441,40 @@ func parseBlock(this: &Parser) -> &ParsedBlock {
 
 func parseStmt(this: &Parser) -> &ParsedStmt {
     trace("Parser.parseStmt");
-    let tkn: Token = this.lexer.peek();
+    let tkn: Token = peek(&this.lexer);
     if (tkn.kind == TOKEN_KEYWORD) {
         if (tkn.content.equals(&KEYWORD_LET)
             || tkn.content.equals(&KEYWORD_MUT)
             || tkn.content.equals(&KEYWORD_COMPTIME)) {
-            this.lexer.next();
+            next(&this.lexer);
             return parseVarDeclStmt(this, tkn, false);
         } else if (tkn.content.equals(&KEYWORD_IF)) {
-            this.lexer.next();
+            next(&this.lexer);
             return parseIfStmt(this, tkn);
         } else if (tkn.content.equals(&KEYWORD_RETURN)) {
-            this.lexer.next();
+            next(&this.lexer);
             return parseReturnStmt(this, tkn);
         } else if (tkn.content.equals(&KEYWORD_WHILE)) {
-            this.lexer.next();
+            next(&this.lexer);
             return parseWhileStmt(this, tkn);
         } else if (tkn.content.equals(&KEYWORD_FOR)) {
-            this.lexer.next();
+            next(&this.lexer);
             return parseForStmt(this, tkn);
         } else if (tkn.content.equals(&KEYWORD_WHILE)) {
-            this.lexer.next();
+            next(&this.lexer);
             return parseWhileStmt(this, tkn);
         } else if (tkn.content.equals(&KEYWORD_BREAK)) {
-            this.lexer.next();
+            next(&this.lexer);
             let end: Token = expect(this, TOKEN_SEMI_COLON);
             let span: Span = newSpanBetween(&tkn.span, &end.span);
             return newParsedStmt(span, STMT_BREAK);
         } else if (tkn.content.equals(&KEYWORD_CONTINUE)) {
-            this.lexer.next();
+            next(&this.lexer);
             let end: Token = expect(this, TOKEN_SEMI_COLON);
             let span: Span = newSpanBetween(&tkn.span, &end.span);
             return newParsedStmt(span, STMT_CONTINUE);
         } else if (tkn.content.equals(&KEYWORD_UNSAFE)) {
-            this.lexer.next();
+            next(&this.lexer);
             let loc: String = tkn.getLocation();
             fprintf(stderr, "%s: %s: The use of `unsafe` has no effect in this version of the compiler.\n", loc.chars(), ERR_STR);
             loc.drop();
@@ -560,7 +560,7 @@ func parseIfStmt(this: &Parser, kw: Token) -> &ParsedStmt {
     let cond: &ParsedExpr = parseExpr(this, );
     expect(this, TOKEN_PAREN_CLOSE);
     let ifBody: &ParsedStmt = parseStmt(this, );
-    let maybeElse: Token = this.lexer.peek();
+    let maybeElse: Token = peek(&this.lexer);
     let ifID: usize = ifBody.getID();
     let elseID: usize = 0;
     let hasElse: bool = false;
@@ -618,11 +618,11 @@ func parseVarDeclStmt(this: &Parser, kw: Token, isGlobal: bool) -> &ParsedStmt {
 
 func parseTypeDecl(this: &Parser) -> &ParsedTypeNode {
     trace("Parser.parseTypeDecl");
-    let loc: Token = this.lexer.peek();
+    let loc: Token = peek(&this.lexer);
     if (eat(this, TOKEN_AMPERSAND_DOUBLE)) {
-        let kw: Token = this.lexer.peek();
+        let kw: Token = peek(&this.lexer);
         if (kw.content.equals(&KEYWORD_MUT)) {
-            this.lexer.next();
+            next(&this.lexer);
             let loc: String = kw.getLocation();
             fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler.\n", loc.chars(), ERR_STR);
             loc.drop();
@@ -636,9 +636,9 @@ func parseTypeDecl(this: &Parser) -> &ParsedTypeNode {
         (*ptr).underlyingID = ptr1.getID();
         return ptr;
     } else if (eat(this, TOKEN_AMPERSAND_SINGLE)) {
-        let kw: Token = this.lexer.peek();
+        let kw: Token = peek(&this.lexer);
         if (kw.content.equals(&KEYWORD_MUT)) {
-            this.lexer.next();
+            next(&this.lexer);
             let loc: String = kw.getLocation();
             fprintf(stderr, "%s: %s: The use of `mut` has no effect in this version of the compiler.\n", loc.chars(), ERR_STR);
             loc.drop();
@@ -683,7 +683,7 @@ func __parseExpr(this: &Parser, precedence: usize, associativity: usize) -> &Par
     trace("Parser.__parseExpr");
     let expr: &ParsedExpr = parsePrimaryExpr(this, );
     while (matchesBinaryExpr(this, )) {
-        let tkn: Token = this.lexer.peek();
+        let tkn: Token = peek(&this.lexer);
         let newPrec: usize = getBinaryPrecedence(this, &tkn);
         if (newPrec < precedence)
             break;
@@ -698,7 +698,7 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
     trace("Parser.parsePrimaryExpr");
     if (matchesUnaryExpr(this, ))
         return parseUnaryExpr(this, );
-    let tknKind: usize = this.lexer.peek().kind;
+    let tknKind: usize = peek(&this.lexer).kind;
     if (tknKind == TOKEN_INT_LITERAL) {
         let number: Token = expect(this, TOKEN_INT_LITERAL);
         let expr: &ParsedExpr = newParsedExpr(number.span, EXPR_INT_LIT);
@@ -821,7 +821,7 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
             exit(1);
         }
     }
-    let t: Token = this.lexer.peek();
+    let t: Token = peek(&this.lexer);
     let loc: String = t.getLocation();
     let name: String = t.content.toString();
     fprintf(stderr, "%s: %s: Expected Expression, found `%s`.\n", loc.chars(), ERR_STR, name.chars());
@@ -832,7 +832,7 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
 func parseSecondaryExpr(this: &Parser, lhs: &ParsedExpr, precedence: usize, associativity: usize) -> &ParsedExpr {
     trace("Parser.parseSecondaryExpr");
     assert(matchesBinaryExpr(this, ));
-    let opTkn: Token = this.lexer.next();
+    let opTkn: Token = next(&this.lexer);
     let op: usize = binOpFromKind(opTkn.kind);
     if (op == BIN_AS) {
         let typ: &ParsedTypeNode = parseTypeDecl(this, );
@@ -864,9 +864,9 @@ func parseSecondaryExpr(this: &Parser, lhs: &ParsedExpr, precedence: usize, asso
 }
 func parseUnaryExpr(this: &Parser) -> &ParsedExpr {
     trace("Parser.parseUnaryExpr");
-    let tkn: Token = this.lexer.peek();
+    let tkn: Token = peek(&this.lexer);
     if (tkn.kind == TOKEN_KEYWORD) {
-        this.lexer.next();
+        next(&this.lexer);
         assert(tkn.content.equals(&KEYWORD_COMPTIME), "Expected `comptime`");
         let precedence: usize = getUnaryPrecedence(this, tkn.kind);
         let expr: &ParsedExpr = __parseExpr(this, precedence, ASSOC_LEFT);
@@ -876,7 +876,7 @@ func parseUnaryExpr(this: &Parser) -> &ParsedExpr {
         (*unary).lhs = expr.getID();
         return unary;
     } else if (tkn.kind == TOKEN_AMPERSAND_DOUBLE) {
-        this.lexer.next();
+        next(&this.lexer);
         let precedence: usize = getUnaryPrecedence(this, TOKEN_AMPERSAND_SINGLE);
         let expr: &ParsedExpr = __parseExpr(this, precedence, ASSOC_LEFT);
         let span: Span = newSpanBetween(&tkn.span, &expr.span);
@@ -891,7 +891,7 @@ func parseUnaryExpr(this: &Parser) -> &ParsedExpr {
         || tkn.kind == TOKEN_AMPERSAND_SINGLE
         || tkn.kind == TOKEN_MINUS_SINGLE
         || tkn.kind == TOKEN_BANG) {
-        this.lexer.next();
+        next(&this.lexer);
         let precedence: usize = getUnaryPrecedence(this, tkn.kind);
         let expr: &ParsedExpr = __parseExpr(this, precedence, ASSOC_LEFT);
         let span: Span = newSpanBetween(&tkn.span, &expr.span);
@@ -906,9 +906,9 @@ func parseUnaryExpr(this: &Parser) -> &ParsedExpr {
 }
 func matchesBinaryExpr(this: &Parser) -> bool {
     trace("Parser.matchesBinaryExpr");
-    let tknKind: usize = this.lexer.peek().kind;
+    let tknKind: usize = peek(&this.lexer).kind;
     if (tknKind == TOKEN_KEYWORD)
-        return this.lexer.peek().content.equals(&KEYWORD_AS);
+        return peek(&this.lexer).content.equals(&KEYWORD_AS);
     return tknKind == TOKEN_EQUAL_DOUBLE
         || tknKind == TOKEN_EQUAL_SINGLE
         || tknKind == TOKEN_NOT_EQUAL
@@ -932,9 +932,9 @@ func matchesBinaryExpr(this: &Parser) -> bool {
 }
 func matchesUnaryExpr(this: &Parser) -> bool {
     trace("Parser.matchesUnaryExpr");
-    let tknKind: usize = this.lexer.peek().kind;
+    let tknKind: usize = peek(&this.lexer).kind;
     if (tknKind == TOKEN_KEYWORD)
-        return this.lexer.peek().content.equals(&KEYWORD_COMPTIME);
+        return peek(&this.lexer).content.equals(&KEYWORD_COMPTIME);
     return tknKind == TOKEN_MINUS_SINGLE
         || tknKind == TOKEN_AMPERSAND_SINGLE
         // FIXME: Would be cooler if peek() could return split tokens too

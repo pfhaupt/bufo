@@ -41,327 +41,327 @@ struct Lexer {
     content: SubStr;
     ptr: usize;
     len: usize;
+}
 
-    func isKeyword(&this, word: &SubStr) -> bool {
-        return word.equals(&KEYWORD_LET)
-            || word.equals(&KEYWORD_FUNC)
-            || word.equals(&KEYWORD_MUT)
-            || word.equals(&KEYWORD_COMPTIME)
-            || word.equals(&KEYWORD_STRUCT)
-            || word.equals(&KEYWORD_ENUM)
-            || word.equals(&KEYWORD_UNION)
-            || word.equals(&KEYWORD_RETURN)
-            || word.equals(&KEYWORD_MODULE)
-            || word.equals(&KEYWORD_IMPORT)
-            || word.equals(&KEYWORD_IF)
-            || word.equals(&KEYWORD_ELSE)
-            || word.equals(&KEYWORD_WHILE)
-            || word.equals(&KEYWORD_UNSAFE)
-            || word.equals(&KEYWORD_SIZEOF)
-            || word.equals(&KEYWORD_AS)
-            || word.equals(&KEYWORD_FOR)
-            || word.equals(&KEYWORD_BREAK)
-            || word.equals(&KEYWORD_CONTINUE)
-            || word.equals(&KEYWORD_EXTERN)
-            || word.equals(&KEYWORD_NULL)
-            || word.equals(&KEYWORD_BLANK)
-            || word.equals(&KEYWORD_TRUE)
-            || word.equals(&KEYWORD_FALSE)
-            || word.equals(&KEYWORD_COMPILER_FLAGS);
-    }
+func isKeyword(this: &Lexer, word: &SubStr) -> bool {
+    return word.equals(&KEYWORD_LET)
+        || word.equals(&KEYWORD_FUNC)
+        || word.equals(&KEYWORD_MUT)
+        || word.equals(&KEYWORD_COMPTIME)
+        || word.equals(&KEYWORD_STRUCT)
+        || word.equals(&KEYWORD_ENUM)
+        || word.equals(&KEYWORD_UNION)
+        || word.equals(&KEYWORD_RETURN)
+        || word.equals(&KEYWORD_MODULE)
+        || word.equals(&KEYWORD_IMPORT)
+        || word.equals(&KEYWORD_IF)
+        || word.equals(&KEYWORD_ELSE)
+        || word.equals(&KEYWORD_WHILE)
+        || word.equals(&KEYWORD_UNSAFE)
+        || word.equals(&KEYWORD_SIZEOF)
+        || word.equals(&KEYWORD_AS)
+        || word.equals(&KEYWORD_FOR)
+        || word.equals(&KEYWORD_BREAK)
+        || word.equals(&KEYWORD_CONTINUE)
+        || word.equals(&KEYWORD_EXTERN)
+        || word.equals(&KEYWORD_NULL)
+        || word.equals(&KEYWORD_BLANK)
+        || word.equals(&KEYWORD_TRUE)
+        || word.equals(&KEYWORD_FALSE)
+        || word.equals(&KEYWORD_COMPILER_FLAGS);
+}
 
-    func escapeCharSequence(&this, tmp: &SubStr, s: &String, len: &usize) -> char {
-        let escaped: bool = false;
-        let extraOffset: usize = 0;
-        let c: char = (&*tmp).getChar(0);
-        if (c == '\\') {
-            c = (&*tmp).getChar(1);
-            if (c == 'n') {
-                s.pushChar('\n');
-            } else if (c == 'r') {
-                s.pushChar('\r');
-            } else if (c == 't') {
-                s.pushChar('\t');
-            } else if (c == '0') {
-                s.pushChar('\0');
-            } else if (c == '\\') {
-                s.pushChar('\\');
-            } else if (c == '\'') {
-                s.pushChar('\'');
-            } else if (c == '\"') {
-                s.pushChar('\"');
-            } else if (c == 'x') {
-                let lower: char = (&*tmp).getChar(2);
-                let upper: char = (&*tmp).getChar(3);
-                assert(isHexDigit(lower), "Expected hex digits for \\x");
-                assert(isHexDigit(upper), "Expected hex digits for \\x");
-                let byte: char = (asHex(lower) * 16 + asHex(upper)) as char;
-                s.pushChar(byte);
-                extraOffset = 2;
-            } else {
-                let t: Token = newToken(this.moduleID, &newSubStr(&c, 0, 1), this.ptr + 1, TOKEN_IDENT);
-                let loc: String = t.span.toString();
-                fprintf(stderr, "%s: %s: Can't escape character `%c`.\n", loc.chars(), ERR_STR, c);
-                loc.drop();
-                exit(1);
-            }
-            escaped = true;
+func escapeCharSequence(this: &Lexer, tmp: &SubStr, s: &String, len: &usize) -> char {
+    let escaped: bool = false;
+    let extraOffset: usize = 0;
+    let c: char = (&*tmp).getChar(0);
+    if (c == '\\') {
+        c = (&*tmp).getChar(1);
+        if (c == 'n') {
+            s.pushChar('\n');
+        } else if (c == 'r') {
+            s.pushChar('\r');
+        } else if (c == 't') {
+            s.pushChar('\t');
+        } else if (c == '0') {
+            s.pushChar('\0');
+        } else if (c == '\\') {
+            s.pushChar('\\');
+        } else if (c == '\'') {
+            s.pushChar('\'');
+        } else if (c == '\"') {
+            s.pushChar('\"');
+        } else if (c == 'x') {
+            let lower: char = (&*tmp).getChar(2);
+            let upper: char = (&*tmp).getChar(3);
+            assert(isHexDigit(lower), "Expected hex digits for \\x");
+            assert(isHexDigit(upper), "Expected hex digits for \\x");
+            let byte: char = (asHex(lower) * 16 + asHex(upper)) as char;
+            s.pushChar(byte);
+            extraOffset = 2;
         } else {
-            s.pushChar(c);
-        }
-        let s: usize = 1;
-        if (escaped) {
-            s = 2;
-        }
-        s = s + extraOffset;
-        *len = *len + s;
-        *tmp = (&*tmp).substring(s, tmp.len);
-        return (&*tmp).getChar(0);
-    }
-
-    func advance(&this) -> bool {
-        this.ptr = this.ptr + 1;
-        this.content = this.content.substring(1, this.content.len);
-        return this.ptr >= this.len;
-    }
-    func peek(&this) -> Token {
-        let ptr: usize = this.ptr;
-        let content: SubStr = this.content;
-        let len: usize = this.len;
-        let tkn: Token = this.__next(true);
-        this.ptr = ptr;
-        this.content = content;
-        this.len = len;
-        return tkn;
-    }
-    func next(&this) -> Token {
-        return this.__next(false);
-    }
-    func __next(&this, peek: bool) -> Token {
-        if (this.ptr == this.len) {
-            return newTokenEOF(this.moduleID, this.ptr);
-        }
-        let currChar: char = this.content.getChar(0);
-        while (isWhitespace(currChar)) {
-            if (this.advance()) {
-                return newTokenEOF(this.moduleID, this.ptr);
-            }
-            currChar = this.content.getChar(0);
-        }
-        if (isAlphabetic(currChar) || currChar == '_') {
-            let len: usize = 0;
-            let tmp: SubStr = this.content;
-            let c: char = tmp.getChar(0);
-            while (isNumeric(c) || isAlphabetic(c) || c == '_') {
-                len = len + 1;
-                tmp = tmp.substring(1, tmp.len);
-                c = tmp.getChar(0);
-            }
-            let word: SubStr = this.content.substring(0, len);
-            this.ptr = this.ptr + len;
-            this.content = tmp;
-            if (this.isKeyword(&word)) {
-                return newToken(this.moduleID, &word, this.ptr - len, TOKEN_KEYWORD);
-            }
-            return newToken(this.moduleID, &word, this.ptr - len, TOKEN_IDENT);
-        } else if (isNumeric(currChar)) {
-            let len: usize = 0;
-            let tmp: SubStr = this.content;
-            while (isNumeric(tmp.getChar(0))) {
-                len = len + 1;
-                tmp = newSubStr(tmp.start, 1, tmp.len);
-            }
-            let word: SubStr = this.content.substring(0, len);
-            this.ptr = this.ptr + len;
-            this.content = tmp;
-            return newToken(this.moduleID, &word, this.ptr - len, TOKEN_INT_LITERAL);
-        } else if (currChar == '"') {
-            this.advance();
-            if (this.content.len == 0) {
-                todo_with_msg("unbalanced \"");
-            }
-            // When peeking we don't care about the precise contents of the String Literal
-            // So we don't need to heap allocate anything just now
-            if (peek) {
-                return newToken(this.moduleID, &newSubStr("\"", 0, 1), this.ptr - 1, TOKEN_STRING_LITERAL);
-            }
-            let len: usize = 0;
-            let s: String = newString();
-            let c: char = this.content.getChar(0);
-            while (c != '"') {
-                let l: usize = 0;
-                c = this.escapeCharSequence(&this.content, &s, &l);
-                this.ptr = this.ptr + l;
-                len = len + l;
-            }
-            let word: SubStr = s.substring(0, s.length);
-            this.advance();
-            return newToken(this.moduleID, &word, this.ptr - len, TOKEN_STRING_LITERAL);
-        } else if (currChar == '\'') {
-            this.advance();
-            if (this.content.len == 0) {
-                todo_with_msg("unbalanced \'");
-            }
-            let len: usize = 0;
-            let s: String = newString();
-            let c: char = this.content.getChar(0);
-            while (c != '\'') {
-                let l: usize = 0;
-                c = this.escapeCharSequence(&this.content, &s, &l);
-                this.ptr = this.ptr + l;
-                len = len + l;
-            }
-            let word: SubStr = s.substring(0, s.length);
-            if (word.len != 1) {
-                todo_with_msg("invalid char literal");
-            }
-            this.advance();
-            return newToken(this.moduleID, &word, this.ptr - len, TOKEN_CHAR_LITERAL);
-        } else if (currChar == '(') {
-            this.advance();
-            return newToken(this.moduleID, &newSubStr("(", 0, 1), this.ptr - 1, TOKEN_PAREN_OPEN);
-        } else if (currChar == ')') {
-            this.advance();
-            return newToken(this.moduleID, &newSubStr(")", 0, 1), this.ptr - 1, TOKEN_PAREN_CLOSE);
-        } else if (currChar == '{') {
-            this.advance();
-            return newToken(this.moduleID, &newSubStr("{", 0, 1), this.ptr - 1, TOKEN_CURLY_OPEN);
-        } else if (currChar == '}') {
-            this.advance();
-            return newToken(this.moduleID, &newSubStr("}", 0, 1), this.ptr - 1, TOKEN_CURLY_CLOSE);
-        } else if (currChar == '[') {
-            this.advance();
-            return newToken(this.moduleID, &newSubStr("[", 0, 1), this.ptr - 1, TOKEN_SQUARE_OPEN);
-        } else if (currChar == ']') {
-            this.advance();
-            return newToken(this.moduleID, &newSubStr("]", 0, 1), this.ptr - 1, TOKEN_SQUARE_CLOSE);
-        } else if (currChar == '<') {
-            this.advance();
-            currChar = this.content.getChar(0);
-            if (currChar == '=') {
-                this.advance();
-                return newToken(this.moduleID, &newSubStr("<=", 0, 2), this.ptr - 2, TOKEN_LESS_THAN_EQUAL);
-            } else {
-                return newToken(this.moduleID, &newSubStr("<", 0, 1), this.ptr - 1, TOKEN_LESS_THAN);
-            }
-        } else if (currChar == '>') {
-            this.advance();
-            currChar = this.content.getChar(0);
-            if (currChar == '=') {
-                this.advance();
-                return newToken(this.moduleID, &newSubStr(">=", 0, 2), this.ptr - 2, TOKEN_GREATER_THAN_EQUAL);
-            } else {
-                return newToken(this.moduleID, &newSubStr(">", 0, 1), this.ptr - 1, TOKEN_GREATER_THAN);
-            }
-        } else if (currChar == ';') {
-            this.advance();
-            return newToken(this.moduleID, &newSubStr(";", 0, 1), this.ptr - 1, TOKEN_SEMI_COLON);
-        } else if (currChar == ':') {
-            this.advance();
-            return newToken(this.moduleID, &newSubStr(":", 0, 1), this.ptr - 1, TOKEN_COLON);
-        } else if (currChar == '=') {
-            this.advance();
-            if (this.ptr < this.len && this.content.getChar(0) == '=') {
-                this.advance();
-                return newToken(this.moduleID, &newSubStr("==", 0, 2), this.ptr - 2, TOKEN_EQUAL_DOUBLE);
-            } else {
-                return newToken(this.moduleID, &newSubStr("=", 0, 1), this.ptr - 1, TOKEN_EQUAL_SINGLE);
-            }
-        } else if (currChar == '&') {
-            this.advance();
-            if (this.ptr < this.len && this.content.getChar(0) == '&') {
-                this.advance();
-                return newToken(this.moduleID, &newSubStr("&&", 0, 2), this.ptr - 2, TOKEN_AMPERSAND_DOUBLE);
-            } else {
-                return newToken(this.moduleID, &newSubStr("&", 0, 1), this.ptr - 1, TOKEN_AMPERSAND_SINGLE);
-            }
-        } else if (currChar == '_') {
-            this.advance();
-            return newToken(this.moduleID, &newSubStr("_", 0, 1), this.ptr - 1, TOKEN_UNDERSCORE);
-        } else if (currChar == '.') {
-            this.advance();
-            if (this.ptr + 2 < this.len && this.content.getChar(0) == '.' && this.content.getChar(1) == '.') {
-                this.advance();
-                this.advance();
-                return newToken(this.moduleID, &newSubStr("...", 0, 3), this.ptr - 3, TOKEN_DOTDOTDOT);
-            }
-            return newToken(this.moduleID, &newSubStr(".", 0, 1), this.ptr - 1, TOKEN_DOT);
-        } else if (currChar == ',') {
-            this.advance();
-            return newToken(this.moduleID, &newSubStr(",", 0, 1), this.ptr - 1, TOKEN_COMMA);
-        } else if (currChar == '+') {
-            this.advance();
-            return newToken(this.moduleID, &newSubStr("+", 0, 1), this.ptr - 1, TOKEN_PLUS_SINGLE);
-        } else if (currChar == '*') {
-            this.advance();
-            return newToken(this.moduleID, &newSubStr("*", 0, 1), this.ptr - 1, TOKEN_ASTERISK_SINGLE);
-        } else if (currChar == '@') {
-            this.advance();
-            return newToken(this.moduleID, &newSubStr("@", 0, 1), this.ptr - 1, TOKEN_AT);
-        } else if (currChar == '%') {
-            this.advance();
-            return newToken(this.moduleID, &newSubStr("%", 0, 1), this.ptr - 1, TOKEN_PERCENT);
-        } else if (currChar == '^') {
-            this.advance();
-            return newToken(this.moduleID, &newSubStr("^", 0, 1), this.ptr - 1, TOKEN_CARET);
-        } else if (currChar == '|') {
-            this.advance();
-            if (this.ptr < this.len && this.content.getChar(0) == '|') {
-                this.advance();
-                return newToken(this.moduleID, &newSubStr("||", 0, 2), this.ptr - 2, TOKEN_PIPE_DOUBLE);
-            } else {
-                return newToken(this.moduleID, &newSubStr("|", 0, 1), this.ptr - 1, TOKEN_PIPE_SINGLE);
-            }
-        } else if (currChar == '-') {
-            this.advance();
-            if (this.ptr < this.len && this.content.getChar(0) == '>') {
-                this.advance();
-                return newToken(this.moduleID, &newSubStr("->", 0, 2), this.ptr - 2, TOKEN_ARROW);
-            } else {
-                return newToken(this.moduleID, &newSubStr("-", 0, 1), this.ptr - 1, TOKEN_MINUS_SINGLE);
-            }
-        } else if (currChar == '!') {
-            this.advance();
-            if (this.ptr < this.len && this.content.getChar(0) == '=') {
-                this.advance();
-                return newToken(this.moduleID, &newSubStr("!=", 0, 2), this.ptr - 2, TOKEN_NOT_EQUAL);
-            } else {
-                return newToken(this.moduleID, &newSubStr("!", 0, 1), this.ptr - 1, TOKEN_BANG);
-            }
-        } else if (currChar == '/' && this.content.getChar(1) == '*') {
-            while (true) {
-                if (this.advance()) {
-                    return newTokenEOF(this.moduleID, this.ptr);
-                }
-                currChar = this.content.getChar(0);
-                let next: char = this.content.getChar(1);
-                if (currChar == '*' && next == '/') {
-                    break;
-                }
-            }
-            this.advance(); // *
-            this.advance(); // /
-            return this.next();
-        } else if (currChar == '/') {
-            if (this.content.getChar(1) == '/') {
-                while (currChar != '\n') {
-                    if (this.advance()) {
-                        return newTokenEOF(this.moduleID, this.ptr);
-                    }
-                    currChar = this.content.getChar(0);
-                }
-                return this.next();
-            } else {
-                this.advance();
-                return newToken(this.moduleID, &newSubStr("/", 0, 1), this.ptr - 1, TOKEN_SLASH_SINGLE);
-            }
-        } else {
-            let t: Token = newToken(this.moduleID, &newSubStr(&currChar, 0, 1), this.ptr + 1, TOKEN_IDENT);
+            let t: Token = newToken(this.moduleID, &newSubStr(&c, 0, 1), this.ptr + 1, TOKEN_IDENT);
             let loc: String = t.span.toString();
-            fprintf(stderr, "%s: %s: Unknown character `%c`.\n", loc.chars(), ERR_STR, currChar);
+            fprintf(stderr, "%s: %s: Can't escape character `%c`.\n", loc.chars(), ERR_STR, c);
             loc.drop();
             exit(1);
         }
+        escaped = true;
+    } else {
+        s.pushChar(c);
+    }
+    let s: usize = 1;
+    if (escaped) {
+        s = 2;
+    }
+    s = s + extraOffset;
+    *len = *len + s;
+    *tmp = (&*tmp).substring(s, tmp.len);
+    return (&*tmp).getChar(0);
+}
+
+func advance(this: &Lexer) -> bool {
+    this.ptr = this.ptr + 1;
+    this.content = this.content.substring(1, this.content.len);
+    return this.ptr >= this.len;
+}
+func peek(this: &Lexer) -> Token {
+    let ptr: usize = this.ptr;
+    let content: SubStr = this.content;
+    let len: usize = this.len;
+    let tkn: Token = __next(this, true);
+    this.ptr = ptr;
+    this.content = content;
+    this.len = len;
+    return tkn;
+}
+func next(this: &Lexer) -> Token {
+    return __next(this, false);
+}
+func __next(this: &Lexer, peek: bool) -> Token {
+    if (this.ptr == this.len) {
+        return newTokenEOF(this.moduleID, this.ptr);
+    }
+    let currChar: char = this.content.getChar(0);
+    while (isWhitespace(currChar)) {
+        if (advance(this, )) {
+            return newTokenEOF(this.moduleID, this.ptr);
+        }
+        currChar = this.content.getChar(0);
+    }
+    if (isAlphabetic(currChar) || currChar == '_') {
+        let len: usize = 0;
+        let tmp: SubStr = this.content;
+        let c: char = tmp.getChar(0);
+        while (isNumeric(c) || isAlphabetic(c) || c == '_') {
+            len = len + 1;
+            tmp = tmp.substring(1, tmp.len);
+            c = tmp.getChar(0);
+        }
+        let word: SubStr = this.content.substring(0, len);
+        this.ptr = this.ptr + len;
+        this.content = tmp;
+        if (isKeyword(this, &word)) {
+            return newToken(this.moduleID, &word, this.ptr - len, TOKEN_KEYWORD);
+        }
+        return newToken(this.moduleID, &word, this.ptr - len, TOKEN_IDENT);
+    } else if (isNumeric(currChar)) {
+        let len: usize = 0;
+        let tmp: SubStr = this.content;
+        while (isNumeric(tmp.getChar(0))) {
+            len = len + 1;
+            tmp = newSubStr(tmp.start, 1, tmp.len);
+        }
+        let word: SubStr = this.content.substring(0, len);
+        this.ptr = this.ptr + len;
+        this.content = tmp;
+        return newToken(this.moduleID, &word, this.ptr - len, TOKEN_INT_LITERAL);
+    } else if (currChar == '"') {
+        advance(this, );
+        if (this.content.len == 0) {
+            todo_with_msg("unbalanced \"");
+        }
+        // When peeking we don't care about the precise contents of the String Literal
+        // So we don't need to heap allocate anything just now
+        if (peek) {
+            return newToken(this.moduleID, &newSubStr("\"", 0, 1), this.ptr - 1, TOKEN_STRING_LITERAL);
+        }
+        let len: usize = 0;
+        let s: String = newString();
+        let c: char = this.content.getChar(0);
+        while (c != '"') {
+            let l: usize = 0;
+            c = escapeCharSequence(this, &this.content, &s, &l);
+            this.ptr = this.ptr + l;
+            len = len + l;
+        }
+        let word: SubStr = s.substring(0, s.length);
+        advance(this, );
+        return newToken(this.moduleID, &word, this.ptr - len, TOKEN_STRING_LITERAL);
+    } else if (currChar == '\'') {
+        advance(this, );
+        if (this.content.len == 0) {
+            todo_with_msg("unbalanced \'");
+        }
+        let len: usize = 0;
+        let s: String = newString();
+        let c: char = this.content.getChar(0);
+        while (c != '\'') {
+            let l: usize = 0;
+            c = escapeCharSequence(this, &this.content, &s, &l);
+            this.ptr = this.ptr + l;
+            len = len + l;
+        }
+        let word: SubStr = s.substring(0, s.length);
+        if (word.len != 1) {
+            todo_with_msg("invalid char literal");
+        }
+        advance(this, );
+        return newToken(this.moduleID, &word, this.ptr - len, TOKEN_CHAR_LITERAL);
+    } else if (currChar == '(') {
+        advance(this, );
+        return newToken(this.moduleID, &newSubStr("(", 0, 1), this.ptr - 1, TOKEN_PAREN_OPEN);
+    } else if (currChar == ')') {
+        advance(this, );
+        return newToken(this.moduleID, &newSubStr(")", 0, 1), this.ptr - 1, TOKEN_PAREN_CLOSE);
+    } else if (currChar == '{') {
+        advance(this, );
+        return newToken(this.moduleID, &newSubStr("{", 0, 1), this.ptr - 1, TOKEN_CURLY_OPEN);
+    } else if (currChar == '}') {
+        advance(this, );
+        return newToken(this.moduleID, &newSubStr("}", 0, 1), this.ptr - 1, TOKEN_CURLY_CLOSE);
+    } else if (currChar == '[') {
+        advance(this, );
+        return newToken(this.moduleID, &newSubStr("[", 0, 1), this.ptr - 1, TOKEN_SQUARE_OPEN);
+    } else if (currChar == ']') {
+        advance(this, );
+        return newToken(this.moduleID, &newSubStr("]", 0, 1), this.ptr - 1, TOKEN_SQUARE_CLOSE);
+    } else if (currChar == '<') {
+        advance(this, );
+        currChar = this.content.getChar(0);
+        if (currChar == '=') {
+            advance(this, );
+            return newToken(this.moduleID, &newSubStr("<=", 0, 2), this.ptr - 2, TOKEN_LESS_THAN_EQUAL);
+        } else {
+            return newToken(this.moduleID, &newSubStr("<", 0, 1), this.ptr - 1, TOKEN_LESS_THAN);
+        }
+    } else if (currChar == '>') {
+        advance(this, );
+        currChar = this.content.getChar(0);
+        if (currChar == '=') {
+            advance(this, );
+            return newToken(this.moduleID, &newSubStr(">=", 0, 2), this.ptr - 2, TOKEN_GREATER_THAN_EQUAL);
+        } else {
+            return newToken(this.moduleID, &newSubStr(">", 0, 1), this.ptr - 1, TOKEN_GREATER_THAN);
+        }
+    } else if (currChar == ';') {
+        advance(this, );
+        return newToken(this.moduleID, &newSubStr(";", 0, 1), this.ptr - 1, TOKEN_SEMI_COLON);
+    } else if (currChar == ':') {
+        advance(this, );
+        return newToken(this.moduleID, &newSubStr(":", 0, 1), this.ptr - 1, TOKEN_COLON);
+    } else if (currChar == '=') {
+        advance(this, );
+        if (this.ptr < this.len && this.content.getChar(0) == '=') {
+            advance(this, );
+            return newToken(this.moduleID, &newSubStr("==", 0, 2), this.ptr - 2, TOKEN_EQUAL_DOUBLE);
+        } else {
+            return newToken(this.moduleID, &newSubStr("=", 0, 1), this.ptr - 1, TOKEN_EQUAL_SINGLE);
+        }
+    } else if (currChar == '&') {
+        advance(this, );
+        if (this.ptr < this.len && this.content.getChar(0) == '&') {
+            advance(this, );
+            return newToken(this.moduleID, &newSubStr("&&", 0, 2), this.ptr - 2, TOKEN_AMPERSAND_DOUBLE);
+        } else {
+            return newToken(this.moduleID, &newSubStr("&", 0, 1), this.ptr - 1, TOKEN_AMPERSAND_SINGLE);
+        }
+    } else if (currChar == '_') {
+        advance(this, );
+        return newToken(this.moduleID, &newSubStr("_", 0, 1), this.ptr - 1, TOKEN_UNDERSCORE);
+    } else if (currChar == '.') {
+        advance(this, );
+        if (this.ptr + 2 < this.len && this.content.getChar(0) == '.' && this.content.getChar(1) == '.') {
+            advance(this, );
+            advance(this, );
+            return newToken(this.moduleID, &newSubStr("...", 0, 3), this.ptr - 3, TOKEN_DOTDOTDOT);
+        }
+        return newToken(this.moduleID, &newSubStr(".", 0, 1), this.ptr - 1, TOKEN_DOT);
+    } else if (currChar == ',') {
+        advance(this, );
+        return newToken(this.moduleID, &newSubStr(",", 0, 1), this.ptr - 1, TOKEN_COMMA);
+    } else if (currChar == '+') {
+        advance(this, );
+        return newToken(this.moduleID, &newSubStr("+", 0, 1), this.ptr - 1, TOKEN_PLUS_SINGLE);
+    } else if (currChar == '*') {
+        advance(this, );
+        return newToken(this.moduleID, &newSubStr("*", 0, 1), this.ptr - 1, TOKEN_ASTERISK_SINGLE);
+    } else if (currChar == '@') {
+        advance(this, );
+        return newToken(this.moduleID, &newSubStr("@", 0, 1), this.ptr - 1, TOKEN_AT);
+    } else if (currChar == '%') {
+        advance(this, );
+        return newToken(this.moduleID, &newSubStr("%", 0, 1), this.ptr - 1, TOKEN_PERCENT);
+    } else if (currChar == '^') {
+        advance(this, );
+        return newToken(this.moduleID, &newSubStr("^", 0, 1), this.ptr - 1, TOKEN_CARET);
+    } else if (currChar == '|') {
+        advance(this, );
+        if (this.ptr < this.len && this.content.getChar(0) == '|') {
+            advance(this, );
+            return newToken(this.moduleID, &newSubStr("||", 0, 2), this.ptr - 2, TOKEN_PIPE_DOUBLE);
+        } else {
+            return newToken(this.moduleID, &newSubStr("|", 0, 1), this.ptr - 1, TOKEN_PIPE_SINGLE);
+        }
+    } else if (currChar == '-') {
+        advance(this, );
+        if (this.ptr < this.len && this.content.getChar(0) == '>') {
+            advance(this, );
+            return newToken(this.moduleID, &newSubStr("->", 0, 2), this.ptr - 2, TOKEN_ARROW);
+        } else {
+            return newToken(this.moduleID, &newSubStr("-", 0, 1), this.ptr - 1, TOKEN_MINUS_SINGLE);
+        }
+    } else if (currChar == '!') {
+        advance(this, );
+        if (this.ptr < this.len && this.content.getChar(0) == '=') {
+            advance(this, );
+            return newToken(this.moduleID, &newSubStr("!=", 0, 2), this.ptr - 2, TOKEN_NOT_EQUAL);
+        } else {
+            return newToken(this.moduleID, &newSubStr("!", 0, 1), this.ptr - 1, TOKEN_BANG);
+        }
+    } else if (currChar == '/' && this.content.getChar(1) == '*') {
+        while (true) {
+            if (advance(this, )) {
+                return newTokenEOF(this.moduleID, this.ptr);
+            }
+            currChar = this.content.getChar(0);
+            let next: char = this.content.getChar(1);
+            if (currChar == '*' && next == '/') {
+                break;
+            }
+        }
+        advance(this, ); // *
+        advance(this, ); // /
+        return next(this, );
+    } else if (currChar == '/') {
+        if (this.content.getChar(1) == '/') {
+            while (currChar != '\n') {
+                if (advance(this, )) {
+                    return newTokenEOF(this.moduleID, this.ptr);
+                }
+                currChar = this.content.getChar(0);
+            }
+            return next(this, );
+        } else {
+            advance(this, );
+            return newToken(this.moduleID, &newSubStr("/", 0, 1), this.ptr - 1, TOKEN_SLASH_SINGLE);
+        }
+    } else {
+        let t: Token = newToken(this.moduleID, &newSubStr(&currChar, 0, 1), this.ptr + 1, TOKEN_IDENT);
+        let loc: String = t.span.toString();
+        fprintf(stderr, "%s: %s: Unknown character `%c`.\n", loc.chars(), ERR_STR, currChar);
+        loc.drop();
+        exit(1);
     }
 }
 
