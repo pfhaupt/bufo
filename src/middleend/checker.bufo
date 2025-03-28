@@ -2,6 +2,7 @@ import "prelude.bufo";
 import "libc.bufo";
 import "string.bufo";
 import "substr.bufo";
+import "../bufo.bufo";
 import "../util/span.bufo";
 import "../util/lists.bufo";
 import "../frontend/context.bufo";
@@ -838,7 +839,7 @@ struct TypeChecker {
                 todo_with_msg("what is it then");
             }
             let exprType: &Type = types.at(exprState.getType());
-            if (!exprType.isNone() && !expr.isAssignment()) {
+            if (!exprType.isNone() && !expr.isAssignment() && *flags.verbose) {
                 let loc: String = expr.span.toString();
                 fprintf(stderr, "%s: %s: Unused expression value.\n", loc.chars(), WARN_STR);
                 loc.drop();
@@ -1169,7 +1170,7 @@ struct TypeChecker {
         } else if (!exprType.isPrimitive()) {
             return this.reportNonPrimitiveCast(expr.span, exprType, typeType);
         }
-        if (typeType.getSize() < exprType.getSize()) {
+        if (typeType.getSize() < exprType.getSize() && *flags.verbose) {
             let loc: String = expr.span.toString();
             let tName: String = typeType.toString();
             let oName: String = exprType.toString();

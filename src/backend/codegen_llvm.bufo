@@ -2,6 +2,7 @@ import "prelude.bufo";
 import "libc.bufo";
 import "string.bufo";
 import "substr.bufo";
+import "../bufo.bufo";
 import "../util/span.bufo";
 import "../util/lists.bufo";
 import "../frontend/nodes.bufo";
@@ -77,7 +78,9 @@ struct LLVMCodegen {
         if (PRINT_DEBUG) this.llvmModule.writeToFile(newSubStrOfStrLit("debug_after.ll"));
         let path: String = outPath.toString();
         path.pushStr(".obj");
-        printf("written to: %s\n", path.chars());
+        if (*flags.verbose) {
+            printf("[INFO] Saving object file at %s\n", path.chars());
+        }
         this.llvmTargetMachine.writeToFile(this.llvmModule, LLVMObjectFile, path.chars());
         // path = outPath.toString();
         // path.pushStr(".s");

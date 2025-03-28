@@ -96,7 +96,9 @@ func runCmdAsync(cmd: Cmd) -> Handle {
 
     let str: String = cmd.toString();
     str.pushChar('\0');
-    printf("[CMD] %s\n", str.buffer);
+    if (cmd.log) {
+        printf("[CMD] %s\n", str.buffer);
+    }
     let bSuccess: bool = CreateProcessA(
         null,
         &*str.buffer,

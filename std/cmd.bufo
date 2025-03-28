@@ -7,6 +7,7 @@ import "substr.bufo";
 @os(WINDOWS) import "windows.bufo";
 
 struct Cmd {
+    log: bool;
     buf: StringBuffer;
 
     func add(&this, arg: &char) {

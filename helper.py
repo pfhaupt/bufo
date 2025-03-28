@@ -157,7 +157,7 @@ def run_test(
             return TestResult(path, STATE.SUCCESS)
 
         filename = "./{}.exe".format(path.replace(os.sep, "."))
-        output = call_cmd(["./bufo.exe", path, "-o", filename])
+        output = call_cmd(["./bufo.exe", path, "-o", filename, "-v"])
         stdout = output.stdout.decode("utf-8").split('\n')
         stderr = output.stderr.decode("utf-8").split('\n')
         if point_of_failure == "RUNTIME":
