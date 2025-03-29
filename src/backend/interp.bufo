@@ -2,6 +2,7 @@ import "prelude.bufo";
 import "libc.bufo";
 import "../util/span.bufo";
 import "../util/lists.bufo";
+import "../util/hashmaps.bufo";
 import "../frontend/nodes.bufo";
 import "../middleend/types.bufo";
 import "./irgen.bufo";
@@ -298,7 +299,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         // op1: blank,
         // args: args,
         let dstReg: &IRReg = getRegister(irFunc, instr.dst);
-        let calledFunc: &IRFunc = this.irGen.functions.at(instr.src.i);
+        let calledFunc: &IRFunc = at(&this.irGen.functions, instr.src.i);
         let argSize: usize = this.argStackLength;
         let stackStart: &u8 = this.realStackStart;
         let regStackStart: &u8 = this.regStackStart;

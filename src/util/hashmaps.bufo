@@ -15,119 +15,119 @@ struct String_IRFuncHashMap {
     length: usize;
     capacity: usize;
     locked: bool;
+}
 
-    func asList(&this) -> IRFuncList {
-        let l: IRFuncList = blank;
+func asList(this: &String_IRFuncHashMap) -> IRFuncList {
+    let l: IRFuncList = blank;
+    for (let i: usize = 0; i < this.capacity; i = i + 1) {
+        let elem: &String_IRFuncEntry = getAtIndex(this, i);
+        if (elem.set) {
+            push(&l, elem.value);
+        }
+    }
+    return l;
+}
+
+func needsResize(this: &String_IRFuncHashMap) -> bool {
+    if (this.capacity == 0) {
+        return true;
+    } else {
+        let loadFactor: f64 = this.length as f64 / this.capacity as f64;
+        assert(loadFactor <= 1);
+        // loadFactor > 0.6, but we don't have floating point literals yet :^)
+        return 10 * loadFactor > 6;
+    }
+}
+
+func indexOf(this: &String_IRFuncHashMap, key: &String) -> usize {
+    this.locked = true;
+    let elem: &String_IRFuncEntry = getEntry(this, key);
+    return (elem - this.elements) / sizeof String_IRFuncEntry;
+}
+
+func at(this: &String_IRFuncHashMap, index: usize) -> &IRFunc {
+    assert(this.locked, "Can only get elements at an index if the HashMap is locked");
+    let elem: &String_IRFuncEntry = getAtIndex(this, index);
+    assert(elem != null, "Expected to find element at the given index");
+    assert(elem.set, "Expected set element at the given index");
+    return &elem.value;
+}
+
+func resizeIfNecessary(this: &String_IRFuncHashMap) {
+    if (needsResize(this)) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 256;
+        let newElements: &String_IRFuncEntry = calloc(newCap, sizeof String_IRFuncEntry);
+        assert(newElements != null, "Could not allocate memory in String_IRFuncHashMap.resizeIfNecessary");
+        let newThis: String_IRFuncHashMap = String_IRFuncHashMap {
+            elements: newElements,
+            length: 0,
+            capacity: newCap,
+            locked: this.locked,
+        };
         for (let i: usize = 0; i < this.capacity; i = i + 1) {
-            let elem: &String_IRFuncEntry = this.getAtIndex(i);
-            if (elem.set) {
-                push(&l, elem.value);
-            }
+            let elem: &String_IRFuncEntry = getAtIndex(this, i);
+            if (elem.set) add(&newThis, elem.key, elem.value);
         }
-        return l;
+        free(this.elements);
+        *this = newThis;
     }
+}
 
-    func needsResize(&this) -> bool {
-        if (this.capacity == 0) {
-            return true;
-        } else {
-            let loadFactor: f64 = this.length as f64 / this.capacity as f64;
-            assert(loadFactor <= 1);
-            // loadFactor > 0.6, but we don't have floating point literals yet :^)
-            return 10 * loadFactor > 6;
-        }
+func add(this: &String_IRFuncHashMap, key: String, value: IRFunc) {
+    trace("String_IRFuncHashMap.add");
+    if (this.locked) {
+        todo_with_msg("HashMap is locked, can't add elements");
     }
-
-    func indexOf(&this, key: &String) -> usize {
-        this.locked = true;
-        let elem: &String_IRFuncEntry = this.getEntry(key);
-        return (elem - this.elements) / sizeof String_IRFuncEntry;
-    }
-
-    func at(&this, index: usize) -> &IRFunc {
-        assert(this.locked, "Can only get elements at an index if the HashMap is locked");
-        let elem: &String_IRFuncEntry = this.getAtIndex(index);
-        assert(elem != null, "Expected to find element at the given index");
-        assert(elem.set, "Expected set element at the given index");
-        return &elem.value;
-    }
-
-    func resizeIfNecessary(&this) {
-        if (this.needsResize()) {
-            let newCap: usize = this.capacity * 2;
-            if (newCap == 0) newCap = 256;
-            let newElements: &String_IRFuncEntry = calloc(newCap, sizeof String_IRFuncEntry);
-            assert(newElements != null, "Could not allocate memory in String_IRFuncHashMap.resizeIfNecessary");
-            let newThis: String_IRFuncHashMap = String_IRFuncHashMap {
-                elements: newElements,
-                length: 0,
-                capacity: newCap,
-                locked: this.locked,
+    resizeIfNecessary(this);
+    assert(this.capacity > 0);
+    let hash: usize = key.hash() % this.capacity;
+    let index: usize = hash;
+    let stop: usize = hash - 1;
+    if (hash == 0) stop = this.capacity - 1;
+    while (index != stop) {
+        let elem: &String_IRFuncEntry = getAtIndex(this, index);
+        if (!elem.set) {
+            *elem = String_IRFuncEntry {
+                set: true,
+                key: key,
+                value: value
             };
-            for (let i: usize = 0; i < this.capacity; i = i + 1) {
-                let elem: &String_IRFuncEntry = this.getAtIndex(i);
-                if (elem.set) newThis.add(elem.key, elem.value);
-            }
-            free(this.elements);
-            *this = newThis;
+            this.length = this.length + 1;
+            return;
         }
+        index = (index + 1) % this.capacity;
     }
+    unreachable("Could not insert element into HashMap");
+}
 
-    func add(&this, key: String, value: IRFunc) {
-        trace("String_IRFuncHashMap.add");
-        if (this.locked) {
-            todo_with_msg("HashMap is locked, can't add elements");
-        }
-        this.resizeIfNecessary();
-        assert(this.capacity > 0);
-        let hash: usize = key.hash() % this.capacity;
-        let index: usize = hash;
-        let stop: usize = hash - 1;
-        if (hash == 0) stop = this.capacity - 1;
-        while (index != stop) {
-            let elem: &String_IRFuncEntry = this.getAtIndex(index);
-            if (!elem.set) {
-                *elem = String_IRFuncEntry {
-                    set: true,
-                    key: key,
-                    value: value
-                };
-                this.length = this.length + 1;
-                return;
-            }
-            index = (index + 1) % this.capacity;
-        }
-        unreachable("Could not insert element into HashMap");
-    }
+func get(this: &String_IRFuncHashMap, key: &String) -> &IRFunc {
+    trace("String_IRFuncHashMap.get");
+    let entry: &String_IRFuncEntry = getEntry(this, key);
+    if (entry == null) return null;
+    return &entry.value;
+}
 
-    func get(&this, key: &String) -> &IRFunc {
-        trace("String_IRFuncHashMap.get");
-        let entry: &String_IRFuncEntry = this.getEntry(key);
-        if (entry == null) return null;
-        return &entry.value;
+func getEntry(this: &String_IRFuncHashMap, key: &String) -> &String_IRFuncEntry {
+    if (this.length == 0) return null;
+    assert(this.capacity > 0);
+    let hash: usize = key.hash() % this.capacity;
+    let stop: usize = hash - 1;
+    if (hash == 0) stop = this.capacity - 1;
+    while (hash != stop) {
+        let elem: &String_IRFuncEntry = getAtIndex(this, hash);
+        if (!elem.set) return null;
+        if (elem.key.equals(key)) return elem;
+        hash = (hash + 1) % this.capacity;
     }
+    unreachable("Load Factor guarantees that there's always at least one unset Entry in the HashMap.");
+}
 
-    func getEntry(&this, key: &String) -> &String_IRFuncEntry {
-        if (this.length == 0) return null;
-        assert(this.capacity > 0);
-        let hash: usize = key.hash() % this.capacity;
-        let stop: usize = hash - 1;
-        if (hash == 0) stop = this.capacity - 1;
-        while (hash != stop) {
-            let elem: &String_IRFuncEntry = this.getAtIndex(hash);
-            if (!elem.set) return null;
-            if (elem.key.equals(key)) return elem;
-            hash = (hash + 1) % this.capacity;
-        }
-        unreachable("Load Factor guarantees that there's always at least one unset Entry in the HashMap.");
-    }
-
-    func getAtIndex(&this, index: usize) -> &String_IRFuncEntry {
-        assert(index < this.capacity, "Out of bounds access in String_IRFuncHashMap.getAtIndex");
-        return this.elements + index * sizeof String_IRFuncEntry;
-    }
-    func containsKey(&this, key: &String) -> bool {
-        trace("String_IRFuncHashMap.containsKey");
-        return this.get(key) != null;
-    }
+func getAtIndex(this: &String_IRFuncHashMap, index: usize) -> &String_IRFuncEntry {
+    assert(index < this.capacity, "Out of bounds access in String_IRFuncHashMap.getAtIndex");
+    return this.elements + index * sizeof String_IRFuncEntry;
+}
+func containsKey(this: &String_IRFuncHashMap, key: &String) -> bool {
+    trace("String_IRFuncHashMap.containsKey");
+    return get(this, key) != null;
 }
