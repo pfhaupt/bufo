@@ -296,31 +296,11 @@ func parseStructDecl(this: &Parser) -> &ParsedStructDecl {
     let decl: &ParsedStructDecl = newParsedStructDecl(this.lexer.moduleID, defaultSpan(), nameTkn);
     let structContext: StructContext = blank;
     while (!parsedEOF(this) && !at(this, TOKEN_CURLY_CLOSE)) {
-        let tkn: Token = peek(&this.lexer);
-        if (tkn.kind == TOKEN_IDENT) {
-            next(&this.lexer);
-            expect(this, TOKEN_COLON);
-            let typ: &ParsedTypeNode = parseTypeDecl(this);
-            addField(&structContext, tkn, typ);
-            expect(this, TOKEN_SEMI_COLON);
-        } else if (tkn.kind == TOKEN_KEYWORD) {
-            if (equals(&tkn.content, &KEYWORD_UNSAFE)) {
-                next(&this.lexer);
-                let loc: String = getLocation(&tkn);
-                fprintf(stderr, "%s: %s: The use of `unsafe` has no effect in this version of the compiler.\n", loc.buffer, ERR_STR);
-                drop(&loc);
-                exit(1);
-            }
-            let tkn: Token = peek(&this.lexer);
-            if (equals(&tkn.content, &KEYWORD_FUNC)) {
-                fprintf(stderr, "%s: %s: Methods are deprecated.\n", getLocation(&tkn).buffer, ERR_STR);
-                exit(1);
-            } else {
-                todo_with_msg("ayo, not a method???");
-            }
-        } else {
-            todo_with_msg("struct no field");
-        }
+        let tkn = expect(this, TOKEN_IDENT);
+        expect(this, TOKEN_COLON);
+        let typ: &ParsedTypeNode = parseTypeDecl(this);
+        addField(&structContext, tkn, typ);
+        expect(this, TOKEN_SEMI_COLON);
     }
     let end: Token = expect(this, TOKEN_CURLY_CLOSE);
     let span: Span = newSpanBetween(&kw.span, &end.span);
@@ -328,17 +308,6 @@ func parseStructDecl(this: &Parser) -> &ParsedStructDecl {
     (*decl).context = structContext;
     this.currentStruct = blank;
     return decl;
-}
-
-func parseMethod(this: &Parser, structDecl: &ParsedStructDecl) -> &ParsedMethod {
-    trace("Parser.parseMethod");
-    let tkn: Token = expect(this, TOKEN_KEYWORD);
-    assert(equals(&tkn.content, &KEYWORD_FUNC));
-    let name: Token = expect(this, TOKEN_IDENT);
-    let params: ParamContext = parseParameters(this, structDecl.name);
-    let retType: &ParsedTypeNode = parseReturnType(this);
-    let body: &ParsedBlock = parseBlock(this);
-    return newParsedMethod(getID(structDecl), newSpanBetween(&tkn.span, &body.span), name, params, retType, getID(body));
 }
 
 func parseFuncDecl(this: &Parser, isExtern: bool) -> &ParsedFuncDecl {
@@ -850,8 +819,8 @@ func parseSecondaryExpr(this: &Parser, lhs: &ParsedExpr, precedence: usize, asso
         rhs = __parseExpr(this, precedence, associativity);
     }
     if (op == BIN_DOT) {
-        if (rhs.kind != EXPR_NAME && rhs.kind != EXPR_CALL) {
-            todo_with_msg("weewoo - The dot operator only works with identifiers (fields) or calls (methods)");
+        if (rhs.kind != EXPR_NAME) {
+            todo_with_msg("weewoo - The dot operator only works with identifiers");
         }
     }
     let span: Span = newSpanBetween(&lhs.span, &rhs.span);

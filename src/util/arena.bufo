@@ -237,39 +237,6 @@ func indexOf(this: &ParsedFuncDeclArena, elem: &ParsedFuncDecl) -> usize {
     return indexOf(this.start, elem);
 }
 
-struct ParsedMethodArena {
-    start: &ArenaBlock;
-    end: &ArenaBlock;
-    length: usize;
-}
-
-func push(this: &ParsedMethodArena, elem: ParsedMethod) {
-    trace("ParsedMethodArena.push");
-    if (this.start == null) {
-        this.start = allocateBlock(ARENA_SIZE_SMALL, sizeof ParsedMethod);
-        assert(this.end == null);
-        this.end = this.start;
-    }
-    push(this.end, &elem, ARENA_SIZE_SMALL);
-    if (this.end.next != null) this.end = this.end.next;
-    this.length = this.length + 1;
-}
-func at(this: &ParsedMethodArena, index: usize) -> &ParsedMethod {
-    trace("ParsedMethodArena.at");
-    assert(this.start != null, "ParsedMethodArena.at() called on empty Arena");
-    return at(this.start, index) as &ParsedMethod;
-}
-func last(this: &ParsedMethodArena) -> &ParsedMethod {
-    trace("ParsedMethodArena.last");
-    assert(this.end != null, "ParsedMethodArena.last() called on empty Arena");
-    return last(this.end) as &ParsedMethod;
-}
-func indexOf(this: &ParsedMethodArena, elem: &ParsedMethod) -> usize {
-    trace("ParsedMethodArena.indexOf");
-    assert(this.start != null, "ParsedMethodArena.indexOf() called on empty Arena");
-    return indexOf(this.start, elem);
-}
-
 struct ParsedBlockArena {
     start: &ArenaBlock;
     end: &ArenaBlock;

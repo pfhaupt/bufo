@@ -40,7 +40,6 @@ func mangleFunctionName(
     name: &Token,
     params: &ParamContext,
     retTypeID: usize,
-    isMethod: bool,
     isComptime: bool,
     attrs: &ParsedAttributeList,
 ) -> String {
@@ -49,13 +48,7 @@ func mangleFunctionName(
         let a = at(attrs, i);
         if (a.kind == ATTR_EXTERN) return toString(&a.name.content);
     }
-    // Method  : StructName-Name-ParamsTypeID-rRetTypeID
     // Function: Name-ParamsTypeID-rRetTypeID
-    if (isMethod) {
-        let strukt: &ParsedStructDecl = at(&structDecls, parentID);
-        pushSubStr(&mangledName, &strukt.name.content);
-        pushChar(&mangledName, '.');
-    }
     pushSubStr(&mangledName, &name.content);
     for (let i: usize = 0; i < params.paramLength; i = i + 1) {
         let name: Token = getNameAtIndex(params, i);
@@ -85,7 +78,6 @@ let modules: ParsedModuleArena = blank;
 let topLevelItems: ParsedTopLevelItemArena = blank;
 let structDecls: ParsedStructDeclArena = blank;
 let funcDecls: ParsedFuncDeclArena = blank;
-let methods: ParsedMethodArena = blank;
 let blocks: ParsedBlockArena = blank;
 let stmts: ParsedStmtArena = blank;
 let typeNodes: ParsedTypeNodeArena = blank;
@@ -276,54 +268,6 @@ func newParsedStructDecl(parent: usize, span: Span, name: Token) -> &ParsedStruc
     return last(&structDecls);
 }
 
-struct ParsedMethod {
-    ignored: bool;
-    parentID: usize;
-    name: Token;
-    span: Span;
-    isStatic: bool;
-    params: ParamContext;
-    retTypeID: usize;
-    body: usize;
-    attrs: ParsedAttributeList;
-    typeState: TCState;
-}
-
-func getID(this: &ParsedMethod) -> usize {
-    trace("ParsedMethod.getID");
-    return indexOf(&methods, this);
-}
-
-func getMangledName(this: &ParsedMethod) -> String {
-    trace("ParsedMethod.getMangledName");
-    if (this.ignored) return toString(&this.name.content);
-    assert(isSuccess(&this.typeState), "Mangling can only be done after type checks");
-    return mangleFunctionName(
-        this.parentID,
-        &this.name,
-        &this.params,
-        this.retTypeID,
-        true,  // isMethod
-        false, // isComptime,
-        &this.attrs,
-    );
-}
-
-func newParsedMethod(parentID: usize, span: Span, name: Token, params: ParamContext, retType: &ParsedTypeNode, body: usize) -> &ParsedMethod {
-    push(&methods, ParsedMethod {
-        ignored: ignoringNodes,
-        parentID: parentID,
-        name: name,
-        span: span,
-        params: params,
-        typeState: blank,
-        retTypeID: getID(retType),
-        body: body,
-        isStatic: !hasThis(&params),
-    });
-    return last(&methods);
-}
-
 struct ParsedFuncDecl {
     ignored: bool;
     parentID: usize;
@@ -359,7 +303,6 @@ func getMangledName(this: &ParsedFuncDecl) -> String {
         &this.name,
         &this.params,
         this.retTypeID,
-        false, // isMethod
         this.isComptime,
         &this.attrs,
     );

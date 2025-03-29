@@ -252,7 +252,6 @@ struct IRFunc {
     name: String;
     span: Span;
     comptimeLevel: usize;
-    isMethod: bool;
     scopes: IRScopeList;
     registers: IRRegList;
     blocks: IRBlockList;
@@ -272,7 +271,6 @@ func hasAttribute(this: &IRFunc, attr: usize) -> bool {
     return false;
 }
 func isExtern(this: &IRFunc) -> bool {
-    if (this.isMethod) return false;
     return isExtern(getFuncNode(this));
 }
 func appendBlock(this: &IRFunc) -> IRBlockID {
@@ -313,12 +311,7 @@ func popLoopBlocks(this: &IRFunc) {
     pop(&this.loopBlocks);
 }
 func getFuncNode(this: &IRFunc) -> &ParsedFuncDecl {
-    assert(!this.isMethod, "IRFunc.getFuncNode called on Method");
     return at(&funcDecls, this.originalID);
-}
-func getMethodNode(this: &IRFunc) -> &ParsedMethod {
-    assert(this.isMethod, "IRFunc.getMethodNode called on Function");
-    return at(&methods, this.originalID);
 }
 func dumpInstructions(this: &IRFunc) {
     printf("%s:\n", this.name.buffer);
@@ -942,7 +935,6 @@ func fillLookup(this: &IRGen, project: &ParsedModule) -> bool {
         let irfunc: IRFunc = IRFunc {
             name: name,
             span: function.span,
-            isMethod: false,
             originalID: getID(function),
             comptimeLevel: 0,
             scopes: blank,
@@ -955,37 +947,6 @@ func fillLookup(this: &IRGen, project: &ParsedModule) -> bool {
             attrs: function.attrs,
         };
         add(&this.functions, name, irfunc);
-    }
-    for (let i: usize = 0; i < methods.length; i = i + 1) {
-        let method: &ParsedMethod = at(&methods, i);
-        if (method.ignored) continue;
-        let name: String = getMangledName(method);
-        if (containsKey(&this.functions, &name)) {
-            let fn = get(&this.functions, &name);
-            let loc = toString(&method.span);
-            let loc1 = toString(&fn.span);
-            fprintf(stderr, "%s: %s Hash collision - Function Lookup already contains function!\n", loc.buffer, FATAL_STR);
-            fprintf(stderr, "%s: %s Function with mangled name %s already defined here!\n", loc1.buffer, FATAL_STR, name.buffer);
-            drop(&loc1);
-            drop(&loc);
-            exit(2);
-        }
-        let irmeth: IRFunc = IRFunc {
-            name: name,
-            span: method.span,
-            isMethod: true,
-            originalID: getID(method),
-            comptimeLevel: 0,
-            scopes: blank,
-            registers: blank,
-            blocks: blank,
-            loopBlocks: blank,
-            currentBlock: blank,
-            llvmFunc: blank,
-            retPtr: blank,
-            attrs: method.attrs,
-        };
-        add(&this.functions, name, irmeth);
     }
     return true;
 }
@@ -1010,10 +971,6 @@ func generateBytecode(this: &IRGen, project: &ParsedModule) -> bool {
     for (let i: usize = 0; i < funcDecls.length; i = i + 1) {
         let fn: &ParsedFuncDecl = at(&funcDecls, i);
         generateFunction(this, fn);
-    }
-    for (let i: usize = 0; i < methods.length; i = i + 1) {
-        let meth: &ParsedMethod = at(&methods, i);
-        generateMethod(this, meth);
     }
     return !this.error;
 }
@@ -1108,36 +1065,13 @@ func generateFunction(this: &IRGen, funcDecl: &ParsedFuncDecl) {
     generateFunctionBody(this, function, at(&blocks, funcDecl.body), at(&typeNodes, funcDecl.retTypeID));
 }
 
-func generateMethod(this: &IRGen, methDecl: &ParsedMethod) {
-    trace("IRGen.generateMethod");
-    if (methDecl.ignored) return;
-    assert(isSuccess(&methDecl.typeState), "Expected valid Method type in IRGen");
-    let name: String = getMangledName(methDecl);
-    let function: &IRFunc = get(&this.functions, &name);
-    assert(function != null, "Expected to find function in lookup");
-    assert(equals(&function.name, &name), "functions.get() retrieved wrong IRFunc");
-    drop(&name);
-    let scope: usize = enterScope(function);
-    assert(scope == 1, "Expected method to enter first scope");
-    let retDecl: &ParsedTypeNode = at(&typeNodes, methDecl.retTypeID);
-    generateFunctionHeader(this, function, at(&types, getType(&retDecl.typeState)), &methDecl.params);
-    generateFunctionBody(this, function, at(&blocks, methDecl.body), at(&typeNodes, methDecl.retTypeID));
-}
-
 func generateBytecodeBlock(this: &IRGen, function: &IRFunc, block: &ParsedBlock) {
     trace("IRGen.generateBytecodeBlock");
     if (block.ignored) return;
     assert(isSuccess(&block.typeState), "Expected valid Block type in IRGen");
     let scope: usize = enterScope(function);
-    let modID: usize = 0;
-    if (function.isMethod) {
-        let m: &ParsedMethod = getMethodNode(function);
-        let s: &ParsedStructDecl = at(&structDecls, m.parentID);
-        modID = s.parentModule;
-    } else {
-        let f: &ParsedFuncDecl = getFuncNode(function);
-        modID = f.parentID;
-    }
+    let f: &ParsedFuncDecl = getFuncNode(function);
+    let modID = f.parentID;
     for (let i: usize = 0; i < block.stmtLength; i = i + 1) {
         let stmt: &ParsedStmt = at(&stmts, getStmtAtIndex(block, i));
         generateBytecodeStmt(this, function, stmt);
@@ -1428,64 +1362,33 @@ func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &Pa
     let rhs: &ParsedExpr = at(&exprs, expr.rhs);
     let instance: &Type = at(&types, getType(&lhs.typeState));
     assert(isStruct(instance) || isStructPointer(instance), "Expected (ptr to) struct in MemberAccess");
-    if (rhs.kind == EXPR_NAME) {
-        let result: RegIndex = generateBytecodeExpr(this, function, lhs, !isStructPointer(instance));
-        let _t: &Type = getRegister(function, result).typ;
-        assert(isStruct(_t) || isStructPointer(_t), "Expected (ptr to) struct in Field Access");
-        if (!isStructPointer(_t)) {
-            let t1: &Type = at(&types, intoPointer(_t));
-            let alloca: RegIndex = allocateRegister(function, t1);
-            buildAlloca(function, expr.span, alloca, getSize(_t));
-            buildStore(function, expr.span, alloca, result);
-            result = alloca;
-            _t = t1;
-        }
-        assert(isStructPointer(_t), "Expected ptr to struct in Field Access");
-        let structType: &Type = getUnderlyingType(_t, false);
-        // `result` contains a pointer to a struct instance at this point
-        let decl: &ParsedStructDecl = at(&structDecls, structType.typeIndex);
-        let index: usize = getFieldIndex(decl, &rhs.origToken.content);
-        let _f: &ParsedTypeNode = at(&typeNodes, getFieldTypeAtIndex(&decl.context, index));
-        let fieldType: &Type = at(&types, getType(&_f.typeState));
-        let fieldPtr: RegIndex = allocateRegister(function, at(&types, intoPointer(fieldType)));
-        buildGetFieldPtr(function, expr.span, fieldPtr, result, index);
-        if (needsPtr) {
-            return fieldPtr;
-        } else {
-            let dst: RegIndex = allocateRegister(function, fieldType);
-            buildLoad(function, expr.span, dst, fieldPtr);
-            return dst;
-        }
-    } else if (rhs.kind == EXPR_CALL) {
-        let result: RegIndex = generateBytecodeExpr(this, function, lhs, false);
-        let instance: RegIndex = prepareArgument(this, function, lhs.span, result, instance);
-        let method: &ParsedMethod = at(&methods, rhs.lhs);
-        let name: String = getMangledName(method);
-        let funcID: usize = getFunctionByName(this, &name);
-        drop(&name);
-        let typ: &Type = at(&types, getType(&expr.typeState));
-        let args: RegIndexList = blank;
-        let retPtr: RegIndex = blank;
-        if (getSize(typ) > 8) {
-            retPtr = allocateRegister(function, at(&types, intoPointer(typ)));
-            buildAlloca(function, expr.span, retPtr, getSize(typ));
-            push(&args, retPtr);
-        }
-        if (method.isStatic) {
-            unreachable("Actually... How did we get here so far?");
-        } else {
-            assert(rhs.arrayContext.elemLength == method.params.paramLength - 1, "args != params - this");
-            push(&args, instance);
-        }
-        for (let i: usize = 0; i < rhs.arrayContext.elemLength; i = i + 1) {
-            let arg: &ParsedExpr = at(&exprs, getElementAtIndex(&rhs.arrayContext, i));
-            let argType: &Type = at(&types, getType(&arg.typeState));
-            let result: RegIndex = generateBytecodeExpr(this, function, arg, false);
-            push(&args, prepareArgument(this, function, arg.span, result, argType));
-        }
-        return prepareReturnValue(this, rhs.span, function, funcID, args, typ, retPtr, needsPtr);
+    assert(rhs.kind == EXPR_NAME);
+    let result: RegIndex = generateBytecodeExpr(this, function, lhs, !isStructPointer(instance));
+    let _t: &Type = getRegister(function, result).typ;
+    assert(isStruct(_t) || isStructPointer(_t), "Expected (ptr to) struct in Field Access");
+    if (!isStructPointer(_t)) {
+        let t1: &Type = at(&types, intoPointer(_t));
+        let alloca: RegIndex = allocateRegister(function, t1);
+        buildAlloca(function, expr.span, alloca, getSize(_t));
+        buildStore(function, expr.span, alloca, result);
+        result = alloca;
+        _t = t1;
+    }
+    assert(isStructPointer(_t), "Expected ptr to struct in Field Access");
+    let structType: &Type = getUnderlyingType(_t, false);
+    // `result` contains a pointer to a struct instance at this point
+    let decl: &ParsedStructDecl = at(&structDecls, structType.typeIndex);
+    let index: usize = getFieldIndex(decl, &rhs.origToken.content);
+    let _f: &ParsedTypeNode = at(&typeNodes, getFieldTypeAtIndex(&decl.context, index));
+    let fieldType: &Type = at(&types, getType(&_f.typeState));
+    let fieldPtr: RegIndex = allocateRegister(function, at(&types, intoPointer(fieldType)));
+    buildGetFieldPtr(function, expr.span, fieldPtr, result, index);
+    if (needsPtr) {
+        return fieldPtr;
     } else {
-        unreachable("Expected name or call in generateBytecodeExprMemberAccess");
+        let dst: RegIndex = allocateRegister(function, fieldType);
+        buildLoad(function, expr.span, dst, fieldPtr);
+        return dst;
     }
 }
 
@@ -2174,7 +2077,6 @@ func newIRGenerator() -> IRGen {
         globalScope: IRFunc {
             name: newStringFromStrLit("__global__"),
             span: blank,
-            isMethod: false,
             originalID: funcDecls.length + 1,
             comptimeLevel: 0,
             scopes: blank,

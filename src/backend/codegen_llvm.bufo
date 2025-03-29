@@ -141,38 +141,20 @@ func generateGlobal(this: &LLVMCodegen, global: &IRFunc) -> bool {
 
 func generateLLVMFunctionHeader(this: &LLVMCodegen, irFunc: &IRFunc) {
     let llvmFunc: LLVMValue = blank;
-    let retType: &Type = null;
     let params: LLVMTypeList = blank;
-    let isVarArg: bool = false;
-    if (irFunc.isMethod) {
-        let method: &ParsedMethod = getMethodNode(irFunc);
-        let typeDecl: &ParsedTypeNode = at(&typeNodes, method.retTypeID);
-        retType = at(&types, getType(&typeDecl.typeState));
-        if (getSize(retType) > 8) {
-            retType = at(&types, intoPointer(retType));
-            push(&params, prepareParameter(this, retType));
-        }
-        for (let i: usize = 0; i < method.params.paramLength; i = i + 1) {
-            let tDecl: &ParsedTypeNode = at(&typeNodes, getTypeAtIndex(&method.params, i));
-            let t: &Type = at(&types, getType(&tDecl.typeState));
-            push(&params, prepareParameter(this, t));
-        }
-        isVarArg = method.params.isVarArg;
-    } else {
-        let function: &ParsedFuncDecl = getFuncNode(irFunc);
-        let typeDecl: &ParsedTypeNode = at(&typeNodes, function.retTypeID);
-        retType = at(&types, getType(&typeDecl.typeState));
-        if (getSize(retType) > 8) {
-            retType = at(&types, intoPointer(retType));
-            push(&params, prepareParameter(this, retType));
-        }
-        for (let i: usize = 0; i < function.params.paramLength; i = i + 1) {
-            let tDecl: &ParsedTypeNode = at(&typeNodes, getTypeAtIndex(&function.params, i));
-            let t: &Type = at(&types, getType(&tDecl.typeState));
-            push(&params, prepareParameter(this, t));
-        }
-        isVarArg = function.params.isVarArg;
+    let function: &ParsedFuncDecl = getFuncNode(irFunc);
+    let typeDecl: &ParsedTypeNode = at(&typeNodes, function.retTypeID);
+    let retType = at(&types, getType(&typeDecl.typeState));
+    if (getSize(retType) > 8) {
+        retType = at(&types, intoPointer(retType));
+        push(&params, prepareParameter(this, retType));
     }
+    for (let i: usize = 0; i < function.params.paramLength; i = i + 1) {
+        let tDecl: &ParsedTypeNode = at(&typeNodes, getTypeAtIndex(&function.params, i));
+        let t: &Type = at(&types, getType(&tDecl.typeState));
+        push(&params, prepareParameter(this, t));
+    }
+    let isVarArg = function.params.isVarArg;
     let llvmType: LLVMType = prepareReturnType(this, retType);
     let llvmFuncType: LLVMType = intoFunctionType(&llvmType, params, isVarArg);
     let llvmFuncValue: LLVMValue = addFunction(&this.llvmModule, asSubStr(&irFunc.name), llvmFuncType);

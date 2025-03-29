@@ -225,22 +225,8 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) {
             name: strukt.name,
             readyState: STRUCT_INCOMPLETE,
             fields: blank,
-            methods: blank,
             typeID: getID(newType(TYPE_KIND_STRUCT, tli.nodeID)),
         };
-        for (let i: usize = 0; i < strukt.context.methodLength; i = i + 1) {
-            let id: usize = getMethodAtIndex(&strukt.context, i);
-            let method: &ParsedMethod = at(&methods, id);
-            let mLookup: MethodLookup = MethodLookup {
-                globalID: id,
-                name: method.name,
-                isStatic: false,
-                returnType: blank,
-                params: blank,
-                readyState: METHOD_INCOMPLETE,
-            };
-            push(&lookup.methods, mLookup);
-        }
         if (contains(&this.structs, &lookup)) {
             todo_with_msg("double struct");
         }
@@ -492,7 +478,6 @@ struct StructLookup {
     name: Token;
     readyState: usize;
     fields: VariableLookupList;
-    methods: MethodLookupList;
     typeID: usize;
 }
 
@@ -535,38 +520,6 @@ func hasField(this: &StructLookup, name: &SubStr) -> bool {
     return false;
 }
 
-// FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
-func containsDuplicateMethod(this: &StructLookup, method: &MethodLookup, dupl: &usize) -> bool {
-    trace("StructLookup.containsDuplicateMethod");
-    let name: String = getMangledName(at(&methods, method.globalID));
-    let duplicate: bool = false;
-    for (let i: usize = 0; !duplicate && i < this.methods.length; i = i + 1) {
-        let m: &MethodLookup = at(&this.methods, i);
-        // REVIEW: is METHOD_DUPLICATE_CHECK always correct, or is it better to check METHOD_READY_TO_USE
-        if (m == method) continue;
-        if (!getReadyState(m, METHOD_DUPLICATE_CHECK)) continue;
-        let n: String = getMangledName(at(&methods, m.globalID));
-        if (equals(&name, &n)) {
-            *dupl = m as usize;
-            duplicate = true;
-        }
-        drop(&n);
-    }
-    return duplicate;
-}
-
-func resolveMethodByName(this: &StructLookup, name: &Token) -> MethodLookupList {
-    trace("StructLookup.resolveMethodByName");
-    let methods: MethodLookupList = blank;
-    for (let i: usize = 0; i < this.methods.length; i = i + 1) {
-        let m: &MethodLookup = at(&this.methods, i);
-        if (equals(&m.name.content, &name.content)) {
-            push(&methods, *m);
-        }
-    }
-    return methods;
-}
-
 func getIndexByName(this: &StructLookup, name: &Token) -> usize {
     trace("StructLookup.getIndexByName");
     for (let i: usize = 0; i < this.fields.length; i = i + 1) {
@@ -600,74 +553,6 @@ func addField(this: &StructLookup, globalID: usize, name: Token, typeState: TCSt
         // REVIEW: Comptime fields?
         isComptime: false,
     });
-}
-func getMethodByGlobalID(this: &StructLookup, methodID: usize) -> &MethodLookup {
-    trace("StructLookup.getMethodByGlobalID");
-    for (let i: usize = 0; i < this.methods.length; i = i + 1) {
-        let f: &MethodLookup = at(&this.methods, i);
-        if (f.globalID == methodID) {
-            return f;
-        }
-    }
-    unreachable("Lookup failed to find method based on global ID!");
-}
-
-comptime METHOD_INCOMPLETE       : usize = pow2(0);
-comptime METHOD_ERROR            : usize = pow2(1);
-comptime METHOD_PARAMS_COMPLETE  : usize = pow2(2);
-comptime METHOD_RETTYPE_COMPLETE : usize = pow2(3);
-comptime METHOD_READY_TO_USE     : usize = pow2(4);
-comptime METHOD_DUPLICATE_CHECK  : usize = pow2(5);
-comptime METHOD_BODY_COMPLETE    : usize = pow2(6);
-struct MethodLookup {
-    globalID: usize;
-    name: Token;
-    isStatic: bool;
-    returnType: TCState;
-    params: VariableLookupList;
-    readyState: usize;
-}
-
-func getReadyState(this: &MethodLookup, state: usize) -> bool {
-    return (this.readyState & state) != 0;
-}
-func setReadyState(this: &MethodLookup, state: usize) {
-    assert(!getReadyState(this, state), "MethodLookup.readyState is already set");
-    this.readyState = this.readyState | state;
-}
-
-func equals(this: &MethodLookup, other: &MethodLookup) -> bool {
-    todo_with_msg("MethodLookup.equals");
-}
-
-func checkForDuplicateParam(this: &MethodLookup, name: &Token, dupl: &VariableLookup) -> bool {
-    trace("MethodLookup.checkForDuplicateParam");
-    for (let i: usize = 0; i < this.params.length; i = i + 1) {
-        let param: &VariableLookup = at(&this.params, i);
-        if (equals(&param.name.content, &name.content)) {
-            *dupl = *param;
-            return true;
-        }
-    }
-    return false;
-}
-
-func addParameter(this: &MethodLookup, globalID: usize, name: Token, typeState: TCState) {
-    trace("MethodLookup.addParameter");
-    assert(isType(&typeState), "MethodLookup received non-type parameter type");
-    push(&this.params, VariableLookup {
-        globalID: globalID,
-        name: name,
-        typeState: typeState,
-        // REVIEW: Comptime params?
-        isComptime: false,
-    });
-}
-
-func setReturnType(this: &MethodLookup, typ: TCState) {
-    trace("MethodLookup.setReturnType");
-    assert(isType(&typ), "MethodLookup received non-type return type");
-    this.returnType = typ;
 }
 
 struct VariableLookup {

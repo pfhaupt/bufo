@@ -134,7 +134,6 @@ struct TypeChecker {
     isComptimeContext: bool;
     currentModule: usize;
     currentFunction: &FunctionLookup;
-    currentMethod: &MethodLookup;
     lookup: Lookup;
     typeError: bool;
 }
@@ -241,19 +240,6 @@ func reportDuplicateFunction(this: &TypeChecker, f1: &FunctionLookup, f2: &Funct
     return newTCStateFailure(ERROR_DUPLICATE_FUNCTION);
 }
 
-func reportDuplicateMethod(this: &TypeChecker, m1: &MethodLookup, m2: &MethodLookup) -> TCState {
-    trace("TypeChecker.reportDuplicateMethod");
-    let errLoc: String = toString(&m1.name.span);
-    let duplLoc: String = toString(&m2.name.span);
-    let name: String = toString(&m1.name.content);
-    fprintf(stderr, "%s: %s: Method redeclaration.\n", errLoc.buffer, ERR_STR);
-    fprintf(stderr, "%s: %s: A method named `%s` with that signature is already declared here.\n", duplLoc.buffer, ERR_STR, name.buffer);
-    drop(&name);
-    drop(&duplLoc);
-    drop(&errLoc);
-    return newTCStateFailure(ERROR_DUPLICATE_METHOD);
-}
-
 func reportNoFunctionCallCandidate(this: &TypeChecker, callID: usize, functions: &FunctionLookupList) -> TCState {
     trace("TypeChecker.reportNoFunctionCallCandidate");
     let callExpr: &ParsedExpr = at(&exprs, callID);
@@ -267,29 +253,6 @@ func reportNoFunctionCallCandidate(this: &TypeChecker, callID: usize, functions:
         let f: &FunctionLookup = at(functions, i);
         let loc: String = toString(&f.name.span);
         fprintf(stderr, "%s: %s: A function with that name is located here.\n", loc.buffer, NOTE_STR);
-        drop(&loc);
-    }
-    drop(&name);
-    drop(&loc);
-    this.typeError = true;
-    return newTCStateFailure(ERROR_NO_CALL_CANDIDATE);
-}
-
-func reportNoMethodCallCandidate(this: &TypeChecker, callID: usize, arguments: &TCStateList, methods: &MethodLookupList) -> TCState {
-    trace("TypeChecker.reportNoMethodCallCandidate");
-    let binExpr = at(&exprs, callID);
-    assert(binExpr.kind == EXPR_BINARY);
-    let callExpr: &ParsedExpr = at(&exprs, binExpr.rhs);
-    assert(callExpr.kind == EXPR_CALL, "reportNoMethodCallCandidate: Expected expr to be a call");
-    let loc: String = toString(&callExpr.origToken.span);
-    let name: String = toString(&callExpr.origToken.content);
-    fprintf(stderr, "%s: %s: Could not find matching signature for call to method `%s`.\n", loc.buffer, ERR_STR, name.buffer);
-    assert(methods.length != 0, "reportNoMethodCallCandidate: Expected at least one declaration");
-    // REVIEW: It was suggested that we could hide this extra info behind a `--verbose` flag, which sounds interesting.
-    for (let i: usize = 0; i < methods.length; i = i + 1) {
-        let f: &MethodLookup = at(methods, i);
-        let loc: String = toString(&f.name.span);
-        fprintf(stderr, "%s: %s: A method with that name is located here.\n", loc.buffer, NOTE_STR);
         drop(&loc);
     }
     drop(&name);
@@ -561,7 +524,6 @@ func typeCheckTLI(this: &TypeChecker, tli: &ParsedTopLevelItem) -> TCState {
     trace("TypeChecker.typeCheckTLI");
     if (tli.ignored) return blank;
     this.currentFunction = null;
-    this.currentMethod = null;
     let currentModule: &ModuleLookup = at(&this.lookup.modules, this.currentModule);
     assert(currentModule.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
     if (tli.kind == TLI_IMPORT) {
@@ -606,115 +568,10 @@ func typeCheckStructDecl(this: &TypeChecker, structID: usize) -> TCState {
             if (!isInvalid(&failure)) return failure;
             setReadyState(structLookup, STRUCT_FIELDS_COMPLETE);
         }
-        if (!getReadyState(structLookup, STRUCT_SIGNATURE_COMPLETE)) {
-            let lookup: bool = false;
-            let error: usize = 0;
-            for (let i: usize = 0; i < context.methodLength; i = i + 1) {
-                let methodID: usize = getMethodAtIndex(context, i);
-                let state: TCState = typeCheckMethod(this, structID, methodID, true);
-                if (isError(&state)) {
-                    let err: usize = getError(&state);
-                    if (err == ERROR_LOOKUP_NOT_READY) lookup = true;
-                    if (isCriticalError(&state)) error = err;
-                }
-                // Don't need to do anything with the StructLookup here because typeCheckMethod
-                // already updates MethodLookup accordingly
-            }
-            if (error != ERROR_INVALID) return newTCStateFailure(error);
-            if (lookup) return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
-            setReadyState(structLookup, STRUCT_SIGNATURE_COMPLETE);
-        }
-        if (!getReadyState(structLookup, STRUCT_METHODS_COMPLETE)) {
-            let lookup: bool = false;
-            for (let i: usize = 0; i < context.methodLength; i = i + 1) {
-                let methodID: usize = getMethodAtIndex(context, i);
-                let state: TCState = typeCheckMethod(this, structID, methodID, false);
-                if (isError(&state)) {
-                    let err: usize = getError(&state);
-                    if (err == ERROR_LOOKUP_NOT_READY) lookup = true;
-                    if (isCriticalError(&state)) return state;
-                }
-            }
-            if (lookup) return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
-            setReadyState(structLookup, STRUCT_METHODS_COMPLETE);
-        }
         setReadyState(structLookup, STRUCT_READY_TO_USE);
     }
     (*strukt).typeState = newTCStateSuccess();
     return result;
-}
-
-func typeCheckMethod(this: &TypeChecker, structID: usize, methodID: usize, onlySignature: bool) -> TCState {
-    trace("TypeChecker.typeCheckMethod");
-    // REVIEW: We can improve performance by passing the StructLookup instead of the ID
-    let method: &ParsedMethod = at(&methods, methodID);
-    if (method.ignored) return blank;
-    let moduleLookup: &ModuleLookup = at(&this.lookup.modules, this.currentModule);
-    let structLookup: &StructLookup = getStructByGlobalID(moduleLookup, structID);
-    let methodLookup: &MethodLookup = getMethodByGlobalID(structLookup, methodID);
-    if (getReadyState(methodLookup, METHOD_BODY_COMPLETE)) {
-        assert(getReadyState(methodLookup, METHOD_READY_TO_USE), "Method should be ready to use at this point");
-        return method.typeState;
-    }
-    this.currentMethod = methodLookup;
-    if (!getReadyState(methodLookup, METHOD_READY_TO_USE)) {
-        if (!getReadyState(methodLookup, METHOD_PARAMS_COMPLETE)) {
-            let failure: TCState = blank;
-            clear(&methodLookup.params);
-            for (let i: usize = 0; i < method.params.paramLength; i = i + 1) {
-                let typ: usize = getTypeAtIndex(&method.params, i);
-                let name: Token = getNameAtIndex(&method.params, i);
-                let dupl: VariableLookup = blank;
-                if (checkForDuplicateParam(methodLookup, &name, &dupl)) {
-                    failure = reportDuplicateParameter(this, name, dupl.name.span);
-                    setReadyState(methodLookup, METHOD_PARAMS_COMPLETE);
-                    continue;
-                }
-                let state: TCState = typeCheckTypeNode(this, typ);
-                if (isError(&state)) {
-                    failure = state;
-                    continue;
-                }
-                addParameter(methodLookup, NODE_ID_OFFSET + i, name, state);
-            }
-            if (!isInvalid(&failure)) return failure;
-            setReadyState(methodLookup, METHOD_PARAMS_COMPLETE);
-        }
-        if (!getReadyState(methodLookup, METHOD_RETTYPE_COMPLETE)) {
-            let retState: TCState = typeCheckTypeNode(this, method.retTypeID);
-            if (isError(&retState)) return retState;
-            setReturnType(methodLookup, retState);
-            setReadyState(methodLookup, METHOD_RETTYPE_COMPLETE);
-        }
-        setReadyState(methodLookup, METHOD_READY_TO_USE);
-    }
-    if (onlySignature) {
-        assert(getReadyState(methodLookup, METHOD_READY_TO_USE), "expected method to be ready for use after checking signature");
-        return newTCStateSuccess();
-    }
-    (*method).typeState = newTCStateSuccess();
-    if (!getReadyState(methodLookup, METHOD_DUPLICATE_CHECK)) {
-        // FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
-        let _dupl: usize = 0;
-        if (containsDuplicateMethod(structLookup, methodLookup, &_dupl)) {
-            assert(_dupl != 0, "Duplicate MethodLookup is null");
-            return reportDuplicateMethod(this, methodLookup, _dupl as &MethodLookup);
-        }
-        setReadyState(methodLookup, METHOD_DUPLICATE_CHECK);
-    }
-    if (!getReadyState(methodLookup, METHOD_BODY_COMPLETE)) {
-        let scopes: ScopeLookupList = blank;
-        let scope: ScopeLookup = blank;
-        for (let i: usize = 0; i < methodLookup.params.length; i = i + 1) {
-            addVariable(&scope, *(at(&methodLookup.params, i)));
-        }
-        push(&scopes, scope);
-        let blockState: TCState = typeCheckBlock(this, method.body, &scopes);
-        pop(&scopes);
-        if (isError(&blockState)) return blockState;
-        setReadyState(methodLookup, METHOD_BODY_COMPLETE);
-    }
-    return method.typeState;
 }
 
 func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupList) -> TCState {
@@ -879,67 +736,36 @@ func typeCheckStmt(this: &TypeChecker, stmtID: usize, scopes: &ScopeLookupList) 
             return stmt.typeState;
         let exprState: TCState = typeCheckExpr(this, stmt.expr, scopes);
         if (isError(&exprState)) return exprState;
-        if (this.currentFunction != null) {
-            assert(getReadyState(this.currentFunction, FUNC_READY_TO_USE), "Function is not ready");
-            let _retType: &Type = at(&types, getType(&this.currentFunction.returnType));
-            if (isNone(_retType)) todo_with_msg("unexpected ret expr where empty function");
-            let retState: &TCState = &this.currentFunction.returnType;
-            assert(isSuccess(retState), "ready to use function has invalid return type");
-            assert(isType(retState), "ready to use function has non-type as return type");
-            if (wantsInfer(&exprState)) {
-                exprState = inferTypeOntoExpr(this, stmt.expr, getType(retState));
-                if (isError(&exprState)) return exprState;
-                assert(isType(&exprState), "Failed to infer type of return expression");
-            }
-            let exprType: &Type = at(&types, getType(&exprState));
-            let retType: &Type = at(&types, getType(retState));
-            if (!equals(exprType, retType)) {
-                return reportTypeMismatch(this, stmt.span, retType, exprType);
-            }
-            (*stmt).typeState = *retState;
-            return newTCStateSuccess();
-        } else if (this.currentMethod != null) {
-            assert(getReadyState(this.currentMethod, METHOD_READY_TO_USE), "Method is not ready");
-            let _retType: &Type = at(&types, getType(&this.currentMethod.returnType));
-            if (isNone(_retType)) todo_with_msg("unexpected ret expr where empty method");
-            let retState: &TCState = &this.currentMethod.returnType;
-            assert(isSuccess(retState), "ready to use method has invalid return type");
-            assert(isType(retState), "ready to use method has non-type as return type");
-            if (wantsInfer(&exprState)) {
-                exprState = inferTypeOntoExpr(this, stmt.expr, getType(retState));
-                if (isError(&exprState)) return exprState;
-                assert(isType(&exprState), "Failed to infer type of return expression");
-            }
-            let exprType: &Type = at(&types, getType(&exprState));
-            let retType: &Type = at(&types, getType(retState));
-            if (!equals(exprType, retType)) {
-                return reportTypeMismatch(this, stmt.span, retType, exprType);
-            }
-            (*stmt).typeState = *retState;
-            return newTCStateSuccess();
-        } else {
-            unreachable("Expected to be either in a method or function, got none of both");
+        assert(this.currentFunction != null);
+        assert(getReadyState(this.currentFunction, FUNC_READY_TO_USE), "Function is not ready");
+        let _retType: &Type = at(&types, getType(&this.currentFunction.returnType));
+        if (isNone(_retType)) todo_with_msg("unexpected ret expr where empty function");
+        let retState: &TCState = &this.currentFunction.returnType;
+        assert(isSuccess(retState), "ready to use function has invalid return type");
+        assert(isType(retState), "ready to use function has non-type as return type");
+        if (wantsInfer(&exprState)) {
+            exprState = inferTypeOntoExpr(this, stmt.expr, getType(retState));
+            if (isError(&exprState)) return exprState;
+            assert(isType(&exprState), "Failed to infer type of return expression");
         }
+        let exprType: &Type = at(&types, getType(&exprState));
+        let retType: &Type = at(&types, getType(retState));
+        if (!equals(exprType, retType)) {
+            return reportTypeMismatch(this, stmt.span, retType, exprType);
+        }
+        (*stmt).typeState = *retState;
+        return newTCStateSuccess();
     } else if (stmt.kind == STMT_RETURN_EMPTY) {
-        if (this.currentFunction != null) {
-            assert(getReadyState(this.currentFunction, FUNC_READY_TO_USE), "Function is not ready");
-            let retType: &Type = at(&types, getType(&this.currentFunction.returnType));
-            if (!isNone(retType)) {
-                printf("%s\n", toString(&stmt.span).buffer);
-                printf("%llu %llu\n", retType.kind, retType.typeIndex);
-                todo_with_msg("function returns something, but we wrote return;");
-            }
-            (*stmt).typeState = newTCStateSuccess();
-            return newTCStateSuccess();
-        } else if (this.currentMethod != null) {
-            assert(getReadyState(this.currentMethod, METHOD_READY_TO_USE), "Method is not ready");
-            let retType: &Type = at(&types, getType(&this.currentMethod.returnType));
-            if (!isNone(retType)) todo_with_msg("method returns something, but we wrote return;");
-            (*stmt).typeState = newTCStateSuccess();
-            return newTCStateSuccess();
-        } else {
-            unreachable("Expected to be either in a method or function, got none of both");
+        assert(this.currentFunction != null);
+        assert(getReadyState(this.currentFunction, FUNC_READY_TO_USE), "Function is not ready");
+        let retType: &Type = at(&types, getType(&this.currentFunction.returnType));
+        if (!isNone(retType)) {
+            printf("%s\n", toString(&stmt.span).buffer);
+            printf("%llu %llu\n", retType.kind, retType.typeIndex);
+            todo_with_msg("function returns something, but we wrote return;");
         }
+        (*stmt).typeState = newTCStateSuccess();
+        return newTCStateSuccess();
     } else if (stmt.kind == STMT_WHILE) {
         if (isSuccess(&stmt.typeState))
             return stmt.typeState;
@@ -1386,128 +1212,6 @@ func typeCheckFunctionParameters(this: &TypeChecker, params: &VariableLookupList
     return newTCStateSuccess();
 }
 
-func markMethodCallCandidates(
-    this: &TypeChecker,
-    callContext: &ArrayContext,
-    methods: &MethodLookupList,
-    candidates: &MethodLookupList,
-    arguments: &TCStateList,
-) -> TCState {
-    trace("TypeChecker.markMethodCallCandidates");
-    for (let i: usize = 0; i < methods.length; i = i + 1) {
-        let m: &MethodLookup = at(methods, i);
-        if (!getReadyState(m, METHOD_READY_TO_USE)) {
-            return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
-        }
-        if (m.isStatic) {
-            // Not handled here
-            continue;
-        }
-        if (m.params.length != arguments.length) {
-            continue;
-        }
-        assert(m.params.length != 0, "not a static method");
-        let thisParam: &VariableLookup = at(&m.params, 0);
-        let thisParamState: TCState = thisParam.typeState;
-        assert(isSuccess(&thisParamState), "Expected valid this parameter");
-        let paramType: &Type = at(&types, getType(&thisParamState));
-        let instType: &Type = at(&types, getType(at(arguments, 0)));
-        if (!equals(instType, paramType)) {
-            if (isPointer(paramType) && !isPointer(instType)) {
-                let under: &Type = getUnderlyingType(paramType, false);
-                if (!equals(instType, under)) {
-                    continue;
-                }
-            } else {
-                todo_with_msg("how can this happen");
-            }
-        }
-        let match = true;
-        for (let j: usize = 1; j < m.params.length; j = j + 1) {
-            let argState: TCState = *at(arguments, j);
-            let param: &VariableLookup = at(&m.params, j);
-            let paramState: &TCState = &param.typeState;
-            assert(isSuccess(paramState), "Expected valid method parameter");
-            let paramType: &Type = at(&types, getType(paramState));
-            if (wantsInfer(&argState)) {
-                argState = tryInferTypeOntoExpr(this, getElementAtIndex(callContext, j - 1), getID(paramType), true);
-                if (isError(&argState)) {
-                    todo_with_msg("error when inferring type of param onto argument");
-                }
-                assert(isType(&argState), "Did not infer type of param onto argument properly");
-            }
-            let argType: &Type = at(&types, getType(&argState));
-            if (!equals(argType, paramType)) {
-                match = false;
-                break;
-            }
-        }
-        if (!match) {
-            continue;
-        }
-        push(candidates, *m);
-    }
-    return newTCStateSuccess();
-}
-
-func selectMethodCallCandidate(
-    this: &TypeChecker,
-    exprID: usize,
-    callContext: &ArrayContext,
-    methods: &MethodLookupList,
-    candidates: &MethodLookupList,
-    arguments: &TCStateList,
-    funcID: &usize,
-    scopes: &ScopeLookupList,
-) -> TCState {
-    trace("TypeChecker.selectMethodCallCandidate");
-    if (candidates.length == 0) {
-        return reportNoMethodCallCandidate(this, exprID, arguments, methods);
-    } else if (candidates.length > 1) {
-        return newTCStatePleaseInfer();
-    }
-    assert(candidates.length == 1, "selectMethodCallCandidate: Expected exactly one candidate");
-    let m: &MethodLookup = at(candidates, 0);
-    assert(getReadyState(m, METHOD_READY_TO_USE), "Expected markMethodCallCandidates to validate METHOD_READY_TO_USE");
-    let thisParam: &VariableLookup = at(&m.params, 0);
-    let thisParamState: TCState = thisParam.typeState;
-    assert(isSuccess(&thisParamState), "Expected valid this parameter");
-    let paramType: &Type = at(&types, getType(&thisParamState));
-    let instType: &Type = at(&types, getType(at(arguments, 0)));
-    if (!equals(instType, paramType)) {
-        if (isPointer(paramType) && !isPointer(instType)) {
-            let under: &Type = getUnderlyingType(paramType, false);
-            assert(equals(instType, under), "method call instance type doesn't match");
-            let expr = at(&exprs, exprID);
-            (*expr).lhs = intoPointer(at(&exprs, expr.lhs));
-            let patched: TCState = typeCheckExpr(this, expr.lhs, scopes);
-            assert(isSuccess(&patched), "patched instance failed");
-            assert(isType(&patched), "patched instance state is not a type");
-            assert(equals(at(&types, getType(&patched)), paramType), "patched instance type does not match");
-        } else {
-            todo_with_msg("how can this happen");
-        }
-    }
-    for (let j: usize = 1; j < m.params.length; j = j + 1) {
-        let argState: &TCState = at(arguments, j);
-        let param: &VariableLookup = at(&m.params, j);
-        let paramState: &TCState = &param.typeState;
-        assert(isSuccess(paramState), "Expected valid method parameter");
-        let paramType: &Type = at(&types, getType(paramState));
-        if (wantsInfer(argState)) {
-            *argState = inferTypeOntoExpr(this, getElementAtIndex(callContext, j - 1), getID(paramType));
-            assert(!isError(argState), "selectMethodCallCandidate: Expected infer to be success");
-            assert(isType(argState), "selectMethodCallCandidate: Expected infer to be success");
-        }
-        let argType: &Type = at(&types, getType(argState));
-        assert(equals(argType, paramType), "selectMethodCallCandidate: Expected argument to match parameter");
-    }
-    *funcID = m.globalID;
-    let retType: TCState = m.returnType;
-    assert(isSuccess(&retType), "selectMethodCallCandidate: Expected valid method return type");
-    return retType;
-}
-
 func typeCheckExprStructInit(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupList) -> TCState {
     // REVIEW: This function will later also do union declarations
     trace("TypeChecker.typeCheckExprStructInit");
@@ -1776,64 +1480,17 @@ func typeCheckExprMemberAccess(this: &TypeChecker, dotID: usize, scopes: &ScopeL
         assert(isStruct(&lookup));
         let structLookup: &StructLookup = asStruct(&lookup);
         let rhs: &ParsedExpr = at(&exprs, expr.rhs);
-        if (rhs.kind == EXPR_NAME) {
-            if (!getReadyState(structLookup, STRUCT_FIELDS_COMPLETE))
-                return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
-            let fieldName: Token = rhs.origToken;
-            let field: VariableLookup = blank;
-            if (!resolveFieldByName(structLookup, &fieldName, &field)) {
-                return reportUnknownField(this, fieldName, structLookup);
-            }
-            let fieldState: TCState = field.typeState;
-            assert(isSuccess(&fieldState), "Expected valid field type");
-            return fieldState;
-        } else if (rhs.kind == EXPR_CALL) {
-            if (!getReadyState(structLookup, STRUCT_SIGNATURE_COMPLETE))
-                return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
-            let methodName: Token = rhs.origToken;
-            let methods: MethodLookupList = resolveMethodByName(structLookup, &methodName);
-            if (methods.length == 0) {
-                let loc: String = getLocation(&methodName);
-                let structName: String = toString(&structLookup.name);
-                let structLoc: String = getLocation(&structLookup.name);
-                let n: String = toString(&methodName.content);
-                fprintf(stderr,
-                    "%s: %s: Struct `%s` has no method named `%s`.\n%s: %s: Struct declared here.\n",
-                    loc.buffer, ERR_STR, structName.buffer, n.buffer, structLoc.buffer, NOTE_STR,
-                );
-                drop(&n);
-                drop(&structLoc);
-                drop(&structName);
-                drop(&loc);
-                this.typeError = true;
-                return newTCStateFailure(ERROR_NO_SUCH_METHOD);
-            }
-            let callContext: &ArrayContext = &rhs.arrayContext;
-            let arguments: TCStateList = blank;
-            push(&arguments, instance);
-            for (let i: usize = 0; i < callContext.elemLength; i = i + 1) {
-                let argID: usize = getElementAtIndex(callContext, i);
-                let arg: TCState = typeCheckExpr(this, argID, scopes);
-                if (isError(&arg)) return arg;
-                push(&arguments, arg);
-            }
-            assert(arguments.length == callContext.elemLength + 1);
-            let candidates: MethodLookupList = blank;
-            let mark: TCState = markMethodCallCandidates(this, callContext, &methods, &candidates, &arguments);
-            if (isError(&mark)) return mark;
-            // methods contains all methods with the same amount of arguments and
-            // candidates where infer-semantics could validate the function
-            // e.g. foo(i: i32) + foo(i: u64) for foo(5)
-            let globalID: usize = 0;
-            let sweep: TCState = selectMethodCallCandidate(this, dotID, callContext, &methods, &candidates, &arguments, &globalID, scopes);
-            if (isError(&sweep)) return sweep;
-            if (wantsInfer(&sweep)) return sweep;
-            assert(isType(&sweep));
-            (*rhs).lhs = globalID;
-            return sweep;
-        } else {
-            unreachable("Got non-field non-call RHS in the dot operation.");
+        assert(rhs.kind == EXPR_NAME);
+        if (!getReadyState(structLookup, STRUCT_FIELDS_COMPLETE))
+            return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
+        let fieldName: Token = rhs.origToken;
+        let field: VariableLookup = blank;
+        if (!resolveFieldByName(structLookup, &fieldName, &field)) {
+            return reportUnknownField(this, fieldName, structLookup);
         }
+        let fieldState: TCState = field.typeState;
+        assert(isSuccess(&fieldState), "Expected valid field type");
+        return fieldState;
     } else {
         unreachable("MemberAccess expected Struct as LHS");
     }
@@ -2356,7 +2013,6 @@ func newTypeChecker() -> TypeChecker {
         isComptimeContext: false,
         currentModule: 0,
         currentFunction: null,
-        currentMethod: null,
         lookup: blank,
         typeError: false,
     };

@@ -46,9 +46,6 @@ struct StructContext {
     fieldTypes: &usize;
     fieldLength: usize;
     fieldCapacity: usize;
-    methods: &usize;
-    methodLength: usize;
-    methodCapacity: usize;
 }
 func addField(this: &StructContext, name: Token, typ: &ParsedTypeNode) {
     trace("StructContext.addField");
@@ -65,18 +62,6 @@ func addField(this: &StructContext, name: Token, typ: &ParsedTypeNode) {
     this.fieldTypes[this.fieldLength] = getID(typ);
     this.fieldLength = this.fieldLength + 1;
 }
-func addMethod(this: &StructContext, method: &ParsedMethod) {
-    trace("StructContext.addMethod");
-    if (this.methodLength >= this.methodCapacity) {
-        let newCap: usize = this.methodCapacity * 2;
-        if (newCap == 0) newCap = 1;
-        this.methods = realloc(this.methods, newCap * sizeof usize);
-        assert(this.methods != null, "Could not resize method list");
-        this.methodCapacity = newCap;
-    }
-    this.methods[this.methodLength] = getID(method);
-    this.methodLength = this.methodLength + 1;
-}
 func getFieldNameAtIndex(this: &StructContext, index: usize) -> Token {
     trace("StructContext.getFieldNameAtIndex");
     assert(index < this.fieldLength, "Out of bounds access in StructContext.getFieldNameAtIndex");
@@ -86,11 +71,6 @@ func getFieldTypeAtIndex(this: &StructContext, index: usize) -> usize {
     trace("StructContext.getFieldTypeAtIndex");
     assert(index < this.fieldLength, "Out of bounds access in StructContext.getFieldTypeAtIndex");
     return this.fieldTypes[index];
-}
-func getMethodAtIndex(this: &StructContext, index: usize) -> usize {
-    trace("StructContext.getMethodAtIndex");
-    assert(index < this.methodLength, "Out of bounds access in StructContext.getMethodAtIndex");
-    return this.methods[index];
 }
 func getFieldIndex(this: &StructContext, name: &SubStr) -> usize {
     trace("StructContext.getFieldIndex");
