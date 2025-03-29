@@ -588,8 +588,8 @@ struct TypeChecker {
             if (!getReadyState(structLookup, STRUCT_FIELDS_COMPLETE)) {
                 let failure: TCState = blank;
                 for (let i: usize = 0; i < context.fieldLength; i = i + 1) {
-                    let name: Token = context.getFieldNameAtIndex(i);
-                    let typ: usize = context.getFieldTypeAtIndex(i);
+                    let name: Token = getFieldNameAtIndex(context, i);
+                    let typ: usize = getFieldTypeAtIndex(context, i);
                     let dupl: VariableLookup = blank;
                     if (checkForDuplicateField(structLookup, &name, &dupl)) {
                         failure = this.reportDuplicateField(name, dupl.name.span);
@@ -609,7 +609,7 @@ struct TypeChecker {
                 let lookup: bool = false;
                 let error: usize = 0;
                 for (let i: usize = 0; i < context.methodLength; i = i + 1) {
-                    let methodID: usize = context.getMethodAtIndex(i);
+                    let methodID: usize = getMethodAtIndex(context, i);
                     let state: TCState = this.typeCheckMethod(structID, methodID, true);
                     if (isError(&state)) {
                         let err: usize = getError(&state);
@@ -626,7 +626,7 @@ struct TypeChecker {
             if (!getReadyState(structLookup, STRUCT_METHODS_COMPLETE)) {
                 let lookup: bool = false;
                 for (let i: usize = 0; i < context.methodLength; i = i + 1) {
-                    let methodID: usize = context.getMethodAtIndex(i);
+                    let methodID: usize = getMethodAtIndex(context, i);
                     let state: TCState = this.typeCheckMethod(structID, methodID, false);
                     if (isError(&state)) {
                         let err: usize = getError(&state);
@@ -661,8 +661,8 @@ struct TypeChecker {
                 let failure: TCState = blank;
                 clear(&methodLookup.params);
                 for (let i: usize = 0; i < method.params.paramLength; i = i + 1) {
-                    let typ: usize = method.params.getTypeAtIndex(i);
-                    let name: Token = method.params.getNameAtIndex(i);
+                    let typ: usize = getTypeAtIndex(&method.params, i);
+                    let name: Token = getNameAtIndex(&method.params, i);
                     let dupl: VariableLookup = blank;
                     if (checkForDuplicateParam(methodLookup, &name, &dupl)) {
                         failure = this.reportDuplicateParameter(name, dupl.name.span);
@@ -732,8 +732,8 @@ struct TypeChecker {
                 let failure: TCState = blank;
                 clear(&funcLookup.params);
                 for (let i: usize = 0; i < function.params.paramLength; i = i + 1) {
-                    let typ: usize = function.params.getTypeAtIndex(i);
-                    let name: Token = function.params.getNameAtIndex(i);
+                    let typ: usize = getTypeAtIndex(&function.params, i);
+                    let name: Token = getNameAtIndex(&function.params, i);
                     let dupl: VariableLookup = blank;
                     if (checkForDuplicateParam(funcLookup, &name, &dupl)) {
                         failure = this.reportDuplicateParameter(name, dupl.name.span);
@@ -1056,7 +1056,7 @@ struct TypeChecker {
         } else if (expr.kind == EXPR_ARRAY_LIT) {
             let context: &ArrayContext = &expr.arrayContext;
             assert(context.elemLength != 0, "Zero sized Array Literal spotted");
-            let elemIndex: usize = context.getElementAtIndex(0);
+            let elemIndex: usize = getElementAtIndex(context, 0);
             let elemState: TCState = this.typeCheckExpr(elemIndex, scopes);
             if (isError(&elemState)) return elemState;
             if (wantsInfer(&elemState)) return elemState;
@@ -1065,7 +1065,7 @@ struct TypeChecker {
                 let elemType: &Type = types.at(elemTypeID);
                 let lastErrState: TCState = blank;
                 for (let i: usize = 1; i < context.elemLength; i = i + 1) {
-                    let nextIndex: usize = context.getElementAtIndex(i);
+                    let nextIndex: usize = getElementAtIndex(context, i);
                     let nextState: TCState = this.typeCheckExpr(nextIndex, scopes);
                     if (isError(&nextState)) {
                         lastErrState = nextState;
@@ -1266,7 +1266,7 @@ struct TypeChecker {
         let callContext: &ArrayContext = &expr.arrayContext;
         let arguments: TCStateList = blank;
         for (let i: usize = 0; i < callContext.elemLength; i = i + 1) {
-            let argID: usize = callContext.getElementAtIndex(i);
+            let argID: usize = getElementAtIndex(callContext, i);
             let arg: TCState = this.typeCheckExpr(argID, scopes);
             if (isError(&arg)) return arg;
             push(&arguments, arg);
@@ -1346,7 +1346,7 @@ struct TypeChecker {
         for (let i: usize = 0; i < callContext.elemLength; i = i + 1) {
             let param = at(params, i);
             let pTypeID = getType(&param.typeState);
-            let argID: usize = callContext.getElementAtIndex(i);
+            let argID: usize = getElementAtIndex(callContext, i);
             let arg: TCState = this.tryInferTypeOntoExpr(argID, pTypeID, checkOnly);
             if (isError(&arg)) {
                 todo_with_msg("typeCheckFunctionArguments: arg param couldnt infer");
@@ -1366,7 +1366,7 @@ struct TypeChecker {
             assert(isSuccess(paramState), "Expected valid function parameter");
             let paramType: &Type = types.at(getType(paramState));
             if (wantsInfer(&argState)) {
-                argState = this.tryInferTypeOntoExpr(callContext.getElementAtIndex(j), paramType.getID(), checkOnly);
+                argState = this.tryInferTypeOntoExpr(getElementAtIndex(callContext, j), paramType.getID(), checkOnly);
                 if (isError(&argState)) {
                     todo_with_msg("error when inferring type of param onto argument");
                 }
@@ -1375,7 +1375,7 @@ struct TypeChecker {
             let argType: &Type = types.at(getType(&argState));
             if (!argType.equals(paramType)) {
                 if (!checkOnly) {
-                    let e = exprs.at(callContext.getElementAtIndex(j));
+                    let e = exprs.at(getElementAtIndex(callContext, j));
                     this.reportTypeMismatch(e.span, paramType, argType);
                 }
                 succ = false;
@@ -1430,7 +1430,7 @@ struct TypeChecker {
                 assert(isSuccess(paramState), "Expected valid method parameter");
                 let paramType: &Type = types.at(getType(paramState));
                 if (wantsInfer(&argState)) {
-                    argState = this.tryInferTypeOntoExpr(callContext.getElementAtIndex(j - 1), paramType.getID(), true);
+                    argState = this.tryInferTypeOntoExpr(getElementAtIndex(callContext, j - 1), paramType.getID(), true);
                     if (isError(&argState)) {
                         todo_with_msg("error when inferring type of param onto argument");
                     }
@@ -1495,7 +1495,7 @@ struct TypeChecker {
             assert(isSuccess(paramState), "Expected valid method parameter");
             let paramType: &Type = types.at(getType(paramState));
             if (wantsInfer(argState)) {
-                *argState = this.inferTypeOntoExpr(callContext.getElementAtIndex(j - 1), paramType.getID());
+                *argState = this.inferTypeOntoExpr(getElementAtIndex(callContext, j - 1), paramType.getID());
                 assert(!isError(argState), "selectMethodCallCandidate: Expected infer to be success");
                 assert(isType(argState), "selectMethodCallCandidate: Expected infer to be success");
             }
@@ -1542,8 +1542,8 @@ struct TypeChecker {
             let hits: usize = 0;
             assert(structLookup.fields.length < 50, "Sorry, I need to hack this for now");
             for (let i: usize = 0; i < context.fieldLength; i = i + 1) {
-                let name: Token = context.getFieldNameAtIndex(i);
-                let exprID: usize = context.getFieldExprAtIndex(i);
+                let name: Token = getFieldNameAtIndex(context, i);
+                let exprID: usize = getFieldExprAtIndex(context, i);
                 let exprState: TCState = this.typeCheckExpr(exprID, scopes);
                 if (isError(&exprState)) return exprState;
                 if (!hasField(structLookup, &name.content)) {
@@ -1813,7 +1813,7 @@ struct TypeChecker {
                 let arguments: TCStateList = blank;
                 push(&arguments, instance);
                 for (let i: usize = 0; i < callContext.elemLength; i = i + 1) {
-                    let argID: usize = callContext.getElementAtIndex(i);
+                    let argID: usize = getElementAtIndex(callContext, i);
                     let arg: TCState = this.typeCheckExpr(argID, scopes);
                     if (isError(&arg)) return arg;
                     push(&arguments, arg);
@@ -1946,7 +1946,7 @@ struct TypeChecker {
                 }
                 let lastErrState: TCState = blank;
                 for (let i: usize = 0; i < expr.arrayContext.elemLength; i = i + 1) {
-                    tid = this.tryInferTypeOntoExpr(expr.arrayContext.getElementAtIndex(i), typ.typeIndex, checkOnly);
+                    tid = this.tryInferTypeOntoExpr(getElementAtIndex(&expr.arrayContext, i), typ.typeIndex, checkOnly);
                     if (isError(&tid)) {
                         lastErrState = tid;
                     }
@@ -1963,7 +1963,7 @@ struct TypeChecker {
                     }
                     return newTCStateFailure(ERROR_ARRAY_SIZE_MISMATCH);
                 }
-                tid = this.tryInferTypeOntoExpr(expr.arrayContext.getElementAtIndex(0), typ.typeIndex, checkOnly);
+                tid = this.tryInferTypeOntoExpr(getElementAtIndex(&expr.arrayContext, 0), typ.typeIndex, checkOnly);
                 if (isError(&tid)) return tid;
             }
             tid = newTCStateType(typeID);

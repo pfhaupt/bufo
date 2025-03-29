@@ -20,24 +20,24 @@ struct ArrayContext {
     elemLength: usize;
     elemCapacity: usize;
     size: usize;
+}
 
-    func addElement(&this, elem: &ParsedExpr) {
-        trace("ArrayContext.addElement");
-        if (this.elemLength >= this.elemCapacity) {
-            let newCap: usize = this.elemCapacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.elemList = realloc(this.elemList, newCap * sizeof usize);
-            assert(this.elemList != null, "Could not resize elem list");
-            this.elemCapacity = newCap;
-        }
-        this.elemList[this.elemLength] = getID(elem);
-        this.elemLength = this.elemLength + 1;
+func addElement(this: &ArrayContext, elem: &ParsedExpr) {
+    trace("ArrayContext.addElement");
+    if (this.elemLength >= this.elemCapacity) {
+        let newCap: usize = this.elemCapacity * 2;
+        if (newCap == 0) newCap = 1;
+        this.elemList = realloc(this.elemList, newCap * sizeof usize);
+        assert(this.elemList != null, "Could not resize elem list");
+        this.elemCapacity = newCap;
     }
+    this.elemList[this.elemLength] = getID(elem);
+    this.elemLength = this.elemLength + 1;
+}
 
-    func getElementAtIndex(&this, index: usize) -> usize {
-        assert(index < this.elemLength, "Out of bounds access in ArrayContext.getElementAtIndex");
-        return this.elemList[index];
-    }
+func getElementAtIndex(this: &ArrayContext, index: usize) -> usize {
+    assert(index < this.elemLength, "Out of bounds access in ArrayContext.getElementAtIndex");
+    return this.elemList[index];
 }
 
 struct StructContext {
@@ -48,73 +48,73 @@ struct StructContext {
     methods: &usize;
     methodLength: usize;
     methodCapacity: usize;
-    func addField(&this, name: Token, typ: &ParsedTypeNode) {
-        trace("StructContext.addField");
-        if (this.fieldLength >= this.fieldCapacity) {
-            let newCap: usize = this.fieldCapacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.fieldNames = realloc(this.fieldNames, newCap * sizeof Token);
-            this.fieldTypes = realloc(this.fieldTypes, newCap * sizeof usize);
-            assert(this.fieldNames != null, "Could not resize field list");
-            assert(this.fieldTypes != null, "Could not resize field list");
-            this.fieldCapacity = newCap;
+}
+func addField(this: &StructContext, name: Token, typ: &ParsedTypeNode) {
+    trace("StructContext.addField");
+    if (this.fieldLength >= this.fieldCapacity) {
+        let newCap: usize = this.fieldCapacity * 2;
+        if (newCap == 0) newCap = 1;
+        this.fieldNames = realloc(this.fieldNames, newCap * sizeof Token);
+        this.fieldTypes = realloc(this.fieldTypes, newCap * sizeof usize);
+        assert(this.fieldNames != null, "Could not resize field list");
+        assert(this.fieldTypes != null, "Could not resize field list");
+        this.fieldCapacity = newCap;
+    }
+    this.fieldNames[this.fieldLength] = name;
+    this.fieldTypes[this.fieldLength] = getID(typ);
+    this.fieldLength = this.fieldLength + 1;
+}
+func addMethod(this: &StructContext, method: &ParsedMethod) {
+    trace("StructContext.addMethod");
+    if (this.methodLength >= this.methodCapacity) {
+        let newCap: usize = this.methodCapacity * 2;
+        if (newCap == 0) newCap = 1;
+        this.methods = realloc(this.methods, newCap * sizeof usize);
+        assert(this.methods != null, "Could not resize method list");
+        this.methodCapacity = newCap;
+    }
+    this.methods[this.methodLength] = getID(method);
+    this.methodLength = this.methodLength + 1;
+}
+func getFieldNameAtIndex(this: &StructContext, index: usize) -> Token {
+    trace("StructContext.getFieldNameAtIndex");
+    assert(index < this.fieldLength, "Out of bounds access in StructContext.getFieldNameAtIndex");
+    return this.fieldNames[index];
+}
+func getFieldTypeAtIndex(this: &StructContext, index: usize) -> usize {
+    trace("StructContext.getFieldTypeAtIndex");
+    assert(index < this.fieldLength, "Out of bounds access in StructContext.getFieldTypeAtIndex");
+    return this.fieldTypes[index];
+}
+func getMethodAtIndex(this: &StructContext, index: usize) -> usize {
+    trace("StructContext.getMethodAtIndex");
+    assert(index < this.methodLength, "Out of bounds access in StructContext.getMethodAtIndex");
+    return this.methods[index];
+}
+func getFieldIndex(this: &StructContext, name: &SubStr) -> usize {
+    trace("StructContext.getFieldIndex");
+    for (let i: usize = 0; i < this.fieldLength; i = i + 1) {
+        let f: Token = getFieldNameAtIndex(this, i);
+        if (f.content.equals(name)) {
+            return i;
         }
-        this.fieldNames[this.fieldLength] = name;
-        this.fieldTypes[this.fieldLength] = getID(typ);
-        this.fieldLength = this.fieldLength + 1;
     }
-    func addMethod(&this, method: &ParsedMethod) {
-        trace("StructContext.addMethod");
-        if (this.methodLength >= this.methodCapacity) {
-            let newCap: usize = this.methodCapacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.methods = realloc(this.methods, newCap * sizeof usize);
-            assert(this.methods != null, "Could not resize method list");
-            this.methodCapacity = newCap;
+    unreachable("Expected to find field index at this point");
+}
+func getFieldOffset(this: &StructContext, name: &SubStr) -> usize {
+    trace("StructContext.getFieldOffset");
+    let offset: usize = 0;
+    for (let i: usize = 0; i < this.fieldLength; i = i + 1) {
+        let f: Token = getFieldNameAtIndex(this, i);
+        let _t: &ParsedTypeNode = typeNodes.at(getFieldTypeAtIndex(this, i));
+        assert(isSuccess(&_t.typeState), "Expected valid field type in getFieldOffset");
+        let t: &Type = types.at(getType(&_t.typeState));
+        if (f.content.equals(name)) {
+            return offset;
         }
-        this.methods[this.methodLength] = getID(method);
-        this.methodLength = this.methodLength + 1;
+        offset = offset + t.getSize();
     }
-    func getFieldNameAtIndex(&this, index: usize) -> Token {
-        trace("StructContext.getFieldNameAtIndex");
-        assert(index < this.fieldLength, "Out of bounds access in StructContext.getFieldNameAtIndex");
-        return this.fieldNames[index];
-    }
-    func getFieldTypeAtIndex(&this, index: usize) -> usize {
-        trace("StructContext.getFieldTypeAtIndex");
-        assert(index < this.fieldLength, "Out of bounds access in StructContext.getFieldTypeAtIndex");
-        return this.fieldTypes[index];
-    }
-    func getMethodAtIndex(&this, index: usize) -> usize {
-        trace("StructContext.getMethodAtIndex");
-        assert(index < this.methodLength, "Out of bounds access in StructContext.getMethodAtIndex");
-        return this.methods[index];
-    }
-    func getFieldIndex(&this, name: &SubStr) -> usize {
-        trace("StructContext.getFieldIndex");
-        for (let i: usize = 0; i < this.fieldLength; i = i + 1) {
-            let f: Token = this.getFieldNameAtIndex(i);
-            if (f.content.equals(name)) {
-                return i;
-            }
-        }
-        unreachable("Expected to find field index at this point");
-    }
-    func getFieldOffset(&this, name: &SubStr) -> usize {
-        trace("StructContext.getFieldOffset");
-        let offset: usize = 0;
-        for (let i: usize = 0; i < this.fieldLength; i = i + 1) {
-            let f: Token = this.getFieldNameAtIndex(i);
-            let _t: &ParsedTypeNode = typeNodes.at(this.getFieldTypeAtIndex(i));
-            assert(isSuccess(&_t.typeState), "Expected valid field type in getFieldOffset");
-            let t: &Type = types.at(getType(&_t.typeState));
-            if (f.content.equals(name)) {
-                return offset;
-            }
-            offset = offset + t.getSize();
-        }
-        unreachable("Expected to find field offset at this point");
-    }
+    unreachable("Expected to find field offset at this point");
 }
 
 struct StructInitContext {
@@ -122,31 +122,31 @@ struct StructInitContext {
     fieldExprs: &usize;
     fieldLength: usize;
     fieldCapacity: usize;
-    func addField(&this, name: Token, expr: &ParsedExpr) {
-        trace("StructInitContext.addField");
-        if (this.fieldLength >= this.fieldCapacity) {
-            let newCap: usize = this.fieldCapacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.fieldNames = realloc(this.fieldNames, newCap * sizeof Token);
-            this.fieldExprs = realloc(this.fieldExprs, newCap * sizeof usize);
-            assert(this.fieldNames != null, "Could not resize field list");
-            assert(this.fieldExprs != null, "Could not resize field list");
-            this.fieldCapacity = newCap;
-        }
-        this.fieldNames[this.fieldLength] = name;
-        this.fieldExprs[this.fieldLength] = getID(expr);
-        this.fieldLength = this.fieldLength + 1;
+}
+func addField(this: &StructInitContext, name: Token, expr: &ParsedExpr) {
+    trace("StructInitContext.addField");
+    if (this.fieldLength >= this.fieldCapacity) {
+        let newCap: usize = this.fieldCapacity * 2;
+        if (newCap == 0) newCap = 1;
+        this.fieldNames = realloc(this.fieldNames, newCap * sizeof Token);
+        this.fieldExprs = realloc(this.fieldExprs, newCap * sizeof usize);
+        assert(this.fieldNames != null, "Could not resize field list");
+        assert(this.fieldExprs != null, "Could not resize field list");
+        this.fieldCapacity = newCap;
     }
-    func getFieldNameAtIndex(&this, index: usize) -> Token {
-        trace("StructInitContext.getFieldNameAtIndex");
-        assert(index < this.fieldLength, "Out of bounds access in StructInitContext.getFieldNameAtIndex");
-        return this.fieldNames[index];
-    }
-    func getFieldExprAtIndex(&this, index: usize) -> usize {
-        trace("StructInitContext.getFieldExprAtIndex");
-        assert(index < this.fieldLength, "Out of bounds access in StructInitContext.getFieldExprAtIndex");
-        return this.fieldExprs[index];
-    }
+    this.fieldNames[this.fieldLength] = name;
+    this.fieldExprs[this.fieldLength] = getID(expr);
+    this.fieldLength = this.fieldLength + 1;
+}
+func getFieldNameAtIndex(this: &StructInitContext, index: usize) -> Token {
+    trace("StructInitContext.getFieldNameAtIndex");
+    assert(index < this.fieldLength, "Out of bounds access in StructInitContext.getFieldNameAtIndex");
+    return this.fieldNames[index];
+}
+func getFieldExprAtIndex(this: &StructInitContext, index: usize) -> usize {
+    trace("StructInitContext.getFieldExprAtIndex");
+    assert(index < this.fieldLength, "Out of bounds access in StructInitContext.getFieldExprAtIndex");
+    return this.fieldExprs[index];
 }
 
 struct ParamContext {
@@ -155,37 +155,37 @@ struct ParamContext {
     paramLength: usize;
     paramCapacity: usize;
     isVarArg: bool;
-    func addParameter(&this, name: Token, typ: &ParsedTypeNode) {
-        trace("ParamContext.addParameter");
-        if (this.paramLength >= this.paramCapacity) {
-            let newCap: usize = this.paramCapacity * 2;
-            if (newCap == 0) newCap = 1;
-            this.paramNames = realloc(this.paramNames, newCap * sizeof Token);
-            this.paramTypes = realloc(this.paramTypes, newCap * sizeof usize);
-            assert(this.paramNames != null, "Could not resize param list");
-            assert(this.paramTypes != null, "Could not resize param list");
-            this.paramCapacity = newCap;
-        }
-        this.paramNames[this.paramLength] = name;
-        this.paramTypes[this.paramLength] = getID(typ);
-        this.paramLength = this.paramLength + 1;
+}
+func addParameter(this: &ParamContext, name: Token, typ: &ParsedTypeNode) {
+    trace("ParamContext.addParameter");
+    if (this.paramLength >= this.paramCapacity) {
+        let newCap: usize = this.paramCapacity * 2;
+        if (newCap == 0) newCap = 1;
+        this.paramNames = realloc(this.paramNames, newCap * sizeof Token);
+        this.paramTypes = realloc(this.paramTypes, newCap * sizeof usize);
+        assert(this.paramNames != null, "Could not resize param list");
+        assert(this.paramTypes != null, "Could not resize param list");
+        this.paramCapacity = newCap;
     }
+    this.paramNames[this.paramLength] = name;
+    this.paramTypes[this.paramLength] = getID(typ);
+    this.paramLength = this.paramLength + 1;
+}
 
-    func hasThis(&this) -> bool {
-        if (this.paramLength == 0) return false;
-        return this.getNameAtIndex(0).content.equals(&comptime BUILD_A_KEYWORD("this"));
-    }
+func hasThis(this: &ParamContext) -> bool {
+    if (this.paramLength == 0) return false;
+    return getNameAtIndex(this, 0).content.equals(&comptime BUILD_A_KEYWORD("this"));
+}
 
-    func getNameAtIndex(&this, index: usize) -> Token {
-        trace("ParamContext.getNameAtIndex");
-        assert(index < this.paramLength, "Out of bounds access in ParamContext.getNameAtIndex");
-        return this.paramNames[index];
-    }
-    func getTypeAtIndex(&this, index: usize) -> usize {
-        trace("ParamContext.getTypeAtIndex");
-        assert(index < this.paramLength, "Out of bounds access in ParamContext.getTypeAtIndex");
-        return this.paramTypes[index];
-    }
+func getNameAtIndex(this: &ParamContext, index: usize) -> Token {
+    trace("ParamContext.getNameAtIndex");
+    assert(index < this.paramLength, "Out of bounds access in ParamContext.getNameAtIndex");
+    return this.paramNames[index];
+}
+func getTypeAtIndex(this: &ParamContext, index: usize) -> usize {
+    trace("ParamContext.getTypeAtIndex");
+    assert(index < this.paramLength, "Out of bounds access in ParamContext.getTypeAtIndex");
+    return this.paramTypes[index];
 }
 
 comptime ELSE_BIT: usize = pow2(20);

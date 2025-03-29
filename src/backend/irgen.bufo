@@ -1028,8 +1028,8 @@ func generateFunctionHeader(this: &IRGen, function: &IRFunc, retType: &Type, par
         prepareParameter(this, function, 0, blank, newSubStrOfStrLit("ret"), types.at(retType.intoPointer()), true);
     }
     for (let i: usize = 0; i < params.paramLength; i = i + 1) {
-        let name: Token = params.getNameAtIndex(i);
-        let typ: usize = params.getTypeAtIndex(i);
+        let name: Token = getNameAtIndex(params, i);
+        let typ: usize = getTypeAtIndex(params, i);
         let typDecl: &ParsedTypeNode = typeNodes.at(typ);
         let pType: &Type = types.at(getType(&typDecl.typeState));
         prepareParameter(this, function, i + offset, name.span, name.content, pType, false);
@@ -1349,8 +1349,8 @@ func generateBytecodeExpr(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, ne
         let reg: RegIndex = allocateRegister(function, strukt);
         buildCreateStruct(function, expr.span, reg);
         for (let i: usize = 0; i < expr.structInitContext.fieldLength; i = i + 1) {
-            let name: Token = expr.structInitContext.getFieldNameAtIndex(i);
-            let expr: &ParsedExpr = exprs.at(expr.structInitContext.getFieldExprAtIndex(i));
+            let name: Token = getFieldNameAtIndex(&expr.structInitContext, i);
+            let expr: &ParsedExpr = exprs.at(getFieldExprAtIndex(&expr.structInitContext, i));
             let index: usize = getFieldIndex(structDecl, &name.content);
             let result: RegIndex = generateBytecodeExpr(this, function, expr, false);
             buildInsertValue(function, expr.span, reg, index, result);
@@ -1445,7 +1445,7 @@ func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &Pa
         // `result` contains a pointer to a struct instance at this point
         let decl: &ParsedStructDecl = structDecls.at(structType.typeIndex);
         let index: usize = getFieldIndex(decl, &rhs.origToken.content);
-        let _f: &ParsedTypeNode = typeNodes.at(decl.context.getFieldTypeAtIndex(index));
+        let _f: &ParsedTypeNode = typeNodes.at(getFieldTypeAtIndex(&decl.context, index));
         let fieldType: &Type = types.at(getType(&_f.typeState));
         let fieldPtr: RegIndex = allocateRegister(function, types.at(fieldType.intoPointer()));
         buildGetFieldPtr(function, expr.span, fieldPtr, result, index);
@@ -1478,7 +1478,7 @@ func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &Pa
             push(&args, instance);
         }
         for (let i: usize = 0; i < rhs.arrayContext.elemLength; i = i + 1) {
-            let arg: &ParsedExpr = exprs.at(rhs.arrayContext.getElementAtIndex(i));
+            let arg: &ParsedExpr = exprs.at(getElementAtIndex(&rhs.arrayContext, i));
             let argType: &Type = types.at(getType(&arg.typeState));
             let result: RegIndex = generateBytecodeExpr(this, function, arg, false);
             push(&args, prepareArgument(this, function, arg.span, result, argType));
@@ -1909,12 +1909,12 @@ func generateBytecodeExprLiteral(this: &IRGen, function: &IRFunc, expr: &ParsedE
         if (expr.arrayContext.size == 0) {
             buildCreateArray(function, expr.span, reg);
             for (let i: usize = 0; i < expr.arrayContext.elemLength; i = i + 1) {
-                let elem: &ParsedExpr = exprs.at(expr.arrayContext.getElementAtIndex(i));
+                let elem: &ParsedExpr = exprs.at(getElementAtIndex(&expr.arrayContext, i));
                 let result: RegIndex = generateBytecodeExpr(this, function, elem, false);
                 buildInsertValue(function, expr.span, reg, i, result);
             }
         } else {
-            let elem: &ParsedExpr = exprs.at(expr.arrayContext.getElementAtIndex(0));
+            let elem: &ParsedExpr = exprs.at(getElementAtIndex(&expr.arrayContext, 0));
             let value: RegIndex = generateBytecodeExpr(this, function, elem, false);
             let usizeType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
             let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
@@ -2158,7 +2158,7 @@ func generateBytecodeExprCall(this: &IRGen, function: &IRFunc, expr: &ParsedExpr
         push(&args, retPtr);
     }
     for (let i: usize = 0; i < expr.arrayContext.elemLength; i = i + 1) {
-        let arg: &ParsedExpr = exprs.at(expr.arrayContext.getElementAtIndex(i));
+        let arg: &ParsedExpr = exprs.at(getElementAtIndex(&expr.arrayContext, i));
         let argType: &Type = types.at(getType(&arg.typeState));
         let result: RegIndex = generateBytecodeExpr(this, function, arg, false);
         push(&args, prepareArgument(this, function, arg.span, result, argType));

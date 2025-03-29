@@ -2,6 +2,7 @@ import "prelude.bufo";
 import "libc.bufo";
 import "string.bufo";
 import "../frontend/nodes.bufo";
+import "../frontend/context.bufo";
 import "../util/arena.bufo";
 import "./checker.bufo";
 
@@ -262,7 +263,7 @@ struct Type {
             assert(isSuccess(&info.typeState), "Can only get alignment of valid structs");
             let maxAlign: usize = 1;
             for (let i: usize = 0; i < info.context.fieldLength; i = i + 1) {
-                let td: &ParsedTypeNode = typeNodes.at(info.context.getFieldTypeAtIndex(i));
+                let td: &ParsedTypeNode = typeNodes.at(getFieldTypeAtIndex(&info.context, i));
                 assert(isSuccess(&td.typeState), "Expected valid field type");
                 let tt: &Type = types.at(getType(&td.typeState));
                 let _a: usize = tt.getAlignment();
@@ -304,7 +305,7 @@ struct Type {
             let size: usize = 0;
             let maxAlign: usize = 1;
             for (let i: usize = 0; i < info.context.fieldLength; i = i + 1) {
-                let td: &ParsedTypeNode = typeNodes.at(info.context.getFieldTypeAtIndex(i));
+                let td: &ParsedTypeNode = typeNodes.at(getFieldTypeAtIndex(&info.context, i));
                 assert(isSuccess(&td.typeState), "Expected valid field type");
                 let tt: &Type = types.at(getType(&td.typeState));
                 let _a: usize = tt.getAlignment();

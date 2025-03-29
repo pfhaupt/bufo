@@ -5,6 +5,7 @@ import "../util/span.bufo";
 import "../util/lists.bufo";
 import "../frontend/token.bufo";
 import "../frontend/nodes.bufo";
+import "../frontend/context.bufo";
 import "../frontend/parser.bufo";
 import "./checker.bufo";
 import "./types.bufo";
@@ -227,7 +228,7 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) {
             typeID: newType(TYPE_KIND_STRUCT, tli.nodeID).getID(),
         };
         for (let i: usize = 0; i < strukt.context.methodLength; i = i + 1) {
-            let id: usize = strukt.context.getMethodAtIndex(i);
+            let id: usize = getMethodAtIndex(&strukt.context, i);
             let method: &ParsedMethod = methods.at(id);
             let mLookup: MethodLookup = MethodLookup {
                 globalID: id,

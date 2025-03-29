@@ -58,8 +58,8 @@ func mangleFunctionName(
     }
     mangledName.pushSubStr(&name.content);
     for (let i: usize = 0; i < params.paramLength; i = i + 1) {
-        let name: Token = params.getNameAtIndex(i);
-        let id: usize = params.getTypeAtIndex(i);
+        let name: Token = getNameAtIndex(params, i);
+        let id: usize = getTypeAtIndex(params, i);
         let typeNode: &ParsedTypeNode = typeNodes.at(id);
         assert(isSuccess(&typeNode.typeState), "Expected valid parameter type for mangling");
         let typ: &Type = types.at(getType(&typeNode.typeState));
@@ -236,7 +236,7 @@ func asTLI(this: &ParsedStructDecl) -> &ParsedTopLevelItem {
 }
 
 func getFieldIndex(this: &ParsedStructDecl, name: &SubStr) -> usize {
-    return this.context.getFieldIndex(name);
+    return getFieldIndex(&this.context, name);
 }
 func getFieldOffset(this: &ParsedStructDecl, name: &SubStr) -> usize {
     let offset: usize = 0;
@@ -248,7 +248,7 @@ func getFieldOffsetAndSize(this: &ParsedStructDecl, index: usize, offset: &usize
     trace("ParsedStructDecl.getFieldOffsetAndSize");
     let o: usize = 0;
     for (let i: usize = 0; i < this.context.fieldLength; i = i + 1) {
-        let field: usize = this.context.getFieldTypeAtIndex(i);
+        let field: usize = getFieldTypeAtIndex(&this.context, i);
         let f1: &ParsedTypeNode = typeNodes.at(field);
         let f: &Type = types.at(getType(&f1.typeState));
         let s: usize = f.getSize();
@@ -319,7 +319,7 @@ func newParsedMethod(parentID: usize, span: Span, name: Token, params: ParamCont
         typeState: blank,
         retTypeID: getID(retType),
         body: body,
-        isStatic: !params.hasThis(),
+        isStatic: !hasThis(&params),
     });
     return methods.last();
 }

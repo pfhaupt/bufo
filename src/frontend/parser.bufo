@@ -301,7 +301,7 @@ func parseStructDecl(this: &Parser) -> &ParsedStructDecl {
             next(&this.lexer);
             expect(this, TOKEN_COLON);
             let typ: &ParsedTypeNode = parseTypeDecl(this);
-            structContext.addField(tkn, typ);
+            addField(&structContext, tkn, typ);
             expect(this, TOKEN_SEMI_COLON);
         } else if (tkn.kind == TOKEN_KEYWORD) {
             if (tkn.content.equals(&KEYWORD_UNSAFE)) {
@@ -315,7 +315,7 @@ func parseStructDecl(this: &Parser) -> &ParsedStructDecl {
             if (tkn.content.equals(&KEYWORD_FUNC)) {
                 fprintf(stderr, "%s: %s: Methods are deprecated.\n", tkn.getLocation().chars(), WARN_STR);
                 let method: &ParsedMethod = parseMethod(this, decl);
-                structContext.addMethod(method);
+                addMethod(&structContext, method);
             } else {
                 todo_with_msg("ayo, not a method???");
             }
@@ -392,23 +392,23 @@ func parseParameters(this: &Parser, parentName: Token) -> ParamContext {
             let dis: Token = expect(this, TOKEN_IDENT);
             if (eat(this, TOKEN_COLON)) {
                 let t = parseTypeDecl(this);
-                context.addParameter(maybeThis, t);
+                addParameter(&context, maybeThis, t);
             } else {
                 let thisType: &ParsedTypeNode = newParsedTypeNode(maybeThis.span, PARSED_TYPE_IDENT);
                 (*thisType).nameTkn = parentName;
                 if (isRef) {
                     let ptr: &ParsedTypeNode = newParsedTypeNode(maybeThis.span, PARSED_TYPE_REF);
                     (*ptr).underlyingID = getID(thisType);
-                    context.addParameter(maybeThis, ptr);
+                    addParameter(&context, maybeThis, ptr);
                 } else {
-                    context.addParameter(maybeThis, thisType);
+                    addParameter(&context, maybeThis, thisType);
                 }
             }
         } else {
             let name: Token = expect(this, TOKEN_IDENT);
             expect(this, TOKEN_COLON);
             let typ: &ParsedTypeNode = parseTypeDecl(this);
-            context.addParameter(name, typ);
+            addParameter(&context, name, typ);
         }
         if (!eat(this, TOKEN_COMMA))
             break;
@@ -716,7 +716,7 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
             let context: ArrayContext = blank;
             while (!parsedEOF(this) && !at(this, TOKEN_PAREN_CLOSE)) {
                 let expr: &ParsedExpr = parseExpr(this);
-                context.addElement(expr);
+                addElement(&context, expr);
                 if (!eat(this, TOKEN_COMMA))
                     break;
             }
@@ -735,7 +735,7 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
                 let name: Token = expect(this, TOKEN_IDENT);
                 expect(this, TOKEN_COLON);
                 let expr: &ParsedExpr = parseExpr(this);
-                context.addField(name, expr);
+                addField(&context, name, expr);
                 if (!eat(this, TOKEN_COMMA))
                     break;
             }
@@ -765,7 +765,7 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
         let arrayContext: ArrayContext = blank;
         while (!parsedEOF(this) && !at(this, TOKEN_SQUARE_CLOSE)) {
             let expr: &ParsedExpr = parseExpr(this);
-            arrayContext.addElement(expr);
+            addElement(&arrayContext, expr);
             if (eat(this, TOKEN_SEMI_COLON)) {
                 if (arrayContext.elemLength != 1) todo_with_msg("array lit with given size too many elements");
                 let size: Token = expect(this, TOKEN_INT_LITERAL);
