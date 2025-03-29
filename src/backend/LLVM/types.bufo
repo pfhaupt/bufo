@@ -7,92 +7,92 @@ import "./values.bufo";
 
 struct LLVMType {
     ref: LLVMTypeRef;
-    func equals(&this, other: &LLVMType) -> bool {
-        return this.ref.ptr == other.ref.ptr;
-    }
+}
+func equals(this: &LLVMType, other: &LLVMType) -> bool {
+    return this.ref.ptr == other.ref.ptr;
+}
 
-    func isFunction(&this) -> bool {
-        trace("LLVMType.isFunction");
-        return LLVMGetTypeKind(this.ref) == LLVMFunctionTypeKind;
-    }
+func isFunction(this: &LLVMType) -> bool {
+    trace("LLVMType.isFunction");
+    return LLVMGetTypeKind(this.ref) == LLVMFunctionTypeKind;
+}
 
-    func getReturnType(&this) -> LLVMType {
-        trace("LLVMType.getReturnType");
-        assert(this.isFunction(), "LLVM.getReturnType() called on non-function");
-        let t: LLVMTypeRef = LLVMGetReturnType(this.ref);
-        assert(!t.isNull(), "Could not get return type");
-        return newLLVMTypeFromRef(t);
-    }
+func getReturnType(this: &LLVMType) -> LLVMType {
+    trace("LLVMType.getReturnType");
+    assert(isFunction(this), "LLVM.getReturnType() called on non-function");
+    let t: LLVMTypeRef = LLVMGetReturnType(this.ref);
+    assert(!isNull(t), "Could not get return type");
+    return newLLVMTypeFromRef(t);
+}
 
-    func isVoid(&this) -> bool {
-        trace("LLVMType.isVoid");
-        return LLVMGetTypeKind(this.ref) == LLVMVoidTypeKind;
-    }
+func isVoid(this: &LLVMType) -> bool {
+    trace("LLVMType.isVoid");
+    return LLVMGetTypeKind(this.ref) == LLVMVoidTypeKind;
+}
 
-    func isStruct(&this) -> bool {
-        trace("LLVMType.isStruct");
-        return LLVMGetTypeKind(this.ref) == LLVMStructTypeKind;
-    }
+func isStruct(this: &LLVMType) -> bool {
+    trace("LLVMType.isStruct");
+    return LLVMGetTypeKind(this.ref) == LLVMStructTypeKind;
+}
 
-    func isPointer(&this) -> bool {
-        trace("LLVMType.isPointer");
-        return LLVMGetTypeKind(this.ref) == LLVMPointerTypeKind;
-    }
+func isPointer(this: &LLVMType) -> bool {
+    trace("LLVMType.isPointer");
+    return LLVMGetTypeKind(this.ref) == LLVMPointerTypeKind;
+}
 
-    func toChars(&this) -> &char {
-        return LLVMPrintTypeToString(this.ref);
-    }
+func toChars(this: &LLVMType) -> &char {
+    return LLVMPrintTypeToString(this.ref);
+}
 
-    func intoFunctionType(&this, params: LLVMTypeList, varArg: bool) -> LLVMType {
-        trace("LLVMType.intoFunctionType");
-        assert(sizeof LLVMType == 8);
-        let fn: LLVMTypeRef = LLVMFunctionType(this.ref, params.elements as &LLVMTypeRef, params.length as u32, newLLVMBool(varArg));
-        assert(!fn.isNull(), "Could not turn LLVMType into a FunctionType");
-        return newLLVMTypeFromRef(fn);
-    }
+func intoFunctionType(this: &LLVMType, params: LLVMTypeList, varArg: bool) -> LLVMType {
+    trace("LLVMType.intoFunctionType");
+    assert(sizeof LLVMType == 8);
+    let fn: LLVMTypeRef = LLVMFunctionType(this.ref, params.elements as &LLVMTypeRef, params.length as u32, newLLVMBool(varArg));
+    assert(!isNull(fn), "Could not turn LLVMType into a FunctionType");
+    return newLLVMTypeFromRef(fn);
+}
 
-    func intoPointerType(&this) -> LLVMType {
-        trace("LLVMType.intoPointerType");
-        // FIXME: Other address spaces
-        let ptr: LLVMTypeRef = LLVMPointerType(this.ref, 0);
-        assert(!ptr.isNull(), "Could not turn LLVMType into a PointerType");
-        return newLLVMTypeFromRef(ptr);
-    }
+func intoPointerType(this: &LLVMType) -> LLVMType {
+    trace("LLVMType.intoPointerType");
+    // FIXME: Other address spaces
+    let ptr: LLVMTypeRef = LLVMPointerType(this.ref, 0);
+    assert(!isNull(ptr), "Could not turn LLVMType into a PointerType");
+    return newLLVMTypeFromRef(ptr);
+}
 
-    func intoArrayType(&this, size: u32) -> LLVMType {
-        trace("LLVMType.intoArrayType");
-        // FIXME: Other address spaces
-        let arr: LLVMTypeRef = LLVMArrayType(this.ref, size);
-        assert(!arr.isNull(), "Could not turn LLVMType into a ArrayType");
-        return newLLVMTypeFromRef(arr);
-    }
+func intoArrayType(this: &LLVMType, size: u32) -> LLVMType {
+    trace("LLVMType.intoArrayType");
+    // FIXME: Other address spaces
+    let arr: LLVMTypeRef = LLVMArrayType(this.ref, size);
+    assert(!isNull(arr), "Could not turn LLVMType into a ArrayType");
+    return newLLVMTypeFromRef(arr);
+}
 
-    func constInt(&this, value: usize, signExtend: bool) -> LLVMValue {
-        trace("LLVMType.constInt");
-        let s: LLVMBool = newLLVMBool(signExtend);
-        let val: LLVMValueRef = LLVMConstInt(this.ref, value, s);
-        assert(!val.isNull(), "Could not get constant integer");
-        return newLLVMValueFromRef(val);
-    }
+func constInt(this: &LLVMType, value: usize, signExtend: bool) -> LLVMValue {
+    trace("LLVMType.constInt");
+    let s: LLVMBool = newLLVMBool(signExtend);
+    let val: LLVMValueRef = LLVMConstInt(this.ref, value, s);
+    assert(!isNull(val), "Could not get constant integer");
+    return newLLVMValueFromRef(val);
+}
 
-    func constZero(&this) -> LLVMValue {
-        trace("LLVMType.constZero");
-        let val: LLVMValueRef = LLVMConstNull(this.ref);
-        assert(!val.isNull(), "Could not get constant zero");
-        return newLLVMValueFromRef(val);
-    }
+func constZero(this: &LLVMType) -> LLVMValue {
+    trace("LLVMType.constZero");
+    let val: LLVMValueRef = LLVMConstNull(this.ref);
+    assert(!isNull(val), "Could not get constant zero");
+    return newLLVMValueFromRef(val);
+}
 
-    func constFloat(&this, value: f64) -> LLVMValue {
-        trace("LLVMType.constFloat");
-        let val: LLVMValueRef = LLVMConstReal(this.ref, value);
-        assert(!val.isNull(), "Could not get constant float");
-        return newLLVMValueFromRef(val);
-    }
+func constFloat(this: &LLVMType, value: f64) -> LLVMValue {
+    trace("LLVMType.constFloat");
+    let val: LLVMValueRef = LLVMConstReal(this.ref, value);
+    assert(!isNull(val), "Could not get constant float");
+    return newLLVMValueFromRef(val);
 }
 
 func newLLVMTypeFromRef(ref: LLVMTypeRef) -> LLVMType {
     trace("newLLVMTypeFromRef");
-    assert(!ref.isNull(), "Passed invalid reference to newLLVMTypeFromRef");
+    assert(!isNull(ref), "Passed invalid reference to newLLVMTypeFromRef");
     return LLVMType {
         ref: ref,
     };

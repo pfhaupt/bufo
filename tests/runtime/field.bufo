@@ -7,13 +7,6 @@ import "prelude.bufo";
 struct Test {
     a: u64;
     b: i64;
-
-    func get_a(this) -> u64 {
-        return this.a;
-    }
-    func set_a(this, a: u64) {
-        this.a = a;
-    }
 }
 
 func destroy(t: Test, counter: u64) -> u64 {
@@ -21,7 +14,7 @@ func destroy(t: Test, counter: u64) -> u64 {
         return 0;
     }
     let tmp: u64 = destroy(t, counter - 1);
-    return tmp + t.get_a();
+    return tmp + t.a;
 }
 
 func main(argc: i32, argv: &&char) -> i32 {

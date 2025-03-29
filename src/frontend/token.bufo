@@ -83,29 +83,29 @@ struct Token {
     span: Span;
     content: SubStr;
     kind: usize;
+}
 
-    func print(&this) {
-        printf("kind=%llu, content=", this.kind);
-        this.content.print();
-    }
-    func getLocation(&this) -> String {
-        return this.span.toString();
-    }
-    func toString(&this) -> String {
-        return this.content.toString();
-    }
-    func getSubStr(&this) -> SubStr {
-        return this.content;
-    }
-    func getSpan(&this) -> Span {
-        return this.span;
-    }
-    func equals(&this, other: &Token) -> bool {
-        if (this.kind != other.kind) return false;
-        if (!this.span.equals(&other.span)) return false;
-        if (!this.content.equals(&other.content)) return false;
-        return true;
-    }
+func print(this: &Token) {
+    printf("kind=%llu, content=", this.kind);
+    print(&this.content);
+}
+func getLocation(this: &Token) -> String {
+    return toString(&this.span);
+}
+func toString(this: &Token) -> String {
+    return toString(&this.content);
+}
+func getSubStr(this: &Token) -> SubStr {
+    return this.content;
+}
+func getSpan(this: &Token) -> Span {
+    return this.span;
+}
+func equals(this: &Token, other: &Token) -> bool {
+    if (this.kind != other.kind) return false;
+    if (!equals(&this.span, &other.span)) return false;
+    if (!equals(&this.content, &other.content)) return false;
+    return true;
 }
 
 func dummyToken(kind: usize) -> Token {

@@ -16,9 +16,9 @@ def enumeratePtrs(ptrs: List[str]) -> str:
         result += f"""
 struct {p} {{
     ptr: Any;
-    func isNull(&this) -> bool {{
-        return this.ptr == null;
-    }}
+}}
+func isNull(this: {p}) -> bool {{
+    return this.ptr == null;
 }}
 """
     return result

@@ -4,33 +4,33 @@ import "./values.bufo";
 
 struct LLVMBasicBlock {
     ref: LLVMBasicBlockRef;
-    func equals(&this, other: &LLVMBasicBlock) -> bool {
-        return this.ref.ptr == other.ref.ptr;
-    }
-    func guardReference(&this) {
-        trace("LLVMBasicBlock.guardReference");
-        assert(!this.ref.isNull(), "LLVM Basic Block is null");
-    }
-    func getParent(&this) -> LLVMValue {
-        trace("LLVMBasicBlock.getParent");
-        this.guardReference();
-        let parent: LLVMValueRef = LLVMGetBasicBlockParent(this.ref);
-        assert(!parent.isNull(), "Could not get parent from basic block");
-        return newLLVMValueFromRef(parent);
-    }
-    func getLastInstruction(&this, out: &LLVMValue) -> bool {
-        trace("LLVMBasicBlock.getLastInstruction");
-        this.guardReference();
-        let instr: LLVMValueRef = LLVMGetLastInstruction(this.ref);
-        if (instr.isNull()) return false;
-        *out = newLLVMValueFromRef(instr);
-        return true;
-    }
+}
+func equals(this: &LLVMBasicBlock, other: &LLVMBasicBlock) -> bool {
+    return this.ref.ptr == other.ref.ptr;
+}
+func guardReference(this: &LLVMBasicBlock) {
+    trace("LLVMBasicBlock.guardReference");
+    assert(!isNull(this.ref), "LLVM Basic Block is null");
+}
+func getParent(this: &LLVMBasicBlock) -> LLVMValue {
+    trace("LLVMBasicBlock.getParent");
+    guardReference(this);
+    let parent: LLVMValueRef = LLVMGetBasicBlockParent(this.ref);
+    assert(!isNull(parent), "Could not get parent from basic block");
+    return newLLVMValueFromRef(parent);
+}
+func getLastInstruction(this: &LLVMBasicBlock, out: &LLVMValue) -> bool {
+    trace("LLVMBasicBlock.getLastInstruction");
+    guardReference(this);
+    let instr: LLVMValueRef = LLVMGetLastInstruction(this.ref);
+    if (isNull(instr)) return false;
+    *out = newLLVMValueFromRef(instr);
+    return true;
 }
 
 func newLLVMBasicBlockFromRef(ref: LLVMBasicBlockRef) -> LLVMBasicBlock {
     trace("newLLVMBasicBlockFromRef");
-    assert(!ref.isNull(), "Passed invalid reference to newLLVMBasicBlockFromRef");
+    assert(!isNull(ref), "Passed invalid reference to newLLVMBasicBlockFromRef");
     return LLVMBasicBlock {
         ref: ref
     };

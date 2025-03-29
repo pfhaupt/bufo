@@ -9,36 +9,35 @@ import "substr.bufo";
 struct Cmd {
     log: bool;
     buf: StringBuffer;
+}
 
-    func add(&this, arg: &char) {
-        this.buf.add(newSubStrOfStrLit(arg));
+func add(this: &Cmd, arg: &char) {
+    add(&this.buf, newSubStrOfStrLit(arg));
+}
+func addSubStr(this: &Cmd, arg: SubStr) {
+    add(&this.buf, arg);
+}
+func addMany(this: &Cmd, args: StringBuffer) {
+    extend(&this.buf, &args);
+}
+func runSync(this: &Cmd) -> bool {
+    return runCmdSync(*this);
+}
+func runAsync(this: &Cmd) -> Handle {
+    return runCmdAsync(*this);
+}
+func toString(this: &Cmd) -> String {
+    return toCmdString(&this.buf);
+}
+func asCharPtrs(this: &Cmd) -> &&char {
+    let _any: Any = calloc(this.buf.length + 1, sizeof &char);
+    assert(_any != null);
+    let _mut: &&char = _any as &&char;
+    for (let i: usize = 0; i < this.buf.length; i = i + 1) {
+        let elem: String = toString(this.buf.data + i * sizeof SubStr);
+        *(_mut + i * sizeof &char) = elem.buffer as &char;
     }
-    func addSubStr(&this, arg: SubStr) {
-        this.buf.add(arg);
-    }
-    func addMany(&this, args: StringBuffer) {
-        this.buf.extend(&args);
-    }
-    func runSync(&this) -> bool {
-        return runCmdSync(*this);
-    }
-    func runAsync(&this) -> Handle {
-        return runCmdAsync(*this);
-    }
-    func toString(&this) -> String {
-        return this.buf.toCmdString();
-    }
-    func asCharPtrs(&this) -> &&char {
-        let _any: Any = calloc(this.buf.length + 1, sizeof &char);
-        assert(_any != null);
-        let _mut: &&char = _any as &&char;
-        for (let i: usize = 0; i < this.buf.length; i = i + 1) {
-            let elem: String = (*(this.buf.data + i * sizeof SubStr)).toString();
-            elem.print();
-            *(_mut + i * sizeof &char) = elem.buffer as &char;
-        }
-        return _any as &&char;
-    }
+    return _any as &&char;
 }
 
 func newCmd() -> Cmd {
@@ -56,27 +55,27 @@ func newCmdFromStrLit(command: &char) -> Cmd {
         if (nextSpace == null) break;
         let offset: usize = nextSpace - command;
         let substr: SubStr = newSubStr(command, 0, offset);
-        cmd.addSubStr(substr);
+        addSubStr(&cmd, substr);
         command = command + offset + 1;
         pos = pos + offset + 1;
     }
     if (pos < len) {
         // Rest of command, for example `help` in `cargo help`
         let rest: SubStr = newSubStr(command, 0, strlen(command));
-        cmd.addSubStr(rest);
+        addSubStr(&cmd, rest);
     }
     return cmd;
 }
 
 func moveFile(from: &char, to: &char) -> bool {
     let moveCmd: Cmd = newCmdFromStrLit("mv");
-    moveCmd.add(from);
-    moveCmd.add(to);
-    return moveCmd.runSync();
+    add(&moveCmd, from);
+    add(&moveCmd, to);
+    return runSync(&moveCmd);
 }
 
 func deleteFile(path: &char) -> bool {
     let delCmd: Cmd = newCmdFromStrLit("rm");
-    delCmd.add(path);
-    return delCmd.runSync();
+    add(&delCmd, path);
+    return runSync(&delCmd);
 }

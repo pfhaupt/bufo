@@ -8,42 +8,42 @@ struct StringBuffer {
     data: &SubStr;
     length: usize;
     capacity: usize;
+}
 
-    func resize(&this, newCap: usize) {
-        let _new: Any = realloc(this.data, newCap * sizeof SubStr);
-        assert(_new != null);
-        this.data = _new as &SubStr;
-        this.capacity = newCap;
+func resize(this: &StringBuffer, newCap: usize) {
+    let _new: Any = realloc(this.data, newCap * sizeof SubStr);
+    assert(_new != null);
+    this.data = _new as &SubStr;
+    this.capacity = newCap;
+}
+func add(this: &StringBuffer, str: SubStr) {
+    if (this.length >= this.capacity) resize(this, 2 * this.capacity);
+    *(this.data + this.length * sizeof SubStr) = str;
+    this.length = this.length + 1;
+}
+func getNthAsCharPtr(this: &StringBuffer, index: usize) -> &char {
+    assert(index < this.length, "Out of bounds access in StringBuf.getNthAsCharPtr()");
+    return (*(this.data + index * sizeof SubStr)).start;
+}
+func extend(this: &StringBuffer, other: &StringBuffer) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        add(this, *(other.data + i * sizeof SubStr));
     }
-    func add(&this, str: SubStr) {
-        if (this.length >= this.capacity) this.resize(2 * this.capacity);
-        *(this.data + this.length * sizeof SubStr) = str;
-        this.length = this.length + 1;
-    }
-    func getNthAsCharPtr(&this, index: usize) -> &char {
-        assert(index < this.length, "Out of bounds access in StringBuf.getNthAsCharPtr()");
-        return (*(this.data + index * sizeof SubStr)).start;
-    }
-    func extend(&this, other: &StringBuffer) {
-        for (let i: usize = 0; i < other.length; i = i + 1) {
-            this.add(*(other.data + i * sizeof SubStr));
+}
+func toCmdString(this: &StringBuffer) -> String {
+    let s: String = newString();
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        let str: SubStr = *(this.data + i * sizeof SubStr);
+        if (hasSpace(&str)) {
+            pushChar(&s, '"');
+            pushSubStr(&s, &str);
+            pushChar(&s, '"');
+        } else {
+            pushSubStr(&s, &str);
         }
+        if (i != this.length - 1) pushChar(&s, ' ');
     }
-    func toCmdString(&this) -> String {
-        let s: String = newString();
-        for (let i: usize = 0; i < this.length; i = i + 1) {
-            let str: SubStr = *(this.data + i * sizeof SubStr);
-            if (str.hasSpace()) {
-                s.pushChar('"');
-                s.pushSubStr(&str);
-                s.pushChar('"');
-            } else {
-                s.pushSubStr(&str);
-            }
-            if (i != this.length - 1) s.pushChar(' ');
-        }
-        return s;
-    }
+    return s;
 }
 
 func newStringBuffer() -> StringBuffer {

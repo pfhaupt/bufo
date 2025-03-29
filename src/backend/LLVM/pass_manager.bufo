@@ -4,31 +4,31 @@ import "./bindings.bufo";
 
 struct LLVMPassManager {
     ref: LLVMPassManagerRef;
-    func addPromoteMemoryToRegisterPass(&this) {
-        trace("LLVMPassManager.addPromoteMemoryToRegisterPass");
-        LLVMAddPromoteMemoryToRegisterPass(this.ref);
-    }
-    func addAlwaysInlinerPass(&this) {
-        trace("LLVMPassManager.addAlwaysInlinerPass");
-        LLVMAddAlwaysInlinerPass(this.ref);
-    }
-    func addCFGSimplificationPass(&this) {
-        trace("LLVMPassManager.addCFGSimplificationPass");
-        LLVMAddCFGSimplificationPass(this.ref);
-    }
-    func addGlobalDCEPass(&this) {
-        trace("LLVMPassManager.addGlobalDCEPass");
-        LLVMAddGlobalDCEPass(this.ref);
-    }
+}
+func addPromoteMemoryToRegisterPass(this: &LLVMPassManager) {
+    trace("LLVMPassManager.addPromoteMemoryToRegisterPass");
+    LLVMAddPromoteMemoryToRegisterPass(this.ref);
+}
+func addAlwaysInlinerPass(this: &LLVMPassManager) {
+    trace("LLVMPassManager.addAlwaysInlinerPass");
+    LLVMAddAlwaysInlinerPass(this.ref);
+}
+func addCFGSimplificationPass(this: &LLVMPassManager) {
+    trace("LLVMPassManager.addCFGSimplificationPass");
+    LLVMAddCFGSimplificationPass(this.ref);
+}
+func addGlobalDCEPass(this: &LLVMPassManager) {
+    trace("LLVMPassManager.addGlobalDCEPass");
+    LLVMAddGlobalDCEPass(this.ref);
+}
 
-    func runOn(&this, mod: LLVMModule) -> bool {
-        trace("LLVMPassManager.runOn");
-        return mod.runInPassManager(*this);
-    }
+func runOn(this: &LLVMPassManager, mod: LLVMModule) -> bool {
+    trace("LLVMPassManager.runOn");
+    return runInPassManager(&mod, *this);
 }
 
 func newLLVMPassManagerFromRef(ref: LLVMPassManagerRef) -> LLVMPassManager {
-    assert(!ref.isNull(), "Called newLLVMPassManagerFromRef with invalid reference");
+    assert(!isNull(ref), "Called newLLVMPassManagerFromRef with invalid reference");
     return LLVMPassManager {
         ref: ref,
     };

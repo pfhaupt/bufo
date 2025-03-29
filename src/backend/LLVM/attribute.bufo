@@ -6,7 +6,7 @@ struct LLVMAttribute {
 }
 
 func newLLVMAttributeFromRef(ref: LLVMAttributeRef) -> LLVMAttribute {
-    assert(!ref.isNull(), "newLLVMAttributeFromRef called with invalid reference");
+    assert(!isNull(ref), "newLLVMAttributeFromRef called with invalid reference");
     return LLVMAttribute {
         ref: ref,
     };
