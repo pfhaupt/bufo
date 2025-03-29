@@ -348,7 +348,7 @@ func getRegisterSizeInBytes(this: &IRFunc) -> usize {
     let size: usize = 0;
     for (let i: usize = 0; i < this.registers.length; i = i + 1) {
         let reg: &IRReg = getRegister(this, RegIndex { i: i });
-        size = size + reg.typ.getSize();
+        size = size + getSize(reg.typ);
     }
     return size;
 }
@@ -358,7 +358,7 @@ func allocateRegister(this: &IRFunc, typ: &Type) -> RegIndex {
     let offset: usize = 0;
     if (size > 0) {
         let last: &IRReg = last(&this.registers);
-        offset = last.offset + last.typ.getSize();
+        offset = last.offset + getSize(last.typ);
     }
     push(&this.registers, IRReg {
         isComptime: this.comptimeLevel > 0,
@@ -557,15 +557,15 @@ func buildLoadBool(this: &IRFunc, span: Span, dst: RegIndex, val: usize) {
 }
 func buildLoadInteger(this: &IRFunc, span: Span, dst: RegIndex, t: &Type, val: usize) {
     let kind: usize = INSTR_LOAD_I8;
-    if (t.isChar()) {
+    if (isChar(t)) {
         kind = INSTR_LOAD_U8;
     } else {
-        assert(t.isInteger(), "IRFunc.buildLoadInteger got non-int type");
-        let size: usize = t.getSize();
+        assert(isInteger(t), "IRFunc.buildLoadInteger got non-int type");
+        let size: usize = getSize(t);
         if (size == 2) kind = INSTR_LOAD_I16;
         if (size == 4) kind = INSTR_LOAD_I32;
         if (size == 8) kind = INSTR_LOAD_I64;
-        if (!t.isSignedInteger()) kind = kind + 1;
+        if (!isSignedInteger(t)) kind = kind + 1;
     }
     pushInstruction(this, IRInstr {
         kind: kind,
@@ -1023,9 +1023,9 @@ func generateFunctionHeader(this: &IRGen, function: &IRFunc, retType: &Type, par
     let entry: IRBlockID = appendBlock(function);
     setCurrentBlock(function, entry);
     let offset: usize = 0;
-    if (retType.getSize() > 8) {
+    if (getSize(retType) > 8) {
         offset = 1;
-        prepareParameter(this, function, 0, blank, newSubStrOfStrLit("ret"), types.at(retType.intoPointer()), true);
+        prepareParameter(this, function, 0, blank, newSubStrOfStrLit("ret"), types.at(intoPointer(retType)), true);
     }
     for (let i: usize = 0; i < params.paramLength; i = i + 1) {
         let name: Token = getNameAtIndex(params, i);
@@ -1042,25 +1042,25 @@ func generateFunctionBody(this: &IRGen, function: &IRFunc, body: &ParsedBlock, r
     if (function.returnBlockID.i == 0) {
         let curr = getCurrentBlock(function);
         function.returnBlockID = appendBlock(function);
-        if (t.isNone()) {
+        if (isNone(t)) {
             setCurrentBlock(function, function.returnBlockID);
             buildReturnEmpty(function, retTypeNode.span);
             setCurrentBlock(function, curr);
         } else {
-            function.returnAlloc = allocateRegister(function, types.at(t.intoPointer()));
-            buildAlloca(function, retTypeNode.span, function.returnAlloc, t.getSize());
+            function.returnAlloc = allocateRegister(function, types.at(intoPointer(t)));
+            buildAlloca(function, retTypeNode.span, function.returnAlloc, getSize(t));
             setCurrentBlock(function, function.returnBlockID);
             let result = allocateRegister(function, t);
             buildLoad(function, retTypeNode.span, result, function.returnAlloc);
-            if (t.getSize() > 8) {
+            if (getSize(t) > 8) {
                 buildStore(function, retTypeNode.span, function.retPtr, result);
                 buildReturnExpr(function, retTypeNode.span, function.retPtr);
             } else {
-                if (t.isStruct()) {
-                    let v: RegIndex = getRegisterForSize(this, function, t.getSize());
+                if (isStruct(t)) {
+                    let v: RegIndex = getRegisterForSize(this, function, getSize(t));
                     let t: &Type = getRegister(function, v).typ;
-                    let r: RegIndex = allocateRegister(function, types.at(t.intoPointer()));
-                    let s: usize = t.getSize();
+                    let r: RegIndex = allocateRegister(function, types.at(intoPointer(t)));
+                    let s: usize = getSize(t);
                     assert(s <= 8);
                     buildAlloca(function, retTypeNode.span, r, s);
                     buildStore(function, retTypeNode.span, r, result);
@@ -1076,12 +1076,12 @@ func generateFunctionBody(this: &IRGen, function: &IRFunc, body: &ParsedBlock, r
     generateBytecodeBlock(this, function, body);
     let curr: &IRBlock = getCurrentBlockAsRef(function);
     if (!isTerminated(curr)) {
-        if (t.isNone()) {
+        if (isNone(t)) {
             buildReturnEmpty(function, body.span);
         } else {
             todo_with_msg("this is sus and an error lol");
             // let b: RegIndex = allocateRegister(function, t);
-            // buildLoadBlank(function, b, t.getSize());
+            // buildLoadBlank(function, b, getSize(t));
             // buildReturnExpr(function, b);
         }
     }
@@ -1171,9 +1171,9 @@ func generateBytecodeStmt(this: &IRGen, function: &IRFunc, stmt: &ParsedStmt) {
         } else {
             let result: RegIndex = generateBytecodeExpr(this, function, expr, false);
             let typ: &Type = types.at(getType(&stmt.typeState));
-            let allocaType: &Type = types.at(typ.intoPointer());
+            let allocaType: &Type = types.at(intoPointer(typ));
             let ptr: RegIndex = allocateRegister(function, allocaType);
-            buildAlloca(function, stmt.span, ptr, typ.getSize());
+            buildAlloca(function, stmt.span, ptr, getSize(typ));
             buildStore(function, stmt.span, ptr, result);
             let scope: &IRScope = last(&function.scopes);
             addEntry(scope, stmt.varDeclContext.name.content, ptr, false);
@@ -1316,12 +1316,12 @@ func generateBytecodeExpr(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, ne
         return generateBytecodeExprUnary(this, function, expr, needsPtr);
     } else if (isBlank(expr)) {
         let t: &Type = types.at(getType(&expr.typeState));
-        let size: usize = t.getSize();
+        let size: usize = getSize(t);
         if (size == 0) warning("blank of type of size 0");
         let reg: RegIndex = allocateRegister(function, t);
         buildLoadBlank(function, expr.span, reg, size);
         if (needsPtr) {
-            let tempAlloc: RegIndex = allocateRegister(function, types.at(t.intoPointer()));
+            let tempAlloc: RegIndex = allocateRegister(function, types.at(intoPointer(t)));
             buildAlloca(function, expr.span, tempAlloc, size);
             buildStore(function, expr.span, tempAlloc, reg);
             return tempAlloc;
@@ -1331,10 +1331,10 @@ func generateBytecodeExpr(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, ne
         let t: &Type = types.at(getType(&expr.typeState));
         let target: &Type = types.at(getType(&typeNodes.at(expr.lhs).typeState));
         let reg: RegIndex = allocateRegister(function, t);
-        let size: usize = target.getSize();
+        let size: usize = getSize(target);
         buildLoadInteger(function, expr.span, reg, t, size);
         if (needsPtr) {
-            let tempAlloc: RegIndex = allocateRegister(function, types.at(t.intoPointer()));
+            let tempAlloc: RegIndex = allocateRegister(function, types.at(intoPointer(t)));
             buildAlloca(function, expr.span, tempAlloc, size);
             buildStore(function, expr.span, tempAlloc, reg);
             return tempAlloc;
@@ -1344,7 +1344,7 @@ func generateBytecodeExpr(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, ne
         return generateBytecodeExprAs(this, function, expr);
     } else if (expr.kind == EXPR_STRUCT_INIT) {
         let strukt: &Type = types.at(getType(&expr.typeState));
-        assert(strukt.isStruct(), "Expected Struct Type in EXPR_STRUCT_INIT");
+        assert(isStruct(strukt), "Expected Struct Type in EXPR_STRUCT_INIT");
         let structDecl: &ParsedStructDecl = structDecls.at(strukt.typeIndex);
         let reg: RegIndex = allocateRegister(function, strukt);
         buildCreateStruct(function, expr.span, reg);
@@ -1356,8 +1356,8 @@ func generateBytecodeExpr(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, ne
             buildInsertValue(function, expr.span, reg, index, result);
         }
         if (needsPtr) {
-            let structAlloc: RegIndex = allocateRegister(function, types.at(strukt.intoPointer()));
-            buildAlloca(function, expr.span, structAlloc, strukt.getSize());
+            let structAlloc: RegIndex = allocateRegister(function, types.at(intoPointer(strukt)));
+            buildAlloca(function, expr.span, structAlloc, getSize(strukt));
             buildStore(function, expr.span, structAlloc, reg);
             return structAlloc;
         }
@@ -1373,42 +1373,42 @@ func generateBytecodeExprAs(this: &IRGen, function: &IRFunc, expr: &ParsedExpr) 
     let current: &Type = types.at(getType(&exprs.at(expr.lhs).typeState));
     let target: &Type = types.at(getType(&typeNodes.at(expr.rhs).typeState));
     let exType: &Type = types.at(getType(&expr.typeState));
-    assert(target.equals(exType));
+    assert(equals(target, exType));
     let dst: RegIndex = allocateRegister(function, target);
-    if (current.isInteger() && target.isPointer()) {
+    if (isInteger(current) && isPointer(target)) {
         buildIntToPtr(function, expr.span, dst, result);
-    } else if (current.isPointer() && target.isInteger()) {
+    } else if (isPointer(current) && isInteger(target)) {
         buildPtrToInt(function, expr.span, dst, result);
-    } else if (current.isPointer() && target.isPointer()) {
+    } else if (isPointer(current) && isPointer(target)) {
         buildMove(function, expr.span, dst, result);
-    } else if ((current.isChar() || current.isInteger()) && (target.isChar() || target.isInteger())) {
-        if (current.getSize() < target.getSize()) {
-            if (current.isSignedInteger()) {
-                buildIntSignExtend(function, expr.span, dst, result, target.getSize() * 8);
+    } else if ((isChar(current) || isInteger(current)) && (isChar(target) || isInteger(target))) {
+        if (getSize(current) < getSize(target)) {
+            if (isSignedInteger(current)) {
+                buildIntSignExtend(function, expr.span, dst, result, getSize(target) * 8);
             } else {
-                buildIntZeroExtend(function, expr.span, dst, result, target.getSize() * 8);
+                buildIntZeroExtend(function, expr.span, dst, result, getSize(target) * 8);
             }
-        } else if (current.getSize() > target.getSize()) {
-            buildIntTruncate(function, expr.span, dst, result, target.getSize() * 8);
+        } else if (getSize(current) > getSize(target)) {
+            buildIntTruncate(function, expr.span, dst, result, getSize(target) * 8);
         } else {
             buildMove(function, expr.span, dst, result);
         }
-    } else if (current.isInteger() && target.isFloat()) {
-        if (target.getSize() == 4) buildIntToF32(function, expr.span, dst, result);
-        else if (target.getSize() == 8) buildIntToF64(function, expr.span, dst, result);
+    } else if (isInteger(current) && isFloat(target)) {
+        if (getSize(target) == 4) buildIntToF32(function, expr.span, dst, result);
+        else if (getSize(target) == 8) buildIntToF64(function, expr.span, dst, result);
         else unreachable("int to float");
-    } else if (current.isFloat() && target.isInteger()) {
-        if (current.getSize() == 4) buildF32ToInt(function, expr.span, dst, result);
-        else if (current.getSize() == 8) buildF64ToInt(function, expr.span, dst, result);
+    } else if (isFloat(current) && isInteger(target)) {
+        if (getSize(current) == 4) buildF32ToInt(function, expr.span, dst, result);
+        else if (getSize(current) == 8) buildF64ToInt(function, expr.span, dst, result);
         else unreachable("float to int");
-    } else if (current.isFloat() && target.isFloat()) {
-        if (current.getSize() < target.getSize()) {
-            assert(current.getSize() == 4);
-            assert(target.getSize() == 8);
+    } else if (isFloat(current) && isFloat(target)) {
+        if (getSize(current) < getSize(target)) {
+            assert(getSize(current) == 4);
+            assert(getSize(target) == 8);
             buildF32ToF64(function, expr.span, dst, result);
-        } else if (current.getSize() > target.getSize()) {
-            assert(current.getSize() == 8);
-            assert(target.getSize() == 4);
+        } else if (getSize(current) > getSize(target)) {
+            assert(getSize(current) == 8);
+            assert(getSize(target) == 4);
             buildF64ToF32(function, expr.span, dst, result);
         } else {
             buildMove(function, expr.span, dst, result);
@@ -1427,27 +1427,27 @@ func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &Pa
     let lhs: &ParsedExpr = exprs.at(expr.lhs);
     let rhs: &ParsedExpr = exprs.at(expr.rhs);
     let instance: &Type = types.at(getType(&lhs.typeState));
-    assert(instance.isStruct() || instance.isStructPointer(), "Expected (ptr to) struct in MemberAccess");
+    assert(isStruct(instance) || isStructPointer(instance), "Expected (ptr to) struct in MemberAccess");
     if (rhs.kind == EXPR_NAME) {
-        let result: RegIndex = generateBytecodeExpr(this, function, lhs, !instance.isStructPointer());
+        let result: RegIndex = generateBytecodeExpr(this, function, lhs, !isStructPointer(instance));
         let _t: &Type = getRegister(function, result).typ;
-        assert(_t.isStruct() || _t.isStructPointer(), "Expected (ptr to) struct in Field Access");
-        if (!_t.isStructPointer()) {
-            let t1: &Type = types.at(_t.intoPointer());
+        assert(isStruct(_t) || isStructPointer(_t), "Expected (ptr to) struct in Field Access");
+        if (!isStructPointer(_t)) {
+            let t1: &Type = types.at(intoPointer(_t));
             let alloca: RegIndex = allocateRegister(function, t1);
-            buildAlloca(function, expr.span, alloca, _t.getSize());
+            buildAlloca(function, expr.span, alloca, getSize(_t));
             buildStore(function, expr.span, alloca, result);
             result = alloca;
             _t = t1;
         }
-        assert(_t.isStructPointer(), "Expected ptr to struct in Field Access");
-        let structType: &Type = _t.getUnderlyingType(false);
+        assert(isStructPointer(_t), "Expected ptr to struct in Field Access");
+        let structType: &Type = getUnderlyingType(_t, false);
         // `result` contains a pointer to a struct instance at this point
         let decl: &ParsedStructDecl = structDecls.at(structType.typeIndex);
         let index: usize = getFieldIndex(decl, &rhs.origToken.content);
         let _f: &ParsedTypeNode = typeNodes.at(getFieldTypeAtIndex(&decl.context, index));
         let fieldType: &Type = types.at(getType(&_f.typeState));
-        let fieldPtr: RegIndex = allocateRegister(function, types.at(fieldType.intoPointer()));
+        let fieldPtr: RegIndex = allocateRegister(function, types.at(intoPointer(fieldType)));
         buildGetFieldPtr(function, expr.span, fieldPtr, result, index);
         if (needsPtr) {
             return fieldPtr;
@@ -1466,9 +1466,9 @@ func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &Pa
         let typ: &Type = types.at(getType(&expr.typeState));
         let args: RegIndexList = blank;
         let retPtr: RegIndex = blank;
-        if (typ.getSize() > 8) {
-            retPtr = allocateRegister(function, types.at(typ.intoPointer()));
-            buildAlloca(function, expr.span, retPtr, typ.getSize());
+        if (getSize(typ) > 8) {
+            retPtr = allocateRegister(function, types.at(intoPointer(typ)));
+            buildAlloca(function, expr.span, retPtr, getSize(typ));
             push(&args, retPtr);
         }
         if (method.isStatic) {
@@ -1491,7 +1491,7 @@ func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &Pa
 
 func prepareReturnValue(this: &IRGen, span: Span, function: &IRFunc, funcID: usize, args: RegIndexList, retType: &Type, retPtr: RegIndex, needsPtr: bool) -> RegIndex {
     let retVal: RegIndex = blank;
-    if (retType.getSize() > 8) {
+    if (getSize(retType) > 8) {
         let reg: RegIndex = allocateRegister(function, retType);
         buildCall(function, span, retPtr, RegIndex { i: funcID }, args);
         if (needsPtr) {
@@ -1501,13 +1501,13 @@ func prepareReturnValue(this: &IRGen, span: Span, function: &IRFunc, funcID: usi
             retVal = reg;
         }
     } else {
-        if (retType.isStruct()) {
-            let reg: RegIndex = getRegisterForSize(this, function, retType.getSize());
+        if (isStruct(retType)) {
+            let reg: RegIndex = getRegisterForSize(this, function, getSize(retType));
             buildCall(function, span, reg, RegIndex { i: funcID }, args);
             let v: RegIndex = allocateRegister(function, retType);
             let t: &Type = getRegister(function, v).typ;
-            let r: RegIndex = allocateRegister(function, types.at(t.intoPointer()));
-            let s: usize = t.getSize();
+            let r: RegIndex = allocateRegister(function, types.at(intoPointer(t)));
+            let s: usize = getSize(t);
             assert(s <= 8);
             buildAlloca(function, span, r, s);
             buildStore(function, span, r, reg);
@@ -1521,8 +1521,8 @@ func prepareReturnValue(this: &IRGen, span: Span, function: &IRFunc, funcID: usi
             let reg: RegIndex = allocateRegister(function, retType);
             buildCall(function, span, reg, RegIndex { i: funcID }, args);
             if (needsPtr) {
-                let tempAlloc: RegIndex = allocateRegister(function, types.at(retType.intoPointer()));
-                buildAlloca(function, span, tempAlloc, retType.getSize());
+                let tempAlloc: RegIndex = allocateRegister(function, types.at(intoPointer(retType)));
+                buildAlloca(function, span, tempAlloc, getSize(retType));
                 buildStore(function, span, tempAlloc, reg);
                 retVal = tempAlloc;
             } else {
@@ -1544,18 +1544,18 @@ func generateBytecodeExprIndexedAccess(this: &IRGen, function: &IRFunc, expr: &P
     assert(expr.op == BIN_INDEXED_ACCESS);
     let arrExpr: &ParsedExpr = exprs.at(expr.lhs);
     let lhsType: &Type = types.at(getType(&arrExpr.typeState));
-    assert(lhsType.isArray() || lhsType.isPointer(), "Expected Ptr or Array as LHS in IndexedAccess");
-    let lhs: RegIndex = generateBytecodeExpr(this, function, arrExpr, lhsType.isArray());
+    assert(isArray(lhsType) || isPointer(lhsType), "Expected Ptr or Array as LHS in IndexedAccess");
+    let lhs: RegIndex = generateBytecodeExpr(this, function, arrExpr, isArray(lhsType));
     let rhs: RegIndex = generateBytecodeExpr(this, function, exprs.at(expr.rhs), false);
-    assert(getRegister(function, lhs).typ.isPointer(), "Expected Ptr as LHS in IndexedAccess");
-    assert(getRegister(function, rhs).typ.isInteger(), "Expected Int as RHS in IndexedAccess");
+    assert(isPointer(getRegister(function, lhs).typ), "Expected Ptr as LHS in IndexedAccess");
+    assert(isInteger(getRegister(function, rhs).typ), "Expected Int as RHS in IndexedAccess");
     let elemType: &Type = types.at(getType(&expr.typeState));
     let usizeType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
     let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
-    if (lhsType.isArray()) {
+    if (isArray(lhsType)) {
         // if (index >= size) panic("Index out of bounds");
         let arrType: &Type = types.at(getType(&arrExpr.typeState));
-        let elemCount: usize = arrType.getSize() / elemType.getSize();
+        let elemCount: usize = getSize(arrType) / getSize(elemType);
         let cond: RegIndex = allocateRegister(function, boolType);
         let size: RegIndex = allocateRegister(function, usizeType);
         let panic: IRBlockID = appendBlock(function);
@@ -1592,9 +1592,9 @@ func generateBytecodeExprIndexedAccess(this: &IRGen, function: &IRFunc, expr: &P
         buildUnreachable(function, expr.span);
         setCurrentBlock(function, normal);
     }
-    let elemPtr: RegIndex = allocateRegister(function, types.at(elemType.intoPointer()));
+    let elemPtr: RegIndex = allocateRegister(function, types.at(intoPointer(elemType)));
     let indices: RegIndexList = blank;
-    if (lhsType.isArray()) {
+    if (isArray(lhsType)) {
         let index: RegIndex = allocateRegister(function, usizeType);
         buildLoadInteger(function, expr.span, index, usizeType, 0);
         push(&indices, index);
@@ -1622,11 +1622,11 @@ func generateBytecodeExprIdentifier(this: &IRGen, function: &IRFunc, expr: &Pars
     }
     if (needsPtr) {
         if (isGlobal) {
-            let ptrType: &Type = types.at(varType.intoPointer());
+            let ptrType: &Type = types.at(intoPointer(varType));
             let global: RegIndex = allocateRegister(function, ptrType);
             if (entry.isComptime) {
                 let val: RegIndex = allocateRegister(function, varType);
-                buildAlloca(function, expr.span, global, varType.getSize());
+                buildAlloca(function, expr.span, global, getSize(varType));
                 buildFetchGlobalComptimeValue(function, expr.span, val, entry.ptr);
                 buildStore(function, expr.span, global, val);
             } else {
@@ -1635,10 +1635,10 @@ func generateBytecodeExprIdentifier(this: &IRGen, function: &IRFunc, expr: &Pars
             return global;
         } else {
             if (entry.isComptime) {
-                let ptrType: &Type = types.at(varType.intoPointer());
+                let ptrType: &Type = types.at(intoPointer(varType));
                 let global: RegIndex = allocateRegister(function, ptrType);
                 let val: RegIndex = allocateRegister(function, varType);
-                buildAlloca(function, expr.span, global, varType.getSize());
+                buildAlloca(function, expr.span, global, getSize(varType));
                 buildFetchLocalComptimeValue(function, expr.span, val, entry.ptr);
                 buildStore(function, expr.span, global, val);
                 return global;
@@ -1676,73 +1676,73 @@ func generateBytecodeExprArithmetic(this: &IRGen, function: &IRFunc, expr: &Pars
     let dst: RegIndex = allocateRegister(function, res);
     // OPT: Specialized 8bit, 16bit, etc. variations
     if (expr.op == BIN_PLUS) {
-        if ((lhsType.isInteger() || lhsType.isChar()) && (rhsType.isInteger() || rhsType.isChar())) {
+        if ((isInteger(lhsType) || isChar(lhsType)) && (isInteger(rhsType) || isChar(rhsType))) {
             buildBinaryOp(function, expr.span, INSTR_INT_ADD, dst, lhs, rhs);
-        } else if (lhsType.isPointer() && rhsType.isInteger()) {
-            assert(res.isPointer(), "PTR + INT expected to be PTR");
+        } else if (isPointer(lhsType) && isInteger(rhsType)) {
+            assert(isPointer(res), "PTR + INT expected to be PTR");
             buildPtrToInt(function, expr.span, lhs, lhs);
             buildBinaryOp(function, expr.span, INSTR_INT_ADD, dst, lhs, rhs);
             buildIntToPtr(function, expr.span, dst, dst);
-        } else if (lhsType.isInteger() && rhsType.isPointer()) {
-            assert(res.isPointer(), "INT + PTR expected to be PTR");
+        } else if (isInteger(lhsType) && isPointer(rhsType)) {
+            assert(isPointer(res), "INT + PTR expected to be PTR");
             buildPtrToInt(function, expr.span, rhs, rhs);
             buildBinaryOp(function, expr.span, INSTR_INT_ADD, dst, lhs, rhs);
             buildIntToPtr(function, expr.span, dst, dst);
-        } else if (lhsType.isFloat() && rhsType.isFloat()) {
+        } else if (isFloat(lhsType) && isFloat(rhsType)) {
             buildBinaryOp(function, expr.span, INSTR_FLOAT_ADD, dst, lhs, rhs);
         } else {
             unreachable("IRGen: Exhaustive handling of types for BIN_PLUS");
         }
     } else if (expr.op == BIN_SUB) {
         let usizeType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
-        if ((lhsType.isInteger() || lhsType.isChar()) && (rhsType.isInteger() || rhsType.isChar())) {
+        if ((isInteger(lhsType) || isChar(lhsType)) && (isInteger(rhsType) || isChar(rhsType))) {
             buildBinaryOp(function, expr.span, INSTR_INT_SUB, dst, lhs, rhs);
-        } else if (lhsType.isPointer() && rhsType.isInteger()) {
-            assert(res.isPointer(), "PTR - INT expected to be PTR");
+        } else if (isPointer(lhsType) && isInteger(rhsType)) {
+            assert(isPointer(res), "PTR - INT expected to be PTR");
             let tmp1: RegIndex = allocateRegister(function, usizeType);
             let tmp2: RegIndex = allocateRegister(function, usizeType);
             buildPtrToInt(function, expr.span, tmp1, lhs);
             buildBinaryOp(function, expr.span, INSTR_INT_SUB, tmp2, tmp1, rhs);
             buildIntToPtr(function, expr.span, dst, tmp2);
-        } else if (lhsType.isInteger() && rhsType.isPointer()) {
-            assert(res.isPointer(), "INT - PTR expected to be PTR");
+        } else if (isInteger(lhsType) && isPointer(rhsType)) {
+            assert(isPointer(res), "INT - PTR expected to be PTR");
             let tmp1: RegIndex = allocateRegister(function, usizeType);
             let tmp2: RegIndex = allocateRegister(function, usizeType);
             buildPtrToInt(function, expr.span, tmp1, rhs);
             buildBinaryOp(function, expr.span, INSTR_INT_SUB, tmp2, lhs, tmp1);
             buildIntToPtr(function, expr.span, dst, tmp2);
-        } else if (lhsType.isPointer() && rhsType.isPointer()) {
-            assert(res.isInteger(), "PTR - PTR expected to be INT");
+        } else if (isPointer(lhsType) && isPointer(rhsType)) {
+            assert(isInteger(res), "PTR - PTR expected to be INT");
             let tmp1: RegIndex = allocateRegister(function, usizeType);
             let tmp2: RegIndex = allocateRegister(function, usizeType);
             buildPtrToInt(function, expr.span, tmp1, lhs);
             buildPtrToInt(function, expr.span, tmp2, rhs);
             buildBinaryOp(function, expr.span, INSTR_INT_SUB, dst, tmp1, tmp2);
-        } else if (lhsType.isFloat() && rhsType.isFloat()) {
+        } else if (isFloat(lhsType) && isFloat(rhsType)) {
             buildBinaryOp(function, expr.span, INSTR_FLOAT_SUB, dst, lhs, rhs);
         } else {
             unreachable("IRGen: Exhaustive handling of types for BIN_SUB");
         }
     } else if (expr.op == BIN_MULT) {
-        if (res.isInteger()) {
+        if (isInteger(res)) {
             buildBinaryOp(function, expr.span, INSTR_INT_MUL, dst, lhs, rhs);
-        } else if (res.isFloat()) {
+        } else if (isFloat(res)) {
             buildBinaryOp(function, expr.span, INSTR_FLOAT_MUL, dst, lhs, rhs);
         } else {
             unreachable("IRGen: Exhaustive handling of types for BIN_MULT");
         }
     } else if (expr.op == BIN_DIV) {
-        if (res.isInteger()) {
+        if (isInteger(res)) {
             buildBinaryOp(function, expr.span, INSTR_INT_DIV, dst, lhs, rhs);
-        } else if (res.isFloat()) {
+        } else if (isFloat(res)) {
             buildBinaryOp(function, expr.span, INSTR_FLOAT_DIV, dst, lhs, rhs);
         } else {
             unreachable("IRGen: Exhaustive handling of types for BIN_DIV");
         }
     } else if (expr.op == BIN_MOD) {
-        if (res.isInteger()) {
+        if (isInteger(res)) {
             buildBinaryOp(function, expr.span, INSTR_INT_MOD, dst, lhs, rhs);
-        } else if (res.isFloat()) {
+        } else if (isFloat(res)) {
             buildBinaryOp(function, expr.span, INSTR_FLOAT_MOD, dst, lhs, rhs);
         } else {
             unreachable("IRGen: Exhaustive handling of types for BIN_MOD");
@@ -1759,54 +1759,54 @@ func generateBytecodeExprComparison(this: &IRGen, function: &IRFunc, expr: &Pars
     let lhs: RegIndex = generateBytecodeExpr(this, function, exprs.at(expr.lhs), false);
     let rhs: RegIndex = generateBytecodeExpr(this, function, exprs.at(expr.rhs), false);
     let res: &Type = types.at(getType(&expr.typeState));
-    assert(res.isBoolean(), "Comparison expected to evaluate to Bool");
+    assert(isBoolean(res), "Comparison expected to evaluate to Bool");
     let dst: RegIndex = allocateRegister(function, res);
     // OPT: Specialized 8bit, 16bit, etc. variations
     let t: &Type = getRegister(function, lhs).typ;
     if (expr.op == BIN_CMP_EQ) {
-        if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
+        if (isInteger(t) || isChar(t) || isPointer(t) || isBoolean(t)) {
             buildBinaryOp(function, expr.span, INSTR_INT_CMP_EQ, dst, lhs, rhs);
-        } else if (t.isFloat()) {
+        } else if (isFloat(t)) {
             buildBinaryOp(function, expr.span, INSTR_FLOAT_CMP_EQ, dst, lhs, rhs);
         } else {
             unreachable("IRGen: Exhaustive handling of types for BIN_CMP_EQ");
         }
     } else if (expr.op == BIN_CMP_NEQ) {
-        if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
+        if (isInteger(t) || isChar(t) || isPointer(t) || isBoolean(t)) {
             buildBinaryOp(function, expr.span, INSTR_INT_CMP_NEQ, dst, lhs, rhs);
-        } else if (t.isFloat()) {
+        } else if (isFloat(t)) {
             buildBinaryOp(function, expr.span, INSTR_FLOAT_CMP_NEQ, dst, lhs, rhs);
         } else {
             unreachable("IRGen: Exhaustive handling of types for BIN_CMP_NEQ");
         }
     } else if (expr.op == BIN_CMP_GT) {
-        if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
+        if (isInteger(t) || isChar(t) || isPointer(t) || isBoolean(t)) {
             buildBinaryOp(function, expr.span, INSTR_INT_CMP_GT, dst, lhs, rhs);
-        } else if (t.isFloat()) {
+        } else if (isFloat(t)) {
             buildBinaryOp(function, expr.span, INSTR_FLOAT_CMP_GT, dst, lhs, rhs);
         } else {
             unreachable("IRGen: Exhaustive handling of types for BIN_CMP_GT");
         }
     } else if (expr.op == BIN_CMP_GTE) {
-        if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
+        if (isInteger(t) || isChar(t) || isPointer(t) || isBoolean(t)) {
             buildBinaryOp(function, expr.span, INSTR_INT_CMP_GTE, dst, lhs, rhs);
-        } else if (t.isFloat()) {
+        } else if (isFloat(t)) {
             buildBinaryOp(function, expr.span, INSTR_FLOAT_CMP_GTE, dst, lhs, rhs);
         } else {
             unreachable("IRGen: Exhaustive handling of types for BIN_CMP_GTE");
         }
     } else if (expr.op == BIN_CMP_LT) {
-        if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
+        if (isInteger(t) || isChar(t) || isPointer(t) || isBoolean(t)) {
             buildBinaryOp(function, expr.span, INSTR_INT_CMP_LT, dst, lhs, rhs);
-        } else if (t.isFloat()) {
+        } else if (isFloat(t)) {
             buildBinaryOp(function, expr.span, INSTR_FLOAT_CMP_LT, dst, lhs, rhs);
         } else {
             unreachable("IRGen: Exhaustive handling of types for BIN_CMP_LT");
         }
     } else if (expr.op == BIN_CMP_LTE) {
-        if (t.isInteger() || t.isChar() || t.isPointer() || t.isBoolean()) {
+        if (isInteger(t) || isChar(t) || isPointer(t) || isBoolean(t)) {
             buildBinaryOp(function, expr.span, INSTR_INT_CMP_LTE, dst, lhs, rhs);
-        } else if (t.isFloat()) {
+        } else if (isFloat(t)) {
             buildBinaryOp(function, expr.span, INSTR_FLOAT_CMP_LTE, dst, lhs, rhs);
         } else {
             unreachable("IRGen: Exhaustive handling of types for BIN_CMP_LTE");
@@ -1859,15 +1859,15 @@ func generateBytecodeExprLiteral(this: &IRGen, function: &IRFunc, expr: &ParsedE
     let t: &Type = types.at(getType(&expr.typeState));
     let reg: RegIndex = allocateRegister(function, t);
     if (expr.kind == EXPR_INT_LIT) {
-        if (t.isInteger() || t.isChar()) {
+        if (isInteger(t) || isChar(t)) {
             let _value: u64 = expr.origToken.content.toU64();
             let value: usize = _value as usize;
             let size: usize = bitCount(value);
-            let typsize: usize = t.getSize() * 8;
-            if (t.isSignedInteger()) size = size + 1;
+            let typsize: usize = getSize(t) * 8;
+            if (isSignedInteger(t)) size = size + 1;
             if (size > typsize) {
                 let loc = toString(&expr.span);
-                let ts = t.toString();
+                let ts = toString(t);
                 fprintf(stderr, "%s: %s: Integer literal (value=%llu) is too big for target type %s.\n",
                     loc.chars(), ERR_STR, _value, ts.chars());
                 ts.drop();
@@ -1875,37 +1875,37 @@ func generateBytecodeExprLiteral(this: &IRGen, function: &IRFunc, expr: &ParsedE
                 this.error = true;
             }
             buildLoadInteger(function, expr.span, reg, t, value);
-        } else if (t.isFloat()) {
+        } else if (isFloat(t)) {
             let value: f64 = expr.origToken.content.toF64();
             assert(value >= 0, "Expected FloatLit value to be positive");
-            let typmax: f64 = t.getMaxFloatValue();
+            let typmax: f64 = getMaxFloatValue(t);
             if (value >= typmax) {
                 todo_with_msg("float literal bigger than type can hold");
             }
-            if (t.getSize() == 4) buildLoadF32(function, expr.span, reg, value as f32);
-            else if (t.getSize() == 8) buildLoadF64(function, expr.span, reg, value);
+            if (getSize(t) == 4) buildLoadF32(function, expr.span, reg, value as f32);
+            else if (getSize(t) == 8) buildLoadF64(function, expr.span, reg, value);
             else unreachable("load float");
         } else {
             unreachable("EXPR_LIT expected to be int or float");
         }
     } else if (expr.kind == EXPR_STRING_LIT) {
-        assert(t.isPointerTo(TYPE_CHAR), "StrLit expected to be &char");
+        assert(isPointerTo(t, TYPE_CHAR), "StrLit expected to be &char");
         let name: SubStr = expr.origToken.content;
         buildLoadString(function, expr.span, reg, name);
     } else if (expr.kind == EXPR_TRUE || expr.kind == EXPR_FALSE) {
-        assert(t.isBoolean(), "true and false expected to be bool");
+        assert(isBoolean(t), "true and false expected to be bool");
         let v: usize = 0;
         if (expr.kind == EXPR_TRUE) v = 1;
         buildLoadBool(function, expr.span, reg, v);
     } else if (expr.kind == EXPR_NULL) {
-        assert(t.isPointer(), "null expected to be pointer");
+        assert(isPointer(t), "null expected to be pointer");
         buildLoadNull(function, expr.span, reg);
     } else if (expr.kind == EXPR_CHAR_LIT) {
-        assert(t.isChar(), "CharLit expected to be char");
+        assert(isChar(t), "CharLit expected to be char");
         buildLoadInteger(function, expr.span, reg, t, expr.origToken.content.getChar(0) as usize);
     } else if (expr.kind == EXPR_ARRAY_LIT) {
-        assert(t.isArray(), "ArrayLit expected to be array");
-        if (t.getSize() > 4096) warning("Array Literal is big and slows down the IR");
+        assert(isArray(t), "ArrayLit expected to be array");
+        if (getSize(t) > 4096) warning("Array Literal is big and slows down the IR");
         if (expr.arrayContext.size == 0) {
             buildCreateArray(function, expr.span, reg);
             for (let i: usize = 0; i < expr.arrayContext.elemLength; i = i + 1) {
@@ -1919,11 +1919,11 @@ func generateBytecodeExprLiteral(this: &IRGen, function: &IRFunc, expr: &ParsedE
             let usizeType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
             let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
             let elemType: &Type = types.at(getType(&elem.typeState));
-            let arrayPtr: RegIndex = allocateRegister(function, types.at(t.intoPointer()));
+            let arrayPtr: RegIndex = allocateRegister(function, types.at(intoPointer(t)));
             let zero: RegIndex = allocateRegister(function, usizeType);
             let one: RegIndex = allocateRegister(function, usizeType);
             let index: RegIndex = allocateRegister(function, usizeType);
-            let indexPtr: RegIndex = allocateRegister(function, types.at(usizeType.intoPointer()));
+            let indexPtr: RegIndex = allocateRegister(function, types.at(intoPointer(usizeType)));
             let size: RegIndex = allocateRegister(function, usizeType);
             let cond: RegIndex = allocateRegister(function, boolType);
             let elemPtr: RegIndex = allocateRegister(function, elemType);
@@ -1932,8 +1932,8 @@ func generateBytecodeExprLiteral(this: &IRGen, function: &IRFunc, expr: &ParsedE
             let body: IRBlockID = appendBlock(function);
             let end: IRBlockID = appendBlock(function);
 
-            buildAlloca(function, expr.span, arrayPtr, t.getSize());
-            buildAlloca(function, expr.span, indexPtr, usizeType.getSize());
+            buildAlloca(function, expr.span, arrayPtr, getSize(t));
+            buildAlloca(function, expr.span, indexPtr, getSize(usizeType));
             buildLoadInteger(function, expr.span, zero, usizeType, 0);
             buildLoadInteger(function, expr.span, one, usizeType, 1);
             buildStore(function, expr.span, indexPtr, zero);
@@ -1976,7 +1976,7 @@ func generateBytecodeExprAssignment(this: &IRGen, function: &IRFunc, expr: &Pars
     assert(isAssignment(expr));
     let lhs: RegIndex = generateBytecodeExpr(this, function, exprs.at(expr.lhs), true);
     let rhs: RegIndex = generateBytecodeExpr(this, function, exprs.at(expr.rhs), false);
-    assert(getRegister(function, lhs).typ.isPointer(), "Assignment expected Ptr as LHS");
+    assert(isPointer(getRegister(function, lhs).typ), "Assignment expected Ptr as LHS");
     buildStore(function, expr.span, lhs, rhs);
     return rhs;
 }
@@ -1993,9 +1993,9 @@ func generateBytecodeExprUnary(this: &IRGen, function: &IRFunc, expr: &ParsedExp
         endComptime(function);
         buildFetchLocalComptimeValue(function, expr.span, r, result);
         if (needsPtr) {
-            let subType: &Type = types.at(exprType.intoPointer());
+            let subType: &Type = types.at(intoPointer(exprType));
             let ptr: RegIndex = allocateRegister(function, subType);
-            buildAlloca(function, expr.span, ptr, exprType.getSize());
+            buildAlloca(function, expr.span, ptr, getSize(exprType));
             buildStore(function, expr.span, ptr, r);
             return ptr;
         } else {
@@ -2005,7 +2005,7 @@ func generateBytecodeExprUnary(this: &IRGen, function: &IRFunc, expr: &ParsedExp
         let subexpr: &ParsedExpr = exprs.at(expr.lhs);
         let result: RegIndex = generateBytecodeExpr(this, function, subexpr, false);
         let ptr: &IRReg = getRegister(function, result);
-        assert(ptr.typ.isPointer(), "Expected Ptr SubExpr in Unary Deref");
+        assert(isPointer(ptr.typ), "Expected Ptr SubExpr in Unary Deref");
         if (needsPtr) {
             return result;
         } else {
@@ -2018,10 +2018,10 @@ func generateBytecodeExprUnary(this: &IRGen, function: &IRFunc, expr: &ParsedExp
         let subExpr: &ParsedExpr = exprs.at(expr.lhs);
         let result: RegIndex = generateBytecodeExpr(this, function, subExpr, true);
         let ptrReg: &IRReg = getRegister(function, result);
-        if (needsPtr || !ptrReg.typ.isPointer()) {
-            let subType: &Type = types.at(ptrReg.typ.intoPointer());
+        if (needsPtr || !isPointer(ptrReg.typ)) {
+            let subType: &Type = types.at(intoPointer(ptrReg.typ));
             let ptr: RegIndex = allocateRegister(function, subType);
-            buildAlloca(function, expr.span, ptr, ptrReg.typ.getSize());
+            buildAlloca(function, expr.span, ptr, getSize(ptrReg.typ));
             buildStore(function, expr.span, ptr, result);
             return ptr;
         } else {
@@ -2035,14 +2035,14 @@ func generateBytecodeExprUnary(this: &IRGen, function: &IRFunc, expr: &ParsedExp
     } else if (expr.op == UNARY_MINUS) {
         let result: RegIndex = generateBytecodeExpr(this, function, exprs.at(expr.lhs), false);
         let t: &Type = types.at(getType(&expr.typeState));
-        if (t.isInteger()) {
+        if (isInteger(t)) {
             let zero: RegIndex = allocateRegister(function, t);
             buildLoadInteger(function, expr.span, zero, t, 0);
             buildBinaryOp(function, expr.span, INSTR_INT_SUB, result, zero, result);
-        } else if (t.isFloat()) {
+        } else if (isFloat(t)) {
             let zero: RegIndex = allocateRegister(function, t);
-            if (t.getSize() == 4) buildLoadF32(function, expr.span, zero, 0);
-            else if (t.getSize() == 8) buildLoadF64(function, expr.span, zero, 0);
+            if (getSize(t) == 4) buildLoadF32(function, expr.span, zero, 0);
+            else if (getSize(t) == 8) buildLoadF64(function, expr.span, zero, 0);
             else unreachable("negation float");
             buildBinaryOp(function, expr.span, INSTR_FLOAT_SUB, result, zero, result);
         } else {
@@ -2056,8 +2056,8 @@ func generateBytecodeExprUnary(this: &IRGen, function: &IRFunc, expr: &ParsedExp
 
 func prepareParameter(this: &IRGen, function: &IRFunc, index: usize, span: Span, name: SubStr, typ: &Type, retValue: bool) {
     trace("IRGen.prepareParameter");
-    if (typ.isStruct()) {
-        let size: usize = typ.getSize();
+    if (isStruct(typ)) {
+        let size: usize = getSize(typ);
         let t: &Type = null;
         if (size <= 1) {
             t = newType(TYPE_KIND_PRIMITIVE, TYPE_U8);
@@ -2071,35 +2071,35 @@ func prepareParameter(this: &IRGen, function: &IRFunc, index: usize, span: Span,
             t = newType(TYPE_KIND_POINTER, TYPE_U8);
         }
         let value: RegIndex = allocateRegister(function, t);
-        buildGetParam(function, span, value, index, t.getSize());
+        buildGetParam(function, span, value, index, getSize(t));
         // value contains prepared struct
-        let allocType: &Type = types.at(typ.intoPointer());
+        let allocType: &Type = types.at(intoPointer(typ));
         let allocReg: RegIndex = allocateRegister(function, allocType);
-        if (t.isPointer()) {
+        if (isPointer(t)) {
             let instance: RegIndex = allocateRegister(function, typ);
             buildLoad(function, span, instance, value);
 
-            buildAlloca(function, span, allocReg, typ.getSize());
+            buildAlloca(function, span, allocReg, getSize(typ));
             buildStore(function, span, allocReg, instance);
             addEntry(last(&function.scopes), name, allocReg, false);
         } else {
-            buildAlloca(function, span, allocReg, typ.getSize());
+            buildAlloca(function, span, allocReg, getSize(typ));
             buildStore(function, span, allocReg, value);
             addEntry(last(&function.scopes), name, allocReg, false);
         }
-    } else if (typ.getSize() > 8) {
+    } else if (getSize(typ) > 8) {
         unreachable("IRGen.prepareParameter: The only types that are bigger than 8 bytes are structs");
     } else {
-        let allocType: &Type = types.at(typ.intoPointer());
+        let allocType: &Type = types.at(intoPointer(typ));
         let allocReg: RegIndex = allocateRegister(function, allocType);
         let value: RegIndex = allocateRegister(function, typ);
-        buildGetParam(function, span, value, index, typ.getSize());
+        buildGetParam(function, span, value, index, getSize(typ));
 
         if (retValue) {
             assert(index == 0);
             (*function).retPtr = value;
         } else {
-            buildAlloca(function, span, allocReg, typ.getSize());
+            buildAlloca(function, span, allocReg, getSize(typ));
             buildStore(function, span, allocReg, value);
             addEntry(last(&function.scopes), name, allocReg, false);
         }
@@ -2125,19 +2125,19 @@ func getRegisterForSize(this: &IRGen, function: &IRFunc, size: usize) -> RegInde
 
 func prepareArgument(this: &IRGen, function: &IRFunc, span: Span, value: RegIndex, typ: &Type) -> RegIndex {
     trace("IRGen.prepareArgument");
-    if (typ.isStruct()) {
-        let size: usize = typ.getSize();
-        let alloc: RegIndex = allocateRegister(function, types.at(typ.intoPointer()));
+    if (isStruct(typ)) {
+        let size: usize = getSize(typ);
+        let alloc: RegIndex = allocateRegister(function, types.at(intoPointer(typ)));
         buildAlloca(function, span, alloc, size);
         buildStore(function, span, alloc, value);
         if (size > 8) return alloc;
         let v: RegIndex = getRegisterForSize(this, function, size);
         buildLoad(function, span, v, alloc);
         return v;
-    } else if (typ.getSize() > 8) {
+    } else if (getSize(typ) > 8) {
         // Following the ABI, all parameters that don't fit in a register get passed by pointer
-        let tempAlloc: RegIndex = allocateRegister(function, types.at(typ.intoPointer()));
-        buildAlloca(function, span, tempAlloc, typ.getSize());
+        let tempAlloc: RegIndex = allocateRegister(function, types.at(intoPointer(typ)));
+        buildAlloca(function, span, tempAlloc, getSize(typ));
         buildStore(function, span, tempAlloc, value);
         return tempAlloc;
     } else {
@@ -2152,9 +2152,9 @@ func generateBytecodeExprCall(this: &IRGen, function: &IRFunc, expr: &ParsedExpr
     let args: RegIndexList = blank;
     let reg: RegIndex = allocateRegister(function, typ);
     let retPtr: RegIndex = blank;
-    if (typ.getSize() > 8) {
-        retPtr = allocateRegister(function, types.at(typ.intoPointer()));
-        buildAlloca(function, expr.span, retPtr, typ.getSize());
+    if (getSize(typ) > 8) {
+        retPtr = allocateRegister(function, types.at(intoPointer(typ)));
+        buildAlloca(function, expr.span, retPtr, getSize(typ));
         push(&args, retPtr);
     }
     for (let i: usize = 0; i < expr.arrayContext.elemLength; i = i + 1) {

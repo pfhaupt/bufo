@@ -133,7 +133,7 @@ func resolveTypeByName(this: &Lookup, currentModule: usize, name: &Token, typ: &
 
 func getTypeLookupForType(this: &Lookup, typ: &Type) -> TypeLookup {
     trace("Lookup.getTypeLookupForType");
-    if (typ.isStruct()) {
+    if (isStruct(typ)) {
         let strukt: &ParsedStructDecl = structDecls.at(typ.typeIndex);
         let modID: usize = strukt.parentModule;
         let s: &StructLookup = getStructByGlobalID(at(&this.modules, modID), getID(strukt));
@@ -225,7 +225,7 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) {
             readyState: STRUCT_INCOMPLETE,
             fields: blank,
             methods: blank,
-            typeID: newType(TYPE_KIND_STRUCT, tli.nodeID).getID(),
+            typeID: getID(newType(TYPE_KIND_STRUCT, tli.nodeID)),
         };
         for (let i: usize = 0; i < strukt.context.methodLength; i = i + 1) {
             let id: usize = getMethodAtIndex(&strukt.context, i);
@@ -330,7 +330,7 @@ func resolveAllFunctionsWithReturnType(this: &ModuleLookup, name: &Token, typ: &
             continue;
         }
         let t = types.at(getType(&f.returnType));
-        if (t.equals(typ)) {
+        if (equals(t, typ)) {
             push(list, *f);
         }
     }
@@ -346,7 +346,7 @@ func resolveAllStructsWithField(this: &ModuleLookup, name: &Token, typ: &Type) -
         if (resolveFieldByName(s, name, &v)) {
             assert(isType(&v.typeState));
             let t = types.at(getType(&v.typeState));
-            if (t.equals(typ)) {
+            if (equals(t, typ)) {
                 push(&list, *s);
             }
         }

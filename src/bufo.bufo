@@ -45,7 +45,7 @@ func main(argc: i32, argv: &&char) -> i32 {
     addImportRoot(&parser, newSubStrOfStrLit("./std/"));
     let project: ParsedModule = parseProject(&parser, fileSubStr);
     let checker: TypeChecker = newTypeChecker();
-    if (!checker.typeCheckProject(&project)) return 1;
+    if (!typeCheckProject(&checker, &project)) return 1;
     let generator: IRGen = newIRGenerator();
     if (!generateBytecode(&generator, &project)) return 1;
     let interp: IRInterp = newIRInterpreter(&generator);
