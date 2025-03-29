@@ -228,7 +228,7 @@ struct IRBlock {
     instructions: IRInstrList;
 }
 func equals(this: &IRBlock, other: &IRBlock) -> bool {
-    return this.parent.equals(&other.parent) && this.id.i == other.id.i;
+    return equals(&this.parent, &other.parent) && this.id.i == other.id.i;
 }
 func isTerminated(this: &IRBlock) -> bool {
     trace("IRBlock.isTerminated");
@@ -321,7 +321,7 @@ func getMethodNode(this: &IRFunc) -> &ParsedMethod {
     return at(&methods, this.originalID);
 }
 func dumpInstructions(this: &IRFunc) {
-    printf("%s:\n", this.name.chars());
+    printf("%s:\n", this.name.buffer);
     for (let i: usize = 0; i < this.blocks.length; i = i + 1) {
         dump(at(&this.blocks, i));
     }
@@ -894,7 +894,7 @@ func addEntry(this: &IRScope, name: SubStr, ptr: RegIndex, isComptime: bool) {
 func getIdentifierByName(this: &IRScope, name: SubStr) -> &IRScopeEntry {
     for (let i: usize = 0; i < this.entries.length; i = i + 1) {
         let entry: &IRScopeEntry = at(&this.entries, i);
-        if (name.equals(&entry.name)) {
+        if (equals(&name, &entry.name)) {
             return entry;
         }
     }
@@ -918,7 +918,6 @@ func getIdentifierByName(this: &IRGen, function: &IRFunc, name: SubStr, isGlobal
         *isGlobal = true;
         return entry;
     }
-    name.print();
     unreachable("Could not find identifier anywhere.");
 }
 func getFunctionByName(this: &IRGen, name: &String) -> usize {
@@ -934,10 +933,10 @@ func fillLookup(this: &IRGen, project: &ParsedModule) -> bool {
             let fn = get(&this.functions, &name);
             let loc = toString(&function.span);
             let loc1 = toString(&fn.span);
-            fprintf(stderr, "%s: %s Hash collision - Function Lookup already contains function!\n", loc.chars(), FATAL_STR);
-            fprintf(stderr, "%s: %s Function with mangled name %s already defined here!\n", loc1.chars(), FATAL_STR, name.chars());
-            loc1.drop();
-            loc.drop();
+            fprintf(stderr, "%s: %s Hash collision - Function Lookup already contains function!\n", loc.buffer, FATAL_STR);
+            fprintf(stderr, "%s: %s Function with mangled name %s already defined here!\n", loc1.buffer, FATAL_STR, name.buffer);
+            drop(&loc1);
+            drop(&loc);
             exit(2);
         }
         let irfunc: IRFunc = IRFunc {
@@ -965,10 +964,10 @@ func fillLookup(this: &IRGen, project: &ParsedModule) -> bool {
             let fn = get(&this.functions, &name);
             let loc = toString(&method.span);
             let loc1 = toString(&fn.span);
-            fprintf(stderr, "%s: %s Hash collision - Function Lookup already contains function!\n", loc.chars(), FATAL_STR);
-            fprintf(stderr, "%s: %s Function with mangled name %s already defined here!\n", loc1.chars(), FATAL_STR, name.chars());
-            loc1.drop();
-            loc.drop();
+            fprintf(stderr, "%s: %s Hash collision - Function Lookup already contains function!\n", loc.buffer, FATAL_STR);
+            fprintf(stderr, "%s: %s Function with mangled name %s already defined here!\n", loc1.buffer, FATAL_STR, name.buffer);
+            drop(&loc1);
+            drop(&loc);
             exit(2);
         }
         let irmeth: IRFunc = IRFunc {
@@ -1097,8 +1096,8 @@ func generateFunction(this: &IRGen, funcDecl: &ParsedFuncDecl) {
     let name: String = getMangledName(funcDecl);
     let function: &IRFunc = get(&this.functions, &name);
     assert(function != null, "Expected to find function in lookup");
-    assert(function.name.equals(&name), "functions.get() retrieved wrong IRFunc");
-    name.drop();
+    assert(equals(&function.name, &name), "functions.get() retrieved wrong IRFunc");
+    drop(&name);
     if (isExtern(funcDecl)) {
         return;
     }
@@ -1116,8 +1115,8 @@ func generateMethod(this: &IRGen, methDecl: &ParsedMethod) {
     let name: String = getMangledName(methDecl);
     let function: &IRFunc = get(&this.functions, &name);
     assert(function != null, "Expected to find function in lookup");
-    assert(function.name.equals(&name), "functions.get() retrieved wrong IRFunc");
-    name.drop();
+    assert(equals(&function.name, &name), "functions.get() retrieved wrong IRFunc");
+    drop(&name);
     let scope: usize = enterScope(function);
     assert(scope == 1, "Expected method to enter first scope");
     let retDecl: &ParsedTypeNode = at(&typeNodes, methDecl.retTypeID);
@@ -1146,8 +1145,8 @@ func generateBytecodeBlock(this: &IRGen, function: &IRFunc, block: &ParsedBlock)
         if (isTerminated(curr)) {
             if (i != block.stmtLength - 1) {
                 let loc: String = toString(&at(&stmts, getStmtAtIndex(block, i + 1)).span);
-                fprintf(stderr, "%s: %s: Unreachable code.\n", loc.chars(), WARN_STR);
-                loc.drop();
+                fprintf(stderr, "%s: %s: Unreachable code.\n", loc.buffer, WARN_STR);
+                drop(&loc);
             }
             break;
         }
@@ -1463,7 +1462,7 @@ func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &Pa
         let method: &ParsedMethod = at(&methods, rhs.lhs);
         let name: String = getMangledName(method);
         let funcID: usize = getFunctionByName(this, &name);
-        name.drop();
+        drop(&name);
         let typ: &Type = at(&types, getType(&expr.typeState));
         let args: RegIndexList = blank;
         let retPtr: RegIndex = blank;
@@ -1568,15 +1567,15 @@ func generateBytecodeExprIndexedAccess(this: &IRGen, function: &IRFunc, expr: &P
         setCurrentBlock(function, panic);
         let err: RegIndex = allocateRegister(function, newType(TYPE_KIND_POINTER, TYPE_CHAR));
         // FIXME: Don't use mangled name?
-        let s: String = function.name.copy();
+        let s: String = copy(&function.name);
         let _s: String = toString(&expr.span);
-        s.pushChar(':');
-        s.pushString(&_s);
-        s.pushStr(": RUNTIME ERROR: Index out of bounds: Array of size ");
-        s.pushNumber(elemCount);
-        s.pushStr(" has no index %d\n");
-        _s.drop();
-        buildLoadString(function, expr.span, err, s.asSubStr());
+        pushChar(&s, ':');
+        pushString(&s, &_s);
+        pushStr(&s, ": RUNTIME ERROR: Index out of bounds: Array of size ");
+        pushNumber(&s, elemCount);
+        pushStr(&s, " has no index %d\n");
+        drop(&_s);
+        buildLoadString(function, expr.span, err, asSubStr(&s));
         let indexoob: String = newStringFromStrLit("index_oobPci64rN");
         if (!containsKey(&this.functions, &indexoob)) {
             fprintf(stderr, "%s Could not generate index check for array access!\n", FATAL_STR);
@@ -1861,7 +1860,7 @@ func generateBytecodeExprLiteral(this: &IRGen, function: &IRFunc, expr: &ParsedE
     let reg: RegIndex = allocateRegister(function, t);
     if (expr.kind == EXPR_INT_LIT) {
         if (isInteger(t) || isChar(t)) {
-            let _value: u64 = expr.origToken.content.toU64();
+            let _value: u64 = toU64(&expr.origToken.content);
             let value: usize = _value as usize;
             let size: usize = bitCount(value);
             let typsize: usize = getSize(t) * 8;
@@ -1870,14 +1869,14 @@ func generateBytecodeExprLiteral(this: &IRGen, function: &IRFunc, expr: &ParsedE
                 let loc = toString(&expr.span);
                 let ts = toString(t);
                 fprintf(stderr, "%s: %s: Integer literal (value=%llu) is too big for target type %s.\n",
-                    loc.chars(), ERR_STR, _value, ts.chars());
-                ts.drop();
-                loc.drop();
+                    loc.buffer, ERR_STR, _value, ts.buffer);
+                drop(&ts);
+                drop(&loc);
                 this.error = true;
             }
             buildLoadInteger(function, expr.span, reg, t, value);
         } else if (isFloat(t)) {
-            let value: f64 = expr.origToken.content.toF64();
+            let value: f64 = toF64(&expr.origToken.content);
             assert(value >= 0, "Expected FloatLit value to be positive");
             let typmax: f64 = getMaxFloatValue(t);
             if (value >= typmax) {
@@ -1903,7 +1902,7 @@ func generateBytecodeExprLiteral(this: &IRGen, function: &IRFunc, expr: &ParsedE
         buildLoadNull(function, expr.span, reg);
     } else if (expr.kind == EXPR_CHAR_LIT) {
         assert(isChar(t), "CharLit expected to be char");
-        buildLoadInteger(function, expr.span, reg, t, expr.origToken.content.getChar(0) as usize);
+        buildLoadInteger(function, expr.span, reg, t, getChar(&expr.origToken.content, 0) as usize);
     } else if (expr.kind == EXPR_ARRAY_LIT) {
         assert(isArray(t), "ArrayLit expected to be array");
         if (getSize(t) > 4096) warning("Array Literal is big and slows down the IR");
@@ -2166,7 +2165,7 @@ func generateBytecodeExprCall(this: &IRGen, function: &IRFunc, expr: &ParsedExpr
     }
     let name: String = getMangledName(at(&funcDecls, expr.lhs));
     let funcID: usize = getFunctionByName(this, &name);
-    name.drop();
+    drop(&name);
     return prepareReturnValue(this, expr.span, function, funcID, args, typ, retPtr, needsPtr);
 }
 

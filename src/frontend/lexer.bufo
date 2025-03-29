@@ -44,71 +44,71 @@ struct Lexer {
 }
 
 func isKeyword(this: &Lexer, word: &SubStr) -> bool {
-    return word.equals(&KEYWORD_LET)
-        || word.equals(&KEYWORD_FUNC)
-        || word.equals(&KEYWORD_MUT)
-        || word.equals(&KEYWORD_COMPTIME)
-        || word.equals(&KEYWORD_STRUCT)
-        || word.equals(&KEYWORD_ENUM)
-        || word.equals(&KEYWORD_UNION)
-        || word.equals(&KEYWORD_RETURN)
-        || word.equals(&KEYWORD_MODULE)
-        || word.equals(&KEYWORD_IMPORT)
-        || word.equals(&KEYWORD_IF)
-        || word.equals(&KEYWORD_ELSE)
-        || word.equals(&KEYWORD_WHILE)
-        || word.equals(&KEYWORD_UNSAFE)
-        || word.equals(&KEYWORD_SIZEOF)
-        || word.equals(&KEYWORD_AS)
-        || word.equals(&KEYWORD_FOR)
-        || word.equals(&KEYWORD_BREAK)
-        || word.equals(&KEYWORD_CONTINUE)
-        || word.equals(&KEYWORD_EXTERN)
-        || word.equals(&KEYWORD_NULL)
-        || word.equals(&KEYWORD_BLANK)
-        || word.equals(&KEYWORD_TRUE)
-        || word.equals(&KEYWORD_FALSE)
-        || word.equals(&KEYWORD_COMPILER_FLAGS);
+    return equals(word, &KEYWORD_LET)
+        || equals(word, &KEYWORD_FUNC)
+        || equals(word, &KEYWORD_MUT)
+        || equals(word, &KEYWORD_COMPTIME)
+        || equals(word, &KEYWORD_STRUCT)
+        || equals(word, &KEYWORD_ENUM)
+        || equals(word, &KEYWORD_UNION)
+        || equals(word, &KEYWORD_RETURN)
+        || equals(word, &KEYWORD_MODULE)
+        || equals(word, &KEYWORD_IMPORT)
+        || equals(word, &KEYWORD_IF)
+        || equals(word, &KEYWORD_ELSE)
+        || equals(word, &KEYWORD_WHILE)
+        || equals(word, &KEYWORD_UNSAFE)
+        || equals(word, &KEYWORD_SIZEOF)
+        || equals(word, &KEYWORD_AS)
+        || equals(word, &KEYWORD_FOR)
+        || equals(word, &KEYWORD_BREAK)
+        || equals(word, &KEYWORD_CONTINUE)
+        || equals(word, &KEYWORD_EXTERN)
+        || equals(word, &KEYWORD_NULL)
+        || equals(word, &KEYWORD_BLANK)
+        || equals(word, &KEYWORD_TRUE)
+        || equals(word, &KEYWORD_FALSE)
+        || equals(word, &KEYWORD_COMPILER_FLAGS);
 }
 
 func escapeCharSequence(this: &Lexer, tmp: &SubStr, s: &String, len: &usize) -> char {
     let escaped: bool = false;
     let extraOffset: usize = 0;
-    let c: char = (&*tmp).getChar(0);
+    let c: char = getChar(tmp, 0);
     if (c == '\\') {
-        c = (&*tmp).getChar(1);
+        c = getChar(tmp, 1);
         if (c == 'n') {
-            s.pushChar('\n');
+            pushChar(s, '\n');
         } else if (c == 'r') {
-            s.pushChar('\r');
+            pushChar(s, '\r');
         } else if (c == 't') {
-            s.pushChar('\t');
+            pushChar(s, '\t');
         } else if (c == '0') {
-            s.pushChar('\0');
+            pushChar(s, '\0');
         } else if (c == '\\') {
-            s.pushChar('\\');
+            pushChar(s, '\\');
         } else if (c == '\'') {
-            s.pushChar('\'');
+            pushChar(s, '\'');
         } else if (c == '\"') {
-            s.pushChar('\"');
+            pushChar(s, '\"');
         } else if (c == 'x') {
-            let lower: char = (&*tmp).getChar(2);
-            let upper: char = (&*tmp).getChar(3);
+            let lower: char = getChar(tmp, 2);
+            let upper: char = getChar(tmp, 3);
             assert(isHexDigit(lower), "Expected hex digits for \\x");
             assert(isHexDigit(upper), "Expected hex digits for \\x");
             let byte: char = (asHex(lower) * 16 + asHex(upper)) as char;
-            s.pushChar(byte);
+            pushChar(s, byte);
             extraOffset = 2;
         } else {
             let t: Token = newToken(this.moduleID, &newSubStr(&c, 0, 1), this.ptr + 1, TOKEN_IDENT);
             let loc: String = toString(&t.span);
-            fprintf(stderr, "%s: %s: Can't escape character `%c`.\n", loc.chars(), ERR_STR, c);
-            loc.drop();
+            fprintf(stderr, "%s: %s: Can't escape character `%c`.\n", loc.buffer, ERR_STR, c);
+            drop(&loc);
             exit(1);
         }
         escaped = true;
     } else {
-        s.pushChar(c);
+        pushChar(s, c);
     }
     let s: usize = 1;
     if (escaped) {
@@ -116,13 +116,13 @@ func escapeCharSequence(this: &Lexer, tmp: &SubStr, s: &String, len: &usize) -> 
     }
     s = s + extraOffset;
     *len = *len + s;
-    *tmp = (&*tmp).substring(s, tmp.len);
-    return (&*tmp).getChar(0);
+    *tmp = substring(tmp, s, tmp.len);
+    return getChar(tmp, 0);
 }
 
 func advance(this: &Lexer) -> bool {
     this.ptr = this.ptr + 1;
-    this.content = this.content.substring(1, this.content.len);
+    this.content = substring(&this.content, 1, this.content.len);
     return this.ptr >= this.len;
 }
 func peek(this: &Lexer) -> Token {
@@ -142,23 +142,23 @@ func __next(this: &Lexer, peek: bool) -> Token {
     if (this.ptr == this.len) {
         return newTokenEOF(this.moduleID, this.ptr);
     }
-    let currChar: char = this.content.getChar(0);
+    let currChar: char = getChar(&this.content, 0);
     while (isWhitespace(currChar)) {
         if (advance(this, )) {
             return newTokenEOF(this.moduleID, this.ptr);
         }
-        currChar = this.content.getChar(0);
+        currChar = getChar(&this.content, 0);
     }
     if (isAlphabetic(currChar) || currChar == '_') {
         let len: usize = 0;
         let tmp: SubStr = this.content;
-        let c: char = tmp.getChar(0);
+        let c: char = getChar(&tmp, 0);
         while (isNumeric(c) || isAlphabetic(c) || c == '_') {
             len = len + 1;
-            tmp = tmp.substring(1, tmp.len);
-            c = tmp.getChar(0);
+            tmp = substring(&tmp, 1, tmp.len);
+            c = getChar(&tmp, 0);
         }
-        let word: SubStr = this.content.substring(0, len);
+        let word: SubStr = substring(&this.content, 0, len);
         this.ptr = this.ptr + len;
         this.content = tmp;
         if (isKeyword(this, &word)) {
@@ -168,11 +168,11 @@ func __next(this: &Lexer, peek: bool) -> Token {
     } else if (isNumeric(currChar)) {
         let len: usize = 0;
         let tmp: SubStr = this.content;
-        while (isNumeric(tmp.getChar(0))) {
+        while (isNumeric(getChar(&tmp, 0))) {
             len = len + 1;
             tmp = newSubStr(tmp.start, 1, tmp.len);
         }
-        let word: SubStr = this.content.substring(0, len);
+        let word: SubStr = substring(&this.content, 0, len);
         this.ptr = this.ptr + len;
         this.content = tmp;
         return newToken(this.moduleID, &word, this.ptr - len, TOKEN_INT_LITERAL);
@@ -188,14 +188,14 @@ func __next(this: &Lexer, peek: bool) -> Token {
         }
         let len: usize = 0;
         let s: String = newString();
-        let c: char = this.content.getChar(0);
+        let c: char = getChar(&this.content, 0);
         while (c != '"') {
             let l: usize = 0;
             c = escapeCharSequence(this, &this.content, &s, &l);
             this.ptr = this.ptr + l;
             len = len + l;
         }
-        let word: SubStr = s.substring(0, s.length);
+        let word: SubStr = substring(&s, 0, s.length);
         advance(this, );
         return newToken(this.moduleID, &word, this.ptr - len, TOKEN_STRING_LITERAL);
     } else if (currChar == '\'') {
@@ -205,14 +205,14 @@ func __next(this: &Lexer, peek: bool) -> Token {
         }
         let len: usize = 0;
         let s: String = newString();
-        let c: char = this.content.getChar(0);
+        let c: char = getChar(&this.content, 0);
         while (c != '\'') {
             let l: usize = 0;
             c = escapeCharSequence(this, &this.content, &s, &l);
             this.ptr = this.ptr + l;
             len = len + l;
         }
-        let word: SubStr = s.substring(0, s.length);
+        let word: SubStr = substring(&s, 0, s.length);
         if (word.len != 1) {
             todo_with_msg("invalid char literal");
         }
@@ -238,7 +238,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
         return newToken(this.moduleID, &newSubStr("]", 0, 1), this.ptr - 1, TOKEN_SQUARE_CLOSE);
     } else if (currChar == '<') {
         advance(this, );
-        currChar = this.content.getChar(0);
+        currChar = getChar(&this.content, 0);
         if (currChar == '=') {
             advance(this, );
             return newToken(this.moduleID, &newSubStr("<=", 0, 2), this.ptr - 2, TOKEN_LESS_THAN_EQUAL);
@@ -247,7 +247,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
         }
     } else if (currChar == '>') {
         advance(this, );
-        currChar = this.content.getChar(0);
+        currChar = getChar(&this.content, 0);
         if (currChar == '=') {
             advance(this, );
             return newToken(this.moduleID, &newSubStr(">=", 0, 2), this.ptr - 2, TOKEN_GREATER_THAN_EQUAL);
@@ -262,7 +262,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
         return newToken(this.moduleID, &newSubStr(":", 0, 1), this.ptr - 1, TOKEN_COLON);
     } else if (currChar == '=') {
         advance(this, );
-        if (this.ptr < this.len && this.content.getChar(0) == '=') {
+        if (this.ptr < this.len && getChar(&this.content, 0) == '=') {
             advance(this, );
             return newToken(this.moduleID, &newSubStr("==", 0, 2), this.ptr - 2, TOKEN_EQUAL_DOUBLE);
         } else {
@@ -270,7 +270,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
         }
     } else if (currChar == '&') {
         advance(this, );
-        if (this.ptr < this.len && this.content.getChar(0) == '&') {
+        if (this.ptr < this.len && getChar(&this.content, 0) == '&') {
             advance(this, );
             return newToken(this.moduleID, &newSubStr("&&", 0, 2), this.ptr - 2, TOKEN_AMPERSAND_DOUBLE);
         } else {
@@ -281,7 +281,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
         return newToken(this.moduleID, &newSubStr("_", 0, 1), this.ptr - 1, TOKEN_UNDERSCORE);
     } else if (currChar == '.') {
         advance(this, );
-        if (this.ptr + 2 < this.len && this.content.getChar(0) == '.' && this.content.getChar(1) == '.') {
+        if (this.ptr + 2 < this.len && getChar(&this.content, 0) == '.' && getChar(&this.content, 1) == '.') {
             advance(this, );
             advance(this, );
             return newToken(this.moduleID, &newSubStr("...", 0, 3), this.ptr - 3, TOKEN_DOTDOTDOT);
@@ -307,7 +307,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
         return newToken(this.moduleID, &newSubStr("^", 0, 1), this.ptr - 1, TOKEN_CARET);
     } else if (currChar == '|') {
         advance(this, );
-        if (this.ptr < this.len && this.content.getChar(0) == '|') {
+        if (this.ptr < this.len && getChar(&this.content, 0) == '|') {
             advance(this, );
             return newToken(this.moduleID, &newSubStr("||", 0, 2), this.ptr - 2, TOKEN_PIPE_DOUBLE);
         } else {
@@ -315,7 +315,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
         }
     } else if (currChar == '-') {
         advance(this, );
-        if (this.ptr < this.len && this.content.getChar(0) == '>') {
+        if (this.ptr < this.len && getChar(&this.content, 0) == '>') {
             advance(this, );
             return newToken(this.moduleID, &newSubStr("->", 0, 2), this.ptr - 2, TOKEN_ARROW);
         } else {
@@ -323,19 +323,19 @@ func __next(this: &Lexer, peek: bool) -> Token {
         }
     } else if (currChar == '!') {
         advance(this, );
-        if (this.ptr < this.len && this.content.getChar(0) == '=') {
+        if (this.ptr < this.len && getChar(&this.content, 0) == '=') {
             advance(this, );
             return newToken(this.moduleID, &newSubStr("!=", 0, 2), this.ptr - 2, TOKEN_NOT_EQUAL);
         } else {
             return newToken(this.moduleID, &newSubStr("!", 0, 1), this.ptr - 1, TOKEN_BANG);
         }
-    } else if (currChar == '/' && this.content.getChar(1) == '*') {
+    } else if (currChar == '/' && getChar(&this.content, 1) == '*') {
         while (true) {
             if (advance(this, )) {
                 return newTokenEOF(this.moduleID, this.ptr);
             }
-            currChar = this.content.getChar(0);
-            let next: char = this.content.getChar(1);
+            currChar = getChar(&this.content, 0);
+            let next: char = getChar(&this.content, 1);
             if (currChar == '*' && next == '/') {
                 break;
             }
@@ -344,12 +344,12 @@ func __next(this: &Lexer, peek: bool) -> Token {
         advance(this, ); // /
         return next(this, );
     } else if (currChar == '/') {
-        if (this.content.getChar(1) == '/') {
+        if (getChar(&this.content, 1) == '/') {
             while (currChar != '\n') {
                 if (advance(this, )) {
                     return newTokenEOF(this.moduleID, this.ptr);
                 }
-                currChar = this.content.getChar(0);
+                currChar = getChar(&this.content, 0);
             }
             return next(this, );
         } else {
@@ -359,8 +359,8 @@ func __next(this: &Lexer, peek: bool) -> Token {
     } else {
         let t: Token = newToken(this.moduleID, &newSubStr(&currChar, 0, 1), this.ptr + 1, TOKEN_IDENT);
         let loc: String = toString(&t.span);
-        fprintf(stderr, "%s: %s: Unknown character `%c`.\n", loc.chars(), ERR_STR, currChar);
-        loc.drop();
+        fprintf(stderr, "%s: %s: Unknown character `%c`.\n", loc.buffer, ERR_STR, currChar);
+        drop(&loc);
         exit(1);
     }
 }

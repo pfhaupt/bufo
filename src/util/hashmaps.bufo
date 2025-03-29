@@ -81,7 +81,7 @@ func add(this: &String_IRFuncHashMap, key: String, value: IRFunc) {
     }
     resizeIfNecessary(this);
     assert(this.capacity > 0);
-    let hash: usize = key.hash() % this.capacity;
+    let hash: usize = hash(&key) % this.capacity;
     let index: usize = hash;
     let stop: usize = hash - 1;
     if (hash == 0) stop = this.capacity - 1;
@@ -111,13 +111,13 @@ func get(this: &String_IRFuncHashMap, key: &String) -> &IRFunc {
 func getEntry(this: &String_IRFuncHashMap, key: &String) -> &String_IRFuncEntry {
     if (this.length == 0) return null;
     assert(this.capacity > 0);
-    let hash: usize = key.hash() % this.capacity;
+    let hash: usize = hash(key) % this.capacity;
     let stop: usize = hash - 1;
     if (hash == 0) stop = this.capacity - 1;
     while (hash != stop) {
         let elem: &String_IRFuncEntry = getAtIndex(this, hash);
         if (!elem.set) return null;
-        if (elem.key.equals(key)) return elem;
+        if (equals(&elem.key, key)) return elem;
         hash = (hash + 1) % this.capacity;
     }
     unreachable("Load Factor guarantees that there's always at least one unset Entry in the HashMap.");

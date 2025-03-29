@@ -81,16 +81,16 @@ func generateExecutable(this: &LLVMCodegen, outPath: SubStr) -> bool {
     addGlobalDCEPass(&pm);
     while (runOn(&pm, this.llvmModule)) {}
     if (PRINT_DEBUG) writeToFile(&this.llvmModule, newSubStrOfStrLit("debug_after.ll"));
-    let path: String = outPath.toString();
-    path.pushStr(".obj");
+    let path: String = toString(&outPath);
+    pushStr(&path, ".obj");
     if (*flags.verbose) {
-        printf("[INFO] Saving object file at %s\n", path.chars());
+        printf("[INFO] Saving object file at %s\n", path.buffer);
     }
-    writeToFile(&this.llvmTargetMachine, this.llvmModule, LLVMObjectFile, path.chars());
+    writeToFile(&this.llvmTargetMachine, this.llvmModule, LLVMObjectFile, path.buffer);
     // path = outPath.toString();
-    // path.pushStr(".s");
-    // printf("written to: %s\n", path.chars());
-    // this.llvmTargetMachine.writeToFile(this.llvmModule, LLVMAssemblyFile, path.chars());
+    // pushStr(&path, ".s");
+    // printf("written to: %s\n", path.buffer);
+    // this.llvmTargetMachine.writeToFile(this.llvmModule, LLVMAssemblyFile, path.buffer);
     return true;
 }
 func generateEntryPoint(this: &LLVMCodegen) -> bool {
@@ -175,7 +175,7 @@ func generateLLVMFunctionHeader(this: &LLVMCodegen, irFunc: &IRFunc) {
     }
     let llvmType: LLVMType = prepareReturnType(this, retType);
     let llvmFuncType: LLVMType = intoFunctionType(&llvmType, params, isVarArg);
-    let llvmFuncValue: LLVMValue = addFunction(&this.llvmModule, irFunc.name.asSubStr(), llvmFuncType);
+    let llvmFuncValue: LLVMValue = addFunction(&this.llvmModule, asSubStr(&irFunc.name), llvmFuncType);
     if (hasAttribute(irFunc, ATTR_NORETURN)) {
         let id = LLVMGetEnumAttributeKindForName("noreturn", 8 /* sizeof "noreturn" */);
         assert(id != 0, "Could not get noreturn attribute from LLVM");
@@ -501,7 +501,7 @@ func generateLLVMInstr(
         return buildXor(&this.llvmBuilder, lhsVal, rhsVal, newSubStrOfStrLit("bxor"));
     } else if (instr.kind == INSTR_CALL) {
         let called: &IRFunc = at(&this.irGen.functions, instr.src.i);
-        let calledFunc: LLVMValue = getFunction(&this.llvmModule, called.name.asSubStr());
+        let calledFunc: LLVMValue = getFunction(&this.llvmModule, asSubStr(&called.name));
         assert(!isNull(calledFunc.ref), "Call tried to call invalid LLVMValue");
         let args: LLVMValueList = blank;
         initBlank(&args, instr.args.length);

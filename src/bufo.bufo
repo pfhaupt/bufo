@@ -38,9 +38,9 @@ func main(argc: i32, argv: &&char) -> i32 {
     flags.verbose = addBoolFlag(&flagParser, "v", "verbose", "Enable verbose output");
     if (!runOn(&flagParser, argc, argv)) return 1;
     let filepath: String = *flags.file;
-    filepath = filepath.toAbsolutePath();
-    let fileSubStr: SubStr = filepath.asSubStr();
-    let string: String = readFileToString(flags.file.chars());
+    filepath = toAbsolutePath(&filepath);
+    let fileSubStr: SubStr = asSubStr(&filepath);
+    let string: String = readFileToString(flags.file.buffer);
     let sub: SubStr = newSubStrOfString(&string, 0, string.length);
     let parser: Parser = newParserFromSource(0, sub);
     addImportRoot(&parser, newSubStrOfStrLit("./std/"));
@@ -51,7 +51,7 @@ func main(argc: i32, argv: &&char) -> i32 {
     if (!generateBytecode(&generator, &project)) return 1;
     let interp: IRInterp = newIRInterpreter(&generator);
     let llvmCodegen: LLVMCodegen = newLLVMCodegen(fileSubStr, &generator, &interp);
-    if (!generateExecutable(&llvmCodegen, flags.out.asSubStr())) return 1;
+    if (!generateExecutable(&llvmCodegen, asSubStr(flags.out))) return 1;
     if (PRINT_DEBUG) {
         printf("modules.length       = %llu\n", modules.length);
         printf("topLevelItems.length = %llu\n", topLevelItems.length);
@@ -64,28 +64,28 @@ func main(argc: i32, argv: &&char) -> i32 {
         printf("exprs.length         = %llu\n", exprs.length);
     }
     let s: String = newStringFromStrLit("link.exe ");
-    s.pushString(flags.out);
-    s.pushStr(".obj");
-    s.pushStr(" /DEFAULTLIB:libcmt /OUT:");
-    s.pushString(flags.out);
+    pushString(&s, flags.out);
+    pushStr(&s, ".obj");
+    pushStr(&s, " /DEFAULTLIB:libcmt /OUT:");
+    pushString(&s, flags.out);
     for (let i: usize = 0; i < compilerFlags.length; i = i + 1) {
-        s.pushChar(' ');
+        pushChar(&s, ' ');
         let flag: &ParsedCompilerFlag = at(&compilerFlags, i);
-        if (flag.flag.content.equals(&COMPILER_FLAG_LIBRARY)) {
-            s.pushSubStr(&flag.value.content);
-            s.pushStr(".lib");
-        } else if (flag.flag.content.equals(&COMPILER_FLAG_LIBPATH)) {
-            s.pushStr("/LIBPATH:");
-            s.pushSubStr(&flag.value.content);
-        } else if (flag.flag.content.equals(&COMPILER_FLAG_LINKER)) {
-            s.pushSubStr(&flag.value.content);
+        if (equals(&flag.flag.content, &COMPILER_FLAG_LIBRARY)) {
+            pushSubStr(&s, &flag.value.content);
+            pushStr(&s, ".lib");
+        } else if (equals(&flag.flag.content, &COMPILER_FLAG_LIBPATH)) {
+            pushStr(&s, "/LIBPATH:");
+            pushSubStr(&s, &flag.value.content);
+        } else if (equals(&flag.flag.content, &COMPILER_FLAG_LINKER)) {
+            pushSubStr(&s, &flag.value.content);
         } else {
             unreachable("Exhaustive handling of compiler_flags");
         }
     }
-    let cmd: Cmd = newCmdFromStrLit(s.chars());
+    let cmd: Cmd = newCmdFromStrLit(s.buffer);
     cmd.log = *flags.verbose;
-    if (!cmd.runSync()) return 1;
-    string.drop();
+    if (!runSync(&cmd)) return 1;
+    drop(&string);
     return 0;
 }

@@ -96,7 +96,7 @@ func getFieldIndex(this: &StructContext, name: &SubStr) -> usize {
     trace("StructContext.getFieldIndex");
     for (let i: usize = 0; i < this.fieldLength; i = i + 1) {
         let f: Token = getFieldNameAtIndex(this, i);
-        if (f.content.equals(name)) {
+        if (equals(&f.content, name)) {
             return i;
         }
     }
@@ -110,7 +110,7 @@ func getFieldOffset(this: &StructContext, name: &SubStr) -> usize {
         let _t: &ParsedTypeNode = at(&typeNodes, getFieldTypeAtIndex(this, i));
         assert(isSuccess(&_t.typeState), "Expected valid field type in getFieldOffset");
         let t: &Type = at(&types, getType(&_t.typeState));
-        if (f.content.equals(name)) {
+        if (equals(&f.content, name)) {
             return offset;
         }
         offset = offset + getSize(t);
@@ -175,7 +175,7 @@ func addParameter(this: &ParamContext, name: Token, typ: &ParsedTypeNode) {
 
 func hasThis(this: &ParamContext) -> bool {
     if (this.paramLength == 0) return false;
-    return getNameAtIndex(this, 0).content.equals(&comptime BUILD_A_KEYWORD("this"));
+    return equals(&getNameAtIndex(this, 0).content, &comptime BUILD_A_KEYWORD("this"));
 }
 
 func getNameAtIndex(this: &ParamContext, index: usize) -> Token {

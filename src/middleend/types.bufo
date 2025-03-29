@@ -1,6 +1,7 @@
 import "prelude.bufo";
 import "libc.bufo";
 import "string.bufo";
+import "substr.bufo";
 import "../frontend/nodes.bufo";
 import "../frontend/context.bufo";
 import "../util/arena.bufo";
@@ -65,16 +66,16 @@ func getMangledName(this: &Type) -> String {
     } else if (this.kind == TYPE_KIND_POINTER) {
         let s: String = newStringFromStrLit("P");
         let _s: String = getMangledName(at(&types, this.typeIndex));
-        s.pushString(&_s);
-        _s.drop();
+        pushString(&s, &_s);
+        drop(&_s);
         return s;
     } else if (this.kind == TYPE_KIND_STRUCT) {
         let s: String = newStringFromStrLit("S");
         let decl: &ParsedStructDecl = at(&structDecls, this.typeIndex);
-        let hash: usize = decl.name.content.hash(3);
-        if (hash < 10) s.pushNumber(0);
-        if (hash < 100) s.pushNumber(0);
-        s.pushNumber(hash);
+        let hash: usize = hash(&decl.name.content, 3);
+        if (hash < 10) pushNumber(&s, 0);
+        if (hash < 100) pushNumber(&s, 0);
+        pushNumber(&s, hash);
         return s;
     } else if (this.kind == TYPE_KIND_ARRAY) {
         todo_with_msg("mangled type array");
@@ -212,21 +213,21 @@ func toString(this: &Type) -> String {
     } else if (this.kind == TYPE_KIND_POINTER) {
         let s: String = newStringFromStrLit("&");
         let _s: String = toString(at(&types, this.typeIndex));
-        s.pushString(&_s);
-        _s.drop();
+        pushString(&s, &_s);
+        drop(&_s);
         return s;
     } else if (this.kind == TYPE_KIND_STRUCT) {
         let decl: &ParsedStructDecl = at(&structDecls, this.typeIndex);
-        return decl.name.content.toString();
+        return toString(&decl.name.content);
     } else if (this.kind == TYPE_KIND_ARRAY) {
         let s: String = newStringFromStrLit("[");
         let _s: String = toString(at(&types, this.typeIndex));
-        s.pushString(&_s);
-        _s.drop();
-        s.pushChar(';');
-        s.pushChar(' ');
-        s.pushNumber(this.arraySize);
-        s.pushChar(']');
+        pushString(&s, &_s);
+        drop(&_s);
+        pushChar(&s, ';');
+        pushChar(&s, ' ');
+        pushNumber(&s, this.arraySize);
+        pushChar(&s, ']');
         return s;
     } else if (this.kind == TYPE_KIND_UNKNOWN) {
         return newStringFromStrLit("<unknown>");

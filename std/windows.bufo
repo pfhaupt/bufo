@@ -94,8 +94,8 @@ func runCmdAsync(cmd: Cmd) -> Handle {
         dwThreadId: 0,
     };
 
-    let str: String = cmd.toString();
-    str.pushChar('\0');
+    let str: String = toString(&cmd);
+    pushChar(&str, '\0');
     if (cmd.log) {
         printf("[CMD] %s\n", str.buffer);
     }
@@ -111,7 +111,7 @@ func runCmdAsync(cmd: Cmd) -> Handle {
         &siStartInfo,
         &piProcInfo
     );
-    str.drop();
+    drop(&str);
 
     if (!bSuccess) {
         fprintf(stderr, "[ERROR] Could not create child process: %#010x\n", GetLastError());

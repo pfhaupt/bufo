@@ -1,5 +1,6 @@
 import "prelude.bufo";
 import "string.bufo";
+import "substr.bufo";
 import "../frontend/nodes.bufo";
 import "./arena.bufo";
 
@@ -13,16 +14,16 @@ func equals(this: &Span, other: &Span) -> bool {
 }
 func print(this: &Span) {
     let s: String = toString(this);
-    s.print();
-    s.drop();
+    print(&s);
+    drop(&s);
 }
 func toString(this: &Span) -> String {
     // FIXME: The spans report in bytes, but the formatting makes it look like line and column
-    let s: String = at(&modules, this.mod).origin.toString();
-    s.pushChar(':');
-    s.pushNumber(this.start);
-    s.pushChar(':');
-    s.pushNumber(this.end);
+    let s: String = toString(&at(&modules, this.mod).origin);
+    pushChar(&s, ':');
+    pushNumber(&s, this.start);
+    pushChar(&s, ':');
+    pushNumber(&s, this.end);
     return s;
 }
 func comesBefore(this: &Span, other: &Span) -> bool {

@@ -1,5 +1,6 @@
 import "prelude.bufo";
 import "libc.bufo";
+import "string.bufo";
 import "../util/span.bufo";
 import "../util/lists.bufo";
 import "../util/hashmaps.bufo";
@@ -54,9 +55,9 @@ func advanceRealStack(this: &IRInterp, span: Span, size: usize) -> &u8 {
     let new: &u8 = this.realStackPointer + size;
     if (new >= this.realStackStart + STACK_SIZE) {
         let loc = toString(&span);
-        fprintf(stderr, "%s: %s: Stack Overflow in the comptime interpreter.\n", loc.chars(), ERR_STR);
-        fprintf(stderr, "%s: %s: Last allocation tried to allocate %llu byte(s).\n", loc.chars(), NOTE_STR, size);
-        loc.drop();
+        fprintf(stderr, "%s: %s: Stack Overflow in the comptime interpreter.\n", loc.buffer, ERR_STR);
+        fprintf(stderr, "%s: %s: Last allocation tried to allocate %llu byte(s).\n", loc.buffer, NOTE_STR, size);
+        drop(&loc);
         exit(2);
     }
     this.realStackPointer = new;
@@ -921,9 +922,9 @@ func pushRegisterStack(this: &IRInterp, span: Span, size: usize) {
     let new: &u8 = this.regStackBase + size;
     if (new > this.regStackStart + REG_STACK_SIZE) {
         let loc = toString(&span);
-        fprintf(stderr, "%s: %s Register Stack Overflow in the comptime interpreter.\n", loc.chars(), FATAL_STR);
-        fprintf(stderr, "%s: %s Tried to reserve %llu byte(s).\n", loc.chars(), FATAL_STR, size);
-        loc.drop();
+        fprintf(stderr, "%s: %s Register Stack Overflow in the comptime interpreter.\n", loc.buffer, FATAL_STR);
+        fprintf(stderr, "%s: %s Tried to reserve %llu byte(s).\n", loc.buffer, FATAL_STR, size);
+        drop(&loc);
         exit(2);
     }
     this.regStackBase = new;
@@ -933,8 +934,8 @@ func popRegisterStack(this: &IRInterp, span: Span, size: usize) {
     let new: &u8 = this.regStackBase - size;
     if (new < this.regStackStart) {
         let loc = toString(&span);
-        fprintf(stderr, "%s: %s Register Stack Underflow in the comptime interpreter.\n", loc.chars(), FATAL_STR);
-        loc.drop();
+        fprintf(stderr, "%s: %s Register Stack Underflow in the comptime interpreter.\n", loc.buffer, FATAL_STR);
+        drop(&loc);
         exit(2);
     }
     this.regStackBase = new;

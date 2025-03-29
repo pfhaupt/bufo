@@ -63,7 +63,7 @@ func shiftArgument(this: &FlagParser, argc: &i32, argv: &&&char) -> &char {
     return result;
 }
 func runOn(this: &FlagParser, argc: i32, argv: &&char) -> bool {
-    if (this.programName.chars() == null) {
+    if (this.programName.buffer == null) {
         let name = shiftArgument(this, &argc, &argv);
         this.programName = newStringFromStrLit(name);
     }

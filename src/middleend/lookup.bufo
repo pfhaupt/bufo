@@ -78,7 +78,7 @@ func resolveAllStructsWithField(this: &Lookup, currentModule: usize, name: &Toke
 
 func resolveVariableByName(this: &Lookup, currentModule: usize, name: &Token, scopes: &ScopeLookupList, var: &VariableLookup) -> bool {
     trace("Lookup.resolveVariableByName");
-    debug(name.content.toString().chars());
+    debug(toString(&name.content).buffer);
     // FIXME: The commented loop underflows
     // for (let i: usize = scopes.length - 1; i >= 0; i = i - 1) {
     for (let _i: usize = 0; _i < scopes.length; _i = _i + 1) {
@@ -86,7 +86,7 @@ func resolveVariableByName(this: &Lookup, currentModule: usize, name: &Token, sc
         let s: &ScopeLookup = at(scopes, i);
         for (let j: usize = 0; j < s.variables.length; j = j + 1) {
             let v: &VariableLookup = at(&s.variables, j);
-            if (v.name.content.equals(&name.content)) {
+            if (equals(&v.name.content, &name.content)) {
                 debug("Variable found in current module");
                 *var = *v;
                 return true;
@@ -97,7 +97,7 @@ func resolveVariableByName(this: &Lookup, currentModule: usize, name: &Token, sc
     let globalScope: &ScopeLookup = at(&mod.variables, 0);
     for (let j: usize = 0; j < globalScope.variables.length; j = j + 1) {
         let v: &VariableLookup = at(&globalScope.variables, j);
-        if (v.name.content.equals(&name.content)) {
+        if (equals(&v.name.content, &name.content)) {
             debug("Variable found in global scope");
             *var = *v;
             return true;
@@ -109,7 +109,7 @@ func resolveVariableByName(this: &Lookup, currentModule: usize, name: &Token, sc
         let globalScope: &ScopeLookup = at(&mod.variables, 0);
         for (let j: usize = 0; j < globalScope.variables.length; j = j + 1) {
             let v: &VariableLookup = at(&globalScope.variables, j);
-            if (v.name.content.equals(&name.content)) {
+            if (equals(&v.name.content, &name.content)) {
                 debug("Variable found in import");
                 *var = *v;
                 return true;
@@ -190,7 +190,7 @@ struct ModuleLookup {
 }
 
 func equals(this: &ModuleLookup, other: &ModuleLookup) -> bool {
-    return this.origin.equals(&other.origin);
+    return equals(&this.origin, &other.origin);
 }
 
 func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) {
@@ -277,11 +277,11 @@ func containsDuplicateFunction(this: &ModuleLookup, function: &FunctionLookup, d
         if (f == function) continue;
         if (!getReadyState(f, FUNC_DUPLICATE_CHECK)) continue;
         let n: String = getMangledName(at(&funcDecls, f.globalID));
-        if (name.equals(&n)) {
+        if (equals(&name, &n)) {
             *dupl = f as usize;
             duplicate = true;
         }
-        n.drop();
+        drop(&n);
     }
     return duplicate;
 }
@@ -313,7 +313,7 @@ func resolveFunctionByName(this: &ModuleLookup, name: &Token) -> FunctionLookupL
     let list: FunctionLookupList = blank;
     for (let i: usize = 0; i < this.functions.length; i = i + 1) {
         let f: &FunctionLookup = at(&this.functions, i);
-        if (f.name.content.equals(&name.content)) {
+        if (equals(&f.name.content, &name.content)) {
             push(&list, *f);
         }
     }
@@ -327,7 +327,7 @@ func resolveAllFunctionsWithReturnType(this: &ModuleLookup, name: &Token, typ: &
         if (!getReadyState(f, FUNC_RETTYPE_COMPLETE)) {
             return false;
         }
-        if (!f.name.content.equals(&name.content)) {
+        if (!equals(&f.name.content, &name.content)) {
             continue;
         }
         let t = at(&types, getType(&f.returnType));
@@ -359,7 +359,7 @@ func resolveTypeByName(this: &ModuleLookup, name: &Token, typ: &TypeLookup) -> b
     trace("ModuleLookup.resolveTypeByName");
     for (let i: usize = 0; i < this.structs.length; i = i + 1) {
         let s: &StructLookup = at(&this.structs, i);
-        if (s.name.content.equals(&name.content)) {
+        if (equals(&s.name.content, &name.content)) {
             *typ = newTypeLookup(TYPE_LOOKUP_STRUCT, s);
             return true;
         }
@@ -420,7 +420,7 @@ func checkForDuplicateParam(this: &FunctionLookup, name: &Token, dupl: &Variable
     trace("FunctionLookup.checkForDuplicateParam");
     for (let i: usize = 0; i < this.params.length; i = i + 1) {
         let param: &VariableLookup = at(&this.params, i);
-        if (param.name.content.equals(&name.content)) {
+        if (equals(&param.name.content, &name.content)) {
             *dupl = *param;
             return true;
         }
@@ -430,7 +430,7 @@ func checkForDuplicateParam(this: &FunctionLookup, name: &Token, dupl: &Variable
 
 func equals(this: &FunctionLookup, other: &FunctionLookup) -> bool {
     warning("When are two functions equal");
-    return this.name.equals(&other.name);
+    return equals(&this.name, &other.name);
 }
 
 comptime TYPE_LOOKUP_INVALID: usize = 0;
@@ -442,7 +442,7 @@ struct TypeLookup {
 
 func getName(this: &TypeLookup) -> String {
     if (this.kind == TYPE_LOOKUP_STRUCT) {
-        return asStruct(this).name.content.toString();
+        return toString(&asStruct(this).name.content);
     } else {
         unreachable("Exhaustive handling in TypeLookup.getName");
     }
@@ -509,14 +509,14 @@ func asTypeLookup(this: &StructLookup) -> TypeLookup {
 }
 func equals(this: &StructLookup, other: &StructLookup) -> bool {
     if (this.parentModule != other.parentModule) return false;
-    return this.name.content.equals(&other.name.content);
+    return equals(&this.name.content, &other.name.content);
 }
 
 func resolveFieldByName(this: &StructLookup, name: &Token, out: &VariableLookup) -> bool {
     trace("StructLookup.resolveFieldByName");
     for (let i: usize = 0; i < this.fields.length; i = i + 1) {
         let f: &VariableLookup = at(&this.fields, i);
-        if (f.name.content.equals(&name.content)) {
+        if (equals(&f.name.content, &name.content)) {
             *out = *f;
             return true;
         }
@@ -528,7 +528,7 @@ func hasField(this: &StructLookup, name: &SubStr) -> bool {
     trace("StructLookup.hasField");
     for (let i: usize = 0; i < this.fields.length; i = i + 1) {
         let f: &VariableLookup = at(&this.fields, i);
-        if (f.name.content.equals(name)) {
+        if (equals(&f.name.content, name)) {
             return true;
         }
     }
@@ -546,11 +546,11 @@ func containsDuplicateMethod(this: &StructLookup, method: &MethodLookup, dupl: &
         if (m == method) continue;
         if (!getReadyState(m, METHOD_DUPLICATE_CHECK)) continue;
         let n: String = getMangledName(at(&methods, m.globalID));
-        if (name.equals(&n)) {
+        if (equals(&name, &n)) {
             *dupl = m as usize;
             duplicate = true;
         }
-        n.drop();
+        drop(&n);
     }
     return duplicate;
 }
@@ -560,7 +560,7 @@ func resolveMethodByName(this: &StructLookup, name: &Token) -> MethodLookupList 
     let methods: MethodLookupList = blank;
     for (let i: usize = 0; i < this.methods.length; i = i + 1) {
         let m: &MethodLookup = at(&this.methods, i);
-        if (m.name.content.equals(&name.content)) {
+        if (equals(&m.name.content, &name.content)) {
             push(&methods, *m);
         }
     }
@@ -571,7 +571,7 @@ func getIndexByName(this: &StructLookup, name: &Token) -> usize {
     trace("StructLookup.getIndexByName");
     for (let i: usize = 0; i < this.fields.length; i = i + 1) {
         let f: &VariableLookup = at(&this.fields, i);
-        if (f.name.content.equals(&name.content)) {
+        if (equals(&f.name.content, &name.content)) {
             return i;
         }
     }
@@ -583,7 +583,7 @@ func checkForDuplicateField(this: &StructLookup, name: &Token, dupl: &VariableLo
     trace("StructLookup.checkForDuplicateField");
     for (let i: usize = 0; i < this.fields.length; i = i + 1) {
         let f: &VariableLookup = at(&this.fields, i);
-        if (f.name.content.equals(&name.content)) {
+        if (equals(&f.name.content, &name.content)) {
             *dupl = *f;
             return true;
         }
@@ -644,7 +644,7 @@ func checkForDuplicateParam(this: &MethodLookup, name: &Token, dupl: &VariableLo
     trace("MethodLookup.checkForDuplicateParam");
     for (let i: usize = 0; i < this.params.length; i = i + 1) {
         let param: &VariableLookup = at(&this.params, i);
-        if (param.name.content.equals(&name.content)) {
+        if (equals(&param.name.content, &name.content)) {
             *dupl = *param;
             return true;
         }
@@ -682,7 +682,7 @@ func isParameter(this: &VariableLookup) -> bool {
 }
 
 func equals(this: &VariableLookup, other: &VariableLookup) -> bool {
-    return this.name.content.equals(&other.name.content);
+    return equals(&this.name.content, &other.name.content);
 }
 
 struct ScopeLookup {
@@ -701,7 +701,7 @@ func isKnownVariable(this: &ScopeLookup, name: SubStr, existing: &Token) -> bool
     trace("ScopeLookup.isKnownVariable");
     for (let i: usize = 0; i < this.variables.length; i = i + 1) {
         let v: &VariableLookup = at(&this.variables, i);
-        if (v.name.content.equals(&name)) {
+        if (equals(&v.name.content, &name)) {
             *existing = v.name;
             return true;
         }
@@ -713,7 +713,7 @@ func getVarIndexByName(this: &ScopeLookup, name: SubStr, index: &usize) -> bool 
     trace("ScopeLookup.getVarIndexByName");
     for (let i: usize = 0; i < this.variables.length; i = i + 1) {
         let v: &VariableLookup = at(&this.variables, i);
-        if (v.name.content.equals(&name)) {
+        if (equals(&v.name.content, &name)) {
             *index = i;
             return true;
         }
@@ -725,7 +725,7 @@ func getVariableByName(this: &ScopeLookup, name: SubStr, var: &VariableLookup) -
     trace("ScopeLookup.getVariableByName");
     for (let i: usize = 0; i < this.variables.length; i = i + 1) {
         let v: &VariableLookup = at(&this.variables, i);
-        if (v.name.content.equals(&name)) {
+        if (equals(&v.name.content, &name)) {
             *var = *v;
             return true;
         }

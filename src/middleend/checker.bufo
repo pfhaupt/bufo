@@ -145,10 +145,10 @@ func reportTypeMismatch(this: &TypeChecker, span: Span, expected: &Type, got: &T
     let typ1: String = toString(expected);
     let typ2: String = toString(got);
     fprintf(stderr, "%s: %s: Type mismatch! Expected type %s, found type %s.\n",
-        loc.chars(), ERR_STR, typ1.chars(), typ2.chars());
-    typ1.drop();
-    typ2.drop();
-    loc.drop();
+        loc.buffer, ERR_STR, typ1.buffer, typ2.buffer);
+    drop(&typ1);
+    drop(&typ2);
+    drop(&loc);
     this.typeError = true;
     return newTCStateFailure(ERROR_TYPE_MISMATCH);
 }
@@ -161,14 +161,14 @@ func reportBinaryTypeMismatch(this: &TypeChecker, op: usize, lhsSpan: Span, lhsT
     let typ1: String = toString(lhsType);
     let typ2: String = toString(rhsType);
     fprintf(stderr, "%s: %s: Type mismatch in binary expression! Operation `%s %s %s` is not defined.\n",
-        loc.chars(), ERR_STR, typ1.chars(), binOpAsStr(op), typ2.chars());
-    fprintf(stderr, "%s: %s: LHS has type %s.\n", loc1.chars(), NOTE_STR, typ1.chars());
-    fprintf(stderr, "%s: %s: RHS has type %s.\n", loc2.chars(), NOTE_STR, typ2.chars());
-    typ2.drop();
-    typ1.drop();
-    loc2.drop();
-    loc1.drop();
-    loc.drop();
+        loc.buffer, ERR_STR, typ1.buffer, binOpAsStr(op), typ2.buffer);
+    fprintf(stderr, "%s: %s: LHS has type %s.\n", loc1.buffer, NOTE_STR, typ1.buffer);
+    fprintf(stderr, "%s: %s: RHS has type %s.\n", loc2.buffer, NOTE_STR, typ2.buffer);
+    drop(&typ2);
+    drop(&typ1);
+    drop(&loc2);
+    drop(&loc1);
+    drop(&loc);
     this.typeError = true;
     return newTCStateFailure(ERROR_TYPE_MISMATCH);
 }
@@ -177,8 +177,8 @@ func reportInvalidPointerArithmetics(this: &TypeChecker, op: usize, lhsSpan: Spa
     trace("TypeChecker.reportInvalidPointerArithmetics");
     let loc: String = toString(&newSpanBetween(&lhsSpan, &rhsSpan));
     fprintf(stderr, "%s: %s: Operation `%s` is not allowed in the context of pointer arithmetics.\n",
-        loc.chars(), ERR_STR, binOpAsStr(op));
-    loc.drop();
+        loc.buffer, ERR_STR, binOpAsStr(op));
+    drop(&loc);
     this.typeError = true;
     return newTCStateFailure(ERROR_INVALID_POINTER_ARITHMETIC);
 }
@@ -187,12 +187,12 @@ func reportDuplicateField(this: &TypeChecker, fieldToken: Token, declSpan: Span)
     trace("TypeChecker.reportDuplicateField");
     let duplLoc: String = toString(&fieldToken.span);
     let origLoc: String = toString(&declSpan);
-    let name: String = fieldToken.content.toString();
-    fprintf(stderr, "%s: %s: Field redeclaration.\n", duplLoc.chars(), ERR_STR);
-    fprintf(stderr, "%s: %s: Field `%s` already declared here.\n", origLoc.chars(), NOTE_STR, name.chars());
-    name.drop();
-    origLoc.drop();
-    duplLoc.drop();
+    let name: String = toString(&fieldToken.content);
+    fprintf(stderr, "%s: %s: Field redeclaration.\n", duplLoc.buffer, ERR_STR);
+    fprintf(stderr, "%s: %s: Field `%s` already declared here.\n", origLoc.buffer, NOTE_STR, name.buffer);
+    drop(&name);
+    drop(&origLoc);
+    drop(&duplLoc);
     this.typeError = true;
     return newTCStateFailure(ERROR_DUPLICATE_FIELD);
 }
@@ -201,12 +201,12 @@ func reportDuplicateParameter(this: &TypeChecker, paramToken: Token, declSpan: S
     trace("TypeChecker.reportDuplicateParameter");
     let duplLoc: String = toString(&paramToken.span);
     let origLoc: String = toString(&declSpan);
-    let name: String = paramToken.content.toString();
-    fprintf(stderr, "%s: %s: Parameter redeclaration.\n", duplLoc.chars(), ERR_STR);
-    fprintf(stderr, "%s: %s: Parameter `%s` already declared here.\n", origLoc.chars(), NOTE_STR, name.chars());
-    name.drop();
-    origLoc.drop();
-    duplLoc.drop();
+    let name: String = toString(&paramToken.content);
+    fprintf(stderr, "%s: %s: Parameter redeclaration.\n", duplLoc.buffer, ERR_STR);
+    fprintf(stderr, "%s: %s: Parameter `%s` already declared here.\n", origLoc.buffer, NOTE_STR, name.buffer);
+    drop(&name);
+    drop(&origLoc);
+    drop(&duplLoc);
     this.typeError = true;
     return newTCStateFailure(ERROR_DUPLICATE_PARAMETER);
 }
@@ -215,14 +215,14 @@ func reportUnknownField(this: &TypeChecker, name: Token, decl: &StructLookup) ->
     trace("TypeChecker.reportUnknownField");
     let errLoc: String = toString(&name.span);
     let declLoc: String = toString(&decl.name.span);
-    let strukt: String = decl.name.content.toString();
-    let field: String = name.content.toString();
-    fprintf(stderr, "%s: %s: Attempted to access unknown field `%s` of instance of struct %s.\n", errLoc.chars(), ERR_STR, field.chars(), strukt.chars());
-    fprintf(stderr, "%s: %s: Struct %s is declared here.\n", declLoc.chars(), NOTE_STR, strukt.chars());
-    field.drop();
-    strukt.drop();
-    declLoc.drop();
-    errLoc.drop();
+    let strukt: String = toString(&decl.name.content);
+    let field: String = toString(&name.content);
+    fprintf(stderr, "%s: %s: Attempted to access unknown field `%s` of instance of struct %s.\n", errLoc.buffer, ERR_STR, field.buffer, strukt.buffer);
+    fprintf(stderr, "%s: %s: Struct %s is declared here.\n", declLoc.buffer, NOTE_STR, strukt.buffer);
+    drop(&field);
+    drop(&strukt);
+    drop(&declLoc);
+    drop(&errLoc);
     this.typeError = true;
     return newTCStateFailure(ERROR_UNKNOWN_FIELD);
 }
@@ -231,12 +231,12 @@ func reportDuplicateFunction(this: &TypeChecker, f1: &FunctionLookup, f2: &Funct
     trace("TypeChecker.reportDuplicateFunction");
     let errLoc: String = toString(&f1.name.span);
     let duplLoc: String = toString(&f2.name.span);
-    let name: String = f1.name.content.toString();
-    fprintf(stderr, "%s: %s: Function redeclaration.\n", errLoc.chars(), ERR_STR);
-    fprintf(stderr, "%s: %s: A function named `%s` with that signature is already declared here.\n", duplLoc.chars(), ERR_STR, name.chars());
-    name.drop();
-    duplLoc.drop();
-    errLoc.drop();
+    let name: String = toString(&f1.name.content);
+    fprintf(stderr, "%s: %s: Function redeclaration.\n", errLoc.buffer, ERR_STR);
+    fprintf(stderr, "%s: %s: A function named `%s` with that signature is already declared here.\n", duplLoc.buffer, ERR_STR, name.buffer);
+    drop(&name);
+    drop(&duplLoc);
+    drop(&errLoc);
     this.typeError = true;
     return newTCStateFailure(ERROR_DUPLICATE_FUNCTION);
 }
@@ -245,12 +245,12 @@ func reportDuplicateMethod(this: &TypeChecker, m1: &MethodLookup, m2: &MethodLoo
     trace("TypeChecker.reportDuplicateMethod");
     let errLoc: String = toString(&m1.name.span);
     let duplLoc: String = toString(&m2.name.span);
-    let name: String = m1.name.content.toString();
-    fprintf(stderr, "%s: %s: Method redeclaration.\n", errLoc.chars(), ERR_STR);
-    fprintf(stderr, "%s: %s: A method named `%s` with that signature is already declared here.\n", duplLoc.chars(), ERR_STR, name.chars());
-    name.drop();
-    duplLoc.drop();
-    errLoc.drop();
+    let name: String = toString(&m1.name.content);
+    fprintf(stderr, "%s: %s: Method redeclaration.\n", errLoc.buffer, ERR_STR);
+    fprintf(stderr, "%s: %s: A method named `%s` with that signature is already declared here.\n", duplLoc.buffer, ERR_STR, name.buffer);
+    drop(&name);
+    drop(&duplLoc);
+    drop(&errLoc);
     return newTCStateFailure(ERROR_DUPLICATE_METHOD);
 }
 
@@ -259,18 +259,18 @@ func reportNoFunctionCallCandidate(this: &TypeChecker, callID: usize, functions:
     let callExpr: &ParsedExpr = at(&exprs, callID);
     assert(callExpr.kind == EXPR_CALL, "reportNoFunctionCallCandidate: Expected expr to be a call");
     let loc: String = toString(&callExpr.origToken.span);
-    let name: String = callExpr.origToken.content.toString();
-    fprintf(stderr, "%s: %s: Could not find matching signature for call to function `%s`.\n", loc.chars(), ERR_STR, name.chars());
+    let name: String = toString(&callExpr.origToken.content);
+    fprintf(stderr, "%s: %s: Could not find matching signature for call to function `%s`.\n", loc.buffer, ERR_STR, name.buffer);
     assert(functions.length != 0, "reportNoFunctionCallCandidate: Expected at least one declaration");
     // REVIEW: It was suggested that we could hide this extra info behind a `--verbose` flag, which sounds interesting.
     for (let i: usize = 0; i < functions.length; i = i + 1) {
         let f: &FunctionLookup = at(functions, i);
         let loc: String = toString(&f.name.span);
-        fprintf(stderr, "%s: %s: A function with that name is located here.\n", loc.chars(), NOTE_STR);
-        loc.drop();
+        fprintf(stderr, "%s: %s: A function with that name is located here.\n", loc.buffer, NOTE_STR);
+        drop(&loc);
     }
-    name.drop();
-    loc.drop();
+    drop(&name);
+    drop(&loc);
     this.typeError = true;
     return newTCStateFailure(ERROR_NO_CALL_CANDIDATE);
 }
@@ -282,18 +282,18 @@ func reportNoMethodCallCandidate(this: &TypeChecker, callID: usize, arguments: &
     let callExpr: &ParsedExpr = at(&exprs, binExpr.rhs);
     assert(callExpr.kind == EXPR_CALL, "reportNoMethodCallCandidate: Expected expr to be a call");
     let loc: String = toString(&callExpr.origToken.span);
-    let name: String = callExpr.origToken.content.toString();
-    fprintf(stderr, "%s: %s: Could not find matching signature for call to method `%s`.\n", loc.chars(), ERR_STR, name.chars());
+    let name: String = toString(&callExpr.origToken.content);
+    fprintf(stderr, "%s: %s: Could not find matching signature for call to method `%s`.\n", loc.buffer, ERR_STR, name.buffer);
     assert(methods.length != 0, "reportNoMethodCallCandidate: Expected at least one declaration");
     // REVIEW: It was suggested that we could hide this extra info behind a `--verbose` flag, which sounds interesting.
     for (let i: usize = 0; i < methods.length; i = i + 1) {
         let f: &MethodLookup = at(methods, i);
         let loc: String = toString(&f.name.span);
-        fprintf(stderr, "%s: %s: A method with that name is located here.\n", loc.chars(), NOTE_STR);
-        loc.drop();
+        fprintf(stderr, "%s: %s: A method with that name is located here.\n", loc.buffer, NOTE_STR);
+        drop(&loc);
     }
-    name.drop();
-    loc.drop();
+    drop(&name);
+    drop(&loc);
     this.typeError = true;
     return newTCStateFailure(ERROR_NO_CALL_CANDIDATE);
 }
@@ -302,12 +302,12 @@ func reportVariableRedeclaration(this: &TypeChecker, newDecl: Token, oldDecl: To
     trace("TypeChecker.reportVariableRedeclaration");
     let newLoc: String = toString(&newDecl.span);
     let oldLoc: String = toString(&oldDecl.span);
-    let name: String = newDecl.content.toString();
-    fprintf(stderr, "%s: %s: Variable redeclaration.\n", newLoc.chars(), ERR_STR);
-    fprintf(stderr, "%s: %s: Variable `%s` already declared here.\n", oldLoc.chars(), NOTE_STR, name.chars());
-    name.drop();
-    oldLoc.drop();
-    newLoc.drop();
+    let name: String = toString(&newDecl.content);
+    fprintf(stderr, "%s: %s: Variable redeclaration.\n", newLoc.buffer, ERR_STR);
+    fprintf(stderr, "%s: %s: Variable `%s` already declared here.\n", oldLoc.buffer, NOTE_STR, name.buffer);
+    drop(&name);
+    drop(&oldLoc);
+    drop(&newLoc);
     this.typeError = true;
     return newTCStateFailure(ERROR_VARIABLE_REDECLARATION);
 }
@@ -316,15 +316,15 @@ func reportRecursiveType(this: &TypeChecker, checked: &TypeLookup, cycle: &TypeL
     trace("TypeChecker.reportRecursiveType");
     let loc: String = getLocation(checked);
     let name: String = getName(checked);
-    fprintf(stderr, "%s: %s: Recursive type %s.\n", loc.chars(), ERR_STR, name.chars());
+    fprintf(stderr, "%s: %s: Recursive type %s.\n", loc.buffer, ERR_STR, name.buffer);
     assert(cycle.length >= 1, "Cycle is empty");
     for (let i: usize = 1; i < cycle.length; i = i + 1) {
         loc = getLocation(at(cycle, i));
         name = getName(at(cycle, i));
-        fprintf(stderr, "%s: %s: Chain of recursion also includes type %s.\n", loc.chars(), NOTE_STR, name.chars());
+        fprintf(stderr, "%s: %s: Chain of recursion also includes type %s.\n", loc.buffer, NOTE_STR, name.buffer);
     }
-    name.drop();
-    loc.drop();
+    drop(&name);
+    drop(&loc);
     this.typeError = true;
     return newTCStateFailure(ERROR_RECURSIVE_TYPE);
 }
@@ -335,10 +335,10 @@ func reportNonPrimitiveCast(this: &TypeChecker, span: Span, from: &Type, to: &Ty
     let typ1: String = toString(from);
     let typ2: String = toString(to);
     fprintf(stderr, "%s: %s: Non primitive cast from type %s to %s.\n",
-        loc.chars(), ERR_STR, typ1.chars(), typ2.chars());
-    typ1.drop();
-    typ2.drop();
-    loc.drop();
+        loc.buffer, ERR_STR, typ1.buffer, typ2.buffer);
+    drop(&typ1);
+    drop(&typ2);
+    drop(&loc);
     this.typeError = true;
     return newTCStateFailure(ERROR_NON_PRIMITIVE_CAST);
 }
@@ -347,10 +347,10 @@ func reportIndexedAccessOnNonArray(this: &TypeChecker, span: Span, typ: &Type) -
     trace("TypeChecker.reportIndexedAccessOnNonArray");
     let loc: String = toString(&span);
     let name: String = toString(typ);
-    fprintf(stderr, "%s: %s: Indexed Access is only supported for arrays.\n", loc.chars(), ERR_STR);
-    fprintf(stderr, "%s: %s: Expression has type %s.\n", loc.chars(), NOTE_STR, name.chars());
-    name.drop();
-    loc.drop();
+    fprintf(stderr, "%s: %s: Indexed Access is only supported for arrays.\n", loc.buffer, ERR_STR);
+    fprintf(stderr, "%s: %s: Expression has type %s.\n", loc.buffer, NOTE_STR, name.buffer);
+    drop(&name);
+    drop(&loc);
     this.typeError = true;
     return newTCStateFailure(ERROR_INDEXED_ACCESS_ON_NON_ARRAY);
 }
@@ -359,12 +359,12 @@ func reportRuntimeValueInComptimeContext(this: &TypeChecker, ident: Token, var: 
     trace("TypeChecker.reportRuntimeValueInComptimeContext");
     let loc = toString(&ident.span);
     let otherLoc = toString(&var.name.span);
-    let name = ident.content.toString();
-    fprintf(stderr, "%s: %s: Variables declared with `let` can't be used in a comptime context.\n", loc.chars(), ERR_STR);
-    fprintf(stderr, "%s: %s: Variable `%s` is declared here.\n", otherLoc.chars(), NOTE_STR, name.chars());
-    name.drop();
-    otherLoc.drop();
-    loc.drop();
+    let name = toString(&ident.content);
+    fprintf(stderr, "%s: %s: Variables declared with `let` can't be used in a comptime context.\n", loc.buffer, ERR_STR);
+    fprintf(stderr, "%s: %s: Variable `%s` is declared here.\n", otherLoc.buffer, NOTE_STR, name.buffer);
+    drop(&name);
+    drop(&otherLoc);
+    drop(&loc);
     this.typeError = true;
     return newTCStateFailure(ERROR_RUNTIME_VALUE_IN_COMPTIME_CONTEXT);
 }
@@ -372,8 +372,8 @@ func reportRuntimeValueInComptimeContext(this: &TypeChecker, ident: Token, var: 
 func reportAnyDereference(this: &TypeChecker, expr: &ParsedExpr) -> TCState {
     trace("TypeChecker.reportAnyDereference");
     let loc = toString(&expr.span);
-    fprintf(stderr, "%s: %s: Can't dereference expression of type Any.\n", loc.chars(), ERR_STR);
-    loc.drop();
+    fprintf(stderr, "%s: %s: Can't dereference expression of type Any.\n", loc.buffer, ERR_STR);
+    drop(&loc);
     this.typeError = true;
     return newTCStateFailure(ERROR_ANY_DEREF);
 }
@@ -382,9 +382,9 @@ func reportMemberAccessOnNonStruct(this: &TypeChecker, expr: &ParsedExpr, instan
     trace("TypeChecker.reportMemberAccessOnNonStruct");
     let loc = toString(&expr.span);
     let t = toString(instance);
-    fprintf(stderr, "%s: %s: The Dot-Operator is not defined for values of type %s.\n", loc.chars(), ERR_STR, t.chars());
-    t.drop();
-    loc.drop();
+    fprintf(stderr, "%s: %s: The Dot-Operator is not defined for values of type %s.\n", loc.buffer, ERR_STR, t.buffer);
+    drop(&t);
+    drop(&loc);
     this.typeError = true;
     return newTCStateFailure(ERROR_MEMBER_ACCESS_NON_STRUCT);
 }
@@ -393,16 +393,16 @@ func reportMemberAccessTooManyOptions(this: &TypeChecker, expr: &ParsedExpr, str
     trace("TypeChecker.reportMemberAccessTooManyOptions");
     assert(structs.length > 0);
     let loc = toString(&expr.span);
-    fprintf(stderr, "%s: %s: Could not infer which type to use for expression.\n", loc.chars(), ERR_STR);
+    fprintf(stderr, "%s: %s: Could not infer which type to use for expression.\n", loc.buffer, ERR_STR);
     for (let i: usize = 0; i < structs.length; i = i + 1) {
         let s = at(structs, i);
         let l = toString(&s.name.span);
-        let n = s.name.content.toString();
-        fprintf(stderr, "%s: %s: Context allows struct %s to be used.\n", l.chars(), NOTE_STR, n.chars());
-        n.drop();
-        l.drop();
+        let n = toString(&s.name.content);
+        fprintf(stderr, "%s: %s: Context allows struct %s to be used.\n", l.buffer, NOTE_STR, n.buffer);
+        drop(&n);
+        drop(&l);
     }
-    loc.drop();
+    drop(&loc);
     this.typeError = true;
     return newTCStateFailure(ERROR_MEMBER_ACCESS_TOO_MANY_OPTIONS);
 }
@@ -411,16 +411,16 @@ func reportFunctionCallTooManyOptions(this: &TypeChecker, expr: &ParsedExpr, fun
     trace("TypeChecker.reportFunctionCallTooManyOptions");
     assert(functions.length > 0);
     let loc = toString(&expr.span);
-    fprintf(stderr, "%s: %s: Could not infer which function to call.\n", loc.chars(), ERR_STR);
+    fprintf(stderr, "%s: %s: Could not infer which function to call.\n", loc.buffer, ERR_STR);
     for (let i: usize = 0; i < functions.length; i = i + 1) {
         let f = at(functions, i);
         let l = toString(&f.name.span);
-        let n = f.name.content.toString();
-        fprintf(stderr, "%s: %s: Context allows this function to be called.\n", l.chars(), NOTE_STR, n.chars());
-        n.drop();
-        l.drop();
+        let n = toString(&f.name.content);
+        fprintf(stderr, "%s: %s: Context allows this function to be called.\n", l.buffer, NOTE_STR, n.buffer);
+        drop(&n);
+        drop(&l);
     }
-    loc.drop();
+    drop(&loc);
     this.typeError = true;
     return newTCStateFailure(ERROR_FUNCTION_CALL_TOO_MANY_OPTIONS);
 }
@@ -431,8 +431,7 @@ func emergencyPrint(this: &TypeChecker, where: Span) {
         content: newSubStrOfStrLit(""),
         kind: TOKEN_EOF
     };
-    t.getLocation().print();
-    printf("\n");
+    printf("%s\n", getLocation(&t).buffer);
 }
 
 func typeCheckProject(this: &TypeChecker, project: &ParsedModule) -> bool {
@@ -846,8 +845,8 @@ func typeCheckStmt(this: &TypeChecker, stmtID: usize, scopes: &ScopeLookupList) 
         let exprType: &Type = at(&types, getType(&exprState));
         if (!isNone(exprType) && !isAssignment(expr) && *flags.verbose) {
             let loc: String = toString(&expr.span);
-            fprintf(stderr, "%s: %s: Unused expression value.\n", loc.chars(), WARN_STR);
-            loc.drop();
+            fprintf(stderr, "%s: %s: Unused expression value.\n", loc.buffer, WARN_STR);
+            drop(&loc);
         }
         (*stmt).typeState = exprState;
         return newTCStateSuccess();
@@ -926,7 +925,7 @@ func typeCheckStmt(this: &TypeChecker, stmtID: usize, scopes: &ScopeLookupList) 
             assert(getReadyState(this.currentFunction, FUNC_READY_TO_USE), "Function is not ready");
             let retType: &Type = at(&types, getType(&this.currentFunction.returnType));
             if (!isNone(retType)) {
-                printf("%s\n", toString(&stmt.span).chars());
+                printf("%s\n", toString(&stmt.span).buffer);
                 printf("%llu %llu\n", retType.kind, retType.typeIndex);
                 todo_with_msg("function returns something, but we wrote return;");
             }
@@ -1077,9 +1076,9 @@ func typeCheckExpr(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupList) 
                     let loc = toString(&at(&exprs, elemIndex).span);
                     let t = toString(elemType);
                     lastErrState = reportTypeMismatch(this, at(&exprs, nextIndex).span, elemType, nextType);
-                    fprintf(stderr, "%s: %s: Array elements inferred to be type %s here.\n", loc.chars(), NOTE_STR, t.chars());
-                    t.drop();
-                    loc.drop();
+                    fprintf(stderr, "%s: %s: Array elements inferred to be type %s here.\n", loc.buffer, NOTE_STR, t.buffer);
+                    drop(&t);
+                    drop(&loc);
                 }
             }
             if (!isInvalid(&lastErrState)) return lastErrState;
@@ -1153,10 +1152,10 @@ func typeCheckExprAs(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupList
             let from = toString(exprType);
             let to = toString(typeType);
             fprintf(stderr, "%s: %s: Casting pointer of type %s to integer of type %s.\n",
-                loc.chars(), WARN_STR, from.chars(), to.chars());
-            to.drop();
-            from.drop();
-            loc.drop();
+                loc.buffer, WARN_STR, from.buffer, to.buffer);
+            drop(&to);
+            drop(&from);
+            drop(&loc);
         }
     } else if (isInteger(exprType) && isPointer(typeType)) {
         if (getSize(typeType) != getSize(exprType)) {
@@ -1164,10 +1163,10 @@ func typeCheckExprAs(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupList
             let from = toString(exprType);
             let to = toString(typeType);
             fprintf(stderr, "%s: %s: Casting integer of type %s to pointer of type %s.\n",
-                loc.chars(), WARN_STR, from.chars(), to.chars());
-            to.drop();
-            from.drop();
-            loc.drop();
+                loc.buffer, WARN_STR, from.buffer, to.buffer);
+            drop(&to);
+            drop(&from);
+            drop(&loc);
         }
     } else if (!isPrimitive(typeType)) {
         return reportNonPrimitiveCast(this, expr.span, exprType, typeType);
@@ -1179,10 +1178,10 @@ func typeCheckExprAs(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupList
         let tName: String = toString(typeType);
         let oName: String = toString(exprType);
         fprintf(stderr, "%s: %s: Lossy type cast: Target type (%s) is smaller than original type (%s).\n",
-            loc.chars(), WARN_STR, tName.chars(), oName.chars());
-        oName.drop();
-        tName.drop();
-        loc.drop();
+            loc.buffer, WARN_STR, tName.buffer, oName.buffer);
+        drop(&oName);
+        drop(&tName);
+        drop(&loc);
     }
     return typeState;
 }
@@ -1217,9 +1216,9 @@ func typeCheckUnary(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupList)
         if (!isBoolean(exprType)) {
             let loc: String = toString(&expr.span);
             let t: String = toString(exprType);
-            fprintf(stderr, "%s: %s: Logical Not is not defined for type %s.\n", loc.chars(), ERR_STR, t.chars());
-            t.drop();
-            loc.drop();
+            fprintf(stderr, "%s: %s: Logical Not is not defined for type %s.\n", loc.buffer, ERR_STR, t.buffer);
+            drop(&t);
+            drop(&loc);
             this.typeError = true;
             return newTCStateFailure(ERROR_TYPE_MISMATCH);
         }
@@ -1229,9 +1228,9 @@ func typeCheckUnary(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupList)
         if (!isSignedInteger(exprType) && !isFloat(exprType)) {
             let loc: String = toString(&expr.span);
             let t: String = toString(exprType);
-            fprintf(stderr, "%s: %s: Negation is not defined for type %s.\n", loc.chars(), ERR_STR, t.chars());
-            t.drop();
-            loc.drop();
+            fprintf(stderr, "%s: %s: Negation is not defined for type %s.\n", loc.buffer, ERR_STR, t.buffer);
+            drop(&t);
+            drop(&loc);
             this.typeError = true;
             return newTCStateFailure(ERROR_TYPE_MISMATCH);
         }
@@ -1249,18 +1248,18 @@ func typeCheckExprCall(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupLi
     let name: Token = expr.origToken;
     let functions: FunctionLookupList = resolveFunctionByName(&this.lookup, this.currentModule, &name);
     if (functions.length == 0) {
-        let loc: String = name.getLocation();
-        let n: String = name.content.toString();
-        fprintf(stderr, "%s: %s: Call to unknown function `%s`.\n", loc.chars(), ERR_STR, n.chars());
+        let loc: String = getLocation(&name);
+        let n: String = toString(&name.content);
+        fprintf(stderr, "%s: %s: Call to unknown function `%s`.\n", loc.buffer, ERR_STR, n.buffer);
         let alternatives: FunctionLookupList = searchAllModulesForFunctionName(&this.lookup, &name);
         for (let i: usize = 0; i < alternatives.length; i = i + 1) {
             let t: &FunctionLookup = at(&alternatives, i);
-            let loc: String = t.name.getLocation();
-            fprintf(stderr, "%s: %s: A function with that name is located here. Import the module to use it.\n", loc.chars(), NOTE_STR);
-            loc.drop();
+            let loc: String = getLocation(&t.name);
+            fprintf(stderr, "%s: %s: A function with that name is located here. Import the module to use it.\n", loc.buffer, NOTE_STR);
+            drop(&loc);
         }
-        n.drop();
-        loc.drop();
+        drop(&n);
+        drop(&loc);
         this.typeError = true;
         return newTCStateFailure(ERROR_NO_SUCH_FUNCTION);
     }
@@ -1517,21 +1516,21 @@ func typeCheckExprStructInit(this: &TypeChecker, exprID: usize, scopes: &ScopeLo
     let name: Token = expr.origToken;
     let lookup: TypeLookup = blank;
     if (!resolveTypeByName(&this.lookup, this.currentModule, &name, &lookup)) {
-        let loc: String = name.getLocation();
-        let _n: String = name.content.toString();
-        fprintf(stderr, "%s: %s: Use of undeclared type identifier `%s`.\n", loc.chars(), ERR_STR, _n.chars());
+        let loc: String = getLocation(&name);
+        let _n: String = toString(&name.content);
+        fprintf(stderr, "%s: %s: Use of undeclared type identifier `%s`.\n", loc.buffer, ERR_STR, _n.buffer);
         let alternatives: TypeLookupList = searchAllModulesForTypeName(&this.lookup, &name);
         for (let i: usize = 0; i < alternatives.length; i = i + 1) {
             let t: &TypeLookup = at(&alternatives, i);
             if (isStruct(t)) {
                 let s: &StructLookup = asStruct(t);
-                let loc: String = s.name.getLocation();
-                fprintf(stderr, "%s: %s: A struct with that name is located here. Import the module to use it.\n", loc.chars(), NOTE_STR);
-                loc.drop();
+                let loc: String = getLocation(&s.name);
+                fprintf(stderr, "%s: %s: A struct with that name is located here. Import the module to use it.\n", loc.buffer, NOTE_STR);
+                drop(&loc);
             }
         }
-        _n.drop();
-        loc.drop();
+        drop(&_n);
+        drop(&loc);
         this.typeError = true;
         return newTCStateFailure(ERROR_NO_SUCH_IDENTIFIER);
     }
@@ -1560,7 +1559,7 @@ func typeCheckExprStructInit(this: &TypeChecker, exprID: usize, scopes: &ScopeLo
             let field: &VariableLookup = at(&structLookup.fields, fieldIndex);
             let fieldState: &TCState = &field.typeState;
             assert(isSuccess(fieldState), "Struct is ready to go, but field type is invalid?");
-            assert(name.content.equals(&field.name.content), "Seems like my hack doesn't work");
+            assert(equals(&name.content, &field.name.content), "Seems like my hack doesn't work");
             let fieldType: &Type = at(&types, getType(fieldState));
             if (wantsInfer(&exprState))
                 exprState = inferTypeOntoExpr(this, exprID, getID(fieldType));
@@ -1582,18 +1581,18 @@ func typeCheckIdentifier(this: &TypeChecker, exprID: usize, scopes: &ScopeLookup
     let name: Token = expr.origToken;
     let var: VariableLookup = blank;
     if (!resolveVariableByName(&this.lookup, this.currentModule, &name, scopes, &var)) {
-        let loc: String = name.getLocation();
-        let _name: String = name.content.toString();
-        fprintf(stderr, "%s: %s: Use of undeclared identifier `%s`.\n", loc.chars(), ERR_STR, _name.chars());
+        let loc: String = getLocation(&name);
+        let _name: String = toString(&name.content);
+        fprintf(stderr, "%s: %s: Use of undeclared identifier `%s`.\n", loc.buffer, ERR_STR, _name.buffer);
         let alternatives: VariableLookupList = searchAllModulesForIdentifier(&this.lookup, &name);
         for (let i: usize = 0; i < alternatives.length; i = i + 1) {
             let t: &VariableLookup = at(&alternatives, i);
-            let loc: String = t.name.getLocation();
-            fprintf(stderr, "%s: %s: A variable with that name is located here. Import the module to use it.\n", loc.chars(), NOTE_STR);
-            loc.drop();
+            let loc: String = getLocation(&t.name);
+            fprintf(stderr, "%s: %s: A variable with that name is located here. Import the module to use it.\n", loc.buffer, NOTE_STR);
+            drop(&loc);
         }
-        _name.drop();
-        loc.drop();
+        drop(&_name);
+        drop(&loc);
         this.typeError = true;
         return newTCStateFailure(ERROR_NO_SUCH_IDENTIFIER);
     }
@@ -1664,9 +1663,9 @@ func typeCheckExprIndexedAccess(this: &TypeChecker, binID: usize, scopes: &Scope
     if (!isPrimitive(rhsType) || rhsTypeID != TYPE_USIZE) {
         let loc: String = toString(&expr.span);
         let typ: String = toString(rhsType);
-        fprintf(stderr, "%s: %s: Expected index of array access to be type usize, got %s.\n", loc.chars(), ERR_STR, typ.chars());
-        typ.drop();
-        loc.drop();
+        fprintf(stderr, "%s: %s: Expected index of array access to be type usize, got %s.\n", loc.buffer, ERR_STR, typ.buffer);
+        drop(&typ);
+        drop(&loc);
         this.typeError = true;
         return newTCStateFailure(ERROR_INDEXED_TYPE_MISMATCH);
     }
@@ -1794,18 +1793,18 @@ func typeCheckExprMemberAccess(this: &TypeChecker, dotID: usize, scopes: &ScopeL
             let methodName: Token = rhs.origToken;
             let methods: MethodLookupList = resolveMethodByName(structLookup, &methodName);
             if (methods.length == 0) {
-                let loc: String = methodName.getLocation();
-                let structName: String = structLookup.name.toString();
-                let structLoc: String = structLookup.name.getLocation();
-                let n: String = methodName.content.toString();
+                let loc: String = getLocation(&methodName);
+                let structName: String = toString(&structLookup.name);
+                let structLoc: String = getLocation(&structLookup.name);
+                let n: String = toString(&methodName.content);
                 fprintf(stderr,
                     "%s: %s: Struct `%s` has no method named `%s`.\n%s: %s: Struct declared here.\n",
-                    loc.chars(), ERR_STR, structName.chars(), n.chars(), structLoc.chars(), NOTE_STR,
+                    loc.buffer, ERR_STR, structName.buffer, n.buffer, structLoc.buffer, NOTE_STR,
                 );
-                n.drop();
-                structLoc.drop();
-                structName.drop();
-                loc.drop();
+                drop(&n);
+                drop(&structLoc);
+                drop(&structName);
+                drop(&loc);
                 this.typeError = true;
                 return newTCStateFailure(ERROR_NO_SUCH_METHOD);
             }
@@ -1878,10 +1877,10 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
     if (expr.kind == EXPR_INT_LIT) {
         if (isChar(typ)) {
             if (!checkOnly) {
-                let l: String = expr.origToken.getLocation();
+                let l: String = getLocation(&expr.origToken);
                 fprintf(stderr, "%s: %s: Using integer literal to initialize value of type char.\n",
-                    l.chars(), WARN_STR);
-                l.drop();
+                    l.buffer, WARN_STR);
+                drop(&l);
             }
             tid = newTCStateType(getID(typ));
         } else if (isInteger(typ) || isFloat(typ)) {
@@ -1894,23 +1893,23 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
             tid = newTCStateType(getID(usizeType));
         } else if (isBoolean(typ)) {
             if (!checkOnly) {
-                let s: String = expr.origToken.content.toString();
-                let l: String = expr.origToken.getLocation();
+                let s: String = toString(&expr.origToken.content);
+                let l: String = getLocation(&expr.origToken);
                 fprintf(stderr, "%s: %s: Unexpected Literal! Expected boolean, found `%s`.\n",
-                    l.chars(), ERR_STR, s.chars());
-                l.drop();
-                s.drop();
+                    l.buffer, ERR_STR, s.buffer);
+                drop(&l);
+                drop(&s);
                 this.typeError = true;
             }
             return newTCStateFailure(ERROR_UNEXPECTED_LITERAL);
         } else if (isArray(typ)) {
             if (!checkOnly) {
-                let s: String = expr.origToken.content.toString();
-                let l: String = expr.origToken.getLocation();
+                let s: String = toString(&expr.origToken.content);
+                let l: String = getLocation(&expr.origToken);
                 fprintf(stderr, "%s: %s: Unexpected Literal! Expected array, found `%s`.\n",
-                    l.chars(), ERR_STR, s.chars());
-                l.drop();
-                s.drop();
+                    l.buffer, ERR_STR, s.buffer);
+                drop(&l);
+                drop(&s);
                 this.typeError = true;
             }
             return newTCStateFailure(ERROR_UNEXPECTED_LITERAL);
@@ -1926,9 +1925,9 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
             if (!checkOnly) {
                 let loc = toString(&expr.span);
                 let t = toString(typ);
-                fprintf(stderr, "%s: %s: Expected expression of type %s, found array literal.\n", loc.chars(), ERR_STR, t.chars());
-                t.drop();
-                loc.drop();
+                fprintf(stderr, "%s: %s: Expected expression of type %s, found array literal.\n", loc.buffer, ERR_STR, t.buffer);
+                drop(&t);
+                drop(&loc);
             }
             return newTCStateFailure(ERROR_TYPE_MISMATCH);
         }
@@ -1938,8 +1937,8 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
                 if (!checkOnly) {
                     let loc: String = toString(&expr.span);
                     fprintf(stderr, "%s: %s: Array size mismatch! Expected to find %llu element(s), got %llu instead.\n",
-                        loc.chars(), ERR_STR, typ.arraySize, expr.arrayContext.elemLength);
-                    loc.drop();
+                        loc.buffer, ERR_STR, typ.arraySize, expr.arrayContext.elemLength);
+                    drop(&loc);
                     this.typeError = true;
                 }
                 return newTCStateFailure(ERROR_ARRAY_SIZE_MISMATCH);
@@ -1957,8 +1956,8 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
                 if (!checkOnly) {
                     let loc: String = toString(&expr.span);
                     fprintf(stderr, "%s: %s: Array size mismatch! Expected to find %llu element(s), got %llu instead.\n",
-                        loc.chars(), ERR_STR, typ.arraySize, expr.arrayContext.size);
-                    loc.drop();
+                        loc.buffer, ERR_STR, typ.arraySize, expr.arrayContext.size);
+                    drop(&loc);
                     this.typeError = true;
                 }
                 return newTCStateFailure(ERROR_ARRAY_SIZE_MISMATCH);
@@ -1972,18 +1971,18 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
             let loc: String = toString(&expr.span);
             let name: String = toString(typ);
             fprintf(stderr, "%s: %s: Invalid initialization of reference of type %s. Please use `null` instead.\n",
-                loc.chars(), ERR_STR, name.chars());
-            name.drop();
-            loc.drop();
+                loc.buffer, ERR_STR, name.buffer);
+            drop(&name);
+            drop(&loc);
             this.typeError = true;
             return newTCStateFailure(ERROR_BLANK_FOR_NULL);
         } else if (isPrimitive(typ)) {
             let loc: String = toString(&expr.span);
             let name: String = toString(typ);
             fprintf(stderr, "%s: %s: Using `blank` to initialize value of type %s. Please use `0` instead.\n",
-                loc.chars(), WARN_STR, name.chars());
-            name.drop();
-            loc.drop();
+                loc.buffer, WARN_STR, name.buffer);
+            drop(&name);
+            drop(&loc);
         }
         tid = newTCStateType(getID(typ));
     } else if (expr.kind == EXPR_BINARY) {
@@ -2027,9 +2026,9 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
                 if (!checkOnly) {
                     let loc: String = toString(&expr.span);
                     let t: String = toString(typ);
-                    fprintf(stderr, "%s: %s: Negation is not defined for type %s.\n", loc.chars(), ERR_STR, t.chars());
-                    t.drop();
-                    loc.drop();
+                    fprintf(stderr, "%s: %s: Negation is not defined for type %s.\n", loc.buffer, ERR_STR, t.buffer);
+                    drop(&t);
+                    drop(&loc);
                     this.typeError = true;
                 }
                 return newTCStateFailure(ERROR_TYPE_MISMATCH);
@@ -2205,8 +2204,8 @@ func typeCheckExprArithmetic(this: &TypeChecker, binID: usize, scopes: &ScopeLoo
                 rhs, rhsType,
             );
             let loc = toString(&rhs);
-            fprintf(stderr, "%s: %s: Pointer offsets must be of type usize.\n", loc.chars(), NOTE_STR);
-            loc.drop();
+            fprintf(stderr, "%s: %s: Pointer offsets must be of type usize.\n", loc.buffer, NOTE_STR);
+            drop(&loc);
             return err;
         }
     } else if (isInteger(lhsType) && isPointer(rhsType)) {
@@ -2220,8 +2219,8 @@ func typeCheckExprArithmetic(this: &TypeChecker, binID: usize, scopes: &ScopeLoo
                 at(&exprs, expr.rhs).span, rhsType,
             );
             let loc = toString(&lhs);
-            fprintf(stderr, "%s: %s: Pointer offsets must be of type usize.\n", loc.chars(), NOTE_STR);
-            loc.drop();
+            fprintf(stderr, "%s: %s: Pointer offsets must be of type usize.\n", loc.buffer, NOTE_STR);
+            drop(&loc);
             return err;
         }
     } else {
@@ -2290,21 +2289,21 @@ func typeCheckTypeNode(this: &TypeChecker, typeID: usize) -> TCState {
         let name: Token = typ.nameTkn;
         let typeLookup: TypeLookup = blank;
         if (!resolveTypeByName(&this.lookup, this.currentModule, &name, &typeLookup)) {
-            let loc: String = name.getLocation();
-            let _n: String = name.content.toString();
-            fprintf(stderr, "%s: %s: Use of undeclared type identifier `%s`.\n", loc.chars(), ERR_STR, _n.chars());
+            let loc: String = getLocation(&name);
+            let _n: String = toString(&name.content);
+            fprintf(stderr, "%s: %s: Use of undeclared type identifier `%s`.\n", loc.buffer, ERR_STR, _n.buffer);
             let alternatives: TypeLookupList = searchAllModulesForTypeName(&this.lookup, &name);
             for (let i: usize = 0; i < alternatives.length; i = i + 1) {
                 let t: &TypeLookup = at(&alternatives, i);
                 if (isStruct(t)) {
                     let s: &StructLookup = asStruct(t);
-                    let loc: String = s.name.getLocation();
-                    fprintf(stderr, "%s: %s: A struct with that name is located here. Import the module to use it.\n", loc.chars(), NOTE_STR);
-                    loc.drop();
+                    let loc: String = getLocation(&s.name);
+                    fprintf(stderr, "%s: %s: A struct with that name is located here. Import the module to use it.\n", loc.buffer, NOTE_STR);
+                    drop(&loc);
                 }
             }
-            _n.drop();
-            loc.drop();
+            drop(&_n);
+            drop(&loc);
             this.typeError = true;
             return newTCStateFailure(ERROR_NO_SUCH_IDENTIFIER);
         }

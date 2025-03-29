@@ -45,9 +45,9 @@ func createTargetTriple(this: &LLVMContext, name: &char) -> &char {
 func createModuleWithName(this: &LLVMContext, name: SubStr) -> LLVMModule {
     trace("LLVMContext.createModuleWithName");
     guardReference(this);
-    let _name: String = name.toString();
-    let mod: LLVMModuleRef = LLVMModuleCreateWithNameInContext(_name.chars(), this.ref);
-    _name.drop();
+    let _name: String = toString(&name);
+    let mod: LLVMModuleRef = LLVMModuleCreateWithNameInContext(_name.buffer, this.ref);
+    drop(&_name);
     assert(!isNull(mod), "Could not create module in context");
     return newLLVMModuleFromRef(mod);
 }
@@ -101,9 +101,9 @@ func createVoidType(this: &LLVMContext) -> LLVMType {
 
 func appendBasicBlock(this: &LLVMContext, fn: LLVMValue, name: SubStr) -> LLVMBasicBlock {
     trace("LLVMContext.appendBasicBlock");
-    let _name: String = name.toString();
-    let block: LLVMBasicBlockRef = LLVMAppendBasicBlockInContext(this.ref, fn.ref, _name.chars());
-    _name.drop();
+    let _name: String = toString(&name);
+    let block: LLVMBasicBlockRef = LLVMAppendBasicBlockInContext(this.ref, fn.ref, _name.buffer);
+    drop(&_name);
     assert(!isNull(block), "Could not append basic block in context");
     return newLLVMBasicBlockFromRef(block);
 }

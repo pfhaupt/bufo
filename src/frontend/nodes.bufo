@@ -26,11 +26,11 @@ func mangleVariableName(
     name: &Token,
 ) -> String {
     if (moduleID == NODE_ID_OFFSET) {
-        return name.content.toString();
+        return toString(&name.content);
     } else {
         let mangledName: String = blank;
-        mangledName.pushNumber(moduleID);
-        mangledName.pushSubStr(&name.content);
+        pushNumber(&mangledName, moduleID);
+        pushSubStr(&mangledName, &name.content);
         return mangledName;
     }
 }
@@ -47,16 +47,16 @@ func mangleFunctionName(
     let mangledName: String = blank;
     for (let i: usize = 0; i < attrs.length; i = i + 1) {
         let a = at(attrs, i);
-        if (a.kind == ATTR_EXTERN) return a.name.content.toString();
+        if (a.kind == ATTR_EXTERN) return toString(&a.name.content);
     }
     // Method  : StructName-Name-ParamsTypeID-rRetTypeID
     // Function: Name-ParamsTypeID-rRetTypeID
     if (isMethod) {
         let strukt: &ParsedStructDecl = at(&structDecls, parentID);
-        mangledName.pushSubStr(&strukt.name.content);
-        mangledName.pushChar('.');
+        pushSubStr(&mangledName, &strukt.name.content);
+        pushChar(&mangledName, '.');
     }
-    mangledName.pushSubStr(&name.content);
+    pushSubStr(&mangledName, &name.content);
     for (let i: usize = 0; i < params.paramLength; i = i + 1) {
         let name: Token = getNameAtIndex(params, i);
         let id: usize = getTypeAtIndex(params, i);
@@ -64,19 +64,19 @@ func mangleFunctionName(
         assert(isSuccess(&typeNode.typeState), "Expected valid parameter type for mangling");
         let typ: &Type = at(&types, getType(&typeNode.typeState));
         let _typ: String = getMangledName(typ);
-        mangledName.pushString(&_typ);
-        _typ.drop();
+        pushString(&mangledName, &_typ);
+        drop(&_typ);
     }
-    mangledName.pushChar('r');
+    pushChar(&mangledName, 'r');
     if (retTypeID != 0) {
         let retNode: &ParsedTypeNode = at(&typeNodes, retTypeID);
         assert(isSuccess(&retNode.typeState), "Expected valid return type for mangling");
         let typ: &Type = at(&types, getType(&retNode.typeState));
         let _typ: String = getMangledName(typ);
-        mangledName.pushString(&_typ);
-        _typ.drop();
+        pushString(&mangledName, &_typ);
+        drop(&_typ);
     } else {
-        mangledName.pushChar('n');
+        pushChar(&mangledName, 'n');
     }
     return mangledName;
 }
@@ -95,7 +95,7 @@ let compilerFlags: ParsedCompilerFlagArena = blank;
 func getModuleByFilePath(path: SubStr, moduleID: &usize) -> bool {
     for (let i: usize = 0; i < modules.length; i = i + 1) {
         let mod: &ParsedModule = at(&modules, i);
-        if (mod.origin.equals(&path)) {
+        if (equals(&mod.origin, &path)) {
             *moduleID = i;
             return true;
         }
@@ -129,15 +129,15 @@ struct ParsedCompilerFlag {
     value: Token;
 }
 func equals(this: &ParsedCompilerFlag, other: &ParsedCompilerFlag) -> bool {
-    if (!this.flag.content.equals(&other.flag.content)) return false;
-    return this.value.content.equals(&other.value.content);
+    if (!equals(&this.flag.content, &other.flag.content)) return false;
+    return equals(&this.value.content, &other.value.content);
 }
 
 func newParsedCompilerFlag(flag: Token, value: Token) -> &ParsedCompilerFlag {
     let f: &SubStr = &flag.content;
-    if (!f.equals(&COMPILER_FLAG_LIBRARY)
-        && !f.equals(&COMPILER_FLAG_LIBPATH)
-        && !f.equals(&COMPILER_FLAG_LINKER)) {
+    if (!equals(f, &COMPILER_FLAG_LIBRARY)
+        && !equals(f, &COMPILER_FLAG_LIBPATH)
+        && !equals(f, &COMPILER_FLAG_LINKER)) {
         todo_with_msg("unknown compiler_flag");
     }
     push(&compilerFlags, ParsedCompilerFlag {
@@ -296,7 +296,7 @@ func getID(this: &ParsedMethod) -> usize {
 
 func getMangledName(this: &ParsedMethod) -> String {
     trace("ParsedMethod.getMangledName");
-    if (this.ignored) return this.name.content.toString();
+    if (this.ignored) return toString(&this.name.content);
     assert(isSuccess(&this.typeState), "Mangling can only be done after type checks");
     return mangleFunctionName(
         this.parentID,
@@ -352,7 +352,7 @@ func isExtern(this: &ParsedFuncDecl) -> bool {
 
 func getMangledName(this: &ParsedFuncDecl) -> String {
     trace("ParsedFuncDecl.getMangledName");
-    if (this.ignored) return this.name.content.toString();
+    if (this.ignored) return toString(&this.name.content);
     assert(isSuccess(&this.typeState), "Mangling can only be done after type checks");
     return mangleFunctionName(
         this.parentID,
@@ -523,20 +523,20 @@ comptime F64: SubStr = BUILD_A_TYPE("f64");
 comptime BOOL: SubStr = BUILD_A_TYPE("bool");
 comptime CHAR: SubStr = BUILD_A_TYPE("char");
 func getBuiltinTypeKind(name: Token) -> usize {
-    if (name.content.equals(&ANY)) return PARSED_TYPE_ANY;
-    else if (name.content.equals(&I8)) return PARSED_TYPE_I8;
-    else if (name.content.equals(&I16)) return PARSED_TYPE_I16;
-    else if (name.content.equals(&I32)) return PARSED_TYPE_I32;
-    else if (name.content.equals(&I64)) return PARSED_TYPE_I64;
-    else if (name.content.equals(&U8)) return PARSED_TYPE_U8;
-    else if (name.content.equals(&U16)) return PARSED_TYPE_U16;
-    else if (name.content.equals(&U32)) return PARSED_TYPE_U32;
-    else if (name.content.equals(&U64)) return PARSED_TYPE_U64;
-    else if (name.content.equals(&USIZE)) return PARSED_TYPE_USIZE;
-    else if (name.content.equals(&F32)) return PARSED_TYPE_F32;
-    else if (name.content.equals(&F64)) return PARSED_TYPE_F64;
-    else if (name.content.equals(&BOOL)) return PARSED_TYPE_BOOL;
-    else if (name.content.equals(&CHAR)) return PARSED_TYPE_CHAR;
+    if (equals(&name.content, &ANY)) return PARSED_TYPE_ANY;
+    else if (equals(&name.content, &I8)) return PARSED_TYPE_I8;
+    else if (equals(&name.content, &I16)) return PARSED_TYPE_I16;
+    else if (equals(&name.content, &I32)) return PARSED_TYPE_I32;
+    else if (equals(&name.content, &I64)) return PARSED_TYPE_I64;
+    else if (equals(&name.content, &U8)) return PARSED_TYPE_U8;
+    else if (equals(&name.content, &U16)) return PARSED_TYPE_U16;
+    else if (equals(&name.content, &U32)) return PARSED_TYPE_U32;
+    else if (equals(&name.content, &U64)) return PARSED_TYPE_U64;
+    else if (equals(&name.content, &USIZE)) return PARSED_TYPE_USIZE;
+    else if (equals(&name.content, &F32)) return PARSED_TYPE_F32;
+    else if (equals(&name.content, &F64)) return PARSED_TYPE_F64;
+    else if (equals(&name.content, &BOOL)) return PARSED_TYPE_BOOL;
+    else if (equals(&name.content, &CHAR)) return PARSED_TYPE_CHAR;
     return PARSED_TYPE_INVALID;
 }
 struct ParsedTypeNode {
