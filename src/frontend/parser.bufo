@@ -313,9 +313,8 @@ func parseStructDecl(this: &Parser) -> &ParsedStructDecl {
             }
             let tkn: Token = peek(&this.lexer);
             if (equals(&tkn.content, &KEYWORD_FUNC)) {
-                fprintf(stderr, "%s: %s: Methods are deprecated.\n", getLocation(&tkn).buffer, WARN_STR);
-                let method: &ParsedMethod = parseMethod(this, decl);
-                addMethod(&structContext, method);
+                fprintf(stderr, "%s: %s: Methods are deprecated.\n", getLocation(&tkn).buffer, ERR_STR);
+                exit(1);
             } else {
                 todo_with_msg("ayo, not a method???");
             }
