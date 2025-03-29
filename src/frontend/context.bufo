@@ -4,6 +4,7 @@ import "substr.bufo";
 import "./token.bufo";
 import "./nodes.bufo";
 import "./lexer.bufo";
+import "../util/arena.bufo";
 import "../middleend/types.bufo";
 import "../middleend/checker.bufo";
 
@@ -106,9 +107,9 @@ func getFieldOffset(this: &StructContext, name: &SubStr) -> usize {
     let offset: usize = 0;
     for (let i: usize = 0; i < this.fieldLength; i = i + 1) {
         let f: Token = getFieldNameAtIndex(this, i);
-        let _t: &ParsedTypeNode = typeNodes.at(getFieldTypeAtIndex(this, i));
+        let _t: &ParsedTypeNode = at(&typeNodes, getFieldTypeAtIndex(this, i));
         assert(isSuccess(&_t.typeState), "Expected valid field type in getFieldOffset");
-        let t: &Type = types.at(getType(&_t.typeState));
+        let t: &Type = at(&types, getType(&_t.typeState));
         if (f.content.equals(name)) {
             return offset;
         }

@@ -52,7 +52,7 @@ func mangleFunctionName(
     // Method  : StructName-Name-ParamsTypeID-rRetTypeID
     // Function: Name-ParamsTypeID-rRetTypeID
     if (isMethod) {
-        let strukt: &ParsedStructDecl = structDecls.at(parentID);
+        let strukt: &ParsedStructDecl = at(&structDecls, parentID);
         mangledName.pushSubStr(&strukt.name.content);
         mangledName.pushChar('.');
     }
@@ -60,18 +60,18 @@ func mangleFunctionName(
     for (let i: usize = 0; i < params.paramLength; i = i + 1) {
         let name: Token = getNameAtIndex(params, i);
         let id: usize = getTypeAtIndex(params, i);
-        let typeNode: &ParsedTypeNode = typeNodes.at(id);
+        let typeNode: &ParsedTypeNode = at(&typeNodes, id);
         assert(isSuccess(&typeNode.typeState), "Expected valid parameter type for mangling");
-        let typ: &Type = types.at(getType(&typeNode.typeState));
+        let typ: &Type = at(&types, getType(&typeNode.typeState));
         let _typ: String = getMangledName(typ);
         mangledName.pushString(&_typ);
         _typ.drop();
     }
     mangledName.pushChar('r');
     if (retTypeID != 0) {
-        let retNode: &ParsedTypeNode = typeNodes.at(retTypeID);
+        let retNode: &ParsedTypeNode = at(&typeNodes, retTypeID);
         assert(isSuccess(&retNode.typeState), "Expected valid return type for mangling");
-        let typ: &Type = types.at(getType(&retNode.typeState));
+        let typ: &Type = at(&types, getType(&retNode.typeState));
         let _typ: String = getMangledName(typ);
         mangledName.pushString(&_typ);
         _typ.drop();
@@ -94,7 +94,7 @@ let compilerFlags: ParsedCompilerFlagArena = blank;
 
 func getModuleByFilePath(path: SubStr, moduleID: &usize) -> bool {
     for (let i: usize = 0; i < modules.length; i = i + 1) {
-        let mod: &ParsedModule = modules.at(i);
+        let mod: &ParsedModule = at(&modules, i);
         if (mod.origin.equals(&path)) {
             *moduleID = i;
             return true;
@@ -140,11 +140,11 @@ func newParsedCompilerFlag(flag: Token, value: Token) -> &ParsedCompilerFlag {
         && !f.equals(&COMPILER_FLAG_LINKER)) {
         todo_with_msg("unknown compiler_flag");
     }
-    compilerFlags.push(ParsedCompilerFlag {
+    push(&compilerFlags, ParsedCompilerFlag {
         flag: flag,
         value: value,
     });
-    return compilerFlags.last();
+    return last(&compilerFlags);
 }
 
 struct ParsedModule {
@@ -157,7 +157,7 @@ struct ParsedModule {
 
 func getID(this: &ParsedModule) -> usize {
     trace("ParsedModule.getID");
-    return modules.indexOf(this);
+    return indexOf(&modules, this);
 }
 
 func addTopLevelItem(this: &ParsedModule, tli: &ParsedTopLevelItem) {
@@ -180,11 +180,11 @@ func getTopLevelItemAtIndex(this: &ParsedModule, index: usize) -> usize {
 
 func newParsedModule(origin: SubStr) -> &ParsedModule {
     trace("newParsedModule");
-    modules.push(ParsedModule {
+    push(&modules, ParsedModule {
         ignored: ignoringNodes,
         origin: origin,
     });
-    return modules.last();
+    return last(&modules);
 }
 
 comptime TLI_INVALID: usize = 0;
@@ -203,19 +203,19 @@ struct ParsedTopLevelItem {
 
 func getID(this: &ParsedTopLevelItem) -> usize {
     trace("ParsedTopLevelItem.getID");
-    return topLevelItems.indexOf(this);
+    return indexOf(&topLevelItems, this);
 }
 
 func newParsedTopLevelItem(span: Span, kind: usize, nodeID: usize) -> &ParsedTopLevelItem {
     trace("newParsedTopLevelItem");
-    topLevelItems.push(ParsedTopLevelItem {
+    push(&topLevelItems, ParsedTopLevelItem {
         ignored: ignoringNodes,
         kind: kind,
         span: span,
         nodeID: nodeID,
         typeState: blank,
     });
-    return topLevelItems.last();
+    return last(&topLevelItems);
 }
 
 struct ParsedStructDecl {
@@ -228,7 +228,7 @@ struct ParsedStructDecl {
 }
 func getID(this: &ParsedStructDecl) -> usize {
     trace("ParsedStructDecl.getID");
-    return structDecls.indexOf(this);
+    return indexOf(&structDecls, this);
 }
 func asTLI(this: &ParsedStructDecl) -> &ParsedTopLevelItem {
     trace("ParsedStructDecl.asTLI");
@@ -249,8 +249,8 @@ func getFieldOffsetAndSize(this: &ParsedStructDecl, index: usize, offset: &usize
     let o: usize = 0;
     for (let i: usize = 0; i < this.context.fieldLength; i = i + 1) {
         let field: usize = getFieldTypeAtIndex(&this.context, i);
-        let f1: &ParsedTypeNode = typeNodes.at(field);
-        let f: &Type = types.at(getType(&f1.typeState));
+        let f1: &ParsedTypeNode = at(&typeNodes, field);
+        let f: &Type = at(&types, getType(&f1.typeState));
         let s: usize = getSize(f);
         s = nextMultipleOf(s, getAlignment(f));
         if (i == index) {
@@ -265,7 +265,7 @@ func getFieldOffsetAndSize(this: &ParsedStructDecl, index: usize, offset: &usize
 
 func newParsedStructDecl(parent: usize, span: Span, name: Token) -> &ParsedStructDecl {
     trace("newParsedStructDecl");
-    structDecls.push(ParsedStructDecl {
+    push(&structDecls, ParsedStructDecl {
         ignored: ignoringNodes,
         parentModule: parent,
         name: name,
@@ -273,7 +273,7 @@ func newParsedStructDecl(parent: usize, span: Span, name: Token) -> &ParsedStruc
         context: blank,
         typeState: blank,
     });
-    return structDecls.last();
+    return last(&structDecls);
 }
 
 struct ParsedMethod {
@@ -291,7 +291,7 @@ struct ParsedMethod {
 
 func getID(this: &ParsedMethod) -> usize {
     trace("ParsedMethod.getID");
-    return methods.indexOf(this);
+    return indexOf(&methods, this);
 }
 
 func getMangledName(this: &ParsedMethod) -> String {
@@ -310,7 +310,7 @@ func getMangledName(this: &ParsedMethod) -> String {
 }
 
 func newParsedMethod(parentID: usize, span: Span, name: Token, params: ParamContext, retType: &ParsedTypeNode, body: usize) -> &ParsedMethod {
-    methods.push(ParsedMethod {
+    push(&methods, ParsedMethod {
         ignored: ignoringNodes,
         parentID: parentID,
         name: name,
@@ -321,7 +321,7 @@ func newParsedMethod(parentID: usize, span: Span, name: Token, params: ParamCont
         body: body,
         isStatic: !hasThis(&params),
     });
-    return methods.last();
+    return last(&methods);
 }
 
 struct ParsedFuncDecl {
@@ -339,7 +339,7 @@ struct ParsedFuncDecl {
 
 func getID(this: &ParsedFuncDecl) -> usize {
     trace("ParsedFuncDecl.getID");
-    return funcDecls.indexOf(this);
+    return indexOf(&funcDecls, this);
 }
 
 func isExtern(this: &ParsedFuncDecl) -> bool {
@@ -371,7 +371,7 @@ func asTLI(this: &ParsedFuncDecl) -> &ParsedTopLevelItem {
 }
 
 func newParsedFuncDecl(parentID: usize, span: Span, name: Token, params: ParamContext, retType: &ParsedTypeNode, body: usize) -> &ParsedFuncDecl {
-    funcDecls.push(ParsedFuncDecl {
+    push(&funcDecls, ParsedFuncDecl {
         ignored: ignoringNodes,
         parentID: parentID,
         name: name,
@@ -382,7 +382,7 @@ func newParsedFuncDecl(parentID: usize, span: Span, name: Token, params: ParamCo
         isComptime: false,
         typeState: blank,
     });
-    return funcDecls.last();
+    return last(&funcDecls);
 }
 
 struct ParsedBlock {
@@ -396,7 +396,7 @@ struct ParsedBlock {
 
 func getID(this: &ParsedBlock) -> usize {
     trace("ParsedBlock.getID");
-    return blocks.indexOf(this);
+    return indexOf(&blocks, this);
 }
 func addStmt(this: &ParsedBlock, stmt: &ParsedStmt) {
     trace("ParsedBlock.addStmt");
@@ -418,10 +418,10 @@ func getStmtAtIndex(this: &ParsedBlock, index: usize) -> usize {
 }
 
 func newParsedBlock() -> &ParsedBlock {
-    blocks.push(ParsedBlock {
+    push(&blocks, ParsedBlock {
         ignored: ignoringNodes,
     });
-    return blocks.last();
+    return last(&blocks);
 }
 
 comptime STMT_INVALID: usize = 0;
@@ -450,7 +450,7 @@ struct ParsedStmt {
 
 func getID(this: &ParsedStmt) -> usize {
     trace("ParsedStmt.getID");
-    return stmts.indexOf(this);
+    return indexOf(&stmts, this);
 }
 
 func asTLI(this: &ParsedStmt) -> &ParsedTopLevelItem {
@@ -470,12 +470,12 @@ func getMangledName(this: &ParsedStmt) -> String {
 
 func newParsedStmt(span: Span, kind: usize) -> &ParsedStmt {
     trace("newParsedStmt");
-    stmts.push(ParsedStmt {
+    push(&stmts, ParsedStmt {
         ignored: ignoringNodes,
         span: span,
         kind: kind,
     });
-    return stmts.last();
+    return last(&stmts);
 }
 
 // REVIEW: These names might need changing once we make it to the Type Checker
@@ -551,22 +551,22 @@ struct ParsedTypeNode {
 
 func getID(this: &ParsedTypeNode) -> usize {
     trace("ParsedTypeNode.getID");
-    return typeNodes.indexOf(this);
+    return indexOf(&typeNodes, this);
 }
 
 func newParsedTypeNode(span: Span, kind: usize) -> &ParsedTypeNode {
     trace("newParsedTypeNode");
-    typeNodes.push(ParsedTypeNode {
+    push(&typeNodes, ParsedTypeNode {
         ignored: ignoringNodes,
         span: span,
         kind: kind,
     });
-    return typeNodes.last();
+    return last(&typeNodes);
 }
 
 func newBuiltinTypeDecl(span: Span, kind: usize) -> &ParsedTypeNode {
     trace("newBuiltinTypeDecl");
-    let t: &ParsedTypeNode = typeNodes.at(kind);
+    let t: &ParsedTypeNode = at(&typeNodes, kind);
     (*t).span = span;
     (*t).kind = PARSED_TYPE_BUILTIN;
     return t;
@@ -617,7 +617,7 @@ struct ParsedExpr {
 }
 func getID(this: &ParsedExpr) -> usize {
     trace("ParsedExpr.getID");
-    return exprs.indexOf(this);
+    return indexOf(&exprs, this);
 }
 
 func intoPointer(this: &ParsedExpr) -> usize {
@@ -632,7 +632,7 @@ func isLValue(this: &ParsedExpr) -> bool {
         return this.op == UNARY_DEREF;
     } else if (this.kind == EXPR_BINARY) {
         if (this.op == BIN_DOT) {
-            return exprs.at(this.rhs).kind == EXPR_NAME;
+            return at(&exprs, this.rhs).kind == EXPR_NAME;
         }
         if (this.op == BIN_INDEXED_ACCESS) return true;
         return false;
@@ -796,11 +796,11 @@ func unaryOpFromKind(kind: usize) -> usize {
 
 func newParsedExpr(span: Span, kind: usize) -> &ParsedExpr {
     trace("newParsedExpr");
-    exprs.push(ParsedExpr {
+    push(&exprs, ParsedExpr {
         ignored: ignoringNodes,
         kind: kind,
         span: span,
     });
-    return exprs.last();
+    return last(&exprs);
 }
 

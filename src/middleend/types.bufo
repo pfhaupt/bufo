@@ -64,13 +64,13 @@ func getMangledName(this: &Type) -> String {
         else todo_with_msg("what type is this");
     } else if (this.kind == TYPE_KIND_POINTER) {
         let s: String = newStringFromStrLit("P");
-        let _s: String = getMangledName(types.at(this.typeIndex));
+        let _s: String = getMangledName(at(&types, this.typeIndex));
         s.pushString(&_s);
         _s.drop();
         return s;
     } else if (this.kind == TYPE_KIND_STRUCT) {
         let s: String = newStringFromStrLit("S");
-        let decl: &ParsedStructDecl = structDecls.at(this.typeIndex);
+        let decl: &ParsedStructDecl = at(&structDecls, this.typeIndex);
         let hash: usize = decl.name.content.hash(3);
         if (hash < 10) s.pushNumber(0);
         if (hash < 100) s.pushNumber(0);
@@ -86,7 +86,7 @@ func getMangledName(this: &Type) -> String {
 }
 
 func getID(this: &Type) -> usize {
-    return types.indexOf(this);
+    return indexOf(&types, this);
 }
 
 func equals(this: &Type, other: &Type) -> bool {
@@ -95,7 +95,7 @@ func equals(this: &Type, other: &Type) -> bool {
             if (other.typeIndex == TYPE_ANY)
                 return true;
         if (other.kind != TYPE_KIND_POINTER) return false;
-        return equals(types.at(this.typeIndex), types.at(other.typeIndex));
+        return equals(at(&types, this.typeIndex), at(&types, other.typeIndex));
     }
     if (this.kind == TYPE_KIND_PRIMITIVE)
         if (other.kind == TYPE_KIND_POINTER)
@@ -104,7 +104,7 @@ func equals(this: &Type, other: &Type) -> bool {
     if (this.kind != other.kind)
         return false;
     if (this.kind == TYPE_KIND_ARRAY) {
-        return equals(types.at(this.typeIndex), types.at(other.typeIndex));
+        return equals(at(&types, this.typeIndex), at(&types, other.typeIndex));
     }
     if (this.kind == TYPE_KIND_PRIMITIVE
         || this.kind == TYPE_KIND_ARRAY
@@ -185,7 +185,7 @@ func getUnderlyingType(this: &Type, deep: bool) -> &Type {
         assert(this.typeIndex != TYPE_ANY, "Type.getUnderlyingType() is not defined for Any");
     assert(isPointer(this) || isArray(this), "type.getUnderlyingType() called on non-pointer non-array");
     while (isPointer(underlying) || isArray(underlying)) {
-        underlying = types.at(underlying.typeIndex);
+        underlying = at(&types, underlying.typeIndex);
         if (!deep) break;
     }
     return underlying;
@@ -211,16 +211,16 @@ func toString(this: &Type) -> String {
         else todo_with_msg("what type is this");
     } else if (this.kind == TYPE_KIND_POINTER) {
         let s: String = newStringFromStrLit("&");
-        let _s: String = toString(types.at(this.typeIndex));
+        let _s: String = toString(at(&types, this.typeIndex));
         s.pushString(&_s);
         _s.drop();
         return s;
     } else if (this.kind == TYPE_KIND_STRUCT) {
-        let decl: &ParsedStructDecl = structDecls.at(this.typeIndex);
+        let decl: &ParsedStructDecl = at(&structDecls, this.typeIndex);
         return decl.name.content.toString();
     } else if (this.kind == TYPE_KIND_ARRAY) {
         let s: String = newStringFromStrLit("[");
-        let _s: String = toString(types.at(this.typeIndex));
+        let _s: String = toString(at(&types, this.typeIndex));
         s.pushString(&_s);
         _s.drop();
         s.pushChar(';');
@@ -257,16 +257,16 @@ func getAlignment(this: &Type) -> usize {
             unreachable("Exhaustive handling of primitive types in Type.getAlignment");
         }
     } else if (this.kind == TYPE_KIND_ARRAY) {
-        let t: &Type = types.at(this.typeIndex);
+        let t: &Type = at(&types, this.typeIndex);
         return getAlignment(t);
     } else if (this.kind == TYPE_KIND_STRUCT) {
-        let info: &ParsedStructDecl = structDecls.at(this.typeIndex);
+        let info: &ParsedStructDecl = at(&structDecls, this.typeIndex);
         assert(isSuccess(&info.typeState), "Can only get alignment of valid structs");
         let maxAlign: usize = 1;
         for (let i: usize = 0; i < info.context.fieldLength; i = i + 1) {
-            let td: &ParsedTypeNode = typeNodes.at(getFieldTypeAtIndex(&info.context, i));
+            let td: &ParsedTypeNode = at(&typeNodes, getFieldTypeAtIndex(&info.context, i));
             assert(isSuccess(&td.typeState), "Expected valid field type");
-            let tt: &Type = types.at(getType(&td.typeState));
+            let tt: &Type = at(&types, getType(&td.typeState));
             let _a: usize = getAlignment(tt);
             if (_a > maxAlign) maxAlign = _a;
         }
@@ -298,17 +298,17 @@ func getSize(this: &Type) -> usize {
             unreachable("Exhaustive handling of primitive types in Type.getSize");
         }
     } else if (this.kind == TYPE_KIND_ARRAY) {
-        let t: &Type = types.at(this.typeIndex);
+        let t: &Type = at(&types, this.typeIndex);
         return getSize(t) * this.arraySize;
     } else if (this.kind == TYPE_KIND_STRUCT) {
-        let info: &ParsedStructDecl = structDecls.at(this.typeIndex);
+        let info: &ParsedStructDecl = at(&structDecls, this.typeIndex);
         assert(isSuccess(&info.typeState), "Can only get size of valid structs");
         let size: usize = 0;
         let maxAlign: usize = 1;
         for (let i: usize = 0; i < info.context.fieldLength; i = i + 1) {
-            let td: &ParsedTypeNode = typeNodes.at(getFieldTypeAtIndex(&info.context, i));
+            let td: &ParsedTypeNode = at(&typeNodes, getFieldTypeAtIndex(&info.context, i));
             assert(isSuccess(&td.typeState), "Expected valid field type");
-            let tt: &Type = types.at(getType(&td.typeState));
+            let tt: &Type = at(&types, getType(&td.typeState));
             let _a: usize = getAlignment(tt);
             size = size + getSize(tt);
             size = nextMultipleOf(size, _a);
@@ -337,15 +337,15 @@ func intoPointer(this: &Type) -> usize {
 func newType(kind: usize, id: usize) -> &Type {
     if (kind == TYPE_KIND_PRIMITIVE) {
         assert(id < TYPE_COUNT, "newType() attempted to use general purpose types");
-        let t: &Type = types.at(id);
+        let t: &Type = at(&types, id);
         (*t).kind = kind;
         (*t).typeIndex = id;
         return t;
     }
-    types.push(Type {
+    push(&types, Type {
         kind: kind,
         typeIndex: id,
     });
-    return types.last();
+    return last(&types);
 }
 

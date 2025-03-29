@@ -9,6 +9,7 @@ import "./nodes.bufo";
 import "./context.bufo";
 import "../util/lists.bufo";
 import "../util/span.bufo";
+import "../util/arena.bufo";
 import "../middleend/checker.bufo";
 import "../middleend/types.bufo";
 import "../backend/irgen.bufo";
@@ -263,7 +264,7 @@ func parseImport(this: &Parser) -> &ParsedTopLevelItem {
             let moduleID: usize = 0;
             let mod: &ParsedModule = null;
             if (getModuleByFilePath(path.asSubStr(), &moduleID)) {
-                mod = modules.at(moduleID);
+                mod = at(&modules, moduleID);
             } else {
                 mod = newParsedModule(path.asSubStr());
                 moduleID = getID(mod);

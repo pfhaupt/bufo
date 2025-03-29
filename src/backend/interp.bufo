@@ -3,6 +3,7 @@ import "libc.bufo";
 import "../util/span.bufo";
 import "../util/lists.bufo";
 import "../util/hashmaps.bufo";
+import "../util/arena.bufo";
 import "../frontend/nodes.bufo";
 import "../middleend/types.bufo";
 import "./irgen.bufo";
@@ -336,7 +337,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         if (isArray(t)) {
             todo_with_msg("InsertValue Array");
         } else if (isStruct(t)) {
-            let s: &ParsedStructDecl = structDecls.at(t.typeIndex);
+            let s: &ParsedStructDecl = at(&structDecls, t.typeIndex);
             let offset: usize = 0;
             let fieldSize: usize = 0;
             getFieldOffsetAndSize(s, instr.src.i, &offset, &fieldSize);
@@ -842,7 +843,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         assert(isStructPointer(t), "IRInterp: GetFieldPtr got non-struct pointer");
         let u: &Type = getUnderlyingType(t, false);
         assert(isStruct(u));
-        let decl: &ParsedStructDecl = structDecls.at(u.typeIndex);
+        let decl: &ParsedStructDecl = at(&structDecls, u.typeIndex);
         let offset: usize = 0;
         let size: usize = 0;
         getFieldOffsetAndSize(decl, instr.op1.i, &offset, &size);

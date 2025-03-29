@@ -5,6 +5,7 @@ import "substr.bufo";
 import "span.bufo";
 import "../util/hashmaps.bufo";
 import "../util/lists.bufo";
+import "../util/arena.bufo";
 import "../frontend/token.bufo";
 import "../frontend/nodes.bufo";
 import "../frontend/context.bufo";
@@ -313,11 +314,11 @@ func popLoopBlocks(this: &IRFunc) {
 }
 func getFuncNode(this: &IRFunc) -> &ParsedFuncDecl {
     assert(!this.isMethod, "IRFunc.getFuncNode called on Method");
-    return funcDecls.at(this.originalID);
+    return at(&funcDecls, this.originalID);
 }
 func getMethodNode(this: &IRFunc) -> &ParsedMethod {
     assert(this.isMethod, "IRFunc.getMethodNode called on Function");
-    return methods.at(this.originalID);
+    return at(&methods, this.originalID);
 }
 func dumpInstructions(this: &IRFunc) {
     printf("%s:\n", this.name.chars());
@@ -926,7 +927,7 @@ func getFunctionByName(this: &IRGen, name: &String) -> usize {
 func fillLookup(this: &IRGen, project: &ParsedModule) -> bool {
     trace("IRGen.fillLookup");
     for (let i: usize = 0; i < funcDecls.length; i = i + 1) {
-        let function: &ParsedFuncDecl = funcDecls.at(i);
+        let function: &ParsedFuncDecl = at(&funcDecls, i);
         if (function.ignored) continue;
         let name: String = getMangledName(function);
         if (containsKey(&this.functions, &name)) {
@@ -957,7 +958,7 @@ func fillLookup(this: &IRGen, project: &ParsedModule) -> bool {
         add(&this.functions, name, irfunc);
     }
     for (let i: usize = 0; i < methods.length; i = i + 1) {
-        let method: &ParsedMethod = methods.at(i);
+        let method: &ParsedMethod = at(&methods, i);
         if (method.ignored) continue;
         let name: String = getMangledName(method);
         if (containsKey(&this.functions, &name)) {
@@ -998,21 +999,21 @@ func generateBytecode(this: &IRGen, project: &ParsedModule) -> bool {
     let entry: IRBlockID = appendBlock(&this.globalScope);
     setCurrentBlock(&this.globalScope, entry);
     for (let i: usize = 0; i < modules.length; i = i + 1) {
-        let mod: &ParsedModule = modules.at(i);
+        let mod: &ParsedModule = at(&modules, i);
         for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
-            let tli: &ParsedTopLevelItem = topLevelItems.at(getTopLevelItemAtIndex(mod, j));
+            let tli: &ParsedTopLevelItem = at(&topLevelItems, getTopLevelItemAtIndex(mod, j));
             if (tli.ignored) continue;
             if (tli.kind == TLI_VAR_DECL) {
-                generateBytecodeStmt(this, &this.globalScope, stmts.at(tli.nodeID));
+                generateBytecodeStmt(this, &this.globalScope, at(&stmts, tli.nodeID));
             }
         }
     }
     for (let i: usize = 0; i < funcDecls.length; i = i + 1) {
-        let fn: &ParsedFuncDecl = funcDecls.at(i);
+        let fn: &ParsedFuncDecl = at(&funcDecls, i);
         generateFunction(this, fn);
     }
     for (let i: usize = 0; i < methods.length; i = i + 1) {
-        let meth: &ParsedMethod = methods.at(i);
+        let meth: &ParsedMethod = at(&methods, i);
         generateMethod(this, meth);
     }
     return !this.error;
@@ -1025,20 +1026,20 @@ func generateFunctionHeader(this: &IRGen, function: &IRFunc, retType: &Type, par
     let offset: usize = 0;
     if (getSize(retType) > 8) {
         offset = 1;
-        prepareParameter(this, function, 0, blank, newSubStrOfStrLit("ret"), types.at(intoPointer(retType)), true);
+        prepareParameter(this, function, 0, blank, newSubStrOfStrLit("ret"), at(&types, intoPointer(retType)), true);
     }
     for (let i: usize = 0; i < params.paramLength; i = i + 1) {
         let name: Token = getNameAtIndex(params, i);
         let typ: usize = getTypeAtIndex(params, i);
-        let typDecl: &ParsedTypeNode = typeNodes.at(typ);
-        let pType: &Type = types.at(getType(&typDecl.typeState));
+        let typDecl: &ParsedTypeNode = at(&typeNodes, typ);
+        let pType: &Type = at(&types, getType(&typDecl.typeState));
         prepareParameter(this, function, i + offset, name.span, name.content, pType, false);
     }
 }
 
 func generateFunctionBody(this: &IRGen, function: &IRFunc, body: &ParsedBlock, retTypeNode: &ParsedTypeNode) {
     trace("IRGen.generateFunctionBody");
-    let t: &Type = types.at(getType(&retTypeNode.typeState));
+    let t: &Type = at(&types, getType(&retTypeNode.typeState));
     if (function.returnBlockID.i == 0) {
         let curr = getCurrentBlock(function);
         function.returnBlockID = appendBlock(function);
@@ -1047,7 +1048,7 @@ func generateFunctionBody(this: &IRGen, function: &IRFunc, body: &ParsedBlock, r
             buildReturnEmpty(function, retTypeNode.span);
             setCurrentBlock(function, curr);
         } else {
-            function.returnAlloc = allocateRegister(function, types.at(intoPointer(t)));
+            function.returnAlloc = allocateRegister(function, at(&types, intoPointer(t)));
             buildAlloca(function, retTypeNode.span, function.returnAlloc, getSize(t));
             setCurrentBlock(function, function.returnBlockID);
             let result = allocateRegister(function, t);
@@ -1059,7 +1060,7 @@ func generateFunctionBody(this: &IRGen, function: &IRFunc, body: &ParsedBlock, r
                 if (isStruct(t)) {
                     let v: RegIndex = getRegisterForSize(this, function, getSize(t));
                     let t: &Type = getRegister(function, v).typ;
-                    let r: RegIndex = allocateRegister(function, types.at(intoPointer(t)));
+                    let r: RegIndex = allocateRegister(function, at(&types, intoPointer(t)));
                     let s: usize = getSize(t);
                     assert(s <= 8);
                     buildAlloca(function, retTypeNode.span, r, s);
@@ -1103,9 +1104,9 @@ func generateFunction(this: &IRGen, funcDecl: &ParsedFuncDecl) {
     }
     let scope: usize = enterScope(function);
     assert(scope == 1, "Expected function to enter first scope");
-    let retDecl: &ParsedTypeNode = typeNodes.at(funcDecl.retTypeID);
-    generateFunctionHeader(this, function, types.at(getType(&retDecl.typeState)), &funcDecl.params);
-    generateFunctionBody(this, function, blocks.at(funcDecl.body), typeNodes.at(funcDecl.retTypeID));
+    let retDecl: &ParsedTypeNode = at(&typeNodes, funcDecl.retTypeID);
+    generateFunctionHeader(this, function, at(&types, getType(&retDecl.typeState)), &funcDecl.params);
+    generateFunctionBody(this, function, at(&blocks, funcDecl.body), at(&typeNodes, funcDecl.retTypeID));
 }
 
 func generateMethod(this: &IRGen, methDecl: &ParsedMethod) {
@@ -1119,9 +1120,9 @@ func generateMethod(this: &IRGen, methDecl: &ParsedMethod) {
     name.drop();
     let scope: usize = enterScope(function);
     assert(scope == 1, "Expected method to enter first scope");
-    let retDecl: &ParsedTypeNode = typeNodes.at(methDecl.retTypeID);
-    generateFunctionHeader(this, function, types.at(getType(&retDecl.typeState)), &methDecl.params);
-    generateFunctionBody(this, function, blocks.at(methDecl.body), typeNodes.at(methDecl.retTypeID));
+    let retDecl: &ParsedTypeNode = at(&typeNodes, methDecl.retTypeID);
+    generateFunctionHeader(this, function, at(&types, getType(&retDecl.typeState)), &methDecl.params);
+    generateFunctionBody(this, function, at(&blocks, methDecl.body), at(&typeNodes, methDecl.retTypeID));
 }
 
 func generateBytecodeBlock(this: &IRGen, function: &IRFunc, block: &ParsedBlock) {
@@ -1132,19 +1133,19 @@ func generateBytecodeBlock(this: &IRGen, function: &IRFunc, block: &ParsedBlock)
     let modID: usize = 0;
     if (function.isMethod) {
         let m: &ParsedMethod = getMethodNode(function);
-        let s: &ParsedStructDecl = structDecls.at(m.parentID);
+        let s: &ParsedStructDecl = at(&structDecls, m.parentID);
         modID = s.parentModule;
     } else {
         let f: &ParsedFuncDecl = getFuncNode(function);
         modID = f.parentID;
     }
     for (let i: usize = 0; i < block.stmtLength; i = i + 1) {
-        let stmt: &ParsedStmt = stmts.at(getStmtAtIndex(block, i));
+        let stmt: &ParsedStmt = at(&stmts, getStmtAtIndex(block, i));
         generateBytecodeStmt(this, function, stmt);
         let curr: &IRBlock = getCurrentBlockAsRef(function);
         if (isTerminated(curr)) {
             if (i != block.stmtLength - 1) {
-                let loc: String = toString(&stmts.at(getStmtAtIndex(block, i + 1)).span);
+                let loc: String = toString(&at(&stmts, getStmtAtIndex(block, i + 1)).span);
                 fprintf(stderr, "%s: %s: Unreachable code.\n", loc.chars(), WARN_STR);
                 loc.drop();
             }
@@ -1161,7 +1162,7 @@ func generateBytecodeStmt(this: &IRGen, function: &IRFunc, stmt: &ParsedStmt) {
     assert(isSuccess(&stmt.typeState), "Expected valid Stmt type in IRGen");
     if (stmt.kind == STMT_VAR_DECL) {
         let exprID: usize = stmt.varDeclContext.exprID;
-        let expr: &ParsedExpr = exprs.at(exprID);
+        let expr: &ParsedExpr = at(&exprs, exprID);
         if (stmt.varDeclContext.isComptime) {
             startComptime(function);
             let result: RegIndex = generateBytecodeExpr(this, function, expr, false);
@@ -1170,8 +1171,8 @@ func generateBytecodeStmt(this: &IRGen, function: &IRFunc, stmt: &ParsedStmt) {
             endComptime(function);
         } else {
             let result: RegIndex = generateBytecodeExpr(this, function, expr, false);
-            let typ: &Type = types.at(getType(&stmt.typeState));
-            let allocaType: &Type = types.at(intoPointer(typ));
+            let typ: &Type = at(&types, getType(&stmt.typeState));
+            let allocaType: &Type = at(&types, intoPointer(typ));
             let ptr: RegIndex = allocateRegister(function, allocaType);
             buildAlloca(function, stmt.span, ptr, getSize(typ));
             buildStore(function, stmt.span, ptr, result);
@@ -1180,18 +1181,18 @@ func generateBytecodeStmt(this: &IRGen, function: &IRFunc, stmt: &ParsedStmt) {
         }
     } else if (stmt.kind == STMT_IF) {
         let context: &IfContext = &stmt.ifContext;
-        let cond: RegIndex = generateBytecodeExpr(this, function, exprs.at(stmt.expr), false);
+        let cond: RegIndex = generateBytecodeExpr(this, function, at(&exprs, stmt.expr), false);
         if (context.hasElse) {
             let then: IRBlockID = appendBlock(function);
             let elze: IRBlockID = appendBlock(function);
             buildCondBr(function, stmt.span, cond, then, elze);
 
             setCurrentBlock(function, then);
-            generateBytecodeStmt(this, function, stmts.at(context.thenBody));
+            generateBytecodeStmt(this, function, at(&stmts, context.thenBody));
             then = getCurrentBlock(function);
 
             setCurrentBlock(function, elze);
-            generateBytecodeStmt(this, function, stmts.at(context.elseBody));
+            generateBytecodeStmt(this, function, at(&stmts, context.elseBody));
             elze = getCurrentBlock(function);
 
             let thenBlock: &IRBlock = getBlockByID(function, then);
@@ -1224,7 +1225,7 @@ func generateBytecodeStmt(this: &IRGen, function: &IRFunc, stmt: &ParsedStmt) {
             buildCondBr(function, stmt.span, cond, then, cont);
 
             setCurrentBlock(function, then);
-            generateBytecodeStmt(this, function, stmts.at(context.thenBody));
+            generateBytecodeStmt(this, function, at(&stmts, context.thenBody));
             let curr: &IRBlock = getCurrentBlockAsRef(function);
             if (!isTerminated(curr)) {
                 buildBr(function, stmt.span, cont);
@@ -1240,35 +1241,35 @@ func generateBytecodeStmt(this: &IRGen, function: &IRFunc, stmt: &ParsedStmt) {
         buildBr(function, stmt.span, condBlock);
 
         setCurrentBlock(function, condBlock);
-        let cond: RegIndex = generateBytecodeExpr(this, function, exprs.at(stmt.expr), false);
+        let cond: RegIndex = generateBytecodeExpr(this, function, at(&exprs, stmt.expr), false);
         buildCondBr(function, stmt.span, cond, bodyBlock, afterBlock);
 
         setCurrentBlock(function, bodyBlock);
-        generateBytecodeStmt(this, function, stmts.at(stmt.block));
+        generateBytecodeStmt(this, function, at(&stmts, stmt.block));
         let curr: &IRBlock = getCurrentBlockAsRef(function);
         if (!isTerminated(curr)) {
             buildBr(function, stmt.span, stepBlock);
         }
 
         setCurrentBlock(function, stepBlock);
-        generateBytecodeExpr(this, function, exprs.at(stmt.step), false);
+        generateBytecodeExpr(this, function, at(&exprs, stmt.step), false);
         buildBr(function, stmt.span, condBlock);
 
         setCurrentBlock(function, afterBlock);
         popLoopBlocks(function);
     } else if (stmt.kind == STMT_RETURN_EXPR) {
         let exprID: usize = stmt.expr;
-        let expr: &ParsedExpr = exprs.at(exprID);
-        let typ: &Type = types.at(getType(&expr.typeState));
+        let expr: &ParsedExpr = at(&exprs, exprID);
+        let typ: &Type = at(&types, getType(&expr.typeState));
         let result: RegIndex = generateBytecodeExpr(this, function, expr, false);
         buildStore(function, stmt.span, function.returnAlloc, result);
         buildBr(function, stmt.span, function.returnBlockID);
     } else if (stmt.kind == STMT_RETURN_EMPTY) {
         buildBr(function, stmt.span, function.returnBlockID);
     } else if (stmt.kind == STMT_BLOCK) {
-        generateBytecodeBlock(this, function, blocks.at(stmt.block));
+        generateBytecodeBlock(this, function, at(&blocks, stmt.block));
     } else if (stmt.kind == STMT_EXPR) {
-        generateBytecodeExpr(this, function, exprs.at(stmt.expr), false);
+        generateBytecodeExpr(this, function, at(&exprs, stmt.expr), false);
     } else if (stmt.kind == STMT_BREAK) {
         if (!buildBreak(function, stmt.span)) {
             todo_with_msg("break outside of loop");
@@ -1315,26 +1316,26 @@ func generateBytecodeExpr(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, ne
     } else if (isUnary(expr)) {
         return generateBytecodeExprUnary(this, function, expr, needsPtr);
     } else if (isBlank(expr)) {
-        let t: &Type = types.at(getType(&expr.typeState));
+        let t: &Type = at(&types, getType(&expr.typeState));
         let size: usize = getSize(t);
         if (size == 0) warning("blank of type of size 0");
         let reg: RegIndex = allocateRegister(function, t);
         buildLoadBlank(function, expr.span, reg, size);
         if (needsPtr) {
-            let tempAlloc: RegIndex = allocateRegister(function, types.at(intoPointer(t)));
+            let tempAlloc: RegIndex = allocateRegister(function, at(&types, intoPointer(t)));
             buildAlloca(function, expr.span, tempAlloc, size);
             buildStore(function, expr.span, tempAlloc, reg);
             return tempAlloc;
         }
         return reg;
     } else if (expr.kind == EXPR_SIZEOF) {
-        let t: &Type = types.at(getType(&expr.typeState));
-        let target: &Type = types.at(getType(&typeNodes.at(expr.lhs).typeState));
+        let t: &Type = at(&types, getType(&expr.typeState));
+        let target: &Type = at(&types, getType(&at(&typeNodes, expr.lhs).typeState));
         let reg: RegIndex = allocateRegister(function, t);
         let size: usize = getSize(target);
         buildLoadInteger(function, expr.span, reg, t, size);
         if (needsPtr) {
-            let tempAlloc: RegIndex = allocateRegister(function, types.at(intoPointer(t)));
+            let tempAlloc: RegIndex = allocateRegister(function, at(&types, intoPointer(t)));
             buildAlloca(function, expr.span, tempAlloc, size);
             buildStore(function, expr.span, tempAlloc, reg);
             return tempAlloc;
@@ -1343,20 +1344,20 @@ func generateBytecodeExpr(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, ne
     } else if (expr.kind == EXPR_AS) {
         return generateBytecodeExprAs(this, function, expr);
     } else if (expr.kind == EXPR_STRUCT_INIT) {
-        let strukt: &Type = types.at(getType(&expr.typeState));
+        let strukt: &Type = at(&types, getType(&expr.typeState));
         assert(isStruct(strukt), "Expected Struct Type in EXPR_STRUCT_INIT");
-        let structDecl: &ParsedStructDecl = structDecls.at(strukt.typeIndex);
+        let structDecl: &ParsedStructDecl = at(&structDecls, strukt.typeIndex);
         let reg: RegIndex = allocateRegister(function, strukt);
         buildCreateStruct(function, expr.span, reg);
         for (let i: usize = 0; i < expr.structInitContext.fieldLength; i = i + 1) {
             let name: Token = getFieldNameAtIndex(&expr.structInitContext, i);
-            let expr: &ParsedExpr = exprs.at(getFieldExprAtIndex(&expr.structInitContext, i));
+            let expr: &ParsedExpr = at(&exprs, getFieldExprAtIndex(&expr.structInitContext, i));
             let index: usize = getFieldIndex(structDecl, &name.content);
             let result: RegIndex = generateBytecodeExpr(this, function, expr, false);
             buildInsertValue(function, expr.span, reg, index, result);
         }
         if (needsPtr) {
-            let structAlloc: RegIndex = allocateRegister(function, types.at(intoPointer(strukt)));
+            let structAlloc: RegIndex = allocateRegister(function, at(&types, intoPointer(strukt)));
             buildAlloca(function, expr.span, structAlloc, getSize(strukt));
             buildStore(function, expr.span, structAlloc, reg);
             return structAlloc;
@@ -1369,10 +1370,10 @@ func generateBytecodeExpr(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, ne
 
 func generateBytecodeExprAs(this: &IRGen, function: &IRFunc, expr: &ParsedExpr) -> RegIndex {
     trace("IRGen.generateBytecodeExprAs");
-    let result: RegIndex = generateBytecodeExpr(this, function, exprs.at(expr.lhs), false);
-    let current: &Type = types.at(getType(&exprs.at(expr.lhs).typeState));
-    let target: &Type = types.at(getType(&typeNodes.at(expr.rhs).typeState));
-    let exType: &Type = types.at(getType(&expr.typeState));
+    let result: RegIndex = generateBytecodeExpr(this, function, at(&exprs, expr.lhs), false);
+    let current: &Type = at(&types, getType(&at(&exprs, expr.lhs).typeState));
+    let target: &Type = at(&types, getType(&at(&typeNodes, expr.rhs).typeState));
+    let exType: &Type = at(&types, getType(&expr.typeState));
     assert(equals(target, exType));
     let dst: RegIndex = allocateRegister(function, target);
     if (isInteger(current) && isPointer(target)) {
@@ -1424,16 +1425,16 @@ func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &Pa
     assert(expr.kind == EXPR_BINARY);
     assert(expr.op == BIN_DOT);
     assert(isSuccess(&expr.typeState), "Expected valid Member state in IRGen");
-    let lhs: &ParsedExpr = exprs.at(expr.lhs);
-    let rhs: &ParsedExpr = exprs.at(expr.rhs);
-    let instance: &Type = types.at(getType(&lhs.typeState));
+    let lhs: &ParsedExpr = at(&exprs, expr.lhs);
+    let rhs: &ParsedExpr = at(&exprs, expr.rhs);
+    let instance: &Type = at(&types, getType(&lhs.typeState));
     assert(isStruct(instance) || isStructPointer(instance), "Expected (ptr to) struct in MemberAccess");
     if (rhs.kind == EXPR_NAME) {
         let result: RegIndex = generateBytecodeExpr(this, function, lhs, !isStructPointer(instance));
         let _t: &Type = getRegister(function, result).typ;
         assert(isStruct(_t) || isStructPointer(_t), "Expected (ptr to) struct in Field Access");
         if (!isStructPointer(_t)) {
-            let t1: &Type = types.at(intoPointer(_t));
+            let t1: &Type = at(&types, intoPointer(_t));
             let alloca: RegIndex = allocateRegister(function, t1);
             buildAlloca(function, expr.span, alloca, getSize(_t));
             buildStore(function, expr.span, alloca, result);
@@ -1443,11 +1444,11 @@ func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &Pa
         assert(isStructPointer(_t), "Expected ptr to struct in Field Access");
         let structType: &Type = getUnderlyingType(_t, false);
         // `result` contains a pointer to a struct instance at this point
-        let decl: &ParsedStructDecl = structDecls.at(structType.typeIndex);
+        let decl: &ParsedStructDecl = at(&structDecls, structType.typeIndex);
         let index: usize = getFieldIndex(decl, &rhs.origToken.content);
-        let _f: &ParsedTypeNode = typeNodes.at(getFieldTypeAtIndex(&decl.context, index));
-        let fieldType: &Type = types.at(getType(&_f.typeState));
-        let fieldPtr: RegIndex = allocateRegister(function, types.at(intoPointer(fieldType)));
+        let _f: &ParsedTypeNode = at(&typeNodes, getFieldTypeAtIndex(&decl.context, index));
+        let fieldType: &Type = at(&types, getType(&_f.typeState));
+        let fieldPtr: RegIndex = allocateRegister(function, at(&types, intoPointer(fieldType)));
         buildGetFieldPtr(function, expr.span, fieldPtr, result, index);
         if (needsPtr) {
             return fieldPtr;
@@ -1459,15 +1460,15 @@ func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &Pa
     } else if (rhs.kind == EXPR_CALL) {
         let result: RegIndex = generateBytecodeExpr(this, function, lhs, false);
         let instance: RegIndex = prepareArgument(this, function, lhs.span, result, instance);
-        let method: &ParsedMethod = methods.at(rhs.lhs);
+        let method: &ParsedMethod = at(&methods, rhs.lhs);
         let name: String = getMangledName(method);
         let funcID: usize = getFunctionByName(this, &name);
         name.drop();
-        let typ: &Type = types.at(getType(&expr.typeState));
+        let typ: &Type = at(&types, getType(&expr.typeState));
         let args: RegIndexList = blank;
         let retPtr: RegIndex = blank;
         if (getSize(typ) > 8) {
-            retPtr = allocateRegister(function, types.at(intoPointer(typ)));
+            retPtr = allocateRegister(function, at(&types, intoPointer(typ)));
             buildAlloca(function, expr.span, retPtr, getSize(typ));
             push(&args, retPtr);
         }
@@ -1478,8 +1479,8 @@ func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &Pa
             push(&args, instance);
         }
         for (let i: usize = 0; i < rhs.arrayContext.elemLength; i = i + 1) {
-            let arg: &ParsedExpr = exprs.at(getElementAtIndex(&rhs.arrayContext, i));
-            let argType: &Type = types.at(getType(&arg.typeState));
+            let arg: &ParsedExpr = at(&exprs, getElementAtIndex(&rhs.arrayContext, i));
+            let argType: &Type = at(&types, getType(&arg.typeState));
             let result: RegIndex = generateBytecodeExpr(this, function, arg, false);
             push(&args, prepareArgument(this, function, arg.span, result, argType));
         }
@@ -1506,7 +1507,7 @@ func prepareReturnValue(this: &IRGen, span: Span, function: &IRFunc, funcID: usi
             buildCall(function, span, reg, RegIndex { i: funcID }, args);
             let v: RegIndex = allocateRegister(function, retType);
             let t: &Type = getRegister(function, v).typ;
-            let r: RegIndex = allocateRegister(function, types.at(intoPointer(t)));
+            let r: RegIndex = allocateRegister(function, at(&types, intoPointer(t)));
             let s: usize = getSize(t);
             assert(s <= 8);
             buildAlloca(function, span, r, s);
@@ -1521,7 +1522,7 @@ func prepareReturnValue(this: &IRGen, span: Span, function: &IRFunc, funcID: usi
             let reg: RegIndex = allocateRegister(function, retType);
             buildCall(function, span, reg, RegIndex { i: funcID }, args);
             if (needsPtr) {
-                let tempAlloc: RegIndex = allocateRegister(function, types.at(intoPointer(retType)));
+                let tempAlloc: RegIndex = allocateRegister(function, at(&types, intoPointer(retType)));
                 buildAlloca(function, span, tempAlloc, getSize(retType));
                 buildStore(function, span, tempAlloc, reg);
                 retVal = tempAlloc;
@@ -1542,19 +1543,19 @@ func generateBytecodeExprIndexedAccess(this: &IRGen, function: &IRFunc, expr: &P
     trace("IRGen.generateBytecodeExprIndexedAccess");
     assert(expr.kind == EXPR_BINARY);
     assert(expr.op == BIN_INDEXED_ACCESS);
-    let arrExpr: &ParsedExpr = exprs.at(expr.lhs);
-    let lhsType: &Type = types.at(getType(&arrExpr.typeState));
+    let arrExpr: &ParsedExpr = at(&exprs, expr.lhs);
+    let lhsType: &Type = at(&types, getType(&arrExpr.typeState));
     assert(isArray(lhsType) || isPointer(lhsType), "Expected Ptr or Array as LHS in IndexedAccess");
     let lhs: RegIndex = generateBytecodeExpr(this, function, arrExpr, isArray(lhsType));
-    let rhs: RegIndex = generateBytecodeExpr(this, function, exprs.at(expr.rhs), false);
+    let rhs: RegIndex = generateBytecodeExpr(this, function, at(&exprs, expr.rhs), false);
     assert(isPointer(getRegister(function, lhs).typ), "Expected Ptr as LHS in IndexedAccess");
     assert(isInteger(getRegister(function, rhs).typ), "Expected Int as RHS in IndexedAccess");
-    let elemType: &Type = types.at(getType(&expr.typeState));
+    let elemType: &Type = at(&types, getType(&expr.typeState));
     let usizeType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
     let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
     if (isArray(lhsType)) {
         // if (index >= size) panic("Index out of bounds");
-        let arrType: &Type = types.at(getType(&arrExpr.typeState));
+        let arrType: &Type = at(&types, getType(&arrExpr.typeState));
         let elemCount: usize = getSize(arrType) / getSize(elemType);
         let cond: RegIndex = allocateRegister(function, boolType);
         let size: RegIndex = allocateRegister(function, usizeType);
@@ -1592,7 +1593,7 @@ func generateBytecodeExprIndexedAccess(this: &IRGen, function: &IRFunc, expr: &P
         buildUnreachable(function, expr.span);
         setCurrentBlock(function, normal);
     }
-    let elemPtr: RegIndex = allocateRegister(function, types.at(intoPointer(elemType)));
+    let elemPtr: RegIndex = allocateRegister(function, at(&types, intoPointer(elemType)));
     let indices: RegIndexList = blank;
     if (isArray(lhsType)) {
         let index: RegIndex = allocateRegister(function, usizeType);
@@ -1616,13 +1617,13 @@ func generateBytecodeExprIdentifier(this: &IRGen, function: &IRFunc, expr: &Pars
     let isGlobal: bool = false;
     let entry: &IRScopeEntry = getIdentifierByName(this, function, expr.origToken.content, &isGlobal);
     assert(entry != null, "Could not find identifier in generateBytecodeExprIdentifier");
-    let varType: &Type = types.at(getType(&expr.typeState));
+    let varType: &Type = at(&types, getType(&expr.typeState));
     if (function.comptimeLevel > 0 && !entry.isComptime) {
         unreachable("Crossing the boundary: comptime IR needs runtime value - The Checker should've caught this");
     }
     if (needsPtr) {
         if (isGlobal) {
-            let ptrType: &Type = types.at(intoPointer(varType));
+            let ptrType: &Type = at(&types, intoPointer(varType));
             let global: RegIndex = allocateRegister(function, ptrType);
             if (entry.isComptime) {
                 let val: RegIndex = allocateRegister(function, varType);
@@ -1635,7 +1636,7 @@ func generateBytecodeExprIdentifier(this: &IRGen, function: &IRFunc, expr: &Pars
             return global;
         } else {
             if (entry.isComptime) {
-                let ptrType: &Type = types.at(intoPointer(varType));
+                let ptrType: &Type = at(&types, intoPointer(varType));
                 let global: RegIndex = allocateRegister(function, ptrType);
                 let val: RegIndex = allocateRegister(function, varType);
                 buildAlloca(function, expr.span, global, getSize(varType));
@@ -1668,11 +1669,11 @@ func generateBytecodeExprIdentifier(this: &IRGen, function: &IRFunc, expr: &Pars
 func generateBytecodeExprArithmetic(this: &IRGen, function: &IRFunc, expr: &ParsedExpr) -> RegIndex {
     trace("IRGen.generateBytecodeExprArithmetic");
     assert(isArithmetic(expr));
-    let lhs: RegIndex = generateBytecodeExpr(this, function, exprs.at(expr.lhs), false);
-    let rhs: RegIndex = generateBytecodeExpr(this, function, exprs.at(expr.rhs), false);
-    let lhsType: &Type = types.at(getType(&exprs.at(expr.lhs).typeState));
-    let rhsType: &Type = types.at(getType(&exprs.at(expr.rhs).typeState));
-    let res: &Type = types.at(getType(&expr.typeState));
+    let lhs: RegIndex = generateBytecodeExpr(this, function, at(&exprs, expr.lhs), false);
+    let rhs: RegIndex = generateBytecodeExpr(this, function, at(&exprs, expr.rhs), false);
+    let lhsType: &Type = at(&types, getType(&at(&exprs, expr.lhs).typeState));
+    let rhsType: &Type = at(&types, getType(&at(&exprs, expr.rhs).typeState));
+    let res: &Type = at(&types, getType(&expr.typeState));
     let dst: RegIndex = allocateRegister(function, res);
     // OPT: Specialized 8bit, 16bit, etc. variations
     if (expr.op == BIN_PLUS) {
@@ -1756,9 +1757,9 @@ func generateBytecodeExprArithmetic(this: &IRGen, function: &IRFunc, expr: &Pars
 func generateBytecodeExprComparison(this: &IRGen, function: &IRFunc, expr: &ParsedExpr) -> RegIndex {
     trace("IRGen.generateBytecodeExprComparison");
     assert(isComparison(expr));
-    let lhs: RegIndex = generateBytecodeExpr(this, function, exprs.at(expr.lhs), false);
-    let rhs: RegIndex = generateBytecodeExpr(this, function, exprs.at(expr.rhs), false);
-    let res: &Type = types.at(getType(&expr.typeState));
+    let lhs: RegIndex = generateBytecodeExpr(this, function, at(&exprs, expr.lhs), false);
+    let rhs: RegIndex = generateBytecodeExpr(this, function, at(&exprs, expr.rhs), false);
+    let res: &Type = at(&types, getType(&expr.typeState));
     assert(isBoolean(res), "Comparison expected to evaluate to Bool");
     let dst: RegIndex = allocateRegister(function, res);
     // OPT: Specialized 8bit, 16bit, etc. variations
@@ -1820,9 +1821,9 @@ func generateBytecodeExprComparison(this: &IRGen, function: &IRFunc, expr: &Pars
 func generateBytecodeExprLogical(this: &IRGen, function: &IRFunc, expr: &ParsedExpr) -> RegIndex {
     trace("IRGen.generateBytecodeExprLogical");
     assert(isLogical(expr));
-    let lhs: RegIndex = generateBytecodeExpr(this, function, exprs.at(expr.lhs), false);
-    let rhs: RegIndex = generateBytecodeExpr(this, function, exprs.at(expr.rhs), false);
-    let t: &Type = types.at(getType(&expr.typeState));
+    let lhs: RegIndex = generateBytecodeExpr(this, function, at(&exprs, expr.lhs), false);
+    let rhs: RegIndex = generateBytecodeExpr(this, function, at(&exprs, expr.rhs), false);
+    let t: &Type = at(&types, getType(&expr.typeState));
     let dst: RegIndex = allocateRegister(function, t);
     if (expr.op == BIN_LAND) {
         buildBinaryOp(function, expr.span, INSTR_LOGICAL_AND, dst, lhs, rhs);
@@ -1837,9 +1838,9 @@ func generateBytecodeExprLogical(this: &IRGen, function: &IRFunc, expr: &ParsedE
 func generateBytecodeExprBitwise(this: &IRGen, function: &IRFunc, expr: &ParsedExpr) -> RegIndex {
     trace("IRGen.generateBytecodeExprBitwise");
     assert(isBitwise(expr));
-    let lhs: RegIndex = generateBytecodeExpr(this, function, exprs.at(expr.lhs), false);
-    let rhs: RegIndex = generateBytecodeExpr(this, function, exprs.at(expr.rhs), false);
-    let t: &Type = types.at(getType(&expr.typeState));
+    let lhs: RegIndex = generateBytecodeExpr(this, function, at(&exprs, expr.lhs), false);
+    let rhs: RegIndex = generateBytecodeExpr(this, function, at(&exprs, expr.rhs), false);
+    let t: &Type = at(&types, getType(&expr.typeState));
     let dst: RegIndex = allocateRegister(function, t);
     if (expr.op == BIN_BAND) {
         buildBinaryOp(function, expr.span, INSTR_BITWISE_AND, dst, lhs, rhs);
@@ -1856,7 +1857,7 @@ func generateBytecodeExprBitwise(this: &IRGen, function: &IRFunc, expr: &ParsedE
 func generateBytecodeExprLiteral(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, needsPtr: bool) -> RegIndex {
     trace("IRGen.generateBytecodeExprLiteral");
     assert(isLiteral(expr));
-    let t: &Type = types.at(getType(&expr.typeState));
+    let t: &Type = at(&types, getType(&expr.typeState));
     let reg: RegIndex = allocateRegister(function, t);
     if (expr.kind == EXPR_INT_LIT) {
         if (isInteger(t) || isChar(t)) {
@@ -1909,21 +1910,21 @@ func generateBytecodeExprLiteral(this: &IRGen, function: &IRFunc, expr: &ParsedE
         if (expr.arrayContext.size == 0) {
             buildCreateArray(function, expr.span, reg);
             for (let i: usize = 0; i < expr.arrayContext.elemLength; i = i + 1) {
-                let elem: &ParsedExpr = exprs.at(getElementAtIndex(&expr.arrayContext, i));
+                let elem: &ParsedExpr = at(&exprs, getElementAtIndex(&expr.arrayContext, i));
                 let result: RegIndex = generateBytecodeExpr(this, function, elem, false);
                 buildInsertValue(function, expr.span, reg, i, result);
             }
         } else {
-            let elem: &ParsedExpr = exprs.at(getElementAtIndex(&expr.arrayContext, 0));
+            let elem: &ParsedExpr = at(&exprs, getElementAtIndex(&expr.arrayContext, 0));
             let value: RegIndex = generateBytecodeExpr(this, function, elem, false);
             let usizeType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
             let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
-            let elemType: &Type = types.at(getType(&elem.typeState));
-            let arrayPtr: RegIndex = allocateRegister(function, types.at(intoPointer(t)));
+            let elemType: &Type = at(&types, getType(&elem.typeState));
+            let arrayPtr: RegIndex = allocateRegister(function, at(&types, intoPointer(t)));
             let zero: RegIndex = allocateRegister(function, usizeType);
             let one: RegIndex = allocateRegister(function, usizeType);
             let index: RegIndex = allocateRegister(function, usizeType);
-            let indexPtr: RegIndex = allocateRegister(function, types.at(intoPointer(usizeType)));
+            let indexPtr: RegIndex = allocateRegister(function, at(&types, intoPointer(usizeType)));
             let size: RegIndex = allocateRegister(function, usizeType);
             let cond: RegIndex = allocateRegister(function, boolType);
             let elemPtr: RegIndex = allocateRegister(function, elemType);
@@ -1974,8 +1975,8 @@ func generateBytecodeExprLiteral(this: &IRGen, function: &IRFunc, expr: &ParsedE
 func generateBytecodeExprAssignment(this: &IRGen, function: &IRFunc, expr: &ParsedExpr) -> RegIndex {
     trace("IRGen.generateBytecodeExprAssignment");
     assert(isAssignment(expr));
-    let lhs: RegIndex = generateBytecodeExpr(this, function, exprs.at(expr.lhs), true);
-    let rhs: RegIndex = generateBytecodeExpr(this, function, exprs.at(expr.rhs), false);
+    let lhs: RegIndex = generateBytecodeExpr(this, function, at(&exprs, expr.lhs), true);
+    let rhs: RegIndex = generateBytecodeExpr(this, function, at(&exprs, expr.rhs), false);
     assert(isPointer(getRegister(function, lhs).typ), "Assignment expected Ptr as LHS");
     buildStore(function, expr.span, lhs, rhs);
     return rhs;
@@ -1986,14 +1987,14 @@ func generateBytecodeExprUnary(this: &IRGen, function: &IRFunc, expr: &ParsedExp
     assert(isUnary(expr));
     if (expr.op == UNARY_COMPTIME) {
         startComptime(function);
-        let subexpr: &ParsedExpr = exprs.at(expr.lhs);
+        let subexpr: &ParsedExpr = at(&exprs, expr.lhs);
         let result: RegIndex = generateBytecodeExpr(this, function, subexpr, false);
-        let exprType = types.at(getType(&expr.typeState));
+        let exprType = at(&types, getType(&expr.typeState));
         let r: RegIndex = allocateRegister(function, exprType);
         endComptime(function);
         buildFetchLocalComptimeValue(function, expr.span, r, result);
         if (needsPtr) {
-            let subType: &Type = types.at(intoPointer(exprType));
+            let subType: &Type = at(&types, intoPointer(exprType));
             let ptr: RegIndex = allocateRegister(function, subType);
             buildAlloca(function, expr.span, ptr, getSize(exprType));
             buildStore(function, expr.span, ptr, r);
@@ -2002,24 +2003,24 @@ func generateBytecodeExprUnary(this: &IRGen, function: &IRFunc, expr: &ParsedExp
             return r;
         }
     } else if (expr.op == UNARY_DEREF) {
-        let subexpr: &ParsedExpr = exprs.at(expr.lhs);
+        let subexpr: &ParsedExpr = at(&exprs, expr.lhs);
         let result: RegIndex = generateBytecodeExpr(this, function, subexpr, false);
         let ptr: &IRReg = getRegister(function, result);
         assert(isPointer(ptr.typ), "Expected Ptr SubExpr in Unary Deref");
         if (needsPtr) {
             return result;
         } else {
-            let t: &Type = types.at(getType(&expr.typeState));
+            let t: &Type = at(&types, getType(&expr.typeState));
             let val: RegIndex = allocateRegister(function, t);
             buildLoad(function, expr.span, val, result);
             return val;
         }
     } else if (expr.op == UNARY_REF) {
-        let subExpr: &ParsedExpr = exprs.at(expr.lhs);
+        let subExpr: &ParsedExpr = at(&exprs, expr.lhs);
         let result: RegIndex = generateBytecodeExpr(this, function, subExpr, true);
         let ptrReg: &IRReg = getRegister(function, result);
         if (needsPtr || !isPointer(ptrReg.typ)) {
-            let subType: &Type = types.at(intoPointer(ptrReg.typ));
+            let subType: &Type = at(&types, intoPointer(ptrReg.typ));
             let ptr: RegIndex = allocateRegister(function, subType);
             buildAlloca(function, expr.span, ptr, getSize(ptrReg.typ));
             buildStore(function, expr.span, ptr, result);
@@ -2028,13 +2029,13 @@ func generateBytecodeExprUnary(this: &IRGen, function: &IRFunc, expr: &ParsedExp
             return result;
         }
     } else if (expr.op == UNARY_NOT) {
-        let result: RegIndex = generateBytecodeExpr(this, function, exprs.at(expr.lhs), false);
-        let r: RegIndex = allocateRegister(function, types.at(getType(&expr.typeState)));
+        let result: RegIndex = generateBytecodeExpr(this, function, at(&exprs, expr.lhs), false);
+        let r: RegIndex = allocateRegister(function, at(&types, getType(&expr.typeState)));
         buildLogicalNot(function, expr.span, r, result);
         return r;
     } else if (expr.op == UNARY_MINUS) {
-        let result: RegIndex = generateBytecodeExpr(this, function, exprs.at(expr.lhs), false);
-        let t: &Type = types.at(getType(&expr.typeState));
+        let result: RegIndex = generateBytecodeExpr(this, function, at(&exprs, expr.lhs), false);
+        let t: &Type = at(&types, getType(&expr.typeState));
         if (isInteger(t)) {
             let zero: RegIndex = allocateRegister(function, t);
             buildLoadInteger(function, expr.span, zero, t, 0);
@@ -2073,7 +2074,7 @@ func prepareParameter(this: &IRGen, function: &IRFunc, index: usize, span: Span,
         let value: RegIndex = allocateRegister(function, t);
         buildGetParam(function, span, value, index, getSize(t));
         // value contains prepared struct
-        let allocType: &Type = types.at(intoPointer(typ));
+        let allocType: &Type = at(&types, intoPointer(typ));
         let allocReg: RegIndex = allocateRegister(function, allocType);
         if (isPointer(t)) {
             let instance: RegIndex = allocateRegister(function, typ);
@@ -2090,7 +2091,7 @@ func prepareParameter(this: &IRGen, function: &IRFunc, index: usize, span: Span,
     } else if (getSize(typ) > 8) {
         unreachable("IRGen.prepareParameter: The only types that are bigger than 8 bytes are structs");
     } else {
-        let allocType: &Type = types.at(intoPointer(typ));
+        let allocType: &Type = at(&types, intoPointer(typ));
         let allocReg: RegIndex = allocateRegister(function, allocType);
         let value: RegIndex = allocateRegister(function, typ);
         buildGetParam(function, span, value, index, getSize(typ));
@@ -2127,7 +2128,7 @@ func prepareArgument(this: &IRGen, function: &IRFunc, span: Span, value: RegInde
     trace("IRGen.prepareArgument");
     if (isStruct(typ)) {
         let size: usize = getSize(typ);
-        let alloc: RegIndex = allocateRegister(function, types.at(intoPointer(typ)));
+        let alloc: RegIndex = allocateRegister(function, at(&types, intoPointer(typ)));
         buildAlloca(function, span, alloc, size);
         buildStore(function, span, alloc, value);
         if (size > 8) return alloc;
@@ -2136,7 +2137,7 @@ func prepareArgument(this: &IRGen, function: &IRFunc, span: Span, value: RegInde
         return v;
     } else if (getSize(typ) > 8) {
         // Following the ABI, all parameters that don't fit in a register get passed by pointer
-        let tempAlloc: RegIndex = allocateRegister(function, types.at(intoPointer(typ)));
+        let tempAlloc: RegIndex = allocateRegister(function, at(&types, intoPointer(typ)));
         buildAlloca(function, span, tempAlloc, getSize(typ));
         buildStore(function, span, tempAlloc, value);
         return tempAlloc;
@@ -2148,22 +2149,22 @@ func prepareArgument(this: &IRGen, function: &IRFunc, span: Span, value: RegInde
 func generateBytecodeExprCall(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, needsPtr: bool) -> RegIndex {
     trace("IRGen.generateBytecodeExprCall");
     assert(isCall(expr));
-    let typ: &Type = types.at(getType(&expr.typeState));
+    let typ: &Type = at(&types, getType(&expr.typeState));
     let args: RegIndexList = blank;
     let reg: RegIndex = allocateRegister(function, typ);
     let retPtr: RegIndex = blank;
     if (getSize(typ) > 8) {
-        retPtr = allocateRegister(function, types.at(intoPointer(typ)));
+        retPtr = allocateRegister(function, at(&types, intoPointer(typ)));
         buildAlloca(function, expr.span, retPtr, getSize(typ));
         push(&args, retPtr);
     }
     for (let i: usize = 0; i < expr.arrayContext.elemLength; i = i + 1) {
-        let arg: &ParsedExpr = exprs.at(getElementAtIndex(&expr.arrayContext, i));
-        let argType: &Type = types.at(getType(&arg.typeState));
+        let arg: &ParsedExpr = at(&exprs, getElementAtIndex(&expr.arrayContext, i));
+        let argType: &Type = at(&types, getType(&arg.typeState));
         let result: RegIndex = generateBytecodeExpr(this, function, arg, false);
         push(&args, prepareArgument(this, function, arg.span, result, argType));
     }
-    let name: String = getMangledName(funcDecls.at(expr.lhs));
+    let name: String = getMangledName(at(&funcDecls, expr.lhs));
     let funcID: usize = getFunctionByName(this, &name);
     name.drop();
     return prepareReturnValue(this, expr.span, function, funcID, args, typ, retPtr, needsPtr);

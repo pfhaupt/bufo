@@ -3,6 +3,7 @@ import "substr.bufo";
 import "string.bufo";
 import "../util/span.bufo";
 import "../util/lists.bufo";
+import "../util/arena.bufo";
 import "../frontend/token.bufo";
 import "../frontend/nodes.bufo";
 import "../frontend/context.bufo";
@@ -134,7 +135,7 @@ func resolveTypeByName(this: &Lookup, currentModule: usize, name: &Token, typ: &
 func getTypeLookupForType(this: &Lookup, typ: &Type) -> TypeLookup {
     trace("Lookup.getTypeLookupForType");
     if (isStruct(typ)) {
-        let strukt: &ParsedStructDecl = structDecls.at(typ.typeIndex);
+        let strukt: &ParsedStructDecl = at(&structDecls, typ.typeIndex);
         let modID: usize = strukt.parentModule;
         let s: &StructLookup = getStructByGlobalID(at(&this.modules, modID), getID(strukt));
         return newTypeLookup(TYPE_LOOKUP_STRUCT, s);
@@ -195,7 +196,7 @@ func equals(this: &ModuleLookup, other: &ModuleLookup) -> bool {
 func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) {
     trace("ModuleLookup.insertTLI");
     if (tli.kind == TLI_FUNC_DECL) {
-        let fun: &ParsedFuncDecl = funcDecls.at(tli.nodeID);
+        let fun: &ParsedFuncDecl = at(&funcDecls, tli.nodeID);
         let lookup: FunctionLookup = FunctionLookup {
             globalID: tli.nodeID,
             parentModule: this.globalID,
@@ -217,7 +218,7 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) {
         }
         push(&this.imports, lookup);
     } else if (tli.kind == TLI_STRUCT_DECL) {
-        let strukt: &ParsedStructDecl = structDecls.at(tli.nodeID);
+        let strukt: &ParsedStructDecl = at(&structDecls, tli.nodeID);
         let lookup: StructLookup = StructLookup {
             globalID: tli.nodeID,
             parentModule: this.globalID,
@@ -229,7 +230,7 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) {
         };
         for (let i: usize = 0; i < strukt.context.methodLength; i = i + 1) {
             let id: usize = getMethodAtIndex(&strukt.context, i);
-            let method: &ParsedMethod = methods.at(id);
+            let method: &ParsedMethod = at(&methods, id);
             let mLookup: MethodLookup = MethodLookup {
                 globalID: id,
                 name: method.name,
@@ -245,7 +246,7 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) {
         }
         push(&this.structs, lookup);
     } else if (tli.kind == TLI_VAR_DECL) {
-        let varDecl: &ParsedStmt = stmts.at(tli.nodeID);
+        let varDecl: &ParsedStmt = at(&stmts, tli.nodeID);
         assert(varDecl.kind == STMT_VAR_DECL);
         let lookup: VariableLookup = VariableLookup {
             globalID: tli.nodeID,
@@ -268,14 +269,14 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) {
 // FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
 func containsDuplicateFunction(this: &ModuleLookup, function: &FunctionLookup, dupl: &usize) -> bool {
     trace("ModuleLookup.containsDuplicateFunction");
-    let name: String = getMangledName(funcDecls.at(function.globalID));
+    let name: String = getMangledName(at(&funcDecls, function.globalID));
     let duplicate: bool = false;
     for (let i: usize = 0; !duplicate && i < this.functions.length; i = i + 1) {
         let f: &FunctionLookup = at(&this.functions, i);
         // REVIEW: is FUNC_DUPLICATE_CHECK always correct, or is it better to check FUNC_READY_TO_USE
         if (f == function) continue;
         if (!getReadyState(f, FUNC_DUPLICATE_CHECK)) continue;
-        let n: String = getMangledName(funcDecls.at(f.globalID));
+        let n: String = getMangledName(at(&funcDecls, f.globalID));
         if (name.equals(&n)) {
             *dupl = f as usize;
             duplicate = true;
@@ -329,7 +330,7 @@ func resolveAllFunctionsWithReturnType(this: &ModuleLookup, name: &Token, typ: &
         if (!f.name.content.equals(&name.content)) {
             continue;
         }
-        let t = types.at(getType(&f.returnType));
+        let t = at(&types, getType(&f.returnType));
         if (equals(t, typ)) {
             push(list, *f);
         }
@@ -345,7 +346,7 @@ func resolveAllStructsWithField(this: &ModuleLookup, name: &Token, typ: &Type) -
         let v: VariableLookup = blank;
         if (resolveFieldByName(s, name, &v)) {
             assert(isType(&v.typeState));
-            let t = types.at(getType(&v.typeState));
+            let t = at(&types, getType(&v.typeState));
             if (equals(t, typ)) {
                 push(&list, *s);
             }
@@ -537,14 +538,14 @@ func hasField(this: &StructLookup, name: &SubStr) -> bool {
 // FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
 func containsDuplicateMethod(this: &StructLookup, method: &MethodLookup, dupl: &usize) -> bool {
     trace("StructLookup.containsDuplicateMethod");
-    let name: String = getMangledName(methods.at(method.globalID));
+    let name: String = getMangledName(at(&methods, method.globalID));
     let duplicate: bool = false;
     for (let i: usize = 0; !duplicate && i < this.methods.length; i = i + 1) {
         let m: &MethodLookup = at(&this.methods, i);
         // REVIEW: is METHOD_DUPLICATE_CHECK always correct, or is it better to check METHOD_READY_TO_USE
         if (m == method) continue;
         if (!getReadyState(m, METHOD_DUPLICATE_CHECK)) continue;
-        let n: String = getMangledName(methods.at(m.globalID));
+        let n: String = getMangledName(at(&methods, m.globalID));
         if (name.equals(&n)) {
             *dupl = m as usize;
             duplicate = true;

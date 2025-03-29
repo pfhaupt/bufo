@@ -6,6 +6,7 @@ import "../bufo.bufo";
 import "../util/span.bufo";
 import "../util/lists.bufo";
 import "../util/hashmaps.bufo";
+import "../util/arena.bufo";
 import "../frontend/nodes.bufo";
 import "../frontend/context.bufo";
 import "../middleend/types.bufo";
@@ -145,29 +146,29 @@ func generateLLVMFunctionHeader(this: &LLVMCodegen, irFunc: &IRFunc) {
     let isVarArg: bool = false;
     if (irFunc.isMethod) {
         let method: &ParsedMethod = getMethodNode(irFunc);
-        let typeDecl: &ParsedTypeNode = typeNodes.at(method.retTypeID);
-        retType = types.at(getType(&typeDecl.typeState));
+        let typeDecl: &ParsedTypeNode = at(&typeNodes, method.retTypeID);
+        retType = at(&types, getType(&typeDecl.typeState));
         if (getSize(retType) > 8) {
-            retType = types.at(intoPointer(retType));
+            retType = at(&types, intoPointer(retType));
             push(&params, prepareParameter(this, retType));
         }
         for (let i: usize = 0; i < method.params.paramLength; i = i + 1) {
-            let tDecl: &ParsedTypeNode = typeNodes.at(getTypeAtIndex(&method.params, i));
-            let t: &Type = types.at(getType(&tDecl.typeState));
+            let tDecl: &ParsedTypeNode = at(&typeNodes, getTypeAtIndex(&method.params, i));
+            let t: &Type = at(&types, getType(&tDecl.typeState));
             push(&params, prepareParameter(this, t));
         }
         isVarArg = method.params.isVarArg;
     } else {
         let function: &ParsedFuncDecl = getFuncNode(irFunc);
-        let typeDecl: &ParsedTypeNode = typeNodes.at(function.retTypeID);
-        retType = types.at(getType(&typeDecl.typeState));
+        let typeDecl: &ParsedTypeNode = at(&typeNodes, function.retTypeID);
+        retType = at(&types, getType(&typeDecl.typeState));
         if (getSize(retType) > 8) {
-            retType = types.at(intoPointer(retType));
+            retType = at(&types, intoPointer(retType));
             push(&params, prepareParameter(this, retType));
         }
         for (let i: usize = 0; i < function.params.paramLength; i = i + 1) {
-            let tDecl: &ParsedTypeNode = typeNodes.at(getTypeAtIndex(&function.params, i));
-            let t: &Type = types.at(getType(&tDecl.typeState));
+            let tDecl: &ParsedTypeNode = at(&typeNodes, getTypeAtIndex(&function.params, i));
+            let t: &Type = at(&types, getType(&tDecl.typeState));
             push(&params, prepareParameter(this, t));
         }
         isVarArg = function.params.isVarArg;
@@ -227,7 +228,7 @@ func prepareParameter(this: &LLVMCodegen, typ: &Type) -> LLVMType {
         }
         return generateLLVMType(this, t);
     } else if (getSize(typ) > 8) {
-        return generateLLVMType(this, types.at(intoPointer(typ)));
+        return generateLLVMType(this, at(&types, intoPointer(typ)));
     } else {
         return generateLLVMType(this, typ);
     }
@@ -733,15 +734,15 @@ func generateLLVMValueFromComptimeValue(this: &LLVMCodegen, typ: &Type, start: &
             todo_with_msg("prim");
         }
     } else if (isStruct(typ)) {
-        let decl: &ParsedStructDecl = structDecls.at(typ.typeIndex);
+        let decl: &ParsedStructDecl = at(&structDecls, typ.typeIndex);
         let lType: LLVMType = generateLLVMType(this, typ);
         assert(isStruct(&lType), "Expected LLVMType to be struct for comptime struct");
         let strukt: LLVMValue = constZero(&lType);
         let offset: usize = 0;
         let _size: usize = 0;
         for (let i: usize = 0; i < decl.context.fieldLength; i = i + 1) {
-            let tDecl: &ParsedTypeNode = typeNodes.at(getFieldTypeAtIndex(&decl.context, i));
-            let fType: &Type = types.at(getType(&tDecl.typeState));
+            let tDecl: &ParsedTypeNode = at(&typeNodes, getFieldTypeAtIndex(&decl.context, i));
+            let fType: &Type = at(&types, getType(&tDecl.typeState));
             getFieldOffsetAndSize(decl, i, &offset, &_size);
             let elemVal: LLVMValue = generateLLVMValueFromComptimeValue(this, fType, start + offset);
             strukt = buildInsertValue(&this.llvmBuilder, 
@@ -791,15 +792,15 @@ func generateLLVMType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
         let t: LLVMType = createIntegerType(&this.llvmContext, 64);
         return intoPointerType(&t);
     } else if (isArray(typ)) {
-        let t: LLVMType = generateLLVMType(this, types.at(typ.typeIndex));
+        let t: LLVMType = generateLLVMType(this, at(&types, typ.typeIndex));
         return intoArrayType(&t, typ.arraySize as u32);
     } else if (isStruct(typ)) {
-        let decl: &ParsedStructDecl = structDecls.at(typ.typeIndex);
+        let decl: &ParsedStructDecl = at(&structDecls, typ.typeIndex);
         let fields: &LLVMType = malloc(decl.context.fieldLength * sizeof LLVMType);
         assert(fields != null, "Could not allocate memory in LLVMCodegen.generateLLVMType");
         for (let i: usize = 0; i < decl.context.fieldLength; i = i + 1) {
-            let tDecl: &ParsedTypeNode = typeNodes.at(getFieldTypeAtIndex(&decl.context, i));
-            fields[i] = generateLLVMType(this, types.at(getType(&tDecl.typeState)));
+            let tDecl: &ParsedTypeNode = at(&typeNodes, getFieldTypeAtIndex(&decl.context, i));
+            fields[i] = generateLLVMType(this, at(&types, getType(&tDecl.typeState)));
         }
         let t: LLVMType = createStructType(&this.llvmContext, &*fields, decl.context.fieldLength as u32, false);
         free(fields);
