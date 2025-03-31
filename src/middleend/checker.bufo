@@ -13,33 +13,32 @@ import "./types.bufo";
 import "./lookup.bufo";
 
 comptime ERROR_INVALID: usize = 0;
-comptime ERROR_LOOKUP_NOT_READY: usize = 1;
-comptime ERROR_NO_SUCH_IDENTIFIER: usize = 2;
-comptime ERROR_NO_SUCH_FUNCTION: usize = 3;
-comptime ERROR_NO_SUCH_METHOD: usize = 4;
-comptime ERROR_USE_BEFORE_DECLARATION: usize = 5;
-comptime ERROR_FIELD_COUNT_MISMATCH: usize = 6;
-comptime ERROR_INDEXED_TYPE_MISMATCH: usize = 7;
-comptime ERROR_UNEXPECTED_LITERAL: usize = 8;
-comptime ERROR_ARRAY_SIZE_MISMATCH: usize = 9;
-comptime ERROR_TYPE_MISMATCH: usize = 10;
-comptime ERROR_INVALID_POINTER_ARITHMETIC: usize = 11;
-comptime ERROR_DUPLICATE_PARAMETER: usize = 12;
-comptime ERROR_DUPLICATE_FIELD: usize = 13;
-comptime ERROR_UNKNOWN_FIELD: usize = 14;
-comptime ERROR_DUPLICATE_FUNCTION: usize = 15;
-comptime ERROR_NO_CALL_CANDIDATE: usize = 16;
-comptime ERROR_VARIABLE_REDECLARATION: usize = 17;
-comptime ERROR_RECURSIVE_TYPE: usize = 18;
-comptime ERROR_DUPLICATE_METHOD: usize = 19;
-comptime ERROR_BLANK_FOR_NULL: usize = 20;
-comptime ERROR_NON_PRIMITIVE_CAST: usize = 21;
-comptime ERROR_INDEXED_ACCESS_ON_NON_ARRAY: usize = 22;
-comptime ERROR_RUNTIME_VALUE_IN_COMPTIME_CONTEXT: usize = 23;
-comptime ERROR_ANY_DEREF: usize = 24;
-comptime ERROR_MEMBER_ACCESS_NON_STRUCT: usize = 25;
-comptime ERROR_MEMBER_ACCESS_TOO_MANY_OPTIONS: usize = 26;
-comptime ERROR_FUNCTION_CALL_TOO_MANY_OPTIONS: usize = 27;
+comptime ERROR_NO_SUCH_IDENTIFIER: usize = 1;
+comptime ERROR_NO_SUCH_FUNCTION: usize = 2;
+comptime ERROR_NO_SUCH_METHOD: usize = 3;
+comptime ERROR_USE_BEFORE_DECLARATION: usize = 4;
+comptime ERROR_FIELD_COUNT_MISMATCH: usize = 5;
+comptime ERROR_INDEXED_TYPE_MISMATCH: usize = 6;
+comptime ERROR_UNEXPECTED_LITERAL: usize = 7;
+comptime ERROR_ARRAY_SIZE_MISMATCH: usize = 8;
+comptime ERROR_TYPE_MISMATCH: usize = 9;
+comptime ERROR_INVALID_POINTER_ARITHMETIC: usize = 10;
+comptime ERROR_DUPLICATE_PARAMETER: usize = 11;
+comptime ERROR_DUPLICATE_FIELD: usize = 12;
+comptime ERROR_UNKNOWN_FIELD: usize = 13;
+comptime ERROR_DUPLICATE_FUNCTION: usize = 14;
+comptime ERROR_NO_CALL_CANDIDATE: usize = 15;
+comptime ERROR_VARIABLE_REDECLARATION: usize = 16;
+comptime ERROR_RECURSIVE_TYPE: usize = 17;
+comptime ERROR_DUPLICATE_METHOD: usize = 18;
+comptime ERROR_BLANK_FOR_NULL: usize = 19;
+comptime ERROR_NON_PRIMITIVE_CAST: usize = 20;
+comptime ERROR_INDEXED_ACCESS_ON_NON_ARRAY: usize = 21;
+comptime ERROR_RUNTIME_VALUE_IN_COMPTIME_CONTEXT: usize = 22;
+comptime ERROR_ANY_DEREF: usize = 23;
+comptime ERROR_MEMBER_ACCESS_NON_STRUCT: usize = 24;
+comptime ERROR_MEMBER_ACCESS_TOO_MANY_OPTIONS: usize = 25;
+comptime ERROR_FUNCTION_CALL_TOO_MANY_OPTIONS: usize = 26;
 
 comptime TCSTATE_INVALID: usize = 0;
 comptime TCSTATE_ERROR: usize = 1;
@@ -484,59 +483,69 @@ func fillLookup(this: &TypeChecker) -> bool {
 
 func typeCheckModules(this: &TypeChecker) -> bool {
     trace("TypeChecker.typeCheckModules");
-    let done: bool = false;
-    let success: bool = true;
-    // FIXMEEEEEEE: After refactor of methods, this loop has to disappear
-    // We can simply check all structs first, then the function signatures
-    // and finally all functions, without that LOOKUP_NOT_READY stuff
-    while (!done) {
-        done = true;
-        for (let i: usize = 0; i < modules.length; i = i + 1) {
-            let mod: &ParsedModule = at(&modules, i);
-            assert(getID(mod) == i);
-            this.currentModule = i;
-            let currModule: &ModuleLookup = at(&this.lookup.modules, i);
-            assert(currModule.variables.length == 1, "still deez");
-            for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
-                let tliID: usize = getTopLevelItemAtIndex(mod, j);
-                let tli: &ParsedTopLevelItem = at(&topLevelItems, tliID);
-                let state: TCState = typeCheckTLI(this, tli);
-                (*tli).typeState = state;
-                if (isError(&state)) {
-                    let err: usize = getError(&state);
-                    if (err == ERROR_LOOKUP_NOT_READY) {
-                        done = false;
-                        // break;
-                    } else if (isCriticalError(&state)) {
-                        // We can't continue here
-                        return false;
-                    } else {
-                        success = false;
-                    }
-                }
+    let success = true;
+    for (let i: usize = 0; i < modules.length; i = i + 1) {
+        let mod: &ParsedModule = at(&modules, i);
+        assert(getID(mod) == i);
+        this.currentModule = i;
+        for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
+            let tliID: usize = getTopLevelItemAtIndex(mod, j);
+            let tli: &ParsedTopLevelItem = at(&topLevelItems, tliID);
+            if (tli.kind == TLI_STRUCT_DECL) {
+                let state = typeCheckStructDecl(this, tli.nodeID);
+                if (!isSuccess(&state)) success = false;
             }
         }
     }
-    return success;
-}
-
-func typeCheckTLI(this: &TypeChecker, tli: &ParsedTopLevelItem) -> TCState {
-    trace("TypeChecker.typeCheckTLI");
-    if (tli.ignored) return blank;
-    this.currentFunction = null;
-    let currentModule: &ModuleLookup = at(&this.lookup.modules, this.currentModule);
-    assert(currentModule.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
-    if (tli.kind == TLI_IMPORT) {
-        return newTCStateSuccess();
-    } else if (tli.kind == TLI_FUNC_DECL) {
-        return typeCheckFunction(this, tli.nodeID, &currentModule.variables);
-    } else if (tli.kind == TLI_STRUCT_DECL) {
-        return typeCheckStructDecl(this, tli.nodeID);
-    } else if (tli.kind == TLI_VAR_DECL) {
-        return typeCheckVarDecl(this, tli.nodeID, &currentModule.variables, true);
-    } else {
-        unreachable("Exhaustive handling of TLI in typeCheckTLI");
+    if (!success) return false;
+    for (let i: usize = 0; i < modules.length; i = i + 1) {
+        let mod: &ParsedModule = at(&modules, i);
+        assert(getID(mod) == i);
+        this.currentModule = i;
+        let currentModule: &ModuleLookup = at(&this.lookup.modules, this.currentModule);
+        assert(currentModule.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
+        for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
+            let tliID: usize = getTopLevelItemAtIndex(mod, j);
+            let tli: &ParsedTopLevelItem = at(&topLevelItems, tliID);
+            if (tli.kind == TLI_FUNC_DECL) {
+                let state = typeCheckFunction(this, tli.nodeID, &currentModule.variables, true);
+                if (!isSuccess(&state)) success = false;
+            }
+        }
     }
+    if (!success) return false;
+    for (let i: usize = 0; i < modules.length; i = i + 1) {
+        let mod: &ParsedModule = at(&modules, i);
+        assert(getID(mod) == i);
+        this.currentModule = i;
+        let currentModule: &ModuleLookup = at(&this.lookup.modules, this.currentModule);
+        assert(currentModule.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
+        for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
+            let tliID: usize = getTopLevelItemAtIndex(mod, j);
+            let tli: &ParsedTopLevelItem = at(&topLevelItems, tliID);
+            if (tli.kind == TLI_VAR_DECL) {
+                let state = typeCheckVarDecl(this, tli.nodeID, &currentModule.variables, true);
+                if (!isSuccess(&state)) success = false;
+            }
+        }
+    }
+    if (!success) return false;
+    for (let i: usize = 0; i < modules.length; i = i + 1) {
+        let mod: &ParsedModule = at(&modules, i);
+        assert(getID(mod) == i);
+        this.currentModule = i;
+        let currentModule: &ModuleLookup = at(&this.lookup.modules, this.currentModule);
+        assert(currentModule.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
+        for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
+            let tliID: usize = getTopLevelItemAtIndex(mod, j);
+            let tli: &ParsedTopLevelItem = at(&topLevelItems, tliID);
+            if (tli.kind == TLI_FUNC_DECL) {
+                let state = typeCheckFunction(this, tli.nodeID, &currentModule.variables, false);
+                if (!isSuccess(&state)) success = false;
+            }
+        }
+    }
+    return true;
 }
 
 func typeCheckStructDecl(this: &TypeChecker, structID: usize) -> TCState {
@@ -574,7 +583,7 @@ func typeCheckStructDecl(this: &TypeChecker, structID: usize) -> TCState {
     return result;
 }
 
-func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupList) -> TCState {
+func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupList, signatureOnly: bool) -> TCState {
     trace("TypeChecker.typeCheckFunction");
     let function: &ParsedFuncDecl = at(&funcDecls, funcID);
     if (function.ignored) return blank;
@@ -615,6 +624,9 @@ func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupLi
             setReadyState(funcLookup, FUNC_RETTYPE_COMPLETE);
         }
         setReadyState(funcLookup, FUNC_READY_TO_USE);
+    }
+    if (signatureOnly) {
+        return newTCStateSuccess();
     }
     (*function).typeState = newTCStateSuccess();
     if (!getReadyState(funcLookup, FUNC_DUPLICATE_CHECK)) {
@@ -661,12 +673,7 @@ func typeCheckBlock(this: &TypeChecker, blockID: usize, scopes: &ScopeLookupList
         let stmtState: TCState = typeCheckStmt(this, getStmtAtIndex(block, i), scopes);
         if (isError(&stmtState)) {
             let err: usize = getError(&stmtState);
-            if (err == ERROR_LOOKUP_NOT_READY) {
-                blockState = stmtState;
-                break;
-            } else {
-                blockState = stmtState;
-            }
+            blockState = stmtState;
         }
     }
     let after: usize = scopes.length;
@@ -1123,9 +1130,7 @@ func markFunctionCallCandidates(
     trace("TypeChecker.markFunctionCallCandidates");
     for (let i: usize = 0; i < functions.length; i = i + 1) {
         let f: &FunctionLookup = at(functions, i);
-        if (!getReadyState(f, FUNC_READY_TO_USE)) {
-            return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
-        }
+        assert(getReadyState(f, FUNC_READY_TO_USE), "Function mark not ready");
         if (!f.isVarArg && f.params.length != arguments.length) {
             continue;
         }
@@ -1241,8 +1246,7 @@ func typeCheckExprStructInit(this: &TypeChecker, exprID: usize, scopes: &ScopeLo
     if (isStruct(&lookup)) {
         let context: &StructInitContext = &expr.structInitContext;
         let structLookup: &StructLookup = asStruct(&lookup);
-        if (!getReadyState(structLookup, STRUCT_FIELDS_COMPLETE))
-            return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
+        assert(getReadyState(structLookup, STRUCT_FIELDS_COMPLETE), "Struct fields not ready pt2");
         let hits: usize = 0;
         assert(structLookup.fields.length < 50, "Sorry, I need to hack this for now");
         for (let i: usize = 0; i < context.fieldLength; i = i + 1) {
@@ -1304,9 +1308,7 @@ func typeCheckIdentifier(this: &TypeChecker, exprID: usize, scopes: &ScopeLookup
         reportRuntimeValueInComptimeContext(this, name, &var);
     }
     let state: TCState = var.typeState;
-    if (isInvalid(&state)) {
-        return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
-    }
+    assert(!isInvalid(&state), "Variable not ready");
     if (isError(&state)) return state;
     assert(expr.op == 0);
     let _loc: Token = blank;
@@ -1481,8 +1483,7 @@ func typeCheckExprMemberAccess(this: &TypeChecker, dotID: usize, scopes: &ScopeL
         let structLookup: &StructLookup = asStruct(&lookup);
         let rhs: &ParsedExpr = at(&exprs, expr.rhs);
         assert(rhs.kind == EXPR_NAME);
-        if (!getReadyState(structLookup, STRUCT_FIELDS_COMPLETE))
-            return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
+        assert(getReadyState(structLookup, STRUCT_FIELDS_COMPLETE), "Struct fields not complete");
         let fieldName: Token = rhs.origToken;
         let field: VariableLookup = blank;
         if (!resolveFieldByName(structLookup, &fieldName, &field)) {
@@ -1726,10 +1727,7 @@ func tryInferTypeOntoCall(this: &TypeChecker, exprID: usize, typeID: usize, chec
     let typ = at(&types, typeID);
     assert(expr.kind == EXPR_CALL);
     let functions: FunctionLookupList = blank;
-    if (!resolveAllFunctionsWithReturnType(&this.lookup, this.currentModule, &expr.origToken, typ, &functions)) {
-        clear(&functions);
-        return newTCStateFailure(ERROR_LOOKUP_NOT_READY);
-    }
+    assert(resolveAllFunctionsWithReturnType(&this.lookup, this.currentModule, &expr.origToken, typ, &functions), "Could not resolve functions");
     let callContext: &ArrayContext = &expr.arrayContext;
     let actual: FunctionLookupList = blank;
     for (let i: usize = 0; i < functions.length; i = i + 1) {
