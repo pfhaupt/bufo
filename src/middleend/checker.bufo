@@ -586,6 +586,7 @@ func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupLi
     this.currentFunction = funcLookup;
     let failure: TCState = blank;
     clear(&funcLookup.params);
+    let params: UsizeList = blank;
     for (let i: usize = 0; i < function.params.paramLength; i = i + 1) {
         let typ: usize = getTypeAtIndex(&function.params, i);
         let name: Token = getNameAtIndex(&function.params, i);
@@ -599,13 +600,17 @@ func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupLi
             failure = state;
             continue;
         }
+        push(&params, getType(&state));
         addParameter(funcLookup, NODE_ID_OFFSET + i, name, state);
     }
     if (!isInvalid(&failure)) return failure;
     let retState: TCState = typeCheckTypeNode(this, function.retTypeID);
     if (isError(&retState)) return retState;
-    setReturnType(funcLookup, retState);
-    (*function).typeState = newTCStateSuccess();
+    let fnType = newType(TYPE_KIND_FUNCTION, getType(&retState));
+    fnType.fnParams = params;
+    let state = newTCStateType(getID(fnType));
+    funcLookup.fnType = state;
+    function.typeState = state;
     if (signatureOnly) {
         return newTCStateSuccess();
     }
@@ -717,18 +722,18 @@ func typeCheckStmt(this: &TypeChecker, stmtID: usize, scopes: &ScopeLookupList) 
         let exprState: TCState = typeCheckExpr(this, stmt.expr, scopes);
         if (isError(&exprState)) return exprState;
         assert(this.currentFunction != null);
-        let _retType: &Type = at(&types, getType(&this.currentFunction.returnType));
-        if (isNone(_retType)) todo_with_msg("unexpected ret expr where empty function");
-        let retState: &TCState = &this.currentFunction.returnType;
+        let retState: &TCState = &this.currentFunction.fnType;
         assert(isSuccess(retState), "ready to use function has invalid return type");
         assert(isType(retState), "ready to use function has non-type as return type");
+        let _rt = at(&types, getType(retState));
+        let retType = at(&types, _rt.typeIndex);
+        if (isNone(retType)) todo_with_msg("unexpected ret expr where empty function");
         if (wantsInfer(&exprState)) {
-            exprState = inferTypeOntoExpr(this, stmt.expr, getType(retState));
+            exprState = inferTypeOntoExpr(this, stmt.expr, getID(retType));
             if (isError(&exprState)) return exprState;
             assert(isType(&exprState), "Failed to infer type of return expression");
         }
         let exprType: &Type = at(&types, getType(&exprState));
-        let retType: &Type = at(&types, getType(retState));
         if (!equals(exprType, retType)) {
             return reportTypeMismatch(this, stmt.span, retType, exprType);
         }
@@ -736,7 +741,9 @@ func typeCheckStmt(this: &TypeChecker, stmtID: usize, scopes: &ScopeLookupList) 
         return newTCStateSuccess();
     } else if (stmt.kind == STMT_RETURN_EMPTY) {
         assert(this.currentFunction != null);
-        let retType: &Type = at(&types, getType(&this.currentFunction.returnType));
+        let retState: &TCState = &this.currentFunction.fnType;
+        let _rt = at(&types, getType(retState));
+        let retType = at(&types, _rt.typeIndex);
         if (!isNone(retType)) {
             printf("%s\n", toString(&stmt.span).buffer);
             printf("%llu %llu\n", retType.kind, retType.typeIndex);
@@ -1133,9 +1140,10 @@ func selectFunctionCallCandidate(
     let paramCheck = typeCheckFunctionParameters(this, &f.params, callContext, arguments, false);
     if (isError(&paramCheck)) return paramCheck;
     *funcID = f.globalID;
-    let retType: TCState = f.returnType;
+    let retType: TCState = f.fnType;
     assert(isSuccess(&retType), "selectFunctionCallCandidate: Expected valid function return type");
-    return retType;
+    let rt = at(&types, getType(&retType));
+    return newTCStateType(rt.typeIndex);
 }
 
 func typeCheckFunctionArguments(this: &TypeChecker, params: &VariableLookupList, callContext: &ArrayContext, arguments: &TCStateList, checkOnly: bool) -> TCState {
@@ -1256,36 +1264,47 @@ func typeCheckIdentifier(this: &TypeChecker, exprID: usize, scopes: &ScopeLookup
     assert(expr.kind == EXPR_NAME);
     let name: Token = expr.origToken;
     let var: VariableLookup = blank;
-    if (!resolveVariableByName(&this.lookup, this.currentModule, &name, scopes, &var)) {
-        let loc: String = getLocation(&name);
-        let _name: String = toString(&name.content);
-        fprintf(stderr, "%s: %s: Use of undeclared identifier `%s`.\n", loc.buffer, ERR_STR, _name.buffer);
-        let alternatives: VariableLookupList = searchAllModulesForIdentifier(&this.lookup, &name);
-        for (let i: usize = 0; i < alternatives.length; i = i + 1) {
-            let t: &VariableLookup = at(&alternatives, i);
-            let loc: String = getLocation(&t.name);
-            fprintf(stderr, "%s: %s: A variable with that name is located here. Import the module to use it.\n", loc.buffer, NOTE_STR);
-            drop(&loc);
+    if (resolveVariableByName(&this.lookup, this.currentModule, &name, scopes, &var)) {
+        if (this.isComptimeContext && !var.isComptime) {
+            reportRuntimeValueInComptimeContext(this, name, &var);
         }
-        drop(&_name);
-        drop(&loc);
-        this.typeError = true;
-        return newTCStateFailure(ERROR_NO_SUCH_IDENTIFIER);
+        let state: TCState = var.typeState;
+        assert(!isInvalid(&state), "Variable not ready");
+        if (isError(&state)) return state;
+        assert(expr.op == 0);
+        let _loc: Token = blank;
+        if (isKnownVariable(at(scopes, 0), name.content, &_loc)) {
+            (*expr).op = 1;
+        }
+        (*expr).lhs = var.globalID;
+        (*expr).typeState = state;
+        return state;
+    } else {
+        let functions = resolveFunctionByName(&this.lookup, this.currentModule, &name);
+        if (functions.length == 0) {
+            let loc: String = getLocation(&name);
+            let _name: String = toString(&name.content);
+            fprintf(stderr, "%s: %s: Use of undeclared identifier `%s`.\n", loc.buffer, ERR_STR, _name.buffer);
+            let alternatives: VariableLookupList = searchAllModulesForIdentifier(&this.lookup, &name);
+            for (let i: usize = 0; i < alternatives.length; i = i + 1) {
+                let t: &VariableLookup = at(&alternatives, i);
+                let loc: String = getLocation(&t.name);
+                fprintf(stderr, "%s: %s: A variable with that name is located here. Import the module to use it.\n", loc.buffer, NOTE_STR);
+                drop(&loc);
+            }
+            drop(&_name);
+            drop(&loc);
+            this.typeError = true;
+            return newTCStateFailure(ERROR_NO_SUCH_IDENTIFIER);
+        } else if (functions.length == 1) {
+            let f = at(&functions, 0);
+            (*expr).lhs = f.globalID;
+            (*expr).typeState = f.fnType;
+            return f.fnType;
+        } else {
+            return newTCStatePleaseInfer();
+        }
     }
-    if (this.isComptimeContext && !var.isComptime) {
-        reportRuntimeValueInComptimeContext(this, name, &var);
-    }
-    let state: TCState = var.typeState;
-    assert(!isInvalid(&state), "Variable not ready");
-    if (isError(&state)) return state;
-    assert(expr.op == 0);
-    let _loc: Token = blank;
-    if (isKnownVariable(at(scopes, 0), name.content, &_loc)) {
-        (*expr).op = 1;
-    }
-    (*expr).lhs = var.globalID;
-    (*expr).typeState = state;
-    return state;
 }
 
 func typeCheckExprBinary(this: &TypeChecker, binID: usize, scopes: &ScopeLookupList) -> TCState {
@@ -1718,7 +1737,8 @@ func tryInferTypeOntoCall(this: &TypeChecker, exprID: usize, typeID: usize, chec
             assert(isSuccess(&state));
             (*expr).lhs = f.globalID;
         }
-        return f.returnType;
+        let _rt = at(&types, getType(&f.fnType));
+        return newTCStateType(_rt.typeIndex);
     } else if (actual.length == 0) {
         if (!checkOnly) {
             let functions: FunctionLookupList = resolveFunctionByName(&this.lookup, this.currentModule, &expr.origToken);

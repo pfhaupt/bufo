@@ -12,8 +12,114 @@ import "../backend/LLVM/basic_block.bufo";
 import "../backend/LLVM/values.bufo";
 import "../backend/LLVM/types.bufo";
 
+// TODO: Generics would be cool :Clueless:
 struct ModuleLookupList {
     elements: &ModuleLookup;
+    length: usize;
+    capacity: usize;
+}
+struct ParsedAttributeList {
+    elements: &ParsedAttribute;
+    length: usize;
+    capacity: usize;
+}
+struct FunctionLookupList {
+    elements: &FunctionLookup;
+    length: usize;
+    capacity: usize;
+}
+struct StructLookupList {
+    elements: &StructLookup;
+    length: usize;
+    capacity: usize;
+}
+struct ScopeLookupList {
+    elements: &ScopeLookup;
+    length: usize;
+    capacity: usize;
+}
+struct TypeLookupList {
+    elements: &TypeLookup;
+    length: usize;
+    capacity: usize;
+}
+struct VariableLookupList {
+    elements: &VariableLookup;
+    length: usize;
+    capacity: usize;
+}
+struct ImportLookupList {
+    elements: &ImportLookup;
+    length: usize;
+    capacity: usize;
+}
+struct TCStateList {
+    elements: &TCState;
+    length: usize;
+    capacity: usize;
+}
+struct RegIndexList {
+    elements: &RegIndex;
+    length: usize;
+    capacity: usize;
+}
+struct IRInstrList {
+    elements: &IRInstr;
+    length: usize;
+    capacity: usize;
+}
+struct IRScopeList {
+    elements: &IRScope;
+    length: usize;
+    capacity: usize;
+}
+struct IRRegList {
+    elements: &IRReg;
+    length: usize;
+    capacity: usize;
+}
+struct IRBlockList {
+    elements: &IRBlock;
+    length: usize;
+    capacity: usize;
+}
+struct LoopBlockList {
+    elements: &LoopBlock;
+    length: usize;
+    capacity: usize;
+}
+struct IRScopeEntryList {
+    elements: &IRScopeEntry;
+    length: usize;
+    capacity: usize;
+}
+struct IRFuncList {
+    elements: &IRFunc;
+    length: usize;
+    capacity: usize;
+}
+struct LLVMTypeList {
+    elements: &LLVMType;
+    length: usize;
+    capacity: usize;
+}
+struct RegValueList {
+    elements: &RegValue;
+    length: usize;
+    capacity: usize;
+}
+struct LLVMBasicBlockList {
+    elements: &LLVMBasicBlock;
+    length: usize;
+    capacity: usize;
+}
+struct LLVMValueList {
+    elements: &LLVMValue;
+    length: usize;
+    capacity: usize;
+}
+struct UsizeList {
+    elements: &usize;
     length: usize;
     capacity: usize;
 }
@@ -82,12 +188,6 @@ func clear(this: &ModuleLookupList) {
     this.length = 0;
 }
 
-struct ParsedAttributeList {
-    elements: &ParsedAttribute;
-    length: usize;
-    capacity: usize;
-}
-
 func initBlank(this: &ParsedAttributeList, newCap: usize) {
     if (this.elements != null) free(this.elements);
     this.elements = calloc(newCap, sizeof ParsedAttribute);
@@ -150,12 +250,6 @@ func drop(this: &ParsedAttributeList) {
 
 func clear(this: &ParsedAttributeList) {
     this.length = 0;
-}
-
-struct FunctionLookupList {
-    elements: &FunctionLookup;
-    length: usize;
-    capacity: usize;
 }
 
 func initBlank(this: &FunctionLookupList, newCap: usize) {
@@ -222,12 +316,6 @@ func clear(this: &FunctionLookupList) {
     this.length = 0;
 }
 
-struct StructLookupList {
-    elements: &StructLookup;
-    length: usize;
-    capacity: usize;
-}
-
 func initBlank(this: &StructLookupList, newCap: usize) {
     if (this.elements != null) free(this.elements);
     this.elements = calloc(newCap, sizeof StructLookup);
@@ -290,12 +378,6 @@ func drop(this: &StructLookupList) {
 
 func clear(this: &StructLookupList) {
     this.length = 0;
-}
-
-struct ScopeLookupList {
-    elements: &ScopeLookup;
-    length: usize;
-    capacity: usize;
 }
 
 func initBlank(this: &ScopeLookupList, newCap: usize) {
@@ -362,12 +444,6 @@ func clear(this: &ScopeLookupList) {
     this.length = 0;
 }
 
-struct TypeLookupList {
-    elements: &TypeLookup;
-    length: usize;
-    capacity: usize;
-}
-
 func initBlank(this: &TypeLookupList, newCap: usize) {
     if (this.elements != null) free(this.elements);
     this.elements = calloc(newCap, sizeof TypeLookup);
@@ -430,12 +506,6 @@ func drop(this: &TypeLookupList) {
 
 func clear(this: &TypeLookupList) {
     this.length = 0;
-}
-
-struct VariableLookupList {
-    elements: &VariableLookup;
-    length: usize;
-    capacity: usize;
 }
 
 func initBlank(this: &VariableLookupList, newCap: usize) {
@@ -502,12 +572,6 @@ func clear(this: &VariableLookupList) {
     this.length = 0;
 }
 
-struct ImportLookupList {
-    elements: &ImportLookup;
-    length: usize;
-    capacity: usize;
-}
-
 func initBlank(this: &ImportLookupList, newCap: usize) {
     if (this.elements != null) free(this.elements);
     this.elements = calloc(newCap, sizeof ImportLookup);
@@ -570,12 +634,6 @@ func drop(this: &ImportLookupList) {
 
 func clear(this: &ImportLookupList) {
     this.length = 0;
-}
-
-struct TCStateList {
-    elements: &TCState;
-    length: usize;
-    capacity: usize;
 }
 
 func initBlank(this: &TCStateList, newCap: usize) {
@@ -642,12 +700,6 @@ func clear(this: &TCStateList) {
     this.length = 0;
 }
 
-struct RegIndexList {
-    elements: &RegIndex;
-    length: usize;
-    capacity: usize;
-}
-
 func initBlank(this: &RegIndexList, newCap: usize) {
     if (this.elements != null) free(this.elements);
     this.elements = calloc(newCap, sizeof RegIndex);
@@ -710,12 +762,6 @@ func drop(this: &RegIndexList) {
 
 func clear(this: &RegIndexList) {
     this.length = 0;
-}
-
-struct IRInstrList {
-    elements: &IRInstr;
-    length: usize;
-    capacity: usize;
 }
 
 func initBlank(this: &IRInstrList, newCap: usize) {
@@ -782,12 +828,6 @@ func clear(this: &IRInstrList) {
     this.length = 0;
 }
 
-struct IRScopeList {
-    elements: &IRScope;
-    length: usize;
-    capacity: usize;
-}
-
 func initBlank(this: &IRScopeList, newCap: usize) {
     if (this.elements != null) free(this.elements);
     this.elements = calloc(newCap, sizeof IRScope);
@@ -850,12 +890,6 @@ func drop(this: &IRScopeList) {
 
 func clear(this: &IRScopeList) {
     this.length = 0;
-}
-
-struct IRRegList {
-    elements: &IRReg;
-    length: usize;
-    capacity: usize;
 }
 
 func initBlank(this: &IRRegList, newCap: usize) {
@@ -922,12 +956,6 @@ func clear(this: &IRRegList) {
     this.length = 0;
 }
 
-struct IRBlockList {
-    elements: &IRBlock;
-    length: usize;
-    capacity: usize;
-}
-
 func initBlank(this: &IRBlockList, newCap: usize) {
     if (this.elements != null) free(this.elements);
     this.elements = calloc(newCap, sizeof IRBlock);
@@ -990,12 +1018,6 @@ func drop(this: &IRBlockList) {
 
 func clear(this: &IRBlockList) {
     this.length = 0;
-}
-
-struct LoopBlockList {
-    elements: &LoopBlock;
-    length: usize;
-    capacity: usize;
 }
 
 func initBlank(this: &LoopBlockList, newCap: usize) {
@@ -1062,12 +1084,6 @@ func clear(this: &LoopBlockList) {
     this.length = 0;
 }
 
-struct IRScopeEntryList {
-    elements: &IRScopeEntry;
-    length: usize;
-    capacity: usize;
-}
-
 func initBlank(this: &IRScopeEntryList, newCap: usize) {
     if (this.elements != null) free(this.elements);
     this.elements = calloc(newCap, sizeof IRScopeEntry);
@@ -1130,12 +1146,6 @@ func drop(this: &IRScopeEntryList) {
 
 func clear(this: &IRScopeEntryList) {
     this.length = 0;
-}
-
-struct IRFuncList {
-    elements: &IRFunc;
-    length: usize;
-    capacity: usize;
 }
 
 func initBlank(this: &IRFuncList, newCap: usize) {
@@ -1202,12 +1212,6 @@ func clear(this: &IRFuncList) {
     this.length = 0;
 }
 
-struct LLVMTypeList {
-    elements: &LLVMType;
-    length: usize;
-    capacity: usize;
-}
-
 func initBlank(this: &LLVMTypeList, newCap: usize) {
     if (this.elements != null) free(this.elements);
     this.elements = calloc(newCap, sizeof LLVMType);
@@ -1270,12 +1274,6 @@ func drop(this: &LLVMTypeList) {
 
 func clear(this: &LLVMTypeList) {
     this.length = 0;
-}
-
-struct RegValueList {
-    elements: &RegValue;
-    length: usize;
-    capacity: usize;
 }
 
 func initBlank(this: &RegValueList, newCap: usize) {
@@ -1342,12 +1340,6 @@ func clear(this: &RegValueList) {
     this.length = 0;
 }
 
-struct LLVMBasicBlockList {
-    elements: &LLVMBasicBlock;
-    length: usize;
-    capacity: usize;
-}
-
 func initBlank(this: &LLVMBasicBlockList, newCap: usize) {
     if (this.elements != null) free(this.elements);
     this.elements = calloc(newCap, sizeof LLVMBasicBlock);
@@ -1410,12 +1402,6 @@ func drop(this: &LLVMBasicBlockList) {
 
 func clear(this: &LLVMBasicBlockList) {
     this.length = 0;
-}
-
-struct LLVMValueList {
-    elements: &LLVMValue;
-    length: usize;
-    capacity: usize;
 }
 
 func initBlank(this: &LLVMValueList, newCap: usize) {
@@ -1482,3 +1468,20 @@ func clear(this: &LLVMValueList) {
     this.length = 0;
 }
 
+func push(this: &UsizeList, element: usize) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof usize);
+        assert(this.elements != null, "Could not allocate memory in UsizeList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+func at(this: &UsizeList, index: usize) -> &usize {
+    assert(index < this.length, "Out of bounds access in UsizeList.at");
+    assert(this.elements != null, "Element pointer is NULL in UsizeList.at");
+    return &this.elements[index];
+}

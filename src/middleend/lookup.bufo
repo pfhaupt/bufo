@@ -201,8 +201,8 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) {
             globalID: tli.nodeID,
             parentModule: this.globalID,
             name: fun.name,
-            returnType: blank,
             params: blank,
+            fnType: blank,
             isVarArg: fun.params.isVarArg,
         };
         push(&this.functions, lookup);
@@ -308,8 +308,9 @@ func resolveAllFunctionsWithReturnType(this: &ModuleLookup, name: &Token, typ: &
         if (!equals(&f.name.content, &name.content)) {
             continue;
         }
-        let t = at(&types, getType(&f.returnType));
-        if (equals(t, typ)) {
+        let _rt = at(&types, getType(&f.fnType));
+        let retType = at(&types, _rt.typeIndex);
+        if (equals(retType, typ)) {
             push(list, *f);
         }
     }
@@ -357,14 +358,9 @@ struct FunctionLookup {
     globalID: usize;
     parentModule: usize;
     name: Token;
-    returnType: TCState;
+    fnType: TCState;
     params: VariableLookupList;
     isVarArg: bool;
-}
-
-func setReturnType(this: &FunctionLookup, typ: TCState) {
-    trace("FunctionLookup.setReturnType");
-    this.returnType = typ;
 }
 
 func addParameter(this: &FunctionLookup, globalID: usize, name: Token, typeState: TCState) {

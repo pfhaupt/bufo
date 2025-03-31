@@ -314,6 +314,9 @@ func generateLLVMInstr(
             buildStore(&this.llvmBuilder, dstVal, srcVal);
         }
         return dstVal;
+    } else if (instr.kind == INSTR_LOAD_FUNCTION_PTR) {
+        let called: &IRFunc = at(&this.irGen.functions, instr.src.i);
+        return called.llvmFunc;
     } else if (instr.kind == INSTR_LOAD) {
         let typ: &Type = getRegister(irFunc, instr.dst).typ;
         let dstTyp: LLVMType = generateLLVMType(this, typ);
@@ -771,6 +774,9 @@ func generateLLVMType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
             todo_with_msg("generate primitive type");
         }
     } else if (isPointer(typ)) {
+        let t: LLVMType = createIntegerType(&this.llvmContext, 64);
+        return intoPointerType(&t);
+    } else if (isFunction(typ)) {
         let t: LLVMType = createIntegerType(&this.llvmContext, 64);
         return intoPointerType(&t);
     } else if (isArray(typ)) {

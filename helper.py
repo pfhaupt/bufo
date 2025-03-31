@@ -322,7 +322,8 @@ def get_current_test_number() -> int:
             full = full.split("-")[0]
             full = full.replace("/", "")
             index = int(full)
-            assert index == current + 1, f"Missing index {index} in tests"
+            if index != current + 1:
+                return current + 1
             current = index
     return current + 1
 

@@ -36,6 +36,7 @@ comptime INSTR_STORE: usize = 3;
 comptime INSTR_FETCH_GLOBAL_PTR: usize = 4;
 comptime INSTR_FETCH_GLOBAL_VALUE: usize = 5;
 comptime INSTR_FETCH_COMPTIME_VALUE: usize = 6;
+comptime INSTR_LOAD_FUNCTION_PTR: usize = 7;
 comptime INSTR_LOAD: usize = 8;
 comptime INSTR_MOVE: usize = 9;
 comptime INSTR_CALL: usize = 10;
@@ -447,6 +448,17 @@ func buildFetchLocalComptimeValue(this: &IRFunc, span: Span, dst: RegIndex, glob
         dst: dst,
         src: globalIndex,
         op1: RegIndex { i: 0 },
+        args: blank,
+    });
+}
+func buildLoadFunctionPtr(this: &IRFunc, span: Span, dst: RegIndex, funcID: usize) {
+    pushInstruction(this, IRInstr {
+        kind: INSTR_LOAD_FUNCTION_PTR,
+        span: span,
+        isComptime: this.comptimeLevel > 0,
+        dst: dst,
+        src: RegIndex { i: funcID },
+        op1: blank,
         args: blank,
     });
 }
@@ -911,7 +923,7 @@ func getIdentifierByName(this: &IRGen, function: &IRFunc, name: SubStr, isGlobal
         *isGlobal = true;
         return entry;
     }
-    unreachable("Could not find identifier anywhere.");
+    return null;
 }
 func getFunctionByName(this: &IRGen, name: &String) -> usize {
     return indexOf(&this.functions, name);
@@ -1518,53 +1530,66 @@ func generateBytecodeExprIdentifier(this: &IRGen, function: &IRFunc, expr: &Pars
     assert(isIdentifier(expr));
     let isGlobal: bool = false;
     let entry: &IRScopeEntry = getIdentifierByName(this, function, expr.origToken.content, &isGlobal);
-    assert(entry != null, "Could not find identifier in generateBytecodeExprIdentifier");
-    let varType: &Type = at(&types, getType(&expr.typeState));
-    if (function.comptimeLevel > 0 && !entry.isComptime) {
-        unreachable("Crossing the boundary: comptime IR needs runtime value - The Checker should've caught this");
-    }
-    if (needsPtr) {
-        if (isGlobal) {
-            let ptrType: &Type = at(&types, intoPointer(varType));
-            let global: RegIndex = allocateRegister(function, ptrType);
-            if (entry.isComptime) {
-                let val: RegIndex = allocateRegister(function, varType);
-                buildAlloca(function, expr.span, global, getSize(varType));
-                buildFetchGlobalComptimeValue(function, expr.span, val, entry.ptr);
-                buildStore(function, expr.span, global, val);
-            } else {
-                buildFetchGlobalPointer(function, expr.span, global, entry.ptr);
-            }
-            return global;
-        } else {
-            if (entry.isComptime) {
+    if (entry != null) {
+        let varType: &Type = at(&types, getType(&expr.typeState));
+        if (function.comptimeLevel > 0 && !entry.isComptime) {
+            unreachable("Crossing the boundary: comptime IR needs runtime value - The Checker should've caught this");
+        }
+        if (needsPtr) {
+            if (isGlobal) {
                 let ptrType: &Type = at(&types, intoPointer(varType));
                 let global: RegIndex = allocateRegister(function, ptrType);
-                let val: RegIndex = allocateRegister(function, varType);
-                buildAlloca(function, expr.span, global, getSize(varType));
-                buildFetchLocalComptimeValue(function, expr.span, val, entry.ptr);
-                buildStore(function, expr.span, global, val);
+                if (entry.isComptime) {
+                    let val: RegIndex = allocateRegister(function, varType);
+                    buildAlloca(function, expr.span, global, getSize(varType));
+                    buildFetchGlobalComptimeValue(function, expr.span, val, entry.ptr);
+                    buildStore(function, expr.span, global, val);
+                } else {
+                    buildFetchGlobalPointer(function, expr.span, global, entry.ptr);
+                }
                 return global;
             } else {
-                return entry.ptr;
-            }
-        }
-    } else {
-        let val: RegIndex = allocateRegister(function, varType);
-        if (isGlobal) {
-            if (entry.isComptime) {
-                buildFetchGlobalComptimeValue(function, expr.span, val, entry.ptr);
-            } else {
-                buildFetchGlobalRuntimeValue(function, expr.span, val, entry.ptr);
+                if (entry.isComptime) {
+                    let ptrType: &Type = at(&types, intoPointer(varType));
+                    let global: RegIndex = allocateRegister(function, ptrType);
+                    let val: RegIndex = allocateRegister(function, varType);
+                    buildAlloca(function, expr.span, global, getSize(varType));
+                    buildFetchLocalComptimeValue(function, expr.span, val, entry.ptr);
+                    buildStore(function, expr.span, global, val);
+                    return global;
+                } else {
+                    return entry.ptr;
+                }
             }
         } else {
-            if (entry.isComptime) {
-                buildFetchLocalComptimeValue(function, expr.span, val, entry.ptr);
+            let val: RegIndex = allocateRegister(function, varType);
+            if (isGlobal) {
+                if (entry.isComptime) {
+                    buildFetchGlobalComptimeValue(function, expr.span, val, entry.ptr);
+                } else {
+                    buildFetchGlobalRuntimeValue(function, expr.span, val, entry.ptr);
+                }
             } else {
-                buildLoad(function, expr.span, val, entry.ptr);
+                if (entry.isComptime) {
+                    buildFetchLocalComptimeValue(function, expr.span, val, entry.ptr);
+                } else {
+                    buildLoad(function, expr.span, val, entry.ptr);
+                }
             }
+            return val;
         }
-        return val;
+    } else {
+        let t = at(&types, getType(&expr.typeState));
+        assert(isFunction(t), "Expected function in generateBytecodeExprIdentifier");
+        let name: String = getMangledName(at(&funcDecls, expr.lhs));
+        let funcID: usize = getFunctionByName(this, &name);
+        let dst = allocateRegister(function, t);
+        buildLoadFunctionPtr(function, expr.span, dst, funcID);
+        if (needsPtr) {
+            todo_with_msg("func ident needsPtr?");
+        } else {
+            return dst;
+        }
     }
 }
 
