@@ -556,29 +556,23 @@ func typeCheckStructDecl(this: &TypeChecker, structID: usize) -> TCState {
     let structLookup: &StructLookup = getStructByGlobalID(moduleLookup, structID);
     let context: &StructContext = &strukt.context;
     let result: TCState = newTCStateSuccess();
-    if (!getReadyState(structLookup, STRUCT_READY_TO_USE)) {
-        if (!getReadyState(structLookup, STRUCT_FIELDS_COMPLETE)) {
-            let failure: TCState = blank;
-            for (let i: usize = 0; i < context.fieldLength; i = i + 1) {
-                let name: Token = getFieldNameAtIndex(context, i);
-                let typ: usize = getFieldTypeAtIndex(context, i);
-                let dupl: VariableLookup = blank;
-                if (checkForDuplicateField(structLookup, &name, &dupl)) {
-                    failure = reportDuplicateField(this, name, dupl.name.span);
-                    continue;
-                }
-                let state: TCState = typeCheckTypeNode(this, typ);
-                if (isError(&state)) {
-                    failure = state;
-                    continue;
-                }
-                addField(structLookup, NODE_ID_OFFSET + i, name, state);
-            }
-            if (!isInvalid(&failure)) return failure;
-            setReadyState(structLookup, STRUCT_FIELDS_COMPLETE);
+    let failure: TCState = blank;
+    for (let i: usize = 0; i < context.fieldLength; i = i + 1) {
+        let name: Token = getFieldNameAtIndex(context, i);
+        let typ: usize = getFieldTypeAtIndex(context, i);
+        let dupl: VariableLookup = blank;
+        if (checkForDuplicateField(structLookup, &name, &dupl)) {
+            failure = reportDuplicateField(this, name, dupl.name.span);
+            continue;
         }
-        setReadyState(structLookup, STRUCT_READY_TO_USE);
+        let state: TCState = typeCheckTypeNode(this, typ);
+        if (isError(&state)) {
+            failure = state;
+            continue;
+        }
+        addField(structLookup, NODE_ID_OFFSET + i, name, state);
     }
+    if (!isInvalid(&failure)) return failure;
     (*strukt).typeState = newTCStateSuccess();
     return result;
 }
@@ -589,69 +583,48 @@ func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupLi
     if (function.ignored) return blank;
     let moduleLookup: &ModuleLookup = at(&this.lookup.modules, this.currentModule);
     let funcLookup: &FunctionLookup = getFunctionByGlobalID(moduleLookup, funcID);
-    if (getReadyState(funcLookup, FUNC_BODY_COMPLETE)) {
-        assert(getReadyState(funcLookup, FUNC_READY_TO_USE), "Function should be ready to use at this point");
-        return function.typeState;
-    }
     this.currentFunction = funcLookup;
-    if (!getReadyState(funcLookup, FUNC_READY_TO_USE)) {
-        if (!getReadyState(funcLookup, FUNC_PARAMS_COMPLETE)) {
-            let failure: TCState = blank;
-            clear(&funcLookup.params);
-            for (let i: usize = 0; i < function.params.paramLength; i = i + 1) {
-                let typ: usize = getTypeAtIndex(&function.params, i);
-                let name: Token = getNameAtIndex(&function.params, i);
-                let dupl: VariableLookup = blank;
-                if (checkForDuplicateParam(funcLookup, &name, &dupl)) {
-                    failure = reportDuplicateParameter(this, name, dupl.name.span);
-                    setReadyState(funcLookup, FUNC_PARAMS_COMPLETE);
-                    continue;
-                }
-                let state: TCState = typeCheckTypeNode(this, typ);
-                if (isError(&state)) {
-                    failure = state;
-                    continue;
-                }
-                addParameter(funcLookup, NODE_ID_OFFSET + i, name, state);
-            }
-            if (!isInvalid(&failure)) return failure;
-            setReadyState(funcLookup, FUNC_PARAMS_COMPLETE);
+    let failure: TCState = blank;
+    clear(&funcLookup.params);
+    for (let i: usize = 0; i < function.params.paramLength; i = i + 1) {
+        let typ: usize = getTypeAtIndex(&function.params, i);
+        let name: Token = getNameAtIndex(&function.params, i);
+        let dupl: VariableLookup = blank;
+        if (checkForDuplicateParam(funcLookup, &name, &dupl)) {
+            failure = reportDuplicateParameter(this, name, dupl.name.span);
+            continue;
         }
-        if (!getReadyState(funcLookup, FUNC_RETTYPE_COMPLETE)) {
-            let retState: TCState = typeCheckTypeNode(this, function.retTypeID);
-            if (isError(&retState)) return retState;
-            setReturnType(funcLookup, retState);
-            setReadyState(funcLookup, FUNC_RETTYPE_COMPLETE);
+        let state: TCState = typeCheckTypeNode(this, typ);
+        if (isError(&state)) {
+            failure = state;
+            continue;
         }
-        setReadyState(funcLookup, FUNC_READY_TO_USE);
+        addParameter(funcLookup, NODE_ID_OFFSET + i, name, state);
     }
+    if (!isInvalid(&failure)) return failure;
+    let retState: TCState = typeCheckTypeNode(this, function.retTypeID);
+    if (isError(&retState)) return retState;
+    setReturnType(funcLookup, retState);
+    (*function).typeState = newTCStateSuccess();
     if (signatureOnly) {
         return newTCStateSuccess();
     }
-    (*function).typeState = newTCStateSuccess();
-    if (!getReadyState(funcLookup, FUNC_DUPLICATE_CHECK)) {
-        // FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
-        let _dupl: usize = 0;
-        if (containsDuplicateFunction(moduleLookup, funcLookup, &_dupl)) {
-            assert(_dupl != 0, "Duplicate FunctionLookup is null");
-            return reportDuplicateFunction(this, funcLookup, _dupl as &FunctionLookup);
-        }
-        setReadyState(funcLookup, FUNC_DUPLICATE_CHECK);
+    let _dupl: &FunctionLookup = null;
+    if (containsDuplicateFunction(moduleLookup, funcLookup, &_dupl)) {
+        assert(_dupl != null, "Duplicate FunctionLookup is null");
+        return reportDuplicateFunction(this, funcLookup, _dupl);
     }
-    if (!getReadyState(funcLookup, FUNC_BODY_COMPLETE)) {
-        let scope: ScopeLookup = blank;
-        for (let i: usize = 0; i < funcLookup.params.length; i = i + 1) {
-            addVariable(&scope, *(at(&funcLookup.params, i)));
+    let scope: ScopeLookup = blank;
+    for (let i: usize = 0; i < funcLookup.params.length; i = i + 1) {
+        addVariable(&scope, *(at(&funcLookup.params, i)));
+    }
+    if (!isExtern(function)) {
+        push(scopes, scope);
+        let blockState: TCState = typeCheckBlock(this, function.body, scopes);
+        pop(scopes);
+        if (isError(&blockState)) {
+            return blockState;
         }
-        if (!isExtern(function)) {
-            push(scopes, scope);
-            let blockState: TCState = typeCheckBlock(this, function.body, scopes);
-            pop(scopes);
-            if (isError(&blockState)) {
-                return blockState;
-            }
-        }
-        setReadyState(funcLookup, FUNC_BODY_COMPLETE);
     }
     return function.typeState;
 }
@@ -744,7 +717,6 @@ func typeCheckStmt(this: &TypeChecker, stmtID: usize, scopes: &ScopeLookupList) 
         let exprState: TCState = typeCheckExpr(this, stmt.expr, scopes);
         if (isError(&exprState)) return exprState;
         assert(this.currentFunction != null);
-        assert(getReadyState(this.currentFunction, FUNC_READY_TO_USE), "Function is not ready");
         let _retType: &Type = at(&types, getType(&this.currentFunction.returnType));
         if (isNone(_retType)) todo_with_msg("unexpected ret expr where empty function");
         let retState: &TCState = &this.currentFunction.returnType;
@@ -764,7 +736,6 @@ func typeCheckStmt(this: &TypeChecker, stmtID: usize, scopes: &ScopeLookupList) 
         return newTCStateSuccess();
     } else if (stmt.kind == STMT_RETURN_EMPTY) {
         assert(this.currentFunction != null);
-        assert(getReadyState(this.currentFunction, FUNC_READY_TO_USE), "Function is not ready");
         let retType: &Type = at(&types, getType(&this.currentFunction.returnType));
         if (!isNone(retType)) {
             printf("%s\n", toString(&stmt.span).buffer);
@@ -1130,7 +1101,6 @@ func markFunctionCallCandidates(
     trace("TypeChecker.markFunctionCallCandidates");
     for (let i: usize = 0; i < functions.length; i = i + 1) {
         let f: &FunctionLookup = at(functions, i);
-        assert(getReadyState(f, FUNC_READY_TO_USE), "Function mark not ready");
         if (!f.isVarArg && f.params.length != arguments.length) {
             continue;
         }
@@ -1160,7 +1130,6 @@ func selectFunctionCallCandidate(
     }
     assert(candidates.length == 1, "selectFunctionCallCandidate: Expected exactly one candidate");
     let f: &FunctionLookup = at(candidates, 0);
-    assert(getReadyState(f, FUNC_READY_TO_USE), "Expected markFunctionCallCandidates to validate FUNC_READY_TO_USE");
     let paramCheck = typeCheckFunctionParameters(this, &f.params, callContext, arguments, false);
     if (isError(&paramCheck)) return paramCheck;
     *funcID = f.globalID;
@@ -1246,7 +1215,6 @@ func typeCheckExprStructInit(this: &TypeChecker, exprID: usize, scopes: &ScopeLo
     if (isStruct(&lookup)) {
         let context: &StructInitContext = &expr.structInitContext;
         let structLookup: &StructLookup = asStruct(&lookup);
-        assert(getReadyState(structLookup, STRUCT_FIELDS_COMPLETE), "Struct fields not ready pt2");
         let hits: usize = 0;
         assert(structLookup.fields.length < 50, "Sorry, I need to hack this for now");
         for (let i: usize = 0; i < context.fieldLength; i = i + 1) {
@@ -1483,7 +1451,6 @@ func typeCheckExprMemberAccess(this: &TypeChecker, dotID: usize, scopes: &ScopeL
         let structLookup: &StructLookup = asStruct(&lookup);
         let rhs: &ParsedExpr = at(&exprs, expr.rhs);
         assert(rhs.kind == EXPR_NAME);
-        assert(getReadyState(structLookup, STRUCT_FIELDS_COMPLETE), "Struct fields not complete");
         let fieldName: Token = rhs.origToken;
         let field: VariableLookup = blank;
         if (!resolveFieldByName(structLookup, &fieldName, &field)) {
@@ -1732,7 +1699,6 @@ func tryInferTypeOntoCall(this: &TypeChecker, exprID: usize, typeID: usize, chec
     let actual: FunctionLookupList = blank;
     for (let i: usize = 0; i < functions.length; i = i + 1) {
         let f = at(&functions, i);
-        assert(getReadyState(f, FUNC_PARAMS_COMPLETE));
         let arguments: TCStateList = blank;
         let state = typeCheckFunctionArguments(this, &f.params, callContext, &arguments, true);
         if (isError(&state)) {
