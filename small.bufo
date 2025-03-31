@@ -13,7 +13,7 @@ comptime foo: i32 = 2;
     e(1);
 }
 
-func foo() -> i32 {
+func fooFn() -> i32 {
     p("yes\n");
     @os(WINDOWS) return 1;
     @os(LINUX) return 2;
@@ -27,7 +27,7 @@ func main(argc: i32, argv: &&char) -> i32 {
     @os(WINDOWS) {
         if (foo != 1) return 1;
     }
-    if (foo() != 1) {
+    if (fooFn() != 1) {
         p("fuck\n");
         return 2;
     }

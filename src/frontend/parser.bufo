@@ -679,24 +679,7 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
         return expr;
     } else if (tknKind == TOKEN_IDENT) {
         let ident: Token = expect(this, TOKEN_IDENT);
-        if (at(this, TOKEN_PAREN_OPEN)) {
-            expect(this, TOKEN_PAREN_OPEN);
-            let context: ArrayContext = blank;
-            while (!parsedEOF(this) && !at(this, TOKEN_PAREN_CLOSE)) {
-                let expr: &ParsedExpr = parseExpr(this);
-                addElement(&context, expr);
-                if (!eat(this, TOKEN_COMMA))
-                    break;
-            }
-            let end: Token = expect(this, TOKEN_PAREN_CLOSE);
-            let span: Span = newSpanBetween(&ident.span, &end.span);
-            let expr: &ParsedExpr = newParsedExpr(span, EXPR_CALL);
-            // REVIEW: This assumes that we will only ever have idents as call bases
-            //         However I'd like to treat functions as first class citizen soon
-            (*expr).origToken = ident;
-            (*expr).arrayContext = context;
-            return expr;
-        } else if (at(this, TOKEN_CURLY_OPEN)) {
+        if (at(this, TOKEN_CURLY_OPEN)) {
             expect(this, TOKEN_CURLY_OPEN);
             let context: StructInitContext = blank;
             while (!parsedEOF(this) && !at(this, TOKEN_CURLY_CLOSE)) {
@@ -815,6 +798,21 @@ func parseSecondaryExpr(this: &Parser, lhs: &ParsedExpr, precedence: usize, asso
     if (op == BIN_INDEXED_ACCESS) {
         rhs = __parseExpr(this, 0, associativity);
         expect(this, TOKEN_SQUARE_CLOSE);
+    } else if (op == BIN_CALL) {
+        let context: ArrayContext = blank;
+        while (!parsedEOF(this) && !at(this, TOKEN_PAREN_CLOSE)) {
+            let expr: &ParsedExpr = parseExpr(this);
+            addElement(&context, expr);
+            if (!eat(this, TOKEN_COMMA))
+                break;
+        }
+        let end: Token = expect(this, TOKEN_PAREN_CLOSE);
+        let span: Span = newSpanBetween(&lhs.span, &end.span);
+        let call: &ParsedExpr = newParsedExpr(span, EXPR_CALL);
+        (*call).arrayContext = context;
+        (*call).op = op;
+        (*call).lhs = getID(lhs);
+        return call;
     } else {
         rhs = __parseExpr(this, precedence, associativity);
     }
@@ -894,6 +892,7 @@ func matchesBinaryExpr(this: &Parser) -> bool {
         || tknKind == TOKEN_CARET
         // REVIEW: Maybe make DOT an identifier expression instead?
         || tknKind == TOKEN_DOT
+        || tknKind == TOKEN_PAREN_OPEN
         || tknKind == TOKEN_SQUARE_OPEN
         || tknKind == TOKEN_PERCENT;
 }
@@ -913,6 +912,7 @@ func getBinaryPrecedence(this: &Parser, tkn: &Token) -> usize {
     trace("Parser.getBinaryPrecedence");
     let tknKind: usize = tkn.kind;
     if (tknKind == TOKEN_DOT) return 17;
+    else if (tknKind == TOKEN_PAREN_OPEN) return 16;
     else if (tknKind == TOKEN_SQUARE_OPEN) return 16;
     else if (tknKind == TOKEN_KEYWORD) {
         assert(equals(&tkn.content, &KEYWORD_AS), "unsupported keyword in getBinaryPrecedence");

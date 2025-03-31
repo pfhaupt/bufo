@@ -124,6 +124,11 @@ func isTerminator(this: &IRInstr) -> bool {
 }
 func dump(this: &IRInstr) {
     if (this.isComptime) printf("\x1b[92m");
+    if (PRINT_DEBUG) {
+        let s = toString(&this.span);
+        printf("%s ", s.buffer);
+        drop(&s);
+    }
     if (this.kind == INSTR_ALLOCA) printf("r%llu = Alloca %llu", this.dst.i, this.src.i);
     else if (this.kind == INSTR_GET_PARAM) printf("r%llu = GetParam %llu (%llu bytes)", this.dst.i, this.src.i, this.op1.i);
     else if (this.kind == INSTR_STORE) printf("Store r%llu, r%llu", this.dst.i, this.src.i);
@@ -131,9 +136,10 @@ func dump(this: &IRInstr) {
     else if (this.kind == INSTR_FETCH_GLOBAL_VALUE) printf("r%llu = FetchGlobalValue r%llu", this.dst.i, this.src.i);
     else if (this.kind == INSTR_FETCH_COMPTIME_VALUE) printf("r%llu = FetchComptimeValue r%llu, global=%llu", this.dst.i, this.src.i, this.op1.i);
     else if (this.kind == INSTR_LOAD) printf("r%llu = Load r%llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_LOAD_FUNCTION_PTR) printf("r%llu = LoadFunctionPtr %llu", this.dst.i, this.src.i);
     else if (this.kind == INSTR_MOVE) printf("r%llu = Move r%llu", this.dst.i, this.src.i);
     else if (this.kind == INSTR_CALL) {
-        printf("r%llu = Call %llu", this.dst.i, this.src.i);
+        printf("r%llu = Call r%llu", this.dst.i, this.src.i);
         for (let i: usize = 0; i < this.args.length; i = i + 1) {
             printf(", r%llu", at(&this.args, i).i);
         }
@@ -1404,11 +1410,11 @@ func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &Pa
     }
 }
 
-func prepareReturnValue(this: &IRGen, span: Span, function: &IRFunc, funcID: usize, args: RegIndexList, retType: &Type, retPtr: RegIndex, needsPtr: bool) -> RegIndex {
+func prepareReturnValue(this: &IRGen, span: Span, function: &IRFunc, base: RegIndex, args: RegIndexList, retType: &Type, retPtr: RegIndex, needsPtr: bool) -> RegIndex {
     let retVal: RegIndex = blank;
     if (getSize(retType) > 8) {
         let reg: RegIndex = allocateRegister(function, retType);
-        buildCall(function, span, retPtr, RegIndex { i: funcID }, args);
+        buildCall(function, span, retPtr, base, args);
         if (needsPtr) {
             retVal = retPtr;
         } else {
@@ -1418,7 +1424,7 @@ func prepareReturnValue(this: &IRGen, span: Span, function: &IRFunc, funcID: usi
     } else {
         if (isStruct(retType)) {
             let reg: RegIndex = getRegisterForSize(this, function, getSize(retType));
-            buildCall(function, span, reg, RegIndex { i: funcID }, args);
+            buildCall(function, span, reg, base, args);
             let v: RegIndex = allocateRegister(function, retType);
             let t: &Type = getRegister(function, v).typ;
             let r: RegIndex = allocateRegister(function, at(&types, intoPointer(t)));
@@ -1434,7 +1440,7 @@ func prepareReturnValue(this: &IRGen, span: Span, function: &IRFunc, funcID: usi
             }
         } else {
             let reg: RegIndex = allocateRegister(function, retType);
-            buildCall(function, span, reg, RegIndex { i: funcID }, args);
+            buildCall(function, span, reg, base, args);
             if (needsPtr) {
                 let tempAlloc: RegIndex = allocateRegister(function, at(&types, intoPointer(retType)));
                 buildAlloca(function, span, tempAlloc, getSize(retType));
@@ -1445,9 +1451,10 @@ func prepareReturnValue(this: &IRGen, span: Span, function: &IRFunc, funcID: usi
             }
         }
     }
-    let f = at(&this.functions, funcID);
-    assert(f != null);
-    if (hasAttribute(f, ATTR_NORETURN)) {
+    let ft: &Type = getRegister(function, base).typ;
+    if (isPointer(ft)) ft = getUnderlyingType(ft, true);
+    assert(isFunction(ft), "IRGen: Base is not a function");
+    if (isNoreturn(ft)) {
         buildUnreachable(function, span);
     }
     return retVal;
@@ -1503,7 +1510,13 @@ func generateBytecodeExprIndexedAccess(this: &IRGen, function: &IRFunc, expr: &P
         push(&args, err);
         push(&args, rhs);
         let reg: RegIndex = allocateRegister(function, newType(TYPE_KIND_PRIMITIVE, TYPE_NONE));
-        buildCall(function, expr.span, reg, RegIndex { i: funcID }, args);
+        {
+            let ft = newType(TYPE_KIND_FUNCTION, TYPE_NONE);
+            ft.arraySize = ft.arraySize | FUNC_TYPE_VARIADIC;
+            let dst = allocateRegister(function, ft);
+            buildLoadFunctionPtr(function, expr.span, dst, funcID);
+            buildCall(function, expr.span, reg, dst, args);
+        }
         buildUnreachable(function, expr.span);
         setCurrentBlock(function, normal);
     }
@@ -1585,11 +1598,7 @@ func generateBytecodeExprIdentifier(this: &IRGen, function: &IRFunc, expr: &Pars
         let funcID: usize = getFunctionByName(this, &name);
         let dst = allocateRegister(function, t);
         buildLoadFunctionPtr(function, expr.span, dst, funcID);
-        if (needsPtr) {
-            todo_with_msg("func ident needsPtr?");
-        } else {
-            return dst;
-        }
+        return dst;
     }
 }
 
@@ -2076,9 +2085,9 @@ func prepareArgument(this: &IRGen, function: &IRFunc, span: Span, value: RegInde
 func generateBytecodeExprCall(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, needsPtr: bool) -> RegIndex {
     trace("IRGen.generateBytecodeExprCall");
     assert(isCall(expr));
+    let base = generateBytecodeExpr(this, function, at(&exprs, expr.lhs), false);
     let typ: &Type = at(&types, getType(&expr.typeState));
     let args: RegIndexList = blank;
-    let reg: RegIndex = allocateRegister(function, typ);
     let retPtr: RegIndex = blank;
     if (getSize(typ) > 8) {
         retPtr = allocateRegister(function, at(&types, intoPointer(typ)));
@@ -2091,10 +2100,7 @@ func generateBytecodeExprCall(this: &IRGen, function: &IRFunc, expr: &ParsedExpr
         let result: RegIndex = generateBytecodeExpr(this, function, arg, false);
         push(&args, prepareArgument(this, function, arg.span, result, argType));
     }
-    let name: String = getMangledName(at(&funcDecls, expr.lhs));
-    let funcID: usize = getFunctionByName(this, &name);
-    drop(&name);
-    return prepareReturnValue(this, expr.span, function, funcID, args, typ, retPtr, needsPtr);
+    return prepareReturnValue(this, expr.span, function, base, args, typ, retPtr, needsPtr);
 }
 
 func newIRGenerator() -> IRGen {

@@ -123,6 +123,16 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         };
         popArgument(this, getRegStackPointer(this, &dst), size);
         return dst;
+    } else if (instr.kind == INSTR_LOAD_FUNCTION_PTR) {
+        let fReg: &IRReg = getRegister(irFunc, instr.dst);
+        assert(isFunction(fReg.typ), "LoadFunctionPtr got non-function");
+        let reg: InterpReg = InterpReg {
+            offset: fReg.offset,
+            size: 8,
+        };
+        let regStackLoc: &u8 = getRegStackPointer(this, &reg);
+        *(regStackLoc as &usize) = instr.src.i;
+        return reg;
     } else if (instr.kind == INSTR_LOAD) {
         // dst: reg,
         // src: ptr,
@@ -273,6 +283,14 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         };
         memset(getRegStackPointer(this, &dst), 0, dst.size);
         return dst;
+    } else if (instr.kind == INSTR_CREATE_ARRAY) {
+        let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+        let dst: InterpReg = InterpReg {
+            offset: dstReg.offset,
+            size: getSize(dstReg.typ),
+        };
+        memset(getRegStackPointer(this, &dst), 0, dst.size);
+        return dst;
     } else if (instr.kind == INSTR_CREATE_STRUCT) {
         let dstReg: &IRReg = getRegister(irFunc, instr.dst);
         let dst: InterpReg = InterpReg {
@@ -301,7 +319,8 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         // op1: blank,
         // args: args,
         let dstReg: &IRReg = getRegister(irFunc, instr.dst);
-        let calledFunc: &IRFunc = at(&this.irGen.functions, instr.src.i);
+        let id = *(getRegStackPointer(this, &asInterp(at(regs, instr.src.i), "Call")) as &usize);
+        let calledFunc: &IRFunc = at(&this.irGen.functions, id);
         let argSize: usize = this.argStackLength;
         let stackStart: &u8 = this.realStackStart;
         let regStackStart: &u8 = this.regStackStart;
@@ -336,7 +355,11 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         let dstStart: &u8 = getRegStackPointer(this, &dst);
         let t: &Type = dstReg.typ;
         if (isArray(t)) {
-            todo_with_msg("InsertValue Array");
+            let ut = getUnderlyingType(t, false);
+            let valReg: InterpReg = asInterp(at(regs, instr.op1.i), "Interp InsertValue Array");
+            let size = getSize(ut);
+            let offset = instr.src.i * size;
+            memcpy(dstStart + offset, getRegStackPointer(this, &valReg), size);
         } else if (isStruct(t)) {
             let s: &ParsedStructDecl = at(&structDecls, t.typeIndex);
             let offset: usize = 0;
@@ -345,10 +368,10 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
             let valReg: InterpReg = asInterp(at(regs, instr.op1.i), "Interp InsertValue Struct");
             assert(valReg.size == fieldSize, "field size mismatch in Interp InsertValue");
             memcpy(dstStart + offset, getRegStackPointer(this, &valReg), fieldSize);
-            return dst;
         } else {
             unreachable("Interp InsertValue expected Array or Struct");
         }
+        return dst;
     } else if (instr.kind == INSTR_INT_ADD) {
         // OPT: Specialized 8bit, 16bit, etc. variations
         let lhs: &RegValue = at(regs, instr.src.i);

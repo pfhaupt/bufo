@@ -43,7 +43,7 @@ comptime TYPE_KIND_FUNCTION: usize = 5;
 struct Type {
     kind: usize;
     typeIndex: usize;
-    fnParams: UsizeList;
+    fnParams: TCStateList;
     arraySize: usize;
 }
 
@@ -87,7 +87,7 @@ func getMangledName(this: &Type) -> String {
         drop(&r);
         for (let i: usize = 0; i < this.fnParams.length; i = i + 1) {
             if (i != this.fnParams.length - 1) pushChar(&s, '.');
-            let p = getMangledName(at(&types, *at(&this.fnParams, i)));
+            let p = getMangledName(at(&types, getType(at(&this.fnParams, i))));
             pushString(&s, &p);
             drop(&p);
         }
@@ -128,8 +128,8 @@ func equals(this: &Type, other: &Type) -> bool {
         if (!equals(at(&types, this.typeIndex), at(&types, other.typeIndex)))
             return false;
         for (let i: usize = 0; i < this.fnParams.length; i = i + 1) {
-            let p1 = at(&types, *at(&this.fnParams, i));
-            let p2 = at(&types, *at(&other.fnParams, i));
+            let p1 = at(&types, getType(at(&this.fnParams, i)));
+            let p2 = at(&types, getType(at(&other.fnParams, i)));
             if (!equals(p1, p2))
                 return false;
         }
@@ -142,6 +142,9 @@ func equals(this: &Type, other: &Type) -> bool {
     todo_with_msg("Type.equals");
 }
 
+func isUnknown(this: &Type) -> bool {
+    return this.kind == TYPE_KIND_UNKNOWN;
+}
 func isFloat(this: &Type) -> bool {
     if (this.kind != TYPE_KIND_PRIMITIVE) return false;
     return this.typeIndex == TYPE_F32
@@ -187,6 +190,16 @@ func isPrimitive(this: &Type) -> bool {
 func isFunction(this: &Type) -> bool {
     return this.kind == TYPE_KIND_FUNCTION;
 }
+comptime FUNC_TYPE_VARIADIC: usize = pow2(0);
+comptime FUNC_TYPE_NORETURN: usize = pow2(1);
+func isVariadic(this: &Type) -> bool {
+    if (!isFunction(this)) return false;
+    return (this.arraySize & FUNC_TYPE_VARIADIC) != 0;
+}
+func isNoreturn(this: &Type) -> bool {
+    if (!isFunction(this)) return false;
+    return (this.arraySize & FUNC_TYPE_NORETURN) != 0;
+}
 func isPointer(this: &Type) -> bool {
     if (this.kind == TYPE_KIND_POINTER) return true;
     if (this.kind == TYPE_KIND_PRIMITIVE)
@@ -223,6 +236,7 @@ func getUnderlyingType(this: &Type, deep: bool) -> &Type {
     return underlying;
 }
 func toString(this: &Type) -> String {
+    trace("Type.toString");
     if (this.kind == TYPE_KIND_PRIMITIVE) {
         // OPT: Make these Strings comptime
         if (this.typeIndex == TYPE_U8) return newStringFromStrLit("u8");
@@ -253,13 +267,22 @@ func toString(this: &Type) -> String {
     } else if (this.kind == TYPE_KIND_FUNCTION) {
         let s: String = newStringFromStrLit("func (");
         for (let i: usize = 0; i < this.fnParams.length; i = i + 1) {
-            let p = toString(at(&types, *at(&this.fnParams, i)));
+            let param = at(&this.fnParams, i);
+            let p: String = blank;
+            if (isType(param)) {
+                p = toString(at(&types, getType(param)));
+            } else {
+                p = newStringFromStrLit("<unknown>");
+            }
             pushString(&s, &p);
             drop(&p);
             if (i != this.fnParams.length - 1) {
                 pushChar(&s, ',');
                 pushChar(&s, ' ');
             }
+        }
+        if (isVariadic(this)) {
+            pushStr(&s, "...");
         }
         pushChar(&s, ')');
         let rt = at(&types, this.typeIndex);
@@ -373,6 +396,11 @@ func getSize(this: &Type) -> usize {
     } else {
         unreachable("Exhaustive handling of type kinds in Type.getSize");
     }
+}
+func getParam(fnType: &Type, id: usize) -> &TCState {
+    assert(isFunction(fnType), "getParam() called on non-function type");
+    assert(id < fnType.fnParams.length, "Out of bounds access in getParam()");
+    return at(&fnType.fnParams, id);
 }
 func getMaxFloatValue(this: &Type) -> f64 {
     assert(isFloat(this), "Type.getMaxFloatValue() called on non-Float");

@@ -9,6 +9,9 @@
 func foo(a: u64) {
 }
 
+func foo(a: i16) {
+}
+
 func bar(a: i32) {
 }
 

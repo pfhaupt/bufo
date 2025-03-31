@@ -4,8 +4,6 @@
 //! CODE: 1
 //! ERROR:
 //! Could not infer which function to call.
-//! Context allows this function to be called.
-//! Context allows this function to be called.
 //! Could not find matching signature for call to function `foo`.
 //! A function with that name is located here.
 //! A function with that name is located here.

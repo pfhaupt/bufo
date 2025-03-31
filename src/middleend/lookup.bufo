@@ -1,4 +1,5 @@
 import "prelude.bufo";
+import "libc.bufo";
 import "substr.bufo";
 import "string.bufo";
 import "../util/span.bufo";
@@ -45,21 +46,18 @@ func resolveFunctionByName(this: &Lookup, currentModule: usize, name: &Token) ->
     return list;
 }
 
-func resolveAllFunctionsWithReturnType(this: &Lookup, currentModule: usize, name: &Token, typ: &Type, list: &FunctionLookupList) -> bool {
-    trace("Lookup.resolveAllFunctionsWithReturnType");
+func resolveAllFunctionsWithSignature(this: &Lookup, currentModule: usize, name: &Token, typ: &Type) -> FunctionLookupList {
+    trace("Lookup.resolveAllFunctionsWithSignature");
     // FIXME: Would be cool if this method didn't create copies of the FunctionLookups
     let currModule: &ModuleLookup = at(&this.modules, currentModule);
-    if (!resolveAllFunctionsWithReturnType(currModule, name, typ, list)) {
-        return false;
-    }
+    let list: FunctionLookupList = blank;
+    extend(&list, &resolveAllFunctionsWithSignature(currModule, name, typ));
     for (let i: usize = 0; i < currModule.imports.length; i = i + 1) {
         let imp: &ImportLookup = at(&currModule.imports, i);
         let importedModule: &ModuleLookup = at(&this.modules, imp.moduleID);
-        if (!resolveAllFunctionsWithReturnType(importedModule, name, typ, list)) {
-            return false;
-        }
+        extend(&list, &resolveAllFunctionsWithSignature(importedModule, name, typ));
     }
-    return true;
+    return list;
 }
 
 func resolveAllStructsWithField(this: &Lookup, currentModule: usize, name: &Token, typ: &Type) -> StructLookupList {
@@ -301,20 +299,59 @@ func resolveFunctionByName(this: &ModuleLookup, name: &Token) -> FunctionLookupL
     return list;
 }
 
-func resolveAllFunctionsWithReturnType(this: &ModuleLookup, name: &Token, typ: &Type, list: &FunctionLookupList) -> bool {
-    trace("ModuleLookup.resolveAllFunctionsWithReturnType");
+func resolveAllFunctionsWithSignature(this: &ModuleLookup, name: &Token, typ: &Type) -> FunctionLookupList {
+    trace("ModuleLookup.resolveAllFunctionsWithSignature");
+    let list: FunctionLookupList = blank;
+    assert(isFunction(typ), "resolveAllFunctionsWithSignature called with non-function type signature");
     for (let i: usize = 0; i < this.functions.length; i = i + 1) {
         let f: &FunctionLookup = at(&this.functions, i);
         if (!equals(&f.name.content, &name.content)) {
             continue;
         }
         let _rt = at(&types, getType(&f.fnType));
-        let retType = at(&types, _rt.typeIndex);
-        if (equals(retType, typ)) {
-            push(list, *f);
+        assert(isFunction(_rt));
+        if (typ.fnParams.length != _rt.fnParams.length) continue;
+        let retType1 = at(&types, typ.typeIndex);
+        let retType2 = at(&types, _rt.typeIndex);
+        if (PRINT_DEBUG) {
+            let s1 = toString(retType1);
+            let s2 = toString(retType2);
+            printf("[DEBUG] Return Type 1: %s\n", s1.buffer);
+            printf("[DEBUG] Return Type 2: %s\n", s2.buffer);
+            drop(&s2);
+            drop(&s1);
+        }
+        if (!isUnknown(retType1)) if (!equals(retType1, retType2)) {
+            debug("Not adding: return type mismatch");
+            continue;
+        }
+        let succ = true;
+        for (let j: usize = 0; j < typ.fnParams.length; j = j + 1) {
+            let p1 = getParam(typ, j);
+            let p2 = getParam(_rt, j);
+            if (!isType(p1)) continue;
+            let t1 = at(&types, getType(p1));
+            let t2 = at(&types, getType(p2));
+            if (PRINT_DEBUG) {
+                let s1 = toString(t1);
+                let s2 = toString(t2);
+                printf("[DEBUG] Type 1: %s\n", s1.buffer);
+                printf("[DEBUG] Type 2: %s\n", s2.buffer);
+                drop(&s2);
+                drop(&s1);
+            }
+            if (!isUnknown(t1)) if (!equals(t1, t2)) {
+                debug("Not adding function");
+                succ = false;
+                break;
+            }
+        }
+        if (succ) {
+            debug("adding function");
+            push(&list, *f);
         }
     }
-    return true;
+    return list;
 }
 
 func resolveAllStructsWithField(this: &ModuleLookup, name: &Token, typ: &Type) -> StructLookupList {

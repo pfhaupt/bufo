@@ -281,6 +281,13 @@ struct ParsedFuncDecl {
     typeState: TCState;
 }
 
+func hasAttribute(this: &ParsedFuncDecl, attr: usize) -> bool {
+    trace("ParsedFuncDecl.hasAttribute");
+    for (let i: usize = 0; i < this.attrs.length; i = i + 1) {
+        if (at(&this.attrs, i).kind == attr) return true;
+    }
+    return false;
+}
 func getID(this: &ParsedFuncDecl) -> usize {
     trace("ParsedFuncDecl.getID");
     return indexOf(&funcDecls, this);
@@ -660,13 +667,14 @@ comptime BIN_CMP_EQ: usize = 11;
 comptime BIN_ASSIGN: usize = 12;
 comptime BIN_AS: usize = 13;
 comptime BIN_INDEXED_ACCESS: usize = 14;
-comptime BIN_MOD: usize = 15;
+comptime BIN_CALL: usize = 15;
+comptime BIN_MOD: usize = 16;
 // FIXME: Those names are pretty easy to mix up
-comptime BIN_LAND: usize = 16;
-comptime BIN_LOR: usize = 17;
-comptime BIN_BAND: usize = 18;
-comptime BIN_BOR: usize = 19;
-comptime BIN_BXOR: usize = 20;
+comptime BIN_LAND: usize = 17;
+comptime BIN_LOR: usize = 18;
+comptime BIN_BAND: usize = 19;
+comptime BIN_BOR: usize = 20;
+comptime BIN_BXOR: usize = 21;
 func binOpFromKind(kind: usize) -> usize {
     trace("binOpFromKind");
     if (kind == TOKEN_PLUS_SINGLE) return BIN_PLUS;
@@ -684,6 +692,7 @@ func binOpFromKind(kind: usize) -> usize {
     // FIXME: We can't know if this is actually KEYWORD_AS
     else if (kind == TOKEN_KEYWORD) return BIN_AS;
     else if (kind == TOKEN_SQUARE_OPEN) return BIN_INDEXED_ACCESS;
+    else if (kind == TOKEN_PAREN_OPEN) return BIN_CALL;
     else if (kind == TOKEN_PERCENT) return BIN_MOD;
     else if (kind == TOKEN_PIPE_SINGLE) return BIN_BOR;
     else if (kind == TOKEN_PIPE_DOUBLE) return BIN_LOR;

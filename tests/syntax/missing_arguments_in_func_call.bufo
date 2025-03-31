@@ -3,8 +3,8 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Could not find matching signature for call to function `bla`.
-//! A function with that name is located here.
+//! Call expects 3 arguments, but 2 were provided.
+//! Call expression has type func (i32, i32, i32).
 
 func bla(a: i32, b: i32, c: i32) {
 }

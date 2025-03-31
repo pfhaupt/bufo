@@ -342,21 +342,18 @@ func buildIntTruncate(this: &LLVMBuilder, val: LLVMValue, typ: LLVMType, name: S
     assert(!isNull(value), "Could not build int truncate");
     return newLLVMValueFromRef(value);
 }
-func buildCall(this: &LLVMBuilder, fn: LLVMValue, args: LLVMValueList, name: SubStr) -> LLVMValue {
+func buildCall(this: &LLVMBuilder, fn: LLVMValue, fnType: LLVMType, args: LLVMValueList, retType: LLVMType, name: SubStr) -> LLVMValue {
     trace("LLVMBuilder.buildCall");
     guardReference(this);
     assert(sizeof LLVMValue == 8);
-    let typ: LLVMType = getGlobalType(&fn);
-    assert(isFunction(&typ), "Call expected LLVMType to be a function!");
-    let ret: LLVMType = getReturnType(&typ);
     let _n: String = blank;
-    if (isVoid(&ret)) {
+    if (isVoid(&retType)) {
         // LLVM complains about named calls that return void
         _n = newStringFromStrLit("");
     } else {
         _n = toString(&name);
     }
-    let value: LLVMValueRef = LLVMBuildCall2(this.ref, typ.ref, fn.ref, args.elements as &LLVMValueRef, args.length as u32, _n.buffer);
+    let value: LLVMValueRef = LLVMBuildCall2(this.ref, fnType.ref, fn.ref, args.elements as &LLVMValueRef, args.length as u32, _n.buffer);
     drop(&_n);
     clear(&args);
     assert(!isNull(value), "Could not build call");

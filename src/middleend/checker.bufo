@@ -39,6 +39,7 @@ comptime ERROR_ANY_DEREF: usize = 23;
 comptime ERROR_MEMBER_ACCESS_NON_STRUCT: usize = 24;
 comptime ERROR_MEMBER_ACCESS_TOO_MANY_OPTIONS: usize = 25;
 comptime ERROR_FUNCTION_CALL_TOO_MANY_OPTIONS: usize = 26;
+comptime ERROR_CALL_TO_NON_FUNCTION: usize = 27;
 
 comptime TCSTATE_INVALID: usize = 0;
 comptime TCSTATE_ERROR: usize = 1;
@@ -242,7 +243,7 @@ func reportDuplicateFunction(this: &TypeChecker, f1: &FunctionLookup, f2: &Funct
 func reportNoFunctionCallCandidate(this: &TypeChecker, callID: usize, functions: &FunctionLookupList) -> TCState {
     trace("TypeChecker.reportNoFunctionCallCandidate");
     let callExpr: &ParsedExpr = at(&exprs, callID);
-    assert(callExpr.kind == EXPR_CALL, "reportNoFunctionCallCandidate: Expected expr to be a call");
+    assert(callExpr.kind == EXPR_NAME, "reportNoFunctionCallCandidate: Expected expr to be a call");
     let loc: String = toString(&callExpr.origToken.span);
     let name: String = toString(&callExpr.origToken.content);
     fprintf(stderr, "%s: %s: Could not find matching signature for call to function `%s`.\n", loc.buffer, ERR_STR, name.buffer);
@@ -385,6 +386,45 @@ func reportFunctionCallTooManyOptions(this: &TypeChecker, expr: &ParsedExpr, fun
     drop(&loc);
     this.typeError = true;
     return newTCStateFailure(ERROR_FUNCTION_CALL_TOO_MANY_OPTIONS);
+}
+
+func reportFunctionCallTooManyOptions(this: &TypeChecker, expr: &ParsedExpr) -> TCState {
+    trace("TypeChecker.reportFunctionCallTooManyOptions");
+    let loc = toString(&expr.span);
+    fprintf(stderr, "%s: %s: Could not infer which function to call.\n", loc.buffer, ERR_STR);
+    drop(&loc);
+    this.typeError = true;
+    return newTCStateFailure(ERROR_FUNCTION_CALL_TOO_MANY_OPTIONS);
+}
+
+func reportCallToNonFunction(this: &TypeChecker, span: Span, base: &Type) -> TCState {
+    trace("TypeChecker.reportCallToNonFunction");
+    let loc = toString(&span);
+    let typ = toString(base);
+    fprintf(stderr, "%s: %s: Can't call expression of type %s.\n", loc.buffer, ERR_STR, typ.buffer);
+    fprintf(stderr, "%s: %s: Currently, all variables (including global variables) shadow functions.\n", loc.buffer, NOTE_STR);
+    fprintf(stderr, "%s: %s: This is a known limitation and will be fixed soon.\n", loc.buffer, NOTE_STR);
+    drop(&typ);
+    drop(&loc);
+    this.typeError = true;
+    return newTCStateFailure(ERROR_CALL_TO_NON_FUNCTION);
+}
+
+func reportArgumentCountMismatch(this: &TypeChecker, span: Span, base: &Type, args: usize) -> TCState {
+    trace("TypeChecker.reportArgumentCountMismatch");
+    let loc = toString(&span);
+    let typ = toString(base);
+    let s = "arguments";
+    let c = base.fnParams.length;
+    if (c == 1) s = "argument";
+    let w = "were";
+    if (args == 1) w = "was";
+    fprintf(stderr, "%s: %s: Call expects %llu %s, but %llu %s provided.\n", loc.buffer, ERR_STR, c, s, args, w);
+    fprintf(stderr, "%s: %s: Call expression has type %s.\n", loc.buffer, NOTE_STR, typ.buffer);
+    drop(&typ);
+    drop(&loc);
+    this.typeError = true;
+    return newTCStateFailure(ERROR_CALL_TO_NON_FUNCTION);
 }
 
 func emergencyPrint(this: &TypeChecker, where: Span) {
@@ -586,7 +626,7 @@ func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupLi
     this.currentFunction = funcLookup;
     let failure: TCState = blank;
     clear(&funcLookup.params);
-    let params: UsizeList = blank;
+    let params: TCStateList = blank;
     for (let i: usize = 0; i < function.params.paramLength; i = i + 1) {
         let typ: usize = getTypeAtIndex(&function.params, i);
         let name: Token = getNameAtIndex(&function.params, i);
@@ -600,7 +640,7 @@ func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupLi
             failure = state;
             continue;
         }
-        push(&params, getType(&state));
+        push(&params, state);
         addParameter(funcLookup, NODE_ID_OFFSET + i, name, state);
     }
     if (!isInvalid(&failure)) return failure;
@@ -608,6 +648,8 @@ func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupLi
     if (isError(&retState)) return retState;
     let fnType = newType(TYPE_KIND_FUNCTION, getType(&retState));
     fnType.fnParams = params;
+    if (function.params.isVarArg) fnType.arraySize = fnType.arraySize | FUNC_TYPE_VARIADIC;
+    if (hasAttribute(function, ATTR_NORETURN)) fnType.arraySize = fnType.arraySize | FUNC_TYPE_NORETURN;
     let state = newTCStateType(getID(fnType));
     funcLookup.fnType = state;
     function.typeState = state;
@@ -650,7 +692,6 @@ func typeCheckBlock(this: &TypeChecker, blockID: usize, scopes: &ScopeLookupList
     for (let i: usize = 0; i < block.stmtLength; i = i + 1) {
         let stmtState: TCState = typeCheckStmt(this, getStmtAtIndex(block, i), scopes);
         if (isError(&stmtState)) {
-            let err: usize = getError(&stmtState);
             blockState = stmtState;
         }
     }
@@ -668,7 +709,9 @@ func typeCheckStmt(this: &TypeChecker, stmtID: usize, scopes: &ScopeLookupList) 
     if (stmt.ignored) return blank;
     if (stmt.kind == STMT_BLOCK) {
         let blockState: TCState = typeCheckBlock(this, stmt.block, scopes);
-        if (isError(&blockState)) return blockState;
+        if (isError(&blockState)) {
+            return blockState;
+        }
         (*stmt).typeState = blockState;
         return blockState;
     } else if (stmt.kind == STMT_VAR_DECL) {
@@ -677,8 +720,13 @@ func typeCheckStmt(this: &TypeChecker, stmtID: usize, scopes: &ScopeLookupList) 
         if (isSuccess(&stmt.typeState))
             return stmt.typeState;
         let exprState: TCState = typeCheckExpr(this, stmt.expr, scopes);
-        if (isError(&exprState)) return exprState;
-        if (wantsInfer(&exprState)) todo_with_msg("stmt expr infer");
+        if (isError(&exprState)) {
+            return exprState;
+        }
+        if (wantsInfer(&exprState)) {
+            let noneType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_NONE);
+            exprState = inferTypeOntoExpr(this, stmt.expr, getID(noneType));
+        }
         let expr: &ParsedExpr = at(&exprs, stmt.expr);
         if (!isType(&exprState)) {
             printf("%llu\n", exprState.kind);
@@ -1056,142 +1104,50 @@ func typeCheckExprCall(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupLi
     // REVIEW: Would be cool if the call base could be any expression, not just an identifier
     let expr: &ParsedExpr = at(&exprs, exprID);
     assert(expr.kind == EXPR_CALL);
-    let name: Token = expr.origToken;
-    let functions: FunctionLookupList = resolveFunctionByName(&this.lookup, this.currentModule, &name);
-    if (functions.length == 0) {
-        let loc: String = getLocation(&name);
-        let n: String = toString(&name.content);
-        fprintf(stderr, "%s: %s: Call to unknown function `%s`.\n", loc.buffer, ERR_STR, n.buffer);
-        let alternatives: FunctionLookupList = searchAllModulesForFunctionName(&this.lookup, &name);
-        for (let i: usize = 0; i < alternatives.length; i = i + 1) {
-            let t: &FunctionLookup = at(&alternatives, i);
-            let loc: String = getLocation(&t.name);
-            fprintf(stderr, "%s: %s: A function with that name is located here. Import the module to use it.\n", loc.buffer, NOTE_STR);
-            drop(&loc);
-        }
-        drop(&n);
-        drop(&loc);
-        this.typeError = true;
-        return newTCStateFailure(ERROR_NO_SUCH_FUNCTION);
-    }
-    let callContext: &ArrayContext = &expr.arrayContext;
-    let arguments: TCStateList = blank;
+    // First sweep
+    let callContext = &expr.arrayContext;
     for (let i: usize = 0; i < callContext.elemLength; i = i + 1) {
         let argID: usize = getElementAtIndex(callContext, i);
         let arg: TCState = typeCheckExpr(this, argID, scopes);
         if (isError(&arg)) return arg;
-        push(&arguments, arg);
     }
-    assert(arguments.length == callContext.elemLength);
-    let candidates: FunctionLookupList = blank;
-    let mark: TCState = markFunctionCallCandidates(this, callContext, &functions, &candidates, &arguments);
-    if (isError(&mark)) return mark;
-    // functions contains all functions with the same amount of arguments and
-    // candidates where infer-semantics could validate the function
-    // e.g. foo(i: i32) + foo(i: u64) for foo(5)
-    let globalID: usize = 0;
-    let sweep: TCState = selectFunctionCallCandidate(this, exprID, callContext, &functions, &candidates, &arguments, &globalID);
-    if (isError(&sweep)) return sweep;
-    if (wantsInfer(&sweep)) return sweep;
-    assert(isType(&sweep));
-    (*expr).lhs = globalID;
-    return sweep;
-}
-
-func markFunctionCallCandidates(
-    this: &TypeChecker,
-    callContext: &ArrayContext,
-    functions: &FunctionLookupList,
-    candidates: &FunctionLookupList,
-    arguments: &TCStateList,
-) -> TCState {
-    trace("TypeChecker.markFunctionCallCandidates");
-    for (let i: usize = 0; i < functions.length; i = i + 1) {
-        let f: &FunctionLookup = at(functions, i);
-        if (!f.isVarArg && f.params.length != arguments.length) {
-            continue;
+    let callBase = typeCheckExpr(this, expr.lhs, scopes);
+    if (isError(&callBase)) return callBase;
+    if (wantsInfer(&callBase)) {
+        let fnType = newType(TYPE_KIND_FUNCTION, TYPE_UNKNOWN);
+        for (let i: usize = 0; i < callContext.elemLength; i = i + 1) {
+            let argID: usize = getElementAtIndex(callContext, i);
+            push(&fnType.fnParams, at(&exprs, argID).typeState);
         }
-        let paramCheck = typeCheckFunctionParameters(this, &f.params, callContext, arguments, true);
-        if (isError(&paramCheck)) {
-            continue;
-        }
-        push(candidates, *f);
+        let baseState = tryInferTypeOntoExpr(this, expr.lhs, getID(fnType), false);
+        if (isError(&baseState)) return baseState;
+        if (wantsInfer(&baseState)) return baseState;
+        callBase = baseState;
     }
-    return newTCStateSuccess();
-}
-
-func selectFunctionCallCandidate(
-    this: &TypeChecker,
-    exprID: usize,
-    callContext: &ArrayContext,
-    functions: &FunctionLookupList,
-    candidates: &FunctionLookupList,
-    arguments: &TCStateList,
-    funcID: &usize,
-) -> TCState {
-    trace("TypeChecker.selectFunctionCallCandidate");
-    if (candidates.length == 0) {
-        return reportNoFunctionCallCandidate(this, exprID, functions);
-    } else if (candidates.length > 1) {
-        return newTCStatePleaseInfer();
+    let baseType = at(&types, getType(&callBase));
+    if (!isFunction(baseType)) {
+        return reportCallToNonFunction(this, expr.span, baseType);
     }
-    assert(candidates.length == 1, "selectFunctionCallCandidate: Expected exactly one candidate");
-    let f: &FunctionLookup = at(candidates, 0);
-    let paramCheck = typeCheckFunctionParameters(this, &f.params, callContext, arguments, false);
-    if (isError(&paramCheck)) return paramCheck;
-    *funcID = f.globalID;
-    let retType: TCState = f.fnType;
-    assert(isSuccess(&retType), "selectFunctionCallCandidate: Expected valid function return type");
-    let rt = at(&types, getType(&retType));
-    return newTCStateType(rt.typeIndex);
-}
-
-func typeCheckFunctionArguments(this: &TypeChecker, params: &VariableLookupList, callContext: &ArrayContext, arguments: &TCStateList, checkOnly: bool) -> TCState {
-    trace("TypeChecker.typeCheckFunctionArguments");
-    if (params.length != callContext.elemLength) {
-        todo_with_msg("typeCheckFunctionArguments: param count mismatch");
+    if (!isVariadic(baseType) && callContext.elemLength != baseType.fnParams.length) {
+        return reportArgumentCountMismatch(this, expr.span, baseType, callContext.elemLength);
     }
-    for (let i: usize = 0; i < callContext.elemLength; i = i + 1) {
-        let param = at(params, i);
-        let pTypeID = getType(&param.typeState);
+    for (let i: usize = 0; i < baseType.fnParams.length; i = i + 1) {
         let argID: usize = getElementAtIndex(callContext, i);
-        let arg: TCState = tryInferTypeOntoExpr(this, argID, pTypeID, checkOnly);
-        if (isError(&arg)) {
-            todo_with_msg("typeCheckFunctionArguments: arg param couldnt infer");
+        let arg: TCState = typeCheckExpr(this, argID, scopes);
+        if (isError(&arg)) return arg;
+        if (wantsInfer(&arg)) {
+            let p = getParam(baseType, i);
+            arg = inferTypeOntoExpr(this, argID, getType(p));
+            if (isError(&arg)) return arg;
         }
-        push(arguments, arg);
-    }
-    assert(arguments.length == callContext.elemLength);
-    return newTCStateSuccess();
-}
-
-func typeCheckFunctionParameters(this: &TypeChecker, params: &VariableLookupList, callContext: &ArrayContext, arguments: &TCStateList, checkOnly: bool) -> TCState {
-    let succ = true;
-    for (let j: usize = 0; j < params.length; j = j + 1) {
-        let argState: TCState = *at(arguments, j);
-        let param: &VariableLookup = at(params, j);
-        let paramState: &TCState = &param.typeState;
-        assert(isSuccess(paramState), "Expected valid function parameter");
-        let paramType: &Type = at(&types, getType(paramState));
-        if (wantsInfer(&argState)) {
-            argState = tryInferTypeOntoExpr(this, getElementAtIndex(callContext, j), getID(paramType), checkOnly);
-            if (isError(&argState)) {
-                todo_with_msg("error when inferring type of param onto argument");
-            }
-            assert(isType(&argState), "Did not infer type of param onto argument properly");
-        }
-        let argType: &Type = at(&types, getType(&argState));
+        let argType = at(&types, getType(&arg));
+        let paramType = at(&types, getType(getParam(baseType, i)));
         if (!equals(argType, paramType)) {
-            if (!checkOnly) {
-                let e = at(&exprs, getElementAtIndex(callContext, j));
-                reportTypeMismatch(this, e.span, paramType, argType);
-            }
-            succ = false;
-            break;
+            let e = at(&exprs, argID);
+            reportTypeMismatch(this, e.span, paramType, argType);
         }
     }
-    if (!succ) return newTCStateFailure(ERROR_TYPE_MISMATCH);
-    return newTCStateSuccess();
+    return newTCStateType(baseType.typeIndex);
 }
 
 func typeCheckExprStructInit(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupList) -> TCState {
@@ -1518,7 +1474,29 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
     }
     let typ: &Type = at(&types, typeID);
     let tid: TCState = blank;
-    if (expr.kind == EXPR_INT_LIT) {
+    if (expr.kind == EXPR_NAME) {
+        assert(isFunction(typ), "Can only try to infer functions onto identifiers for now");
+        let functions = resolveAllFunctionsWithSignature(&this.lookup, this.currentModule, &expr.origToken, typ);
+        if (functions.length == 0) {
+            if (checkOnly) {
+                tid = newTCStateFailure(ERROR_NO_SUCH_FUNCTION);
+            } else {
+                let all = resolveFunctionByName(&this.lookup, this.currentModule, &expr.origToken);
+                tid = reportNoFunctionCallCandidate(this, exprID, &all);
+                drop(&all);
+            }
+        } else if (functions.length == 1) {
+            let f = at(&functions, 0);
+            assert(f.params.length == typ.fnParams.length);
+            if (!checkOnly) {
+                expr.lhs = f.globalID;
+            }
+            tid = f.fnType;
+        } else {
+            tid = newTCStatePleaseInfer();
+        }
+        drop(&functions);
+    } else if (expr.kind == EXPR_INT_LIT) {
         if (isChar(typ)) {
             if (!checkOnly) {
                 let l: String = getLocation(&expr.origToken);
@@ -1713,44 +1691,35 @@ func tryInferTypeOntoCall(this: &TypeChecker, exprID: usize, typeID: usize, chec
     let typ = at(&types, typeID);
     assert(expr.kind == EXPR_CALL);
     let functions: FunctionLookupList = blank;
-    assert(resolveAllFunctionsWithReturnType(&this.lookup, this.currentModule, &expr.origToken, typ, &functions), "Could not resolve functions");
-    let callContext: &ArrayContext = &expr.arrayContext;
-    let actual: FunctionLookupList = blank;
-    for (let i: usize = 0; i < functions.length; i = i + 1) {
-        let f = at(&functions, i);
-        let arguments: TCStateList = blank;
-        let state = typeCheckFunctionArguments(this, &f.params, callContext, &arguments, true);
-        if (isError(&state)) {
-            todo_with_msg("argument fail");
-        }
-        state = typeCheckFunctionParameters(this, &f.params, callContext, &arguments, checkOnly);
-        if (isError(&state)) {
-            todo_with_msg("parameter fail");
-        }
-        push(&actual, *f);
+    let fnType = newType(TYPE_KIND_FUNCTION, typeID);
+    let callContext = &expr.arrayContext;
+    for (let i: usize = 0; i < callContext.elemLength; i = i + 1) {
+        let argID: usize = getElementAtIndex(callContext, i);
+        push(&fnType.fnParams, at(&exprs, argID).typeState);
     }
-    if (actual.length == 1) {
-        let f = at(&actual, 0);
-        if (!checkOnly) {
-            let arguments: TCStateList = blank;
-            let state = typeCheckFunctionArguments(this, &f.params, callContext, &arguments, false);
-            assert(isSuccess(&state));
-            (*expr).lhs = f.globalID;
-        }
-        let _rt = at(&types, getType(&f.fnType));
-        return newTCStateType(_rt.typeIndex);
-    } else if (actual.length == 0) {
-        if (!checkOnly) {
-            let functions: FunctionLookupList = resolveFunctionByName(&this.lookup, this.currentModule, &expr.origToken);
-            return reportNoFunctionCallCandidate(this, getID(expr), &functions);
-        }
-        return newTCStateFailure(ERROR_TYPE_MISMATCH);
-    } else {
-        if (!checkOnly) {
-            return reportFunctionCallTooManyOptions(this, expr, &actual);
-        }
-        return newTCStateFailure(ERROR_TYPE_MISMATCH);
+    let baseState = tryInferTypeOntoExpr(this, expr.lhs, getID(fnType), checkOnly);
+    if (isError(&baseState)) return baseState;
+    if (wantsInfer(&baseState)) {
+        return reportFunctionCallTooManyOptions(this, expr);
     }
+    assert(isType(&baseState), "tryInferOntoCall: Base is not a type");
+    let baseFunc = at(&types, getType(&baseState));
+    assert(isFunction(baseFunc), "tryInferTypeOntoCall: Base is not a function");
+    assert(baseFunc.typeIndex == typeID, "tryInferTypeOntoCall: Base return type doesn't match expected");
+    assert(baseFunc.fnParams.length == callContext.elemLength, "tryInferTypeOntoCall: Base expects different count of arguments");
+    let state: TCState = newTCStateSuccess();
+    for (let i: usize = 0; i < callContext.elemLength; i = i + 1) {
+        let p = getParam(baseFunc, i);
+        let s1 = tryInferTypeOntoExpr(this, getElementAtIndex(callContext, i), getType(p), checkOnly);
+        if (isError(&s1)) {
+            state = s1;
+        }
+    }
+    if (!isSuccess(&state)) {
+        todo_with_msg("infer arg failed");
+    }
+    if (checkOnly) return newTCStateSuccess();
+    return newTCStateType(typeID);
 }
 
 func tryInferTypeOntoMemberAccess(this: &TypeChecker, exprID: usize, typeID: usize, checkOnly: bool) -> TCState {
