@@ -450,7 +450,8 @@ comptime PARSED_TYPE_REF: usize = 17;
 comptime PARSED_TYPE_ARRAY: usize = 18;
 comptime PARSED_TYPE_F32: usize = 19;
 comptime PARSED_TYPE_F64: usize = 20;
-comptime PARSED_TYPE_BUILTIN: usize = 21;
+comptime PARSED_TYPE_FUNC: usize = 21;
+comptime PARSED_TYPE_BUILTIN: usize = 22;
 func BUILD_A_TYPE(s: &char) -> SubStr {
     return SubStr {
         start: s,
@@ -494,6 +495,7 @@ struct ParsedTypeNode {
     span: Span;
     kind: usize;
     underlyingID: usize;
+    fnParams: UsizeList;
     arraySize: usize;
     nameTkn: Token;
     typeState: TCState;

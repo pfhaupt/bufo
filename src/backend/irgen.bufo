@@ -2025,7 +2025,17 @@ func prepareParameter(this: &IRGen, function: &IRFunc, index: usize, span: Span,
             addEntry(last(&function.scopes), name, allocReg, false);
         }
     } else if (getSize(typ) > 8) {
-        unreachable("IRGen.prepareParameter: The only types that are bigger than 8 bytes are structs");
+        let t = newType(TYPE_KIND_POINTER, TYPE_U8);
+        let value: RegIndex = allocateRegister(function, t);
+        let allocType: &Type = at(&types, intoPointer(typ));
+        let allocReg: RegIndex = allocateRegister(function, allocType);
+        buildGetParam(function, span, value, index, getSize(t));
+        let instance: RegIndex = allocateRegister(function, typ);
+        buildLoad(function, span, instance, value);
+
+        buildAlloca(function, span, allocReg, getSize(typ));
+        buildStore(function, span, allocReg, instance);
+        addEntry(last(&function.scopes), name, allocReg, false);
     } else {
         let allocType: &Type = at(&types, intoPointer(typ));
         let allocReg: RegIndex = allocateRegister(function, allocType);

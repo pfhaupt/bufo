@@ -93,7 +93,12 @@ func getMangledName(this: &Type) -> String {
         }
         return s;
     } else if (this.kind == TYPE_KIND_ARRAY) {
-        todo_with_msg("mangled type array");
+        let s: String = newStringFromStrLit("A");
+        let r = getMangledName(at(&types, this.typeIndex));
+        pushString(&s, &r);
+        drop(&r);
+        pushNumber(&s, this.arraySize);
+        return s;
     } else if (this.kind == TYPE_KIND_UNKNOWN) {
         todo_with_msg("mangled type unknown???");
     } else {
@@ -311,6 +316,8 @@ func toString(this: &Type) -> String {
 }
 func getAlignment(this: &Type) -> usize {
     if (this.kind == TYPE_KIND_POINTER) {
+        return 8;
+    } else if (this.kind == TYPE_KIND_FUNCTION) {
         return 8;
     } else if (this.kind == TYPE_KIND_PRIMITIVE) {
         if (this.typeIndex == TYPE_UNKNOWN) unreachable("Type.getAlignment(TYPE_UNKNOWN) called");

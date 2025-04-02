@@ -1881,7 +1881,23 @@ func typeCheckTypeNode(this: &TypeChecker, typeID: usize) -> TCState {
     if (typ.ignored) return blank;
     if (isSuccess(&typ.typeState)) return typ.typeState;
     let tid: usize = 0;
-    if (typ.kind == PARSED_TYPE_REF) {
+    if (typ.kind == PARSED_TYPE_FUNC) {
+        let retState: TCState = typeCheckTypeNode(this, typ.underlyingID);
+        if (isError(&retState)) return retState;
+        let params: TCStateList = blank;
+        let fnType = newType(TYPE_KIND_FUNCTION, getType(&retState));
+        let error: TCState = blank;
+        for (let i: usize = 0; i < typ.fnParams.length; i = i + 1) {
+            let state = typeCheckTypeNode(this, *at(&typ.fnParams, i));
+            if (isError(&state)) {
+                error = state;
+            }
+            push(&params, state);
+        }
+        if (isError(&error)) return error;
+        fnType.fnParams = params;
+        tid = getID(fnType);
+    } else if (typ.kind == PARSED_TYPE_REF) {
         let under: TCState = typeCheckTypeNode(this, typ.underlyingID);
         if (isError(&under)) return under;
         let underlyingType: usize = getType(&under);

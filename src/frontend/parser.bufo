@@ -298,7 +298,7 @@ func parseStructDecl(this: &Parser) -> &ParsedStructDecl {
     while (!parsedEOF(this) && !at(this, TOKEN_CURLY_CLOSE)) {
         let tkn = expect(this, TOKEN_IDENT);
         expect(this, TOKEN_COLON);
-        let typ: &ParsedTypeNode = parseTypeDecl(this);
+        let typ: &ParsedTypeNode = parseTypeNode(this);
         addField(&structContext, tkn, typ);
         expect(this, TOKEN_SEMI_COLON);
     }
@@ -331,7 +331,7 @@ func parseFuncDecl(this: &Parser, isExtern: bool) -> &ParsedFuncDecl {
 func parseReturnType(this: &Parser) -> &ParsedTypeNode {
     trace("Parser.parseReturnType");
     if (eat(this, TOKEN_ARROW)) {
-        return parseTypeDecl(this);
+        return parseTypeNode(this);
     } else {
         return newBuiltinTypeDecl(peek(&this.lexer).span, PARSED_TYPE_NONE);
     }
@@ -359,7 +359,7 @@ func parseParameters(this: &Parser, parentName: Token) -> ParamContext {
         if (isThis) {
             let dis: Token = expect(this, TOKEN_IDENT);
             if (eat(this, TOKEN_COLON)) {
-                let t = parseTypeDecl(this);
+                let t = parseTypeNode(this);
                 addParameter(&context, maybeThis, t);
             } else {
                 let thisType: &ParsedTypeNode = newParsedTypeNode(maybeThis.span, PARSED_TYPE_IDENT);
@@ -375,7 +375,7 @@ func parseParameters(this: &Parser, parentName: Token) -> ParamContext {
         } else {
             let name: Token = expect(this, TOKEN_IDENT);
             expect(this, TOKEN_COLON);
-            let typ: &ParsedTypeNode = parseTypeDecl(this);
+            let typ: &ParsedTypeNode = parseTypeNode(this);
             addParameter(&context, name, typ);
         }
         if (!eat(this, TOKEN_COMMA))
@@ -567,7 +567,7 @@ func parseVarDeclStmt(this: &Parser, kw: Token, isGlobal: bool) -> &ParsedStmt {
     let data: VarDeclContext = blank;
     data.name = nameTkn;
     if (eat(this, TOKEN_COLON)) {
-        data.typeID = getID(parseTypeDecl(this));
+        data.typeID = getID(parseTypeNode(this));
     }
     expect(this, TOKEN_EQUAL_SINGLE);
     data.exprID = getID(parseExpr(this));
@@ -584,10 +584,32 @@ func parseVarDeclStmt(this: &Parser, kw: Token, isGlobal: bool) -> &ParsedStmt {
     return decl;
 }
 
-func parseTypeDecl(this: &Parser) -> &ParsedTypeNode {
-    trace("Parser.parseTypeDecl");
+func parseTypeNode(this: &Parser) -> &ParsedTypeNode {
+    trace("Parser.parseTypeNode");
     let loc: Token = peek(&this.lexer);
-    if (eat(this, TOKEN_AMPERSAND_DOUBLE)) {
+    if (at(this, TOKEN_KEYWORD)) {
+        let kw = peek(&this.lexer);
+        if (!equals(&kw.content, &KEYWORD_FUNC)) {
+            expect(this, TOKEN_IDENT);
+        }
+        next(&this.lexer);
+        expect(this, TOKEN_PAREN_OPEN);
+        let params: UsizeList = blank;
+        while (!at(this, TOKEN_PAREN_CLOSE)) {
+            let pt = parseTypeNode(this);
+            if (!at(this, TOKEN_PAREN_CLOSE)) {
+                expect(this, TOKEN_COMMA);
+            }
+            push(&params, getID(pt));
+        }
+        expect(this, TOKEN_PAREN_CLOSE);
+        let retType = parseReturnType(this);
+        let span = newSpanBetween(&kw.span, &retType.span);
+        let funcNode = newParsedTypeNode(span, PARSED_TYPE_FUNC);
+        funcNode.underlyingID = getID(retType);
+        funcNode.fnParams = params;
+        return funcNode;
+    } else if (eat(this, TOKEN_AMPERSAND_DOUBLE)) {
         let kw: Token = peek(&this.lexer);
         if (equals(&kw.content, &KEYWORD_MUT)) {
             next(&this.lexer);
@@ -596,7 +618,7 @@ func parseTypeDecl(this: &Parser) -> &ParsedTypeNode {
             drop(&loc);
             exit(1);
         }
-        let typ: &ParsedTypeNode = parseTypeDecl(this);
+        let typ: &ParsedTypeNode = parseTypeNode(this);
         let span: Span = newSpanBetween(&loc.span, &typ.span);
         let ptr1: &ParsedTypeNode = newParsedTypeNode(span, PARSED_TYPE_REF);
         (*ptr1).underlyingID = getID(typ);
@@ -612,13 +634,13 @@ func parseTypeDecl(this: &Parser) -> &ParsedTypeNode {
             drop(&loc);
             exit(1);
         }
-        let typ: &ParsedTypeNode = parseTypeDecl(this);
+        let typ: &ParsedTypeNode = parseTypeNode(this);
         let span: Span = newSpanBetween(&loc.span, &typ.span);
         let ptr: &ParsedTypeNode = newParsedTypeNode(span, PARSED_TYPE_REF);
         (*ptr).underlyingID = getID(typ);
         return ptr;
     } else if (eat(this, TOKEN_SQUARE_OPEN)) {
-        let typ: &ParsedTypeNode = parseTypeDecl(this);
+        let typ: &ParsedTypeNode = parseTypeNode(this);
         expect(this, TOKEN_SEMI_COLON);
         let size: Token = expect(this, TOKEN_INT_LITERAL);
         let _size: String = toString(&size.content);
@@ -752,7 +774,7 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
             (*expr).origToken = kw;
             return expr;
         } else if (equals(&kw.content, &KEYWORD_SIZEOF)) {
-            let typ: &ParsedTypeNode = parseTypeDecl(this);
+            let typ: &ParsedTypeNode = parseTypeNode(this);
             let span: Span = newSpanBetween(&kw.span, &typ.span);
             let expr: &ParsedExpr = newParsedExpr(span, EXPR_SIZEOF);
             (*expr).lhs = getID(typ);
@@ -786,7 +808,7 @@ func parseSecondaryExpr(this: &Parser, lhs: &ParsedExpr, precedence: usize, asso
     let opTkn: Token = next(&this.lexer);
     let op: usize = binOpFromKind(opTkn.kind);
     if (op == BIN_AS) {
-        let typ: &ParsedTypeNode = parseTypeDecl(this);
+        let typ: &ParsedTypeNode = parseTypeNode(this);
         let span: Span = newSpanBetween(&lhs.span, &typ.span);
         let asop: &ParsedExpr = newParsedExpr(span, EXPR_AS);
         (*asop).op = op;
