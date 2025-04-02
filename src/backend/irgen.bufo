@@ -29,6 +29,7 @@ func equals(this: &IRReg, other: &IRReg) -> bool {
     unreachable("IRReg.equals is not implemented yet");
 }
 
+// NOTE: When you update this list, you must also update the function pointers in the interpreter
 comptime INSTR_INVALID: usize = 0;
 comptime INSTR_ALLOCA: usize = 1;
 comptime INSTR_GET_PARAM: usize = 2;
