@@ -1003,8 +1003,40 @@ func typeCheckExprAs(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupList
     if (isError(&exprState)) return exprState;
     assert(isType(&exprState), "Expected <expr> in `<expr> as <type>` to have a valid type after infer");
     let exprType: &Type = at(&types, getType(&exprState));
-    if (isPointer(typeType) && isPointer(exprType)) {
+    if (isPointer(exprType) && isPointer(typeType)) {
         // PTR as PTR is allowed
+    } else if (isFunction(exprType) && isFunction(typeType)) {
+        // Function as Function is allowed
+        if (*flags.verbose) {
+            let loc = toString(&expr.span);
+            let from = toString(exprType);
+            let to = toString(typeType);
+            fprintf(stderr, "%s: %s: Casting from type %s to type %s.\n",
+                loc.buffer, WARN_STR, from.buffer, to.buffer);
+            drop(&to);
+            drop(&from);
+            drop(&loc);
+        }
+    } else if (isFunction(exprType) && isAny(typeType)) {
+        // Function as Any is allowed
+        if (*flags.verbose) {
+            let loc = toString(&expr.span);
+            let from = toString(typeType);
+            fprintf(stderr, "%s: %s: Casting from type %s to Any.\n",
+                loc.buffer, WARN_STR, from.buffer);
+            drop(&from);
+            drop(&loc);
+        }
+    } else if (isAny(exprType) && isFunction(typeType)) {
+        // Any as Function is allowed
+        if (*flags.verbose) {
+            let loc = toString(&expr.span);
+            let to = toString(typeType);
+            fprintf(stderr, "%s: %s: Casting from Any to type %s.\n",
+                loc.buffer, WARN_STR, to.buffer);
+            drop(&to);
+            drop(&loc);
+        }
     } else if (isPointer(exprType) && isInteger(typeType)) {
         if (getSize(typeType) != getSize(exprType)) {
             let loc = toString(&expr.span);

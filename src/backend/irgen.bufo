@@ -1334,6 +1334,12 @@ func generateBytecodeExprAs(this: &IRGen, function: &IRFunc, expr: &ParsedExpr) 
         buildPtrToInt(function, expr.span, dst, result);
     } else if (isPointer(current) && isPointer(target)) {
         buildMove(function, expr.span, dst, result);
+    } else if (isFunction(current) && isFunction(target)) {
+        buildMove(function, expr.span, dst, result);
+    } else if (isAny(current) && isFunction(target)) {
+        buildMove(function, expr.span, dst, result);
+    } else if (isFunction(current) && isAny(target)) {
+        buildMove(function, expr.span, dst, result);
     } else if ((isChar(current) || isInteger(current)) && (isChar(target) || isInteger(target))) {
         if (getSize(current) < getSize(target)) {
             if (isSignedInteger(current)) {
@@ -1850,6 +1856,15 @@ func generateBytecodeExprLiteral(this: &IRGen, function: &IRFunc, expr: &ParsedE
                 let elem: &ParsedExpr = at(&exprs, getElementAtIndex(&expr.arrayContext, i));
                 let result: RegIndex = generateBytecodeExpr(this, function, elem, false);
                 buildInsertValue(function, expr.span, reg, i, result);
+            }
+            if (needsPtr) {
+                let subType: &Type = at(&types, intoPointer(t));
+                let ptr: RegIndex = allocateRegister(function, subType);
+                buildAlloca(function, expr.span, ptr, getSize(t));
+                buildStore(function, expr.span, ptr, reg);
+                return ptr;
+            } else {
+                return reg;
             }
         } else {
             let elem: &ParsedExpr = at(&exprs, getElementAtIndex(&expr.arrayContext, 0));
