@@ -192,6 +192,7 @@ func assert(cond: bool, msg: &char) {
     exit(1);
 }
 
+// FIXMEEEEEEE: Make this CLI flags
 comptime PRINT_DEBUG: bool = false;
 func debug(msg: &char) {
     if (!PRINT_DEBUG) return;
