@@ -12,9 +12,6 @@ import "libc.bufo";
 // TODO: Calling convention for the OS for nerds :Kappa:
 // TODO: Passing arguments on the stack should consider the argument size
 
-// FIXME: Something causes a heap corruption for `betterRaylib` when I close the window
-//        Debugging indicates that it seems like _dlclose() is at fault
-
 // Some notes:
 // https://www.felixcloutier.com/x86/mov
 // https://blog.kenanb.com/code/low-level/2024/01/05/x86-64-insn-encoding.html
@@ -483,7 +480,6 @@ func betterRaylib() {
     push(&args, Value { kind: U64, u64: HEIGHT });
     push(&args, Value { kind: U64, u64: title as u64 });
     let InitWindow = compileFunctionCall(getFunction(handle, "InitWindow"), VOID, &args);
-    free(args.elements);
     args.length = 0;
     InitWindow.run();
     let WindowShouldClose = compileFunctionCall(getFunction(handle, "WindowShouldClose"), U64, &args);

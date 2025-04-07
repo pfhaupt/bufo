@@ -1,9 +1,8 @@
+.PHONY: all clean brick
 
 all: bufo.exe hello.exe small.exe machine.exe
-	bufo.exe src/bufo.bufo -o bufo1.exe
-	mv bufo1.exe bufo.exe
 
-bufo.exe: src/bufo.bufo
+bufo.exe: $(shell find src/ -type f)
 	bufo.exe src/bufo.bufo -o bufo1.exe
 	mv bufo1.exe bufo.exe
 
@@ -22,3 +21,6 @@ brick:
 clean:
 	rm -f *.s
 	rm -f *.obj
+	rm -f hello.exe
+	rm -f small.exe
+	rm -f machine.exe
