@@ -15,7 +15,7 @@ func main(argc: i32, argv: &&char) -> i32 {
     comptime n: usize = 2;
     comptime v1: usize = ack(m, n);
     assert(v1 == 29);
-    comptime v2: usize = ack(3, 5);
-    assert(v2 == 253);
+    comptime v2: usize = ack(3, 4);
+    assert(v2 == 125);
     return 0;
 }

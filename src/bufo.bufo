@@ -16,6 +16,7 @@ import "./backend/interp.bufo";
 import "./backend/codegen_llvm.bufo";
 
 let flagParser = FlagParser {};
+// FIXME: Flag like -w that prints extra warnings instead of globbering -v
 struct Flags {
     file: &String;
     out: &String;

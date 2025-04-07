@@ -1,4 +1,5 @@
 import "prelude.bufo";
+import "libc.bufo";
 import "substr.bufo";
 import "string.bufo";
 import "../util/span.bufo";
@@ -45,21 +46,18 @@ func resolveFunctionByName(this: &Lookup, currentModule: usize, name: &Token) ->
     return list;
 }
 
-func resolveAllFunctionsWithReturnType(this: &Lookup, currentModule: usize, name: &Token, typ: &Type, list: &FunctionLookupList) -> bool {
-    trace("Lookup.resolveAllFunctionsWithReturnType");
+func resolveAllFunctionsWithSignature(this: &Lookup, currentModule: usize, name: &Token, typ: &Type) -> FunctionLookupList {
+    trace("Lookup.resolveAllFunctionsWithSignature");
     // FIXME: Would be cool if this method didn't create copies of the FunctionLookups
     let currModule: &ModuleLookup = at(&this.modules, currentModule);
-    if (!resolveAllFunctionsWithReturnType(currModule, name, typ, list)) {
-        return false;
-    }
+    let list: FunctionLookupList = blank;
+    extend(&list, &resolveAllFunctionsWithSignature(currModule, name, typ));
     for (let i: usize = 0; i < currModule.imports.length; i = i + 1) {
         let imp: &ImportLookup = at(&currModule.imports, i);
         let importedModule: &ModuleLookup = at(&this.modules, imp.moduleID);
-        if (!resolveAllFunctionsWithReturnType(importedModule, name, typ, list)) {
-            return false;
-        }
+        extend(&list, &resolveAllFunctionsWithSignature(importedModule, name, typ));
     }
-    return true;
+    return list;
 }
 
 func resolveAllStructsWithField(this: &Lookup, currentModule: usize, name: &Token, typ: &Type) -> StructLookupList {
@@ -201,9 +199,8 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) {
             globalID: tli.nodeID,
             parentModule: this.globalID,
             name: fun.name,
-            returnType: blank,
             params: blank,
-            readyState: FUNC_INCOMPLETE,
+            fnType: blank,
             isVarArg: fun.params.isVarArg,
         };
         push(&this.functions, lookup);
@@ -223,7 +220,6 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) {
             globalID: tli.nodeID,
             parentModule: this.globalID,
             name: strukt.name,
-            readyState: STRUCT_INCOMPLETE,
             fields: blank,
             typeID: getID(newType(TYPE_KIND_STRUCT, tli.nodeID)),
         };
@@ -252,19 +248,16 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) {
     }
 }
 
-// FIXME: We need to use usize because the bootstrap doesn't support nested references :^)
-func containsDuplicateFunction(this: &ModuleLookup, function: &FunctionLookup, dupl: &usize) -> bool {
+func containsDuplicateFunction(this: &ModuleLookup, function: &FunctionLookup, dupl: &&FunctionLookup) -> bool {
     trace("ModuleLookup.containsDuplicateFunction");
     let name: String = getMangledName(at(&funcDecls, function.globalID));
     let duplicate: bool = false;
     for (let i: usize = 0; !duplicate && i < this.functions.length; i = i + 1) {
         let f: &FunctionLookup = at(&this.functions, i);
-        // REVIEW: is FUNC_DUPLICATE_CHECK always correct, or is it better to check FUNC_READY_TO_USE
         if (f == function) continue;
-        if (!getReadyState(f, FUNC_DUPLICATE_CHECK)) continue;
         let n: String = getMangledName(at(&funcDecls, f.globalID));
         if (equals(&name, &n)) {
-            *dupl = f as usize;
+            *dupl = f;
             duplicate = true;
         }
         drop(&n);
@@ -306,22 +299,59 @@ func resolveFunctionByName(this: &ModuleLookup, name: &Token) -> FunctionLookupL
     return list;
 }
 
-func resolveAllFunctionsWithReturnType(this: &ModuleLookup, name: &Token, typ: &Type, list: &FunctionLookupList) -> bool {
-    trace("ModuleLookup.resolveAllFunctionsWithReturnType");
+func resolveAllFunctionsWithSignature(this: &ModuleLookup, name: &Token, typ: &Type) -> FunctionLookupList {
+    trace("ModuleLookup.resolveAllFunctionsWithSignature");
+    let list: FunctionLookupList = blank;
+    assert(isFunction(typ), "resolveAllFunctionsWithSignature called with non-function type signature");
     for (let i: usize = 0; i < this.functions.length; i = i + 1) {
         let f: &FunctionLookup = at(&this.functions, i);
-        if (!getReadyState(f, FUNC_RETTYPE_COMPLETE)) {
-            return false;
-        }
         if (!equals(&f.name.content, &name.content)) {
             continue;
         }
-        let t = at(&types, getType(&f.returnType));
-        if (equals(t, typ)) {
-            push(list, *f);
+        let _rt = at(&types, getType(&f.fnType));
+        assert(isFunction(_rt));
+        if (typ.fnParams.length != _rt.fnParams.length) continue;
+        let retType1 = at(&types, typ.typeIndex);
+        let retType2 = at(&types, _rt.typeIndex);
+        if (PRINT_DEBUG) {
+            let s1 = toString(retType1);
+            let s2 = toString(retType2);
+            printf("[DEBUG] Return Type 1: %s\n", s1.buffer);
+            printf("[DEBUG] Return Type 2: %s\n", s2.buffer);
+            drop(&s2);
+            drop(&s1);
+        }
+        if (!isUnknown(retType1)) if (!equals(retType1, retType2)) {
+            debug("Not adding: return type mismatch");
+            continue;
+        }
+        let succ = true;
+        for (let j: usize = 0; j < typ.fnParams.length; j = j + 1) {
+            let p1 = getParam(typ, j);
+            let p2 = getParam(_rt, j);
+            if (!isType(p1)) continue;
+            let t1 = at(&types, getType(p1));
+            let t2 = at(&types, getType(p2));
+            if (PRINT_DEBUG) {
+                let s1 = toString(t1);
+                let s2 = toString(t2);
+                printf("[DEBUG] Type 1: %s\n", s1.buffer);
+                printf("[DEBUG] Type 2: %s\n", s2.buffer);
+                drop(&s2);
+                drop(&s1);
+            }
+            if (!isUnknown(t1)) if (!equals(t1, t2)) {
+                debug("Not adding function");
+                succ = false;
+                break;
+            }
+        }
+        if (succ) {
+            debug("adding function");
+            push(&list, *f);
         }
     }
-    return true;
+    return list;
 }
 
 func resolveAllStructsWithField(this: &ModuleLookup, name: &Token, typ: &Type) -> StructLookupList {
@@ -361,34 +391,13 @@ func equals(this: &ImportLookup, other: &ImportLookup) -> bool {
     return this.moduleID == other.moduleID;
 }
 
-comptime FUNC_INCOMPLETE       : usize = pow2(0);
-comptime FUNC_ERROR            : usize = pow2(1);
-comptime FUNC_PARAMS_COMPLETE  : usize = pow2(2);
-comptime FUNC_RETTYPE_COMPLETE : usize = pow2(3);
-comptime FUNC_READY_TO_USE     : usize = pow2(4);
-comptime FUNC_DUPLICATE_CHECK  : usize = pow2(5);
-comptime FUNC_BODY_COMPLETE    : usize = pow2(6);
 struct FunctionLookup {
     globalID: usize;
     parentModule: usize;
     name: Token;
-    returnType: TCState;
+    fnType: TCState;
     params: VariableLookupList;
-    readyState: usize;
     isVarArg: bool;
-}
-
-func getReadyState(this: &FunctionLookup, state: usize) -> bool {
-    return (this.readyState & state) != 0;
-}
-func setReadyState(this: &FunctionLookup, state: usize) {
-    assert(!getReadyState(this, state), "FunctionLookup.readyState is already set");
-    this.readyState = this.readyState | state;
-}
-
-func setReturnType(this: &FunctionLookup, typ: TCState) {
-    trace("FunctionLookup.setReturnType");
-    this.returnType = typ;
 }
 
 func addParameter(this: &FunctionLookup, globalID: usize, name: Token, typeState: TCState) {
@@ -466,27 +475,12 @@ func newTypeLookup(kind: usize, actual: Any) -> TypeLookup {
     };
 }
 
-comptime STRUCT_INCOMPLETE        : usize = pow2(0);
-comptime STRUCT_ERROR             : usize = pow2(1);
-comptime STRUCT_FIELDS_COMPLETE   : usize = pow2(2);
-comptime STRUCT_SIGNATURE_COMPLETE: usize = pow2(3);
-comptime STRUCT_METHODS_COMPLETE  : usize = pow2(4);
-comptime STRUCT_READY_TO_USE      : usize = pow2(5);
 struct StructLookup {
     globalID: usize;
     parentModule: usize;
     name: Token;
-    readyState: usize;
     fields: VariableLookupList;
     typeID: usize;
-}
-
-func getReadyState(this: &StructLookup, state: usize) -> bool {
-    return (this.readyState & state) != 0;
-}
-func setReadyState(this: &StructLookup, state: usize) {
-    assert(!getReadyState(this, state), "StructLookup.readyState is already set");
-    this.readyState = this.readyState | state;
 }
 
 func asTypeLookup(this: &StructLookup) -> TypeLookup {

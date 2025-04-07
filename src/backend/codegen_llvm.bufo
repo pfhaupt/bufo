@@ -120,7 +120,7 @@ func generateEntryPoint(this: &LLVMCodegen) -> bool {
     let args: LLVMValueList = blank;
     push(&args, getNthParam(&main, 0));
     push(&args, getNthParam(&main, 1));
-    let v: LLVMValue = buildCall(&this.llvmBuilder, mainFunc, args, newSubStrOfStrLit("entry"));
+    let v: LLVMValue = buildCall(&this.llvmBuilder, mainFunc, retFnType, args, retType, newSubStrOfStrLit("entry"));
     buildReturn(&this.llvmBuilder, v);
     return true;
 }
@@ -141,22 +141,9 @@ func generateGlobal(this: &LLVMCodegen, global: &IRFunc) -> bool {
 
 func generateLLVMFunctionHeader(this: &LLVMCodegen, irFunc: &IRFunc) {
     let llvmFunc: LLVMValue = blank;
-    let params: LLVMTypeList = blank;
     let function: &ParsedFuncDecl = getFuncNode(irFunc);
     let typeDecl: &ParsedTypeNode = at(&typeNodes, function.retTypeID);
-    let retType = at(&types, getType(&typeDecl.typeState));
-    if (getSize(retType) > 8) {
-        retType = at(&types, intoPointer(retType));
-        push(&params, prepareParameter(this, retType));
-    }
-    for (let i: usize = 0; i < function.params.paramLength; i = i + 1) {
-        let tDecl: &ParsedTypeNode = at(&typeNodes, getTypeAtIndex(&function.params, i));
-        let t: &Type = at(&types, getType(&tDecl.typeState));
-        push(&params, prepareParameter(this, t));
-    }
-    let isVarArg = function.params.isVarArg;
-    let llvmType: LLVMType = prepareReturnType(this, retType);
-    let llvmFuncType: LLVMType = intoFunctionType(&llvmType, params, isVarArg);
+    let llvmFuncType = generateLLVMFunctionType(this, at(&types, getType(&function.typeState)));
     let llvmFuncValue: LLVMValue = addFunction(&this.llvmModule, asSubStr(&irFunc.name), llvmFuncType);
     if (hasAttribute(irFunc, ATTR_NORETURN)) {
         let id = LLVMGetEnumAttributeKindForName("noreturn", 8 /* sizeof "noreturn" */);
@@ -314,6 +301,9 @@ func generateLLVMInstr(
             buildStore(&this.llvmBuilder, dstVal, srcVal);
         }
         return dstVal;
+    } else if (instr.kind == INSTR_LOAD_FUNCTION_PTR) {
+        let called: &IRFunc = at(&this.irGen.functions, instr.src.i);
+        return called.llvmFunc;
     } else if (instr.kind == INSTR_LOAD) {
         let typ: &Type = getRegister(irFunc, instr.dst).typ;
         let dstTyp: LLVMType = generateLLVMType(this, typ);
@@ -482,8 +472,7 @@ func generateLLVMInstr(
         let rhsVal: LLVMValue = asLLVM(at(regs, instr.op1.i), "LLVM Bitwise Xor");
         return buildXor(&this.llvmBuilder, lhsVal, rhsVal, newSubStrOfStrLit("bxor"));
     } else if (instr.kind == INSTR_CALL) {
-        let called: &IRFunc = at(&this.irGen.functions, instr.src.i);
-        let calledFunc: LLVMValue = getFunction(&this.llvmModule, asSubStr(&called.name));
+        let calledFunc: LLVMValue = asLLVM(at(regs, instr.src.i), "LLVM Call");
         assert(!isNull(calledFunc.ref), "Call tried to call invalid LLVMValue");
         let args: LLVMValueList = blank;
         initBlank(&args, instr.args.length);
@@ -493,7 +482,14 @@ func generateLLVMInstr(
             let argReg: &RegValue = at(regs, _a.i);
             *(at(&args, i)) = asLLVM(argReg, "LLVM Call Arg");
         }
-        return buildCall(&this.llvmBuilder, calledFunc, args, newSubStrOfStrLit("call"));
+        let base: &IRReg = getRegister(irFunc, instr.src);
+        let bt = base.typ;
+        if (isPointer(bt)) bt = getUnderlyingType(bt, true);
+        assert(isFunction(bt), "Call tried to call non-function base");
+        let reg: &IRReg = getRegister(irFunc, instr.dst);
+        let retType = generateLLVMType(this, reg.typ);
+        let fnType = generateLLVMFunctionType(this, bt);
+        return buildCall(&this.llvmBuilder, calledFunc, fnType, args, retType, newSubStrOfStrLit("call"));
     } else if (instr.kind == INSTR_COND_BR) {
         let cond: LLVMValue = asLLVM(at(regs, instr.src.i), "LLVM CondBr");
         buildCondBr(&this.llvmBuilder, cond, *at(blocks, instr.dst.i), *at(blocks, instr.op1.i));
@@ -727,25 +723,51 @@ func generateLLVMValueFromComptimeValue(this: &LLVMCodegen, typ: &Type, start: &
             let fType: &Type = at(&types, getType(&tDecl.typeState));
             getFieldOffsetAndSize(decl, i, &offset, &_size);
             let elemVal: LLVMValue = generateLLVMValueFromComptimeValue(this, fType, start + offset);
-            strukt = buildInsertValue(&this.llvmBuilder, 
-                strukt,
-                elemVal,
-                i as u32,
-                "comptime_struct_field",
-            );
+            strukt = buildInsertValue(&this.llvmBuilder, strukt, elemVal, i as u32, "comptime_struct_field");
         }
         return strukt;
     } else if (isArray(typ)) {
-        todo_with_msg("comptime to LLVM array");
+        let llvmType = generateLLVMType(this, typ);
+        let elemType = getUnderlyingType(typ, false);
+        let size = getSize(elemType);
+        let array = constZero(&llvmType);
+        for (let i: usize = 0; i < typ.arraySize; i = i + 1) {
+            let offset = size * i;
+            let elem = generateLLVMValueFromComptimeValue(this, elemType, start + offset);
+            array = buildInsertValue(&this.llvmBuilder, array, elem, i as u32, "comptime_array_elem");
+        }
+        return array;
     } else if (isPointer(typ)) {
         let underlying: &Type = getUnderlyingType(typ, false);
         if (isChar(underlying)) {
             return buildGlobalStringPtr(&this.llvmBuilder, *(start as &usize) as &char, newSubStrOfStrLit("comptime_str"));
         }
         todo_with_msg("comptime to LLVM pointer");
+    } else if (isFunction(typ)) {
+        let id: usize = *(start as &usize);
+        return at(&this.irGen.functions, id).llvmFunc;
     } else {
         unreachable("Exhaustive handling in generateLLVMValueFromComptime");
     }
+}
+
+func generateLLVMFunctionType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
+    trace("LLVMCodegen.generateLLVMFunctionType");
+    assert(isFunction(typ), "generateLLVMFunctionType called on non function");
+    let params: LLVMTypeList = blank;
+    let retType = at(&types, typ.typeIndex);
+    if (getSize(retType) > 8) {
+        retType = at(&types, intoPointer(retType));
+        push(&params, prepareParameter(this, retType));
+    }
+    for (let i: usize = 0; i < typ.fnParams.length; i = i + 1) {
+        let t: &Type = at(&types, getType(getParam(typ, i)));
+        push(&params, prepareParameter(this, t));
+    }
+    let isVarArg = isVariadic(typ);
+    let llvmType: LLVMType = prepareReturnType(this, retType);
+    let llvmFuncType: LLVMType = intoFunctionType(&llvmType, params, isVarArg);
+    return llvmFuncType;
 }
 
 func generateLLVMType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
@@ -771,6 +793,9 @@ func generateLLVMType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
             todo_with_msg("generate primitive type");
         }
     } else if (isPointer(typ)) {
+        let t: LLVMType = createIntegerType(&this.llvmContext, 64);
+        return intoPointerType(&t);
+    } else if (isFunction(typ)) {
         let t: LLVMType = createIntegerType(&this.llvmContext, 64);
         return intoPointerType(&t);
     } else if (isArray(typ)) {

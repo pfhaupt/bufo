@@ -29,6 +29,7 @@ func equals(this: &IRReg, other: &IRReg) -> bool {
     unreachable("IRReg.equals is not implemented yet");
 }
 
+// NOTE: When you update this list, you must also update the function pointers in the interpreter
 comptime INSTR_INVALID: usize = 0;
 comptime INSTR_ALLOCA: usize = 1;
 comptime INSTR_GET_PARAM: usize = 2;
@@ -36,6 +37,7 @@ comptime INSTR_STORE: usize = 3;
 comptime INSTR_FETCH_GLOBAL_PTR: usize = 4;
 comptime INSTR_FETCH_GLOBAL_VALUE: usize = 5;
 comptime INSTR_FETCH_COMPTIME_VALUE: usize = 6;
+comptime INSTR_LOAD_FUNCTION_PTR: usize = 7;
 comptime INSTR_LOAD: usize = 8;
 comptime INSTR_MOVE: usize = 9;
 comptime INSTR_CALL: usize = 10;
@@ -123,6 +125,11 @@ func isTerminator(this: &IRInstr) -> bool {
 }
 func dump(this: &IRInstr) {
     if (this.isComptime) printf("\x1b[92m");
+    if (PRINT_DEBUG) {
+        let s = toString(&this.span);
+        printf("%s ", s.buffer);
+        drop(&s);
+    }
     if (this.kind == INSTR_ALLOCA) printf("r%llu = Alloca %llu", this.dst.i, this.src.i);
     else if (this.kind == INSTR_GET_PARAM) printf("r%llu = GetParam %llu (%llu bytes)", this.dst.i, this.src.i, this.op1.i);
     else if (this.kind == INSTR_STORE) printf("Store r%llu, r%llu", this.dst.i, this.src.i);
@@ -130,9 +137,10 @@ func dump(this: &IRInstr) {
     else if (this.kind == INSTR_FETCH_GLOBAL_VALUE) printf("r%llu = FetchGlobalValue r%llu", this.dst.i, this.src.i);
     else if (this.kind == INSTR_FETCH_COMPTIME_VALUE) printf("r%llu = FetchComptimeValue r%llu, global=%llu", this.dst.i, this.src.i, this.op1.i);
     else if (this.kind == INSTR_LOAD) printf("r%llu = Load r%llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_LOAD_FUNCTION_PTR) printf("r%llu = LoadFunctionPtr %llu", this.dst.i, this.src.i);
     else if (this.kind == INSTR_MOVE) printf("r%llu = Move r%llu", this.dst.i, this.src.i);
     else if (this.kind == INSTR_CALL) {
-        printf("r%llu = Call %llu", this.dst.i, this.src.i);
+        printf("r%llu = Call r%llu", this.dst.i, this.src.i);
         for (let i: usize = 0; i < this.args.length; i = i + 1) {
             printf(", r%llu", at(&this.args, i).i);
         }
@@ -447,6 +455,17 @@ func buildFetchLocalComptimeValue(this: &IRFunc, span: Span, dst: RegIndex, glob
         dst: dst,
         src: globalIndex,
         op1: RegIndex { i: 0 },
+        args: blank,
+    });
+}
+func buildLoadFunctionPtr(this: &IRFunc, span: Span, dst: RegIndex, funcID: usize) {
+    pushInstruction(this, IRInstr {
+        kind: INSTR_LOAD_FUNCTION_PTR,
+        span: span,
+        isComptime: this.comptimeLevel > 0,
+        dst: dst,
+        src: RegIndex { i: funcID },
+        op1: blank,
         args: blank,
     });
 }
@@ -911,7 +930,7 @@ func getIdentifierByName(this: &IRGen, function: &IRFunc, name: SubStr, isGlobal
         *isGlobal = true;
         return entry;
     }
-    unreachable("Could not find identifier anywhere.");
+    return null;
 }
 func getFunctionByName(this: &IRGen, name: &String) -> usize {
     return indexOf(&this.functions, name);
@@ -1315,6 +1334,12 @@ func generateBytecodeExprAs(this: &IRGen, function: &IRFunc, expr: &ParsedExpr) 
         buildPtrToInt(function, expr.span, dst, result);
     } else if (isPointer(current) && isPointer(target)) {
         buildMove(function, expr.span, dst, result);
+    } else if (isFunction(current) && isFunction(target)) {
+        buildMove(function, expr.span, dst, result);
+    } else if (isAny(current) && isFunction(target)) {
+        buildMove(function, expr.span, dst, result);
+    } else if (isFunction(current) && isAny(target)) {
+        buildMove(function, expr.span, dst, result);
     } else if ((isChar(current) || isInteger(current)) && (isChar(target) || isInteger(target))) {
         if (getSize(current) < getSize(target)) {
             if (isSignedInteger(current)) {
@@ -1392,11 +1417,11 @@ func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &Pa
     }
 }
 
-func prepareReturnValue(this: &IRGen, span: Span, function: &IRFunc, funcID: usize, args: RegIndexList, retType: &Type, retPtr: RegIndex, needsPtr: bool) -> RegIndex {
+func prepareReturnValue(this: &IRGen, span: Span, function: &IRFunc, base: RegIndex, args: RegIndexList, retType: &Type, retPtr: RegIndex, needsPtr: bool) -> RegIndex {
     let retVal: RegIndex = blank;
     if (getSize(retType) > 8) {
         let reg: RegIndex = allocateRegister(function, retType);
-        buildCall(function, span, retPtr, RegIndex { i: funcID }, args);
+        buildCall(function, span, retPtr, base, args);
         if (needsPtr) {
             retVal = retPtr;
         } else {
@@ -1406,7 +1431,7 @@ func prepareReturnValue(this: &IRGen, span: Span, function: &IRFunc, funcID: usi
     } else {
         if (isStruct(retType)) {
             let reg: RegIndex = getRegisterForSize(this, function, getSize(retType));
-            buildCall(function, span, reg, RegIndex { i: funcID }, args);
+            buildCall(function, span, reg, base, args);
             let v: RegIndex = allocateRegister(function, retType);
             let t: &Type = getRegister(function, v).typ;
             let r: RegIndex = allocateRegister(function, at(&types, intoPointer(t)));
@@ -1422,7 +1447,7 @@ func prepareReturnValue(this: &IRGen, span: Span, function: &IRFunc, funcID: usi
             }
         } else {
             let reg: RegIndex = allocateRegister(function, retType);
-            buildCall(function, span, reg, RegIndex { i: funcID }, args);
+            buildCall(function, span, reg, base, args);
             if (needsPtr) {
                 let tempAlloc: RegIndex = allocateRegister(function, at(&types, intoPointer(retType)));
                 buildAlloca(function, span, tempAlloc, getSize(retType));
@@ -1433,9 +1458,10 @@ func prepareReturnValue(this: &IRGen, span: Span, function: &IRFunc, funcID: usi
             }
         }
     }
-    let f = at(&this.functions, funcID);
-    assert(f != null);
-    if (hasAttribute(f, ATTR_NORETURN)) {
+    let ft: &Type = getRegister(function, base).typ;
+    if (isPointer(ft)) ft = getUnderlyingType(ft, true);
+    assert(isFunction(ft), "IRGen: Base is not a function");
+    if (isNoreturn(ft)) {
         buildUnreachable(function, span);
     }
     return retVal;
@@ -1491,7 +1517,13 @@ func generateBytecodeExprIndexedAccess(this: &IRGen, function: &IRFunc, expr: &P
         push(&args, err);
         push(&args, rhs);
         let reg: RegIndex = allocateRegister(function, newType(TYPE_KIND_PRIMITIVE, TYPE_NONE));
-        buildCall(function, expr.span, reg, RegIndex { i: funcID }, args);
+        {
+            let ft = newType(TYPE_KIND_FUNCTION, TYPE_NONE);
+            ft.arraySize = ft.arraySize | FUNC_TYPE_VARIADIC;
+            let dst = allocateRegister(function, ft);
+            buildLoadFunctionPtr(function, expr.span, dst, funcID);
+            buildCall(function, expr.span, reg, dst, args);
+        }
         buildUnreachable(function, expr.span);
         setCurrentBlock(function, normal);
     }
@@ -1518,53 +1550,62 @@ func generateBytecodeExprIdentifier(this: &IRGen, function: &IRFunc, expr: &Pars
     assert(isIdentifier(expr));
     let isGlobal: bool = false;
     let entry: &IRScopeEntry = getIdentifierByName(this, function, expr.origToken.content, &isGlobal);
-    assert(entry != null, "Could not find identifier in generateBytecodeExprIdentifier");
-    let varType: &Type = at(&types, getType(&expr.typeState));
-    if (function.comptimeLevel > 0 && !entry.isComptime) {
-        unreachable("Crossing the boundary: comptime IR needs runtime value - The Checker should've caught this");
-    }
-    if (needsPtr) {
-        if (isGlobal) {
-            let ptrType: &Type = at(&types, intoPointer(varType));
-            let global: RegIndex = allocateRegister(function, ptrType);
-            if (entry.isComptime) {
-                let val: RegIndex = allocateRegister(function, varType);
-                buildAlloca(function, expr.span, global, getSize(varType));
-                buildFetchGlobalComptimeValue(function, expr.span, val, entry.ptr);
-                buildStore(function, expr.span, global, val);
-            } else {
-                buildFetchGlobalPointer(function, expr.span, global, entry.ptr);
-            }
-            return global;
-        } else {
-            if (entry.isComptime) {
+    if (entry != null) {
+        let varType: &Type = at(&types, getType(&expr.typeState));
+        if (function.comptimeLevel > 0 && !entry.isComptime) {
+            unreachable("Crossing the boundary: comptime IR needs runtime value - The Checker should've caught this");
+        }
+        if (needsPtr) {
+            if (isGlobal) {
                 let ptrType: &Type = at(&types, intoPointer(varType));
                 let global: RegIndex = allocateRegister(function, ptrType);
-                let val: RegIndex = allocateRegister(function, varType);
-                buildAlloca(function, expr.span, global, getSize(varType));
-                buildFetchLocalComptimeValue(function, expr.span, val, entry.ptr);
-                buildStore(function, expr.span, global, val);
+                if (entry.isComptime) {
+                    let val: RegIndex = allocateRegister(function, varType);
+                    buildAlloca(function, expr.span, global, getSize(varType));
+                    buildFetchGlobalComptimeValue(function, expr.span, val, entry.ptr);
+                    buildStore(function, expr.span, global, val);
+                } else {
+                    buildFetchGlobalPointer(function, expr.span, global, entry.ptr);
+                }
                 return global;
             } else {
-                return entry.ptr;
-            }
-        }
-    } else {
-        let val: RegIndex = allocateRegister(function, varType);
-        if (isGlobal) {
-            if (entry.isComptime) {
-                buildFetchGlobalComptimeValue(function, expr.span, val, entry.ptr);
-            } else {
-                buildFetchGlobalRuntimeValue(function, expr.span, val, entry.ptr);
+                if (entry.isComptime) {
+                    let ptrType: &Type = at(&types, intoPointer(varType));
+                    let global: RegIndex = allocateRegister(function, ptrType);
+                    let val: RegIndex = allocateRegister(function, varType);
+                    buildAlloca(function, expr.span, global, getSize(varType));
+                    buildFetchLocalComptimeValue(function, expr.span, val, entry.ptr);
+                    buildStore(function, expr.span, global, val);
+                    return global;
+                } else {
+                    return entry.ptr;
+                }
             }
         } else {
-            if (entry.isComptime) {
-                buildFetchLocalComptimeValue(function, expr.span, val, entry.ptr);
+            let val: RegIndex = allocateRegister(function, varType);
+            if (isGlobal) {
+                if (entry.isComptime) {
+                    buildFetchGlobalComptimeValue(function, expr.span, val, entry.ptr);
+                } else {
+                    buildFetchGlobalRuntimeValue(function, expr.span, val, entry.ptr);
+                }
             } else {
-                buildLoad(function, expr.span, val, entry.ptr);
+                if (entry.isComptime) {
+                    buildFetchLocalComptimeValue(function, expr.span, val, entry.ptr);
+                } else {
+                    buildLoad(function, expr.span, val, entry.ptr);
+                }
             }
+            return val;
         }
-        return val;
+    } else {
+        let t = at(&types, getType(&expr.typeState));
+        assert(isFunction(t), "Expected function in generateBytecodeExprIdentifier");
+        let name: String = getMangledName(at(&funcDecls, expr.lhs));
+        let funcID: usize = getFunctionByName(this, &name);
+        let dst = allocateRegister(function, t);
+        buildLoadFunctionPtr(function, expr.span, dst, funcID);
+        return dst;
     }
 }
 
@@ -1816,6 +1857,15 @@ func generateBytecodeExprLiteral(this: &IRGen, function: &IRFunc, expr: &ParsedE
                 let result: RegIndex = generateBytecodeExpr(this, function, elem, false);
                 buildInsertValue(function, expr.span, reg, i, result);
             }
+            if (needsPtr) {
+                let subType: &Type = at(&types, intoPointer(t));
+                let ptr: RegIndex = allocateRegister(function, subType);
+                buildAlloca(function, expr.span, ptr, getSize(t));
+                buildStore(function, expr.span, ptr, reg);
+                return ptr;
+            } else {
+                return reg;
+            }
         } else {
             let elem: &ParsedExpr = at(&exprs, getElementAtIndex(&expr.arrayContext, 0));
             let value: RegIndex = generateBytecodeExpr(this, function, elem, false);
@@ -1991,7 +2041,17 @@ func prepareParameter(this: &IRGen, function: &IRFunc, index: usize, span: Span,
             addEntry(last(&function.scopes), name, allocReg, false);
         }
     } else if (getSize(typ) > 8) {
-        unreachable("IRGen.prepareParameter: The only types that are bigger than 8 bytes are structs");
+        let t = newType(TYPE_KIND_POINTER, TYPE_U8);
+        let value: RegIndex = allocateRegister(function, t);
+        let allocType: &Type = at(&types, intoPointer(typ));
+        let allocReg: RegIndex = allocateRegister(function, allocType);
+        buildGetParam(function, span, value, index, getSize(t));
+        let instance: RegIndex = allocateRegister(function, typ);
+        buildLoad(function, span, instance, value);
+
+        buildAlloca(function, span, allocReg, getSize(typ));
+        buildStore(function, span, allocReg, instance);
+        addEntry(last(&function.scopes), name, allocReg, false);
     } else {
         let allocType: &Type = at(&types, intoPointer(typ));
         let allocReg: RegIndex = allocateRegister(function, allocType);
@@ -2051,9 +2111,9 @@ func prepareArgument(this: &IRGen, function: &IRFunc, span: Span, value: RegInde
 func generateBytecodeExprCall(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, needsPtr: bool) -> RegIndex {
     trace("IRGen.generateBytecodeExprCall");
     assert(isCall(expr));
+    let base = generateBytecodeExpr(this, function, at(&exprs, expr.lhs), false);
     let typ: &Type = at(&types, getType(&expr.typeState));
     let args: RegIndexList = blank;
-    let reg: RegIndex = allocateRegister(function, typ);
     let retPtr: RegIndex = blank;
     if (getSize(typ) > 8) {
         retPtr = allocateRegister(function, at(&types, intoPointer(typ)));
@@ -2066,10 +2126,7 @@ func generateBytecodeExprCall(this: &IRGen, function: &IRFunc, expr: &ParsedExpr
         let result: RegIndex = generateBytecodeExpr(this, function, arg, false);
         push(&args, prepareArgument(this, function, arg.span, result, argType));
     }
-    let name: String = getMangledName(at(&funcDecls, expr.lhs));
-    let funcID: usize = getFunctionByName(this, &name);
-    drop(&name);
-    return prepareReturnValue(this, expr.span, function, funcID, args, typ, retPtr, needsPtr);
+    return prepareReturnValue(this, expr.span, function, base, args, typ, retPtr, needsPtr);
 }
 
 func newIRGenerator() -> IRGen {
