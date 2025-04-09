@@ -72,11 +72,13 @@ func main(argc: i32, argv: &&char) -> i32 {
         pushChar(&s, ' ');
         let flag: &ParsedCompilerFlag = at(&compilerFlags, i);
         if (equals(&flag.flag.content, &COMPILER_FLAG_LIBRARY)) {
+            pushStr(&s, "\"");
             pushSubStr(&s, &flag.value.content);
-            pushStr(&s, ".lib");
+            pushStr(&s, ".lib\"");
         } else if (equals(&flag.flag.content, &COMPILER_FLAG_LIBPATH)) {
-            pushStr(&s, "/LIBPATH:");
+            pushStr(&s, "/LIBPATH:\"");
             pushSubStr(&s, &flag.value.content);
+            pushStr(&s, "\"");
         } else if (equals(&flag.flag.content, &COMPILER_FLAG_LINKER)) {
             pushSubStr(&s, &flag.value.content);
         } else {
