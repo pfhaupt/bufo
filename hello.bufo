@@ -5,6 +5,7 @@
 
 // Bonus points if you have a copy of `metal_pipe.wav` floating around nearby. 
 
+@os(WINDOWS)
 compiler_flags {
     library: "raylib";
     libpath: "./raylib/lib/";
@@ -16,6 +17,13 @@ compiler_flags {
     library: "shell32";
     library: "User32";
     linker: "/NODEFAULTLIB:libcmt";
+}
+
+@os(LINUX)
+compiler_flags {
+    libpath: "./raylib/lib/";
+    library: ":libraylib.a";
+    library: "m";
 }
 
 import "prelude.bufo";

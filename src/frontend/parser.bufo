@@ -115,33 +115,21 @@ func parseProject(this: &Parser, root: SubStr) -> ParsedModule {
 func parseModule(this: &Parser, root: SubStr, mod: &ParsedModule) {
     trace("Parser.parseModule");
     addImportRoot(this, root);
-    if (at(this, TOKEN_KEYWORD)) {
-        let maybeFlags: Token = peek(&this.lexer);
-        if (equals(&maybeFlags.content, &KEYWORD_COMPILER_FLAGS)) {
-            next(&this.lexer);
-            expect(this, TOKEN_CURLY_OPEN);
-            while (!at(this, TOKEN_CURLY_CLOSE)) {
-                let flag: Token = expect(this, TOKEN_IDENT);
-                expect(this, TOKEN_COLON);
-                let value: Token = expect(this, TOKEN_STRING_LITERAL);
-                let _flag: &ParsedCompilerFlag = newParsedCompilerFlag(flag, value);
-                if (!at(this, TOKEN_CURLY_CLOSE)) {
-                    expect(this, TOKEN_SEMI_COLON);
-                }
-            }
-            expect(this, TOKEN_CURLY_CLOSE);
-        }
-    }
     while (!parsedEOF(this)) {
         let attributes: ParsedAttributeList = blank;
         let skip = parseAttributes(this, &attributes);
         if (skip) {
             debug("Parsed TopLevelItem, but skipping it because of @if()");
             toggleIgnoringNodes();
-            let item: &ParsedTopLevelItem = parseTopLevelItem(this, attributes);
+            let item: &ParsedTopLevelItem = parseTopLevelItem(this, attributes, skip);
             toggleIgnoringNodes();
         } else {
-            let item: &ParsedTopLevelItem = parseTopLevelItem(this, attributes);
+            let item: &ParsedTopLevelItem = parseTopLevelItem(this, attributes, skip);
+            if (item == null) {
+                // FIXME: Sus hack
+                // ParsedCompilerFlag
+                continue;
+            }
             addTopLevelItem(mod, item);
         }
     }
@@ -187,7 +175,7 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList) -> bool {
     return skip;
 }
 
-func parseTopLevelItem(this: &Parser, attributes: ParsedAttributeList) -> &ParsedTopLevelItem {
+func parseTopLevelItem(this: &Parser, attributes: ParsedAttributeList, skip: bool) -> &ParsedTopLevelItem {
     trace("Parser.parseTopLevelItem");
     let tkn: Token = peek(&this.lexer);
     if (tkn.kind != TOKEN_KEYWORD) {
@@ -201,6 +189,9 @@ func parseTopLevelItem(this: &Parser, attributes: ParsedAttributeList) -> &Parse
     }
     if (equals(&tkn.content, &KEYWORD_IMPORT)) {
         return parseImport(this);
+    } else if (equals(&tkn.content, &KEYWORD_COMPILER_FLAGS)) {
+        parseCompilerFlags(this, attributes, skip);
+        return null;
     } else if (equals(&tkn.content, &KEYWORD_LET)
             || equals(&tkn.content, &KEYWORD_MUT)) {
         next(&this.lexer);
@@ -244,6 +235,29 @@ func parseTopLevelItem(this: &Parser, attributes: ParsedAttributeList) -> &Parse
         return asTLI(decl);
     }
     todo_with_msg("top level");
+}
+
+func parseCompilerFlags(this: &Parser, attributes: ParsedAttributeList, skip: bool) {
+    trace("Parser.parseImport");
+    let cmpTkn: Token = expect(this, TOKEN_KEYWORD);
+    assert(equals(&cmpTkn.content, &KEYWORD_COMPILER_FLAGS));
+    expect(this, TOKEN_CURLY_OPEN);
+    while (!at(this, TOKEN_CURLY_CLOSE)) {
+        let flag: Token = expect(this, TOKEN_IDENT);
+        expect(this, TOKEN_COLON);
+        let value: Token = expect(this, TOKEN_STRING_LITERAL);
+        if (!skip) {
+            // FIXME: Compiler Flags are currently a big hack in the compiler, they're basically
+            // their own thing until the final linker stage
+            // newParsedCompilerFlag adds them to a global list, which is why we're only
+            // constructing the flag if we're not skipping
+            let _flag: &ParsedCompilerFlag = newParsedCompilerFlag(flag, value);
+        }
+        if (!at(this, TOKEN_CURLY_CLOSE)) {
+            expect(this, TOKEN_SEMI_COLON);
+        }
+    }
+    expect(this, TOKEN_CURLY_CLOSE);
 }
 
 func parseImport(this: &Parser) -> &ParsedTopLevelItem {
