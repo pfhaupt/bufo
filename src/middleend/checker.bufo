@@ -492,6 +492,7 @@ func findRecursiveTypes(this: &TypeChecker) -> bool {
     let recursive: bool = false;
     for (let i: usize = 0; i < structDecls.length; i = i + 1) {
         let decl: &ParsedStructDecl = at(&structDecls, i);
+        if (decl.ignored) continue;
         let mod: &ModuleLookup = at(&this.lookup.modules, decl.parentModule);
         let strukt: &StructLookup = getStructByGlobalID(mod, i);
         let visited: TypeLookupList = blank;
