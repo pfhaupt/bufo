@@ -2,6 +2,13 @@
 @extern("printf") func p(fmt: &char, ...) -> i32;
 @noreturn @extern("exit") func e(code: i32);
 
+@os(LINUX) func assert(cond: bool) {
+    if (!cond) {
+        p("ASSERTION FAILED!\n");
+        e(1);
+    }
+}
+
 @os(WINDOWS)
 comptime foo: i32 = 1;
 @os(LINUX)

@@ -1,5 +1,14 @@
+@os(LINUX)
+compiler_flags {
+    // Apparently `f32 % f32` needs -lm on Linux
+    library: "m";
+}
+
 import "prelude.bufo";
 import "libc.bufo";
+
+@os(LINUX) import "./std/posix/constants.bufo";
+@os(LINUX) import "./std/posix/functions.bufo";
 
 // Experiments to explore JIT compilation of function calls
 // Will be integrated into the compiler at some point
@@ -48,6 +57,7 @@ import "libc.bufo";
 // - ModRM -> 2bits addressing mode, 3bits opcode extension, 3bits register
 // - /digit => opcode extension for ModRM
 
+@os(LINUX) @extern("dlsym") func dlsym(handle: Any, name: &char) -> Any;
 @os(LINUX) @extern("dlopen") func dlopen(filename: &char, flags: i32) -> Any;
 @os(LINUX) @extern("dlclose") func dlclose(handle: Any) -> i32;
 
@@ -67,15 +77,29 @@ import "libc.bufo";
 @os(WINDOWS) @extern("VirtualFree") func VirtualFree(address: Any, bytes: usize, flags: u32) -> bool;
 @os(WINDOWS) @extern("GetLastError") func GetLastError() -> u32;
 
+@os(LINUX) func VirtualFree(address: Any, bytes: usize, flags: u32) -> bool {
+    let d = munmap(address, bytes);
+    if (d == 0) return true;
+    return false;
+}
+
 @os(WINDOWS) func getFunction(handle: Any, name: &char) -> Any {
     let fn = GetProcAddress(handle, name);
     assert(fn != null, "Could not find function");
     return fn;
 }
 
+@os(LINUX) func getFunction(handle: Any, name: &char) -> Any {
+    let fn = dlsym(handle, name);
+    assert(fn != null, "Could not find function");
+    return fn;
+}
+
 func raylib() {
-    let handle = dlopen("./raylib/lib/raylib.dll", 0);
-    assert(handle != null, "Could not load raylib.dll");
+    @os(WINDOWS) let handle = dlopen("./raylib/lib/raylib.dll", 0);
+    @os(WINDOWS) assert(handle != null, "Could not load raylib.dll");
+    @os(LINUX) let handle = dlopen("./raylib/lib/libraylib.so", RTLD_LAZY);
+    @os(LINUX) assert(handle != null, "Could not load libraylib.so");
     let InitWindow = getFunction(handle, "InitWindow") as func (usize, usize, &char);
     let WindowShouldClose = getFunction(handle, "WindowShouldClose") as func () -> bool;
     let BeginDrawing = getFunction(handle, "BeginDrawing") as func ();
@@ -172,13 +196,21 @@ comptime XMM0: u8 = 0;
 comptime XMM1: u8 = 1;
 comptime XMM2: u8 = 2;
 comptime XMM3: u8 = 3;
+comptime XMM4: u8 = 4;
+comptime XMM5: u8 = 5;
 
 comptime ADDR_INDIRECT: u8 = 0;
 comptime ADDR_DISP8: u8 = 1;
 comptime ADDR_DISP32: u8 = 2;
 comptime ADDR_REG: u8 = 3;
 
-@os(WINDOWS) comptime ARGS = [[RCX, XMM0], [RDX, XMM1], [R8, XMM2], [R9, XMM3]];
+comptime PROT_READ: i32 = 1;
+comptime PROT_WRITE: i32 = 2;
+comptime PROT_EXEC: i32 = 4;
+comptime MAP_PRIVATE: i32 = 2;
+comptime MAP_ANONYMOUS: i32 = 32;
+
+comptime RTLD_LAZY: i32 = 1;
 
 struct Value {
     kind: u8;
@@ -339,18 +371,21 @@ func free(fn: Function) {
     }
 }
 
-func compileFunctionCall(fn: Any, ret: u8, args: &ValueList) -> Function {
+@os(WINDOWS) func compileFunctionCall(fn: Any, ret: u8, args: &ValueList) -> Function {
     let buf: ByteBuffer = blank;
     // push(&buf, '\xf1');
     extend(&buf, &push(RBP));
     extend(&buf, &mov(RBP, RSP));
+    comptime ARG_LEN: usize = 4;
+    comptime STACK_OFFSET: u32 = 32;
+    comptime ARGS = [[RCX, XMM0], [RDX, XMM1], [R8, XMM2], [R9, XMM3]];
     for (let i: usize = 0; i < args.length; i = i + 1) {
         let v = args.elements[i];
-        if (i >= 4) {
+        if (i >= ARG_LEN) {
             if (v.kind == U64) {
-                extend(&buf, &mov(RSP, 32 + 8 * (i - 4) as u32, v.u64));
+                extend(&buf, &mov(RSP, STACK_OFFSET + 8 * (i - ARG_LEN) as u32, v.u64));
             } else if (v.kind == F64) {
-                extend(&buf, &mov(RSP, 32 + 8 * (i - 4) as u32, *(&v.f64 as &u64)));
+                extend(&buf, &mov(RSP, STACK_OFFSET + 8 * (i - ARG_LEN) as u32, *(&v.f64 as &u64)));
             } else {
                 unreachable("yo momma so fat, she caused my bits to flip");
             }
@@ -384,16 +419,73 @@ func compileFunctionCall(fn: Any, ret: u8, args: &ValueList) -> Function {
         unreachable("yo momma so fat, she can't even return properly");
     }
     push(&buf, '\xC3');
-    @os(WINDOWS) {
-        let code = VirtualAlloc(null, buf.length, 4096, 64);
-        assert(code != null, "Could not alloc some bytes sadge thx Windows");
-        memcpy(code, buf.elements, buf.length);
-        free(buf.elements);
-        return Function { run: code as func () -> u64, size: buf.length };
+    let code = VirtualAlloc(null, buf.length, 4096, 64);
+    assert(code != null, "Could not alloc some bytes sadge thx Windows");
+    memcpy(code, buf.elements, buf.length);
+    free(buf.elements);
+    return Function { run: code as func () -> u64, size: buf.length };
+}
+
+@os(LINUX) func compileFunctionCall(fn: Any, ret: u8, args: &ValueList) -> Function {
+    let buf: ByteBuffer = blank;
+    // push(&buf, '\xf1');
+    extend(&buf, &push(RBP));
+    extend(&buf, &mov(RBP, RSP));
+    comptime ARG_LEN: usize = 6;
+    comptime STACK_OFFSET: u32 = 48;
+    comptime ARGS = [[RDI, XMM0], [RSI, XMM1], [RDX, XMM2], [RCX, XMM3], [R8, XMM4], [R9, XMM5]];
+    let intargs: usize = 0;
+    let fltargs: usize = 0;
+    for (let i: usize = 0; i < args.length; i = i + 1) {
+        let v = args.elements[i];
+        if (v.kind == U64) {
+            if (intargs > 6) {
+                extend(&buf, &mov(RSP, STACK_OFFSET + 8 * (i - ARG_LEN) as u32, v.u64));
+            } else {
+                extend(&buf, &mov(ARGS[intargs][U64 as usize], v.u64));
+            }
+            intargs = intargs + 1;
+        } else if (v.kind == F64) {
+            if (fltargs > 8) {
+                extend(&buf, &mov(RSP, STACK_OFFSET + 8 * (i - ARG_LEN) as u32, *(&v.f64 as &u64)));
+            } else {
+                extend(&buf, &mov(ARGS[fltargs][F64 as usize], v.f64));
+            }
+            fltargs = fltargs + 1;
+        } else if (v.kind == F32) {
+            if (fltargs > 8) {
+                unreachable("f32 stack");
+            } else {
+                extend(&buf, &mov(ARGS[fltargs][F64 as usize], v.f32));
+            }
+            fltargs = fltargs + 1;
+        } else {
+            unreachable("yo momma so fat, she caused another bit flop");
+        }
     }
-    @os(LINUX) {
-        unreachable("haven't implemented mmap yet");
+    if (args.length < 4) extend(&buf, &sub(RSP, 32));
+    extend(&buf, &mov(RAX, fn as u64));
+    extend(&buf, &call(RAX));
+    if (args.length < 4) extend(&buf, &add(RSP, 32));
+    extend(&buf, &pop(RBP));
+    if (ret == U64) {
+    } else if (ret == VOID) {
+        extend(&buf, &mov(RAX, 420691337 as u32));
+    } else if (ret == F64) {
+        push(&buf, '\x66', '\x48', '\x0F', '\x7E');
+        modRM(&buf, ADDR_REG, XMM0, RAX);
+    } else if (ret == F32) {
+        push(&buf, '\x66', '\x0F', '\x7E');
+        modRM(&buf, ADDR_REG, XMM0, RAX);
+    } else {
+        unreachable("yo momma so fat, she can't even return properly");
     }
+    push(&buf, '\xC3');
+    let code = mmap(null, buf.length, PROT_EXEC | PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    assert(code as i64 != -1, strerror(*errno()));
+    memcpy(code, buf.elements, buf.length);
+    free(buf.elements);
+    return Function { run: code as func () -> u64, size: buf.length };
 }
 
 func bar(a: usize) -> usize {
@@ -472,8 +564,10 @@ func betterRaylib() {
     comptime RH: f32 = 100;
     comptime WIDTH: u64 = 800;
     comptime HEIGHT: u64 = 600;
-    let handle = dlopen("./raylib/lib/raylib.dll", 0);
-    assert(handle != null, "Could not load raylib.dll");
+    @os(WINDOWS) let handle = dlopen("./raylib/lib/raylib.dll", 0);
+    @os(WINDOWS) assert(handle != null, "Could not load raylib.dll");
+    @os(LINUX) let handle = dlopen("./raylib/lib/libraylib.so", RTLD_LAZY);
+    @os(LINUX) assert(handle != null, "Could not load libraylib.so");
     let args: ValueList = blank;
     let title = "Hello from the JIT";
     push(&args, Value { kind: U64, u64: WIDTH });
@@ -513,8 +607,11 @@ func betterRaylib() {
         let ColorFromHSV = compileFunctionCall(getFunction(handle, "ColorFromHSV"), U64, &args);
         args.length = 0;
         let c: u64 = ColorFromHSV.run();
-        push(&args, Value { kind: U64, u64: *(&[x, y] as &u64) });
-        push(&args, Value { kind: U64, u64: *(&[RW, RH] as &u64) });
+        // FIXME: A better way of handling this -> Proper struct support
+        @os(WINDOWS) push(&args, Value { kind: F64, f64: *(&[x, y] as &u64) });
+        @os(WINDOWS) push(&args, Value { kind: F64, f64: *(&[RW, RH] as &u64) });
+        @os(LINUX) push(&args, Value { kind: F64, f64: *(&[x, y] as &f64) });
+        @os(LINUX) push(&args, Value { kind: F64, f64: *(&[RW, RH] as &f64) });
         push(&args, Value { kind: U64, u64: c });
         let DrawRectangleV = compileFunctionCall(getFunction(handle, "DrawRectangleV"), VOID, &args);
         args.length = 0;

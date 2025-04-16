@@ -1,12 +1,36 @@
 
 from typing import List
 import subprocess
+import sys
+
+def print_cmd(cmd: List, verbose = False) -> None:
+    if verbose or "--verbose" in sys.argv:
+        print("CMD: " + " ".join(cmd))
+
 def call_cmd(cmd: List) -> subprocess.CompletedProcess[bytes]:
+    print_cmd(cmd)
     return subprocess.run(cmd, capture_output=True)
 
-def get(what: str, split_by: str = "\n") -> List[str]:
-    out = call_cmd(["llvm-config", what])
-    assert out.returncode == 0
+def try_call(cmd: List) -> subprocess.CompletedProcess[bytes]:
+    try:
+        return call_cmd(cmd)
+    except Exception as e:
+        print_cmd(cmd, verbose=True)
+        print("error: Could not run command!")
+        print(e)
+        exit(1)
+
+def get(what: List[str], split_by: str = "\n") -> List[str]:
+    if sys.platform == "linux":
+        c = ["llvm-config-16"]
+    elif sys.platform == "Windows":
+        c = ["llvm-config"]
+    else:
+        assert False, f"Unsupported OS {sys.platform}, can't call llvm-config"
+    for w in what:
+        c.append(w)
+    out = try_call(c)
+    assert out.returncode == 0, out.stderr.decode('utf-8')
     output = out.stdout.decode('utf-8')
     return output.split(split_by)
 
@@ -24,28 +48,56 @@ func isNull(this: {p}) -> bool {{
     return result
 
 def compile_wrapper(llvm_path, libs):
-    include = llvm_path + "\\..\\include\\"
-    cmd = ["cl.exe", "/c", ".\\wrapper\\target.c", f"/I{include}", "/LIBPATH{llvm_path}"]
-    for l in libs:
-        cmd.append(llvm_path + "\\" + l.replace("\n", ""))
-    proc = call_cmd(cmd)
-    assert proc.returncode == 0, proc.stdout.decode("utf-8")
-    cmd = ["lib.exe", "/out:llvm_wrapper.lib", "target.obj"]
-    proc = call_cmd(cmd)
-    assert proc.returncode == 0, proc.stdout.decode("utf-8")
+    if sys.platform == "linux":
+        include = llvm_path + "/../include/"
+        cmd = ["cc", "-c", "./wrapper/target.c", f"-I{include}", f"-L{llvm_path}"]
+        for l in libs:
+            cmd.append("-l" + l.replace("\n", ""))
+    elif sys.platform == "Windows":
+        include = llvm_path + "\\..\\include\\"
+        cmd = ["cl.exe", "/c", ".\\wrapper\\target.c", f"/I{include}", "/LIBPATH{llvm_path}"]
+        for l in libs:
+            cmd.append(llvm_path + "\\" + l.replace("\n", ""))
+    else:
+        assert False, f"Unsupported OS {sys.platform}, can't compile wrapper"
+    proc = try_call(cmd)
+    assert proc.returncode == 0, proc.stderr.decode("utf-8")
+    if sys.platform == "linux":
+        cmd = ["ar", "rcs", "llvm_wrapper.a", "target.o"]
+    elif sys.platform == "Windows":
+        cmd = ["lib.exe", "/out:llvm_wrapper.lib", "target.obj"]
+    else:
+        assert False, f"Unsupported OS {sys.platform}, can't link wrapper"
+    proc = try_call(cmd)
+    assert proc.returncode == 0, proc.stderr.decode("utf-8")
 
 with open("./src/backend/LLVM/bindings.bufo", "w") as file:
-    path = get("--libdir")[0]
-    libs = get("--libnames", " ")
-    content = "compiler_flags {\n"
+    path = get(["--libdir"])[0]
+    libs = get(["--libnames"], " ")
+    content = ""
+    if sys.platform == "linux":
+        content += "@os(LINUX)\n"
+    elif sys.platform == "Windows":
+        content += "@os(WINDOWS)\n"
+    else:
+        assert False, f"Unsupported OS {sys.platform}, can't specify @os() attribute"
+    content += "compiler_flags {\n"
     compile_wrapper(path, libs)
-    content += "  library: \"llvm_wrapper\";\n"
+    if sys.platform == "linux":
+        content += "  library: \":llvm_wrapper.a\";\n"
+    elif sys.platform == "Windows":
+        content += "  library: \"llvm_wrapper\";\n"
     for l in libs:
         _l = l.replace("\n", "")
         if _l.endswith(".lib"):
             _l = _l.removesuffix(".lib")
-        content += f"  library: \"{_l}\";\n"
-    path = path.replace("\\", "\\\\")
+        if sys.platform == "linux":
+            content += f"  library: \":{_l}\";\n"
+        elif sys.platform == "Windows":
+            content += f"  library: \"{_l}\";\n"
+    if sys.platform == "Windows":
+        path = path.replace("\\", "\\\\")
+    content += "  libpath: \".\";\n"
     content += f"  libpath: \"{path}\";\n"
     content += "}\n"
     content += enumeratePtrs([

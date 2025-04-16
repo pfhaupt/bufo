@@ -3,8 +3,11 @@ import "libc.bufo";
 import "string_buf.bufo";
 import "string.bufo";
 import "substr.bufo";
-@os(WINDOWS) import "winapi/structs.bufo";
-@os(WINDOWS) import "windows.bufo";
+// FIXME: @os() on import doesn't work properly
+// @os(WINDOWS) import "winapi/structs.bufo";
+// @os(WINDOWS) import "windows.bufo";
+
+@os(LINUX) import "./linux.bufo";
 
 struct Cmd {
     log: bool;

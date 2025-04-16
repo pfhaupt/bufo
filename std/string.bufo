@@ -20,8 +20,9 @@ func hash(this: &String) -> usize {
 func toAbsolutePath(this: &String) -> String {
     let buf: &char = calloc(1024, 1);
     assert(buf != null);
-    let abs: &char = _fullpath(buf, this.buffer, 1024);
-    assert(abs != null, "Could not get absolute path");
+    @os(WINDOWS) let abs: &char = _fullpath(buf, this.buffer, 1024);
+    @os(WINDOWS) assert(abs != null, "Could not get absolute path");
+    @os(LINUX) let abs: &char = realpath(this.buffer, buf);
     let s: String = newStringFromStrLit(buf);
     free(buf);
     return s;

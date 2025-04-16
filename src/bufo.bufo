@@ -63,6 +63,12 @@ func main(argc: i32, argv: &&char) -> i32 {
         printf("typeNodes.length     = %llu\n", typeNodes.length);
         printf("exprs.length         = %llu\n", exprs.length);
     }
+    if (!linkExecutable()) return 1;
+    drop(&string);
+    return 0;
+}
+
+@os(WINDOWS) func linkExecutable() -> bool {
     let s: String = newStringFromStrLit("link.exe ");
     pushString(&s, flags.out);
     pushStr(&s, ".obj");
@@ -87,7 +93,39 @@ func main(argc: i32, argv: &&char) -> i32 {
     }
     let cmd: Cmd = newCmdFromStrLit(s.buffer);
     cmd.log = *flags.verbose;
-    if (!runSync(&cmd)) return 1;
-    drop(&string);
-    return 0;
+    let success = runSync(&cmd);
+    drop(&s);
+    return success;
+}
+
+@os(LINUX) func linkExecutable() -> bool {
+    let s: String = newStringFromStrLit("ld ");
+    pushStr(&s, "-dynamic-linker ");
+    pushStr(&s, "/lib64/ld-linux-x86-64.so.2 ");
+    pushStr(&s, "/lib64/crt1.o ");
+    pushString(&s, flags.out);
+    pushStr(&s, ".obj ");
+    pushStr(&s, "-lc ");
+    pushStr(&s, "-o ");
+    pushString(&s, flags.out);
+    for (let i: usize = 0; i < compilerFlags.length; i = i + 1) {
+        pushChar(&s, ' ');
+        let flag: &ParsedCompilerFlag = at(&compilerFlags, i);
+        if (equals(&flag.flag.content, &COMPILER_FLAG_LIBRARY)) {
+            pushStr(&s, "-l");
+            pushSubStr(&s, &flag.value.content);
+        } else if (equals(&flag.flag.content, &COMPILER_FLAG_LIBPATH)) {
+            pushStr(&s, "-L");
+            pushSubStr(&s, &flag.value.content);
+        } else if (equals(&flag.flag.content, &COMPILER_FLAG_LINKER)) {
+            pushSubStr(&s, &flag.value.content);
+        } else {
+            unreachable("Exhaustive handling of compiler_flags");
+        }
+    }
+    let cmd: Cmd = newCmdFromStrLit(s.buffer);
+    cmd.log = *flags.verbose;
+    let success = runSync(&cmd);
+    drop(&s);
+    return success;
 }

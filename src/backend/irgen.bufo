@@ -2,7 +2,7 @@ import "prelude.bufo";
 import "libc.bufo";
 import "string.bufo";
 import "substr.bufo";
-import "span.bufo";
+import "../util/span.bufo";
 import "../util/hashmaps.bufo";
 import "../util/lists.bufo";
 import "../util/arena.bufo";

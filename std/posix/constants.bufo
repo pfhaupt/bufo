@@ -12,11 +12,6 @@ your system if not treated carefully.
 
 // REVIEW: Do errors actually write this errno?
 import "posix/functions.bufo";
-func __safe_errno_location() -> &i32 {
-    unsafe {
-        return __errno_location();
-    }
-}
-func errno() -> &i32 { return __safe_errno_location(); }
+func errno() -> &i32 { return __errno_location(); }
 
 comptime ENOENT: i32 = 2;

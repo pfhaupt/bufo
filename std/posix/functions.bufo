@@ -9,25 +9,26 @@ Usage of any of these functions is highly unsafe and might destroy your
 system at any time.
 */
 
-import "posix/structs.bufo";
+import "../linux.bufo";
+import "./structs.bufo";
 
-unsafe extern stat(path: &char, statbuf: &mut stat) -> i32;
-unsafe extern strerror(errno: i32) -> &char;
-unsafe extern fork() -> i32;
-unsafe extern execvp(name: &char, args: &&char) -> i32;
-unsafe extern waitpid(pid: Handle, out: &mut i32, flags: i32) -> i32;
-unsafe func WIFSIGNALED(status: i32) -> bool {
-    return (((status & 127) + 1) / 2) > 0;
+@os(LINUX) @extern("stat") func stat(path: &char, Statbuf: &Stat) -> i32;
+@os(LINUX) @extern("strerror") func strerror(errno: i32) -> &char;
+@os(LINUX) @extern("fork") func fork() -> i32;
+@os(LINUX) @extern("execvp") func execvp(name: &char, args: &&char) -> i32;
+@os(LINUX) @extern("waitpid") func waitpid(pid: Handle, out: &i32, flags: i32) -> i32;
+@os(LINUX) func WIFSIGNALED(Status: i32) -> bool {
+    return (((Status & 127) + 1) / 2) > 0;
 }
-unsafe func WIFEXITED(status: i32) -> bool {
-    return WTERMSIG(status) == 0;
+@os(LINUX) func WIFEXITED(Status: i32) -> bool {
+    return WTERMSIG(Status) == 0;
 }
-unsafe func WTERMSIG(status: i32) -> i32 {
-    return (status & 127);
+@os(LINUX) func WTERMSIG(Status: i32) -> i32 {
+    return (Status & 127);
 }
-unsafe func WEXITSTATUS(status: i32) -> i32 {
-    return (status & 65280) / 256;
+@os(LINUX) func WEXITSTATUS(Status: i32) -> i32 {
+    return (Status & 65280) / 256;
 }
-unsafe extern strsignal(signal: i32) -> &char;
-unsafe extern __errno_location() -> &i32;
+@os(LINUX) @extern("strsignal") func strsignal(signal: i32) -> &char;
+@os(LINUX) @extern("__errno_location") func __errno_location() -> &i32;
 
