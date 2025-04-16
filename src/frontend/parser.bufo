@@ -119,7 +119,7 @@ func parseModule(this: &Parser, root: SubStr, mod: &ParsedModule) {
         let attributes: ParsedAttributeList = blank;
         let skip = parseAttributes(this, &attributes);
         if (skip) {
-            debug("Parsed TopLevelItem, but skipping it because of @if()");
+            debug("Parsed TopLevelItem, but skipping it because of @os()");
             toggleIgnoringNodes();
             let item: &ParsedTopLevelItem = parseTopLevelItem(this, attributes, skip);
             toggleIgnoringNodes();
@@ -188,7 +188,7 @@ func parseTopLevelItem(this: &Parser, attributes: ParsedAttributeList, skip: boo
         exit(1);
     }
     if (equals(&tkn.content, &KEYWORD_IMPORT)) {
-        return parseImport(this);
+        return parseImport(this, skip);
     } else if (equals(&tkn.content, &KEYWORD_COMPILER_FLAGS)) {
         parseCompilerFlags(this, attributes, skip);
         return null;
@@ -260,7 +260,7 @@ func parseCompilerFlags(this: &Parser, attributes: ParsedAttributeList, skip: bo
     expect(this, TOKEN_CURLY_CLOSE);
 }
 
-func parseImport(this: &Parser) -> &ParsedTopLevelItem {
+func parseImport(this: &Parser, skip: bool) -> &ParsedTopLevelItem {
     trace("Parser.parseImport");
     let impTkn: Token = expect(this, TOKEN_KEYWORD);
     assert(equals(&impTkn.content, &KEYWORD_IMPORT));
@@ -274,6 +274,13 @@ func parseImport(this: &Parser) -> &ParsedTopLevelItem {
         if (canReadFileToString(path.buffer, &src)) {
             debug("Found file");
             debug(path.buffer);
+            if (skip) {
+                debug("Parsed import, but skipping it because of @os()");
+                drop(&src); // No need to leak anything here :^)
+                drop(&path);
+                expect(this, TOKEN_SEMI_COLON);
+                return null;
+            }
             let moduleID: usize = 0;
             let mod: &ParsedModule = null;
             if (getModuleByFilePath(asSubStr(&path), &moduleID)) {
@@ -407,7 +414,7 @@ func parseBlock(this: &Parser) -> &ParsedBlock {
         let attributes: ParsedAttributeList = blank;
         let skip = parseAttributes(this, &attributes);
         if (skip) {
-            debug("Parsed Stmt, but skipping it because of @if()");
+            debug("Parsed Stmt, but skipping it because of @os()");
             toggleIgnoringNodes();
             let stmt: &ParsedStmt = parseStmt(this);
             toggleIgnoringNodes();

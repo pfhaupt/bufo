@@ -1,3 +1,4 @@
+@os(WINDOWS)
 compiler_flags {
   library: "llvm_wrapper";
   library: "LLVMWindowsManifest";
@@ -175,6 +176,7 @@ compiler_flags {
   library: "LLVMTableGen";
   library: "LLVMSupport";
   library: "LLVMDemangle";
+  libpath: ".";
   libpath: "C:\\LLVM\\lib";
 }
 

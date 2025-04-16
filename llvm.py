@@ -23,7 +23,7 @@ def try_call(cmd: List) -> subprocess.CompletedProcess[bytes]:
 def get(what: List[str], split_by: str = "\n") -> List[str]:
     if sys.platform == "linux":
         c = ["llvm-config-16"]
-    elif sys.platform == "Windows":
+    elif sys.platform == "win32":
         c = ["llvm-config"]
     else:
         assert False, f"Unsupported OS {sys.platform}, can't call llvm-config"
@@ -53,7 +53,7 @@ def compile_wrapper(llvm_path, libs):
         cmd = ["cc", "-c", "./wrapper/target.c", f"-I{include}", f"-L{llvm_path}"]
         for l in libs:
             cmd.append("-l" + l.replace("\n", ""))
-    elif sys.platform == "Windows":
+    elif sys.platform == "win32":
         include = llvm_path + "\\..\\include\\"
         cmd = ["cl.exe", "/c", ".\\wrapper\\target.c", f"/I{include}", "/LIBPATH{llvm_path}"]
         for l in libs:
@@ -64,7 +64,7 @@ def compile_wrapper(llvm_path, libs):
     assert proc.returncode == 0, proc.stderr.decode("utf-8")
     if sys.platform == "linux":
         cmd = ["ar", "rcs", "llvm_wrapper.a", "target.o"]
-    elif sys.platform == "Windows":
+    elif sys.platform == "win32":
         cmd = ["lib.exe", "/out:llvm_wrapper.lib", "target.obj"]
     else:
         assert False, f"Unsupported OS {sys.platform}, can't link wrapper"
@@ -77,7 +77,7 @@ with open("./src/backend/LLVM/bindings.bufo", "w") as file:
     content = ""
     if sys.platform == "linux":
         content += "@os(LINUX)\n"
-    elif sys.platform == "Windows":
+    elif sys.platform == "win32":
         content += "@os(WINDOWS)\n"
     else:
         assert False, f"Unsupported OS {sys.platform}, can't specify @os() attribute"
@@ -85,7 +85,7 @@ with open("./src/backend/LLVM/bindings.bufo", "w") as file:
     compile_wrapper(path, libs)
     if sys.platform == "linux":
         content += "  library: \":llvm_wrapper.a\";\n"
-    elif sys.platform == "Windows":
+    elif sys.platform == "win32":
         content += "  library: \"llvm_wrapper\";\n"
     for l in libs:
         _l = l.replace("\n", "")
@@ -93,9 +93,9 @@ with open("./src/backend/LLVM/bindings.bufo", "w") as file:
             _l = _l.removesuffix(".lib")
         if sys.platform == "linux":
             content += f"  library: \":{_l}\";\n"
-        elif sys.platform == "Windows":
+        elif sys.platform == "win32":
             content += f"  library: \"{_l}\";\n"
-    if sys.platform == "Windows":
+    if sys.platform == "win32":
         path = path.replace("\\", "\\\\")
     content += "  libpath: \".\";\n"
     content += f"  libpath: \"{path}\";\n"

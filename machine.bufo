@@ -608,8 +608,8 @@ func betterRaylib() {
         args.length = 0;
         let c: u64 = ColorFromHSV.run();
         // FIXME: A better way of handling this -> Proper struct support
-        @os(WINDOWS) push(&args, Value { kind: F64, f64: *(&[x, y] as &u64) });
-        @os(WINDOWS) push(&args, Value { kind: F64, f64: *(&[RW, RH] as &u64) });
+        @os(WINDOWS) push(&args, Value { kind: U64, u64: *(&[x, y] as &u64) });
+        @os(WINDOWS) push(&args, Value { kind: U64, u64: *(&[RW, RH] as &u64) });
         @os(LINUX) push(&args, Value { kind: F64, f64: *(&[x, y] as &f64) });
         @os(LINUX) push(&args, Value { kind: F64, f64: *(&[RW, RH] as &f64) });
         push(&args, Value { kind: U64, u64: c });
