@@ -2,7 +2,7 @@
 
 all: ./bufo.exe ./hello.exe ./small.exe ./machine.exe
 
-./bufo.exe: $(shell find src/ -type f)
+./bufo.exe: $(shell find src/ -type f) $(shell find std/ -type f)
 	./bufo.exe src/bufo.bufo -o ./bufo1.exe
 	mv ./bufo1.exe ./bufo.exe
 

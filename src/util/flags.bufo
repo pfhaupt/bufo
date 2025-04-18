@@ -72,7 +72,7 @@ func runOn(this: &FlagParser, argc: i32, argv: &&char) -> bool {
         let long = false;
         let short = false;
         let standalone = false;
-        if (strcmp(flag, "--") == 0) {
+        if (strncmp("--", flag, 2) == 0) {
             flag = flag + 2;
             long = true;
         } else if (*flag == '-') {

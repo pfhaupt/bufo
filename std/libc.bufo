@@ -11,6 +11,7 @@
 // Strings
 @extern("strlen") func strlen(string: &char) -> usize;
 @extern("strcmp") func strcmp(s1: &char, s2: &char) -> i32;
+@extern("strncmp") func strncmp(s1: &char, s2: &char, n: usize) -> i32;
 @extern("strchr") func strchr(s: &char, c: char) -> &char;
 
 // Memory
