@@ -4,9 +4,10 @@
 //! CODE: 1
 //! ERROR:
 //! Could not infer which function to call.
-//! Could not find matching signature for call to function `foo`.
-//! A function with that name is located here.
-//! A function with that name is located here.
+//! No function overload fits the provided context for call to function `foo`.
+//! Context requires an overload of the form func (<unknown>) -> u8.
+//! Overload func (u8) -> i32 declared here.
+//! Overload func (i32) -> i32 declared here.
 
 import "prelude.bufo";
 

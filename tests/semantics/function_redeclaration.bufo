@@ -4,7 +4,7 @@
 //! CODE: 1
 //! ERROR:
 //! Function redeclaration.
-//! A function named `bla` with that signature is already declared here.
+//! A function named `bla` with the signature func () is already declared here.
 
 func bla() {
 }

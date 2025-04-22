@@ -3,8 +3,14 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Could not find matching signature for call to function `foo`.
-//! Could not find matching signature for call to function `bar`.
+//! No function overload fits the provided context for call to function `foo`.
+//! Context requires an overload of the form func (i8) -> <unknown>.
+//! Overload func (u64) declared here.
+//! Overload func (i16) declared here.
+//! No function overload fits the provided context for call to function `bar`.
+//! Context requires an overload of the form func (u32) -> <unknown>.
+//! Overload func (i32) declared here.
+//! Overload func (u8) declared here.
 
 func foo(a: u64) {
 }

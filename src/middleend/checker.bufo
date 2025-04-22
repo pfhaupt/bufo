@@ -231,8 +231,10 @@ func reportDuplicateFunction(this: &TypeChecker, f1: &FunctionLookup, f2: &Funct
     let errLoc: String = toString(&f1.name.span);
     let duplLoc: String = toString(&f2.name.span);
     let name: String = toString(&f1.name.content);
+    let typ = toString(at(&types, getType(&f1.fnType)));
     fprintf(stderr, "%s: %s: Function redeclaration.\n", errLoc.buffer, ERR_STR);
-    fprintf(stderr, "%s: %s: A function named `%s` with that signature is already declared here.\n", duplLoc.buffer, ERR_STR, name.buffer);
+    fprintf(stderr, "%s: %s: A function named `%s` with the signature %s is already declared here.\n", duplLoc.buffer, ERR_STR, name.buffer, typ.buffer);
+    drop(&typ);
     drop(&name);
     drop(&duplLoc);
     drop(&errLoc);
@@ -240,21 +242,26 @@ func reportDuplicateFunction(this: &TypeChecker, f1: &FunctionLookup, f2: &Funct
     return newTCStateFailure(ERROR_DUPLICATE_FUNCTION);
 }
 
-func reportNoFunctionCallCandidate(this: &TypeChecker, callID: usize, functions: &FunctionLookupList) -> TCState {
+func reportNoFunctionCallCandidate(this: &TypeChecker, callID: usize, fnType: &Type, functions: &FunctionLookupList) -> TCState {
     trace("TypeChecker.reportNoFunctionCallCandidate");
     let callExpr: &ParsedExpr = at(&exprs, callID);
     assert(callExpr.kind == EXPR_NAME, "reportNoFunctionCallCandidate: Expected expr to be a call");
     let loc: String = toString(&callExpr.origToken.span);
     let name: String = toString(&callExpr.origToken.content);
-    fprintf(stderr, "%s: %s: Could not find matching signature for call to function `%s`.\n", loc.buffer, ERR_STR, name.buffer);
-    assert(functions.length != 0, "reportNoFunctionCallCandidate: Expected at least one declaration");
+    let typ = toString(fnType);
+    fprintf(stderr, "%s: %s: No function overload fits the provided context for call to function `%s`.\n", loc.buffer, ERR_STR, name.buffer);
+    fprintf(stderr, "%s: %s: Context requires an overload of the form %s.\n", loc.buffer, NOTE_STR, typ.buffer);
     // REVIEW: It was suggested that we could hide this extra info behind a `--verbose` flag, which sounds interesting.
+    assert(functions.length != 0, "reportNoFunctionCallCandidate: Expected at least one declaration");
     for (let i: usize = 0; i < functions.length; i = i + 1) {
         let f: &FunctionLookup = at(functions, i);
         let loc: String = toString(&f.name.span);
-        fprintf(stderr, "%s: %s: A function with that name is located here.\n", loc.buffer, NOTE_STR);
+        let typ = toString(at(&types, getType(&f.fnType)));
+        fprintf(stderr, "%s: %s: Overload %s declared here.\n", loc.buffer, NOTE_STR, typ.buffer);
+        drop(&typ);
         drop(&loc);
     }
+    drop(&typ);
     drop(&name);
     drop(&loc);
     this.typeError = true;
@@ -1515,7 +1522,7 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
                 tid = newTCStateFailure(ERROR_NO_SUCH_FUNCTION);
             } else {
                 let all = resolveFunctionByName(&this.lookup, this.currentModule, &expr.origToken);
-                tid = reportNoFunctionCallCandidate(this, exprID, &all);
+                tid = reportNoFunctionCallCandidate(this, exprID, typ, &all);
                 drop(&all);
             }
         } else if (functions.length == 1) {
