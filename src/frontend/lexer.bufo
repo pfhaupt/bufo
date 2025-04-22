@@ -12,7 +12,6 @@ func BUILD_A_KEYWORD(s: &char) -> SubStr {
     };
 }
 comptime KEYWORD_LET: SubStr = BUILD_A_KEYWORD("let");
-comptime KEYWORD_MUT: SubStr = BUILD_A_KEYWORD("mut");
 comptime KEYWORD_COMPTIME: SubStr = BUILD_A_KEYWORD("comptime");
 comptime KEYWORD_FUNC: SubStr = BUILD_A_KEYWORD("func");
 comptime KEYWORD_STRUCT: SubStr = BUILD_A_KEYWORD("struct");
@@ -24,13 +23,11 @@ comptime KEYWORD_IMPORT: SubStr = BUILD_A_KEYWORD("import");
 comptime KEYWORD_IF: SubStr = BUILD_A_KEYWORD("if");
 comptime KEYWORD_ELSE: SubStr = BUILD_A_KEYWORD("else");
 comptime KEYWORD_WHILE: SubStr = BUILD_A_KEYWORD("while");
-comptime KEYWORD_UNSAFE: SubStr = BUILD_A_KEYWORD("unsafe");
 comptime KEYWORD_SIZEOF: SubStr = BUILD_A_KEYWORD("sizeof");
 comptime KEYWORD_AS: SubStr = BUILD_A_KEYWORD("as");
 comptime KEYWORD_FOR: SubStr = BUILD_A_KEYWORD("for");
 comptime KEYWORD_BREAK: SubStr = BUILD_A_KEYWORD("break");
 comptime KEYWORD_CONTINUE: SubStr = BUILD_A_KEYWORD("continue");
-comptime KEYWORD_EXTERN: SubStr = BUILD_A_KEYWORD("extern");
 comptime KEYWORD_NULL: SubStr = BUILD_A_KEYWORD("null");
 comptime KEYWORD_BLANK: SubStr = BUILD_A_KEYWORD("blank");
 comptime KEYWORD_TRUE: SubStr = BUILD_A_KEYWORD("true");
@@ -46,7 +43,6 @@ struct Lexer {
 func isKeyword(this: &Lexer, word: &SubStr) -> bool {
     return equals(word, &KEYWORD_LET)
         || equals(word, &KEYWORD_FUNC)
-        || equals(word, &KEYWORD_MUT)
         || equals(word, &KEYWORD_COMPTIME)
         || equals(word, &KEYWORD_STRUCT)
         || equals(word, &KEYWORD_ENUM)
@@ -57,13 +53,11 @@ func isKeyword(this: &Lexer, word: &SubStr) -> bool {
         || equals(word, &KEYWORD_IF)
         || equals(word, &KEYWORD_ELSE)
         || equals(word, &KEYWORD_WHILE)
-        || equals(word, &KEYWORD_UNSAFE)
         || equals(word, &KEYWORD_SIZEOF)
         || equals(word, &KEYWORD_AS)
         || equals(word, &KEYWORD_FOR)
         || equals(word, &KEYWORD_BREAK)
         || equals(word, &KEYWORD_CONTINUE)
-        || equals(word, &KEYWORD_EXTERN)
         || equals(word, &KEYWORD_NULL)
         || equals(word, &KEYWORD_BLANK)
         || equals(word, &KEYWORD_TRUE)

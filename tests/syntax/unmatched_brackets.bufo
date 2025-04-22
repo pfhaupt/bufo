@@ -4,7 +4,7 @@
 //! CODE: 1
 //! ERROR:
 //! Expected Top Level Keyword, found `}` instead.
-//! A non-exhaustive list of TLK: `import`, `let`, `comptime`, `struct`, `extern`, `func`.
+//! A non-exhaustive list of TLK: `import`, `let`, `comptime`, `struct`, `func`.
 
 struct Foo {
 
