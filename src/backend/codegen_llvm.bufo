@@ -708,6 +708,9 @@ func generateLLVMValueFromComptimeValue(this: &LLVMCodegen, typ: &Type, start: &
             assert(val == 0 || val == 1, "comptime bool is not 0 or 1");
             let t: LLVMType = createIntegerType(&this.llvmContext, 1);
             return constInt(&t, val as usize, false);
+        } else if (isNone(typ)) {
+            let t: LLVMType = createIntegerType(&this.llvmContext, 1);
+            return constInt(&t, 1, false);
         } else {
             todo_with_msg("prim");
         }

@@ -7,10 +7,12 @@ import "../util/hashmaps.bufo";
 import "../util/arena.bufo";
 import "../frontend/nodes.bufo";
 import "../middleend/types.bufo";
+import "../middleend/checker.bufo";
 import "./irgen.bufo";
 import "./codegen_llvm.bufo";
 
 @os(WINDOWS) import "winapi/structs.bufo";
+@os(WINDOWS) import "winapi/functions.bufo";
 
 struct InterpReg {
     offset: usize;
@@ -119,20 +121,20 @@ let instrFns = [
     evaluateIntCmpLtAndGte,     // INSTR_INT_CMP_GTE
     evaluateIntCmpLtAndGte,     // INSTR_INT_CMP_LT
     evaluateIntCmpGtAndLte,     // INSTR_INT_CMP_LTE
-    evaluateNotImplemented,
-    evaluateNotImplemented,
-    evaluateNotImplemented,
+    evaluateFloatAdd,           // INSTR_FLOAT_ADD
+    evaluateFloatSub,           // INSTR_FLOAT_SUB
+    evaluateFloatMul,           // INSTR_FLOAT_MUL
     evaluateFloatDiv,           // INSTR_FLOAT_DIV
-    evaluateNotImplemented,
+    evaluateFloatMod,           // INSTR_FLOAT_MOD
     evaluateFloatCmpEqAndNeq,   // INSTR_FLOAT_CMP_EQ
     evaluateFloatCmpEqAndNeq,   // INSTR_FLOAT_CMP_NEQ
-    evaluateNotImplemented,
-    evaluateNotImplemented,
-    evaluateNotImplemented,
-    evaluateNotImplemented,
+    evaluateFloatCmpGtAndLte,   // INSTR_FLOAT_CMP_GT
+    evaluateFloatCmpLtAndGte,   // INSTR_FLOAT_CMP_GTE
+    evaluateFloatCmpLtAndGte,   // INSTR_FLOAT_CMP_LT
+    evaluateFloatCmpGtAndLte,   // INSTR_FLOAT_CMP_LTE
     evaluateLogicalNot,         // INSTR_LOGICAL_NOT
     evaluateNotImplemented,
-    evaluateNotImplemented,
+    evaluateLogicalOr,          // INSTR_LOGICAL_OR
     evaluateNotImplemented,
     evaluateNotImplemented,
     evaluateNotImplemented,
@@ -265,28 +267,68 @@ func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let id = *(getRegStackPointer(this, &asInterp(at(regs, instr.src.i), "Call")) as &usize);
     let calledFunc: &IRFunc = at(&this.irGen.functions, id);
-    let argSize: usize = this.argStackLength;
-    let stackStart: &u8 = this.realStackStart;
-    let regStackStart: &u8 = this.regStackStart;
-    for (let _i: usize = 0; _i < instr.args.length; _i = _i + 1) {
-        let i: usize = instr.args.length - _i - 1;
-        let reg: &RegValue = at(regs, at(&instr.args, i).i);
-        let arg: InterpReg = asInterp(reg, "call arg");
-        pushArgument(this, getRegStackPointer(this, &arg), arg.size);
+    let f = at(&funcDecls, calledFunc.originalID);
+    if (isExtern(f)) {
+        @os(WINDOWS) if (!isNull(f.dllHandle.handle)) {
+            let fun = compileFunctionCall(this, irFunc, calledFunc, instr, f.dllHandle.handle.ptr, regs);
+            let retType = at(&types, at(&types, getType(&f.typeState)).typeIndex);
+            let val = fun.run();
+            let size: usize = getSize(dstReg.typ);
+            let dst: InterpReg = InterpReg {
+                offset: dstReg.offset,
+                size: size,
+            };
+            if (getSize(retType) == 0) {
+                // noop
+            } else if (getSize(retType) <= 1) {
+                *(getRegStackPointer(this, &dst) as &u8) = *((&val) as &u8);
+            } else if (getSize(retType) <= 2) {
+                *(getRegStackPointer(this, &dst) as &u16) = *((&val) as &u16);
+            } else if (getSize(retType) <= 4) {
+                if (isFloat(retType)) {
+                    *(getRegStackPointer(this, &dst) as &f32) = *((&val) as &f32);
+                } else {
+                    *(getRegStackPointer(this, &dst) as &u32) = *((&val) as &u32);
+                }
+            } else if (getSize(retType) <= 8) {
+                if (isFloat(retType)) {
+                    *(getRegStackPointer(this, &dst) as &f64) = *((&val) as &f64);
+                } else {
+                    *(getRegStackPointer(this, &dst) as &u64) = *((&val) as &u64);
+                }
+            } else {
+                // handled by IR generator
+            }
+            free(fun);
+            return dst;
+        } else {
+            todo_with_msg("comptime interpreter could not find valid function pointer for extern function");
+        }
+        @os(LINUX) todo_with_msg("comptime extern call");
+    } else {
+        let argSize: usize = this.argStackLength;
+        let stackStart: &u8 = this.realStackStart;
+        let regStackStart: &u8 = this.regStackStart;
+        for (let _i: usize = 0; _i < instr.args.length; _i = _i + 1) {
+            let i: usize = instr.args.length - _i - 1;
+            let reg: &RegValue = at(regs, at(&instr.args, i).i);
+            let arg: InterpReg = asInterp(reg, "call arg");
+            pushArgument(this, getRegStackPointer(this, &arg), arg.size);
+        }
+        let regs: RegValueList = blank;
+        initBlank(&regs, calledFunc.registers.length);
+        evaluateCall(this, instr.span, calledFunc, &regs);
+        let size: usize = getSize(dstReg.typ);
+        let dst: InterpReg = InterpReg {
+            offset: dstReg.offset,
+            size: size,
+        };
+        popArgument(this, getRegStackPointer(this, &dst), size);
+        assert(argSize == this.argStackLength, "Imbalanced argument stack after calling IRInterp.evaluateCall");
+        assert(stackStart == this.realStackStart, "Imbalanced real stack after calling IRInterp.evaluateCall");
+        assert(regStackStart == this.regStackStart, "Imbalanced reg stack after calling IRInterp.evaluateCall");
+        return dst;
     }
-    let regs: RegValueList = blank;
-    initBlank(&regs, calledFunc.registers.length);
-    evaluateCall(this, instr.span, calledFunc, &regs);
-    let size: usize = getSize(dstReg.typ);
-    let dst: InterpReg = InterpReg {
-        offset: dstReg.offset,
-        size: size,
-    };
-    popArgument(this, getRegStackPointer(this, &dst), size);
-    assert(argSize == this.argStackLength, "Imbalanced argument stack after calling IRInterp.evaluateCall");
-    assert(stackStart == this.realStackStart, "Imbalanced real stack after calling IRInterp.evaluateCall");
-    assert(regStackStart == this.regStackStart, "Imbalanced reg stack after calling IRInterp.evaluateCall");
-    return dst;
 }
 func evaluateReturnExpr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     trace("IRInterp.evaluateReturnExpr");
@@ -770,6 +812,90 @@ func evaluateIntCmpLtAndGte(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, r
     return dst;
 }
 
+func evaluateFloatAdd(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateFloatAdd");
+    // OPT: Specialized 8bit, 16bit, etc. variations
+    let lhs: &RegValue = at(regs, instr.src.i);
+    let rhs: &RegValue = at(regs, instr.op1.i);
+    let rLhs: InterpReg =  asInterp(lhs, "FloatAdd LHS");
+    let rRhs: InterpReg =  asInterp(rhs, "FloatAdd RHS");
+    let t1: &Type = getRegister(irFunc, instr.src).typ;
+    let s1: usize = rLhs.size;
+    let s2: usize = rRhs.size;
+    assert(s1 == s2, "FloatAdd expected LHS and RHS to be the same size");
+    let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+    let dst: InterpReg = InterpReg {
+        offset: dstReg.offset,
+        size: s1,
+    };
+    let start: &u8 = getRegStackPointer(this, &dst);
+    let lhsStart: &u8 = getRegStackPointer(this, &rLhs);
+    let rhsStart: &u8 = getRegStackPointer(this, &rRhs);
+    if (s1 == 4) {
+        *(start as &f32) = *(lhsStart as &f32) + *(rhsStart as &f32);
+    } else if (s1 == 8) {
+        *(start as &f64) = *(lhsStart as &f64) + *(rhsStart as &f64);
+    } else {
+        unreachable("float add with sus bitsize");
+    }
+    return dst;
+}
+func evaluateFloatSub(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateFloatSub");
+    // OPT: Specialized 8bit, 16bit, etc. variations
+    let lhs: &RegValue = at(regs, instr.src.i);
+    let rhs: &RegValue = at(regs, instr.op1.i);
+    let rLhs: InterpReg =  asInterp(lhs, "FloatSub LHS");
+    let rRhs: InterpReg =  asInterp(rhs, "FloatSub RHS");
+    let t1: &Type = getRegister(irFunc, instr.src).typ;
+    let s1: usize = rLhs.size;
+    let s2: usize = rRhs.size;
+    assert(s1 == s2, "FloatSub expected LHS and RHS to be the same size");
+    let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+    let dst: InterpReg = InterpReg {
+        offset: dstReg.offset,
+        size: s1,
+    };
+    let start: &u8 = getRegStackPointer(this, &dst);
+    let lhsStart: &u8 = getRegStackPointer(this, &rLhs);
+    let rhsStart: &u8 = getRegStackPointer(this, &rRhs);
+    if (s1 == 4) {
+        *(start as &f32) = *(lhsStart as &f32) - *(rhsStart as &f32);
+    } else if (s1 == 8) {
+        *(start as &f64) = *(lhsStart as &f64) - *(rhsStart as &f64);
+    } else {
+        unreachable("float sub with sus bitsize");
+    }
+    return dst;
+}
+func evaluateFloatMul(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateFloatMul");
+    // OPT: Specialized 8bit, 16bit, etc. variations
+    let lhs: &RegValue = at(regs, instr.src.i);
+    let rhs: &RegValue = at(regs, instr.op1.i);
+    let rLhs: InterpReg =  asInterp(lhs, "FloatMul LHS");
+    let rRhs: InterpReg =  asInterp(rhs, "FloatMul RHS");
+    let t1: &Type = getRegister(irFunc, instr.src).typ;
+    let s1: usize = rLhs.size;
+    let s2: usize = rRhs.size;
+    assert(s1 == s2, "FloatMul expected LHS and RHS to be the same size");
+    let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+    let dst: InterpReg = InterpReg {
+        offset: dstReg.offset,
+        size: s1,
+    };
+    let start: &u8 = getRegStackPointer(this, &dst);
+    let lhsStart: &u8 = getRegStackPointer(this, &rLhs);
+    let rhsStart: &u8 = getRegStackPointer(this, &rRhs);
+    if (s1 == 4) {
+        *(start as &f32) = *(lhsStart as &f32) * *(rhsStart as &f32);
+    } else if (s1 == 8) {
+        *(start as &f64) = *(lhsStart as &f64) * *(rhsStart as &f64);
+    } else {
+        unreachable("float mul with sus bitsize");
+    }
+    return dst;
+}
 func evaluateFloatDiv(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     trace("IRInterp.evaluateFloatDiv");
     // OPT: Specialized 8bit, 16bit, etc. variations
@@ -795,6 +921,34 @@ func evaluateFloatDiv(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &
         *(start as &f64) = *(lhsStart as &f64) / *(rhsStart as &f64);
     } else {
         unreachable("float div with sus bitsize");
+    }
+    return dst;
+}
+func evaluateFloatMod(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateFloatMod");
+    // OPT: Specialized 8bit, 16bit, etc. variations
+    let lhs: &RegValue = at(regs, instr.src.i);
+    let rhs: &RegValue = at(regs, instr.op1.i);
+    let rLhs: InterpReg =  asInterp(lhs, "FloatMod LHS");
+    let rRhs: InterpReg =  asInterp(rhs, "FloatMod RHS");
+    let t1: &Type = getRegister(irFunc, instr.src).typ;
+    let s1: usize = rLhs.size;
+    let s2: usize = rRhs.size;
+    assert(s1 == s2, "FloatMod expected LHS and RHS to be the same size");
+    let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+    let dst: InterpReg = InterpReg {
+        offset: dstReg.offset,
+        size: s1,
+    };
+    let start: &u8 = getRegStackPointer(this, &dst);
+    let lhsStart: &u8 = getRegStackPointer(this, &rLhs);
+    let rhsStart: &u8 = getRegStackPointer(this, &rRhs);
+    if (s1 == 4) {
+        *(start as &f32) = *(lhsStart as &f32) % *(rhsStart as &f32);
+    } else if (s1 == 8) {
+        *(start as &f64) = *(lhsStart as &f64) % *(rhsStart as &f64);
+    } else {
+        unreachable("float mod with sus bitsize");
     }
     return dst;
 }
@@ -835,6 +989,80 @@ func evaluateFloatCmpEqAndNeq(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr,
     *start = r;
     return dst;
 }
+func evaluateFloatCmpGtAndLte(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateFloatCmpGtAndLte");
+    let lhs: &RegValue = at(regs, instr.src.i);
+    let rhs: &RegValue = at(regs, instr.op1.i);
+    let rLhs: InterpReg =  asInterp(lhs, "FCmpLte/FCmpGt LHS");
+    let rRhs: InterpReg =  asInterp(rhs, "FCmpLte/FCmpGt RHS");
+    let t1: &Type = getRegister(irFunc, instr.src).typ;
+    let t2: &Type = getRegister(irFunc, instr.op1).typ;
+    let s1: usize = getSize(t1);
+    let s2: usize = getSize(t2);
+    assert(s1 == s2, "FCmpLte/FCmpGt got differently sized operands");
+    let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+    let dst: InterpReg = InterpReg {
+        offset: dstReg.offset,
+        size: 1,
+    };
+    let start: &u8 = getRegStackPointer(this, &dst);
+    let lhsStart: &u8 = getRegStackPointer(this, &rLhs);
+    let rhsStart: &u8 = getRegStackPointer(this, &rRhs);
+    let eq: bool = false;
+    if (isFloat(t1)) {
+        if (s1 == 4) {
+            eq = *(lhsStart as &f32) > *(rhsStart as &f32);
+        } else if (s1 == 8) {
+            eq = *(lhsStart as &f64) > *(rhsStart as &f64);
+        } else {
+            unreachable("float cmp with sus bitsize");
+        }
+    } else {
+        unreachable("Interp FCmpGt/FCmpLte on non-float");
+    }
+    let r: u8 = 0;
+    if (eq) r = 1;
+    if (instr.kind == INSTR_FLOAT_CMP_LTE) r = 1 - r;
+    *start = r;
+    return dst;
+}
+func evaluateFloatCmpLtAndGte(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateFloatCmpLtAndGte");
+    let lhs: &RegValue = at(regs, instr.src.i);
+    let rhs: &RegValue = at(regs, instr.op1.i);
+    let rLhs: InterpReg =  asInterp(lhs, "FCmpGte/FCmpLt LHS");
+    let rRhs: InterpReg =  asInterp(rhs, "FCmpGte/FCmpLt RHS");
+    let t1: &Type = getRegister(irFunc, instr.src).typ;
+    let t2: &Type = getRegister(irFunc, instr.op1).typ;
+    let s1: usize = getSize(t1);
+    let s2: usize = getSize(t2);
+    assert(s1 == s2, "FCmpGte/FCmpLt got differently sized operands");
+    let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+    let dst: InterpReg = InterpReg {
+        offset: dstReg.offset,
+        size: 1,
+    };
+    let start: &u8 = getRegStackPointer(this, &dst);
+    let lhsStart: &u8 = getRegStackPointer(this, &rLhs);
+    let rhsStart: &u8 = getRegStackPointer(this, &rRhs);
+    let eq: bool = false;
+    if (isFloat(t1)) {
+        if (s1 == 4) {
+            eq = *(lhsStart as &f32) < *(rhsStart as &f32);
+        } else if (s1 == 8) {
+            eq = *(lhsStart as &f64) < *(rhsStart as &f64);
+        } else {
+            unreachable("float cmp with sus bitsize");
+        }
+    } else {
+        unreachable("Interp FCmpLt/FCmpGte on non-float");
+    }
+    let r: u8 = 0;
+    if (eq) r = 1;
+    if (instr.kind == INSTR_FLOAT_CMP_GTE) r = 1 - r;
+    *start = r;
+    return dst;
+}
 func evaluateLogicalNot(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     trace("IRInterp.evaluateLogicalNot");
     let src: &RegValue = at(regs, instr.src.i);
@@ -852,6 +1080,32 @@ func evaluateLogicalNot(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs:
     let val: u8 = *srcStart;
     assert(val == 0 || val == 1, "Logical Not got non-zero non-one");
     *dstStart = 1 - val;
+    return dst;
+}
+func evaluateLogicalOr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateLogicalOr");
+    let lhs: &RegValue = at(regs, instr.src.i);
+    let rhs: &RegValue = at(regs, instr.op1.i);
+    let rLhs: InterpReg =  asInterp(lhs, "LOr LHS");
+    let rRhs: InterpReg =  asInterp(rhs, "LOr RHS");
+    let t1: &Type = getRegister(irFunc, instr.src).typ;
+    let t2: &Type = getRegister(irFunc, instr.op1).typ;
+    let s1: usize = getSize(t1);
+    let s2: usize = getSize(t2);
+    assert(s1 == s2, "LOr got differently sized operands");
+    assert(s1 == 1, "Idk");
+    let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+    let dst: InterpReg = InterpReg {
+        offset: dstReg.offset,
+        size: 1,
+    };
+    let lhsStart: &u8 = getRegStackPointer(this, &rLhs);
+    let rhsStart: &u8 = getRegStackPointer(this, &rRhs);
+    let dstStart: &u8 = getRegStackPointer(this, &dst);
+    *dstStart = 0;
+    if (*(lhsStart as &bool) || *(rhsStart as &bool)) {
+        *dstStart = 1;
+    }
     return dst;
 }
 func evaluateInsertValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
@@ -1088,18 +1342,311 @@ func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: 
     }
     return false;
 }
-func evaluateCall(this: &IRInterp, span: Span, irFunc: &IRFunc, regs: &RegValueList) {
-    trace("IRInterp.evaluateCall");
-    let f = at(&funcDecls, irFunc.originalID);
-    if (isExtern(f)) {
-        if (!isNull(f.dllHandle.handle)) {
-            fprintf(stderr, "f.dllHandle.handle = %p\n", f.dllHandle.handle);
-            // TODO: JIT compile function call
-            todo_with_msg("Everything indicates that we currently have a valid pointer in f.dllHandle!");
+
+comptime RAX: u8 = 0;
+comptime RCX: u8 = 1;
+comptime RDX: u8 = 2;
+comptime RBX: u8 = 3;
+comptime RSP: u8 = 4;
+comptime RBP: u8 = 5;
+comptime RSI: u8 = 6;
+comptime RDI: u8 = 7;
+comptime R8: u8 = 8;
+comptime R9: u8 = 9;
+comptime R10: u8 = 10;
+comptime R11: u8 = 11;
+comptime R12: u8 = 12;
+comptime R13: u8 = 13;
+comptime R14: u8 = 14;
+comptime R15: u8 = 15;
+
+comptime XMM0: u8 = 0;
+comptime XMM1: u8 = 1;
+comptime XMM2: u8 = 2;
+comptime XMM3: u8 = 3;
+comptime XMM4: u8 = 4;
+comptime XMM5: u8 = 5;
+
+comptime ADDR_INDIRECT: u8 = 0;
+comptime ADDR_DISP8: u8 = 1;
+comptime ADDR_DISP32: u8 = 2;
+comptime ADDR_REG: u8 = 3;
+
+comptime PROT_READ: i32 = 1;
+comptime PROT_WRITE: i32 = 2;
+comptime PROT_EXEC: i32 = 4;
+comptime MAP_PRIVATE: i32 = 2;
+comptime MAP_ANONYMOUS: i32 = 32;
+
+comptime RTLD_LAZY: i32 = 1;
+
+struct ByteBuffer {
+    elements: &u8;
+    length: usize;
+    capacity: usize;
+}
+
+struct Function {
+    run: func () -> u64;
+    size: usize;
+}
+
+func free(fn: Function) {
+    if (!VirtualFree(fn.run as Any, fn.size, 16384)) {
+        printf("warning: Could not free function at %p\n", fn.run);
+    }
+}
+
+func push(buf: &ByteBuffer, b1: char, b2: char, b3: char, b4: char, b5: char, b6: char, b7: char, b8: char) {
+    push(buf, b1 as u8, b2 as u8, b3 as u8, b4 as u8, b5 as u8, b6 as u8, b7 as u8, b8 as u8);
+}
+
+func push(buf: &ByteBuffer, b1: char, b2: char, b3: char, b4: char) {
+    push(buf, b1 as u8, b2 as u8);
+    push(buf, b3 as u8, b4 as u8);
+}
+func push(buf: &ByteBuffer, b1: char, b2: char, b3: char) {
+    push(buf, b1 as u8, b2 as u8);
+    push(buf, b3 as u8);
+}
+func push(buf: &ByteBuffer, b1: char, b2: char) {
+    push(buf, b1 as u8, b2 as u8);
+}
+func push(buf: &ByteBuffer, b1: char) {
+    push(buf, b1 as u8);
+}
+func push(buf: &ByteBuffer, b1: u8, b2: u8) {
+    push(buf, b1);
+    push(buf, b2);
+}
+func push(buf: &ByteBuffer, b1: u8, b2: u8, b3: u8, b4: u8, b5: u8, b6: u8, b7: u8, b8: u8) {
+    push(buf, b1);
+    push(buf, b2);
+    push(buf, b3);
+    push(buf, b4);
+    push(buf, b5);
+    push(buf, b6);
+    push(buf, b7);
+    push(buf, b8);
+}
+func push(buf: &ByteBuffer, element: u8) {
+    if (buf.length >= buf.capacity) {
+        let newCap: usize = buf.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        buf.elements = realloc(buf.elements, newCap * sizeof u8);
+        assert(buf.elements != null, "Could not allocate memory in ByteBuffer.push");
+        buf.capacity = newCap;
+    }
+    buf.elements[buf.length] = element;
+    buf.length = buf.length + 1;
+}
+
+func extend(buf: &ByteBuffer, other: &ByteBuffer) {
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(buf, other.elements[i]);
+    }
+    free(other.elements);
+    *other = blank;
+}
+
+func pushImm(bytes: &ByteBuffer, imm: u32) {
+    let _bytes = &imm as &u8;
+    for (let i: usize = 0; i < 4; i = i + 1) {
+        push(bytes, _bytes[i]);
+    }
+}
+
+func pushImm(bytes: &ByteBuffer, imm: u64) {
+    let _bytes = &imm as &u8;
+    for (let i: usize = 0; i < 8; i = i + 1) {
+        push(bytes, _bytes[i]);
+    }
+}
+
+func modRM(bytes: &ByteBuffer, addr: u8, opext: u8, reg: u8) {
+    let byte = shiftLeft(addr as usize, 6) as u8;
+    byte = byte | shiftLeft(opext as usize, 3) as u8;
+    byte = byte | (reg % 8);
+    push(bytes, byte);
+}
+
+func modPrefix(bytes: &ByteBuffer, r: u8) {
+    let rex: u8 = '\x48' as u8;
+    if (r >= 8) rex = rex | 1;
+    push(bytes, rex);
+}
+
+func mov(to: u8, from: u8) -> ByteBuffer {
+    let bytes: ByteBuffer = blank;
+    modPrefix(&bytes, from);
+    push(&bytes, '\x89');
+    modRM(&bytes, ADDR_REG, from, to);
+    return bytes;
+}
+
+func mov(r: u8, imm: u32) -> ByteBuffer {
+    let bytes: ByteBuffer = blank;
+    let opcode = (('\xb8' as u8) + (r % 8)) as char;
+    push(&bytes, opcode);
+    pushImm(&bytes, imm);
+    return bytes;
+}
+
+func mov(r: u8, imm: u64) -> ByteBuffer {
+    let bytes: ByteBuffer = blank;
+    modPrefix(&bytes, r);
+    let opcode = (('\xb8' as u8) + (r % 8)) as char;
+    push(&bytes, opcode);
+    pushImm(&bytes, imm);
+    return bytes;
+}
+
+
+func push(reg: u8) -> ByteBuffer {
+    let bytes: ByteBuffer = blank;
+    push(&bytes, '\xFF');
+    modRM(&bytes, ADDR_REG, 6, reg);
+    return bytes;
+}
+
+func pop(reg: u8) -> ByteBuffer {
+    let bytes: ByteBuffer = blank;
+    push(&bytes, '\x8F');
+    modRM(&bytes, ADDR_REG, 0, reg);
+    return bytes;
+}
+
+func mov(r: u8, offset: u32, imm: u64) -> ByteBuffer {
+    let bytes: ByteBuffer = blank;
+    extend(&bytes, &mov(RBX, imm));
+    assert(offset < 256, "only single byte offset for now");
+    push(&bytes, '\x48', '\x89', '\x5C', '\x24');
+    push(&bytes, offset as char);
+    return bytes;
+}
+
+func mov(r: u8, imm: f32) -> ByteBuffer {
+    let bytes: ByteBuffer = blank;
+    extend(&bytes, &mov(RAX, *(&imm as &u32)));
+    push(&bytes, '\x66', '\x0F', '\x6E');
+    modRM(&bytes, ADDR_REG, r, RAX);
+    return bytes;
+}
+
+func mov(r: u8, imm: f64) -> ByteBuffer {
+    let bytes: ByteBuffer = blank;
+    extend(&bytes, &mov(RAX, *(&imm as &u64)));
+    push(&bytes, '\x66', '\x48', '\x0F', '\x6E');
+    modRM(&bytes, ADDR_REG, r, RAX);
+    return bytes;
+}
+
+func add(r: u8, imm: u32) -> ByteBuffer {
+    let bytes: ByteBuffer = blank;
+    modPrefix(&bytes, r);
+    push(&bytes, '\x81');
+    modRM(&bytes, ADDR_REG, 0, r);
+    pushImm(&bytes, imm);
+    return bytes;
+}
+
+func sub(r: u8, imm: u32) -> ByteBuffer {
+    let bytes: ByteBuffer = blank;
+    modPrefix(&bytes, r);
+    push(&bytes, '\x81');
+    modRM(&bytes, ADDR_REG, 5, r);
+    pushImm(&bytes, imm);
+    return bytes;
+}
+
+func call(r: u8) -> ByteBuffer {
+    let bytes: ByteBuffer = blank;
+    push(&bytes, '\xFF');
+    modRM(&bytes, ADDR_REG, 2, r);
+    return bytes;
+}
+
+func push(val: u64) -> ByteBuffer {
+    let bytes: ByteBuffer = blank;
+    extend(&bytes, &mov(RAX, val));
+    push(&bytes, '\xFF');
+    modRM(&bytes, ADDR_REG, 6, RAX);
+    return bytes;
+}
+
+
+@os(WINDOWS) func compileFunctionCall(this: &IRInterp, currFunc: &IRFunc, calledFunc: &IRFunc, instr: &IRInstr, fn: usize, regs: &RegValueList) -> Function {
+    let f = at(&funcDecls, calledFunc.originalID);
+    let retType = at(&types, at(&types, getType(&f.typeState)).typeIndex);
+    let buf: ByteBuffer = blank;
+    // push(&buf, '\xf1');
+    extend(&buf, &push(RBP));
+    extend(&buf, &mov(RBP, RSP));
+    comptime ARG_LEN: usize = 4;
+    comptime STACK_OFFSET: u32 = 32;
+    comptime ARGS = [[RCX, XMM0], [RDX, XMM1], [R8, XMM2], [R9, XMM3]];
+    for (let i: usize = 0; i < instr.args.length; i = i + 1) {
+        let index = at(&instr.args, i);
+        let reg: &RegValue = at(regs, index.i);
+        let arg: InterpReg = asInterp(reg, "call arg");
+        let origReg = getRegister(currFunc, *index);
+        let argType = origReg.typ;
+        if (i >= ARG_LEN) {
+            todo_with_msg("stack");
+            // if (v.kind == U64) {
+            //     extend(&buf, &mov(RSP, STACK_OFFSET + 8 * (i - ARG_LEN) as u32, v.u64));
+            // } else if (v.kind == F64) {
+            //     extend(&buf, &mov(RSP, STACK_OFFSET + 8 * (i - ARG_LEN) as u32, *(&v.f64 as &u64)));
+            // } else {
+            //     unreachable("yo momma so fat, she caused my bits to flip");
+            // }
         } else {
-            todo_with_msg("comptime interpreter could not find valid function pointer for extern function");
+            if (isFloat(argType)) {
+                if (getSize(argType) == 4) {
+                    extend(&buf, &mov(ARGS[i][1], *(getRegStackPointer(this, &arg) as &f32)));
+                } else {
+                    extend(&buf, &mov(ARGS[i][1], *(getRegStackPointer(this, &arg) as &f64)));
+                }
+            } else if (getSize(argType) <= 8) {
+                extend(&buf, &mov(ARGS[i][0], *(getRegStackPointer(this, &arg) as &u64)));
+            } else {
+                todo_with_msg("non-int non-float >8 byte reg");
+            }
         }
     }
+    if (instr.args.length < 4) extend(&buf, &sub(RSP, 32));
+    extend(&buf, &mov(RAX, fn as u64));
+    extend(&buf, &call(RAX));
+    if (instr.args.length < 4) extend(&buf, &add(RSP, 32));
+    extend(&buf, &pop(RBP));
+    if (isFloat(retType)) {
+        push(&buf, '\x66', '\x48', '\x0F', '\x7E');
+        modRM(&buf, ADDR_REG, XMM0, RAX);
+    } else if (isNone(retType)) {
+        extend(&buf, &mov(RAX, 420691337 as u32));
+    } else if (isInteger(retType) || isBoolean(retType) || isStruct(retType)) {
+        // noop, other side will hopefully put the thing in RAX for us
+    } else {
+        fprintf(stderr, "%s\n", toString(retType).buffer);
+        todo_with_msg("non-float ret");
+    }
+    // if (ret == U64) {
+    // } else if (ret == F64) {
+    // } else if (ret == F32) {
+    //     push(&buf, '\x66', '\x0F', '\x7E');
+    //     modRM(&buf, ADDR_REG, XMM0, RAX);
+    // } else {
+    //     unreachable("yo momma so fat, she can't even return properly");
+    // }
+    push(&buf, '\xC3');
+    let code = VirtualAlloc(null, buf.length, 4096, 64);
+    assert(code != null, "Could not alloc some bytes sadge thx Windows");
+    memcpy(code, buf.elements, buf.length);
+    free(buf.elements);
+    return Function { run: code as func () -> u64, size: buf.length };
+}
+func evaluateCall(this: &IRInterp, span: Span, irFunc: &IRFunc, regs: &RegValueList) {
+    trace("IRInterp.evaluateCall");
     let funcSize: usize = getRegisterSizeInBytes(irFunc);
     pushRegisterStack(this, span, funcSize);
     let blockID: IRBlockID = IRBlockID { i: 0 };

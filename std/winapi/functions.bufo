@@ -47,3 +47,5 @@ import "winapi/structs.bufo";
 @extern("LoadLibraryA") func LoadLibraryA(lpLibFileName: &char) -> Handle;
 @extern("FreeLibrary") func FreeLibrary(hLibModule: Handle) -> bool;
 @extern("GetProcAddress") func GetProcAddress(handle: Handle, name: &char) -> Handle;
+@extern("VirtualAlloc") func VirtualAlloc(idk: Any, bytes: usize, flags: u32, pFlags: u32) -> Any;
+@extern("VirtualFree") func VirtualFree(address: Any, bytes: usize, flags: u32) -> bool;
