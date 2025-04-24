@@ -1385,6 +1385,9 @@ func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &Pa
     let lhs: &ParsedExpr = at(&exprs, expr.lhs);
     let rhs: &ParsedExpr = at(&exprs, expr.rhs);
     let instance: &Type = at(&types, getType(&lhs.typeState));
+    if (isModule(instance)) {
+        return generateBytecodeExpr(this, function, rhs, needsPtr);
+    }
     assert(isStruct(instance) || isStructPointer(instance), "Expected (ptr to) struct in MemberAccess");
     assert(rhs.kind == EXPR_NAME);
     let result: RegIndex = generateBytecodeExpr(this, function, lhs, !isStructPointer(instance));
@@ -1599,12 +1602,17 @@ func generateBytecodeExprIdentifier(this: &IRGen, function: &IRFunc, expr: &Pars
         }
     } else {
         let t = at(&types, getType(&expr.typeState));
-        assert(isFunction(t), "Expected function in generateBytecodeExprIdentifier");
-        let name: String = getMangledName(at(&funcDecls, expr.lhs));
-        let funcID: usize = getFunctionByName(this, &name);
-        let dst = allocateRegister(function, t);
-        buildLoadFunctionPtr(function, expr.span, dst, funcID);
-        return dst;
+        if (isModule(t)) {
+            return allocateRegister(function, t);
+        } else if (isFunction(t)) {
+            let name: String = getMangledName(at(&funcDecls, expr.lhs));
+            let funcID: usize = getFunctionByName(this, &name);
+            let dst = allocateRegister(function, t);
+            buildLoadFunctionPtr(function, expr.span, dst, funcID);
+            return dst;
+        } else {
+            unreachable("Exhaustive handling of types in generateBytecodeExprIdentifier");
+        }
     }
 }
 

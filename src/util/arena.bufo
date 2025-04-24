@@ -171,6 +171,39 @@ func indexOf(this: &ParsedTopLevelItemArena, elem: &ParsedTopLevelItem) -> usize
     return indexOf(this.start, elem);
 }
 
+struct ParsedModuleArena {
+    start: &ArenaBlock;
+    end: &ArenaBlock;
+    length: usize;
+}
+
+func push(this: &ParsedModuleArena, elem: ParsedModule) {
+    trace("ParsedModuleArena.push");
+    if (this.start == null) {
+        this.start = allocateBlock(ARENA_SIZE_SMALL, sizeof ParsedModule);
+        assert(this.end == null);
+        this.end = this.start;
+    }
+    push(this.end, &elem, ARENA_SIZE_SMALL);
+    if (this.end.next != null) this.end = this.end.next;
+    this.length = this.length + 1;
+}
+func at(this: &ParsedModuleArena, index: usize) -> &ParsedModule {
+    trace("ParsedModuleArena.at");
+    assert(this.start != null, "ParsedModuleArena.at() called on empty Arena");
+    return at(this.start, index) as &ParsedModule;
+}
+func last(this: &ParsedModuleArena) -> &ParsedModule {
+    trace("ParsedModuleArena.last");
+    assert(this.end != null, "ParsedModuleArena.last() called on empty Arena");
+    return last(this.end) as &ParsedModule;
+}
+func indexOf(this: &ParsedModuleArena, elem: &ParsedModule) -> usize {
+    trace("ParsedModuleArena.indexOf");
+    assert(this.start != null, "ParsedModuleArena.indexOf() called on empty Arena");
+    return indexOf(this.start, elem);
+}
+
 struct ParsedStructDeclArena {
     start: &ArenaBlock;
     end: &ArenaBlock;

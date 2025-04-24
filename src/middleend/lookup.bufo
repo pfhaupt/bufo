@@ -32,6 +32,23 @@ func insertFile(this: &Lookup, file: &ParsedFile) -> &FileLookup {
     return last(&this.files);
 }
 
+func getFunctionByGlobalID(this: &Lookup, funcID: usize) -> &FunctionLookup {
+    trace("FileLookup.getFunctionByGlobalID");
+    for (let i: usize = 0; i < this.files.length; i = i + 1) {
+        let f = getFunctionByGlobalID(at(&this.files, i), funcID);
+        if (f != null) return f;
+    }
+    unreachable("Lookup failed to find function based on global ID!");
+}
+func getModuleByGlobalID(this: &Lookup, modID: usize) -> &ModuleLookup {
+    trace("FileLookup.getModuleByGlobalID");
+    for (let i: usize = 0; i < this.files.length; i = i + 1) {
+        let m = getModuleByGlobalID(at(&this.files, i), modID);
+        if (m != null) return m;
+    }
+    unreachable("Lookup failed to find function based on global ID!");
+}
+
 func resolveFunctionByName(this: &Lookup, currentFile: usize, name: &Token) -> FunctionLookupList {
     trace("Lookup.resolveFunctionByName");
     // FIXME: Would be cool if this method didn't create copies of the FunctionLookups
@@ -130,11 +147,23 @@ func resolveTypeByName(this: &Lookup, currentFile: usize, name: &Token, typ: &Ty
     return false;
 }
 
+func resolveModuleByName(this: &Lookup, currentFile: usize, name: &Token, mod: &&ModuleLookup) -> bool {
+    trace("Lookup.resolveModuleByName");
+    let currFile: &FileLookup = at(&this.files, currentFile);
+    if (resolveModuleByName(currFile, name, mod)) return true;
+    for (let i: usize = 0; i < currFile.imports.length; i = i + 1) {
+        let imp: &ImportLookup = at(&currFile.imports, i);
+        let importedFile: &FileLookup = at(&this.files, imp.fileID);
+        if (resolveModuleByName(importedFile, name, mod)) return true;
+    }
+    return false;
+}
 func getTypeLookupForType(this: &Lookup, typ: &Type) -> TypeLookup {
     trace("Lookup.getTypeLookupForType");
     if (isStruct(typ)) {
         let strukt: &ParsedStructDecl = at(&structDecls, typ.typeIndex);
-        let fileID: usize = strukt.parentFile;
+        assert(strukt.parent.isFile, "struct parent is not a file");
+        let fileID: usize = strukt.parent.id as usize;
         let s: &StructLookup = getStructByGlobalID(at(&this.files, fileID), getID(strukt));
         return newTypeLookup(TYPE_LOOKUP_STRUCT, s);
     } else {
@@ -178,10 +207,12 @@ func searchAllFilesForIdentifier(this: &Lookup, name: &Token) -> VariableLookupL
     return list;
 }
 
+// FIXME: FileLookup can be refactored into only having a single field - a ModuleLookup
 struct FileLookup {
     globalID: usize;
     origin: SubStr;
     imports: ImportLookupList;
+    modules: ModuleLookupList;
     functions: FunctionLookupList;
     structs: StructLookupList;
     variables: ScopeLookupList;
@@ -191,13 +222,14 @@ func equals(this: &FileLookup, other: &FileLookup) -> bool {
     return equals(&this.origin, &other.origin);
 }
 
+// FIXME: Remove this function
 func insertTLI(this: &FileLookup, tli: &ParsedTopLevelItem) {
     trace("FileLookup.insertTLI");
     if (tli.kind == TLI_FUNC_DECL) {
         let fun: &ParsedFuncDecl = at(&funcDecls, tli.nodeID);
         let lookup: FunctionLookup = FunctionLookup {
             globalID: tli.nodeID,
-            parentFile: this.globalID,
+            parent: tli.parent,
             name: fun.name,
             params: blank,
             fnType: blank,
@@ -214,11 +246,26 @@ func insertTLI(this: &FileLookup, tli: &ParsedTopLevelItem) {
             todo_with_msg("double import");
         }
         push(&this.imports, lookup);
+    } else if (tli.kind == TLI_MOD_DECL) {
+        let modID: usize = tli.nodeID;
+        let mod: &ParsedModule = at(&modules, modID);
+        let lookup: ModuleLookup = ModuleLookup {
+            name: mod.name,
+            globalID: modID,
+        };
+        if (contains(&this.modules, &lookup)) {
+            todo_with_msg("double module");
+        }
+        // Global Scope
+        push(&lookup.variables, blank);
+        for (let i: usize = 0; i < mod.tlis.length; i = i + 1)
+            insertTLI(&lookup, at(&topLevelItems, *at(&mod.tlis, i)));
+        push(&this.modules, lookup);
     } else if (tli.kind == TLI_STRUCT_DECL) {
         let strukt: &ParsedStructDecl = at(&structDecls, tli.nodeID);
         let lookup: StructLookup = StructLookup {
             globalID: tli.nodeID,
-            parentFile: this.globalID,
+            parent: tli.parent,
             name: strukt.name,
             fields: blank,
             typeID: getID(newType(TYPE_KIND_STRUCT, tli.nodeID)),
@@ -244,11 +291,98 @@ func insertTLI(this: &FileLookup, tli: &ParsedTopLevelItem) {
         }
         addVariable(globalScope, lookup);
     } else {
-        todo_with_msg("insert tli");
+        unreachable("Exhaustive handling of TLI kinds in insertTLI");
     }
 }
 
+func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) {
+    trace("FileLookup.insertTLI");
+    if (tli.kind == TLI_FUNC_DECL) {
+        let fun: &ParsedFuncDecl = at(&funcDecls, tli.nodeID);
+        let lookup: FunctionLookup = FunctionLookup {
+            globalID: tli.nodeID,
+            parent: tli.parent,
+            name: fun.name,
+            params: blank,
+            fnType: blank,
+            isVarArg: fun.params.isVarArg,
+        };
+        push(&this.functions, lookup);
+    } else if (tli.kind == TLI_IMPORT) {
+        let fileID: usize = tli.nodeID;
+        assert(fileID < files.length);
+        let lookup: ImportLookup = ImportLookup {
+            fileID: fileID
+        };
+        if (contains(&this.imports, &lookup)) {
+            todo_with_msg("double import");
+        }
+        push(&this.imports, lookup);
+    } else if (tli.kind == TLI_MOD_DECL) {
+        let modID: usize = tli.nodeID;
+        let mod: &ParsedModule = at(&modules, modID);
+        let lookup: ModuleLookup = ModuleLookup {
+            name: mod.name,
+            globalID: modID,
+        };
+        if (contains(&this.modules, &lookup)) {
+            todo_with_msg("double module");
+        }
+        // Global Scope
+        push(&lookup.variables, blank);
+        for (let i: usize = 0; i < mod.tlis.length; i = i + 1)
+            insertTLI(&lookup, at(&topLevelItems, *at(&mod.tlis, i)));
+        push(&this.modules, lookup);
+    } else if (tli.kind == TLI_STRUCT_DECL) {
+        let strukt: &ParsedStructDecl = at(&structDecls, tli.nodeID);
+        let lookup: StructLookup = StructLookup {
+            globalID: tli.nodeID,
+            parent: tli.parent,
+            name: strukt.name,
+            fields: blank,
+            typeID: getID(newType(TYPE_KIND_STRUCT, tli.nodeID)),
+        };
+        if (contains(&this.structs, &lookup)) {
+            todo_with_msg("double struct");
+        }
+        push(&this.structs, lookup);
+    } else if (tli.kind == TLI_VAR_DECL) {
+        let varDecl: &ParsedStmt = at(&stmts, tli.nodeID);
+        assert(varDecl.kind == STMT_VAR_DECL);
+        let lookup: VariableLookup = VariableLookup {
+            globalID: tli.nodeID,
+            name: varDecl.varDeclContext.name,
+            typeState: blank,
+            isComptime: varDecl.varDeclContext.isComptime,
+        };
+        assert(this.variables.length == 1, "expected to find only the global scope");
+        let globalScope: &ScopeLookup = last(&this.variables);
+        let loc: Token = blank;
+        if (isKnownVariable(globalScope, lookup.name.content, &loc)) {
+            todo_with_msg("double global var");
+        }
+        addVariable(globalScope, lookup);
+    } else {
+        unreachable("Exhaustive handling of TLI kinds in insertTLI");
+    }
+}
 func containsDuplicateFunction(this: &FileLookup, function: &FunctionLookup, dupl: &&FunctionLookup) -> bool {
+    trace("FileLookup.containsDuplicateFunction");
+    let name: String = getMangledName(at(&funcDecls, function.globalID));
+    let duplicate: bool = false;
+    for (let i: usize = 0; !duplicate && i < this.functions.length; i = i + 1) {
+        let f: &FunctionLookup = at(&this.functions, i);
+        if (f == function) continue;
+        let n: String = getMangledName(at(&funcDecls, f.globalID));
+        if (equals(&name, &n)) {
+            *dupl = f;
+            duplicate = true;
+        }
+        drop(&n);
+    }
+    return duplicate;
+}
+func containsDuplicateFunction(this: &ModuleLookup, function: &FunctionLookup, dupl: &&FunctionLookup) -> bool {
     trace("FileLookup.containsDuplicateFunction");
     let name: String = getMangledName(at(&funcDecls, function.globalID));
     let duplicate: bool = false;
@@ -273,7 +407,19 @@ func getFunctionByGlobalID(this: &FileLookup, funcID: usize) -> &FunctionLookup 
             return f;
         }
     }
-    unreachable("Lookup failed to find function based on global ID!");
+    for (let i: usize = 0; i < this.modules.length; i = i + 1) {
+        let f = getFunctionByGlobalID(at(&this.modules, i), funcID);
+        if (f != null) return f;
+    }
+    return null;
+}
+func getModuleByGlobalID(this: &FileLookup, modID: usize) -> &ModuleLookup {
+    trace("FileLookup.getModuleByGlobalID");
+    for (let i: usize = 0; i < this.modules.length; i = i + 1) {
+        let m = getModuleByGlobalID(at(&this.modules, i), modID);
+        if (m != null) return m;
+    }
+    return null;
 }
 
 func getStructByGlobalID(this: &FileLookup, structID: usize) -> &StructLookup {
@@ -383,6 +529,18 @@ func resolveTypeByName(this: &FileLookup, name: &Token, typ: &TypeLookup) -> boo
     return false;
 }
 
+func resolveModuleByName(this: &FileLookup, name: &Token, mod: &&ModuleLookup) -> bool {
+    trace("FileLookup.resolveModuleByName");
+    for (let i: usize = 0; i < this.modules.length; i = i + 1) {
+        let m = at(&this.modules, i);
+        if (equals(&m.name.content, &name.content)) {
+            *mod = m;
+            return true;
+        }
+    }
+    return false;
+}
+
 struct ImportLookup {
     fileID: usize;
 }
@@ -391,9 +549,68 @@ func equals(this: &ImportLookup, other: &ImportLookup) -> bool {
     return this.fileID == other.fileID;
 }
 
+struct ModuleLookup {
+    globalID: usize;
+    name: Token;
+    imports: ImportLookupList;
+    modules: ModuleLookupList;
+    functions: FunctionLookupList;
+    structs: StructLookupList;
+    variables: ScopeLookupList;
+}
+
+func equals(this: &ModuleLookup, other: &ModuleLookup) -> bool {
+    return this.globalID == other.globalID;
+}
+func getFunctionByGlobalID(this: &ModuleLookup, funcID: usize) -> &FunctionLookup {
+    for (let i: usize = 0; i < this.functions.length; i = i + 1) {
+        let f: &FunctionLookup = at(&this.functions, i);
+        if (f.globalID == funcID) {
+            return f;
+        }
+    }
+    return null;
+}
+func getModuleByGlobalID(this: &ModuleLookup, modID: usize) -> &ModuleLookup {
+    if (this.globalID == modID) return this;
+    for (let i: usize = 0; i < this.modules.length; i = i + 1) {
+        let m: &ModuleLookup = at(&this.modules, i);
+        if (m.globalID == modID) {
+            return m;
+        }
+    }
+    return null;
+}
+
+comptime IDENT_NONE: u32 = 0;
+comptime IDENT_FUNC: u32 = 1;
+comptime IDENT_VAR: u32 = 2;
+func resolveIdentifierByName(this: &ModuleLookup, name: &Token, var: &&VariableLookup, fun: &FunctionLookupList) -> u32 {
+    trace("ModuleLookup.resolveIdentifierByName");
+    assert(this.variables.length == 1, "Unexpected length of global variable lookup");
+    let global = last(&this.variables);
+    for (let i: usize = 0; i < global.variables.length; i = i + 1) {
+        let v = at(&global.variables, i);
+        if (equals(&v.name.content, &name.content)) {
+            *var = v;
+            return IDENT_VAR;
+        }
+    }
+    for (let i: usize = 0; i < this.functions.length; i = i + 1) {
+        let f = at(&this.functions, i);
+        if (equals(&f.name.content, &name.content)) {
+            // FIXME: Would be cool if this didn't create a copy
+            push(fun, *f);
+        }
+    }
+    if (fun.length > 0) return IDENT_FUNC;
+    return IDENT_NONE;
+}
+
+
 struct FunctionLookup {
     globalID: usize;
-    parentFile: usize;
+    parent: TLIParent;
     name: Token;
     fnType: TCState;
     params: VariableLookupList;
@@ -477,7 +694,7 @@ func newTypeLookup(kind: usize, actual: Any) -> TypeLookup {
 
 struct StructLookup {
     globalID: usize;
-    parentFile: usize;
+    parent: TLIParent;
     name: Token;
     fields: VariableLookupList;
     typeID: usize;
@@ -487,7 +704,7 @@ func asTypeLookup(this: &StructLookup) -> TypeLookup {
     return newTypeLookup(TYPE_LOOKUP_STRUCT, this);
 }
 func equals(this: &StructLookup, other: &StructLookup) -> bool {
-    if (this.parentFile != other.parentFile) return false;
+    if (!equals(&this.parent, &other.parent)) return false;
     return equals(&this.name.content, &other.name.content);
 }
 

@@ -176,6 +176,10 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList) -> bool {
 }
 
 func parseTopLevelItem(this: &Parser, attributes: ParsedAttributeList, skip: bool) -> &ParsedTopLevelItem {
+    return parseTopLevelItem(this, TLIParent { isFile: true, id: this.lexer.fileID as u32 }, attributes, skip);
+}
+
+func parseTopLevelItem(this: &Parser, parent: TLIParent, attributes: ParsedAttributeList, skip: bool) -> &ParsedTopLevelItem {
     trace("Parser.parseTopLevelItem");
     let tkn: Token = peek(&this.lexer);
     if (equals(&tkn.content, &KEYWORD_IMPORT)) {
@@ -183,6 +187,9 @@ func parseTopLevelItem(this: &Parser, attributes: ParsedAttributeList, skip: boo
     } else if (equals(&tkn.content, &KEYWORD_COMPILER_FLAGS)) {
         parseCompilerFlags(this, attributes, skip);
         return null;
+    } else if (equals(&tkn.content, &KEYWORD_MODULE)) {
+        // REVIEW: Do we want to support modules outside of TLIs?
+        return asTLI(parseModule(this, parent, attributes));
     } else if (equals(&tkn.content, &KEYWORD_LET)) {
         next(&this.lexer);
         return asTLI(parseVarDeclStmt(this, tkn, true));
@@ -191,7 +198,7 @@ func parseTopLevelItem(this: &Parser, attributes: ParsedAttributeList, skip: boo
         return asTLI(parseVarDeclStmt(this, tkn, true));
     } else if (equals(&tkn.content, &KEYWORD_STRUCT)) {
         // REVIEW: Do we want to support structs outside of TLIs?
-        return asTLI(parseStructDecl(this));
+        return asTLI(parseStructDecl(this, parent));
     } else if (equals(&tkn.content, &KEYWORD_FUNC)) {
         // REVIEW: Do we want to support functions outside of TLIs?
         let isExtern: bool = false;
@@ -201,7 +208,7 @@ func parseTopLevelItem(this: &Parser, attributes: ParsedAttributeList, skip: boo
                 break;
             }
         }
-        let decl = parseFuncDecl(this, isExtern);
+        let decl = parseFuncDecl(this, parent, isExtern);
         decl.attrs = attributes;
         return asTLI(decl);
     } else {
@@ -213,6 +220,40 @@ func parseTopLevelItem(this: &Parser, attributes: ParsedAttributeList, skip: boo
         drop(&loc);
         exit(1);
     }
+}
+
+func parseModule(this: &Parser, _parent: TLIParent, attributes: ParsedAttributeList) -> &ParsedModule {
+    trace("Parser.parseModule");
+    let modTkn: Token = expect(this, TOKEN_KEYWORD);
+    assert(equals(&modTkn.content, &KEYWORD_MODULE));
+    let name = expect(this, TOKEN_IDENT);
+    let tlis: UsizeList = blank;
+    expect(this, TOKEN_CURLY_OPEN);
+    let mod = newParsedModule(_parent, blank, name, blank);
+    let parent = TLIParent { isFile: false, id: getID(mod) as u32 };
+    while (!at(this, TOKEN_CURLY_CLOSE)) {
+        let attributes: ParsedAttributeList = blank;
+        let skip = parseAttributes(this, &attributes);
+        if (skip) {
+            debug("Parsed TopLevelItem, but skipping it because of @os()");
+            toggleIgnoringNodes();
+            let item: &ParsedTopLevelItem = parseTopLevelItem(this, parent, attributes, skip);
+            toggleIgnoringNodes();
+        } else {
+            let item: &ParsedTopLevelItem = parseTopLevelItem(this, parent, attributes, skip);
+            if (item == null) {
+                // FIXME: Sus hack
+                // ParsedCompilerFlag
+                continue;
+            }
+            push(&tlis, getID(item));
+        }
+    }
+    let end = expect(this, TOKEN_CURLY_CLOSE);
+    let span = newSpanBetween(&modTkn.span, &end.span);
+    mod.span = span;
+    mod.tlis = tlis;
+    return mod;
 }
 
 func parseCompilerFlags(this: &Parser, attributes: ParsedAttributeList, skip: bool) {
@@ -283,7 +324,7 @@ func parseImport(this: &Parser, skip: bool) -> &ParsedTopLevelItem {
     exit(1);
 }
 
-func parseStructDecl(this: &Parser) -> &ParsedStructDecl {
+func parseStructDecl(this: &Parser, parent: TLIParent) -> &ParsedStructDecl {
     trace("Parser.parseStructDecl");
     let kw: Token = expect(this, TOKEN_KEYWORD);
     let nameTkn: Token = expect(this, TOKEN_IDENT);
@@ -292,7 +333,7 @@ func parseStructDecl(this: &Parser) -> &ParsedStructDecl {
     }
     this.currentStruct = nameTkn.content;
     expect(this, TOKEN_CURLY_OPEN);
-    let decl: &ParsedStructDecl = newParsedStructDecl(this.lexer.fileID, defaultSpan(), nameTkn);
+    let decl: &ParsedStructDecl = newParsedStructDecl(parent, defaultSpan(), nameTkn);
     let structContext: StructContext = blank;
     while (!parsedEOF(this) && !at(this, TOKEN_CURLY_CLOSE)) {
         let tkn = expect(this, TOKEN_IDENT);
@@ -309,7 +350,7 @@ func parseStructDecl(this: &Parser) -> &ParsedStructDecl {
     return decl;
 }
 
-func parseFuncDecl(this: &Parser, isExtern: bool) -> &ParsedFuncDecl {
+func parseFuncDecl(this: &Parser, parent: TLIParent, isExtern: bool) -> &ParsedFuncDecl {
     trace("Parser.parseFuncDecl");
     let tkn: Token = expect(this, TOKEN_KEYWORD);
     if (!isExtern) assert(equals(&tkn.content, &KEYWORD_FUNC));
@@ -319,11 +360,11 @@ func parseFuncDecl(this: &Parser, isExtern: bool) -> &ParsedFuncDecl {
     if (isExtern) {
         let end: Token = expect(this, TOKEN_SEMI_COLON);
         let span: Span = newSpanBetween(&tkn.span, &end.span);
-        return newParsedFuncDecl(this.lexer.fileID, span, name, params, retType, 0);
+        return newParsedFuncDecl(parent, span, name, params, retType, 0);
     } else {
         let body: &ParsedBlock = parseBlock(this);
         let span: Span = newSpanBetween(&tkn.span, &body.span);
-        return newParsedFuncDecl(this.lexer.fileID, span, name, params, retType, getID(body));
+        return newParsedFuncDecl(parent, span, name, params, retType, getID(body));
     }
 }
 

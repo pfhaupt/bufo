@@ -40,6 +40,7 @@ comptime TYPE_KIND_POINTER: usize = 2;
 comptime TYPE_KIND_STRUCT: usize = 3;
 comptime TYPE_KIND_ARRAY: usize = 4;
 comptime TYPE_KIND_FUNCTION: usize = 5;
+comptime TYPE_KIND_MODULE: usize = 6;
 struct Type {
     kind: usize;
     typeIndex: usize;
@@ -219,6 +220,9 @@ func isPointerTo(this: &Type, typ: usize) -> bool {
     if (!isPointer(this)) return false;
     return this.typeIndex == typ;
 }
+func isModule(this: &Type) -> bool {
+    return this.kind == TYPE_KIND_MODULE;
+}
 func isStruct(this: &Type) -> bool {
     return this.kind == TYPE_KIND_STRUCT;
 }
@@ -308,6 +312,9 @@ func toString(this: &Type) -> String {
         pushNumber(&s, this.arraySize);
         pushChar(&s, ']');
         return s;
+    } else if (this.kind == TYPE_KIND_MODULE) {
+        let m = at(&modules, this.typeIndex);
+        return toString(&m.name.content);
     } else if (this.kind == TYPE_KIND_UNKNOWN) {
         return newStringFromStrLit("<unknown>");
     } else {
@@ -381,6 +388,8 @@ func getSize(this: &Type) -> usize {
         else {
             unreachable("Exhaustive handling of primitive types in Type.getSize");
         }
+    } else if (this.kind == TYPE_KIND_MODULE) {
+        return 0;
     } else if (this.kind == TYPE_KIND_ARRAY) {
         let t: &Type = at(&types, this.typeIndex);
         return getSize(t) * this.arraySize;

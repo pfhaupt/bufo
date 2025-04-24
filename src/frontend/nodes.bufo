@@ -36,7 +36,7 @@ func mangleVariableName(
 }
 
 func mangleFunctionName(
-    parentID: usize,
+    parent: TLIParent,
     name: &Token,
     params: &ParamContext,
     retTypeID: usize,
@@ -48,7 +48,13 @@ func mangleFunctionName(
         let a = at(attrs, i);
         if (a.kind == ATTR_EXTERN) return toString(&a.name.content);
     }
-    // Function: Name-ParamsTypeID-rRetTypeID
+    // Function: [Module]*-Name-ParamsTypeID-rRetTypeID
+    while (!parent.isFile) {
+        let mod = at(&modules, parent.id as usize);
+        pushSubStr(&mangledName, &mod.name.content);
+        pushChar(&mangledName, '.');
+        parent = mod.parent;
+    }
     pushSubStr(&mangledName, &name.content);
     for (let i: usize = 0; i < params.paramLength; i = i + 1) {
         let name: Token = getNameAtIndex(params, i);
@@ -76,6 +82,7 @@ func mangleFunctionName(
 
 let files: ParsedFileArena = blank;
 let topLevelItems: ParsedTopLevelItemArena = blank;
+let modules: ParsedModuleArena = blank;
 let structDecls: ParsedStructDeclArena = blank;
 let funcDecls: ParsedFuncDeclArena = blank;
 let blocks: ParsedBlockArena = blank;
@@ -184,8 +191,22 @@ comptime TLI_IMPORT: usize = 1;
 comptime TLI_VAR_DECL: usize = 2;
 comptime TLI_STRUCT_DECL: usize = 3;
 comptime TLI_FUNC_DECL: usize = 4;
+comptime TLI_MOD_DECL: usize = 5;
+
+// the parentID is ambiguous because we can nest modules -> is the parent a ParsedFile or should we
+// look in the modules lookup?
+struct TLIParent {
+    isFile: bool;
+    id: u32;
+}
+
+func equals(this: &TLIParent, other: &TLIParent) -> bool {
+    return this.isFile == other.isFile && this.id == other.id;
+}
+
 struct ParsedTopLevelItem {
     ignored: bool;
+    parent: TLIParent;
     kind: usize;
     span: Span;
     nodeID: usize;
@@ -210,9 +231,36 @@ func newParsedTopLevelItem(span: Span, kind: usize, nodeID: usize) -> &ParsedTop
     return last(&topLevelItems);
 }
 
+struct ParsedModule {
+    ignored: bool;
+    parent: TLIParent;
+    name: Token;
+    span: Span;
+    tlis: UsizeList;
+}
+func getID(this: &ParsedModule) -> usize {
+    trace("ParsedModule.getID");
+    return indexOf(&modules, this);
+}
+func asTLI(this: &ParsedModule) -> &ParsedTopLevelItem {
+    trace("ParsedModule.asTLI");
+    return newParsedTopLevelItem(this.span, TLI_MOD_DECL, getID(this));
+}
+func newParsedModule(parent: TLIParent, span: Span, name: Token, tlis: UsizeList) -> &ParsedModule {
+    trace("newParsedModule");
+    push(&modules, ParsedModule {
+        ignored: ignoringNodes,
+        parent: parent,
+        name: name,
+        span: span,
+        tlis: tlis,
+    });
+    return last(&modules);
+}
+
 struct ParsedStructDecl {
     ignored: bool;
-    parentFile: usize;
+    parent: TLIParent;
     name: Token;
     span: Span;
     context: StructContext;
@@ -255,11 +303,11 @@ func getFieldOffsetAndSize(this: &ParsedStructDecl, index: usize, offset: &usize
     unreachable("Expected to find field offset and size");
 }
 
-func newParsedStructDecl(parent: usize, span: Span, name: Token) -> &ParsedStructDecl {
+func newParsedStructDecl(parent: TLIParent, span: Span, name: Token) -> &ParsedStructDecl {
     trace("newParsedStructDecl");
     push(&structDecls, ParsedStructDecl {
         ignored: ignoringNodes,
-        parentFile: parent,
+        parent: parent,
         name: name,
         span: span,
         context: blank,
@@ -270,7 +318,7 @@ func newParsedStructDecl(parent: usize, span: Span, name: Token) -> &ParsedStruc
 
 struct ParsedFuncDecl {
     ignored: bool;
-    parentID: usize;
+    parent: TLIParent;
     name: Token;
     span: Span;
     params: ParamContext;
@@ -306,7 +354,7 @@ func getMangledName(this: &ParsedFuncDecl) -> String {
     if (this.ignored) return toString(&this.name.content);
     assert(isSuccess(&this.typeState), "Mangling can only be done after type checks");
     return mangleFunctionName(
-        this.parentID,
+        this.parent,
         &this.name,
         &this.params,
         this.retTypeID,
@@ -320,10 +368,10 @@ func asTLI(this: &ParsedFuncDecl) -> &ParsedTopLevelItem {
     return newParsedTopLevelItem(this.span, TLI_FUNC_DECL, getID(this));
 }
 
-func newParsedFuncDecl(parentID: usize, span: Span, name: Token, params: ParamContext, retType: &ParsedTypeNode, body: usize) -> &ParsedFuncDecl {
+func newParsedFuncDecl(parent: TLIParent, span: Span, name: Token, params: ParamContext, retType: &ParsedTypeNode, body: usize) -> &ParsedFuncDecl {
     push(&funcDecls, ParsedFuncDecl {
         ignored: ignoringNodes,
-        parentID: parentID,
+        parent: parent,
         name: name,
         span: span,
         params: params,

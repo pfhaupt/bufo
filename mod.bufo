@@ -1,0 +1,38 @@
+
+import "prelude.bufo";
+import "libc.bufo";
+
+module math {
+    func pow(base: i32, expo: i32) -> i32 {
+        let result: i32 = 1;
+        for (let i: i32 = 0; i < expo; i = i + 1) {
+            result = result * base;
+        }
+        return result;
+    }
+}
+module sus {
+    func pow(b: i32, e: i32) -> i32 {
+        return b - e;
+    }
+}
+func pow(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+func thing(what: i32) -> func (i32, i32) -> i32 {
+    if (what == 0) return math.pow;
+    if (what == 1) return pow;
+    if (what == 2) return sus.pow;
+    unreachable("hmmm");
+}
+func main(argc: i32, argv: &&char) -> i32 {
+    let a: i32 = (comptime thing(0))(5, 3);
+    let b: i32 = (comptime thing(1))(5, 3);
+    let c: i32 = (comptime thing(2))(5, 3);
+    assert(a == 125);
+    assert(b == 8);
+    assert(c == 2);
+    printf("works on my machine! :Clueless:\n");
+    return 0;
+}
+
