@@ -112,18 +112,18 @@ func dummyToken(kind: usize) -> Token {
     return newToken(0, &defaultSubStr(), 0, kind);
 }
 
-func newToken(moduleID: usize, sub: &SubStr, start: usize, kind: usize) -> Token {
-    let s: Span = newSpan(moduleID, start, start + sub.len);
+func newToken(fileID: usize, sub: &SubStr, start: usize, kind: usize) -> Token {
+    let s: Span = newSpan(fileID, start, start + sub.len);
     return Token {
         content: *sub,
         span: s,
         kind: kind
     };
 }
-func newTokenEOF(moduleID: usize, start: usize) -> Token {
+func newTokenEOF(fileID: usize, start: usize) -> Token {
     return Token {
         content: newSubStr("End Of File", 0, 11),
-        span: newSpan(moduleID, start, start + 1),
+        span: newSpan(fileID, start, start + 1),
         kind: TOKEN_EOF,
     };
 }

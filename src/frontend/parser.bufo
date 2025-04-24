@@ -99,21 +99,21 @@ func parsedEOF(this: &Parser) -> bool {
     return peek(&this.lexer).kind == TOKEN_EOF;
 }
 
-func parseProject(this: &Parser, root: SubStr) -> ParsedModule {
+func parseProject(this: &Parser, root: SubStr) -> ParsedFile {
     trace("Parser.parseProject");
-    assert(this.lexer.moduleID == 0, "Expected Parser.parseProject to be the root");
-    let rootModule: &ParsedModule = newParsedModule(root);
-    assert(getID(rootModule) == 0, "Expected Parser.parseProject result to be the root");
-    parseModule(this, root, rootModule);
+    assert(this.lexer.fileID == 0, "Expected Parser.parseProject to be the root");
+    let rootFile: &ParsedFile = newParsedFile(root);
+    assert(getID(rootFile) == 0, "Expected Parser.parseProject result to be the root");
+    parseFile(this, root, rootFile);
     if (this.syntaxError) {
         // All errors are reported at this point
         exit(1);
     }
-    return *rootModule;
+    return *rootFile;
 }
 
-func parseModule(this: &Parser, root: SubStr, mod: &ParsedModule) {
-    trace("Parser.parseModule");
+func parseFile(this: &Parser, root: SubStr, file: &ParsedFile) {
+    trace("Parser.parseFile");
     addImportRoot(this, root);
     while (!parsedEOF(this)) {
         let attributes: ParsedAttributeList = blank;
@@ -130,7 +130,7 @@ func parseModule(this: &Parser, root: SubStr, mod: &ParsedModule) {
                 // ParsedCompilerFlag
                 continue;
             }
-            addTopLevelItem(mod, item);
+            addTopLevelItem(file, item);
         }
     }
 }
@@ -178,15 +178,6 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList) -> bool {
 func parseTopLevelItem(this: &Parser, attributes: ParsedAttributeList, skip: bool) -> &ParsedTopLevelItem {
     trace("Parser.parseTopLevelItem");
     let tkn: Token = peek(&this.lexer);
-    if (tkn.kind != TOKEN_KEYWORD) {
-        let loc: String = toString(&tkn.span);
-        let name: String = toString(&tkn.content);
-        fprintf(stderr, "%s: %s: Expected Top Level Keyword, found `%s` instead.\n", loc.buffer, ERR_STR, name.buffer);
-        fprintf(stderr, "%s: %s: A non-exhaustive list of TLK: `import`, `let`, `comptime`, `struct`, `func`.\n", loc.buffer, NOTE_STR);
-        drop(&name);
-        drop(&loc);
-        exit(1);
-    }
     if (equals(&tkn.content, &KEYWORD_IMPORT)) {
         return parseImport(this, skip);
     } else if (equals(&tkn.content, &KEYWORD_COMPILER_FLAGS)) {
@@ -213,8 +204,15 @@ func parseTopLevelItem(this: &Parser, attributes: ParsedAttributeList, skip: boo
         let decl = parseFuncDecl(this, isExtern);
         decl.attrs = attributes;
         return asTLI(decl);
+    } else {
+        let loc: String = toString(&tkn.span);
+        let name: String = toString(&tkn.content);
+        fprintf(stderr, "%s: %s: Expected Top Level Keyword, found `%s` instead.\n", loc.buffer, ERR_STR, name.buffer);
+        fprintf(stderr, "%s: %s: A non-exhaustive list of TLK: `import`, `let`, `comptime`, `struct`, `func`.\n", loc.buffer, NOTE_STR);
+        drop(&name);
+        drop(&loc);
+        exit(1);
     }
-    todo_with_msg("top level");
 }
 
 func parseCompilerFlags(this: &Parser, attributes: ParsedAttributeList, skip: bool) {
@@ -261,21 +259,21 @@ func parseImport(this: &Parser, skip: bool) -> &ParsedTopLevelItem {
                 expect(this, TOKEN_SEMI_COLON);
                 return null;
             }
-            let moduleID: usize = 0;
-            let mod: &ParsedModule = null;
-            if (getModuleByFilePath(asSubStr(&path), &moduleID)) {
-                mod = at(&modules, moduleID);
+            let fileID: usize = 0;
+            let file: &ParsedFile = null;
+            if (getFileByFilePath(asSubStr(&path), &fileID)) {
+                file = at(&files, fileID);
             } else {
-                mod = newParsedModule(asSubStr(&path));
-                moduleID = getID(mod);
+                file = newParsedFile(asSubStr(&path));
+                fileID = getID(file);
                 // Note: We leak the source code of the imported file here :^)
-                let parser: Parser = newParserFromSource(getID(mod), asSubStr(&src));
+                let parser: Parser = newParserFromSource(getID(file), asSubStr(&src));
                 inheritImportRoots(&parser, this);
-                parseModule(&parser, asSubStr(&path), mod);
+                parseFile(&parser, asSubStr(&path), file);
             }
             let end: Token = expect(this, TOKEN_SEMI_COLON);
             let span: Span = newSpanBetween(&impTkn.span, &end.span);
-            let item: &ParsedTopLevelItem = newParsedTopLevelItem(span, TLI_IMPORT, moduleID);
+            let item: &ParsedTopLevelItem = newParsedTopLevelItem(span, TLI_IMPORT, fileID);
             return item;
         }
         drop(&path);
@@ -294,7 +292,7 @@ func parseStructDecl(this: &Parser) -> &ParsedStructDecl {
     }
     this.currentStruct = nameTkn.content;
     expect(this, TOKEN_CURLY_OPEN);
-    let decl: &ParsedStructDecl = newParsedStructDecl(this.lexer.moduleID, defaultSpan(), nameTkn);
+    let decl: &ParsedStructDecl = newParsedStructDecl(this.lexer.fileID, defaultSpan(), nameTkn);
     let structContext: StructContext = blank;
     while (!parsedEOF(this) && !at(this, TOKEN_CURLY_CLOSE)) {
         let tkn = expect(this, TOKEN_IDENT);
@@ -321,11 +319,11 @@ func parseFuncDecl(this: &Parser, isExtern: bool) -> &ParsedFuncDecl {
     if (isExtern) {
         let end: Token = expect(this, TOKEN_SEMI_COLON);
         let span: Span = newSpanBetween(&tkn.span, &end.span);
-        return newParsedFuncDecl(this.lexer.moduleID, span, name, params, retType, 0);
+        return newParsedFuncDecl(this.lexer.fileID, span, name, params, retType, 0);
     } else {
         let body: &ParsedBlock = parseBlock(this);
         let span: Span = newSpanBetween(&tkn.span, &body.span);
-        return newParsedFuncDecl(this.lexer.moduleID, span, name, params, retType, getID(body));
+        return newParsedFuncDecl(this.lexer.fileID, span, name, params, retType, getID(body));
     }
 }
 
@@ -556,7 +554,7 @@ func parseVarDeclStmt(this: &Parser, kw: Token, isGlobal: bool) -> &ParsedStmt {
     let span: Span = newSpanBetween(&kw.span, &end.span);
     let decl: &ParsedStmt = newParsedStmt(span, STMT_VAR_DECL);
     if (isGlobal) {
-        (*decl).block = this.lexer.moduleID;
+        (*decl).block = this.lexer.fileID;
     } else {
         (*decl).block = NODE_ID_OFFSET;
     }
@@ -935,9 +933,9 @@ func getUnaryPrecedence(this: &Parser, tknKind: usize) -> usize {
     unreachable("Exhaustive handling of unary operators in Parser.getUnaryPrecedence");
 }
 
-func newParserFromSource(moduleID: usize, src: SubStr) -> Parser {
+func newParserFromSource(fileID: usize, src: SubStr) -> Parser {
     return Parser {
-        lexer: newLexer(moduleID, src),
+        lexer: newLexer(fileID, src),
         importRoots: null,
         importRootLength: 0,
         importRootCapacity: 0,

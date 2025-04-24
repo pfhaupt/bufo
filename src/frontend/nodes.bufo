@@ -22,14 +22,14 @@ func toggleIgnoringNodes() {
 }
 
 func mangleVariableName(
-    moduleID: usize,
+    fileID: usize,
     name: &Token,
 ) -> String {
-    if (moduleID == NODE_ID_OFFSET) {
+    if (fileID == NODE_ID_OFFSET) {
         return toString(&name.content);
     } else {
         let mangledName: String = blank;
-        pushNumber(&mangledName, moduleID);
+        pushNumber(&mangledName, fileID);
         pushSubStr(&mangledName, &name.content);
         return mangledName;
     }
@@ -74,7 +74,7 @@ func mangleFunctionName(
     return mangledName;
 }
 
-let modules: ParsedModuleArena = blank;
+let files: ParsedFileArena = blank;
 let topLevelItems: ParsedTopLevelItemArena = blank;
 let structDecls: ParsedStructDeclArena = blank;
 let funcDecls: ParsedFuncDeclArena = blank;
@@ -84,11 +84,11 @@ let typeNodes: ParsedTypeNodeArena = blank;
 let exprs: ParsedExprArena = blank;
 let compilerFlags: ParsedCompilerFlagArena = blank;
 
-func getModuleByFilePath(path: SubStr, moduleID: &usize) -> bool {
-    for (let i: usize = 0; i < modules.length; i = i + 1) {
-        let mod: &ParsedModule = at(&modules, i);
-        if (equals(&mod.origin, &path)) {
-            *moduleID = i;
+func getFileByFilePath(path: SubStr, fileID: &usize) -> bool {
+    for (let i: usize = 0; i < files.length; i = i + 1) {
+        let file: &ParsedFile = at(&files, i);
+        if (equals(&file.origin, &path)) {
+            *fileID = i;
             return true;
         }
     }
@@ -139,7 +139,7 @@ func newParsedCompilerFlag(flag: Token, value: Token) -> &ParsedCompilerFlag {
     return last(&compilerFlags);
 }
 
-struct ParsedModule {
+struct ParsedFile {
     ignored: bool;
     origin: SubStr;
     tliList: &usize;
@@ -147,13 +147,13 @@ struct ParsedModule {
     tliCapacity: usize;
 }
 
-func getID(this: &ParsedModule) -> usize {
-    trace("ParsedModule.getID");
-    return indexOf(&modules, this);
+func getID(this: &ParsedFile) -> usize {
+    trace("ParsedFile.getID");
+    return indexOf(&files, this);
 }
 
-func addTopLevelItem(this: &ParsedModule, tli: &ParsedTopLevelItem) {
-    trace("ParsedModule.addTopLevelItem");
+func addTopLevelItem(this: &ParsedFile, tli: &ParsedTopLevelItem) {
+    trace("ParsedFile.addTopLevelItem");
     if (this.tliLength >= this.tliCapacity) {
         let newCap: usize = this.tliCapacity * 2;
         if (newCap == 0) newCap = 1;
@@ -165,18 +165,18 @@ func addTopLevelItem(this: &ParsedModule, tli: &ParsedTopLevelItem) {
     this.tliLength = this.tliLength + 1;
 }
 
-func getTopLevelItemAtIndex(this: &ParsedModule, index: usize) -> usize {
+func getTopLevelItemAtIndex(this: &ParsedFile, index: usize) -> usize {
     assert(index < this.tliLength, "Out of bounds access in getTopLevelItemAtIndex");
     return this.tliList[index];
 }
 
-func newParsedModule(origin: SubStr) -> &ParsedModule {
-    trace("newParsedModule");
-    push(&modules, ParsedModule {
+func newParsedFile(origin: SubStr) -> &ParsedFile {
+    trace("newParsedFile");
+    push(&files, ParsedFile {
         ignored: ignoringNodes,
         origin: origin,
     });
-    return last(&modules);
+    return last(&files);
 }
 
 comptime TLI_INVALID: usize = 0;
@@ -212,7 +212,7 @@ func newParsedTopLevelItem(span: Span, kind: usize, nodeID: usize) -> &ParsedTop
 
 struct ParsedStructDecl {
     ignored: bool;
-    parentModule: usize;
+    parentFile: usize;
     name: Token;
     span: Span;
     context: StructContext;
@@ -259,7 +259,7 @@ func newParsedStructDecl(parent: usize, span: Span, name: Token) -> &ParsedStruc
     trace("newParsedStructDecl");
     push(&structDecls, ParsedStructDecl {
         ignored: ignoringNodes,
-        parentModule: parent,
+        parentFile: parent,
         name: name,
         span: span,
         context: blank,
@@ -375,7 +375,7 @@ func newParsedBlock() -> &ParsedBlock {
 }
 
 comptime STMT_INVALID: usize = 0;
-// if VarDecl is global, set block to moduleID, otherwise, set block to MAX
+// if VarDecl is global, set block to fileID, otherwise, set block to MAX
 comptime STMT_VAR_DECL: usize = 1;
 comptime STMT_RETURN_EMPTY: usize = 2;
 comptime STMT_RETURN_EXPR: usize = 3;

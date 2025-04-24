@@ -935,7 +935,7 @@ func getIdentifierByName(this: &IRGen, function: &IRFunc, name: SubStr, isGlobal
 func getFunctionByName(this: &IRGen, name: &String) -> usize {
     return indexOf(&this.functions, name);
 }
-func fillLookup(this: &IRGen, project: &ParsedModule) -> bool {
+func fillLookup(this: &IRGen, project: &ParsedFile) -> bool {
     trace("IRGen.fillLookup");
     for (let i: usize = 0; i < funcDecls.length; i = i + 1) {
         let function: &ParsedFuncDecl = at(&funcDecls, i);
@@ -969,7 +969,7 @@ func fillLookup(this: &IRGen, project: &ParsedModule) -> bool {
     }
     return true;
 }
-func generateBytecode(this: &IRGen, project: &ParsedModule) -> bool {
+func generateBytecode(this: &IRGen, project: &ParsedFile) -> bool {
     trace("IRGen.generateBytecode");
     if (!fillLookup(this, project))
         return false;
@@ -977,10 +977,10 @@ func generateBytecode(this: &IRGen, project: &ParsedModule) -> bool {
     assert(this.globalScope.scopes.length == 1, "Expected only one valid scope");
     let entry: IRBlockID = appendBlock(&this.globalScope);
     setCurrentBlock(&this.globalScope, entry);
-    for (let i: usize = 0; i < modules.length; i = i + 1) {
-        let mod: &ParsedModule = at(&modules, i);
-        for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
-            let tli: &ParsedTopLevelItem = at(&topLevelItems, getTopLevelItemAtIndex(mod, j));
+    for (let i: usize = 0; i < files.length; i = i + 1) {
+        let file: &ParsedFile = at(&files, i);
+        for (let j: usize = 0; j < file.tliLength; j = j + 1) {
+            let tli: &ParsedTopLevelItem = at(&topLevelItems, getTopLevelItemAtIndex(file, j));
             if (tli.ignored) continue;
             if (tli.kind == TLI_VAR_DECL) {
                 generateBytecodeStmt(this, &this.globalScope, at(&stmts, tli.nodeID));
@@ -1090,7 +1090,6 @@ func generateBytecodeBlock(this: &IRGen, function: &IRFunc, block: &ParsedBlock)
     assert(isSuccess(&block.typeState), "Expected valid Block type in IRGen");
     let scope: usize = enterScope(function);
     let f: &ParsedFuncDecl = getFuncNode(function);
-    let modID = f.parentID;
     for (let i: usize = 0; i < block.stmtLength; i = i + 1) {
         let stmt: &ParsedStmt = at(&stmts, getStmtAtIndex(block, i));
         generateBytecodeStmt(this, function, stmt);

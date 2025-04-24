@@ -34,7 +34,7 @@ comptime KEYWORD_TRUE: SubStr = BUILD_A_KEYWORD("true");
 comptime KEYWORD_FALSE: SubStr = BUILD_A_KEYWORD("false");
 comptime KEYWORD_COMPILER_FLAGS: SubStr = BUILD_A_KEYWORD("compiler_flags");
 struct Lexer {
-    moduleID: usize;
+    fileID: usize;
     content: SubStr;
     ptr: usize;
     len: usize;
@@ -94,7 +94,7 @@ func escapeCharSequence(this: &Lexer, tmp: &SubStr, s: &String, len: &usize) -> 
             pushChar(s, byte);
             extraOffset = 2;
         } else {
-            let t: Token = newToken(this.moduleID, &newSubStr(&c, 0, 1), this.ptr + 1, TOKEN_IDENT);
+            let t: Token = newToken(this.fileID, &newSubStr(&c, 0, 1), this.ptr + 1, TOKEN_IDENT);
             let loc: String = toString(&t.span);
             fprintf(stderr, "%s: %s: Can't escape character `%c`.\n", loc.buffer, ERR_STR, c);
             drop(&loc);
@@ -134,12 +134,12 @@ func next(this: &Lexer) -> Token {
 }
 func __next(this: &Lexer, peek: bool) -> Token {
     if (this.ptr == this.len) {
-        return newTokenEOF(this.moduleID, this.ptr);
+        return newTokenEOF(this.fileID, this.ptr);
     }
     let currChar: char = getChar(&this.content, 0);
     while (isWhitespace(currChar)) {
         if (advance(this, )) {
-            return newTokenEOF(this.moduleID, this.ptr);
+            return newTokenEOF(this.fileID, this.ptr);
         }
         currChar = getChar(&this.content, 0);
     }
@@ -156,9 +156,9 @@ func __next(this: &Lexer, peek: bool) -> Token {
         this.ptr = this.ptr + len;
         this.content = tmp;
         if (isKeyword(this, &word)) {
-            return newToken(this.moduleID, &word, this.ptr - len, TOKEN_KEYWORD);
+            return newToken(this.fileID, &word, this.ptr - len, TOKEN_KEYWORD);
         }
-        return newToken(this.moduleID, &word, this.ptr - len, TOKEN_IDENT);
+        return newToken(this.fileID, &word, this.ptr - len, TOKEN_IDENT);
     } else if (isNumeric(currChar)) {
         let len: usize = 0;
         let tmp: SubStr = this.content;
@@ -169,7 +169,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
         let word: SubStr = substring(&this.content, 0, len);
         this.ptr = this.ptr + len;
         this.content = tmp;
-        return newToken(this.moduleID, &word, this.ptr - len, TOKEN_INT_LITERAL);
+        return newToken(this.fileID, &word, this.ptr - len, TOKEN_INT_LITERAL);
     } else if (currChar == '"') {
         advance(this, );
         if (this.content.len == 0) {
@@ -178,7 +178,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
         // When peeking we don't care about the precise contents of the String Literal
         // So we don't need to heap allocate anything just now
         if (peek) {
-            return newToken(this.moduleID, &newSubStr("\"", 0, 1), this.ptr - 1, TOKEN_STRING_LITERAL);
+            return newToken(this.fileID, &newSubStr("\"", 0, 1), this.ptr - 1, TOKEN_STRING_LITERAL);
         }
         let len: usize = 0;
         let s: String = newString();
@@ -191,7 +191,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
         }
         let word: SubStr = substring(&s, 0, s.length);
         advance(this, );
-        return newToken(this.moduleID, &word, this.ptr - len, TOKEN_STRING_LITERAL);
+        return newToken(this.fileID, &word, this.ptr - len, TOKEN_STRING_LITERAL);
     } else if (currChar == '\'') {
         advance(this, );
         if (this.content.len == 0) {
@@ -211,122 +211,122 @@ func __next(this: &Lexer, peek: bool) -> Token {
             todo_with_msg("invalid char literal");
         }
         advance(this, );
-        return newToken(this.moduleID, &word, this.ptr - len, TOKEN_CHAR_LITERAL);
+        return newToken(this.fileID, &word, this.ptr - len, TOKEN_CHAR_LITERAL);
     } else if (currChar == '(') {
         advance(this, );
-        return newToken(this.moduleID, &newSubStr("(", 0, 1), this.ptr - 1, TOKEN_PAREN_OPEN);
+        return newToken(this.fileID, &newSubStr("(", 0, 1), this.ptr - 1, TOKEN_PAREN_OPEN);
     } else if (currChar == ')') {
         advance(this, );
-        return newToken(this.moduleID, &newSubStr(")", 0, 1), this.ptr - 1, TOKEN_PAREN_CLOSE);
+        return newToken(this.fileID, &newSubStr(")", 0, 1), this.ptr - 1, TOKEN_PAREN_CLOSE);
     } else if (currChar == '{') {
         advance(this, );
-        return newToken(this.moduleID, &newSubStr("{", 0, 1), this.ptr - 1, TOKEN_CURLY_OPEN);
+        return newToken(this.fileID, &newSubStr("{", 0, 1), this.ptr - 1, TOKEN_CURLY_OPEN);
     } else if (currChar == '}') {
         advance(this, );
-        return newToken(this.moduleID, &newSubStr("}", 0, 1), this.ptr - 1, TOKEN_CURLY_CLOSE);
+        return newToken(this.fileID, &newSubStr("}", 0, 1), this.ptr - 1, TOKEN_CURLY_CLOSE);
     } else if (currChar == '[') {
         advance(this, );
-        return newToken(this.moduleID, &newSubStr("[", 0, 1), this.ptr - 1, TOKEN_SQUARE_OPEN);
+        return newToken(this.fileID, &newSubStr("[", 0, 1), this.ptr - 1, TOKEN_SQUARE_OPEN);
     } else if (currChar == ']') {
         advance(this, );
-        return newToken(this.moduleID, &newSubStr("]", 0, 1), this.ptr - 1, TOKEN_SQUARE_CLOSE);
+        return newToken(this.fileID, &newSubStr("]", 0, 1), this.ptr - 1, TOKEN_SQUARE_CLOSE);
     } else if (currChar == '<') {
         advance(this, );
         currChar = getChar(&this.content, 0);
         if (currChar == '=') {
             advance(this, );
-            return newToken(this.moduleID, &newSubStr("<=", 0, 2), this.ptr - 2, TOKEN_LESS_THAN_EQUAL);
+            return newToken(this.fileID, &newSubStr("<=", 0, 2), this.ptr - 2, TOKEN_LESS_THAN_EQUAL);
         } else {
-            return newToken(this.moduleID, &newSubStr("<", 0, 1), this.ptr - 1, TOKEN_LESS_THAN);
+            return newToken(this.fileID, &newSubStr("<", 0, 1), this.ptr - 1, TOKEN_LESS_THAN);
         }
     } else if (currChar == '>') {
         advance(this, );
         currChar = getChar(&this.content, 0);
         if (currChar == '=') {
             advance(this, );
-            return newToken(this.moduleID, &newSubStr(">=", 0, 2), this.ptr - 2, TOKEN_GREATER_THAN_EQUAL);
+            return newToken(this.fileID, &newSubStr(">=", 0, 2), this.ptr - 2, TOKEN_GREATER_THAN_EQUAL);
         } else {
-            return newToken(this.moduleID, &newSubStr(">", 0, 1), this.ptr - 1, TOKEN_GREATER_THAN);
+            return newToken(this.fileID, &newSubStr(">", 0, 1), this.ptr - 1, TOKEN_GREATER_THAN);
         }
     } else if (currChar == ';') {
         advance(this, );
-        return newToken(this.moduleID, &newSubStr(";", 0, 1), this.ptr - 1, TOKEN_SEMI_COLON);
+        return newToken(this.fileID, &newSubStr(";", 0, 1), this.ptr - 1, TOKEN_SEMI_COLON);
     } else if (currChar == ':') {
         advance(this, );
-        return newToken(this.moduleID, &newSubStr(":", 0, 1), this.ptr - 1, TOKEN_COLON);
+        return newToken(this.fileID, &newSubStr(":", 0, 1), this.ptr - 1, TOKEN_COLON);
     } else if (currChar == '=') {
         advance(this, );
         if (this.ptr < this.len && getChar(&this.content, 0) == '=') {
             advance(this, );
-            return newToken(this.moduleID, &newSubStr("==", 0, 2), this.ptr - 2, TOKEN_EQUAL_DOUBLE);
+            return newToken(this.fileID, &newSubStr("==", 0, 2), this.ptr - 2, TOKEN_EQUAL_DOUBLE);
         } else {
-            return newToken(this.moduleID, &newSubStr("=", 0, 1), this.ptr - 1, TOKEN_EQUAL_SINGLE);
+            return newToken(this.fileID, &newSubStr("=", 0, 1), this.ptr - 1, TOKEN_EQUAL_SINGLE);
         }
     } else if (currChar == '&') {
         advance(this, );
         if (this.ptr < this.len && getChar(&this.content, 0) == '&') {
             advance(this, );
-            return newToken(this.moduleID, &newSubStr("&&", 0, 2), this.ptr - 2, TOKEN_AMPERSAND_DOUBLE);
+            return newToken(this.fileID, &newSubStr("&&", 0, 2), this.ptr - 2, TOKEN_AMPERSAND_DOUBLE);
         } else {
-            return newToken(this.moduleID, &newSubStr("&", 0, 1), this.ptr - 1, TOKEN_AMPERSAND_SINGLE);
+            return newToken(this.fileID, &newSubStr("&", 0, 1), this.ptr - 1, TOKEN_AMPERSAND_SINGLE);
         }
     } else if (currChar == '_') {
         advance(this, );
-        return newToken(this.moduleID, &newSubStr("_", 0, 1), this.ptr - 1, TOKEN_UNDERSCORE);
+        return newToken(this.fileID, &newSubStr("_", 0, 1), this.ptr - 1, TOKEN_UNDERSCORE);
     } else if (currChar == '.') {
         advance(this, );
         if (this.ptr + 2 < this.len && getChar(&this.content, 0) == '.' && getChar(&this.content, 1) == '.') {
             advance(this, );
             advance(this, );
-            return newToken(this.moduleID, &newSubStr("...", 0, 3), this.ptr - 3, TOKEN_DOTDOTDOT);
+            return newToken(this.fileID, &newSubStr("...", 0, 3), this.ptr - 3, TOKEN_DOTDOTDOT);
         }
-        return newToken(this.moduleID, &newSubStr(".", 0, 1), this.ptr - 1, TOKEN_DOT);
+        return newToken(this.fileID, &newSubStr(".", 0, 1), this.ptr - 1, TOKEN_DOT);
     } else if (currChar == ',') {
         advance(this, );
-        return newToken(this.moduleID, &newSubStr(",", 0, 1), this.ptr - 1, TOKEN_COMMA);
+        return newToken(this.fileID, &newSubStr(",", 0, 1), this.ptr - 1, TOKEN_COMMA);
     } else if (currChar == '+') {
         advance(this, );
-        return newToken(this.moduleID, &newSubStr("+", 0, 1), this.ptr - 1, TOKEN_PLUS_SINGLE);
+        return newToken(this.fileID, &newSubStr("+", 0, 1), this.ptr - 1, TOKEN_PLUS_SINGLE);
     } else if (currChar == '*') {
         advance(this, );
-        return newToken(this.moduleID, &newSubStr("*", 0, 1), this.ptr - 1, TOKEN_ASTERISK_SINGLE);
+        return newToken(this.fileID, &newSubStr("*", 0, 1), this.ptr - 1, TOKEN_ASTERISK_SINGLE);
     } else if (currChar == '@') {
         advance(this, );
-        return newToken(this.moduleID, &newSubStr("@", 0, 1), this.ptr - 1, TOKEN_AT);
+        return newToken(this.fileID, &newSubStr("@", 0, 1), this.ptr - 1, TOKEN_AT);
     } else if (currChar == '%') {
         advance(this, );
-        return newToken(this.moduleID, &newSubStr("%", 0, 1), this.ptr - 1, TOKEN_PERCENT);
+        return newToken(this.fileID, &newSubStr("%", 0, 1), this.ptr - 1, TOKEN_PERCENT);
     } else if (currChar == '^') {
         advance(this, );
-        return newToken(this.moduleID, &newSubStr("^", 0, 1), this.ptr - 1, TOKEN_CARET);
+        return newToken(this.fileID, &newSubStr("^", 0, 1), this.ptr - 1, TOKEN_CARET);
     } else if (currChar == '|') {
         advance(this, );
         if (this.ptr < this.len && getChar(&this.content, 0) == '|') {
             advance(this, );
-            return newToken(this.moduleID, &newSubStr("||", 0, 2), this.ptr - 2, TOKEN_PIPE_DOUBLE);
+            return newToken(this.fileID, &newSubStr("||", 0, 2), this.ptr - 2, TOKEN_PIPE_DOUBLE);
         } else {
-            return newToken(this.moduleID, &newSubStr("|", 0, 1), this.ptr - 1, TOKEN_PIPE_SINGLE);
+            return newToken(this.fileID, &newSubStr("|", 0, 1), this.ptr - 1, TOKEN_PIPE_SINGLE);
         }
     } else if (currChar == '-') {
         advance(this, );
         if (this.ptr < this.len && getChar(&this.content, 0) == '>') {
             advance(this, );
-            return newToken(this.moduleID, &newSubStr("->", 0, 2), this.ptr - 2, TOKEN_ARROW);
+            return newToken(this.fileID, &newSubStr("->", 0, 2), this.ptr - 2, TOKEN_ARROW);
         } else {
-            return newToken(this.moduleID, &newSubStr("-", 0, 1), this.ptr - 1, TOKEN_MINUS_SINGLE);
+            return newToken(this.fileID, &newSubStr("-", 0, 1), this.ptr - 1, TOKEN_MINUS_SINGLE);
         }
     } else if (currChar == '!') {
         advance(this, );
         if (this.ptr < this.len && getChar(&this.content, 0) == '=') {
             advance(this, );
-            return newToken(this.moduleID, &newSubStr("!=", 0, 2), this.ptr - 2, TOKEN_NOT_EQUAL);
+            return newToken(this.fileID, &newSubStr("!=", 0, 2), this.ptr - 2, TOKEN_NOT_EQUAL);
         } else {
-            return newToken(this.moduleID, &newSubStr("!", 0, 1), this.ptr - 1, TOKEN_BANG);
+            return newToken(this.fileID, &newSubStr("!", 0, 1), this.ptr - 1, TOKEN_BANG);
         }
     } else if (currChar == '/' && getChar(&this.content, 1) == '*') {
         while (true) {
             if (advance(this, )) {
-                return newTokenEOF(this.moduleID, this.ptr);
+                return newTokenEOF(this.fileID, this.ptr);
             }
             currChar = getChar(&this.content, 0);
             let next: char = getChar(&this.content, 1);
@@ -341,17 +341,17 @@ func __next(this: &Lexer, peek: bool) -> Token {
         if (getChar(&this.content, 1) == '/') {
             while (currChar != '\n') {
                 if (advance(this, )) {
-                    return newTokenEOF(this.moduleID, this.ptr);
+                    return newTokenEOF(this.fileID, this.ptr);
                 }
                 currChar = getChar(&this.content, 0);
             }
             return next(this, );
         } else {
             advance(this, );
-            return newToken(this.moduleID, &newSubStr("/", 0, 1), this.ptr - 1, TOKEN_SLASH_SINGLE);
+            return newToken(this.fileID, &newSubStr("/", 0, 1), this.ptr - 1, TOKEN_SLASH_SINGLE);
         }
     } else {
-        let t: Token = newToken(this.moduleID, &newSubStr(&currChar, 0, 1), this.ptr + 1, TOKEN_IDENT);
+        let t: Token = newToken(this.fileID, &newSubStr(&currChar, 0, 1), this.ptr + 1, TOKEN_IDENT);
         let loc: String = toString(&t.span);
         fprintf(stderr, "%s: %s: Unknown character `%c`.\n", loc.buffer, ERR_STR, currChar);
         drop(&loc);
@@ -359,10 +359,10 @@ func __next(this: &Lexer, peek: bool) -> Token {
     }
 }
 
-func newLexer(moduleID: usize, content: SubStr) -> Lexer {
+func newLexer(fileID: usize, content: SubStr) -> Lexer {
     return Lexer {
         content: content,
-        moduleID: moduleID,
+        fileID: fileID,
         ptr: 0,
         len: content.len
     };

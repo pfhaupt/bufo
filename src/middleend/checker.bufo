@@ -132,7 +132,7 @@ func newTCStatePleaseInfer() -> TCState {
 
 struct TypeChecker {
     isComptimeContext: bool;
-    currentModule: usize;
+    currentFile: usize;
     currentFunction: &FunctionLookup;
     lookup: Lookup;
     typeError: bool;
@@ -443,10 +443,10 @@ func emergencyPrint(this: &TypeChecker, where: Span) {
     printf("%s\n", getLocation(&t).buffer);
 }
 
-func typeCheckProject(this: &TypeChecker, project: &ParsedModule) -> bool {
+func typeCheckProject(this: &TypeChecker, project: &ParsedFile) -> bool {
     trace("TypeChecker.typeCheckProject");
     if (!fillLookup(this)) return false;
-    if (!typeCheckModules(this)) return false;
+    if (!typeCheckFiles(this)) return false;
     if (findRecursiveTypes(this)) return false;
     return !this.typeError;
 }
@@ -472,16 +472,16 @@ func dfs(this: &TypeChecker, typeLookup: TypeLookup, visited: &TypeLookupList, f
                 assert(isStruct(elemType));
                 let structID: usize = elemType.typeIndex;
                 let decl: &ParsedStructDecl = at(&structDecls, structID);
-                let mod: &ModuleLookup = at(&this.lookup.modules, decl.parentModule);
-                let strukt: &StructLookup = getStructByGlobalID(mod, structID);
+                let file: &FileLookup = at(&this.lookup.files, decl.parentFile);
+                let strukt: &StructLookup = getStructByGlobalID(file, structID);
                 if (dfs(this, asTypeLookup(strukt), visited, finished)) {
                     done = true;
                 }
             } else if (isStruct(fieldType)) {
                 let structID: usize = fieldType.typeIndex;
                 let decl: &ParsedStructDecl = at(&structDecls, structID);
-                let mod: &ModuleLookup = at(&this.lookup.modules, decl.parentModule);
-                let strukt: &StructLookup = getStructByGlobalID(mod, structID);
+                let file: &FileLookup = at(&this.lookup.files, decl.parentFile);
+                let strukt: &StructLookup = getStructByGlobalID(file, structID);
                 if (dfs(this, asTypeLookup(strukt), visited, finished)) {
                     done = true;
                 }
@@ -500,8 +500,8 @@ func findRecursiveTypes(this: &TypeChecker) -> bool {
     for (let i: usize = 0; i < structDecls.length; i = i + 1) {
         let decl: &ParsedStructDecl = at(&structDecls, i);
         if (decl.ignored) continue;
-        let mod: &ModuleLookup = at(&this.lookup.modules, decl.parentModule);
-        let strukt: &StructLookup = getStructByGlobalID(mod, i);
+        let file: &FileLookup = at(&this.lookup.files, decl.parentFile);
+        let strukt: &StructLookup = getStructByGlobalID(file, i);
         let visited: TypeLookupList = blank;
         let finished: TypeLookupList = blank;
         if (dfs(this, asTypeLookup(strukt), &visited, &finished)) {
@@ -514,13 +514,13 @@ func findRecursiveTypes(this: &TypeChecker) -> bool {
 
 func fillLookup(this: &TypeChecker) -> bool {
     trace("TypeChecker.fillLookup");
-    for (let i: usize = 0; i < modules.length; i = i + 1) {
-        let mod: &ParsedModule = at(&modules, i);
-        assert(getID(mod) == i);
-        this.currentModule = i;
-        let lookup: &ModuleLookup = insertModule(&this.lookup, mod);
-        for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
-            let tliID: usize = getTopLevelItemAtIndex(mod, j);
+    for (let i: usize = 0; i < files.length; i = i + 1) {
+        let file: &ParsedFile = at(&files, i);
+        assert(getID(file) == i);
+        this.currentFile = i;
+        let lookup: &FileLookup = insertFile(&this.lookup, file);
+        for (let j: usize = 0; j < file.tliLength; j = j + 1) {
+            let tliID: usize = getTopLevelItemAtIndex(file, j);
             let tli: &ParsedTopLevelItem = at(&topLevelItems, tliID);
             if (tli.ignored) continue;
             insertTLI(lookup, tli);
@@ -529,15 +529,15 @@ func fillLookup(this: &TypeChecker) -> bool {
     return true;
 }
 
-func typeCheckModules(this: &TypeChecker) -> bool {
-    trace("TypeChecker.typeCheckModules");
+func typeCheckFiles(this: &TypeChecker) -> bool {
+    trace("TypeChecker.typeCheckFiles");
     let success = true;
-    for (let i: usize = 0; i < modules.length; i = i + 1) {
-        let mod: &ParsedModule = at(&modules, i);
-        assert(getID(mod) == i);
-        this.currentModule = i;
-        for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
-            let tliID: usize = getTopLevelItemAtIndex(mod, j);
+    for (let i: usize = 0; i < files.length; i = i + 1) {
+        let file: &ParsedFile = at(&files, i);
+        assert(getID(file) == i);
+        this.currentFile = i;
+        for (let j: usize = 0; j < file.tliLength; j = j + 1) {
+            let tliID: usize = getTopLevelItemAtIndex(file, j);
             let tli: &ParsedTopLevelItem = at(&topLevelItems, tliID);
             if (tli.kind == TLI_STRUCT_DECL) {
                 let state = typeCheckStructDecl(this, tli.nodeID);
@@ -546,49 +546,49 @@ func typeCheckModules(this: &TypeChecker) -> bool {
         }
     }
     if (!success) return false;
-    for (let i: usize = 0; i < modules.length; i = i + 1) {
-        let mod: &ParsedModule = at(&modules, i);
-        assert(getID(mod) == i);
-        this.currentModule = i;
-        let currentModule: &ModuleLookup = at(&this.lookup.modules, this.currentModule);
-        assert(currentModule.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
-        for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
-            let tliID: usize = getTopLevelItemAtIndex(mod, j);
+    for (let i: usize = 0; i < files.length; i = i + 1) {
+        let file: &ParsedFile = at(&files, i);
+        assert(getID(file) == i);
+        this.currentFile = i;
+        let currentFile: &FileLookup = at(&this.lookup.files, this.currentFile);
+        assert(currentFile.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
+        for (let j: usize = 0; j < file.tliLength; j = j + 1) {
+            let tliID: usize = getTopLevelItemAtIndex(file, j);
             let tli: &ParsedTopLevelItem = at(&topLevelItems, tliID);
             if (tli.kind == TLI_FUNC_DECL) {
-                let state = typeCheckFunction(this, tli.nodeID, &currentModule.variables, true);
+                let state = typeCheckFunction(this, tli.nodeID, &currentFile.variables, true);
                 if (!isSuccess(&state)) success = false;
             }
         }
     }
     if (!success) return false;
-    for (let i: usize = 0; i < modules.length; i = i + 1) {
-        let mod: &ParsedModule = at(&modules, i);
-        assert(getID(mod) == i);
-        this.currentModule = i;
-        let currentModule: &ModuleLookup = at(&this.lookup.modules, this.currentModule);
-        assert(currentModule.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
-        for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
-            let tliID: usize = getTopLevelItemAtIndex(mod, j);
+    for (let i: usize = 0; i < files.length; i = i + 1) {
+        let file: &ParsedFile = at(&files, i);
+        assert(getID(file) == i);
+        this.currentFile = i;
+        let currentFile: &FileLookup = at(&this.lookup.files, this.currentFile);
+        assert(currentFile.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
+        for (let j: usize = 0; j < file.tliLength; j = j + 1) {
+            let tliID: usize = getTopLevelItemAtIndex(file, j);
             let tli: &ParsedTopLevelItem = at(&topLevelItems, tliID);
             if (tli.kind == TLI_VAR_DECL) {
-                let state = typeCheckVarDecl(this, tli.nodeID, &currentModule.variables, true);
+                let state = typeCheckVarDecl(this, tli.nodeID, &currentFile.variables, true);
                 if (!isSuccess(&state)) success = false;
             }
         }
     }
     if (!success) return false;
-    for (let i: usize = 0; i < modules.length; i = i + 1) {
-        let mod: &ParsedModule = at(&modules, i);
-        assert(getID(mod) == i);
-        this.currentModule = i;
-        let currentModule: &ModuleLookup = at(&this.lookup.modules, this.currentModule);
-        assert(currentModule.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
-        for (let j: usize = 0; j < mod.tliLength; j = j + 1) {
-            let tliID: usize = getTopLevelItemAtIndex(mod, j);
+    for (let i: usize = 0; i < files.length; i = i + 1) {
+        let file: &ParsedFile = at(&files, i);
+        assert(getID(file) == i);
+        this.currentFile = i;
+        let currentFile: &FileLookup = at(&this.lookup.files, this.currentFile);
+        assert(currentFile.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
+        for (let j: usize = 0; j < file.tliLength; j = j + 1) {
+            let tliID: usize = getTopLevelItemAtIndex(file, j);
             let tli: &ParsedTopLevelItem = at(&topLevelItems, tliID);
             if (tli.kind == TLI_FUNC_DECL) {
-                let state = typeCheckFunction(this, tli.nodeID, &currentModule.variables, false);
+                let state = typeCheckFunction(this, tli.nodeID, &currentFile.variables, false);
                 if (!isSuccess(&state)) success = false;
             }
         }
@@ -600,8 +600,8 @@ func typeCheckStructDecl(this: &TypeChecker, structID: usize) -> TCState {
     trace("TypeChecker.typeCheckStructDecl");
     let strukt: &ParsedStructDecl = at(&structDecls, structID);
     if (strukt.ignored) return blank;
-    let moduleLookup: &ModuleLookup = at(&this.lookup.modules, this.currentModule);
-    let structLookup: &StructLookup = getStructByGlobalID(moduleLookup, structID);
+    let fileLookup: &FileLookup = at(&this.lookup.files, this.currentFile);
+    let structLookup: &StructLookup = getStructByGlobalID(fileLookup, structID);
     let context: &StructContext = &strukt.context;
     let result: TCState = newTCStateSuccess();
     let failure: TCState = blank;
@@ -629,8 +629,8 @@ func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupLi
     trace("TypeChecker.typeCheckFunction");
     let function: &ParsedFuncDecl = at(&funcDecls, funcID);
     if (function.ignored) return blank;
-    let moduleLookup: &ModuleLookup = at(&this.lookup.modules, this.currentModule);
-    let funcLookup: &FunctionLookup = getFunctionByGlobalID(moduleLookup, funcID);
+    let fileLookup: &FileLookup = at(&this.lookup.files, this.currentFile);
+    let funcLookup: &FunctionLookup = getFunctionByGlobalID(fileLookup, funcID);
     this.currentFunction = funcLookup;
     let failure: TCState = blank;
     clear(&funcLookup.params);
@@ -665,7 +665,7 @@ func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupLi
         return newTCStateSuccess();
     }
     let _dupl: &FunctionLookup = null;
-    if (containsDuplicateFunction(moduleLookup, funcLookup, &_dupl)) {
+    if (containsDuplicateFunction(fileLookup, funcLookup, &_dupl)) {
         assert(_dupl != null, "Duplicate FunctionLookup is null");
         return reportDuplicateFunction(this, funcLookup, _dupl);
     }
@@ -1197,17 +1197,17 @@ func typeCheckExprStructInit(this: &TypeChecker, exprID: usize, scopes: &ScopeLo
     assert(expr.kind == EXPR_STRUCT_INIT);
     let name: Token = expr.origToken;
     let lookup: TypeLookup = blank;
-    if (!resolveTypeByName(&this.lookup, this.currentModule, &name, &lookup)) {
+    if (!resolveTypeByName(&this.lookup, this.currentFile, &name, &lookup)) {
         let loc: String = getLocation(&name);
         let _n: String = toString(&name.content);
         fprintf(stderr, "%s: %s: Use of undeclared type identifier `%s`.\n", loc.buffer, ERR_STR, _n.buffer);
-        let alternatives: TypeLookupList = searchAllModulesForTypeName(&this.lookup, &name);
+        let alternatives: TypeLookupList = searchAllFilesForTypeName(&this.lookup, &name);
         for (let i: usize = 0; i < alternatives.length; i = i + 1) {
             let t: &TypeLookup = at(&alternatives, i);
             if (isStruct(t)) {
                 let s: &StructLookup = asStruct(t);
                 let loc: String = getLocation(&s.name);
-                fprintf(stderr, "%s: %s: A struct with that name is located here. Import the module to use it.\n", loc.buffer, NOTE_STR);
+                fprintf(stderr, "%s: %s: A struct with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
                 drop(&loc);
             }
         }
@@ -1260,7 +1260,7 @@ func typeCheckIdentifier(this: &TypeChecker, exprID: usize, scopes: &ScopeLookup
     assert(expr.kind == EXPR_NAME);
     let name: Token = expr.origToken;
     let var: VariableLookup = blank;
-    if (resolveVariableByName(&this.lookup, this.currentModule, &name, scopes, &var)) {
+    if (resolveVariableByName(&this.lookup, this.currentFile, &name, scopes, &var)) {
         if (this.isComptimeContext && !var.isComptime) {
             reportRuntimeValueInComptimeContext(this, name, &var);
         }
@@ -1276,16 +1276,16 @@ func typeCheckIdentifier(this: &TypeChecker, exprID: usize, scopes: &ScopeLookup
         (*expr).typeState = state;
         return state;
     } else {
-        let functions = resolveFunctionByName(&this.lookup, this.currentModule, &name);
+        let functions = resolveFunctionByName(&this.lookup, this.currentFile, &name);
         if (functions.length == 0) {
             let loc: String = getLocation(&name);
             let _name: String = toString(&name.content);
             fprintf(stderr, "%s: %s: Use of undeclared identifier `%s`.\n", loc.buffer, ERR_STR, _name.buffer);
-            let alternatives: VariableLookupList = searchAllModulesForIdentifier(&this.lookup, &name);
+            let alternatives: VariableLookupList = searchAllFilesForIdentifier(&this.lookup, &name);
             for (let i: usize = 0; i < alternatives.length; i = i + 1) {
                 let t: &VariableLookup = at(&alternatives, i);
                 let loc: String = getLocation(&t.name);
-                fprintf(stderr, "%s: %s: A variable with that name is located here. Import the module to use it.\n", loc.buffer, NOTE_STR);
+                fprintf(stderr, "%s: %s: A variable with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
                 drop(&loc);
             }
             drop(&_name);
@@ -1516,12 +1516,12 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
     let tid: TCState = blank;
     if (expr.kind == EXPR_NAME) {
         assert(isFunction(typ), "Can only try to infer functions onto identifiers for now");
-        let functions = resolveAllFunctionsWithSignature(&this.lookup, this.currentModule, &expr.origToken, typ);
+        let functions = resolveAllFunctionsWithSignature(&this.lookup, this.currentFile, &expr.origToken, typ);
         if (functions.length == 0) {
             if (checkOnly) {
                 tid = newTCStateFailure(ERROR_NO_SUCH_FUNCTION);
             } else {
-                let all = resolveFunctionByName(&this.lookup, this.currentModule, &expr.origToken);
+                let all = resolveFunctionByName(&this.lookup, this.currentFile, &expr.origToken);
                 tid = reportNoFunctionCallCandidate(this, exprID, typ, &all);
                 drop(&all);
             }
@@ -1772,7 +1772,7 @@ func tryInferTypeOntoMemberAccess(this: &TypeChecker, exprID: usize, typeID: usi
     let rhs = at(&exprs, expr.rhs);
     if (rhs.kind == EXPR_NAME) {
         let name = rhs.origToken;
-        let structs = resolveAllStructsWithField(&this.lookup, this.currentModule, &name, typ);
+        let structs = resolveAllStructsWithField(&this.lookup, this.currentFile, &name, typ);
         if (structs.length == 0) {
             todo_with_msg("tryInferTypeOntoMemberAccess: 0 struct with field");
         } else if (structs.length == 1) {
@@ -1954,17 +1954,17 @@ func typeCheckTypeNode(this: &TypeChecker, typeID: usize) -> TCState {
     } else if (typ.kind == PARSED_TYPE_IDENT) {
         let name: Token = typ.nameTkn;
         let typeLookup: TypeLookup = blank;
-        if (!resolveTypeByName(&this.lookup, this.currentModule, &name, &typeLookup)) {
+        if (!resolveTypeByName(&this.lookup, this.currentFile, &name, &typeLookup)) {
             let loc: String = getLocation(&name);
             let _n: String = toString(&name.content);
             fprintf(stderr, "%s: %s: Use of undeclared type identifier `%s`.\n", loc.buffer, ERR_STR, _n.buffer);
-            let alternatives: TypeLookupList = searchAllModulesForTypeName(&this.lookup, &name);
+            let alternatives: TypeLookupList = searchAllFilesForTypeName(&this.lookup, &name);
             for (let i: usize = 0; i < alternatives.length; i = i + 1) {
                 let t: &TypeLookup = at(&alternatives, i);
                 if (isStruct(t)) {
                     let s: &StructLookup = asStruct(t);
                     let loc: String = getLocation(&s.name);
-                    fprintf(stderr, "%s: %s: A struct with that name is located here. Import the module to use it.\n", loc.buffer, NOTE_STR);
+                    fprintf(stderr, "%s: %s: A struct with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
                     drop(&loc);
                 }
             }
@@ -2020,7 +2020,7 @@ func typeCheckTypeNode(this: &TypeChecker, typeID: usize) -> TCState {
 func newTypeChecker() -> TypeChecker {
     return TypeChecker {
         isComptimeContext: false,
-        currentModule: 0,
+        currentFile: 0,
         currentFunction: null,
         lookup: blank,
         typeError: false,

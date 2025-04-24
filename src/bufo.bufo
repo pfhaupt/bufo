@@ -45,7 +45,7 @@ func main(argc: i32, argv: &&char) -> i32 {
     let sub: SubStr = newSubStrOfString(&string, 0, string.length);
     let parser: Parser = newParserFromSource(0, sub);
     addImportRoot(&parser, newSubStrOfStrLit("./std/"));
-    let project: ParsedModule = parseProject(&parser, fileSubStr);
+    let project: ParsedFile = parseProject(&parser, fileSubStr);
     let checker: TypeChecker = newTypeChecker();
     if (!typeCheckProject(&checker, &project)) return 1;
     let generator: IRGen = newIRGenerator();
@@ -54,7 +54,7 @@ func main(argc: i32, argv: &&char) -> i32 {
     let llvmCodegen: LLVMCodegen = newLLVMCodegen(fileSubStr, &generator, &interp);
     if (!generateExecutable(&llvmCodegen, asSubStr(flags.out))) return 1;
     if (PRINT_DEBUG) {
-        printf("modules.length       = %llu\n", modules.length);
+        printf("files.length         = %llu\n", files.length);
         printf("topLevelItems.length = %llu\n", topLevelItems.length);
         printf("structDecls.length   = %llu\n", structDecls.length);
         printf("funcDecls.length     = %llu\n", funcDecls.length);

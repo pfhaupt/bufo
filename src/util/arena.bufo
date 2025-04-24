@@ -105,16 +105,16 @@ func indexOf(this: &ParsedCompilerFlagArena, elem: &ParsedCompilerFlag) -> usize
     return indexOf(this.start, elem);
 }
 
-struct ParsedModuleArena {
+struct ParsedFileArena {
     start: &ArenaBlock;
     end: &ArenaBlock;
     length: usize;
 }
 
-func push(this: &ParsedModuleArena, elem: ParsedModule) {
-    trace("ParsedModuleArena.push");
+func push(this: &ParsedFileArena, elem: ParsedFile) {
+    trace("ParsedFileArena.push");
     if (this.start == null) {
-        this.start = allocateBlock(ARENA_SIZE_MEDIUM, sizeof ParsedModule);
+        this.start = allocateBlock(ARENA_SIZE_MEDIUM, sizeof ParsedFile);
         assert(this.end == null);
         this.end = this.start;
     }
@@ -122,19 +122,19 @@ func push(this: &ParsedModuleArena, elem: ParsedModule) {
     if (this.end.next != null) this.end = this.end.next;
     this.length = this.length + 1;
 }
-func at(this: &ParsedModuleArena, index: usize) -> &ParsedModule {
-    trace("ParsedModuleArena.at");
-    assert(this.start != null, "ParsedModuleArena.at() called on empty Arena");
-    return at(this.start, index) as &ParsedModule;
+func at(this: &ParsedFileArena, index: usize) -> &ParsedFile {
+    trace("ParsedFileArena.at");
+    assert(this.start != null, "ParsedFileArena.at() called on empty Arena");
+    return at(this.start, index) as &ParsedFile;
 }
-func last(this: &ParsedModuleArena) -> &ParsedModule {
-    trace("ParsedModuleArena.last");
-    assert(this.end != null, "ParsedModuleArena.last() called on empty Arena");
-    return last(this.end) as &ParsedModule;
+func last(this: &ParsedFileArena) -> &ParsedFile {
+    trace("ParsedFileArena.last");
+    assert(this.end != null, "ParsedFileArena.last() called on empty Arena");
+    return last(this.end) as &ParsedFile;
 }
-func indexOf(this: &ParsedModuleArena, elem: &ParsedModule) -> usize {
-    trace("ParsedModuleArena.indexOf");
-    assert(this.start != null, "ParsedModuleArena.indexOf() called on empty Arena");
+func indexOf(this: &ParsedFileArena, elem: &ParsedFile) -> usize {
+    trace("ParsedFileArena.indexOf");
+    assert(this.start != null, "ParsedFileArena.indexOf() called on empty Arena");
     return indexOf(this.start, elem);
 }
 

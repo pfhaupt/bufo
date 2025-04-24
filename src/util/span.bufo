@@ -5,12 +5,12 @@ import "../frontend/nodes.bufo";
 import "./arena.bufo";
 
 struct Span {
-    mod: usize;
+    file: usize;
     start: usize;
     end: usize;
 }
 func equals(this: &Span, other: &Span) -> bool {
-    return this.mod == other.mod && this.start == other.start && this.end == other.end;
+    return this.file == other.file && this.start == other.start && this.end == other.end;
 }
 func print(this: &Span) {
     let s: String = toString(this);
@@ -19,7 +19,7 @@ func print(this: &Span) {
 }
 func toString(this: &Span) -> String {
     // FIXME: The spans report in bytes, but the formatting makes it look like line and column
-    let s: String = toString(&at(&modules, this.mod).origin);
+    let s: String = toString(&at(&files, this.file).origin);
     pushChar(&s, ':');
     pushNumber(&s, this.start);
     pushChar(&s, ':');
@@ -30,10 +30,10 @@ func comesBefore(this: &Span, other: &Span) -> bool {
     return this.start < other.start;
 }
 
-func newSpan(mod: usize, start: usize, end: usize) -> Span {
+func newSpan(file: usize, start: usize, end: usize) -> Span {
     assert(end >= start, "Invalid size for newSpan()");
     return Span {
-        mod: mod,
+        file: file,
         start: start,
         end: end,
     };
@@ -42,16 +42,16 @@ func newSpanBetween(start: &Span, end: &Span) -> Span {
     // (100:105)+(104:109)
     assert(end.end >= start.end, "newSpanBetween: End Span can't end before Start Span.");
     assert(start.start <= end.start, "newSpanBetween: Start Span can't start after End Span.");
-    assert(start.mod == end.mod, "newSpanBetween: Spans can't be in different modules.");
+    assert(start.file == end.file, "newSpanBetween: Spans can't be in different files.");
     return Span {
-        mod: start.mod,
+        file: start.file,
         start: start.start,
         end: end.end
     };
 }
 func defaultSpan() -> Span {
     return Span {
-        mod: 0,
+        file: 0,
         start: 0,
         end: 0
     };
