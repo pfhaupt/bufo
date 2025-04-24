@@ -290,6 +290,7 @@ func insertTLI(this: &FileLookup, tli: &ParsedTopLevelItem) {
             todo_with_msg("double global var");
         }
         addVariable(globalScope, lookup);
+    } else if (tli.kind == TLI_CONFIG) {
     } else {
         unreachable("Exhaustive handling of TLI kinds in insertTLI");
     }
@@ -362,6 +363,7 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) {
             todo_with_msg("double global var");
         }
         addVariable(globalScope, lookup);
+    } else if (tli.kind == TLI_CONFIG) {
     } else {
         unreachable("Exhaustive handling of TLI kinds in insertTLI");
     }

@@ -13,6 +13,10 @@ struct Handle {
     ptr: usize;
 }
 
+func isNull(h: Handle) -> bool {
+    return h.ptr == 0;
+}
+
 struct StartupInfo {
     cb: u32;
     lpReserved: &char;

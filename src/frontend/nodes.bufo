@@ -11,6 +11,8 @@ import "./lexer.bufo";
 import "../middleend/checker.bufo";
 import "../middleend/types.bufo";
 
+@os(WINDOWS) import "winapi/structs.bufo";
+
 // Arbitrary number chosen as a magic constant for various things
 // idea: We'll never have more than that many expressions or type nodes
 //       if you ever have 10 billion expressions, please tell me how :^)
@@ -90,6 +92,8 @@ let stmts: ParsedStmtArena = blank;
 let typeNodes: ParsedTypeNodeArena = blank;
 let exprs: ParsedExprArena = blank;
 let compilerFlags: ParsedCompilerFlagArena = blank;
+let configs: ParsedConfigArena = blank;
+let dlls: DLLArena = blank;
 
 func getFileByFilePath(path: SubStr, fileID: &usize) -> bool {
     for (let i: usize = 0; i < files.length; i = i + 1) {
@@ -146,6 +150,50 @@ func newParsedCompilerFlag(flag: Token, value: Token) -> &ParsedCompilerFlag {
     return last(&compilerFlags);
 }
 
+comptime CONFIG_INVALID: u8 = 0;
+comptime CONFIG_LIBNAME: u8 = 1;
+comptime CONFIG_LIBPATH: u8 = 2;
+comptime CONFIG_LINKER: u8 = 3;
+struct Config {
+    kind: u8;
+    value: Token;
+}
+
+func newConfig(t: Token, value: Token) -> Config {
+    let kind: u8 = CONFIG_INVALID;
+    if (equals(&t.content, &comptime BUILD_A_KEYWORD("library"))) {
+        kind = CONFIG_LIBNAME;
+    } else if (equals(&t.content, &comptime BUILD_A_KEYWORD("libpath"))) {
+        kind = CONFIG_LIBPATH;
+    } else if (equals(&t.content, &comptime BUILD_A_KEYWORD("linker"))) {
+        kind = CONFIG_LINKER;
+    } else {
+        todo_with_msg("invalid config");
+    }
+    return Config { kind: kind, value: value };
+}
+
+struct ParsedConfig {
+    span: Span;
+    configs: ConfigList;
+}
+
+func newParsedConfig(span: Span, cfgs: ConfigList) -> &ParsedConfig {
+    push(&configs, ParsedConfig {
+        span: span,
+        configs: cfgs,
+    });
+    return last(&configs);
+}
+
+func getID(this: &ParsedConfig) -> usize {
+    return indexOf(&configs, this);
+}
+
+func asTLI(this: &ParsedConfig) -> &ParsedTopLevelItem {
+    return newParsedTopLevelItem(this.span, TLI_CONFIG, getID(this));
+}
+
 struct ParsedFile {
     ignored: bool;
     origin: SubStr;
@@ -192,6 +240,7 @@ comptime TLI_VAR_DECL: usize = 2;
 comptime TLI_STRUCT_DECL: usize = 3;
 comptime TLI_FUNC_DECL: usize = 4;
 comptime TLI_MOD_DECL: usize = 5;
+comptime TLI_CONFIG: usize = 6;
 
 // the parentID is ambiguous because we can nest modules -> is the parent a ParsedFile or should we
 // look in the modules lookup?
@@ -231,12 +280,33 @@ func newParsedTopLevelItem(span: Span, kind: usize, nodeID: usize) -> &ParsedTop
     return last(&topLevelItems);
 }
 
+@os(WINDOWS) struct DLL {
+    path: String;
+    handle: Handle;
+}
+// TODO: Linux DLLs
+@os(LINUX) struct DLL { }
+
+@os(WINDOWS) func newDLL(path: String, handle: Handle) -> &DLL {
+    push(&dlls, DLL {
+        path: path,
+        handle: handle,
+    });
+    return last(&dlls);
+}
+
+func getID(this: &DLL) -> usize {
+    trace("DLL.getID");
+    return indexOf(&dlls, this);
+}
+
 struct ParsedModule {
     ignored: bool;
     parent: TLIParent;
     name: Token;
     span: Span;
     tlis: UsizeList;
+    dlls: UsizeList;
 }
 func getID(this: &ParsedModule) -> usize {
     trace("ParsedModule.getID");
@@ -327,6 +397,7 @@ struct ParsedFuncDecl {
     attrs: ParsedAttributeList;
     isComptime: bool;
     typeState: TCState;
+    dllHandle: &DLL; // Ptr to DLLArena
 }
 
 func hasAttribute(this: &ParsedFuncDecl, attr: usize) -> bool {
@@ -347,6 +418,11 @@ func isExtern(this: &ParsedFuncDecl) -> bool {
         if (at(&this.attrs, i).kind == ATTR_EXTERN) return true;
     }
     return false;
+}
+
+func getParentModule(this: &ParsedFuncDecl) -> &ParsedModule {
+    assert(!this.parent.isFile, "getParentModule called on function in a file scope");
+    return at(&modules, this.parent.id as usize);
 }
 
 func getMangledName(this: &ParsedFuncDecl) -> String {

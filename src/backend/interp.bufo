@@ -10,6 +10,8 @@ import "../middleend/types.bufo";
 import "./irgen.bufo";
 import "./codegen_llvm.bufo";
 
+@os(WINDOWS) import "winapi/structs.bufo";
+
 struct InterpReg {
     offset: usize;
     size: usize;
@@ -1088,6 +1090,16 @@ func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: 
 }
 func evaluateCall(this: &IRInterp, span: Span, irFunc: &IRFunc, regs: &RegValueList) {
     trace("IRInterp.evaluateCall");
+    let f = at(&funcDecls, irFunc.originalID);
+    if (isExtern(f)) {
+        if (!isNull(f.dllHandle.handle)) {
+            fprintf(stderr, "f.dllHandle.handle = %p\n", f.dllHandle.handle);
+            // TODO: JIT compile function call
+            todo_with_msg("Everything indicates that we currently have a valid pointer in f.dllHandle!");
+        } else {
+            todo_with_msg("comptime interpreter could not find valid function pointer for extern function");
+        }
+    }
     let funcSize: usize = getRegisterSizeInBytes(irFunc);
     pushRegisterStack(this, span, funcSize);
     let blockID: IRBlockID = IRBlockID { i: 0 };

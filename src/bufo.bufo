@@ -6,6 +6,7 @@ import "cmd.bufo";
 import "./util/span.bufo";
 import "./util/flags.bufo";
 import "./util/arena.bufo";
+import "./util/lists.bufo";
 import "./frontend/nodes.bufo";
 import "./frontend/lexer.bufo";
 import "./frontend/parser.bufo";
@@ -74,6 +75,26 @@ func main(argc: i32, argv: &&char) -> i32 {
     pushStr(&s, ".obj");
     pushStr(&s, " /DEFAULTLIB:libcmt /OUT:");
     pushString(&s, flags.out);
+    for (let i: usize = 0; i < configs.length; i = i + 1) {
+        let flag = at(&configs, i);
+        for (let j: usize = 0; j < flag.configs.length; j = j + 1) {
+            pushChar(&s, ' ');
+            let _flag = at(&flag.configs, j);
+            if (_flag.kind == CONFIG_LIBNAME) {
+                pushStr(&s, "\"");
+                pushSubStr(&s, &_flag.value.content);
+                pushStr(&s, ".lib\"");
+            } else if (_flag.kind == CONFIG_LIBPATH) {
+                pushStr(&s, "/LIBPATH:\"");
+                pushSubStr(&s, &_flag.value.content);
+                pushStr(&s, "\"");
+            } else if (_flag.kind == CONFIG_LINKER) {
+                pushSubStr(&s, &_flag.value.content);
+            } else {
+                unreachable("Exhaustive handling of compiler__flags");
+            }
+        }
+    }
     for (let i: usize = 0; i < compilerFlags.length; i = i + 1) {
         pushChar(&s, ' ');
         let flag: &ParsedCompilerFlag = at(&compilerFlags, i);

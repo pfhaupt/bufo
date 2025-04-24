@@ -16,6 +16,9 @@ import "../backend/irgen.bufo";
 import "../backend/interp.bufo";
 import "../backend/codegen_llvm.bufo";
 
+@os(WINDOWS) import "winapi/functions.bufo";
+@os(WINDOWS) import "winapi/structs.bufo";
+
 struct Parser {
     lexer: Lexer;
     importRoots: &String;
@@ -117,7 +120,7 @@ func parseFile(this: &Parser, root: SubStr, file: &ParsedFile) {
     addImportRoot(this, root);
     while (!parsedEOF(this)) {
         let attributes: ParsedAttributeList = blank;
-        let skip = parseAttributes(this, &attributes);
+        let skip = parseAttributes(this, &attributes, false);
         if (skip) {
             debug("Parsed TopLevelItem, but skipping it because of @os()");
             toggleIgnoringNodes();
@@ -135,12 +138,17 @@ func parseFile(this: &Parser, root: SubStr, file: &ParsedFile) {
     }
 }
 
-func parseAttributes(this: &Parser, attrs: &ParsedAttributeList) -> bool {
+func parseAttributes(this: &Parser, attrs: &ParsedAttributeList, inModule: bool) -> bool {
     trace("Parser.parseAttributes");
     let skip: bool = false;
     while (eat(this, TOKEN_AT)) {
         let name = expectSoftIdentifier(this);
         if (equals(&name.content, &_ATTR_EXTERN)) {
+            if (!inModule && *flags.verbose) {
+                let loc = toString(&name.span);
+                fprintf(stderr, "%s: %s: `@extern()` used outside of a module.\n", loc.buffer, WARN_STR);
+                drop(&loc);
+            }
             expect(this, TOKEN_PAREN_OPEN);
             let v = expect(this, TOKEN_STRING_LITERAL);
             let end = expect(this, TOKEN_PAREN_CLOSE);
@@ -184,8 +192,13 @@ func parseTopLevelItem(this: &Parser, parent: TLIParent, attributes: ParsedAttri
     let tkn: Token = peek(&this.lexer);
     if (equals(&tkn.content, &KEYWORD_IMPORT)) {
         return parseImport(this, skip);
+    } else if (equals(&tkn.content, &KEYWORD_CONFIG)) {
+        return asTLI(parseConfig(this, parent, attributes));
     } else if (equals(&tkn.content, &KEYWORD_COMPILER_FLAGS)) {
+        let loc = toString(&tkn.span);
+        fprintf(stderr, "%s: %s: `compiler_flags` is deprecated, please use `config` instead.\n", loc.buffer, WARN_STR);
         parseCompilerFlags(this, attributes, skip);
+        drop(&loc);
         return null;
     } else if (equals(&tkn.content, &KEYWORD_MODULE)) {
         // REVIEW: Do we want to support modules outside of TLIs?
@@ -222,7 +235,7 @@ func parseTopLevelItem(this: &Parser, parent: TLIParent, attributes: ParsedAttri
     }
 }
 
-func parseModule(this: &Parser, _parent: TLIParent, attributes: ParsedAttributeList) -> &ParsedModule {
+func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList) -> &ParsedModule {
     trace("Parser.parseModule");
     let modTkn: Token = expect(this, TOKEN_KEYWORD);
     assert(equals(&modTkn.content, &KEYWORD_MODULE));
@@ -231,9 +244,16 @@ func parseModule(this: &Parser, _parent: TLIParent, attributes: ParsedAttributeL
     expect(this, TOKEN_CURLY_OPEN);
     let mod = newParsedModule(_parent, blank, name, blank);
     let parent = TLIParent { isFile: false, id: getID(mod) as u32 };
+    let anyExtern = false;
     while (!at(this, TOKEN_CURLY_CLOSE)) {
         let attributes: ParsedAttributeList = blank;
-        let skip = parseAttributes(this, &attributes);
+        let skip = parseAttributes(this, &attributes, true);
+        for (let i: usize = 0; !anyExtern && i < attributes.length; i = i + 1) {
+            if (at(&attributes, i).kind == ATTR_EXTERN) {
+                anyExtern = true;
+                break;
+            }
+        }
         if (skip) {
             debug("Parsed TopLevelItem, but skipping it because of @os()");
             toggleIgnoringNodes();
@@ -253,11 +273,72 @@ func parseModule(this: &Parser, _parent: TLIParent, attributes: ParsedAttributeL
     let span = newSpanBetween(&modTkn.span, &end.span);
     mod.span = span;
     mod.tlis = tlis;
+    @os(WINDOWS) if (anyExtern) {
+        for (let i: usize = 0; i < tlis.length; i = i + 1) {
+            let t = at(&topLevelItems, *at(&tlis, i));
+            if (t.kind == TLI_CONFIG) {
+                let cfg = at(&configs, t.nodeID);
+                let paths: TokenList = blank;
+                for (let j: usize = 0; j < cfg.configs.length; j = j + 1) {
+                    let _cfg = at(&cfg.configs, j);
+                    if (_cfg.kind == CONFIG_LIBPATH) {
+                        push(&paths, _cfg.value);
+                    }
+                }
+                for (let k: usize = 0; k < paths.length; k = k + 1) {
+                    let _path = toString(&at(&paths, k).content);
+                    let path = toAbsolutePath(&_path);
+                    pushChar(&path, '\\');
+                    for (let j: usize = 0; j < cfg.configs.length; j = j + 1) {
+                        let _cfg = at(&cfg.configs, j);
+                        if (_cfg.kind == CONFIG_LIBNAME) {
+                            let path = copy(&path);
+                            pushSubStr(&path, &_cfg.value.content);
+                            pushStr(&path, ".dll");
+                            let file: Any = fopen(path.buffer, "r");
+                            if (file == null) {
+                                continue;
+                            }
+                            fclose(file);
+                            let handle = LoadLibraryA(path.buffer);
+                            if (isNull(handle)) {
+                                continue;
+                            }
+                            push(&mod.dlls, getID(newDLL(path, handle)));
+                        }
+                    }
+                    drop(&_path);
+                    drop(&path);
+                }
+            }
+        }
+        if (mod.dlls.length == 0) {
+            todo_with_msg("Function in module marked @extern but no DLL found");
+        }
+    }
+    @os(LINUX) if (anyExtern) todo_with_msg("check if dll exists");
     return mod;
 }
 
+func parseConfig(this: &Parser, parent: TLIParent, attributes: ParsedAttributeList) -> &ParsedConfig {
+    trace("Parser.parseConfig");
+    let cfgTkn: Token = expect(this, TOKEN_KEYWORD);
+    assert(equals(&cfgTkn.content, &KEYWORD_CONFIG));
+    expect(this, TOKEN_CURLY_OPEN);
+    let flags: ConfigList = blank;
+    while (!at(this, TOKEN_CURLY_CLOSE)) {
+        let cfg = expect(this, TOKEN_IDENT);
+        expect(this, TOKEN_COLON);
+        let value = expect(this, TOKEN_STRING_LITERAL);
+        push(&flags, newConfig(cfg, value));
+        if (!eat(this, TOKEN_COMMA)) break;
+    }
+    let end = expect(this, TOKEN_CURLY_CLOSE);
+    return newParsedConfig(newSpanBetween(&cfgTkn.span, &end.span), flags);
+}
+
 func parseCompilerFlags(this: &Parser, attributes: ParsedAttributeList, skip: bool) {
-    trace("Parser.parseImport");
+    trace("Parser.parseCompilerFlags");
     let cmpTkn: Token = expect(this, TOKEN_KEYWORD);
     assert(equals(&cmpTkn.content, &KEYWORD_COMPILER_FLAGS));
     expect(this, TOKEN_CURLY_OPEN);
@@ -424,7 +505,7 @@ func parseBlock(this: &Parser) -> &ParsedBlock {
     let start: Token = expect(this, TOKEN_CURLY_OPEN);
     while (!parsedEOF(this) && !at(this, TOKEN_CURLY_CLOSE)) {
         let attributes: ParsedAttributeList = blank;
-        let skip = parseAttributes(this, &attributes);
+        let skip = parseAttributes(this, &attributes, false);
         if (skip) {
             debug("Parsed Stmt, but skipping it because of @os()");
             toggleIgnoringNodes();

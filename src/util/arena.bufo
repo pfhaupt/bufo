@@ -72,6 +72,39 @@ func allocateBlock(cap: usize, size: usize) -> &ArenaBlock {
     return block;
 }
 
+struct ParsedConfigArena {
+    start: &ArenaBlock;
+    end: &ArenaBlock;
+    length: usize;
+}
+
+func push(this: &ParsedConfigArena, elem: ParsedConfig) {
+    trace("ParsedConfigArena.push");
+    if (this.start == null) {
+        this.start = allocateBlock(ARENA_SIZE_SMALL, sizeof ParsedConfig);
+        assert(this.end == null);
+        this.end = this.start;
+    }
+    push(this.end, &elem, ARENA_SIZE_SMALL);
+    if (this.end.next != null) this.end = this.end.next;
+    this.length = this.length + 1;
+}
+func at(this: &ParsedConfigArena, index: usize) -> &ParsedConfig {
+    trace("ParsedConfigArena.at");
+    assert(this.start != null, "ParsedConfigArena.at() called on empty Arena");
+    return at(this.start, index) as &ParsedConfig;
+}
+func last(this: &ParsedConfigArena) -> &ParsedConfig {
+    trace("ParsedConfigArena.last");
+    assert(this.end != null, "ParsedConfigArena.last() called on empty Arena");
+    return last(this.end) as &ParsedConfig;
+}
+func indexOf(this: &ParsedConfigArena, elem: &ParsedConfig) -> usize {
+    trace("ParsedConfigArena.indexOf");
+    assert(this.start != null, "ParsedConfigArena.indexOf() called on empty Arena");
+    return indexOf(this.start, elem);
+}
+
 struct ParsedCompilerFlagArena {
     start: &ArenaBlock;
     end: &ArenaBlock;
@@ -432,6 +465,39 @@ func last(this: &TypeArena) -> &Type {
 func indexOf(this: &TypeArena, elem: &Type) -> usize {
     trace("TypeArena.indexOf");
     assert(this.start != null, "TypeArena.indexOf() called on empty Arena");
+    return indexOf(this.start, elem);
+}
+
+struct DLLArena {
+    start: &ArenaBlock;
+    end: &ArenaBlock;
+    length: usize;
+}
+
+func push(this: &DLLArena, elem: DLL) {
+    trace("DLLArena.push");
+    if (this.start == null) {
+        this.start = allocateBlock(ARENA_SIZE_SMALL, sizeof DLL);
+        assert(this.end == null);
+        this.end = this.start;
+    }
+    push(this.end, &elem, ARENA_SIZE_SMALL);
+    if (this.end.next != null) this.end = this.end.next;
+    this.length = this.length + 1;
+}
+func at(this: &DLLArena, index: usize) -> &DLL {
+    trace("DLLArena.at");
+    assert(this.start != null, "DLLArena.at() called on empty Arena");
+    return at(this.start, index) as &DLL;
+}
+func last(this: &DLLArena) -> &DLL {
+    trace("DLLArena.last");
+    assert(this.end != null, "DLLArena.last() called on empty Arena");
+    return last(this.end) as &DLL;
+}
+func indexOf(this: &DLLArena, elem: &DLL) -> usize {
+    trace("DLLArena.indexOf");
+    assert(this.start != null, "DLLArena.indexOf() called on empty Arena");
     return indexOf(this.start, elem);
 }
 

@@ -44,3 +44,6 @@ import "winapi/structs.bufo";
     lpLastAccessTime: &FileTime,
     lpLastWriteTime: &FileTime
 ) -> bool;
+@extern("LoadLibraryA") func LoadLibraryA(lpLibFileName: &char) -> Handle;
+@extern("FreeLibrary") func FreeLibrary(hLibModule: Handle) -> bool;
+@extern("GetProcAddress") func GetProcAddress(handle: Handle, name: &char) -> Handle;

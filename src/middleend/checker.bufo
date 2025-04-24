@@ -12,6 +12,9 @@ import "../frontend/nodes.bufo";
 import "./types.bufo";
 import "./lookup.bufo";
 
+@os(WINDOWS) import "winapi/structs.bufo";
+@os(WINDOWS) import "winapi/functions.bufo";
+
 comptime ERROR_INVALID: usize = 0;
 comptime ERROR_NO_SUCH_IDENTIFIER: usize = 1;
 comptime ERROR_NO_SUCH_FUNCTION: usize = 2;
@@ -747,13 +750,34 @@ func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupLi
     for (let i: usize = 0; i < funcLookup.params.length; i = i + 1) {
         addVariable(&scope, *(at(&funcLookup.params, i)));
     }
-    if (!isExtern(function)) {
-        push(scopes, scope);
-        let blockState: TCState = typeCheckBlock(this, function.body, scopes);
-        pop(scopes);
-        if (isError(&blockState)) {
-            return blockState;
+    @os(WINDOWS) if (isExtern(function)) {
+        if (!function.parent.isFile) {
+            let mod = getParentModule(function);
+            if (mod.dlls.length == 0) {
+                todo_with_msg("warn: @extern() function has no DLLs to fetch from");
+            }
+            let _name = toString(&function.name.content);
+            for (let i: usize = 0; i < mod.dlls.length; i = i + 1) {
+                let dll = at(&dlls, *at(&mod.dlls, i));
+                let handle = GetProcAddress(dll.handle, _name.buffer);
+                if (!isNull(handle)) {
+                    function.dllHandle = newDLL(dll.path, handle);
+                    break;
+                }
+            }
+            drop(&_name);
+        } else {
         }
+        return function.typeState;
+    }
+    @os(LINUX) if (isExtern(function)) {
+        todo_with_msg("type check extern func on Linux");
+    }
+    push(scopes, scope);
+    let blockState: TCState = typeCheckBlock(this, function.body, scopes);
+    pop(scopes);
+    if (isError(&blockState)) {
+        return blockState;
     }
     return function.typeState;
 }

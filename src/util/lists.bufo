@@ -3,6 +3,7 @@ import "libc.bufo";
 import "string.bufo";
 import "substr.bufo";
 import "../frontend/nodes.bufo";
+import "../frontend/token.bufo";
 import "../middleend/lookup.bufo";
 import "../middleend/checker.bufo";
 import "../backend/irgen.bufo";
@@ -128,7 +129,44 @@ struct UsizeList {
     length: usize;
     capacity: usize;
 }
+struct ConfigList {
+    elements: &Config;
+    length: usize;
+    capacity: usize;
+}
+struct TokenList {
+    elements: &Token;
+    length: usize;
+    capacity: usize;
+}
 
+func push(this: &TokenList, element: Token) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof Token);
+        assert(this.elements != null, "Could not allocate memory in TokenList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+func at(this: &TokenList, index: usize) -> &Token {
+    assert(index < this.length, "Out of bounds access in TokenList.at");
+    assert(this.elements != null, "Element pointer is NULL in TokenList.at");
+    return &this.elements[index];
+}
+func push(this: &ConfigList, element: Config) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof Config);
+        assert(this.elements != null, "Could not allocate memory in ConfigList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
 func push(this: &ModuleLookupList, element: ModuleLookup) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
@@ -151,6 +189,11 @@ func contains(this: &ModuleLookupList, element: &ModuleLookup) -> bool {
 func at(this: &ModuleLookupList, index: usize) -> &ModuleLookup {
     assert(index < this.length, "Out of bounds access in ModuleLookupList.at");
     assert(this.elements != null, "Element pointer is NULL in ModuleLookupList.at");
+    return &this.elements[index];
+}
+func at(this: &ConfigList, index: usize) -> &Config {
+    assert(index < this.length, "Out of bounds access in ConfigList.at");
+    assert(this.elements != null, "Element pointer is NULL in ConfigList.at");
     return &this.elements[index];
 }
 func initBlank(this: &FileLookupList, newCap: usize) {
