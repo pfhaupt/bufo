@@ -1,0 +1,16 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Module contains @extern() functions, but no config was specified.
+//! The config contains important information such as linker flags and library paths.
+//! The config can be declared using the top level keyword `config` within the module.
+
+module test {
+    @extern("something") func something();
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    return 0;
+}

@@ -269,7 +269,7 @@ func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
     let calledFunc: &IRFunc = at(&this.irGen.functions, id);
     let f = at(&funcDecls, calledFunc.originalID);
     if (isExtern(f)) {
-        @os(WINDOWS) if (!isNull(f.dllHandle.handle)) {
+        @os(WINDOWS) if (!isNull(f.dllHandle)) {
             let fun = compileFunctionCall(this, irFunc, calledFunc, instr, f.dllHandle.handle.ptr, regs);
             let retType = at(&types, at(&types, getType(&f.typeState)).typeIndex);
             let val = fun.run();
@@ -302,7 +302,30 @@ func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
             free(fun);
             return dst;
         } else {
-            todo_with_msg("comptime interpreter could not find valid function pointer for extern function");
+            let loc = toString(&instr.span);
+            fprintf(stderr, "%s: %s: Can not call external function `%s` at compile time.\n", loc.buffer, ERR_STR, calledFunc.name.buffer);
+            if (f.dllHandle == dllNotFound()) {
+                let m = getParentModule(f);
+                let _loc = toString(&m.span);
+                let cfg = getConfigs(m);
+                if (cfg.length == 0) {
+                    fprintf(stderr, "%s: %s: No configuration found!\n", _loc.buffer, NOTE_STR);
+                } else {
+                    fprintf(stderr, "%s: %s: Could not load any of the libraries specified in the module configuration.\n", loc.buffer, NOTE_STR);
+                    fprintf(stderr, "%s: %s: Module declared here.\n", _loc.buffer, NOTE_STR);
+                    for (let i: usize = 0; i < cfg.length; i = i + 1) {
+                        let tli = at(&topLevelItems, *at(&cfg, i));
+                        assert(tli.kind == TLI_CONFIG);
+                        let _loc = toString(&tli.span);
+                        fprintf(stderr, "%s: %s: Module configuration declared here.\n", _loc.buffer, NOTE_STR);
+                        drop(&_loc);
+                    }
+                }
+            } else {
+                unreachable("actually null-ptr");
+            }
+            drop(&loc);
+            exit(1);
         }
         @os(LINUX) todo_with_msg("comptime extern call");
     } else {

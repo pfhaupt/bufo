@@ -47,8 +47,7 @@ struct Vector2 {
 }
 
 module raylib {
-    @os(WINDOWS)
-    config {
+    @os(WINDOWS) config {
         library: "raylib",
         libpath: "./raylib/lib",
         library: "OpenGL32",
@@ -93,7 +92,7 @@ module raylib {
         comptime PixelPerSecond: i32 = 200;
         comptime PixelPerFrame: f32 = PixelPerSecond as f32 / FPS as f32;
         raylib.SetTargetFPS(FPS);
-        let w = raylib.LoadWave("./_metal_pipe.wav");
+        let w = raylib.LoadWave("./metal_pipe.wav");
         let s = raylib.LoadSoundFromWave(w);
         if (raylib.IsSoundValid(s)) {
             raylib.SetSoundVolume(s, 20/100);

@@ -743,20 +743,19 @@ func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupLi
     let state = newTCStateType(getID(fnType));
     funcLookup.fnType = state;
     function.typeState = state;
-    if (signatureOnly) {
-        return newTCStateSuccess();
-    }
-    let scope: ScopeLookup = blank;
-    for (let i: usize = 0; i < funcLookup.params.length; i = i + 1) {
-        addVariable(&scope, *(at(&funcLookup.params, i)));
-    }
     @os(WINDOWS) if (isExtern(function)) {
         if (!function.parent.isFile) {
             let mod = getParentModule(function);
-            if (mod.dlls.length == 0) {
-                todo_with_msg("warn: @extern() function has no DLLs to fetch from");
-            }
             let _name = toString(&function.name.content);
+            if (mod.dlls.length == 0) {
+                if (*flags.verbose) {
+                    let loc = toString(&function.span);
+                    fprintf(stderr, "%s: %s: No dynamic library was found for external function %s. You will not be able to call it at compile time.\n",
+                        loc.buffer, WARN_STR, _name.buffer);
+                    drop(&loc);
+                }
+                function.dllHandle = dllNotFound();
+            }
             for (let i: usize = 0; i < mod.dlls.length; i = i + 1) {
                 let dll = at(&dlls, *at(&mod.dlls, i));
                 let handle = GetProcAddress(dll.handle, _name.buffer);
@@ -772,6 +771,13 @@ func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupLi
     }
     @os(LINUX) if (isExtern(function)) {
         todo_with_msg("type check extern func on Linux");
+    }
+    if (signatureOnly) {
+        return newTCStateSuccess();
+    }
+    let scope: ScopeLookup = blank;
+    for (let i: usize = 0; i < funcLookup.params.length; i = i + 1) {
+        addVariable(&scope, *(at(&funcLookup.params, i)));
     }
     push(scopes, scope);
     let blockState: TCState = typeCheckBlock(this, function.body, scopes);

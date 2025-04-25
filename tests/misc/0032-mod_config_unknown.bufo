@@ -1,0 +1,16 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Unknown config option `something_that_doesnt_exist`.
+//! A non-exhaustive list of config options: `library`, `libpath`, `linker`.
+
+module test {
+    config {
+        something_that_doesnt_exist: "123",
+    }
+}
+
+func main() {
+}

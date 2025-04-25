@@ -168,7 +168,7 @@ func newConfig(t: Token, value: Token) -> Config {
     } else if (equals(&t.content, &comptime BUILD_A_KEYWORD("linker"))) {
         kind = CONFIG_LINKER;
     } else {
-        todo_with_msg("invalid config");
+        kind = CONFIG_INVALID;
     }
     return Config { kind: kind, value: value };
 }
@@ -295,6 +295,16 @@ func newParsedTopLevelItem(span: Span, kind: usize, nodeID: usize) -> &ParsedTop
     return last(&dlls);
 }
 
+comptime DLL_NOT_FOUND: usize = 1;
+func dllNotFound() -> &DLL {
+    return DLL_NOT_FOUND as &DLL;
+}
+func isNull(dll: &DLL) -> bool {
+    if (dll == null) return true;
+    if (dll == dllNotFound()) return true;
+    return isNull(dll.handle);
+}
+
 func getID(this: &DLL) -> usize {
     trace("DLL.getID");
     return indexOf(&dlls, this);
@@ -307,6 +317,15 @@ struct ParsedModule {
     span: Span;
     tlis: UsizeList;
     dlls: UsizeList;
+}
+func getConfigs(this: &ParsedModule) -> UsizeList {
+    let list = UsizeList {};
+    for (let i: usize = 0; i < this.tlis.length; i = i + 1) {
+        if (at(&topLevelItems, *at(&this.tlis, i)).kind == TLI_CONFIG) {
+            push(&list, *at(&this.tlis, i));
+        }
+    }
+    return list;
 }
 func getID(this: &ParsedModule) -> usize {
     trace("ParsedModule.getID");

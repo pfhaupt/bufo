@@ -274,11 +274,15 @@ func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList
     mod.span = span;
     mod.tlis = tlis;
     @os(WINDOWS) if (anyExtern) {
+        let modConfigs = UsizeList {};
+        let anyLibrary = false;
         for (let i: usize = 0; i < tlis.length; i = i + 1) {
             let t = at(&topLevelItems, *at(&tlis, i));
             if (t.kind == TLI_CONFIG) {
+                push(&modConfigs, *at(&tlis, i));
                 let cfg = at(&configs, t.nodeID);
                 let paths: TokenList = blank;
+                push(&paths, newToken(mod.parent.id as usize, &newSubStrOfStrLit("."), 0, TOKEN_DOT));
                 for (let j: usize = 0; j < cfg.configs.length; j = j + 1) {
                     let _cfg = at(&cfg.configs, j);
                     if (_cfg.kind == CONFIG_LIBPATH) {
@@ -292,6 +296,7 @@ func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList
                     for (let j: usize = 0; j < cfg.configs.length; j = j + 1) {
                         let _cfg = at(&cfg.configs, j);
                         if (_cfg.kind == CONFIG_LIBNAME) {
+                            anyLibrary = true;
                             let path = copy(&path);
                             pushSubStr(&path, &_cfg.value.content);
                             pushStr(&path, ".dll");
@@ -312,8 +317,25 @@ func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList
                 }
             }
         }
-        if (mod.dlls.length == 0) {
-            todo_with_msg("Function in module marked @extern but no DLL found");
+        if (modConfigs.length == 0) {
+            let loc = toString(&mod.span);
+            fprintf(stderr, "%s: %s: Module contains @extern() functions, but no config was specified.\n", loc.buffer, ERR_STR);
+            fprintf(stderr, "%s: %s: The config contains important information such as linker flags and library paths.\n", loc.buffer, NOTE_STR);
+            fprintf(stderr, "%s: %s: The config can be declared using the top level keyword `config` within the module.\n", loc.buffer, NOTE_STR);
+            drop(&loc);
+            this.syntaxError = true;
+        } else if (!anyLibrary) {
+            let loc = toString(&mod.span);
+            fprintf(stderr, "%s: %s: Module contains @extern() functions, but no library was provided in the config.\n", loc.buffer, ERR_STR);
+            for (let i: usize = 0; i < modConfigs.length; i = i + 1) {
+                let t = at(&topLevelItems, *at(&modConfigs, i));
+                assert(t.kind == TLI_CONFIG);
+                let loc = toString(&t.span);
+                fprintf(stderr, "%s: %s: Module configuration specified here.\n", loc.buffer, NOTE_STR);
+                drop(&loc);
+            }
+            drop(&loc);
+            this.syntaxError = true;
         }
     }
     @os(LINUX) if (anyExtern) todo_with_msg("check if dll exists");
@@ -327,10 +349,28 @@ func parseConfig(this: &Parser, parent: TLIParent, attributes: ParsedAttributeLi
     expect(this, TOKEN_CURLY_OPEN);
     let flags: ConfigList = blank;
     while (!at(this, TOKEN_CURLY_CLOSE)) {
-        let cfg = expect(this, TOKEN_IDENT);
+        let _cfg = expect(this, TOKEN_IDENT);
         expect(this, TOKEN_COLON);
         let value = expect(this, TOKEN_STRING_LITERAL);
-        push(&flags, newConfig(cfg, value));
+        let cfg = newConfig(_cfg, value);
+        if (cfg.kind == CONFIG_INVALID) {
+            let loc = toString(&_cfg.span);
+            let name = toString(&_cfg.content);
+            fprintf(stderr, "%s: %s: Unknown config option `%s`.\n", loc.buffer, ERR_STR, name.buffer);
+            fprintf(stderr, "%s: %s: A non-exhaustive list of config options: `library`, `libpath`, `linker`.\n", loc.buffer, NOTE_STR);
+            drop(&name);
+            drop(&loc);
+            this.syntaxError = true;
+        } else if (value.content.len == 0) {
+            let loc = toString(&value.span);
+            let name = toString(&_cfg.content);
+            fprintf(stderr, "%s: %s: Value for config option `%s` can't be empty.\n", loc.buffer, ERR_STR, name.buffer);
+            drop(&name);
+            drop(&loc);
+            this.syntaxError = true;
+        } else {
+            push(&flags, cfg);
+        }
         if (!eat(this, TOKEN_COMMA)) break;
     }
     let end = expect(this, TOKEN_CURLY_CLOSE);
