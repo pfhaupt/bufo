@@ -112,6 +112,9 @@ func main(argc: i32, argv: &&char) -> i32 {
             unreachable("Exhaustive handling of compiler_flags");
         }
     }
+    if (!*flags.verbose) {
+        pushStr(&s, " /NOLOGO");
+    }
     let cmd: Cmd = newCmdFromStrLit(s.buffer);
     cmd.log = *flags.verbose;
     let success = runSync(&cmd);
