@@ -133,7 +133,7 @@ let instrFns = [
     evaluateFloatCmpLtAndGte,   // INSTR_FLOAT_CMP_LT
     evaluateFloatCmpGtAndLte,   // INSTR_FLOAT_CMP_LTE
     evaluateLogicalNot,         // INSTR_LOGICAL_NOT
-    evaluateNotImplemented,
+    evaluateLogicalAnd,         // INSTR_LOGICAL_AND
     evaluateLogicalOr,          // INSTR_LOGICAL_OR
     evaluateNotImplemented,
     evaluateNotImplemented,
@@ -321,6 +321,8 @@ func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
                         drop(&_loc);
                     }
                 }
+            } else if (f.dllHandle == null) {
+                // REVIEW: What do we report here?
             } else {
                 unreachable("actually null-ptr");
             }
@@ -1103,6 +1105,32 @@ func evaluateLogicalNot(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs:
     let val: u8 = *srcStart;
     assert(val == 0 || val == 1, "Logical Not got non-zero non-one");
     *dstStart = 1 - val;
+    return dst;
+}
+func evaluateLogicalAnd(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateLogicalAnd");
+    let lhs: &RegValue = at(regs, instr.src.i);
+    let rhs: &RegValue = at(regs, instr.op1.i);
+    let rLhs: InterpReg =  asInterp(lhs, "LAnd LHS");
+    let rRhs: InterpReg =  asInterp(rhs, "LAnd RHS");
+    let t1: &Type = getRegister(irFunc, instr.src).typ;
+    let t2: &Type = getRegister(irFunc, instr.op1).typ;
+    let s1: usize = getSize(t1);
+    let s2: usize = getSize(t2);
+    assert(s1 == s2, "LAnd got differently sized operands");
+    assert(s1 == 1, "Idk");
+    let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+    let dst: InterpReg = InterpReg {
+        offset: dstReg.offset,
+        size: 1,
+    };
+    let lhsStart: &u8 = getRegStackPointer(this, &rLhs);
+    let rhsStart: &u8 = getRegStackPointer(this, &rRhs);
+    let dstStart: &u8 = getRegStackPointer(this, &dst);
+    *dstStart = 0;
+    if (*(lhsStart as &bool) && *(rhsStart as &bool)) {
+        *dstStart = 1;
+    }
     return dst;
 }
 func evaluateLogicalOr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {

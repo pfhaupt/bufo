@@ -1,8 +1,0 @@
-unsafe func main() {
-    mut buf: [char; 1024] = [0; 1024];
-    mut f: Any = fopen("./ex/file.bufo", "r");
-    let s: usize = fread(&buf, 1, 1024, f);
-    printf("Size in bytes: %u\n", s);
-    printf("File:\n%s\n", &buf);
-    assert(fclose(f) == 0, "Could not close file!");
-}

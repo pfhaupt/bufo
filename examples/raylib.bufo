@@ -2,7 +2,6 @@
 import "prelude.bufo";
 import "libc.bufo";
 
-
 // TODO: Structs in modules don't work yet
 struct Color {
     r: u8;
@@ -86,7 +85,7 @@ module raylib {
         comptime HEIGHT: i32 = 600;
         comptime RW: f32 = 150;
         comptime RH: f32 = 150;
-        raylib.InitWindow(WIDTH, HEIGHT, "Hello from bufo!");
+        raylib.InitWindow(WIDTH, HEIGHT, "actual_test: Hello from bufo!");
         raylib.InitAudioDevice();
         comptime FPS: i32 = 60;
         comptime PixelPerSecond: i32 = 200;
@@ -122,28 +121,38 @@ module raylib {
         raylib.CloseAudioDevice();
         raylib.CloseWindow();
     }
-    func test() {
+    func simple_test(isComptime: bool, inMakefile: bool) {
         // TODO: Lookup doesn't check the current module, would be cool to not have to write
-        //       raylib. all the time while within the module raylib
-        raylib.InitWindow(800, 600, "hello from bufo");
+        //        all the time while within the module raylib
+        if (isComptime) {
+            raylib.InitWindow(600, 400, "simple_test: hello from bufo but at comptime FeelsOkayMan");
+        } else {
+            raylib.InitWindow(600, 400, "simple_test: hello from bufo");
+        }
+        let c = comptime raylib.ColorFromHSV(90, 1/10, 3/10);
         while (!raylib.WindowShouldClose()) {
+            if ((isComptime || inMakefile) && raylib.GetTime() > 3) {
+                if (!isComptime) {
+                    // TODO: Make things like printf and assert available to comptime
+                    printf("\x1b[92m[INFO] 3 seconds have passed, closing window.\x1b[0m\n");
+                }
+                break;
+            }
             raylib.BeginDrawing();
-            raylib.ClearBackground(Color { r: 51, g: 51, b: 51, a: 255 });
+            raylib.ClearBackground(c);
             raylib.EndDrawing();
         }
         raylib.CloseWindow();
     }
 }
-module other {
-    // Doesn't work because this module doesn't have a config
-    // @extern("BeginDrawing") func BeginDrawing();
-}
 
 func main(argc: i32, argv: &&char) -> i32 {
-    printf("works on my machine! :Clueless:\n");
-    raylib.actual_test();
-    // that's frigging poggers :^)
-    (comptime raylib.actual_test());
+    let inMakefile = false;
+    if (argc > 1) {
+        inMakefile = strcmp(argv[1], "--Makefile") == 0;
+    }
+    raylib.simple_test(false, inMakefile);
+    (comptime raylib.simple_test(true, false));
     return 0;
 }
 
