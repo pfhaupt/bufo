@@ -1,43 +1,46 @@
-# Bufo
+# bufo
 ## Overview
-Bufo is a programming language that I created for my own personal exploration and experimentation.  
+bufo is a programming language that I created for my own personal exploration and experimentation.
+
 It features a semi-unique syntax, with a focus on imperative and functional programming that encourages creativity and experimentation.
 
-It is not intended to be fast or special (this may be subject to change).
-
-This project is Part 2 of my journey, the first being [HauptLang](https://github.com/MrLagSux/HauptLang).
-
-**All features are highly experimental and might change at any time.**
+The name is a reference to the [common toad](https://en.wikipedia.org/wiki/Common_toad), as its latin name is [bufo bufo](./src/bufo.bufo).
 
 ## Milestones/Roadmap
-- [x] Type System
-- [ ] Functional Programming capabilities
-- [ ] Self-hosting
-- [ ] Optimizations
+- [x] Self-hosting
+- [x] Functional Programming capabilities
+- [x] Arbitrary code execution at compile time
+- [ ] Rust-style enums and Pattern Matching
+- [ ] Closures
+- [ ] Macros
+- [ ] Generics
+- [ ] Inline Assembly and/or Inline Machine Code
 
 ## Quick Start
-### Build
-Run `cargo build [--release]` to compile the bufo-compiler. You can then find it in `./target/`.
-### Usage
-Run `bufo -i <input.bu> [flags]` to compile the input file.  
-Specify `-d` to generate debug info.  
-Specify `-r` to run the code after the compiler has finished.
+Note: If you want to build the compiler, check below this section.
 
-## Language Support
-- Variables:  
-`let name: i32 = 15;` assigns `15` to a variable called `name` of type `i32`.  
-The compiler checks re-definitions of variables, re-assignments are always possible.  
-Variable types are checked at compile time, statements like `let a: i32 = 5u32;` will throw an error.  
-Built-in types: `i32, i64, u32, u64, usize`  
-Currently there is no way to cast types.
-- The language has (multi-dimensional) array support:  
-`let arr: i32[2, 3] = [[1, 2, 3], [4, 5, 6]];` creates a `2x3` array and assigns it to `arr`.  
-Use `arr[x, y]` to index an element. In this example, `arr[1, 1]` gets the value 5.  
-Out-of-bounds checks are performed at runtime.  
-Note: Arrays are zero-indexed.
-- Functions:  
-`func foo(a: i32, x: u32) -> i64 { ... }` defines a function that takes in 2 arguments, one of type `i32`, one of type `u32`, and returns a value of type `i64`.  
-Functions inside of functions are not supported yet.
-- Supports if-else-statements.  
-- `main()` is the entrypoint of the program.
-- Currently there are no global variables. On a global level you can only define functions.
+bufo is a statically typed and compiled low-level general purpose programming language. If you come from languages like C or Rust, you'll pick up the language pretty quickly.
+
+To get a quick overview over the language features, take a look at the [how_to](./how_to/) directory.
+
+## Building the compiler
+### If you already have a copy of bufo
+Simply run `make`, the Makefile will do the rest.
+```sh
+$ make
+```
+It should be mentioned that the Makefile assumes a pretty normal Unix environment, even though I personally use Windows. Before it runs the actual build script, it verifies that all necessary tools are available on your machine.
+
+To run the test suite, you can run the following command. By default the suite compiles the compiler, `--dont-compile` instructs the suite to not do that.
+```sh
+$ python helper.py test [--dont-compile]
+```
+
+### Bootstrap - If you don't have a copy
+The compiler is [selfhosted](https://en.wikipedia.org/wiki/Self-hosting_(compilers)). This means that the compiler is written in bufo itself, without using any other programming languages or compilers to fall back to.
+
+Bootstrapping is currently not supported, however it is a high priority. Once such a mechanism exists, bootstrapping the compiler will be as simple as running
+```sh
+$ make bootstrap
+```
+in the terminal.

@@ -1,0 +1,173 @@
+// Have you ever wanted to do something at compile time, but the language at the time didn't
+// allow you to do so?
+//
+// The scenario is simple:
+// Often, compilers differentiate between the "runtime" of a program, and the "compile time" of a
+// program. The runtime is when you actually run your executable, you generated some machine code,
+// maybe distributed it, everything is final now.
+// The compile time is what happens during compilation of the program. It's only relevant for the
+// few milliseconds (I hope) that the compiler takes to compile your program, but after that it has
+// no effect on the runtime of your program.
+//
+// The concept of compile time evaluation (CTE), to save the runtime some effort, isn't new. Ever
+// since computers existed, and especially on embedded systems, outsourcing work to the compile time
+// instead of the runtime had huge benefits. Especially for constant values (for example, prime
+// numbers) you can easily argue that the compiler can just calculate them, and embed the final
+// result into the executable, instead of potentially taking minutes or hours to calculate them on
+// lower power hardware like embedded systems. Because, you know, every developer has a super
+// computer at home, and all customers have potatoes. (or so the saying goes).
+//
+// CTE in other languages often forms its own sublanguage, restricting the original language to a
+// big degree, and limiting what you can do. Even if they still turn out to be turing complete,
+// you're often not able to do anything the runtime can do, like opening files.
+//
+// But what if you could?
+//
+// `comptime` takes CTE to the next level. Instead of forming its own sublanguage, `comptime`
+// allows you to do *anything* the normal language can do, including calling functions, creating
+// constant values, or more advanced things like creating internet connections, creating GUI
+// applications, spawning threads etc.
+//
+// If you know the language Jai, this concept might sound familiar. If you don't, I highly
+// recommend you to check it out (assuming jblow ever publicly releases Jai :^)). While I don't
+// claim that bufo will ever be on the same level as Jai (it won't), it has still been a huge
+// inspiration and idea fountain throughout the project.
+//
+// To explain, let me clarify that bufo is not a normal compiler. It creates an executable, sure,
+// but that's not everything it does. After type checking and transforming the Abstract Syntax Tree
+// (one internal representation of your source code) into an easier to use intermediate
+// representation (IR), the compiler is basically free to do whatever it wants with it. In a normal
+// compiler, you'd pass that IR to LLVM, or your custom assembler, and be done.
+//
+// bufo does the same, except that it also has an IR interpreter builtin to facilitate CTE.
+// Before passing the IR to LLVM, it checks if the instruction has been marked as comptime, and if
+// it has, it simply evaluates it. Any IR instruction, like adding two integers, or calling a
+// function, is implemented, so the interpreter is capable of doing virtually anything.
+//
+// Let me demonstrate.
+
+// TODO: Remove those TODOs, it's not a very nice demonstration otherwise :^)
+// TODO: Remove `comptime` variable declarations, to allow `comptime {}` blocks without ()
+// FIXME: assert() uses a global variable `stdin`, which is fine and intended, however the
+//        interp triggers an assertion itself when accessing it
+// TODO: Hex literals
+// TODO: We can cook up so much with comptime, however the whole std (cough cough libc) still uses
+//       the non-module syntax so we can't use printf() and any of that...
+
+import "prelude.bufo";
+import "libc.bufo";
+
+struct Value {
+    a: i32;
+    b: u8;
+}
+
+struct Color {
+    r: u8;
+    g: u8;
+    b: u8;
+    a: u8;
+}
+
+// This is how you declare modules in bufo.
+module raylib {
+    // bufo supports conditional compilation using the attribute @os()
+    // config { } is special syntax to specify linker arguments, like libraries or paths
+    // Note: This means that this demonstration will not work on Linux, because the compiler won't
+    //       see any config there.
+    @os(WINDOWS) config {
+        // We're only interested in raylib.lib / raylib.a / raylib.so / raylib.dll / ...
+        // Final executables get statically linked by default.
+        library: "raylib",
+        // Makefile runs bufo.exe how_to/... so the path is different
+        libpath: "./raylib/lib",
+        libpath: "../raylib/lib",
+        // Below are some additional libraries the static version of raylib needs, like shell32.lib
+        // They're not needed at compile time, but because demo() is also available at runtime, we
+        // must specify them anyway.
+        library: "Gdi32",
+        library: "WinMM",
+        library: "shell32",
+        library: "User32",
+        linker: "/NODEFAULTLIB:libcmt",
+    }
+    // using the attribute @extern() we're telling the compiler to look for a function called
+    // "GetColor" in the libraries mentioned in the config above
+    // this means that we can now use raylib.get_color(), and it will call GetColor() under the hood.
+    @extern("GetColor") func get_color(v: u32) -> Color;
+    @extern("InitWindow") func init_window(width: i32, height: i32, title: &char);
+    @extern("WindowShouldClose") func window_should_close() -> bool;
+    @extern("BeginDrawing") func begin_drawing();
+    @extern("EndDrawing") func end_drawing();
+    @extern("ClearBackground") func clear_background(c: Color);
+    @extern("GetTime") func get_time() -> f64;
+    @extern("DrawText") func draw_text(text: &char, posX: i32, posY: i32, fontSize: i32, color: Color);
+    // External functions can be variadic
+    @extern("TextFormat") func text_format(fmt: &char, ...) -> &char;
+    @extern("CloseWindow") func close_window();
+}
+
+func add(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+// This function is called at compile time, everything inside it is evaluated too.
+// Note that you do not have to mark the function in any way. Usually you have to decide if a
+// function is available at compile time *or* runtime, but not in bufo. This function exists both
+// at compile time *and* runtime.
+func demo() -> Value {
+    let a = add(1, 2);
+    // assert(a == 3); // see TODO at the top
+    if (a != 3) return blank;
+    // CTE is not limited to the bufo world, you can also call external functions, provided the
+    // library can be loaded. This allows you to do anything a library can do!
+    // We can handle arbitrary types, we can call functions, anything.
+    // Even function pointers will work just fine. I'll let you figure that one out.
+    let gc = raylib.get_color;
+    let color = gc(404232447 /* 0x181818ff */);
+    if (color.r != 24 /* 0x18 */) return blank;
+    if (color.g != 24 /* 0x18 */) return blank;
+    if (color.b != 24 /* 0x18 */) return blank;
+    if (color.a != 255 /* 0xff */) return blank;
+
+    // For example, it allows us to open windows at compile time.
+    raylib.init_window(800, 600, "Hello from the how_to demo!");
+    let c = raylib.get_color(16777215 /* 0x00ffffff */);
+    let yellow = Color { r: 255, g: 255, a: 255 };
+    while (!raylib.window_should_close()) {
+        let dt = raylib.get_time();
+        raylib.begin_drawing();
+        raylib.clear_background(color);
+        raylib.draw_text("This window only exists at compile time.", 0, 0, 32, c);
+        raylib.draw_text("It will never show at runtime, unless you", 0, 32, 32, c);
+        raylib.draw_text("call demo() in a non-comptime context.", 0, 64, 32, c);
+        // Variadic functions (here: raylib.text_format) are also supported, including passing
+        // structures to functions. This is because bufo follows the C calling convention by default.
+        raylib.draw_text(raylib.text_format("This window has been open for %.2f seconds", dt), 0, 96, 32, c);
+        if (dt > 10) {
+            raylib.draw_text("Closing window soon...", 0, 128, 32, yellow);
+        }
+        if (dt > 15) {
+            raylib.draw_text(raylib.text_format("In %.2f seconds...", 20 - dt), 0, 160, 32, Color { r: 255, a: 255 });
+        }
+        if (dt >= 20) break;
+        raylib.end_drawing();
+    }
+    raylib.close_window();
+    return Value {
+        a: 12,
+        b: 17
+    };
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    // comptime instructs the compiler to evaluate the expression (here: call to demo()) at compile time
+    let value = comptime demo();
+    assert(value.a == 12);
+    assert(value.b == 17);
+    printf("At runtime, we don't get a fancy window.\n");
+    printf("However, the comptime evaluator has returned a structure:\n");
+    printf("value.a = %d\n", value.a);
+    printf("value.b = %hhu\n", value.b);
+    return 0;
+}

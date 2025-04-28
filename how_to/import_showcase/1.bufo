@@ -1,0 +1,13 @@
+
+// Import statements don't propagate through the project, which means that if file A imports file
+// B, and file B imports file C, that file A cannot use any functions declared in file C, unless
+// you import it explicitly again.
+
+import "./import_showcase/2.bufo";
+
+// Only imports libc for this file, for printf()
+import "libc.bufo";
+
+func showcase1() {
+    printf("Hello from the other file!\n");
+}

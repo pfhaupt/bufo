@@ -1,0 +1,8 @@
+
+// 2.bufo is imported by 1.bufo, but not by 003_imports.bufo, which means it can't be used there
+
+import "prelude.bufo"; // unreachable
+
+func showcase2() {
+    unreachable("This shouldn't be visible");
+}

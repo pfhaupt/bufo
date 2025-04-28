@@ -1,0 +1,88 @@
+// Functions can be declared using the `func` keyword.
+// Every function has a name, can take in some arguments, and can return a value.
+// In contrast to some other languages, functions can be overloaded too.
+
+import "prelude.bufo"; // assert
+import "libc.bufo"; // printf
+
+// Functions can be declared in any order you want
+func main(argc: i32, argv: &&char) -> i32 {
+    showcase1();
+    showcase2();
+    return 0;
+}
+
+// Function overloading means giving multiple functions the same name, but different function
+// signatures (parameters and return type). This allows us to implement pseudo-generic functions
+// and functions with pseudo-default arguments.
+
+// pseudo-generic function add<T>(T, T) -> T
+func add(a: u32, b: u32) -> u32 {
+    return a + b;
+}
+func add(a: i32, b: i32) -> i32 {
+    return a - b; // oops
+}
+
+// pseudo-default arguments
+func printNumber(number: u32) {
+    printNumber(number, false);
+}
+func printNumber(number: u32, padded: bool) {
+    if (padded) {
+        printf("% 6u\n", number);
+    } else {
+        printf("%u\n", number);
+    }
+}
+
+func showcase1() {
+    // bufo infers the correct add() based on the type of the variable
+    let c: u32 = add(1, 2); // add() must return u32
+    let d: i32 = add(3, 4); // add() must return i32
+    assert(c == 3);
+    assert(d == -1);
+
+    // compiler error: Not enough type information with the given context
+    // let e = add(1, 2);
+
+    printNumber(17);
+    printNumber(12, true);
+}
+
+// Functions in bufo are first class citizen, which means that *function types* are part of the language.
+// You can freely assign functions to variables, return them from functions, store them in structures etc.
+// Note: Anonymous functions (sometimes called closures, function expressions, inline functions, etc.)
+//       are not implemented yet, but planned. All functions must have a name.
+func apply(base: u32, fn: func (u32) -> u32) -> u32 {
+    return fn(base);
+}
+
+func square(s: u32) -> u32 {
+    return s * s;
+}
+
+func double(s: u32) -> u32 {
+    return 2 * s;
+}
+
+func switch(mode: u8) -> func (u32) -> u32 {
+    if (mode == 0) {
+        return square;
+    } else {
+        return double;
+    }
+}
+
+func showcase2() {
+    let a: u32 = 3;
+    let b = apply(a, square);
+    let c = apply(a, switch(1)); // calls double(a)
+    let f = switch(0);           // f has the type `func (u32) -> u32`
+    let d = f(a);                // calls square(a)
+    let e = switch(1)(a);        // calls double(a)
+    assert(b == 9);
+    assert(c == 6);
+    assert(d == 9);
+    assert(e == 6);
+}

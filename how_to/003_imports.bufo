@@ -1,0 +1,26 @@
+// bufo allows you to split your code across multiple files for a more organized experience.
+// Files can be imported using the keyword `import`, which specifies a file path the compiler
+// should look for.
+// If you specify a relative path, the compiler will check relative to *the current file* first,
+// before checking other paths.
+
+import "./import_showcase/1.bufo";
+// compiler error: File already imported
+// import "import_showcase.bufo";
+
+// After importing a file, you can use all data structures and functions declared in it.
+// The concept of visibility doesn't exist in bufo, all functions are "public" by default.
+// If you want to prevent name collisions (for example, if two files declare the same struct),
+// you can use modules instead.
+
+func main(argc: i32, argv: &&char) -> i32 {
+    // showcase1() is declared in ./import_showcase/1.bufo
+    showcase1();
+
+    // showcase2() is declared in ./import_showcase/2.bufo
+    // Even though we import that file in ./import_showcase/1.bufo, imports don't propagate.
+    // You have to import a given file in every other file you want to use it in.
+    // showcase2();
+    return 0;
+}
+

@@ -1,6 +1,7 @@
-.PHONY: all clean brick examples
+.PHONY: all clean brick examples clean_example how_to clean_howto bootstrap
 
 RUN_EXAMPLES =
+RUN_HOWTO =
 VERBOSE = @
 
 ifeq ($(VERBOSE),)
@@ -47,7 +48,7 @@ endif
 	./bufo.exe src/bufo.bufo -o ./bufo1.exe
 	mv ./bufo1.exe ./bufo.exe
 
-all: ./bufo.exe examples
+all: ./bufo.exe examples how_to
 
 define log_run
 	@printf "%-10s %s\n" "$(1)" "$(2)"
@@ -70,12 +71,36 @@ else
 examples: $(EXOUT)
 endif
 
+HOWTODIR := ./how_to
+HOWTOSRC := $(wildcard $(HOWTODIR)/*.bufo)
+HOWTOOUT := $(HOWTOSRC:.bufo=.exe)
+HOWTORUN := $(HOWTOSRC:.bufo=.run)
+
+$(HOWTOOUT): %.exe : %.bufo
+	$(call log_run,BUFO,$@,./bufo.exe $^ -o $@)
+$(HOWTORUN): %.run : %.exe | $(HOWTOOUT)
+	$(call log_run,RUN ,$<, $< --Makefile)
+
+ifdef RUN_HOWTO
+how_to: $(HOWTORUN)
+else
+how_to: $(HOWTOOUT)
+endif
+
+bootstrap:
+	$(error `make bootstrap` is currently a stub and does nothing)
+
 brick:
 	./working.exe src/bufo.bufo -o ./bufo.exe
 
-clean:
+clean: clean_example clean_howto
 	rm -f *.s
 	rm -f *.obj
+clean_example:
 	rm -f $(EXDIR)/*.s
 	rm -f $(EXDIR)/*.obj
 	rm -f $(EXDIR)/*.exe
+clean_howto:
+	rm -f $(HOWTODIR)/*.s
+	rm -f $(HOWTODIR)/*.obj
+	rm -f $(HOWTODIR)/*.exe
