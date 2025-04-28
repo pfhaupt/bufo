@@ -1648,13 +1648,14 @@ func push(val: u64) -> ByteBuffer {
 
 @os(WINDOWS) func compileFunctionCall(this: &IRInterp, currFunc: &IRFunc, calledFunc: &IRFunc, instr: &IRInstr, fn: usize, regs: &RegValueList) -> Function {
     let f = at(&funcDecls, calledFunc.originalID);
-    let retType = at(&types, at(&types, getType(&f.typeState)).typeIndex);
+    let fnType = at(&types, getType(&f.typeState));
+    let retType = at(&types, fnType.typeIndex);
     let buf: ByteBuffer = blank;
     // push(&buf, '\xf1');
     extend(&buf, &push(RBP));
     extend(&buf, &mov(RBP, RSP));
     comptime ARG_LEN: usize = 4;
-    comptime STACK_OFFSET: u32 = 32;
+    let stack_offset: u32 = 32;
     comptime ARGS = [[RCX, XMM0], [RDX, XMM1], [R8, XMM2], [R9, XMM3]];
     for (let i: usize = 0; i < instr.args.length; i = i + 1) {
         let index = at(&instr.args, i);
@@ -1662,15 +1663,30 @@ func push(val: u64) -> ByteBuffer {
         let arg: InterpReg = asInterp(reg, "call arg");
         let origReg = getRegister(currFunc, *index);
         let argType = origReg.typ;
-        if (i >= ARG_LEN) {
-            todo_with_msg("stack");
-            // if (v.kind == U64) {
-            //     extend(&buf, &mov(RSP, STACK_OFFSET + 8 * (i - ARG_LEN) as u32, v.u64));
-            // } else if (v.kind == F64) {
-            //     extend(&buf, &mov(RSP, STACK_OFFSET + 8 * (i - ARG_LEN) as u32, *(&v.f64 as &u64)));
-            // } else {
-            //     unreachable("yo momma so fat, she caused my bits to flip");
-            // }
+        if (isVariadic(fnType)) {
+            if (isFloat(argType)) {
+                if (getSize(argType) == 4) {
+                    extend(&buf, &mov(ARGS[i][0], *(getRegStackPointer(this, &arg) as &u32)));
+                    extend(&buf, &mov(ARGS[i][1], *(getRegStackPointer(this, &arg) as &f32)));
+                } else {
+                    extend(&buf, &mov(ARGS[i][0], *(getRegStackPointer(this, &arg) as &u64)));
+                    extend(&buf, &mov(ARGS[i][1], *(getRegStackPointer(this, &arg) as &f64)));
+                }
+            } else if (getSize(argType) <= 8) {
+                extend(&buf, &mov(ARGS[i][0], *(getRegStackPointer(this, &arg) as &u64)));
+            } else {
+                todo_with_msg("non-int non-float >8 byte reg");
+            }
+        } else if (i >= ARG_LEN) {
+            // Technically this puts a lot of garbage on the stack, but do we care?
+            // we update the stack pointer correctly, so the next argument overwrites the garbage
+            // and if the called function doesn't manage the stack properly, is that our fault?
+            if (getSize(argType) <= 8) {
+                extend(&buf, &mov(RSP, stack_offset, *(getRegStackPointer(this, &arg) as &u64)));
+            } else {
+                todo_with_msg(">8byte stack");
+            }
+            stack_offset = stack_offset + getSize(argType) as u32;
         } else {
             if (isFloat(argType)) {
                 if (getSize(argType) == 4) {
@@ -1695,7 +1711,7 @@ func push(val: u64) -> ByteBuffer {
         modRM(&buf, ADDR_REG, XMM0, RAX);
     } else if (isNone(retType)) {
         extend(&buf, &mov(RAX, 420691337 as u32));
-    } else if (isInteger(retType) || isBoolean(retType) || isStruct(retType)) {
+    } else if (isInteger(retType) || isBoolean(retType) || isStruct(retType) || isPointer(retType)) {
         // noop, other side will hopefully put the thing in RAX for us
     } else {
         fprintf(stderr, "%s\n", toString(retType).buffer);
