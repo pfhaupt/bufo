@@ -321,6 +321,26 @@ func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
                         drop(&_loc);
                     }
                 }
+            } else if (f.dllHandle == dllNoSuchFunction()) {
+                let m = getParentModule(f);
+                let _loc = toString(&m.span);
+                let cfg = getConfigs(m);
+                if (cfg.length == 0) {
+                    fprintf(stderr, "%s: %s: No configuration found!\n", _loc.buffer, NOTE_STR);
+                } else {
+                    let _fnLoc = toString(&f.span);
+                    fprintf(stderr, "%s: %s: Could not find the function in any of the specified libraries.\n", loc.buffer, ERR_STR);
+                    fprintf(stderr, "%s: %s: Function declared here.\n", _fnLoc.buffer, NOTE_STR);
+                    fprintf(stderr, "%s: %s: Module declared here.\n", _loc.buffer, NOTE_STR);
+                    for (let i: usize = 0; i < cfg.length; i = i + 1) {
+                        let tli = at(&topLevelItems, *at(&cfg, i));
+                        assert(tli.kind == TLI_CONFIG);
+                        let _loc = toString(&tli.span);
+                        fprintf(stderr, "%s: %s: Module configuration declared here.\n", _loc.buffer, NOTE_STR);
+                        drop(&_loc);
+                    }
+                    drop(&_fnLoc);
+                }
             } else if (f.dllHandle == null) {
                 // REVIEW: What do we report here?
             } else {

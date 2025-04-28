@@ -746,7 +746,7 @@ func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupLi
     @os(WINDOWS) if (isExtern(function)) {
         if (!function.parent.isFile) {
             let mod = getParentModule(function);
-            let _name = toString(&function.name.content);
+            let _name = getMangledName(function);
             if (mod.dlls.length == 0) {
                 if (*flags.verbose) {
                     let loc = toString(&function.span);
@@ -756,13 +756,24 @@ func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupLi
                 }
                 function.dllHandle = dllNotFound();
             }
+            let addrFound = false;
             for (let i: usize = 0; i < mod.dlls.length; i = i + 1) {
                 let dll = at(&dlls, *at(&mod.dlls, i));
                 let handle = GetProcAddress(dll.handle, _name.buffer);
                 if (!isNull(handle)) {
                     function.dllHandle = newDLL(dll.path, handle);
+                    addrFound = true;
                     break;
                 }
+            }
+            if (!addrFound && function.dllHandle != dllNotFound()) {
+                if (*flags.verbose) {
+                    let loc = toString(&function.span);
+                    fprintf(stderr, "%s: %s: Could not find external function %s in any DLL. You will not be able to call it at compile time.\n",
+                        loc.buffer, WARN_STR, _name.buffer);
+                    drop(&loc);
+                }
+                function.dllHandle = dllNoSuchFunction();
             }
             drop(&_name);
         } else {

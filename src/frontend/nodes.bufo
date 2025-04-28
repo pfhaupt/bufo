@@ -296,12 +296,17 @@ func newParsedTopLevelItem(span: Span, kind: usize, nodeID: usize) -> &ParsedTop
 }
 
 comptime DLL_NOT_FOUND: usize = 1;
+comptime DLL_NO_SUCH_FUNCTION: usize = 2;
 func dllNotFound() -> &DLL {
     return DLL_NOT_FOUND as &DLL;
+}
+func dllNoSuchFunction() -> &DLL {
+    return DLL_NO_SUCH_FUNCTION as &DLL;
 }
 func isNull(dll: &DLL) -> bool {
     if (dll == null) return true;
     if (dll == dllNotFound()) return true;
+    if (dll == dllNoSuchFunction()) return true;
     return isNull(dll.handle);
 }
 
