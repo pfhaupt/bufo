@@ -1,0 +1,8 @@
+
+import "./irgen.bufo";
+import "prelude.bufo";
+
+func analyzeControlFlow(irgen: &IRGen) -> bool {
+    warning("Control Flow Analysis is not implemented yet");
+    return true;
+}

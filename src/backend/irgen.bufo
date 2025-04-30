@@ -104,6 +104,7 @@ comptime INSTR_INT_TO_PTR: usize = 70;
 comptime INSTR_GET_FIELD_PTR: usize = 71;
 comptime INSTR_GET_ELEMENT_PTR: usize = 72;
 comptime INSTR_UNREACHABLE: usize = 73;
+comptime INSTR_UNTERMINATED: usize = 74;
 struct IRInstr {
     kind: usize;
     span: Span;
@@ -121,7 +122,8 @@ func isTerminator(this: &IRInstr) -> bool {
         || this.kind == INSTR_RETURN_VOID
         || this.kind == INSTR_COND_BR
         || this.kind == INSTR_BR
-        || this.kind == INSTR_UNREACHABLE;
+        || this.kind == INSTR_UNREACHABLE
+        || this.kind == INSTR_UNTERMINATED;
 }
 func dump(this: &IRInstr) {
     if (this.isComptime) printf("\x1b[92m");
@@ -207,6 +209,7 @@ func dump(this: &IRInstr) {
     else if (this.kind == INSTR_INT_TO_PTR) printf("r%llu = IntToPtr r%llu", this.dst.i, this.src.i);
     else if (this.kind == INSTR_GET_FIELD_PTR) printf("r%llu = GetFieldPtr r%llu, %llu", this.dst.i, this.src.i, this.op1.i);
     else if (this.kind == INSTR_UNREACHABLE) printf("unreachable");
+    else if (this.kind == INSTR_UNTERMINATED) printf("<unterminated block>");
     else if (this.kind == INSTR_GET_ELEMENT_PTR) {
         printf("r%llu = GetElementPtr r%llu", this.dst.i, this.src.i);
         for (let i: usize = 0; i < this.args.length; i = i + 1) {
@@ -678,6 +681,17 @@ func buildUnreachable(this: &IRFunc, span: Span) {
         args: blank,
     });
 }
+func buildUnterminated(this: &IRFunc, span: Span) {
+    pushInstruction(this, IRInstr {
+        kind: INSTR_UNTERMINATED,
+        span: span,
+        isComptime: this.comptimeLevel > 0,
+        dst: blank,
+        src: blank,
+        op1: blank,
+        args: blank,
+    });
+}
 func buildBr(this: &IRFunc, span: Span, block: IRBlockID) {
     assert(block.i < this.blocks.length, "buildBr called with invalid ID");
     pushInstruction(this, IRInstr {
@@ -1055,10 +1069,7 @@ func generateFunctionBody(this: &IRGen, function: &IRFunc, body: &ParsedBlock, r
         if (isNone(t)) {
             buildReturnEmpty(function, body.span);
         } else {
-            todo_with_msg("this is sus and an error lol");
-            // let b: RegIndex = allocateRegister(function, t);
-            // buildLoadBlank(function, b, getSize(t));
-            // buildReturnExpr(function, b);
+            buildUnterminated(function, body.span);
         }
     }
     let after: usize = leaveScope(function);

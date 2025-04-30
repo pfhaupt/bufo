@@ -154,7 +154,8 @@ let instrFns = [
     evaluateIntToPtr,           // INSTR_INT_TO_PTR
     evaluateGetFieldPtr,        // INSTR_GET_FIELD_PTR
     evaluateNotImplemented,     // INSTR_GET_ELEMENT_PTR
-    evaluateNotImplemented,     // INSTR_UNREACHABLE
+    evaluateUnreachable,        // INSTR_UNREACHABLE
+    evaluateUnterminated,       // INSTR_UNTERMINATED
 ];
 func evaluateNotImplemented(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     printf("%s: ", toString(&instr.span).buffer);
@@ -1377,6 +1378,14 @@ func evaluateGetFieldPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
     let ptr: &u8 = getRegStackPointer(this, &fAggr);
     *(regStackLoc as &usize) = *(ptr as &usize) + offset;
     return reg;
+}
+func evaluateUnreachable(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateUnreachable");
+    unreachable("IRInterp: Hit INSTR_UNREACHABLE");
+}
+func evaluateUnterminated(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateUnterminated");
+    unreachable("IRInterp: Hit INSTR_UNTERMINATED");
 }
 
 func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {

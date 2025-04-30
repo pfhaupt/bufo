@@ -497,6 +497,9 @@ func generateLLVMInstr(
     } else if (instr.kind == INSTR_UNREACHABLE) {
         buildUnreachable(&this.llvmBuilder, );
         return blank;
+    } else if (instr.kind == INSTR_UNTERMINATED) {
+        fprintf(stderr, "%s %s: UNTERMINATED BLOCK FOUND!!!\n", toString(&instr.span).buffer, FATAL_STR);
+        unreachable("LLVM: Received INSTR_UNTERMINATED, Control Flow Analysis should've caught this!");
     } else if (instr.kind == INSTR_BR) {
         buildBr(&this.llvmBuilder, *at(blocks, instr.dst.i));
         return blank;
