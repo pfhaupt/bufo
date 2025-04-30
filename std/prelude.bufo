@@ -170,6 +170,10 @@ func assert(cond: bool, msg: &char) {
     }
 }
 
+@noreturn func unreachable() {
+    unreachable("Explicit call to unreachable()");
+}
+
 @noreturn func unreachable(msg: &char) {
     setupStdHandles();
     if (stderr == null) {

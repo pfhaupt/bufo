@@ -144,7 +144,7 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList, inModule: bool)
     while (eat(this, TOKEN_AT)) {
         let name = expectSoftIdentifier(this);
         if (equals(&name.content, &_ATTR_EXTERN)) {
-            if (!inModule && *flags.verbose) {
+            if (!inModule && *flags.warnExtra) {
                 let loc = toString(&name.span);
                 fprintf(stderr, "%s: %s: `@extern()` used outside of a module.\n", loc.buffer, WARN_STR);
                 drop(&loc);

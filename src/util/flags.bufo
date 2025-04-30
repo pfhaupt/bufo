@@ -48,6 +48,18 @@ func addStringFlag(this: &FlagParser, short: &char, long: &char, descr: &char, m
     let f = addDefaultFlag(this, FLAG_STRING, short, long, descr, mode);
     return &f.asString;
 }
+func addBoolFlag(this: &FlagParser, flag: &char, descr: &char) -> &bool {
+    if (strncmp("--", flag, 2) == 0) {
+        flag = flag + 2;
+        return addBoolFlag(this, null, flag, descr);
+    } else if (*flag == '-') {
+        flag = flag + 1;
+        return addBoolFlag(this, flag, null, descr);
+    }
+    printf("%s\n", flag);
+    assert(false, "addBoolFlag(&FlagParser, &char, &char) must be called with a flag that has the form -s or --long");
+    unreachable();
+}
 func addBoolFlag(this: &FlagParser, short: &char, long: &char, descr: &char) -> &bool {
     return addBoolFlag(this, short, long, descr, FLAG_MODE_DEFAULT);
 }

@@ -748,7 +748,7 @@ func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupLi
             let mod = getParentModule(function);
             let _name = getMangledName(function);
             if (mod.dlls.length == 0) {
-                if (*flags.verbose) {
+                if (*flags.warnSimple) {
                     let loc = toString(&function.span);
                     fprintf(stderr, "%s: %s: No dynamic library was found for external function %s. You will not be able to call it at compile time.\n",
                         loc.buffer, WARN_STR, _name.buffer);
@@ -767,7 +767,7 @@ func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupLi
                 }
             }
             if (!addrFound && function.dllHandle != dllNotFound()) {
-                if (*flags.verbose) {
+                if (*flags.warnSimple) {
                     let loc = toString(&function.span);
                     fprintf(stderr, "%s: %s: Could not find external function %s in any DLL. You will not be able to call it at compile time.\n",
                         loc.buffer, WARN_STR, _name.buffer);
@@ -856,7 +856,7 @@ func typeCheckStmt(this: &TypeChecker, stmtID: usize, scopes: &ScopeLookupList) 
             todo_with_msg("what is it then");
         }
         let exprType: &Type = at(&types, getType(&exprState));
-        if (!isNone(exprType) && !isAssignment(expr) && *flags.verbose) {
+        if (!isNone(exprType) && !isAssignment(expr) && *flags.warnUnused) {
             let loc: String = toString(&expr.span);
             fprintf(stderr, "%s: %s: Unused expression value.\n", loc.buffer, WARN_STR);
             drop(&loc);
@@ -1130,7 +1130,7 @@ func typeCheckExprAs(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupList
         // PTR as PTR is allowed
     } else if (isFunction(exprType) && isFunction(typeType)) {
         // Function as Function is allowed
-        if (*flags.verbose) {
+        if (*flags.warnExtra) {
             let loc = toString(&expr.span);
             let from = toString(exprType);
             let to = toString(typeType);
@@ -1142,7 +1142,7 @@ func typeCheckExprAs(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupList
         }
     } else if (isFunction(exprType) && isAny(typeType)) {
         // Function as Any is allowed
-        if (*flags.verbose) {
+        if (*flags.warnExtra) {
             let loc = toString(&expr.span);
             let from = toString(typeType);
             fprintf(stderr, "%s: %s: Casting from type %s to Any.\n",
@@ -1152,7 +1152,7 @@ func typeCheckExprAs(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupList
         }
     } else if (isAny(exprType) && isFunction(typeType)) {
         // Any as Function is allowed
-        if (*flags.verbose) {
+        if (*flags.warnExtra) {
             let loc = toString(&expr.span);
             let to = toString(typeType);
             fprintf(stderr, "%s: %s: Casting from Any to type %s.\n",
@@ -1187,7 +1187,7 @@ func typeCheckExprAs(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupList
     } else if (!isPrimitive(exprType)) {
         return reportNonPrimitiveCast(this, expr.span, exprType, typeType);
     }
-    if (getSize(typeType) < getSize(exprType) && *flags.verbose) {
+    if (getSize(typeType) < getSize(exprType) && *flags.warnExtra) {
         let loc: String = toString(&expr.span);
         let tName: String = toString(typeType);
         let oName: String = toString(exprType);

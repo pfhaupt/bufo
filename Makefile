@@ -3,6 +3,8 @@
 RUN_EXAMPLES =
 RUN_HOWTO =
 VERBOSE = @
+BUFO_FLAGS = --warn
+ALL_FLAGS = $(BUFO_FLAGS) --warn-extra --verbose
 
 ifeq ($(VERBOSE),)
 define log
@@ -45,7 +47,7 @@ else
 endif
 
 ./bufo.exe: $(shell find src/ -type f) $(shell find std/ -type f)
-	./bufo.exe src/bufo.bufo -o ./bufo1.exe
+	./bufo.exe src/bufo.bufo -o ./bufo1.exe $(ALL_FLAGS)
 	mv ./bufo1.exe ./bufo.exe
 
 all: ./bufo.exe examples how_to
@@ -61,14 +63,14 @@ EXOUT := $(EXSRC:.bufo=.exe)
 EXRUN := $(EXSRC:.bufo=.run)
 
 $(EXOUT): %.exe : %.bufo
-	$(call log_run,BUFO,$@,./bufo.exe $^ -o $@)
+	$(call log_run,BUFO,$@,./bufo.exe $^ -o $@ $(BUFO_FLAGS))
 $(EXRUN): %.run : %.exe | $(EXOUT)
 	$(call log_run,RUN ,$<, $< --Makefile)
 
 ifdef RUN_EXAMPLES
-examples: $(EXRUN)
+examples: ./bufo.exe $(EXRUN)
 else
-examples: $(EXOUT)
+examples: ./bufo.exe $(EXOUT)
 endif
 
 HOWTODIR := ./how_to
@@ -77,14 +79,14 @@ HOWTOOUT := $(HOWTOSRC:.bufo=.exe)
 HOWTORUN := $(HOWTOSRC:.bufo=.run)
 
 $(HOWTOOUT): %.exe : %.bufo
-	$(call log_run,BUFO,$@,./bufo.exe $^ -o $@)
+	$(call log_run,BUFO,$@,./bufo.exe $^ -o $@ $(BUFO_FLAGS))
 $(HOWTORUN): %.run : %.exe | $(HOWTOOUT)
 	$(call log_run,RUN ,$<, $< --Makefile)
 
 ifdef RUN_HOWTO
-how_to: $(HOWTORUN)
+how_to: ./bufo.exe $(HOWTORUN)
 else
-how_to: $(HOWTOOUT)
+how_to: ./bufo.exe $(HOWTOOUT)
 endif
 
 bootstrap:

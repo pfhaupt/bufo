@@ -17,11 +17,13 @@ import "./backend/interp.bufo";
 import "./backend/codegen_llvm.bufo";
 
 let flagParser = FlagParser {};
-// FIXME: Flag like -w that prints extra warnings instead of globbering -v
 struct Flags {
     file: &String;
     out: &String;
     verbose: &bool;
+    warnSimple: &bool;
+    warnExtra: &bool;
+    warnUnused: &bool;
 }
 let flags = Flags {};
 func main(argc: i32, argv: &&char) -> i32 {
@@ -38,7 +40,14 @@ func main(argc: i32, argv: &&char) -> i32 {
     flags.file = addStringFlag(&flagParser, "The input file", FLAG_MODE_MANDATORY);
     flags.out = addStringFlag(&flagParser, "o", "output", "The output file", FLAG_MODE_SINGLE | FLAG_MODE_MANDATORY);
     flags.verbose = addBoolFlag(&flagParser, "v", "verbose", "Enable verbose output");
+    flags.warnSimple = addBoolFlag(&flagParser, "w", "warn", "Enable warnings");
+    flags.warnExtra = addBoolFlag(&flagParser, "--warn-extra", "Enable extra warnings");
+    flags.warnUnused = addBoolFlag(&flagParser, "--warn-unused", "Enable warnings about unused expression values, functions, etc.");
     if (!runOn(&flagParser, argc, argv)) return 1;
+    if (*flags.warnExtra && !*flags.warnSimple) {
+        fprintf(stderr, "error: --warn-extra only works in combination with [-w|--warn]\n");
+        return 1;
+    }
     let filepath: String = *flags.file;
     filepath = toAbsolutePath(&filepath);
     let fileSubStr: SubStr = asSubStr(&filepath);
