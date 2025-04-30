@@ -20,6 +20,29 @@ struct Flag {
     asString: String;
     asBool: bool;
 }
+func isMandatory(flag: &Flag) -> bool {
+    return (flag.mode & FLAG_MODE_MANDATORY) != 0;
+}
+func toString(this: &Flag) -> String {
+    let s: String = blank;
+    if (this.long != null) {
+        pushStr(&s, "--");
+        pushStr(&s, this.long);
+        if (this.kind == FLAG_STRING) {
+            pushStr(&s, " [arg]");
+        }
+    } else if (this.short != null) {
+        pushChar(&s, '-');
+        pushStr(&s, this.short);
+        if (this.kind == FLAG_STRING) {
+            pushStr(&s, " [arg]");
+        }
+    } else {
+        assert(this.kind == FLAG_STRING);
+        pushStr(&s, "<standalone>");
+    }
+    return s;
+}
 
 struct FlagParser {
     programName: String;
@@ -73,6 +96,42 @@ func shiftArgument(this: &FlagParser, argc: &i32, argv: &&&char) -> &char {
     *argv = *argv + sizeof &&char;
     *argc = *argc - 1;
     return result;
+}
+func showUsage(this: &FlagParser) {
+    fprintf(stderr, "Usage: %s", this.programName.buffer);
+    for (let i: usize = 0; i < this.flagCount; i = i + 1) {
+        let f = &this.flags[i];
+        if (isMandatory(f)) {
+            fprintf(stderr, " %s", toString(f).buffer);
+        }
+    }
+    fprintf(stderr, "\n");
+}
+func showHelp(this: &FlagParser) {
+    fprintf(stderr, "Help:\n");
+    for (let i: usize = 0; i < this.flagCount; i = i + 1) {
+        showHelp(&this.flags[i]);
+    }
+    fprintf(stderr, "\n");
+}
+func showHelp(this: &Flag) {
+    let s: String = blank;
+    if (this.short != null && this.long != null) {
+        pushChar(&s, '-');
+        pushStr(&s, this.short);
+        pushStr(&s, " | ");
+        let _s: String = toString(this);
+        pushString(&s, &_s);
+        drop(&_s);
+    } else {
+        s = toString(this);
+    }
+    fprintf(stderr, "%20s: %s", s.buffer, this.descr);
+    if (isMandatory(this)) {
+        fprintf(stderr, " [mandatory]");
+    }
+    fprintf(stderr, "\n");
+    drop(&s);
 }
 func runOn(this: &FlagParser, argc: i32, argv: &&char) -> bool {
     if (this.programName.buffer == null) {
@@ -162,7 +221,10 @@ func runOn(this: &FlagParser, argc: i32, argv: &&char) -> bool {
                 break;
             }
         }
-        if (!found) todo_with_msg("unknown flag");
+        if (!found) {
+            fprintf(stderr, "%s: Unknown flag %s\n", ERR_STR, flag);
+            return false;
+        }
     }
     let allGotten = true;
     for (let i: usize = 0; i < this.flagCount; i = i + 1) {

@@ -43,7 +43,11 @@ func main(argc: i32, argv: &&char) -> i32 {
     flags.warnSimple = addBoolFlag(&flagParser, "w", "warn", "Enable warnings");
     flags.warnExtra = addBoolFlag(&flagParser, "--warn-extra", "Enable extra warnings");
     flags.warnUnused = addBoolFlag(&flagParser, "--warn-unused", "Enable warnings about unused expression values, functions, etc.");
-    if (!runOn(&flagParser, argc, argv)) return 1;
+    if (!runOn(&flagParser, argc, argv)) {
+        showUsage(&flagParser);
+        showHelp(&flagParser);
+        return 1;
+    }
     if (*flags.warnExtra && !*flags.warnSimple) {
         fprintf(stderr, "error: --warn-extra only works in combination with [-w|--warn]\n");
         return 1;
