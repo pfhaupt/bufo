@@ -165,7 +165,7 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList, inModule: bool)
                 fprintf(stderr, "%s\n", toString(&os.content).buffer);
                 todo_with_msg("Unknown os");
             }
-            skip = !equals(&os.content, &TARGET_OS);
+            skip = !equals(&os.content, &asSubStr(flags.target));
         } else if (equals(&name.content, &_ATTR_NORETURN)) {
             push(attrs, ParsedAttribute {
                 span: name.span,

@@ -1,9 +1,14 @@
 .PHONY: all clean brick examples clean_example how_to clean_howto bootstrap
 
+ifeq ($(OS),Windows_NT)
+TARGET = x86_64-pc-windows-msvc
+else
+TARGET = x86_64-pc-linux-gnu
+endif
 RUN_EXAMPLES =
 RUN_HOWTO =
 VERBOSE = @
-BUFO_FLAGS = --warn
+BUFO_FLAGS = --warn --target $(TARGET)
 ALL_FLAGS = $(BUFO_FLAGS) --warn-extra --verbose
 
 ifeq ($(VERBOSE),)

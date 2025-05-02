@@ -8,9 +8,6 @@ func comptimeSubStr(s: &char) -> SubStr {
 }
 comptime OS_WINDOWS: SubStr = comptimeSubStr("WINDOWS");
 comptime OS_LINUX: SubStr = comptimeSubStr("LINUX");
-// FIXME: Make this a flag
-@os(WINDOWS) comptime TARGET_OS: SubStr = OS_WINDOWS;
-@os(LINUX) comptime TARGET_OS: SubStr = OS_LINUX;
 
 comptime FATAL_STR: &char = "\x1b[95m[FATAL]\x1b[0m";
 comptime ERR_STR: &char = "\x1b[91merror\x1b[0m";
