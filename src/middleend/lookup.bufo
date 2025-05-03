@@ -448,7 +448,7 @@ func getStructByGlobalID(this: &FileLookup, structID: usize) -> &StructLookup {
         let s = getStructByGlobalID(at(&this.modules, i), structID);
         if (s != null) return s;
     }
-    unreachable("Lookup failed to find struct based on global ID!");
+    return null;
 }
 
 func resolveFunctionByName(this: &FileLookup, name: &Token) -> FunctionLookupList {

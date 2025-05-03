@@ -552,18 +552,17 @@ func dfs(this: &TypeChecker, typeLookup: TypeLookup, visited: &TypeLookupList, f
 func findRecursiveTypes(this: &TypeChecker) -> bool {
     trace("TypeChecker.findRecursiveTypes");
     let recursive: bool = false;
-    // FIXME: unreachable hit in Lookup.getStructByGlobalID
-    // for (let i: usize = 0; i < structDecls.length; i = i + 1) {
-    //     let decl: &ParsedStructDecl = at(&structDecls, i);
-    //     if (decl.ignored) continue;
-    //     let strukt: &StructLookup = getStructByGlobalID(&this.lookup, i);
-    //     let visited: TypeLookupList = blank;
-    //     let finished: TypeLookupList = blank;
-    //     if (dfs(this, asTypeLookup(strukt), &visited, &finished)) {
-    //         reportRecursiveType(this, &asTypeLookup(strukt), &visited);
-    //         recursive = true;
-    //     }
-    // }
+    for (let i: usize = 0; i < structDecls.length; i = i + 1) {
+        let decl: &ParsedStructDecl = at(&structDecls, i);
+        if (decl.ignored) continue;
+        let strukt: &StructLookup = getStructByGlobalID(&this.lookup, i);
+        let visited: TypeLookupList = blank;
+        let finished: TypeLookupList = blank;
+        if (dfs(this, asTypeLookup(strukt), &visited, &finished)) {
+            reportRecursiveType(this, &asTypeLookup(strukt), &visited);
+            recursive = true;
+        }
+    }
     return recursive;
 }
 
