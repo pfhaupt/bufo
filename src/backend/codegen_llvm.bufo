@@ -217,7 +217,7 @@ func generateFunction(this: &LLVMCodegen, index: usize, irFunc: &IRFunc) -> bool
     trace("LLVMCodegen.generateFunction");
     if (isExtern(irFunc)) return true;
     let llvmFuncValue: LLVMValue = irFunc.llvmFunc;
-    assert(!isNull(llvmFuncValue.ref));
+    assert(!LLVM::isNull(llvmFuncValue.ref));
     let blocks: LLVMBasicBlockList = blank;
     initBlank(&blocks, irFunc.blocks.length);
     assert(blocks.length != 0, "Every IRFunc has at least one instruction");
@@ -276,7 +276,7 @@ func generateLLVMInstr(
     regs: &RegValueList,
 ) -> LLVMValue {
     trace("LLVMCodegen.generateLLVMInstr");
-    let isGlobal: bool = isNull(llvmFunc.ref);
+    let isGlobal: bool = LLVM::isNull(llvmFunc.ref);
     if (instr.kind == INSTR_ALLOCA) {
         let reg: &IRReg = getRegister(irFunc, instr.dst);
         assert(isPointer(reg.typ), "LLVM Alloca expected ptr dst");
@@ -473,7 +473,7 @@ func generateLLVMInstr(
         return buildXor(&this.llvmBuilder, lhsVal, rhsVal, newSubStrOfStrLit("bxor"));
     } else if (instr.kind == INSTR_CALL) {
         let calledFunc: LLVMValue = asLLVM(at(regs, instr.src.i), "LLVM Call");
-        assert(!isNull(calledFunc.ref), "Call tried to call invalid LLVMValue");
+        assert(!LLVM::isNull(calledFunc.ref), "Call tried to call invalid LLVMValue");
         let args: LLVMValueList = blank;
         initBlank(&args, instr.args.length);
         for (let i: usize = 0; i < instr.args.length; i = i + 1) {

@@ -411,24 +411,6 @@ func reportMemberAccessTooManyOptions(this: &TypeChecker, expr: &ParsedExpr, str
     return newTCStateFailure(ERROR_MEMBER_ACCESS_TOO_MANY_OPTIONS);
 }
 
-func reportFunctionCallTooManyOptions(this: &TypeChecker, expr: &ParsedExpr, functions: &FunctionLookupList) -> TCState {
-    trace("TypeChecker.reportFunctionCallTooManyOptions");
-    assert(functions.length > 0);
-    let loc = toString(&expr.span);
-    fprintf(stderr, "%s: %s: Could not infer which function to call.\n", loc.buffer, ERR_STR);
-    for (let i: usize = 0; i < functions.length; i = i + 1) {
-        let f = at(functions, i);
-        let l = toString(&f.name.span);
-        let n = toString(&f.name.content);
-        fprintf(stderr, "%s: %s: Context allows this function to be called.\n", l.buffer, NOTE_STR, n.buffer);
-        drop(&n);
-        drop(&l);
-    }
-    drop(&loc);
-    this.typeError = true;
-    return newTCStateFailure(ERROR_FUNCTION_CALL_TOO_MANY_OPTIONS);
-}
-
 func reportFunctionCallTooManyOptions(this: &TypeChecker, expr: &ParsedExpr) -> TCState {
     trace("TypeChecker.reportFunctionCallTooManyOptions");
     let loc = toString(&expr.span);
@@ -1644,7 +1626,8 @@ func typeCheckExprModuleAccess(this: &TypeChecker, dotID: usize, scopes: &ScopeL
                 rhs.lhs = f.globalID;
                 return s;
             } else {
-                todo_with_msg("multiple module.fun");
+                drop(&fun);
+                return newTCStatePleaseInfer();
             }
         } else if (res == IDENT_VAR) {
             assert(var != null, "IDENT_VAR but var is null");
@@ -1775,6 +1758,8 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
     let tid: TCState = blank;
     if (expr.kind == EXPR_NAME) {
         assert(isFunction(typ), "Can only try to infer functions onto identifiers for now");
+        // FIXME: Same problem as with typeCheckTypeNode, this code doesn't consider the
+        //        possibility that we're in a submodule, or calling a function mod::func()
         let functions = resolveAllFunctionsWithSignature(&this.lookup, this.currentFile, &expr.origToken, typ);
         if (functions.length == 0) {
             if (checkOnly) {
@@ -1925,6 +1910,9 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
         } else if (expr.op == BIN_DOT) {
             tid = tryInferTypeOntoMemberAccess(this, exprID, typeID, checkOnly);
             if (isError(&tid)) return tid;
+        } else if (expr.op == BIN_MODULE) {
+            tid = tryInferTypeOntoModuleAccess(this, exprID, typeID, checkOnly);
+            if (isError(&tid)) return tid;
         } else {
             todo_with_msg("inferTypeOntoExpr for non-arith non-comp binary");
         }
@@ -1989,7 +1977,6 @@ func tryInferTypeOntoCall(this: &TypeChecker, exprID: usize, typeID: usize, chec
     let expr = at(&exprs, exprID);
     let typ = at(&types, typeID);
     assert(expr.kind == EXPR_CALL);
-    let functions: FunctionLookupList = blank;
     let fnType = newType(TYPE_KIND_FUNCTION, typeID);
     let callContext = &expr.arrayContext;
     for (let i: usize = 0; i < callContext.elemLength; i = i + 1) {
@@ -2051,6 +2038,51 @@ func tryInferTypeOntoMemberAccess(this: &TypeChecker, exprID: usize, typeID: usi
     } else {
         unreachable("Exhaustive handling of possibilities in tryInferTypeOntoMemberAccess");
     }
+}
+
+func tryInferTypeOntoModuleAccess(this: &TypeChecker, exprID: usize, typeID: usize, checkOnly: bool) -> TCState {
+    trace("TypeChecker.tryInferTypeOntoModuleAccess");
+    let expr = at(&exprs, exprID);
+    let typ = at(&types, typeID);
+    assert(expr.kind == EXPR_BINARY);
+    assert(expr.op == BIN_MODULE);
+    let lhs = at(&exprs, expr.lhs);
+    let lhsState = lhs.typeState;
+    if (!isSuccess(&lhsState)) todo_with_msg("can't infer onto module access if we don't know LHS");
+    if (!isType(&lhsState)) todo_with_msg("can't infer onto module access if LHS is not valid");
+    let lhsType = at(&types, getType(&lhsState));
+    assert(isModule(lhsType), "LHS of BIN_MODULE is not of type module!");
+    let lookup = getModuleByGlobalID(&this.lookup, lhsType.typeIndex);
+    let rhs = at(&exprs, expr.rhs);
+    let tid: TCState = blank;
+    if (rhs.kind == EXPR_NAME) {
+        assert(isFunction(typ), "Can only try to infer functions onto module identifiers for now");
+        let functions = resolveAllFunctionsWithSignature(lookup, &rhs.origToken, typ);
+        if (functions.length == 0) {
+            if (checkOnly) {
+                tid = newTCStateFailure(ERROR_NO_SUCH_FUNCTION);
+            } else {
+                let all = resolveFunctionByName(lookup, &rhs.origToken);
+                tid = reportNoFunctionCallCandidate(this, expr.rhs, typ, &all);
+                drop(&all);
+            }
+        } else if (functions.length == 1) {
+            let f = at(&functions, 0);
+            assert(f.params.length == typ.fnParams.length);
+            if (!checkOnly) {
+                rhs.lhs = f.globalID;
+            }
+            tid = f.fnType;
+        } else {
+            tid = newTCStatePleaseInfer();
+        }
+        rhs.typeState = tid;
+        drop(&functions);
+    } else {
+        unreachable("Exhaustive handling of possibilities in tryInferTypeOntoModuleAccess");
+    }
+    expr.typeState = tid;
+    return tid;
 }
 
 func typeCheckExprArithmetic(this: &TypeChecker, binID: usize, scopes: &ScopeLookupList) -> TCState {

@@ -6,7 +6,7 @@ import "./context.bufo";
 import "./values.bufo";
 
 struct LLVMType {
-    ref: LLVMTypeRef;
+    ref: LLVM::TypeRef;
 }
 func equals(this: &LLVMType, other: &LLVMType) -> bool {
     return this.ref.ptr == other.ref.ptr;
@@ -20,8 +20,8 @@ func isFunction(this: &LLVMType) -> bool {
 func getReturnType(this: &LLVMType) -> LLVMType {
     trace("LLVMType.getReturnType");
     assert(isFunction(this), "LLVM::getReturnType() called on non-function");
-    let t: LLVMTypeRef = LLVM::GetReturnType(this.ref);
-    assert(!isNull(t), "Could not get return type");
+    let t: LLVM::TypeRef = LLVM::GetReturnType(this.ref);
+    assert(!LLVM::isNull(t), "Could not get return type");
     return newLLVMTypeFromRef(t);
 }
 
@@ -47,52 +47,52 @@ func toChars(this: &LLVMType) -> &char {
 func intoFunctionType(this: &LLVMType, params: LLVMTypeList, varArg: bool) -> LLVMType {
     trace("LLVMType.intoFunctionType");
     assert(sizeof LLVMType == 8);
-    let fn: LLVMTypeRef = LLVM::FunctionType(this.ref, params.elements as &LLVMTypeRef, params.length as u32, newLLVMBool(varArg));
-    assert(!isNull(fn), "Could not turn LLVMType into a FunctionType");
+    let fn: LLVM::TypeRef = LLVM::FunctionType(this.ref, params.elements as &LLVM::TypeRef, params.length as u32, newLLVMBool(varArg));
+    assert(!LLVM::isNull(fn), "Could not turn LLVMType into a FunctionType");
     return newLLVMTypeFromRef(fn);
 }
 
 func intoPointerType(this: &LLVMType) -> LLVMType {
     trace("LLVMType.intoPointerType");
     // FIXME: Other address spaces
-    let ptr: LLVMTypeRef = LLVM::PointerType(this.ref, 0);
-    assert(!isNull(ptr), "Could not turn LLVMType into a PointerType");
+    let ptr: LLVM::TypeRef = LLVM::PointerType(this.ref, 0);
+    assert(!LLVM::isNull(ptr), "Could not turn LLVMType into a PointerType");
     return newLLVMTypeFromRef(ptr);
 }
 
 func intoArrayType(this: &LLVMType, size: u32) -> LLVMType {
     trace("LLVMType.intoArrayType");
     // FIXME: Other address spaces
-    let arr: LLVMTypeRef = LLVM::ArrayType(this.ref, size);
-    assert(!isNull(arr), "Could not turn LLVMType into a ArrayType");
+    let arr: LLVM::TypeRef = LLVM::ArrayType(this.ref, size);
+    assert(!LLVM::isNull(arr), "Could not turn LLVMType into a ArrayType");
     return newLLVMTypeFromRef(arr);
 }
 
 func constInt(this: &LLVMType, value: usize, signExtend: bool) -> LLVMValue {
     trace("LLVMType.constInt");
     let s: LLVMBool = newLLVMBool(signExtend);
-    let val: LLVMValueRef = LLVM::ConstInt(this.ref, value, s);
-    assert(!isNull(val), "Could not get constant integer");
+    let val: LLVM::ValueRef = LLVM::ConstInt(this.ref, value, s);
+    assert(!LLVM::isNull(val), "Could not get constant integer");
     return newLLVMValueFromRef(val);
 }
 
 func constZero(this: &LLVMType) -> LLVMValue {
     trace("LLVMType.constZero");
-    let val: LLVMValueRef = LLVM::ConstNull(this.ref);
-    assert(!isNull(val), "Could not get constant zero");
+    let val: LLVM::ValueRef = LLVM::ConstNull(this.ref);
+    assert(!LLVM::isNull(val), "Could not get constant zero");
     return newLLVMValueFromRef(val);
 }
 
 func constFloat(this: &LLVMType, value: f64) -> LLVMValue {
     trace("LLVMType.constFloat");
-    let val: LLVMValueRef = LLVM::ConstReal(this.ref, value);
-    assert(!isNull(val), "Could not get constant float");
+    let val: LLVM::ValueRef = LLVM::ConstReal(this.ref, value);
+    assert(!LLVM::isNull(val), "Could not get constant float");
     return newLLVMValueFromRef(val);
 }
 
-func newLLVMTypeFromRef(ref: LLVMTypeRef) -> LLVMType {
+func newLLVMTypeFromRef(ref: LLVM::TypeRef) -> LLVMType {
     trace("newLLVMTypeFromRef");
-    assert(!isNull(ref), "Passed invalid reference to newLLVMTypeFromRef");
+    assert(!LLVM::isNull(ref), "Passed invalid reference to newLLVMTypeFromRef");
     return LLVMType {
         ref: ref,
     };

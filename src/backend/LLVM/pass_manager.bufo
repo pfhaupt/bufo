@@ -3,7 +3,7 @@ import "./module.bufo";
 import "./bindings.bufo";
 
 struct LLVMPassManager {
-    ref: LLVMPassManagerRef;
+    ref: LLVM::PassManagerRef;
 }
 func addPromoteMemoryToRegisterPass(this: &LLVMPassManager) {
     trace("LLVMPassManager.addPromoteMemoryToRegisterPass");
@@ -27,8 +27,8 @@ func runOn(this: &LLVMPassManager, mod: LLVMModule) -> bool {
     return runInPassManager(&mod, *this);
 }
 
-func newLLVMPassManagerFromRef(ref: LLVMPassManagerRef) -> LLVMPassManager {
-    assert(!isNull(ref), "Called newLLVMPassManagerFromRef with invalid reference");
+func newLLVMPassManagerFromRef(ref: LLVM::PassManagerRef) -> LLVMPassManager {
+    assert(!LLVM::isNull(ref), "Called newLLVMPassManagerFromRef with invalid reference");
     return LLVMPassManager {
         ref: ref,
     };

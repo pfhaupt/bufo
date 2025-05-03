@@ -463,6 +463,7 @@ func resolveFunctionByName(this: &FileLookup, name: &Token) -> FunctionLookupLis
     return list;
 }
 
+// FIXME: Remove FileLookup, we duplicate so much code that's already in ModuleLookup
 func resolveAllFunctionsWithSignature(this: &FileLookup, name: &Token, typ: &Type) -> FunctionLookupList {
     trace("FileLookup.resolveAllFunctionsWithSignature");
     let list: FunctionLookupList = blank;
@@ -662,7 +663,72 @@ func resolveTypeByName(this: &ModuleLookup, name: &Token, typ: &TypeLookup) -> b
     }
     return false;
 }
+func resolveFunctionByName(this: &ModuleLookup, name: &Token) -> FunctionLookupList {
+    trace("ModuleLookup.resolveFunctionByName");
+    let list: FunctionLookupList = blank;
+    for (let i: usize = 0; i < this.functions.length; i = i + 1) {
+        let f: &FunctionLookup = at(&this.functions, i);
+        if (equals(&f.name.content, &name.content)) {
+            push(&list, *f);
+        }
+    }
+    return list;
+}
 
+func resolveAllFunctionsWithSignature(this: &ModuleLookup, name: &Token, typ: &Type) -> FunctionLookupList {
+    trace("ModuleLookup.resolveAllFunctionsWithSignature");
+    // FIXME: Would be cool if this method didn't create copies of the FunctionLookups
+    let list: FunctionLookupList = blank;
+    for (let i: usize = 0; i < this.functions.length; i = i + 1) {
+        let f: &FunctionLookup = at(&this.functions, i);
+        if (!equals(&f.name.content, &name.content)) {
+            continue;
+        }
+        let _rt = at(&types, getType(&f.fnType));
+        assert(isFunction(_rt));
+        if (typ.fnParams.length != _rt.fnParams.length) continue;
+        let retType1 = at(&types, typ.typeIndex);
+        let retType2 = at(&types, _rt.typeIndex);
+        if (PRINT_DEBUG) {
+            let s1 = toString(retType1);
+            let s2 = toString(retType2);
+            printf("[DEBUG] Return Type 1: %s\n", s1.buffer);
+            printf("[DEBUG] Return Type 2: %s\n", s2.buffer);
+            drop(&s2);
+            drop(&s1);
+        }
+        if (!isUnknown(retType1)) if (!equals(retType1, retType2)) {
+            debug("Not adding: return type mismatch");
+            continue;
+        }
+        let succ = true;
+        for (let j: usize = 0; j < typ.fnParams.length; j = j + 1) {
+            let p1 = getParam(typ, j);
+            let p2 = getParam(_rt, j);
+            if (!isType(p1)) continue;
+            let t1 = at(&types, getType(p1));
+            let t2 = at(&types, getType(p2));
+            if (PRINT_DEBUG) {
+                let s1 = toString(t1);
+                let s2 = toString(t2);
+                printf("[DEBUG] Type 1: %s\n", s1.buffer);
+                printf("[DEBUG] Type 2: %s\n", s2.buffer);
+                drop(&s2);
+                drop(&s1);
+            }
+            if (!isUnknown(t1)) if (!equals(t1, t2)) {
+                debug("Not adding function");
+                succ = false;
+                break;
+            }
+        }
+        if (succ) {
+            debug("adding function");
+            push(&list, *f);
+        }
+    }
+    return list;
+}
 struct FunctionLookup {
     globalID: usize;
     parent: TLIParent;

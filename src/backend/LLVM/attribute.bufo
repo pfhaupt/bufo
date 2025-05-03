@@ -2,11 +2,11 @@ import "prelude.bufo";
 import "../LLVM/bindings.bufo";
 
 struct LLVMAttribute {
-    ref: LLVMAttributeRef;
+    ref: LLVM::AttributeRef;
 }
 
-func newLLVMAttributeFromRef(ref: LLVMAttributeRef) -> LLVMAttribute {
-    assert(!isNull(ref), "newLLVMAttributeFromRef called with invalid reference");
+func newLLVMAttributeFromRef(ref: LLVM::AttributeRef) -> LLVMAttribute {
+    assert(!LLVM::isNull(ref), "newLLVMAttributeFromRef called with invalid reference");
     return LLVMAttribute {
         ref: ref,
     };

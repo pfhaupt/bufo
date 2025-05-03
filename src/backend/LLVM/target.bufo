@@ -8,7 +8,7 @@ struct LLVMDataLayout {
 }
 
 struct LLVMTargetData {
-    ref: LLVMTargetDataRef;
+    ref: LLVM::TargetDataRef;
 }
 
 func getBitSize(this: &LLVMTargetData, typ: &LLVMType) -> usize {
@@ -31,19 +31,19 @@ func getDataLayout(this: &LLVMTargetData) -> LLVMDataLayout {
     };
 }
 
-func newLLVMTargetDataFromRef(ref: LLVMTargetDataRef) -> LLVMTargetData {
+func newLLVMTargetDataFromRef(ref: LLVM::TargetDataRef) -> LLVMTargetData {
     return LLVMTargetData {
         ref: ref,
     };
 }
 
 struct LLVMTarget {
-    ref: LLVMTargetRef;
+    ref: LLVM::TargetRef;
 }
 
 func createTargetMachine(this: &LLVMTarget, triple: &char, cpu: &char, features: &char) -> LLVMTargetMachine {
     trace("LLVMTarget.createTargetMachine");
-    let target: LLVMTargetMachineRef = LLVM::CreateTargetMachine(
+    let target: LLVM::TargetMachineRef = LLVM::CreateTargetMachine(
         this.ref,
         triple,
         cpu,
@@ -52,18 +52,18 @@ func createTargetMachine(this: &LLVMTarget, triple: &char, cpu: &char, features:
         0,
         0
     );
-    assert(!isNull(target), "Could not create target machine");
+    assert(!LLVM::isNull(target), "Could not create target machine");
     return newLLVMTargetMachineFromRef(target);
 }
 
-func newLLVMTargetFromRef(ref: LLVMTargetRef) -> LLVMTarget {
+func newLLVMTargetFromRef(ref: LLVM::TargetRef) -> LLVMTarget {
     return LLVMTarget {
         ref: ref,
     };
 }
 
 struct LLVMTargetMachine {
-    ref: LLVMTargetMachineRef;
+    ref: LLVM::TargetMachineRef;
 }
 
 func writeToFile(this: &LLVMTargetMachine, mod: LLVMModule, mode: i32, filepath: &char) {
@@ -76,12 +76,12 @@ func writeToFile(this: &LLVMTargetMachine, mod: LLVMModule, mode: i32, filepath:
 
 func getTargetData(this: &LLVMTargetMachine) -> LLVMTargetData {
     trace("LLVMTargetMachine.getTargetData");
-    let data: LLVMTargetDataRef = LLVM::CreateTargetDataLayout(this.ref);
-    assert(!isNull(data), "Could not get TargetData");
+    let data: LLVM::TargetDataRef = LLVM::CreateTargetDataLayout(this.ref);
+    assert(!LLVM::isNull(data), "Could not get TargetData");
     return newLLVMTargetDataFromRef(data);
 }
 
-func newLLVMTargetMachineFromRef(ref: LLVMTargetMachineRef) -> LLVMTargetMachine {
+func newLLVMTargetMachineFromRef(ref: LLVM::TargetMachineRef) -> LLVMTargetMachine {
     return LLVMTargetMachine {
         ref: ref,
     };

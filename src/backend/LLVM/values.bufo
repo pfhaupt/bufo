@@ -6,14 +6,14 @@ import "../LLVM/types.bufo";
 import "../LLVM/attribute.bufo";
 
 struct LLVMValue {
-    ref: LLVMValueRef;
+    ref: LLVM::ValueRef;
 }
 func equals(this: &LLVMValue, other: &LLVMValue) -> bool {
     todo_with_msg("LLVMValue.equals");
 }
 func guardReference(this: &LLVMValue) {
     trace("LLVMValue.guardReference");
-    assert(!isNull(this.ref), "LLVM Value is null");
+    assert(!LLVM::isNull(this.ref), "LLVM Value is null");
 }
 
 func isStructValue(this: &LLVMValue) -> bool {
@@ -27,29 +27,29 @@ func dump(this: &LLVMValue) {
 
 func getGlobalType(this: &LLVMValue) -> LLVMType {
     trace("LLVMValue.getGlobalType");
-    let t: LLVMTypeRef = LLVM::GlobalGetValueType(this.ref);
-    assert(!isNull(t), "Could not get global type of LLVMValue");
+    let t: LLVM::TypeRef = LLVM::GlobalGetValueType(this.ref);
+    assert(!LLVM::isNull(t), "Could not get global type of LLVMValue");
     return newLLVMTypeFromRef(t);
 }
 
 func getNthParam(this: &LLVMValue, index: usize) -> LLVMValue {
     trace("LLVMValue.getNthParam");
-    let param: LLVMValueRef = LLVM::GetParam(this.ref, index as u32);
-    assert(!isNull(param), "Could not get parameter of LLVMValue");
+    let param: LLVM::ValueRef = LLVM::GetParam(this.ref, index as u32);
+    assert(!LLVM::isNull(param), "Could not get parameter of LLVMValue");
     return newLLVMValueFromRef(param);
 }
 
 func getFirstBasicBlock(this: &LLVMValue) -> LLVMBasicBlock {
     trace("LLVMValue.getFirstBasicBlock");
-    let block: LLVMBasicBlockRef = LLVM::GetFirstBasicBlock(this.ref);
-    assert(!isNull(block), "Could not get first basic block from LLVMValue");
+    let block: LLVM::BasicBlockRef = LLVM::GetFirstBasicBlock(this.ref);
+    assert(!LLVM::isNull(block), "Could not get first basic block from LLVMValue");
     return newLLVMBasicBlockFromRef(block);
 }
 
 func getType(this: &LLVMValue) -> LLVMType {
     trace("LLVMValue.getType");
-    let t: LLVMTypeRef = LLVM::TypeOf(this.ref);
-    assert(!isNull(t), "Coult not get type of LLVMValue");
+    let t: LLVM::TypeRef = LLVM::TypeOf(this.ref);
+    assert(!LLVM::isNull(t), "Could not get type of LLVMValue");
     return newLLVMTypeFromRef(t);
 }
 func setName(this: &LLVMValue, name: SubStr) {
@@ -66,7 +66,7 @@ func getName(this: &LLVMValue) -> SubStr {
 
 func setInitializer(this: &LLVMValue, val: LLVMValue) {
     trace("LLVMValue.setInitializer");
-    assert(!isNull(val.ref), "Expected valid LLVMValue in LLVMValue.setInitializer");
+    assert(!LLVM::isNull(val.ref), "Expected valid LLVMValue in LLVMValue.setInitializer");
     LLVM::SetInitializer(this.ref, val.ref);
 }
 
@@ -75,9 +75,9 @@ func addAttribute(this: &LLVMValue, index: u32, attr: LLVMAttribute) {
     LLVM::AddAttributeAtIndex(this.ref, index, attr.ref);
 }
 
-func newLLVMValueFromRef(ref: LLVMValueRef) -> LLVMValue {
+func newLLVMValueFromRef(ref: LLVM::ValueRef) -> LLVMValue {
     trace("newLLVMValueFromRef");
-    assert(!isNull(ref), "Passed invalid reference to newLLVMValueFromRef");
+    assert(!LLVM::isNull(ref), "Passed invalid reference to newLLVMValueFromRef");
     return LLVMValue {
         ref: ref
     };

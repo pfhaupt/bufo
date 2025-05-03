@@ -3,34 +3,34 @@ import "./bindings.bufo";
 import "./values.bufo";
 
 struct LLVMBasicBlock {
-    ref: LLVMBasicBlockRef;
+    ref: LLVM::BasicBlockRef;
 }
 func equals(this: &LLVMBasicBlock, other: &LLVMBasicBlock) -> bool {
     return this.ref.ptr == other.ref.ptr;
 }
 func guardReference(this: &LLVMBasicBlock) {
     trace("LLVMBasicBlock.guardReference");
-    assert(!isNull(this.ref), "LLVM Basic Block is null");
+    assert(!LLVM::isNull(this.ref), "LLVM Basic Block is null");
 }
 func getParent(this: &LLVMBasicBlock) -> LLVMValue {
     trace("LLVMBasicBlock.getParent");
     guardReference(this);
-    let parent: LLVMValueRef = LLVM::GetBasicBlockParent(this.ref);
-    assert(!isNull(parent), "Could not get parent from basic block");
+    let parent: LLVM::ValueRef = LLVM::GetBasicBlockParent(this.ref);
+    assert(!LLVM::isNull(parent), "Could not get parent from basic block");
     return newLLVMValueFromRef(parent);
 }
 func getLastInstruction(this: &LLVMBasicBlock, out: &LLVMValue) -> bool {
     trace("LLVMBasicBlock.getLastInstruction");
     guardReference(this);
-    let instr: LLVMValueRef = LLVM::GetLastInstruction(this.ref);
-    if (isNull(instr)) return false;
+    let instr: LLVM::ValueRef = LLVM::GetLastInstruction(this.ref);
+    if (LLVM::isNull(instr)) return false;
     *out = newLLVMValueFromRef(instr);
     return true;
 }
 
-func newLLVMBasicBlockFromRef(ref: LLVMBasicBlockRef) -> LLVMBasicBlock {
+func newLLVMBasicBlockFromRef(ref: LLVM::BasicBlockRef) -> LLVMBasicBlock {
     trace("newLLVMBasicBlockFromRef");
-    assert(!isNull(ref), "Passed invalid reference to newLLVMBasicBlockFromRef");
+    assert(!LLVM::isNull(ref), "Passed invalid reference to newLLVMBasicBlockFromRef");
     return LLVMBasicBlock {
         ref: ref
     };

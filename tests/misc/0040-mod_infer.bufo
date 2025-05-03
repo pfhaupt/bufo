@@ -1,0 +1,31 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+
+module test {
+    struct Foo {
+        a: u8;
+    }
+    func foo(f: test::Foo) -> u8 {
+        return f.a;
+    }
+    func foo(a: i32) -> i32 {
+        return a * a;
+    }
+    func foo(b: u32) -> u32 {
+        return b + b;
+    }
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    assert(test::foo(12 as i32) == 144);
+    assert(test::foo(12 as u32) == 24);
+    assert(test::foo(test::Foo { a: 12 }) == 12);
+    let a: u8 = test::foo(blank);
+    assert(a == 0);
+    assert(test::foo(test::foo(12 as u32) as i32) == 24 * 24);
+    return 0;
+}
+

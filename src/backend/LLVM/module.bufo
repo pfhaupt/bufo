@@ -9,7 +9,7 @@ import "../LLVM/pass_manager.bufo";
 import "../LLVM/target.bufo";
 
 struct LLVMModule {
-    ref: LLVMModuleRef;
+    ref: LLVM::ModuleRef;
 }
 
 func print(this: &LLVMModule) {
@@ -57,62 +57,62 @@ func verify(this: &LLVMModule) -> bool {
 
 func addFunction(this: &LLVMModule, name: SubStr, function: LLVMType) -> LLVMValue {
     trace("LLVMModule.addFunction");
-    assert(!isNull(function.ref), "Expected valid LLVMType in LLVMModule.addFunction");
+    assert(!LLVM::isNull(function.ref), "Expected valid LLVMType in LLVMModule.addFunction");
     let _n: String = toString(&name);
-    let f: LLVMValueRef = LLVM::AddFunction(this.ref, _n.buffer, function.ref);
+    let f: LLVM::ValueRef = LLVM::AddFunction(this.ref, _n.buffer, function.ref);
     drop(&_n);
-    assert(!isNull(f), "Could not add function to module");
+    assert(!LLVM::isNull(f), "Could not add function to module");
     return newLLVMValueFromRef(f);
 }
 func hasFunction(this: &LLVMModule, name: SubStr) -> bool {
     trace("LLVMModule.hasFunction");
     let _n: String = toString(&name);
-    let f: LLVMValueRef = LLVM::GetNamedFunction(this.ref, _n.buffer);
+    let f: LLVM::ValueRef = LLVM::GetNamedFunction(this.ref, _n.buffer);
     drop(&_n);
-    return !isNull(f);
+    return !LLVM::isNull(f);
 }
 func getFunction(this: &LLVMModule, name: SubStr) -> LLVMValue {
     trace("LLVMModule.getFunction");
     let _n: String = toString(&name);
-    let f: LLVMValueRef = LLVM::GetNamedFunction(this.ref, _n.buffer);
+    let f: LLVM::ValueRef = LLVM::GetNamedFunction(this.ref, _n.buffer);
     drop(&_n);
-    assert(!isNull(f), "Could not get function from module");
+    assert(!LLVM::isNull(f), "Could not get function from module");
     return newLLVMValueFromRef(f);
 }
 func addGlobal(this: &LLVMModule, typ: LLVMType, space: u32, name: SubStr) -> LLVMValue {
     trace("LLVMModule.addGlobal");
-    assert(!isNull(typ.ref), "Expected valid LLVMType in LLVMModule.addGlobal");
+    assert(!LLVM::isNull(typ.ref), "Expected valid LLVMType in LLVMModule.addGlobal");
     let _n: String = toString(&name);
-    let g: LLVMValueRef = LLVM::AddGlobalInAddressSpace(this.ref, typ.ref, _n.buffer, space);
+    let g: LLVM::ValueRef = LLVM::AddGlobalInAddressSpace(this.ref, typ.ref, _n.buffer, space);
     drop(&_n);
-    assert(!isNull(g), "Could not add global in module");
+    assert(!LLVM::isNull(g), "Could not add global in module");
     return newLLVMValueFromRef(g);
 }
 func getGlobal(this: &LLVMModule, name: SubStr) -> LLVMValue {
     trace("LLVMModule.getGlobal");
     let _n: String = toString(&name);
-    let g: LLVMValueRef = LLVM::GetNamedGlobal(this.ref, _n.buffer);
+    let g: LLVM::ValueRef = LLVM::GetNamedGlobal(this.ref, _n.buffer);
     drop(&_n);
-    assert(!isNull(g), "Could not get global in module");
+    assert(!LLVM::isNull(g), "Could not get global in module");
     return newLLVMValueFromRef(g);
 }
 
 func createPassManager(this: &LLVMModule) -> LLVMPassManager {
     trace("LLVMModule.createPassManager");
-    let pm: LLVMPassManagerRef = LLVM::CreatePassManager();
-    assert(!isNull(pm), "Could not create pass manager for module");
+    let pm: LLVM::PassManagerRef = LLVM::CreatePassManager();
+    assert(!LLVM::isNull(pm), "Could not create pass manager for module");
     return newLLVMPassManagerFromRef(pm);
 }
 func runInPassManager(this: &LLVMModule, pm: LLVMPassManager) -> bool {
     trace("LLVMModule.runInPassManager");
-    assert(!isNull(this.ref));
-    assert(!isNull(pm.ref));
+    assert(!LLVM::isNull(this.ref));
+    assert(!LLVM::isNull(pm.ref));
     return LLVM::RunPassManager(pm.ref, this.ref) == 1;
 }
 
-func newLLVMModuleFromRef(ref: LLVMModuleRef) -> LLVMModule {
+func newLLVMModuleFromRef(ref: LLVM::ModuleRef) -> LLVMModule {
     trace("newLLVMModuleFromRef");
-    assert(!isNull(ref), "Passed invalid reference to newLLVMModuleFromRef");
+    assert(!LLVM::isNull(ref), "Passed invalid reference to newLLVMModuleFromRef");
     return LLVMModule {
         ref: ref
     };
