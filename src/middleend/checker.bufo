@@ -46,6 +46,7 @@ comptime ERROR_MEMBER_ACCESS_TOO_MANY_OPTIONS: usize = 27;
 comptime ERROR_FUNCTION_CALL_TOO_MANY_OPTIONS: usize = 28;
 comptime ERROR_CALL_TO_NON_FUNCTION: usize = 29;
 comptime ERROR_UNKNOWN_SUBMODULE: usize = 30;
+comptime ERROR_MODULE_ACCESS_NON_MODULE: usize = 31;
 
 comptime TCSTATE_INVALID: usize = 0;
 comptime TCSTATE_ERROR: usize = 1;
@@ -138,7 +139,7 @@ func newTCStatePleaseInfer() -> TCState {
 
 struct TypeChecker {
     isComptimeContext: bool;
-    currentFile: usize;
+    currentModule: &ModuleLookup;
     currentFunction: &FunctionLookup;
     lookup: Lookup;
     typeError: bool;
@@ -475,6 +476,20 @@ func reportUnknownModule(this: &TypeChecker, name: Token) -> TCState {
     this.typeError = true;
     return newTCStateFailure(ERROR_NO_SUCH_MODULE);
 }
+func reportModuleAccessOfNonModule(this: &TypeChecker, span: Span, name: Token, typ: TypeLookup) -> TCState {
+    let loc = toString(&span);
+    let _name = toString(&name.content);
+    fprintf(stderr, "%s: %s: `%s` is not a module, so the `::` operator cannot be applied.\n", loc.buffer, ERR_STR, _name.buffer);
+    if (typ.kind != TYPE_LOOKUP_INVALID) {
+        let _loc = getLocation(&typ);
+        fprintf(stderr, "%s: %s: Struct declared here.\n", _loc.buffer, NOTE_STR);
+        drop(&_loc);
+    }
+    drop(&_name);
+    drop(&loc);
+    this.typeError = true;
+    return newTCStateFailure(ERROR_MODULE_ACCESS_NON_MODULE);
+}
 func emergencyPrint(this: &TypeChecker, where: Span) {
     let t: Token = Token {
         span: where,
@@ -553,13 +568,12 @@ func fillLookup(this: &TypeChecker) -> bool {
     for (let i: usize = 0; i < files.length; i = i + 1) {
         let file: &ParsedFile = at(&files, i);
         assert(getID(file) == i);
-        this.currentFile = i;
-        let lookup: &FileLookup = insertFile(&this.lookup, file);
-        for (let j: usize = 0; j < file.tliLength; j = j + 1) {
-            let tliID: usize = getTopLevelItemAtIndex(file, j);
+        this.currentModule = insertFile(&this.lookup, file);
+        for (let j: usize = 0; j < file.mod.tlis.length; j = j + 1) {
+            let tliID: usize = *at(&file.mod.tlis, j);
             let tli: &ParsedTopLevelItem = at(&topLevelItems, tliID);
             if (tli.ignored) continue;
-            insertTLI(lookup, tli);
+            insertTLI(this.currentModule, tli);
         }
     }
     return true;
@@ -571,9 +585,9 @@ func typeCheckFiles(this: &TypeChecker) -> bool {
     for (let i: usize = 0; i < files.length; i = i + 1) {
         let file: &ParsedFile = at(&files, i);
         assert(getID(file) == i);
-        this.currentFile = i;
-        for (let j: usize = 0; j < file.tliLength; j = j + 1) {
-            let tliID: usize = getTopLevelItemAtIndex(file, j);
+        this.currentModule = at(&this.lookup.files, i);
+        for (let j: usize = 0; j < file.mod.tlis.length; j = j + 1) {
+            let tliID: usize = *at(&file.mod.tlis, j);
             let tli: &ParsedTopLevelItem = at(&topLevelItems, tliID);
             if (tli.kind == TLI_STRUCT_DECL) {
                 let state = typeCheckStructDecl(this, tli.nodeID);
@@ -585,14 +599,13 @@ func typeCheckFiles(this: &TypeChecker) -> bool {
     for (let i: usize = 0; i < files.length; i = i + 1) {
         let file: &ParsedFile = at(&files, i);
         assert(getID(file) == i);
-        this.currentFile = i;
-        let currentFile: &FileLookup = at(&this.lookup.files, this.currentFile);
-        assert(currentFile.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
-        for (let j: usize = 0; j < file.tliLength; j = j + 1) {
-            let tliID: usize = getTopLevelItemAtIndex(file, j);
+        this.currentModule = at(&this.lookup.files, i);
+        assert(this.currentModule.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
+        for (let j: usize = 0; j < file.mod.tlis.length; j = j + 1) {
+            let tliID: usize = *at(&file.mod.tlis, j);
             let tli: &ParsedTopLevelItem = at(&topLevelItems, tliID);
             if (tli.kind == TLI_FUNC_DECL) {
-                let state = typeCheckFunction(this, tli.nodeID, &currentFile.variables, true);
+                let state = typeCheckFunction(this, tli.nodeID, &this.currentModule.variables, true);
                 if (!isSuccess(&state)) success = false;
             }
         }
@@ -601,30 +614,29 @@ func typeCheckFiles(this: &TypeChecker) -> bool {
     for (let i: usize = 0; i < files.length; i = i + 1) {
         let file: &ParsedFile = at(&files, i);
         assert(getID(file) == i);
-        this.currentFile = i;
-        let currentFile: &FileLookup = at(&this.lookup.files, this.currentFile);
-        assert(currentFile.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
-        for (let j: usize = 0; j < file.tliLength; j = j + 1) {
-            let tliID: usize = getTopLevelItemAtIndex(file, j);
-            let tli: &ParsedTopLevelItem = at(&topLevelItems, tliID);
-            if (tli.kind == TLI_MOD_DECL) {
-                let state = typeCheckModule(this, tli.nodeID, &currentFile.variables);
-                if (!isSuccess(&state)) success = false;
-            }
+        this.currentModule = at(&this.lookup.files, i);
+        assert(this.currentModule != null);
+        assert(this.currentModule.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
+        for (let j: usize = 0; j < file.mod.tlis.length; j = j + 1) {
+             let tliID: usize = *at(&file.mod.tlis, j);
+             let tli: &ParsedTopLevelItem = at(&topLevelItems, tliID);
+             if (tli.kind == TLI_MOD_DECL) {
+                 let state = typeCheckModule(this, tli.nodeID, &this.currentModule.variables);
+                 if (!isSuccess(&state)) success = false;
+             }
         }
     }
     if (!success) return false;
     for (let i: usize = 0; i < files.length; i = i + 1) {
         let file: &ParsedFile = at(&files, i);
         assert(getID(file) == i);
-        this.currentFile = i;
-        let currentFile: &FileLookup = at(&this.lookup.files, this.currentFile);
-        assert(currentFile.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
-        for (let j: usize = 0; j < file.tliLength; j = j + 1) {
-            let tliID: usize = getTopLevelItemAtIndex(file, j);
+        this.currentModule = at(&this.lookup.files, i);
+        assert(this.currentModule.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
+        for (let j: usize = 0; j < file.mod.tlis.length; j = j + 1) {
+            let tliID: usize = *at(&file.mod.tlis, j);
             let tli: &ParsedTopLevelItem = at(&topLevelItems, tliID);
             if (tli.kind == TLI_VAR_DECL) {
-                let state = typeCheckVarDecl(this, tli.nodeID, &currentFile.variables, true);
+                let state = typeCheckVarDecl(this, tli.nodeID, &this.currentModule.variables, true);
                 if (!isSuccess(&state)) success = false;
             }
         }
@@ -633,17 +645,16 @@ func typeCheckFiles(this: &TypeChecker) -> bool {
     for (let i: usize = 0; i < files.length; i = i + 1) {
         let file: &ParsedFile = at(&files, i);
         assert(getID(file) == i);
-        this.currentFile = i;
-        let currentFile: &FileLookup = at(&this.lookup.files, this.currentFile);
-        assert(currentFile.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
-        for (let j: usize = 0; j < file.tliLength; j = j + 1) {
-            let tliID: usize = getTopLevelItemAtIndex(file, j);
+        this.currentModule = at(&this.lookup.files, i);
+        assert(this.currentModule.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
+        for (let j: usize = 0; j < file.mod.tlis.length; j = j + 1) {
+            let tliID: usize = *at(&file.mod.tlis, j);
             let tli: &ParsedTopLevelItem = at(&topLevelItems, tliID);
             if (tli.kind == TLI_FUNC_DECL) {
-                let state = typeCheckFunction(this, tli.nodeID, &currentFile.variables, false);
+                let state = typeCheckFunction(this, tli.nodeID, &this.currentModule.variables, false);
                 let _dupl: &FunctionLookup = null;
-                let funcLookup = getFunctionByGlobalID(&this.lookup, tli.nodeID);
-                if (containsDuplicateFunction(currentFile, funcLookup, &_dupl)) {
+                let funcLookup = getFunctionByGlobalID(this.currentModule, tli.nodeID);
+                if (containsDuplicateFunction(this.currentModule, funcLookup, &_dupl)) {
                     assert(_dupl != null, "Duplicate FunctionLookup is null");
                     reportDuplicateFunction(this, funcLookup, _dupl);
                     success = false;
@@ -659,7 +670,8 @@ func typeCheckFiles(this: &TypeChecker) -> bool {
 func typeCheckModule(this: &TypeChecker, modID: usize, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.typeCheckModule");
     let mod = at(&modules, modID);
-    let lookup = getModuleByGlobalID(&this.lookup, modID);
+    let prev = this.currentModule;
+    this.currentModule = getModuleByGlobalID(&this.lookup, modID);
     let result = newTCStateSuccess();
     for (let i: usize = 0; i < mod.tlis.length; i = i + 1) {
         let tli: &ParsedTopLevelItem = at(&topLevelItems, *at(&mod.tlis, i));
@@ -668,7 +680,10 @@ func typeCheckModule(this: &TypeChecker, modID: usize, scopes: &ScopeLookupList)
             if (!isSuccess(&state)) result = state;
         }
     }
-    if (!isSuccess(&result)) return result;
+    if (!isSuccess(&result)) {
+        this.currentModule = prev;
+        return result;
+    }
     for (let i: usize = 0; i < mod.tlis.length; i = i + 1) {
         let tli: &ParsedTopLevelItem = at(&topLevelItems, *at(&mod.tlis, i));
         if (tli.kind == TLI_FUNC_DECL) {
@@ -676,7 +691,10 @@ func typeCheckModule(this: &TypeChecker, modID: usize, scopes: &ScopeLookupList)
             if (!isSuccess(&state)) result = state;
         }
     }
-    if (!isSuccess(&result)) return result;
+    if (!isSuccess(&result)) {
+        this.currentModule = prev;
+        return result;
+    }
     for (let i: usize = 0; i < mod.tlis.length; i = i + 1) {
         let tli: &ParsedTopLevelItem = at(&topLevelItems, *at(&mod.tlis, i));
         if (tli.kind == TLI_MOD_DECL) {
@@ -684,7 +702,10 @@ func typeCheckModule(this: &TypeChecker, modID: usize, scopes: &ScopeLookupList)
             if (!isSuccess(&state)) result = state;
         }
     }
-    if (!isSuccess(&result)) return result;
+    if (!isSuccess(&result)) {
+        this.currentModule = prev;
+        return result;
+    }
     for (let i: usize = 0; i < mod.tlis.length; i = i + 1) {
         let tli: &ParsedTopLevelItem = at(&topLevelItems, *at(&mod.tlis, i));
         if (tli.kind == TLI_VAR_DECL) {
@@ -692,20 +713,24 @@ func typeCheckModule(this: &TypeChecker, modID: usize, scopes: &ScopeLookupList)
             if (!isSuccess(&state)) result = state;
         }
     }
-    if (!isSuccess(&result)) return result;
+    if (!isSuccess(&result)) {
+        this.currentModule = prev;
+        return result;
+    }
     for (let i: usize = 0; i < mod.tlis.length; i = i + 1) {
         let tli: &ParsedTopLevelItem = at(&topLevelItems, *at(&mod.tlis, i));
         if (tli.kind == TLI_FUNC_DECL) {
             let state = typeCheckFunction(this, tli.nodeID, scopes, false);
             let _dupl: &FunctionLookup = null;
-            let funcLookup = getFunctionByGlobalID(&this.lookup, tli.nodeID);
-            if (containsDuplicateFunction(lookup, funcLookup, &_dupl)) {
+            let funcLookup = getFunctionByGlobalID(this.currentModule, tli.nodeID);
+            if (containsDuplicateFunction(this.currentModule, funcLookup, &_dupl)) {
                 assert(_dupl != null, "Duplicate FunctionLookup is null");
                 result = reportDuplicateFunction(this, funcLookup, _dupl);
             }
             if (!isSuccess(&state)) result = state;
         }
     }
+    this.currentModule = prev;
     return result;
 }
 
@@ -713,8 +738,7 @@ func typeCheckStructDecl(this: &TypeChecker, structID: usize) -> TCState {
     trace("TypeChecker.typeCheckStructDecl");
     let strukt: &ParsedStructDecl = at(&structDecls, structID);
     if (strukt.ignored) return blank;
-    let fileLookup: &FileLookup = at(&this.lookup.files, this.currentFile);
-    let structLookup: &StructLookup = getStructByGlobalID(fileLookup, structID);
+    let structLookup: &StructLookup = getStructByGlobalID(&this.lookup, structID);
     let context: &StructContext = &strukt.context;
     let result: TCState = newTCStateSuccess();
     let failure: TCState = blank;
@@ -1342,7 +1366,7 @@ func typeCheckExprStructInit(this: &TypeChecker, exprID: usize, scopes: &ScopeLo
     assert(expr.kind == EXPR_STRUCT_INIT);
     let name: Token = expr.origToken;
     let lookup: TypeLookup = blank;
-    if (!resolveTypeByName(&this.lookup, this.currentFile, &name, &lookup)) {
+    if (!resolveTypeByName(this.currentModule, &name, &lookup)) {
         let alternatives: TypeLookupList = searchAllFilesForTypeName(&this.lookup, &name);
         return reportUnknownType(this, null, name, alternatives);
     }
@@ -1395,7 +1419,7 @@ func typeCheckIdentifier(this: &TypeChecker, exprID: usize, scopes: &ScopeLookup
     assert(expr.kind == EXPR_NAME);
     let name: Token = expr.origToken;
     let var: VariableLookup = blank;
-    if (resolveVariableByName(&this.lookup, this.currentFile, &name, scopes, &var)) {
+    if (resolveVariableByName(this.currentModule, &name, scopes, &var)) {
         if (this.isComptimeContext && !var.isComptime) {
             reportRuntimeValueInComptimeContext(this, name, &var);
         }
@@ -1411,7 +1435,7 @@ func typeCheckIdentifier(this: &TypeChecker, exprID: usize, scopes: &ScopeLookup
         (*expr).typeState = state;
         return state;
     }
-    let functions = resolveFunctionByName(&this.lookup, this.currentFile, &name);
+    let functions = resolveFunctionByName(this.currentModule, &name);
     if (functions.length > 1) {
         drop(&functions);
         return newTCStatePleaseInfer();
@@ -1423,7 +1447,7 @@ func typeCheckIdentifier(this: &TypeChecker, exprID: usize, scopes: &ScopeLookup
         return f.fnType;
     }
     let moduleLookup: &ModuleLookup = null;
-    if (resolveModuleByName(&this.lookup, this.currentFile, &name, &moduleLookup)) {
+    if (resolveModuleByName(this.currentModule, &name, &moduleLookup)) {
         let typ = newType(TYPE_KIND_MODULE, moduleLookup.globalID);
         let state = newTCStateType(getID(typ));
         expr.typeState = state;
@@ -1595,27 +1619,30 @@ func typeCheckExprModuleAccess(this: &TypeChecker, dotID: usize, scopes: &ScopeL
     assert(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
     assert(expr.op == BIN_MODULE);
     let modExpr = at(&exprs, expr.lhs);
+    let rhs = at(&exprs, expr.rhs);
     let instance: TCState = typeCheckExpr(this, expr.lhs, scopes);
     if (isError(&instance)) return instance;
     let instanceTypeID: usize = getType(&instance);
     let instanceType: &Type = at(&types, instanceTypeID);
     if (!isModule(instanceType)) {
-        todo_with_msg("LHS of :: not module");
+        return reportModuleAccessOfNonModule(this, expr.span, modExpr.origToken, blank);
     }
     let modLookup = getModuleByGlobalID(&this.lookup, instanceType.typeIndex);
-    let rhs: &ParsedExpr = at(&exprs, expr.rhs);
     if (rhs.kind == EXPR_NAME) {
         let submodule: &ModuleLookup = null;
-        if (resolveModuleByName(modLookup, &rhs.origToken, &submodule)) {
+        if (resolveModuleByName(modLookup, &rhs.origToken, &submodule, false, true, true)) {
             let typ = newType(TYPE_KIND_MODULE, submodule.globalID);
             rhs.typeState = newTCStateType(getID(typ));
             return rhs.typeState;
         }
         let var: &VariableLookup = null;
         let fun: FunctionLookupList = blank;
-        let res = resolveIdentifierByName(modLookup, &rhs.origToken, &var, &fun);
-        if (res == IDENT_NONE) {
-            todo_with_msg("module::ident doesn't exist");
+        let typ: TypeLookup = blank;
+        let res = resolveIdentifierByName(modLookup, &rhs.origToken, &var, &typ, &fun);
+        if (res == IDENT_TYPE) {
+            return reportModuleAccessOfNonModule(this, expr.span, rhs.origToken, typ);
+        } else if (res == IDENT_NONE) {
+            return reportUnknownSubmodule(this, modLookup, rhs.origToken);
         } else if (res == IDENT_FUNC) {
             assert(fun.length != 0, "IDENT_FUNC but fun is empty");
             if (fun.length == 1) {
@@ -1760,12 +1787,12 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
         assert(isFunction(typ), "Can only try to infer functions onto identifiers for now");
         // FIXME: Same problem as with typeCheckTypeNode, this code doesn't consider the
         //        possibility that we're in a submodule, or calling a function mod::func()
-        let functions = resolveAllFunctionsWithSignature(&this.lookup, this.currentFile, &expr.origToken, typ);
+        let functions = resolveAllFunctionsWithSignature(this.currentModule, &expr.origToken, typ);
         if (functions.length == 0) {
             if (checkOnly) {
                 tid = newTCStateFailure(ERROR_NO_SUCH_FUNCTION);
             } else {
-                let all = resolveFunctionByName(&this.lookup, this.currentFile, &expr.origToken);
+                let all = resolveFunctionByName(this.currentModule, &expr.origToken);
                 tid = reportNoFunctionCallCandidate(this, exprID, typ, &all);
                 drop(&all);
             }
@@ -2018,7 +2045,7 @@ func tryInferTypeOntoMemberAccess(this: &TypeChecker, exprID: usize, typeID: usi
     let rhs = at(&exprs, expr.rhs);
     if (rhs.kind == EXPR_NAME) {
         let name = rhs.origToken;
-        let structs = resolveAllStructsWithField(&this.lookup, this.currentFile, &name, typ);
+        let structs = resolveAllStructsWithField(this.currentModule, &name, typ);
         if (structs.length == 0) {
             todo_with_msg("tryInferTypeOntoMemberAccess: 0 struct with field");
         } else if (structs.length == 1) {
@@ -2052,7 +2079,7 @@ func tryInferTypeOntoModuleAccess(this: &TypeChecker, exprID: usize, typeID: usi
     if (!isType(&lhsState)) todo_with_msg("can't infer onto module access if LHS is not valid");
     let lhsType = at(&types, getType(&lhsState));
     assert(isModule(lhsType), "LHS of BIN_MODULE is not of type module!");
-    let lookup = getModuleByGlobalID(&this.lookup, lhsType.typeIndex);
+    let lookup = getModuleByGlobalID(this.currentModule, lhsType.typeIndex);
     let rhs = at(&exprs, expr.rhs);
     let tid: TCState = blank;
     if (rhs.kind == EXPR_NAME) {
@@ -2245,7 +2272,7 @@ func typeCheckTypeNode(this: &TypeChecker, typeID: usize) -> TCState {
     } else if (typ.kind == PARSED_TYPE_IDENT) {
         let name: Token = typ.nameTkn;
         let typeLookup: TypeLookup = blank;
-        if (!resolveTypeByName(&this.lookup, this.currentFile, &name, &typeLookup)) {
+        if (!resolveTypeByName(this.currentModule, &name, &typeLookup)) {
             let loc: String = getLocation(&name);
             let _n: String = toString(&name.content);
             fprintf(stderr, "%s: %s: Use of undeclared type identifier `%s`.\n", loc.buffer, ERR_STR, _n.buffer);
@@ -2278,12 +2305,7 @@ func typeCheckTypeNode(this: &TypeChecker, typeID: usize) -> TCState {
         let _orig = typ;
         let moduleLookup: &ModuleLookup = null;
         let name = typ.nameTkn;
-        // FIXME: none of the typeCheck*** functions consider us being in a submodule, which means
-        //        that we always have to provide the full module path for a type, even if we're in
-        //        the same module or share a root
-        //        -> If we just kept track of currentModule instead of currentFile, we'd be fine
-        //        -> Please deprecate the concept of files :^)
-        if (!resolveModuleByName(&this.lookup, this.currentFile, &name, &moduleLookup)) {
+        if (!resolveModuleByName(this.currentModule, &name, &moduleLookup)) {
             return reportUnknownModule(this, name);
         }
         while (true) {
@@ -2354,7 +2376,7 @@ func typeCheckTypeNode(this: &TypeChecker, typeID: usize) -> TCState {
 func newTypeChecker() -> TypeChecker {
     return TypeChecker {
         isComptimeContext: false,
-        currentFile: 0,
+        currentModule: null,
         currentFunction: null,
         lookup: blank,
         typeError: false,

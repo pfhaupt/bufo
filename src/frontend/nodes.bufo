@@ -197,32 +197,12 @@ func asTLI(this: &ParsedConfig) -> &ParsedTopLevelItem {
 struct ParsedFile {
     ignored: bool;
     origin: SubStr;
-    tliList: &usize;
-    tliLength: usize;
-    tliCapacity: usize;
+    mod: &ParsedModule;
 }
 
 func getID(this: &ParsedFile) -> usize {
     trace("ParsedFile.getID");
     return indexOf(&files, this);
-}
-
-func addTopLevelItem(this: &ParsedFile, tli: &ParsedTopLevelItem) {
-    trace("ParsedFile.addTopLevelItem");
-    if (this.tliLength >= this.tliCapacity) {
-        let newCap: usize = this.tliCapacity * 2;
-        if (newCap == 0) newCap = 1;
-        this.tliList = realloc(this.tliList, newCap * sizeof usize);
-        assert(this.tliList != null, "Could not resize tli list");
-        this.tliCapacity = newCap;
-    }
-    this.tliList[this.tliLength] = getID(tli);
-    this.tliLength = this.tliLength + 1;
-}
-
-func getTopLevelItemAtIndex(this: &ParsedFile, index: usize) -> usize {
-    assert(index < this.tliLength, "Out of bounds access in getTopLevelItemAtIndex");
-    return this.tliList[index];
 }
 
 func newParsedFile(origin: SubStr) -> &ParsedFile {

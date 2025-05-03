@@ -1,0 +1,26 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+
+module A {
+    struct Foo {
+        b: B::Baz;
+    }
+    module B {
+        struct Baz {
+            a: i32;
+        }
+        struct Bar {
+            f: Foo;
+        }
+    }
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let f = A::Foo { b: A::B::Baz { a: 12 } };
+    assert(f.b.a == 12);
+    return 0;
+}
+

@@ -1,0 +1,18 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! SUCCESS
+
+import "prelude.bufo";
+
+module A {
+    struct B { val: i32; }
+    module B {
+        struct Foo { x: i32; }
+    }
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let f = A::B::Foo { x: 1 };
+    assert(f.x == 1);
+    return 0;
+}

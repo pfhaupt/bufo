@@ -993,8 +993,8 @@ func generateBytecode(this: &IRGen, project: &ParsedFile) -> bool {
     setCurrentBlock(&this.globalScope, entry);
     for (let i: usize = 0; i < files.length; i = i + 1) {
         let file: &ParsedFile = at(&files, i);
-        for (let j: usize = 0; j < file.tliLength; j = j + 1) {
-            let tli: &ParsedTopLevelItem = at(&topLevelItems, getTopLevelItemAtIndex(file, j));
+        for (let j: usize = 0; j < file.mod.tlis.length; j = j + 1) {
+            let tli: &ParsedTopLevelItem = at(&topLevelItems, *at(&file.mod.tlis, j));
             if (tli.ignored) continue;
             if (tli.kind == TLI_VAR_DECL) {
                 generateBytecodeStmt(this, &this.globalScope, at(&stmts, tli.nodeID));

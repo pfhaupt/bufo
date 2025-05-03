@@ -62,13 +62,6 @@ struct Value {
     b: u8;
 }
 
-struct Color {
-    r: u8;
-    g: u8;
-    b: u8;
-    a: u8;
-}
-
 // This is how you declare modules in bufo.
 module raylib {
     // bufo supports conditional compilation using the attribute @os()
@@ -93,7 +86,7 @@ module raylib {
     }
     // using the attribute @extern() we're telling the compiler to look for a function called
     // "GetColor" in the libraries mentioned in the config above
-    // this means that we can now use raylib.get_color(), and it will call GetColor() under the hood.
+    // this means that we can now use raylib::get_color(), and it will call GetColor() under the hood.
     @extern("GetColor") func get_color(v: u32) -> Color;
     @extern("InitWindow") func init_window(width: i32, height: i32, title: &char);
     @extern("WindowShouldClose") func window_should_close() -> bool;
@@ -105,6 +98,14 @@ module raylib {
     // External functions can be variadic
     @extern("TextFormat") func text_format(fmt: &char, ...) -> &char;
     @extern("CloseWindow") func close_window();
+
+    // Of course raylib also comes with its own data structures.
+    struct Color {
+        r: u8;
+        g: u8;
+        b: u8;
+        a: u8;
+    }
 }
 
 func add(a: i32, b: i32) -> i32 {
@@ -133,7 +134,7 @@ func demo() -> Value {
     // For example, it allows us to open windows at compile time.
     raylib::init_window(800, 600, "Hello from the how_to demo!");
     let c = raylib::get_color(16777215 /* 0x00ffffff */);
-    let yellow = Color { r: 255, g: 255, a: 255 };
+    let yellow = raylib::Color { r: 255, g: 255, a: 255 };
     while (!raylib::window_should_close()) {
         let dt = raylib::get_time();
         raylib::begin_drawing();
@@ -148,7 +149,7 @@ func demo() -> Value {
             raylib::draw_text("Closing window soon...", 0, 128, 32, yellow);
         }
         if (dt > 15) {
-            raylib::draw_text(raylib::text_format("In %.2f seconds...", 20 - dt), 0, 160, 32, Color { r: 255, a: 255 });
+            raylib::draw_text(raylib::text_format("In %.2f seconds...", 20 - dt), 0, 160, 32, raylib::Color { r: 255, a: 255 });
         }
         if (dt >= 20) break;
         raylib::end_drawing();

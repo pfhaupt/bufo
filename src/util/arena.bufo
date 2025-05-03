@@ -13,7 +13,6 @@ struct ArenaBlock {
 }
 
 func push(this: &ArenaBlock, elem: Any, newCap: usize) {
-    trace("ArenaBlock.push");
     if (this.next != null) {
         push(this.next, elem, newCap);
         return;
@@ -27,7 +26,6 @@ func push(this: &ArenaBlock, elem: Any, newCap: usize) {
     this.length = this.length + 1;
 }
 func at(this: &ArenaBlock, index: usize) -> Any {
-    trace("ArenaBlock.at");
     if (index >= this.capacity) {
         assert(this.next != null, "Out of bounds access in ArenaBlock");
         return at(this.next, index - this.capacity);
@@ -36,7 +34,6 @@ func at(this: &ArenaBlock, index: usize) -> Any {
     return (this.elements as &usize) + index * this.elemSize;
 }
 func last(this: &ArenaBlock) -> Any {
-    trace("ArenaBlock.last");
     assert(this.length > 0, "ArenaBlock.last() called on empty Arena");
     assert(this.next == null, "ArenaBlock.last() called on block in the middle of a chain");
     return at(this, this.length - 1);

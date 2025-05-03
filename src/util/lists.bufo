@@ -14,11 +14,6 @@ import "../backend/LLVM/values.bufo";
 import "../backend/LLVM/types.bufo";
 
 // TODO: Generics would be cool :Clueless:
-struct FileLookupList {
-    elements: &FileLookup;
-    length: usize;
-    capacity: usize;
-}
 struct ParsedAttributeList {
     elements: &ParsedAttribute;
     length: usize;
@@ -196,68 +191,10 @@ func at(this: &ConfigList, index: usize) -> &Config {
     assert(this.elements != null, "Element pointer is NULL in ConfigList.at");
     return &this.elements[index];
 }
-func initBlank(this: &FileLookupList, newCap: usize) {
-    if (this.elements != null) free(this.elements);
-    this.elements = calloc(newCap, sizeof FileLookup);
-    assert(this.elements != null, "Could not allocate memory in FileLookupList.initBlank");
-    this.capacity = newCap;
-    this.length = newCap;
-}
 
-func push(this: &FileLookupList, element: FileLookup) {
-    if (this.length >= this.capacity) {
-        let newCap: usize = this.capacity * 2;
-        if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof FileLookup);
-        assert(this.elements != null, "Could not allocate memory in FileLookupList.push");
-        this.capacity = newCap;
-    }
-    this.elements[this.length] = element;
-    this.length = this.length + 1;
-}
-
-func pop(this: &FileLookupList) -> &FileLookup {
-    let l: &FileLookup = last(this);
-    this.length = this.length - 1;
-    return l;
-}
-
-func at(this: &FileLookupList, index: usize) -> &FileLookup {
-    assert(index < this.length, "Out of bounds access in FileLookupList.at");
-    assert(this.elements != null, "Element pointer is NULL in FileLookupList.at");
-    return &this.elements[index];
-}
-
-func contains(this: &FileLookupList, element: &FileLookup) -> bool {
-    for (let i: usize = 0; i < this.length; i = i + 1) {
-        if (equals(at(this, i), element)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-func last(this: &FileLookupList) -> &FileLookup {
-    assert(this.length != 0, "Called last() on empty FileLookupList");
+func last(this: &ModuleLookupList) -> &ModuleLookup {
+    assert(this.length != 0, "Called last() on empty ModuleLookupList");
     return at(this, this.length - 1);
-}
-
-func extend(this: &FileLookupList, other: &FileLookupList) {
-    for (let i: usize = 0; i < other.length; i = i + 1) {
-        push(this, *(at(other, i)));
-    }
-    drop(other);
-}
-
-func drop(this: &FileLookupList) {
-    free(this.elements);
-    this.elements = null;
-    this.length = 0;
-    this.capacity = 0;
-}
-
-func clear(this: &FileLookupList) {
-    this.length = 0;
 }
 
 func initBlank(this: &ParsedAttributeList, newCap: usize) {

@@ -1,0 +1,19 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! `B` is not a module, so the `::` operator cannot be applied.
+
+module A {
+    module B {
+        struct Foo { x: i32; }
+    }
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let B = A::B::Foo { x: 1 };
+    let f = B::Foo { x: 2 };
+    return 0;
+}
+

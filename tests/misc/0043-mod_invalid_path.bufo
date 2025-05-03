@@ -1,0 +1,22 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! `Foo` is not a module, so the `::` operator cannot be applied.
+//! Struct declared here.
+
+module A {
+    struct Foo {
+        x: i32;
+    }
+    struct Bar {
+        y: i32;
+    }
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let b = A::Foo::Bar { y: 5 };
+    return 0;
+}
+

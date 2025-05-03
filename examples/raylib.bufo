@@ -22,18 +22,18 @@ module raylib {
     @extern("WindowShouldClose") func WindowShouldClose() -> bool;
     @extern("BeginDrawing") func BeginDrawing();
     @extern("EndDrawing") func EndDrawing();
-    @extern("ClearBackground") func ClearBackground(c: raylib::Color);
-    @extern("DrawRectangleV") func DrawRectangleV(pos: raylib::Vector2, size: raylib::Vector2, col: raylib::Color);
-    @extern("ColorFromHSV") func ColorFromHSV(h: f32, s: f32, v: f32) -> raylib::Color;
-    @extern("GetColor") func GetColor(val: u32) -> raylib::Color;
-    @extern("LoadImageFromScreen") func LoadImageFromScreen() -> raylib::Image;
-    @extern("ExportImage") func ExportImage(i: raylib::Image, name: &char) -> bool;
-    @extern("PlaySound") func PlaySound(sound: raylib::Sound);
-    @extern("LoadSound") func LoadSound(fileName: &char) -> raylib::Sound;
-    @extern("IsSoundValid") func IsSoundValid(sound: raylib::Sound) -> bool;
-    @extern("LoadWave") func LoadWave(fileName: &char) -> raylib::Wave;
-    @extern("LoadSoundFromWave") func LoadSoundFromWave(wave: raylib::Wave) -> raylib::Sound;
-    @extern("SetSoundVolume") func SetSoundVolume(sound: raylib::Sound, volume: f32);
+    @extern("ClearBackground") func ClearBackground(c: Color);
+    @extern("DrawRectangleV") func DrawRectangleV(pos: Vector2, size: Vector2, col: Color);
+    @extern("ColorFromHSV") func ColorFromHSV(h: f32, s: f32, v: f32) -> Color;
+    @extern("GetColor") func GetColor(val: u32) -> Color;
+    @extern("LoadImageFromScreen") func LoadImageFromScreen() -> Image;
+    @extern("ExportImage") func ExportImage(i: Image, name: &char) -> bool;
+    @extern("PlaySound") func PlaySound(sound: Sound);
+    @extern("LoadSound") func LoadSound(fileName: &char) -> Sound;
+    @extern("IsSoundValid") func IsSoundValid(sound: Sound) -> bool;
+    @extern("LoadWave") func LoadWave(fileName: &char) -> Wave;
+    @extern("LoadSoundFromWave") func LoadSoundFromWave(wave: Wave) -> Sound;
+    @extern("SetSoundVolume") func SetSoundVolume(sound: Sound, volume: f32);
     @extern("GetTime") func GetTime() -> f64;
     @extern("SetTargetFPS") func SetTargetFPS(fps: i32);
 
@@ -62,7 +62,7 @@ module raylib {
     }
 
     struct Sound {
-        stream: raylib::AudioStream;
+        stream: AudioStream;
         frameCount: u32;
     }
 
@@ -84,32 +84,32 @@ module raylib {
         comptime HEIGHT: i32 = 600;
         comptime RW: f32 = 150;
         comptime RH: f32 = 150;
-        raylib::InitWindow(WIDTH, HEIGHT, "actual_test: Hello from bufo!");
-        raylib::InitAudioDevice();
+        InitWindow(WIDTH, HEIGHT, "actual_test: Hello from bufo!");
+        InitAudioDevice();
         comptime FPS: i32 = 60;
         comptime PixelPerSecond: i32 = 200;
         comptime PixelPerFrame: f32 = PixelPerSecond as f32 / FPS as f32;
-        raylib::SetTargetFPS(FPS);
-        let w = raylib::LoadWave("./metal_pipe.wav");
-        let s = raylib::LoadSoundFromWave(w);
-        if (raylib::IsSoundValid(s)) {
-            raylib::SetSoundVolume(s, 20/100);
-            raylib::PlaySound(s);
+        SetTargetFPS(FPS);
+        let w = LoadWave("./metal_pipe.wav");
+        let s = LoadSoundFromWave(w);
+        if (IsSoundValid(s)) {
+            SetSoundVolume(s, 20/100);
+            PlaySound(s);
         }
         let x: f32 = 0;
         let y: f32 = 0;
         let dx: f32 = 1;
         let dy: f32 = 2;
-        while (!raylib::WindowShouldClose()) {
-            raylib::BeginDrawing();
+        while (!WindowShouldClose()) {
+            BeginDrawing();
             // 0x181818ff
-            raylib::ClearBackground(raylib::GetColor(404232447));
-            raylib::DrawRectangleV(
-                raylib::Vector2 { x: x, y: y },
-                raylib::Vector2 { x: RW, y: RH },
-                raylib::ColorFromHSV((50 * raylib::GetTime() as f32) % 360, 1, 1)
+            ClearBackground(GetColor(404232447));
+            DrawRectangleV(
+                Vector2 { x: x, y: y },
+                Vector2 { x: RW, y: RH },
+                ColorFromHSV((50 * GetTime() as f32) % 360, 1, 1)
             );
-            raylib::EndDrawing();
+            EndDrawing();
             let nx = x + dx * PixelPerSecond as f32 / FPS as f32;
             let ny = y + dy * PixelPerSecond as f32 / FPS as f32;
             if (nx + RW >= WIDTH as f32 || nx <= 0) dx = dx * -1;
@@ -117,31 +117,29 @@ module raylib {
             if (ny + RH >= HEIGHT as f32 || ny <= 0) dy = dy * -1;
             else y = ny;
         }
-        raylib::CloseAudioDevice();
-        raylib::CloseWindow();
+        CloseAudioDevice();
+        CloseWindow();
     }
     func simple_test(isComptime: bool, inMakefile: bool) {
-        // TODO: Lookup doesn't check the current module, would be cool to not have to write
-        //        all the time while within the module raylib
         if (isComptime) {
-            raylib::InitWindow(600, 400, "simple_test: hello from bufo but at comptime FeelsOkayMan");
+            InitWindow(600, 400, "simple_test: hello from bufo but at comptime FeelsOkayMan");
         } else {
-            raylib::InitWindow(600, 400, "simple_test: hello from bufo");
+            InitWindow(600, 400, "simple_test: hello from bufo");
         }
-        let c = comptime raylib::ColorFromHSV(90, 1/10, 3/10);
-        while (!raylib::WindowShouldClose()) {
-            if ((isComptime || inMakefile) && raylib::GetTime() > 3) {
+        let c = comptime ColorFromHSV(90, 1/10, 3/10);
+        while (!WindowShouldClose()) {
+            if ((isComptime || inMakefile) && GetTime() > 3) {
                 if (!isComptime) {
                     // TODO: Make things like printf and assert available to comptime
                     printf("\x1b[92m[INFO] 3 seconds have passed, closing window.\x1b[0m\n");
                 }
                 break;
             }
-            raylib::BeginDrawing();
-            raylib::ClearBackground(c);
-            raylib::EndDrawing();
+            BeginDrawing();
+            ClearBackground(c);
+            EndDrawing();
         }
-        raylib::CloseWindow();
+        CloseWindow();
     }
 }
 

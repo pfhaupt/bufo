@@ -117,6 +117,7 @@ func parseProject(this: &Parser, root: SubStr) -> ParsedFile {
 
 func parseFile(this: &Parser, root: SubStr, file: &ParsedFile) {
     trace("Parser.parseFile");
+    file.mod = newParsedModule(blank, blank, blank, blank);
     addImportRoot(this, root);
     while (!parsedEOF(this)) {
         let attributes: ParsedAttributeList = blank;
@@ -133,7 +134,7 @@ func parseFile(this: &Parser, root: SubStr, file: &ParsedFile) {
                 // ParsedCompilerFlag
                 continue;
             }
-            addTopLevelItem(file, item);
+            push(&file.mod.tlis, getID(item));
         }
     }
 }
