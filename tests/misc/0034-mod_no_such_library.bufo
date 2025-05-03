@@ -16,6 +16,6 @@ module test {
 }
 
 func main(argc: i32, argv: &&char) -> i32 {
-    (comptime test.something());
+    (comptime test::something());
     return 0;
 }

@@ -123,7 +123,7 @@ func demo() -> Value {
     // library can be loaded. This allows you to do anything a library can do!
     // We can handle arbitrary types, we can call functions, anything.
     // Even function pointers will work just fine. I'll let you figure that one out.
-    let gc = raylib.get_color;
+    let gc = raylib::get_color;
     let color = gc(404232447 /* 0x181818ff */);
     if (color.r != 24 /* 0x18 */) return blank;
     if (color.g != 24 /* 0x18 */) return blank;
@@ -131,29 +131,29 @@ func demo() -> Value {
     if (color.a != 255 /* 0xff */) return blank;
 
     // For example, it allows us to open windows at compile time.
-    raylib.init_window(800, 600, "Hello from the how_to demo!");
-    let c = raylib.get_color(16777215 /* 0x00ffffff */);
+    raylib::init_window(800, 600, "Hello from the how_to demo!");
+    let c = raylib::get_color(16777215 /* 0x00ffffff */);
     let yellow = Color { r: 255, g: 255, a: 255 };
-    while (!raylib.window_should_close()) {
-        let dt = raylib.get_time();
-        raylib.begin_drawing();
-        raylib.clear_background(color);
-        raylib.draw_text("This window only exists at compile time.", 0, 0, 32, c);
-        raylib.draw_text("It will never show at runtime, unless you", 0, 32, 32, c);
-        raylib.draw_text("call demo() in a non-comptime context.", 0, 64, 32, c);
-        // Variadic functions (here: raylib.text_format) are also supported, including passing
+    while (!raylib::window_should_close()) {
+        let dt = raylib::get_time();
+        raylib::begin_drawing();
+        raylib::clear_background(color);
+        raylib::draw_text("This window only exists at compile time.", 0, 0, 32, c);
+        raylib::draw_text("It will never show at runtime, unless you", 0, 32, 32, c);
+        raylib::draw_text("call demo() in a non-comptime context.", 0, 64, 32, c);
+        // Variadic functions (here: raylib::text_format) are also supported, including passing
         // structures to functions. This is because bufo follows the C calling convention by default.
-        raylib.draw_text(raylib.text_format("This window has been open for %.2f seconds", dt), 0, 96, 32, c);
+        raylib::draw_text(raylib::text_format("This window has been open for %.2f seconds", dt), 0, 96, 32, c);
         if (dt > 10) {
-            raylib.draw_text("Closing window soon...", 0, 128, 32, yellow);
+            raylib::draw_text("Closing window soon...", 0, 128, 32, yellow);
         }
         if (dt > 15) {
-            raylib.draw_text(raylib.text_format("In %.2f seconds...", 20 - dt), 0, 160, 32, Color { r: 255, a: 255 });
+            raylib::draw_text(raylib::text_format("In %.2f seconds...", 20 - dt), 0, 160, 32, Color { r: 255, a: 255 });
         }
         if (dt >= 20) break;
-        raylib.end_drawing();
+        raylib::end_drawing();
     }
-    raylib.close_window();
+    raylib::close_window();
     return Value {
         a: 12,
         b: 17

@@ -46,7 +46,15 @@ func getModuleByGlobalID(this: &Lookup, modID: usize) -> &ModuleLookup {
         let m = getModuleByGlobalID(at(&this.files, i), modID);
         if (m != null) return m;
     }
-    unreachable("Lookup failed to find function based on global ID!");
+    unreachable("Lookup failed to find module based on global ID!");
+}
+func getStructByGlobalID(this: &Lookup, structID: usize) -> &StructLookup {
+    trace("FileLookup.getStructByGlobalID");
+    for (let i: usize = 0; i < this.files.length; i = i + 1) {
+        let m = getStructByGlobalID(at(&this.files, i), structID);
+        if (m != null) return m;
+    }
+    unreachable("Lookup failed to find struct based on global ID!");
 }
 
 func resolveFunctionByName(this: &Lookup, currentFile: usize, name: &Token) -> FunctionLookupList {
@@ -162,10 +170,14 @@ func getTypeLookupForType(this: &Lookup, typ: &Type) -> TypeLookup {
     trace("Lookup.getTypeLookupForType");
     if (isStruct(typ)) {
         let strukt: &ParsedStructDecl = at(&structDecls, typ.typeIndex);
-        assert(strukt.parent.isFile, "struct parent is not a file");
-        let fileID: usize = strukt.parent.id as usize;
-        let s: &StructLookup = getStructByGlobalID(at(&this.files, fileID), getID(strukt));
-        return newTypeLookup(TYPE_LOOKUP_STRUCT, s);
+        if (strukt.parent.isFile) {
+            let fileID: usize = strukt.parent.id as usize;
+            let s: &StructLookup = getStructByGlobalID(at(&this.files, fileID), getID(strukt));
+            return newTypeLookup(TYPE_LOOKUP_STRUCT, s);
+        } else {
+            let s: &StructLookup = getStructByGlobalID(this, getID(strukt));
+            return newTypeLookup(TYPE_LOOKUP_STRUCT, s);
+        }
     } else {
         unreachable("Lookup.getTypeLookupForType got non-struct type");
     }
@@ -432,6 +444,10 @@ func getStructByGlobalID(this: &FileLookup, structID: usize) -> &StructLookup {
             return s;
         }
     }
+    for (let i: usize = 0; i < this.modules.length; i = i + 1) {
+        let s = getStructByGlobalID(at(&this.modules, i), structID);
+        if (s != null) return s;
+    }
     unreachable("Lookup failed to find struct based on global ID!");
 }
 
@@ -577,9 +593,22 @@ func getModuleByGlobalID(this: &ModuleLookup, modID: usize) -> &ModuleLookup {
     if (this.globalID == modID) return this;
     for (let i: usize = 0; i < this.modules.length; i = i + 1) {
         let m: &ModuleLookup = at(&this.modules, i);
-        if (m.globalID == modID) {
-            return m;
+        let lookup = getModuleByGlobalID(m, modID);
+        if (lookup != null) return lookup;
+    }
+    return null;
+}
+func getStructByGlobalID(this: &ModuleLookup, structID: usize) -> &StructLookup {
+    trace("ModuleLookup.getStructByGlobalID");
+    for (let i: usize = 0; i < this.structs.length; i = i + 1) {
+        let s: &StructLookup = at(&this.structs, i);
+        if (s.globalID == structID) {
+            return s;
         }
+    }
+    for (let i: usize = 0; i < this.modules.length; i = i + 1) {
+        let s = getStructByGlobalID(at(&this.modules, i), structID);
+        if (s != null) return s;
     }
     return null;
 }
@@ -609,6 +638,30 @@ func resolveIdentifierByName(this: &ModuleLookup, name: &Token, var: &&VariableL
     return IDENT_NONE;
 }
 
+func resolveModuleByName(this: &ModuleLookup, name: &Token, mod: &&ModuleLookup) -> bool {
+    trace("ModuleLookup.resolveModuleByName");
+    if (equals(&this.name.content, &name.content)) {
+        *mod = this;
+        return true;
+    }
+    for (let i: usize = 0; i < this.modules.length; i = i + 1) {
+        let submodule = at(&this.modules, i);
+        if (resolveModuleByName(submodule, name, mod)) return true;
+    }
+    return false;
+}
+
+func resolveTypeByName(this: &ModuleLookup, name: &Token, typ: &TypeLookup) -> bool {
+    trace("ModuleLookup.resolveTypeByName");
+    for (let i: usize = 0; i < this.structs.length; i = i + 1) {
+        let s: &StructLookup = at(&this.structs, i);
+        if (equals(&s.name.content, &name.content)) {
+            *typ = newTypeLookup(TYPE_LOOKUP_STRUCT, s);
+            return true;
+        }
+    }
+    return false;
+}
 
 struct FunctionLookup {
     globalID: usize;

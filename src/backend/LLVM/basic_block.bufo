@@ -15,14 +15,14 @@ func guardReference(this: &LLVMBasicBlock) {
 func getParent(this: &LLVMBasicBlock) -> LLVMValue {
     trace("LLVMBasicBlock.getParent");
     guardReference(this);
-    let parent: LLVMValueRef = LLVM.GetBasicBlockParent(this.ref);
+    let parent: LLVMValueRef = LLVM::GetBasicBlockParent(this.ref);
     assert(!isNull(parent), "Could not get parent from basic block");
     return newLLVMValueFromRef(parent);
 }
 func getLastInstruction(this: &LLVMBasicBlock, out: &LLVMValue) -> bool {
     trace("LLVMBasicBlock.getLastInstruction");
     guardReference(this);
-    let instr: LLVMValueRef = LLVM.GetLastInstruction(this.ref);
+    let instr: LLVMValueRef = LLVM::GetLastInstruction(this.ref);
     if (isNull(instr)) return false;
     *out = newLLVMValueFromRef(instr);
     return true;

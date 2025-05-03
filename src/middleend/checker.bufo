@@ -16,33 +16,36 @@ import "./lookup.bufo";
 @os(WINDOWS) import "winapi/functions.bufo";
 
 comptime ERROR_INVALID: usize = 0;
-comptime ERROR_NO_SUCH_IDENTIFIER: usize = 1;
-comptime ERROR_NO_SUCH_FUNCTION: usize = 2;
-comptime ERROR_NO_SUCH_METHOD: usize = 3;
-comptime ERROR_USE_BEFORE_DECLARATION: usize = 4;
-comptime ERROR_FIELD_COUNT_MISMATCH: usize = 5;
-comptime ERROR_INDEXED_TYPE_MISMATCH: usize = 6;
-comptime ERROR_UNEXPECTED_LITERAL: usize = 7;
-comptime ERROR_ARRAY_SIZE_MISMATCH: usize = 8;
-comptime ERROR_TYPE_MISMATCH: usize = 9;
-comptime ERROR_INVALID_POINTER_ARITHMETIC: usize = 10;
-comptime ERROR_DUPLICATE_PARAMETER: usize = 11;
-comptime ERROR_DUPLICATE_FIELD: usize = 12;
-comptime ERROR_UNKNOWN_FIELD: usize = 13;
-comptime ERROR_DUPLICATE_FUNCTION: usize = 14;
-comptime ERROR_NO_CALL_CANDIDATE: usize = 15;
-comptime ERROR_VARIABLE_REDECLARATION: usize = 16;
-comptime ERROR_RECURSIVE_TYPE: usize = 17;
-comptime ERROR_DUPLICATE_METHOD: usize = 18;
-comptime ERROR_BLANK_FOR_NULL: usize = 19;
-comptime ERROR_NON_PRIMITIVE_CAST: usize = 20;
-comptime ERROR_INDEXED_ACCESS_ON_NON_ARRAY: usize = 21;
-comptime ERROR_RUNTIME_VALUE_IN_COMPTIME_CONTEXT: usize = 22;
-comptime ERROR_ANY_DEREF: usize = 23;
-comptime ERROR_MEMBER_ACCESS_NON_STRUCT: usize = 24;
-comptime ERROR_MEMBER_ACCESS_TOO_MANY_OPTIONS: usize = 25;
-comptime ERROR_FUNCTION_CALL_TOO_MANY_OPTIONS: usize = 26;
-comptime ERROR_CALL_TO_NON_FUNCTION: usize = 27;
+comptime ERROR_NO_SUCH_MODULE: usize = 1;
+comptime ERROR_NO_SUCH_IDENTIFIER: usize = 2;
+comptime ERROR_NO_SUCH_FUNCTION: usize = 3;
+comptime ERROR_NO_SUCH_METHOD: usize = 4;
+comptime ERROR_NO_SUCH_TYPE: usize = 5;
+comptime ERROR_USE_BEFORE_DECLARATION: usize = 6;
+comptime ERROR_FIELD_COUNT_MISMATCH: usize = 7;
+comptime ERROR_INDEXED_TYPE_MISMATCH: usize = 8;
+comptime ERROR_UNEXPECTED_LITERAL: usize = 9;
+comptime ERROR_ARRAY_SIZE_MISMATCH: usize = 10;
+comptime ERROR_TYPE_MISMATCH: usize = 11;
+comptime ERROR_INVALID_POINTER_ARITHMETIC: usize = 12;
+comptime ERROR_DUPLICATE_PARAMETER: usize = 13;
+comptime ERROR_DUPLICATE_FIELD: usize = 14;
+comptime ERROR_UNKNOWN_FIELD: usize = 15;
+comptime ERROR_DUPLICATE_FUNCTION: usize = 16;
+comptime ERROR_NO_CALL_CANDIDATE: usize = 17;
+comptime ERROR_VARIABLE_REDECLARATION: usize = 18;
+comptime ERROR_RECURSIVE_TYPE: usize = 19;
+comptime ERROR_DUPLICATE_METHOD: usize = 20;
+comptime ERROR_BLANK_FOR_NULL: usize = 21;
+comptime ERROR_NON_PRIMITIVE_CAST: usize = 22;
+comptime ERROR_INDEXED_ACCESS_ON_NON_ARRAY: usize = 23;
+comptime ERROR_RUNTIME_VALUE_IN_COMPTIME_CONTEXT: usize = 24;
+comptime ERROR_ANY_DEREF: usize = 25;
+comptime ERROR_MEMBER_ACCESS_NON_STRUCT: usize = 26;
+comptime ERROR_MEMBER_ACCESS_TOO_MANY_OPTIONS: usize = 27;
+comptime ERROR_FUNCTION_CALL_TOO_MANY_OPTIONS: usize = 28;
+comptime ERROR_CALL_TO_NON_FUNCTION: usize = 29;
+comptime ERROR_UNKNOWN_SUBMODULE: usize = 30;
 
 comptime TCSTATE_INVALID: usize = 0;
 comptime TCSTATE_ERROR: usize = 1;
@@ -227,6 +230,34 @@ func reportUnknownField(this: &TypeChecker, name: Token, decl: &StructLookup) ->
     drop(&errLoc);
     this.typeError = true;
     return newTCStateFailure(ERROR_UNKNOWN_FIELD);
+}
+func reportUnknownType(this: &TypeChecker, mod: &ModuleLookup, name: Token, alternatives: TypeLookupList) -> TCState {
+    let loc: String = getLocation(&name);
+    let _n: String = toString(&name.content);
+    if (mod != null) {
+        let mod = at(&modules, mod.globalID);
+        let _n1 = toString(&mod.name.content);
+        let loc1 = toString(&mod.span);
+        fprintf(stderr, "%s: %s: Module `%s` does not contain any types named `%s`.\n", loc.buffer, ERR_STR, _n1.buffer, _n.buffer);
+        fprintf(stderr, "%s: %s: Module declared here.\n", loc1.buffer, NOTE_STR);
+        drop(&loc1);
+        drop(&_n1);
+    } else {
+        fprintf(stderr, "%s: %s: Use of undeclared type identifier `%s`.\n", loc.buffer, ERR_STR, _n.buffer);
+        for (let i: usize = 0; i < alternatives.length; i = i + 1) {
+            let t: &TypeLookup = at(&alternatives, i);
+            if (isStruct(t)) {
+                let s: &StructLookup = asStruct(t);
+                let loc: String = getLocation(&s.name);
+                fprintf(stderr, "%s: %s: A struct with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
+                drop(&loc);
+            }
+        }
+    }
+    drop(&_n);
+    drop(&loc);
+    this.typeError = true;
+    return newTCStateFailure(ERROR_NO_SUCH_TYPE);
 }
 
 func reportDuplicateFunction(this: &TypeChecker, f1: &FunctionLookup, f2: &FunctionLookup) -> TCState {
@@ -437,6 +468,31 @@ func reportArgumentCountMismatch(this: &TypeChecker, span: Span, base: &Type, ar
     return newTCStateFailure(ERROR_CALL_TO_NON_FUNCTION);
 }
 
+func reportUnknownSubmodule(this: &TypeChecker, mod: &ModuleLookup, name: Token) -> TCState {
+    trace("TypeChecker.reportUnknownSubmodule");
+    let loc = toString(&name.span);
+    let _mod = at(&modules, mod.globalID);
+    let orig = toString(&_mod.span);
+    let _origName = toString(&_mod.name.content);
+    let _name = toString(&name.content);
+    fprintf(stderr, "%s: %s: Module `%s` does not contain any submodules named `%s`.\n", loc.buffer, ERR_STR, _origName.buffer, _name.buffer);
+    fprintf(stderr, "%s: %s: Module declared here.\n", orig.buffer, NOTE_STR);
+    drop(&_name);
+    drop(&_origName);
+    drop(&orig);
+    drop(&loc);
+    this.typeError = true;
+    return newTCStateFailure(ERROR_UNKNOWN_SUBMODULE);
+}
+func reportUnknownModule(this: &TypeChecker, name: Token) -> TCState {
+    let loc = toString(&name.span);
+    let _name = toString(&name.content);
+    fprintf(stderr, "%s: %s: Use of undeclared module `%s`.\n", loc.buffer, ERR_STR, _name.buffer);
+    drop(&_name);
+    drop(&loc);
+    this.typeError = true;
+    return newTCStateFailure(ERROR_NO_SUCH_MODULE);
+}
 func emergencyPrint(this: &TypeChecker, where: Span) {
     let t: Token = Token {
         span: where,
@@ -474,19 +530,13 @@ func dfs(this: &TypeChecker, typeLookup: TypeLookup, visited: &TypeLookupList, f
                 let elemType: &Type = at(&types, typeID);
                 assert(isStruct(elemType));
                 let structID: usize = elemType.typeIndex;
-                let decl: &ParsedStructDecl = at(&structDecls, structID);
-                assert(decl.parent.isFile, "dfs: struct parent is not a file");
-                let file: &FileLookup = at(&this.lookup.files, decl.parent.id as usize);
-                let strukt: &StructLookup = getStructByGlobalID(file, structID);
+                let strukt: &StructLookup = getStructByGlobalID(&this.lookup, structID);
                 if (dfs(this, asTypeLookup(strukt), visited, finished)) {
                     done = true;
                 }
             } else if (isStruct(fieldType)) {
                 let structID: usize = fieldType.typeIndex;
-                let decl: &ParsedStructDecl = at(&structDecls, structID);
-                assert(decl.parent.isFile, "dfs: struct parent is not a file");
-                let file: &FileLookup = at(&this.lookup.files, decl.parent.id as usize);
-                let strukt: &StructLookup = getStructByGlobalID(file, structID);
+                let strukt: &StructLookup = getStructByGlobalID(&this.lookup, structID);
                 if (dfs(this, asTypeLookup(strukt), visited, finished)) {
                     done = true;
                 }
@@ -502,19 +552,18 @@ func dfs(this: &TypeChecker, typeLookup: TypeLookup, visited: &TypeLookupList, f
 func findRecursiveTypes(this: &TypeChecker) -> bool {
     trace("TypeChecker.findRecursiveTypes");
     let recursive: bool = false;
-    for (let i: usize = 0; i < structDecls.length; i = i + 1) {
-        let decl: &ParsedStructDecl = at(&structDecls, i);
-        if (decl.ignored) continue;
-        assert(decl.parent.isFile, "findRecursiveTypes: struct parent is not a file");
-        let file: &FileLookup = at(&this.lookup.files, decl.parent.id as usize);
-        let strukt: &StructLookup = getStructByGlobalID(file, i);
-        let visited: TypeLookupList = blank;
-        let finished: TypeLookupList = blank;
-        if (dfs(this, asTypeLookup(strukt), &visited, &finished)) {
-            reportRecursiveType(this, &asTypeLookup(strukt), &visited);
-            recursive = true;
-        }
-    }
+    // FIXME: unreachable hit in Lookup.getStructByGlobalID
+    // for (let i: usize = 0; i < structDecls.length; i = i + 1) {
+    //     let decl: &ParsedStructDecl = at(&structDecls, i);
+    //     if (decl.ignored) continue;
+    //     let strukt: &StructLookup = getStructByGlobalID(&this.lookup, i);
+    //     let visited: TypeLookupList = blank;
+    //     let finished: TypeLookupList = blank;
+    //     if (dfs(this, asTypeLookup(strukt), &visited, &finished)) {
+    //         reportRecursiveType(this, &asTypeLookup(strukt), &visited);
+    //         recursive = true;
+    //     }
+    // }
     return recursive;
 }
 
@@ -1313,29 +1362,15 @@ func typeCheckExprStructInit(this: &TypeChecker, exprID: usize, scopes: &ScopeLo
     let name: Token = expr.origToken;
     let lookup: TypeLookup = blank;
     if (!resolveTypeByName(&this.lookup, this.currentFile, &name, &lookup)) {
-        let loc: String = getLocation(&name);
-        let _n: String = toString(&name.content);
-        fprintf(stderr, "%s: %s: Use of undeclared type identifier `%s`.\n", loc.buffer, ERR_STR, _n.buffer);
         let alternatives: TypeLookupList = searchAllFilesForTypeName(&this.lookup, &name);
-        for (let i: usize = 0; i < alternatives.length; i = i + 1) {
-            let t: &TypeLookup = at(&alternatives, i);
-            if (isStruct(t)) {
-                let s: &StructLookup = asStruct(t);
-                let loc: String = getLocation(&s.name);
-                fprintf(stderr, "%s: %s: A struct with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
-                drop(&loc);
-            }
-        }
-        drop(&_n);
-        drop(&loc);
-        this.typeError = true;
-        return newTCStateFailure(ERROR_NO_SUCH_IDENTIFIER);
+        return reportUnknownType(this, null, name, alternatives);
     }
     if (isStruct(&lookup)) {
         let context: &StructInitContext = &expr.structInitContext;
         let structLookup: &StructLookup = asStruct(&lookup);
         let hits: usize = 0;
         assert(structLookup.fields.length < 50, "Sorry, I need to hack this for now");
+        let result = newTCStateType(structLookup.typeID);
         for (let i: usize = 0; i < context.fieldLength; i = i + 1) {
             let name: Token = getFieldNameAtIndex(context, i);
             let exprID: usize = getFieldExprAtIndex(context, i);
@@ -1358,12 +1393,16 @@ func typeCheckExprStructInit(this: &TypeChecker, exprID: usize, scopes: &ScopeLo
             let fieldType: &Type = at(&types, getType(fieldState));
             if (wantsInfer(&exprState))
                 exprState = inferTypeOntoExpr(this, exprID, getID(fieldType));
+            if (isError(&exprState)) {
+                result = exprState;
+                continue;
+            }
             let exprType: &Type = at(&types, getType(&exprState));
             if (!equals(fieldType, exprType)) {
                 return reportTypeMismatch(this, at(&exprs, exprID).span, fieldType, exprType);
             }
         }
-        return newTCStateType(structLookup.typeID);
+        return result;
     } else {
         unreachable("typeCheckExprStructInit got non-struct");
     }
@@ -1429,7 +1468,9 @@ func typeCheckExprBinary(this: &TypeChecker, binID: usize, scopes: &ScopeLookupL
     trace("TypeChecker.typeCheckExprBinary");
     let expr: &ParsedExpr = at(&exprs, binID);
     assert(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
-    if (expr.op == BIN_DOT) {
+    if (expr.op == BIN_MODULE) {
+        return typeCheckExprModuleAccess(this, binID, scopes);
+    } else if (expr.op == BIN_DOT) {
         return typeCheckExprMemberAccess(this, binID, scopes);
     } else if (expr.op == BIN_ASSIGN) {
         return typeCheckExprAssign(this, binID, scopes);
@@ -1567,28 +1608,33 @@ func typeCheckExprAssign(this: &TypeChecker, binID: usize, scopes: &ScopeLookupL
     return rhsState;
 }
 
-func typeCheckExprMemberAccess(this: &TypeChecker, dotID: usize, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckExprMemberAccess");
+func typeCheckExprModuleAccess(this: &TypeChecker, dotID: usize, scopes: &ScopeLookupList) -> TCState {
+    trace("TypeChecker.typeCheckExprModuleAccess");
     let expr: &ParsedExpr = at(&exprs, dotID);
     assert(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
-    assert(expr.op == BIN_DOT);
+    assert(expr.op == BIN_MODULE);
+    let modExpr = at(&exprs, expr.lhs);
     let instance: TCState = typeCheckExpr(this, expr.lhs, scopes);
     if (isError(&instance)) return instance;
-    if (wantsInfer(&instance)) return instance;
     let instanceTypeID: usize = getType(&instance);
     let instanceType: &Type = at(&types, instanceTypeID);
-    if (isModule(instanceType)) {
-        let lookup: &ModuleLookup = null;
-        let mod = at(&modules, instanceType.typeIndex);
-        let succ = resolveModuleByName(&this.lookup, this.currentFile, &mod.name, &lookup);
-        assert(succ, "ModuleLookup should exist at this point");
-        let rhs: &ParsedExpr = at(&exprs, expr.rhs);
-        assert(rhs.kind == EXPR_NAME);
+    if (!isModule(instanceType)) {
+        todo_with_msg("LHS of :: not module");
+    }
+    let modLookup = getModuleByGlobalID(&this.lookup, instanceType.typeIndex);
+    let rhs: &ParsedExpr = at(&exprs, expr.rhs);
+    if (rhs.kind == EXPR_NAME) {
+        let submodule: &ModuleLookup = null;
+        if (resolveModuleByName(modLookup, &rhs.origToken, &submodule)) {
+            let typ = newType(TYPE_KIND_MODULE, submodule.globalID);
+            rhs.typeState = newTCStateType(getID(typ));
+            return rhs.typeState;
+        }
         let var: &VariableLookup = null;
         let fun: FunctionLookupList = blank;
-        let res = resolveIdentifierByName(lookup, &rhs.origToken, &var, &fun);
+        let res = resolveIdentifierByName(modLookup, &rhs.origToken, &var, &fun);
         if (res == IDENT_NONE) {
-            todo_with_msg("module.ident doesn't exist");
+            todo_with_msg("module::ident doesn't exist");
         } else if (res == IDENT_FUNC) {
             assert(fun.length != 0, "IDENT_FUNC but fun is empty");
             if (fun.length == 1) {
@@ -1607,7 +1653,68 @@ func typeCheckExprMemberAccess(this: &TypeChecker, dotID: usize, scopes: &ScopeL
         } else {
             unreachable("Exhaustive handling of outcomes of resolveIdentifierByName");
         }
+    } else if (rhs.kind == EXPR_STRUCT_INIT) {
+        let name: Token = rhs.origToken;
+        let lookup: TypeLookup = blank;
+        if (!resolveTypeByName(modLookup, &name, &lookup)) {
+            return reportUnknownType(this, modLookup, name, blank);
+        }
+        if (isStruct(&lookup)) {
+            let context: &StructInitContext = &rhs.structInitContext;
+            let structLookup: &StructLookup = asStruct(&lookup);
+            let hits: usize = 0;
+            assert(structLookup.fields.length < 50, "Sorry, I need to hack this for now");
+            let result = newTCStateType(structLookup.typeID);
+            for (let i: usize = 0; i < context.fieldLength; i = i + 1) {
+                let name: Token = getFieldNameAtIndex(context, i);
+                let rhsID: usize = getFieldExprAtIndex(context, i);
+                let rhsState: TCState = typeCheckExpr(this, rhsID, scopes);
+                if (isError(&rhsState)) rhs.typeState = rhsState;
+                if (!hasField(structLookup, &name.content)) {
+                    rhs.typeState = reportUnknownField(this, name, structLookup);
+                }
+                let fieldIndex: usize = getIndexByName(structLookup, &name);
+                let bit: usize = shiftLeft(1, fieldIndex);
+                if ((hits & bit) != 0) {
+                    todo_with_msg("duplicate field");
+                } else {
+                    hits = hits | bit;
+                }
+                let field: &VariableLookup = at(&structLookup.fields, fieldIndex);
+                let fieldState: &TCState = &field.typeState;
+                assert(isSuccess(fieldState), "Struct is ready to go, but field type is invalid?");
+                assert(equals(&name.content, &field.name.content), "Seems like my hack doesn't work");
+                let fieldType: &Type = at(&types, getType(fieldState));
+                if (wantsInfer(&rhsState))
+                    rhsState = inferTypeOntoExpr(this, rhsID, getID(fieldType));
+                if (isError(&rhsState)) {
+                    result = rhsState;
+                    continue;
+                }
+                let rhsType: &Type = at(&types, getType(&rhsState));
+                if (!equals(fieldType, rhsType)) {
+                    rhs.typeState = reportTypeMismatch(this, at(&exprs, rhsID).span, fieldType, rhsType);
+                }
+            }
+            rhs.typeState = result;
+        } else {
+            unreachable("typeCheckExprModuleAccess got non-struct");
+        }
+        return rhs.typeState;
+    } else {
+        todo_with_msg("report error maybe?");
     }
+}
+func typeCheckExprMemberAccess(this: &TypeChecker, dotID: usize, scopes: &ScopeLookupList) -> TCState {
+    trace("TypeChecker.typeCheckExprMemberAccess");
+    let expr: &ParsedExpr = at(&exprs, dotID);
+    assert(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
+    assert(expr.op == BIN_DOT);
+    let instance: TCState = typeCheckExpr(this, expr.lhs, scopes);
+    if (isError(&instance)) return instance;
+    if (wantsInfer(&instance)) return instance;
+    let instanceTypeID: usize = getType(&instance);
+    let instanceType: &Type = at(&types, instanceTypeID);
     if (!isStruct(instanceType) && !isStructPointer(instanceType)) {
         return reportMemberAccessOnNonStruct(this, expr, instanceType);
     }
@@ -2136,6 +2243,49 @@ func typeCheckTypeNode(this: &TypeChecker, typeID: usize) -> TCState {
         } else {
             todo_with_msg("check ident");
         }
+    } else if (typ.kind == PARSED_TYPE_MODULE) {
+        let _orig = typ;
+        let moduleLookup: &ModuleLookup = null;
+        let name = typ.nameTkn;
+        // FIXME: none of the typeCheck*** functions consider us being in a submodule, which means
+        //        that we always have to provide the full module path for a type, even if we're in
+        //        the same module or share a root
+        //        -> If we just kept track of currentModule instead of currentFile, we'd be fine
+        //        -> Please deprecate the concept of files :^)
+        if (!resolveModuleByName(&this.lookup, this.currentFile, &name, &moduleLookup)) {
+            return reportUnknownModule(this, name);
+        }
+        while (true) {
+            let sub = at(&typeNodes, typ.underlyingID);
+            if (sub.underlyingID == 0) {
+                let lookup: TypeLookup = blank;
+                if (!resolveTypeByName(moduleLookup, &sub.nameTkn, &lookup)) {
+                    return reportUnknownType(this, moduleLookup, sub.nameTkn, blank);
+                }
+                if (isStruct(&lookup)) {
+                    let structLookup: &StructLookup = asStruct(&lookup);
+                    let _tid: usize = structLookup.typeID;
+                    assert(_tid != 0, "Ready to use Struct Lookup has Type ID 0");
+                    let t: &Type = at(&types, _tid);
+                    assert(isStruct(t), "Struct Lookup links to non-Struct type");
+                    tid = getID(t);
+                    break;
+                } else {
+                    todo_with_msg("module::<type> with type != struct");
+                }
+            } else {
+                name = sub.nameTkn;
+                let newModule: &ModuleLookup = null;
+                if (!resolveModuleByName(moduleLookup, &name, &newModule)) {
+                    return reportUnknownSubmodule(this, moduleLookup, name);
+                }
+                let modType = newType(TYPE_KIND_MODULE, newModule.globalID);
+                typ.typeState = newTCStateType(getID(modType));
+                typ = sub;
+                moduleLookup = newModule;
+            }
+        }
+        typ = _orig;
     } else if (typ.kind == PARSED_TYPE_BUILTIN) {
         let id: usize = getID(typ);
         let typeID: usize = 0;

@@ -350,7 +350,7 @@ func parseConfig(this: &Parser, parent: TLIParent, attributes: ParsedAttributeLi
     let flags: ConfigList = blank;
     while (!at(this, TOKEN_CURLY_CLOSE)) {
         let _cfg = expect(this, TOKEN_IDENT);
-        expect(this, TOKEN_COLON);
+        expect(this, TOKEN_COLON_SINGLE);
         let value = expect(this, TOKEN_STRING_LITERAL);
         let cfg = newConfig(_cfg, value);
         if (cfg.kind == CONFIG_INVALID) {
@@ -384,7 +384,7 @@ func parseCompilerFlags(this: &Parser, attributes: ParsedAttributeList, skip: bo
     expect(this, TOKEN_CURLY_OPEN);
     while (!at(this, TOKEN_CURLY_CLOSE)) {
         let flag: Token = expect(this, TOKEN_IDENT);
-        expect(this, TOKEN_COLON);
+        expect(this, TOKEN_COLON_SINGLE);
         let value: Token = expect(this, TOKEN_STRING_LITERAL);
         if (!skip) {
             // FIXME: Compiler Flags are currently a big hack in the compiler, they're basically
@@ -458,7 +458,7 @@ func parseStructDecl(this: &Parser, parent: TLIParent) -> &ParsedStructDecl {
     let structContext: StructContext = blank;
     while (!parsedEOF(this) && !at(this, TOKEN_CURLY_CLOSE)) {
         let tkn = expect(this, TOKEN_IDENT);
-        expect(this, TOKEN_COLON);
+        expect(this, TOKEN_COLON_SINGLE);
         let typ: &ParsedTypeNode = parseTypeNode(this);
         addField(&structContext, tkn, typ);
         expect(this, TOKEN_SEMI_COLON);
@@ -512,7 +512,7 @@ func parseParameters(this: &Parser, parentName: Token) -> ParamContext {
         let isThis: bool = equals(&maybeThis.content, &comptime BUILD_A_KEYWORD("this"));
         if (isThis) {
             let dis: Token = expect(this, TOKEN_IDENT);
-            if (eat(this, TOKEN_COLON)) {
+            if (eat(this, TOKEN_COLON_SINGLE)) {
                 let t = parseTypeNode(this);
                 addParameter(&context, maybeThis, t);
             } else {
@@ -528,7 +528,7 @@ func parseParameters(this: &Parser, parentName: Token) -> ParamContext {
             }
         } else {
             let name: Token = expect(this, TOKEN_IDENT);
-            expect(this, TOKEN_COLON);
+            expect(this, TOKEN_COLON_SINGLE);
             let typ: &ParsedTypeNode = parseTypeNode(this);
             addParameter(&context, name, typ);
         }
@@ -706,7 +706,7 @@ func parseVarDeclStmt(this: &Parser, kw: Token, isGlobal: bool) -> &ParsedStmt {
     let isComptime: bool = equals(&kw.content, &KEYWORD_COMPTIME);
     let data: VarDeclContext = blank;
     data.name = nameTkn;
-    if (eat(this, TOKEN_COLON)) {
+    if (eat(this, TOKEN_COLON_SINGLE)) {
         data.typeID = getID(parseTypeNode(this));
     }
     expect(this, TOKEN_EQUAL_SINGLE);
@@ -779,14 +779,29 @@ func parseTypeNode(this: &Parser) -> &ParsedTypeNode {
         return arr;
     } else {
         let nameTkn: Token = expect(this, TOKEN_IDENT);
-        let maybeBuiltin: usize = getBuiltinTypeKind(nameTkn);
-        if (maybeBuiltin == 0) {
-            // Not a builtin, must resolve later
-            let typ: &ParsedTypeNode = newParsedTypeNode(nameTkn.span, PARSED_TYPE_IDENT);
-            (*typ).nameTkn = nameTkn;
-            return typ;
+        if (at(this, TOKEN_COLON_DOUBLE)) {
+            let node = newParsedTypeNode(nameTkn.span, PARSED_TYPE_MODULE);
+            let orig = node;
+            node.nameTkn = nameTkn;
+            while (eat(this, TOKEN_COLON_DOUBLE)) {
+                let typeTkn = expect(this, TOKEN_IDENT);
+                let span = newSpanBetween(&node.span, &typeTkn.span);
+                let newNode = newParsedTypeNode(span, PARSED_TYPE_MODULE);
+                newNode.nameTkn = typeTkn;
+                node.underlyingID = getID(newNode);
+                node = newNode;
+            }
+            return orig;
         } else {
-            return newBuiltinTypeDecl(nameTkn.span, maybeBuiltin);
+            let maybeBuiltin: usize = getBuiltinTypeKind(nameTkn);
+            if (maybeBuiltin == 0) {
+                // Not a builtin, must resolve later
+                let typ: &ParsedTypeNode = newParsedTypeNode(nameTkn.span, PARSED_TYPE_IDENT);
+                (*typ).nameTkn = nameTkn;
+                return typ;
+            } else {
+                return newBuiltinTypeDecl(nameTkn.span, maybeBuiltin);
+            }
         }
     }
 }
@@ -832,7 +847,7 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
             let context: StructInitContext = blank;
             while (!parsedEOF(this) && !at(this, TOKEN_CURLY_CLOSE)) {
                 let name: Token = expect(this, TOKEN_IDENT);
-                expect(this, TOKEN_COLON);
+                expect(this, TOKEN_COLON_SINGLE);
                 let expr: &ParsedExpr = parseExpr(this);
                 addField(&context, name, expr);
                 if (!eat(this, TOKEN_COMMA))
@@ -1033,7 +1048,8 @@ func matchesBinaryExpr(this: &Parser) -> bool {
         || tknKind == TOKEN_PIPE_DOUBLE
         || tknKind == TOKEN_PIPE_SINGLE
         || tknKind == TOKEN_CARET
-        // REVIEW: Maybe make DOT an identifier expression instead?
+        // FIXME: :: should be an identifier, not a binary expression
+        || tknKind == TOKEN_COLON_DOUBLE
         || tknKind == TOKEN_DOT
         || tknKind == TOKEN_PAREN_OPEN
         || tknKind == TOKEN_SQUARE_OPEN
@@ -1054,7 +1070,8 @@ func matchesUnaryExpr(this: &Parser) -> bool {
 func getBinaryPrecedence(this: &Parser, tkn: &Token) -> usize {
     trace("Parser.getBinaryPrecedence");
     let tknKind: usize = tkn.kind;
-    if (tknKind == TOKEN_DOT) return 17;
+    if (tknKind == TOKEN_COLON_DOUBLE) return 18;
+    else if (tknKind == TOKEN_DOT) return 17;
     else if (tknKind == TOKEN_PAREN_OPEN) return 16;
     else if (tknKind == TOKEN_SQUARE_OPEN) return 16;
     else if (tknKind == TOKEN_KEYWORD) {

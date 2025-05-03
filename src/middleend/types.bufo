@@ -143,7 +143,8 @@ func equals(this: &Type, other: &Type) -> bool {
     }
     if (this.kind == TYPE_KIND_PRIMITIVE
         || this.kind == TYPE_KIND_ARRAY
-        || this.kind == TYPE_KIND_STRUCT)
+        || this.kind == TYPE_KIND_STRUCT
+        || this.kind == TYPE_KIND_MODULE)
         return this.typeIndex == other.typeIndex;
     todo_with_msg("Type.equals");
 }
@@ -272,7 +273,7 @@ func toString(this: &Type) -> String {
         return s;
     } else if (this.kind == TYPE_KIND_STRUCT) {
         let decl: &ParsedStructDecl = at(&structDecls, this.typeIndex);
-        return toString(&decl.name.content);
+        return getFullName(decl);
     } else if (this.kind == TYPE_KIND_FUNCTION) {
         let s: String = newStringFromStrLit("func (");
         for (let i: usize = 0; i < this.fnParams.length; i = i + 1) {
@@ -312,9 +313,6 @@ func toString(this: &Type) -> String {
         pushNumber(&s, this.arraySize);
         pushChar(&s, ']');
         return s;
-    } else if (this.kind == TYPE_KIND_MODULE) {
-        let m = at(&modules, this.typeIndex);
-        return toString(&m.name.content);
     } else if (this.kind == TYPE_KIND_UNKNOWN) {
         return newStringFromStrLit("<unknown>");
     } else {

@@ -396,6 +396,33 @@ func getFieldOffsetAndSize(this: &ParsedStructDecl, index: usize, offset: &usize
     }
     unreachable("Expected to find field offset and size");
 }
+func getParentModule(this: &ParsedStructDecl) -> &ParsedModule {
+    assert(!this.parent.isFile, "getParentModule called on struct in a file scope");
+    return at(&modules, this.parent.id as usize);
+}
+func getFullName(this: &ParsedStructDecl) -> String {
+    let s: String = blank;
+    let parent = this.parent;
+    while (!parent.isFile) {
+        let m = at(&modules, parent.id as usize);
+        let _s: String = blank;
+        pushSubStr(&_s, &m.name.content);
+        if (s.length != 0) {
+            pushChar(&_s, ':');
+            pushChar(&_s, ':');
+        }
+        pushString(&_s, &s);
+        drop(&s);
+        s = _s;
+        parent = m.parent;
+    }
+    if (s.length != 0) {
+        pushChar(&s, ':');
+        pushChar(&s, ':');
+    }
+    pushSubStr(&s, &this.name.content);
+    return s;
+}
 
 func newParsedStructDecl(parent: TLIParent, span: Span, name: Token) -> &ParsedStructDecl {
     trace("newParsedStructDecl");
@@ -599,7 +626,8 @@ comptime PARSED_TYPE_ARRAY: usize = 18;
 comptime PARSED_TYPE_F32: usize = 19;
 comptime PARSED_TYPE_F64: usize = 20;
 comptime PARSED_TYPE_FUNC: usize = 21;
-comptime PARSED_TYPE_BUILTIN: usize = 22;
+comptime PARSED_TYPE_MODULE: usize = 22;
+comptime PARSED_TYPE_BUILTIN: usize = 23;
 func BUILD_A_TYPE(s: &char) -> SubStr {
     return SubStr {
         start: s,
@@ -825,6 +853,7 @@ comptime BIN_LOR: usize = 18;
 comptime BIN_BAND: usize = 19;
 comptime BIN_BOR: usize = 20;
 comptime BIN_BXOR: usize = 21;
+comptime BIN_MODULE: usize = 22;
 func binOpFromKind(kind: usize) -> usize {
     trace("binOpFromKind");
     if (kind == TOKEN_PLUS_SINGLE) return BIN_PLUS;
@@ -849,6 +878,7 @@ func binOpFromKind(kind: usize) -> usize {
     else if (kind == TOKEN_AMPERSAND_SINGLE) return BIN_BAND;
     else if (kind == TOKEN_AMPERSAND_DOUBLE) return BIN_LAND;
     else if (kind == TOKEN_CARET) return BIN_BXOR;
+    else if (kind == TOKEN_COLON_DOUBLE) return BIN_MODULE;
     else {
         printf("%llu\n", kind);
         todo_with_msg("binOpFromKind");

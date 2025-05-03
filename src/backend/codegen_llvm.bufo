@@ -146,7 +146,7 @@ func generateLLVMFunctionHeader(this: &LLVMCodegen, irFunc: &IRFunc) {
     let llvmFuncType = generateLLVMFunctionType(this, at(&types, getType(&function.typeState)));
     let llvmFuncValue: LLVMValue = addFunction(&this.llvmModule, asSubStr(&irFunc.name), llvmFuncType);
     if (hasAttribute(irFunc, ATTR_NORETURN)) {
-        let id = LLVM.GetEnumAttributeKindForName("noreturn", 8 /* sizeof "noreturn" */);
+        let id = LLVM::GetEnumAttributeKindForName("noreturn", 8 /* sizeof "noreturn" */);
         assert(id != 0, "Could not get noreturn attribute from LLVM");
         addAttribute(&llvmFuncValue, U32_MAX, createEnumAttribute(&this.llvmContext, id, 1));
     }

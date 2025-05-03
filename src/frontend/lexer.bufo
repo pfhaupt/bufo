@@ -256,7 +256,12 @@ func __next(this: &Lexer, peek: bool) -> Token {
         return newToken(this.fileID, &newSubStr(";", 0, 1), this.ptr - 1, TOKEN_SEMI_COLON);
     } else if (currChar == ':') {
         advance(this, );
-        return newToken(this.fileID, &newSubStr(":", 0, 1), this.ptr - 1, TOKEN_COLON);
+        if (this.ptr < this.len && getChar(&this.content, 0) == ':') {
+            advance(this, );
+            return newToken(this.fileID, &newSubStr("::", 0, 2), this.ptr - 2, TOKEN_COLON_DOUBLE);
+        } else {
+            return newToken(this.fileID, &newSubStr(":", 0, 1), this.ptr - 1, TOKEN_COLON_SINGLE);
+        }
     } else if (currChar == '=') {
         advance(this, );
         if (this.ptr < this.len && getChar(&this.content, 0) == '=') {

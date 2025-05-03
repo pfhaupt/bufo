@@ -1,0 +1,35 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! SUCCESS
+
+import "prelude.bufo";
+import "libc.bufo";
+
+module foo {
+    struct Foo {
+        a: i32;
+    }
+    module bar {
+        struct Baz {
+            b: u32;
+        }
+    }
+}
+
+func g(b: foo::bar::Baz) -> foo::bar::Baz {
+    b.b = 420;
+    return b;
+}
+
+func f(f: foo::Foo) -> foo::Foo {
+    return f;
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a = foo::Foo { a: 12 };
+    let b = f(a);
+    assert(b.a == 12);
+    let c = g(blank);
+    assert(c.b == 420);
+    return 0;
+}

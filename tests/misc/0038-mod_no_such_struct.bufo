@@ -1,0 +1,27 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Module `C` does not contain any types named `D`.
+//! Module declared here.
+//! Module `B` does not contain any types named `D`.
+//! Module declared here.
+//! Module `A` does not contain any types named `D`.
+//! Module declared here.
+
+import "prelude.bufo";
+
+module A {
+    module B {
+        module C {
+        }
+    }
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let foo = A::B::C::D { a: 12 };
+    let bar = A::B::D { a: 12 };
+    let baz = A::D { a: 12 };
+    return 0;
+}

@@ -1266,7 +1266,9 @@ func generateBytecodeExpr(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, ne
     } else if (isAssignment(expr)) {
         return generateBytecodeExprAssignment(this, function, expr);
     } else if (expr.kind == EXPR_BINARY) {
-        if (expr.op == BIN_DOT) {
+        if (expr.op == BIN_MODULE) {
+            return generateBytecodeExprModuleAccess(this, function, expr, needsPtr);
+        } else if (expr.op == BIN_DOT) {
             return generateBytecodeExprMemberAccess(this, function, expr, needsPtr);
         } else if (expr.op == BIN_INDEXED_ACCESS) {
             return generateBytecodeExprIndexedAccess(this, function, expr, needsPtr);
@@ -1386,6 +1388,17 @@ func generateBytecodeExprAs(this: &IRGen, function: &IRFunc, expr: &ParsedExpr) 
         unreachable("Exhaustive handling of variations in generateBytecodeExprAs");
     }
     return dst;
+}
+func generateBytecodeExprModuleAccess(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, needsPtr: bool) -> RegIndex {
+    trace("IRGen.generateBytecodeExprModuleAccess");
+    assert(expr.kind == EXPR_BINARY);
+    assert(expr.op == BIN_MODULE);
+    assert(isSuccess(&expr.typeState), "Expected valid Module state in IRGen");
+    let lhs: &ParsedExpr = at(&exprs, expr.lhs);
+    let rhs: &ParsedExpr = at(&exprs, expr.rhs);
+    let instance: &Type = at(&types, getType(&lhs.typeState));
+    assert(isModule(instance), "Expected LHS to be module");
+    return generateBytecodeExpr(this, function, rhs, needsPtr);
 }
 
 func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, needsPtr: bool) -> RegIndex {
