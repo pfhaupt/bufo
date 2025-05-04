@@ -1,0 +1,17 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Struct redeclaration.
+//! Struct `Foo` already declared here.
+
+struct Foo {
+}
+
+struct Foo {
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    return 0;
+}

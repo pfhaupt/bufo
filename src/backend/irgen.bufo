@@ -2,6 +2,7 @@ import "prelude.bufo";
 import "libc.bufo";
 import "string.bufo";
 import "substr.bufo";
+import "../bufo.bufo";
 import "../util/span.bufo";
 import "../util/hashmaps.bufo";
 import "../util/lists.bufo";
@@ -1855,7 +1856,13 @@ func generateBytecodeExprLiteral(this: &IRGen, function: &IRFunc, expr: &ParsedE
             assert(value >= 0, "Expected FloatLit value to be positive");
             let typmax: f64 = getMaxFloatValue(t);
             if (value >= typmax) {
-                todo_with_msg("float literal bigger than type can hold");
+                let loc = toString(&expr.span);
+                let ts = toString(t);
+                fprintf(stderr, "%s: %s: Float literal (value=%f) is too big for target type %s.\n",
+                    loc.buffer, ERR_STR, value, ts.buffer);
+                drop(&ts);
+                drop(&loc);
+                this.error = true;
             }
             if (getSize(t) == 4) buildLoadF32(function, expr.span, reg, value as f32);
             else if (getSize(t) == 8) buildLoadF64(function, expr.span, reg, value);
@@ -1882,6 +1889,12 @@ func generateBytecodeExprLiteral(this: &IRGen, function: &IRFunc, expr: &ParsedE
         assert(isArray(t), "ArrayLit expected to be array");
         if (getSize(t) > 4096) warning("Array Literal is big and slows down the IR");
         if (expr.arrayContext.size == 0) {
+            if (getSize(t) == 0 && *flags.warnSimple) {
+                // array literal of the form []
+                let loc = toString(&expr.span);
+                fprintf(stderr, "%s: %s: Array is zero-sized and can never be indexed into.\n", loc.buffer, WARN_STR);
+                drop(&loc);
+            }
             buildCreateArray(function, expr.span, reg);
             for (let i: usize = 0; i < expr.arrayContext.elemLength; i = i + 1) {
                 let elem: &ParsedExpr = at(&exprs, getElementAtIndex(&expr.arrayContext, i));

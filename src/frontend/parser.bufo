@@ -105,7 +105,7 @@ func parsedEOF(this: &Parser) -> bool {
 func parseProject(this: &Parser, root: SubStr) -> ParsedFile {
     trace("Parser.parseProject");
     assert(this.lexer.fileID == 0, "Expected Parser.parseProject to be the root");
-    let rootFile: &ParsedFile = newParsedFile(root);
+    let rootFile: &ParsedFile = newParsedFile(root, this.lexer.content);
     assert(getID(rootFile) == 0, "Expected Parser.parseProject result to be the root");
     parseFile(this, root, rootFile);
     if (this.syntaxError) {
@@ -427,7 +427,7 @@ func parseImport(this: &Parser, skip: bool) -> &ParsedTopLevelItem {
             if (getFileByFilePath(asSubStr(&path), &fileID)) {
                 file = at(&files, fileID);
             } else {
-                file = newParsedFile(asSubStr(&path));
+                file = newParsedFile(asSubStr(&path), asSubStr(&src));
                 fileID = getID(file);
                 // Note: We leak the source code of the imported file here :^)
                 let parser: Parser = newParserFromSource(getID(file), asSubStr(&src));
@@ -922,7 +922,6 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
             (*expr).lhs = getID(typ);
             return expr;
         } else {
-            // FIXME: Code duplication, but we expect() the KEYWORD above :^)
             let loc: String = getLocation(&kw);
             let name: String = toString(&kw.content);
             fprintf(stderr, "%s: %s: Expected Expression, found `%s`.\n", loc.buffer, ERR_STR, name.buffer);
@@ -977,7 +976,14 @@ func parseSecondaryExpr(this: &Parser, lhs: &ParsedExpr, precedence: usize, asso
     }
     if (op == BIN_DOT) {
         if (rhs.kind != EXPR_NAME) {
-            todo_with_msg("weewoo - The dot operator only works with identifiers");
+            fprintf(stderr, "%s: %s: The right side of `.` must be an identifier.\n", toString(&lhs.span).buffer, ERR_STR);
+            this.syntaxError = true;
+        }
+    } else if (op == BIN_MODULE) {
+        let isModule = lhs.kind == EXPR_BINARY && lhs.op == BIN_MODULE;
+        if (lhs.kind != EXPR_NAME && !isModule) {
+            fprintf(stderr, "%s: %s: The left side of `::` must be an identifier or other module specifier.\n", toString(&lhs.span).buffer, ERR_STR);
+            this.syntaxError = true;
         }
     }
     let span: Span = newSpanBetween(&lhs.span, &rhs.span);

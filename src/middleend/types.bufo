@@ -315,6 +315,13 @@ func toString(this: &Type) -> String {
         return s;
     } else if (this.kind == TYPE_KIND_UNKNOWN) {
         return newStringFromStrLit("<unknown>");
+    } else if (this.kind == TYPE_KIND_MODULE) {
+        let m = at(&modules, this.typeIndex);
+        let s = newStringFromStrLit("module ");
+        let _s = getFullName(m);
+        pushString(&s, &_s);
+        drop(&_s);
+        return s;
     } else {
         unreachable("Exhaustive handling of types in Type.toString");
     }

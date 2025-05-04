@@ -117,7 +117,7 @@ func equals(this: &FileLookup, other: &FileLookup) -> bool {
     return equals(&this.origin, &other.origin);
 }
 
-func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) {
+func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) -> bool {
     trace("FileLookup.insertTLI");
     assert(this.globalLookup != null, "insertTLI called on ModuleLookup without Global Lookup");
     if (tli.kind == TLI_FUNC_DECL) {
@@ -135,10 +135,17 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) {
         let fileID: usize = tli.nodeID;
         assert(fileID < files.length);
         let lookup: ImportLookup = ImportLookup {
+            span: tli.span,
             fileID: fileID
         };
         if (contains(&this.imports, &lookup)) {
-            todo_with_msg("double import");
+            let loc = toString(&tli.span);
+            let _loc = toString(&get(&this.imports, &lookup).span);
+            fprintf(stderr, "%s: %s: Can not import the same file twice.\n", loc.buffer, ERR_STR);
+            fprintf(stderr, "%s: %s: File already imported here.\n", _loc.buffer, NOTE_STR);
+            drop(&_loc);
+            drop(&loc);
+            return false;
         }
         push(&this.imports, lookup);
     } else if (tli.kind == TLI_MOD_DECL) {
@@ -151,7 +158,15 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) {
             globalID: modID,
         };
         if (contains(&this.modules, &lookup)) {
-            todo_with_msg("double module");
+            let loc = toString(&tli.span);
+            let _loc = toString(&get(&this.modules, &lookup).name.span);
+            let name = toString(&mod.name);
+            fprintf(stderr, "%s: %s: Module redeclaration.\n", loc.buffer, ERR_STR);
+            fprintf(stderr, "%s: %s: Module `%s` already declared here.\n", _loc.buffer, NOTE_STR, name.buffer);
+            drop(&name);
+            drop(&_loc);
+            drop(&loc);
+            return false;
         }
         // Global Scope
         push(&lookup.variables, blank);
@@ -168,7 +183,15 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) {
             typeID: getID(newType(TYPE_KIND_STRUCT, tli.nodeID)),
         };
         if (contains(&this.structs, &lookup)) {
-            todo_with_msg("double struct");
+            let loc = toString(&tli.span);
+            let _loc = toString(&get(&this.structs, &lookup).name.span);
+            let name = toString(&strukt.name);
+            fprintf(stderr, "%s: %s: Struct redeclaration.\n", loc.buffer, ERR_STR);
+            fprintf(stderr, "%s: %s: Struct `%s` already declared here.\n", _loc.buffer, NOTE_STR, name.buffer);
+            drop(&name);
+            drop(&_loc);
+            drop(&loc);
+            return false;
         }
         push(&this.structs, lookup);
     } else if (tli.kind == TLI_VAR_DECL) {
@@ -182,15 +205,24 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) {
         };
         assert(this.variables.length == 1, "expected to find only the global scope");
         let globalScope: &ScopeLookup = last(&this.variables);
-        let loc: Token = blank;
-        if (isKnownVariable(globalScope, lookup.name.content, &loc)) {
-            todo_with_msg("double global var");
+        let _loc: Token = blank;
+        if (isKnownVariable(globalScope, lookup.name.content, &_loc)) {
+            let loc = toString(&tli.span);
+            let name = toString(&varDecl.varDeclContext.name);
+            let _loc = toString(&_loc.span);
+            fprintf(stderr, "%s: %s: Variable redeclaration.\n", loc.buffer, ERR_STR);
+            fprintf(stderr, "%s: %s: Variable `%s` already declared here.\n", _loc.buffer, NOTE_STR, name.buffer);
+            drop(&name);
+            drop(&_loc);
+            drop(&loc);
+            return false;
         }
         addVariable(globalScope, lookup);
     } else if (tli.kind == TLI_CONFIG) {
     } else {
         unreachable("Exhaustive handling of TLI kinds in insertTLI");
     }
+    return true;
 }
 func containsDuplicateFunction(this: &ModuleLookup, function: &FunctionLookup, dupl: &&FunctionLookup) -> bool {
     trace("FileLookup.containsDuplicateFunction");
@@ -211,6 +243,7 @@ func containsDuplicateFunction(this: &ModuleLookup, function: &FunctionLookup, d
 }
 
 struct ImportLookup {
+    span: Span;
     fileID: usize;
 }
 
@@ -231,7 +264,9 @@ struct ModuleLookup {
 }
 
 func equals(this: &ModuleLookup, other: &ModuleLookup) -> bool {
-    return this.globalID == other.globalID;
+    // same name, same parent -> equal
+    if (!equals(&this.name.content, &other.name.content)) return false;
+    return equals(this.parent, other.parent);
 }
 func getFunctionByGlobalID(this: &ModuleLookup, funcID: usize) -> &FunctionLookup {
     return getFunctionByGlobalID(this, funcID, true);

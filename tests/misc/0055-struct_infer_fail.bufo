@@ -1,0 +1,24 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Could not infer which type to use for expression.
+
+struct Foo {
+}
+
+struct Bar {
+}
+
+func f() -> Foo {
+    return blank;
+}
+func f() -> Bar {
+    return blank;
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a: u32 = f().x;
+    return 0;
+}

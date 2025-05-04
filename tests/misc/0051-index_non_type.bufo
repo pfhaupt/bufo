@@ -1,0 +1,18 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Could not infer type of subexpression for indexed access.
+
+func f() -> [i32; 3] {
+    return [3, 4, 5];
+}
+func f() -> [u32; 3] {
+    return [1, 2, 3];
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let value: u32 = f()[1];
+    return 0;
+}

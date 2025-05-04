@@ -1494,3 +1494,34 @@ func at(this: &UsizeList, index: usize) -> &usize {
     assert(this.elements != null, "Element pointer is NULL in UsizeList.at");
     return &this.elements[index];
 }
+
+func get(this: &ImportLookupList, val: &ImportLookup) -> &ImportLookup {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        let v = at(this, i);
+        if (equals(v, val)) {
+            return v;
+        }
+    }
+    assert(contains(this, val), "Expected to find element in get()");
+    unreachable("contains(this, val) is true");
+}
+func get(this: &StructLookupList, val: &StructLookup) -> &StructLookup {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        let v = at(this, i);
+        if (equals(v, val)) {
+            return v;
+        }
+    }
+    assert(contains(this, val), "Expected to find element in get()");
+    unreachable("contains(this, val) is true");
+}
+func get(this: &ModuleLookupList, val: &ModuleLookup) -> &ModuleLookup {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        let v = at(this, i);
+        if (equals(v, val)) {
+            return v;
+        }
+    }
+    assert(contains(this, val), "Expected to find element in get()");
+    unreachable("contains(this, val) is true");
+}

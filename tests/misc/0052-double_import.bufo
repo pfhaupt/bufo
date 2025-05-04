@@ -1,0 +1,10 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Can not import the same file twice.
+//! File already imported here.
+
+import "./file_for_double_import_test.bufo";
+import "./file_for_double_import_test.bufo";

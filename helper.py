@@ -321,10 +321,13 @@ def get_current_test_number() -> int:
             full = full.removeprefix("./tests/misc/")
             full = full.split("-")[0]
             full = full.replace("/", "")
-            index = int(full)
-            if index != current + 1:
-                return current + 1
-            current = index
+            try:
+                index = int(full)
+                if index != current + 1:
+                    return current + 1
+                current = index
+            except ValueError:
+                continue
     return current + 1
 
 def get_prefix(index: int) -> str:

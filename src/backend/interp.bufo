@@ -67,16 +67,30 @@ func advanceRealStack(this: &IRInterp, span: Span, size: usize) -> &u8 {
     this.realStackPointer = new;
     return _p;
 }
-func pushArgument(this: &IRInterp, start: &u8, size: usize) {
+func pushArgument(this: &IRInterp, span: Span, start: &u8, size: usize) {
     trace("IRInterp.pushArgument");
-    if (this.argStackLength + size >= this.argStackCapacity) todo_with_msg("overflow in pushArgument");
+    let new = this.argStackLength + size;
+    if (new >= this.argStackCapacity) {
+        let loc = toString(&span);
+        fprintf(stderr, "%s: %s: Argument Stack Overflow in the comptime interpreter.\n", loc.buffer, ERR_STR);
+        fprintf(stderr, "%s: %s: Last function call tried to push %llu byte(s).\n", loc.buffer, NOTE_STR, size);
+        drop(&loc);
+        exit(2);
+    }
     memcpy(this.argStack + this.argStackLength, start, size);
-    this.argStackLength = this.argStackLength + size;
+    this.argStackLength = new;
 }
-func popArgument(this: &IRInterp, start: &u8, size: usize) {
+func popArgument(this: &IRInterp, span: Span, start: &u8, size: usize) {
     trace("IRInterp.popArgument");
-    if (this.argStackLength < size) todo_with_msg("underflow in popArgument");
-    this.argStackLength = this.argStackLength - size;
+    let new = this.argStackLength - size;
+    if (this.argStackLength < size) {
+        let loc = toString(&span);
+        fprintf(stderr, "%s: %s: Argument Stack Underflow in the comptime interpreter.\n", loc.buffer, ERR_STR);
+        fprintf(stderr, "%s: %s: Last function call tried to pop %llu byte(s).\n", loc.buffer, NOTE_STR, size);
+        drop(&loc);
+        exit(2);
+    }
+    this.argStackLength = new;
     memcpy(start, this.argStack + this.argStackLength, size);
 }
 
@@ -183,7 +197,7 @@ func evaluateGetParam(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &
         offset: getRegister(irFunc, instr.dst).offset,
         size: size,
     };
-    popArgument(this, getRegStackPointer(this, &dst), size);
+    popArgument(this, instr.span, getRegStackPointer(this, &dst), size);
     return dst;
 }
 func evaluateStore(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
@@ -359,7 +373,7 @@ func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
             let i: usize = instr.args.length - _i - 1;
             let reg: &RegValue = at(regs, at(&instr.args, i).i);
             let arg: InterpReg = asInterp(reg, "call arg");
-            pushArgument(this, getRegStackPointer(this, &arg), arg.size);
+            pushArgument(this, instr.span, getRegStackPointer(this, &arg), arg.size);
         }
         let regs: RegValueList = blank;
         initBlank(&regs, calledFunc.registers.length);
@@ -369,7 +383,7 @@ func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
             offset: dstReg.offset,
             size: size,
         };
-        popArgument(this, getRegStackPointer(this, &dst), size);
+        popArgument(this, instr.span, getRegStackPointer(this, &dst), size);
         assert(argSize == this.argStackLength, "Imbalanced argument stack after calling IRInterp.evaluateCall");
         assert(stackStart == this.realStackStart, "Imbalanced real stack after calling IRInterp.evaluateCall");
         assert(regStackStart == this.regStackStart, "Imbalanced reg stack after calling IRInterp.evaluateCall");
@@ -378,9 +392,9 @@ func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
 }
 func evaluateReturnExpr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     trace("IRInterp.evaluateReturnExpr");
-    let expr: &RegValue = &*at(regs, instr.src.i);
+    let expr: &RegValue = at(regs, instr.src.i);
     let rExpr: InterpReg =  asInterp(expr, "ReturnExpr");
-    pushArgument(this, getRegStackPointer(this, &rExpr), rExpr.size);
+    pushArgument(this, instr.span, getRegStackPointer(this, &rExpr), rExpr.size);
     return blank;
 }
 

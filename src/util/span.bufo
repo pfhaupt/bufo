@@ -18,12 +18,15 @@ func print(this: &Span) {
     drop(&s);
 }
 func toString(this: &Span) -> String {
-    // FIXME: The spans report in bytes, but the formatting makes it look like line and column
-    let s: String = toString(&at(&files, this.file).origin);
+    let file = at(&files, this.file);
+    let s: String = toString(&file.origin);
+    let line: usize = 0;
+    let col: usize = 0;
+    getLineAndColumnFromSpan(file, this, &line, &col);
     pushChar(&s, ':');
-    pushNumber(&s, this.start);
+    pushNumber(&s, line);
     pushChar(&s, ':');
-    pushNumber(&s, this.end);
+    pushNumber(&s, col);
     return s;
 }
 func comesBefore(this: &Span, other: &Span) -> bool {

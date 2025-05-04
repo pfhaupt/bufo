@@ -1,0 +1,14 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! The left side of `::` must be an identifier or other module specifier.
+
+module A {
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a = (1 + 1)::foo();
+    return 0;
+}

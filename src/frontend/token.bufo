@@ -44,40 +44,46 @@ comptime TOKEN_PIPE_DOUBLE: usize = 36;
 comptime TOKEN_DOTDOTDOT: usize = 37;
 comptime TOKEN_CARET: usize = 38;
 func tokenKindToString(kind: usize) -> &char {
-    if (kind == TOKEN_EOF) { return "TOKEN_EOF"; }
-    else if (kind == TOKEN_IDENT) { return "Identifier"; }
-    else if (kind == TOKEN_KEYWORD) { return "Keyword"; }
-    else if (kind == TOKEN_STRING_LITERAL) { return "String literal"; }
-    else if (kind == TOKEN_INT_LITERAL) { return "Integer literal"; }
-    else if (kind == TOKEN_PAREN_OPEN) { return "`(`"; }
-    else if (kind == TOKEN_PAREN_CLOSE) { return "`)`"; }
-    else if (kind == TOKEN_CURLY_OPEN) { return "`{`"; }
-    else if (kind == TOKEN_CURLY_CLOSE) { return "`}`"; }
-    else if (kind == TOKEN_SQUARE_OPEN) { return "`[`"; }
-    else if (kind == TOKEN_SQUARE_CLOSE) { return "`]`"; }
-    else if (kind == TOKEN_SEMI_COLON) { return "`;`"; }
-    else if (kind == TOKEN_COLON_SINGLE) { return "`:`"; }
-    else if (kind == TOKEN_COLON_DOUBLE) { return "`::`"; }
-    else if (kind == TOKEN_EQUAL_SINGLE) { return "`=`"; }
-    else if (kind == TOKEN_EQUAL_DOUBLE) { return "`==`"; }
-    else if (kind == TOKEN_AMPERSAND_SINGLE) { return "`&`"; }
-    else if (kind == TOKEN_AMPERSAND_DOUBLE) { return "`&&`"; }
-    else if (kind == TOKEN_COMMA) { return "`,`"; }
-    else if (kind == TOKEN_ARROW) { return "`->`"; }
-    else if (kind == TOKEN_PLUS_SINGLE) { return "`+`"; }
-    else if (kind == TOKEN_UNDERSCORE) { return "`_`"; }
-    else if (kind == TOKEN_DOT) { return "`.`"; }
-    else if (kind == TOKEN_AT) { return "`@`"; }
-    else if (kind == TOKEN_MINUS_SINGLE) { return "`-`"; }
-    else if (kind == TOKEN_ASTERISK_SINGLE) { return "`*`"; }
-    else if (kind == TOKEN_NOT_EQUAL) { return "`!=`"; }
-    else if (kind == TOKEN_BANG) { return "`!`"; }
-    else if (kind == TOKEN_SLASH_SINGLE) { return "`/`"; }
-    else if (kind == TOKEN_PERCENT) { return "`%`"; }
-    else if (kind == TOKEN_PIPE_DOUBLE) { return "`||`"; }
-    else if (kind == TOKEN_DOTDOTDOT) { return "`...`"; }
-    else if (kind == TOKEN_CARET) { return "`^`"; }
-    todo_with_msg("tokenKindToString for unknown token kind");
+    if (kind == TOKEN_EOF) return "TOKEN_EOF";
+    else if (kind == TOKEN_IDENT) return "Identifier";
+    else if (kind == TOKEN_KEYWORD) return "Keyword";
+    else if (kind == TOKEN_STRING_LITERAL) return "String literal";
+    else if (kind == TOKEN_INT_LITERAL) return "Integer literal";
+    else if (kind == TOKEN_CHAR_LITERAL) return "Character literal";
+    else if (kind == TOKEN_PAREN_OPEN) return "`(`";
+    else if (kind == TOKEN_PAREN_CLOSE) return "`)`";
+    else if (kind == TOKEN_CURLY_OPEN) return "`{`";
+    else if (kind == TOKEN_CURLY_CLOSE) return "`}`";
+    else if (kind == TOKEN_SQUARE_OPEN) return "`[`";
+    else if (kind == TOKEN_SQUARE_CLOSE) return "`]`";
+    else if (kind == TOKEN_SEMI_COLON) return "`;`";
+    else if (kind == TOKEN_COLON_SINGLE) return "`:`";
+    else if (kind == TOKEN_COLON_DOUBLE) return "`::`";
+    else if (kind == TOKEN_EQUAL_SINGLE) return "`=`";
+    else if (kind == TOKEN_EQUAL_DOUBLE) return "`==`";
+    else if (kind == TOKEN_AMPERSAND_SINGLE) return "`&`";
+    else if (kind == TOKEN_AMPERSAND_DOUBLE) return "`&&`";
+    else if (kind == TOKEN_COMMA) return "`,`";
+    else if (kind == TOKEN_ARROW) return "`->`";
+    else if (kind == TOKEN_PLUS_SINGLE) return "`+`";
+    else if (kind == TOKEN_UNDERSCORE) return "`_`";
+    else if (kind == TOKEN_DOT) return "`.`";
+    else if (kind == TOKEN_AT) return "`@`";
+    else if (kind == TOKEN_MINUS_SINGLE) return "`-`";
+    else if (kind == TOKEN_ASTERISK_SINGLE) return "`*`";
+    else if (kind == TOKEN_NOT_EQUAL) return "`!=`";
+    else if (kind == TOKEN_BANG) return "`!`";
+    else if (kind == TOKEN_SLASH_SINGLE) return "`/`";
+    else if (kind == TOKEN_LESS_THAN_EQUAL) return "`<=`";
+    else if (kind == TOKEN_LESS_THAN) return "`<`";
+    else if (kind == TOKEN_GREATER_THAN_EQUAL) return "`>=`";
+    else if (kind == TOKEN_GREATER_THAN) return "`>`";
+    else if (kind == TOKEN_PERCENT) return "`%`";
+    else if (kind == TOKEN_PIPE_SINGLE) return "`|`";
+    else if (kind == TOKEN_PIPE_DOUBLE) return "`||`";
+    else if (kind == TOKEN_DOTDOTDOT) return "`...`";
+    else if (kind == TOKEN_CARET) return "`^`";
+    unreachable("Exhaustive handling of kinds in tokenKindToString");
 }
 struct Token {
     span: Span;

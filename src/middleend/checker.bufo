@@ -42,11 +42,12 @@ comptime ERROR_INDEXED_ACCESS_ON_NON_ARRAY: usize = 23;
 comptime ERROR_RUNTIME_VALUE_IN_COMPTIME_CONTEXT: usize = 24;
 comptime ERROR_ANY_DEREF: usize = 25;
 comptime ERROR_MEMBER_ACCESS_NON_STRUCT: usize = 26;
-comptime ERROR_MEMBER_ACCESS_TOO_MANY_OPTIONS: usize = 27;
-comptime ERROR_FUNCTION_CALL_TOO_MANY_OPTIONS: usize = 28;
-comptime ERROR_CALL_TO_NON_FUNCTION: usize = 29;
-comptime ERROR_UNKNOWN_SUBMODULE: usize = 30;
-comptime ERROR_MODULE_ACCESS_NON_MODULE: usize = 31;
+comptime ERROR_MEMBER_ACCESS_NO_OPTIONS: usize = 27;
+comptime ERROR_MEMBER_ACCESS_TOO_MANY_OPTIONS: usize = 28;
+comptime ERROR_FUNCTION_CALL_TOO_MANY_OPTIONS: usize = 29;
+comptime ERROR_CALL_TO_NON_FUNCTION: usize = 30;
+comptime ERROR_UNKNOWN_SUBMODULE: usize = 31;
+comptime ERROR_MODULE_ACCESS_NON_MODULE: usize = 32;
 
 comptime TCSTATE_INVALID: usize = 0;
 comptime TCSTATE_ERROR: usize = 1;
@@ -394,6 +395,15 @@ func reportMemberAccessOnNonStruct(this: &TypeChecker, expr: &ParsedExpr, instan
     return newTCStateFailure(ERROR_MEMBER_ACCESS_NON_STRUCT);
 }
 
+func reportMemberAccessNoOptions(this: &TypeChecker, expr: &ParsedExpr) -> TCState {
+    trace("TypeChecker.reportMemberAccessNoOptions");
+    let loc = toString(&expr.span);
+    fprintf(stderr, "%s: %s: Could not infer which type to use for expression.\n", loc.buffer, ERR_STR);
+    drop(&loc);
+    this.typeError = true;
+    return newTCStateFailure(ERROR_MEMBER_ACCESS_NO_OPTIONS);
+}
+
 func reportMemberAccessTooManyOptions(this: &TypeChecker, expr: &ParsedExpr, structs: &StructLookupList) -> TCState {
     trace("TypeChecker.reportMemberAccessTooManyOptions");
     assert(structs.length > 0);
@@ -565,6 +575,7 @@ func findRecursiveTypes(this: &TypeChecker) -> bool {
 
 func fillLookup(this: &TypeChecker) -> bool {
     trace("TypeChecker.fillLookup");
+    let success = true;
     for (let i: usize = 0; i < files.length; i = i + 1) {
         let file: &ParsedFile = at(&files, i);
         assert(getID(file) == i);
@@ -573,10 +584,10 @@ func fillLookup(this: &TypeChecker) -> bool {
             let tliID: usize = *at(&file.mod.tlis, j);
             let tli: &ParsedTopLevelItem = at(&topLevelItems, tliID);
             if (tli.ignored) continue;
-            insertTLI(this.currentModule, tli);
+            if (!insertTLI(this.currentModule, tli)) success = false;
         }
     }
-    return true;
+    return success;
 }
 
 func typeCheckFiles(this: &TypeChecker) -> bool {
@@ -1091,7 +1102,7 @@ func typeCheckExpr(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupList) 
         state = newTCStateType(getID(t));
     } else if (expr.kind == EXPR_ARRAY_LIT) {
         let context: &ArrayContext = &expr.arrayContext;
-        assert(context.elemLength != 0, "Zero sized Array Literal spotted");
+        if (context.elemLength == 0) return newTCStatePleaseInfer();
         let elemIndex: usize = getElementAtIndex(context, 0);
         let elemState: TCState = typeCheckExpr(this, elemIndex, scopes);
         if (isError(&elemState)) return elemState;
@@ -1371,43 +1382,7 @@ func typeCheckExprStructInit(this: &TypeChecker, exprID: usize, scopes: &ScopeLo
         return reportUnknownType(this, null, name, alternatives);
     }
     if (isStruct(&lookup)) {
-        let context: &StructInitContext = &expr.structInitContext;
-        let structLookup: &StructLookup = asStruct(&lookup);
-        let hits: usize = 0;
-        assert(structLookup.fields.length < 50, "Sorry, I need to hack this for now");
-        let result = newTCStateType(structLookup.typeID);
-        for (let i: usize = 0; i < context.fieldLength; i = i + 1) {
-            let name: Token = getFieldNameAtIndex(context, i);
-            let exprID: usize = getFieldExprAtIndex(context, i);
-            let exprState: TCState = typeCheckExpr(this, exprID, scopes);
-            if (isError(&exprState)) return exprState;
-            if (!hasField(structLookup, &name.content)) {
-                return reportUnknownField(this, name, structLookup);
-            }
-            let fieldIndex: usize = getIndexByName(structLookup, &name);
-            let bit: usize = shiftLeft(1, fieldIndex);
-            if ((hits & bit) != 0) {
-                todo_with_msg("duplicate field");
-            } else {
-                hits = hits | bit;
-            }
-            let field: &VariableLookup = at(&structLookup.fields, fieldIndex);
-            let fieldState: &TCState = &field.typeState;
-            assert(isSuccess(fieldState), "Struct is ready to go, but field type is invalid?");
-            assert(equals(&name.content, &field.name.content), "Seems like my hack doesn't work");
-            let fieldType: &Type = at(&types, getType(fieldState));
-            if (wantsInfer(&exprState))
-                exprState = inferTypeOntoExpr(this, exprID, getID(fieldType));
-            if (isError(&exprState)) {
-                result = exprState;
-                continue;
-            }
-            let exprType: &Type = at(&types, getType(&exprState));
-            if (!equals(fieldType, exprType)) {
-                return reportTypeMismatch(this, at(&exprs, exprID).span, fieldType, exprType);
-            }
-        }
-        return result;
+        return typeCheckStructInitialization(this, expr, lookup, scopes);
     } else {
         unreachable("typeCheckExprStructInit got non-struct");
     }
@@ -1503,7 +1478,14 @@ func typeCheckExprIndexedAccess(this: &TypeChecker, binID: usize, scopes: &Scope
     let rhsState: TCState = typeCheckExpr(this, expr.rhs, scopes);
     if (isError(&lhsState)) return lhsState;
     if (isError(&rhsState)) return rhsState;
-    if (!isType(&lhsState)) todo_with_msg("indexed access, original LHS is not a type");
+    if (wantsInfer(&lhsState)) {
+        let lhs = at(&exprs, expr.lhs);
+        let loc = toString(&lhs.span);
+        fprintf(stderr, "%s: %s: Could not infer type of subexpression for indexed access.\n", loc.buffer, ERR_STR);
+        drop(&loc);
+        return newTCStateFailure(ERROR_INDEXED_ACCESS_ON_NON_ARRAY);
+    }
+    assert(isType(&lhsState), "IndexedAccess: Not error, not infer, what is it?");
     let lhsTypeID: usize = getType(&lhsState);
     let lhsType: &Type = at(&types, lhsTypeID);
     if (!isArray(lhsType) && !isPointer(lhsType)) {
@@ -1513,7 +1495,8 @@ func typeCheckExprIndexedAccess(this: &TypeChecker, binID: usize, scopes: &Scope
         let usizeType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
         rhsState = inferTypeOntoExpr(this, expr.rhs, getID(usizeType));
     }
-    if (!isType(&rhsState)) todo_with_msg("indexed access, could not infer type to RHS");
+    if (isError(&rhsState)) return rhsState;
+    assert(isType(&rhsState), "IndexedAccess: Index is not valid after infer?");
     let rhsTypeID: usize = getType(&rhsState);
     let rhsType: &Type = at(&types, rhsTypeID);
     // FIXME: Put those into a single check
@@ -1613,6 +1596,47 @@ func typeCheckExprAssign(this: &TypeChecker, binID: usize, scopes: &ScopeLookupL
     return rhsState;
 }
 
+func typeCheckStructInitialization(this: &TypeChecker, expr: &ParsedExpr, lookup: TypeLookup, scopes: &ScopeLookupList) -> TCState {
+    let context: &StructInitContext = &expr.structInitContext;
+    let structLookup: &StructLookup = asStruct(&lookup);
+    let hits: usize = 0;
+    assert(structLookup.fields.length < 50, "Sorry, I need to hack this for now");
+    let result = newTCStateType(structLookup.typeID);
+    for (let i: usize = 0; i < context.fieldLength; i = i + 1) {
+        let name: Token = getFieldNameAtIndex(context, i);
+        let exprID: usize = getFieldExprAtIndex(context, i);
+        let exprState: TCState = typeCheckExpr(this, exprID, scopes);
+        if (isError(&exprState)) result = exprState;
+        if (!hasField(structLookup, &name.content)) {
+            result = reportUnknownField(this, name, structLookup);
+        }
+        let fieldIndex: usize = getIndexByName(structLookup, &name);
+        let bit: usize = shiftLeft(1, fieldIndex);
+        if ((hits & bit) != 0) {
+            let field = getFieldNameAtIndex(context, fieldIndex);
+            result = reportDuplicateField(this, name, field.span);
+            continue;
+        } else {
+            hits = hits | bit;
+        }
+        let field: &VariableLookup = at(&structLookup.fields, fieldIndex);
+        let fieldState: &TCState = &field.typeState;
+        assert(isSuccess(fieldState), "Struct is ready to go, but field type is invalid?");
+        assert(equals(&name.content, &field.name.content), "Seems like my hack doesn't work");
+        let fieldType: &Type = at(&types, getType(fieldState));
+        if (wantsInfer(&exprState))
+            exprState = inferTypeOntoExpr(this, exprID, getID(fieldType));
+        if (isError(&exprState)) {
+            result = exprState;
+            continue;
+        }
+        let exprType: &Type = at(&types, getType(&exprState));
+        if (!equals(fieldType, exprType)) {
+            result = reportTypeMismatch(this, at(&exprs, exprID).span, fieldType, exprType);
+        }
+    }
+    return result;
+}
 func typeCheckExprModuleAccess(this: &TypeChecker, dotID: usize, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.typeCheckExprModuleAccess");
     let expr: &ParsedExpr = at(&exprs, dotID);
@@ -1669,43 +1693,7 @@ func typeCheckExprModuleAccess(this: &TypeChecker, dotID: usize, scopes: &ScopeL
             return reportUnknownType(this, modLookup, name, blank);
         }
         if (isStruct(&lookup)) {
-            let context: &StructInitContext = &rhs.structInitContext;
-            let structLookup: &StructLookup = asStruct(&lookup);
-            let hits: usize = 0;
-            assert(structLookup.fields.length < 50, "Sorry, I need to hack this for now");
-            let result = newTCStateType(structLookup.typeID);
-            for (let i: usize = 0; i < context.fieldLength; i = i + 1) {
-                let name: Token = getFieldNameAtIndex(context, i);
-                let rhsID: usize = getFieldExprAtIndex(context, i);
-                let rhsState: TCState = typeCheckExpr(this, rhsID, scopes);
-                if (isError(&rhsState)) rhs.typeState = rhsState;
-                if (!hasField(structLookup, &name.content)) {
-                    rhs.typeState = reportUnknownField(this, name, structLookup);
-                }
-                let fieldIndex: usize = getIndexByName(structLookup, &name);
-                let bit: usize = shiftLeft(1, fieldIndex);
-                if ((hits & bit) != 0) {
-                    todo_with_msg("duplicate field");
-                } else {
-                    hits = hits | bit;
-                }
-                let field: &VariableLookup = at(&structLookup.fields, fieldIndex);
-                let fieldState: &TCState = &field.typeState;
-                assert(isSuccess(fieldState), "Struct is ready to go, but field type is invalid?");
-                assert(equals(&name.content, &field.name.content), "Seems like my hack doesn't work");
-                let fieldType: &Type = at(&types, getType(fieldState));
-                if (wantsInfer(&rhsState))
-                    rhsState = inferTypeOntoExpr(this, rhsID, getID(fieldType));
-                if (isError(&rhsState)) {
-                    result = rhsState;
-                    continue;
-                }
-                let rhsType: &Type = at(&types, getType(&rhsState));
-                if (!equals(fieldType, rhsType)) {
-                    rhs.typeState = reportTypeMismatch(this, at(&exprs, rhsID).span, fieldType, rhsType);
-                }
-            }
-            rhs.typeState = result;
+            rhs.typeState = typeCheckStructInitialization(this, rhs, lookup, scopes);
         } else {
             unreachable("typeCheckExprModuleAccess got non-struct");
         }
@@ -1864,7 +1852,6 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
             }
             return newTCStateFailure(ERROR_TYPE_MISMATCH);
         }
-        assert(expr.arrayContext.elemLength > 0, "Got empty array literal");
         if (expr.arrayContext.size == 0) {
             if (typ.arraySize != expr.arrayContext.elemLength) {
                 if (!checkOnly) {
@@ -1950,7 +1937,17 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
             if (isError(&tid)) return tid;
             tid = newTCStateType(typeID);
         } else if (expr.op == UNARY_REF) {
-            if (!isPointer(typ)) todo_with_msg("can't infer non-pointer type onto reference");
+            if (!isPointer(typ)) {
+                if (!checkOnly) {
+                    let loc: String = toString(&expr.span);
+                    let t: String = toString(typ);
+                    fprintf(stderr, "%s: %s: Expected expression of type %s, found reference.\n", loc.buffer, ERR_STR, t.buffer);
+                    drop(&t);
+                    drop(&loc);
+                    this.typeError = true;
+                }
+                return newTCStateFailure(ERROR_TYPE_MISMATCH);
+            }
             let underlying: &Type = getUnderlyingType(typ, false);
             tid = tryInferTypeOntoExpr(this, expr.lhs, getID(underlying), checkOnly);
             if (isError(&tid)) return tid;
@@ -2047,7 +2044,7 @@ func tryInferTypeOntoMemberAccess(this: &TypeChecker, exprID: usize, typeID: usi
         let name = rhs.origToken;
         let structs = resolveAllStructsWithField(this.currentModule, &name, typ);
         if (structs.length == 0) {
-            todo_with_msg("tryInferTypeOntoMemberAccess: 0 struct with field");
+            return reportMemberAccessNoOptions(this, expr);
         } else if (structs.length == 1) {
             let strukt = at(&structs, 0);
             let state = tryInferTypeOntoExpr(this, expr.lhs, strukt.typeID, checkOnly);
@@ -2075,8 +2072,8 @@ func tryInferTypeOntoModuleAccess(this: &TypeChecker, exprID: usize, typeID: usi
     assert(expr.op == BIN_MODULE);
     let lhs = at(&exprs, expr.lhs);
     let lhsState = lhs.typeState;
-    if (!isSuccess(&lhsState)) todo_with_msg("can't infer onto module access if we don't know LHS");
-    if (!isType(&lhsState)) todo_with_msg("can't infer onto module access if LHS is not valid");
+    if (!isSuccess(&lhsState)) return lhsState;
+    if (!isType(&lhsState)) return lhsState;
     let lhsType = at(&types, getType(&lhsState));
     assert(isModule(lhsType), "LHS of BIN_MODULE is not of type module!");
     let lookup = getModuleByGlobalID(this.currentModule, lhsType.typeIndex);
@@ -2262,7 +2259,6 @@ func typeCheckTypeNode(this: &TypeChecker, typeID: usize) -> TCState {
         let t: &Type = newType(TYPE_KIND_POINTER, underlyingType);
         tid = getID(t);
     } else if (typ.kind == PARSED_TYPE_ARRAY) {
-        if (typ.arraySize == 0) todo_with_msg("0 elements in mah array");
         let under: TCState = typeCheckTypeNode(this, typ.underlyingID);
         if (isError(&under)) return under;
         let underlyingType: usize = getType(&under);
