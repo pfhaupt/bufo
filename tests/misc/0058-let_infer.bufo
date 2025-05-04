@@ -1,0 +1,33 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+
+struct Bar {
+}
+
+struct Foo {
+    a: i32;
+    b: i32;
+}
+
+func foo(a: Foo) -> i32 {
+    return a.a;
+}
+
+func create() -> Foo {
+    return Foo { a: 12 };
+}
+
+func create() -> Bar {
+    return Bar { };
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a = create();
+    let b = foo(a);
+    assert(b == 12);
+    return 0;
+}
+

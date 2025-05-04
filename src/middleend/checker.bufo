@@ -48,6 +48,7 @@ comptime ERROR_FUNCTION_CALL_TOO_MANY_OPTIONS: usize = 29;
 comptime ERROR_CALL_TO_NON_FUNCTION: usize = 30;
 comptime ERROR_UNKNOWN_SUBMODULE: usize = 31;
 comptime ERROR_MODULE_ACCESS_NON_MODULE: usize = 32;
+comptime ERROR_DEREF_NON_POINTER: usize = 33;
 
 comptime TCSTATE_INVALID: usize = 0;
 comptime TCSTATE_ERROR: usize = 1;
@@ -287,15 +288,27 @@ func reportNoFunctionCallCandidate(this: &TypeChecker, callID: usize, fnType: &T
     let typ = toString(fnType);
     fprintf(stderr, "%s: %s: No function overload fits the provided context for call to function `%s`.\n", loc.buffer, ERR_STR, name.buffer);
     fprintf(stderr, "%s: %s: Context requires an overload of the form %s.\n", loc.buffer, NOTE_STR, typ.buffer);
-    // REVIEW: It was suggested that we could hide this extra info behind a `--verbose` flag, which sounds interesting.
     assert(functions.length != 0, "reportNoFunctionCallCandidate: Expected at least one declaration");
-    for (let i: usize = 0; i < functions.length; i = i + 1) {
-        let f: &FunctionLookup = at(functions, i);
-        let loc: String = toString(&f.name.span);
-        let typ = toString(at(&types, getType(&f.fnType)));
-        fprintf(stderr, "%s: %s: Overload %s declared here.\n", loc.buffer, NOTE_STR, typ.buffer);
-        drop(&typ);
-        drop(&loc);
+    if (*flags.verbose) {
+        for (let i: usize = 0; i < functions.length; i = i + 1) {
+            let f: &FunctionLookup = at(functions, i);
+            let loc: String = toString(&f.name.span);
+            let typ = toString(at(&types, getType(&f.fnType)));
+            fprintf(stderr, "%s: %s: Overload %s declared here.\n", loc.buffer, NOTE_STR, typ.buffer);
+            drop(&typ);
+            drop(&loc);
+        }
+    } else {
+        let is = "are";
+        let ol = "overloads";
+        let it = "them";
+        if (functions.length == 1) {
+            is = "is";
+            ol = "overload";
+            it = "it";
+        }
+        fprintf(stderr, "%s: %s: There %s %llu possible %s. Re-run with the --verbose flag to see %s.\n",
+                loc.buffer, NOTE_STR, is, functions.length, ol, it);
     }
     drop(&typ);
     drop(&name);
@@ -550,7 +563,7 @@ func dfs(this: &TypeChecker, typeLookup: TypeLookup, visited: &TypeLookupList, f
             }
         }
     } else {
-        todo_with_msg("dfs on non-struct");
+        unreachable("Exhaustive handling of TypeLookup kinds in dfs");
     }
     push(finished, typeLookup);
     return done;
@@ -913,7 +926,7 @@ func typeCheckStmt(this: &TypeChecker, stmtID: usize, scopes: &ScopeLookupList) 
         }
         if (wantsInfer(&exprState)) {
             let noneType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_NONE);
-            exprState = inferTypeOntoExpr(this, stmt.expr, getID(noneType));
+            exprState = inferTypeOntoExpr(this, stmt.expr, getID(noneType), scopes);
         }
         let expr: &ParsedExpr = at(&exprs, stmt.expr);
         if (!isType(&exprState)) {
@@ -942,7 +955,7 @@ func typeCheckStmt(this: &TypeChecker, stmtID: usize, scopes: &ScopeLookupList) 
         if (isError(&elseState)) return elseState;
         let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
         if (wantsInfer(&condState)) {
-            condState = inferTypeOntoExpr(this, stmt.expr, getID(boolType));
+            condState = inferTypeOntoExpr(this, stmt.expr, getID(boolType), scopes);
             assert(isType(&condState), "Could not infer type onto if-condition");
         }
         let condType: &Type = at(&types, getType(&condState));
@@ -965,7 +978,7 @@ func typeCheckStmt(this: &TypeChecker, stmtID: usize, scopes: &ScopeLookupList) 
         let retType = at(&types, _rt.typeIndex);
         if (isNone(retType)) todo_with_msg("unexpected ret expr where empty function");
         if (wantsInfer(&exprState)) {
-            exprState = inferTypeOntoExpr(this, stmt.expr, getID(retType));
+            exprState = inferTypeOntoExpr(this, stmt.expr, getID(retType), scopes);
             if (isError(&exprState)) return exprState;
             assert(isType(&exprState), "Failed to infer type of return expression");
         }
@@ -998,7 +1011,7 @@ func typeCheckStmt(this: &TypeChecker, stmtID: usize, scopes: &ScopeLookupList) 
         if (isError(&stepState)) return stepState;
         let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
         if (wantsInfer(&condState)) {
-            condState = inferTypeOntoExpr(this, stmt.expr, getID(boolType));
+            condState = inferTypeOntoExpr(this, stmt.expr, getID(boolType), scopes);
             assert(isType(&condState), "Could not infer type onto while-condition");
         }
         let condType: &Type = at(&types, getType(&condState));
@@ -1046,14 +1059,14 @@ func typeCheckVarDecl(this: &TypeChecker, varDeclID: usize, scopes: &ScopeLookup
             assert(isInvalid(&typeState), "`let var = expr;` got valid type state??");
             if (isError(&exprState)) return exprState;
             if (wantsInfer(&exprState)) {
-                todo_with_msg("`let var = expr;` wants inferred expr");
+            } else if (!isType(&exprState)) {
+                todo_with_msg("let expr is not a type");
             }
-            if (!isType(&exprState)) todo_with_msg("let expr is not a type");
             typeState = exprState;
         } else {
             // let var: type = expr;
             if (wantsInfer(&exprState)) {
-                exprState = inferTypeOntoExpr(this, context.exprID, getType(&typeState));
+                exprState = inferTypeOntoExpr(this, context.exprID, getType(&typeState), scopes);
             }
             if (isType(&exprState)) {
                 let typeType: &Type = at(&types, getType(&typeState));
@@ -1187,7 +1200,7 @@ func typeCheckExprAs(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupList
     if (isError(&typeState)) return typeState;
     assert(isType(&typeState), "typeCheckExprAs Type is not a Type");
     let typeType: &Type = at(&types, getType(&typeState));
-    if (wantsInfer(&exprState)) exprState = inferTypeOntoExpr(this, expr.lhs, getID(typeType));
+    if (wantsInfer(&exprState)) exprState = inferTypeOntoExpr(this, expr.lhs, getID(typeType), scopes);
     if (isError(&exprState)) return exprState;
     assert(isType(&exprState), "Expected <expr> in `<expr> as <type>` to have a valid type after infer");
     let exprType: &Type = at(&types, getType(&exprState));
@@ -1282,7 +1295,12 @@ func typeCheckUnary(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupList)
             }
         }
         if (!isPointer(exprType)) {
-            todo_with_msg("deref non-pointer");
+            let loc: String = toString(&expr.span);
+            let t: String = toString(exprType);
+            fprintf(stderr, "%s: %s: Attempted to dereference expression of type %s.\n", loc.buffer, ERR_STR, t.buffer);
+            drop(&t);
+            drop(&loc);
+            return newTCStateFailure(ERROR_DEREF_NON_POINTER);
         }
         let underlying: &Type = getUnderlyingType(exprType, false);
         return newTCStateType(getID(underlying));
@@ -1339,7 +1357,7 @@ func typeCheckExprCall(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupLi
             let argID: usize = getElementAtIndex(callContext, i);
             push(&fnType.fnParams, at(&exprs, argID).typeState);
         }
-        let baseState = tryInferTypeOntoExpr(this, expr.lhs, getID(fnType), false);
+        let baseState = tryInferTypeOntoExpr(this, expr.lhs, getID(fnType), scopes, false);
         if (isError(&baseState)) return baseState;
         if (wantsInfer(&baseState)) return baseState;
         callBase = baseState;
@@ -1357,7 +1375,7 @@ func typeCheckExprCall(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupLi
         if (isError(&arg)) return arg;
         if (wantsInfer(&arg)) {
             let p = getParam(baseType, i);
-            arg = inferTypeOntoExpr(this, argID, getType(p));
+            arg = inferTypeOntoExpr(this, argID, getType(p), scopes);
             if (isError(&arg)) return arg;
         }
         let argType = at(&types, getType(&arg));
@@ -1493,13 +1511,12 @@ func typeCheckExprIndexedAccess(this: &TypeChecker, binID: usize, scopes: &Scope
     }
     if (wantsInfer(&rhsState)) {
         let usizeType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
-        rhsState = inferTypeOntoExpr(this, expr.rhs, getID(usizeType));
+        rhsState = inferTypeOntoExpr(this, expr.rhs, getID(usizeType), scopes);
     }
     if (isError(&rhsState)) return rhsState;
     assert(isType(&rhsState), "IndexedAccess: Index is not valid after infer?");
     let rhsTypeID: usize = getType(&rhsState);
     let rhsType: &Type = at(&types, rhsTypeID);
-    // FIXME: Put those into a single check
     if (!isPrimitive(rhsType) || rhsTypeID != TYPE_USIZE) {
         let loc: String = toString(&expr.span);
         let typ: String = toString(rhsType);
@@ -1524,7 +1541,7 @@ func typeCheckExprLogical(this: &TypeChecker, binID: usize, scopes: &ScopeLookup
     let rhsState: TCState = typeCheckExpr(this, expr.rhs, scopes);
     if (isError(&lhsState)) return lhsState;
     if (isError(&rhsState)) return rhsState;
-    let maybeInfer: TCState = checkIfInferIsNeeded(this, expr.lhs, &lhsState, expr.rhs, &rhsState);
+    let maybeInfer: TCState = checkIfInferIsNeeded(this, expr.lhs, &lhsState, expr.rhs, &rhsState, scopes);
     if (isError(&maybeInfer)) {
         todo_with_msg("couldn't infer in logical");
     }
@@ -1551,7 +1568,7 @@ func typeCheckExprBitwise(this: &TypeChecker, binID: usize, scopes: &ScopeLookup
     let rhsState: TCState = typeCheckExpr(this, expr.rhs, scopes);
     if (isError(&lhsState)) return lhsState;
     if (isError(&rhsState)) return rhsState;
-    let maybeInfer: TCState = checkIfInferIsNeeded(this, expr.lhs, &lhsState, expr.rhs, &rhsState);
+    let maybeInfer: TCState = checkIfInferIsNeeded(this, expr.lhs, &lhsState, expr.rhs, &rhsState, scopes);
     if (isError(&maybeInfer)) {
         todo_with_msg("couldn't infer in bitwise");
     }
@@ -1582,12 +1599,10 @@ func typeCheckExprAssign(this: &TypeChecker, binID: usize, scopes: &ScopeLookupL
     let rhsState: TCState = typeCheckExpr(this, expr.rhs, scopes);
     if (isError(&lhsState)) return lhsState;
     if (isError(&rhsState)) return rhsState;
-    let maybeInfer: TCState = checkIfInferIsNeeded(this, expr.lhs, &lhsState, expr.rhs, &rhsState);
-    if (isError(&maybeInfer)) {
-        todo_with_msg("couldn't infer in assignment");
-    }
-    if (!isType(&lhsState)) todo_with_msg("assignment, could not infer type to LHS");
-    if (!isType(&rhsState)) todo_with_msg("assignment, could not infer type to RHS");
+    let maybeInfer: TCState = checkIfInferIsNeeded(this, expr.lhs, &lhsState, expr.rhs, &rhsState, scopes);
+    if (isError(&maybeInfer)) return maybeInfer;
+    if (!isType(&lhsState)) return lhsState;
+    if (!isType(&rhsState)) return rhsState;
     let lhsType: &Type = at(&types, getType(&lhsState));
     let rhsType: &Type = at(&types, getType(&rhsState));
     if (!equals(lhsType, rhsType)) {
@@ -1625,7 +1640,7 @@ func typeCheckStructInitialization(this: &TypeChecker, expr: &ParsedExpr, lookup
         assert(equals(&name.content, &field.name.content), "Seems like my hack doesn't work");
         let fieldType: &Type = at(&types, getType(fieldState));
         if (wantsInfer(&exprState))
-            exprState = inferTypeOntoExpr(this, exprID, getID(fieldType));
+            exprState = inferTypeOntoExpr(this, exprID, getID(fieldType), scopes);
         if (isError(&exprState)) {
             result = exprState;
             continue;
@@ -1736,7 +1751,7 @@ func typeCheckExprMemberAccess(this: &TypeChecker, dotID: usize, scopes: &ScopeL
     }
 }
 
-func checkIfInferIsNeeded(this: &TypeChecker, lhsID: usize, lhsState: &TCState, rhsID: usize, rhsState: &TCState) -> TCState {
+func checkIfInferIsNeeded(this: &TypeChecker, lhsID: usize, lhsState: &TCState, rhsID: usize, rhsState: &TCState, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.checkIfInferIsNeeded");
     let lhsExpr: &ParsedExpr = at(&exprs, lhsID);
     let rhsExpr: &ParsedExpr = at(&exprs, rhsID);
@@ -1744,23 +1759,23 @@ func checkIfInferIsNeeded(this: &TypeChecker, lhsID: usize, lhsState: &TCState, 
         return newTCStateSuccess();
     } else if (isType(lhsState) && !isType(rhsState)) {
         let lhsType: usize = getType(lhsState);
-        *rhsState = inferTypeOntoExpr(this, rhsID, lhsType);
+        *rhsState = inferTypeOntoExpr(this, rhsID, lhsType, scopes);
         return *rhsState;
     } else if (!isType(lhsState) && isType(rhsState)) {
         let rhsType: usize = getType(rhsState);
-        *lhsState = inferTypeOntoExpr(this, lhsID, rhsType);
+        *lhsState = inferTypeOntoExpr(this, lhsID, rhsType, scopes);
         return *lhsState;
     } else {
         return newTCStatePleaseInfer();
     }
 }
 
-func inferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize) -> TCState {
+func inferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.inferTypeOntoExpr");
-    return tryInferTypeOntoExpr(this, exprID, typeID, false);
+    return tryInferTypeOntoExpr(this, exprID, typeID, scopes, false);
 }
 
-func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, checkOnly: bool) -> TCState {
+func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, scopes: &ScopeLookupList, checkOnly: bool) -> TCState {
     trace("TypeChecker.tryInferTypeOntoExpr");
     let expr: &ParsedExpr = at(&exprs, exprID);
     if (isSuccess(&expr.typeState)) {
@@ -1772,29 +1787,48 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
     let typ: &Type = at(&types, typeID);
     let tid: TCState = blank;
     if (expr.kind == EXPR_NAME) {
-        assert(isFunction(typ), "Can only try to infer functions onto identifiers for now");
-        // FIXME: Same problem as with typeCheckTypeNode, this code doesn't consider the
-        //        possibility that we're in a submodule, or calling a function mod::func()
-        let functions = resolveAllFunctionsWithSignature(this.currentModule, &expr.origToken, typ);
-        if (functions.length == 0) {
-            if (checkOnly) {
-                tid = newTCStateFailure(ERROR_NO_SUCH_FUNCTION);
+        let var: VariableLookup = blank;
+        if (resolveVariableByName(this.currentModule, &expr.origToken, scopes, &var)) {
+            assert(wantsInfer(&var.typeState), "Ident has no type, but variable doesn't want infer");
+            tid = newTCStateType(typeID);
+            var.typeState = tid;
+            let stmt = at(&stmts, var.globalID);
+            assert(stmt.kind == STMT_VAR_DECL, "VariableLookup points to non-VarDecl");
+            tid = tryInferTypeOntoExpr(this, stmt.varDeclContext.exprID, typeID, scopes, checkOnly);
+            if (isError(&tid)) {
+                let loc = toString(&expr.span);
+                let name = toString(&expr.origToken.content);
+                let typ = toString(typ);
+                fprintf(stderr, "%s: %s: Variable `%s` inferred to be of type %s here.\n", loc.buffer, NOTE_STR, name.buffer, typ.buffer);
+                drop(&typ);
+                drop(&name);
+                drop(&loc);
+            }
+            stmt.typeState = tid;
+        } else if (isFunction(typ)) {
+            let functions = resolveAllFunctionsWithSignature(this.currentModule, &expr.origToken, typ);
+            if (functions.length == 0) {
+                if (checkOnly) {
+                    tid = newTCStateFailure(ERROR_NO_SUCH_FUNCTION);
+                } else {
+                    let all = resolveFunctionByName(this.currentModule, &expr.origToken);
+                    tid = reportNoFunctionCallCandidate(this, exprID, typ, &all);
+                    drop(&all);
+                }
+            } else if (functions.length == 1) {
+                let f = at(&functions, 0);
+                assert(f.params.length == typ.fnParams.length);
+                if (!checkOnly) {
+                    expr.lhs = f.globalID;
+                }
+                tid = f.fnType;
             } else {
-                let all = resolveFunctionByName(this.currentModule, &expr.origToken);
-                tid = reportNoFunctionCallCandidate(this, exprID, typ, &all);
-                drop(&all);
+                tid = newTCStatePleaseInfer();
             }
-        } else if (functions.length == 1) {
-            let f = at(&functions, 0);
-            assert(f.params.length == typ.fnParams.length);
-            if (!checkOnly) {
-                expr.lhs = f.globalID;
-            }
-            tid = f.fnType;
+            drop(&functions);
         } else {
-            tid = newTCStatePleaseInfer();
+            todo_with_msg("infer onto name, but not a function or variable");
         }
-        drop(&functions);
     } else if (expr.kind == EXPR_INT_LIT) {
         if (isChar(typ)) {
             if (!checkOnly) {
@@ -1865,7 +1899,7 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
             }
             let lastErrState: TCState = blank;
             for (let i: usize = 0; i < expr.arrayContext.elemLength; i = i + 1) {
-                tid = tryInferTypeOntoExpr(this, getElementAtIndex(&expr.arrayContext, i), typ.typeIndex, checkOnly);
+                tid = tryInferTypeOntoExpr(this, getElementAtIndex(&expr.arrayContext, i), typ.typeIndex, scopes, checkOnly);
                 if (isError(&tid)) {
                     lastErrState = tid;
                 }
@@ -1882,7 +1916,7 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
                 }
                 return newTCStateFailure(ERROR_ARRAY_SIZE_MISMATCH);
             }
-            tid = tryInferTypeOntoExpr(this, getElementAtIndex(&expr.arrayContext, 0), typ.typeIndex, checkOnly);
+            tid = tryInferTypeOntoExpr(this, getElementAtIndex(&expr.arrayContext, 0), typ.typeIndex, scopes, checkOnly);
             if (isError(&tid)) return tid;
         }
         tid = newTCStateType(typeID);
@@ -1907,25 +1941,25 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
         tid = newTCStateType(getID(typ));
     } else if (expr.kind == EXPR_BINARY) {
         if (isArithmetic(expr) || isBitwise(expr)) {
-            tid = tryInferTypeOntoExpr(this, expr.lhs, typeID, checkOnly);
+            tid = tryInferTypeOntoExpr(this, expr.lhs, typeID, scopes, checkOnly);
             if (isError(&tid)) return tid;
-            tid = tryInferTypeOntoExpr(this, expr.rhs, typeID, checkOnly);
+            tid = tryInferTypeOntoExpr(this, expr.rhs, typeID, scopes, checkOnly);
             if (isError(&tid)) return tid;
             tid = newTCStateType(typeID);
         } else if (isComparison(expr)) {
             // Assuming that neither side has a type (otherwise typeCheckExprComparison would've handled the infer step)
             // So all that's left is whack things like `1 == 1`, for which we blindly try to infer usize onto both sides
             let usizeType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
-            tid = tryInferTypeOntoExpr(this, expr.lhs, getID(usizeType), checkOnly);
+            tid = tryInferTypeOntoExpr(this, expr.lhs, getID(usizeType), scopes, checkOnly);
             if (isError(&tid)) return tid;
-            tid = tryInferTypeOntoExpr(this, expr.rhs, getID(usizeType), checkOnly);
+            tid = tryInferTypeOntoExpr(this, expr.rhs, getID(usizeType), scopes, checkOnly);
             if (isError(&tid)) return tid;
             tid = newTCStateType(typeID);
         } else if (expr.op == BIN_DOT) {
-            tid = tryInferTypeOntoMemberAccess(this, exprID, typeID, checkOnly);
+            tid = tryInferTypeOntoMemberAccess(this, exprID, typeID, scopes, checkOnly);
             if (isError(&tid)) return tid;
         } else if (expr.op == BIN_MODULE) {
-            tid = tryInferTypeOntoModuleAccess(this, exprID, typeID, checkOnly);
+            tid = tryInferTypeOntoModuleAccess(this, exprID, typeID, scopes, checkOnly);
             if (isError(&tid)) return tid;
         } else {
             todo_with_msg("inferTypeOntoExpr for non-arith non-comp binary");
@@ -1933,7 +1967,7 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
     } else if (expr.kind == EXPR_UNARY) {
         if (expr.op == UNARY_DEREF) {
             let newType: &Type = newType(TYPE_KIND_POINTER, typeID);
-            tid = tryInferTypeOntoExpr(this, expr.lhs, getID(newType), checkOnly);
+            tid = tryInferTypeOntoExpr(this, expr.lhs, getID(newType), scopes, checkOnly);
             if (isError(&tid)) return tid;
             tid = newTCStateType(typeID);
         } else if (expr.op == UNARY_REF) {
@@ -1949,7 +1983,7 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
                 return newTCStateFailure(ERROR_TYPE_MISMATCH);
             }
             let underlying: &Type = getUnderlyingType(typ, false);
-            tid = tryInferTypeOntoExpr(this, expr.lhs, getID(underlying), checkOnly);
+            tid = tryInferTypeOntoExpr(this, expr.lhs, getID(underlying), scopes, checkOnly);
             if (isError(&tid)) return tid;
             tid = newTCStateType(typeID);
         } else if (expr.op == UNARY_MINUS) {
@@ -1966,7 +2000,7 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
                 }
                 return newTCStateFailure(ERROR_TYPE_MISMATCH);
             }
-            tid = tryInferTypeOntoExpr(this, expr.lhs, typeID, checkOnly);
+            tid = tryInferTypeOntoExpr(this, expr.lhs, typeID, scopes, checkOnly);
             if (isError(&tid)) return tid;
             assert(isType(&tid), "infer non-error expected to be a type");
             let subType: &Type = at(&types, getType(&tid));
@@ -1974,7 +2008,7 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
             tid = newTCStateType(typeID);
         } else if (expr.op == UNARY_NOT) {
             let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
-            tid = tryInferTypeOntoExpr(this, expr.lhs, getID(boolType), checkOnly);
+            tid = tryInferTypeOntoExpr(this, expr.lhs, getID(boolType), scopes, checkOnly);
             if (isError(&tid)) return tid;
             todo_with_msg("unary not infer");
         } else {
@@ -1984,7 +2018,7 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
         if (!isPointer(typ)) todo_with_msg("tried to infer non-ptr to null");
         tid = newTCStateType(typeID);
     } else if (expr.kind == EXPR_CALL) {
-        tid = tryInferTypeOntoCall(this, exprID, typeID, checkOnly);
+        tid = tryInferTypeOntoCall(this, exprID, typeID, scopes, checkOnly);
         if (isError(&tid)) return tid;
     } else {
         emergencyPrint(this, expr.span);
@@ -1996,7 +2030,7 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, chec
     return tid;
 }
 
-func tryInferTypeOntoCall(this: &TypeChecker, exprID: usize, typeID: usize, checkOnly: bool) -> TCState {
+func tryInferTypeOntoCall(this: &TypeChecker, exprID: usize, typeID: usize, scopes: &ScopeLookupList, checkOnly: bool) -> TCState {
     trace("TypeChecker.tryInferTypeOntoCall");
     let expr = at(&exprs, exprID);
     let typ = at(&types, typeID);
@@ -2007,7 +2041,7 @@ func tryInferTypeOntoCall(this: &TypeChecker, exprID: usize, typeID: usize, chec
         let argID: usize = getElementAtIndex(callContext, i);
         push(&fnType.fnParams, at(&exprs, argID).typeState);
     }
-    let baseState = tryInferTypeOntoExpr(this, expr.lhs, getID(fnType), checkOnly);
+    let baseState = tryInferTypeOntoExpr(this, expr.lhs, getID(fnType), scopes, checkOnly);
     if (isError(&baseState)) return baseState;
     if (wantsInfer(&baseState)) {
         return reportFunctionCallTooManyOptions(this, expr);
@@ -2020,7 +2054,7 @@ func tryInferTypeOntoCall(this: &TypeChecker, exprID: usize, typeID: usize, chec
     let state: TCState = newTCStateSuccess();
     for (let i: usize = 0; i < callContext.elemLength; i = i + 1) {
         let p = getParam(baseFunc, i);
-        let s1 = tryInferTypeOntoExpr(this, getElementAtIndex(callContext, i), getType(p), checkOnly);
+        let s1 = tryInferTypeOntoExpr(this, getElementAtIndex(callContext, i), getType(p), scopes, checkOnly);
         if (isError(&s1)) {
             state = s1;
         }
@@ -2032,7 +2066,7 @@ func tryInferTypeOntoCall(this: &TypeChecker, exprID: usize, typeID: usize, chec
     return newTCStateType(typeID);
 }
 
-func tryInferTypeOntoMemberAccess(this: &TypeChecker, exprID: usize, typeID: usize, checkOnly: bool) -> TCState {
+func tryInferTypeOntoMemberAccess(this: &TypeChecker, exprID: usize, typeID: usize, scopes: &ScopeLookupList, checkOnly: bool) -> TCState {
     trace("TypeChecker.tryInferTypeOntoMemberAccess");
     let expr = at(&exprs, exprID);
     let typ = at(&types, typeID);
@@ -2047,7 +2081,7 @@ func tryInferTypeOntoMemberAccess(this: &TypeChecker, exprID: usize, typeID: usi
             return reportMemberAccessNoOptions(this, expr);
         } else if (structs.length == 1) {
             let strukt = at(&structs, 0);
-            let state = tryInferTypeOntoExpr(this, expr.lhs, strukt.typeID, checkOnly);
+            let state = tryInferTypeOntoExpr(this, expr.lhs, strukt.typeID, scopes, checkOnly);
             if (isError(&state)) return state;
             if (checkOnly) return newTCStateSuccess();
             return newTCStateType(typeID);
@@ -2064,7 +2098,7 @@ func tryInferTypeOntoMemberAccess(this: &TypeChecker, exprID: usize, typeID: usi
     }
 }
 
-func tryInferTypeOntoModuleAccess(this: &TypeChecker, exprID: usize, typeID: usize, checkOnly: bool) -> TCState {
+func tryInferTypeOntoModuleAccess(this: &TypeChecker, exprID: usize, typeID: usize, scopes: &ScopeLookupList, checkOnly: bool) -> TCState {
     trace("TypeChecker.tryInferTypeOntoModuleAccess");
     let expr = at(&exprs, exprID);
     let typ = at(&types, typeID);
@@ -2131,7 +2165,7 @@ func typeCheckExprArithmetic(this: &TypeChecker, binID: usize, scopes: &ScopeLoo
             );
         }
     }
-    let maybeInfer: TCState = checkIfInferIsNeeded(this, expr.lhs, &lhsState, expr.rhs, &rhsState);
+    let maybeInfer: TCState = checkIfInferIsNeeded(this, expr.lhs, &lhsState, expr.rhs, &rhsState, scopes);
     if (isError(&maybeInfer)) return maybeInfer;
     if (wantsInfer(&maybeInfer)) return maybeInfer;
     let lhsType: &Type = at(&types, getType(&lhsState));
@@ -2207,7 +2241,7 @@ func typeCheckExprComparison(this: &TypeChecker, binID: usize, scopes: &ScopeLoo
     let rhsState: TCState = typeCheckExpr(this, expr.rhs, scopes);
     if (isError(&lhsState)) return lhsState;
     if (isError(&rhsState)) return rhsState;
-    let maybeInfer: TCState = checkIfInferIsNeeded(this, expr.lhs, &lhsState, expr.rhs, &rhsState);
+    let maybeInfer: TCState = checkIfInferIsNeeded(this, expr.lhs, &lhsState, expr.rhs, &rhsState, scopes);
     if (isError(&maybeInfer)) {
         todo_with_msg("couldn't infer in comp");
     }
@@ -2356,8 +2390,7 @@ func typeCheckTypeNode(this: &TypeChecker, typeID: usize) -> TCState {
         else if (id == PARSED_TYPE_F32) typeID = TYPE_F32;
         else if (id == PARSED_TYPE_F64) typeID = TYPE_F64;
         else {
-            emergencyPrint(this, typ.span);
-            todo_with_msg("handle other parsed -> checked type conversion");
+            unreachable("Exhaustive handling of parsed types in typeCheckTypeNode");
         }
         let t: &Type = newType(TYPE_KIND_PRIMITIVE, typeID);
         tid = getID(t);

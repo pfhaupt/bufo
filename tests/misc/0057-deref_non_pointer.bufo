@@ -1,0 +1,15 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Attempted to dereference expression of type i32.
+//! Attempted to dereference expression of type usize.
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a: i32 = 12;
+    let b: usize = 1;
+    *a = 12;
+    *b = 1;
+    return 0;
+}

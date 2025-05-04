@@ -1,4 +1,5 @@
 import "prelude.bufo";
+import "libc.bufo";
 import "../LLVM/types.bufo";
 import "../LLVM/module.bufo";
 import "../LLVM/bindings.bufo";
@@ -70,7 +71,9 @@ func writeToFile(this: &LLVMTargetMachine, mod: LLVMModule, mode: i32, filepath:
     trace("LLVMTargetMachine.writeToFile");
     let err: LLVMString = blank;
     if (LLVM::TargetMachineEmitToFile(this.ref, mod.ref, filepath, mode, &err) != 0) {
-        todo_with_msg("couldnt write file");
+        fprintf(stderr, "%s Could not write LLVM module to file!\n", FATAL_STR);
+        fprintf(stderr, "%s %s\n", FATAL_STR, err.chars);
+        exit(1);
     }
 }
 
