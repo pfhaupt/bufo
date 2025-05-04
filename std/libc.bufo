@@ -33,6 +33,8 @@
 
 @extern("snprintf") func snprintf(buffer: Any, size: usize, format: &char, ...) -> usize;
 
+@extern("getenv") func getenv(name: &char) -> &char;
+
 // Console IO
 @extern("printf") func printf(msg: &char, ...) -> usize;
 @extern("putchar") func putchar(ch: char) -> char;

@@ -1,4 +1,4 @@
-.PHONY: all clean brick examples clean_example how_to clean_howto bootstrap
+.PHONY: all clean brick examples clean_example how_to clean_howto bootstrap std
 
 ifeq ($(OS),Windows_NT)
 TARGET = x86_64-pc-windows-msvc
@@ -55,7 +55,11 @@ endif
 	./bufo.exe src/bufo.bufo -o ./bufo1.exe $(ALL_FLAGS)
 	mv ./bufo1.exe ./bufo.exe
 
-all: ./bufo.exe examples how_to
+all: ./bufo.exe examples how_to std
+
+std:
+	$(VERBOSE)mkdir -p $(APPDATA)/../Local/bufo
+	$(VERBOSE)cp -r ./std/ $(APPDATA)/../Local/bufo/
 
 define log_run
 	@printf "%-10s %s\n" "$(1)" "$(2)"

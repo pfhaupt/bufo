@@ -81,6 +81,7 @@ func main(argc: i32, argv: &&char) -> i32 {
     let string: String = readFileToString(flags.file.buffer);
     let sub: SubStr = newSubStrOfString(&string, 0, string.length);
     let parser: Parser = newParserFromSource(0, sub);
+    @os(WINDOWS) if (!addWindowsRoot(&parser)) return 1;
     addImportRoot(&parser, newSubStrOfStrLit("./std/"));
     let project: ParsedFile = parseProject(&parser, fileSubStr);
     let checker: TypeChecker = newTypeChecker();
@@ -104,6 +105,19 @@ func main(argc: i32, argv: &&char) -> i32 {
     if (!linkExecutable()) return 1;
     drop(&string);
     return 0;
+}
+
+@os(WINDOWS) func addWindowsRoot(parser: &Parser) -> bool {
+    let path = getenv("APPDATA");
+    if (path == null) {
+        fprintf(stderr, "%s Could not get path of APPDATA, aborting\n", FATAL_STR);
+        return false;
+    }
+    assert(path != null, "Could not get path of APPDATA");
+    let s: String = newStringFromStrLit(path);
+    pushStr(&s, "/../Local/bufo/std/");
+    addImportRoot(parser, asSubStr(&s));
+    return true;
 }
 
 @os(WINDOWS) func linkExecutable() -> bool {
