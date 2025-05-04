@@ -91,7 +91,6 @@ let blocks: ParsedBlockArena = blank;
 let stmts: ParsedStmtArena = blank;
 let typeNodes: ParsedTypeNodeArena = blank;
 let exprs: ParsedExprArena = blank;
-let compilerFlags: ParsedCompilerFlagArena = blank;
 let configs: ParsedConfigArena = blank;
 let dlls: DLLArena = blank;
 
@@ -122,32 +121,6 @@ struct ParsedAttribute {
 
 func equals(this: &ParsedAttribute, other: &ParsedAttribute) -> bool {
     unreachable("ParsedAttribute.equals is not implemented yet");
-}
-
-comptime COMPILER_FLAG_LIBRARY: SubStr = BUILD_A_KEYWORD("library");
-comptime COMPILER_FLAG_LIBPATH: SubStr = BUILD_A_KEYWORD("libpath");
-comptime COMPILER_FLAG_LINKER: SubStr = BUILD_A_KEYWORD("linker");
-struct ParsedCompilerFlag {
-    flag: Token;
-    value: Token;
-}
-func equals(this: &ParsedCompilerFlag, other: &ParsedCompilerFlag) -> bool {
-    if (!equals(&this.flag.content, &other.flag.content)) return false;
-    return equals(&this.value.content, &other.value.content);
-}
-
-func newParsedCompilerFlag(flag: Token, value: Token) -> &ParsedCompilerFlag {
-    let f: &SubStr = &flag.content;
-    if (!equals(f, &COMPILER_FLAG_LIBRARY)
-        && !equals(f, &COMPILER_FLAG_LIBPATH)
-        && !equals(f, &COMPILER_FLAG_LINKER)) {
-        todo_with_msg("unknown compiler_flag");
-    }
-    push(&compilerFlags, ParsedCompilerFlag {
-        flag: flag,
-        value: value,
-    });
-    return last(&compilerFlags);
 }
 
 comptime CONFIG_INVALID: u8 = 0;

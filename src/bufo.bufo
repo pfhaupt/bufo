@@ -128,25 +128,8 @@ func main(argc: i32, argv: &&char) -> i32 {
             } else if (_flag.kind == CONFIG_LINKER) {
                 pushSubStr(&s, &_flag.value.content);
             } else {
-                unreachable("Exhaustive handling of compiler__flags");
+                unreachable("Exhaustive handling of configs");
             }
-        }
-    }
-    for (let i: usize = 0; i < compilerFlags.length; i = i + 1) {
-        pushChar(&s, ' ');
-        let flag: &ParsedCompilerFlag = at(&compilerFlags, i);
-        if (equals(&flag.flag.content, &COMPILER_FLAG_LIBRARY)) {
-            pushStr(&s, "\"");
-            pushSubStr(&s, &flag.value.content);
-            pushStr(&s, ".lib\"");
-        } else if (equals(&flag.flag.content, &COMPILER_FLAG_LIBPATH)) {
-            pushStr(&s, "/LIBPATH:\"");
-            pushSubStr(&s, &flag.value.content);
-            pushStr(&s, "\"");
-        } else if (equals(&flag.flag.content, &COMPILER_FLAG_LINKER)) {
-            pushSubStr(&s, &flag.value.content);
-        } else {
-            unreachable("Exhaustive handling of compiler_flags");
         }
     }
     if (!*flags.verbose) {
@@ -169,19 +152,22 @@ func main(argc: i32, argv: &&char) -> i32 {
     pushStr(&s, "-lc ");
     pushStr(&s, "-o ");
     pushString(&s, flags.out);
-    for (let i: usize = 0; i < compilerFlags.length; i = i + 1) {
-        pushChar(&s, ' ');
-        let flag: &ParsedCompilerFlag = at(&compilerFlags, i);
-        if (equals(&flag.flag.content, &COMPILER_FLAG_LIBRARY)) {
-            pushStr(&s, "-l");
-            pushSubStr(&s, &flag.value.content);
-        } else if (equals(&flag.flag.content, &COMPILER_FLAG_LIBPATH)) {
-            pushStr(&s, "-L");
-            pushSubStr(&s, &flag.value.content);
-        } else if (equals(&flag.flag.content, &COMPILER_FLAG_LINKER)) {
-            pushSubStr(&s, &flag.value.content);
-        } else {
-            unreachable("Exhaustive handling of compiler_flags");
+    for (let i: usize = 0; i < configs.length; i = i + 1) {
+        let flag = at(&configs, i);
+        for (let j: usize = 0; j < flag.configs.length; j = j + 1) {
+            pushChar(&s, ' ');
+            let _flag = at(&flag.configs, j);
+            if (_flag.kind == CONFIG_LIBNAME) {
+                pushStr(&s, "-l");
+                pushSubStr(&s, &_flag.value.content);
+            } else if (_flag.kind == CONFIG_LIBPATH) {
+                pushStr(&s, "-L");
+                pushSubStr(&s, &_flag.value.content);
+            } else if (_flag.kind == CONFIG_LINKER) {
+                pushSubStr(&s, &_flag.value.content);
+            } else {
+                unreachable("Exhaustive handling of configs");
+            }
         }
     }
     let cmd: Cmd = newCmdFromStrLit(s.buffer);

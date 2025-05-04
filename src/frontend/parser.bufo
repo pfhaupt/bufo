@@ -129,11 +129,6 @@ func parseFile(this: &Parser, root: SubStr, file: &ParsedFile) {
             toggleIgnoringNodes();
         } else {
             let item: &ParsedTopLevelItem = parseTopLevelItem(this, attributes, skip);
-            if (item == null) {
-                // FIXME: Sus hack
-                // ParsedCompilerFlag
-                continue;
-            }
             push(&file.mod.tlis, getID(item));
         }
     }
@@ -195,12 +190,6 @@ func parseTopLevelItem(this: &Parser, parent: TLIParent, attributes: ParsedAttri
         return parseImport(this, skip);
     } else if (equals(&tkn.content, &KEYWORD_CONFIG)) {
         return asTLI(parseConfig(this, parent, attributes));
-    } else if (equals(&tkn.content, &KEYWORD_COMPILER_FLAGS)) {
-        let loc = toString(&tkn.span);
-        fprintf(stderr, "%s: %s: `compiler_flags` is deprecated, please use `config` instead.\n", loc.buffer, WARN_STR);
-        parseCompilerFlags(this, attributes, skip);
-        drop(&loc);
-        return null;
     } else if (equals(&tkn.content, &KEYWORD_MODULE)) {
         // REVIEW: Do we want to support modules outside of TLIs?
         return asTLI(parseModule(this, parent, attributes));
@@ -262,11 +251,6 @@ func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList
             toggleIgnoringNodes();
         } else {
             let item: &ParsedTopLevelItem = parseTopLevelItem(this, parent, attributes, skip);
-            if (item == null) {
-                // FIXME: Sus hack
-                // ParsedCompilerFlag
-                continue;
-            }
             push(&tlis, getID(item));
         }
     }
@@ -376,29 +360,6 @@ func parseConfig(this: &Parser, parent: TLIParent, attributes: ParsedAttributeLi
     }
     let end = expect(this, TOKEN_CURLY_CLOSE);
     return newParsedConfig(newSpanBetween(&cfgTkn.span, &end.span), flags);
-}
-
-func parseCompilerFlags(this: &Parser, attributes: ParsedAttributeList, skip: bool) {
-    trace("Parser.parseCompilerFlags");
-    let cmpTkn: Token = expect(this, TOKEN_KEYWORD);
-    assert(equals(&cmpTkn.content, &KEYWORD_COMPILER_FLAGS));
-    expect(this, TOKEN_CURLY_OPEN);
-    while (!at(this, TOKEN_CURLY_CLOSE)) {
-        let flag: Token = expect(this, TOKEN_IDENT);
-        expect(this, TOKEN_COLON_SINGLE);
-        let value: Token = expect(this, TOKEN_STRING_LITERAL);
-        if (!skip) {
-            // FIXME: Compiler Flags are currently a big hack in the compiler, they're basically
-            // their own thing until the final linker stage
-            // newParsedCompilerFlag adds them to a global list, which is why we're only
-            // constructing the flag if we're not skipping
-            let _flag: &ParsedCompilerFlag = newParsedCompilerFlag(flag, value);
-        }
-        if (!at(this, TOKEN_CURLY_CLOSE)) {
-            expect(this, TOKEN_SEMI_COLON);
-        }
-    }
-    expect(this, TOKEN_CURLY_CLOSE);
 }
 
 func parseImport(this: &Parser, skip: bool) -> &ParsedTopLevelItem {

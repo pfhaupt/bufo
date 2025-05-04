@@ -102,39 +102,6 @@ func indexOf(this: &ParsedConfigArena, elem: &ParsedConfig) -> usize {
     return indexOf(this.start, elem);
 }
 
-struct ParsedCompilerFlagArena {
-    start: &ArenaBlock;
-    end: &ArenaBlock;
-    length: usize;
-}
-
-func push(this: &ParsedCompilerFlagArena, elem: ParsedCompilerFlag) {
-    trace("ParsedCompilerFlagArena.push");
-    if (this.start == null) {
-        this.start = allocateBlock(ARENA_SIZE_SMALL, sizeof ParsedCompilerFlag);
-        assert(this.end == null);
-        this.end = this.start;
-    }
-    push(this.end, &elem, ARENA_SIZE_SMALL);
-    if (this.end.next != null) this.end = this.end.next;
-    this.length = this.length + 1;
-}
-func at(this: &ParsedCompilerFlagArena, index: usize) -> &ParsedCompilerFlag {
-    trace("ParsedCompilerFlagArena.at");
-    assert(this.start != null, "ParsedCompilerFlagArena.at() called on empty Arena");
-    return at(this.start, index) as &ParsedCompilerFlag;
-}
-func last(this: &ParsedCompilerFlagArena) -> &ParsedCompilerFlag {
-    trace("ParsedCompilerFlagArena.last");
-    assert(this.end != null, "ParsedCompilerFlagArena.last() called on empty Arena");
-    return last(this.end) as &ParsedCompilerFlag;
-}
-func indexOf(this: &ParsedCompilerFlagArena, elem: &ParsedCompilerFlag) -> usize {
-    trace("ParsedCompilerFlagArena.indexOf");
-    assert(this.start != null, "ParsedCompilerFlagArena.indexOf() called on empty Arena");
-    return indexOf(this.start, elem);
-}
-
 struct ParsedFileArena {
     start: &ArenaBlock;
     end: &ArenaBlock;
