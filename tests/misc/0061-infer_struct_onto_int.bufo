@@ -1,0 +1,14 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Unexpected Literal! Expected value of type Foo, found `1`.
+
+struct Foo {
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let f: Foo = 1;
+    return 0;
+}

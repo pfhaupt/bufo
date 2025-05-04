@@ -1,0 +1,17 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! DIAGNOSTICS
+//! WARNING:
+//! Shadowing variable `a` from an outer scope.
+//! Variable with the same name already declared here.
+
+import "prelude.bufo";
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a: i32 = 12;
+    {
+        let a: i32 = 13;
+        assert(a == 13);
+    }
+    return 0;
+}

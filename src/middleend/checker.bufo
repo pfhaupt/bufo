@@ -1042,7 +1042,22 @@ func typeCheckVarDecl(this: &TypeChecker, varDeclID: usize, scopes: &ScopeLookup
         exprState = varDecl.typeState;
     } else {
         let loc: Token = blank;
-        // REVIEW: Warn about shadowing?
+        if (*flags.warnSimple) {
+            for (let i: usize = 0; i < scopes.length - 1; i = i + 1) {
+                let s = at(scopes, i);
+                let _loc: Token = blank;
+                if (isKnownVariable(s, context.name.content, &_loc)) {
+                    let loc1 = toString(&context.name.span);
+                    let loc2 = toString(&_loc.span);
+                    let name = toString(&context.name.content);
+                    fprintf(stderr, "%s: %s: Shadowing variable `%s` from an outer scope.\n", loc1.buffer, WARN_STR, name.buffer);
+                    fprintf(stderr, "%s: %s: Variable with the same name already declared here.\n", loc2.buffer, NOTE_STR);
+                    drop(&name);
+                    drop(&loc2);
+                    drop(&loc1);
+                }
+            }
+        }
         if (!globalScope && isKnownVariable(last, context.name.content, &loc)) {
             return reportVariableRedeclaration(this, context.name, loc);
         }
@@ -1869,12 +1884,21 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, scop
             }
             return newTCStateFailure(ERROR_UNEXPECTED_LITERAL);
         } else {
-            todo_with_msg("can't infer non-int non-float type onto int literal");
+            if (!checkOnly) {
+                let s: String = toString(&expr.origToken.content);
+                let l: String = getLocation(&expr.origToken);
+                let t = toString(typ);
+                fprintf(stderr, "%s: %s: Unexpected Literal! Expected value of type %s, found `%s`.\n",
+                    l.buffer, ERR_STR, t.buffer, s.buffer);
+                drop(&t);
+                drop(&l);
+                drop(&s);
+                this.typeError = true;
+            }
+            return newTCStateFailure(ERROR_UNEXPECTED_LITERAL);
         }
     } else if (expr.kind == EXPR_CHAR_LIT) {
-        if (typ.kind != TYPE_KIND_PRIMITIVE && typ.typeIndex != TYPE_CHAR)
-            todo_with_msg("can't infer non-char type onto char literal");
-        tid = newTCStateType(getID(typ));
+        unreachable("EXPR_CHAR_LIT always has type char and should never be the target of tryInferTypeOntoExpr");
     } else if (expr.kind == EXPR_ARRAY_LIT) {
         if (!isArray(typ)) {
             if (!checkOnly) {

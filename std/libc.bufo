@@ -1,7 +1,3 @@
-// All libc functions are unsafe, because C-compliance is not guaranteed yet.
-
-// TODO: Implement safe wrapper for everything :^)
-
 @os(WINDOWS) @extern("_fdopen") func fdopen(fd: i32, mode: &char) -> Any;
 @os(WINDOWS) @extern("_fullpath") func _fullpath(absPath: &char, relPath: &char, maxLength: i32) -> &char;
 
@@ -30,7 +26,6 @@
 
 // File IO
 @extern("fopen") func fopen(filename: &char, mode: &char) -> Any;
-// FIXME: Any ignores Mutability :^) We should probably only write to mutable buffers tho...
 @extern("fread") func fread(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
 @extern("fwrite") func fwrite(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
 @extern("fclose") func fclose(stream: Any) -> i32;

@@ -879,10 +879,7 @@ func binOpFromKind(kind: usize) -> usize {
     else if (kind == TOKEN_AMPERSAND_DOUBLE) return BIN_LAND;
     else if (kind == TOKEN_CARET) return BIN_BXOR;
     else if (kind == TOKEN_COLON_DOUBLE) return BIN_MODULE;
-    else {
-        printf("%llu\n", kind);
-        todo_with_msg("binOpFromKind");
-    }
+    unreachable("Exhaustive handling of kinds in binOpFromKind");
 }
 
 func binOpAsStr(op: usize) -> &char {

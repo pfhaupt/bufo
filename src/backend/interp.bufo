@@ -19,7 +19,7 @@ struct InterpReg {
     size: usize;
 }
 func equals(this: &InterpReg, other: &InterpReg) -> bool {
-    todo_with_msg("InterpReg.equals");
+    unreachable("InterpReg.equals is never called");
 }
 
 comptime REG_STACK_SIZE: usize = 16777216;
