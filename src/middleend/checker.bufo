@@ -1639,6 +1639,7 @@ func typeCheckStructInitialization(this: &TypeChecker, expr: &ParsedExpr, lookup
         if (isError(&exprState)) result = exprState;
         if (!hasField(structLookup, &name.content)) {
             result = reportUnknownField(this, name, structLookup);
+            continue;
         }
         let fieldIndex: usize = getIndexByName(structLookup, &name);
         let bit: usize = shiftLeft(1, fieldIndex);
