@@ -17,6 +17,8 @@ import "./backend/cfa.bufo";
 import "./backend/interp.bufo";
 import "./backend/codegen_llvm.bufo";
 
+@os(WINDOWS) import "winapi/functions.bufo";
+
 let flagParser = FlagParser {};
 struct Flags {
     file: &String;
@@ -81,7 +83,7 @@ func main(argc: i32, argv: &&char) -> i32 {
     let string: String = readFileToString(flags.file.buffer);
     let sub: SubStr = newSubStrOfString(&string, 0, string.length);
     let parser: Parser = newParserFromSource(0, sub);
-    @os(WINDOWS) if (!addWindowsRoot(&parser)) return 1;
+    if (!findStdAndAddToImports(&parser)) return 1;
     addImportRoot(&parser, newSubStrOfStrLit("./std/"));
     let project: ParsedFile = parseProject(&parser, fileSubStr);
     let checker: TypeChecker = newTypeChecker();
@@ -107,17 +109,30 @@ func main(argc: i32, argv: &&char) -> i32 {
     return 0;
 }
 
-@os(WINDOWS) func addWindowsRoot(parser: &Parser) -> bool {
-    let path = getenv("APPDATA");
-    if (path == null) {
-        fprintf(stderr, "%s Could not get path of APPDATA, aborting\n", FATAL_STR);
-        return false;
-    }
-    assert(path != null, "Could not get path of APPDATA");
-    let s: String = newStringFromStrLit(path);
-    pushStr(&s, "/../Local/bufo/std/");
-    addImportRoot(parser, asSubStr(&s));
+func findStdAndAddToImports(parser: &Parser) -> bool {
+    let _my_path = getBufoPath();
+    let my_path = newStringFromStrLit(_my_path);
+    free(_my_path);
+    let root = getRoot(&my_path);
+    @os(WINDOWS) pushStr(&root, "\\std\\");
+    @os(LINUX) pushStr(&root, "/std/");
+    addImportRoot(parser, asSubStr(&root));
     return true;
+}
+
+@os(WINDOWS) func getBufoPath() -> &char {
+    // TODO: Get actual size of MAX_PATH, as the user can set this to values other than 260
+    comptime MAX_PATH: u32 = 260;
+    let buf = ['\0'; 260];
+    let length = GetModuleFileNameA(blank, &buf[0], MAX_PATH);
+    let buffer = malloc(length as usize + 1);
+    memset(buffer, 0, length as usize + 1);
+    memcpy(buffer, &buf, length as usize);
+    return buffer as &char;
+}
+
+@os(LINUX) func getBufoPath() {
+    unreachable("getBufoPath is not implemented for Linux yet");
 }
 
 @os(WINDOWS) func linkExecutable() -> bool {
