@@ -914,6 +914,9 @@ func parseSecondaryExpr(this: &Parser, lhs: &ParsedExpr, precedence: usize, asso
         return asop;
     }
     let rhs: &ParsedExpr = null;
+    // FIXME: There's no reason why those things should be secondary expressions
+    //        `foo{}` is a primary expression, but `foo()` and `foo[]` arent?
+    // TODO:  Remove BIN_INDEXED_ACCESS and BIN_CALL (todo.py: There's a related FIXME one line above this)
     if (op == BIN_INDEXED_ACCESS) {
         rhs = __parseExpr(this, 0, associativity);
         expect(this, TOKEN_SQUARE_CLOSE);
