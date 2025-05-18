@@ -142,8 +142,7 @@ func generateGlobal(this: &LLVMCodegen, global: &IRFunc) -> bool {
 func generateLLVMFunctionHeader(this: &LLVMCodegen, irFunc: &IRFunc) {
     let llvmFunc: LLVMValue = blank;
     let function: &ParsedFuncDecl = getFuncNode(irFunc);
-    let typeDecl: &ParsedTypeNode = at(&typeNodes, function.retTypeID);
-    let llvmFuncType = generateLLVMFunctionType(this, at(&types, getType(&function.typeState)));
+    let llvmFuncType = generateLLVMFunctionType(this, getType(&function.typeState));
     let llvmFuncValue: LLVMValue = addFunction(&this.llvmModule, asSubStr(&irFunc.name), llvmFuncType);
     if (hasAttribute(irFunc, ATTR_NORETURN)) {
         let id = LLVM::GetEnumAttributeKindForName("noreturn", 8 /* sizeof "noreturn" */);
@@ -725,8 +724,8 @@ func generateLLVMValueFromComptimeValue(this: &LLVMCodegen, typ: &Type, start: &
         let offset: usize = 0;
         let _size: usize = 0;
         for (let i: usize = 0; i < decl.context.fieldLength; i = i + 1) {
-            let tDecl: &ParsedTypeNode = at(&typeNodes, getFieldTypeAtIndex(&decl.context, i));
-            let fType: &Type = at(&types, getType(&tDecl.typeState));
+            let tDecl: &ParsedTypeNode = getFieldTypeAtIndex(&decl.context, i);
+            let fType: &Type = getType(&tDecl.typeState);
             getFieldOffsetAndSize(decl, i, &offset, &_size);
             let elemVal: LLVMValue = generateLLVMValueFromComptimeValue(this, fType, start + offset);
             strukt = buildInsertValue(&this.llvmBuilder, strukt, elemVal, i as u32, "comptime_struct_field");
@@ -767,7 +766,7 @@ func generateLLVMFunctionType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
         push(&params, prepareParameter(this, retType));
     }
     for (let i: usize = 0; i < typ.fnParams.length; i = i + 1) {
-        let t: &Type = at(&types, getType(getParam(typ, i)));
+        let t: &Type = getType(getParam(typ, i));
         push(&params, prepareParameter(this, t));
     }
     let isVarArg = isVariadic(typ);
@@ -812,8 +811,8 @@ func generateLLVMType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
         let fields: &LLVMType = malloc(decl.context.fieldLength * sizeof LLVMType);
         assert(fields != null, "Could not allocate memory in LLVMCodegen.generateLLVMType");
         for (let i: usize = 0; i < decl.context.fieldLength; i = i + 1) {
-            let tDecl: &ParsedTypeNode = at(&typeNodes, getFieldTypeAtIndex(&decl.context, i));
-            fields[i] = generateLLVMType(this, at(&types, getType(&tDecl.typeState)));
+            let tDecl: &ParsedTypeNode = getFieldTypeAtIndex(&decl.context, i);
+            fields[i] = generateLLVMType(this, getType(&tDecl.typeState));
         }
         let t: LLVMType = createStructType(&this.llvmContext, &*fields, decl.context.fieldLength as u32, false);
         free(fields);

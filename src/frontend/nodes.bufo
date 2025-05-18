@@ -41,7 +41,7 @@ func mangleFunctionName(
     parent: TLIParent,
     name: &Token,
     params: &ParamContext,
-    retTypeID: usize,
+    retType: &ParsedTypeNode,
     isComptime: bool,
     attrs: &ParsedAttributeList,
 ) -> String {
@@ -60,19 +60,17 @@ func mangleFunctionName(
     pushSubStr(&mangledName, &name.content);
     for (let i: usize = 0; i < params.paramLength; i = i + 1) {
         let name: Token = getNameAtIndex(params, i);
-        let id: usize = getTypeAtIndex(params, i);
-        let typeNode: &ParsedTypeNode = at(&typeNodes, id);
+        let typeNode: &ParsedTypeNode = getTypeAtIndex(params, i);
         assert(isSuccess(&typeNode.typeState), "Expected valid parameter type for mangling");
-        let typ: &Type = at(&types, getType(&typeNode.typeState));
+        let typ: &Type = getType(&typeNode.typeState);
         let _typ: String = getMangledName(typ);
         pushString(&mangledName, &_typ);
         drop(&_typ);
     }
     pushChar(&mangledName, 'r');
-    if (retTypeID != 0) {
-        let retNode: &ParsedTypeNode = at(&typeNodes, retTypeID);
-        assert(isSuccess(&retNode.typeState), "Expected valid return type for mangling");
-        let typ: &Type = at(&types, getType(&retNode.typeState));
+    if (retType != null) {
+        assert(isSuccess(&retType.typeState), "Expected valid return type for mangling");
+        let typ: &Type = getType(&retType.typeState);
         let _typ: String = getMangledName(typ);
         pushString(&mangledName, &_typ);
         drop(&_typ);
@@ -384,9 +382,8 @@ func getFieldOffsetAndSize(this: &ParsedStructDecl, index: usize, offset: &usize
     trace("ParsedStructDecl.getFieldOffsetAndSize");
     let o: usize = 0;
     for (let i: usize = 0; i < this.context.fieldLength; i = i + 1) {
-        let field: usize = getFieldTypeAtIndex(&this.context, i);
-        let f1: &ParsedTypeNode = at(&typeNodes, field);
-        let f: &Type = at(&types, getType(&f1.typeState));
+        let f1: &ParsedTypeNode = getFieldTypeAtIndex(&this.context, i);
+        let f: &Type = getType(&f1.typeState);
         let s: usize = getSize(f);
         s = nextMultipleOf(s, getAlignment(f));
         if (i == index) {
@@ -445,8 +442,8 @@ struct ParsedFuncDecl {
     name: Token;
     span: Span;
     params: ParamContext;
-    retTypeID: usize;
-    body: usize;
+    retType: &ParsedTypeNode;
+    body: &ParsedBlock;
     attrs: ParsedAttributeList;
     isComptime: bool;
     typeState: TCState;
@@ -486,7 +483,7 @@ func getMangledName(this: &ParsedFuncDecl) -> String {
         this.parent,
         &this.name,
         &this.params,
-        this.retTypeID,
+        this.retType,
         this.isComptime,
         &this.attrs,
     );
@@ -497,14 +494,14 @@ func asTLI(this: &ParsedFuncDecl) -> &ParsedTopLevelItem {
     return newParsedTopLevelItem(this.span, TLI_FUNC_DECL, getID(this));
 }
 
-func newParsedFuncDecl(parent: TLIParent, span: Span, name: Token, params: ParamContext, retType: &ParsedTypeNode, body: usize) -> &ParsedFuncDecl {
+func newParsedFuncDecl(parent: TLIParent, span: Span, name: Token, params: ParamContext, retType: &ParsedTypeNode, body: &ParsedBlock) -> &ParsedFuncDecl {
     push(&funcDecls, ParsedFuncDecl {
         ignored: ignoringNodes,
         parent: parent,
         name: name,
         span: span,
         params: params,
-        retTypeID: getID(retType),
+        retType: retType,
         body: body,
         isComptime: false,
         typeState: blank,
@@ -515,7 +512,7 @@ func newParsedFuncDecl(parent: TLIParent, span: Span, name: Token, params: Param
 struct ParsedBlock {
     ignored: bool;
     span: Span;
-    stmtList: &usize;
+    stmtList: &&ParsedStmt;
     stmtLength: usize;
     stmtCapacity: usize;
     typeState: TCState;
@@ -534,11 +531,11 @@ func addStmt(this: &ParsedBlock, stmt: &ParsedStmt) {
         assert(this.stmtList != null, "Could not resize stmt list");
         this.stmtCapacity = newCap;
     }
-    this.stmtList[this.stmtLength] = getID(stmt);
+    this.stmtList[this.stmtLength] = stmt;
     this.stmtLength = this.stmtLength + 1;
 }
 
-func getStmtAtIndex(this: &ParsedBlock, index: usize) -> usize {
+func getStmtAtIndex(this: &ParsedBlock, index: usize) -> &ParsedStmt {
     trace("ParsedBlock.getStmtAtIndex");
     assert(index < this.stmtLength, "Out of bounds access in ParsedBlock.getStmtAtIndex");
     return this.stmtList[index];
@@ -568,9 +565,9 @@ struct ParsedStmt {
     kind: usize;
     span: Span;
     varDeclContext: VarDeclContext;
-    expr: usize;
-    block: usize;
-    step: usize;
+    expr: &ParsedExpr;
+    block: &ParsedBlock;
+    step: &ParsedExpr;
     ifContext: IfContext;
     typeState: TCState;
 }
@@ -591,8 +588,14 @@ func asTLI(this: &ParsedStmt) -> &ParsedTopLevelItem {
 
 func getMangledName(this: &ParsedStmt) -> String {
     assert(this.kind == STMT_VAR_DECL, "Only variable declarations can get their names mangled");
-    assert(this.block < NODE_ID_OFFSET, "Only global variable declarations can get their names mangled");
-    return mangleVariableName(this.block, &this.varDeclContext.name);
+    assert(this.varDeclContext.origin < NODE_ID_OFFSET, "Only global variable declarations can get their names mangled");
+    return mangleVariableName(this.varDeclContext.origin, &this.varDeclContext.name);
+}
+
+func into_block(this: &ParsedStmt) -> &ParsedBlock {
+    let block: &ParsedBlock = newParsedBlock();
+    addStmt(block, this);
+    return block;
 }
 
 func newParsedStmt(span: Span, kind: usize) -> &ParsedStmt {
@@ -672,8 +675,8 @@ struct ParsedTypeNode {
     ignored: bool;
     span: Span;
     kind: usize;
-    underlyingID: usize;
-    fnParams: UsizeList;
+    underlyingID: &ParsedTypeNode;
+    fnParams: ParsedTypeNodeList;
     arraySize: usize;
     nameTkn: Token;
     typeState: TCState;

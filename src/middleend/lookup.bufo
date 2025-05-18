@@ -180,7 +180,7 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) -> bool {
             parent: tli.parent,
             name: strukt.name,
             fields: blank,
-            typeID: getID(newType(TYPE_KIND_STRUCT, tli.nodeID)),
+            type: newType(TYPE_KIND_STRUCT, tli.nodeID),
         };
         if (contains(&this.structs, &lookup)) {
             let loc = toString(&tli.span);
@@ -454,7 +454,7 @@ func resolveAllStructsWithField(this: &ModuleLookup, name: &Token, typ: &Type) -
         let v: VariableLookup = blank;
         if (resolveFieldByName(s, name, &v)) {
             assert(isType(&v.typeState));
-            let t = at(&types, getType(&v.typeState));
+            let t = getType(&v.typeState);
             if (equals(t, typ)) {
                 push(&list, *s);
             }
@@ -528,7 +528,7 @@ func resolveAllFunctionsWithSignature(this: &ModuleLookup, name: &Token, typ: &T
         if (!equals(&f.name.content, &name.content)) {
             continue;
         }
-        let _rt = at(&types, getType(&f.fnType));
+        let _rt = getType(&f.fnType);
         assert(isFunction(_rt));
         if (typ.fnParams.length != _rt.fnParams.length) continue;
         let retType1 = at(&types, typ.typeIndex);
@@ -541,8 +541,8 @@ func resolveAllFunctionsWithSignature(this: &ModuleLookup, name: &Token, typ: &T
             let p1 = getParam(typ, j);
             let p2 = getParam(_rt, j);
             if (!isType(p1)) continue;
-            let t1 = at(&types, getType(p1));
-            let t2 = at(&types, getType(p2));
+            let t1 = getType(p1);
+            let t2 = getType(p2);
             if (!isUnknown(t1)) if (!equals(t1, t2)) {
                 succ = false;
                 break;
@@ -650,7 +650,7 @@ struct StructLookup {
     parent: TLIParent;
     name: Token;
     fields: VariableLookupList;
-    typeID: usize;
+    type: &Type;
 }
 
 func asTypeLookup(this: &StructLookup) -> TypeLookup {

@@ -134,7 +134,28 @@ struct TokenList {
     length: usize;
     capacity: usize;
 }
+struct ParsedTypeNodeList {
+    elements: &&ParsedTypeNode;
+    length: usize;
+    capacity: usize;
+}
 
+func push(this: &ParsedTypeNodeList, element: &ParsedTypeNode) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof &ParsedTypeNode);
+        assert(this.elements != null, "Could not allocate memory in ParsedTypeNodeList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+func at(this: &ParsedTypeNodeList, index: usize) -> &&ParsedTypeNode {
+    assert(index < this.length, "Out of bounds access in ParsedTypeNodeList.at");
+    assert(this.elements != null, "Element pointer is NULL in ParsedTypeNodeList.at");
+    return &this.elements[index];
+}
 func push(this: &TokenList, element: Token) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;

@@ -286,7 +286,7 @@ func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
     if (isExtern(f)) {
         @os(WINDOWS) if (!isNull(f.dllHandle)) {
             let fun = compileFunctionCall(this, irFunc, calledFunc, instr, f.dllHandle.handle.ptr, regs);
-            let retType = at(&types, at(&types, getType(&f.typeState)).typeIndex);
+            let retType = at(&types, getType(&f.typeState).typeIndex);
             let val = fun.run();
             let size: usize = getSize(dstReg.typ);
             let dst: InterpReg = InterpReg {
@@ -1671,7 +1671,7 @@ func push(val: u64) -> ByteBuffer {
 
 @os(WINDOWS) func compileFunctionCall(this: &IRInterp, currFunc: &IRFunc, calledFunc: &IRFunc, instr: &IRInstr, fn: usize, regs: &RegValueList) -> Function {
     let f = at(&funcDecls, calledFunc.originalID);
-    let fnType = at(&types, getType(&f.typeState));
+    let fnType = getType(&f.typeState);
     let retType = at(&types, fnType.typeIndex);
     let buf: ByteBuffer = blank;
     // push(&buf, '\xf1');
