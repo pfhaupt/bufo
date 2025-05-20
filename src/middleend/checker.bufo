@@ -216,14 +216,20 @@ func reportDuplicateParameter(this: &TypeChecker, paramToken: Token, declSpan: S
     return newTCStateFailure(ERROR_DUPLICATE_PARAMETER);
 }
 
-func reportUnknownField(this: &TypeChecker, name: Token, decl: &StructLookup) -> TCState {
+func reportUnknownField(this: &TypeChecker, name: Token, decl: &StructLookup, isUnion: bool) -> TCState {
     trace("TypeChecker.reportUnknownField");
     let errLoc: String = toString(&name.span);
     let declLoc: String = toString(&decl.name.span);
     let strukt: String = toString(&decl.name.content);
     let field: String = toString(&name.content);
-    fprintf(stderr, "%s: %s: Attempted to access unknown field `%s` of instance of struct %s.\n", errLoc.buffer, ERR_STR, field.buffer, strukt.buffer);
-    fprintf(stderr, "%s: %s: Struct %s is declared here.\n", declLoc.buffer, NOTE_STR, strukt.buffer);
+    let s1 = "struct";
+    let s2 = "Struct";
+    if (isUnion) {
+        s1 = "union variant";
+        s2 = "Union variant";
+    }
+    fprintf(stderr, "%s: %s: Attempted to access unknown field `%s` of instance of %s %s.\n", errLoc.buffer, ERR_STR, field.buffer, s1, strukt.buffer);
+    fprintf(stderr, "%s: %s: %s %s is declared here.\n", declLoc.buffer, NOTE_STR, s2, strukt.buffer);
     drop(&field);
     drop(&strukt);
     drop(&declLoc);
@@ -837,7 +843,7 @@ func typeCheckUnionDecl(this: &TypeChecker, onion: &ParsedUnionDecl) -> TCState 
     trace("TypeChecker.typeCheckUnionDecl");
     if (onion.ignored) return blank;
     let unionLookup = getUnionByGlobalDecl(&this.lookup, onion);
-    let result = newTCStateSuccess();
+    let result = newTCStateType(newType(TYPE_KIND_UNION, getID(onion)));
     for (let i: usize = 0; i < onion.variants.length; i = i + 1) {
         let variant = *at(&onion.variants, i);
         /*
@@ -1489,6 +1495,31 @@ func typeCheckExprCall(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLook
         callBase = baseState;
     }
     let baseType = getType(&callBase);
+    if (isUnion(baseType)) {
+        let decl = at(&unionDecls, baseType.typeIndex);
+        let variant = *at(&decl.variants, baseType.arraySize);
+        if (variant.kind != UNION_VARIANT_TUPLE) todo_with_msg("report error: Union Variant is not a tuple");
+        if (callContext.elemLength != variant.fields.length) todo_with_msg("report error: Tuple variant count mismatch");
+        let unionType = copy(baseType);
+        unionType.arraySize = baseType.arraySize;
+        for (let i: usize = 0; i < variant.fields.length; i = i + 1) {
+            let argID = getElementAtIndex(callContext, i);
+            let arg = typeCheckExpr(this, argID, scopes);
+            if (isError(&arg)) return arg;
+            let paramType = getTypeAtIndex(variant, i);
+            if (wantsInfer(&arg)) {
+                arg = inferTypeOntoExpr(this, argID, paramType, scopes);
+                if (isError(&arg)) return arg;
+            }
+            let argType = getType(&arg);
+            if (!equals(argType, paramType)) {
+                let e = at(&exprs, argID);
+                reportTypeMismatch(this, e.span, paramType, argType);
+            }
+        }
+        expr.kind = EXPR_UNION_INIT;
+        return newTCStateType(unionType);
+    }
     if (!isFunction(baseType)) {
         return reportCallToNonFunction(this, expr.span, baseType);
     }
@@ -1561,6 +1592,16 @@ func typeCheckIdentifier(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLo
         (*expr).lhs = f.globalID;
         (*expr).typeState = f.fnType;
         return f.fnType;
+    }
+    let unionLookup: &UnionLookup = null;
+    if (resolveUnionByName(this.currentModule, &name, &unionLookup)) {
+        assert(unionLookup != null, "resolveUnionByName returned true but lookup is null");
+        let decl = unionLookup.global;
+        assert(isSuccess(&decl.typeState), "Expected valid union type at this point");
+        let t = getType(&decl.typeState);
+        assert(isUnion(t), "Expected union declaration to have union type");
+        // Must copy here because each `::` sets the variant of this type
+        return newTCStateType(copy(t));
     }
     let moduleLookup: &ModuleLookup = null;
     if (resolveModuleByName(this.currentModule, &name, &moduleLookup)) {
@@ -1726,8 +1767,11 @@ func typeCheckExprAssign(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLo
     }
     return rhsState;
 }
-
 func typeCheckStructInitialization(this: &TypeChecker, expr: &ParsedExpr, lookup: TypeLookup, scopes: &ScopeLookupList) -> TCState {
+    return typeCheckStructInitialization(this, expr, lookup, scopes, false);
+}
+
+func typeCheckStructInitialization(this: &TypeChecker, expr: &ParsedExpr, lookup: TypeLookup, scopes: &ScopeLookupList, isUnion: bool) -> TCState {
     let context: &StructInitContext = &expr.structInitContext;
     let structLookup: &StructLookup = asStruct(&lookup);
     let hits: usize = 0;
@@ -1739,7 +1783,7 @@ func typeCheckStructInitialization(this: &TypeChecker, expr: &ParsedExpr, lookup
         let exprState: TCState = typeCheckExpr(this, fieldExpr, scopes);
         if (isError(&exprState)) result = exprState;
         if (!hasField(structLookup, &name.content)) {
-            result = reportUnknownField(this, name, structLookup);
+            result = reportUnknownField(this, name, structLookup, isUnion);
             continue;
         }
         let fieldIndex: usize = getIndexByName(structLookup, &name);
@@ -1778,59 +1822,98 @@ func typeCheckExprModuleAccess(this: &TypeChecker, expr: &ParsedExpr, scopes: &S
     let instance: TCState = typeCheckExpr(this, expr.lhs, scopes);
     if (isError(&instance)) return instance;
     let instanceType = getType(&instance);
-    if (!isModule(instanceType)) {
+    if (isModule(instanceType)) {
+        let modLookup = getModuleByGlobalID(&this.lookup, instanceType.typeIndex);
+        if (rhs.kind == EXPR_NAME) {
+            let submodule: &ModuleLookup = null;
+            if (resolveModuleByName(modLookup, &rhs.origToken, &submodule, false, true, true)) {
+                let typ = newType(TYPE_KIND_MODULE, submodule.globalID);
+                rhs.typeState = newTCStateType(typ);
+                return rhs.typeState;
+            }
+            let var: &VariableLookup = null;
+            let fun: FunctionLookupList = blank;
+            let typ: TypeLookup = blank;
+            let res = resolveIdentifierByName(modLookup, &rhs.origToken, &var, &typ, &fun);
+            if (res == IDENT_TYPE) {
+                return reportModuleAccessOfNonModule(this, expr.span, rhs.origToken, typ);
+            } else if (res == IDENT_NONE) {
+                return reportUnknownSubmodule(this, modLookup, rhs.origToken);
+            } else if (res == IDENT_FUNC) {
+                assert(fun.length != 0, "IDENT_FUNC but fun is empty");
+                if (fun.length == 1) {
+                    let f = at(&fun, 0);
+                    assert(isSuccess(&f.fnType), "Did not properly type check function of module");
+                    let s = f.fnType;
+                    rhs.typeState = s;
+                    rhs.lhs = f.globalID;
+                    return s;
+                } else {
+                    drop(&fun);
+                    return newTCStatePleaseInfer();
+                }
+            } else if (res == IDENT_VAR) {
+                assert(var != null, "IDENT_VAR but var is null");
+                todo_with_msg("module.var");
+            } else {
+                unreachable("Exhaustive handling of outcomes of resolveIdentifierByName");
+            }
+        } else if (rhs.kind == EXPR_STRUCT_INIT) {
+            let name: Token = rhs.origToken;
+            let lookup: TypeLookup = blank;
+            if (!resolveTypeByName(modLookup, &name, &lookup)) {
+                return reportUnknownType(this, modLookup, name, blank);
+            }
+            if (isStruct(&lookup)) {
+                rhs.typeState = typeCheckStructInitialization(this, rhs, lookup, scopes);
+            } else {
+                unreachable("typeCheckExprModuleAccess got non-struct");
+            }
+            return rhs.typeState;
+        } else {
+            todo_with_msg("module: report error maybe?");
+        }
+    } else if (isUnion(instanceType)) {
+        return typeCheckExprUnionInit(this, expr, instanceType, scopes);
+    } else {
         return reportModuleAccessOfNonModule(this, expr.span, modExpr.origToken, blank);
     }
-    let modLookup = getModuleByGlobalID(&this.lookup, instanceType.typeIndex);
+}
+func typeCheckExprUnionInit(this: &TypeChecker, expr: &ParsedExpr, unionType: &Type, scopes: &ScopeLookupList) -> TCState {
+    trace("TypeChecker.typeCheckExprUnionInit");
+    assert(expr.op == BIN_MODULE);
+    assert(isUnion(unionType));
+    unionType = copy(unionType);
+    let lhs = at(&exprs, expr.lhs);
+    assert(isSuccess(&lhs.typeState));
+    let rhs = at(&exprs, expr.rhs);
+    let decl = at(&unionDecls, unionType.typeIndex);
+    let lookup: &UnionLookup = null;
+    let succ = resolveUnionByName(this.currentModule, &decl.name, &lookup);
+    assert(succ);
+    let result = newTCStateType(unionType);
     if (rhs.kind == EXPR_NAME) {
-        let submodule: &ModuleLookup = null;
-        if (resolveModuleByName(modLookup, &rhs.origToken, &submodule, false, true, true)) {
-            let typ = newType(TYPE_KIND_MODULE, submodule.globalID);
-            rhs.typeState = newTCStateType(typ);
-            return rhs.typeState;
-        }
-        let var: &VariableLookup = null;
-        let fun: FunctionLookupList = blank;
-        let typ: TypeLookup = blank;
-        let res = resolveIdentifierByName(modLookup, &rhs.origToken, &var, &typ, &fun);
-        if (res == IDENT_TYPE) {
-            return reportModuleAccessOfNonModule(this, expr.span, rhs.origToken, typ);
-        } else if (res == IDENT_NONE) {
-            return reportUnknownSubmodule(this, modLookup, rhs.origToken);
-        } else if (res == IDENT_FUNC) {
-            assert(fun.length != 0, "IDENT_FUNC but fun is empty");
-            if (fun.length == 1) {
-                let f = at(&fun, 0);
-                assert(isSuccess(&f.fnType), "Did not properly type check function of module");
-                let s = f.fnType;
-                rhs.typeState = s;
-                rhs.lhs = f.globalID;
-                return s;
-            } else {
-                drop(&fun);
-                return newTCStatePleaseInfer();
-            }
-        } else if (res == IDENT_VAR) {
-            assert(var != null, "IDENT_VAR but var is null");
-            todo_with_msg("module.var");
-        } else {
-            unreachable("Exhaustive handling of outcomes of resolveIdentifierByName");
-        }
+        let name = &rhs.origToken;
+        let variant: &UnionVariantLookup = null;
+        if (!resolveVariantByName(lookup, name, &variant)) todo_with_msg("report error, no such variant");
+        unionType.arraySize = variant.tag;
+        result = newTCStateType(unionType);
     } else if (rhs.kind == EXPR_STRUCT_INIT) {
-        let name: Token = rhs.origToken;
-        let lookup: TypeLookup = blank;
-        if (!resolveTypeByName(modLookup, &name, &lookup)) {
-            return reportUnknownType(this, modLookup, name, blank);
-        }
-        if (isStruct(&lookup)) {
-            rhs.typeState = typeCheckStructInitialization(this, rhs, lookup, scopes);
-        } else {
-            unreachable("typeCheckExprModuleAccess got non-struct");
-        }
-        return rhs.typeState;
+        let name = &rhs.origToken;
+        let variant: &UnionVariantLookup = null;
+        if (!resolveVariantByName(lookup, name, &variant)) todo_with_msg("report error, no such variant");
+        unionType.arraySize = variant.tag;
+        let result = newTCStateType(unionType);
+        let structLookup = intoStructLookup(variant);
+        // FIXME: typeCheckStructInitialization is exactly what we need here, but it would be cool
+        //        if it wasn't called like that
+        result = typeCheckStructInitialization(this, rhs, asTypeLookup(&structLookup), scopes, true);
     } else {
-        todo_with_msg("report error maybe?");
+        todo_with_msg("union: report error maybe?");
     }
+    rhs.kind = EXPR_UNION_INIT;
+    rhs.typeState = result;
+    return result;
 }
 func typeCheckExprMemberAccess(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.typeCheckExprMemberAccess");
@@ -1869,7 +1952,7 @@ func typeCheckExprMemberAccess(this: &TypeChecker, expr: &ParsedExpr, scopes: &S
         let fieldName: Token = rhs.origToken;
         let field: VariableLookup = blank;
         if (!resolveFieldByName(structLookup, &fieldName, &field)) {
-            return reportUnknownField(this, fieldName, structLookup);
+            return reportUnknownField(this, fieldName, structLookup, false);
         }
         let fieldState: TCState = field.typeState;
         assert(isSuccess(&fieldState), "Expected valid field type");
@@ -2081,6 +2164,13 @@ func tryInferTypeOntoExpr(this: &TypeChecker, expr: &ParsedExpr, type: &Type, sc
             let loc: String = toString(&expr.span);
             let name: String = toString(type);
             fprintf(stderr, "%s: %s: Using `blank` to initialize value of type %s. Please use `0` instead.\n",
+                loc.buffer, WARN_STR, name.buffer);
+            drop(&name);
+            drop(&loc);
+        } else if (isUnion(type)) {
+            let loc: String = toString(&expr.span);
+            let name: String = toString(type);
+            fprintf(stderr, "%s: %s: Using `blank` to initialize value of type %s.\n",
                 loc.buffer, WARN_STR, name.buffer);
             drop(&name);
             drop(&loc);

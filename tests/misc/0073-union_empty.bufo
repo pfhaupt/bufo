@@ -1,0 +1,18 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+
+union Empty {}
+
+func do_something(f: Empty) -> Empty {
+    return f;
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    assert(sizeof Empty == 0);
+    let f: Empty = blank;
+    let g = do_something(f);
+    return 0;
+}

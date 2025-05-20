@@ -622,6 +622,26 @@ func resolveAllFunctionsWithSignature(this: &ModuleLookup, name: &Token, typ: &T
     }
     return list;
 }
+func resolveUnionByName(this: &ModuleLookup, name: &Token, onion: &&UnionLookup) -> bool {
+    return resolveUnionByName(this, name, onion, true);
+}
+func resolveUnionByName(this: &ModuleLookup, name: &Token, onion: &&UnionLookup, checkImport: bool) -> bool {
+    trace("ModuleLookup.resolveUnionByName");
+    for (let i: usize = 0; i < this.unions.length; i = i + 1) {
+        let e: &UnionLookup = at(&this.unions, i);
+        if (equals(&e.name.content, &name.content)) {
+            *onion = e;
+            return true;
+        }
+    }
+    if (checkImport) {
+        for (let i: usize = 0; i < this.imports.length; i = i + 1) {
+            let imp = at(&this.globalLookup.files, at(&this.imports, i).fileID);
+            if (resolveUnionByName(imp, name, onion, false)) return true;
+        }
+    }
+    return false;
+}
 struct FunctionLookup {
     globalID: usize;
     parent: TLIParent;
@@ -810,6 +830,17 @@ func equals(this: &UnionLookup, other: &UnionLookup) -> bool {
     return equals(&this.name.content, &other.name.content);
 }
 
+func resolveVariantByName(this: &UnionLookup, name: &Token, variant: &&UnionVariantLookup) -> bool {
+    for (let i: usize = 0; i < this.variants.length; i = i + 1) {
+        let v: &UnionVariantLookup = at(&this.variants, i);
+        if (equals(&v.global.name.content, &name.content)) {
+            *variant = v;
+            return true;
+        }
+    }
+    return false;
+}
+
 func checkForDuplicateVariant(this: &UnionLookup, curr: &ParsedUnionVariant, dupl: &&UnionVariantLookup) -> bool {
     trace("UnionLookup.checkForDuplicateVariant");
     for (let i: usize = 0; i < this.variants.length; i = i + 1) {
@@ -823,25 +854,48 @@ func checkForDuplicateVariant(this: &UnionLookup, curr: &ParsedUnionVariant, dup
 }
 func addVariant(this: &UnionLookup, variant: &ParsedUnionVariant, typeState: TCState) {
     trace("UnionLookup.addVariant");
+    let tag = this.variants.length;
     push(&this.variants, UnionVariantLookup {
         global: variant,
+        tag: tag,
         typeState: typeState,
     });
 }
 
 struct UnionVariantLookup {
     global: &ParsedUnionVariant;
+    tag: usize;
     typeState: TCState;
 }
 
 func equals(this: &UnionVariantLookup, other: &UnionVariantLookup) -> bool {
-    todo_with_msg("UnionVariantLookup.equals");
+    unreachable("UnionVariantLookup.equals");
 }
 func checkForDuplicateName(this: &UnionVariantLookup, name: &Token, dupl: &&Token) -> bool {
     trace("UnionVariantLookup.checkForDuplicateName");
     return checkForDuplicateName(this.global, name, dupl);
 }
 
+func intoStructLookup(this: &UnionVariantLookup) -> StructLookup {
+    assert(this.global.kind == UNION_VARIANT_STRUCT, "intoStructLookup() called on non-struct variant");
+    let lookup = StructLookup {
+        globalID: getID(this.global),
+        parent: this.global.parent,
+        name: this.global.name,
+    };
+    for (let i: usize = 0; i < this.global.fields.length; i = i + 1) {
+        let field = *at(&this.global.fields, i);
+        let name = at(&this.global.names, i);
+        assert(isSuccess(&field.typeState), "Expected valid variant field type at this point");
+        push(&lookup.fields, VariableLookup {
+            globalID: getID(field),
+            name: *name,
+            typeState: field.typeState,
+            isComptime: false
+        });
+    }
+    return lookup;
+}
 
 struct VariableLookup {
     globalID: usize;

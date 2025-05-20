@@ -60,8 +60,8 @@ func getMangledName(this: &Type) -> String {
         else if (this.typeIndex == TYPE_I16) return newStringFromStrLit("i16");
         else if (this.typeIndex == TYPE_I32) return newStringFromStrLit("i32");
         else if (this.typeIndex == TYPE_I64) return newStringFromStrLit("i64");
-        else if (this.typeIndex == TYPE_USIZE) return newStringFromStrLit("U");
-        else if (this.typeIndex == TYPE_ANY) return newStringFromStrLit("A");
+        else if (this.typeIndex == TYPE_USIZE) return newStringFromStrLit("usz");
+        else if (this.typeIndex == TYPE_ANY) return newStringFromStrLit("Any");
         else if (this.typeIndex == TYPE_BOOL) return newStringFromStrLit("B");
         else if (this.typeIndex == TYPE_NONE) return newStringFromStrLit("N");
         else if (this.typeIndex == TYPE_CHAR) return newStringFromStrLit("c");
@@ -78,6 +78,14 @@ func getMangledName(this: &Type) -> String {
         let s: String = newStringFromStrLit("S");
         let decl: &ParsedStructDecl = at(&structDecls, this.typeIndex);
         let hash: usize = hash(&decl.name.content, 3);
+        if (hash < 10) pushNumber(&s, 0);
+        if (hash < 100) pushNumber(&s, 0);
+        pushNumber(&s, hash);
+        return s;
+    } else if (this.kind == TYPE_KIND_UNION) {
+        let s = newStringFromStrLit("U");
+        let decl = at(&unionDecls, this.typeIndex);
+        let hash = hash(&decl.name.content, 3);
         if (hash < 10) pushNumber(&s, 0);
         if (hash < 100) pushNumber(&s, 0);
         pushNumber(&s, hash);
@@ -127,6 +135,7 @@ func equals(this: &Type, other: &Type) -> bool {
     if (this.kind != other.kind)
         return false;
     if (this.kind == TYPE_KIND_ARRAY) {
+        // FIXME: array_bug.bufo
         return equals(at(&types, this.typeIndex), at(&types, other.typeIndex));
     }
     if (this.kind == TYPE_KIND_FUNCTION) {
@@ -278,6 +287,9 @@ func toString(this: &Type) -> String {
         return s;
     } else if (this.kind == TYPE_KIND_STRUCT) {
         let decl: &ParsedStructDecl = at(&structDecls, this.typeIndex);
+        return getFullName(decl);
+    } else if (this.kind == TYPE_KIND_UNION) {
+        let decl: &ParsedUnionDecl = at(&unionDecls, this.typeIndex);
         return getFullName(decl);
     } else if (this.kind == TYPE_KIND_FUNCTION) {
         let s: String = newStringFromStrLit("func (");
@@ -479,6 +491,12 @@ func getMaxFloatValue(this: &Type) -> f64 {
 }
 func intoPointer(this: &Type) -> usize {
     return getID(newType(TYPE_KIND_POINTER, getID(this)));
+}
+
+func copy(this: &Type) -> &Type {
+    let new = newType(this.kind, this.typeIndex);
+    *new = *this;
+    return new;
 }
 
 func newType(kind: usize, type: &Type) -> &Type {

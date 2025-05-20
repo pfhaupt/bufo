@@ -396,6 +396,14 @@ func buildUnreachable(this: &LLVMBuilder) {
     assert(!LLVM::isNull(v), "Could not build unreachable");
 }
 
+func buildMemcpy(this: &LLVMBuilder, dst: LLVMValue, dstAlign: u32, src: LLVMValue, srcAlign: u32, size: LLVMValue) -> LLVMValue {
+    trace("LLVMBuilder.buildMemcpy");
+    guardReference(this);
+    let v = LLVM::BuildMemcpy(this.ref, dst.ref, dstAlign, src.ref, srcAlign, size.ref);
+    assert(!LLVM::isNull(v), "Could not build memcpy");
+    return newLLVMValueFromRef(v);
+}
+
 func newLLVMBuilderFromRef(ref: LLVM::BuilderRef) -> LLVMBuilder {
     trace("newLLVMBuilderFromRef");
     assert(!LLVM::isNull(ref), "Passed invalid reference to newLLVMBuilderFromRef");

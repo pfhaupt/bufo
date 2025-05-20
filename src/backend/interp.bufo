@@ -164,12 +164,14 @@ let instrFns = [
     evaluateF64ToF32,           // INSTR_F64_TO_F32
     evaluateCreateArray,        // INSTR_CREATE_ARRAY
     evaluateCreateStruct,       // INSTR_CREATE_STRUCT
+    evaluateCreateUnion,        // INSTR_CREATE_UNION
     evaluatePtrToInt,           // INSTR_PTR_TO_INT
     evaluateIntToPtr,           // INSTR_INT_TO_PTR
     evaluateGetFieldPtr,        // INSTR_GET_FIELD_PTR
     evaluateNotImplemented,     // INSTR_GET_ELEMENT_PTR
     evaluateUnreachable,        // INSTR_UNREACHABLE
     evaluateUnterminated,       // INSTR_UNTERMINATED
+    evaluateMemcpy,             // INSTR_MEMCPY
 ];
 func evaluateNotImplemented(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     printf("%s: ", toString(&instr.span).buffer);
@@ -1270,6 +1272,16 @@ func evaluateCreateStruct(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, reg
     memset(getRegStackPointer(this, &dst), 0, dst.size);
     return dst;
 }
+func evaluateCreateUnion(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateCreateUnion");
+    let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+    let dst: InterpReg = InterpReg {
+        offset: dstReg.offset,
+        size: getSize(dstReg.typ),
+    };
+    memset(getRegStackPointer(this, &dst), 0, dst.size);
+    return dst;
+}
 func evaluateIntToF32(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     trace("IRInterp.evaluateIntToF32");
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
@@ -1400,6 +1412,21 @@ func evaluateUnreachable(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
 func evaluateUnterminated(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     trace("IRInterp.evaluateUnterminated");
     unreachable("IRInterp: Hit INSTR_UNTERMINATED");
+}
+func evaluateMemcpy(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateMemcpy");
+    let src  = at(regs, instr.src.i);
+    let dst  = at(regs, instr.dst.i);
+    let size = at(regs, instr.op1.i);
+    let rSrc = asInterp(src, "Memcpy src");
+    let rDst = asInterp(dst, "Memcpy dst");
+    let rSize = asInterp(size, "Memcpy size");
+    let srcLoc: &u8 = *(getRegStackPointer(this, &rSrc) as &usize) as &u8;
+    let dstLoc: &u8 = *(getRegStackPointer(this, &rDst) as &usize) as &u8;
+    let sizeStart: &u8 = getRegStackPointer(this, &rSize);
+    let sizeValue = *(sizeStart as &usize);
+    memcpy(dstLoc, srcLoc, sizeValue);
+    return rDst;
 }
 
 func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {

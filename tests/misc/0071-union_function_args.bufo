@@ -1,0 +1,26 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+
+union Foo {
+    A,
+    B(i8, i8, i8),
+}
+
+func take(f: Foo) {
+}
+
+func take_ref(f: &Foo) {
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a = Foo::A;
+    let b = Foo::B(12, 12, 12);
+    take(a);
+    take(b);
+    take_ref(&a);
+    take_ref(&b);
+    return 0;
+}

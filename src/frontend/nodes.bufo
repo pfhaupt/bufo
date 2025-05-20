@@ -211,7 +211,7 @@ comptime TLI_INVALID    : usize = 0;
 comptime TLI_IMPORT     : usize = 1;
 comptime TLI_VAR_DECL   : usize = 2;
 comptime TLI_STRUCT_DECL: usize = 3;
-comptime TLI_UNION_DECL  : usize = 4;
+comptime TLI_UNION_DECL : usize = 4;
 comptime TLI_FUNC_DECL  : usize = 5;
 comptime TLI_MOD_DECL   : usize = 6;
 comptime TLI_CONFIG     : usize = 7;
@@ -465,6 +465,29 @@ func asTLI(this: &ParsedUnionDecl) -> &ParsedTopLevelItem {
     trace("ParsedUnionDecl.asTLI");
     return newParsedTopLevelItem(this.span, TLI_UNION_DECL, getID(this));
 }
+func getFullName(this: &ParsedUnionDecl) -> String {
+    let s: String = blank;
+    let parent = this.parent;
+    while (!parent.isFile) {
+        let m = at(&modules, parent.id as usize);
+        let _s: String = blank;
+        pushSubStr(&_s, &m.name.content);
+        if (s.length != 0) {
+            pushChar(&_s, ':');
+            pushChar(&_s, ':');
+        }
+        pushString(&_s, &s);
+        drop(&s);
+        s = _s;
+        parent = m.parent;
+    }
+    if (s.length != 0) {
+        pushChar(&s, ':');
+        pushChar(&s, ':');
+    }
+    pushSubStr(&s, &this.name.content);
+    return s;
+}
 func newParsedUnionDecl(parent: TLIParent, span: Span, name: Token) -> &ParsedUnionDecl {
     trace("newParsedUnionDecl");
     push(&unionDecls, ParsedUnionDecl {
@@ -489,6 +512,22 @@ struct ParsedUnionVariant {
     fields: ParsedTypeNodeList;
     names: TokenList;
 }
+func getID(this: &ParsedUnionVariant) -> usize {
+    trace("ParsedUnionVariant.getID");
+    return indexOf(&unionVariants, this);
+}
+
+func getFieldIndexAndOffset(this: &ParsedUnionVariant, name: &SubStr, index: &usize, offset: &usize) {
+    assert(this.kind == UNION_VARIANT_STRUCT, "ParsedUnionVariant.getFieldIndex called on non-struct union variant");
+    for (let i: usize = 0; i < this.names.length; i = i + 1) {
+        if (equals(&at(&this.names, i).content, name)) {
+            *index = i;
+            return;
+        }
+        *offset = *offset + getSize(getType(&(*at(&this.fields, i)).typeState));
+    }
+    unreachable("Expected to find field in union variant at this point");
+}
 
 func addField(this: &ParsedUnionVariant, field: &ParsedTypeNode) {
     // NOTE: We leak the String here
@@ -496,6 +535,14 @@ func addField(this: &ParsedUnionVariant, field: &ParsedTypeNode) {
     pushNumber(&s, this.names.length);
     let name = newToken(this.parent.id as usize, &asSubStr(&s), 0, TOKEN_IDENT);
     addNamedField(this, name, field);
+}
+
+func getTypeAtIndex(this: &ParsedUnionVariant, index: usize) -> &Type {
+    trace("ParsedUnionVariant.getTypeAtIndex");
+    assert(index < this.fields.length, "Out of bounds access in ParsedUnionVariant.getTypeAtIndex");
+    let node = *at(&this.fields, index);
+    assert(isSuccess(&node.typeState), "Expected valid TypeNode state in ParsedUnionVariant.getTypeAtIndex");
+    return getType(&node.typeState);
 }
 
 func addNamedField(this: &ParsedUnionVariant, name: Token, typ: &ParsedTypeNode) {
@@ -822,12 +869,13 @@ comptime EXPR_CALL: usize = 9;
 // sizeof -> LHS is set
 comptime EXPR_SIZEOF: usize = 10;
 comptime EXPR_STRUCT_INIT: usize = 11;
+comptime EXPR_UNION_INIT: usize = 12;
 // as -> LHS is expr, RHS is type ID
-comptime EXPR_AS: usize = 12;
-comptime EXPR_NULL: usize = 13;
-comptime EXPR_BLANK: usize = 14;
-comptime EXPR_TRUE: usize = 15;
-comptime EXPR_FALSE: usize = 16;
+comptime EXPR_AS: usize = 13;
+comptime EXPR_NULL: usize = 14;
+comptime EXPR_BLANK: usize = 15;
+comptime EXPR_TRUE: usize = 16;
+comptime EXPR_FALSE: usize = 17;
 struct ParsedExpr {
     ignored: bool;
     span: Span;

@@ -1,0 +1,22 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+
+union Foo {
+    Empty, // Filler so 0 isn't a valid tag
+    A(i32),
+    B(i32),
+}
+
+func foo(f: Foo) -> bool {
+    // Tag is always the first byte
+    return (*(&f as &u8) == 1);
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let f = comptime foo(Foo::A(10));
+    assert(f);
+    return 0;
+}

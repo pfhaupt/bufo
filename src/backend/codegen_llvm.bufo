@@ -569,6 +569,10 @@ func generateLLVMInstr(
         let reg: &IRReg = getRegister(irFunc, instr.dst);
         let typ: LLVMType = generateLLVMType(this, reg.typ);
         return constZero(&typ);
+    } else if (instr.kind == INSTR_CREATE_UNION) {
+        let reg: &IRReg = getRegister(irFunc, instr.dst);
+        let typ: LLVMType = generateLLVMType(this, reg.typ);
+        return constZero(&typ);
     } else if (instr.kind == INSTR_INSERT_VALUE) {
         let dstVal: LLVMValue = asLLVM(at(regs, instr.dst.i), "LLVM InsertValue");
         let index: usize = instr.src.i;
@@ -648,6 +652,12 @@ func generateLLVMInstr(
         let underlying: &Type = getUnderlyingType(ptr, false);
         assert(isStruct(underlying), "LLVM GetFieldPtr wants ptr to struct");
         return buildStructGEP(&this.llvmBuilder, generateLLVMType(this, underlying), aggr, instr.op1.i, newSubStrOfStrLit("field_ptr"));
+    } else if (instr.kind == INSTR_MEMCPY) {
+        let src: LLVMValue = asLLVM(at(regs, instr.src.i), "LLVM Memcpy src");
+        let dst: LLVMValue = asLLVM(at(regs, instr.dst.i), "LLVM Memcpy dst");
+        let size: LLVMValue = asLLVM(at(regs, instr.op1.i), "LLVM Memcpy op1");
+        buildMemcpy(&this.llvmBuilder, dst, 1, src, 1, size);
+        return dst;
     } else {
         printf("LLVM %llu\n", instr.kind);
         todo_with_msg("unknown llvm kind");
@@ -830,7 +840,10 @@ func generateLLVMType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
     } else if (isUnion(typ)) {
         let decl: &ParsedUnionDecl = at(&unionDecls, typ.typeIndex);
         let size = getSize(typ) as u32;
-        assert(size >= 1, "LLVM: Expected Union to be at least one byte (the tag)");
+        if (size == 0) {
+            assert(decl.variants.length == 0, "LLVM: Union has size 0, but contains variants");
+            return createStructType(&this.llvmContext, null, 0, false);
+        }
         // Unions store the tag and an array of bytes
         let tag: LLVMType = generateLLVMType(this, newType(TYPE_KIND_PRIMITIVE, TYPE_U8));
         let data = intoArrayType(&tag, size - 1); // - 1 because tag is stored differently

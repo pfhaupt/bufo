@@ -355,6 +355,7 @@
     @extern("LLVMBuildFPExt") func BuildFPExt(B: LLVM::BuilderRef, Val: LLVM::ValueRef, Typ: LLVM::TypeRef, name: &char) -> LLVM::ValueRef;
     @extern("LLVMBuildFPTrunc") func BuildFPTrunc(B: LLVM::BuilderRef, Val: LLVM::ValueRef, Typ: LLVM::TypeRef, name: &char) -> LLVM::ValueRef;
     @extern("LLVMBuildUnreachable") func BuildUnreachable(B: LLVM::BuilderRef) -> LLVM::ValueRef;
+    @extern("LLVMBuildMemCpy") func BuildMemcpy(B: LLVM::BuilderRef, Dst: LLVM::ValueRef, DstAlign: u32, Src: LLVM::ValueRef, SrcAlign: u32, Size: LLVM::ValueRef) -> LLVM::ValueRef;
 
     // LLVMValue
     @extern("LLVMTypeOf") func TypeOf(Val: LLVM::ValueRef) -> LLVM::TypeRef;

@@ -100,12 +100,14 @@ comptime INSTR_F32_TO_F64: usize = 65;
 comptime INSTR_F64_TO_F32: usize = 66;
 comptime INSTR_CREATE_ARRAY: usize = 67;
 comptime INSTR_CREATE_STRUCT: usize = 68;
-comptime INSTR_PTR_TO_INT: usize = 69;
-comptime INSTR_INT_TO_PTR: usize = 70;
-comptime INSTR_GET_FIELD_PTR: usize = 71;
-comptime INSTR_GET_ELEMENT_PTR: usize = 72;
-comptime INSTR_UNREACHABLE: usize = 73;
-comptime INSTR_UNTERMINATED: usize = 74;
+comptime INSTR_CREATE_UNION: usize = 69;
+comptime INSTR_PTR_TO_INT: usize = 70;
+comptime INSTR_INT_TO_PTR: usize = 71;
+comptime INSTR_GET_FIELD_PTR: usize = 72;
+comptime INSTR_GET_ELEMENT_PTR: usize = 73;
+comptime INSTR_UNREACHABLE: usize = 74;
+comptime INSTR_UNTERMINATED: usize = 75;
+comptime INSTR_MEMCPY: usize = 76;
 struct IRInstr {
     kind: usize;
     span: Span;
@@ -206,11 +208,13 @@ func dump(this: &IRInstr) {
     else if (this.kind == INSTR_F64_TO_F32) printf("r%llu = FloatTrunc r%llu", this.dst.i, this.src.i);
     else if (this.kind == INSTR_CREATE_ARRAY) printf("r%llu = CreateArray", this.dst.i);
     else if (this.kind == INSTR_CREATE_STRUCT) printf("r%llu = CreateStruct", this.dst.i);
+    else if (this.kind == INSTR_CREATE_UNION) printf("r%llu = CreateUnion", this.dst.i);
     else if (this.kind == INSTR_PTR_TO_INT) printf("r%llu = PtrToInt r%llu", this.dst.i, this.src.i);
     else if (this.kind == INSTR_INT_TO_PTR) printf("r%llu = IntToPtr r%llu", this.dst.i, this.src.i);
     else if (this.kind == INSTR_GET_FIELD_PTR) printf("r%llu = GetFieldPtr r%llu, %llu", this.dst.i, this.src.i, this.op1.i);
     else if (this.kind == INSTR_UNREACHABLE) printf("unreachable");
     else if (this.kind == INSTR_UNTERMINATED) printf("<unterminated block>");
+    else if (this.kind == INSTR_MEMCPY) printf("Memcpy r%llu, r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
     else if (this.kind == INSTR_GET_ELEMENT_PTR) {
         printf("r%llu = GetElementPtr r%llu", this.dst.i, this.src.i);
         for (let i: usize = 0; i < this.args.length; i = i + 1) {
@@ -290,7 +294,6 @@ func appendBlock(this: &IRFunc) -> IRBlockID {
     push(&this.blocks, IRBlock {
         parent: this.name,
         id: id,
-        instructions: blank,
     });
     return id;
 }
@@ -401,8 +404,6 @@ func buildAlloca(this: &IRFunc, span: Span, dst: RegIndex, size: usize) {
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: RegIndex { i: size },
-        op1: blank,
-        args: blank,
     };
     let entry: &IRBlock = getBlockByID(this, IRBlockID { i: 0 });
     if (isTerminated(entry)) {
@@ -425,8 +426,6 @@ func buildFetchGlobalPointer(this: &IRFunc, span: Span, dst: RegIndex, globalInd
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: globalIndex,
-        op1: blank,
-        args: blank,
     });
 }
 func buildFetchGlobalRuntimeValue(this: &IRFunc, span: Span, dst: RegIndex, globalIndex: RegIndex) {
@@ -436,8 +435,6 @@ func buildFetchGlobalRuntimeValue(this: &IRFunc, span: Span, dst: RegIndex, glob
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: globalIndex,
-        op1: blank,
-        args: blank,
     });
 }
 func buildFetchGlobalComptimeValue(this: &IRFunc, span: Span, dst: RegIndex, globalIndex: RegIndex) {
@@ -448,7 +445,6 @@ func buildFetchGlobalComptimeValue(this: &IRFunc, span: Span, dst: RegIndex, glo
         dst: dst,
         src: globalIndex,
         op1: RegIndex { i: 1 },
-        args: blank,
     });
 }
 func buildFetchLocalComptimeValue(this: &IRFunc, span: Span, dst: RegIndex, globalIndex: RegIndex) {
@@ -459,7 +455,6 @@ func buildFetchLocalComptimeValue(this: &IRFunc, span: Span, dst: RegIndex, glob
         dst: dst,
         src: globalIndex,
         op1: RegIndex { i: 0 },
-        args: blank,
     });
 }
 func buildLoadFunctionPtr(this: &IRFunc, span: Span, dst: RegIndex, funcID: usize) {
@@ -469,8 +464,6 @@ func buildLoadFunctionPtr(this: &IRFunc, span: Span, dst: RegIndex, funcID: usiz
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: RegIndex { i: funcID },
-        op1: blank,
-        args: blank,
     });
 }
 func buildLoad(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
@@ -480,8 +473,6 @@ func buildLoad(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: src,
-        op1: blank,
-        args: blank,
     });
 }
 func buildMove(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
@@ -491,8 +482,6 @@ func buildMove(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: src,
-        op1: blank,
-        args: blank,
     });
 }
 func buildGetParam(this: &IRFunc, span: Span, dst: RegIndex, index: usize, size: usize) {
@@ -503,7 +492,6 @@ func buildGetParam(this: &IRFunc, span: Span, dst: RegIndex, index: usize, size:
         dst: dst,
         src: RegIndex { i: index },
         op1: RegIndex { i: size },
-        args: blank,
     });
 }
 func buildStore(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
@@ -513,8 +501,6 @@ func buildStore(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: src,
-        op1: blank,
-        args: blank,
     });
 }
 func buildCall(this: &IRFunc, span: Span, dst: RegIndex, funcID: RegIndex, args: RegIndexList) {
@@ -524,7 +510,6 @@ func buildCall(this: &IRFunc, span: Span, dst: RegIndex, funcID: RegIndex, args:
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: funcID,
-        op1: blank,
         args: args,
     });
 }
@@ -533,10 +518,7 @@ func buildReturnExpr(this: &IRFunc, span: Span, val: RegIndex) {
         kind: INSTR_RETURN_EXPR,
         span: span,
         isComptime: this.comptimeLevel > 0,
-        dst: blank,
         src: val,
-        op1: blank,
-        args: blank,
     });
 }
 func buildReturnEmpty(this: &IRFunc, span: Span) {
@@ -544,10 +526,6 @@ func buildReturnEmpty(this: &IRFunc, span: Span) {
         kind: INSTR_RETURN_VOID,
         span: span,
         isComptime: this.comptimeLevel > 0,
-        dst: blank,
-        src: blank,
-        op1: blank,
-        args: blank,
     });
 }
 func buildLoadString(this: &IRFunc, span: Span, dst: RegIndex, str: SubStr) {
@@ -558,7 +536,6 @@ func buildLoadString(this: &IRFunc, span: Span, dst: RegIndex, str: SubStr) {
         dst: dst,
         src: RegIndex { i: str.start as usize },
         op1: RegIndex { i: str.len },
-        args: blank,
     });
 }
 func buildLoadBool(this: &IRFunc, span: Span, dst: RegIndex, val: usize) {
@@ -568,8 +545,6 @@ func buildLoadBool(this: &IRFunc, span: Span, dst: RegIndex, val: usize) {
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: RegIndex { i: val },
-        op1: blank,
-        args: blank,
     });
 }
 func buildLoadInteger(this: &IRFunc, span: Span, dst: RegIndex, t: &Type, val: usize) {
@@ -590,8 +565,6 @@ func buildLoadInteger(this: &IRFunc, span: Span, dst: RegIndex, t: &Type, val: u
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: RegIndex { i: val },
-        op1: blank,
-        args: blank,
     });
 }
 func buildLoadNull(this: &IRFunc, span: Span, dst: RegIndex) {
@@ -600,9 +573,6 @@ func buildLoadNull(this: &IRFunc, span: Span, dst: RegIndex) {
         span: span,
         isComptime: this.comptimeLevel > 0,
         dst: dst,
-        src: blank,
-        op1: blank,
-        args: blank,
     });
 }
 func buildLoadF32(this: &IRFunc, span: Span, dst: RegIndex, val: f32) {
@@ -612,8 +582,6 @@ func buildLoadF32(this: &IRFunc, span: Span, dst: RegIndex, val: f32) {
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: RegIndex { i: *(&val as &usize) },
-        op1: blank,
-        args: blank,
     });
 }
 func buildLoadF64(this: &IRFunc, span: Span, dst: RegIndex, val: f64) {
@@ -623,8 +591,6 @@ func buildLoadF64(this: &IRFunc, span: Span, dst: RegIndex, val: f64) {
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: RegIndex { i: *(&val as &usize) },
-        op1: blank,
-        args: blank,
     });
 }
 func buildLoadBlank(this: &IRFunc, span: Span, dst: RegIndex, size: usize) {
@@ -634,8 +600,6 @@ func buildLoadBlank(this: &IRFunc, span: Span, dst: RegIndex, size: usize) {
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: RegIndex { i: size },
-        op1: blank,
-        args: blank,
     });
 }
 func buildLogicalNot(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
@@ -645,8 +609,6 @@ func buildLogicalNot(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: src,
-        op1: blank,
-        args: blank
     });
 }
 func buildBinaryOp(this: &IRFunc, span: Span, kind: usize, dst: RegIndex, lhs: RegIndex, rhs: RegIndex) {
@@ -657,7 +619,6 @@ func buildBinaryOp(this: &IRFunc, span: Span, kind: usize, dst: RegIndex, lhs: R
         dst: dst,
         src: lhs,
         op1: rhs,
-        args: blank,
     });
 }
 func buildInsertValue(this: &IRFunc, span: Span, aggr: RegIndex, index: usize, val: RegIndex) {
@@ -668,7 +629,6 @@ func buildInsertValue(this: &IRFunc, span: Span, aggr: RegIndex, index: usize, v
         dst: aggr,
         src: RegIndex { i: index },
         op1: val,
-        args: blank,
     });
 }
 func buildUnreachable(this: &IRFunc, span: Span) {
@@ -676,10 +636,6 @@ func buildUnreachable(this: &IRFunc, span: Span) {
         kind: INSTR_UNREACHABLE,
         span: span,
         isComptime: this.comptimeLevel > 0,
-        dst: blank,
-        src: blank,
-        op1: blank,
-        args: blank,
     });
 }
 func buildUnterminated(this: &IRFunc, span: Span) {
@@ -687,10 +643,6 @@ func buildUnterminated(this: &IRFunc, span: Span) {
         kind: INSTR_UNTERMINATED,
         span: span,
         isComptime: this.comptimeLevel > 0,
-        dst: blank,
-        src: blank,
-        op1: blank,
-        args: blank,
     });
 }
 func buildBr(this: &IRFunc, span: Span, block: IRBlockID) {
@@ -700,9 +652,6 @@ func buildBr(this: &IRFunc, span: Span, block: IRBlockID) {
         span: span,
         isComptime: this.comptimeLevel > 0,
         dst: RegIndex { i: block.i },
-        src: blank,
-        op1: blank,
-        args: blank,
     });
 }
 func buildCondBr(this: &IRFunc, span: Span, cond: RegIndex, drue: IRBlockID, falze: IRBlockID) {
@@ -715,7 +664,6 @@ func buildCondBr(this: &IRFunc, span: Span, cond: RegIndex, drue: IRBlockID, fal
         dst: RegIndex { i: drue.i },
         src: cond,
         op1: RegIndex { i: falze.i },
-        args: blank,
     });
 }
 func buildBreak(this: &IRFunc, span: Span) -> bool {
@@ -738,7 +686,6 @@ func buildIntSignExtend(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex,
         dst: dst,
         src: src,
         op1: RegIndex { i: bits },
-        args: blank,
     });
 }
 func buildIntZeroExtend(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex, bits: usize) {
@@ -749,7 +696,6 @@ func buildIntZeroExtend(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex,
         dst: dst,
         src: src,
         op1: RegIndex { i: bits },
-        args: blank,
     });
 }
 func buildIntTruncate(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex, bits: usize) {
@@ -760,7 +706,6 @@ func buildIntTruncate(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex, b
         dst: dst,
         src: src,
         op1: RegIndex { i: bits },
-        args: blank,
     });
 }
 func buildF32ToF64(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
@@ -770,8 +715,6 @@ func buildF32ToF64(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: src,
-        op1: blank,
-        args: blank,
     });
 }
 func buildF64ToF32(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
@@ -781,8 +724,6 @@ func buildF64ToF32(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: src,
-        op1: blank,
-        args: blank,
     });
 }
 func buildIntToF32(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
@@ -792,8 +733,6 @@ func buildIntToF32(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: src,
-        op1: blank,
-        args: blank,
     });
 }
 func buildIntToF64(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
@@ -803,8 +742,6 @@ func buildIntToF64(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: src,
-        op1: blank,
-        args: blank,
     });
 }
 func buildF32ToInt(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
@@ -814,8 +751,6 @@ func buildF32ToInt(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: src,
-        op1: blank,
-        args: blank,
     });
 }
 func buildF64ToInt(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
@@ -825,8 +760,6 @@ func buildF64ToInt(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: src,
-        op1: blank,
-        args: blank,
     });
 }
 func buildCreateArray(this: &IRFunc, span: Span, dst: RegIndex) {
@@ -835,9 +768,6 @@ func buildCreateArray(this: &IRFunc, span: Span, dst: RegIndex) {
         span: span,
         isComptime: this.comptimeLevel > 0,
         dst: dst,
-        src: blank,
-        op1: blank,
-        args: blank,
     });
 }
 func buildCreateStruct(this: &IRFunc, span: Span, dst: RegIndex) {
@@ -846,9 +776,14 @@ func buildCreateStruct(this: &IRFunc, span: Span, dst: RegIndex) {
         span: span,
         isComptime: this.comptimeLevel > 0,
         dst: dst,
-        src: blank,
-        op1: blank,
-        args: blank,
+    });
+}
+func buildCreateUnion(this: &IRFunc, span: Span, dst: RegIndex) {
+    pushInstruction(this, IRInstr {
+        kind: INSTR_CREATE_UNION,
+        span: span,
+        isComptime: this.comptimeLevel > 0,
+        dst: dst,
     });
 }
 func buildPtrToInt(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
@@ -858,8 +793,6 @@ func buildPtrToInt(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: src,
-        op1: blank,
-        args: blank,
     });
 }
 func buildIntToPtr(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
@@ -869,8 +802,6 @@ func buildIntToPtr(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
         isComptime: this.comptimeLevel > 0,
         dst: dst,
         src: src,
-        op1: blank,
-        args: blank,
     });
 }
 func buildGetFieldPtr(this: &IRFunc, span: Span, elem: RegIndex, aggr: RegIndex, index: usize) {
@@ -881,7 +812,6 @@ func buildGetFieldPtr(this: &IRFunc, span: Span, elem: RegIndex, aggr: RegIndex,
         dst: elem,
         src: aggr,
         op1: RegIndex { i: index },
-        args: blank,
     });
 }
 func buildGetElementPtr(this: &IRFunc, span: Span, elem: RegIndex, aggr: RegIndex, indices: RegIndexList) {
@@ -891,8 +821,17 @@ func buildGetElementPtr(this: &IRFunc, span: Span, elem: RegIndex, aggr: RegInde
         isComptime: this.comptimeLevel > 0,
         dst: elem,
         src: aggr,
-        op1: blank,
         args: indices,
+    });
+}
+func buildMemcpy(this: &IRFunc, span: Span, src: RegIndex, dst: RegIndex, size: RegIndex) {
+    pushInstruction(this, IRInstr {
+        kind: INSTR_MEMCPY,
+        span: span,
+        isComptime: this.comptimeLevel > 0,
+        dst: dst,
+        src: src,
+        op1: size,
     });
 }
 
@@ -971,13 +910,6 @@ func fillLookup(this: &IRGen, project: &ParsedFile) -> bool {
             span: function.span,
             originalID: getID(function),
             comptimeLevel: 0,
-            scopes: blank,
-            registers: blank,
-            blocks: blank,
-            loopBlocks: blank,
-            currentBlock: blank,
-            llvmFunc: blank,
-            retPtr: blank,
             attrs: function.attrs,
         };
         add(&this.functions, name, irfunc);
@@ -1005,6 +937,15 @@ func generateBytecode(this: &IRGen, project: &ParsedFile) -> bool {
     for (let i: usize = 0; i < funcDecls.length; i = i + 1) {
         let fn: &ParsedFuncDecl = at(&funcDecls, i);
         generateFunction(this, fn);
+    }
+    if (*flags.emitBIR) {
+        // TODO: Emit to file
+        dumpInstructions(&this.globalScope);
+        let fns = asList(&this.functions);
+        for (let i: usize = 0; i < fns.length; i = i + 1) {
+            dumpInstructions(at(&fns, i));
+        }
+        drop(&fns);
     }
     return !this.error;
 }
@@ -1280,7 +1221,6 @@ func generateBytecodeExpr(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, ne
     } else if (isBlank(expr)) {
         let t: &Type = getType(&expr.typeState);
         let size: usize = getSize(t);
-        if (size == 0) warning("blank of type of size 0");
         let reg: RegIndex = allocateRegister(function, t);
         buildLoadBlank(function, expr.span, reg, size);
         if (needsPtr) {
@@ -1325,8 +1265,85 @@ func generateBytecodeExpr(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, ne
             return structAlloc;
         }
         return reg;
+    } else if (expr.kind == EXPR_UNION_INIT) {
+        return generateBytecodeExprUnionInit(this, function, expr, needsPtr);
     } else {
         unreachable("Exhaustive handling of expressions in IRGen.generateBytecodeExpr");
+    }
+}
+
+func generateBytecodeExprUnionInit(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, needsPtr: bool) -> RegIndex {
+    trace("IRGen.generateBytecodeExprUnionInit");
+    assert(expr.kind == EXPR_UNION_INIT);
+    // union = [tag, data]
+    let typ: &Type = getType(&expr.typeState);
+    assert(isUnion(typ), "Expected Union Type in EXPR_UNION_INIT");
+    let decl = at(&unionDecls, typ.typeIndex);
+    let variant = *at(&decl.variants, typ.arraySize);
+    assert(decl.variants.length < 256, "IRGen assumes that the tag of an union fits in a single byte");
+    let size = getSize(typ);
+    assert(size >= 1, "Expected union instance to be at least one byte");
+    let dst = allocateRegister(function, typ);
+    buildCreateUnion(function, expr.span, dst);
+    let start = allocateRegister(function, at(&types, intoPointer(typ)));
+    buildAlloca(function, expr.span, start, size);
+    let usizeType = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
+    let sizeReg = allocateRegister(function, usizeType);
+    let tmp = allocateRegister(function, at(&types, intoPointer(typ)));
+    buildMove(function, expr.span, tmp, start);
+    {
+        // tag
+        let u8 = newType(TYPE_KIND_PRIMITIVE, TYPE_U8);
+        let tag = allocateRegister(function, u8);
+        buildLoadInteger(function, expr.span, tag, u8, typ.arraySize);
+        buildStore(function, expr.span, start, tag);
+
+        // offset tmp by tag
+        buildLoadInteger(function, expr.span, sizeReg, usizeType, 1);
+        buildPtrToInt(function, expr.span, tmp, tmp);
+        buildBinaryOp(function, expr.span, INSTR_INT_ADD, tmp, tmp, sizeReg);
+        buildIntToPtr(function, expr.span, tmp, tmp);
+    }
+    if (variant.kind == UNION_VARIANT_EMPTY) {
+        // nothing to do here
+        // REVIEW: Maybe allow things like  union { A = 12, B = 23 }  ?
+    } else if (variant.kind == UNION_VARIANT_TUPLE) {
+        // The Type Checker overwrites the original expr.kind, however because we have a tuple, we
+        // know the original kind was EXPR_CALL
+        for (let i: usize = 0; i < expr.arrayContext.elemLength; i = i + 1) {
+            let field: &ParsedExpr = at(&exprs, getElementAtIndex(&expr.arrayContext, i));
+            let result: RegIndex = generateBytecodeExpr(this, function, field, true);
+            buildLoadInteger(function, field.span, sizeReg, usizeType, getSize(getType(&field.typeState)));
+            buildMemcpy(function, field.span, result, tmp, sizeReg);
+            if (i != expr.arrayContext.elemLength - 1) {
+                buildPtrToInt(function, expr.span, tmp, tmp);
+                buildBinaryOp(function, expr.span, INSTR_INT_ADD, tmp, tmp, sizeReg);
+                buildIntToPtr(function, expr.span, tmp, tmp);
+            }
+        }
+    } else if (variant.kind == UNION_VARIANT_STRUCT) {
+        // The Type Checker overwrites the original expr.kind, however because we have a tuple, we
+        // know the original kind was EXPR_STRUCT_INIT
+        for (let i: usize = 0; i < expr.structInitContext.fieldLength; i = i + 1) {
+            let name: Token = getFieldNameAtIndex(&expr.structInitContext, i);
+            let field: &ParsedExpr = getFieldExprAtIndex(&expr.structInitContext, i);
+            let result: RegIndex = generateBytecodeExpr(this, function, field, true);
+            buildLoadInteger(function, field.span, sizeReg, usizeType, getSize(getType(&field.typeState)));
+            buildMemcpy(function, field.span, result, tmp, sizeReg);
+            if (i != expr.structInitContext.fieldLength - 1) {
+                buildPtrToInt(function, expr.span, tmp, tmp);
+                buildBinaryOp(function, expr.span, INSTR_INT_ADD, tmp, tmp, sizeReg);
+                buildIntToPtr(function, expr.span, tmp, tmp);
+            }
+        }
+    } else {
+        unreachable("Exhaustive handling of union variants in generateBytecodeExprIdentifier");
+    }
+    if (needsPtr) {
+        return start;
+    } else {
+        buildLoad(function, expr.span, dst, start);
+        return dst;
     }
 }
 
@@ -1395,8 +1412,13 @@ func generateBytecodeExprModuleAccess(this: &IRGen, function: &IRFunc, expr: &Pa
     let lhs: &ParsedExpr = at(&exprs, expr.lhs);
     let rhs: &ParsedExpr = at(&exprs, expr.rhs);
     let instance: &Type = getType(&lhs.typeState);
-    assert(isModule(instance), "Expected LHS to be module");
-    return generateBytecodeExpr(this, function, rhs, needsPtr);
+    if (isModule(instance)) {
+        return generateBytecodeExpr(this, function, rhs, needsPtr);
+    } else if (isUnion(instance)) {
+        return generateBytecodeExpr(this, function, rhs, needsPtr);
+    } else {
+        unreachable("generateBytecodeExprModuleAccess: Unexpected type of LHS");
+    }
 }
 
 func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, needsPtr: bool) -> RegIndex {
@@ -1632,6 +1654,8 @@ func generateBytecodeExprIdentifier(this: &IRGen, function: &IRFunc, expr: &Pars
             let dst = allocateRegister(function, t);
             buildLoadFunctionPtr(function, expr.span, dst, funcID);
             return dst;
+        } else if (isUnion(t)) {
+            unreachable("generateBytecodeExprIdentifier: Unions should be handled in generateBytecodeExprIdentifier");
         } else {
             unreachable("Exhaustive handling of types in generateBytecodeExprIdentifier");
         }
@@ -1962,6 +1986,12 @@ func generateBytecodeExprLiteral(this: &IRGen, function: &IRFunc, expr: &ParsedE
     } else {
         unreachable("Exhaustive handling of ops in generateBytecodeExprLiteral");
     }
+    if (needsPtr) {
+        let tempAlloc: RegIndex = allocateRegister(function, at(&types, intoPointer(t)));
+        buildAlloca(function, expr.span, tempAlloc, getSize(t));
+        buildStore(function, expr.span, tempAlloc, reg);
+        return tempAlloc;
+    }
     return reg;
 }
 
@@ -2174,18 +2204,8 @@ func newIRGenerator() -> IRGen {
     return IRGen {
         globalScope: IRFunc {
             name: newStringFromStrLit("__global__"),
-            span: blank,
             originalID: funcDecls.length + 1,
             comptimeLevel: 0,
-            scopes: blank,
-            registers: blank,
-            blocks: blank,
-            loopBlocks: blank,
-            currentBlock: blank,
-            llvmFunc: blank,
-            retPtr: blank,
-            attrs: blank,
         },
-        functions: blank,
     };
 }
