@@ -9,15 +9,16 @@ RUN_EXAMPLES =
 RUN_HOWTO =
 VERBOSE = @
 BUFO_FLAGS = --warn --target $(TARGET)
-ALL_FLAGS = $(BUFO_FLAGS) --warn-extra --verbose
 
 ifeq ($(VERBOSE),)
-define log
-	$(info MAKE  $(1))
-endef
+  ALL_FLAGS = $(BUFO_FLAGS) --warn-extra --verbose
+  define log
+    $(info MAKE  $(1))
+  endef
 else
-define log
-endef
+  ALL_FLAGS = $(BUFO_FLAGS)
+  define log
+  endef
 endif
 
 define check_exists_win

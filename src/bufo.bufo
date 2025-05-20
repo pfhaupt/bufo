@@ -29,6 +29,10 @@ struct Flags {
     warnUnused: &bool;
     target: &String;
     checkOnly: &bool;
+    emitASM: &bool;
+    emitBIR: &bool;
+    emitLLVM: &bool;
+    keepOBJ: &bool;
 }
 let flags = Flags {};
 func main(argc: i32, argv: &&char) -> i32 {
@@ -51,6 +55,10 @@ func main(argc: i32, argv: &&char) -> i32 {
     let warnAll = addBoolFlag(&flagParser, "--warn-all", "Enable all warnings");
     flags.target = addStringFlag(&flagParser, "t", "target", "The target to compile for. Must be either Windows or Linux.");
     flags.checkOnly = addBoolFlag(&flagParser, "--check-only", "Stop after semantic analysis");
+    flags.emitASM = addBoolFlag(&flagParser, "--emit-asm", "Save the generated assembly code in <output>.asm");
+    flags.emitBIR = addBoolFlag(&flagParser, "--emit-bir", "Save the generated bufo IR in <output>.bir");
+    flags.emitLLVM = addBoolFlag(&flagParser, "--emit-llvm", "Save the generated LLVM IR in <output>.ll");
+    flags.keepOBJ = addBoolFlag(&flagParser, "--keep-obj", "Keep the generated object file <output>.obj");
     if (!runOn(&flagParser, argc, argv)) {
         showUsage(&flagParser);
         showHelp(&flagParser);

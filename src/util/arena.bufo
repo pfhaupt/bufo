@@ -234,6 +234,72 @@ func indexOf(this: &ParsedStructDeclArena, elem: &ParsedStructDecl) -> usize {
     return indexOf(this.start, elem);
 }
 
+struct ParsedUnionDeclArena {
+    start: &ArenaBlock;
+    end: &ArenaBlock;
+    length: usize;
+}
+
+func push(this: &ParsedUnionDeclArena, elem: ParsedUnionDecl) {
+    trace("ParsedUnionDeclArena.push");
+    if (this.start == null) {
+        this.start = allocateBlock(ARENA_SIZE_MEDIUM, sizeof ParsedUnionDecl);
+        assert(this.end == null);
+        this.end = this.start;
+    }
+    push(this.end, &elem, ARENA_SIZE_MEDIUM);
+    if (this.end.next != null) this.end = this.end.next;
+    this.length = this.length + 1;
+}
+func at(this: &ParsedUnionDeclArena, index: usize) -> &ParsedUnionDecl {
+    trace("ParsedUnionDeclArena.at");
+    assert(this.start != null, "ParsedUnionDeclArena.at() called on empty Arena");
+    return at(this.start, index) as &ParsedUnionDecl;
+}
+func last(this: &ParsedUnionDeclArena) -> &ParsedUnionDecl {
+    trace("ParsedUnionDeclArena.last");
+    assert(this.end != null, "ParsedUnionDeclArena.last() called on empty Arena");
+    return last(this.end) as &ParsedUnionDecl;
+}
+func indexOf(this: &ParsedUnionDeclArena, elem: &ParsedUnionDecl) -> usize {
+    trace("ParsedUnionDeclArena.indexOf");
+    assert(this.start != null, "ParsedUnionDeclArena.indexOf() called on empty Arena");
+    return indexOf(this.start, elem);
+}
+
+struct ParsedUnionVariantArena {
+    start: &ArenaBlock;
+    end: &ArenaBlock;
+    length: usize;
+}
+
+func push(this: &ParsedUnionVariantArena, elem: ParsedUnionVariant) {
+    trace("ParsedUnionVariantArena.push");
+    if (this.start == null) {
+        this.start = allocateBlock(ARENA_SIZE_MEDIUM, sizeof ParsedUnionVariant);
+        assert(this.end == null);
+        this.end = this.start;
+    }
+    push(this.end, &elem, ARENA_SIZE_MEDIUM);
+    if (this.end.next != null) this.end = this.end.next;
+    this.length = this.length + 1;
+}
+func at(this: &ParsedUnionVariantArena, index: usize) -> &ParsedUnionVariant {
+    trace("ParsedUnionVariantArena.at");
+    assert(this.start != null, "ParsedUnionVariantArena.at() called on empty Arena");
+    return at(this.start, index) as &ParsedUnionVariant;
+}
+func last(this: &ParsedUnionVariantArena) -> &ParsedUnionVariant {
+    trace("ParsedUnionVariantArena.last");
+    assert(this.end != null, "ParsedUnionVariantArena.last() called on empty Arena");
+    return last(this.end) as &ParsedUnionVariant;
+}
+func indexOf(this: &ParsedUnionVariantArena, elem: &ParsedUnionVariant) -> usize {
+    trace("ParsedUnionVariantArena.indexOf");
+    assert(this.start != null, "ParsedUnionVariantArena.indexOf() called on empty Arena");
+    return indexOf(this.start, elem);
+}
+
 struct ParsedFuncDeclArena {
     start: &ArenaBlock;
     end: &ArenaBlock;

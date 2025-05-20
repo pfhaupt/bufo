@@ -1,0 +1,35 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+import "libc.bufo";
+
+union Foo {
+    A,
+}
+
+union Bar {
+    Foo(Foo),
+}
+
+struct Baz {
+    f: Foo;
+    b: Bar;
+}
+
+union Qux {
+    Foo { foo: Foo },
+    Bar(Bar),
+    Baz(Baz),
+    Empty
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    assert(sizeof Foo == 1);
+    assert(sizeof Bar == 2);
+    assert(sizeof Baz == 3);
+    assert(sizeof Qux == 4);
+    return 0;
+}
+

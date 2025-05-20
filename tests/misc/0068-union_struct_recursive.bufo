@@ -1,0 +1,22 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Recursive type B.
+//! Chain of recursion also includes type A.
+//! Recursive type A.
+//! Chain of recursion also includes type B.
+
+union A {
+    B { b: B },
+}
+
+struct B {
+    a: A;
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    return 0;
+}
+

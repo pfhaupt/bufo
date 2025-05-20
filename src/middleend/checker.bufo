@@ -15,40 +15,42 @@ import "./lookup.bufo";
 @os(WINDOWS) import "winapi/structs.bufo";
 @os(WINDOWS) import "winapi/functions.bufo";
 
-comptime ERROR_INVALID: usize = 0;
-comptime ERROR_NO_SUCH_MODULE: usize = 1;
-comptime ERROR_NO_SUCH_IDENTIFIER: usize = 2;
-comptime ERROR_NO_SUCH_FUNCTION: usize = 3;
-comptime ERROR_NO_SUCH_METHOD: usize = 4;
-comptime ERROR_NO_SUCH_TYPE: usize = 5;
-comptime ERROR_USE_BEFORE_DECLARATION: usize = 6;
-comptime ERROR_FIELD_COUNT_MISMATCH: usize = 7;
-comptime ERROR_INDEXED_TYPE_MISMATCH: usize = 8;
-comptime ERROR_UNEXPECTED_LITERAL: usize = 9;
-comptime ERROR_ARRAY_SIZE_MISMATCH: usize = 10;
-comptime ERROR_TYPE_MISMATCH: usize = 11;
-comptime ERROR_INVALID_POINTER_ARITHMETIC: usize = 12;
-comptime ERROR_DUPLICATE_PARAMETER: usize = 13;
-comptime ERROR_DUPLICATE_FIELD: usize = 14;
-comptime ERROR_UNKNOWN_FIELD: usize = 15;
-comptime ERROR_DUPLICATE_FUNCTION: usize = 16;
-comptime ERROR_NO_CALL_CANDIDATE: usize = 17;
-comptime ERROR_VARIABLE_REDECLARATION: usize = 18;
-comptime ERROR_RECURSIVE_TYPE: usize = 19;
-comptime ERROR_DUPLICATE_METHOD: usize = 20;
-comptime ERROR_BLANK_FOR_NULL: usize = 21;
-comptime ERROR_NON_PRIMITIVE_CAST: usize = 22;
-comptime ERROR_INDEXED_ACCESS_ON_NON_ARRAY: usize = 23;
+comptime ERROR_INVALID                          : usize = 0;
+comptime ERROR_NO_SUCH_MODULE                   : usize = 1;
+comptime ERROR_NO_SUCH_IDENTIFIER               : usize = 2;
+comptime ERROR_NO_SUCH_FUNCTION                 : usize = 3;
+comptime ERROR_NO_SUCH_METHOD                   : usize = 4;
+comptime ERROR_NO_SUCH_TYPE                     : usize = 5;
+comptime ERROR_USE_BEFORE_DECLARATION           : usize = 6;
+comptime ERROR_FIELD_COUNT_MISMATCH             : usize = 7;
+comptime ERROR_INDEXED_TYPE_MISMATCH            : usize = 8;
+comptime ERROR_UNEXPECTED_LITERAL               : usize = 9;
+comptime ERROR_ARRAY_SIZE_MISMATCH              : usize = 10;
+comptime ERROR_TYPE_MISMATCH                    : usize = 11;
+comptime ERROR_INVALID_POINTER_ARITHMETIC       : usize = 12;
+comptime ERROR_DUPLICATE_PARAMETER              : usize = 13;
+comptime ERROR_DUPLICATE_FIELD                  : usize = 14;
+comptime ERROR_UNKNOWN_FIELD                    : usize = 15;
+comptime ERROR_DUPLICATE_FUNCTION               : usize = 16;
+comptime ERROR_NO_CALL_CANDIDATE                : usize = 17;
+comptime ERROR_VARIABLE_REDECLARATION           : usize = 18;
+comptime ERROR_RECURSIVE_TYPE                   : usize = 19;
+comptime ERROR_DUPLICATE_METHOD                 : usize = 20;
+comptime ERROR_BLANK_FOR_NULL                   : usize = 21;
+comptime ERROR_NON_PRIMITIVE_CAST               : usize = 22;
+comptime ERROR_INDEXED_ACCESS_ON_NON_ARRAY      : usize = 23;
 comptime ERROR_RUNTIME_VALUE_IN_COMPTIME_CONTEXT: usize = 24;
-comptime ERROR_ANY_DEREF: usize = 25;
-comptime ERROR_MEMBER_ACCESS_NON_STRUCT: usize = 26;
-comptime ERROR_MEMBER_ACCESS_NO_OPTIONS: usize = 27;
-comptime ERROR_MEMBER_ACCESS_TOO_MANY_OPTIONS: usize = 28;
-comptime ERROR_FUNCTION_CALL_TOO_MANY_OPTIONS: usize = 29;
-comptime ERROR_CALL_TO_NON_FUNCTION: usize = 30;
-comptime ERROR_UNKNOWN_SUBMODULE: usize = 31;
-comptime ERROR_MODULE_ACCESS_NON_MODULE: usize = 32;
-comptime ERROR_DEREF_NON_POINTER: usize = 33;
+comptime ERROR_ANY_DEREF                        : usize = 25;
+comptime ERROR_MEMBER_ACCESS_NON_STRUCT         : usize = 26;
+comptime ERROR_MEMBER_ACCESS_NO_OPTIONS         : usize = 27;
+comptime ERROR_MEMBER_ACCESS_TOO_MANY_OPTIONS   : usize = 28;
+comptime ERROR_FUNCTION_CALL_TOO_MANY_OPTIONS   : usize = 29;
+comptime ERROR_CALL_TO_NON_FUNCTION             : usize = 30;
+comptime ERROR_UNKNOWN_SUBMODULE                : usize = 31;
+comptime ERROR_MODULE_ACCESS_NON_MODULE         : usize = 32;
+comptime ERROR_DEREF_NON_POINTER                : usize = 33;
+comptime ERROR_DUPLICATE_UNION_VARIANT           : usize = 34;
+comptime ERROR_DUPLICATE_UNION_NAME              : usize = 35;
 
 comptime TCSTATE_INVALID: usize = 0;
 comptime TCSTATE_ERROR: usize = 1;
@@ -507,6 +509,33 @@ func reportModuleAccessOfNonModule(this: &TypeChecker, span: Span, name: Token, 
     this.typeError = true;
     return newTCStateFailure(ERROR_MODULE_ACCESS_NON_MODULE);
 }
+func reportDuplicateVariant(this: &TypeChecker, orig: &ParsedUnionVariant, dupl: &UnionVariantLookup) -> TCState {
+    trace("TypeChecker.reportDuplicateVariant");
+    let duplLoc: String = toString(&orig.span);
+    let origLoc: String = toString(&dupl.global.span);
+    let name: String = toString(&orig.name.content);
+    fprintf(stderr, "%s: %s: Union Variant redeclaration.\n", duplLoc.buffer, ERR_STR);
+    fprintf(stderr, "%s: %s: Variant `%s` already declared here.\n", origLoc.buffer, NOTE_STR, name.buffer);
+    drop(&name);
+    drop(&origLoc);
+    drop(&duplLoc);
+    this.typeError = true;
+    return newTCStateFailure(ERROR_DUPLICATE_UNION_VARIANT);
+}
+func reportDuplicateNameInUnion(this: &TypeChecker, variant: &ParsedUnionVariant, first: &Token, dupl: &Token) -> TCState {
+    trace("TypeChecker.reportDuplicateNameInUnion");
+    let duplLoc: String = toString(&first.span);
+    let origLoc: String = toString(&dupl.span);
+    let name: String = toString(&first.content);
+    fprintf(stderr, "%s: %s: Union Variant already contains a field with that name.\n", duplLoc.buffer, ERR_STR);
+    fprintf(stderr, "%s: %s: Field `%s` already declared here.\n", origLoc.buffer, NOTE_STR, name.buffer);
+    drop(&name);
+    drop(&origLoc);
+    drop(&duplLoc);
+    this.typeError = true;
+    return newTCStateFailure(ERROR_DUPLICATE_UNION_NAME);
+}
+
 func emergencyPrint(this: &TypeChecker, where: Span) {
     let t: Token = Token {
         span: where,
@@ -524,6 +553,22 @@ func typeCheckProject(this: &TypeChecker, project: &ParsedFile) -> bool {
     return !this.typeError;
 }
 
+func dfs(this: &TypeChecker, type: &Type, visited: &TypeLookupList, finished: &TypeLookupList) -> bool {
+    if (isArray(type)) {
+        return dfs(this, getUnderlyingType(type, false), visited, finished);
+    } else if (isStruct(type)) {
+        let structID: usize = type.typeIndex;
+        let strukt: &StructLookup = getStructByGlobalID(&this.lookup, structID);
+        return dfs(this, asTypeLookup(strukt), visited, finished);
+    } else if (isUnion(type)) {
+        let unionID: usize = type.typeIndex;
+        let onion: &UnionLookup = getUnionByGlobalDecl(&this.lookup, at(&unionDecls, unionID));
+        return dfs(this, asTypeLookup(onion), visited, finished);
+    } else {
+        return false;
+    }
+}
+
 func dfs(this: &TypeChecker, typeLookup: TypeLookup, visited: &TypeLookupList, finished: &TypeLookupList) -> bool {
     trace("TypeChecker.dfs");
     if (contains(finished, &typeLookup))
@@ -538,19 +583,20 @@ func dfs(this: &TypeChecker, typeLookup: TypeLookup, visited: &TypeLookupList, f
             let field: &VariableLookup = at(&strukt.fields, i);
             assert(isSuccess(&field.typeState), "Expected valid field type in DFS");
             let fieldType: &Type = getType(&field.typeState);
-            if (isStructArray(fieldType)) {
-                let typeID: usize = fieldType.typeIndex;
-                let elemType: &Type = at(&types, typeID);
-                assert(isStruct(elemType));
-                let structID: usize = elemType.typeIndex;
-                let strukt: &StructLookup = getStructByGlobalID(&this.lookup, structID);
-                if (dfs(this, asTypeLookup(strukt), visited, finished)) {
-                    done = true;
-                }
-            } else if (isStruct(fieldType)) {
-                let structID: usize = fieldType.typeIndex;
-                let strukt: &StructLookup = getStructByGlobalID(&this.lookup, structID);
-                if (dfs(this, asTypeLookup(strukt), visited, finished)) {
+            if (dfs(this, fieldType, visited, finished)) {
+                done = true;
+            }
+        }
+    } else if (isUnion(&typeLookup)) {
+        let onion: &UnionLookup = asUnion(&typeLookup);
+        for (let i: usize = 0; i < onion.variants.length; i = i + 1) {
+            let _variant = at(&onion.variants, i);
+            let variant = _variant.global;
+            for (let j: usize = 0; j < variant.fields.length; j = j + 1) {
+                let field = *at(&variant.fields, j);
+                assert(isSuccess(&field.typeState), "Expected valid field type in DFS");
+                let fieldType = getType(&field.typeState);
+                if (dfs(this, fieldType, visited, finished)) {
                     done = true;
                 }
             }
@@ -573,6 +619,17 @@ func findRecursiveTypes(this: &TypeChecker) -> bool {
         let finished: TypeLookupList = blank;
         if (dfs(this, asTypeLookup(strukt), &visited, &finished)) {
             reportRecursiveType(this, &asTypeLookup(strukt), &visited);
+            recursive = true;
+        }
+    }
+    for (let i: usize = 0; i < unionDecls.length; i = i + 1) {
+        let decl: &ParsedUnionDecl = at(&unionDecls, i);
+        if (decl.ignored) continue;
+        let onion: &UnionLookup = getUnionByGlobalDecl(&this.lookup, decl);
+        let visited: TypeLookupList = blank;
+        let finished: TypeLookupList = blank;
+        if (dfs(this, asTypeLookup(onion), &visited, &finished)) {
+            reportRecursiveType(this, &asTypeLookup(onion), &visited);
             recursive = true;
         }
     }
@@ -608,6 +665,20 @@ func typeCheckFiles(this: &TypeChecker) -> bool {
             let tli: &ParsedTopLevelItem = at(&topLevelItems, tliID);
             if (tli.kind == TLI_STRUCT_DECL) {
                 let state = typeCheckStructDecl(this, tli.nodeID);
+                if (!isSuccess(&state)) success = false;
+            }
+        }
+    }
+    if (!success) return false;
+    for (let i: usize = 0; i < files.length; i = i + 1) {
+        let file: &ParsedFile = at(&files, i);
+        assert(getID(file) == i);
+        this.currentModule = at(&this.lookup.files, i);
+        for (let j: usize = 0; j < file.mod.tlis.length; j = j + 1) {
+            let tliID: usize = *at(&file.mod.tlis, j);
+            let tli: &ParsedTopLevelItem = at(&topLevelItems, tliID);
+            if (tli.kind == TLI_UNION_DECL) {
+                let state = typeCheckUnionDecl(this, asUnion(tli));
                 if (!isSuccess(&state)) success = false;
             }
         }
@@ -703,6 +774,17 @@ func typeCheckModule(this: &TypeChecker, modID: usize, scopes: &ScopeLookupList)
     }
     for (let i: usize = 0; i < mod.tlis.length; i = i + 1) {
         let tli: &ParsedTopLevelItem = at(&topLevelItems, *at(&mod.tlis, i));
+        if (tli.kind == TLI_UNION_DECL) {
+            let state = typeCheckUnionDecl(this, asUnion(tli));
+            if (!isSuccess(&state)) result = state;
+        }
+    }
+    if (!isSuccess(&result)) {
+        this.currentModule = prev;
+        return result;
+    }
+    for (let i: usize = 0; i < mod.tlis.length; i = i + 1) {
+        let tli: &ParsedTopLevelItem = at(&topLevelItems, *at(&mod.tlis, i));
         if (tli.kind == TLI_FUNC_DECL) {
             let state = typeCheckFunction(this, tli.nodeID, scopes, true);
             if (!isSuccess(&state)) result = state;
@@ -751,6 +833,53 @@ func typeCheckModule(this: &TypeChecker, modID: usize, scopes: &ScopeLookupList)
     return result;
 }
 
+func typeCheckUnionDecl(this: &TypeChecker, onion: &ParsedUnionDecl) -> TCState {
+    trace("TypeChecker.typeCheckUnionDecl");
+    if (onion.ignored) return blank;
+    let unionLookup = getUnionByGlobalDecl(&this.lookup, onion);
+    let result = newTCStateSuccess();
+    for (let i: usize = 0; i < onion.variants.length; i = i + 1) {
+        let variant = *at(&onion.variants, i);
+        /*
+        union Foo {
+            A,
+            B
+        }
+        typeof(Foo::A) == Foo
+        typeof(Foo::B) == Foo
+         */
+        let state: TCState = newTCStateType(newType(TYPE_KIND_UNION, getID(onion)));
+        let dupl: &UnionVariantLookup = null;
+        if (checkForDuplicateVariant(unionLookup, variant, &dupl)) {
+            result = reportDuplicateVariant(this, variant, dupl);
+        }
+        if (variant.kind == UNION_VARIANT_EMPTY) {
+            assert(variant.fields.length == 0, "Empty Union Variant has fields");
+            assert(variant.names.length == 0, "Empty Union Variant has fields");
+        }
+        assert(variant.names.length == variant.fields.length, "Union Variant name and field length mismatch");
+        for (let i: usize = 0; i < variant.fields.length; i = i + 1) {
+            let field = *at(&variant.fields, i);
+            let name = at(&variant.names, i);
+            let dupl: &Token = null;
+            if (checkForDuplicateName(variant, name, &dupl)) {
+                result = reportDuplicateNameInUnion(this, variant, name, dupl);
+                break;
+            }
+            let fieldState = typeCheckTypeNode(this, field);
+            if (!isSuccess(&fieldState)) {
+                result = fieldState;
+            }
+        }
+        addVariant(unionLookup, variant, state);
+    }
+    if (isSuccess(&result)) {
+        onion.typeState = result;
+    }
+    return result;
+}
+
+// FIXME: getStructByGlobalID -> getStructByGlobalDecl
 func typeCheckStructDecl(this: &TypeChecker, structID: usize) -> TCState {
     trace("TypeChecker.typeCheckStructDecl");
     let strukt: &ParsedStructDecl = at(&structDecls, structID);
@@ -1711,6 +1840,21 @@ func typeCheckExprMemberAccess(this: &TypeChecker, expr: &ParsedExpr, scopes: &S
     if (isError(&instance)) return instance;
     if (wantsInfer(&instance)) return instance;
     let instanceType = getType(&instance);
+    // TODO: There's no reason why things like the following example shouldn't work for member access.
+    // [Marker for todo.py: The above TODO is important]
+    // [Marker for todo.py: The above TODO is important]
+    /*
+    struct Foo {
+        a: i32;
+    }
+    func main() {
+        let f = Foo { a: 1 };
+        let r1 = &f;
+        let r2 = &r1;
+        r2.a = 13; // The Dot-Operator is not defined for values of type &&Foo.
+        assert(f.a == 13);
+    }
+    */
     if (!isStruct(instanceType) && !isStructPointer(instanceType)) {
         return reportMemberAccessOnNonStruct(this, expr, instanceType);
     }
@@ -2315,8 +2459,12 @@ func typeCheckTypeNode(this: &TypeChecker, typeNode: &ParsedTypeNode) -> TCState
             let structLookup: &StructLookup = asStruct(&typeLookup);
             tid = structLookup.type;
             assert(isStruct(tid), "Struct Lookup links to non-Struct typeNode");
+        } else if (isUnion(&typeLookup)) {
+            let unionLookup: &UnionLookup = asUnion(&typeLookup);
+            tid = unionLookup.type;
+            assert(isUnion(tid), "Union Lookup links to non-Union typeNode");
         } else {
-            todo_with_msg("check ident");
+            unreachable("Exhaustive handling of TypeLookup kinds in typeCheckTypeNode");
         }
     } else if (typeNode.kind == PARSED_TYPE_MODULE) {
         let _orig = typeNode;

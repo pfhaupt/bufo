@@ -1,0 +1,20 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Union Variant redeclaration.
+//! Variant `Dog` already declared here.
+//! Union Variant redeclaration.
+//! Variant `Cat` already declared here.
+
+union Animal {
+    Dog,
+    Dog,
+    Cat(i32),
+    Cat { a: i32 },
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    return 0;
+}

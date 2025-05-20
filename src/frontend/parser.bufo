@@ -24,7 +24,6 @@ struct Parser {
     importRoots: &String;
     importRootLength: usize;
     importRootCapacity: usize;
-    currentStruct: SubStr;
     syntaxError: bool;
 }
 
@@ -202,6 +201,9 @@ func parseTopLevelItem(this: &Parser, parent: TLIParent, attributes: ParsedAttri
     } else if (equals(&tkn.content, &KEYWORD_STRUCT)) {
         // REVIEW: Do we want to support structs outside of TLIs?
         return asTLI(parseStructDecl(this, parent));
+    } else if (equals(&tkn.content, &KEYWORD_UNION)) {
+        // REVIEW: Do we want to support unions outside of TLIs?
+        return asTLI(parseUnionDecl(this, parent));
     } else if (equals(&tkn.content, &KEYWORD_FUNC)) {
         // REVIEW: Do we want to support functions outside of TLIs?
         let isExtern: bool = false;
@@ -218,7 +220,7 @@ func parseTopLevelItem(this: &Parser, parent: TLIParent, attributes: ParsedAttri
         let loc: String = toString(&tkn.span);
         let name: String = toString(&tkn.content);
         fprintf(stderr, "%s: %s: Expected Top Level Keyword, found `%s` instead.\n", loc.buffer, ERR_STR, name.buffer);
-        fprintf(stderr, "%s: %s: A non-exhaustive list of TLK: `import`, `let`, `comptime`, `struct`, `func`.\n", loc.buffer, NOTE_STR);
+        fprintf(stderr, "%s: %s: A non-exhaustive list of TLK: `import`, `let`, `comptime`, `struct`, `union`, `func`.\n", loc.buffer, NOTE_STR);
         drop(&name);
         drop(&loc);
         exit(1);
@@ -407,6 +409,62 @@ func parseImport(this: &Parser, skip: bool) -> &ParsedTopLevelItem {
     exit(1);
 }
 
+func parseUnionDecl(this: &Parser, parent: TLIParent) -> &ParsedUnionDecl {
+    trace("Parser.parseUnionDecl");
+    let kw: Token = expect(this, TOKEN_KEYWORD);
+    let nameTkn: Token = expect(this, TOKEN_IDENT);
+    if (!isAsciiUppercase(getChar(&nameTkn.content, 0))) {
+        todo_with_msg("whine about union not being capitalized");
+    }
+    expect(this, TOKEN_CURLY_OPEN);
+    let decl: &ParsedUnionDecl = newParsedUnionDecl(parent, defaultSpan(), nameTkn);
+    let unionParent = TLIParent { id: getID(decl) as u32 };
+    while (!parsedEOF(this) && !at(this, TOKEN_CURLY_CLOSE)) {
+        let variant = parseUnionVariant(this, unionParent);
+        push(&decl.variants, variant);
+        if (!at(this, TOKEN_CURLY_CLOSE)) {
+            expect(this, TOKEN_COMMA);
+        }
+    }
+    let end: Token = expect(this, TOKEN_CURLY_CLOSE);
+    decl.span = newSpanBetween(&kw.span, &end.span);
+    return decl;
+}
+
+func parseUnionVariant(this: &Parser, parent: TLIParent) -> &ParsedUnionVariant {
+    trace("Parser.parseUnionVariant");
+    let name = expect(this, TOKEN_IDENT);
+    if (eat(this, TOKEN_CURLY_OPEN)) {
+        let variant = newParsedUnionVariant(UNION_VARIANT_STRUCT, parent, name.span, name);
+        while (!parsedEOF(this) && !at(this, TOKEN_CURLY_CLOSE)) {
+            let fieldName = expect(this, TOKEN_IDENT);
+            expect(this, TOKEN_COLON_SINGLE);
+            let typ = parseTypeNode(this);
+            addNamedField(variant, fieldName, typ);
+            if (!at(this, TOKEN_CURLY_CLOSE)) {
+                expect(this, TOKEN_COMMA);
+            }
+        }
+        let end: Token = expect(this, TOKEN_CURLY_CLOSE);
+        variant.span = newSpanBetween(&name.span, &end.span);
+        return variant;
+    } else if (eat(this, TOKEN_PAREN_OPEN)) {
+        let variant = newParsedUnionVariant(UNION_VARIANT_TUPLE, parent, name.span, name);
+        while (!parsedEOF(this) && !at(this, TOKEN_PAREN_CLOSE)) {
+            let typ = parseTypeNode(this);
+            addField(variant, typ);
+            if (!at(this, TOKEN_PAREN_CLOSE)) {
+                expect(this, TOKEN_COMMA);
+            }
+        }
+        let end: Token = expect(this, TOKEN_PAREN_CLOSE);
+        variant.span = newSpanBetween(&name.span, &end.span);
+        return variant;
+    } else {
+        return newParsedUnionVariant(UNION_VARIANT_EMPTY, parent, name.span, name);
+    }
+}
+
 func parseStructDecl(this: &Parser, parent: TLIParent) -> &ParsedStructDecl {
     trace("Parser.parseStructDecl");
     let kw: Token = expect(this, TOKEN_KEYWORD);
@@ -414,7 +472,6 @@ func parseStructDecl(this: &Parser, parent: TLIParent) -> &ParsedStructDecl {
     if (!isAsciiUppercase(getChar(&nameTkn.content, 0))) {
         todo_with_msg("whine about struct not being capitalized");
     }
-    this.currentStruct = nameTkn.content;
     expect(this, TOKEN_CURLY_OPEN);
     let decl: &ParsedStructDecl = newParsedStructDecl(parent, defaultSpan(), nameTkn);
     let structContext: StructContext = blank;
@@ -429,7 +486,6 @@ func parseStructDecl(this: &Parser, parent: TLIParent) -> &ParsedStructDecl {
     let span: Span = newSpanBetween(&kw.span, &end.span);
     (*decl).span = span;
     (*decl).context = structContext;
-    this.currentStruct = blank;
     return decl;
 }
 
@@ -1085,7 +1141,6 @@ func newParserFromSource(fileID: usize, src: SubStr) -> Parser {
         importRoots: null,
         importRootLength: 0,
         importRootCapacity: 0,
-        currentStruct: blank,
         syntaxError: false,
     };
 }

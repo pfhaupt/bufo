@@ -5,6 +5,7 @@ import "./token.bufo";
 import "./nodes.bufo";
 import "./lexer.bufo";
 import "../util/arena.bufo";
+import "../util/lists.bufo";
 import "../middleend/types.bufo";
 import "../middleend/checker.bufo";
 

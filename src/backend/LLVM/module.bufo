@@ -38,7 +38,6 @@ func writeToFile(this: &LLVMModule, path: SubStr) -> bool {
         drop(&_n);
         return false;
     }
-    printf("%s: Written LLVM Module to %s\n", NOTE_STR, _n.buffer);
     drop(&_n);
     return true;
 }

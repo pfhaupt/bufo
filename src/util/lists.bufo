@@ -139,7 +139,101 @@ struct ParsedTypeNodeList {
     length: usize;
     capacity: usize;
 }
+struct ParsedUnionVariantList {
+    elements: &&ParsedUnionVariant;
+    length: usize;
+    capacity: usize;
+}
+struct UnionLookupList {
+    elements: &UnionLookup;
+    length: usize;
+    capacity: usize;
+}
+struct UnionVariantLookupList {
+    elements: &UnionVariantLookup;
+    length: usize;
+    capacity: usize;
+}
+func push(this: &UnionVariantLookupList, element: UnionVariantLookup) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof UnionVariantLookup);
+        assert(this.elements != null, "Could not allocate memory in UnionVariantLookupList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
 
+func at(this: &UnionVariantLookupList, index: usize) -> &UnionVariantLookup {
+    assert(index < this.length, "Out of bounds access in UnionVariantLookupList.at");
+    assert(this.elements != null, "Element pointer is NULL in UnionVariantLookupList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &UnionVariantLookupList, element: &UnionVariantLookup) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
+        }
+    }
+    return false;
+}
+func push(this: &UnionLookupList, element: UnionLookup) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof UnionLookup);
+        assert(this.elements != null, "Could not allocate memory in UnionLookupList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+func pop(this: &UnionLookupList) -> &UnionLookup {
+    let l: &UnionLookup = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+
+func at(this: &UnionLookupList, index: usize) -> &UnionLookup {
+    assert(index < this.length, "Out of bounds access in UnionLookupList.at");
+    assert(this.elements != null, "Element pointer is NULL in UnionLookupList.at");
+    return &this.elements[index];
+}
+
+func contains(this: &UnionLookupList, element: &UnionLookup) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (equals(at(this, i), element)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+func last(this: &UnionLookupList) -> &UnionLookup {
+    assert(this.length != 0, "Called last() on empty UnionLookupList");
+    return at(this, this.length - 1);
+}
+
+func push(this: &ParsedUnionVariantList, element: &ParsedUnionVariant) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof &ParsedUnionVariant);
+        assert(this.elements != null, "Could not allocate memory in ParsedUnionVariantList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+func at(this: &ParsedUnionVariantList, index: usize) -> &&ParsedUnionVariant {
+    assert(index < this.length, "Out of bounds access in ParsedUnionVariantList.at");
+    assert(this.elements != null, "Element pointer is NULL in ParsedUnionVariantList.at");
+    return &this.elements[index];
+}
 func push(this: &ParsedTypeNodeList, element: &ParsedTypeNode) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
@@ -1527,6 +1621,16 @@ func get(this: &ImportLookupList, val: &ImportLookup) -> &ImportLookup {
     unreachable("contains(this, val) is true");
 }
 func get(this: &StructLookupList, val: &StructLookup) -> &StructLookup {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        let v = at(this, i);
+        if (equals(v, val)) {
+            return v;
+        }
+    }
+    assert(contains(this, val), "Expected to find element in get()");
+    unreachable("contains(this, val) is true");
+}
+func get(this: &UnionLookupList, val: &UnionLookup) -> &UnionLookup {
     for (let i: usize = 0; i < this.length; i = i + 1) {
         let v = at(this, i);
         if (equals(v, val)) {

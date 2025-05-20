@@ -84,6 +84,8 @@ let files: ParsedFileArena = blank;
 let topLevelItems: ParsedTopLevelItemArena = blank;
 let modules: ParsedModuleArena = blank;
 let structDecls: ParsedStructDeclArena = blank;
+let unionDecls: ParsedUnionDeclArena = blank;
+let unionVariants: ParsedUnionVariantArena = blank;
 let funcDecls: ParsedFuncDeclArena = blank;
 let blocks: ParsedBlockArena = blank;
 let stmts: ParsedStmtArena = blank;
@@ -205,13 +207,14 @@ func newParsedFile(origin: SubStr, src: SubStr) -> &ParsedFile {
     return last(&files);
 }
 
-comptime TLI_INVALID: usize = 0;
-comptime TLI_IMPORT: usize = 1;
-comptime TLI_VAR_DECL: usize = 2;
+comptime TLI_INVALID    : usize = 0;
+comptime TLI_IMPORT     : usize = 1;
+comptime TLI_VAR_DECL   : usize = 2;
 comptime TLI_STRUCT_DECL: usize = 3;
-comptime TLI_FUNC_DECL: usize = 4;
-comptime TLI_MOD_DECL: usize = 5;
-comptime TLI_CONFIG: usize = 6;
+comptime TLI_UNION_DECL  : usize = 4;
+comptime TLI_FUNC_DECL  : usize = 5;
+comptime TLI_MOD_DECL   : usize = 6;
+comptime TLI_CONFIG     : usize = 7;
 
 // the parentID is ambiguous because we can nest modules -> is the parent a ParsedFile or should we
 // look in the modules lookup?
@@ -232,6 +235,15 @@ struct ParsedTopLevelItem {
     nodeID: usize;
     attributes: ParsedAttributeList;
     typeState: TCState;
+}
+
+func asStruct(this: &ParsedTopLevelItem) -> &ParsedStructDecl {
+    assert(this.kind == TLI_STRUCT_DECL, "ParsedTopLevelItem.asStruct() called on non-struct TLI");
+    return at(&structDecls, this.nodeID);
+}
+func asUnion(this: &ParsedTopLevelItem) -> &ParsedUnionDecl {
+    assert(this.kind == TLI_UNION_DECL, "ParsedTopLevelItem.asUnion() called on non-union TLI");
+    return at(&unionDecls, this.nodeID);
 }
 
 func getID(this: &ParsedTopLevelItem) -> usize {
@@ -436,6 +448,89 @@ func newParsedStructDecl(parent: TLIParent, span: Span, name: Token) -> &ParsedS
     return last(&structDecls);
 }
 
+struct ParsedUnionDecl {
+    ignored: bool;
+    parent: TLIParent;
+    name: Token;
+    span: Span;
+    variants: ParsedUnionVariantList;
+    typeState: TCState;
+}
+
+func getID(this: &ParsedUnionDecl) -> usize {
+    trace("ParsedUnionDecl.getID");
+    return indexOf(&unionDecls, this);
+}
+func asTLI(this: &ParsedUnionDecl) -> &ParsedTopLevelItem {
+    trace("ParsedUnionDecl.asTLI");
+    return newParsedTopLevelItem(this.span, TLI_UNION_DECL, getID(this));
+}
+func newParsedUnionDecl(parent: TLIParent, span: Span, name: Token) -> &ParsedUnionDecl {
+    trace("newParsedUnionDecl");
+    push(&unionDecls, ParsedUnionDecl {
+        ignored: ignoringNodes,
+        parent: parent,
+        name: name,
+        span: span,
+    });
+    return last(&unionDecls);
+}
+
+comptime UNION_VARIANT_INVALID: usize = 0;
+comptime UNION_VARIANT_EMPTY  : usize = 1; // A, B, C
+comptime UNION_VARIANT_TUPLE  : usize = 2; // A(i32), B(i32)
+comptime UNION_VARIANT_STRUCT : usize = 3; // A { a: i32, b: i32 }
+struct ParsedUnionVariant {
+    ignored: bool;
+    parent: TLIParent;
+    name: Token;
+    span: Span;
+    kind: usize;
+    fields: ParsedTypeNodeList;
+    names: TokenList;
+}
+
+func addField(this: &ParsedUnionVariant, field: &ParsedTypeNode) {
+    // NOTE: We leak the String here
+    let s: String = blank;
+    pushNumber(&s, this.names.length);
+    let name = newToken(this.parent.id as usize, &asSubStr(&s), 0, TOKEN_IDENT);
+    addNamedField(this, name, field);
+}
+
+func addNamedField(this: &ParsedUnionVariant, name: Token, typ: &ParsedTypeNode) {
+    assert(this.fields.length == this.names.length, "ParsedUnionVariant.addNamedField: Unbalanced field and name lists");
+    push(&this.fields, typ);
+    push(&this.names, name);
+}
+
+func checkForDuplicateName(this: &ParsedUnionVariant, name: &Token, dupl: &&Token) -> bool {
+    trace("ParsedUnionVariant.checkForDuplicateName");
+    let found = false;
+    for (let i: usize = 0; i < this.names.length; i = i + 1) {
+        let n = at(&this.names, i);
+        if (equals(&n.content, &name.content)) {
+            if (found) {
+                *dupl = n;
+                return true;
+            }
+            found = true;
+        }
+    }
+    return false;
+}
+
+func newParsedUnionVariant(kind: usize, parent: TLIParent, span: Span, name: Token) -> &ParsedUnionVariant {
+    trace("newParsedUnionVariant");
+    push(&unionVariants, ParsedUnionVariant {
+        ignored: ignoringNodes,
+        parent: parent,
+        name: name,
+        span: span,
+        kind: kind,
+    });
+    return last(&unionVariants);
+}
 struct ParsedFuncDecl {
     ignored: bool;
     parent: TLIParent;

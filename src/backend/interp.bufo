@@ -1740,14 +1740,6 @@ func push(val: u64) -> ByteBuffer {
         fprintf(stderr, "%s\n", toString(retType).buffer);
         todo_with_msg("non-float ret");
     }
-    // if (ret == U64) {
-    // } else if (ret == F64) {
-    // } else if (ret == F32) {
-    //     push(&buf, '\x66', '\x0F', '\x7E');
-    //     modRM(&buf, ADDR_REG, XMM0, RAX);
-    // } else {
-    //     unreachable("yo momma so fat, she can't even return properly");
-    // }
     push(&buf, '\xC3');
     let code = VirtualAlloc(null, buf.length, 4096, 64);
     assert(code != null, "Could not alloc some bytes sadge thx Windows");

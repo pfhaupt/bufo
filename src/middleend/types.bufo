@@ -34,13 +34,14 @@ comptime TYPE_COUNT: usize   = 17;
 
 let types: TypeArena = blank;
 
-comptime TYPE_KIND_UNKNOWN: usize = 0;
+comptime TYPE_KIND_UNKNOWN: usize   = 0;
 comptime TYPE_KIND_PRIMITIVE: usize = 1;
-comptime TYPE_KIND_POINTER: usize = 2;
-comptime TYPE_KIND_STRUCT: usize = 3;
-comptime TYPE_KIND_ARRAY: usize = 4;
-comptime TYPE_KIND_FUNCTION: usize = 5;
-comptime TYPE_KIND_MODULE: usize = 6;
+comptime TYPE_KIND_POINTER: usize   = 2;
+comptime TYPE_KIND_STRUCT: usize    = 3;
+comptime TYPE_KIND_UNION: usize      = 4;
+comptime TYPE_KIND_ARRAY: usize     = 5;
+comptime TYPE_KIND_FUNCTION: usize  = 6;
+comptime TYPE_KIND_MODULE: usize    = 7;
 struct Type {
     kind: usize;
     typeIndex: usize;
@@ -144,6 +145,7 @@ func equals(this: &Type, other: &Type) -> bool {
     if (this.kind == TYPE_KIND_PRIMITIVE
         || this.kind == TYPE_KIND_ARRAY
         || this.kind == TYPE_KIND_STRUCT
+        || this.kind == TYPE_KIND_UNION
         || this.kind == TYPE_KIND_MODULE)
         return this.typeIndex == other.typeIndex;
     todo_with_msg("Type.equals");
@@ -226,6 +228,9 @@ func isModule(this: &Type) -> bool {
 }
 func isStruct(this: &Type) -> bool {
     return this.kind == TYPE_KIND_STRUCT;
+}
+func isUnion(this: &Type) -> bool {
+    return this.kind == TYPE_KIND_UNION;
 }
 func isArray(this: &Type) -> bool {
     return this.kind == TYPE_KIND_ARRAY;
@@ -365,6 +370,21 @@ func getAlignment(this: &Type) -> usize {
             if (_a > maxAlign) maxAlign = _a;
         }
         return maxAlign;
+    } else if (this.kind == TYPE_KIND_UNION) {
+        let info: &ParsedUnionDecl = at(&unionDecls, this.typeIndex);
+        assert(isSuccess(&info.typeState), "Can only get alignment of valid unions");
+        let maxAlign: usize = 1;
+        for (let i: usize = 0; i < info.variants.length; i = i + 1) {
+            let variant = *at(&info.variants, i);
+            for (let j: usize = 0; j < variant.fields.length; j = j + 1) {
+                let field = *at(&variant.fields, j);
+                assert(isSuccess(&field.typeState), "Expected valid field type");
+                let tt: &Type = getType(&field.typeState);
+                let _a: usize = getAlignment(tt);
+                if (_a > maxAlign) maxAlign = _a;
+            }
+        }
+        return maxAlign;
     } else {
         unreachable("Exhaustive handling of type kinds in Type.getAlignment");
     }
@@ -414,6 +434,30 @@ func getSize(this: &Type) -> usize {
         }
         size = nextMultipleOf(size, maxAlign);
         return size;
+    } else if (this.kind == TYPE_KIND_UNION) {
+        let info: &ParsedUnionDecl = at(&unionDecls, this.typeIndex);
+        assert(isSuccess(&info.typeState), "Can only get size of valid unions");
+        assert(info.variants.length < 256, "getSize expects the Union tag to fit into a single byte");
+        let maxSize: usize = 0;
+        let maxAlign: usize = 1;
+        for (let i: usize = 0; i < info.variants.length; i = i + 1) {
+            let variant = *at(&info.variants, i);
+            let size: usize = 1; // union tag
+            let align: usize = 1;
+            for (let j: usize = 0; j < variant.fields.length; j = j + 1) {
+                let field = *at(&variant.fields, j);
+                assert(isSuccess(&field.typeState), "Expected valid field type");
+                let tt: &Type = getType(&field.typeState);
+                let _a: usize = getAlignment(tt);
+                size = size + getSize(tt);
+                size = nextMultipleOf(size, _a);
+                if (_a > align) align = _a;
+            }
+            if (size > maxSize) maxSize = size;
+            if (align > maxAlign) maxAlign = align;
+        }
+        maxSize = nextMultipleOf(maxSize, maxAlign);
+        return maxSize;
     } else {
         unreachable("Exhaustive handling of type kinds in Type.getSize");
     }

@@ -87,10 +87,20 @@ func generateExecutable(this: &LLVMCodegen, outPath: SubStr) -> bool {
         printf("[INFO] Saving object file at %s\n", path.buffer);
     }
     writeToFile(&this.llvmTargetMachine, this.llvmModule, LLVMObjectFile, path.buffer);
-    // path = outPath.toString();
-    // pushStr(&path, ".s");
-    // printf("written to: %s\n", path.buffer);
-    // this.llvmTargetMachine.writeToFile(this.llvmModule, LLVMAssemblyFile, path.buffer);
+    if (*flags.emitASM) {
+        let path = toString(&outPath);
+        pushStr(&path, ".s");
+        printf("[INFO] Saving assembly code in %s\n", path.buffer);
+        writeToFile(&this.llvmTargetMachine, this.llvmModule, LLVMAssemblyFile, path.buffer);
+        drop(&path);
+    }
+    if (*flags.emitLLVM) {
+        let path = toString(&outPath);
+        pushStr(&path, ".ll");
+        printf("[INFO] Saving LLVM IR in %s\n", path.buffer);
+        writeToFile(&this.llvmModule, asSubStr(&path));
+        drop(&path);
+    }
     return true;
 }
 func generateEntryPoint(this: &LLVMCodegen) -> bool {
@@ -814,9 +824,18 @@ func generateLLVMType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
             let tDecl: &ParsedTypeNode = getFieldTypeAtIndex(&decl.context, i);
             fields[i] = generateLLVMType(this, getType(&tDecl.typeState));
         }
-        let t: LLVMType = createStructType(&this.llvmContext, &*fields, decl.context.fieldLength as u32, false);
+        let t: LLVMType = createStructType(&this.llvmContext, fields, decl.context.fieldLength as u32, false);
         free(fields);
         return t;
+    } else if (isUnion(typ)) {
+        let decl: &ParsedUnionDecl = at(&unionDecls, typ.typeIndex);
+        let size = getSize(typ) as u32;
+        assert(size >= 1, "LLVM: Expected Union to be at least one byte (the tag)");
+        // Unions store the tag and an array of bytes
+        let tag: LLVMType = generateLLVMType(this, newType(TYPE_KIND_PRIMITIVE, TYPE_U8));
+        let data = intoArrayType(&tag, size - 1); // - 1 because tag is stored differently
+        let fields = [tag, data];
+        return createStructType(&this.llvmContext, &fields[0], 2, false);
     } else {
         todo_with_msg("generate llvm type");
     }

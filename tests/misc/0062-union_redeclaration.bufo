@@ -1,0 +1,15 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Union redeclaration.
+//! Union `Foo` already declared here.
+
+union Foo {
+    Bar,
+    Baz
+}
+
+union Foo {
+}
