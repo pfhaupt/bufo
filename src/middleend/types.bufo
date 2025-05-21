@@ -135,8 +135,8 @@ func equals(this: &Type, other: &Type) -> bool {
     if (this.kind != other.kind)
         return false;
     if (this.kind == TYPE_KIND_ARRAY) {
-        // FIXME: array_bug.bufo
-        return equals(at(&types, this.typeIndex), at(&types, other.typeIndex));
+        if (!equals(at(&types, this.typeIndex), at(&types, other.typeIndex))) return false;
+        return this.arraySize == other.arraySize;
     }
     if (this.kind == TYPE_KIND_FUNCTION) {
         if (this.fnParams.length != other.fnParams.length)
