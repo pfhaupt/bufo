@@ -3,7 +3,7 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Expected Identifier, found `{`
+//! Expected Identifier, found `{` instead.
 
 func main(
     {

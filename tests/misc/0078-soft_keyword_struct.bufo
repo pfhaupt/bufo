@@ -1,0 +1,16 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+
+struct if {
+    else: i32;
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let if = if { else: 12 };
+    assert(if.else == 12);
+    return 0;
+}
+

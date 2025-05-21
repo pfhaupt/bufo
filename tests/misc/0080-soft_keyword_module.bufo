@@ -1,0 +1,20 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+
+module if {
+    module else {
+        struct Foo { i: i32; }
+        func foo() -> Foo {
+            return Foo { i: 12 };
+        }
+    }
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let f = if::else::foo();
+    assert(f.i == 12);
+    return 0;
+}

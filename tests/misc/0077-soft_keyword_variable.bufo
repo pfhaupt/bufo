@@ -1,0 +1,25 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+import "libc.bufo";
+
+struct Foo {
+    bar: i32;
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let config = Foo { bar: 12 };
+    let import: i32 = 18;
+    assert(config.bar == 12);
+    assert(import == 18);
+    let if: i32 = 69;
+    // may break if we ever decide to make `if` an expression
+    assert(if == 69);
+    // Doesn't work because sizeof is a special expression
+    // let sizeof: i64 = 12;
+    // assert(sizeof == 12);
+    return 0;
+}
+

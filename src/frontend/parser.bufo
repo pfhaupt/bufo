@@ -60,7 +60,23 @@ func expectSoftIdentifier(this: &Parser) -> Token {
     if (tkn.kind != TOKEN_KEYWORD && tkn.kind != TOKEN_IDENT) {
         let loc: String = getLocation(&tkn);
         let name: String = toString(&tkn.content);
-        fprintf(stderr, "%s: %s: Expected identifier, found `%s` instead.\n", loc.buffer, ERR_STR, name.buffer);
+        fprintf(stderr, "%s: %s: Expected Identifier, found `%s` instead.\n", loc.buffer, ERR_STR, name.buffer);
+        drop(&name);
+        drop(&loc);
+        exit(1);
+    }
+    // These keywords serve a purpose in parsePrimaryExpr, there's no point in creating variables
+    // with those names, because you could never use them.
+    // FIXME: This check is very expensive, and we do this for every parameter and variable declaration
+    // TODO:  Short-circuiting for logical binary expressions
+    if (equals(&tkn.content, &KEYWORD_NULL)
+        || equals(&tkn.content, &KEYWORD_TRUE)
+        || equals(&tkn.content, &KEYWORD_FALSE)
+        || equals(&tkn.content, &KEYWORD_BLANK)
+        || equals(&tkn.content, &KEYWORD_SIZEOF)) {
+        let loc: String = getLocation(&tkn);
+        let name: String = toString(&tkn.content);
+        fprintf(stderr, "%s: %s: Expected Identifier, found `%s` instead.\n", loc.buffer, ERR_STR, name.buffer);
         drop(&name);
         drop(&loc);
         exit(1);
@@ -231,7 +247,7 @@ func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList
     trace("Parser.parseModule");
     let modTkn: Token = expect(this, TOKEN_KEYWORD);
     assert(equals(&modTkn.content, &KEYWORD_MODULE));
-    let name = expect(this, TOKEN_IDENT);
+    let name = expectSoftIdentifier(this);
     let tlis: UsizeList = blank;
     expect(this, TOKEN_CURLY_OPEN);
     let mod = newParsedModule(_parent, blank, name, blank);
@@ -412,10 +428,7 @@ func parseImport(this: &Parser, skip: bool) -> &ParsedTopLevelItem {
 func parseUnionDecl(this: &Parser, parent: TLIParent) -> &ParsedUnionDecl {
     trace("Parser.parseUnionDecl");
     let kw: Token = expect(this, TOKEN_KEYWORD);
-    let nameTkn: Token = expect(this, TOKEN_IDENT);
-    if (!isAsciiUppercase(getChar(&nameTkn.content, 0))) {
-        todo_with_msg("whine about union not being capitalized");
-    }
+    let nameTkn: Token = expectSoftIdentifier(this);
     expect(this, TOKEN_CURLY_OPEN);
     let decl: &ParsedUnionDecl = newParsedUnionDecl(parent, defaultSpan(), nameTkn);
     let unionParent = TLIParent { id: getID(decl) as u32 };
@@ -433,11 +446,11 @@ func parseUnionDecl(this: &Parser, parent: TLIParent) -> &ParsedUnionDecl {
 
 func parseUnionVariant(this: &Parser, parent: TLIParent) -> &ParsedUnionVariant {
     trace("Parser.parseUnionVariant");
-    let name = expect(this, TOKEN_IDENT);
+    let name = expectSoftIdentifier(this);
     if (eat(this, TOKEN_CURLY_OPEN)) {
         let variant = newParsedUnionVariant(UNION_VARIANT_STRUCT, parent, name.span, name);
         while (!parsedEOF(this) && !at(this, TOKEN_CURLY_CLOSE)) {
-            let fieldName = expect(this, TOKEN_IDENT);
+            let fieldName = expectSoftIdentifier(this);
             expect(this, TOKEN_COLON_SINGLE);
             let typ = parseTypeNode(this);
             addNamedField(variant, fieldName, typ);
@@ -468,15 +481,12 @@ func parseUnionVariant(this: &Parser, parent: TLIParent) -> &ParsedUnionVariant 
 func parseStructDecl(this: &Parser, parent: TLIParent) -> &ParsedStructDecl {
     trace("Parser.parseStructDecl");
     let kw: Token = expect(this, TOKEN_KEYWORD);
-    let nameTkn: Token = expect(this, TOKEN_IDENT);
-    if (!isAsciiUppercase(getChar(&nameTkn.content, 0))) {
-        todo_with_msg("whine about struct not being capitalized");
-    }
+    let nameTkn: Token = expectSoftIdentifier(this);
     expect(this, TOKEN_CURLY_OPEN);
     let decl: &ParsedStructDecl = newParsedStructDecl(parent, defaultSpan(), nameTkn);
     let structContext: StructContext = blank;
     while (!parsedEOF(this) && !at(this, TOKEN_CURLY_CLOSE)) {
-        let tkn = expect(this, TOKEN_IDENT);
+        let tkn = expectSoftIdentifier(this);
         expect(this, TOKEN_COLON_SINGLE);
         let typ: &ParsedTypeNode = parseTypeNode(this);
         addField(&structContext, tkn, typ);
@@ -493,7 +503,7 @@ func parseFuncDecl(this: &Parser, parent: TLIParent, isExtern: bool) -> &ParsedF
     trace("Parser.parseFuncDecl");
     let tkn: Token = expect(this, TOKEN_KEYWORD);
     if (!isExtern) assert(equals(&tkn.content, &KEYWORD_FUNC));
-    let name: Token = expect(this, TOKEN_IDENT);
+    let name: Token = expectSoftIdentifier(this);
     let params: ParamContext = parseParameters(this, blank);
     let retType: &ParsedTypeNode = parseReturnType(this);
     if (isExtern) {
@@ -545,7 +555,7 @@ func parseParameters(this: &Parser, parentName: Token) -> ParamContext {
                 }
             }
         } else {
-            let name: Token = expect(this, TOKEN_IDENT);
+            let name: Token = expectSoftIdentifier(this);
             expect(this, TOKEN_COLON_SINGLE);
             let typ: &ParsedTypeNode = parseTypeNode(this);
             addParameter(&context, name, typ);
@@ -716,7 +726,7 @@ func parseIfStmt(this: &Parser, kw: Token) -> &ParsedStmt {
 
 func parseVarDeclStmt(this: &Parser, kw: Token, isGlobal: bool) -> &ParsedStmt {
     trace("Parser.parseVarDeclStmt");
-    let nameTkn: Token = expect(this, TOKEN_IDENT);
+    let nameTkn: Token = expectSoftIdentifier(this);
     let isComptime: bool = equals(&kw.content, &KEYWORD_COMPTIME);
     let data: VarDeclContext = blank;
     data.name = nameTkn;
@@ -744,7 +754,7 @@ func parseTypeNode(this: &Parser) -> &ParsedTypeNode {
     if (at(this, TOKEN_KEYWORD)) {
         let kw = peek(&this.lexer);
         if (!equals(&kw.content, &KEYWORD_FUNC)) {
-            expect(this, TOKEN_IDENT);
+            expectSoftIdentifier(this);
         }
         next(&this.lexer);
         expect(this, TOKEN_PAREN_OPEN);
@@ -792,13 +802,13 @@ func parseTypeNode(this: &Parser) -> &ParsedTypeNode {
         drop(&_size);
         return arr;
     } else {
-        let nameTkn: Token = expect(this, TOKEN_IDENT);
+        let nameTkn: Token = expectSoftIdentifier(this);
         if (at(this, TOKEN_COLON_DOUBLE)) {
             let node = newParsedTypeNode(nameTkn.span, PARSED_TYPE_MODULE);
             let orig = node;
             node.nameTkn = nameTkn;
             while (eat(this, TOKEN_COLON_DOUBLE)) {
-                let typeTkn = expect(this, TOKEN_IDENT);
+                let typeTkn = expectSoftIdentifier(this);
                 let span = newSpanBetween(&node.span, &typeTkn.span);
                 let newNode = newParsedTypeNode(span, PARSED_TYPE_MODULE);
                 newNode.nameTkn = typeTkn;
@@ -854,30 +864,6 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
         let expr: &ParsedExpr = parseExpr(this);
         expect(this, TOKEN_PAREN_CLOSE);
         return expr;
-    } else if (tknKind == TOKEN_IDENT) {
-        let ident: Token = expect(this, TOKEN_IDENT);
-        if (at(this, TOKEN_CURLY_OPEN)) {
-            expect(this, TOKEN_CURLY_OPEN);
-            let context: StructInitContext = blank;
-            while (!parsedEOF(this) && !at(this, TOKEN_CURLY_CLOSE)) {
-                let name: Token = expect(this, TOKEN_IDENT);
-                expect(this, TOKEN_COLON_SINGLE);
-                let expr: &ParsedExpr = parseExpr(this);
-                addField(&context, name, expr);
-                if (!eat(this, TOKEN_COMMA))
-                    break;
-            }
-            let end: Token = expect(this, TOKEN_CURLY_CLOSE);
-            let span: Span = newSpanBetween(&ident.span, &end.span);
-            let expr: &ParsedExpr = newParsedExpr(span, EXPR_STRUCT_INIT);
-            (*expr).origToken = ident;
-            (*expr).structInitContext = context;
-            return expr;
-        } else {
-            let expr: &ParsedExpr = newParsedExpr(ident.span, EXPR_NAME);
-            (*expr).origToken = ident;
-            return expr;
-        }
     } else if (tknKind == TOKEN_STRING_LITERAL) {
         let str: Token = expect(this, TOKEN_STRING_LITERAL);
         let expr: &ParsedExpr = newParsedExpr(str.span, EXPR_STRING_LIT);
@@ -910,37 +896,52 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
         let expr: &ParsedExpr = newParsedExpr(span, EXPR_ARRAY_LIT);
         (*expr).arrayContext = arrayContext;
         return expr;
-    } else if (tknKind == TOKEN_KEYWORD) {
-        let kw: Token = expect(this, TOKEN_KEYWORD);
-        if (equals(&kw.content, &KEYWORD_NULL)) {
-            let expr: &ParsedExpr = newParsedExpr(kw.span, EXPR_NULL);
-            (*expr).origToken = kw;
+    } else if (tknKind == TOKEN_KEYWORD || tknKind == TOKEN_IDENT) {
+        let ident: Token = expect(this, tknKind);
+        // Note: If you ever add a keyword here, you must adjust expectSoftIdentifier(this) accordingly
+        if (equals(&ident.content, &KEYWORD_NULL)) {
+            let expr: &ParsedExpr = newParsedExpr(ident.span, EXPR_NULL);
+            expr.origToken = ident;
             return expr;
-        } else if (equals(&kw.content, &KEYWORD_TRUE)) {
-            let expr: &ParsedExpr = newParsedExpr(kw.span, EXPR_TRUE);
-            (*expr).origToken = kw;
+        } else if (equals(&ident.content, &KEYWORD_TRUE)) {
+            let expr: &ParsedExpr = newParsedExpr(ident.span, EXPR_TRUE);
+            expr.origToken = ident;
             return expr;
-        } else if (equals(&kw.content, &KEYWORD_FALSE)) {
-            let expr: &ParsedExpr = newParsedExpr(kw.span, EXPR_FALSE);
-            (*expr).origToken = kw;
+        } else if (equals(&ident.content, &KEYWORD_FALSE)) {
+            let expr: &ParsedExpr = newParsedExpr(ident.span, EXPR_FALSE);
+            expr.origToken = ident;
             return expr;
-        } else if (equals(&kw.content, &KEYWORD_BLANK)) {
-            let expr: &ParsedExpr = newParsedExpr(kw.span, EXPR_BLANK);
-            (*expr).origToken = kw;
+        } else if (equals(&ident.content, &KEYWORD_BLANK)) {
+            let expr: &ParsedExpr = newParsedExpr(ident.span, EXPR_BLANK);
+            expr.origToken = ident;
             return expr;
-        } else if (equals(&kw.content, &KEYWORD_SIZEOF)) {
+        } else if (equals(&ident.content, &KEYWORD_SIZEOF)) {
             let typ: &ParsedTypeNode = parseTypeNode(this);
-            let span: Span = newSpanBetween(&kw.span, &typ.span);
+            let span: Span = newSpanBetween(&ident.span, &typ.span);
             let expr: &ParsedExpr = newParsedExpr(span, EXPR_SIZEOF);
-            (*expr).lhs = getID(typ);
+            expr.lhs = getID(typ);
+            return expr;
+        } else if (at(this, TOKEN_CURLY_OPEN)) {
+            expect(this, TOKEN_CURLY_OPEN);
+            let context: StructInitContext = blank;
+            while (!parsedEOF(this) && !at(this, TOKEN_CURLY_CLOSE)) {
+                let name: Token = expectSoftIdentifier(this);
+                expect(this, TOKEN_COLON_SINGLE);
+                let expr: &ParsedExpr = parseExpr(this);
+                addField(&context, name, expr);
+                if (!eat(this, TOKEN_COMMA))
+                    break;
+            }
+            let end: Token = expect(this, TOKEN_CURLY_CLOSE);
+            let span: Span = newSpanBetween(&ident.span, &end.span);
+            let expr: &ParsedExpr = newParsedExpr(span, EXPR_STRUCT_INIT);
+            (*expr).origToken = ident;
+            (*expr).structInitContext = context;
             return expr;
         } else {
-            let loc: String = getLocation(&kw);
-            let name: String = toString(&kw.content);
-            fprintf(stderr, "%s: %s: Expected Expression, found `%s`.\n", loc.buffer, ERR_STR, name.buffer);
-            drop(&name);
-            drop(&loc);
-            exit(1);
+            let expr: &ParsedExpr = newParsedExpr(ident.span, EXPR_NAME);
+            (*expr).origToken = ident;
+            return expr;
         }
     }
     let t: Token = peek(&this.lexer);

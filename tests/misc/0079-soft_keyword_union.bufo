@@ -1,0 +1,27 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+
+struct Expr {
+    stuff: i32;
+}
+struct Stmt {
+    stuff: i32;
+}
+struct Token {
+    stuff: i32;
+}
+
+union AST {
+    if(Expr, Stmt),
+    let(Token, Expr),
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let decl = AST::let(blank, blank);
+    let stmt = AST::if(blank, blank);
+    return 0;
+}
+
