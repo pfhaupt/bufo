@@ -434,32 +434,49 @@ func resolveIdentifierByName(this: &ModuleLookup, name: &Token, var: &&VariableL
     return IDENT_NONE;
 }
 
+struct MLConfig {
+    checkSelf: bool;
+    checkImport: bool;
+    checkModule: bool;
+    checkParent: bool;
+}
+
 func resolveModuleByName(this: &ModuleLookup, name: &Token, mod: &&ModuleLookup) -> bool {
-    return resolveModuleByName(this, name, mod, true, true, true, true);
+    return resolveModuleByName(this, name, mod, MLConfig {
+        checkSelf: true,
+        checkImport: true,
+        checkModule: true,
+        checkParent: true,
+    });
 }
 // TODO: Maybe use a struct instead of passing so many boolean values here
-func resolveModuleByName(this: &ModuleLookup, name: &Token, mod: &&ModuleLookup, allowedSelf: bool, checkImport: bool, checkModules: bool, checkParent: bool) -> bool {
+func resolveModuleByName(this: &ModuleLookup, name: &Token, mod: &&ModuleLookup, c: MLConfig) -> bool {
     trace("ModuleLookup.resolveModuleByName");
     assert(this != null, "resolveModuleByName called with null-Lookup");
-    if (allowedSelf && equals(&this.name.content, &name.content)) {
+    if (c.checkSelf && equals(&this.name.content, &name.content)) {
         *mod = this;
         return true;
     }
-    if (checkModules) {
+    if (c.checkModule) {
         for (let i: usize = 0; i < this.modules.length; i = i + 1) {
             let submodule = at(&this.modules, i);
-            if (resolveModuleByName(submodule, name, mod, true, false, false, false)) return true;
+            if (resolveModuleByName(submodule, name, mod, MLConfig { checkSelf: true })) return true;
         }
     }
-    if (checkImport) {
+    if (c.checkImport) {
         for (let i: usize = 0; i < this.imports.length; i = i + 1) {
             let imp = at(&this.globalLookup.files, at(&this.imports, i).fileID);
-            if (resolveModuleByName(imp, name, mod, true, false, checkModules, false)) return true;
+            if (resolveModuleByName(imp, name, mod, MLConfig { checkSelf: true, checkModule: c.checkModule })) return true;
         }
     }
-    if (checkParent && this.parent != null) {
+    if (c.checkParent && this.parent != null) {
         let parentMod = getModuleByGlobalID(this.globalLookup, getID(this.parent));
-        return resolveModuleByName(parentMod, name, mod, true, true, checkModules, true);
+        return resolveModuleByName(parentMod, name, mod, MLConfig {
+            checkSelf: true,
+            checkImport: true,
+            checkModule: c.checkModule,
+            checkParent: true,
+        });
     }
     return false;
 }
