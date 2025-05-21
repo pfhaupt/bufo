@@ -20,6 +20,7 @@ struct Lookup {
 func insertFile(this: &Lookup, file: &ParsedFile) -> &ModuleLookup {
     trace("Lookup.insertFile");
     let lookup = ModuleLookup {
+        name: newToken(0, &newSubStrOfStrLit("<file module>"), 0, TOKEN_IDENT),
         globalID: getID(file.mod),
         globalLookup: this,
     };
@@ -434,9 +435,10 @@ func resolveIdentifierByName(this: &ModuleLookup, name: &Token, var: &&VariableL
 }
 
 func resolveModuleByName(this: &ModuleLookup, name: &Token, mod: &&ModuleLookup) -> bool {
-    return resolveModuleByName(this, name, mod, true, true, true);
+    return resolveModuleByName(this, name, mod, true, true, true, true);
 }
-func resolveModuleByName(this: &ModuleLookup, name: &Token, mod: &&ModuleLookup, allowedSelf: bool, checkImport: bool, checkModules: bool) -> bool {
+// TODO: Maybe use a struct instead of passing so many boolean values here
+func resolveModuleByName(this: &ModuleLookup, name: &Token, mod: &&ModuleLookup, allowedSelf: bool, checkImport: bool, checkModules: bool, checkParent: bool) -> bool {
     trace("ModuleLookup.resolveModuleByName");
     assert(this != null, "resolveModuleByName called with null-Lookup");
     if (allowedSelf && equals(&this.name.content, &name.content)) {
@@ -446,18 +448,18 @@ func resolveModuleByName(this: &ModuleLookup, name: &Token, mod: &&ModuleLookup,
     if (checkModules) {
         for (let i: usize = 0; i < this.modules.length; i = i + 1) {
             let submodule = at(&this.modules, i);
-            if (resolveModuleByName(submodule, name, mod)) return true;
+            if (resolveModuleByName(submodule, name, mod, true, false, false, false)) return true;
         }
     }
     if (checkImport) {
         for (let i: usize = 0; i < this.imports.length; i = i + 1) {
             let imp = at(&this.globalLookup.files, at(&this.imports, i).fileID);
-            if (resolveModuleByName(imp, name, mod, true, false, checkModules)) return true;
+            if (resolveModuleByName(imp, name, mod, true, false, checkModules, false)) return true;
         }
     }
-    if (this.parent != null) {
+    if (checkParent && this.parent != null) {
         let parentMod = getModuleByGlobalID(this.globalLookup, getID(this.parent));
-        return resolveModuleByName(parentMod, name, mod, true, true, false);
+        return resolveModuleByName(parentMod, name, mod, true, true, checkModules, true);
     }
     return false;
 }

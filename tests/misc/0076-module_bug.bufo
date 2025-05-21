@@ -1,0 +1,21 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! SUCCESS
+
+module Bar {
+    struct Foo {
+        a: i32;
+    }
+}
+
+module Foo {
+    union Bar {
+        A(Bar::Foo),
+        B(i32),
+    }
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    return 0;
+}
+

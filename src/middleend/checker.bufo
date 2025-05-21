@@ -1826,7 +1826,14 @@ func typeCheckExprModuleAccess(this: &TypeChecker, expr: &ParsedExpr, scopes: &S
         let modLookup = getModuleByGlobalID(&this.lookup, instanceType.typeIndex);
         if (rhs.kind == EXPR_NAME) {
             let submodule: &ModuleLookup = null;
-            if (resolveModuleByName(modLookup, &rhs.origToken, &submodule, false, true, true)) {
+            // TODO: Maybe use a struct instead of passing so many boolean values here
+            // passed arguments:
+            //  1) Don't return modLookup if modLookup has the same name
+            //  2) Don't check files which modLookup imported
+            //  3) Check if any submodule in modLookup is what we're looking for
+            //  4) Don't check if the parent of modLookup has a module with this name
+            //  REVIEW: Can or should we pass true for argument 2?
+            if (resolveModuleByName(modLookup, &rhs.origToken, &submodule, false, false, true, false)) {
                 let typ = newType(TYPE_KIND_MODULE, submodule.globalID);
                 rhs.typeState = newTCStateType(typ);
                 return rhs.typeState;
