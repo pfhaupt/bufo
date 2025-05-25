@@ -1,0 +1,54 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+import "libc.bufo";
+
+struct Foo {
+    a: i32;
+    b: i32;
+}
+
+union Bar {
+    A { a: i32, b: i32 },
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let foo = Foo { a: 12, b: 13 };
+    match (foo) {
+        Foo { a, b, .. } => {
+            printf("foo rest match none yep\n");
+        }
+    }
+    match (foo) {
+        Foo { a, .. } => {
+            printf("foo rest match some yep\n");
+        }
+    }
+    match (foo) {
+        Foo { .. } => {
+            printf("foo rest match all yep\n");
+        }
+    }
+    let bar = Bar::A { a: 12, b: 13 };
+    match (bar) {
+        Bar::A { a, b, .. } => {
+            printf("bar rest match none yep\n");
+        }
+        _ => { return 2; }
+    }
+    match (bar) {
+        Bar::A { a, .. } => {
+            printf("bar rest match some yep\n");
+        }
+        _ => { return 2; }
+    }
+    match (bar) {
+        Bar::A { .. } => {
+            printf("bar rest match all yep\n");
+        }
+        _ => { return 2; }
+    }
+    return 0;
+}

@@ -1,0 +1,41 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+import "libc.bufo";
+
+struct Foo {
+    f: i32;
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let foo = Foo { f: 13 };
+    match (&foo.f) {
+        &13 => { printf("reference yep\n"); }
+        _ => { return 1; }
+    }
+    assert(foo.f == 13);
+    match (foo.f) {
+        13 => { printf("copy yep\n"); }
+        _ => { return 1; }
+    }
+    assert(foo.f == 13);
+    match (&foo.f) {
+        // Pointer to foo.f
+        &field => { field = 15; }
+    }
+    assert(foo.f == 15);
+    match (&foo.f) {
+        // Error: typeof(field) == &i32, can't assign
+        field => { /* field = 15; */ }
+    }
+    assert(foo.f == 15);
+    match (foo.f) {
+        // Copy of foo.f
+        field => { field = 20; }
+    }
+    assert(foo.f == 15);
+    return 0;
+}
+

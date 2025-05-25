@@ -1,0 +1,47 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+import "libc.bufo";
+
+union Bez {
+    Flag(i32),
+}
+
+struct Bar {
+    bez: Bez;
+}
+
+union Foo {
+    A(Bar),
+    B(u64, u32),
+    C { c: u8 },
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a = Foo::A(Bar { bez: Bez::Flag(12) });
+    match (&a) {
+        &Foo::A(Bar { Bez::Flag(val) }) => {
+            assert(val == 12, "val != 12");
+            val = 17;
+            printf("A write yep\n");
+        }
+        _ => { return 1; }
+    }
+    match (a) {
+        Foo::A(Bar { Bez::Flag(val) }) => {
+            assert(val == 17, "val != 17");
+            printf("A read yep\n");
+        }
+        _ => { return 1; }
+    }
+    // it's all just bytes in the memory, we can massage them as we want
+    // union layout: u8 tag + [u8; N] data
+    // Foo::A is [u8; [u8; i32]], so we just skip the tags and retrieve the data with a simple cast
+    let ptr = ((&a as &u8) + 2) as &i32;
+    let val = *ptr;
+    assert(val == 17);
+    return 0;
+}
+

@@ -519,7 +519,7 @@ func parseFuncDecl(this: &Parser, parent: TLIParent, isExtern: bool) -> &ParsedF
 
 func parseReturnType(this: &Parser) -> &ParsedTypeNode {
     trace("Parser.parseReturnType");
-    if (eat(this, TOKEN_ARROW)) {
+    if (eat(this, TOKEN_ARROW_THIN)) {
         return parseTypeNode(this);
     } else {
         return newBuiltinTypeDecl(peek(&this.lexer).span, PARSED_TYPE_NONE);
@@ -622,6 +622,9 @@ func parseStmt(this: &Parser) -> &ParsedStmt {
             let end: Token = expect(this, TOKEN_SEMI_COLON);
             let span: Span = newSpanBetween(&tkn.span, &end.span);
             return newParsedStmt(span, STMT_CONTINUE);
+        } else if (equals(&tkn.content, &KEYWORD_MATCH)) {
+            next(&this.lexer);
+            return parseMatchStmt(this, tkn);
         }
     } else if (tkn.kind == TOKEN_CURLY_OPEN) {
         let block: &ParsedBlock = parseBlock(this);
@@ -635,6 +638,125 @@ func parseStmt(this: &Parser) -> &ParsedStmt {
     let expr: &ParsedStmt = newParsedStmt(span, STMT_EXPR);
     (*expr).expr = value;
     return expr;
+}
+
+func parseMatchStmt(this: &Parser, kw: Token) -> &ParsedStmt {
+    trace("Parser.parseMatchStmt");
+    assert(kw.kind == TOKEN_KEYWORD);
+    expect(this, TOKEN_PAREN_OPEN);
+    let expr = parseExpr(this);
+    expect(this, TOKEN_PAREN_CLOSE);
+    expect(this, TOKEN_CURLY_OPEN);
+    let patterns: ParsedPatternList = blank;
+    let stmts: ParsedStmtList = blank;
+    while (!at(this, TOKEN_CURLY_CLOSE)) {
+        let pt = parsePattern(this);
+        expect(this, TOKEN_ARROW_THICK);
+        let block = parseBlock(this);
+        let stmt = into_stmt(block);
+        if (!at(this, TOKEN_CURLY_CLOSE)) {
+            eat(this, TOKEN_COMMA);
+        }
+        push(&patterns, pt);
+        push(&stmts, stmt);
+    }
+    let end = expect(this, TOKEN_CURLY_CLOSE);
+    let span = newSpanBetween(&kw.span, &end.span);
+    let stmt = newParsedStmt(span, STMT_MATCH);
+    if (patterns.length == 0) {
+        todo_with_msg("parser: 0 arms in match");
+    }
+    stmt.expr = expr;
+    stmt.patterns = patterns;
+    stmt.stmts = stmts;
+    return stmt;
+}
+
+func parsePattern(this: &Parser) -> &ParsedPattern {
+    trace("Parser.parsePattern");
+    // REVIEW: next or peek?
+    let tkn = next(&this.lexer);
+    if (tkn.kind == TOKEN_IDENT) {
+        if (eat(this, TOKEN_COLON_DOUBLE)) {
+            let pat = newParsedPattern(tkn.span, PATTERN_PATH);
+            pat.ident = tkn;
+            let subpat = parsePattern(this);
+            if (subpat.kind != PATTERN_STRUCT && subpat.kind != PATTERN_IDENT) {
+                todo_with_msg("parser: Path Pattern has non-struct non-ident as RHS");
+            }
+            push(&pat.subPatterns, subpat);
+            return pat;
+        } else if (eat(this, TOKEN_CURLY_OPEN)) {
+            let pat = newParsedPattern(tkn.span, PATTERN_STRUCT);
+            pat.ident = tkn;
+            while (!at(this, TOKEN_CURLY_CLOSE)) {
+                let subpat = parsePattern(this);
+                if (!at(this, TOKEN_CURLY_CLOSE)) {
+                    if (subpat.kind == PATTERN_REST) {
+                        let loc = toString(&next(&this.lexer).span);
+                        fprintf(stderr, "%s: %s: The `..` pattern can only appear at the end of a struct pattern.\n", loc.buffer, ERR_STR);
+                        drop(&loc);
+                        this.syntaxError = true;
+                    } else {
+                        expect(this, TOKEN_COMMA);
+                    }
+                }
+                push(&pat.subPatterns, subpat);
+            }
+            let end = expect(this, TOKEN_CURLY_CLOSE);
+            pat.span = newSpanBetween(&tkn.span, &end.span);
+            return pat;
+        } else if (eat(this, TOKEN_PAREN_OPEN)) {
+            let pat = newParsedPattern(tkn.span, PATTERN_STRUCT);
+            pat.ident = tkn;
+            while (!at(this, TOKEN_PAREN_CLOSE)) {
+                let subpat = parsePattern(this);
+                if (!at(this, TOKEN_PAREN_CLOSE)) {
+                    expect(this, TOKEN_COMMA);
+                }
+                push(&pat.subPatterns, subpat);
+                if (subpat.kind == PATTERN_REST) break;
+            }
+            let end = expect(this, TOKEN_PAREN_CLOSE);
+            pat.span = newSpanBetween(&tkn.span, &end.span);
+            return pat;
+        } else {
+            let pat = newParsedPattern(tkn.span, PATTERN_IDENT);
+            pat.ident = tkn;
+            return pat;
+        }
+    } else if (tkn.kind == TOKEN_DOTDOT) {
+        return newParsedPattern(tkn.span, PATTERN_REST);
+    } else if (tkn.kind == TOKEN_KEYWORD) {
+        if (equals(&tkn.content, &KEYWORD_TRUE)
+            || equals(&tkn.content, &KEYWORD_FALSE)) {
+            let pat = newParsedPattern(tkn.span, PATTERN_BOOLEAN);
+            pat.ident = tkn;
+            return pat;
+        } else if (equals(&tkn.content, &KEYWORD_NULL)) {
+            let pat = newParsedPattern(tkn.span, PATTERN_NULL);
+            pat.ident = tkn;
+            return pat;
+        }
+    } else if (tkn.kind == TOKEN_WILDCARD) {
+        return newParsedPattern(tkn.span, PATTERN_WILDCARD);
+    } else if (tkn.kind == TOKEN_AMPERSAND_SINGLE) {
+        let underlying = parsePattern(this);
+        let span = newSpanBetween(&tkn.span, &underlying.span);
+        let pat = newParsedPattern(span, PATTERN_REFERENCE);
+        push(&pat.subPatterns, underlying);
+        return pat;
+    } else if (tkn.kind == TOKEN_INT_LITERAL) {
+        let pat = newParsedPattern(tkn.span, PATTERN_NUMBER);
+        pat.ident = tkn;
+        return pat;
+    }
+    let loc: String = getLocation(&tkn);
+    let name: String = toString(&tkn.content);
+    fprintf(stderr, "%s: %s: Expected Pattern, found `%s`.\n", loc.buffer, ERR_STR, name.buffer);
+    drop(&name);
+    drop(&loc);
+    exit(1);
 }
 
 func parseForStmt(this: &Parser, kw: Token) -> &ParsedStmt {

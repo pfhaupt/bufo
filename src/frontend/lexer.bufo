@@ -34,6 +34,7 @@ comptime KEYWORD_TRUE: SubStr = BUILD_A_KEYWORD("true");
 comptime KEYWORD_FALSE: SubStr = BUILD_A_KEYWORD("false");
 // REVIEW: Is this the final keyword we want to use?
 comptime KEYWORD_CONFIG: SubStr = BUILD_A_KEYWORD("config");
+comptime KEYWORD_MATCH: SubStr = BUILD_A_KEYWORD("match");
 struct Lexer {
     fileID: usize;
     content: SubStr;
@@ -63,7 +64,8 @@ func isKeyword(this: &Lexer, word: &SubStr) -> bool {
         || equals(word, &KEYWORD_BLANK)
         || equals(word, &KEYWORD_TRUE)
         || equals(word, &KEYWORD_FALSE)
-        || equals(word, &KEYWORD_CONFIG);
+        || equals(word, &KEYWORD_CONFIG)
+        || equals(word, &KEYWORD_MATCH);
 }
 
 func escapeCharSequence(this: &Lexer, tmp: &SubStr, s: &String, len: &usize) -> char {
@@ -139,7 +141,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
     }
     let currChar: char = getChar(&this.content, 0);
     while (isWhitespace(currChar)) {
-        if (advance(this, )) {
+        if (advance(this)) {
             return newTokenEOF(this.fileID, this.ptr);
         }
         currChar = getChar(&this.content, 0);
@@ -156,6 +158,9 @@ func __next(this: &Lexer, peek: bool) -> Token {
         let word: SubStr = substring(&this.content, 0, len);
         this.ptr = this.ptr + len;
         this.content = tmp;
+        if (equals(&word, &comptime BUILD_A_KEYWORD("_"))) {
+            return newToken(this.fileID, &word, this.ptr - len, TOKEN_WILDCARD);
+        }
         if (isKeyword(this, &word)) {
             return newToken(this.fileID, &word, this.ptr - len, TOKEN_KEYWORD);
         }
@@ -172,7 +177,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
         this.content = tmp;
         return newToken(this.fileID, &word, this.ptr - len, TOKEN_INT_LITERAL);
     } else if (currChar == '"') {
-        advance(this, );
+        advance(this);
         if (this.content.len == 0) {
             todo_with_msg("unbalanced \"");
         }
@@ -191,10 +196,10 @@ func __next(this: &Lexer, peek: bool) -> Token {
             len = len + l;
         }
         let word: SubStr = substring(&s, 0, s.length);
-        advance(this, );
+        advance(this);
         return newToken(this.fileID, &word, this.ptr - len, TOKEN_STRING_LITERAL);
     } else if (currChar == '\'') {
-        advance(this, );
+        advance(this);
         if (this.content.len == 0) {
             todo_with_msg("unbalanced \'");
         }
@@ -211,127 +216,133 @@ func __next(this: &Lexer, peek: bool) -> Token {
         if (word.len != 1) {
             todo_with_msg("invalid char literal");
         }
-        advance(this, );
+        advance(this);
         return newToken(this.fileID, &word, this.ptr - len, TOKEN_CHAR_LITERAL);
     } else if (currChar == '(') {
-        advance(this, );
+        advance(this);
         return newToken(this.fileID, &newSubStr("(", 0, 1), this.ptr - 1, TOKEN_PAREN_OPEN);
     } else if (currChar == ')') {
-        advance(this, );
+        advance(this);
         return newToken(this.fileID, &newSubStr(")", 0, 1), this.ptr - 1, TOKEN_PAREN_CLOSE);
     } else if (currChar == '{') {
-        advance(this, );
+        advance(this);
         return newToken(this.fileID, &newSubStr("{", 0, 1), this.ptr - 1, TOKEN_CURLY_OPEN);
     } else if (currChar == '}') {
-        advance(this, );
+        advance(this);
         return newToken(this.fileID, &newSubStr("}", 0, 1), this.ptr - 1, TOKEN_CURLY_CLOSE);
     } else if (currChar == '[') {
-        advance(this, );
+        advance(this);
         return newToken(this.fileID, &newSubStr("[", 0, 1), this.ptr - 1, TOKEN_SQUARE_OPEN);
     } else if (currChar == ']') {
-        advance(this, );
+        advance(this);
         return newToken(this.fileID, &newSubStr("]", 0, 1), this.ptr - 1, TOKEN_SQUARE_CLOSE);
     } else if (currChar == '<') {
-        advance(this, );
+        advance(this);
         currChar = getChar(&this.content, 0);
         if (currChar == '=') {
-            advance(this, );
+            advance(this);
             return newToken(this.fileID, &newSubStr("<=", 0, 2), this.ptr - 2, TOKEN_LESS_THAN_EQUAL);
         } else {
             return newToken(this.fileID, &newSubStr("<", 0, 1), this.ptr - 1, TOKEN_LESS_THAN);
         }
     } else if (currChar == '>') {
-        advance(this, );
+        advance(this);
         currChar = getChar(&this.content, 0);
         if (currChar == '=') {
-            advance(this, );
+            advance(this);
             return newToken(this.fileID, &newSubStr(">=", 0, 2), this.ptr - 2, TOKEN_GREATER_THAN_EQUAL);
         } else {
             return newToken(this.fileID, &newSubStr(">", 0, 1), this.ptr - 1, TOKEN_GREATER_THAN);
         }
     } else if (currChar == ';') {
-        advance(this, );
+        advance(this);
         return newToken(this.fileID, &newSubStr(";", 0, 1), this.ptr - 1, TOKEN_SEMI_COLON);
     } else if (currChar == ':') {
-        advance(this, );
+        advance(this);
         if (this.ptr < this.len && getChar(&this.content, 0) == ':') {
-            advance(this, );
+            advance(this);
             return newToken(this.fileID, &newSubStr("::", 0, 2), this.ptr - 2, TOKEN_COLON_DOUBLE);
         } else {
             return newToken(this.fileID, &newSubStr(":", 0, 1), this.ptr - 1, TOKEN_COLON_SINGLE);
         }
     } else if (currChar == '=') {
-        advance(this, );
+        advance(this);
         if (this.ptr < this.len && getChar(&this.content, 0) == '=') {
-            advance(this, );
+            advance(this);
             return newToken(this.fileID, &newSubStr("==", 0, 2), this.ptr - 2, TOKEN_EQUAL_DOUBLE);
+        } else if (this.ptr < this.len && getChar(&this.content, 0) == '>') {
+            advance(this);
+            return newToken(this.fileID, &newSubStr("=>", 0, 2), this.ptr - 2, TOKEN_ARROW_THICK);
         } else {
             return newToken(this.fileID, &newSubStr("=", 0, 1), this.ptr - 1, TOKEN_EQUAL_SINGLE);
         }
     } else if (currChar == '&') {
-        advance(this, );
+        advance(this);
         if (this.ptr < this.len && getChar(&this.content, 0) == '&') {
-            advance(this, );
+            advance(this);
             return newToken(this.fileID, &newSubStr("&&", 0, 2), this.ptr - 2, TOKEN_AMPERSAND_DOUBLE);
         } else {
             return newToken(this.fileID, &newSubStr("&", 0, 1), this.ptr - 1, TOKEN_AMPERSAND_SINGLE);
         }
     } else if (currChar == '_') {
-        advance(this, );
+        advance(this);
         return newToken(this.fileID, &newSubStr("_", 0, 1), this.ptr - 1, TOKEN_UNDERSCORE);
     } else if (currChar == '.') {
-        advance(this, );
-        if (this.ptr + 2 < this.len && getChar(&this.content, 0) == '.' && getChar(&this.content, 1) == '.') {
-            advance(this, );
-            advance(this, );
-            return newToken(this.fileID, &newSubStr("...", 0, 3), this.ptr - 3, TOKEN_DOTDOTDOT);
+        advance(this);
+        if (this.ptr < this.len && getChar(&this.content, 0) == '.') {
+            advance(this);
+            if (this.ptr < this.len && getChar(&this.content, 0) == '.') {
+                advance(this);
+                return newToken(this.fileID, &newSubStr("...", 0, 3), this.ptr - 3, TOKEN_DOTDOTDOT);
+            }
+            return newToken(this.fileID, &newSubStr("..", 0, 2), this.ptr - 2, TOKEN_DOTDOT);
         }
         return newToken(this.fileID, &newSubStr(".", 0, 1), this.ptr - 1, TOKEN_DOT);
     } else if (currChar == ',') {
-        advance(this, );
+        advance(this);
         return newToken(this.fileID, &newSubStr(",", 0, 1), this.ptr - 1, TOKEN_COMMA);
     } else if (currChar == '+') {
-        advance(this, );
+        advance(this);
         return newToken(this.fileID, &newSubStr("+", 0, 1), this.ptr - 1, TOKEN_PLUS_SINGLE);
     } else if (currChar == '*') {
-        advance(this, );
+        advance(this);
         return newToken(this.fileID, &newSubStr("*", 0, 1), this.ptr - 1, TOKEN_ASTERISK_SINGLE);
     } else if (currChar == '@') {
-        advance(this, );
+        advance(this);
         return newToken(this.fileID, &newSubStr("@", 0, 1), this.ptr - 1, TOKEN_AT);
     } else if (currChar == '%') {
-        advance(this, );
+        advance(this);
         return newToken(this.fileID, &newSubStr("%", 0, 1), this.ptr - 1, TOKEN_PERCENT);
     } else if (currChar == '^') {
-        advance(this, );
+        advance(this);
         return newToken(this.fileID, &newSubStr("^", 0, 1), this.ptr - 1, TOKEN_CARET);
     } else if (currChar == '|') {
-        advance(this, );
+        advance(this);
         if (this.ptr < this.len && getChar(&this.content, 0) == '|') {
-            advance(this, );
+            advance(this);
             return newToken(this.fileID, &newSubStr("||", 0, 2), this.ptr - 2, TOKEN_PIPE_DOUBLE);
         } else {
             return newToken(this.fileID, &newSubStr("|", 0, 1), this.ptr - 1, TOKEN_PIPE_SINGLE);
         }
     } else if (currChar == '-') {
-        advance(this, );
+        advance(this);
         if (this.ptr < this.len && getChar(&this.content, 0) == '>') {
-            advance(this, );
-            return newToken(this.fileID, &newSubStr("->", 0, 2), this.ptr - 2, TOKEN_ARROW);
+            advance(this);
+            return newToken(this.fileID, &newSubStr("->", 0, 2), this.ptr - 2, TOKEN_ARROW_THIN);
         } else {
             return newToken(this.fileID, &newSubStr("-", 0, 1), this.ptr - 1, TOKEN_MINUS_SINGLE);
         }
     } else if (currChar == '!') {
-        advance(this, );
+        advance(this);
         if (this.ptr < this.len && getChar(&this.content, 0) == '=') {
-            advance(this, );
+            advance(this);
             return newToken(this.fileID, &newSubStr("!=", 0, 2), this.ptr - 2, TOKEN_NOT_EQUAL);
         } else {
             return newToken(this.fileID, &newSubStr("!", 0, 1), this.ptr - 1, TOKEN_BANG);
         }
     } else if (currChar == '/' && getChar(&this.content, 1) == '*') {
         while (true) {
-            if (advance(this, )) {
+            if (advance(this)) {
                 return newTokenEOF(this.fileID, this.ptr);
             }
             currChar = getChar(&this.content, 0);
@@ -340,20 +351,20 @@ func __next(this: &Lexer, peek: bool) -> Token {
                 break;
             }
         }
-        advance(this, ); // *
-        advance(this, ); // /
-        return next(this, );
+        advance(this); // *
+        advance(this); // /
+        return next(this);
     } else if (currChar == '/') {
         if (getChar(&this.content, 1) == '/') {
             while (currChar != '\n') {
-                if (advance(this, )) {
+                if (advance(this)) {
                     return newTokenEOF(this.fileID, this.ptr);
                 }
                 currChar = getChar(&this.content, 0);
             }
-            return next(this, );
+            return next(this);
         } else {
-            advance(this, );
+            advance(this);
             return newToken(this.fileID, &newSubStr("/", 0, 1), this.ptr - 1, TOKEN_SLASH_SINGLE);
         }
     } else {

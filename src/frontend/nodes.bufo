@@ -93,6 +93,7 @@ let typeNodes: ParsedTypeNodeArena = blank;
 let exprs: ParsedExprArena = blank;
 let configs: ParsedConfigArena = blank;
 let dlls: DLLArena = blank;
+let patterns: ParsedPatternArena = blank;
 
 func getFileByFilePath(path: SubStr, fileID: &usize) -> bool {
     for (let i: usize = 0; i < files.length; i = i + 1) {
@@ -465,6 +466,27 @@ func asTLI(this: &ParsedUnionDecl) -> &ParsedTopLevelItem {
     trace("ParsedUnionDecl.asTLI");
     return newParsedTopLevelItem(this.span, TLI_UNION_DECL, getID(this));
 }
+func resolveVariantByName(this: &ParsedUnionDecl, name: &Token, out: &&ParsedUnionVariant) -> bool {
+    trace("ParsedUnionDecl.resolveVariantByName");
+    for (let i: usize = 0; i < this.variants.length; i = i + 1) {
+        let variant = *at(&this.variants, i);
+        if (equals(&variant.name.content, &name.content)) {
+            *out = variant;
+            return true;
+        }
+    }
+    return false;
+}
+func getVariantTag(this: &ParsedUnionDecl, variant: &ParsedUnionVariant) -> usize {
+    trace("ParsedUnionDecl.getVariantTag");
+    for (let i: usize = 0; i < this.variants.length; i = i + 1) {
+        if (*at(&this.variants, i) == variant) {
+            return i;
+        }
+    }
+    unreachable("getVariantTag() expected to find variant");
+}
+
 func getFullName(this: &ParsedUnionDecl) -> String {
     let s: String = blank;
     let parent = this.parent;
@@ -682,7 +704,11 @@ func getStmtAtIndex(this: &ParsedBlock, index: usize) -> &ParsedStmt {
     assert(index < this.stmtLength, "Out of bounds access in ParsedBlock.getStmtAtIndex");
     return this.stmtList[index];
 }
-
+func into_stmt(this: &ParsedBlock) -> &ParsedStmt {
+    let blockStmt: &ParsedStmt = newParsedStmt(this.span, STMT_BLOCK);
+    blockStmt.block = this;
+    return blockStmt;
+}
 func newParsedBlock() -> &ParsedBlock {
     push(&blocks, ParsedBlock {
         ignored: ignoringNodes,
@@ -701,6 +727,7 @@ comptime STMT_IF: usize = 6;
 comptime STMT_WHILE: usize = 7;
 comptime STMT_BREAK: usize = 8;
 comptime STMT_CONTINUE: usize = 9;
+comptime STMT_MATCH: usize = 10;
 // FIXME: The amount of memory wasted here is crazy
 struct ParsedStmt {
     ignored: bool;
@@ -711,6 +738,8 @@ struct ParsedStmt {
     block: &ParsedBlock;
     step: &ParsedExpr;
     ifContext: IfContext;
+    patterns: ParsedPatternList;
+    stmts: ParsedStmtList;
     typeState: TCState;
 }
 
@@ -1077,5 +1106,83 @@ func newParsedExpr(span: Span, kind: usize) -> &ParsedExpr {
         span: span,
     });
     return last(&exprs);
+}
+
+comptime PATTERN_INVALID  : usize = 0;
+comptime PATTERN_WILDCARD : usize = 1; // _
+comptime PATTERN_NUMBER   : usize = 2; // 1, 2, 3
+comptime PATTERN_IDENT    : usize = 3; // a, b, c
+comptime PATTERN_REFERENCE: usize = 4; // &<pat>
+comptime PATTERN_STRUCT   : usize = 5; // Foo { <pat>, <pat>, ... }
+comptime PATTERN_PATH     : usize = 6; // Foo::<pat>
+comptime PATTERN_REST     : usize = 7; // ..
+comptime PATTERN_BOOLEAN  : usize = 8; // true, false
+comptime PATTERN_NULL     : usize = 9; // null
+struct ParsedPattern {
+    ignored: bool;
+    kind: usize;
+    span: Span;
+    ident: Token;
+    subPatterns: ParsedPatternList;
+}
+
+func getID(this: &ParsedPattern) -> usize {
+    trace("ParsedPattern.getID");
+    return indexOf(&patterns, this);
+}
+
+func newParsedPattern(span: Span, kind: usize) -> &ParsedPattern {
+    trace("newParsedPattern");
+    push(&patterns, ParsedPattern {
+        ignored: ignoringNodes,
+        kind: kind,
+        span: span,
+    });
+    return last(&patterns);
+}
+
+func toString(this: &ParsedPattern) -> String {
+    if (this.kind == PATTERN_WILDCARD) {
+        return newStringFromStrLit("_");
+    } else if (this.kind == PATTERN_IDENT
+        || this.kind == PATTERN_NUMBER
+        || this.kind == PATTERN_NULL
+        || this.kind == PATTERN_BOOLEAN) {
+        return toString(&this.ident.content);
+    } else if (this.kind == PATTERN_REFERENCE) {
+        let s = newStringFromStrLit("&");
+        let _s = toString(*at(&this.subPatterns, 0));
+        pushString(&s, &_s);
+        drop(&_s);
+        return s;
+    } else if (this.kind == PATTERN_STRUCT) {
+        let s = toString(&this.ident.content);
+        if (this.subPatterns.length == 0) {
+            pushStr(&s, " { }");
+        } else {
+            pushStr(&s, " { ");
+            for (let i: usize = 0; i < this.subPatterns.length; i = i + 1) {
+                let _s = toString(*at(&this.subPatterns, i));
+                pushString(&s, &_s);
+                if (i != this.subPatterns.length - 1) {
+                    pushStr(&s, ", ");
+                }
+                drop(&_s);
+            }
+            pushStr(&s, " }");
+        }
+        return s;
+    } else if (this.kind == PATTERN_PATH) {
+        let s = toString(&this.ident.content);
+        pushStr(&s, "::");
+        let _s = toString(*at(&this.subPatterns, 0));
+        pushString(&s, &_s);
+        drop(&_s);
+        return s;
+    } else if (this.kind == PATTERN_REST) {
+        return newStringFromStrLit("..");
+    } else {
+        unreachable("Exhaustive handling of pattern kinds in ParsedPattern.toString()");
+    }
 }
 

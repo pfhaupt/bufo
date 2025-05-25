@@ -15,52 +15,57 @@ import "./lookup.bufo";
 @os(WINDOWS) import "winapi/structs.bufo";
 @os(WINDOWS) import "winapi/functions.bufo";
 
-comptime ERROR_INVALID                          : usize = 0;
-comptime ERROR_NO_SUCH_MODULE                   : usize = 1;
-comptime ERROR_NO_SUCH_IDENTIFIER               : usize = 2;
-comptime ERROR_NO_SUCH_FUNCTION                 : usize = 3;
-comptime ERROR_NO_SUCH_METHOD                   : usize = 4;
-comptime ERROR_NO_SUCH_TYPE                     : usize = 5;
-comptime ERROR_USE_BEFORE_DECLARATION           : usize = 6;
-comptime ERROR_FIELD_COUNT_MISMATCH             : usize = 7;
-comptime ERROR_INDEXED_TYPE_MISMATCH            : usize = 8;
-comptime ERROR_UNEXPECTED_LITERAL               : usize = 9;
-comptime ERROR_ARRAY_SIZE_MISMATCH              : usize = 10;
-comptime ERROR_TYPE_MISMATCH                    : usize = 11;
-comptime ERROR_INVALID_POINTER_ARITHMETIC       : usize = 12;
-comptime ERROR_DUPLICATE_PARAMETER              : usize = 13;
-comptime ERROR_DUPLICATE_FIELD                  : usize = 14;
-comptime ERROR_UNKNOWN_FIELD                    : usize = 15;
-comptime ERROR_DUPLICATE_FUNCTION               : usize = 16;
-comptime ERROR_NO_CALL_CANDIDATE                : usize = 17;
-comptime ERROR_VARIABLE_REDECLARATION           : usize = 18;
-comptime ERROR_RECURSIVE_TYPE                   : usize = 19;
-comptime ERROR_DUPLICATE_METHOD                 : usize = 20;
-comptime ERROR_BLANK_FOR_NULL                   : usize = 21;
-comptime ERROR_NON_PRIMITIVE_CAST               : usize = 22;
-comptime ERROR_INDEXED_ACCESS_ON_NON_ARRAY      : usize = 23;
-comptime ERROR_RUNTIME_VALUE_IN_COMPTIME_CONTEXT: usize = 24;
-comptime ERROR_ANY_DEREF                        : usize = 25;
-comptime ERROR_MEMBER_ACCESS_NON_STRUCT         : usize = 26;
-comptime ERROR_MEMBER_ACCESS_NO_OPTIONS         : usize = 27;
-comptime ERROR_MEMBER_ACCESS_TOO_MANY_OPTIONS   : usize = 28;
-comptime ERROR_FUNCTION_CALL_TOO_MANY_OPTIONS   : usize = 29;
-comptime ERROR_CALL_TO_NON_FUNCTION             : usize = 30;
-comptime ERROR_UNKNOWN_SUBMODULE                : usize = 31;
-comptime ERROR_MODULE_ACCESS_NON_MODULE         : usize = 32;
-comptime ERROR_DEREF_NON_POINTER                : usize = 33;
+comptime ERROR_INVALID                           : usize = 0;
+comptime ERROR_NO_SUCH_MODULE                    : usize = 1;
+comptime ERROR_NO_SUCH_IDENTIFIER                : usize = 2;
+comptime ERROR_NO_SUCH_FUNCTION                  : usize = 3;
+comptime ERROR_NO_SUCH_METHOD                    : usize = 4;
+comptime ERROR_NO_SUCH_TYPE                      : usize = 5;
+comptime ERROR_USE_BEFORE_DECLARATION            : usize = 6;
+comptime ERROR_FIELD_COUNT_MISMATCH              : usize = 7;
+comptime ERROR_INDEXED_TYPE_MISMATCH             : usize = 8;
+comptime ERROR_UNEXPECTED_LITERAL                : usize = 9;
+comptime ERROR_ARRAY_SIZE_MISMATCH               : usize = 10;
+comptime ERROR_TYPE_MISMATCH                     : usize = 11;
+comptime ERROR_INVALID_POINTER_ARITHMETIC        : usize = 12;
+comptime ERROR_DUPLICATE_PARAMETER               : usize = 13;
+comptime ERROR_DUPLICATE_FIELD                   : usize = 14;
+comptime ERROR_UNKNOWN_FIELD                     : usize = 15;
+comptime ERROR_DUPLICATE_FUNCTION                : usize = 16;
+comptime ERROR_NO_CALL_CANDIDATE                 : usize = 17;
+comptime ERROR_VARIABLE_REDECLARATION            : usize = 18;
+comptime ERROR_RECURSIVE_TYPE                    : usize = 19;
+comptime ERROR_DUPLICATE_METHOD                  : usize = 20;
+comptime ERROR_BLANK_FOR_NULL                    : usize = 21;
+comptime ERROR_NON_PRIMITIVE_CAST                : usize = 22;
+comptime ERROR_INDEXED_ACCESS_ON_NON_ARRAY       : usize = 23;
+comptime ERROR_RUNTIME_VALUE_IN_COMPTIME_CONTEXT : usize = 24;
+comptime ERROR_ANY_DEREF                         : usize = 25;
+comptime ERROR_MEMBER_ACCESS_NON_STRUCT          : usize = 26;
+comptime ERROR_MEMBER_ACCESS_NO_OPTIONS          : usize = 27;
+comptime ERROR_MEMBER_ACCESS_TOO_MANY_OPTIONS    : usize = 28;
+comptime ERROR_FUNCTION_CALL_TOO_MANY_OPTIONS    : usize = 29;
+comptime ERROR_CALL_TO_NON_FUNCTION              : usize = 30;
+comptime ERROR_UNKNOWN_SUBMODULE                 : usize = 31;
+comptime ERROR_MODULE_ACCESS_NON_MODULE          : usize = 32;
+comptime ERROR_DEREF_NON_POINTER                 : usize = 33;
 comptime ERROR_DUPLICATE_UNION_VARIANT           : usize = 34;
 comptime ERROR_DUPLICATE_UNION_NAME              : usize = 35;
+comptime ERROR_NON_EXHAUSTIVE_MATCH              : usize = 36;
+comptime ERROR_IMPOSSIBLE_PATTERN                : usize = 37;
+comptime ERROR_NULL_NON_PTR                      : usize = 38;
 
 comptime TCSTATE_INVALID: usize = 0;
 comptime TCSTATE_ERROR: usize = 1;
 comptime TCSTATE_PLEASE_INFER: usize = 2;
 comptime TCSTATE_TYPE: usize = 3;
+comptime TCSTATE_PATTERN: usize = 4;
 struct TCState {
     kind: usize;
     error: usize;
     typ: &Type;
     name: Token;
+    pattern: PatState;
 }
 
 func equals(this: &TCState, other: &TCState) -> bool {
@@ -88,11 +93,15 @@ func isError(this: &TCState) -> bool {
 }
 
 func isSuccess(this: &TCState) -> bool {
-    return this.kind == TCSTATE_TYPE;
+    return this.kind == TCSTATE_TYPE || this.kind == TCSTATE_PATTERN;
 }
 
 func isType(this: &TCState) -> bool {
     return this.kind == TCSTATE_TYPE;
+}
+
+func isPattern(this: &TCState) -> bool {
+    return this.kind == TCSTATE_PATTERN;
 }
 
 func getType(this: &TCState) -> &Type {
@@ -108,6 +117,13 @@ func getError(this: &TCState) -> usize {
         assert(false);
     }
     return this.error;
+}
+func getPatState(this: &TCState) -> PatState {
+    if (!isPattern(this)) {
+        fprintf(stderr, "ERROR: getPatState(&TCState) called on non-pattern TCState with kind=%llu\n", this.kind);
+        assert(false);
+    }
+    return this.pattern;
 }
 
 func newTCStateSuccess() -> TCState {
@@ -134,6 +150,16 @@ func newTCStatePleaseInfer() -> TCState {
     return TCState {
         kind: TCSTATE_PLEASE_INFER,
     };
+}
+func newTCStatePattern(state: PatState) -> TCState {
+    return TCState {
+        kind: TCSTATE_PATTERN,
+        pattern: state
+    };
+}
+
+struct PatState {
+    complete: bool;
 }
 
 struct TypeChecker {
@@ -540,6 +566,33 @@ func reportDuplicateNameInUnion(this: &TypeChecker, variant: &ParsedUnionVariant
     drop(&duplLoc);
     this.typeError = true;
     return newTCStateFailure(ERROR_DUPLICATE_UNION_NAME);
+}
+func reportImpossiblePattern(this: &TypeChecker, pat: &ParsedPattern, type: &Type) -> TCState {
+    trace("TypeChecker.reportImpossiblePattern");
+    let loc = toString(&pat.span);
+    let patS = toString(pat);
+    let typ = toString(type);
+    fprintf(stderr, "%s: %s: A value of type %s will never match the pattern `%s`.\n", loc.buffer, ERR_STR, typ.buffer, patS.buffer);
+    drop(&patS);
+    drop(&typ);
+    drop(&loc);
+    this.typeError = true;
+    return newTCStateFailure(ERROR_IMPOSSIBLE_PATTERN);
+}
+func reportNotEnoughPatterns(this: &TypeChecker, pat: &ParsedPattern, type: &Type) -> TCState {
+    let err = reportImpossiblePattern(this, pat, type);
+    let loc = toString(&pat.span);
+    fprintf(stderr, "%s: %s: Not enough patterns were provided to match the type.\n", loc.buffer, NOTE_STR);
+    fprintf(stderr, "%s: %s: If you only care about certain fields, you can use `_` or `..` to ignore the rest.\n", loc.buffer, NOTE_STR);
+    drop(&loc);
+    return err;
+}
+func reportTooManyPatterns(this: &TypeChecker, pat: &ParsedPattern, type: &Type) -> TCState {
+    let err = reportImpossiblePattern(this, pat, type);
+    let loc = toString(&pat.span);
+    fprintf(stderr, "%s: %s: Too many patterns were provided to match the type.\n", loc.buffer, NOTE_STR);
+    drop(&loc);
+    return err;
 }
 
 func emergencyPrint(this: &TypeChecker, where: Span) {
@@ -1145,11 +1198,218 @@ func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupLi
         }
         (*stmt).typeState = newTCStateSuccess();
         return newTCStateSuccess();
+    } else if (stmt.kind == STMT_MATCH) {
+        return typeCheckMatchStmt(this, stmt, scopes);
     } else if (stmt.kind == STMT_BREAK || stmt.kind == STMT_CONTINUE) {
         (*stmt).typeState = newTCStateSuccess();
         return newTCStateSuccess();
     } else {
         unreachable("Exhaustive handling of stmts in typeCheckStmt");
+    }
+}
+
+func typeCheckMatchStmt(this: &TypeChecker, match: &ParsedStmt, scopes: &ScopeLookupList) -> TCState {
+    trace("TypeChecker.typeCheckMatchStmt");
+    assert(match.kind == STMT_MATCH);
+    let exprState = typeCheckExpr(this, match.expr, scopes);
+    if (isError(&exprState)) return exprState;
+    if (wantsInfer(&exprState)) todo_with_msg("match expr wants infer");
+    let type = getType(&exprState);
+    assert(match.patterns.length == match.stmts.length);
+    let result = newTCStateSuccess();
+    let complete = false;
+    // TODO: typeCheckMatchStmt: Check for exhaustive pattern matching
+    // TODO: How do we know if we exhausted all union patterns?
+    // TODO: How do we know if we exhausted any pattern?
+    for (let i: usize = 0; i < match.patterns.length; i = i + 1) {
+        let scope: ScopeLookup = blank;
+        let pat = *at(&match.patterns, i);
+        let patState = checkAndBindPattern(this, type, pat, &scope);
+        if (isError(&patState)) {
+            result = patState;
+            continue;
+        }
+        assert(isPattern(&patState));
+        let _patState = getPatState(&patState);
+        push(scopes, scope);
+        let stmt = *at(&match.stmts, i);
+        let stmtState = typeCheckStmt(this, stmt, scopes);
+        pop(scopes);
+        complete = _patState.complete;
+        if (complete && i != match.patterns.length - 1) {
+            let next = *at(&match.patterns, i + 1);
+            let loc = toString(&next.span);
+            fprintf(stderr, "%s: %s: Unreachable pattern.\n", loc.buffer, WARN_STR);
+            drop(&loc);
+            (match.patterns.length = i + 1);
+            (match.stmts.length = i + 1);
+        }
+    }
+    if (isError(&result)) return result;
+    if (!complete) {
+        let loc = toString(&match.span);
+        fprintf(stderr, "%s: %s: Patterns of a match statement must be exhaustive.\n", loc.buffer, ERR_STR);
+        let wildcard = tokenKindToString(TOKEN_WILDCARD);
+        fprintf(stderr, "%s: %s: You can use the wildcard pattern %s to catch all other cases.\n", loc.buffer, NOTE_STR, wildcard);
+        drop(&loc);
+        return newTCStateFailure(ERROR_NON_EXHAUSTIVE_MATCH);
+    }
+    // match.typeState doesn't work because Parser treats match as start of statement
+    (match.typeState = newTCStatePattern(PatState {
+        complete: true
+    }));
+    return result;
+}
+
+func checkAndBindPattern(this: &TypeChecker, type: &Type, pat: &ParsedPattern, scope: &ScopeLookup) -> TCState {
+    trace("TypeChecker.checkAndBindPattern");
+    // TODO: This is a good spot to test match statements after the refactor :^)
+    if (pat.kind == PATTERN_IDENT) {
+        let loc: Token = blank;
+        if (isKnownVariable(scope, pat.ident.content, &loc)) {
+            todo_with_msg("pat ident exists, check type");
+        }
+        addVariable(scope, VariableLookup {
+            globalID: getID(pat),
+            name: pat.ident,
+            typeState: newTCStateType(type),
+            isComptime: false,
+        });
+        return newTCStatePattern(PatState {
+            complete: true,
+        });
+    } else if (pat.kind == PATTERN_REFERENCE) {
+        // REVIEW: Make &pat check for null?
+        if (!isPointer(type)) {
+            return reportImpossiblePattern(this, pat, type);
+        }
+        assert(pat.subPatterns.length == 1);
+        let underlying = getUnderlyingType(type, false);
+        return checkAndBindPattern(this, underlying, *at(&pat.subPatterns, 0), scope);
+    } else if (pat.kind == PATTERN_BOOLEAN) {
+        if (!isBoolean(type)) {
+            return reportImpossiblePattern(this, pat, type);
+        }
+        return newTCStatePattern(PatState {
+            complete: false
+        });
+    } else if (pat.kind == PATTERN_NULL) {
+        if (!isPointer(type)) {
+            return reportImpossiblePattern(this, pat, type);
+        }
+        return newTCStatePattern(PatState {
+            complete: false
+        });
+    } else if (pat.kind == PATTERN_PATH) {
+        let name = &pat.ident;
+        assert(pat.subPatterns.length == 1);
+        let subPat = *at(&pat.subPatterns, 0);
+        assert(subPat.kind == PATTERN_IDENT || subPat.kind == PATTERN_STRUCT);
+        let moduleLookup: &ModuleLookup = null;
+        if (isUnion(type)) {
+            let decl = at(&unionDecls, type.typeIndex);
+            let variant: &ParsedUnionVariant = null;
+            if (!resolveVariantByName(decl, &subPat.ident, &variant)) {
+                todo_with_msg("checkAndBindPattern: Path pattern Union doesn't have variant");
+            }
+            if (subPat.kind == PATTERN_IDENT && variant.kind != UNION_VARIANT_EMPTY) {
+                todo_with_msg("checkAndBindPattern: Union Pattern ident not empty");
+            }
+            if (subPat.subPatterns.length > variant.fields.length) {
+                if (subPat.subPatterns.length == variant.fields.length + 1) {
+                    let last = *at(&subPat.subPatterns, subPat.subPatterns.length - 1);
+                    if (last.kind != PATTERN_REST) {
+                        return reportTooManyPatterns(this, pat, type);
+                    }
+                } else {
+                    return reportTooManyPatterns(this, pat, type);
+                }
+            }
+            if (subPat.subPatterns.length < variant.fields.length) {
+                if (subPat.subPatterns.length > 0) {
+                    let last = *at(&subPat.subPatterns, subPat.subPatterns.length - 1);
+                    if (last.kind != PATTERN_REST) {
+                        return reportNotEnoughPatterns(this, pat, type);
+                    }
+                } else {
+                    return reportNotEnoughPatterns(this, pat, type);
+                }
+            }
+            let complete = true;
+            for (let i: usize = 0; i < variant.fields.length; i = i + 1) {
+                let subSubPat = *at(&subPat.subPatterns, i);
+                let field = *at(&variant.fields, i);
+                assert(isSuccess(&field.typeState), "checkAndBindPattern: Invalid field type");
+                let type = getType(&field.typeState);
+                let subComplete = checkAndBindPattern(this, type, subSubPat, scope);
+                if (isError(&subComplete)) return subComplete;
+                if (!getPatState(&subComplete).complete) {
+                    complete = false;
+                }
+                if (subSubPat.kind == PATTERN_REST) break;
+            }
+            return newTCStatePattern(PatState {
+                complete: false
+            });
+        } else if (resolveModuleByName(this.currentModule, name, &moduleLookup)) {
+            return checkAndBindPattern(this, type, subPat, scope);
+        } else {
+            return reportImpossiblePattern(this, pat, type);
+        }
+    } else if (pat.kind == PATTERN_STRUCT) {
+        if (!isStruct(type)) {
+            return reportImpossiblePattern(this, pat, type);
+        }
+        let decl = getStructByGlobalID(&this.lookup, type.typeIndex);
+        if (pat.subPatterns.length > decl.fields.length) {
+            if (pat.subPatterns.length == decl.fields.length + 1) {
+                let last = *at(&pat.subPatterns, pat.subPatterns.length - 1);
+                if (last.kind != PATTERN_REST) {
+                    return reportTooManyPatterns(this, pat, type);
+                }
+            } else {
+                return reportTooManyPatterns(this, pat, type);
+            }
+        }
+        if (pat.subPatterns.length < decl.fields.length) {
+            if (pat.subPatterns.length > 0) {
+                let last = *at(&pat.subPatterns, pat.subPatterns.length - 1);
+                if (last.kind != PATTERN_REST) {
+                    return reportNotEnoughPatterns(this, pat, type);
+                }
+            } else {
+                return reportNotEnoughPatterns(this, pat, type);
+            }
+        }
+        let complete = true;
+        for (let i: usize = 0; i < decl.fields.length; i = i + 1) {
+            let subpat = *at(&pat.subPatterns, i);
+            let field = at(&decl.fields, i);
+            assert(isSuccess(&field.typeState), "checkAndBindPattern: Invalid field type");
+            let type = getType(&field.typeState);
+            let subComplete = checkAndBindPattern(this, type, subpat, scope);
+            if (isError(&subComplete)) return subComplete;
+            if (!getPatState(&subComplete).complete) {
+                complete = false;
+            }
+            if (subpat.kind == PATTERN_REST) break;
+        }
+        return newTCStatePattern(PatState {
+            complete: complete
+        });
+    } else if (pat.kind == PATTERN_NUMBER) {
+        if (!isInteger(type) && !isFloat(type)) {
+            return reportImpossiblePattern(this, pat, type);
+        }
+        return newTCStatePattern(PatState {
+            complete: false
+        });
+    } else if (pat.kind == PATTERN_WILDCARD || pat.kind == PATTERN_REST) {
+        return newTCStatePattern(PatState {
+            complete: true,
+        });
+    } else {
+        unreachable("Exhaustive handling of patterns in checkAndBindPattern");
     }
 }
 
@@ -2258,7 +2518,15 @@ func tryInferTypeOntoExpr(this: &TypeChecker, expr: &ParsedExpr, type: &Type, sc
             unreachable("Exhaustive handling of unary ops in inferTypeOntoExpr");
         }
     } else if (expr.kind == EXPR_NULL) {
-        if (!isPointer(type)) todo_with_msg("tried to infer non-ptr to null");
+        if (!isPointer(type)) {
+            let loc: String = toString(&expr.span);
+            let name: String = toString(type);
+            fprintf(stderr, "%s: %s: Can't use `null` to initialize value of type %s.\n",loc.buffer, ERR_STR, name.buffer);
+            drop(&name);
+            drop(&loc);
+            this.typeError = true;
+            return newTCStateFailure(ERROR_NULL_NON_PTR);
+        }
         tid = newTCStateType(type);
     } else if (expr.kind == EXPR_CALL) {
         tid = tryInferTypeOntoCall(this, expr, type, scopes, checkOnly);

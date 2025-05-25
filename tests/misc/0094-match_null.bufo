@@ -1,0 +1,27 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+import "libc.bufo";
+
+struct Foo {
+    ptr1: &i32;
+    ptr2: &i32;
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let ptr: &char = null;
+    match (ptr) {
+        null => { printf("null yep\n"); }
+        &val => { return 1; }
+    }
+    let foo = Foo { ptr1: null, ptr2: &argc };
+    match (foo) {
+        Foo { null , null  } => { return 1; }
+        Foo { null , &val2 } => { printf("foo yep\n"); }
+        Foo { &val1, null  } => { return 1; }
+        Foo { &val1, &val2 } => { return 1; }
+    }
+    return 0;
+}

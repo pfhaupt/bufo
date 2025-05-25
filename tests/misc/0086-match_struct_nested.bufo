@@ -1,0 +1,45 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+import "libc.bufo";
+
+struct Bar {
+    c: usize;
+}
+
+struct Foo {
+    a: i32;
+    b: f32;
+    c: Bar;
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let foo = Foo { a: 12, b: 17, c: Bar { c: 69 } };
+    match (foo) {
+        Foo { 12, b, Bar { some_random_name } } => {
+            assert(some_random_name == 69, "c != 69");
+        }
+        _ => { return 1; }
+    }
+    assert(foo.c.c == 69);
+    match (&foo) {
+        &Foo { _, _, Bar { important_field } } => {
+            important_field = 34;
+        }
+    }
+    assert(foo.c.c == 34);
+    let before: usize = 0;
+    match (&foo.c) {
+        &Bar { 33 } => { return 1; }
+        &Bar { important_field } => {
+            before = important_field;
+            important_field = 101;
+        }
+    }
+    assert(before == 34);
+    assert(foo.c.c == 101);
+    return 0;
+}
+

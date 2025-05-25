@@ -154,6 +154,50 @@ struct UnionVariantLookupList {
     length: usize;
     capacity: usize;
 }
+struct ParsedPatternList {
+    elements: &&ParsedPattern;
+    length: usize;
+    capacity: usize;
+}
+struct ParsedStmtList {
+    elements: &&ParsedStmt;
+    length: usize;
+    capacity: usize;
+}
+func push(this: &ParsedStmtList, element: &ParsedStmt) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof &ParsedStmt);
+        assert(this.elements != null, "Could not allocate memory in ParsedStmtList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+func at(this: &ParsedStmtList, index: usize) -> &&ParsedStmt {
+    assert(index < this.length, "Out of bounds access in ParsedStmtList.at");
+    assert(this.elements != null, "Element pointer is NULL in ParsedStmtList.at");
+    return &this.elements[index];
+}
+
+func push(this: &ParsedPatternList, element: &ParsedPattern) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof &ParsedPattern);
+        assert(this.elements != null, "Could not allocate memory in ParsedPatternList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+func at(this: &ParsedPatternList, index: usize) -> &&ParsedPattern {
+    assert(index < this.length, "Out of bounds access in ParsedPatternList.at");
+    assert(this.elements != null, "Element pointer is NULL in ParsedPatternList.at");
+    return &this.elements[index];
+}
+
 func push(this: &UnionVariantLookupList, element: UnionVariantLookup) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;

@@ -1,0 +1,15 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! The `..` pattern can only appear at the end of a struct pattern.
+
+struct Foo {
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    match (Foo { }) {
+        Foo { .., a } => { }
+    }
+}

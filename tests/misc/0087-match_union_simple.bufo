@@ -1,0 +1,51 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+import "libc.bufo";
+
+union Foo {
+    A(i32),
+    B(u64, u32),
+    C { c: u8 },
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a = Foo::A(12);
+    match (a) {
+        Foo::A(9) => { return 1; }
+        Foo::A(val) => {
+            assert(val == 12, "val != 12");
+            printf("A yep\n");
+        }
+        Foo::B(_, _) => { return 1; }
+        Foo::C { _ } => { return 1; }
+        _ => { return 2; }
+    }
+    let b = Foo::B(34, 35);
+    match (b) {
+        Foo::A(9) => { return 1; }
+        Foo::A(val) => { return 1; }
+        Foo::B(34, 36) => { return 1; }
+        Foo::B(34, val) => {
+            assert(val == 35, "val != 35");
+            printf("B yep\n");
+        }
+        Foo::C { _ } => { return 1; }
+        _ => { return 2; }
+    }
+    let c = Foo::C { c: 12 };
+    match (c) {
+        Foo::A(9) => { return 1; }
+        Foo::A(val) => { return 1; }
+        Foo::B(34, 36) => { return 1; }
+        Foo::B(34, val) => { return 1; }
+        Foo::C { c } => {
+            assert(c == 12);
+            printf("C yep\n");
+        }
+        _ => { return 2; }
+    }
+    return 0;
+}

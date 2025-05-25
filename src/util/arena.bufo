@@ -531,3 +531,36 @@ func indexOf(this: &DLLArena, elem: &DLL) -> usize {
     return indexOf(this.start, elem);
 }
 
+struct ParsedPatternArena {
+    start: &ArenaBlock;
+    end: &ArenaBlock;
+    length: usize;
+}
+
+func push(this: &ParsedPatternArena, elem: ParsedPattern) {
+    trace("ParsedPatternArena.push");
+    if (this.start == null) {
+        this.start = allocateBlock(ARENA_SIZE_MEDIUM, sizeof ParsedPattern);
+        assert(this.end == null);
+        this.end = this.start;
+    }
+    push(this.end, &elem, ARENA_SIZE_MEDIUM);
+    if (this.end.next != null) this.end = this.end.next;
+    this.length = this.length + 1;
+}
+func at(this: &ParsedPatternArena, index: usize) -> &ParsedPattern {
+    trace("ParsedPatternArena.at");
+    assert(this.start != null, "ParsedPatternArena.at() called on empty Arena");
+    return at(this.start, index) as &ParsedPattern;
+}
+func last(this: &ParsedPatternArena) -> &ParsedPattern {
+    trace("ParsedPatternArena.last");
+    assert(this.end != null, "ParsedPatternArena.last() called on empty Arena");
+    return last(this.end) as &ParsedPattern;
+}
+func indexOf(this: &ParsedPatternArena, elem: &ParsedPattern) -> usize {
+    trace("ParsedPatternArena.indexOf");
+    assert(this.start != null, "ParsedPatternArena.indexOf() called on empty Arena");
+    return indexOf(this.start, elem);
+}
+
