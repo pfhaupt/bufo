@@ -10,7 +10,7 @@ The name is a reference to the [common toad](https://en.wikipedia.org/wiki/Commo
 - [x] Self-hosting
 - [x] Functional Programming capabilities
 - [x] Arbitrary code execution at compile time
-- [ ] Rust-style enums and Pattern Matching
+- [x] Unions and Pattern Matching
 - [ ] Closures
 - [ ] Macros
 - [ ] Generics

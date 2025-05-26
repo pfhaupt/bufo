@@ -1,0 +1,236 @@
+// Unions are a powerful data type. Unlike C unions, bufo unions are tagged, which means that they
+// always keep track of their tag/kind at runtime. This makes them more like Rust-enums.
+//
+// To do things with unions, you need to use the `match` statement or Pattern Matching in general.
+// Pattern Matching allows you to conveniently access any field or value inside any data structure,
+// even beyond references and many type layers deep. They're often described as "if statements on
+// steroids", and I agree.
+
+import "prelude.bufo"; // unreachable
+import "libc.bufo";    // printf
+
+func main(argc: i32, argv: &&char) -> i32 {
+    showcase1(); // Simple Unions
+    showcase2(); // Tree types
+    showcase3(); // Deep Pattern Matching
+    return 0;
+}
+
+// Unions in bufo support three flavors of variants:
+// - Empty variants (here: None) don't store any data. They're useful as markers, for example to
+//   show the absence of a value (here: We don't have any u32).
+// - Tuple variants (here: Some(u32)) store data in a tuple-like format. The fields aren't named,
+//   so you can just provide values in order that they're defined in the declaration.
+// - Struct variants store data in a struct-like format. When initializing them, you can provide
+//   values for the field in any order, just like with normal structs. (here: StructUnion)
+union Option {
+    Some(u32),
+    None
+}
+
+union StructUnion {
+    Variant { a: i32, b: i32, c: i32 },
+    // Unions can contain any other data type, as long as there is no cycle in the definitions
+    // (i.e. StructUnion contains Option and Option contains StructUnion)
+    Other { opt: Option },
+}
+
+func showcase1() {
+    // Here we create an instance of StructUnion, setting `a` to 0 (implicitly), `b` to 7 and `c` to 12.
+    let structVariant = StructUnion::Variant { c: 12, b: 7 };
+    match (structVariant) {
+        // Number literals are valid patterns.
+        StructUnion::Variant { 0, 7, 12 } => {
+            printf("You can specify the fields in any order.\n");
+            printf("Any field that you omit will be zero-initialized.\n");
+        }
+        // We know that `structVariant` has the layout matched above, so we should never get here.
+        _ => { unreachable(); }
+    }
+
+    // `something` is a variant of Option which contains some extra data.
+    let something = Option::Some(12);
+    // `nothing` just has been marked as having no data.
+    let nothing = Option::None;
+    match (something) {
+        // This will create a copy of the encapsulated value (here: 12) and assign it to `val`
+        // which can then be used in this branch.
+        Option::Some(val) => {
+            printf("something stored a value of %llu\n", val);
+        }
+        // We know that `something` has the layout matched above, so we should never get here.
+        _ => { unreachable(); }
+    }
+    match (nothing) {
+        // Control Flow will try all patterns, until it finds a match.
+        Option::Some(val) => { unreachable("`nothing` is not Some, we should never get here"); }
+        Option::None => {
+            printf("nothing is None\n");
+        }
+        // There's no fallthrough between branches, each branch will continue below the match statement.
+        _ => {
+            printf("You should never see this! (unless there's a bug in the compiler)\n");
+        }
+    }
+}
+
+// Unions allow us to also construct more complicated data structures. Instead of managing structs
+// ourselves and keeping track of tags, the language just does this for us. This allows us to focus
+// on the logic, and the language will manage the various kinds for us. This is especially useful
+// in tree-like data structures or also instructions in a virtual machine, where you can create a
+// single variant for each instruction, without needing to worry about memory management.
+// An union will always be as big as the largest variant.
+
+// Custom "Allocator"
+let nodes: [Tree; 64] = blank;
+let count: usize = 0;
+func wrap(n: Tree) -> &Tree {
+    nodes[count] = n;
+    count = count + 1;
+    return &nodes[count - 1];
+}
+
+// Unions, like normal data structures, can't be recursive, which means that you need a layer of
+// indirection (i.e. a reference) if any variant contains the union itself, like here.
+union Tree {
+    Leaf(u64),
+    // Node { l: Tree, r: Tree }, // <-- error: Recursive type Tree.
+    Node { l: &Tree, r: &Tree },
+}
+
+func sum(t: &Tree) -> u64 {
+    // Pattern Matching now allows us to conveniently access the underlying data of unions and
+    // other types.
+    match (t) {
+        // To not cause any segmentation faults, we check for null here.
+        null => { return 0; }
+        &Tree::Leaf(val) => { return val; }
+        // If you ever call sum with a Tree::Node { l: null, r: null }, the null pattern will make
+        // sure that this still works out fine when you call sum(null).
+        // You could also use the following patterns as a guard:
+        // &Tree::Node { null, null } => { return 0; }
+        // &Tree::Node { l,    null } => { return sum(l); }
+        // &Tree::Node { null, r    } => { return sum(r); }
+        // In general it's good practice to do null-checks as seen in the first pattern, just so
+        // that no pattern accidentally causes a segmentation fault.
+        // It also saves you from coming up with all those edge cases mentioned above :^)
+        &Tree::Node { l, r } => { return sum(l) + sum(r); }
+        _ => { unreachable(); }
+    }
+    unreachable();
+}
+
+// bufo doesn't have default arguments (yet?), however thanks to function overloading we can easily
+// define our own.
+func print(t: &Tree) { print(t, 0); }
+func print(t: &Tree, indent: usize) {
+    match (t) {
+        null => {
+            printf("%*sNULL\n", indent, "");
+        }
+        &Tree::Leaf(val) => {
+            printf("%*sleaf: %llu\n", indent, "", val);
+        }
+        &Tree::Node { l, r } => {
+            printf("%*snode:\n", indent, "");
+            print(l, indent + 2);
+            print(r, indent + 2);
+        }
+        _ => { unreachable(); }
+    }
+}
+
+func showcase2() {
+    let n1 = wrap(Tree::Leaf(13));
+    let n2 = wrap(Tree::Leaf(14));
+    let n3 = wrap(Tree::Node { l: n1, r: n2 });
+    let n4 = wrap(Tree::Leaf(15));
+    let n5 = wrap(Tree::Node { l: n3, r: n4 });
+    print(n5);
+    let s = sum(n5);
+    assert(s == 42); // Always the answer to everything
+    printf("The sum of the tree is %llu\n", s);
+    let cond = true;
+    match (cond) {
+        true => { }
+        false => { }
+        // Patterns in a match statement must be exhaustive, which means all possible variations of
+        // the input expression must eventually lead to a branch. The compiler is currently pretty
+        // limited when it comes to figuring out exhaustiveness, so you very often have to provide
+        // a "catch-all" guard.
+        // *We* know that boolean is always `true` or `false`, but the compiler sadly doesn't (yet)
+        // :^)
+        _ => { unreachable(); }
+    }
+}
+
+// Some "more complicated" type definitions for showcase3.
+union Union {
+    Variant1(i32),
+    Variant2(u8, &i32),
+}
+struct Type {
+    value: i32;
+    field: Union;
+    condition: bool;
+    other2: i32;
+}
+struct OtherType {
+    value: i32;
+    field: Type;
+}
+
+// Pattern Matching allows you to very conveniently match against more complicated types,
+// as shown here. bufo supports various patterns, a non-complete list is:
+// - Identifiers       (here: a)
+// - Numbers           (here: 12)
+// - Wildcards         (Always denoted as `_`)
+// - Struct Pattern    (here: OtherType, Type)
+// - Union Pattern     (here: Union::Variant2)
+// - Reference Pattern (Always starts with `&`)
+// - null, true, false
+// Some of the patterns are recursive, i.e. are made out of other patterns themselves, which allow
+// for arbitrary depth when matching. For example, the Reference Pattern excepts a subpattern right
+// after the ampersand, and the Struct Pattern excepts a list of subpatterns, separated by commas.
+
+// One important note is that the Struct Pattern (and by proxy, the Union Struct Pattern) don't
+// match against field names. They'll always match against the current field they're located at,
+// so in our case `a` *always* captures `OtherType.value`.
+func showcase3() {
+    let value: i32 = 34;
+    let u = Union::Variant2(12, &value);
+    let t = Type { value: 13, field: u, condition: true };
+    let o = OtherType { value: 14, field: t };
+    // Here we match a copy of `o` against the patterns. Any change that you make to matched
+    // identifiers (for example, `a`) don't effect the original instance.
+    match (o) {
+        OtherType { a, Type { _, Union::Variant2(12, &needle), true, .. } } => {
+            assert(a == 14);
+            a = 20; // Doesn't modify the original `o` instance
+            // For references, the values are still copied (i.e. the memory address of `value`),
+            // however the value it *points to* remains the same. This means that you can easily
+            // update values behind pointers, like here.
+            assert(value == 34);
+            printf("The value of the original value is: %d\n", needle);
+            // Also updates the original `value` as defined in the first line here.
+            needle = 29;
+        }
+        _ => { }
+    }
+    assert(o.value == 14);
+    assert(value == 29);
+    // if the provided expression is a reference, all changes to any matched value will also be
+    // reflected in the original value the reference points to.
+    match (&o) {
+        &OtherType { a, Type { _, Union::Variant2(12, &needle), true, .. } } => {
+            assert(a == 14);
+            a = 20; // Now modifies the original `o` instance.
+            needle = 37; // Still updates the original `value`.
+        }
+        // We know that `&o` has the layout matched above, so we should never get here.
+        _ => { unreachable(); }
+    }
+    assert(o.value == 20);
+    assert(value == 37);
+}
+

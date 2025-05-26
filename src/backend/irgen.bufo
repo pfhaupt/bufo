@@ -1286,10 +1286,22 @@ func generateBytecodePattern(this: &IRGen, function: &IRFunc, expr: RegIndex, pa
         buildLoadNull(function, pat.span, reg);
         buildBinaryOp(function, pat.span, INSTR_INT_CMP_EQ, success, expr, reg);
     } else if (pat.kind == PATTERN_BOOLEAN) {
-        if (equals(&pat.ident.content, &comptime BUILD_A_KEYWORD("true"))) {
-            buildMove(function, pat.span, success, expr);
+        if (inOrigMemory) {
+            assert(isPointer(type), "Boolean Pattern inOrigMemory expected pointer");
+            assert(isPointerTo(type, TYPE_BOOL), "Boolean Pattern inOrigMemory expected pointer to bool");
+            let _expr = allocateRegister(function, getUnderlyingType(type, false));
+            buildLoad(function, pat.span, _expr, expr);
+            if (equals(&pat.ident.content, &comptime BUILD_A_KEYWORD("true"))) {
+                buildMove(function, pat.span, success, _expr);
+            } else {
+                buildLogicalNot(function, pat.span, success, _expr);
+            }
         } else {
-            buildLogicalNot(function, pat.span, success, expr);
+            if (equals(&pat.ident.content, &comptime BUILD_A_KEYWORD("true"))) {
+                buildMove(function, pat.span, success, expr);
+            } else {
+                buildLogicalNot(function, pat.span, success, expr);
+            }
         }
     } else if (pat.kind == PATTERN_STRUCT) {
         buildLoadBool(function, pat.span, success, 1);
@@ -1364,9 +1376,10 @@ func generateBytecodePatternStruct(this: &IRGen, function: &IRFunc, expr: RegInd
             let subPat = *at(&pat.subPatterns, i);
             let fieldNode = getFieldTypeAtIndex(&decl.context, i);
             let fieldType = getType(&fieldNode.typeState);
+            let fieldPtr = allocateRegister(function, at(&types, intoPointer(fieldType)));
             let subExpr = allocateRegister(function, fieldType);
-            buildGetFieldPtr(function, pat.span, subExpr, expr, i);
-            buildLoad(function, pat.span, subExpr, subExpr);
+            buildGetFieldPtr(function, pat.span, fieldPtr, expr, i);
+            buildLoad(function, pat.span, subExpr, fieldPtr);
             let sub = generateBytecodePattern(this, function, subExpr, subPat, false);
             buildBinaryOp(function, subPat.span, INSTR_LOGICAL_AND, success, success, sub);
             if (subPat.kind == PATTERN_REST) break;
@@ -1383,6 +1396,7 @@ func generateBytecodePatternUnion(this: &IRGen, function: &IRFunc, expr: RegInde
     let usizeType = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
     let sizeReg = allocateRegister(function, usizeType);
     let tag = allocateRegister(function, u8Type);
+    let tagMatch = allocateRegister(function, newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL));
     let tagPtr = allocateRegister(function, at(&types, intoPointer(u8Type)));
     let tagVal = allocateRegister(function, u8Type);
     // REVIEW: Can we condense the branches?
@@ -1401,7 +1415,8 @@ func generateBytecodePatternUnion(this: &IRGen, function: &IRFunc, expr: RegInde
             buildLoadInteger(function, subPat.span, tag, u8Type, getVariantTag(decl, variant));
             buildMove(function, subPat.span, tagPtr, tmp);
             buildLoad(function, subPat.span, tagVal, tagPtr);
-            buildBinaryOp(function, subPat.span, INSTR_INT_CMP_EQ, success, tag, tagVal);
+            buildBinaryOp(function, subPat.span, INSTR_INT_CMP_EQ, tagMatch, tag, tagVal);
+            buildBinaryOp(function, subPat.span, INSTR_LOGICAL_AND, success, success, tagMatch);
 
             // offset tmp by tag
             buildLoadInteger(function, subPat.span, sizeReg, usizeType, 1);
@@ -1442,7 +1457,8 @@ func generateBytecodePatternUnion(this: &IRGen, function: &IRFunc, expr: RegInde
             buildLoadInteger(function, subPat.span, tag, u8Type, getVariantTag(decl, variant));
             buildMove(function, subPat.span, tagPtr, allocReg);
             buildLoad(function, subPat.span, tagVal, tagPtr);
-            buildBinaryOp(function, subPat.span, INSTR_INT_CMP_EQ, success, tag, tagVal);
+            buildBinaryOp(function, subPat.span, INSTR_INT_CMP_EQ, tagMatch, tag, tagVal);
+            buildBinaryOp(function, subPat.span, INSTR_LOGICAL_AND, success, success, tagMatch);
 
             // offset tmp by tag
             buildLoadInteger(function, subPat.span, sizeReg, usizeType, 1);
