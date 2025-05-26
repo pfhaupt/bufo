@@ -1573,13 +1573,16 @@ func generateBytecodeExprUnionInit(this: &IRGen, function: &IRFunc, expr: &Parse
     assert(decl.variants.length < 256, "IRGen assumes that the tag of an union fits in a single byte");
     let size = getSize(typ);
     assert(size >= 1, "Expected union instance to be at least one byte");
-    let dst = allocateRegister(function, typ);
-    buildCreateUnion(function, expr.span, dst);
     let start = allocateRegister(function, at(&types, intoPointer(typ)));
     buildAlloca(function, expr.span, start, size);
+    let empty = allocateRegister(function, typ);
+    buildCreateUnion(function, expr.span, empty);
+    buildStore(function, expr.span, start, empty);
     let usizeType = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
     let sizeReg = allocateRegister(function, usizeType);
+    let offsetReg = allocateRegister(function, usizeType);
     let tmp = allocateRegister(function, at(&types, intoPointer(typ)));
+    let base = allocateRegister(function, at(&types, intoPointer(typ)));
     buildMove(function, expr.span, tmp, start);
     {
         // tag
@@ -1594,6 +1597,7 @@ func generateBytecodeExprUnionInit(this: &IRGen, function: &IRFunc, expr: &Parse
         buildBinaryOp(function, expr.span, INSTR_INT_ADD, tmp, tmp, sizeReg);
         buildIntToPtr(function, expr.span, tmp, tmp);
     }
+    buildMove(function, expr.span, base, tmp);
     if (variant.kind == UNION_VARIANT_EMPTY) {
         // nothing to do here
         // REVIEW: Maybe allow things like  union { A = 12, B = 23 }  ?
@@ -1618,13 +1622,19 @@ func generateBytecodeExprUnionInit(this: &IRGen, function: &IRFunc, expr: &Parse
             let name: Token = getFieldNameAtIndex(&expr.structInitContext, i);
             let field: &ParsedExpr = getFieldExprAtIndex(&expr.structInitContext, i);
             let result: RegIndex = generateBytecodeExpr(this, function, field, true);
+            {
+                let index: usize = 0;
+                let offset: usize = 0;
+                getFieldIndexAndOffset(variant, &name.content, &index, &offset);
+                buildLoadInteger(function, field.span, offsetReg, usizeType, offset);
+                buildPtrToInt(function, expr.span, base, base);
+                buildPtrToInt(function, expr.span, tmp, tmp);
+                buildBinaryOp(function, expr.span, INSTR_INT_ADD, tmp, base, offsetReg);
+                buildIntToPtr(function, expr.span, tmp, tmp);
+                buildIntToPtr(function, expr.span, base, base);
+            }
             buildLoadInteger(function, field.span, sizeReg, usizeType, getSize(getType(&field.typeState)));
             buildMemcpy(function, field.span, result, tmp, sizeReg);
-            if (i != expr.structInitContext.fieldLength - 1) {
-                buildPtrToInt(function, expr.span, tmp, tmp);
-                buildBinaryOp(function, expr.span, INSTR_INT_ADD, tmp, tmp, sizeReg);
-                buildIntToPtr(function, expr.span, tmp, tmp);
-            }
         }
     } else {
         unreachable("Exhaustive handling of union variants in generateBytecodeExprIdentifier");
@@ -1632,6 +1642,7 @@ func generateBytecodeExprUnionInit(this: &IRGen, function: &IRFunc, expr: &Parse
     if (needsPtr) {
         return start;
     } else {
+        let dst = allocateRegister(function, typ);
         buildLoad(function, expr.span, dst, start);
         return dst;
     }
