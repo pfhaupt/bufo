@@ -1308,6 +1308,9 @@ func checkAndBindPattern(this: &TypeChecker, type: &Type, pat: &ParsedPattern, s
         let moduleLookup: &ModuleLookup = null;
         if (isUnion(type)) {
             let decl = at(&unionDecls, type.typeIndex);
+            if (!equals(&name.content, &decl.name.content)) {
+                return reportImpossiblePattern(this, pat, type);
+            }
             let variant: &ParsedUnionVariant = null;
             if (!resolveVariantByName(decl, &subPat.ident, &variant)) {
                 todo_with_msg("checkAndBindPattern: Path pattern Union doesn't have variant");
@@ -1361,6 +1364,10 @@ func checkAndBindPattern(this: &TypeChecker, type: &Type, pat: &ParsedPattern, s
             return reportImpossiblePattern(this, pat, type);
         }
         let decl = getStructByGlobalID(&this.lookup, type.typeIndex);
+        let name = &pat.ident;
+        if (!equals(&name.content, &decl.name.content)) {
+            return reportImpossiblePattern(this, pat, type);
+        }
         if (pat.subPatterns.length > decl.fields.length) {
             if (pat.subPatterns.length == decl.fields.length + 1) {
                 let last = *at(&pat.subPatterns, pat.subPatterns.length - 1);

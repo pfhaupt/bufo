@@ -1,0 +1,38 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! A value of type Bar will never match the pattern `Foo { _ }`.
+//! A value of type Baz will never match the pattern `Foo::A`.
+
+struct Foo {
+    val: i32;
+}
+struct Bar {
+    val: i32;
+}
+
+union Foo {
+    A,
+}
+
+union Baz {
+    B
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let bar = Bar { val: 13 };
+    match (bar) {
+        Foo { _ } => {
+            return 1;
+        }
+        _ => {
+        }
+    }
+    let baz = Baz::B;
+    match (baz) {
+        Foo::A => { }
+    }
+    return 0;
+}
