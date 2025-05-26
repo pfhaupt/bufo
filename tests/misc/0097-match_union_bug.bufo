@@ -1,0 +1,44 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+
+let nodes: [LinkedList; 64] = blank;
+let count: usize = 0;
+
+func wrap(n: LinkedList) -> &LinkedList {
+    nodes[count] = n;
+    count = count + 1;
+    return &nodes[count - 1];
+}
+
+union LinkedList {
+    Leaf(u64),
+    Node { v: u64, next: &LinkedList },
+}
+
+func sum(l: &LinkedList) -> u64 {
+    match (l) {
+        &LinkedList::Leaf(val) => { return val; }
+        &LinkedList::Node { val, null } => { return val; }
+        &LinkedList::Node { val, node } => { return sum(node) + val; }
+        _ => { unreachable(); }
+    }
+    unreachable();
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let n1 = wrap(LinkedList::Leaf(13));
+    let n2 = wrap(LinkedList::Leaf(14));
+    let n3 = wrap(LinkedList::Leaf(15));
+    let n4 = wrap(LinkedList::Node { v: 16, next: n2 });
+    let n5 = wrap(LinkedList::Node { v: 1, next: n4 });
+    assert(sum(n1) == 13, "n1 has unexpected sum");
+    assert(sum(n2) == 14, "n2 has unexpected sum");
+    assert(sum(n3) == 15, "n3 has unexpected sum");
+    assert(sum(n4) == 30, "n4 has unexpected sum");
+    assert(sum(n5) == 31, "n5 has unexpected sum");
+    return 0;
+}
+

@@ -1420,6 +1420,7 @@ func generateBytecodePatternUnion(this: &IRGen, function: &IRFunc, expr: RegInde
             buildBinaryOp(function, subSubPat.span, INSTR_LOGICAL_AND, success, success, sub);
             if (subSubPat.kind == PATTERN_REST) break;
             if (i != subPat.subPatterns.length - 1) {
+                buildLoadInteger(function, subSubPat.span, sizeReg, usizeType, fieldSize);
                 buildPtrToInt(function, subSubPat.span, tmp, tmp);
                 buildBinaryOp(function, subSubPat.span, INSTR_INT_ADD, tmp, tmp, sizeReg);
                 buildIntToPtr(function, subSubPat.span, tmp, tmp);
