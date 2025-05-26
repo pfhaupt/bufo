@@ -1164,8 +1164,10 @@ func evaluateLogicalAnd(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs:
     let lhsStart: &u8 = getRegStackPointer(this, &rLhs);
     let rhsStart: &u8 = getRegStackPointer(this, &rRhs);
     let dstStart: &u8 = getRegStackPointer(this, &dst);
+    let l = *lhsStart;
+    let r = *rhsStart;
     *dstStart = 0;
-    if (*(lhsStart as &bool) && *(rhsStart as &bool)) {
+    if (l == 1 && r == 1) {
         *dstStart = 1;
     }
     return dst;
@@ -1190,8 +1192,10 @@ func evaluateLogicalOr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
     let lhsStart: &u8 = getRegStackPointer(this, &rLhs);
     let rhsStart: &u8 = getRegStackPointer(this, &rRhs);
     let dstStart: &u8 = getRegStackPointer(this, &dst);
+    let l = *lhsStart;
+    let r = *rhsStart;
     *dstStart = 0;
-    if (*(lhsStart as &bool) || *(rhsStart as &bool)) {
+    if (l == 1 || r == 1) {
         *dstStart = 1;
     }
     return dst;
