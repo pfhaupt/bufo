@@ -1,0 +1,29 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+import "libc.bufo";
+
+struct Foo {
+    val: i32;
+    ptr: &u8;
+}
+
+struct Bar {
+    foo: &Foo;
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let someNumber: u8 = 13;
+    let foo = Foo { val: 13, ptr: &someNumber };
+    let bar = Bar { foo: &foo };
+    match (bar) {
+        Bar { &Foo { _, &flag } } => {
+            flag = 17;
+            printf("read yep\n");
+        }
+    }
+    assert(someNumber == 17);
+    return 0;
+}

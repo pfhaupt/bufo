@@ -1272,7 +1272,14 @@ func generateBytecodePattern(this: &IRGen, function: &IRFunc, expr: RegIndex, pa
     } else if (pat.kind == PATTERN_REFERENCE) {
         assert(pat.subPatterns.length == 1);
         assert(isPointer(type), "Reference Pattern expected pointer type");
-        return generateBytecodePattern(this, function, expr, *at(&pat.subPatterns, 0), true);
+        let under = getUnderlyingType(type, false);
+        if (isPointer(under)) {
+            let reg = allocateRegister(function, under);
+            buildLoad(function, pat.span, reg, expr);
+            return generateBytecodePattern(this, function, reg, *at(&pat.subPatterns, 0), true);
+        } else {
+            return generateBytecodePattern(this, function, expr, *at(&pat.subPatterns, 0), true);
+        }
     } else if (pat.kind == PATTERN_NULL) {
         assert(isPointer(type), "Null Pattern expected pointer type");
         let reg = allocateRegister(function, type);
