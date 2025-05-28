@@ -1,6 +1,7 @@
 import "prelude.bufo";
 import "string.bufo";
 import "substr.bufo";
+import "../../bufo.bufo";
 import "../LLVM/bindings.bufo";
 import "../LLVM/module.bufo";
 import "../LLVM/builder.bufo";
@@ -38,8 +39,13 @@ func createTarget(this: &LLVMContext, name: &char) -> LLVMTarget {
 
 func createTargetTriple(this: &LLVMContext, name: &char) -> &char {
     trace("LLVMContext.createTargetTriple");
-    @os(WINDOWS) return "x86_64-pc-windows-msvc";
-    @os(LINUX) return "x86_64-unknown-linux-gnu";
+    if (equals(flags.target, &newStringFromStrLit("WINDOWS"))) {
+        return "x86_64-pc-windows-msvc";
+    } else if (equals(flags.target, &newStringFromStrLit("LINUX"))) {
+        return "x86_64-unknown-linux-gnu";
+    } else {
+        unreachable("createTargetTriple: Unknown target!");
+    }
 }
 
 func createModuleWithName(this: &LLVMContext, name: SubStr) -> LLVMModule {

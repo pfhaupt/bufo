@@ -12,6 +12,7 @@ import "../middleend/checker.bufo";
 import "../middleend/types.bufo";
 
 @os(WINDOWS) import "winapi/structs.bufo";
+@os(LINUX) import "posix/structs.bufo";
 
 // Arbitrary number chosen as a magic constant for various things
 // idea: We'll never have more than that many expressions or type nodes
@@ -148,12 +149,14 @@ func newConfig(t: Token, value: Token) -> Config {
 }
 
 struct ParsedConfig {
+    ignored: bool;
     span: Span;
     configs: ConfigList;
 }
 
 func newParsedConfig(span: Span, cfgs: ConfigList) -> &ParsedConfig {
     push(&configs, ParsedConfig {
+        ignored: ignoringNodes,
         span: span,
         configs: cfgs,
     });
@@ -268,10 +271,12 @@ func newParsedTopLevelItem(span: Span, kind: usize, nodeID: usize) -> &ParsedTop
     path: String;
     handle: Handle;
 }
-// TODO: Linux DLLs
-@os(LINUX) struct DLL { }
+@os(LINUX) struct DLL {
+    path: String;
+    handle: Handle;
+}
 
-@os(WINDOWS) func newDLL(path: String, handle: Handle) -> &DLL {
+func newDLL(path: String, handle: Handle) -> &DLL {
     push(&dlls, DLL {
         path: path,
         handle: handle,

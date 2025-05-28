@@ -31,4 +31,22 @@ import "./structs.bufo";
 }
 @os(LINUX) @extern("strsignal") func strsignal(signal: i32) -> &char;
 @os(LINUX) @extern("__errno_location") func __errno_location() -> &i32;
+@os(LINUX) @extern("readlink") func readlink(pathname: &char, buf: &char, bufsiz: i32) -> i32;
 
+@os(LINUX) @extern("mmap") func mmap(addr: Any, length: usize, prot: i32, flags: i32, fd: i32, offset: usize) -> Any;
+@os(LINUX) @extern("munmap") func munmap(addr: Any, length: usize) -> i32;
+@os(LINUX) @extern("getpagesize") func getpagesize() -> usize;
+
+@os(LINUX) @extern("dlopen") func dlopen(filename: &char, flags: i32) -> Any;
+@os(LINUX) func dlopen(filename: &char, flags: i32) -> Handle {
+    return Handle {
+        ptr: dlopen(filename, flags) as Any as usize
+    };
+}
+@os(LINUX) @extern("dlclose") func dlclose(handle: Any) -> i32;
+@os(LINUX) @extern("dlsym") func dlsym(handle: Any, symbol: &char) -> Any;
+@os(LINUX) func dlsym(handle: Handle, symbol: &char) -> Handle {
+    return Handle {
+        ptr: dlsym(handle.ptr as Any, symbol) as usize
+    };
+}

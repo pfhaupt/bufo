@@ -7,13 +7,9 @@ import "./posix/structs.bufo";
 import "./posix/functions.bufo";
 import "./posix/constants.bufo";
 
-struct Handle {
-    ptr: usize;
-}
-
 comptime INVALID_HANDLE: Handle = Handle { ptr: 18446744073709551615 };
 
-func getLastModified(filePath: &char) -> usize {
+@os(LINUX) func getLastModified(filePath: &char) -> usize {
     let statbuf: Stat = blank;
 
     if (stat(filePath, &statbuf) < 0) {
@@ -25,7 +21,7 @@ func getLastModified(filePath: &char) -> usize {
     return statbuf.st_mtime as usize;
 }
 
-func waitForProcess(proc: Handle) -> bool {
+@os(LINUX) func waitForProcess(proc: Handle) -> bool {
     if (proc.ptr == INVALID_HANDLE.ptr) return false;
     while (true) {
         let wstatus: i32 = 0;
@@ -51,13 +47,13 @@ func waitForProcess(proc: Handle) -> bool {
     return true;
 }
 
-func runCmdSync(cmd: Cmd) -> bool {
+@os(LINUX) func runCmdSync(cmd: Cmd) -> bool {
     let proc: Handle = runCmdAsync(cmd);
     if (proc.ptr == INVALID_HANDLE.ptr) return false;
     return waitForProcess(proc);
 }
 
-func runCmdAsync(cmd: Cmd) -> Handle {
+@os(LINUX) func runCmdAsync(cmd: Cmd) -> Handle {
     let cpid: i32 = fork();
     if (cpid < 0) {
         fprintf(stderr, "[ERROR] Could not fork child process: %s\n", strerror(*errno()));

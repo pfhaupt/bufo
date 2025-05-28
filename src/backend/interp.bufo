@@ -14,6 +14,8 @@ import "./codegen_llvm.bufo";
 @os(WINDOWS) import "winapi/structs.bufo";
 @os(WINDOWS) import "winapi/functions.bufo";
 
+@os(LINUX) import "posix/functions.bufo";
+
 struct InterpReg {
     offset: usize;
     size: usize;
@@ -1497,14 +1499,6 @@ comptime ADDR_DISP8: u8 = 1;
 comptime ADDR_DISP32: u8 = 2;
 comptime ADDR_REG: u8 = 3;
 
-comptime PROT_READ: i32 = 1;
-comptime PROT_WRITE: i32 = 2;
-comptime PROT_EXEC: i32 = 4;
-comptime MAP_PRIVATE: i32 = 2;
-comptime MAP_ANONYMOUS: i32 = 32;
-
-comptime RTLD_LAZY: i32 = 1;
-
 struct ByteBuffer {
     elements: &u8;
     length: usize;
@@ -1516,8 +1510,13 @@ struct Function {
     size: usize;
 }
 
-func free(fn: Function) {
+@os(WINDOWS) func free(fn: Function) {
     if (!VirtualFree(fn.run as Any, fn.size, 16384)) {
+        printf("warning: Could not free function at %p\n", fn.run);
+    }
+}
+@os(LINUX) func free(fn: Function) {
+    if (munmap(fn.run as Any, fn.size) != 0) {
         printf("warning: Could not free function at %p\n", fn.run);
     }
 }

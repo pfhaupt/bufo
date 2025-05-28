@@ -15,3 +15,11 @@ import "posix/functions.bufo";
 func errno() -> &i32 { return __errno_location(); }
 
 comptime ENOENT: i32 = 2;
+
+comptime PROT_READ: i32 = 1;
+comptime PROT_WRITE: i32 = 2;
+comptime PROT_EXEC: i32 = 4;
+comptime MAP_PRIVATE: i32 = 2;
+comptime MAP_ANONYMOUS: i32 = 32;
+
+comptime RTLD_LAZY: i32 = 1;

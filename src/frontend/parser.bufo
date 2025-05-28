@@ -19,6 +19,10 @@ import "../backend/codegen_llvm.bufo";
 @os(WINDOWS) import "winapi/functions.bufo";
 @os(WINDOWS) import "winapi/structs.bufo";
 
+@os(LINUX) import "posix/constants.bufo";
+@os(LINUX) import "posix/functions.bufo";
+@os(LINUX) import "posix/structs.bufo";
+
 struct Parser {
     lexer: Lexer;
     importRoots: &String;
@@ -276,7 +280,8 @@ func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList
     let span = newSpanBetween(&modTkn.span, &end.span);
     mod.span = span;
     mod.tlis = tlis;
-    @os(WINDOWS) if (anyExtern) {
+    {
+        // Check if all DLLs can be loaded
         let modConfigs = UsizeList {};
         let anyLibrary = false;
         for (let i: usize = 0; i < tlis.length; i = i + 1) {
@@ -295,20 +300,23 @@ func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList
                 for (let k: usize = 0; k < paths.length; k = k + 1) {
                     let _path = toString(&at(&paths, k).content);
                     let path = toAbsolutePath(&_path);
-                    pushChar(&path, '\\');
+                    @os(WINDOWS) pushChar(&path, '\\');
+                    @os(LINUX) pushChar(&path, '/');
                     for (let j: usize = 0; j < cfg.configs.length; j = j + 1) {
                         let _cfg = at(&cfg.configs, j);
                         if (_cfg.kind == CONFIG_LIBNAME) {
                             anyLibrary = true;
                             let path = copy(&path);
                             pushSubStr(&path, &_cfg.value.content);
-                            pushStr(&path, ".dll");
+                            @os(WINDOWS) pushStr(&path, ".dll");
+                            @os(LINUX) pushStr(&path, ".so");
                             let file: Any = fopen(path.buffer, "r");
                             if (file == null) {
                                 continue;
                             }
                             fclose(file);
-                            let handle = LoadLibraryA(path.buffer);
+                            @os(WINDOWS) let handle = LoadLibraryA(path.buffer);
+                            @os(LINUX) let handle: Handle = dlopen(path.buffer, RTLD_LAZY);
                             if (isNull(handle)) {
                                 continue;
                             }
@@ -341,7 +349,6 @@ func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList
             this.syntaxError = true;
         }
     }
-    @os(LINUX) if (anyExtern) todo_with_msg("check if dll exists");
     return mod;
 }
 

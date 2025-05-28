@@ -18,6 +18,12 @@ import "./backend/interp.bufo";
 import "./backend/codegen_llvm.bufo";
 
 @os(WINDOWS) import "winapi/functions.bufo";
+@os(WINDOWS) import "windows.bufo";
+@os(LINUX) import "posix/functions.bufo";
+
+@os(LINUX) config {
+    library: "m",
+}
 
 let flagParser = FlagParser {};
 struct Flags {
@@ -37,6 +43,16 @@ struct Flags {
 let flags = Flags {};
 func main(argc: i32, argv: &&char) -> i32 {
     setupStdHandles();
+    @os(WINDOWS) if (!tryFind("cl.exe")) {
+        fprintf(stderr, "%s: Developer environment is not initialized properly!\n", ERR_STR);
+        fprintf(stderr, "%s: Could not find `cl.exe`.\n", NOTE_STR);
+        fprintf(stderr, "%s: You can activate it by running `vcvarsall.bat x64` from your Visual Studio installation in the current terminal.\n", NOTE_STR);
+        fprintf(stderr, "%s: You can find it here: `C:\\Program Files\\Microsoft Visual Studio\\<year>\\<version>", NOTE_STR);
+        fprintf(stderr,    "\\VC\\Auxiliary\\Build\\vcvarsall.bat`.\n");
+        fprintf(stderr, "%s: In the future the compiler will initialize this environment itself, but until then you will", NOTE_STR);
+        fprintf(stderr,    " have to initialize the environment every time you start the terminal.\n");
+        return 1;
+    }
     for (let i: usize = 0; i < PARSED_TYPE_BUILTIN; i = i + 1) {
         push(&typeNodes, ParsedTypeNode {
             span: blank,
@@ -142,18 +158,48 @@ func findStdAndAddToImports(parser: &Parser) -> bool {
     return buffer as &char;
 }
 
-@os(LINUX) func getBufoPath() {
-    unreachable("getBufoPath is not implemented for Linux yet");
+@os(LINUX) func getBufoPath() -> &char {
+    let buffer = malloc(1024);
+    memset(buffer, 0, 1024);
+    let n = readlink("/proc/self/exe", buffer, 1024);
+    if (n < 0) {
+        free(buffer);
+        return null;
+    }
+    return buffer;
 }
 
 @os(WINDOWS) func linkExecutable() -> bool {
-    let s: String = newStringFromStrLit("link.exe ");
+    if (!equals(flags.target, &newStringFromStrLit("WINDOWS"))) {
+        if (*flags.keepOBJ) {
+            fprintf(stderr, "%s: Cross-linking is not supported yet.\n", NOTE_STR);
+            return true;
+        }
+        fprintf(stderr, "%s: Cross-linking is not supported yet. Run with `--keep-obj` to generate an object file.\n", ERR_STR);
+        return false;
+    }
+    // if we find a non-standard linker, we'll use that one instead of the normal Windows linker.
+    // On my system, linking the selfhost takes as long as doing the whole rest of the pipeline,
+    // type checking, comptime evaluation etc.
+    // radlink.exe brings down linking times from 1.8 seconds to 0.8 seconds, which is very nice.
+    // radlink: https://github.com/EpicGamesExt/raddebugger
+    let s: String = blank;
+    if (tryFind("radlink.exe")) {
+        s = newStringFromStrLit("radlink.exe ");
+    } else if (tryFind("link.exe")) {
+        s = newStringFromStrLit("link.exe ");
+    } else {
+        fprintf(stderr, "error: Could not find a linker in PATH. Did you forget to initialize a developer environment?\n");
+        fprintf(stderr, "note: Currently we support the normal Visual Studio `link.exe`, and experimentally `radlink.exe` for improved linking times.\n");
+        return false;
+    }
     pushString(&s, flags.out);
     pushStr(&s, ".obj");
     pushStr(&s, " /DEFAULTLIB:libcmt /OUT:");
     pushString(&s, flags.out);
     for (let i: usize = 0; i < configs.length; i = i + 1) {
         let flag = at(&configs, i);
+        if (flag.ignored) continue;
         for (let j: usize = 0; j < flag.configs.length; j = j + 1) {
             pushChar(&s, ' ');
             let _flag = at(&flag.configs, j);
@@ -183,6 +229,14 @@ func findStdAndAddToImports(parser: &Parser) -> bool {
 }
 
 @os(LINUX) func linkExecutable() -> bool {
+    if (!equals(flags.target, &newStringFromStrLit("LINUX"))) {
+        if (*flags.keepOBJ) {
+            fprintf(stderr, "%s: Cross-linking is not supported yet.\n", NOTE_STR);
+            return true;
+        }
+        fprintf(stderr, "%s: Cross-linking is not supported yet. Run with `--keep-obj` to generate an object file.\n", ERR_STR);
+        return false;
+    }
     let s: String = newStringFromStrLit("ld ");
     pushStr(&s, "-dynamic-linker ");
     pushStr(&s, "/lib64/ld-linux-x86-64.so.2 ");
@@ -194,6 +248,7 @@ func findStdAndAddToImports(parser: &Parser) -> bool {
     pushString(&s, flags.out);
     for (let i: usize = 0; i < configs.length; i = i + 1) {
         let flag = at(&configs, i);
+        if (flag.ignored) continue;
         for (let j: usize = 0; j < flag.configs.length; j = j + 1) {
             pushChar(&s, ' ');
             let _flag = at(&flag.configs, j);

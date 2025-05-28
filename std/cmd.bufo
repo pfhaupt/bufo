@@ -7,7 +7,8 @@ import "substr.bufo";
 @os(WINDOWS) import "winapi/structs.bufo";
 @os(WINDOWS) import "windows.bufo";
 
-@os(LINUX) import "./linux.bufo";
+@os(LINUX) import "posix/structs.bufo";
+@os(LINUX) import "linux.bufo";
 
 struct Cmd {
     log: bool;

@@ -19,11 +19,6 @@
 @extern("memcmp") func memcmp(lhs: Any, rhs: Any, count: usize) -> i32;
 @extern("memset") func memset(s: Any, b: i32, count: usize) -> Any;
 
-@os(LINUX) @extern("mmap") func mmap(addr: Any, length: usize, prot: i32, flags: i32, fd: i32, offset: usize) -> Any;
-@os(LINUX) @extern("munmap") func munmap(addr: Any, length: usize) -> i32;
-
-@os(LINUX) @extern("getpagesize") func getpagesize() -> usize;
-
 // File IO
 @extern("fopen") func fopen(filename: &char, mode: &char) -> Any;
 @extern("fread") func fread(buffer: Any, size: usize, count: usize, stream: Any) -> usize;

@@ -53,6 +53,13 @@ func waitForProcess(proc: Handle) -> bool {
     return true;
 }
 
+func tryFind(program: &char) -> bool {
+    let s: String = newStringFromStrLit("where /Q ");
+    pushStr(&s, program);
+    let cmd: Cmd = newCmdFromStrLit(s.buffer);
+    return runCmdSync(cmd);
+}
+
 func runCmdSync(cmd: Cmd) -> bool {
     let proc: Handle = runCmdAsync(cmd);
     if (proc.ptr == INVALID_HANDLE.ptr) return false;

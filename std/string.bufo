@@ -34,6 +34,12 @@ func toAbsolutePath(this: &String) -> String {
     assert(c.length != 0, "getRoot: Found no root");
     return c;
 }
+@os(LINUX) func getRoot(this: &String) -> String {
+    let c = copy(this);
+    while (c.length > 0 && getChar(&c, c.length - 1) != '/') c.length = c.length - 1;
+    assert(c.length != 0, "getRoot: Found no root");
+    return c;
+}
 
 func getChar(this: &String, index: usize) -> char {
     assert(index <= this.length, "Index out of bounds for String.getChar()");
