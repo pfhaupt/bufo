@@ -70,10 +70,9 @@ def compile_wrapper(llvm_path, libs):
         assert False, f"Unsupported OS {sys.platform}, can't link wrapper"
     proc = try_call(cmd)
     assert proc.returncode == 0, proc.stderr.decode("utf-8")
+    print("[INFO] Generated LLVM wrapper")
 
-with open("./src/backend/LLVM/bindings.bufo", "w") as file:
-    path = get(["--libdir"])[0]
-    libs = get(["--libnames"], " ")
+def generate_bindings(file, path, libs):
     content = ""
     content += " module LLVM {\n"
     content += enumeratePtrs([
@@ -96,7 +95,6 @@ with open("./src/backend/LLVM/bindings.bufo", "w") as file:
     else:
         assert False, f"Unsupported OS {sys.platform}, can't specify @os() attribute"
     content += "config {\n"
-    compile_wrapper(path, libs)
     if sys.platform == "linux":
         content += "        library: \":llvm_wrapper.a\";\n"
     elif sys.platform == "win32":
@@ -316,3 +314,15 @@ comptime LLVMObjectFile: i32 = 1;
 """
     file.write(content)
     print("[INFO] Generated LLVM bindings")
+
+def main():
+    path = get(["--libdir"])[0]
+    libs = get(["--libnames"], " ")
+    compile_wrapper(path, libs)
+    if "--wrapper-only" in sys.argv:
+        return
+    with open("./src/backend/LLVM/bindings.bufo", "w") as file:
+        generate_bindings(file, path, libs)
+
+if __name__ == "__main__":
+    main()

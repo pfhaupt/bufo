@@ -81,7 +81,8 @@
         // It must be somewhere here :^)
         libpath: "/usr/lib/llvm-16/lib/",
         libpath: "/lib/llvm-16/lib/",
-        linker: "./llvm_wrapper.o",
+        libpath: ".", // llvm_wrapper.a
+        library: ":llvm_wrapper.a",
     }
     @os(WINDOWS) config {
         library: "llvm_wrapper",
