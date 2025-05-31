@@ -280,7 +280,7 @@ func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList
     let span = newSpanBetween(&modTkn.span, &end.span);
     mod.span = span;
     mod.tlis = tlis;
-    {
+    if (anyExtern) {
         // Check if all DLLs can be loaded
         let modConfigs = UsizeList {};
         let anyLibrary = false;

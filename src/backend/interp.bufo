@@ -288,7 +288,7 @@ func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
     let calledFunc: &IRFunc = at(&this.irGen.functions, id);
     let f = at(&funcDecls, calledFunc.originalID);
     if (isExtern(f)) {
-        @os(WINDOWS) if (!isNull(f.dllHandle)) {
+        if (!isNull(f.dllHandle)) {
             let fun = compileFunctionCall(this, irFunc, calledFunc, instr, f.dllHandle.handle.ptr, regs);
             let retType = at(&types, getType(&f.typeState).typeIndex);
             let val = fun.run();
@@ -368,7 +368,6 @@ func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
             drop(&loc);
             exit(1);
         }
-        @os(LINUX) todo_with_msg("comptime extern call");
     } else {
         let argSize: usize = this.argStackLength;
         let stackStart: &u8 = this.realStackStart;
@@ -1776,6 +1775,9 @@ func push(val: u64) -> ByteBuffer {
     memcpy(code, buf.elements, buf.length);
     free(buf.elements);
     return Function { run: code as func () -> u64, size: buf.length };
+}
+@os(LINUX) func compileFunctionCall(this: &IRInterp, currFunc: &IRFunc, calledFunc: &IRFunc, instr: &IRInstr, fn: usize, regs: &RegValueList) -> Function {
+    todo_with_msg("comptime extern call");
 }
 func evaluateCall(this: &IRInterp, span: Span, irFunc: &IRFunc, regs: &RegValueList) {
     trace("IRInterp.evaluateCall");

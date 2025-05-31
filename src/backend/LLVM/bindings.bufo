@@ -79,6 +79,7 @@
     @os(LINUX) config {
         library: "LLVM",
         // It must be somewhere here :^)
+        libpath: "/usr/lib64/llvm16/lib",
         libpath: "/usr/lib/llvm-16/lib/",
         libpath: "/lib/llvm-16/lib/",
         libpath: ".", // llvm_wrapper.a
