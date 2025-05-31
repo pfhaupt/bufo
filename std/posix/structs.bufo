@@ -13,7 +13,7 @@ system at any time.
     ptr: usize;
 }
 func isNull(h: Handle) -> bool {
-    return h.ptr != 0;
+    return h.ptr == 0;
 }
 
 @os(LINUX) struct Pid_t {

@@ -305,21 +305,32 @@ func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList
                     for (let j: usize = 0; j < cfg.configs.length; j = j + 1) {
                         let _cfg = at(&cfg.configs, j);
                         if (_cfg.kind == CONFIG_LIBNAME) {
+                            // TODO: On Linux shared libraries often start with `lib`, e.g. libraylib.so
                             anyLibrary = true;
                             let path = copy(&path);
                             pushSubStr(&path, &_cfg.value.content);
                             @os(WINDOWS) pushStr(&path, ".dll");
                             @os(LINUX) pushStr(&path, ".so");
+                            if (*flags.verbose) printf("[INFO] Trying to load %s: ", path.buffer);
                             let file: Any = fopen(path.buffer, "r");
                             if (file == null) {
+                                if (*flags.verbose) {
+                                    @os(WINDOWS) printf("No such file or directory\n");
+                                    @os(LINUX) printf("%s\n", strerror(*errno()));
+                                }
                                 continue;
                             }
                             fclose(file);
                             @os(WINDOWS) let handle = LoadLibraryA(path.buffer);
                             @os(LINUX) let handle: Handle = dlopen(path.buffer, RTLD_LAZY);
                             if (isNull(handle)) {
+                                if (*flags.verbose) {
+                                    @os(WINDOWS) printf("Could not load DLL\n");
+                                    @os(LINUX) printf("%s\n", dlerror());
+                                }
                                 continue;
                             }
+                            if (*flags.verbose) printf("Success. Handle = %p\n", handle.ptr);
                             push(&mod.dlls, getID(newDLL(path, handle)));
                         }
                     }

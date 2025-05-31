@@ -38,12 +38,13 @@ import "./structs.bufo";
 @os(LINUX) @extern("getpagesize") func getpagesize() -> usize;
 
 @os(LINUX) @extern("dlopen") func dlopen(filename: &char, flags: i32) -> Any;
+@os(LINUX) @extern("dlclose") func dlclose(handle: Any) -> i32;
+@os(LINUX) @extern("dlerror") func dlerror() -> &char;
 @os(LINUX) func dlopen(filename: &char, flags: i32) -> Handle {
     return Handle {
         ptr: dlopen(filename, flags) as Any as usize
     };
 }
-@os(LINUX) @extern("dlclose") func dlclose(handle: Any) -> i32;
 @os(LINUX) @extern("dlsym") func dlsym(handle: Any, symbol: &char) -> Any;
 @os(LINUX) func dlsym(handle: Handle, symbol: &char) -> Handle {
     return Handle {
