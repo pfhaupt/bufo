@@ -107,13 +107,13 @@ func escapeCharSequence(this: &Lexer, tmp: &SubStr, s: &String, len: &usize) -> 
     } else {
         pushChar(s, c);
     }
-    let s: usize = 1;
+    let step: usize = 1;
     if (escaped) {
-        s = 2;
+        step = 2;
     }
-    s = s + extraOffset;
-    *len = *len + s;
-    *tmp = substring(tmp, s, tmp.len);
+    step = step + extraOffset;
+    *len = *len + step;
+    *tmp = substring(tmp, step, tmp.len);
     return getChar(tmp, 0);
 }
 

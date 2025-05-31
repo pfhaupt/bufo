@@ -60,7 +60,6 @@ func mangleFunctionName(
     }
     pushSubStr(&mangledName, &name.content);
     for (let i: usize = 0; i < params.paramLength; i = i + 1) {
-        let name: Token = getNameAtIndex(params, i);
         let typeNode: &ParsedTypeNode = getTypeAtIndex(params, i);
         assert(isSuccess(&typeNode.typeState), "Expected valid parameter type for mangling");
         let typ: &Type = getType(&typeNode.typeState);

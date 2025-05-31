@@ -235,11 +235,11 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) -> bool {
         };
         assert(this.variables.length == 1, "expected to find only the global scope");
         let globalScope: &ScopeLookup = last(&this.variables);
-        let _loc: Token = blank;
-        if (isKnownVariable(globalScope, lookup.name.content, &_loc)) {
+        let duplVar: Token = blank;
+        if (isKnownVariable(globalScope, lookup.name.content, &duplVar)) {
             let loc = toString(&tli.span);
             let name = toString(&varDecl.varDeclContext.name);
-            let _loc = toString(&_loc.span);
+            let _loc = toString(&duplVar.span);
             fprintf(stderr, "%s: %s: Variable redeclaration.\n", loc.buffer, ERR_STR);
             fprintf(stderr, "%s: %s: Variable `%s` already declared here.\n", _loc.buffer, NOTE_STR, name.buffer);
             drop(&name);

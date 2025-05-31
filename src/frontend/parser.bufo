@@ -307,31 +307,33 @@ func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList
                         if (_cfg.kind == CONFIG_LIBNAME) {
                             // TODO: On Linux shared libraries often start with `lib`, e.g. libraylib.so
                             anyLibrary = true;
-                            let path = copy(&path);
-                            pushSubStr(&path, &_cfg.value.content);
-                            @os(WINDOWS) pushStr(&path, ".dll");
-                            @os(LINUX) pushStr(&path, ".so");
-                            if (*flags.verbose) printf("[INFO] Trying to load %s: ", path.buffer);
-                            let file: Any = fopen(path.buffer, "r");
+                            let libPath = copy(&path);
+                            pushSubStr(&libPath, &_cfg.value.content);
+                            @os(WINDOWS) pushStr(&libPath, ".dll");
+                            @os(LINUX) pushStr(&libPath, ".so");
+                            if (*flags.verbose) printf("[INFO] Trying to load %s: ", libPath.buffer);
+                            let file: Any = fopen(libPath.buffer, "r");
                             if (file == null) {
                                 if (*flags.verbose) {
                                     @os(WINDOWS) printf("No such file or directory\n");
                                     @os(LINUX) printf("%s\n", strerror(*errno()));
                                 }
+                                drop(&libPath);
                                 continue;
                             }
                             fclose(file);
-                            @os(WINDOWS) let handle = LoadLibraryA(path.buffer);
-                            @os(LINUX) let handle: Handle = dlopen(path.buffer, RTLD_LAZY);
+                            @os(WINDOWS) let handle = LoadLibraryA(libPath.buffer);
+                            @os(LINUX) let handle: Handle = dlopen(libPath.buffer, RTLD_LAZY);
                             if (isNull(handle)) {
                                 if (*flags.verbose) {
                                     @os(WINDOWS) printf("Could not load DLL\n");
                                     @os(LINUX) printf("%s\n", dlerror());
                                 }
+                                drop(&libPath);
                                 continue;
                             }
                             if (*flags.verbose) printf("Success. Handle = %p\n", handle.ptr);
-                            push(&mod.dlls, getID(newDLL(path, handle)));
+                            push(&mod.dlls, getID(newDLL(libPath, handle)));
                         }
                     }
                     drop(&_path);
@@ -352,9 +354,9 @@ func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList
             for (let i: usize = 0; i < modConfigs.length; i = i + 1) {
                 let t = at(&topLevelItems, *at(&modConfigs, i));
                 assert(t.kind == TLI_CONFIG);
-                let loc = toString(&t.span);
-                fprintf(stderr, "%s: %s: Module configuration specified here.\n", loc.buffer, NOTE_STR);
                 drop(&loc);
+                loc = toString(&t.span);
+                fprintf(stderr, "%s: %s: Module configuration specified here.\n", loc.buffer, NOTE_STR);
             }
             drop(&loc);
             this.syntaxError = true;
@@ -420,16 +422,16 @@ func parseImport(this: &Parser, skip: bool) -> &ParsedTopLevelItem {
                 return null;
             }
             let fileID: usize = 0;
-            let file: &ParsedFile = null;
+            let importedFile: &ParsedFile = null;
             if (getFileByFilePath(asSubStr(&path), &fileID)) {
-                file = at(&files, fileID);
+                importedFile = at(&files, fileID);
             } else {
-                file = newParsedFile(asSubStr(&path), asSubStr(&src));
-                fileID = getID(file);
+                importedFile = newParsedFile(asSubStr(&path), asSubStr(&src));
+                fileID = getID(importedFile);
                 // Note: We leak the source code of the imported file here :^)
-                let parser: Parser = newParserFromSource(getID(file), asSubStr(&src));
+                let parser: Parser = newParserFromSource(fileID, asSubStr(&src));
                 inheritImportRoots(&parser, this);
-                parseFile(&parser, asSubStr(&path), file);
+                parseFile(&parser, asSubStr(&path), importedFile);
             }
             let end: Token = expect(this, TOKEN_SEMI_COLON);
             let span: Span = newSpanBetween(&impTkn.span, &end.span);

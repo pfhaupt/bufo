@@ -970,26 +970,26 @@ func generateFunctionHeader(this: &IRGen, function: &IRFunc, retType: &Type, par
 
 func generateFunctionBody(this: &IRGen, function: &IRFunc, body: &ParsedBlock, retTypeNode: &ParsedTypeNode) {
     trace("IRGen.generateFunctionBody");
-    let t: &Type = getType(&retTypeNode.typeState);
+    let retType: &Type = getType(&retTypeNode.typeState);
     if (function.returnBlockID.i == 0) {
         let curr = getCurrentBlock(function);
         function.returnBlockID = appendBlock(function);
-        if (isNone(t)) {
+        if (isNone(retType)) {
             setCurrentBlock(function, function.returnBlockID);
             buildReturnEmpty(function, retTypeNode.span);
             setCurrentBlock(function, curr);
         } else {
-            function.returnAlloc = allocateRegister(function, at(&types, intoPointer(t)));
-            buildAlloca(function, retTypeNode.span, function.returnAlloc, getSize(t));
+            function.returnAlloc = allocateRegister(function, at(&types, intoPointer(retType)));
+            buildAlloca(function, retTypeNode.span, function.returnAlloc, getSize(retType));
             setCurrentBlock(function, function.returnBlockID);
-            let result = allocateRegister(function, t);
+            let result = allocateRegister(function, retType);
             buildLoad(function, retTypeNode.span, result, function.returnAlloc);
-            if (getSize(t) > 8) {
+            if (getSize(retType) > 8) {
                 buildStore(function, retTypeNode.span, function.retPtr, result);
                 buildReturnExpr(function, retTypeNode.span, function.retPtr);
             } else {
-                if (isStruct(t)) {
-                    let v: RegIndex = getRegisterForSize(this, function, getSize(t));
+                if (isStruct(retType)) {
+                    let v: RegIndex = getRegisterForSize(this, function, getSize(retType));
                     let t: &Type = getRegister(function, v).typ;
                     let r: RegIndex = allocateRegister(function, at(&types, intoPointer(t)));
                     let s: usize = getSize(t);
@@ -1008,7 +1008,7 @@ func generateFunctionBody(this: &IRGen, function: &IRFunc, body: &ParsedBlock, r
     generateBytecodeBlock(this, function, body);
     let curr: &IRBlock = getCurrentBlockAsRef(function);
     if (!isTerminated(curr)) {
-        if (isNone(t)) {
+        if (isNone(retType)) {
             buildReturnEmpty(function, body.span);
         } else {
             buildUnterminated(function, body.span);
@@ -1559,10 +1559,10 @@ func generateBytecodeExpr(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, ne
         buildCreateStruct(function, expr.span, reg);
         for (let i: usize = 0; i < expr.structInitContext.fieldLength; i = i + 1) {
             let name: Token = getFieldNameAtIndex(&expr.structInitContext, i);
-            let expr: &ParsedExpr = getFieldExprAtIndex(&expr.structInitContext, i);
+            let field: &ParsedExpr = getFieldExprAtIndex(&expr.structInitContext, i);
             let index: usize = getFieldIndex(structDecl, &name.content);
-            let result: RegIndex = generateBytecodeExpr(this, function, expr, false);
-            buildInsertValue(function, expr.span, reg, index, result);
+            let result: RegIndex = generateBytecodeExpr(this, function, field, false);
+            buildInsertValue(function, field.span, reg, index, result);
         }
         if (needsPtr) {
             let structAlloc: RegIndex = allocateRegister(function, at(&types, intoPointer(strukt)));

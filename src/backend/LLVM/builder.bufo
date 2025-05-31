@@ -55,9 +55,9 @@ func buildAlloca(this: &LLVMBuilder, typ: LLVMType, name: SubStr) -> LLVMValue {
 func buildStore(this: &LLVMBuilder, ptr: LLVMValue, value: LLVMValue) -> LLVMValue {
     trace("LLVMBuilder.buildStore");
     guardReference(this);
-    let value: LLVM::ValueRef = LLVM::BuildStore(this.ref, value.ref, ptr.ref);
-    assert(!LLVM::isNull(value), "Could not build store in builder");
-    return newLLVMValueFromRef(value);
+    let store: LLVM::ValueRef = LLVM::BuildStore(this.ref, value.ref, ptr.ref);
+    assert(!LLVM::isNull(store), "Could not build store in builder");
+    return newLLVMValueFromRef(store);
 }
 
 func buildLoad(this: &LLVMBuilder, pType: LLVMType, ptr: LLVMValue, name: SubStr) -> LLVMValue {
@@ -73,8 +73,8 @@ func buildLoad(this: &LLVMBuilder, pType: LLVMType, ptr: LLVMValue, name: SubStr
 func buildReturn(this: &LLVMBuilder, value: LLVMValue) {
     trace("LLVMBuilder.buildReturn");
     guardReference(this);
-    let value: LLVM::ValueRef = LLVM::BuildRet(this.ref, value.ref);
-    assert(!LLVM::isNull(value), "Could not build return in builder");
+    let ret: LLVM::ValueRef = LLVM::BuildRet(this.ref, value.ref);
+    assert(!LLVM::isNull(ret), "Could not build return in builder");
 }
 func buildReturnVoid(this: &LLVMBuilder) {
     trace("LLVMBuilder.buildReturnVoid");

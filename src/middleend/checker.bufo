@@ -270,9 +270,9 @@ func reportUnknownType(this: &TypeChecker, mod: &ModuleLookup, name: Token, alte
     let loc: String = getLocation(&name);
     let _n: String = toString(&name.content);
     if (mod != null) {
-        let mod = at(&modules, mod.globalID);
-        let _n1 = toString(&mod.name.content);
-        let loc1 = toString(&mod.span);
+        let modNode = at(&modules, mod.globalID);
+        let _n1 = toString(&modNode.name.content);
+        let loc1 = toString(&modNode.span);
         fprintf(stderr, "%s: %s: Module `%s` does not contain any types named `%s`.\n", loc.buffer, ERR_STR, _n1.buffer, _n.buffer);
         fprintf(stderr, "%s: %s: Module declared here.\n", loc1.buffer, NOTE_STR);
         drop(&loc1);
@@ -283,9 +283,9 @@ func reportUnknownType(this: &TypeChecker, mod: &ModuleLookup, name: Token, alte
             let t: &TypeLookup = at(&alternatives, i);
             if (isStruct(t)) {
                 let s: &StructLookup = asStruct(t);
-                let loc: String = getLocation(&s.name);
-                fprintf(stderr, "%s: %s: A struct with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
                 drop(&loc);
+                loc = getLocation(&s.name);
+                fprintf(stderr, "%s: %s: A struct with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
             }
         }
     }
@@ -323,11 +323,11 @@ func reportNoFunctionCallCandidate(this: &TypeChecker, callExpr: &ParsedExpr, fn
     if (*flags.verbose) {
         for (let i: usize = 0; i < functions.length; i = i + 1) {
             let f: &FunctionLookup = at(functions, i);
-            let loc: String = toString(&f.name.span);
-            let typ = toString(getType(&f.fnType));
-            fprintf(stderr, "%s: %s: Overload %s declared here.\n", loc.buffer, NOTE_STR, typ.buffer);
             drop(&typ);
             drop(&loc);
+            loc = toString(&f.name.span);
+            typ = toString(getType(&f.fnType));
+            fprintf(stderr, "%s: %s: Overload %s declared here.\n", loc.buffer, NOTE_STR, typ.buffer);
         }
     } else {
         let is = "are";
@@ -920,12 +920,12 @@ func typeCheckUnionDecl(this: &TypeChecker, onion: &ParsedUnionDecl) -> TCState 
             assert(variant.names.length == 0, "Empty Union Variant has fields");
         }
         assert(variant.names.length == variant.fields.length, "Union Variant name and field length mismatch");
-        for (let i: usize = 0; i < variant.fields.length; i = i + 1) {
-            let field = *at(&variant.fields, i);
-            let name = at(&variant.names, i);
-            let dupl: &Token = null;
-            if (checkForDuplicateName(variant, name, &dupl)) {
-                result = reportDuplicateNameInUnion(this, variant, name, dupl);
+        for (let j: usize = 0; j < variant.fields.length; j = j + 1) {
+            let field = *at(&variant.fields, j);
+            let name = at(&variant.names, j);
+            let duplName: &Token = null;
+            if (checkForDuplicateName(variant, name, &duplName)) {
+                result = reportDuplicateNameInUnion(this, variant, name, duplName);
                 break;
             }
             let fieldState = typeCheckTypeNode(this, field);
@@ -1344,8 +1344,8 @@ func checkAndBindPattern(this: &TypeChecker, type: &Type, pat: &ParsedPattern, s
                 let subSubPat = *at(&subPat.subPatterns, i);
                 let field = *at(&variant.fields, i);
                 assert(isSuccess(&field.typeState), "checkAndBindPattern: Invalid field type");
-                let type = getType(&field.typeState);
-                let subComplete = checkAndBindPattern(this, type, subSubPat, scope);
+                let fieldType = getType(&field.typeState);
+                let subComplete = checkAndBindPattern(this, fieldType, subSubPat, scope);
                 if (isError(&subComplete)) return subComplete;
                 if (!getPatState(&subComplete).complete) {
                     complete = false;
@@ -1394,8 +1394,8 @@ func checkAndBindPattern(this: &TypeChecker, type: &Type, pat: &ParsedPattern, s
             let subpat = *at(&pat.subPatterns, i);
             let field = at(&decl.fields, i);
             assert(isSuccess(&field.typeState), "checkAndBindPattern: Invalid field type");
-            let type = getType(&field.typeState);
-            let subComplete = checkAndBindPattern(this, type, subpat, scope);
+            let fieldType = getType(&field.typeState);
+            let subComplete = checkAndBindPattern(this, fieldType, subpat, scope);
             if (isError(&subComplete)) return subComplete;
             if (!getPatState(&subComplete).complete) {
                 complete = false;
@@ -1884,9 +1884,9 @@ func typeCheckIdentifier(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLo
     let alternatives: VariableLookupList = searchAllFilesForIdentifier(&this.lookup, &name);
     for (let i: usize = 0; i < alternatives.length; i = i + 1) {
         let t: &VariableLookup = at(&alternatives, i);
-        let loc: String = getLocation(&t.name);
-        fprintf(stderr, "%s: %s: A variable with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
         drop(&loc);
+        loc = getLocation(&t.name);
+        fprintf(stderr, "%s: %s: A variable with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
     }
     drop(&_name);
     drop(&loc);
@@ -2177,11 +2177,12 @@ func typeCheckExprUnionInit(this: &TypeChecker, expr: &ParsedExpr, unionType: &T
         let variant: &UnionVariantLookup = null;
         if (!resolveVariantByName(lookup, name, &variant)) todo_with_msg("report error, no such variant");
         unionType.arraySize = variant.tag;
-        let result = newTCStateType(unionType);
+        result = newTCStateType(unionType);
         let structLookup = intoStructLookup(variant);
         // FIXME: typeCheckStructInitialization is exactly what we need here, but it would be cool
         //        if it wasn't called like that
-        result = typeCheckStructInitialization(this, rhs, asTypeLookup(&structLookup), scopes, true);
+        let check = typeCheckStructInitialization(this, rhs, asTypeLookup(&structLookup), scopes, true);
+        if (isError(&check)) return check;
     } else {
         todo_with_msg("union: report error maybe?");
     }
@@ -2293,9 +2294,9 @@ func tryInferTypeOntoExpr(this: &TypeChecker, expr: &ParsedExpr, type: &Type, sc
             if (isError(&tid)) {
                 let loc = toString(&expr.span);
                 let name = toString(&expr.origToken.content);
-                let type = toString(type);
-                fprintf(stderr, "%s: %s: Variable `%s` inferred to be of type %s here.\n", loc.buffer, NOTE_STR, name.buffer, type.buffer);
-                drop(&type);
+                let typeName = toString(type);
+                fprintf(stderr, "%s: %s: Variable `%s` inferred to be of type %s here.\n", loc.buffer, NOTE_STR, name.buffer, typeName.buffer);
+                drop(&typeName);
                 drop(&name);
                 drop(&loc);
             }
@@ -2817,9 +2818,9 @@ func typeCheckTypeNode(this: &TypeChecker, typeNode: &ParsedTypeNode) -> TCState
                 let t: &TypeLookup = at(&alternatives, i);
                 if (isStruct(t)) {
                     let s: &StructLookup = asStruct(t);
-                    let loc: String = getLocation(&s.name);
-                    fprintf(stderr, "%s: %s: A struct with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
                     drop(&loc);
+                    loc = getLocation(&s.name);
+                    fprintf(stderr, "%s: %s: A struct with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
                 }
             }
             drop(&_n);

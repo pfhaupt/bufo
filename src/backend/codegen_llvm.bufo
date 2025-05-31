@@ -81,25 +81,25 @@ func generateExecutable(this: &LLVMCodegen, outPath: SubStr) -> bool {
     addGlobalDCEPass(&pm);
     while (runOn(&pm, this.llvmModule)) {}
     if (PRINT_DEBUG) writeToFile(&this.llvmModule, newSubStrOfStrLit("debug_after.ll"));
-    let path: String = toString(&outPath);
-    pushStr(&path, ".obj");
+    let objPath: String = toString(&outPath);
+    pushStr(&objPath, ".obj");
     if (*flags.verbose) {
-        printf("[INFO] Saving object file at %s\n", path.buffer);
+        printf("[INFO] Saving object file at %s\n", objPath.buffer);
     }
-    writeToFile(&this.llvmTargetMachine, this.llvmModule, LLVMObjectFile, path.buffer);
+    writeToFile(&this.llvmTargetMachine, this.llvmModule, LLVMObjectFile, objPath.buffer);
     if (*flags.emitASM) {
-        let path = toString(&outPath);
-        pushStr(&path, ".s");
-        printf("[INFO] Saving assembly code in %s\n", path.buffer);
-        writeToFile(&this.llvmTargetMachine, this.llvmModule, LLVMAssemblyFile, path.buffer);
-        drop(&path);
+        let asmPath = toString(&outPath);
+        pushStr(&asmPath, ".s");
+        printf("[INFO] Saving assembly code in %s\n", asmPath.buffer);
+        writeToFile(&this.llvmTargetMachine, this.llvmModule, LLVMAssemblyFile, asmPath.buffer);
+        drop(&asmPath);
     }
     if (*flags.emitLLVM) {
-        let path = toString(&outPath);
-        pushStr(&path, ".ll");
-        printf("[INFO] Saving LLVM IR in %s\n", path.buffer);
-        writeToFile(&this.llvmModule, asSubStr(&path));
-        drop(&path);
+        let llvmPath = toString(&outPath);
+        pushStr(&llvmPath, ".ll");
+        printf("[INFO] Saving LLVM IR in %s\n", llvmPath.buffer);
+        writeToFile(&this.llvmModule, asSubStr(&llvmPath));
+        drop(&llvmPath);
     }
     return true;
 }
@@ -754,10 +754,10 @@ func generateLLVMValueFromComptimeValue(this: &LLVMCodegen, typ: &Type, start: &
     } else if (isArray(typ)) {
         let llvmType = generateLLVMType(this, typ);
         let elemType = getUnderlyingType(typ, false);
-        let size = getSize(elemType);
+        let elemSize = getSize(elemType);
         let array = constZero(&llvmType);
         for (let i: usize = 0; i < typ.arraySize; i = i + 1) {
-            let offset = size * i;
+            let offset = elemSize * i;
             let elem = generateLLVMValueFromComptimeValue(this, elemType, start + offset);
             array = buildInsertValue(&this.llvmBuilder, array, elem, i as u32, "comptime_array_elem");
         }
