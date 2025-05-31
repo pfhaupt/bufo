@@ -50,7 +50,6 @@
 // TODO: Remove `comptime` variable declarations, to allow `comptime {}` blocks without ()
 // FIXME: assert() uses a global variable `stdin`, which is fine and intended, however the
 //        interp triggers an assertion itself when accessing it
-// TODO: Hex literals
 // TODO: We can cook up so much with comptime, however the whole std (cough cough libc) still uses
 //       the non-module syntax so we can't use printf() and any of that...
 
@@ -125,15 +124,15 @@ func demo() -> Value {
     // We can handle arbitrary types, we can call functions, anything.
     // Even function pointers will work just fine. I'll let you figure that one out.
     let gc = raylib::get_color;
-    let color = gc(404232447 /* 0x181818ff */);
-    if (color.r != 24 /* 0x18 */) return blank;
-    if (color.g != 24 /* 0x18 */) return blank;
-    if (color.b != 24 /* 0x18 */) return blank;
-    if (color.a != 255 /* 0xff */) return blank;
+    let color = gc(0x181818ff);
+    if (color.r != 0x18) return blank;
+    if (color.g != 0x18) return blank;
+    if (color.b != 0x18) return blank;
+    if (color.a != 0xff) return blank;
 
     // For example, it allows us to open windows at compile time.
     raylib::init_window(800, 600, "Hello from the how_to demo!");
-    let c = raylib::get_color(16777215 /* 0x00ffffff */);
+    let c = raylib::get_color(0x00ffffff);
     let yellow = raylib::Color { r: 255, g: 255, a: 255 };
     while (!raylib::window_should_close()) {
         let dt = raylib::get_time();
