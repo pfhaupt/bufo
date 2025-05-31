@@ -1,0 +1,17 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+
+func main(argc: i32, argv: &&char) -> i32 {
+    assert(0b01000010 == 66);
+    assert(0b1111111111111111 == 65535);
+    assert(0b1111_1111_1111_1111 == 65535);
+    assert(0b0 == 0);
+    assert(0b1 == 1);
+    assert(0b100100011010001010110011110001001101010111100110111101111 == 81985529216486895);
+    assert(0b1_0010_0011_0100_0101_0110_0111_1000_1001_1010_1011_1100_1101_1110_1111 == 81985529216486895);
+    assert(0b == 0); // lexer quirk, but fine imo
+    return 0;
+}

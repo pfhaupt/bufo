@@ -168,11 +168,71 @@ func __next(this: &Lexer, peek: bool) -> Token {
     } else if (isNumeric(currChar)) {
         let len: usize = 0;
         let tmp: SubStr = this.content;
-        while (isNumeric(getChar(&tmp, 0))) {
+        let val: usize = 0;
+        let prefixed = false;
+        if (currChar == '0') {
             len = len + 1;
             tmp = newSubStr(tmp.start, 1, tmp.len);
+            currChar = getChar(&tmp, 0);
+            if (currChar == 'x') {
+                len = len + 1;
+                tmp = newSubStr(tmp.start, 1, tmp.len);
+                prefixed = true;
+                while (true) {
+                    let c = getChar(&tmp, 0);
+                    if (isHexDigit(c)) {
+                        val = 16 * val + asHex(c) as usize;
+                    } else if (c == '_') {
+                        // ignored
+                    } else {
+                        break;
+                    }
+                    len = len + 1;
+                    tmp = newSubStr(tmp.start, 1, tmp.len);
+                }
+            } else if (currChar == 'b') {
+                len = len + 1;
+                tmp = newSubStr(tmp.start, 1, tmp.len);
+                prefixed = true;
+                while (true) {
+                    let c = getChar(&tmp, 0);
+                    if (c == '0' || c == '1') {
+                        val = 2 * val;
+                        if (c == '1') val = val + 1;
+                    } else if (c == '_') {
+                        // ignored
+                    } else {
+                        break;
+                    }
+                    len = len + 1;
+                    tmp = newSubStr(tmp.start, 1, tmp.len);
+                }
+            } else if (isAlphabetic(currChar)) {
+                let t: Token = newToken(this.fileID, &newSubStr(&currChar, 0, 1), this.ptr + 1, TOKEN_IDENT);
+                let loc: String = toString(&t.span);
+                fprintf(stderr, "%s: %s: Invalid number prefix `%c`.\n", loc.buffer, ERR_STR, currChar);
+                exit(1);
+            }
         }
-        let word: SubStr = substring(&this.content, 0, len);
+        if (!prefixed) {
+            assert(val == 0);
+            while (true) {
+                let c = getChar(&tmp, 0);
+                if (isNumeric(c)) {
+                    val = 10 * val + (c as usize - 48);
+                } else if (c == '_') {
+                    // ignored
+                } else {
+                    break;
+                }
+                len = len + 1;
+                tmp = newSubStr(tmp.start, 1, tmp.len);
+            }
+        }
+        // shhhhhh, don't question it :^)
+        let _word = newString();
+        pushNumber(&_word, val);
+        let word: SubStr = asSubStr(&_word);
         this.ptr = this.ptr + len;
         this.content = tmp;
         return newToken(this.fileID, &word, this.ptr - len, TOKEN_INT_LITERAL);
