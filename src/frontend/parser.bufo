@@ -522,7 +522,7 @@ func parseFuncDecl(this: &Parser, parent: TLIParent, isExtern: bool) -> &ParsedF
     let tkn: Token = expect(this, TOKEN_KEYWORD);
     if (!isExtern) assert(equals(&tkn.content, &KEYWORD_FUNC));
     let name: Token = expectSoftIdentifier(this);
-    let params: ParamContext = parseParameters(this, blank);
+    let params: ParamContext = parseParameters(this);
     let retType: &ParsedTypeNode = parseReturnType(this);
     if (isExtern) {
         let end: Token = expect(this, TOKEN_SEMI_COLON);
@@ -544,7 +544,7 @@ func parseReturnType(this: &Parser) -> &ParsedTypeNode {
     }
 }
 
-func parseParameters(this: &Parser, parentName: Token) -> ParamContext {
+func parseParameters(this: &Parser) -> ParamContext {
     trace("Parser.parseParameters");
     expect(this, TOKEN_PAREN_OPEN);
     let context: ParamContext = blank;
@@ -553,33 +553,13 @@ func parseParameters(this: &Parser, parentName: Token) -> ParamContext {
             context.isVarArg = true;
             break;
         }
-        let isRef: bool = eat(this, TOKEN_AMPERSAND_SINGLE);
-        let maybeThis: Token = peek(&this.lexer);
-        let isThis: bool = equals(&maybeThis.content, &comptime BUILD_A_KEYWORD("this"));
-        if (isThis) {
-            let dis: Token = expect(this, TOKEN_IDENT);
-            if (eat(this, TOKEN_COLON_SINGLE)) {
-                let t = parseTypeNode(this);
-                addParameter(&context, maybeThis, t);
-            } else {
-                let thisType: &ParsedTypeNode = newParsedTypeNode(maybeThis.span, PARSED_TYPE_IDENT);
-                (*thisType).nameTkn = parentName;
-                if (isRef) {
-                    let ptr: &ParsedTypeNode = newParsedTypeNode(maybeThis.span, PARSED_TYPE_REF);
-                    (*ptr).underlyingID = thisType;
-                    addParameter(&context, maybeThis, ptr);
-                } else {
-                    addParameter(&context, maybeThis, thisType);
-                }
-            }
-        } else {
-            let name: Token = expectSoftIdentifier(this);
-            expect(this, TOKEN_COLON_SINGLE);
-            let typ: &ParsedTypeNode = parseTypeNode(this);
-            addParameter(&context, name, typ);
-        }
-        if (!eat(this, TOKEN_COMMA))
+        let name: Token = expectSoftIdentifier(this);
+        expect(this, TOKEN_COLON_SINGLE);
+        let typ: &ParsedTypeNode = parseTypeNode(this);
+        addParameter(&context, name, typ);
+        if (!eat(this, TOKEN_COMMA)) {
             break;
+        }
     }
     expect(this, TOKEN_PAREN_CLOSE);
     return context;
