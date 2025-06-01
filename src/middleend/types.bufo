@@ -13,107 +13,107 @@ func nextMultipleOf(a: usize, b: usize) -> usize {
     return a + (b - (a % b));
 }
 
-comptime TYPE_INVALID: usize = 0;
-comptime TYPE_UNKNOWN: usize = 1;
-comptime TYPE_U8: usize      = 2;
-comptime TYPE_U16: usize     = 3;
-comptime TYPE_U32: usize     = 4;
-comptime TYPE_U64: usize     = 5;
-comptime TYPE_I8: usize      = 6;
-comptime TYPE_I16: usize     = 7;
-comptime TYPE_I32: usize     = 8;
-comptime TYPE_I64: usize     = 9;
-comptime TYPE_USIZE: usize   = 10;
-comptime TYPE_ANY: usize     = 11;
-comptime TYPE_BOOL: usize    = 12;
-comptime TYPE_NONE: usize    = 13;
-comptime TYPE_CHAR: usize    = 14;
-comptime TYPE_F32: usize     = 15;
-comptime TYPE_F64: usize     = 16;
-comptime TYPE_COUNT: usize   = 17;
+union PrimType {
+    U8,
+    U16,
+    U32,
+    U64,
+    I8,
+    I16,
+    I32,
+    I64,
+    Usize,
+    Any,
+    Bool,
+    None,
+    Char,
+    F32,
+    F64,
+}
 
 let types: TypeArena = blank;
 
-comptime TYPE_KIND_UNKNOWN: usize   = 0;
-comptime TYPE_KIND_PRIMITIVE: usize = 1;
-comptime TYPE_KIND_POINTER: usize   = 2;
-comptime TYPE_KIND_STRUCT: usize    = 3;
-comptime TYPE_KIND_UNION: usize      = 4;
-comptime TYPE_KIND_ARRAY: usize     = 5;
-comptime TYPE_KIND_FUNCTION: usize  = 6;
-comptime TYPE_KIND_MODULE: usize    = 7;
-struct Type {
-    kind: usize;
-    typeIndex: usize;
-    fnParams: TCStateList;
-    arraySize: usize;
+union Type {
+    Unknown,
+    Prim(PrimType),
+    Ptr(&Type),
+    Array(&Type, usize),
+    Func(TypeList, &Type, FuncAttr),
+    Struct(&ParsedStructDecl),
+    Union(&ParsedUnionDecl, usize),
+    Module(&ParsedModule),
 }
 
 func getMangledName(this: &Type) -> String {
-    if (this.kind == TYPE_KIND_PRIMITIVE) {
-        // OPT: Make these Strings comptime
-        if (this.typeIndex == TYPE_U8) return newStringFromStrLit("u8");
-        else if (this.typeIndex == TYPE_U16) return newStringFromStrLit("u16");
-        else if (this.typeIndex == TYPE_U32) return newStringFromStrLit("u32");
-        else if (this.typeIndex == TYPE_U64) return newStringFromStrLit("u64");
-        else if (this.typeIndex == TYPE_I8) return newStringFromStrLit("i8");
-        else if (this.typeIndex == TYPE_I16) return newStringFromStrLit("i16");
-        else if (this.typeIndex == TYPE_I32) return newStringFromStrLit("i32");
-        else if (this.typeIndex == TYPE_I64) return newStringFromStrLit("i64");
-        else if (this.typeIndex == TYPE_USIZE) return newStringFromStrLit("usz");
-        else if (this.typeIndex == TYPE_ANY) return newStringFromStrLit("Any");
-        else if (this.typeIndex == TYPE_BOOL) return newStringFromStrLit("B");
-        else if (this.typeIndex == TYPE_NONE) return newStringFromStrLit("N");
-        else if (this.typeIndex == TYPE_CHAR) return newStringFromStrLit("c");
-        else if (this.typeIndex == TYPE_F32) return newStringFromStrLit("f32");
-        else if (this.typeIndex == TYPE_F64) return newStringFromStrLit("f64");
-        else todo_with_msg("what type is this");
-    } else if (this.kind == TYPE_KIND_POINTER) {
-        let s: String = newStringFromStrLit("P");
-        let _s: String = getMangledName(at(&types, this.typeIndex));
-        pushString(&s, &_s);
-        drop(&_s);
-        return s;
-    } else if (this.kind == TYPE_KIND_STRUCT) {
-        let s: String = newStringFromStrLit("S");
-        let decl: &ParsedStructDecl = at(&structDecls, this.typeIndex);
-        let hash: usize = hash(&decl.name.content, 3);
-        if (hash < 10) pushNumber(&s, 0);
-        if (hash < 100) pushNumber(&s, 0);
-        pushNumber(&s, hash);
-        return s;
-    } else if (this.kind == TYPE_KIND_UNION) {
-        let s = newStringFromStrLit("U");
-        let decl = at(&unionDecls, this.typeIndex);
-        let hash = hash(&decl.name.content, 3);
-        if (hash < 10) pushNumber(&s, 0);
-        if (hash < 100) pushNumber(&s, 0);
-        pushNumber(&s, hash);
-        return s;
-    } else if (this.kind == TYPE_KIND_FUNCTION) {
-        let s: String = newStringFromStrLit("F");
-        let r = getMangledName(at(&types, this.typeIndex));
-        pushString(&s, &r);
-        drop(&r);
-        for (let i: usize = 0; i < this.fnParams.length; i = i + 1) {
-            if (i != this.fnParams.length - 1) pushChar(&s, '.');
-            let p = getMangledName(getType(at(&this.fnParams, i)));
-            pushString(&s, &p);
-            drop(&p);
+    match (this) {
+        &Type::Prim(typ) => {
+            // OPT: Make these Strings comptime
+            match (typ) {
+                PrimType::U8    => {  return newStringFromStrLit("u8"); }
+                PrimType::U16   => {  return newStringFromStrLit("u16"); }
+                PrimType::U32   => {  return newStringFromStrLit("u32"); }
+                PrimType::U64   => {  return newStringFromStrLit("u64"); }
+                PrimType::I8    => {  return newStringFromStrLit("i8"); }
+                PrimType::I16   => {  return newStringFromStrLit("i16"); }
+                PrimType::I32   => {  return newStringFromStrLit("i32"); }
+                PrimType::I64   => {  return newStringFromStrLit("i64"); }
+                PrimType::Usize => {  return newStringFromStrLit("usz"); }
+                PrimType::Any   => {  return newStringFromStrLit("Any"); }
+                PrimType::Bool  => {  return newStringFromStrLit("B"); }
+                PrimType::None  => {  return newStringFromStrLit("N"); }
+                PrimType::Char  => {  return newStringFromStrLit("c"); }
+                PrimType::F32   => {  return newStringFromStrLit("f32"); }
+                PrimType::F64   => {  return newStringFromStrLit("f64"); }
+                _ => { unreachable("Exhaustive handling of primitive types in getMangledName"); }
+            }
         }
-        return s;
-    } else if (this.kind == TYPE_KIND_ARRAY) {
-        let s: String = newStringFromStrLit("A");
-        let r = getMangledName(at(&types, this.typeIndex));
-        pushString(&s, &r);
-        drop(&r);
-        pushNumber(&s, this.arraySize);
-        return s;
-    } else if (this.kind == TYPE_KIND_UNKNOWN) {
-        todo_with_msg("mangled type unknown???");
-    } else {
-        unreachable("Exhaustive handling of types in Type.getMangledName");
+        &Type::Ptr(typ) => {
+            let s: String = newStringFromStrLit("P");
+            let _s: String = getMangledName(typ);
+            pushString(&s, &_s);
+            drop(&_s);
+            return s;
+        }
+        &Type::Struct(decl) => {
+            let s: String = newStringFromStrLit("S");
+            let hash: usize = hash(&decl.name.content, 3);
+            if (hash < 10) pushNumber(&s, 0);
+            if (hash < 100) pushNumber(&s, 0);
+            pushNumber(&s, hash);
+            return s;
+        }
+        &Type::Union(decl, _) => {
+            let s = newStringFromStrLit("U");
+            let hash = hash(&decl.name.content, 3);
+            if (hash < 10) pushNumber(&s, 0);
+            if (hash < 100) pushNumber(&s, 0);
+            pushNumber(&s, hash);
+            return s;
+        }
+        &Type::Func(params, ret, _) => {
+            let s: String = newStringFromStrLit("F");
+            let r = getMangledName(ret);
+            pushString(&s, &r);
+            drop(&r);
+            for (let i: usize = 0; i < params.length; i = i + 1) {
+                if (i != params.length - 1) pushChar(&s, '.');
+                let p = getMangledName(*at(&params, i));
+                pushString(&s, &p);
+                drop(&p);
+            }
+            return s;
+        }
+        &Type::Array(typ, size) => {
+            let s: String = newStringFromStrLit("A");
+            let r = getMangledName(typ);
+            pushString(&s, &r);
+            drop(&r);
+            pushNumber(&s, size);
+            return s;
+        }
+        _ => { }
     }
+    unreachable("Exhaustive handling of types in Type.getMangledName");
 }
 
 func getID(this: &Type) -> usize {
@@ -121,399 +121,487 @@ func getID(this: &Type) -> usize {
 }
 
 func equals(this: &Type, other: &Type) -> bool {
-    if (this.kind == TYPE_KIND_POINTER) {
-        if (other.kind == TYPE_KIND_PRIMITIVE)
-            if (other.typeIndex == TYPE_ANY)
-                return true;
-        if (other.kind != TYPE_KIND_POINTER) return false;
-        return equals(at(&types, this.typeIndex), at(&types, other.typeIndex));
-    }
-    if (this.kind == TYPE_KIND_PRIMITIVE)
-        if (other.kind == TYPE_KIND_POINTER)
-            if (this.typeIndex == TYPE_ANY)
-                return true;
-    if (this.kind != other.kind)
-        return false;
-    if (this.kind == TYPE_KIND_ARRAY) {
-        if (!equals(at(&types, this.typeIndex), at(&types, other.typeIndex))) return false;
-        return this.arraySize == other.arraySize;
-    }
-    if (this.kind == TYPE_KIND_FUNCTION) {
-        if (this.fnParams.length != other.fnParams.length)
-            return false;
-        if (!equals(at(&types, this.typeIndex), at(&types, other.typeIndex)))
-            return false;
-        for (let i: usize = 0; i < this.fnParams.length; i = i + 1) {
-            let p1 = getType(at(&this.fnParams, i));
-            let p2 = getType(at(&other.fnParams, i));
-            if (!equals(p1, p2))
-                return false;
+    // TODO: Tuple expressions
+    match (this) {
+        &Type::Ptr(typ) => {
+            match (other) {
+                &Type::Prim(PrimType::Any) => { return true; }
+                &Type::Ptr(otyp) => { return equals(typ, otyp); }
+                _ => { return false; }
+            }
         }
-        return true;
+        &Type::Prim(PrimType::Any) => {
+            match (other) {
+                &Type::Ptr(_) => { return true; }
+                &Type::Prim(PrimType::Any) => { return true; }
+                _ => { }
+            }
+        }
+        &Type::Prim(t) => {
+            match (other) {
+                &Type::Prim(o) => { return tag(&t) == tag(&o); }
+                _ => { }
+            }
+        }
+        _ => { }
     }
-    if (this.kind == TYPE_KIND_PRIMITIVE
-        || this.kind == TYPE_KIND_ARRAY
-        || this.kind == TYPE_KIND_STRUCT
-        || this.kind == TYPE_KIND_UNION
-        || this.kind == TYPE_KIND_MODULE)
-        return this.typeIndex == other.typeIndex;
-    todo_with_msg("Type.equals");
+    if (tag(this) != tag(other)) return false;
+    match (this) {
+        &Type::Array(typ1, size1) => {
+            match (other) {
+                &Type::Array(typ2, size2) => {
+                    return size1 == size2 && equals(typ1, typ2);
+                }
+                _ => { return false; }
+            }
+        }
+        _ => { }
+    }
+    match (this) {
+        &Type::Func(params, ret, attr) => {
+            match (other) {
+                &Type::Func(oparams, oret, oattr) => {
+                    if (attr.isVariadic != oattr.isVariadic) return false;
+                    if (attr.isNoreturn != oattr.isNoreturn) return false;
+                    if (params.length != oparams.length) return false;
+                    if (!equals(ret, oret)) return false;
+                    for (let i: usize = 0; i < params.length; i = i + 1) {
+                        let p1 = *at(&params, i);
+                        let p2 = *at(&oparams, i);
+                        if (!equals(p1, p2)) return false;
+                    }
+                    return true;
+                }
+                _ => { return false; }
+            }
+        }
+        _ => { }
+    }
+    match (this) {
+        &Type::Struct(decl) => {
+            match (other) {
+                &Type::Struct(odecl) => { return decl == odecl; }
+                _ => { return false; }
+            }
+        }
+        _ => { }
+    }
+    match (this) {
+        &Type::Union(decl, _) => {
+            match (other) {
+                &Type::Union(odecl, _) => { return decl == odecl; }
+                _ => { return false; }
+            }
+        }
+        _ => { }
+    }
+    match (this) {
+        &Type::Module(decl) => {
+            match (other) {
+                &Type::Module(odecl) => { return decl == odecl; }
+                _ => { return false; }
+            }
+        }
+        _ => { }
+    }
+    fprintf(stderr, "%s\n", toString(this).buffer);
+    fprintf(stderr, "%s\n", toString(other).buffer);
+    unreachable("&Type.equals() should've caught all combinations by this point!");
 }
 
 func isUnknown(this: &Type) -> bool {
-    return this.kind == TYPE_KIND_UNKNOWN;
+    return tag(this) == comptime tag(&Type::Unknown);
 }
 func isFloat(this: &Type) -> bool {
-    if (this.kind != TYPE_KIND_PRIMITIVE) return false;
-    return this.typeIndex == TYPE_F32
-        || this.typeIndex == TYPE_F64;
+    match (this) {
+        &Type::Prim(PrimType::F32) => { return true; }
+        &Type::Prim(PrimType::F64) => { return true; }
+        _ => { }
+    }
+    return false;
 }
 func isInteger(this: &Type) -> bool {
-    if (this.kind != TYPE_KIND_PRIMITIVE) return false;
-    if (isSignedInteger(this)) return true;
-    return isUnsignedInteger(this);
+    return isSignedInteger(this) || isUnsignedInteger(this);
 }
 func isSignedInteger(this: &Type) -> bool {
-    return this.typeIndex == TYPE_I8
-        || this.typeIndex == TYPE_I16
-        || this.typeIndex == TYPE_I32
-        || this.typeIndex == TYPE_I64;
+    match (this) {
+        &Type::Prim(PrimType::I8)  => { return true; }
+        &Type::Prim(PrimType::I16) => { return true; }
+        &Type::Prim(PrimType::I32) => { return true; }
+        &Type::Prim(PrimType::I64) => { return true; }
+        _ => { }
+    }
+    return false;
 }
 func isUnsignedInteger(this: &Type) -> bool {
-    return this.typeIndex == TYPE_U8
-        || this.typeIndex == TYPE_U16
-        || this.typeIndex == TYPE_U32
-        || this.typeIndex == TYPE_U64
-        || this.typeIndex == TYPE_USIZE;
+    match (this) {
+        &Type::Prim(PrimType::U8)  => { return true; }
+        &Type::Prim(PrimType::U16) => { return true; }
+        &Type::Prim(PrimType::U32) => { return true; }
+        &Type::Prim(PrimType::U64) => { return true; }
+        &Type::Prim(PrimType::Usize) => { return true; }
+        _ => { }
+    }
+    return false;
 }
 func isChar(this: &Type) -> bool {
-    if (this.kind != TYPE_KIND_PRIMITIVE) return false;
-    return this.typeIndex == TYPE_CHAR;
+    match (this) {
+        &Type::Prim(PrimType::Char) => { return true; }
+        _ => { }
+    }
+    return false;
 }
 func isBoolean(this: &Type) -> bool {
-    if (this.kind != TYPE_KIND_PRIMITIVE) return false;
-    return this.typeIndex == TYPE_BOOL;
+    match (this) {
+        &Type::Prim(PrimType::Bool) => { return true; }
+        _ => { }
+    }
+    return false;
 }
 func isNone(this: &Type) -> bool {
-    if (this.kind != TYPE_KIND_PRIMITIVE) return false;
-    return this.typeIndex == TYPE_NONE;
+    match (this) {
+        &Type::Prim(PrimType::None) => { return true; }
+        _ => { }
+    }
+    return false;
 }
 func isAny(this: &Type) -> bool {
-    if (this.kind != TYPE_KIND_PRIMITIVE) return false;
-    return this.typeIndex == TYPE_ANY;
+    match (this) {
+        &Type::Prim(PrimType::Any) => { return true; }
+        _ => { }
+    }
+    return false;
 }
 func isPrimitive(this: &Type) -> bool {
-    return this.kind == TYPE_KIND_PRIMITIVE;
+    return tag(this) == comptime tag(&Type::Prim);
 }
 func isFunction(this: &Type) -> bool {
-    return this.kind == TYPE_KIND_FUNCTION;
+    return tag(this) == comptime tag(&Type::Func);
 }
-comptime FUNC_TYPE_VARIADIC: usize = pow2(0);
-comptime FUNC_TYPE_NORETURN: usize = pow2(1);
+struct FuncAttr {
+    isVariadic: bool;
+    isNoreturn: bool;
+}
 func isVariadic(this: &Type) -> bool {
-    if (!isFunction(this)) return false;
-    return (this.arraySize & FUNC_TYPE_VARIADIC) != 0;
+    match (this) {
+        &Type::Func(_, _, attr) => { return attr.isVariadic; }
+        _ => { }
+    }
+    return false;
 }
 func isNoreturn(this: &Type) -> bool {
-    if (!isFunction(this)) return false;
-    return (this.arraySize & FUNC_TYPE_NORETURN) != 0;
+    match (this) {
+        &Type::Func(_, _, attr) => { return attr.isNoreturn; }
+        _ => { }
+    }
+    return false;
 }
 func isPointer(this: &Type) -> bool {
-    if (this.kind == TYPE_KIND_POINTER) return true;
-    if (this.kind == TYPE_KIND_PRIMITIVE)
-        return this.typeIndex == TYPE_ANY;
+    match (this) {
+        &Type::Ptr(_) => { return true; }
+        &Type::Prim(PrimType::Any) => { return true; }
+        _ => { }
+    }
     return false;
 }
 func isStructPointer(this: &Type) -> bool {
     if (!isPointer(this)) return false;
     return isStruct(getUnderlyingType(this, false));
 }
-func isPointerTo(this: &Type, typ: usize) -> bool {
-    if (!isPointer(this)) return false;
-    return this.typeIndex == typ;
+func isPointerTo(this: &Type, typ: &Type) -> bool {
+    match (this) {
+        &Type::Ptr(to) => { return equals(to, typ); }
+        _ => { }
+    }
+    return false;
 }
 func isModule(this: &Type) -> bool {
-    return this.kind == TYPE_KIND_MODULE;
+    return tag(this) == comptime tag(&Type::Module);
 }
 func isStruct(this: &Type) -> bool {
-    return this.kind == TYPE_KIND_STRUCT;
+    return tag(this) == comptime tag(&Type::Struct);
 }
 func isUnion(this: &Type) -> bool {
-    return this.kind == TYPE_KIND_UNION;
+    return tag(this) == comptime tag(&Type::Union);
 }
 func isArray(this: &Type) -> bool {
-    return this.kind == TYPE_KIND_ARRAY;
+    return tag(this) == comptime tag(&Type::Array);
 }
 func isStructArray(this: &Type) -> bool {
     if (!isArray(this)) return false;
     return isStruct(getUnderlyingType(this, false));
 }
 func getUnderlyingType(this: &Type, deep: bool) -> &Type {
-    let underlying: &Type = this;
-    if (this.kind == TYPE_KIND_PRIMITIVE)
-        assert(this.typeIndex != TYPE_ANY, "Type.getUnderlyingType() is not defined for Any");
-    assert(isPointer(this) || isArray(this), "type.getUnderlyingType() called on non-pointer non-array");
-    while (isPointer(underlying) || isArray(underlying)) {
-        underlying = at(&types, underlying.typeIndex);
+    let underlying = this;
+    while (isPointer(this) || isArray(this)) {
+        match (underlying) {
+            &Type::Ptr(under) => { underlying = under; }
+            &Type::Array(under, _) => { underlying = under; }
+            _ => { break; }
+        }
         if (!deep) break;
     }
     return underlying;
 }
+// FIXME: Make toString() accept a buffer, so we don't allocate 20 bytes on the heap 1 million times
 func toString(this: &Type) -> String {
     trace("Type.toString");
-    if (this.kind == TYPE_KIND_PRIMITIVE) {
-        // OPT: Make these Strings comptime
-        if (this.typeIndex == TYPE_U8) return newStringFromStrLit("u8");
-        else if (this.typeIndex == TYPE_U16) return newStringFromStrLit("u16");
-        else if (this.typeIndex == TYPE_U32) return newStringFromStrLit("u32");
-        else if (this.typeIndex == TYPE_U64) return newStringFromStrLit("u64");
-        else if (this.typeIndex == TYPE_I8) return newStringFromStrLit("i8");
-        else if (this.typeIndex == TYPE_I16) return newStringFromStrLit("i16");
-        else if (this.typeIndex == TYPE_I32) return newStringFromStrLit("i32");
-        else if (this.typeIndex == TYPE_I64) return newStringFromStrLit("i64");
-        else if (this.typeIndex == TYPE_USIZE) return newStringFromStrLit("usize");
-        else if (this.typeIndex == TYPE_ANY) return newStringFromStrLit("Any");
-        else if (this.typeIndex == TYPE_BOOL) return newStringFromStrLit("bool");
-        else if (this.typeIndex == TYPE_NONE) return newStringFromStrLit("none");
-        else if (this.typeIndex == TYPE_CHAR) return newStringFromStrLit("char");
-        else if (this.typeIndex == TYPE_F32) return newStringFromStrLit("f32");
-        else if (this.typeIndex == TYPE_F64) return newStringFromStrLit("f64");
-        else todo_with_msg("what type is this");
-    } else if (this.kind == TYPE_KIND_POINTER) {
-        let s: String = newStringFromStrLit("&");
-        let _s: String = toString(at(&types, this.typeIndex));
-        pushString(&s, &_s);
-        drop(&_s);
-        return s;
-    } else if (this.kind == TYPE_KIND_STRUCT) {
-        let decl: &ParsedStructDecl = at(&structDecls, this.typeIndex);
-        return getFullName(decl);
-    } else if (this.kind == TYPE_KIND_UNION) {
-        let decl: &ParsedUnionDecl = at(&unionDecls, this.typeIndex);
-        return getFullName(decl);
-    } else if (this.kind == TYPE_KIND_FUNCTION) {
-        let s: String = newStringFromStrLit("func (");
-        for (let i: usize = 0; i < this.fnParams.length; i = i + 1) {
-            let param = at(&this.fnParams, i);
-            let p: String = blank;
-            if (isType(param)) {
-                p = toString(getType(param));
-            } else {
-                p = newStringFromStrLit("<unknown>");
-            }
-            pushString(&s, &p);
-            drop(&p);
-            if (i != this.fnParams.length - 1) {
-                pushChar(&s, ',');
-                pushChar(&s, ' ');
+    match (this) {
+        &Type::Unknown => { return newStringFromStrLit("<unknown>"); }
+        &Type::Prim(typ) => {
+            // OPT: Make these Strings comptime
+            match (typ) {
+                PrimType::U8    => {  return newStringFromStrLit("u8"); }
+                PrimType::U16   => {  return newStringFromStrLit("u16"); }
+                PrimType::U32   => {  return newStringFromStrLit("u32"); }
+                PrimType::U64   => {  return newStringFromStrLit("u64"); }
+                PrimType::I8    => {  return newStringFromStrLit("i8"); }
+                PrimType::I16   => {  return newStringFromStrLit("i16"); }
+                PrimType::I32   => {  return newStringFromStrLit("i32"); }
+                PrimType::I64   => {  return newStringFromStrLit("i64"); }
+                PrimType::Usize => {  return newStringFromStrLit("usize"); }
+                PrimType::Any   => {  return newStringFromStrLit("Any"); }
+                PrimType::Bool  => {  return newStringFromStrLit("bool"); }
+                PrimType::None  => {  return newStringFromStrLit("none"); }
+                PrimType::Char  => {  return newStringFromStrLit("char"); }
+                PrimType::F32   => {  return newStringFromStrLit("f32"); }
+                PrimType::F64   => {  return newStringFromStrLit("f64"); }
+                _ => { unreachable("Exhaustive handling of primitive types in toString"); }
             }
         }
-        if (isVariadic(this)) {
-            pushStr(&s, "...");
+        &Type::Ptr(sub) => {
+            let s: String = newStringFromStrLit("&");
+            let _s: String = toString(sub);
+            pushString(&s, &_s);
+            drop(&_s);
+            return s;
         }
-        pushChar(&s, ')');
-        let rt = at(&types, this.typeIndex);
-        if (!isNone(rt)) {
-            pushStr(&s, " -> ");
-            let r = toString(rt);
-            pushString(&s, &r);
-            drop(&r);
+        &Type::Struct(decl) => { return getFullName(decl); }
+        &Type::Union(decl, _) => { return getFullName(decl); }
+        &Type::Module(decl) => { return getFullName(decl); }
+        &Type::Func(params, rt, attr) => {
+            let s: String = newStringFromStrLit("func (");
+            for (let i: usize = 0; i < params.length; i = i + 1) {
+                let param = at(&params, i);
+                let p: String = toString(*at(&params, i));
+                pushString(&s, &p);
+                drop(&p);
+                if (i != params.length - 1) {
+                    pushChar(&s, ',');
+                    pushChar(&s, ' ');
+                }
+            }
+            if (attr.isVariadic) {
+                pushStr(&s, "...");
+            }
+            pushChar(&s, ')');
+            if (!isNone(rt)) {
+                pushStr(&s, " -> ");
+                let r = toString(rt);
+                pushString(&s, &r);
+                drop(&r);
+            }
+            return s;
         }
-        return s;
-    } else if (this.kind == TYPE_KIND_ARRAY) {
-        let s: String = newStringFromStrLit("[");
-        let _s: String = toString(at(&types, this.typeIndex));
-        pushString(&s, &_s);
-        drop(&_s);
-        pushChar(&s, ';');
-        pushChar(&s, ' ');
-        pushNumber(&s, this.arraySize);
-        pushChar(&s, ']');
-        return s;
-    } else if (this.kind == TYPE_KIND_UNKNOWN) {
-        return newStringFromStrLit("<unknown>");
-    } else if (this.kind == TYPE_KIND_MODULE) {
-        let m = at(&modules, this.typeIndex);
-        let s = newStringFromStrLit("module ");
-        let _s = getFullName(m);
-        pushString(&s, &_s);
-        drop(&_s);
-        return s;
-    } else {
-        unreachable("Exhaustive handling of types in Type.toString");
+        &Type::Array(sub, size) => {
+            let s: String = newStringFromStrLit("[");
+            let _s: String = toString(sub);
+            pushString(&s, &_s);
+            drop(&_s);
+            pushChar(&s, ';');
+            pushChar(&s, ' ');
+            pushNumber(&s, size);
+            pushChar(&s, ']');
+            return s;
+        }
+        _ => { }
     }
+    unreachable("Exhaustive handling of types in Type.toString");
 }
 func getAlignment(this: &Type) -> usize {
-    if (this.kind == TYPE_KIND_POINTER) {
-        return 8;
-    } else if (this.kind == TYPE_KIND_FUNCTION) {
-        return 8;
-    } else if (this.kind == TYPE_KIND_PRIMITIVE) {
-        if (this.typeIndex == TYPE_UNKNOWN) unreachable("Type.getAlignment(TYPE_UNKNOWN) called");
-        else if (this.typeIndex == TYPE_NONE)
-            return 0;
-        else if (this.typeIndex == TYPE_I8 || this.typeIndex == TYPE_U8 || this.typeIndex == TYPE_CHAR)
-            return 1;
-        else if (this.typeIndex == TYPE_BOOL)
-            return 1;
-        else if (this.typeIndex == TYPE_I16 || this.typeIndex == TYPE_U16)
-            return 2;
-        else if (this.typeIndex == TYPE_I32 || this.typeIndex == TYPE_U32 || this.typeIndex == TYPE_F32)
-            return 4;
-        else if (this.typeIndex == TYPE_I64 || this.typeIndex == TYPE_U64 || this.typeIndex == TYPE_F64)
-            return 8;
-        else if (this.typeIndex == TYPE_USIZE || this.typeIndex == TYPE_ANY)
-            return 8;
-        else {
-            unreachable("Exhaustive handling of primitive types in Type.getAlignment");
+    match (this) {
+        &Type::Ptr(_) => { return 8; }
+        &Type::Func(_,_,_) => { return 8; }
+        &Type::Prim(typ) => {
+            match (typ) {
+                // TODO: Or Pattern
+                PrimType::None => { return 0; }
+                PrimType::I8 => { return 1; }
+                PrimType::U8 => { return 1; }
+                PrimType::Char => { return 1; }
+                PrimType::Bool => { return 1; }
+                PrimType::I16 => { return 2; }
+                PrimType::U16 => { return 2; }
+                PrimType::I32 => { return 4; }
+                PrimType::U32 => { return 4; }
+                PrimType::F32 => { return 4; }
+                PrimType::I64 => { return 8; }
+                PrimType::U64 => { return 8; }
+                PrimType::F64 => { return 8; }
+                PrimType::Usize => { return 8; }
+                PrimType::Any => { return 8; }
+                _ => { unreachable("Exhaustive handling of primitive types in Type.getAlignment"); }
+            }
         }
-    } else if (this.kind == TYPE_KIND_ARRAY) {
-        let t: &Type = at(&types, this.typeIndex);
-        return getAlignment(t);
-    } else if (this.kind == TYPE_KIND_STRUCT) {
-        let info: &ParsedStructDecl = at(&structDecls, this.typeIndex);
-        assert(isSuccess(&info.typeState), "Can only get alignment of valid structs");
-        let maxAlign: usize = 1;
-        for (let i: usize = 0; i < info.context.fieldLength; i = i + 1) {
-            let td: &ParsedTypeNode = getFieldTypeAtIndex(&info.context, i);
-            assert(isSuccess(&td.typeState), "Expected valid field type");
-            let tt: &Type = getType(&td.typeState);
-            let _a: usize = getAlignment(tt);
-            if (_a > maxAlign) maxAlign = _a;
-        }
-        return maxAlign;
-    } else if (this.kind == TYPE_KIND_UNION) {
-        let info: &ParsedUnionDecl = at(&unionDecls, this.typeIndex);
-        assert(isSuccess(&info.typeState), "Can only get alignment of valid unions");
-        let maxAlign: usize = 1;
-        for (let i: usize = 0; i < info.variants.length; i = i + 1) {
-            let variant = *at(&info.variants, i);
-            for (let j: usize = 0; j < variant.fields.length; j = j + 1) {
-                let field = *at(&variant.fields, j);
-                assert(isSuccess(&field.typeState), "Expected valid field type");
-                let tt: &Type = getType(&field.typeState);
+        &Type::Array(sub, _) => { return getAlignment(sub); }
+        &Type::Struct(decl) => {
+            assert(isSuccess(&decl.typeState), "Can only get alignment of valid structs");
+            let maxAlign: usize = 1;
+            for (let i: usize = 0; i < decl.context.fieldLength; i = i + 1) {
+                let td: &ParsedTypeNode = getFieldTypeAtIndex(&decl.context, i);
+                assert(isSuccess(&td.typeState), "Expected valid field type");
+                let tt: &Type = getType(&td.typeState);
                 let _a: usize = getAlignment(tt);
                 if (_a > maxAlign) maxAlign = _a;
             }
+            return maxAlign;
         }
-        return maxAlign;
-    } else {
-        unreachable("Exhaustive handling of type kinds in Type.getAlignment");
+        &Type::Union(decl, _) => {
+            assert(isSuccess(&decl.typeState), "Can only get alignment of valid unions");
+            let maxAlign: usize = 1;
+            for (let i: usize = 0; i < decl.variants.length; i = i + 1) {
+                let variant = *at(&decl.variants, i);
+                for (let j: usize = 0; j < variant.fields.length; j = j + 1) {
+                    let field = *at(&variant.fields, j);
+                    assert(isSuccess(&field.typeState), "Expected valid field type");
+                    let tt: &Type = getType(&field.typeState);
+                    let _a: usize = getAlignment(tt);
+                    if (_a > maxAlign) maxAlign = _a;
+                }
+            }
+            return maxAlign;
+        }
+        _ => { }
     }
+    unreachable("Exhaustive handling of type kinds in Type.getAlignment");
 }
 func getSize(this: &Type) -> usize {
-    if (this.kind == TYPE_KIND_POINTER) {
-        return 8;
-    } else if (this.kind == TYPE_KIND_FUNCTION) {
-        return 8;
-    } else if (this.kind == TYPE_KIND_PRIMITIVE) {
-        if (this.typeIndex == TYPE_UNKNOWN) unreachable("Type.getSize(TYPE_UNKNOWN) called");
-        else if (this.typeIndex == TYPE_NONE)
-            return 0;
-        else if (this.typeIndex == TYPE_I8 || this.typeIndex == TYPE_U8 || this.typeIndex == TYPE_CHAR)
-            return 1;
-        else if (this.typeIndex == TYPE_BOOL)
-            return 1;
-        else if (this.typeIndex == TYPE_I16 || this.typeIndex == TYPE_U16)
-            return 2;
-        else if (this.typeIndex == TYPE_I32 || this.typeIndex == TYPE_U32 || this.typeIndex == TYPE_F32)
-            return 4;
-        else if (this.typeIndex == TYPE_I64 || this.typeIndex == TYPE_U64 || this.typeIndex == TYPE_F64)
-            return 8;
-        else if (this.typeIndex == TYPE_USIZE || this.typeIndex == TYPE_ANY)
-            return 8;
-        else {
-            unreachable("Exhaustive handling of primitive types in Type.getSize");
+    match (this) {
+        &Type::Ptr(_) => { return 8; }
+        &Type::Func(_,_,_) => { return 8; }
+        &Type::Prim(typ) => {
+            match (typ) {
+                // TODO: Or Pattern
+                PrimType::None => { return 0; }
+                PrimType::I8 => { return 1; }
+                PrimType::U8 => { return 1; }
+                PrimType::Char => { return 1; }
+                PrimType::Bool => { return 1; }
+                PrimType::I16 => { return 2; }
+                PrimType::U16 => { return 2; }
+                PrimType::I32 => { return 4; }
+                PrimType::U32 => { return 4; }
+                PrimType::F32 => { return 4; }
+                PrimType::I64 => { return 8; }
+                PrimType::U64 => { return 8; }
+                PrimType::F64 => { return 8; }
+                PrimType::Usize => { return 8; }
+                PrimType::Any => { return 8; }
+                _ => { unreachable("Exhaustive handling of primitive types in Type.getSize"); }
+            }
         }
-    } else if (this.kind == TYPE_KIND_MODULE) {
-        return 0;
-    } else if (this.kind == TYPE_KIND_ARRAY) {
-        let t: &Type = at(&types, this.typeIndex);
-        return getSize(t) * this.arraySize;
-    } else if (this.kind == TYPE_KIND_STRUCT) {
-        let info: &ParsedStructDecl = at(&structDecls, this.typeIndex);
-        assert(isSuccess(&info.typeState), "Can only get size of valid structs");
-        let size: usize = 0;
-        let maxAlign: usize = 1;
-        for (let i: usize = 0; i < info.context.fieldLength; i = i + 1) {
-            let td: &ParsedTypeNode = getFieldTypeAtIndex(&info.context, i);
-            assert(isSuccess(&td.typeState), "Expected valid field type");
-            let tt: &Type = getType(&td.typeState);
-            let _a: usize = getAlignment(tt);
-            size = size + getSize(tt);
-            size = nextMultipleOf(size, _a);
-            if (_a > maxAlign) maxAlign = _a;
-        }
-        size = nextMultipleOf(size, maxAlign);
-        return size;
-    } else if (this.kind == TYPE_KIND_UNION) {
-        let info: &ParsedUnionDecl = at(&unionDecls, this.typeIndex);
-        assert(isSuccess(&info.typeState), "Can only get size of valid unions");
-        assert(info.variants.length < 256, "getSize expects the Union tag to fit into a single byte");
-        let maxSize: usize = 0;
-        let maxAlign: usize = 1;
-        for (let i: usize = 0; i < info.variants.length; i = i + 1) {
-            let variant = *at(&info.variants, i);
-            let size: usize = 1; // union tag
-            let align: usize = 1;
-            for (let j: usize = 0; j < variant.fields.length; j = j + 1) {
-                let field = *at(&variant.fields, j);
-                assert(isSuccess(&field.typeState), "Expected valid field type");
-                let tt: &Type = getType(&field.typeState);
+        &Type::Module(_) => { return 0; }
+        &Type::Array(sub, size) => { return getSize(sub) * size; }
+        &Type::Struct(decl) => {
+            assert(isSuccess(&decl.typeState), "Can only get size of valid structs");
+            let size: usize = 0;
+            let maxAlign: usize = 1;
+            for (let i: usize = 0; i < decl.context.fieldLength; i = i + 1) {
+                let td: &ParsedTypeNode = getFieldTypeAtIndex(&decl.context, i);
+                assert(isSuccess(&td.typeState), "Expected valid field type");
+                let tt: &Type = getType(&td.typeState);
                 let _a: usize = getAlignment(tt);
                 size = size + getSize(tt);
                 size = nextMultipleOf(size, _a);
-                if (_a > align) align = _a;
+                if (_a > maxAlign) maxAlign = _a;
             }
-            if (size > maxSize) maxSize = size;
-            if (align > maxAlign) maxAlign = align;
+            size = nextMultipleOf(size, maxAlign);
+            return size;
         }
-        maxSize = nextMultipleOf(maxSize, maxAlign);
-        return maxSize;
-    } else {
-        unreachable("Exhaustive handling of type kinds in Type.getSize");
+        &Type::Union(decl, _) => {
+            assert(isSuccess(&decl.typeState), "Can only get size of valid unions");
+            assert(decl.variants.length < 256, "getSize expects the Union tag to fit into a single byte");
+            let maxSize: usize = 0;
+            let maxAlign: usize = 1;
+            for (let i: usize = 0; i < decl.variants.length; i = i + 1) {
+                let variant = *at(&decl.variants, i);
+                let size: usize = 1; // union tag
+                let align: usize = 1;
+                for (let j: usize = 0; j < variant.fields.length; j = j + 1) {
+                    let field = *at(&variant.fields, j);
+                    assert(isSuccess(&field.typeState), "Expected valid field type");
+                    let tt: &Type = getType(&field.typeState);
+                    let _a: usize = getAlignment(tt);
+                    size = size + getSize(tt);
+                    size = nextMultipleOf(size, _a);
+                    if (_a > align) align = _a;
+                }
+                if (size > maxSize) maxSize = size;
+                if (align > maxAlign) maxAlign = align;
+            }
+            maxSize = nextMultipleOf(maxSize, maxAlign);
+            return maxSize;
+        }
+        _ => { }
     }
+    unreachable("Exhaustive handling of type kinds in Type.getSize");
 }
-func getParam(fnType: &Type, id: usize) -> &TCState {
-    assert(isFunction(fnType), "getParam() called on non-function type");
-    assert(id < fnType.fnParams.length, "Out of bounds access in getParam()");
-    return at(&fnType.fnParams, id);
+func getParam(fnType: &Type, id: usize) -> &Type {
+    match (fnType) {
+        &Type::Func(params, _, _) => { return *at(&params, id); }
+        _ => { }
+    }
+    unreachable("getParam() called on non-function type");
+}
+func getReturnType(fnType: &Type) -> &Type {
+    match (fnType) {
+        &Type::Func(_, ret, _) => { return ret; }
+        _ => { }
+    }
+    unreachable("getReturnType() called on non-function type");
 }
 func getMaxFloatValue(this: &Type) -> f64 {
-    assert(isFloat(this), "Type.getMaxFloatValue() called on non-Float");
-    if (this.typeIndex == TYPE_F32) {
-        let VAL: i32 = 2139095039;
-        return *(&VAL as &f32) as f64;
-    } else {
-        let VAL: i64 = 9218868437227405311;
-        return *(&VAL as &f64);
+    match (this) {
+        &Type::Prim(PrimType::F32) => {
+            let VAL: i32 = 2139095039;
+            return *(&VAL as &f32) as f64;
+        }
+        &Type::Prim(PrimType::F64) => {
+            let VAL: i64 = 9218868437227405311;
+            return *(&VAL as &f64);
+        }
+        _ => { }
     }
+    unreachable("Type.getMaxFloatValue() called on non-Float");
 }
-func intoPointer(this: &Type) -> usize {
-    return getID(newType(TYPE_KIND_POINTER, getID(this)));
+func intoPointer(this: &Type) -> &Type {
+    return wrap(Type::Ptr(this));
 }
 
 func copy(this: &Type) -> &Type {
-    let new = newType(this.kind, this.typeIndex);
-    *new = *this;
-    return new;
+    return wrap(*this);
 }
 
-func newType(kind: usize, type: &Type) -> &Type {
-    return newType(kind, getID(type));
-}
-func newType(kind: usize, id: usize) -> &Type {
-    if (kind == TYPE_KIND_PRIMITIVE) {
-        assert(id < TYPE_COUNT, "newType() attempted to use general purpose types");
-        let t: &Type = at(&types, id);
-        (*t).kind = kind;
-        (*t).typeIndex = id;
-        return t;
-    }
-    push(&types, Type {
-        kind: kind,
-        typeIndex: id,
-    });
+func wrap(t: Type) -> &Type {
+    push(&types, t);
     return last(&types);
 }
+
+// func newType(kind: usize, type: &Type) -> &Type {
+//     return newType(kind, getID(type));
+// }
+// func newType(kind: usize, id: usize) -> &Type {
+//     if (kind == TYPE_KIND_PRIMITIVE) {
+//         assert(id < TYPE_COUNT, "newType() attempted to use general purpose types");
+//         let t: &Type = at(&types, id);
+//         (*t).kind = kind;
+//         (*t).typeIndex = id;
+//         return t;
+//     }
+//     push(&types, Type {
+//         kind: kind,
+//         typeIndex: id,
+//     });
+//     return last(&types);
+// }
 

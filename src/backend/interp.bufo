@@ -290,7 +290,11 @@ func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
     if (isExtern(f)) {
         if (!isNull(f.dllHandle)) {
             let fun = compileFunctionCall(this, irFunc, calledFunc, instr, f.dllHandle.handle.ptr, regs);
-            let retType = at(&types, getType(&f.typeState).typeIndex);
+            let retType: &Type = null;
+            match (getType(&f.typeState)) {
+                &Type::Func(_, _ret, _) => { retType = _ret; }
+                _ => { unreachable("IRGen.evaluateInstrCall: Expected function type"); }
+            }
             let val = fun.run();
             let size: usize = getSize(dstReg.typ);
             let dst: InterpReg = InterpReg {
@@ -1212,22 +1216,22 @@ func evaluateInsertValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
     };
     let dstStart: &u8 = getRegStackPointer(this, &dst);
     let t: &Type = dstReg.typ;
-    if (isArray(t)) {
-        let ut = getUnderlyingType(t, false);
-        let valReg: InterpReg = asInterp(at(regs, instr.op1.i), "Interp InsertValue Array");
-        let size = getSize(ut);
-        let offset = instr.src.i * size;
-        memcpy(dstStart + offset, getRegStackPointer(this, &valReg), size);
-    } else if (isStruct(t)) {
-        let s: &ParsedStructDecl = at(&structDecls, t.typeIndex);
-        let offset: usize = 0;
-        let fieldSize: usize = 0;
-        getFieldOffsetAndSize(s, instr.src.i, &offset, &fieldSize);
-        let valReg: InterpReg = asInterp(at(regs, instr.op1.i), "Interp InsertValue Struct");
-        assert(valReg.size == fieldSize, "field size mismatch in Interp InsertValue");
-        memcpy(dstStart + offset, getRegStackPointer(this, &valReg), fieldSize);
-    } else {
-        unreachable("Interp InsertValue expected Array or Struct");
+    match (t) {
+        &Type::Array(under, _size) => {
+            let valReg: InterpReg = asInterp(at(regs, instr.op1.i), "Interp InsertValue Array");
+            let size = getSize(under);
+            let offset = instr.src.i * size;
+            memcpy(dstStart + offset, getRegStackPointer(this, &valReg), size);
+        }
+        &Type::Struct(decl) => {
+            let offset: usize = 0;
+            let fieldSize: usize = 0;
+            getFieldOffsetAndSize(decl, instr.src.i, &offset, &fieldSize);
+            let valReg: InterpReg = asInterp(at(regs, instr.op1.i), "Interp InsertValue Struct");
+            assert(valReg.size == fieldSize, "field size mismatch in Interp InsertValue");
+            memcpy(dstStart + offset, getRegStackPointer(this, &valReg), fieldSize);
+        }
+        _ => { unreachable("Interp InsertValue expected Array or Struct"); }
     }
     return dst;
 }
@@ -1398,8 +1402,11 @@ func evaluateGetFieldPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
     let t: &Type = getRegister(irFunc, instr.src).typ;
     assert(isStructPointer(t), "IRInterp: GetFieldPtr got non-struct pointer");
     let u: &Type = getUnderlyingType(t, false);
-    assert(isStruct(u));
-    let decl: &ParsedStructDecl = at(&structDecls, u.typeIndex);
+    let decl: &ParsedStructDecl = null;
+    match (u) {
+        &Type::Struct(_decl) => { decl = _decl; }
+        _ => { unreachable("Expected Struct in evaluateGetFieldPtr"); }
+    }
     let offset: usize = 0;
     let size: usize = 0;
     getFieldOffsetAndSize(decl, instr.op1.i, &offset, &size);
@@ -1702,8 +1709,15 @@ func push(val: u64) -> ByteBuffer {
 
 @os(WINDOWS) func compileFunctionCall(this: &IRInterp, currFunc: &IRFunc, calledFunc: &IRFunc, instr: &IRInstr, fn: usize, regs: &RegValueList) -> Function {
     let f = at(&funcDecls, calledFunc.originalID);
-    let fnType = getType(&f.typeState);
-    let retType = at(&types, fnType.typeIndex);
+    let isVariadic = false;
+    let retType: &Type = null;
+    match (getType(&f.typeState)) {
+        &Type::Func(_, _ret, attr) => {
+            isVariadic = attr.isVariadic;
+            retType = _ret;
+        }
+        _ => { unreachable("IRGen.evaluateInstrCall: Expected function type"); }
+    }
     let buf: ByteBuffer = blank;
     // push(&buf, '\xf1');
     extend(&buf, &push(RBP));
@@ -1717,7 +1731,7 @@ func push(val: u64) -> ByteBuffer {
         let arg: InterpReg = asInterp(reg, "call arg");
         let origReg = getRegister(currFunc, *index);
         let argType = origReg.typ;
-        if (isVariadic(fnType)) {
+        if (isVariadic) {
             if (isFloat(argType)) {
                 if (getSize(argType) == 4) {
                     extend(&buf, &mov(ARGS[i][0], *(getRegStackPointer(this, &arg) as &u32)));

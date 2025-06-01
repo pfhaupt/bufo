@@ -59,9 +59,6 @@ func main(argc: i32, argv: &&char) -> i32 {
             kind: PARSED_TYPE_BUILTIN,
         });
     }
-    for (let i: usize = 0; i < TYPE_COUNT; i = i + 1) {
-        push(&types, blank);
-    }
     flags.file = addStringFlag(&flagParser, "The input file", FLAG_MODE_MANDATORY);
     flags.out = addStringFlag(&flagParser, "o", "output", "The output file", FLAG_MODE_SINGLE | FLAG_MODE_MANDATORY);
     flags.verbose = addBoolFlag(&flagParser, "v", "verbose", "Enable verbose output");

@@ -4,6 +4,7 @@ import "string.bufo";
 import "substr.bufo";
 import "../frontend/nodes.bufo";
 import "../frontend/token.bufo";
+import "../middleend/types.bufo";
 import "../middleend/lookup.bufo";
 import "../middleend/checker.bufo";
 import "../backend/irgen.bufo";
@@ -163,6 +164,48 @@ struct ParsedStmtList {
     elements: &&ParsedStmt;
     length: usize;
     capacity: usize;
+}
+struct ParsedExprList {
+    elements: &&ParsedExpr;
+    length: usize;
+    capacity: usize;
+}
+struct TypeList {
+    elements: &&Type;
+    length: usize;
+    capacity: usize;
+}
+func push(this: &TypeList, element: &Type) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof &Type);
+        assert(this.elements != null, "Could not allocate memory in TypeList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+func at(this: &TypeList, index: usize) -> &&Type {
+    assert(index < this.length, "Out of bounds access in TypeList.at");
+    assert(this.elements != null, "Element pointer is NULL in TypeList.at");
+    return &this.elements[index];
+}
+func push(this: &ParsedExprList, element: &ParsedExpr) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = realloc(this.elements, newCap * sizeof &ParsedExpr);
+        assert(this.elements != null, "Could not allocate memory in ParsedExprList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+func at(this: &ParsedExprList, index: usize) -> &&ParsedExpr {
+    assert(index < this.length, "Out of bounds access in ParsedExprList.at");
+    assert(this.elements != null, "Element pointer is NULL in ParsedExprList.at");
+    return &this.elements[index];
 }
 func push(this: &ParsedStmtList, element: &ParsedStmt) {
     if (this.length >= this.capacity) {

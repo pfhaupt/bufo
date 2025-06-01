@@ -9,14 +9,6 @@ import "../util/lists.bufo";
 import "../middleend/types.bufo";
 import "../middleend/checker.bufo";
 
-struct VarDeclContext {
-    name: Token;
-    type: &ParsedTypeNode;
-    expr: &ParsedExpr;
-    isComptime: bool;
-    origin: usize;
-}
-
 // FIXME: This name is misleading, given that we also use it for function calls
 struct ArrayContext {
     elemList: &usize;

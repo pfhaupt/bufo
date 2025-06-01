@@ -616,28 +616,24 @@ func parseStmt(this: &Parser) -> &ParsedStmt {
             next(&this.lexer);
             let end: Token = expect(this, TOKEN_SEMI_COLON);
             let span: Span = newSpanBetween(&tkn.span, &end.span);
-            return newParsedStmt(span, STMT_BREAK);
+            return newParsedStmt(span, StmtData::Break);
         } else if (equals(&tkn.content, &KEYWORD_CONTINUE)) {
             next(&this.lexer);
             let end: Token = expect(this, TOKEN_SEMI_COLON);
             let span: Span = newSpanBetween(&tkn.span, &end.span);
-            return newParsedStmt(span, STMT_CONTINUE);
+            return newParsedStmt(span, StmtData::Continue);
         } else if (equals(&tkn.content, &KEYWORD_MATCH)) {
             next(&this.lexer);
             return parseMatchStmt(this, tkn);
         }
     } else if (tkn.kind == TOKEN_CURLY_OPEN) {
         let block: &ParsedBlock = parseBlock(this);
-        let bl: &ParsedStmt = newParsedStmt(block.span, STMT_BLOCK);
-        (*bl).block = block;
-        return bl;
+        return newParsedStmt(block.span, StmtData::Block(block));
     }
     let value: &ParsedExpr = parseExpr(this);
     let end: Token = expect(this, TOKEN_SEMI_COLON);
     let span: Span = newSpanBetween(&value.span, &end.span);
-    let expr: &ParsedStmt = newParsedStmt(span, STMT_EXPR);
-    (*expr).expr = value;
-    return expr;
+    return newParsedStmt(span, StmtData::Expr(value));
 }
 
 func parseMatchStmt(this: &Parser, kw: Token) -> &ParsedStmt {
@@ -662,14 +658,10 @@ func parseMatchStmt(this: &Parser, kw: Token) -> &ParsedStmt {
     }
     let end = expect(this, TOKEN_CURLY_CLOSE);
     let span = newSpanBetween(&kw.span, &end.span);
-    let stmt = newParsedStmt(span, STMT_MATCH);
     if (patterns.length == 0) {
         todo_with_msg("parser: 0 arms in match");
     }
-    stmt.expr = expr;
-    stmt.patterns = patterns;
-    stmt.stmts = stmts;
-    return stmt;
+    return newParsedStmt(span, StmtData::Match(expr, patterns, stmts));
 }
 
 func parsePattern(this: &Parser) -> &ParsedPattern {
@@ -678,21 +670,21 @@ func parsePattern(this: &Parser) -> &ParsedPattern {
     let tkn = next(&this.lexer);
     if (tkn.kind == TOKEN_IDENT) {
         if (eat(this, TOKEN_COLON_DOUBLE)) {
-            let pat = newParsedPattern(tkn.span, PATTERN_PATH);
-            pat.ident = tkn;
             let subpat = parsePattern(this);
-            if (subpat.kind != PATTERN_STRUCT && subpat.kind != PATTERN_IDENT) {
-                todo_with_msg("parser: Path Pattern has non-struct non-ident as RHS");
+            match (&subpat.data) {
+                &Pattern::Struct(_, _) => { }
+                &Pattern::Ident(_) => { }
+                _ => {
+                    todo_with_msg("parser: Path Pattern has non-struct non-ident as RHS");
+                }
             }
-            push(&pat.subPatterns, subpat);
-            return pat;
+            return newParsedPattern(tkn.span, Pattern::Path(tkn, subpat));
         } else if (eat(this, TOKEN_CURLY_OPEN)) {
-            let pat = newParsedPattern(tkn.span, PATTERN_STRUCT);
-            pat.ident = tkn;
+            let subPatterns: ParsedPatternList = blank;
             while (!at(this, TOKEN_CURLY_CLOSE)) {
                 let subpat = parsePattern(this);
                 if (!at(this, TOKEN_CURLY_CLOSE)) {
-                    if (subpat.kind == PATTERN_REST) {
+                    if (tag(&subpat.data) == comptime tag(&Pattern::Rest)) {
                         let loc = toString(&next(&this.lexer).span);
                         fprintf(stderr, "%s: %s: The `..` pattern can only appear at the end of a struct pattern.\n", loc.buffer, ERR_STR);
                         drop(&loc);
@@ -701,55 +693,51 @@ func parsePattern(this: &Parser) -> &ParsedPattern {
                         expect(this, TOKEN_COMMA);
                     }
                 }
-                push(&pat.subPatterns, subpat);
+                push(&subPatterns, subpat);
             }
             let end = expect(this, TOKEN_CURLY_CLOSE);
-            pat.span = newSpanBetween(&tkn.span, &end.span);
-            return pat;
+            let span = newSpanBetween(&tkn.span, &end.span);
+            return newParsedPattern(span, Pattern::Struct(tkn, subPatterns));
         } else if (eat(this, TOKEN_PAREN_OPEN)) {
-            let pat = newParsedPattern(tkn.span, PATTERN_STRUCT);
-            pat.ident = tkn;
+            let subPatterns: ParsedPatternList = blank;
             while (!at(this, TOKEN_PAREN_CLOSE)) {
                 let subpat = parsePattern(this);
                 if (!at(this, TOKEN_PAREN_CLOSE)) {
-                    expect(this, TOKEN_COMMA);
+                    if (tag(&subpat.data) == comptime tag(&Pattern::Rest)) {
+                        let loc = toString(&next(&this.lexer).span);
+                        fprintf(stderr, "%s: %s: The `..` pattern can only appear at the end of a struct pattern.\n", loc.buffer, ERR_STR);
+                        drop(&loc);
+                        this.syntaxError = true;
+                    } else {
+                        expect(this, TOKEN_COMMA);
+                    }
                 }
-                push(&pat.subPatterns, subpat);
-                if (subpat.kind == PATTERN_REST) break;
+                push(&subPatterns, subpat);
             }
             let end = expect(this, TOKEN_PAREN_CLOSE);
-            pat.span = newSpanBetween(&tkn.span, &end.span);
-            return pat;
+            let span = newSpanBetween(&tkn.span, &end.span);
+            return newParsedPattern(span, Pattern::Struct(tkn, subPatterns));
         } else {
-            let pat = newParsedPattern(tkn.span, PATTERN_IDENT);
-            pat.ident = tkn;
-            return pat;
+            return newParsedPattern(tkn.span, Pattern::Ident(tkn));
         }
     } else if (tkn.kind == TOKEN_DOTDOT) {
-        return newParsedPattern(tkn.span, PATTERN_REST);
+        return newParsedPattern(tkn.span, Pattern::Rest);
     } else if (tkn.kind == TOKEN_KEYWORD) {
-        if (equals(&tkn.content, &KEYWORD_TRUE)
-            || equals(&tkn.content, &KEYWORD_FALSE)) {
-            let pat = newParsedPattern(tkn.span, PATTERN_BOOLEAN);
-            pat.ident = tkn;
-            return pat;
+        if (equals(&tkn.content, &KEYWORD_TRUE)) {
+            return newParsedPattern(tkn.span, Pattern::Boolean(true));
+        } else if (equals(&tkn.content, &KEYWORD_FALSE)) {
+            return newParsedPattern(tkn.span, Pattern::Boolean(false));
         } else if (equals(&tkn.content, &KEYWORD_NULL)) {
-            let pat = newParsedPattern(tkn.span, PATTERN_NULL);
-            pat.ident = tkn;
-            return pat;
+            return newParsedPattern(tkn.span, Pattern::Null);
         }
     } else if (tkn.kind == TOKEN_WILDCARD) {
-        return newParsedPattern(tkn.span, PATTERN_WILDCARD);
+        return newParsedPattern(tkn.span, Pattern::Wildcard);
     } else if (tkn.kind == TOKEN_AMPERSAND_SINGLE) {
         let underlying = parsePattern(this);
         let span = newSpanBetween(&tkn.span, &underlying.span);
-        let pat = newParsedPattern(span, PATTERN_REFERENCE);
-        push(&pat.subPatterns, underlying);
-        return pat;
+        return newParsedPattern(span, Pattern::Reference(underlying));
     } else if (tkn.kind == TOKEN_INT_LITERAL) {
-        let pat = newParsedPattern(tkn.span, PATTERN_NUMBER);
-        pat.ident = tkn;
-        return pat;
+        return newParsedPattern(tkn.span, Pattern::Number(tkn));
     }
     let loc: String = getLocation(&tkn);
     let name: String = toString(&tkn.content);
@@ -774,15 +762,12 @@ func parseForStmt(this: &Parser, kw: Token) -> &ParsedStmt {
         expect(this, TOKEN_PAREN_CLOSE);
         let body: &ParsedStmt = parseStmt(this);
         let span: Span = newSpanBetween(&kw.span, &body.span);
-        let whileNode: &ParsedStmt = newParsedStmt(span, STMT_WHILE);
-        whileNode.expr = cond;
-        whileNode.block = into_block(body);
-        whileNode.step = step;
-        addStmt(block, init);
-        addStmt(block, whileNode);
-        let blockStmt: &ParsedStmt = newParsedStmt(span, STMT_BLOCK);
-        blockStmt.block = block;
-        return blockStmt;
+        return newParsedStmt(span, StmtData::CFor {
+            init: init,
+            cond: cond,
+            step: step,
+            body: body
+        });
     }
 }
 
@@ -794,11 +779,7 @@ func parseWhileStmt(this: &Parser, kw: Token) -> &ParsedStmt {
     expect(this, TOKEN_PAREN_CLOSE);
     let body = parseStmt(this);
     let span: Span = newSpanBetween(&kw.span, &body.span);
-    let stmt: &ParsedStmt = newParsedStmt(span, STMT_WHILE);
-    stmt.expr = cond;
-    stmt.block = into_block(body);
-    stmt.step = newParsedExpr(span, EXPR_EMPTY);
-    return stmt;
+    return newParsedStmt(span, StmtData::While(cond, body));
 }
 
 func parseReturnStmt(this: &Parser, kw: Token) -> &ParsedStmt {
@@ -810,11 +791,9 @@ func parseReturnStmt(this: &Parser, kw: Token) -> &ParsedStmt {
     let end: Token = expect(this, TOKEN_SEMI_COLON);
     let span: Span = newSpanBetween(&kw.span, &end.span);
     if (value != null) {
-        let ret: &ParsedStmt = newParsedStmt(span, STMT_RETURN_EXPR);
-        ret.expr = value;
-        return ret;
+        return newParsedStmt(span, StmtData::ReturnExpr(value));
     } else {
-        return newParsedStmt(span, STMT_RETURN_EMPTY);
+        return newParsedStmt(span, StmtData::ReturnEmpty);
     }
 }
 
@@ -836,38 +815,33 @@ func parseIfStmt(this: &Parser, kw: Token) -> &ParsedStmt {
         }
     }
     let span: Span = newSpanBetween(&kw.span, &end);
-    let ifStmt: &ParsedStmt = newParsedStmt(span, STMT_IF);
-    ifStmt.expr = cond;
-    ifStmt.ifContext = IfContext {
-        thenBody: ifBody,
-        elseBody: elseBody,
-        hasElse: elseBody != null,
-    };
-    return ifStmt;
+    if (elseBody != null) {
+        return newParsedStmt(span, StmtData::IfElse(cond, ifBody, elseBody));
+    } else {
+        return newParsedStmt(span, StmtData::If(cond, ifBody));
+    }
 }
 
 func parseVarDeclStmt(this: &Parser, kw: Token, isGlobal: bool) -> &ParsedStmt {
     trace("Parser.parseVarDeclStmt");
     let nameTkn: Token = expectSoftIdentifier(this);
     let isComptime: bool = equals(&kw.content, &KEYWORD_COMPTIME);
-    let data: VarDeclContext = blank;
-    data.name = nameTkn;
+    let type: &ParsedTypeNode = null;
     if (eat(this, TOKEN_COLON_SINGLE)) {
-        data.type = parseTypeNode(this);
+        type = parseTypeNode(this);
     }
     expect(this, TOKEN_EQUAL_SINGLE);
-    data.expr= parseExpr(this);
-    data.isComptime = isComptime;
+    let expr = parseExpr(this);
     let end: Token = expect(this, TOKEN_SEMI_COLON);
     let span: Span = newSpanBetween(&kw.span, &end.span);
-    let decl: &ParsedStmt = newParsedStmt(span, STMT_VAR_DECL);
-    if (isGlobal) {
-        data.origin = this.lexer.fileID;
-    } else {
-        data.origin = NODE_ID_OFFSET;
-    }
-    (*decl).varDeclContext = data;
-    return decl;
+    return newParsedStmt(span, StmtData::VarDecl(VarDecl {
+        name: nameTkn,
+        type: type,
+        expr: expr,
+        isComptime: isComptime,
+        isGlobal: isGlobal,
+        origin: this.lexer.fileID,
+    }));
 }
 
 func parseTypeNode(this: &Parser) -> &ParsedTypeNode {
@@ -954,9 +928,9 @@ func parseTypeNode(this: &Parser) -> &ParsedTypeNode {
 
 func parseExpr(this: &Parser) -> &ParsedExpr {
     trace("Parser.parseExpr");
-    return __parseExpr(this, 0, ASSOC_LEFT);
+    return __parseExpr(this, 0, Assoc::Left);
 }
-func __parseExpr(this: &Parser, precedence: usize, associativity: usize) -> &ParsedExpr {
+func __parseExpr(this: &Parser, precedence: usize, associativity: Assoc) -> &ParsedExpr {
     trace("Parser.__parseExpr");
     let expr: &ParsedExpr = parsePrimaryExpr(this);
     while (matchesBinaryExpr(this)) {
@@ -964,9 +938,9 @@ func __parseExpr(this: &Parser, precedence: usize, associativity: usize) -> &Par
         let newPrec: usize = getBinaryPrecedence(this, &tkn);
         if (newPrec < precedence)
             break;
-        if (newPrec == precedence && associativity == ASSOC_LEFT)
+        if (newPrec == precedence && tag(&associativity) == comptime tag(&Assoc::Left))
             break;
-        let newAssoc: usize = getBinaryAssociativity(this, &tkn);
+        let newAssoc = getBinaryAssociativity(this, &tkn);
         expr = parseSecondaryExpr(this, expr, newPrec, newAssoc);
     }
     return expr;
@@ -977,24 +951,18 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
         return parseUnaryExpr(this);
     let tknKind: usize = peek(&this.lexer).kind;
     if (tknKind == TOKEN_INT_LITERAL) {
-        let number: Token = expect(this, TOKEN_INT_LITERAL);
-        let expr: &ParsedExpr = newParsedExpr(number.span, EXPR_INT_LIT);
-        (*expr).origToken = number;
-        return expr;
+        let number = expect(this, TOKEN_INT_LITERAL);
+        return newParsedExpr(number.span, ExprData::IntLit(number));
+    } else if (tknKind == TOKEN_STRING_LITERAL) {
+        let str = expect(this, TOKEN_STRING_LITERAL);
+        return newParsedExpr(str.span, ExprData::StrLit(str));
+    } else if (tknKind == TOKEN_CHAR_LITERAL) {
+        let ch = expect(this, TOKEN_CHAR_LITERAL);
+        return newParsedExpr(ch.span, ExprData::CharLit(ch));
     } else if (tknKind == TOKEN_PAREN_OPEN) {
         expect(this, TOKEN_PAREN_OPEN);
         let expr: &ParsedExpr = parseExpr(this);
         expect(this, TOKEN_PAREN_CLOSE);
-        return expr;
-    } else if (tknKind == TOKEN_STRING_LITERAL) {
-        let str: Token = expect(this, TOKEN_STRING_LITERAL);
-        let expr: &ParsedExpr = newParsedExpr(str.span, EXPR_STRING_LIT);
-        (*expr).origToken = str;
-        return expr;
-    } else if (tknKind == TOKEN_CHAR_LITERAL) {
-        let ch: Token = expect(this, TOKEN_CHAR_LITERAL);
-        let expr: &ParsedExpr = newParsedExpr(ch.span, EXPR_CHAR_LIT);
-        (*expr).origToken = ch;
         return expr;
     } else if (tknKind == TOKEN_SQUARE_OPEN) {
         let start: Token = expect(this, TOKEN_SQUARE_OPEN);
@@ -1015,34 +983,22 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
         }
         let end: Token = expect(this, TOKEN_SQUARE_CLOSE);
         let span: Span = newSpanBetween(&start.span, &end.span);
-        let expr: &ParsedExpr = newParsedExpr(span, EXPR_ARRAY_LIT);
-        (*expr).arrayContext = arrayContext;
-        return expr;
+        return newParsedExpr(span, ExprData::ArrayLit(arrayContext));
     } else if (tknKind == TOKEN_KEYWORD || tknKind == TOKEN_IDENT) {
         let ident: Token = expect(this, tknKind);
         // Note: If you ever add a keyword here, you must adjust expectSoftIdentifier(this) accordingly
         if (equals(&ident.content, &KEYWORD_NULL)) {
-            let expr: &ParsedExpr = newParsedExpr(ident.span, EXPR_NULL);
-            expr.origToken = ident;
-            return expr;
+            return newParsedExpr(ident.span, ExprData::Null);
         } else if (equals(&ident.content, &KEYWORD_TRUE)) {
-            let expr: &ParsedExpr = newParsedExpr(ident.span, EXPR_TRUE);
-            expr.origToken = ident;
-            return expr;
+            return newParsedExpr(ident.span, ExprData::True);
         } else if (equals(&ident.content, &KEYWORD_FALSE)) {
-            let expr: &ParsedExpr = newParsedExpr(ident.span, EXPR_FALSE);
-            expr.origToken = ident;
-            return expr;
+            return newParsedExpr(ident.span, ExprData::False);
         } else if (equals(&ident.content, &KEYWORD_BLANK)) {
-            let expr: &ParsedExpr = newParsedExpr(ident.span, EXPR_BLANK);
-            expr.origToken = ident;
-            return expr;
+            return newParsedExpr(ident.span, ExprData::Blank);
         } else if (equals(&ident.content, &KEYWORD_SIZEOF)) {
             let typ: &ParsedTypeNode = parseTypeNode(this);
             let span: Span = newSpanBetween(&ident.span, &typ.span);
-            let expr: &ParsedExpr = newParsedExpr(span, EXPR_SIZEOF);
-            expr.lhs = getID(typ);
-            return expr;
+            return newParsedExpr(span, ExprData::Sizeof(typ));
         } else if (at(this, TOKEN_CURLY_OPEN)) {
             expect(this, TOKEN_CURLY_OPEN);
             let context: StructInitContext = blank;
@@ -1056,14 +1012,14 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
             }
             let end: Token = expect(this, TOKEN_CURLY_CLOSE);
             let span: Span = newSpanBetween(&ident.span, &end.span);
-            let expr: &ParsedExpr = newParsedExpr(span, EXPR_STRUCT_INIT);
-            (*expr).origToken = ident;
-            (*expr).structInitContext = context;
-            return expr;
+            return newParsedExpr(span, ExprData::StructInit(StructExpr {
+                name: ident,
+                context: context
+            }));
         } else {
-            let expr: &ParsedExpr = newParsedExpr(ident.span, EXPR_NAME);
-            (*expr).origToken = ident;
-            return expr;
+            return newParsedExpr(ident.span, ExprData::Ident(IdentExpr {
+                name: ident
+            }));
         }
     }
     let t: Token = peek(&this.lexer);
@@ -1074,63 +1030,59 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
     drop(&loc);
     exit(1);
 }
-func parseSecondaryExpr(this: &Parser, lhs: &ParsedExpr, precedence: usize, associativity: usize) -> &ParsedExpr {
+func parseSecondaryExpr(this: &Parser, lhs: &ParsedExpr, precedence: usize, associativity: Assoc) -> &ParsedExpr {
     trace("Parser.parseSecondaryExpr");
     assert(matchesBinaryExpr(this));
     let opTkn: Token = next(&this.lexer);
-    let op: usize = binOpFromKind(opTkn.kind);
-    if (op == BIN_AS) {
+    if (equals(&opTkn.content, &KEYWORD_AS)) {
         let typ: &ParsedTypeNode = parseTypeNode(this);
         let span: Span = newSpanBetween(&lhs.span, &typ.span);
-        let asop: &ParsedExpr = newParsedExpr(span, EXPR_AS);
-        (*asop).op = op;
-        (*asop).lhs = getID(lhs);
-        (*asop).rhs = getID(typ);
-        return asop;
+        return newParsedExpr(span, ExprData::As(lhs, typ));
     }
     let rhs: &ParsedExpr = null;
     // FIXME: There's no reason why those things should be secondary expressions
     //        `foo{}` is a primary expression, but `foo()` and `foo[]` arent?
     // TODO:  Remove BIN_INDEXED_ACCESS and BIN_CALL (todo.py: There's a related FIXME one line above this)
-    if (op == BIN_INDEXED_ACCESS) {
+    if (opTkn.kind == TOKEN_SQUARE_OPEN) {
         rhs = __parseExpr(this, 0, associativity);
         expect(this, TOKEN_SQUARE_CLOSE);
-    } else if (op == BIN_CALL) {
-        let context: ArrayContext = blank;
+    } else if (opTkn.kind == TOKEN_PAREN_OPEN) {
+        let args: ParsedExprList = blank;
         while (!parsedEOF(this) && !at(this, TOKEN_PAREN_CLOSE)) {
-            let expr: &ParsedExpr = parseExpr(this);
-            addElement(&context, expr);
+            push(&args, parseExpr(this));
             if (!eat(this, TOKEN_COMMA))
                 break;
         }
         let end: Token = expect(this, TOKEN_PAREN_CLOSE);
         let span: Span = newSpanBetween(&lhs.span, &end.span);
-        let call: &ParsedExpr = newParsedExpr(span, EXPR_CALL);
-        (*call).arrayContext = context;
-        (*call).op = op;
-        (*call).lhs = getID(lhs);
-        return call;
+        return newParsedExpr(span, ExprData::Call(CallExpr {
+            span: span,
+            base: lhs,
+            args: args
+        }));
     } else {
         rhs = __parseExpr(this, precedence, associativity);
     }
-    if (op == BIN_DOT) {
-        if (rhs.kind != EXPR_NAME) {
-            fprintf(stderr, "%s: %s: The right side of `.` must be an identifier.\n", toString(&lhs.span).buffer, ERR_STR);
-            this.syntaxError = true;
+    if (opTkn.kind == TOKEN_DOT) {
+        match (&rhs.data) {
+            &ExprData::Ident(_) => { },
+            _ => {
+                fprintf(stderr, "%s: %s: The right side of `.` must be an identifier.\n", toString(&lhs.span).buffer, ERR_STR);
+                this.syntaxError = true;
+            }
         }
-    } else if (op == BIN_MODULE) {
-        let isModule = lhs.kind == EXPR_BINARY && lhs.op == BIN_MODULE;
-        if (lhs.kind != EXPR_NAME && !isModule) {
-            fprintf(stderr, "%s: %s: The left side of `::` must be an identifier or other module specifier.\n", toString(&lhs.span).buffer, ERR_STR);
-            this.syntaxError = true;
+    } else if (opTkn.kind == TOKEN_COLON_DOUBLE) {
+        match (&lhs.data) {
+            &ExprData::Binary(BinaryExpr::Path(_, _)) => { },
+            &ExprData::Ident(_) => { },
+            _ => {
+                fprintf(stderr, "%s: %s: The left side of `::` must be an identifier or other module specifier.\n", toString(&lhs.span).buffer, ERR_STR);
+                this.syntaxError = true;
+            }
         }
     }
     let span: Span = newSpanBetween(&lhs.span, &rhs.span);
-    let binop: &ParsedExpr = newParsedExpr(span, EXPR_BINARY);
-    (*binop).op = op;
-    (*binop).lhs = getID(lhs);
-    (*binop).rhs = getID(rhs);
-    return binop;
+    return newParsedExpr(span, ExprData::Binary(fromTkn(opTkn.kind, lhs, rhs)));
 }
 func parseUnaryExpr(this: &Parser) -> &ParsedExpr {
     trace("Parser.parseUnaryExpr");
@@ -1139,36 +1091,25 @@ func parseUnaryExpr(this: &Parser) -> &ParsedExpr {
         next(&this.lexer);
         assert(equals(&tkn.content, &KEYWORD_COMPTIME), "Expected `comptime`");
         let precedence: usize = getUnaryPrecedence(this, tkn.kind);
-        let expr: &ParsedExpr = __parseExpr(this, precedence, ASSOC_LEFT);
+        let expr: &ParsedExpr = __parseExpr(this, precedence, Assoc::Left);
         let span: Span = newSpanBetween(&tkn.span, &expr.span);
-        let unary: &ParsedExpr = newParsedExpr(span, EXPR_UNARY);
-        (*unary).op = unaryOpFromKind(tkn.kind);
-        (*unary).lhs = getID(expr);
-        return unary;
+        return newParsedExpr(span, ExprData::Unary(UnaryExpr::Comptime(expr)));
     } else if (tkn.kind == TOKEN_AMPERSAND_DOUBLE) {
         next(&this.lexer);
         let precedence: usize = getUnaryPrecedence(this, TOKEN_AMPERSAND_SINGLE);
-        let expr: &ParsedExpr = __parseExpr(this, precedence, ASSOC_LEFT);
+        let expr: &ParsedExpr = __parseExpr(this, precedence, Assoc::Left);
         let span: Span = newSpanBetween(&tkn.span, &expr.span);
-        let inner: &ParsedExpr = newParsedExpr(span, EXPR_UNARY);
-        (*inner).op = unaryOpFromKind(TOKEN_AMPERSAND_SINGLE);
-        (*inner).lhs = getID(expr);
-        let unary: &ParsedExpr = newParsedExpr(span, EXPR_UNARY);
-        (*unary).op = unaryOpFromKind(TOKEN_AMPERSAND_SINGLE);
-        (*unary).lhs = getID(inner);
-        return unary;
+        let inner = newParsedExpr(span, ExprData::Unary(UnaryExpr::Ref(expr)));
+        return newParsedExpr(span, ExprData::Unary(UnaryExpr::Ref(inner)));
     } else if (tkn.kind == TOKEN_ASTERISK_SINGLE
         || tkn.kind == TOKEN_AMPERSAND_SINGLE
         || tkn.kind == TOKEN_MINUS_SINGLE
         || tkn.kind == TOKEN_BANG) {
         next(&this.lexer);
         let precedence: usize = getUnaryPrecedence(this, tkn.kind);
-        let expr: &ParsedExpr = __parseExpr(this, precedence, ASSOC_LEFT);
+        let expr: &ParsedExpr = __parseExpr(this, precedence, Assoc::Left);
         let span: Span = newSpanBetween(&tkn.span, &expr.span);
-        let unary: &ParsedExpr = newParsedExpr(span, EXPR_UNARY);
-        (*unary).op = unaryOpFromKind(tkn.kind);
-        (*unary).lhs = getID(expr);
-        return unary;
+        return newParsedExpr(span, ExprData::Unary(fromTkn(tkn.kind, expr)));
     } else {
         unreachable("Exhaustive handling of unary operations in parseUnaryExpr");
     }
@@ -1242,11 +1183,11 @@ func getBinaryPrecedence(this: &Parser, tkn: &Token) -> usize {
     else if (tknKind == TOKEN_EQUAL_SINGLE) return 2;
     unreachable("Exhaustive handling of binary operators in Parser.getBinaryPrecedence");
 }
-func getBinaryAssociativity(this: &Parser, tkn: &Token) -> usize {
+func getBinaryAssociativity(this: &Parser, tkn: &Token) -> Assoc {
     trace("Parser.getBinaryAssociativity");
     let tknKind: usize = tkn.kind;
-    if (tknKind == TOKEN_EQUAL_SINGLE) return ASSOC_RIGHT;
-    return ASSOC_LEFT;
+    if (tknKind == TOKEN_EQUAL_SINGLE) return Assoc::Right;
+    return Assoc::Left;
 }
 func getUnaryPrecedence(this: &Parser, tknKind: usize) -> usize {
     // FIXME: We can't know if this is actually KEYWORD_COMPTIME

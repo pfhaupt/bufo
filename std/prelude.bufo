@@ -1,5 +1,9 @@
 import "substr.bufo";
 
+func tag(union: Any) -> u8 {
+    return *(union as &u8);
+}
+
 func comptimeSubStr(s: &char) -> SubStr {
     return SubStr {
         start: s,

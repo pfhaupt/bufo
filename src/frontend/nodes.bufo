@@ -25,6 +25,7 @@ func toggleIgnoringNodes() {
 }
 
 func mangleVariableName(
+    global: bool,
     fileID: usize,
     name: &Token,
 ) -> String {
@@ -709,9 +710,7 @@ func getStmtAtIndex(this: &ParsedBlock, index: usize) -> &ParsedStmt {
     return this.stmtList[index];
 }
 func into_stmt(this: &ParsedBlock) -> &ParsedStmt {
-    let blockStmt: &ParsedStmt = newParsedStmt(this.span, STMT_BLOCK);
-    blockStmt.block = this;
-    return blockStmt;
+    return newParsedStmt(this.span, StmtData::Block(this));
 }
 func newParsedBlock() -> &ParsedBlock {
     push(&blocks, ParsedBlock {
@@ -720,30 +719,35 @@ func newParsedBlock() -> &ParsedBlock {
     return last(&blocks);
 }
 
-comptime STMT_INVALID: usize = 0;
-// if VarDecl is global, set block to fileID, otherwise, set block to MAX
-comptime STMT_VAR_DECL: usize = 1;
-comptime STMT_RETURN_EMPTY: usize = 2;
-comptime STMT_RETURN_EXPR: usize = 3;
-comptime STMT_EXPR: usize = 4;
-comptime STMT_BLOCK: usize = 5;
-comptime STMT_IF: usize = 6;
-comptime STMT_WHILE: usize = 7;
-comptime STMT_BREAK: usize = 8;
-comptime STMT_CONTINUE: usize = 9;
-comptime STMT_MATCH: usize = 10;
-// FIXME: The amount of memory wasted here is crazy
+// TODO: Once `let` accepts a pattern, we can also introduce `if let`
+union StmtData {
+    VarDecl(VarDecl),
+    ReturnEmpty,
+    ReturnExpr(&ParsedExpr),
+    Expr(&ParsedExpr),
+    Block(&ParsedBlock),
+    If(&ParsedExpr, &ParsedStmt),
+    IfElse(&ParsedExpr, &ParsedStmt, &ParsedStmt),
+    While(&ParsedExpr, &ParsedStmt),
+    CFor { init: &ParsedStmt, cond: &ParsedExpr, step: &ParsedExpr, body: &ParsedStmt },
+    Break,
+    Continue,
+    Match(&ParsedExpr, ParsedPatternList, ParsedStmtList),
+}
+// TODO: VarDecls should accept a pattern instead of just a name
+struct VarDecl {
+    name: Token;
+    type: &ParsedTypeNode;
+    expr: &ParsedExpr;
+    isComptime: bool;
+    isGlobal: bool;
+    origin: usize;
+}
+
 struct ParsedStmt {
     ignored: bool;
-    kind: usize;
     span: Span;
-    varDeclContext: VarDeclContext;
-    expr: &ParsedExpr;
-    block: &ParsedBlock;
-    step: &ParsedExpr;
-    ifContext: IfContext;
-    patterns: ParsedPatternList;
-    stmts: ParsedStmtList;
+    data: StmtData;
     typeState: TCState;
 }
 
@@ -754,17 +758,13 @@ func getID(this: &ParsedStmt) -> usize {
 
 func asTLI(this: &ParsedStmt) -> &ParsedTopLevelItem {
     trace("ParsedStmt.asTLI");
-    if (this.kind == STMT_VAR_DECL) {
-        return newParsedTopLevelItem(this.span, TLI_VAR_DECL, getID(this));
-    } else {
-        unreachable("Exhaustive handling of STMT to TLI conversions");
+    match (&this.data) {
+        &StmtData::VarDecl(..) => {
+            return newParsedTopLevelItem(this.span, TLI_VAR_DECL, getID(this));
+        }
+        _ => { }
     }
-}
-
-func getMangledName(this: &ParsedStmt) -> String {
-    assert(this.kind == STMT_VAR_DECL, "Only variable declarations can get their names mangled");
-    assert(this.varDeclContext.origin < NODE_ID_OFFSET, "Only global variable declarations can get their names mangled");
-    return mangleVariableName(this.varDeclContext.origin, &this.varDeclContext.name);
+    unreachable("Exhaustive handling of STMT to TLI conversions");
 }
 
 func into_block(this: &ParsedStmt) -> &ParsedBlock {
@@ -773,12 +773,12 @@ func into_block(this: &ParsedStmt) -> &ParsedBlock {
     return block;
 }
 
-func newParsedStmt(span: Span, kind: usize) -> &ParsedStmt {
+func newParsedStmt(span: Span, data: StmtData) -> &ParsedStmt {
     trace("newParsedStmt");
     push(&stmts, ParsedStmt {
         ignored: ignoringNodes,
         span: span,
-        kind: kind,
+        data: data,
     });
     return last(&stmts);
 }
@@ -880,254 +880,320 @@ func newBuiltinTypeDecl(span: Span, kind: usize) -> &ParsedTypeNode {
     return t;
 }
 
-comptime ASSOC_LEFT: usize = 0;
-comptime ASSOC_RIGHT: usize = 1;
+union Assoc {
+    Left,
+    Right
+}
 
-comptime EXPR_INVALID: usize = 0;
-comptime EXPR_EMPTY: usize = 1;
-comptime EXPR_INT_LIT: usize = 2;
-comptime EXPR_STRING_LIT: usize = 3;
-comptime EXPR_CHAR_LIT: usize = 4;
-comptime EXPR_ARRAY_LIT: usize = 5;
-// name -> op is 1 if it's a global variable
-// name -> LHS is ID of VarDecl, set by TypeChecker
-//      -> if name is a parameter, set LHS to MAX+param#
-comptime EXPR_NAME: usize = 6;
-// unary -> op and LHS is set
-comptime EXPR_UNARY: usize = 7;
-comptime EXPR_BINARY: usize = 8;
-// call -> origToken is fn name, arrayContext is args
-// call -> LHS is ID of FuncDecl we call, set by TypeChecker
-comptime EXPR_CALL: usize = 9;
-// sizeof -> LHS is set
-comptime EXPR_SIZEOF: usize = 10;
-comptime EXPR_STRUCT_INIT: usize = 11;
-comptime EXPR_UNION_INIT: usize = 12;
-// as -> LHS is expr, RHS is type ID
-comptime EXPR_AS: usize = 13;
-comptime EXPR_NULL: usize = 14;
-comptime EXPR_BLANK: usize = 15;
-comptime EXPR_TRUE: usize = 16;
-comptime EXPR_FALSE: usize = 17;
+union ExprData {
+    IntLit(Token),
+    StrLit(Token),
+    CharLit(Token),
+    ArrayLit(ArrayContext),
+    Ident(IdentExpr),
+    Unary(UnaryExpr),
+    Binary(BinaryExpr),
+    Call(CallExpr),
+    Sizeof(&ParsedTypeNode),
+    StructInit(StructExpr),
+    UnionInit(UnionExpr),
+    As(&ParsedExpr, &ParsedTypeNode),
+    Null,
+    Blank,
+    True,
+    False,
+}
+union UnaryExpr {
+    Comptime(&ParsedExpr),
+    Ref(&ParsedExpr),
+    Deref(&ParsedExpr),
+    Negate(&ParsedExpr),
+    Not(&ParsedExpr),
+}
+func fromTkn(kind: usize, expr: &ParsedExpr) -> UnaryExpr {
+    if (kind == TOKEN_KEYWORD) return UnaryExpr::Comptime(expr);
+    else if (kind == TOKEN_ASTERISK_SINGLE) return UnaryExpr::Deref(expr);
+    else if (kind == TOKEN_AMPERSAND_SINGLE) return UnaryExpr::Ref(expr);
+    else if (kind == TOKEN_MINUS_SINGLE) return UnaryExpr::Negate(expr);
+    else if (kind == TOKEN_BANG) return UnaryExpr::Not(expr);
+    unreachable("fromTkn: Exhaustive handling of unary ops");
+}
+func extractOperand(expr: &UnaryExpr, lhs: &&ParsedExpr) {
+    match (expr) {
+        &UnaryExpr::Comptime(_lhs) => { *lhs = _lhs; }
+        &UnaryExpr::Ref(_lhs) => { *lhs = _lhs; }
+        &UnaryExpr::Deref(_lhs) => { *lhs = _lhs; }
+        &UnaryExpr::Negate(_lhs) => { *lhs = _lhs; }
+        &UnaryExpr::Not(_lhs) => { *lhs = _lhs; }
+        _ => { unreachable("extractOperand: Exhaustive handling of unary expressions"); }
+    }
+}
+union BinaryExpr {
+    Path(&ParsedExpr, &ParsedExpr),
+    Dot(&ParsedExpr, &ParsedExpr),
+    Assign(&ParsedExpr, &ParsedExpr),
+    Plus(&ParsedExpr, &ParsedExpr),
+    Sub(&ParsedExpr, &ParsedExpr),
+    Mult(&ParsedExpr, &ParsedExpr),
+    Div(&ParsedExpr, &ParsedExpr),
+    Mod(&ParsedExpr, &ParsedExpr),
+    CmpEq(&ParsedExpr, &ParsedExpr),
+    CmpNeq(&ParsedExpr, &ParsedExpr),
+    CmpGt(&ParsedExpr, &ParsedExpr),
+    CmpGte(&ParsedExpr, &ParsedExpr),
+    CmpLt(&ParsedExpr, &ParsedExpr),
+    CmpLte(&ParsedExpr, &ParsedExpr),
+    LogAnd(&ParsedExpr, &ParsedExpr),
+    LogOr(&ParsedExpr, &ParsedExpr),
+    BitAnd(&ParsedExpr, &ParsedExpr),
+    BitOr(&ParsedExpr, &ParsedExpr),
+    BitXor(&ParsedExpr, &ParsedExpr),
+    Indexed(&ParsedExpr, &ParsedExpr),
+}
+func binOpAsStr(expr: &BinaryExpr) -> &char {
+    match (expr) {
+        &BinaryExpr::Path(..) => { return "::"; }
+        &BinaryExpr::Dot(..) => { return "."; }
+        &BinaryExpr::Assign(..) => { return "="; }
+        &BinaryExpr::Plus(..) => { return "+"; }
+        &BinaryExpr::Sub(..) => { return "-"; }
+        &BinaryExpr::Mult(..) => { return "*"; }
+        &BinaryExpr::Div(..) => { return "/"; }
+        &BinaryExpr::Mod(..) => { return "%"; }
+        &BinaryExpr::CmpEq(..) => { return "=="; }
+        &BinaryExpr::CmpNeq(..) => { return "!="; }
+        &BinaryExpr::CmpGt(..) => { return ">"; }
+        &BinaryExpr::CmpGte(..) => { return ">="; }
+        &BinaryExpr::CmpLt(..) => { return "<"; }
+        &BinaryExpr::CmpLte(..) => { return "<="; }
+        &BinaryExpr::LogAnd(..) => { return "&&"; }
+        &BinaryExpr::LogOr(..) => { return "||"; }
+        &BinaryExpr::BitAnd(..) => { return "&"; }
+        &BinaryExpr::BitOr(..) => { return "|"; }
+        &BinaryExpr::BitXor(..) => { return "^"; }
+        &BinaryExpr::Indexed(..) => { unreachable("binOpAsStr is not defined for indexed access"); }
+        _ => { }
+    }
+    unreachable("binOpAsStr: Exhaustive handling of binary expressions");
+}
+
+func extractOperands(expr: &BinaryExpr, lhs: &&ParsedExpr, rhs: &&ParsedExpr) {
+    match (expr) {
+        &BinaryExpr::Path(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        &BinaryExpr::Dot(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        &BinaryExpr::Assign(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        &BinaryExpr::Plus(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        &BinaryExpr::Sub(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        &BinaryExpr::Mult(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        &BinaryExpr::Div(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        &BinaryExpr::Mod(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        &BinaryExpr::CmpEq(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        &BinaryExpr::CmpNeq(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        &BinaryExpr::CmpGt(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        &BinaryExpr::CmpGte(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        &BinaryExpr::CmpLt(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        &BinaryExpr::CmpLte(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        &BinaryExpr::LogAnd(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        &BinaryExpr::LogOr(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        &BinaryExpr::BitAnd(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        &BinaryExpr::BitOr(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        &BinaryExpr::BitXor(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        &BinaryExpr::Indexed(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        _ => { unreachable("extractOperands: Exhaustive handling of binary expressions"); }
+    }
+}
+func fromTkn(kind: usize, lhs: &ParsedExpr, rhs: &ParsedExpr) -> BinaryExpr {
+    if (kind == TOKEN_PLUS_SINGLE) return BinaryExpr::Plus(lhs, rhs);
+    else if (kind == TOKEN_MINUS_SINGLE) return BinaryExpr::Sub(lhs, rhs);
+    else if (kind == TOKEN_ASTERISK_SINGLE) return BinaryExpr::Mult(lhs, rhs);
+    else if (kind == TOKEN_SLASH_SINGLE) return BinaryExpr::Div(lhs, rhs);
+    else if (kind == TOKEN_DOT) return BinaryExpr::Dot(lhs, rhs);
+    else if (kind == TOKEN_GREATER_THAN_EQUAL) return BinaryExpr::CmpGte(lhs, rhs);
+    else if (kind == TOKEN_GREATER_THAN) return BinaryExpr::CmpGt(lhs, rhs);
+    else if (kind == TOKEN_LESS_THAN_EQUAL) return BinaryExpr::CmpLte(lhs, rhs);
+    else if (kind == TOKEN_LESS_THAN) return BinaryExpr::CmpLt(lhs, rhs);
+    else if (kind == TOKEN_NOT_EQUAL) return BinaryExpr::CmpNeq(lhs, rhs);
+    else if (kind == TOKEN_EQUAL_DOUBLE) return BinaryExpr::CmpEq(lhs, rhs);
+    else if (kind == TOKEN_EQUAL_SINGLE) return BinaryExpr::Assign(lhs, rhs);
+    else if (kind == TOKEN_SQUARE_OPEN) return BinaryExpr::Indexed(lhs, rhs);
+    else if (kind == TOKEN_PERCENT) return BinaryExpr::Mod(lhs, rhs);
+    else if (kind == TOKEN_AMPERSAND_DOUBLE) return BinaryExpr::LogAnd(lhs, rhs);
+    else if (kind == TOKEN_PIPE_DOUBLE) return BinaryExpr::LogOr(lhs, rhs);
+    else if (kind == TOKEN_AMPERSAND_SINGLE) return BinaryExpr::BitAnd(lhs, rhs);
+    else if (kind == TOKEN_PIPE_SINGLE) return BinaryExpr::BitOr(lhs, rhs);
+    else if (kind == TOKEN_CARET) return BinaryExpr::BitXor(lhs, rhs);
+    else if (kind == TOKEN_COLON_DOUBLE) return BinaryExpr::Path(lhs, rhs);
+    unreachable("fromTkn: Exhaustive handling of binary kinds");
+}
+func isArithmetic(this: &BinaryExpr) -> bool {
+    match (this) {
+        &BinaryExpr::Plus(..) => { return true; }
+        &BinaryExpr::Sub(..) => { return true; }
+        &BinaryExpr::Mult(..) => { return true; }
+        &BinaryExpr::Div(..) => { return true; }
+        &BinaryExpr::Mod(..) => { return true; }
+        _ => { }
+    }
+    return false;
+}
+func isComparison(this: &BinaryExpr) -> bool {
+    match (this) {
+        &BinaryExpr::CmpGte(..) => { return true; }
+        &BinaryExpr::CmpGt(..) => { return true; }
+        &BinaryExpr::CmpLte(..) => { return true; }
+        &BinaryExpr::CmpLt(..) => { return true; }
+        &BinaryExpr::CmpEq(..) => { return true; }
+        &BinaryExpr::CmpNeq(..) => { return true; }
+        _ => { }
+    }
+    return false;
+}
+func isLogical(this: &BinaryExpr) -> bool {
+    match (this) {
+        &BinaryExpr::LogAnd(..) => { return true; }
+        &BinaryExpr::LogOr(..) => { return true; }
+        _ => { }
+    }
+    return false;
+}
+func isBitwise(this: &BinaryExpr) -> bool {
+    match (this) {
+        &BinaryExpr::BitAnd(..) => { return true; }
+        &BinaryExpr::BitOr(..) => { return true; }
+        &BinaryExpr::BitXor(..) => { return true; }
+        _ => { }
+    }
+    return false;
+}
+func isAssignment(this: &BinaryExpr) -> bool {
+    match (this) {
+        &BinaryExpr::Assign(..) => { return true; }
+        _ => { }
+    }
+    return false;
+}
+
+
+struct IdentExpr {
+    name: Token;
+    isGlobal: bool;
+    origID: usize;
+    type: &Type;
+}
+struct StructExpr {
+    name: Token;
+    context: StructInitContext;
+}
+struct CallExpr {
+    span: Span;
+    base: &ParsedExpr;
+    args: ParsedExprList;
+    retType: &Type;
+    isUnion: bool;
+}
+union UnionExpr {
+    Tuple(CallExpr),
+    Struct(StructExpr),
+    Empty,
+}
 struct ParsedExpr {
     ignored: bool;
     span: Span;
-    kind: usize;
-    origToken: Token;
-    // REVIEW: We don't need to waste all that memory
-    arrayContext: ArrayContext;
-    structInitContext: StructInitContext;
-    // FIXME: Do we need to waste that memory for all expressions, even if they're not binary ops?
-    // REVIEW: We could store binOp in origToken and compute the op on the fly?
-    op: usize;
-    lhs: usize;
-    rhs: usize;
+    data: ExprData;
     typeState: TCState;
 }
 func getID(this: &ParsedExpr) -> usize {
     trace("ParsedExpr.getID");
     return indexOf(&exprs, this);
 }
-
-func intoPointer(this: &ParsedExpr) -> usize {
-    let unary: &ParsedExpr = newParsedExpr(this.span, EXPR_UNARY);
-    (*unary).op = UNARY_REF;
-    (*unary).lhs = getID(this);
-    return getID(unary);
-}
-
-func isLValue(this: &ParsedExpr) -> bool {
-    if (this.kind == EXPR_UNARY) {
-        return this.op == UNARY_DEREF;
-    } else if (this.kind == EXPR_BINARY) {
-        if (this.op == BIN_DOT) {
-            return at(&exprs, this.rhs).kind == EXPR_NAME;
-        }
-        if (this.op == BIN_INDEXED_ACCESS) return true;
-        return false;
-    } else {
-        return this.kind == EXPR_NAME;
-    }
-}
-
-func isBlank(this: &ParsedExpr) -> bool {
-    return this.kind == EXPR_BLANK;
-}
-func isIdentifier(this: &ParsedExpr) -> bool {
-    return this.kind == EXPR_NAME;
-}
-func isLiteral(this: &ParsedExpr) -> bool {
-    return this.kind == EXPR_INT_LIT
-        || this.kind == EXPR_STRING_LIT
-        || this.kind == EXPR_CHAR_LIT
-        || this.kind == EXPR_ARRAY_LIT
-        || this.kind == EXPR_NULL
-        || this.kind == EXPR_TRUE
-        || this.kind == EXPR_FALSE;
-}
-
-func isUnary(this: &ParsedExpr) -> bool {
-    return this.kind == EXPR_UNARY;
-}
-
-func isCall(this: &ParsedExpr) -> bool {
-    return this.kind == EXPR_CALL;
-}
-
-func isAssignment(this: &ParsedExpr) -> bool {
-    if (this.kind != EXPR_BINARY) return false;
-    return this.op == BIN_ASSIGN;
-}
-
-func isArithmetic(this: &ParsedExpr) -> bool {
-    if (this.kind != EXPR_BINARY) return false;
-    return this.op == BIN_PLUS
-        || this.op == BIN_SUB
-        || this.op == BIN_MULT
-        || this.op == BIN_DIV
-        || this.op == BIN_MOD;
-}
-
-func isComparison(this: &ParsedExpr) -> bool {
-    if (this.kind != EXPR_BINARY) return false;
-    return this.op == BIN_CMP_GTE
-        || this.op == BIN_CMP_GT
-        || this.op == BIN_CMP_LTE
-        || this.op == BIN_CMP_LT
-        || this.op == BIN_CMP_EQ
-        || this.op == BIN_CMP_NEQ;
-}
-
-func isLogical(this: &ParsedExpr) -> bool {
-    if (this.kind != EXPR_BINARY) return false;
-    return this.op == BIN_LAND
-        || this.op == BIN_LOR;
-}
-
-func isBitwise(this: &ParsedExpr) -> bool {
-    if (this.kind != EXPR_BINARY) return false;
-    return this.op == BIN_BAND
-        || this.op == BIN_BOR
-        || this.op == BIN_BXOR;
-}
-
-comptime BIN_INVALID: usize = 0;
-comptime BIN_PLUS: usize = 1;
-comptime BIN_SUB: usize = 2;
-comptime BIN_MULT: usize = 3;
-comptime BIN_DIV: usize = 4;
-comptime BIN_DOT: usize = 5;
-comptime BIN_CMP_GTE: usize = 6;
-comptime BIN_CMP_GT: usize = 7;
-comptime BIN_CMP_LTE: usize = 8;
-comptime BIN_CMP_LT: usize = 9;
-comptime BIN_CMP_NEQ: usize = 10;
-comptime BIN_CMP_EQ: usize = 11;
-comptime BIN_ASSIGN: usize = 12;
-comptime BIN_AS: usize = 13;
-comptime BIN_INDEXED_ACCESS: usize = 14;
-comptime BIN_CALL: usize = 15;
-comptime BIN_MOD: usize = 16;
-comptime BIN_LAND: usize = 17;
-comptime BIN_LOR: usize = 18;
-comptime BIN_BAND: usize = 19;
-comptime BIN_BOR: usize = 20;
-comptime BIN_BXOR: usize = 21;
-comptime BIN_MODULE: usize = 22;
-func binOpFromKind(kind: usize) -> usize {
-    trace("binOpFromKind");
-    if (kind == TOKEN_PLUS_SINGLE) return BIN_PLUS;
-    else if (kind == TOKEN_MINUS_SINGLE) return BIN_SUB;
-    else if (kind == TOKEN_ASTERISK_SINGLE) return BIN_MULT;
-    else if (kind == TOKEN_SLASH_SINGLE) return BIN_DIV;
-    else if (kind == TOKEN_DOT) return BIN_DOT;
-    else if (kind == TOKEN_GREATER_THAN_EQUAL) return BIN_CMP_GTE;
-    else if (kind == TOKEN_GREATER_THAN) return BIN_CMP_GT;
-    else if (kind == TOKEN_LESS_THAN_EQUAL) return BIN_CMP_LTE;
-    else if (kind == TOKEN_LESS_THAN) return BIN_CMP_LT;
-    else if (kind == TOKEN_NOT_EQUAL) return BIN_CMP_NEQ;
-    else if (kind == TOKEN_EQUAL_DOUBLE) return BIN_CMP_EQ;
-    else if (kind == TOKEN_EQUAL_SINGLE) return BIN_ASSIGN;
-    else if (kind == TOKEN_KEYWORD) return BIN_AS;
-    else if (kind == TOKEN_SQUARE_OPEN) return BIN_INDEXED_ACCESS;
-    else if (kind == TOKEN_PAREN_OPEN) return BIN_CALL;
-    else if (kind == TOKEN_PERCENT) return BIN_MOD;
-    else if (kind == TOKEN_PIPE_SINGLE) return BIN_BOR;
-    else if (kind == TOKEN_PIPE_DOUBLE) return BIN_LOR;
-    else if (kind == TOKEN_AMPERSAND_SINGLE) return BIN_BAND;
-    else if (kind == TOKEN_AMPERSAND_DOUBLE) return BIN_LAND;
-    else if (kind == TOKEN_CARET) return BIN_BXOR;
-    else if (kind == TOKEN_COLON_DOUBLE) return BIN_MODULE;
-    unreachable("Exhaustive handling of kinds in binOpFromKind");
-}
-
-func binOpAsStr(op: usize) -> &char {
-    if (op == BIN_PLUS) return "+";
-    else if (op == BIN_SUB) return "-";
-    else if (op == BIN_MULT) return "*";
-    else if (op == BIN_DIV) return "/";
-    else if (op == BIN_DOT) return ".";
-    else if (op == BIN_CMP_GTE) return ">=";
-    else if (op == BIN_CMP_GT) return ">";
-    else if (op == BIN_CMP_LTE) return "<=";
-    else if (op == BIN_CMP_LT) return "<";
-    else if (op == BIN_CMP_NEQ) return "!=";
-    else if (op == BIN_CMP_EQ) return "==";
-    else if (op == BIN_ASSIGN) return "=";
-    else if (op == BIN_AS) return "as";
-    else if (op == BIN_INDEXED_ACCESS) return "[]";
-    else if (op == BIN_MOD) return "%";
-    else if (op == BIN_LAND) return "&&";
-    else if (op == BIN_LOR) return "||";
-    else if (op == BIN_BAND) return "&";
-    else if (op == BIN_BOR) return "|";
-    else if (op == BIN_BXOR) return "^";
-    unreachable("Exhaustive handling of binary ops in binOpAsStr");
-}
-
-comptime UNARY_INVALID: usize = 0;
-comptime UNARY_COMPTIME: usize = 1;
-comptime UNARY_DEREF: usize = 2;
-comptime UNARY_REF: usize = 3;
-comptime UNARY_MINUS: usize = 4;
-comptime UNARY_NOT: usize = 5;
-func unaryOpFromKind(kind: usize) -> usize {
-    trace("unaryOpFromKind");
-    // FIXME: We can't know if this is actually KEYWORD_COMPTIME
-    if (kind == TOKEN_KEYWORD) return UNARY_COMPTIME;
-    else if (kind == TOKEN_ASTERISK_SINGLE) return UNARY_DEREF;
-    else if (kind == TOKEN_AMPERSAND_SINGLE) return UNARY_REF;
-    else if (kind == TOKEN_MINUS_SINGLE) return UNARY_MINUS;
-    else if (kind == TOKEN_BANG) return UNARY_NOT;
-    todo_with_msg("unaryOpFromKind");
-}
-
-func newParsedExpr(span: Span, kind: usize) -> &ParsedExpr {
-    trace("newParsedExpr");
-    push(&exprs, ParsedExpr {
-        ignored: ignoringNodes,
-        kind: kind,
-        span: span,
-    });
+func wrap(this: ParsedExpr) -> &ParsedExpr {
+    push(&exprs, this);
     return last(&exprs);
 }
 
-comptime PATTERN_INVALID  : usize = 0;
-comptime PATTERN_WILDCARD : usize = 1; // _
-comptime PATTERN_NUMBER   : usize = 2; // 1, 2, 3
-comptime PATTERN_IDENT    : usize = 3; // a, b, c
-comptime PATTERN_REFERENCE: usize = 4; // &<pat>
-comptime PATTERN_STRUCT   : usize = 5; // Foo { <pat>, <pat>, ... }
-comptime PATTERN_PATH     : usize = 6; // Foo::<pat>
-comptime PATTERN_REST     : usize = 7; // ..
-comptime PATTERN_BOOLEAN  : usize = 8; // true, false
-comptime PATTERN_NULL     : usize = 9; // null
+func newParsedExpr(span: Span, data: ExprData) -> &ParsedExpr {
+    return wrap(ParsedExpr {
+        span: span,
+        data: data
+    });
+}
+
+func intoPointer(this: &ParsedExpr) -> usize {
+    let unary = ParsedExpr {
+        span: this.span,
+        data: ExprData::Unary(UnaryExpr::Ref(this)),
+    };
+    return getID(wrap(unary));
+}
+
+func isLValue(this: &ParsedExpr) -> bool {
+    match (this.data) {
+        ExprData::Unary(UnaryExpr::Deref(_)) => { return true; }
+        ExprData::Binary(BinaryExpr::Indexed(..)) => { return true; }
+        ExprData::Binary(BinaryExpr::Dot(_, &ParsedExpr { _, _, rhs, .. })) => {
+            match (rhs) {
+                ExprData::Ident { .. } => { return true; }
+                _ => { }
+            }
+        }
+        ExprData::Ident { .. } => { return true; }
+        _ => { }
+    }
+    return false;
+}
+
+// FIXME: Remove these isXYZ functions
+func isBlank(this: &ParsedExpr) -> bool {
+    return tag(&this.data) == tag(&ExprData::Blank);
+}
+func isIdentifier(this: &ParsedExpr) -> bool {
+    return tag(&this.data) == tag(&ExprData::Ident);
+}
+func isLiteral(this: &ParsedExpr) -> bool {
+    match (&this.data) {
+        &ExprData::IntLit { .. } => { return true; }
+        &ExprData::StrLit { .. } => { return true; }
+        &ExprData::CharLit { .. } => { return true; }
+        &ExprData::ArrayLit { .. } => { return true; }
+        &ExprData::Null => { return true; }
+        &ExprData::True => { return true; }
+        &ExprData::False => { return true; }
+        _ => { }
+    }
+    return false;
+}
+
+func isUnary(this: &ParsedExpr) -> bool {
+    return tag(&this.data) == tag(&ExprData::Unary);
+}
+
+func isCall(this: &ParsedExpr) -> bool {
+    return tag(&this.data) == tag(&ExprData::Call);
+}
+
+func isAssignment(this: &ParsedExpr) -> bool {
+    match (&this.data) {
+        &ExprData::Binary(BinaryExpr::Assign(..)) => { return true; }
+        _ => { }
+    }
+    return false;
+}
+
+union Pattern {
+    Wildcard,
+    Number(Token),
+    Ident(Token),
+    Reference(&ParsedPattern),
+    Struct(Token, ParsedPatternList),
+    Path(Token, &ParsedPattern),
+    Rest,
+    Boolean(bool),
+    Null,
+}
 struct ParsedPattern {
     ignored: bool;
-    kind: usize;
     span: Span;
-    ident: Token;
-    subPatterns: ParsedPatternList;
+    data: Pattern;
 }
 
 func getID(this: &ParsedPattern) -> usize {
@@ -1135,58 +1201,63 @@ func getID(this: &ParsedPattern) -> usize {
     return indexOf(&patterns, this);
 }
 
-func newParsedPattern(span: Span, kind: usize) -> &ParsedPattern {
+func newParsedPattern(span: Span, pat: Pattern) -> &ParsedPattern {
     trace("newParsedPattern");
     push(&patterns, ParsedPattern {
         ignored: ignoringNodes,
-        kind: kind,
         span: span,
+        data: pat
     });
     return last(&patterns);
 }
 
 func toString(this: &ParsedPattern) -> String {
-    if (this.kind == PATTERN_WILDCARD) {
-        return newStringFromStrLit("_");
-    } else if (this.kind == PATTERN_IDENT
-        || this.kind == PATTERN_NUMBER
-        || this.kind == PATTERN_NULL
-        || this.kind == PATTERN_BOOLEAN) {
-        return toString(&this.ident.content);
-    } else if (this.kind == PATTERN_REFERENCE) {
-        let s = newStringFromStrLit("&");
-        let _s = toString(*at(&this.subPatterns, 0));
-        pushString(&s, &_s);
-        drop(&_s);
-        return s;
-    } else if (this.kind == PATTERN_STRUCT) {
-        let s = toString(&this.ident.content);
-        if (this.subPatterns.length == 0) {
-            pushStr(&s, " { }");
-        } else {
-            pushStr(&s, " { ");
-            for (let i: usize = 0; i < this.subPatterns.length; i = i + 1) {
-                let _s = toString(*at(&this.subPatterns, i));
-                pushString(&s, &_s);
-                if (i != this.subPatterns.length - 1) {
-                    pushStr(&s, ", ");
-                }
-                drop(&_s);
-            }
-            pushStr(&s, " }");
+    match (&this.data) {
+        &Pattern::Rest => { return newStringFromStrLit(".."); }
+        &Pattern::Wildcard => { return newStringFromStrLit("_"); }
+        &Pattern::Boolean(true) => { return newStringFromStrLit("true"); }
+        &Pattern::Boolean(false) => { return newStringFromStrLit("false"); }
+        &Pattern::Null => { return newStringFromStrLit("null"); }
+        &Pattern::Ident(ident) => { return toString(&ident.content); }
+        &Pattern::Number(number) => { return toString(&number.content); }
+        &Pattern::Reference(pat) => {
+            let s = newStringFromStrLit("&");
+            let _s = toString(pat);
+            pushString(&s, &_s);
+            drop(&_s);
+            return s;
         }
-        return s;
-    } else if (this.kind == PATTERN_PATH) {
-        let s = toString(&this.ident.content);
-        pushStr(&s, "::");
-        let _s = toString(*at(&this.subPatterns, 0));
-        pushString(&s, &_s);
-        drop(&_s);
-        return s;
-    } else if (this.kind == PATTERN_REST) {
-        return newStringFromStrLit("..");
-    } else {
-        unreachable("Exhaustive handling of pattern kinds in ParsedPattern.toString()");
+        &Pattern::Struct(name, pats) => {
+            let s = toString(&name.content);
+            if (pats.length == 0) {
+                pushStr(&s, " { }");
+            } else {
+                pushStr(&s, " { ");
+                for (let i: usize = 0; i < pats.length; i = i + 1) {
+                    let _s = toString(*at(&pats, i));
+                    pushString(&s, &_s);
+                    if (i != pats.length - 1) {
+                        pushStr(&s, ", ");
+                    }
+                    drop(&_s);
+                }
+                pushStr(&s, " }");
+            }
+            return s;
+        }
+        &Pattern::Path(name, sub) => {
+            let s = toString(&name.content);
+            pushStr(&s, "::");
+            let _s = toString(sub);
+            pushString(&s, &_s);
+            drop(&_s);
+            return s;
+        }
+        unknown => {
+            fprintf(stderr, "%s ParsedPattern.toString: Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
+            exit(2);
+        }
     }
+    unreachable("Exhaustive handling of pattern kinds in ParsedPattern.toString()");
 }
 

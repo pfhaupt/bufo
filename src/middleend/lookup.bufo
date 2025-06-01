@@ -65,19 +65,20 @@ func getUnionByGlobalDecl(this: &Lookup, decl: &ParsedUnionDecl) -> &UnionLookup
 
 func getTypeLookupForType(this: &Lookup, typ: &Type) -> TypeLookup {
     trace("Lookup.getTypeLookupForType");
-    if (isStruct(typ)) {
-        let strukt: &ParsedStructDecl = at(&structDecls, typ.typeIndex);
-        if (strukt.parent.isFile) {
-            let fileID: usize = strukt.parent.id as usize;
-            let s: &StructLookup = getStructByGlobalID(at(&this.files, fileID), getID(strukt));
-            return newTypeLookup(TYPE_LOOKUP_STRUCT, s);
-        } else {
-            let s: &StructLookup = getStructByGlobalID(this, getID(strukt));
-            return newTypeLookup(TYPE_LOOKUP_STRUCT, s);
+    match (typ) {
+        &Type::Struct(decl) => {
+            if (decl.parent.isFile) {
+                let fileID: usize = decl.parent.id as usize;
+                let s: &StructLookup = getStructByGlobalID(at(&this.files, fileID), getID(decl));
+                return newTypeLookup(TYPE_LOOKUP_STRUCT, s);
+            } else {
+                let s: &StructLookup = getStructByGlobalID(this, getID(decl));
+                return newTypeLookup(TYPE_LOOKUP_STRUCT, s);
+            }
         }
-    } else {
-        unreachable("Lookup.getTypeLookupForType got non-struct type");
+        _ => { }
     }
+    unreachable("Lookup.getTypeLookupForType got non-struct type");
 }
 
 func searchAllFilesForTypeName(this: &Lookup, name: &Token) -> TypeLookupList {
@@ -189,7 +190,7 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) -> bool {
             parent: tli.parent,
             name: strukt.name,
             fields: blank,
-            type: newType(TYPE_KIND_STRUCT, tli.nodeID),
+            type: wrap(Type::Struct(strukt)),
         };
         if (contains(&this.structs, &lookup)) {
             let loc = toString(&tli.span);
@@ -210,7 +211,7 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) -> bool {
             parent: tli.parent,
             name: onion.name,
             variants: blank,
-            type: newType(TYPE_KIND_UNION, tli.nodeID),
+            type: wrap(Type::Union(onion, 0)),
         };
         if (contains(&this.unions, &lookup)) {
             let loc = toString(&tli.span);
@@ -226,23 +227,31 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) -> bool {
         push(&this.unions, lookup);
     } else if (tli.kind == TLI_VAR_DECL) {
         let varDecl: &ParsedStmt = at(&stmts, tli.nodeID);
-        assert(varDecl.kind == STMT_VAR_DECL);
+        let name: Token = blank;
+        let isComptime = false;
+        match (&varDecl.data) {
+            &StmtData::VarDecl(decl) => {
+                name = decl.name;
+                isComptime = decl.isComptime;
+            }
+            _ => { unreachable(); }
+        }
         let lookup: VariableLookup = VariableLookup {
             globalID: tli.nodeID,
-            name: varDecl.varDeclContext.name,
+            name: name,
             typeState: blank,
-            isComptime: varDecl.varDeclContext.isComptime,
+            isComptime: isComptime,
         };
         assert(this.variables.length == 1, "expected to find only the global scope");
         let globalScope: &ScopeLookup = last(&this.variables);
         let duplVar: Token = blank;
         if (isKnownVariable(globalScope, lookup.name.content, &duplVar)) {
             let loc = toString(&tli.span);
-            let name = toString(&varDecl.varDeclContext.name);
+            let _name = toString(&name);
             let _loc = toString(&duplVar.span);
             fprintf(stderr, "%s: %s: Variable redeclaration.\n", loc.buffer, ERR_STR);
-            fprintf(stderr, "%s: %s: Variable `%s` already declared here.\n", _loc.buffer, NOTE_STR, name.buffer);
-            drop(&name);
+            fprintf(stderr, "%s: %s: Variable `%s` already declared here.\n", _loc.buffer, NOTE_STR, _name.buffer);
+            drop(&_name);
             drop(&_loc);
             drop(&loc);
             return false;
@@ -602,6 +611,15 @@ func resolveAllFunctionsWithSignature(this: &ModuleLookup, name: &Token, typ: &T
 func resolveAllFunctionsWithSignature(this: &ModuleLookup, name: &Token, typ: &Type, checkImport: bool) -> FunctionLookupList {
     trace("ModuleLookup.resolveAllFunctionsWithSignature");
     // FIXME: Would be cool if this method didn't create copies of the FunctionLookups
+    let params1: TypeList = blank;
+    let ret1: &Type = null;
+    match (typ) {
+        &Type::Func(params, ret, _) => {
+            params1 = params;
+            ret1 = ret;
+        }
+        _ => { unreachable(); }
+    }
     let list: FunctionLookupList = blank;
     for (let i: usize = 0; i < this.functions.length; i = i + 1) {
         let f: &FunctionLookup = at(&this.functions, i);
@@ -609,27 +627,22 @@ func resolveAllFunctionsWithSignature(this: &ModuleLookup, name: &Token, typ: &T
             continue;
         }
         let _rt = getType(&f.fnType);
-        assert(isFunction(_rt));
-        if (typ.fnParams.length != _rt.fnParams.length) continue;
-        let retType1 = at(&types, typ.typeIndex);
-        let retType2 = at(&types, _rt.typeIndex);
-        if (!isUnknown(retType1)) if (!equals(retType1, retType2)) {
-            continue;
-        }
-        let succ = true;
-        for (let j: usize = 0; j < typ.fnParams.length; j = j + 1) {
-            let p1 = getParam(typ, j);
-            let p2 = getParam(_rt, j);
-            if (!isType(p1)) continue;
-            let t1 = getType(p1);
-            let t2 = getType(p2);
-            if (!isUnknown(t1)) if (!equals(t1, t2)) {
-                succ = false;
-                break;
+        match (_rt) {
+            &Type::Func(params2, ret2, _) => {
+                if (params1.length != params2.length) continue;
+                if (!isUnknown(ret1)) if (!equals(ret1, ret2)) continue;
+                let succ = true;
+                for (let j: usize = 0; j < params1.length; j = j + 1) {
+                    let t1 = *at(&params1, j);
+                    let t2 = *at(&params2, j);
+                    if (!isUnknown(t1)) if (!equals(t1, t2)) {
+                        succ = false;
+                        break;
+                    }
+                }
+                if (succ) push(&list, *f);
             }
-        }
-        if (succ) {
-            push(&list, *f);
+            _ => { unreachable(); }
         }
     }
     if (checkImport) {

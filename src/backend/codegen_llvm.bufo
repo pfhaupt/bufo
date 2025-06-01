@@ -171,15 +171,15 @@ func prepareReturnType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
         let size: usize = getSize(typ);
         let t: &Type = null;
         if (size <= 1) {
-            t = newType(TYPE_KIND_PRIMITIVE, TYPE_U8);
+            t = wrap(Type::Prim(PrimType::U8));
         } else if (size <= 2) {
-            t = newType(TYPE_KIND_PRIMITIVE, TYPE_U16);
+            t = wrap(Type::Prim(PrimType::U16));
         } else if (size <= 4) {
-            t = newType(TYPE_KIND_PRIMITIVE, TYPE_U32);
+            t = wrap(Type::Prim(PrimType::U32));
         } else if (size <= 8) {
-            t = newType(TYPE_KIND_PRIMITIVE, TYPE_U64);
+            t = wrap(Type::Prim(PrimType::U64));
         } else {
-            t = newType(TYPE_KIND_POINTER, TYPE_U8);
+            t = wrap(Type::Ptr(wrap(Type::Prim(PrimType::U8))));
         }
         return generateLLVMType(this, t);
     } else {
@@ -194,19 +194,19 @@ func prepareParameter(this: &LLVMCodegen, typ: &Type) -> LLVMType {
         let size: usize = getSize(typ);
         let t: &Type = null;
         if (size <= 1) {
-            t = newType(TYPE_KIND_PRIMITIVE, TYPE_U8);
+            t = wrap(Type::Prim(PrimType::U8));
         } else if (size <= 2) {
-            t = newType(TYPE_KIND_PRIMITIVE, TYPE_U16);
+            t = wrap(Type::Prim(PrimType::U16));
         } else if (size <= 4) {
-            t = newType(TYPE_KIND_PRIMITIVE, TYPE_U32);
+            t = wrap(Type::Prim(PrimType::U32));
         } else if (size <= 8) {
-            t = newType(TYPE_KIND_PRIMITIVE, TYPE_U64);
+            t = wrap(Type::Prim(PrimType::U64));
         } else {
-            t = newType(TYPE_KIND_POINTER, TYPE_U8);
+            t = wrap(Type::Ptr(wrap(Type::Prim(PrimType::U8))));
         }
         return generateLLVMType(this, t);
     } else if (getSize(typ) > 8) {
-        return generateLLVMType(this, at(&types, intoPointer(typ)));
+        return generateLLVMType(this, intoPointer(typ));
     } else {
         return generateLLVMType(this, typ);
     }
@@ -504,7 +504,7 @@ func generateLLVMInstr(
         buildCondBr(&this.llvmBuilder, cond, *at(blocks, instr.dst.i), *at(blocks, instr.op1.i));
         return blank;
     } else if (instr.kind == INSTR_UNREACHABLE) {
-        buildUnreachable(&this.llvmBuilder, );
+        buildUnreachable(&this.llvmBuilder);
         return blank;
     } else if (instr.kind == INSTR_UNTERMINATED) {
         fprintf(stderr, "%s %s: UNTERMINATED BLOCK FOUND!!!\n", toString(&instr.span).buffer, FATAL_STR);
@@ -517,7 +517,7 @@ func generateLLVMInstr(
         buildReturn(&this.llvmBuilder, val);
         return blank;
     } else if (instr.kind == INSTR_RETURN_VOID) {
-        buildReturnVoid(&this.llvmBuilder, );
+        buildReturnVoid(&this.llvmBuilder);
         return blank;
     } else if (instr.kind == INSTR_LOAD_I8) {
         let t: LLVMType = createIntegerType(&this.llvmContext, 8);
@@ -544,10 +544,10 @@ func generateLLVMInstr(
         let t: LLVMType = createIntegerType(&this.llvmContext, 64);
         return constInt(&t, instr.src.i, false);
     } else if (instr.kind == INSTR_LOAD_F32) {
-        let t: LLVMType = createFloatType(&this.llvmContext, );
+        let t: LLVMType = createFloatType(&this.llvmContext);
         return constFloat(&t, *(&instr.src.i as &f32) as f64);
     } else if (instr.kind == INSTR_LOAD_F64) {
-        let t: LLVMType = createDoubleType(&this.llvmContext, );
+        let t: LLVMType = createDoubleType(&this.llvmContext);
         return constFloat(&t, *(&instr.src.i as &f64));
     } else if (instr.kind == INSTR_LOAD_BOOL) {
         let t: LLVMType = createIntegerType(&this.llvmContext, 1);
@@ -597,8 +597,8 @@ func generateLLVMInstr(
         let val: LLVMValue = asLLVM(at(regs, instr.src.i), "LLVM IntToF32 / IntToF64");
         let reg: &IRReg = getRegister(irFunc, instr.src);
         let signed: bool = isSignedInteger(reg.typ);
-        let typ: LLVMType = createFloatType(&this.llvmContext, );
-        if (instr.kind == INSTR_INT_TO_F64) typ = createDoubleType(&this.llvmContext, );
+        let typ: LLVMType = createFloatType(&this.llvmContext);
+        if (instr.kind == INSTR_INT_TO_F64) typ = createDoubleType(&this.llvmContext);
         return buildIntToFloat(&this.llvmBuilder, val, typ, signed, newSubStrOfStrLit("i2f"));
     } else if (instr.kind == INSTR_F32_TO_INT || instr.kind == INSTR_F64_TO_INT) {
         let val: LLVMValue = asLLVM(at(regs, instr.src.i), "LLVM F32ToInt / F64ToInt");
@@ -608,11 +608,11 @@ func generateLLVMInstr(
         return buildFloatToInt(&this.llvmBuilder, val, typ, signed, newSubStrOfStrLit("f2i"));
     } else if (instr.kind == INSTR_F32_TO_F64) {
         let val: LLVMValue = asLLVM(at(regs, instr.src.i), "LLVM F32ToF64");
-        let typ: LLVMType = createDoubleType(&this.llvmContext, );
+        let typ: LLVMType = createDoubleType(&this.llvmContext);
         return buildFloatExtend(&this.llvmBuilder, val, typ, newSubStrOfStrLit("f32tof64"));
     } else if (instr.kind == INSTR_F64_TO_F32) {
         let val: LLVMValue = asLLVM(at(regs, instr.src.i), "LLVM F64ToF32");
-        let typ: LLVMType = createFloatType(&this.llvmContext, );
+        let typ: LLVMType = createFloatType(&this.llvmContext);
         return buildFloatTruncate(&this.llvmBuilder, val, typ, newSubStrOfStrLit("f64tof32"));
     } else if (instr.kind == INSTR_INT_SIGN_EXTEND) {
         let val: LLVMValue = asLLVM(at(regs, instr.src.i), "LLVM IntSignExt");
@@ -691,105 +691,120 @@ func generateLLVMValueFromComptimeValue(this: &LLVMCodegen, typ: &Type, start: &
     trace("LLVMCodegen.generateLLVMValueFromComptimeValue");
     assert(start != null, "generateLLVMValueFromComptimeValue got nullptr");
     let size: usize = getSize(typ);
-    if (isPrimitive(typ)) {
-        if (isInteger(typ)) {
-            // Note: LLVM doesn't care about signedness for integers, that's all handled in the instructions
-            if (size == 1) {
+    match (typ) {
+        &Type::Prim(prim) => {
+            if (isInteger(typ)) {
+                // Note: LLVM doesn't care about signedness for integers, that's all handled in the instructions
+                if (size == 1) {
+                    let val: u8 = *(start as &u8);
+                    let t: LLVMType = createIntegerType(&this.llvmContext, 8);
+                    return constInt(&t, val as usize, false);
+                } else if (size == 2) {
+                    let val: u16 = *(start as &u16);
+                    let t: LLVMType = createIntegerType(&this.llvmContext, 16);
+                    return constInt(&t, val as usize, false);
+                } else if (size == 4) {
+                    let val: u32 = *(start as &u32);
+                    let t: LLVMType = createIntegerType(&this.llvmContext, 32);
+                    return constInt(&t, val as usize, false);
+                } else if (size == 8) {
+                    let val: u64 = *(start as &u64);
+                    let t: LLVMType = createIntegerType(&this.llvmContext, 64);
+                    return constInt(&t, val as usize, false);
+                } else {
+                    unreachable("unexpected int size");
+                }
+            } else if (isFloat(typ)) {
+                if (size == 4) {
+                    let val = *(start as &f32);
+                    let t = createFloatType(&this.llvmContext);
+                    return constFloat(&t, val as f64);
+                } else if (size == 8) {
+                    let val = *(start as &f64);
+                    let t = createDoubleType(&this.llvmContext);
+                    return constFloat(&t, val);
+                } else {
+                    unreachable("unexpected float size");
+                }
+            } else if (isBoolean(typ)) {
                 let val: u8 = *(start as &u8);
-                let t: LLVMType = createIntegerType(&this.llvmContext, 8);
+                assert(val == 0 || val == 1, "comptime bool is not 0 or 1");
+                let t: LLVMType = createIntegerType(&this.llvmContext, 1);
                 return constInt(&t, val as usize, false);
-            } else if (size == 2) {
-                let val: u16 = *(start as &u16);
-                let t: LLVMType = createIntegerType(&this.llvmContext, 16);
-                return constInt(&t, val as usize, false);
-            } else if (size == 4) {
-                let val: u32 = *(start as &u32);
-                let t: LLVMType = createIntegerType(&this.llvmContext, 32);
-                return constInt(&t, val as usize, false);
-            } else if (size == 8) {
-                let val: u64 = *(start as &u64);
-                let t: LLVMType = createIntegerType(&this.llvmContext, 64);
-                return constInt(&t, val as usize, false);
+            } else if (isNone(typ)) {
+                let t: LLVMType = createIntegerType(&this.llvmContext, 1);
+                return constInt(&t, 1, false);
             } else {
-                unreachable("unexpected int size");
+                todo_with_msg("prim");
             }
-        } else if (isFloat(typ)) {
-            if (size == 4) {
-                let val = *(start as &f32);
-                let t = createFloatType(&this.llvmContext, );
-                return constFloat(&t, val as f64);
-            } else if (size == 8) {
-                let val = *(start as &f64);
-                let t = createDoubleType(&this.llvmContext, );
-                return constFloat(&t, val);
-            } else {
-                unreachable("unexpected float size");
+        }
+        &Type::Struct(decl) => {
+            let lType: LLVMType = generateLLVMType(this, typ);
+            assert(isStruct(&lType), "Expected LLVMType to be struct for comptime struct");
+            let strukt: LLVMValue = constZero(&lType);
+            let offset: usize = 0;
+            let _size: usize = 0;
+            for (let i: usize = 0; i < decl.context.fieldLength; i = i + 1) {
+                let tDecl: &ParsedTypeNode = getFieldTypeAtIndex(&decl.context, i);
+                let fType: &Type = getType(&tDecl.typeState);
+                getFieldOffsetAndSize(decl, i, &offset, &_size);
+                let elemVal: LLVMValue = generateLLVMValueFromComptimeValue(this, fType, start + offset);
+                strukt = buildInsertValue(&this.llvmBuilder, strukt, elemVal, i as u32, "comptime_struct_field");
             }
-        } else if (isBoolean(typ)) {
-            let val: u8 = *(start as &u8);
-            assert(val == 0 || val == 1, "comptime bool is not 0 or 1");
-            let t: LLVMType = createIntegerType(&this.llvmContext, 1);
-            return constInt(&t, val as usize, false);
-        } else if (isNone(typ)) {
-            let t: LLVMType = createIntegerType(&this.llvmContext, 1);
-            return constInt(&t, 1, false);
-        } else {
-            todo_with_msg("prim");
+            return strukt;
         }
-    } else if (isStruct(typ)) {
-        let decl: &ParsedStructDecl = at(&structDecls, typ.typeIndex);
-        let lType: LLVMType = generateLLVMType(this, typ);
-        assert(isStruct(&lType), "Expected LLVMType to be struct for comptime struct");
-        let strukt: LLVMValue = constZero(&lType);
-        let offset: usize = 0;
-        let _size: usize = 0;
-        for (let i: usize = 0; i < decl.context.fieldLength; i = i + 1) {
-            let tDecl: &ParsedTypeNode = getFieldTypeAtIndex(&decl.context, i);
-            let fType: &Type = getType(&tDecl.typeState);
-            getFieldOffsetAndSize(decl, i, &offset, &_size);
-            let elemVal: LLVMValue = generateLLVMValueFromComptimeValue(this, fType, start + offset);
-            strukt = buildInsertValue(&this.llvmBuilder, strukt, elemVal, i as u32, "comptime_struct_field");
+        &Type::Array(elemType, size) => {
+            let llvmType = generateLLVMType(this, typ);
+            let elemSize = getSize(elemType);
+            let array = constZero(&llvmType);
+            for (let i: usize = 0; i < size; i = i + 1) {
+                let offset = elemSize * i;
+                let elem = generateLLVMValueFromComptimeValue(this, elemType, start + offset);
+                array = buildInsertValue(&this.llvmBuilder, array, elem, i as u32, "comptime_array_elem");
+            }
+            return array;
         }
-        return strukt;
-    } else if (isArray(typ)) {
-        let llvmType = generateLLVMType(this, typ);
-        let elemType = getUnderlyingType(typ, false);
-        let elemSize = getSize(elemType);
-        let array = constZero(&llvmType);
-        for (let i: usize = 0; i < typ.arraySize; i = i + 1) {
-            let offset = elemSize * i;
-            let elem = generateLLVMValueFromComptimeValue(this, elemType, start + offset);
-            array = buildInsertValue(&this.llvmBuilder, array, elem, i as u32, "comptime_array_elem");
+        // FIXME: Short-Circuiting for Pattern Matching so it doesn't deref this Ptr and segfault :^)
+        // &Type::Ptr(&Type::Prim(PrimType::Char)) => {
+        //     return buildGlobalStringPtr(&this.llvmBuilder, *(start as &usize) as &char, newSubStrOfStrLit("comptime_str"));
+        // }
+        &Type::Func(_,_,_) => {
+            let id: usize = *(start as &usize);
+            return at(&this.irGen.functions, id).llvmFunc;
         }
-        return array;
-    } else if (isPointer(typ)) {
-        let underlying: &Type = getUnderlyingType(typ, false);
-        if (isChar(underlying)) {
+        &Type::Ptr(&Type::Prim(PrimType::Char)) => {
             return buildGlobalStringPtr(&this.llvmBuilder, *(start as &usize) as &char, newSubStrOfStrLit("comptime_str"));
         }
-        todo_with_msg("comptime to LLVM pointer");
-    } else if (isFunction(typ)) {
-        let id: usize = *(start as &usize);
-        return at(&this.irGen.functions, id).llvmFunc;
-    } else {
-        unreachable("Exhaustive handling in generateLLVMValueFromComptime");
+        typ => {
+            fprintf(stderr, "%s\n", toString(typ).buffer);
+            todo_with_msg("generateLLVMValueFromComptime");
+        }
     }
+    unreachable("Exhaustive handling in generateLLVMValueFromComptime");
 }
 
 func generateLLVMFunctionType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
     trace("LLVMCodegen.generateLLVMFunctionType");
-    assert(isFunction(typ), "generateLLVMFunctionType called on non function");
+    let fnParams: TypeList = blank;
+    let retType: &Type = null;
+    let isVarArg = false;
+    match (typ) {
+        &Type::Func(_params, _ret, attr) => {
+            fnParams = _params;
+            retType = _ret;
+            isVarArg = attr.isVariadic;
+        }
+        _ => { unreachable("generateLLVMFunctionType called on non function"); }
+    }
     let params: LLVMTypeList = blank;
-    let retType = at(&types, typ.typeIndex);
     if (getSize(retType) > 8) {
-        retType = at(&types, intoPointer(retType));
+        retType = intoPointer(retType);
         push(&params, prepareParameter(this, retType));
     }
-    for (let i: usize = 0; i < typ.fnParams.length; i = i + 1) {
-        let t: &Type = getType(getParam(typ, i));
+    for (let i: usize = 0; i < fnParams.length; i = i + 1) {
+        let t: &Type = *at(&fnParams, i);
         push(&params, prepareParameter(this, t));
     }
-    let isVarArg = isVariadic(typ);
     let llvmType: LLVMType = prepareReturnType(this, retType);
     let llvmFuncType: LLVMType = intoFunctionType(&llvmType, params, isVarArg);
     return llvmFuncType;
@@ -797,61 +812,58 @@ func generateLLVMFunctionType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
 
 func generateLLVMType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
     trace("LLVMCodegen.generateLLVMType");
-    if (isPrimitive(typ)) {
-        if (isInteger(typ)) {
-            return createIntegerType(&this.llvmContext, getSize(typ) as i64 * 8);
-        } else if (isChar(typ)) {
-            return createIntegerType(&this.llvmContext, 8);
-        } else if (isBoolean(typ)) {
-            return createIntegerType(&this.llvmContext, 1);
-        } else if (isFloat(typ)) {
-            if (typ.typeIndex == TYPE_F32) return createFloatType(&this.llvmContext, );
-            else if (typ.typeIndex == TYPE_F64) return createDoubleType(&this.llvmContext, );
-            unreachable("Expected TYPE_F32 or TYPE_F64");
-        } else if (isNone(typ)) {
-            return createVoidType(&this.llvmContext, );
-        } else if (isAny(typ)) {
-            let t: LLVMType = createIntegerType(&this.llvmContext, 64);
-            return intoPointerType(&t);
-        } else {
-            fprintf(stderr, "%llu %llu\n", typ.kind, typ.typeIndex);
-            todo_with_msg("generate primitive type");
+    match (typ) {
+        &Type::Prim(_) => {
+            if (isInteger(typ)) {
+                return createIntegerType(&this.llvmContext, getSize(typ) as i64 * 8);
+            } else if (isChar(typ)) {
+                return createIntegerType(&this.llvmContext, 8);
+            } else if (isBoolean(typ)) {
+                return createIntegerType(&this.llvmContext, 1);
+            } else if (isFloat(typ)) {
+                match (typ) {
+                    &Type::Prim(PrimType::F32) => { return createFloatType(&this.llvmContext); }
+                    &Type::Prim(PrimType::F64) => { return createDoubleType(&this.llvmContext); }
+                    _ => { unreachable("Expected TYPE_F32 or TYPE_F64"); }
+                }
+            } else if (isNone(typ)) {
+                return createVoidType(&this.llvmContext);
+            } else if (isAny(typ)) {
+                return intoPointerType(&createIntegerType(&this.llvmContext, 64));
+            } else {
+                fprintf(stderr, "%s\n", toString(typ).buffer);
+                todo_with_msg("generate primitive type");
+            }
         }
-    } else if (isPointer(typ)) {
-        let t: LLVMType = createIntegerType(&this.llvmContext, 64);
-        return intoPointerType(&t);
-    } else if (isFunction(typ)) {
-        let t: LLVMType = createIntegerType(&this.llvmContext, 64);
-        return intoPointerType(&t);
-    } else if (isArray(typ)) {
-        let t: LLVMType = generateLLVMType(this, at(&types, typ.typeIndex));
-        return intoArrayType(&t, typ.arraySize as u32);
-    } else if (isStruct(typ)) {
-        let decl: &ParsedStructDecl = at(&structDecls, typ.typeIndex);
-        let fields: &LLVMType = malloc(decl.context.fieldLength * sizeof LLVMType);
-        assert(fields != null, "Could not allocate memory in LLVMCodegen.generateLLVMType");
-        for (let i: usize = 0; i < decl.context.fieldLength; i = i + 1) {
-            let tDecl: &ParsedTypeNode = getFieldTypeAtIndex(&decl.context, i);
-            fields[i] = generateLLVMType(this, getType(&tDecl.typeState));
+        &Type::Ptr(_) => { return intoPointerType(&createIntegerType(&this.llvmContext, 64)); }
+        &Type::Func(_,_,_) => { return intoPointerType(&createIntegerType(&this.llvmContext, 64)); }
+        &Type::Array(under, size) => { return intoArrayType(&generateLLVMType(this, under), size as u32); }
+        &Type::Struct(decl) => {
+            let fields: &LLVMType = malloc(decl.context.fieldLength * sizeof LLVMType);
+            assert(fields != null, "Could not allocate memory in LLVMCodegen.generateLLVMType");
+            for (let i: usize = 0; i < decl.context.fieldLength; i = i + 1) {
+                let tDecl: &ParsedTypeNode = getFieldTypeAtIndex(&decl.context, i);
+                fields[i] = generateLLVMType(this, getType(&tDecl.typeState));
+            }
+            let t: LLVMType = createStructType(&this.llvmContext, fields, decl.context.fieldLength as u32, false);
+            free(fields);
+            return t;
         }
-        let t: LLVMType = createStructType(&this.llvmContext, fields, decl.context.fieldLength as u32, false);
-        free(fields);
-        return t;
-    } else if (isUnion(typ)) {
-        let decl: &ParsedUnionDecl = at(&unionDecls, typ.typeIndex);
-        let size = getSize(typ) as u32;
-        if (size == 0) {
-            assert(decl.variants.length == 0, "LLVM: Union has size 0, but contains variants");
-            return createStructType(&this.llvmContext, null, 0, false);
+        &Type::Union(decl, _) => {
+            let size = getSize(typ) as u32;
+            if (size == 0) {
+                assert(decl.variants.length == 0, "LLVM: Union has size 0, but contains variants");
+                return createStructType(&this.llvmContext, null, 0, false);
+            }
+            // Unions store the tag and an array of bytes
+            let tag: LLVMType = generateLLVMType(this, wrap(Type::Prim(PrimType::U8)));
+            let data = intoArrayType(&tag, size - 1); // - 1 because tag is stored differently
+            let fields = [tag, data];
+            return createStructType(&this.llvmContext, &fields[0], 2, false);
         }
-        // Unions store the tag and an array of bytes
-        let tag: LLVMType = generateLLVMType(this, newType(TYPE_KIND_PRIMITIVE, TYPE_U8));
-        let data = intoArrayType(&tag, size - 1); // - 1 because tag is stored differently
-        let fields = [tag, data];
-        return createStructType(&this.llvmContext, &fields[0], 2, false);
-    } else {
-        todo_with_msg("generate llvm type");
+        _ => { }
     }
+    todo_with_msg("generate llvm type");
 }
 
 func newLLVMCodegen(name: SubStr, irGen: &IRGen, interp: &IRInterp) -> LLVMCodegen {

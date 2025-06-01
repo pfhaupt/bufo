@@ -187,7 +187,7 @@ func reportTypeMismatch(this: &TypeChecker, span: Span, expected: &Type, got: &T
     return newTCStateFailure(ERROR_TYPE_MISMATCH);
 }
 
-func reportBinaryTypeMismatch(this: &TypeChecker, op: usize, lhsSpan: Span, lhsType: &Type, rhsSpan: Span, rhsType: &Type) -> TCState {
+func reportBinaryTypeMismatch(this: &TypeChecker, op: &char, lhsSpan: Span, lhsType: &Type, rhsSpan: Span, rhsType: &Type) -> TCState {
     trace("TypeChecker.reportBinaryTypeMismatch");
     let loc: String = toString(&newSpanBetween(&lhsSpan, &rhsSpan));
     let loc1: String = toString(&lhsSpan);
@@ -195,7 +195,7 @@ func reportBinaryTypeMismatch(this: &TypeChecker, op: usize, lhsSpan: Span, lhsT
     let typ1: String = toString(lhsType);
     let typ2: String = toString(rhsType);
     fprintf(stderr, "%s: %s: Type mismatch in binary expression! Operation `%s %s %s` is not defined.\n",
-        loc.buffer, ERR_STR, typ1.buffer, binOpAsStr(op), typ2.buffer);
+        loc.buffer, ERR_STR, typ1.buffer, op, typ2.buffer);
     fprintf(stderr, "%s: %s: LHS has type %s.\n", loc1.buffer, NOTE_STR, typ1.buffer);
     fprintf(stderr, "%s: %s: RHS has type %s.\n", loc2.buffer, NOTE_STR, typ2.buffer);
     drop(&typ2);
@@ -207,11 +207,11 @@ func reportBinaryTypeMismatch(this: &TypeChecker, op: usize, lhsSpan: Span, lhsT
     return newTCStateFailure(ERROR_TYPE_MISMATCH);
 }
 
-func reportInvalidPointerArithmetics(this: &TypeChecker, op: usize, lhsSpan: Span, rhsSpan: Span) -> TCState {
+func reportInvalidPointerArithmetics(this: &TypeChecker, op: &char, lhsSpan: Span, rhsSpan: Span) -> TCState {
     trace("TypeChecker.reportInvalidPointerArithmetics");
     let loc: String = toString(&newSpanBetween(&lhsSpan, &rhsSpan));
     fprintf(stderr, "%s: %s: Operation `%s` is not allowed in the context of pointer arithmetics.\n",
-        loc.buffer, ERR_STR, binOpAsStr(op));
+        loc.buffer, ERR_STR, op);
     drop(&loc);
     this.typeError = true;
     return newTCStateFailure(ERROR_INVALID_POINTER_ARITHMETIC);
@@ -311,11 +311,10 @@ func reportDuplicateFunction(this: &TypeChecker, f1: &FunctionLookup, f2: &Funct
     return newTCStateFailure(ERROR_DUPLICATE_FUNCTION);
 }
 
-func reportNoFunctionCallCandidate(this: &TypeChecker, callExpr: &ParsedExpr, fnType: &Type, functions: &FunctionLookupList) -> TCState {
+func reportNoFunctionCallCandidate(this: &TypeChecker, ident: Token, fnType: &Type, functions: &FunctionLookupList) -> TCState {
     trace("TypeChecker.reportNoFunctionCallCandidate");
-    assert(callExpr.kind == EXPR_NAME, "reportNoFunctionCallCandidate: Expected expr to be a call");
-    let loc: String = toString(&callExpr.origToken.span);
-    let name: String = toString(&callExpr.origToken.content);
+    let loc: String = toString(&ident.span);
+    let name: String = toString(&ident.content);
     let typ = toString(fnType);
     fprintf(stderr, "%s: %s: No function overload fits the provided context for call to function `%s`.\n", loc.buffer, ERR_STR, name.buffer);
     fprintf(stderr, "%s: %s: Context requires an overload of the form %s.\n", loc.buffer, NOTE_STR, typ.buffer);
@@ -439,19 +438,19 @@ func reportMemberAccessOnNonStruct(this: &TypeChecker, expr: &ParsedExpr, instan
     return newTCStateFailure(ERROR_MEMBER_ACCESS_NON_STRUCT);
 }
 
-func reportMemberAccessNoOptions(this: &TypeChecker, expr: &ParsedExpr) -> TCState {
+func reportMemberAccessNoOptions(this: &TypeChecker, span: Span) -> TCState {
     trace("TypeChecker.reportMemberAccessNoOptions");
-    let loc = toString(&expr.span);
+    let loc = toString(&span);
     fprintf(stderr, "%s: %s: Could not infer which type to use for expression.\n", loc.buffer, ERR_STR);
     drop(&loc);
     this.typeError = true;
     return newTCStateFailure(ERROR_MEMBER_ACCESS_NO_OPTIONS);
 }
 
-func reportMemberAccessTooManyOptions(this: &TypeChecker, expr: &ParsedExpr, structs: &StructLookupList) -> TCState {
+func reportMemberAccessTooManyOptions(this: &TypeChecker, span: Span, structs: &StructLookupList) -> TCState {
     trace("TypeChecker.reportMemberAccessTooManyOptions");
     assert(structs.length > 0);
-    let loc = toString(&expr.span);
+    let loc = toString(&span);
     fprintf(stderr, "%s: %s: Could not infer which type to use for expression.\n", loc.buffer, ERR_STR);
     for (let i: usize = 0; i < structs.length; i = i + 1) {
         let s = at(structs, i);
@@ -466,7 +465,7 @@ func reportMemberAccessTooManyOptions(this: &TypeChecker, expr: &ParsedExpr, str
     return newTCStateFailure(ERROR_MEMBER_ACCESS_TOO_MANY_OPTIONS);
 }
 
-func reportFunctionCallTooManyOptions(this: &TypeChecker, expr: &ParsedExpr) -> TCState {
+func reportFunctionCallTooManyOptions(this: &TypeChecker, expr: &CallExpr) -> TCState {
     trace("TypeChecker.reportFunctionCallTooManyOptions");
     let loc = toString(&expr.span);
     fprintf(stderr, "%s: %s: Could not infer which function to call.\n", loc.buffer, ERR_STR);
@@ -490,10 +489,14 @@ func reportCallToNonFunction(this: &TypeChecker, span: Span, base: &Type) -> TCS
 
 func reportArgumentCountMismatch(this: &TypeChecker, span: Span, base: &Type, args: usize) -> TCState {
     trace("TypeChecker.reportArgumentCountMismatch");
+    let c: usize = 0;
+    match (base) {
+        &Type::Func(params, _, _) => { c = params.length; }
+        _ => { unreachable(); }
+    }
     let loc = toString(&span);
     let typ = toString(base);
     let s = "arguments";
-    let c = base.fnParams.length;
     if (c == 1) s = "argument";
     let w = "were";
     if (args == 1) w = "was";
@@ -616,19 +619,17 @@ func typeCheckProject(this: &TypeChecker, project: &ParsedFile) -> bool {
 }
 
 func dfs(this: &TypeChecker, type: &Type, visited: &TypeLookupList, finished: &TypeLookupList) -> bool {
-    if (isArray(type)) {
-        return dfs(this, getUnderlyingType(type, false), visited, finished);
-    } else if (isStruct(type)) {
-        let structID: usize = type.typeIndex;
-        let strukt: &StructLookup = getStructByGlobalID(&this.lookup, structID);
-        return dfs(this, asTypeLookup(strukt), visited, finished);
-    } else if (isUnion(type)) {
-        let unionID: usize = type.typeIndex;
-        let onion: &UnionLookup = getUnionByGlobalDecl(&this.lookup, at(&unionDecls, unionID));
-        return dfs(this, asTypeLookup(onion), visited, finished);
-    } else {
-        return false;
+    match (type) {
+        &Type::Array(under, _) => { return dfs(this, under, visited, finished); }
+        &Type::Struct(decl) => {
+            return dfs(this, asTypeLookup(getStructByGlobalID(&this.lookup, getID(decl))), visited, finished);
+        }
+        &Type::Union(decl, _) => {
+            return dfs(this, asTypeLookup(getUnionByGlobalDecl(&this.lookup, decl)), visited, finished);
+        }
+        _ => { }
     }
+    return false;
 }
 
 func dfs(this: &TypeChecker, typeLookup: TypeLookup, visited: &TypeLookupList, finished: &TypeLookupList) -> bool {
@@ -899,7 +900,7 @@ func typeCheckUnionDecl(this: &TypeChecker, onion: &ParsedUnionDecl) -> TCState 
     trace("TypeChecker.typeCheckUnionDecl");
     if (onion.ignored) return blank;
     let unionLookup = getUnionByGlobalDecl(&this.lookup, onion);
-    let result = newTCStateType(newType(TYPE_KIND_UNION, getID(onion)));
+    let result = newTCStateType(wrap(Type::Union(onion, 0)));
     for (let i: usize = 0; i < onion.variants.length; i = i + 1) {
         let variant = *at(&onion.variants, i);
         /*
@@ -910,7 +911,7 @@ func typeCheckUnionDecl(this: &TypeChecker, onion: &ParsedUnionDecl) -> TCState 
         typeof(Foo::A) == Foo
         typeof(Foo::B) == Foo
          */
-        let state: TCState = newTCStateType(newType(TYPE_KIND_UNION, getID(onion)));
+        let state: TCState = newTCStateType(wrap(Type::Union(onion, 0)));
         let dupl: &UnionVariantLookup = null;
         if (checkForDuplicateVariant(unionLookup, variant, &dupl)) {
             result = reportDuplicateVariant(this, variant, dupl);
@@ -978,7 +979,7 @@ func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupLi
     this.currentFunction = funcLookup;
     let failure: TCState = blank;
     clear(&funcLookup.params);
-    let params: TCStateList = blank;
+    let params: TypeList = blank;
     for (let i: usize = 0; i < function.params.paramLength; i = i + 1) {
         let typ = getTypeAtIndex(&function.params, i);
         let name: Token = getNameAtIndex(&function.params, i);
@@ -992,16 +993,16 @@ func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupLi
             failure = state;
             continue;
         }
-        push(&params, state);
+        push(&params, getType(&state));
         addParameter(funcLookup, NODE_ID_OFFSET + i, name, state);
     }
     if (!isInvalid(&failure)) return failure;
     let retState: TCState = typeCheckTypeNode(this, function.retType);
     if (isError(&retState)) return retState;
-    let fnType = newType(TYPE_KIND_FUNCTION, getType(&retState));
-    fnType.fnParams = params;
-    if (function.params.isVarArg) fnType.arraySize = fnType.arraySize | FUNC_TYPE_VARIADIC;
-    if (hasAttribute(function, ATTR_NORETURN)) fnType.arraySize = fnType.arraySize | FUNC_TYPE_NORETURN;
+    let fnType = wrap(Type::Func(params, getType(&retState), FuncAttr {
+        isVariadic: function.params.isVarArg,
+        isNoreturn: hasAttribute(function, ATTR_NORETURN)
+    }));
     let state = newTCStateType(fnType);
     funcLookup.fnType = state;
     function.typeState = state;
@@ -1088,143 +1089,177 @@ func typeCheckBlock(this: &TypeChecker, block: &ParsedBlock, scopes: &ScopeLooku
 func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.typeCheckStmt");
     if (stmt.ignored) return blank;
-    if (stmt.kind == STMT_BLOCK) {
-        let blockState: TCState = typeCheckBlock(this, stmt.block, scopes);
-        if (isError(&blockState)) {
-            return blockState;
+    if (isSuccess(&stmt.typeState)) return stmt.typeState;
+    let state = newTCStateSuccess();
+    match (&stmt.data) {
+        &StmtData::VarDecl(_) => { return typeCheckVarDecl(this, stmt, scopes, false); }
+        &StmtData::ReturnEmpty => {
+            trace("TypeChecker.typeCheckStmt: ReturnEmpty");
+            assert(this.currentFunction != null);
+            let retState: &TCState = &this.currentFunction.fnType;
+            let _rt = getType(retState);
+            let retType = getReturnType(_rt);
+            if (!isNone(retType)) {
+                printf("%s\n", toString(&stmt.span).buffer);
+                printf("%s\n", toString(retType).buffer);
+                todo_with_msg("function returns something, but we wrote return;");
+            }
         }
-        stmt.typeState = blockState;
-        return blockState;
-    } else if (stmt.kind == STMT_VAR_DECL) {
-        return typeCheckVarDecl(this, stmt, scopes, false);
-    } else if (stmt.kind == STMT_EXPR) {
-        if (isSuccess(&stmt.typeState))
-            return stmt.typeState;
-        let exprState: TCState = typeCheckExpr(this, stmt.expr, scopes);
-        if (isError(&exprState)) {
-            return exprState;
-        }
-        if (wantsInfer(&exprState)) {
-            let noneType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_NONE);
-            exprState = inferTypeOntoExpr(this, stmt.expr, noneType, scopes);
-        }
-        if (!isType(&exprState)) {
-            printf("%llu\n", exprState.kind);
-            todo_with_msg("what is it then");
-        }
-        let exprType: &Type = getType(&exprState);
-        if (!isNone(exprType) && !isAssignment(stmt.expr) && *flags.warnUnused) {
-            let loc: String = toString(&stmt.expr.span);
-            fprintf(stderr, "%s: %s: Unused expression value.\n", loc.buffer, WARN_STR);
-            drop(&loc);
-        }
-        (*stmt).typeState = exprState;
-        return newTCStateSuccess();
-    } else if (stmt.kind == STMT_IF) {
-        if (isSuccess(&stmt.typeState))
-            return stmt.typeState;
-        let condState: TCState = typeCheckExpr(this, stmt.expr, scopes);
-        let thenState: TCState = typeCheckStmt(this, stmt.ifContext.thenBody, scopes);
-        let elseState: TCState = newTCStateSuccess();
-        if (stmt.ifContext.hasElse) {
-            elseState = typeCheckStmt(this, stmt.ifContext.elseBody, scopes);
-        }
-        if (isError(&condState)) return condState;
-        if (isError(&thenState)) return thenState;
-        if (isError(&elseState)) return elseState;
-        let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
-        if (wantsInfer(&condState)) {
-            condState = inferTypeOntoExpr(this, stmt.expr, boolType, scopes);
-            assert(isType(&condState), "Could not infer type onto if-condition");
-        }
-        let condType: &Type = getType(&condState);
-        if (!isBoolean(condType)) {
-            return reportTypeMismatch(this, stmt.expr.span, boolType, condType);
-        }
-        let state: TCState = newTCStateSuccess();
-        (*stmt).typeState = state;
-        return state;
-    } else if (stmt.kind == STMT_RETURN_EXPR) {
-        if (isSuccess(&stmt.typeState))
-            return stmt.typeState;
-        let exprState: TCState = typeCheckExpr(this, stmt.expr, scopes);
-        if (isError(&exprState)) return exprState;
-        assert(this.currentFunction != null);
-        let retState: &TCState = &this.currentFunction.fnType;
-        assert(isSuccess(retState), "ready to use function has invalid return type");
-        assert(isType(retState), "ready to use function has non-type as return type");
-        let _rt = getType(retState);
-        let retType = at(&types, _rt.typeIndex);
-        if (isNone(retType)) todo_with_msg("unexpected ret expr where empty function");
-        if (wantsInfer(&exprState)) {
-            exprState = inferTypeOntoExpr(this, stmt.expr, retType, scopes);
+        &StmtData::ReturnExpr(expr) => {
+            trace("TypeChecker.typeCheckStmt: ReturnExpr");
+            let exprState: TCState = typeCheckExpr(this, expr, scopes);
             if (isError(&exprState)) return exprState;
-            assert(isType(&exprState), "Failed to infer type of return expression");
+            assert(this.currentFunction != null);
+            let retState: &TCState = &this.currentFunction.fnType;
+            assert(isSuccess(retState), "ready to use function has invalid return type");
+            assert(isType(retState), "ready to use function has non-type as return type");
+            let _rt = getType(retState);
+            let retType = getReturnType(_rt);
+            if (isNone(retType)) todo_with_msg("unexpected ret expr where empty function");
+            if (wantsInfer(&exprState)) {
+                exprState = inferTypeOntoExpr(this, expr, retType, scopes);
+                if (isError(&exprState)) return exprState;
+                assert(isType(&exprState), "Failed to infer type of return expression");
+            }
+            let exprType: &Type = getType(&exprState);
+            if (!equals(exprType, retType)) {
+                return reportTypeMismatch(this, stmt.span, retType, exprType);
+            }
+            state = *retState;
         }
-        let exprType: &Type = getType(&exprState);
-        if (!equals(exprType, retType)) {
-            return reportTypeMismatch(this, stmt.span, retType, exprType);
+        &StmtData::Expr(expr) => {
+            trace("TypeChecker.typeCheckStmt: Expr");
+            let exprState: TCState = typeCheckExpr(this, expr, scopes);
+            if (isError(&exprState)) return exprState;
+            if (wantsInfer(&exprState)) {
+                let noneType: &Type = wrap(Type::Prim(PrimType::None));
+                exprState = inferTypeOntoExpr(this, expr, noneType, scopes);
+            }
+            if (!isType(&exprState)) {
+                printf("%s\n", toString(&stmt.span).buffer);
+                printf("%llu\n", exprState.kind);
+                todo_with_msg("what is it then");
+            }
+            let exprType: &Type = getType(&exprState);
+            if (!isNone(exprType) && !isAssignment(expr) && *flags.warnUnused) {
+                let loc: String = toString(&expr.span);
+                fprintf(stderr, "%s: %s: Unused expression value.\n", loc.buffer, WARN_STR);
+                drop(&loc);
+            }
+            state = exprState;
         }
-        (*stmt).typeState = *retState;
-        return newTCStateSuccess();
-    } else if (stmt.kind == STMT_RETURN_EMPTY) {
-        assert(this.currentFunction != null);
-        let retState: &TCState = &this.currentFunction.fnType;
-        let _rt = getType(retState);
-        let retType = at(&types, _rt.typeIndex);
-        if (!isNone(retType)) {
-            printf("%s\n", toString(&stmt.span).buffer);
-            printf("%llu %llu\n", retType.kind, retType.typeIndex);
-            todo_with_msg("function returns something, but we wrote return;");
+        &StmtData::Block(block) => { state = typeCheckBlock(this, block, scopes); }
+        &StmtData::If(cond, then) => {
+            trace("TypeChecker.typeCheckStmt: If");
+            let condState: TCState = typeCheckExpr(this, cond, scopes);
+            let thenState: TCState = typeCheckStmt(this, then, scopes);
+            if (isError(&condState)) return condState;
+            if (isError(&thenState)) return thenState;
+            let boolType: &Type = wrap(Type::Prim(PrimType::Bool));
+            if (wantsInfer(&condState)) {
+                condState = inferTypeOntoExpr(this, cond, boolType, scopes);
+                assert(isType(&condState), "Could not infer type onto if-condition");
+            }
+            let condType: &Type = getType(&condState);
+            if (!isBoolean(condType)) {
+                return reportTypeMismatch(this, cond.span, boolType, condType);
+            }
         }
-        (*stmt).typeState = newTCStateSuccess();
-        return newTCStateSuccess();
-    } else if (stmt.kind == STMT_WHILE) {
-        if (isSuccess(&stmt.typeState))
-            return stmt.typeState;
-        let condState: TCState = typeCheckExpr(this, stmt.expr, scopes);
-        let bodyState: TCState = typeCheckBlock(this, stmt.block, scopes);
-        let stepState: TCState = typeCheckExpr(this, stmt.step, scopes);
-        if (isError(&condState)) return condState;
-        if (isError(&bodyState)) return bodyState;
-        if (isError(&stepState)) return stepState;
-        let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
-        if (wantsInfer(&condState)) {
-            condState = inferTypeOntoExpr(this, stmt.expr, boolType, scopes);
-            assert(isType(&condState), "Could not infer type onto while-condition");
+        &StmtData::IfElse(cond, then, elze) => {
+            trace("TypeChecker.typeCheckStmt: IfElse");
+            let condState: TCState = typeCheckExpr(this, cond, scopes);
+            let thenState: TCState = typeCheckStmt(this, then, scopes);
+            let elseState: TCState = typeCheckStmt(this, elze, scopes);
+            if (isError(&condState)) return condState;
+            if (isError(&thenState)) return thenState;
+            if (isError(&elseState)) return elseState;
+            let boolType: &Type = wrap(Type::Prim(PrimType::Bool));
+            if (wantsInfer(&condState)) {
+                condState = inferTypeOntoExpr(this, cond, boolType, scopes);
+                assert(isType(&condState), "Could not infer type onto if-condition");
+            }
+            let condType: &Type = getType(&condState);
+            if (!isBoolean(condType)) {
+                return reportTypeMismatch(this, cond.span, boolType, condType);
+            }
         }
-        let condType: &Type = getType(&condState);
-        if (!isBoolean(condType)) {
-            return reportTypeMismatch(this, stmt.expr.span, boolType, condType);
+        &StmtData::While(cond, body) => {
+            trace("TypeChecker.typeCheckStmt: While");
+            let condState: TCState = typeCheckExpr(this, cond, scopes);
+            let bodyState: TCState = typeCheckStmt(this, body, scopes);
+            if (isError(&condState)) return condState;
+            if (isError(&bodyState)) return bodyState;
+            let boolType: &Type = wrap(Type::Prim(PrimType::Bool));
+            if (wantsInfer(&condState)) {
+                condState = inferTypeOntoExpr(this, cond, boolType, scopes);
+                assert(isType(&condState), "Could not infer type onto while-condition");
+            }
+            let condType: &Type = getType(&condState);
+            if (!isBoolean(condType)) {
+                return reportTypeMismatch(this, cond.span, boolType, condType);
+            }
         }
-        (*stmt).typeState = newTCStateSuccess();
-        return newTCStateSuccess();
-    } else if (stmt.kind == STMT_MATCH) {
-        return typeCheckMatchStmt(this, stmt, scopes);
-    } else if (stmt.kind == STMT_BREAK || stmt.kind == STMT_CONTINUE) {
-        (*stmt).typeState = newTCStateSuccess();
-        return newTCStateSuccess();
-    } else {
-        unreachable("Exhaustive handling of stmts in typeCheckStmt");
+        &StmtData::CFor { init, cond, step, body } => {
+            trace("TypeChecker.typeCheckStmt: CFor");
+            push(scopes, blank);
+            let initState: TCState = typeCheckStmt(this, init, scopes);
+            let condState: TCState = typeCheckExpr(this, cond, scopes);
+            let stepState: TCState = typeCheckExpr(this, step, scopes);
+            let bodyState: TCState = typeCheckStmt(this, body, scopes);
+            pop(scopes);
+            if (isError(&initState)) return initState;
+            if (isError(&condState)) return condState;
+            if (isError(&stepState)) return stepState;
+            if (isError(&bodyState)) return bodyState;
+            let boolType: &Type = wrap(Type::Prim(PrimType::Bool));
+            if (wantsInfer(&condState)) {
+                condState = inferTypeOntoExpr(this, cond, boolType, scopes);
+                assert(isType(&condState), "Could not infer type onto for-condition");
+            }
+            let condType: &Type = getType(&condState);
+            if (!isBoolean(condType)) {
+                return reportTypeMismatch(this, cond.span, boolType, condType);
+            }
+        }
+        &StmtData::Break => { }
+        &StmtData::Continue => { }
+        &StmtData::Match(_,_,_) => { return typeCheckMatchStmt(this, stmt, scopes); }
+        unknown => {
+            fprintf(stderr, "%s typeCheckStmt: Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
+            exit(2);
+        }
     }
+    if (isError(&state)) return state;
+    stmt.typeState = state;
+    return state;
 }
 
 func typeCheckMatchStmt(this: &TypeChecker, match: &ParsedStmt, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.typeCheckMatchStmt");
-    assert(match.kind == STMT_MATCH);
-    let exprState = typeCheckExpr(this, match.expr, scopes);
+    let expr: &ParsedExpr = null;
+    let patterns: &ParsedPatternList = null;
+    let stmts: &ParsedStmtList = null;
+    match (&match.data) {
+        &StmtData::Match(_expr, _patterns, _stmts) => {
+            expr = _expr;
+            patterns = &_patterns;
+            stmts = &_stmts;
+        }
+        _ => { unreachable(); }
+    }
+    let exprState = typeCheckExpr(this, expr, scopes);
     if (isError(&exprState)) return exprState;
     if (wantsInfer(&exprState)) todo_with_msg("match expr wants infer");
     let type = getType(&exprState);
-    assert(match.patterns.length == match.stmts.length);
+    assert(patterns.length == stmts.length);
     let result = newTCStateSuccess();
     let complete = false;
     // TODO: typeCheckMatchStmt: Check for exhaustive pattern matching
     // TODO: How do we know if we exhausted all union patterns?
     // TODO: How do we know if we exhausted any pattern?
-    for (let i: usize = 0; i < match.patterns.length; i = i + 1) {
+    for (let i: usize = 0; i < patterns.length; i = i + 1) {
         let scope: ScopeLookup = blank;
-        let pat = *at(&match.patterns, i);
+        let pat = *at(patterns, i);
         let patState = checkAndBindPattern(this, type, pat, &scope);
         if (isError(&patState)) {
             result = patState;
@@ -1233,17 +1268,17 @@ func typeCheckMatchStmt(this: &TypeChecker, match: &ParsedStmt, scopes: &ScopeLo
         assert(isPattern(&patState));
         let _patState = getPatState(&patState);
         push(scopes, scope);
-        let stmt = *at(&match.stmts, i);
+        let stmt = *at(stmts, i);
         let stmtState = typeCheckStmt(this, stmt, scopes);
         pop(scopes);
         complete = _patState.complete;
-        if (complete && i != match.patterns.length - 1) {
-            let next = *at(&match.patterns, i + 1);
+        if (complete && i != patterns.length - 1) {
+            let next = *at(patterns, i + 1);
             let loc = toString(&next.span);
             fprintf(stderr, "%s: %s: Unreachable pattern.\n", loc.buffer, WARN_STR);
             drop(&loc);
-            (match.patterns.length = i + 1);
-            (match.stmts.length = i + 1);
+            patterns.length = i + 1;
+            stmts.length = i + 1;
         }
     }
     if (isError(&result)) return result;
@@ -1265,160 +1300,180 @@ func typeCheckMatchStmt(this: &TypeChecker, match: &ParsedStmt, scopes: &ScopeLo
 func checkAndBindPattern(this: &TypeChecker, type: &Type, pat: &ParsedPattern, scope: &ScopeLookup) -> TCState {
     trace("TypeChecker.checkAndBindPattern");
     // TODO: This is a good spot to test match statements after the refactor :^)
-    if (pat.kind == PATTERN_IDENT) {
-        let loc: Token = blank;
-        if (isKnownVariable(scope, pat.ident.content, &loc)) {
-            todo_with_msg("pat ident exists, check type");
+    match (&pat.data) {
+        &Pattern::Ident(ident) => {
+            let loc: Token = blank;
+            if (isKnownVariable(scope, ident.content, &loc)) {
+                todo_with_msg("pat ident exists, check type");
+            }
+            addVariable(scope, VariableLookup {
+                globalID: getID(pat),
+                name: ident,
+                typeState: newTCStateType(type),
+                isComptime: false,
+            });
+            return newTCStatePattern(PatState {
+                complete: true,
+            });
         }
-        addVariable(scope, VariableLookup {
-            globalID: getID(pat),
-            name: pat.ident,
-            typeState: newTCStateType(type),
-            isComptime: false,
-        });
-        return newTCStatePattern(PatState {
-            complete: true,
-        });
-    } else if (pat.kind == PATTERN_REFERENCE) {
-        // REVIEW: Make &pat check for null?
-        if (!isPointer(type)) {
-            return reportImpossiblePattern(this, pat, type);
+        &Pattern::Reference(sub) => {
+            // REVIEW: Make &pat check for null?
+            match (type) {
+                &Type::Ptr(under) => { return checkAndBindPattern(this, under, sub, scope); }
+                _ => { return reportImpossiblePattern(this, pat, type); }
+            }
         }
-        assert(pat.subPatterns.length == 1);
-        let underlying = getUnderlyingType(type, false);
-        return checkAndBindPattern(this, underlying, *at(&pat.subPatterns, 0), scope);
-    } else if (pat.kind == PATTERN_BOOLEAN) {
-        if (!isBoolean(type)) {
-            return reportImpossiblePattern(this, pat, type);
-        }
-        return newTCStatePattern(PatState {
-            complete: false
-        });
-    } else if (pat.kind == PATTERN_NULL) {
-        if (!isPointer(type)) {
-            return reportImpossiblePattern(this, pat, type);
-        }
-        return newTCStatePattern(PatState {
-            complete: false
-        });
-    } else if (pat.kind == PATTERN_PATH) {
-        let name = &pat.ident;
-        assert(pat.subPatterns.length == 1);
-        let subPat = *at(&pat.subPatterns, 0);
-        assert(subPat.kind == PATTERN_IDENT || subPat.kind == PATTERN_STRUCT);
-        let moduleLookup: &ModuleLookup = null;
-        if (isUnion(type)) {
-            let decl = at(&unionDecls, type.typeIndex);
-            if (!equals(&name.content, &decl.name.content)) {
+        &Pattern::Boolean(_) => {
+            if (!isBoolean(type)) {
                 return reportImpossiblePattern(this, pat, type);
-            }
-            let variant: &ParsedUnionVariant = null;
-            if (!resolveVariantByName(decl, &subPat.ident, &variant)) {
-                todo_with_msg("checkAndBindPattern: Path pattern Union doesn't have variant");
-            }
-            if (subPat.kind == PATTERN_IDENT && variant.kind != UNION_VARIANT_EMPTY) {
-                todo_with_msg("checkAndBindPattern: Union Pattern ident not empty");
-            }
-            if (subPat.subPatterns.length > variant.fields.length) {
-                if (subPat.subPatterns.length == variant.fields.length + 1) {
-                    let last = *at(&subPat.subPatterns, subPat.subPatterns.length - 1);
-                    if (last.kind != PATTERN_REST) {
-                        return reportTooManyPatterns(this, pat, type);
-                    }
-                } else {
-                    return reportTooManyPatterns(this, pat, type);
-                }
-            }
-            if (subPat.subPatterns.length < variant.fields.length) {
-                if (subPat.subPatterns.length > 0) {
-                    let last = *at(&subPat.subPatterns, subPat.subPatterns.length - 1);
-                    if (last.kind != PATTERN_REST) {
-                        return reportNotEnoughPatterns(this, pat, type);
-                    }
-                } else {
-                    return reportNotEnoughPatterns(this, pat, type);
-                }
-            }
-            let complete = true;
-            for (let i: usize = 0; i < variant.fields.length; i = i + 1) {
-                let subSubPat = *at(&subPat.subPatterns, i);
-                let field = *at(&variant.fields, i);
-                assert(isSuccess(&field.typeState), "checkAndBindPattern: Invalid field type");
-                let fieldType = getType(&field.typeState);
-                let subComplete = checkAndBindPattern(this, fieldType, subSubPat, scope);
-                if (isError(&subComplete)) return subComplete;
-                if (!getPatState(&subComplete).complete) {
-                    complete = false;
-                }
-                if (subSubPat.kind == PATTERN_REST) break;
             }
             return newTCStatePattern(PatState {
                 complete: false
             });
-        } else if (resolveModuleByName(this.currentModule, name, &moduleLookup)) {
-            return checkAndBindPattern(this, type, subPat, scope);
-        } else {
-            return reportImpossiblePattern(this, pat, type);
         }
-    } else if (pat.kind == PATTERN_STRUCT) {
-        if (!isStruct(type)) {
-            return reportImpossiblePattern(this, pat, type);
+        &Pattern::Null => {
+            if (!isPointer(type)) {
+                return reportImpossiblePattern(this, pat, type);
+            }
+            return newTCStatePattern(PatState {
+                complete: false
+            });
         }
-        let decl = getStructByGlobalID(&this.lookup, type.typeIndex);
-        let name = &pat.ident;
-        if (!equals(&name.content, &decl.name.content)) {
-            return reportImpossiblePattern(this, pat, type);
-        }
-        if (pat.subPatterns.length > decl.fields.length) {
-            if (pat.subPatterns.length == decl.fields.length + 1) {
-                let last = *at(&pat.subPatterns, pat.subPatterns.length - 1);
-                if (last.kind != PATTERN_REST) {
-                    return reportTooManyPatterns(this, pat, type);
+        &Pattern::Path(name, subPat) => {
+            let ident: Token = blank;
+            match (&subPat.data) {
+                &Pattern::Ident(_ident) => { ident = _ident; }
+                &Pattern::Struct(_ident, _) => { ident = _ident; }
+                _ => { unreachable("Path Pattern expected Ident or Struct as RHS"); }
+            }
+            match (type) {
+                &Type::Union(decl, _) => {
+                    if (!equals(&name.content, &decl.name.content)) {
+                        return reportImpossiblePattern(this, pat, type);
+                    }
+                    let variant: &ParsedUnionVariant = null;
+                    if (!resolveVariantByName(decl, &ident, &variant)) {
+                        todo_with_msg("checkAndBindPattern: Path pattern Union doesn't have variant");
+                    }
+                    match (&subPat.data) {
+                        &Pattern::Ident(ident) => {
+                            if (variant.kind != UNION_VARIANT_EMPTY) {
+                                todo_with_msg("checkAndBindPattern: Union Pattern ident not empty");
+                            }
+                        }
+                        &Pattern::Struct(ident, subPatterns) => {
+                            // FIXME: Code duplication with Pattern::Struct a few lines below
+                            if (subPatterns.length > variant.fields.length) {
+                                if (subPatterns.length == variant.fields.length + 1) {
+                                    let last = *at(&subPatterns, subPatterns.length - 1);
+                                    if (tag(&last.data) != comptime tag(&Pattern::Rest)) {
+                                        return reportTooManyPatterns(this, pat, type);
+                                    }
+                                } else {
+                                    return reportTooManyPatterns(this, pat, type);
+                                }
+                            }
+                            if (subPatterns.length < variant.fields.length) {
+                                if (subPatterns.length > 0) {
+                                    let last = *at(&subPatterns, subPatterns.length - 1);
+                                    if (tag(&last.data) != comptime tag(&Pattern::Rest)) {
+                                        return reportNotEnoughPatterns(this, pat, type);
+                                    }
+                                } else {
+                                    return reportNotEnoughPatterns(this, pat, type);
+                                }
+                            }
+                            let complete = true;
+                            for (let i: usize = 0; i < variant.fields.length; i = i + 1) {
+                                let subSubPat = *at(&subPatterns, i);
+                                let field = *at(&variant.fields, i);
+                                assert(isSuccess(&field.typeState), "checkAndBindPattern: Invalid field type");
+                                let fieldType = getType(&field.typeState);
+                                let subComplete = checkAndBindPattern(this, fieldType, subSubPat, scope);
+                                if (isError(&subComplete)) return subComplete;
+                                if (!getPatState(&subComplete).complete) {
+                                    complete = false;
+                                }
+                                if (tag(&subSubPat.data) == comptime tag(&Pattern::Rest)) break;
+                            }
+                        }
+                        _ => { unreachable("Expected Ident Pattern or Struct Pattern as RHS of Path Pattern"); }
+                    }
+                    return newTCStatePattern(PatState {
+                        complete: false
+                    });
                 }
-            } else {
-                return reportTooManyPatterns(this, pat, type);
-            }
-        }
-        if (pat.subPatterns.length < decl.fields.length) {
-            if (pat.subPatterns.length > 0) {
-                let last = *at(&pat.subPatterns, pat.subPatterns.length - 1);
-                if (last.kind != PATTERN_REST) {
-                    return reportNotEnoughPatterns(this, pat, type);
+                type => {
+                    let moduleLookup: &ModuleLookup = null;
+                    if (resolveModuleByName(this.currentModule, &name, &moduleLookup)) {
+                        return checkAndBindPattern(this, type, subPat, scope);
+                    } else {
+                        return reportImpossiblePattern(this, pat, type);
+                    }
                 }
-            } else {
-                return reportNotEnoughPatterns(this, pat, type);
             }
         }
-        let complete = true;
-        for (let i: usize = 0; i < decl.fields.length; i = i + 1) {
-            let subpat = *at(&pat.subPatterns, i);
-            let field = at(&decl.fields, i);
-            assert(isSuccess(&field.typeState), "checkAndBindPattern: Invalid field type");
-            let fieldType = getType(&field.typeState);
-            let subComplete = checkAndBindPattern(this, fieldType, subpat, scope);
-            if (isError(&subComplete)) return subComplete;
-            if (!getPatState(&subComplete).complete) {
-                complete = false;
+        &Pattern::Struct(name, subPatterns) => {
+            match (type) {
+                &Type::Struct(decl) => {
+                    let lookup = getStructByGlobalID(&this.lookup, getID(decl));
+                    if (!equals(&name.content, &lookup.name.content)) {
+                        return reportImpossiblePattern(this, pat, type);
+                    }
+                    if (subPatterns.length > lookup.fields.length) {
+                        if (subPatterns.length == lookup.fields.length + 1) {
+                            let last = *at(&subPatterns, subPatterns.length - 1);
+                            if (tag(&last.data) != comptime tag(&Pattern::Rest)) {
+                                return reportTooManyPatterns(this, pat, type);
+                            }
+                        } else {
+                            return reportTooManyPatterns(this, pat, type);
+                        }
+                    }
+                    if (subPatterns.length < lookup.fields.length) {
+                        if (subPatterns.length > 0) {
+                            let last = *at(&subPatterns, subPatterns.length - 1);
+                            if (tag(&last.data) != comptime tag(&Pattern::Rest)) {
+                                return reportNotEnoughPatterns(this, pat, type);
+                            }
+                        } else {
+                            return reportNotEnoughPatterns(this, pat, type);
+                        }
+                    }
+                    let complete = true;
+                    for (let i: usize = 0; i < lookup.fields.length; i = i + 1) {
+                        // FIXME: Struct Pattern should bind by name, not index
+                        let subpat = *at(&subPatterns, i);
+                        let field = at(&lookup.fields, i);
+                        assert(isSuccess(&field.typeState), "checkAndBindPattern: Invalid field type");
+                        let fieldType = getType(&field.typeState);
+                        let subComplete = checkAndBindPattern(this, fieldType, subpat, scope);
+                        if (isError(&subComplete)) return subComplete;
+                        if (!getPatState(&subComplete).complete) {
+                            complete = false;
+                        }
+                        if (tag(&subpat.data) == comptime tag(&Pattern::Rest)) break;
+                    }
+                    return newTCStatePattern(PatState {
+                        complete: complete
+                    });
+                }
+                _ => { return reportImpossiblePattern(this, pat, type); }
             }
-            if (subpat.kind == PATTERN_REST) break;
         }
-        return newTCStatePattern(PatState {
-            complete: complete
-        });
-    } else if (pat.kind == PATTERN_NUMBER) {
-        if (!isInteger(type) && !isFloat(type)) {
-            return reportImpossiblePattern(this, pat, type);
+        &Pattern::Number(_) => {
+            if (!isInteger(type) && !isFloat(type)) {
+                return reportImpossiblePattern(this, pat, type);
+            }
+            return newTCStatePattern(PatState {
+                complete: false
+            });
         }
-        return newTCStatePattern(PatState {
-            complete: false
-        });
-    } else if (pat.kind == PATTERN_WILDCARD || pat.kind == PATTERN_REST) {
-        return newTCStatePattern(PatState {
-            complete: true,
-        });
-    } else {
-        unreachable("Exhaustive handling of patterns in checkAndBindPattern");
+        &Pattern::Wildcard => { return newTCStatePattern(PatState { complete: true }); }
+        &Pattern::Rest     => { return newTCStatePattern(PatState { complete: true }); }
+        _ => { }
     }
+    unreachable("Exhaustive handling of patterns in checkAndBindPattern");
 }
 
 func typeCheckVarDecl(this: &TypeChecker, varDeclID: usize, scopes: &ScopeLookupList, globalScope: bool) -> TCState {
@@ -1427,82 +1482,87 @@ func typeCheckVarDecl(this: &TypeChecker, varDeclID: usize, scopes: &ScopeLookup
 func typeCheckVarDecl(this: &TypeChecker, varDecl: &ParsedStmt, scopes: &ScopeLookupList, globalScope: bool) -> TCState {
     trace("TypeChecker.typeCheckVarDecl");
     if (varDecl.ignored) return blank;
-    assert(varDecl.kind == STMT_VAR_DECL, "Stmt expected to be a VarDecl");
-    let context: VarDeclContext = varDecl.varDeclContext;
-    let last: &ScopeLookup = last(scopes);
-    let typeState: TCState = blank;
-    let exprState: TCState = blank;
-    if (isSuccess(&varDecl.typeState)) {
-        typeState = varDecl.typeState;
-        exprState = varDecl.typeState;
-    } else {
-        let loc: Token = blank;
-        if (*flags.warnSimple) {
-            for (let i: usize = 0; i < scopes.length - 1; i = i + 1) {
-                let s = at(scopes, i);
-                let _loc: Token = blank;
-                if (isKnownVariable(s, context.name.content, &_loc)) {
-                    let loc1 = toString(&context.name.span);
-                    let loc2 = toString(&_loc.span);
-                    let name = toString(&context.name.content);
-                    fprintf(stderr, "%s: %s: Shadowing variable `%s` from an outer scope.\n", loc1.buffer, WARN_STR, name.buffer);
-                    fprintf(stderr, "%s: %s: Variable with the same name already declared here.\n", loc2.buffer, NOTE_STR);
-                    drop(&name);
-                    drop(&loc2);
-                    drop(&loc1);
+    // TODO: Split StmtData::VarDecl into a version that has a type, and one that doesn't
+    match (&varDecl.data) {
+        &StmtData::VarDecl(VarDecl { name, type, expr, isComptime, .. }) => {
+            let last: &ScopeLookup = last(scopes);
+            let typeState: TCState = blank;
+            let exprState: TCState = blank;
+            if (isSuccess(&varDecl.typeState)) {
+                typeState = varDecl.typeState;
+                exprState = varDecl.typeState;
+            } else {
+                let loc: Token = blank;
+                if (*flags.warnSimple) {
+                    for (let i: usize = 0; i < scopes.length - 1; i = i + 1) {
+                        let s = at(scopes, i);
+                        let _loc: Token = blank;
+                        if (isKnownVariable(s, name.content, &_loc)) {
+                            let loc1 = toString(&name.span);
+                            let loc2 = toString(&_loc.span);
+                            let name = toString(&name.content);
+                            fprintf(stderr, "%s: %s: Shadowing variable `%s` from an outer scope.\n", loc1.buffer, WARN_STR, name.buffer);
+                            fprintf(stderr, "%s: %s: Variable with the same name already declared here.\n", loc2.buffer, NOTE_STR);
+                            drop(&name);
+                            drop(&loc2);
+                            drop(&loc1);
+                        }
+                    }
+                }
+                if (!globalScope && isKnownVariable(last, name.content, &loc)) {
+                    return reportVariableRedeclaration(this, name, loc);
+                }
+                if (type != null) {
+                    typeState = typeCheckTypeNode(this, type);
+                    if (isError(&typeState)) return typeState;
+                    if (!isType(&typeState)) todo_with_msg("let type is not a type");
+                }
+                this.isComptimeContext = isComptime;
+                exprState = typeCheckExpr(this, expr, scopes);
+                this.isComptimeContext = false;
+                if (type == null) {
+                    // let var = expr;
+                    assert(isInvalid(&typeState), "`let var = expr;` got valid type state??");
+                    if (isError(&exprState)) return exprState;
+                    if (wantsInfer(&exprState)) {
+                    } else if (!isType(&exprState)) {
+                        todo_with_msg("let expr is not a type");
+                    }
+                    typeState = exprState;
+                } else {
+                    // let var: type = expr;
+                    if (wantsInfer(&exprState)) {
+                        exprState = inferTypeOntoExpr(this, expr, getType(&typeState), scopes);
+                    }
+                    if (isType(&exprState)) {
+                        let typeType: &Type = getType(&typeState);
+                        let exprType: &Type = getType(&exprState);
+                        if (!equals(typeType, exprType)) {
+                            exprState = reportTypeMismatch(this, expr.span, typeType, exprType);
+                        }
+                    }
                 }
             }
-        }
-        if (!globalScope && isKnownVariable(last, context.name.content, &loc)) {
-            return reportVariableRedeclaration(this, context.name, loc);
-        }
-        if (context.type != null) {
-            typeState = typeCheckTypeNode(this, context.type);
-            if (isError(&typeState)) return typeState;
-            if (!isType(&typeState)) todo_with_msg("let type is not a type");
-        }
-        this.isComptimeContext = context.isComptime;
-        exprState = typeCheckExpr(this, context.expr, scopes);
-        this.isComptimeContext = false;
-        if (context.type == null) {
-            // let var = expr;
-            assert(isInvalid(&typeState), "`let var = expr;` got valid type state??");
+            if (globalScope) {
+                let index: usize = 0;
+                assert(getVarIndexByName(last, name.content, &index), "Could not find variable in global scope");
+                let var: &VariableLookup = getVariableAtIndex(last, index);
+                var.typeState = typeState;
+            } else {
+                addVariable(last, VariableLookup {
+                    globalID: getID(varDecl),
+                    name: name,
+                    typeState: typeState,
+                    isComptime: isComptime,
+                });
+            }
             if (isError(&exprState)) return exprState;
-            if (wantsInfer(&exprState)) {
-            } else if (!isType(&exprState)) {
-                todo_with_msg("let expr is not a type");
-            }
-            typeState = exprState;
-        } else {
-            // let var: type = expr;
-            if (wantsInfer(&exprState)) {
-                exprState = inferTypeOntoExpr(this, context.expr, getType(&typeState), scopes);
-            }
-            if (isType(&exprState)) {
-                let typeType: &Type = getType(&typeState);
-                let exprType: &Type = getType(&exprState);
-                if (!equals(typeType, exprType)) {
-                    exprState = reportTypeMismatch(this, context.expr.span, typeType, exprType);
-                }
-            }
+            varDecl.typeState = typeState;
+            return typeState;
         }
+        _ => { }
     }
-    if (globalScope) {
-        let index: usize = 0;
-        assert(getVarIndexByName(last, context.name.content, &index), "Could not find variable in global scope");
-        let var: &VariableLookup = getVariableAtIndex(last, index);
-        (*var).typeState = typeState;
-    } else {
-        addVariable(last, VariableLookup {
-            globalID: getID(varDecl),
-            name: context.name,
-            typeState: typeState,
-            isComptime: context.isComptime,
-        });
-    }
-    if (isError(&exprState)) return exprState;
-    (*varDecl).typeState = typeState;
-    return typeState;
+    unreachable("typeCheckVarDecl: Expected VarDecl");
 }
 
 func typeCheckExpr(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupList) -> TCState {
@@ -1513,99 +1573,90 @@ func typeCheckExpr(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupLi
     if (expr.ignored) return blank;
     if (isSuccess(&expr.typeState)) return expr.typeState;
     let state: TCState = blank;
-    if (expr.kind == EXPR_EMPTY) {
-        state = newTCStateSuccess();
-    } else if (expr.kind == EXPR_INT_LIT) {
-        state = newTCStatePleaseInfer();
-    } else if (expr.kind == EXPR_STRING_LIT) {
-        let ct: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_CHAR);
-        let st: &Type = newType(TYPE_KIND_POINTER, getID(ct));
-        state = newTCStateType(st);
-    } else if (expr.kind == EXPR_CHAR_LIT) {
-        state = newTCStateType(newType(TYPE_KIND_PRIMITIVE, TYPE_CHAR));
-    } else if (expr.kind == EXPR_ARRAY_LIT) {
-        let context: &ArrayContext = &expr.arrayContext;
-        if (context.elemLength == 0) return newTCStatePleaseInfer();
-        let elemIndex: usize = getElementAtIndex(context, 0);
-        let elemState: TCState = typeCheckExpr(this, elemIndex, scopes);
-        if (isError(&elemState)) return elemState;
-        if (wantsInfer(&elemState)) return elemState;
-        let elemType: &Type = getType(&elemState);
-        if (context.size == 0) {
-            let lastErrState: TCState = blank;
-            for (let i: usize = 1; i < context.elemLength; i = i + 1) {
-                let nextIndex: usize = getElementAtIndex(context, i);
-                let nextState: TCState = typeCheckExpr(this, nextIndex, scopes);
-                if (isError(&nextState)) {
-                    lastErrState = nextState;
-                    continue;
-                }
-                let nextType: &Type = getType(&nextState);
-                if (!equals(nextType, elemType)) {
-                    let loc = toString(&at(&exprs, elemIndex).span);
-                    let t = toString(elemType);
-                    lastErrState = reportTypeMismatch(this, at(&exprs, nextIndex).span, elemType, nextType);
-                    fprintf(stderr, "%s: %s: Array elements inferred to be type %s here.\n", loc.buffer, NOTE_STR, t.buffer);
-                    drop(&t);
-                    drop(&loc);
-                }
-            }
-            if (!isInvalid(&lastErrState)) return lastErrState;
-            let t: &Type = newType(TYPE_KIND_ARRAY, getID(elemType));
-            (*t).arraySize = context.elemLength;
-            state = newTCStateType(t);
-        } else {
-            let t: &Type = newType(TYPE_KIND_ARRAY, getID(elemType));
-            (*t).arraySize = context.size;
-            state = newTCStateType(t);
+    match (&expr.data) {
+        &ExprData::IntLit(_) => { state = newTCStatePleaseInfer(); }
+        &ExprData::StrLit(_) => {
+            let ct = wrap(Type::Prim(PrimType::Char));
+            let st = wrap(Type::Ptr(ct));
+            state = newTCStateType(st);
         }
-    } else if (expr.kind == EXPR_NAME) {
-        state = typeCheckIdentifier(this, expr, scopes);
-    } else if (expr.kind == EXPR_UNARY) {
-        state = typeCheckUnary(this, expr, scopes);
-    } else if (expr.kind == EXPR_BINARY) {
-        state = typeCheckExprBinary(this, expr, scopes);
-    } else if (expr.kind == EXPR_CALL) {
-        state = typeCheckExprCall(this, expr, scopes);
-    } else if (expr.kind == EXPR_SIZEOF) {
-        state = typeCheckExprSizeof(this, expr, scopes);
-    } else if (expr.kind == EXPR_STRUCT_INIT) {
-        state = typeCheckExprStructInit(this, expr, scopes);
-    } else if (expr.kind == EXPR_AS) {
-        state = typeCheckExprAs(this, expr, scopes);
-    } else if (expr.kind == EXPR_NULL) {
-        state = newTCStatePleaseInfer();
-    } else if (expr.kind == EXPR_BLANK) {
-        state = newTCStatePleaseInfer();
-    } else if (expr.kind == EXPR_TRUE || expr.kind == EXPR_FALSE) {
-        state = newTCStateType(newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL));
-    } else {
-        unreachable("Exhaustive handling of expressions in typeCheckExpr");
+        &ExprData::CharLit(_) => {
+            let ct = wrap(Type::Prim(PrimType::Char));
+            state = newTCStateType(ct);
+        }
+        &ExprData::ArrayLit(context) => {
+            if (context.elemLength == 0) return newTCStatePleaseInfer();
+            let elemIndex: usize = getElementAtIndex(&context, 0);
+            let elemState: TCState = typeCheckExpr(this, elemIndex, scopes);
+            if (isError(&elemState)) return elemState;
+            if (wantsInfer(&elemState)) return elemState;
+            let elemType: &Type = getType(&elemState);
+            if (context.size == 0) {
+                let lastErrState: TCState = blank;
+                for (let i: usize = 1; i < context.elemLength; i = i + 1) {
+                    let nextIndex: usize = getElementAtIndex(&context, i);
+                    let nextState: TCState = typeCheckExpr(this, nextIndex, scopes);
+                    if (isError(&nextState)) {
+                        lastErrState = nextState;
+                        continue;
+                    }
+                    let nextType: &Type = getType(&nextState);
+                    if (!equals(nextType, elemType)) {
+                        let loc = toString(&at(&exprs, elemIndex).span);
+                        let t = toString(elemType);
+                        lastErrState = reportTypeMismatch(this, at(&exprs, nextIndex).span, elemType, nextType);
+                        fprintf(stderr, "%s: %s: Array elements inferred to be type %s here.\n", loc.buffer, NOTE_STR, t.buffer);
+                        drop(&t);
+                        drop(&loc);
+                    }
+                }
+                if (!isInvalid(&lastErrState)) return lastErrState;
+                let t: &Type = wrap(Type::Array(elemType, context.elemLength));
+                state = newTCStateType(t);
+            } else {
+                let t: &Type = wrap(Type::Array(elemType, context.size));
+                state = newTCStateType(t);
+            }
+        }
+        &ExprData::Ident(ident) => { state = typeCheckIdentifier(this, &ident, scopes); }
+        &ExprData::Unary(unary) => { state = typeCheckExprUnary(this, &unary, scopes); }
+        &ExprData::Binary(binary) => { state = typeCheckExprBinary(this, &binary, scopes); }
+        &ExprData::Call(call) => {
+            state = typeCheckExprCall(this, &call, scopes);
+            if (call.isUnion) {
+                expr.data = ExprData::UnionInit(UnionExpr::Tuple(call));
+            }
+        }
+        &ExprData::Sizeof(type) => {
+            let typeState: TCState = typeCheckTypeNode(this, type);
+            if (isError(&typeState)) return typeState;
+            state = newTCStateType(wrap(Type::Prim(PrimType::Usize)));
+        }
+        &ExprData::StructInit(init) => { state = typeCheckExprStructInit(this, &init, scopes); }
+        &ExprData::As(expr, type) => { state = typeCheckExprAs(this, expr, type, scopes); }
+        &ExprData::Null => { state = newTCStatePleaseInfer(); }
+        &ExprData::Blank => { state = newTCStatePleaseInfer(); }
+        &ExprData::True => { state = newTCStateType(wrap(Type::Prim(PrimType::Bool))); }
+        &ExprData::False => { state = newTCStateType(wrap(Type::Prim(PrimType::Bool))); }
+        unknown => {
+            fprintf(stderr, "%s Unhandled Expression with tag %hhu!\n", FATAL_STR, tag(unknown));
+            exit(2);
+        }
     }
     if (isError(&state)) return state;
-    (*expr).typeState = state;
+    expr.typeState = state;
     return state;
 }
 
-func typeCheckExprSizeof(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckExprSizeof");
-    if (isSuccess(&expr.typeState)) return expr.typeState;
-    assert(expr.kind == EXPR_SIZEOF);
-    let typeState: TCState = typeCheckTypeNode(this, at(&typeNodes, expr.lhs));
-    if (isError(&typeState)) return typeState;
-    return newTCStateType(newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE));
-}
-
-func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupList) -> TCState {
+func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, type: &ParsedTypeNode, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.typeCheckExprAs");
-    assert(expr.kind == EXPR_AS);
-    let exprState: TCState = typeCheckExpr(this, expr.lhs, scopes);
-    let typeState: TCState = typeCheckTypeNode(this, at(&typeNodes, expr.rhs));
+    let exprState: TCState = typeCheckExpr(this, expr, scopes);
+    let typeState: TCState = typeCheckTypeNode(this, type);
     if (isError(&exprState)) return exprState;
     if (isError(&typeState)) return typeState;
     assert(isType(&typeState), "typeCheckExprAs Type is not a Type");
     let typeType: &Type = getType(&typeState);
-    if (wantsInfer(&exprState)) exprState = inferTypeOntoExpr(this, expr.lhs, getID(typeType), scopes);
+    if (wantsInfer(&exprState)) exprState = inferTypeOntoExpr(this, expr, typeType, scopes);
     if (isError(&exprState)) return exprState;
     assert(isType(&exprState), "Expected <expr> in `<expr> as <type>` to have a valid type after infer");
     let exprType: &Type = getType(&exprState);
@@ -1683,144 +1734,142 @@ func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookup
     return typeState;
 }
 
-func typeCheckUnary(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckUnary");
-    assert(expr.kind == EXPR_UNARY);
-    let exprState: TCState = typeCheckExpr(this, expr.lhs, scopes);
+func typeCheckExprUnary(this: &TypeChecker, unary: &UnaryExpr, scopes: &ScopeLookupList) -> TCState {
+    trace("TypeChecker.typeCheckExprUnary");
+    let lhs: &ParsedExpr = null;
+    extractOperand(unary, &lhs);
+    let exprState: TCState = typeCheckExpr(this, lhs, scopes);
     if (isError(&exprState)) return exprState;
     if (wantsInfer(&exprState)) return exprState; // Can't be done in here
-    if (expr.op == UNARY_COMPTIME) {
-        return exprState;
-    } else if (expr.op == UNARY_DEREF) {
-        let exprType: &Type = getType(&exprState);
-        if (isPrimitive(exprType)) {
-            if (exprType.typeIndex == TYPE_ANY) {
-                return reportAnyDereference(this, expr);
+    let exprType: &Type = getType(&exprState);
+    match (unary) {
+        &UnaryExpr::Comptime(_) => { return exprState; }
+        &UnaryExpr::Deref(_) => {
+            match (exprType) {
+                &Type::Prim(PrimType::Any) => { return reportAnyDereference(this, lhs); }
+                &Type::Ptr(under) => { return newTCStateType(under); }
+                t => {
+                    let loc: String = toString(&lhs.span);
+                    let t: String = toString(exprType);
+                    fprintf(stderr, "%s: %s: Attempted to dereference expression of type %s.\n", loc.buffer, ERR_STR, t.buffer);
+                    drop(&t);
+                    drop(&loc);
+                    return newTCStateFailure(ERROR_DEREF_NON_POINTER);
+                }
             }
         }
-        if (!isPointer(exprType)) {
-            let loc: String = toString(&expr.span);
-            let t: String = toString(exprType);
-            fprintf(stderr, "%s: %s: Attempted to dereference expression of type %s.\n", loc.buffer, ERR_STR, t.buffer);
-            drop(&t);
-            drop(&loc);
-            return newTCStateFailure(ERROR_DEREF_NON_POINTER);
+        &UnaryExpr::Ref(_) => {
+            return newTCStateType(wrap(Type::Ptr(exprType)));
         }
-        return newTCStateType(getUnderlyingType(exprType, false));
-    } else if (expr.op == UNARY_REF) {
-        let exprType: &Type = getType(&exprState);
-        return newTCStateType(newType(TYPE_KIND_POINTER, getID(exprType)));
-    } else if (expr.op == UNARY_NOT) {
-        let exprType: &Type = getType(&exprState);
-        if (!isBoolean(exprType)) {
-            let loc: String = toString(&expr.span);
-            let t: String = toString(exprType);
-            fprintf(stderr, "%s: %s: Logical Not is not defined for type %s.\n", loc.buffer, ERR_STR, t.buffer);
-            drop(&t);
-            drop(&loc);
-            this.typeError = true;
-            return newTCStateFailure(ERROR_TYPE_MISMATCH);
+        &UnaryExpr::Negate(_) => {
+            if (!isSignedInteger(exprType) && !isFloat(exprType)) {
+                let loc: String = toString(&lhs.span);
+                let t: String = toString(exprType);
+                fprintf(stderr, "%s: %s: Negation is not defined for type %s.\n", loc.buffer, ERR_STR, t.buffer);
+                drop(&t);
+                drop(&loc);
+                this.typeError = true;
+                return newTCStateFailure(ERROR_TYPE_MISMATCH);
+            }
+            return exprState;
         }
-        return exprState;
-    } else if (expr.op == UNARY_MINUS) {
-        let exprType: &Type = getType(&exprState);
-        if (!isSignedInteger(exprType) && !isFloat(exprType)) {
-            let loc: String = toString(&expr.span);
-            let t: String = toString(exprType);
-            fprintf(stderr, "%s: %s: Negation is not defined for type %s.\n", loc.buffer, ERR_STR, t.buffer);
-            drop(&t);
-            drop(&loc);
-            this.typeError = true;
-            return newTCStateFailure(ERROR_TYPE_MISMATCH);
+        &UnaryExpr::Not(_) => {
+            if (!isBoolean(exprType)) {
+                let loc: String = toString(&lhs.span);
+                let t: String = toString(exprType);
+                fprintf(stderr, "%s: %s: Logical Not is not defined for type %s.\n", loc.buffer, ERR_STR, t.buffer);
+                drop(&t);
+                drop(&loc);
+                this.typeError = true;
+                return newTCStateFailure(ERROR_TYPE_MISMATCH);
+            }
+            return exprState;
         }
-        return exprState;
-    } else {
-        unreachable("Exhaustive handling of ops in typeCheckUnary");
+        _ => { }
     }
+    unreachable("Exhaustive handling of ops in typeCheckUnary");
 }
 
-func typeCheckExprCall(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupList) -> TCState {
+func typeCheckExprCall(this: &TypeChecker, call: &CallExpr, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.typeCheckExprCall");
-    assert(expr.kind == EXPR_CALL);
     // First sweep
-    let callContext = &expr.arrayContext;
-    for (let i: usize = 0; i < callContext.elemLength; i = i + 1) {
-        let argID: usize = getElementAtIndex(callContext, i);
-        let arg: TCState = typeCheckExpr(this, argID, scopes);
+    let args = &call.args;
+    for (let i: usize = 0; i < args.length; i = i + 1) {
+        let arg: TCState = typeCheckExpr(this, *at(args, i), scopes);
         if (isError(&arg)) return arg;
     }
-    let callBase = typeCheckExpr(this, expr.lhs, scopes);
+    let callBase = typeCheckExpr(this, call.base, scopes);
     if (isError(&callBase)) return callBase;
     if (wantsInfer(&callBase)) {
-        let fnType = newType(TYPE_KIND_FUNCTION, TYPE_UNKNOWN);
-        for (let i: usize = 0; i < callContext.elemLength; i = i + 1) {
-            let argID: usize = getElementAtIndex(callContext, i);
-            push(&fnType.fnParams, at(&exprs, argID).typeState);
+        let params: TypeList = blank;
+        for (let i: usize = 0; i < args.length; i = i + 1) {
+            let typ = wrap(Type::Unknown);
+            let state = &(*at(args, i)).typeState;
+            if (isType(state)) typ = getType(state);
+            push(&params, typ);
         }
-        let baseState = tryInferTypeOntoExpr(this, expr.lhs, getID(fnType), scopes, false);
+        let fnType = wrap(Type::Func(params, wrap(Type::Unknown), blank));
+        let baseState = tryInferTypeOntoExpr(this, call.base, fnType, scopes, false);
         if (isError(&baseState)) return baseState;
         if (wantsInfer(&baseState)) return baseState;
         callBase = baseState;
     }
     let baseType = getType(&callBase);
-    if (isUnion(baseType)) {
-        let decl = at(&unionDecls, baseType.typeIndex);
-        let variant = *at(&decl.variants, baseType.arraySize);
-        if (variant.kind != UNION_VARIANT_TUPLE) todo_with_msg("report error: Union Variant is not a tuple");
-        if (callContext.elemLength != variant.fields.length) todo_with_msg("report error: Tuple variant count mismatch");
-        let unionType = copy(baseType);
-        unionType.arraySize = baseType.arraySize;
-        for (let i: usize = 0; i < variant.fields.length; i = i + 1) {
-            let argID = getElementAtIndex(callContext, i);
-            let arg = typeCheckExpr(this, argID, scopes);
-            if (isError(&arg)) return arg;
-            let paramType = getTypeAtIndex(variant, i);
-            if (wantsInfer(&arg)) {
-                arg = inferTypeOntoExpr(this, argID, paramType, scopes);
-                if (isError(&arg)) return arg;
+    match (baseType) {
+        &Type::Union(decl, vID) => {
+            let variant = *at(&decl.variants, vID);
+            if (variant.kind != UNION_VARIANT_TUPLE) todo_with_msg("report error: Union Variant is not a tuple");
+            if (args.length != variant.fields.length) todo_with_msg("report error: Tuple variant count mismatch");
+            let unionType = copy(baseType);
+            for (let i: usize = 0; i < variant.fields.length; i = i + 1) {
+                let arg = *at(args, i);
+                let argState = typeCheckExpr(this, arg, scopes);
+                if (isError(&argState)) return argState;
+                let paramType = getTypeAtIndex(variant, i);
+                if (wantsInfer(&argState)) {
+                    argState = inferTypeOntoExpr(this, arg, paramType, scopes);
+                    if (isError(&argState)) return argState;
+                }
+                let argType = getType(&argState);
+                if (!equals(argType, paramType)) {
+                    reportTypeMismatch(this, arg.span, paramType, argType);
+                }
             }
-            let argType = getType(&arg);
-            if (!equals(argType, paramType)) {
-                let e = at(&exprs, argID);
-                reportTypeMismatch(this, e.span, paramType, argType);
+            call.isUnion = true;
+            return newTCStateType(unionType);
+        }
+        &Type::Func(params, ret, attr) => {
+            if (!attr.isVariadic && args.length != params.length) {
+                return reportArgumentCountMismatch(this, call.span, baseType, args.length);
             }
+            for (let i: usize = 0; i < params.length; i = i + 1) {
+                let arg = *at(args, i);
+                let paramType = *at(&params, i);
+                let argState: TCState = typeCheckExpr(this, arg, scopes);
+                if (isError(&argState)) return argState;
+                if (wantsInfer(&argState)) {
+                    argState = inferTypeOntoExpr(this, arg, paramType, scopes);
+                    if (isError(&argState)) return argState;
+                }
+                let argType = getType(&argState);
+                if (!equals(argType, paramType)) {
+                    reportTypeMismatch(this, arg.span, paramType, argType);
+                }
+            }
+            call.retType = ret;
+            return newTCStateType(ret);
         }
-        expr.kind = EXPR_UNION_INIT;
-        return newTCStateType(unionType);
+        _ => { return reportCallToNonFunction(this, call.span, baseType); }
     }
-    if (!isFunction(baseType)) {
-        return reportCallToNonFunction(this, expr.span, baseType);
-    }
-    if (!isVariadic(baseType) && callContext.elemLength != baseType.fnParams.length) {
-        return reportArgumentCountMismatch(this, expr.span, baseType, callContext.elemLength);
-    }
-    for (let i: usize = 0; i < baseType.fnParams.length; i = i + 1) {
-        let argID: usize = getElementAtIndex(callContext, i);
-        let arg: TCState = typeCheckExpr(this, argID, scopes);
-        if (isError(&arg)) return arg;
-        if (wantsInfer(&arg)) {
-            let p = getParam(baseType, i);
-            arg = inferTypeOntoExpr(this, argID, getType(p), scopes);
-            if (isError(&arg)) return arg;
-        }
-        let argType = getType(&arg);
-        let paramType = getType(getParam(baseType, i));
-        if (!equals(argType, paramType)) {
-            let e = at(&exprs, argID);
-            reportTypeMismatch(this, e.span, paramType, argType);
-        }
-    }
-    return newTCStateType(at(&types, baseType.typeIndex));
+    unreachable();
 }
 
-func typeCheckExprStructInit(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupList) -> TCState {
+func typeCheckExprStructInit(this: &TypeChecker, expr: &StructExpr, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.typeCheckExprStructInit");
-    assert(expr.kind == EXPR_STRUCT_INIT);
-    let name: Token = expr.origToken;
     let lookup: TypeLookup = blank;
-    if (!resolveTypeByName(this.currentModule, &name, &lookup)) {
-        let alternatives: TypeLookupList = searchAllFilesForTypeName(&this.lookup, &name);
-        return reportUnknownType(this, null, name, alternatives);
+    if (!resolveTypeByName(this.currentModule, &expr.name, &lookup)) {
+        let alternatives: TypeLookupList = searchAllFilesForTypeName(&this.lookup, &expr.name);
+        return reportUnknownType(this, null, expr.name, alternatives);
     }
     if (isStruct(&lookup)) {
         return typeCheckStructInitialization(this, expr, lookup, scopes);
@@ -1829,59 +1878,59 @@ func typeCheckExprStructInit(this: &TypeChecker, expr: &ParsedExpr, scopes: &Sco
     }
 }
 
-func typeCheckIdentifier(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupList) -> TCState {
+func typeCheckIdentifier(this: &TypeChecker, ident: &IdentExpr, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.typeCheckIdentifier");
-    assert(expr.kind == EXPR_NAME);
-    let name: Token = expr.origToken;
     let var: VariableLookup = blank;
-    if (resolveVariableByName(this.currentModule, &name, scopes, &var)) {
+    let name = &ident.name;
+    if (resolveVariableByName(this.currentModule, name, scopes, &var)) {
         if (this.isComptimeContext && !var.isComptime) {
-            reportRuntimeValueInComptimeContext(this, name, &var);
+            reportRuntimeValueInComptimeContext(this, *name, &var);
         }
         let state: TCState = var.typeState;
         assert(!isInvalid(&state), "Variable not ready");
         if (isError(&state)) return state;
-        assert(expr.op == 0);
         let _loc: Token = blank;
         if (isKnownVariable(at(scopes, 0), name.content, &_loc)) {
-            (*expr).op = 1;
+            ident.isGlobal = true;
         }
-        (*expr).lhs = var.globalID;
-        (*expr).typeState = state;
+        if (isType(&state)) {
+            ident.type = getType(&state);
+        }
+        ident.origID = var.globalID;
         return state;
     }
-    let functions = resolveFunctionByName(this.currentModule, &name);
+    let functions = resolveFunctionByName(this.currentModule, name);
     if (functions.length > 1) {
         drop(&functions);
         return newTCStatePleaseInfer();
     }
     if (functions.length == 1) {
         let f = at(&functions, 0);
-        (*expr).lhs = f.globalID;
-        (*expr).typeState = f.fnType;
+        ident.type = getType(&f.fnType);
+        ident.origID = f.globalID;
         return f.fnType;
     }
     let unionLookup: &UnionLookup = null;
-    if (resolveUnionByName(this.currentModule, &name, &unionLookup)) {
+    if (resolveUnionByName(this.currentModule, name, &unionLookup)) {
         assert(unionLookup != null, "resolveUnionByName returned true but lookup is null");
         let decl = unionLookup.global;
         assert(isSuccess(&decl.typeState), "Expected valid union type at this point");
         let t = getType(&decl.typeState);
         assert(isUnion(t), "Expected union declaration to have union type");
         // Must copy here because each `::` sets the variant of this type
+        ident.type = t;
         return newTCStateType(copy(t));
     }
     let moduleLookup: &ModuleLookup = null;
-    if (resolveModuleByName(this.currentModule, &name, &moduleLookup)) {
-        let typ = newType(TYPE_KIND_MODULE, moduleLookup.globalID);
-        let state = newTCStateType(typ);
-        expr.typeState = state;
-        return state;
+    if (resolveModuleByName(this.currentModule, name, &moduleLookup)) {
+        let typ = wrap(Type::Module(at(&modules, moduleLookup.globalID)));
+        ident.type = typ;
+        return newTCStateType(typ);
     }
-    let loc: String = getLocation(&name);
+    let loc: String = getLocation(name);
     let _name: String = toString(&name.content);
     fprintf(stderr, "%s: %s: Use of undeclared identifier `%s`.\n", loc.buffer, ERR_STR, _name.buffer);
-    let alternatives: VariableLookupList = searchAllFilesForIdentifier(&this.lookup, &name);
+    let alternatives: VariableLookupList = searchAllFilesForIdentifier(&this.lookup, name);
     for (let i: usize = 0; i < alternatives.length; i = i + 1) {
         let t: &VariableLookup = at(&alternatives, i);
         drop(&loc);
@@ -1894,40 +1943,47 @@ func typeCheckIdentifier(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLo
     return newTCStateFailure(ERROR_NO_SUCH_IDENTIFIER);
 }
 
-func typeCheckExprBinary(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupList) -> TCState {
+func typeCheckExprBinary(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.typeCheckExprBinary");
-    assert(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
-    if (expr.op == BIN_MODULE) {
-        return typeCheckExprModuleAccess(this, expr, scopes);
-    } else if (expr.op == BIN_DOT) {
-        return typeCheckExprMemberAccess(this, expr, scopes);
-    } else if (expr.op == BIN_ASSIGN) {
-        return typeCheckExprAssign(this, expr, scopes);
-    } else if (expr.op == BIN_INDEXED_ACCESS) {
-        return typeCheckExprIndexedAccess(this, expr, scopes);
-    } else if (isArithmetic(expr)) {
-        return typeCheckExprArithmetic(this, expr, scopes);
-    } else if (isComparison(expr)) {
-        return typeCheckExprComparison(this, expr, scopes);
-    } else if (isLogical(expr)) {
-        return typeCheckExprLogical(this, expr, scopes);
-    } else if (isBitwise(expr)) {
-        return typeCheckExprBitwise(this, expr, scopes);
-    } else {
-        unreachable("Exhaustive handling of ops in typeCheckExprBinary");
+    match (expr) {
+        &BinaryExpr::Path(..) => { return typeCheckExprPathAccess(this, expr, scopes); }
+        &BinaryExpr::Dot(..) => { return typeCheckExprMemberAccess(this, expr, scopes); }
+        &BinaryExpr::Assign(..) => { return typeCheckExprAssign(this, expr, scopes); }
+        &BinaryExpr::Plus(..) => { return typeCheckExprArithmetic(this, expr, scopes); }
+        &BinaryExpr::Sub(..) => { return typeCheckExprArithmetic(this, expr, scopes); }
+        &BinaryExpr::Mult(..) => { return typeCheckExprArithmetic(this, expr, scopes); }
+        &BinaryExpr::Div(..) => { return typeCheckExprArithmetic(this, expr, scopes); }
+        &BinaryExpr::Mod(..) => { return typeCheckExprArithmetic(this, expr, scopes); }
+        &BinaryExpr::CmpEq(..) => { return typeCheckExprComparison(this, expr, scopes); }
+        &BinaryExpr::CmpNeq(..) => { return typeCheckExprComparison(this, expr, scopes); }
+        &BinaryExpr::CmpGt(..) => { return typeCheckExprComparison(this, expr, scopes); }
+        &BinaryExpr::CmpGte(..) => { return typeCheckExprComparison(this, expr, scopes); }
+        &BinaryExpr::CmpLt(..) => { return typeCheckExprComparison(this, expr, scopes); }
+        &BinaryExpr::CmpLte(..) => { return typeCheckExprComparison(this, expr, scopes); }
+        &BinaryExpr::LogAnd(..) => { return typeCheckExprLogical(this, expr, scopes); }
+        &BinaryExpr::LogOr(..) => { return typeCheckExprLogical(this, expr, scopes); }
+        &BinaryExpr::BitAnd(..) => { return typeCheckExprBitwise(this, expr, scopes); }
+        &BinaryExpr::BitOr(..) => { return typeCheckExprBitwise(this, expr, scopes); }
+        &BinaryExpr::BitXor(..) => { return typeCheckExprBitwise(this, expr, scopes); }
+        &BinaryExpr::Indexed(..) => { return typeCheckExprIndexedAccess(this, expr, scopes); }
+        unknown => {
+            fprintf(stderr, "%s typeCheckExprBinary: Unhandled tag %hhu!\n", FATAL_STR, tag(unknown));
+            exit(2);
+        }
     }
+    unreachable("Exhaustive handling of binary expressions in typeCheckExprBinary");
 }
 
-func typeCheckExprIndexedAccess(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupList) -> TCState {
+func typeCheckExprIndexedAccess(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.typeCheckExprIndexedAccess");
-    assert(expr.kind == EXPR_BINARY);
-    assert(expr.op == BIN_INDEXED_ACCESS);
-    let lhsState: TCState = typeCheckExpr(this, expr.lhs, scopes);
-    let rhsState: TCState = typeCheckExpr(this, expr.rhs, scopes);
+    let lhs: &ParsedExpr = null;
+    let rhs: &ParsedExpr = null;
+    extractOperands(expr, &lhs, &rhs);
+    let lhsState: TCState = typeCheckExpr(this, lhs, scopes);
+    let rhsState: TCState = typeCheckExpr(this, rhs, scopes);
     if (isError(&lhsState)) return lhsState;
     if (isError(&rhsState)) return rhsState;
     if (wantsInfer(&lhsState)) {
-        let lhs = at(&exprs, expr.lhs);
         let loc = toString(&lhs.span);
         fprintf(stderr, "%s: %s: Could not infer type of subexpression for indexed access.\n", loc.buffer, ERR_STR);
         drop(&loc);
@@ -1936,111 +1992,102 @@ func typeCheckExprIndexedAccess(this: &TypeChecker, expr: &ParsedExpr, scopes: &
     assert(isType(&lhsState), "IndexedAccess: Not error, not infer, what is it?");
     let lhsType: &Type = getType(&lhsState);
     if (!isArray(lhsType) && !isPointer(lhsType)) {
-        return reportIndexedAccessOnNonArray(this, expr.span, lhsType);
+        return reportIndexedAccessOnNonArray(this, lhs.span, lhsType);
     }
     if (wantsInfer(&rhsState)) {
-        let usizeType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
-        rhsState = inferTypeOntoExpr(this, expr.rhs, getID(usizeType), scopes);
+        let usizeType: &Type = wrap(Type::Prim(PrimType::Usize));
+        rhsState = inferTypeOntoExpr(this, rhs, usizeType, scopes);
     }
     if (isError(&rhsState)) return rhsState;
     assert(isType(&rhsState), "IndexedAccess: Index is not valid after infer?");
     let rhsType: &Type = getType(&rhsState);
-    if (!isPrimitive(rhsType) || rhsType.typeIndex != TYPE_USIZE) {
-        let loc: String = toString(&expr.span);
-        let typ: String = toString(rhsType);
-        fprintf(stderr, "%s: %s: Expected index of array access to be type usize, got %s.\n", loc.buffer, ERR_STR, typ.buffer);
-        drop(&typ);
-        drop(&loc);
-        this.typeError = true;
-        return newTCStateFailure(ERROR_INDEXED_TYPE_MISMATCH);
+    match (rhsType) {
+        &Type::Prim(PrimType::Usize) => {
+            let underlyingType: &Type = getUnderlyingType(lhsType, false);
+            return newTCStateType(underlyingType);
+        }
+        _ => { }
     }
-    let underlyingID: usize = lhsType.typeIndex;
-    let underlyingType: &Type = at(&types, underlyingID);
-    assert(getID(underlyingType) == underlyingID);
-    return newTCStateType(underlyingType);
+    let loc: String = toString(&rhs.span);
+    let typ: String = toString(rhsType);
+    fprintf(stderr, "%s: %s: Expected index of array access to be type usize, got %s.\n", loc.buffer, ERR_STR, typ.buffer);
+    drop(&typ);
+    drop(&loc);
+    this.typeError = true;
+    return newTCStateFailure(ERROR_INDEXED_TYPE_MISMATCH);
 }
 
-func typeCheckExprLogical(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupList) -> TCState {
+func typeCheckExprLogical(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.typeCheckExprLogical");
-    assert(expr.kind == EXPR_BINARY);
-    assert(isLogical(expr));
-    let lhsState: TCState = typeCheckExpr(this, expr.lhs, scopes);
-    let rhsState: TCState = typeCheckExpr(this, expr.rhs, scopes);
+    let lhs: &ParsedExpr = null;
+    let rhs: &ParsedExpr = null;
+    extractOperands(expr, &lhs, &rhs);
+    let lhsState: TCState = typeCheckExpr(this, lhs, scopes);
+    let rhsState: TCState = typeCheckExpr(this, rhs, scopes);
     if (isError(&lhsState)) return lhsState;
     if (isError(&rhsState)) return rhsState;
-    let maybeInfer: TCState = checkIfInferIsNeeded(this, expr.lhs, &lhsState, expr.rhs, &rhsState, scopes);
-    if (isError(&maybeInfer)) {
-        todo_with_msg("couldn't infer in logical");
-    }
+    let maybeInfer: TCState = checkIfInferIsNeeded(this, lhs, &lhsState, rhs, &rhsState, scopes);
+    if (isError(&maybeInfer)) { todo_with_msg("couldn't infer in logical"); }
     if (wantsInfer(&maybeInfer)) return maybeInfer;
     let lhsType: &Type = getType(&lhsState);
     let rhsType: &Type = getType(&rhsState);
-    let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
+    let boolType: &Type = wrap(Type::Prim(PrimType::Bool));
     let result = newTCStateType(boolType);
-    if (!isBoolean(lhsType)) {
-        result = reportTypeMismatch(this, at(&exprs, expr.lhs).span, boolType, lhsType);
-    }
-    if (!isBoolean(rhsType)) {
-        result = reportTypeMismatch(this, at(&exprs, expr.rhs).span, boolType, rhsType);
-    }
+    if (!isBoolean(lhsType)) { result = reportTypeMismatch(this, lhs.span, boolType, lhsType); }
+    if (!isBoolean(rhsType)) { result = reportTypeMismatch(this, rhs.span, boolType, rhsType); }
     return result;
 }
 
-func typeCheckExprBitwise(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupList) -> TCState {
+func typeCheckExprBitwise(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.typeCheckExprBitwise");
-    assert(expr.kind == EXPR_BINARY);
-    assert(isBitwise(expr));
-    let lhsState: TCState = typeCheckExpr(this, expr.lhs, scopes);
-    let rhsState: TCState = typeCheckExpr(this, expr.rhs, scopes);
+    let lhs: &ParsedExpr = null;
+    let rhs: &ParsedExpr = null;
+    extractOperands(expr, &lhs, &rhs);
+    let lhsState: TCState = typeCheckExpr(this, lhs, scopes);
+    let rhsState: TCState = typeCheckExpr(this, rhs, scopes);
     if (isError(&lhsState)) return lhsState;
     if (isError(&rhsState)) return rhsState;
-    let maybeInfer: TCState = checkIfInferIsNeeded(this, expr.lhs, &lhsState, expr.rhs, &rhsState, scopes);
-    if (isError(&maybeInfer)) {
-        todo_with_msg("couldn't infer in bitwise");
-    }
+    let maybeInfer: TCState = checkIfInferIsNeeded(this, lhs, &lhsState, rhs, &rhsState, scopes);
+    if (isError(&maybeInfer)) { todo_with_msg("couldn't infer in bitwise"); }
     if (wantsInfer(&maybeInfer)) return maybeInfer;
     let lhsType: &Type = getType(&lhsState);
     let rhsType: &Type = getType(&rhsState);
     if (!equals(lhsType, rhsType) || !isInteger(lhsType) || !isInteger(rhsType)) {
-        return reportBinaryTypeMismatch(this, 
-            expr.op,
-            at(&exprs, expr.lhs).span, lhsType,
-            at(&exprs, expr.rhs).span, rhsType,
-        );
+        return reportBinaryTypeMismatch(this, binOpAsStr(expr), lhs.span, lhsType, rhs.span, rhsType);
     }
     return lhsState;
 }
 
-func typeCheckExprAssign(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupList) -> TCState {
+func typeCheckExprAssign(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.typeCheckExprAssign");
-    assert(expr.kind == EXPR_BINARY);
-    assert(expr.op == BIN_ASSIGN);
-    let lhsExpr: &ParsedExpr = at(&exprs, expr.lhs);
-    if (!isLValue(lhsExpr)) {
-        emergencyPrint(this, lhsExpr.span);
+    let lhs: &ParsedExpr = null;
+    let rhs: &ParsedExpr = null;
+    extractOperands(expr, &lhs, &rhs);
+    if (!isLValue(lhs)) {
+        emergencyPrint(this, lhs.span);
         todo_with_msg("invalid l-value");
     }
-    let lhsState: TCState = typeCheckExpr(this, expr.lhs, scopes);
-    let rhsState: TCState = typeCheckExpr(this, expr.rhs, scopes);
+    let lhsState: TCState = typeCheckExpr(this, lhs, scopes);
+    let rhsState: TCState = typeCheckExpr(this, rhs, scopes);
     if (isError(&lhsState)) return lhsState;
     if (isError(&rhsState)) return rhsState;
-    let maybeInfer: TCState = checkIfInferIsNeeded(this, expr.lhs, &lhsState, expr.rhs, &rhsState, scopes);
+    let maybeInfer: TCState = checkIfInferIsNeeded(this, lhs, &lhsState, rhs, &rhsState, scopes);
     if (isError(&maybeInfer)) return maybeInfer;
     if (!isType(&lhsState)) return lhsState;
     if (!isType(&rhsState)) return rhsState;
     let lhsType: &Type = getType(&lhsState);
     let rhsType: &Type = getType(&rhsState);
     if (!equals(lhsType, rhsType)) {
-        return reportTypeMismatch(this, at(&exprs, expr.rhs).span, lhsType, rhsType);
+        return reportTypeMismatch(this, rhs.span, lhsType, rhsType);
     }
     return rhsState;
 }
-func typeCheckStructInitialization(this: &TypeChecker, expr: &ParsedExpr, lookup: TypeLookup, scopes: &ScopeLookupList) -> TCState {
+func typeCheckStructInitialization(this: &TypeChecker, expr: &StructExpr, lookup: TypeLookup, scopes: &ScopeLookupList) -> TCState {
     return typeCheckStructInitialization(this, expr, lookup, scopes, false);
 }
 
-func typeCheckStructInitialization(this: &TypeChecker, expr: &ParsedExpr, lookup: TypeLookup, scopes: &ScopeLookupList, isUnion: bool) -> TCState {
-    let context: &StructInitContext = &expr.structInitContext;
+func typeCheckStructInitialization(this: &TypeChecker, expr: &StructExpr, lookup: TypeLookup, scopes: &ScopeLookupList, isUnion: bool) -> TCState {
+    let context: &StructInitContext = &expr.context;
     let structLookup: &StructLookup = asStruct(&lookup);
     let hits: usize = 0;
     assert(structLookup.fields.length < 50, "Sorry, I need to hack this for now");
@@ -2081,120 +2128,133 @@ func typeCheckStructInitialization(this: &TypeChecker, expr: &ParsedExpr, lookup
     }
     return result;
 }
-func typeCheckExprModuleAccess(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckExprModuleAccess");
-    assert(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
-    assert(expr.op == BIN_MODULE);
-    let modExpr = at(&exprs, expr.lhs);
-    let rhs = at(&exprs, expr.rhs);
-    let instance: TCState = typeCheckExpr(this, expr.lhs, scopes);
+func typeCheckExprPathAccess(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLookupList) -> TCState {
+    trace("TypeChecker.typeCheckExprPathAccess");
+    let lhs: &ParsedExpr = null;
+    let rhs: &ParsedExpr = null;
+    extractOperands(expr, &lhs, &rhs);
+    let instance: TCState = typeCheckExpr(this, lhs, scopes);
     if (isError(&instance)) return instance;
     let instanceType = getType(&instance);
-    if (isModule(instanceType)) {
-        let modLookup = getModuleByGlobalID(&this.lookup, instanceType.typeIndex);
-        if (rhs.kind == EXPR_NAME) {
-            let submodule: &ModuleLookup = null;
-            let konfig = MLConfig {
-                checkSelf: false,
-                checkImport: false, // REVIEW: Should we pass true here instead?
-                checkModule: true,
-                checkParent: false,
-            };
-            if (resolveModuleByName(modLookup, &rhs.origToken, &submodule, konfig)) {
-                let typ = newType(TYPE_KIND_MODULE, submodule.globalID);
-                rhs.typeState = newTCStateType(typ);
-                return rhs.typeState;
-            }
-            let var: &VariableLookup = null;
-            let fun: FunctionLookupList = blank;
-            let typ: TypeLookup = blank;
-            let res = resolveIdentifierByName(modLookup, &rhs.origToken, &var, &typ, &fun);
-            if (res == IDENT_TYPE) {
-                return reportModuleAccessOfNonModule(this, expr.span, rhs.origToken, typ);
-            } else if (res == IDENT_NONE) {
-                return reportUnknownSubmodule(this, modLookup, rhs.origToken);
-            } else if (res == IDENT_FUNC) {
-                assert(fun.length != 0, "IDENT_FUNC but fun is empty");
-                if (fun.length == 1) {
-                    let f = at(&fun, 0);
-                    assert(isSuccess(&f.fnType), "Did not properly type check function of module");
-                    let s = f.fnType;
-                    rhs.typeState = s;
-                    rhs.lhs = f.globalID;
-                    return s;
-                } else {
-                    drop(&fun);
-                    return newTCStatePleaseInfer();
+    match (instanceType) {
+        &Type::Module(decl) => {
+            let modLookup = getModuleByGlobalID(&this.lookup, getID(decl));
+            match (&rhs.data) {
+                &ExprData::Ident(ident) => {
+                    let submodule: &ModuleLookup = null;
+                    let konfig = MLConfig {
+                        checkSelf: false,
+                        checkImport: false, // REVIEW: Should we pass true here instead?
+                        checkModule: true,
+                        checkParent: false,
+                    };
+                    if (resolveModuleByName(modLookup, &ident.name, &submodule, konfig)) {
+                        let typ = wrap(Type::Module(at(&modules, submodule.globalID)));
+                        rhs.typeState = newTCStateType(typ);
+                        return rhs.typeState;
+                    }
+                    let var: &VariableLookup = null;
+                    let fun: FunctionLookupList = blank;
+                    let typ: TypeLookup = blank;
+                    let res = resolveIdentifierByName(modLookup, &ident.name, &var, &typ, &fun);
+                    if (res == IDENT_TYPE) {
+                        return reportModuleAccessOfNonModule(this, lhs.span, ident.name, typ);
+                    } else if (res == IDENT_NONE) {
+                        return reportUnknownSubmodule(this, modLookup, ident.name);
+                    } else if (res == IDENT_FUNC) {
+                        assert(fun.length != 0, "IDENT_FUNC but fun is empty");
+                        if (fun.length == 1) {
+                            let f = at(&fun, 0);
+                            assert(isSuccess(&f.fnType), "Did not properly type check function of module");
+                            let s = f.fnType;
+                            rhs.typeState = s;
+                            ident.type = getType(&s);
+                            ident.origID = f.globalID;
+                            return s;
+                        } else {
+                            drop(&fun);
+                            return newTCStatePleaseInfer();
+                        }
+                    } else if (res == IDENT_VAR) {
+                        assert(var != null, "IDENT_VAR but var is null");
+                        todo_with_msg("module.var");
+                    } else {
+                        unreachable("Exhaustive handling of outcomes of resolveIdentifierByName");
+                    }
                 }
-            } else if (res == IDENT_VAR) {
-                assert(var != null, "IDENT_VAR but var is null");
-                todo_with_msg("module.var");
-            } else {
-                unreachable("Exhaustive handling of outcomes of resolveIdentifierByName");
+                &ExprData::StructInit(init) => {
+                    let lookup: TypeLookup = blank;
+                    if (!resolveTypeByName(modLookup, &init.name, &lookup)) {
+                        return reportUnknownType(this, modLookup, init.name, blank);
+                    }
+                    if (isStruct(&lookup)) {
+                        rhs.typeState = typeCheckStructInitialization(this, &init, lookup, scopes);
+                    } else {
+                        unreachable("typeCheckExprModuleAccess got non-struct");
+                    }
+                    return rhs.typeState;
+                }
+                _ => { unreachable("Expected StructInit or Ident as RHS of module"); }
             }
-        } else if (rhs.kind == EXPR_STRUCT_INIT) {
-            let name: Token = rhs.origToken;
-            let lookup: TypeLookup = blank;
-            if (!resolveTypeByName(modLookup, &name, &lookup)) {
-                return reportUnknownType(this, modLookup, name, blank);
-            }
-            if (isStruct(&lookup)) {
-                rhs.typeState = typeCheckStructInitialization(this, rhs, lookup, scopes);
-            } else {
-                unreachable("typeCheckExprModuleAccess got non-struct");
-            }
-            return rhs.typeState;
-        } else {
-            todo_with_msg("module: report error maybe?");
         }
-    } else if (isUnion(instanceType)) {
-        return typeCheckExprUnionInit(this, expr, instanceType, scopes);
-    } else {
-        return reportModuleAccessOfNonModule(this, expr.span, modExpr.origToken, blank);
+        &Type::Union(_, _) => { return typeCheckExprUnionInit(this, expr, instanceType, scopes); }
+        _ => {
+            let name: Token = blank;
+            match (lhs.data) {
+                ExprData::Ident(ident) => { name = ident.name; }
+                _ => { unreachable("Expected identifier as LHS of Path access"); }
+            }
+            return reportModuleAccessOfNonModule(this, lhs.span, name, blank);
+        }
     }
+    unreachable();
 }
-func typeCheckExprUnionInit(this: &TypeChecker, expr: &ParsedExpr, unionType: &Type, scopes: &ScopeLookupList) -> TCState {
+func typeCheckExprUnionInit(this: &TypeChecker, expr: &BinaryExpr, unionType: &Type, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.typeCheckExprUnionInit");
-    assert(expr.op == BIN_MODULE);
-    assert(isUnion(unionType));
-    unionType = copy(unionType);
-    let lhs = at(&exprs, expr.lhs);
+    let decl: &ParsedUnionDecl = null;
+    match (unionType) {
+        &Type::Union(_decl, _) => { decl = _decl; }
+        _ => { unreachable(); }
+    }
+    let lhs: &ParsedExpr = null;
+    let rhs: &ParsedExpr = null;
+    extractOperands(expr, &lhs, &rhs);
     assert(isSuccess(&lhs.typeState));
-    let rhs = at(&exprs, expr.rhs);
-    let decl = at(&unionDecls, unionType.typeIndex);
     let lookup: &UnionLookup = null;
     let succ = resolveUnionByName(this.currentModule, &decl.name, &lookup);
     assert(succ);
     let result = newTCStateType(unionType);
-    if (rhs.kind == EXPR_NAME) {
-        let name = &rhs.origToken;
-        let variant: &UnionVariantLookup = null;
-        if (!resolveVariantByName(lookup, name, &variant)) todo_with_msg("report error, no such variant");
-        unionType.arraySize = variant.tag;
-        result = newTCStateType(unionType);
-    } else if (rhs.kind == EXPR_STRUCT_INIT) {
-        let name = &rhs.origToken;
-        let variant: &UnionVariantLookup = null;
-        if (!resolveVariantByName(lookup, name, &variant)) todo_with_msg("report error, no such variant");
-        unionType.arraySize = variant.tag;
-        result = newTCStateType(unionType);
-        let structLookup = intoStructLookup(variant);
-        // FIXME: typeCheckStructInitialization is exactly what we need here, but it would be cool
-        //        if it wasn't called like that
-        let check = typeCheckStructInitialization(this, rhs, asTypeLookup(&structLookup), scopes, true);
-        if (isError(&check)) return check;
-    } else {
-        todo_with_msg("union: report error maybe?");
+    match (&rhs.data) {
+        &ExprData::Ident(ident) => {
+            let variant: &UnionVariantLookup = null;
+            if (!resolveVariantByName(lookup, &ident.name, &variant)) todo_with_msg("report error, no such variant");
+            unionType = wrap(Type::Union(decl, variant.tag));
+            result = newTCStateType(unionType);
+            rhs.data = ExprData::UnionInit(UnionExpr::Empty);
+        }
+        &ExprData::StructInit(init) => {
+            let variant: &UnionVariantLookup = null;
+            if (!resolveVariantByName(lookup, &init.name, &variant)) todo_with_msg("report error, no such variant");
+            unionType = wrap(Type::Union(decl, variant.tag));
+            result = newTCStateType(unionType);
+            let structLookup = intoStructLookup(variant);
+            // FIXME: typeCheckStructInitialization is exactly what we need here, but it would be cool
+            //        if it wasn't called like that
+            let check = typeCheckStructInitialization(this, &init, asTypeLookup(&structLookup), scopes, true);
+            if (isError(&check)) return check;
+            rhs.data = ExprData::UnionInit(UnionExpr::Struct(init));
+        }
+        _ => { unreachable("Expected StructInit or Ident as RHS"); }
     }
-    rhs.kind = EXPR_UNION_INIT;
     rhs.typeState = result;
     return result;
 }
-func typeCheckExprMemberAccess(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupList) -> TCState {
+func typeCheckExprMemberAccess(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.typeCheckExprMemberAccess");
-    assert(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
-    assert(expr.op == BIN_DOT);
-    let instance: TCState = typeCheckExpr(this, expr.lhs, scopes);
+    let lhs: &ParsedExpr = null;
+    let rhs: &ParsedExpr = null;
+    extractOperands(expr, &lhs, &rhs);
+    let instance: TCState = typeCheckExpr(this, lhs, scopes);
     if (isError(&instance)) return instance;
     if (wantsInfer(&instance)) return instance;
     let instanceType = getType(&instance);
@@ -2214,7 +2274,7 @@ func typeCheckExprMemberAccess(this: &TypeChecker, expr: &ParsedExpr, scopes: &S
     }
     */
     if (!isStruct(instanceType) && !isStructPointer(instanceType)) {
-        return reportMemberAccessOnNonStruct(this, expr, instanceType);
+        return reportMemberAccessOnNonStruct(this, lhs, instanceType);
     }
     let underlying: &Type = instanceType;
     if (!isStruct(underlying)) underlying = getUnderlyingType(instanceType, true);
@@ -2222,9 +2282,11 @@ func typeCheckExprMemberAccess(this: &TypeChecker, expr: &ParsedExpr, scopes: &S
     if (isStruct(underlying)) {
         assert(isStruct(&lookup));
         let structLookup: &StructLookup = asStruct(&lookup);
-        let rhs: &ParsedExpr = at(&exprs, expr.rhs);
-        assert(rhs.kind == EXPR_NAME);
-        let fieldName: Token = rhs.origToken;
+        let fieldName: Token = blank;
+        match (&rhs.data) {
+            &ExprData::Ident(IdentExpr { ident, .. }) => { fieldName = ident; }
+            _ => { unreachable("Expected RHS to be an identifier"); }
+        }
         let field: VariableLookup = blank;
         if (!resolveFieldByName(structLookup, &fieldName, &field)) {
             return reportUnknownField(this, fieldName, structLookup, false);
@@ -2282,228 +2344,217 @@ func tryInferTypeOntoExpr(this: &TypeChecker, expr: &ParsedExpr, type: &Type, sc
         return newTCStateType(type);
     }
     let tid: TCState = blank;
-    if (expr.kind == EXPR_NAME) {
-        let var: VariableLookup = blank;
-        if (resolveVariableByName(this.currentModule, &expr.origToken, scopes, &var)) {
-            assert(wantsInfer(&var.typeState), "Ident has no type, but variable doesn't want infer");
+    match (&expr.data) {
+        &ExprData::IntLit(value) => {
+            if (isChar(type)) {
+                if (!checkOnly) {
+                    let l: String = getLocation(&value);
+                    fprintf(stderr, "%s: %s: Using integer literal to initialize value of type char.\n",
+                        l.buffer, WARN_STR);
+                    drop(&l);
+                }
+                tid = newTCStateType(type);
+            } else if (isInteger(type) || isFloat(type)) {
+                tid = newTCStateType(type);
+            } else if (isPointer(type)) {
+                // REVIEW: This is... More than debatable?
+                // Context requires a pointer, we have an integer literal.. Now this literal is type usize
+                // Question: Is there ever a situation where we actually want this literal to be type ptr?
+                tid = newTCStateType(wrap(Type::Prim(PrimType::Usize)));
+            } else if (isBoolean(type)) {
+                if (!checkOnly) {
+                    let s: String = toString(&value.content);
+                    let l: String = getLocation(&value);
+                    fprintf(stderr, "%s: %s: Unexpected Literal! Expected boolean, found `%s`.\n",
+                        l.buffer, ERR_STR, s.buffer);
+                    drop(&l);
+                    drop(&s);
+                    this.typeError = true;
+                }
+                return newTCStateFailure(ERROR_UNEXPECTED_LITERAL);
+            } else if (isArray(type)) {
+                if (!checkOnly) {
+                    let s: String = toString(&value.content);
+                    let l: String = getLocation(&value);
+                    fprintf(stderr, "%s: %s: Unexpected Literal! Expected array, found `%s`.\n",
+                        l.buffer, ERR_STR, s.buffer);
+                    drop(&l);
+                    drop(&s);
+                    this.typeError = true;
+                }
+                return newTCStateFailure(ERROR_UNEXPECTED_LITERAL);
+            } else {
+                if (!checkOnly) {
+                    let s: String = toString(&value.content);
+                    let l: String = getLocation(&value);
+                    let t = toString(type);
+                    fprintf(stderr, "%s: %s: Unexpected Literal! Expected value of type %s, found `%s`.\n",
+                        l.buffer, ERR_STR, t.buffer, s.buffer);
+                    drop(&t);
+                    drop(&l);
+                    drop(&s);
+                    this.typeError = true;
+                }
+                return newTCStateFailure(ERROR_UNEXPECTED_LITERAL);
+            }
+        }
+        // &ExprData::StrLit(Token)
+        // &ExprData::CharLit(Token)
+        &ExprData::ArrayLit(context) => {
+            match (type) {
+                &Type::Array(under, size) => {
+                    if (context.size == 0) {
+                        if (size != context.elemLength) {
+                            if (!checkOnly) {
+                                let loc: String = toString(&expr.span);
+                                fprintf(stderr, "%s: %s: Array size mismatch! Expected to find %llu element(s), got %llu instead.\n",
+                                    loc.buffer, ERR_STR, size, context.elemLength);
+                                drop(&loc);
+                                this.typeError = true;
+                            }
+                            return newTCStateFailure(ERROR_ARRAY_SIZE_MISMATCH);
+                        }
+                        let lastErrState: TCState = blank;
+                        for (let i: usize = 0; i < context.elemLength; i = i + 1) {
+                            tid = tryInferTypeOntoExpr(this, getElementAtIndex(&context, i), under, scopes, checkOnly);
+                            if (isError(&tid)) lastErrState = tid;
+                        }
+                        if (!isInvalid(&lastErrState)) return lastErrState;
+                    } else {
+                        if (size != context.size) {
+                            if (!checkOnly) {
+                                let loc: String = toString(&expr.span);
+                                fprintf(stderr, "%s: %s: Array size mismatch! Expected to find %llu element(s), got %llu instead.\n",
+                                    loc.buffer, ERR_STR, size, context.size);
+                                drop(&loc);
+                                this.typeError = true;
+                            }
+                            return newTCStateFailure(ERROR_ARRAY_SIZE_MISMATCH);
+                        }
+                        tid = tryInferTypeOntoExpr(this, getElementAtIndex(&context, 0), under, scopes, checkOnly);
+                        if (isError(&tid)) return tid;
+                    }
+                    tid = newTCStateType(type);
+                }
+                _ => {
+                    if (!checkOnly) {
+                        let loc = toString(&expr.span);
+                        let t = toString(type);
+                        fprintf(stderr, "%s: %s: Expected expression of type %s, found array literal.\n", loc.buffer, ERR_STR, t.buffer);
+                        drop(&t);
+                        drop(&loc);
+                    }
+                    return newTCStateFailure(ERROR_TYPE_MISMATCH);
+                }
+            }
+        }
+        &ExprData::Ident(ident) => { tid = tryInferTypeOntoIdent(this, &ident, type, scopes, checkOnly); }
+        &ExprData::Unary(unary) => { tid = tryInferTypeOntoUnary(this, expr.span, &unary, type, scopes, checkOnly); }
+        &ExprData::Binary(binary) => { tid = tryInferTypeOntoBinary(this, &binary, type, scopes, checkOnly); }
+        &ExprData::Call(call) => { tid = tryInferTypeOntoCall(this, &call, type, scopes, checkOnly); }
+        // &ExprData::Sizeof(&ParsedTypeNode)
+        // &ExprData::StructInit(StructExpr)
+        // &ExprData::UnionInit(UnionExpr)
+        // &ExprData::As(&ParsedExpr, &ParsedTypeNode)
+        &ExprData::Null => {
+            if (!isPointer(type)) {
+                let loc: String = toString(&expr.span);
+                let name: String = toString(type);
+                fprintf(stderr, "%s: %s: Can't use `null` to initialize value of type %s.\n",loc.buffer, ERR_STR, name.buffer);
+                drop(&name);
+                drop(&loc);
+                this.typeError = true;
+                return newTCStateFailure(ERROR_NULL_NON_PTR);
+            }
             tid = newTCStateType(type);
-            var.typeState = tid;
-            let stmt = at(&stmts, var.globalID);
-            assert(stmt.kind == STMT_VAR_DECL, "VariableLookup points to non-VarDecl");
-            tid = tryInferTypeOntoExpr(this, stmt.varDeclContext.expr, type, scopes, checkOnly);
-            if (isError(&tid)) {
-                let loc = toString(&expr.span);
-                let name = toString(&expr.origToken.content);
-                let typeName = toString(type);
-                fprintf(stderr, "%s: %s: Variable `%s` inferred to be of type %s here.\n", loc.buffer, NOTE_STR, name.buffer, typeName.buffer);
-                drop(&typeName);
+        }
+        &ExprData::Blank => {
+            if (isPointer(type)) {
+                let loc: String = toString(&expr.span);
+                let name: String = toString(type);
+                fprintf(stderr, "%s: %s: Invalid initialization of reference of type %s. Please use `null` instead.\n",
+                    loc.buffer, ERR_STR, name.buffer);
+                drop(&name);
+                drop(&loc);
+                this.typeError = true;
+                return newTCStateFailure(ERROR_BLANK_FOR_NULL);
+            } else if (isPrimitive(type)) {
+                let loc: String = toString(&expr.span);
+                let name: String = toString(type);
+                fprintf(stderr, "%s: %s: Using `blank` to initialize value of type %s. Please use `0` instead.\n",
+                    loc.buffer, WARN_STR, name.buffer);
+                drop(&name);
+                drop(&loc);
+            } else if (isUnion(type)) {
+                let loc: String = toString(&expr.span);
+                let name: String = toString(type);
+                fprintf(stderr, "%s: %s: Using `blank` to initialize value of type %s.\n",
+                    loc.buffer, WARN_STR, name.buffer);
                 drop(&name);
                 drop(&loc);
             }
-            stmt.typeState = tid;
-        } else if (isFunction(type)) {
-            let functions = resolveAllFunctionsWithSignature(this.currentModule, &expr.origToken, type);
-            if (functions.length == 0) {
-                if (checkOnly) {
-                    tid = newTCStateFailure(ERROR_NO_SUCH_FUNCTION);
-                } else {
-                    let all = resolveFunctionByName(this.currentModule, &expr.origToken);
-                    tid = reportNoFunctionCallCandidate(this, expr, type, &all);
-                    drop(&all);
-                }
-            } else if (functions.length == 1) {
-                let f = at(&functions, 0);
-                assert(f.params.length == type.fnParams.length);
-                if (!checkOnly) {
-                    expr.lhs = f.globalID;
-                }
-                tid = f.fnType;
-            } else {
-                tid = newTCStatePleaseInfer();
-            }
-            drop(&functions);
-        } else {
-            todo_with_msg("infer onto name, but not a function or variable");
-        }
-    } else if (expr.kind == EXPR_INT_LIT) {
-        if (isChar(type)) {
-            if (!checkOnly) {
-                let l: String = getLocation(&expr.origToken);
-                fprintf(stderr, "%s: %s: Using integer literal to initialize value of type char.\n",
-                    l.buffer, WARN_STR);
-                drop(&l);
-            }
             tid = newTCStateType(type);
-        } else if (isInteger(type) || isFloat(type)) {
-            tid = newTCStateType(type);
-        } else if (isPointer(type)) {
-            // REVIEW: This is... More than debatable?
-            // Context requires a pointer, we have an integer literal.. Now this literal is type usize
-            // Question: Is there ever a situation where we actually want this literal to be type ptr?
-            let usizeType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
-            tid = newTCStateType(usizeType);
-        } else if (isBoolean(type)) {
-            if (!checkOnly) {
-                let s: String = toString(&expr.origToken.content);
-                let l: String = getLocation(&expr.origToken);
-                fprintf(stderr, "%s: %s: Unexpected Literal! Expected boolean, found `%s`.\n",
-                    l.buffer, ERR_STR, s.buffer);
-                drop(&l);
-                drop(&s);
-                this.typeError = true;
-            }
-            return newTCStateFailure(ERROR_UNEXPECTED_LITERAL);
-        } else if (isArray(type)) {
-            if (!checkOnly) {
-                let s: String = toString(&expr.origToken.content);
-                let l: String = getLocation(&expr.origToken);
-                fprintf(stderr, "%s: %s: Unexpected Literal! Expected array, found `%s`.\n",
-                    l.buffer, ERR_STR, s.buffer);
-                drop(&l);
-                drop(&s);
-                this.typeError = true;
-            }
-            return newTCStateFailure(ERROR_UNEXPECTED_LITERAL);
-        } else {
-            if (!checkOnly) {
-                let s: String = toString(&expr.origToken.content);
-                let l: String = getLocation(&expr.origToken);
-                let t = toString(type);
-                fprintf(stderr, "%s: %s: Unexpected Literal! Expected value of type %s, found `%s`.\n",
-                    l.buffer, ERR_STR, t.buffer, s.buffer);
-                drop(&t);
-                drop(&l);
-                drop(&s);
-                this.typeError = true;
-            }
-            return newTCStateFailure(ERROR_UNEXPECTED_LITERAL);
         }
-    } else if (expr.kind == EXPR_CHAR_LIT) {
-        unreachable("EXPR_CHAR_LIT always has type char and should never be the target of tryInferTypeOntoExpr");
-    } else if (expr.kind == EXPR_ARRAY_LIT) {
-        if (!isArray(type)) {
-            if (!checkOnly) {
-                let loc = toString(&expr.span);
-                let t = toString(type);
-                fprintf(stderr, "%s: %s: Expected expression of type %s, found array literal.\n", loc.buffer, ERR_STR, t.buffer);
-                drop(&t);
-                drop(&loc);
-            }
-            return newTCStateFailure(ERROR_TYPE_MISMATCH);
+        // &ExprData::True
+        // &ExprData::False
+        unknown => {
+            fprintf(stderr, "%s tryInferTypeOntoExpr: Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
+            exit(2);
         }
-        if (expr.arrayContext.size == 0) {
-            if (type.arraySize != expr.arrayContext.elemLength) {
-                if (!checkOnly) {
-                    let loc: String = toString(&expr.span);
-                    fprintf(stderr, "%s: %s: Array size mismatch! Expected to find %llu element(s), got %llu instead.\n",
-                        loc.buffer, ERR_STR, type.arraySize, expr.arrayContext.elemLength);
-                    drop(&loc);
-                    this.typeError = true;
-                }
-                return newTCStateFailure(ERROR_ARRAY_SIZE_MISMATCH);
-            }
-            let lastErrState: TCState = blank;
-            for (let i: usize = 0; i < expr.arrayContext.elemLength; i = i + 1) {
-                tid = tryInferTypeOntoExpr(this, getElementAtIndex(&expr.arrayContext, i), type.typeIndex, scopes, checkOnly);
-                if (isError(&tid)) {
-                    lastErrState = tid;
-                }
-            }
-            if (!isInvalid(&lastErrState)) return lastErrState;
-        } else {
-            if (type.arraySize != expr.arrayContext.size) {
-                if (!checkOnly) {
-                    let loc: String = toString(&expr.span);
-                    fprintf(stderr, "%s: %s: Array size mismatch! Expected to find %llu element(s), got %llu instead.\n",
-                        loc.buffer, ERR_STR, type.arraySize, expr.arrayContext.size);
-                    drop(&loc);
-                    this.typeError = true;
-                }
-                return newTCStateFailure(ERROR_ARRAY_SIZE_MISMATCH);
-            }
-            tid = tryInferTypeOntoExpr(this, getElementAtIndex(&expr.arrayContext, 0), type.typeIndex, scopes, checkOnly);
-            if (isError(&tid)) return tid;
-        }
-        tid = newTCStateType(type);
-    } else if (expr.kind == EXPR_BLANK) {
-        if (isPointer(type)) {
-            let loc: String = toString(&expr.span);
-            let name: String = toString(type);
-            fprintf(stderr, "%s: %s: Invalid initialization of reference of type %s. Please use `null` instead.\n",
-                loc.buffer, ERR_STR, name.buffer);
-            drop(&name);
-            drop(&loc);
-            this.typeError = true;
-            return newTCStateFailure(ERROR_BLANK_FOR_NULL);
-        } else if (isPrimitive(type)) {
-            let loc: String = toString(&expr.span);
-            let name: String = toString(type);
-            fprintf(stderr, "%s: %s: Using `blank` to initialize value of type %s. Please use `0` instead.\n",
-                loc.buffer, WARN_STR, name.buffer);
-            drop(&name);
-            drop(&loc);
-        } else if (isUnion(type)) {
-            let loc: String = toString(&expr.span);
-            let name: String = toString(type);
-            fprintf(stderr, "%s: %s: Using `blank` to initialize value of type %s.\n",
-                loc.buffer, WARN_STR, name.buffer);
-            drop(&name);
-            drop(&loc);
-        }
-        tid = newTCStateType(type);
-    } else if (expr.kind == EXPR_BINARY) {
-        if (isArithmetic(expr) || isBitwise(expr)) {
-            tid = tryInferTypeOntoExpr(this, expr.lhs, type, scopes, checkOnly);
-            if (isError(&tid)) return tid;
-            tid = tryInferTypeOntoExpr(this, expr.rhs, type, scopes, checkOnly);
+    }
+    /*
+    // } else if (expr.kind == EXPR_CHAR_LIT) {
+    //     unreachable("EXPR_CHAR_LIT always has type char and should never be the target of tryInferTypeOntoExpr");
+    // } else if (expr.kind == EXPR_ARRAY_LIT) {
+    // } else if (expr.kind == EXPR_BLANK) {
+    // } else if (expr.kind == EXPR_UNARY) {
+    // } else if (expr.kind == EXPR_CALL) {
+    //     tid = tryInferTypeOntoCall(this, expr, type, scopes, checkOnly);
+    //     if (isError(&tid)) return tid;
+    // } else {
+    //     emergencyPrint(this, expr.span);
+    //     todo_with_msg("unhandled case in inferTypeOntoExpr");
+    // }
+    */
+    if (!checkOnly) {
+        (*expr).typeState = tid;
+    }
+    return tid;
+}
+
+func tryInferTypeOntoUnary(this: &TypeChecker, span: Span, unary: &UnaryExpr, type: &Type, scopes: &ScopeLookupList, checkOnly: bool) -> TCState {
+    let tid: TCState = blank;
+    match (unary) {
+        &UnaryExpr::Deref(subExpr) => {
+            let newType: &Type = wrap(Type::Ptr(type));
+            tid = tryInferTypeOntoExpr(this, subExpr, newType, scopes, checkOnly);
             if (isError(&tid)) return tid;
             tid = newTCStateType(type);
-        } else if (isComparison(expr)) {
-            // Assuming that neither side has a type (otherwise typeCheckExprComparison would've handled the infer step)
-            // So all that's left is whack things like `1 == 1`, for which we blindly try to infer usize onto both sides
-            let usizeType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
-            tid = tryInferTypeOntoExpr(this, expr.lhs, getID(usizeType), scopes, checkOnly);
-            if (isError(&tid)) return tid;
-            tid = tryInferTypeOntoExpr(this, expr.rhs, getID(usizeType), scopes, checkOnly);
-            if (isError(&tid)) return tid;
-            tid = newTCStateType(type);
-        } else if (expr.op == BIN_DOT) {
-            tid = tryInferTypeOntoMemberAccess(this, expr, type, scopes, checkOnly);
-            if (isError(&tid)) return tid;
-        } else if (expr.op == BIN_MODULE) {
-            tid = tryInferTypeOntoModuleAccess(this, expr, type, scopes, checkOnly);
-            if (isError(&tid)) return tid;
-        } else {
-            todo_with_msg("inferTypeOntoExpr for non-arith non-comp binary");
         }
-    } else if (expr.kind == EXPR_UNARY) {
-        if (expr.op == UNARY_DEREF) {
-            let newType: &Type = newType(TYPE_KIND_POINTER, type);
-            tid = tryInferTypeOntoExpr(this, expr.lhs, getID(newType), scopes, checkOnly);
-            if (isError(&tid)) return tid;
-            tid = newTCStateType(type);
-        } else if (expr.op == UNARY_REF) {
-            if (!isPointer(type)) {
-                if (!checkOnly) {
-                    let loc: String = toString(&expr.span);
-                    let t: String = toString(type);
-                    fprintf(stderr, "%s: %s: Expected expression of type %s, found reference.\n", loc.buffer, ERR_STR, t.buffer);
-                    drop(&t);
-                    drop(&loc);
-                    this.typeError = true;
+        &UnaryExpr::Ref(subExpr) => {
+            match (type) {
+                &Type::Ptr(under) => {
+                    tid = tryInferTypeOntoExpr(this, subExpr, under, scopes, checkOnly);
+                    if (isError(&tid)) return tid;
+                    tid = newTCStateType(type);
                 }
-                return newTCStateFailure(ERROR_TYPE_MISMATCH);
+                _ => {
+                    if (!checkOnly) {
+                        let loc: String = toString(&span);
+                        let t: String = toString(type);
+                        fprintf(stderr, "%s: %s: Expected expression of type %s, found reference.\n", loc.buffer, ERR_STR, t.buffer);
+                        drop(&t);
+                        drop(&loc);
+                        this.typeError = true;
+                    }
+                    return newTCStateFailure(ERROR_TYPE_MISMATCH);
+                }
             }
-            let underlying: &Type = getUnderlyingType(type, false);
-            tid = tryInferTypeOntoExpr(this, expr.lhs, getID(underlying), scopes, checkOnly);
-            if (isError(&tid)) return tid;
-            tid = newTCStateType(type);
-        } else if (expr.op == UNARY_MINUS) {
-            // -expr
-            // typeof(expr) == typeof(-expr)
+        }
+        &UnaryExpr::Negate(subExpr) => {
             if (!isSignedInteger(type) && !isFloat(type)) {
                 if (!checkOnly) {
-                    let loc: String = toString(&expr.span);
+                    let loc: String = toString(&span);
                     let t: String = toString(type);
                     fprintf(stderr, "%s: %s: Negation is not defined for type %s.\n", loc.buffer, ERR_STR, t.buffer);
                     drop(&t);
@@ -2512,55 +2563,118 @@ func tryInferTypeOntoExpr(this: &TypeChecker, expr: &ParsedExpr, type: &Type, sc
                 }
                 return newTCStateFailure(ERROR_TYPE_MISMATCH);
             }
-            tid = tryInferTypeOntoExpr(this, expr.lhs, type, scopes, checkOnly);
+            tid = tryInferTypeOntoExpr(this, subExpr, type, scopes, checkOnly);
             if (isError(&tid)) return tid;
             assert(isType(&tid), "infer non-error expected to be a type");
             let subType: &Type = getType(&tid);
             assert(equals(subType, type), "Infer: SubExpr of UNARY_MINUS is expected to have same type as Expr");
             tid = newTCStateType(type);
-        } else if (expr.op == UNARY_NOT) {
-            let boolType: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL);
-            tid = tryInferTypeOntoExpr(this, expr.lhs, getID(boolType), scopes, checkOnly);
+        }
+        &UnaryExpr::Not(subExpr) => {
+            let boolType: &Type = wrap(Type::Prim(PrimType::Bool));
+            tid = tryInferTypeOntoExpr(this, subExpr, boolType, scopes, checkOnly);
             if (isError(&tid)) return tid;
             todo_with_msg("unary not infer");
-        } else {
-            unreachable("Exhaustive handling of unary ops in inferTypeOntoExpr");
         }
-    } else if (expr.kind == EXPR_NULL) {
-        if (!isPointer(type)) {
-            let loc: String = toString(&expr.span);
-            let name: String = toString(type);
-            fprintf(stderr, "%s: %s: Can't use `null` to initialize value of type %s.\n",loc.buffer, ERR_STR, name.buffer);
-            drop(&name);
-            drop(&loc);
-            this.typeError = true;
-            return newTCStateFailure(ERROR_NULL_NON_PTR);
-        }
-        tid = newTCStateType(type);
-    } else if (expr.kind == EXPR_CALL) {
-        tid = tryInferTypeOntoCall(this, expr, type, scopes, checkOnly);
-        if (isError(&tid)) return tid;
-    } else {
-        emergencyPrint(this, expr.span);
-        todo_with_msg("unhandled case in inferTypeOntoExpr");
-    }
-    if (!checkOnly) {
-        (*expr).typeState = tid;
+        _ => { unreachable("Exhaustive handling of ops in tryInferTypeOntoUnary"); }
     }
     return tid;
 }
 
-func tryInferTypeOntoCall(this: &TypeChecker, expr: &ParsedExpr, type: &Type, scopes: &ScopeLookupList, checkOnly: bool) -> TCState {
-    trace("TypeChecker.tryInferTypeOntoCall");
-    assert(expr.kind == EXPR_CALL);
-    let typeID = getID(type);
-    let fnType = newType(TYPE_KIND_FUNCTION, typeID);
-    let callContext = &expr.arrayContext;
-    for (let i: usize = 0; i < callContext.elemLength; i = i + 1) {
-        let argID: usize = getElementAtIndex(callContext, i);
-        push(&fnType.fnParams, at(&exprs, argID).typeState);
+func tryInferTypeOntoBinary(this: &TypeChecker, binary: &BinaryExpr, type: &Type, scopes: &ScopeLookupList, checkOnly: bool) -> TCState {
+    let lhs: &ParsedExpr = null;
+    let rhs: &ParsedExpr = null;
+    extractOperands(binary, &lhs, &rhs);
+    let tid: TCState = blank;
+    if (isArithmetic(binary) || isBitwise(binary)) {
+        tid = tryInferTypeOntoExpr(this, lhs, type, scopes, checkOnly);
+        if (isError(&tid)) return tid;
+        tid = tryInferTypeOntoExpr(this, rhs, type, scopes, checkOnly);
+        if (isError(&tid)) return tid;
+        tid = newTCStateType(type);
+    } else if (isComparison(binary)) {
+        // Assuming that neither side has a type (otherwise typeCheckExprComparison would've handled the infer step)
+        // So all that's left is whack things like `1 == 1`, for which we blindly try to infer usize onto both sides
+        let usizeType = wrap(Type::Prim(PrimType::Usize));
+        tid = tryInferTypeOntoExpr(this, lhs, usizeType, scopes, checkOnly);
+        if (isError(&tid)) return tid;
+        tid = tryInferTypeOntoExpr(this, rhs, usizeType, scopes, checkOnly);
+        if (isError(&tid)) return tid;
+        tid = newTCStateType(type);
+    } else if (tag(binary) == comptime tag(&BinaryExpr::Dot)) {
+        tid = tryInferTypeOntoMemberAccess(this, binary, type, scopes, checkOnly);
+    } else if (tag(binary) == comptime tag(&BinaryExpr::Path)) {
+        tid = tryInferTypeOntoPathAccess(this, binary, type, scopes, checkOnly);
+    } else {
+        todo_with_msg("inferTypeOntoExpr for non-arith non-comp binary");
     }
-    let baseState = tryInferTypeOntoExpr(this, expr.lhs, getID(fnType), scopes, checkOnly);
+    return tid;
+}
+
+func tryInferTypeOntoIdent(this: &TypeChecker, ident: &IdentExpr, type: &Type, scopes: &ScopeLookupList, checkOnly: bool) -> TCState {
+    let var: VariableLookup = blank;
+    let tid: TCState = blank;
+    if (resolveVariableByName(this.currentModule, &ident.name, scopes, &var)) {
+        assert(wantsInfer(&var.typeState), "Ident has no type, but variable doesn't want infer");
+        tid = newTCStateType(type);
+        var.typeState = tid;
+        let stmt = at(&stmts, var.globalID);
+        match (stmt.data) {
+            StmtData::VarDecl(decl) => {
+                tid = tryInferTypeOntoExpr(this, decl.expr, type, scopes, checkOnly);
+            }
+            _ => { unreachable("VariableLookup points to non-VarDecl"); }
+        }
+        if (isError(&tid)) {
+            let loc = toString(&ident.name.span);
+            let name = toString(&ident.name.content);
+            let typeName = toString(type);
+            fprintf(stderr, "%s: %s: Variable `%s` inferred to be of type %s here.\n", loc.buffer, NOTE_STR, name.buffer, typeName.buffer);
+            drop(&typeName);
+            drop(&name);
+            drop(&loc);
+        }
+        stmt.typeState = tid;
+    } else if (isFunction(type)) {
+        let functions = resolveAllFunctionsWithSignature(this.currentModule, &ident.name, type);
+        if (functions.length == 0) {
+            if (checkOnly) {
+                tid = newTCStateFailure(ERROR_NO_SUCH_FUNCTION);
+            } else {
+                let all = resolveFunctionByName(this.currentModule, &ident.name);
+                tid = reportNoFunctionCallCandidate(this, ident.name, type, &all);
+                drop(&all);
+            }
+        } else if (functions.length == 1) {
+            let f = at(&functions, 0);
+            if (!checkOnly) {
+                ident.origID = f.globalID;
+            }
+            tid = f.fnType;
+        } else {
+            tid = newTCStatePleaseInfer();
+        }
+        drop(&functions);
+    } else {
+        todo_with_msg("infer onto name, but not a function or variable");
+    }
+    if (isType(&tid)) {
+        ident.type = getType(&tid);
+    }
+    return tid;
+}
+
+func tryInferTypeOntoCall(this: &TypeChecker, expr: &CallExpr, type: &Type, scopes: &ScopeLookupList, checkOnly: bool) -> TCState {
+    trace("TypeChecker.tryInferTypeOntoCall");
+    let params: TypeList = blank;
+    for (let i: usize = 0; i < expr.args.length; i = i + 1) {
+        let state = &(*at(&expr.args, i)).typeState;
+        let typ = wrap(Type::Unknown);
+        if (isType(state)) typ = getType(state);
+        push(&params, typ);
+    }
+    let fnType = wrap(Type::Func(params, type, blank));
+    let baseState = tryInferTypeOntoExpr(this, expr.base, fnType, scopes, checkOnly);
     if (isError(&baseState)) return baseState;
     if (wantsInfer(&baseState)) {
         return reportFunctionCallTooManyOptions(this, expr);
@@ -2568,12 +2682,10 @@ func tryInferTypeOntoCall(this: &TypeChecker, expr: &ParsedExpr, type: &Type, sc
     assert(isType(&baseState), "tryInferOntoCall: Base is not a type");
     let baseFunc = getType(&baseState);
     assert(isFunction(baseFunc), "tryInferTypeOntoCall: Base is not a function");
-    assert(baseFunc.typeIndex == typeID, "tryInferTypeOntoCall: Base return type doesn't match expected");
-    assert(baseFunc.fnParams.length == callContext.elemLength, "tryInferTypeOntoCall: Base expects different count of arguments");
     let state: TCState = newTCStateSuccess();
-    for (let i: usize = 0; i < callContext.elemLength; i = i + 1) {
+    for (let i: usize = 0; i < expr.args.length; i = i + 1) {
         let p = getParam(baseFunc, i);
-        let s1 = tryInferTypeOntoExpr(this, getElementAtIndex(callContext, i), getType(p), scopes, checkOnly);
+        let s1 = tryInferTypeOntoExpr(this, *at(&expr.args, i), p, scopes, checkOnly);
         if (isError(&s1)) {
             state = s1;
         }
@@ -2582,88 +2694,94 @@ func tryInferTypeOntoCall(this: &TypeChecker, expr: &ParsedExpr, type: &Type, sc
         todo_with_msg("infer arg failed");
     }
     if (checkOnly) return newTCStateSuccess();
+    expr.retType = type;
     return newTCStateType(type);
 }
 
-func tryInferTypeOntoMemberAccess(this: &TypeChecker, expr: &ParsedExpr, type: &Type, scopes: &ScopeLookupList, checkOnly: bool) -> TCState {
+func tryInferTypeOntoMemberAccess(this: &TypeChecker, expr: &BinaryExpr, type: &Type, scopes: &ScopeLookupList, checkOnly: bool) -> TCState {
     trace("TypeChecker.tryInferTypeOntoMemberAccess");
-    assert(expr.kind == EXPR_BINARY);
-    assert(expr.op == BIN_DOT);
-    let lhs = at(&exprs, expr.lhs);
-    let rhs = at(&exprs, expr.rhs);
-    if (rhs.kind == EXPR_NAME) {
-        let name = rhs.origToken;
-        let structs = resolveAllStructsWithField(this.currentModule, &name, type);
-        if (structs.length == 0) {
-            return reportMemberAccessNoOptions(this, expr);
-        } else if (structs.length == 1) {
-            let strukt = at(&structs, 0);
-            let state = tryInferTypeOntoExpr(this, expr.lhs, strukt.type, scopes, checkOnly);
-            if (isError(&state)) return state;
-            if (checkOnly) return newTCStateSuccess();
-            return newTCStateType(type);
-        } else {
-            if (!checkOnly) {
-                return reportMemberAccessTooManyOptions(this, expr, &structs);
+    let lhs: &ParsedExpr = null;
+    let rhs: &ParsedExpr = null;
+    extractOperands(expr, &lhs, &rhs);
+    match (&rhs.data) {
+        &ExprData::Ident(ident) => {
+            let name = ident.name;
+            let structs = resolveAllStructsWithField(this.currentModule, &name, type);
+            if (structs.length == 0) {
+                return reportMemberAccessNoOptions(this, lhs.span);
+            } else if (structs.length == 1) {
+                let struct = at(&structs, 0);
+                let state = tryInferTypeOntoExpr(this, lhs, struct.type, scopes, checkOnly);
+                if (isError(&state)) return state;
+                if (checkOnly) return newTCStateSuccess();
+                return newTCStateType(type);
+            } else {
+                if (!checkOnly) {
+                    return reportMemberAccessTooManyOptions(this, lhs.span, &structs);
+                }
+                return newTCStateFailure(ERROR_TYPE_MISMATCH);
             }
-            return newTCStateFailure(ERROR_TYPE_MISMATCH);
         }
-    } else if (rhs.kind == EXPR_CALL) {
-        todo_with_msg("infer member call");
-    } else {
-        unreachable("Exhaustive handling of possibilities in tryInferTypeOntoMemberAccess");
+        _ => { }
     }
+    unreachable("Exhaustive handling of possibilities in tryInferTypeOntoMemberAccess"); 
 }
 
-func tryInferTypeOntoModuleAccess(this: &TypeChecker, expr: &ParsedExpr, type: &Type, scopes: &ScopeLookupList, checkOnly: bool) -> TCState {
-    trace("TypeChecker.tryInferTypeOntoModuleAccess");
-    assert(expr.kind == EXPR_BINARY);
-    assert(expr.op == BIN_MODULE);
-    let lhs = at(&exprs, expr.lhs);
+func tryInferTypeOntoPathAccess(this: &TypeChecker, expr: &BinaryExpr, type: &Type, scopes: &ScopeLookupList, checkOnly: bool) -> TCState {
+    trace("TypeChecker.tryInferTypeOntoPathAccess");
+    let lhs: &ParsedExpr = null;
+    let rhs: &ParsedExpr = null;
+    extractOperands(expr, &lhs, &rhs);
     let lhsState = lhs.typeState;
     if (!isSuccess(&lhsState)) return lhsState;
     if (!isType(&lhsState)) return lhsState;
     let lhsType = getType(&lhsState);
-    assert(isModule(lhsType), "LHS of BIN_MODULE is not of type module!");
-    let lookup = getModuleByGlobalID(this.currentModule, lhsType.typeIndex);
-    let rhs = at(&exprs, expr.rhs);
-    let tid: TCState = blank;
-    if (rhs.kind == EXPR_NAME) {
-        assert(isFunction(type), "Can only try to infer functions onto module identifiers for now");
-        let functions = resolveAllFunctionsWithSignature(lookup, &rhs.origToken, type);
-        if (functions.length == 0) {
-            if (checkOnly) {
-                tid = newTCStateFailure(ERROR_NO_SUCH_FUNCTION);
-            } else {
-                let all = resolveFunctionByName(lookup, &rhs.origToken);
-                tid = reportNoFunctionCallCandidate(this, at(&exprs, expr.rhs), type, &all);
-                drop(&all);
-            }
-        } else if (functions.length == 1) {
-            let f = at(&functions, 0);
-            assert(f.params.length == type.fnParams.length);
-            if (!checkOnly) {
-                rhs.lhs = f.globalID;
-            }
-            tid = f.fnType;
-        } else {
-            tid = newTCStatePleaseInfer();
-        }
-        rhs.typeState = tid;
-        drop(&functions);
-    } else {
-        unreachable("Exhaustive handling of possibilities in tryInferTypeOntoModuleAccess");
+    let lookup: &ModuleLookup = null;
+    match (lhsType) {
+        &Type::Module(decl) => { lookup = getModuleByGlobalID(this.currentModule, getID(decl)); }
+        _ => { unreachable("LHS of BIN_MODULE is not of type module!"); }
     }
-    expr.typeState = tid;
+    let tid: TCState = blank;
+    match (&rhs.data) {
+        &ExprData::Ident(ident) => {
+            assert(isFunction(type), "Can only try to infer functions onto module identifiers for now");
+            let functions = resolveAllFunctionsWithSignature(lookup, &ident.name, type);
+            if (functions.length == 0) {
+                if (checkOnly) {
+                    tid = newTCStateFailure(ERROR_NO_SUCH_FUNCTION);
+                } else {
+                    let all = resolveFunctionByName(lookup, &ident.name);
+                    tid = reportNoFunctionCallCandidate(this, ident.name, type, &all);
+                    drop(&all);
+                }
+            } else if (functions.length == 1) {
+                let f = at(&functions, 0);
+                if (!checkOnly) {
+                    ident.origID = f.globalID;
+                }
+                tid = f.fnType;
+            } else {
+                tid = newTCStatePleaseInfer();
+            }
+            rhs.typeState = tid;
+            if (isType(&tid)) {
+                ident.type = getType(&tid);
+            }
+            drop(&functions);
+        }
+        _ => { unreachable("Exhaustive handling of possibilities in tryInferTypeOntoModuleAccess"); }
+    }
     return tid;
 }
 
-func typeCheckExprArithmetic(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupList) -> TCState {
+func typeCheckExprArithmetic(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.typeCheckExprArithmetic");
-    assert(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
     assert(isArithmetic(expr), "Expr expected to be arithmetic");
-    let lhsState: TCState = typeCheckExpr(this, expr.lhs, scopes);
-    let rhsState: TCState = typeCheckExpr(this, expr.rhs, scopes);
+    let lhs: &ParsedExpr = null;
+    let rhs: &ParsedExpr = null;
+    extractOperands(expr, &lhs, &rhs);
+    let lhsState: TCState = typeCheckExpr(this, lhs, scopes);
+    let rhsState: TCState = typeCheckExpr(this, rhs, scopes);
     if (isError(&lhsState)) return lhsState;
     if (isError(&rhsState)) return rhsState;
     let lhsPointer: bool = false;
@@ -2671,90 +2789,70 @@ func typeCheckExprArithmetic(this: &TypeChecker, expr: &ParsedExpr, scopes: &Sco
     if (isType(&lhsState)) if (isPointer(getType(&lhsState))) lhsPointer = true;
     if (isType(&rhsState)) if (isPointer(getType(&rhsState))) rhsPointer = true;
     if (lhsPointer || rhsPointer) {
-        if (expr.op != BIN_PLUS && expr.op != BIN_SUB) {
-            return reportInvalidPointerArithmetics(this, 
-                expr.op,
-                at(&exprs, expr.lhs).span,
-                at(&exprs, expr.rhs).span,
-            );
+        match (expr) {
+            &BinaryExpr::Plus(..) => { },
+            &BinaryExpr::Sub(..) => { },
+            other => { return reportInvalidPointerArithmetics(this, binOpAsStr(other), lhs.span, rhs.span); }
         }
     }
-    let maybeInfer: TCState = checkIfInferIsNeeded(this, expr.lhs, &lhsState, expr.rhs, &rhsState, scopes);
+    let maybeInfer: TCState = checkIfInferIsNeeded(this, lhs, &lhsState, rhs, &rhsState, scopes);
     if (isError(&maybeInfer)) return maybeInfer;
     if (wantsInfer(&maybeInfer)) return maybeInfer;
     let lhsType: &Type = getType(&lhsState);
     let rhsType: &Type = getType(&rhsState);
     let resultState: TCState = blank;
     if (equals(lhsType, rhsType)) {
-        if (isChar(lhsType) && expr.op != BIN_PLUS && expr.op != BIN_SUB) {
-            return reportBinaryTypeMismatch(this, 
-                expr.op,
-                at(&exprs, expr.lhs).span, lhsType,
-                at(&exprs, expr.rhs).span, rhsType,
-            );
+        comptime p = tag(&BinaryExpr::Plus);
+        comptime s = tag(&BinaryExpr::Sub);
+        if (isChar(lhsType) && tag(expr) != p && tag(expr) != s) {
+            return reportBinaryTypeMismatch(this, binOpAsStr(expr), lhs.span, lhsType, rhs.span, rhsType);
         }
         if (isStruct(lhsType) || isArray(lhsType)) {
-            return reportBinaryTypeMismatch(this, 
-                expr.op,
-                at(&exprs, expr.lhs).span, lhsType,
-                at(&exprs, expr.rhs).span, rhsType,
-            );
+            return reportBinaryTypeMismatch(this, binOpAsStr(expr), lhs.span, lhsType, rhs.span, rhsType);
         } else if (isPointer(lhsType)) {
-            let t: &Type = newType(TYPE_KIND_PRIMITIVE, TYPE_USIZE);
-            resultState = newTCStateType(t);
+            resultState = newTCStateType(wrap(Type::Prim(PrimType::Usize)));
         } else {
-            assert(getID(lhsType) == getID(rhsType), "Arithmetic LHS and RHS are different types");
             resultState = newTCStateType(lhsType);
         }
     } else if (isPointer(lhsType) && isInteger(rhsType)) {
-        if (rhsType.typeIndex == TYPE_USIZE) {
-            resultState = lhsState;
-        } else {
-            let rhs = at(&exprs, expr.rhs).span;
-            let err = reportBinaryTypeMismatch(this, 
-                expr.op,
-                at(&exprs, expr.lhs).span, lhsType,
-                rhs, rhsType,
-            );
-            let loc = toString(&rhs);
-            fprintf(stderr, "%s: %s: Pointer offsets must be of type usize.\n", loc.buffer, NOTE_STR);
-            drop(&loc);
-            return err;
+        match (rhsType) {
+            &Type::Prim(PrimType::Usize) => { resultState = lhsState; }
+            _ => {
+                let err = reportBinaryTypeMismatch(this, binOpAsStr(expr), lhs.span, lhsType, rhs.span, rhsType);
+                let loc = toString(&rhs.span);
+                fprintf(stderr, "%s: %s: Pointer offsets must be of type usize.\n", loc.buffer, NOTE_STR);
+                drop(&loc);
+                return err;
+            }
         }
     } else if (isInteger(lhsType) && isPointer(rhsType)) {
-        if (lhsType.typeIndex == TYPE_USIZE) {
-            resultState = rhsState;
-        } else {
-            let lhs = at(&exprs, expr.lhs).span;
-            let err = reportBinaryTypeMismatch(this, 
-                expr.op,
-                lhs, lhsType,
-                at(&exprs, expr.rhs).span, rhsType,
-            );
-            let loc = toString(&lhs);
-            fprintf(stderr, "%s: %s: Pointer offsets must be of type usize.\n", loc.buffer, NOTE_STR);
-            drop(&loc);
-            return err;
+        match (lhsType) {
+            &Type::Prim(PrimType::Usize) => { resultState = rhsState; }
+            _ => {
+                let err = reportBinaryTypeMismatch(this, binOpAsStr(expr), lhs.span, lhsType, rhs.span, rhsType);
+                let loc = toString(&lhs.span);
+                fprintf(stderr, "%s: %s: Pointer offsets must be of type usize.\n", loc.buffer, NOTE_STR);
+                drop(&loc);
+                return err;
+            }
         }
     } else {
-        return reportBinaryTypeMismatch(this, 
-            expr.op,
-            at(&exprs, expr.lhs).span, lhsType,
-            at(&exprs, expr.rhs).span, rhsType,
-        );
+        return reportBinaryTypeMismatch(this, binOpAsStr(expr), lhs.span, lhsType, rhs.span, rhsType);
     }
     return resultState;
 }
 
-func typeCheckExprComparison(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupList) -> TCState {
+func typeCheckExprComparison(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.typeCheckExprComparison");
-    assert(expr.kind == EXPR_BINARY, "Expr expected to be Binary");
     assert(isComparison(expr), "Expr expected to be comparison");
-    let lhsState: TCState = typeCheckExpr(this, expr.lhs, scopes);
-    let rhsState: TCState = typeCheckExpr(this, expr.rhs, scopes);
+    let lhs: &ParsedExpr = null;
+    let rhs: &ParsedExpr = null;
+    extractOperands(expr, &lhs, &rhs);
+    let lhsState: TCState = typeCheckExpr(this, lhs, scopes);
+    let rhsState: TCState = typeCheckExpr(this, rhs, scopes);
     if (isError(&lhsState)) return lhsState;
     if (isError(&rhsState)) return rhsState;
-    let maybeInfer: TCState = checkIfInferIsNeeded(this, expr.lhs, &lhsState, expr.rhs, &rhsState, scopes);
+    let maybeInfer: TCState = checkIfInferIsNeeded(this, lhs, &lhsState, rhs, &rhsState, scopes);
     if (isError(&maybeInfer)) {
         todo_with_msg("couldn't infer in comp");
     }
@@ -2763,16 +2861,16 @@ func typeCheckExprComparison(this: &TypeChecker, expr: &ParsedExpr, scopes: &Sco
     let rhsType: &Type = getType(&rhsState);
     if (!equals(lhsType, rhsType)) {
         return reportBinaryTypeMismatch(this, 
-            expr.op,
-            at(&exprs, expr.lhs).span, lhsType,
-            at(&exprs, expr.rhs).span, rhsType,
+            binOpAsStr(expr),
+            lhs.span, lhsType,
+            rhs.span, rhsType,
         );
     }
     if (isStruct(lhsType) || isStruct(rhsType)
         || isArray(lhsType) || isArray(rhsType)) {
         todo_with_msg("report error, can't compare structs or arrays using == or similar.");
     }
-    return newTCStateType(newType(TYPE_KIND_PRIMITIVE, TYPE_BOOL));
+    return newTCStateType(wrap(Type::Prim(PrimType::Bool)));
 }
 
 func typeCheckTypeNode(this: &TypeChecker, typeNode: &ParsedTypeNode) -> TCState {
@@ -2783,29 +2881,25 @@ func typeCheckTypeNode(this: &TypeChecker, typeNode: &ParsedTypeNode) -> TCState
     if (typeNode.kind == PARSED_TYPE_FUNC) {
         let retState: TCState = typeCheckTypeNode(this, typeNode.underlyingID);
         if (isError(&retState)) return retState;
-        let params: TCStateList = blank;
-        let fnType = newType(TYPE_KIND_FUNCTION, getID(getType(&retState)));
+        let params: TypeList = blank;
         let error: TCState = blank;
         for (let i: usize = 0; i < typeNode.fnParams.length; i = i + 1) {
             let state = typeCheckTypeNode(this, *at(&typeNode.fnParams, i));
             if (isError(&state)) {
                 error = state;
             }
-            push(&params, state);
+            push(&params, getType(&state));
         }
         if (isError(&error)) return error;
-        fnType.fnParams = params;
-        tid = fnType;
+        tid = wrap(Type::Func(params, getType(&retState), blank));
     } else if (typeNode.kind == PARSED_TYPE_REF) {
         let under: TCState = typeCheckTypeNode(this, typeNode.underlyingID);
         if (isError(&under)) return under;
-        tid = newType(TYPE_KIND_POINTER, getID(getType(&under)));
+        tid = wrap(Type::Ptr(getType(&under)));
     } else if (typeNode.kind == PARSED_TYPE_ARRAY) {
         let under: TCState = typeCheckTypeNode(this, typeNode.underlyingID);
         if (isError(&under)) return under;
-        let t: &Type = newType(TYPE_KIND_ARRAY, getID(getType(&under)));
-        (*t).arraySize = typeNode.arraySize;
-        tid = t;
+        tid = wrap(Type::Array(getType(&under), typeNode.arraySize));
     } else if (typeNode.kind == PARSED_TYPE_IDENT) {
         let name: Token = typeNode.nameTkn;
         let typeLookup: TypeLookup = blank;
@@ -2867,7 +2961,7 @@ func typeCheckTypeNode(this: &TypeChecker, typeNode: &ParsedTypeNode) -> TCState
                 if (!resolveModuleByName(moduleLookup, &name, &newModule)) {
                     return reportUnknownSubmodule(this, moduleLookup, name);
                 }
-                let modType = newType(TYPE_KIND_MODULE, newModule.globalID);
+                let modType = wrap(Type::Module(at(&modules, newModule.globalID)));
                 typeNode.typeState = newTCStateType(modType);
                 typeNode = sub;
                 moduleLookup = newModule;
@@ -2876,28 +2970,26 @@ func typeCheckTypeNode(this: &TypeChecker, typeNode: &ParsedTypeNode) -> TCState
         typeNode = _orig;
     } else if (typeNode.kind == PARSED_TYPE_BUILTIN) {
         let id: usize = getID(typeNode);
-        let typeID: usize = 0;
-        if (id == PARSED_TYPE_INVALID) typeID = TYPE_INVALID;
-        else if (id == PARSED_TYPE_UNKNOWN) typeID = TYPE_UNKNOWN;
-        else if (id == PARSED_TYPE_NONE) typeID = TYPE_NONE;
-        else if (id == PARSED_TYPE_ANY) typeID = TYPE_ANY;
-        else if (id == PARSED_TYPE_I8) typeID = TYPE_I8;
-        else if (id == PARSED_TYPE_I16) typeID = TYPE_I16;
-        else if (id == PARSED_TYPE_I32) typeID = TYPE_I32;
-        else if (id == PARSED_TYPE_I64) typeID = TYPE_I64;
-        else if (id == PARSED_TYPE_U8) typeID = TYPE_U8;
-        else if (id == PARSED_TYPE_U16) typeID = TYPE_U16;
-        else if (id == PARSED_TYPE_U32) typeID = TYPE_U32;
-        else if (id == PARSED_TYPE_U64) typeID = TYPE_U64;
-        else if (id == PARSED_TYPE_USIZE) typeID = TYPE_USIZE;
-        else if (id == PARSED_TYPE_BOOL) typeID = TYPE_BOOL;
-        else if (id == PARSED_TYPE_CHAR) typeID = TYPE_CHAR;
-        else if (id == PARSED_TYPE_F32) typeID = TYPE_F32;
-        else if (id == PARSED_TYPE_F64) typeID = TYPE_F64;
+        let prim: PrimType = PrimType::None;
+        if (id == PARSED_TYPE_NONE) prim = PrimType::None;
+        else if (id == PARSED_TYPE_ANY) prim = PrimType::Any;
+        else if (id == PARSED_TYPE_I8) prim =PrimType::I8;
+        else if (id == PARSED_TYPE_I16) prim =PrimType::I16;
+        else if (id == PARSED_TYPE_I32) prim =PrimType::I32;
+        else if (id == PARSED_TYPE_I64) prim =PrimType::I64;
+        else if (id == PARSED_TYPE_U8) prim =PrimType::U8;
+        else if (id == PARSED_TYPE_U16) prim =PrimType::U16;
+        else if (id == PARSED_TYPE_U32) prim =PrimType::U32;
+        else if (id == PARSED_TYPE_U64) prim =PrimType::U64;
+        else if (id == PARSED_TYPE_USIZE) prim =PrimType::Usize;
+        else if (id == PARSED_TYPE_BOOL) prim =PrimType::Bool;
+        else if (id == PARSED_TYPE_CHAR) prim =PrimType::Char;
+        else if (id == PARSED_TYPE_F32) prim =PrimType::F32;
+        else if (id == PARSED_TYPE_F64) prim =PrimType::F64;
         else {
             unreachable("Exhaustive handling of parsed types in typeCheckTypeNode");
         }
-        tid = newType(TYPE_KIND_PRIMITIVE, typeID);
+        tid = wrap(Type::Prim(prim));
     } else {
         todo_with_msg("unknown typeNode kind");
     }
