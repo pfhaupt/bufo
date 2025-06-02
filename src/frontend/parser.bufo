@@ -25,6 +25,7 @@ import "../backend/codegen_llvm.bufo";
 
 struct Parser {
     lexer: Lexer;
+    anonFnCount: usize;
     importRoots: &String;
     importRootLength: usize;
     importRootCapacity: usize;
@@ -77,7 +78,8 @@ func expectSoftIdentifier(this: &Parser) -> Token {
         || equals(&tkn.content, &KEYWORD_TRUE)
         || equals(&tkn.content, &KEYWORD_FALSE)
         || equals(&tkn.content, &KEYWORD_BLANK)
-        || equals(&tkn.content, &KEYWORD_SIZEOF)) {
+        || equals(&tkn.content, &KEYWORD_SIZEOF)
+        || equals(&tkn.content, &KEYWORD_FUNC)) {
         let loc: String = getLocation(&tkn);
         let name: String = toString(&tkn.content);
         fprintf(stderr, "%s: %s: Expected Identifier, found `%s` instead.\n", loc.buffer, ERR_STR, name.buffer);
@@ -999,6 +1001,19 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
             let typ: &ParsedTypeNode = parseTypeNode(this);
             let span: Span = newSpanBetween(&ident.span, &typ.span);
             return newParsedExpr(span, ExprData::Sizeof(typ));
+        } else if (equals(&ident.content, &KEYWORD_FUNC)) {
+            // Dot to ensure that there will never be a name clash with user defined functions
+            let _name: String = newStringFromStrLit(".anon_");
+            pushNumber(&_name, this.anonFnCount);
+            this.anonFnCount = this.anonFnCount + 1;
+            let fileID = this.lexer.fileID;
+            let name = newToken(fileID, &asSubStr(&_name), 0, TOKEN_IDENT);
+            let params = parseParameters(this);
+            let retType = parseReturnType(this);
+            let body = parseBlock(this);
+            let span = newSpanBetween(&ident.span, &body.span);
+            let decl = newParsedFuncDecl(TLIParent { isFile: true, id: fileID as u32 }, span, name, params, retType, body);
+            return newParsedExpr(span, ExprData::Func(decl));
         } else if (at(this, TOKEN_CURLY_OPEN)) {
             expect(this, TOKEN_CURLY_OPEN);
             let context: StructInitContext = blank;
@@ -1202,6 +1217,7 @@ func getUnaryPrecedence(this: &Parser, tknKind: usize) -> usize {
 func newParserFromSource(fileID: usize, src: SubStr) -> Parser {
     return Parser {
         lexer: newLexer(fileID, src),
+        anonFnCount: 0,
         importRoots: null,
         importRootLength: 0,
         importRootCapacity: 0,

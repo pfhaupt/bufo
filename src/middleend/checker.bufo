@@ -169,8 +169,23 @@ struct TypeChecker {
     isComptimeContext: bool;
     currentModule: &ModuleLookup;
     currentFunction: &FunctionLookup;
+    anonFuncDepth: usize;
     lookup: Lookup;
     typeError: bool;
+}
+func enterAnonFunc(this: &TypeChecker) { this.anonFuncDepth = this.anonFuncDepth + 1; }
+func leaveAnonFunc(this: &TypeChecker) { this.anonFuncDepth = this.anonFuncDepth - 1; }
+
+func pl(count: usize, s1: &char, s2: &char) -> &char {
+    if (count == 1) return s1;
+    return s2;
+}
+func reportVerboseNote(this: &TypeChecker, loc: String, count: usize, s1: &char, s2: &char) {
+    let is = pl(count, "is", "are");
+    let ol = pl(count, s1, s2);
+    let it = pl(count, "it", "them");
+    fprintf(stderr, "%s: %s: There %s %llu %s. Re-run with the --verbose flag to see %s.\n",
+            loc.buffer, NOTE_STR, is, count, ol, it);
 }
 
 func reportTypeMismatch(this: &TypeChecker, span: Span, expected: &Type, got: &Type) -> TCState {
@@ -279,14 +294,18 @@ func reportUnknownType(this: &TypeChecker, mod: &ModuleLookup, name: Token, alte
         drop(&_n1);
     } else {
         fprintf(stderr, "%s: %s: Use of undeclared type identifier `%s`.\n", loc.buffer, ERR_STR, _n.buffer);
-        for (let i: usize = 0; i < alternatives.length; i = i + 1) {
-            let t: &TypeLookup = at(&alternatives, i);
-            if (isStruct(t)) {
-                let s: &StructLookup = asStruct(t);
-                drop(&loc);
-                loc = getLocation(&s.name);
-                fprintf(stderr, "%s: %s: A struct with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
+        if (*flags.verbose) {
+            for (let i: usize = 0; i < alternatives.length; i = i + 1) {
+                let t: &TypeLookup = at(&alternatives, i);
+                if (isStruct(t)) {
+                    let s: &StructLookup = asStruct(t);
+                    drop(&loc);
+                    loc = getLocation(&s.name);
+                    fprintf(stderr, "%s: %s: A struct with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
+                }
             }
+        } else if (alternatives.length > 0) {
+            reportVerboseNote(this, loc, alternatives.length, "struct with that name", "structs with that name");
         }
     }
     drop(&_n);
@@ -329,16 +348,7 @@ func reportNoFunctionCallCandidate(this: &TypeChecker, ident: Token, fnType: &Ty
             fprintf(stderr, "%s: %s: Overload %s declared here.\n", loc.buffer, NOTE_STR, typ.buffer);
         }
     } else {
-        let is = "are";
-        let ol = "overloads";
-        let it = "them";
-        if (functions.length == 1) {
-            is = "is";
-            ol = "overload";
-            it = "it";
-        }
-        fprintf(stderr, "%s: %s: There %s %llu possible %s. Re-run with the --verbose flag to see %s.\n",
-                loc.buffer, NOTE_STR, is, functions.length, ol, it);
+        reportVerboseNote(this, loc, functions.length, "possible overload", "possible overloads");
     }
     drop(&typ);
     drop(&name);
@@ -972,10 +982,12 @@ func typeCheckStructDecl(this: &TypeChecker, structID: usize) -> TCState {
 }
 
 func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupList, signatureOnly: bool) -> TCState {
+    return typeCheckFunction(this, at(&funcDecls, funcID), scopes, signatureOnly);
+}
+func typeCheckFunction(this: &TypeChecker, function: &ParsedFuncDecl, scopes: &ScopeLookupList, signatureOnly: bool) -> TCState {
     trace("TypeChecker.typeCheckFunction");
-    let function: &ParsedFuncDecl = at(&funcDecls, funcID);
     if (function.ignored) return blank;
-    let funcLookup = getFunctionByGlobalID(&this.lookup, funcID);
+    let funcLookup = getFunctionByGlobalID(&this.lookup, getID(function));
     this.currentFunction = funcLookup;
     let failure: TCState = blank;
     clear(&funcLookup.params);
@@ -1638,8 +1650,19 @@ func typeCheckExpr(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupLi
         &ExprData::Blank => { state = newTCStatePleaseInfer(); }
         &ExprData::True => { state = newTCStateType(wrap(Type::Prim(PrimType::Bool))); }
         &ExprData::False => { state = newTCStateType(wrap(Type::Prim(PrimType::Bool))); }
+        &ExprData::Func(decl) => {
+            let added = insertTLI(this.currentModule, asTLI(decl));
+            assert(added, "Func Expr was already contained in lookup!");
+            assert(scopes.length > 0, "Expected to at least find global scope in func expr");
+            let _scopes: ScopeLookupList = blank;
+            push(&_scopes, *at(scopes, 0));
+            enterAnonFunc(this);
+            state = typeCheckFunction(this, decl, &_scopes, false);
+            leaveAnonFunc(this);
+            drop(&_scopes);
+        }
         unknown => {
-            fprintf(stderr, "%s Unhandled Expression with tag %hhu!\n", FATAL_STR, tag(unknown));
+            fprintf(stderr, "%s typeCheckExpr: Unhandled Expression with tag %hhu!\n", FATAL_STR, tag(unknown));
             exit(2);
         }
     }
@@ -1930,12 +1953,16 @@ func typeCheckIdentifier(this: &TypeChecker, ident: &IdentExpr, scopes: &ScopeLo
     let loc: String = getLocation(name);
     let _name: String = toString(&name.content);
     fprintf(stderr, "%s: %s: Use of undeclared identifier `%s`.\n", loc.buffer, ERR_STR, _name.buffer);
-    let alternatives: VariableLookupList = searchAllFilesForIdentifier(&this.lookup, name);
-    for (let i: usize = 0; i < alternatives.length; i = i + 1) {
-        let t: &VariableLookup = at(&alternatives, i);
-        drop(&loc);
-        loc = getLocation(&t.name);
-        fprintf(stderr, "%s: %s: A variable with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
+    let alternatives: VariableLookupList = searchAllFilesForIdentifier(&this.lookup, name, this.anonFuncDepth > 0);
+    if (*flags.verbose) {
+        for (let i: usize = 0; i < alternatives.length; i = i + 1) {
+            let t: &VariableLookup = at(&alternatives, i);
+            drop(&loc);
+            loc = getLocation(&t.name);
+            fprintf(stderr, "%s: %s: A variable with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
+        }
+    } else if (alternatives.length > 0) {
+        reportVerboseNote(this, loc, alternatives.length, "global variable with that name", "global variables with that name");
     }
     drop(&_name);
     drop(&loc);
@@ -2908,19 +2935,7 @@ func typeCheckTypeNode(this: &TypeChecker, typeNode: &ParsedTypeNode) -> TCState
             let _n: String = toString(&name.content);
             fprintf(stderr, "%s: %s: Use of undeclared type identifier `%s`.\n", loc.buffer, ERR_STR, _n.buffer);
             let alternatives: TypeLookupList = searchAllFilesForTypeName(&this.lookup, &name);
-            for (let i: usize = 0; i < alternatives.length; i = i + 1) {
-                let t: &TypeLookup = at(&alternatives, i);
-                if (isStruct(t)) {
-                    let s: &StructLookup = asStruct(t);
-                    drop(&loc);
-                    loc = getLocation(&s.name);
-                    fprintf(stderr, "%s: %s: A struct with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
-                }
-            }
-            drop(&_n);
-            drop(&loc);
-            this.typeError = true;
-            return newTCStateFailure(ERROR_NO_SUCH_IDENTIFIER);
+            return reportUnknownType(this, null, name, alternatives);
         }
         if (isStruct(&typeLookup)) {
             let structLookup: &StructLookup = asStruct(&typeLookup);

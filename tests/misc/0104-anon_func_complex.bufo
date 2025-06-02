@@ -1,0 +1,28 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+
+func apply(x: i32, f: func (i32) -> i32) -> i32 {
+    return f(x);
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a = apply(5, func (x: i32) -> i32 {
+        return x * x;
+    });
+    assert(a == 25);
+    let b = apply(a, func (x: i32) -> i32 {
+        return x - 15;
+    });
+    assert(b == 10);
+    let c = apply(apply(b, func (x: i32) -> i32 {
+        return x * x;
+    }), func (x: i32) -> i32 {
+        return x + x;
+    });
+    assert(c == 200); // (10 * 10) + (10 * 10)
+    return 0;
+}
+

@@ -1640,6 +1640,14 @@ func generateBytecodeExpr(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, ne
         }
         &ExprData::True => { return generateBytecodeExprLiteral(this, function, expr, needsPtr); }
         &ExprData::False => { return generateBytecodeExprLiteral(this, function, expr, needsPtr); }
+        &ExprData::Func(decl) => {
+            generateFunction(this, decl);
+            let name: String = getMangledName(decl);
+            let funcID: usize = getFunctionByName(this, &name);
+            let dst = allocateRegister(function, getType(&decl.typeState));
+            buildLoadFunctionPtr(function, expr.span, dst, funcID);
+            return dst;
+        }
         unknown => {
             fprintf(stderr, "%s generateBytecodeExpr: Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
             exit(2);

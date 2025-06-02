@@ -52,8 +52,6 @@ func showcase1() {
 
 // Functions in bufo are first class citizen, which means that *function types* are part of the language.
 // You can freely assign functions to variables, return them from functions, store them in structures etc.
-// Note: Anonymous functions (sometimes called closures, function expressions, inline functions, etc.)
-//       are not implemented yet, but planned. All functions must have a name.
 func apply(base: u32, fn: func (u32) -> u32) -> u32 {
     return fn(base);
 }
@@ -74,6 +72,7 @@ func switch(mode: u8) -> func (u32) -> u32 {
     }
 }
 
+comptime FIVE: u32 = 5;
 func showcase2() {
     let a: u32 = 3;
     let b = apply(a, square);
@@ -85,4 +84,25 @@ func showcase2() {
     assert(c == 6);
     assert(d == 9);
     assert(e == 6);
+
+    // Additionally, bufo supports anonymous functions. While they can't capture variables except
+    // from the global scope (so they can't access a, b, c, f, d, e, but can access FIVE),
+    // they otherwise behave like any normal function, except they don't have a name and you
+    // can declare and use them in expression contexts:
+    let g = apply(e, func (x: u32) -> u32 {
+        // compiler error: Use of undeclared variable `e`.
+        // let tmp = e;
+        return x + 9 + FIVE; // FIVE is a global variable and can be used here.
+    });
+    assert(g == 20);
+
+    let h = apply(g, func (x: u32) -> u32 {
+        // Because they're expressions, you can also directly call them after declaring them.
+        // outer function: g(x) = f(x)
+        return func (y: u32) -> u32 {
+            // inner function: f(y) = y * y
+            return y * y;
+        }(x);
+    });
+    assert(h == 400);
 }

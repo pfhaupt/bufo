@@ -102,6 +102,9 @@ func searchAllFilesForFunctionName(this: &Lookup, name: &Token) -> FunctionLooku
     return list;
 }
 func searchAllFilesForIdentifier(this: &Lookup, name: &Token) -> VariableLookupList {
+    return searchAllFilesForIdentifier(this, name, false);
+}
+func searchAllFilesForIdentifier(this: &Lookup, name: &Token, globalOnly: bool) -> VariableLookupList {
     trace("Lookup.searchAllFilesForIdentifier");
     let list: VariableLookupList = blank;
     for (let i: usize = 0; i < this.files.length; i = i + 1) {
@@ -112,6 +115,7 @@ func searchAllFilesForIdentifier(this: &Lookup, name: &Token) -> VariableLookupL
             if (getVariableByName(s, name.content, &v)) {
                 push(&list, v);
             }
+            if (globalOnly) break;
         }
     }
     return list;

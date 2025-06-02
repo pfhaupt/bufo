@@ -902,6 +902,7 @@ union ExprData {
     Blank,
     True,
     False,
+    Func(&ParsedFuncDecl),
 }
 union UnaryExpr {
     Comptime(&ParsedExpr),

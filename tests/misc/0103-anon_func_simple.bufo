@@ -1,0 +1,29 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+
+comptime FIVE: i32 = 5;
+
+func foo() -> i32 {
+    let f = func () -> i32 {
+        return FIVE;
+    };
+    return f();
+}
+
+func bar(f: func () -> i32) -> i32 {
+    return f() + func () -> i32 {
+        return 10;
+    }();
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a = foo();
+    let b = bar(foo);
+    assert(a == 5);
+    assert(b == 15);
+    assert(bar(func () -> i32 { return 10; }) == 20);
+    return 0;
+}
