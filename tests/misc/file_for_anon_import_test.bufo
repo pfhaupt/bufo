@@ -1,0 +1,8 @@
+//! IGNORED
+
+import "prelude.bufo";
+
+func foo() {
+    let a = func () -> i32 { return 1; }();
+    assert(a == 1);
+}

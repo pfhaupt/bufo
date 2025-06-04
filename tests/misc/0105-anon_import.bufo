@@ -1,0 +1,13 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+import "file_for_anon_import_test.bufo";
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a = func () -> i32 { return 0; }();
+    assert(a == 0);
+    foo();
+    return 0;
+}

@@ -1004,6 +1004,8 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
         } else if (equals(&ident.content, &KEYWORD_FUNC)) {
             // Dot to ensure that there will never be a name clash with user defined functions
             let _name: String = newStringFromStrLit(".anon_");
+            pushNumber(&_name, this.lexer.fileID);
+            pushChar(&_name, '_');
             pushNumber(&_name, this.anonFnCount);
             this.anonFnCount = this.anonFnCount + 1;
             let fileID = this.lexer.fileID;
