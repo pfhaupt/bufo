@@ -3,16 +3,22 @@ import "prelude.bufo";
 import "libc.bufo";
 
 module raylib {
-    @os(WINDOWS) config {
-        library: "raylib",
+    @os(LINUX) config {
+        static: "libraylib.a",
+        dynamic: "libraylib.so",
         libpath: "./raylib/lib",
-        library: "OpenGL32",
-        library: "msvcrt",
-        library: "Gdi32",
-        library: "WinMM",
-        library: "kernel32",
-        library: "shell32",
-        library: "User32",
+    }
+    @os(WINDOWS) config {
+        static: "raylib.lib",
+        dynamic: "raylib.dll",
+        libpath: "./raylib/lib",
+        static: "OpenGL32.lib",
+        static: "msvcrt.lib",
+        static: "Gdi32.lib",
+        static: "WinMM.lib",
+        static: "kernel32.lib",
+        static: "shell32.lib",
+        static: "User32.lib",
         linker: "/NODEFAULTLIB:libcmt",
     }
     @extern("InitWindow") func InitWindow(width: i32, height: i32, title: &char);
@@ -120,7 +126,7 @@ module raylib {
         CloseAudioDevice();
         CloseWindow();
     }
-    func simple_test(isComptime: bool, inMakefile: bool) {
+    func simple_test(isComptime: bool) {
         if (isComptime) {
             InitWindow(600, 400, "simple_test: hello from bufo but at comptime FeelsOkayMan");
         } else {
@@ -128,11 +134,9 @@ module raylib {
         }
         let c = comptime ColorFromHSV(90, 1/10, 3/10);
         while (!WindowShouldClose()) {
-            if ((isComptime || inMakefile) && GetTime() > 3) {
-                if (!isComptime) {
-                    // TODO: Make things like printf and assert available to comptime
-                    printf("\x1b[92m[INFO] 3 seconds have passed, closing window.\x1b[0m\n");
-                }
+            if (GetTime() > 3) {
+                // FIXME
+                // C::printf("\x1b[92m[INFO] 3 seconds have passed, closing window.\x1b[0m\n");
                 break;
             }
             BeginDrawing();
@@ -144,12 +148,8 @@ module raylib {
 }
 
 func main(argc: i32, argv: &&char) -> i32 {
-    let inMakefile = false;
-    if (argc > 1) {
-        inMakefile = strcmp(argv[1], "--Makefile") == 0;
-    }
-    raylib::simple_test(false, inMakefile);
-    (comptime raylib::simple_test(true, false));
+    raylib::simple_test(false);
+    (comptime raylib::simple_test(true));
     return 0;
 }
 

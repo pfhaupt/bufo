@@ -18,7 +18,7 @@ func toHex(hex: u8) {
     bfr[1] = 'x';
     bfr[2] = _HEX_CHAR[upper as usize];
     bfr[3] = _HEX_CHAR[lower as usize];
-    printf("%s\n", &bfr);
+    C::printf("%s\n", &bfr);
 }
 
 func main(argc: i32, argv: &&char) -> i32 {

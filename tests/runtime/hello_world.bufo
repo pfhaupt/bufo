@@ -6,7 +6,7 @@ import "prelude.bufo";
 import "libc.bufo";
 
 func main(argc: i32, argv: &&char) -> i32 {
-    let written_chars: usize = printf("Hello, World!\n");
+    let written_chars: usize = C::printf("Hello, World!\n");
     assert(written_chars == 14); // 13 + newline
     return 0;
 }

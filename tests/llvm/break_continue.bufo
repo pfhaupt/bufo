@@ -11,6 +11,6 @@ func main(argc: i32, argv: &&char) -> i32 {
     for (let i: u8 = 0; i < 5; i = i + 1) {
         while (true) break;
     }
-    while (true) { exit(0); return 0; }
+    while (true) { C::exit(0); return 0; }
     return 0;
 }

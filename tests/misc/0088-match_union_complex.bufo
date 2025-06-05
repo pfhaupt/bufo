@@ -25,14 +25,14 @@ func main(argc: i32, argv: &&char) -> i32 {
         &Foo::A(Bar { Bez::Flag(val) }) => {
             assert(val == 12, "val != 12");
             val = 17;
-            printf("A write yep\n");
+            C::printf("A write yep\n");
         }
         _ => { return 1; }
     }
     match (a) {
         Foo::A(Bar { Bez::Flag(val) }) => {
             assert(val == 17, "val != 17");
-            printf("A read yep\n");
+            C::printf("A read yep\n");
         }
         _ => { return 1; }
     }

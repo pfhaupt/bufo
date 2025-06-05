@@ -125,27 +125,26 @@ func equals(this: &ParsedAttribute, other: &ParsedAttribute) -> bool {
     unreachable("ParsedAttribute.equals is not implemented yet");
 }
 
-comptime CONFIG_INVALID: u8 = 0;
-comptime CONFIG_LIBNAME: u8 = 1;
-comptime CONFIG_LIBPATH: u8 = 2;
-comptime CONFIG_LINKER: u8 = 3;
-struct Config {
-    kind: u8;
-    value: Token;
+union Config {
+    Invalid(Token),
+    Static(Token),
+    Dynamic(Token),
+    Libpath(Token),
+    Linker(Token),
 }
 
 func newConfig(t: Token, value: Token) -> Config {
-    let kind: u8 = CONFIG_INVALID;
-    if (equals(&t.content, &comptime BUILD_A_KEYWORD("library"))) {
-        kind = CONFIG_LIBNAME;
+    if (equals(&t.content, &comptime BUILD_A_KEYWORD("static"))) {
+        return Config::Static(value);
+    } else if (equals(&t.content, &comptime BUILD_A_KEYWORD("dynamic"))) {
+        return Config::Dynamic(value);
     } else if (equals(&t.content, &comptime BUILD_A_KEYWORD("libpath"))) {
-        kind = CONFIG_LIBPATH;
+        return Config::Libpath(value);
     } else if (equals(&t.content, &comptime BUILD_A_KEYWORD("linker"))) {
-        kind = CONFIG_LINKER;
+        return Config::Linker(value);
     } else {
-        kind = CONFIG_INVALID;
+        return Config::Invalid(value);
     }
-    return Config { kind: kind, value: value };
 }
 
 struct ParsedConfig {
@@ -696,7 +695,7 @@ func addStmt(this: &ParsedBlock, stmt: &ParsedStmt) {
     if (this.stmtLength >= this.stmtCapacity) {
         let newCap: usize = this.stmtCapacity * 2;
         if (newCap == 0) newCap = 1;
-        this.stmtList = realloc(this.stmtList, newCap * sizeof usize);
+        this.stmtList = C::realloc(this.stmtList, newCap * sizeof usize);
         assert(this.stmtList != null, "Could not resize stmt list");
         this.stmtCapacity = newCap;
     }
@@ -1255,8 +1254,8 @@ func toString(this: &ParsedPattern) -> String {
             return s;
         }
         unknown => {
-            fprintf(stderr, "%s ParsedPattern.toString: Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
-            exit(2);
+            C::fprintf(stderr, "%s ParsedPattern.toString: Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
+            C::exit(2);
         }
     }
     unreachable("Exhaustive handling of pattern kinds in ParsedPattern.toString()");

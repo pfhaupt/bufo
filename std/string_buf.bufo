@@ -11,7 +11,7 @@ struct StringBuffer {
 }
 
 func resize(this: &StringBuffer, newCap: usize) {
-    let _new: Any = realloc(this.data, newCap * sizeof SubStr);
+    let _new: Any = C::realloc(this.data, newCap * sizeof SubStr);
     assert(_new != null);
     this.data = _new as &SubStr;
     this.capacity = newCap;
@@ -47,7 +47,7 @@ func toCmdString(this: &StringBuffer) -> String {
 }
 
 func newStringBuffer() -> StringBuffer {
-    let _bfr: Any = calloc(INITIAL_STRINGBUFFER_CAP, sizeof SubStr);
+    let _bfr: Any = C::calloc(INITIAL_STRINGBUFFER_CAP, sizeof SubStr);
     let _data: &SubStr = _bfr as &SubStr;
     return StringBuffer {
         data: _data,

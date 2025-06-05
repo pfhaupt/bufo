@@ -155,8 +155,8 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) -> bool {
         if (contains(&this.imports, &lookup)) {
             let loc = toString(&tli.span);
             let _loc = toString(&get(&this.imports, &lookup).span);
-            fprintf(stderr, "%s: %s: Can not import the same file twice.\n", loc.buffer, ERR_STR);
-            fprintf(stderr, "%s: %s: File already imported here.\n", _loc.buffer, NOTE_STR);
+            C::fprintf(stderr, "%s: %s: Can not import the same file twice.\n", loc.buffer, ERR_STR);
+            C::fprintf(stderr, "%s: %s: File already imported here.\n", _loc.buffer, NOTE_STR);
             drop(&_loc);
             drop(&loc);
             return false;
@@ -175,8 +175,8 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) -> bool {
             let loc = toString(&tli.span);
             let _loc = toString(&get(&this.modules, &lookup).name.span);
             let name = toString(&mod.name);
-            fprintf(stderr, "%s: %s: Module redeclaration.\n", loc.buffer, ERR_STR);
-            fprintf(stderr, "%s: %s: Module `%s` already declared here.\n", _loc.buffer, NOTE_STR, name.buffer);
+            C::fprintf(stderr, "%s: %s: Module redeclaration.\n", loc.buffer, ERR_STR);
+            C::fprintf(stderr, "%s: %s: Module `%s` already declared here.\n", _loc.buffer, NOTE_STR, name.buffer);
             drop(&name);
             drop(&_loc);
             drop(&loc);
@@ -200,8 +200,8 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) -> bool {
             let loc = toString(&tli.span);
             let _loc = toString(&get(&this.structs, &lookup).name.span);
             let name = toString(&strukt.name);
-            fprintf(stderr, "%s: %s: Struct redeclaration.\n", loc.buffer, ERR_STR);
-            fprintf(stderr, "%s: %s: Struct `%s` already declared here.\n", _loc.buffer, NOTE_STR, name.buffer);
+            C::fprintf(stderr, "%s: %s: Struct redeclaration.\n", loc.buffer, ERR_STR);
+            C::fprintf(stderr, "%s: %s: Struct `%s` already declared here.\n", _loc.buffer, NOTE_STR, name.buffer);
             drop(&name);
             drop(&_loc);
             drop(&loc);
@@ -221,8 +221,8 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) -> bool {
             let loc = toString(&tli.span);
             let _loc = toString(&get(&this.unions, &lookup).name.span);
             let name = toString(&onion.name);
-            fprintf(stderr, "%s: %s: Union redeclaration.\n", loc.buffer, ERR_STR);
-            fprintf(stderr, "%s: %s: Union `%s` already declared here.\n", _loc.buffer, NOTE_STR, name.buffer);
+            C::fprintf(stderr, "%s: %s: Union redeclaration.\n", loc.buffer, ERR_STR);
+            C::fprintf(stderr, "%s: %s: Union `%s` already declared here.\n", _loc.buffer, NOTE_STR, name.buffer);
             drop(&name);
             drop(&_loc);
             drop(&loc);
@@ -253,8 +253,8 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) -> bool {
             let loc = toString(&tli.span);
             let _name = toString(&name);
             let _loc = toString(&duplVar.span);
-            fprintf(stderr, "%s: %s: Variable redeclaration.\n", loc.buffer, ERR_STR);
-            fprintf(stderr, "%s: %s: Variable `%s` already declared here.\n", _loc.buffer, NOTE_STR, _name.buffer);
+            C::fprintf(stderr, "%s: %s: Variable redeclaration.\n", loc.buffer, ERR_STR);
+            C::fprintf(stderr, "%s: %s: Variable `%s` already declared here.\n", _loc.buffer, NOTE_STR, _name.buffer);
             drop(&_name);
             drop(&_loc);
             drop(&loc);

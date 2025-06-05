@@ -10,6 +10,8 @@ RUN_HOWTO =
 VERBOSE = @
 BUFO_FLAGS = --warn --target $(TARGET)
 
+BUFO_CC = ./bufo.exe
+
 ifeq ($(VERBOSE),)
   ALL_FLAGS = $(BUFO_FLAGS) --warn-extra --verbose
   define log
@@ -52,11 +54,11 @@ else
   $(call check_exists,printf)
 endif
 
-./bufo.exe: $(shell find src/ -type f) $(shell find std/ -type f)
-	./bufo.exe src/bufo.bufo -o ./bufo1.exe $(ALL_FLAGS)
-	mv ./bufo1.exe ./bufo.exe
+${BUFO_CC}: $(shell find src/ -type f) $(shell find std/ -type f)
+	${BUFO_CC} src/bufo.bufo -o ${BUFO_CC}.tmp $(ALL_FLAGS)
+	mv ${BUFO_CC}.tmp ${BUFO_CC}
 
-all: ./bufo.exe examples how_to
+all: ${BUFO_CC} examples how_to
 
 define log_run
 	@printf "%-10s %s\n" "$(1)" "$(2)"
@@ -69,14 +71,14 @@ EXOUT := $(EXSRC:.bufo=.exe)
 EXRUN := $(EXSRC:.bufo=.run)
 
 $(EXOUT): %.exe : %.bufo
-	$(call log_run,BUFO,$@,./bufo.exe $^ -o $@ $(BUFO_FLAGS))
+	$(call log_run,BUFO,$@,${BUFO_CC} $^ -o $@ $(BUFO_FLAGS))
 $(EXRUN): %.run : %.exe | $(EXOUT)
 	$(call log_run,RUN ,$<, $< --Makefile)
 
 ifdef RUN_EXAMPLES
-examples: ./bufo.exe $(EXRUN)
+examples: ${BUFO_CC} $(EXRUN)
 else
-examples: ./bufo.exe $(EXOUT)
+examples: ${BUFO_CC} $(EXOUT)
 endif
 
 HOWTODIR := ./how_to
@@ -85,21 +87,21 @@ HOWTOOUT := $(HOWTOSRC:.bufo=.exe)
 HOWTORUN := $(HOWTOSRC:.bufo=.run)
 
 $(HOWTOOUT): %.exe : %.bufo
-	$(call log_run,BUFO,$@,./bufo.exe $^ -o $@ $(BUFO_FLAGS))
+	$(call log_run,BUFO,$@,${BUFO_CC} $^ -o $@ $(BUFO_FLAGS))
 $(HOWTORUN): %.run : %.exe | $(HOWTOOUT)
 	$(call log_run,RUN ,$<, $< --Makefile)
 
 ifdef RUN_HOWTO
-how_to: ./bufo.exe $(HOWTORUN)
+how_to: ${BUFO_CC} $(HOWTORUN)
 else
-how_to: ./bufo.exe $(HOWTOOUT)
+how_to: ${BUFO_CC} $(HOWTOOUT)
 endif
 
 bootstrap:
 	$(error `make bootstrap` is currently a stub and does nothing)
 
 brick:
-	./working.exe src/bufo.bufo -o ./bufo.exe
+	./working.exe src/bufo.bufo -o ${BUFO_CC}
 
 clean: clean_example clean_howto
 	rm -f *.s

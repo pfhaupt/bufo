@@ -84,20 +84,20 @@ func generateExecutable(this: &LLVMCodegen, outPath: SubStr) -> bool {
     let objPath: String = toString(&outPath);
     pushStr(&objPath, ".obj");
     if (*flags.verbose) {
-        printf("[INFO] Saving object file at %s\n", objPath.buffer);
+        C::printf("[INFO] Saving object file at %s\n", objPath.buffer);
     }
     writeToFile(&this.llvmTargetMachine, this.llvmModule, LLVMObjectFile, objPath.buffer);
     if (*flags.emitASM) {
         let asmPath = toString(&outPath);
         pushStr(&asmPath, ".s");
-        printf("[INFO] Saving assembly code in %s\n", asmPath.buffer);
+        C::printf("[INFO] Saving assembly code in %s\n", asmPath.buffer);
         writeToFile(&this.llvmTargetMachine, this.llvmModule, LLVMAssemblyFile, asmPath.buffer);
         drop(&asmPath);
     }
     if (*flags.emitLLVM) {
         let llvmPath = toString(&outPath);
         pushStr(&llvmPath, ".ll");
-        printf("[INFO] Saving LLVM IR in %s\n", llvmPath.buffer);
+        C::printf("[INFO] Saving LLVM IR in %s\n", llvmPath.buffer);
         writeToFile(&this.llvmModule, asSubStr(&llvmPath));
         drop(&llvmPath);
     }
@@ -111,9 +111,9 @@ func generateEntryPoint(this: &LLVMCodegen) -> bool {
     //        names that overwrite the mangling
     let mainName: SubStr = newSubStrOfStrLit("maini32PPcri32");
     if (!hasFunction(&this.llvmModule, mainName)) {
-        fprintf(stderr, "%s Could not find main function!\n", FATAL_STR);
-        fprintf(stderr, "%s: The compiler currently requires that the input file also defines a main function.\n", NOTE_STR);
-        fprintf(stderr, "%s: The compiler is looking for a function with the signature `func main(argc: i32, argv: &&char) -> i32`.\n", NOTE_STR);
+        C::fprintf(stderr, "%s Could not find main function!\n", FATAL_STR);
+        C::fprintf(stderr, "%s: The compiler currently requires that the input file also defines a main function.\n", NOTE_STR);
+        C::fprintf(stderr, "%s: The compiler is looking for a function with the signature `func main(argc: i32, argv: &&char) -> i32`.\n", NOTE_STR);
         return false;
     }
     let mainFunc: LLVMValue = getFunction(&this.llvmModule, mainName);
@@ -507,7 +507,7 @@ func generateLLVMInstr(
         buildUnreachable(&this.llvmBuilder);
         return blank;
     } else if (instr.kind == INSTR_UNTERMINATED) {
-        fprintf(stderr, "%s %s: UNTERMINATED BLOCK FOUND!!!\n", toString(&instr.span).buffer, FATAL_STR);
+        C::fprintf(stderr, "%s %s: UNTERMINATED BLOCK FOUND!!!\n", toString(&instr.span).buffer, FATAL_STR);
         unreachable("LLVM: Received INSTR_UNTERMINATED, Control Flow Analysis should've caught this!");
     } else if (instr.kind == INSTR_BR) {
         buildBr(&this.llvmBuilder, *at(blocks, instr.dst.i));
@@ -659,7 +659,7 @@ func generateLLVMInstr(
         buildMemcpy(&this.llvmBuilder, dst, 1, src, 1, size);
         return dst;
     } else {
-        printf("LLVM %llu\n", instr.kind);
+        C::printf("LLVM %llu\n", instr.kind);
         todo_with_msg("unknown llvm kind");
     }
 }
@@ -776,7 +776,7 @@ func generateLLVMValueFromComptimeValue(this: &LLVMCodegen, typ: &Type, start: &
             return buildGlobalStringPtr(&this.llvmBuilder, *(start as &usize) as &char, newSubStrOfStrLit("comptime_str"));
         }
         typ => {
-            fprintf(stderr, "%s\n", toString(typ).buffer);
+            C::fprintf(stderr, "%s\n", toString(typ).buffer);
             todo_with_msg("generateLLVMValueFromComptime");
         }
     }
@@ -831,7 +831,7 @@ func generateLLVMType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
             } else if (isAny(typ)) {
                 return intoPointerType(&createIntegerType(&this.llvmContext, 64));
             } else {
-                fprintf(stderr, "%s\n", toString(typ).buffer);
+                C::fprintf(stderr, "%s\n", toString(typ).buffer);
                 todo_with_msg("generate primitive type");
             }
         }
@@ -839,14 +839,14 @@ func generateLLVMType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
         &Type::Func(_,_,_) => { return intoPointerType(&createIntegerType(&this.llvmContext, 64)); }
         &Type::Array(under, size) => { return intoArrayType(&generateLLVMType(this, under), size as u32); }
         &Type::Struct(decl) => {
-            let fields: &LLVMType = malloc(decl.context.fieldLength * sizeof LLVMType);
+            let fields: &LLVMType = C::malloc(decl.context.fieldLength * sizeof LLVMType);
             assert(fields != null, "Could not allocate memory in LLVMCodegen.generateLLVMType");
             for (let i: usize = 0; i < decl.context.fieldLength; i = i + 1) {
                 let tDecl: &ParsedTypeNode = getFieldTypeAtIndex(&decl.context, i);
                 fields[i] = generateLLVMType(this, getType(&tDecl.typeState));
             }
             let t: LLVMType = createStructType(&this.llvmContext, fields, decl.context.fieldLength as u32, false);
-            free(fields);
+            C::free(fields);
             return t;
         }
         &Type::Union(decl, _) => {

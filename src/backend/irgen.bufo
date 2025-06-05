@@ -130,102 +130,102 @@ func isTerminator(this: &IRInstr) -> bool {
         || this.kind == INSTR_UNTERMINATED;
 }
 func dump(this: &IRInstr) {
-    if (!*flags.emitBIR && this.isComptime) printf("\x1b[92m");
+    if (!*flags.emitBIR && this.isComptime) C::printf("\x1b[92m");
     if (PRINT_DEBUG) {
         let s = toString(&this.span);
-        printf("%s ", s.buffer);
+        C::printf("%s ", s.buffer);
         drop(&s);
     }
-    if (this.kind == INSTR_ALLOCA) printf("r%llu = Alloca %llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_GET_PARAM) printf("r%llu = GetParam %llu (%llu bytes)", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_STORE) printf("Store r%llu, r%llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_FETCH_GLOBAL_PTR) printf("r%llu = FetchGlobalPtr r%llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_FETCH_GLOBAL_VALUE) printf("r%llu = FetchGlobalValue r%llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_FETCH_COMPTIME_VALUE) printf("r%llu = FetchComptimeValue r%llu, global=%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_LOAD) printf("r%llu = Load r%llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_LOAD_FUNCTION_PTR) printf("r%llu = LoadFunctionPtr %llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_MOVE) printf("r%llu = Move r%llu", this.dst.i, this.src.i);
+    if (this.kind == INSTR_ALLOCA) C::printf("r%llu = Alloca %llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_GET_PARAM) C::printf("r%llu = GetParam %llu (%llu bytes)", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_STORE) C::printf("Store r%llu, r%llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_FETCH_GLOBAL_PTR) C::printf("r%llu = FetchGlobalPtr r%llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_FETCH_GLOBAL_VALUE) C::printf("r%llu = FetchGlobalValue r%llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_FETCH_COMPTIME_VALUE) C::printf("r%llu = FetchComptimeValue r%llu, global=%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_LOAD) C::printf("r%llu = Load r%llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_LOAD_FUNCTION_PTR) C::printf("r%llu = LoadFunctionPtr %llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_MOVE) C::printf("r%llu = Move r%llu", this.dst.i, this.src.i);
     else if (this.kind == INSTR_CALL) {
-        printf("r%llu = Call r%llu", this.dst.i, this.src.i);
+        C::printf("r%llu = Call r%llu", this.dst.i, this.src.i);
         for (let i: usize = 0; i < this.args.length; i = i + 1) {
-            printf(", r%llu", at(&this.args, i).i);
+            C::printf(", r%llu", at(&this.args, i).i);
         }
-    } else if (this.kind == INSTR_RETURN_EXPR) printf("RetExpr r%llu", this.src.i);
-    else if (this.kind == INSTR_RETURN_VOID) printf("RetVoid");
-    else if (this.kind == INSTR_LOAD_STRING) printf("r%llu = LoadString %p, %llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_LOAD_BOOL) printf("r%llu = Load Bool %hhu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_LOAD_I8) printf("r%llu = Load I8 %llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_LOAD_U8) printf("r%llu = Load U8 %llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_LOAD_I16) printf("r%llu = Load I16 %llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_LOAD_U16) printf("r%llu = Load U16 %llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_LOAD_I32) printf("r%llu = Load I32 %llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_LOAD_U32) printf("r%llu = Load U32 %llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_LOAD_I64) printf("r%llu = Load I64 %llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_LOAD_U64) printf("r%llu = Load U64 %llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_LOAD_NULL) printf("r%llu = Load Null", this.dst.i);
-    else if (this.kind == INSTR_LOAD_F32) printf("r%llu = Load F32 %f", this.dst.i, *(&this.src.i as &f32) as f64);
-    else if (this.kind == INSTR_LOAD_F64) printf("r%llu = Load F64 %f", this.dst.i, *(&this.src.i as &f64));
-    else if (this.kind == INSTR_LOAD_BLANK) printf("r%llu = Load Blank", this.dst.i);
-    else if (this.kind == INSTR_COND_BR) printf("CondBr r%llu, true=%llu, false=%llu", this.src.i, this.dst.i, this.op1.i);
-    else if (this.kind == INSTR_BR) printf("Br %llu", this.dst.i);
-    else if (this.kind == INSTR_INT_ADD) printf("r%llu = AddInt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_INT_SUB) printf("r%llu = SubInt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_INT_MUL) printf("r%llu = MulInt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_INT_DIV) printf("r%llu = DivInt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_INT_MOD) printf("r%llu = ModInt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_INT_CMP_EQ) printf("r%llu = ICmpEq r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_INT_CMP_NEQ) printf("r%llu = ICmpNeq r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_INT_CMP_GT) printf("r%llu = ICmpGt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_INT_CMP_GTE) printf("r%llu = ICmpGte r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_INT_CMP_LT) printf("r%llu = ICmpLt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_INT_CMP_LTE) printf("r%llu = ICmpLte r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_FLOAT_ADD) printf("r%llu = AddFloat r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_FLOAT_SUB) printf("r%llu = SubFloat r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_FLOAT_MUL) printf("r%llu = MulFloat r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_FLOAT_DIV) printf("r%llu = DivFloat r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_FLOAT_MOD) printf("r%llu = ModFloat r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_FLOAT_CMP_EQ) printf("r%llu = FCmpEq r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_FLOAT_CMP_NEQ) printf("r%llu = FCmpNeq r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_FLOAT_CMP_GT) printf("r%llu = FCmpGt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_FLOAT_CMP_GTE) printf("r%llu = FCmpGte r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_FLOAT_CMP_LT) printf("r%llu = FCmpLt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_FLOAT_CMP_LTE) printf("r%llu = FCmpLte r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_LOGICAL_NOT) printf("r%llu = LNot r%llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_LOGICAL_AND) printf("r%llu = LAnd r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_LOGICAL_OR) printf("r%llu = LOr r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_BITWISE_AND) printf("r%llu = BAnd r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_BITWISE_OR) printf("r%llu = BOr r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_BITWISE_XOR) printf("r%llu = BXOr r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_INSERT_VALUE) printf("r%llu = InsertValue r%llu, %llu, r%llu", this.dst.i, this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_INT_SIGN_EXTEND) printf("r%llu = IntSExt r%llu, %llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_INT_ZERO_EXTEND) printf("r%llu = IntZExt r%llu, %llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_INT_TRUNCATE) printf("r%llu = IntTrunc r%llu, %llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_INT_TO_F32) printf("r%llu = IntToF32 r%llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_INT_TO_F64) printf("r%llu = IntToF64 r%llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_F32_TO_INT) printf("r%llu = F32ToInt r%llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_F64_TO_INT) printf("r%llu = F64ToInt r%llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_INT_TO_F64) printf("r%llu = IntToF64 r%llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_F32_TO_F64) printf("r%llu = FloatExt r%llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_F64_TO_F32) printf("r%llu = FloatTrunc r%llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_CREATE_ARRAY) printf("r%llu = CreateArray", this.dst.i);
-    else if (this.kind == INSTR_CREATE_STRUCT) printf("r%llu = CreateStruct", this.dst.i);
-    else if (this.kind == INSTR_CREATE_UNION) printf("r%llu = CreateUnion", this.dst.i);
-    else if (this.kind == INSTR_PTR_TO_INT) printf("r%llu = PtrToInt r%llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_INT_TO_PTR) printf("r%llu = IntToPtr r%llu", this.dst.i, this.src.i);
-    else if (this.kind == INSTR_GET_FIELD_PTR) printf("r%llu = GetFieldPtr r%llu, %llu", this.dst.i, this.src.i, this.op1.i);
-    else if (this.kind == INSTR_UNREACHABLE) printf("unreachable");
-    else if (this.kind == INSTR_UNTERMINATED) printf("<unterminated block>");
-    else if (this.kind == INSTR_MEMCPY) printf("Memcpy r%llu, r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    } else if (this.kind == INSTR_RETURN_EXPR) C::printf("RetExpr r%llu", this.src.i);
+    else if (this.kind == INSTR_RETURN_VOID) C::printf("RetVoid");
+    else if (this.kind == INSTR_LOAD_STRING) C::printf("r%llu = LoadString %p, %llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_LOAD_BOOL) C::printf("r%llu = Load Bool %hhu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_LOAD_I8) C::printf("r%llu = Load I8 %llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_LOAD_U8) C::printf("r%llu = Load U8 %llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_LOAD_I16) C::printf("r%llu = Load I16 %llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_LOAD_U16) C::printf("r%llu = Load U16 %llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_LOAD_I32) C::printf("r%llu = Load I32 %llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_LOAD_U32) C::printf("r%llu = Load U32 %llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_LOAD_I64) C::printf("r%llu = Load I64 %llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_LOAD_U64) C::printf("r%llu = Load U64 %llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_LOAD_NULL) C::printf("r%llu = Load Null", this.dst.i);
+    else if (this.kind == INSTR_LOAD_F32) C::printf("r%llu = Load F32 %f", this.dst.i, *(&this.src.i as &f32) as f64);
+    else if (this.kind == INSTR_LOAD_F64) C::printf("r%llu = Load F64 %f", this.dst.i, *(&this.src.i as &f64));
+    else if (this.kind == INSTR_LOAD_BLANK) C::printf("r%llu = Load Blank", this.dst.i);
+    else if (this.kind == INSTR_COND_BR) C::printf("CondBr r%llu, true=%llu, false=%llu", this.src.i, this.dst.i, this.op1.i);
+    else if (this.kind == INSTR_BR) C::printf("Br %llu", this.dst.i);
+    else if (this.kind == INSTR_INT_ADD) C::printf("r%llu = AddInt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_INT_SUB) C::printf("r%llu = SubInt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_INT_MUL) C::printf("r%llu = MulInt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_INT_DIV) C::printf("r%llu = DivInt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_INT_MOD) C::printf("r%llu = ModInt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_INT_CMP_EQ) C::printf("r%llu = ICmpEq r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_INT_CMP_NEQ) C::printf("r%llu = ICmpNeq r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_INT_CMP_GT) C::printf("r%llu = ICmpGt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_INT_CMP_GTE) C::printf("r%llu = ICmpGte r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_INT_CMP_LT) C::printf("r%llu = ICmpLt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_INT_CMP_LTE) C::printf("r%llu = ICmpLte r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_FLOAT_ADD) C::printf("r%llu = AddFloat r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_FLOAT_SUB) C::printf("r%llu = SubFloat r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_FLOAT_MUL) C::printf("r%llu = MulFloat r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_FLOAT_DIV) C::printf("r%llu = DivFloat r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_FLOAT_MOD) C::printf("r%llu = ModFloat r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_FLOAT_CMP_EQ) C::printf("r%llu = FCmpEq r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_FLOAT_CMP_NEQ) C::printf("r%llu = FCmpNeq r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_FLOAT_CMP_GT) C::printf("r%llu = FCmpGt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_FLOAT_CMP_GTE) C::printf("r%llu = FCmpGte r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_FLOAT_CMP_LT) C::printf("r%llu = FCmpLt r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_FLOAT_CMP_LTE) C::printf("r%llu = FCmpLte r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_LOGICAL_NOT) C::printf("r%llu = LNot r%llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_LOGICAL_AND) C::printf("r%llu = LAnd r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_LOGICAL_OR) C::printf("r%llu = LOr r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_BITWISE_AND) C::printf("r%llu = BAnd r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_BITWISE_OR) C::printf("r%llu = BOr r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_BITWISE_XOR) C::printf("r%llu = BXOr r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_INSERT_VALUE) C::printf("r%llu = InsertValue r%llu, %llu, r%llu", this.dst.i, this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_INT_SIGN_EXTEND) C::printf("r%llu = IntSExt r%llu, %llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_INT_ZERO_EXTEND) C::printf("r%llu = IntZExt r%llu, %llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_INT_TRUNCATE) C::printf("r%llu = IntTrunc r%llu, %llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_INT_TO_F32) C::printf("r%llu = IntToF32 r%llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_INT_TO_F64) C::printf("r%llu = IntToF64 r%llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_F32_TO_INT) C::printf("r%llu = F32ToInt r%llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_F64_TO_INT) C::printf("r%llu = F64ToInt r%llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_INT_TO_F64) C::printf("r%llu = IntToF64 r%llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_F32_TO_F64) C::printf("r%llu = FloatExt r%llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_F64_TO_F32) C::printf("r%llu = FloatTrunc r%llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_CREATE_ARRAY) C::printf("r%llu = CreateArray", this.dst.i);
+    else if (this.kind == INSTR_CREATE_STRUCT) C::printf("r%llu = CreateStruct", this.dst.i);
+    else if (this.kind == INSTR_CREATE_UNION) C::printf("r%llu = CreateUnion", this.dst.i);
+    else if (this.kind == INSTR_PTR_TO_INT) C::printf("r%llu = PtrToInt r%llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_INT_TO_PTR) C::printf("r%llu = IntToPtr r%llu", this.dst.i, this.src.i);
+    else if (this.kind == INSTR_GET_FIELD_PTR) C::printf("r%llu = GetFieldPtr r%llu, %llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_UNREACHABLE) C::printf("unreachable");
+    else if (this.kind == INSTR_UNTERMINATED) C::printf("<unterminated block>");
+    else if (this.kind == INSTR_MEMCPY) C::printf("Memcpy r%llu, r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
     else if (this.kind == INSTR_GET_ELEMENT_PTR) {
-        printf("r%llu = GetElementPtr r%llu", this.dst.i, this.src.i);
+        C::printf("r%llu = GetElementPtr r%llu", this.dst.i, this.src.i);
         for (let i: usize = 0; i < this.args.length; i = i + 1) {
-            printf(", r%llu", at(&this.args, i).i);
+            C::printf(", r%llu", at(&this.args, i).i);
         }
     } else {
-        fprintf(stderr, "kind: %llu\n", this.kind);
+        C::fprintf(stderr, "kind: %llu\n", this.kind);
         unreachable("Exhaustive handling in IRInstr.dump()");
     }
-    if (!*flags.emitBIR && this.isComptime) printf("\x1b[0m\n"); else printf("\n");
+    if (!*flags.emitBIR && this.isComptime) C::printf("\x1b[0m\n"); else C::printf("\n");
 }
 
 struct LoopBlock {
@@ -253,9 +253,9 @@ func isTerminated(this: &IRBlock) -> bool {
     return isTerminator(last(&this.instructions));
 }
 func dump(this: &IRBlock) {
-    printf("b%llu:\n", this.id);
+    C::printf("b%llu:\n", this.id);
     for (let i: usize = 0; i < this.instructions.length; i = i + 1) {
-        printf("  %4d: ", i);
+        C::printf("  %4d: ", i);
         dump(at(&this.instructions, i));
     }
 }
@@ -330,7 +330,7 @@ func getFuncNode(this: &IRFunc) -> &ParsedFuncDecl {
     return at(&funcDecls, this.originalID);
 }
 func dumpInstructions(this: &IRFunc) {
-    printf("%s:\n", this.name.buffer);
+    C::printf("%s:\n", this.name.buffer);
     for (let i: usize = 0; i < this.blocks.length; i = i + 1) {
         dump(at(&this.blocks, i));
     }
@@ -900,11 +900,11 @@ func fillLookup(this: &IRGen, project: &ParsedFile) -> bool {
             let fn = get(&this.functions, &name);
             let loc = toString(&function.span);
             let loc1 = toString(&fn.span);
-            fprintf(stderr, "%s: %s Hash collision - Function Lookup already contains function!\n", loc.buffer, FATAL_STR);
-            fprintf(stderr, "%s: %s Function with mangled name %s already defined here!\n", loc1.buffer, FATAL_STR, name.buffer);
+            C::fprintf(stderr, "%s: %s Hash collision - Function Lookup already contains function!\n", loc.buffer, FATAL_STR);
+            C::fprintf(stderr, "%s: %s Function with mangled name %s already defined here!\n", loc1.buffer, FATAL_STR, name.buffer);
             drop(&loc1);
             drop(&loc);
-            exit(2);
+            C::exit(2);
         }
         let irfunc: IRFunc = IRFunc {
             name: name,
@@ -1050,7 +1050,7 @@ func generateBytecodeBlock(this: &IRGen, function: &IRFunc, block: &ParsedBlock)
         if (isTerminated(curr)) {
             if (i != block.stmtLength - 1) {
                 let loc: String = toString(&getStmtAtIndex(block, i + 1).span);
-                fprintf(stderr, "%s: %s: Unreachable code.\n", loc.buffer, WARN_STR);
+                C::fprintf(stderr, "%s: %s: Unreachable code.\n", loc.buffer, WARN_STR);
                 drop(&loc);
             }
             break;
@@ -1215,8 +1215,8 @@ func generateBytecodeStmt(this: &IRGen, function: &IRFunc, stmt: &ParsedStmt) {
             generateBytecodeMatchStmt(this, function, stmt);
         }
         unknown => {
-            fprintf(stderr, "%s generateBytecodeStmt: Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
-            exit(2);
+            C::fprintf(stderr, "%s generateBytecodeStmt: Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
+            C::exit(2);
         }
     }
 }
@@ -1263,10 +1263,10 @@ func generateBytecodeMatchStmt(this: &IRGen, function: &IRFunc, match: &ParsedSt
     // here.
     let unreachable: String = newStringFromStrLit("unreachablePcrN");
     if (!containsKey(&this.functions, &unreachable)) {
-        fprintf(stderr, "%s Could not generate match guard check!\n", FATAL_STR);
-        fprintf(stderr, "%s: Reason: Could not find function `unreachable`!\n", NOTE_STR);
-        fprintf(stderr, "%s: Please import `prelude.bufo` and try again.\n", NOTE_STR);
-        exit(1);
+        C::fprintf(stderr, "%s Could not generate match guard check!\n", FATAL_STR);
+        C::fprintf(stderr, "%s: Reason: Could not find function `unreachable`!\n", NOTE_STR);
+        C::fprintf(stderr, "%s: Please import `prelude.bufo` and try again.\n", NOTE_STR);
+        C::exit(1);
     }
     let funcID: usize = getFunctionByName(this, &unreachable);
     let args: RegIndexList = blank;
@@ -1649,8 +1649,8 @@ func generateBytecodeExpr(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, ne
             return dst;
         }
         unknown => {
-            fprintf(stderr, "%s generateBytecodeExpr: Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
-            exit(2);
+            C::fprintf(stderr, "%s generateBytecodeExpr: Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
+            C::exit(2);
         }
     }
     unreachable("Exhaustive handling of ops in generateBytecodeExpr");
@@ -1679,8 +1679,8 @@ func generateBytecodeExprBinary(this: &IRGen, function: &IRFunc, expr: &BinaryEx
         &BinaryExpr::BitXor(..) => { return generateBytecodeExprBitwise(this, function, expr, type); }
         &BinaryExpr::Indexed(..) => { return generateBytecodeExprIndexedAccess(this, function, expr, type, needsPtr); }
         unknown => {
-            fprintf(stderr, "%s generateBytecodeExprBinary: Unhandled tag %hhu!\n", FATAL_STR, tag(unknown));
-            exit(2);
+            C::fprintf(stderr, "%s generateBytecodeExprBinary: Unhandled tag %hhu!\n", FATAL_STR, tag(unknown));
+            C::exit(2);
         }
     }
     unreachable("generateBytecodeExprBinary: Exhaustive handling of binary ops");
@@ -1990,10 +1990,10 @@ func generateBytecodeExprIndexedAccess(this: &IRGen, function: &IRFunc, expr: &B
         buildLoadString(function, lhs.span, err, asSubStr(&s));
         let indexoob: String = newStringFromStrLit("index_oobPci64rN");
         if (!containsKey(&this.functions, &indexoob)) {
-            fprintf(stderr, "%s Could not generate index check for array access!\n", FATAL_STR);
-            fprintf(stderr, "%s: Reason: Could not find function `index_oob`!\n", NOTE_STR);
-            fprintf(stderr, "%s: Please import `prelude.bufo` and try again.\n", NOTE_STR);
-            exit(1);
+            C::fprintf(stderr, "%s Could not generate index check for array access!\n", FATAL_STR);
+            C::fprintf(stderr, "%s: Reason: Could not find function `index_oob`!\n", NOTE_STR);
+            C::fprintf(stderr, "%s: Please import `prelude.bufo` and try again.\n", NOTE_STR);
+            C::exit(1);
         }
         let funcID: usize = getFunctionByName(this, &indexoob);
         let args: RegIndexList = blank;
@@ -2310,7 +2310,7 @@ func loadLiteral(this: &IRGen, function: &IRFunc, reg: RegIndex, tkn: &Token) ->
         if (size > typsize) {
             let loc = toString(&tkn.span);
             let ts = toString(typ);
-            fprintf(stderr, "%s: %s: Integer literal (value=%llu) is too big for target type %s.\n",
+            C::fprintf(stderr, "%s: %s: Integer literal (value=%llu) is too big for target type %s.\n",
                 loc.buffer, ERR_STR, _value, ts.buffer);
             drop(&ts);
             drop(&loc);
@@ -2324,7 +2324,7 @@ func loadLiteral(this: &IRGen, function: &IRFunc, reg: RegIndex, tkn: &Token) ->
         if (value >= typmax) {
             let loc = toString(&tkn.span);
             let ts = toString(typ);
-            fprintf(stderr, "%s: %s: Float literal (value=%f) is too big for target type %s.\n",
+            C::fprintf(stderr, "%s: %s: Float literal (value=%f) is too big for target type %s.\n",
                 loc.buffer, ERR_STR, value, ts.buffer);
             drop(&ts);
             drop(&loc);
@@ -2358,7 +2358,7 @@ func generateBytecodeExprLiteral(this: &IRGen, function: &IRFunc, expr: &ParsedE
                 if (getSize(t) == 0 && *flags.warnSimple) {
                     // array literal of the form []
                     let loc = toString(&expr.span);
-                    fprintf(stderr, "%s: %s: Array is zero-sized and can never be indexed into.\n", loc.buffer, WARN_STR);
+                    C::fprintf(stderr, "%s: %s: Array is zero-sized and can never be indexed into.\n", loc.buffer, WARN_STR);
                     drop(&loc);
                 }
                 buildCreateArray(function, expr.span, reg);

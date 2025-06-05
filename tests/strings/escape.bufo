@@ -8,19 +8,19 @@ import "libc.bufo";
 func main(argc: i32, argv: &&char) -> i32 {
     {
         let s: &char = "Hello\n, World!\n";
-        let _len: usize = strlen(s);
+        let _len: usize = C::strlen(s);
         assert(_len == 15);
     }
     {
         let zero: &char = "\0";
-        let _len: usize = strlen(zero);
+        let _len: usize = C::strlen(zero);
         assert(_len == 0);
     }
     let tested: [&char; 4] = ["\t", "\n", "\\", "\r"];
     for (let index: usize = 0; index < 4; index = index + 1) {
         let elem: &char = tested[index];
         {
-            let _len: usize = strlen(elem);
+            let _len: usize = C::strlen(elem);
             assert(_len == 1);
         }
     }

@@ -13,14 +13,14 @@ struct Foo {
 func main(argc: i32, argv: &&char) -> i32 {
     let b = true;
     match (b) {
-        true => { printf("b yep\n"); }
+        true => { C::printf("b yep\n"); }
         false => { return 1; }
         _ => { return 2; }
     }
     let foo = Foo { b1: true, b2: false };
     match (foo) {
         Foo { false, false } => { return 1; }
-        Foo { true , false } => { printf("foo yep\n"); }
+        Foo { true , false } => { C::printf("foo yep\n"); }
         Foo { false, true  } => { return 1; }
         Foo { true , true  } => { return 1; }
         _ => { return 2; }

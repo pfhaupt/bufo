@@ -34,7 +34,7 @@ func toString(this: &Cmd) -> String {
     return toCmdString(&this.buf);
 }
 func asCharPtrs(this: &Cmd) -> &&char {
-    let _any: Any = calloc(this.buf.length + 1, sizeof &char);
+    let _any: Any = C::calloc(this.buf.length + 1, sizeof &char);
     assert(_any != null);
     let _mut: &&char = _any as &&char;
     for (let i: usize = 0; i < this.buf.length; i = i + 1) {
@@ -53,9 +53,9 @@ func newCmd() -> Cmd {
 func newCmdFromStrLit(command: &char) -> Cmd {
     let cmd: Cmd = newCmd();
     let pos: usize = 0;
-    let len: usize = strlen(command);
+    let len: usize = C::strlen(command);
     while (pos < len) {
-        let nextSpace: &char = strchr(command, ' ');
+        let nextSpace: &char = C::strchr(command, ' ');
         if (nextSpace == null) break;
         let offset: usize = nextSpace - command;
         let substr: SubStr = newSubStr(command, 0, offset);
@@ -65,7 +65,7 @@ func newCmdFromStrLit(command: &char) -> Cmd {
     }
     if (pos < len) {
         // Rest of command, for example `help` in `cargo help`
-        let rest: SubStr = newSubStr(command, 0, strlen(command));
+        let rest: SubStr = newSubStr(command, 0, C::strlen(command));
         addSubStr(&cmd, rest);
     }
     return cmd;

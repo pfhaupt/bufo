@@ -27,10 +27,10 @@ func main(argc: i32, argv: &&char) -> i32 {
     if (sizeof Foo != 40) return 1;
 
     let f: Foo = newFoo();
-    let _idk: Any = calloc(2, sizeof Foo);
+    let _idk: Any = C::calloc(2, sizeof Foo);
     assert(_idk != null);
     let _b: &Foo = _idk;
     *(_b + sizeof Foo) = f;
-    free(_idk);
+    C::free(_idk);
     return 0;
 }

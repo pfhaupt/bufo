@@ -204,8 +204,8 @@ func equals(this: &Type, other: &Type) -> bool {
         }
         _ => { }
     }
-    fprintf(stderr, "%s\n", toString(this).buffer);
-    fprintf(stderr, "%s\n", toString(other).buffer);
+    C::fprintf(stderr, "%s\n", toString(this).buffer);
+    C::fprintf(stderr, "%s\n", toString(other).buffer);
     unreachable("&Type.equals() should've caught all combinations by this point!");
 }
 

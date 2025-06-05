@@ -26,7 +26,7 @@ func buildCompSubStr(input: &char) -> CompSubStr {
 func main(argc: i32, argv: &&char) -> i32 {
     comptime substr: CompSubStr = buildCompSubStr("Hello World!");
     assert(substr.length == 12);
-    let written: usize = printf("%.*s\n", substr.length, substr.start);
+    let written: usize = C::printf("%.*s\n", substr.length, substr.start);
     assert(written == 13); // +1 for newline
     return 0;
 }

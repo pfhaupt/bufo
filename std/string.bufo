@@ -18,13 +18,13 @@ func hash(this: &String) -> usize {
 }
 
 func toAbsolutePath(this: &String) -> String {
-    let buf: &char = calloc(1024, 1);
+    let buf: &char = C::calloc(1024, 1);
     assert(buf != null);
-    @os(WINDOWS) let abs: &char = _fullpath(buf, this.buffer, 1024);
+    @os(WINDOWS) let abs: &char = C::_fullpath(buf, this.buffer, 1024);
     @os(WINDOWS) assert(abs != null, "Could not get absolute path");
-    @os(LINUX) let abs: &char = realpath(this.buffer, buf);
+    @os(LINUX) let abs: &char = C::realpath(this.buffer, buf);
     let s: String = newStringFromStrLit(buf);
-    free(buf);
+    C::free(buf);
     return s;
 }
 
@@ -47,12 +47,12 @@ func getChar(this: &String, index: usize) -> char {
 }
 
 func drop(this: &String) {
-    free(this.buffer);
+    C::free(this.buffer);
 }
 func copy(this: &String) -> String {
-    let bfr: Any = calloc(this.capacity, sizeof char);
+    let bfr: Any = C::calloc(this.capacity, sizeof char);
     assert(bfr != null, "Could not copy String");
-    let _bfr: Any = memcpy(bfr, this.buffer, this.capacity);
+    let _bfr: Any = C::memcpy(bfr, this.buffer, this.capacity);
     assert(_bfr != null);
     assert(bfr == _bfr);
     return String {
@@ -64,15 +64,15 @@ func copy(this: &String) -> String {
 func resize(this: &String, newCap: usize) {
     if (newCap < 256) newCap = 256;
     let old: &char = this.buffer;
-    this.buffer = calloc(newCap, sizeof char);
+    this.buffer = C::calloc(newCap, sizeof char);
     assert(this.buffer != null, "Could not resize String");
-    memcpy(this.buffer, old, this.length);
-    free(old);
+    C::memcpy(this.buffer, old, this.length);
+    C::free(old);
     this.capacity = newCap;
 }
 func print(this: &String) {
     for (let i: usize = 0; i < this.length; i = i + 1) {
-        printf("%c", *(this.buffer + i));
+        C::printf("%c", *(this.buffer + i));
     }
 }
 func asSubStr(this: &String) -> SubStr {
@@ -83,18 +83,18 @@ func substring(this: &String, start: usize, end: usize) -> SubStr {
 }
 func pushNumber(this: &String, num: usize) {
     let bfr: [char; 50] = ['\0'; 50];
-    let length: usize = snprintf(null, 0, "%llu", num);
+    let length: usize = C::snprintf(null, 0, "%llu", num);
     assert(length < 50, "Buffer Overflow in String.pushNumber()");
-    snprintf(&bfr, length + 1, "%llu", num);
+    C::snprintf(&bfr, length + 1, "%llu", num);
     for (let i: usize = 0; i < length; i = i + 1) {
         pushChar(this, bfr[i]);
     }
 }
 func pushNumberAsHex(this: &String, num: usize) {
     let bfr: [char; 50] = ['\0'; 50];
-    let length: usize = snprintf(null, 0, "0x%llX", num);
+    let length: usize = C::snprintf(null, 0, "0x%llX", num);
     assert(length < 50, "Buffer Overflow in String.pushNumberAsHex()");
-    snprintf(&bfr, length + 1, "0x%llX", num);
+    C::snprintf(&bfr, length + 1, "0x%llX", num);
     for (let i: usize = 0; i < length; i = i + 1) {
         pushChar(this, bfr[i]);
     }
@@ -136,7 +136,7 @@ func pushString(this: &String, s: &String) {
     }
 }
 func pushStr(this: &String, s: &char) {
-    let _len: usize = strlen(s);
+    let _len: usize = C::strlen(s);
     for (let i: usize = 0; i < _len; i = i + 1) {
         let ch: char = *(s + i);
         pushChar(this, ch);
@@ -182,7 +182,7 @@ func equals(this: &String, other: &String) -> bool {
 
 func newString() -> String {
     let cap: usize = 16;
-    let _m: Any = calloc(cap, sizeof char);
+    let _m: Any = C::calloc(cap, sizeof char);
     let buff: &char = _m as &char;
     return String {
         buffer: buff,
@@ -192,10 +192,10 @@ func newString() -> String {
 }
 
 func newStringFromStrLit(s: &char) -> String {
-    let len: usize = strlen(s);
-    let buff: &char = calloc(len + 1, sizeof char);
+    let len: usize = C::strlen(s);
+    let buff: &char = C::calloc(len + 1, sizeof char);
     assert(buff != null);
-    memcpy(buff, s, len);
+    C::memcpy(buff, s, len);
     return String {
         buffer: buff as &char,
         length: len,
@@ -205,13 +205,13 @@ func newStringFromStrLit(s: &char) -> String {
 
 func canReadFileToString(path: &char, source: &String) -> bool {
     // `b` needed because otherwise `\r` would be dropped, leading to wrong Spans
-    let file: Any = fopen(path, "rb");
+    let file: Any = C::fopen(path, "rb");
     if (file == null) {
         return false;
     }
     let buf: [char; 1024] = ['\0'; 1024];
     while (true) {
-        let size: usize = fread(&buf, 1, 1024, file);
+        let size: usize = C::fread(&buf, 1, 1024, file);
         if (size == 0) {
             break;
         }
@@ -219,21 +219,21 @@ func canReadFileToString(path: &char, source: &String) -> bool {
             pushChar(source, buf[i]);
         }
     }
-    assert(fclose(file) == 0);
+    assert(C::fclose(file) == 0);
     return true;
 }
 
 func readFileToString(path: &char) -> String {
     let s: String = newString();
     // `b` needed because otherwise `\r` would be dropped, leading to wrong Spans
-    let file: Any = fopen(path, "rb");
+    let file: Any = C::fopen(path, "rb");
     if (file == null) {
-        fprintf(stderr, "error: Could not open file `%s`.\n", path);
-        exit(1);
+        C::fprintf(stderr, "error: Could not open file `%s`.\n", path);
+        C::exit(1);
     }
     let buf: [char; 1024] = ['\0'; 1024];
     while (true) {
-        let size: usize = fread(&buf, 1, 1024, file);
+        let size: usize = C::fread(&buf, 1, 1024, file);
         if (size == 0) {
             break;
         }
@@ -241,17 +241,17 @@ func readFileToString(path: &char) -> String {
             pushChar(&s, buf[i]);
         }
     }
-    assert(fclose(file) == 0);
+    assert(C::fclose(file) == 0);
     return s;
 }
 
 func writeStringToFile(path: &char, s: String) {
     // `b` needed because otherwise `\r` would be dropped, leading to wrong Spans
-    let file: Any = fopen(path, "wb");
+    let file: Any = C::fopen(path, "wb");
     if (file == null) {
-        fprintf(stderr, "error: Could not open file `%s`.\n", path);
-        exit(1);
+        C::fprintf(stderr, "error: Could not open file `%s`.\n", path);
+        C::exit(1);
     }
-    let size: usize = fwrite(s.buffer, 1, s.length, file);
-    assert(fclose(file) == 0);
+    let size: usize = C::fwrite(s.buffer, 1, s.length, file);
+    assert(C::fclose(file) == 0);
 }

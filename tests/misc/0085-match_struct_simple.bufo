@@ -16,7 +16,7 @@ func main(argc: i32, argv: &&char) -> i32 {
         Foo { 20, 35 } => { return 1; }
         Foo { 12, 35 } => { return 1; }
         Foo { 20, 17 } => { return 1; }
-        Foo { 12, 17 } => { printf("struct yep\n"); }
+        Foo { 12, 17 } => { C::printf("struct yep\n"); }
         _ => { return 1; }
     }
     match (&foo) {

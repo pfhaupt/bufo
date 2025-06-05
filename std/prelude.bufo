@@ -24,11 +24,11 @@ let stdin: Any = null;
 let stdout: Any = null;
 let stderr: Any = null;
 func setupStdHandles() {
-    if (stdin == null) stdin = fdopen(0, "a");
+    if (stdin == null) stdin = C::fdopen(0, "a");
     _assert(stdin != null, "Could not initialize STDIN!");
-    if (stdout == null) stdout = fdopen(1, "a");
+    if (stdout == null) stdout = C::fdopen(1, "a");
     _assert(stdout != null, "Could not initialize STDOUT!");
-    if (stderr == null) stderr = fdopen(2, "a");
+    if (stderr == null) stderr = C::fdopen(2, "a");
     _assert(stderr != null, "Could not initialize STDERR!");
 }
 
@@ -130,31 +130,31 @@ func isAsciiUppercase(ch: char) -> bool {
 // Internal Runtime Errors
 @noreturn func index_oob(msg: &char, index: i64) {
     setupStdHandles();
-    fprintf(stderr, msg, index);
-    exit(1);
+    C::fprintf(stderr, msg, index);
+    C::exit(1);
 }
 
 func assert(cond: bool) {
     setupStdHandles();
     if (!cond) {
         if (stderr == null) {
-            printf("ASSERTION FAILED\n");
-            printf("%s Could not print to STDERR because STDERR is NULL!\n", FATAL_STR);
+            C::printf("ASSERTION FAILED\n");
+            C::printf("%s Could not print to STDERR because STDERR is NULL!\n", FATAL_STR);
         } else {
-            fprintf(stderr, "ASSERTION FAILED\n");
+            C::fprintf(stderr, "ASSERTION FAILED\n");
         }
-        exit(1);
+        C::exit(1);
     }
 }
 func _assert(cond: bool, msg: &char) {
     if (!cond) {
         if (stderr == null) {
-            printf("ASSERTION FAILED: %s\n", msg);
-            printf("%s Could not print to STDERR because STDERR is NULL!\n", FATAL_STR);
+            C::printf("ASSERTION FAILED: %s\n", msg);
+            C::printf("%s Could not print to STDERR because STDERR is NULL!\n", FATAL_STR);
         } else {
-            fprintf(stderr, "ASSERTION FAILED: %s\n", msg);
+            C::fprintf(stderr, "ASSERTION FAILED: %s\n", msg);
         }
-        exit(1);
+        C::exit(1);
     }
 }
 
@@ -162,12 +162,12 @@ func assert(cond: bool, msg: &char) {
     setupStdHandles();
     if (!cond) {
         if (stderr == null) {
-            printf("ASSERTION FAILED: %s\n", msg);
-            printf("%s Could not print to STDERR because STDERR is NULL!\n", FATAL_STR);
+            C::printf("ASSERTION FAILED: %s\n", msg);
+            C::printf("%s Could not print to STDERR because STDERR is NULL!\n", FATAL_STR);
         } else {
-            fprintf(stderr, "ASSERTION FAILED: %s\n", msg);
+            C::fprintf(stderr, "ASSERTION FAILED: %s\n", msg);
         }
-        exit(1);
+        C::exit(1);
     }
 }
 
@@ -178,38 +178,38 @@ func assert(cond: bool, msg: &char) {
 @noreturn func unreachable(msg: &char) {
     setupStdHandles();
     if (stderr == null) {
-        printf("%s Entered unreachable code: %s", FATAL_STR, msg);
-        printf("%s Could not print to STDERR because STDERR is NULL!\n", FATAL_STR);
+        C::printf("%s Entered unreachable code: %s", FATAL_STR, msg);
+        C::printf("%s Could not print to STDERR because STDERR is NULL!\n", FATAL_STR);
     } else {
-        fprintf(stderr, "%s Entered unreachable code: %s\n", FATAL_STR, msg);
+        C::fprintf(stderr, "%s Entered unreachable code: %s\n", FATAL_STR, msg);
     }
-    exit(1);
+    C::exit(1);
 }
 
 @noreturn func todo_with_msg(msg: &char) {
     setupStdHandles();
     if (stderr == null) {
-        printf("TODO: %s\n", msg);
-        printf("%s Could not print to STDERR because STDERR is NULL!\n", FATAL_STR);
+        C::printf("TODO: %s\n", msg);
+        C::printf("%s Could not print to STDERR because STDERR is NULL!\n", FATAL_STR);
     } else {
-        fprintf(stderr, "TODO: %s\n", msg);
+        C::fprintf(stderr, "TODO: %s\n", msg);
     }
-    exit(1);
+    C::exit(1);
 }
 
 // FIXMEEEEEEE: Make this CLI flags
 comptime PRINT_DEBUG: bool = false;
 func debug(msg: &char) {
     if (!PRINT_DEBUG) return;
-    printf("[DEBUG] %s\n", msg);
+    C::printf("[DEBUG] %s\n", msg);
 }
 comptime PRINT_TRACE: bool = false;
 func trace(msg: &char) {
     if (!PRINT_TRACE) return;
-    printf("[TRACE] %s\n", msg);
+    C::printf("[TRACE] %s\n", msg);
 }
 comptime PRINT_WARNING: bool = true;
 func warning(msg: &char) {
     if (!PRINT_WARNING) return;
-    fprintf(stderr, "\x1b[93m[WARNING]\x1b[0m %s\n", msg);
+    C::fprintf(stderr, "\x1b[93m[WARNING]\x1b[0m %s\n", msg);
 }

@@ -16,9 +16,11 @@ import "../backend/irgen.bufo";
 import "../backend/interp.bufo";
 import "../backend/codegen_llvm.bufo";
 
+@os(WINDOWS) import "windows.bufo";
 @os(WINDOWS) import "winapi/functions.bufo";
 @os(WINDOWS) import "winapi/structs.bufo";
 
+@os(LINUX) import "linux.bufo";
 @os(LINUX) import "posix/constants.bufo";
 @os(LINUX) import "posix/functions.bufo";
 @os(LINUX) import "posix/structs.bufo";
@@ -29,8 +31,8 @@ struct Parser {
     importRoots: &String;
     importRootLength: usize;
     importRootCapacity: usize;
-    syntaxError: bool;
 }
+let syntaxError = false;
 
 func addImportRoot(this: &Parser, filePath: SubStr) {
     trace("Parser.addImportRoot");
@@ -38,7 +40,7 @@ func addImportRoot(this: &Parser, filePath: SubStr) {
     if (this.importRootLength >= this.importRootCapacity) {
         let newCap: usize = this.importRootCapacity * 2;
         if (newCap == 0) newCap = 1;
-        this.importRoots = realloc(this.importRoots, newCap * sizeof String);
+        this.importRoots = C::realloc(this.importRoots, newCap * sizeof String);
         assert(this.importRoots != null, "Could not resize import roots");
         this.importRootCapacity = newCap;
     }
@@ -65,10 +67,10 @@ func expectSoftIdentifier(this: &Parser) -> Token {
     if (tkn.kind != TOKEN_KEYWORD && tkn.kind != TOKEN_IDENT) {
         let loc: String = getLocation(&tkn);
         let name: String = toString(&tkn.content);
-        fprintf(stderr, "%s: %s: Expected Identifier, found `%s` instead.\n", loc.buffer, ERR_STR, name.buffer);
+        C::fprintf(stderr, "%s: %s: Expected Identifier, found `%s` instead.\n", loc.buffer, ERR_STR, name.buffer);
         drop(&name);
         drop(&loc);
-        exit(1);
+        C::exit(1);
     }
     // These keywords serve a purpose in parsePrimaryExpr, there's no point in creating variables
     // with those names, because you could never use them.
@@ -82,10 +84,10 @@ func expectSoftIdentifier(this: &Parser) -> Token {
         || equals(&tkn.content, &KEYWORD_FUNC)) {
         let loc: String = getLocation(&tkn);
         let name: String = toString(&tkn.content);
-        fprintf(stderr, "%s: %s: Expected Identifier, found `%s` instead.\n", loc.buffer, ERR_STR, name.buffer);
+        C::fprintf(stderr, "%s: %s: Expected Identifier, found `%s` instead.\n", loc.buffer, ERR_STR, name.buffer);
         drop(&name);
         drop(&loc);
-        exit(1);
+        C::exit(1);
     }
     return tkn;
 }
@@ -97,10 +99,10 @@ func expect(this: &Parser, tknKind: usize) -> Token {
         let loc: String = getLocation(&tkn);
         let exp: &char = tokenKindToString(tknKind);
         let name: String = toString(&tkn.content);
-        fprintf(stderr, "%s: %s: Expected %s, found `%s` instead.\n", loc.buffer, ERR_STR, exp, name.buffer);
+        C::fprintf(stderr, "%s: %s: Expected %s, found `%s` instead.\n", loc.buffer, ERR_STR, exp, name.buffer);
         drop(&name);
         drop(&loc);
-        exit(1);
+        C::exit(1);
     }
     return tkn;
 }
@@ -129,9 +131,9 @@ func parseProject(this: &Parser, root: SubStr) -> ParsedFile {
     let rootFile: &ParsedFile = newParsedFile(root, this.lexer.content);
     assert(getID(rootFile) == 0, "Expected Parser.parseProject result to be the root");
     parseFile(this, root, rootFile);
-    if (this.syntaxError) {
+    if (syntaxError) {
         // All errors are reported at this point
-        exit(1);
+        C::exit(1);
     }
     return *rootFile;
 }
@@ -163,7 +165,7 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList, inModule: bool)
         if (equals(&name.content, &_ATTR_EXTERN)) {
             if (!inModule && *flags.warnExtra) {
                 let loc = toString(&name.span);
-                fprintf(stderr, "%s: %s: `@extern()` used outside of a module.\n", loc.buffer, WARN_STR);
+                C::fprintf(stderr, "%s: %s: `@extern()` used outside of a module.\n", loc.buffer, WARN_STR);
                 drop(&loc);
             }
             expect(this, TOKEN_PAREN_OPEN);
@@ -179,7 +181,7 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList, inModule: bool)
             let os = expect(this, TOKEN_IDENT);
             expect(this, TOKEN_PAREN_CLOSE);
             if (!equals(&os.content, &OS_WINDOWS) && !equals(&os.content, &OS_LINUX)) {
-                fprintf(stderr, "%s\n", toString(&os.content).buffer);
+                C::fprintf(stderr, "%s\n", toString(&os.content).buffer);
                 todo_with_msg("Unknown os");
             }
             skip = !equals(&os.content, &asSubStr(flags.target));
@@ -191,10 +193,10 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList, inModule: bool)
         } else {
             let loc = toString(&name.span);
             let n = toString(&name.content);
-            fprintf(stderr, "%s: %s: Use of unknown attribute `%s`.\n", loc.buffer, ERR_STR, n.buffer);
+            C::fprintf(stderr, "%s: %s: Use of unknown attribute `%s`.\n", loc.buffer, ERR_STR, n.buffer);
             drop(&n);
             drop(&loc);
-            this.syntaxError = true;
+            syntaxError = true;
         }
     }
     return skip;
@@ -241,11 +243,11 @@ func parseTopLevelItem(this: &Parser, parent: TLIParent, attributes: ParsedAttri
     } else {
         let loc: String = toString(&tkn.span);
         let name: String = toString(&tkn.content);
-        fprintf(stderr, "%s: %s: Expected Top Level Keyword, found `%s` instead.\n", loc.buffer, ERR_STR, name.buffer);
-        fprintf(stderr, "%s: %s: A non-exhaustive list of TLK: `import`, `let`, `comptime`, `struct`, `union`, `func`.\n", loc.buffer, NOTE_STR);
+        C::fprintf(stderr, "%s: %s: Expected Top Level Keyword, found `%s` instead.\n", loc.buffer, ERR_STR, name.buffer);
+        C::fprintf(stderr, "%s: %s: A non-exhaustive list of TLK: `import`, `let`, `comptime`, `struct`, `union`, `func`.\n", loc.buffer, NOTE_STR);
         drop(&name);
         drop(&loc);
-        exit(1);
+        C::exit(1);
     }
 }
 
@@ -295,8 +297,15 @@ func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList
                 push(&paths, newToken(mod.parent.id as usize, &newSubStrOfStrLit("."), 0, TOKEN_DOT));
                 for (let j: usize = 0; j < cfg.configs.length; j = j + 1) {
                     let _cfg = at(&cfg.configs, j);
-                    if (_cfg.kind == CONFIG_LIBPATH) {
-                        push(&paths, _cfg.value);
+                    match (_cfg) {
+                        &Config::Libpath(p) => {
+                            let _p = toString(&p.content);
+                            if (dirExists(_p.buffer)) {
+                                push(&paths, p);
+                            }
+                            drop(&_p);
+                        }
+                        _ => { }
                     }
                 }
                 for (let k: usize = 0; k < paths.length; k = k + 1) {
@@ -306,36 +315,39 @@ func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList
                     @os(LINUX) pushChar(&path, '/');
                     for (let j: usize = 0; j < cfg.configs.length; j = j + 1) {
                         let _cfg = at(&cfg.configs, j);
-                        if (_cfg.kind == CONFIG_LIBNAME) {
-                            // TODO: On Linux shared libraries often start with `lib`, e.g. libraylib.so
-                            anyLibrary = true;
-                            let libPath = copy(&path);
-                            pushSubStr(&libPath, &_cfg.value.content);
-                            @os(WINDOWS) pushStr(&libPath, ".dll");
-                            @os(LINUX) pushStr(&libPath, ".so");
-                            if (*flags.verbose) printf("[INFO] Trying to load %s: ", libPath.buffer);
-                            let file: Any = fopen(libPath.buffer, "r");
-                            if (file == null) {
-                                if (*flags.verbose) {
-                                    @os(WINDOWS) printf("No such file or directory\n");
-                                    @os(LINUX) printf("%s\n", strerror(*errno()));
-                                }
-                                drop(&libPath);
-                                continue;
+                        match (_cfg) {
+                            &Config::Static(name) => {
+                                anyLibrary = true;
                             }
-                            fclose(file);
-                            @os(WINDOWS) let handle = LoadLibraryA(libPath.buffer);
-                            @os(LINUX) let handle: Handle = dlopen(libPath.buffer, RTLD_LAZY);
-                            if (isNull(handle)) {
-                                if (*flags.verbose) {
-                                    @os(WINDOWS) printf("Could not load DLL\n");
-                                    @os(LINUX) printf("%s\n", dlerror());
+                            &Config::Dynamic(name) => {
+                                anyLibrary = true;
+                                let libPath = copy(&path);
+                                pushSubStr(&libPath, &name.content);
+                                if (*flags.verbose) C::printf("[INFO] Trying to load %s: ", libPath.buffer);
+                                let file: Any = C::fopen(libPath.buffer, "r");
+                                if (file == null) {
+                                    if (*flags.verbose) {
+                                        @os(WINDOWS) C::printf("No such file or directory\n");
+                                        @os(LINUX) C::printf("%s\n", strerror(*errno()));
+                                    }
+                                    drop(&libPath);
+                                    continue;
                                 }
-                                drop(&libPath);
-                                continue;
+                                C::fclose(file);
+                                @os(WINDOWS) let handle = WinAPI::LoadLibraryA(libPath.buffer);
+                                @os(LINUX) let handle: Handle = dlopen(libPath.buffer, RTLD_LAZY);
+                                if (isNull(handle)) {
+                                    if (*flags.verbose) {
+                                        @os(WINDOWS) C::printf("Could not load DLL\n");
+                                        @os(LINUX) C::printf("%s\n", dlerror());
+                                    }
+                                    drop(&libPath);
+                                    continue;
+                                }
+                                if (*flags.verbose) C::printf("Success. Handle = %p\n", handle.ptr);
+                                push(&mod.dlls, getID(newDLL(libPath, handle)));
                             }
-                            if (*flags.verbose) printf("Success. Handle = %p\n", handle.ptr);
-                            push(&mod.dlls, getID(newDLL(libPath, handle)));
+                            _ => { }
                         }
                     }
                     drop(&_path);
@@ -345,23 +357,23 @@ func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList
         }
         if (modConfigs.length == 0) {
             let loc = toString(&mod.span);
-            fprintf(stderr, "%s: %s: Module contains @extern() functions, but no config was specified.\n", loc.buffer, ERR_STR);
-            fprintf(stderr, "%s: %s: The config contains important information such as linker flags and library paths.\n", loc.buffer, NOTE_STR);
-            fprintf(stderr, "%s: %s: The config can be declared using the top level keyword `config` within the module.\n", loc.buffer, NOTE_STR);
+            C::fprintf(stderr, "%s: %s: Module contains @extern() functions, but no config was specified.\n", loc.buffer, ERR_STR);
+            C::fprintf(stderr, "%s: %s: The config contains important information such as linker flags and library paths.\n", loc.buffer, NOTE_STR);
+            C::fprintf(stderr, "%s: %s: The config can be declared using the top level keyword `config` within the module.\n", loc.buffer, NOTE_STR);
             drop(&loc);
-            this.syntaxError = true;
+            syntaxError = true;
         } else if (!anyLibrary) {
             let loc = toString(&mod.span);
-            fprintf(stderr, "%s: %s: Module contains @extern() functions, but no library was provided in the config.\n", loc.buffer, ERR_STR);
+            C::fprintf(stderr, "%s: %s: Module contains @extern() functions, but no library was provided in the config.\n", loc.buffer, ERR_STR);
             for (let i: usize = 0; i < modConfigs.length; i = i + 1) {
                 let t = at(&topLevelItems, *at(&modConfigs, i));
                 assert(t.kind == TLI_CONFIG);
                 drop(&loc);
                 loc = toString(&t.span);
-                fprintf(stderr, "%s: %s: Module configuration specified here.\n", loc.buffer, NOTE_STR);
+                C::fprintf(stderr, "%s: %s: Module configuration specified here.\n", loc.buffer, NOTE_STR);
             }
             drop(&loc);
-            this.syntaxError = true;
+            syntaxError = true;
         }
     }
     return mod;
@@ -378,21 +390,21 @@ func parseConfig(this: &Parser, parent: TLIParent, attributes: ParsedAttributeLi
         expect(this, TOKEN_COLON_SINGLE);
         let value = expect(this, TOKEN_STRING_LITERAL);
         let cfg = newConfig(_cfg, value);
-        if (cfg.kind == CONFIG_INVALID) {
+        if (tag(&cfg) == comptime tag(&Config::Invalid)) {
             let loc = toString(&_cfg.span);
             let name = toString(&_cfg.content);
-            fprintf(stderr, "%s: %s: Unknown config option `%s`.\n", loc.buffer, ERR_STR, name.buffer);
-            fprintf(stderr, "%s: %s: A non-exhaustive list of config options: `library`, `libpath`, `linker`.\n", loc.buffer, NOTE_STR);
+            C::fprintf(stderr, "%s: %s: Unknown config option `%s`.\n", loc.buffer, ERR_STR, name.buffer);
+            C::fprintf(stderr, "%s: %s: A non-exhaustive list of config options: `static`, `dynamic`, `libpath`, `linker`.\n", loc.buffer, NOTE_STR);
             drop(&name);
             drop(&loc);
-            this.syntaxError = true;
+            syntaxError = true;
         } else if (value.content.len == 0) {
             let loc = toString(&value.span);
             let name = toString(&_cfg.content);
-            fprintf(stderr, "%s: %s: Value for config option `%s` can't be empty.\n", loc.buffer, ERR_STR, name.buffer);
+            C::fprintf(stderr, "%s: %s: Value for config option `%s` can't be empty.\n", loc.buffer, ERR_STR, name.buffer);
             drop(&name);
             drop(&loc);
-            this.syntaxError = true;
+            syntaxError = true;
         } else {
             push(&flags, cfg);
         }
@@ -443,8 +455,8 @@ func parseImport(this: &Parser, skip: bool) -> &ParsedTopLevelItem {
         drop(&path);
     }
     let loc: String = getLocation(&tkn);
-    fprintf(stderr, "%s: %s: Could not import file %s.\n", loc.buffer, ERR_STR, file.buffer);
-    exit(1);
+    C::fprintf(stderr, "%s: %s: Could not import file %s.\n", loc.buffer, ERR_STR, file.buffer);
+    C::exit(1);
 }
 
 func parseUnionDecl(this: &Parser, parent: TLIParent) -> &ParsedUnionDecl {
@@ -688,9 +700,9 @@ func parsePattern(this: &Parser) -> &ParsedPattern {
                 if (!at(this, TOKEN_CURLY_CLOSE)) {
                     if (tag(&subpat.data) == comptime tag(&Pattern::Rest)) {
                         let loc = toString(&next(&this.lexer).span);
-                        fprintf(stderr, "%s: %s: The `..` pattern can only appear at the end of a struct pattern.\n", loc.buffer, ERR_STR);
+                        C::fprintf(stderr, "%s: %s: The `..` pattern can only appear at the end of a struct pattern.\n", loc.buffer, ERR_STR);
                         drop(&loc);
-                        this.syntaxError = true;
+                        syntaxError = true;
                     } else {
                         expect(this, TOKEN_COMMA);
                     }
@@ -707,9 +719,9 @@ func parsePattern(this: &Parser) -> &ParsedPattern {
                 if (!at(this, TOKEN_PAREN_CLOSE)) {
                     if (tag(&subpat.data) == comptime tag(&Pattern::Rest)) {
                         let loc = toString(&next(&this.lexer).span);
-                        fprintf(stderr, "%s: %s: The `..` pattern can only appear at the end of a struct pattern.\n", loc.buffer, ERR_STR);
+                        C::fprintf(stderr, "%s: %s: The `..` pattern can only appear at the end of a struct pattern.\n", loc.buffer, ERR_STR);
                         drop(&loc);
-                        this.syntaxError = true;
+                        syntaxError = true;
                     } else {
                         expect(this, TOKEN_COMMA);
                     }
@@ -743,10 +755,10 @@ func parsePattern(this: &Parser) -> &ParsedPattern {
     }
     let loc: String = getLocation(&tkn);
     let name: String = toString(&tkn.content);
-    fprintf(stderr, "%s: %s: Expected Pattern, found `%s`.\n", loc.buffer, ERR_STR, name.buffer);
+    C::fprintf(stderr, "%s: %s: Expected Pattern, found `%s`.\n", loc.buffer, ERR_STR, name.buffer);
     drop(&name);
     drop(&loc);
-    exit(1);
+    C::exit(1);
 }
 
 func parseForStmt(this: &Parser, kw: Token) -> &ParsedStmt {
@@ -1042,10 +1054,10 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
     let t: Token = peek(&this.lexer);
     let loc: String = getLocation(&t);
     let name: String = toString(&t.content);
-    fprintf(stderr, "%s: %s: Expected Expression, found `%s`.\n", loc.buffer, ERR_STR, name.buffer);
+    C::fprintf(stderr, "%s: %s: Expected Expression, found `%s`.\n", loc.buffer, ERR_STR, name.buffer);
     drop(&name);
     drop(&loc);
-    exit(1);
+    C::exit(1);
 }
 func parseSecondaryExpr(this: &Parser, lhs: &ParsedExpr, precedence: usize, associativity: Assoc) -> &ParsedExpr {
     trace("Parser.parseSecondaryExpr");
@@ -1084,8 +1096,8 @@ func parseSecondaryExpr(this: &Parser, lhs: &ParsedExpr, precedence: usize, asso
         match (&rhs.data) {
             &ExprData::Ident(_) => { },
             _ => {
-                fprintf(stderr, "%s: %s: The right side of `.` must be an identifier.\n", toString(&lhs.span).buffer, ERR_STR);
-                this.syntaxError = true;
+                C::fprintf(stderr, "%s: %s: The right side of `.` must be an identifier.\n", toString(&lhs.span).buffer, ERR_STR);
+                syntaxError = true;
             }
         }
     } else if (opTkn.kind == TOKEN_COLON_DOUBLE) {
@@ -1093,8 +1105,8 @@ func parseSecondaryExpr(this: &Parser, lhs: &ParsedExpr, precedence: usize, asso
             &ExprData::Binary(BinaryExpr::Path(_, _)) => { },
             &ExprData::Ident(_) => { },
             _ => {
-                fprintf(stderr, "%s: %s: The left side of `::` must be an identifier or other module specifier.\n", toString(&lhs.span).buffer, ERR_STR);
-                this.syntaxError = true;
+                C::fprintf(stderr, "%s: %s: The left side of `::` must be an identifier or other module specifier.\n", toString(&lhs.span).buffer, ERR_STR);
+                syntaxError = true;
             }
         }
     }
@@ -1223,6 +1235,5 @@ func newParserFromSource(fileID: usize, src: SubStr) -> Parser {
         importRoots: null,
         importRootLength: 0,
         importRootCapacity: 0,
-        syntaxError: false,
     };
 }

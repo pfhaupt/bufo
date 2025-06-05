@@ -17,7 +17,7 @@ func main(argc: i32, argv: &&char) -> i32 {
         Foo::A(9) => { return 1; }
         Foo::A(val) => {
             assert(val == 12, "val != 12");
-            printf("A yep\n");
+            C::printf("A yep\n");
         }
         Foo::B(_, _) => { return 1; }
         Foo::C { _ } => { return 1; }
@@ -30,7 +30,7 @@ func main(argc: i32, argv: &&char) -> i32 {
         Foo::B(34, 36) => { return 1; }
         Foo::B(34, val) => {
             assert(val == 35, "val != 35");
-            printf("B yep\n");
+            C::printf("B yep\n");
         }
         Foo::C { _ } => { return 1; }
         _ => { return 2; }
@@ -43,7 +43,7 @@ func main(argc: i32, argv: &&char) -> i32 {
         Foo::B(34, val) => { return 1; }
         Foo::C { c } => {
             assert(c == 12);
-            printf("C yep\n");
+            C::printf("C yep\n");
         }
         _ => { return 2; }
     }

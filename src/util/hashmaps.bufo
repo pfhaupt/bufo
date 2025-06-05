@@ -57,7 +57,7 @@ func resizeIfNecessary(this: &String_IRFuncHashMap) {
     if (needsResize(this)) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 256;
-        let newElements: &String_IRFuncEntry = calloc(newCap, sizeof String_IRFuncEntry);
+        let newElements: &String_IRFuncEntry = C::calloc(newCap, sizeof String_IRFuncEntry);
         assert(newElements != null, "Could not allocate memory in String_IRFuncHashMap.resizeIfNecessary");
         let newThis: String_IRFuncHashMap = String_IRFuncHashMap {
             elements: newElements,
@@ -69,7 +69,7 @@ func resizeIfNecessary(this: &String_IRFuncHashMap) {
             let elem: &String_IRFuncEntry = getAtIndex(this, i);
             if (elem.set) add(&newThis, elem.key, elem.value);
         }
-        free(this.elements);
+        C::free(this.elements);
         *this = newThis;
     }
 }

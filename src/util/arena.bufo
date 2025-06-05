@@ -22,7 +22,7 @@ func push(this: &ArenaBlock, elem: Any, newCap: usize) {
         return;
     }
     assert(this.length < this.capacity);
-    memcpy((this.elements as &usize) + this.length * this.elemSize, elem, this.elemSize);
+    C::memcpy((this.elements as &usize) + this.length * this.elemSize, elem, this.elemSize);
     this.length = this.length + 1;
 }
 func at(this: &ArenaBlock, index: usize) -> Any {
@@ -54,9 +54,9 @@ comptime ARENA_SIZE_MEDIUM: usize = 128;
 comptime ARENA_SIZE_LARGE: usize = 1024;
 comptime ARENA_SIZE_HUGE: usize = 8192;
 func allocateBlock(cap: usize, size: usize) -> &ArenaBlock {
-    let mem: Any = calloc(1, sizeof ArenaBlock);
+    let mem: Any = C::calloc(1, sizeof ArenaBlock);
     assert(mem != null, "Could not allocate ArenaBlock instance");
-    let elements: Any = calloc(cap, size);
+    let elements: Any = C::calloc(cap, size);
     assert(elements != null, "Could not allocate ArenaBlock elements");
     let block: &ArenaBlock = mem as &ArenaBlock;
     *block = ArenaBlock {

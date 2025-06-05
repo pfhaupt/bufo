@@ -8,9 +8,9 @@ import "libc.bufo";
 func main(argc: i32, argv: &&char) -> i32 {
     let a: &char = "Hello, World!";
     let b: &char = "How are you?";
-    assert(strcmp(a, b) < 0);
-    assert(strcmp(a, a) == 0);
-    assert(strcmp(b, b) == 0);
-    assert(strcmp(b, a) > 0);
+    assert(C::strcmp(a, b) < 0);
+    assert(C::strcmp(a, a) == 0);
+    assert(C::strcmp(b, b) == 0);
+    assert(C::strcmp(b, a) > 0);
     return 0;
 }

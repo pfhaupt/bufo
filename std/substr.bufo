@@ -65,7 +65,7 @@ func print(this: &SubStr) {
         let a: Any = this.start;
         let c: &char = a;
         let p: char = *(c + i);
-        assert(p == putchar(p), "Wrote wrong character in SubStr.print");
+        assert(p == C::putchar(p), "Wrote wrong character in SubStr.print");
     }
 }
 func getPathParent(this: &SubStr) -> String {
@@ -133,7 +133,7 @@ func toF64(this: &SubStr) -> f64 {
 }
 
 func newSubStrOfStrLit(orig: &char) -> SubStr {
-    return newSubStr(orig, 0, strlen(orig));
+    return newSubStr(orig, 0, C::strlen(orig));
 }
 
 func newSubStr(orig: &char, start: usize, end: usize) -> SubStr {
@@ -152,6 +152,6 @@ func newSubStrOfString(orig: &String, start: usize, end: usize) -> SubStr {
 }
 func defaultSubStr() -> SubStr {
     let s: &char = "You are not supposed to read this. Please issue a bug report.";
-    let l: usize = strlen(s);
+    let l: usize = C::strlen(s);
     return newSubStr(s, 0, l);
 }

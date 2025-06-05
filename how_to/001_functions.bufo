@@ -30,9 +30,9 @@ func printNumber(number: u32) {
 }
 func printNumber(number: u32, padded: bool) {
     if (padded) {
-        printf("% 6u\n", number);
+        C::printf("% 6u\n", number);
     } else {
-        printf("%u\n", number);
+        C::printf("%u\n", number);
     }
 }
 

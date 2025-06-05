@@ -15,7 +15,7 @@ comptime INVALID_HANDLE: Handle = Handle { ptr: 18446744073709551615 };
     if (stat(filePath, &statbuf) < 0) {
         // NOTE: if output does not exist it 100% must be rebuilt
         if (*errno() == ENOENT) return 0;
-        fprintf(stderr, "[ERROR] Could not get time of %s: %#010x\n", filePath, strerror(*errno()));
+        C::fprintf(stderr, "[ERROR] Could not get time of %s: %#010x\n", filePath, strerror(*errno()));
         return 0;
     }
     return statbuf.st_mtime as usize;
@@ -26,23 +26,32 @@ comptime INVALID_HANDLE: Handle = Handle { ptr: 18446744073709551615 };
     while (true) {
         let wstatus: i32 = 0;
         if (waitpid(proc, &wstatus, 0) < 0) {
-            fprintf(stderr, "[ERROR] Could not wait on command (pid %d): %s\n", proc, strerror(*errno()));
+            C::fprintf(stderr, "[ERROR] Could not wait on command (pid %d): %s\n", proc, strerror(*errno()));
             return false;
         }
 
         if (WIFEXITED(wstatus)) {
             let exit_status: i32 = WEXITSTATUS(wstatus);
             if (exit_status != 0) {
-                fprintf(stderr, "[ERROR] Command exited with exit code %d\n", exit_status);
+                C::fprintf(stderr, "[ERROR] Command exited with exit code %d\n", exit_status);
                 return false;
             }
             break;
         }
 
         if (WIFSIGNALED(wstatus)) {
-            fprintf(stderr, "[ERROR] Command process was terminated by %s\n", strsignal(WTERMSIG(wstatus)));
+            C::fprintf(stderr, "[ERROR] Command process was terminated by %s\n", strsignal(WTERMSIG(wstatus)));
             return false;
         }
+    }
+    return true;
+}
+
+@os(LINUX) func dirExists(path: &char) -> bool {
+    let statbuf: Stat = blank;
+
+    if (stat(path, &statbuf) < 0) {
+        if (*errno() == ENOENT) return false;
     }
     return true;
 }
@@ -56,20 +65,22 @@ comptime INVALID_HANDLE: Handle = Handle { ptr: 18446744073709551615 };
 @os(LINUX) func runCmdAsync(cmd: Cmd) -> Handle {
     let cpid: i32 = fork();
     if (cpid < 0) {
-        fprintf(stderr, "[ERROR] Could not fork child process: %s\n", strerror(*errno()));
+        C::fprintf(stderr, "[ERROR] Could not fork child process: %s\n", strerror(*errno()));
         return INVALID_HANDLE;
     }
 
     if (cpid == 0) {
         let str: String = toString(&cmd);
         pushChar(&str, '\0');
-        printf("[CMD] %s\n", str.buffer);
+        if (cmd.log) {
+            C::printf("[CMD] %s\n", str.buffer);
+        }
 
         let progName: String = toString(&cmd.buf.data[0]);
         let args: &&char = asCharPtrs(&cmd);
         if (execvp(progName.buffer as &char, args) < 0) {
-            fprintf(stderr, "[ERROR] Could not exec child process: %s\n", strerror(*errno()));
-            exit(1);
+            C::fprintf(stderr, "[ERROR] Could not exec child process: %s\n", strerror(*errno()));
+            C::exit(1);
         }
         unreachable("execvp");
     }

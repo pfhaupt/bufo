@@ -42,10 +42,10 @@ struct IRInterp {
 func dumpRegisterStack(this: &IRInterp, bytes: usize) {
     let cols: usize = 4;
     for (let i: usize = 0; i < bytes; i = i + 1) {
-        if (i > 0 && i % (8 * cols) == 0) printf("\n");
-        printf("%2hhX", *(this.regStackStart + i));
+        if (i > 0 && i % (8 * cols) == 0) C::printf("\n");
+        C::printf("%2hhX", *(this.regStackStart + i));
     }
-    printf("\n");
+    C::printf("\n");
 }
 func getGlobalPointer(this: &IRInterp, reg: &InterpReg) -> &u8 {
     return this.globalRegBase - reg.offset - reg.size;
@@ -61,10 +61,10 @@ func advanceRealStack(this: &IRInterp, span: Span, size: usize) -> &u8 {
     let new: &u8 = this.realStackPointer + size;
     if (new >= this.realStackStart + STACK_SIZE) {
         let loc = toString(&span);
-        fprintf(stderr, "%s: %s: Stack Overflow in the comptime interpreter.\n", loc.buffer, ERR_STR);
-        fprintf(stderr, "%s: %s: Last allocation tried to allocate %llu byte(s).\n", loc.buffer, NOTE_STR, size);
+        C::fprintf(stderr, "%s: %s: Stack Overflow in the comptime interpreter.\n", loc.buffer, ERR_STR);
+        C::fprintf(stderr, "%s: %s: Last allocation tried to allocate %llu byte(s).\n", loc.buffer, NOTE_STR, size);
         drop(&loc);
-        exit(2);
+        C::exit(2);
     }
     this.realStackPointer = new;
     return _p;
@@ -74,12 +74,12 @@ func pushArgument(this: &IRInterp, span: Span, start: &u8, size: usize) {
     let new = this.argStackLength + size;
     if (new >= this.argStackCapacity) {
         let loc = toString(&span);
-        fprintf(stderr, "%s: %s: Argument Stack Overflow in the comptime interpreter.\n", loc.buffer, ERR_STR);
-        fprintf(stderr, "%s: %s: Last function call tried to push %llu byte(s).\n", loc.buffer, NOTE_STR, size);
+        C::fprintf(stderr, "%s: %s: Argument Stack Overflow in the comptime interpreter.\n", loc.buffer, ERR_STR);
+        C::fprintf(stderr, "%s: %s: Last function call tried to push %llu byte(s).\n", loc.buffer, NOTE_STR, size);
         drop(&loc);
-        exit(2);
+        C::exit(2);
     }
-    memcpy(this.argStack + this.argStackLength, start, size);
+    C::memcpy(this.argStack + this.argStackLength, start, size);
     this.argStackLength = new;
 }
 func popArgument(this: &IRInterp, span: Span, start: &u8, size: usize) {
@@ -87,13 +87,13 @@ func popArgument(this: &IRInterp, span: Span, start: &u8, size: usize) {
     let new = this.argStackLength - size;
     if (this.argStackLength < size) {
         let loc = toString(&span);
-        fprintf(stderr, "%s: %s: Argument Stack Underflow in the comptime interpreter.\n", loc.buffer, ERR_STR);
-        fprintf(stderr, "%s: %s: Last function call tried to pop %llu byte(s).\n", loc.buffer, NOTE_STR, size);
+        C::fprintf(stderr, "%s: %s: Argument Stack Underflow in the comptime interpreter.\n", loc.buffer, ERR_STR);
+        C::fprintf(stderr, "%s: %s: Last function call tried to pop %llu byte(s).\n", loc.buffer, NOTE_STR, size);
         drop(&loc);
-        exit(2);
+        C::exit(2);
     }
     this.argStackLength = new;
-    memcpy(start, this.argStack + this.argStackLength, size);
+    C::memcpy(start, this.argStack + this.argStackLength, size);
 }
 
 let instrFns = [
@@ -176,7 +176,7 @@ let instrFns = [
     evaluateMemcpy,             // INSTR_MEMCPY
 ];
 func evaluateNotImplemented(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
-    printf("%s: ", toString(&instr.span).buffer);
+    C::printf("%s: ", toString(&instr.span).buffer);
     dump(instr);
     unreachable("Not implemented");
 }
@@ -218,7 +218,7 @@ func evaluateStore(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Reg
     let srcReg: InterpReg = asInterp(src, "Store src");
     let srcLoc: &u8 = getRegStackPointer(this, &srcReg);
     let dstLoc: &u8 = *(getRegStackPointer(this, &dstReg) as &usize) as &u8;
-    memcpy(dstLoc, srcLoc, srcReg.size);
+    C::memcpy(dstLoc, srcLoc, srcReg.size);
     return dstReg;
 }
 func evaluateFetchComptimeValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
@@ -232,7 +232,7 @@ func evaluateFetchComptimeValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInst
             offset: fReg.offset,
             size: size,
         };
-        memcpy(getRegStackPointer(this, &reg), ptr, size);
+        C::memcpy(getRegStackPointer(this, &reg), ptr, size);
         return reg;
     } else {
         // Local fetch
@@ -264,7 +264,7 @@ func evaluateLoad(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegV
     };
     let srcLoc: &u8 = *(getRegStackPointer(this, &srcReg) as &usize) as &u8;
     let dstLoc: &u8 = getRegStackPointer(this, &dstReg);
-    memcpy(dstLoc, srcLoc, dstReg.size);
+    C::memcpy(dstLoc, srcLoc, dstReg.size);
     return dstReg;
 }
 func evaluateMove(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
@@ -278,7 +278,7 @@ func evaluateMove(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegV
     };
     let srcLoc: &u8 = getRegStackPointer(this, &srcReg);
     let dstLoc: &u8 = getRegStackPointer(this, &dstReg);
-    memcpy(dstLoc, srcLoc, dstReg.size);
+    C::memcpy(dstLoc, srcLoc, dstReg.size);
     return dstReg;
 }
 func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
@@ -326,22 +326,22 @@ func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
             return dst;
         } else {
             let loc = toString(&instr.span);
-            fprintf(stderr, "%s: %s: Can not call external function `%s` at compile time.\n", loc.buffer, ERR_STR, calledFunc.name.buffer);
+            C::fprintf(stderr, "%s: %s: Can not call external function `%s` at compile time.\n", loc.buffer, ERR_STR, calledFunc.name.buffer);
             if (f.dllHandle == dllNotFound()) {
                 let m = getParentModule(f);
                 let _loc = toString(&m.span);
                 let cfg = getConfigs(m);
                 if (cfg.length == 0) {
-                    fprintf(stderr, "%s: %s: No configuration found!\n", _loc.buffer, NOTE_STR);
+                    C::fprintf(stderr, "%s: %s: No configuration found!\n", _loc.buffer, NOTE_STR);
                 } else {
-                    fprintf(stderr, "%s: %s: Could not load any of the libraries specified in the module configuration.\n", loc.buffer, NOTE_STR);
-                    fprintf(stderr, "%s: %s: Module declared here.\n", _loc.buffer, NOTE_STR);
+                    C::fprintf(stderr, "%s: %s: Could not load any of the libraries specified in the module configuration.\n", loc.buffer, NOTE_STR);
+                    C::fprintf(stderr, "%s: %s: Module declared here.\n", _loc.buffer, NOTE_STR);
                     for (let i: usize = 0; i < cfg.length; i = i + 1) {
                         let tli = at(&topLevelItems, *at(&cfg, i));
                         assert(tli.kind == TLI_CONFIG);
                         drop(&_loc);
                         _loc = toString(&tli.span);
-                        fprintf(stderr, "%s: %s: Module configuration declared here.\n", _loc.buffer, NOTE_STR);
+                        C::fprintf(stderr, "%s: %s: Module configuration declared here.\n", _loc.buffer, NOTE_STR);
                     }
                 }
                 drop(&_loc);
@@ -350,18 +350,18 @@ func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
                 let _loc = toString(&m.span);
                 let cfg = getConfigs(m);
                 if (cfg.length == 0) {
-                    fprintf(stderr, "%s: %s: No configuration found!\n", _loc.buffer, NOTE_STR);
+                    C::fprintf(stderr, "%s: %s: No configuration found!\n", _loc.buffer, NOTE_STR);
                 } else {
                     let _fnLoc = toString(&f.span);
-                    fprintf(stderr, "%s: %s: Could not find the function in any of the specified libraries.\n", loc.buffer, ERR_STR);
-                    fprintf(stderr, "%s: %s: Function declared here.\n", _fnLoc.buffer, NOTE_STR);
-                    fprintf(stderr, "%s: %s: Module declared here.\n", _loc.buffer, NOTE_STR);
+                    C::fprintf(stderr, "%s: %s: Could not find the function in any of the specified libraries.\n", loc.buffer, ERR_STR);
+                    C::fprintf(stderr, "%s: %s: Function declared here.\n", _fnLoc.buffer, NOTE_STR);
+                    C::fprintf(stderr, "%s: %s: Module declared here.\n", _loc.buffer, NOTE_STR);
                     for (let i: usize = 0; i < cfg.length; i = i + 1) {
                         let tli = at(&topLevelItems, *at(&cfg, i));
                         assert(tli.kind == TLI_CONFIG);
                         drop(&_loc);
                         _loc = toString(&tli.span);
-                        fprintf(stderr, "%s: %s: Module configuration declared here.\n", _loc.buffer, NOTE_STR);
+                        C::fprintf(stderr, "%s: %s: Module configuration declared here.\n", _loc.buffer, NOTE_STR);
                     }
                     drop(&_fnLoc);
                 }
@@ -372,7 +372,7 @@ func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
                 unreachable("actually null-ptr");
             }
             drop(&loc);
-            exit(1);
+            C::exit(1);
         }
     } else {
         let argSize: usize = this.argStackLength;
@@ -570,7 +570,7 @@ func evaluateLoadBlank(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
         offset: dstReg.offset,
         size: getSize(dstReg.typ),
     };
-    memset(getRegStackPointer(this, &dst), 0, dst.size);
+    C::memset(getRegStackPointer(this, &dst), 0, dst.size);
     return dst;
 }
 func evaluateCondBr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
@@ -1221,7 +1221,7 @@ func evaluateInsertValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
             let valReg: InterpReg = asInterp(at(regs, instr.op1.i), "Interp InsertValue Array");
             let size = getSize(under);
             let offset = instr.src.i * size;
-            memcpy(dstStart + offset, getRegStackPointer(this, &valReg), size);
+            C::memcpy(dstStart + offset, getRegStackPointer(this, &valReg), size);
         }
         &Type::Struct(decl) => {
             let offset: usize = 0;
@@ -1229,7 +1229,7 @@ func evaluateInsertValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
             getFieldOffsetAndSize(decl, instr.src.i, &offset, &fieldSize);
             let valReg: InterpReg = asInterp(at(regs, instr.op1.i), "Interp InsertValue Struct");
             assert(valReg.size == fieldSize, "field size mismatch in Interp InsertValue");
-            memcpy(dstStart + offset, getRegStackPointer(this, &valReg), fieldSize);
+            C::memcpy(dstStart + offset, getRegStackPointer(this, &valReg), fieldSize);
         }
         _ => { unreachable("Interp InsertValue expected Array or Struct"); }
     }
@@ -1270,7 +1270,7 @@ func evaluateCreateArray(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
         offset: dstReg.offset,
         size: getSize(dstReg.typ),
     };
-    memset(getRegStackPointer(this, &dst), 0, dst.size);
+    C::memset(getRegStackPointer(this, &dst), 0, dst.size);
     return dst;
 }
 func evaluateCreateStruct(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
@@ -1280,7 +1280,7 @@ func evaluateCreateStruct(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, reg
         offset: dstReg.offset,
         size: getSize(dstReg.typ),
     };
-    memset(getRegStackPointer(this, &dst), 0, dst.size);
+    C::memset(getRegStackPointer(this, &dst), 0, dst.size);
     return dst;
 }
 func evaluateCreateUnion(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
@@ -1290,7 +1290,7 @@ func evaluateCreateUnion(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
         offset: dstReg.offset,
         size: getSize(dstReg.typ),
     };
-    memset(getRegStackPointer(this, &dst), 0, dst.size);
+    C::memset(getRegStackPointer(this, &dst), 0, dst.size);
     return dst;
 }
 func evaluateIntToF32(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
@@ -1439,7 +1439,7 @@ func evaluateMemcpy(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
     let dstLoc: &u8 = *(getRegStackPointer(this, &rDst) as &usize) as &u8;
     let sizeStart: &u8 = getRegStackPointer(this, &rSize);
     let sizeValue = *(sizeStart as &usize);
-    memcpy(dstLoc, srcLoc, sizeValue);
+    C::memcpy(dstLoc, srcLoc, sizeValue);
     return rDst;
 }
 
@@ -1519,13 +1519,13 @@ struct Function {
 }
 
 @os(WINDOWS) func free(fn: Function) {
-    if (!VirtualFree(fn.run as Any, fn.size, 16384)) {
-        printf("warning: Could not free function at %p\n", fn.run);
+    if (!WinAPI::VirtualFree(fn.run as Any, fn.size, 16384)) {
+        C::printf("warning: Could not free function at %p\n", fn.run);
     }
 }
 @os(LINUX) func free(fn: Function) {
     if (munmap(fn.run as Any, fn.size) != 0) {
-        printf("warning: Could not free function at %p\n", fn.run);
+        C::printf("warning: Could not free function at %p\n", fn.run);
     }
 }
 
@@ -1565,7 +1565,7 @@ func push(buf: &ByteBuffer, element: u8) {
     if (buf.length >= buf.capacity) {
         let newCap: usize = buf.capacity * 2;
         if (newCap == 0) newCap = 32;
-        buf.elements = realloc(buf.elements, newCap * sizeof u8);
+        buf.elements = C::realloc(buf.elements, newCap * sizeof u8);
         assert(buf.elements != null, "Could not allocate memory in ByteBuffer.push");
         buf.capacity = newCap;
     }
@@ -1577,7 +1577,7 @@ func extend(buf: &ByteBuffer, other: &ByteBuffer) {
     for (let i: usize = 0; i < other.length; i = i + 1) {
         push(buf, other.elements[i]);
     }
-    free(other.elements);
+    C::free(other.elements);
     *other = blank;
 }
 
@@ -1782,14 +1782,14 @@ func push(val: u64) -> ByteBuffer {
     } else if (isInteger(retType) || isBoolean(retType) || isStruct(retType) || isPointer(retType)) {
         // noop, other side will hopefully put the thing in RAX for us
     } else {
-        fprintf(stderr, "%s\n", toString(retType).buffer);
+        C::fprintf(stderr, "%s\n", toString(retType).buffer);
         todo_with_msg("non-float ret");
     }
     push(&buf, '\xC3');
-    let code = VirtualAlloc(null, buf.length, 4096, 64);
+    let code = WinAPI::VirtualAlloc(null, buf.length, 4096, 64);
     assert(code != null, "Could not alloc some bytes sadge thx Windows");
-    memcpy(code, buf.elements, buf.length);
-    free(buf.elements);
+    C::memcpy(code, buf.elements, buf.length);
+    C::free(buf.elements);
     return Function { run: code as func () -> u64, size: buf.length };
 }
 @os(LINUX) func compileFunctionCall(this: &IRInterp, currFunc: &IRFunc, calledFunc: &IRFunc, instr: &IRInstr, fn: usize, regs: &RegValueList) -> Function {
@@ -1810,10 +1810,10 @@ func pushRegisterStack(this: &IRInterp, span: Span, size: usize) {
     let new: &u8 = this.regStackBase + size;
     if (new > this.regStackStart + REG_STACK_SIZE) {
         let loc = toString(&span);
-        fprintf(stderr, "%s: %s Register Stack Overflow in the comptime interpreter.\n", loc.buffer, FATAL_STR);
-        fprintf(stderr, "%s: %s Tried to reserve %llu byte(s).\n", loc.buffer, FATAL_STR, size);
+        C::fprintf(stderr, "%s: %s Register Stack Overflow in the comptime interpreter.\n", loc.buffer, FATAL_STR);
+        C::fprintf(stderr, "%s: %s Tried to reserve %llu byte(s).\n", loc.buffer, FATAL_STR, size);
         drop(&loc);
-        exit(2);
+        C::exit(2);
     }
     this.regStackBase = new;
 }
@@ -1822,20 +1822,20 @@ func popRegisterStack(this: &IRInterp, span: Span, size: usize) {
     let new: &u8 = this.regStackBase - size;
     if (new < this.regStackStart) {
         let loc = toString(&span);
-        fprintf(stderr, "%s: %s Register Stack Underflow in the comptime interpreter.\n", loc.buffer, FATAL_STR);
+        C::fprintf(stderr, "%s: %s Register Stack Underflow in the comptime interpreter.\n", loc.buffer, FATAL_STR);
         drop(&loc);
-        exit(2);
+        C::exit(2);
     }
     this.regStackBase = new;
     assert(this.regStackBase >= this.globalRegBase, "Register Stack overwrote global stack");
 }
 
 func newIRInterpreter(irGen: &IRGen) -> IRInterp {
-    let regStack: &u8 = malloc(REG_STACK_SIZE);
+    let regStack: &u8 = C::malloc(REG_STACK_SIZE);
     assert(regStack != null, "Could not prepare IRInterp.regStack");
-    let realStack: &u8 = malloc(STACK_SIZE);
+    let realStack: &u8 = C::malloc(STACK_SIZE);
     assert(realStack != null, "Could not prepare IRInterp.realStack");
-    let argStack: &u8 = malloc(640000);
+    let argStack: &u8 = C::malloc(640000);
     assert(argStack != null, "Could not prepare IRInterp.argStack");
     return IRInterp {
         irGen: irGen,

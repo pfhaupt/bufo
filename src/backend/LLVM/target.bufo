@@ -71,9 +71,9 @@ func writeToFile(this: &LLVMTargetMachine, mod: LLVMModule, mode: i32, filepath:
     trace("LLVMTargetMachine.writeToFile");
     let err: LLVMString = blank;
     if (LLVM::TargetMachineEmitToFile(this.ref, mod.ref, filepath, mode, &err) != 0) {
-        fprintf(stderr, "%s Could not write LLVM module to file!\n", FATAL_STR);
-        fprintf(stderr, "%s %s\n", FATAL_STR, err.chars);
-        exit(1);
+        C::fprintf(stderr, "%s Could not write LLVM module to file!\n", FATAL_STR);
+        C::fprintf(stderr, "%s %s\n", FATAL_STR, err.chars);
+        C::exit(1);
     }
 }
 

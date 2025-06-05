@@ -41,8 +41,8 @@ func showcase1() {
     match (structVariant) {
         // Number literals are valid patterns.
         StructUnion::Variant { 0, 7, 12 } => {
-            printf("You can specify the fields in any order.\n");
-            printf("Any field that you omit will be zero-initialized.\n");
+            C::printf("You can specify the fields in any order.\n");
+            C::printf("Any field that you omit will be zero-initialized.\n");
         }
         // We know that `structVariant` has the layout matched above, so we should never get here.
         _ => { unreachable(); }
@@ -56,7 +56,7 @@ func showcase1() {
         // This will create a copy of the encapsulated value (here: 12) and assign it to `val`
         // which can then be used in this branch.
         Option::Some(val) => {
-            printf("something stored a value of %llu\n", val);
+            C::printf("something stored a value of %llu\n", val);
         }
         // We know that `something` has the layout matched above, so we should never get here.
         _ => { unreachable(); }
@@ -65,11 +65,11 @@ func showcase1() {
         // Control Flow will try all patterns, until it finds a match.
         Option::Some(val) => { unreachable("`nothing` is not Some, we should never get here"); }
         Option::None => {
-            printf("nothing is None\n");
+            C::printf("nothing is None\n");
         }
         // There's no fallthrough between branches, each branch will continue below the match statement.
         _ => {
-            printf("You should never see this! (unless there's a bug in the compiler)\n");
+            C::printf("You should never see this! (unless there's a bug in the compiler)\n");
         }
     }
 }
@@ -126,13 +126,13 @@ func print(t: &Tree) { print(t, 0); }
 func print(t: &Tree, indent: usize) {
     match (t) {
         null => {
-            printf("%*sNULL\n", indent, "");
+            C::printf("%*sNULL\n", indent, "");
         }
         &Tree::Leaf(val) => {
-            printf("%*sleaf: %llu\n", indent, "", val);
+            C::printf("%*sleaf: %llu\n", indent, "", val);
         }
         &Tree::Node { l, r } => {
-            printf("%*snode:\n", indent, "");
+            C::printf("%*snode:\n", indent, "");
             print(l, indent + 2);
             print(r, indent + 2);
         }
@@ -149,7 +149,7 @@ func showcase2() {
     print(n5);
     let s = sum(n5);
     assert(s == 42); // Always the answer to everything
-    printf("The sum of the tree is %llu\n", s);
+    C::printf("The sum of the tree is %llu\n", s);
     let cond = true;
     match (cond) {
         true => { }
@@ -211,7 +211,7 @@ func showcase3() {
             // however the value it *points to* remains the same. This means that you can easily
             // update values behind pointers, like here.
             assert(value == 34);
-            printf("The value of the original value is: %d\n", needle);
+            C::printf("The value of the original value is: %d\n", needle);
             // Also updates the original `value` as defined in the first line here.
             needle = 29;
         }

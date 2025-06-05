@@ -109,21 +109,21 @@ func isPattern(this: &TCState) -> bool {
 
 func getType(this: &TCState) -> &Type {
     if (!isType(this)) {
-        fprintf(stderr, "ERROR: getType(&TCState) called on non-type TCState with kind=%llu\n", this.kind);
+        C::fprintf(stderr, "ERROR: getType(&TCState) called on non-type TCState with kind=%llu\n", this.kind);
         assert(false);
     }
     return this.typ;
 }
 func getError(this: &TCState) -> usize {
     if (!isError(this)) {
-        fprintf(stderr, "ERROR: getError(&TCState) called on non-error TCState with kind=%llu\n", this.kind);
+        C::fprintf(stderr, "ERROR: getError(&TCState) called on non-error TCState with kind=%llu\n", this.kind);
         assert(false);
     }
     return this.error;
 }
 func getPatState(this: &TCState) -> PatState {
     if (!isPattern(this)) {
-        fprintf(stderr, "ERROR: getPatState(&TCState) called on non-pattern TCState with kind=%llu\n", this.kind);
+        C::fprintf(stderr, "ERROR: getPatState(&TCState) called on non-pattern TCState with kind=%llu\n", this.kind);
         assert(false);
     }
     return this.pattern;
@@ -184,7 +184,7 @@ func reportVerboseNote(this: &TypeChecker, loc: String, count: usize, s1: &char,
     let is = pl(count, "is", "are");
     let ol = pl(count, s1, s2);
     let it = pl(count, "it", "them");
-    fprintf(stderr, "%s: %s: There %s %llu %s. Re-run with the --verbose flag to see %s.\n",
+    C::fprintf(stderr, "%s: %s: There %s %llu %s. Re-run with the --verbose flag to see %s.\n",
             loc.buffer, NOTE_STR, is, count, ol, it);
 }
 
@@ -193,7 +193,7 @@ func reportTypeMismatch(this: &TypeChecker, span: Span, expected: &Type, got: &T
     let loc: String = toString(&span);
     let typ1: String = toString(expected);
     let typ2: String = toString(got);
-    fprintf(stderr, "%s: %s: Type mismatch! Expected type %s, found type %s.\n",
+    C::fprintf(stderr, "%s: %s: Type mismatch! Expected type %s, found type %s.\n",
         loc.buffer, ERR_STR, typ1.buffer, typ2.buffer);
     drop(&typ1);
     drop(&typ2);
@@ -209,10 +209,10 @@ func reportBinaryTypeMismatch(this: &TypeChecker, op: &char, lhsSpan: Span, lhsT
     let loc2: String = toString(&rhsSpan);
     let typ1: String = toString(lhsType);
     let typ2: String = toString(rhsType);
-    fprintf(stderr, "%s: %s: Type mismatch in binary expression! Operation `%s %s %s` is not defined.\n",
+    C::fprintf(stderr, "%s: %s: Type mismatch in binary expression! Operation `%s %s %s` is not defined.\n",
         loc.buffer, ERR_STR, typ1.buffer, op, typ2.buffer);
-    fprintf(stderr, "%s: %s: LHS has type %s.\n", loc1.buffer, NOTE_STR, typ1.buffer);
-    fprintf(stderr, "%s: %s: RHS has type %s.\n", loc2.buffer, NOTE_STR, typ2.buffer);
+    C::fprintf(stderr, "%s: %s: LHS has type %s.\n", loc1.buffer, NOTE_STR, typ1.buffer);
+    C::fprintf(stderr, "%s: %s: RHS has type %s.\n", loc2.buffer, NOTE_STR, typ2.buffer);
     drop(&typ2);
     drop(&typ1);
     drop(&loc2);
@@ -225,7 +225,7 @@ func reportBinaryTypeMismatch(this: &TypeChecker, op: &char, lhsSpan: Span, lhsT
 func reportInvalidPointerArithmetics(this: &TypeChecker, op: &char, lhsSpan: Span, rhsSpan: Span) -> TCState {
     trace("TypeChecker.reportInvalidPointerArithmetics");
     let loc: String = toString(&newSpanBetween(&lhsSpan, &rhsSpan));
-    fprintf(stderr, "%s: %s: Operation `%s` is not allowed in the context of pointer arithmetics.\n",
+    C::fprintf(stderr, "%s: %s: Operation `%s` is not allowed in the context of pointer arithmetics.\n",
         loc.buffer, ERR_STR, op);
     drop(&loc);
     this.typeError = true;
@@ -237,8 +237,8 @@ func reportDuplicateField(this: &TypeChecker, fieldToken: Token, declSpan: Span)
     let duplLoc: String = toString(&fieldToken.span);
     let origLoc: String = toString(&declSpan);
     let name: String = toString(&fieldToken.content);
-    fprintf(stderr, "%s: %s: Field redeclaration.\n", duplLoc.buffer, ERR_STR);
-    fprintf(stderr, "%s: %s: Field `%s` already declared here.\n", origLoc.buffer, NOTE_STR, name.buffer);
+    C::fprintf(stderr, "%s: %s: Field redeclaration.\n", duplLoc.buffer, ERR_STR);
+    C::fprintf(stderr, "%s: %s: Field `%s` already declared here.\n", origLoc.buffer, NOTE_STR, name.buffer);
     drop(&name);
     drop(&origLoc);
     drop(&duplLoc);
@@ -251,8 +251,8 @@ func reportDuplicateParameter(this: &TypeChecker, paramToken: Token, declSpan: S
     let duplLoc: String = toString(&paramToken.span);
     let origLoc: String = toString(&declSpan);
     let name: String = toString(&paramToken.content);
-    fprintf(stderr, "%s: %s: Parameter redeclaration.\n", duplLoc.buffer, ERR_STR);
-    fprintf(stderr, "%s: %s: Parameter `%s` already declared here.\n", origLoc.buffer, NOTE_STR, name.buffer);
+    C::fprintf(stderr, "%s: %s: Parameter redeclaration.\n", duplLoc.buffer, ERR_STR);
+    C::fprintf(stderr, "%s: %s: Parameter `%s` already declared here.\n", origLoc.buffer, NOTE_STR, name.buffer);
     drop(&name);
     drop(&origLoc);
     drop(&duplLoc);
@@ -272,8 +272,8 @@ func reportUnknownField(this: &TypeChecker, name: Token, decl: &StructLookup, is
         s1 = "union variant";
         s2 = "Union variant";
     }
-    fprintf(stderr, "%s: %s: Attempted to access unknown field `%s` of instance of %s %s.\n", errLoc.buffer, ERR_STR, field.buffer, s1, strukt.buffer);
-    fprintf(stderr, "%s: %s: %s %s is declared here.\n", declLoc.buffer, NOTE_STR, s2, strukt.buffer);
+    C::fprintf(stderr, "%s: %s: Attempted to access unknown field `%s` of instance of %s %s.\n", errLoc.buffer, ERR_STR, field.buffer, s1, strukt.buffer);
+    C::fprintf(stderr, "%s: %s: %s %s is declared here.\n", declLoc.buffer, NOTE_STR, s2, strukt.buffer);
     drop(&field);
     drop(&strukt);
     drop(&declLoc);
@@ -288,12 +288,12 @@ func reportUnknownType(this: &TypeChecker, mod: &ModuleLookup, name: Token, alte
         let modNode = at(&modules, mod.globalID);
         let _n1 = toString(&modNode.name.content);
         let loc1 = toString(&modNode.span);
-        fprintf(stderr, "%s: %s: Module `%s` does not contain any types named `%s`.\n", loc.buffer, ERR_STR, _n1.buffer, _n.buffer);
-        fprintf(stderr, "%s: %s: Module declared here.\n", loc1.buffer, NOTE_STR);
+        C::fprintf(stderr, "%s: %s: Module `%s` does not contain any types named `%s`.\n", loc.buffer, ERR_STR, _n1.buffer, _n.buffer);
+        C::fprintf(stderr, "%s: %s: Module declared here.\n", loc1.buffer, NOTE_STR);
         drop(&loc1);
         drop(&_n1);
     } else {
-        fprintf(stderr, "%s: %s: Use of undeclared type identifier `%s`.\n", loc.buffer, ERR_STR, _n.buffer);
+        C::fprintf(stderr, "%s: %s: Use of undeclared type identifier `%s`.\n", loc.buffer, ERR_STR, _n.buffer);
         if (*flags.verbose) {
             for (let i: usize = 0; i < alternatives.length; i = i + 1) {
                 let t: &TypeLookup = at(&alternatives, i);
@@ -301,7 +301,7 @@ func reportUnknownType(this: &TypeChecker, mod: &ModuleLookup, name: Token, alte
                     let s: &StructLookup = asStruct(t);
                     drop(&loc);
                     loc = getLocation(&s.name);
-                    fprintf(stderr, "%s: %s: A struct with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
+                    C::fprintf(stderr, "%s: %s: A struct with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
                 }
             }
         } else if (alternatives.length > 0) {
@@ -320,8 +320,8 @@ func reportDuplicateFunction(this: &TypeChecker, f1: &FunctionLookup, f2: &Funct
     let duplLoc: String = toString(&f2.name.span);
     let name: String = toString(&f1.name.content);
     let typ = toString(getType(&f1.fnType));
-    fprintf(stderr, "%s: %s: Function redeclaration.\n", errLoc.buffer, ERR_STR);
-    fprintf(stderr, "%s: %s: A function named `%s` with the signature %s is already declared here.\n", duplLoc.buffer, ERR_STR, name.buffer, typ.buffer);
+    C::fprintf(stderr, "%s: %s: Function redeclaration.\n", errLoc.buffer, ERR_STR);
+    C::fprintf(stderr, "%s: %s: A function named `%s` with the signature %s is already declared here.\n", duplLoc.buffer, ERR_STR, name.buffer, typ.buffer);
     drop(&typ);
     drop(&name);
     drop(&duplLoc);
@@ -335,8 +335,8 @@ func reportNoFunctionCallCandidate(this: &TypeChecker, ident: Token, fnType: &Ty
     let loc: String = toString(&ident.span);
     let name: String = toString(&ident.content);
     let typ = toString(fnType);
-    fprintf(stderr, "%s: %s: No function overload fits the provided context for call to function `%s`.\n", loc.buffer, ERR_STR, name.buffer);
-    fprintf(stderr, "%s: %s: Context requires an overload of the form %s.\n", loc.buffer, NOTE_STR, typ.buffer);
+    C::fprintf(stderr, "%s: %s: No function overload fits the provided context for call to function `%s`.\n", loc.buffer, ERR_STR, name.buffer);
+    C::fprintf(stderr, "%s: %s: Context requires an overload of the form %s.\n", loc.buffer, NOTE_STR, typ.buffer);
     assert(functions.length != 0, "reportNoFunctionCallCandidate: Expected at least one declaration");
     if (*flags.verbose) {
         for (let i: usize = 0; i < functions.length; i = i + 1) {
@@ -345,7 +345,7 @@ func reportNoFunctionCallCandidate(this: &TypeChecker, ident: Token, fnType: &Ty
             drop(&loc);
             loc = toString(&f.name.span);
             typ = toString(getType(&f.fnType));
-            fprintf(stderr, "%s: %s: Overload %s declared here.\n", loc.buffer, NOTE_STR, typ.buffer);
+            C::fprintf(stderr, "%s: %s: Overload %s declared here.\n", loc.buffer, NOTE_STR, typ.buffer);
         }
     } else {
         reportVerboseNote(this, loc, functions.length, "possible overload", "possible overloads");
@@ -362,8 +362,8 @@ func reportVariableRedeclaration(this: &TypeChecker, newDecl: Token, oldDecl: To
     let newLoc: String = toString(&newDecl.span);
     let oldLoc: String = toString(&oldDecl.span);
     let name: String = toString(&newDecl.content);
-    fprintf(stderr, "%s: %s: Variable redeclaration.\n", newLoc.buffer, ERR_STR);
-    fprintf(stderr, "%s: %s: Variable `%s` already declared here.\n", oldLoc.buffer, NOTE_STR, name.buffer);
+    C::fprintf(stderr, "%s: %s: Variable redeclaration.\n", newLoc.buffer, ERR_STR);
+    C::fprintf(stderr, "%s: %s: Variable `%s` already declared here.\n", oldLoc.buffer, NOTE_STR, name.buffer);
     drop(&name);
     drop(&oldLoc);
     drop(&newLoc);
@@ -375,12 +375,12 @@ func reportRecursiveType(this: &TypeChecker, checked: &TypeLookup, cycle: &TypeL
     trace("TypeChecker.reportRecursiveType");
     let loc: String = getLocation(checked);
     let name: String = getName(checked);
-    fprintf(stderr, "%s: %s: Recursive type %s.\n", loc.buffer, ERR_STR, name.buffer);
+    C::fprintf(stderr, "%s: %s: Recursive type %s.\n", loc.buffer, ERR_STR, name.buffer);
     assert(cycle.length >= 1, "Cycle is empty");
     for (let i: usize = 1; i < cycle.length; i = i + 1) {
         loc = getLocation(at(cycle, i));
         name = getName(at(cycle, i));
-        fprintf(stderr, "%s: %s: Chain of recursion also includes type %s.\n", loc.buffer, NOTE_STR, name.buffer);
+        C::fprintf(stderr, "%s: %s: Chain of recursion also includes type %s.\n", loc.buffer, NOTE_STR, name.buffer);
     }
     drop(&name);
     drop(&loc);
@@ -393,7 +393,7 @@ func reportNonPrimitiveCast(this: &TypeChecker, span: Span, from: &Type, to: &Ty
     let loc: String = toString(&span);
     let typ1: String = toString(from);
     let typ2: String = toString(to);
-    fprintf(stderr, "%s: %s: Non primitive cast from type %s to %s.\n",
+    C::fprintf(stderr, "%s: %s: Non primitive cast from type %s to %s.\n",
         loc.buffer, ERR_STR, typ1.buffer, typ2.buffer);
     drop(&typ1);
     drop(&typ2);
@@ -406,8 +406,8 @@ func reportIndexedAccessOnNonArray(this: &TypeChecker, span: Span, typ: &Type) -
     trace("TypeChecker.reportIndexedAccessOnNonArray");
     let loc: String = toString(&span);
     let name: String = toString(typ);
-    fprintf(stderr, "%s: %s: Indexed Access is only supported for arrays.\n", loc.buffer, ERR_STR);
-    fprintf(stderr, "%s: %s: Expression has type %s.\n", loc.buffer, NOTE_STR, name.buffer);
+    C::fprintf(stderr, "%s: %s: Indexed Access is only supported for arrays.\n", loc.buffer, ERR_STR);
+    C::fprintf(stderr, "%s: %s: Expression has type %s.\n", loc.buffer, NOTE_STR, name.buffer);
     drop(&name);
     drop(&loc);
     this.typeError = true;
@@ -419,8 +419,8 @@ func reportRuntimeValueInComptimeContext(this: &TypeChecker, ident: Token, var: 
     let loc = toString(&ident.span);
     let otherLoc = toString(&var.name.span);
     let name = toString(&ident.content);
-    fprintf(stderr, "%s: %s: Variables declared with `let` can't be used in a comptime context.\n", loc.buffer, ERR_STR);
-    fprintf(stderr, "%s: %s: Variable `%s` is declared here.\n", otherLoc.buffer, NOTE_STR, name.buffer);
+    C::fprintf(stderr, "%s: %s: Variables declared with `let` can't be used in a comptime context.\n", loc.buffer, ERR_STR);
+    C::fprintf(stderr, "%s: %s: Variable `%s` is declared here.\n", otherLoc.buffer, NOTE_STR, name.buffer);
     drop(&name);
     drop(&otherLoc);
     drop(&loc);
@@ -431,7 +431,7 @@ func reportRuntimeValueInComptimeContext(this: &TypeChecker, ident: Token, var: 
 func reportAnyDereference(this: &TypeChecker, expr: &ParsedExpr) -> TCState {
     trace("TypeChecker.reportAnyDereference");
     let loc = toString(&expr.span);
-    fprintf(stderr, "%s: %s: Can't dereference expression of type Any.\n", loc.buffer, ERR_STR);
+    C::fprintf(stderr, "%s: %s: Can't dereference expression of type Any.\n", loc.buffer, ERR_STR);
     drop(&loc);
     this.typeError = true;
     return newTCStateFailure(ERROR_ANY_DEREF);
@@ -441,7 +441,7 @@ func reportMemberAccessOnNonStruct(this: &TypeChecker, expr: &ParsedExpr, instan
     trace("TypeChecker.reportMemberAccessOnNonStruct");
     let loc = toString(&expr.span);
     let t = toString(instance);
-    fprintf(stderr, "%s: %s: The Dot-Operator is not defined for values of type %s.\n", loc.buffer, ERR_STR, t.buffer);
+    C::fprintf(stderr, "%s: %s: The Dot-Operator is not defined for values of type %s.\n", loc.buffer, ERR_STR, t.buffer);
     drop(&t);
     drop(&loc);
     this.typeError = true;
@@ -451,7 +451,7 @@ func reportMemberAccessOnNonStruct(this: &TypeChecker, expr: &ParsedExpr, instan
 func reportMemberAccessNoOptions(this: &TypeChecker, span: Span) -> TCState {
     trace("TypeChecker.reportMemberAccessNoOptions");
     let loc = toString(&span);
-    fprintf(stderr, "%s: %s: Could not infer which type to use for expression.\n", loc.buffer, ERR_STR);
+    C::fprintf(stderr, "%s: %s: Could not infer which type to use for expression.\n", loc.buffer, ERR_STR);
     drop(&loc);
     this.typeError = true;
     return newTCStateFailure(ERROR_MEMBER_ACCESS_NO_OPTIONS);
@@ -461,12 +461,12 @@ func reportMemberAccessTooManyOptions(this: &TypeChecker, span: Span, structs: &
     trace("TypeChecker.reportMemberAccessTooManyOptions");
     assert(structs.length > 0);
     let loc = toString(&span);
-    fprintf(stderr, "%s: %s: Could not infer which type to use for expression.\n", loc.buffer, ERR_STR);
+    C::fprintf(stderr, "%s: %s: Could not infer which type to use for expression.\n", loc.buffer, ERR_STR);
     for (let i: usize = 0; i < structs.length; i = i + 1) {
         let s = at(structs, i);
         let l = toString(&s.name.span);
         let n = toString(&s.name.content);
-        fprintf(stderr, "%s: %s: Context allows struct %s to be used.\n", l.buffer, NOTE_STR, n.buffer);
+        C::fprintf(stderr, "%s: %s: Context allows struct %s to be used.\n", l.buffer, NOTE_STR, n.buffer);
         drop(&n);
         drop(&l);
     }
@@ -478,7 +478,7 @@ func reportMemberAccessTooManyOptions(this: &TypeChecker, span: Span, structs: &
 func reportFunctionCallTooManyOptions(this: &TypeChecker, expr: &CallExpr) -> TCState {
     trace("TypeChecker.reportFunctionCallTooManyOptions");
     let loc = toString(&expr.span);
-    fprintf(stderr, "%s: %s: Could not infer which function to call.\n", loc.buffer, ERR_STR);
+    C::fprintf(stderr, "%s: %s: Could not infer which function to call.\n", loc.buffer, ERR_STR);
     drop(&loc);
     this.typeError = true;
     return newTCStateFailure(ERROR_FUNCTION_CALL_TOO_MANY_OPTIONS);
@@ -488,9 +488,9 @@ func reportCallToNonFunction(this: &TypeChecker, span: Span, base: &Type) -> TCS
     trace("TypeChecker.reportCallToNonFunction");
     let loc = toString(&span);
     let typ = toString(base);
-    fprintf(stderr, "%s: %s: Can't call expression of type %s.\n", loc.buffer, ERR_STR, typ.buffer);
-    fprintf(stderr, "%s: %s: Currently, all variables (including global variables) shadow functions.\n", loc.buffer, NOTE_STR);
-    fprintf(stderr, "%s: %s: This is a known limitation and will be fixed soon.\n", loc.buffer, NOTE_STR);
+    C::fprintf(stderr, "%s: %s: Can't call expression of type %s.\n", loc.buffer, ERR_STR, typ.buffer);
+    C::fprintf(stderr, "%s: %s: Currently, all variables (including global variables) shadow functions.\n", loc.buffer, NOTE_STR);
+    C::fprintf(stderr, "%s: %s: This is a known limitation and will be fixed soon.\n", loc.buffer, NOTE_STR);
     drop(&typ);
     drop(&loc);
     this.typeError = true;
@@ -510,8 +510,8 @@ func reportArgumentCountMismatch(this: &TypeChecker, span: Span, base: &Type, ar
     if (c == 1) s = "argument";
     let w = "were";
     if (args == 1) w = "was";
-    fprintf(stderr, "%s: %s: Call expects %llu %s, but %llu %s provided.\n", loc.buffer, ERR_STR, c, s, args, w);
-    fprintf(stderr, "%s: %s: Call expression has type %s.\n", loc.buffer, NOTE_STR, typ.buffer);
+    C::fprintf(stderr, "%s: %s: Call expects %llu %s, but %llu %s provided.\n", loc.buffer, ERR_STR, c, s, args, w);
+    C::fprintf(stderr, "%s: %s: Call expression has type %s.\n", loc.buffer, NOTE_STR, typ.buffer);
     drop(&typ);
     drop(&loc);
     this.typeError = true;
@@ -525,8 +525,8 @@ func reportUnknownSubmodule(this: &TypeChecker, mod: &ModuleLookup, name: Token)
     let orig = toString(&_mod.span);
     let _origName = toString(&_mod.name.content);
     let _name = toString(&name.content);
-    fprintf(stderr, "%s: %s: Module `%s` does not contain any submodules named `%s`.\n", loc.buffer, ERR_STR, _origName.buffer, _name.buffer);
-    fprintf(stderr, "%s: %s: Module declared here.\n", orig.buffer, NOTE_STR);
+    C::fprintf(stderr, "%s: %s: Module `%s` does not contain any submodules named `%s`.\n", loc.buffer, ERR_STR, _origName.buffer, _name.buffer);
+    C::fprintf(stderr, "%s: %s: Module declared here.\n", orig.buffer, NOTE_STR);
     drop(&_name);
     drop(&_origName);
     drop(&orig);
@@ -537,7 +537,7 @@ func reportUnknownSubmodule(this: &TypeChecker, mod: &ModuleLookup, name: Token)
 func reportUnknownModule(this: &TypeChecker, name: Token) -> TCState {
     let loc = toString(&name.span);
     let _name = toString(&name.content);
-    fprintf(stderr, "%s: %s: Use of undeclared module `%s`.\n", loc.buffer, ERR_STR, _name.buffer);
+    C::fprintf(stderr, "%s: %s: Use of undeclared module `%s`.\n", loc.buffer, ERR_STR, _name.buffer);
     drop(&_name);
     drop(&loc);
     this.typeError = true;
@@ -546,10 +546,10 @@ func reportUnknownModule(this: &TypeChecker, name: Token) -> TCState {
 func reportModuleAccessOfNonModule(this: &TypeChecker, span: Span, name: Token, typ: TypeLookup) -> TCState {
     let loc = toString(&span);
     let _name = toString(&name.content);
-    fprintf(stderr, "%s: %s: `%s` is not a module, so the `::` operator cannot be applied.\n", loc.buffer, ERR_STR, _name.buffer);
+    C::fprintf(stderr, "%s: %s: `%s` is not a module, so the `::` operator cannot be applied.\n", loc.buffer, ERR_STR, _name.buffer);
     if (typ.kind != TYPE_LOOKUP_INVALID) {
         let _loc = getLocation(&typ);
-        fprintf(stderr, "%s: %s: Struct declared here.\n", _loc.buffer, NOTE_STR);
+        C::fprintf(stderr, "%s: %s: Struct declared here.\n", _loc.buffer, NOTE_STR);
         drop(&_loc);
     }
     drop(&_name);
@@ -562,8 +562,8 @@ func reportDuplicateVariant(this: &TypeChecker, orig: &ParsedUnionVariant, dupl:
     let duplLoc: String = toString(&orig.span);
     let origLoc: String = toString(&dupl.global.span);
     let name: String = toString(&orig.name.content);
-    fprintf(stderr, "%s: %s: Union Variant redeclaration.\n", duplLoc.buffer, ERR_STR);
-    fprintf(stderr, "%s: %s: Variant `%s` already declared here.\n", origLoc.buffer, NOTE_STR, name.buffer);
+    C::fprintf(stderr, "%s: %s: Union Variant redeclaration.\n", duplLoc.buffer, ERR_STR);
+    C::fprintf(stderr, "%s: %s: Variant `%s` already declared here.\n", origLoc.buffer, NOTE_STR, name.buffer);
     drop(&name);
     drop(&origLoc);
     drop(&duplLoc);
@@ -575,8 +575,8 @@ func reportDuplicateNameInUnion(this: &TypeChecker, variant: &ParsedUnionVariant
     let duplLoc: String = toString(&first.span);
     let origLoc: String = toString(&dupl.span);
     let name: String = toString(&first.content);
-    fprintf(stderr, "%s: %s: Union Variant already contains a field with that name.\n", duplLoc.buffer, ERR_STR);
-    fprintf(stderr, "%s: %s: Field `%s` already declared here.\n", origLoc.buffer, NOTE_STR, name.buffer);
+    C::fprintf(stderr, "%s: %s: Union Variant already contains a field with that name.\n", duplLoc.buffer, ERR_STR);
+    C::fprintf(stderr, "%s: %s: Field `%s` already declared here.\n", origLoc.buffer, NOTE_STR, name.buffer);
     drop(&name);
     drop(&origLoc);
     drop(&duplLoc);
@@ -588,7 +588,7 @@ func reportImpossiblePattern(this: &TypeChecker, pat: &ParsedPattern, type: &Typ
     let loc = toString(&pat.span);
     let patS = toString(pat);
     let typ = toString(type);
-    fprintf(stderr, "%s: %s: A value of type %s will never match the pattern `%s`.\n", loc.buffer, ERR_STR, typ.buffer, patS.buffer);
+    C::fprintf(stderr, "%s: %s: A value of type %s will never match the pattern `%s`.\n", loc.buffer, ERR_STR, typ.buffer, patS.buffer);
     drop(&patS);
     drop(&typ);
     drop(&loc);
@@ -598,15 +598,15 @@ func reportImpossiblePattern(this: &TypeChecker, pat: &ParsedPattern, type: &Typ
 func reportNotEnoughPatterns(this: &TypeChecker, pat: &ParsedPattern, type: &Type) -> TCState {
     let err = reportImpossiblePattern(this, pat, type);
     let loc = toString(&pat.span);
-    fprintf(stderr, "%s: %s: Not enough patterns were provided to match the type.\n", loc.buffer, NOTE_STR);
-    fprintf(stderr, "%s: %s: If you only care about certain fields, you can use `_` or `..` to ignore the rest.\n", loc.buffer, NOTE_STR);
+    C::fprintf(stderr, "%s: %s: Not enough patterns were provided to match the type.\n", loc.buffer, NOTE_STR);
+    C::fprintf(stderr, "%s: %s: If you only care about certain fields, you can use `_` or `..` to ignore the rest.\n", loc.buffer, NOTE_STR);
     drop(&loc);
     return err;
 }
 func reportTooManyPatterns(this: &TypeChecker, pat: &ParsedPattern, type: &Type) -> TCState {
     let err = reportImpossiblePattern(this, pat, type);
     let loc = toString(&pat.span);
-    fprintf(stderr, "%s: %s: Too many patterns were provided to match the type.\n", loc.buffer, NOTE_STR);
+    C::fprintf(stderr, "%s: %s: Too many patterns were provided to match the type.\n", loc.buffer, NOTE_STR);
     drop(&loc);
     return err;
 }
@@ -617,7 +617,7 @@ func emergencyPrint(this: &TypeChecker, where: Span) {
         content: newSubStrOfStrLit(""),
         kind: TOKEN_EOF
     };
-    printf("%s\n", getLocation(&t).buffer);
+    C::printf("%s\n", getLocation(&t).buffer);
 }
 
 func typeCheckProject(this: &TypeChecker, project: &ParsedFile) -> bool {
@@ -1025,7 +1025,7 @@ func typeCheckFunction(this: &TypeChecker, function: &ParsedFuncDecl, scopes: &S
             if (mod.dlls.length == 0) {
                 if (*flags.warnSimple) {
                     let loc = toString(&function.span);
-                    fprintf(stderr, "%s: %s: No dynamic library was found for external function %s. You will not be able to call it at compile time.\n",
+                    C::fprintf(stderr, "%s: %s: No dynamic library was found for external function %s. You will not be able to call it at compile time.\n",
                         loc.buffer, WARN_STR, _name.buffer);
                     drop(&loc);
                 }
@@ -1034,7 +1034,7 @@ func typeCheckFunction(this: &TypeChecker, function: &ParsedFuncDecl, scopes: &S
             let addrFound = false;
             for (let i: usize = 0; i < mod.dlls.length; i = i + 1) {
                 let dll = at(&dlls, *at(&mod.dlls, i));
-                @os(WINDOWS) let handle = GetProcAddress(dll.handle, _name.buffer);
+                @os(WINDOWS) let handle = WinAPI::GetProcAddress(dll.handle, _name.buffer);
                 @os(LINUX) let handle = dlsym(dll.handle, _name.buffer);
                 if (!isNull(handle)) {
                     function.dllHandle = newDLL(dll.path, handle);
@@ -1045,7 +1045,7 @@ func typeCheckFunction(this: &TypeChecker, function: &ParsedFuncDecl, scopes: &S
             if (!addrFound && function.dllHandle != dllNotFound()) {
                 if (*flags.warnSimple) {
                     let loc = toString(&function.span);
-                    fprintf(stderr, "%s: %s: Could not find external function %s in any DLL. You will not be able to call it at compile time.\n",
+                    C::fprintf(stderr, "%s: %s: Could not find external function %s in any DLL. You will not be able to call it at compile time.\n",
                         loc.buffer, WARN_STR, _name.buffer);
                     drop(&loc);
                 }
@@ -1112,8 +1112,8 @@ func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupLi
             let _rt = getType(retState);
             let retType = getReturnType(_rt);
             if (!isNone(retType)) {
-                printf("%s\n", toString(&stmt.span).buffer);
-                printf("%s\n", toString(retType).buffer);
+                C::printf("%s\n", toString(&stmt.span).buffer);
+                C::printf("%s\n", toString(retType).buffer);
                 todo_with_msg("function returns something, but we wrote return;");
             }
         }
@@ -1148,14 +1148,14 @@ func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupLi
                 exprState = inferTypeOntoExpr(this, expr, noneType, scopes);
             }
             if (!isType(&exprState)) {
-                printf("%s\n", toString(&stmt.span).buffer);
-                printf("%llu\n", exprState.kind);
+                C::printf("%s\n", toString(&stmt.span).buffer);
+                C::printf("%llu\n", exprState.kind);
                 todo_with_msg("what is it then");
             }
             let exprType: &Type = getType(&exprState);
             if (!isNone(exprType) && !isAssignment(expr) && *flags.warnUnused) {
                 let loc: String = toString(&expr.span);
-                fprintf(stderr, "%s: %s: Unused expression value.\n", loc.buffer, WARN_STR);
+                C::fprintf(stderr, "%s: %s: Unused expression value.\n", loc.buffer, WARN_STR);
                 drop(&loc);
             }
             state = exprState;
@@ -1237,8 +1237,8 @@ func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupLi
         &StmtData::Continue => { }
         &StmtData::Match(_,_,_) => { return typeCheckMatchStmt(this, stmt, scopes); }
         unknown => {
-            fprintf(stderr, "%s typeCheckStmt: Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
-            exit(2);
+            C::fprintf(stderr, "%s typeCheckStmt: Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
+            C::exit(2);
         }
     }
     if (isError(&state)) return state;
@@ -1287,7 +1287,7 @@ func typeCheckMatchStmt(this: &TypeChecker, match: &ParsedStmt, scopes: &ScopeLo
         if (complete && i != patterns.length - 1) {
             let next = *at(patterns, i + 1);
             let loc = toString(&next.span);
-            fprintf(stderr, "%s: %s: Unreachable pattern.\n", loc.buffer, WARN_STR);
+            C::fprintf(stderr, "%s: %s: Unreachable pattern.\n", loc.buffer, WARN_STR);
             drop(&loc);
             patterns.length = i + 1;
             stmts.length = i + 1;
@@ -1296,9 +1296,9 @@ func typeCheckMatchStmt(this: &TypeChecker, match: &ParsedStmt, scopes: &ScopeLo
     if (isError(&result)) return result;
     if (!complete) {
         let loc = toString(&match.span);
-        fprintf(stderr, "%s: %s: Patterns of a match statement must be exhaustive.\n", loc.buffer, ERR_STR);
+        C::fprintf(stderr, "%s: %s: Patterns of a match statement must be exhaustive.\n", loc.buffer, ERR_STR);
         let wildcard = tokenKindToString(TOKEN_WILDCARD);
-        fprintf(stderr, "%s: %s: You can use the wildcard pattern %s to catch all other cases.\n", loc.buffer, NOTE_STR, wildcard);
+        C::fprintf(stderr, "%s: %s: You can use the wildcard pattern %s to catch all other cases.\n", loc.buffer, NOTE_STR, wildcard);
         drop(&loc);
         return newTCStateFailure(ERROR_NON_EXHAUSTIVE_MATCH);
     }
@@ -1513,8 +1513,8 @@ func typeCheckVarDecl(this: &TypeChecker, varDecl: &ParsedStmt, scopes: &ScopeLo
                             let loc1 = toString(&name.span);
                             let loc2 = toString(&_loc.span);
                             let name = toString(&name.content);
-                            fprintf(stderr, "%s: %s: Shadowing variable `%s` from an outer scope.\n", loc1.buffer, WARN_STR, name.buffer);
-                            fprintf(stderr, "%s: %s: Variable with the same name already declared here.\n", loc2.buffer, NOTE_STR);
+                            C::fprintf(stderr, "%s: %s: Shadowing variable `%s` from an outer scope.\n", loc1.buffer, WARN_STR, name.buffer);
+                            C::fprintf(stderr, "%s: %s: Variable with the same name already declared here.\n", loc2.buffer, NOTE_STR);
                             drop(&name);
                             drop(&loc2);
                             drop(&loc1);
@@ -1617,7 +1617,7 @@ func typeCheckExpr(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupLi
                         let loc = toString(&at(&exprs, elemIndex).span);
                         let t = toString(elemType);
                         lastErrState = reportTypeMismatch(this, at(&exprs, nextIndex).span, elemType, nextType);
-                        fprintf(stderr, "%s: %s: Array elements inferred to be type %s here.\n", loc.buffer, NOTE_STR, t.buffer);
+                        C::fprintf(stderr, "%s: %s: Array elements inferred to be type %s here.\n", loc.buffer, NOTE_STR, t.buffer);
                         drop(&t);
                         drop(&loc);
                     }
@@ -1662,8 +1662,8 @@ func typeCheckExpr(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupLi
             drop(&_scopes);
         }
         unknown => {
-            fprintf(stderr, "%s typeCheckExpr: Unhandled Expression with tag %hhu!\n", FATAL_STR, tag(unknown));
-            exit(2);
+            C::fprintf(stderr, "%s typeCheckExpr: Unhandled Expression with tag %hhu!\n", FATAL_STR, tag(unknown));
+            C::exit(2);
         }
     }
     if (isError(&state)) return state;
@@ -1691,7 +1691,7 @@ func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, type: &ParsedTypeNod
             let loc = toString(&expr.span);
             let from = toString(exprType);
             let to = toString(typeType);
-            fprintf(stderr, "%s: %s: Casting from type %s to type %s.\n",
+            C::fprintf(stderr, "%s: %s: Casting from type %s to type %s.\n",
                 loc.buffer, WARN_STR, from.buffer, to.buffer);
             drop(&to);
             drop(&from);
@@ -1702,7 +1702,7 @@ func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, type: &ParsedTypeNod
         if (*flags.warnExtra) {
             let loc = toString(&expr.span);
             let from = toString(typeType);
-            fprintf(stderr, "%s: %s: Casting from type %s to Any.\n",
+            C::fprintf(stderr, "%s: %s: Casting from type %s to Any.\n",
                 loc.buffer, WARN_STR, from.buffer);
             drop(&from);
             drop(&loc);
@@ -1712,7 +1712,7 @@ func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, type: &ParsedTypeNod
         if (*flags.warnExtra) {
             let loc = toString(&expr.span);
             let to = toString(typeType);
-            fprintf(stderr, "%s: %s: Casting from Any to type %s.\n",
+            C::fprintf(stderr, "%s: %s: Casting from Any to type %s.\n",
                 loc.buffer, WARN_STR, to.buffer);
             drop(&to);
             drop(&loc);
@@ -1722,7 +1722,7 @@ func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, type: &ParsedTypeNod
             let loc = toString(&expr.span);
             let from = toString(exprType);
             let to = toString(typeType);
-            fprintf(stderr, "%s: %s: Casting pointer of type %s to integer of type %s.\n",
+            C::fprintf(stderr, "%s: %s: Casting pointer of type %s to integer of type %s.\n",
                 loc.buffer, WARN_STR, from.buffer, to.buffer);
             drop(&to);
             drop(&from);
@@ -1733,7 +1733,7 @@ func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, type: &ParsedTypeNod
             let loc = toString(&expr.span);
             let from = toString(exprType);
             let to = toString(typeType);
-            fprintf(stderr, "%s: %s: Casting integer of type %s to pointer of type %s.\n",
+            C::fprintf(stderr, "%s: %s: Casting integer of type %s to pointer of type %s.\n",
                 loc.buffer, WARN_STR, from.buffer, to.buffer);
             drop(&to);
             drop(&from);
@@ -1748,7 +1748,7 @@ func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, type: &ParsedTypeNod
         let loc: String = toString(&expr.span);
         let tName: String = toString(typeType);
         let oName: String = toString(exprType);
-        fprintf(stderr, "%s: %s: Lossy type cast: Target type (%s) is smaller than original type (%s).\n",
+        C::fprintf(stderr, "%s: %s: Lossy type cast: Target type (%s) is smaller than original type (%s).\n",
             loc.buffer, WARN_STR, tName.buffer, oName.buffer);
         drop(&oName);
         drop(&tName);
@@ -1774,7 +1774,7 @@ func typeCheckExprUnary(this: &TypeChecker, unary: &UnaryExpr, scopes: &ScopeLoo
                 t => {
                     let loc: String = toString(&lhs.span);
                     let t: String = toString(exprType);
-                    fprintf(stderr, "%s: %s: Attempted to dereference expression of type %s.\n", loc.buffer, ERR_STR, t.buffer);
+                    C::fprintf(stderr, "%s: %s: Attempted to dereference expression of type %s.\n", loc.buffer, ERR_STR, t.buffer);
                     drop(&t);
                     drop(&loc);
                     return newTCStateFailure(ERROR_DEREF_NON_POINTER);
@@ -1788,7 +1788,7 @@ func typeCheckExprUnary(this: &TypeChecker, unary: &UnaryExpr, scopes: &ScopeLoo
             if (!isSignedInteger(exprType) && !isFloat(exprType)) {
                 let loc: String = toString(&lhs.span);
                 let t: String = toString(exprType);
-                fprintf(stderr, "%s: %s: Negation is not defined for type %s.\n", loc.buffer, ERR_STR, t.buffer);
+                C::fprintf(stderr, "%s: %s: Negation is not defined for type %s.\n", loc.buffer, ERR_STR, t.buffer);
                 drop(&t);
                 drop(&loc);
                 this.typeError = true;
@@ -1800,7 +1800,7 @@ func typeCheckExprUnary(this: &TypeChecker, unary: &UnaryExpr, scopes: &ScopeLoo
             if (!isBoolean(exprType)) {
                 let loc: String = toString(&lhs.span);
                 let t: String = toString(exprType);
-                fprintf(stderr, "%s: %s: Logical Not is not defined for type %s.\n", loc.buffer, ERR_STR, t.buffer);
+                C::fprintf(stderr, "%s: %s: Logical Not is not defined for type %s.\n", loc.buffer, ERR_STR, t.buffer);
                 drop(&t);
                 drop(&loc);
                 this.typeError = true;
@@ -1952,14 +1952,14 @@ func typeCheckIdentifier(this: &TypeChecker, ident: &IdentExpr, scopes: &ScopeLo
     }
     let loc: String = getLocation(name);
     let _name: String = toString(&name.content);
-    fprintf(stderr, "%s: %s: Use of undeclared identifier `%s`.\n", loc.buffer, ERR_STR, _name.buffer);
+    C::fprintf(stderr, "%s: %s: Use of undeclared identifier `%s`.\n", loc.buffer, ERR_STR, _name.buffer);
     let alternatives: VariableLookupList = searchAllFilesForIdentifier(&this.lookup, name, this.anonFuncDepth > 0);
     if (*flags.verbose) {
         for (let i: usize = 0; i < alternatives.length; i = i + 1) {
             let t: &VariableLookup = at(&alternatives, i);
             drop(&loc);
             loc = getLocation(&t.name);
-            fprintf(stderr, "%s: %s: A variable with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
+            C::fprintf(stderr, "%s: %s: A variable with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
         }
     } else if (alternatives.length > 0) {
         reportVerboseNote(this, loc, alternatives.length, "global variable with that name", "global variables with that name");
@@ -1994,8 +1994,8 @@ func typeCheckExprBinary(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLo
         &BinaryExpr::BitXor(..) => { return typeCheckExprBitwise(this, expr, scopes); }
         &BinaryExpr::Indexed(..) => { return typeCheckExprIndexedAccess(this, expr, scopes); }
         unknown => {
-            fprintf(stderr, "%s typeCheckExprBinary: Unhandled tag %hhu!\n", FATAL_STR, tag(unknown));
-            exit(2);
+            C::fprintf(stderr, "%s typeCheckExprBinary: Unhandled tag %hhu!\n", FATAL_STR, tag(unknown));
+            C::exit(2);
         }
     }
     unreachable("Exhaustive handling of binary expressions in typeCheckExprBinary");
@@ -2012,7 +2012,7 @@ func typeCheckExprIndexedAccess(this: &TypeChecker, expr: &BinaryExpr, scopes: &
     if (isError(&rhsState)) return rhsState;
     if (wantsInfer(&lhsState)) {
         let loc = toString(&lhs.span);
-        fprintf(stderr, "%s: %s: Could not infer type of subexpression for indexed access.\n", loc.buffer, ERR_STR);
+        C::fprintf(stderr, "%s: %s: Could not infer type of subexpression for indexed access.\n", loc.buffer, ERR_STR);
         drop(&loc);
         return newTCStateFailure(ERROR_INDEXED_ACCESS_ON_NON_ARRAY);
     }
@@ -2037,7 +2037,7 @@ func typeCheckExprIndexedAccess(this: &TypeChecker, expr: &BinaryExpr, scopes: &
     }
     let loc: String = toString(&rhs.span);
     let typ: String = toString(rhsType);
-    fprintf(stderr, "%s: %s: Expected index of array access to be type usize, got %s.\n", loc.buffer, ERR_STR, typ.buffer);
+    C::fprintf(stderr, "%s: %s: Expected index of array access to be type usize, got %s.\n", loc.buffer, ERR_STR, typ.buffer);
     drop(&typ);
     drop(&loc);
     this.typeError = true;
@@ -2376,7 +2376,7 @@ func tryInferTypeOntoExpr(this: &TypeChecker, expr: &ParsedExpr, type: &Type, sc
             if (isChar(type)) {
                 if (!checkOnly) {
                     let l: String = getLocation(&value);
-                    fprintf(stderr, "%s: %s: Using integer literal to initialize value of type char.\n",
+                    C::fprintf(stderr, "%s: %s: Using integer literal to initialize value of type char.\n",
                         l.buffer, WARN_STR);
                     drop(&l);
                 }
@@ -2392,7 +2392,7 @@ func tryInferTypeOntoExpr(this: &TypeChecker, expr: &ParsedExpr, type: &Type, sc
                 if (!checkOnly) {
                     let s: String = toString(&value.content);
                     let l: String = getLocation(&value);
-                    fprintf(stderr, "%s: %s: Unexpected Literal! Expected boolean, found `%s`.\n",
+                    C::fprintf(stderr, "%s: %s: Unexpected Literal! Expected boolean, found `%s`.\n",
                         l.buffer, ERR_STR, s.buffer);
                     drop(&l);
                     drop(&s);
@@ -2403,7 +2403,7 @@ func tryInferTypeOntoExpr(this: &TypeChecker, expr: &ParsedExpr, type: &Type, sc
                 if (!checkOnly) {
                     let s: String = toString(&value.content);
                     let l: String = getLocation(&value);
-                    fprintf(stderr, "%s: %s: Unexpected Literal! Expected array, found `%s`.\n",
+                    C::fprintf(stderr, "%s: %s: Unexpected Literal! Expected array, found `%s`.\n",
                         l.buffer, ERR_STR, s.buffer);
                     drop(&l);
                     drop(&s);
@@ -2415,7 +2415,7 @@ func tryInferTypeOntoExpr(this: &TypeChecker, expr: &ParsedExpr, type: &Type, sc
                     let s: String = toString(&value.content);
                     let l: String = getLocation(&value);
                     let t = toString(type);
-                    fprintf(stderr, "%s: %s: Unexpected Literal! Expected value of type %s, found `%s`.\n",
+                    C::fprintf(stderr, "%s: %s: Unexpected Literal! Expected value of type %s, found `%s`.\n",
                         l.buffer, ERR_STR, t.buffer, s.buffer);
                     drop(&t);
                     drop(&l);
@@ -2434,7 +2434,7 @@ func tryInferTypeOntoExpr(this: &TypeChecker, expr: &ParsedExpr, type: &Type, sc
                         if (size != context.elemLength) {
                             if (!checkOnly) {
                                 let loc: String = toString(&expr.span);
-                                fprintf(stderr, "%s: %s: Array size mismatch! Expected to find %llu element(s), got %llu instead.\n",
+                                C::fprintf(stderr, "%s: %s: Array size mismatch! Expected to find %llu element(s), got %llu instead.\n",
                                     loc.buffer, ERR_STR, size, context.elemLength);
                                 drop(&loc);
                                 this.typeError = true;
@@ -2451,7 +2451,7 @@ func tryInferTypeOntoExpr(this: &TypeChecker, expr: &ParsedExpr, type: &Type, sc
                         if (size != context.size) {
                             if (!checkOnly) {
                                 let loc: String = toString(&expr.span);
-                                fprintf(stderr, "%s: %s: Array size mismatch! Expected to find %llu element(s), got %llu instead.\n",
+                                C::fprintf(stderr, "%s: %s: Array size mismatch! Expected to find %llu element(s), got %llu instead.\n",
                                     loc.buffer, ERR_STR, size, context.size);
                                 drop(&loc);
                                 this.typeError = true;
@@ -2467,7 +2467,7 @@ func tryInferTypeOntoExpr(this: &TypeChecker, expr: &ParsedExpr, type: &Type, sc
                     if (!checkOnly) {
                         let loc = toString(&expr.span);
                         let t = toString(type);
-                        fprintf(stderr, "%s: %s: Expected expression of type %s, found array literal.\n", loc.buffer, ERR_STR, t.buffer);
+                        C::fprintf(stderr, "%s: %s: Expected expression of type %s, found array literal.\n", loc.buffer, ERR_STR, t.buffer);
                         drop(&t);
                         drop(&loc);
                     }
@@ -2487,7 +2487,7 @@ func tryInferTypeOntoExpr(this: &TypeChecker, expr: &ParsedExpr, type: &Type, sc
             if (!isPointer(type)) {
                 let loc: String = toString(&expr.span);
                 let name: String = toString(type);
-                fprintf(stderr, "%s: %s: Can't use `null` to initialize value of type %s.\n",loc.buffer, ERR_STR, name.buffer);
+                C::fprintf(stderr, "%s: %s: Can't use `null` to initialize value of type %s.\n",loc.buffer, ERR_STR, name.buffer);
                 drop(&name);
                 drop(&loc);
                 this.typeError = true;
@@ -2499,7 +2499,7 @@ func tryInferTypeOntoExpr(this: &TypeChecker, expr: &ParsedExpr, type: &Type, sc
             if (isPointer(type)) {
                 let loc: String = toString(&expr.span);
                 let name: String = toString(type);
-                fprintf(stderr, "%s: %s: Invalid initialization of reference of type %s. Please use `null` instead.\n",
+                C::fprintf(stderr, "%s: %s: Invalid initialization of reference of type %s. Please use `null` instead.\n",
                     loc.buffer, ERR_STR, name.buffer);
                 drop(&name);
                 drop(&loc);
@@ -2508,14 +2508,14 @@ func tryInferTypeOntoExpr(this: &TypeChecker, expr: &ParsedExpr, type: &Type, sc
             } else if (isPrimitive(type)) {
                 let loc: String = toString(&expr.span);
                 let name: String = toString(type);
-                fprintf(stderr, "%s: %s: Using `blank` to initialize value of type %s. Please use `0` instead.\n",
+                C::fprintf(stderr, "%s: %s: Using `blank` to initialize value of type %s. Please use `0` instead.\n",
                     loc.buffer, WARN_STR, name.buffer);
                 drop(&name);
                 drop(&loc);
             } else if (isUnion(type)) {
                 let loc: String = toString(&expr.span);
                 let name: String = toString(type);
-                fprintf(stderr, "%s: %s: Using `blank` to initialize value of type %s.\n",
+                C::fprintf(stderr, "%s: %s: Using `blank` to initialize value of type %s.\n",
                     loc.buffer, WARN_STR, name.buffer);
                 drop(&name);
                 drop(&loc);
@@ -2525,8 +2525,8 @@ func tryInferTypeOntoExpr(this: &TypeChecker, expr: &ParsedExpr, type: &Type, sc
         // &ExprData::True
         // &ExprData::False
         unknown => {
-            fprintf(stderr, "%s tryInferTypeOntoExpr: Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
-            exit(2);
+            C::fprintf(stderr, "%s tryInferTypeOntoExpr: Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
+            C::exit(2);
         }
     }
     /*
@@ -2569,7 +2569,7 @@ func tryInferTypeOntoUnary(this: &TypeChecker, span: Span, unary: &UnaryExpr, ty
                     if (!checkOnly) {
                         let loc: String = toString(&span);
                         let t: String = toString(type);
-                        fprintf(stderr, "%s: %s: Expected expression of type %s, found reference.\n", loc.buffer, ERR_STR, t.buffer);
+                        C::fprintf(stderr, "%s: %s: Expected expression of type %s, found reference.\n", loc.buffer, ERR_STR, t.buffer);
                         drop(&t);
                         drop(&loc);
                         this.typeError = true;
@@ -2583,7 +2583,7 @@ func tryInferTypeOntoUnary(this: &TypeChecker, span: Span, unary: &UnaryExpr, ty
                 if (!checkOnly) {
                     let loc: String = toString(&span);
                     let t: String = toString(type);
-                    fprintf(stderr, "%s: %s: Negation is not defined for type %s.\n", loc.buffer, ERR_STR, t.buffer);
+                    C::fprintf(stderr, "%s: %s: Negation is not defined for type %s.\n", loc.buffer, ERR_STR, t.buffer);
                     drop(&t);
                     drop(&loc);
                     this.typeError = true;
@@ -2656,7 +2656,7 @@ func tryInferTypeOntoIdent(this: &TypeChecker, ident: &IdentExpr, type: &Type, s
             let loc = toString(&ident.name.span);
             let name = toString(&ident.name.content);
             let typeName = toString(type);
-            fprintf(stderr, "%s: %s: Variable `%s` inferred to be of type %s here.\n", loc.buffer, NOTE_STR, name.buffer, typeName.buffer);
+            C::fprintf(stderr, "%s: %s: Variable `%s` inferred to be of type %s here.\n", loc.buffer, NOTE_STR, name.buffer, typeName.buffer);
             drop(&typeName);
             drop(&name);
             drop(&loc);
@@ -2847,7 +2847,7 @@ func typeCheckExprArithmetic(this: &TypeChecker, expr: &BinaryExpr, scopes: &Sco
             _ => {
                 let err = reportBinaryTypeMismatch(this, binOpAsStr(expr), lhs.span, lhsType, rhs.span, rhsType);
                 let loc = toString(&rhs.span);
-                fprintf(stderr, "%s: %s: Pointer offsets must be of type usize.\n", loc.buffer, NOTE_STR);
+                C::fprintf(stderr, "%s: %s: Pointer offsets must be of type usize.\n", loc.buffer, NOTE_STR);
                 drop(&loc);
                 return err;
             }
@@ -2858,7 +2858,7 @@ func typeCheckExprArithmetic(this: &TypeChecker, expr: &BinaryExpr, scopes: &Sco
             _ => {
                 let err = reportBinaryTypeMismatch(this, binOpAsStr(expr), lhs.span, lhsType, rhs.span, rhsType);
                 let loc = toString(&lhs.span);
-                fprintf(stderr, "%s: %s: Pointer offsets must be of type usize.\n", loc.buffer, NOTE_STR);
+                C::fprintf(stderr, "%s: %s: Pointer offsets must be of type usize.\n", loc.buffer, NOTE_STR);
                 drop(&loc);
                 return err;
             }
@@ -2933,7 +2933,7 @@ func typeCheckTypeNode(this: &TypeChecker, typeNode: &ParsedTypeNode) -> TCState
         if (!resolveTypeByName(this.currentModule, &name, &typeLookup)) {
             let loc: String = getLocation(&name);
             let _n: String = toString(&name.content);
-            fprintf(stderr, "%s: %s: Use of undeclared type identifier `%s`.\n", loc.buffer, ERR_STR, _n.buffer);
+            C::fprintf(stderr, "%s: %s: Use of undeclared type identifier `%s`.\n", loc.buffer, ERR_STR, _n.buffer);
             let alternatives: TypeLookupList = searchAllFilesForTypeName(&this.lookup, &name);
             return reportUnknownType(this, null, name, alternatives);
         }

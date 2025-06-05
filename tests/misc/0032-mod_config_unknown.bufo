@@ -4,7 +4,7 @@
 //! CODE: 1
 //! ERROR:
 //! Unknown config option `something_that_doesnt_exist`.
-//! A non-exhaustive list of config options: `library`, `libpath`, `linker`.
+//! A non-exhaustive list of config options: `static`, `dynamic`, `libpath`, `linker`.
 
 module test {
     config {

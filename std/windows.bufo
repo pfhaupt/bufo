@@ -8,7 +8,7 @@ import "winapi/functions.bufo";
 import "winapi/constants.bufo";
 
 func getLastModified(filePath: &char) -> usize {
-    let file: Handle = CreateFileA(
+    let file: Handle = WinAPI::CreateFileA(
         filePath,
         GENERIC_READ,
         FILE_SHARE_WRITE | FILE_SHARE_READ,
@@ -18,39 +18,45 @@ func getLastModified(filePath: &char) -> usize {
         INVALID_HANDLE
     );
     let time: FileTime = FileTime { time: 0 };
-    if (!GetFileTime(file, null, null, &time)) {
-        fprintf(stderr, "[ERROR] Could not get time of %s: %#010x\n", filePath, GetLastError());
+    if (!WinAPI::GetFileTime(file, null, null, &time)) {
+        C::fprintf(stderr, "[ERROR] Could not get time of %s: %#010x\n", filePath, WinError(WinAPI::GetLastError()));
         return 0-1;
     }
-    let _r: bool = CloseHandle(file);
+    let _r: bool = WinAPI::CloseHandle(file);
     assert(_r);
     return time.time;
 }
 
 func waitForProcess(proc: Handle) -> bool {
-    let result: u32 = WaitForSingleObject(
+    let result: u32 = WinAPI::WaitForSingleObject(
         proc,
         INFINITE
     );
 
     if (result == WAIT_FAILED) {
-        fprintf(stderr, "[ERROR] Could not wait on child process: %#010x\n", GetLastError());
+        C::fprintf(stderr, "[ERROR] Could not wait on child process: %#010x\n", WinError(WinAPI::GetLastError()));
         return false;
     }
 
     let exitStatus: u32 = 0;
-    if (!GetExitCodeProcess(proc, &exitStatus)) {
-        fprintf(stderr, "[ERROR] Could not get process exit code: %#010x\n", GetLastError());
+    if (!WinAPI::GetExitCodeProcess(proc, &exitStatus)) {
+        C::fprintf(stderr, "[ERROR] Could not get process exit code: %#010x\n", WinError(WinAPI::GetLastError()));
         return false;
     }
 
     if (exitStatus != 0) {
-        fprintf(stderr, "[ERROR] Command exited with exit code %#010x\n", exitStatus);
+        C::fprintf(stderr, "[ERROR] Command exited with exit code %#010x\n", exitStatus);
         return false;
     }
 
-    CloseHandle(proc);
+    WinAPI::CloseHandle(proc);
     return true;
+}
+
+func dirExists(path: &char) -> bool {
+    let attrib = WinAPI::GetFileAttributesA(path);
+    return attrib != INVALID_FILE_ATTRIBUTES &&
+            (attrib & FILE_ATTRIBUTE_DIRECTORY) != 0;
 }
 
 func tryFind(program: &char) -> bool {
@@ -84,9 +90,9 @@ func runCmdAsync(cmd: Cmd) -> Handle {
         wShowWindow: 0,
         cbReserved2: 0,
         lpReserved2: null,
-        hStdInput: GetStdHandle(STD_INPUT_HANDLE),
-        hStdOutput: GetStdHandle(STD_OUTPUT_HANDLE),
-        hStdError: GetStdHandle(STD_ERROR_HANDLE),
+        hStdInput: WinAPI::GetStdHandle(STD_INPUT_HANDLE),
+        hStdOutput: WinAPI::GetStdHandle(STD_OUTPUT_HANDLE),
+        hStdError: WinAPI::GetStdHandle(STD_ERROR_HANDLE),
     };
     siStartInfo.cb = sizeof StartupInfo as u32;
     // NOTE: theoretically setting NULL to std handles should not be a problem
@@ -104,9 +110,9 @@ func runCmdAsync(cmd: Cmd) -> Handle {
     let str: String = toString(&cmd);
     pushChar(&str, '\0');
     if (cmd.log) {
-        printf("[CMD] %s\n", str.buffer);
+        C::printf("[CMD] %s\n", str.buffer);
     }
-    let bSuccess: bool = CreateProcessA(
+    let bSuccess: bool = WinAPI::CreateProcessA(
         null,
         &*str.buffer,
         null,
@@ -121,11 +127,27 @@ func runCmdAsync(cmd: Cmd) -> Handle {
     drop(&str);
 
     if (!bSuccess) {
-        fprintf(stderr, "[ERROR] Could not create child process: %#010x\n", GetLastError());
+        C::fprintf(stderr, "[ERROR] Could not create child process: %#010x\n", WinError(WinAPI::GetLastError()));
         return INVALID_HANDLE;
     }
 
-    CloseHandle(piProcInfo.hThread);
+    WinAPI::CloseHandle(piProcInfo.hThread);
 
     return piProcInfo.hProcess;
+}
+
+func WinError(error: u32) -> &char {
+    let s = String {};
+    pushNumber(&s, error as usize);
+    return s.buffer;
+    // FIXME: Why does link.exe not find FormatMessage?
+    // let message: &char = null;
+    // let lang = 0x0409; // en-US
+    // if (WinAPI::FormatMessage(
+    //     FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+    //     null, error, lang, &message, 0, message) == 0) {
+    //     C::fprintf(stderr, "%s Could not get WinError: FormatMessage failed!\n", FATAL_STR);
+    //     return null;
+    // }
+    // return message;
 }

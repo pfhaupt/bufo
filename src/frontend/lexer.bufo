@@ -99,9 +99,9 @@ func escapeCharSequence(this: &Lexer, tmp: &SubStr, s: &String, len: &usize) -> 
         } else {
             let t: Token = newToken(this.fileID, &newSubStr(&c, 0, 1), this.ptr + 1, TOKEN_IDENT);
             let loc: String = toString(&t.span);
-            fprintf(stderr, "%s: %s: Can't escape character `%c`.\n", loc.buffer, ERR_STR, c);
+            C::fprintf(stderr, "%s: %s: Can't escape character `%c`.\n", loc.buffer, ERR_STR, c);
             drop(&loc);
-            exit(1);
+            C::exit(1);
         }
         escaped = true;
     } else {
@@ -210,8 +210,8 @@ func __next(this: &Lexer, peek: bool) -> Token {
             } else if (isAlphabetic(currChar)) {
                 let t: Token = newToken(this.fileID, &newSubStr(&currChar, 0, 1), this.ptr + 1, TOKEN_IDENT);
                 let loc: String = toString(&t.span);
-                fprintf(stderr, "%s: %s: Invalid number prefix `%c`.\n", loc.buffer, ERR_STR, currChar);
-                exit(1);
+                C::fprintf(stderr, "%s: %s: Invalid number prefix `%c`.\n", loc.buffer, ERR_STR, currChar);
+                C::exit(1);
             }
         }
         if (!prefixed) {
@@ -430,9 +430,9 @@ func __next(this: &Lexer, peek: bool) -> Token {
     } else {
         let t: Token = newToken(this.fileID, &newSubStr(&currChar, 0, 1), this.ptr + 1, TOKEN_IDENT);
         let loc: String = toString(&t.span);
-        fprintf(stderr, "%s: %s: Unknown character `%c`.\n", loc.buffer, ERR_STR, currChar);
+        C::fprintf(stderr, "%s: %s: Unknown character `%c`.\n", loc.buffer, ERR_STR, currChar);
         drop(&loc);
-        exit(1);
+        C::exit(1);
     }
 }
 

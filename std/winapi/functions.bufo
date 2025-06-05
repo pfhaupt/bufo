@@ -11,42 +11,52 @@ system at any time.
 
 import "winapi/structs.bufo";
 
-@os(WINDOWS) @extern("CreateProcessA") func CreateProcessA(
-    lpApplicationName: &char,
-    lpCommandLine: &char,
-    lpProcessAttributes: &SecurityAttributes,
-    lpThreadAttributes: &SecurityAttributes,
-    bInheritHandles: bool,
-    dwCreationFlags: u32,
-    lpEnvironment: Any,
-    lpCurrentDirectory: &char,
-    lpStartupInfo: &StartupInfo,
-    lpProcessInformation: &ProcessInformation
-) -> bool;
-
-@os(WINDOWS) @extern("CreateFileA") func CreateFileA(
-    lpFileName: &char,
-    dwDesiredAccess: u32,
-    dwShareMode: u32,
-    lpSecurityAttributes: &SecurityAttributes,
-    dwCreationDisposition: u32,
-    dwFlagsAndAttributes: u32,
-    hTemplateFile: Handle,
-) -> Handle;
-@os(WINDOWS) @extern("GetStdHandle") func GetStdHandle(handle: u32) -> Handle;
-@os(WINDOWS) @extern("CloseHandle") func CloseHandle(handle: Handle) -> bool;
-@os(WINDOWS) @extern("WaitForSingleObject") func WaitForSingleObject(hHandle: Handle, dwMilliseconds: u32) -> u32;
-@os(WINDOWS) @extern("GetExitCodeProcess") func GetExitCodeProcess(proc: Handle, exitStatus: &u32) -> bool;
-@os(WINDOWS) @extern("GetLastError") func GetLastError() -> u32;
-@os(WINDOWS) @extern("GetFileTime") func GetFileTime(
-    hFile: Handle,
-    lpCreationTime: &FileTime,
-    lpLastAccessTime: &FileTime,
-    lpLastWriteTime: &FileTime
-) -> bool;
-@os(WINDOWS) @extern("LoadLibraryA") func LoadLibraryA(lpLibFileName: &char) -> Handle;
-@os(WINDOWS) @extern("FreeLibrary") func FreeLibrary(hLibModule: Handle) -> bool;
-@os(WINDOWS) @extern("GetProcAddress") func GetProcAddress(handle: Handle, name: &char) -> Handle;
-@os(WINDOWS) @extern("VirtualAlloc") func VirtualAlloc(idk: Any, bytes: usize, flags: u32, pFlags: u32) -> Any;
-@os(WINDOWS) @extern("VirtualFree") func VirtualFree(address: Any, bytes: usize, flags: u32) -> bool;
-@os(WINDOWS) @extern("GetModuleFileNameA") func GetModuleFileNameA(hModule: Handle, lpFileName: &char, nSize: u32) -> u32;
+@os(WINDOWS)
+module WinAPI {
+    config {
+        static: "kernel32.lib",
+        dynamic: "kernel32.dll",
+        libpath: "C:/Windows/System32",
+    }
+    @extern("CreateProcessA") func CreateProcessA(
+        lpApplicationName: &char,
+        lpCommandLine: &char,
+        lpProcessAttributes: &SecurityAttributes,
+        lpThreadAttributes: &SecurityAttributes,
+        bInheritHandles: bool,
+        dwCreationFlags: u32,
+        lpEnvironment: Any,
+        lpCurrentDirectory: &char,
+        lpStartupInfo: &StartupInfo,
+        lpProcessInformation: &ProcessInformation
+    ) -> bool;
+    @extern("CreateFileA") func CreateFileA(
+        lpFileName: &char,
+        dwDesiredAccess: u32,
+        dwShareMode: u32,
+        lpSecurityAttributes: &SecurityAttributes,
+        dwCreationDisposition: u32,
+        dwFlagsAndAttributes: u32,
+        hTemplateFile: Handle,
+    ) -> Handle;
+    @extern("GetFileAttributesA") func GetFileAttributesA(path: &char) -> u32;
+    @extern("GetStdHandle") func GetStdHandle(handle: u32) -> Handle;
+    @extern("CloseHandle") func CloseHandle(handle: Handle) -> bool;
+    @extern("WaitForSingleObject") func WaitForSingleObject(hHandle: Handle, dwMilliseconds: u32) -> u32;
+    @extern("GetExitCodeProcess") func GetExitCodeProcess(proc: Handle, exitStatus: &u32) -> bool;
+    @extern("GetLastError") func GetLastError() -> u32;
+    @extern("GetFileTime") func GetFileTime(
+        hFile: Handle,
+        lpCreationTime: &FileTime,
+        lpLastAccessTime: &FileTime,
+        lpLastWriteTime: &FileTime
+    ) -> bool;
+    @extern("LoadLibraryA") func LoadLibraryA(lpLibFileName: &char) -> Handle;
+    @extern("FreeLibrary") func FreeLibrary(hLibModule: Handle) -> bool;
+    @extern("GetProcAddress") func GetProcAddress(handle: Handle, name: &char) -> Handle;
+    @extern("VirtualAlloc") func VirtualAlloc(idk: Any, bytes: usize, flags: u32, pFlags: u32) -> Any;
+    @extern("VirtualFree") func VirtualFree(address: Any, bytes: usize, flags: u32) -> bool;
+    @extern("GetModuleFileNameA") func GetModuleFileNameA(hModule: Handle, lpFileName: &char, nSize: u32) -> u32;
+    // REVIEW: Why does this function not exist in kernel32, according to radlink?
+    // @extern("FormatMessage") func FormatMessage(dwFlags: u32, lpSource: &char, dwMessageId: u32, dwLanguageId: u32, lpBuffer: &&char, nSize: u32, ...) -> u32;
+}

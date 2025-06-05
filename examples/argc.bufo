@@ -3,7 +3,7 @@ import "libc.bufo";
 
 func main(argc: i32, argv: &&char) -> i32 {
     for (let i: usize = 0; i < argc as usize; i = i + 1) {
-        printf("%s\n", argv[i]);
+        C::printf("%s\n", argv[i]);
     }
     return 0;
 }

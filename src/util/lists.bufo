@@ -179,7 +179,7 @@ func push(this: &TypeList, element: &Type) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof &Type);
+        this.elements = C::realloc(this.elements, newCap * sizeof &Type);
         assert(this.elements != null, "Could not allocate memory in TypeList.push");
         this.capacity = newCap;
     }
@@ -195,7 +195,7 @@ func push(this: &ParsedExprList, element: &ParsedExpr) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof &ParsedExpr);
+        this.elements = C::realloc(this.elements, newCap * sizeof &ParsedExpr);
         assert(this.elements != null, "Could not allocate memory in ParsedExprList.push");
         this.capacity = newCap;
     }
@@ -211,7 +211,7 @@ func push(this: &ParsedStmtList, element: &ParsedStmt) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof &ParsedStmt);
+        this.elements = C::realloc(this.elements, newCap * sizeof &ParsedStmt);
         assert(this.elements != null, "Could not allocate memory in ParsedStmtList.push");
         this.capacity = newCap;
     }
@@ -228,7 +228,7 @@ func push(this: &ParsedPatternList, element: &ParsedPattern) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof &ParsedPattern);
+        this.elements = C::realloc(this.elements, newCap * sizeof &ParsedPattern);
         assert(this.elements != null, "Could not allocate memory in ParsedPatternList.push");
         this.capacity = newCap;
     }
@@ -245,7 +245,7 @@ func push(this: &UnionVariantLookupList, element: UnionVariantLookup) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof UnionVariantLookup);
+        this.elements = C::realloc(this.elements, newCap * sizeof UnionVariantLookup);
         assert(this.elements != null, "Could not allocate memory in UnionVariantLookupList.push");
         this.capacity = newCap;
     }
@@ -271,7 +271,7 @@ func push(this: &UnionLookupList, element: UnionLookup) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof UnionLookup);
+        this.elements = C::realloc(this.elements, newCap * sizeof UnionLookup);
         assert(this.elements != null, "Could not allocate memory in UnionLookupList.push");
         this.capacity = newCap;
     }
@@ -309,7 +309,7 @@ func push(this: &ParsedUnionVariantList, element: &ParsedUnionVariant) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof &ParsedUnionVariant);
+        this.elements = C::realloc(this.elements, newCap * sizeof &ParsedUnionVariant);
         assert(this.elements != null, "Could not allocate memory in ParsedUnionVariantList.push");
         this.capacity = newCap;
     }
@@ -325,7 +325,7 @@ func push(this: &ParsedTypeNodeList, element: &ParsedTypeNode) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof &ParsedTypeNode);
+        this.elements = C::realloc(this.elements, newCap * sizeof &ParsedTypeNode);
         assert(this.elements != null, "Could not allocate memory in ParsedTypeNodeList.push");
         this.capacity = newCap;
     }
@@ -341,7 +341,7 @@ func push(this: &TokenList, element: Token) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof Token);
+        this.elements = C::realloc(this.elements, newCap * sizeof Token);
         assert(this.elements != null, "Could not allocate memory in TokenList.push");
         this.capacity = newCap;
     }
@@ -357,7 +357,7 @@ func push(this: &ConfigList, element: Config) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof Config);
+        this.elements = C::realloc(this.elements, newCap * sizeof Config);
         assert(this.elements != null, "Could not allocate memory in ConfigList.push");
         this.capacity = newCap;
     }
@@ -368,7 +368,7 @@ func push(this: &ModuleLookupList, element: ModuleLookup) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof ModuleLookup);
+        this.elements = C::realloc(this.elements, newCap * sizeof ModuleLookup);
         assert(this.elements != null, "Could not allocate memory in ModuleLookupList.push");
         this.capacity = newCap;
     }
@@ -400,8 +400,8 @@ func last(this: &ModuleLookupList) -> &ModuleLookup {
 }
 
 func initBlank(this: &ParsedAttributeList, newCap: usize) {
-    if (this.elements != null) free(this.elements);
-    this.elements = calloc(newCap, sizeof ParsedAttribute);
+    if (this.elements != null) C::free(this.elements);
+    this.elements = C::calloc(newCap, sizeof ParsedAttribute);
     assert(this.elements != null, "Could not allocate memory in ParsedAttributeList.initBlank");
     this.capacity = newCap;
     this.length = newCap;
@@ -411,7 +411,7 @@ func push(this: &ParsedAttributeList, element: ParsedAttribute) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof ParsedAttribute);
+        this.elements = C::realloc(this.elements, newCap * sizeof ParsedAttribute);
         assert(this.elements != null, "Could not allocate memory in ParsedAttributeList.push");
         this.capacity = newCap;
     }
@@ -453,7 +453,7 @@ func extend(this: &ParsedAttributeList, other: &ParsedAttributeList) {
 }
 
 func drop(this: &ParsedAttributeList) {
-    free(this.elements);
+    C::free(this.elements);
     this.elements = null;
     this.length = 0;
     this.capacity = 0;
@@ -464,8 +464,8 @@ func clear(this: &ParsedAttributeList) {
 }
 
 func initBlank(this: &FunctionLookupList, newCap: usize) {
-    if (this.elements != null) free(this.elements);
-    this.elements = calloc(newCap, sizeof FunctionLookup);
+    if (this.elements != null) C::free(this.elements);
+    this.elements = C::calloc(newCap, sizeof FunctionLookup);
     assert(this.elements != null, "Could not allocate memory in FunctionLookupList.initBlank");
     this.capacity = newCap;
     this.length = newCap;
@@ -475,7 +475,7 @@ func push(this: &FunctionLookupList, element: FunctionLookup) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof FunctionLookup);
+        this.elements = C::realloc(this.elements, newCap * sizeof FunctionLookup);
         assert(this.elements != null, "Could not allocate memory in FunctionLookupList.push");
         this.capacity = newCap;
     }
@@ -517,7 +517,7 @@ func extend(this: &FunctionLookupList, other: &FunctionLookupList) {
 }
 
 func drop(this: &FunctionLookupList) {
-    free(this.elements);
+    C::free(this.elements);
     this.elements = null;
     this.length = 0;
     this.capacity = 0;
@@ -528,8 +528,8 @@ func clear(this: &FunctionLookupList) {
 }
 
 func initBlank(this: &StructLookupList, newCap: usize) {
-    if (this.elements != null) free(this.elements);
-    this.elements = calloc(newCap, sizeof StructLookup);
+    if (this.elements != null) C::free(this.elements);
+    this.elements = C::calloc(newCap, sizeof StructLookup);
     assert(this.elements != null, "Could not allocate memory in StructLookupList.initBlank");
     this.capacity = newCap;
     this.length = newCap;
@@ -539,7 +539,7 @@ func push(this: &StructLookupList, element: StructLookup) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof StructLookup);
+        this.elements = C::realloc(this.elements, newCap * sizeof StructLookup);
         assert(this.elements != null, "Could not allocate memory in StructLookupList.push");
         this.capacity = newCap;
     }
@@ -581,7 +581,7 @@ func extend(this: &StructLookupList, other: &StructLookupList) {
 }
 
 func drop(this: &StructLookupList) {
-    free(this.elements);
+    C::free(this.elements);
     this.elements = null;
     this.length = 0;
     this.capacity = 0;
@@ -592,8 +592,8 @@ func clear(this: &StructLookupList) {
 }
 
 func initBlank(this: &ScopeLookupList, newCap: usize) {
-    if (this.elements != null) free(this.elements);
-    this.elements = calloc(newCap, sizeof ScopeLookup);
+    if (this.elements != null) C::free(this.elements);
+    this.elements = C::calloc(newCap, sizeof ScopeLookup);
     assert(this.elements != null, "Could not allocate memory in ScopeLookupList.initBlank");
     this.capacity = newCap;
     this.length = newCap;
@@ -603,7 +603,7 @@ func push(this: &ScopeLookupList, element: ScopeLookup) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof ScopeLookup);
+        this.elements = C::realloc(this.elements, newCap * sizeof ScopeLookup);
         assert(this.elements != null, "Could not allocate memory in ScopeLookupList.push");
         this.capacity = newCap;
     }
@@ -645,7 +645,7 @@ func extend(this: &ScopeLookupList, other: &ScopeLookupList) {
 }
 
 func drop(this: &ScopeLookupList) {
-    free(this.elements);
+    C::free(this.elements);
     this.elements = null;
     this.length = 0;
     this.capacity = 0;
@@ -656,8 +656,8 @@ func clear(this: &ScopeLookupList) {
 }
 
 func initBlank(this: &TypeLookupList, newCap: usize) {
-    if (this.elements != null) free(this.elements);
-    this.elements = calloc(newCap, sizeof TypeLookup);
+    if (this.elements != null) C::free(this.elements);
+    this.elements = C::calloc(newCap, sizeof TypeLookup);
     assert(this.elements != null, "Could not allocate memory in TypeLookupList.initBlank");
     this.capacity = newCap;
     this.length = newCap;
@@ -667,7 +667,7 @@ func push(this: &TypeLookupList, element: TypeLookup) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof TypeLookup);
+        this.elements = C::realloc(this.elements, newCap * sizeof TypeLookup);
         assert(this.elements != null, "Could not allocate memory in TypeLookupList.push");
         this.capacity = newCap;
     }
@@ -709,7 +709,7 @@ func extend(this: &TypeLookupList, other: &TypeLookupList) {
 }
 
 func drop(this: &TypeLookupList) {
-    free(this.elements);
+    C::free(this.elements);
     this.elements = null;
     this.length = 0;
     this.capacity = 0;
@@ -720,8 +720,8 @@ func clear(this: &TypeLookupList) {
 }
 
 func initBlank(this: &VariableLookupList, newCap: usize) {
-    if (this.elements != null) free(this.elements);
-    this.elements = calloc(newCap, sizeof VariableLookup);
+    if (this.elements != null) C::free(this.elements);
+    this.elements = C::calloc(newCap, sizeof VariableLookup);
     assert(this.elements != null, "Could not allocate memory in VariableLookupList.initBlank");
     this.capacity = newCap;
     this.length = newCap;
@@ -731,7 +731,7 @@ func push(this: &VariableLookupList, element: VariableLookup) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof VariableLookup);
+        this.elements = C::realloc(this.elements, newCap * sizeof VariableLookup);
         assert(this.elements != null, "Could not allocate memory in VariableLookupList.push");
         this.capacity = newCap;
     }
@@ -773,7 +773,7 @@ func extend(this: &VariableLookupList, other: &VariableLookupList) {
 }
 
 func drop(this: &VariableLookupList) {
-    free(this.elements);
+    C::free(this.elements);
     this.elements = null;
     this.length = 0;
     this.capacity = 0;
@@ -784,8 +784,8 @@ func clear(this: &VariableLookupList) {
 }
 
 func initBlank(this: &ImportLookupList, newCap: usize) {
-    if (this.elements != null) free(this.elements);
-    this.elements = calloc(newCap, sizeof ImportLookup);
+    if (this.elements != null) C::free(this.elements);
+    this.elements = C::calloc(newCap, sizeof ImportLookup);
     assert(this.elements != null, "Could not allocate memory in ImportLookupList.initBlank");
     this.capacity = newCap;
     this.length = newCap;
@@ -795,7 +795,7 @@ func push(this: &ImportLookupList, element: ImportLookup) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof ImportLookup);
+        this.elements = C::realloc(this.elements, newCap * sizeof ImportLookup);
         assert(this.elements != null, "Could not allocate memory in ImportLookupList.push");
         this.capacity = newCap;
     }
@@ -837,7 +837,7 @@ func extend(this: &ImportLookupList, other: &ImportLookupList) {
 }
 
 func drop(this: &ImportLookupList) {
-    free(this.elements);
+    C::free(this.elements);
     this.elements = null;
     this.length = 0;
     this.capacity = 0;
@@ -848,8 +848,8 @@ func clear(this: &ImportLookupList) {
 }
 
 func initBlank(this: &TCStateList, newCap: usize) {
-    if (this.elements != null) free(this.elements);
-    this.elements = calloc(newCap, sizeof TCState);
+    if (this.elements != null) C::free(this.elements);
+    this.elements = C::calloc(newCap, sizeof TCState);
     assert(this.elements != null, "Could not allocate memory in TCStateList.initBlank");
     this.capacity = newCap;
     this.length = newCap;
@@ -859,7 +859,7 @@ func push(this: &TCStateList, element: TCState) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof TCState);
+        this.elements = C::realloc(this.elements, newCap * sizeof TCState);
         assert(this.elements != null, "Could not allocate memory in TCStateList.push");
         this.capacity = newCap;
     }
@@ -901,7 +901,7 @@ func extend(this: &TCStateList, other: &TCStateList) {
 }
 
 func drop(this: &TCStateList) {
-    free(this.elements);
+    C::free(this.elements);
     this.elements = null;
     this.length = 0;
     this.capacity = 0;
@@ -912,8 +912,8 @@ func clear(this: &TCStateList) {
 }
 
 func initBlank(this: &RegIndexList, newCap: usize) {
-    if (this.elements != null) free(this.elements);
-    this.elements = calloc(newCap, sizeof RegIndex);
+    if (this.elements != null) C::free(this.elements);
+    this.elements = C::calloc(newCap, sizeof RegIndex);
     assert(this.elements != null, "Could not allocate memory in RegIndexList.initBlank");
     this.capacity = newCap;
     this.length = newCap;
@@ -923,7 +923,7 @@ func push(this: &RegIndexList, element: RegIndex) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof RegIndex);
+        this.elements = C::realloc(this.elements, newCap * sizeof RegIndex);
         assert(this.elements != null, "Could not allocate memory in RegIndexList.push");
         this.capacity = newCap;
     }
@@ -965,7 +965,7 @@ func extend(this: &RegIndexList, other: &RegIndexList) {
 }
 
 func drop(this: &RegIndexList) {
-    free(this.elements);
+    C::free(this.elements);
     this.elements = null;
     this.length = 0;
     this.capacity = 0;
@@ -976,8 +976,8 @@ func clear(this: &RegIndexList) {
 }
 
 func initBlank(this: &IRInstrList, newCap: usize) {
-    if (this.elements != null) free(this.elements);
-    this.elements = calloc(newCap, sizeof IRInstr);
+    if (this.elements != null) C::free(this.elements);
+    this.elements = C::calloc(newCap, sizeof IRInstr);
     assert(this.elements != null, "Could not allocate memory in IRInstrList.initBlank");
     this.capacity = newCap;
     this.length = newCap;
@@ -987,7 +987,7 @@ func push(this: &IRInstrList, element: IRInstr) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof IRInstr);
+        this.elements = C::realloc(this.elements, newCap * sizeof IRInstr);
         assert(this.elements != null, "Could not allocate memory in IRInstrList.push");
         this.capacity = newCap;
     }
@@ -1029,7 +1029,7 @@ func extend(this: &IRInstrList, other: &IRInstrList) {
 }
 
 func drop(this: &IRInstrList) {
-    free(this.elements);
+    C::free(this.elements);
     this.elements = null;
     this.length = 0;
     this.capacity = 0;
@@ -1040,8 +1040,8 @@ func clear(this: &IRInstrList) {
 }
 
 func initBlank(this: &IRScopeList, newCap: usize) {
-    if (this.elements != null) free(this.elements);
-    this.elements = calloc(newCap, sizeof IRScope);
+    if (this.elements != null) C::free(this.elements);
+    this.elements = C::calloc(newCap, sizeof IRScope);
     assert(this.elements != null, "Could not allocate memory in IRScopeList.initBlank");
     this.capacity = newCap;
     this.length = newCap;
@@ -1051,7 +1051,7 @@ func push(this: &IRScopeList, element: IRScope) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof IRScope);
+        this.elements = C::realloc(this.elements, newCap * sizeof IRScope);
         assert(this.elements != null, "Could not allocate memory in IRScopeList.push");
         this.capacity = newCap;
     }
@@ -1093,7 +1093,7 @@ func extend(this: &IRScopeList, other: &IRScopeList) {
 }
 
 func drop(this: &IRScopeList) {
-    free(this.elements);
+    C::free(this.elements);
     this.elements = null;
     this.length = 0;
     this.capacity = 0;
@@ -1104,8 +1104,8 @@ func clear(this: &IRScopeList) {
 }
 
 func initBlank(this: &IRRegList, newCap: usize) {
-    if (this.elements != null) free(this.elements);
-    this.elements = calloc(newCap, sizeof IRReg);
+    if (this.elements != null) C::free(this.elements);
+    this.elements = C::calloc(newCap, sizeof IRReg);
     assert(this.elements != null, "Could not allocate memory in IRRegList.initBlank");
     this.capacity = newCap;
     this.length = newCap;
@@ -1115,7 +1115,7 @@ func push(this: &IRRegList, element: IRReg) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof IRReg);
+        this.elements = C::realloc(this.elements, newCap * sizeof IRReg);
         assert(this.elements != null, "Could not allocate memory in IRRegList.push");
         this.capacity = newCap;
     }
@@ -1157,7 +1157,7 @@ func extend(this: &IRRegList, other: &IRRegList) {
 }
 
 func drop(this: &IRRegList) {
-    free(this.elements);
+    C::free(this.elements);
     this.elements = null;
     this.length = 0;
     this.capacity = 0;
@@ -1168,8 +1168,8 @@ func clear(this: &IRRegList) {
 }
 
 func initBlank(this: &IRBlockList, newCap: usize) {
-    if (this.elements != null) free(this.elements);
-    this.elements = calloc(newCap, sizeof IRBlock);
+    if (this.elements != null) C::free(this.elements);
+    this.elements = C::calloc(newCap, sizeof IRBlock);
     assert(this.elements != null, "Could not allocate memory in IRBlockList.initBlank");
     this.capacity = newCap;
     this.length = newCap;
@@ -1179,7 +1179,7 @@ func push(this: &IRBlockList, element: IRBlock) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof IRBlock);
+        this.elements = C::realloc(this.elements, newCap * sizeof IRBlock);
         assert(this.elements != null, "Could not allocate memory in IRBlockList.push");
         this.capacity = newCap;
     }
@@ -1221,7 +1221,7 @@ func extend(this: &IRBlockList, other: &IRBlockList) {
 }
 
 func drop(this: &IRBlockList) {
-    free(this.elements);
+    C::free(this.elements);
     this.elements = null;
     this.length = 0;
     this.capacity = 0;
@@ -1232,8 +1232,8 @@ func clear(this: &IRBlockList) {
 }
 
 func initBlank(this: &LoopBlockList, newCap: usize) {
-    if (this.elements != null) free(this.elements);
-    this.elements = calloc(newCap, sizeof LoopBlock);
+    if (this.elements != null) C::free(this.elements);
+    this.elements = C::calloc(newCap, sizeof LoopBlock);
     assert(this.elements != null, "Could not allocate memory in LoopBlockList.initBlank");
     this.capacity = newCap;
     this.length = newCap;
@@ -1243,7 +1243,7 @@ func push(this: &LoopBlockList, element: LoopBlock) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof LoopBlock);
+        this.elements = C::realloc(this.elements, newCap * sizeof LoopBlock);
         assert(this.elements != null, "Could not allocate memory in LoopBlockList.push");
         this.capacity = newCap;
     }
@@ -1285,7 +1285,7 @@ func extend(this: &LoopBlockList, other: &LoopBlockList) {
 }
 
 func drop(this: &LoopBlockList) {
-    free(this.elements);
+    C::free(this.elements);
     this.elements = null;
     this.length = 0;
     this.capacity = 0;
@@ -1296,8 +1296,8 @@ func clear(this: &LoopBlockList) {
 }
 
 func initBlank(this: &IRScopeEntryList, newCap: usize) {
-    if (this.elements != null) free(this.elements);
-    this.elements = calloc(newCap, sizeof IRScopeEntry);
+    if (this.elements != null) C::free(this.elements);
+    this.elements = C::calloc(newCap, sizeof IRScopeEntry);
     assert(this.elements != null, "Could not allocate memory in IRScopeEntryList.initBlank");
     this.capacity = newCap;
     this.length = newCap;
@@ -1307,7 +1307,7 @@ func push(this: &IRScopeEntryList, element: IRScopeEntry) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof IRScopeEntry);
+        this.elements = C::realloc(this.elements, newCap * sizeof IRScopeEntry);
         assert(this.elements != null, "Could not allocate memory in IRScopeEntryList.push");
         this.capacity = newCap;
     }
@@ -1349,7 +1349,7 @@ func extend(this: &IRScopeEntryList, other: &IRScopeEntryList) {
 }
 
 func drop(this: &IRScopeEntryList) {
-    free(this.elements);
+    C::free(this.elements);
     this.elements = null;
     this.length = 0;
     this.capacity = 0;
@@ -1360,8 +1360,8 @@ func clear(this: &IRScopeEntryList) {
 }
 
 func initBlank(this: &IRFuncList, newCap: usize) {
-    if (this.elements != null) free(this.elements);
-    this.elements = calloc(newCap, sizeof IRFunc);
+    if (this.elements != null) C::free(this.elements);
+    this.elements = C::calloc(newCap, sizeof IRFunc);
     assert(this.elements != null, "Could not allocate memory in IRFuncList.initBlank");
     this.capacity = newCap;
     this.length = newCap;
@@ -1371,7 +1371,7 @@ func push(this: &IRFuncList, element: IRFunc) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof IRFunc);
+        this.elements = C::realloc(this.elements, newCap * sizeof IRFunc);
         assert(this.elements != null, "Could not allocate memory in IRFuncList.push");
         this.capacity = newCap;
     }
@@ -1413,7 +1413,7 @@ func extend(this: &IRFuncList, other: &IRFuncList) {
 }
 
 func drop(this: &IRFuncList) {
-    free(this.elements);
+    C::free(this.elements);
     this.elements = null;
     this.length = 0;
     this.capacity = 0;
@@ -1424,8 +1424,8 @@ func clear(this: &IRFuncList) {
 }
 
 func initBlank(this: &LLVMTypeList, newCap: usize) {
-    if (this.elements != null) free(this.elements);
-    this.elements = calloc(newCap, sizeof LLVMType);
+    if (this.elements != null) C::free(this.elements);
+    this.elements = C::calloc(newCap, sizeof LLVMType);
     assert(this.elements != null, "Could not allocate memory in LLVMTypeList.initBlank");
     this.capacity = newCap;
     this.length = newCap;
@@ -1435,7 +1435,7 @@ func push(this: &LLVMTypeList, element: LLVMType) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof LLVMType);
+        this.elements = C::realloc(this.elements, newCap * sizeof LLVMType);
         assert(this.elements != null, "Could not allocate memory in LLVMTypeList.push");
         this.capacity = newCap;
     }
@@ -1477,7 +1477,7 @@ func extend(this: &LLVMTypeList, other: &LLVMTypeList) {
 }
 
 func drop(this: &LLVMTypeList) {
-    free(this.elements);
+    C::free(this.elements);
     this.elements = null;
     this.length = 0;
     this.capacity = 0;
@@ -1488,8 +1488,8 @@ func clear(this: &LLVMTypeList) {
 }
 
 func initBlank(this: &RegValueList, newCap: usize) {
-    if (this.elements != null) free(this.elements);
-    this.elements = calloc(newCap, sizeof RegValue);
+    if (this.elements != null) C::free(this.elements);
+    this.elements = C::calloc(newCap, sizeof RegValue);
     assert(this.elements != null, "Could not allocate memory in RegValueList.initBlank");
     this.capacity = newCap;
     this.length = newCap;
@@ -1499,7 +1499,7 @@ func push(this: &RegValueList, element: RegValue) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof RegValue);
+        this.elements = C::realloc(this.elements, newCap * sizeof RegValue);
         assert(this.elements != null, "Could not allocate memory in RegValueList.push");
         this.capacity = newCap;
     }
@@ -1541,7 +1541,7 @@ func extend(this: &RegValueList, other: &RegValueList) {
 }
 
 func drop(this: &RegValueList) {
-    free(this.elements);
+    C::free(this.elements);
     this.elements = null;
     this.length = 0;
     this.capacity = 0;
@@ -1552,8 +1552,8 @@ func clear(this: &RegValueList) {
 }
 
 func initBlank(this: &LLVMBasicBlockList, newCap: usize) {
-    if (this.elements != null) free(this.elements);
-    this.elements = calloc(newCap, sizeof LLVMBasicBlock);
+    if (this.elements != null) C::free(this.elements);
+    this.elements = C::calloc(newCap, sizeof LLVMBasicBlock);
     assert(this.elements != null, "Could not allocate memory in LLVMBasicBlockList.initBlank");
     this.capacity = newCap;
     this.length = newCap;
@@ -1563,7 +1563,7 @@ func push(this: &LLVMBasicBlockList, element: LLVMBasicBlock) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof LLVMBasicBlock);
+        this.elements = C::realloc(this.elements, newCap * sizeof LLVMBasicBlock);
         assert(this.elements != null, "Could not allocate memory in LLVMBasicBlockList.push");
         this.capacity = newCap;
     }
@@ -1605,7 +1605,7 @@ func extend(this: &LLVMBasicBlockList, other: &LLVMBasicBlockList) {
 }
 
 func drop(this: &LLVMBasicBlockList) {
-    free(this.elements);
+    C::free(this.elements);
     this.elements = null;
     this.length = 0;
     this.capacity = 0;
@@ -1616,8 +1616,8 @@ func clear(this: &LLVMBasicBlockList) {
 }
 
 func initBlank(this: &LLVMValueList, newCap: usize) {
-    if (this.elements != null) free(this.elements);
-    this.elements = calloc(newCap, sizeof LLVMValue);
+    if (this.elements != null) C::free(this.elements);
+    this.elements = C::calloc(newCap, sizeof LLVMValue);
     assert(this.elements != null, "Could not allocate memory in LLVMValueList.initBlank");
     this.capacity = newCap;
     this.length = newCap;
@@ -1627,7 +1627,7 @@ func push(this: &LLVMValueList, element: LLVMValue) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof LLVMValue);
+        this.elements = C::realloc(this.elements, newCap * sizeof LLVMValue);
         assert(this.elements != null, "Could not allocate memory in LLVMValueList.push");
         this.capacity = newCap;
     }
@@ -1669,7 +1669,7 @@ func extend(this: &LLVMValueList, other: &LLVMValueList) {
 }
 
 func drop(this: &LLVMValueList) {
-    free(this.elements);
+    C::free(this.elements);
     this.elements = null;
     this.length = 0;
     this.capacity = 0;
@@ -1683,7 +1683,7 @@ func push(this: &UsizeList, element: usize) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
-        this.elements = realloc(this.elements, newCap * sizeof usize);
+        this.elements = C::realloc(this.elements, newCap * sizeof usize);
         assert(this.elements != null, "Could not allocate memory in UsizeList.push");
         this.capacity = newCap;
     }

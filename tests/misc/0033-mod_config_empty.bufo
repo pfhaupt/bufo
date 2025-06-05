@@ -3,12 +3,12 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Value for config option `library` can't be empty.
+//! Value for config option `static` can't be empty.
 //! Value for config option `libpath` can't be empty.
 
 module test {
     config {
-        library: "",
+        static: "",
         libpath: "",
     }
 }

@@ -22,7 +22,7 @@ func addElement(this: &ArrayContext, elem: &ParsedExpr) {
     if (this.elemLength >= this.elemCapacity) {
         let newCap: usize = this.elemCapacity * 2;
         if (newCap == 0) newCap = 1;
-        this.elemList = realloc(this.elemList, newCap * sizeof usize);
+        this.elemList = C::realloc(this.elemList, newCap * sizeof usize);
         assert(this.elemList != null, "Could not resize elem list");
         this.elemCapacity = newCap;
     }
@@ -46,8 +46,8 @@ func addField(this: &StructContext, name: Token, typ: &ParsedTypeNode) {
     if (this.fieldLength >= this.fieldCapacity) {
         let newCap: usize = this.fieldCapacity * 2;
         if (newCap == 0) newCap = 1;
-        this.fieldNames = realloc(this.fieldNames, newCap * sizeof Token);
-        this.fieldTypes = realloc(this.fieldTypes, newCap * sizeof usize);
+        this.fieldNames = C::realloc(this.fieldNames, newCap * sizeof Token);
+        this.fieldTypes = C::realloc(this.fieldTypes, newCap * sizeof usize);
         assert(this.fieldNames != null, "Could not resize field list");
         assert(this.fieldTypes != null, "Could not resize field list");
         this.fieldCapacity = newCap;
@@ -103,8 +103,8 @@ func addField(this: &StructInitContext, name: Token, expr: &ParsedExpr) {
     if (this.fieldLength >= this.fieldCapacity) {
         let newCap: usize = this.fieldCapacity * 2;
         if (newCap == 0) newCap = 1;
-        this.fieldNames = realloc(this.fieldNames, newCap * sizeof Token);
-        this.fieldExprs = realloc(this.fieldExprs, newCap * sizeof usize);
+        this.fieldNames = C::realloc(this.fieldNames, newCap * sizeof Token);
+        this.fieldExprs = C::realloc(this.fieldExprs, newCap * sizeof usize);
         assert(this.fieldNames != null, "Could not resize field list");
         assert(this.fieldExprs != null, "Could not resize field list");
         this.fieldCapacity = newCap;
@@ -136,8 +136,8 @@ func addParameter(this: &ParamContext, name: Token, typ: &ParsedTypeNode) {
     if (this.paramLength >= this.paramCapacity) {
         let newCap: usize = this.paramCapacity * 2;
         if (newCap == 0) newCap = 1;
-        this.paramNames = realloc(this.paramNames, newCap * sizeof Token);
-        this.paramTypes = realloc(this.paramTypes, newCap * sizeof usize);
+        this.paramNames = C::realloc(this.paramNames, newCap * sizeof Token);
+        this.paramTypes = C::realloc(this.paramTypes, newCap * sizeof usize);
         assert(this.paramNames != null, "Could not resize param list");
         assert(this.paramTypes != null, "Could not resize param list");
         this.paramCapacity = newCap;

@@ -98,7 +98,7 @@ struct Token {
 }
 
 func print(this: &Token) {
-    printf("kind=%llu, content=", this.kind);
+    C::printf("kind=%llu, content=", this.kind);
     print(&this.content);
 }
 func getLocation(this: &Token) -> String {

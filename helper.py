@@ -20,6 +20,8 @@ FAIL: str = format_red("FAIL")
 IGNORE: str = format_yellow("IGNORE")
 PASS: str = format_green("PASS")
 
+BUFO_CC = "./bufo.exe" if sys.platform == "win32" else "./bufo_linux"
+
 def compare(expected: List[str], actual: List[str]) -> bool:
     for line in expected:
         inside = False
@@ -157,7 +159,7 @@ def run_test(
             return TestResult(path, STATE.SUCCESS)
 
         filename = "./{}.exe".format(path.replace(os.sep, "."))
-        output = call_cmd(["./bufo.exe", path, "-o", filename, "-v", "--warn-all"])
+        output = call_cmd([BUFO_CC, path, "-o", filename, "-v", "--warn-all"])
         stdout = output.stdout.decode("utf-8").split('\n')
         stderr = output.stderr.decode("utf-8").split('\n')
         if point_of_failure == "RUNTIME":
@@ -217,12 +219,11 @@ def run_test(
 
 def recompile_compiler(stage: int) -> None:
     print(f"Recompiling compiler stage {stage}...")
-    cmd = call_cmd(["./bufo.exe", "./src/bufo.bufo", "-o", "bufo1.exe"])
+    cmd = call_cmd(["make", "-B", f"BUFO_CC={BUFO_CC}"])
     if cmd.returncode != 0:
         print("Failed to recompile compiler", file=sys.stderr)
         print(cmd.stderr.decode("utf-8"), file=sys.stderr)
         sys.exit(1)
-    call_cmd(["mv", "bufo1.exe", "bufo.exe"])
     print("Recompilation successful")
 
 def run_all_tests(

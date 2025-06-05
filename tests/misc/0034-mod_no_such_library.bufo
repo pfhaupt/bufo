@@ -10,7 +10,7 @@
 
 module test {
     config {
-        library: "asdaslkdasd",
+        dynamic: "asdaslkdasd",
     }
     @extern("something") func something();
 }

@@ -9,5 +9,5 @@ import "./import_showcase/2.bufo";
 import "libc.bufo";
 
 func showcase1() {
-    printf("Hello from the other file!\n");
+    C::printf("Hello from the other file!\n");
 }

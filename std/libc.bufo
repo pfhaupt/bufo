@@ -1,39 +1,51 @@
-@os(WINDOWS) @extern("_fdopen") func fdopen(fd: i32, mode: &char) -> Any;
-@os(WINDOWS) @extern("_fullpath") func _fullpath(absPath: &char, relPath: &char, maxLength: i32) -> &char;
+module C {
+    @os(WINDOWS) config {
+        dynamic: "msvcrt.dll",
+        static: "msvcrt.lib",
+        libpath: "C:/Windows/System32",
+        linker: "/DEFAULTLIB:legacy_stdio_definitions", // printf and the like
+    }
+    @os(LINUX) config {
+        dynamic: "libc.so.6",
+        libpath: "/lib/x86_64-linux-gnu/",
+    }
+    @os(WINDOWS) @extern("_fdopen") func fdopen(fd: i32, mode: &char) -> Any;
+    @os(WINDOWS) @extern("_snprintf") func snprintf(buffer: Any, size: usize, format: &char, ...) -> usize;
+    @os(WINDOWS) @extern("_fullpath") func _fullpath(absPath: &char, relPath: &char, maxLength: i32) -> &char;
 
-@os(LINUX) @extern("fdopen") func fdopen(fd: i32, mode: &char) -> Any;
-@os(LINUX) @extern("realpath") func realpath(path: &char, res: &char) -> &char;
+    @os(LINUX) @extern("fdopen") func fdopen(fd: i32, mode: &char) -> Any;
+    @os(LINUX) @extern("snprintf") func snprintf(buffer: Any, size: usize, format: &char, ...) -> usize;
+    @os(LINUX) @extern("realpath") func realpath(path: &char, res: &char) -> &char;
 
-// Strings
-@extern("strlen") func strlen(string: &char) -> usize;
-@extern("strcmp") func strcmp(s1: &char, s2: &char) -> i32;
-@extern("strncmp") func strncmp(s1: &char, s2: &char, n: usize) -> i32;
-@extern("strchr") func strchr(s: &char, c: char) -> &char;
+    // Strings
+    @extern("strlen") func strlen(string: &char) -> usize;
+    @extern("strcmp") func strcmp(s1: &char, s2: &char) -> i32;
+    @extern("strncmp") func strncmp(s1: &char, s2: &char, n: usize) -> i32;
+    @extern("strchr") func strchr(s: &char, c: char) -> &char;
 
-// Memory
-@extern("malloc") func malloc(bytes: usize) -> Any;
-@extern("calloc") func calloc(num: usize, size: usize) -> Any;
-@extern("realloc") func realloc(ptr: Any, new_size: usize) -> Any;
-@extern("free") func free(ptr: Any);
-@extern("memcpy") func memcpy(dest: Any, src: Any, count: usize) -> Any;
-@extern("memcmp") func memcmp(lhs: Any, rhs: Any, count: usize) -> i32;
-@extern("memset") func memset(s: Any, b: i32, count: usize) -> Any;
+    // Memory
+    @extern("malloc") func malloc(bytes: usize) -> Any;
+    @extern("calloc") func calloc(num: usize, size: usize) -> Any;
+    @extern("realloc") func realloc(ptr: Any, new_size: usize) -> Any;
+    @extern("free") func free(ptr: Any);
+    @extern("memcpy") func memcpy(dest: Any, src: Any, count: usize) -> Any;
+    @extern("memcmp") func memcmp(lhs: Any, rhs: Any, count: usize) -> i32;
+    @extern("memset") func memset(s: Any, b: i32, count: usize) -> Any;
 
-// File IO
-@extern("fopen") func fopen(filename: &char, mode: &char) -> Any;
-@extern("fread") func fread(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
-@extern("fwrite") func fwrite(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
-@extern("fclose") func fclose(stream: Any) -> i32;
-@extern("fprintf") func fprintf(stream: Any, msg: &char, ...);
+    // File IO
+    @extern("fopen") func fopen(filename: &char, mode: &char) -> Any;
+    @extern("fread") func fread(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
+    @extern("fwrite") func fwrite(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
+    @extern("fclose") func fclose(stream: Any) -> i32;
+    @extern("fprintf") func fprintf(stream: Any, msg: &char, ...);
 
-@extern("snprintf") func snprintf(buffer: Any, size: usize, format: &char, ...) -> usize;
+    @extern("getenv") func getenv(name: &char) -> &char;
 
-@extern("getenv") func getenv(name: &char) -> &char;
+    // Console IO
+    @extern("printf") func printf(msg: &char, ...) -> usize;
+    @extern("putchar") func putchar(ch: char) -> char;
+    @extern("puts") func puts(s: &char) -> usize;
 
-// Console IO
-@extern("printf") func printf(msg: &char, ...) -> usize;
-@extern("putchar") func putchar(ch: char) -> char;
-@extern("puts") func puts(s: &char) -> usize;
-
-// Process Control
-@noreturn @extern("exit") func exit(code: i32);
+    // Process Control
+    @noreturn @extern("exit") func exit(code: i32);
+}
