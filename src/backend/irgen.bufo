@@ -1225,6 +1225,7 @@ func generateBytecodeStmt(this: &IRGen, function: &IRFunc, stmt: &ParsedStmt) {
             let after = leaveScope(function);
             assert(scope == after, "Scope imbalance in for-loop");
             setCurrentBlock(function, afterBlock);
+            popLoopBlocks(function);
         }
         &StmtData::Break => {
             if (!buildBreak(function, stmt.span)) {
