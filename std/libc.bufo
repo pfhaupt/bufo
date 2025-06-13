@@ -17,6 +17,7 @@ module C {
     @os(LINUX) @extern("snprintf") func snprintf(buffer: Any, size: usize, format: &char, ...) -> usize;
     @os(LINUX) @extern("realpath") func realpath(path: &char, res: &char) -> &char;
 
+    @extern("scanf") func scanf(fmt: &char, ...) -> i32;
     // Strings
     @extern("strlen") func strlen(string: &char) -> usize;
     @extern("strcmp") func strcmp(s1: &char, s2: &char) -> i32;
@@ -47,5 +48,6 @@ module C {
     @extern("puts") func puts(s: &char) -> usize;
 
     // Process Control
+    @noreturn @extern("abort") func abort();
     @noreturn @extern("exit") func exit(code: i32);
 }

@@ -81,7 +81,7 @@ func getTypeLookupForType(this: &Lookup, typ: &Type) -> TypeLookup {
     unreachable("Lookup.getTypeLookupForType got non-struct type");
 }
 
-func searchAllFilesForTypeName(this: &Lookup, name: &Token) -> TypeLookupList {
+func searchAllFilesForTypeName(this: &Lookup, name: &SubStr) -> TypeLookupList {
     trace("Lookup.searchAllFilesForTypeName");
     let list: TypeLookupList = blank;
     for (let i: usize = 0; i < this.files.length; i = i + 1) {
@@ -432,6 +432,13 @@ func resolveIdentifierByName(this: &ModuleLookup, name: &Token, var: &&VariableL
             return IDENT_TYPE;
         }
     }
+    for (let i: usize = 0; i < this.unions.length; i = i + 1) {
+        let u = at(&this.unions, i);
+        if (equals(&u.name.content, &name.content)) {
+            *typ = newTypeLookup(TYPE_LOOKUP_UNION, u);
+            return IDENT_TYPE;
+        }
+    }
     for (let i: usize = 0; i < this.functions.length; i = i + 1) {
         let f = at(&this.functions, i);
         if (equals(&f.name.content, &name.content)) {
@@ -462,7 +469,6 @@ func resolveModuleByName(this: &ModuleLookup, name: &Token, mod: &&ModuleLookup)
         checkParent: true,
     });
 }
-// TODO: Maybe use a struct instead of passing so many boolean values here
 func resolveModuleByName(this: &ModuleLookup, name: &Token, mod: &&ModuleLookup, c: MLConfig) -> bool {
     trace("ModuleLookup.resolveModuleByName");
     assert(this != null, "resolveModuleByName called with null-Lookup");
@@ -549,22 +555,22 @@ func resolveAllStructsWithField(this: &ModuleLookup, name: &Token, typ: &Type) -
     return list;
 }
 
-func resolveTypeByName(this: &ModuleLookup, name: &Token, typ: &TypeLookup) -> bool {
+func resolveTypeByName(this: &ModuleLookup, name: &SubStr, typ: &TypeLookup) -> bool {
     return resolveTypeByName(this, name, typ, true);
 }
-func resolveTypeByName(this: &ModuleLookup, name: &Token, typ: &TypeLookup, checkImport: bool) -> bool {
+func resolveTypeByName(this: &ModuleLookup, name: &SubStr, typ: &TypeLookup, checkImport: bool) -> bool {
     trace("ModuleLookup.resolveTypeByName");
     assert(this != null, "resolveTypeByName called with null-Lookup");
     for (let i: usize = 0; i < this.structs.length; i = i + 1) {
         let s: &StructLookup = at(&this.structs, i);
-        if (equals(&s.name.content, &name.content)) {
+        if (equals(&s.name.content, name)) {
             *typ = newTypeLookup(TYPE_LOOKUP_STRUCT, s);
             return true;
         }
     }
     for (let i: usize = 0; i < this.unions.length; i = i + 1) {
         let e: &UnionLookup = at(&this.unions, i);
-        if (equals(&e.name.content, &name.content)) {
+        if (equals(&e.name.content, name)) {
             *typ = newTypeLookup(TYPE_LOOKUP_UNION, e);
             return true;
         }
@@ -610,9 +616,14 @@ func resolveFunctionByName(this: &ModuleLookup, name: &Token, checkImport: bool)
 }
 
 func resolveAllFunctionsWithSignature(this: &ModuleLookup, name: &Token, typ: &Type) -> FunctionLookupList {
-    return resolveAllFunctionsWithSignature(this, name, typ, true);
+    return resolveAllFunctionsWithSignature(this, name, typ, MLConfig {
+        checkSelf: true,
+        checkImport: true,
+        checkModule: false,
+        checkParent: true,
+    });
 }
-func resolveAllFunctionsWithSignature(this: &ModuleLookup, name: &Token, typ: &Type, checkImport: bool) -> FunctionLookupList {
+func resolveAllFunctionsWithSignature(this: &ModuleLookup, name: &Token, typ: &Type, config: MLConfig) -> FunctionLookupList {
     trace("ModuleLookup.resolveAllFunctionsWithSignature");
     // FIXME: Would be cool if this method didn't create copies of the FunctionLookups
     let params1: TypeList = blank;
@@ -649,12 +660,24 @@ func resolveAllFunctionsWithSignature(this: &ModuleLookup, name: &Token, typ: &T
             _ => { unreachable(); }
         }
     }
-    if (checkImport) {
+    if (config.checkImport) {
         for (let i: usize = 0; i < this.imports.length; i = i + 1) {
             let imp = at(&this.globalLookup.files, at(&this.imports, i).fileID);
-            let _list = resolveAllFunctionsWithSignature(imp, name, typ, false);
+            let _list = resolveAllFunctionsWithSignature(imp, name, typ, MLConfig {
+                checkSelf: true,
+            });
             extend(&list, &_list);
         }
+    }
+    if (config.checkParent && this.parent != null) {
+        let parentMod = getModuleByGlobalID(this.globalLookup, getID(this.parent));
+        let fns = resolveAllFunctionsWithSignature(parentMod, name, typ, MLConfig {
+            checkSelf: true,
+            checkImport: true,
+            checkModule: false,
+            checkParent: true,
+        });
+        extend(&list, &fns);
     }
     return list;
 }

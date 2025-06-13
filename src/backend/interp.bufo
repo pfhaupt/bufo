@@ -1,6 +1,9 @@
 import "prelude.bufo";
 import "libc.bufo";
 import "string.bufo";
+import "substr.bufo";
+import "asm.bufo";
+import "../bufo.bufo";
 import "../util/span.bufo";
 import "../util/lists.bufo";
 import "../util/hashmaps.bufo";
@@ -10,18 +13,47 @@ import "../middleend/types.bufo";
 import "../middleend/checker.bufo";
 import "./irgen.bufo";
 import "./codegen_llvm.bufo";
+import "./assembler.bufo";
+import "./byte_buffer.bufo";
 
 @os(WINDOWS) import "winapi/structs.bufo";
 @os(WINDOWS) import "winapi/functions.bufo";
 
 @os(LINUX) import "posix/functions.bufo";
 
-struct InterpReg {
-    offset: usize;
-    size: usize;
+struct CallStackInfo {
+    span: Span;
+    name: String;
 }
-func equals(this: &InterpReg, other: &InterpReg) -> bool {
-    unreachable("InterpReg.equals is never called");
+struct CallStack {
+    elements: &CallStackInfo;
+    length: usize;
+    capacity: usize;
+}
+func push(this: &CallStack, element: CallStackInfo) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = C::realloc(this.elements, newCap * sizeof CallStackInfo);
+        assert(this.elements != null, "Could not allocate memory in CallStack.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+func at(this: &CallStack, index: usize) -> &CallStackInfo {
+    assert(index < this.length, "Out of bounds access in CallStack.at");
+    assert(this.elements != null, "Element pointer is NULL in CallStack.at");
+    return &this.elements[index];
+}
+func pop(this: &CallStack) -> &CallStackInfo {
+    let l: &CallStackInfo = last(this);
+    this.length = this.length - 1;
+    return l;
+}
+func last(this: &CallStack) -> &CallStackInfo {
+    assert(this.length != 0, "Called last() on empty CallStack");
+    return at(this, this.length - 1);
 }
 
 comptime REG_STACK_SIZE: usize = 16777216;
@@ -38,6 +70,7 @@ struct IRInterp {
     argStack: &u8;
     argStackLength: usize;
     argStackCapacity: usize;
+    callStack: CallStack;
 }
 func dumpRegisterStack(this: &IRInterp, bytes: usize) {
     let cols: usize = 4;
@@ -101,8 +134,8 @@ let instrFns = [
     evaluateAlloca,             // INSTR_ALLOCA
     evaluateGetParam,           // INSTR_GET_PARAM
     evaluateStore,              // INSTR_STORE
-    evaluateNotImplemented,
-    evaluateNotImplemented,
+    evaluateNotImplemented,     // INSTR_FETCH_GLOBAL_PTR
+    evaluateFetchGlobalValue,   // INSTR_FETCH_GLOBAL_VALUE
     evaluateFetchComptimeValue, // INSTR_FETCH_COMPTIME_VALUE
     evaluateLoadFunctionPtr,    // INSTR_LOAD_FUNCTION_PTR
     evaluateLoad,               // INSTR_LOAD
@@ -118,7 +151,7 @@ let instrFns = [
     evaluateLoadU16,            // INSTR_LOAD_U16
     evaluateLoadI32,            // INSTR_LOAD_I32
     evaluateLoadU32,            // INSTR_LOAD_U32
-    evaluateNotImplemented,
+    evaluateNotImplemented,     // INSTR_LOAD_I64
     evaluateLoadU64,            // INSTR_LOAD_U64
     evaluateLoadNull,           // INSTR_LOAD_NULL
     evaluateLoadF32,            // INSTR_LOAD_F32
@@ -151,15 +184,15 @@ let instrFns = [
     evaluateLogicalNot,         // INSTR_LOGICAL_NOT
     evaluateLogicalAnd,         // INSTR_LOGICAL_AND
     evaluateLogicalOr,          // INSTR_LOGICAL_OR
-    evaluateNotImplemented,
-    evaluateNotImplemented,
-    evaluateNotImplemented,
+    evaluateBitwiseAnd,         // INSTR_BITWISE_AND
+    evaluateBitwiseOr,          // INSTR_BITWISE_OR
+    evaluateNotImplemented,     // INSTR_BITWISE_XOR
     evaluateInsertValue,        // INSTR_INSERT_VALUE
-    evaluateNotImplemented,
-    evaluateNotImplemented,
-    evaluateNotImplemented,
+    evaluateIntSignExtend,      // INSTR_INT_SIGN_EXTEND
+    evaluateIntZeroExtend,      // INSTR_INT_ZERO_EXTEND
+    evaluateIntTruncate,        // INSTR_INT_TRUNCATE
     evaluateIntToF32,           // INSTR_INT_TO_F32
-    evaluateNotImplemented,
+    evaluateNotImplemented,     // INSTR_INT_TO_F64
     evaluateF32ToInt,           // INSTR_F32_TO_INT
     evaluateF64ToInt,           // INSTR_F64_TO_INT
     evaluateF32ToF64,           // INSTR_F32_TO_F64
@@ -170,14 +203,19 @@ let instrFns = [
     evaluatePtrToInt,           // INSTR_PTR_TO_INT
     evaluateIntToPtr,           // INSTR_INT_TO_PTR
     evaluateGetFieldPtr,        // INSTR_GET_FIELD_PTR
-    evaluateNotImplemented,     // INSTR_GET_ELEMENT_PTR
+    evaluateGetElementPtr,      // INSTR_GET_ELEMENT_PTR
     evaluateUnreachable,        // INSTR_UNREACHABLE
     evaluateUnterminated,       // INSTR_UNTERMINATED
     evaluateMemcpy,             // INSTR_MEMCPY
+    evaluateEmitAssembly,       // INSTR_EMIT_ASSEMBLY
+    evaluateIntoIRValue,        // INSTR_INTO_IR_VALUE
 ];
 func evaluateNotImplemented(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
-    C::printf("%s: ", toString(&instr.span).buffer);
+    dumpInstructions(irFunc);
+    let loc = toString(&instr.span);
+    C::printf("%s: ", loc.buffer);
     dump(instr);
+    dumpCallStack(this, &loc);
     unreachable("Not implemented");
 }
 func evaluateAlloca(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
@@ -211,15 +249,28 @@ func evaluateStore(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Reg
     let dst: &IRReg = getRegister(irFunc, instr.dst);
     let src: &RegValue = at(regs, instr.src.i);
     assert(isPointer(dst.typ), "Store expected Ptr Dst");
+    let size = getSize(dst.typ);
     let dstReg: InterpReg = InterpReg {
         offset: dst.offset,
-        size: getSize(dst.typ),
+        size: size,
     };
     let srcReg: InterpReg = asInterp(src, "Store src");
     let srcLoc: &u8 = getRegStackPointer(this, &srcReg);
     let dstLoc: &u8 = *(getRegStackPointer(this, &dstReg) as &usize) as &u8;
     C::memcpy(dstLoc, srcLoc, srcReg.size);
     return dstReg;
+}
+func evaluateFetchGlobalValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateFetchGlobalValue");
+    let fReg = getRegister(irFunc, instr.dst);
+    let ptr = getGlobalPointer(this, &asInterp(at(this.globalRegisters, instr.src.i), "Interp FetchGlobalValue"));
+    let size = getSize(fReg.typ);
+    let reg = InterpReg {
+        offset: fReg.offset,
+        size: size,
+    };
+    C::memcpy(getRegStackPointer(this, &reg), ptr, size);
+    return reg;
 }
 func evaluateFetchComptimeValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     trace("IRInterp.evaluateFetchComptimeValue");
@@ -1207,6 +1258,96 @@ func evaluateLogicalOr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
     }
     return dst;
 }
+func evaluateBitwiseAnd(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateBitwiseAnd");
+    let lhs: &RegValue = at(regs, instr.src.i);
+    let rhs: &RegValue = at(regs, instr.op1.i);
+    let rLhs: InterpReg =  asInterp(lhs, "BAnd LHS");
+    let rRhs: InterpReg =  asInterp(rhs, "BAnd RHS");
+    let t1: &Type = getRegister(irFunc, instr.src).typ;
+    let t2: &Type = getRegister(irFunc, instr.op1).typ;
+    let s1: usize = getSize(t1);
+    let s2: usize = getSize(t2);
+    assert(s1 == s2, "BAnd got differently sized operands");
+    let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+    let dst: InterpReg = InterpReg {
+        offset: dstReg.offset,
+        size: s1,
+    };
+    let lhsStart: &u8 = getRegStackPointer(this, &rLhs);
+    let rhsStart: &u8 = getRegStackPointer(this, &rRhs);
+    let dstStart: &u8 = getRegStackPointer(this, &dst);
+    if (s1 == 1) {
+        *(dstStart as &u8) = *(lhsStart as &u8) & *(rhsStart as &u8);
+    } else if (s1 == 2) {
+        *(dstStart as &u16) = *(lhsStart as &u16) & *(rhsStart as &u16);
+    } else if (s1 == 4) {
+        *(dstStart as &u32) = *(lhsStart as &u32) & *(rhsStart as &u32);
+    } else if (s1 == 8) {
+        *(dstStart as &u64) = *(lhsStart as &u64) & *(rhsStart as &u64);
+    } else unreachable("Exhaustive handling of types in BAnd");
+    return dst;
+}
+func evaluateBitwiseOr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateBitwiseOr");
+    let lhs: &RegValue = at(regs, instr.src.i);
+    let rhs: &RegValue = at(regs, instr.op1.i);
+    let rLhs: InterpReg =  asInterp(lhs, "BOr LHS");
+    let rRhs: InterpReg =  asInterp(rhs, "BOr RHS");
+    let t1: &Type = getRegister(irFunc, instr.src).typ;
+    let t2: &Type = getRegister(irFunc, instr.op1).typ;
+    let s1: usize = getSize(t1);
+    let s2: usize = getSize(t2);
+    assert(s1 == s2, "BOr got differently sized operands");
+    let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+    let dst: InterpReg = InterpReg {
+        offset: dstReg.offset,
+        size: s1,
+    };
+    let lhsStart: &u8 = getRegStackPointer(this, &rLhs);
+    let rhsStart: &u8 = getRegStackPointer(this, &rRhs);
+    let dstStart: &u8 = getRegStackPointer(this, &dst);
+    if (s1 == 1) {
+        *(dstStart as &u8) = *(lhsStart as &u8) | *(rhsStart as &u8);
+    } else if (s1 == 2) {
+        *(dstStart as &u16) = *(lhsStart as &u16) | *(rhsStart as &u16);
+    } else if (s1 == 4) {
+        *(dstStart as &u32) = *(lhsStart as &u32) | *(rhsStart as &u32);
+    } else if (s1 == 8) {
+        *(dstStart as &u64) = *(lhsStart as &u64) | *(rhsStart as &u64);
+    } else unreachable("Exhaustive handling of types in BOr");
+    return dst;
+}
+func evaluateBitwiseXor(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateBitwiseXor");
+    let lhs: &RegValue = at(regs, instr.src.i);
+    let rhs: &RegValue = at(regs, instr.op1.i);
+    let rLhs: InterpReg =  asInterp(lhs, "BXor LHS");
+    let rRhs: InterpReg =  asInterp(rhs, "BXor RHS");
+    let t1: &Type = getRegister(irFunc, instr.src).typ;
+    let t2: &Type = getRegister(irFunc, instr.op1).typ;
+    let s1: usize = getSize(t1);
+    let s2: usize = getSize(t2);
+    assert(s1 == s2, "BXor got differently sized operands");
+    let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+    let dst: InterpReg = InterpReg {
+        offset: dstReg.offset,
+        size: s1,
+    };
+    let lhsStart: &u8 = getRegStackPointer(this, &rLhs);
+    let rhsStart: &u8 = getRegStackPointer(this, &rRhs);
+    let dstStart: &u8 = getRegStackPointer(this, &dst);
+    if (s1 == 1) {
+        *(dstStart as &u8) = *(lhsStart as &u8) ^ *(rhsStart as &u8);
+    } else if (s1 == 2) {
+        *(dstStart as &u16) = *(lhsStart as &u16) ^ *(rhsStart as &u16);
+    } else if (s1 == 4) {
+        *(dstStart as &u32) = *(lhsStart as &u32) ^ *(rhsStart as &u32);
+    } else if (s1 == 8) {
+        *(dstStart as &u64) = *(lhsStart as &u64) ^ *(rhsStart as &u64);
+    } else unreachable("Exhaustive handling of types in BXOr");
+    return dst;
+}
 func evaluateInsertValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     trace("IRInterp.evaluateInsertValue");
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
@@ -1233,6 +1374,67 @@ func evaluateInsertValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
         }
         _ => { unreachable("Interp InsertValue expected Array or Struct"); }
     }
+    return dst;
+}
+func evaluateIntSignExtend(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateIntSignExtend");
+    let src: &RegValue = at(regs, instr.src.i);
+    let rSrc: InterpReg = asInterp(src, "SExt src");
+    let t: &Type = getRegister(irFunc, instr.src).typ;
+    assert(isSignedInteger(t), "SExt expected Signed Integer");
+    let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+    let dst: InterpReg = InterpReg {
+        offset: dstReg.offset,
+        size: rSrc.size,
+    };
+    let srcStart: &u8 = getRegStackPointer(this, &rSrc);
+    let dstStart: &u8 = getRegStackPointer(this, &dst);
+    todo_with_msg("sext");
+}
+func evaluateIntZeroExtend(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateIntZeroExtend");
+    let src: &RegValue = at(regs, instr.src.i);
+    let rSrc: InterpReg = asInterp(src, "ZExt src");
+    let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+    let t1 = getRegister(irFunc, instr.src).typ;
+    let t2 = getRegister(irFunc, instr.dst).typ;
+    let s1 = getSize(t1);
+    let s2 = getSize(t2);
+    assert(s2 > s1, "Zero Extend expected dst to be greater than src");
+    let dst: InterpReg = InterpReg {
+        offset: dstReg.offset,
+        size: s2,
+    };
+    let srcStart: &u8 = getRegStackPointer(this, &rSrc);
+    let dstStart: &u8 = getRegStackPointer(this, &dst);
+    C::memset(dstStart, 0, s2);
+    if (s1 == 1) *dstStart = *srcStart;
+    else if (s1 == 2) *(dstStart as &u16) = *(srcStart as &u16);
+    else if (s1 == 4) *(dstStart as &u32) = *(srcStart as &u32);
+    else unreachable("ZExt 8 byte to what?");
+    return dst;
+}
+func evaluateIntTruncate(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateIntTruncate");
+    let src: &RegValue = at(regs, instr.src.i);
+    let rSrc: InterpReg = asInterp(src, "Trunc src");
+    let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+    let t1 = getRegister(irFunc, instr.src).typ;
+    let t2 = getRegister(irFunc, instr.dst).typ;
+    let s1 = getSize(t1);
+    let s2 = getSize(t2);
+    assert(s1 > s2, "Int Truncate expected src to be greater than dst");
+    let dst: InterpReg = InterpReg {
+        offset: dstReg.offset,
+        size: s2,
+    };
+    let srcStart: &u8 = getRegStackPointer(this, &rSrc);
+    let dstStart: &u8 = getRegStackPointer(this, &dst);
+    C::memset(dstStart, 0, s2);
+    if (s1 == 8) *(dstStart as &u64) = *(srcStart as &u64);
+    else if (s1 == 4) *(dstStart as &u32) = *(srcStart as &u32);
+    else if (s1 == 2) *(dstStart as &u16) = *(srcStart as &u16);
+    else unreachable("Truncate 1 byte to what?");
     return dst;
 }
 func evaluateF32ToF64(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
@@ -1419,6 +1621,44 @@ func evaluateGetFieldPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
     *(regStackLoc as &usize) = *(ptr as &usize) + offset;
     return reg;
 }
+func evaluateGetElementPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateGetElementPtr");
+    let elemReg: &IRReg = getRegister(irFunc, instr.dst);
+    let aggr: InterpReg = asInterp(at(regs, instr.src.i), "IRInterp: GetElementPtr");
+    let ptr: &u8 = getRegStackPointer(this, &aggr);
+    let dstReg: InterpReg = InterpReg {
+        offset: elemReg.offset,
+        size: 8,
+    };
+    let t: &Type = getRegister(irFunc, instr.src).typ;
+    let offset = 0;
+    for (let i: usize = 0; i < instr.args.length; i = i + 1) {
+        let arg = at(&instr.args, i);
+        let reg = at(regs, arg.i);
+        let elems = *(getRegStackPointer(this, &asInterp(reg, "IRInterp: GetElementPtr index")) as &usize);
+        match (t) {
+            &Type::Ptr(underlying) => {
+                offset = offset + elems * getSize(underlying);
+                t = underlying;
+            }
+            &Type::Array(underlying, _) => {
+                offset = offset + elems * getSize(underlying);
+                t = underlying;
+            }
+            &Type::Ptr(&Type::Struct(decl)) => {
+                todo_with_msg("IRInterp: evaluateGetElementPtr on Struct");
+            }
+            _ => {
+                C::fprintf(stderr, "%s IRInterp: evaluateGetElementPtr source has unexpected type!\n", FATAL_STR);
+                C::fprintf(stderr, "%s IRInterp: The type: %s\n", FATAL_STR, toString(t).buffer);
+                C::exit(2);
+            }
+        }
+    }
+    let regStackLoc: &u8 = getRegStackPointer(this, &dstReg);
+    *(regStackLoc as &usize) = *(ptr as &usize) + offset;
+    return dstReg;
+}
 func evaluateUnreachable(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     trace("IRInterp.evaluateUnreachable");
     unreachable("IRInterp: Hit INSTR_UNREACHABLE");
@@ -1442,6 +1682,28 @@ func evaluateMemcpy(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
     C::memcpy(dstLoc, srcLoc, sizeValue);
     return rDst;
 }
+func evaluateEmitAssembly(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateEmitAssembly");
+    let loc = toString(&instr.span);
+    C::fprintf(stderr, "%s: %s: Inline Assembly can't be used in a comptime context.\n", loc.buffer, ERR_STR);
+    dumpCallStack(this, &loc);
+    drop(&loc);
+    C::exit(1);
+}
+func evaluateIntoIRValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    trace("IRInterp.evaluateIntoIRValue");
+    let src = at(regs, instr.src.i);
+    let dstReg = getRegister(irFunc, instr.dst);
+    let size = getSize(dstReg.typ);
+    assert(size == sizeof RegValue, "IntoIRValue: size mismatch with llvm");
+    assert(size == sizeof IRValue, "IntoIRValue: size mismatch with asm");
+    let dst = InterpReg {
+        offset: dstReg.offset,
+        size: size,
+    };
+    *(getRegStackPointer(this, &dst) as &RegValue) = *src;
+    return dst;
+}
 
 func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     trace("IRInterp.evaluateSingle");
@@ -1449,7 +1711,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         assert(instr.isComptime, "Expected comptime instr in IRInterp.evaluateSingle");
     }
     assert(this.regStackBase < this.regStackStart + REG_STACK_SIZE, "Stack Cursor Overflow in IRInterp.evaluateSingle");
-    if (PRINT_DEBUG) dump(instr);
+    if (*flags.debug) dump(instr);
     return instrFns[instr.kind](this, irFunc, instr, regs, forcedComptime);
 }
 func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: &RegValueList, forcedComptime: bool) -> bool {
@@ -1468,244 +1730,11 @@ func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: 
             return ret;
         } else {
             assert(!isTerminator(instr), "Interp: Unexpected terminator in the middle of a block");
-            *(at(regs, instr.dst.i)) = RegValue {
-                isLLVM: false,
-                regValue: result,
-                llvmValue: blank,
-            };
+            addInterpValue(at(regs, instr.dst.i), result);
         }
     }
     return false;
 }
-
-comptime RAX: u8 = 0;
-comptime RCX: u8 = 1;
-comptime RDX: u8 = 2;
-comptime RBX: u8 = 3;
-comptime RSP: u8 = 4;
-comptime RBP: u8 = 5;
-comptime RSI: u8 = 6;
-comptime RDI: u8 = 7;
-comptime R8: u8 = 8;
-comptime R9: u8 = 9;
-comptime R10: u8 = 10;
-comptime R11: u8 = 11;
-comptime R12: u8 = 12;
-comptime R13: u8 = 13;
-comptime R14: u8 = 14;
-comptime R15: u8 = 15;
-
-comptime XMM0: u8 = 0;
-comptime XMM1: u8 = 1;
-comptime XMM2: u8 = 2;
-comptime XMM3: u8 = 3;
-comptime XMM4: u8 = 4;
-comptime XMM5: u8 = 5;
-
-comptime ADDR_INDIRECT: u8 = 0;
-comptime ADDR_DISP8: u8 = 1;
-comptime ADDR_DISP32: u8 = 2;
-comptime ADDR_REG: u8 = 3;
-
-struct ByteBuffer {
-    elements: &u8;
-    length: usize;
-    capacity: usize;
-}
-
-struct Function {
-    run: func () -> u64;
-    size: usize;
-}
-
-@os(WINDOWS) func free(fn: Function) {
-    if (!WinAPI::VirtualFree(fn.run as Any, fn.size, 16384)) {
-        C::printf("warning: Could not free function at %p\n", fn.run);
-    }
-}
-@os(LINUX) func free(fn: Function) {
-    if (munmap(fn.run as Any, fn.size) != 0) {
-        C::printf("warning: Could not free function at %p\n", fn.run);
-    }
-}
-
-func push(buf: &ByteBuffer, b1: char, b2: char, b3: char, b4: char, b5: char, b6: char, b7: char, b8: char) {
-    push(buf, b1 as u8, b2 as u8, b3 as u8, b4 as u8, b5 as u8, b6 as u8, b7 as u8, b8 as u8);
-}
-
-func push(buf: &ByteBuffer, b1: char, b2: char, b3: char, b4: char) {
-    push(buf, b1 as u8, b2 as u8);
-    push(buf, b3 as u8, b4 as u8);
-}
-func push(buf: &ByteBuffer, b1: char, b2: char, b3: char) {
-    push(buf, b1 as u8, b2 as u8);
-    push(buf, b3 as u8);
-}
-func push(buf: &ByteBuffer, b1: char, b2: char) {
-    push(buf, b1 as u8, b2 as u8);
-}
-func push(buf: &ByteBuffer, b1: char) {
-    push(buf, b1 as u8);
-}
-func push(buf: &ByteBuffer, b1: u8, b2: u8) {
-    push(buf, b1);
-    push(buf, b2);
-}
-func push(buf: &ByteBuffer, b1: u8, b2: u8, b3: u8, b4: u8, b5: u8, b6: u8, b7: u8, b8: u8) {
-    push(buf, b1);
-    push(buf, b2);
-    push(buf, b3);
-    push(buf, b4);
-    push(buf, b5);
-    push(buf, b6);
-    push(buf, b7);
-    push(buf, b8);
-}
-func push(buf: &ByteBuffer, element: u8) {
-    if (buf.length >= buf.capacity) {
-        let newCap: usize = buf.capacity * 2;
-        if (newCap == 0) newCap = 32;
-        buf.elements = C::realloc(buf.elements, newCap * sizeof u8);
-        assert(buf.elements != null, "Could not allocate memory in ByteBuffer.push");
-        buf.capacity = newCap;
-    }
-    buf.elements[buf.length] = element;
-    buf.length = buf.length + 1;
-}
-
-func extend(buf: &ByteBuffer, other: &ByteBuffer) {
-    for (let i: usize = 0; i < other.length; i = i + 1) {
-        push(buf, other.elements[i]);
-    }
-    C::free(other.elements);
-    *other = blank;
-}
-
-func pushImm(bytes: &ByteBuffer, imm: u32) {
-    let _bytes = &imm as &u8;
-    for (let i: usize = 0; i < 4; i = i + 1) {
-        push(bytes, _bytes[i]);
-    }
-}
-
-func pushImm(bytes: &ByteBuffer, imm: u64) {
-    let _bytes = &imm as &u8;
-    for (let i: usize = 0; i < 8; i = i + 1) {
-        push(bytes, _bytes[i]);
-    }
-}
-
-func modRM(bytes: &ByteBuffer, addr: u8, opext: u8, reg: u8) {
-    let byte = shiftLeft(addr as usize, 6) as u8;
-    byte = byte | shiftLeft(opext as usize, 3) as u8;
-    byte = byte | (reg % 8);
-    push(bytes, byte);
-}
-
-func modPrefix(bytes: &ByteBuffer, r: u8) {
-    let rex: u8 = '\x48' as u8;
-    if (r >= 8) rex = rex | 1;
-    push(bytes, rex);
-}
-
-func mov(to: u8, from: u8) -> ByteBuffer {
-    let bytes: ByteBuffer = blank;
-    modPrefix(&bytes, from);
-    push(&bytes, '\x89');
-    modRM(&bytes, ADDR_REG, from, to);
-    return bytes;
-}
-
-func mov(r: u8, imm: u32) -> ByteBuffer {
-    let bytes: ByteBuffer = blank;
-    let opcode = (('\xb8' as u8) + (r % 8)) as char;
-    push(&bytes, opcode);
-    pushImm(&bytes, imm);
-    return bytes;
-}
-
-func mov(r: u8, imm: u64) -> ByteBuffer {
-    let bytes: ByteBuffer = blank;
-    modPrefix(&bytes, r);
-    let opcode = (('\xb8' as u8) + (r % 8)) as char;
-    push(&bytes, opcode);
-    pushImm(&bytes, imm);
-    return bytes;
-}
-
-
-func push(reg: u8) -> ByteBuffer {
-    let bytes: ByteBuffer = blank;
-    push(&bytes, '\xFF');
-    modRM(&bytes, ADDR_REG, 6, reg);
-    return bytes;
-}
-
-func pop(reg: u8) -> ByteBuffer {
-    let bytes: ByteBuffer = blank;
-    push(&bytes, '\x8F');
-    modRM(&bytes, ADDR_REG, 0, reg);
-    return bytes;
-}
-
-func mov(r: u8, offset: u32, imm: u64) -> ByteBuffer {
-    let bytes: ByteBuffer = blank;
-    extend(&bytes, &mov(RBX, imm));
-    assert(offset < 256, "only single byte offset for now");
-    push(&bytes, '\x48', '\x89', '\x5C', '\x24');
-    push(&bytes, offset as char);
-    return bytes;
-}
-
-func mov(r: u8, imm: f32) -> ByteBuffer {
-    let bytes: ByteBuffer = blank;
-    extend(&bytes, &mov(RAX, *(&imm as &u32)));
-    push(&bytes, '\x66', '\x0F', '\x6E');
-    modRM(&bytes, ADDR_REG, r, RAX);
-    return bytes;
-}
-
-func mov(r: u8, imm: f64) -> ByteBuffer {
-    let bytes: ByteBuffer = blank;
-    extend(&bytes, &mov(RAX, *(&imm as &u64)));
-    push(&bytes, '\x66', '\x48', '\x0F', '\x6E');
-    modRM(&bytes, ADDR_REG, r, RAX);
-    return bytes;
-}
-
-func add(r: u8, imm: u32) -> ByteBuffer {
-    let bytes: ByteBuffer = blank;
-    modPrefix(&bytes, r);
-    push(&bytes, '\x81');
-    modRM(&bytes, ADDR_REG, 0, r);
-    pushImm(&bytes, imm);
-    return bytes;
-}
-
-func sub(r: u8, imm: u32) -> ByteBuffer {
-    let bytes: ByteBuffer = blank;
-    modPrefix(&bytes, r);
-    push(&bytes, '\x81');
-    modRM(&bytes, ADDR_REG, 5, r);
-    pushImm(&bytes, imm);
-    return bytes;
-}
-
-func call(r: u8) -> ByteBuffer {
-    let bytes: ByteBuffer = blank;
-    push(&bytes, '\xFF');
-    modRM(&bytes, ADDR_REG, 2, r);
-    return bytes;
-}
-
-func push(val: u64) -> ByteBuffer {
-    let bytes: ByteBuffer = blank;
-    extend(&bytes, &mov(RAX, val));
-    push(&bytes, '\xFF');
-    modRM(&bytes, ADDR_REG, 6, RAX);
-    return bytes;
-}
-
 
 @os(WINDOWS) func compileFunctionCall(this: &IRInterp, currFunc: &IRFunc, calledFunc: &IRFunc, instr: &IRInstr, fn: usize, regs: &RegValueList) -> Function {
     let f = at(&funcDecls, calledFunc.originalID);
@@ -1720,11 +1749,12 @@ func push(val: u64) -> ByteBuffer {
     }
     let buf: ByteBuffer = blank;
     // push(&buf, '\xf1');
-    extend(&buf, &push(RBP));
-    extend(&buf, &mov(RBP, RSP));
+    push(&buf, RBP);
+    mov(&buf, RBP, RSP);
     comptime ARG_LEN: usize = 4;
     let stack_offset: u32 = 32;
-    comptime ARGS = [[RCX, XMM0], [RDX, XMM1], [R8, XMM2], [R9, XMM3]];
+    comptime GPR_ARGS = [RCX , RDX , R8  , R9  ];
+    comptime FPR_ARGS = [XMM0, XMM1, XMM2, XMM3];
     for (let i: usize = 0; i < instr.args.length; i = i + 1) {
         let index = at(&instr.args, i);
         let reg: &RegValue = at(regs, index.i);
@@ -1732,25 +1762,41 @@ func push(val: u64) -> ByteBuffer {
         let origReg = getRegister(currFunc, *index);
         let argType = origReg.typ;
         if (isVariadic) {
-            if (isFloat(argType)) {
-                if (getSize(argType) == 4) {
-                    extend(&buf, &mov(ARGS[i][0], *(getRegStackPointer(this, &arg) as &u32)));
-                    extend(&buf, &mov(ARGS[i][1], *(getRegStackPointer(this, &arg) as &f32)));
+            if (i >= ARG_LEN) {
+                if (getSize(argType) <= 8) {
+                    let v = *(getRegStackPointer(this, &arg) as &u64);
+                    mov(&buf, RSP, stack_offset, ImmI64 { b: v });
                 } else {
-                    extend(&buf, &mov(ARGS[i][0], *(getRegStackPointer(this, &arg) as &u64)));
-                    extend(&buf, &mov(ARGS[i][1], *(getRegStackPointer(this, &arg) as &f64)));
+                    todo_with_msg(">8byte stack");
                 }
-            } else if (getSize(argType) <= 8) {
-                extend(&buf, &mov(ARGS[i][0], *(getRegStackPointer(this, &arg) as &u64)));
+                stack_offset = stack_offset + 8;
             } else {
-                todo_with_msg("non-int non-float >8 byte reg");
+                if (isFloat(argType)) {
+                    if (getSize(argType) == 4) {
+                        let v1 = *(getRegStackPointer(this, &arg) as &u32);
+                        let v2 = *(getRegStackPointer(this, &arg) as &f32);
+                        mov(&buf, GPR_ARGS[i], ImmI32 { b: v1 });
+                        mov(&buf, FPR_ARGS[i], ImmF32 { b: v2 });
+                    } else {
+                        let v1 = *(getRegStackPointer(this, &arg) as &u64);
+                        let v2 = *(getRegStackPointer(this, &arg) as &f64);
+                        mov(&buf, GPR_ARGS[i], ImmI64 { b: v1 });
+                        mov(&buf, FPR_ARGS[i], ImmF64 { b: v2 });
+                    }
+                } else if (getSize(argType) <= 8) {
+                    let v = *(getRegStackPointer(this, &arg) as &u64);
+                    mov(&buf, GPR_ARGS[i], ImmI64 { b: v });
+                } else {
+                    todo_with_msg("non-int non-float >8 byte reg");
+                }
             }
         } else if (i >= ARG_LEN) {
             // Technically this puts a lot of garbage on the stack, but do we care?
             // we update the stack pointer correctly, so the next argument overwrites the garbage
             // and if the called function doesn't manage the stack properly, is that our fault?
             if (getSize(argType) <= 8) {
-                extend(&buf, &mov(RSP, stack_offset, *(getRegStackPointer(this, &arg) as &u64)));
+                let v = *(getRegStackPointer(this, &arg) as &u64);
+                mov(&buf, RSP, stack_offset, ImmI64 { b: v });
             } else {
                 todo_with_msg(">8byte stack");
             }
@@ -1758,27 +1804,30 @@ func push(val: u64) -> ByteBuffer {
         } else {
             if (isFloat(argType)) {
                 if (getSize(argType) == 4) {
-                    extend(&buf, &mov(ARGS[i][1], *(getRegStackPointer(this, &arg) as &f32)));
+                    let v = *(getRegStackPointer(this, &arg) as &f32);
+                    mov(&buf, FPR_ARGS[i], ImmF32 { b: v });
                 } else {
-                    extend(&buf, &mov(ARGS[i][1], *(getRegStackPointer(this, &arg) as &f64)));
+                    let v = *(getRegStackPointer(this, &arg) as &f64);
+                    mov(&buf, FPR_ARGS[i], ImmF64 { b: v });
                 }
             } else if (getSize(argType) <= 8) {
-                extend(&buf, &mov(ARGS[i][0], *(getRegStackPointer(this, &arg) as &u64)));
+                let v = *(getRegStackPointer(this, &arg) as &u64);
+                mov(&buf, GPR_ARGS[i], ImmI64 { b: v });
             } else {
                 todo_with_msg("non-int non-float >8 byte reg");
             }
         }
     }
-    if (instr.args.length < 4) extend(&buf, &sub(RSP, 32));
-    extend(&buf, &mov(RAX, fn as u64));
-    extend(&buf, &call(RAX));
-    if (instr.args.length < 4) extend(&buf, &add(RSP, 32));
-    extend(&buf, &pop(RBP));
+    if (instr.args.length < 4) sub(&buf, RSP, ImmI32 { b: 32 });
+    mov(&buf, RAX, ImmI64 { b: fn as u64 });
+    call(&buf, RAX);
+    if (instr.args.length < 4) add(&buf, RSP, ImmI32 { b: 32 });
+    pop(&buf, RBP);
     if (isFloat(retType)) {
         push(&buf, '\x66', '\x48', '\x0F', '\x7E');
-        modRM(&buf, ADDR_REG, XMM0, RAX);
+        modRM(&buf, ADDR_REG, XMM0.r, RAX);
     } else if (isNone(retType)) {
-        extend(&buf, &mov(RAX, 420691337 as u32));
+        mov(&buf, RAX, ImmI32 { b: 420691337 });
     } else if (isInteger(retType) || isBoolean(retType) || isStruct(retType) || isPointer(retType)) {
         // noop, other side will hopefully put the thing in RAX for us
     } else {
@@ -1798,11 +1847,14 @@ func push(val: u64) -> ByteBuffer {
 func evaluateCall(this: &IRInterp, span: Span, irFunc: &IRFunc, regs: &RegValueList) {
     trace("IRInterp.evaluateCall");
     let funcSize: usize = getRegisterSizeInBytes(irFunc);
+    let fn = at(&funcDecls, irFunc.originalID);
+    pushCallStack(this, span, toString(&fn.name.content));
     pushRegisterStack(this, span, funcSize);
     let blockID: IRBlockID = IRBlockID { i: 0 };
     while (evaluateBlock(this, &blockID, irFunc, regs, true)) {
     }
     popRegisterStack(this, span, funcSize);
+    popCallStack(this);
     return;
 }
 func pushRegisterStack(this: &IRInterp, span: Span, size: usize) {
@@ -1828,6 +1880,26 @@ func popRegisterStack(this: &IRInterp, span: Span, size: usize) {
     }
     this.regStackBase = new;
     assert(this.regStackBase >= this.globalRegBase, "Register Stack overwrote global stack");
+}
+func pushCallStack(this: &IRInterp, span: Span, name: String) {
+    push(&this.callStack, CallStackInfo {
+        span: span,
+        name: name,
+    });
+}
+func popCallStack(this: &IRInterp) {
+    assert(this.callStack.length > 0, "IRInterp.popCallStack() called on empty stack!");
+    pop(&this.callStack);
+}
+func dumpCallStack(this: &IRInterp, loc: &String) {
+    C::fprintf(stderr, "%s: %s: The current call stack:\n", loc.buffer, NOTE_STR);
+    for (let _i: usize = 0; _i < this.callStack.length; _i = _i + 1) {
+        let i = this.callStack.length - _i - 1;
+        let e = at(&this.callStack, i);
+        let l = toString(&e.span);
+        C::fprintf(stderr, "%s: %s: Entered function `%s` here.\n", l.buffer, NOTE_STR, e.name.buffer);
+        drop(&l);
+    }
 }
 
 func newIRInterpreter(irGen: &IRGen) -> IRInterp {

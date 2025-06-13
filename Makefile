@@ -8,7 +8,7 @@ endif
 RUN_EXAMPLES =
 RUN_HOWTO =
 VERBOSE = @
-BUFO_FLAGS = --warn --target $(TARGET)
+BUFO_FLAGS = --warn --target $(TARGET) --verbose $(EXTRA)
 
 BUFO_CC = ./bufo.exe
 

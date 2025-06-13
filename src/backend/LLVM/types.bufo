@@ -1,5 +1,7 @@
 import "prelude.bufo";
 import "libc.bufo";
+import "asm.bufo";
+import "string.bufo";
 import "../../util/lists.bufo";
 import "./bindings.bufo";
 import "./context.bufo";
@@ -87,6 +89,19 @@ func constFloat(this: &LLVMType, value: f64) -> LLVMValue {
     trace("LLVMType.constFloat");
     let val: LLVM::ValueRef = LLVM::ConstReal(this.ref, value);
     assert(!LLVM::isNull(val), "Could not get constant float");
+    return newLLVMValueFromRef(val);
+}
+
+func getInlineAsm(this: &LLVMType, context: &ASMContext) -> LLVMValue {
+    trace("LLVMType.getInlineAsm");
+    let constraints = collect(context);
+    let val = LLVM::GetInlineAsm(this.ref,
+        context.code.buffer, context.code.length,
+        constraints.buffer, constraints.length,
+        newLLVMBool(context.sideEffects), newLLVMBool(context.alignedStack),
+        tag(&context.dialect) as u32, newLLVMBool(context.canThrow));
+    assert(!LLVM::isNull(val), "Could not generate inline assembly");
+    drop(&constraints);
     return newLLVMValueFromRef(val);
 }
 

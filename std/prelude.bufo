@@ -23,6 +23,11 @@ comptime U32_MAX: u32 = 0 - 1;
 let stdin: Any = null;
 let stdout: Any = null;
 let stderr: Any = null;
+// Ensure that we can always use the handles at compile time
+let _setup = func () -> bool {
+    (comptime setupStdHandles());
+    return true;
+};
 func setupStdHandles() {
     if (stdin == null) stdin = C::fdopen(0, "a");
     _assert(stdin != null, "Could not initialize STDIN!");
@@ -197,15 +202,14 @@ func assert(cond: bool, msg: &char) {
     C::exit(1);
 }
 
-// FIXMEEEEEEE: Make this CLI flags
-comptime PRINT_DEBUG: bool = false;
-func debug(msg: &char) {
-    if (!PRINT_DEBUG) return;
+let debug = disabled;
+let trace = disabled;
+
+func disabled(msg: &char) { }
+func debug_active(msg: &char) {
     C::printf("[DEBUG] %s\n", msg);
 }
-comptime PRINT_TRACE: bool = false;
-func trace(msg: &char) {
-    if (!PRINT_TRACE) return;
+func trace_active(msg: &char) {
     C::printf("[TRACE] %s\n", msg);
 }
 comptime PRINT_WARNING: bool = true;

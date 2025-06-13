@@ -2,6 +2,7 @@ import "prelude.bufo";
 import "libc.bufo";
 import "string.bufo";
 import "substr.bufo";
+import "asm.bufo";
 import "../frontend/nodes.bufo";
 import "../frontend/token.bufo";
 import "../middleend/types.bufo";
@@ -174,6 +175,14 @@ struct TypeList {
     elements: &&Type;
     length: usize;
     capacity: usize;
+}
+func pop(this: &ParsedExprList, index: usize) -> &ParsedExpr {
+    let elem = *at(this, index);
+    for (let i: usize = index; i < this.length - 1; i = i + 1) {
+        *at(this, i) = *at(this, i + 1);
+    }
+    this.length = this.length - 1;
+    return elem;
 }
 func push(this: &TypeList, element: &Type) {
     if (this.length >= this.capacity) {

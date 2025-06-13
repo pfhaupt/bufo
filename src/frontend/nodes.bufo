@@ -732,6 +732,7 @@ union StmtData {
     Break,
     Continue,
     Match(&ParsedExpr, ParsedPatternList, ParsedStmtList),
+    Asm(&ParsedExpr, ParsedExprList),
 }
 // TODO: VarDecls should accept a pattern instead of just a name
 struct VarDecl {
@@ -911,8 +912,7 @@ union UnaryExpr {
     Not(&ParsedExpr),
 }
 func fromTkn(kind: usize, expr: &ParsedExpr) -> UnaryExpr {
-    if (kind == TOKEN_KEYWORD) return UnaryExpr::Comptime(expr);
-    else if (kind == TOKEN_ASTERISK_SINGLE) return UnaryExpr::Deref(expr);
+    if (kind == TOKEN_ASTERISK_SINGLE) return UnaryExpr::Deref(expr);
     else if (kind == TOKEN_AMPERSAND_SINGLE) return UnaryExpr::Ref(expr);
     else if (kind == TOKEN_MINUS_SINGLE) return UnaryExpr::Negate(expr);
     else if (kind == TOKEN_BANG) return UnaryExpr::Not(expr);

@@ -11,8 +11,10 @@ import "../frontend/token.bufo";
 import "../frontend/nodes.bufo";
 import "../frontend/context.bufo";
 import "../frontend/lexer.bufo";
+import "../middleend/lookup.bufo";
 import "../middleend/types.bufo";
 import "../middleend/checker.bufo";
+import "./codegen_llvm.bufo";
 import "./LLVM/values.bufo";
 
 struct RegIndex {
@@ -32,83 +34,85 @@ func equals(this: &IRReg, other: &IRReg) -> bool {
 }
 
 // NOTE: When you update this list, you must also update the function pointers in the interpreter
-comptime INSTR_INVALID: usize = 0;
-comptime INSTR_ALLOCA: usize = 1;
-comptime INSTR_GET_PARAM: usize = 2;
-comptime INSTR_STORE: usize = 3;
-comptime INSTR_FETCH_GLOBAL_PTR: usize = 4;
-comptime INSTR_FETCH_GLOBAL_VALUE: usize = 5;
+comptime INSTR_INVALID             : usize = 0;
+comptime INSTR_ALLOCA              : usize = 1;
+comptime INSTR_GET_PARAM           : usize = 2;
+comptime INSTR_STORE               : usize = 3;
+comptime INSTR_FETCH_GLOBAL_PTR    : usize = 4;
+comptime INSTR_FETCH_GLOBAL_VALUE  : usize = 5;
 comptime INSTR_FETCH_COMPTIME_VALUE: usize = 6;
-comptime INSTR_LOAD_FUNCTION_PTR: usize = 7;
-comptime INSTR_LOAD: usize = 8;
-comptime INSTR_MOVE: usize = 9;
-comptime INSTR_CALL: usize = 10;
-comptime INSTR_RETURN_EXPR: usize = 11;
-comptime INSTR_RETURN_VOID: usize = 12;
-comptime INSTR_LOAD_STRING: usize = 13;
-comptime INSTR_LOAD_BOOL: usize = 14;
-comptime INSTR_LOAD_I8: usize = 15;
-comptime INSTR_LOAD_U8: usize = 16;
-comptime INSTR_LOAD_I16: usize = 17;
-comptime INSTR_LOAD_U16: usize = 18;
-comptime INSTR_LOAD_I32: usize = 19;
-comptime INSTR_LOAD_U32: usize = 20;
-comptime INSTR_LOAD_I64: usize = 21;
-comptime INSTR_LOAD_U64: usize = 22;
-comptime INSTR_LOAD_NULL: usize = 23;
-comptime INSTR_LOAD_F32: usize = 24;
-comptime INSTR_LOAD_F64: usize = 25;
-comptime INSTR_LOAD_BLANK: usize = 26;
-comptime INSTR_COND_BR: usize = 27;
-comptime INSTR_BR: usize = 28;
-comptime INSTR_INT_ADD: usize = 29;
-comptime INSTR_INT_SUB: usize = 30;
-comptime INSTR_INT_MUL: usize = 31;
-comptime INSTR_INT_DIV: usize = 32;
-comptime INSTR_INT_MOD: usize = 33;
-comptime INSTR_INT_CMP_EQ: usize = 34;
-comptime INSTR_INT_CMP_NEQ: usize = 35;
-comptime INSTR_INT_CMP_GT: usize = 36;
-comptime INSTR_INT_CMP_GTE: usize = 37;
-comptime INSTR_INT_CMP_LT: usize = 38;
-comptime INSTR_INT_CMP_LTE: usize = 39;
-comptime INSTR_FLOAT_ADD: usize = 40;
-comptime INSTR_FLOAT_SUB: usize = 41;
-comptime INSTR_FLOAT_MUL: usize = 42;
-comptime INSTR_FLOAT_DIV: usize = 43;
-comptime INSTR_FLOAT_MOD: usize = 44;
-comptime INSTR_FLOAT_CMP_EQ: usize = 45;
-comptime INSTR_FLOAT_CMP_NEQ: usize = 46;
-comptime INSTR_FLOAT_CMP_GT: usize = 47;
-comptime INSTR_FLOAT_CMP_GTE: usize = 48;
-comptime INSTR_FLOAT_CMP_LT: usize = 49;
-comptime INSTR_FLOAT_CMP_LTE: usize = 50;
-comptime INSTR_LOGICAL_NOT: usize = 51;
-comptime INSTR_LOGICAL_AND: usize = 52;
-comptime INSTR_LOGICAL_OR: usize = 53;
-comptime INSTR_BITWISE_AND: usize = 54;
-comptime INSTR_BITWISE_OR: usize = 55;
-comptime INSTR_BITWISE_XOR: usize = 56;
-comptime INSTR_INSERT_VALUE: usize = 57;
-comptime INSTR_INT_SIGN_EXTEND: usize = 58;
-comptime INSTR_INT_ZERO_EXTEND: usize = 59;
-comptime INSTR_INT_TRUNCATE: usize = 60;
-comptime INSTR_INT_TO_F32: usize = 61;
-comptime INSTR_INT_TO_F64: usize = 62;
-comptime INSTR_F32_TO_INT: usize = 63;
-comptime INSTR_F64_TO_INT: usize = 64;
-comptime INSTR_F32_TO_F64: usize = 65;
-comptime INSTR_F64_TO_F32: usize = 66;
-comptime INSTR_CREATE_ARRAY: usize = 67;
-comptime INSTR_CREATE_STRUCT: usize = 68;
-comptime INSTR_CREATE_UNION: usize = 69;
-comptime INSTR_PTR_TO_INT: usize = 70;
-comptime INSTR_INT_TO_PTR: usize = 71;
-comptime INSTR_GET_FIELD_PTR: usize = 72;
-comptime INSTR_GET_ELEMENT_PTR: usize = 73;
-comptime INSTR_UNREACHABLE: usize = 74;
-comptime INSTR_UNTERMINATED: usize = 75;
-comptime INSTR_MEMCPY: usize = 76;
+comptime INSTR_LOAD_FUNCTION_PTR   : usize = 7;
+comptime INSTR_LOAD                : usize = 8;
+comptime INSTR_MOVE                : usize = 9;
+comptime INSTR_CALL                : usize = 10;
+comptime INSTR_RETURN_EXPR         : usize = 11;
+comptime INSTR_RETURN_VOID         : usize = 12;
+comptime INSTR_LOAD_STRING         : usize = 13;
+comptime INSTR_LOAD_BOOL           : usize = 14;
+comptime INSTR_LOAD_I8             : usize = 15;
+comptime INSTR_LOAD_U8             : usize = 16;
+comptime INSTR_LOAD_I16            : usize = 17;
+comptime INSTR_LOAD_U16            : usize = 18;
+comptime INSTR_LOAD_I32            : usize = 19;
+comptime INSTR_LOAD_U32            : usize = 20;
+comptime INSTR_LOAD_I64            : usize = 21;
+comptime INSTR_LOAD_U64            : usize = 22;
+comptime INSTR_LOAD_NULL           : usize = 23;
+comptime INSTR_LOAD_F32            : usize = 24;
+comptime INSTR_LOAD_F64            : usize = 25;
+comptime INSTR_LOAD_BLANK          : usize = 26;
+comptime INSTR_COND_BR             : usize = 27;
+comptime INSTR_BR                  : usize = 28;
+comptime INSTR_INT_ADD             : usize = 29;
+comptime INSTR_INT_SUB             : usize = 30;
+comptime INSTR_INT_MUL             : usize = 31;
+comptime INSTR_INT_DIV             : usize = 32;
+comptime INSTR_INT_MOD             : usize = 33;
+comptime INSTR_INT_CMP_EQ          : usize = 34;
+comptime INSTR_INT_CMP_NEQ         : usize = 35;
+comptime INSTR_INT_CMP_GT          : usize = 36;
+comptime INSTR_INT_CMP_GTE         : usize = 37;
+comptime INSTR_INT_CMP_LT          : usize = 38;
+comptime INSTR_INT_CMP_LTE         : usize = 39;
+comptime INSTR_FLOAT_ADD           : usize = 40;
+comptime INSTR_FLOAT_SUB           : usize = 41;
+comptime INSTR_FLOAT_MUL           : usize = 42;
+comptime INSTR_FLOAT_DIV           : usize = 43;
+comptime INSTR_FLOAT_MOD           : usize = 44;
+comptime INSTR_FLOAT_CMP_EQ        : usize = 45;
+comptime INSTR_FLOAT_CMP_NEQ       : usize = 46;
+comptime INSTR_FLOAT_CMP_GT        : usize = 47;
+comptime INSTR_FLOAT_CMP_GTE       : usize = 48;
+comptime INSTR_FLOAT_CMP_LT        : usize = 49;
+comptime INSTR_FLOAT_CMP_LTE       : usize = 50;
+comptime INSTR_LOGICAL_NOT         : usize = 51;
+comptime INSTR_LOGICAL_AND         : usize = 52;
+comptime INSTR_LOGICAL_OR          : usize = 53;
+comptime INSTR_BITWISE_AND         : usize = 54;
+comptime INSTR_BITWISE_OR          : usize = 55;
+comptime INSTR_BITWISE_XOR         : usize = 56;
+comptime INSTR_INSERT_VALUE        : usize = 57;
+comptime INSTR_INT_SIGN_EXTEND     : usize = 58;
+comptime INSTR_INT_ZERO_EXTEND     : usize = 59;
+comptime INSTR_INT_TRUNCATE        : usize = 60;
+comptime INSTR_INT_TO_F32          : usize = 61;
+comptime INSTR_INT_TO_F64          : usize = 62;
+comptime INSTR_F32_TO_INT          : usize = 63;
+comptime INSTR_F64_TO_INT          : usize = 64;
+comptime INSTR_F32_TO_F64          : usize = 65;
+comptime INSTR_F64_TO_F32          : usize = 66;
+comptime INSTR_CREATE_ARRAY        : usize = 67;
+comptime INSTR_CREATE_STRUCT       : usize = 68;
+comptime INSTR_CREATE_UNION        : usize = 69;
+comptime INSTR_PTR_TO_INT          : usize = 70;
+comptime INSTR_INT_TO_PTR          : usize = 71;
+comptime INSTR_GET_FIELD_PTR       : usize = 72;
+comptime INSTR_GET_ELEMENT_PTR     : usize = 73;
+comptime INSTR_UNREACHABLE         : usize = 74;
+comptime INSTR_UNTERMINATED        : usize = 75;
+comptime INSTR_MEMCPY              : usize = 76;
+comptime INSTR_EMIT_ASSEMBLY       : usize = 77;
+comptime INSTR_INTO_IR_VALUE       : usize = 78;
 struct IRInstr {
     kind: usize;
     span: Span;
@@ -131,7 +135,7 @@ func isTerminator(this: &IRInstr) -> bool {
 }
 func dump(this: &IRInstr) {
     if (!*flags.emitBIR && this.isComptime) C::printf("\x1b[92m");
-    if (PRINT_DEBUG) {
+    if (*flags.debug) {
         let s = toString(&this.span);
         C::printf("%s ", s.buffer);
         drop(&s);
@@ -216,6 +220,8 @@ func dump(this: &IRInstr) {
     else if (this.kind == INSTR_UNREACHABLE) C::printf("unreachable");
     else if (this.kind == INSTR_UNTERMINATED) C::printf("<unterminated block>");
     else if (this.kind == INSTR_MEMCPY) C::printf("Memcpy r%llu, r%llu, r%llu", this.dst.i, this.src.i, this.op1.i);
+    else if (this.kind == INSTR_EMIT_ASSEMBLY) C::printf("EmitAsm r%llu (%s)", this.src.i, toString(this.op1.i as &Type).buffer);
+    else if (this.kind == INSTR_INTO_IR_VALUE) C::printf("r%llu = IntoIRValue r%llu", this.dst.i, this.src.i);
     else if (this.kind == INSTR_GET_ELEMENT_PTR) {
         C::printf("r%llu = GetElementPtr r%llu", this.dst.i, this.src.i);
         for (let i: usize = 0; i < this.args.length; i = i + 1) {
@@ -835,6 +841,24 @@ func buildMemcpy(this: &IRFunc, span: Span, src: RegIndex, dst: RegIndex, size: 
         op1: size,
     });
 }
+func buildEmitAssembly(this: &IRFunc, span: Span, context: RegIndex, fnType: &Type) {
+    pushInstruction(this, IRInstr {
+        kind: INSTR_EMIT_ASSEMBLY,
+        span: span,
+        isComptime: this.comptimeLevel > 0,
+        src: context,
+        op1: RegIndex { i: fnType as usize }
+    });
+}
+func buildIntoIRValue(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
+    pushInstruction(this, IRInstr {
+        kind: INSTR_INTO_IR_VALUE,
+        span: span,
+        isComptime: this.comptimeLevel > 0,
+        dst: dst,
+        src: src,
+    });
+}
 
 struct IRScopeEntry {
     name: SubStr;
@@ -869,6 +893,7 @@ func getIdentifierByName(this: &IRScope, name: SubStr) -> &IRScopeEntry {
 }
 
 struct IRGen {
+    lookup: &Lookup;
     globalScope: IRFunc;
     functions: String_IRFuncHashMap;
     error: bool;
@@ -1154,8 +1179,8 @@ func generateBytecodeStmt(this: &IRGen, function: &IRFunc, stmt: &ParsedStmt) {
             buildBr(function, stmt.span, condBlock);
 
             setCurrentBlock(function, condBlock);
-            let cond: RegIndex = generateBytecodeExpr(this, function, cond, false);
-            buildCondBr(function, stmt.span, cond, bodyBlock, afterBlock);
+            let condReg: RegIndex = generateBytecodeExpr(this, function, cond, false);
+            buildCondBr(function, stmt.span, condReg, bodyBlock, afterBlock);
 
             setCurrentBlock(function, bodyBlock);
             generateBytecodeStmt(this, function, body);
@@ -1213,6 +1238,57 @@ func generateBytecodeStmt(this: &IRGen, function: &IRFunc, stmt: &ParsedStmt) {
         }
         &StmtData::Match(_, _, _) => {
             generateBytecodeMatchStmt(this, function, stmt);
+        }
+        &StmtData::Asm(fn, args) => {
+            let retType = getReturnType(getType(&fn.typeState));
+            assert(getSize(retType) > 8, "Expected Inline Assembly function to return ASMContext");
+            let irArgs: RegIndexList = blank;
+            let retPtr: RegIndex = blank;
+            {
+                retPtr = allocateRegister(function, intoPointer(retType));
+                startComptime(function);
+                buildAlloca(function, stmt.span, retPtr, getSize(retType));
+                endComptime(function);
+                push(&irArgs, retPtr);
+            }
+            comptime IR_VALUE = BUILD_A_KEYWORD("IRValue");
+            comptime ASM_FILE = BUILD_A_KEYWORD("asm.bufo");
+            let lookup: TypeLookup = blank;
+            let unions = searchAllFilesForTypeName(this.lookup, &IR_VALUE);
+            let context: &UnionLookup = null;
+            for (let i: usize = 0; i < unions.length; i = i + 1) {
+                let l = at(&unions, i);
+                if (l.kind == TYPE_LOOKUP_UNION) {
+                    let u = l.actual as &UnionLookup;
+                    let decl = u.global;
+                    if (!decl.parent.isFile) continue;
+                    let parent = at(&files, decl.parent.id as usize);
+                    let filePath = toString(&parent.origin);
+                    let fileName = getFileName(&filePath);
+                    drop(&filePath);
+                    if (equals(&asSubStr(&fileName), &ASM_FILE)) {
+                        assert(context == null, "How did we find another asm.bufo?");
+                        context = u;
+                    }
+                    drop(&fileName);
+                }
+            }
+            assert(context != null, "Could not find IRValue!");
+            let regValueType = context.type;
+            for (let i: usize = 0; i < args.length; i = i + 1) {
+                let arg = *at(&args, i);
+                let result = generateBytecodeExpr(this, function, arg, false);
+                startComptime(function);
+                let regValue = allocateRegister(function, regValueType);
+                buildIntoIRValue(function, arg.span, regValue, result);
+                push(&irArgs, prepareArgument(this, function, arg.span, regValue, regValueType));
+                endComptime(function);
+            }
+            startComptime(function);
+            let base = generateBytecodeExpr(this, function, fn, false);
+            let reg = prepareReturnValue(this, stmt.span, function, base, irArgs, retType, retPtr, false);
+            endComptime(function);
+            buildEmitAssembly(function, stmt.span, reg, getType(&fn.typeState));
         }
         unknown => {
             C::fprintf(stderr, "%s generateBytecodeStmt: Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
@@ -1463,13 +1539,9 @@ func generateBytecodePatternUnion(this: &IRGen, function: &IRFunc, expr: RegInde
         }
         _ => { unreachable(); }
     }
-    let u8Type = wrap(Type::Prim(PrimType::U8));
     let usizeType = wrap(Type::Prim(PrimType::Usize));
     let sizeReg = allocateRegister(function, usizeType);
-    let tagReg = allocateRegister(function, u8Type);
     let tagMatch = allocateRegister(function, wrap(Type::Prim(PrimType::Bool)));
-    let tagPtr = allocateRegister(function, intoPointer(u8Type));
-    let tagVal = allocateRegister(function, u8Type);
     // REVIEW: Can we condense the branches?
     if (inOrigMemory) {
         let decl: &ParsedUnionDecl = null;
@@ -1477,6 +1549,12 @@ func generateBytecodePatternUnion(this: &IRGen, function: &IRFunc, expr: RegInde
             &Type::Ptr(&Type::Union(_decl, _)) => { decl = _decl; }
             _ => { unreachable("In Memory Union Pattern expected pointer type"); }
         }
+        let smol = PrimType::U8;
+        if (decl.variants.length >= 256) smol = PrimType::U16;
+        let tagType = wrap(Type::Prim(smol));
+        let tagReg = allocateRegister(function, tagType);
+        let tagPtr = allocateRegister(function, intoPointer(tagType));
+        let tagVal = allocateRegister(function, tagType);
         let variant: &ParsedUnionVariant = null;
         let found = resolveVariantByName(decl, name, &variant);
         assert(found);
@@ -1484,14 +1562,16 @@ func generateBytecodePatternUnion(this: &IRGen, function: &IRFunc, expr: RegInde
         buildMove(function, pat.span, tmp, expr);
         {
             // tagReg check
-            buildLoadInteger(function, name.span, tagReg, u8Type, getVariantTag(decl, variant));
+            buildLoadInteger(function, name.span, tagReg, tagType, getVariantTag(decl, variant));
             buildMove(function, name.span, tagPtr, tmp);
             buildLoad(function, name.span, tagVal, tagPtr);
             buildBinaryOp(function, name.span, INSTR_INT_CMP_EQ, tagMatch, tagReg, tagVal);
             buildBinaryOp(function, name.span, INSTR_LOGICAL_AND, success, success, tagMatch);
 
             // offset tmp by tagReg
-            buildLoadInteger(function, name.span, sizeReg, usizeType, 1);
+            let offset: usize = 1;
+            if (decl.variants.length >= 256) offset = 2;
+            buildLoadInteger(function, name.span, sizeReg, usizeType, offset);
             buildPtrToInt(function, name.span, tmp, tmp);
             buildBinaryOp(function, name.span, INSTR_INT_ADD, tmp, tmp, sizeReg);
             buildIntToPtr(function, name.span, tmp, tmp);
@@ -1519,6 +1599,12 @@ func generateBytecodePatternUnion(this: &IRGen, function: &IRFunc, expr: RegInde
             &Type::Union(_decl, _) => { decl = _decl; }
             _ => { unreachable("Union Pattern expected union type"); }
         }
+        let smol = PrimType::U8;
+        if (decl.variants.length >= 256) smol = PrimType::U16;
+        let tagType = wrap(Type::Prim(smol));
+        let tagReg = allocateRegister(function, tagType);
+        let tagPtr = allocateRegister(function, intoPointer(tagType));
+        let tagVal = allocateRegister(function, tagType);
         let variant: &ParsedUnionVariant = null;
         let found = resolveVariantByName(decl, name, &variant);
         assert(found);
@@ -1529,14 +1615,16 @@ func generateBytecodePatternUnion(this: &IRGen, function: &IRFunc, expr: RegInde
         buildMove(function, pat.span, tmp, allocReg);
         {
             // tagReg check
-            buildLoadInteger(function, name.span, tagReg, u8Type, getVariantTag(decl, variant));
+            buildLoadInteger(function, name.span, tagReg, tagType, getVariantTag(decl, variant));
             buildMove(function, name.span, tagPtr, allocReg);
             buildLoad(function, name.span, tagVal, tagPtr);
             buildBinaryOp(function, name.span, INSTR_INT_CMP_EQ, tagMatch, tagReg, tagVal);
             buildBinaryOp(function, name.span, INSTR_LOGICAL_AND, success, success, tagMatch);
 
             // offset tmp by tagReg
-            buildLoadInteger(function, name.span, sizeReg, usizeType, 1);
+            let offset: usize = 1;
+            if (decl.variants.length >= 256) offset = 2;
+            buildLoadInteger(function, name.span, sizeReg, usizeType, offset);
             buildPtrToInt(function, name.span, tmp, tmp);
             buildBinaryOp(function, name.span, INSTR_INT_ADD, tmp, tmp, sizeReg);
             buildIntToPtr(function, name.span, tmp, tmp);
@@ -1700,7 +1788,7 @@ func generateBytecodeExprUnionInit(this: &IRGen, function: &IRFunc, span: Span, 
         }
         _ => { unreachable("Expected Union Type in EXPR_UNION_INIT"); }
     }
-    assert(decl.variants.length < 256, "IRGen assumes that the tag of an union fits in a single byte");
+    assert(decl.variants.length < 65536, "IRGen assumes that the tag of an union fits in at most two bytes");
     let size = getSize(type);
     assert(size >= 1, "Expected union instance to be at least one byte");
     let start = allocateRegister(function, intoPointer(type));
@@ -1716,13 +1804,17 @@ func generateBytecodeExprUnionInit(this: &IRGen, function: &IRFunc, span: Span, 
     buildMove(function, span, tmp, start);
     {
         // tag
-        let u8 = wrap(Type::Prim(PrimType::U8));
-        let tagReg = allocateRegister(function, u8);
-        buildLoadInteger(function, span, tagReg, u8, tag);
+        let smol = PrimType::U8;
+        if (decl.variants.length >= 256) smol = PrimType::U16;
+        let tagType = wrap(Type::Prim(smol));
+        let tagReg = allocateRegister(function, tagType);
+        buildLoadInteger(function, span, tagReg, tagType, tag);
         buildStore(function, span, start, tagReg);
 
         // offset tmp by tag
-        buildLoadInteger(function, span, sizeReg, usizeType, 1);
+        let offset: usize = 1;
+        if (decl.variants.length >= 256) offset = 2;
+        buildLoadInteger(function, span, sizeReg, usizeType, offset);
         buildPtrToInt(function, span, tmp, tmp);
         buildBinaryOp(function, span, INSTR_INT_ADD, tmp, tmp, sizeReg);
         buildIntToPtr(function, span, tmp, tmp);
@@ -2389,7 +2481,7 @@ func generateBytecodeExprLiteral(this: &IRGen, function: &IRFunc, expr: &ParsedE
                 let indexPtr: RegIndex = allocateRegister(function, intoPointer(usizeType));
                 let size: RegIndex = allocateRegister(function, usizeType);
                 let cond: RegIndex = allocateRegister(function, boolType);
-                let elemPtr: RegIndex = allocateRegister(function, elemType);
+                let elemPtr: RegIndex = allocateRegister(function, intoPointer(elemType));
 
                 let start: IRBlockID = appendBlock(function);
                 let body: IRBlockID = appendBlock(function);
@@ -2527,7 +2619,19 @@ func generateBytecodeExprUnary(this: &IRGen, function: &IRFunc, span: Span, expr
 
 func prepareParameter(this: &IRGen, function: &IRFunc, index: usize, span: Span, name: SubStr, typ: &Type, retValue: bool) {
     trace("IRGen.prepareParameter");
-    if (isStruct(typ)) {
+    if (getSize(typ) > 8) {
+        let t = wrap(Type::Ptr(wrap(Type::Prim(PrimType::U8))));
+        let value: RegIndex = allocateRegister(function, t);
+        let allocType: &Type = intoPointer(typ);
+        let allocReg: RegIndex = allocateRegister(function, allocType);
+        buildGetParam(function, span, value, index, getSize(t));
+        let instance: RegIndex = allocateRegister(function, typ);
+        buildLoad(function, span, instance, value);
+
+        buildAlloca(function, span, allocReg, getSize(typ));
+        buildStore(function, span, allocReg, instance);
+        addEntry(last(&function.scopes), name, allocReg, false);
+    } else if (isStruct(typ)) {
         let size: usize = getSize(typ);
         let t: &Type = null;
         if (size <= 1) {
@@ -2558,18 +2662,6 @@ func prepareParameter(this: &IRGen, function: &IRFunc, index: usize, span: Span,
             buildStore(function, span, allocReg, value);
             addEntry(last(&function.scopes), name, allocReg, false);
         }
-    } else if (getSize(typ) > 8) {
-        let t = wrap(Type::Ptr(wrap(Type::Prim(PrimType::U8))));
-        let value: RegIndex = allocateRegister(function, t);
-        let allocType: &Type = intoPointer(typ);
-        let allocReg: RegIndex = allocateRegister(function, allocType);
-        buildGetParam(function, span, value, index, getSize(t));
-        let instance: RegIndex = allocateRegister(function, typ);
-        buildLoad(function, span, instance, value);
-
-        buildAlloca(function, span, allocReg, getSize(typ));
-        buildStore(function, span, allocReg, instance);
-        addEntry(last(&function.scopes), name, allocReg, false);
     } else {
         let allocType: &Type = intoPointer(typ);
         let allocReg: RegIndex = allocateRegister(function, allocType);
@@ -2606,7 +2698,13 @@ func getRegisterForSize(this: &IRGen, function: &IRFunc, size: usize) -> RegInde
 
 func prepareArgument(this: &IRGen, function: &IRFunc, span: Span, value: RegIndex, typ: &Type) -> RegIndex {
     trace("IRGen.prepareArgument");
-    if (isStruct(typ)) {
+     if (getSize(typ) > 8) {
+        // Following the ABI, all parameters that don't fit in a register get passed by pointer
+        let tempAlloc: RegIndex = allocateRegister(function, intoPointer(typ));
+        buildAlloca(function, span, tempAlloc, getSize(typ));
+        buildStore(function, span, tempAlloc, value);
+        return tempAlloc;
+    } else if (isStruct(typ)) {
         let size: usize = getSize(typ);
         let alloc: RegIndex = allocateRegister(function, intoPointer(typ));
         buildAlloca(function, span, alloc, size);
@@ -2615,12 +2713,6 @@ func prepareArgument(this: &IRGen, function: &IRFunc, span: Span, value: RegInde
         let v: RegIndex = getRegisterForSize(this, function, size);
         buildLoad(function, span, v, alloc);
         return v;
-    } else if (getSize(typ) > 8) {
-        // Following the ABI, all parameters that don't fit in a register get passed by pointer
-        let tempAlloc: RegIndex = allocateRegister(function, intoPointer(typ));
-        buildAlloca(function, span, tempAlloc, getSize(typ));
-        buildStore(function, span, tempAlloc, value);
-        return tempAlloc;
     } else {
         return value;
     }
@@ -2647,12 +2739,13 @@ func generateBytecodeExprCall(this: &IRGen, function: &IRFunc, expr: &CallExpr, 
     return prepareReturnValue(this, expr.span, function, base, args, typ, retPtr, needsPtr);
 }
 
-func newIRGenerator() -> IRGen {
+func newIRGenerator(lookup: &Lookup) -> IRGen {
     return IRGen {
         globalScope: IRFunc {
             name: newStringFromStrLit("__global__"),
             originalID: funcDecls.length + 1,
             comptimeLevel: 0,
         },
+        lookup: lookup
     };
 }

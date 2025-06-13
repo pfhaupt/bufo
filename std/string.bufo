@@ -3,6 +3,29 @@ import "prelude.bufo";
 import "substr.bufo";
 
 let HEX_CHAR: [char; 16] = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'];
+
+struct StringList {
+    elements: &String;
+    length: usize;
+    capacity: usize;
+}
+func push(this: &StringList, element: String) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = C::realloc(this.elements, newCap * sizeof String);
+        assert(this.elements != null, "Could not allocate memory in StringList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+func at(this: &StringList, index: usize) -> &String {
+    assert(index < this.length, "Out of bounds access in StringList.at");
+    assert(this.elements != null, "Element pointer is NULL in StringList.at");
+    return &this.elements[index];
+}
+
 struct String {
     buffer: &char;
     length: usize;
@@ -26,6 +49,14 @@ func toAbsolutePath(this: &String) -> String {
     let s: String = newStringFromStrLit(buf);
     C::free(buf);
     return s;
+}
+
+func getFileName(this: &String) -> String {
+    let root = getRoot(this);
+    assert(this.length > root.length, "getFileName: zero-char file name??");
+    let name = toString(&substring(this, root.length, this.length));
+    drop(&root);
+    return name;
 }
 
 @os(WINDOWS) func getRoot(this: &String) -> String {
@@ -175,6 +206,26 @@ func toU64(this: &String) -> u64 {
     }
     return val;
 }
+
+func splitBy(this: &String, pred: func (char, &usize) -> bool) -> StringList {
+    let list = StringList { };
+    let last: usize = 0;
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        let skip: usize = 0;
+        if (pred(this.buffer[i], &skip)) {
+            let _s = substring(this, last, i);
+            push(&list, toString(&_s));
+            i = i + skip;
+            last = i;
+        }
+    }
+    if (last != this.length) {
+        let _s = substring(this, last, this.length);
+        push(&list, toString(&_s));
+    }
+    return list;
+}
+
 func equals(this: &String, other: &String) -> bool {
     if (this.length != other.length) return false;
     return equals(&asSubStr(this), &asSubStr(other));

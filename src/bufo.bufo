@@ -39,8 +39,10 @@ struct Flags {
     emitASM: &bool;
     emitBIR: &bool;
     emitLLVM: &bool;
-    keepOBJ: &bool;
+    dontLink: &bool;
     linkDynamic: &bool;
+    debug: &bool;
+    trace: &bool;
 }
 let flags = Flags {};
 func main(argc: i32, argv: &&char) -> i32 {
@@ -73,13 +75,18 @@ func main(argc: i32, argv: &&char) -> i32 {
     flags.emitASM = addBoolFlag(&flagParser, "--emit-asm", "Save the generated assembly code in <output>.asm");
     flags.emitBIR = addBoolFlag(&flagParser, "--emit-bir", "Save the generated bufo IR in <output>.bir");
     flags.emitLLVM = addBoolFlag(&flagParser, "--emit-llvm", "Save the generated LLVM IR in <output>.ll");
-    flags.keepOBJ = addBoolFlag(&flagParser, "--keep-obj", "Keep the generated object file <output>.obj");
+    flags.dontLink = addBoolFlag(&flagParser, "--dont-link", "Stop after generating <output>.obj");
     flags.linkDynamic = addBoolFlag(&flagParser, "--link-dynamic", "Use the specified dynamic libraries to link instead of static libraries");
+    flags.debug = addBoolFlag(&flagParser, "d", "debug", "Enable debug logs and other debugging measurements");
+    flags.trace = addBoolFlag(&flagParser, "--trace", "Trace function calls");
     if (!runOn(&flagParser, argc, argv)) {
         showUsage(&flagParser);
         showHelp(&flagParser);
         return 1;
     }
+    if (*flags.debug) debug = debug_active;
+    // TODO: Build tracing into the IRGen
+    if (*flags.trace) trace = trace_active;
     if (*warnAll) {
         *flags.warnExtra = true;
         *flags.warnSimple = true;
@@ -114,14 +121,14 @@ func main(argc: i32, argv: &&char) -> i32 {
     let project: ParsedFile = parseProject(&parser, fileSubStr);
     let checker: TypeChecker = newTypeChecker();
     if (!typeCheckProject(&checker, &project)) return 1;
-    let generator: IRGen = newIRGenerator();
+    let generator: IRGen = newIRGenerator(&checker.lookup);
     if (!generateBytecode(&generator, &project)) return 1;
     if (!analyzeControlFlow(&generator)) return 1;
     if (*flags.checkOnly) return 0;
     let interp: IRInterp = newIRInterpreter(&generator);
     let llvmCodegen: LLVMCodegen = newLLVMCodegen(fileSubStr, &generator, &interp);
     if (!generateExecutable(&llvmCodegen, asSubStr(flags.out))) return 1;
-    if (PRINT_DEBUG) {
+    if (*flags.debug) {
         C::printf("files.length         = %llu\n", files.length);
         C::printf("topLevelItems.length = %llu\n", topLevelItems.length);
         C::printf("structDecls.length   = %llu\n", structDecls.length);
@@ -170,12 +177,11 @@ func findStdAndAddToImports(parser: &Parser) -> bool {
 }
 
 @os(WINDOWS) func linkExecutable() -> bool {
+    if (*flags.dontLink) {
+        return true;
+    }
     if (!equals(flags.target, &newStringFromStrLit("WINDOWS"))) {
-        if (*flags.keepOBJ) {
-            C::fprintf(stderr, "%s: Cross-linking is not supported yet.\n", NOTE_STR);
-            return true;
-        }
-        C::fprintf(stderr, "%s: Cross-linking is not supported yet. Run with `--keep-obj` to generate an object file.\n", ERR_STR);
+        C::fprintf(stderr, "%s: Cross-linking is not supported yet. Run with `--dont-link` to generate an object file.\n", ERR_STR);
         return false;
     }
     // if we find a non-standard linker, we'll use that one instead of the normal Windows linker.
@@ -194,8 +200,9 @@ func findStdAndAddToImports(parser: &Parser) -> bool {
         return false;
     }
     pushString(&s, flags.out);
-    pushStr(&s, ".obj");
-    pushStr(&s, " /DEFAULTLIB:libcmt /OUT:");
+    pushStr(&s, ".obj ");
+    pushStr(&s, "/DEFAULTLIB:libcmt ");
+    pushStr(&s, "/OUT:");
     pushString(&s, flags.out);
     for (let i: usize = 0; i < configs.length; i = i + 1) {
         let flag = at(&configs, i);
@@ -246,12 +253,11 @@ func findStdAndAddToImports(parser: &Parser) -> bool {
 }
 
 @os(LINUX) func linkExecutable() -> bool {
+    if (*flags.dontLink) {
+        return true;
+    }
     if (!equals(flags.target, &newStringFromStrLit("LINUX"))) {
-        if (*flags.keepOBJ) {
-            C::fprintf(stderr, "%s: Cross-linking is not supported yet.\n", NOTE_STR);
-            return true;
-        }
-        C::fprintf(stderr, "%s: Cross-linking is not supported yet. Run with `--keep-obj` to generate an object file.\n", ERR_STR);
+        C::fprintf(stderr, "%s: Cross-linking is not supported yet. Run with `--dont-link` to generate an object file.\n", ERR_STR);
         return false;
     }
     let s: String = newStringFromStrLit("ld ");

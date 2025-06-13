@@ -399,6 +399,7 @@
     @extern("LLVMCountParamTypes") func CountParamTypes(FunctionTy: LLVM::TypeRef) -> u32;
     @extern("LLVMGetReturnType") func GetReturnType(FunctionTy: LLVM::TypeRef) -> LLVM::TypeRef;
     @extern("LLVMPrintTypeToString") func PrintTypeToString(Ty: LLVM::TypeRef) -> &char;
+    @extern("LLVMGetInlineAsm") func GetInlineAsm(Ty: LLVM::TypeRef, AsmString: &char, AsmStringSize: usize, Constraints: &char, ConstraintsSize: usize, HasSideEffects: LLVMBool, IsAlignStack: LLVMBool, Dialect: u32, CanThrow: LLVMBool) -> LLVM::ValueRef;
 
     @extern("LLVMGetTypeKind") func GetTypeKind(Ty: LLVM::TypeRef) -> i32;
 }

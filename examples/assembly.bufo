@@ -1,0 +1,85 @@
+import "prelude.bufo";
+import "libc.bufo";
+import "asm.bufo";
+import "string.bufo";
+
+// Limit for showcase2. Set to 0 if you want to use scanf instead
+comptime LIMIT: u64 = 100;
+
+func main(argc: i32, argv: &&char) -> i32 {
+    showcase1();
+    showcase2();
+    return 0;
+}
+
+func arithmetics(v1: IRValue, v2: IRValue, v3: IRValue, v4: IRValue, v5: IRValue, v6: IRValue) -> ASMContext {
+    let context = ASMContext {};
+    context.dialect = ASMDialect::Intel;
+    let emit = func (context: &ASMContext, out: &char, op: &char, lhs: &char, rhs: &char) {
+        constrain(context, ASMConstraint::Clobber(ASMLoc::Reg("rax")));
+        let buf = ['\0'; 256];
+        C::snprintf(&buf, 256, "mov rax, %s\n%s rax, %s\nmov %s, rax", lhs, op, rhs, out);
+        push(context, &buf as &char);
+    };
+    emit(&context, "[$2]", "add", "$0", "$1");
+    emit(&context, "[$4]", "sub", "$0", "$1");
+    emit(&context, "[$5]", "xor", "$0", "42");
+    push(&context, "mov [$3], $1");
+    constrain(&context, ASMConstraint::In(ASMLoc::AnyReg, v1));
+    constrain(&context, ASMConstraint::In(ASMLoc::AnyReg, v2));
+    constrain(&context, ASMConstraint::In(ASMLoc::AnyReg, v3));
+    constrain(&context, ASMConstraint::In(ASMLoc::AnyReg, v4));
+    constrain(&context, ASMConstraint::In(ASMLoc::AnyReg, v5));
+    constrain(&context, ASMConstraint::In(ASMLoc::AnyReg, v6));
+    C::printf("Code:\n%s\n", context.code.buffer);
+    return context;
+}
+
+func showcase1() {
+    let v1: u64 = 35;
+    let v2: u64 = 34;
+    let v3: u64 = 0;
+    let v4: u64 = 0;
+    let v5: u64 = 0;
+    let v6: u64 = 0;
+    asm(arithmetics, v1, v2, &v3, &v4, &v5, &v6);
+    assert(v1 == 35, "Assembly failed, part 1!");
+    assert(v2 == 34, "Assembly failed, part 2!");
+    assert(v3 == 69, "Assembly failed, part 3!");
+    assert(v4 == 34, "Assembly failed, part 4!");
+    assert(v5 == 1,  "Assembly failed, part 5!");
+    assert(v6 == 9,  "Assembly failed, part 6!");
+    C::printf("Passed :FeelsOkayMan:\n");
+}
+
+func loop(sumPtr: IRValue, limit: IRValue) -> ASMContext {
+    let context = ASMContext {};
+    context.dialect = ASMDialect::Intel;
+    push(&context, "mov rax, 0");
+    push(&context, "mov rbx, 0");
+    push(&context, "cond:");
+    push(&context, "cmp rax, $1");
+    push(&context, "jz done");
+    push(&context, "add rbx, rax");
+    push(&context, "inc rax");
+    push(&context, "jmp cond");
+    push(&context, "done:");
+    push(&context, "mov [$0], rbx");
+    constrain(&context, ASMConstraint::In(ASMLoc::AnyReg, sumPtr));
+    constrain(&context, ASMConstraint::In(ASMLoc::AnyReg, limit));
+    constrain(&context, ASMConstraint::Clobber(ASMLoc::Reg("rax")));
+    constrain(&context, ASMConstraint::Clobber(ASMLoc::Reg("rbx")));
+    return context;
+}
+
+func showcase2() {
+    let limit: u64 = LIMIT;
+    if (limit == 0) {
+        C::printf("How much do you want to loop? ");
+        let ret = C::scanf("%llu", &limit);
+    }
+    let sum: u64 = 0;
+    asm(loop, &sum, limit);
+    C::printf("The sum of %llu loops is %llu!\n", limit, sum);
+}
+

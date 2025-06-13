@@ -76,17 +76,19 @@ func getMangledName(this: &Type) -> String {
         }
         &Type::Struct(decl) => {
             let s: String = newStringFromStrLit("S");
-            let hash: usize = hash(&decl.name.content, 3);
+            let hash: usize = hash(&decl.name.content, 4);
             if (hash < 10) pushNumber(&s, 0);
             if (hash < 100) pushNumber(&s, 0);
+            if (hash < 1000) pushNumber(&s, 0);
             pushNumber(&s, hash);
             return s;
         }
         &Type::Union(decl, _) => {
             let s = newStringFromStrLit("U");
-            let hash = hash(&decl.name.content, 3);
+            let hash: usize = hash(&decl.name.content, 4);
             if (hash < 10) pushNumber(&s, 0);
             if (hash < 100) pushNumber(&s, 0);
+            if (hash < 1000) pushNumber(&s, 0);
             pushNumber(&s, hash);
             return s;
         }
@@ -520,12 +522,13 @@ func getSize(this: &Type) -> usize {
         }
         &Type::Union(decl, _) => {
             assert(isSuccess(&decl.typeState), "Can only get size of valid unions");
-            assert(decl.variants.length < 256, "getSize expects the Union tag to fit into a single byte");
+            assert(decl.variants.length < 65536, "getSize expects the Union tag to fit into at most two bytes");
             let maxSize: usize = 0;
             let maxAlign: usize = 1;
             for (let i: usize = 0; i < decl.variants.length; i = i + 1) {
                 let variant = *at(&decl.variants, i);
                 let size: usize = 1; // union tag
+                if (decl.variants.length >= 256) size = 2;
                 let align: usize = 1;
                 for (let j: usize = 0; j < variant.fields.length; j = j + 1) {
                     let field = *at(&variant.fields, j);

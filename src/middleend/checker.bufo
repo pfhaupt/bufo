@@ -8,6 +8,7 @@ import "../util/lists.bufo";
 import "../util/arena.bufo";
 import "../frontend/context.bufo";
 import "../frontend/token.bufo";
+import "../frontend/lexer.bufo";
 import "../frontend/nodes.bufo";
 import "./types.bufo";
 import "./lookup.bufo";
@@ -57,6 +58,8 @@ comptime ERROR_DUPLICATE_UNION_NAME              : usize = 35;
 comptime ERROR_NON_EXHAUSTIVE_MATCH              : usize = 36;
 comptime ERROR_IMPOSSIBLE_PATTERN                : usize = 37;
 comptime ERROR_NULL_NON_PTR                      : usize = 38;
+comptime ERROR_FILE_MISSING                      : usize = 39;
+comptime ERROR_ASSEMBLY_IN_COMPTIME_CONTEXT      : usize = 40;
 
 comptime TCSTATE_INVALID: usize = 0;
 comptime TCSTATE_ERROR: usize = 1;
@@ -166,7 +169,7 @@ struct PatState {
 }
 
 struct TypeChecker {
-    isComptimeContext: bool;
+    comptimeDepth: usize;
     currentModule: &ModuleLookup;
     currentFunction: &FunctionLookup;
     anonFuncDepth: usize;
@@ -175,6 +178,8 @@ struct TypeChecker {
 }
 func enterAnonFunc(this: &TypeChecker) { this.anonFuncDepth = this.anonFuncDepth + 1; }
 func leaveAnonFunc(this: &TypeChecker) { this.anonFuncDepth = this.anonFuncDepth - 1; }
+func enterComptime(this: &TypeChecker) { this.comptimeDepth = this.comptimeDepth + 1; }
+func leaveComptime(this: &TypeChecker) { this.comptimeDepth = this.comptimeDepth - 1; }
 
 func pl(count: usize, s1: &char, s2: &char) -> &char {
     if (count == 1) return s1;
@@ -610,6 +615,36 @@ func reportTooManyPatterns(this: &TypeChecker, pat: &ParsedPattern, type: &Type)
     drop(&loc);
     return err;
 }
+func reportAssemblyWrongReturnType(this: &TypeChecker, stmt: &ParsedStmt, got: &Type, wanted: &Type) -> TCState {
+    let loc = toString(&stmt.span);
+    let name1 = toString(got);
+    let name2 = toString(wanted);
+    C::fprintf(stderr, "%s: %s: The function passed as the first argument to `asm` must return an %s.\n", loc.buffer, ERR_STR, name2.buffer);
+    C::fprintf(stderr, "%s: %s: The function currently returns a value of type `%s`.\n", loc.buffer, NOTE_STR, name1.buffer);
+    drop(&name2);
+    drop(&name1);
+    drop(&loc);
+    return newTCStateFailure(ERROR_TYPE_MISMATCH);
+}
+func reportAssemblyNotAFunction(this: &TypeChecker, stmt: &ParsedStmt, got: &Type, wanted: &Type) -> TCState {
+    let loc = toString(&stmt.span);
+    let name1 = toString(got);
+    let name2 = toString(wanted);
+    C::fprintf(stderr, "%s: %s: Expected first argument of `asm` to be a function, but found expression of type `%s`.\n", loc.buffer, ERR_STR, name1.buffer);
+    C::fprintf(stderr, "%s: %s: Inline assembly uses compile-time evaluation and requires the function to return an %s.\n", loc.buffer, NOTE_STR, name2.buffer);
+    drop(&name2);
+    drop(&name1);
+    drop(&loc);
+    return newTCStateFailure(ERROR_TYPE_MISMATCH);
+}
+func reportAssemblyArgCountMismatch(this: &TypeChecker, stmt: &ParsedStmt, argCount: usize, paramCount: usize) -> TCState {
+    let args = pl(argCount, "argument", "arguments");
+    let params = pl(paramCount, "parameter", "parameters");
+    let loc = toString(&stmt.span);
+    C::fprintf(stderr, "%s: %s: The function passed to `asm` expected %llu %s, but got %llu %s.\n", loc.buffer, ERR_STR, paramCount, params, argCount, args);
+    drop(&loc);
+    return newTCStateFailure(ERROR_TYPE_MISMATCH);
+}
 
 func emergencyPrint(this: &TypeChecker, where: Span) {
     let t: Token = Token {
@@ -776,7 +811,6 @@ func typeCheckFiles(this: &TypeChecker) -> bool {
         let file: &ParsedFile = at(&files, i);
         assert(getID(file) == i);
         this.currentModule = at(&this.lookup.files, i);
-        assert(this.currentModule != null);
         assert(this.currentModule.variables.length == 1, "expected to find only the global scope for TLI VarDecl");
         for (let j: usize = 0; j < file.mod.tlis.length; j = j + 1) {
              let tliID: usize = *at(&file.mod.tlis, j);
@@ -1236,6 +1270,64 @@ func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupLi
         &StmtData::Break => { }
         &StmtData::Continue => { }
         &StmtData::Match(_,_,_) => { return typeCheckMatchStmt(this, stmt, scopes); }
+        &StmtData::Asm(fn, args) => {
+            let exprState = typeCheckExpr(this, fn, scopes);
+            if (isError(&exprState)) return exprState;
+            if (wantsInfer(&exprState)) return exprState; // Can't be done in here
+            let exprType = getType(&exprState);
+            comptime ASM_CONTEXT = BUILD_A_KEYWORD("ASMContext");
+            comptime ASM_FILE = BUILD_A_KEYWORD("asm.bufo");
+            let lookup: TypeLookup = blank;
+            let structs = searchAllFilesForTypeName(&this.lookup, &ASM_CONTEXT);
+            let context: &StructLookup = null;
+            for (let i: usize = 0; i < structs.length; i = i + 1) {
+                let l = at(&structs, i);
+                if (l.kind == TYPE_LOOKUP_STRUCT) {
+                    let s = l.actual as &StructLookup;
+                    let decl = at(&structDecls, s.globalID);
+                    if (!decl.parent.isFile) continue;
+                    let parent = at(&files, decl.parent.id as usize);
+                    let filePath = toString(&parent.origin);
+                    let fileName = getFileName(&filePath);
+                    drop(&filePath);
+                    if (equals(&asSubStr(&fileName), &ASM_FILE)) {
+                        assert(context == null, "How did we find another asm.bufo?");
+                        context = s;
+                    }
+                    drop(&fileName);
+                }
+            }
+            if (context == null) {
+                let loc = toString(&stmt.span);
+                C::fprintf(stderr, "%s: %s: Inline assembly requires data structures which are part of the standard library.\n", loc.buffer, ERR_STR);
+                C::fprintf(stderr, "%s: %s: Please import `asm.bufo` and try again.\n", loc.buffer, NOTE_STR);
+                drop(&loc);
+                return newTCStateFailure(ERROR_FILE_MISSING);
+            }
+            match (exprType) {
+                &Type::Func(params, ret, _) => {
+                    if (!equals(ret, context.type)) {
+                        return reportAssemblyWrongReturnType(this, stmt, ret, context.type);
+                    }
+                    if (args.length != params.length) {
+                        return reportAssemblyArgCountMismatch(this, stmt, args.length, params.length);
+                    }
+                    for (let i: usize = 0; i < params.length; i = i + 1) {
+                        let arg = *at(&args, i);
+                        let par = *at(&params, i);
+                        let argState = typeCheckExpr(this, arg, scopes);
+                        if (isError(&argState)) return argState;
+                        if (wantsInfer(&argState)) {
+                            todo_with_msg("infer type onto asm arg");
+                        }
+                        assert(isType(&argState), "Expected asm-arg to be valid by now");
+                    }
+                }
+                type => {
+                    return reportAssemblyNotAFunction(this, stmt, type, context.type);
+                }
+            }
+        }
         unknown => {
             C::fprintf(stderr, "%s typeCheckStmt: Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
             C::exit(2);
@@ -1512,10 +1604,10 @@ func typeCheckVarDecl(this: &TypeChecker, varDecl: &ParsedStmt, scopes: &ScopeLo
                         if (isKnownVariable(s, name.content, &_loc)) {
                             let loc1 = toString(&name.span);
                             let loc2 = toString(&_loc.span);
-                            let name = toString(&name.content);
-                            C::fprintf(stderr, "%s: %s: Shadowing variable `%s` from an outer scope.\n", loc1.buffer, WARN_STR, name.buffer);
+                            let name1 = toString(&name.content);
+                            C::fprintf(stderr, "%s: %s: Shadowing variable `%s` from an outer scope.\n", loc1.buffer, WARN_STR, name1.buffer);
                             C::fprintf(stderr, "%s: %s: Variable with the same name already declared here.\n", loc2.buffer, NOTE_STR);
-                            drop(&name);
+                            drop(&name1);
                             drop(&loc2);
                             drop(&loc1);
                         }
@@ -1529,9 +1621,9 @@ func typeCheckVarDecl(this: &TypeChecker, varDecl: &ParsedStmt, scopes: &ScopeLo
                     if (isError(&typeState)) return typeState;
                     if (!isType(&typeState)) todo_with_msg("let type is not a type");
                 }
-                this.isComptimeContext = isComptime;
+                if (isComptime) enterComptime(this);
                 exprState = typeCheckExpr(this, expr, scopes);
-                this.isComptimeContext = false;
+                if (isComptime) leaveComptime(this);
                 if (type == null) {
                     // let var = expr;
                     assert(isInvalid(&typeState), "`let var = expr;` got valid type state??");
@@ -1657,7 +1749,9 @@ func typeCheckExpr(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupLi
             let _scopes: ScopeLookupList = blank;
             push(&_scopes, *at(scopes, 0));
             enterAnonFunc(this);
+            let fn = this.currentFunction;
             state = typeCheckFunction(this, decl, &_scopes, false);
+            this.currentFunction = fn;
             leaveAnonFunc(this);
             drop(&_scopes);
         }
@@ -1759,20 +1853,23 @@ func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, type: &ParsedTypeNod
 
 func typeCheckExprUnary(this: &TypeChecker, unary: &UnaryExpr, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.typeCheckExprUnary");
-    let lhs: &ParsedExpr = null;
-    extractOperand(unary, &lhs);
-    let exprState: TCState = typeCheckExpr(this, lhs, scopes);
-    if (isError(&exprState)) return exprState;
-    if (wantsInfer(&exprState)) return exprState; // Can't be done in here
-    let exprType: &Type = getType(&exprState);
     match (unary) {
-        &UnaryExpr::Comptime(_) => { return exprState; }
-        &UnaryExpr::Deref(_) => {
+        &UnaryExpr::Comptime(expr) => {
+            enterComptime(this);
+            let exprState = typeCheckExpr(this, expr, scopes);
+            leaveComptime(this);
+            return exprState;
+        }
+        &UnaryExpr::Deref(expr) => {
+            let exprState = typeCheckExpr(this, expr, scopes);
+            if (isError(&exprState)) return exprState;
+            if (wantsInfer(&exprState)) return exprState; // Can't be done in here
+            let exprType = getType(&exprState);
             match (exprType) {
-                &Type::Prim(PrimType::Any) => { return reportAnyDereference(this, lhs); }
+                &Type::Prim(PrimType::Any) => { return reportAnyDereference(this, expr); }
                 &Type::Ptr(under) => { return newTCStateType(under); }
-                t => {
-                    let loc: String = toString(&lhs.span);
+                _ => {
+                    let loc: String = toString(&expr.span);
                     let t: String = toString(exprType);
                     C::fprintf(stderr, "%s: %s: Attempted to dereference expression of type %s.\n", loc.buffer, ERR_STR, t.buffer);
                     drop(&t);
@@ -1781,12 +1878,20 @@ func typeCheckExprUnary(this: &TypeChecker, unary: &UnaryExpr, scopes: &ScopeLoo
                 }
             }
         }
-        &UnaryExpr::Ref(_) => {
+        &UnaryExpr::Ref(expr) => {
+            let exprState = typeCheckExpr(this, expr, scopes);
+            if (isError(&exprState)) return exprState;
+            if (wantsInfer(&exprState)) return exprState; // Can't be done in here
+            let exprType = getType(&exprState);
             return newTCStateType(wrap(Type::Ptr(exprType)));
         }
-        &UnaryExpr::Negate(_) => {
+        &UnaryExpr::Negate(expr) => {
+            let exprState = typeCheckExpr(this, expr, scopes);
+            if (isError(&exprState)) return exprState;
+            if (wantsInfer(&exprState)) return exprState; // Can't be done in here
+            let exprType = getType(&exprState);
             if (!isSignedInteger(exprType) && !isFloat(exprType)) {
-                let loc: String = toString(&lhs.span);
+                let loc: String = toString(&expr.span);
                 let t: String = toString(exprType);
                 C::fprintf(stderr, "%s: %s: Negation is not defined for type %s.\n", loc.buffer, ERR_STR, t.buffer);
                 drop(&t);
@@ -1796,9 +1901,13 @@ func typeCheckExprUnary(this: &TypeChecker, unary: &UnaryExpr, scopes: &ScopeLoo
             }
             return exprState;
         }
-        &UnaryExpr::Not(_) => {
+        &UnaryExpr::Not(expr) => {
+            let exprState = typeCheckExpr(this, expr, scopes);
+            if (isError(&exprState)) return exprState;
+            if (wantsInfer(&exprState)) return exprState; // Can't be done in here
+            let exprType = getType(&exprState);
             if (!isBoolean(exprType)) {
-                let loc: String = toString(&lhs.span);
+                let loc: String = toString(&expr.span);
                 let t: String = toString(exprType);
                 C::fprintf(stderr, "%s: %s: Logical Not is not defined for type %s.\n", loc.buffer, ERR_STR, t.buffer);
                 drop(&t);
@@ -1890,8 +1999,8 @@ func typeCheckExprCall(this: &TypeChecker, call: &CallExpr, scopes: &ScopeLookup
 func typeCheckExprStructInit(this: &TypeChecker, expr: &StructExpr, scopes: &ScopeLookupList) -> TCState {
     trace("TypeChecker.typeCheckExprStructInit");
     let lookup: TypeLookup = blank;
-    if (!resolveTypeByName(this.currentModule, &expr.name, &lookup)) {
-        let alternatives: TypeLookupList = searchAllFilesForTypeName(&this.lookup, &expr.name);
+    if (!resolveTypeByName(this.currentModule, &expr.name.content, &lookup)) {
+        let alternatives: TypeLookupList = searchAllFilesForTypeName(&this.lookup, &expr.name.content);
         return reportUnknownType(this, null, expr.name, alternatives);
     }
     if (isStruct(&lookup)) {
@@ -1906,8 +2015,8 @@ func typeCheckIdentifier(this: &TypeChecker, ident: &IdentExpr, scopes: &ScopeLo
     let var: VariableLookup = blank;
     let name = &ident.name;
     if (resolveVariableByName(this.currentModule, name, scopes, &var)) {
-        if (this.isComptimeContext && !var.isComptime) {
-            reportRuntimeValueInComptimeContext(this, *name, &var);
+        if (this.comptimeDepth > 0 && !var.isComptime) {
+            return reportRuntimeValueInComptimeContext(this, *name, &var);
         }
         let state: TCState = var.typeState;
         assert(!isInvalid(&state), "Variable not ready");
@@ -2169,13 +2278,13 @@ func typeCheckExprPathAccess(this: &TypeChecker, expr: &BinaryExpr, scopes: &Sco
             match (&rhs.data) {
                 &ExprData::Ident(ident) => {
                     let submodule: &ModuleLookup = null;
-                    let konfig = MLConfig {
+                    let config = MLConfig {
                         checkSelf: false,
                         checkImport: false, // REVIEW: Should we pass true here instead?
                         checkModule: true,
                         checkParent: false,
                     };
-                    if (resolveModuleByName(modLookup, &ident.name, &submodule, konfig)) {
+                    if (resolveModuleByName(modLookup, &ident.name, &submodule, config)) {
                         let typ = wrap(Type::Module(at(&modules, submodule.globalID)));
                         rhs.typeState = newTCStateType(typ);
                         return rhs.typeState;
@@ -2185,7 +2294,13 @@ func typeCheckExprPathAccess(this: &TypeChecker, expr: &BinaryExpr, scopes: &Sco
                     let typ: TypeLookup = blank;
                     let res = resolveIdentifierByName(modLookup, &ident.name, &var, &typ, &fun);
                     if (res == IDENT_TYPE) {
-                        return reportModuleAccessOfNonModule(this, lhs.span, ident.name, typ);
+                        if (isStruct(&typ)) {
+                            return reportModuleAccessOfNonModule(this, lhs.span, ident.name, typ);
+                        } else {
+                            let t = asUnion(&typ).type;
+                            rhs.typeState = newTCStateType(t);
+                            return rhs.typeState;
+                        }
                     } else if (res == IDENT_NONE) {
                         return reportUnknownSubmodule(this, modLookup, ident.name);
                     } else if (res == IDENT_FUNC) {
@@ -2211,7 +2326,7 @@ func typeCheckExprPathAccess(this: &TypeChecker, expr: &BinaryExpr, scopes: &Sco
                 }
                 &ExprData::StructInit(init) => {
                     let lookup: TypeLookup = blank;
-                    if (!resolveTypeByName(modLookup, &init.name, &lookup)) {
+                    if (!resolveTypeByName(modLookup, &init.name.content, &lookup)) {
                         return reportUnknownType(this, modLookup, init.name, blank);
                     }
                     if (isStruct(&lookup)) {
@@ -2225,7 +2340,7 @@ func typeCheckExprPathAccess(this: &TypeChecker, expr: &BinaryExpr, scopes: &Sco
             }
         }
         &Type::Union(_, _) => { return typeCheckExprUnionInit(this, expr, instanceType, scopes); }
-        _ => {
+        typ => {
             let name: Token = blank;
             match (lhs.data) {
                 ExprData::Ident(ident) => { name = ident.name; }
@@ -2246,10 +2361,11 @@ func typeCheckExprUnionInit(this: &TypeChecker, expr: &BinaryExpr, unionType: &T
     let lhs: &ParsedExpr = null;
     let rhs: &ParsedExpr = null;
     extractOperands(expr, &lhs, &rhs);
-    assert(isSuccess(&lhs.typeState));
-    let lookup: &UnionLookup = null;
-    let succ = resolveUnionByName(this.currentModule, &decl.name, &lookup);
-    assert(succ);
+    assert(isSuccess(&lhs.typeState), "UnionInit: Expected valid LHS type");
+    let lhsType = getType(&lhs.typeState);
+    assert(isUnion(lhsType), "UnionInit: Expected LHS to be union");
+    assert(equals(lhsType, unionType), "UnionInit: Passed type is not the same union");
+    let lookup: &UnionLookup = getUnionByGlobalDecl(&this.lookup, decl);
     let result = newTCStateType(unionType);
     match (&rhs.data) {
         &ExprData::Ident(ident) => {
@@ -2529,20 +2645,6 @@ func tryInferTypeOntoExpr(this: &TypeChecker, expr: &ParsedExpr, type: &Type, sc
             C::exit(2);
         }
     }
-    /*
-    // } else if (expr.kind == EXPR_CHAR_LIT) {
-    //     unreachable("EXPR_CHAR_LIT always has type char and should never be the target of tryInferTypeOntoExpr");
-    // } else if (expr.kind == EXPR_ARRAY_LIT) {
-    // } else if (expr.kind == EXPR_BLANK) {
-    // } else if (expr.kind == EXPR_UNARY) {
-    // } else if (expr.kind == EXPR_CALL) {
-    //     tid = tryInferTypeOntoCall(this, expr, type, scopes, checkOnly);
-    //     if (isError(&tid)) return tid;
-    // } else {
-    //     emergencyPrint(this, expr.span);
-    //     todo_with_msg("unhandled case in inferTypeOntoExpr");
-    // }
-    */
     if (!checkOnly) {
         (*expr).typeState = tid;
     }
@@ -2663,7 +2765,13 @@ func tryInferTypeOntoIdent(this: &TypeChecker, ident: &IdentExpr, type: &Type, s
         }
         stmt.typeState = tid;
     } else if (isFunction(type)) {
-        let functions = resolveAllFunctionsWithSignature(this.currentModule, &ident.name, type);
+        let config = MLConfig {
+            checkSelf: true,
+            checkImport: true,
+            checkModule: false,
+            checkParent: true,
+        };
+        let functions = resolveAllFunctionsWithSignature(this.currentModule, &ident.name, type, config);
         if (functions.length == 0) {
             if (checkOnly) {
                 tid = newTCStateFailure(ERROR_NO_SUCH_FUNCTION);
@@ -2930,11 +3038,11 @@ func typeCheckTypeNode(this: &TypeChecker, typeNode: &ParsedTypeNode) -> TCState
     } else if (typeNode.kind == PARSED_TYPE_IDENT) {
         let name: Token = typeNode.nameTkn;
         let typeLookup: TypeLookup = blank;
-        if (!resolveTypeByName(this.currentModule, &name, &typeLookup)) {
+        if (!resolveTypeByName(this.currentModule, &name.content, &typeLookup)) {
             let loc: String = getLocation(&name);
             let _n: String = toString(&name.content);
             C::fprintf(stderr, "%s: %s: Use of undeclared type identifier `%s`.\n", loc.buffer, ERR_STR, _n.buffer);
-            let alternatives: TypeLookupList = searchAllFilesForTypeName(&this.lookup, &name);
+            let alternatives: TypeLookupList = searchAllFilesForTypeName(&this.lookup, &name.content);
             return reportUnknownType(this, null, name, alternatives);
         }
         if (isStruct(&typeLookup)) {
@@ -2959,7 +3067,7 @@ func typeCheckTypeNode(this: &TypeChecker, typeNode: &ParsedTypeNode) -> TCState
             let sub = typeNode.underlyingID;
             if (sub.underlyingID == null) {
                 let lookup: TypeLookup = blank;
-                if (!resolveTypeByName(moduleLookup, &sub.nameTkn, &lookup)) {
+                if (!resolveTypeByName(moduleLookup, &sub.nameTkn.content, &lookup)) {
                     return reportUnknownType(this, moduleLookup, sub.nameTkn, blank);
                 }
                 if (isStruct(&lookup)) {
@@ -3015,7 +3123,7 @@ func typeCheckTypeNode(this: &TypeChecker, typeNode: &ParsedTypeNode) -> TCState
 
 func newTypeChecker() -> TypeChecker {
     return TypeChecker {
-        isComptimeContext: false,
+        comptimeDepth: 0,
         currentModule: null,
         currentFunction: null,
         lookup: blank,

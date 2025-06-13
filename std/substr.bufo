@@ -91,6 +91,42 @@ func getChar(this: &SubStr, index: usize) -> char {
     assert(index <= this.len, "Index out of bounds for String Index.");
     return getChar(this.start, index);
 }
+func beginsWith(this: &SubStr, prefix: &SubStr) -> bool {
+    if (prefix.len > this.len) return false;
+    for (let i: usize = 0; i < prefix.len; i = i + 1) {
+        if (this.start[i] != prefix.start[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+func skipUntil(this: &SubStr, pred: func (char) -> bool) {
+    while (this.len > 0) {
+        if (!pred(this.start[0])) {
+            advance(this);
+        } else {
+            break;
+        }
+    }
+}
+func splitNext(this: &SubStr, pred: func (char) -> bool) -> SubStr {
+    for (let i: usize = 0; i < this.len; i = i + 1) {
+        if (pred(this.start[i])) {
+            let _s1 = substring(this, 0, i);
+            advance(this, i);
+            return _s1;
+        }
+    }
+    return *this;
+}
+func advance(this: &SubStr) {
+    advance(this, 1);
+}
+func advance(this: &SubStr, step: usize) {
+    assert(step <= this.len, "SubStr.advance: Step too big!");
+    this.start = this.start + step;
+    this.len = this.len - step;
+}
 func substring(this: &SubStr, start: usize, end: usize) -> SubStr {
     assert(end <= this.len, "Index out of bounds for String Substring.");
     assert(end - start <= this.len, "Invalid length for String Substring.");

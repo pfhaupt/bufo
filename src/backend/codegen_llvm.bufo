@@ -2,6 +2,7 @@ import "prelude.bufo";
 import "libc.bufo";
 import "string.bufo";
 import "substr.bufo";
+import "asm.bufo";
 import "../bufo.bufo";
 import "../util/span.bufo";
 import "../util/lists.bufo";
@@ -23,21 +24,64 @@ import "./LLVM/basic_block.bufo";
 import "./LLVM/pass_manager.bufo";
 import "./LLVM/target.bufo";
 
-struct RegValue {
-    isLLVM: bool;
-    regValue: InterpReg;
-    llvmValue: LLVMValue;
+union RegValue {
+    None,
+    LLVM(LLVMValue),
+    Interp(InterpReg),
+    Both(LLVMValue, InterpReg),
 }
 func equals(this: &RegValue, other: &RegValue) -> bool {
     todo_with_msg("RegValue.equals");
 }
+func addInterpValue(this: &RegValue, val: InterpReg) {
+    match (this) {
+        &RegValue::LLVM(llvm) => { *this = RegValue::Both(llvm, val); }
+        &RegValue::Interp(_) => { *this = RegValue::Interp(val); }
+        &RegValue::None => { *this = RegValue::Interp(val); }
+        &RegValue::Both(llvm, _) => { *this = RegValue::Both(llvm, val); }
+        _ => { unreachable(); }
+    }
+}
+func addLLVMValue(this: &RegValue, val: LLVMValue) {
+    match (this) {
+        &RegValue::LLVM(_) => { *this = RegValue::LLVM(val); }
+        &RegValue::Interp(interp) => { *this = RegValue::Both(val, interp); }
+        &RegValue::None => { *this = RegValue::LLVM(val); }
+        &RegValue::Both(_, interp) => { *this = RegValue::Both(val, interp); }
+        _ => { unreachable(); }
+    }
+}
 func asInterp(this: &RegValue, err: &char) -> InterpReg {
-    assert(!this.isLLVM, err);
-    return this.regValue;
+    match (this) {
+        &RegValue::Interp(interp) => { return interp; }
+        &RegValue::Both(_, interp) => { return interp; }
+        _ => { }
+    }
+    unreachable(err);
 }
 func asLLVM(this: &RegValue, err: &char) -> LLVMValue {
-    assert(this.isLLVM, err);
-    return this.llvmValue;
+    match (this) {
+        &RegValue::LLVM(llvm) => { return llvm; }
+        &RegValue::Both(llvm, _) => { return llvm; }
+        _ => { }
+    }
+    unreachable(err);
+}
+func isLLVM(this: &RegValue) -> bool {
+    match (this) {
+        &RegValue::LLVM(_) => { return true; }
+        &RegValue::Both(_, _) => { return true; }
+        _ => { }
+    }
+    return false;
+}
+func isInterp(this: &RegValue) -> bool {
+    match (this) {
+        &RegValue::Interp(_) => { return true; }
+        &RegValue::Both(_, _) => { return true; }
+        _ => { }
+    }
+    return false;
 }
 
 struct LLVMCodegen {
@@ -56,7 +100,7 @@ func generateExecutable(this: &LLVMCodegen, outPath: SubStr) -> bool {
     //     functions: String_IRFuncHashMap;
     trace("LLVMCodegen.generateExecutable");
     let fns: IRFuncList = asList(&this.irGen.functions);
-    if (PRINT_DEBUG) {
+    if (*flags.debug) {
         dumpInstructions(&this.irGen.globalScope);
         for (let i: usize = 0; i < fns.length; i = i + 1) {
             let f: &IRFunc = at(&fns, i);
@@ -72,7 +116,7 @@ func generateExecutable(this: &LLVMCodegen, outPath: SubStr) -> bool {
         let f: &IRFunc = at(&fns, i);
         if (!generateFunction(this, i, f)) return false;
     }
-    if (PRINT_DEBUG) writeToFile(&this.llvmModule, newSubStrOfStrLit("debug_before.ll"));
+    if (*flags.debug) writeToFile(&this.llvmModule, newSubStrOfStrLit("debug_before.ll"));
     if (!verify(&this.llvmModule)) return false;
     let pm: LLVMPassManager = createPassManager(&this.llvmModule);
     addPromoteMemoryToRegisterPass(&pm);
@@ -80,7 +124,7 @@ func generateExecutable(this: &LLVMCodegen, outPath: SubStr) -> bool {
     addCFGSimplificationPass(&pm);
     addGlobalDCEPass(&pm);
     while (runOn(&pm, this.llvmModule)) {}
-    if (PRINT_DEBUG) writeToFile(&this.llvmModule, newSubStrOfStrLit("debug_after.ll"));
+    if (*flags.debug) writeToFile(&this.llvmModule, newSubStrOfStrLit("debug_after.ll"));
     let objPath: String = toString(&outPath);
     pushStr(&objPath, ".obj");
     if (*flags.verbose) {
@@ -105,6 +149,7 @@ func generateExecutable(this: &LLVMCodegen, outPath: SubStr) -> bool {
 }
 func generateEntryPoint(this: &LLVMCodegen) -> bool {
     trace("LLVMCodegen.generateEntryPoint");
+    if (*flags.dontLink) return true;
     // FIXME: Currently we hardcode the entry point.
     //        It would be cooler if the prelude or standard library did that.
     //        Needs more features though, like being able to provide custom
@@ -256,22 +301,17 @@ func generateBlock(
 ) {
     for (let i: usize = 0; i < block.instructions.length; i = i + 1) {
         let instr: &IRInstr = at(&block.instructions, i);
-        let val: RegValue = blank;
-        if (instr.isComptime) {
-            val = RegValue {
-                isLLVM: false,
-                regValue: evaluateSingle(this.interp, irFunc, instr, regs, false),
-                llvmValue: blank,
-            };
+        if (instr.kind == INSTR_ALLOCA) {
+            let llvm = generateLLVMInstr(this, llvmFunc, irFunc, llvmBlocks, instr, regs);
+            let interp = evaluateSingle(this.interp, irFunc, instr, regs, true);
+            addLLVMValue((at(regs, instr.dst.i)), llvm);
+            addInterpValue((at(regs, instr.dst.i)), interp);
+        } else if (instr.isComptime) {
+            let val = evaluateSingle(this.interp, irFunc, instr, regs, false);
+            if (!isTerminator(instr)) addInterpValue((at(regs, instr.dst.i)), val);
         } else {
-            val = RegValue {
-                isLLVM: true,
-                regValue: blank,
-                llvmValue: generateLLVMInstr(this, llvmFunc, irFunc, llvmBlocks, instr, regs),
-            };
-        }
-        if (!isTerminator(instr)) {
-            *(at(regs, instr.dst.i)) = val;
+            let val = generateLLVMInstr(this, llvmFunc, irFunc, llvmBlocks, instr, regs);
+            if (!isTerminator(instr)) addLLVMValue((at(regs, instr.dst.i)), val);
         }
     }
 }
@@ -302,8 +342,8 @@ func generateLLVMInstr(
         setName(&param, newSubStrOfStrLit("p"));
         return param;
     } else if (instr.kind == INSTR_STORE) {
-        let dstVal: LLVMValue = asLLVM(at(regs, instr.dst.i), "LLVM Store");
-        let srcVal: LLVMValue = asLLVM(at(regs, instr.src.i), "LLVM Store");
+        let dstVal: LLVMValue = asLLVM(at(regs, instr.dst.i), "LLVM Store dst");
+        let srcVal: LLVMValue = asLLVM(at(regs, instr.src.i), "LLVM Store src");
         if (isGlobal) {
             setInitializer(&dstVal, srcVal);
         } else {
@@ -317,7 +357,7 @@ func generateLLVMInstr(
         let typ: &Type = getRegister(irFunc, instr.dst).typ;
         let dstTyp: LLVMType = generateLLVMType(this, typ);
         let reg: &RegValue = at(regs, instr.src.i);
-        if (reg.isLLVM) {
+        if (isLLVM(reg)) {
             let srcVal: LLVMValue = asLLVM(reg, "LLVM Load");
             if (isGlobal) {
                 todo_with_msg("LLVM global load");
@@ -332,7 +372,7 @@ func generateLLVMInstr(
         return asLLVM(at(regs, instr.src.i), "LLVM Move");
     } else if (instr.kind == INSTR_FETCH_GLOBAL_PTR) {
         let val: &RegValue = at(&this.global, instr.src.i);
-        if (val.isLLVM) {
+        if (isLLVM(val)) {
             return asLLVM(val, "We just checked if it is LLVM");
         } else {
             let reg: InterpReg = asInterp(val, "We just checked if it is Interp");
@@ -342,7 +382,7 @@ func generateLLVMInstr(
     } else if (instr.kind == INSTR_FETCH_GLOBAL_VALUE) {
         let val: &RegValue = at(&this.global, instr.src.i);
         let typ: &Type = getRegister(irFunc, instr.dst).typ;
-        assert(val.isLLVM, "FetchGlobalValue got non-LLVM src");
+        assert(isLLVM(val), "FetchGlobalValue got non-LLVM src");
         let dstTyp: LLVMType = generateLLVMType(this, typ);
         let reg: LLVMValue = asLLVM(val, "We just checked if it is LLVM");
         return buildLoad(&this.llvmBuilder, dstTyp, reg, newSubStrOfStrLit("fetchglobalval"));
@@ -351,7 +391,7 @@ func generateLLVMInstr(
             // Global fetch
             let val: &RegValue = at(&this.global, instr.src.i);
             let typ: &Type = getRegister(irFunc, instr.dst).typ;
-            assert(!val.isLLVM, "FetchComptimeValue global=1 got non-Interp src");
+            assert(!isLLVM(val), "FetchComptimeValue global=1 got non-Interp src");
             let reg: InterpReg = asInterp(val, "We just checked if it is Interp");
             let start: &u8 = getGlobalPointer(this.interp, &reg);
             return generateLLVMValueFromComptimeValue(this, typ, start);
@@ -359,7 +399,7 @@ func generateLLVMInstr(
             // Local fetch
             let val: &RegValue = at(regs, instr.src.i);
             let typ: &Type = getRegister(irFunc, instr.dst).typ;
-            assert(!val.isLLVM, "FetchComptimeValue global=0 got non-Interp src");
+            assert(!isLLVM(val), "FetchComptimeValue global=0 got non-Interp src");
             let reg: InterpReg = asInterp(val, "We just checked if it is Interp");
             let start: &u8 = getComptimePointer(this, &reg);
             return generateLLVMValueFromComptimeValue(this, typ, start);
@@ -658,10 +698,47 @@ func generateLLVMInstr(
         let size: LLVMValue = asLLVM(at(regs, instr.op1.i), "LLVM Memcpy op1");
         buildMemcpy(&this.llvmBuilder, dst, 1, src, 1, size);
         return dst;
+    } else if (instr.kind == INSTR_EMIT_ASSEMBLY) {
+        let reg = at(regs, instr.src.i);
+        let start: &u8 = getRegStackPointer(this.interp, &asInterp(reg, "LLVM EmitAsm src"));
+        let fnType = instr.op1.i as &Type;
+        let context = start as &ASMContext;
+        let retType = generateTypeFromASM(this, context);
+        let args = collectValuesFromASM(this, context);
+        let params: LLVMTypeList = blank;
+        for (let i: usize = 0; i < args.length; i = i + 1) {
+            push(&params, getType(&args.elements[i]));
+        }
+        let asmFn = intoFunctionType(&retType, params, false);
+        let asmCall = getInlineAsm(&asmFn, context);
+        return buildCall(&this.llvmBuilder, asmCall, asmFn, args, retType, newSubStrOfStrLit("asm"));
     } else {
         C::printf("LLVM %llu\n", instr.kind);
         todo_with_msg("unknown llvm kind");
     }
+}
+func collectValuesFromASM(this: &LLVMCodegen, context: &ASMContext) -> LLVMValueList {
+    let list: LLVMValueList = blank;
+    for (let i: usize = 0; i < context.args.length; i = i + 1) {
+        push(&list, newLLVMValueFromRef(getArg(context, i)));
+    }
+    return list;
+}
+func generateTypeFromASM(this: &LLVMCodegen, context: &ASMContext) -> LLVMType {
+    if (context.out.length == 0) return createVoidType(&this.llvmContext);
+    if (context.out.length == 1) {
+        let arg = newLLVMValueFromRef(getArg(context, 0));
+        return getType(&arg);
+    }
+    let fields: &LLVMType = C::calloc(context.out.length, sizeof LLVMType);
+    assert(fields != null);
+    for (let i: usize = 0; i < context.out.length; i = i + 1) {
+        let arg = newLLVMValueFromRef(getArg(context, i));
+        fields[i] = getType(&arg);
+    }
+    let t = createStructType(&this.llvmContext, fields, context.out.length as u32, false);
+    C::free(fields);
+    return t;
 }
 
 func getComptimePointer(this: &LLVMCodegen, reg: &InterpReg) -> &u8 {
@@ -752,6 +829,35 @@ func generateLLVMValueFromComptimeValue(this: &LLVMCodegen, typ: &Type, start: &
                 strukt = buildInsertValue(&this.llvmBuilder, strukt, elemVal, i as u32, "comptime_struct_field");
             }
             return strukt;
+        }
+        &Type::Union(decl, variant) => {
+            let lType: LLVMType = generateLLVMType(this, typ);
+            assert(isStruct(&lType), "Expected LLVMType to be struct for comptime union");
+            let union: LLVMValue = constZero(&lType);
+            if (size == 0) {
+                return union;
+            }
+            let smol = PrimType::U8;
+            if (decl.variants.length >= 256) smol = PrimType::U16;
+            let byte = wrap(Type::Prim(smol));
+            {
+                let tag = generateLLVMValueFromComptimeValue(this, byte, start);
+                buildInsertValue(&this.llvmBuilder, union, tag, 0, "comptime_union_tag");
+            }
+            {
+                // FIXME: The line below fails LLVM validation
+                // let data = generateLLVMValueFromComptimeValue(this, wrap(Type::Array(byte, size - 1)), start + 1);
+                let dataSize = size - 1;
+                let offset = start + 1;
+                if (decl.variants.length >= 256) {
+                    dataSize = size - 2;
+                    offset = start + 2;
+                }
+                let byt = wrap(Type::Prim(PrimType::U8));
+                let data = generateLLVMValueFromComptimeValue(this, wrap(Type::Array(byt, dataSize)), offset);
+                buildInsertValue(&this.llvmBuilder, union, data, 1, "comptime_union_tag");
+            }
+            return union;
         }
         &Type::Array(elemType, size) => {
             let llvmType = generateLLVMType(this, typ);
@@ -856,8 +962,14 @@ func generateLLVMType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
                 return createStructType(&this.llvmContext, null, 0, false);
             }
             // Unions store the tag and an array of bytes
-            let tag: LLVMType = generateLLVMType(this, wrap(Type::Prim(PrimType::U8)));
-            let data = intoArrayType(&tag, size - 1); // - 1 because tag is stored differently
+            let smol = PrimType::U8;
+            let offset: u32 = 1;
+            if (decl.variants.length >= 256) {
+                smol = PrimType::U16;
+                offset = 2;
+            }
+            let tag: LLVMType = generateLLVMType(this, wrap(Type::Prim(smol)));
+            let data = intoArrayType(&tag, size - offset); // tag is stored differently
             let fields = [tag, data];
             return createStructType(&this.llvmContext, &fields[0], 2, false);
         }

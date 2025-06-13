@@ -1,0 +1,21 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Inline Assembly can't be used in a comptime context.
+//! The current call stack:
+//! Entered function `b` here.
+
+import "asm.bufo";
+
+func b() {
+    asm(func () -> ASMContext {
+        return blank;
+    });
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    (comptime b());
+    return 0;
+}

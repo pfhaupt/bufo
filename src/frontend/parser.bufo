@@ -81,7 +81,9 @@ func expectSoftIdentifier(this: &Parser) -> Token {
         || equals(&tkn.content, &KEYWORD_FALSE)
         || equals(&tkn.content, &KEYWORD_BLANK)
         || equals(&tkn.content, &KEYWORD_SIZEOF)
-        || equals(&tkn.content, &KEYWORD_FUNC)) {
+        || equals(&tkn.content, &KEYWORD_ASM)
+        || equals(&tkn.content, &KEYWORD_FUNC)
+        || equals(&tkn.content, &KEYWORD_COMPTIME)) {
         let loc: String = getLocation(&tkn);
         let name: String = toString(&tkn.content);
         C::fprintf(stderr, "%s: %s: Expected Identifier, found `%s` instead.\n", loc.buffer, ERR_STR, name.buffer);
@@ -639,6 +641,28 @@ func parseStmt(this: &Parser) -> &ParsedStmt {
         } else if (equals(&tkn.content, &KEYWORD_MATCH)) {
             next(&this.lexer);
             return parseMatchStmt(this, tkn);
+        } else if (equals(&tkn.content, &KEYWORD_ASM)) {
+            next(&this.lexer);
+            expect(this, TOKEN_PAREN_OPEN);
+            let args = ParsedExprList { };
+            while (!at(this, TOKEN_PAREN_CLOSE)) {
+                let arg = parseExpr(this);
+                if (!at(this, TOKEN_PAREN_CLOSE)) {
+                    expect(this, TOKEN_COMMA);
+                }
+                push(&args, arg);
+            }
+            expect(this, TOKEN_PAREN_CLOSE);
+            let end = expect(this, TOKEN_SEMI_COLON);
+            let span: Span = newSpanBetween(&tkn.span, &end.span);
+            if (args.length == 0) {
+                C::fprintf(stderr, "%s: %s: `asm` expects at least one argument.\n", toString(&tkn.span).buffer, ERR_STR);
+                syntaxError = true;
+                return newParsedStmt(span, StmtData::Asm(null, args));
+            } else {
+                let fn = pop(&args, 0);
+                return newParsedStmt(span, StmtData::Asm(fn, args));
+            }
         }
     } else if (tkn.kind == TOKEN_CURLY_OPEN) {
         let block: &ParsedBlock = parseBlock(this);
@@ -1009,6 +1033,14 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
             return newParsedExpr(ident.span, ExprData::False);
         } else if (equals(&ident.content, &KEYWORD_BLANK)) {
             return newParsedExpr(ident.span, ExprData::Blank);
+        } else if (equals(&ident.content, &KEYWORD_ASM)) {
+            let loc: String = getLocation(&ident);
+            let name: String = toString(&ident.content);
+            C::fprintf(stderr, "%s: %s: Expected Expression, found `%s`.\n", loc.buffer, ERR_STR, name.buffer);
+            C::fprintf(stderr, "%s: %s: Inline Assembly can only be used as a statement.\n", loc.buffer, NOTE_STR);
+            drop(&name);
+            drop(&loc);
+            C::exit(1);
         } else if (equals(&ident.content, &KEYWORD_SIZEOF)) {
             let typ: &ParsedTypeNode = parseTypeNode(this);
             let span: Span = newSpanBetween(&ident.span, &typ.span);
@@ -1118,11 +1150,13 @@ func parseUnaryExpr(this: &Parser) -> &ParsedExpr {
     let tkn: Token = peek(&this.lexer);
     if (tkn.kind == TOKEN_KEYWORD) {
         next(&this.lexer);
-        assert(equals(&tkn.content, &KEYWORD_COMPTIME), "Expected `comptime`");
-        let precedence: usize = getUnaryPrecedence(this, tkn.kind);
-        let expr: &ParsedExpr = __parseExpr(this, precedence, Assoc::Left);
-        let span: Span = newSpanBetween(&tkn.span, &expr.span);
-        return newParsedExpr(span, ExprData::Unary(UnaryExpr::Comptime(expr)));
+        if (equals(&tkn.content, &KEYWORD_COMPTIME)) {
+            let expr: &ParsedExpr = parseExpr(this);
+            let span: Span = newSpanBetween(&tkn.span, &expr.span);
+            return newParsedExpr(span, ExprData::Unary(UnaryExpr::Comptime(expr)));
+        } else {
+            unreachable("parseUnaryExpr: Unexpected keyword");
+        }
     } else if (tkn.kind == TOKEN_AMPERSAND_DOUBLE) {
         next(&this.lexer);
         let precedence: usize = getUnaryPrecedence(this, TOKEN_AMPERSAND_SINGLE);
@@ -1174,8 +1208,10 @@ func matchesBinaryExpr(this: &Parser) -> bool {
 func matchesUnaryExpr(this: &Parser) -> bool {
     trace("Parser.matchesUnaryExpr");
     let tknKind: usize = peek(&this.lexer).kind;
-    if (tknKind == TOKEN_KEYWORD)
-        return equals(&peek(&this.lexer).content, &KEYWORD_COMPTIME);
+    if (tknKind == TOKEN_KEYWORD) {
+        let tkn = peek(&this.lexer);
+        return equals(&tkn.content, &KEYWORD_COMPTIME);
+    }
     return tknKind == TOKEN_MINUS_SINGLE
         || tknKind == TOKEN_AMPERSAND_SINGLE
         // FIXME: Would be cooler if peek() could return split tokens too
@@ -1219,9 +1255,7 @@ func getBinaryAssociativity(this: &Parser, tkn: &Token) -> Assoc {
     return Assoc::Left;
 }
 func getUnaryPrecedence(this: &Parser, tknKind: usize) -> usize {
-    // FIXME: We can't know if this is actually KEYWORD_COMPTIME
-    if (tknKind == TOKEN_KEYWORD) return 14;
-    else if (tknKind == TOKEN_MINUS_SINGLE) return 14;
+    if (tknKind == TOKEN_MINUS_SINGLE) return 14;
     else if (tknKind == TOKEN_ASTERISK_SINGLE) return 14;
     else if (tknKind == TOKEN_AMPERSAND_SINGLE) return 14;
     else if (tknKind == TOKEN_BANG) return 14;

@@ -1,0 +1,15 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! Expected first argument of `asm` to be a function, but found expression of type `i32`.
+//! Inline assembly uses compile-time evaluation and requires the function to return an ASMContext.
+
+import "asm.bufo";
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let baz: i32 = 0;
+    asm(baz);
+    return 0;
+}

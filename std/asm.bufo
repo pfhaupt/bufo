@@ -1,0 +1,192 @@
+import "prelude.bufo";
+import "libc.bufo";
+import "string.bufo";
+import "substr.bufo";
+
+import "../src/backend/LLVM/bindings.bufo";
+
+struct InterpReg {
+    offset: usize;
+    size: usize;
+}
+
+func equals(this: &InterpReg, other: &InterpReg) -> bool {
+    unreachable("InterpReg.equals is never called");
+}
+
+// TODO: Get rid of RegValue in src/backend/codegen_llvm.bufo and use IRValue instead
+//       Otherwise the compiler may use a different data layout than other programs
+union IRValue {
+    None,
+    LLVM(LLVM::ValueRef),
+    Interp(InterpReg),
+    Both(LLVM::ValueRef, InterpReg),
+}
+func asInterp(this: &IRValue, err: &char) -> InterpReg {
+    match (this) {
+        &IRValue::Interp(interp) => { return interp; }
+        &IRValue::Both(_, interp) => { return interp; }
+        _ => { }
+    }
+    unreachable(err);
+}
+func asLLVM(this: &IRValue, err: &char) -> LLVM::ValueRef {
+    match (this) {
+        &IRValue::LLVM(llvm) => { return llvm; }
+        &IRValue::Both(llvm, _) => { return llvm; }
+        _ => { }
+    }
+    unreachable(err);
+}
+
+struct IRValueList {
+    elements: &IRValue;
+    length: usize;
+    capacity: usize;
+}
+func push(this: &IRValueList, element: IRValue) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = C::realloc(this.elements, newCap * sizeof IRValue);
+        assert(this.elements != null, "Could not allocate memory in IRValueList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+func at(this: &IRValueList, index: usize) -> &IRValue {
+    assert(index < this.length, "Out of bounds access in IRValueList.at");
+    assert(this.elements != null, "Element pointer is NULL in IRValueList.at");
+    return &this.elements[index];
+}
+
+union ASMDialect {
+    ATT,
+    Intel,
+}
+union ASMConstraint {
+    InOut(ASMLoc, IRValue),
+    In(ASMLoc, IRValue),
+    Out(ASMLoc, IRValue),
+    Clobber(ASMLoc),
+}
+
+union ASMLoc {
+    AnyReg,
+    Reg(&char),
+}
+
+struct ASMContext {
+    code: String;
+    out: StringList;
+    in: StringList;
+    clobber: StringList;
+    args: IRValueList;
+    sideEffects: bool;
+    alignedStack: bool;
+    dialect: ASMDialect;
+    canThrow: bool;
+}
+func getArg(context: &ASMContext, index: usize) -> LLVM::ValueRef {
+    return asLLVM(&context.args.elements[index], "ASMContext.getArg");
+}
+func push(context: &ASMContext, code: &char) {
+    pushStr(&context.code, code);
+    pushStr(&context.code, "\n");
+}
+func in(context: &ASMContext, arg: IRValue, constraint: &char) {
+    push(&context.args, arg);
+    push(&context.in, newStringFromStrLit(constraint));
+}
+func out(context: &ASMContext, arg: IRValue, constraint: &char) {
+    push(&context.args, arg);
+    push(&context.out, newStringFromStrLit(constraint));
+}
+func constrain(context: &ASMContext, loc: ASMLoc) -> String {
+    let r: String = blank;
+    match (&loc) {
+        &ASMLoc::Reg(reg) => {
+            r = newStringFromStrLit("{");
+            pushStr(&r, reg);
+            pushChar(&r, '}');
+        }
+        &ASMLoc::AnyReg => { r = newStringFromStrLit("r"); }
+        unknown => {
+            C::fprintf(stderr, "%s ASMContext.constrain: Unhandled tag %hhu\n", FATAL_STR, tag(unknown));
+            C::exit(2);
+        }
+    }
+    return r;
+}
+func constrain(context: &ASMContext, cons: ASMConstraint) {
+    match (&cons) {
+        &ASMConstraint::In(loc, val) => {
+            let in = constrain(context, loc);
+            push(&context.in, in);
+            push(&context.args, val);
+        }
+        &ASMConstraint::InOut(loc, val) => {
+            let in = constrain(context, loc);
+            let out = newStringFromStrLit("=");
+            pushString(&out, &in);
+            push(&context.out, out);
+            push(&context.in, in);
+            push(&context.args, val);
+        }
+        &ASMConstraint::Clobber(loc) => {
+            let clob = constrain(context, loc);
+            let out = newStringFromStrLit("~");
+            pushString(&out, &clob);
+            push(&context.clobber, out);
+        }
+        unknown => {
+            C::fprintf(stderr, "%s ASMContext.constrain: Unhandled tag %hhu\n", FATAL_STR, tag(unknown));
+            C::exit(2);
+        }
+    }
+}
+func constrain(context: &ASMContext, code: &char) {
+    let l = C::strlen(code);
+    let ptr = code;
+    let c: usize = 0;
+    while (c < l) {
+        while (ptr[0] != ',') ptr = ptr + 1;
+        let diff = ptr - code;
+        let s: String = blank;
+        for (let i: usize = 0; i < diff; i = i + 1) pushChar(&s, code[i]);
+        if (s.length > 0) {
+            if (s.buffer[0] == '=') {
+                push(&context.out, s);
+            } else if (s.buffer[0] == '~') {
+                push(&context.clobber, s);
+            } else {
+                push(&context.in, s);
+            }
+        }
+        code = ptr;
+        c = c + diff + 1;
+        ptr = ptr + diff + 1;
+    }
+}
+
+func collect(context: &ASMContext) -> String {
+    let s: String = blank;
+    for (let i: usize = 0; i < context.out.length; i = i + 1) {
+        pushString(&s, at(&context.out, i));
+        if (context.in.length > 0
+            || context.clobber.length > 0
+            || i != context.out.length - 1) pushChar(&s, ',');
+    }
+    for (let i: usize = 0; i < context.in.length; i = i + 1) {
+        pushString(&s, at(&context.in, i));
+        if (context.clobber.length > 0
+            || i != context.in.length - 1) pushChar(&s, ',');
+    }
+    for (let i: usize = 0; i < context.clobber.length; i = i + 1) {
+        pushString(&s, at(&context.clobber, i));
+        if (i != context.clobber.length - 1) pushChar(&s, ',');
+    }
+    return s;
+}
+

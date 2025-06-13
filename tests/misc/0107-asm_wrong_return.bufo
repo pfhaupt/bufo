@@ -1,0 +1,14 @@
+//! THIS IS A TEST PROGRAM
+//! COMPILER
+//! FAILURE
+//! CODE: 1
+//! ERROR:
+//! The function passed as the first argument to `asm` must return an ASMContext.
+//! The function currently returns a value of type `i32`.
+
+import "asm.bufo";
+
+func main(argc: i32, argv: &&char) -> i32 {
+    asm(func () -> i32 {});
+    return 0;
+}
