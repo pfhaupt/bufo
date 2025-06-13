@@ -46,8 +46,14 @@ func toString(this: &Flag) -> String {
 
 struct FlagParser {
     programName: String;
+    helpFlag: &bool;
     flags: [Flag; 32];
     flagCount: usize;
+    errors: StringList;
+}
+func addHelpFlag(this: &FlagParser) -> &bool {
+    assert(this.helpFlag == null, "addHelpFlag() called twice");
+    return this.helpFlag = addBoolFlag(this, "h", "help", "Print help and exit");
 }
 func addDefaultFlag(this: &FlagParser, kind: usize, short: &char, long: &char, descr: &char, mode: usize) -> &Flag {
     assert(this.flagCount < 32, "Could not add flag: Too many flags");
@@ -97,24 +103,30 @@ func shiftArgument(this: &FlagParser, argc: &i32, argv: &&&char) -> &char {
     *argc = *argc - 1;
     return result;
 }
-func showUsage(this: &FlagParser) {
-    C::fprintf(stderr, "Usage: %s", this.programName.buffer);
+func showErrors(stream: Any, this: &FlagParser) {
+    assert(this.errors.length > 0, "showErrors() called but no error collected");
+    for (let i: usize = 0; i < this.errors.length; i = i + 1) {
+        let f = &this.errors.elements[i];
+        C::fprintf(stream, "%.*s", f.length, f.buffer);
+    }
+}
+func showUsage(stream: Any, this: &FlagParser) {
+    C::fprintf(stream, "Usage: %s", this.programName.buffer);
     for (let i: usize = 0; i < this.flagCount; i = i + 1) {
         let f = &this.flags[i];
         if (isMandatory(f)) {
-            C::fprintf(stderr, " %s", toString(f).buffer);
+            C::fprintf(stream, " %s", toString(f).buffer);
         }
     }
-    C::fprintf(stderr, "\n");
+    C::fprintf(stream, "\n");
 }
-func showHelp(this: &FlagParser) {
-    C::fprintf(stderr, "Help:\n");
+func showHelp(stream: Any, this: &FlagParser) {
+    C::fprintf(stream, "Help:\n");
     for (let i: usize = 0; i < this.flagCount; i = i + 1) {
-        showHelp(&this.flags[i]);
+        showHelp(stream, &this.flags[i]);
     }
-    C::fprintf(stderr, "\n");
 }
-func showHelp(this: &Flag) {
+func showHelp(stream: Any, this: &Flag) {
     let s: String = blank;
     if (this.short != null && this.long != null) {
         pushChar(&s, '-');
@@ -126,14 +138,48 @@ func showHelp(this: &Flag) {
     } else {
         s = toString(this);
     }
-    C::fprintf(stderr, "%20s: %s", s.buffer, this.descr);
+    C::fprintf(stream, "%20s: %s", s.buffer, this.descr);
     if (isMandatory(this)) {
-        C::fprintf(stderr, " [mandatory]");
+        C::fprintf(stream, " [mandatory]");
     }
-    C::fprintf(stderr, "\n");
+    C::fprintf(stream, "\n");
     drop(&s);
 }
+func helpOr(this: &FlagParser, or: bool) -> bool {
+    if (this.helpFlag != null) {
+        return *this.helpFlag || or;
+    }
+    return or;
+}
+func emitFlagError(this: &FlagParser, msg: &char, name: &char) -> &String {
+    let len = C::strlen(msg) + C::strlen(name) + 1;
+    let buf = C::calloc(len, sizeof char);
+    assert(buf != null);
+    C::snprintf(buf, len, msg, name);
+    let err = emitFlagError(this, buf);
+    C::free(buf);
+    return err;
+}
+func emitFlagError(this: &FlagParser, msg: &char) -> &String {
+    let err = newStringFromStrLit(ERR_STR);
+    pushStr(&err, ": ");
+    pushStr(&err, msg);
+    pushChar(&err, '\n');
+    push(&this.errors, err);
+    return last(&this.errors);
+}
+func emitFlagDescription(this: &FlagParser, f: &Flag) -> String {
+    let err = newStringFromStrLit(NOTE_STR);
+    pushStr(&err, ": Description of flag: ");
+    pushStr(&err, f.descr);
+    pushStr(&err, "\n");
+    return err;
+}
 func runOn(this: &FlagParser, argc: i32, argv: &&char) -> bool {
+    let res = _runOn(this, argc, argv) && this.errors.length == 0;
+    return helpOr(this, res);
+}
+func _runOn(this: &FlagParser, argc: i32, argv: &&char) -> bool {
     if (this.programName.buffer == null) {
         let name = shiftArgument(this, &argc, &argv);
         this.programName = newStringFromStrLit(name);
@@ -159,14 +205,14 @@ func runOn(this: &FlagParser, argc: i32, argv: &&char) -> bool {
                 if (f.long == null) continue;
                 if (C::strcmp(flag, f.long) == 0) {
                     if (f.found && ((f.mode & FLAG_MODE_SINGLE) != 0)) {
-                        C::fprintf(stderr, "%s: Value for flag `--%s` was already provided.\n", ERR_STR, f.long);
+                        emitFlagError(this, "Value for flag --%s was already provided.", f.long);
                         return false;
                     }
                     if (f.kind == FLAG_BOOL) {
                         f.asBool = true;
                     } else if (f.kind == FLAG_STRING) {
                         if (argc == 0) {
-                            C::fprintf(stderr, "%s: Expected one more positional argument for flag --%s.\n", ERR_STR, f.long);
+                            emitFlagError(this, "Expected one more positional argument for flag --%s.", f.long);
                             return false;
                         }
                         let val = shiftArgument(this, &argc, &argv);
@@ -182,14 +228,14 @@ func runOn(this: &FlagParser, argc: i32, argv: &&char) -> bool {
                 if (f.short == null) continue;
                 if (C::strcmp(flag, f.short) == 0) {
                     if (f.found && ((f.mode & FLAG_MODE_SINGLE) != 0)) {
-                        C::fprintf(stderr, "%s: Value for flag `-%s` was already provided.\n", ERR_STR, f.short);
+                        emitFlagError(this, "Value for flag -%s was already provided.", f.short);
                         return false;
                     }
                     if (f.kind == FLAG_BOOL) {
                         f.asBool = true;
                     } else if (f.kind == FLAG_STRING) {
                         if (argc == 0) {
-                            C::fprintf(stderr, "%s: Expected one more positional argument for flag -%s.\n", ERR_STR, f.short);
+                            emitFlagError(this, "Expected one more positional argument for flag -%s.", f.short);
                             return false;
                         }
                         let val = shiftArgument(this, &argc, &argv);
@@ -205,8 +251,10 @@ func runOn(this: &FlagParser, argc: i32, argv: &&char) -> bool {
                 if (f.short != null) continue;
                 if (f.long != null) continue;
                 if (f.found && ((f.mode & FLAG_MODE_SINGLE) != 0)) {
-                    C::fprintf(stderr, "%s: Value for standalone flag was already provided.\n", ERR_STR);
-                    C::fprintf(stderr, "%s: Description of flag: %s\n", NOTE_STR, f.descr);
+                    let err = emitFlagError(this, "Value for standalone flag was already provided.");
+                    let note = emitFlagDescription(this, f);
+                    pushString(err, &note);
+                    drop(&note);
                     return false;
                 }
                 if (f.kind == FLAG_BOOL) {
@@ -222,8 +270,10 @@ func runOn(this: &FlagParser, argc: i32, argv: &&char) -> bool {
             }
         }
         if (!found) {
-            C::fprintf(stderr, "%s: Unknown flag %s\n", ERR_STR, flag);
-            return false;
+            if (long) emitFlagError(this, "Unknown flag --%s.", flag);
+            if (short) emitFlagError(this, "Unknown flag -%s.", flag);
+            if (standalone) emitFlagError(this, "Unknown flag %s.", flag);
+            continue;
         }
     }
     let allGotten = true;
@@ -232,11 +282,14 @@ func runOn(this: &FlagParser, argc: i32, argv: &&char) -> bool {
         if (!f.found && ((f.mode & FLAG_MODE_MANDATORY) != 0)) {
             let name = f.long;
             if (name == null) name = f.short;
+            // emitFlagError pushes the error to FlagParser.errors, no need to do anything here
             if (name == null) {
-                C::fprintf(stderr, "%s: Mandatory standalone flag not provided.\n", ERR_STR);
-                C::fprintf(stderr, "%s: Description of flag: %s\n", NOTE_STR, f.descr);
+                let err = emitFlagError(this, "Mandatory standalone flag not provided.");
+                let note = emitFlagDescription(this, f);
+                pushString(err, &note);
+                drop(&note);
             } else {
-                C::fprintf(stderr, "%s: No value for flag `%s` was provided.\n", ERR_STR, name);
+                emitFlagError(this, "No value for flag `%s` was provided.", name);
             }
             allGotten = false;
         }

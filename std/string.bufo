@@ -25,6 +25,9 @@ func at(this: &StringList, index: usize) -> &String {
     assert(this.elements != null, "Element pointer is NULL in StringList.at");
     return &this.elements[index];
 }
+func last(this: &StringList) -> &String {
+    return at(this, this.length - 1);
+}
 
 struct String {
     buffer: &char;

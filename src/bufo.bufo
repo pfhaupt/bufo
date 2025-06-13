@@ -79,10 +79,17 @@ func main(argc: i32, argv: &&char) -> i32 {
     flags.linkDynamic = addBoolFlag(&flagParser, "--link-dynamic", "Use the specified dynamic libraries to link instead of static libraries");
     flags.debug = addBoolFlag(&flagParser, "d", "debug", "Enable debug logs and other debugging measurements");
     flags.trace = addBoolFlag(&flagParser, "--trace", "Trace function calls");
+    let help = addHelpFlag(&flagParser);
     if (!runOn(&flagParser, argc, argv)) {
-        showUsage(&flagParser);
-        showHelp(&flagParser);
+        showErrors(stderr, &flagParser);
+        showUsage(stderr, &flagParser);
+        showHelp(stderr, &flagParser);
         return 1;
+    }
+    if (*help) {
+        showUsage(stdout, &flagParser);
+        showHelp(stdout, &flagParser);
+        return 0;
     }
     if (*flags.debug) debug = debug_active;
     // TODO: Build tracing into the IRGen
@@ -107,7 +114,7 @@ func main(argc: i32, argv: &&char) -> i32 {
         @os(LINUX) *flags.target = newStringFromStrLit("LINUX");
     } else {
         C::fprintf(stderr, "error: Unknown target %s\n", flags.target.buffer);
-        showHelp(&flagParser);
+        showHelp(stderr, &flagParser);
         return 1;
     }
     let filepath: String = *flags.file;
