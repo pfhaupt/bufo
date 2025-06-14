@@ -57,13 +57,13 @@ func loop(sumPtr: IRValue, limit: IRValue) -> ASMContext {
     context.dialect = ASMDialect::Intel;
     push(&context, "mov rax, 0");
     push(&context, "mov rbx, 0");
-    push(&context, "cond:");
+    push(&context, "cond${:uid}:");
     push(&context, "cmp rax, $1");
-    push(&context, "jz done");
+    push(&context, "jz done${:uid}");
     push(&context, "add rbx, rax");
     push(&context, "inc rax");
-    push(&context, "jmp cond");
-    push(&context, "done:");
+    push(&context, "jmp cond${:uid}");
+    push(&context, "done${:uid}:");
     push(&context, "mov [$0], rbx");
     constrain(&context, ASMConstraint::In(ASMLoc::AnyReg, sumPtr));
     constrain(&context, ASMConstraint::In(ASMLoc::AnyReg, limit));

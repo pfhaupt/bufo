@@ -2,7 +2,7 @@
 import "prelude.bufo";
 import "libc.bufo";
 
-import "winapi/functions.bufo";
+@os(WINDOWS) import "winapi/functions.bufo";
 @os(LINUX) import "posix/structs.bufo";
 @os(LINUX) import "posix/functions.bufo";
 

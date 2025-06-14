@@ -3,11 +3,11 @@ import "libc.bufo";
 import "cmd.bufo";
 import "string.bufo";
 
-import "winapi/structs.bufo";
-import "winapi/functions.bufo";
-import "winapi/constants.bufo";
+@os(WINDOWS) import "winapi/structs.bufo";
+@os(WINDOWS) import "winapi/functions.bufo";
+@os(WINDOWS) import "winapi/constants.bufo";
 
-func getLastModified(filePath: &char) -> usize {
+@os(WINDOWS) func getLastModified(filePath: &char) -> usize {
     let file: Handle = WinAPI::CreateFileA(
         filePath,
         GENERIC_READ,
@@ -27,7 +27,7 @@ func getLastModified(filePath: &char) -> usize {
     return time.time;
 }
 
-func waitForProcess(proc: Handle) -> bool {
+@os(WINDOWS) func waitForProcess(proc: Handle) -> bool {
     let result: u32 = WinAPI::WaitForSingleObject(
         proc,
         INFINITE
@@ -53,27 +53,27 @@ func waitForProcess(proc: Handle) -> bool {
     return true;
 }
 
-func dirExists(path: &char) -> bool {
+@os(WINDOWS) func dirExists(path: &char) -> bool {
     let attrib = WinAPI::GetFileAttributesA(path);
     return attrib != INVALID_FILE_ATTRIBUTES &&
             (attrib & FILE_ATTRIBUTE_DIRECTORY) != 0;
 }
 
-func tryFind(program: &char) -> bool {
+@os(WINDOWS) func tryFind(program: &char) -> bool {
     let s: String = newStringFromStrLit("where /Q ");
     pushStr(&s, program);
     let cmd: Cmd = newCmdFromStrLit(s.buffer);
     return runCmdSync(cmd);
 }
 
-func runCmdSync(cmd: Cmd) -> bool {
+@os(WINDOWS) func runCmdSync(cmd: Cmd) -> bool {
     let proc: Handle = runCmdAsync(cmd);
     if (proc.ptr == INVALID_HANDLE.ptr) return false;
     return waitForProcess(proc);
 }
 
 // https://docs.microsoft.com/en-us/windows/win32/procthread/creating-a-child-process-with-redirected-input-and-output
-func runCmdAsync(cmd: Cmd) -> Handle {
+@os(WINDOWS) func runCmdAsync(cmd: Cmd) -> Handle {
     let siStartInfo: StartupInfo = StartupInfo {
         cb: 0,
         lpReserved: null,
@@ -136,7 +136,7 @@ func runCmdAsync(cmd: Cmd) -> Handle {
     return piProcInfo.hProcess;
 }
 
-func WinError(error: u32) -> &char {
+@os(WINDOWS) func WinError(error: u32) -> &char {
     let s = String {};
     pushNumber(&s, error as usize);
     return s.buffer;

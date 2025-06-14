@@ -96,7 +96,7 @@ struct LLVMCodegen {
 
 func generateExecutable(this: &LLVMCodegen, outPath: SubStr) -> bool {
     let fns: IRFuncList = asList(&this.irGen.functions);
-    if (*flags.debug) {
+    if (*flags.debug && *flags.verbose) {
         dumpInstructions(&this.irGen.globalScope);
         for (let i: usize = 0; i < fns.length; i = i + 1) {
             let f: &IRFunc = at(&fns, i);
@@ -114,12 +114,31 @@ func generateExecutable(this: &LLVMCodegen, outPath: SubStr) -> bool {
     }
     if (*flags.debug) writeToFile(&this.llvmModule, newSubStrOfStrLit("debug_before.ll"));
     if (!verify(&this.llvmModule)) return false;
-    let pm: LLVMPassManager = createPassManager(&this.llvmModule);
-    addPromoteMemoryToRegisterPass(&pm);
-    addAlwaysInlinerPass(&pm);
-    addCFGSimplificationPass(&pm);
-    addGlobalDCEPass(&pm);
-    while (runOn(&pm, this.llvmModule)) {}
+    if (*flags.opt) {
+        let passOptions = createPassBuilderOptions();
+        // Not sure if we need this, we just verified the module
+        // setVerifyEach(passOptions, newLLVMBool(*flags.debug));
+        // Debug Logging is very noisy :^)
+        // setDebugLogging(passOptions, newLLVMBool(*flags.debug));
+        // TODO: Find out what this AAPipeline is for
+        // setAAPipeline(passOptions, "");
+        // TODO: Play around with these settings
+        setLoopInterleaving(passOptions, newLLVMBool(true));
+        setLoopVectorization(passOptions, newLLVMBool(true));
+        setSLPVectorization(passOptions, newLLVMBool(true));
+        setLoopUnrolling(passOptions, newLLVMBool(true));
+        setForgetAllSCEVInLoopUnroll(passOptions, newLLVMBool(true));
+        setLicmMssaOptCap(passOptions, 100);
+        setLicmMssaNoAccForPromotionCap(passOptions, 8);
+        setCallGraphProfile(passOptions, newLLVMBool(true));
+        setMergeFunctions(passOptions, newLLVMBool(true));
+        setInlinerThreshold(passOptions, 250);
+        // TODO: Play with some passes to figure out a good mix of optimizations
+        if (!runPasses(this.llvmModule, "default<O3>", this.llvmTargetMachine, passOptions)) {
+            return false;
+        }
+        disposePassBuilderOptions(passOptions);
+    }
     if (*flags.debug) writeToFile(&this.llvmModule, newSubStrOfStrLit("debug_after.ll"));
     let objPath: String = toString(&outPath);
     pushStr(&objPath, ".obj");

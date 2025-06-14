@@ -137,6 +137,10 @@ func isAsciiUppercase(ch: char) -> bool {
     C::exit(1);
 }
 
+// Calls to assert() will be replaced with calls to _empty_assert() when you specify --opt
+func _empty_assert(cond: bool) { }
+func _empty_assert(cond: bool, msg: &char) { }
+
 func assert(cond: bool) {
     setupStdHandles();
     if (!cond) {

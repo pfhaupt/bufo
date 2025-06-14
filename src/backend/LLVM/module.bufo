@@ -87,15 +87,9 @@ func getGlobal(this: &LLVMModule, name: SubStr) -> LLVMValue {
     return newLLVMValueFromRef(g);
 }
 
-func createPassManager(this: &LLVMModule) -> LLVMPassManager {
-    let pm: LLVM::PassManagerRef = LLVM::CreatePassManager();
-    assert(!LLVM::isNull(pm), "Could not create pass manager for module");
-    return newLLVMPassManagerFromRef(pm);
-}
-func runInPassManager(this: &LLVMModule, pm: LLVMPassManager) -> bool {
+func runPasses(this: LLVMModule, passes: &char, target: LLVMTargetMachine, options: LLVMPassBuilderOptions) -> bool {
     assert(!LLVM::isNull(this.ref));
-    assert(!LLVM::isNull(pm.ref));
-    return LLVM::RunPassManager(pm.ref, this.ref) == 1;
+    return LLVM::RunPasses(this.ref, passes, target.ref, options.ref).ptr == null;
 }
 
 func newLLVMModuleFromRef(ref: LLVM::ModuleRef) -> LLVMModule {

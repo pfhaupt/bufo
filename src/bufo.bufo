@@ -43,6 +43,7 @@ struct Flags {
     linkDynamic: &bool;
     debug: &bool;
     trace: &bool;
+    opt: &bool;
 }
 let flags = Flags {};
 func main(argc: i32, argv: &&char) -> i32 {
@@ -79,6 +80,7 @@ func main(argc: i32, argv: &&char) -> i32 {
     flags.linkDynamic = addBoolFlag(&flagParser, "--link-dynamic", "Use the specified dynamic libraries to link instead of static libraries");
     flags.debug = addBoolFlag(&flagParser, "d", "debug", "Enable debug logs and other debugging measurements");
     flags.trace = addBoolFlag(&flagParser, "--trace", "Trace function calls");
+    flags.opt = addBoolFlag(&flagParser, "--opt", "Enable aggressive optimizations");
     let help = addHelpFlag(&flagParser);
     if (!runOn(&flagParser, argc, argv)) {
         showErrors(stderr, &flagParser);

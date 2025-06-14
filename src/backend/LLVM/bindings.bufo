@@ -1,81 +1,30 @@
+
  module LLVM {
+    struct TargetMachineRef { ptr: Any; }
+    func isNull(this: TargetMachineRef) -> bool { return this.ptr == null; }
+    struct TargetRef { ptr: Any; }
+    func isNull(this: TargetRef) -> bool { return this.ptr == null; }
+    struct TargetDataRef { ptr: Any; }
+    func isNull(this: TargetDataRef) -> bool { return this.ptr == null; }
+    struct ContextRef { ptr: Any; }
+    func isNull(this: ContextRef) -> bool { return this.ptr == null; }
+    struct ModuleRef { ptr: Any; }
+    func isNull(this: ModuleRef) -> bool { return this.ptr == null; }
+    struct BuilderRef { ptr: Any; }
+    func isNull(this: BuilderRef) -> bool { return this.ptr == null; }
+    struct BasicBlockRef { ptr: Any; }
+    func isNull(this: BasicBlockRef) -> bool { return this.ptr == null; }
+    struct ValueRef { ptr: Any; }
+    func isNull(this: ValueRef) -> bool { return this.ptr == null; }
+    struct TypeRef { ptr: Any; }
+    func isNull(this: TypeRef) -> bool { return this.ptr == null; }
+    struct AttributeRef { ptr: Any; }
+    func isNull(this: AttributeRef) -> bool { return this.ptr == null; }
+    struct PassBuilderOptionsRef { ptr: Any; }
+    func isNull(this: PassBuilderOptionsRef) -> bool { return this.ptr == null; }
+    struct ErrorRef { ptr: Any; }
+    func isNull(this: ErrorRef) -> bool { return this.ptr == null; }
 
-    struct TargetMachineRef {
-        ptr: Any;
-    }
-    func isNull(this: LLVM::TargetMachineRef) -> bool {
-        return this.ptr == null;
-    }
-
-    struct TargetRef {
-        ptr: Any;
-    }
-    func isNull(this: LLVM::TargetRef) -> bool {
-        return this.ptr == null;
-    }
-
-    struct TargetDataRef {
-        ptr: Any;
-    }
-    func isNull(this: LLVM::TargetDataRef) -> bool {
-        return this.ptr == null;
-    }
-
-    struct PassManagerRef {
-        ptr: Any;
-    }
-    func isNull(this: LLVM::PassManagerRef) -> bool {
-        return this.ptr == null;
-    }
-
-    struct ContextRef {
-        ptr: Any;
-    }
-    func isNull(this: LLVM::ContextRef) -> bool {
-        return this.ptr == null;
-    }
-
-    struct ModuleRef {
-        ptr: Any;
-    }
-    func isNull(this: LLVM::ModuleRef) -> bool {
-        return this.ptr == null;
-    }
-
-    struct BuilderRef {
-        ptr: Any;
-    }
-    func isNull(this: LLVM::BuilderRef) -> bool {
-        return this.ptr == null;
-    }
-
-    struct BasicBlockRef {
-        ptr: Any;
-    }
-    func isNull(this: LLVM::BasicBlockRef) -> bool {
-        return this.ptr == null;
-    }
-
-    struct ValueRef {
-        ptr: Any;
-    }
-    func isNull(this: LLVM::ValueRef) -> bool {
-        return this.ptr == null;
-    }
-
-    struct TypeRef {
-        ptr: Any;
-    }
-    func isNull(this: LLVM::TypeRef) -> bool {
-        return this.ptr == null;
-    }
-
-    struct AttributeRef {
-        ptr: Any;
-    }
-    func isNull(this: LLVM::AttributeRef) -> bool {
-        return this.ptr == null;
-    }
     @os(LINUX) config {
         // It must be somewhere here :^)
         libpath: "/usr/lib64/llvm16/lib/",
@@ -92,11 +41,15 @@
         libpath: "C:\\LLVM\\lib",
         libpath: "C:\\LLVM\\bin",
         dynamic: "LLVM-C.dll",
+        static: "ntdll.lib",    // LLVMSupport needs a function from there
+        static: "Advapi32.lib", // LLVMSupport needs a function from there
         static: "llvm_wrapper.lib",
         static: "LLVMWindowsManifest.lib",
         static: "LLVMXRay.lib",
         static: "LLVMLibDriver.lib",
         static: "LLVMDlltoolDriver.lib",
+        static: "LLVMTelemetry.lib",
+        static: "LLVMTextAPIBinaryReader.lib",
         static: "LLVMCoverage.lib",
         static: "LLVMLineEditor.lib",
         static: "LLVMXCoreDisassembler.lib",
@@ -112,8 +65,8 @@
         static: "LLVMWebAssemblyDisassembler.lib",
         static: "LLVMWebAssemblyAsmParser.lib",
         static: "LLVMWebAssemblyCodeGen.lib",
-        static: "LLVMWebAssemblyDesc.lib",
         static: "LLVMWebAssemblyUtils.lib",
+        static: "LLVMWebAssemblyDesc.lib",
         static: "LLVMWebAssemblyInfo.lib",
         static: "LLVMVEDisassembler.lib",
         static: "LLVMVEAsmParser.lib",
@@ -125,6 +78,10 @@
         static: "LLVMSystemZCodeGen.lib",
         static: "LLVMSystemZDesc.lib",
         static: "LLVMSystemZInfo.lib",
+        static: "LLVMSPIRVCodeGen.lib",
+        static: "LLVMSPIRVDesc.lib",
+        static: "LLVMSPIRVInfo.lib",
+        static: "LLVMSPIRVAnalysis.lib",
         static: "LLVMSparcDisassembler.lib",
         static: "LLVMSparcAsmParser.lib",
         static: "LLVMSparcCodeGen.lib",
@@ -198,6 +155,7 @@
         static: "LLVMAArch64Desc.lib",
         static: "LLVMAArch64Utils.lib",
         static: "LLVMAArch64Info.lib",
+        static: "LLVMOrcDebugging.lib",
         static: "LLVMOrcJIT.lib",
         static: "LLVMWindowsDriver.lib",
         static: "LLVMMCJIT.lib",
@@ -217,29 +175,37 @@
         static: "LLVMMCDisassembler.lib",
         static: "LLVMLTO.lib",
         static: "LLVMPasses.lib",
+        static: "LLVMHipStdPar.lib",
         static: "LLVMCFGuard.lib",
         static: "LLVMCoroutines.lib",
         static: "LLVMipo.lib",
         static: "LLVMVectorize.lib",
+        static: "LLVMSandboxIR.lib",
         static: "LLVMLinker.lib",
         static: "LLVMInstrumentation.lib",
         static: "LLVMFrontendOpenMP.lib",
+        static: "LLVMFrontendOffloading.lib",
         static: "LLVMFrontendOpenACC.lib",
         static: "LLVMFrontendHLSL.lib",
+        static: "LLVMFrontendDriver.lib",
+        static: "LLVMFrontendAtomic.lib",
         static: "LLVMExtensions.lib",
         static: "LLVMDWARFLinkerParallel.lib",
+        static: "LLVMDWARFLinkerClassic.lib",
         static: "LLVMDWARFLinker.lib",
         static: "LLVMGlobalISel.lib",
         static: "LLVMMIRParser.lib",
         static: "LLVMAsmPrinter.lib",
         static: "LLVMSelectionDAG.lib",
         static: "LLVMCodeGen.lib",
+        static: "LLVMTarget.lib",
         static: "LLVMObjCARCOpts.lib",
+        static: "LLVMCodeGenTypes.lib",
+        static: "LLVMCGData.lib",
         static: "LLVMIRPrinter.lib",
         static: "LLVMInterfaceStub.lib",
         static: "LLVMFileCheck.lib",
         static: "LLVMFuzzMutate.lib",
-        static: "LLVMTarget.lib",
         static: "LLVMScalarOpts.lib",
         static: "LLVMInstCombine.lib",
         static: "LLVMAggressiveInstCombine.lib",
@@ -248,8 +214,10 @@
         static: "LLVMAnalysis.lib",
         static: "LLVMProfileData.lib",
         static: "LLVMSymbolize.lib",
+        static: "LLVMDebugInfoBTF.lib",
         static: "LLVMDebugInfoPDB.lib",
         static: "LLVMDebugInfoMSF.lib",
+        static: "LLVMDebugInfoCodeView.lib",
         static: "LLVMDebugInfoDWARF.lib",
         static: "LLVMObject.lib",
         static: "LLVMTextAPI.lib",
@@ -257,7 +225,6 @@
         static: "LLVMIRReader.lib",
         static: "LLVMAsmParser.lib",
         static: "LLVMMC.lib",
-        static: "LLVMDebugInfoCodeView.lib",
         static: "LLVMBitReader.lib",
         static: "LLVMFuzzerCLI.lib",
         static: "LLVMCore.lib",
@@ -271,138 +238,149 @@
     }
 
     // LLVMTarget
-    @extern("LLVMGetTargetFromName") func GetTargetFromName(name: &char) -> LLVM::TargetRef;
+    @extern("LLVMGetTargetFromName") func GetTargetFromName(name: &char) -> TargetRef;
     @extern("LLVM_InitializeNativeAsmParser") func _InitializeNativeAsmParser() -> i32;
     @extern("LLVM_InitializeNativeAsmPrinter") func _InitializeNativeAsmPrinter() -> i32;
     @extern("LLVM_InitializeNativeDisassembler") func _InitializeNativeDisassembler() -> i32;
     @extern("LLVM_InitializeNativeTarget") func _InitializeNativeTarget() -> i32;
-    @extern("LLVMCreateTargetMachine") func CreateTargetMachine(T: LLVM::TargetRef, Triple: &char, CPU: &char, Features: &char, Level: i32, Reloc: i32, CodeModel: i32) -> LLVM::TargetMachineRef;
-    @extern("LLVMTargetMachineEmitToFile") func TargetMachineEmitToFile(T: LLVM::TargetMachineRef, M: LLVM::ModuleRef, path: &char, opts: i32, err: &LLVMString) -> i32;
-    @extern("LLVMCreateTargetDataLayout") func CreateTargetDataLayout(T: LLVM::TargetMachineRef) -> LLVM::TargetDataRef;
-    @extern("LLVMStoreSizeOfType") func StoreSizeOfType(T: LLVM::TargetDataRef, Ty: LLVM::TypeRef) -> usize;
-    @extern("LLVMABISizeOfType") func ABISizeOfType(T: LLVM::TargetDataRef, Ty: LLVM::TypeRef) -> usize;
-    @extern("LLVMSizeOfTypeInBits") func SizeOfTypeInBits(T: LLVM::TargetDataRef, Ty: LLVM::TypeRef) -> usize;
-    @extern("LLVMCopyStringRepOfTargetData") func CopyStringRepOfTargetData(T: LLVM::TargetDataRef) -> &char;
+    @extern("LLVMCreateTargetMachine") func CreateTargetMachine(T: TargetRef, Triple: &char, CPU: &char, Features: &char, Level: i32, Reloc: i32, CodeModel: i32) -> TargetMachineRef;
+    @extern("LLVMTargetMachineEmitToFile") func TargetMachineEmitToFile(T: TargetMachineRef, M: ModuleRef, path: &char, opts: i32, err: &LLVMString) -> i32;
+    @extern("LLVMCreateTargetDataLayout") func CreateTargetDataLayout(T: TargetMachineRef) -> TargetDataRef;
+    @extern("LLVMStoreSizeOfType") func StoreSizeOfType(T: TargetDataRef, Ty: TypeRef) -> usize;
+    @extern("LLVMABISizeOfType") func ABISizeOfType(T: TargetDataRef, Ty: TypeRef) -> usize;
+    @extern("LLVMSizeOfTypeInBits") func SizeOfTypeInBits(T: TargetDataRef, Ty: TypeRef) -> usize;
+    @extern("LLVMCopyStringRepOfTargetData") func CopyStringRepOfTargetData(T: TargetDataRef) -> &char;
 
     // LLVMContext
-    @extern("LLVMContextCreate") func ContextCreate() -> LLVM::ContextRef;
-    @extern("LLVMContextDispose") func ContextDispose(context: LLVM::ContextRef);
-    @extern("LLVMModuleCreateWithNameInContext") func ModuleCreateWithNameInContext(id: &char, C: LLVM::ContextRef) -> LLVM::ModuleRef;
-    @extern("LLVMIntTypeInContext") func IntTypeInContext(c: LLVM::ContextRef, bits: u32) -> LLVM::TypeRef;
-    @extern("LLVMFloatTypeInContext") func FloatTypeInContext(c: LLVM::ContextRef) -> LLVM::TypeRef;
-    @extern("LLVMDoubleTypeInContext") func DoubleTypeInContext(c: LLVM::ContextRef) -> LLVM::TypeRef;
-    @extern("LLVMVoidTypeInContext") func VoidTypeInContext(c: LLVM::ContextRef) -> LLVM::TypeRef;
-    @extern("LLVMStructTypeInContext") func StructTypeInContext(c: LLVM::ContextRef, ElementTypes: &LLVM::TypeRef, ElementCount: u32, Packed: LLVMBool) -> LLVM::TypeRef;
-    @extern("LLVMCreateEnumAttribute") func CreateEnumAttribute(c: LLVM::ContextRef, KindID: u32, Val: u64) -> LLVM::AttributeRef;
+    @extern("LLVMContextCreate") func ContextCreate() -> ContextRef;
+    @extern("LLVMContextDispose") func ContextDispose(context: ContextRef);
+    @extern("LLVMModuleCreateWithNameInContext") func ModuleCreateWithNameInContext(id: &char, C: ContextRef) -> ModuleRef;
+    @extern("LLVMIntTypeInContext") func IntTypeInContext(c: ContextRef, bits: u32) -> TypeRef;
+    @extern("LLVMFloatTypeInContext") func FloatTypeInContext(c: ContextRef) -> TypeRef;
+    @extern("LLVMDoubleTypeInContext") func DoubleTypeInContext(c: ContextRef) -> TypeRef;
+    @extern("LLVMVoidTypeInContext") func VoidTypeInContext(c: ContextRef) -> TypeRef;
+    @extern("LLVMStructTypeInContext") func StructTypeInContext(c: ContextRef, ElementTypes: &TypeRef, ElementCount: u32, Packed: LLVMBool) -> TypeRef;
+    @extern("LLVMCreateEnumAttribute") func CreateEnumAttribute(c: ContextRef, KindID: u32, Val: u64) -> AttributeRef;
 
     // LLVMModule
-    @extern("LLVMPrintModuleToString") func PrintModuleToString(M: LLVM::ModuleRef) -> &char;
-    @extern("LLVMPrintModuleToFile") func PrintModuleToFile(M: LLVM::ModuleRef, Filename: &char, ErrorMessage: &LLVMString) -> LLVMBool;
-    @extern("LLVMGetNamedFunction") func GetNamedFunction(M: LLVM::ModuleRef, Name: &char) -> LLVM::ValueRef;
-    @extern("LLVMAddFunction") func AddFunction(M: LLVM::ModuleRef, name: &char, FunctionTy: LLVM::TypeRef) -> LLVM::ValueRef;
-    @extern("LLVMAddGlobalInAddressSpace") func AddGlobalInAddressSpace(M: LLVM::ModuleRef, Ty: LLVM::TypeRef, Name: &char, AddressSpace: u32) -> LLVM::ValueRef;
-    @extern("LLVMGetNamedGlobal") func GetNamedGlobal(M: LLVM::ModuleRef, Name: &char) -> LLVM::ValueRef;
-    @extern("LLVMVerifyModule") func VerifyModule(M: LLVM::ModuleRef, mode: i32, code: &LLVMString) -> LLVMBool;
-    @extern("LLVMSetDataLayout") func SetDataLayout(M: LLVM::ModuleRef, Data: &char);
-    @extern("LLVMSetTarget") func SetTarget(M: LLVM::ModuleRef, Target: &char);
+    @extern("LLVMPrintModuleToString") func PrintModuleToString(M: ModuleRef) -> &char;
+    @extern("LLVMPrintModuleToFile") func PrintModuleToFile(M: ModuleRef, Filename: &char, ErrorMessage: &LLVMString) -> LLVMBool;
+    @extern("LLVMGetNamedFunction") func GetNamedFunction(M: ModuleRef, Name: &char) -> ValueRef;
+    @extern("LLVMAddFunction") func AddFunction(M: ModuleRef, name: &char, FunctionTy: TypeRef) -> ValueRef;
+    @extern("LLVMAddGlobalInAddressSpace") func AddGlobalInAddressSpace(M: ModuleRef, Ty: TypeRef, Name: &char, AddressSpace: u32) -> ValueRef;
+    @extern("LLVMGetNamedGlobal") func GetNamedGlobal(M: ModuleRef, Name: &char) -> ValueRef;
+    @extern("LLVMVerifyModule") func VerifyModule(M: ModuleRef, mode: i32, code: &LLVMString) -> LLVMBool;
+    @extern("LLVMSetDataLayout") func SetDataLayout(M: ModuleRef, Data: &char);
+    @extern("LLVMSetTarget") func SetTarget(M: ModuleRef, Target: &char);
 
-    // LLVMPassManager
-    @extern("LLVMCreatePassManager") func CreatePassManager() -> LLVM::PassManagerRef;
-    @extern("LLVMAddPromoteMemoryToRegisterPass") func AddPromoteMemoryToRegisterPass(P: LLVM::PassManagerRef);
-    @extern("LLVMAddAlwaysInlinerPass") func AddAlwaysInlinerPass(P: LLVM::PassManagerRef);
-    @extern("LLVMAddCFGSimplificationPass") func AddCFGSimplificationPass(P: LLVM::PassManagerRef);
-    @extern("LLVMAddGlobalDCEPass") func AddGlobalDCEPass(P: LLVM::PassManagerRef);
-    @extern("LLVMRunPassManager") func RunPassManager(P: LLVM::PassManagerRef, M: LLVM::ModuleRef) -> i32;
+    // LLVMPassBuilder
+    @extern("LLVMRunPasses") func RunPasses(M: ModuleRef, Passes: &char, TM: TargetMachineRef, Options: PassBuilderOptionsRef) -> ErrorRef;
+    @extern("LLVMRunPassesOnFunction") func RunPassesOnFunction(F: ValueRef, Passes: &char, TM: TargetMachineRef, Options: PassBuilderOptionsRef) -> ErrorRef;
+    @extern("LLVMCreatePassBuilderOptions") func CreatePassBuilderOptions() -> PassBuilderOptionsRef;
+    @extern("LLVMDisposePassBuilderOptions") func DisposePassBuilderOptions(Options: PassBuilderOptionsRef);
+    @extern("LLVMPassBuilderOptionsSetVerifyEach") func PassBuilderOptionsSetVerifyEach(Options: PassBuilderOptionsRef, VerifyEach: LLVMBool);
+    @extern("LLVMPassBuilderOptionsSetDebugLogging") func PassBuilderOptionsSetDebugLogging(Options: PassBuilderOptionsRef, DebugLogging: LLVMBool);
+    @extern("LLVMPassBuilderOptionsSetAAPipeline") func PassBuilderOptionsSetAAPipeline(Options: PassBuilderOptionsRef, AAPipeline: &char);
+    @extern("LLVMPassBuilderOptionsSetLoopInterleaving") func PassBuilderOptionsSetLoopInterleaving(Options: PassBuilderOptionsRef, LoopInterleaving: LLVMBool);
+    @extern("LLVMPassBuilderOptionsSetLoopVectorization") func PassBuilderOptionsSetLoopVectorization(Options: PassBuilderOptionsRef, LoopVectorization: LLVMBool);
+    @extern("LLVMPassBuilderOptionsSetSLPVectorization") func PassBuilderOptionsSetSLPVectorization(Options: PassBuilderOptionsRef, SLPVectorization: LLVMBool);
+    @extern("LLVMPassBuilderOptionsSetLoopUnrolling") func PassBuilderOptionsSetLoopUnrolling(Options: PassBuilderOptionsRef, LoopUnrolling: LLVMBool);
+    @extern("LLVMPassBuilderOptionsSetForgetAllSCEVInLoopUnroll") func PassBuilderOptionsSetForgetAllSCEVInLoopUnroll(Options: PassBuilderOptionsRef, ForgetAllSCEVInLoopUnroll: LLVMBool);
+    @extern("LLVMPassBuilderOptionsSetLicmMssaOptCap") func PassBuilderOptionsSetLicmMssaOptCap(Options: PassBuilderOptionsRef, LicmMssaOptCap: u32);
+    @extern("LLVMPassBuilderOptionsSetLicmMssaNoAccForPromotionCap") func PassBuilderOptionsSetLicmMssaNoAccForPromotionCap(Options: PassBuilderOptionsRef, LicmMssaNoAccForPromotionCap: u32);
+    @extern("LLVMPassBuilderOptionsSetCallGraphProfile") func PassBuilderOptionsSetCallGraphProfile(Options: PassBuilderOptionsRef, CallGraphProfile: LLVMBool);
+    @extern("LLVMPassBuilderOptionsSetMergeFunctions") func PassBuilderOptionsSetMergeFunctions(Options: PassBuilderOptionsRef, MergeFunctions: LLVMBool);
+    @extern("LLVMPassBuilderOptionsSetInlinerThreshold") func PassBuilderOptionsSetInlinerThreshold(Options: PassBuilderOptionsRef, Threshold: i32);
 
     // LLVMBasicBlock
-    @extern("LLVMAppendBasicBlockInContext") func AppendBasicBlockInContext(C: LLVM::ContextRef, FnRef: LLVM::ValueRef, name: &char) -> LLVM::BasicBlockRef;
-    @extern("LLVMGetInsertBlock") func GetInsertBlock(Builder: LLVM::BuilderRef) -> LLVM::BasicBlockRef;
-    @extern("LLVMGetBasicBlockParent") func GetBasicBlockParent(Block: LLVM::BasicBlockRef) -> LLVM::ValueRef;
-    @extern("LLVMGetFirstBasicBlock") func GetFirstBasicBlock(Fn: LLVM::ValueRef) -> LLVM::BasicBlockRef;
-    @extern("LLVMGetLastInstruction") func GetLastInstruction(Block: LLVM::BasicBlockRef) -> LLVM::ValueRef;
+    @extern("LLVMAppendBasicBlockInContext") func AppendBasicBlockInContext(C: ContextRef, FnRef: ValueRef, name: &char) -> BasicBlockRef;
+    @extern("LLVMGetInsertBlock") func GetInsertBlock(Builder: BuilderRef) -> BasicBlockRef;
+    @extern("LLVMGetBasicBlockParent") func GetBasicBlockParent(Block: BasicBlockRef) -> ValueRef;
+    @extern("LLVMGetFirstBasicBlock") func GetFirstBasicBlock(Fn: ValueRef) -> BasicBlockRef;
+    @extern("LLVMGetLastInstruction") func GetLastInstruction(Block: BasicBlockRef) -> ValueRef;
 
     // LLVMBuilder
-    @extern("LLVMCreateBuilderInContext") func CreateBuilderInContext(context: LLVM::ContextRef) -> LLVM::BuilderRef;
-    @extern("LLVMCreateBuilder") func CreateBuilder() -> LLVM::BuilderRef;
-    @extern("LLVMBuildRetVoid") func BuildRetVoid(B: LLVM::BuilderRef) -> LLVM::ValueRef;
-    @extern("LLVMBuildRet") func BuildRet(B: LLVM::BuilderRef, Value: LLVM::ValueRef) -> LLVM::ValueRef;
-    @extern("LLVMPositionBuilderAtEnd") func PositionBuilderAtEnd(Builder: LLVM::BuilderRef, Block: LLVM::BasicBlockRef);
-    @extern("LLVMPositionBuilderBefore") func PositionBuilderBefore(Builder: LLVM::BuilderRef, Instr: LLVM::ValueRef);
-    @extern("LLVMBuildAlloca") func BuildAlloca(B: LLVM::BuilderRef, Ty: LLVM::TypeRef, Name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildStore") func BuildStore(B: LLVM::BuilderRef, Value: LLVM::ValueRef, Ptr: LLVM::ValueRef) -> LLVM::ValueRef;
-    @extern("LLVMBuildInsertValue") func BuildInsertValue(B: LLVM::BuilderRef, AggVal: LLVM::ValueRef, EltVal: LLVM::ValueRef, Index: u32, Name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildBr") func BuildBr(B: LLVM::BuilderRef, Dest: LLVM::BasicBlockRef) -> LLVM::ValueRef;
-    @extern("LLVMBuildCondBr") func BuildCondBr(B: LLVM::BuilderRef, If: LLVM::ValueRef, Then: LLVM::BasicBlockRef, Else: LLVM::BasicBlockRef) -> LLVM::ValueRef;
-    @extern("LLVMBuildLoad2") func BuildLoad2(B: LLVM::BuilderRef, Ty: LLVM::TypeRef, Ptr: LLVM::ValueRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildAdd") func BuildAdd(B: LLVM::BuilderRef, LHS: LLVM::ValueRef, RHS: LLVM::ValueRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildSub") func BuildSub(B: LLVM::BuilderRef, LHS: LLVM::ValueRef, RHS: LLVM::ValueRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildMul") func BuildMul(B: LLVM::BuilderRef, LHS: LLVM::ValueRef, RHS: LLVM::ValueRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildSDiv") func BuildSDiv(B: LLVM::BuilderRef, LHS: LLVM::ValueRef, RHS: LLVM::ValueRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildUDiv") func BuildUDiv(B: LLVM::BuilderRef, LHS: LLVM::ValueRef, RHS: LLVM::ValueRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildSRem") func BuildSRem(B: LLVM::BuilderRef, LHS: LLVM::ValueRef, RHS: LLVM::ValueRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildURem") func BuildURem(B: LLVM::BuilderRef, LHS: LLVM::ValueRef, RHS: LLVM::ValueRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildFAdd") func BuildFAdd(B: LLVM::BuilderRef, LHS: LLVM::ValueRef, RHS: LLVM::ValueRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildFSub") func BuildFSub(B: LLVM::BuilderRef, LHS: LLVM::ValueRef, RHS: LLVM::ValueRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildFMul") func BuildFMul(B: LLVM::BuilderRef, LHS: LLVM::ValueRef, RHS: LLVM::ValueRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildFDiv") func BuildFDiv(B: LLVM::BuilderRef, LHS: LLVM::ValueRef, RHS: LLVM::ValueRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildFRem") func BuildFRem(B: LLVM::BuilderRef, LHS: LLVM::ValueRef, RHS: LLVM::ValueRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildICmp") func BuildICmp(B: LLVM::BuilderRef, pred: i32, LHS: LLVM::ValueRef, RHS: LLVM::ValueRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildFCmp") func BuildFCmp(B: LLVM::BuilderRef, pred: i32, LHS: LLVM::ValueRef, RHS: LLVM::ValueRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildNot") func BuildNot(B: LLVM::BuilderRef, Val: LLVM::ValueRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildOr") func BuildOr(B: LLVM::BuilderRef, LHS: LLVM::ValueRef, RHS: LLVM::ValueRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildAnd") func BuildAnd(B: LLVM::BuilderRef, LHS: LLVM::ValueRef, RHS: LLVM::ValueRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildXor") func BuildXor(B: LLVM::BuilderRef, LHS: LLVM::ValueRef, RHS: LLVM::ValueRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildPtrToInt") func BuildPtrToInt(B: LLVM::BuilderRef, Ptr: LLVM::ValueRef, Int: LLVM::TypeRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildIntToPtr") func BuildIntToPtr(B: LLVM::BuilderRef, Ptr: LLVM::ValueRef, Int: LLVM::TypeRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildSIToFP") func BuildSIToFP(B: LLVM::BuilderRef, Val: LLVM::ValueRef, DestTy: LLVM::TypeRef, Name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildUIToFP") func BuildUIToFP(B: LLVM::BuilderRef, Val: LLVM::ValueRef, DestTy: LLVM::TypeRef, Name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildFPToSI") func BuildFPToSI(B: LLVM::BuilderRef, Val: LLVM::ValueRef, DestTy: LLVM::TypeRef, Name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildFPToUI") func BuildFPToUI(B: LLVM::BuilderRef, Val: LLVM::ValueRef, DestTy: LLVM::TypeRef, Name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildCall2") func BuildCall2(B: LLVM::BuilderRef, Ty: LLVM::TypeRef, Fn: LLVM::ValueRef, Args: &LLVM::ValueRef, NumArgs: u32, Name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildGlobalStringPtr") func BuildGlobalStringPtr(B: LLVM::BuilderRef, Str: &char, Name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildSExt") func BuildSExt(B: LLVM::BuilderRef, Val: LLVM::ValueRef, Typ: LLVM::TypeRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildZExt") func BuildZExt(B: LLVM::BuilderRef, Val: LLVM::ValueRef, Typ: LLVM::TypeRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildTrunc") func BuildTrunc(B: LLVM::BuilderRef, Val: LLVM::ValueRef, Typ: LLVM::TypeRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildStructGEP2") func BuildStructGEP2(B: LLVM::BuilderRef, Ty: LLVM::TypeRef, Pointer: LLVM::ValueRef, Idx: u32, Name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildGEP2") func BuildGEP2(B: LLVM::BuilderRef, Ty: LLVM::TypeRef, Pointer: LLVM::ValueRef, Indices: &LLVM::ValueRef, Length: u32, Name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildFPExt") func BuildFPExt(B: LLVM::BuilderRef, Val: LLVM::ValueRef, Typ: LLVM::TypeRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildFPTrunc") func BuildFPTrunc(B: LLVM::BuilderRef, Val: LLVM::ValueRef, Typ: LLVM::TypeRef, name: &char) -> LLVM::ValueRef;
-    @extern("LLVMBuildUnreachable") func BuildUnreachable(B: LLVM::BuilderRef) -> LLVM::ValueRef;
-    @extern("LLVMBuildMemCpy") func BuildMemcpy(B: LLVM::BuilderRef, Dst: LLVM::ValueRef, DstAlign: u32, Src: LLVM::ValueRef, SrcAlign: u32, Size: LLVM::ValueRef) -> LLVM::ValueRef;
+    @extern("LLVMCreateBuilderInContext") func CreateBuilderInContext(context: ContextRef) -> BuilderRef;
+    @extern("LLVMCreateBuilder") func CreateBuilder() -> BuilderRef;
+    @extern("LLVMBuildRetVoid") func BuildRetVoid(B: BuilderRef) -> ValueRef;
+    @extern("LLVMBuildRet") func BuildRet(B: BuilderRef, Value: ValueRef) -> ValueRef;
+    @extern("LLVMPositionBuilderAtEnd") func PositionBuilderAtEnd(Builder: BuilderRef, Block: BasicBlockRef);
+    @extern("LLVMPositionBuilderBefore") func PositionBuilderBefore(Builder: BuilderRef, Instr: ValueRef);
+    @extern("LLVMBuildAlloca") func BuildAlloca(B: BuilderRef, Ty: TypeRef, Name: &char) -> ValueRef;
+    @extern("LLVMBuildStore") func BuildStore(B: BuilderRef, Value: ValueRef, Ptr: ValueRef) -> ValueRef;
+    @extern("LLVMBuildInsertValue") func BuildInsertValue(B: BuilderRef, AggVal: ValueRef, EltVal: ValueRef, Index: u32, Name: &char) -> ValueRef;
+    @extern("LLVMBuildBr") func BuildBr(B: BuilderRef, Dest: BasicBlockRef) -> ValueRef;
+    @extern("LLVMBuildCondBr") func BuildCondBr(B: BuilderRef, If: ValueRef, Then: BasicBlockRef, Else: BasicBlockRef) -> ValueRef;
+    @extern("LLVMBuildLoad2") func BuildLoad2(B: BuilderRef, Ty: TypeRef, Ptr: ValueRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildAdd") func BuildAdd(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildSub") func BuildSub(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildMul") func BuildMul(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildSDiv") func BuildSDiv(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildUDiv") func BuildUDiv(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildSRem") func BuildSRem(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildURem") func BuildURem(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildFAdd") func BuildFAdd(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildFSub") func BuildFSub(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildFMul") func BuildFMul(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildFDiv") func BuildFDiv(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildFRem") func BuildFRem(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildICmp") func BuildICmp(B: BuilderRef, pred: i32, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildFCmp") func BuildFCmp(B: BuilderRef, pred: i32, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildNot") func BuildNot(B: BuilderRef, Val: ValueRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildOr") func BuildOr(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildAnd") func BuildAnd(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildXor") func BuildXor(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildPtrToInt") func BuildPtrToInt(B: BuilderRef, Ptr: ValueRef, Int: TypeRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildIntToPtr") func BuildIntToPtr(B: BuilderRef, Ptr: ValueRef, Int: TypeRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildSIToFP") func BuildSIToFP(B: BuilderRef, Val: ValueRef, DestTy: TypeRef, Name: &char) -> ValueRef;
+    @extern("LLVMBuildUIToFP") func BuildUIToFP(B: BuilderRef, Val: ValueRef, DestTy: TypeRef, Name: &char) -> ValueRef;
+    @extern("LLVMBuildFPToSI") func BuildFPToSI(B: BuilderRef, Val: ValueRef, DestTy: TypeRef, Name: &char) -> ValueRef;
+    @extern("LLVMBuildFPToUI") func BuildFPToUI(B: BuilderRef, Val: ValueRef, DestTy: TypeRef, Name: &char) -> ValueRef;
+    @extern("LLVMBuildCall2") func BuildCall2(B: BuilderRef, Ty: TypeRef, Fn: ValueRef, Args: &ValueRef, NumArgs: u32, Name: &char) -> ValueRef;
+    @extern("LLVMBuildGlobalStringPtr") func BuildGlobalStringPtr(B: BuilderRef, Str: &char, Name: &char) -> ValueRef;
+    @extern("LLVMBuildSExt") func BuildSExt(B: BuilderRef, Val: ValueRef, Typ: TypeRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildZExt") func BuildZExt(B: BuilderRef, Val: ValueRef, Typ: TypeRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildTrunc") func BuildTrunc(B: BuilderRef, Val: ValueRef, Typ: TypeRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildStructGEP2") func BuildStructGEP2(B: BuilderRef, Ty: TypeRef, Pointer: ValueRef, Idx: u32, Name: &char) -> ValueRef;
+    @extern("LLVMBuildGEP2") func BuildGEP2(B: BuilderRef, Ty: TypeRef, Pointer: ValueRef, Indices: &ValueRef, Length: u32, Name: &char) -> ValueRef;
+    @extern("LLVMBuildFPExt") func BuildFPExt(B: BuilderRef, Val: ValueRef, Typ: TypeRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildFPTrunc") func BuildFPTrunc(B: BuilderRef, Val: ValueRef, Typ: TypeRef, name: &char) -> ValueRef;
+    @extern("LLVMBuildUnreachable") func BuildUnreachable(B: BuilderRef) -> ValueRef;
+    @extern("LLVMBuildMemCpy") func BuildMemcpy(B: BuilderRef, Dst: ValueRef, DstAlign: u32, Src: ValueRef, SrcAlign: u32, Size: ValueRef) -> ValueRef;
 
     // LLVMValue
-    @extern("LLVMTypeOf") func TypeOf(Val: LLVM::ValueRef) -> LLVM::TypeRef;
-    @extern("LLVMConstInt") func ConstInt(IntTy: LLVM::TypeRef, N: usize, SignExtend: LLVMBool) -> LLVM::ValueRef;
-    @extern("LLVMConstReal") func ConstReal(RealTy: LLVM::TypeRef, F: f64) -> LLVM::ValueRef;
-    @extern("LLVMConstNull") func ConstNull(Ty: LLVM::TypeRef) -> LLVM::ValueRef;
-    @extern("LLVMDumpValue") func DumpValue(V: LLVM::ValueRef);
-    @extern("LLVMGlobalGetValueType") func GlobalGetValueType(Val: LLVM::ValueRef) -> LLVM::TypeRef;
-    @extern("LLVMAddAttributeAtIndex") func AddAttributeAtIndex(Val: LLVM::ValueRef, index: u32, Attr: LLVM::AttributeRef);
+    @extern("LLVMTypeOf") func TypeOf(Val: ValueRef) -> TypeRef;
+    @extern("LLVMConstInt") func ConstInt(IntTy: TypeRef, N: usize, SignExtend: LLVMBool) -> ValueRef;
+    @extern("LLVMConstReal") func ConstReal(RealTy: TypeRef, F: f64) -> ValueRef;
+    @extern("LLVMConstNull") func ConstNull(Ty: TypeRef) -> ValueRef;
+    @extern("LLVMDumpValue") func DumpValue(V: ValueRef);
+    @extern("LLVMGlobalGetValueType") func GlobalGetValueType(Val: ValueRef) -> TypeRef;
+    @extern("LLVMAddAttributeAtIndex") func AddAttributeAtIndex(Val: ValueRef, index: u32, Attr: AttributeRef);
 
     // LLVM Globals
-    @extern("LLVMSetInitializer") func SetInitializer(GlobalVar: LLVM::ValueRef, ConstantVal: LLVM::ValueRef);
-    @extern("LLVMGetInitializer") func GetInitializer(GlobalVar: LLVM::ValueRef) -> LLVM::ValueRef;
+    @extern("LLVMSetInitializer") func SetInitializer(GlobalVar: ValueRef, ConstantVal: ValueRef);
+    @extern("LLVMGetInitializer") func GetInitializer(GlobalVar: ValueRef) -> ValueRef;
 
-    @extern("LLVMGetParam") func GetParam(FnRef: LLVM::ValueRef, index: u32) -> LLVM::ValueRef;
-    @extern("LLVMSetValueName2") func SetValueName2(Val: LLVM::ValueRef, Name: &char, NameLen: usize);
-    @extern("LLVMSetValueName") func SetValueName(Val: LLVM::ValueRef, Name: &char);
-    @extern("LLVMGetValueName2") func GetValueName2(Val: LLVM::ValueRef, Length: &usize) -> &char;
-    @extern("LLVMGetValueName") func GetValueName(Val: LLVM::ValueRef) -> &char;
+    @extern("LLVMGetParam") func GetParam(FnRef: ValueRef, index: u32) -> ValueRef;
+    @extern("LLVMSetValueName2") func SetValueName2(Val: ValueRef, Name: &char, NameLen: usize);
+    @extern("LLVMSetValueName") func SetValueName(Val: ValueRef, Name: &char);
+    @extern("LLVMGetValueName2") func GetValueName2(Val: ValueRef, Length: &usize) -> &char;
+    @extern("LLVMGetValueName") func GetValueName(Val: ValueRef) -> &char;
 
     // LLVMAttribute
     @extern("LLVMGetEnumAttributeKindForName") func GetEnumAttributeKindForName(Name: &char, SLen: usize) -> u32;
 
     // LLVMType
-    @extern("LLVMFunctionType") func FunctionType(ReturnType: LLVM::TypeRef, ParamTypes: &LLVM::TypeRef, ParamCount: u32, IsVarArg: LLVMBool) -> LLVM::TypeRef;
-    @extern("LLVMPointerType") func PointerType(ElementType: LLVM::TypeRef, AddressSpace: u32) -> LLVM::TypeRef;
-    @extern("LLVMArrayType") func ArrayType(ElementType: LLVM::TypeRef, size: u32) -> LLVM::TypeRef;
-    @extern("LLVMGetParamTypes") func GetParamTypes(FunctionTy: LLVM::TypeRef, Dest: &LLVM::TypeRef);
-    @extern("LLVMCountParamTypes") func CountParamTypes(FunctionTy: LLVM::TypeRef) -> u32;
-    @extern("LLVMGetReturnType") func GetReturnType(FunctionTy: LLVM::TypeRef) -> LLVM::TypeRef;
-    @extern("LLVMPrintTypeToString") func PrintTypeToString(Ty: LLVM::TypeRef) -> &char;
-    @extern("LLVMGetInlineAsm") func GetInlineAsm(Ty: LLVM::TypeRef, AsmString: &char, AsmStringSize: usize, Constraints: &char, ConstraintsSize: usize, HasSideEffects: LLVMBool, IsAlignStack: LLVMBool, Dialect: u32, CanThrow: LLVMBool) -> LLVM::ValueRef;
+    @extern("LLVMFunctionType") func FunctionType(ReturnType: TypeRef, ParamTypes: &TypeRef, ParamCount: u32, IsVarArg: LLVMBool) -> TypeRef;
+    @extern("LLVMPointerType") func PointerType(ElementType: TypeRef, AddressSpace: u32) -> TypeRef;
+    @extern("LLVMArrayType") func ArrayType(ElementType: TypeRef, size: u32) -> TypeRef;
+    @extern("LLVMGetParamTypes") func GetParamTypes(FunctionTy: TypeRef, Dest: &TypeRef);
+    @extern("LLVMCountParamTypes") func CountParamTypes(FunctionTy: TypeRef) -> u32;
+    @extern("LLVMGetReturnType") func GetReturnType(FunctionTy: TypeRef) -> TypeRef;
+    @extern("LLVMPrintTypeToString") func PrintTypeToString(Ty: TypeRef) -> &char;
+    @extern("LLVMGetInlineAsm") func GetInlineAsm(Ty: TypeRef, AsmString: &char, AsmStringSize: usize, Constraints: &char, ConstraintsSize: usize, HasSideEffects: LLVMBool, IsAlignStack: LLVMBool, Dialect: u32, CanThrow: LLVMBool) -> ValueRef;
 
-    @extern("LLVMGetTypeKind") func GetTypeKind(Ty: LLVM::TypeRef) -> i32;
+    @extern("LLVMGetTypeKind") func GetTypeKind(Ty: TypeRef) -> i32;
 }
 struct LLVMBool { val: i32; }
 func newLLVMBool(b: bool) -> LLVMBool {

@@ -1648,7 +1648,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         assert(instr.isComptime, "Expected comptime instr in IRInterp.evaluateSingle");
     }
     assert(this.regStackBase < this.regStackStart + REG_STACK_SIZE, "Stack Cursor Overflow in IRInterp.evaluateSingle");
-    if (*flags.debug) dump(instr);
+    if (*flags.debug && *flags.verbose) dump(instr);
     return instrFns[instr.kind](this, irFunc, instr, regs, forcedComptime);
 }
 func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: &RegValueList, forcedComptime: bool) -> bool {

@@ -12,7 +12,7 @@ system at any time.
 @os(LINUX) struct Handle {
     ptr: usize;
 }
-func isNull(h: Handle) -> bool {
+@os(LINUX) func isNull(h: Handle) -> bool {
     return h.ptr == 0;
 }
 

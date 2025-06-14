@@ -2090,7 +2090,7 @@ func generateBytecodeExprIndexedAccess(this: &IRGen, function: &IRFunc, expr: &B
     assert(isInteger(getRegister(function, rhsReg).typ), "Expected Int as RHS in IndexedAccess");
     let usizeType: &Type = wrap(Type::Prim(PrimType::Usize));
     let boolType: &Type = wrap(Type::Prim(PrimType::Bool));
-    if (isArray(lhsType)) {
+    if (isArray(lhsType) && !*flags.opt) {
         // if (index >= size) panic("Index out of bounds");
         let arrType: &Type = getType(&lhs.typeState);
         let elemCount: usize = getSize(arrType) / getSize(type);
@@ -2197,6 +2197,14 @@ func generateBytecodeExprIdentifier(this: &IRGen, function: &IRFunc, expr: &Iden
             return allocateRegister(function, type);
         } else if (isFunction(type)) {
             let name: String = getMangledName(at(&funcDecls, expr.origID));
+            if (*flags.opt) {
+                // When --opt is provided, we replace all assertions with empty function calls
+                if (equals(&name, &comptime newStringFromStrLit("assertBPcrN"))) {
+                    name = newStringFromStrLit("_empty_assertBPcrN");
+                } else if (equals(&name, &comptime newStringFromStrLit("assertBrN"))) {
+                    name = newStringFromStrLit("_empty_assertBrN");
+                }
+            }
             let funcID: usize = getFunctionByName(this, &name);
             let dst = allocateRegister(function, type);
             buildLoadFunctionPtr(function, expr.name.span, dst, funcID);

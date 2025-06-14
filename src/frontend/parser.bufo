@@ -34,6 +34,7 @@ struct Parser {
 }
 let syntaxError = false;
 let needsPrelude = false;
+let needsAssembly = false;
 
 func addImportRoot(this: &Parser, filePath: SubStr) {
     let root: String = getPathParent(&filePath);
@@ -157,6 +158,7 @@ func parseProject(this: &Parser, root: SubStr) -> ParsedFile {
     };
     importIf(this, rootFile, *flags.trace, "trace.bufo");
     importIf(this, rootFile, needsPrelude, "prelude.bufo");
+    importIf(this, rootFile, needsAssembly, "asm.bufo");
     if (syntaxError) {
         // All errors are reported at this point
         C::exit(1);
@@ -636,9 +638,6 @@ func parseStmt(this: &Parser) -> &ParsedStmt {
         } else if (equals(&tkn.content, &KEYWORD_FOR)) {
             next(&this.lexer);
             return parseForStmt(this, tkn);
-        } else if (equals(&tkn.content, &KEYWORD_WHILE)) {
-            next(&this.lexer);
-            return parseWhileStmt(this, tkn);
         } else if (equals(&tkn.content, &KEYWORD_BREAK)) {
             next(&this.lexer);
             let end: Token = expect(this, TOKEN_SEMI_COLON);
@@ -666,6 +665,7 @@ func parseStmt(this: &Parser) -> &ParsedStmt {
             expect(this, TOKEN_PAREN_CLOSE);
             let end = expect(this, TOKEN_SEMI_COLON);
             let span: Span = newSpanBetween(&tkn.span, &end.span);
+            needsAssembly = true;
             if (args.length == 0) {
                 C::fprintf(stderr, "%s: %s: `asm` expects at least one argument.\n", toString(&tkn.span).buffer, ERR_STR);
                 syntaxError = true;

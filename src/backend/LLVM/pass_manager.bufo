@@ -2,29 +2,54 @@ import "prelude.bufo";
 import "./module.bufo";
 import "./bindings.bufo";
 
-struct LLVMPassManager {
-    ref: LLVM::PassManagerRef;
-}
-func addPromoteMemoryToRegisterPass(this: &LLVMPassManager) {
-    LLVM::AddPromoteMemoryToRegisterPass(this.ref);
-}
-func addAlwaysInlinerPass(this: &LLVMPassManager) {
-    LLVM::AddAlwaysInlinerPass(this.ref);
-}
-func addCFGSimplificationPass(this: &LLVMPassManager) {
-    LLVM::AddCFGSimplificationPass(this.ref);
-}
-func addGlobalDCEPass(this: &LLVMPassManager) {
-    LLVM::AddGlobalDCEPass(this.ref);
+struct LLVMPassBuilderOptions {
+    ref: LLVM::PassBuilderOptionsRef;
 }
 
-func runOn(this: &LLVMPassManager, mod: LLVMModule) -> bool {
-    return runInPassManager(&mod, *this);
+func createPassBuilderOptions() -> LLVMPassBuilderOptions {
+    let v = LLVM::CreatePassBuilderOptions();
+    assert(!LLVM::isNull(v), "Could not create Pass Builder Options");
+    return LLVMPassBuilderOptions { ref: v };
 }
-
-func newLLVMPassManagerFromRef(ref: LLVM::PassManagerRef) -> LLVMPassManager {
-    assert(!LLVM::isNull(ref), "Called newLLVMPassManagerFromRef with invalid reference");
-    return LLVMPassManager {
-        ref: ref,
-    };
+func disposePassBuilderOptions(opt: LLVMPassBuilderOptions) {
+    LLVM::DisposePassBuilderOptions(opt.ref);
+}
+func setVerifyEach(opt: LLVMPassBuilderOptions, verify: LLVMBool) {
+    LLVM::PassBuilderOptionsSetVerifyEach(opt.ref, verify);
+}
+func setDebugLogging(opt: LLVMPassBuilderOptions, debug: LLVMBool) {
+    LLVM::PassBuilderOptionsSetDebugLogging(opt.ref, debug);
+}
+func setAAPipeline(opt: LLVMPassBuilderOptions, pipeline: &char) {
+    LLVM::PassBuilderOptionsSetAAPipeline(opt.ref, pipeline);
+}
+func setLoopInterleaving(opt: LLVMPassBuilderOptions, interleave: LLVMBool) {
+    LLVM::PassBuilderOptionsSetLoopInterleaving(opt.ref, interleave);
+}
+func setLoopVectorization(opt: LLVMPassBuilderOptions, vectorize: LLVMBool) {
+    LLVM::PassBuilderOptionsSetLoopVectorization(opt.ref, vectorize);
+}
+func setSLPVectorization(opt: LLVMPassBuilderOptions, vectorize: LLVMBool) {
+    LLVM::PassBuilderOptionsSetSLPVectorization(opt.ref, vectorize);
+}
+func setLoopUnrolling(opt: LLVMPassBuilderOptions, unroll: LLVMBool) {
+    LLVM::PassBuilderOptionsSetLoopUnrolling(opt.ref, unroll);
+}
+func setForgetAllSCEVInLoopUnroll(opt: LLVMPassBuilderOptions, forget: LLVMBool) {
+    LLVM::PassBuilderOptionsSetForgetAllSCEVInLoopUnroll(opt.ref, forget);
+}
+func setLicmMssaOptCap(opt: LLVMPassBuilderOptions, cap: u32) {
+    LLVM::PassBuilderOptionsSetLicmMssaOptCap(opt.ref, cap);
+}
+func setLicmMssaNoAccForPromotionCap(opt: LLVMPassBuilderOptions, cap: u32) {
+    LLVM::PassBuilderOptionsSetLicmMssaNoAccForPromotionCap(opt.ref, cap);
+}
+func setCallGraphProfile(opt: LLVMPassBuilderOptions, profile: LLVMBool) {
+    LLVM::PassBuilderOptionsSetCallGraphProfile(opt.ref, profile);
+}
+func setMergeFunctions(opt: LLVMPassBuilderOptions, merge: LLVMBool) {
+    LLVM::PassBuilderOptionsSetMergeFunctions(opt.ref, merge);
+}
+func setInlinerThreshold(opt: LLVMPassBuilderOptions, threshold: i32) {
+    LLVM::PassBuilderOptionsSetInlinerThreshold(opt.ref, threshold);
 }
