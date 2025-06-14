@@ -53,13 +53,11 @@ struct Assembler {
 }
 
 func pushImm(bytes: &ByteBuffer, imm: ImmI32) {
-    trace("pushImm(ImmI32)");
     let p = &imm.b as &u8;
     push(bytes, p[0]); push(bytes, p[1]);
     push(bytes, p[2]); push(bytes, p[3]);
 }
 func pushImm(bytes: &ByteBuffer, imm: ImmI64) {
-    trace("pushImm(ImmI64)");
     let p = &imm.b as &u8;
     push(bytes, p[0]); push(bytes, p[1]);
     push(bytes, p[2]); push(bytes, p[3]);
@@ -68,7 +66,6 @@ func pushImm(bytes: &ByteBuffer, imm: ImmI64) {
 }
 
 func modRM(bytes: &ByteBuffer, addr: u8, opext: u8, reg: GPR) {
-    trace("modRM(AddrMode, Op, GPR)");
     let byte = shiftLeft(addr as usize, 6) as u8;
     byte = byte | shiftLeft(opext as usize, 3) as u8;
     byte = byte | (reg.r % 8);
@@ -76,28 +73,24 @@ func modRM(bytes: &ByteBuffer, addr: u8, opext: u8, reg: GPR) {
 }
 
 func modPrefix(bytes: &ByteBuffer, r: GPR) {
-    trace("modPrefix(GPR)");
     let rex: u8 = '\x48' as u8;
     if (tag(&r) >= 8) rex = rex | 1;
     push(bytes, rex);
 }
 
 func mov(bytes: &ByteBuffer, to: GPR, from: GPR) {
-    trace("mov(GPR, GPR)");
     modPrefix(bytes, from);
     push(bytes, '\x89');
     modRM(bytes, ADDR_REG, tag(&from), to);
 }
 
 func mov(bytes: &ByteBuffer, r: FPR, imm: ImmF32) {
-    trace("mov(FPR, ImmF32)");
     let v = *(&imm.b as &u32);
     mov(bytes, RAX, ImmI32 { b: v });
     push(bytes, '\x66', '\x0F', '\x6E');
     modRM(bytes, ADDR_REG, r.r, RAX);
 }
 func mov(bytes: &ByteBuffer, r: FPR, imm: ImmF64) {
-    trace("mov(FPR, ImmF64)");
     let v = *(&imm.b as &u64);
     mov(bytes, RAX, ImmI64 { b: v });
     push(bytes, '\x66', '\x48', '\x0F', '\x6E');
@@ -105,13 +98,11 @@ func mov(bytes: &ByteBuffer, r: FPR, imm: ImmF64) {
 }
 
 func mov(bytes: &ByteBuffer, r: GPR, imm: ImmI32) {
-    trace("mov(GPR, ImmI32)");
     let opcode = (('\xb8' as u8) + (r.r % 8)) as char;
     push(bytes, opcode);
     pushImm(bytes, imm);
 }
 func mov(bytes: &ByteBuffer, r: GPR, imm: ImmI64) {
-    trace("mov(GPR, ImmI64)");
     let opcode = (('\xb8' as u8) + (r.r % 8)) as char;
     modPrefix(bytes, r);
     push(bytes, opcode);
@@ -119,19 +110,16 @@ func mov(bytes: &ByteBuffer, r: GPR, imm: ImmI64) {
 }
 
 func push(bytes: &ByteBuffer, reg: GPR) {
-    trace("push(GPR)");
     push(bytes, '\xFF');
     modRM(bytes, ADDR_REG, 6, reg);
 }
 
 func pop(bytes: &ByteBuffer, reg: GPR) {
-    trace("pop(GPR)");
     push(bytes, '\x8F');
     modRM(bytes, ADDR_REG, 0, reg);
 }
 
 func mov(bytes: &ByteBuffer, r: GPR, offset: u32, imm: ImmI64) {
-    trace("mov(GPR, u32, ImmI64)");
     mov(bytes, RBX, imm);
     assert(offset < 256, "only single byte offset for now");
     push(bytes, '\x48', '\x89', '\x5C', '\x24');
@@ -139,7 +127,6 @@ func mov(bytes: &ByteBuffer, r: GPR, offset: u32, imm: ImmI64) {
 }
 
 func add(bytes: &ByteBuffer, r: GPR, imm: ImmI32) {
-    trace("add(GPR, ImmI32)");
     modPrefix(bytes, r);
     push(bytes, '\x81');
     modRM(bytes, ADDR_REG, 0, r);
@@ -147,7 +134,6 @@ func add(bytes: &ByteBuffer, r: GPR, imm: ImmI32) {
 }
 
 func sub(bytes: &ByteBuffer, r: GPR, imm: ImmI32) {
-    trace("sub(GPR, ImmI32)");
     modPrefix(bytes, r);
     push(bytes, '\x81');
     modRM(bytes, ADDR_REG, 5, r);
@@ -155,13 +141,11 @@ func sub(bytes: &ByteBuffer, r: GPR, imm: ImmI32) {
 }
 
 func call(bytes: &ByteBuffer, r: GPR) {
-    trace("call(GPR)");
     push(bytes, '\xFF');
     modRM(bytes, ADDR_REG, 2, r);
 }
 
 func push(bytes: &ByteBuffer, imm: ImmI64) {
-    trace("push(ImmI64)");
     mov(bytes, RAX, imm);
     push(bytes, '\xFF');
     modRM(bytes, ADDR_REG, 6, RAX);

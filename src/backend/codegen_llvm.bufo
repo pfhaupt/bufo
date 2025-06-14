@@ -95,10 +95,6 @@ struct LLVMCodegen {
 }
 
 func generateExecutable(this: &LLVMCodegen, outPath: SubStr) -> bool {
-    // struct IRGen {
-    //     globalScope: IRFunc;
-    //     functions: String_IRFuncHashMap;
-    trace("LLVMCodegen.generateExecutable");
     let fns: IRFuncList = asList(&this.irGen.functions);
     if (*flags.debug) {
         dumpInstructions(&this.irGen.globalScope);
@@ -148,7 +144,6 @@ func generateExecutable(this: &LLVMCodegen, outPath: SubStr) -> bool {
     return true;
 }
 func generateEntryPoint(this: &LLVMCodegen) -> bool {
-    trace("LLVMCodegen.generateEntryPoint");
     if (*flags.dontLink) return true;
     // FIXME: Currently we hardcode the entry point.
     //        It would be cooler if the prelude or standard library did that.
@@ -180,7 +175,6 @@ func generateEntryPoint(this: &LLVMCodegen) -> bool {
     return true;
 }
 func generateGlobal(this: &LLVMCodegen, global: &IRFunc) -> bool {
-    trace("LLVMCodegen.generateGlobal");
     this.global = blank;
     initBlank(&this.global, global.registers.length);
     let funcSize: usize = getRegisterSizeInBytes(global);
@@ -210,7 +204,6 @@ func generateLLVMFunctionHeader(this: &LLVMCodegen, irFunc: &IRFunc) {
 }
 
 func prepareReturnType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
-    trace("LLVMCodegen.prepareReturnType");
     // FIXME: Kinda sucks that we have to do this both in the IRGen and here
     if (isStruct(typ)) {
         let size: usize = getSize(typ);
@@ -233,7 +226,6 @@ func prepareReturnType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
 }
 
 func prepareParameter(this: &LLVMCodegen, typ: &Type) -> LLVMType {
-    trace("LLVMCodegen.prepareParameter");
     // FIXME: Kinda sucks that we have to do this both in the IRGen and here
     if (isStruct(typ)) {
         let size: usize = getSize(typ);
@@ -258,7 +250,6 @@ func prepareParameter(this: &LLVMCodegen, typ: &Type) -> LLVMType {
 }
 
 func getLLVMTypeSize(this: &LLVMCodegen, typ: &LLVMType) -> usize {
-    trace("LLVMCodegen.getLLVMTypeSize");
     let data: LLVMTargetData = getTargetData(&this.llvmTargetMachine);
     let s1: usize = getStoreSize(&data, typ);
     let s2: usize = getABISize(&data, typ);
@@ -268,7 +259,6 @@ func getLLVMTypeSize(this: &LLVMCodegen, typ: &LLVMType) -> usize {
 }
 
 func generateFunction(this: &LLVMCodegen, index: usize, irFunc: &IRFunc) -> bool {
-    trace("LLVMCodegen.generateFunction");
     if (isExtern(irFunc)) return true;
     let llvmFuncValue: LLVMValue = irFunc.llvmFunc;
     assert(!LLVM::isNull(llvmFuncValue.ref));
@@ -324,7 +314,6 @@ func generateLLVMInstr(
     instr: &IRInstr,
     regs: &RegValueList,
 ) -> LLVMValue {
-    trace("LLVMCodegen.generateLLVMInstr");
     let isGlobal: bool = LLVM::isNull(llvmFunc.ref);
     if (instr.kind == INSTR_ALLOCA) {
         let reg: &IRReg = getRegister(irFunc, instr.dst);
@@ -360,7 +349,7 @@ func generateLLVMInstr(
         if (isLLVM(reg)) {
             let srcVal: LLVMValue = asLLVM(reg, "LLVM Load");
             if (isGlobal) {
-                todo_with_msg("LLVM global load");
+                return getInitializer(&srcVal);
             } else {
                 return buildLoad(&this.llvmBuilder, dstTyp, srcVal, newSubStrOfStrLit("load"));
             }
@@ -742,7 +731,6 @@ func generateTypeFromASM(this: &LLVMCodegen, context: &ASMContext) -> LLVMType {
 }
 
 func getComptimePointer(this: &LLVMCodegen, reg: &InterpReg) -> &u8 {
-    trace("LLVMCodegen.getComptimePointer");
     let start: &u8 = getRegStackPointer(this.interp, reg);
     assert(start >= this.interp.regStackStart, "Expected comptime value to be allocated on Interp Reg Stack");
     assert(start < this.interp.regStackStart + REG_STACK_SIZE, "Expected comptime value to be allocated on Interp Reg Stack");
@@ -750,7 +738,6 @@ func getComptimePointer(this: &LLVMCodegen, reg: &InterpReg) -> &u8 {
 }
 
 func generateLLVMValueFromComptimePtr(this: &LLVMCodegen, typ: &Type, reg: InterpReg) -> LLVMValue {
-    trace("LLVMCodegen.generateLLVMValueFromComptimePtr");
     assert(isPointer(typ), "generateLLVMValueFromComptimePtr expected Pointer");
     assert(reg.size == 8, "generateLLVMValueFromComptimePtr expected Pointer sized register");
     let underlying: &Type = getUnderlyingType(typ, false);
@@ -765,7 +752,6 @@ func generateLLVMValueFromComptimePtr(this: &LLVMCodegen, typ: &Type, reg: Inter
     return alloc;
 }
 func generateLLVMValueFromComptimeValue(this: &LLVMCodegen, typ: &Type, start: &u8) -> LLVMValue {
-    trace("LLVMCodegen.generateLLVMValueFromComptimeValue");
     assert(start != null, "generateLLVMValueFromComptimeValue got nullptr");
     let size: usize = getSize(typ);
     match (typ) {
@@ -890,7 +876,6 @@ func generateLLVMValueFromComptimeValue(this: &LLVMCodegen, typ: &Type, start: &
 }
 
 func generateLLVMFunctionType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
-    trace("LLVMCodegen.generateLLVMFunctionType");
     let fnParams: TypeList = blank;
     let retType: &Type = null;
     let isVarArg = false;
@@ -917,7 +902,6 @@ func generateLLVMFunctionType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
 }
 
 func generateLLVMType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
-    trace("LLVMCodegen.generateLLVMType");
     match (typ) {
         &Type::Prim(_) => {
             if (isInteger(typ)) {

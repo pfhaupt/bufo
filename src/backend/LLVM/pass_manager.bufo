@@ -6,24 +6,19 @@ struct LLVMPassManager {
     ref: LLVM::PassManagerRef;
 }
 func addPromoteMemoryToRegisterPass(this: &LLVMPassManager) {
-    trace("LLVMPassManager.addPromoteMemoryToRegisterPass");
     LLVM::AddPromoteMemoryToRegisterPass(this.ref);
 }
 func addAlwaysInlinerPass(this: &LLVMPassManager) {
-    trace("LLVMPassManager.addAlwaysInlinerPass");
     LLVM::AddAlwaysInlinerPass(this.ref);
 }
 func addCFGSimplificationPass(this: &LLVMPassManager) {
-    trace("LLVMPassManager.addCFGSimplificationPass");
     LLVM::AddCFGSimplificationPass(this.ref);
 }
 func addGlobalDCEPass(this: &LLVMPassManager) {
-    trace("LLVMPassManager.addGlobalDCEPass");
     LLVM::AddGlobalDCEPass(this.ref);
 }
 
 func runOn(this: &LLVMPassManager, mod: LLVMModule) -> bool {
-    trace("LLVMPassManager.runOn");
     return runInPassManager(&mod, *this);
 }
 

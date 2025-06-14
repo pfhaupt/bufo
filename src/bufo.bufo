@@ -92,8 +92,6 @@ func main(argc: i32, argv: &&char) -> i32 {
         return 0;
     }
     if (*flags.debug) debug = debug_active;
-    // TODO: Build tracing into the IRGen
-    if (*flags.trace) trace = trace_active;
     if (*warnAll) {
         *flags.warnExtra = true;
         *flags.warnSimple = true;

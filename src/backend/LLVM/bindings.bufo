@@ -381,6 +381,7 @@
 
     // LLVM Globals
     @extern("LLVMSetInitializer") func SetInitializer(GlobalVar: LLVM::ValueRef, ConstantVal: LLVM::ValueRef);
+    @extern("LLVMGetInitializer") func GetInitializer(GlobalVar: LLVM::ValueRef) -> LLVM::ValueRef;
 
     @extern("LLVMGetParam") func GetParam(FnRef: LLVM::ValueRef, index: u32) -> LLVM::ValueRef;
     @extern("LLVMSetValueName2") func SetValueName2(Val: LLVM::ValueRef, Name: &char, NameLen: usize);

@@ -8,7 +8,7 @@ endif
 RUN_EXAMPLES =
 RUN_HOWTO =
 VERBOSE = @
-BUFO_FLAGS = --warn --target $(TARGET) --verbose $(EXTRA)
+BUFO_FLAGS = --warn --target $(TARGET) $(EXTRA)
 
 BUFO_CC = ./bufo.exe
 
@@ -101,7 +101,7 @@ bootstrap:
 	$(error `make bootstrap` is currently a stub and does nothing)
 
 brick:
-	./working.exe src/bufo.bufo -o ${BUFO_CC}
+	./working.exe src/bufo.bufo -o $(BUFO_CC) $(EXTRA)
 
 clean: clean_example clean_howto
 	rm -f *.s

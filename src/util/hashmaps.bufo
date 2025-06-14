@@ -75,7 +75,6 @@ func resizeIfNecessary(this: &String_IRFuncHashMap) {
 }
 
 func add(this: &String_IRFuncHashMap, key: String, value: IRFunc) {
-    trace("String_IRFuncHashMap.add");
     if (this.locked) {
         todo_with_msg("HashMap is locked, can't add elements");
     }
@@ -102,7 +101,6 @@ func add(this: &String_IRFuncHashMap, key: String, value: IRFunc) {
 }
 
 func get(this: &String_IRFuncHashMap, key: &String) -> &IRFunc {
-    trace("String_IRFuncHashMap.get");
     let entry: &String_IRFuncEntry = getEntry(this, key);
     if (entry == null) return null;
     return &entry.value;
@@ -128,6 +126,5 @@ func getAtIndex(this: &String_IRFuncHashMap, index: usize) -> &String_IRFuncEntr
     return this.elements + index * sizeof String_IRFuncEntry;
 }
 func containsKey(this: &String_IRFuncHashMap, key: &String) -> bool {
-    trace("String_IRFuncHashMap.containsKey");
     return get(this, key) != null;
 }

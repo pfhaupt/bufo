@@ -76,7 +76,6 @@ struct ParsedConfigArena {
 }
 
 func push(this: &ParsedConfigArena, elem: ParsedConfig) {
-    trace("ParsedConfigArena.push");
     if (this.start == null) {
         this.start = allocateBlock(ARENA_SIZE_SMALL, sizeof ParsedConfig);
         assert(this.end == null);
@@ -87,17 +86,14 @@ func push(this: &ParsedConfigArena, elem: ParsedConfig) {
     this.length = this.length + 1;
 }
 func at(this: &ParsedConfigArena, index: usize) -> &ParsedConfig {
-    trace("ParsedConfigArena.at");
     assert(this.start != null, "ParsedConfigArena.at() called on empty Arena");
     return at(this.start, index) as &ParsedConfig;
 }
 func last(this: &ParsedConfigArena) -> &ParsedConfig {
-    trace("ParsedConfigArena.last");
     assert(this.end != null, "ParsedConfigArena.last() called on empty Arena");
     return last(this.end) as &ParsedConfig;
 }
 func indexOf(this: &ParsedConfigArena, elem: &ParsedConfig) -> usize {
-    trace("ParsedConfigArena.indexOf");
     assert(this.start != null, "ParsedConfigArena.indexOf() called on empty Arena");
     return indexOf(this.start, elem);
 }
@@ -109,7 +105,6 @@ struct ParsedFileArena {
 }
 
 func push(this: &ParsedFileArena, elem: ParsedFile) {
-    trace("ParsedFileArena.push");
     if (this.start == null) {
         this.start = allocateBlock(ARENA_SIZE_MEDIUM, sizeof ParsedFile);
         assert(this.end == null);
@@ -120,17 +115,14 @@ func push(this: &ParsedFileArena, elem: ParsedFile) {
     this.length = this.length + 1;
 }
 func at(this: &ParsedFileArena, index: usize) -> &ParsedFile {
-    trace("ParsedFileArena.at");
     assert(this.start != null, "ParsedFileArena.at() called on empty Arena");
     return at(this.start, index) as &ParsedFile;
 }
 func last(this: &ParsedFileArena) -> &ParsedFile {
-    trace("ParsedFileArena.last");
     assert(this.end != null, "ParsedFileArena.last() called on empty Arena");
     return last(this.end) as &ParsedFile;
 }
 func indexOf(this: &ParsedFileArena, elem: &ParsedFile) -> usize {
-    trace("ParsedFileArena.indexOf");
     assert(this.start != null, "ParsedFileArena.indexOf() called on empty Arena");
     return indexOf(this.start, elem);
 }
@@ -142,7 +134,6 @@ struct ParsedTopLevelItemArena {
 }
 
 func push(this: &ParsedTopLevelItemArena, elem: ParsedTopLevelItem) {
-    trace("ParsedTopLevelItemArena.push");
     if (this.start == null) {
         this.start = allocateBlock(ARENA_SIZE_MEDIUM, sizeof ParsedTopLevelItem);
         assert(this.end == null);
@@ -153,17 +144,14 @@ func push(this: &ParsedTopLevelItemArena, elem: ParsedTopLevelItem) {
     this.length = this.length + 1;
 }
 func at(this: &ParsedTopLevelItemArena, index: usize) -> &ParsedTopLevelItem {
-    trace("ParsedTopLevelItemArena.at");
     assert(this.start != null, "ParsedTopLevelItemArena.at() called on empty Arena");
     return at(this.start, index) as &ParsedTopLevelItem;
 }
 func last(this: &ParsedTopLevelItemArena) -> &ParsedTopLevelItem {
-    trace("ParsedTopLevelItemArena.last");
     assert(this.end != null, "ParsedTopLevelItemArena.last() called on empty Arena");
     return last(this.end) as &ParsedTopLevelItem;
 }
 func indexOf(this: &ParsedTopLevelItemArena, elem: &ParsedTopLevelItem) -> usize {
-    trace("ParsedTopLevelItemArena.indexOf");
     assert(this.start != null, "ParsedTopLevelItemArena.indexOf() called on empty Arena");
     return indexOf(this.start, elem);
 }
@@ -175,7 +163,6 @@ struct ParsedModuleArena {
 }
 
 func push(this: &ParsedModuleArena, elem: ParsedModule) {
-    trace("ParsedModuleArena.push");
     if (this.start == null) {
         this.start = allocateBlock(ARENA_SIZE_SMALL, sizeof ParsedModule);
         assert(this.end == null);
@@ -186,17 +173,14 @@ func push(this: &ParsedModuleArena, elem: ParsedModule) {
     this.length = this.length + 1;
 }
 func at(this: &ParsedModuleArena, index: usize) -> &ParsedModule {
-    trace("ParsedModuleArena.at");
     assert(this.start != null, "ParsedModuleArena.at() called on empty Arena");
     return at(this.start, index) as &ParsedModule;
 }
 func last(this: &ParsedModuleArena) -> &ParsedModule {
-    trace("ParsedModuleArena.last");
     assert(this.end != null, "ParsedModuleArena.last() called on empty Arena");
     return last(this.end) as &ParsedModule;
 }
 func indexOf(this: &ParsedModuleArena, elem: &ParsedModule) -> usize {
-    trace("ParsedModuleArena.indexOf");
     assert(this.start != null, "ParsedModuleArena.indexOf() called on empty Arena");
     return indexOf(this.start, elem);
 }
@@ -208,7 +192,6 @@ struct ParsedStructDeclArena {
 }
 
 func push(this: &ParsedStructDeclArena, elem: ParsedStructDecl) {
-    trace("ParsedStructDeclArena.push");
     if (this.start == null) {
         this.start = allocateBlock(ARENA_SIZE_SMALL, sizeof ParsedStructDecl);
         assert(this.end == null);
@@ -219,17 +202,14 @@ func push(this: &ParsedStructDeclArena, elem: ParsedStructDecl) {
     this.length = this.length + 1;
 }
 func at(this: &ParsedStructDeclArena, index: usize) -> &ParsedStructDecl {
-    trace("ParsedStructDeclArena.at");
     assert(this.start != null, "ParsedStructDeclArena.at() called on empty Arena");
     return at(this.start, index) as &ParsedStructDecl;
 }
 func last(this: &ParsedStructDeclArena) -> &ParsedStructDecl {
-    trace("ParsedStructDeclArena.last");
     assert(this.end != null, "ParsedStructDeclArena.last() called on empty Arena");
     return last(this.end) as &ParsedStructDecl;
 }
 func indexOf(this: &ParsedStructDeclArena, elem: &ParsedStructDecl) -> usize {
-    trace("ParsedStructDeclArena.indexOf");
     assert(this.start != null, "ParsedStructDeclArena.indexOf() called on empty Arena");
     return indexOf(this.start, elem);
 }
@@ -241,7 +221,6 @@ struct ParsedUnionDeclArena {
 }
 
 func push(this: &ParsedUnionDeclArena, elem: ParsedUnionDecl) {
-    trace("ParsedUnionDeclArena.push");
     if (this.start == null) {
         this.start = allocateBlock(ARENA_SIZE_MEDIUM, sizeof ParsedUnionDecl);
         assert(this.end == null);
@@ -252,17 +231,14 @@ func push(this: &ParsedUnionDeclArena, elem: ParsedUnionDecl) {
     this.length = this.length + 1;
 }
 func at(this: &ParsedUnionDeclArena, index: usize) -> &ParsedUnionDecl {
-    trace("ParsedUnionDeclArena.at");
     assert(this.start != null, "ParsedUnionDeclArena.at() called on empty Arena");
     return at(this.start, index) as &ParsedUnionDecl;
 }
 func last(this: &ParsedUnionDeclArena) -> &ParsedUnionDecl {
-    trace("ParsedUnionDeclArena.last");
     assert(this.end != null, "ParsedUnionDeclArena.last() called on empty Arena");
     return last(this.end) as &ParsedUnionDecl;
 }
 func indexOf(this: &ParsedUnionDeclArena, elem: &ParsedUnionDecl) -> usize {
-    trace("ParsedUnionDeclArena.indexOf");
     assert(this.start != null, "ParsedUnionDeclArena.indexOf() called on empty Arena");
     return indexOf(this.start, elem);
 }
@@ -274,7 +250,6 @@ struct ParsedUnionVariantArena {
 }
 
 func push(this: &ParsedUnionVariantArena, elem: ParsedUnionVariant) {
-    trace("ParsedUnionVariantArena.push");
     if (this.start == null) {
         this.start = allocateBlock(ARENA_SIZE_MEDIUM, sizeof ParsedUnionVariant);
         assert(this.end == null);
@@ -285,17 +260,14 @@ func push(this: &ParsedUnionVariantArena, elem: ParsedUnionVariant) {
     this.length = this.length + 1;
 }
 func at(this: &ParsedUnionVariantArena, index: usize) -> &ParsedUnionVariant {
-    trace("ParsedUnionVariantArena.at");
     assert(this.start != null, "ParsedUnionVariantArena.at() called on empty Arena");
     return at(this.start, index) as &ParsedUnionVariant;
 }
 func last(this: &ParsedUnionVariantArena) -> &ParsedUnionVariant {
-    trace("ParsedUnionVariantArena.last");
     assert(this.end != null, "ParsedUnionVariantArena.last() called on empty Arena");
     return last(this.end) as &ParsedUnionVariant;
 }
 func indexOf(this: &ParsedUnionVariantArena, elem: &ParsedUnionVariant) -> usize {
-    trace("ParsedUnionVariantArena.indexOf");
     assert(this.start != null, "ParsedUnionVariantArena.indexOf() called on empty Arena");
     return indexOf(this.start, elem);
 }
@@ -307,7 +279,6 @@ struct ParsedFuncDeclArena {
 }
 
 func push(this: &ParsedFuncDeclArena, elem: ParsedFuncDecl) {
-    trace("ParsedFuncDeclArena.push");
     if (this.start == null) {
         this.start = allocateBlock(ARENA_SIZE_LARGE, sizeof ParsedFuncDecl);
         assert(this.end == null);
@@ -318,17 +289,14 @@ func push(this: &ParsedFuncDeclArena, elem: ParsedFuncDecl) {
     this.length = this.length + 1;
 }
 func at(this: &ParsedFuncDeclArena, index: usize) -> &ParsedFuncDecl {
-    trace("ParsedFuncDeclArena.at");
     assert(this.start != null, "ParsedFuncDeclArena.at() called on empty Arena");
     return at(this.start, index) as &ParsedFuncDecl;
 }
 func last(this: &ParsedFuncDeclArena) -> &ParsedFuncDecl {
-    trace("ParsedFuncDeclArena.last");
     assert(this.end != null, "ParsedFuncDeclArena.last() called on empty Arena");
     return last(this.end) as &ParsedFuncDecl;
 }
 func indexOf(this: &ParsedFuncDeclArena, elem: &ParsedFuncDecl) -> usize {
-    trace("ParsedFuncDeclArena.indexOf");
     assert(this.start != null, "ParsedFuncDeclArena.indexOf() called on empty Arena");
     return indexOf(this.start, elem);
 }
@@ -340,7 +308,6 @@ struct ParsedBlockArena {
 }
 
 func push(this: &ParsedBlockArena, elem: ParsedBlock) {
-    trace("ParsedBlockArena.push");
     if (this.start == null) {
         this.start = allocateBlock(ARENA_SIZE_MEDIUM, sizeof ParsedBlock);
         assert(this.end == null);
@@ -351,17 +318,14 @@ func push(this: &ParsedBlockArena, elem: ParsedBlock) {
     this.length = this.length + 1;
 }
 func at(this: &ParsedBlockArena, index: usize) -> &ParsedBlock {
-    trace("ParsedBlockArena.at");
     assert(this.start != null, "ParsedBlockArena.at() called on empty Arena");
     return at(this.start, index) as &ParsedBlock;
 }
 func last(this: &ParsedBlockArena) -> &ParsedBlock {
-    trace("ParsedBlockArena.last");
     assert(this.end != null, "ParsedBlockArena.last() called on empty Arena");
     return last(this.end) as &ParsedBlock;
 }
 func indexOf(this: &ParsedBlockArena, elem: &ParsedBlock) -> usize {
-    trace("ParsedBlockArena.indexOf");
     assert(this.start != null, "ParsedBlockArena.indexOf() called on empty Arena");
     return indexOf(this.start, elem);
 }
@@ -373,7 +337,6 @@ struct ParsedStmtArena {
 }
 
 func push(this: &ParsedStmtArena, elem: ParsedStmt) {
-    trace("ParsedStmtArena.push");
     if (this.start == null) {
         this.start = allocateBlock(ARENA_SIZE_LARGE, sizeof ParsedStmt);
         assert(this.end == null);
@@ -384,17 +347,14 @@ func push(this: &ParsedStmtArena, elem: ParsedStmt) {
     this.length = this.length + 1;
 }
 func at(this: &ParsedStmtArena, index: usize) -> &ParsedStmt {
-    trace("ParsedStmtArena.at");
     assert(this.start != null, "ParsedStmtArena.at() called on empty Arena");
     return at(this.start, index) as &ParsedStmt;
 }
 func last(this: &ParsedStmtArena) -> &ParsedStmt {
-    trace("ParsedStmtArena.last");
     assert(this.end != null, "ParsedStmtArena.last() called on empty Arena");
     return last(this.end) as &ParsedStmt;
 }
 func indexOf(this: &ParsedStmtArena, elem: &ParsedStmt) -> usize {
-    trace("ParsedStmtArena.indexOf");
     assert(this.start != null, "ParsedStmtArena.indexOf() called on empty Arena");
     return indexOf(this.start, elem);
 }
@@ -406,7 +366,6 @@ struct ParsedExprArena {
 }
 
 func push(this: &ParsedExprArena, elem: ParsedExpr) {
-    trace("ParsedExprArena.push");
     if (this.start == null) {
         this.start = allocateBlock(ARENA_SIZE_HUGE, sizeof ParsedExpr);
         assert(this.end == null);
@@ -417,17 +376,14 @@ func push(this: &ParsedExprArena, elem: ParsedExpr) {
     this.length = this.length + 1;
 }
 func at(this: &ParsedExprArena, index: usize) -> &ParsedExpr {
-    trace("ParsedExprArena.at");
     assert(this.start != null, "ParsedExprArena.at() called on empty Arena");
     return at(this.start, index) as &ParsedExpr;
 }
 func last(this: &ParsedExprArena) -> &ParsedExpr {
-    trace("ParsedExprArena.last");
     assert(this.end != null, "ParsedExprArena.last() called on empty Arena");
     return last(this.end) as &ParsedExpr;
 }
 func indexOf(this: &ParsedExprArena, elem: &ParsedExpr) -> usize {
-    trace("ParsedExprArena.indexOf");
     assert(this.start != null, "ParsedExprArena.indexOf() called on empty Arena");
     return indexOf(this.start, elem);
 }
@@ -439,7 +395,6 @@ struct ParsedTypeNodeArena {
 }
 
 func push(this: &ParsedTypeNodeArena, elem: ParsedTypeNode) {
-    trace("ParsedTypeNodeArena.push");
     if (this.start == null) {
         this.start = allocateBlock(ARENA_SIZE_HUGE, sizeof ParsedTypeNode);
         assert(this.end == null);
@@ -450,17 +405,14 @@ func push(this: &ParsedTypeNodeArena, elem: ParsedTypeNode) {
     this.length = this.length + 1;
 }
 func at(this: &ParsedTypeNodeArena, index: usize) -> &ParsedTypeNode {
-    trace("ParsedTypeNodeArena.at");
     assert(this.start != null, "ParsedTypeNodeArena.at() called on empty Arena");
     return at(this.start, index) as &ParsedTypeNode;
 }
 func last(this: &ParsedTypeNodeArena) -> &ParsedTypeNode {
-    trace("ParsedTypeNodeArena.last");
     assert(this.end != null, "ParsedTypeNodeArena.last() called on empty Arena");
     return last(this.end) as &ParsedTypeNode;
 }
 func indexOf(this: &ParsedTypeNodeArena, elem: &ParsedTypeNode) -> usize {
-    trace("ParsedTypeNodeArena.indexOf");
     assert(this.start != null, "ParsedTypeNodeArena.indexOf() called on empty Arena");
     return indexOf(this.start, elem);
 }
@@ -472,7 +424,6 @@ struct TypeArena {
 }
 
 func push(this: &TypeArena, elem: Type) {
-    trace("TypeArena.push");
     if (this.start == null) {
         this.start = allocateBlock(ARENA_SIZE_HUGE, sizeof Type);
         assert(this.end == null);
@@ -483,17 +434,14 @@ func push(this: &TypeArena, elem: Type) {
     this.length = this.length + 1;
 }
 func at(this: &TypeArena, index: usize) -> &Type {
-    trace("TypeArena.at");
     assert(this.start != null, "TypeArena.at() called on empty Arena");
     return at(this.start, index) as &Type;
 }
 func last(this: &TypeArena) -> &Type {
-    trace("TypeArena.last");
     assert(this.end != null, "TypeArena.last() called on empty Arena");
     return last(this.end) as &Type;
 }
 func indexOf(this: &TypeArena, elem: &Type) -> usize {
-    trace("TypeArena.indexOf");
     assert(this.start != null, "TypeArena.indexOf() called on empty Arena");
     return indexOf(this.start, elem);
 }
@@ -505,7 +453,6 @@ struct DLLArena {
 }
 
 func push(this: &DLLArena, elem: DLL) {
-    trace("DLLArena.push");
     if (this.start == null) {
         this.start = allocateBlock(ARENA_SIZE_SMALL, sizeof DLL);
         assert(this.end == null);
@@ -516,17 +463,14 @@ func push(this: &DLLArena, elem: DLL) {
     this.length = this.length + 1;
 }
 func at(this: &DLLArena, index: usize) -> &DLL {
-    trace("DLLArena.at");
     assert(this.start != null, "DLLArena.at() called on empty Arena");
     return at(this.start, index) as &DLL;
 }
 func last(this: &DLLArena) -> &DLL {
-    trace("DLLArena.last");
     assert(this.end != null, "DLLArena.last() called on empty Arena");
     return last(this.end) as &DLL;
 }
 func indexOf(this: &DLLArena, elem: &DLL) -> usize {
-    trace("DLLArena.indexOf");
     assert(this.start != null, "DLLArena.indexOf() called on empty Arena");
     return indexOf(this.start, elem);
 }
@@ -538,7 +482,6 @@ struct ParsedPatternArena {
 }
 
 func push(this: &ParsedPatternArena, elem: ParsedPattern) {
-    trace("ParsedPatternArena.push");
     if (this.start == null) {
         this.start = allocateBlock(ARENA_SIZE_MEDIUM, sizeof ParsedPattern);
         assert(this.end == null);
@@ -549,17 +492,14 @@ func push(this: &ParsedPatternArena, elem: ParsedPattern) {
     this.length = this.length + 1;
 }
 func at(this: &ParsedPatternArena, index: usize) -> &ParsedPattern {
-    trace("ParsedPatternArena.at");
     assert(this.start != null, "ParsedPatternArena.at() called on empty Arena");
     return at(this.start, index) as &ParsedPattern;
 }
 func last(this: &ParsedPatternArena) -> &ParsedPattern {
-    trace("ParsedPatternArena.last");
     assert(this.end != null, "ParsedPatternArena.last() called on empty Arena");
     return last(this.end) as &ParsedPattern;
 }
 func indexOf(this: &ParsedPatternArena, elem: &ParsedPattern) -> usize {
-    trace("ParsedPatternArena.indexOf");
     assert(this.start != null, "ParsedPatternArena.indexOf() called on empty Arena");
     return indexOf(this.start, elem);
 }

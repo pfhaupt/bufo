@@ -254,7 +254,6 @@ func equals(this: &IRBlock, other: &IRBlock) -> bool {
     return equals(&this.parent, &other.parent) && this.id.i == other.id.i;
 }
 func isTerminated(this: &IRBlock) -> bool {
-    trace("IRBlock.isTerminated");
     if (this.instructions.length == 0) return false;
     return isTerminator(last(&this.instructions));
 }
@@ -266,8 +265,20 @@ func dump(this: &IRBlock) {
     }
 }
 func pushInstruction(this: &IRBlock, instr: IRInstr) {
-    trace("IRBlock.pushInstruction");
     push(&this.instructions, instr);
+}
+func insertInstruction(this: &IRBlock, index: usize, instr: IRInstr) {
+    assert(index <= this.instructions.length, "Out of bounds in insertInstruction");
+    let instructions = IRInstrList {};
+    for (let i: usize = 0; i < index; i = i + 1) {
+        push(&instructions, *at(&this.instructions, i));
+    }
+    push(&instructions, instr);
+    for (let i: usize = index; i < this.instructions.length; i = i + 1) {
+        push(&instructions, *at(&this.instructions, i));
+    }
+    drop(&this.instructions);
+    this.instructions = instructions;
 }
 
 struct IRFunc {
@@ -285,9 +296,9 @@ struct IRFunc {
     attrs: ParsedAttributeList;
     returnBlockID: IRBlockID;
     returnAlloc: RegIndex;
+    allocaCounter: usize;
 }
 func hasAttribute(this: &IRFunc, attr: usize) -> bool {
-    trace("IRFunc.hasAttribute");
     for (let i: usize = 0; i < this.attrs.length; i = i + 1) {
         if (at(&this.attrs, i).kind == attr) return true;
     }
@@ -369,7 +380,6 @@ func getRegisterSizeInBytes(this: &IRFunc) -> usize {
     return size;
 }
 func allocateRegister(this: &IRFunc, typ: &Type) -> RegIndex {
-    trace("IRFunc.allocateRegister");
     let size: usize = this.registers.length;
     let offset: usize = 0;
     if (size > 0) {
@@ -388,7 +398,6 @@ func getRegister(this: &IRFunc, index: RegIndex) -> &IRReg {
     return at(&this.registers, index.i);
 }
 func getIdentifierByName(this: &IRFunc, name: SubStr) -> &IRScopeEntry {
-    trace("IRFunc.getIdentifierByName");
     for (let _i: usize = 0; _i < this.scopes.length; _i = _i + 1) {
         let i: usize = this.scopes.length - _i - 1;
         let entry: &IRScopeEntry = getIdentifierByName(at(&this.scopes, i), name);
@@ -399,7 +408,6 @@ func getIdentifierByName(this: &IRFunc, name: SubStr) -> &IRScopeEntry {
     return null;
 }
 func pushInstruction(this: &IRFunc, instr: IRInstr) {
-    trace("IRFunc.pushInstruction");
     assert(this.blocks.length > 0, "IRFunc.pushInstruction called on empty block list");
     assert(this.currentBlock.i < this.blocks.length, "IRFunc.pushInstruction: Current block was invalid");
     pushInstruction(at(&this.blocks, this.currentBlock.i), instr);
@@ -413,18 +421,8 @@ func buildAlloca(this: &IRFunc, span: Span, dst: RegIndex, size: usize) {
         src: RegIndex { i: size },
     };
     let entry: &IRBlock = getBlockByID(this, IRBlockID { i: 0 });
-    if (isTerminated(entry)) {
-        assert(entry.instructions.length > 0);
-        pushInstruction(entry, alloca);
-        let l: usize = entry.instructions.length;
-        let last: &IRInstr = at(&entry.instructions, l - 1);
-        let prev: &IRInstr = at(&entry.instructions, l - 2);
-        let i1: IRInstr = *last;
-        *last = *prev;
-        *prev = i1;
-    } else {
-        pushInstruction(entry, alloca);
-    }
+    insertInstruction(entry, this.allocaCounter, alloca);
+    this.allocaCounter = this.allocaCounter + 1;
 }
 func buildFetchGlobalPointer(this: &IRFunc, span: Span, dst: RegIndex, globalIndex: RegIndex) {
     pushInstruction(this, IRInstr {
@@ -899,7 +897,6 @@ struct IRGen {
     error: bool;
 }
 func getIdentifierByName(this: &IRGen, function: &IRFunc, name: SubStr, isGlobal: &bool) -> &IRScopeEntry {
-    trace("IRGen.getIdentifierByName");
     let entry: &IRScopeEntry = getIdentifierByName(function, name);
     if (entry != null) {
         *isGlobal = false;
@@ -915,8 +912,21 @@ func getIdentifierByName(this: &IRGen, function: &IRFunc, name: SubStr, isGlobal
 func getFunctionByName(this: &IRGen, name: &String) -> usize {
     return indexOf(&this.functions, name);
 }
+func getFunctionByMangledName(this: &IRGen, name: &char, imp: &char) -> usize {
+    let fn = newStringFromStrLit(name);
+    if (!containsKey(&this.functions, &fn)) {
+        C::fprintf(stderr, "%s Could not insert implicit function call! Reason: Could not find function `%s`!\n", FATAL_STR, name);
+        C::fprintf(stderr, "%s: Certain features in the language require extra support from the standard library. ", NOTE_STR);
+        C::fprintf(stderr,     "Normally the compiler automatically imports the required files, however it seems like it failed this time.\n");
+        C::fprintf(stderr, "%s: Please import `%s` and try again.\n", NOTE_STR, imp);
+        C::fprintf(stderr, "%s: Please create a bug report on https://github.com/pfhaupt/bufo/issues/new.\n", NOTE_STR);
+        C::exit(2);
+    }
+    let funcID: usize = getFunctionByName(this, &fn);
+    drop(&fn);
+    return funcID;
+}
 func fillLookup(this: &IRGen, project: &ParsedFile) -> bool {
-    trace("IRGen.fillLookup");
     for (let i: usize = 0; i < funcDecls.length; i = i + 1) {
         let function: &ParsedFuncDecl = at(&funcDecls, i);
         if (function.ignored) continue;
@@ -943,7 +953,6 @@ func fillLookup(this: &IRGen, project: &ParsedFile) -> bool {
     return true;
 }
 func generateBytecode(this: &IRGen, project: &ParsedFile) -> bool {
-    trace("IRGen.generateBytecode");
     if (!fillLookup(this, project))
         return false;
     let scope: usize = enterScope(&this.globalScope);
@@ -977,7 +986,6 @@ func generateBytecode(this: &IRGen, project: &ParsedFile) -> bool {
 }
 
 func generateFunctionHeader(this: &IRGen, function: &IRFunc, retType: &Type, params: &ParamContext) {
-    trace("IRGen.generateFunctionHeader");
     let entry: IRBlockID = appendBlock(function);
     setCurrentBlock(function, entry);
     let offset: usize = 0;
@@ -994,7 +1002,6 @@ func generateFunctionHeader(this: &IRGen, function: &IRFunc, retType: &Type, par
 }
 
 func generateFunctionBody(this: &IRGen, function: &IRFunc, body: &ParsedBlock, retTypeNode: &ParsedTypeNode) {
-    trace("IRGen.generateFunctionBody");
     let retType: &Type = getType(&retTypeNode.typeState);
     if (function.returnBlockID.i == 0) {
         let curr = getCurrentBlock(function);
@@ -1030,11 +1037,53 @@ func generateFunctionBody(this: &IRGen, function: &IRFunc, body: &ParsedBlock, r
             setCurrentBlock(function, curr);
         }
     }
-    generateBytecodeBlock(this, function, body);
+    if (*flags.trace) {
+        let fn = getFuncNode(function);
+        let isEnter = equals(&fn.name.content, &newSubStrOfStrLit("traceEnter"));
+        let isLeave = equals(&fn.name.content, &newSubStrOfStrLit("traceLeave"));
+        let init = func (function: &IRFunc, fn: &ParsedFuncDecl) -> RegIndexList {
+            let args = RegIndexList { };
+            // Function name
+            let reg = allocateRegister(function, wrap(Type::Ptr(wrap(Type::Prim(PrimType::Char)))));
+            let name = toString(&fn.name.content);
+            buildLoadString(function, function.span, reg, asSubStr(&name));
+            push(&args, reg);
+            return args;
+        };
+        if (!isEnter && !isLeave) {
+            let funcID: usize = 0;
+            let args: RegIndexList = blank;
+            // traceEnter
+            funcID = getFunctionByMangledName(this, "traceEnterPcrN", "trace.bufo");
+            args = init(function, fn);
+            generateImplicitCall(this, function, function.span, funcID, wrap(Type::Prim(PrimType::None)), args);
+            // function body
+            generateBytecodeBlock(this, function, body);
+            // traceLeave
+            funcID = getFunctionByMangledName(this, "traceLeavePcrN", "trace.bufo");
+            let curr = getCurrentBlock(function);
+            setCurrentBlock(function, function.returnBlockID);
+            let block = getCurrentBlockAsRef(function);
+            if (isTerminated(block)) {
+                let term = *pop(&block.instructions);
+                args = init(function, fn);
+                generateImplicitCall(this, function, function.span, funcID, wrap(Type::Prim(PrimType::None)), args);
+                push(&block.instructions, term);
+            } else {
+                args = init(function, fn);
+                generateImplicitCall(this, function, function.span, funcID, wrap(Type::Prim(PrimType::None)), args);
+            }
+            setCurrentBlock(function, curr);
+        } else {
+            generateBytecodeBlock(this, function, body);
+        }
+    } else {
+        generateBytecodeBlock(this, function, body);
+    }
     let curr: &IRBlock = getCurrentBlockAsRef(function);
     if (!isTerminated(curr)) {
         if (isNone(retType)) {
-            buildReturnEmpty(function, body.span);
+            buildBr(function, body.span, function.returnBlockID);
         } else {
             buildUnterminated(function, body.span);
         }
@@ -1044,7 +1093,6 @@ func generateFunctionBody(this: &IRGen, function: &IRFunc, body: &ParsedBlock, r
 }
 
 func generateFunction(this: &IRGen, funcDecl: &ParsedFuncDecl) {
-    trace("IRGen.generateFunction");
     if (funcDecl.ignored) return;
     assert(isSuccess(&funcDecl.typeState), "Expected valid FuncDecl type in IRGen");
     let name: String = getMangledName(funcDecl);
@@ -1063,7 +1111,6 @@ func generateFunction(this: &IRGen, funcDecl: &ParsedFuncDecl) {
 }
 
 func generateBytecodeBlock(this: &IRGen, function: &IRFunc, block: &ParsedBlock) {
-    trace("IRGen.generateBytecodeBlock");
     if (block.ignored) return;
     assert(isSuccess(&block.typeState), "Expected valid Block type in IRGen");
     let scope: usize = enterScope(function);
@@ -1086,7 +1133,6 @@ func generateBytecodeBlock(this: &IRGen, function: &IRFunc, block: &ParsedBlock)
 }
 
 func generateBytecodeStmt(this: &IRGen, function: &IRFunc, stmt: &ParsedStmt) {
-    trace("IRGen.generateBytecodeStmt");
     match (&stmt.data) {
         &StmtData::VarDecl(decl) => {
             let expr: &ParsedExpr = decl.expr;
@@ -1299,7 +1345,6 @@ func generateBytecodeStmt(this: &IRGen, function: &IRFunc, stmt: &ParsedStmt) {
 }
 
 func generateBytecodeMatchStmt(this: &IRGen, function: &IRFunc, match: &ParsedStmt) {
-    trace("IRGen.generateBytecodeMatchStmt");
     let expr: &ParsedExpr = null;
     let patterns: &ParsedPatternList = null;
     let stmts: &ParsedStmtList = null;
@@ -1338,14 +1383,7 @@ func generateBytecodeMatchStmt(this: &IRGen, function: &IRFunc, match: &ParsedSt
     // in the normal control flow, we should at some point always go into a matchBlock, which jumps
     // to the end. If we don't, there's an internal compiler bug, which is why we put an unreachable
     // here.
-    let unreachable: String = newStringFromStrLit("unreachablePcrN");
-    if (!containsKey(&this.functions, &unreachable)) {
-        C::fprintf(stderr, "%s Could not generate match guard check!\n", FATAL_STR);
-        C::fprintf(stderr, "%s: Reason: Could not find function `unreachable`!\n", NOTE_STR);
-        C::fprintf(stderr, "%s: Please import `prelude.bufo` and try again.\n", NOTE_STR);
-        C::exit(1);
-    }
-    let funcID: usize = getFunctionByName(this, &unreachable);
+    let funcID = getFunctionByMangledName(this, "unreachablePcrN", "prelude.bufo");
     let args: RegIndexList = blank;
     {
         let err: RegIndex = allocateRegister(function, wrap(Type::Prim(PrimType::Char)));
@@ -1363,21 +1401,12 @@ func generateBytecodeMatchStmt(this: &IRGen, function: &IRFunc, match: &ParsedSt
         buildLoadString(function, match.span, err, asSubStr(&s));
         push(&args, err);
     }
-    let reg: RegIndex = allocateRegister(function, wrap(Type::Prim(PrimType::None)));
-    {
-        let ft = wrap(Type::Func(blank, wrap(Type::Prim(PrimType::None)), FuncAttr {
-            isVariadic: true // REVIEW: Why?
-        }));
-        let dst = allocateRegister(function, ft);
-        buildLoadFunctionPtr(function, match.span, dst, funcID);
-        buildCall(function, match.span, reg, dst, args);
-    }
+    generateImplicitCall(this, function, match.span, funcID, wrap(Type::Prim(PrimType::None)), args);
     buildUnreachable(function, match.span);
     setCurrentBlock(function, end);
 }
 
 func generateBytecodePattern(this: &IRGen, function: &IRFunc, expr: RegIndex, pat: &ParsedPattern, inOrigMemory: bool) -> RegIndex {
-    trace("IRGen.generateBytecodePattern");
     let type = getRegister(function, expr).typ;
     let success = allocateRegister(function, wrap(Type::Prim(PrimType::Bool)));
     match (&pat.data) {
@@ -1475,7 +1504,6 @@ func generateBytecodePattern(this: &IRGen, function: &IRFunc, expr: RegIndex, pa
 }
 
 func generateBytecodePatternStruct(this: &IRGen, function: &IRFunc, expr: RegIndex, pat: &ParsedPattern, success: RegIndex, inOrigMemory: bool) {
-    trace("IRGen.generateBytecodePatternStruct");
     let type = getRegister(function, expr).typ;
     let subPatterns: &ParsedPatternList = null;
     match (&pat.data) {
@@ -1525,7 +1553,6 @@ func generateBytecodePatternStruct(this: &IRGen, function: &IRFunc, expr: RegInd
 }
 
 func generateBytecodePatternUnion(this: &IRGen, function: &IRFunc, expr: RegIndex, pat: &ParsedPattern, success: RegIndex, inOrigMemory: bool) {
-    trace("IRGen.generateBytecodePatternUnion");
     // FIXME: Handling of IR for unions is always so awkward
     let type = getRegister(function, expr).typ;
     let name: &Token = null;
@@ -1655,7 +1682,6 @@ func generateBytecodePatternUnion(this: &IRGen, function: &IRFunc, expr: RegInde
 }
 
 func generateBytecodeExpr(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, needsPtr: bool) -> RegIndex {
-    trace("IRGen.generateBytecodeExpr");
     if (expr.ignored) return blank;
     assert(isSuccess(&expr.typeState), "Expected valid Expr type in IRGen");
     match (&expr.data) {
@@ -1730,7 +1756,6 @@ func generateBytecodeExpr(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, ne
         &ExprData::True => { return generateBytecodeExprLiteral(this, function, expr, needsPtr); }
         &ExprData::False => { return generateBytecodeExprLiteral(this, function, expr, needsPtr); }
         &ExprData::Func(decl) => {
-            generateFunction(this, decl);
             let name: String = getMangledName(decl);
             let funcID: usize = getFunctionByName(this, &name);
             let dst = allocateRegister(function, getType(&decl.typeState));
@@ -1776,7 +1801,6 @@ func generateBytecodeExprBinary(this: &IRGen, function: &IRFunc, expr: &BinaryEx
 }
 
 func generateBytecodeExprUnionInit(this: &IRGen, function: &IRFunc, span: Span, expr: &UnionExpr, type: &Type, needsPtr: bool) -> RegIndex {
-    trace("IRGen.generateBytecodeExprUnionInit");
     // union = [tag, data]
     let decl: &ParsedUnionDecl = null;
     let variant: &ParsedUnionVariant = null;
@@ -1873,7 +1897,6 @@ func generateBytecodeExprUnionInit(this: &IRGen, function: &IRFunc, span: Span, 
 }
 
 func generateBytecodeExprAs(this: &IRGen, function: &IRFunc, expr: &ParsedExpr) -> RegIndex {
-    trace("IRGen.generateBytecodeExprAs");
     let orig: &ParsedExpr = null;
     let typeNode: &ParsedTypeNode = null;
     match (expr.data) {
@@ -1934,7 +1957,6 @@ func generateBytecodeExprAs(this: &IRGen, function: &IRFunc, expr: &ParsedExpr) 
     return dst;
 }
 func generateBytecodeExprPathAccess(this: &IRGen, function: &IRFunc, expr: &BinaryExpr, needsPtr: bool) -> RegIndex {
-    trace("IRGen.generateBytecodeExprPathAccess");
     let lhs: &ParsedExpr = null;
     let rhs: &ParsedExpr = null;
     extractOperands(expr, &lhs, &rhs);
@@ -1949,7 +1971,6 @@ func generateBytecodeExprPathAccess(this: &IRGen, function: &IRFunc, expr: &Bina
 }
 
 func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &BinaryExpr, needsPtr: bool) -> RegIndex {
-    trace("IRGen.generateBytecodeExprMemberAccess");
     let lhs: &ParsedExpr = null;
     let rhs: &ParsedExpr = null;
     extractOperands(expr, &lhs, &rhs);
@@ -2044,8 +2065,20 @@ func prepareReturnValue(this: &IRGen, span: Span, function: &IRFunc, base: RegIn
     return retVal;
 }
 
+func generateImplicitCall(this: &IRGen, function: &IRFunc, span: Span, funcID: usize, retType: &Type, args: RegIndexList) -> RegIndex {
+    let reg: RegIndex = allocateRegister(function, retType);
+    {
+        let ft = wrap(Type::Func(blank, retType, FuncAttr {
+            isVariadic: true // REVIEW: Why?
+        }));
+        let dst = allocateRegister(function, ft);
+        buildLoadFunctionPtr(function, span, dst, funcID);
+        buildCall(function, span, reg, dst, args);
+    }
+    return reg;
+}
+
 func generateBytecodeExprIndexedAccess(this: &IRGen, function: &IRFunc, expr: &BinaryExpr, type: &Type, needsPtr: bool) -> RegIndex {
-    trace("IRGen.generateBytecodeExprIndexedAccess");
     let lhs: &ParsedExpr = null;
     let rhs: &ParsedExpr = null;
     extractOperands(expr, &lhs, &rhs);
@@ -2081,26 +2114,11 @@ func generateBytecodeExprIndexedAccess(this: &IRGen, function: &IRFunc, expr: &B
         pushStr(&s, " has no index %d\n");
         drop(&_s);
         buildLoadString(function, lhs.span, err, asSubStr(&s));
-        let indexoob: String = newStringFromStrLit("index_oobPci64rN");
-        if (!containsKey(&this.functions, &indexoob)) {
-            C::fprintf(stderr, "%s Could not generate index check for array access!\n", FATAL_STR);
-            C::fprintf(stderr, "%s: Reason: Could not find function `index_oob`!\n", NOTE_STR);
-            C::fprintf(stderr, "%s: Please import `prelude.bufo` and try again.\n", NOTE_STR);
-            C::exit(1);
-        }
-        let funcID: usize = getFunctionByName(this, &indexoob);
+        let funcID = getFunctionByMangledName(this, "index_oobPci64rN", "prelude.bufo");
         let args: RegIndexList = blank;
         push(&args, err);
         push(&args, rhsReg);
-        let reg: RegIndex = allocateRegister(function, wrap(Type::Prim(PrimType::None)));
-        {
-            let ft = wrap(Type::Func(blank, wrap(Type::Prim(PrimType::None)), FuncAttr {
-                isVariadic: true // REVIEW: Why?
-            }));
-            let dst = allocateRegister(function, ft);
-            buildLoadFunctionPtr(function, lhs.span, dst, funcID);
-            buildCall(function, lhs.span, reg, dst, args);
-        }
+        generateImplicitCall(this, function, lhs.span, funcID, wrap(Type::Prim(PrimType::None)), args);
         buildUnreachable(function, lhs.span);
         setCurrentBlock(function, normal);
     }
@@ -2123,7 +2141,6 @@ func generateBytecodeExprIndexedAccess(this: &IRGen, function: &IRFunc, expr: &B
 }
 
 func generateBytecodeExprIdentifier(this: &IRGen, function: &IRFunc, expr: &IdentExpr, needsPtr: bool) -> RegIndex {
-    trace("IRGen.generateBytecodeExprIdentifier");
     let isGlobal: bool = false;
     let type = expr.type;
     assert(type != null, "IRGen: IdentExpr has unset type!");
@@ -2191,7 +2208,6 @@ func generateBytecodeExprIdentifier(this: &IRGen, function: &IRFunc, expr: &Iden
 }
 
 func generateBytecodeExprArithmetic(this: &IRGen, function: &IRFunc, expr: &BinaryExpr, type: &Type) -> RegIndex {
-    trace("IRGen.generateBytecodeExprArithmetic");
     assert(isArithmetic(expr));
     let lhs: &ParsedExpr = null;
     let rhs: &ParsedExpr = null;
@@ -2286,7 +2302,6 @@ func generateBytecodeExprArithmetic(this: &IRGen, function: &IRFunc, expr: &Bina
 }
 
 func generateBytecodeExprComparison(this: &IRGen, function: &IRFunc, expr: &BinaryExpr, type: &Type) -> RegIndex {
-    trace("IRGen.generateBytecodeExprComparison");
     assert(isComparison(expr));
     let lhs: &ParsedExpr = null;
     let rhs: &ParsedExpr = null;
@@ -2358,7 +2373,6 @@ func generateBytecodeExprComparison(this: &IRGen, function: &IRFunc, expr: &Bina
 }
 
 func generateBytecodeExprLogical(this: &IRGen, function: &IRFunc, expr: &BinaryExpr, type: &Type) -> RegIndex {
-    trace("IRGen.generateBytecodeExprLogical");
     assert(isLogical(expr));
     let lhs: &ParsedExpr = null;
     let rhs: &ParsedExpr = null;
@@ -2375,7 +2389,6 @@ func generateBytecodeExprLogical(this: &IRGen, function: &IRFunc, expr: &BinaryE
 }
 
 func generateBytecodeExprBitwise(this: &IRGen, function: &IRFunc, expr: &BinaryExpr, type: &Type) -> RegIndex {
-    trace("IRGen.generateBytecodeExprBitwise");
     assert(isBitwise(expr));
     let lhs: &ParsedExpr = null;
     let rhs: &ParsedExpr = null;
@@ -2433,7 +2446,6 @@ func loadLiteral(this: &IRGen, function: &IRFunc, reg: RegIndex, tkn: &Token) ->
 }
 
 func generateBytecodeExprLiteral(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, needsPtr: bool) -> RegIndex {
-    trace("IRGen.generateBytecodeExprLiteral");
     assert(isLiteral(expr));
     let t: &Type = getType(&expr.typeState);
     let reg: RegIndex = allocateRegister(function, t);
@@ -2534,7 +2546,6 @@ func generateBytecodeExprLiteral(this: &IRGen, function: &IRFunc, expr: &ParsedE
 }
 
 func generateBytecodeExprAssignment(this: &IRGen, function: &IRFunc, expr: &BinaryExpr) -> RegIndex {
-    trace("IRGen.generateBytecodeExprAssignment");
     assert(isAssignment(expr));
     let lhs: &ParsedExpr = null;
     let rhs: &ParsedExpr = null;
@@ -2547,7 +2558,6 @@ func generateBytecodeExprAssignment(this: &IRGen, function: &IRFunc, expr: &Bina
 }
 
 func generateBytecodeExprUnary(this: &IRGen, function: &IRFunc, span: Span, expr: &UnaryExpr, type: &Type, needsPtr: bool) -> RegIndex {
-    trace("IRGen.generateBytecodeExprUnary");
     match (expr) {
         &UnaryExpr::Comptime(subExpr) => {
             startComptime(function);
@@ -2619,7 +2629,6 @@ func generateBytecodeExprUnary(this: &IRGen, function: &IRFunc, span: Span, expr
 }
 
 func prepareParameter(this: &IRGen, function: &IRFunc, index: usize, span: Span, name: SubStr, typ: &Type, retValue: bool) {
-    trace("IRGen.prepareParameter");
     if (getSize(typ) > 8) {
         let t = wrap(Type::Ptr(wrap(Type::Prim(PrimType::U8))));
         let value: RegIndex = allocateRegister(function, t);
@@ -2681,7 +2690,6 @@ func prepareParameter(this: &IRGen, function: &IRFunc, index: usize, span: Span,
 }
 
 func getRegisterForSize(this: &IRGen, function: &IRFunc, size: usize) -> RegIndex {
-    trace("IRGen.getRegisterForSize");
     let v: RegIndex = blank;
     if (size <= 1) {
         v = allocateRegister(function, wrap(Type::Prim(PrimType::U8)));
@@ -2698,7 +2706,6 @@ func getRegisterForSize(this: &IRGen, function: &IRFunc, size: usize) -> RegInde
 }
 
 func prepareArgument(this: &IRGen, function: &IRFunc, span: Span, value: RegIndex, typ: &Type) -> RegIndex {
-    trace("IRGen.prepareArgument");
      if (getSize(typ) > 8) {
         // Following the ABI, all parameters that don't fit in a register get passed by pointer
         let tempAlloc: RegIndex = allocateRegister(function, intoPointer(typ));
@@ -2720,7 +2727,6 @@ func prepareArgument(this: &IRGen, function: &IRFunc, span: Span, value: RegInde
 }
 
 func generateBytecodeExprCall(this: &IRGen, function: &IRFunc, expr: &CallExpr, needsPtr: bool) -> RegIndex {
-    trace("IRGen.generateBytecodeExprCall");
     let base = generateBytecodeExpr(this, function, expr.base, false);
     let typ: &Type = expr.retType;
     assert(typ != null, "IRGen: CallExpr has invalid return type");

@@ -347,7 +347,6 @@ func getUnderlyingType(this: &Type, deep: bool) -> &Type {
 }
 // FIXME: Make toString() accept a buffer, so we don't allocate 20 bytes on the heap 1 million times
 func toString(this: &Type) -> String {
-    trace("Type.toString");
     match (this) {
         &Type::Unknown => { return newStringFromStrLit("<unknown>"); }
         &Type::Prim(typ) => {

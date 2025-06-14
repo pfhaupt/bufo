@@ -13,19 +13,15 @@ struct LLVMTargetData {
 }
 
 func getBitSize(this: &LLVMTargetData, typ: &LLVMType) -> usize {
-    trace("LLVMTargetData.getBitSize");
     return LLVM::SizeOfTypeInBits(this.ref, typ.ref);
 }
 func getABISize(this: &LLVMTargetData, typ: &LLVMType) -> usize {
-    trace("LLVMTargetData.getABISize");
     return LLVM::ABISizeOfType(this.ref, typ.ref);
 }
 func getStoreSize(this: &LLVMTargetData, typ: &LLVMType) -> usize {
-    trace("LLVMTargetData.getStoreSize");
     return LLVM::StoreSizeOfType(this.ref, typ.ref);
 }
 func getDataLayout(this: &LLVMTargetData) -> LLVMDataLayout {
-    trace("LLVMTargetData.getDataLayout");
     let c: &char = LLVM::CopyStringRepOfTargetData(this.ref);
     return LLVMDataLayout {
         ref: c
@@ -43,7 +39,6 @@ struct LLVMTarget {
 }
 
 func createTargetMachine(this: &LLVMTarget, triple: &char, cpu: &char, features: &char) -> LLVMTargetMachine {
-    trace("LLVMTarget.createTargetMachine");
     let target: LLVM::TargetMachineRef = LLVM::CreateTargetMachine(
         this.ref,
         triple,
@@ -68,7 +63,6 @@ struct LLVMTargetMachine {
 }
 
 func writeToFile(this: &LLVMTargetMachine, mod: LLVMModule, mode: i32, filepath: &char) {
-    trace("LLVMTargetMachine.writeToFile");
     let err: LLVMString = blank;
     if (LLVM::TargetMachineEmitToFile(this.ref, mod.ref, filepath, mode, &err) != 0) {
         C::fprintf(stderr, "%s Could not write LLVM module to file!\n", FATAL_STR);
@@ -78,7 +72,6 @@ func writeToFile(this: &LLVMTargetMachine, mod: LLVMModule, mode: i32, filepath:
 }
 
 func getTargetData(this: &LLVMTargetMachine) -> LLVMTargetData {
-    trace("LLVMTargetMachine.getTargetData");
     let data: LLVM::TargetDataRef = LLVM::CreateTargetDataLayout(this.ref);
     assert(!LLVM::isNull(data), "Could not get TargetData");
     return newLLVMTargetDataFromRef(data);

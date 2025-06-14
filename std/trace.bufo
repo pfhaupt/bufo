@@ -1,0 +1,26 @@
+
+import "prelude.bufo";
+import "libc.bufo";
+
+let traceDepth: usize = 0;
+let traceCount: usize = 0;
+
+func traceEnter(fn: &char) {
+    comptime TRACE_RATE: usize = 50;
+    traceDepth = traceDepth + 1;
+    traceCount = traceCount + 1;
+    if (traceCount % TRACE_RATE == 0) {
+        let buf = ['\0'; 256];
+        for (let i: usize = 0; i < traceDepth; i = i + 1) buf[i] = '-';
+        C::printf("[TRACE] %sEntering %s\n", &buf, fn);
+    }
+}
+func traceLeave(fn: &char) {
+    comptime TRACE_RATE: usize = 50;
+    if (traceCount % TRACE_RATE == 0) {
+        let buf = ['\0'; 256];
+        for (let i: usize = 0; i < traceDepth; i = i + 1) buf[i] = '-';
+        C::printf("[TRACE] %sLeaving %s\n", &buf, fn);
+    }
+    traceDepth = traceDepth - 1;
+}

@@ -31,14 +31,12 @@ func initializeTargets(this: &LLVMContext) {
 }
 
 func createTarget(this: &LLVMContext, name: &char) -> LLVMTarget {
-    trace("LLVMContext.createTarget");
     let target: LLVM::TargetRef = LLVM::GetTargetFromName(name);
     assert(!LLVM::isNull(target), "Could not create target triple");
     return newLLVMTargetFromRef(target);
 }
 
 func createTargetTriple(this: &LLVMContext, name: &char) -> &char {
-    trace("LLVMContext.createTargetTriple");
     if (equals(flags.target, &newStringFromStrLit("WINDOWS"))) {
         return "x86_64-pc-windows-msvc";
     } else if (equals(flags.target, &newStringFromStrLit("LINUX"))) {
@@ -49,7 +47,6 @@ func createTargetTriple(this: &LLVMContext, name: &char) -> &char {
 }
 
 func createModuleWithName(this: &LLVMContext, name: SubStr) -> LLVMModule {
-    trace("LLVMContext.createModuleWithName");
     guardReference(this);
     let _name: String = toString(&name);
     let mod: LLVM::ModuleRef = LLVM::ModuleCreateWithNameInContext(_name.buffer, this.ref);
@@ -59,7 +56,6 @@ func createModuleWithName(this: &LLVMContext, name: SubStr) -> LLVMModule {
 }
 
 func createBuilder(this: &LLVMContext) -> LLVMBuilder {
-    trace("LLVMContext.createBuilder");
     guardReference(this);
     let builder: LLVM::BuilderRef = LLVM::CreateBuilderInContext(this.ref);
     assert(!LLVM::isNull(builder), "Could not create builder in context");
@@ -67,7 +63,6 @@ func createBuilder(this: &LLVMContext) -> LLVMBuilder {
 }
 
 func createIntegerType(this: &LLVMContext, bitsize: i64) -> LLVMType {
-    trace("LLVMContext.createIntegerType");
     assert(bitsize > 0, "Got invalid bitsize in createIntegerType");
     // LLVM max limit is 2^23-1 bits
     assert(bitsize <= 8388607, "Got invalid bitsize in createIntegerType");
@@ -77,21 +72,18 @@ func createIntegerType(this: &LLVMContext, bitsize: i64) -> LLVMType {
 }
 
 func createFloatType(this: &LLVMContext) -> LLVMType {
-    trace("LLVMContext.createFloatType");
     let float: LLVM::TypeRef = LLVM::FloatTypeInContext(this.ref);
     assert(!LLVM::isNull(float), "Could not create float type in context");
     return newLLVMTypeFromRef(float);
 }
 
 func createDoubleType(this: &LLVMContext) -> LLVMType {
-    trace("LLVMContext.createDoubleType");
     let double: LLVM::TypeRef = LLVM::DoubleTypeInContext(this.ref);
     assert(!LLVM::isNull(double), "Could not create double type in context");
     return newLLVMTypeFromRef(double);
 }
 
 func createStructType(this: &LLVMContext, elements: &LLVMType, count: u32, packed: bool) -> LLVMType {
-    trace("LLVMContext.createStructType");
     let b: LLVMBool = newLLVMBool(packed);
     let strukt: LLVM::TypeRef = LLVM::StructTypeInContext(this.ref, elements as &LLVM::TypeRef, count, b);
     assert(!LLVM::isNull(strukt), "Could not create struct type in context");
@@ -99,14 +91,12 @@ func createStructType(this: &LLVMContext, elements: &LLVMType, count: u32, packe
 }
 
 func createVoidType(this: &LLVMContext) -> LLVMType {
-    trace("LLVMContext.createVoidType");
     let void: LLVM::TypeRef = LLVM::VoidTypeInContext(this.ref);
     assert(!LLVM::isNull(void), "Could not create void type in context");
     return newLLVMTypeFromRef(void);
 }
 
 func appendBasicBlock(this: &LLVMContext, fn: LLVMValue, name: SubStr) -> LLVMBasicBlock {
-    trace("LLVMContext.appendBasicBlock");
     let _name: String = toString(&name);
     let block: LLVM::BasicBlockRef = LLVM::AppendBasicBlockInContext(this.ref, fn.ref, _name.buffer);
     drop(&_name);
@@ -115,7 +105,6 @@ func appendBasicBlock(this: &LLVMContext, fn: LLVMValue, name: SubStr) -> LLVMBa
 }
 
 func createEnumAttribute(this: &LLVMContext, id: u32, val: u64) -> LLVMAttribute {
-    trace("LLVMContext.createEnumAttribute");
     let attr = LLVM::CreateEnumAttribute(this.ref, id, val);
     assert(!LLVM::isNull(attr), "Could not create enum attribute in context");
     return newLLVMAttributeFromRef(attr);

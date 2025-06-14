@@ -178,7 +178,6 @@ struct ParsedFile {
 }
 
 func getID(this: &ParsedFile) -> usize {
-    trace("ParsedFile.getID");
     return indexOf(&files, this);
 }
 
@@ -201,7 +200,6 @@ func getLineAndColumnFromSpan(this: &ParsedFile, span: &Span, line: &usize, colu
 }
 
 func newParsedFile(origin: SubStr, src: SubStr) -> &ParsedFile {
-    trace("newParsedFile");
     push(&files, ParsedFile {
         ignored: ignoringNodes,
         origin: origin,
@@ -250,12 +248,10 @@ func asUnion(this: &ParsedTopLevelItem) -> &ParsedUnionDecl {
 }
 
 func getID(this: &ParsedTopLevelItem) -> usize {
-    trace("ParsedTopLevelItem.getID");
     return indexOf(&topLevelItems, this);
 }
 
 func newParsedTopLevelItem(span: Span, kind: usize, nodeID: usize) -> &ParsedTopLevelItem {
-    trace("newParsedTopLevelItem");
     push(&topLevelItems, ParsedTopLevelItem {
         ignored: ignoringNodes,
         kind: kind,
@@ -299,7 +295,6 @@ func isNull(dll: &DLL) -> bool {
 }
 
 func getID(this: &DLL) -> usize {
-    trace("DLL.getID");
     return indexOf(&dlls, this);
 }
 
@@ -327,11 +322,9 @@ func getConfigs(this: &ParsedModule) -> UsizeList {
     return list;
 }
 func getID(this: &ParsedModule) -> usize {
-    trace("ParsedModule.getID");
     return indexOf(&modules, this);
 }
 func asTLI(this: &ParsedModule) -> &ParsedTopLevelItem {
-    trace("ParsedModule.asTLI");
     return newParsedTopLevelItem(this.span, TLI_MOD_DECL, getID(this));
 }
 func getFullName(this: &ParsedModule) -> String {
@@ -358,7 +351,6 @@ func getFullName(this: &ParsedModule) -> String {
     return s;
 }
 func newParsedModule(parent: TLIParent, span: Span, name: Token, tlis: UsizeList) -> &ParsedModule {
-    trace("newParsedModule");
     push(&modules, ParsedModule {
         ignored: ignoringNodes,
         parent: parent,
@@ -378,11 +370,9 @@ struct ParsedStructDecl {
     typeState: TCState;
 }
 func getID(this: &ParsedStructDecl) -> usize {
-    trace("ParsedStructDecl.getID");
     return indexOf(&structDecls, this);
 }
 func asTLI(this: &ParsedStructDecl) -> &ParsedTopLevelItem {
-    trace("ParsedStructDecl.asTLI");
     return newParsedTopLevelItem(this.span, TLI_STRUCT_DECL, getID(this));
 }
 
@@ -396,7 +386,6 @@ func getFieldOffset(this: &ParsedStructDecl, name: &SubStr) -> usize {
     return offset;
 }
 func getFieldOffsetAndSize(this: &ParsedStructDecl, index: usize, offset: &usize, size: &usize) {
-    trace("ParsedStructDecl.getFieldOffsetAndSize");
     let o: usize = 0;
     for (let i: usize = 0; i < this.context.fieldLength; i = i + 1) {
         let f1: &ParsedTypeNode = getFieldTypeAtIndex(&this.context, i);
@@ -441,7 +430,6 @@ func getFullName(this: &ParsedStructDecl) -> String {
 }
 
 func newParsedStructDecl(parent: TLIParent, span: Span, name: Token) -> &ParsedStructDecl {
-    trace("newParsedStructDecl");
     push(&structDecls, ParsedStructDecl {
         ignored: ignoringNodes,
         parent: parent,
@@ -463,15 +451,12 @@ struct ParsedUnionDecl {
 }
 
 func getID(this: &ParsedUnionDecl) -> usize {
-    trace("ParsedUnionDecl.getID");
     return indexOf(&unionDecls, this);
 }
 func asTLI(this: &ParsedUnionDecl) -> &ParsedTopLevelItem {
-    trace("ParsedUnionDecl.asTLI");
     return newParsedTopLevelItem(this.span, TLI_UNION_DECL, getID(this));
 }
 func resolveVariantByName(this: &ParsedUnionDecl, name: &Token, out: &&ParsedUnionVariant) -> bool {
-    trace("ParsedUnionDecl.resolveVariantByName");
     for (let i: usize = 0; i < this.variants.length; i = i + 1) {
         let variant = *at(&this.variants, i);
         if (equals(&variant.name.content, &name.content)) {
@@ -482,7 +467,6 @@ func resolveVariantByName(this: &ParsedUnionDecl, name: &Token, out: &&ParsedUni
     return false;
 }
 func getVariantTag(this: &ParsedUnionDecl, variant: &ParsedUnionVariant) -> usize {
-    trace("ParsedUnionDecl.getVariantTag");
     for (let i: usize = 0; i < this.variants.length; i = i + 1) {
         if (*at(&this.variants, i) == variant) {
             return i;
@@ -515,7 +499,6 @@ func getFullName(this: &ParsedUnionDecl) -> String {
     return s;
 }
 func newParsedUnionDecl(parent: TLIParent, span: Span, name: Token) -> &ParsedUnionDecl {
-    trace("newParsedUnionDecl");
     push(&unionDecls, ParsedUnionDecl {
         ignored: ignoringNodes,
         parent: parent,
@@ -539,7 +522,6 @@ struct ParsedUnionVariant {
     names: TokenList;
 }
 func getID(this: &ParsedUnionVariant) -> usize {
-    trace("ParsedUnionVariant.getID");
     return indexOf(&unionVariants, this);
 }
 
@@ -564,7 +546,6 @@ func addField(this: &ParsedUnionVariant, field: &ParsedTypeNode) {
 }
 
 func getTypeAtIndex(this: &ParsedUnionVariant, index: usize) -> &Type {
-    trace("ParsedUnionVariant.getTypeAtIndex");
     assert(index < this.fields.length, "Out of bounds access in ParsedUnionVariant.getTypeAtIndex");
     let node = *at(&this.fields, index);
     assert(isSuccess(&node.typeState), "Expected valid TypeNode state in ParsedUnionVariant.getTypeAtIndex");
@@ -578,7 +559,6 @@ func addNamedField(this: &ParsedUnionVariant, name: Token, typ: &ParsedTypeNode)
 }
 
 func checkForDuplicateName(this: &ParsedUnionVariant, name: &Token, dupl: &&Token) -> bool {
-    trace("ParsedUnionVariant.checkForDuplicateName");
     let found = false;
     for (let i: usize = 0; i < this.names.length; i = i + 1) {
         let n = at(&this.names, i);
@@ -594,7 +574,6 @@ func checkForDuplicateName(this: &ParsedUnionVariant, name: &Token, dupl: &&Toke
 }
 
 func newParsedUnionVariant(kind: usize, parent: TLIParent, span: Span, name: Token) -> &ParsedUnionVariant {
-    trace("newParsedUnionVariant");
     push(&unionVariants, ParsedUnionVariant {
         ignored: ignoringNodes,
         parent: parent,
@@ -619,19 +598,16 @@ struct ParsedFuncDecl {
 }
 
 func hasAttribute(this: &ParsedFuncDecl, attr: usize) -> bool {
-    trace("ParsedFuncDecl.hasAttribute");
     for (let i: usize = 0; i < this.attrs.length; i = i + 1) {
         if (at(&this.attrs, i).kind == attr) return true;
     }
     return false;
 }
 func getID(this: &ParsedFuncDecl) -> usize {
-    trace("ParsedFuncDecl.getID");
     return indexOf(&funcDecls, this);
 }
 
 func isExtern(this: &ParsedFuncDecl) -> bool {
-    trace("ParsedFuncDecl.isExtern");
     for (let i: usize = 0; i < this.attrs.length; i = i + 1) {
         if (at(&this.attrs, i).kind == ATTR_EXTERN) return true;
     }
@@ -644,7 +620,6 @@ func getParentModule(this: &ParsedFuncDecl) -> &ParsedModule {
 }
 
 func getMangledName(this: &ParsedFuncDecl) -> String {
-    trace("ParsedFuncDecl.getMangledName");
     if (this.ignored) return toString(&this.name.content);
     assert(isSuccess(&this.typeState), "Mangling can only be done after type checks");
     return mangleFunctionName(
@@ -658,7 +633,6 @@ func getMangledName(this: &ParsedFuncDecl) -> String {
 }
 
 func asTLI(this: &ParsedFuncDecl) -> &ParsedTopLevelItem {
-    trace("ParsedFuncDecl.asTLI");
     return newParsedTopLevelItem(this.span, TLI_FUNC_DECL, getID(this));
 }
 
@@ -687,11 +661,9 @@ struct ParsedBlock {
 }
 
 func getID(this: &ParsedBlock) -> usize {
-    trace("ParsedBlock.getID");
     return indexOf(&blocks, this);
 }
 func addStmt(this: &ParsedBlock, stmt: &ParsedStmt) {
-    trace("ParsedBlock.addStmt");
     if (this.stmtLength >= this.stmtCapacity) {
         let newCap: usize = this.stmtCapacity * 2;
         if (newCap == 0) newCap = 1;
@@ -704,7 +676,6 @@ func addStmt(this: &ParsedBlock, stmt: &ParsedStmt) {
 }
 
 func getStmtAtIndex(this: &ParsedBlock, index: usize) -> &ParsedStmt {
-    trace("ParsedBlock.getStmtAtIndex");
     assert(index < this.stmtLength, "Out of bounds access in ParsedBlock.getStmtAtIndex");
     return this.stmtList[index];
 }
@@ -752,12 +723,10 @@ struct ParsedStmt {
 }
 
 func getID(this: &ParsedStmt) -> usize {
-    trace("ParsedStmt.getID");
     return indexOf(&stmts, this);
 }
 
 func asTLI(this: &ParsedStmt) -> &ParsedTopLevelItem {
-    trace("ParsedStmt.asTLI");
     match (&this.data) {
         &StmtData::VarDecl(..) => {
             return newParsedTopLevelItem(this.span, TLI_VAR_DECL, getID(this));
@@ -774,7 +743,6 @@ func into_block(this: &ParsedStmt) -> &ParsedBlock {
 }
 
 func newParsedStmt(span: Span, data: StmtData) -> &ParsedStmt {
-    trace("newParsedStmt");
     push(&stmts, ParsedStmt {
         ignored: ignoringNodes,
         span: span,
@@ -858,12 +826,10 @@ struct ParsedTypeNode {
 }
 
 func getID(this: &ParsedTypeNode) -> usize {
-    trace("ParsedTypeNode.getID");
     return indexOf(&typeNodes, this);
 }
 
 func newParsedTypeNode(span: Span, kind: usize) -> &ParsedTypeNode {
-    trace("newParsedTypeNode");
     push(&typeNodes, ParsedTypeNode {
         ignored: ignoringNodes,
         span: span,
@@ -873,7 +839,6 @@ func newParsedTypeNode(span: Span, kind: usize) -> &ParsedTypeNode {
 }
 
 func newBuiltinTypeDecl(span: Span, kind: usize) -> &ParsedTypeNode {
-    trace("newBuiltinTypeDecl");
     let t: &ParsedTypeNode = at(&typeNodes, kind);
     (*t).span = span;
     (*t).kind = PARSED_TYPE_BUILTIN;
@@ -1103,7 +1068,6 @@ struct ParsedExpr {
     typeState: TCState;
 }
 func getID(this: &ParsedExpr) -> usize {
-    trace("ParsedExpr.getID");
     return indexOf(&exprs, this);
 }
 func wrap(this: ParsedExpr) -> &ParsedExpr {
@@ -1197,12 +1161,10 @@ struct ParsedPattern {
 }
 
 func getID(this: &ParsedPattern) -> usize {
-    trace("ParsedPattern.getID");
     return indexOf(&patterns, this);
 }
 
 func newParsedPattern(span: Span, pat: Pattern) -> &ParsedPattern {
-    trace("newParsedPattern");
     push(&patterns, ParsedPattern {
         ignored: ignoringNodes,
         span: span,

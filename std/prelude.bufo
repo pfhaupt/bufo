@@ -23,18 +23,16 @@ comptime U32_MAX: u32 = 0 - 1;
 let stdin: Any = null;
 let stdout: Any = null;
 let stderr: Any = null;
-// Ensure that we can always use the handles at compile time
-let _setup = func () -> bool {
-    (comptime setupStdHandles());
-    return true;
-};
+let done = false;
 func setupStdHandles() {
+    if (done) return;
     if (stdin == null) stdin = C::fdopen(0, "a");
     _assert(stdin != null, "Could not initialize STDIN!");
     if (stdout == null) stdout = C::fdopen(1, "a");
     _assert(stdout != null, "Could not initialize STDOUT!");
     if (stderr == null) stderr = C::fdopen(2, "a");
     _assert(stderr != null, "Could not initialize STDERR!");
+    done = true;
 }
 
 // libc for now is also part of the prelude
@@ -203,14 +201,10 @@ func assert(cond: bool, msg: &char) {
 }
 
 let debug = disabled;
-let trace = disabled;
 
 func disabled(msg: &char) { }
 func debug_active(msg: &char) {
     C::printf("[DEBUG] %s\n", msg);
-}
-func trace_active(msg: &char) {
-    C::printf("[TRACE] %s\n", msg);
 }
 comptime PRINT_WARNING: bool = true;
 func warning(msg: &char) {

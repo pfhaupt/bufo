@@ -194,7 +194,6 @@ func reportVerboseNote(this: &TypeChecker, loc: String, count: usize, s1: &char,
 }
 
 func reportTypeMismatch(this: &TypeChecker, span: Span, expected: &Type, got: &Type) -> TCState {
-    trace("TypeChecker.reportTypeMismatch");
     let loc: String = toString(&span);
     let typ1: String = toString(expected);
     let typ2: String = toString(got);
@@ -208,7 +207,6 @@ func reportTypeMismatch(this: &TypeChecker, span: Span, expected: &Type, got: &T
 }
 
 func reportBinaryTypeMismatch(this: &TypeChecker, op: &char, lhsSpan: Span, lhsType: &Type, rhsSpan: Span, rhsType: &Type) -> TCState {
-    trace("TypeChecker.reportBinaryTypeMismatch");
     let loc: String = toString(&newSpanBetween(&lhsSpan, &rhsSpan));
     let loc1: String = toString(&lhsSpan);
     let loc2: String = toString(&rhsSpan);
@@ -228,7 +226,6 @@ func reportBinaryTypeMismatch(this: &TypeChecker, op: &char, lhsSpan: Span, lhsT
 }
 
 func reportInvalidPointerArithmetics(this: &TypeChecker, op: &char, lhsSpan: Span, rhsSpan: Span) -> TCState {
-    trace("TypeChecker.reportInvalidPointerArithmetics");
     let loc: String = toString(&newSpanBetween(&lhsSpan, &rhsSpan));
     C::fprintf(stderr, "%s: %s: Operation `%s` is not allowed in the context of pointer arithmetics.\n",
         loc.buffer, ERR_STR, op);
@@ -238,7 +235,6 @@ func reportInvalidPointerArithmetics(this: &TypeChecker, op: &char, lhsSpan: Spa
 }
 
 func reportDuplicateField(this: &TypeChecker, fieldToken: Token, declSpan: Span) -> TCState {
-    trace("TypeChecker.reportDuplicateField");
     let duplLoc: String = toString(&fieldToken.span);
     let origLoc: String = toString(&declSpan);
     let name: String = toString(&fieldToken.content);
@@ -252,7 +248,6 @@ func reportDuplicateField(this: &TypeChecker, fieldToken: Token, declSpan: Span)
 }
 
 func reportDuplicateParameter(this: &TypeChecker, paramToken: Token, declSpan: Span) -> TCState {
-    trace("TypeChecker.reportDuplicateParameter");
     let duplLoc: String = toString(&paramToken.span);
     let origLoc: String = toString(&declSpan);
     let name: String = toString(&paramToken.content);
@@ -266,7 +261,6 @@ func reportDuplicateParameter(this: &TypeChecker, paramToken: Token, declSpan: S
 }
 
 func reportUnknownField(this: &TypeChecker, name: Token, decl: &StructLookup, isUnion: bool) -> TCState {
-    trace("TypeChecker.reportUnknownField");
     let errLoc: String = toString(&name.span);
     let declLoc: String = toString(&decl.name.span);
     let strukt: String = toString(&decl.name.content);
@@ -320,7 +314,6 @@ func reportUnknownType(this: &TypeChecker, mod: &ModuleLookup, name: Token, alte
 }
 
 func reportDuplicateFunction(this: &TypeChecker, f1: &FunctionLookup, f2: &FunctionLookup) -> TCState {
-    trace("TypeChecker.reportDuplicateFunction");
     let errLoc: String = toString(&f1.name.span);
     let duplLoc: String = toString(&f2.name.span);
     let name: String = toString(&f1.name.content);
@@ -336,7 +329,6 @@ func reportDuplicateFunction(this: &TypeChecker, f1: &FunctionLookup, f2: &Funct
 }
 
 func reportNoFunctionCallCandidate(this: &TypeChecker, ident: Token, fnType: &Type, functions: &FunctionLookupList) -> TCState {
-    trace("TypeChecker.reportNoFunctionCallCandidate");
     let loc: String = toString(&ident.span);
     let name: String = toString(&ident.content);
     let typ = toString(fnType);
@@ -363,7 +355,6 @@ func reportNoFunctionCallCandidate(this: &TypeChecker, ident: Token, fnType: &Ty
 }
 
 func reportVariableRedeclaration(this: &TypeChecker, newDecl: Token, oldDecl: Token) -> TCState {
-    trace("TypeChecker.reportVariableRedeclaration");
     let newLoc: String = toString(&newDecl.span);
     let oldLoc: String = toString(&oldDecl.span);
     let name: String = toString(&newDecl.content);
@@ -377,7 +368,6 @@ func reportVariableRedeclaration(this: &TypeChecker, newDecl: Token, oldDecl: To
 }
 
 func reportRecursiveType(this: &TypeChecker, checked: &TypeLookup, cycle: &TypeLookupList) -> TCState {
-    trace("TypeChecker.reportRecursiveType");
     let loc: String = getLocation(checked);
     let name: String = getName(checked);
     C::fprintf(stderr, "%s: %s: Recursive type %s.\n", loc.buffer, ERR_STR, name.buffer);
@@ -394,7 +384,6 @@ func reportRecursiveType(this: &TypeChecker, checked: &TypeLookup, cycle: &TypeL
 }
 
 func reportNonPrimitiveCast(this: &TypeChecker, span: Span, from: &Type, to: &Type) -> TCState {
-    trace("TypeChecker.reportNonPrimitiveCast");
     let loc: String = toString(&span);
     let typ1: String = toString(from);
     let typ2: String = toString(to);
@@ -408,7 +397,6 @@ func reportNonPrimitiveCast(this: &TypeChecker, span: Span, from: &Type, to: &Ty
 }
 
 func reportIndexedAccessOnNonArray(this: &TypeChecker, span: Span, typ: &Type) -> TCState {
-    trace("TypeChecker.reportIndexedAccessOnNonArray");
     let loc: String = toString(&span);
     let name: String = toString(typ);
     C::fprintf(stderr, "%s: %s: Indexed Access is only supported for arrays.\n", loc.buffer, ERR_STR);
@@ -420,7 +408,6 @@ func reportIndexedAccessOnNonArray(this: &TypeChecker, span: Span, typ: &Type) -
 }
 
 func reportRuntimeValueInComptimeContext(this: &TypeChecker, ident: Token, var: &VariableLookup) -> TCState {
-    trace("TypeChecker.reportRuntimeValueInComptimeContext");
     let loc = toString(&ident.span);
     let otherLoc = toString(&var.name.span);
     let name = toString(&ident.content);
@@ -434,7 +421,6 @@ func reportRuntimeValueInComptimeContext(this: &TypeChecker, ident: Token, var: 
 }
 
 func reportAnyDereference(this: &TypeChecker, expr: &ParsedExpr) -> TCState {
-    trace("TypeChecker.reportAnyDereference");
     let loc = toString(&expr.span);
     C::fprintf(stderr, "%s: %s: Can't dereference expression of type Any.\n", loc.buffer, ERR_STR);
     drop(&loc);
@@ -443,7 +429,6 @@ func reportAnyDereference(this: &TypeChecker, expr: &ParsedExpr) -> TCState {
 }
 
 func reportMemberAccessOnNonStruct(this: &TypeChecker, expr: &ParsedExpr, instance: &Type) -> TCState {
-    trace("TypeChecker.reportMemberAccessOnNonStruct");
     let loc = toString(&expr.span);
     let t = toString(instance);
     C::fprintf(stderr, "%s: %s: The Dot-Operator is not defined for values of type %s.\n", loc.buffer, ERR_STR, t.buffer);
@@ -454,7 +439,6 @@ func reportMemberAccessOnNonStruct(this: &TypeChecker, expr: &ParsedExpr, instan
 }
 
 func reportMemberAccessNoOptions(this: &TypeChecker, span: Span) -> TCState {
-    trace("TypeChecker.reportMemberAccessNoOptions");
     let loc = toString(&span);
     C::fprintf(stderr, "%s: %s: Could not infer which type to use for expression.\n", loc.buffer, ERR_STR);
     drop(&loc);
@@ -463,7 +447,6 @@ func reportMemberAccessNoOptions(this: &TypeChecker, span: Span) -> TCState {
 }
 
 func reportMemberAccessTooManyOptions(this: &TypeChecker, span: Span, structs: &StructLookupList) -> TCState {
-    trace("TypeChecker.reportMemberAccessTooManyOptions");
     assert(structs.length > 0);
     let loc = toString(&span);
     C::fprintf(stderr, "%s: %s: Could not infer which type to use for expression.\n", loc.buffer, ERR_STR);
@@ -481,7 +464,6 @@ func reportMemberAccessTooManyOptions(this: &TypeChecker, span: Span, structs: &
 }
 
 func reportFunctionCallTooManyOptions(this: &TypeChecker, expr: &CallExpr) -> TCState {
-    trace("TypeChecker.reportFunctionCallTooManyOptions");
     let loc = toString(&expr.span);
     C::fprintf(stderr, "%s: %s: Could not infer which function to call.\n", loc.buffer, ERR_STR);
     drop(&loc);
@@ -490,7 +472,6 @@ func reportFunctionCallTooManyOptions(this: &TypeChecker, expr: &CallExpr) -> TC
 }
 
 func reportCallToNonFunction(this: &TypeChecker, span: Span, base: &Type) -> TCState {
-    trace("TypeChecker.reportCallToNonFunction");
     let loc = toString(&span);
     let typ = toString(base);
     C::fprintf(stderr, "%s: %s: Can't call expression of type %s.\n", loc.buffer, ERR_STR, typ.buffer);
@@ -503,7 +484,6 @@ func reportCallToNonFunction(this: &TypeChecker, span: Span, base: &Type) -> TCS
 }
 
 func reportArgumentCountMismatch(this: &TypeChecker, span: Span, base: &Type, args: usize) -> TCState {
-    trace("TypeChecker.reportArgumentCountMismatch");
     let c: usize = 0;
     match (base) {
         &Type::Func(params, _, _) => { c = params.length; }
@@ -524,7 +504,6 @@ func reportArgumentCountMismatch(this: &TypeChecker, span: Span, base: &Type, ar
 }
 
 func reportUnknownSubmodule(this: &TypeChecker, mod: &ModuleLookup, name: Token) -> TCState {
-    trace("TypeChecker.reportUnknownSubmodule");
     let loc = toString(&name.span);
     let _mod = at(&modules, mod.globalID);
     let orig = toString(&_mod.span);
@@ -563,7 +542,6 @@ func reportModuleAccessOfNonModule(this: &TypeChecker, span: Span, name: Token, 
     return newTCStateFailure(ERROR_MODULE_ACCESS_NON_MODULE);
 }
 func reportDuplicateVariant(this: &TypeChecker, orig: &ParsedUnionVariant, dupl: &UnionVariantLookup) -> TCState {
-    trace("TypeChecker.reportDuplicateVariant");
     let duplLoc: String = toString(&orig.span);
     let origLoc: String = toString(&dupl.global.span);
     let name: String = toString(&orig.name.content);
@@ -576,7 +554,6 @@ func reportDuplicateVariant(this: &TypeChecker, orig: &ParsedUnionVariant, dupl:
     return newTCStateFailure(ERROR_DUPLICATE_UNION_VARIANT);
 }
 func reportDuplicateNameInUnion(this: &TypeChecker, variant: &ParsedUnionVariant, first: &Token, dupl: &Token) -> TCState {
-    trace("TypeChecker.reportDuplicateNameInUnion");
     let duplLoc: String = toString(&first.span);
     let origLoc: String = toString(&dupl.span);
     let name: String = toString(&first.content);
@@ -589,7 +566,6 @@ func reportDuplicateNameInUnion(this: &TypeChecker, variant: &ParsedUnionVariant
     return newTCStateFailure(ERROR_DUPLICATE_UNION_NAME);
 }
 func reportImpossiblePattern(this: &TypeChecker, pat: &ParsedPattern, type: &Type) -> TCState {
-    trace("TypeChecker.reportImpossiblePattern");
     let loc = toString(&pat.span);
     let patS = toString(pat);
     let typ = toString(type);
@@ -656,7 +632,6 @@ func emergencyPrint(this: &TypeChecker, where: Span) {
 }
 
 func typeCheckProject(this: &TypeChecker, project: &ParsedFile) -> bool {
-    trace("TypeChecker.typeCheckProject");
     if (!fillLookup(this)) return false;
     if (!typeCheckFiles(this)) return false;
     if (findRecursiveTypes(this)) return false;
@@ -678,7 +653,6 @@ func dfs(this: &TypeChecker, type: &Type, visited: &TypeLookupList, finished: &T
 }
 
 func dfs(this: &TypeChecker, typeLookup: TypeLookup, visited: &TypeLookupList, finished: &TypeLookupList) -> bool {
-    trace("TypeChecker.dfs");
     if (contains(finished, &typeLookup))
         return false;
     if (contains(visited, &typeLookup))
@@ -717,7 +691,6 @@ func dfs(this: &TypeChecker, typeLookup: TypeLookup, visited: &TypeLookupList, f
 }
 
 func findRecursiveTypes(this: &TypeChecker) -> bool {
-    trace("TypeChecker.findRecursiveTypes");
     let recursive: bool = false;
     for (let i: usize = 0; i < structDecls.length; i = i + 1) {
         let decl: &ParsedStructDecl = at(&structDecls, i);
@@ -745,7 +718,6 @@ func findRecursiveTypes(this: &TypeChecker) -> bool {
 }
 
 func fillLookup(this: &TypeChecker) -> bool {
-    trace("TypeChecker.fillLookup");
     let success = true;
     for (let i: usize = 0; i < files.length; i = i + 1) {
         let file: &ParsedFile = at(&files, i);
@@ -762,7 +734,6 @@ func fillLookup(this: &TypeChecker) -> bool {
 }
 
 func typeCheckFiles(this: &TypeChecker) -> bool {
-    trace("TypeChecker.typeCheckFiles");
     let success = true;
     for (let i: usize = 0; i < files.length; i = i + 1) {
         let file: &ParsedFile = at(&files, i);
@@ -863,7 +834,6 @@ func typeCheckFiles(this: &TypeChecker) -> bool {
 
 // FIXME: This function is a mess
 func typeCheckModule(this: &TypeChecker, modID: usize, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckModule");
     let mod = at(&modules, modID);
     let prev = this.currentModule;
     this.currentModule = getModuleByGlobalID(&this.lookup, modID);
@@ -941,7 +911,6 @@ func typeCheckModule(this: &TypeChecker, modID: usize, scopes: &ScopeLookupList)
 }
 
 func typeCheckUnionDecl(this: &TypeChecker, onion: &ParsedUnionDecl) -> TCState {
-    trace("TypeChecker.typeCheckUnionDecl");
     if (onion.ignored) return blank;
     let unionLookup = getUnionByGlobalDecl(&this.lookup, onion);
     let result = newTCStateType(wrap(Type::Union(onion, 0)));
@@ -988,7 +957,6 @@ func typeCheckUnionDecl(this: &TypeChecker, onion: &ParsedUnionDecl) -> TCState 
 
 // FIXME: getStructByGlobalID -> getStructByGlobalDecl
 func typeCheckStructDecl(this: &TypeChecker, structID: usize) -> TCState {
-    trace("TypeChecker.typeCheckStructDecl");
     let strukt: &ParsedStructDecl = at(&structDecls, structID);
     if (strukt.ignored) return blank;
     let structLookup: &StructLookup = getStructByGlobalID(&this.lookup, structID);
@@ -1019,7 +987,6 @@ func typeCheckFunction(this: &TypeChecker, funcID: usize, scopes: &ScopeLookupLi
     return typeCheckFunction(this, at(&funcDecls, funcID), scopes, signatureOnly);
 }
 func typeCheckFunction(this: &TypeChecker, function: &ParsedFuncDecl, scopes: &ScopeLookupList, signatureOnly: bool) -> TCState {
-    trace("TypeChecker.typeCheckFunction");
     if (function.ignored) return blank;
     let funcLookup = getFunctionByGlobalID(&this.lookup, getID(function));
     this.currentFunction = funcLookup;
@@ -1107,7 +1074,6 @@ func typeCheckFunction(this: &TypeChecker, function: &ParsedFuncDecl, scopes: &S
 }
 
 func typeCheckBlock(this: &TypeChecker, block: &ParsedBlock, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckBlock");
     if (block.ignored) return blank;
     if (isSuccess(&block.typeState)) {
         return block.typeState;
@@ -1133,14 +1099,12 @@ func typeCheckBlock(this: &TypeChecker, block: &ParsedBlock, scopes: &ScopeLooku
 }
 
 func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckStmt");
     if (stmt.ignored) return blank;
     if (isSuccess(&stmt.typeState)) return stmt.typeState;
     let state = newTCStateSuccess();
     match (&stmt.data) {
         &StmtData::VarDecl(_) => { return typeCheckVarDecl(this, stmt, scopes, false); }
         &StmtData::ReturnEmpty => {
-            trace("TypeChecker.typeCheckStmt: ReturnEmpty");
             assert(this.currentFunction != null);
             let retState: &TCState = &this.currentFunction.fnType;
             let _rt = getType(retState);
@@ -1152,7 +1116,6 @@ func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupLi
             }
         }
         &StmtData::ReturnExpr(expr) => {
-            trace("TypeChecker.typeCheckStmt: ReturnExpr");
             let exprState: TCState = typeCheckExpr(this, expr, scopes);
             if (isError(&exprState)) return exprState;
             assert(this.currentFunction != null);
@@ -1174,7 +1137,6 @@ func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupLi
             state = *retState;
         }
         &StmtData::Expr(expr) => {
-            trace("TypeChecker.typeCheckStmt: Expr");
             let exprState: TCState = typeCheckExpr(this, expr, scopes);
             if (isError(&exprState)) return exprState;
             if (wantsInfer(&exprState)) {
@@ -1196,7 +1158,6 @@ func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupLi
         }
         &StmtData::Block(block) => { state = typeCheckBlock(this, block, scopes); }
         &StmtData::If(cond, then) => {
-            trace("TypeChecker.typeCheckStmt: If");
             let condState: TCState = typeCheckExpr(this, cond, scopes);
             let thenState: TCState = typeCheckStmt(this, then, scopes);
             if (isError(&condState)) return condState;
@@ -1212,7 +1173,6 @@ func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupLi
             }
         }
         &StmtData::IfElse(cond, then, elze) => {
-            trace("TypeChecker.typeCheckStmt: IfElse");
             let condState: TCState = typeCheckExpr(this, cond, scopes);
             let thenState: TCState = typeCheckStmt(this, then, scopes);
             let elseState: TCState = typeCheckStmt(this, elze, scopes);
@@ -1230,7 +1190,6 @@ func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupLi
             }
         }
         &StmtData::While(cond, body) => {
-            trace("TypeChecker.typeCheckStmt: While");
             let condState: TCState = typeCheckExpr(this, cond, scopes);
             let bodyState: TCState = typeCheckStmt(this, body, scopes);
             if (isError(&condState)) return condState;
@@ -1246,7 +1205,6 @@ func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupLi
             }
         }
         &StmtData::CFor { init, cond, step, body } => {
-            trace("TypeChecker.typeCheckStmt: CFor");
             push(scopes, blank);
             let initState: TCState = typeCheckStmt(this, init, scopes);
             let condState: TCState = typeCheckExpr(this, cond, scopes);
@@ -1339,7 +1297,6 @@ func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupLi
 }
 
 func typeCheckMatchStmt(this: &TypeChecker, match: &ParsedStmt, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckMatchStmt");
     let expr: &ParsedExpr = null;
     let patterns: &ParsedPatternList = null;
     let stmts: &ParsedStmtList = null;
@@ -1402,7 +1359,6 @@ func typeCheckMatchStmt(this: &TypeChecker, match: &ParsedStmt, scopes: &ScopeLo
 }
 
 func checkAndBindPattern(this: &TypeChecker, type: &Type, pat: &ParsedPattern, scope: &ScopeLookup) -> TCState {
-    trace("TypeChecker.checkAndBindPattern");
     // TODO: This is a good spot to test match statements after the refactor :^)
     match (&pat.data) {
         &Pattern::Ident(ident) => {
@@ -1584,7 +1540,6 @@ func typeCheckVarDecl(this: &TypeChecker, varDeclID: usize, scopes: &ScopeLookup
     return typeCheckVarDecl(this, at(&stmts, varDeclID), scopes, globalScope);
 }
 func typeCheckVarDecl(this: &TypeChecker, varDecl: &ParsedStmt, scopes: &ScopeLookupList, globalScope: bool) -> TCState {
-    trace("TypeChecker.typeCheckVarDecl");
     if (varDecl.ignored) return blank;
     // TODO: Split StmtData::VarDecl into a version that has a type, and one that doesn't
     match (&varDecl.data) {
@@ -1673,7 +1628,6 @@ func typeCheckExpr(this: &TypeChecker, exprID: usize, scopes: &ScopeLookupList) 
     return typeCheckExpr(this, at(&exprs, exprID), scopes);
 }
 func typeCheckExpr(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckExpr");
     if (expr.ignored) return blank;
     if (isSuccess(&expr.typeState)) return expr.typeState;
     let state: TCState = blank;
@@ -1766,7 +1720,6 @@ func typeCheckExpr(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupLi
 }
 
 func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, type: &ParsedTypeNode, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckExprAs");
     let exprState: TCState = typeCheckExpr(this, expr, scopes);
     let typeState: TCState = typeCheckTypeNode(this, type);
     if (isError(&exprState)) return exprState;
@@ -1852,7 +1805,6 @@ func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, type: &ParsedTypeNod
 }
 
 func typeCheckExprUnary(this: &TypeChecker, unary: &UnaryExpr, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckExprUnary");
     match (unary) {
         &UnaryExpr::Comptime(expr) => {
             enterComptime(this);
@@ -1923,7 +1875,6 @@ func typeCheckExprUnary(this: &TypeChecker, unary: &UnaryExpr, scopes: &ScopeLoo
 }
 
 func typeCheckExprCall(this: &TypeChecker, call: &CallExpr, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckExprCall");
     // First sweep
     let args = &call.args;
     for (let i: usize = 0; i < args.length; i = i + 1) {
@@ -1997,7 +1948,6 @@ func typeCheckExprCall(this: &TypeChecker, call: &CallExpr, scopes: &ScopeLookup
 }
 
 func typeCheckExprStructInit(this: &TypeChecker, expr: &StructExpr, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckExprStructInit");
     let lookup: TypeLookup = blank;
     if (!resolveTypeByName(this.currentModule, &expr.name.content, &lookup)) {
         let alternatives: TypeLookupList = searchAllFilesForTypeName(&this.lookup, &expr.name.content);
@@ -2011,7 +1961,6 @@ func typeCheckExprStructInit(this: &TypeChecker, expr: &StructExpr, scopes: &Sco
 }
 
 func typeCheckIdentifier(this: &TypeChecker, ident: &IdentExpr, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckIdentifier");
     let var: VariableLookup = blank;
     let name = &ident.name;
     if (resolveVariableByName(this.currentModule, name, scopes, &var)) {
@@ -2080,7 +2029,6 @@ func typeCheckIdentifier(this: &TypeChecker, ident: &IdentExpr, scopes: &ScopeLo
 }
 
 func typeCheckExprBinary(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckExprBinary");
     match (expr) {
         &BinaryExpr::Path(..) => { return typeCheckExprPathAccess(this, expr, scopes); }
         &BinaryExpr::Dot(..) => { return typeCheckExprMemberAccess(this, expr, scopes); }
@@ -2111,7 +2059,6 @@ func typeCheckExprBinary(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLo
 }
 
 func typeCheckExprIndexedAccess(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckExprIndexedAccess");
     let lhs: &ParsedExpr = null;
     let rhs: &ParsedExpr = null;
     extractOperands(expr, &lhs, &rhs);
@@ -2154,7 +2101,6 @@ func typeCheckExprIndexedAccess(this: &TypeChecker, expr: &BinaryExpr, scopes: &
 }
 
 func typeCheckExprLogical(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckExprLogical");
     let lhs: &ParsedExpr = null;
     let rhs: &ParsedExpr = null;
     extractOperands(expr, &lhs, &rhs);
@@ -2175,7 +2121,6 @@ func typeCheckExprLogical(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeL
 }
 
 func typeCheckExprBitwise(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckExprBitwise");
     let lhs: &ParsedExpr = null;
     let rhs: &ParsedExpr = null;
     extractOperands(expr, &lhs, &rhs);
@@ -2195,7 +2140,6 @@ func typeCheckExprBitwise(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeL
 }
 
 func typeCheckExprAssign(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckExprAssign");
     let lhs: &ParsedExpr = null;
     let rhs: &ParsedExpr = null;
     extractOperands(expr, &lhs, &rhs);
@@ -2265,7 +2209,6 @@ func typeCheckStructInitialization(this: &TypeChecker, expr: &StructExpr, lookup
     return result;
 }
 func typeCheckExprPathAccess(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckExprPathAccess");
     let lhs: &ParsedExpr = null;
     let rhs: &ParsedExpr = null;
     extractOperands(expr, &lhs, &rhs);
@@ -2352,7 +2295,6 @@ func typeCheckExprPathAccess(this: &TypeChecker, expr: &BinaryExpr, scopes: &Sco
     unreachable();
 }
 func typeCheckExprUnionInit(this: &TypeChecker, expr: &BinaryExpr, unionType: &Type, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckExprUnionInit");
     let decl: &ParsedUnionDecl = null;
     match (unionType) {
         &Type::Union(_decl, _) => { decl = _decl; }
@@ -2393,7 +2335,6 @@ func typeCheckExprUnionInit(this: &TypeChecker, expr: &BinaryExpr, unionType: &T
     return result;
 }
 func typeCheckExprMemberAccess(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckExprMemberAccess");
     let lhs: &ParsedExpr = null;
     let rhs: &ParsedExpr = null;
     extractOperands(expr, &lhs, &rhs);
@@ -2448,7 +2389,6 @@ func checkIfInferIsNeeded(this: &TypeChecker, lhsID: usize, lhsState: &TCState, 
     return checkIfInferIsNeeded(this, lhsExpr, lhsState, rhsExpr, rhsState, scopes);
 }
 func checkIfInferIsNeeded(this: &TypeChecker, lhsExpr: &ParsedExpr, lhsState: &TCState, rhsExpr: &ParsedExpr, rhsState: &TCState, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.checkIfInferIsNeeded");
     if (isType(lhsState) && isType(rhsState)) {
         return newTCStateSuccess();
     } else if (isType(lhsState) && !isType(rhsState)) {
@@ -2463,7 +2403,6 @@ func checkIfInferIsNeeded(this: &TypeChecker, lhsExpr: &ParsedExpr, lhsState: &T
 }
 
 func inferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.inferTypeOntoExpr");
     return tryInferTypeOntoExpr(this, exprID, typeID, scopes, false);
 }
 func inferTypeOntoExpr(this: &TypeChecker, exprID: usize, type: &Type, scopes: &ScopeLookupList) -> TCState {
@@ -2480,7 +2419,6 @@ func tryInferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, scop
 }
 
 func tryInferTypeOntoExpr(this: &TypeChecker, expr: &ParsedExpr, type: &Type, scopes: &ScopeLookupList, checkOnly: bool) -> TCState {
-    trace("TypeChecker.tryInferTypeOntoExpr");
     if (isSuccess(&expr.typeState)) {
         let exprType: &Type = getType(&expr.typeState);
         if (!equals(exprType, type)) todo_with_msg("infer failed");
@@ -2800,7 +2738,6 @@ func tryInferTypeOntoIdent(this: &TypeChecker, ident: &IdentExpr, type: &Type, s
 }
 
 func tryInferTypeOntoCall(this: &TypeChecker, expr: &CallExpr, type: &Type, scopes: &ScopeLookupList, checkOnly: bool) -> TCState {
-    trace("TypeChecker.tryInferTypeOntoCall");
     let params: TypeList = blank;
     for (let i: usize = 0; i < expr.args.length; i = i + 1) {
         let state = &(*at(&expr.args, i)).typeState;
@@ -2834,7 +2771,6 @@ func tryInferTypeOntoCall(this: &TypeChecker, expr: &CallExpr, type: &Type, scop
 }
 
 func tryInferTypeOntoMemberAccess(this: &TypeChecker, expr: &BinaryExpr, type: &Type, scopes: &ScopeLookupList, checkOnly: bool) -> TCState {
-    trace("TypeChecker.tryInferTypeOntoMemberAccess");
     let lhs: &ParsedExpr = null;
     let rhs: &ParsedExpr = null;
     extractOperands(expr, &lhs, &rhs);
@@ -2863,7 +2799,6 @@ func tryInferTypeOntoMemberAccess(this: &TypeChecker, expr: &BinaryExpr, type: &
 }
 
 func tryInferTypeOntoPathAccess(this: &TypeChecker, expr: &BinaryExpr, type: &Type, scopes: &ScopeLookupList, checkOnly: bool) -> TCState {
-    trace("TypeChecker.tryInferTypeOntoPathAccess");
     let lhs: &ParsedExpr = null;
     let rhs: &ParsedExpr = null;
     extractOperands(expr, &lhs, &rhs);
@@ -2910,7 +2845,6 @@ func tryInferTypeOntoPathAccess(this: &TypeChecker, expr: &BinaryExpr, type: &Ty
 }
 
 func typeCheckExprArithmetic(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckExprArithmetic");
     assert(isArithmetic(expr), "Expr expected to be arithmetic");
     let lhs: &ParsedExpr = null;
     let rhs: &ParsedExpr = null;
@@ -2978,7 +2912,6 @@ func typeCheckExprArithmetic(this: &TypeChecker, expr: &BinaryExpr, scopes: &Sco
 }
 
 func typeCheckExprComparison(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLookupList) -> TCState {
-    trace("TypeChecker.typeCheckExprComparison");
     assert(isComparison(expr), "Expr expected to be comparison");
     let lhs: &ParsedExpr = null;
     let rhs: &ParsedExpr = null;
@@ -3009,7 +2942,6 @@ func typeCheckExprComparison(this: &TypeChecker, expr: &BinaryExpr, scopes: &Sco
 }
 
 func typeCheckTypeNode(this: &TypeChecker, typeNode: &ParsedTypeNode) -> TCState {
-    trace("TypeChecker.typeCheckTypeNode");
     if (typeNode.ignored) return blank;
     if (isSuccess(&typeNode.typeState)) return typeNode.typeState;
     let tid: &Type = null;

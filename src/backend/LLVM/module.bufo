@@ -18,17 +18,14 @@ func print(this: &LLVMModule) {
 }
 
 func setTriple(this: &LLVMModule, triple: &char) {
-    trace("LLVMModule.setTriple");
     LLVM::SetTarget(this.ref, triple);
 }
 
 func setDataLayout(this: &LLVMModule, layout: LLVMDataLayout) {
-    trace("LLVMModule.setDataLayout");
     LLVM::SetDataLayout(this.ref, layout.ref);
 }
 
 func writeToFile(this: &LLVMModule, path: SubStr) -> bool {
-    trace("LLVMModule.writeToFile");
     let err: LLVMString = blank;
     let _n: String = toString(&path);
     let code: LLVMBool = LLVM::PrintModuleToFile(this.ref, _n.buffer, &err);
@@ -43,7 +40,6 @@ func writeToFile(this: &LLVMModule, path: SubStr) -> bool {
 }
 
 func verify(this: &LLVMModule) -> bool {
-    trace("LLVMModule.verify");
     let err: LLVMString = blank;
     let code: LLVMBool = LLVM::VerifyModule(this.ref, LLVMReturnStatusAction, &err);
     if (code.val != 0) {
@@ -55,7 +51,6 @@ func verify(this: &LLVMModule) -> bool {
 }
 
 func addFunction(this: &LLVMModule, name: SubStr, function: LLVMType) -> LLVMValue {
-    trace("LLVMModule.addFunction");
     assert(!LLVM::isNull(function.ref), "Expected valid LLVMType in LLVMModule.addFunction");
     let _n: String = toString(&name);
     let f: LLVM::ValueRef = LLVM::AddFunction(this.ref, _n.buffer, function.ref);
@@ -64,14 +59,12 @@ func addFunction(this: &LLVMModule, name: SubStr, function: LLVMType) -> LLVMVal
     return newLLVMValueFromRef(f);
 }
 func hasFunction(this: &LLVMModule, name: SubStr) -> bool {
-    trace("LLVMModule.hasFunction");
     let _n: String = toString(&name);
     let f: LLVM::ValueRef = LLVM::GetNamedFunction(this.ref, _n.buffer);
     drop(&_n);
     return !LLVM::isNull(f);
 }
 func getFunction(this: &LLVMModule, name: SubStr) -> LLVMValue {
-    trace("LLVMModule.getFunction");
     let _n: String = toString(&name);
     let f: LLVM::ValueRef = LLVM::GetNamedFunction(this.ref, _n.buffer);
     drop(&_n);
@@ -79,7 +72,6 @@ func getFunction(this: &LLVMModule, name: SubStr) -> LLVMValue {
     return newLLVMValueFromRef(f);
 }
 func addGlobal(this: &LLVMModule, typ: LLVMType, space: u32, name: SubStr) -> LLVMValue {
-    trace("LLVMModule.addGlobal");
     assert(!LLVM::isNull(typ.ref), "Expected valid LLVMType in LLVMModule.addGlobal");
     let _n: String = toString(&name);
     let g: LLVM::ValueRef = LLVM::AddGlobalInAddressSpace(this.ref, typ.ref, _n.buffer, space);
@@ -88,7 +80,6 @@ func addGlobal(this: &LLVMModule, typ: LLVMType, space: u32, name: SubStr) -> LL
     return newLLVMValueFromRef(g);
 }
 func getGlobal(this: &LLVMModule, name: SubStr) -> LLVMValue {
-    trace("LLVMModule.getGlobal");
     let _n: String = toString(&name);
     let g: LLVM::ValueRef = LLVM::GetNamedGlobal(this.ref, _n.buffer);
     drop(&_n);
@@ -97,20 +88,17 @@ func getGlobal(this: &LLVMModule, name: SubStr) -> LLVMValue {
 }
 
 func createPassManager(this: &LLVMModule) -> LLVMPassManager {
-    trace("LLVMModule.createPassManager");
     let pm: LLVM::PassManagerRef = LLVM::CreatePassManager();
     assert(!LLVM::isNull(pm), "Could not create pass manager for module");
     return newLLVMPassManagerFromRef(pm);
 }
 func runInPassManager(this: &LLVMModule, pm: LLVMPassManager) -> bool {
-    trace("LLVMModule.runInPassManager");
     assert(!LLVM::isNull(this.ref));
     assert(!LLVM::isNull(pm.ref));
     return LLVM::RunPassManager(pm.ref, this.ref) == 1;
 }
 
 func newLLVMModuleFromRef(ref: LLVM::ModuleRef) -> LLVMModule {
-    trace("newLLVMModuleFromRef");
     assert(!LLVM::isNull(ref), "Passed invalid reference to newLLVMModuleFromRef");
     return LLVMModule {
         ref: ref
