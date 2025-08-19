@@ -134,7 +134,7 @@ func isAsciiUppercase(ch: char) -> bool {
 @noreturn func index_oob(msg: &char, index: i64) {
     setupStdHandles();
     C::fprintf(stderr, msg, index);
-    C::exit(1);
+    C::exit(2);
 }
 
 // Calls to assert() will be replaced with calls to _empty_assert() when you specify --opt
@@ -150,7 +150,7 @@ func assert(cond: bool) {
         } else {
             C::fprintf(stderr, "ASSERTION FAILED\n");
         }
-        C::exit(1);
+        C::exit(2);
     }
 }
 func _assert(cond: bool, msg: &char) {
@@ -161,7 +161,7 @@ func _assert(cond: bool, msg: &char) {
         } else {
             C::fprintf(stderr, "ASSERTION FAILED: %s\n", msg);
         }
-        C::exit(1);
+        C::exit(2);
     }
 }
 
@@ -174,7 +174,7 @@ func assert(cond: bool, msg: &char) {
         } else {
             C::fprintf(stderr, "ASSERTION FAILED: %s\n", msg);
         }
-        C::exit(1);
+        C::exit(2);
     }
 }
 
@@ -190,7 +190,7 @@ func assert(cond: bool, msg: &char) {
     } else {
         C::fprintf(stderr, "%s Entered unreachable code: %s\n", FATAL_STR, msg);
     }
-    C::exit(1);
+    C::exit(2);
 }
 
 @noreturn func todo_with_msg(msg: &char) {
@@ -201,15 +201,9 @@ func assert(cond: bool, msg: &char) {
     } else {
         C::fprintf(stderr, "TODO: %s\n", msg);
     }
-    C::exit(1);
+    C::exit(2);
 }
 
-let debug = disabled;
-
-func disabled(msg: &char) { }
-func debug_active(msg: &char) {
-    C::printf("[DEBUG] %s\n", msg);
-}
 comptime PRINT_WARNING: bool = true;
 func warning(msg: &char) {
     if (!PRINT_WARNING) return;

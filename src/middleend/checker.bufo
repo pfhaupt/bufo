@@ -979,7 +979,7 @@ func typeCheckStructDecl(this: &TypeChecker, structID: usize) -> TCState {
         addField(structLookup, NODE_ID_OFFSET + i, name, state);
     }
     if (!isInvalid(&failure)) return failure;
-    (*strukt).typeState = newTCStateSuccess();
+    strukt.typeState = newTCStateType(wrap(Type::Struct(strukt)));
     return result;
 }
 
@@ -1765,7 +1765,15 @@ func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, type: &ParsedTypeNod
             drop(&loc);
         }
     } else if (isPointer(exprType) && isInteger(typeType)) {
-        if (getSize(typeType) != getSize(exprType)) {
+        // FIXME: The condition above is too generous, see following code snippet
+        /*
+         * func foo(a: u32) {}
+         * func bar() {
+         *   let a: u32 = 10;
+         *   foo(&a);
+         * }
+         */
+        if (getSizeInBytes(typeType) != getSizeInBytes(exprType)) {
             let loc = toString(&expr.span);
             let from = toString(exprType);
             let to = toString(typeType);
@@ -1776,7 +1784,7 @@ func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, type: &ParsedTypeNod
             drop(&loc);
         }
     } else if (isInteger(exprType) && isPointer(typeType)) {
-        if (getSize(typeType) != getSize(exprType)) {
+        if (getSizeInBytes(typeType) != getSizeInBytes(exprType)) {
             let loc = toString(&expr.span);
             let from = toString(exprType);
             let to = toString(typeType);
@@ -1791,7 +1799,7 @@ func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, type: &ParsedTypeNod
     } else if (!isPrimitive(exprType)) {
         return reportNonPrimitiveCast(this, expr.span, exprType, typeType);
     }
-    if (getSize(typeType) < getSize(exprType) && *flags.warnExtra) {
+    if (getSizeInBytes(typeType) < getSizeInBytes(exprType) && *flags.warnExtra) {
         let loc: String = toString(&expr.span);
         let tName: String = toString(typeType);
         let oName: String = toString(exprType);
@@ -2109,7 +2117,7 @@ func typeCheckExprLogical(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeL
     if (isError(&lhsState)) return lhsState;
     if (isError(&rhsState)) return rhsState;
     let maybeInfer: TCState = checkIfInferIsNeeded(this, lhs, &lhsState, rhs, &rhsState, scopes);
-    if (isError(&maybeInfer)) { todo_with_msg("couldn't infer in logical"); }
+    if (isError(&maybeInfer)) return maybeInfer;
     if (wantsInfer(&maybeInfer)) return maybeInfer;
     let lhsType: &Type = getType(&lhsState);
     let rhsType: &Type = getType(&rhsState);
@@ -2129,7 +2137,7 @@ func typeCheckExprBitwise(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeL
     if (isError(&lhsState)) return lhsState;
     if (isError(&rhsState)) return rhsState;
     let maybeInfer: TCState = checkIfInferIsNeeded(this, lhs, &lhsState, rhs, &rhsState, scopes);
-    if (isError(&maybeInfer)) { todo_with_msg("couldn't infer in bitwise"); }
+    if (isError(&maybeInfer)) return maybeInfer;
     if (wantsInfer(&maybeInfer)) return maybeInfer;
     let lhsType: &Type = getType(&lhsState);
     let rhsType: &Type = getType(&rhsState);
@@ -2921,9 +2929,7 @@ func typeCheckExprComparison(this: &TypeChecker, expr: &BinaryExpr, scopes: &Sco
     if (isError(&lhsState)) return lhsState;
     if (isError(&rhsState)) return rhsState;
     let maybeInfer: TCState = checkIfInferIsNeeded(this, lhs, &lhsState, rhs, &rhsState, scopes);
-    if (isError(&maybeInfer)) {
-        todo_with_msg("couldn't infer in comp");
-    }
+    if (isError(&maybeInfer)) return maybeInfer;
     if (wantsInfer(&maybeInfer)) return maybeInfer;
     let lhsType: &Type = getType(&lhsState);
     let rhsType: &Type = getType(&rhsState);
@@ -3007,8 +3013,13 @@ func typeCheckTypeNode(this: &TypeChecker, typeNode: &ParsedTypeNode) -> TCState
                     tid = structLookup.type;
                     assert(isStruct(tid), "Struct Lookup links to non-Struct typeNode");
                     break;
+                } else if (isUnion(&lookup)) {
+                    let unionLookup: &UnionLookup = asUnion(&lookup);
+                    tid = unionLookup.type;
+                    assert(isUnion(tid), "Union Lookup links to non-Union typeNode");
+                    break;
                 } else {
-                    todo_with_msg("module::<typeNode> with typeNode != struct");
+                    todo_with_msg("module::<typeNode> with typeNode != struct && != union");
                 }
             } else {
                 name = sub.nameTkn;

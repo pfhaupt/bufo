@@ -92,6 +92,11 @@ func runPasses(this: LLVMModule, passes: &char, target: LLVMTargetMachine, optio
     return LLVM::RunPasses(this.ref, passes, target.ref, options.ref).ptr == null;
 }
 
+func addModuleFlag(this: LLVMModule, behavior: i32, flag: SubStr, value: LLVMValue) {
+    let meta = LLVM::ValueAsMetadata(value.ref);
+    LLVM::AddModuleFlag(this.ref, behavior, flag.start, flag.len, meta);
+}
+
 func newLLVMModuleFromRef(ref: LLVM::ModuleRef) -> LLVMModule {
     assert(!LLVM::isNull(ref), "Passed invalid reference to newLLVMModuleFromRef");
     return LLVMModule {

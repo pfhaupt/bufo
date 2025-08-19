@@ -2,6 +2,7 @@
 import "prelude.bufo";
 import "libc.bufo";
 
+@os(WINDOWS) import "winapi/structs.bufo";
 @os(WINDOWS) import "winapi/functions.bufo";
 @os(LINUX) import "posix/structs.bufo";
 @os(LINUX) import "posix/functions.bufo";
@@ -18,7 +19,7 @@ struct Function {
 }
 
 @os(WINDOWS) func free(fn: Function) {
-    if (!WinAPI::VirtualFree(fn.run as Any, fn.size, 16384)) {
+    if (failed(WinAPI::VirtualFree(fn.run as Any, fn.size, 16384))) {
         C::printf("warning: Could not free function at %p\n", fn.run);
     }
 }

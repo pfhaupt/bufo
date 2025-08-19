@@ -40,6 +40,7 @@ struct Flags {
     emitBIR: &bool;
     emitLLVM: &bool;
     dontLink: &bool;
+    noEntry: &bool;
     linkDynamic: &bool;
     debug: &bool;
     trace: &bool;
@@ -77,8 +78,9 @@ func main(argc: i32, argv: &&char) -> i32 {
     flags.emitBIR = addBoolFlag(&flagParser, "--emit-bir", "Save the generated bufo IR in <output>.bir");
     flags.emitLLVM = addBoolFlag(&flagParser, "--emit-llvm", "Save the generated LLVM IR in <output>.ll");
     flags.dontLink = addBoolFlag(&flagParser, "--dont-link", "Stop after generating <output>.obj");
+    flags.noEntry = addBoolFlag(&flagParser, "--no-entry", "Don't include an entrypoint in the final output");
     flags.linkDynamic = addBoolFlag(&flagParser, "--link-dynamic", "Use the specified dynamic libraries to link instead of static libraries");
-    flags.debug = addBoolFlag(&flagParser, "d", "debug", "Enable debug logs and other debugging measurements");
+    flags.debug = addBoolFlag(&flagParser, "d", "debug", "Compile with debug info");
     flags.trace = addBoolFlag(&flagParser, "--trace", "Trace function calls");
     flags.opt = addBoolFlag(&flagParser, "--opt", "Enable aggressive optimizations");
     let help = addHelpFlag(&flagParser);
@@ -93,7 +95,6 @@ func main(argc: i32, argv: &&char) -> i32 {
         showHelp(stdout, &flagParser);
         return 0;
     }
-    if (*flags.debug) debug = debug_active;
     if (*warnAll) {
         *flags.warnExtra = true;
         *flags.warnSimple = true;
@@ -102,6 +103,11 @@ func main(argc: i32, argv: &&char) -> i32 {
     if (*flags.warnExtra && !*flags.warnSimple) {
         C::fprintf(stderr, "error: --warn-extra only works in combination with [-w|--warn]\n");
         return 1;
+    }
+    for (let i: u8 = 0; i < PRIM_TYPE_COUNT as u8; i = i + 1) {
+        push(&types, Type::Unknown);
+        if (*flags.debug) push(&debugTypes, blank);
+        wrap(Type::Prim(*(&i as &PrimType))); // I am a trained professional
     }
     // TODO: @os() currently only checks WINDOWS or LINUX, would be cool if we could derive this
     //       from the provided target triple
@@ -134,7 +140,7 @@ func main(argc: i32, argv: &&char) -> i32 {
     if (*flags.checkOnly) return 0;
     let interp: IRInterp = newIRInterpreter(&generator);
     let llvmCodegen: LLVMCodegen = newLLVMCodegen(fileSubStr, &generator, &interp);
-    if (!generateExecutable(&llvmCodegen, asSubStr(flags.out))) return 1;
+    if (!generateExecutable(&llvmCodegen, asSubStr(flags.out), argc, argv)) return 1;
     if (*flags.debug) {
         C::printf("files.length         = %llu\n", files.length);
         C::printf("topLevelItems.length = %llu\n", topLevelItems.length);
@@ -206,9 +212,16 @@ func findStdAndAddToImports(parser: &Parser) -> bool {
         C::fprintf(stderr, "note: Currently we support the normal Visual Studio `link.exe`, and experimentally `radlink.exe` for improved linking times.\n");
         return false;
     }
+    if (*flags.debug) {
+        pushStr(&s, "/DEBUG:full ");
+        // REVIEW: LNK4099 is the "Missing Debug Info" warning. Do we want debug info for external libraries?
+        // PDB 'filename' was not found with 'object/library' or at 'path'; linking object as if no debug info
+        pushStr(&s, "/IGNORE:4099 ");
+    }
+    pushStr(&s, "/INCREMENTAL:NO ");
+    pushStr(&s, "/DEFAULTLIB:libcmt ");
     pushString(&s, flags.out);
     pushStr(&s, ".obj ");
-    pushStr(&s, "/DEFAULTLIB:libcmt ");
     pushStr(&s, "/OUT:");
     pushString(&s, flags.out);
     for (let i: usize = 0; i < configs.length; i = i + 1) {

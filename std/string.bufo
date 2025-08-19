@@ -38,7 +38,7 @@ struct String {
 func hash(this: &String) -> usize {
     let hash: usize = 5381;
     for (let i: usize = 0; i < this.length; i = i + 1) {
-        hash = (shiftLeft(hash, 5) + hash) + (getChar(this, i) as usize);
+        hash = (shiftLeft(hash, 5) + hash) + (this.buffer[i] as usize);
     }
     return hash;
 }
@@ -64,20 +64,15 @@ func getFileName(this: &String) -> String {
 
 @os(WINDOWS) func getRoot(this: &String) -> String {
     let c = copy(this);
-    while (c.length > 0 && getChar(&c, c.length - 1) != '\\') c.length = c.length - 1;
+    while (c.length > 0 && c.buffer[c.length - 1] != '\\') c.length = c.length - 1;
     assert(c.length != 0, "getRoot: Found no root");
     return c;
 }
 @os(LINUX) func getRoot(this: &String) -> String {
     let c = copy(this);
-    while (c.length > 0 && getChar(&c, c.length - 1) != '/') c.length = c.length - 1;
+    while (c.length > 0 && c.buffer[c.length - 1] != '/') c.length = c.length - 1;
     assert(c.length != 0, "getRoot: Found no root");
     return c;
-}
-
-func getChar(this: &String, index: usize) -> char {
-    assert(index <= this.length, "Index out of bounds for String.getChar()");
-    return *(this.buffer + index);
 }
 
 func drop(this: &String) {
@@ -158,27 +153,21 @@ func pushHex(this: &String, hex: u8) {
     pushChar(this, HEX_CHAR[lower as usize]);
 }
 func pushSubStr(this: &String, sub: &SubStr) {
-    for (let i: usize = 0; i < sub.len; i = i + 1) {
-        let ch: char = getChar(sub, i);
-        pushChar(this, ch);
-    }
+    let newLen = this.length + sub.len;
+    if (newLen >= this.capacity) resize(this, newLen + 32);
+    C::memcpy(this.buffer + this.length * sizeof char, sub.start, sub.len);
+    this.length = newLen;
 }
 func pushString(this: &String, s: &String) {
-    for (let i: usize = 0; i < s.length; i = i + 1) {
-        let ch: char = getChar(s, i);
-        pushChar(this, ch);
-    }
+    pushSubStr(this, &asSubStr(s));
 }
 func pushStr(this: &String, s: &char) {
     let _len: usize = C::strlen(s);
-    for (let i: usize = 0; i < _len; i = i + 1) {
-        let ch: char = *(s + i);
-        pushChar(this, ch);
-    }
+    pushSubStr(this, &SubStr { start: s, len: _len });
 }
 func isNumber(this: &String) -> bool {
     for (let i: usize = 0; i < this.length; i = i + 1) {
-        let ch: char = getChar(this, i);
+        let ch: char = this.buffer[i];
         if (ch == '\0') {
             break;
         }
@@ -193,7 +182,7 @@ func toI64(this: &String) -> i64 {
     assert(isNumber(this), "not a number");
     let val: i64 = 0;
     for (let i: usize = 0; i < this.length - 1; i = i + 1) {
-        let ch: char = getChar(this, i);
+        let ch: char = this.buffer[i];
         let digit: i64 = (ch - '0') as i64;
         val = 10 * val + digit;
     }
@@ -203,7 +192,7 @@ func toU64(this: &String) -> u64 {
     assert(isNumber(this), "not a number");
     let val: u64 = 0;
     for (let i: usize = 0; i < this.length; i = i + 1) {
-        let ch: char = getChar(this, i);
+        let ch: char = this.buffer[i];
         let digit: u64 = (ch - '0') as u64;
         val = 10 * val + digit;
     }

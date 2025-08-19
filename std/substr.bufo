@@ -18,7 +18,7 @@ func hash(this: &SubStr, length: usize) -> usize {
     let h: usize = 0;
     let d: usize = pow(10, length);
     for (let i: usize = 0; i < this.len; i = i + 1) {
-        let c: char = getChar(this, i);
+        let c: char = this.start[i];
         h = h + (c as usize);
         h = h % d;
     }
@@ -34,8 +34,8 @@ func lexOrder(this: &SubStr, other: &SubStr) -> u8 {
     }
     let l: usize = this.len;
     for (let i: usize = 0; i < l; i = i + 1) {
-        let c1: char = getChar(this, i);
-        let c2: char = getChar(other, i);
+        let c1: char = this.start[i];
+        let c2: char = other.start[i];
         if (c1 < c2) {
             return ORDER_LESS;
         }
@@ -52,8 +52,8 @@ func equals(this: &SubStr, other: &SubStr) -> bool {
     }
     let l: usize = this.len;
     for (let i: usize = 0; i < l; i = i + 1) {
-        let c1: char = getChar(this, i);
-        let c2: char = getChar(other, i);
+        let c1: char = this.start[i];
+        let c2: char = other.start[i];
         if (c1 != c2) {
             return false;
         }
@@ -71,7 +71,7 @@ func print(this: &SubStr) {
 func getPathParent(this: &SubStr) -> String {
     let s: String = toString(this);
     while (s.length > 0) {
-        let c: char = getChar(&s, s.length - 1);
+        let c: char = s.buffer[s.length - 1];
         if (c == '/' || c == '\\') {
             break;
         }
@@ -81,15 +81,14 @@ func getPathParent(this: &SubStr) -> String {
     return s;
 }
 func toString(this: &SubStr) -> String {
-    let s: String = newString();
-    for (let i: usize = 0; i < this.len; i = i + 1) {
-        pushChar(&s, getChar(this, i));
-    }
-    return s;
-}
-func getChar(this: &SubStr, index: usize) -> char {
-    assert(index <= this.len, "Index out of bounds for String Index.");
-    return getChar(this.start, index);
+    let buf = C::calloc(sizeof char, this.len + 1);
+    assert(buf != null, "toString(SubStr)");
+    C::memcpy(buf, this.start, this.len);
+    return String {
+        buffer: buf,
+        length: this.len,
+        capacity: this.len + 1
+    };
 }
 func beginsWith(this: &SubStr, prefix: &SubStr) -> bool {
     if (prefix.len > this.len) return false;
@@ -134,7 +133,7 @@ func substring(this: &SubStr, start: usize, end: usize) -> SubStr {
 }
 func hasSpace(this: &SubStr) -> bool {
     for (let i: usize = 0; i < this.len; i = i + 1) {
-        if (getChar(this, i) == ' ') {
+        if (this.start[i] == ' ') {
             return true;
         }
     }
@@ -142,7 +141,7 @@ func hasSpace(this: &SubStr) -> bool {
 }
 func isNumber(this: &SubStr) -> bool {
     for (let i: usize = 0; i < this.len; i = i + 1) {
-        let ch: char = getChar(this, i);
+        let ch: char = this.start[i];
         if (ch == '\0') {
             break;
         }
@@ -157,7 +156,7 @@ func toU64(this: &SubStr) -> u64 {
     assert(isNumber(this), "not a number");
     let val: u64 = 0;
     for (let i: usize = 0; i < this.len; i = i + 1) {
-        let ch: char = getChar(this, i);
+        let ch: char = this.start[i];
         let digit: u64 = (ch - '0') as u64;
         val = 10 * val + digit;
     }

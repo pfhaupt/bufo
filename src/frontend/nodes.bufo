@@ -10,6 +10,7 @@ import "./token.bufo";
 import "./lexer.bufo";
 import "../middleend/checker.bufo";
 import "../middleend/types.bufo";
+import "../backend/LLVM/debug_info.bufo";
 
 @os(WINDOWS) import "winapi/structs.bufo";
 @os(LINUX) import "posix/structs.bufo";
@@ -175,6 +176,7 @@ struct ParsedFile {
     origin: SubStr;
     src: SubStr;
     mod: &ParsedModule;
+    debugInfo: DebugInfo;
 }
 
 func getID(this: &ParsedFile) -> usize {
@@ -327,6 +329,9 @@ func getID(this: &ParsedModule) -> usize {
 func asTLI(this: &ParsedModule) -> &ParsedTopLevelItem {
     return newParsedTopLevelItem(this.span, TLI_MOD_DECL, getID(this));
 }
+func getParentFile(this: &ParsedModule) -> &ParsedFile {
+    return at(&files, this.span.file);
+}
 func getFullName(this: &ParsedModule) -> String {
     let s: String = blank;
     let parent = this.parent;
@@ -368,6 +373,7 @@ struct ParsedStructDecl {
     span: Span;
     context: StructContext;
     typeState: TCState;
+    debugInfo: DebugInfo;
 }
 func getID(this: &ParsedStructDecl) -> usize {
     return indexOf(&structDecls, this);
@@ -379,27 +385,39 @@ func asTLI(this: &ParsedStructDecl) -> &ParsedTopLevelItem {
 func getFieldIndex(this: &ParsedStructDecl, name: &SubStr) -> usize {
     return getFieldIndex(&this.context, name);
 }
-func getFieldOffset(this: &ParsedStructDecl, name: &SubStr) -> usize {
+func getFieldOffset(this: &ParsedStructDecl, name: &SubStr, inBits: bool) -> usize {
     let offset: usize = 0;
     let _idc: usize = 0;
-    getFieldOffsetAndSize(this, getFieldIndex(this, name), &offset, &_idc);
+    getFieldOffsetAndSize(this, getFieldIndex(this, name), &offset, &_idc, inBits);
     return offset;
 }
-func getFieldOffsetAndSize(this: &ParsedStructDecl, index: usize, offset: &usize, size: &usize) {
+func getFieldOffsetAndSize(this: &ParsedStructDecl, index: usize, offset: &usize, size: &usize, inBits: bool) {
     let o: usize = 0;
+    let sizeFn = getSizeInBytes;
+    let alignFn = getAlignmentInBytes;
+    if (inBits) {
+        sizeFn = getSizeInBits;
+        alignFn = getAlignmentInBits;
+    }
     for (let i: usize = 0; i < this.context.fieldLength; i = i + 1) {
         let f1: &ParsedTypeNode = getFieldTypeAtIndex(&this.context, i);
         let f: &Type = getType(&f1.typeState);
-        let s: usize = getSize(f);
-        s = nextMultipleOf(s, getAlignment(f));
+        let s: usize = sizeFn(f);
         if (i == index) {
             *offset = o;
             *size = s;
             return;
         }
-        o = o + s;
+        if (i != this.context.fieldLength - 1) {
+            let f2: &ParsedTypeNode = getFieldTypeAtIndex(&this.context, i + 1);
+            let nf: &Type = getType(&f2.typeState);
+            o = nextMultipleOf(o + s, alignFn(nf));
+        }
     }
     unreachable("Expected to find field offset and size");
+}
+func getParentFile(this: &ParsedStructDecl) -> &ParsedFile {
+    return at(&files, this.span.file);
 }
 func getParentModule(this: &ParsedStructDecl) -> &ParsedModule {
     assert(!this.parent.isFile, "getParentModule called on struct in a file scope");
@@ -448,6 +466,7 @@ struct ParsedUnionDecl {
     span: Span;
     variants: ParsedUnionVariantList;
     typeState: TCState;
+    debugInfo: DebugInfo;
 }
 
 func getID(this: &ParsedUnionDecl) -> usize {
@@ -475,6 +494,9 @@ func getVariantTag(this: &ParsedUnionDecl, variant: &ParsedUnionVariant) -> usiz
     unreachable("getVariantTag() expected to find variant");
 }
 
+func getParentFile(this: &ParsedUnionDecl) -> &ParsedFile {
+    return at(&files, this.span.file);
+}
 func getFullName(this: &ParsedUnionDecl) -> String {
     let s: String = blank;
     let parent = this.parent;
@@ -525,16 +547,66 @@ func getID(this: &ParsedUnionVariant) -> usize {
     return indexOf(&unionVariants, this);
 }
 
-func getFieldIndexAndOffset(this: &ParsedUnionVariant, name: &SubStr, index: &usize, offset: &usize) {
-    assert(this.kind == UNION_VARIANT_STRUCT, "ParsedUnionVariant.getFieldIndex called on non-struct union variant");
+func toType(this: &ParsedUnionVariant) -> &Type {
+    let decl: &ParsedStructDecl = newParsedStructDecl(this.parent, this.span, this.name);
+    if (this.kind == UNION_VARIANT_STRUCT) {
+        for (let i: usize = 0; i < this.fields.length; i = i + 1) {
+            addField(&decl.context, *at(&this.names, i), *at(&this.fields, i));
+        }
+    } else if (this.kind == UNION_VARIANT_TUPLE) {
+        for (let i: usize = 0; i < this.fields.length; i = i + 1) {
+            // NOTE: We leak the String here
+            let s: String = blank;
+            pushNumber(&s, i);
+            let name = newToken(this.parent.id as usize, &asSubStr(&s), 0, TOKEN_IDENT);
+            addField(&decl.context, name, *at(&this.fields, i));
+        }
+    } else {
+        assert(this.kind == UNION_VARIANT_EMPTY);
+    }
+    let typ = wrap(Type::Struct(decl));
+    decl.typeState = newTCStateType(typ);
+    return typ;
+}
+
+func getFieldIndex(this: &ParsedUnionVariant, name: &SubStr) -> usize {
     for (let i: usize = 0; i < this.names.length; i = i + 1) {
         if (equals(&at(&this.names, i).content, name)) {
-            *index = i;
+            return i;
+        }
+    }
+    unreachable("ParsedUnionVariant.getFieldIndex: Expected to find field with name");
+}
+func getFieldOffsetAndSize(this: &ParsedUnionVariant, index: usize, offset: &usize, size: &usize, inBits: bool) {
+    assert(this.kind != UNION_VARIANT_EMPTY, "ParsedUnionVariant.getFieldOffsetAndSize called on empty union variant");
+    assert(index < this.fields.length, "getFieldOffsetAndSize: Out-of-bounds");
+    assert(this.fields.length > 0, "getFieldOffsetAndSize: Empty variant");
+    let sizeFn = getSizeInBytes;
+    let alignFn = getAlignmentInBytes;
+    if (inBits) {
+        sizeFn = getSizeInBits;
+        alignFn = getAlignmentInBits;
+    }
+    let o: usize = 0;
+    if (*offset != 0) {
+        let nf: &Type = getType(&(*at(&this.fields, 0)).typeState);
+        o = nextMultipleOf(*offset, alignFn(nf));
+    }
+    for (let i: usize = 0; i < this.fields.length; i = i + 1) {
+        let f = getType(&(*at(&this.fields, i)).typeState);
+        let s: usize = sizeFn(f);
+        if (i == index) {
+            *offset = o;
+            *size = s;
             return;
         }
-        *offset = *offset + getSize(getType(&(*at(&this.fields, i)).typeState));
+        o = o + s;
+        if (i != this.fields.length - 1) {
+            let nf: &Type = getType(&(*at(&this.fields, i + 1)).typeState);
+            o = nextMultipleOf(o, alignFn(nf));
+        }
     }
-    unreachable("Expected to find field in union variant at this point");
+    unreachable("Expected to find field offset and size");
 }
 
 func addField(this: &ParsedUnionVariant, field: &ParsedTypeNode) {
@@ -595,6 +667,7 @@ struct ParsedFuncDecl {
     isComptime: bool;
     typeState: TCState;
     dllHandle: &DLL; // Ptr to DLLArena
+    debugInfo: DebugInfo;
 }
 
 func hasAttribute(this: &ParsedFuncDecl, attr: usize) -> bool {
@@ -614,6 +687,9 @@ func isExtern(this: &ParsedFuncDecl) -> bool {
     return false;
 }
 
+func getParentFile(this: &ParsedFuncDecl) -> &ParsedFile {
+    return at(&files, this.span.file);
+}
 func getParentModule(this: &ParsedFuncDecl) -> &ParsedModule {
     assert(!this.parent.isFile, "getParentModule called on function in a file scope");
     return at(&modules, this.parent.id as usize);

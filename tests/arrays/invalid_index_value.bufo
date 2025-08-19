@@ -1,7 +1,7 @@
 //! THIS IS A TEST PROGRAM
 //! RUNTIME
 //! FAILURE
-//! CODE: 1
+//! CODE: 2
 //! ERROR:
 //! RUNTIME ERROR: Index out of bounds: Array of size 3 has no index 4
 

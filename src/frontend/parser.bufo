@@ -173,7 +173,6 @@ func parseFile(this: &Parser, root: SubStr, file: &ParsedFile) {
         let attributes: ParsedAttributeList = blank;
         let skip = parseAttributes(this, &attributes, false);
         if (skip) {
-            debug("Parsed TopLevelItem, but skipping it because of @os()");
             toggleIgnoringNodes();
             let item: &ParsedTopLevelItem = parseTopLevelItem(this, attributes, skip);
             toggleIgnoringNodes();
@@ -295,7 +294,6 @@ func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList
             }
         }
         if (skip) {
-            debug("Parsed TopLevelItem, but skipping it because of @os()");
             toggleIgnoringNodes();
             let item: &ParsedTopLevelItem = parseTopLevelItem(this, parent, attributes, skip);
             toggleIgnoringNodes();
@@ -452,10 +450,7 @@ func parseImportByName(this: &Parser, loc: Span, file: String, skip: bool) -> &P
         pushString(&path, &file);
         path = toAbsolutePath(&path);
         if (canReadFileToString(path.buffer, &src)) {
-            debug("Found file");
-            debug(path.buffer);
             if (skip) {
-                debug("Parsed import, but skipping it because of @os()");
                 drop(&src); // No need to leak anything here :^)
                 drop(&path);
                 return null;
@@ -548,8 +543,8 @@ func parseStructDecl(this: &Parser, parent: TLIParent) -> &ParsedStructDecl {
     }
     let end: Token = expect(this, TOKEN_CURLY_CLOSE);
     let span: Span = newSpanBetween(&kw.span, &end.span);
-    (*decl).span = span;
-    (*decl).context = structContext;
+    decl.span = span;
+    decl.context = structContext;
     return decl;
 }
 
@@ -605,7 +600,6 @@ func parseBlock(this: &Parser) -> &ParsedBlock {
         let attributes: ParsedAttributeList = blank;
         let skip = parseAttributes(this, &attributes, false);
         if (skip) {
-            debug("Parsed Stmt, but skipping it because of @os()");
             toggleIgnoringNodes();
             let stmt: &ParsedStmt = parseStmt(this);
             toggleIgnoringNodes();

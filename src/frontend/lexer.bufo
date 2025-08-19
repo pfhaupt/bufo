@@ -73,9 +73,9 @@ func isKeyword(this: &Lexer, word: &SubStr) -> bool {
 func escapeCharSequence(this: &Lexer, tmp: &SubStr, s: &String, len: &usize) -> char {
     let escaped: bool = false;
     let extraOffset: usize = 0;
-    let c: char = getChar(tmp, 0);
+    let c: char = tmp.start[0];
     if (c == '\\') {
-        c = getChar(tmp, 1);
+        c = tmp.start[1];
         if (c == 'n') {
             pushChar(s, '\n');
         } else if (c == 'r') {
@@ -91,8 +91,8 @@ func escapeCharSequence(this: &Lexer, tmp: &SubStr, s: &String, len: &usize) -> 
         } else if (c == '\"') {
             pushChar(s, '\"');
         } else if (c == 'x') {
-            let lower: char = getChar(tmp, 2);
-            let upper: char = getChar(tmp, 3);
+            let lower: char = tmp.start[2];
+            let upper: char = tmp.start[3];
             assert(isHexDigit(lower), "Expected hex digits for \\x");
             assert(isHexDigit(upper), "Expected hex digits for \\x");
             let byte: char = (asHex(lower) * 16 + asHex(upper)) as char;
@@ -116,7 +116,7 @@ func escapeCharSequence(this: &Lexer, tmp: &SubStr, s: &String, len: &usize) -> 
     step = step + extraOffset;
     *len = *len + step;
     *tmp = substring(tmp, step, tmp.len);
-    return getChar(tmp, 0);
+    return tmp.start[0];
 }
 
 func advance(this: &Lexer) -> bool {
@@ -141,21 +141,21 @@ func __next(this: &Lexer, peek: bool) -> Token {
     if (this.ptr == this.len) {
         return newTokenEOF(this.fileID, this.ptr);
     }
-    let currChar: char = getChar(&this.content, 0);
+    let currChar: char = this.content.start[0];
     while (isWhitespace(currChar)) {
         if (advance(this)) {
             return newTokenEOF(this.fileID, this.ptr);
         }
-        currChar = getChar(&this.content, 0);
+        currChar = this.content.start[0];
     }
     if (isAlphabetic(currChar) || currChar == '_') {
         let len: usize = 0;
         let tmp: SubStr = this.content;
-        let c: char = getChar(&tmp, 0);
+        let c: char = tmp.start[0];
         while (isNumeric(c) || isAlphabetic(c) || c == '_') {
             len = len + 1;
             tmp = substring(&tmp, 1, tmp.len);
-            c = getChar(&tmp, 0);
+            c = tmp.start[0];
         }
         let word: SubStr = substring(&this.content, 0, len);
         this.ptr = this.ptr + len;
@@ -175,13 +175,13 @@ func __next(this: &Lexer, peek: bool) -> Token {
         if (currChar == '0') {
             len = len + 1;
             tmp = newSubStr(tmp.start, 1, tmp.len);
-            currChar = getChar(&tmp, 0);
+            currChar = tmp.start[0];
             if (currChar == 'x') {
                 len = len + 1;
                 tmp = newSubStr(tmp.start, 1, tmp.len);
                 prefixed = true;
                 while (true) {
-                    let c = getChar(&tmp, 0);
+                    let c = tmp.start[0];
                     if (isHexDigit(c)) {
                         val = 16 * val + asHex(c) as usize;
                     } else if (c == '_') {
@@ -197,7 +197,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
                 tmp = newSubStr(tmp.start, 1, tmp.len);
                 prefixed = true;
                 while (true) {
-                    let c = getChar(&tmp, 0);
+                    let c = tmp.start[0];
                     if (c == '0' || c == '1') {
                         val = 2 * val;
                         if (c == '1') val = val + 1;
@@ -219,7 +219,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
         if (!prefixed) {
             assert(val == 0);
             while (true) {
-                let c = getChar(&tmp, 0);
+                let c = tmp.start[0];
                 if (isNumeric(c)) {
                     val = 10 * val + (c as usize - 48);
                 } else if (c == '_') {
@@ -250,7 +250,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
         }
         let len: usize = 0;
         let s: String = newString();
-        let c: char = getChar(&this.content, 0);
+        let c: char = this.content.start[0];
         while (c != '"') {
             let l: usize = 0;
             c = escapeCharSequence(this, &this.content, &s, &l);
@@ -267,7 +267,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
         }
         let len: usize = 0;
         let s: String = newString();
-        let c: char = getChar(&this.content, 0);
+        let c: char = this.content.start[0];
         while (c != '\'') {
             let l: usize = 0;
             c = escapeCharSequence(this, &this.content, &s, &l);
@@ -276,7 +276,10 @@ func __next(this: &Lexer, peek: bool) -> Token {
         }
         let word: SubStr = substring(&s, 0, s.length);
         if (word.len != 1) {
-            todo_with_msg("invalid char literal");
+            let t: Token = newToken(this.fileID, &word, this.ptr - len, TOKEN_IDENT);
+            let loc: String = toString(&t.span);
+            C::fprintf(stderr, "%s: %s: Invalid character literal `%.*s`.\n", loc.buffer, ERR_STR, word.len, word.start);
+            C::exit(1);
         }
         advance(this);
         return newToken(this.fileID, &word, this.ptr - len, TOKEN_CHAR_LITERAL);
@@ -300,7 +303,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
         return newToken(this.fileID, &newSubStr("]", 0, 1), this.ptr - 1, TOKEN_SQUARE_CLOSE);
     } else if (currChar == '<') {
         advance(this);
-        currChar = getChar(&this.content, 0);
+        currChar = this.content.start[0];
         if (currChar == '=') {
             advance(this);
             return newToken(this.fileID, &newSubStr("<=", 0, 2), this.ptr - 2, TOKEN_LESS_THAN_EQUAL);
@@ -309,7 +312,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
         }
     } else if (currChar == '>') {
         advance(this);
-        currChar = getChar(&this.content, 0);
+        currChar = this.content.start[0];
         if (currChar == '=') {
             advance(this);
             return newToken(this.fileID, &newSubStr(">=", 0, 2), this.ptr - 2, TOKEN_GREATER_THAN_EQUAL);
@@ -321,7 +324,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
         return newToken(this.fileID, &newSubStr(";", 0, 1), this.ptr - 1, TOKEN_SEMI_COLON);
     } else if (currChar == ':') {
         advance(this);
-        if (this.ptr < this.len && getChar(&this.content, 0) == ':') {
+        if (this.ptr < this.len && this.content.start[0] == ':') {
             advance(this);
             return newToken(this.fileID, &newSubStr("::", 0, 2), this.ptr - 2, TOKEN_COLON_DOUBLE);
         } else {
@@ -329,10 +332,10 @@ func __next(this: &Lexer, peek: bool) -> Token {
         }
     } else if (currChar == '=') {
         advance(this);
-        if (this.ptr < this.len && getChar(&this.content, 0) == '=') {
+        if (this.ptr < this.len && this.content.start[0] == '=') {
             advance(this);
             return newToken(this.fileID, &newSubStr("==", 0, 2), this.ptr - 2, TOKEN_EQUAL_DOUBLE);
-        } else if (this.ptr < this.len && getChar(&this.content, 0) == '>') {
+        } else if (this.ptr < this.len && this.content.start[0] == '>') {
             advance(this);
             return newToken(this.fileID, &newSubStr("=>", 0, 2), this.ptr - 2, TOKEN_ARROW_THICK);
         } else {
@@ -340,7 +343,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
         }
     } else if (currChar == '&') {
         advance(this);
-        if (this.ptr < this.len && getChar(&this.content, 0) == '&') {
+        if (this.ptr < this.len && this.content.start[0] == '&') {
             advance(this);
             return newToken(this.fileID, &newSubStr("&&", 0, 2), this.ptr - 2, TOKEN_AMPERSAND_DOUBLE);
         } else {
@@ -351,9 +354,9 @@ func __next(this: &Lexer, peek: bool) -> Token {
         return newToken(this.fileID, &newSubStr("_", 0, 1), this.ptr - 1, TOKEN_UNDERSCORE);
     } else if (currChar == '.') {
         advance(this);
-        if (this.ptr < this.len && getChar(&this.content, 0) == '.') {
+        if (this.ptr < this.len && this.content.start[0] == '.') {
             advance(this);
-            if (this.ptr < this.len && getChar(&this.content, 0) == '.') {
+            if (this.ptr < this.len && this.content.start[0] == '.') {
                 advance(this);
                 return newToken(this.fileID, &newSubStr("...", 0, 3), this.ptr - 3, TOKEN_DOTDOTDOT);
             }
@@ -380,7 +383,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
         return newToken(this.fileID, &newSubStr("^", 0, 1), this.ptr - 1, TOKEN_CARET);
     } else if (currChar == '|') {
         advance(this);
-        if (this.ptr < this.len && getChar(&this.content, 0) == '|') {
+        if (this.ptr < this.len && this.content.start[0] == '|') {
             advance(this);
             return newToken(this.fileID, &newSubStr("||", 0, 2), this.ptr - 2, TOKEN_PIPE_DOUBLE);
         } else {
@@ -388,7 +391,7 @@ func __next(this: &Lexer, peek: bool) -> Token {
         }
     } else if (currChar == '-') {
         advance(this);
-        if (this.ptr < this.len && getChar(&this.content, 0) == '>') {
+        if (this.ptr < this.len && this.content.start[0] == '>') {
             advance(this);
             return newToken(this.fileID, &newSubStr("->", 0, 2), this.ptr - 2, TOKEN_ARROW_THIN);
         } else {
@@ -396,19 +399,19 @@ func __next(this: &Lexer, peek: bool) -> Token {
         }
     } else if (currChar == '!') {
         advance(this);
-        if (this.ptr < this.len && getChar(&this.content, 0) == '=') {
+        if (this.ptr < this.len && this.content.start[0] == '=') {
             advance(this);
             return newToken(this.fileID, &newSubStr("!=", 0, 2), this.ptr - 2, TOKEN_NOT_EQUAL);
         } else {
             return newToken(this.fileID, &newSubStr("!", 0, 1), this.ptr - 1, TOKEN_BANG);
         }
-    } else if (currChar == '/' && getChar(&this.content, 1) == '*') {
+    } else if (currChar == '/' && this.content.start[1] == '*') {
         while (true) {
             if (advance(this)) {
                 return newTokenEOF(this.fileID, this.ptr);
             }
-            currChar = getChar(&this.content, 0);
-            let next: char = getChar(&this.content, 1);
+            currChar = this.content.start[0];
+            let next: char = this.content.start[1];
             if (currChar == '*' && next == '/') {
                 break;
             }
@@ -417,12 +420,12 @@ func __next(this: &Lexer, peek: bool) -> Token {
         advance(this); // /
         return next(this);
     } else if (currChar == '/') {
-        if (getChar(&this.content, 1) == '/') {
+        if (this.content.start[1] == '/') {
             while (currChar != '\n') {
                 if (advance(this)) {
                     return newTokenEOF(this.fileID, this.ptr);
                 }
-                currChar = getChar(&this.content, 0);
+                currChar = this.content.start[0];
             }
             return next(this);
         } else {

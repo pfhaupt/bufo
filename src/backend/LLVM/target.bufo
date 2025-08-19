@@ -1,5 +1,6 @@
 import "prelude.bufo";
 import "libc.bufo";
+import "bufo.bufo";
 import "../LLVM/types.bufo";
 import "../LLVM/module.bufo";
 import "../LLVM/bindings.bufo";
@@ -23,6 +24,9 @@ func getStoreSize(this: &LLVMTargetData, typ: &LLVMType) -> usize {
 }
 func getDataLayout(this: &LLVMTargetData) -> LLVMDataLayout {
     let c: &char = LLVM::CopyStringRepOfTargetData(this.ref);
+    if (*flags.debug) {
+        C::printf("[INFO] LLVM Data Layout: %s\n", c);
+    }
     return LLVMDataLayout {
         ref: c
     };
@@ -39,15 +43,12 @@ struct LLVMTarget {
 }
 
 func createTargetMachine(this: &LLVMTarget, triple: &char, cpu: &char, features: &char) -> LLVMTargetMachine {
-    let target: LLVM::TargetMachineRef = LLVM::CreateTargetMachine(
-        this.ref,
-        triple,
-        cpu,
-        features,
-        0,
-        0,
-        0
-    );
+    let target = LLVM::CreateTargetMachine(this.ref, triple, cpu, features, 0, 0, 0);
+    assert(!LLVM::isNull(target), "Could not create target machine");
+    return newLLVMTargetMachineFromRef(target);
+}
+func createTargetMachineWithOptions(this: LLVMTarget, triple: &char, options: LLVMTargetMachineOptions) -> LLVMTargetMachine {
+    let target = LLVM::CreateTargetMachineWithOptions(this.ref, triple, options.ref);
     assert(!LLVM::isNull(target), "Could not create target machine");
     return newLLVMTargetMachineFromRef(target);
 }
@@ -81,4 +82,36 @@ func newLLVMTargetMachineFromRef(ref: LLVM::TargetMachineRef) -> LLVMTargetMachi
     return LLVMTargetMachine {
         ref: ref,
     };
+}
+
+struct LLVMTargetMachineOptions {
+    ref: LLVM::TargetMachineOptionsRef;
+}
+
+func createTargetMachineOptions() -> LLVMTargetMachineOptions {
+    let opt = LLVM::CreateTargetMachineOptions();
+    assert(!LLVM::isNull(opt), "Could not create target machine options");
+    return LLVMTargetMachineOptions { ref: opt };
+}
+func disposeTargetMachineOptions(opt: LLVMTargetMachineOptions) {
+    LLVM::DisposeTargetMachineOptions(opt.ref);
+}
+
+func setCPU(opt: LLVMTargetMachineOptions, cpu: &char) {
+    LLVM::TargetMachineOptionsSetCPU(opt.ref, cpu);
+}
+func setFeatures(opt: LLVMTargetMachineOptions, features: &char) {
+    LLVM::TargetMachineOptionsSetFeatures(opt.ref, features);
+}
+func setABI(opt: LLVMTargetMachineOptions, ABI: &char) {
+    LLVM::TargetMachineOptionsSetABI(opt.ref, ABI);
+}
+func setCodeGenOptLevel(opt: LLVMTargetMachineOptions, level: LLVM::CodeGenOptLevel) {
+    LLVM::TargetMachineOptionsSetCodeGenOptLevel(opt.ref, LLVM::asI32(&level));
+}
+func setRelocMode(opt: LLVMTargetMachineOptions, reloc: LLVM::RelocMode) {
+    LLVM::TargetMachineOptionsSetRelocMode(opt.ref, LLVM::asI32(&reloc));
+}
+func setCodeModel(opt: LLVMTargetMachineOptions, model: LLVM::CodeModel) {
+    LLVM::TargetMachineOptionsSetCodeModel(opt.ref, LLVM::asI32(&model));
 }

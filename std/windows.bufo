@@ -18,12 +18,12 @@ import "string.bufo";
         INVALID_HANDLE
     );
     let time: FileTime = FileTime { time: 0 };
-    if (!WinAPI::GetFileTime(file, null, null, &time)) {
+    if (failed(WinAPI::GetFileTime(file, null, null, &time))) {
         C::fprintf(stderr, "[ERROR] Could not get time of %s: %#010x\n", filePath, WinError(WinAPI::GetLastError()));
         return 0-1;
     }
-    let _r: bool = WinAPI::CloseHandle(file);
-    assert(_r);
+    let _r = WinAPI::CloseHandle(file);
+    assert(success(_r));
     return time.time;
 }
 
@@ -39,7 +39,7 @@ import "string.bufo";
     }
 
     let exitStatus: u32 = 0;
-    if (!WinAPI::GetExitCodeProcess(proc, &exitStatus)) {
+    if (failed(WinAPI::GetExitCodeProcess(proc, &exitStatus))) {
         C::fprintf(stderr, "[ERROR] Could not get process exit code: %#010x\n", WinError(WinAPI::GetLastError()));
         return false;
     }
@@ -112,12 +112,12 @@ import "string.bufo";
     if (cmd.log) {
         C::printf("[CMD] %s\n", str.buffer);
     }
-    let bSuccess: bool = WinAPI::CreateProcessA(
+    let bSuccess = WinAPI::CreateProcessA(
         null,
         &*str.buffer,
         null,
         null,
-        true,
+        BOOL { i: 1 },
         0,
         null,
         null,
@@ -126,7 +126,7 @@ import "string.bufo";
     );
     drop(&str);
 
-    if (!bSuccess) {
+    if (failed(bSuccess)) {
         C::fprintf(stderr, "[ERROR] Could not create child process: %#010x\n", WinError(WinAPI::GetLastError()));
         return INVALID_HANDLE;
     }
@@ -137,17 +137,13 @@ import "string.bufo";
 }
 
 @os(WINDOWS) func WinError(error: u32) -> &char {
-    let s = String {};
-    pushNumber(&s, error as usize);
-    return s.buffer;
-    // FIXME: Why does link.exe not find FormatMessage?
-    // let message: &char = null;
-    // let lang = 0x0409; // en-US
-    // if (WinAPI::FormatMessage(
-    //     FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-    //     null, error, lang, &message, 0, message) == 0) {
-    //     C::fprintf(stderr, "%s Could not get WinError: FormatMessage failed!\n", FATAL_STR);
-    //     return null;
-    // }
-    // return message;
+    let message: &char = null;
+    let lang = 0x0409; // en-US
+    if (WinAPI::FormatMessage(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        null, error, lang, &message, 0, message) == 0) {
+        C::fprintf(stderr, "%s Could not get WinError: FormatMessage failed!\n", FATAL_STR);
+        return null;
+    }
+    return message;
 }

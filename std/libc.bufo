@@ -4,6 +4,9 @@ module C {
         static: "msvcrt.lib",
         libpath: "C:/Windows/System32",
         linker: "/DEFAULTLIB:legacy_stdio_definitions", // printf and the like
+        // REVIEW: LNK4098 is the "Defaultlib Conflict" warning. Do we want to print that?
+        // defaultlib 'library' conflicts with use of other libs; use /NODEFAULTLIB:library
+        linker: "/IGNORE:4098",
     }
     @os(LINUX) config {
         dynamic: "libc.so.6",

@@ -1,0 +1,7 @@
+
+import "./bindings.bufo";
+
+struct LLVMMetadata {
+    ref: LLVM::MetadataRef;
+}
+

@@ -207,6 +207,8 @@ let instrFns = [
     evaluateMemcpy,             // INSTR_MEMCPY
     evaluateEmitAssembly,       // INSTR_EMIT_ASSEMBLY
     evaluateIntoIRValue,        // INSTR_INTO_IR_VALUE
+    evaluateDebugInfo,          // INSTR_DEBUG_INFO_ALLOCA
+    evaluateDebugInfo,          // INSTR_DEBUG_INFO_PARAM
 ];
 func evaluateNotImplemented(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     dumpInstructions(irFunc);
@@ -240,7 +242,7 @@ func evaluateStore(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Reg
     let dst: &IRReg = getRegister(irFunc, instr.dst);
     let src: &RegValue = at(regs, instr.src.i);
     assert(isPointer(dst.typ), "Store expected Ptr Dst");
-    let size = getSize(dst.typ);
+    let size = getSizeInBytes(dst.typ);
     let dstReg: InterpReg = InterpReg {
         offset: dst.offset,
         size: size,
@@ -255,7 +257,7 @@ func evaluateFetchGlobalPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, r
     let fReg = getRegister(irFunc, instr.dst);
     let ptr = getGlobalPointer(this, &asInterp(at(this.globalRegisters, instr.src.i), "Interp FetchGlobalPtr"));
     let t = fReg.typ;
-    let size = getSize(fReg.typ);
+    let size = getSizeInBytes(fReg.typ);
     let reg = InterpReg {
         offset: fReg.offset,
         size: size,
@@ -266,7 +268,7 @@ func evaluateFetchGlobalPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, r
 func evaluateFetchGlobalValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let fReg = getRegister(irFunc, instr.dst);
     let ptr = getGlobalPointer(this, &asInterp(at(this.globalRegisters, instr.src.i), "Interp FetchGlobalValue"));
-    let size = getSize(fReg.typ);
+    let size = getSizeInBytes(fReg.typ);
     let reg = InterpReg {
         offset: fReg.offset,
         size: size,
@@ -279,7 +281,7 @@ func evaluateFetchComptimeValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInst
         // Global fetch
         let fReg = getRegister(irFunc, instr.dst);
         let ptr = getGlobalPointer(this, &asInterp(at(this.globalRegisters, instr.src.i), "Interp FetchComptimeValue"));
-        let size = getSize(fReg.typ);
+        let size = getSizeInBytes(fReg.typ);
         let reg = InterpReg {
             offset: fReg.offset,
             size: size,
@@ -310,7 +312,7 @@ func evaluateLoad(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegV
     assert(srcReg.size == 8, "Load expected Ptr Src");
     let dstReg: InterpReg = InterpReg {
         offset: dst.offset,
-        size: getSize(dst.typ),
+        size: getSizeInBytes(dst.typ),
     };
     let srcLoc: &u8 = *(getRegStackPointer(this, &srcReg) as &usize) as &u8;
     let dstLoc: &u8 = getRegStackPointer(this, &dstReg);
@@ -323,7 +325,7 @@ func evaluateMove(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegV
     let srcReg: InterpReg =  asInterp(src, "Interp Move src");
     let dstReg: InterpReg = InterpReg {
         offset: dst.offset,
-        size: getSize(dst.typ),
+        size: getSizeInBytes(dst.typ),
     };
     let srcLoc: &u8 = getRegStackPointer(this, &srcReg);
     let dstLoc: &u8 = getRegStackPointer(this, &dstReg);
@@ -344,24 +346,24 @@ func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
                 _ => { unreachable("IRGen.evaluateInstrCall: Expected function type"); }
             }
             let val = fun.run();
-            let size: usize = getSize(dstReg.typ);
+            let size: usize = getSizeInBytes(dstReg.typ);
             let dst: InterpReg = InterpReg {
                 offset: dstReg.offset,
                 size: size,
             };
-            if (getSize(retType) == 0) {
+            if (getSizeInBytes(retType) == 0) {
                 // noop
-            } else if (getSize(retType) <= 1) {
+            } else if (getSizeInBytes(retType) <= 1) {
                 *(getRegStackPointer(this, &dst) as &u8) = *((&val) as &u8);
-            } else if (getSize(retType) <= 2) {
+            } else if (getSizeInBytes(retType) <= 2) {
                 *(getRegStackPointer(this, &dst) as &u16) = *((&val) as &u16);
-            } else if (getSize(retType) <= 4) {
+            } else if (getSizeInBytes(retType) <= 4) {
                 if (isFloat(retType)) {
                     *(getRegStackPointer(this, &dst) as &f32) = *((&val) as &f32);
                 } else {
                     *(getRegStackPointer(this, &dst) as &u32) = *((&val) as &u32);
                 }
-            } else if (getSize(retType) <= 8) {
+            } else if (getSizeInBytes(retType) <= 8) {
                 if (isFloat(retType)) {
                     *(getRegStackPointer(this, &dst) as &f64) = *((&val) as &f64);
                 } else {
@@ -435,7 +437,7 @@ func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
         let callRegs: RegValueList = blank;
         initBlank(&callRegs, calledFunc.registers.length);
         evaluateCall(this, instr.span, calledFunc, &callRegs);
-        let size: usize = getSize(dstReg.typ);
+        let size: usize = getSizeInBytes(dstReg.typ);
         let dst: InterpReg = InterpReg {
             offset: dstReg.offset,
             size: size,
@@ -601,7 +603,7 @@ func evaluateLoadBlank(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let dst: InterpReg = InterpReg {
         offset: dstReg.offset,
-        size: getSize(dstReg.typ),
+        size: getSizeInBytes(dstReg.typ),
     };
     C::memset(getRegStackPointer(this, &dst), 0, dst.size);
     return dst;
@@ -776,8 +778,8 @@ func evaluateIntCmpEqAndNeq(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, r
     let rRhs: InterpReg =  asInterp(rhs, "ICmpNeq/ICmpEq RHS");
     let t1: &Type = getRegister(irFunc, instr.src).typ;
     let t2: &Type = getRegister(irFunc, instr.op1).typ;
-    let s1: usize = getSize(t1);
-    let s2: usize = getSize(t2);
+    let s1: usize = getSizeInBytes(t1);
+    let s2: usize = getSizeInBytes(t2);
     assert(s1 == s2, "ICmpNeq/ICmpEq got differently sized operands");
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let dst: InterpReg = InterpReg {
@@ -821,8 +823,8 @@ func evaluateIntCmpGtAndLte(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, r
     let rRhs: InterpReg =  asInterp(rhs, "ICmpGt/ICmpLte RHS");
     let t1: &Type = getRegister(irFunc, instr.src).typ;
     let t2: &Type = getRegister(irFunc, instr.op1).typ;
-    let s1: usize = getSize(t1);
-    let s2: usize = getSize(t2);
+    let s1: usize = getSizeInBytes(t1);
+    let s2: usize = getSizeInBytes(t2);
     assert(s1 == s2, "ICmpGt/ICmpLte got differently sized operands");
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let dst: InterpReg = InterpReg {
@@ -866,8 +868,8 @@ func evaluateIntCmpLtAndGte(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, r
     let rRhs: InterpReg =  asInterp(rhs, "ICmpLt/ICmpGte RHS");
     let t1: &Type = getRegister(irFunc, instr.src).typ;
     let t2: &Type = getRegister(irFunc, instr.op1).typ;
-    let s1: usize = getSize(t1);
-    let s2: usize = getSize(t2);
+    let s1: usize = getSizeInBytes(t1);
+    let s2: usize = getSizeInBytes(t2);
     assert(s1 == s2, "ICmpLt/ICmpGte got differently sized operands");
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let dst: InterpReg = InterpReg {
@@ -1047,8 +1049,8 @@ func evaluateFloatCmpEqAndNeq(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr,
     let rRhs: InterpReg =  asInterp(rhs, "FCmpNeq/FCmpEq RHS");
     let t1: &Type = getRegister(irFunc, instr.src).typ;
     let t2: &Type = getRegister(irFunc, instr.op1).typ;
-    let s1: usize = getSize(t1);
-    let s2: usize = getSize(t2);
+    let s1: usize = getSizeInBytes(t1);
+    let s2: usize = getSizeInBytes(t2);
     assert(s1 == s2, "FCmpNeq/FCmpEq got differently sized operands");
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let dst: InterpReg = InterpReg {
@@ -1083,8 +1085,8 @@ func evaluateFloatCmpGtAndLte(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr,
     let rRhs: InterpReg =  asInterp(rhs, "FCmpLte/FCmpGt RHS");
     let t1: &Type = getRegister(irFunc, instr.src).typ;
     let t2: &Type = getRegister(irFunc, instr.op1).typ;
-    let s1: usize = getSize(t1);
-    let s2: usize = getSize(t2);
+    let s1: usize = getSizeInBytes(t1);
+    let s2: usize = getSizeInBytes(t2);
     assert(s1 == s2, "FCmpLte/FCmpGt got differently sized operands");
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let dst: InterpReg = InterpReg {
@@ -1119,8 +1121,8 @@ func evaluateFloatCmpLtAndGte(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr,
     let rRhs: InterpReg =  asInterp(rhs, "FCmpGte/FCmpLt RHS");
     let t1: &Type = getRegister(irFunc, instr.src).typ;
     let t2: &Type = getRegister(irFunc, instr.op1).typ;
-    let s1: usize = getSize(t1);
-    let s2: usize = getSize(t2);
+    let s1: usize = getSizeInBytes(t1);
+    let s2: usize = getSizeInBytes(t2);
     assert(s1 == s2, "FCmpGte/FCmpLt got differently sized operands");
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let dst: InterpReg = InterpReg {
@@ -1153,7 +1155,7 @@ func evaluateLogicalNot(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs:
     let rSrc: InterpReg = asInterp(src, "LNot SRC");
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let t1: &Type = getRegister(irFunc, instr.src).typ;
-    let s1: usize = getSize(t1);
+    let s1: usize = getSizeInBytes(t1);
     assert(s1 == 1, "Idk");
     let dst: InterpReg = InterpReg {
         offset: dstReg.offset,
@@ -1173,8 +1175,8 @@ func evaluateLogicalAnd(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs:
     let rRhs: InterpReg =  asInterp(rhs, "LAnd RHS");
     let t1: &Type = getRegister(irFunc, instr.src).typ;
     let t2: &Type = getRegister(irFunc, instr.op1).typ;
-    let s1: usize = getSize(t1);
-    let s2: usize = getSize(t2);
+    let s1: usize = getSizeInBytes(t1);
+    let s2: usize = getSizeInBytes(t2);
     assert(s1 == s2, "LAnd got differently sized operands");
     assert(s1 == 1, "Idk");
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
@@ -1200,8 +1202,8 @@ func evaluateLogicalOr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
     let rRhs: InterpReg =  asInterp(rhs, "LOr RHS");
     let t1: &Type = getRegister(irFunc, instr.src).typ;
     let t2: &Type = getRegister(irFunc, instr.op1).typ;
-    let s1: usize = getSize(t1);
-    let s2: usize = getSize(t2);
+    let s1: usize = getSizeInBytes(t1);
+    let s2: usize = getSizeInBytes(t2);
     assert(s1 == s2, "LOr got differently sized operands");
     assert(s1 == 1, "Idk");
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
@@ -1227,8 +1229,8 @@ func evaluateBitwiseAnd(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs:
     let rRhs: InterpReg =  asInterp(rhs, "BAnd RHS");
     let t1: &Type = getRegister(irFunc, instr.src).typ;
     let t2: &Type = getRegister(irFunc, instr.op1).typ;
-    let s1: usize = getSize(t1);
-    let s2: usize = getSize(t2);
+    let s1: usize = getSizeInBytes(t1);
+    let s2: usize = getSizeInBytes(t2);
     assert(s1 == s2, "BAnd got differently sized operands");
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let dst: InterpReg = InterpReg {
@@ -1256,8 +1258,8 @@ func evaluateBitwiseOr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
     let rRhs: InterpReg =  asInterp(rhs, "BOr RHS");
     let t1: &Type = getRegister(irFunc, instr.src).typ;
     let t2: &Type = getRegister(irFunc, instr.op1).typ;
-    let s1: usize = getSize(t1);
-    let s2: usize = getSize(t2);
+    let s1: usize = getSizeInBytes(t1);
+    let s2: usize = getSizeInBytes(t2);
     assert(s1 == s2, "BOr got differently sized operands");
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let dst: InterpReg = InterpReg {
@@ -1285,8 +1287,8 @@ func evaluateBitwiseXor(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs:
     let rRhs: InterpReg =  asInterp(rhs, "BXor RHS");
     let t1: &Type = getRegister(irFunc, instr.src).typ;
     let t2: &Type = getRegister(irFunc, instr.op1).typ;
-    let s1: usize = getSize(t1);
-    let s2: usize = getSize(t2);
+    let s1: usize = getSizeInBytes(t1);
+    let s2: usize = getSizeInBytes(t2);
     assert(s1 == s2, "BXor got differently sized operands");
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let dst: InterpReg = InterpReg {
@@ -1311,21 +1313,21 @@ func evaluateInsertValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let dst: InterpReg = InterpReg {
         offset: dstReg.offset,
-        size: getSize(dstReg.typ),
+        size: getSizeInBytes(dstReg.typ),
     };
     let dstStart: &u8 = getRegStackPointer(this, &dst);
     let t: &Type = dstReg.typ;
     match (t) {
         &Type::Array(under, _size) => {
             let valReg: InterpReg = asInterp(at(regs, instr.op1.i), "Interp InsertValue Array");
-            let size = getSize(under);
+            let size = getSizeInBytes(under);
             let offset = instr.src.i * size;
             C::memcpy(dstStart + offset, getRegStackPointer(this, &valReg), size);
         }
         &Type::Struct(decl) => {
             let offset: usize = 0;
             let fieldSize: usize = 0;
-            getFieldOffsetAndSize(decl, instr.src.i, &offset, &fieldSize);
+            getFieldOffsetAndSize(decl, instr.src.i, &offset, &fieldSize, false);
             let valReg: InterpReg = asInterp(at(regs, instr.op1.i), "Interp InsertValue Struct");
             assert(valReg.size == fieldSize, "field size mismatch in Interp InsertValue");
             C::memcpy(dstStart + offset, getRegStackPointer(this, &valReg), fieldSize);
@@ -1354,8 +1356,8 @@ func evaluateIntZeroExtend(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, re
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let t1 = getRegister(irFunc, instr.src).typ;
     let t2 = getRegister(irFunc, instr.dst).typ;
-    let s1 = getSize(t1);
-    let s2 = getSize(t2);
+    let s1 = getSizeInBytes(t1);
+    let s2 = getSizeInBytes(t2);
     assert(s2 > s1, "Zero Extend expected dst to be greater than src");
     let dst: InterpReg = InterpReg {
         offset: dstReg.offset,
@@ -1376,8 +1378,8 @@ func evaluateIntTruncate(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let t1 = getRegister(irFunc, instr.src).typ;
     let t2 = getRegister(irFunc, instr.dst).typ;
-    let s1 = getSize(t1);
-    let s2 = getSize(t2);
+    let s1 = getSizeInBytes(t1);
+    let s2 = getSizeInBytes(t2);
     assert(s1 > s2, "Int Truncate expected src to be greater than dst");
     let dst: InterpReg = InterpReg {
         offset: dstReg.offset,
@@ -1422,7 +1424,7 @@ func evaluateCreateArray(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let dst: InterpReg = InterpReg {
         offset: dstReg.offset,
-        size: getSize(dstReg.typ),
+        size: getSizeInBytes(dstReg.typ),
     };
     C::memset(getRegStackPointer(this, &dst), 0, dst.size);
     return dst;
@@ -1431,7 +1433,7 @@ func evaluateCreateStruct(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, reg
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let dst: InterpReg = InterpReg {
         offset: dstReg.offset,
-        size: getSize(dstReg.typ),
+        size: getSizeInBytes(dstReg.typ),
     };
     C::memset(getRegStackPointer(this, &dst), 0, dst.size);
     return dst;
@@ -1440,7 +1442,7 @@ func evaluateCreateUnion(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let dst: InterpReg = InterpReg {
         offset: dstReg.offset,
-        size: getSize(dstReg.typ),
+        size: getSizeInBytes(dstReg.typ),
     };
     C::memset(getRegStackPointer(this, &dst), 0, dst.size);
     return dst;
@@ -1456,7 +1458,7 @@ func evaluateIntToF32(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &
     let dstStart: &u8 = getRegStackPointer(this, &dst);
     let t: &Type = getRegister(irFunc, instr.src).typ;
     let signed: bool = isSignedInteger(t);
-    let s: usize = getSize(t);
+    let s: usize = getSizeInBytes(t);
     let v: f32 = 0;
     if (s == 1) {
         if (signed) v = *(srcStart as &i8) as f32;
@@ -1479,7 +1481,7 @@ func evaluateIntToF32(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &
 func evaluateF32ToInt(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let src: InterpReg = asInterp(at(regs, instr.src.i), "Interp F32ToInt");
-    let size: usize = getSize(dstReg.typ);
+    let size: usize = getSizeInBytes(dstReg.typ);
     let signed: bool = isSignedInteger(dstReg.typ);
     let dst: InterpReg = InterpReg {
         offset: dstReg.offset,
@@ -1508,7 +1510,7 @@ func evaluateF32ToInt(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &
 func evaluateF64ToInt(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let src: InterpReg = asInterp(at(regs, instr.src.i), "Interp F64ToInt");
-    let size: usize = getSize(dstReg.typ);
+    let size: usize = getSizeInBytes(dstReg.typ);
     let signed: bool = isSignedInteger(dstReg.typ);
     let dst: InterpReg = InterpReg {
         offset: dstReg.offset,
@@ -1555,7 +1557,7 @@ func evaluateGetFieldPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
     }
     let offset: usize = 0;
     let size: usize = 0;
-    getFieldOffsetAndSize(decl, instr.op1.i, &offset, &size);
+    getFieldOffsetAndSize(decl, instr.op1.i, &offset, &size, false);
     let reg: InterpReg = InterpReg {
         offset: fReg.offset,
         size: 8,
@@ -1581,11 +1583,11 @@ func evaluateGetElementPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, re
         let elems = *(getRegStackPointer(this, &asInterp(reg, "IRInterp: GetElementPtr index")) as &usize);
         match (t) {
             &Type::Ptr(underlying) => {
-                offset = offset + elems * getSize(underlying);
+                offset = offset + elems * getSizeInBytes(underlying);
                 t = underlying;
             }
             &Type::Array(underlying, _) => {
-                offset = offset + elems * getSize(underlying);
+                offset = offset + elems * getSizeInBytes(underlying);
                 t = underlying;
             }
             &Type::Ptr(&Type::Struct(decl)) => {
@@ -1632,7 +1634,7 @@ func evaluateEmitAssembly(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, reg
 func evaluateIntoIRValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let src = at(regs, instr.src.i);
     let dstReg = getRegister(irFunc, instr.dst);
-    let size = getSize(dstReg.typ);
+    let size = getSizeInBytes(dstReg.typ);
     assert(size == sizeof RegValue, "IntoIRValue: size mismatch with llvm");
     assert(size == sizeof IRValue, "IntoIRValue: size mismatch with asm");
     let dst = InterpReg {
@@ -1641,6 +1643,15 @@ func evaluateIntoIRValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
     };
     *(getRegStackPointer(this, &dst) as &RegValue) = *src;
     return dst;
+}
+func evaluateDebugInfo(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    // noop in interpreter
+    let dstReg = getRegister(irFunc, instr.dst);
+    let size = getSizeInBytes(dstReg.typ);
+    return InterpReg {
+        offset: dstReg.offset,
+        size: size,
+    };
 }
 
 func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
@@ -1699,7 +1710,7 @@ func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: 
         let argType = origReg.typ;
         if (isVariadic) {
             if (i >= ARG_LEN) {
-                if (getSize(argType) <= 8) {
+                if (getSizeInBytes(argType) <= 8) {
                     let v = *(getRegStackPointer(this, &arg) as &u64);
                     mov(&buf, RSP, stack_offset, ImmI64 { b: v });
                 } else {
@@ -1708,7 +1719,7 @@ func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: 
                 stack_offset = stack_offset + 8;
             } else {
                 if (isFloat(argType)) {
-                    if (getSize(argType) == 4) {
+                    if (getSizeInBytes(argType) == 4) {
                         let v1 = *(getRegStackPointer(this, &arg) as &u32);
                         let v2 = *(getRegStackPointer(this, &arg) as &f32);
                         mov(&buf, GPR_ARGS[i], ImmI32 { b: v1 });
@@ -1719,7 +1730,7 @@ func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: 
                         mov(&buf, GPR_ARGS[i], ImmI64 { b: v1 });
                         mov(&buf, FPR_ARGS[i], ImmF64 { b: v2 });
                     }
-                } else if (getSize(argType) <= 8) {
+                } else if (getSizeInBytes(argType) <= 8) {
                     let v = *(getRegStackPointer(this, &arg) as &u64);
                     mov(&buf, GPR_ARGS[i], ImmI64 { b: v });
                 } else {
@@ -1730,23 +1741,23 @@ func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: 
             // Technically this puts a lot of garbage on the stack, but do we care?
             // we update the stack pointer correctly, so the next argument overwrites the garbage
             // and if the called function doesn't manage the stack properly, is that our fault?
-            if (getSize(argType) <= 8) {
+            if (getSizeInBytes(argType) <= 8) {
                 let v = *(getRegStackPointer(this, &arg) as &u64);
                 mov(&buf, RSP, stack_offset, ImmI64 { b: v });
             } else {
                 todo_with_msg(">8byte stack");
             }
-            stack_offset = stack_offset + getSize(argType) as u32;
+            stack_offset = stack_offset + getSizeInBytes(argType) as u32;
         } else {
             if (isFloat(argType)) {
-                if (getSize(argType) == 4) {
+                if (getSizeInBytes(argType) == 4) {
                     let v = *(getRegStackPointer(this, &arg) as &f32);
                     mov(&buf, FPR_ARGS[i], ImmF32 { b: v });
                 } else {
                     let v = *(getRegStackPointer(this, &arg) as &f64);
                     mov(&buf, FPR_ARGS[i], ImmF64 { b: v });
                 }
-            } else if (getSize(argType) <= 8) {
+            } else if (getSizeInBytes(argType) <= 8) {
                 let v = *(getRegStackPointer(this, &arg) as &u64);
                 mov(&buf, GPR_ARGS[i], ImmI64 { b: v });
             } else {

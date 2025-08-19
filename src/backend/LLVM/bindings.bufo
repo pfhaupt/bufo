@@ -1,30 +1,7 @@
 
- module LLVM {
-    struct TargetMachineRef { ptr: Any; }
-    func isNull(this: TargetMachineRef) -> bool { return this.ptr == null; }
-    struct TargetRef { ptr: Any; }
-    func isNull(this: TargetRef) -> bool { return this.ptr == null; }
-    struct TargetDataRef { ptr: Any; }
-    func isNull(this: TargetDataRef) -> bool { return this.ptr == null; }
-    struct ContextRef { ptr: Any; }
-    func isNull(this: ContextRef) -> bool { return this.ptr == null; }
-    struct ModuleRef { ptr: Any; }
-    func isNull(this: ModuleRef) -> bool { return this.ptr == null; }
-    struct BuilderRef { ptr: Any; }
-    func isNull(this: BuilderRef) -> bool { return this.ptr == null; }
-    struct BasicBlockRef { ptr: Any; }
-    func isNull(this: BasicBlockRef) -> bool { return this.ptr == null; }
-    struct ValueRef { ptr: Any; }
-    func isNull(this: ValueRef) -> bool { return this.ptr == null; }
-    struct TypeRef { ptr: Any; }
-    func isNull(this: TypeRef) -> bool { return this.ptr == null; }
-    struct AttributeRef { ptr: Any; }
-    func isNull(this: AttributeRef) -> bool { return this.ptr == null; }
-    struct PassBuilderOptionsRef { ptr: Any; }
-    func isNull(this: PassBuilderOptionsRef) -> bool { return this.ptr == null; }
-    struct ErrorRef { ptr: Any; }
-    func isNull(this: ErrorRef) -> bool { return this.ptr == null; }
+import "prelude.bufo";
 
+module LLVM {
     @os(LINUX) config {
         // It must be somewhere here :^)
         libpath: "/usr/lib64/llvm16/lib/",
@@ -37,13 +14,17 @@
         linker: "-lLLVM-16",
     }
     @os(WINDOWS) config {
-        libpath: ".",
+        // Custom wrappers
+        libpath: "./wrapper/",
+        static: "target.lib",
+        static: "variant.lib",
+
+        // Global LLVM stuff
         libpath: "C:\\LLVM\\lib",
         libpath: "C:\\LLVM\\bin",
         dynamic: "LLVM-C.dll",
         static: "ntdll.lib",    // LLVMSupport needs a function from there
         static: "Advapi32.lib", // LLVMSupport needs a function from there
-        static: "llvm_wrapper.lib",
         static: "LLVMWindowsManifest.lib",
         static: "LLVMXRay.lib",
         static: "LLVMLibDriver.lib",
@@ -237,6 +218,46 @@
         static: "LLVMDemangle.lib",
     }
 
+    struct TargetMachineOptionsRef { ptr: Any; }
+    func isNull(this: TargetMachineOptionsRef) -> bool { return this.ptr == null; }
+    struct TargetMachineRef { ptr: Any; }
+    func isNull(this: TargetMachineRef) -> bool { return this.ptr == null; }
+    struct TargetRef { ptr: Any; }
+    func isNull(this: TargetRef) -> bool { return this.ptr == null; }
+    struct TargetDataRef { ptr: Any; }
+    func isNull(this: TargetDataRef) -> bool { return this.ptr == null; }
+    struct ContextRef { ptr: Any; }
+    func isNull(this: ContextRef) -> bool { return this.ptr == null; }
+    struct ModuleRef { ptr: Any; }
+    func isNull(this: ModuleRef) -> bool { return this.ptr == null; }
+    struct BuilderRef { ptr: Any; }
+    func isNull(this: BuilderRef) -> bool { return this.ptr == null; }
+    struct BasicBlockRef { ptr: Any; }
+    func isNull(this: BasicBlockRef) -> bool { return this.ptr == null; }
+    struct ValueRef { ptr: Any; }
+    func isNull(this: ValueRef) -> bool { return this.ptr == null; }
+    struct TypeRef { ptr: Any; }
+    func isNull(this: TypeRef) -> bool { return this.ptr == null; }
+    struct AttributeRef { ptr: Any; }
+    func isNull(this: AttributeRef) -> bool { return this.ptr == null; }
+    struct PassBuilderOptionsRef { ptr: Any; }
+    func isNull(this: PassBuilderOptionsRef) -> bool { return this.ptr == null; }
+    struct ErrorRef { ptr: Any; }
+    func isNull(this: ErrorRef) -> bool { return this.ptr == null; }
+    struct DIBuilderRef { ptr: Any; }
+    func isNull(this: DIBuilderRef) -> bool { return this.ptr == null; }
+    struct MetadataRef { ptr: Any; }
+    func isNull(this: MetadataRef) -> bool { return this.ptr == null; }
+    struct DbgRecordRef { ptr: Any; }
+    func isNull(this: DbgRecordRef) -> bool { return this.ptr == null; }
+
+    union CodeGenOptLevel { None, Less, Default, Aggressive }
+    union RelocMode { Default, Static, PIC, DynamicNoPic, ROPI, RWPI, ROPI_RWPI }
+    union CodeModel { Default, JITDefault, Tiny, Small, Kernel, Medium, Large }
+    func asI32(u: Any) -> i32 {
+        return *(u as &u8) as i32;
+    }
+
     // LLVMTarget
     @extern("LLVMGetTargetFromName") func GetTargetFromName(name: &char) -> TargetRef;
     @extern("LLVM_InitializeNativeAsmParser") func _InitializeNativeAsmParser() -> i32;
@@ -244,12 +265,23 @@
     @extern("LLVM_InitializeNativeDisassembler") func _InitializeNativeDisassembler() -> i32;
     @extern("LLVM_InitializeNativeTarget") func _InitializeNativeTarget() -> i32;
     @extern("LLVMCreateTargetMachine") func CreateTargetMachine(T: TargetRef, Triple: &char, CPU: &char, Features: &char, Level: i32, Reloc: i32, CodeModel: i32) -> TargetMachineRef;
+    @extern("LLVMCreateTargetMachineWithOptions") func CreateTargetMachineWithOptions(T: TargetRef, Triple: &char, Options: TargetMachineOptionsRef) -> TargetMachineRef;
     @extern("LLVMTargetMachineEmitToFile") func TargetMachineEmitToFile(T: TargetMachineRef, M: ModuleRef, path: &char, opts: i32, err: &LLVMString) -> i32;
     @extern("LLVMCreateTargetDataLayout") func CreateTargetDataLayout(T: TargetMachineRef) -> TargetDataRef;
     @extern("LLVMStoreSizeOfType") func StoreSizeOfType(T: TargetDataRef, Ty: TypeRef) -> usize;
     @extern("LLVMABISizeOfType") func ABISizeOfType(T: TargetDataRef, Ty: TypeRef) -> usize;
     @extern("LLVMSizeOfTypeInBits") func SizeOfTypeInBits(T: TargetDataRef, Ty: TypeRef) -> usize;
     @extern("LLVMCopyStringRepOfTargetData") func CopyStringRepOfTargetData(T: TargetDataRef) -> &char;
+
+    // LLVMTargetMachineOptions
+    @extern("LLVMCreateTargetMachineOptions") func CreateTargetMachineOptions() -> TargetMachineOptionsRef;
+    @extern("LLVMDisposeTargetMachineOptions") func DisposeTargetMachineOptions(Options: TargetMachineOptionsRef);
+    @extern("LLVMTargetMachineOptionsSetCPU") func TargetMachineOptionsSetCPU(Options: TargetMachineOptionsRef, CPU: &char);
+    @extern("LLVMTargetMachineOptionsSetFeatures") func TargetMachineOptionsSetFeatures(Options: TargetMachineOptionsRef, Features: &char);
+    @extern("LLVMTargetMachineOptionsSetABI") func TargetMachineOptionsSetABI(Options: TargetMachineOptionsRef, ABI: &char);
+    @extern("LLVMTargetMachineOptionsSetCodeGenOptLevel") func TargetMachineOptionsSetCodeGenOptLevel(Options: TargetMachineOptionsRef, Level: i32);
+    @extern("LLVMTargetMachineOptionsSetRelocMode") func TargetMachineOptionsSetRelocMode(Options: TargetMachineOptionsRef, Reloc: i32);
+    @extern("LLVMTargetMachineOptionsSetCodeModel") func TargetMachineOptionsSetCodeModel(Options: TargetMachineOptionsRef, CodeModel: i32);
 
     // LLVMContext
     @extern("LLVMContextCreate") func ContextCreate() -> ContextRef;
@@ -272,6 +304,7 @@
     @extern("LLVMVerifyModule") func VerifyModule(M: ModuleRef, mode: i32, code: &LLVMString) -> LLVMBool;
     @extern("LLVMSetDataLayout") func SetDataLayout(M: ModuleRef, Data: &char);
     @extern("LLVMSetTarget") func SetTarget(M: ModuleRef, Target: &char);
+    @extern("LLVMAddModuleFlag") func AddModuleFlag(M: ModuleRef, Behavior: i32, Key: &char, KeyLen: usize, Val: MetadataRef);
 
     // LLVMPassBuilder
     @extern("LLVMRunPasses") func RunPasses(M: ModuleRef, Passes: &char, TM: TargetMachineRef, Options: PassBuilderOptionsRef) -> ErrorRef;
@@ -302,10 +335,18 @@
     // LLVMBuilder
     @extern("LLVMCreateBuilderInContext") func CreateBuilderInContext(context: ContextRef) -> BuilderRef;
     @extern("LLVMCreateBuilder") func CreateBuilder() -> BuilderRef;
+    @extern("LLVMPositionBuilder") func PositionBuilder(Builder: BuilderRef, Block: BasicBlockRef, Instr: ValueRef);
+    @extern("LLVMPositionBuilderBeforeDbgRecords") func PositionBuilderBeforeDbgRecords(Builder: BuilderRef, Block: BasicBlockRef, Inst: ValueRef);
+    @extern("LLVMPositionBuilderBefore") func PositionBuilderBefore(Builder: BuilderRef, Instr: ValueRef);
+    @extern("LLVMPositionBuilderBeforeInstrAndDbgRecords") func PositionBuilderBeforeInstrAndDbgRecords(Builder: BuilderRef, Instr: ValueRef);
+    @extern("LLVMPositionBuilderAtEnd") func PositionBuilderAtEnd(Builder: BuilderRef, Block: BasicBlockRef);
+    @extern("LLVMGetCurrentDebugLocation2") func GetCurrentDebugLocation(Builder: BuilderRef) -> MetadataRef;
+    @extern("LLVMSetCurrentDebugLocation2") func SetCurrentDebugLocation(Builder: BuilderRef, loc: MetadataRef);
+    @extern("LLVMSetInstDebugLocation") func SetInstDebugLocation(Builder: BuilderRef, Inst: ValueRef);
+
+    // Instructions
     @extern("LLVMBuildRetVoid") func BuildRetVoid(B: BuilderRef) -> ValueRef;
     @extern("LLVMBuildRet") func BuildRet(B: BuilderRef, Value: ValueRef) -> ValueRef;
-    @extern("LLVMPositionBuilderAtEnd") func PositionBuilderAtEnd(Builder: BuilderRef, Block: BasicBlockRef);
-    @extern("LLVMPositionBuilderBefore") func PositionBuilderBefore(Builder: BuilderRef, Instr: ValueRef);
     @extern("LLVMBuildAlloca") func BuildAlloca(B: BuilderRef, Ty: TypeRef, Name: &char) -> ValueRef;
     @extern("LLVMBuildStore") func BuildStore(B: BuilderRef, Value: ValueRef, Ptr: ValueRef) -> ValueRef;
     @extern("LLVMBuildInsertValue") func BuildInsertValue(B: BuilderRef, AggVal: ValueRef, EltVal: ValueRef, Index: u32, Name: &char) -> ValueRef;
@@ -356,6 +397,9 @@
     @extern("LLVMDumpValue") func DumpValue(V: ValueRef);
     @extern("LLVMGlobalGetValueType") func GlobalGetValueType(Val: ValueRef) -> TypeRef;
     @extern("LLVMAddAttributeAtIndex") func AddAttributeAtIndex(Val: ValueRef, index: u32, Attr: AttributeRef);
+    @extern("LLVMSetAlignment") func SetAlignment(Val: ValueRef, Bytes: u32);
+    @extern("LLVMGlobalSetMetadata") func GlobalSetMetadata(Global: ValueRef, Kind: u32, MD: MetadataRef);
+    @extern("LLVMIsAGlobalVariable") func IsAGlobalVariable(Val: ValueRef) -> ValueRef;
 
     // LLVM Globals
     @extern("LLVMSetInitializer") func SetInitializer(GlobalVar: ValueRef, ConstantVal: ValueRef);
@@ -379,8 +423,47 @@
     @extern("LLVMGetReturnType") func GetReturnType(FunctionTy: TypeRef) -> TypeRef;
     @extern("LLVMPrintTypeToString") func PrintTypeToString(Ty: TypeRef) -> &char;
     @extern("LLVMGetInlineAsm") func GetInlineAsm(Ty: TypeRef, AsmString: &char, AsmStringSize: usize, Constraints: &char, ConstraintsSize: usize, HasSideEffects: LLVMBool, IsAlignStack: LLVMBool, Dialect: u32, CanThrow: LLVMBool) -> ValueRef;
-
     @extern("LLVMGetTypeKind") func GetTypeKind(Ty: TypeRef) -> i32;
+
+    // LLVMDIBuilder
+    @extern("LLVMCreateDIBuilder") func CreateDIBuilder(M: ModuleRef) -> DIBuilderRef;
+    @extern("LLVMDisposeDIBuilder") func DisposeDIBuilder(Builder: DIBuilderRef);
+    @extern("LLVMDIBuilderFinalize") func DIBuilderFinalize(Builder: DIBuilderRef);
+    @extern("LLVMDIBuilderCreateCompileUnit") func DIBuilderCreateCompileUnit(Builder: DIBuilderRef, Lang: i32, FileRef: MetadataRef,
+    Producer: &char, ProducerLen: usize, isOptimized: LLVMBool, Flags: &char, FlagsLen: usize, RuntimeVer: u32, SplitName: &char,
+    SplitNameLen: usize, Kind: i32, DWOId: u32, SplitDebugInlining: LLVMBool, DebugInfoForProfiling: LLVMBool, SysRoot: &char,
+    SysRootLen: usize, SDK: &char, SDKLen: usize) -> MetadataRef;
+    @extern("LLVMDIBuilderCreateExpression") func DIBuilderCreateExpression(Builder: DIBuilderRef, Addr: &usize, Length: usize) -> MetadataRef;
+    @extern("LLVMDIBuilderCreateFile") func DIBuilderCreateFile(Builder: DIBuilderRef, Filename: &char, FilenameLen: usize, Directory: &char, DirectoryLen: usize) -> MetadataRef;
+    @extern("LLVMDIBuilderCreateFunction") func DIBuilderCreateFunction(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, LinkageName: &char, LinkageNameLen: usize, File: MetadataRef, LineNo: u32, Ty: MetadataRef, IsLocalToUnit: LLVMBool, IsDefinition: LLVMBool, ScopeLine: u32, Flags: i32, IsOptimized: LLVMBool) -> MetadataRef;
+    @extern("LLVMDIBuilderCreateDebugLocation") func DIBuilderCreateDebugLocation(Ctx: ContextRef, Line: u32, Col: u32, Scope: MetadataRef, InlinedAt: MetadataRef) -> MetadataRef;
+    @extern("LLVMDIBuilderCreateAutoVariable") func DIBuilderCreateAutoVariable(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, File: MetadataRef, LineNo: u32, Ty: MetadataRef, AlwaysPreserve: LLVMBool, Flags: i32, AlignInBits: u32) -> MetadataRef;
+    @extern("LLVMDIBuilderCreateBasicType") func DIBuilderCreateBasicType(Builder: DIBuilderRef, Name: &char, NameLen: usize, SizeInBits: u64, Encoding: u32, Flags: i32) -> MetadataRef;
+    @extern("LLVMDIBuilderCreateParameterVariable") func DIBuilderCreateParameterVariable(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, ArgNo: u32, File: MetadataRef, LineNo: u32, Ty: MetadataRef, AlwaysPreserve: LLVMBool, Flags: i32) -> MetadataRef;
+    @extern("LLVMDIBuilderCreatePointerType") func DIBuilderCreatePointerType(Builder: DIBuilderRef, PointeeTy: MetadataRef, SizeInBits: u64, AlignInBits: u32, AddressSpace: u32, Name: &char, NameLen: usize) -> MetadataRef;
+    @extern("LLVMDIBuilderCreateStructType") func DIBuilderCreateStructType(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, File: MetadataRef, LineNumber: u32, SizeInBits: u64, AlignInBits: u32, Flags: i32, DerivedFrom: MetadataRef, Elements: &MetadataRef, NumElements: u32, RunTimeLang: u32, VTableHolder: MetadataRef, UniqueId: &char, UniqueIdLen: usize) -> MetadataRef;
+    @extern("LLVMDIBuilderCreateVariantPart") func DIBuilderCreateVariantPart(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, File: MetadataRef, LineNumber: u32, SizeInBits: u64, AlignInBits: u32, Flags: i32, Discriminator: MetadataRef, Elements: &MetadataRef, NumElements: u32, Unique: &char, UniqueLen: usize) -> MetadataRef;
+    @extern("LLVMDIBuilderCreateVariantMemberType") func DIBuilderCreateVariantMemberType(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, File: MetadataRef, LineNumber: u32, SizeInBits: u64, AlignInBits: u32, OffsetInBits: u64, Discriminant: ValueRef, Flags: i32, Ty: MetadataRef) -> MetadataRef;
+    @extern("LLVMDIBuilderCreateMemberType") func DIBuilderCreateMemberType(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, File: MetadataRef, LineNumber: u32, SizeInBits: u64, AlignInBits: u32, OffsetInBits: u64, Flags: i32, Ty: MetadataRef) -> MetadataRef;
+    @extern("LLVMDIBuilderCreateSubroutineType") func DIBuilderCreateSubroutineType(Builder: DIBuilderRef, File: MetadataRef, ParameterTypes: &MetadataRef, NumParameterTypes: u32, Flags: i32) -> MetadataRef;
+    @extern("LLVMDIBuilderCreateTypedef") func DIBuilderCreateTypedef(Builder: DIBuilderRef, Type: MetadataRef, Name: &char, NameLen: usize, File: MetadataRef, LineNo: u32, Scope: MetadataRef, AlignInBits: u32) -> MetadataRef;
+    @extern("LLVMDIBuilderCreateUnionType") func DIBuilderCreateUnionType(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, File: MetadataRef, LineNumber: u32, SizeInBits: u64, AlignInBits: u32, Flags: i32, Elements: &MetadataRef, NumElements: u32, RunTimeLang: u32, UniqueId: &char, UniqueLen: usize) -> MetadataRef;
+    @extern("LLVMDIBuilderCreateArrayType") func DIBuilderCreateArrayType(Builder: DIBuilderRef, Size: u64, AlignInBits: u32, Ty: MetadataRef, Subscripts: &MetadataRef, NumSubscripts: u32) -> MetadataRef;
+    @extern("LLVMDIBuilderCreateArtificialType") func DIBuilderCreateArtificialType(Builder: DIBuilderRef, Ty: MetadataRef) -> MetadataRef;
+    @extern("LLVMDIBuilderCreateUnspecifiedType") func DIBuilderCreateUnspecifiedType(Builder: DIBuilderRef, Name: &char, NameLen: usize) -> MetadataRef;
+    @extern("LLVMDIBuilderInsertDeclareRecordAtEnd") func DIBuilderInsertDeclareRecordAtEnd(Builder: DIBuilderRef, Storage: ValueRef, VarInfo: MetadataRef, Expr: MetadataRef, DebugLoc: MetadataRef, Block: BasicBlockRef) -> DbgRecordRef;
+    @extern("LLVMDIBuilderInsertDeclareRecordBefore") func DIBuilderInsertDeclareRecordBefore(Builder: DIBuilderRef, Storage: ValueRef, VarInfo: MetadataRef, Expr: MetadataRef, DebugLoc: MetadataRef, Instr: ValueRef) -> DbgRecordRef;
+    @extern("LLVMDIBuilderCreateGlobalVariableExpression") func DIBuilderCreateGlobalVariableExpression(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, Linkage: &char, LinkLen: usize, File: MetadataRef, LineNo: u32, Ty: MetadataRef, LocalToUnit: LLVMBool, Expr: MetadataRef, Decl: MetadataRef, AlignInBits: u32) -> MetadataRef;
+
+
+    // LLVMMetadata
+    @extern("LLVMMetadataReplaceAllUsesWith") func ReplaceAllUsesWith(TempTargetMetadata: MetadataRef, Replacement: MetadataRef);
+    @extern("LLVMSetSubprogram") func SetSubprogram(Func: ValueRef, SP: MetadataRef);
+    @extern("LLVMGetSubprogram") func GetSubprogram(Func: ValueRef) -> MetadataRef;
+    @extern("LLVMTemporaryMDNode") func TemporaryMDNode(Ctx: ContextRef, Data: &MetadataRef, NumElements: usize) -> MetadataRef;
+    @extern("LLVMDisposeTemporaryMDNode") func DisposeTemporaryMDNode(TempNode: MetadataRef);
+    @extern("LLVMValueAsMetadata") func ValueAsMetadata(Val: ValueRef) -> MetadataRef;
+    @extern("LLVMGetMDKindID") func GetMDKindID(Name: &char, NameLen: u32) -> u32;
 }
 struct LLVMBool { val: i32; }
 func newLLVMBool(b: bool) -> LLVMBool {
@@ -391,28 +474,28 @@ func newLLVMBool(b: bool) -> LLVMBool {
 struct LLVMString { chars: &char; }
 
 
-comptime LLVMVoidTypeKind: i32 = 0;
-comptime LLVMHalfTypeKind: i32 = 1;
-comptime LLVMFloatTypeKind: i32 = 2;
-comptime LLVMDoubleTypeKind: i32 = 3;
-comptime LLVMX86_FP80TypeKind: i32 = 4;
-comptime LLVMFP128TypeKind: i32 = 5;
-comptime LLVMPPC_FP128TypeKind: i32 = 6;
-comptime LLVMLabelTypeKind: i32 = 7;
-comptime LLVMIntegerTypeKind: i32 = 8;
-comptime LLVMFunctionTypeKind: i32 = 9;
-comptime LLVMStructTypeKind: i32 = 10;
-comptime LLVMArrayTypeKind: i32 = 11;
-comptime LLVMPointerTypeKind: i32 = 12;
-comptime LLVMVectorTypeKind: i32 = 13;
-comptime LLVMMetadataTypeKind: i32 = 14;
+comptime LLVMVoidTypeKind          : i32 = 0;
+comptime LLVMHalfTypeKind          : i32 = 1;
+comptime LLVMFloatTypeKind         : i32 = 2;
+comptime LLVMDoubleTypeKind        : i32 = 3;
+comptime LLVMX86_FP80TypeKind      : i32 = 4;
+comptime LLVMFP128TypeKind         : i32 = 5;
+comptime LLVMPPC_FP128TypeKind     : i32 = 6;
+comptime LLVMLabelTypeKind         : i32 = 7;
+comptime LLVMIntegerTypeKind       : i32 = 8;
+comptime LLVMFunctionTypeKind      : i32 = 9;
+comptime LLVMStructTypeKind        : i32 = 10;
+comptime LLVMArrayTypeKind         : i32 = 11;
+comptime LLVMPointerTypeKind       : i32 = 12;
+comptime LLVMVectorTypeKind        : i32 = 13;
+comptime LLVMMetadataTypeKind      : i32 = 14;
 // Unused according to https://llvm.org/doxygen/llvm-c_2Core_8h_source.html line 164
-// comptime LLVMX86_MMXTypeKind: i32 = 15;
-comptime LLVMTokenTypeKind: i32 = 16;
+// comptime LLVMX86_MMXTypeKind    : i32 = 15;
+comptime LLVMTokenTypeKind         : i32 = 16;
 comptime LLVMScalableVectorTypeKind: i32 = 17;
-comptime LLVMBFloatTypeKind: i32 = 18;
-comptime LLVMX86_AMXTypeKind: i32 = 19;
-comptime LLVMTargetExtTypeKind: i32 = 20;
+comptime LLVMBFloatTypeKind        : i32 = 18;
+comptime LLVMX86_AMXTypeKind       : i32 = 19;
+comptime LLVMTargetExtTypeKind     : i32 = 20;
 
 comptime LLVMIntEQ : i32 = 32;
 comptime LLVMIntNE : i32 = 33;
@@ -448,3 +531,119 @@ comptime LLVMReturnStatusAction: i32 = 2; /* verifier will just return 1 */
 
 comptime LLVMAssemblyFile: i32 = 0;
 comptime LLVMObjectFile: i32 = 1;
+
+comptime LLVMDIFlagZero               : i32 = 0;
+comptime LLVMDIFlagPrivate            : i32 = 1;
+comptime LLVMDIFlagProtected          : i32 = 2;
+comptime LLVMDIFlagPublic             : i32 = 3;
+comptime LLVMDIFlagFwdDecl            : i32 = shiftLeft(1, 2) as i32;
+comptime LLVMDIFlagAppleBlock         : i32 = shiftLeft(1, 3) as i32;
+comptime LLVMDIFlagReservedBit4       : i32 = shiftLeft(1, 4) as i32;
+comptime LLVMDIFlagVirtual            : i32 = shiftLeft(1, 5) as i32;
+comptime LLVMDIFlagArtificial         : i32 = shiftLeft(1, 6) as i32;
+comptime LLVMDIFlagExplicit           : i32 = shiftLeft(1, 7) as i32;
+comptime LLVMDIFlagPrototyped         : i32 = shiftLeft(1, 8) as i32;
+comptime LLVMDIFlagObjcClassComplete  : i32 = shiftLeft(1, 9) as i32;
+comptime LLVMDIFlagObjectPointer      : i32 = shiftLeft(1, 10) as i32;
+comptime LLVMDIFlagVector             : i32 = shiftLeft(1, 11) as i32;
+comptime LLVMDIFlagStaticMember       : i32 = shiftLeft(1, 12) as i32;
+comptime LLVMDIFlagLValueReference    : i32 = shiftLeft(1, 13) as i32;
+comptime LLVMDIFlagRValueReference    : i32 = shiftLeft(1, 14) as i32;
+comptime LLVMDIFlagReserved           : i32 = shiftLeft(1, 15) as i32;
+comptime LLVMDIFlagSingleInheritance  : i32 = shiftLeft(1, 16) as i32;
+comptime LLVMDIFlagMultipleInheritance: i32 = shiftLeft(2, 16) as i32;
+comptime LLVMDIFlagVirtualInheritance : i32 = shiftLeft(3, 16) as i32;
+comptime LLVMDIFlagIntroducedVirtual  : i32 = shiftLeft(1, 18) as i32;
+comptime LLVMDIFlagBitField           : i32 = shiftLeft(1, 19) as i32;
+comptime LLVMDIFlagNoReturn           : i32 = shiftLeft(1, 20) as i32;
+comptime LLVMDIFlagTypePassByValue    : i32 = shiftLeft(1, 22) as i32;
+comptime LLVMDIFlagTypePassByReference: i32 = shiftLeft(1, 23) as i32;
+comptime LLVMDIFlagEnumClass          : i32 = shiftLeft(1, 24) as i32;
+comptime LLVMDIFlagFixedEnum          : i32 = LLVMDIFlagEnumClass; // Deprecated.
+comptime LLVMDIFlagThunk              : i32 = shiftLeft(1, 25) as i32;
+comptime LLVMDIFlagNonTrivial         : i32 = shiftLeft(1, 26) as i32;
+comptime LLVMDIFlagBigEndian          : i32 = shiftLeft(1, 27) as i32;
+comptime LLVMDIFlagLittleEndian       : i32 = shiftLeft(1, 28) as i32;
+comptime LLVMDIFlagIndirectVirtualBase: i32 = (shiftLeft(1, 2) as i32) | (shiftLeft(1, 5) as i32);
+comptime LLVMDIFlagAccessibility      : i32 = LLVMDIFlagPrivate
+                                            | LLVMDIFlagProtected
+                                            | LLVMDIFlagPublic;
+comptime LLVMDIFlagPtrToMemberRep     : i32 = LLVMDIFlagSingleInheritance
+                                            | LLVMDIFlagMultipleInheritance
+                                            | LLVMDIFlagVirtualInheritance;
+
+comptime LLVMDWARFEmissionKindNone          : i32 = 0;
+comptime LLVMDWARFEmissionKindFull          : i32 = 1;
+comptime LLVMDWARFEmissionKindLineTablesOnly: i32 = 2;
+
+
+comptime LLVMDWARFSourceLanguageC89                : i32 = 0;
+comptime LLVMDWARFSourceLanguageC                  : i32 = 1;
+comptime LLVMDWARFSourceLanguageAda83              : i32 = 2;
+comptime LLVMDWARFSourceLanguageC_plus_plus        : i32 = 3;
+comptime LLVMDWARFSourceLanguageCobol74            : i32 = 4;
+comptime LLVMDWARFSourceLanguageCobol85            : i32 = 5;
+comptime LLVMDWARFSourceLanguageFortran77          : i32 = 6;
+comptime LLVMDWARFSourceLanguageFortran90          : i32 = 7;
+comptime LLVMDWARFSourceLanguagePascal83           : i32 = 8;
+comptime LLVMDWARFSourceLanguageModula2            : i32 = 9;
+comptime LLVMDWARFSourceLanguageJava               : i32 = 10;
+comptime LLVMDWARFSourceLanguageC99                : i32 = 11;
+comptime LLVMDWARFSourceLanguageAda95              : i32 = 12;
+comptime LLVMDWARFSourceLanguageFortran95          : i32 = 13;
+comptime LLVMDWARFSourceLanguagePLI                : i32 = 14;
+comptime LLVMDWARFSourceLanguageObjC               : i32 = 15;
+comptime LLVMDWARFSourceLanguageObjC_plus_plus     : i32 = 16;
+comptime LLVMDWARFSourceLanguageUPC                : i32 = 17;
+comptime LLVMDWARFSourceLanguageD                  : i32 = 18;
+comptime LLVMDWARFSourceLanguagePython             : i32 = 19;
+comptime LLVMDWARFSourceLanguageOpenCL             : i32 = 20;
+comptime LLVMDWARFSourceLanguageGo                 : i32 = 21;
+comptime LLVMDWARFSourceLanguageModula3            : i32 = 22;
+comptime LLVMDWARFSourceLanguageHaskell            : i32 = 23;
+comptime LLVMDWARFSourceLanguageC_plus_plus_03     : i32 = 24;
+comptime LLVMDWARFSourceLanguageC_plus_plus_11     : i32 = 25;
+comptime LLVMDWARFSourceLanguageOCaml              : i32 = 26;
+comptime LLVMDWARFSourceLanguageRust               : i32 = 27;
+comptime LLVMDWARFSourceLanguageC11                : i32 = 28;
+comptime LLVMDWARFSourceLanguageSwift              : i32 = 29;
+comptime LLVMDWARFSourceLanguageJulia              : i32 = 30;
+comptime LLVMDWARFSourceLanguageDylan              : i32 = 31;
+comptime LLVMDWARFSourceLanguageC_plus_plus_14     : i32 = 32;
+comptime LLVMDWARFSourceLanguageFortran03          : i32 = 33;
+comptime LLVMDWARFSourceLanguageFortran08          : i32 = 34;
+comptime LLVMDWARFSourceLanguageRenderScript       : i32 = 35;
+comptime LLVMDWARFSourceLanguageBLISS              : i32 = 36;
+comptime LLVMDWARFSourceLanguageKotlin             : i32 = 37;
+comptime LLVMDWARFSourceLanguageZig                : i32 = 38;
+comptime LLVMDWARFSourceLanguageCrystal            : i32 = 39;
+comptime LLVMDWARFSourceLanguageC_plus_plus_17     : i32 = 40;
+comptime LLVMDWARFSourceLanguageC_plus_plus_20     : i32 = 41;
+comptime LLVMDWARFSourceLanguageC17                : i32 = 42;
+comptime LLVMDWARFSourceLanguageFortran18          : i32 = 43;
+comptime LLVMDWARFSourceLanguageAda2005            : i32 = 44;
+comptime LLVMDWARFSourceLanguageAda2012            : i32 = 45;
+comptime LLVMDWARFSourceLanguageHIP                : i32 = 46;
+comptime LLVMDWARFSourceLanguageAssembly           : i32 = 47;
+comptime LLVMDWARFSourceLanguageC_sharp            : i32 = 48;
+comptime LLVMDWARFSourceLanguageMojo               : i32 = 49;
+comptime LLVMDWARFSourceLanguageGLSL               : i32 = 50;
+comptime LLVMDWARFSourceLanguageGLSL_ES            : i32 = 51;
+comptime LLVMDWARFSourceLanguageHLSL               : i32 = 52;
+comptime LLVMDWARFSourceLanguageOpenCL_CPP         : i32 = 53;
+comptime LLVMDWARFSourceLanguageCPP_for_OpenCL     : i32 = 54;
+comptime LLVMDWARFSourceLanguageSYCL               : i32 = 55;
+comptime LLVMDWARFSourceLanguageRuby               : i32 = 56;
+comptime LLVMDWARFSourceLanguageMove               : i32 = 57;
+comptime LLVMDWARFSourceLanguageHylo               : i32 = 58;
+comptime LLVMDWARFSourceLanguageMetal              : i32 = 59;
+comptime LLVMDWARFSourceLanguageMips_Assembler     : i32 = 60;
+comptime LLVMDWARFSourceLanguageGOOGLE_RenderScript: i32 = 61;
+comptime LLVMDWARFSourceLanguageBORLAND_Delphi     : i32 = 62;
+
+comptime LLVMModuleFlagBehaviorError       : i32 = 0;
+comptime LLVMModuleFlagBehaviorWarning     : i32 = 1;
+comptime LLVMModuleFlagBehaviorRequire     : i32 = 2;
+comptime LLVMModuleFlagBehaviorOverride    : i32 = 3;
+comptime LLVMModuleFlagBehaviorAppend      : i32 = 4;
+comptime LLVMModuleFlagBehaviorAppendUnique: i32 = 5;

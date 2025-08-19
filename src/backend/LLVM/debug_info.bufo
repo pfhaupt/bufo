@@ -1,0 +1,507 @@
+
+import "prelude.bufo";
+import "bufo.bufo";
+import "libc.bufo";
+import "substr.bufo";
+import "string.bufo";
+import "span.bufo";
+
+import "../../util/arena.bufo";
+import "../../util/lists.bufo";
+import "./bindings.bufo";
+import "./module.bufo";
+import "./metadata.bufo";
+import "./values.bufo";
+import "../LLVM/types.bufo";
+import "./builder.bufo";
+import "./basic_block.bufo";
+import "../LLVM/context.bufo";
+
+import "../../frontend/nodes.bufo";
+import "../../frontend/token.bufo";
+import "../../frontend/context.bufo";
+import "../../middleend/types.bufo";
+import "../../middleend/checker.bufo";
+import "../../backend/irgen.bufo";
+
+struct DebugInfo {
+    diUnit: LLVMMetadata;
+    diFile: LLVMMetadata;
+    diType: LLVMMetadata;
+}
+
+struct LLVMDIBuilder {
+    ref: LLVM::DIBuilderRef;
+}
+
+struct LLVMDbgRecord {
+    ref: LLVM::DbgRecordRef;
+}
+
+func createDIBuilder(mod: LLVMModule) -> LLVMDIBuilder {
+    let di = LLVM::CreateDIBuilder(mod.ref);
+    assert(!LLVM::isNull(di), "Could not create DIBuilder");
+    return LLVMDIBuilder { ref: di };
+}
+
+func disposeDIBuilder(builder: LLVMDIBuilder) {
+    LLVM::DisposeDIBuilder(builder.ref);
+}
+
+func finalizeDIBuilder(builder: LLVMDIBuilder) {
+    LLVM::DIBuilderFinalize(builder.ref);
+}
+
+func createCompileUnit(builder: LLVMDIBuilder, lang: i32, file: LLVMMetadata, producer: SubStr,
+        isOptimized: LLVMBool, flags: SubStr, runtimeVer: u32, splitName: SubStr, kind: i32,
+        dwoid: u32, splitDebugInlining: LLVMBool, debugInfoForProfiling: LLVMBool, sysRoot: SubStr, sdk: SubStr) -> LLVMMetadata {
+    let unit = LLVM::DIBuilderCreateCompileUnit(builder.ref, lang, file.ref, producer.start, producer.len,
+                isOptimized, flags.start, flags.len, runtimeVer, splitName.start, splitName.len, kind, dwoid,
+                splitDebugInlining, debugInfoForProfiling, sysRoot.start, sysRoot.len, sdk.start, sdk.len);
+    assert(!LLVM::isNull(unit), "Could not create debug compile unit");
+    return LLVMMetadata { ref: unit };
+}
+
+func createFile(builder: LLVMDIBuilder, filename: &char, fileLen: usize, dir: &char, dirLen: usize) -> LLVMMetadata {
+    let file = LLVM::DIBuilderCreateFile(builder.ref, filename, fileLen, dir, dirLen);
+    assert(!LLVM::isNull(file), "Could not create debug file");
+    return LLVMMetadata { ref: file };
+}
+
+func createFunction(builder: LLVMDIBuilder, scope: LLVMMetadata, name: SubStr, linkage: SubStr, file: LLVMMetadata, line: u32,
+        type: LLVMMetadata, localToUnit: LLVMBool, isDefinition: LLVMBool, scopeLine: u32, flags: i32, isOptimized: LLVMBool) -> LLVMMetadata {
+    let fn = LLVM::DIBuilderCreateFunction(builder.ref, scope.ref, name.start, name.len, linkage.start, linkage.len,
+            file.ref, line, type.ref, localToUnit, isDefinition, scopeLine, flags, isOptimized);
+    assert(!LLVM::isNull(fn), "Could not create debug function");
+    return LLVMMetadata { ref: fn };
+}
+
+func createParameterVariable(builder: LLVMDIBuilder, scope: LLVMMetadata, name: SubStr, arg: u32, file: LLVMMetadata, line: u32,
+        ty: LLVMMetadata, alwaysPreserve: LLVMBool, flags: i32) -> LLVMMetadata {
+    let p = LLVM::DIBuilderCreateParameterVariable(builder.ref, scope.ref, name.start, name.len, arg, file.ref, line, ty.ref, alwaysPreserve, flags);
+    assert(!LLVM::isNull(p), "Could not create debug parameter");
+    return LLVMMetadata { ref: p };
+}
+func createAutoVariable(builder: LLVMDIBuilder, scope: LLVMMetadata, name: SubStr, file: LLVMMetadata, line: u32,
+        ty: LLVMMetadata, alwaysPreserve: LLVMBool, flags: i32, align: u32) -> LLVMMetadata {
+    let v = LLVM::DIBuilderCreateAutoVariable(builder.ref, scope.ref, name.start, name.len, file.ref, line, ty.ref, alwaysPreserve, flags, align);
+    assert(!LLVM::isNull(v), "Could not create debug variable");
+    return LLVMMetadata { ref: v };
+}
+
+comptime DW_ATE_address         : u32 = 0x01;
+comptime DW_ATE_boolean         : u32 = 0x02;
+comptime DW_ATE_complex_float   : u32 = 0x03;
+comptime DW_ATE_float           : u32 = 0x04;
+comptime DW_ATE_signed          : u32 = 0x05;
+comptime DW_ATE_signed_char     : u32 = 0x06;
+comptime DW_ATE_unsigned        : u32 = 0x07;
+comptime DW_ATE_unsigned_char   : u32 = 0x08;
+comptime DW_ATE_imaginary_float : u32 = 0x09;
+comptime DW_ATE_packed_decimal  : u32 = 0x0a;
+comptime DW_ATE_numeric_string  : u32 = 0x0b;
+comptime DW_ATE_edited          : u32 = 0x0c;
+comptime DW_ATE_signed_fixed    : u32 = 0x0d;
+comptime DW_ATE_unsigned_fixed  : u32 = 0x0e;
+comptime DW_ATE_decimal_float   : u32 = 0x0f;
+comptime DW_ATE_UTF             : u32 = 0x10;
+comptime DW_ATE_UCS             : u32 = 0x11;
+comptime DW_ATE_ASCII           : u32 = 0x12;
+comptime DW_ATE_lo_user         : u32 = 0x80;
+comptime DW_ATE_hi_user         : u32 = 0xff;
+func getEncoding(p: PrimType) -> u32 {
+    match (p) {
+        PrimType::U8    => { return DW_ATE_unsigned; }
+        PrimType::U16   => { return DW_ATE_unsigned; }
+        PrimType::U32   => { return DW_ATE_unsigned; }
+        PrimType::U64   => { return DW_ATE_unsigned; }
+        PrimType::I8    => { return DW_ATE_signed; }
+        PrimType::I16   => { return DW_ATE_signed; }
+        PrimType::I32   => { return DW_ATE_signed; }
+        PrimType::I64   => { return DW_ATE_signed; }
+        PrimType::Usize => { return DW_ATE_unsigned; }
+        PrimType::Any   => { return DW_ATE_address; }
+        PrimType::Bool  => { return DW_ATE_boolean; }
+        PrimType::None  => { unreachable("getEncoding(None)"); }
+        PrimType::Char  => { return DW_ATE_unsigned_char; }
+        PrimType::F32   => { return DW_ATE_float; }
+        PrimType::F64   => { return DW_ATE_float; }
+        _ => { }
+    }
+    unreachable("Exhaustive handling of primitive types in getEncoding"); 
+}
+func getFullName(p: PrimType) -> SubStr {
+    match (p) {
+        PrimType::U8    => { return comptime newSubStrOfStrLit("u8"); }
+        PrimType::U16   => { return comptime newSubStrOfStrLit("u16"); }
+        PrimType::U32   => { return comptime newSubStrOfStrLit("u32"); }
+        PrimType::U64   => { return comptime newSubStrOfStrLit("u64"); }
+        PrimType::I8    => { return comptime newSubStrOfStrLit("i8"); }
+        PrimType::I16   => { return comptime newSubStrOfStrLit("i16"); }
+        PrimType::I32   => { return comptime newSubStrOfStrLit("i32"); }
+        PrimType::I64   => { return comptime newSubStrOfStrLit("i64"); }
+        PrimType::Usize => { return comptime newSubStrOfStrLit("usize"); }
+        PrimType::Any   => { return comptime newSubStrOfStrLit("Any"); }
+        PrimType::Bool  => { return comptime newSubStrOfStrLit("bool"); }
+        PrimType::None  => { return comptime newSubStrOfStrLit("none"); }
+        PrimType::Char  => { return comptime newSubStrOfStrLit("char"); }
+        PrimType::F32   => { return comptime newSubStrOfStrLit("f32"); }
+        PrimType::F64   => { return comptime newSubStrOfStrLit("f64"); }
+        _ => { }
+    }
+    unreachable("Exhaustive handling of primitive types in getFullName"); 
+}
+
+func createSubroutineType(builder: LLVMDIBuilder, diFile: LLVMMetadata, type: &Type) -> LLVMMetadata {
+    match (type) {
+        &Type::Func(args, ret, _) => {
+            let types: &LLVM::MetadataRef = C::malloc(sizeof LLVM::MetadataRef * (args.length + 1));
+            assert(types != null);
+            types[0] = createType(builder, diFile, ret).ref;
+            for (let i: usize = 0; i < args.length; i = i + 1) {
+                types[i + 1] = createType(builder, diFile, args.elements[i]).ref;
+            }
+            let meta = LLVM::DIBuilderCreateSubroutineType(builder.ref, diFile.ref, types, (args.length + 1) as u32, LLVMDIFlagZero);
+            assert(!LLVM::isNull(meta), "Could not create debug info for function type");
+            C::free(types);
+            return LLVMMetadata { ref: meta };
+        }
+        _ => { }
+    }
+    unreachable("createSubroutineType: Expected function type");
+}
+
+func createDebugInfoForPrimitiveType(builder: LLVMDIBuilder, type: &Type) -> LLVMMetadata {
+    let data = LLVMMetadata {};
+    match (type) {
+        &Type::Prim(PrimType::Any) => {
+            let size: u64 = 64;
+            let align: u32 = 64;
+            comptime fullName = newSubStrOfStrLit("any");
+            let meta = LLVM::DIBuilderCreatePointerType(builder.ref, blank, size as u64, align as u32, 0, fullName.start, fullName.len);
+            assert(!LLVM::isNull(meta), "Could not create debug info for Any type");
+            data = LLVMMetadata { ref: meta };
+        }
+        &Type::Prim(PrimType::None) => {
+            comptime fullName = getFullName(PrimType::None);
+            let meta = LLVM::DIBuilderCreateUnspecifiedType(builder.ref, fullName.start, fullName.len);
+            assert(!LLVM::isNull(meta), "Could not create debug info for primitive type");
+            data = LLVMMetadata { ref: meta };
+        }
+        &Type::Prim(prim) => {
+            let fullName = getFullName(prim);
+            let size = getSizeInBits(type);
+            let encoding = getEncoding(prim);
+            let flags = LLVMDIFlagZero;
+            let meta = LLVM::DIBuilderCreateBasicType(builder.ref, fullName.start, fullName.len, size as u64, encoding, flags);
+            assert(!LLVM::isNull(meta), "Could not create debug info for primitive type");
+            data = LLVMMetadata { ref: meta };
+        }
+        _ => {
+            unreachable("createDebugInfoForPrimitiveType: Expected primitive type");
+        }
+    }
+    return data;
+}
+func createDebugInfoForStructType(builder: LLVMDIBuilder, diFile: LLVMMetadata, type: &Type) -> LLVMMetadata {
+    let data = LLVMMetadata {};
+    match (type) {
+        &Type::Struct(decl) => {
+            let file = getParentFile(decl);
+            let line: usize = 0;
+            let col: usize = 0;
+            getLineAndColumnFromSpan(file, &decl.span, &line, &col);
+            let unique = getFullName(decl);
+            let diDecl = file.debugInfo.diFile;
+            let _flags = LLVMDIFlagPublic;
+            let elements: &LLVM::MetadataRef = C::malloc(sizeof LLVM::MetadataRef * decl.context.fieldLength);
+            assert(elements != null);
+            for (let i: usize = 0; i < decl.context.fieldLength; i = i + 1) {
+                let name = getFieldNameAtIndex(&decl.context, i);
+                let fts = getFieldTypeAtIndex(&decl.context, i).typeState;
+                let fieldType = getType(&fts);
+                let fieldDebugType = createType(builder, diFile, fieldType).ref;
+                let fieldLine: usize = 0;
+                let fieldColumn: usize = 0;
+                getLineAndColumnFromSpan(file, &decl.span, &fieldLine, &fieldColumn);
+                let fieldOffset: usize = 0;
+                let fieldSize: usize = 0;
+                let fieldAlign: usize = getAlignmentInBits(fieldType);
+                getFieldOffsetAndSize(decl, i, &fieldOffset, &fieldSize, true);
+                elements[i] = LLVM::DIBuilderCreateMemberType(builder.ref, diDecl.ref, name.content.start, name.content.len,
+                                    diDecl.ref, fieldLine as u32, fieldSize as u64, fieldAlign as u32, fieldOffset as u64,
+                                    LLVMDIFlagZero, fieldDebugType);
+            }
+            let start = decl.name.content.start;
+            let len = decl.name.content.len;
+            let size = getSizeInBits(getType(&decl.typeState));
+            let align = getAlignmentInBits(getType(&decl.typeState));
+            let meta = LLVM::DIBuilderCreateStructType(builder.ref, diDecl.ref, start, len, diDecl.ref, line as u32, size as u64,
+                align as u32, _flags, blank, elements, decl.context.fieldLength as u32, 0, blank, unique.buffer, unique.length);
+            assert(!LLVM::isNull(meta), "Could not create debug info for struct type");
+            C::free(elements);
+            drop(&unique);
+            data = LLVMMetadata { ref: meta };
+            LLVM::ReplaceAllUsesWith(decl.debugInfo.diType.ref, meta);
+            decl.debugInfo.diType = data;
+        }
+        _ => {
+            unreachable("createDebugInfoForStructType: Expected struct type");
+        }
+    }
+    return data;
+}
+func createDebugInfoForUnionType(builder: LLVMDIBuilder, diFile: LLVMMetadata, type: &Type, llvmContext: LLVMContext) -> LLVMMetadata {
+    let data = LLVMMetadata {};
+    match (type) {
+        &Type::Union(decl, _) => {
+            let file = getParentFile(decl);
+            let unique = getFullName(decl);
+            let diDecl = file.debugInfo.diFile;
+            let line: usize = 0;
+            let col: usize = 0;
+            getLineAndColumnFromSpan(file, &decl.span, &line, &col);
+            let flags = LLVMDIFlagZero;
+
+            let tagSize: u64 = 8;
+            if (decl.variants.length >= 256) tagSize = tagSize * 2;
+            let tag = createTagType(builder, diFile, type, line);
+            let elems: &LLVM::MetadataRef = C::malloc(sizeof LLVM::MetadataRef * decl.variants.length);
+            assert(elems != null);
+
+            let maxSize: u64 = 0;
+            let maxAlign: u32 = 8;
+            if (decl.variants.length >= 256) maxAlign = maxAlign * 2;
+            for (let i: usize = 0; i < decl.variants.length; i = i + 1) {
+                let variant = *at(&decl.variants, i);
+                let name = variant.name.content;
+                let variantType = toType(variant);
+                let variantSize = getSizeInBits(variantType) as u64;
+                let variantAlign = getAlignmentInBits(variantType) as u32;
+                if (variantSize > maxSize) maxSize = variantSize;
+                if (variantAlign > maxAlign) maxAlign = variantAlign;
+                let variantDebugType = createUnionVariantType(builder, diFile, decl, variant, line, flags).ref;
+                let variantMember = LLVM::DIBuilderCreateMemberType(builder.ref, diDecl.ref, name.start,
+                                name.len, diFile.ref, line as u32, variantSize, variantAlign, 0, flags, variantDebugType);
+                assert(!LLVM::isNull(variantMember), "Could not create debug info for union variant");
+                elems[i] = variantMember;
+            }
+            let size = getSizeInBits(type) as u64;
+            let align = getAlignmentInBits(type) as u32;
+            assert(maxAlign == align, "Alignment mismatch");
+            assert(maxSize <= size, "Size mismatch");
+            // See FIXME in irgen.bufo UnionInit
+            // let payloadOffset = nextMultipleOf(tagSize as usize, maxAlign as usize) as u64;
+            let payloadOffset = tagSize;
+
+            let meta: LLVM::MetadataRef = blank;
+            if (decl.variants.length > 0) {
+                let _payloadStr = copy(&unique);
+                pushStr(&_payloadStr, "._payload");
+                let payloadStr = copy(&unique);
+                pushStr(&payloadStr, ".payload");
+                let _payload = LLVM::DIBuilderCreateUnionType(builder.ref, diDecl.ref, _payloadStr.buffer, _payloadStr.length,
+                    diFile.ref, line as u32, maxSize, maxAlign, flags, elems, decl.variants.length as u32,
+                    0, _payloadStr.buffer, _payloadStr.length);
+                assert(!LLVM::isNull(_payload), "Could not create debug info for payload");
+                let payload = LLVM::DIBuilderCreateMemberType(builder.ref, diDecl.ref, payloadStr.buffer, payloadStr.length,
+                    diFile.ref, line as u32, maxSize, maxAlign, payloadOffset, flags, _payload);
+                assert(!LLVM::isNull(payload), "Could not create debug info for payload");
+                let comb = [tag.ref, payload];
+                meta = LLVM::DIBuilderCreateStructType(builder.ref, diDecl.ref,
+                                unique.buffer, unique.length, diFile.ref, line as u32,
+                                size, align, flags, blank, &comb[0], 2, 0, blank,
+                                unique.buffer, unique.length);
+                assert(!LLVM::isNull(meta), "Could not create debug info for union");
+                drop(&payloadStr);
+                drop(&_payloadStr);
+            } else {
+                meta = tag.ref;
+            }
+            drop(&unique);
+            C::free(elems);
+            data = LLVMMetadata { ref: meta };
+            LLVM::ReplaceAllUsesWith(decl.debugInfo.diType.ref, meta);
+            decl.debugInfo.diType = data;
+        }
+        _ => {
+            unreachable("createDebugInfoForUnionType: Expected union type");
+        }
+    }
+    return data;
+}
+func createTagType(builder: LLVMDIBuilder, diFile: LLVMMetadata, type: &Type, line: usize) -> LLVMMetadata {
+    match (type) {
+        &Type::Union(decl, _) => {
+            let file = getParentFile(decl);
+            let unique = getFullName(decl);
+            let diDecl = file.debugInfo.diFile;
+            let _tag: LLVMMetadata = createType(builder, diFile, wrap(Type::Prim(PrimType::U8)));
+            let tagSize: u64 = 8;
+            let tagAlign: u32 = 8;
+            if (decl.variants.length >= 256) {
+                _tag = createType(builder, diFile, wrap(Type::Prim(PrimType::U16)));
+                tagSize = 16;
+                tagAlign = 16;
+            }
+            let tag = LLVM::DIBuilderCreateMemberType(builder.ref, diDecl.ref, "tag", 3,
+                            diDecl.ref, line as u32, tagSize, tagAlign, 0, LLVMDIFlagZero, _tag.ref);
+            assert(!LLVM::isNull(tag), "Could not create debug info for union tag");
+            return LLVMMetadata { ref: tag };
+        }
+        _ => {
+            unreachable("createTagType: Expected union type");
+        }
+    }
+    unreachable("createTagType");
+}
+func createUnionVariantType(builder: LLVMDIBuilder, diFile: LLVMMetadata, decl: &ParsedUnionDecl, variant: &ParsedUnionVariant, line: usize, flags: i32) -> LLVMMetadata {
+    let file = getParentFile(decl);
+    let diDecl = file.debugInfo.diFile;
+    let pl = getFullName(decl);
+    pushChar(&pl, '.');
+    {
+        let _v = toString(&variant.name.content);
+        pushString(&pl, &_v);
+        drop(&_v);
+    }
+    let meta: LLVM::MetadataRef = blank;
+    if (variant.fields.length > 0) {
+        assert(variant.names.length != 0, "Parser fills this with names");
+        let inner: &LLVM::MetadataRef = C::malloc(sizeof LLVM::MetadataRef * variant.fields.length);
+        assert(inner != null);
+        for (let i: usize = 0; i < variant.fields.length; i = i + 1) {
+            let fieldNode = *at(&variant.fields, i);
+            let fieldName = *at(&variant.names, i);
+            let name = fieldName.content;
+            let fieldType = getType(&fieldNode.typeState);
+            let fieldDebugType = createType(builder, diFile, fieldType).ref;
+            let fieldLine: usize = 0;
+            let fieldColumn: usize = 0;
+            getLineAndColumnFromSpan(file, &fieldNode.span, &fieldLine, &fieldColumn);
+            let fieldOffset: usize = 0;
+            let fieldSize: usize = 0;
+            let fieldAlign: usize = getAlignmentInBits(fieldType);
+            getFieldOffsetAndSize(variant, i, &fieldOffset, &fieldSize, true);
+            inner[i] = LLVM::DIBuilderCreateMemberType(builder.ref, diDecl.ref, name.start, name.len,
+                            diFile.ref, fieldLine as u32, fieldSize as u64, fieldAlign as u32,
+                            fieldOffset as u64, flags, fieldDebugType);
+        }
+        let variantType = toType(variant);
+        let size = getSizeInBits(variantType) as u64;
+        let align = getAlignmentInBits(variantType) as u32;
+        meta = LLVM::DIBuilderCreateStructType(builder.ref, diDecl.ref, pl.buffer, pl.length,
+                        diFile.ref, line as u32, size, align, flags, blank, inner,
+                        variant.fields.length as u32, 0, blank, pl.buffer, pl.length);
+        C::free(inner);
+    } else {
+        // Dummy Value so the variant appears in the debugger
+        // REVIEW: Is there really no way to create an empty/dummy type with DIBuilder?
+        meta = createType(builder, diFile, wrap(Type::Prim(PrimType::U8))).ref;
+    }
+    assert(!LLVM::isNull(meta), "Could not create debug info for union variant");
+    drop(&pl);
+    return LLVMMetadata { ref: meta };
+}
+
+func createType(builder: LLVMDIBuilder, diFile: LLVMMetadata, type: &Type) -> LLVMMetadata {
+    let dt = at(&debugTypes, getID(type));
+    if (!LLVM::isNull(dt.ref)) return *dt;
+    let data = LLVMMetadata {};
+    match (type) {
+        &Type::Prim(p) => { return *at(&debugTypes, tag(&p) as usize); }
+        &Type::Unknown => {
+            comptime fullName = getFullName(PrimType::None);
+            let meta = LLVM::DIBuilderCreateUnspecifiedType(builder.ref, fullName.start, fullName.len);
+            assert(!LLVM::isNull(meta), "Could not create debug info for unknown type");
+            data = LLVMMetadata { ref: meta };
+        }
+        &Type::Ptr(under) => {
+            let pointee = createType(builder, diFile, under);
+            let size: u64 = 64;
+            let align: u32 = 64;
+            let fullName = comptime newSubStrOfStrLit("ptr");
+            let meta = LLVM::DIBuilderCreatePointerType(builder.ref, pointee.ref, size, align, 0, fullName.start, fullName.len);
+            assert(!LLVM::isNull(meta), "Could not create debug info for pointer type");
+            data = LLVMMetadata { ref: meta };
+        }
+        &Type::Array(under, size) => {
+            let element = createType(builder, diFile, under);
+            let meta = LLVM::DIBuilderCreateArrayType(builder.ref, size as u64, getAlignmentInBits(under) as u32, element.ref, &element.ref, 1);
+            assert(!LLVM::isNull(meta), "Could not create debug info for array type");
+            data = LLVMMetadata { ref: meta };
+        }
+        &Type::Func(_,_,_) => {
+            let size: u64 = 64;
+            let align: u32 = 64;
+            comptime fullName1 = getFullName(PrimType::None);
+            let pointee = LLVM::DIBuilderCreateUnspecifiedType(builder.ref, fullName1.start, fullName1.len);
+            comptime fullName = newSubStrOfStrLit("fnPtr");
+            let meta = LLVM::DIBuilderCreatePointerType(builder.ref, pointee, size, align, 0, fullName.start, fullName.len);
+            assert(!LLVM::isNull(meta), "Could not create debug info for function type");
+            data = LLVMMetadata { ref: meta };
+        }
+        &Type::Struct(decl) => { return decl.debugInfo.diType; }
+        &Type::Union(decl, _) => { return decl.debugInfo.diType; }
+        &Type::Module(_) => {
+            todo_with_msg("createType(LLVMDIBuilder: Type::Module");
+            // comptime fullName = getFullName(PrimType::None);
+            // let meta = LLVM::DIBuilderCreateUnspecifiedType(builder.ref, fullName.start, fullName.len);
+            // assert(!LLVM::isNull(meta), "Could not create debug info for module type");
+            // data = LLVMMetadata { ref: meta };
+        }
+        unknown => {
+            C::fprintf(stderr, "%s createType(LLVMDIBuilder): Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
+            C::exit(2);
+        }
+    }
+    *dt = data;
+    return data;
+}
+
+func setSubprogram(fn: LLVMValue, sp: LLVMMetadata) {
+    LLVM::SetSubprogram(fn.ref, sp.ref);
+}
+func getSubprogram(fn: LLVMValue) -> LLVMMetadata {
+    let s = LLVM::GetSubprogram(fn.ref);
+    assert(!LLVM::isNull(s), "Could not get Subprogram");
+    return LLVMMetadata { ref: s };
+}
+
+func createExpression(diBuilder: LLVMDIBuilder, addr: &usize, length: usize) -> LLVMMetadata {
+    let e = LLVM::DIBuilderCreateExpression(diBuilder.ref, addr, length);
+    assert(!LLVM::isNull(e), "Could not create debug expression");
+    return LLVMMetadata { ref: e };
+}
+
+func createDebugLocation(ctx: LLVMContext, line: u32, col: u32, scope: LLVMMetadata) -> LLVMMetadata {
+    let loc = LLVM::DIBuilderCreateDebugLocation(ctx.ref, line, col, scope.ref, blank);
+    assert(!LLVM::isNull(loc), "Could not create debug location");
+    return LLVMMetadata { ref: loc };
+}
+
+func setCurrentDebugLocation(diBuilder: LLVMDIBuilder, builder: LLVMBuilder, ctx: LLVMContext, fn: LLVMValue, irFunc: &IRFunc, span: Span) {
+    let file = at(&files, span.file);
+    let line: usize = 0;
+    let col: usize = 0;
+    getLineAndColumnFromSpan(file, &span, &line, &col);
+    let sub = getSubprogram(fn);
+    let loc = createDebugLocation(ctx, line as u32, col as u32, sub);
+    LLVM::SetCurrentDebugLocation(builder.ref, loc.ref);
+}
+
+func resetCurrentDebugLocation(diBuilder: LLVMDIBuilder, builder: LLVMBuilder) {
+    LLVM::SetCurrentDebugLocation(builder.ref, blank);
+}
+
+func insertDeclareRecordBefore(diBuilder: LLVMDIBuilder, storage: LLVMValue, info: LLVMMetadata, expr: LLVMMetadata, loc: LLVMMetadata, instr: LLVMValue) -> LLVMDbgRecord {
+    let record = LLVM::DIBuilderInsertDeclareRecordBefore(diBuilder.ref, storage.ref, info.ref, expr.ref, loc.ref, instr.ref);
+    assert(!LLVM::isNull(record), "Could not insert record");
+    return LLVMDbgRecord { ref: record };
+}
+
+func insertDeclareRecordAtEnd(diBuilder: LLVMDIBuilder, storage: LLVMValue, info: LLVMMetadata, expr: LLVMMetadata, loc: LLVMMetadata, block: LLVMBasicBlock) -> LLVMDbgRecord {
+    let record = LLVM::DIBuilderInsertDeclareRecordAtEnd(diBuilder.ref, storage.ref, info.ref, expr.ref, loc.ref, block.ref);
+    assert(!LLVM::isNull(record), "Could not insert record");
+    return LLVMDbgRecord { ref: record };
+}

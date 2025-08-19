@@ -81,7 +81,7 @@ func getFieldOffset(this: &StructContext, name: &SubStr) -> usize {
         if (equals(&f.content, name)) {
             return offset;
         }
-        offset = offset + getSize(t);
+        offset = offset + getSizeInBytes(t);
     }
     unreachable("Expected to find field offset at this point");
 }

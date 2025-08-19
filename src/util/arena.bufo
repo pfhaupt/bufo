@@ -3,6 +3,7 @@ import "libc.bufo";
 import "./span.bufo";
 import "../frontend/nodes.bufo";
 import "../middleend/types.bufo";
+import "../backend/LLVM/metadata.bufo";
 
 struct ArenaBlock {
     elements: Any;
@@ -39,7 +40,7 @@ func last(this: &ArenaBlock) -> Any {
     return at(this, this.length - 1);
 }
 func indexOf(this: &ArenaBlock, elem: Any) -> usize {
-    if (this.elements <= elem && (elem as usize) <= (this.elements as usize) + this.capacity * this.elemSize) {
+    if (this.elements <= elem && (elem as usize) < (this.elements as usize) + this.capacity * this.elemSize) {
         let index: usize = ((elem as usize) - (this.elements as usize)) / this.elemSize;
         assert(index < this.length, "ArenaBlock.indexOf() does not contain the element");
         return index;
@@ -501,6 +502,35 @@ func last(this: &ParsedPatternArena) -> &ParsedPattern {
 }
 func indexOf(this: &ParsedPatternArena, elem: &ParsedPattern) -> usize {
     assert(this.start != null, "ParsedPatternArena.indexOf() called on empty Arena");
+    return indexOf(this.start, elem);
+}
+
+struct LLVMMetadataArena {
+    start: &ArenaBlock;
+    end: &ArenaBlock;
+    length: usize;
+}
+
+func push(this: &LLVMMetadataArena, elem: LLVMMetadata) {
+    if (this.start == null) {
+        this.start = allocateBlock(ARENA_SIZE_HUGE, sizeof LLVMMetadata);
+        assert(this.end == null);
+        this.end = this.start;
+    }
+    push(this.end, &elem, ARENA_SIZE_HUGE);
+    if (this.end.next != null) this.end = this.end.next;
+    this.length = this.length + 1;
+}
+func at(this: &LLVMMetadataArena, index: usize) -> &LLVMMetadata {
+    assert(this.start != null, "LLVMMetadataArena.at() called on empty Arena");
+    return at(this.start, index) as &LLVMMetadata;
+}
+func last(this: &LLVMMetadataArena) -> &LLVMMetadata {
+    assert(this.end != null, "LLVMMetadataArena.last() called on empty Arena");
+    return last(this.end) as &LLVMMetadata;
+}
+func indexOf(this: &LLVMMetadataArena, elem: &LLVMMetadata) -> usize {
+    assert(this.start != null, "LLVMMetadataArena.indexOf() called on empty Arena");
     return indexOf(this.start, elem);
 }
 
