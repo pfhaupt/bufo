@@ -1688,6 +1688,13 @@ func clear(this: &LLVMValueList) {
     this.length = 0;
 }
 
+func initBlank(this: &UsizeList, newCap: usize) {
+    if (this.elements != null) C::free(this.elements);
+    this.elements = C::calloc(newCap, sizeof usize);
+    assert(this.elements != null, "Could not allocate memory in UsizeList.initBlank");
+    this.capacity = newCap;
+    this.length = newCap;
+}
 func push(this: &UsizeList, element: usize) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;

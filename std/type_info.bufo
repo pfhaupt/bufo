@@ -1,0 +1,162 @@
+import "prelude.bufo";
+import "substr.bufo";
+import "libc.bufo";
+
+// TODO: Type aliases like `type TypeID = usize;`
+
+let type_info_table: &TypeInfo = null;
+
+struct TypeInfoTable {
+    elements: &TypeInfo;
+    length: usize;
+    capacity: usize;
+}
+
+func push_entry(table: &TypeInfoTable, info: TypeInfo) {
+    if (table.length >= table.capacity) {
+        let newCap: usize = table.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        table.elements = C::realloc(table.elements, newCap * sizeof TypeInfo);
+        assert(table.elements != null, "generateTypeInfoTable: Could not allocate memory");
+        table.capacity = newCap;
+    }
+    table.elements[table.length] = info;
+    table.length = table.length + 1;
+}
+func index_of(table: &TypeInfoTable, info: &TypeInfo) -> usize {
+    for (let i: usize = 0; i < table.length; i = i + 1) {
+        if (tag(&table.elements[i]) == tag(info) && equals(&get_name(&table.elements[i]), &get_name(info))) {
+            return i;
+        }
+    }
+    return table.length;
+}
+func contains(table: &TypeInfoTable, info: &TypeInfo) -> bool {
+    for (let i: usize = 0; i < table.length; i = i + 1) {
+        if (tag(&table.elements[i]) == tag(info) && equals(&get_name(&table.elements[i]), &get_name(info))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+struct TypeInfoList {
+    elements: &usize;
+    length: usize;
+    capacity: usize;
+}
+func push(this: &TypeInfoList, element: usize) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = C::realloc(this.elements, newCap * sizeof usize);
+        assert(this.elements != null, "Could not allocate memory in TypeInfoList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+struct FieldTypeInfoList {
+    elements: &FieldTypeInfo;
+    length: usize;
+    capacity: usize;
+}
+func push(this: &FieldTypeInfoList, element: FieldTypeInfo) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = C::realloc(this.elements, newCap * sizeof FieldTypeInfo);
+        assert(this.elements != null, "Could not allocate memory in FieldTypeInfoList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+struct FieldTypeInfo {
+    name: SubStr;
+    type: usize;
+    offset_in_bytes: usize;
+}
+
+struct UnionVariantTypeInfoList {
+    elements: &UnionVariantTypeInfo;
+    length: usize;
+    capacity: usize;
+}
+func push(this: &UnionVariantTypeInfoList, element: UnionVariantTypeInfo) {
+    if (this.length >= this.capacity) {
+        let newCap: usize = this.capacity * 2;
+        if (newCap == 0) newCap = 32;
+        this.elements = C::realloc(this.elements, newCap * sizeof UnionVariantTypeInfo);
+        assert(this.elements != null, "Could not allocate memory in UnionVariantTypeInfoList.push");
+        this.capacity = newCap;
+    }
+    this.elements[this.length] = element;
+    this.length = this.length + 1;
+}
+
+union UnionVariantTypeInfo {
+    Empty { name: SubStr },
+    Tuple { name: SubStr, fields: TypeInfoList },
+    Struct { name: SubStr, fields: FieldTypeInfoList },
+}
+
+func get_name(info: &UnionVariantTypeInfo) -> SubStr {
+    match (info) {
+        &UnionVariantTypeInfo::Empty { name } => { return name; }
+        &UnionVariantTypeInfo::Tuple { name, _ } => { return name; }
+        &UnionVariantTypeInfo::Struct { name, _ } => { return name; }
+        _ => { }
+    }
+    unreachable("Exhaustive handling of variant info kinds in get_name()");
+}
+
+union TypeInfo {
+    Unknown,
+    Primitive { name: SubStr, size_in_bytes: usize, align_in_bytes: usize },
+    Pointer   { name: SubStr, underlying: usize },
+    Array     { name: SubStr, size_in_bytes: usize, align_in_bytes: usize, elem: usize, elem_count: usize },
+    Struct    { name: SubStr, size_in_bytes: usize, align_in_bytes: usize, fields: FieldTypeInfoList },
+    Union     { name: SubStr, size_in_bytes: usize, align_in_bytes: usize, variants: UnionVariantTypeInfoList },
+    Function  { name: SubStr, args: TypeInfoList, retType: usize },
+}
+
+func equals(ti1: &TypeInfo, ti2: &TypeInfo) -> bool {
+    if (tag(ti1) != tag(ti2)) return false;
+    return equals(&get_name(ti1), &get_name(ti2));
+}
+
+func get_size(info: &TypeInfo) -> usize {
+    match (info) {
+        &TypeInfo::Primitive { _, size_in_bytes, _ } => { return size_in_bytes; }
+        &TypeInfo::Pointer { .. } => { return 8; }
+        &TypeInfo::Function { .. } => { return 8; }
+        &TypeInfo::Array { _, size_in_bytes, _, _, _ } => { return size_in_bytes; }
+        &TypeInfo::Struct { _, size_in_bytes, _, _ } => { return size_in_bytes; }
+        &TypeInfo::Union { _, size_in_bytes, _, _ } => { return size_in_bytes; }
+        &TypeInfo::Unknown => { unreachable("get_size(TypeInfo::Unknown)"); }
+        _ => { }
+    }
+    unreachable("Exhaustive handling of info kinds in get_size()");
+}
+
+func get_name(info: &TypeInfo) -> SubStr {
+    match (info) {
+        &TypeInfo::Primitive { name, .. } => { return name; }
+        &TypeInfo::Pointer { name, .. } => { return name; }
+        &TypeInfo::Function { name, .. } => { return name; }
+        &TypeInfo::Array { name, .. } => { return name; }
+        &TypeInfo::Struct { name, .. } => { return name; }
+        &TypeInfo::Union { name, .. } => { return name; }
+        &TypeInfo::Unknown => { return comptime newSubStrOfStrLit("<unknown>"); }
+        _ => { }
+    }
+    unreachable("Exhaustive handling of info kinds in get_name()");
+}
+
+struct Data {
+    ptr: Any;
+    info: TypeInfo;
+}
+

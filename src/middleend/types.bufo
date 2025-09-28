@@ -2,6 +2,7 @@ import "prelude.bufo";
 import "libc.bufo";
 import "string.bufo";
 import "substr.bufo";
+import "type_info.bufo";
 import "../bufo.bufo";
 import "../util/arena.bufo";
 import "../util/lists.bufo";
@@ -34,6 +35,16 @@ union PrimType {
     F64,
 }
 comptime PRIM_TYPE_COUNT: usize = 15; // FIXME: When we add a new PrimType we need to update this
+
+func index_of_type(table: &TypeInfoTable, type: &Type) -> usize {
+    for (let i: usize = 0; i < table.length; i = i + 1) {
+        let n = toString(type);
+        let b = equals(&get_name(&table.elements[i]), &asSubStr(&n));
+        drop(&n);
+        if (b) return i;
+    }
+    return table.length;
+}
 
 // TODO: Remove this arena, instead associate types with Nodes?
 let types: TypeArena = blank;
@@ -128,8 +139,28 @@ func getID(this: &Type) -> usize {
     return indexOf(&types, this);
 }
 
+// TODO: Equality in a type system context is kinda stupid
+//       What we want to know is if a type can be converted to another one
+//       where f(A, B) may return true, but f(B, A) false.
 func equals(this: &Type, other: &Type) -> bool {
+    return _equals(this, other, true);
+}
+func _equals(this: &Type, other: &Type, allowData: bool) -> bool {
     // TODO: Tuple expressions
+    if (allowData) {
+        match (this) {
+            &Type::Struct(decl) => {
+                if (decl.isDataDefinition) return true;
+            }
+            _ => { }
+        }
+        match (other) {
+            &Type::Struct(decl) => {
+                if (decl.isDataDefinition) return true;
+            }
+            _ => { }
+        }
+    }
     match (this) {
         &Type::Ptr(typ) => {
             match (other) {
@@ -280,6 +311,15 @@ func isAny(this: &Type) -> bool {
     }
     return false;
 }
+func isData(this: &Type) -> bool {
+    match (this) {
+        &Type::Struct(decl) => {
+            return decl.isDataDefinition;
+        }
+        _ => { }
+    }
+    return false;
+}
 func isPrimitive(this: &Type) -> bool {
     return tag(this) == comptime tag(&Type::Prim);
 }
@@ -351,7 +391,7 @@ func getUnderlyingType(this: &Type, deep: bool) -> &Type {
     }
     return underlying;
 }
-// FIXME: Make toString() accept a buffer, so we don't allocate 20 bytes on the heap 1 million times
+// OPT: Make toString() accept a buffer, so we don't allocate 20 bytes on the heap 1 million times
 func toString(this: &Type) -> String {
     match (this) {
         &Type::Unknown => { return newStringFromStrLit("<unknown>"); }
@@ -616,6 +656,9 @@ func getMaxFloatValue(this: &Type) -> f64 {
 }
 func intoPointer(this: &Type) -> &Type {
     return wrap(Type::Ptr(this));
+}
+func intoArrayType(this: &Type, size: usize) -> &Type {
+    return wrap(Type::Array(this, size));
 }
 
 func copy(this: &Type) -> &Type {

@@ -99,6 +99,16 @@ func beginsWith(this: &SubStr, prefix: &SubStr) -> bool {
     }
     return true;
 }
+func endsWith(this: &SubStr, suffix: &SubStr) -> bool {
+    if (suffix.len > this.len) return false;
+    let offset = this.len - suffix.len;
+    for (let i: usize = 0; i < suffix.len; i = i + 1) {
+        if (this.start[offset + i] != suffix.start[i]) {
+            return false;
+        }
+    }
+    return true;
+}
 func skipUntil(this: &SubStr, pred: func (char) -> bool) {
     while (this.len > 0) {
         if (!pred(this.start[0])) {

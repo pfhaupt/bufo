@@ -2,6 +2,7 @@ import "prelude.bufo";
 import "libc.bufo";
 import "string.bufo";
 import "substr.bufo";
+import "type_info.bufo";
 import "../bufo.bufo";
 import "../util/span.bufo";
 import "../util/hashmaps.bufo";
@@ -34,6 +35,7 @@ func equals(this: &IRReg, other: &IRReg) -> bool {
 }
 
 // NOTE: When you update this list, you must also update the function pointers in the interpreter
+// FIXME: IMPORTANT: Make this an union
 comptime INSTR_INVALID             : usize = 0;
 comptime INSTR_ALLOCA              : usize = 1;
 comptime INSTR_GET_PARAM           : usize = 2;
@@ -883,7 +885,6 @@ func buildIntoIRValue(this: &IRFunc, span: Span, dst: RegIndex, src: RegIndex) {
         src: src,
     });
 }
-
 struct IRScopeEntry {
     name: SubStr;
     ptr: RegIndex;
@@ -919,7 +920,10 @@ func getIdentifierByName(this: &IRScope, name: SubStr) -> &IRScopeEntry {
 struct IRGen {
     lookup: &Lookup;
     globalScope: IRFunc;
+    initRuntime: IRFunc;
     functions: String_IRFuncHashMap;
+    type_info_table: TypeInfoTable;
+    type_info_array_register: RegIndex;
     error: bool;
 }
 func getIdentifierByName(this: &IRGen, function: &IRFunc, name: SubStr, isGlobal: &bool) -> &IRScopeEntry {
@@ -978,6 +982,652 @@ func fillLookup(this: &IRGen, project: &ParsedFile) -> bool {
     }
     return true;
 }
+
+func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile) -> bool {
+    comptime NAME = BUILD_A_KEYWORD("TypeInfo");
+    comptime FILE = BUILD_A_KEYWORD("type_info.bufo");
+    let ti_file = getFileByFileName(FILE);
+    if (ti_file == null) {
+        // If we never imported the file, we can safely assume that we don't need Type Info.
+        return true;
+    }
+    let context = findUnionByNameInFile(this.lookup, &FILE, &NAME);
+    assert(context != null, "generateTypeInfoTable: Could not find union context for TypeInfo");
+
+    let file = getParentFile(context.global);
+    for (let j: usize = 0; j < file.mod.tlis.length; j = j + 1) {
+        let tli: &ParsedTopLevelItem = at(&topLevelItems, *at(&file.mod.tlis, j));
+        if (tli.ignored) continue;
+        if (tli.kind == TLI_VAR_DECL) {
+            generateBytecodeStmt(this, function, at(&stmts, tli.nodeID));
+            // generateBytecode will iterate over this file again,
+            // but we don't want to generate two statements
+            tli.ignored = true;
+        }
+    }
+
+    let table: TypeInfoTable = blank;
+    // Fill table with unique types
+    for (let i: usize = 0; i < types.length; i = i + 1) {
+        let t = at(&types, i);
+        match (t) {
+            &Type::Unknown => {
+                let u = TypeInfo::Unknown;
+                if (!contains(&table, &u)) push_entry(&table, u);
+            }
+            &Type::Prim(prim) => {
+                assert(i < PRIM_TYPE_COUNT, "nope");
+                let name = toString(at(&types, i));
+                push_entry(&table, TypeInfo::Primitive { name: asSubStr(&name), size_in_bytes: getSizeInBytes(t), align_in_bytes: getAlignmentInBytes(t) });
+            }
+            &Type::Ptr(underlying) => {
+                let name = toString(at(&types, i));
+                let p = TypeInfo::Pointer { name: asSubStr(&name) };
+                if (!contains(&table, &p)) push_entry(&table, p);
+            }
+            &Type::Array(elem, len) => {
+                let name = toString(at(&types, i));
+                let a = TypeInfo::Array { name: asSubStr(&name), size_in_bytes: getSizeInBytes(t), align_in_bytes: getAlignmentInBytes(t), elem_count: len };
+                if (!contains(&table, &a)) push_entry(&table, a);
+            }
+            &Type::Func(args, ret, _) => {
+                let name = toString(at(&types, i));
+                let f = TypeInfo::Function { name: asSubStr(&name) };
+                if (!contains(&table, &f)) push_entry(&table, f);
+            }
+            &Type::Struct(decl) => {
+                let name = getFullName(decl);
+                let s = TypeInfo::Struct { name: asSubStr(&name), size_in_bytes: getSizeInBytes(t), align_in_bytes: getAlignmentInBytes(t) };
+                if (!contains(&table, &s)) push_entry(&table, s);
+            }
+            &Type::Union(decl, _) => {
+                let name = getFullName(decl);
+                let u = TypeInfo::Union { name: asSubStr(&name), size_in_bytes: getSizeInBytes(t), align_in_bytes: getAlignmentInBytes(t) };
+                if (!contains(&table, &u)) push_entry(&table, u);
+            }
+            &Type::Module(_) => { }
+            _ => { }
+        }
+    }
+    // Backpatch type references
+    for (let i: usize = 0; i < types.length; i = i + 1) {
+        let t = at(&types, i);
+        match (t) {
+            &Type::Prim(prim) => { }
+            &Type::Ptr(underlying) => {
+                let name = asSubStr(&toString(at(&types, i)));
+                let s = TypeInfo::Pointer { name: name };
+                let ptr_index = index_of(&table, &s);
+                assert(ptr_index != table.length);
+                let ptr_info = &table.elements[ptr_index];
+                assert(tag(ptr_info) == comptime tag(&TypeInfo::Pointer));
+                assert(equals(&name, &get_name(ptr_info)));
+                let underlying_index = index_of_type(&table, underlying);
+                assert(underlying_index != table.length, "Underlying type info does not exist");
+                *ptr_info = TypeInfo::Pointer { name: name, underlying: underlying_index };
+            }
+            &Type::Array(elem, len) => {
+                let name = asSubStr(&toString(at(&types, i)));
+                let a = TypeInfo::Array { name: name };
+                let array_index = index_of(&table, &a);
+                assert(array_index != table.length);
+                let array_info = &table.elements[array_index];
+                assert(tag(array_info) == comptime tag(&TypeInfo::Array));
+                assert(equals(&name, &get_name(array_info)));
+                match (array_info) {
+                    &TypeInfo::Array { _, _, _, elem_index, l } => {
+                        elem_index = index_of_type(&table, elem);
+                        assert(len == l);
+                    }
+                    _ => { unreachable(); }
+                }
+            }
+            &Type::Func(args, ret, attr) => {
+                let name = asSubStr(&toString(at(&types, i)));
+                let f = TypeInfo::Function { name: name };
+                let function_index = index_of(&table, &f);
+                assert(function_index != table.length);
+                let function_info = &table.elements[function_index];
+                assert(tag(function_info) == comptime tag(&TypeInfo::Function));
+                assert(equals(&name, &get_name(function_info)));
+                let arg_list: &TypeInfoList = null;
+                let ret_index: &usize = null;
+                match (function_info) {
+                    &TypeInfo::Function { _, args, ret } => {
+                        arg_list = &args;
+                        ret_index = &ret;
+                    }
+                    _ => { unreachable(); }
+                }
+                if (arg_list.length > 0) continue;
+                for (let j: usize = 0; j < args.length; j = j + 1) {
+                    let index = index_of_type(&table, *at(&args, j));
+                    assert(index != table.length, "Argument type info does not exist");
+                    push(arg_list, index);
+                }
+                *ret_index = index_of_type(&table, ret);
+                assert(*ret_index != table.length, "Return type info does not exist");
+            }
+            &Type::Struct(decl) => {
+                let name = asSubStr(&getFullName(decl));
+                let s = TypeInfo::Struct { name: name };
+                let struct_index = index_of(&table, &s);
+                assert(struct_index != table.length);
+                let struct_info = &table.elements[struct_index];
+                assert(tag(struct_info) == comptime tag(&TypeInfo::Struct));
+                assert(equals(&name, &get_name(struct_info)));
+                let struct_fields: &FieldTypeInfoList = null;
+                match (struct_info) {
+                    &TypeInfo::Struct { name, _, _, fields } => { struct_fields = &fields; }
+                    _ => { unreachable(); }
+                }
+                if (struct_fields.length > 0) continue;
+                for (let j: usize = 0; j < decl.context.fieldLength; j = j + 1) {
+                    let name = getFieldNameAtIndex(&decl.context, j);
+                    let type_decl = getFieldTypeAtIndex(&decl.context, j);
+                    let type = getType(&type_decl.typeState);
+                    let index = index_of_type(&table, type);
+                    assert(index != table.length, "Struct field type info does not exist");
+                    push(struct_fields, FieldTypeInfo {
+                        name: name.content,
+                        type: index,
+                        offset_in_bytes: getFieldOffset(decl, &name.content, false),
+                    });
+                }
+            }
+            &Type::Union(decl, _) => {
+                let name = asSubStr(&getFullName(decl));
+                let u = TypeInfo::Union { name: name };
+                let union_index = index_of(&table, &u);
+                assert(union_index != table.length);
+                let union_info = &table.elements[union_index];
+                assert(tag(union_info) == comptime tag(&TypeInfo::Union));
+                assert(equals(&name, &get_name(union_info)));
+                let variant_list: &UnionVariantTypeInfoList = null;
+                match (union_info) {
+                    &TypeInfo::Union { name, _, _, variants } => { variant_list = &variants; }
+                    _ => { unreachable(); }
+                }
+                if (variant_list.length > 0) continue;
+                for (let j: usize = 0; j < decl.variants.length; j = j + 1) {
+                    let variant = decl.variants.elements[j];
+                    let variant_info = UnionVariantTypeInfo::Empty{};
+                    if (variant.kind == UNION_VARIANT_EMPTY) {
+                        variant_info = UnionVariantTypeInfo::Empty { name: variant.name.content };
+                    } else if (variant.kind == UNION_VARIANT_TUPLE) {
+                        let tuple_fields: TypeInfoList = blank;
+                        for (let k: usize = 0; k < variant.fields.length; k = k + 1) {
+                            let type_decl = variant.fields.elements[k];
+                            let type = getType(&type_decl.typeState);
+                            let index = index_of_type(&table, type);
+                            assert(index != table.length, "Union variant field type info does not exist");
+                            push(&tuple_fields, index);
+                        }
+                        variant_info = UnionVariantTypeInfo::Tuple {
+                            name: variant.name.content,
+                            fields: tuple_fields,
+                        };
+                    } else if (variant.kind == UNION_VARIANT_STRUCT) {
+                        let struct_fields: FieldTypeInfoList = blank;
+                        assert(variant.fields.length == variant.names.length);
+                        for (let k: usize = 0; k < variant.fields.length; k = k + 1) {
+                            let name = variant.names.elements[k];
+                            let type_decl = variant.fields.elements[k];
+                            let type = getType(&type_decl.typeState);
+                            let index = index_of_type(&table, type);
+                            assert(index != table.length, "Union variant field type info does not exist");
+                            let _size: usize = 0;
+                            let offset: usize = 0;
+                            getFieldOffsetAndSize(variant, k, &offset, &_size, false);
+                            push(&struct_fields, FieldTypeInfo {
+                                name: name.content,
+                                type: index,
+                                offset_in_bytes: offset,
+                            });
+                        }
+                        variant_info = UnionVariantTypeInfo::Struct {
+                            name: variant.name.content,
+                            fields: struct_fields,
+                        };
+                    } else {
+                        unreachable();
+                    }
+                    push(variant_list, variant_info);
+                }
+            }
+            &Type::Module(_) => { }
+            _ => { }
+        }
+    }
+    // Remove every type info that's isolated, i.e. not referred to by any other type
+    // Structs and Unions are always included (aka the "root" of the type info tree),
+    // but because the type checker often also generates intermediate, incomplete types
+    // especially in the context of functions, the table contains info for types that
+    // can literally never be accessed anywhere at runtime, no matter how hard the user tries.
+    // So it's safe to remove them, which should reduce the final table size quite a bit.
+    // Algorithm:
+    //   while table.size changes:
+    //     table:  [0 1 2 3 4 5]
+    //     usage:
+    //       1 is a struct
+    //       0 -> 3
+    //       1 -> 0
+    //     count:  [1 1 0 1 0 0]
+    //     remove: [2 4 5]
+    //     actual: [0 1 3]
+    //     for every usage:
+    //       decrement index by how many indices smaller than it were removed
+    //       i.e. 0 -> 3: one index below 3 got removed (2) => 0 -> 2
+    // Fixpoint algorithm
+    //   Does it always terminate?
+    //     break if size unchanged
+    //     two cases:
+    //       we didn't remove an item -> size unchanged, halt
+    //       we removed an item -> finite size got smaller, finite steps until halts
+    //                             because once we have no items, we can no longer
+    //                             remove them, 0 is lower bound
+    let length = table.length;
+    while (true) {
+        let count: UsizeList = blank;
+        initBlank(&count, table.length);
+        for (let i: usize = 0; i < table.length; i = i + 1) {
+            match (&table.elements[i]) {
+                &TypeInfo::Array { _, _, _, elem, _ } => { count.elements[elem] = count.elements[elem] + 1; }
+                &TypeInfo::Pointer { _, under } => { count.elements[under] = count.elements[under] + 1; }
+                &TypeInfo::Function { _, args, ret } => {
+                    let is_unknown = func (table: &TypeInfoTable, index: usize) -> bool {
+                        // TODO: Make let a pattern
+                        match (table.elements[index]) {
+                            TypeInfo::Unknown => { return true; }
+                            _ => { }
+                        }
+                        return false;
+                    };
+                    // The compiler needs incomplete function types to infer proper call candidates
+                    // We don't want those types at runtime.
+                    let needed = true;
+                    for (let j: usize = 0; j < args.length; j = j + 1) {
+                        if (is_unknown(&table, args.elements[j])) {
+                            needed = false;
+                        }
+                    }
+                    needed = needed && !is_unknown(&table, ret);
+                    if (needed) count.elements[i] = count.elements[i] + 1;
+                    for (let j: usize = 0; j < args.length; j = j + 1) {
+                        let elem = args.elements[j];
+                        count.elements[elem] = count.elements[elem] + 1;
+                    }
+                    count.elements[ret] = count.elements[ret] + 1;
+                }
+                &TypeInfo::Struct { _, _, _, fields } => {
+                    count.elements[i] = count.elements[i] + 1;
+                    for (let j: usize = 0; j < fields.length; j = j + 1) {
+                        let elem = fields.elements[j].type;
+                        count.elements[elem] = count.elements[elem] + 1;
+                    }
+                }
+                &TypeInfo::Union { _, _, _, variants } => {
+                    count.elements[i] = count.elements[i] + 1;
+                    for (let j: usize = 0; j < variants.length; j = j + 1) {
+                        let var = &variants.elements[j];
+                        match (var) {
+                            &UnionVariantTypeInfo::Empty { .. } => { },
+                            &UnionVariantTypeInfo::Tuple { _, fields } => {
+                                for (let k: usize = 0; k < fields.length; k = k + 1) {
+                                    let elem = fields.elements[k];
+                                    count.elements[elem] = count.elements[elem] + 1;
+                                }
+                            }
+                            &UnionVariantTypeInfo::Struct { _, fields } => {
+                                for (let k: usize = 0; k < fields.length; k = k + 1) {
+                                    let elem = fields.elements[k].type;
+                                    count.elements[elem] = count.elements[elem] + 1;
+                                }
+                            }
+                            _ => { unreachable(); }
+                        }
+                    }
+                }
+                &TypeInfo::Primitive { .. } => {
+                    count.elements[i] = count.elements[i] + 1;
+                }
+                &TypeInfo::Unknown => { }
+                _ => { unreachable(); }
+            }
+        }
+        let remove: UsizeList = blank;
+        let new_table: TypeInfoTable = blank;
+        for (let i: usize = 0; i < count.length; i = i + 1) {
+            if (count.elements[i] != 0) {
+                push_entry(&new_table, table.elements[i]);
+            } else {
+                push(&remove, i);
+            }
+        }
+        let count_offset = func (removed: &UsizeList, index: usize) -> usize {
+            let offset: usize = 0;
+            // OPT: Binary search, the list is sorted
+            for (let i: usize = 0; i < removed.length; i = i + 1) {
+                let removed_index = removed.elements[i];
+                if (removed_index > index) break;
+                offset = offset + 1;
+            }
+            return offset;
+        };
+        for (let i: usize = 0; i < new_table.length; i = i + 1) {
+            match (&new_table.elements[i]) {
+                &TypeInfo::Array { _, _, _, elem, _ } => { elem = elem - count_offset(&remove, elem); }
+                &TypeInfo::Pointer { _, under } => { under = under - count_offset(&remove, under); }
+                &TypeInfo::Function { _, args, ret } => {
+                    for (let j: usize = 0; j < args.length; j = j + 1) {
+                        args.elements[j] = args.elements[j] - count_offset(&remove, args.elements[j]);
+                    }
+                    ret = ret - count_offset(&remove, ret);
+                }
+                &TypeInfo::Struct { _, _, _, fields } => {
+                    for (let j: usize = 0; j < fields.length; j = j + 1) {
+                        fields.elements[j].type = fields.elements[j].type - count_offset(&remove, fields.elements[j].type);
+                    }
+                }
+                &TypeInfo::Union { _, _, _, variants } => {
+                    for (let j: usize = 0; j < variants.length; j = j + 1) {
+                        let var = &variants.elements[j];
+                        match (var) {
+                            &UnionVariantTypeInfo::Empty { .. } => { },
+                            &UnionVariantTypeInfo::Tuple { _, fields } => {
+                                for (let k: usize = 0; k < fields.length; k = k + 1) {
+                                    fields.elements[k] = fields.elements[k] - count_offset(&remove, fields.elements[k]);
+                                }
+                            }
+                            &UnionVariantTypeInfo::Struct { _, fields } => {
+                                for (let k: usize = 0; k < fields.length; k = k + 1) {
+                                    fields.elements[k].type = fields.elements[k].type - count_offset(&remove, fields.elements[k].type);
+                                }
+                            }
+                            _ => { unreachable(); }
+                        }
+                    }
+                }
+                &TypeInfo::Primitive { .. } => { }
+                &TypeInfo::Unknown => { }
+                _ => { unreachable(); }
+            }
+        }
+        table = new_table;
+        if (table.length == length) break;
+        length = table.length;
+    }
+    let t: &Type = intoArrayType(context.type, table.length);
+    assert(getSizeInBytes(t) == sizeof TypeInfo * table.length, "Size mismatch");
+    let reg: RegIndex = allocateRegister(function, t);
+    buildCreateArray(function, context.global.span, reg);
+    let global_table = allocateRegister(function, intoPointer(t));
+    buildAlloca(function, context.global.span, global_table, getSizeInBytes(t));
+    buildStore(function, context.global.span, global_table, reg);
+
+    let isGlobal = false;
+    let global_type_info_table = getIdentifierByName(this, function, comptime newSubStrOfStrLit("type_info_table"), &isGlobal);
+    assert(global_type_info_table != null, "Could not find global type info table variable");
+    buildStore(function, context.global.span, global_type_info_table.ptr, global_table);
+    this.type_info_table = table;
+    this.type_info_array_register = global_table;
+    return true;
+}
+
+func generateRuntimeTypeInfo(this: &IRGen) -> bool {
+    comptime FILE = BUILD_A_KEYWORD("type_info.bufo");
+    comptime TI = BUILD_A_KEYWORD("TypeInfo");
+    comptime FTI = BUILD_A_KEYWORD("FieldTypeInfo");
+    comptime UVTI = BUILD_A_KEYWORD("UnionVariantTypeInfo");
+    let context = findUnionByNameInFile(this.lookup, &FILE, &TI);
+    assert(context != null, "generateRuntimeInitialization: Could not find union context for TypeInfo");
+    let _fieldTypeInfo = findStructByNameInFile(this.lookup, &FILE, &FTI);
+    assert(_fieldTypeInfo != null, "generateRuntimeInitialization: Could not find context for FieldTypeInfo");
+    let _unionVariantTypeInfo = findUnionByNameInFile(this.lookup, &FILE, &UVTI);
+    assert(_unionVariantTypeInfo != null, "generateRuntimeInitialization: Could not find context for UnionVariantTypeInfo");
+
+    let fieldTypeInfo = _fieldTypeInfo.type;
+    let unionVariantTypeInfo = _unionVariantTypeInfo.type;
+
+    let span = context.global.span;
+
+    let function = &this.initRuntime;
+
+    let typeInfoPtr: &Type = intoPointer(context.type);
+    let u8Type: &Type = wrap(Type::Prim(PrimType::U8));
+    let usizeType: &Type = wrap(Type::Prim(PrimType::Usize));
+    let charPtrType = wrap(Type::Ptr(wrap(Type::Prim(PrimType::Char))));
+    let fieldTypeInfoPtr = wrap(Type::Ptr(fieldTypeInfo));
+
+    let global_table = allocateRegister(function, typeInfoPtr);
+    buildFetchGlobalPointer(function, span, global_table, this.type_info_array_register);
+
+    let elemPtr = allocateRegister(function, typeInfoPtr);
+    let tagReg = allocateRegister(function, u8Type);
+    let index = allocateRegister(function, usizeType);
+    let indices: RegIndexList = blank;
+    push(&indices, index);
+    let reg = allocateRegister(function, charPtrType);
+    let tmp = allocateRegister(function, usizeType);
+    let ftiReg = allocateRegister(function, fieldTypeInfo);
+    let fieldPtr = allocateRegister(function, intoPointer(fieldTypeInfo));
+    let variantPtr = allocateRegister(function, intoPointer(unionVariantTypeInfo));
+
+    let field_index = allocateRegister(function, usizeType);
+    let field_indices: RegIndexList = blank;
+    push(&field_indices, field_index);
+
+    let variant_index = allocateRegister(function, usizeType);
+    let variant_indices: RegIndexList = blank;
+    push(&variant_indices, variant_index);
+
+    let write_at_offset = func (function: &IRFunc, span: Span, ptr: RegIndex, tmp: RegIndex, byte_offset: usize, val: RegIndex) {
+        let usizeType: &Type = wrap(Type::Prim(PrimType::Usize));
+        buildLoadInteger(function, span, tmp, usizeType, byte_offset);
+        buildPtrToInt(function, span, ptr, ptr);
+        buildBinaryOp(function, span, INSTR_INT_ADD, tmp, tmp, ptr);
+        buildIntToPtr(function, span, tmp, tmp);
+        buildStore(function, span, tmp, val);
+    };
+
+    let alloc_list = func (this: &IRGen, function: &IRFunc, span: Span, ti: &Type, len: usize) -> RegIndex {
+        let typ = wrap(Type::Array(ti, len));
+        let arrTypPtr = intoPointer(typ);
+        let pt = intoPointer(ti);
+        let local = allocateRegister(function, pt);
+        let s = getSizeInBytes(ti);
+
+        let arrAlloc = allocateRegister(&this.globalScope, arrTypPtr);
+        buildAlloca(&this.globalScope, span, arrAlloc, s * len);
+        let arrReg = allocateRegister(&this.globalScope, typ);
+        buildLoadBlank(&this.globalScope, span, arrReg, s * len);
+        buildStore(&this.globalScope, span, arrAlloc, arrReg);
+
+        buildFetchGlobalPointer(function, span, local, arrAlloc);
+        arrReg = allocateRegister(function, typ);
+        buildLoadBlank(function, span, arrReg, s * len);
+        buildStore(function, span, local, arrReg);
+        return local;
+    };
+
+    for (let i: usize = 0; i < this.type_info_table.length; i = i + 1) {
+        buildLoadInteger(function, span, index, usizeType, i);
+        buildGetElementPtr(function, span, elemPtr, global_table, indices);
+
+        let info = &this.type_info_table.elements[i];
+        buildLoadInteger(function, span, tagReg, u8Type, tag(info) as usize);
+        write_at_offset(function, span, elemPtr, tmp, 0, tagReg);
+
+        // TODO: The big TODO in generateBytecodeExprUnionInit will also destroy this initialization
+        let name = get_name(info);
+        buildLoadString(function, span, reg, name);
+        write_at_offset(function, span, elemPtr, tmp, 1, reg);
+        buildLoadInteger(function, span, index, usizeType, name.len);
+        write_at_offset(function, span, elemPtr, tmp, 9, index);
+
+        // TODO: TypeInfo contains the same lists in various variants, we could
+        //       create common wrapper functions to emit the correct IR, which would
+        //       reduce the surface area for bugs in case we extend the TypeInfo definition.
+        match (info) {
+            &TypeInfo::Array { _, size_in_bytes, align_in_bytes, elem, elem_count } => {
+                buildLoadInteger(function, span, index, usizeType, size_in_bytes);
+                write_at_offset(function, span, elemPtr, tmp, 17, index);
+                buildLoadInteger(function, span, index, usizeType, align_in_bytes);
+                write_at_offset(function, span, elemPtr, tmp, 25, index);
+                buildLoadInteger(function, span, index, usizeType, elem);
+                write_at_offset(function, span, elemPtr, tmp, 33, index);
+                buildLoadInteger(function, span, index, usizeType, elem_count);
+                write_at_offset(function, span, elemPtr, tmp, 41, index);
+            }
+            &TypeInfo::Pointer { _, underlying } => {
+                buildLoadInteger(function, span, index, usizeType, underlying);
+                write_at_offset(function, span, elemPtr, tmp, 17, index);
+            }
+            &TypeInfo::Function { _, args, ret } => {
+                let local_args = alloc_list(this, function, span, usizeType, args.length);
+                for (let j: usize = 0; j < args.length; j = j + 1) {
+                    buildLoadInteger(function, span, field_index, usizeType, j);
+                    buildGetElementPtr(function, span, fieldPtr, local_args, field_indices);
+
+                    buildLoadInteger(function, span, index, usizeType, args.elements[j]);
+                    write_at_offset(function, span, fieldPtr, tmp, 0, index);
+                }
+                write_at_offset(function, span, elemPtr, tmp, 17, local_args);
+                buildLoadInteger(function, span, field_index, usizeType, args.length);
+                write_at_offset(function, span, elemPtr, tmp, 25, field_index);
+                write_at_offset(function, span, elemPtr, tmp, 33, field_index);
+
+                buildLoadInteger(function, span, field_index, usizeType, ret);
+                write_at_offset(function, span, elemPtr, tmp, 41, field_index);
+            }
+            &TypeInfo::Struct { _, size_in_bytes, align_in_bytes, fields } => {
+                let local_fields = alloc_list(this, function, span, fieldTypeInfo, fields.length);
+
+                for (let j: usize = 0; j < fields.length; j = j + 1) {
+                    buildLoadInteger(function, span, field_index, usizeType, j);
+                    buildGetElementPtr(function, span, fieldPtr, local_fields, field_indices);
+                    let fieldName = fields.elements[j].name;
+
+                    buildLoadString(function, span, reg, fieldName);
+                    write_at_offset(function, span, fieldPtr, tmp, 0, reg);
+                    buildLoadInteger(function, span, index, usizeType, fieldName.len);
+                    write_at_offset(function, span, fieldPtr, tmp, 8, index);
+                    buildLoadInteger(function, span, index, usizeType, fields.elements[j].type);
+                    write_at_offset(function, span, fieldPtr, tmp, 16, index);
+                    buildLoadInteger(function, span, index, usizeType, fields.elements[j].offset_in_bytes);
+                    write_at_offset(function, span, fieldPtr, tmp, 24, index);
+                }
+
+                buildLoadInteger(function, span, field_index, usizeType, size_in_bytes);
+                write_at_offset(function, span, elemPtr, tmp, 17, field_index);
+                buildLoadInteger(function, span, field_index, usizeType, align_in_bytes);
+                write_at_offset(function, span, elemPtr, tmp, 25, field_index);
+                write_at_offset(function, span, elemPtr, tmp, 33, local_fields);
+                buildLoadInteger(function, span, field_index, usizeType, fields.length);
+                write_at_offset(function, span, elemPtr, tmp, 41, field_index);
+                write_at_offset(function, span, elemPtr, tmp, 49, field_index);
+            }
+            &TypeInfo::Union { _, size_in_bytes, align_in_bytes, variants } => {
+                let local_variants = alloc_list(this, function, span, unionVariantTypeInfo, variants.length);
+                for (let j: usize = 0; j < variants.length; j = j + 1) {
+                    let var = &variants.elements[j];
+                    buildLoadInteger(function, span, variant_index, usizeType, j);
+                    buildGetElementPtr(function, span, variantPtr, local_variants, variant_indices);
+
+                    buildLoadInteger(function, span, tagReg, u8Type, tag(var) as usize);
+                    write_at_offset(function, span, variantPtr, tmp, 0, tagReg);
+
+                    let variantName = get_name(var);
+                    buildLoadString(function, span, reg, variantName);
+                    write_at_offset(function, span, variantPtr, tmp, 1, reg);
+                    buildLoadInteger(function, span, index, usizeType, variantName.len);
+                    write_at_offset(function, span, variantPtr, tmp, 9, index);
+
+                    match (var) {
+                        &UnionVariantTypeInfo::Empty { .. } => { },
+                        &UnionVariantTypeInfo::Tuple { _, fields } => {
+                            let local_fields = alloc_list(this, function, span, usizeType, fields.length);
+
+                            for (let k: usize = 0; k < fields.length; k = k + 1) {
+                                buildLoadInteger(function, span, field_index, usizeType, k);
+                                buildGetElementPtr(function, span, fieldPtr, local_fields, field_indices);
+
+                                buildLoadInteger(function, span, index, usizeType, fields.elements[k]);
+                                write_at_offset(function, span, fieldPtr, tmp, 0, index);
+                            }
+
+                            write_at_offset(function, span, variantPtr, tmp, 17, local_fields);
+                            buildLoadInteger(function, span, variant_index, usizeType, fields.length);
+                            write_at_offset(function, span, variantPtr, tmp, 25, variant_index);
+                            write_at_offset(function, span, variantPtr, tmp, 33, variant_index);
+                        }
+                        &UnionVariantTypeInfo::Struct { _, fields } => {
+                            let local_fields = alloc_list(this, function, span, fieldTypeInfo, fields.length);
+
+                            for (let k: usize = 0; k < fields.length; k = k + 1) {
+                                buildLoadInteger(function, span, field_index, usizeType, k);
+                                buildGetElementPtr(function, span, fieldPtr, local_fields, field_indices);
+                                let fieldName = fields.elements[k].name;
+
+                                buildLoadString(function, span, reg, fieldName);
+                                write_at_offset(function, span, fieldPtr, tmp, 0, reg);
+                                buildLoadInteger(function, span, index, usizeType, fieldName.len);
+                                write_at_offset(function, span, fieldPtr, tmp, 8, index);
+                                buildLoadInteger(function, span, index, usizeType, fields.elements[k].type);
+                                write_at_offset(function, span, fieldPtr, tmp, 16, index);
+                                buildLoadInteger(function, span, index, usizeType, fields.elements[k].offset_in_bytes);
+                                write_at_offset(function, span, fieldPtr, tmp, 24, index);
+                            }
+
+                            write_at_offset(function, span, variantPtr, tmp, 17, local_fields);
+                            buildLoadInteger(function, span, variant_index, usizeType, fields.length);
+                            write_at_offset(function, span, variantPtr, tmp, 25, variant_index);
+                            write_at_offset(function, span, variantPtr, tmp, 33, variant_index);
+                        }
+                        _ => { unreachable(); }
+                    }
+                }
+                buildLoadInteger(function, span, variant_index, usizeType, size_in_bytes);
+                write_at_offset(function, span, elemPtr, tmp, 17, variant_index);
+                buildLoadInteger(function, span, variant_index, usizeType, align_in_bytes);
+                write_at_offset(function, span, elemPtr, tmp, 25, variant_index);
+
+                write_at_offset(function, span, elemPtr, tmp, 33, local_variants);
+                buildLoadInteger(function, span, variant_index, usizeType, variants.length);
+                write_at_offset(function, span, elemPtr, tmp, 41, variant_index);
+                write_at_offset(function, span, elemPtr, tmp, 49, variant_index);
+            }
+            &TypeInfo::Primitive { _, size_in_bytes, align_in_bytes } => {
+                buildLoadInteger(function, span, index, usizeType, size_in_bytes);
+                write_at_offset(function, span, elemPtr, tmp, 17, index);
+                buildLoadInteger(function, span, index, usizeType, align_in_bytes);
+                write_at_offset(function, span, elemPtr, tmp, 25, index);
+            }
+            &TypeInfo::Unknown => { }
+            _ => { unreachable(); }
+        }
+    }
+    return true;
+}
+
+func generateRuntimeInitialization(this: &IRGen, project: &ParsedFile) -> bool {
+    this.initRuntime = IRFunc {
+        name: comptime newStringFromStrLit(".init_runtime"),
+    };
+    let scope: usize = enterScope(&this.initRuntime);
+    let entry: IRBlockID = appendBlock(&this.initRuntime);
+    setCurrentBlock(&this.initRuntime, entry);
+
+    comptime FILE = BUILD_A_KEYWORD("type_info.bufo");
+    let ti_file = getFileByFileName(FILE);
+    if (ti_file != null) {
+        if (!generateRuntimeTypeInfo(this)) return false;
+    }
+
+    buildReturnEmpty(&this.initRuntime, project.mod.span);
+    return true;
+}
+
 func generateBytecode(this: &IRGen, project: &ParsedFile) -> bool {
     if (!fillLookup(this, project))
         return false;
@@ -985,6 +1635,10 @@ func generateBytecode(this: &IRGen, project: &ParsedFile) -> bool {
     assert(this.globalScope.scopes.length == 1, "Expected only one valid scope");
     let entry: IRBlockID = appendBlock(&this.globalScope);
     setCurrentBlock(&this.globalScope, entry);
+    if (!generateTypeInfoTable(this, &this.globalScope, project))
+        return false;
+    if (!generateRuntimeInitialization(this, project))
+        return false;
     for (let i: usize = 0; i < files.length; i = i + 1) {
         let file: &ParsedFile = at(&files, i);
         for (let j: usize = 0; j < file.mod.tlis.length; j = j + 1) {
@@ -1002,6 +1656,7 @@ func generateBytecode(this: &IRGen, project: &ParsedFile) -> bool {
     if (*flags.emitBIR) {
         // TODO: Emit to file
         dumpInstructions(&this.globalScope);
+        dumpInstructions(&this.initRuntime);
         let fns = asList(&this.functions);
         for (let i: usize = 0; i < fns.length; i = i + 1) {
             dumpInstructions(at(&fns, i));
@@ -1765,7 +2420,7 @@ func generateBytecodeExpr(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, ne
         &ExprData::UnionInit(init) => {
             return generateBytecodeExprUnionInit(this, function, expr.span, &init, getType(&expr.typeState), needsPtr);
         }
-        &ExprData::As(_,_) => { return generateBytecodeExprAs(this, function, expr); }
+        &ExprData::As(_,_) => { return generateBytecodeExprAs(this, function, expr, needsPtr); }
         &ExprData::Null => { return generateBytecodeExprLiteral(this, function, expr, needsPtr); }
         &ExprData::Blank => {
             let t: &Type = getType(&expr.typeState);
@@ -1789,12 +2444,75 @@ func generateBytecodeExpr(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, ne
             buildLoadFunctionPtr(function, expr.span, dst, funcID);
             return dst;
         }
+        &ExprData::TypeInfo(typeNode) => {
+            let target: &Type = getType(&typeNode.typeState);
+            let typeInfo: &Type = getType(&expr.typeState);
+            let reg = generateTypeInfo(this, function, expr.span, target);
+            if (needsPtr) {
+                let size: usize = getSizeInBytes(typeInfo);
+                let tempAlloc: RegIndex = allocateRegister(function, intoPointer(typeInfo));
+                buildAlloca(function, expr.span, tempAlloc, size);
+                buildStore(function, expr.span, tempAlloc, reg);
+                return tempAlloc;
+            }
+            return reg;
+        }
+        &ExprData::AsData(exprNode) => {
+            let subExpr = generateBytecodeExpr(this, function, exprNode, true);
+            let target: &Type = getType(&exprNode.typeState);
+            let data: &Type = getType(&expr.typeState);
+            let reg = allocateRegister(function, data);
+            buildCreateStruct(function, expr.span, reg);
+            buildInsertValue(function, expr.span, reg, 0, subExpr);
+            {
+                let ti = generateTypeInfo(this, function, expr.span, target);
+                buildInsertValue(function, expr.span, reg, 1, ti);
+            }
+            if (needsPtr) {
+                let size: usize = getSizeInBytes(data);
+                let tempAlloc: RegIndex = allocateRegister(function, intoPointer(data));
+                buildAlloca(function, expr.span, tempAlloc, size);
+                buildStore(function, expr.span, tempAlloc, reg);
+                return tempAlloc;
+            }
+            return reg;
+        }
         unknown => {
             C::fprintf(stderr, "%s generateBytecodeExpr: Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
             C::exit(2);
         }
     }
     unreachable("Exhaustive handling of ops in generateBytecodeExpr");
+}
+
+func generateTypeInfo(this: &IRGen, function: &IRFunc, span: Span, type: &Type) -> RegIndex {
+    let index = index_of_type(&this.type_info_table, type);
+    assert(index < this.type_info_table.length, "generateTypeInfo: Info for type doesn't exist");
+
+    let isGlobal = false;
+    let global_type_info_table = getIdentifierByName(this, function, comptime newSubStrOfStrLit("type_info_table"), &isGlobal);
+    assert(global_type_info_table != null, "generateTypeInfo: Could not find global type info table variable");
+    assert(isGlobal, "generateTypeInfo: Global type info table is not global");
+
+    comptime NAME = BUILD_A_KEYWORD("TypeInfo");
+    comptime FILE = BUILD_A_KEYWORD("type_info.bufo");
+    let context = findUnionByNameInFile(this.lookup, &FILE, &NAME);
+    assert(context != null, "generateTypeInfo: Could not find union context for TypeInfo");
+    let typeInfo = context.type;
+
+    let usizeType: &Type = wrap(Type::Prim(PrimType::Usize));
+    let indexReg = allocateRegister(function, usizeType);
+    let indices: RegIndexList = blank;
+    buildLoadInteger(function, span, indexReg, usizeType, index);
+    push(&indices, indexReg);
+
+    let info = allocateRegister(function, typeInfo);
+    let info_ptr = allocateRegister(function, intoPointer(typeInfo));
+    buildFetchGlobalPointer(function, span, info_ptr, global_type_info_table.ptr);
+    buildLoad(function, span, info_ptr, info_ptr);
+    buildGetElementPtr(function, span, info_ptr, info_ptr, indices);
+    buildLoad(function, span, info, info_ptr);
+    return info;
 }
 
 func generateBytecodeExprBinary(this: &IRGen, function: &IRFunc, expr: &BinaryExpr, type: &Type, needsPtr: bool) -> RegIndex {
@@ -1929,18 +2647,26 @@ func generateBytecodeExprUnionInit(this: &IRGen, function: &IRFunc, span: Span, 
     }
 }
 
-func generateBytecodeExprAs(this: &IRGen, function: &IRFunc, expr: &ParsedExpr) -> RegIndex {
+func generateBytecodeExprAs(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, needsPtr: bool) -> RegIndex {
     let orig: &ParsedExpr = null;
     let typeNode: &ParsedTypeNode = null;
     match (expr.data) {
         ExprData::As(_orig, _type) => { orig = _orig; typeNode = _type; }
         _ => { unreachable(); }
     }
-    let result: RegIndex = generateBytecodeExpr(this, function, orig, false);
     let current: &Type = getType(&orig.typeState);
     let target: &Type = getType(&typeNode.typeState);
+    let result: RegIndex = generateBytecodeExpr(this, function, orig, isData(current));
     let dst: RegIndex = allocateRegister(function, target);
-    if (isInteger(current) && isPointer(target)) {
+    if (isData(current)) {
+        // TODO: Runtime check that whatever we're loading is actually behind the Data
+        let fieldPtr = allocateRegister(function, intoPointer(intoPointer(target)));
+        buildGetFieldPtr(function, expr.span, fieldPtr, result, 0);
+        buildLoad(function, expr.span, fieldPtr, fieldPtr);
+        buildLoad(function, expr.span, dst, fieldPtr);
+    } else if (isData(target)) {
+        unreachable("generateBytecodeExprAs: <something> as Data should've been handled by the Type Checker");
+    } else if (isInteger(current) && isPointer(target)) {
         buildIntToPtr(function, expr.span, dst, result);
     } else if (isPointer(current) && isInteger(target)) {
         buildPtrToInt(function, expr.span, dst, result);
@@ -1986,6 +2712,12 @@ func generateBytecodeExprAs(this: &IRGen, function: &IRFunc, expr: &ParsedExpr) 
         }
     } else {
         unreachable("Exhaustive handling of variations in generateBytecodeExprAs");
+    }
+    if (needsPtr) {
+        let tempAlloc: RegIndex = allocateRegister(function, intoPointer(target));
+        buildAlloca(function, expr.span, tempAlloc, getSizeInBytes(target));
+        buildStore(function, expr.span, tempAlloc, dst);
+        dst = tempAlloc;
     }
     return dst;
 }

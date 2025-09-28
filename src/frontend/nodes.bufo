@@ -97,6 +97,16 @@ let configs: ParsedConfigArena = blank;
 let dlls: DLLArena = blank;
 let patterns: ParsedPatternArena = blank;
 
+func getFileByFileName(name: SubStr) -> &ParsedFile {
+    for (let i: usize = 0; i < files.length; i = i + 1) {
+        let file: &ParsedFile = at(&files, i);
+        if (endsWith(&file.origin, &name)) {
+            return file;
+        }
+    }
+    return null;
+}
+
 func getFileByFilePath(path: SubStr, fileID: &usize) -> bool {
     for (let i: usize = 0; i < files.length; i = i + 1) {
         let file: &ParsedFile = at(&files, i);
@@ -374,6 +384,7 @@ struct ParsedStructDecl {
     context: StructContext;
     typeState: TCState;
     debugInfo: DebugInfo;
+    isDataDefinition: bool;
 }
 func getID(this: &ParsedStructDecl) -> usize {
     return indexOf(&structDecls, this);
@@ -944,6 +955,8 @@ union ExprData {
     True,
     False,
     Func(&ParsedFuncDecl),
+    TypeInfo(&ParsedTypeNode),
+    AsData(&ParsedExpr),
 }
 union UnaryExpr {
     Comptime(&ParsedExpr),

@@ -1235,33 +1235,8 @@ func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupLi
             let exprType = getType(&exprState);
             comptime ASM_CONTEXT = BUILD_A_KEYWORD("ASMContext");
             comptime ASM_FILE = BUILD_A_KEYWORD("asm.bufo");
-            let lookup: TypeLookup = blank;
-            let structs = searchAllFilesForTypeName(&this.lookup, &ASM_CONTEXT);
-            let context: &StructLookup = null;
-            for (let i: usize = 0; i < structs.length; i = i + 1) {
-                let l = at(&structs, i);
-                if (l.kind == TYPE_LOOKUP_STRUCT) {
-                    let s = l.actual as &StructLookup;
-                    let decl = at(&structDecls, s.globalID);
-                    if (!decl.parent.isFile) continue;
-                    let parent = at(&files, decl.parent.id as usize);
-                    let filePath = toString(&parent.origin);
-                    let fileName = getFileName(&filePath);
-                    drop(&filePath);
-                    if (equals(&asSubStr(&fileName), &ASM_FILE)) {
-                        assert(context == null, "How did we find another asm.bufo?");
-                        context = s;
-                    }
-                    drop(&fileName);
-                }
-            }
-            if (context == null) {
-                let loc = toString(&stmt.span);
-                C::fprintf(stderr, "%s: %s: Inline assembly requires data structures which are part of the standard library.\n", loc.buffer, ERR_STR);
-                C::fprintf(stderr, "%s: %s: Please import `asm.bufo` and try again.\n", loc.buffer, NOTE_STR);
-                drop(&loc);
-                return newTCStateFailure(ERROR_FILE_MISSING);
-            }
+            let context = findStructByNameInFile(&this.lookup, &ASM_FILE, &ASM_CONTEXT);
+            assert(context != null, "typeCheckStmt: Could not find struct context for ASMContext");
             match (exprType) {
                 &Type::Func(params, ret, _) => {
                     if (!equals(ret, context.type)) {
@@ -1691,7 +1666,7 @@ func typeCheckExpr(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupLi
             state = newTCStateType(wrap(Type::Prim(PrimType::Usize)));
         }
         &ExprData::StructInit(init) => { state = typeCheckExprStructInit(this, &init, scopes); }
-        &ExprData::As(expr, type) => { state = typeCheckExprAs(this, expr, type, scopes); }
+        &ExprData::As(curr, type) => { state = typeCheckExprAs(this, expr, curr, type, scopes); }
         &ExprData::Null => { state = newTCStatePleaseInfer(); }
         &ExprData::Blank => { state = newTCStatePleaseInfer(); }
         &ExprData::True => { state = newTCStateType(wrap(Type::Prim(PrimType::Bool))); }
@@ -1709,6 +1684,25 @@ func typeCheckExpr(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupLi
             leaveAnonFunc(this);
             drop(&_scopes);
         }
+        &ExprData::TypeInfo(type) => {
+            let typeState: TCState = typeCheckTypeNode(this, type);
+            if (isError(&typeState)) return typeState;
+            comptime NAME = BUILD_A_KEYWORD("TypeInfo");
+            comptime FILE = BUILD_A_KEYWORD("type_info.bufo");
+            let context = findUnionByNameInFile(&this.lookup, &FILE, &NAME);
+            assert(context != null, "typeCheckExpr: Could not find union context for TypeInfo");
+            state = newTCStateType(context.type);
+        }
+        &ExprData::AsData(subExpr) => {
+            let typeState: TCState = typeCheckExpr(this, subExpr, scopes);
+            if (isError(&typeState)) return typeState;
+            if (wantsInfer(&typeState)) todo_with_msg("as_data infer");
+            comptime NAME = BUILD_A_KEYWORD("Data");
+            comptime FILE = BUILD_A_KEYWORD("type_info.bufo");
+            let context = findStructByNameInFile(&this.lookup, &FILE, &NAME);
+            assert(context != null, "typeCheckExpr: Could not find struct context for Data");
+            state = newTCStateType(context.type);
+        }
         unknown => {
             C::fprintf(stderr, "%s typeCheckExpr: Unhandled Expression with tag %hhu!\n", FATAL_STR, tag(unknown));
             C::exit(2);
@@ -1719,23 +1713,30 @@ func typeCheckExpr(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupLi
     return state;
 }
 
-func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, type: &ParsedTypeNode, scopes: &ScopeLookupList) -> TCState {
-    let exprState: TCState = typeCheckExpr(this, expr, scopes);
+func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, curr: &ParsedExpr, type: &ParsedTypeNode, scopes: &ScopeLookupList) -> TCState {
+    let exprState: TCState = typeCheckExpr(this, curr, scopes);
     let typeState: TCState = typeCheckTypeNode(this, type);
     if (isError(&exprState)) return exprState;
     if (isError(&typeState)) return typeState;
     assert(isType(&typeState), "typeCheckExprAs Type is not a Type");
     let typeType: &Type = getType(&typeState);
-    if (wantsInfer(&exprState)) exprState = inferTypeOntoExpr(this, expr, typeType, scopes);
+    if (wantsInfer(&exprState)) exprState = inferTypeOntoExpr(this, curr, typeType, scopes);
     if (isError(&exprState)) return exprState;
     assert(isType(&exprState), "Expected <expr> in `<expr> as <type>` to have a valid type after infer");
     let exprType: &Type = getType(&exprState);
-    if (isPointer(exprType) && isPointer(typeType)) {
+    if (isData(exprType) && isData(typeType)) {
+        todo_with_msg("Data as Data???");
+    } else if (isData(exprType)) {
+        // Data as <Something> is allowed
+    } else if (isData(typeType)) {
+        // <Something> as Data is allowed
+        expr.data = ExprData::AsData(curr);
+    } else if (isPointer(exprType) && isPointer(typeType)) {
         // PTR as PTR is allowed
     } else if (isFunction(exprType) && isFunction(typeType)) {
         // Function as Function is allowed
         if (*flags.warnExtra) {
-            let loc = toString(&expr.span);
+            let loc = toString(&curr.span);
             let from = toString(exprType);
             let to = toString(typeType);
             C::fprintf(stderr, "%s: %s: Casting from type %s to type %s.\n",
@@ -1747,7 +1748,7 @@ func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, type: &ParsedTypeNod
     } else if (isFunction(exprType) && isAny(typeType)) {
         // Function as Any is allowed
         if (*flags.warnExtra) {
-            let loc = toString(&expr.span);
+            let loc = toString(&curr.span);
             let from = toString(typeType);
             C::fprintf(stderr, "%s: %s: Casting from type %s to Any.\n",
                 loc.buffer, WARN_STR, from.buffer);
@@ -1757,7 +1758,7 @@ func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, type: &ParsedTypeNod
     } else if (isAny(exprType) && isFunction(typeType)) {
         // Any as Function is allowed
         if (*flags.warnExtra) {
-            let loc = toString(&expr.span);
+            let loc = toString(&curr.span);
             let to = toString(typeType);
             C::fprintf(stderr, "%s: %s: Casting from Any to type %s.\n",
                 loc.buffer, WARN_STR, to.buffer);
@@ -1774,7 +1775,7 @@ func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, type: &ParsedTypeNod
          * }
          */
         if (getSizeInBytes(typeType) != getSizeInBytes(exprType)) {
-            let loc = toString(&expr.span);
+            let loc = toString(&curr.span);
             let from = toString(exprType);
             let to = toString(typeType);
             C::fprintf(stderr, "%s: %s: Casting pointer of type %s to integer of type %s.\n",
@@ -1785,7 +1786,7 @@ func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, type: &ParsedTypeNod
         }
     } else if (isInteger(exprType) && isPointer(typeType)) {
         if (getSizeInBytes(typeType) != getSizeInBytes(exprType)) {
-            let loc = toString(&expr.span);
+            let loc = toString(&curr.span);
             let from = toString(exprType);
             let to = toString(typeType);
             C::fprintf(stderr, "%s: %s: Casting integer of type %s to pointer of type %s.\n",
@@ -1795,12 +1796,12 @@ func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, type: &ParsedTypeNod
             drop(&loc);
         }
     } else if (!isPrimitive(typeType)) {
-        return reportNonPrimitiveCast(this, expr.span, exprType, typeType);
+        return reportNonPrimitiveCast(this, curr.span, exprType, typeType);
     } else if (!isPrimitive(exprType)) {
-        return reportNonPrimitiveCast(this, expr.span, exprType, typeType);
+        return reportNonPrimitiveCast(this, curr.span, exprType, typeType);
     }
     if (getSizeInBytes(typeType) < getSizeInBytes(exprType) && *flags.warnExtra) {
-        let loc: String = toString(&expr.span);
+        let loc: String = toString(&curr.span);
         let tName: String = toString(typeType);
         let oName: String = toString(exprType);
         C::fprintf(stderr, "%s: %s: Lossy type cast: Target type (%s) is smaller than original type (%s).\n",
@@ -1934,17 +1935,22 @@ func typeCheckExprCall(this: &TypeChecker, call: &CallExpr, scopes: &ScopeLookup
                 return reportArgumentCountMismatch(this, call.span, baseType, args.length);
             }
             for (let i: usize = 0; i < params.length; i = i + 1) {
-                let arg = *at(args, i);
+                let arg = at(args, i);
                 let paramType = *at(&params, i);
-                let argState: TCState = typeCheckExpr(this, arg, scopes);
+                let argState: TCState = typeCheckExpr(this, *arg, scopes);
                 if (isError(&argState)) return argState;
                 if (wantsInfer(&argState)) {
-                    argState = inferTypeOntoExpr(this, arg, paramType, scopes);
+                    argState = inferTypeOntoExpr(this, *arg, paramType, scopes);
                     if (isError(&argState)) return argState;
                 }
                 let argType = getType(&argState);
-                if (!equals(argType, paramType)) {
-                    reportTypeMismatch(this, arg.span, paramType, argType);
+                if (!isData(argType) && isData(paramType)) {
+                    *arg = newParsedExpr((*arg).span, ExprData::AsData(*arg));
+                    let newState = typeCheckExpr(this, *arg, scopes);
+                    if (isError(&newState)) return newState;
+                    assert(isType(&newState), "idk if this is always the case");
+                } else if (!equals(argType, paramType)) {
+                    reportTypeMismatch(this, (*arg).span, paramType, argType);
                 }
             }
             call.retType = ret;
@@ -2716,15 +2722,28 @@ func tryInferTypeOntoIdent(this: &TypeChecker, ident: &IdentExpr, type: &Type, s
             checkImport: true,
             checkModule: false,
             checkParent: true,
+            allowData: false,
         };
         let functions = resolveAllFunctionsWithSignature(this.currentModule, &ident.name, type, config);
         if (functions.length == 0) {
-            if (checkOnly) {
-                tid = newTCStateFailure(ERROR_NO_SUCH_FUNCTION);
+            config.allowData = true;
+            functions = resolveAllFunctionsWithSignature(this.currentModule, &ident.name, type, config);
+            if (functions.length == 0) {
+                if (checkOnly) {
+                    tid = newTCStateFailure(ERROR_NO_SUCH_FUNCTION);
+                } else {
+                    let all = resolveFunctionByName(this.currentModule, &ident.name);
+                    tid = reportNoFunctionCallCandidate(this, ident.name, type, &all);
+                    drop(&all);
+                }
+            } else if (functions.length == 1) {
+                let f = at(&functions, 0);
+                if (!checkOnly) {
+                    ident.origID = f.globalID;
+                }
+                tid = f.fnType;
             } else {
-                let all = resolveFunctionByName(this.currentModule, &ident.name);
-                tid = reportNoFunctionCallCandidate(this, ident.name, type, &all);
-                drop(&all);
+                tid = newTCStatePleaseInfer();
             }
         } else if (functions.length == 1) {
             let f = at(&functions, 0);

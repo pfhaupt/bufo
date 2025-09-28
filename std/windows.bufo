@@ -45,7 +45,6 @@ import "string.bufo";
     }
 
     if (exitStatus != 0) {
-        C::fprintf(stderr, "[ERROR] Command exited with exit code %#010x\n", exitStatus);
         return false;
     }
 

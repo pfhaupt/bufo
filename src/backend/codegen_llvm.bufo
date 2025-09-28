@@ -8,10 +8,12 @@ import "../util/span.bufo";
 import "../util/lists.bufo";
 import "../util/hashmaps.bufo";
 import "../util/arena.bufo";
+import "../frontend/lexer.bufo";
 import "../frontend/nodes.bufo";
 import "../frontend/context.bufo";
 import "../middleend/types.bufo";
 import "../middleend/checker.bufo";
+import "../middleend/lookup.bufo";
 import "./irgen.bufo";
 import "./interp.bufo";
 import "./LLVM/bindings.bufo";
@@ -189,11 +191,13 @@ func generateExecutable(this: &LLVMCodegen, outPath: SubStr, argc: i32, argv: &&
     for (let i: usize = 0; i < fns.length; i = i + 1) {
         generateLLVMFunctionHeader(this, at(&fns, i));
     }
+    if (!generateRuntimeInitialization(this, &this.irGen.initRuntime)) return false;
     if (!generateEntryPoint(this)) return false;
     if (!generateGlobal(this, &this.irGen.globalScope)) return false;
+    if (!_generateFunction(this, &this.irGen.initRuntime)) return false;
     for (let i: usize = 0; i < fns.length; i = i + 1) {
         let f: &IRFunc = at(&fns, i);
-        if (!generateFunction(this, i, f)) return false;
+        if (!generateFunction(this, f)) return false;
     }
     if (*flags.debug) {
         // TODO: Delete old debug info
@@ -249,6 +253,36 @@ func generateExecutable(this: &LLVMCodegen, outPath: SubStr, argc: i32, argv: &&
     }
     return true;
 }
+func generateRuntimeInitialization(this: &LLVMCodegen, initRuntime: &IRFunc) -> bool {
+    let rt_type = wrap(Type::Func(blank, wrap(Type::Prim(PrimType::None)), blank));
+    let llvmFuncType = generateLLVMFunctionType(this, rt_type);
+    let llvmFuncValue = addFunction(&this.llvmModule, asSubStr(&initRuntime.name), llvmFuncType);
+    if (*flags.debug) {
+        let file: &ParsedFile = null;
+        for (let i: usize = 0; i < files.length; i = i + 1) {
+            let f = at(&files, i);
+            if (endsWith(&f.origin, &asSubStr(flags.file))) {
+                file = f;
+                break;
+            }
+        }
+        assert(file != null);
+        let line: usize = 0;
+        let col: usize = 0;
+        getLineAndColumnFromSpan(file, &initRuntime.span, &line, &col);
+        let linkage = asSubStr(&initRuntime.name);
+        let diFile = file.debugInfo.diFile;
+        let diUnit = file.debugInfo.diUnit;
+        assert(!LLVM::isNull(diFile.ref), "DebugInfo File is null");
+        assert(!LLVM::isNull(diUnit.ref), "DebugInfo Unit is null");
+        let sp = createFunction(this.llvmDIBuilder, diUnit, asSubStr(&initRuntime.name), linkage, diFile, line as u32,
+            createSubroutineType(this.llvmDIBuilder, diFile, rt_type), newLLVMBool(false),
+            newLLVMBool(true), line as u32, LLVMDIFlagPrototyped, newLLVMBool(*flags.opt));
+        setSubprogram(llvmFuncValue, sp);
+    }
+    initRuntime.llvmFunc = llvmFuncValue;
+    return true;
+}
 func generateEntryPoint(this: &LLVMCodegen) -> bool {
     if (*flags.noEntry) return true;
     // FIXME: Currently we hardcode the entry point.
@@ -274,6 +308,15 @@ func generateEntryPoint(this: &LLVMCodegen) -> bool {
     let entry: LLVMBasicBlock = appendBasicBlock(&this.llvmContext, main, newSubStrOfStrLit("entry"));
     positionAtEnd(&this.llvmBuilder, entry);
     let args: LLVMValueList = blank;
+    {
+        comptime rt_name = newSubStrOfStrLit(".init_runtime");
+        assert(hasFunction(&this.llvmModule, rt_name), "Could not find .init_runtime");
+        let runtime_func: LLVMValue = getFunction(&this.llvmModule, rt_name);
+        let _retType: LLVMType = createVoidType(&this.llvmContext);
+        let _params: LLVMTypeList = blank;
+        let _retFnType: LLVMType = intoFunctionType(&_retType, _params, false);
+        buildCall(&this.llvmBuilder, runtime_func, _retFnType, blank, _retType, newSubStrOfStrLit("entry"));
+    }
     push(&args, getNthParam(&main, 0));
     push(&args, getNthParam(&main, 1));
     let v: LLVMValue = buildCall(&this.llvmBuilder, mainFunc, retFnType, args, retType, newSubStrOfStrLit("entry"));
@@ -379,8 +422,7 @@ func getLLVMTypeSize(this: &LLVMCodegen, typ: &LLVMType) -> usize {
     return s1;
 }
 
-func generateFunction(this: &LLVMCodegen, index: usize, irFunc: &IRFunc) -> bool {
-    if (isExtern(irFunc)) return true;
+func _generateFunction(this: &LLVMCodegen, irFunc: &IRFunc) -> bool {
     let llvmFuncValue: LLVMValue = irFunc.llvmFunc;
     assert(!LLVM::isNull(llvmFuncValue.ref));
     let blocks: LLVMBasicBlockList = blank;
@@ -402,6 +444,11 @@ func generateFunction(this: &LLVMCodegen, index: usize, irFunc: &IRFunc) -> bool
     }
     popRegisterStack(this.interp, irFunc.span, funcSize);
     return true;
+}
+
+func generateFunction(this: &LLVMCodegen, irFunc: &IRFunc) -> bool {
+    if (isExtern(irFunc)) return true;
+    return _generateFunction(this, irFunc);
 }
 func generateBlock(
     this: &LLVMCodegen,
@@ -1007,7 +1054,7 @@ func generateLLVMValueFromComptimeValue(this: &LLVMCodegen, typ: &Type, start: &
             let byte = wrap(Type::Prim(smol));
             {
                 let tag = generateLLVMValueFromComptimeValue(this, byte, start);
-                buildInsertValue(&this.llvmBuilder, union, tag, 0, "comptime_union_tag");
+                union = buildInsertValue(&this.llvmBuilder, union, tag, 0, "comptime_union_tag");
             }
             {
                 // FIXME: The line below fails LLVM validation
@@ -1020,7 +1067,7 @@ func generateLLVMValueFromComptimeValue(this: &LLVMCodegen, typ: &Type, start: &
                 }
                 let byt = wrap(Type::Prim(PrimType::U8));
                 let data = generateLLVMValueFromComptimeValue(this, wrap(Type::Array(byt, dataSize)), offset);
-                buildInsertValue(&this.llvmBuilder, union, data, 1, "comptime_union_tag");
+                union = buildInsertValue(&this.llvmBuilder, union, data, 1, "comptime_union_tag");
             }
             return union;
         }

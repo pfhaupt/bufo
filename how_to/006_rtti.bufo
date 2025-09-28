@@ -1,0 +1,174 @@
+// Bufo has support for runtime type information, short RTTI. There are currently two mechanisms
+// that expose RTTI:
+// 1. A direct call to `type_info(<type>)`, which returns you the type information of the specified type.
+// 2. Casting any expression to type `Data`, both implicitly and explicitly.
+
+// All relevant data types and functions are defined in type_info.bufo
+import "type_info.bufo"; // Data + TypeInfo
+
+import "prelude.bufo";   // assert
+import "libc.bufo";      // printf
+
+struct Foo {
+    a: i32;
+    b: i32;
+    c: &Bar;
+}
+
+struct Bar {
+    a: f32;
+    b: func () -> i32;
+    c: Foo;
+}
+
+union Baz {
+    Foo(Foo),
+    Bar { b: Bar },
+}
+
+// REVIEW: Maybe move this to std/type_info.bufo?
+func print_info_for_value(d: Data) {
+    // Data itself stores two things: A pointer to some value, and the associated type information.
+    // Using this type information, you can then interpret this pointer in any way you want.
+    C::printf("The original value is located at address %p\n", d.ptr);
+    print_type_info(d.info);
+}
+
+func print_type_info(ti: TypeInfo) {
+    match (ti) {
+        TypeInfo::Struct { name, size, align, fields } => {
+            C::printf("Struct `%.*s` passed!\n", name.len, name.start);
+            C::printf("Struct has a size of %llu bytes and an alignment of %llu bytes\n", size, align);
+            C::printf("Struct has %llu fields!\n", fields.length);
+            for (let i: usize = 0; i < fields.length; i = i + 1) {
+                let fi = fields.elements[i];
+                let f = &type_info_table[fi.type];
+                let n1 = fi.name;
+                let n2 = get_name(f);
+                C::printf(" -> Field `%.*s` with type `%.*s`\n", n1.len, n1.start, n2.len, n2.start);
+            }
+        }
+        TypeInfo::Union { name, size, align, variants } => {
+            C::printf("Union `%.*s` passed!\n", name.len, name.start);
+            C::printf("Union has a size of %llu bytes and an alignment of %llu bytes\n", size, align);
+            C::printf("Union has %llu variants!\n", variants.length);
+            for (let i: usize = 0; i < variants.length; i = i + 1) {
+                let vi = &variants.elements[i];
+                match (vi) {
+                    &UnionVariantTypeInfo::Empty { name } => {
+                        C::printf(" -> Empty Variant with name `%.*s`\n", name.len, name.start);
+                    }
+                    &UnionVariantTypeInfo::Tuple { name, fields } => {
+                        C::printf(" -> Tuple Variant with name `%.*s`\n", name.len, name.start);
+                        for (let j: usize = 0; j < fields.length; j = j + 1) {
+                            let f = &type_info_table[fields.elements[j]];
+                            let n2 = get_name(f);
+                            C::printf("    -> Element %llu with type `%.*s`\n", j, n2.len, n2.start);
+                        }
+                    }
+                    &UnionVariantTypeInfo::Struct { name, fields } => {
+                        C::printf(" -> Struct Variant with name `%.*s`\n", name.len, name.start);
+                        for (let j: usize = 0; j < fields.length; j = j + 1) {
+                            let fi = fields.elements[j];
+                            let f = &type_info_table[fi.type];
+                            let n1 = fi.name;
+                            let n2 = get_name(f);
+                            C::printf("    -> Field `%.*s` with type `%.*s`\n", n1.len, n1.start, n2.len, n2.start);
+                        }
+                    }
+                    _ => { }
+                }
+            }
+        }
+        TypeInfo::Primitive { name, size, align } => {
+            C::printf("Primitive `%.*s` passed!\n", name.len, name.start);
+            C::printf("Primitive has a size of %llu bytes and an alignment of %llu bytes\n", size, align);
+        }
+        TypeInfo::Function { name, args, retType } => {
+            // Internally, function types are anonymous and not attached to any identifier.
+            // The "name" of a function is the result of the internal call to Type.toString().
+            C::printf("Function `%.*s` passed!\n", name.len, name.start);
+            for (let i: usize = 0; i < args.length; i = i + 1) {
+                let a = &type_info_table[args.elements[i]];
+                let n = get_name(a);
+                C::printf(" -> Parameter %llu with type `%.*s`\n", i, n.len, n.start);
+            }
+            let r = &type_info_table[retType];
+            let n = get_name(r);
+            C::printf(" -> Returns type `%.*s`\n", n.len, n.start);
+        }
+        ti => {
+            let name = get_name(&ti);
+            C::printf("Can't print_value info about %.*s yet!\n", name.len, name.start);
+        }
+    }
+    C::printf("\n");
+}
+
+// RTTI allows us to define pseudo-generic functions. While bufo doesn't have traditional
+// generic functions and data types, we can still use type information to simulate that.
+func println_value(d: Data) {
+    print_value(d);
+    C::printf("\n");
+}
+func print_value(d: Data) {
+    // Note: For demonstration purposes, we simplify the implementation of print_value()
+    match (d.info) {
+        TypeInfo::Struct { name, _, _, fields } => {
+            C::printf("%.*s {", name.len, name.start);
+            for (let i: usize = 0; i < fields.length; i = i + 1) {
+                let f = &fields.elements[i];
+                if (i > 0) C::printf(",");
+                C::printf(" %.*s: ", f.name.len, f.name.start);
+                // You can also construct `Data` manually.
+                let field_ptr = (d.ptr as usize + f.offset_in_bytes) as Any;
+                print_value(Data { ptr: field_ptr, info: type_info_table[f.type] });
+            }
+            C::printf(" }");
+        }
+        TypeInfo::Primitive { name, size, align } => {
+            assert(C::strcmp(name.start, "i32") == 0, "The demonstration expects an i32.");
+            assert(size == 4 && align == 4);
+            // Data can be casted to any type you want. The compiler does not validate the
+            // type, this is all handled at runtime. So only do that when you're sure that
+            // the type matches, for example as we are here.
+            C::printf("%d", d as i32);
+            // The line above is equivalent to this version:
+            // C::printf("%d", *(d.ptr as &i32));
+        }
+        TypeInfo::Pointer { _, _ } => {
+            C::printf("%p", d as Any);
+        }
+        _ => { unreachable("The demonstration does not expect any other type information."); }
+    }
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    // The straightforward way of getting type information is by using the keyword `type_info`.
+    print_type_info(type_info(Baz));
+    print_type_info(type_info(i32));
+    C::printf("------------------------------------------------------------\n\n");
+
+    let bar: Bar = blank;
+    let foo = Foo {
+        a: 98,
+        b: -12,
+        c: &bar,
+    };
+    let baz = Baz::Foo(foo);
+    let int: i32 = 34;
+
+    // Every value can be implicitly casted to a value of type Data, if no other possible overload exists.
+    print_info_for_value(foo);
+    print_info_for_value(int);
+    C::printf("------------------------------------------------------------\n\n");
+
+    // You can also inspect function values.
+    print_type_info(type_info(func (Foo, Bar) -> Baz));
+    print_info_for_value(main);
+    C::printf("------------------------------------------------------------\n\n");
+
+    println_value(foo);
+    println_value(int);
+    return 0;
+}

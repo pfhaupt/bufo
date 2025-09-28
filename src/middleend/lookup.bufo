@@ -75,6 +75,55 @@ func getTypeLookupForType(this: &Lookup, typ: &Type) -> TypeLookup {
     unreachable("Lookup.getTypeLookupForType got non-struct type");
 }
 
+// OPT: Why dont we just get the context of the single file we're interested in, instead of
+//      looking through *all* files and directly discarding 99.9% of contexts
+func findStructByNameInFile(this: &Lookup, file: &SubStr, name: &SubStr) -> &StructLookup {
+    let structs = searchAllFilesForTypeName(this, name);
+    let context: &StructLookup = null;
+    for (let i: usize = 0; i < structs.length; i = i + 1) {
+        let l = at(&structs, i);
+        if (l.kind == TYPE_LOOKUP_STRUCT) {
+            let s = l.actual as &StructLookup;
+            let decl = at(&structDecls, s.globalID);
+            if (!decl.parent.isFile) continue;
+            let parent = at(&files, decl.parent.id as usize);
+            let filePath = toString(&parent.origin);
+            let fileName = getFileName(&filePath);
+            drop(&filePath);
+            if (equals(&asSubStr(&fileName), file)) {
+                assert(context == null, "How did we find another file?");
+                context = s;
+            }
+            drop(&fileName);
+        }
+    }
+    drop(&structs);
+    return context;
+}
+func findUnionByNameInFile(this: &Lookup, file: &SubStr, name: &SubStr) -> &UnionLookup {
+    let unions = searchAllFilesForTypeName(this, name);
+    let context: &UnionLookup = null;
+    for (let i: usize = 0; i < unions.length; i = i + 1) {
+        let l = at(&unions, i);
+        if (l.kind == TYPE_LOOKUP_UNION) {
+            let s = l.actual as &UnionLookup;
+            let decl = s.global;
+            if (!decl.parent.isFile) continue;
+            let parent = at(&files, decl.parent.id as usize);
+            let filePath = toString(&parent.origin);
+            let fileName = getFileName(&filePath);
+            drop(&filePath);
+            if (equals(&asSubStr(&fileName), file)) {
+                assert(context == null, "How did we find another file?");
+                context = s;
+            }
+            drop(&fileName);
+        }
+    }
+    drop(&unions);
+    return context;
+}
+
 func searchAllFilesForTypeName(this: &Lookup, name: &SubStr) -> TypeLookupList {
     let list: TypeLookupList = blank;
     for (let i: usize = 0; i < this.files.length; i = i + 1) {
@@ -443,6 +492,7 @@ struct MLConfig {
     checkImport: bool;
     checkModule: bool;
     checkParent: bool;
+    allowData: bool;
 }
 
 func resolveModuleByName(this: &ModuleLookup, name: &Token, mod: &&ModuleLookup) -> bool {
@@ -600,6 +650,7 @@ func resolveAllFunctionsWithSignature(this: &ModuleLookup, name: &Token, typ: &T
         checkImport: true,
         checkModule: false,
         checkParent: true,
+        allowData: true,
     });
 }
 func resolveAllFunctionsWithSignature(this: &ModuleLookup, name: &Token, typ: &Type, config: MLConfig) -> FunctionLookupList {
@@ -623,12 +674,12 @@ func resolveAllFunctionsWithSignature(this: &ModuleLookup, name: &Token, typ: &T
         match (_rt) {
             &Type::Func(params2, ret2, _) => {
                 if (params1.length != params2.length) continue;
-                if (!isUnknown(ret1)) if (!equals(ret1, ret2)) continue;
+                if (!isUnknown(ret1)) if (!_equals(ret1, ret2, config.allowData)) continue;
                 let succ = true;
                 for (let j: usize = 0; j < params1.length; j = j + 1) {
                     let t1 = *at(&params1, j);
                     let t2 = *at(&params2, j);
-                    if (!isUnknown(t1)) if (!equals(t1, t2)) {
+                    if (!isUnknown(t1)) if (!_equals(t1, t2, config.allowData)) {
                         succ = false;
                         break;
                     }

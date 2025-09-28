@@ -18,11 +18,13 @@ import "./basic_block.bufo";
 import "../LLVM/context.bufo";
 
 import "../../frontend/nodes.bufo";
+import "../../frontend/lexer.bufo";
 import "../../frontend/token.bufo";
 import "../../frontend/context.bufo";
 import "../../middleend/types.bufo";
 import "../../middleend/checker.bufo";
 import "../../backend/irgen.bufo";
+import "../../backend/codegen_llvm.bufo";
 
 struct DebugInfo {
     diUnit: LLVMMetadata;

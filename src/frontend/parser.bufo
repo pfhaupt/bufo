@@ -35,6 +35,7 @@ struct Parser {
 let syntaxError = false;
 let needsPrelude = false;
 let needsAssembly = false;
+let needsTypeInfo = false;
 
 func addImportRoot(this: &Parser, filePath: SubStr) {
     let root: String = getPathParent(&filePath);
@@ -82,7 +83,8 @@ func expectSoftIdentifier(this: &Parser) -> Token {
         || equals(&tkn.content, &KEYWORD_SIZEOF)
         || equals(&tkn.content, &KEYWORD_ASM)
         || equals(&tkn.content, &KEYWORD_FUNC)
-        || equals(&tkn.content, &KEYWORD_COMPTIME)) {
+        || equals(&tkn.content, &KEYWORD_COMPTIME)
+        || equals(&tkn.content, &KEYWORD_TYPEINFO)) {
         let loc: String = getLocation(&tkn);
         let name: String = toString(&tkn.content);
         C::fprintf(stderr, "%s: %s: Expected Identifier, found `%s` instead.\n", loc.buffer, ERR_STR, name.buffer);
@@ -159,6 +161,7 @@ func parseProject(this: &Parser, root: SubStr) -> ParsedFile {
     importIf(this, rootFile, *flags.trace, "trace.bufo");
     importIf(this, rootFile, needsPrelude, "prelude.bufo");
     importIf(this, rootFile, needsAssembly, "asm.bufo");
+    importIf(this, rootFile, needsTypeInfo, "type_info.bufo");
     if (syntaxError) {
         // All errors are reported at this point
         C::exit(1);
@@ -545,6 +548,13 @@ func parseStructDecl(this: &Parser, parent: TLIParent) -> &ParsedStructDecl {
     let span: Span = newSpanBetween(&kw.span, &end.span);
     decl.span = span;
     decl.context = structContext;
+    // FIXME: This seems like an ugly hack
+    if (equals(&decl.name.content, &comptime newSubStrOfStrLit("Data"))) {
+        let parent = getParentFile(decl);
+        if (endsWith(&parent.origin, &comptime newSubStrOfStrLit("type_info.bufo"))) {
+            decl.isDataDefinition = true;
+        }
+    }
     return decl;
 }
 
@@ -1040,6 +1050,13 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
             let typ: &ParsedTypeNode = parseTypeNode(this);
             let span: Span = newSpanBetween(&ident.span, &typ.span);
             return newParsedExpr(span, ExprData::Sizeof(typ));
+        } else if (equals(&ident.content, &KEYWORD_TYPEINFO)) {
+            expect(this, TOKEN_PAREN_OPEN);
+            let typ: &ParsedTypeNode = parseTypeNode(this);
+            expect(this, TOKEN_PAREN_CLOSE);
+            let span: Span = newSpanBetween(&ident.span, &typ.span);
+            needsTypeInfo = true;
+            return newParsedExpr(span, ExprData::TypeInfo(typ));
         } else if (equals(&ident.content, &KEYWORD_FUNC)) {
             // Dot to ensure that there will never be a name clash with user defined functions
             let _name: String = newStringFromStrLit(".anon_");

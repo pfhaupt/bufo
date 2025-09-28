@@ -36,6 +36,7 @@ comptime KEYWORD_FALSE: SubStr = BUILD_A_KEYWORD("false");
 comptime KEYWORD_CONFIG: SubStr = BUILD_A_KEYWORD("config");
 comptime KEYWORD_MATCH: SubStr = BUILD_A_KEYWORD("match");
 comptime KEYWORD_ASM: SubStr = BUILD_A_KEYWORD("asm");
+comptime KEYWORD_TYPEINFO: SubStr = BUILD_A_KEYWORD("type_info");
 struct Lexer {
     fileID: usize;
     content: SubStr;
@@ -67,7 +68,8 @@ func isKeyword(this: &Lexer, word: &SubStr) -> bool {
         || equals(word, &KEYWORD_FALSE)
         || equals(word, &KEYWORD_CONFIG)
         || equals(word, &KEYWORD_MATCH)
-        || equals(word, &KEYWORD_ASM);
+        || equals(word, &KEYWORD_ASM)
+        || equals(word, &KEYWORD_TYPEINFO);
 }
 
 func escapeCharSequence(this: &Lexer, tmp: &SubStr, s: &String, len: &usize) -> char {
