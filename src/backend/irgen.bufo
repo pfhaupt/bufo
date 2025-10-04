@@ -1025,6 +1025,11 @@ func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile
                 let p = TypeInfo::Pointer { name: asSubStr(&name) };
                 if (!contains(&table, &p)) push_entry(&table, p);
             }
+            &Type::Variadic(_) => {
+                let name = toString(at(&types, i));
+                let v = TypeInfo::Variadic { name: asSubStr(&name) };
+                if (!contains(&table, &v)) push_entry(&table, v);
+            }
             &Type::Array(elem, len) => {
                 let name = toString(at(&types, i));
                 let a = TypeInfo::Array { name: asSubStr(&name), size_in_bytes: getSizeInBytes(t), align_in_bytes: getAlignmentInBytes(t), elem_count: len };
@@ -1046,7 +1051,7 @@ func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile
                 if (!contains(&table, &u)) push_entry(&table, u);
             }
             &Type::Module(_) => { }
-            _ => { }
+            _ => { unreachable("generateTypeInfoTable: Exhaustive handling of Type kinds when filling"); }
         }
     }
     // Backpatch type references
@@ -1065,6 +1070,18 @@ func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile
                 let underlying_index = index_of_type(&table, underlying);
                 assert(underlying_index != table.length, "Underlying type info does not exist");
                 *ptr_info = TypeInfo::Pointer { name: name, underlying: underlying_index };
+            }
+            &Type::Variadic(underlying) => {
+                let name = asSubStr(&toString(at(&types, i)));
+                let s = TypeInfo::Variadic { name: name };
+                let var_index = index_of(&table, &s);
+                assert(var_index != table.length);
+                let var_info = &table.elements[var_index];
+                assert(tag(var_info) == comptime tag(&TypeInfo::Variadic));
+                assert(equals(&name, &get_name(var_info)));
+                let underlying_index = index_of_type(&table, underlying);
+                assert(underlying_index != table.length, "Underlying type info does not exist");
+                *var_info = TypeInfo::Variadic { name: name, underlying: underlying_index };
             }
             &Type::Array(elem, len) => {
                 let name = asSubStr(&toString(at(&types, i)));
@@ -1196,7 +1213,8 @@ func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile
                 }
             }
             &Type::Module(_) => { }
-            _ => { }
+            &Type::Unknown => { }
+            _ => { unreachable("generateTypeInfoTable: Exhaustive handling of Type kinds when patching"); }
         }
     }
     // Remove every type info that's isolated, i.e. not referred to by any other type
@@ -1234,6 +1252,7 @@ func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile
             match (&table.elements[i]) {
                 &TypeInfo::Array { _, _, _, elem, _ } => { count.elements[elem] = count.elements[elem] + 1; }
                 &TypeInfo::Pointer { _, under } => { count.elements[under] = count.elements[under] + 1; }
+                &TypeInfo::Variadic { _, under } => { count.elements[under] = count.elements[under] + 1; }
                 &TypeInfo::Function { _, args, ret } => {
                     let is_unknown = func (table: &TypeInfoTable, index: usize) -> bool {
                         // TODO: Make let a pattern
@@ -1292,7 +1311,7 @@ func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile
                     count.elements[i] = count.elements[i] + 1;
                 }
                 &TypeInfo::Unknown => { }
-                _ => { unreachable(); }
+                _ => { unreachable("generateTypeInfoTable: Exhaustive handling of Type kinds when counting"); }
             }
         }
         let remove: UsizeList = blank;
@@ -1318,6 +1337,7 @@ func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile
             match (&new_table.elements[i]) {
                 &TypeInfo::Array { _, _, _, elem, _ } => { elem = elem - count_offset(&remove, elem); }
                 &TypeInfo::Pointer { _, under } => { under = under - count_offset(&remove, under); }
+                &TypeInfo::Variadic { _, under } => { under = under - count_offset(&remove, under); }
                 &TypeInfo::Function { _, args, ret } => {
                     for (let j: usize = 0; j < args.length; j = j + 1) {
                         args.elements[j] = args.elements[j] - count_offset(&remove, args.elements[j]);
@@ -1350,7 +1370,7 @@ func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile
                 }
                 &TypeInfo::Primitive { .. } => { }
                 &TypeInfo::Unknown => { }
-                _ => { unreachable(); }
+                _ => { unreachable("generateTypeInfoTable: Exhaustive handling of Type kinds when removing"); }
             }
         }
         table = new_table;
@@ -1483,6 +1503,10 @@ func generateRuntimeTypeInfo(this: &IRGen) -> bool {
                 buildLoadInteger(function, span, index, usizeType, underlying);
                 write_at_offset(function, span, elemPtr, tmp, 17, index);
             }
+            &TypeInfo::Variadic { _, underlying } => {
+                buildLoadInteger(function, span, index, usizeType, underlying);
+                write_at_offset(function, span, elemPtr, tmp, 17, index);
+            }
             &TypeInfo::Function { _, args, ret } => {
                 let local_args = alloc_list(this, function, span, usizeType, args.length);
                 for (let j: usize = 0; j < args.length; j = j + 1) {
@@ -1604,7 +1628,7 @@ func generateRuntimeTypeInfo(this: &IRGen) -> bool {
                 write_at_offset(function, span, elemPtr, tmp, 25, index);
             }
             &TypeInfo::Unknown => { }
-            _ => { unreachable(); }
+            _ => { unreachable("generateRuntimeTypeInfo: Exhaustive handling of Type kinds"); }
         }
     }
     return true;
@@ -2477,6 +2501,41 @@ func generateBytecodeExpr(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, ne
             }
             return reg;
         }
+        &ExprData::Variadic(vals) => {
+            // f(..., v1, v2, v3)
+            // tmp = [v1, v2, v3]
+            // var = { &tmp, 3 }
+            let varType: &Type = getType(&expr.typeState);
+            assert(isVariadicType(varType), "ExprData::Variadic() is not variadic?");
+            let subType = getUnderlyingType(varType, false);
+            let count = vals.length;
+
+            // Create tmp
+            let newType = intoArrayType(subType, count);
+            let reg = allocateRegister(function, newType);
+            buildCreateArray(function, expr.span, reg);
+            for (let i: usize = 0; i < vals.length; i = i + 1) {
+                let result: RegIndex = generateBytecodeExpr(this, function, *at(&vals, i), false);
+                buildInsertValue(function, expr.span, reg, i, result);
+            }
+            // Pointer to tmp
+            let alloca = allocateRegister(function, intoPointer(newType));
+            buildAlloca(function, expr.span, alloca, getSizeInBytes(newType));
+            buildStore(function, expr.span, alloca, reg);
+
+            // length of variadic
+            let usizeType = wrap(Type::Prim(PrimType::Usize));
+            let sizeReg = allocateRegister(function, usizeType);
+            buildLoadInteger(function, expr.span, sizeReg, usizeType, vals.length);
+
+            // Wrapper struct
+            reg = allocateRegister(function, varType);
+            buildCreateStruct(function, expr.span, reg);
+            buildInsertValue(function, expr.span, reg, 0, alloca);
+            buildInsertValue(function, expr.span, reg, 1, sizeReg);
+            assert(!needsPtr, "needsPtr for ExprData::Variadic?");
+            return reg;
+        }
         unknown => {
             C::fprintf(stderr, "%s generateBytecodeExpr: Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
             C::exit(2);
@@ -2743,8 +2802,26 @@ func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &Bi
     if (isModule(instance)) {
         return generateBytecodeExpr(this, function, rhs, needsPtr);
     }
-    assert(isStruct(instance) || isStructPointer(instance), "Expected (ptr to) struct in MemberAccess");
+    assert(isVariadicType(instance) || isStruct(instance) || isStructPointer(instance), "Expected (ptr to) struct in MemberAccess");
     let result: RegIndex = generateBytecodeExpr(this, function, lhs, !isStructPointer(instance));
+    if (isVariadicType(instance)) {
+        let name: Token = blank;
+        match (rhs.data) {
+            ExprData::Ident(ident) => { name = ident.name; }
+            _ => { unreachable("Expected Identifier as RHS of member access"); }
+        }
+        assert(equals(&name.content, &comptime newSubStrOfStrLit("length")), "not length");
+        let usizeType: &Type = wrap(Type::Prim(PrimType::Usize));
+        let fieldPtr = allocateRegister(function, intoPointer(usizeType));
+        buildGetFieldPtr(function, lhs.span, fieldPtr, result, 1);
+        if (needsPtr) {
+            return fieldPtr;
+        } else {
+            let value = allocateRegister(function, usizeType);
+            buildLoad(function, lhs.span, value, fieldPtr);
+            return value;
+        }
+    }
     let _t: &Type = getRegister(function, result).typ;
     assert(isStruct(_t) || isStructPointer(_t), "Expected (ptr to) struct in Field Access");
     if (!isStructPointer(_t)) {
@@ -2848,8 +2925,8 @@ func generateBytecodeExprIndexedAccess(this: &IRGen, function: &IRFunc, expr: &B
     let rhs: &ParsedExpr = null;
     extractOperands(expr, &lhs, &rhs);
     let lhsType: &Type = getType(&lhs.typeState);
-    assert(isArray(lhsType) || isPointer(lhsType), "Expected Ptr or Array as LHS in IndexedAccess");
-    let lhsReg: RegIndex = generateBytecodeExpr(this, function, lhs, isArray(lhsType));
+    assert(isVariadicType(lhsType) || isArray(lhsType) || isPointer(lhsType), "Expected Array, Ptr or VarArg as LHS in IndexedAccess");
+    let lhsReg: RegIndex = generateBytecodeExpr(this, function, lhs, !isPointer(lhsType));
     let rhsReg: RegIndex = generateBytecodeExpr(this, function, rhs, false);
     assert(isPointer(getRegister(function, lhsReg).typ), "Expected Ptr as LHS in IndexedAccess");
     assert(isInteger(getRegister(function, rhsReg).typ), "Expected Int as RHS in IndexedAccess");
@@ -2894,8 +2971,20 @@ func generateBytecodeExprIndexedAccess(this: &IRGen, function: &IRFunc, expr: &B
         buildLoadInteger(function, lhs.span, index, usizeType, 0);
         push(&indices, index);
     }
-    push(&indices, rhsReg);
-    buildGetElementPtr(function, lhs.span, elemPtr, lhsReg, indices);
+    if (isVariadicType(lhsType)) {
+        // lhsReg contains *{ *[...], len }
+        // GetFieldPtr => **[...]
+        // Load => *[...]
+        // GetElementPtr[0, index] => Deref Load, Index into Array
+        let ptr: RegIndex = allocateRegister(function, intoPointer(getUnderlyingType(lhsType, false)));
+        buildGetFieldPtr(function, lhs.span, ptr, lhsReg, 0);
+        buildLoad(function, lhs.span, ptr, ptr);
+        push(&indices, rhsReg);
+        buildGetElementPtr(function, lhs.span, elemPtr, ptr, indices);
+    } else {
+        push(&indices, rhsReg);
+        buildGetElementPtr(function, lhs.span, elemPtr, lhsReg, indices);
+    }
     if (needsPtr) {
         return elemPtr;
     } else {

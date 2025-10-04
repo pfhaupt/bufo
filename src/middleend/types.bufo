@@ -52,6 +52,8 @@ let debugTypes: LLVMMetadataArena = blank;
 
 union Type {
     Unknown,
+    // TODO: Ideally this should be a Slice type, but not sure how to integrate the semantics yet
+    Variadic(&Type),
     Prim(PrimType),
     Ptr(&Type),
     Array(&Type, usize),
@@ -94,18 +96,18 @@ func getMangledName(this: &Type) -> String {
         &Type::Struct(decl) => {
             let s: String = newStringFromStrLit("S");
             let hash: usize = hash(&decl.name.content, 4);
-            if (hash < 10) pushNumber(&s, 0);
-            if (hash < 100) pushNumber(&s, 0);
-            if (hash < 1000) pushNumber(&s, 0);
+            if (hash < 10) pushNumber(&s, 0 as usize);
+            if (hash < 100) pushNumber(&s, 0 as usize);
+            if (hash < 1000) pushNumber(&s, 0 as usize);
             pushNumber(&s, hash);
             return s;
         }
         &Type::Union(decl, _) => {
             let s = newStringFromStrLit("U");
             let hash: usize = hash(&decl.name.content, 4);
-            if (hash < 10) pushNumber(&s, 0);
-            if (hash < 100) pushNumber(&s, 0);
-            if (hash < 1000) pushNumber(&s, 0);
+            if (hash < 10) pushNumber(&s, 0 as usize);
+            if (hash < 100) pushNumber(&s, 0 as usize);
+            if (hash < 1000) pushNumber(&s, 0 as usize);
             pushNumber(&s, hash);
             return s;
         }
@@ -128,6 +130,13 @@ func getMangledName(this: &Type) -> String {
             pushString(&s, &r);
             drop(&r);
             pushNumber(&s, size);
+            return s;
+        }
+        &Type::Variadic(typ) => {
+            let s: String = newStringFromStrLit("V");
+            let r = getMangledName(typ);
+            pushString(&s, &r);
+            drop(&r);
             return s;
         }
         _ => { }
@@ -185,6 +194,17 @@ func _equals(this: &Type, other: &Type, allowData: bool) -> bool {
         _ => { }
     }
     if (tag(this) != tag(other)) return false;
+    match (this) {
+        &Type::Variadic(typ1) => {
+            match (other) {
+                &Type::Variadic(typ2) => {
+                    return equals(typ1, typ2);
+                }
+                _ => { return false; }
+            }
+        }
+        _ => { }
+    }
     match (this) {
         &Type::Array(typ1, size1) => {
             match (other) {
@@ -279,6 +299,13 @@ func isUnsignedInteger(this: &Type) -> bool {
         &Type::Prim(PrimType::U32) => { return true; }
         &Type::Prim(PrimType::U64) => { return true; }
         &Type::Prim(PrimType::Usize) => { return true; }
+        _ => { }
+    }
+    return false;
+}
+func isVariadicType(this: &Type) -> bool {
+    match (this) {
+        &Type::Variadic(_) => { return true; }
         _ => { }
     }
     return false;
@@ -381,10 +408,11 @@ func isStructArray(this: &Type) -> bool {
 }
 func getUnderlyingType(this: &Type, deep: bool) -> &Type {
     let underlying = this;
-    while (isPointer(this) || isArray(this)) {
+    while (isVariadicType(this) || isPointer(this) || isArray(this)) {
         match (underlying) {
             &Type::Ptr(under) => { underlying = under; }
             &Type::Array(under, _) => { underlying = under; }
+            &Type::Variadic(under) => { underlying = under; }
             _ => { break; }
         }
         if (!deep) break;
@@ -439,7 +467,9 @@ func toString(this: &Type) -> String {
                 }
             }
             if (attr.isVariadic) {
-                pushStr(&s, "...");
+                if (params.length > 0) if (!isVariadicType(params.elements[params.length - 1])) {
+                    pushStr(&s, "...");
+                }
             }
             pushChar(&s, ')');
             if (!isNone(rt)) {
@@ -459,6 +489,12 @@ func toString(this: &Type) -> String {
             pushChar(&s, ' ');
             pushNumber(&s, size);
             pushChar(&s, ']');
+            return s;
+        }
+        &Type::Variadic(typ) => {
+            let s: String = newStringFromStrLit("...");
+            let _s: String = toString(typ);
+            pushString(&s, &_s);
             return s;
         }
         _ => { }
@@ -541,6 +577,7 @@ func getSizeInBits(this: &Type) -> usize {
 func getSizeInBytes(this: &Type) -> usize {
     match (this) {
         &Type::Ptr(_) => { return 8; }
+        &Type::Variadic(_) => { return 16; } // ptr + size
         &Type::Func(_,_,_) => { return 8; }
         &Type::Prim(typ) => {
             match (typ) {

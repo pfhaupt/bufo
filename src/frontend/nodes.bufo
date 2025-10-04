@@ -839,6 +839,7 @@ func newParsedStmt(span: Span, data: StmtData) -> &ParsedStmt {
 }
 
 // REVIEW: These names might need changing once we make it to the Type Checker
+// FIXME: IMPORTANT: Make this an union
 comptime PARSED_TYPE_INVALID: usize = 0;
 comptime PARSED_TYPE_UNKNOWN: usize = 1;
 comptime PARSED_TYPE_NONE: usize = 2;
@@ -862,7 +863,8 @@ comptime PARSED_TYPE_F32: usize = 19;
 comptime PARSED_TYPE_F64: usize = 20;
 comptime PARSED_TYPE_FUNC: usize = 21;
 comptime PARSED_TYPE_MODULE: usize = 22;
-comptime PARSED_TYPE_BUILTIN: usize = 23;
+comptime PARSED_TYPE_VARIADIC: usize = 23;
+comptime PARSED_TYPE_BUILTIN: usize = 24;
 func BUILD_A_TYPE(s: &char) -> SubStr {
     return SubStr {
         start: s,
@@ -957,6 +959,7 @@ union ExprData {
     Func(&ParsedFuncDecl),
     TypeInfo(&ParsedTypeNode),
     AsData(&ParsedExpr),
+    Variadic(ParsedExprList),
 }
 union UnaryExpr {
     Comptime(&ParsedExpr),

@@ -115,6 +115,8 @@ func get_name(info: &UnionVariantTypeInfo) -> SubStr {
 union TypeInfo {
     Unknown,
     Primitive { name: SubStr, size_in_bytes: usize, align_in_bytes: usize },
+    // TODO: After Type Checker refactor and introduction of the Slice type this should also be a Slice
+    Variadic  { name: SubStr, underlying: usize },
     Pointer   { name: SubStr, underlying: usize },
     Array     { name: SubStr, size_in_bytes: usize, align_in_bytes: usize, elem: usize, elem_count: usize },
     Struct    { name: SubStr, size_in_bytes: usize, align_in_bytes: usize, fields: FieldTypeInfoList },
@@ -131,6 +133,7 @@ func get_size(info: &TypeInfo) -> usize {
     match (info) {
         &TypeInfo::Primitive { _, size_in_bytes, _ } => { return size_in_bytes; }
         &TypeInfo::Pointer { .. } => { return 8; }
+        &TypeInfo::Variadic { _, _ } => { return 16; } // ptr + size
         &TypeInfo::Function { .. } => { return 8; }
         &TypeInfo::Array { _, size_in_bytes, _, _, _ } => { return size_in_bytes; }
         &TypeInfo::Struct { _, size_in_bytes, _, _ } => { return size_in_bytes; }
@@ -145,6 +148,7 @@ func get_name(info: &TypeInfo) -> SubStr {
     match (info) {
         &TypeInfo::Primitive { name, .. } => { return name; }
         &TypeInfo::Pointer { name, .. } => { return name; }
+        &TypeInfo::Variadic { name, .. } => { return name; }
         &TypeInfo::Function { name, .. } => { return name; }
         &TypeInfo::Array { name, .. } => { return name; }
         &TypeInfo::Struct { name, .. } => { return name; }

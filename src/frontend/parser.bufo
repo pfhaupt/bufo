@@ -586,19 +586,27 @@ func parseReturnType(this: &Parser) -> &ParsedTypeNode {
 func parseParameters(this: &Parser) -> ParamContext {
     expect(this, TOKEN_PAREN_OPEN);
     let context: ParamContext = blank;
+    let isVariadic = false;
     while (!parsedEOF(this) && !at(this, TOKEN_PAREN_CLOSE)) {
         if (eat(this, TOKEN_DOTDOTDOT)) {
-            context.isVarArg = true;
+            isVariadic = true;
             break;
         }
         let name: Token = expectSoftIdentifier(this);
         expect(this, TOKEN_COLON_SINGLE);
-        let typ: &ParsedTypeNode = parseTypeNode(this);
+        let typ: &ParsedTypeNode = parseTypeNode(this, true);
         addParameter(&context, name, typ);
+        if (isVariadic) {
+            C::fprintf(stderr, "%s: %s: Cannot specify parameters after variadics.\n", toString(&name.span).buffer, ERR_STR);
+            syntaxError = true;
+        } else {
+            isVariadic = typ.kind == PARSED_TYPE_VARIADIC;
+        }
         if (!eat(this, TOKEN_COMMA)) {
             break;
         }
     }
+    context.isVarArg = isVariadic;
     expect(this, TOKEN_PAREN_CLOSE);
     return context;
 }
@@ -892,8 +900,24 @@ func parseVarDeclStmt(this: &Parser, kw: Token, isGlobal: bool) -> &ParsedStmt {
 }
 
 func parseTypeNode(this: &Parser) -> &ParsedTypeNode {
-    let loc: Token = peek(&this.lexer);
-    if (at(this, TOKEN_KEYWORD)) {
+    return parseTypeNode(this, false);
+}
+func parseTypeNode(this: &Parser, allowedVariadic: bool) -> &ParsedTypeNode {
+    let curr: Token = peek(&this.lexer);
+    if (at(this, TOKEN_DOTDOTDOT)) {
+        if (!allowedVariadic) {
+            let loc: String = getLocation(&curr);
+            C::fprintf(stderr, "%s: %s: Cannot use variadics in this context.\n", loc.buffer, ERR_STR);
+            drop(&loc);
+            C::exit(1);
+        }
+        next(&this.lexer);
+        let typ = parseTypeNode(this);
+        let span = newSpanBetween(&curr.span, &typ.span);
+        let varNode = newParsedTypeNode(span, PARSED_TYPE_VARIADIC);
+        varNode.underlyingID = typ;
+        return varNode;
+    } else if (at(this, TOKEN_KEYWORD)) {
         let kw = peek(&this.lexer);
         if (!equals(&kw.content, &KEYWORD_FUNC)) {
             expectSoftIdentifier(this);
@@ -918,7 +942,7 @@ func parseTypeNode(this: &Parser) -> &ParsedTypeNode {
     } else if (eat(this, TOKEN_AMPERSAND_DOUBLE)) {
         let kw: Token = peek(&this.lexer);
         let typ: &ParsedTypeNode = parseTypeNode(this);
-        let span: Span = newSpanBetween(&loc.span, &typ.span);
+        let span: Span = newSpanBetween(&curr.span, &typ.span);
         let ptr1: &ParsedTypeNode = newParsedTypeNode(span, PARSED_TYPE_REF);
         (*ptr1).underlyingID = typ;
         let ptr: &ParsedTypeNode = newParsedTypeNode(span, PARSED_TYPE_REF);
@@ -927,7 +951,7 @@ func parseTypeNode(this: &Parser) -> &ParsedTypeNode {
     } else if (eat(this, TOKEN_AMPERSAND_SINGLE)) {
         let kw: Token = peek(&this.lexer);
         let typ: &ParsedTypeNode = parseTypeNode(this);
-        let span: Span = newSpanBetween(&loc.span, &typ.span);
+        let span: Span = newSpanBetween(&curr.span, &typ.span);
         let ptr: &ParsedTypeNode = newParsedTypeNode(span, PARSED_TYPE_REF);
         (*ptr).underlyingID = typ;
         return ptr;
@@ -937,7 +961,7 @@ func parseTypeNode(this: &Parser) -> &ParsedTypeNode {
         let size: Token = expect(this, TOKEN_INT_LITERAL);
         let _size: String = toString(&size.content);
         let end: Token = expect(this, TOKEN_SQUARE_CLOSE);
-        let span: Span = newSpanBetween(&loc.span, &end.span);
+        let span: Span = newSpanBetween(&curr.span, &end.span);
         let arr: &ParsedTypeNode = newParsedTypeNode(span, PARSED_TYPE_ARRAY);
         (*arr).underlyingID = typ;
         (*arr).arraySize = toU64(&_size) as usize;

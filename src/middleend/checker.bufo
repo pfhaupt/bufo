@@ -399,7 +399,7 @@ func reportNonPrimitiveCast(this: &TypeChecker, span: Span, from: &Type, to: &Ty
 func reportIndexedAccessOnNonArray(this: &TypeChecker, span: Span, typ: &Type) -> TCState {
     let loc: String = toString(&span);
     let name: String = toString(typ);
-    C::fprintf(stderr, "%s: %s: Indexed Access is only supported for arrays.\n", loc.buffer, ERR_STR);
+    C::fprintf(stderr, "%s: %s: Indexed Access is only supported for arrays, pointers and variadic types.\n", loc.buffer, ERR_STR);
     C::fprintf(stderr, "%s: %s: Expression has type %s.\n", loc.buffer, NOTE_STR, name.buffer);
     drop(&name);
     drop(&loc);
@@ -484,6 +484,9 @@ func reportCallToNonFunction(this: &TypeChecker, span: Span, base: &Type) -> TCS
 }
 
 func reportArgumentCountMismatch(this: &TypeChecker, span: Span, base: &Type, args: usize) -> TCState {
+    return reportArgumentCountMismatch(this, span, base, args, false);
+}
+func reportArgumentCountMismatch(this: &TypeChecker, span: Span, base: &Type, args: usize, atLeast: bool) -> TCState {
     let c: usize = 0;
     match (base) {
         &Type::Func(params, _, _) => { c = params.length; }
@@ -495,7 +498,9 @@ func reportArgumentCountMismatch(this: &TypeChecker, span: Span, base: &Type, ar
     if (c == 1) s = "argument";
     let w = "were";
     if (args == 1) w = "was";
-    C::fprintf(stderr, "%s: %s: Call expects %llu %s, but %llu %s provided.\n", loc.buffer, ERR_STR, c, s, args, w);
+    let min = "";
+    if (atLeast) min = "at least ";
+    C::fprintf(stderr, "%s: %s: Call expects %s%llu %s, but %llu %s provided.\n", loc.buffer, ERR_STR, min, c, s, args, w);
     C::fprintf(stderr, "%s: %s: Call expression has type %s.\n", loc.buffer, NOTE_STR, typ.buffer);
     drop(&typ);
     drop(&loc);
@@ -1931,27 +1936,111 @@ func typeCheckExprCall(this: &TypeChecker, call: &CallExpr, scopes: &ScopeLookup
             return newTCStateType(unionType);
         }
         &Type::Func(params, ret, attr) => {
-            if (!attr.isVariadic && args.length != params.length) {
-                return reportArgumentCountMismatch(this, call.span, baseType, args.length);
-            }
-            for (let i: usize = 0; i < params.length; i = i + 1) {
-                let arg = at(args, i);
-                let paramType = *at(&params, i);
-                let argState: TCState = typeCheckExpr(this, *arg, scopes);
-                if (isError(&argState)) return argState;
-                if (wantsInfer(&argState)) {
-                    argState = inferTypeOntoExpr(this, *arg, paramType, scopes);
+            let check_params = func (this: &TypeChecker, args: &ParsedExprList, params: &TypeList, scopes: &ScopeLookupList, variadic: bool) -> TCState {
+                for (let i: usize = 0; i < params.length; i = i + 1) {
+                    let arg = at(args, i);
+                    let paramType = *at(params, i);
+                    let argState: TCState = typeCheckExpr(this, *arg, scopes);
                     if (isError(&argState)) return argState;
+                    if (wantsInfer(&argState)) {
+                        argState = inferTypeOntoExpr(this, *arg, paramType, scopes);
+                        if (isError(&argState)) return argState;
+                    }
+                    let argType = getType(&argState);
+                    if (isVariadicType(argType) && variadic) {
+                        // no need to wrap again
+                        assert(params.length == 1, "check_params: Assumption wrong");
+                    } else if (!isData(argType) && isData(paramType)) {
+                        *arg = newParsedExpr((*arg).span, ExprData::AsData(*arg));
+                        let newState = typeCheckExpr(this, *arg, scopes);
+                        if (isError(&newState)) return newState;
+                        assert(isType(&newState), "idk if this is always the case");
+                    } else if (!equals(argType, paramType)) {
+                        reportTypeMismatch(this, (*arg).span, paramType, argType);
+                    }
                 }
-                let argType = getType(&argState);
-                if (!isData(argType) && isData(paramType)) {
-                    *arg = newParsedExpr((*arg).span, ExprData::AsData(*arg));
-                    let newState = typeCheckExpr(this, *arg, scopes);
-                    if (isError(&newState)) return newState;
-                    assert(isType(&newState), "idk if this is always the case");
-                } else if (!equals(argType, paramType)) {
-                    reportTypeMismatch(this, (*arg).span, paramType, argType);
+                return newTCStateSuccess();
+            };
+            if (attr.isVariadic) {
+                assert(params.length > 0, "Variadic function with 0 parameters");
+                let last = params.elements[params.length - 1];
+                let state: TCState = blank;
+                if (isVariadicType(last)) {
+                    // bufo internal variadic
+                    // FIXME: Find a way to not manipulate params.length here
+                    params.length = params.length - 1; // Variadic type itself
+                    if (args.length < params.length) {
+                        // FIXME: We say "at least N" arguments, but it should be N-1 (ignore the variadic)
+                        state = reportArgumentCountMismatch(this, call.span, baseType, args.length, true);
+                        params.length = params.length + 1; // Variadic type itself
+                        return state;
+                    }
+                    let varType = getUnderlyingType(last, false);
+                    state = check_params(this, args, &params, scopes, false);
+                    if (!isSuccess(&state)) {
+                        params.length = params.length + 1; // Variadic type itself
+                        return state;
+                    }
+                    // func f(p1, p2, ...p3)
+                    // call f(a1, a2, a3, a4, a5)
+                    // Type check a3...a5 with type p3
+                    let varLen = args.length - params.length;
+                    let varArgs = ParsedExprList { };
+                    let varParams: TypeList = blank;
+                    for (let i: usize = 0; i < varLen; i = i + 1) {
+                        push(&varArgs, *at(args, params.length + i));
+                        push(&varParams, varType);
+                    }
+                    state = check_params(this, &varArgs, &varParams, scopes, true);
+                    if (!isSuccess(&state)) {
+                        params.length = params.length + 1; // Variadic type itself
+                        return state;
+                    }
+                    // -- Here we have successfully verified all types of the variadics
+                    // Original:
+                    //   [] = VarArgs
+                    //   call f(a1, a2, [a3, a4, a5])
+                    // Transform into:
+                    //   call f(a1, a2, { &[a3, a4, a5], 3 })
+                    args.length = params.length; // Strip off VarArgs
+                    if (varArgs.length == 1) {
+                        // We have exactly one variadic argument, which could be variadic itself
+                        let entry = varArgs.elements[0];
+                        assert(isType(&entry.typeState), "Single VarArg is not valid");
+                        let t = getType(&entry.typeState);
+                        if (isVariadicType(t)) {
+                            if (equals(getUnderlyingType(t, false), varType)) {
+                                // func f(ints: ...i32);
+                                // func g(args: ...i32) {
+                                //   f(args); // <-- No need to wrap [args] again
+                                // }
+                                push(args, entry);
+                            } else {
+                                let varArg = newParsedExpr(call.span, ExprData::Variadic(varArgs));
+                                varArg.typeState = newTCStateType(last);
+                                push(args, varArg);
+                            }
+                        } else {
+                            let varArg = newParsedExpr(call.span, ExprData::Variadic(varArgs));
+                            varArg.typeState = newTCStateType(last);
+                            push(args, varArg);
+                        }
+                    } else {
+                        let varArg = newParsedExpr(call.span, ExprData::Variadic(varArgs));
+                        varArg.typeState = newTCStateType(last);
+                        push(args, varArg);
+                    }
+                    params.length = params.length + 1; // Variadic type itself
+                } else {
+                    state = check_params(this, args, &params, scopes, false);
+                    if (!isSuccess(&state)) return state;
                 }
+            } else {
+                if (args.length != params.length) {
+                    return reportArgumentCountMismatch(this, call.span, baseType, args.length);
+                }
+                let state = check_params(this, args, &params, scopes, true);
+                if (!isSuccess(&state)) return state;
             }
             call.retType = ret;
             return newTCStateType(ret);
@@ -2087,16 +2176,16 @@ func typeCheckExprIndexedAccess(this: &TypeChecker, expr: &BinaryExpr, scopes: &
         return newTCStateFailure(ERROR_INDEXED_ACCESS_ON_NON_ARRAY);
     }
     assert(isType(&lhsState), "IndexedAccess: Not error, not infer, what is it?");
-    let lhsType: &Type = getType(&lhsState);
-    if (!isArray(lhsType) && !isPointer(lhsType)) {
-        return reportIndexedAccessOnNonArray(this, lhs.span, lhsType);
-    }
     if (wantsInfer(&rhsState)) {
         let usizeType: &Type = wrap(Type::Prim(PrimType::Usize));
         rhsState = inferTypeOntoExpr(this, rhs, usizeType, scopes);
     }
     if (isError(&rhsState)) return rhsState;
     assert(isType(&rhsState), "IndexedAccess: Index is not valid after infer?");
+    let lhsType: &Type = getType(&lhsState);
+    if (!isArray(lhsType) && !isPointer(lhsType) && !isVariadicType(lhsType)) {
+        return reportIndexedAccessOnNonArray(this, lhs.span, lhsType);
+    }
     let rhsType: &Type = getType(&rhsState);
     match (rhsType) {
         &Type::Prim(PrimType::Usize) => {
@@ -2371,6 +2460,22 @@ func typeCheckExprMemberAccess(this: &TypeChecker, expr: &BinaryExpr, scopes: &S
         assert(f.a == 13);
     }
     */
+    if (isVariadicType(instanceType)) {
+        let fieldName: Token = blank;
+        match (&rhs.data) {
+            &ExprData::Ident(IdentExpr { ident, .. }) => { fieldName = ident; }
+            _ => { unreachable("Expected RHS to be an identifier"); }
+        }
+        if (equals(&fieldName.content, &comptime newSubStrOfStrLit("length"))) {
+            let usizeType = wrap(Type::Prim(PrimType::Usize));
+            return newTCStateType(usizeType);
+        }
+        let l: String = toString(&rhs.span);
+        C::fprintf(stderr, "%s: %s: Attempted to access unknown field `%.*s` of variadic type.\n",
+            l.buffer, ERR_STR, fieldName.content.len, fieldName.content.start);
+        drop(&l);
+        return newTCStateFailure(ERROR_UNKNOWN_FIELD);
+    }
     if (!isStruct(instanceType) && !isStructPointer(instanceType)) {
         return reportMemberAccessOnNonStruct(this, lhs, instanceType);
     }
@@ -3053,6 +3158,10 @@ func typeCheckTypeNode(this: &TypeChecker, typeNode: &ParsedTypeNode) -> TCState
             }
         }
         typeNode = _orig;
+    } else if (typeNode.kind == PARSED_TYPE_VARIADIC) {
+        let under: TCState = typeCheckTypeNode(this, typeNode.underlyingID);
+        if (isError(&under)) return under;
+        tid = wrap(Type::Variadic(getType(&under)));
     } else if (typeNode.kind == PARSED_TYPE_BUILTIN) {
         let id: usize = getID(typeNode);
         let prim: PrimType = PrimType::None;

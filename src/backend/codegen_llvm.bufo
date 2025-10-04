@@ -905,7 +905,7 @@ func generateLLVMInstr(
         let aggrType: LLVMType = getType(&aggr);
         assert(isPointer(&aggrType), "Expected Pointer to Struct in GetFieldPtr");
         let underlying: &Type = getUnderlyingType(ptr, false);
-        assert(isStruct(underlying), "LLVM GetFieldPtr wants ptr to struct");
+        assert(isVariadicType(underlying) || isStruct(underlying), "LLVM GetFieldPtr wants ptr to struct");
         return buildStructGEP(&this.llvmBuilder, generateLLVMType(this, underlying), aggr, instr.op1.i, newSubStrOfStrLit("field_ptr"));
     } else if (instr.kind == INSTR_MEMCPY) {
         let src: LLVMValue = asLLVM(at(regs, instr.src.i), "LLVM Memcpy src");
@@ -1184,6 +1184,13 @@ func generateLLVMType(this: &LLVMCodegen, type: &Type) -> LLVMType {
                 let fields = [tag, data];
                 typ = createStructType(&this.llvmContext, &fields[0], 2, false);
             }
+        }
+        &Type::Variadic(_) => {
+            let fields: &LLVMType = C::calloc(2, sizeof LLVMType);
+            assert(fields != null);
+            fields[0] = intoPointerType(&createIntegerType(&this.llvmContext, 64));
+            fields[1] = createIntegerType(&this.llvmContext, 64);
+            typ = createStructType(&this.llvmContext, fields, 2, false);
         }
         _ => {
             todo_with_msg("generate llvm type");
