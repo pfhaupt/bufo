@@ -472,9 +472,11 @@ func generateBlock(
             }
         }
         if (instr.kind == INSTR_ALLOCA) {
-            let llvm = generateLLVMInstr(this, llvmFunc, irFunc, llvmBlocks, instr, regs);
+            if (!instr.isComptime) {
+                let llvm = generateLLVMInstr(this, llvmFunc, irFunc, llvmBlocks, instr, regs);
+                addLLVMValue((at(regs, instr.dst.i)), llvm);
+            }
             let interp = evaluateSingle(this.interp, irFunc, instr, regs, true);
-            addLLVMValue((at(regs, instr.dst.i)), llvm);
             addInterpValue((at(regs, instr.dst.i)), interp);
         } else if (instr.isComptime) {
             let val = evaluateSingle(this.interp, irFunc, instr, regs, false);
