@@ -60,6 +60,7 @@ comptime ERROR_IMPOSSIBLE_PATTERN                : usize = 37;
 comptime ERROR_NULL_NON_PTR                      : usize = 38;
 comptime ERROR_FILE_MISSING                      : usize = 39;
 comptime ERROR_ASSEMBLY_IN_COMPTIME_CONTEXT      : usize = 40;
+comptime ERROR_NAKED_STATEMENT                   : usize = 41;
 
 comptime TCSTATE_INVALID: usize = 0;
 comptime TCSTATE_ERROR: usize = 1;
@@ -596,6 +597,12 @@ func reportTooManyPatterns(this: &TypeChecker, pat: &ParsedPattern, type: &Type)
     drop(&loc);
     return err;
 }
+func reportStatementInNakedFunction(this: &TypeChecker, stmt: &ParsedStmt) -> TCState {
+    let loc = toString(&stmt.span);
+    C::fprintf(stderr, "%s: %s: Only `asm` statements are allowed in functions marked `@naked`.\n", loc.buffer, ERR_STR);
+    drop(&loc);
+    return newTCStateFailure(ERROR_NAKED_STATEMENT);
+}
 func reportAssemblyWrongReturnType(this: &TypeChecker, stmt: &ParsedStmt, got: &Type, wanted: &Type) -> TCState {
     let loc = toString(&stmt.span);
     let name1 = toString(got);
@@ -1070,7 +1077,7 @@ func typeCheckFunction(this: &TypeChecker, function: &ParsedFuncDecl, scopes: &S
         addVariable(&scope, *(at(&funcLookup.params, i)));
     }
     push(scopes, scope);
-    let blockState: TCState = typeCheckBlock(this, function.body, scopes);
+    let blockState: TCState = typeCheckBlock(this, function.body, scopes, hasAttribute(function, ATTR_NAKED));
     pop(scopes);
     if (isError(&blockState)) {
         return blockState;
@@ -1078,7 +1085,7 @@ func typeCheckFunction(this: &TypeChecker, function: &ParsedFuncDecl, scopes: &S
     return function.typeState;
 }
 
-func typeCheckBlock(this: &TypeChecker, block: &ParsedBlock, scopes: &ScopeLookupList) -> TCState {
+func typeCheckBlock(this: &TypeChecker, block: &ParsedBlock, scopes: &ScopeLookupList, nakedFunc: bool) -> TCState {
     if (block.ignored) return blank;
     if (isSuccess(&block.typeState)) {
         return block.typeState;
@@ -1090,7 +1097,21 @@ func typeCheckBlock(this: &TypeChecker, block: &ParsedBlock, scopes: &ScopeLooku
     // REVIEW: Do we want to make blocks expressions?
     let blockState: TCState = newTCStateSuccess();
     for (let i: usize = 0; i < block.stmtLength; i = i + 1) {
-        let stmtState: TCState = typeCheckStmt(this, getStmtAtIndex(block, i), scopes);
+        let stmt = getStmtAtIndex(block, i);
+        if (nakedFunc) {
+            match (&stmt.data) {
+                &StmtData::Asm(_, _) => {},
+                &StmtData::Block(_block) => {
+                    blockState = typeCheckBlock(this, _block, scopes, nakedFunc);
+                    continue;
+                }
+                _ => {
+                    blockState = reportStatementInNakedFunction(this, stmt);
+                    continue;
+                }
+            }
+        }
+        let stmtState: TCState = typeCheckStmt(this, stmt, scopes);
         if (isError(&stmtState)) {
             blockState = stmtState;
         }
@@ -1161,7 +1182,7 @@ func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupLi
             }
             state = exprState;
         }
-        &StmtData::Block(block) => { state = typeCheckBlock(this, block, scopes); }
+        &StmtData::Block(block) => { state = typeCheckBlock(this, block, scopes, false /*Don't care*/); }
         &StmtData::If(cond, then) => {
             let condState: TCState = typeCheckExpr(this, cond, scopes);
             let thenState: TCState = typeCheckStmt(this, then, scopes);

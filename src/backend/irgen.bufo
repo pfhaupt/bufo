@@ -1698,6 +1698,7 @@ func generateFunctionHeader(this: &IRGen, function: &IRFunc, retType: &Type, par
         offset = 1;
         prepareParameter(this, function, 0, blank, newSubStrOfStrLit("ret"), intoPointer(retType), true);
     }
+    if (hasAttribute(at(&funcDecls, function.originalID), ATTR_NAKED)) return;
     for (let i: usize = 0; i < params.paramLength; i = i + 1) {
         let name: Token = getNameAtIndex(params, i);
         let typDecl: &ParsedTypeNode = getTypeAtIndex(params, i);

@@ -218,6 +218,16 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList, inModule: bool)
                 span: name.span,
                 kind: ATTR_NORETURN,
             });
+        } else if (equals(&name.content, &_ATTR_NAKED)) {
+            push(attrs, ParsedAttribute {
+                span: name.span,
+                kind: ATTR_NAKED,
+            });
+        } else if (equals(&name.content, &_ATTR_NO_MANGLE)) {
+            push(attrs, ParsedAttribute {
+                span: name.span,
+                kind: ATTR_NO_MANGLE,
+            });
         } else {
             let loc = toString(&name.span);
             let n = toString(&name.content);

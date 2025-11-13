@@ -52,6 +52,7 @@ func mangleFunctionName(
     for (let i: usize = 0; i < attrs.length; i = i + 1) {
         let a = at(attrs, i);
         if (a.kind == ATTR_EXTERN) return toString(&a.name.content);
+        if (a.kind == ATTR_NO_MANGLE) return toString(&name.content);
     }
     // Function: [Module]*-Name-ParamsTypeID-rRetTypeID
     while (!parent.isFile) {
@@ -121,11 +122,15 @@ func getFileByFilePath(path: SubStr, fileID: &usize) -> bool {
 comptime _ATTR_EXTERN: SubStr = BUILD_A_KEYWORD("extern");
 comptime _ATTR_OS: SubStr = BUILD_A_KEYWORD("os");
 comptime _ATTR_NORETURN: SubStr = BUILD_A_KEYWORD("noreturn");
+comptime _ATTR_NAKED: SubStr = BUILD_A_KEYWORD("naked");
+comptime _ATTR_NO_MANGLE: SubStr = BUILD_A_KEYWORD("no_mangle");
 
 comptime ATTR_INVALID: usize = 0;
 comptime ATTR_EXTERN: usize = 1;
 comptime ATTR_OS: usize = 2; // not used, handled in parser directly
 comptime ATTR_NORETURN: usize = 3;
+comptime ATTR_NAKED: usize = 4;
+comptime ATTR_NO_MANGLE: usize = 5;
 struct ParsedAttribute {
     kind: usize;
     span: Span;

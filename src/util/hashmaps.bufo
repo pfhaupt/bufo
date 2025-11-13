@@ -42,6 +42,7 @@ func needsResize(this: &String_IRFuncHashMap) -> bool {
 func indexOf(this: &String_IRFuncHashMap, key: &String) -> usize {
     this.locked = true;
     let elem: &String_IRFuncEntry = getEntry(this, key);
+    assert(elem != null, "String_IRFuncHashMap.indexOf() does not contain key");
     return (elem - this.elements) / sizeof String_IRFuncEntry;
 }
 

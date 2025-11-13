@@ -347,6 +347,11 @@ func generateLLVMFunctionHeader(this: &LLVMCodegen, irFunc: &IRFunc) {
         assert(id != 0, "Could not get noreturn attribute from LLVM");
         addAttribute(&llvmFuncValue, U32_MAX, createEnumAttribute(&this.llvmContext, id, 1));
     }
+    if (hasAttribute(irFunc, ATTR_NAKED)) {
+        let id = LLVM::GetEnumAttributeKindForName("naked", 5 /* sizeof "naked" */);
+        assert(id != 0, "Could not get naked attribute from LLVM");
+        addAttribute(&llvmFuncValue, U32_MAX, createEnumAttribute(&this.llvmContext, id, 1));
+    }
     if (*flags.debug) {
         let file = getParentFile(function);
         let line: usize = 0;
