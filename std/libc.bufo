@@ -42,6 +42,7 @@ module C {
     @extern("fwrite") func fwrite(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
     @extern("fclose") func fclose(stream: Any) -> i32;
     @extern("fprintf") func fprintf(stream: Any, msg: &char, ...);
+    @extern("fflush") func fflush(stream: Any) -> i32;
 
     @extern("getenv") func getenv(name: &char) -> &char;
 

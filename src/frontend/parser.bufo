@@ -162,6 +162,7 @@ func parseProject(this: &Parser, root: SubStr) -> ParsedFile {
     importIf(this, rootFile, needsPrelude, "prelude.bufo");
     importIf(this, rootFile, needsAssembly, "asm.bufo");
     importIf(this, rootFile, needsTypeInfo, "type_info.bufo");
+    importIf(this, rootFile, true, "runtime.bufo");
     if (syntaxError) {
         // All errors are reported at this point
         C::exit(1);

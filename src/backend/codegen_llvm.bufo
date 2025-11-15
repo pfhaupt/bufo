@@ -285,10 +285,15 @@ func generateRuntimeInitialization(this: &LLVMCodegen, initRuntime: &IRFunc) -> 
 }
 func generateEntryPoint(this: &LLVMCodegen) -> bool {
     if (*flags.noEntry) return true;
-    // FIXME: Currently we hardcode the entry point.
-    //        It would be cooler if the prelude or standard library did that.
-    //        Needs more features though, like being able to provide custom
-    //        names that overwrite the mangling
+    let realMainName: SubStr = newSubStrOfStrLit("__real_main");
+    if (!hasFunction(&this.llvmModule, realMainName)) {
+        C::fprintf(stderr, "%s Could not find entry point!\n", FATAL_STR);
+        C::fprintf(stderr, "%s: Expected to find `std/runtime.bufo` in the list of imports, but failed!\n", NOTE_STR);
+        return false;
+    }
+    let realMainFunc: LLVMValue = getFunction(&this.llvmModule, realMainName);
+
+    // FIXME: Would be cool if we could also specify functions like `func main() {}` here that dont take arguments
     let mainName: SubStr = newSubStrOfStrLit("maini32PPcri32");
     if (!hasFunction(&this.llvmModule, mainName)) {
         C::fprintf(stderr, "%s Could not find main function!\n", FATAL_STR);
@@ -302,6 +307,7 @@ func generateEntryPoint(this: &LLVMCodegen) -> bool {
     push(&params, createIntegerType(&this.llvmContext, 32));
     let _p: LLVMType = createIntegerType(&this.llvmContext, 8);
     push(&params, intoPointerType(&_p));
+    push(&params, intoPointerType(&createIntegerType(&this.llvmContext, 64)));
     let retFnType: LLVMType = intoFunctionType(&retType, params, false);
     assert(!hasFunction(&this.llvmModule, newSubStrOfStrLit("main")));
     let main: LLVMValue = addFunction(&this.llvmModule, newSubStrOfStrLit("main"), retFnType);
@@ -319,7 +325,8 @@ func generateEntryPoint(this: &LLVMCodegen) -> bool {
     }
     push(&args, getNthParam(&main, 0));
     push(&args, getNthParam(&main, 1));
-    let v: LLVMValue = buildCall(&this.llvmBuilder, mainFunc, retFnType, args, retType, newSubStrOfStrLit("entry"));
+    push(&args, mainFunc);
+    let v: LLVMValue = buildCall(&this.llvmBuilder, realMainFunc, retFnType, args, retType, newSubStrOfStrLit("entry"));
     buildReturn(&this.llvmBuilder, v);
     return true;
 }

@@ -48,7 +48,6 @@ struct Flags {
 }
 let flags = Flags {};
 func main(argc: i32, argv: &&char) -> i32 {
-    setupStdHandles();
     @os(WINDOWS) if (!tryFind("cl.exe")) {
         C::fprintf(stderr, "%s: Developer environment is not initialized properly!\n", ERR_STR);
         C::fprintf(stderr, "%s: Could not find `cl.exe`.\n", NOTE_STR);

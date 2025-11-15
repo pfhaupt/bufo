@@ -1,0 +1,10 @@
+import "prelude.bufo";
+import "libc.bufo";
+
+@no_mangle func __real_main(argc: i32, argv: &&char, main: func (i32, &&char) -> i32) -> i32 {
+    setupStdHandles();
+    let code = main(argc, argv);
+    C::fflush(null);
+    return code;
+}
+
