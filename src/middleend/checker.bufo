@@ -61,6 +61,8 @@ comptime ERROR_NULL_NON_PTR                      : usize = 38;
 comptime ERROR_FILE_MISSING                      : usize = 39;
 comptime ERROR_ASSEMBLY_IN_COMPTIME_CONTEXT      : usize = 40;
 comptime ERROR_NAKED_STATEMENT                   : usize = 41;
+comptime ERROR_INVALID_VARIANT_INIT              : usize = 42;
+comptime ERROR_NO_SUCH_VARIANT                   : usize = 43;
 
 comptime TCSTATE_INVALID: usize = 0;
 comptime TCSTATE_ERROR: usize = 1;
@@ -589,6 +591,77 @@ func reportNotEnoughPatterns(this: &TypeChecker, pat: &ParsedPattern, type: &Typ
     C::fprintf(stderr, "%s: %s: If you only care about certain fields, you can use `_` or `..` to ignore the rest.\n", loc.buffer, NOTE_STR);
     drop(&loc);
     return err;
+}
+func reportInvalidVariantInitializer(this: &TypeChecker, decl: &ParsedUnionDecl, variant: &ParsedUnionVariant, span: Span, gotKind: usize) -> TCState {
+    let loc1 = toString(&span);
+    let loc2 = toString(&decl.name.span);
+    let loc3 = toString(&variant.span);
+    let name1 = toString(&variant.name.content);
+    let name2 = toString(&decl.name.content);
+    let exp = "";
+    if (variant.kind == UNION_VARIANT_EMPTY) exp = "an Empty";
+    if (variant.kind == UNION_VARIANT_TUPLE) exp = "a Tuple";
+    if (variant.kind == UNION_VARIANT_STRUCT) exp = "a Struct";
+    let got = "";
+    if (gotKind == UNION_VARIANT_EMPTY) got = "an Empty";
+    if (gotKind == UNION_VARIANT_TUPLE) got = "a Tuple";
+    if (gotKind == UNION_VARIANT_STRUCT) got = "a Struct";
+    C::fprintf(stderr, "%s: %s: Invalid initialization of variant `%s` of type %s.\n", loc1.buffer, ERR_STR, name1.buffer, name2.buffer);
+    C::fprintf(stderr, "%s: %s: `%s` is %s variant, but an initializer for %s variant was provided.\n", loc3.buffer, NOTE_STR, name1.buffer, exp, got);
+    C::fprintf(stderr, "%s: %s: Type declared here.\n", loc2.buffer, NOTE_STR);
+    drop(&loc1);
+    drop(&loc2);
+    drop(&loc3);
+    drop(&name1);
+    drop(&name2);
+    this.typeError = true;
+    return newTCStateFailure(ERROR_INVALID_VARIANT_INIT);
+}
+func reportInvalidVariant(this: &TypeChecker, pat: &ParsedPattern, type: &Type) -> TCState {
+    let loc = toString(&pat.span);
+    let patS = toString(pat);
+    let typ = toString(type);
+    C::fprintf(stderr, "%s: %s: A value of type %s will never match the pattern `%s`.\n", loc.buffer, ERR_STR, typ.buffer, patS.buffer);
+    C::fprintf(stderr, "%s: %s: Type %s has no such variant.\n", loc.buffer, NOTE_STR, typ.buffer);
+    drop(&patS);
+    drop(&typ);
+    drop(&loc);
+    this.typeError = true;
+    return newTCStateFailure(ERROR_IMPOSSIBLE_PATTERN);
+}
+func reportInvalidVariant(this: &TypeChecker, pat: &ParsedPattern, type: &Type, expKind: usize, gotKind: usize) -> TCState {
+    let loc = toString(&pat.span);
+    let patS = toString(pat);
+    let typ = toString(type);
+    C::fprintf(stderr, "%s: %s: A value of type %s will never match the pattern `%s`.\n", loc.buffer, ERR_STR, typ.buffer, patS.buffer);
+    let exp = "";
+    if (expKind == UNION_VARIANT_EMPTY) exp = "an Empty";
+    if (expKind == UNION_VARIANT_TUPLE) exp = "a Tuple";
+    if (expKind == UNION_VARIANT_STRUCT) exp = "a Struct";
+    let got = "";
+    if (gotKind == UNION_VARIANT_EMPTY) got = "An Empty";
+    if (gotKind == UNION_VARIANT_TUPLE) got = "A Tuple";
+    if (gotKind == UNION_VARIANT_STRUCT) got = "A Struct";
+    C::fprintf(stderr, "%s: %s: %s pattern can't be used to match against %s variant.\n", loc.buffer, NOTE_STR, got, exp);
+    drop(&patS);
+    drop(&typ);
+    drop(&loc);
+    this.typeError = true;
+    return newTCStateFailure(ERROR_IMPOSSIBLE_PATTERN);
+}
+func reportNoSuchVariant(this: &TypeChecker, lookup: &UnionLookup, tkn: Token) -> TCState {
+    let loc1 = toString(&tkn.span);
+    let name1 = toString(&tkn.content);
+    let loc2 = toString(&lookup.name.span);
+    let name2 = toString(&lookup.name.content);
+    C::fprintf(stderr, "%s: %s: Type %s has no variant named `%s`.\n", loc1.buffer, ERR_STR, name2.buffer, name1.buffer);
+    C::fprintf(stderr, "%s: %s: Type declared here.\n", loc2.buffer, NOTE_STR);
+    drop(&loc1);
+    drop(&loc2);
+    drop(&name1);
+    drop(&name2);
+    this.typeError = true;
+    return newTCStateFailure(ERROR_NO_SUCH_VARIANT);
 }
 func reportTooManyPatterns(this: &TypeChecker, pat: &ParsedPattern, type: &Type) -> TCState {
     let err = reportImpossiblePattern(this, pat, type);
@@ -1414,15 +1487,19 @@ func checkAndBindPattern(this: &TypeChecker, type: &Type, pat: &ParsedPattern, s
                     }
                     let variant: &ParsedUnionVariant = null;
                     if (!resolveVariantByName(decl, &ident, &variant)) {
-                        todo_with_msg("checkAndBindPattern: Path pattern Union doesn't have variant");
+                        return reportInvalidVariant(this, pat, type);
                     }
                     match (&subPat.data) {
                         &Pattern::Ident(ident) => {
                             if (variant.kind != UNION_VARIANT_EMPTY) {
-                                todo_with_msg("checkAndBindPattern: Union Pattern ident not empty");
+                                return reportInvalidVariant(this, pat, type, variant.kind, UNION_VARIANT_EMPTY);
                             }
                         }
                         &Pattern::Struct(ident, subPatterns) => {
+                            // The parser turns tuple patterns into struct patterns, so we must do this weird check here
+                            if (variant.kind == UNION_VARIANT_EMPTY) {
+                                return reportInvalidVariant(this, pat, type, UNION_VARIANT_EMPTY, variant.kind);
+                            }
                             // FIXME: Code duplication with Pattern::Struct a few lines below
                             if (subPatterns.length > variant.fields.length) {
                                 if (subPatterns.length == variant.fields.length + 1) {
@@ -1936,7 +2013,9 @@ func typeCheckExprCall(this: &TypeChecker, call: &CallExpr, scopes: &ScopeLookup
     match (baseType) {
         &Type::Union(decl, vID) => {
             let variant = *at(&decl.variants, vID);
-            if (variant.kind != UNION_VARIANT_TUPLE) todo_with_msg("report error: Union Variant is not a tuple");
+            if (variant.kind != UNION_VARIANT_TUPLE) {
+                return reportInvalidVariantInitializer(this, decl, variant, call.span, UNION_VARIANT_TUPLE);
+            }
             if (args.length != variant.fields.length) todo_with_msg("report error: Tuple variant count mismatch");
             let unionType = copy(baseType);
             for (let i: usize = 0; i < variant.fields.length; i = i + 1) {
@@ -2436,14 +2515,21 @@ func typeCheckExprUnionInit(this: &TypeChecker, expr: &BinaryExpr, unionType: &T
     match (&rhs.data) {
         &ExprData::Ident(ident) => {
             let variant: &UnionVariantLookup = null;
-            if (!resolveVariantByName(lookup, &ident.name, &variant)) todo_with_msg("report error, no such variant");
+            if (!resolveVariantByName(lookup, &ident.name, &variant)) {
+                return reportNoSuchVariant(this, lookup, ident.name);
+            }
             unionType = wrap(Type::Union(decl, variant.tag));
             result = newTCStateType(unionType);
             rhs.data = ExprData::UnionInit(UnionExpr::Empty);
         }
         &ExprData::StructInit(init) => {
             let variant: &UnionVariantLookup = null;
-            if (!resolveVariantByName(lookup, &init.name, &variant)) todo_with_msg("report error, no such variant");
+            if (!resolveVariantByName(lookup, &init.name, &variant)) {
+                return reportNoSuchVariant(this, lookup, init.name);
+            }
+            if (variant.global.kind != UNION_VARIANT_STRUCT) {
+                return reportInvalidVariantInitializer(this, decl, variant.global, rhs.span, UNION_VARIANT_STRUCT);
+            }
             unionType = wrap(Type::Union(decl, variant.tag));
             result = newTCStateType(unionType);
             let structLookup = intoStructLookup(variant);
