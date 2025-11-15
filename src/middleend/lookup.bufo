@@ -694,6 +694,7 @@ func resolveAllFunctionsWithSignature(this: &ModuleLookup, name: &Token, typ: &T
             let imp = at(&this.globalLookup.files, at(&this.imports, i).fileID);
             let _list = resolveAllFunctionsWithSignature(imp, name, typ, MLConfig {
                 checkSelf: true,
+                allowData: config.allowData,
             });
             extend(&list, &_list);
         }
@@ -705,6 +706,7 @@ func resolveAllFunctionsWithSignature(this: &ModuleLookup, name: &Token, typ: &T
             checkImport: true,
             checkModule: false,
             checkParent: true,
+            allowData: config.allowData,
         });
         extend(&list, &fns);
     }
