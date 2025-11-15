@@ -244,11 +244,16 @@ func findStdAndAddToImports(parser: &Parser) -> bool {
                 }
                 &Config::Libpath(name) => {
                     let _p = toString(&name.content);
-                    if (dirExists(_p.buffer)) {
-                        pushStr(&s, "/LIBPATH:\"");
-                        pushString(&s, &_p);
-                        pushStr(&s, "\"");
+                    pushStr(&s, "/LIBPATH:\"");
+                    if (!dirExists(_p.buffer)) {
+                        // if dir does not exist relative to CWD, make it relative to the compiler PATH
+                        let _my_path = getBufoPath();
+                        pushStr(&s, _my_path);
+                        s = getRoot(&s);
+                        C::free(_my_path);
                     }
+                    pushString(&s, &_p);
+                    pushStr(&s, "\"");
                     drop(&_p);
                 }
                 &Config::Linker(name) => {
