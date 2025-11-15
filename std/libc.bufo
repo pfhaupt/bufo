@@ -53,5 +53,9 @@ module C {
 
     // Process Control
     @noreturn @extern("abort") func abort();
-    @noreturn @extern("exit") func exit(code: i32);
+    @noreturn func exit(code: i32) {
+        C::fflush(null);
+        C::_exit(code);
+    }
+    @noreturn @extern("exit") func _exit(code: i32);
 }

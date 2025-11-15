@@ -1693,12 +1693,12 @@ func generateBytecode(this: &IRGen, project: &ParsedFile) -> bool {
 func generateFunctionHeader(this: &IRGen, function: &IRFunc, retType: &Type, params: &ParamContext) {
     let entry: IRBlockID = appendBlock(function);
     setCurrentBlock(function, entry);
+    if (hasAttribute(at(&funcDecls, function.originalID), ATTR_NAKED)) return;
     let offset: usize = 0;
     if (getSizeInBytes(retType) > 8) {
         offset = 1;
         prepareParameter(this, function, 0, blank, newSubStrOfStrLit("ret"), intoPointer(retType), true);
     }
-    if (hasAttribute(at(&funcDecls, function.originalID), ATTR_NAKED)) return;
     for (let i: usize = 0; i < params.paramLength; i = i + 1) {
         let name: Token = getNameAtIndex(params, i);
         let typDecl: &ParsedTypeNode = getTypeAtIndex(params, i);
@@ -1709,12 +1709,20 @@ func generateFunctionHeader(this: &IRGen, function: &IRFunc, retType: &Type, par
 
 func generateFunctionBody(this: &IRGen, function: &IRFunc, body: &ParsedBlock, retTypeNode: &ParsedTypeNode) {
     let retType: &Type = getType(&retTypeNode.typeState);
+    let isNakedFn = hasAttribute(at(&funcDecls, function.originalID), ATTR_NAKED);
     if (function.returnBlockID.i == 0) {
         let curr = getCurrentBlock(function);
         function.returnBlockID = appendBlock(function);
         if (isNone(retType)) {
             setCurrentBlock(function, function.returnBlockID);
             buildReturnEmpty(function, retTypeNode.span);
+            setCurrentBlock(function, curr);
+        } else if (isNakedFn) {
+            assert(getSizeInBytes(retType) <= 8, "Naked functions can only return types that fit into a register");
+            let reg = allocateRegister(function, retType);
+            setCurrentBlock(function, function.returnBlockID);
+            buildLoadBlank(function, retTypeNode.span, reg, getSizeInBytes(retType));
+            buildReturnExpr(function, retTypeNode.span, reg);
             setCurrentBlock(function, curr);
         } else {
             function.returnAlloc = allocateRegister(function, intoPointer(retType));
@@ -1788,7 +1796,7 @@ func generateFunctionBody(this: &IRGen, function: &IRFunc, body: &ParsedBlock, r
     }
     let curr: &IRBlock = getCurrentBlockAsRef(function);
     if (!isTerminated(curr)) {
-        if (isNone(retType)) {
+        if (isNone(retType) || isNakedFn) {
             buildBr(function, body.span, function.returnBlockID);
         } else {
             buildUnterminated(function, body.span);
@@ -2739,13 +2747,13 @@ func generateBytecodeExprAs(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, 
     } else if (isFunction(current) && isAny(target)) {
         buildMove(function, expr.span, dst, result);
     } else if ((isChar(current) || isInteger(current)) && (isChar(target) || isInteger(target))) {
-        if (getSizeInBytes(current) < getSizeInBytes(target)) {
+        if (getSizeInBits(current) < getSizeInBits(target)) {
             if (isSignedInteger(current)) {
                 buildIntSignExtend(function, expr.span, dst, result, getSizeInBits(target));
             } else {
                 buildIntZeroExtend(function, expr.span, dst, result, getSizeInBits(target));
             }
-        } else if (getSizeInBytes(current) > getSizeInBytes(target)) {
+        } else if (getSizeInBits(current) > getSizeInBits(target)) {
             buildIntTruncate(function, expr.span, dst, result, getSizeInBits(target));
         } else {
             buildMove(function, expr.span, dst, result);
@@ -2758,6 +2766,16 @@ func generateBytecodeExprAs(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, 
         if (getSizeInBytes(current) == 4) buildF32ToInt(function, expr.span, dst, result);
         else if (getSizeInBytes(current) == 8) buildF64ToInt(function, expr.span, dst, result);
         else unreachable("float to int");
+    } else if (isBoolean(current) && isInteger(target)) {
+        if (isSignedInteger(current)) {
+            buildIntSignExtend(function, expr.span, dst, result, getSizeInBits(target));
+        } else {
+            buildIntZeroExtend(function, expr.span, dst, result, getSizeInBits(target));
+        }
+    } else if (isInteger(current) && isBoolean(target)) {
+        let zero: RegIndex = allocateRegister(function, current);
+        buildLoadInteger(function, expr.span, zero, current, 0);
+        buildBinaryOp(function, expr.span, INSTR_INT_CMP_NEQ, dst, result, zero);
     } else if (isFloat(current) && isFloat(target)) {
         if (getSizeInBytes(current) < getSizeInBytes(target)) {
             assert(getSizeInBytes(current) == 4);

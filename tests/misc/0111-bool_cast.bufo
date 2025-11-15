@@ -1,0 +1,31 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo"; // assert
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let i: i32 = 1;
+    assert(i as bool);
+    i = 5;
+    assert(i as bool);
+    i = 0;
+    assert(!(i as bool));
+
+    let b = false;
+    assert(b as u8 == 0);
+    assert(b as i32 == 0);
+    assert(b as usize as Any == null);
+
+    let c = true;
+    assert(c as i8 == 1);
+    assert(c as u32 == 1);
+    assert(c as usize as Any == 0x1 as Any);
+
+    assert(false as i8 as bool == false);
+
+    assert(0 as i8 as bool as i8 == 0 as i8);
+    assert(3 as i8 as bool as i8 == 1 as i8);
+    return 0;
+}
+

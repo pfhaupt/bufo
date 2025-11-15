@@ -418,6 +418,30 @@ func createType(builder: LLVMDIBuilder, diFile: LLVMMetadata, type: &Type) -> LL
             assert(!LLVM::isNull(meta), "Could not create debug info for unknown type");
             data = LLVMMetadata { ref: meta };
         }
+        &Type::Variadic(under) => {
+            let _flags = LLVMDIFlagPublic;
+            let elements: &LLVM::MetadataRef = C::malloc(sizeof LLVM::MetadataRef * 2);
+            assert(elements != null);
+            comptime ptrName = newSubStrOfStrLit("ptr");
+            comptime sizeName = newSubStrOfStrLit("length");
+            let ptrDebugType = createType(builder, diFile, intoPointer(under)).ref;
+            let sizeDebugType = createType(builder, diFile, wrap(Type::Prim(PrimType::Usize))).ref;
+            elements[0] = LLVM::DIBuilderCreateMemberType(builder.ref, diFile.ref, ptrName.start, ptrName.len,
+                                diFile.ref, 0, 64, 64, 0, LLVMDIFlagZero, ptrDebugType);
+            elements[1] = LLVM::DIBuilderCreateMemberType(builder.ref, diFile.ref, sizeName.start, sizeName.len,
+                                diFile.ref, 0, 64, 64, 64, LLVMDIFlagZero, sizeDebugType);
+            let varName = newStringFromStrLit("var<");
+            let _s = toString(under);
+            pushString(&varName, &_s);
+            drop(&_s);
+            pushChar(&varName, '>');
+            let start = varName.buffer;
+            let len = varName.length;
+            let meta = LLVM::DIBuilderCreateStructType(builder.ref, diFile.ref, start, len, diFile.ref,
+                            0, 128, 64, _flags, blank, elements, 2, 0, blank, start, len);
+            assert(!LLVM::isNull(meta), "Could not create debug info for variadic type");
+            data = LLVMMetadata { ref: meta };
+        }
         &Type::Ptr(under) => {
             let pointee = createType(builder, diFile, under);
             let size: u64 = 64;
