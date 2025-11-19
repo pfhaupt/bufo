@@ -739,8 +739,15 @@ func parseMatchStmt(this: &Parser, kw: Token) -> &ParsedStmt {
 func parsePattern(this: &Parser) -> &ParsedPattern {
     // REVIEW: next or peek?
     let tkn = next(&this.lexer);
-    if (tkn.kind == TOKEN_IDENT) {
-        if (eat(this, TOKEN_COLON_DOUBLE)) {
+    let retPat: &ParsedPattern = null;
+    if (tkn.kind == TOKEN_IDENT || tkn.kind == TOKEN_KEYWORD) {
+        if (equals(&tkn.content, &KEYWORD_TRUE)) {
+            retPat = newParsedPattern(tkn.span, Pattern::Boolean(true));
+        } else if (equals(&tkn.content, &KEYWORD_FALSE)) {
+            retPat = newParsedPattern(tkn.span, Pattern::Boolean(false));
+        } else if (equals(&tkn.content, &KEYWORD_NULL)) {
+            retPat = newParsedPattern(tkn.span, Pattern::Null);
+        } else if (eat(this, TOKEN_COLON_DOUBLE)) {
             let subpat = parsePattern(this);
             match (&subpat.data) {
                 &Pattern::Struct(_, _) => { }
@@ -749,7 +756,7 @@ func parsePattern(this: &Parser) -> &ParsedPattern {
                     todo_with_msg("parser: Path Pattern has non-struct non-ident as RHS");
                 }
             }
-            return newParsedPattern(tkn.span, Pattern::Path(tkn, subpat));
+            retPat = newParsedPattern(tkn.span, Pattern::Path(tkn, subpat));
         } else if (eat(this, TOKEN_CURLY_OPEN)) {
             let subPatterns: ParsedPatternList = blank;
             while (!at(this, TOKEN_CURLY_CLOSE)) {
@@ -768,7 +775,7 @@ func parsePattern(this: &Parser) -> &ParsedPattern {
             }
             let end = expect(this, TOKEN_CURLY_CLOSE);
             let span = newSpanBetween(&tkn.span, &end.span);
-            return newParsedPattern(span, Pattern::Struct(tkn, subPatterns));
+            retPat = newParsedPattern(span, Pattern::Struct(tkn, subPatterns));
         } else if (eat(this, TOKEN_PAREN_OPEN)) {
             let subPatterns: ParsedPatternList = blank;
             while (!at(this, TOKEN_PAREN_CLOSE)) {
@@ -787,35 +794,35 @@ func parsePattern(this: &Parser) -> &ParsedPattern {
             }
             let end = expect(this, TOKEN_PAREN_CLOSE);
             let span = newSpanBetween(&tkn.span, &end.span);
-            return newParsedPattern(span, Pattern::Struct(tkn, subPatterns));
+            retPat = newParsedPattern(span, Pattern::Struct(tkn, subPatterns));
         } else {
-            return newParsedPattern(tkn.span, Pattern::Ident(tkn));
+            retPat = newParsedPattern(tkn.span, Pattern::Ident(tkn));
         }
     } else if (tkn.kind == TOKEN_DOTDOT) {
-        return newParsedPattern(tkn.span, Pattern::Rest);
-    } else if (tkn.kind == TOKEN_KEYWORD) {
-        if (equals(&tkn.content, &KEYWORD_TRUE)) {
-            return newParsedPattern(tkn.span, Pattern::Boolean(true));
-        } else if (equals(&tkn.content, &KEYWORD_FALSE)) {
-            return newParsedPattern(tkn.span, Pattern::Boolean(false));
-        } else if (equals(&tkn.content, &KEYWORD_NULL)) {
-            return newParsedPattern(tkn.span, Pattern::Null);
-        }
+        retPat = newParsedPattern(tkn.span, Pattern::Rest);
     } else if (tkn.kind == TOKEN_WILDCARD) {
-        return newParsedPattern(tkn.span, Pattern::Wildcard);
+        retPat = newParsedPattern(tkn.span, Pattern::Wildcard);
     } else if (tkn.kind == TOKEN_AMPERSAND_SINGLE) {
         let underlying = parsePattern(this);
         let span = newSpanBetween(&tkn.span, &underlying.span);
-        return newParsedPattern(span, Pattern::Reference(underlying));
+        retPat = newParsedPattern(span, Pattern::Reference(underlying));
     } else if (tkn.kind == TOKEN_INT_LITERAL) {
-        return newParsedPattern(tkn.span, Pattern::Number(tkn));
+        retPat = newParsedPattern(tkn.span, Pattern::Number(tkn));
     }
-    let loc: String = getLocation(&tkn);
-    let name: String = toString(&tkn.content);
-    C::fprintf(stderr, "%s: %s: Expected Pattern, found `%s`.\n", loc.buffer, ERR_STR, name.buffer);
-    drop(&name);
-    drop(&loc);
-    C::exit(1);
+    if (retPat == null) {
+        let loc: String = getLocation(&tkn);
+        let name: String = toString(&tkn.content);
+        C::fprintf(stderr, "%s: %s: Expected Pattern, found `%s`.\n", loc.buffer, ERR_STR, name.buffer);
+        drop(&name);
+        drop(&loc);
+        C::exit(1);
+    }
+    if (eat(this, TOKEN_COLON_SINGLE)) {
+        let type = parseTypeNode(this);
+        return newParsedPattern(tkn.span, Pattern::PatWithType(retPat, type));
+    } else {
+        return retPat;
+    }
 }
 
 func parseForStmt(this: &Parser, kw: Token) -> &ParsedStmt {
@@ -843,12 +850,35 @@ func parseForStmt(this: &Parser, kw: Token) -> &ParsedStmt {
 
 func parseWhileStmt(this: &Parser, kw: Token) -> &ParsedStmt {
     assert(kw.kind == TOKEN_KEYWORD);
-    expect(this, TOKEN_PAREN_OPEN);
-    let cond: &ParsedExpr = parseExpr(this);
-    expect(this, TOKEN_PAREN_CLOSE);
-    let body = parseStmt(this);
-    let span: Span = newSpanBetween(&kw.span, &body.span);
-    return newParsedStmt(span, StmtData::While(cond, body));
+    if (eat(this, TOKEN_PAREN_OPEN)) {
+        // while ( <expr> ) <stmt>
+        let cond: &ParsedExpr = parseExpr(this);
+        expect(this, TOKEN_PAREN_CLOSE);
+        let body = parseStmt(this);
+        let span: Span = newSpanBetween(&kw.span, &body.span);
+        return newParsedStmt(span, StmtData::While(cond, body));
+    } else if (at(this, TOKEN_KEYWORD)) {
+        // while let <pat> = <expr> <block>
+        let tkn = expect(this, TOKEN_KEYWORD);
+        if (!equals(&tkn.content, &KEYWORD_LET)) {
+            let loc: String = getLocation(&tkn);
+            C::fprintf(stderr, "%s: %s: Expected `(` or `let`, found `%.*s` instead.\n", loc.buffer, ERR_STR, tkn.content.len, tkn.content.start);
+            drop(&loc);
+            C::exit(1);
+        }
+        let pat = parsePattern(this);
+        expect(this, TOKEN_EQUAL_SINGLE);
+        let expr = parseExpr(this, false);
+        let block = parseBlock(this);
+        let span = newSpanBetween(&tkn.span, &block.span);
+        return newParsedStmt(span, StmtData::WhileLet(pat, expr, block));
+    } else {
+        let tkn = peek(&this.lexer);
+        let loc: String = getLocation(&tkn);
+        C::fprintf(stderr, "%s: %s: Expected `(` or `let`, found `%.*s` instead.\n", loc.buffer, ERR_STR, tkn.content.len, tkn.content.start);
+        drop(&loc);
+        C::exit(1);
+    }
 }
 
 func parseReturnStmt(this: &Parser, kw: Token) -> &ParsedStmt {
@@ -867,47 +897,91 @@ func parseReturnStmt(this: &Parser, kw: Token) -> &ParsedStmt {
 
 func parseIfStmt(this: &Parser, kw: Token) -> &ParsedStmt {
     assert(kw.kind == TOKEN_KEYWORD);
-    expect(this, TOKEN_PAREN_OPEN);
-    let cond: &ParsedExpr = parseExpr(this);
-    expect(this, TOKEN_PAREN_CLOSE);
-    let ifBody: &ParsedStmt = parseStmt(this);
-    let elseBody: &ParsedStmt = null;
-    let end: Span = ifBody.span;
-    let maybeElse: Token = peek(&this.lexer);
-    if (maybeElse.kind == TOKEN_KEYWORD) {
-        if (equals(&maybeElse.content, &KEYWORD_ELSE)) {
-            expect(this, TOKEN_KEYWORD);
-            elseBody = parseStmt(this);
-            end = elseBody.span;
+    if (eat(this, TOKEN_PAREN_OPEN)) {
+        // if ( <expr> ) <stmt> [else <stmt>]
+        let cond: &ParsedExpr = parseExpr(this);
+        expect(this, TOKEN_PAREN_CLOSE);
+        let ifBody: &ParsedStmt = parseStmt(this);
+        let elseBody: &ParsedStmt = null;
+        let end: Span = ifBody.span;
+        let maybeElse: Token = peek(&this.lexer);
+        if (maybeElse.kind == TOKEN_KEYWORD) {
+            if (equals(&maybeElse.content, &KEYWORD_ELSE)) {
+                expect(this, TOKEN_KEYWORD);
+                elseBody = parseStmt(this);
+                end = elseBody.span;
+            }
         }
-    }
-    let span: Span = newSpanBetween(&kw.span, &end);
-    if (elseBody != null) {
-        return newParsedStmt(span, StmtData::IfElse(cond, ifBody, elseBody));
+        let span: Span = newSpanBetween(&kw.span, &end);
+        if (elseBody != null) {
+            return newParsedStmt(span, StmtData::IfElse(cond, ifBody, elseBody));
+        } else {
+            return newParsedStmt(span, StmtData::If(cond, ifBody));
+        }
+    } else if (at(this, TOKEN_KEYWORD)) {
+        // if let <pat> = <expr> <block> else <block>
+        let tkn = expect(this, TOKEN_KEYWORD);
+        if (!equals(&tkn.content, &KEYWORD_LET)) {
+            let loc: String = getLocation(&tkn);
+            C::fprintf(stderr, "%s: %s: Expected `(` or `let`, found `%.*s` instead.\n", loc.buffer, ERR_STR, tkn.content.len, tkn.content.start);
+            drop(&loc);
+            C::exit(1);
+        }
+        let pat = parsePattern(this);
+        expect(this, TOKEN_EQUAL_SINGLE);
+        let expr = parseExpr(this, false);
+        let block = parseBlock(this);
+        let end = block.span;
+        let maybeElse: Token = peek(&this.lexer);
+        let elseBody: &ParsedBlock = null;
+        if (maybeElse.kind == TOKEN_KEYWORD) {
+            if (equals(&maybeElse.content, &KEYWORD_ELSE)) {
+                expect(this, TOKEN_KEYWORD);
+                elseBody = parseBlock(this);
+                end = elseBody.span;
+            }
+        }
+        let span: Span = newSpanBetween(&kw.span, &end);
+        if (elseBody != null) {
+            return newParsedStmt(span, StmtData::IfLetElse(pat, expr, block, elseBody));
+        } else {
+            return newParsedStmt(span, StmtData::IfLet(pat, expr, block));
+        }
     } else {
-        return newParsedStmt(span, StmtData::If(cond, ifBody));
+        let tkn = peek(&this.lexer);
+        let loc: String = getLocation(&tkn);
+        C::fprintf(stderr, "%s: %s: Expected `(` or `let`, found `%.*s` instead.\n", loc.buffer, ERR_STR, tkn.content.len, tkn.content.start);
+        drop(&loc);
+        C::exit(1);
     }
 }
 
 func parseVarDeclStmt(this: &Parser, kw: Token, isGlobal: bool) -> &ParsedStmt {
-    let nameTkn: Token = expectSoftIdentifier(this);
     let isComptime: bool = equals(&kw.content, &KEYWORD_COMPTIME);
-    let type: &ParsedTypeNode = null;
-    if (eat(this, TOKEN_COLON_SINGLE)) {
-        type = parseTypeNode(this);
-    }
+    let pat = parsePattern(this);
     expect(this, TOKEN_EQUAL_SINGLE);
     let expr = parseExpr(this);
-    let end: Token = expect(this, TOKEN_SEMI_COLON);
-    let span: Span = newSpanBetween(&kw.span, &end.span);
-    return newParsedStmt(span, StmtData::VarDecl(VarDecl {
-        name: nameTkn,
-        type: type,
+    let decl = VarDecl {
+        pat: pat,
         expr: expr,
+        trampoline: null,
         isComptime: isComptime,
         isGlobal: isGlobal,
         origin: this.lexer.fileID,
-    }));
+    };
+    if (at(this, TOKEN_KEYWORD)) {
+        let elze = expect(this, TOKEN_KEYWORD);
+        if (!equals(&elze.content, &KEYWORD_ELSE)) {
+            let loc: String = getLocation(&elze);
+            C::fprintf(stderr, "%s: %s: Expected `else`, got `%.*s`.\n", loc.buffer, ERR_STR, elze.content.len, elze.content.start);
+            drop(&loc);
+            C::exit(1);
+        }
+        decl.trampoline = parseBlock(this);
+    }
+    let end: Token = expect(this, TOKEN_SEMI_COLON);
+    let span: Span = newSpanBetween(&kw.span, &end.span);
+    return newParsedStmt(span, StmtData::VarDecl(decl));
 }
 
 func parseTypeNode(this: &Parser) -> &ParsedTypeNode {
@@ -1008,10 +1082,17 @@ func parseTypeNode(this: &Parser, allowedVariadic: bool) -> &ParsedTypeNode {
 }
 
 func parseExpr(this: &Parser) -> &ParsedExpr {
-    return __parseExpr(this, 0, Assoc::Left);
+    return parseExpr(this, true);
+}
+
+func parseExpr(this: &Parser, struct_init_allowed: bool) -> &ParsedExpr {
+    return __parseExpr(this, 0, Assoc::Left, struct_init_allowed);
 }
 func __parseExpr(this: &Parser, precedence: usize, associativity: Assoc) -> &ParsedExpr {
-    let expr: &ParsedExpr = parsePrimaryExpr(this);
+    return __parseExpr(this, precedence, associativity, true);
+}
+func __parseExpr(this: &Parser, precedence: usize, associativity: Assoc, struct_init_allowed: bool) -> &ParsedExpr {
+    let expr: &ParsedExpr = parsePrimaryExpr(this, struct_init_allowed);
     while (matchesBinaryExpr(this)) {
         let tkn: Token = peek(&this.lexer);
         let newPrec: usize = getBinaryPrecedence(this, &tkn);
@@ -1024,7 +1105,7 @@ func __parseExpr(this: &Parser, precedence: usize, associativity: Assoc) -> &Par
     }
     return expr;
 }
-func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
+func parsePrimaryExpr(this: &Parser, struct_init_allowed: bool) -> &ParsedExpr {
     if (matchesUnaryExpr(this))
         return parseUnaryExpr(this);
     let tknKind: usize = peek(&this.lexer).kind;
@@ -1108,6 +1189,11 @@ func parsePrimaryExpr(this: &Parser) -> &ParsedExpr {
             let decl = newParsedFuncDecl(TLIParent { isFile: true, id: fileID as u32 }, span, name, params, retType, body);
             return newParsedExpr(span, ExprData::Func(decl));
         } else if (at(this, TOKEN_CURLY_OPEN)) {
+            if (!struct_init_allowed) {
+                return newParsedExpr(ident.span, ExprData::Ident(IdentExpr {
+                    name: ident
+                }));
+            }
             expect(this, TOKEN_CURLY_OPEN);
             let context: StructInitContext = blank;
             while (!parsedEOF(this) && !at(this, TOKEN_CURLY_CLOSE)) {

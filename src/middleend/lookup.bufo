@@ -270,42 +270,71 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) -> bool {
         push(&this.unions, lookup);
     } else if (tli.kind == TLI_VAR_DECL) {
         let varDecl: &ParsedStmt = at(&stmts, tli.nodeID);
-        let name: Token = blank;
+        assert(this.variables.length == 1, "expected to find only the global scope");
+        let globalScope: &ScopeLookup = last(&this.variables);
+        let pat: &ParsedPattern = null;
         let isComptime = false;
         match (&varDecl.data) {
             &StmtData::VarDecl(decl) => {
-                name = decl.name;
+                pat = decl.pat;
                 isComptime = decl.isComptime;
             }
             _ => { unreachable(); }
         }
-        let lookup: VariableLookup = VariableLookup {
-            globalID: tli.nodeID,
-            name: name,
-            typeState: blank,
-            isComptime: isComptime,
-        };
-        assert(this.variables.length == 1, "expected to find only the global scope");
-        let globalScope: &ScopeLookup = last(&this.variables);
-        let duplVar: Token = blank;
-        if (isKnownVariable(globalScope, lookup.name.content, &duplVar)) {
-            let loc = toString(&tli.span);
-            let _name = toString(&name);
-            let _loc = toString(&duplVar.span);
-            C::fprintf(stderr, "%s: %s: Variable redeclaration.\n", loc.buffer, ERR_STR);
-            C::fprintf(stderr, "%s: %s: Variable `%s` already declared here.\n", _loc.buffer, NOTE_STR, _name.buffer);
-            drop(&_name);
-            drop(&_loc);
-            drop(&loc);
-            return false;
-        }
-        addVariable(globalScope, lookup);
+        return insertVariables(this, pat, globalScope, isComptime);
     } else if (tli.kind == TLI_CONFIG) {
     } else {
         unreachable("Exhaustive handling of TLI kinds in insertTLI");
     }
     return true;
 }
+func insertVariables(this: &ModuleLookup, pat: &ParsedPattern, globalScope: &ScopeLookup, isComptime: bool) -> bool {
+    let check_known = func (globalScope: &ScopeLookup, lookup: &VariableLookup, pat: &ParsedPattern, name: &Token) -> bool {
+        let duplVar: Token = blank;
+        if (isKnownVariable(globalScope, lookup.name.content, &duplVar)) {
+            let loc = toString(&pat.span);
+            let _name = toString(name);
+            let _loc = toString(&duplVar.span);
+            C::fprintf(stderr, "%s: %s: Variable redeclaration.\n", loc.buffer, ERR_STR);
+            C::fprintf(stderr, "%s: %s: Variable `%s` already declared here.\n", _loc.buffer, NOTE_STR, _name.buffer);
+            drop(&_name);
+            drop(&_loc);
+            drop(&loc);
+            return true;
+        }
+        return false;
+    };
+    match (pat.data) {
+        Pattern::Wildcard => { todo_with_msg("insertVariables: Invalid pattern"); },
+        Pattern::Number(_) => { todo_with_msg("insertVariables: Invalid pattern"); },
+        Pattern::Rest => { todo_with_msg("insertVariables: Invalid pattern"); },
+        Pattern::Boolean(_) => { todo_with_msg("insertVariables: Invalid pattern"); },
+        Pattern::Null => { todo_with_msg("insertVariables: Invalid pattern"); },
+        Pattern::PatWithType(subpat, _) => { return insertVariables(this, subpat, globalScope, isComptime); }
+        Pattern::Ident(name) => {
+            let lookup: VariableLookup = VariableLookup {
+                globalID: getID(pat),
+                name: name,
+                typeState: blank,
+                isComptime: isComptime,
+            };
+            if (check_known(globalScope, &lookup, pat, &name)) return false;
+            addVariable(globalScope, lookup);
+            return true;
+        },
+        Pattern::Reference(subpat) => { return insertVariables(this, subpat, globalScope, isComptime); }
+        Pattern::Struct(name, subpats) => {
+            for (let i: usize = 0; i < subpats.length; i = i + 1) {
+                if (!insertVariables(this, subpats.elements[i], globalScope, isComptime)) return false;
+            }
+            return true;
+        }
+        Pattern::Path(_, subpat) => { return insertVariables(this, subpat, globalScope, isComptime); }
+        _ => { }
+    }
+    unreachable("insertVariables: Exhaustive handling of patterns");
+}
+
 func containsDuplicateFunction(this: &ModuleLookup, function: &FunctionLookup, dupl: &&FunctionLookup) -> bool {
     assert(this != null, "containsDuplicateFunction called with null-Lookup");
     let name: String = getMangledName(at(&funcDecls, function.globalID));

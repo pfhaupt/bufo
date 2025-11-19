@@ -1850,22 +1850,27 @@ func generateBytecodeStmt(this: &IRGen, function: &IRFunc, stmt: &ParsedStmt) {
     match (&stmt.data) {
         &StmtData::VarDecl(decl) => {
             let expr: &ParsedExpr = decl.expr;
-            if (decl.isComptime) {
-                startComptime(function);
-                let result: RegIndex = generateBytecodeExpr(this, function, expr, false);
-                let scope: &IRScope = last(&function.scopes);
-                addVariable(this, function, stmt.span, scope, decl.name.content, result, true);
-                endComptime(function);
-            } else {
-                let result: RegIndex = generateBytecodeExpr(this, function, expr, false);
-                let typ: &Type = getType(&stmt.typeState);
-                let allocaType: &Type = intoPointer(typ);
-                let ptr: RegIndex = allocateRegister(function, allocaType);
-                buildAlloca(function, stmt.span, ptr, getSizeInBytes(typ));
-                buildStore(function, stmt.span, ptr, result);
-                let scope: &IRScope = last(&function.scopes);
-                addVariable(this, function, stmt.span, scope, decl.name.content, ptr, false);
+            if (decl.isComptime) startComptime(function);
+            let result: RegIndex = generateBytecodeExpr(this, function, expr, false);
+            let patReg = generateBytecodePattern(this, function, result, decl.pat, false /* don't care */, decl.isComptime);
+            if (decl.trampoline != null) {
+                let trampoline = appendBlock(function);
+                let after = appendBlock(function);
+                buildCondBr(function, decl.trampoline.span, patReg, after, trampoline);
+
+                setCurrentBlock(function, trampoline);
+                generateBytecodeBlock(this, function, decl.trampoline);
+                let curr = getCurrentBlockAsRef(function);
+                if (!isTerminated(curr)) {
+                    let loc = toString(&decl.trampoline.span);
+                    C::fprintf(stderr, "%s: %s: Trampolines must always terminate.\n", loc.buffer, ERR_STR);
+                    drop(&loc);
+                    this.error = true;
+                }
+
+                setCurrentBlock(function, after);
             }
+            if (decl.isComptime) endComptime(function);
         }
         &StmtData::ReturnEmpty => {
             buildBr(function, stmt.span, function.returnBlockID);
@@ -1951,6 +1956,91 @@ func generateBytecodeStmt(this: &IRGen, function: &IRFunc, stmt: &ParsedStmt) {
 
             setCurrentBlock(function, afterBlock);
             popLoopBlocks(function);
+        }
+        &StmtData::IfLet(pat, expr, block) => {
+            let scope: usize = enterScope(function);
+            let result: RegIndex = generateBytecodeExpr(this, function, expr, false);
+            let patReg = generateBytecodePattern(this, function, result, pat, false /* don't care */);
+
+            let jump = appendBlock(function);
+            let after = appendBlock(function);
+            buildCondBr(function, stmt.span, patReg, jump, after);
+
+            setCurrentBlock(function, jump);
+            generateBytecodeBlock(this, function, block);
+            let curr: &IRBlock = getCurrentBlockAsRef(function);
+            if (!isTerminated(curr)) {
+                buildBr(function, stmt.span, after);
+            }
+            setCurrentBlock(function, after);
+            leaveScope(function);
+        }
+        &StmtData::IfLetElse(pat, expr, block, elze) => {
+            let scope: usize = enterScope(function);
+            let result: RegIndex = generateBytecodeExpr(this, function, expr, false);
+            let patReg = generateBytecodePattern(this, function, result, pat, false /* don't care */);
+
+            let jumpTrue = appendBlock(function);
+            let jumpFalse = appendBlock(function);
+            buildCondBr(function, stmt.span, patReg, jumpTrue, jumpFalse);
+
+            setCurrentBlock(function, jumpTrue);
+            generateBytecodeBlock(this, function, block);
+            jumpTrue = getCurrentBlock(function);
+            leaveScope(function);
+
+            setCurrentBlock(function, jumpFalse);
+            generateBytecodeBlock(this, function, elze);
+            jumpFalse = getCurrentBlock(function);
+
+            let jumpTrueBlock: &IRBlock = getBlockByID(function, jumpTrue);
+            let jumpFalseBlock: &IRBlock = getBlockByID(function, jumpFalse);
+            let jumpTrueTerm: bool = isTerminated(jumpTrueBlock);
+            let jumpFalseTerm: bool = isTerminated(jumpFalseBlock);
+            if (jumpTrueTerm && jumpFalseTerm) {
+                // nothing to do here
+            } else if (jumpTrueTerm && !jumpFalseTerm) {
+                let after: IRBlockID = appendBlock(function);
+                setCurrentBlock(function, jumpFalse);
+                buildBr(function, stmt.span, after);
+                setCurrentBlock(function, after);
+            } else if (!jumpTrueTerm && jumpFalseTerm) {
+                let after: IRBlockID = appendBlock(function);
+                setCurrentBlock(function, jumpTrue);
+                buildBr(function, stmt.span, after);
+                setCurrentBlock(function, after);
+            } else {
+                let after: IRBlockID = appendBlock(function);
+                setCurrentBlock(function, jumpTrue);
+                buildBr(function, stmt.span, after);
+                setCurrentBlock(function, jumpFalse);
+                buildBr(function, stmt.span, after);
+                setCurrentBlock(function, after);
+            }
+        }
+        &StmtData::WhileLet(pat, expr, block) => {
+            let scope: usize = enterScope(function);
+            let condBlock = appendBlock(function);
+            let bodyBlock = appendBlock(function);
+            let afterBlock = appendBlock(function);
+            pushLoopBlocks(function, condBlock, afterBlock);
+            buildBr(function, stmt.span, condBlock);
+
+            setCurrentBlock(function, condBlock);
+            let result: RegIndex = generateBytecodeExpr(this, function, expr, false);
+            let patReg = generateBytecodePattern(this, function, result, pat, false /* don't care */);
+            buildCondBr(function, stmt.span, patReg, bodyBlock, afterBlock);
+
+            setCurrentBlock(function, bodyBlock);
+            generateBytecodeBlock(this, function, block);
+            let curr: &IRBlock = getCurrentBlockAsRef(function);
+            if (!isTerminated(curr)) {
+                buildBr(function, stmt.span, condBlock);
+            }
+
+            setCurrentBlock(function, afterBlock);
+            popLoopBlocks(function);
+            leaveScope(function);
         }
         &StmtData::CFor { init, cond, step, body } => {
             let initBlock = appendBlock(function);
@@ -2121,12 +2211,17 @@ func generateBytecodeMatchStmt(this: &IRGen, function: &IRFunc, match: &ParsedSt
 }
 
 func generateBytecodePattern(this: &IRGen, function: &IRFunc, expr: RegIndex, pat: &ParsedPattern, inOrigMemory: bool) -> RegIndex {
+    return generateBytecodePattern(this, function, expr, pat, inOrigMemory, false);
+}
+func generateBytecodePattern(this: &IRGen, function: &IRFunc, expr: RegIndex, pat: &ParsedPattern, inOrigMemory: bool, isComptimeVariable: bool) -> RegIndex {
     let type = getRegister(function, expr).typ;
     let success = allocateRegister(function, wrap(Type::Prim(PrimType::Bool)));
     match (&pat.data) {
         &Pattern::Ident(name) => {
             // FIXME: This pattern doesn't update DebugInfo of the identifier properly
-            if (inOrigMemory) {
+            if (isComptimeVariable) {
+                addVariable(this, function, pat.span, last(&function.scopes), name.content, expr, true);
+            } else if (inOrigMemory) {
                 addVariable(this, function, pat.span, last(&function.scopes), name.content, expr, false);
             } else {
                 let allocReg = allocateRegister(function, intoPointer(type));
@@ -2142,10 +2237,13 @@ func generateBytecodePattern(this: &IRGen, function: &IRFunc, expr: RegIndex, pa
             if (isPointer(under)) {
                 let reg = allocateRegister(function, under);
                 buildLoad(function, pat.span, reg, expr);
-                return generateBytecodePattern(this, function, reg, sub, true);
+                return generateBytecodePattern(this, function, reg, sub, true, isComptimeVariable);
             } else {
-                return generateBytecodePattern(this, function, expr, sub, true);
+                return generateBytecodePattern(this, function, expr, sub, true, isComptimeVariable);
             }
+        }
+        &Pattern::PatWithType(sub, _) => {
+            return generateBytecodePattern(this, function, expr, sub, inOrigMemory, isComptimeVariable);
         }
         &Pattern::Null => {
             assert(isPointer(type), "Null Pattern expected pointer type");
@@ -2177,16 +2275,16 @@ func generateBytecodePattern(this: &IRGen, function: &IRFunc, expr: RegIndex, pa
         }
         &Pattern::Struct(_, _) => {
             buildLoadBool(function, pat.span, success, 1);
-            generateBytecodePatternStruct(this, function, expr, pat, success, inOrigMemory);
+            generateBytecodePatternStruct(this, function, expr, pat, success, inOrigMemory, isComptimeVariable);
         }
         &Pattern::Path(_, sub) => {
             buildLoadBool(function, pat.span, success, 1);
             let ptr = isPointer(type);
             if (ptr) type = getUnderlyingType(type, false);
             if (isUnion(type)) {
-                generateBytecodePatternUnion(this, function, expr, pat, success, ptr || inOrigMemory);
+                generateBytecodePatternUnion(this, function, expr, pat, success, ptr || inOrigMemory, isComptimeVariable);
             } else if (isStruct(type)) {
-                generateBytecodePatternStruct(this, function, expr, sub, success, ptr || inOrigMemory);
+                generateBytecodePatternStruct(this, function, expr, sub, success, ptr || inOrigMemory, isComptimeVariable);
             } else {
                 unreachable("generateBytecodePattern(PATTERN_PATH): Exhaustive handling of variations");
             }
@@ -2218,7 +2316,7 @@ func generateBytecodePattern(this: &IRGen, function: &IRFunc, expr: RegIndex, pa
     return success;
 }
 
-func generateBytecodePatternStruct(this: &IRGen, function: &IRFunc, expr: RegIndex, pat: &ParsedPattern, success: RegIndex, inOrigMemory: bool) {
+func generateBytecodePatternStruct(this: &IRGen, function: &IRFunc, expr: RegIndex, pat: &ParsedPattern, success: RegIndex, inOrigMemory: bool, isComptimeVariable: bool) {
     let type = getRegister(function, expr).typ;
     let subPatterns: &ParsedPatternList = null;
     match (&pat.data) {
@@ -2238,7 +2336,7 @@ func generateBytecodePatternStruct(this: &IRGen, function: &IRFunc, expr: RegInd
             let fieldType = intoPointer(getType(&fieldNode.typeState));
             let subExpr = allocateRegister(function, fieldType);
             buildGetFieldPtr(function, pat.span, subExpr, expr, i);
-            let sub = generateBytecodePattern(this, function, subExpr, subPat, true);
+            let sub = generateBytecodePattern(this, function, subExpr, subPat, true, isComptimeVariable);
             buildBinaryOp(function, subPat.span, INSTR_LOGICAL_AND, success, success, sub);
             if (tag(&subPat.data) == comptime tag(&Pattern::Rest)) break;
         }
@@ -2260,14 +2358,14 @@ func generateBytecodePatternStruct(this: &IRGen, function: &IRFunc, expr: RegInd
             let subExpr = allocateRegister(function, fieldType);
             buildGetFieldPtr(function, pat.span, fieldPtr, expr, i);
             buildLoad(function, pat.span, subExpr, fieldPtr);
-            let sub = generateBytecodePattern(this, function, subExpr, subPat, false);
+            let sub = generateBytecodePattern(this, function, subExpr, subPat, false, isComptimeVariable);
             buildBinaryOp(function, subPat.span, INSTR_LOGICAL_AND, success, success, sub);
             if (tag(&subPat.data) == comptime tag(&Pattern::Rest)) break;
         }
     }
 }
 
-func generateBytecodePatternUnion(this: &IRGen, function: &IRFunc, expr: RegIndex, pat: &ParsedPattern, success: RegIndex, inOrigMemory: bool) {
+func generateBytecodePatternUnion(this: &IRGen, function: &IRFunc, expr: RegIndex, pat: &ParsedPattern, success: RegIndex, inOrigMemory: bool, isComptimeVariable: bool) {
     // FIXME: Handling of IR for unions is always so awkward
     let type = getRegister(function, expr).typ;
     let name: &Token = null;
@@ -2326,7 +2424,7 @@ func generateBytecodePatternUnion(this: &IRGen, function: &IRFunc, expr: RegInde
             let fieldSize = getSizeInBytes(fieldType);
             let subPtr = allocateRegister(function, intoPointer(fieldType));
             buildMove(function, subSubPat.span, subPtr, tmp);
-            let sub = generateBytecodePattern(this, function, subPtr, subSubPat, true);
+            let sub = generateBytecodePattern(this, function, subPtr, subSubPat, true, isComptimeVariable);
             buildBinaryOp(function, subSubPat.span, INSTR_LOGICAL_AND, success, success, sub);
             if (tag(&subSubPat.data) == comptime tag(&Pattern::Rest)) break;
             if (i != subPatterns.length - 1) {
@@ -2384,7 +2482,7 @@ func generateBytecodePatternUnion(this: &IRGen, function: &IRFunc, expr: RegInde
             buildLoadInteger(function, subSubPat.span, sizeReg, usizeType, fieldSize);
             buildMemcpy(function, subSubPat.span, tmp, subAlloc, sizeReg);
             buildLoad(function, subSubPat.span, subExpr, subAlloc);
-            let sub = generateBytecodePattern(this, function, subExpr, subSubPat, false);
+            let sub = generateBytecodePattern(this, function, subExpr, subSubPat, false, isComptimeVariable);
             buildBinaryOp(function, subSubPat.span, INSTR_LOGICAL_AND, success, success, sub);
             if (tag(&subSubPat.data) == comptime tag(&Pattern::Rest)) break;
             if (i != subPatterns.length - 1) {
@@ -2588,11 +2686,11 @@ func generateBytecodeExprBinary(this: &IRGen, function: &IRFunc, expr: &BinaryEx
         &BinaryExpr::Path(..) => { return generateBytecodeExprPathAccess(this, function, expr, needsPtr); }
         &BinaryExpr::Dot(..) => { return generateBytecodeExprMemberAccess(this, function, expr, needsPtr); }
         &BinaryExpr::Assign(..) => { return generateBytecodeExprAssignment(this, function, expr); }
-        &BinaryExpr::Plus(..) => { return generateBytecodeExprArithmetic(this, function, expr, type); }
-        &BinaryExpr::Sub(..) => { return generateBytecodeExprArithmetic(this, function, expr, type); }
-        &BinaryExpr::Mult(..) => { return generateBytecodeExprArithmetic(this, function, expr, type); }
-        &BinaryExpr::Div(..) => { return generateBytecodeExprArithmetic(this, function, expr, type); }
-        &BinaryExpr::Mod(..) => { return generateBytecodeExprArithmetic(this, function, expr, type); }
+        &BinaryExpr::Plus(..) => { return generateBytecodeExprArithmetic(this, function, expr, type, needsPtr); }
+        &BinaryExpr::Sub(..) => { return generateBytecodeExprArithmetic(this, function, expr, type, needsPtr); }
+        &BinaryExpr::Mult(..) => { return generateBytecodeExprArithmetic(this, function, expr, type, needsPtr); }
+        &BinaryExpr::Div(..) => { return generateBytecodeExprArithmetic(this, function, expr, type, needsPtr); }
+        &BinaryExpr::Mod(..) => { return generateBytecodeExprArithmetic(this, function, expr, type, needsPtr); }
         &BinaryExpr::CmpEq(..) => { return generateBytecodeExprComparison(this, function, expr, type); }
         &BinaryExpr::CmpNeq(..) => { return generateBytecodeExprComparison(this, function, expr, type); }
         &BinaryExpr::CmpGt(..) => { return generateBytecodeExprComparison(this, function, expr, type); }
@@ -3101,7 +3199,7 @@ func generateBytecodeExprIdentifier(this: &IRGen, function: &IRFunc, expr: &Iden
     }
 }
 
-func generateBytecodeExprArithmetic(this: &IRGen, function: &IRFunc, expr: &BinaryExpr, type: &Type) -> RegIndex {
+func generateBytecodeExprArithmetic(this: &IRGen, function: &IRFunc, expr: &BinaryExpr, type: &Type, needsPtr: bool) -> RegIndex {
     assert(isArithmetic(expr));
     let lhs: &ParsedExpr = null;
     let rhs: &ParsedExpr = null;
@@ -3192,7 +3290,15 @@ func generateBytecodeExprArithmetic(this: &IRGen, function: &IRFunc, expr: &Bina
         }
         _ => { unreachable("Exhaustive handling of ops in generateBytecodeExprArithmetic"); }
     }
-    return dst;
+    if (needsPtr) {
+        let subType: &Type = intoPointer(type);
+        let ptr: RegIndex = allocateRegister(function, subType);
+        buildAlloca(function, lhs.span, ptr, getSizeInBytes(type));
+        buildStore(function, lhs.span, ptr, dst);
+        return ptr;
+    } else {
+        return dst;
+    }
 }
 
 func generateBytecodeExprComparison(this: &IRGen, function: &IRFunc, expr: &BinaryExpr, type: &Type) -> RegIndex {

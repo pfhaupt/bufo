@@ -781,7 +781,6 @@ func newParsedBlock() -> &ParsedBlock {
     return last(&blocks);
 }
 
-// TODO: Once `let` accepts a pattern, we can also introduce `if let`
 union StmtData {
     VarDecl(VarDecl),
     ReturnEmpty,
@@ -796,12 +795,15 @@ union StmtData {
     Continue,
     Match(&ParsedExpr, ParsedPatternList, ParsedStmtList),
     Asm(&ParsedExpr, ParsedExprList),
+    IfLet(&ParsedPattern, &ParsedExpr, &ParsedBlock),
+    IfLetElse(&ParsedPattern, &ParsedExpr, &ParsedBlock, &ParsedBlock),
+    WhileLet(&ParsedPattern, &ParsedExpr, &ParsedBlock),
 }
-// TODO: VarDecls should accept a pattern instead of just a name
+
 struct VarDecl {
-    name: Token;
-    type: &ParsedTypeNode;
+    pat: &ParsedPattern;
     expr: &ParsedExpr;
+    trampoline: &ParsedBlock;
     isComptime: bool;
     isGlobal: bool;
     origin: usize;
@@ -1244,6 +1246,7 @@ union Pattern {
     Wildcard,
     Number(Token),
     Ident(Token),
+    PatWithType(&ParsedPattern, &ParsedTypeNode),
     Reference(&ParsedPattern),
     Struct(Token, ParsedPatternList),
     Path(Token, &ParsedPattern),

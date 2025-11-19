@@ -63,6 +63,8 @@ comptime ERROR_ASSEMBLY_IN_COMPTIME_CONTEXT      : usize = 40;
 comptime ERROR_NAKED_STATEMENT                   : usize = 41;
 comptime ERROR_INVALID_VARIANT_INIT              : usize = 42;
 comptime ERROR_NO_SUCH_VARIANT                   : usize = 43;
+comptime ERROR_INFER_FAILED                      : usize = 44;
+comptime ERROR_MISSING_TRAMPOLINE                : usize = 45;
 
 comptime TCSTATE_INVALID: usize = 0;
 comptime TCSTATE_ERROR: usize = 1;
@@ -187,6 +189,26 @@ func leaveComptime(this: &TypeChecker) { this.comptimeDepth = this.comptimeDepth
 func pl(count: usize, s1: &char, s2: &char) -> &char {
     if (count == 1) return s1;
     return s2;
+}
+func reportUnknownIdentifier(this: &TypeChecker, name: &Token) -> TCState {
+    let loc: String = getLocation(name);
+    let _name: String = toString(&name.content);
+    C::fprintf(stderr, "%s: %s: Use of undeclared identifier `%s`.\n", loc.buffer, ERR_STR, _name.buffer);
+    let alternatives: VariableLookupList = searchAllFilesForIdentifier(&this.lookup, name, this.anonFuncDepth > 0);
+    if (*flags.verbose) {
+        for (let i: usize = 0; i < alternatives.length; i = i + 1) {
+            let t: &VariableLookup = at(&alternatives, i);
+            drop(&loc);
+            loc = getLocation(&t.name);
+            C::fprintf(stderr, "%s: %s: A variable with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
+        }
+    } else if (alternatives.length > 0) {
+        reportVerboseNote(this, loc, alternatives.length, "global variable with that name", "global variables with that name");
+    }
+    drop(&_name);
+    drop(&loc);
+    this.typeError = true;
+    return newTCStateFailure(ERROR_NO_SUCH_IDENTIFIER);
 }
 func reportVerboseNote(this: &TypeChecker, loc: String, count: usize, s1: &char, s2: &char) {
     let is = pl(count, "is", "are");
@@ -439,6 +461,14 @@ func reportMemberAccessOnNonStruct(this: &TypeChecker, expr: &ParsedExpr, instan
     drop(&loc);
     this.typeError = true;
     return newTCStateFailure(ERROR_MEMBER_ACCESS_NON_STRUCT);
+}
+
+func reportCouldNotInferType(this: &TypeChecker, span: Span) -> TCState {
+    let loc = toString(&span);
+    C::fprintf(stderr, "%s: %s: Could not infer type of expression.\n", loc.buffer, ERR_STR);
+    drop(&loc);
+    this.typeError = true;
+    return newTCStateFailure(ERROR_INFER_FAILED);
 }
 
 func reportMemberAccessNoOptions(this: &TypeChecker, span: Span) -> TCState {
@@ -705,6 +735,21 @@ func reportAssemblyArgCountMismatch(this: &TypeChecker, stmt: &ParsedStmt, argCo
     C::fprintf(stderr, "%s: %s: The function passed to `asm` expected %llu %s, but got %llu %s.\n", loc.buffer, ERR_STR, paramCount, params, argCount, args);
     drop(&loc);
     return newTCStateFailure(ERROR_TYPE_MISMATCH);
+}
+
+func reportMissingTrampoline(this: &TypeChecker, span: Span) -> TCState {
+    let loc = toString(&span);
+    C::fprintf(stderr, "%s: %s: Pattern in variable declaration is not exhaustive.\n", loc.buffer, ERR_STR);
+    C::fprintf(stderr, "%s: %s: Provide a trampoline to handle the case where the pattern does not match.\n", loc.buffer, NOTE_STR);
+    C::fprintf(stderr, "%s: %s: A trampoline is an `else`-block after the declaration, for example `let a = 10 else { /* trampoline */ };`\n", loc.buffer, NOTE_STR);
+    drop(&loc);
+    return newTCStateFailure(ERROR_MISSING_TRAMPOLINE);
+}
+
+func reportUnnecessaryTrampoline(this: &TypeChecker, span: Span) {
+    let loc = toString(&span);
+    C::fprintf(stderr, "%s: %s: Pattern in variable declaration is exhaustive, the trampoline is unreachable.\n", loc.buffer, WARN_STR);
+    drop(&loc);
 }
 
 func emergencyPrint(this: &TypeChecker, where: Span) {
@@ -1303,6 +1348,35 @@ func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupLi
                 return reportTypeMismatch(this, cond.span, boolType, condType);
             }
         }
+        &StmtData::IfLet(pat, expr, block) => {
+            // REVIEW: Check if pattern is exhaustive?
+            push(scopes, blank);
+            state = handleLetPatExpr(this, stmt.span, pat, expr, scopes, false);
+            if (isError(&state)) return state;
+            let blockState = typeCheckBlock(this, block, scopes, false);
+            if (isError(&blockState)) return blockState;
+            pop(scopes);
+        }
+        &StmtData::IfLetElse(pat, expr, block, elze) => {
+            // REVIEW: Check if pattern is exhaustive?
+            push(scopes, blank);
+            state = handleLetPatExpr(this, stmt.span, pat, expr, scopes, false);
+            if (isError(&state)) return state;
+            let blockState = typeCheckBlock(this, block, scopes, false);
+            if (isError(&blockState)) return blockState;
+            pop(scopes);
+            let elseState = typeCheckBlock(this, elze, scopes, false);
+            if (isError(&elseState)) return elseState;
+        }
+        &StmtData::WhileLet(pat, expr, block) => {
+            // REVIEW: Check if pattern is exhaustive?
+            push(scopes, blank);
+            state = handleLetPatExpr(this, stmt.span, pat, expr, scopes, false);
+            if (isError(&state)) return state;
+            let blockState = typeCheckBlock(this, block, scopes, false);
+            if (isError(&blockState)) return blockState;
+            pop(scopes);
+        }
         &StmtData::CFor { init, cond, step, body } => {
             push(scopes, blank);
             let initState: TCState = typeCheckStmt(this, init, scopes);
@@ -1395,7 +1469,7 @@ func typeCheckMatchStmt(this: &TypeChecker, match: &ParsedStmt, scopes: &ScopeLo
     for (let i: usize = 0; i < patterns.length; i = i + 1) {
         let scope: ScopeLookup = blank;
         let pat = *at(patterns, i);
-        let patState = checkAndBindPattern(this, type, pat, &scope);
+        let patState = checkAndBindPattern(this, type, pat, scopes, &scope);
         if (isError(&patState)) {
             result = patState;
             continue;
@@ -1432,28 +1506,67 @@ func typeCheckMatchStmt(this: &TypeChecker, match: &ParsedStmt, scopes: &ScopeLo
     return result;
 }
 
-func checkAndBindPattern(this: &TypeChecker, type: &Type, pat: &ParsedPattern, scope: &ScopeLookup) -> TCState {
-    // TODO: This is a good spot to test match statements after the refactor :^)
-    match (&pat.data) {
-        &Pattern::Ident(ident) => {
-            let loc: Token = blank;
-            if (isKnownVariable(scope, ident.content, &loc)) {
-                todo_with_msg("pat ident exists, check type");
+func checkAndBindPattern(this: &TypeChecker, type: &Type, pat: &ParsedPattern, scopes: &ScopeLookupList, scope: &ScopeLookup) -> TCState {
+    return checkAndBindPattern(this, type, pat, scopes, scope, false);
+}
+func checkAndBindPattern(this: &TypeChecker, type: &Type, pat: &ParsedPattern, scopes: &ScopeLookupList, scope: &ScopeLookup, globalScope: bool) -> TCState {
+    let check_ident = func (this: &TypeChecker, type: &Type, pat: &ParsedPattern, ident: Token, scopes: &ScopeLookupList, scope: &ScopeLookup, globalScope: bool) -> TCState {
+        let loc: Token = blank;
+        if (globalScope) {
+            let index: usize = 0;
+            assert(getVarIndexByName(scope, ident.content, &index), "Could not find variable in global scope");
+            let var: &VariableLookup = getVariableAtIndex(scope, index);
+            var.typeState = newTCStateType(type);
+        } else if (isKnownVariable(scope, ident.content, &loc)) {
+            return reportVariableRedeclaration(this, ident, loc);
+        } else {
+            if (*flags.warnSimple) {
+                for (let i: usize = 0; i < scopes.length - 1; i = i + 1) {
+                    let s = at(scopes, i);
+                    let _loc: Token = blank;
+                    if (isKnownVariable(s, ident.content, &_loc)) {
+                        let loc1 = toString(&ident.span);
+                        let loc2 = toString(&_loc.span);
+                        let name1 = toString(&ident.content);
+                        C::fprintf(stderr, "%s: %s: Shadowing variable `%s` from an outer scope.\n", loc1.buffer, WARN_STR, name1.buffer);
+                        C::fprintf(stderr, "%s: %s: Variable with the same name already declared here.\n", loc2.buffer, NOTE_STR);
+                        drop(&name1);
+                        drop(&loc2);
+                        drop(&loc1);
+                    }
+                }
             }
             addVariable(scope, VariableLookup {
                 globalID: getID(pat),
                 name: ident,
                 typeState: newTCStateType(type),
-                isComptime: false,
+                isComptime: this.comptimeDepth > 0,
             });
-            return newTCStatePattern(PatState {
-                complete: true,
-            });
+        }
+        return newTCStatePattern(PatState {
+            complete: true,
+        });
+    };
+    match (&pat.data) {
+        &Pattern::PatWithType(subpat, typeNode) => {
+            let typeState = typeCheckTypeNode(this, typeNode);
+            if (isError(&typeState)) return typeState;
+            let typ = getType(&typeState);
+            let err: TCState = blank;
+            if (!equals(typ, type)) {
+                err = reportTypeMismatch(this, pat.span, typ, type);
+            }
+            let res = checkAndBindPattern(this, typ, subpat, scopes, scope, globalScope);
+            if (isError(&err)) return err;
+            return res;
+        }
+        &Pattern::Ident(ident) => {
+            return check_ident(this, type, pat, ident, scopes, scope, globalScope);
         }
         &Pattern::Reference(sub) => {
             // REVIEW: Make &pat check for null?
             match (type) {
-                &Type::Ptr(under) => { return checkAndBindPattern(this, under, sub, scope); }
+                &Type::Ptr(under) => { return checkAndBindPattern(this, under, sub, scopes, scope); }
                 _ => { return reportImpossiblePattern(this, pat, type); }
             }
         }
@@ -1527,7 +1640,7 @@ func checkAndBindPattern(this: &TypeChecker, type: &Type, pat: &ParsedPattern, s
                                 let field = *at(&variant.fields, i);
                                 assert(isSuccess(&field.typeState), "checkAndBindPattern: Invalid field type");
                                 let fieldType = getType(&field.typeState);
-                                let subComplete = checkAndBindPattern(this, fieldType, subSubPat, scope);
+                                let subComplete = checkAndBindPattern(this, fieldType, subSubPat, scopes, scope);
                                 if (isError(&subComplete)) return subComplete;
                                 if (!getPatState(&subComplete).complete) {
                                     complete = false;
@@ -1544,7 +1657,7 @@ func checkAndBindPattern(this: &TypeChecker, type: &Type, pat: &ParsedPattern, s
                 type => {
                     let moduleLookup: &ModuleLookup = null;
                     if (resolveModuleByName(this.currentModule, &name, &moduleLookup)) {
-                        return checkAndBindPattern(this, type, subPat, scope);
+                        return checkAndBindPattern(this, type, subPat, scopes, scope);
                     } else {
                         return reportImpossiblePattern(this, pat, type);
                     }
@@ -1585,7 +1698,7 @@ func checkAndBindPattern(this: &TypeChecker, type: &Type, pat: &ParsedPattern, s
                         let field = at(&lookup.fields, i);
                         assert(isSuccess(&field.typeState), "checkAndBindPattern: Invalid field type");
                         let fieldType = getType(&field.typeState);
-                        let subComplete = checkAndBindPattern(this, fieldType, subpat, scope);
+                        let subComplete = checkAndBindPattern(this, fieldType, subpat, scopes, scope);
                         if (isError(&subComplete)) return subComplete;
                         if (!getPatState(&subComplete).complete) {
                             complete = false;
@@ -1617,85 +1730,59 @@ func checkAndBindPattern(this: &TypeChecker, type: &Type, pat: &ParsedPattern, s
 func typeCheckVarDecl(this: &TypeChecker, varDeclID: usize, scopes: &ScopeLookupList, globalScope: bool) -> TCState {
     return typeCheckVarDecl(this, at(&stmts, varDeclID), scopes, globalScope);
 }
+func handleLetPatExpr(this: &TypeChecker, span: Span, pat: &ParsedPattern, expr: &ParsedExpr, scopes: &ScopeLookupList, globalScope: bool) -> TCState {
+    let declState = newTCStateSuccess();
+    let exprState = typeCheckExpr(this, expr, scopes);
+    if (isError(&exprState)) {
+        declState = exprState;
+        exprState = newTCStateType(wrap(Type::Error));
+    }
+    if (wantsInfer(&exprState)) {
+        // the case where `let <pat> = <expr>;` failed to get a type for `<expr>`
+        exprState = inferPatternOntoExpr(this, expr, pat, scopes);
+        if (isError(&exprState)) {
+            declState = exprState;
+            exprState = newTCStateType(wrap(Type::Error));
+        }
+        if (wantsInfer(&exprState)) {
+            // We tried our best, but even looking at `<pat>` didnt help us resolve a type
+            return reportCouldNotInferType(this, span);
+        }
+        assert(isType(&exprState), "typeCheckVarDecl: infer failed");
+    }
+    let exprType = getType(&exprState);
+    let last: &ScopeLookup = last(scopes);
+    let state = checkAndBindPattern(this, exprType, pat, scopes, last, globalScope);
+    if (isError(&declState)) return declState;
+    return state;
+}
 func typeCheckVarDecl(this: &TypeChecker, varDecl: &ParsedStmt, scopes: &ScopeLookupList, globalScope: bool) -> TCState {
     if (varDecl.ignored) return blank;
-    // TODO: Split StmtData::VarDecl into a version that has a type, and one that doesn't
     match (&varDecl.data) {
-        &StmtData::VarDecl(VarDecl { name, type, expr, isComptime, .. }) => {
+        &StmtData::VarDecl(VarDecl { pat, expr, trampoline, isComptime, .. }) => {
+            if (isComptime) enterComptime(this);
+            // NOTE: hack1 and hack2 are... hacks. They ensure that we can't use any variables
+            //       defined in the pattern (e.g. Foo::A(n)) in the trampoline in case the match
+            //       failed.
             let last: &ScopeLookup = last(scopes);
-            let typeState: TCState = blank;
-            let exprState: TCState = blank;
-            if (isSuccess(&varDecl.typeState)) {
-                typeState = varDecl.typeState;
-                exprState = varDecl.typeState;
-            } else {
-                let loc: Token = blank;
-                if (*flags.warnSimple) {
-                    for (let i: usize = 0; i < scopes.length - 1; i = i + 1) {
-                        let s = at(scopes, i);
-                        let _loc: Token = blank;
-                        if (isKnownVariable(s, name.content, &_loc)) {
-                            let loc1 = toString(&name.span);
-                            let loc2 = toString(&_loc.span);
-                            let name1 = toString(&name.content);
-                            C::fprintf(stderr, "%s: %s: Shadowing variable `%s` from an outer scope.\n", loc1.buffer, WARN_STR, name1.buffer);
-                            C::fprintf(stderr, "%s: %s: Variable with the same name already declared here.\n", loc2.buffer, NOTE_STR);
-                            drop(&name1);
-                            drop(&loc2);
-                            drop(&loc1);
-                        }
-                    }
+            let hack1 = last.variables.length;
+            let state = handleLetPatExpr(this, varDecl.span, pat, expr, scopes, globalScope);
+            let hack2 = last.variables.length;
+            if (isComptime) leaveComptime(this);
+            if (isError(&state)) return state;
+            let _patState = getPatState(&state);
+            if (trampoline != null) {
+                last.variables.length = hack1;
+                state = typeCheckBlock(this, trampoline, scopes, false);
+                last.variables.length = hack2;
+                if (_patState.complete) {
+                    reportUnnecessaryTrampoline(this, trampoline.span);
                 }
-                if (!globalScope && isKnownVariable(last, name.content, &loc)) {
-                    return reportVariableRedeclaration(this, name, loc);
-                }
-                if (type != null) {
-                    typeState = typeCheckTypeNode(this, type);
-                    if (isError(&typeState)) return typeState;
-                    if (!isType(&typeState)) todo_with_msg("let type is not a type");
-                }
-                if (isComptime) enterComptime(this);
-                exprState = typeCheckExpr(this, expr, scopes);
-                if (isComptime) leaveComptime(this);
-                if (type == null) {
-                    // let var = expr;
-                    assert(isInvalid(&typeState), "`let var = expr;` got valid type state??");
-                    if (isError(&exprState)) return exprState;
-                    if (wantsInfer(&exprState)) {
-                    } else if (!isType(&exprState)) {
-                        todo_with_msg("let expr is not a type");
-                    }
-                    typeState = exprState;
-                } else {
-                    // let var: type = expr;
-                    if (wantsInfer(&exprState)) {
-                        exprState = inferTypeOntoExpr(this, expr, getType(&typeState), scopes);
-                    }
-                    if (isType(&exprState)) {
-                        let typeType: &Type = getType(&typeState);
-                        let exprType: &Type = getType(&exprState);
-                        if (!equals(typeType, exprType)) {
-                            exprState = reportTypeMismatch(this, expr.span, typeType, exprType);
-                        }
-                    }
-                }
+            } else if (!_patState.complete) {
+                return reportMissingTrampoline(this, varDecl.span);
             }
-            if (globalScope) {
-                let index: usize = 0;
-                assert(getVarIndexByName(last, name.content, &index), "Could not find variable in global scope");
-                let var: &VariableLookup = getVariableAtIndex(last, index);
-                var.typeState = typeState;
-            } else {
-                addVariable(last, VariableLookup {
-                    globalID: getID(varDecl),
-                    name: name,
-                    typeState: typeState,
-                    isComptime: isComptime,
-                });
-            }
-            if (isError(&exprState)) return exprState;
-            varDecl.typeState = typeState;
-            return typeState;
+            varDecl.typeState = state;
+            return state;
         }
         _ => { }
     }
@@ -2211,24 +2298,7 @@ func typeCheckIdentifier(this: &TypeChecker, ident: &IdentExpr, scopes: &ScopeLo
         ident.type = typ;
         return newTCStateType(typ);
     }
-    let loc: String = getLocation(name);
-    let _name: String = toString(&name.content);
-    C::fprintf(stderr, "%s: %s: Use of undeclared identifier `%s`.\n", loc.buffer, ERR_STR, _name.buffer);
-    let alternatives: VariableLookupList = searchAllFilesForIdentifier(&this.lookup, name, this.anonFuncDepth > 0);
-    if (*flags.verbose) {
-        for (let i: usize = 0; i < alternatives.length; i = i + 1) {
-            let t: &VariableLookup = at(&alternatives, i);
-            drop(&loc);
-            loc = getLocation(&t.name);
-            C::fprintf(stderr, "%s: %s: A variable with that name is located here. Import the file to use it.\n", loc.buffer, NOTE_STR);
-        }
-    } else if (alternatives.length > 0) {
-        reportVerboseNote(this, loc, alternatives.length, "global variable with that name", "global variables with that name");
-    }
-    drop(&_name);
-    drop(&loc);
-    this.typeError = true;
-    return newTCStateFailure(ERROR_NO_SUCH_IDENTIFIER);
+    return reportUnknownIdentifier(this, name);
 }
 
 func typeCheckExprBinary(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLookupList) -> TCState {
@@ -2283,6 +2353,7 @@ func typeCheckExprIndexedAccess(this: &TypeChecker, expr: &BinaryExpr, scopes: &
     if (isError(&rhsState)) return rhsState;
     assert(isType(&rhsState), "IndexedAccess: Index is not valid after infer?");
     let lhsType: &Type = getType(&lhsState);
+    // FIXME: LHS may be of type Any here :^)
     if (!isArray(lhsType) && !isPointer(lhsType) && !isVariadicType(lhsType)) {
         return reportIndexedAccessOnNonArray(this, lhs.span, lhsType);
     }
@@ -2628,6 +2699,33 @@ func checkIfInferIsNeeded(this: &TypeChecker, lhsExpr: &ParsedExpr, lhsState: &T
     }
 }
 
+func inferPatternOntoExpr(this: &TypeChecker, expr: &ParsedExpr, pat: &ParsedPattern, scopes: &ScopeLookupList) -> TCState {
+    match (pat.data) {
+        Pattern::Wildcard => { todo_with_msg("inferPatternOntoExpr: Wildcard onto expr? Is this possible?"); },
+        Pattern::Number(_) => { todo_with_msg("inferPatternOntoExpr: Wildcard onto expr? Is this possible?"); },
+        Pattern::Rest => { todo_with_msg("inferPatternOntoExpr: Wildcard onto expr? Is this possible?"); },
+        Pattern::Boolean(_) => { todo_with_msg("inferPatternOntoExpr: Wildcard onto expr? Is this possible?"); },
+        Pattern::Null => { todo_with_msg("inferPatternOntoExpr: Wildcard onto expr? Is this possible?"); },
+        Pattern::PatWithType(subpat, typeNode) => {
+            let typeState = typeCheckTypeNode(this, typeNode);
+            if (isError(&typeState)) return typeState;
+            let type = getType(&typeState);
+            return inferTypeOntoExpr(this, expr, type, scopes);
+        }
+        // FIXME: See related FIXME in tryInferTypeOntoExpr, we may be able to restore old semantics
+        //        It's just:tm: more complicated now because we have recursive patterns instead of
+        //        simple identifiers.
+        Pattern::Ident(name) => { return newTCStatePleaseInfer(); },
+        Pattern::Reference(subpat) => { }
+        Pattern::Struct(name, subpats) => { }
+        Pattern::Path(_, subpat) => { }
+        _ => { }
+    }
+    emergencyPrint(this, pat.span);
+    emergencyPrint(this, expr.span);
+    unreachable("inferPatternOntoExpr: Exhaustive handling of patterns");
+}
+
 func inferTypeOntoExpr(this: &TypeChecker, exprID: usize, typeID: usize, scopes: &ScopeLookupList) -> TCState {
     return tryInferTypeOntoExpr(this, exprID, typeID, scopes, false);
 }
@@ -2908,12 +3006,18 @@ func tryInferTypeOntoIdent(this: &TypeChecker, ident: &IdentExpr, type: &Type, s
     let var: VariableLookup = blank;
     let tid: TCState = blank;
     if (resolveVariableByName(this.currentModule, &ident.name, scopes, &var)) {
+        unreachable("tryInferTypeOntoIdent: New let-statements prevent variables from ever being unresolved");
         assert(wantsInfer(&var.typeState), "Ident has no type, but variable doesn't want infer");
         tid = newTCStateType(type);
         var.typeState = tid;
+        // FIXME: This is waiting for corruption to happen, var.globalID now points into the pattern list
         let stmt = at(&stmts, var.globalID);
         match (stmt.data) {
             StmtData::VarDecl(decl) => {
+                // FIXME: Maybe try making this work for `let <pat> = <expr>;` aswell?
+                //        Problem is that we don't keep track of individual sub-expressions
+                //        aka in (a, b) = (5, 12) both a and b point towards (5, 12) instead
+                //        of 5 and 12 individually
                 tid = tryInferTypeOntoExpr(this, decl.expr, type, scopes, checkOnly);
             }
             _ => { unreachable("VariableLookup points to non-VarDecl"); }
@@ -2968,7 +3072,7 @@ func tryInferTypeOntoIdent(this: &TypeChecker, ident: &IdentExpr, type: &Type, s
         }
         drop(&functions);
     } else {
-        todo_with_msg("infer onto name, but not a function or variable");
+        return reportUnknownIdentifier(this, &ident.name);
     }
     if (isType(&tid)) {
         ident.type = getType(&tid);

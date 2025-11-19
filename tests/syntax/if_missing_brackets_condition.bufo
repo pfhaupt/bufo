@@ -3,7 +3,7 @@
 //! FAILURE
 //! CODE: 1
 //! ERROR:
-//! Expected `(`, found `a` instead.
+//! Expected `(` or `let`, found `a` instead.
 
 func main() {
     if a == 1 {

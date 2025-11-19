@@ -137,7 +137,7 @@ import "string.bufo";
 
 @os(WINDOWS) func WinError(error: u32) -> &char {
     let message: &char = null;
-    let lang = 0x0409; // en-US
+    let lang: u32 = 0x0409; // en-US
     if (WinAPI::FormatMessage(
         FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
         null, error, lang, &message, 0, message) == 0) {

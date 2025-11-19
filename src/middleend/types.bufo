@@ -51,6 +51,8 @@ let types: TypeArena = blank;
 let debugTypes: LLVMMetadataArena = blank;
 
 union Type {
+    Error, // Used for error propagation, for example to still add a variable even though
+           // its declaration failed - Just so we don't get "Use of undeclared variable" errors.
     Unknown,
     // TODO: Ideally this should be a Slice type, but not sure how to integrate the semantics yet
     Variadic(&Type),
@@ -169,6 +171,14 @@ func _equals(this: &Type, other: &Type, allowData: bool) -> bool {
             }
             _ => { }
         }
+    }
+    match (this) {
+        &Type::Error => { return true; }
+        _ => { }
+    }
+    match (other) {
+        &Type::Error => { return true; }
+        _ => { }
     }
     match (this) {
         &Type::Ptr(typ) => {
@@ -422,6 +432,7 @@ func getUnderlyingType(this: &Type, deep: bool) -> &Type {
 // OPT: Make toString() accept a buffer, so we don't allocate 20 bytes on the heap 1 million times
 func toString(this: &Type) -> String {
     match (this) {
+        &Type::Error => { return newStringFromStrLit("<propagated error>"); }
         &Type::Unknown => { return newStringFromStrLit("<unknown>"); }
         &Type::Prim(typ) => {
             // OPT: Make these Strings comptime

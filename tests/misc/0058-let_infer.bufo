@@ -25,7 +25,7 @@ func create() -> Bar {
 }
 
 func main(argc: i32, argv: &&char) -> i32 {
-    let a = create();
+    let a: Foo = create();
     let b = foo(a);
     assert(b == 12);
     return 0;

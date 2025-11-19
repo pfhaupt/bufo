@@ -1576,7 +1576,7 @@ func evaluateGetElementPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, re
         size: 8,
     };
     let t: &Type = getRegister(irFunc, instr.src).typ;
-    let offset = 0;
+    let offset: usize = 0;
     for (let i: usize = 0; i < instr.args.length; i = i + 1) {
         let arg = at(&instr.args, i);
         let reg = at(regs, arg.i);
