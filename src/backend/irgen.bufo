@@ -2311,9 +2311,53 @@ func generateBytecodePattern(this: &IRGen, function: &IRFunc, expr: RegIndex, pa
         }
         &Pattern::Wildcard => { buildLoadBool(function, pat.span, success, 1); }
         &Pattern::Rest => { buildLoadBool(function, pat.span, success, 1); }
+        &Pattern::Tuple(_) => {
+            buildLoadBool(function, pat.span, success, 1);
+            generateBytecodePatternTuple(this, function, expr, pat, success, inOrigMemory, isComptimeVariable);
+        }
         _ => { unreachable("Exhaustive handling of patterns in IRGen.generateBytecodePattern"); }
     }
     return success;
+}
+func generateBytecodePatternTuple(this: &IRGen, function: &IRFunc, expr: RegIndex, pat: &ParsedPattern, success: RegIndex, inOrigMemory: bool, isComptimeVariable: bool) {
+    let type = getRegister(function, expr).typ;
+    let Pattern::Tuple(subPatterns) = pat.data else {
+        unreachable("generateBytecodePatternTuple: Not a tuple pattern");
+    };
+    // REVIEW: Can we condense the branches?
+    if (inOrigMemory) {
+        let &Type::Ptr(&Type::Tuple(elems)) = type else {
+            unreachable("generateBytecodePatternTuple: Not a tuple ptr");
+        };
+        for (let i: usize = 0; i < elems.length; i = i + 1) {
+            let subPat = *at(&subPatterns, i);
+            let fieldType = intoPointer(elems.elements[i]);
+            let subExpr = allocateRegister(function, fieldType);
+            buildGetFieldPtr(function, pat.span, subExpr, expr, i);
+            let sub = generateBytecodePattern(this, function, subExpr, subPat, true, isComptimeVariable);
+            buildBinaryOp(function, subPat.span, INSTR_LOGICAL_AND, success, success, sub);
+            if (tag(&subPat.data) == comptime tag(&Pattern::Rest)) break;
+        }
+    } else {
+        let &Type::Tuple(elems) = type else {
+            unreachable("generateBytecodePatternTuple: Not a tuple type");
+        };
+        let allocReg = allocateRegister(function, intoPointer(type));
+        buildAlloca(function, pat.span, allocReg, getSizeInBytes(type));
+        buildStore(function, pat.span, allocReg, expr);
+        expr = allocReg;
+        for (let i: usize = 0; i < elems.length; i = i + 1) {
+            let subPat = *at(&subPatterns, i);
+            let fieldType = elems.elements[i];
+            let fieldPtr = allocateRegister(function, intoPointer(fieldType));
+            let subExpr = allocateRegister(function, fieldType);
+            buildGetFieldPtr(function, pat.span, fieldPtr, expr, i);
+            buildLoad(function, pat.span, subExpr, fieldPtr);
+            let sub = generateBytecodePattern(this, function, subExpr, subPat, false, isComptimeVariable);
+            buildBinaryOp(function, subPat.span, INSTR_LOGICAL_AND, success, success, sub);
+            if (tag(&subPat.data) == comptime tag(&Pattern::Rest)) break;
+        }
+    }
 }
 
 func generateBytecodePatternStruct(this: &IRGen, function: &IRFunc, expr: RegIndex, pat: &ParsedPattern, success: RegIndex, inOrigMemory: bool, isComptimeVariable: bool) {
@@ -2643,6 +2687,23 @@ func generateBytecodeExpr(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, ne
             assert(!needsPtr, "needsPtr for ExprData::Variadic?");
             return reg;
         }
+        &ExprData::Tuple(elems) => {
+            let tuple: &Type = getType(&expr.typeState);
+            let reg: RegIndex = allocateRegister(function, tuple);
+            buildCreateStruct(function, expr.span, reg);
+            for (let i: usize = 0; i < elems.length; i = i + 1) {
+                let e = elems.elements[i];
+                let result: RegIndex = generateBytecodeExpr(this, function, e, false);
+                buildInsertValue(function, e.span, reg, i, result);
+            }
+            if (needsPtr) {
+                let structAlloc: RegIndex = allocateRegister(function, intoPointer(tuple));
+                buildAlloca(function, expr.span, structAlloc, getSizeInBytes(tuple));
+                buildStore(function, expr.span, structAlloc, reg);
+                return structAlloc;
+            }
+            return reg;
+        }
         unknown => {
             C::fprintf(stderr, "%s generateBytecodeExpr: Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
             C::exit(2);
@@ -2919,8 +2980,15 @@ func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &Bi
     if (isModule(instance)) {
         return generateBytecodeExpr(this, function, rhs, needsPtr);
     }
-    assert(isVariadicType(instance) || isStruct(instance) || isStructPointer(instance), "Expected (ptr to) struct in MemberAccess");
-    let result: RegIndex = generateBytecodeExpr(this, function, lhs, !isStructPointer(instance));
+    assert(isVariadicType(instance)
+        || isStruct(instance)
+        || isStructPointer(instance)
+        || isTuple(instance)
+        || isTuplePointer(instance), "Expected (ptr to) struct or tuple in MemberAccess");
+    let _needsPtr = !isStructPointer(instance) && !isTuplePointer(instance);
+    let result: RegIndex = generateBytecodeExpr(this, function, lhs, _needsPtr);
+    let index: usize = 1;
+    let fieldType: &Type = null;
     if (isVariadicType(instance)) {
         let name: Token = blank;
         match (rhs.data) {
@@ -2928,42 +2996,53 @@ func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &Bi
             _ => { unreachable("Expected Identifier as RHS of member access"); }
         }
         assert(equals(&name.content, &comptime newSubStrOfStrLit("length")), "not length");
-        let usizeType: &Type = wrap(Type::Prim(PrimType::Usize));
-        let fieldPtr = allocateRegister(function, intoPointer(usizeType));
-        buildGetFieldPtr(function, lhs.span, fieldPtr, result, 1);
-        if (needsPtr) {
-            return fieldPtr;
-        } else {
-            let value = allocateRegister(function, usizeType);
-            buildLoad(function, lhs.span, value, fieldPtr);
-            return value;
+        fieldType = wrap(Type::Prim(PrimType::Usize));
+        index = 1;
+    } else {
+        let _t: &Type = getRegister(function, result).typ;
+        if (isStruct(_t) || isStructPointer(_t)) {
+            if (!isStructPointer(_t)) {
+                let t1: &Type = intoPointer(_t);
+                let alloca: RegIndex = allocateRegister(function, t1);
+                buildAlloca(function, lhs.span, alloca, getSizeInBytes(_t));
+                buildStore(function, lhs.span, alloca, result);
+                result = alloca;
+                _t = t1;
+            }
+            let decl: &ParsedStructDecl = null;
+            match (_t) {
+                &Type::Ptr(&Type::Struct(_decl)) => { decl = _decl; }
+                _ => { unreachable("Expected ptr to struct in Field Access"); }
+            }
+            // `result` contains a pointer to a struct instance at this point
+            let name: Token = blank;
+            match (rhs.data) {
+                ExprData::Ident(ident) => { name = ident.name; }
+                _ => { unreachable("Expected Identifier as RHS of member access"); }
+            }
+            index = getFieldIndex(decl, &name.content);
+            let _f: &ParsedTypeNode = getFieldTypeAtIndex(&decl.context, index);
+            fieldType = getType(&_f.typeState);
+        } else if (isTuple(_t) || isTuplePointer(_t)) {
+            if (!isTuplePointer(_t)) {
+                let t1: &Type = intoPointer(_t);
+                let alloca: RegIndex = allocateRegister(function, t1);
+                buildAlloca(function, lhs.span, alloca, getSizeInBytes(_t));
+                buildStore(function, lhs.span, alloca, result);
+                result = alloca;
+                _t = t1;
+            }
+            let ExprData::IntLit(tkn) = rhs.data else {
+                unreachable("Expected Number as RHS of member access");
+            };
+            index = toU64(&tkn.content) as usize;
+            let &Type::Ptr(&Type::Tuple(tElems)) = _t else {
+                unreachable("Not tuple");
+            };
+            fieldType = tElems.elements[index];
         }
     }
-    let _t: &Type = getRegister(function, result).typ;
-    assert(isStruct(_t) || isStructPointer(_t), "Expected (ptr to) struct in Field Access");
-    if (!isStructPointer(_t)) {
-        let t1: &Type = intoPointer(_t);
-        let alloca: RegIndex = allocateRegister(function, t1);
-        buildAlloca(function, lhs.span, alloca, getSizeInBytes(_t));
-        buildStore(function, lhs.span, alloca, result);
-        result = alloca;
-        _t = t1;
-    }
-    let decl: &ParsedStructDecl = null;
-    match (_t) {
-        &Type::Ptr(&Type::Struct(_decl)) => { decl = _decl; }
-        _ => { unreachable("Expected ptr to struct in Field Access"); }
-    }
-    // `result` contains a pointer to a struct instance at this point
-    let name: Token = blank;
-    match (rhs.data) {
-        ExprData::Ident(ident) => { name = ident.name; }
-        _ => { unreachable("Expected Identifier as RHS of member access"); }
-    }
-    let index: usize = getFieldIndex(decl, &name.content);
-    let _f: &ParsedTypeNode = getFieldTypeAtIndex(&decl.context, index);
-    let fieldType: &Type = getType(&_f.typeState);
-    let fieldPtr: RegIndex = allocateRegister(function, intoPointer(fieldType));
+    let fieldPtr = allocateRegister(function, intoPointer(fieldType));
     buildGetFieldPtr(function, lhs.span, fieldPtr, result, index);
     if (needsPtr) {
         return fieldPtr;

@@ -871,7 +871,8 @@ comptime PARSED_TYPE_F64: usize = 20;
 comptime PARSED_TYPE_FUNC: usize = 21;
 comptime PARSED_TYPE_MODULE: usize = 22;
 comptime PARSED_TYPE_VARIADIC: usize = 23;
-comptime PARSED_TYPE_BUILTIN: usize = 24;
+comptime PARSED_TYPE_TUPLE: usize = 24;
+comptime PARSED_TYPE_BUILTIN: usize = 25;
 func BUILD_A_TYPE(s: &char) -> SubStr {
     return SubStr {
         start: s,
@@ -967,6 +968,7 @@ union ExprData {
     TypeInfo(&ParsedTypeNode),
     AsData(&ParsedExpr),
     Variadic(ParsedExprList),
+    Tuple(ParsedExprList),
 }
 union UnaryExpr {
     Comptime(&ParsedExpr),
@@ -1250,6 +1252,7 @@ union Pattern {
     Reference(&ParsedPattern),
     Struct(Token, ParsedPatternList),
     Path(Token, &ParsedPattern),
+    Tuple(ParsedPatternList),
     Rest,
     Boolean(bool),
     Null,

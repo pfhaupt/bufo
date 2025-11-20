@@ -453,10 +453,37 @@ func reportAnyDereference(this: &TypeChecker, expr: &ParsedExpr) -> TCState {
     return newTCStateFailure(ERROR_ANY_DEREF);
 }
 
-func reportMemberAccessOnNonStruct(this: &TypeChecker, expr: &ParsedExpr, instance: &Type) -> TCState {
+func reportMemberAccessOnNonStructNonTuple(this: &TypeChecker, expr: &ParsedExpr, instance: &Type) -> TCState {
     let loc = toString(&expr.span);
     let t = toString(instance);
     C::fprintf(stderr, "%s: %s: The Dot-Operator is not defined for values of type %s.\n", loc.buffer, ERR_STR, t.buffer);
+    drop(&t);
+    drop(&loc);
+    this.typeError = true;
+    return newTCStateFailure(ERROR_MEMBER_ACCESS_NON_STRUCT);
+}
+func reportNonIdentAccessOnStruct(this: &TypeChecker, expr: &ParsedExpr, instance: &Type) -> TCState {
+    let loc = toString(&expr.span);
+    let t = toString(instance);
+    C::fprintf(stderr, "%s: %s: The Dot-Operator expected an identifier for a value of type %s.\n", loc.buffer, ERR_STR, t.buffer);
+    drop(&t);
+    drop(&loc);
+    this.typeError = true;
+    return newTCStateFailure(ERROR_MEMBER_ACCESS_NON_STRUCT);
+}
+func reportNonNumberAccessOnTuple(this: &TypeChecker, expr: &ParsedExpr, instance: &Type) -> TCState {
+    let loc = toString(&expr.span);
+    let t = toString(instance);
+    C::fprintf(stderr, "%s: %s: The Dot-Operator expected a number for a value of type %s.\n", loc.buffer, ERR_STR, t.buffer);
+    drop(&t);
+    drop(&loc);
+    this.typeError = true;
+    return newTCStateFailure(ERROR_MEMBER_ACCESS_NON_STRUCT);
+}
+func reportTupleIndexOutOfBounds(this: &TypeChecker, expr: &ParsedExpr, tuple: &Type, index: usize) -> TCState {
+    let loc = toString(&expr.span);
+    let t = toString(tuple);
+    C::fprintf(stderr, "%s: %s: Index %llu is not valid for value of type %s.\n", loc.buffer, ERR_STR, index, t.buffer);
     drop(&t);
     drop(&loc);
     this.typeError = true;
@@ -1722,6 +1749,34 @@ func checkAndBindPattern(this: &TypeChecker, type: &Type, pat: &ParsedPattern, s
         }
         &Pattern::Wildcard => { return newTCStatePattern(PatState { complete: true }); }
         &Pattern::Rest     => { return newTCStatePattern(PatState { complete: true }); }
+        &Pattern::Tuple(patElems) => {
+            let &Type::Tuple(typElems) = type else {
+                return reportImpossiblePattern(this, pat, type);
+            };
+            if (patElems.length < typElems.length) {
+                assert(patElems.length > 0, "Pattern::Tuple is empty?");
+                let last = *at(&patElems, patElems.length - 1);
+                if (tag(&last.data) != comptime tag(&Pattern::Rest)) {
+                    return reportNotEnoughPatterns(this, pat, type);
+                }
+            } else if (patElems.length > typElems.length) {
+                return reportTooManyPatterns(this, pat, type);
+            }
+            let complete = true;
+            for (let i: usize = 0; i < typElems.length; i = i + 1) {
+                let subpat = patElems.elements[i];
+                let elemType = typElems.elements[i];
+                let subComplete = checkAndBindPattern(this, elemType, subpat, scopes, scope);
+                if (isError(&subComplete)) return subComplete;
+                if (!getPatState(&subComplete).complete) {
+                    complete = false;
+                }
+                if (tag(&subpat.data) == comptime tag(&Pattern::Rest)) break;
+            }
+            return newTCStatePattern(PatState {
+                complete: complete
+            });
+        }
         _ => { }
     }
     unreachable("Exhaustive handling of patterns in checkAndBindPattern");
@@ -1892,6 +1947,16 @@ func typeCheckExpr(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupLi
             let context = findStructByNameInFile(&this.lookup, &FILE, &NAME);
             assert(context != null, "typeCheckExpr: Could not find struct context for Data");
             state = newTCStateType(context.type);
+        }
+        &ExprData::Tuple(elems) => {
+            let tElems: TypeList = blank;
+            for (let i: usize = 0; i < elems.length; i = i + 1) {
+                let e = typeCheckExpr(this, elems.elements[i], scopes);
+                if (isError(&e)) return e;
+                if (wantsInfer(&e)) return e;
+                push(&tElems, getType(&e));
+            }
+            state = newTCStateType(wrap(Type::Tuple(tElems)));
         }
         unknown => {
             C::fprintf(stderr, "%s typeCheckExpr: Unhandled Expression with tag %hhu!\n", FATAL_STR, tag(unknown));
@@ -2654,19 +2719,25 @@ func typeCheckExprMemberAccess(this: &TypeChecker, expr: &BinaryExpr, scopes: &S
         drop(&l);
         return newTCStateFailure(ERROR_UNKNOWN_FIELD);
     }
-    if (!isStruct(instanceType) && !isStructPointer(instanceType)) {
-        return reportMemberAccessOnNonStruct(this, lhs, instanceType);
+    if (!isStruct(instanceType)
+        && !isStructPointer(instanceType)
+        && !isTuple(instanceType)
+        && !isTuplePointer(instanceType)) {
+        return reportMemberAccessOnNonStructNonTuple(this, lhs, instanceType);
     }
     let underlying: &Type = instanceType;
     if (!isStruct(underlying)) underlying = getUnderlyingType(instanceType, true);
-    let lookup: TypeLookup = getTypeLookupForType(&this.lookup, underlying);
     if (isStruct(underlying)) {
+        let lookup: TypeLookup = getTypeLookupForType(&this.lookup, underlying);
         assert(isStruct(&lookup));
         let structLookup: &StructLookup = asStruct(&lookup);
         let fieldName: Token = blank;
         match (&rhs.data) {
             &ExprData::Ident(IdentExpr { ident, .. }) => { fieldName = ident; }
-            _ => { unreachable("Expected RHS to be an identifier"); }
+            &ExprData::IntLit(_) => {
+                return reportNonIdentAccessOnStruct(this, lhs, instanceType);
+            }
+            _ => { unreachable("Expected RHS to be an identifier or number"); }
         }
         let field: VariableLookup = blank;
         if (!resolveFieldByName(structLookup, &fieldName, &field)) {
@@ -2675,8 +2746,27 @@ func typeCheckExprMemberAccess(this: &TypeChecker, expr: &BinaryExpr, scopes: &S
         let fieldState: TCState = field.typeState;
         assert(isSuccess(&fieldState), "Expected valid field type");
         return fieldState;
+    } else if (isTuple(underlying)) {
+        let tkn: Token = blank;
+        match (&rhs.data) {
+            &ExprData::Ident(_) => {
+                return reportNonNumberAccessOnTuple(this, lhs, instanceType);
+            }
+            &ExprData::IntLit(_tkn) => {
+                tkn = _tkn;
+            }
+            _ => { unreachable("Expected RHS to be an identifier or number"); }
+        }
+        let index = toU64(&tkn.content) as usize;
+        let &Type::Tuple(elems) = underlying else {
+            unreachable("underlying is tuple");
+        };
+        if (index >= elems.length) {
+            return reportTupleIndexOutOfBounds(this, lhs, instanceType, index);
+        }
+        return newTCStateType(elems.elements[index]);
     } else {
-        unreachable("MemberAccess expected Struct as LHS");
+        unreachable("MemberAccess expected Struct or Tuple as LHS");
     }
 }
 
@@ -2900,10 +2990,62 @@ func tryInferTypeOntoExpr(this: &TypeChecker, expr: &ParsedExpr, type: &Type, sc
             }
             tid = newTCStateType(type);
         }
-        // &ExprData::True
-        // &ExprData::False
+        &ExprData::True => {
+            if (!isBoolean(type)) {
+                if (!checkOnly) {
+                    let loc = toString(&expr.span);
+                    let t = toString(type);
+                    C::fprintf(stderr, "%s: %s: Expected expression of type %s, found `true`.\n", loc.buffer, ERR_STR, t.buffer);
+                    drop(&t);
+                    drop(&loc);
+                }
+                return newTCStateFailure(ERROR_TYPE_MISMATCH);
+            }
+            tid = newTCStateType(type);
+        }
+        &ExprData::False => {
+            if (!isBoolean(type)) {
+                if (!checkOnly) {
+                    let loc = toString(&expr.span);
+                    let t = toString(type);
+                    C::fprintf(stderr, "%s: %s: Expected expression of type %s, found `false`.\n", loc.buffer, ERR_STR, t.buffer);
+                    drop(&t);
+                    drop(&loc);
+                }
+                return newTCStateFailure(ERROR_TYPE_MISMATCH);
+            }
+            tid = newTCStateType(type);
+        }
+        &ExprData::Tuple(exprElems) => {
+            let &Type::Tuple(typeElems) = type else {
+                if (!checkOnly) {
+                    let loc = toString(&expr.span);
+                    let t = toString(type);
+                    C::fprintf(stderr, "%s: %s: Expected expression of type %s, found tuple.\n", loc.buffer, ERR_STR, t.buffer);
+                    drop(&t);
+                    drop(&loc);
+                }
+                return newTCStateFailure(ERROR_TYPE_MISMATCH);
+            };
+            if (typeElems.length != exprElems.length) {
+                if (!checkOnly) {
+                    let loc = toString(&expr.span);
+                    C::fprintf(stderr, "%s: %s: Expected tuple with %llu elements, found %llu.\n", loc.buffer, ERR_STR, typeElems.length, exprElems.length);
+                    drop(&loc);
+                }
+                return newTCStateFailure(ERROR_TYPE_MISMATCH);
+            }
+            for (let i: usize = 0; i < typeElems.length; i = i + 1) {
+                let _expr = exprElems.elements[i];
+                let _type = typeElems.elements[i];
+                let state = tryInferTypeOntoExpr(this, _expr, _type, scopes, checkOnly);
+                if (isError(&state)) return state;
+            }
+            tid = newTCStateType(type);
+        }
         unknown => {
-            C::fprintf(stderr, "%s tryInferTypeOntoExpr: Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
+            let loc = toString(&expr.span);
+            C::fprintf(stderr, "%s %s: tryInferTypeOntoExpr: Unknown tag %hhu!\n", FATAL_STR, loc.buffer, tag(unknown));
             C::exit(2);
         }
     }
@@ -3295,8 +3437,9 @@ func typeCheckTypeNode(this: &TypeChecker, typeNode: &ParsedTypeNode) -> TCState
             let state = typeCheckTypeNode(this, *at(&typeNode.fnParams, i));
             if (isError(&state)) {
                 error = state;
+            } else {
+                push(&params, getType(&state));
             }
-            push(&params, getType(&state));
         }
         if (isError(&error)) return error;
         tid = wrap(Type::Func(params, getType(&retState), blank));
@@ -3373,6 +3516,19 @@ func typeCheckTypeNode(this: &TypeChecker, typeNode: &ParsedTypeNode) -> TCState
         let under: TCState = typeCheckTypeNode(this, typeNode.underlyingID);
         if (isError(&under)) return under;
         tid = wrap(Type::Variadic(getType(&under)));
+    } else if (typeNode.kind == PARSED_TYPE_TUPLE) {
+        let elems: TypeList = blank;
+        let error: TCState = blank;
+        for (let i: usize = 0; i < typeNode.fnParams.length; i = i + 1) {
+            let state = typeCheckTypeNode(this, *at(&typeNode.fnParams, i));
+            if (isError(&state)) {
+                error = state;
+            } else {
+                push(&elems, getType(&state));
+            }
+        }
+        if (isError(&error)) return error;
+        tid = wrap(Type::Tuple(elems));
     } else if (typeNode.kind == PARSED_TYPE_BUILTIN) {
         let id: usize = getID(typeNode);
         let prim: PrimType = PrimType::None;

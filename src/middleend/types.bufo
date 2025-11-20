@@ -63,6 +63,7 @@ union Type {
     Struct(&ParsedStructDecl),
     Union(&ParsedUnionDecl, usize),
     Module(&ParsedModule),
+    Tuple(TypeList),
 }
 
 func getMangledName(this: &Type) -> String {
@@ -139,6 +140,16 @@ func getMangledName(this: &Type) -> String {
             let r = getMangledName(typ);
             pushString(&s, &r);
             drop(&r);
+            return s;
+        }
+        &Type::Tuple(elems) => {
+            let s: String = newStringFromStrLit("T");
+            for (let i: usize = 0; i < elems.length; i = i + 1) {
+                if (i != elems.length - 1) pushChar(&s, '.');
+                let e = getMangledName(*at(&elems, i));
+                pushString(&s, &e);
+                drop(&e);
+            }
             return s;
         }
         _ => { }
@@ -238,6 +249,23 @@ func _equals(this: &Type, other: &Type, allowData: bool) -> bool {
                         let p1 = *at(&params, i);
                         let p2 = *at(&oparams, i);
                         if (!equals(p1, p2)) return false;
+                    }
+                    return true;
+                }
+                _ => { return false; }
+            }
+        }
+        _ => { }
+    }
+    match (this) {
+        &Type::Tuple(elems) => {
+            match (other) {
+                &Type::Tuple(oelems) => {
+                    if (elems.length != oelems.length) return false;
+                    for (let i: usize = 0; i < elems.length; i = i + 1) {
+                        let e1 = *at(&elems, i);
+                        let e2 = *at(&oelems, i);
+                        if (!equals(e1, e2)) return false;
                     }
                     return true;
                 }
@@ -393,6 +421,10 @@ func isStructPointer(this: &Type) -> bool {
     if (!isPointer(this)) return false;
     return isStruct(getUnderlyingType(this, false));
 }
+func isTuplePointer(this: &Type) -> bool {
+    if (!isPointer(this)) return false;
+    return isTuple(getUnderlyingType(this, false));
+}
 func isPointerTo(this: &Type, typ: &Type) -> bool {
     match (this) {
         &Type::Ptr(to) => { return equals(to, typ); }
@@ -411,6 +443,9 @@ func isUnion(this: &Type) -> bool {
 }
 func isArray(this: &Type) -> bool {
     return tag(this) == comptime tag(&Type::Array);
+}
+func isTuple(this: &Type) -> bool {
+    return tag(this) == comptime tag(&Type::Tuple);
 }
 func isStructArray(this: &Type) -> bool {
     if (!isArray(this)) return false;
@@ -468,7 +503,6 @@ func toString(this: &Type) -> String {
         &Type::Func(params, rt, attr) => {
             let s: String = newStringFromStrLit("func (");
             for (let i: usize = 0; i < params.length; i = i + 1) {
-                let param = at(&params, i);
                 let p: String = toString(*at(&params, i));
                 pushString(&s, &p);
                 drop(&p);
@@ -506,6 +540,20 @@ func toString(this: &Type) -> String {
             let s: String = newStringFromStrLit("...");
             let _s: String = toString(typ);
             pushString(&s, &_s);
+            return s;
+        }
+        &Type::Tuple(elems) => {
+            let s: String = newStringFromStrLit("(");
+            for (let i: usize = 0; i < elems.length; i = i + 1) {
+                let e: String = toString(*at(&elems, i));
+                pushString(&s, &e);
+                drop(&e);
+                if (i != elems.length - 1) {
+                    pushChar(&s, ',');
+                    pushChar(&s, ' ');
+                }
+            }
+            pushChar(&s, ')');
             return s;
         }
         _ => { }
@@ -670,9 +718,25 @@ func getSizeInBytes(this: &Type) -> usize {
             maxSize = nextMultipleOf(maxSize, maxAlign);
             return maxSize;
         }
+        &Type::Tuple(elems) => {
+            let size: usize = 0;
+            let maxAlign: usize = 1;
+            for (let i: usize = 0; i < elems.length; i = i + 1) {
+                let tt: &Type = elems.elements[i];
+                size = size + getSizeInBytes(tt);
+                let _a: usize = getAlignmentInBytes(tt);
+                if (_a > maxAlign) maxAlign = _a;
+                if (i != elems.length - 1) {
+                    let nextType: &Type = elems.elements[i + 1];
+                    size = nextMultipleOf(size, getAlignmentInBytes(nextType));
+                }
+            }
+            size = nextMultipleOf(size, maxAlign);
+            return size;
+        }
         _ => { }
     }
-    unreachable("Exhaustive handling of type kinds in Type.getSize");
+    unreachable("Exhaustive handling of type kinds in Type.getSizeInBytes");
 }
 func getParam(fnType: &Type, id: usize) -> &Type {
     match (fnType) {
@@ -687,6 +751,12 @@ func getReturnType(fnType: &Type) -> &Type {
         _ => { }
     }
     unreachable("getReturnType() called on non-function type");
+}
+func getTupleElement(tuple: &Type, index: usize) -> &Type {
+    let &Type::Tuple(elems) = tuple else {
+        unreachable("getTupleElement() called on non-tuple type");
+    };
+    return *at(&elems, index);
 }
 func getMaxFloatValue(this: &Type) -> f64 {
     match (this) {
