@@ -15,14 +15,15 @@ func isEmpty(this: &SubStr) -> bool {
 }
 
 func hash(this: &SubStr, length: usize) -> usize {
-    let h: usize = 0;
     let d: usize = pow(10, length);
+    return hash(this) % d;
+}
+func hash(this: &SubStr) -> usize {
+    let hash: usize = 5381;
     for (let i: usize = 0; i < this.len; i = i + 1) {
-        let c: char = this.start[i];
-        h = h + (c as usize);
-        h = h % d;
+        hash = (shiftLeft(hash, 5) + hash) + (this.start[i] as usize);
     }
-    return h;
+    return hash;
 }
 
 func lexOrder(this: &SubStr, other: &SubStr) -> u8 {

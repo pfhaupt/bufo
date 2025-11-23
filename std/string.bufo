@@ -36,11 +36,7 @@ struct String {
 }
 
 func hash(this: &String) -> usize {
-    let hash: usize = 5381;
-    for (let i: usize = 0; i < this.length; i = i + 1) {
-        hash = (shiftLeft(hash, 5) + hash) + (this.buffer[i] as usize);
-    }
-    return hash;
+    return hash(&asSubStr(this));
 }
 
 func toAbsolutePath(this: &String) -> String {
