@@ -7,8 +7,8 @@ module LLVM {
         libpath: "/usr/lib64/llvm20/lib/",
         libpath: "/usr/lib/llvm-20/lib/",
         libpath: "/lib/llvm-20/lib/",
-        libpath: ".", // llvm_wrapper.a
-        static: "llvm_wrapper.a",
+        libpath: "./wrapper/",
+        static: "target.a",
         // TODO: It would be cool to statically link with LLVM on Linux too
         dynamic: "libLLVM-20.so",
         linker: "-lLLVM-20",
