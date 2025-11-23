@@ -178,7 +178,7 @@ func toF64(this: &SubStr) -> f64 {
 }
 
 func newSubStrOfStrLit(orig: &char) -> SubStr {
-    return newSubStr(orig, 0, C::strlen(orig));
+    return newSubStr(orig, 0, comptimeStrlen(orig));
 }
 
 func newSubStr(orig: &char, start: usize, end: usize) -> SubStr {

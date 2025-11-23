@@ -1636,7 +1636,7 @@ func generateRuntimeTypeInfo(this: &IRGen) -> bool {
 
 func generateRuntimeInitialization(this: &IRGen, project: &ParsedFile) -> bool {
     this.initRuntime = IRFunc {
-        name: comptime newStringFromStrLit(".init_runtime"),
+        name: comptime newReadonlyString(".init_runtime"),
     };
     let scope: usize = enterScope(&this.initRuntime);
     let entry: IRBlockID = appendBlock(&this.initRuntime);
@@ -3262,9 +3262,9 @@ func generateBytecodeExprIdentifier(this: &IRGen, function: &IRFunc, expr: &Iden
             let name: String = getMangledName(at(&funcDecls, expr.origID));
             if (*flags.opt) {
                 // When --opt is provided, we replace all assertions with empty function calls
-                if (equals(&name, &comptime newStringFromStrLit("assertBPcrN"))) {
+                if (equals(&name, &comptime newReadonlyString("assertBPcrN"))) {
                     name = newStringFromStrLit("_empty_assertBPcrN");
-                } else if (equals(&name, &comptime newStringFromStrLit("assertBrN"))) {
+                } else if (equals(&name, &comptime newReadonlyString("assertBrN"))) {
                     name = newStringFromStrLit("_empty_assertBrN");
                 }
             }

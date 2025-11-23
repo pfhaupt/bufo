@@ -142,8 +142,8 @@ func _empty_assert(cond: bool) { }
 func _empty_assert(cond: bool, msg: &char) { }
 
 func assert(cond: bool) {
-    setupStdHandles();
     if (!cond) {
+        setupStdHandles();
         if (stderr == null) {
             C::printf("ASSERTION FAILED\n");
             C::printf("%s Could not print to STDERR because STDERR is NULL!\n", FATAL_STR);
@@ -166,8 +166,8 @@ func _assert(cond: bool, msg: &char) {
 }
 
 func assert(cond: bool, msg: &char) {
-    setupStdHandles();
     if (!cond) {
+        setupStdHandles();
         if (stderr == null) {
             C::printf("ASSERTION FAILED: %s\n", msg);
             C::printf("%s Could not print to STDERR because STDERR is NULL!\n", FATAL_STR);

@@ -339,6 +339,13 @@ func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
     let f = at(&funcDecls, calledFunc.originalID);
     if (isExtern(f)) {
         if (!isNull(f.dllHandle)) {
+            if (*flags.disableExternalComptime) {
+                let loc = toString(&instr.span);
+                C::fprintf(stderr, "%s: %s: Cannot call external function `%s` at compile time.\n", loc.buffer, ERR_STR, calledFunc.name.buffer);
+                C::fprintf(stderr, "%s: %s: Flag `--no-extern-comptime` was provided.\n", loc.buffer, NOTE_STR);
+                dumpCallStack(this, &loc);
+                C::exit(1);
+            }
             let fun = compileFunctionCall(this, irFunc, calledFunc, instr, f.dllHandle.handle.ptr, regs);
             let retType: &Type = null;
             match (getType(&f.typeState)) {

@@ -240,6 +240,14 @@ func newString() -> String {
     };
 }
 
+func newReadonlyString(s: &char) -> String {
+    return String {
+        buffer: s,
+        length: comptimeStrlen(s),
+        capacity: comptimeStrlen(s),
+    };
+}
+
 func newStringFromStrLit(s: &char) -> String {
     let len: usize = C::strlen(s);
     let buff: &char = C::calloc(len + 1, sizeof char);

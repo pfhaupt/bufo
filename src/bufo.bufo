@@ -45,6 +45,7 @@ struct Flags {
     debug: &bool;
     trace: &bool;
     opt: &bool;
+    disableExternalComptime: &bool;
 }
 let flags = Flags {};
 func main(argc: i32, argv: &&char) -> i32 {
@@ -82,6 +83,7 @@ func main(argc: i32, argv: &&char) -> i32 {
     flags.debug = addBoolFlag(&flagParser, "d", "debug", "Compile with debug info");
     flags.trace = addBoolFlag(&flagParser, "--trace", "Trace function calls");
     flags.opt = addBoolFlag(&flagParser, "--opt", "Enable aggressive optimizations");
+    flags.disableExternalComptime = addBoolFlag(&flagParser, "--no-extern-comptime", "Don't allow any compile time calls to functions marked `@extern`.");
     let help = addHelpFlag(&flagParser);
     if (!runOn(&flagParser, argc, argv)) {
         showErrors(stderr, &flagParser);

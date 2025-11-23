@@ -55,7 +55,7 @@ else
 endif
 
 ${BUFO_CC}: $(shell find src/ -type f) $(shell find std/ -type f)
-	${BUFO_CC} src/bufo.bufo -o ${BUFO_CC}.tmp $(ALL_FLAGS)
+	${BUFO_CC} src/bufo.bufo -o ${BUFO_CC}.tmp $(ALL_FLAGS) --no-extern-comptime
 	mv ${BUFO_CC}.tmp ${BUFO_CC}
 
 all: ${BUFO_CC} examples how_to
@@ -101,7 +101,7 @@ bootstrap:
 	$(error `make bootstrap` is currently a stub and does nothing)
 
 brick:
-	./working.exe src/bufo.bufo -o $(BUFO_CC) $(EXTRA)
+	./working.exe src/bufo.bufo -o $(BUFO_CC) $(EXTRA) --no-extern-comptime
 
 clean: clean_example clean_howto
 	rm -f *.s
