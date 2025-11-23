@@ -22,7 +22,7 @@ def try_call(cmd: List) -> subprocess.CompletedProcess[bytes]:
 
 def get(what: List[str], split_by: str = "\n") -> List[str]:
     if sys.platform == "linux":
-        c = ["llvm-config-16"]
+        c = ["llvm-config-20"]
     elif sys.platform == "win32":
         c = ["llvm-config"]
     else:
@@ -59,7 +59,7 @@ def compile_file(cmds: List[List[str]], path: str, llvm_path: str, libs: List[st
         out = path.replace(".cpp", ".c")
         out = out.replace(".c", ".o")
         include = llvm_path + "/../include/"
-        cmd = ["cc", "-c", path, f"-I\"{include}\"", f"-L\"{llvm_path}\"", "-o", f"\"{out}\""]
+        cmd = ["cc", "-c", path, f"-I{include}", f"-L{llvm_path}", "-o", f"{out}"]
         for l in libs:
             cmd.append("-l" + l.replace("\n", ""))
     elif sys.platform == "win32":
