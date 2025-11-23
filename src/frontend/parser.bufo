@@ -1139,13 +1139,13 @@ func __parseExpr(this: &Parser, precedence: usize, associativity: Assoc, struct_
         if (newPrec == precedence && tag(&associativity) == comptime tag(&Assoc::Left))
             break;
         let newAssoc = getBinaryAssociativity(this, &tkn);
-        expr = parseSecondaryExpr(this, expr, newPrec, newAssoc);
+        expr = parseSecondaryExpr(this, expr, newPrec, newAssoc, struct_init_allowed);
     }
     return expr;
 }
 func parsePrimaryExpr(this: &Parser, struct_init_allowed: bool) -> &ParsedExpr {
     if (matchesUnaryExpr(this))
-        return parseUnaryExpr(this);
+        return parseUnaryExpr(this, struct_init_allowed);
     let tknKind: usize = peek(&this.lexer).kind;
     if (tknKind == TOKEN_INT_LITERAL) {
         let number = expect(this, TOKEN_INT_LITERAL);
@@ -1279,7 +1279,7 @@ func parsePrimaryExpr(this: &Parser, struct_init_allowed: bool) -> &ParsedExpr {
     drop(&loc);
     C::exit(1);
 }
-func parseSecondaryExpr(this: &Parser, lhs: &ParsedExpr, precedence: usize, associativity: Assoc) -> &ParsedExpr {
+func parseSecondaryExpr(this: &Parser, lhs: &ParsedExpr, precedence: usize, associativity: Assoc, struct_init_allowed: bool) -> &ParsedExpr {
     assert(matchesBinaryExpr(this));
     let opTkn: Token = next(&this.lexer);
     if (equals(&opTkn.content, &KEYWORD_AS)) {
@@ -1310,7 +1310,7 @@ func parseSecondaryExpr(this: &Parser, lhs: &ParsedExpr, precedence: usize, asso
             args: args
         }));
     } else {
-        rhs = __parseExpr(this, precedence, associativity);
+        rhs = __parseExpr(this, precedence, associativity, struct_init_allowed);
     }
     if (opTkn.kind == TOKEN_DOT) {
         match (&rhs.data) {
@@ -1334,12 +1334,12 @@ func parseSecondaryExpr(this: &Parser, lhs: &ParsedExpr, precedence: usize, asso
     let span: Span = newSpanBetween(&lhs.span, &rhs.span);
     return newParsedExpr(span, ExprData::Binary(fromTkn(opTkn.kind, lhs, rhs)));
 }
-func parseUnaryExpr(this: &Parser) -> &ParsedExpr {
+func parseUnaryExpr(this: &Parser, struct_init_allowed: bool) -> &ParsedExpr {
     let tkn: Token = peek(&this.lexer);
     if (tkn.kind == TOKEN_KEYWORD) {
         next(&this.lexer);
         if (equals(&tkn.content, &KEYWORD_COMPTIME)) {
-            let expr: &ParsedExpr = parseExpr(this);
+            let expr: &ParsedExpr = parseExpr(this, struct_init_allowed);
             let span: Span = newSpanBetween(&tkn.span, &expr.span);
             return newParsedExpr(span, ExprData::Unary(UnaryExpr::Comptime(expr)));
         } else {
@@ -1348,7 +1348,7 @@ func parseUnaryExpr(this: &Parser) -> &ParsedExpr {
     } else if (tkn.kind == TOKEN_AMPERSAND_DOUBLE) {
         next(&this.lexer);
         let precedence: usize = getUnaryPrecedence(this, TOKEN_AMPERSAND_SINGLE);
-        let expr: &ParsedExpr = __parseExpr(this, precedence, Assoc::Left);
+        let expr: &ParsedExpr = __parseExpr(this, precedence, Assoc::Left, struct_init_allowed);
         let span: Span = newSpanBetween(&tkn.span, &expr.span);
         let inner = newParsedExpr(span, ExprData::Unary(UnaryExpr::Ref(expr)));
         return newParsedExpr(span, ExprData::Unary(UnaryExpr::Ref(inner)));
@@ -1358,7 +1358,7 @@ func parseUnaryExpr(this: &Parser) -> &ParsedExpr {
         || tkn.kind == TOKEN_BANG) {
         next(&this.lexer);
         let precedence: usize = getUnaryPrecedence(this, tkn.kind);
-        let expr: &ParsedExpr = __parseExpr(this, precedence, Assoc::Left);
+        let expr: &ParsedExpr = __parseExpr(this, precedence, Assoc::Left, struct_init_allowed);
         let span: Span = newSpanBetween(&tkn.span, &expr.span);
         return newParsedExpr(span, ExprData::Unary(fromTkn(tkn.kind, expr)));
     } else {
