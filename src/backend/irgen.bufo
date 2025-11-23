@@ -1050,6 +1050,11 @@ func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile
                 let u = TypeInfo::Union { name: asSubStr(&name), size_in_bytes: getSizeInBytes(t), align_in_bytes: getAlignmentInBytes(t) };
                 if (!contains(&table, &u)) push_entry(&table, u);
             }
+            &Type::Tuple(_elems) => {
+                let name = toString(at(&types, i));
+                let a = TypeInfo::Tuple { name: asSubStr(&name), size_in_bytes: getSizeInBytes(t), align_in_bytes: getAlignmentInBytes(t) };
+                if (!contains(&table, &a)) push_entry(&table, a);
+            }
             &Type::Module(_) => { }
             _ => { unreachable("generateTypeInfoTable: Exhaustive handling of Type kinds when filling"); }
         }
@@ -1214,6 +1219,28 @@ func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile
             }
             &Type::Module(_) => { }
             &Type::Unknown => { }
+            &Type::Tuple(elems) => {
+                let name = asSubStr(&toString(at(&types, i)));
+                let a = TypeInfo::Tuple { name: name };
+                let tuple_index = index_of(&table, &a);
+                assert(tuple_index != table.length);
+                let tuple_info = &table.elements[tuple_index];
+                assert(tag(tuple_info) == comptime tag(&TypeInfo::Tuple));
+                assert(equals(&name, &get_name(tuple_info)));
+                let elem_list: &TypeInfoList = null;
+                match (tuple_info) {
+                    &TypeInfo::Tuple { _, _, _, elems } => {
+                        elem_list = &elems;
+                    }
+                    _ => { unreachable(); }
+                }
+                if (elem_list.length > 0) continue;
+                for (let j: usize = 0; j < elems.length; j = j + 1) {
+                    let index = index_of_type(&table, elems.elements[j]);
+                    assert(index != table.length, "Argument type info does not exist");
+                    push(elem_list, index);
+                }
+            }
             _ => { unreachable("generateTypeInfoTable: Exhaustive handling of Type kinds when patching"); }
         }
     }
@@ -1310,6 +1337,13 @@ func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile
                 &TypeInfo::Primitive { .. } => {
                     count.elements[i] = count.elements[i] + 1;
                 }
+                &TypeInfo::Tuple { _, _, _, elements } => {
+                    count.elements[i] = count.elements[i] + 1;
+                    for (let j: usize = 0; j < elements.length; j = j + 1) {
+                        let elem = elements.elements[j];
+                        count.elements[elem] = count.elements[elem] + 1;
+                    }
+                }
                 &TypeInfo::Unknown => { }
                 _ => { unreachable("generateTypeInfoTable: Exhaustive handling of Type kinds when counting"); }
             }
@@ -1370,6 +1404,11 @@ func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile
                 }
                 &TypeInfo::Primitive { .. } => { }
                 &TypeInfo::Unknown => { }
+                &TypeInfo::Tuple { _, _, _, elements } => {
+                    for (let j: usize = 0; j < elements.length; j = j + 1) {
+                        elements.elements[j] = elements.elements[j] - count_offset(&remove, elements.elements[j]);
+                    }
+                }
                 _ => { unreachable("generateTypeInfoTable: Exhaustive handling of Type kinds when removing"); }
             }
         }
@@ -1626,6 +1665,26 @@ func generateRuntimeTypeInfo(this: &IRGen) -> bool {
                 write_at_offset(function, span, elemPtr, tmp, 17, index);
                 buildLoadInteger(function, span, index, usizeType, align_in_bytes);
                 write_at_offset(function, span, elemPtr, tmp, 25, index);
+            }
+            &TypeInfo::Tuple { _, size_in_bytes, align_in_bytes, elements } => {
+                let local_elements = alloc_list(this, function, span, usizeType, elements.length);
+                for (let j: usize = 0; j < elements.length; j = j + 1) {
+                    buildLoadInteger(function, span, field_index, usizeType, j);
+                    buildGetElementPtr(function, span, fieldPtr, local_elements, field_indices);
+
+                    buildLoadInteger(function, span, index, usizeType, elements.elements[j]);
+                    write_at_offset(function, span, fieldPtr, tmp, 0, index);
+                }
+
+                buildLoadInteger(function, span, index, usizeType, size_in_bytes);
+                write_at_offset(function, span, elemPtr, tmp, 17, index);
+                buildLoadInteger(function, span, index, usizeType, align_in_bytes);
+                write_at_offset(function, span, elemPtr, tmp, 25, index);
+
+                write_at_offset(function, span, elemPtr, tmp, 33, local_elements);
+                buildLoadInteger(function, span, field_index, usizeType, elements.length);
+                write_at_offset(function, span, elemPtr, tmp, 41, field_index);
+                write_at_offset(function, span, elemPtr, tmp, 49, field_index);
             }
             &TypeInfo::Unknown => { }
             _ => { unreachable("generateRuntimeTypeInfo: Exhaustive handling of Type kinds"); }

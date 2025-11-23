@@ -618,6 +618,15 @@ func getAlignmentInBytes(this: &Type) -> usize {
             }
             res = maxAlign;
         }
+        &Type::Tuple(elems) => {
+            let maxAlign: usize = 1;
+            for (let i: usize = 0; i < elems.length; i = i + 1) {
+                let tt: &Type = elems.elements[i];
+                let _a: usize = getAlignmentInBytes(tt);
+                if (_a > maxAlign) maxAlign = _a;
+            }
+            res = maxAlign;
+        }
         _ => {
             unreachable("Exhaustive handling of type kinds in Type.getAlignment");
         }
