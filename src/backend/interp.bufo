@@ -20,6 +20,7 @@ import "./byte_buffer.bufo";
 @os(WINDOWS) import "winapi/functions.bufo";
 
 @os(LINUX) import "posix/functions.bufo";
+@os(LINUX) import "posix/constants.bufo";
 
 struct CallStackInfo {
     span: Span;
@@ -1788,16 +1789,100 @@ func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: 
         C::fprintf(stderr, "%s\n", toString(retType).buffer);
         todo_with_msg("non-float ret");
     }
-    push(&buf, '\xC3');
+    ret(&buf);
     let code = WinAPI::VirtualAlloc(null, buf.length, 4096, 64);
     assert(code != null, "Could not alloc some bytes sadge thx Windows");
     C::memcpy(code, buf.elements, buf.length);
     C::free(buf.elements);
     return Function { run: code as func () -> u64, size: buf.length };
 }
+
 @os(LINUX) func compileFunctionCall(this: &IRInterp, currFunc: &IRFunc, calledFunc: &IRFunc, instr: &IRInstr, fn: usize, regs: &RegValueList) -> Function {
-    todo_with_msg("comptime extern call");
+    C::printf("%s: %s: implementing comptime extern call for SysV\n", NOTE_STR, toString(&instr.span).buffer);
+    let decl = at(&funcDecls, calledFunc.originalID);
+
+    let &Type::Func(_, retType, attrs) = getType(&decl.typeState) else {
+        unreachable("IRGen.evaluateInstrCall: Expected function type");
+    };
+
+    if(attrs.isVariadic) {
+        todo_with_msg("Variadic comptime call");
+    }
+
+    comptime GPR_REGS = [RDI,  RSI,  RDX,  RCX,  R8,   R9];
+    comptime FPR_REGS = [XMM0, XMM1, XMM2, XMM3, XMM4, XMM5, XMM6, XMM7];
+    comptime GPR_REGS_NUM: usize = 6;
+    comptime FPR_REGS_NUM: usize = 8;
+
+    let gpr_i: usize = 0;
+    let fpr_i: usize = 0;
+
+    let buf: ByteBuffer = blank;
+    /* function enter */
+    push(&buf, RBP);
+    mov(&buf, RBP, RSP);
+
+    for(let i: usize = 0; i < instr.args.length; i = i+1) {
+        let regIdx = at(&instr.args, i);
+        let reg = at(regs, regIdx.i);
+        let arg: InterpReg = asInterp(reg, "call arg");
+        let irreg = getRegister(currFunc, *regIdx);
+        let regStackPtr = getRegStackPointer(this, &arg);
+        match(irreg.typ) {
+            &Type::Prim(PrimType::F32) => {
+                let v = *(regStackPtr as &f32);
+                mov(&buf, FPR_REGS[fpr_i], ImmF32 { b: v });
+                fpr_i = fpr_i + 1;
+                assert(fpr_i < FPR_REGS_NUM, "pass float in stack");
+            }
+            &Type::Prim(PrimType::F64) => {
+                let v = *(regStackPtr as &f64);
+                mov(&buf, FPR_REGS[fpr_i], ImmF64 { b: v });
+                fpr_i = fpr_i + 1;
+                assert(fpr_i < FPR_REGS_NUM, "pass float in stack");
+            }
+            _ => {
+                if(getSizeInBytes(irreg.typ) <= 8) {
+                    assert(gpr_i < GPR_REGS_NUM, "pass integer in stack");
+                    let v = *(regStackPtr as &u64);
+                    mov(&buf, GPR_REGS[gpr_i], ImmI64 { b: v });
+                    gpr_i = gpr_i+1;
+                } else {
+                    todo_with_msg("Probably unimplemented type");
+                }
+            }
+        }
+    }
+
+    mov(&buf, RAX, ImmI64 { b: fn as u64 });
+    call(&buf, RAX);
+
+    pop(&buf, RBP);
+
+    if (isFloat(retType)) {
+        // movq rax, xmm0
+        push(&buf, '\x66', '\x48', '\x0F', '\x7E');
+        modRM(&buf, ADDR_REG, XMM0.r, RAX);
+    } else if (isNone(retType)) {
+        mov(&buf, RAX, ImmI64 { b: 69420 });
+    } else if (isInteger(retType) || isBoolean(retType) || isStruct(retType) || isPointer(retType)) {
+        // noop, other side will hopefully put the thing in RAX for us
+    } else {
+        C::fprintf(stderr, "%s: unhandled return value %s for comptime function call.\n", FATAL_STR, toString(retType).buffer);
+        unreachable();
+    }
+    ret(&buf);
+
+    /* copy assembly to a separate page marked +x */
+    let code = posix::mmap(null, buf.length, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_ANONYMOUS | MAP_PRIVATE, 0, 0);
+    assert(code != MAP_FAILED, "Could not alloc some bytes sadge thx Linus </3");
+    C::memcpy(code, buf.elements, buf.length);
+    C::free(buf.elements);
+
+    //todo_with_msg("comptime extern call");
+    return Function { run: code as func () -> u64, size: buf.length };
 }
+
 func evaluateCall(this: &IRInterp, span: Span, irFunc: &IRFunc, regs: &RegValueList) {
     let funcSize: usize = getRegisterSizeInBytes(irFunc);
     let fn = at(&funcDecls, irFunc.originalID);

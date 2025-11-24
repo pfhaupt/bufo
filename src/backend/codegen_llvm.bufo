@@ -403,7 +403,16 @@ func prepareReturnType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
 
 func prepareParameter(this: &LLVMCodegen, typ: &Type) -> LLVMType {
     // FIXME: Kinda sucks that we have to do this both in the IRGen and here
-    if (isStruct(typ)) {
+    let storeOnStack = false;
+
+    if(equals(flags.target, &comptime newStringFromStrLit("LINUX"))) {
+        storeOnStack = isComposite(typ) && getSizeInBytes(typ) > 2*8 || getSizeInBytes(typ) > 8;
+    } else if(equals(flags.target, &comptime newStringFromStrLit("WINDOWS"))) {
+        storeOnStack = getSizeInBytes(typ) > 8;
+    }
+    if(storeOnStack) return generateLLVMType(this, intoPointer(typ));
+
+    if (isComposite(typ)) {
         let size: usize = getSizeInBytes(typ);
         let t: &Type = null;
         if (size <= 1) {
@@ -414,12 +423,12 @@ func prepareParameter(this: &LLVMCodegen, typ: &Type) -> LLVMType {
             t = wrap(Type::Prim(PrimType::U32));
         } else if (size <= 8) {
             t = wrap(Type::Prim(PrimType::U64));
+        //} else if (size <= 2*8 && equals(flags.target, &comptime newStringFromStrLit("LINUX"))) {
+        //    t = intoPointer(typ);
         } else {
             t = wrap(Type::Ptr(wrap(Type::Prim(PrimType::U8))));
         }
         return generateLLVMType(this, t);
-    } else if (getSizeInBytes(typ) > 8) {
-        return generateLLVMType(this, intoPointer(typ));
     } else {
         return generateLLVMType(this, typ);
     }
@@ -1037,7 +1046,14 @@ func generateLLVMValueFromComptimeValue(this: &LLVMCodegen, typ: &Type, start: &
             } else if (isNone(typ)) {
                 let t: LLVMType = createIntegerType(&this.llvmContext, 1);
                 return constInt(&t, 1, false);
+            } else if (isAny(typ)) {
+                let val: u64 = *(start as &u64);
+                let t: LLVMType = createIntegerType(&this.llvmContext, 64);
+                let ptr = intoPointerType(&t);
+                let int = constInt(&t, val as usize, false);
+                return buildIntToPtr(&this.llvmBuilder, int, ptr, newSubStrOfStrLit("i2p"));
             } else {
+                C::fprintf(stderr, "%s: unhandled return value %s for comptime function call.\n", FATAL_STR, toString(typ).buffer);
                 todo_with_msg("prim");
             }
         }

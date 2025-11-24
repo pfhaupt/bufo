@@ -12,42 +12,52 @@ system at any time.
 import "../linux.bufo";
 import "./structs.bufo";
 
-@os(LINUX) @extern("stat") func stat(path: &char, Statbuf: &Stat) -> i32;
-@os(LINUX) @extern("strerror") func strerror(errno: i32) -> &char;
-@os(LINUX) @extern("fork") func fork() -> i32;
-@os(LINUX) @extern("execvp") func execvp(name: &char, args: &&char) -> i32;
-@os(LINUX) @extern("waitpid") func waitpid(pid: Handle, out: &i32, flags: i32) -> i32;
-@os(LINUX) func WIFSIGNALED(Status: i32) -> bool {
-    return (((Status & 127) + 1) / 2) > 0;
-}
-@os(LINUX) func WIFEXITED(Status: i32) -> bool {
-    return WTERMSIG(Status) == 0;
-}
-@os(LINUX) func WTERMSIG(Status: i32) -> i32 {
-    return (Status & 127);
-}
-@os(LINUX) func WEXITSTATUS(Status: i32) -> i32 {
-    return (Status & 65280) / 256;
-}
-@os(LINUX) @extern("strsignal") func strsignal(signal: i32) -> &char;
-@os(LINUX) @extern("__errno_location") func __errno_location() -> &i32;
-@os(LINUX) @extern("readlink") func readlink(pathname: &char, buf: &char, bufsiz: i32) -> i32;
+@os(LINUX) module posix {
+    config {
+        /* copy+paste from libc.bufo */
+        dynamic: "libc.so.6",
+        libpath: "/usr/lib/",
+        libpath: "/usr/lib64/",
+        libpath: "/lib/x86_64-linux-gnu/",
+    }
 
-@os(LINUX) @extern("mmap") func mmap(addr: Any, length: usize, prot: i32, flags: i32, fd: i32, offset: usize) -> Any;
-@os(LINUX) @extern("munmap") func munmap(addr: Any, length: usize) -> i32;
-@os(LINUX) @extern("getpagesize") func getpagesize() -> usize;
+    @extern("stat") func stat(path: &char, Statbuf: &Stat) -> i32;
+    @extern("strerror") func strerror(errno: i32) -> &char;
+    @extern("fork") func fork() -> i32;
+    @extern("execvp") func execvp(name: &char, args: &&char) -> i32;
+    @extern("waitpid") func waitpid(pid: Handle, out: &i32, flags: i32) -> i32;
+    func WIFSIGNALED(Status: i32) -> bool {
+        return (((Status & 127) + 1) / 2) > 0;
+    }
+    func WIFEXITED(Status: i32) -> bool {
+        return WTERMSIG(Status) == 0;
+    }
+    func WTERMSIG(Status: i32) -> i32 {
+        return (Status & 127);
+    }
+    func WEXITSTATUS(Status: i32) -> i32 {
+        return (Status & 65280) / 256;
+    }
+    @extern("strsignal") func strsignal(signal: i32) -> &char;
+    @extern("__errno_location") func __errno_location() -> &i32;
+    @extern("readlink") func readlink(pathname: &char, buf: &char, bufsiz: i32) -> i32;
 
-@os(LINUX) @extern("dlopen") func dlopen(filename: &char, flags: i32) -> Any;
-@os(LINUX) @extern("dlclose") func dlclose(handle: Any) -> i32;
-@os(LINUX) @extern("dlerror") func dlerror() -> &char;
-@os(LINUX) func dlopen(filename: &char, flags: i32) -> Handle {
-    return Handle {
-        ptr: dlopen(filename, flags) as Any as usize
-    };
-}
-@os(LINUX) @extern("dlsym") func dlsym(handle: Any, symbol: &char) -> Any;
-@os(LINUX) func dlsym(handle: Handle, symbol: &char) -> Handle {
-    return Handle {
-        ptr: dlsym(handle.ptr as Any, symbol) as usize
-    };
+    @extern("mmap") func mmap(addr: Any, length: usize, prot: i32, flags: i32, fd: i32, offset: usize) -> Any;
+    @extern("munmap") func munmap(addr: Any, length: usize) -> i32;
+    @extern("getpagesize") func getpagesize() -> usize;
+
+    @extern("dlopen") func dlopen(filename: &char, flags: i32) -> Any;
+    @extern("dlclose") func dlclose(handle: Any) -> i32;
+    @extern("dlerror") func dlerror() -> &char;
+    func dlopen(filename: &char, flags: i32) -> Handle {
+        return Handle {
+            ptr: dlopen(filename, flags) as Any as usize
+        };
+    }
+    @extern("dlsym") func dlsym(handle: Any, symbol: &char) -> Any;
+    func dlsym(handle: Handle, symbol: &char) -> Handle {
+        return Handle {
+            ptr: dlsym(handle.ptr as Any, symbol) as usize
+        };
+    }
 }

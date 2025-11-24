@@ -364,18 +364,18 @@ func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList
                                 if (file == null) {
                                     if (*flags.verbose) {
                                         @os(WINDOWS) C::printf("No such file or directory\n");
-                                        @os(LINUX) C::printf("%s\n", strerror(*errno()));
+                                        @os(LINUX) C::printf("%s\n", posix::strerror(*errno()));
                                     }
                                     drop(&libPath);
                                     continue;
                                 }
                                 C::fclose(file);
                                 @os(WINDOWS) let handle = WinAPI::LoadLibraryA(libPath.buffer);
-                                @os(LINUX) let handle: Handle = dlopen(libPath.buffer, RTLD_LAZY);
+                                @os(LINUX) let handle: Handle = posix::dlopen(libPath.buffer, RTLD_LAZY);
                                 if (isNull(handle)) {
                                     if (*flags.verbose) {
                                         @os(WINDOWS) C::printf("Could not load DLL\n");
-                                        @os(LINUX) C::printf("%s\n", dlerror());
+                                        @os(LINUX) C::printf("%s\n", posix::dlerror());
                                     }
                                     drop(&libPath);
                                     continue;

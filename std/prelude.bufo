@@ -26,7 +26,7 @@ let stderr: Any = null;
 let done = false;
 func setupStdHandles() {
     if (done) return;
-    if (stdin == null) stdin = C::fdopen(0, "a");
+    if (stdin == null) stdin = C::fdopen(0, "r");
     _assert(stdin != null, "Could not initialize STDIN!");
     if (stdout == null) stdout = C::fdopen(1, "a");
     _assert(stdout != null, "Could not initialize STDOUT!");

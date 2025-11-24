@@ -12,10 +12,10 @@ comptime INVALID_HANDLE: Handle = Handle { ptr: 18446744073709551615 };
 @os(LINUX) func getLastModified(filePath: &char) -> usize {
     let statbuf: Stat = blank;
 
-    if (stat(filePath, &statbuf) < 0) {
+    if (posix::stat(filePath, &statbuf) < 0) {
         // NOTE: if output does not exist it 100% must be rebuilt
         if (*errno() == ENOENT) return 0;
-        C::fprintf(stderr, "[ERROR] Could not get time of %s: %#010x\n", filePath, strerror(*errno()));
+        C::fprintf(stderr, "[ERROR] Could not get time of %s: %#010x\n", filePath, posix::strerror(*errno()));
         return 0;
     }
     return statbuf.st_mtime as usize;
@@ -25,13 +25,13 @@ comptime INVALID_HANDLE: Handle = Handle { ptr: 18446744073709551615 };
     if (proc.ptr == INVALID_HANDLE.ptr) return false;
     while (true) {
         let wstatus: i32 = 0;
-        if (waitpid(proc, &wstatus, 0) < 0) {
-            C::fprintf(stderr, "[ERROR] Could not wait on command (pid %d): %s\n", proc, strerror(*errno()));
+        if (posix::waitpid(proc, &wstatus, 0) < 0) {
+            C::fprintf(stderr, "[ERROR] Could not wait on command (pid %d): %s\n", proc, posix::strerror(*errno()));
             return false;
         }
 
-        if (WIFEXITED(wstatus)) {
-            let exit_status: i32 = WEXITSTATUS(wstatus);
+        if (posix::WIFEXITED(wstatus)) {
+            let exit_status: i32 = posix::WEXITSTATUS(wstatus);
             if (exit_status != 0) {
                 C::fprintf(stderr, "[ERROR] Command exited with exit code %d\n", exit_status);
                 return false;
@@ -39,8 +39,8 @@ comptime INVALID_HANDLE: Handle = Handle { ptr: 18446744073709551615 };
             break;
         }
 
-        if (WIFSIGNALED(wstatus)) {
-            C::fprintf(stderr, "[ERROR] Command process was terminated by %s\n", strsignal(WTERMSIG(wstatus)));
+        if (posix::WIFSIGNALED(wstatus)) {
+            C::fprintf(stderr, "[ERROR] Command process was terminated by %s\n", posix::strsignal(posix::WTERMSIG(wstatus)));
             return false;
         }
     }
@@ -50,7 +50,7 @@ comptime INVALID_HANDLE: Handle = Handle { ptr: 18446744073709551615 };
 @os(LINUX) func dirExists(path: &char) -> bool {
     let statbuf: Stat = blank;
 
-    if (stat(path, &statbuf) < 0) {
+    if (posix::stat(path, &statbuf) < 0) {
         if (*errno() == ENOENT) return false;
     }
     return true;
@@ -63,9 +63,9 @@ comptime INVALID_HANDLE: Handle = Handle { ptr: 18446744073709551615 };
 }
 
 @os(LINUX) func runCmdAsync(cmd: Cmd) -> Handle {
-    let cpid: i32 = fork();
+    let cpid: i32 = posix::fork();
     if (cpid < 0) {
-        C::fprintf(stderr, "[ERROR] Could not fork child process: %s\n", strerror(*errno()));
+        C::fprintf(stderr, "[ERROR] Could not fork child process: %s\n", posix::strerror(*errno()));
         return INVALID_HANDLE;
     }
 
@@ -78,8 +78,8 @@ comptime INVALID_HANDLE: Handle = Handle { ptr: 18446744073709551615 };
 
         let progName: String = toString(&cmd.buf.data[0]);
         let args: &&char = asCharPtrs(&cmd);
-        if (execvp(progName.buffer as &char, args) < 0) {
-            C::fprintf(stderr, "[ERROR] Could not exec child process: %s\n", strerror(*errno()));
+        if (posix::execvp(progName.buffer as &char, args) < 0) {
+            C::fprintf(stderr, "[ERROR] Could not exec child process: %s\n", posix::strerror(*errno()));
             C::exit(1);
         }
         unreachable("execvp");

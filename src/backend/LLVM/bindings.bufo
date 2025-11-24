@@ -4,14 +4,13 @@ import "prelude.bufo";
 module LLVM {
     @os(LINUX) config {
         // It must be somewhere here :^)
-        libpath: "/usr/lib64/llvm20/lib/",
-        libpath: "/usr/lib/llvm-20/lib/",
-        libpath: "/lib/llvm-20/lib/",
-        libpath: "./wrapper/",
-        static: "target.a",
-        // TODO: It would be cool to statically link with LLVM on Linux too
-        dynamic: "libLLVM-20.so",
-        linker: "-lLLVM-20",
+        libpath: "/usr/lib64/llvm21/lib/",
+        libpath: "/usr/lib/llvm-21/lib/",
+        libpath: "/lib/llvm-21/lib/",
+        libpath: ".",
+        static: "wrapper/target.a",
+        dynamic: "libLLVM-21.so",
+        linker: "-lLLVM-21",
     }
     @os(WINDOWS) config {
         // Custom wrappers

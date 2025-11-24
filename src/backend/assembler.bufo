@@ -36,6 +36,8 @@ comptime XMM2: FPR = FPR { r: 2 };
 comptime XMM3: FPR = FPR { r: 3 };
 comptime XMM4: FPR = FPR { r: 4 };
 comptime XMM5: FPR = FPR { r: 5 };
+comptime XMM6: FPR = FPR { r: 6 };
+comptime XMM7: FPR = FPR { r: 7 };
 
 comptime ADDR_INDIRECT: u8 = 0;
 comptime ADDR_DISP8   : u8 = 1;
@@ -149,5 +151,9 @@ func push(bytes: &ByteBuffer, imm: ImmI64) {
     mov(bytes, RAX, imm);
     push(bytes, '\xFF');
     modRM(bytes, ADDR_REG, 6, RAX);
+}
+
+func ret(bytes: &ByteBuffer) {
+    push(bytes, '\xC3');
 }
 

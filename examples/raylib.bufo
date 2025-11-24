@@ -7,6 +7,8 @@ module raylib {
         static: "libraylib.a",
         dynamic: "libraylib.so",
         libpath: "./raylib/lib",
+        libpath: "/home/fint/opt/raylib-5.5/lib/",
+        linker: "-lm"
     }
     @os(WINDOWS) config {
         static: "raylib.lib",
@@ -42,6 +44,7 @@ module raylib {
     @extern("SetSoundVolume") func SetSoundVolume(sound: Sound, volume: f32);
     @extern("GetTime") func GetTime() -> f64;
     @extern("SetTargetFPS") func SetTargetFPS(fps: i32);
+    @extern("DrawText") func DrawText(text: &char, x: i32, y: i32, fontSize: i32, color: Color);
 
     struct Color {
         r: u8;
@@ -132,15 +135,18 @@ module raylib {
         } else {
             InitWindow(600, 400, "simple_test: hello from bufo");
         }
-        let c = comptime ColorFromHSV(90, 1/10, 3/10);
+        //let c = comptime ColorFromHSV(90, 1/10, 3/10);
+        let c = comptime GetColor(404232447); /* 0x181818FF */
         while (!WindowShouldClose()) {
             if (GetTime() > 3) {
-                // FIXME
+                // FIXME: "Did not properly type check function of module"
                 // C::printf("\x1b[92m[INFO] 3 seconds have passed, closing window.\x1b[0m\n");
                 break;
             }
             BeginDrawing();
             ClearBackground(c);
+            DrawText("This window only exists at compile time!", 10, 10, 15, GetColor(0-1));
+            DrawText("It will not be show in the final executable!", 10, 35, 15, GetColor(0-1));
             EndDrawing();
         }
         CloseWindow();

@@ -22,7 +22,7 @@ def try_call(cmd: List) -> subprocess.CompletedProcess[bytes]:
 
 def get(what: List[str], split_by: str = "\n") -> List[str]:
     if sys.platform == "linux":
-        c = ["llvm-config-20"]
+        c = ["llvm-config"]
     elif sys.platform == "win32":
         c = ["llvm-config"]
     else:
