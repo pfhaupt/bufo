@@ -1,0 +1,18 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo"; // assert
+
+func foo() -> (usize, usize) {
+    let size: usize = 5;
+    return (5, size);
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let f = foo();
+    assert(f.0 == 5);
+    assert(f.1 == 5);
+    return 0;
+}
+

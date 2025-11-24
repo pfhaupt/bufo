@@ -1950,12 +1950,17 @@ func typeCheckExpr(this: &TypeChecker, expr: &ParsedExpr, scopes: &ScopeLookupLi
         }
         &ExprData::Tuple(elems) => {
             let tElems: TypeList = blank;
+            let infer: TCState = blank;
             for (let i: usize = 0; i < elems.length; i = i + 1) {
                 let e = typeCheckExpr(this, elems.elements[i], scopes);
                 if (isError(&e)) return e;
-                if (wantsInfer(&e)) return e;
+                if (wantsInfer(&e)) {
+                    infer = e;
+                    continue;
+                }
                 push(&tElems, getType(&e));
             }
+            if (wantsInfer(&infer)) return infer;
             state = newTCStateType(wrap(Type::Tuple(tElems)));
         }
         unknown => {
