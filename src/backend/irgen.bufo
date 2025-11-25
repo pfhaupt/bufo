@@ -3769,11 +3769,11 @@ func generateBytecodeExprUnary(this: &IRGen, function: &IRFunc, span: Span, expr
 func prepareParameter(this: &IRGen, function: &IRFunc, index: usize, span: Span, name: SubStr, typ: &Type, retValue: bool) {
     let storeOnStack = false;
 
-    if(equals(flags.target, &comptime newStringFromStrLit("LINUX"))) {
+    if(equals(flags.target, &OS_LINUX)) {
         storeOnStack = (isComposite(typ) && getSizeInBytes(typ) > 2*8) || getSizeInBytes(typ) > 8;
-    } else if(equals(flags.target, &comptime newStringFromStrLit("WINDOWS"))) {
+    } else if(equals(flags.target, &OS_WINDOWS)) {
         storeOnStack = getSizeInBytes(typ) > 8;
-    } else unreachable();
+    } else unreachable("OS ABI");
 
     if (storeOnStack) {
         let t = wrap(Type::Ptr(wrap(Type::Prim(PrimType::U8))));
@@ -3798,7 +3798,7 @@ func prepareParameter(this: &IRGen, function: &IRFunc, index: usize, span: Span,
             t = wrap(Type::Prim(PrimType::U32));
         } else if (size <= 8) {
             t = wrap(Type::Prim(PrimType::U64));
-        //} else if (equals(flags.target, &comptime newStringFromStrLit("LINUX")) && size <= 2*8) {
+        //} else if (equals(flags.target, &OS_LINUX) && size <= 2*8) {
         //    t = intoPointer(typ);
         } else {
             t = wrap(Type::Ptr(wrap(Type::Prim(PrimType::U8))));
@@ -3848,12 +3848,12 @@ func getRegisterForSize(this: &IRGen, function: &IRFunc, size: usize) -> RegInde
     } else if (size <= 8) {
         v = allocateRegister(function, wrap(Type::Prim(PrimType::U64)));
     } else {
-        if(equals(flags.target, &comptime newStringFromStrLit("LINUX"))) {
+        if(equals(flags.target, &OS_LINUX)) {
             todo_with_msg("LINUX: getRegisterForSize called with size > 8");
             /* this is needed for SysV ABI structs that are <= 2*8 bytes in size */
             if(size <= 2*8) v = allocateRegister(function, wrap(Type::Array(wrap(Type::Prim(PrimType::U8)), size)));
             else unreachable("getRegisterForSize called with size > 8");
-        } else if(equals(flags.target, &comptime newStringFromStrLit("WINDOWS"))) {
+        } else if(equals(flags.target, &OS_WINDOWS)) {
             unreachable("getRegisterForSize called with size > 8");
         } else { unreachable("getRegisterForSize: unknown target"); }
     }
@@ -3869,7 +3869,7 @@ func getRegisterForSize(this: &IRGen, function: &IRFunc, size: usize) -> RegInde
 }
 
 func prepareArgument(this: &IRGen, function: &IRFunc, span: Span, value: RegIndex, typ: &Type) -> RegIndex {
-    if(equals(flags.target, &comptime newStringFromStrLit("LINUX"))) {
+    if(equals(flags.target, &OS_LINUX)) {
         if(isComposite(typ)) {
             /* break up into 1 or 2 regs and use those */
             let size = getSizeInBytes(typ);
@@ -3881,7 +3881,7 @@ func prepareArgument(this: &IRGen, function: &IRFunc, span: Span, value: RegInde
 
             let (a, b) = splitStructIntoRegs(typ);
             if(b != 0) {
-                C::printf("%s: %s: TODO[Linux]: use multiple regs for small structs\n", toString(&span).buffer, NOTE_STR);
+                if(*flags.verbose) C::printf("%s: %s: TODO[Linux]: use multiple regs for small structs\n", toString(&span).buffer, NOTE_STR);
                 return alloc;
             }
 
@@ -3898,7 +3898,7 @@ func prepareArgument(this: &IRGen, function: &IRFunc, span: Span, value: RegInde
                 return tempAlloc;
             } else return value;
         }
-    } else if(equals(flags.target, &comptime newStringFromStrLit("WINDOWS"))) {
+    } else if(equals(flags.target, &OS_WINDOWS)) {
         if (getSizeInBytes(typ) > 8) {
             // Following the ABI, all parameters that don't fit in a register get passed by pointer
             let tempAlloc: RegIndex = allocateRegister(function, intoPointer(typ));
@@ -3906,7 +3906,7 @@ func prepareArgument(this: &IRGen, function: &IRFunc, span: Span, value: RegInde
             buildStore(function, span, tempAlloc, value);
             return tempAlloc;
         } else if (isComposite(typ)) {
-            // if(equals(flags.target, &comptime newReadonlyString("LINUX"))) todo_with_msg("move structure for penger machine");
+            // if(equals(flags.target, &OS_LINUX)) todo_with_msg("move structure for penger machine");
             let size: usize = getSizeInBytes(typ);
             let alloc: RegIndex = allocateRegister(function, intoPointer(typ));
             buildAlloca(function, span, alloc, size);

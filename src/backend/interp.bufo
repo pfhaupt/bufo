@@ -1798,7 +1798,7 @@ func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: 
 }
 
 @os(LINUX) func compileFunctionCall(this: &IRInterp, currFunc: &IRFunc, calledFunc: &IRFunc, instr: &IRInstr, fn: usize, regs: &RegValueList) -> Function {
-    C::printf("%s: %s: implementing comptime extern call for SysV\n", NOTE_STR, toString(&instr.span).buffer);
+    if(*flags.verbose) C::printf("%s: %s: implementing comptime extern call for SysV\n", NOTE_STR, toString(&instr.span).buffer);
     let decl = at(&funcDecls, calledFunc.originalID);
 
     let &Type::Func(_, retType, attrs) = getType(&decl.typeState) else {

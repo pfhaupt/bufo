@@ -37,9 +37,9 @@ func createTarget(this: &LLVMContext, name: &char) -> LLVMTarget {
 }
 
 func createTargetTriple(this: &LLVMContext, name: &char) -> &char {
-    if (equals(flags.target, &newStringFromStrLit("WINDOWS"))) {
+    if (equals(flags.target, &OS_WINDOWS)) {
         return "x86_64-pc-windows-msvc";
-    } else if (equals(flags.target, &newStringFromStrLit("LINUX"))) {
+    } else if (equals(flags.target, &OS_LINUX)) {
         return "x86_64-unknown-linux-gnu";
     } else {
         unreachable("createTargetTriple: Unknown target!");

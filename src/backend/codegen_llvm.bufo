@@ -405,11 +405,12 @@ func prepareParameter(this: &LLVMCodegen, typ: &Type) -> LLVMType {
     // FIXME: Kinda sucks that we have to do this both in the IRGen and here
     let storeOnStack = false;
 
-    if(equals(flags.target, &comptime newStringFromStrLit("LINUX"))) {
+    if(equals(flags.target, &OS_LINUX)) {
         storeOnStack = isComposite(typ) && getSizeInBytes(typ) > 2*8 || getSizeInBytes(typ) > 8;
-    } else if(equals(flags.target, &comptime newStringFromStrLit("WINDOWS"))) {
+    } else if(equals(flags.target, &OS_WINDOWS)) {
         storeOnStack = getSizeInBytes(typ) > 8;
-    }
+    } else unreachable("OS ABI");
+
     if(storeOnStack) return generateLLVMType(this, intoPointer(typ));
 
     if (isComposite(typ)) {
@@ -423,7 +424,7 @@ func prepareParameter(this: &LLVMCodegen, typ: &Type) -> LLVMType {
             t = wrap(Type::Prim(PrimType::U32));
         } else if (size <= 8) {
             t = wrap(Type::Prim(PrimType::U64));
-        //} else if (size <= 2*8 && equals(flags.target, &comptime newStringFromStrLit("LINUX"))) {
+        //} else if (size <= 2*8 && equals(flags.target, &OS_LINUX)) {
         //    t = intoPointer(typ);
         } else {
             t = wrap(Type::Ptr(wrap(Type::Prim(PrimType::U8))));

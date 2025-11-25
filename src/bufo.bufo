@@ -113,12 +113,12 @@ func main(argc: i32, argv: &&char) -> i32 {
     // TODO: @os() currently only checks WINDOWS or LINUX, would be cool if we could derive this
     //       from the provided target triple
     if (equals(flags.target, &newStringFromStrLit("x86_64-pc-windows-msvc"))) {
-        *flags.target = newStringFromStrLit("WINDOWS");
+        *flags.target = OS_WINDOWS;
     } else if (equals(flags.target, &newStringFromStrLit("x86_64-pc-linux-gnu"))) {
-        *flags.target = newStringFromStrLit("LINUX");
+        *flags.target = OS_LINUX;
     } else if (flags.target.length == 0) {
-        @os(WINDOWS) *flags.target = newStringFromStrLit("WINDOWS");
-        @os(LINUX) *flags.target = newStringFromStrLit("LINUX");
+        @os(WINDOWS) *flags.target = OS_WINDOWS;
+        @os(LINUX) *flags.target = OS_LINUX;
     } else {
         C::fprintf(stderr, "error: Unknown target %s\n", flags.target.buffer);
         showHelp(stderr, &flagParser);
@@ -199,7 +199,7 @@ func findStdAndAddToImports(parser: &Parser) -> bool {
     if (*flags.dontLink) {
         return true;
     }
-    if (!equals(flags.target, &newStringFromStrLit("WINDOWS"))) {
+    if (!equals(flags.target, &OS_WINDOWS)) {
         C::fprintf(stderr, "%s: Cross-linking is not supported yet. Run with `--dont-link` to generate an object file.\n", ERR_STR);
         return false;
     }
@@ -287,7 +287,7 @@ func findStdAndAddToImports(parser: &Parser) -> bool {
     if (*flags.dontLink) {
         return true;
     }
-    if (!equals(flags.target, &newStringFromStrLit("LINUX"))) {
+    if (!equals(flags.target, &OS_LINUX)) {
         C::fprintf(stderr, "%s: Cross-linking is not supported yet. Run with `--dont-link` to generate an object file.\n", ERR_STR);
         return false;
     }

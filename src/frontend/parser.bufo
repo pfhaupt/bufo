@@ -209,7 +209,7 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList, inModule: bool)
             expect(this, TOKEN_PAREN_OPEN);
             let os = expect(this, TOKEN_IDENT);
             expect(this, TOKEN_PAREN_CLOSE);
-            if (!equals(&os.content, &OS_WINDOWS) && !equals(&os.content, &OS_LINUX)) {
+            if (!equals(&os.content, &asSubStr(&OS_WINDOWS)) && !equals(&os.content, &asSubStr(&OS_LINUX))) {
                 C::fprintf(stderr, "%s\n", toString(&os.content).buffer);
                 todo_with_msg("Unknown os");
             }

@@ -1,4 +1,5 @@
 import "substr.bufo";
+import "string.bufo";
 
 func tag(union: Any) -> u8 {
     return *(union as &u8);
@@ -10,8 +11,8 @@ func comptimeSubStr(s: &char) -> SubStr {
         len: comptimeStrlen(s)
     };
 }
-comptime OS_WINDOWS: SubStr = comptimeSubStr("WINDOWS");
-comptime OS_LINUX: SubStr = comptimeSubStr("LINUX");
+comptime OS_WINDOWS: String = newReadonlyString("WINDOWS");
+comptime OS_LINUX: String = newReadonlyString("LINUX");
 
 comptime FATAL_STR: &char = "\x1b[95m[FATAL]\x1b[0m";
 comptime ERR_STR: &char = "\x1b[91merror\x1b[0m";
