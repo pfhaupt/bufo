@@ -149,8 +149,7 @@ func call(bytes: &ByteBuffer, r: GPR) {
 
 func push(bytes: &ByteBuffer, imm: ImmI64) {
     mov(bytes, RAX, imm);
-    push(bytes, '\xFF');
-    modRM(bytes, ADDR_REG, 6, RAX);
+    push(bytes, RAX);
 }
 
 func ret(bytes: &ByteBuffer) {

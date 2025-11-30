@@ -66,10 +66,10 @@ module raylib {
     @os(LINUX) config {
         static: "libraylib.a",
         dynamic: "libraylib.so",
+        linker: "-lm",
         // Makefile runs bufo.exe how_to/... so the path is different
         libpath: "./raylib/lib",
-        libpath: "../raylib/lib",
-        libpath: "/home/fint/opt/raylib-5.5/lib"
+        libpath: "../raylib/lib"
     }
     @os(WINDOWS) config {
         static: "raylib.lib",
@@ -148,12 +148,12 @@ func demo() -> Value {
         raylib::draw_text("call demo() in a non-comptime context.", 0, 64, 32, c);
         // Variadic functions (here: raylib::text_format) are also supported, including passing
         // structures to functions. This is because bufo follows the C calling convention by default.
-        //raylib::draw_text(raylib::text_format("This window has been open for %.2f seconds", dt), 0, 96, 32, c);
+        raylib::draw_text(raylib::text_format("This window has been open for %.2f seconds", dt), 0, 96, 32, c);
         if (dt > 10) {
             raylib::draw_text("Closing window soon...", 0, 128, 32, yellow);
         }
         if (dt > 15) {
-            //raylib::draw_text(raylib::text_format("In %.2f seconds...", 20 - dt), 0, 160, 32, raylib::Color { r: 255, a: 255 });
+            raylib::draw_text(raylib::text_format("In %.2f seconds...", 20 - dt), 0, 160, 32, raylib::Color { r: 255, a: 255 });
         }
         if (dt >= 20) break;
         raylib::end_drawing();

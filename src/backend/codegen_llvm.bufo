@@ -381,7 +381,7 @@ func generateLLVMFunctionHeader(this: &LLVMCodegen, irFunc: &IRFunc) {
 
 func prepareReturnType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
     // FIXME: Kinda sucks that we have to do this both in the IRGen and here
-    if (isStruct(typ)) {
+    if (isComposite(typ)) {
         let size: usize = getSizeInBytes(typ);
         let t: &Type = null;
         if (size <= 1) {

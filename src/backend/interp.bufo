@@ -1805,10 +1805,6 @@ func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: 
         unreachable("IRGen.evaluateInstrCall: Expected function type");
     };
 
-    if(attrs.isVariadic) {
-        todo_with_msg("Variadic comptime call");
-    }
-
     comptime GPR_REGS = [RDI,  RSI,  RDX,  RCX,  R8,   R9];
     comptime FPR_REGS = [XMM0, XMM1, XMM2, XMM3, XMM4, XMM5, XMM6, XMM7];
     comptime GPR_REGS_NUM: usize = 6;
@@ -1831,31 +1827,65 @@ func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: 
         match(irreg.typ) {
             &Type::Prim(PrimType::F32) => {
                 let v = *(regStackPtr as &f32);
-                mov(&buf, FPR_REGS[fpr_i], ImmF32 { b: v });
+                if(attrs.isVariadic) {
+                  // upcast f32 to f64 for varargs
+                  mov(&buf, FPR_REGS[fpr_i], ImmF64 { b: v as f64 });
+                } else {
+                  mov(&buf, FPR_REGS[fpr_i], ImmF32 { b: v });
+                }
                 fpr_i = fpr_i + 1;
-                assert(fpr_i < FPR_REGS_NUM, "pass float in stack");
+                assert(fpr_i < FPR_REGS_NUM, "pass f32 in stack");
             }
             &Type::Prim(PrimType::F64) => {
                 let v = *(regStackPtr as &f64);
                 mov(&buf, FPR_REGS[fpr_i], ImmF64 { b: v });
                 fpr_i = fpr_i + 1;
-                assert(fpr_i < FPR_REGS_NUM, "pass float in stack");
+                assert(fpr_i < FPR_REGS_NUM, "pass f64 in stack");
             }
             _ => {
                 if(getSizeInBytes(irreg.typ) <= 8) {
                     assert(gpr_i < GPR_REGS_NUM, "pass integer in stack");
                     let v = *(regStackPtr as &u64);
-                    mov(&buf, GPR_REGS[gpr_i], ImmI64 { b: v });
+                    if(gpr_i >= GPR_REGS_NUM) {
+                        // TODO: i'm unsure if ImmI64 is always correct
+                        mov(&buf, RSP, 8*(gpr_i - GPR_REGS_NUM) as u32, ImmI64 { b: v });
+                    } else {
+                        mov(&buf, GPR_REGS[gpr_i], ImmI64 { b: v });
+                    }
                     gpr_i = gpr_i+1;
                 } else {
-                    todo_with_msg("Probably unimplemented type");
+                    todo_with_msg(">8 type in compileFunctionCall");
                 }
             }
         }
     }
 
-    mov(&buf, RAX, ImmI64 { b: fn as u64 });
-    call(&buf, RAX);
+
+    if(attrs.isVariadic) {
+        assert(fpr_i <= 255);
+
+        // SysV defines 16-byte alignment for single f64, 32-byte for f128, 64-byte for f256
+        //  for varfuncs, but since bufo doesn't have any of that we can just use 16.
+        comptime FP_ALIGNMENT: usize = 16;
+        let stack_args: usize = 1; /* RBX */
+        if(gpr_i >= GPR_REGS_NUM) stack_args = stack_args + (GPR_REGS_NUM - gpr_i);
+        if(fpr_i >= FPR_REGS_NUM) stack_args = stack_args + (FPR_REGS_NUM - fpr_i);
+
+        assert(stack_args < 4294967296);
+
+        let stack_offset = (8*stack_args % FP_ALIGNMENT) as u32;
+
+        if(stack_offset != 0) sub(&buf, RSP, ImmI32 { b: stack_offset });
+            mov(&buf, RAX, ImmI32 { b: fpr_i as u32 });
+            push(&buf, RBX);
+                mov(&buf, RBX, ImmI64 { b: fn as u64 });
+                call(&buf, RBX); // do call using RBX, because lower RAX is taken by fpr count
+            pop(&buf, RBX);
+        if(stack_offset != 0) add(&buf, RSP, ImmI32 { b: stack_offset });
+    } else {
+        mov(&buf, RAX, ImmI64 { b: fn as u64 });
+        call(&buf, RAX);
+    }
 
     pop(&buf, RBP);
 
@@ -1864,7 +1894,7 @@ func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: 
         push(&buf, '\x66', '\x48', '\x0F', '\x7E');
         modRM(&buf, ADDR_REG, XMM0.r, RAX);
     } else if (isNone(retType)) {
-        mov(&buf, RAX, ImmI64 { b: 69420 });
+        mov(&buf, RAX, ImmI64 { b: 694201337 });
     } else if (isInteger(retType) || isBoolean(retType) || isStruct(retType) || isPointer(retType)) {
         // noop, other side will hopefully put the thing in RAX for us
     } else {

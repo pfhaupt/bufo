@@ -1793,7 +1793,7 @@ func generateFunctionBody(this: &IRGen, function: &IRFunc, body: &ParsedBlock, r
                 buildStore(function, retTypeNode.span, function.retPtr, result);
                 buildReturnExpr(function, retTypeNode.span, function.retPtr);
             } else {
-                if (isStruct(retType)) {
+                if (isComposite(retType)) {
                     let v: RegIndex = getRegisterForSize(this, function, getSizeInBytes(retType));
                     let t: &Type = getRegister(function, v).typ;
                     let r: RegIndex = allocateRegister(function, intoPointer(t));
