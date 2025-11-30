@@ -7,7 +7,6 @@ module raylib {
         static: "libraylib.a",
         dynamic: "libraylib.so",
         libpath: "./raylib/lib",
-        libpath: "/home/fint/opt/raylib-5.5/lib/",
         linker: "-lm"
     }
     @os(WINDOWS) config {

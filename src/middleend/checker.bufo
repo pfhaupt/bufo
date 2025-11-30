@@ -1316,7 +1316,7 @@ func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupLi
                 if(isError(&exprState)) return exprState;
             }
             if (!isType(&exprState)) {
-                C::printf("%s: %s: unexpected TCState: %llu\n", toString(&stmt.span).buffer, exprState.kind);
+                C::printf("%s: unexpected TCState: %llu\n", toString(&stmt.span).buffer, exprState.kind);
                 unreachable("unexpected TCState");
             }
             let exprType: &Type = getType(&exprState);
@@ -3148,7 +3148,6 @@ func tryInferTypeOntoIdent(this: &TypeChecker, ident: &IdentExpr, type: &Type, s
     let var: VariableLookup = blank;
     let tid: TCState = blank;
     if (resolveVariableByName(this.currentModule, &ident.name, scopes, &var)) {
-        //C::printf("in %s\n", toString(&ident.name.span).buffer);
         unreachable("tryInferTypeOntoIdent: New let-statements prevent variables from ever being unresolved");
         assert(wantsInfer(&var.typeState), "Ident has no type, but variable doesn't want infer");
         tid = newTCStateType(type);
