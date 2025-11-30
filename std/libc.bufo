@@ -10,7 +10,10 @@ module C {
     }
     @os(LINUX) config {
         dynamic: "libc.so.6",
+        libpath: "/usr/lib/",
+        libpath: "/usr/lib64/",
         libpath: "/lib/x86_64-linux-gnu/",
+        libpath: ".",
     }
     @os(WINDOWS) @extern("_fdopen") func fdopen(fd: i32, mode: &char) -> Any;
     @os(WINDOWS) @extern("_snprintf") func snprintf(buffer: Any, size: usize, format: &char, ...) -> usize;
@@ -21,6 +24,7 @@ module C {
     @os(LINUX) @extern("realpath") func realpath(path: &char, res: &char) -> &char;
 
     @extern("scanf") func scanf(fmt: &char, ...) -> i32;
+    @extern("fgets") func fgets(buf: &char, size: i32, stream: Any) -> &char;
     // Strings
     @extern("strlen") func strlen(string: &char) -> usize;
     @extern("strcmp") func strcmp(s1: &char, s2: &char) -> i32;

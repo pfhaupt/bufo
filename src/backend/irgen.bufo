@@ -1793,7 +1793,7 @@ func generateFunctionBody(this: &IRGen, function: &IRFunc, body: &ParsedBlock, r
                 buildStore(function, retTypeNode.span, function.retPtr, result);
                 buildReturnExpr(function, retTypeNode.span, function.retPtr);
             } else {
-                if (isStruct(retType)) {
+                if (isComposite(retType)) {
                     let v: RegIndex = getRegisterForSize(this, function, getSizeInBytes(retType));
                     let t: &Type = getRegister(function, v).typ;
                     let r: RegIndex = allocateRegister(function, intoPointer(t));
@@ -3767,7 +3767,15 @@ func generateBytecodeExprUnary(this: &IRGen, function: &IRFunc, span: Span, expr
 }
 
 func prepareParameter(this: &IRGen, function: &IRFunc, index: usize, span: Span, name: SubStr, typ: &Type, retValue: bool) {
-    if (getSizeInBytes(typ) > 8) {
+    let storeOnStack = false;
+
+    if(equals(flags.target, &OS_LINUX)) {
+        storeOnStack = (isComposite(typ) && getSizeInBytes(typ) > 2*8) || getSizeInBytes(typ) > 8;
+    } else if(equals(flags.target, &OS_WINDOWS)) {
+        storeOnStack = getSizeInBytes(typ) > 8;
+    } else unreachable("OS ABI");
+
+    if (storeOnStack) {
         let t = wrap(Type::Ptr(wrap(Type::Prim(PrimType::U8))));
         let value: RegIndex = allocateRegister(function, t);
         let allocType: &Type = intoPointer(typ);
@@ -3779,8 +3787,8 @@ func prepareParameter(this: &IRGen, function: &IRFunc, index: usize, span: Span,
         buildAlloca(function, span, allocReg, getSizeInBytes(typ));
         buildStore(function, span, allocReg, instance);
         addParameter(this, function, span, last(&function.scopes), name, allocReg, index, false);
-    } else if (isStruct(typ)) {
-        let size: usize = getSizeInBytes(typ);
+    } else if (isComposite(typ)) {
+        let size = getSizeInBytes(typ);
         let t: &Type = null;
         if (size <= 1) {
             t = wrap(Type::Prim(PrimType::U8));
@@ -3790,6 +3798,8 @@ func prepareParameter(this: &IRGen, function: &IRFunc, index: usize, span: Span,
             t = wrap(Type::Prim(PrimType::U32));
         } else if (size <= 8) {
             t = wrap(Type::Prim(PrimType::U64));
+        //} else if (equals(flags.target, &OS_LINUX) && size <= 2*8) {
+        //    t = intoPointer(typ);
         } else {
             t = wrap(Type::Ptr(wrap(Type::Prim(PrimType::U8))));
         }
@@ -3838,30 +3848,77 @@ func getRegisterForSize(this: &IRGen, function: &IRFunc, size: usize) -> RegInde
     } else if (size <= 8) {
         v = allocateRegister(function, wrap(Type::Prim(PrimType::U64)));
     } else {
-        unreachable("getRegisterForSize called with size > 8");
+        if(equals(flags.target, &OS_LINUX)) {
+            todo_with_msg("LINUX: getRegisterForSize called with size > 8");
+            /* this is needed for SysV ABI structs that are <= 2*8 bytes in size */
+            if(size <= 2*8) v = allocateRegister(function, wrap(Type::Array(wrap(Type::Prim(PrimType::U8)), size)));
+            else unreachable("getRegisterForSize called with size > 8");
+        } else if(equals(flags.target, &OS_WINDOWS)) {
+            unreachable("getRegisterForSize called with size > 8");
+        } else { unreachable("getRegisterForSize: unknown target"); }
     }
     return v;
 }
 
+@os(LINUX) func splitStructIntoRegs(typ: &Type) -> (usize, usize) {
+    assert(isComposite(typ), "LINUX: splitStructIntoRegs called on non-composite");
+    let size: usize = getSizeInBytes(typ);
+    assert(size <= 2*8, "LINUX: splitStructIntoRegs called on too big struct");
+    if(size <= 8) return (size, 0);
+    else return (8 as usize, size - 8);
+}
+
 func prepareArgument(this: &IRGen, function: &IRFunc, span: Span, value: RegIndex, typ: &Type) -> RegIndex {
-     if (getSizeInBytes(typ) > 8) {
-        // Following the ABI, all parameters that don't fit in a register get passed by pointer
-        let tempAlloc: RegIndex = allocateRegister(function, intoPointer(typ));
-        buildAlloca(function, span, tempAlloc, getSizeInBytes(typ));
-        buildStore(function, span, tempAlloc, value);
-        return tempAlloc;
-    } else if (isStruct(typ)) {
-        let size: usize = getSizeInBytes(typ);
-        let alloc: RegIndex = allocateRegister(function, intoPointer(typ));
-        buildAlloca(function, span, alloc, size);
-        buildStore(function, span, alloc, value);
-        if (size > 8) return alloc;
-        let v: RegIndex = getRegisterForSize(this, function, size);
-        buildLoad(function, span, v, alloc);
-        return v;
-    } else {
-        return value;
-    }
+    if(equals(flags.target, &OS_LINUX)) {
+        if(isComposite(typ)) {
+            /* break up into 1 or 2 regs and use those */
+            let size = getSizeInBytes(typ);
+
+            let alloc: RegIndex = allocateRegister(function, intoPointer(typ));
+            buildAlloca(function, span, alloc, size);
+            buildStore(function, span, alloc, value);
+            if (size > 2*8) return alloc; /* if it's bigger than two pointers, pass as pointer */
+
+            let (a, b) = splitStructIntoRegs(typ);
+            if(b != 0) {
+                if(*flags.verbose) C::printf("%s: %s: TODO[Linux]: use multiple regs for small structs\n", toString(&span).buffer, NOTE_STR);
+                return alloc;
+            }
+
+            let v: RegIndex = getRegisterForSize(this, function, a);
+            buildLoad(function, span, v, alloc);
+            return v;
+
+            //return value;
+        } else {
+            if(getSizeInBytes(typ) > 8) {
+                let tempAlloc: RegIndex = allocateRegister(function, intoPointer(typ));
+                buildAlloca(function, span, tempAlloc, getSizeInBytes(typ));
+                buildStore(function, span, tempAlloc, value);
+                return tempAlloc;
+            } else return value;
+        }
+    } else if(equals(flags.target, &OS_WINDOWS)) {
+        if (getSizeInBytes(typ) > 8) {
+            // Following the ABI, all parameters that don't fit in a register get passed by pointer
+            let tempAlloc: RegIndex = allocateRegister(function, intoPointer(typ));
+            buildAlloca(function, span, tempAlloc, getSizeInBytes(typ));
+            buildStore(function, span, tempAlloc, value);
+            return tempAlloc;
+        } else if (isComposite(typ)) {
+            // if(equals(flags.target, &OS_LINUX)) todo_with_msg("move structure for penger machine");
+            let size: usize = getSizeInBytes(typ);
+            let alloc: RegIndex = allocateRegister(function, intoPointer(typ));
+            buildAlloca(function, span, alloc, size);
+            buildStore(function, span, alloc, value);
+            if (size > 8) return alloc;
+            let v: RegIndex = getRegisterForSize(this, function, size);
+            buildLoad(function, span, v, alloc);
+            return v;
+        } else {
+            return value;
+        }
+    } else { unreachable("prepareArgument ABI"); }
 }
 
 func generateBytecodeExprCall(this: &IRGen, function: &IRFunc, expr: &CallExpr, needsPtr: bool) -> RegIndex {

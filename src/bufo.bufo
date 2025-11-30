@@ -113,19 +113,24 @@ func main(argc: i32, argv: &&char) -> i32 {
     // TODO: @os() currently only checks WINDOWS or LINUX, would be cool if we could derive this
     //       from the provided target triple
     if (equals(flags.target, &newStringFromStrLit("x86_64-pc-windows-msvc"))) {
-        *flags.target = newStringFromStrLit("WINDOWS");
+        *flags.target = OS_WINDOWS;
     } else if (equals(flags.target, &newStringFromStrLit("x86_64-pc-linux-gnu"))) {
-        *flags.target = newStringFromStrLit("LINUX");
+        *flags.target = OS_LINUX;
     } else if (flags.target.length == 0) {
-        @os(WINDOWS) *flags.target = newStringFromStrLit("WINDOWS");
-        @os(LINUX) *flags.target = newStringFromStrLit("LINUX");
+        @os(WINDOWS) *flags.target = OS_WINDOWS;
+        @os(LINUX) *flags.target = OS_LINUX;
     } else {
         C::fprintf(stderr, "error: Unknown target %s\n", flags.target.buffer);
         showHelp(stderr, &flagParser);
         return 1;
     }
+    let out = toAbsolutePath(flags.out);
     let filepath: String = *flags.file;
     filepath = toAbsolutePath(&filepath);
+    if(endsWith(&asSubStr(&out), &comptime newSubStrOfStrLit(".bufo"))) {
+        C::fprintf(stderr, "%s: refusing to output to `%s` as it ends in `.bufo`\n", ERR_STR, out.buffer);
+        return 1;
+    }
     let fileSubStr: SubStr = asSubStr(&filepath);
     let string: String = readFileToString(flags.file.buffer);
     let sub: SubStr = newSubStrOfString(&string, 0, string.length);
@@ -182,7 +187,7 @@ func findStdAndAddToImports(parser: &Parser) -> bool {
 @os(LINUX) func getBufoPath() -> &char {
     let buffer = C::malloc(1024);
     C::memset(buffer, 0, 1024);
-    let n = readlink("/proc/self/exe", buffer, 1024);
+    let n = posix::readlink("/proc/self/exe", buffer, 1024);
     if (n < 0) {
         C::free(buffer);
         return null;
@@ -194,7 +199,7 @@ func findStdAndAddToImports(parser: &Parser) -> bool {
     if (*flags.dontLink) {
         return true;
     }
-    if (!equals(flags.target, &newStringFromStrLit("WINDOWS"))) {
+    if (!equals(flags.target, &OS_WINDOWS)) {
         C::fprintf(stderr, "%s: Cross-linking is not supported yet. Run with `--dont-link` to generate an object file.\n", ERR_STR);
         return false;
     }
@@ -282,7 +287,7 @@ func findStdAndAddToImports(parser: &Parser) -> bool {
     if (*flags.dontLink) {
         return true;
     }
-    if (!equals(flags.target, &newStringFromStrLit("LINUX"))) {
+    if (!equals(flags.target, &OS_LINUX)) {
         C::fprintf(stderr, "%s: Cross-linking is not supported yet. Run with `--dont-link` to generate an object file.\n", ERR_STR);
         return false;
     }

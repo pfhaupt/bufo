@@ -1193,7 +1193,7 @@ func typeCheckFunction(this: &TypeChecker, function: &ParsedFuncDecl, scopes: &S
             for (let i: usize = 0; i < mod.dlls.length; i = i + 1) {
                 let dll = at(&dlls, *at(&mod.dlls, i));
                 @os(WINDOWS) let handle = WinAPI::GetProcAddress(dll.handle, _name.buffer);
-                @os(LINUX) let handle = dlsym(dll.handle, _name.buffer);
+                @os(LINUX) let handle = posix::dlsym(dll.handle, _name.buffer);
                 if (!isNull(handle)) {
                     function.dllHandle = newDLL(dll.path, handle);
                     addrFound = true;
@@ -1313,11 +1313,11 @@ func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupLi
             if (wantsInfer(&exprState)) {
                 let noneType: &Type = wrap(Type::Prim(PrimType::None));
                 exprState = inferTypeOntoExpr(this, expr, noneType, scopes);
+                if(isError(&exprState)) return exprState;
             }
             if (!isType(&exprState)) {
-                C::printf("%s\n", toString(&stmt.span).buffer);
-                C::printf("%llu\n", exprState.kind);
-                todo_with_msg("what is it then");
+                C::printf("%s: unexpected TCState: %llu\n", toString(&stmt.span).buffer, exprState.kind);
+                unreachable("unexpected TCState");
             }
             let exprType: &Type = getType(&exprState);
             if (!isNone(exprType) && !isAssignment(expr) && *flags.warnUnused) {

@@ -97,7 +97,7 @@ func resize(this: &String, newCap: usize) {
 }
 func print(this: &String) {
     for (let i: usize = 0; i < this.length; i = i + 1) {
-        C::printf("%c", *(this.buffer + i));
+        C::printf("%c", this.buffer[i]);
     }
 }
 func asSubStr(this: &String) -> SubStr {
@@ -201,21 +201,22 @@ func toU64(this: &String) -> u64 {
     return val;
 }
 
-func splitBy(this: &String, pred: func (char, &usize) -> bool) -> StringList {
+func splitBy(this: &String, pred: func (char) -> bool) -> StringList {
     let list = StringList { };
     let last: usize = 0;
     for (let i: usize = 0; i < this.length; i = i + 1) {
-        let skip: usize = 0;
-        if (pred(this.buffer[i], &skip)) {
-            let _s = substring(this, last, i);
-            push(&list, toString(&_s));
-            i = i + skip;
+        if (pred(this.buffer[i])) {
+            let s = substring(this, last, i);
+            push(&list, toString(&s));
+            while(pred(this.buffer[i])) {
+                i = i+1;
+            }
             last = i;
         }
     }
     if (last != this.length) {
-        let _s = substring(this, last, this.length);
-        push(&list, toString(&_s));
+        let s = substring(this, last, this.length);
+        push(&list, toString(&s));
     }
     return list;
 }
@@ -226,34 +227,41 @@ func equals(this: &String, other: &String) -> bool {
 }
 
 func newString() -> String {
-    let cap: usize = 16;
+    comptime cap: usize = 16;
     let _m: Any = C::calloc(cap, sizeof char);
     let buff: &char = _m as &char;
     return String {
         buffer: buff,
         length: 0,
-        capacity: 16
+        capacity: cap
+    };
+}
+
+func stringFromSlice(s: &char, len: usize) -> String {
+    return String {
+        buffer: s,
+        length: len,
+        capacity: len
+    };
+}
+
+func newStringFromSlice(s: &char, len: usize) -> String {
+    let buf: &char = C::calloc(len + 1, sizeof char);
+    assert(buf != null);
+    C::memcpy(buf, s, len);
+    return String {
+        buffer: buf as &char,
+        length: len,
+        capacity: len
     };
 }
 
 func newReadonlyString(s: &char) -> String {
-    return String {
-        buffer: s,
-        length: comptimeStrlen(s),
-        capacity: comptimeStrlen(s),
-    };
+    return stringFromSlice(s, comptimeStrlen(s));
 }
 
 func newStringFromStrLit(s: &char) -> String {
-    let len: usize = C::strlen(s);
-    let buff: &char = C::calloc(len + 1, sizeof char);
-    assert(buff != null);
-    C::memcpy(buff, s, len);
-    return String {
-        buffer: buff as &char,
-        length: len,
-        capacity: len
-    };
+    return newStringFromSlice(s, comptimeStrlen(s));
 }
 
 func canReadFileToString(path: &char, source: &String) -> bool {
@@ -307,4 +315,23 @@ func writeStringToFile(path: &char, s: String) {
     }
     let size: usize = C::fwrite(s.buffer, 1, s.length, file);
     assert(C::fclose(file) == 0);
+}
+
+func strip(string: String) -> String {
+  assert(string.buffer != null);
+
+  while(isWhitespace(string.buffer[0])) {
+    string.buffer = string.buffer + 1;
+    string.length = string.length - 1;
+  }
+
+  while(string.length != 0 && isWhitespace(string.buffer[string.length-1])) {
+    string.length = string.length - 1;
+  }
+
+  return string;
+}
+
+func strip(string: &char) -> String {
+  return strip(newStringFromStrLit(string));
 }

@@ -24,7 +24,7 @@ struct Function {
     }
 }
 @os(LINUX) func free(fn: Function) {
-    if (munmap(fn.run as Any, fn.size) != 0) {
+    if (posix::munmap(fn.run as Any, fn.size) != 0) {
         C::printf("warning: Could not free function at %p\n", fn.run);
     }
 }

@@ -66,9 +66,10 @@ module raylib {
     @os(LINUX) config {
         static: "libraylib.a",
         dynamic: "libraylib.so",
+        linker: "-lm",
         // Makefile runs bufo.exe how_to/... so the path is different
         libpath: "./raylib/lib",
-        libpath: "../raylib/lib",
+        libpath: "../raylib/lib"
     }
     @os(WINDOWS) config {
         static: "raylib.lib",

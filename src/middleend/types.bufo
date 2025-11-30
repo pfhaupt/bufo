@@ -451,6 +451,11 @@ func isStructArray(this: &Type) -> bool {
     if (!isArray(this)) return false;
     return isStruct(getUnderlyingType(this, false));
 }
+
+func isComposite(this: &Type) -> bool {
+    return isStruct(this) || isUnion(this);
+}
+
 func getUnderlyingType(this: &Type, deep: bool) -> &Type {
     let underlying = this;
     while (isVariadicType(this) || isPointer(this) || isArray(this)) {
