@@ -11,14 +11,17 @@ comptime FLAG_MODE_SINGLE: usize    = pow2(0);
 comptime FLAG_MODE_MANDATORY: usize = pow2(1);
 
 struct Flag {
-    kind: usize;
     found: bool;
     mode: usize;
     short: &char;
     long: &char;
     descr: &char;
-    asString: String;
-    asBool: bool;
+    data: FlagData;
+}
+union FlagData {
+    Invalid,
+    String(String),
+    Bool(bool),
 }
 func isMandatory(flag: &Flag) -> bool {
     return (flag.mode & FLAG_MODE_MANDATORY) != 0;
@@ -28,17 +31,19 @@ func toString(this: &Flag) -> String {
     if (this.long != null) {
         pushStr(&s, "--");
         pushStr(&s, this.long);
-        if (this.kind == FLAG_STRING) {
+        if let FlagData::String(_) = this.data {
             pushStr(&s, " [arg]");
         }
     } else if (this.short != null) {
         pushChar(&s, '-');
         pushStr(&s, this.short);
-        if (this.kind == FLAG_STRING) {
+        if let FlagData::String(_) = this.data {
             pushStr(&s, " [arg]");
         }
     } else {
-        assert(this.kind == FLAG_STRING);
+        let FlagData::String(_) = this.data else {
+            unreachable("toString expected String for standalone");
+        };
         pushStr(&s, "<standalone>");
     }
     return s;
@@ -55,16 +60,18 @@ func addHelpFlag(this: &FlagParser) -> &bool {
     assert(this.helpFlag == null, "addHelpFlag() called twice");
     return this.helpFlag = addBoolFlag(this, "h", "help", "Print help and exit");
 }
-func addDefaultFlag(this: &FlagParser, kind: usize, short: &char, long: &char, descr: &char, mode: usize) -> &Flag {
+func addDefaultFlag(this: &FlagParser, short: &char, long: &char, descr: &char, mode: usize, data: FlagData) -> &Flag {
     assert(this.flagCount < 32, "Could not add flag: Too many flags");
     let f = &this.flags[this.flagCount];
-    assert(f.kind == FLAG_INVALID);
+    let FlagData::Invalid = f.data else {
+        unreachable("addDefaultFlag: Flag not invalid");
+    };
     this.flagCount = this.flagCount + 1;
-    f.kind = kind;
     f.mode = mode;
     f.short = short;
     f.long = long;
     f.descr = descr;
+    f.data = data;
     return f;
 }
 func addStringFlag(this: &FlagParser, descr: &char, mode: usize) -> &String {
@@ -74,8 +81,11 @@ func addStringFlag(this: &FlagParser, short: &char, long: &char, descr: &char) -
     return addStringFlag(this, short, long, descr, FLAG_MODE_DEFAULT);
 }
 func addStringFlag(this: &FlagParser, short: &char, long: &char, descr: &char, mode: usize) -> &String {
-    let f = addDefaultFlag(this, FLAG_STRING, short, long, descr, mode);
-    return &f.asString;
+    let f = addDefaultFlag(this, short, long, descr, mode, FlagData::String(blank));
+    let &FlagData::String(s) = &f.data else {
+        unreachable();
+    };
+    return &s;
 }
 func addBoolFlag(this: &FlagParser, flag: &char, descr: &char) -> &bool {
     if (C::strncmp("--", flag, 2) == 0) {
@@ -93,8 +103,11 @@ func addBoolFlag(this: &FlagParser, short: &char, long: &char, descr: &char) -> 
     return addBoolFlag(this, short, long, descr, FLAG_MODE_DEFAULT);
 }
 func addBoolFlag(this: &FlagParser, short: &char, long: &char, descr: &char, mode: usize) -> &bool {
-    let f = addDefaultFlag(this, FLAG_BOOL, short, long, descr, mode);
-    return &f.asBool;
+    let f = addDefaultFlag(this, short, long, descr, mode, FlagData::Bool(false));
+    let &FlagData::Bool(b) = &f.data else {
+        unreachable();
+    };
+    return &b;
 }
 func shiftArgument(this: &FlagParser, argc: &i32, argv: &&&char) -> &char {
     assert(*argc > 0);
@@ -208,19 +221,20 @@ func _runOn(this: &FlagParser, argc: i32, argv: &&char) -> bool {
                         emitFlagError(this, "Value for flag --%s was already provided.", f.long);
                         return false;
                     }
-                    if (f.kind == FLAG_BOOL) {
-                        f.asBool = true;
-                    } else if (f.kind == FLAG_STRING) {
+                    if let &FlagData::Bool(b) = &f.data {
+                        b = true;
+                        f.found = true;
+                    }
+                    if let &FlagData::String(s) = &f.data {
                         if (argc == 0) {
                             emitFlagError(this, "Expected one more positional argument for flag --%s.", f.long);
                             return false;
                         }
                         let val = shiftArgument(this, &argc, &argv);
-                        f.asString = newStringFromStrLit(val);
-                    } else {
-                        unreachable("Exhaustive handling of long flag kinds");
+                        s = newStringFromStrLit(val);
+                        f.found = true;
                     }
-                    f.found = true;
+                    assert(f.found, "Exhaustive handling of long flags");
                     found = true;
                     break;
                 }
@@ -231,19 +245,20 @@ func _runOn(this: &FlagParser, argc: i32, argv: &&char) -> bool {
                         emitFlagError(this, "Value for flag -%s was already provided.", f.short);
                         return false;
                     }
-                    if (f.kind == FLAG_BOOL) {
-                        f.asBool = true;
-                    } else if (f.kind == FLAG_STRING) {
+                    if let &FlagData::Bool(b) = &f.data {
+                        b = true;
+                        f.found = true;
+                    }
+                    if let &FlagData::String(s) = &f.data {
                         if (argc == 0) {
                             emitFlagError(this, "Expected one more positional argument for flag -%s.", f.short);
                             return false;
                         }
                         let val = shiftArgument(this, &argc, &argv);
-                        f.asString = newStringFromStrLit(val);
-                    } else {
-                        unreachable("Exhaustive handling of short flag kinds");
+                        s = newStringFromStrLit(val);
+                        f.found = true;
                     }
-                    f.found = true;
+                    assert(f.found, "Exhaustive handling of short flag kinds");
                     found = true;
                     break;
                 }
@@ -257,14 +272,15 @@ func _runOn(this: &FlagParser, argc: i32, argv: &&char) -> bool {
                     drop(&note);
                     return false;
                 }
-                if (f.kind == FLAG_BOOL) {
-                    f.asBool = true;
-                } else if (f.kind == FLAG_STRING) {
-                    f.asString = newStringFromStrLit(flag);
-                } else {
-                    unreachable("Exhaustive handling of standalone flag kinds");
+                if let &FlagData::Bool(b) = &f.data {
+                    b = true;
+                    f.found = true;
                 }
-                f.found = true;
+                if let &FlagData::String(s) = &f.data {
+                    s = newStringFromStrLit(flag);
+                    f.found = true;
+                }
+                assert(f.found, "Exhaustive handling of standalone flag kinds");
                 found = true;
                 break;
             }

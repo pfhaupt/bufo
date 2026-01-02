@@ -368,14 +368,16 @@ func createUnionVariantType(builder: LLVMDIBuilder, diFile: LLVMMetadata, decl: 
         drop(&_v);
     }
     let meta: LLVM::MetadataRef = blank;
-    if (variant.fields.length > 0) {
-        assert(variant.names.length != 0, "Parser fills this with names");
-        let inner: &LLVM::MetadataRef = C::malloc(sizeof LLVM::MetadataRef * variant.fields.length);
+    let (true, fields) = get_fields(variant) else {
+        unreachable("createUnionVariantType");
+    };
+    if (fields.length > 0) {
+        let inner: &LLVM::MetadataRef = C::malloc(sizeof LLVM::MetadataRef * fields.length);
         assert(inner != null);
-        for (let i: usize = 0; i < variant.fields.length; i = i + 1) {
-            let fieldNode = *at(&variant.fields, i);
-            let fieldName = *at(&variant.names, i);
-            let name = fieldName.content;
+        for (let i: usize = 0; i < fields.length; i = i + 1) {
+            let fieldNode = fields.elements[i];
+            let name: String = blank;
+            pushNumber(&name, i);
             let fieldType = getType(&fieldNode.typeState);
             let fieldDebugType = createType(builder, diFile, fieldType).ref;
             let fieldLine: usize = 0;
@@ -385,7 +387,7 @@ func createUnionVariantType(builder: LLVMDIBuilder, diFile: LLVMMetadata, decl: 
             let fieldSize: usize = 0;
             let fieldAlign: usize = getAlignmentInBits(fieldType);
             getFieldOffsetAndSize(variant, i, &fieldOffset, &fieldSize, true);
-            inner[i] = LLVM::DIBuilderCreateMemberType(builder.ref, diDecl.ref, name.start, name.len,
+            inner[i] = LLVM::DIBuilderCreateMemberType(builder.ref, diDecl.ref, name.buffer, name.length,
                             diFile.ref, fieldLine as u32, fieldSize as u64, fieldAlign as u32,
                             fieldOffset as u64, flags, fieldDebugType);
         }
@@ -394,7 +396,7 @@ func createUnionVariantType(builder: LLVMDIBuilder, diFile: LLVMMetadata, decl: 
         let align = getAlignmentInBits(variantType) as u32;
         meta = LLVM::DIBuilderCreateStructType(builder.ref, diDecl.ref, pl.buffer, pl.length,
                         diFile.ref, line as u32, size, align, flags, blank, inner,
-                        variant.fields.length as u32, 0, blank, pl.buffer, pl.length);
+                        fields.length as u32, 0, blank, pl.buffer, pl.length);
         C::free(inner);
     } else {
         // Dummy Value so the variant appears in the debugger

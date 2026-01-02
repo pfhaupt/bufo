@@ -200,11 +200,7 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList, inModule: bool)
             expect(this, TOKEN_PAREN_OPEN);
             let v = expect(this, TOKEN_STRING_LITERAL);
             let end = expect(this, TOKEN_PAREN_CLOSE);
-            push(attrs, ParsedAttribute {
-                span: newSpanBetween(&name.span, &end.span),
-                kind: ATTR_EXTERN,
-                name: v,
-            });
+            push(attrs, ParsedAttribute::Extern(v));
         } else if (equals(&name.content, &_ATTR_OS)) {
             expect(this, TOKEN_PAREN_OPEN);
             let os = expect(this, TOKEN_IDENT);
@@ -215,20 +211,11 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList, inModule: bool)
             }
             skip = !equals(&os.content, &asSubStr(flags.target));
         } else if (equals(&name.content, &_ATTR_NORETURN)) {
-            push(attrs, ParsedAttribute {
-                span: name.span,
-                kind: ATTR_NORETURN,
-            });
+            push(attrs, ParsedAttribute::Noreturn);
         } else if (equals(&name.content, &_ATTR_NAKED)) {
-            push(attrs, ParsedAttribute {
-                span: name.span,
-                kind: ATTR_NAKED,
-            });
+            push(attrs, ParsedAttribute::Naked);
         } else if (equals(&name.content, &_ATTR_NO_MANGLE)) {
-            push(attrs, ParsedAttribute {
-                span: name.span,
-                kind: ATTR_NO_MANGLE,
-            });
+            push(attrs, ParsedAttribute::Nomangle);
         } else {
             let loc = toString(&name.span);
             let n = toString(&name.content);
@@ -270,7 +257,7 @@ func parseTopLevelItem(this: &Parser, parent: TLIParent, attributes: ParsedAttri
         // REVIEW: Do we want to support functions outside of TLIs?
         let isExtern: bool = false;
         for (let i: usize = 0; i < attributes.length; i = i + 1) {
-            if (at(&attributes, i).kind == ATTR_EXTERN) {
+            if (tag(&attributes.elements[i]) == comptime tag(&ParsedAttribute::Extern)) {
                 isExtern = true;
                 break;
             }
@@ -302,7 +289,7 @@ func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList
         let attributes: ParsedAttributeList = blank;
         let skip = parseAttributes(this, &attributes, true);
         for (let i: usize = 0; !anyExtern && i < attributes.length; i = i + 1) {
-            if (at(&attributes, i).kind == ATTR_EXTERN) {
+            if (tag(&attributes.elements[i]) == comptime tag(&ParsedAttribute::Extern)) {
                 anyExtern = true;
                 break;
             }
@@ -512,7 +499,7 @@ func parseUnionDecl(this: &Parser, parent: TLIParent) -> &ParsedUnionDecl {
 func parseUnionVariant(this: &Parser, parent: TLIParent) -> &ParsedUnionVariant {
     let name = expectSoftIdentifier(this);
     if (eat(this, TOKEN_CURLY_OPEN)) {
-        let variant = newParsedUnionVariant(UNION_VARIANT_STRUCT, parent, name.span, name);
+        let variant = newParsedUnionVariant(parent, name.span, name, ParsedUnionVariantData::Struct {});
         while (!parsedEOF(this) && !at(this, TOKEN_CURLY_CLOSE)) {
             let fieldName = expectSoftIdentifier(this);
             expect(this, TOKEN_COLON_SINGLE);
@@ -526,7 +513,7 @@ func parseUnionVariant(this: &Parser, parent: TLIParent) -> &ParsedUnionVariant 
         variant.span = newSpanBetween(&name.span, &end.span);
         return variant;
     } else if (eat(this, TOKEN_PAREN_OPEN)) {
-        let variant = newParsedUnionVariant(UNION_VARIANT_TUPLE, parent, name.span, name);
+        let variant = newParsedUnionVariant(parent, name.span, name, ParsedUnionVariantData::Tuple {});
         while (!parsedEOF(this) && !at(this, TOKEN_PAREN_CLOSE)) {
             let typ = parseTypeNode(this);
             addField(variant, typ);
@@ -538,7 +525,7 @@ func parseUnionVariant(this: &Parser, parent: TLIParent) -> &ParsedUnionVariant 
         variant.span = newSpanBetween(&name.span, &end.span);
         return variant;
     } else {
-        return newParsedUnionVariant(UNION_VARIANT_EMPTY, parent, name.span, name);
+        return newParsedUnionVariant(parent, name.span, name, ParsedUnionVariantData::Empty);
     }
 }
 

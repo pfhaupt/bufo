@@ -349,12 +349,12 @@ func generateLLVMFunctionHeader(this: &LLVMCodegen, irFunc: &IRFunc) {
     let function: &ParsedFuncDecl = getFuncNode(irFunc);
     let llvmFuncType = generateLLVMFunctionType(this, getType(&function.typeState));
     let llvmFuncValue: LLVMValue = addFunction(&this.llvmModule, asSubStr(&irFunc.name), llvmFuncType);
-    if (hasAttribute(irFunc, ATTR_NORETURN)) {
+    if (hasAttribute(irFunc, ParsedAttribute::Noreturn)) {
         let id = LLVM::GetEnumAttributeKindForName("noreturn", 8 /* sizeof "noreturn" */);
         assert(id != 0, "Could not get noreturn attribute from LLVM");
         addAttribute(&llvmFuncValue, U32_MAX, createEnumAttribute(&this.llvmContext, id, 1));
     }
-    if (hasAttribute(irFunc, ATTR_NAKED)) {
+    if (hasAttribute(irFunc, ParsedAttribute::Naked)) {
         let id = LLVM::GetEnumAttributeKindForName("naked", 5 /* sizeof "naked" */);
         assert(id != 0, "Could not get naked attribute from LLVM");
         addAttribute(&llvmFuncValue, U32_MAX, createEnumAttribute(&this.llvmContext, id, 1));

@@ -50,9 +50,13 @@ func mangleFunctionName(
 ) -> String {
     let mangledName: String = blank;
     for (let i: usize = 0; i < attrs.length; i = i + 1) {
-        let a = at(attrs, i);
-        if (a.kind == ATTR_EXTERN) return toString(&a.name.content);
-        if (a.kind == ATTR_NO_MANGLE) return toString(&name.content);
+        let a = attrs.elements[i];
+        if let ParsedAttribute::Extern(name) = a {
+            return toString(&name.content);
+        }
+        if let ParsedAttribute::Nomangle = a {
+            return toString(&name.content);
+        }
     }
     // Function: [Module]*-Name-ParamsTypeID-rRetTypeID
     while (!parent.isFile) {
@@ -125,16 +129,13 @@ comptime _ATTR_NORETURN: SubStr = BUILD_A_KEYWORD("noreturn");
 comptime _ATTR_NAKED: SubStr = BUILD_A_KEYWORD("naked");
 comptime _ATTR_NO_MANGLE: SubStr = BUILD_A_KEYWORD("no_mangle");
 
-comptime ATTR_INVALID: usize = 0;
-comptime ATTR_EXTERN: usize = 1;
-comptime ATTR_OS: usize = 2; // not used, handled in parser directly
-comptime ATTR_NORETURN: usize = 3;
-comptime ATTR_NAKED: usize = 4;
-comptime ATTR_NO_MANGLE: usize = 5;
-struct ParsedAttribute {
-    kind: usize;
-    span: Span;
-    name: Token;
+union ParsedAttribute {
+    Invalid,
+    Extern(Token),
+    OS(Token),
+    Noreturn,
+    Naked,
+    Nomangle,
 }
 
 func equals(this: &ParsedAttribute, other: &ParsedAttribute) -> bool {
@@ -274,7 +275,7 @@ func newParsedTopLevelItem(span: Span, kind: usize, nodeID: usize) -> &ParsedTop
         kind: kind,
         span: span,
         nodeID: nodeID,
-        typeState: blank,
+        typeState: TCState::Invalid,
     });
     return last(&topLevelItems);
 }
@@ -409,8 +410,8 @@ func getFieldOffset(this: &ParsedStructDecl, name: &SubStr, inBits: bool) -> usi
 }
 func getFieldOffsetAndSize(this: &ParsedStructDecl, index: usize, offset: &usize, size: &usize, inBits: bool) {
     let o: usize = 0;
-    let sizeFn = getSizeInBytes;
-    let alignFn = getAlignmentInBytes;
+    let sizeFn: func (&Type) -> usize = getSizeInBytes;
+    let alignFn: func (&Type) -> usize = getAlignmentInBytes;
     if (inBits) {
         sizeFn = getSizeInBits;
         alignFn = getAlignmentInBits;
@@ -470,7 +471,7 @@ func newParsedStructDecl(parent: TLIParent, span: Span, name: Token) -> &ParsedS
         name: name,
         span: span,
         context: blank,
-        typeState: blank,
+        typeState: TCState::Invalid,
     });
     return last(&structDecls);
 }
@@ -483,6 +484,65 @@ struct ParsedUnionDecl {
     variants: ParsedUnionVariantList;
     typeState: TCState;
     debugInfo: DebugInfo;
+}
+
+func getAlignmentInBytes(this: &ParsedUnionDecl) -> usize {
+    assert(isSuccess(&this.typeState), "Can only get alignment of valid unions");
+    let maxAlign: usize = 1;
+    if (this.variants.length >= 256) maxAlign = 2;
+    for (let i: usize = 0; i < this.variants.length; i = i + 1) {
+        let variant = *at(&this.variants, i);
+        let (true, fields) = get_fields(variant) else {
+            continue;
+        };
+        for (let j: usize = 0; j < fields.length; j = j + 1) {
+            let field = fields.elements[j];
+            assert(isSuccess(&field.typeState), "Expected valid field type");
+            let tt: &Type = getType(&field.typeState);
+            let _a: usize = getAlignmentInBytes(tt);
+            if (_a > maxAlign) maxAlign = _a;
+        }
+    }
+    return maxAlign;
+}
+func getSizeInBytes(this: &ParsedUnionDecl) -> usize {
+    assert(isSuccess(&this.typeState), "Can only get size of valid unions");
+    assert(this.variants.length < 65536, "getSize expects the Union tag to fit into at most two bytes");
+    let maxSize: usize = 0;
+    let maxAlign: usize = 1;
+    for (let i: usize = 0; i < this.variants.length; i = i + 1) {
+        let variant = *at(&this.variants, i);
+        let size: usize = 1; // union tag
+        let align: usize = 1;
+        if (this.variants.length >= 256) {
+            size = 2;
+            align = 2;
+        }
+        if let (true, fields) = get_fields(variant) {
+            if (fields.length > 0) {
+                let next: &ParsedTypeNode = fields.elements[0];
+                let nextType: &Type = getType(&next.typeState);
+                size = nextMultipleOf(size, getAlignmentInBytes(nextType));
+            }
+            for (let j: usize = 0; j < fields.length; j = j + 1) {
+                let field = fields.elements[j];
+                assert(isSuccess(&field.typeState), "Expected valid field type");
+                let tt: &Type = getType(&field.typeState);
+                size = size + getSizeInBytes(tt);
+                let _a: usize = getAlignmentInBytes(tt);
+                if (_a > align) align = _a;
+                if (j != fields.length - 1) {
+                    let next: &ParsedTypeNode = fields.elements[j + 1];
+                    let nextType: &Type = getType(&next.typeState);
+                    size = nextMultipleOf(size, getAlignmentInBytes(nextType));
+                }
+            }
+        }
+        if (size > maxSize) maxSize = size;
+        if (align > maxAlign) maxAlign = align;
+    }
+    maxSize = nextMultipleOf(maxSize, maxAlign);
+    return maxSize;
 }
 
 func getID(this: &ParsedUnionDecl) -> usize {
@@ -546,70 +606,89 @@ func newParsedUnionDecl(parent: TLIParent, span: Span, name: Token) -> &ParsedUn
     return last(&unionDecls);
 }
 
-comptime UNION_VARIANT_INVALID: usize = 0;
-comptime UNION_VARIANT_EMPTY  : usize = 1; // A, B, C
-comptime UNION_VARIANT_TUPLE  : usize = 2; // A(i32), B(i32)
-comptime UNION_VARIANT_STRUCT : usize = 3; // A { a: i32, b: i32 }
 struct ParsedUnionVariant {
     ignored: bool;
     parent: TLIParent;
-    name: Token;
     span: Span;
-    kind: usize;
-    fields: ParsedTypeNodeList;
-    names: TokenList;
+    name: Token;
+    data: ParsedUnionVariantData;
+}
+union ParsedUnionVariantData {
+    Empty,
+    Tuple { fields: ParsedTypeNodeList },
+    Struct { fields: ParsedTypeNodeList, names: TokenList },
 }
 func getID(this: &ParsedUnionVariant) -> usize {
     return indexOf(&unionVariants, this);
 }
 
+func get_fields(this: &ParsedUnionVariant) -> (bool, &ParsedTypeNodeList) {
+    match (&this.data) {
+        &ParsedUnionVariantData::Tuple { fields } => { return (true, &fields); }
+        &ParsedUnionVariantData::Struct { fields, names } => { return (true, &fields); }
+        _ => { }
+    }
+    return (false, null);
+}
+
 func toType(this: &ParsedUnionVariant) -> &Type {
     let decl: &ParsedStructDecl = newParsedStructDecl(this.parent, this.span, this.name);
-    if (this.kind == UNION_VARIANT_STRUCT) {
-        for (let i: usize = 0; i < this.fields.length; i = i + 1) {
-            addField(&decl.context, *at(&this.names, i), *at(&this.fields, i));
+    match (this.data) {
+        ParsedUnionVariantData::Empty => { }
+        ParsedUnionVariantData::Tuple { fields } => {
+            for (let i: usize = 0; i < fields.length; i = i + 1) {
+                let s: String = blank;
+                pushNumber(&s, i);
+                let name = newToken(this.parent.id as usize, &asSubStr(&s), 0, TOKEN_IDENT);
+                addField(&decl.context, name, fields.elements[i]);
+            }
         }
-    } else if (this.kind == UNION_VARIANT_TUPLE) {
-        for (let i: usize = 0; i < this.fields.length; i = i + 1) {
-            // NOTE: We leak the String here
-            let s: String = blank;
-            pushNumber(&s, i);
-            let name = newToken(this.parent.id as usize, &asSubStr(&s), 0, TOKEN_IDENT);
-            addField(&decl.context, name, *at(&this.fields, i));
+        ParsedUnionVariantData::Struct { fields, names } => {
+            assert(fields.length == names.length, "ParsedUnionVariant.toType: struct count mismatch");
+            for (let i: usize = 0; i < fields.length; i = i + 1) {
+                addField(&decl.context, names.elements[i], fields.elements[i]);
+            }
         }
-    } else {
-        assert(this.kind == UNION_VARIANT_EMPTY);
+        _ => { unreachable(); }
     }
     let typ = wrap(Type::Struct(decl));
-    decl.typeState = newTCStateType(typ);
+    decl.typeState = TCState::Type(typ);
     return typ;
 }
 
 func getFieldIndex(this: &ParsedUnionVariant, name: &SubStr) -> usize {
-    for (let i: usize = 0; i < this.names.length; i = i + 1) {
-        if (equals(&at(&this.names, i).content, name)) {
-            return i;
+    if let &ParsedUnionVariantData::Struct { _, names } = &this.data {
+        for (let i: usize = 0; i < names.length; i = i + 1) {
+            if (equals(&names.elements[i].content, name)) return i;
         }
     }
     unreachable("ParsedUnionVariant.getFieldIndex: Expected to find field with name");
 }
 func getFieldOffsetAndSize(this: &ParsedUnionVariant, index: usize, offset: &usize, size: &usize, inBits: bool) {
-    assert(this.kind != UNION_VARIANT_EMPTY, "ParsedUnionVariant.getFieldOffsetAndSize called on empty union variant");
-    assert(index < this.fields.length, "getFieldOffsetAndSize: Out-of-bounds");
-    assert(this.fields.length > 0, "getFieldOffsetAndSize: Empty variant");
-    let sizeFn = getSizeInBytes;
-    let alignFn = getAlignmentInBytes;
+    let fields: ParsedTypeNodeList = blank;
+    match (this.data) {
+        ParsedUnionVariantData::Empty => {
+            unreachable("ParsedUnionVariant.getFieldOffsetAndSize called on empty union variant");
+        }
+        ParsedUnionVariantData::Struct { _fields, _ } => { fields = _fields; }
+        ParsedUnionVariantData::Tuple { _fields } => { fields = _fields; }
+        _ => { unreachable(); }
+    }
+    assert(index < fields.length, "getFieldOffsetAndSize: Out-of-bounds");
+    assert(fields.length > 0, "getFieldOffsetAndSize: Empty variant");
+    let sizeFn: func (&Type) -> usize = getSizeInBytes;
+    let alignFn: func (&Type) -> usize = getAlignmentInBytes;
     if (inBits) {
         sizeFn = getSizeInBits;
         alignFn = getAlignmentInBits;
     }
     let o: usize = 0;
     if (*offset != 0) {
-        let nf: &Type = getType(&(*at(&this.fields, 0)).typeState);
+        let nf: &Type = getType(&fields.elements[0].typeState);
         o = nextMultipleOf(*offset, alignFn(nf));
     }
-    for (let i: usize = 0; i < this.fields.length; i = i + 1) {
-        let f = getType(&(*at(&this.fields, i)).typeState);
+    for (let i: usize = 0; i < fields.length; i = i + 1) {
+        let f = getType(&fields.elements[i].typeState);
         let s: usize = sizeFn(f);
         if (i == index) {
             *offset = o;
@@ -617,8 +696,8 @@ func getFieldOffsetAndSize(this: &ParsedUnionVariant, index: usize, offset: &usi
             return;
         }
         o = o + s;
-        if (i != this.fields.length - 1) {
-            let nf: &Type = getType(&(*at(&this.fields, i + 1)).typeState);
+        if (i != fields.length - 1) {
+            let nf: &Type = getType(&fields.elements[i + 1].typeState);
             o = nextMultipleOf(o, alignFn(nf));
         }
     }
@@ -626,30 +705,45 @@ func getFieldOffsetAndSize(this: &ParsedUnionVariant, index: usize, offset: &usi
 }
 
 func addField(this: &ParsedUnionVariant, field: &ParsedTypeNode) {
-    // NOTE: We leak the String here
-    let s: String = blank;
-    pushNumber(&s, this.names.length);
-    let name = newToken(this.parent.id as usize, &asSubStr(&s), 0, TOKEN_IDENT);
-    addNamedField(this, name, field);
+    let &ParsedUnionVariantData::Tuple { fields } = &this.data else {
+        unreachable("ParsedUnionVariant.addField called on non-tuple");
+    };
+    push(&fields, field);
 }
 
 func getTypeAtIndex(this: &ParsedUnionVariant, index: usize) -> &Type {
-    assert(index < this.fields.length, "Out of bounds access in ParsedUnionVariant.getTypeAtIndex");
-    let node = *at(&this.fields, index);
+    let node: &ParsedTypeNode = null;
+    match (&this.data) {
+        &ParsedUnionVariantData::Tuple { fields } => {
+            assert(index < fields.length, "Out of bounds access in ParsedUnionVariant.getTypeAtIndex");
+            node = fields.elements[index];
+        }
+        &ParsedUnionVariantData::Struct { fields, _ } => {
+            assert(index < fields.length, "Out of bounds access in ParsedUnionVariant.getTypeAtIndex");
+            node = fields.elements[index];
+        }
+        _ => { unreachable("ParsedUnionVariant.getTypeAtIndex"); }
+    }
     assert(isSuccess(&node.typeState), "Expected valid TypeNode state in ParsedUnionVariant.getTypeAtIndex");
     return getType(&node.typeState);
 }
 
 func addNamedField(this: &ParsedUnionVariant, name: Token, typ: &ParsedTypeNode) {
-    assert(this.fields.length == this.names.length, "ParsedUnionVariant.addNamedField: Unbalanced field and name lists");
-    push(&this.fields, typ);
-    push(&this.names, name);
+    let &ParsedUnionVariantData::Struct { fields, names } = &this.data else {
+        unreachable("ParsedUnionVariant.addNamedField called on non-struct");
+    };
+    assert(fields.length == names.length, "ParsedUnionVariant.addNamedField: Unbalanced field and name lists");
+    push(&fields, typ);
+    push(&names, name);
 }
 
 func checkForDuplicateName(this: &ParsedUnionVariant, name: &Token, dupl: &&Token) -> bool {
+    let &ParsedUnionVariantData::Struct { _, names } = &this.data else {
+        unreachable("ParsedUnionVariant.checkForDuplicateName called on non-struct");
+    };
     let found = false;
-    for (let i: usize = 0; i < this.names.length; i = i + 1) {
-        let n = at(&this.names, i);
+    for (let i: usize = 0; i < names.length; i = i + 1) {
+        let n = &names.elements[i];
         if (equals(&n.content, &name.content)) {
             if (found) {
                 *dupl = n;
@@ -661,13 +755,13 @@ func checkForDuplicateName(this: &ParsedUnionVariant, name: &Token, dupl: &&Toke
     return false;
 }
 
-func newParsedUnionVariant(kind: usize, parent: TLIParent, span: Span, name: Token) -> &ParsedUnionVariant {
+func newParsedUnionVariant(parent: TLIParent, span: Span, name: Token, data: ParsedUnionVariantData) -> &ParsedUnionVariant {
     push(&unionVariants, ParsedUnionVariant {
         ignored: ignoringNodes,
         parent: parent,
-        name: name,
         span: span,
-        kind: kind,
+        name: name,
+        data: data,
     });
     return last(&unionVariants);
 }
@@ -686,9 +780,9 @@ struct ParsedFuncDecl {
     debugInfo: DebugInfo;
 }
 
-func hasAttribute(this: &ParsedFuncDecl, attr: usize) -> bool {
+func hasAttribute(this: &ParsedFuncDecl, attr: ParsedAttribute) -> bool {
     for (let i: usize = 0; i < this.attrs.length; i = i + 1) {
-        if (at(&this.attrs, i).kind == attr) return true;
+        if (tag(&this.attrs.elements[i]) == tag(&attr)) return true;
     }
     return false;
 }
@@ -698,7 +792,7 @@ func getID(this: &ParsedFuncDecl) -> usize {
 
 func isExtern(this: &ParsedFuncDecl) -> bool {
     for (let i: usize = 0; i < this.attrs.length; i = i + 1) {
-        if (at(&this.attrs, i).kind == ATTR_EXTERN) return true;
+        if (tag(&this.attrs.elements[i]) == comptime tag(&ParsedAttribute::Extern)) return true;
     }
     return false;
 }
@@ -738,7 +832,7 @@ func newParsedFuncDecl(parent: TLIParent, span: Span, name: Token, params: Param
         retType: retType,
         body: body,
         isComptime: false,
-        typeState: blank,
+        typeState: TCState::Invalid,
     });
     return last(&funcDecls);
 }

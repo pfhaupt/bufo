@@ -304,9 +304,9 @@ struct IRFunc {
     returnAlloc: RegIndex;
     allocaCounter: usize;
 }
-func hasAttribute(this: &IRFunc, attr: usize) -> bool {
+func hasAttribute(this: &IRFunc, attr: ParsedAttribute) -> bool {
     for (let i: usize = 0; i < this.attrs.length; i = i + 1) {
-        if (at(&this.attrs, i).kind == attr) return true;
+        if (tag(&this.attrs.elements[i]) == tag(&attr)) return true;
     }
     return false;
 }
@@ -1174,45 +1174,48 @@ func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile
                 for (let j: usize = 0; j < decl.variants.length; j = j + 1) {
                     let variant = decl.variants.elements[j];
                     let variant_info = UnionVariantTypeInfo::Empty{};
-                    if (variant.kind == UNION_VARIANT_EMPTY) {
-                        variant_info = UnionVariantTypeInfo::Empty { name: variant.name.content };
-                    } else if (variant.kind == UNION_VARIANT_TUPLE) {
-                        let tuple_fields: TypeInfoList = blank;
-                        for (let k: usize = 0; k < variant.fields.length; k = k + 1) {
-                            let type_decl = variant.fields.elements[k];
-                            let type = getType(&type_decl.typeState);
-                            let index = index_of_type(&table, type);
-                            assert(index != table.length, "Union variant field type info does not exist");
-                            push(&tuple_fields, index);
+                    match (variant.data) {
+                        ParsedUnionVariantData::Empty => {
+                            variant_info = UnionVariantTypeInfo::Empty { name: variant.name.content };
                         }
-                        variant_info = UnionVariantTypeInfo::Tuple {
-                            name: variant.name.content,
-                            fields: tuple_fields,
-                        };
-                    } else if (variant.kind == UNION_VARIANT_STRUCT) {
-                        let struct_fields: FieldTypeInfoList = blank;
-                        assert(variant.fields.length == variant.names.length);
-                        for (let k: usize = 0; k < variant.fields.length; k = k + 1) {
-                            let name = variant.names.elements[k];
-                            let type_decl = variant.fields.elements[k];
-                            let type = getType(&type_decl.typeState);
-                            let index = index_of_type(&table, type);
-                            assert(index != table.length, "Union variant field type info does not exist");
-                            let _size: usize = 0;
-                            let offset: usize = 0;
-                            getFieldOffsetAndSize(variant, k, &offset, &_size, false);
-                            push(&struct_fields, FieldTypeInfo {
-                                name: name.content,
-                                type: index,
-                                offset_in_bytes: offset,
-                            });
+                        ParsedUnionVariantData::Tuple { fields } => {
+                            let tuple_fields: TypeInfoList = blank;
+                            for (let k: usize = 0; k < fields.length; k = k + 1) {
+                                let type_decl = fields.elements[k];
+                                let type = getType(&type_decl.typeState);
+                                let index = index_of_type(&table, type);
+                                assert(index != table.length, "Union variant field type info does not exist");
+                                push(&tuple_fields, index);
+                            }
+                            variant_info = UnionVariantTypeInfo::Tuple {
+                                name: variant.name.content,
+                                fields: tuple_fields,
+                            };
                         }
-                        variant_info = UnionVariantTypeInfo::Struct {
-                            name: variant.name.content,
-                            fields: struct_fields,
-                        };
-                    } else {
-                        unreachable();
+                        ParsedUnionVariantData::Struct { fields, names } => {
+                            let struct_fields: FieldTypeInfoList = blank;
+                            assert(fields.length == names.length);
+                            for (let k: usize = 0; k < fields.length; k = k + 1) {
+                                let name = names.elements[k];
+                                let type_decl = fields.elements[k];
+                                let type = getType(&type_decl.typeState);
+                                let index = index_of_type(&table, type);
+                                assert(index != table.length, "Union variant field type info does not exist");
+                                let _size: usize = 0;
+                                let offset: usize = 0;
+                                getFieldOffsetAndSize(variant, k, &offset, &_size, false);
+                                push(&struct_fields, FieldTypeInfo {
+                                    name: name.content,
+                                    type: index,
+                                    offset_in_bytes: offset,
+                                });
+                            }
+                            variant_info = UnionVariantTypeInfo::Struct {
+                                name: variant.name.content,
+                                fields: struct_fields,
+                            };
+                        }
+                        _ => { unreachable(); }
                     }
                     push(variant_list, variant_info);
                 }
@@ -1752,7 +1755,7 @@ func generateBytecode(this: &IRGen, project: &ParsedFile) -> bool {
 func generateFunctionHeader(this: &IRGen, function: &IRFunc, retType: &Type, params: &ParamContext) {
     let entry: IRBlockID = appendBlock(function);
     setCurrentBlock(function, entry);
-    if (hasAttribute(at(&funcDecls, function.originalID), ATTR_NAKED)) return;
+    if (hasAttribute(at(&funcDecls, function.originalID), ParsedAttribute::Naked)) return;
     let offset: usize = 0;
     if (getSizeInBytes(retType) > 8) {
         offset = 1;
@@ -1768,7 +1771,7 @@ func generateFunctionHeader(this: &IRGen, function: &IRFunc, retType: &Type, par
 
 func generateFunctionBody(this: &IRGen, function: &IRFunc, body: &ParsedBlock, retTypeNode: &ParsedTypeNode) {
     let retType: &Type = getType(&retTypeNode.typeState);
-    let isNakedFn = hasAttribute(at(&funcDecls, function.originalID), ATTR_NAKED);
+    let isNakedFn = hasAttribute(at(&funcDecls, function.originalID), ParsedAttribute::Naked);
     if (function.returnBlockID.i == 0) {
         let curr = getCurrentBlock(function);
         function.returnBlockID = appendBlock(function);
@@ -2520,21 +2523,23 @@ func generateBytecodePatternUnion(this: &IRGen, function: &IRFunc, expr: RegInde
             buildBinaryOp(function, name.span, INSTR_INT_ADD, tmp, tmp, sizeReg);
             buildIntToPtr(function, name.span, tmp, tmp);
         }
-        for (let i: usize = 0; i < variant.fields.length; i = i + 1) {
-            let subSubPat = *at(&subPatterns, i);
-            let fieldNode = *at(&variant.fields, i);
-            let fieldType = getType(&fieldNode.typeState);
-            let fieldSize = getSizeInBytes(fieldType);
-            let subPtr = allocateRegister(function, intoPointer(fieldType));
-            buildMove(function, subSubPat.span, subPtr, tmp);
-            let sub = generateBytecodePattern(this, function, subPtr, subSubPat, true, isComptimeVariable);
-            buildBinaryOp(function, subSubPat.span, INSTR_LOGICAL_AND, success, success, sub);
-            if (tag(&subSubPat.data) == comptime tag(&Pattern::Rest)) break;
-            if (i != subPatterns.length - 1) {
-                buildLoadInteger(function, subSubPat.span, sizeReg, usizeType, fieldSize);
-                buildPtrToInt(function, subSubPat.span, tmp, tmp);
-                buildBinaryOp(function, subSubPat.span, INSTR_INT_ADD, tmp, tmp, sizeReg);
-                buildIntToPtr(function, subSubPat.span, tmp, tmp);
+        if let (true, fields) = get_fields(variant) {
+            for (let i: usize = 0; i < fields.length; i = i + 1) {
+                let subSubPat = subPatterns.elements[i];
+                let fieldNode = fields.elements[i];
+                let fieldType = getType(&fieldNode.typeState);
+                let fieldSize = getSizeInBytes(fieldType);
+                let subPtr = allocateRegister(function, intoPointer(fieldType));
+                buildMove(function, subSubPat.span, subPtr, tmp);
+                let sub = generateBytecodePattern(this, function, subPtr, subSubPat, true, isComptimeVariable);
+                buildBinaryOp(function, subSubPat.span, INSTR_LOGICAL_AND, success, success, sub);
+                if (tag(&subSubPat.data) == comptime tag(&Pattern::Rest)) break;
+                if (i != subPatterns.length - 1) {
+                    buildLoadInteger(function, subSubPat.span, sizeReg, usizeType, fieldSize);
+                    buildPtrToInt(function, subSubPat.span, tmp, tmp);
+                    buildBinaryOp(function, subSubPat.span, INSTR_INT_ADD, tmp, tmp, sizeReg);
+                    buildIntToPtr(function, subSubPat.span, tmp, tmp);
+                }
             }
         }
     } else {
@@ -2574,24 +2579,26 @@ func generateBytecodePatternUnion(this: &IRGen, function: &IRFunc, expr: RegInde
             buildIntToPtr(function, name.span, tmp, tmp);
         }
         expr = allocReg;
-        for (let i: usize = 0; i < variant.fields.length; i = i + 1) {
-            let subSubPat = *at(&subPatterns, i);
-            let fieldNode = *at(&variant.fields, i);
-            let fieldType = getType(&fieldNode.typeState);
-            let fieldSize = getSizeInBytes(fieldType);
-            let subAlloc = allocateRegister(function, intoPointer(fieldType));
-            let subExpr = allocateRegister(function, fieldType);
-            buildAlloca(function, subSubPat.span, subAlloc, fieldSize);
-            buildLoadInteger(function, subSubPat.span, sizeReg, usizeType, fieldSize);
-            buildMemcpy(function, subSubPat.span, tmp, subAlloc, sizeReg);
-            buildLoad(function, subSubPat.span, subExpr, subAlloc);
-            let sub = generateBytecodePattern(this, function, subExpr, subSubPat, false, isComptimeVariable);
-            buildBinaryOp(function, subSubPat.span, INSTR_LOGICAL_AND, success, success, sub);
-            if (tag(&subSubPat.data) == comptime tag(&Pattern::Rest)) break;
-            if (i != subPatterns.length - 1) {
-                buildPtrToInt(function, subSubPat.span, tmp, tmp);
-                buildBinaryOp(function, subSubPat.span, INSTR_INT_ADD, tmp, tmp, sizeReg);
-                buildIntToPtr(function, subSubPat.span, tmp, tmp);
+        if let (true, fields) = get_fields(variant) {
+            for (let i: usize = 0; i < fields.length; i = i + 1) {
+                let subSubPat = subPatterns.elements[i];
+                let fieldNode = fields.elements[i];
+                let fieldType = getType(&fieldNode.typeState);
+                let fieldSize = getSizeInBytes(fieldType);
+                let subAlloc = allocateRegister(function, intoPointer(fieldType));
+                let subExpr = allocateRegister(function, fieldType);
+                buildAlloca(function, subSubPat.span, subAlloc, fieldSize);
+                buildLoadInteger(function, subSubPat.span, sizeReg, usizeType, fieldSize);
+                buildMemcpy(function, subSubPat.span, tmp, subAlloc, sizeReg);
+                buildLoad(function, subSubPat.span, subExpr, subAlloc);
+                let sub = generateBytecodePattern(this, function, subExpr, subSubPat, false, isComptimeVariable);
+                buildBinaryOp(function, subSubPat.span, INSTR_LOGICAL_AND, success, success, sub);
+                if (tag(&subSubPat.data) == comptime tag(&Pattern::Rest)) break;
+                if (i != subPatterns.length - 1) {
+                    buildPtrToInt(function, subSubPat.span, tmp, tmp);
+                    buildBinaryOp(function, subSubPat.span, INSTR_INT_ADD, tmp, tmp, sizeReg);
+                    buildIntToPtr(function, subSubPat.span, tmp, tmp);
+                }
             }
         }
     }
@@ -2835,12 +2842,12 @@ func generateBytecodeExprUnionInit(this: &IRGen, function: &IRFunc, span: Span, 
     // union = [tag, data]
     let decl: &ParsedUnionDecl = null;
     let variant: &ParsedUnionVariant = null;
-    let tag: usize = 0;
+    let _tag: usize = 0;
     match (type) {
         &Type::Union(_decl, _variant) => {
             decl = _decl;
             variant = *at(&decl.variants, _variant);
-            tag = _variant;
+            _tag = _variant;
         }
         _ => { unreachable("Expected Union Type in EXPR_UNION_INIT"); }
     }
@@ -2864,7 +2871,7 @@ func generateBytecodeExprUnionInit(this: &IRGen, function: &IRFunc, span: Span, 
         if (decl.variants.length >= 256) smol = PrimType::U16;
         let tagType = wrap(Type::Prim(smol));
         let tagReg = allocateRegister(function, tagType);
-        buildLoadInteger(function, span, tagReg, tagType, tag);
+        buildLoadInteger(function, span, tagReg, tagType, _tag);
         buildStore(function, span, start, tagReg);
 
         // offset tmp by tag
@@ -2887,7 +2894,7 @@ func generateBytecodeExprUnionInit(this: &IRGen, function: &IRFunc, span: Span, 
             // REVIEW: Maybe allow things like  union { A = 12, B = 23 }  ?
         }
         &UnionExpr::Tuple(tuple) => {
-            assert(variant.kind == UNION_VARIANT_TUPLE, "UnionExpr::Tuple did not get Tuple variant");
+            assert(tag(&variant.data) == comptime tag(&ParsedUnionVariantData::Tuple), "UnionExpr::Tuple did not get Tuple variant");
             for (let i: usize = 0; i < tuple.args.length; i = i + 1) {
                 let field: &ParsedExpr = *at(&tuple.args, i);
                 let result: RegIndex = generateBytecodeExpr(this, function, field, true);
@@ -2901,7 +2908,7 @@ func generateBytecodeExprUnionInit(this: &IRGen, function: &IRFunc, span: Span, 
             }
         }
         &UnionExpr::Struct(context) => {
-            assert(variant.kind == UNION_VARIANT_STRUCT, "UnionExpr::Struct did not get Struct variant");
+            assert(tag(&variant.data) == comptime tag(&ParsedUnionVariantData::Struct), "UnionExpr::Struct did not get Struct variant");
             for (let i: usize = 0; i < context.context.fieldLength; i = i + 1) {
                 let name: Token = getFieldNameAtIndex(&context.context, i);
                 let field: &ParsedExpr = getFieldExprAtIndex(&context.context, i);

@@ -603,20 +603,7 @@ func getAlignmentInBytes(this: &Type) -> usize {
             res = maxAlign;
         }
         &Type::Union(decl, _) => {
-            assert(isSuccess(&decl.typeState), "Can only get alignment of valid unions");
-            let maxAlign: usize = 1;
-            if (decl.variants.length >= 256) maxAlign = 2;
-            for (let i: usize = 0; i < decl.variants.length; i = i + 1) {
-                let variant = *at(&decl.variants, i);
-                for (let j: usize = 0; j < variant.fields.length; j = j + 1) {
-                    let field = *at(&variant.fields, j);
-                    assert(isSuccess(&field.typeState), "Expected valid field type");
-                    let tt: &Type = getType(&field.typeState);
-                    let _a: usize = getAlignmentInBytes(tt);
-                    if (_a > maxAlign) maxAlign = _a;
-                }
-            }
-            res = maxAlign;
+            res = getAlignmentInBytes(decl);
         }
         &Type::Tuple(elems) => {
             let maxAlign: usize = 1;
@@ -691,41 +678,7 @@ func getSizeInBytes(this: &Type) -> usize {
             return size;
         }
         &Type::Union(decl, _) => {
-            assert(isSuccess(&decl.typeState), "Can only get size of valid unions");
-            assert(decl.variants.length < 65536, "getSize expects the Union tag to fit into at most two bytes");
-            let maxSize: usize = 0;
-            let maxAlign: usize = 1;
-            for (let i: usize = 0; i < decl.variants.length; i = i + 1) {
-                let variant = *at(&decl.variants, i);
-                let size: usize = 1; // union tag
-                let align: usize = 1;
-                if (decl.variants.length >= 256) {
-                    size = 2;
-                    align = 2;
-                }
-                if (variant.fields.length > 0) {
-                    let next: &ParsedTypeNode = *at(&variant.fields, 0);
-                    let nextType: &Type = getType(&next.typeState);
-                    size = nextMultipleOf(size, getAlignmentInBytes(nextType));
-                }
-                for (let j: usize = 0; j < variant.fields.length; j = j + 1) {
-                    let field = *at(&variant.fields, j);
-                    assert(isSuccess(&field.typeState), "Expected valid field type");
-                    let tt: &Type = getType(&field.typeState);
-                    size = size + getSizeInBytes(tt);
-                    let _a: usize = getAlignmentInBytes(tt);
-                    if (_a > align) align = _a;
-                    if (j != variant.fields.length - 1) {
-                        let next: &ParsedTypeNode = *at(&variant.fields, j + 1);
-                        let nextType: &Type = getType(&next.typeState);
-                        size = nextMultipleOf(size, getAlignmentInBytes(nextType));
-                    }
-                }
-                if (size > maxSize) maxSize = size;
-                if (align > maxAlign) maxAlign = align;
-            }
-            maxSize = nextMultipleOf(maxSize, maxAlign);
-            return maxSize;
+            return getSizeInBytes(decl);
         }
         &Type::Tuple(elems) => {
             let size: usize = 0;

@@ -180,7 +180,7 @@ func insertTLI(this: &ModuleLookup, tli: &ParsedTopLevelItem) -> bool {
             parent: tli.parent,
             name: fun.name,
             params: blank,
-            fnType: blank,
+            fnType: TCState::Invalid,
             isVarArg: fun.params.isVarArg,
         };
         push(&this.functions, lookup);
@@ -315,7 +315,7 @@ func insertVariables(this: &ModuleLookup, pat: &ParsedPattern, globalScope: &Sco
             let lookup: VariableLookup = VariableLookup {
                 globalID: getID(pat),
                 name: name,
-                typeState: blank,
+                typeState: TCState::Invalid,
                 isComptime: isComptime,
             };
             if (check_known(globalScope, &lookup, pat, &name)) return false;
@@ -985,15 +985,17 @@ func checkForDuplicateName(this: &UnionVariantLookup, name: &Token, dupl: &&Toke
 }
 
 func intoStructLookup(this: &UnionVariantLookup) -> StructLookup {
-    assert(this.global.kind == UNION_VARIANT_STRUCT, "intoStructLookup() called on non-struct variant");
+    let &ParsedUnionVariantData::Struct { fields, names } = &this.global.data else {
+        unreachable("intoStructLookup() called on non-struct variant");
+    };
     let lookup = StructLookup {
         globalID: getID(this.global),
         parent: this.global.parent,
         name: this.global.name,
     };
-    for (let i: usize = 0; i < this.global.fields.length; i = i + 1) {
-        let field = *at(&this.global.fields, i);
-        let name = at(&this.global.names, i);
+    for (let i: usize = 0; i < fields.length; i = i + 1) {
+        let field = fields.elements[i];
+        let name = &names.elements[i];
         assert(isSuccess(&field.typeState), "Expected valid variant field type at this point");
         push(&lookup.fields, VariableLookup {
             globalID: getID(field),
