@@ -1151,7 +1151,7 @@ func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile
                     let index = index_of_type(&table, type);
                     assert(index != table.length, "Struct field type info does not exist");
                     push(struct_fields, FieldTypeInfo {
-                        name: name.content,
+                        name: asSubStr(&toString(&name.content)),
                         type: index,
                         offset_in_bytes: getFieldOffset(decl, &name.content, false),
                     });
@@ -1176,7 +1176,9 @@ func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile
                     let variant_info = UnionVariantTypeInfo::Empty{};
                     match (variant.data) {
                         ParsedUnionVariantData::Empty => {
-                            variant_info = UnionVariantTypeInfo::Empty { name: variant.name.content };
+                            variant_info = UnionVariantTypeInfo::Empty {
+                                name: asSubStr(&toString(&variant.name.content)),
+                            };
                         }
                         ParsedUnionVariantData::Tuple { fields } => {
                             let tuple_fields: TypeInfoList = blank;
@@ -1188,7 +1190,7 @@ func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile
                                 push(&tuple_fields, index);
                             }
                             variant_info = UnionVariantTypeInfo::Tuple {
-                                name: variant.name.content,
+                                name: asSubStr(&toString(&variant.name.content)),
                                 fields: tuple_fields,
                             };
                         }
@@ -1205,13 +1207,13 @@ func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile
                                 let offset: usize = 0;
                                 getFieldOffsetAndSize(variant, k, &offset, &_size, false);
                                 push(&struct_fields, FieldTypeInfo {
-                                    name: name.content,
+                                    name: asSubStr(&toString(&name.content)),
                                     type: index,
                                     offset_in_bytes: offset,
                                 });
                             }
                             variant_info = UnionVariantTypeInfo::Struct {
-                                name: variant.name.content,
+                                name: asSubStr(&toString(&variant.name.content)),
                                 fields: struct_fields,
                             };
                         }
