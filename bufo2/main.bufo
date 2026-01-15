@@ -1,0 +1,59 @@
+
+import "libc.bufo";
+import "type_info.bufo";
+import "string.bufo";
+import "substr.bufo";
+
+import "common.bufo";
+import "corot.bufo";
+import "lexer.bufo";
+import "parser.bufo";
+
+/*
+ * spawn(parse_file)
+ * parse_file
+ * -> spawn(parse_foo)
+ * -> spawn(parse_bar)
+ * -> spawn(parse_main)
+ * parse_foo
+ * -> insert
+ *    -> run
+ *       -> get_ident(bar)
+ *          -> no such ident + state == NOT_DONE_PARSING
+ *             -> switch()
+ *          -> really no such ident
+ *             -> report error
+ *          -> bind ident, continue
+ *       -> code = generate(bar)
+ *       -> return call(code)
+ *    -> do stuff
+ * parse_bar
+ * ...
+ * parse_main
+ * ...
+ */
+
+func main(argc: i32, argv: &&char) -> i32 {
+    if (argc < 2) {
+        C::fprintf(stderr, "error: Expected file input\n");
+        return 1;
+    }
+    let source: String = blank;
+    if (!canReadFileToString(argv[1], &source)) {
+        C::fprintf(stderr, "error: Could not read file %s\n", argv[1]);
+        return 1;
+    }
+    C::printf("--------------------------------------------------\n");
+    C::printf("%.*s", source.length, source.buffer);
+    C::printf("--------------------------------------------------\n");
+
+    init_corot_engine();
+    let file = spawn(parse_file, &source);
+
+    // The main function only switches between scheduled coroutines
+    while (any_active()) switch();
+
+    C::printf("done\n");
+    return 0;
+}
+

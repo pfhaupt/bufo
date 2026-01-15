@@ -1,0 +1,56 @@
+
+import "prelude.bufo";
+import "libc.bufo";
+import "substr.bufo";
+
+import "common.bufo";
+import "lexer.bufo";
+
+struct AST {
+    origin: SubStr;
+    data: ASTData;
+}
+
+union ASTData {
+    Function { name: SubStr },
+    Type(ASTType),
+}
+
+union ASTType {
+    Primitive(PrimType),
+}
+
+union PrimType {
+    I32,
+}
+
+func create_node(origin: SubStr) -> &AST {
+    let ptr: &AST = C::malloc(sizeof AST);
+    assert(ptr != null, "create_node failed");
+    ptr.origin = origin;
+    return ptr;
+}
+
+func create_function(origin: SubStr, name: SubStr) -> &AST {
+    dbg(" create_function", name);
+    let ptr = create_node(origin);
+    ptr.data = ASTData::Function {
+        name: name
+    };
+    return ptr;
+}
+
+func create_type(origin: SubStr, typ: ASTType) -> &AST {
+    dbg("    create_type");
+    let ptr = create_node(origin);
+    ptr.data = ASTData::Type(typ);
+    return ptr;
+}
+
+func is_primitive_type(name: SubStr, prim: &ASTType) -> bool {
+    if (equals(&name, &comptime newSubStrOfStrLit("i32"))) {
+        *prim = ASTType::Primitive(PrimType::I32);
+        return true;
+    }
+    return false;
+}

@@ -36,6 +36,12 @@ module C {
     @extern("memcmp") func memcmp(lhs: Any, rhs: Any, count: usize) -> i32;
     @extern("memset") func memset(s: Any, b: i32, count: usize) -> Any;
 
+    @os(WINDOWS) func aligned_alloc(alignment: usize, size: usize) -> Any {
+        return _aligned_malloc(size, alignment);
+    }
+    @os(WINDOWS) @extern("_aligned_malloc") func _aligned_malloc(size: usize, alignment: usize) -> Any;
+    @os(LINUX) @extern("aligned_alloc") func aligned_alloc(alignment: usize, size: usize) -> Any;
+
     // File IO
     @extern("fopen") func fopen(filename: &char, mode: &char) -> Any;
     @extern("fread") func fread(buffer: Any, size: usize, count: usize, stream: Any) -> usize;

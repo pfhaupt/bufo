@@ -1,0 +1,27 @@
+
+import "libc.bufo";
+import "prelude.bufo";
+import "type_info.bufo";
+import "substr.bufo";
+
+func wrap(d: Data) -> Any {
+    let size = get_size(&d.info);
+    let ptr = C::malloc(size);
+    assert(ptr != null, "wrap failed");
+    C::memcpy(ptr, d.ptr, size);
+    return ptr;
+}
+
+comptime PRINT_DEBUG = true;
+func dbg(msg: &char, args: ...SubStr) {
+    if (PRINT_DEBUG) {
+        C::printf("[DEBUG] %s", msg);
+        if (args.length > 0) C::printf(": ");
+        for (let i: usize = 0; i < args.length; i = i + 1) {
+            let s = args[i];
+            if (i > 0) C::printf(", ");
+            C::printf("%.*s", s.len, s.start);
+        }
+        C::printf("\n");
+    }
+}

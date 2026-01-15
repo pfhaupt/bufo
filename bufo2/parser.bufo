@@ -1,0 +1,103 @@
+
+import "prelude.bufo";
+import "libc.bufo";
+import "type_info.bufo";
+import "string.bufo";
+import "substr.bufo";
+
+import "common.bufo";
+import "corot.bufo";
+import "lexer.bufo";
+import "ast.bufo";
+
+func parse_file(arg: Any) {
+    let src = arg as &String;
+    let slice = asSubStr(src);
+    assert(slice.len != 0, "Empty source");
+    let lexer = Lexer {
+        offset_in_file: 0,
+        source: slice,
+    };
+    while (!is_empty(&lexer)) {
+        let tkn = next(&lexer);
+        match (tkn.data) {
+            TokenData::EndOfFile => {
+                return;
+            }
+            TokenData::KeywordFunc => {
+                let _name = next(&lexer);
+                expect(&lexer, TokenData::ParenOpen);
+                skip_until(&lexer, TokenData::ParenClose);
+                expect(&lexer, TokenData::CurlyOpen);
+                let end = skip_until(&lexer, TokenData::CurlyClose);
+                // func foo ( ) { } .......
+                // ^offset_in_file
+                //                ^end.offset_in_file
+                // + 1 because the curly bracket is also contained
+                let fn_size = end.offset_in_file + 1;
+                let fn_input = Lexer {
+                    offset_in_file: tkn.offset_in_file,
+                    source: substring(&slice, tkn.offset_in_file, fn_size),
+                };
+                spawn(parse_function, wrap(fn_input));
+            }
+            t => {
+                C::fprintf(stderr, "TODO: unknown tag %hhu\n", tag(&t));
+                return;
+            }
+        }
+    }
+}
+
+func parse_type(lexer: &Lexer) -> &AST {
+    dbg("   parse_type");
+    let tkn = peek(lexer);
+    match (tkn.data) {
+        TokenData::Ident { name } => {
+            let prim: ASTType = ASTType::Primitive(PrimType::I32);
+            if (is_primitive_type(name, &prim)) {
+                next(lexer);
+                return create_type(name, prim);
+            }
+            todo_with_msg("non-primitive type");
+        }
+        t => {
+            C::fprintf(stderr, "error: Expected identifier, got %s\n", to_cstr(t));
+        }
+    }
+    return null;
+}
+
+func parse_parameter(lexer: &Lexer, func_node: &ASTData) {
+    let &ASTData::Function { fnName } = func_node else { unreachable(); };
+    let name = expect(lexer, TokenData::Ident);
+    let TokenData::Ident { _name } = name.data else { unreachable(); };
+    dbg("  parse_parameter", fnName, _name);
+    expect(lexer, TokenData::ColonSingle);
+    let type = parse_type(lexer);
+}
+
+func parse_function(arg: Any) {
+    dbg("parse_function");
+    let lexer = *(arg as &Lexer);
+    C::free(arg);
+    let func_keyword = next(&lexer);
+    let _name = expect(&lexer, TokenData::Ident);
+    let name = get_name(&_name);
+    let func_node = create_function(lexer.source, name);
+    expect(&lexer, TokenData::ParenOpen);
+    while (!at(&lexer, TokenData::ParenClose)) {
+        parse_parameter(&lexer, &func_node.data);
+        if (!at(&lexer, TokenData::ParenClose)) {
+            expect(&lexer, TokenData::Comma);
+        }
+    }
+    expect(&lexer, TokenData::ParenClose);
+    expect(&lexer, TokenData::CurlyOpen);
+    while (!at(&lexer, TokenData::CurlyClose)) {
+        next(&lexer);
+    }
+    let end = expect(&lexer, TokenData::CurlyClose);
+    expect(&lexer, TokenData::EndOfFile);
+}
+

@@ -1,0 +1,7 @@
+
+func foo(b: i32, c: i32) {
+}
+func bar() {
+}
+func main() {
+}

@@ -1,0 +1,163 @@
+
+import "prelude.bufo";
+import "libc.bufo";
+import "type_info.bufo";
+import "string.bufo";
+import "substr.bufo";
+
+import "common.bufo";
+import "corot.bufo";
+
+struct Token {
+    offset_in_file: usize;
+    data: TokenData;
+}
+
+union TokenData {
+    Empty,
+    Ident { name: SubStr },
+
+    KeywordFunc,
+
+    ParenOpen,
+    ParenClose,
+    CurlyOpen,
+    CurlyClose,
+    ColonSingle,
+    Comma,
+    SemiColon,
+    EndOfFile,
+}
+
+func to_cstr(t: TokenData) -> &char {
+    return [
+        "<empty token>",
+        "identifier",
+
+        "`func`",
+
+        "`(`",
+        "`)`",
+        "`{`",
+        "`}`",
+        "`:`",
+        "`,`",
+        "`;`",
+        "<end of file>",
+    ][tag(&t) as usize];
+}
+
+func get_name(t: &Token) -> SubStr {
+    match (&t.data) {
+        &TokenData::Ident { name } => { return name; }
+        _ => { todo_with_msg("get_name(Token)"); }
+    }
+    unreachable("get_name()");
+}
+
+func isKeyword(s: SubStr, kw: &TokenData) -> bool {
+    if (equals(&s, &comptime newSubStrOfStrLit("func"))) {
+        *kw = TokenData::KeywordFunc;
+        return true;
+    } else {
+        return false;
+    }
+}
+
+struct Lexer {
+    offset_in_file: usize;
+    source: SubStr;
+}
+
+func is_empty(l: &Lexer) -> bool {
+    return l.source.len == 0;
+}
+
+func __next(l: &Lexer) -> Token {
+    let advance = func (s: &SubStr, bytes: usize, offset_in_file: &usize) {
+        assert(bytes <= s.len, "tokenizer: advance beyond EOF");
+        s.start = s.start + bytes;
+        s.len = s.len - bytes;
+        *offset_in_file = *offset_in_file + bytes;
+    };
+    let tkn: Token = Token { data: TokenData::EndOfFile };
+    if (l.source.len == 0) return tkn;
+
+    let first = l.source.start[0];
+    while (isWhitespace(first)) {
+        advance(&l.source, 1, &l.offset_in_file);
+        first = l.source.start[0];
+    }
+    if (l.source.len == 0) return tkn;
+
+    let offset = l.offset_in_file;
+    let i: usize = 1;
+    if (isAlphabetic(first)) {
+        while (isAlphanumeric(l.source.start[i])) i = i + 1;
+        let kw: TokenData = TokenData::Empty;
+        let name = substring(&l.source, 0, i);
+        if (isKeyword(name, &kw)) {
+            tkn.data = kw;
+        } else {
+            tkn.data = TokenData::Ident { name: name };
+        }
+    } else if (first == '(') {
+        tkn.data = TokenData::ParenOpen;
+    } else if (first == ')') {
+        tkn.data = TokenData::ParenClose;
+    } else if (first == '{') {
+        tkn.data = TokenData::CurlyOpen;
+    } else if (first == '}') {
+        tkn.data = TokenData::CurlyClose;
+    } else if (first == ':') {
+        tkn.data = TokenData::ColonSingle;
+    } else if (first == ',') {
+        tkn.data = TokenData::Comma;
+    } else if (first == ';') {
+        tkn.data = TokenData::SemiColon;
+    } else {
+        todo_with_msg("tokenizer");
+    }
+    tkn.offset_in_file = offset;
+    advance(&l.source, i, &l.offset_in_file);
+    return tkn;
+}
+
+func peek(l: &Lexer) -> Token {
+    let _l = *l;
+    let tkn = __next(&_l);
+    return tkn;
+}
+
+func next(l: &Lexer) -> Token {
+    return __next(l);
+}
+
+func at(l: &Lexer, tokens: TokenData) -> bool {
+    let tkn = peek(l);
+    return tag(&tkn.data) == tag(&tokens);
+}
+
+func expect(l: &Lexer, tokens: ...TokenData) -> Token {
+    let tkn = next(l);
+    for (let i: usize = 0; i < tokens.length; i = i + 1) {
+        if (tag(&tkn.data) == tag(&tokens[i])) return tkn;
+    }
+    C::fprintf(stderr, "error: Expected ");
+    if (tokens.length > 1) C::fprintf(stderr, "one of ");
+    for (let i: usize = 0; i < tokens.length; i = i + 1) {
+        C::fprintf(stderr, "%s", to_cstr(tokens[i]));
+        if (tokens.length > 2 && i < tokens.length - 2) C::fprintf(stderr, ", ");
+        else if (i == tokens.length - 2) C::fprintf(stderr, " or ");
+    }
+    C::fprintf(stderr, ", but got %s.", to_cstr(tkn.data));
+    C::exit(1);
+}
+
+func skip_until(l: &Lexer, token: TokenData) -> Token {
+    while (!at(l, token)) {
+        next(l);
+    }
+    return expect(l, token);
+}
+

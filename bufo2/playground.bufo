@@ -1,0 +1,81 @@
+
+struct List($T) {
+    elements: *$T;
+    capacity: usize = 0;
+    length: usize = 0;
+}
+
+struct Slice($T) {
+    elements: *$T;
+    length: usize;
+}
+
+func foo(c: Code) -> string {
+    let s = to_string(c);
+    return "{s} + {s}";
+}
+
+let a = 12;
+#insert #run foo(a); // a + a
+
+func repeat(a: i32, body: Code) -> string {
+    let s;
+    for 0..a { s += to_string(body); }
+    return s;
+}
+
+union Code {
+    Block(),
+    Stmt(),
+    Function(),
+}
+func _for(l: List, list: Code, body: Code) -> Code {
+    return _for(l, it, list, body);
+}
+func _for(_: List, it: Code, list: Code, body: Code) -> Code {
+    assert(a.type == List);
+    let c: Code.Block = #parse END
+        let _index = 0;
+        while (_index < %list%.length) {
+            let %it% = &%list%.elements[_index];
+            %body%;
+            _index++;
+        }
+    END;
+
+    let s = "let _index = 0; while (_index < {a}.length) {{ let it = &{a}.elements[_index]; {body} _index++; }}";
+    let c: Code.Block = #parse,string s;
+}
+func _for(a: Code, body: Code) -> Code {
+    let t = a.type;
+    if (t.for_fn != null) return t.for_fn(a, body);
+
+    let c: Code.Block    = #parse,string "let it = 0; while (it < {a}) {{ {body} it++; }}";
+    let c: Code.Stmt     = #parse,string "let it = 0;";
+    let c: Code.Function = #parse,string "func foo () {}";
+    return c;
+}
+#insert #run _for(a, { print(it); });
+
+union Type {
+    Ptr(&Type),
+    Prim(...)
+}
+
+let t: Type.Ptr = parse_ptr();
+
+let c: AST.FuncNode = do();
+
+let _c = do();
+if _c != FuncNode { panic(); }
+let c = _c;
+
+func main() {
+    let l: List(i32);
+    l.push(5);
+    _for(e, l, { print(e) });
+    for e in l {
+        print(e);
+    }
+}
+

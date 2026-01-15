@@ -1,0 +1,214 @@
+
+import "libc.bufo";
+import "type_info.bufo";
+import "prelude.bufo";
+import "asm.bufo";
+
+import "list.bufo";
+
+comptime STACK_CAPACITY: usize = 1024 * 1024;
+
+struct Context {
+    alive: bool;
+    rsp: &usize;
+    stack_base: &usize;
+    yield_value: Any;
+    value_available: bool;
+    return_value: Any;
+}
+
+struct Corot_Engine {
+    contexts: GAF_List; // List<Context>
+    active: GAF_List;   // List<usize>
+    dead: GAF_List;     // List<usize>
+    current: usize;
+}
+
+let engine: Corot_Engine = blank;
+
+func init_corot_engine() {
+    if (engine.contexts.length > 0) return;
+    engine = Corot_Engine {
+        contexts: new_GAF_List(type_info(Context)),
+        active: new_GAF_List(type_info(usize)),
+        dead: new_GAF_List(type_info(usize)),
+        current: 0,
+    };
+    push(&engine.contexts, Context {});
+    push(&engine.active, 0 as usize);
+}
+
+func get_context(id: usize) -> &Context {
+    return get_ref_raw(&engine.contexts, id);
+}
+
+func is_active(id: usize) -> bool {
+    return get_context(id).alive;
+}
+
+func yield_value(id: usize, value: Any) {
+    let context = get_context(id);
+    context.return_value = value;
+}
+
+union Corot_State {
+    Value(Any),
+    Dead,
+}
+
+func unwrap(cs: Corot_State, msg: &char) -> Any {
+    match (cs) {
+        Corot_State::Value(v) => { return v; }
+        _ => { }
+    }
+    unreachable(msg);
+}
+func unwrap(cs: Corot_State) -> Any {
+    return unwrap(cs, "unwrap() called on invalid Corot_State");
+}
+
+func get_value(id: usize) -> Corot_State {
+    let context = get_context(id);
+    while (!context.value_available) {
+        if (!is_active(id)) return Corot_State::Dead;
+        switch();
+    }
+    context.value_available = false;
+    return Corot_State::Value(context.yield_value);
+}
+
+func any_active() -> bool {
+    return engine.active.length > 1;
+}
+
+func corot_id() -> usize {
+    return engine.current;
+}
+
+func spawn(f: func (Any), arg: Any) -> usize {
+    let id: usize = 0;
+    if (engine.dead.length > 0) {
+        pop(&engine.dead, &id);
+    } else {
+        let context = Context {
+            stack_base: C::aligned_alloc(16, STACK_CAPACITY)
+        };
+        assert(context.stack_base != null, "Could not allocate stack for coroutine");
+        push(&engine.contexts, context);
+        id = engine.contexts.length - 1;
+    }
+    let context = get_context(id);
+    let rsp = (context.stack_base as usize + STACK_CAPACITY) as &usize;
+    assert(rsp as usize % 16 == 0, "RSP is not aligned");
+    @os(WINDOWS) {
+        rsp = rsp - 32; // shadow space
+        let kickoff = func (f: func (Any), arg: Any) {
+            f(arg);
+            _finish_current();
+        };
+        *(rsp - 0) = kickoff as Any as usize;
+        *(rsp - 8) = f as Any as usize;
+        *(rsp - 16) = arg as usize;
+        rsp = rsp - 80; // we push/pop many registers
+    }
+    @os(LINUX) todo_with_msg("prepare stack");
+    context.rsp = rsp as &usize;
+    context.alive = true;
+    push(&engine.active, id);
+    return id;
+}
+
+func _finish_current() {
+    let id: &usize = get_ref_raw(&engine.active, engine.current);
+    assert(*id != 0, "_finish_current: Attempted to finish main thread");
+
+    let context = get_context(*id);
+    context.alive = false;
+
+    push(&engine.dead, *id);
+    swap_remove(&engine.active, engine.current);
+    assert(engine.active.length > 0, "_finish_current: No active coroutine to switch to");
+    engine.current = engine.current % engine.active.length;
+
+    let new_id: &usize = get_ref_raw(&engine.active, engine.current);
+    let new_context = get_context(*new_id);
+    restore_context(new_context.rsp, new_context.return_value);
+}
+
+@naked func restore_context(new_rsp: &usize, return_value: Any) {
+    @os(WINDOWS) asm(func () -> ASMContext {
+        let context = ASMContext {};
+        push(&context, "mov %rcx, %rsp");
+        push(&context, "mov %rdx, %rax");
+        push(&context, "pop %r15");
+        push(&context, "pop %r14");
+        push(&context, "pop %r13");
+        push(&context, "pop %r12");
+        push(&context, "pop %rsi");
+        push(&context, "pop %rdi");
+        push(&context, "pop %rbp");
+        push(&context, "pop %rbx");
+        push(&context, "pop %rdx");
+        push(&context, "pop %rcx");
+        push(&context, "ret");
+        return context;
+    });
+    @os(LINUX) todo_with_msg("restore_context");
+}
+
+@no_mangle func switch_context(rsp: &usize, yield_value: Any, has_value: bool) {
+    let id: &usize = get_ref_raw(&engine.active, engine.current);
+    let context = get_context(*id);
+    context.rsp = rsp;
+    context.yield_value = yield_value;
+    if (has_value) context.value_available = true;
+
+    engine.current = (engine.current + 1) % engine.active.length;
+    let new_id: &usize = get_ref_raw(&engine.active, engine.current);
+    let new_context = get_context(*new_id);
+    restore_context(new_context.rsp, new_context.return_value);
+}
+
+@naked func switch() -> Any {
+    @os(WINDOWS) asm(func () -> ASMContext {
+        let context = ASMContext {};
+        push(&context, "push %rcx");
+        push(&context, "push %rdx");
+        push(&context, "push %rbx");
+        push(&context, "push %rbp");
+        push(&context, "push %rdi");
+        push(&context, "push %rsi");
+        push(&context, "push %r12");
+        push(&context, "push %r13");
+        push(&context, "push %r14");
+        push(&context, "push %r15");
+        push(&context, "mov $$0, %r8");
+        push(&context, "mov %rcx, %rdx");
+        push(&context, "mov %rsp, %rcx");
+        push(&context, "jmp switch_context");
+        return context;
+    });
+    @os(LINUX) todo_with_msg("switch");
+}
+@naked func yield(val: Any) -> Any {
+    @os(WINDOWS) asm(func () -> ASMContext {
+        let context = ASMContext {};
+        push(&context, "push %rcx");
+        push(&context, "push %rdx");
+        push(&context, "push %rbx");
+        push(&context, "push %rbp");
+        push(&context, "push %rdi");
+        push(&context, "push %rsi");
+        push(&context, "push %r12");
+        push(&context, "push %r13");
+        push(&context, "push %r14");
+        push(&context, "push %r15");
+        push(&context, "mov $$1, %r8");
+        push(&context, "mov %rcx, %rdx");
+        push(&context, "mov %rsp, %rcx");
+        push(&context, "jmp switch_context");
+        return context;
+    });
+    @os(LINUX) todo_with_msg("yield");
+}
+
