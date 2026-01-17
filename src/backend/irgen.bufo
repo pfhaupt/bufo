@@ -2920,7 +2920,14 @@ func generateBytecodeExprUnionInit(this: &IRGen, function: &IRFunc, span: Span, 
                 {
                     let index: usize = getFieldIndex(variant, &name.content);
                     getFieldOffsetAndSize(variant, index, &offset, &size, false);
-                    buildLoadInteger(function, field.span, offsetReg, usizeType, offset);
+                    let real_offset: usize = 0;
+                    for (let j: usize = 0; j < index; j = j + 1) {
+                        let _offset: usize = 0;
+                        let _size: usize = 0;
+                        getFieldOffsetAndSize(variant, j, &_offset, &_size, false);
+                        real_offset = real_offset + _size;
+                    }
+                    buildLoadInteger(function, field.span, offsetReg, usizeType, real_offset);
                     buildPtrToInt(function, span, base, base);
                     buildPtrToInt(function, span, tmp, tmp);
                     buildBinaryOp(function, span, INSTR_INT_ADD, tmp, base, offsetReg);

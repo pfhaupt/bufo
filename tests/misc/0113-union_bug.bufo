@@ -1,0 +1,27 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "prelude.bufo";
+
+union ASTData {
+    Function {
+        is_generic: bool,
+        stuff: usize,
+    },
+}
+func create_function() {
+    let data = ASTData::Function {
+        is_generic: false,
+        stuff: 420691337
+    };
+    let &ASTData::Function { is_generic, stuff } = &data else {
+        unreachable();
+    };
+    assert(stuff == 420691337, "stuff is not very nice!!!");
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    create_function();
+    return 0;
+}
