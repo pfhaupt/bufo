@@ -425,6 +425,10 @@ func isTuplePointer(this: &Type) -> bool {
     if (!isPointer(this)) return false;
     return isTuple(getUnderlyingType(this, false));
 }
+func isArrayPointer(this: &Type) -> bool {
+    if (!isPointer(this)) return false;
+    return isArray(getUnderlyingType(this, false));
+}
 func isPointerTo(this: &Type, typ: &Type) -> bool {
     match (this) {
         &Type::Ptr(to) => { return equals(to, typ); }

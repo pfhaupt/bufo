@@ -3055,6 +3055,25 @@ func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &Bi
     if (isModule(instance)) {
         return generateBytecodeExpr(this, function, rhs, needsPtr);
     }
+    if (isArray(instance) || isArrayPointer(instance)) {
+        while let &Type::Ptr(under) = getUnderlyingType(instance, false) {
+            instance = under;
+        }
+        let &Type::Array(_, arraySize) = instance else {
+            unreachable("Expected array in MemberAccess");
+        };
+        let usizeType: &Type = wrap(Type::Prim(PrimType::Usize));
+        let size: RegIndex = allocateRegister(function, usizeType);
+        buildLoadInteger(function, rhs.span, size, usizeType, arraySize);
+        if (needsPtr) {
+            let tempAlloc: RegIndex = allocateRegister(function, intoPointer(usizeType));
+            buildAlloca(function, rhs.span, tempAlloc, getSizeInBytes(usizeType));
+            buildStore(function, rhs.span, tempAlloc, size);
+            return tempAlloc;
+        } else {
+            return size;
+        }
+    }
     assert(isVariadicType(instance)
         || isStruct(instance)
         || isStructPointer(instance)

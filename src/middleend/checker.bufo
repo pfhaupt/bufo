@@ -2454,6 +2454,7 @@ func typeCheckExprBitwise(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeL
 }
 
 func typeCheckExprAssign(this: &TypeChecker, expr: &BinaryExpr, scopes: &ScopeLookupList) -> TCState {
+    // FIXME(2026-01-27): Would be cool if we had a way to disallow bogus assignments like array.length = xyz;
     let lhs: &ParsedExpr = null;
     let rhs: &ParsedExpr = null;
     extractOperands(expr, &lhs, &rhs);
@@ -2678,7 +2679,9 @@ func typeCheckExprMemberAccess(this: &TypeChecker, expr: &BinaryExpr, scopes: &S
         assert(f.a == 13);
     }
     */
-    if (isVariadicType(instanceType)) {
+    if (isVariadicType(instanceType)
+        || isArray(instanceType)
+        || isArrayPointer(instanceType)) {
         let fieldName: Token = blank;
         match (&rhs.data) {
             &ExprData::Ident(IdentExpr { ident, .. }) => { fieldName = ident; }
@@ -2689,8 +2692,10 @@ func typeCheckExprMemberAccess(this: &TypeChecker, expr: &BinaryExpr, scopes: &S
             return TCState::Type(usizeType);
         }
         let l: String = toString(&rhs.span);
-        C::fprintf(stderr, "%s: %s: Attempted to access unknown field `%.*s` of variadic type.\n",
-            l.buffer, ERR_STR, fieldName.content.len, fieldName.content.start);
+        let s = "array";
+        if (isVariadicType(instanceType)) s = "variadic";
+        C::fprintf(stderr, "%s: %s: Attempted to access unknown field `%.*s` of %s type.\n",
+            l.buffer, ERR_STR, fieldName.content.len, fieldName.content.start, s);
         drop(&l);
         return TCState::Error(ERROR_UNKNOWN_FIELD);
     }
