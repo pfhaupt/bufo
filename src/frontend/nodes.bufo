@@ -1412,6 +1412,19 @@ func toString(this: &ParsedPattern) -> String {
             drop(&_s);
             return s;
         }
+        &Pattern::Tuple(pats) => {
+            let s = newStringFromStrLit("(");
+            for (let i: usize = 0; i < pats.length; i = i + 1) {
+                let _s = toString(*at(&pats, i));
+                pushString(&s, &_s);
+                if (i != pats.length - 1) {
+                    pushStr(&s, ", ");
+                }
+                drop(&_s);
+            }
+            pushStr(&s, ")");
+            return s;
+        }
         unknown => {
             C::fprintf(stderr, "%s ParsedPattern.toString: Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
             C::exit(2);

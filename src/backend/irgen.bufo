@@ -2782,7 +2782,12 @@ func generateBytecodeExpr(this: &IRGen, function: &IRFunc, expr: &ParsedExpr, ne
 
 func generateTypeInfo(this: &IRGen, function: &IRFunc, span: Span, type: &Type) -> RegIndex {
     let index = index_of_type(&this.type_info_table, type);
-    assert(index < this.type_info_table.length, "generateTypeInfo: Info for type doesn't exist");
+    if (index >= this.type_info_table.length) {
+        let l: String = toString(&span);
+        let t: String = toString(type);
+        C::fprintf(stderr, "%s: %s: WEEWOO!!! Type Info for Type %s doesn't exist!!!\n", l.buffer, FATAL_STR, t.buffer);
+        C::exit(2);
+    }
 
     let isGlobal = false;
     let global_type_info_table = getIdentifierByName(this, function, comptime newSubStrOfStrLit("type_info_table"), &isGlobal);

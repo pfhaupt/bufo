@@ -241,6 +241,8 @@ func _equals(this: &Type, other: &Type, allowData: bool) -> bool {
         &Type::Func(params, ret, attr) => {
             match (other) {
                 &Type::Func(oparams, oret, oattr) => {
+                    // FIXME(2026-01-27): see variadic_bug.bufo for bug regarding equality of
+                    //                    variadic functions
                     if (attr.isVariadic != oattr.isVariadic) return false;
                     if (attr.isNoreturn != oattr.isNoreturn) return false;
                     if (params.length != oparams.length) return false;

@@ -2266,7 +2266,7 @@ func typeCheckExprCall(this: &TypeChecker, call: &CallExpr, scopes: &ScopeLookup
                 if (args.length != params.length) {
                     return reportArgumentCountMismatch(this, call.span, baseType, args.length);
                 }
-                let state = check_params(this, args, &params, scopes, true);
+                let state = check_params(this, args, &params, scopes, false);
                 if (!isSuccess(&state)) return state;
             }
             call.retType = ret;
@@ -3413,16 +3413,21 @@ func typeCheckTypeNode(this: &TypeChecker, typeNode: &ParsedTypeNode) -> TCState
         if (isError(&retState)) return retState;
         let params: TypeList = blank;
         let error = TCState::Invalid;
+        let is_variadic = false;
         for (let i: usize = 0; i < typeNode.fnParams.length; i = i + 1) {
             let state = typeCheckTypeNode(this, *at(&typeNode.fnParams, i));
             if (isError(&state)) {
                 error = state;
             } else {
-                push(&params, getType(&state));
+                let typ = getType(&state);
+                if (isVariadic(typ)) is_variadic = true;
+                push(&params, typ);
             }
         }
         if (isError(&error)) return error;
-        tid = wrap(Type::Func(params, getType(&retState), blank));
+        tid = wrap(Type::Func(params, getType(&retState), FuncAttr {
+            isVariadic: is_variadic
+        }));
     } else if (typeNode.kind == PARSED_TYPE_REF) {
         let under: TCState = typeCheckTypeNode(this, typeNode.underlyingID);
         if (isError(&under)) return under;

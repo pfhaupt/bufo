@@ -1,0 +1,17 @@
+
+func foo(args: ...i32) -> i32 {
+    let sum: i32 = 0;
+    for (let i: usize = 0; i < args.length; i = i + 1) {
+        sum = sum + args[i];
+    }
+    return sum;
+}
+
+func map(f: func (...i32) -> i32, args: ...i32) -> i32 {
+    return f(args);
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let result = map(foo, 1, 2, 3);
+    return 0;
+}

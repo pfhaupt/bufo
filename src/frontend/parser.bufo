@@ -996,11 +996,11 @@ func parseTypeNode(this: &Parser) -> &ParsedTypeNode {
 }
 func parseTypeNode(this: &Parser, allowedVariadic: bool) -> &ParsedTypeNode {
     let curr: Token = peek(&this.lexer);
-    let parse_tuple = func (this: &Parser) -> ParsedTypeNodeList {
+    let parse_tuple = func (this: &Parser, allowedVariadic: bool) -> ParsedTypeNodeList {
         let tuple: ParsedTypeNodeList = blank;
         expect(this, TOKEN_PAREN_OPEN);
         while (!at(this, TOKEN_PAREN_CLOSE)) {
-            let pt = parseTypeNode(this);
+            let pt = parseTypeNode(this, allowedVariadic);
             if (!at(this, TOKEN_PAREN_CLOSE)) {
                 expect(this, TOKEN_COMMA);
             }
@@ -1028,7 +1028,7 @@ func parseTypeNode(this: &Parser, allowedVariadic: bool) -> &ParsedTypeNode {
             expectSoftIdentifier(this);
         }
         next(&this.lexer);
-        let params = parse_tuple(this);
+        let params = parse_tuple(this, true);
         let retType = parseReturnType(this);
         let span = newSpanBetween(&kw.span, &retType.span);
         let funcNode = newParsedTypeNode(span, PARSED_TYPE_FUNC);
@@ -1065,7 +1065,7 @@ func parseTypeNode(this: &Parser, allowedVariadic: bool) -> &ParsedTypeNode {
         return arr;
     } else if (at(this, TOKEN_PAREN_OPEN)) {
         let t = peek(&this.lexer);
-        let tuple = parse_tuple(this);
+        let tuple = parse_tuple(this, false);
         if (tuple.length == 0) {
             // REVIEW: Do we want to allow empty tuples?
             let loc = getLocation(&t);
