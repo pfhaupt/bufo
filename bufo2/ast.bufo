@@ -2,55 +2,224 @@
 import "prelude.bufo";
 import "libc.bufo";
 import "substr.bufo";
+import "string.bufo";
+import "type_info.bufo";
+import "list.bufo";
+import "hashmap.bufo";
 
+import "corot.bufo";
 import "common.bufo";
 import "lexer.bufo";
+import "type.bufo";
+import "lookup.bufo";
+import "parser.bufo";
+
+comptime FUNCTION_STATE_IS_GENERIC       : u8 = 0b00001;
+comptime FUNCTION_STATE_PARSED_SIGNATURE : u8 = 0b00010;
+comptime FUNCTION_STATE_CHECKED_SIGNATURE: u8 = 0b00100;
+comptime FUNCTION_STATE_PARSED_BODY      : u8 = 0b01000;
+comptime FUNCTION_STATE_CHECKED_BODY     : u8 = 0b10000;
+struct FunctionState { i: u8; }
+
+comptime STRUCT_STATE_PARSED_SIGNATURE: u8 = 0b001;
+comptime STRUCT_STATE_PARSED_FIELDS   : u8 = 0b010;
+comptime STRUCT_STATE_CHECKED         : u8 = 0b100;
+struct StructState { i: u8; }
+
+func create_mapping_key(out: &String, mapping: &GAF_HashMap) {
+    enumerate(mapping, func (index: usize, key: Data, value: Data, arg: &String) {
+        if (index > 0) pushStr(arg, ", ");
+        let type = value as &Type;
+        to_string(arg, type, true);
+    }, out);
+}
 
 struct AST {
+    parent: &AST;
     origin: SubStr;
+    loc: Loc;
     data: ASTData;
+    type: &Type;
 }
 
 union ASTData {
-    Function { name: SubStr },
+    Struct(ASTStruct),
+    Function(ASTFunction),
+    Stmt(ASTStmt),
+    Expr(ASTExpr),
     Type(ASTType),
+    Pat(ASTPat),
+}
+
+struct ASTStruct {
+    state: StructState;
+    name: SubStr;
+    parameters: GAF_List; // List<&AST>
+    fields: GAF_List; // List<&AST>
+    monomorphized_instances: GAF_HashMap; // HashMap<String, &AST>
+}
+
+func is_generic(struct_info: &ASTStruct) -> bool {
+    while ((struct_info.state.i & STRUCT_STATE_PARSED_SIGNATURE) == 0) switch();
+    return struct_info.parameters.length != 0;
+}
+
+struct ASTFunction {
+    state: FunctionState;
+    name: SubStr;
+    stmts: GAF_List; // List<&AST>
+}
+
+union ASTStmt {
+    Expr(&AST),
+    ReturnExpr(&AST),
+    ReturnVoid,
+    Let {
+        pat: &AST,
+        expr: &AST,       // if null: let <pat>;
+        trampoline: &AST, // if null: let <pat> = <expr>;
+    },
+    Comptime {
+        pat: &AST,
+        expr: &AST,       // if null: let <pat>;
+        trampoline: &AST, // if null: let <pat> = <expr>;
+    },
+    If(ASTIf),
+    IfElse(ASTIfElse),
+}
+
+union ASTPat {
+    Ident(Token),
+    PatWithType(&AST, &AST),
+}
+
+// if (<cond>) <then>
+struct ASTIf {
+    cond: &AST;
+    then: &AST;
+}
+
+// if (<cond>) <then> else <else>
+struct ASTIfElse {
+    cond: &AST;
+    then: &AST;
+    else: &AST;
+}
+
+union ASTExpr {
+    BuiltinType { name: SubStr },
+    Ident { name: SubStr },
+    Number { value: SubStr },
+    StringLiteral { value: String },
+    Call(&AST, GAF_List), // arguments = List<&AST>
 }
 
 union ASTType {
-    Primitive(PrimType),
+    Builtin(&Type),
+    Struct { sub_nodes: GAF_List }, // List<&AST>
+    Generic,
 }
 
-union PrimType {
-    I32,
-}
-
-func create_node(origin: SubStr) -> &AST {
-    let ptr: &AST = C::malloc(sizeof AST);
+func create_node(loc: Loc, origin: SubStr) -> &AST {
+    let ptr: &AST = C::calloc(1, sizeof AST);
     assert(ptr != null, "create_node failed");
     ptr.origin = origin;
+    ptr.loc = loc;
     return ptr;
 }
 
-func create_function(origin: SubStr, name: SubStr) -> &AST {
-    dbg(" create_function", name);
-    let ptr = create_node(origin);
-    ptr.data = ASTData::Function {
-        name: name
-    };
+func create_struct(loc: Loc, origin: SubStr, name: SubStr) -> &AST {
+    let ptr = create_node(loc, origin);
+    ptr.data = ASTData::Struct(ASTStruct {
+        state: blank,
+        name: name,
+        parameters: new_GAF_List(type_info(&AST)),
+        monomorphized_instances: new_hashmap_with_string_key(type_info(&AST)),
+    });
+    let lookup = get_struct_by_name(&global_lookup, name);
+    if (lookup != null) {
+        message(
+            error(loc, "Redeclaration of type %.", name),
+            note(lookup.node.loc, "Type already declared here."),
+        );
+    }
+    add(&global_lookup.structs, name, new_struct_lookup(ptr));
     return ptr;
 }
 
-func create_type(origin: SubStr, typ: ASTType) -> &AST {
-    dbg("    create_type");
-    let ptr = create_node(origin);
+func monomorphize_struct_node(ast: &AST, mapping: GAF_HashMap) -> &AST {
+    let &ASTData::Struct(parent) = &ast.data else { unreachable(); };
+
+    let key: String = blank;
+    create_mapping_key(&key, &mapping);
+
+    // We've already monomorphized this mapping, we don't need to do any further work
+    let child = get(&parent.monomorphized_instances, key);
+    if (child.ptr != null) {
+        drop(&key);
+        return child as &AST;
+    }
+
+    let ptr = create_node(ast.loc, ast.origin);
+    let name: String = blank;
+    format(&name, "%(%)", parent.name, key);
+    ptr.data = ASTData::Struct(ASTStruct {
+        state: blank,
+        name: asSubStr(&name),
+        fields: new_GAF_List(type_info(&AST)),
+    });
+    add(&parent.monomorphized_instances, key, ptr);
+    parse_struct_with_mapping(ptr, mapping);
+    return ptr;
+}
+
+func create_function(loc: Loc, origin: SubStr, name: SubStr) -> &AST {
+    let ptr = create_node(loc, origin);
+    ptr.data = ASTData::Function(ASTFunction {
+        state: blank,
+        name: name,
+        stmts: new_GAF_List(type_info(&AST)),
+    });
+    let lookup = get_functions_by_name(&global_lookup, name);
+    if (lookup == null) {
+        add(&global_lookup.functions, name, new_function_lookup(ptr));
+    } else {
+        push(&lookup.overloads, ptr);
+    }
+    return ptr;
+}
+
+func create_type(loc: Loc, origin: SubStr, typ: ASTType) -> &AST {
+    let ptr = create_node(loc, origin);
     ptr.data = ASTData::Type(typ);
     return ptr;
 }
 
-func is_primitive_type(name: SubStr, prim: &ASTType) -> bool {
-    if (equals(&name, &comptime newSubStrOfStrLit("i32"))) {
-        *prim = ASTType::Primitive(PrimType::I32);
-        return true;
-    }
-    return false;
+func create_stmt(loc: Loc, origin: SubStr, stmt: ASTStmt) -> &AST {
+    let ptr = create_node(loc, origin);
+    ptr.data = ASTData::Stmt(stmt);
+    return ptr;
+}
+
+func create_pattern(loc: Loc, origin: SubStr, pat: ASTPat) -> &AST {
+    let ptr = create_node(loc, origin);
+    ptr.data = ASTData::Pat(pat);
+    return ptr;
+}
+
+func create_expr(loc: Loc, origin: SubStr, expr: ASTExpr) -> &AST {
+    let ptr = create_node(loc, origin);
+    ptr.data = ASTData::Expr(expr);
+    return ptr;
+}
+
+func get_builtin_type(name: SubStr) -> ASTType {
+    return ASTType::Builtin(get_builtin_type(name));
+}
+
+func add_stmt(fn: &AST, stmt: &AST) {
+    let &ASTData::Function(func_state) = &fn.data else {
+        unreachable("add_stmt called on non-function");
+    };
+    push(&func_state.stmts, stmt);
 }

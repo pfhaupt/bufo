@@ -1,0 +1,99 @@
+
+import "prelude.bufo";
+import "list.bufo";
+import "hashmap.bufo";
+import "substr.bufo";
+import "type_info.bufo";
+import "string.bufo";
+
+import "ast.bufo";
+import "common.bufo";
+
+union Lookup {
+    Struct(StructLookup),
+    Function(FunctionLookup),
+}
+
+func new_struct_lookup(node: &AST) -> Lookup {
+    return Lookup::Struct(StructLookup {
+        node: node
+    });
+}
+
+func new_function_lookup(node: &AST) -> Lookup {
+    let overloads = new_GAF_List(type_info(&AST));
+    push(&overloads, node);
+    return Lookup::Function(FunctionLookup {
+        overloads: overloads,
+    });
+}
+
+struct StructLookup {
+    node: &AST;
+}
+
+struct FunctionLookup {
+    overloads: GAF_List; // List<&AST>
+}
+
+struct SymbolLookup {
+    structs: GAF_HashMap; // HashMap<SubStr, Lookup>
+    functions: GAF_HashMap; // HashMap<SubStr, Lookup>
+}
+
+let global_lookup: SymbolLookup = blank;
+func init_global_lookup() {
+    global_lookup = SymbolLookup {
+        structs: new_hashmap_with_substr_key(type_info(Lookup)),
+        functions: new_hashmap_with_substr_key(type_info(Lookup)),
+    };
+}
+
+func print_global_lookup() {
+    foreach(&global_lookup.structs, func (key: Data, value: Data) {
+        let name = key as SubStr;
+        let struct_lookup = get_struct_by_name(&global_lookup, name);
+        let &ASTData::Struct(struct_info) = &struct_lookup.node.data else {
+            unreachable();
+        };
+        message(dbg(struct_lookup.node.loc, "Struct `%` defined here.", name));
+        foreach(&struct_info.monomorphized_instances, func (key: Data, value: Data) {
+            let _key = key as String;
+            let node = value as &AST;
+            message(dbg(node.loc, "  Monomorphized with key `%`", _key));
+        });
+    });
+
+    foreach(&global_lookup.functions, func (key: Data, value: Data) {
+        let name = key as SubStr;
+        let fn_lookup = get_functions_by_name(&global_lookup, name);
+        foreach(&fn_lookup.overloads, func (elem: Data, name: &SubStr) {
+            let node = elem as &AST;
+            message(dbg(node.loc, "Function `%` defined here.", *name));
+        }, &name);
+    });
+}
+
+func get_struct_by_name(lookup: &SymbolLookup, name: SubStr) -> &StructLookup {
+    let node = get(&lookup.structs, name).ptr as &Lookup;
+    if (node == null) return null;
+    let &Lookup::Struct(sl) = node else {
+        return null;
+    };
+    return &sl;
+}
+func get_functions_by_name(lookup: &SymbolLookup, name: SubStr) -> &FunctionLookup {
+    let node = get(&lookup.functions, name).ptr as &Lookup;
+    if (node == null) return null;
+    let &Lookup::Function(fl) = node else {
+        return null;
+    };
+    return &fl;
+}
+
+func get_global_identifier(name: SubStr) -> (&StructLookup, &FunctionLookup) {
+    return (
+        get_struct_by_name(&global_lookup, name),
+        get_functions_by_name(&global_lookup, name),
+    );
+}

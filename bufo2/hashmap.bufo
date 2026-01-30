@@ -1,0 +1,183 @@
+
+// TODO(2026-01-30): Move to stdlib
+
+import "type_info.bufo";
+import "libc.bufo";
+import "prelude.bufo";
+import "list.bufo";
+
+struct GAF_HashMap {
+    elements: Any;
+    keys: Any;
+    set_elements: &bool;
+    length: usize;
+    capacity: usize;
+    key_type: TypeInfo;
+    key_type_size: usize;
+    value_type: TypeInfo;
+    value_type_size: usize;
+    key_hash_fn: func (Data) -> usize;
+    key_equals_fn: func (Data, Data) -> bool;
+}
+
+func new_GAF_HashMap(key: TypeInfo, value: TypeInfo, key_hash: func (Data) -> usize, key_equals: func (Data, Data) -> bool) -> GAF_HashMap {
+    return GAF_HashMap {
+        elements: null,
+        keys: null,
+        set_elements: null,
+        length: 0,
+        capacity: 0,
+        key_type: key,
+        key_type_size: get_size(&key),
+        value_type: value,
+        value_type_size: get_size(&value),
+        key_hash_fn: key_hash,
+        key_equals_fn: key_equals,
+    };
+}
+
+func asList(this: &GAF_HashMap) -> GAF_List {
+    let l = new_GAF_List(this.value_type);
+    foreach(this, func (k: Data, elem: Data, arg: &GAF_List) {
+        push(arg, elem);
+    }, &l);
+    return l;
+}
+
+func enumerate(this: &GAF_HashMap, fn: func (usize, Data, Data)) {
+    let index: usize = 0;
+    for (let i: usize = 0; i < this.capacity; i = i + 1) {
+        if (this.set_elements[i]) {
+            let (key, value) = getAtIndex(this, i);
+            fn(index, key, value);
+            index = index + 1;
+        }
+    }
+}
+
+func enumerate(this: &GAF_HashMap, fn: func (usize, Data, Data, Any), arg: Any) {
+    let index: usize = 0;
+    for (let i: usize = 0; i < this.capacity; i = i + 1) {
+        if (this.set_elements[i]) {
+            let (key, value) = getAtIndex(this, i);
+            fn(index, key, value, arg);
+            index = index + 1;
+        }
+    }
+}
+
+func foreach(this: &GAF_HashMap, fn: func (Data, Data)) {
+    for (let i: usize = 0; i < this.capacity; i = i + 1) {
+        if (this.set_elements[i]) {
+            let (key, value) = getAtIndex(this, i);
+            fn(key, value);
+        }
+    }
+}
+
+func foreach(this: &GAF_HashMap, fn: func (Data, Data, Any), arg: Any) {
+    for (let i: usize = 0; i < this.capacity; i = i + 1) {
+        if (this.set_elements[i]) {
+            let (key, value) = getAtIndex(this, i);
+            fn(key, value, arg);
+        }
+    }
+}
+
+func needsResize(this: &GAF_HashMap) -> bool {
+    if (this.capacity == 0) return true;
+
+    let loadFactor: f64 = this.length as f64 / this.capacity as f64;
+    assert(loadFactor <= 1);
+    // loadFactor > 0.6, but we don't have floating point literals yet :^)
+    return 10 * loadFactor > 6;
+}
+
+func resizeIfNecessary(this: &GAF_HashMap) {
+    if (!needsResize(this)) return;
+
+    let newCap: usize = this.capacity * 2;
+    if (newCap == 0) newCap = 256;
+    let newElements = C::calloc(newCap, this.value_type_size);
+    assert(newElements != null, "Could not allocate memory in GAF_HashMap.resizeIfNecessary");
+    let newKeys = C::calloc(newCap, this.key_type_size);
+    assert(newKeys != null, "Could not allocate memory in GAF_HashMap.resizeIfNecessary");
+    let newSetElements = C::calloc(newCap, sizeof bool);
+    assert(newSetElements != null, "Could not allocate memory in GAF_HashMap.resizeIfNecessary");
+    let newThis: GAF_HashMap = GAF_HashMap {
+        elements: newElements,
+        keys: newKeys,
+        set_elements: newSetElements,
+        length: 0,
+        capacity: newCap,
+        key_type: this.key_type,
+        key_type_size: this.key_type_size,
+        value_type: this.value_type,
+        value_type_size: this.value_type_size,
+        key_hash_fn: this.key_hash_fn,
+        key_equals_fn: this.key_equals_fn,
+    };
+    for (let i: usize = 0; i < this.capacity; i = i + 1) {
+        let (key, value) = getAtIndex(this, i);
+        if (this.set_elements[i]) add(&newThis, key, value);
+    }
+    C::free(this.elements);
+    C::free(this.keys);
+    C::free(this.set_elements);
+    *this = newThis;
+}
+
+func add(this: &GAF_HashMap, key: Data, value: Data) {
+    assert(equals(&this.key_type, &key.info), "GAF_HashMap.add: Key type mismatch");
+    assert(equals(&this.value_type, &value.info), "GAF_HashMap.add: Value type mismatch");
+    resizeIfNecessary(this);
+    assert(this.capacity > 0);
+    let _hash: usize = this.key_hash_fn(key) % this.capacity;
+    let stop: usize = _hash - 1;
+    if (_hash == 0) stop = this.capacity - 1;
+    while (_hash != stop) {
+        let (_key, _value) = getAtIndex(this, _hash);
+        let must_write = false;
+        if (!this.set_elements[_hash]) {
+            must_write = true;
+            this.length = this.length + 1;
+        } else if (this.key_equals_fn(_key, key)) {
+            must_write = true;
+        }
+        if (must_write) {
+            C::memcpy(_key.ptr, key.ptr, this.key_type_size);
+            C::memcpy(_value.ptr, value.ptr, this.value_type_size);
+            this.set_elements[_hash] = true;
+            return;
+        }
+        _hash = (_hash + 1) % this.capacity;
+    }
+    unreachable("Could not insert element into HashMap");
+}
+
+func contains(this: &GAF_HashMap, key: Data) -> bool {
+    return get(this, key).ptr != null;
+}
+
+func get(this: &GAF_HashMap, key: Data) -> Data {
+    assert(equals(&this.key_type, &key.info), "GAF_HashMap.get: Key type mismatch");
+    if (this.length == 0) return Data { info: this.value_type, ptr: null };
+    assert(this.capacity > 0);
+    let _hash: usize = this.key_hash_fn(key) % this.capacity;
+    let stop: usize = _hash - 1;
+    if (_hash == 0) stop = this.capacity - 1;
+    while (_hash != stop) {
+        let (_key, _value) = getAtIndex(this, _hash);
+        if (!this.set_elements[_hash]) return Data { info: this.value_type, ptr: null };
+        if (this.key_equals_fn(_key, key)) return _value;
+        _hash = (_hash + 1) % this.capacity;
+    }
+    unreachable("Load Factor guarantees that there's always at least one unset Entry in the HashMap.");
+}
+
+func getAtIndex(this: &GAF_HashMap, index: usize) -> (Data, Data) {
+    assert(index < this.capacity, "Out of bounds access in GAF_HashMap.getAtIndex");
+    let key = Data { ptr: (this.keys as &char) + index * this.key_type_size, info: this.key_type };
+    let value = Data { ptr: (this.elements as &char) + index * this.value_type_size, info: this.value_type };
+    return (key, value);
+}

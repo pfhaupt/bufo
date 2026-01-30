@@ -3,6 +3,10 @@ import "libc.bufo";
 import "prelude.bufo";
 import "type_info.bufo";
 import "substr.bufo";
+import "string.bufo";
+import "hashmap.bufo";
+
+import "corot.bufo";
 
 func wrap(d: Data) -> Any {
     let size = get_size(&d.info);
@@ -12,16 +16,175 @@ func wrap(d: Data) -> Any {
     return ptr;
 }
 
-comptime PRINT_DEBUG = true;
-func dbg(msg: &char, args: ...SubStr) {
-    if (PRINT_DEBUG) {
-        C::printf("[DEBUG] %s", msg);
-        if (args.length > 0) C::printf(": ");
-        for (let i: usize = 0; i < args.length; i = i + 1) {
-            let s = args[i];
-            if (i > 0) C::printf(", ");
-            C::printf("%.*s", s.len, s.start);
+func new_hashmap_with_substr_key(info: TypeInfo) -> GAF_HashMap {
+    return new_GAF_HashMap(type_info(SubStr), info,
+        func (key: Data) -> usize {
+            return hash(key.ptr as &SubStr);
+        },
+        func (k1: Data, k2: Data) -> bool {
+            return equals(k1.ptr as &SubStr, k2.ptr as &SubStr);
         }
-        C::printf("\n");
+    );
+}
+func new_hashmap_with_string_key(info: TypeInfo) -> GAF_HashMap {
+    return new_GAF_HashMap(type_info(String), info,
+        func (key: Data) -> usize {
+            return hash(key.ptr as &String);
+        },
+        func (k1: Data, k2: Data) -> bool {
+            return equals(k1.ptr as &String, k2.ptr as &String);
+        }
+    );
+}
+
+// TODO: Move to stdlib
+func __format_helper(out: &String, arg: Data) {
+    match (arg.info) {
+        TypeInfo::Struct { name, _, _, fields } => {
+            if (C::strncmp(name.start, "SubStr", name.len) == 0) {
+                pushSubStr(out, arg.ptr);
+            } else if (C::strncmp(name.start, "String", name.len) == 0) {
+                pushString(out, arg.ptr);
+            } else {
+                pushSubStr(out, &name);
+                for (let i: usize = 0; i < fields.length; i = i + 1) {
+                    let f = &fields.elements[i];
+                    if (i > 0) pushChar(out, ',');
+                    pushSubStr(out, &f.name);
+                    let field_ptr = (arg.ptr as usize + f.offset_in_bytes) as Any;
+                    __format_helper(out, Data { ptr: field_ptr, info: type_info_table[f.type] });
+                }
+                pushStr(out, " }");
+            }
+        }
+        TypeInfo::Primitive { name, size, align } => {
+            if (C::strncmp(name.start, "i8", name.len) == 0) pushNumber(out, arg as i8);
+            else if (C::strncmp(name.start, "i16", name.len) == 0) pushNumber(out, arg as i16);
+            else if (C::strncmp(name.start, "i32", name.len) == 0) pushNumber(out, arg as i32);
+            else if (C::strncmp(name.start, "i64", name.len) == 0) pushNumber(out, arg as i64);
+            else if (C::strncmp(name.start, "u8", name.len) == 0) pushNumber(out, arg as u8);
+            else if (C::strncmp(name.start, "u16", name.len) == 0) pushNumber(out, arg as u16);
+            else if (C::strncmp(name.start, "u32", name.len) == 0) pushNumber(out, arg as u32);
+            else if (C::strncmp(name.start, "u64", name.len) == 0) pushNumber(out, arg as u64);
+            else if (C::strncmp(name.start, "usize", name.len) == 0) pushNumber(out, arg as usize);
+            else if (C::strncmp(name.start, "bool", name.len) == 0) if (arg as bool) pushStr(out, "true"); else pushStr(out, "false");
+            else if (C::strncmp(name.start, "char", name.len) == 0) pushChar(out, arg as char);
+            else unreachable("__format_helper primitive");
+        }
+        TypeInfo::Pointer { _, underlying } => {
+            if (equals(&type_info_table[underlying], &type_info(char))) {
+                pushStr(out, arg as &char);
+            } else {
+                pushNumberAsHex(out, arg as usize);
+            }
+        }
+        _ => { unreachable("__format_helper"); }
+    }
+}
+
+func format(out: &String, fmt: &char, args: ...Data) {
+    let l = C::strlen(fmt);
+    let arg_count: usize = 0;
+    let escaped = false;
+    for (let i: usize = 0; i < l; i = i + 1) {
+        let c = fmt[i];
+        if (c == '\\') {
+            escaped = true;
+        } else if (c == '%') {
+            if (escaped) {
+                pushChar(out, c);
+            } else {
+                assert(arg_count < args.length, "RUNTIME ERROR: Format string received too many arguments");
+                let arg = args[arg_count];
+                __format_helper(out, arg);
+                arg_count = arg_count + 1;
+            }
+            escaped = false;
+        } else {
+            pushChar(out, c);
+            escaped = false;
+        }
+    }
+    assert(arg_count == args.length, "RUNTIME ERROR: Unused arguments in format string");
+}
+
+struct Loc {
+    file: &char;
+    offset: usize; // TODO: line and column
+}
+
+func new_loc(offset: usize) -> Loc {
+    return Loc {
+        file: "idk where",
+        offset: offset,
+    };
+}
+
+union Message {
+    Todo(Loc, String),
+    Error(Loc, String),
+    Warning(Loc, String),
+    Note(Loc, String),
+    Debug(Loc, String),
+}
+
+func todo(loc: Loc, fmt: &char, args: ...Data) -> Message {
+    comptime TODO_STR: &char = "\x1b[95mTODO\x1b[0m";
+    let s: String = newStringFromStrLit(TODO_STR);
+    pushChar(&s, ':');
+    pushChar(&s, ' ');
+    format(&s, fmt, args);
+    return Message::Todo(loc, s);
+}
+
+func dbg(loc: Loc, fmt: &char, args: ...Data) -> Message {
+    comptime DEBUG_STR: &char = "\x1b[96mDEBUG\x1b[0m";
+    let s: String = newStringFromStrLit(DEBUG_STR);
+    pushChar(&s, ':');
+    pushChar(&s, ' ');
+    format(&s, fmt, args);
+    return Message::Debug(loc, s);
+}
+
+func note(loc: Loc, fmt: &char, args: ...Data) -> Message {
+    let s: String = newStringFromStrLit(NOTE_STR);
+    pushChar(&s, ':');
+    pushChar(&s, ' ');
+    format(&s, fmt, args);
+    return Message::Note(loc, s);
+}
+
+func error(loc: Loc, fmt: &char, args: ...Data) -> Message {
+    let s: String = newStringFromStrLit(ERR_STR);
+    pushChar(&s, ':');
+    pushChar(&s, ' ');
+    format(&s, fmt, args);
+    return Message::Error(loc, s);
+}
+
+comptime PRINT_DEBUG = true;
+let error_happened: bool = false;
+func message(errors: ...Message) {
+    let had_error = false;
+    for (let i: usize = 0; i < errors.length; i = i + 1) {
+        let loc: Loc = blank;
+        let msg: String = blank;
+        match (errors[i]) {
+            Message::Todo   (_loc, _msg) => { loc = _loc; msg = _msg; had_error = true; }
+            Message::Error  (_loc, _msg) => { loc = _loc; msg = _msg; had_error = true; }
+            Message::Warning(_loc, _msg) => { loc = _loc; msg = _msg; }
+            Message::Note   (_loc, _msg) => { loc = _loc; msg = _msg; }
+            Message::Debug  (_loc, _msg) => {
+                if (!PRINT_DEBUG) { drop(&_msg); continue; }
+                loc = _loc; msg = _msg;
+            }
+            _ => { unreachable("message"); }
+        }
+        C::fprintf(stderr, "%s:%llu: %.*s\n", loc.file, loc.offset, msg.length, msg.buffer);
+        drop(&msg);
+    }
+    if (had_error) {
+        error_happened = true;
+        _finish_current();
     }
 }

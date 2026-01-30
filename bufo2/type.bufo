@@ -1,0 +1,88 @@
+
+import "prelude.bufo";
+import "substr.bufo";
+import "string.bufo";
+import "type_info.bufo";
+import "list.bufo";
+
+import "ast.bufo";
+import "common.bufo";
+
+// FIXME(2026-01-30): Primitive Types are scattered in multiple places around the compiler
+//                    including the Lexer. Would be cool to collect that into a single place
+//                    so modifications are easier to catch.
+union PrimType {
+    I32,
+    Usize,
+    __count,
+}
+
+func to_string(out: &String, t: PrimType) {
+    let _tag = tag(&t) as usize;
+    comptime names = [
+        newSubStrOfStrLit("i32"),
+        newSubStrOfStrLit("usize"),
+    ];
+    (comptime assert(names.length == tag(&PrimType::__count) as usize, "PrimType::to_string: Added primitive type"));
+    pushSubStr(out, &names[_tag]);
+}
+
+union Type {
+    Meta(&Type),
+    Struct(&AST),
+    Prim(PrimType),
+}
+
+func get_builtin_type(name: SubStr) -> &Type {
+    let map = [
+        (comptime newSubStrOfStrLit("i32"), Type::Prim(PrimType::I32)),
+        (comptime newSubStrOfStrLit("usize"), Type::Prim(PrimType::Usize)),
+    ];
+    assert(map.length == tag(&PrimType::__count) as usize, "get_builtin_type: Added primitive type");
+    for (let i: usize = 0; i < map.length; i = i + 1) {
+        if (equals(&map[i].0, &name)) return wrap(map[i].1);
+    }
+    message(todo(new_loc(0), "get_builtin_type: Unknown type name %", name));
+    unreachable(); // todo terminates
+}
+
+func to_string(out: &String, t: &Type) {
+    to_string(out, t, false);
+}
+func to_string(out: &String, t: &Type, highlight_meta: bool) {
+    match (t) {
+        &Type::Meta(_t) => {
+            if (highlight_meta) pushStr(out, "^");
+            to_string(out, _t, highlight_meta);
+            if (highlight_meta) pushStr(out, "^");
+        }
+        &Type::Struct(node) => {
+            let &ASTData::Struct(struct_info) = &node.data else {
+                unreachable("to_string(Type): Non-Struct AST");
+            };
+            pushSubStr(out, &struct_info.name);
+            if (node.parent == null) {
+                if (struct_info.parameters.length > 0) {
+                    // Generic struct, print as List($T)
+                    pushChar(out, '(');
+                    enumerate(&struct_info.parameters, func (index: usize, val: Data, out: &String) {
+                        if (index > 0) pushStr(out, ", ");
+                        let _node = val as &AST;
+                        let ASTData::Type(ASTType::Generic) = _node.data else {
+                            unreachable();
+                        };
+                        pushChar(out, '$');
+                        pushSubStr(out, &_node.origin);
+                    }, out);
+                    pushChar(out, ')');
+                }
+            }
+        }
+        &Type::Prim(p) => {
+            to_string(out, p);
+        }
+        _ => {
+            message(todo(new_loc(0), "to_string(Type): %", tag(t)));
+        }
+    }
+}

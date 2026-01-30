@@ -1,7 +1,44 @@
 
-func foo(b: i32, c: i32) {
+struct List($T) {
+    elements: *$T;
+    length: usize;
+    capacity: usize;
 }
+
+func assert() {
+    comptime list_of_i32 = List(List(i32));
+}
+func assert(cond: bool) {
+}
+
+func new_list(elem: $T) -> List($T) {
+    let list: List($T);
+    push(&list, elem);
+    return list;
+}
+
+func push(list: List($T), elem: $T) {
+    assert(list.elements != null);
+}
+
+func foo(val: $T) -> string {
+    if (val == 13) return "let foo13 = 13";
+    return "let foo14 = 14";
+}
+
 func bar() {
+    let i: i32 = 1;
+    let b = i;
 }
+
 func main() {
+    comptime list_of_i32 = List(List(i32));
+    let i: list_of_i32 = 0;
+    comptime foo = "let bar = 1;";
+    comptime value1: i32 = 13;
+    comptime value2: i8 = 14;
+    #insert foo;
+    #insert "let list = new_list(i);";
+    #insert #run foo(value1);
+    #insert #run foo(value2);
 }

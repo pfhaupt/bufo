@@ -124,12 +124,13 @@ func pushNumberAsHex(this: &String, num: usize) {
         pushChar(this, bfr[i]);
     }
 }
-func pushNumber(this: &String, i: u8) {
-    pushNumber(this, i as usize);
-}
-func pushNumber(this: &String, i: i32) {
-    pushNumber(this, i as i64);
-}
+func pushNumber(this: &String, i: u8 ) { pushNumber(this, i as usize); }
+func pushNumber(this: &String, i: u16) { pushNumber(this, i as usize); }
+func pushNumber(this: &String, i: u32) { pushNumber(this, i as usize); }
+func pushNumber(this: &String, i: u64) { pushNumber(this, i as usize); }
+func pushNumber(this: &String, i: i8 ) { pushNumber(this, i as i64);   }
+func pushNumber(this: &String, i: i16) { pushNumber(this, i as i64);   }
+func pushNumber(this: &String, i: i32) { pushNumber(this, i as i64);   }
 func pushNumber(this: &String, i: i64) {
     if (i < 0) {
         pushChar(this, '-');

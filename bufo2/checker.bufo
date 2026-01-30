@@ -1,0 +1,207 @@
+
+import "libc.bufo";
+import "prelude.bufo";
+import "list.bufo";
+import "hashmap.bufo";
+import "substr.bufo";
+import "type_info.bufo";
+import "string.bufo";
+
+import "type.bufo";
+import "ast.bufo";
+import "common.bufo";
+import "lookup.bufo";
+import "parser.bufo";
+
+func get_parent_function(node: &AST) -> &AST {
+    while (node != null) {
+        if let ASTData::Function { .. } = node.data {
+            return node;
+        }
+        node = node.parent;
+    }
+    unreachable("get_parent_function: Node is not inside a function");
+}
+
+struct Stack_Info {
+    variables: GAF_HashMap; // HashMap<SubStr, &AST>
+}
+
+func new_stack() -> Stack_Info {
+    return Stack_Info {
+        variables: new_hashmap_with_substr_key(type_info(&AST)),
+    };
+}
+
+func get_variable_by_name(stack: &GAF_List, name: SubStr) -> (&AST, bool) {
+    for (let i: usize = 0; i < stack.length; i = i + 1) {
+        let _stack = get_ref_raw(stack, i) as &Stack_Info;
+        let elem = get(&_stack.variables, name);
+        if (elem.ptr != null) return (elem as &AST, true);
+    }
+    return (null, false);
+}
+
+func check_function(fn: &AST) {
+    let &ASTData::Function(func_state) = &fn.data else {
+        unreachable("check_function: Node is not a function");
+    };
+    let stack = new_GAF_List(type_info(Stack_Info));
+    push(&stack, new_stack());
+    for (let i: usize = 0; i < func_state.stmts.length; i = i + 1) {
+        let stmt = get_ref(&func_state.stmts, i) as &AST;
+        check_stmt(&stack, stmt);
+    }
+    pop(&stack);
+}
+
+func check_stmt(stack: &GAF_List, stmt: &AST) {
+    let &ASTData::Stmt(actual_stmt) = &stmt.data else {
+        unreachable("check_stmt: Node is not a statement");
+    };
+    let f = func (stmt: &AST, stack: &GAF_List, pat: &AST, expr: &AST, trampoline: &AST) {
+        if (expr != null) {
+            let (needs_trampoline, _) = check_and_bind_pattern(stack, pat, expr);
+            message(todo(stmt.loc, "check_stmt: Can't check pat-expr yet"));
+            if (trampoline != null) {
+                // let <pat> = <expr> else <trampoline>;
+                message(todo(stmt.loc, "check_stmt: Can't check pat-expr-trampoline yet"));
+            }
+        } else {
+            // let <pat>;
+            assert(trampoline == null);
+            message(todo(stmt.loc, "check_stmt: Can't check pat yet"));
+        }
+    };
+    match (&actual_stmt) {
+        &ASTStmt::Let { pat, expr, trampoline } => {
+            f(stmt, stack, pat, expr, trampoline);
+        }
+        &ASTStmt::Comptime { pat, expr, trampoline } => {
+            f(stmt, stack, pat, expr, trampoline);
+        }
+        _ => {
+            message(todo(stmt.loc, "check_stmt: Can't check stmt yet"));
+        }
+    }
+}
+
+func check_and_bind_pattern(stack: &GAF_List, _pat: &AST, _expr: &AST) -> (bool, bool) {
+    let &ASTData::Pat(pat) = &_pat.data else {
+        unreachable("check_and_bind_pattern: Node is not a pattern");
+    };
+    let &ASTData::Expr(expr) = &_expr.data else {
+        unreachable("check_and_bind_pattern: Node is not an expression");
+    };
+    let result = (false, false);
+    match (&pat) {
+        &ASTPat::Ident(name) => {
+            let type = check_expr(stack, _expr);
+            if (type == null) message(todo(_expr.loc, "check_and_bind_pattern: Expression wants infer"));
+            let _last = get_ref_raw(stack, stack.length - 1) as &Stack_Info;
+            if (contains(&_last.variables, _pat.origin)) {
+                message(todo(_pat.loc, "check_and_bind_pattern: Redefinition of identifier"));
+            } else {
+                _pat.type = type;
+                add(&_last.variables, _pat.origin, _pat);
+            }
+            result = (false, false);
+        },
+        &ASTPat::PatWithType(subpat, subtype) => {
+            let type = check_type(stack, subtype);
+            message(todo(_pat.loc, "check_and_bind_pattern: PatWithType"));
+        }
+        _ => {
+            message(todo(_pat.loc, "check_and_bind_pattern: Can't check pattern yet"));
+        }
+    }
+    return result;
+}
+
+func check_expr(stack: &GAF_List, _expr: &AST) -> &Type {
+    if (_expr.type != null) return _expr.type;
+    let &ASTData::Expr(expr) = &_expr.data else {
+        unreachable("check_expr: Node is not an expression");
+    };
+    let type: &Type = null;
+    match (&expr) {
+        &ASTExpr::Ident { name } => {
+            if let (node, true) = get_variable_by_name(stack, name) {
+                message(todo(_expr.loc, "check_expr: ident found"));
+            } else {
+                if let (sl, fl) = get_global_identifier(name) {
+                    if (sl != null && fl != null) {
+                        message(todo(_expr.loc, "check_expr: global ident can be both"));
+                    } else if (sl != null) {
+                        type = wrap(Type::Meta(wrap(Type::Struct(sl.node))));
+                    } else if (fl != null) {
+                        message(todo(_expr.loc, "check_expr: global ident is function"));
+                    } else {
+                        message(error(_expr.loc, "Use of undeclared identifier `%`.", name));
+                    }
+                } else {
+                    message(todo(_expr.loc, "check_expr: no such ident"));
+                }
+            }
+        }
+        &ASTExpr::Number { value } => {
+            message(todo(_expr.loc, "check_expr: Number"));
+        }
+        &ASTExpr::StringLiteral { value } => {
+            message(todo(_expr.loc, "check_expr: StringLiteral"));
+        }
+        &ASTExpr::Call(_base, _args) => {
+            let base = check_expr(stack, _base);
+            match (base) {
+                null => { return null; }
+                &Type::Meta(&Type::Struct(node)) => {
+                    let &ASTData::Struct(struct_info) = &node.data else {
+                        unreachable("Type::Struct doesn't point to AST::Struct");
+                    };
+                    if (!is_generic(&struct_info)) message(todo(_expr.loc, "check_expr: Struct is not generic"));
+                    if (_args.length != struct_info.parameters.length) {
+                        message(todo(_expr.loc, "check_expr: Generic instantiation didn't get enough / got too many arguments"));
+                    }
+                    let mapping = new_generic_type_mapping();
+                    foreach(&struct_info.parameters, func (elem: Data, args: &(&GAF_List, &GAF_HashMap, &GAF_List)) {
+                        let &(stack, mapping, _args) = args;
+                        let index = mapping.length;
+                        let arg = get_ref(_args, index) as &AST;
+                        let type = check_expr(stack, arg);
+                        if (type == null) message(todo(arg.loc, "check_expr: Generic parameter wants infer???"));
+
+                        let &Type::Meta(sub) = type else {
+                            message(todo(arg.loc, "check_expr: Generic parameter is not a meta-type"));
+                            unreachable(); // todo terminates
+                        };
+                        let node = elem as &AST;
+                        add(mapping, node.origin, type);
+                    }, &(stack, &mapping, &_args));
+
+                    let s = wrap(Type::Struct(monomorphize_struct_node(node, mapping)));
+                    type = wrap(Type::Meta(s));
+                }
+                _ => { message(todo(_expr.loc, "check_expr: Call with base type %", tag(base))); }
+            }
+        }
+        _ => {
+            message(todo(_expr.loc, "check_expr: Can't check expression"));
+        }
+    }
+    _expr.type = type;
+    return type;
+}
+
+func check_type(stack: &GAF_List, _type: &AST) -> &Type {
+    let &ASTData::Type(type) = &_type.data else {
+        unreachable("check_type: Node is not a type");
+    };
+    message(todo(_type.loc, "check_type"));
+    unreachable();
+}
+
+func check_insert_expr(expr: &AST) {
+    if (expr.type != null) return;
+    check_function(get_parent_function(expr));
+    assert(expr.type != null, "check_function couldn't give expression a type");
+}

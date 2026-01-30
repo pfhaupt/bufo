@@ -132,14 +132,30 @@ func equals(ti1: &TypeInfo, ti2: &TypeInfo) -> bool {
 
 func get_size(info: &TypeInfo) -> usize {
     match (info) {
-        &TypeInfo::Primitive { _, size_in_bytes, _ } => { return size_in_bytes; }
-        &TypeInfo::Pointer { .. } => { return 8; }
-        &TypeInfo::Variadic { _, _ } => { return 16; } // ptr + size
-        &TypeInfo::Function { .. } => { return 8; }
-        &TypeInfo::Array { _, size_in_bytes, _, _, _ } => { return size_in_bytes; }
-        &TypeInfo::Struct { _, size_in_bytes, _, _ } => { return size_in_bytes; }
-        &TypeInfo::Union { _, size_in_bytes, _, _ } => { return size_in_bytes; }
-        &TypeInfo::Tuple { _, size_in_bytes, _, _ } => { return size_in_bytes; }
+        &TypeInfo::Primitive { _, size_in_bytes, _ }       => { return size_in_bytes; }
+        &TypeInfo::Pointer   { .. }                        => { return 8; }
+        &TypeInfo::Variadic  { _, _ }                      => { return 16; } // ptr + size
+        &TypeInfo::Function  { .. }                        => { return 8; }
+        &TypeInfo::Array     { _, size_in_bytes, _, _, _ } => { return size_in_bytes; }
+        &TypeInfo::Struct    { _, size_in_bytes, _, _ }    => { return size_in_bytes; }
+        &TypeInfo::Union     { _, size_in_bytes, _, _ }    => { return size_in_bytes; }
+        &TypeInfo::Tuple     { _, size_in_bytes, _, _ }    => { return size_in_bytes; }
+        &TypeInfo::Unknown => { unreachable("get_size(TypeInfo::Unknown)"); }
+        _ => { }
+    }
+    unreachable("Exhaustive handling of info kinds in get_size()");
+}
+
+func get_align(info: &TypeInfo) -> usize {
+    match (info) {
+        &TypeInfo::Primitive { _, _, align_in_bytes }       => { return align_in_bytes; }
+        &TypeInfo::Pointer   { .. }                         => { return 8; }
+        &TypeInfo::Variadic  { _, _ }                       => { return 8; } // ptr + size
+        &TypeInfo::Function  { .. }                         => { return 8; }
+        &TypeInfo::Array     { _, _, align_in_bytes, _, _ } => { return align_in_bytes; }
+        &TypeInfo::Struct    { _, _, align_in_bytes, _ }    => { return align_in_bytes; }
+        &TypeInfo::Union     { _, _, align_in_bytes, _ }    => { return align_in_bytes; }
+        &TypeInfo::Tuple     { _, _, align_in_bytes, _ }    => { return align_in_bytes; }
         &TypeInfo::Unknown => { unreachable("get_size(TypeInfo::Unknown)"); }
         _ => { }
     }

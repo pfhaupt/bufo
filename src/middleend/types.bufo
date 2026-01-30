@@ -37,12 +37,15 @@ union PrimType {
 comptime PRIM_TYPE_COUNT: usize = 15; // FIXME: When we add a new PrimType we need to update this
 
 func index_of_type(table: &TypeInfoTable, type: &Type) -> usize {
+    let n = toString(type);
     for (let i: usize = 0; i < table.length; i = i + 1) {
-        let n = toString(type);
         let b = equals(&get_name(&table.elements[i]), &asSubStr(&n));
-        drop(&n);
-        if (b) return i;
+        if (b) {
+            drop(&n);
+            return i;
+        }
     }
+    drop(&n);
     return table.length;
 }
 

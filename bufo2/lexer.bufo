@@ -7,6 +7,7 @@ import "substr.bufo";
 
 import "common.bufo";
 import "corot.bufo";
+import "type.bufo";
 
 struct Token {
     offset_in_file: usize;
@@ -15,9 +16,18 @@ struct Token {
 
 union TokenData {
     Empty,
+    BuiltinType { name: SubStr },
     Ident { name: SubStr },
+    Number { value: SubStr },
+    StringLiteral { origin: SubStr, value: String },
 
     KeywordFunc,
+    KeywordStruct,
+    KeywordLet,
+    KeywordComptime,
+    KeywordIf,
+    KeywordElse,
+    KeywordReturn,
 
     ParenOpen,
     ParenClose,
@@ -26,15 +36,38 @@ union TokenData {
     ColonSingle,
     Comma,
     SemiColon,
+    Dollar,
+    AsteriskSingle,
+    AmpersandSingle,
+    MinusSingle,
+    Dot,
+    Bang,
+    NotEqual,
+    EqualSingle,
+    AmpersandDouble,
+    Hash,
+
+    Arrow,
+
     EndOfFile,
 }
 
 func to_cstr(t: TokenData) -> &char {
+    (comptime assert(tag(&TokenData::EndOfFile) == 30, "TokenData::to_cstr: Added more tokens"));
     return [
         "<empty token>",
+        "builtin type",
         "identifier",
+        "number",
+        "string literal",
 
         "`func`",
+        "`struct`",
+        "`let`",
+        "`comptime`",
+        "`if`",
+        "`else`",
+        "`return`",
 
         "`(`",
         "`)`",
@@ -43,6 +76,19 @@ func to_cstr(t: TokenData) -> &char {
         "`:`",
         "`,`",
         "`;`",
+        "`$`",
+        "`*`",
+        "`&`",
+        "`-`",
+        "`.`",
+        "`!`",
+        "`!=`",
+        "`=`",
+        "`&&`",
+        "`#`",
+
+        "`->`",
+
         "<end of file>",
     ][tag(&t) as usize];
 }
@@ -55,13 +101,39 @@ func get_name(t: &Token) -> SubStr {
     unreachable("get_name()");
 }
 
-func isKeyword(s: SubStr, kw: &TokenData) -> bool {
-    if (equals(&s, &comptime newSubStrOfStrLit("func"))) {
-        *kw = TokenData::KeywordFunc;
-        return true;
-    } else {
-        return false;
+func is_keyword(s: SubStr, kw: &TokenData) -> bool {
+    (comptime assert(tag(&TokenData::EndOfFile) == 30, "Lexer::is_keyword: Added more tokens"));
+    let kws = [
+        (comptime newSubStrOfStrLit("func"), TokenData::KeywordFunc),
+        (comptime newSubStrOfStrLit("struct"), TokenData::KeywordStruct),
+        (comptime newSubStrOfStrLit("let"), TokenData::KeywordLet),
+        (comptime newSubStrOfStrLit("comptime"), TokenData::KeywordComptime),
+        (comptime newSubStrOfStrLit("if"), TokenData::KeywordIf),
+        (comptime newSubStrOfStrLit("else"), TokenData::KeywordElse),
+        (comptime newSubStrOfStrLit("return"), TokenData::KeywordReturn),
+    ];
+    for (let i: usize = 0; i < kws.length; i = i + 1) {
+        if (equals(&s, &kws[i].0)) {
+            *kw = kws[i].1;
+            return true;
+        }
     }
+    return false;
+}
+
+func is_builtin_type(s: SubStr) -> bool {
+    (comptime assert(tag(&TokenData::EndOfFile) == 30, "Lexer::is_builtin_type: Added more tokens"));
+    comptime types = [
+        newSubStrOfStrLit("i32"),
+        newSubStrOfStrLit("usize"),
+    ];
+    (comptime assert(types.length == tag(&PrimType::__count) as usize, "Lexer::is_builtin_type: Added primitive type"));
+    for (let i: usize = 0; i < types.length; i = i + 1) {
+        if (equals(&s, &types[i])) {
+            return true;
+        }
+    }
+    return false;
 }
 
 struct Lexer {
@@ -75,7 +147,7 @@ func is_empty(l: &Lexer) -> bool {
 
 func __next(l: &Lexer) -> Token {
     let advance = func (s: &SubStr, bytes: usize, offset_in_file: &usize) {
-        assert(bytes <= s.len, "tokenizer: advance beyond EOF");
+        assert(bytes <= s.len, "lexer: advance beyond EOF");
         s.start = s.start + bytes;
         s.len = s.len - bytes;
         *offset_in_file = *offset_in_file + bytes;
@@ -92,15 +164,44 @@ func __next(l: &Lexer) -> Token {
 
     let offset = l.offset_in_file;
     let i: usize = 1;
-    if (isAlphabetic(first)) {
-        while (isAlphanumeric(l.source.start[i])) i = i + 1;
+    (comptime assert(tag(&TokenData::EndOfFile) == 30, "Lexer::__next: Added more tokens"));
+    if (isAlphabetic(first) || first == '_') {
+        while (isAlphanumeric(l.source.start[i]) || l.source.start[i] == '_') i = i + 1;
         let kw: TokenData = TokenData::Empty;
         let name = substring(&l.source, 0, i);
-        if (isKeyword(name, &kw)) {
+        if (is_keyword(name, &kw)) {
             tkn.data = kw;
+        } else if (is_builtin_type(name)) {
+            tkn.data = TokenData::BuiltinType { name: name };
         } else {
             tkn.data = TokenData::Ident { name: name };
         }
+    } else if (isNumeric(first)) {
+        while (isNumeric(l.source.start[i]) || l.source.start[i] == '_') i = i + 1;
+        tkn.data = TokenData::Number { value: substring(&l.source, 0, i) };
+    } else if (first == '"') {
+        let ch = l.source.start[i];
+        let escaped = false;
+        let s: String = blank;
+        while (i < l.source.len && ch != '"') {
+            if (escaped) {
+                if (ch == '\\') {
+                    pushChar(&s, '\\');
+                } else {
+                    message(error(new_loc(l.offset_in_file + i), "Can't escape character `%`.", ch));
+                }
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else {
+                pushChar(&s, ch);
+            }
+            i = i + 1;
+            ch = l.source.start[i];
+        }
+        if (ch != '"') message(error(new_loc(l.offset_in_file), "Unescaped string literal"));
+        i = i + 1; // closing quote
+        tkn.data = TokenData::StringLiteral { origin: substring(&l.source, 0, i), value: s };
     } else if (first == '(') {
         tkn.data = TokenData::ParenOpen;
     } else if (first == ')') {
@@ -115,8 +216,39 @@ func __next(l: &Lexer) -> Token {
         tkn.data = TokenData::Comma;
     } else if (first == ';') {
         tkn.data = TokenData::SemiColon;
+    } else if (first == '$') {
+        tkn.data = TokenData::Dollar;
+    } else if (first == '*') {
+        tkn.data = TokenData::AsteriskSingle;
+    } else if (first == '&') {
+        if (l.source.len > 1 && l.source.start[1] == '&') {
+            tkn.data = TokenData::AmpersandDouble;
+            i = 2;
+        } else {
+            tkn.data = TokenData::AmpersandSingle;
+        }
+    } else if (first == '-') {
+        if (l.source.len > 1 && l.source.start[1] == '>') {
+            tkn.data = TokenData::Arrow;
+            i = 2;
+        } else {
+            tkn.data = TokenData::MinusSingle;
+        }
+    } else if (first == '.') {
+        tkn.data = TokenData::Dot;
+    } else if (first == '!') {
+        if (l.source.len > 1 && l.source.start[1] == '=') {
+            tkn.data = TokenData::NotEqual;
+            i = 2;
+        } else {
+            tkn.data = TokenData::Bang;
+        }
+    } else if (first == '=') {
+        tkn.data = TokenData::EqualSingle;
+    } else if (first == '#') {
+        tkn.data = TokenData::Hash;
     } else {
-        todo_with_msg("tokenizer");
+        message(error(new_loc(l.offset_in_file), "Unknown character `%`.", first));
     }
     tkn.offset_in_file = offset;
     advance(&l.source, i, &l.offset_in_file);
@@ -133,9 +265,15 @@ func next(l: &Lexer) -> Token {
     return __next(l);
 }
 
-func at(l: &Lexer, tokens: TokenData) -> bool {
+func at(l: &Lexer, token: TokenData) -> bool {
     let tkn = peek(l);
-    return tag(&tkn.data) == tag(&tokens);
+    return tag(&tkn.data) == tag(&token);
+}
+
+func eat(l: &Lexer, token: TokenData) -> bool {
+    if (!at(l, token)) return false;
+    next(l);
+    return true;
 }
 
 func expect(l: &Lexer, tokens: ...TokenData) -> Token {
@@ -143,7 +281,7 @@ func expect(l: &Lexer, tokens: ...TokenData) -> Token {
     for (let i: usize = 0; i < tokens.length; i = i + 1) {
         if (tag(&tkn.data) == tag(&tokens[i])) return tkn;
     }
-    C::fprintf(stderr, "error: Expected ");
+    C::fprintf(stderr, "%s:%llu: %s: Expected ", "idk where", tkn.offset_in_file, ERR_STR);
     if (tokens.length > 1) C::fprintf(stderr, "one of ");
     for (let i: usize = 0; i < tokens.length; i = i + 1) {
         C::fprintf(stderr, "%s", to_cstr(tokens[i]));
@@ -161,3 +299,17 @@ func skip_until(l: &Lexer, token: TokenData) -> Token {
     return expect(l, token);
 }
 
+func skip_until_matching(lexer: &Lexer, start: TokenData, end: TokenData) -> Token {
+    expect(lexer, start);
+    let count: usize = 1;
+    while (count != 0) {
+        let tkn = next(lexer);
+        if (tag(&tkn.data) == tag(&start)) {
+            count = count + 1;
+        } else if (tag(&tkn.data) == tag(&end)) {
+            count = count - 1;
+            if (count == 0) return tkn;
+        }
+    }
+    unreachable("Should've returned by now");
+}

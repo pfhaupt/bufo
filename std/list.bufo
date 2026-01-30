@@ -21,8 +21,36 @@ func new_GAF_List(ti: TypeInfo) -> GAF_List {
     };
 }
 
+func enumerate(this: &GAF_List, fn: func (usize, Data)) {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        fn(i, get_ref(this, i));
+    }
+}
+func enumerate(this: &GAF_List, fn: func (usize, Data, Any), arg: Any) {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        fn(i, get_ref(this, i), arg);
+    }
+}
+func foreach(this: &GAF_List, fn: func (Data)) {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        fn(get_ref(this, i));
+    }
+}
+func foreach(this: &GAF_List, fn: func (Data, Any), arg: Any) {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        fn(get_ref(this, i), arg);
+    }
+}
+
 func push(list: &GAF_List, elem: Data) {
-    assert(equals(&list.type, &elem.info), "GAF_List.push: Attempted to push invalid element");
+    if (!equals(&list.type, &elem.info)) {
+        let want = get_name(&list.type);
+        let got = get_name(&elem.info);
+        C::fprintf(stderr, "got:  %.*s\n", got.len, got.start);
+        C::fprintf(stderr, "want: %.*s\n", want.len, want.start);
+        C::fprintf(stderr, "GAF_List.push: Attempted to push invalid element\n");
+        C::exit(1);
+    }
     if (list.length >= list.capacity) {
         let new_cap: usize = list.capacity * 2;
         if (new_cap == 0) new_cap = 32;
@@ -34,11 +62,17 @@ func push(list: &GAF_List, elem: Data) {
     list.length = list.length + 1;
 }
 
+func pop(list: &GAF_List) {
+    pop(list, null);
+}
+
 func pop(list: &GAF_List, dst: Any) {
     assert(list.length > 0, "GAF_List.pop: Attempted to pop from empty list");
     list.length = list.length - 1;
-    let elem = list.elements as &usize + list.length * list.type_size;
-    C::memcpy(dst, elem, list.type_size);
+    if (dst != null) {
+        let elem = list.elements as &usize + list.length * list.type_size;
+        C::memcpy(dst, elem, list.type_size);
+    }
 }
 
 func get_ref(list: &GAF_List, index: usize) -> Data {

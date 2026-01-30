@@ -8,6 +8,7 @@ import "common.bufo";
 import "corot.bufo";
 import "lexer.bufo";
 import "parser.bufo";
+import "lookup.bufo";
 
 /*
  * spawn(parse_file)
@@ -48,10 +49,19 @@ func main(argc: i32, argv: &&char) -> i32 {
     C::printf("--------------------------------------------------\n");
 
     init_corot_engine();
+    init_global_lookup();
+
     let file = spawn(parse_file, &source);
 
     // The main function only switches between scheduled coroutines
     while (any_active()) switch();
+
+    print_global_lookup();
+
+    if (error_happened) {
+        C::fprintf(stderr, "error: Could not compile program due to the above errors.\n");
+        return 1;
+    }
 
     C::printf("done\n");
     return 0;
