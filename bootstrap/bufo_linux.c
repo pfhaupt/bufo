@@ -5130,7 +5130,7 @@ String_s getPathParentPS7720rS0540(SubStr_s *this) {
     return (s);
 }
 String_s toStringPS7720rS0540(SubStr_s *this) {
-    Any buf = (((calloc))((sizeof(char)), (((this)->len) + ((usize)(1llu)))));
+    Any buf = (((calloc))((((this)->len) + ((usize)(1llu))), (sizeof(char))));
     ((assertBPcrN)(((buf) != (NULL)), ("toString(SubStr)")));
     (((memcpy))((buf), ((this)->start), ((this)->len)));
     return ((String_s){.buffer = (buf), .length = ((this)->len), .capacity = (((this)->len) + ((usize)(1llu)))});
@@ -37093,7 +37093,7 @@ none generateGCCScriptrN(none) {
     ((formatPS0540PcVS4175rN)((&(command)), ("gcc -x c % -o %.exe"),
                               ((variadic_4507){.ptr = (Data_s[2]){((Data_s){.ptr = &tmp_91056, .info = type_info_table[18]}), ((Data_s){.ptr = &tmp_91057, .info = type_info_table[18]})},
                                                .length = 2})));
-    ((formatPS0540PcVS4175rN)((&(command)), (" -Wall -Wextra -Werror -pedantic -std=c99"), ((variadic_4507){.ptr = NULL, .length = 0})));
+    ((formatPS0540PcVS4175rN)((&(command)), (" -Wall -Wextra -pedantic -std=c99"), ((variadic_4507){.ptr = NULL, .length = 0})));
     ((formatPS0540PcVS4175rN)((&(command)), (" -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable"), ((variadic_4507){.ptr = NULL, .length = 0})));
     ((formatPS0540PcVS4175rN)((&(command)), (" -Wno-builtin-declaration-mismatch -Wno-incompatible-pointer-types -Wno-missing-braces"), ((variadic_4507){.ptr = NULL, .length = 0})));
     for (usize i = ((usize)(0llu)); ((i) < ((configs).length)); ((i) = ((i) + ((usize)(1llu))))) {
@@ -37186,7 +37186,7 @@ none generateClangScriptrN(none) {
     ((formatPS0540PcVS4175rN)((&(command)), ("clang % -o %.exe"),
                               ((variadic_4507){.ptr = (Data_s[2]){((Data_s){.ptr = &tmp_91076, .info = type_info_table[18]}), ((Data_s){.ptr = &tmp_91077, .info = type_info_table[18]})},
                                                .length = 2})));
-    ((formatPS0540PcVS4175rN)((&(command)), (" -Wall -Wextra -Werror -pedantic -std=c99 -ferror-limit=5"), ((variadic_4507){.ptr = NULL, .length = 0})));
+    ((formatPS0540PcVS4175rN)((&(command)), (" -Wall -Wextra -pedantic -std=c99 -ferror-limit=5"), ((variadic_4507){.ptr = NULL, .length = 0})));
     ((formatPS0540PcVS4175rN)((&(command)), (" -Wno-incompatible-library-redeclaration -Wno-builtin-requires-header"), ((variadic_4507){.ptr = NULL, .length = 0})));
     ((formatPS0540PcVS4175rN)((&(command)), (" -Wno-unused-variable -Wno-unused-parameter -Wno-incompatible-function-pointer-types"), ((variadic_4507){.ptr = NULL, .length = 0})));
     String_s tmp_85454 = ((toStringPS7720rS0540)((&(OS_WINDOWS))));

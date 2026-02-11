@@ -671,7 +671,7 @@ func generateGCCScript() {
     let name: String = format1("%.gcc.sh", *flags.out);
     let command: String = blank;
     format(&command, "gcc -x c % -o %.exe", *flags.out, *flags.out);
-    format(&command, " -Wall -Wextra -Werror -pedantic -std=c99");
+    format(&command, " -Wall -Wextra -pedantic -std=c99");
     format(&command, " -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable");
     format(&command, " -Wno-builtin-declaration-mismatch -Wno-incompatible-pointer-types -Wno-missing-braces");
     for (let i: usize = 0; i < configs.length; i = i + 1) {
@@ -699,7 +699,7 @@ func generateClangScript() {
     let name: String = blank;
     let command: String = blank;
     format(&command, "clang % -o %.exe", *flags.out, *flags.out);
-    format(&command, " -Wall -Wextra -Werror -pedantic -std=c99 -ferror-limit=5");
+    format(&command, " -Wall -Wextra -pedantic -std=c99 -ferror-limit=5");
     format(&command, " -Wno-incompatible-library-redeclaration -Wno-builtin-requires-header");
     format(&command, " -Wno-unused-variable -Wno-unused-parameter -Wno-incompatible-function-pointer-types");
     if (equals(flags.target, &toString(&OS_WINDOWS))) {

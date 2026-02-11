@@ -80,7 +80,7 @@ func getPathParent(this: &SubStr) -> String {
     return s;
 }
 func toString(this: &SubStr) -> String {
-    let buf = C::calloc(sizeof char, this.len + 1);
+    let buf = C::calloc(this.len + 1, sizeof char);
     assert(buf != null, "toString(SubStr)");
     C::memcpy(buf, this.start, this.len);
     return String {
