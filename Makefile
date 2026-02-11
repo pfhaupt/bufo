@@ -55,7 +55,7 @@ else
 endif
 
 ${BUFO_CC}: $(shell find src/ -type f) $(shell find std/ -type f)
-	${BUFO_CC} src/bufo.bufo -o ${BUFO_CC}.tmp $(ALL_FLAGS) --no-extern-comptime
+	${BUFO_CC} src/bufo.bufo -o ${BUFO_CC}.tmp $(ALL_FLAGS) --no-extern-comptime --no-inline-assembly
 	mv ${BUFO_CC}.tmp ${BUFO_CC}
 
 all: ${BUFO_CC} examples how_to
