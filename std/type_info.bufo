@@ -183,3 +183,9 @@ struct Data {
     info: TypeInfo;
 }
 
+func copy_data_to_heap(d: Data) -> Data {
+    return Data {
+        ptr: C::memcpy(C::malloc(get_size(&d.info)), d.ptr, get_size(&d.info)),
+        info: d.info,
+    };
+}

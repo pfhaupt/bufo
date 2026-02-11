@@ -1291,6 +1291,15 @@ func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupLi
                 return reportTypeMismatch(this, stmt.span, retType, exprType);
             }
             state = *retState;
+            if (isData(retType) && !isData(exprType)) {
+                let loc: String = toString(&stmt.span);
+                C::fprintf(stderr, "%s: %s: Cannot implicitly convert return expression to Data.\n", loc.buffer, ERR_STR);
+                C::fprintf(stderr, "%s: %s: Conversion would allocate the expression on the stack, so the function would return a dangling pointer.\n", loc.buffer, NOTE_STR);
+                C::fprintf(stderr, "%s: %s: If you know what you're doing, you can explicitly cast the expression yourself (using `<expr> as Data`) to suppress this error.\n", loc.buffer, NOTE_STR);
+                C::fprintf(stderr, "%s: %s: If you don't know what you're doing, you can use a function such as `copy_data_to_heap()`.\n", loc.buffer, NOTE_STR);
+                drop(&loc);
+                state = TCState::Error(ERROR_TYPE_MISMATCH);
+            }
         }
         &StmtData::Expr(expr) => {
             let exprState: TCState = typeCheckExpr(this, expr, scopes);
@@ -2038,14 +2047,16 @@ func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, curr: &ParsedExpr, t
         return reportNonPrimitiveCast(this, curr.span, exprType, typeType);
     }
     if (getSizeInBytes(typeType) < getSizeInBytes(exprType) && *flags.warnExtra) {
-        let loc: String = toString(&curr.span);
-        let tName: String = toString(typeType);
-        let oName: String = toString(exprType);
-        C::fprintf(stderr, "%s: %s: Lossy type cast: Target type (%s) is smaller than original type (%s).\n",
-            loc.buffer, WARN_STR, tName.buffer, oName.buffer);
-        drop(&oName);
-        drop(&tName);
-        drop(&loc);
+        if (!isData(typeType) && !isData(exprType)) {
+            let loc: String = toString(&curr.span);
+            let tName: String = toString(typeType);
+            let oName: String = toString(exprType);
+            C::fprintf(stderr, "%s: %s: Lossy type cast: Target type (%s) is smaller than original type (%s).\n",
+                loc.buffer, WARN_STR, tName.buffer, oName.buffer);
+            drop(&oName);
+            drop(&tName);
+            drop(&loc);
+        }
     }
     return typeState;
 }

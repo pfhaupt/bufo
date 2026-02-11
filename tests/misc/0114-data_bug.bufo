@@ -1,0 +1,23 @@
+//! THIS IS A TEST PROGRAM
+//! RUNTIME
+//! SUCCESS
+
+import "libc.bufo";
+import "prelude.bufo";
+import "type_info.bufo";
+
+func foo(d: Data) -> Data {
+    let value: usize = d as usize;
+    return value as Data;
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    for (let i: usize = 0; i < 10; i = i + 1) {
+        let v = foo(i);
+        assert(v.ptr as usize != i, "v.ptr == i");
+        assert(v as usize == i as usize, "v != i");
+    }
+    C::printf("pass!\n");
+    return 0;
+}
+
