@@ -63,9 +63,7 @@ func equals(this: &SubStr, other: &SubStr) -> bool {
 }
 func print(this: &SubStr) {
     for (let i: usize = 0; i < this.len; i = i + 1) {
-        let a: Any = this.start;
-        let c: &char = a;
-        let p: char = *(c + i);
+        let p: char = this.start[i];
         assert(p == C::putchar(p), "Wrote wrong character in SubStr.print");
     }
 }
@@ -189,10 +187,8 @@ func newSubStr(orig: &char, start: usize, end: usize) -> SubStr {
     };
 }
 func newSubStrOfString(orig: &String, start: usize, end: usize) -> SubStr {
-    let _bfr: Any = orig.buffer;
-    let _cbfr: &char = _bfr;
     return SubStr {
-        start: _cbfr + start,
+        start: orig.buffer + start,
         len: end - start,
     };
 }

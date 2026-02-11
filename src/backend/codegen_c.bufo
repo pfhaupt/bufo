@@ -1,0 +1,1833 @@
+import "prelude.bufo";
+import "libc.bufo";
+import "substr.bufo";
+import "string.bufo";
+import "format.bufo";
+import "type_info.bufo";
+import "hashmap.bufo";
+import "hashset.bufo";
+import "list.bufo";
+
+import "../bufo.bufo";
+import "../util/span.bufo";
+import "../util/lists.bufo";
+import "../util/arena.bufo";
+import "../util/hashmaps.bufo";
+import "../frontend/token.bufo";
+import "../frontend/nodes.bufo";
+import "../frontend/context.bufo";
+import "../middleend/checker.bufo";
+import "../middleend/types.bufo";
+import "../backend/irgen.bufo";
+
+@os(WINDOWS) import "windows.bufo";
+@os(WINDOWS) import "winapi/functions.bufo";
+
+@os(LINUX) import "linux.bufo";
+@os(LINUX) import "posix/functions.bufo";
+
+comptime INDENTATION_LEVEL: usize = 4;
+
+struct Var_Context {
+    bound_in_reference_pattern: bool;
+}
+
+struct CStack {
+    variables: GAF_HashMap; // Map<SubStr, Var_Context>
+}
+
+func newCStack() -> CStack {
+    return CStack {
+        variables: new_hashmap_with_substr_key(type_info(Var_Context)),
+    };
+}
+
+struct CGen {
+    stack: GAF_List;                 // List<CStack>
+    variadic_map: GAF_HashMap;       // Map<String, String>
+    array_map_declared: GAF_HashMap; // Map<String, String>
+    array_map_defined: GAF_HashMap;  // Map<String, String>
+    tuple_map_declared: GAF_HashMap; // Map<String, String>
+    tuple_map_defined: GAF_HashMap;  // Map<String, String>
+    type_info_table: TypeInfoTable;
+}
+
+func newCGen() -> CGen {
+    return CGen {
+        stack: new_GAF_List(type_info(CStack)),
+        variadic_map: new_hashmap_with_string_key(type_info(String)),
+        array_map_declared: new_hashmap_with_string_key(type_info(String)),
+        array_map_defined: new_hashmap_with_string_key(type_info(String)),
+        tuple_map_declared: new_hashmap_with_string_key(type_info(String)),
+        tuple_map_defined: new_hashmap_with_string_key(type_info(String)),
+        type_info_table: generateTypeInfoTable(),
+    };
+}
+
+func getVariableInfo(this: &CGen, name: SubStr) -> (Var_Context, bool) {
+    // stack 0 == global scope
+    for (let _i: usize = 0; _i < this.stack.length; _i = _i + 1) {
+        let i = this.stack.length - _i - 1;
+        let entry = get_ref_raw(&this.stack, i) as &CStack;
+        let _entry = get(&entry.variables, name);
+        if (_entry.ptr != null) {
+            return (_entry as Var_Context, true);
+        }
+    }
+    return (blank, false);
+}
+
+func unescape(s: SubStr) -> String {
+    let out: String = blank;
+    for (let i: usize = 0; i < s.len; i = i + 1) {
+        if (s.start[i] == '\0') {
+            pushStr(&out, "\\0");
+        } else if (s.start[i] == '\n') {
+            pushStr(&out, "\\n");
+        } else if (s.start[i] == '\t') {
+            pushStr(&out, "\\t");
+        } else if (s.start[i] == '\r') {
+            pushStr(&out, "\\r");
+        } else if (s.start[i] == '\\') {
+            pushStr(&out, "\\\\");
+        } else if (s.start[i] == '\'') {
+            pushStr(&out, "\\\'");
+        } else if (s.start[i] == '\"') {
+            pushStr(&out, "\\\"");
+        } else if (s.start[i] as u8 >= 0x7F || s.start[i] < ' ') {
+            // Invalid ASCII
+            pushStr(&out, "\\x");
+            let tmp: String = blank;
+            pushNumberAsHex(&tmp, s.start[i] as usize);
+            tmp.buffer = tmp.buffer + 2; // Skip 0x
+            tmp.length = tmp.length - 2;
+            pushString(&out, &tmp);
+            tmp.buffer = tmp.buffer - 2; // Undo skip
+            tmp.length = tmp.length + 2;
+            drop(&tmp);
+        } else {
+            pushChar(&out, s.start[i]);
+        }
+    }
+    return out;
+}
+
+func generateTypeName(this: &CGen, type: &Type, nameForType: String) -> String {
+    return generateTypeName(this, type, asSubStr(&nameForType));
+}
+func generateTypeName(this: &CGen, type: &Type, nameForType: SubStr) -> String {
+    return generateTypeName(this, type, nameForType, 0);
+}
+func generateTypeName(this: &CGen, type: &Type, nameForType: SubStr, size: usize) -> String {
+    let out: String = blank;
+    match (type) {
+        &Type::Func(params, ret, _) => {
+            if (size == 0) {
+                format(&out, "% (*%)(", generateTypeName(this, ret), nameForType);
+            } else {
+                format(&out, "% (*%[%])(", generateTypeName(this, ret), nameForType, size);
+            }
+            if (params.length == 0) {
+                format(&out, "none");
+            } else {
+                for (let i: usize = 0; i < params.length; i = i + 1) {
+                    format(&out, "%", generateTypeName(this, params.elements[i]));
+                    if (i != params.length - 1) {
+                        format(&out, ", ");
+                    }
+                }
+            }
+            format(&out, ")");
+        }
+        _ => {
+            if (nameForType.len != 0) {
+                if (size != 0) {
+                    format(&out, "% %[%]", generateTypeName(this, type), nameForType, size);
+                } else {
+                    format(&out, "% %", generateTypeName(this, type), nameForType);
+                }
+            } else {
+                if (size != 0) {
+                    format(&out, "%[%]", generateTypeName(this, type), size);
+                } else {
+                    format(&out, "%", generateTypeName(this, type));
+                }
+            }
+        }
+    }
+    return out;
+}
+func generateTypeName(this: &CGen, type: &Type) -> String {
+    match (type) {
+        &Type::Prim(_) => {
+            return toString(type);
+        }
+        &Type::Ptr(under) => {
+            return format1("%*", generateTypeName(this, under));
+        }
+        &Type::Struct(decl) => {
+            let name = getFullName(decl, "_");
+            makeNameCCompatible(&name, "_s");
+            return name;
+        }
+        &Type::Union(decl, _) => {
+            let name = getFullName(decl, "_");
+            makeNameCCompatible(&name, "_u");
+            return name;
+        }
+        &Type::Tuple(elems) => {
+            let _t = toString(type);
+            let _v = get(&this.tuple_map_declared, _t);
+            drop(&_t);
+            if (_v.ptr == null) {
+                return format1("tuple_%", getID(type));
+            } else {
+                return _v as String;
+            }
+        }
+        &Type::Func(..) => {
+            return generateTypeName(this, type, comptime newSubStrOfStrLit(""));
+        }
+        &Type::Array(..) => {
+            let _t = toString(type);
+            let _v = get(&this.array_map_declared, _t);
+            drop(&_t);
+            if (_v.ptr == null) {
+                return format1("array_%", getID(type));
+            } else {
+                return _v as String;
+            }
+        }
+        &Type::Variadic(under) => {
+            let _t = toString(type);
+            let _v = get(&this.variadic_map, _t);
+            drop(&_t);
+            if (_v.ptr == null) {
+                return format1("variadic_%", getID(type));
+            } else {
+                return _v as String;
+            }
+        }
+        _ => {
+            print(&toString(type));
+            C::printf("\n");
+            return newStringFromStrLit("/*TODO: generateTypeName */");
+        }
+    }
+    unreachable("generateTypeName");
+}
+
+func generateTypeName(this: &CGen, type: &ParsedTypeNode) -> String {
+    return generateTypeName(this, getType(&type.typeState));
+}
+
+func makeNameCCompatible(name: &String) {
+    makeNameCCompatible(name, "");
+}
+func makeNameCCompatible(name: &String, prefix: &char) {
+    let forbidden = [
+        "stdin",
+        "stdout",
+        "stderr",
+        "enum",
+        "union",
+        "struct",
+        "if",
+        "else",
+        "switch",
+        "case",
+        "for",
+        "while",
+        "break",
+        "continue",
+        "do",
+        "return",
+        "signed",
+        "unsigned",
+        "void",
+        "bool",
+        "float",
+        "double",
+        "int",
+        "char",
+        "short",
+        "long",
+    ];
+    pushStr(name, prefix);
+    for (let i: usize = 0; i < forbidden.length; i = i + 1) {
+        let s = newStringFromStrLit(forbidden[i]);
+        if (equals(name, &s)) {
+            *name = format1("%_", s);
+        }
+        drop(&s);
+    }
+    replace(name, '.', '_');
+}
+
+func generateBuiltinTypedefs(out: &String) {
+    format(out, "// Builtin Types:\n");
+    format(out, "#include <stddef.h> // NULL\n");
+    format(out, "#include <stdbool.h> // bool\n");
+    format(out, "#include <stdint.h>\n");
+    format(out, "typedef uint8_t u8;\n");
+    format(out, "typedef uint16_t u16;\n");
+    format(out, "typedef uint32_t u32;\n");
+    format(out, "typedef uint64_t u64;\n");
+    format(out, "typedef int8_t i8;\n");
+    format(out, "typedef int16_t i16;\n");
+    format(out, "typedef int32_t i32;\n");
+    format(out, "typedef int64_t i64;\n");
+    format(out, "typedef void* Any;\n");
+    format(out, "typedef void none;\n");
+    format(out, "typedef float f32;\n");
+    format(out, "typedef double f64;\n");
+    format(out, "typedef u64 usize;\n");
+
+    format(out, "// C doesn't have f32 \\% f32 etc.\n");
+    format(out, "float fmodf(float x, float y);\n");
+    format(out, "double fmod(double x, double y);\n");
+
+    format(out, "\n");
+}
+
+func forwardDeclareTypes(this: &CGen, out: &String) {
+    format(out, "// Struct Declarations:\n");
+    for (let i: usize = 0; i < structDecls.length; i = i + 1) {
+        forwardDeclareStruct(out, at(&structDecls, i));
+    }
+    format(out, "\n");
+
+    format(out, "// Union Declarations:\n");
+    for (let i: usize = 0; i < unionDecls.length; i = i + 1) {
+        forwardDeclareUnion(out, at(&unionDecls, i));
+    }
+    format(out, "\n");
+
+    format(out, "// Tuple Types:\n");
+    for (let i: usize = 0; i < types.length; i = i + 1) {
+        let type = at(&types, i);
+        if (!isTuple(type)) continue;
+        if (containsInvalidType(type)) continue;
+        forwardDeclareTuple(this, out, type);
+    }
+    format(out, "\n");
+
+    format(out, "// Array Types:\n");
+    for (let i: usize = 0; i < types.length; i = i + 1) {
+        let type = at(&types, i);
+        if (!isArray(type)) continue;
+        if (containsInvalidType(type)) continue;
+        forwardDeclareArray(this, out, type);
+    }
+    format(out, "\n");
+}
+
+struct TypeDeclEntry {
+    c_code: String;
+    generated: bool;
+}
+
+func emitTypeDeclaration(this: &CGen, out: &String, map: &GAF_HashMap, type: &Type) {
+    let _entry = get(map, generateTypeName(this, type));
+    match (type) {
+        &Type::Array(elem, _) => {
+            assert(_entry.ptr != null, "emitTypeDeclaration: Could not find array");
+            let entry = _entry.ptr as &TypeDeclEntry;
+            if (entry.generated) return;
+            let elemEntry = get(map, generateTypeName(this, elem));
+            if (elemEntry.ptr != null) {
+                let entry = elemEntry.ptr as &TypeDeclEntry;
+                if (!entry.generated) {
+                    emitTypeDeclaration(this, out, map, elem);
+                }
+            }
+        }
+        &Type::Tuple(elems) => {
+            assert(_entry.ptr != null, "emitTypeDeclaration: Could not find tuple");
+            let entry = _entry.ptr as &TypeDeclEntry;
+            if (entry.generated) return;
+            for (let j: usize = 0; j < elems.length; j = j + 1) {
+                let field = elems.elements[j];
+                let fieldEntry = get(map, generateTypeName(this, field));
+                if (fieldEntry.ptr == null) continue;
+                let entry = fieldEntry.ptr as &TypeDeclEntry;
+                if (entry.generated) continue;
+                emitTypeDeclaration(this, out, map, field);
+            }
+        }
+        &Type::Struct(strukt) => {
+            assert(_entry.ptr != null, "emitTypeDeclaration: Could not find struct");
+            let entry = _entry.ptr as &TypeDeclEntry;
+            if (entry.generated) return;
+            for (let j: usize = 0; j < strukt.context.fieldLength; j = j + 1) {
+                let _field = getFieldTypeAtIndex(&strukt.context, j);
+                let field = getType(&_field.typeState);
+                let fieldEntry = get(map, generateTypeName(this, field));
+                if (fieldEntry.ptr == null) continue;
+                let entry = fieldEntry.ptr as &TypeDeclEntry;
+                if (entry.generated) continue;
+                emitTypeDeclaration(this, out, map, field);
+            }
+        }
+        &Type::Union(onion, _) => {
+            assert(_entry.ptr != null, "emitTypeDeclaration: Could not find union");
+            let entry = _entry.ptr as &TypeDeclEntry;
+            if (entry.generated) return;
+            for (let i: usize = 0; i < onion.variants.length; i = i + 1) {
+                let variant = *at(&onion.variants, i);
+                let (true, fields) = get_fields(variant) else {
+                    continue;
+                };
+                for (let j: usize = 0; j < fields.length; j = j + 1) {
+                    let _field = *at(fields, j);
+                    let field = getType(&_field.typeState);
+                    let fieldEntry = get(map, generateTypeName(this, field));
+                    if (fieldEntry.ptr == null) continue;
+                    let entry = fieldEntry.ptr as &TypeDeclEntry;
+                    if (entry.generated) continue;
+                    emitTypeDeclaration(this, out, map, field);
+                }
+            }
+        }
+        _ => {
+            assert(_entry.ptr == null, "emitTypeDeclaration: Missed a Type");
+        }
+    }
+    if (_entry.ptr != null) {
+        let entry = _entry.ptr as &TypeDeclEntry;
+        assert(!entry.generated, "emitTypeDeclaration: Type already generated");
+        pushString(out, &entry.c_code);
+        entry.generated = true;
+    }
+}
+
+func emitVariadicType(this: &CGen, out: &String, type: &Type) {
+    let &Type::Variadic(under) = type else {
+        unreachable("emitVariadicType");
+    };
+
+    let _t = toString(type);
+    let _v = get(&this.variadic_map, _t);
+    if (_v.ptr != null) {
+        drop(&_t);
+        return;
+    }
+
+    let ind = generateIndent(INDENTATION_LEVEL);
+    let name = format1("variadic_%", getID(type));
+    format(out, "typedef struct % {\n", name);
+    format(out, "%%* ptr;\n", ind, generateTypeName(this, under));
+    format(out, "%usize length;\n", ind);
+    format(out, "} %;\n", name);
+    add(&this.variadic_map, _t, name);
+}
+
+func generateTypeDeclarations(this: &CGen, out: &String) {
+    let map = new_hashmap_with_string_key(type_info(TypeDeclEntry));
+    for (let i: usize = 0; i < structDecls.length; i = i + 1) {
+        let strukt = at(&structDecls, i);
+        if (strukt.ignored) continue;
+        let s: String = blank;
+        generateStructDefinition(this, &s, strukt);
+        add(&map, generateTypeName(this, getType(&strukt.typeState)), TypeDeclEntry { c_code: s });
+    }
+    for (let i: usize = 0; i < unionDecls.length; i = i + 1) {
+        let onion = at(&unionDecls, i);
+        if (onion.ignored) continue;
+        let s: String = blank;
+        generateUnionDefinition(this, &s, onion);
+        add(&map, generateTypeName(this, getType(&onion.typeState)), TypeDeclEntry { c_code: s });
+    }
+    // FIXME(2026-02-07): Create generateXYZDefiniton abstraction so we only
+    //                    have to iterate this list once.
+    for (let i: usize = 0; i < types.length; i = i + 1) {
+        let type = at(&types, i);
+        if (!isTuple(type)) continue;
+        if (containsInvalidType(type)) continue;
+        let s: String = blank;
+        generateTupleDefinition(this, &s, type);
+        if (s.length == 0) continue; // Already generated
+        add(&map, generateTypeName(this, type), TypeDeclEntry { c_code: s });
+    }
+    for (let i: usize = 0; i < types.length; i = i + 1) {
+        let type = at(&types, i);
+        if (!isArray(type)) continue;
+        if (containsInvalidType(type)) continue;
+        let s: String = blank;
+        generateArrayDefinition(this, &s, type);
+        if (s.length == 0) continue; // Already generated
+        add(&map, generateTypeName(this, type), TypeDeclEntry { c_code: s });
+    }
+    for (let i: usize = 0; i < structDecls.length; i = i + 1) {
+        let strukt = at(&structDecls, i);
+        if (strukt.ignored) continue;
+        let sType = getType(&strukt.typeState);
+        emitTypeDeclaration(this, out, &map, sType);
+    }
+    for (let i: usize = 0; i < unionDecls.length; i = i + 1) {
+        let onion = at(&unionDecls, i);
+        if (onion.ignored) continue;
+        let uType = getType(&onion.typeState);
+        emitTypeDeclaration(this, out, &map, uType);
+    }
+    for (let i: usize = 0; i < types.length; i = i + 1) {
+        let type = at(&types, i);
+        if (!isTuple(type)) continue;
+        if (containsInvalidType(type)) continue;
+        emitTypeDeclaration(this, out, &map, type);
+    }
+    for (let i: usize = 0; i < types.length; i = i + 1) {
+        let type = at(&types, i);
+        if (!isArray(type)) continue;
+        if (containsInvalidType(type)) continue;
+        emitTypeDeclaration(this, out, &map, type);
+    }
+}
+
+func forwardDeclareFunctions(this: &CGen, out: &String) {
+    for (let i: usize = 0; i < funcDecls.length; i = i + 1) {
+        forwardDeclareFunction(this, out, at(&funcDecls, i));
+    }
+}
+
+func generateFunctionDefinitions(this: &CGen, out: &String) {
+    for (let i: usize = 0; i < funcDecls.length; i = i + 1) {
+        generateFunctionDefinition(this, out, at(&funcDecls, i));
+    }
+}
+
+func generateGlobalVariables(this: &CGen, out: &String) {
+    format(out, "// Global Variables:\n");
+    for (let i: usize = 0; i < files.length; i = i + 1) {
+        let file: &ParsedFile = at(&files, i);
+        for (let j: usize = 0; j < file.mod.tlis.length; j = j + 1) {
+            let tli: &ParsedTopLevelItem = at(&topLevelItems, *at(&file.mod.tlis, j));
+            if (tli.ignored) continue;
+            if (tli.kind == TLI_VAR_DECL) {
+                let _decl = at(&stmts, tli.nodeID);
+                let &StmtData::VarDecl(decl) = &_decl.data else {
+                    unreachable();
+                };
+                let fast_path = func (this: &CGen, out: &String, tkn: Token, type: &Type, expr: &ParsedExpr, indent: usize) {
+                    let _name = toString(&tkn.content);
+                    makeNameCCompatible(&_name);
+                    format(out, "%;\n", generateTypeName(this, type, _name));
+                    let stack = get_ref_raw(&this.stack, this.stack.length - 1) as &CStack;
+                    add(&stack.variables, tkn.content, Var_Context {
+                        bound_in_reference_pattern: false
+                    });
+                };
+                if let &Pattern::PatWithType(subpat, typ) = &decl.pat.data {
+                    if let &Pattern::Ident(tkn) = &subpat.data {
+                        // Fast path: `let foo: bar = <expr>;`
+                        fast_path(this, out, tkn, getType(&typ.typeState), decl.expr, 0);
+                        continue;
+                    }
+                }
+                if let &Pattern::Ident(tkn) = &decl.pat.data {
+                    // Fast path: `let foo = <expr>;`
+                    fast_path(this, out, tkn, getType(&decl.expr.typeState), decl.expr, 0);
+                    continue;
+                }
+                unreachable("generateGlobalVariables: Can't use slow_path here");
+            }
+        }
+    }
+}
+func generateGlobalInit(this: &CGen, _decl: &ParsedStmt, indent: usize) -> String {
+    let &StmtData::VarDecl(decl) = &_decl.data else {
+        unreachable();
+    };
+    let fast_path = func (this: &CGen, tkn: Token, expr: &ParsedExpr, indent: usize) -> String {
+        let _name = toString(&tkn.content);
+        makeNameCCompatible(&_name);
+        let tmpAlloc: String = blank;
+        return format1("%% = %;\n", generateIndent(indent), _name, generateExpr(this, &tmpAlloc, expr));
+        assert(tmpAlloc.length == 0, "generateGlobalInit: Expression needs entry");
+    };
+    if let &Pattern::PatWithType(subpat, _) = &decl.pat.data {
+        if let &Pattern::Ident(tkn) = &subpat.data {
+            // Fast path: `let foo: bar = <expr>;`
+            return fast_path(this, tkn, decl.expr, indent);
+        }
+    }
+    if let &Pattern::Ident(tkn) = &decl.pat.data {
+        // Fast path: `let foo = <expr>;`
+        return fast_path(this, tkn, decl.expr, indent);
+    }
+    unreachable("generateGlobalInit: Can't use slow_path here");
+}
+func generateGlobalInitialization(this: &CGen, out: &String) {
+    format(out, "none __global_init_please_dont_call_yourself(none) {\n");
+    for (let i: usize = 0; i < files.length; i = i + 1) {
+        let file: &ParsedFile = at(&files, i);
+        for (let j: usize = 0; j < file.mod.tlis.length; j = j + 1) {
+            let tli: &ParsedTopLevelItem = at(&topLevelItems, *at(&file.mod.tlis, j));
+            if (tli.ignored) continue;
+            if (tli.kind == TLI_VAR_DECL) {
+                format(out, "%", generateGlobalInit(this, at(&stmts, tli.nodeID), INDENTATION_LEVEL));
+            }
+        }
+    }
+    format(out, "}\n");
+}
+
+func transpileToC() {
+    generateCCode();
+    generateBuildScript();
+}
+
+func generateCCode() {
+    let c_code: String = blank;
+    let cgen = newCGen();
+
+    push(&cgen.stack, newCStack()); // global scope
+
+    generateBuiltinTypedefs(&c_code);
+    forwardDeclareTypes(&cgen, &c_code);
+    generateTypeDeclarations(&cgen, &c_code);
+    format(&c_code, "\n");
+
+    forwardDeclareFunctions(&cgen, &c_code);
+    format(&c_code, "\n");
+
+    generateGlobalVariables(&cgen, &c_code);
+    generateGlobalInitialization(&cgen, &c_code);
+    format(&c_code, "\n");
+
+    generateFunctionDefinitions(&cgen, &c_code);
+    format(&c_code, "\n");
+
+    generateEntrypoint(&c_code);
+    writeStringToFile(flags.out.buffer, c_code);
+
+    fprint("[INFO] Successfully generated %\n", *flags.out);
+}
+
+func generateBuildScript() {
+    generateClangScript();
+    if (equals(flags.target, &toString(&OS_WINDOWS))) {
+        generateClexeScript();
+    } else if (equals(flags.target, &toString(&OS_LINUX))) {
+        generateGCCScript();
+    } else {
+        unreachable("generateBuildScript");
+    }
+}
+
+func generateClexeScript() {
+    let file: String = blank;
+    let name: String = format1("%.cl.bat", *flags.out);
+    let command: String = blank;
+    format(&command, "@cl.exe /nologo /Fe:%.exe %", *flags.out, *flags.out);
+    // Juuuuuuust to be safe
+    format(&command, " /W4 /wd4047 /wd4024 /wd4100 /wd4189 /wd4702 /wd4101 /wd4456 /wd4459 /wd4457");
+    for (let i: usize = 0; i < configs.length; i = i + 1) {
+        let flag = at(&configs, i);
+        if (flag.ignored) continue;
+        for (let j: usize = 0; j < flag.configs.length; j = j + 1) {
+            let _flag = at(&flag.configs, j);
+            let &Config::Static(name) = _flag else {
+                continue;
+            };
+            format(&command, " %", name.content);
+        }
+    }
+    let emitted_link = false;
+    for (let i: usize = 0; i < configs.length; i = i + 1) {
+        let flag = at(&configs, i);
+        if (flag.ignored) continue;
+        for (let j: usize = 0; j < flag.configs.length; j = j + 1) {
+            let _flag = at(&flag.configs, j);
+            match (_flag) {
+                &Config::Libpath(name) => {
+                    if (!emitted_link) {
+                        format(&command, " /link");
+                        emitted_link = true;
+                    }
+                    format(&command, " /LIBPATH:%", name.content);
+                }
+                &Config::Linker(name) => {
+                    if (!emitted_link) {
+                        format(&command, " /link");
+                        emitted_link = true;
+                    }
+                    format(&command, " %", name.content);
+                }
+                _ => { continue; }
+            }
+        }
+    }
+    format(&file, "%", command);
+    format(&file, " && echo [INFO] Successfully generated %.exe", *flags.out);
+    format(&file, " || echo [ERROR] Could not generate %.exe\n", *flags.out);
+    writeStringToFile(name.buffer, file);
+    fprint("[INFO] Successfully generated %\n", name);
+}
+
+func generateGCCScript() {
+    let file: String = blank;
+    format(&file, "#!/usr/bin/env bash\n");
+    let name: String = format1("%.gcc.sh", *flags.out);
+    let command: String = blank;
+    format(&command, "gcc -x c % -o %.exe", *flags.out, *flags.out);
+    format(&command, " -Wall -Wextra -Werror -pedantic -std=c99");
+    format(&command, " -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable");
+    format(&command, " -Wno-builtin-declaration-mismatch -Wno-incompatible-pointer-types -Wno-missing-braces");
+    for (let i: usize = 0; i < configs.length; i = i + 1) {
+        let flag = at(&configs, i);
+        if (flag.ignored) continue;
+        for (let j: usize = 0; j < flag.configs.length; j = j + 1) {
+            let _flag = at(&flag.configs, j);
+            match (_flag) {
+                &Config::Static(name) => { format(&command, " -l %", name.content); }
+                &Config::Libpath(name) => { format(&command, " -L %", name.content); }
+                &Config::Linker(name) => { format(&command, " -Xlinker %", name.content); }
+                _ => { continue; }
+            }
+        }
+    }
+    format(&file, "%", command);
+    format(&file, " && echo [INFO] Successfully generated %.exe", *flags.out);
+    format(&file, " || echo [ERROR] Could not generate %.exe\n", *flags.out);
+    writeStringToFile(name.buffer, file);
+    fprint("[INFO] Successfully generated %\n", name);
+}
+
+func generateClangScript() {
+    let file: String = blank;
+    let name: String = blank;
+    let command: String = blank;
+    format(&command, "clang % -o %.exe", *flags.out, *flags.out);
+    format(&command, " -Wall -Wextra -Werror -pedantic -std=c99 -ferror-limit=5");
+    format(&command, " -Wno-incompatible-library-redeclaration -Wno-builtin-requires-header");
+    format(&command, " -Wno-unused-variable -Wno-unused-parameter -Wno-incompatible-function-pointer-types");
+    if (equals(flags.target, &toString(&OS_WINDOWS))) {
+        name = format1("%.clang.bat", *flags.out);
+        format(&file, "@");
+    } else if (equals(flags.target, &toString(&OS_LINUX))) {
+        name = format1("%.clang.sh", *flags.out);
+        format(&file, "#!/usr/bin/env bash\n");
+    } else {
+        unreachable("generateClangScript");
+    }
+    for (let i: usize = 0; i < configs.length; i = i + 1) {
+        let flag = at(&configs, i);
+        if (flag.ignored) continue;
+        for (let j: usize = 0; j < flag.configs.length; j = j + 1) {
+            let _flag = at(&flag.configs, j);
+            match (_flag) {
+                &Config::Static(name) => { format(&command, " -l %", name.content); }
+                &Config::Libpath(name) => { format(&command, " -L %", name.content); }
+                &Config::Linker(name) => { format(&command, " -Xlinker %", name.content); }
+                _ => { continue; }
+            }
+        }
+    }
+    format(&file, "%", command);
+    format(&file, " && echo [INFO] Successfully generated %.exe", *flags.out);
+    format(&file, " || echo [ERROR] Could not generate %.exe\n", *flags.out);
+    writeStringToFile(name.buffer, file);
+    fprint("[INFO] Successfully generated %\n", name);
+}
+
+func generateEntrypoint(out: &String) {
+    let ind = generateIndent(INDENTATION_LEVEL);
+    format(out, "// The entry point for the C runtime\n");
+    format(out, "int main(int argc, char **argv) {\n");
+    format(out, "%__global_init_please_dont_call_yourself();\n", ind);
+    format(out, "%return __real_main(argc, argv, &maini32PPcri32);\n", ind);
+    format(out, "}\n");
+}
+
+func forwardDeclareTuple(this: &CGen, out: &String, type: &Type) {
+    let _t = toString(type);
+    let _v = get(&this.tuple_map_declared, _t);
+    if (_v.ptr != null) {
+        drop(&_t);
+        return;
+    }
+
+    let name = format1("tuple_%", getID(type));
+    format(out, "typedef struct % %;\n", name, name);
+    add(&this.tuple_map_declared, _t, name);
+}
+
+func generateTupleDefinition(this: &CGen, out: &String, type: &Type) {
+    let &Type::Tuple(elems) = type else {
+        unreachable("generateTupleDefinition");
+    };
+    assert(elems.length != 0);
+
+    let _t = toString(type);
+    let _v = get(&this.tuple_map_defined, _t);
+    if (_v.ptr != null) {
+        drop(&_t);
+        return;
+    }
+
+    let ind = generateIndent(INDENTATION_LEVEL);
+    let name = format1("tuple_%", getID(type));
+    format(out, "struct % {\n", name);
+    for (let i: usize = 0; i < elems.length; i = i + 1) {
+        let field = elems.elements[i];
+        let _name = format1("_%", i);
+        let name = asSubStr(&_name);
+        format(out, "%%;\n", ind, generateTypeName(this, field, name));
+    }
+    format(out, "};\n");
+    add(&this.tuple_map_defined, _t, name);
+}
+
+// Because Arrays in C decay the moment you touch them, we wrap them into simple structs.
+// This way, they are still treated as proper values, for example when we pass them to
+// functions, or assign them.
+func forwardDeclareArray(this: &CGen, out: &String, type: &Type) {
+    let _t = toString(type);
+    let _v = get(&this.array_map_declared, _t);
+    if (_v.ptr != null) {
+        drop(&_t);
+        return;
+    }
+
+    let name = format1("array_%", getID(type));
+    format(out, "typedef struct % %;\n", name, name);
+    add(&this.array_map_declared, _t, name);
+}
+func generateArrayDefinition(this: &CGen, out: &String, type: &Type) {
+    let &Type::Array(elem, size) = type else {
+        unreachable("generateArrayDefinition");
+    };
+
+    let _t = toString(type);
+    let _v = get(&this.array_map_defined, _t);
+    if (_v.ptr != null) {
+        drop(&_t);
+        return;
+    }
+
+    let _size = size;
+    if (_size == 0) _size = 1;
+    let ind = generateIndent(INDENTATION_LEVEL);
+    let name = format1("array_%", getID(type));
+    format(out, "struct % {\n", name);
+    format(out, "%%;\n", ind, generateTypeName(this, elem, comptime newSubStrOfStrLit("arr"), _size));
+    format(out, "};\n");
+    add(&this.array_map_defined, _t, name);
+}
+
+func forwardDeclareStruct(out: &String, strukt: &ParsedStructDecl) {
+    if (strukt.ignored) return;
+    let name: String = getFullName(strukt, "_");
+    makeNameCCompatible(&name, "_s");
+    // format(out, "// Original: %\n", toString(&strukt.span));
+    format(out, "typedef struct % %;\n", name, name);
+}
+
+func generateStructDefinition(this: &CGen, out: &String, strukt: &ParsedStructDecl) {
+    if (strukt.ignored) return;
+    if (strukt.context.fieldLength == 0) return;
+    let ind = generateIndent(INDENTATION_LEVEL);
+    let name: String = getFullName(strukt, "_");
+    makeNameCCompatible(&name, "_s");
+    // format(out, "// Original: %\n", toString(&strukt.span));
+    format(out, "struct % {\n", name);
+    for (let i: usize = 0; i < strukt.context.fieldLength; i = i + 1) {
+        let nameTkn = getFieldNameAtIndex(&strukt.context, i);
+        let _field = getFieldTypeAtIndex(&strukt.context, i);
+        let field = getType(&_field.typeState);
+        let _name = toString(&nameTkn.content);
+        makeNameCCompatible(&_name);
+        let name = asSubStr(&_name);
+        format(out, "%%;\n", ind, generateTypeName(this, field, name));
+    }
+    format(out, "};\n");
+}
+
+func forwardDeclareUnion(out: &String, onion: &ParsedUnionDecl) {
+    if (onion.ignored) return;
+    let name: String = getFullName(onion, "_");
+    makeNameCCompatible(&name, "_u");
+    // format(out, "// Original: %\n", toString(&onion.span));
+    format(out, "typedef struct % %;\n", name, name);
+}
+
+func generateUnionDefinition(this: &CGen, out: &String, onion: &ParsedUnionDecl) {
+    if (onion.ignored) return;
+    assert(onion.variants.length < 256, "generateUnionDefinition: Tag needs u16");
+    assert(onion.variants.length != 0, "generateUnionDefinition: Empty Union?");
+
+    let ind = generateIndent(INDENTATION_LEVEL);
+    let name: String = getFullName(onion, "_");
+    makeNameCCompatible(&name, "_u");
+    // format(out, "// Original: %\n", toString(&onion.span));
+    format(out, "struct % {\n", name);
+
+    format(out, "%u8 tag;\n", ind);
+    let has_non_empty = false;
+    for (let i: usize = 0; i < onion.variants.length; i = i + 1) {
+        let variant = *at(&onion.variants, i);
+        if let &ParsedUnionVariantData::Empty = &variant.data {
+            continue;
+        } else {
+            has_non_empty = true;
+            break;
+        }
+    }
+    if (has_non_empty) {
+        format(out, "%union {\n", ind);
+        for (let i: usize = 0; i < onion.variants.length; i = i + 1) {
+            let variant = *at(&onion.variants, i);
+            let (true, fields) = get_fields(variant) else {
+                continue;
+            };
+
+            let payload = format1("%%struct {\n", ind, ind);
+            for (let j: usize = 0; j < fields.length; j = j + 1) {
+                let _field = *at(fields, j);
+                let field = getType(&_field.typeState);
+                // TODO(2026-02-03): Get names of Struct Variants
+                let _name = format1("_%", j);
+                let name = asSubStr(&_name);
+                format(&payload, "%%%%;\n", ind, ind, ind, generateTypeName(this, field, name));
+                drop(&_name);
+            }
+            format(&payload, "%%} variant%;\n", ind, ind, i);
+            pushString(out, &payload);
+        }
+        format(out, "%} payload;\n", ind);
+    }
+    format(out, "};\n");
+}
+
+func forwardDeclareFunction(this: &CGen, out: &String, function: &ParsedFuncDecl) {
+    if (function.ignored) return;
+    let name: String = getMangledName(function);
+    makeNameCCompatible(&name);
+    emitFunctionSignature(this, out, name, function, true);
+    format(out, ";\n");
+}
+
+func generateFunctionDefinition(this: &CGen, out: &String, function: &ParsedFuncDecl) {
+    if (function.ignored) return;
+    if (isExtern(function)) return;
+    let name: String = getMangledName(function);
+    makeNameCCompatible(&name);
+    emitFunctionSignature(this, out, name, function);
+    let stack = newCStack();
+    for (let i: usize = 0; i < function.params.paramLength; i = i + 1) {
+        let name = getNameAtIndex(&function.params, i);
+        add(&stack.variables, name.content, Var_Context {
+            bound_in_reference_pattern: false
+        });
+    }
+    push(&this.stack, stack);
+    format(out, " %", generateBlock(this, function.body, INDENTATION_LEVEL));
+    pop(&this.stack);
+}
+
+func emitFunctionSignature(this: &CGen, out: &String, name: String, function: &ParsedFuncDecl) {
+    emitFunctionSignature(this, out, name, function, false);
+}
+func emitFunctionSignature(this: &CGen, out: &String, name: String, function: &ParsedFuncDecl, generateVariadics: bool) {
+    // format(out, "// Original: %\n", toString(&function.span));
+    let fnSig: String = blank;
+    if (hasAttribute(function, ParsedAttribute::Noreturn)) {
+        format(out, "#if defined(__clang__) || defined(__GNUC__)\n");
+        format(out, "__attribute__((noreturn))\n");
+        format(out, "#elif defined(_WIN32)\n");
+        format(out, "__declspec(noreturn)\n");
+        format(out, "#else\n");
+        format(out, "#error \"Can't mark function as noreturn on your compiler. PRs welcome.\"\n");
+        format(out, "#endif\n");
+    }
+    format(&fnSig, "% %(", generateTypeName(this, function.retType), name);
+    if (function.params.paramLength == 0) {
+        format(&fnSig, "none");
+    } else {
+        for (let i: usize = 0; i < function.params.paramLength; i = i + 1) {
+            let _name = getNameAtIndex(&function.params, i);
+            let name = toString(&_name.content);
+            makeNameCCompatible(&name);
+            let typDecl = getTypeAtIndex(&function.params, i);
+            let pType = getType(&typDecl.typeState);
+            if let &Type::Variadic(under) = pType {
+                if (generateVariadics) {
+                    emitVariadicType(this, out, pType);
+                }
+            }
+            format(&fnSig, "%", generateTypeName(this, pType, asSubStr(&name)));
+            if (i != function.params.paramLength - 1) {
+                format(&fnSig, ", ");
+            }
+        }
+    }
+    if (isExtern(function) && function.params.isVarArg) {
+        format(&fnSig, ", ...");
+    }
+    format(&fnSig, ")");
+    pushString(out, &fnSig);
+}
+
+func generateBlock(this: &CGen, block: &ParsedBlock, indent: usize) -> String {
+    assert(indent != 0, "generateBlock without indent");
+    let out: String = blank;
+    format(&out, "%{\n", generateIndent(indent - INDENTATION_LEVEL));
+    {
+        push(&this.stack, newCStack());
+        for (let i: usize = 0; i < block.stmtLength; i = i + 1) {
+            let entry: String = blank;
+            let stmt = generateStmt(this, &entry, block.stmtList[i], indent);
+            if (entry.length != 0) {
+                format(&out, "%\n", entry);
+                drop(&entry);
+            }
+            format(&out, "%\n", stmt);
+        }
+        pop(&this.stack);
+    }
+    format(&out, "%}\n", generateIndent(indent - INDENTATION_LEVEL));
+    return out;
+}
+
+func generateIndent(indent: usize) -> String {
+    let out: String = blank;
+    for (let i: usize = 0; i < indent; i = i + 1) {
+        pushChar(&out, ' ');
+    }
+    return out;
+}
+
+func generateStmt(this: &CGen, tmpAlloc: &String, stmt: &ParsedStmt, indent: usize) -> String {
+    let out: String = blank;
+    if let &StmtData::Block(_) = &stmt.data {
+    } else {
+        out = generateIndent(indent);
+    }
+    match (&stmt.data) {
+        &StmtData::VarDecl(decl) => {
+            format(&out, "%;", generateVarDecl(this, tmpAlloc, stmt, indent));
+        }
+        &StmtData::ReturnEmpty => {
+            format(&out, "return;");
+        }
+        &StmtData::ReturnExpr(expr) => {
+            format(&out, "return %;", generateExpr(this, tmpAlloc, expr));
+        }
+        &StmtData::Expr(expr) => {
+            format(&out, "%;", generateExpr(this, tmpAlloc, expr));
+        }
+        &StmtData::Block(block) => {
+            format(&out, "%", generateBlock(this, block, indent + INDENTATION_LEVEL));
+        }
+        &StmtData::If(cond, body) => {
+            format(&out,
+                "if %\n%",
+                generateExpr(this, tmpAlloc, cond),
+                generateStmt(this, tmpAlloc, body, indent));
+        }
+        &StmtData::IfElse(cond, body, elze) => {
+            format(&out,
+                "if %\n%\n%else\n%",
+                generateExpr(this, tmpAlloc, cond),
+                generateStmt(this, tmpAlloc, body, indent),
+                generateIndent(indent),
+                generateStmt(this, tmpAlloc, elze, indent));
+        }
+        &StmtData::While(cond, body) => {
+            format(&out,
+                "while %\n%",
+                generateExpr(this, tmpAlloc, cond),
+                generateStmt(this, tmpAlloc, body, indent));
+        }
+        &StmtData::CFor { init, cond, step, body } => {
+            format(&out,
+                "for (% %; %)\n%",
+                generateStmt(this, tmpAlloc, init, 0),
+                generateExpr(this, tmpAlloc, cond),
+                generateExpr(this, tmpAlloc, step),
+                generateStmt(this, tmpAlloc, body, indent));
+        }
+        &StmtData::Break => {
+            format(&out, "break;");
+        }
+        &StmtData::Continue => {
+            format(&out, "continue;");
+        }
+        &StmtData::Match(..) => {
+            format(&out, "%", generateMatchStmt(this, tmpAlloc, stmt, indent));
+        }
+        &StmtData::Asm(expr, args) => {
+            let s = toString(&stmt.span);
+            C::fprintf(stderr, "%s %.*s: Cannot transpile Inline Assembly to C yet.\n", ERR_STR, s.length, s.buffer);
+            C::exit(1);
+        }
+        &StmtData::IfLet(_pat, _expr, _block) => {
+            let expr = generateExpr(this, tmpAlloc, _expr);
+            let typ = getType(&_expr.typeState);
+
+            let ind = generateIndent(indent);
+            format(&out, "%{\n", ind); {
+                push(&this.stack, newCStack());
+                let tmp_name = format1("tmp_%_", getID(stmt));
+                let tmp_type = generateTypeName(this, typ, tmp_name);
+                format(&out, "% = %;\n", tmp_type, generateExpr(this, tmpAlloc, _expr));
+
+                let (pat, success) = generatePattern(this, tmpAlloc, _pat, tmp_name, typ, indent);
+                format(&out, "%\n", pat);
+                let block = generateBlock(this, _block, indent + INDENTATION_LEVEL);
+                format(&out, "%if (%) %", ind, success, block);
+                pop(&this.stack);
+            } format(&out, "%}\n", ind);
+        }
+        &StmtData::IfLetElse(_pat, _expr, _block, _elze) => {
+            let expr = generateExpr(this, tmpAlloc, _expr);
+            let typ = getType(&_expr.typeState);
+
+            let ind = generateIndent(indent);
+            format(&out, "%{\n", ind); {
+                push(&this.stack, newCStack());
+                let tmp_name = format1("tmp_%_", getID(stmt));
+                let tmp_type = generateTypeName(this, typ, tmp_name);
+                format(&out, "% = %;\n", tmp_type, generateExpr(this, tmpAlloc, _expr));
+
+                let (pat, success) = generatePattern(this, tmpAlloc, _pat, tmp_name, typ, indent);
+                format(&out, "%\n", pat);
+                let block = generateBlock(this, _block, indent + INDENTATION_LEVEL);
+                format(&out, "%if (%) % else", ind, success, block);
+                pop(&this.stack);
+
+                push(&this.stack, newCStack());
+                let elze = generateBlock(this, _elze, indent + INDENTATION_LEVEL);
+                format(&out, "%%", ind, elze);
+                pop(&this.stack);
+            } format(&out, "%}\n", ind);
+        }
+        &StmtData::WhileLet(_pat, _expr, _block) => {
+            let expr = generateExpr(this, tmpAlloc, _expr);
+            let typ = getType(&_expr.typeState);
+
+            let ind = generateIndent(indent);
+            format(&out, "%while (true) {\n", ind); {
+                push(&this.stack, newCStack());
+                let tmp_name = format1("tmp_%_", getID(stmt));
+                let tmp_type = generateTypeName(this, typ, tmp_name);
+                format(&out, "% = %;\n", tmp_type, generateExpr(this, tmpAlloc, _expr));
+
+                let (pat, success) = generatePattern(this, tmpAlloc, _pat, tmp_name, typ, indent);
+                format(&out, "%\n", pat);
+                let block = generateBlock(this, _block, indent + INDENTATION_LEVEL);
+                format(&out, "%if (!%) break;\n", ind, success);
+                format(&out, "%%\n", ind, block);
+                pop(&this.stack);
+            } format(&out, "%}\n", ind);
+        }
+        t => {
+            let s = toString(&stmt.span);
+            C::fprintf(stderr, "%s %.*s: stmt %hhu\n", FATAL_STR, s.length, s.buffer, tag(t));
+            return format1("\n#error TODO: generateStmt %\n", tag(t));
+        }
+    }
+    return out;
+}
+
+func generateVarDecl(this: &CGen, tmpAlloc: &String, _decl: &ParsedStmt, indent: usize) -> String {
+    let &StmtData::VarDecl(decl) = &_decl.data else {
+        unreachable("generateVarDecl");
+    };
+    if (decl.isComptime && *flags.warnSimple) {
+        let loc = toString(&_decl.span);
+        C::fprintf(stderr, "%s: %.*s: Comptime has no effect when transpiling to C.\n", WARN_STR, loc.length, loc.buffer);
+    }
+
+    let fast_path = func (this: &CGen, tmpAlloc: &String, tkn: Token, type: &Type, expr: &ParsedExpr, indent: usize) -> String {
+        let out: String = blank;
+        let _name = toString(&tkn.content);
+        makeNameCCompatible(&_name);
+        let e = generateExpr(this, tmpAlloc, expr);
+        format(&out, "% = %", generateTypeName(this, type, _name), e);
+        let stack = get_ref_raw(&this.stack, this.stack.length - 1) as &CStack;
+        add(&stack.variables, tkn.content, Var_Context {
+            bound_in_reference_pattern: false
+        });
+        return out;
+    };
+    if let &Pattern::PatWithType(subpat, typ) = &decl.pat.data {
+        if let &Pattern::Ident(tkn) = &subpat.data {
+            // Fast path: `let foo: bar = <expr>;`
+            return fast_path(this, tmpAlloc, tkn, getType(&typ.typeState), decl.expr, indent);
+        }
+    }
+    if let &Pattern::Ident(tkn) = &decl.pat.data {
+        // Fast path: `let foo = <expr>;`
+        return fast_path(this, tmpAlloc, tkn, getType(&decl.expr.typeState), decl.expr, indent);
+    }
+
+    // Slow path: Actually perform pattern matching.
+    let out: String = blank;
+    let ind = generateIndent(indent);
+    let id = getID(_decl);
+    let typ = getType(&decl.expr.typeState);
+
+    let tmp_name = format1("tmp_%_", id);
+    let tmp_type = generateTypeName(this, typ, tmp_name);
+    format(&out, "% = %;\n", tmp_type, generateExpr(this, tmpAlloc, decl.expr));
+
+    let (pat, success) = generatePattern(this, tmpAlloc, decl.pat, tmp_name, typ, indent);
+    format(&out, "%%", ind, pat);
+
+    if (decl.trampoline != null) {
+        format(&out, "if (!%) %", success, generateBlock(this, decl.trampoline, indent + INDENTATION_LEVEL));
+    } else if (*flags.debug) {
+        format(&out, "%if (!%) unreachablePcrN(\"RUNTIME ERROR: pattern of let statement is not exhaustive. this is a bug!\");\n", ind, success);
+    } else {
+        format(&out, "%(void)%", ind, success);
+    }
+    return out;
+}
+
+func generateMatchStmt(this: &CGen, tmpAlloc: &String, stmt: &ParsedStmt, indent: usize) -> String {
+    let &StmtData::Match(_expr, _pats, _arms) = &stmt.data else {
+        unreachable("generateMatchStmt");
+    };
+    let ind = generateIndent(indent);
+    let armInd = generateIndent(indent + INDENTATION_LEVEL);
+
+    let out: String = blank;
+    let typ = getType(&_expr.typeState);
+    let id = getID(stmt);
+
+    let tmp_name = format1("tmp_%_", id);
+    let tmp_type = generateTypeName(this, typ, tmp_name);
+    format(&out, "% = %;\n", tmp_type, generateExpr(this, tmpAlloc, _expr));
+
+    for (let i: usize = 0; i < _pats.length; i = i + 1) {
+        let _pat = _pats.elements[i];
+        let _arm = _arms.elements[i];
+
+        let (pat, succ) = generatePattern(this, tmpAlloc, _pat, tmp_name, typ, indent + INDENTATION_LEVEL);
+        let arm = generateStmt(this, tmpAlloc, _arm, indent + INDENTATION_LEVEL);
+
+        format(&out, "%{\n", ind);
+        format(&out, "%", pat);
+        format(&out, "%if (%) {%%goto after_%;\n}\n", armInd, succ, arm, armInd, id);
+        format(&out, "%}\n", ind);
+    }
+    format(&out, "%unreachablePcrN(\"RUNTIME ERROR: match statement is not exhaustive. this is a bug!\");\n", ind);
+    format(&out, "after_%:\n", id);
+    format(&out, "%(void)0; // error: label at end of compound statement is a C23 extension", ind);
+    return out;
+}
+
+func generatePattern(this: &CGen, tmpAlloc: &String, pat: &ParsedPattern, expr: String, type: &Type, indent: usize) -> (String, String) {
+    assert(indent != 0, "generatePattern: wrong indentation");
+    let initInd = generateIndent(indent - INDENTATION_LEVEL);
+    let ind = generateIndent(indent);
+
+    match (&pat.data) {
+        &Pattern::Wildcard => {
+            return (blank, format1("true"));
+        }
+        &Pattern::Ident(tkn) => {
+            let name = toString(&tkn.content);
+            makeNameCCompatible(&name);
+
+            let stack = get_ref_raw(&this.stack, this.stack.length - 1) as &CStack;
+            add(&stack.variables, tkn.content, Var_Context {
+                bound_in_reference_pattern: true,
+            });
+
+            let out: String = blank;
+            if (true) {
+                type = intoPointer(type);
+                format(&out, "%% = &%;\n", ind, generateTypeName(this, type, name), expr);
+            } else {
+                format(&out, "%% = %;\n", ind, generateTypeName(this, type, name), expr);
+            }
+            return (out, format1("true"));
+        }
+        &Pattern::PatWithType(sub, ty) => {
+            return generatePattern(this, tmpAlloc, sub, expr, type, indent);
+        }
+        &Pattern::Reference(sub) => {
+            let under = getUnderlyingType(type, false);
+            if (isPointer(under)) {
+                return generatePattern(this, tmpAlloc, sub, format1("*%", expr), under, indent);
+            } else {
+                return generatePattern(this, tmpAlloc, sub, expr, type, indent);
+            }
+        }
+        &Pattern::Struct(tkn, sub) => {
+            let success = format1("succ_%_", getID(pat));
+            format(tmpAlloc, "%bool % = true;\n", initInd, success);
+
+            return generatePatternStruct(this, tmpAlloc, pat, success, expr, type, indent);
+        }
+        &Pattern::Path(_, sub) => {
+            let success = format1("succ_%_", getID(pat));
+            format(tmpAlloc, "%bool % = true;\n", initInd, success);
+
+            let ptr = isPointer(type);
+            let under = type;
+            if (ptr) under = getUnderlyingType(type, false);
+            if (isUnion(under)) {
+                return generatePatternUnion(this, tmpAlloc, sub, success, expr, type, indent);
+            } else if (isStruct(under)) {
+                return generatePatternStruct(this, tmpAlloc, sub, success, expr, under, indent);
+            } else {
+                unreachable("generatePattern");
+            }
+        }
+        &Pattern::Tuple(pats) => {
+            let success = format1("succ_%_", getID(pat));
+            format(tmpAlloc, "%bool % = true;\n", initInd, success);
+            return generatePatternTuple(this, tmpAlloc, pat, success, expr, type, indent);
+        }
+        &Pattern::Rest => {
+            return (blank, format1("true"));
+        }
+        &Pattern::Boolean(b) => {
+            let success = format1("succ_%_", getID(pat));
+            format(tmpAlloc, "%bool % = true;\n", initInd, success);
+            return (format1("%% = % == %;\n", ind, success, expr, b), success);
+        }
+        p => {
+            return (format1("\n#error generatePattern %\n", tag(p)), format1("false"));
+        }
+    }
+    unreachable("generatePattern");
+}
+func generatePatternTuple(this: &CGen, tmpAlloc: &String, pat: &ParsedPattern, successVariable: String, expr: String, type: &Type, indent: usize) -> (String, String) {
+    let &Pattern::Tuple(pats) = &pat.data else {
+        unreachable("generatePatternTuple");
+    };
+
+    let ptr = isPointer(type);
+    if (ptr) type = getUnderlyingType(type, false);
+    let &Type::Tuple(types) = type else {
+        fprint("%: Nope, it's actually a %\n", toString(&pat.span), toString(type));
+        unreachable("generatePattern: Tuple");
+    };
+
+    let ind = generateIndent(indent);
+    let out: String = blank;
+
+    for (let i: usize = 0; i < pats.length; i = i + 1) {
+        let subPat = pats.elements[i];
+        let fieldType = types.elements[i];
+        let subExpr: String = blank;
+        if (ptr) {
+            subExpr = format1("%->_%", expr, i);
+        } else {
+            subExpr = format1("%._%", expr, i);
+        }
+        let (_sub, _succ) = generatePattern(this, tmpAlloc, subPat, subExpr, fieldType, indent);
+        format(&out, "%", _sub);
+        format(&out, "%% &= %;\n", ind, successVariable, _succ);
+        if (tag(&subPat.data) == comptime tag(&Pattern::Rest)) break;
+    }
+    return (out, successVariable);
+}
+func generatePatternUnion(this: &CGen, tmpAlloc: &String, pat: &ParsedPattern, successVariable: String, expr: String, type: &Type, indent: usize) -> (String, String) {
+    let name: &Token = null;
+    let subPatterns: ParsedPatternList = blank;
+    match (&pat.data) {
+        &Pattern::Ident(ident) => {
+            name = &ident;
+        }
+        &Pattern::Struct(ident, pats) => {
+            name = &ident;
+            subPatterns = pats;
+        }
+        _ => { unreachable(); }
+    }
+    let ptr = isPointer(type);
+    if (ptr) type = getUnderlyingType(type, false);
+    let &Type::Union(decl, _) = type else {
+        unreachable("generatePatternUnion");
+    };
+    let variant: &ParsedUnionVariant = null;
+    let found = resolveVariantByName(decl, name, &variant);
+    assert(found);
+    let variantTag = getVariantTag(decl, variant);
+
+    let ind = generateIndent(indent);
+    let out: String = blank;
+
+    // Tag Check
+    if (ptr) {
+        format(&out, "%% &= (%->tag == %);\n", ind, successVariable, expr, variantTag);
+    } else {
+        format(&out, "%% &= (%.tag == %);\n", ind, successVariable, expr, variantTag);
+    }
+
+    if let (true, fields) = get_fields(variant) {
+        for (let i: usize = 0; i < fields.length; i = i + 1) {
+            let subPat = subPatterns.elements[i];
+            let fieldNode = fields.elements[i];
+            let fieldType = getType(&fieldNode.typeState);
+            let subExpr: String = blank;
+            if (ptr) {
+                subExpr = format1("%->payload.variant%._%", expr, variantTag, i);
+            } else {
+                subExpr = format1("%.payload.variant%._%", expr, variantTag, i);
+            }
+            let (sub, success) = generatePattern(this, tmpAlloc, subPat, subExpr, fieldType, indent);
+            format(&out, "%", sub);
+            format(&out, "%% &= %;\n", ind, successVariable, success);
+            if (tag(&subPat.data) == comptime tag(&Pattern::Rest)) break;
+        }
+    }
+    return (out, successVariable);
+}
+
+func generatePatternStruct(this: &CGen, tmpAlloc: &String, pat: &ParsedPattern, successVariable: String, expr: String, type: &Type, indent: usize) -> (String, String) {
+    let &Pattern::Struct(_, patterns) = &pat.data else {
+        unreachable("generatePatternStruct");
+    };
+
+    let ptr = isPointer(type);
+    if (ptr) type = getUnderlyingType(type, false);
+    let &Type::Struct(decl) = type else {
+        fprint("%: Nope, it's actually a %\n", toString(&pat.span), toString(type));
+        unreachable("generatePatternStruct");
+    };
+
+    let out: String = blank;
+    let ind = generateIndent(indent);
+
+    for (let i: usize = 0; i < decl.context.fieldLength; i = i + 1) {
+        let subPat = *at(&patterns, i);
+        let fieldNode = getFieldTypeAtIndex(&decl.context, i);
+        let fieldName = getFieldNameAtIndex(&decl.context, i);
+        let fieldType = getType(&fieldNode.typeState);
+        let fieldExpr: String = blank;
+        if (ptr) {
+            fieldExpr = format1("%->%", expr, fieldName.content);
+        } else {
+            fieldExpr = format1("%.%", expr, fieldName.content);
+        }
+        let (sub, success) = generatePattern(this, tmpAlloc, subPat, fieldExpr, fieldType, indent);
+        format(&out, "%", sub);
+        format(&out, "%% &= %;\n", ind, successVariable, success);
+        if (tag(&subPat.data) == comptime tag(&Pattern::Rest)) break;
+    }
+
+    return (out, successVariable);
+}
+
+func generateExpr(this: &CGen, tmpAlloc: &String, expr: &ParsedExpr) -> String {
+    return format1("(%)", _generateExpr(this, tmpAlloc, expr));
+}
+func _generateExpr(this: &CGen, tmpAlloc: &String, expr: &ParsedExpr) -> String {
+    let out: String = blank;
+    match (&expr.data) {
+        &ExprData::IntLit(lit) => {
+            let _lit: String = blank;
+            format(&_lit, "%", lit.content);
+            let t = getType(&expr.typeState);
+            let &Type::Prim(pt) = t else {
+                unreachable("Integer Literal doesn't have primitive type");
+            };
+            match (pt) {
+                PrimType::Usize => { format(&_lit, "llu"); }
+                PrimType::U64   => { format(&_lit, "llu"); }
+                PrimType::I64   => { format(&_lit, "ll"); }
+                _ => { }
+            }
+            format(&out, "(%)(%)", generateTypeName(this, getType(&expr.typeState)), _lit);
+            drop(&_lit);
+        }
+        &ExprData::StrLit(lit) => {
+            format(&out, "\"%\"", unescape(lit.content));
+        }
+        &ExprData::CharLit(lit) => {
+            format(&out, "\'%\'", unescape(lit.content));
+        }
+        &ExprData::ArrayLit(ctx) => {
+            format(&out, "(%){", generateTypeName(this, getType(&expr.typeState)));
+            if (ctx.size == 0) {
+                for (let i: usize = 0; i < ctx.elemLength; i = i + 1) {
+                    let idx = getElementAtIndex(&ctx, i);
+                    let el = at(&exprs, idx);
+                    format(&out, "%", generateExpr(this, tmpAlloc, el));
+                    if (i != ctx.elemLength - 1) {
+                        format(&out, ", ");
+                    }
+                }
+            } else {
+                let idx = getElementAtIndex(&ctx, 0);
+                let el = at(&exprs, idx);
+                let e = generateExpr(this, tmpAlloc, el);
+                for (let i: usize = 0; i < ctx.size; i = i + 1) {
+                    format(&out, "%", e);
+                    if (i != ctx.size - 1) {
+                        format(&out, ", ");
+                    }
+                }
+            }
+            format(&out, "}");
+        }
+        &ExprData::Ident(ident) => {
+            let name: String = blank;
+            if let (ctx, true) = getVariableInfo(this, ident.name.content) {
+                name = toString(&ident.name.content);
+                if (ctx.bound_in_reference_pattern) {
+                    name = format1("*%", name);
+                }
+            } else {
+                if (isFunction(ident.type)) {
+                    name = getMangledName(at(&funcDecls, ident.origID));
+                } else {
+                    fprint("%\n", ident.name.content);
+                    return newStringFromStrLit("/*TODO: dont know this ident */");
+                }
+            }
+            makeNameCCompatible(&name);
+            format(&out, "%", name);
+        }
+        &ExprData::Unary(unary) => {
+            out = generateUnaryExpr(this, tmpAlloc, &unary);
+        }
+        &ExprData::Binary(bin) => {
+            out = generateBinaryExpr(this, tmpAlloc, expr);
+        }
+        &ExprData::Call(call) => {
+            format(&out, "%(", generateExpr(this, tmpAlloc, call.base));
+            for (let i: usize = 0; i < call.args.length; i = i + 1) {
+                format(&out, "%", generateExpr(this, tmpAlloc, call.args.elements[i]));
+                if (i != call.args.length - 1) {
+                    format(&out, ", ");
+                }
+            }
+            format(&out, ")");
+        }
+        &ExprData::Sizeof(what) => {
+            format(&out, "sizeof(%)", generateTypeName(this, what));
+        }
+        &ExprData::StructInit(str) => {
+            format(&out, "(%) { ", generateTypeName(this, getType(&expr.typeState)));
+            if (str.context.fieldLength == 0) {
+                format(&out, "0");
+            } else {
+                for (let i: usize = 0; i < str.context.fieldLength; i = i + 1) {
+                    let nameTkn = getFieldNameAtIndex(&str.context, i);
+                    let fieldNode = getFieldExprAtIndex(&str.context, i);
+                    let _name = toString(&nameTkn.content);
+                    makeNameCCompatible(&_name);
+                    let name = asSubStr(&_name);
+                    format(&out, ".% = %", name, generateExpr(this, tmpAlloc, fieldNode));
+                    if (i != str.context.fieldLength - 1) {
+                        format(&out, ", ");
+                    }
+                }
+            }
+            format(&out, " }");
+        }
+        &ExprData::UnionInit(uni) => {
+            out = generateUnionInit(this, tmpAlloc, expr);
+        }
+        &ExprData::As(subexpr, type) => {
+            let exprType = getType(&subexpr.typeState);
+            if (isFunction(exprType)) {
+                // Thank you C: ISO C forbids conversion of function pointer to object pointer type
+                format(&out, "(%)(usize)(%)", generateTypeName(this, type), generateExpr(this, tmpAlloc, subexpr));
+            } else if (isData(exprType)) {
+                format(&out, "*(%*)(%.ptr)", generateTypeName(this, type), generateExpr(this, tmpAlloc, subexpr));
+            } else {
+                format(&out, "(%)(%)", generateTypeName(this, type), generateExpr(this, tmpAlloc, subexpr));
+            }
+        }
+        &ExprData::Null => {
+            format(&out, "NULL");
+        }
+        &ExprData::Blank => {
+            format(&out, "(%) {0}", generateTypeName(this, getType(&expr.typeState)));
+        }
+        &ExprData::True => {
+            format(&out, "true");
+        }
+        &ExprData::False => {
+            format(&out, "false");
+        }
+        &ExprData::Func(function) => {
+            let name: String = getMangledName(function);
+            makeNameCCompatible(&name);
+            format(&out, "%", name);
+        }
+        &ExprData::TypeInfo(typ) => {
+            format(&out, "%", generateTypeInfo(this, expr.span, getType(&typ.typeState)));
+        }
+        &ExprData::AsData(subexpr) => {
+            let exprType = getType(&subexpr.typeState);
+            let e: String = blank;
+            if (isPointer(exprType)) {
+                e = generateExpr(this, tmpAlloc, subexpr);
+            } else {
+                let sub = generateExpr(this, tmpAlloc, subexpr);
+                let tmp_name = format1("tmp_%", getID(expr));
+                format(tmpAlloc, "% = %;\n", generateTypeName(this, exprType, tmp_name), sub);
+                e = format1("&%", tmp_name);
+            }
+            let ti = generateTypeInfo(this, expr.span, exprType);
+            format(&out, "(Data_s) { .ptr = %, .info = % }", e, ti);
+        }
+        &ExprData::Variadic(exprs) => {
+            let _v = getType(&expr.typeState);
+            let vt = generateTypeName(this, _v);
+            let et = generateTypeName(this, getUnderlyingType(_v, false));
+            format(&out, "(%) { .ptr = ", vt);
+            if (exprs.length == 0) {
+                format(&out, "NULL");
+            } else {
+                let tmp: String = blank;
+                format(&tmp, "(%[%]){ ", et, exprs.length);
+                for (let i: usize = 0; i < exprs.length; i = i + 1) {
+                    format(&tmp, "%", generateExpr(this, tmpAlloc, exprs.elements[i]));
+                    if (i != exprs.length - 1) {
+                        format(&tmp, ", ");
+                    }
+                }
+                format(&tmp, " }");
+                format(&out, "%", tmp);
+            }
+            format(&out, " , .length = % }", exprs.length);
+        }
+        &ExprData::Tuple(exprs) => {
+            let _t = getType(&expr.typeState);
+            let tt = generateTypeName(this, _t);
+            format(&out, "(%) { ", tt);
+            for (let i: usize = 0; i < exprs.length; i = i + 1) {
+                format(&out, "%", generateExpr(this, tmpAlloc, exprs.elements[i]));
+                if (i != exprs.length - 1) {
+                    format(&out, ", ");
+                }
+            }
+            format(&out, " }");
+        }
+        t => {
+            let s = toString(&expr.span);
+            C::fprintf(stderr, "%s %.*s: expr %hhu\n", FATAL_STR, s.length, s.buffer, tag(t));
+            return format1("/*TODO: generateExpr %*/", tag(t));
+        }
+    }
+    return out;
+}
+
+func generateTypeInfo(this: &CGen, span: Span, type: &Type) -> String {
+    let index = index_of_type(&this.type_info_table, type);
+    if (index >= this.type_info_table.length) {
+        let l: String = toString(&span);
+        let t: String = toString(type);
+        C::fprintf(stderr, "%s: %s: WEEWOO!!! Type Info for Type %s doesn't exist!!!\n", l.buffer, FATAL_STR, t.buffer);
+        C::exit(2);
+    }
+    return format1("type_info_table[%]", index);
+}
+func generateUnionInit(this: &CGen, tmpAlloc: &String, init: &ParsedExpr) -> String {
+    let type = getType(&init.typeState);
+    let &Type::Union(decl, _variant) = type else {
+        unreachable("generateUnionInit");
+    };
+    let &ExprData::UnionInit(uni) = &init.data else {
+        unreachable("generateUnionInit");
+    };
+
+    let out: String = blank;
+    format(&out, "(%) { ", generateTypeName(this, type));
+    format(&out, ".tag = %", _variant);
+    let has_non_empty = false;
+    for (let i: usize = 0; i < decl.variants.length; i = i + 1) {
+        let _v = *at(&decl.variants, i);
+        if let &ParsedUnionVariantData::Empty = &_v.data {
+        } else {
+            has_non_empty = true;
+            break;
+        }
+    }
+    if (has_non_empty) {
+        format(&out, ", .payload = ");
+        match (&uni) {
+            &UnionExpr::Tuple(texpr) => {
+                format(&out, "{ .variant% = { ", _variant);
+                for (let i: usize = 0; i < texpr.args.length; i = i + 1) {
+                    let v = texpr.args.elements[i];
+                    let te = generateExpr(this, tmpAlloc, v);
+                    format(&out, "._% = %", i, te);
+                    if (i != texpr.args.length - 1) {
+                        format(&out, ", ");
+                    }
+                }
+                format(&out, " } }");
+            }
+            &UnionExpr::Struct(sexpr) => {
+                format(&out, "{ .variant% = { ", _variant);
+                if (sexpr.context.fieldLength > 0) {
+                    for (let i: usize = 0; i < sexpr.context.fieldLength; i = i + 1) {
+                        let name = getFieldNameAtIndex(&sexpr.context, i);
+                        let field = getFieldExprAtIndex(&sexpr.context, i);
+                        let te = generateExpr(this, tmpAlloc, field);
+                        let index = getFieldIndex(*at(&decl.variants, _variant), &name.content);
+                        format(&out, "._% = %", index, te);
+                        if (i != sexpr.context.fieldLength - 1) {
+                            format(&out, ", ");
+                        }
+                    }
+                } else {
+                    format(&out, "0");
+                }
+                format(&out, " } }");
+            }
+            &UnionExpr::Empty => {
+                format(&out, "{0}");
+            }
+            _ => { unreachable(); }
+        }
+    }
+    format(&out, " }");
+    return out;
+}
+
+func isCLValue(this: &ParsedExpr) -> bool {
+    match (this.data) {
+        ExprData::Unary(UnaryExpr::Deref(_)) => { return true; }
+        ExprData::Binary(BinaryExpr::Indexed(lhs, rhs)) => { return true; }
+        ExprData::Binary(BinaryExpr::Dot(lhs, &ParsedExpr { _, _, rhs, .. })) => {
+            if (!isCLValue(lhs)) return false;
+            match (rhs) {
+                ExprData::Ident { .. } => { return true; }
+                _ => { }
+            }
+        }
+        ExprData::Ident { .. } => { return true; }
+        _ => { }
+    }
+    return false;
+}
+
+func generateUnaryExpr(this: &CGen, tmpAlloc: &String, unary: &UnaryExpr) -> String {
+    let out: String = blank;
+    match (unary) {
+        &UnaryExpr::Ref(expr) => {
+            if (isCLValue(expr)) {
+                format(&out, "&%", generateExpr(this, tmpAlloc, expr));
+            } else {
+                let tmp_name = format1("tmp_%", getID(expr));
+                let t = generateTypeName(this, getType(&expr.typeState), tmp_name);
+                let e = generateExpr(this, tmpAlloc, expr);
+                format(tmpAlloc, "% = %;\n", t, e);
+                format(&out, "&%", tmp_name);
+            }
+        }
+        &UnaryExpr::Deref(expr) => {
+            format(&out, "*%", generateExpr(this, tmpAlloc, expr));
+        }
+        &UnaryExpr::Negate(expr) => {
+            format(&out, "-%", generateExpr(this, tmpAlloc, expr));
+        }
+        &UnaryExpr::Not(expr) => {
+            format(&out, "!%", generateExpr(this, tmpAlloc, expr));
+        }
+        &UnaryExpr::Comptime(expr) => {
+            if (*flags.warnSimple) {
+                let loc = toString(&expr.span);
+                C::fprintf(stderr, "%s: %.*s: Comptime has no effect when transpiling to C.\n", WARN_STR, loc.length, loc.buffer);
+            }
+            format(&out, "%", generateExpr(this, tmpAlloc, expr));
+        }
+        t => {
+            unreachable("generateUnaryExpr");
+        }
+    }
+    return out;
+}
+
+func generateBinaryExpr(this: &CGen, tmpAlloc: &String, expr: &ParsedExpr) -> String {
+    let &ExprData::Binary(bin) = &expr.data else {
+        unreachable("generateBinaryExpr");
+    };
+    let out: String = blank;
+    match (&bin) {
+        &BinaryExpr::Path(_, rhs) => {
+            out = generateExpr(this, tmpAlloc, rhs);
+        }
+        &BinaryExpr::Dot(lhs, rhs) => {
+            let lhsType = getType(&lhs.typeState);
+            format(&out, "%", generateExpr(this, tmpAlloc, lhs));
+            if (isArray(lhsType)) {
+                let &Type::Array(_, size) = lhsType else { unreachable(); };
+                out.length = 0;
+                pushNumber(&out, size);
+            } else if (isVariadicType(lhsType)) {
+                pushStr(&out, ".length");
+            } else if (isStruct(lhsType) || isStructPointer(lhsType)) {
+                if (isStructPointer(lhsType)) {
+                    pushStr(&out, "->");
+                } else {
+                    pushStr(&out, ".");
+                }
+                let &ExprData::Ident(ident) = &rhs.data else {
+                    unreachable("Struct Dot doesn't have ident RHS");
+                };
+                let _field = toString(&ident.name.content);
+                makeNameCCompatible(&_field);
+                format(&out, "%", _field);
+            } else if (isTuple(lhsType) || isTuplePointer(lhsType)) {
+                return newStringFromStrLit("/*TODO: dot tuple */");
+            } else {
+                unreachable("generateBinaryExpr: Dot");
+            }
+        }
+        &BinaryExpr::Indexed(lhs, rhs) => {
+            let lhsType = getType(&lhs.typeState);
+            let lhsExpr = generateExpr(this, tmpAlloc, lhs);
+            let rhsExpr = generateExpr(this, tmpAlloc, rhs);
+            if (isArray(lhsType)) {
+                format(&out, "(%.arr)[%]", lhsExpr, rhsExpr);
+            } else if (isVariadicType(lhsType)) {
+                format(&out, "(%.ptr)[%]", lhsExpr, rhsExpr);
+            } else {
+                format(&out, "(%)[%]", lhsExpr, rhsExpr);
+            }
+        }
+        &BinaryExpr::Mod(lhs, rhs) => {
+            let lhsType = getType(&lhs.typeState);
+            let lhsExpr = generateExpr(this, tmpAlloc, lhs);
+            let rhsExpr = generateExpr(this, tmpAlloc, rhs);
+            if (isFloat(lhsType)) {
+                if (getSizeInBytes(lhsType) == 4) {
+                    format(&out, "fmodf(%, %)", lhsExpr, rhsExpr);
+                } else {
+                    format(&out, "fmod(%, %)", lhsExpr, rhsExpr);
+                }
+            } else {
+                format(&out, "% % %", lhsExpr, binOpAsStr(&bin), rhsExpr);
+            }
+        }
+        _ => {
+            let lhs: &ParsedExpr = null;
+            let rhs: &ParsedExpr = null;
+            extractOperands(&bin, &lhs, &rhs);
+            let lhsExpr = generateExpr(this, tmpAlloc, lhs);
+            let rhsExpr = generateExpr(this, tmpAlloc, rhs);
+            if (isArithmetic(&bin)) {
+                let lhsType = getType(&lhs.typeState);
+                let rhsType = getType(&rhs.typeState);
+                let resType = getType(&expr.typeState);
+                let rt = generateTypeName(this, resType);
+                if (isPointer(lhsType) && isPointer(rhsType)) {
+                    format(&out, "(%)((unsigned char *)% % (unsigned char *)%)", rt, lhsExpr, binOpAsStr(&bin), rhsExpr);
+                } else if (isPointer(lhsType)) {
+                    format(&out, "(%)((unsigned char *)% % %)", rt, lhsExpr, binOpAsStr(&bin), rhsExpr);
+                } else if (isPointer(rhsType)) {
+                    format(&out, "(%)(% % (unsigned char *)%)", rt, lhsExpr, binOpAsStr(&bin), rhsExpr);
+                } else {
+                    format(&out, "% % %", lhsExpr, binOpAsStr(&bin), rhsExpr);
+                }
+            } else {
+                format(&out, "% % %", lhsExpr, binOpAsStr(&bin), rhsExpr);
+            }
+        }
+    }
+    return out;
+}

@@ -11,10 +11,9 @@ The name is a reference to the [common toad](https://en.wikipedia.org/wiki/Commo
 - [x] Functional Programming capabilities
 - [x] Arbitrary code execution at compile time
 - [x] Unions and Pattern Matching
-- [ ] Closures
+- [x] Inline Assembly
 - [ ] Macros
 - [ ] Generics
-- [ ] Inline Assembly and/or Inline Machine Code
 
 ## Quick Start
 Note: If you want to build the compiler, check below this section.
@@ -24,6 +23,9 @@ bufo is a statically typed and compiled low-level general purpose programming la
 To get a quick overview over the language features, take a look at the [how_to](./how_to/) directory.
 
 ## Building the compiler
+### Dependencies
+- LLVM 20.1.7
+    - If your system doesn't provide LLVM as a package, you can use my [LLVM factory](https://github.com/pfhaupt/llvm-factory) to build it yourself.
 ### If you already have a copy of bufo
 Simply run `make`, the Makefile will do the rest.
 ```sh
@@ -39,8 +41,25 @@ $ python helper.py test [--dont-compile]
 ### Bootstrap - If you don't have a copy
 The compiler is [selfhosted](https://en.wikipedia.org/wiki/Self-hosting_(compilers)). This means that the compiler is written in bufo itself, without using any other programming languages or compilers to fall back to.
 
-Bootstrapping is currently not supported, however it is a high priority. Once such a mechanism exists, bootstrapping the compiler will be as simple as running
-```sh
-$ make bootstrap
+The compiler supports transpiling bufo code to C. As a result, the compiler also has a version "written" in C. You can find it in `./bootstrap/`. It is a single self-contained file.
+
+Depending on your operating system and preferred C compiler, run any of the provided scripts in the bootstrap directory from the root of the project.
+They will generate the initial bootstrap compiler, which you can then use to compile the real version.
+
+For example, to compile the compiler on Windows with cl.exe, run:
+```console
+$ python ./llvm.py
+$ .\bootstrap\bufo_windows.c.cl.bat
+[INFO] Successfully generated bootstrap/bufo_windows.c.exe
+$ .\bootstrap\bufo_windows.c.exe src\bufo.bufo -o .\bufo_windows.exe
+$ .\bufo_windows.exe --help
 ```
-in the terminal.
+
+As another example, to compile the compiler on Linux with clang, run:
+```console
+$ python3 ./llvm.py
+$ ./bootstrap/bufo_linux.c.clang.sh
+[INFO] Successfully generated bootstrap/bufo_linux.c.exe
+$ ./bootstrap/bufo_linux.c.exe ./src/bufo.bufo -o ./bufo_linux
+$ ./bufo_linux --help
+```

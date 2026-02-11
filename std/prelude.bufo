@@ -87,13 +87,6 @@ func bitCount(val: usize) -> usize {
     return r;
 }
 
-func getChar(s: &char, index: usize) -> char {
-    let _idk: Any = s;
-    let _ch: &char = _idk;
-    let c: char = *(_ch + index);
-    return c;
-}
-
 func isNumeric(ch: char) -> bool {
     let _u8 = ch as u8;
     return (_u8 >= 48) && (_u8 <= 57);

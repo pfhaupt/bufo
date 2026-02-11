@@ -69,6 +69,34 @@ union Type {
     Tuple(TypeList),
 }
 
+func containsInvalidType(this: &Type) -> bool {
+    match (this) {
+        &Type::Error => { return true; }
+        &Type::Unknown => { return true; }
+        &Type::Variadic(under) => { return containsInvalidType(under); }
+        &Type::Prim(_) => { return false; }
+        &Type::Ptr(under) => { return containsInvalidType(under); }
+        &Type::Array(under, _) => { return containsInvalidType(under); }
+        &Type::Func(params, ret, _) => {
+            for (let i: usize = 0; i < params.length; i = i + 1) {
+                if (containsInvalidType(params.elements[i])) return true;
+            }
+            return containsInvalidType(ret);
+        }
+        &Type::Struct(decl) => { return decl == null; }
+        &Type::Union(decl, _) => { return decl == null; }
+        &Type::Module(decl) => { return decl == null; }
+        &Type::Tuple(elems) => {
+            for (let i: usize = 0; i < elems.length; i = i + 1) {
+                if (containsInvalidType(elems.elements[i])) return true;
+            }
+            return false;
+        }
+        _ => { }
+    }
+    unreachable("containsInvalidType");
+}
+
 func getMangledName(this: &Type) -> String {
     match (this) {
         &Type::Prim(typ) => {

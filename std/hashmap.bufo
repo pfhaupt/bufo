@@ -1,10 +1,32 @@
 
-// TODO(2026-01-30): Move to stdlib
-
 import "type_info.bufo";
 import "libc.bufo";
 import "prelude.bufo";
 import "list.bufo";
+import "substr.bufo";
+import "string.bufo";
+
+func new_hashmap_with_substr_key(info: TypeInfo) -> GAF_HashMap {
+    return new_GAF_HashMap(type_info(SubStr), info,
+        func (key: Data) -> usize {
+            return hash(key.ptr as &SubStr);
+        },
+        func (k1: Data, k2: Data) -> bool {
+            return equals(k1.ptr as &SubStr, k2.ptr as &SubStr);
+        }
+    );
+}
+
+func new_hashmap_with_string_key(info: TypeInfo) -> GAF_HashMap {
+    return new_GAF_HashMap(type_info(String), info,
+        func (key: Data) -> usize {
+            return hash(key.ptr as &String);
+        },
+        func (k1: Data, k2: Data) -> bool {
+            return equals(k1.ptr as &String, k2.ptr as &String);
+        }
+    );
+}
 
 struct GAF_HashMap {
     elements: Any;

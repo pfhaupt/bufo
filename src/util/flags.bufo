@@ -112,7 +112,7 @@ func addBoolFlag(this: &FlagParser, short: &char, long: &char, descr: &char, mod
 func shiftArgument(this: &FlagParser, argc: &i32, argv: &&&char) -> &char {
     assert(*argc > 0);
     let result = **argv;
-    *argv = *argv + sizeof &&char;
+    *argv = &(*argv)[1];
     *argc = *argc - 1;
     return result;
 }

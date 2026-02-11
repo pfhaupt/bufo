@@ -1043,7 +1043,8 @@ func typeCheckModule(this: &TypeChecker, modID: usize, scopes: &ScopeLookupList)
 func typeCheckUnionDecl(this: &TypeChecker, onion: &ParsedUnionDecl) -> TCState {
     if (onion.ignored) return TCState::Success;
     let unionLookup = getUnionByGlobalDecl(&this.lookup, onion);
-    let result = TCState::Type(wrap(Type::Union(onion, 0)));
+    assert(isUnion(unionLookup.type), "typeCheckUnionDecl: Union Lookup doesn't contain Union Type");
+    let result = TCState::Type(unionLookup.type);
     for (let i: usize = 0; i < onion.variants.length; i = i + 1) {
         let variant = *at(&onion.variants, i);
         /*
@@ -1100,6 +1101,7 @@ func typeCheckStructDecl(this: &TypeChecker, structID: usize) -> TCState {
     let strukt: &ParsedStructDecl = at(&structDecls, structID);
     if (strukt.ignored) return TCState::Success;
     let structLookup: &StructLookup = getStructByGlobalID(&this.lookup, structID);
+    assert(isStruct(structLookup.type), "typeCheckStructDecl: Struct Lookup doesn't contain Struct Type");
     let context: &StructContext = &strukt.context;
     let result = TCState::Success;
     let failure = TCState::Invalid;
@@ -1119,7 +1121,7 @@ func typeCheckStructDecl(this: &TypeChecker, structID: usize) -> TCState {
         addField(structLookup, NODE_ID_OFFSET + i, name, state);
     }
     if (!isInvalid(&failure)) return failure;
-    strukt.typeState = TCState::Type(wrap(Type::Struct(strukt)));
+    strukt.typeState = TCState::Type(structLookup.type);
     return result;
 }
 
@@ -1412,6 +1414,11 @@ func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupLi
         &StmtData::Continue => { }
         &StmtData::Match(_,_,_) => { return typeCheckMatchStmt(this, stmt, scopes); }
         &StmtData::Asm(fn, args) => {
+            if (*flags.disableInlineAssembly) {
+                let loc = toString(&stmt.span);
+                C::fprintf(stderr, "%s: %s: Cannot use inline assembly.\n", loc.buffer, ERR_STR);
+                C::fprintf(stderr, "%s: %s: Flag `--no-inline-assembly` was provided.\n", loc.buffer, NOTE_STR);
+            }
             let exprState = typeCheckExpr(this, fn, scopes);
             if (isError(&exprState)) return exprState;
             if (wantsInfer(&exprState)) return exprState; // Can't be done in here

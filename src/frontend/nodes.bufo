@@ -440,7 +440,7 @@ func getParentModule(this: &ParsedStructDecl) -> &ParsedModule {
     assert(!this.parent.isFile, "getParentModule called on struct in a file scope");
     return at(&modules, this.parent.id as usize);
 }
-func getFullName(this: &ParsedStructDecl) -> String {
+func getFullName(this: &ParsedStructDecl, split: &char) -> String {
     let s: String = blank;
     let parent = this.parent;
     while (!parent.isFile) {
@@ -448,8 +448,7 @@ func getFullName(this: &ParsedStructDecl) -> String {
         let _s: String = blank;
         pushSubStr(&_s, &m.name.content);
         if (s.length != 0) {
-            pushChar(&_s, ':');
-            pushChar(&_s, ':');
+            pushStr(&_s, split);
         }
         pushString(&_s, &s);
         drop(&s);
@@ -457,11 +456,13 @@ func getFullName(this: &ParsedStructDecl) -> String {
         parent = m.parent;
     }
     if (s.length != 0) {
-        pushChar(&s, ':');
-        pushChar(&s, ':');
+        pushStr(&s, split);
     }
     pushSubStr(&s, &this.name.content);
     return s;
+}
+func getFullName(this: &ParsedStructDecl) -> String {
+    return getFullName(this, "::");
 }
 
 func newParsedStructDecl(parent: TLIParent, span: Span, name: Token) -> &ParsedStructDecl {
@@ -573,7 +574,7 @@ func getVariantTag(this: &ParsedUnionDecl, variant: &ParsedUnionVariant) -> usiz
 func getParentFile(this: &ParsedUnionDecl) -> &ParsedFile {
     return at(&files, this.span.file);
 }
-func getFullName(this: &ParsedUnionDecl) -> String {
+func getFullName(this: &ParsedUnionDecl, split: &char) -> String {
     let s: String = blank;
     let parent = this.parent;
     while (!parent.isFile) {
@@ -581,8 +582,7 @@ func getFullName(this: &ParsedUnionDecl) -> String {
         let _s: String = blank;
         pushSubStr(&_s, &m.name.content);
         if (s.length != 0) {
-            pushChar(&_s, ':');
-            pushChar(&_s, ':');
+            pushStr(&_s, split);
         }
         pushString(&_s, &s);
         drop(&s);
@@ -590,11 +590,13 @@ func getFullName(this: &ParsedUnionDecl) -> String {
         parent = m.parent;
     }
     if (s.length != 0) {
-        pushChar(&s, ':');
-        pushChar(&s, ':');
+        pushStr(&s, split);
     }
     pushSubStr(&s, &this.name.content);
     return s;
+}
+func getFullName(this: &ParsedUnionDecl) -> String {
+    return getFullName(this, "::");
 }
 func newParsedUnionDecl(parent: TLIParent, span: Span, name: Token) -> &ParsedUnionDecl {
     push(&unionDecls, ParsedUnionDecl {

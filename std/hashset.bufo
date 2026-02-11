@@ -1,0 +1,36 @@
+
+import "type_info.bufo";
+import "hashmap.bufo";
+import "substr.bufo";
+import "string.bufo";
+
+func new_substr_hashset() -> GAF_HashSet {
+    return GAF_HashSet {
+        _map: new_hashmap_with_substr_key(type_info(bool)),
+    };
+}
+
+func new_string_hashset() -> GAF_HashSet {
+    return GAF_HashSet {
+        _map: new_hashmap_with_string_key(type_info(bool)),
+    };
+}
+
+
+struct GAF_HashSet {
+    _map: GAF_HashMap; // Map<Key, bool>
+}
+
+func new_GAF_HashSet(key: TypeInfo, key_hash: func (Data) -> usize, key_equals: func (Data, Data) -> bool) -> GAF_HashSet {
+    return GAF_HashSet {
+        _map: new_GAF_HashMap(key, type_info(bool), key_hash, key_equals)
+    };
+}
+
+func add(this: &GAF_HashSet, key: Data) {
+    add(&this._map, key, true);
+}
+
+func contains(this: &GAF_HashSet, key: Data) -> bool {
+    return contains(&this._map, key);
+}

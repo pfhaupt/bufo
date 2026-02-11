@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+gcc -x c bootstrap/bufo_linux.c -o bootstrap/bufo_linux.c.exe -Wall -Wextra -Werror -pedantic -std=c99 -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable -Wno-builtin-declaration-mismatch -Wno-incompatible-pointer-types -Wno-missing-braces -L /lib/x86_64-linux-gnu/ -L /usr/lib64/llvm20/lib/ -L /usr/lib/llvm-20/lib/ -L /lib/llvm-20/lib/ -L ./wrapper/ -l target -Xlinker -lLLVM-20 -Xlinker -lm && echo [INFO] Successfully generated bootstrap/bufo_linux.c.exe || echo [ERROR] Could not generate bootstrap/bufo_linux.c.exe

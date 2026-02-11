@@ -23,7 +23,7 @@ func push(this: &ArenaBlock, elem: Any, newCap: usize) {
         return;
     }
     assert(this.length < this.capacity);
-    C::memcpy((this.elements as &usize) + this.length * this.elemSize, elem, this.elemSize);
+    C::memcpy((this.elements as &u8) + this.length * this.elemSize, elem, this.elemSize);
     this.length = this.length + 1;
 }
 func at(this: &ArenaBlock, index: usize) -> Any {

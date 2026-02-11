@@ -1,0 +1,90 @@
+
+import "prelude.bufo";
+import "libc.bufo";
+import "substr.bufo";
+import "string.bufo";
+import "type_info.bufo";
+
+func __format_helper(out: &String, arg: Data) {
+    match (arg.info) {
+        TypeInfo::Struct { name, _, _, fields } => {
+            if (C::strncmp(name.start, "SubStr", name.len) == 0) {
+                pushSubStr(out, arg.ptr);
+            } else if (C::strncmp(name.start, "String", name.len) == 0) {
+                pushString(out, arg.ptr);
+            } else {
+                pushSubStr(out, &name);
+                for (let i: usize = 0; i < fields.length; i = i + 1) {
+                    let f = &fields.elements[i];
+                    if (i > 0) pushChar(out, ',');
+                    pushSubStr(out, &f.name);
+                    let field_ptr = (arg.ptr as usize + f.offset_in_bytes) as Any;
+                    __format_helper(out, Data { ptr: field_ptr, info: type_info_table[f.type] });
+                }
+                pushStr(out, " }");
+            }
+        }
+        TypeInfo::Primitive { name, size, align } => {
+            if (C::strncmp(name.start, "i8", name.len) == 0) pushNumber(out, arg as i8);
+            else if (C::strncmp(name.start, "i16", name.len) == 0) pushNumber(out, arg as i16);
+            else if (C::strncmp(name.start, "i32", name.len) == 0) pushNumber(out, arg as i32);
+            else if (C::strncmp(name.start, "i64", name.len) == 0) pushNumber(out, arg as i64);
+            else if (C::strncmp(name.start, "u8", name.len) == 0) pushNumber(out, arg as u8);
+            else if (C::strncmp(name.start, "u16", name.len) == 0) pushNumber(out, arg as u16);
+            else if (C::strncmp(name.start, "u32", name.len) == 0) pushNumber(out, arg as u32);
+            else if (C::strncmp(name.start, "u64", name.len) == 0) pushNumber(out, arg as u64);
+            else if (C::strncmp(name.start, "usize", name.len) == 0) pushNumber(out, arg as usize);
+            else if (C::strncmp(name.start, "bool", name.len) == 0) if (arg as bool) pushStr(out, "true"); else pushStr(out, "false");
+            else if (C::strncmp(name.start, "char", name.len) == 0) pushChar(out, arg as char);
+            else if (C::strncmp(name.start, "Any", name.len) == 0) pushNumberAsHex(out, arg as usize);
+            else unreachable("__format_helper primitive");
+        }
+        TypeInfo::Pointer { _, underlying } => {
+            if (equals(&type_info_table[underlying], &type_info(char))) {
+                pushStr(out, arg as &char);
+            } else {
+                pushNumberAsHex(out, arg as usize);
+            }
+        }
+        _ => { unreachable("__format_helper"); }
+    }
+}
+
+func format(out: &String, fmt: &char, args: ...Data) {
+    let l = C::strlen(fmt);
+    let arg_count: usize = 0;
+    let escaped = false;
+    for (let i: usize = 0; i < l; i = i + 1) {
+        let c = fmt[i];
+        if (c == '\\') {
+            escaped = true;
+        } else if (c == '%') {
+            if (escaped) {
+                pushChar(out, c);
+            } else {
+                assert(arg_count < args.length, "RUNTIME ERROR: Format string received too many arguments");
+                let arg = args[arg_count];
+                __format_helper(out, arg);
+                arg_count = arg_count + 1;
+            }
+            escaped = false;
+        } else {
+            pushChar(out, c);
+            escaped = false;
+        }
+    }
+    assert(arg_count == args.length, "RUNTIME ERROR: Unused arguments in format string");
+}
+
+func format1(fmt: &char, args: ...Data) -> String {
+    let s: String = blank;
+    format(&s, fmt, args);
+    return s;
+}
+
+func fprint(fmt: &char, args: ...Data) {
+    let o: String = blank;
+    format(&o, fmt, args);
+    print(&o);
+    drop(&o);
+}

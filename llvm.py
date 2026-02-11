@@ -54,9 +54,9 @@ def assert_run(cmd: List[str]):
         print("stderr", proc.stderr.decode("utf-8"))
         exit(2)
 
-def compile_file(cmds: List[List[str]], path: str, llvm_path: str, libs: List[str], *args) -> str:
+def compile_file(cmds: List[List[str]], path: str, out: str, llvm_path: str, libs: List[str], *args) -> str:
     if sys.platform == "linux":
-        out = path.replace(".cpp", ".c")
+        out = out.replace(".cpp", ".c")
         out = out.replace(".c", ".o")
         include = llvm_path + "/../include/"
         cmd = ["cc", "-c", path, f"-I{include}", f"-L{llvm_path}", "-o", f"{out}"]
@@ -94,8 +94,8 @@ def link_file(cmds: List[List[str]], file: str) -> str:
 
 def compile_wrapper(llvm_path, libs):
     cmds = []
-    target_obj = compile_file(cmds, "./wrapper/target.c", llvm_path, libs)
-    variant_obj = compile_file(cmds, "./wrapper/variant.cpp", llvm_path, libs, "/std:c++20")
+    target_obj = compile_file(cmds, "./wrapper/target.c", "./wrapper/target.o" if sys.platform == "win32" else "./wrapper/libtarget.o", llvm_path, libs)
+    variant_obj = compile_file(cmds, "./wrapper/variant.cpp", "./wrapper/variant.o" if sys.platform == "win32" else "./wrapper/libvariant.o", llvm_path, libs, "/std:c++20")
     target_lib = link_file(cmds, target_obj)
     variant_lib = link_file(cmds, variant_obj)
     for cmd in cmds:

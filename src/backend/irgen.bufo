@@ -983,29 +983,7 @@ func fillLookup(this: &IRGen, project: &ParsedFile) -> bool {
     return true;
 }
 
-func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile) -> bool {
-    comptime NAME = BUILD_A_KEYWORD("TypeInfo");
-    comptime FILE = BUILD_A_KEYWORD("type_info.bufo");
-    let ti_file = getFileByFileName(FILE);
-    if (ti_file == null) {
-        // If we never imported the file, we can safely assume that we don't need Type Info.
-        return true;
-    }
-    let context = findUnionByNameInFile(this.lookup, &FILE, &NAME);
-    assert(context != null, "generateTypeInfoTable: Could not find union context for TypeInfo");
-
-    let file = getParentFile(context.global);
-    for (let j: usize = 0; j < file.mod.tlis.length; j = j + 1) {
-        let tli: &ParsedTopLevelItem = at(&topLevelItems, *at(&file.mod.tlis, j));
-        if (tli.ignored) continue;
-        if (tli.kind == TLI_VAR_DECL) {
-            generateBytecodeStmt(this, function, at(&stmts, tli.nodeID));
-            // generateBytecode will iterate over this file again,
-            // but we don't want to generate two statements
-            tli.ignored = true;
-        }
-    }
-
+func generateTypeInfoTable() -> TypeInfoTable {
     let table: TypeInfoTable = blank;
     // Fill table with unique types
     for (let i: usize = 0; i < types.length; i = i + 1) {
@@ -1287,10 +1265,8 @@ func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile
                 &TypeInfo::Variadic { _, under } => { count.elements[under] = count.elements[under] + 1; }
                 &TypeInfo::Function { _, args, ret } => {
                     let is_unknown = func (table: &TypeInfoTable, index: usize) -> bool {
-                        // TODO: Make let a pattern
-                        match (table.elements[index]) {
-                            TypeInfo::Unknown => { return true; }
-                            _ => { }
+                        if let TypeInfo::Unknown = table.elements[index] {
+                            return true;
                         }
                         return false;
                     };
@@ -1421,6 +1397,33 @@ func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile
         if (table.length == length) break;
         length = table.length;
     }
+    return table;
+}
+
+func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile) -> bool {
+    comptime NAME = BUILD_A_KEYWORD("TypeInfo");
+    comptime FILE = BUILD_A_KEYWORD("type_info.bufo");
+    let ti_file = getFileByFileName(FILE);
+    if (ti_file == null) {
+        // If we never imported the file, we can safely assume that we don't need Type Info.
+        return true;
+    }
+    let context = findUnionByNameInFile(this.lookup, &FILE, &NAME);
+    assert(context != null, "generateTypeInfoTable: Could not find union context for TypeInfo");
+
+    let file = getParentFile(context.global);
+    for (let j: usize = 0; j < file.mod.tlis.length; j = j + 1) {
+        let tli: &ParsedTopLevelItem = at(&topLevelItems, *at(&file.mod.tlis, j));
+        if (tli.ignored) continue;
+        if (tli.kind == TLI_VAR_DECL) {
+            generateBytecodeStmt(this, function, at(&stmts, tli.nodeID));
+            // generateBytecode will iterate over this file again,
+            // but we don't want to generate two statements
+            tli.ignored = true;
+        }
+    }
+
+    let table = generateTypeInfoTable();
     let t: &Type = intoArrayType(context.type, table.length);
     assert(getSizeInBytes(t) == sizeof TypeInfo * table.length, "Size mismatch");
     let reg: RegIndex = allocateRegister(function, t);
@@ -3061,10 +3064,14 @@ func generateBytecodeExprMemberAccess(this: &IRGen, function: &IRFunc, expr: &Bi
         return generateBytecodeExpr(this, function, rhs, needsPtr);
     }
     if (isArray(instance) || isArrayPointer(instance)) {
-        while let &Type::Ptr(under) = getUnderlyingType(instance, false) {
-            instance = under;
+        if (isArrayPointer(instance)) {
+            while let &Type::Ptr(under) = getUnderlyingType(instance, false) {
+                instance = under;
+            }
         }
         let &Type::Array(_, arraySize) = instance else {
+            let s = toString(instance);
+            C::fprintf(stderr, "%s %.*s\n", FATAL_STR, s.length, s.buffer);
             unreachable("Expected array in MemberAccess");
         };
         let usizeType: &Type = wrap(Type::Prim(PrimType::Usize));

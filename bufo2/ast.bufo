@@ -3,6 +3,7 @@ import "prelude.bufo";
 import "libc.bufo";
 import "substr.bufo";
 import "string.bufo";
+import "format.bufo";
 import "type_info.bufo";
 import "list.bufo";
 import "hashmap.bufo";

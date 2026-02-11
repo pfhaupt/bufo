@@ -1,4 +1,4 @@
-.PHONY: all clean brick examples clean_example how_to clean_howto bootstrap
+.PHONY: all clean brick examples clean_example how_to clean_howto bootstrap_windows bootstrap_linux bootstrap
 
 ifeq ($(OS),Windows_NT)
 TARGET = x86_64-pc-windows-msvc
@@ -97,8 +97,13 @@ else
 how_to: ${BUFO_CC} $(HOWTOOUT)
 endif
 
-bootstrap:
-	$(error `make bootstrap` is currently a stub and does nothing)
+bootstrap_windows: ${BUFO_CC}
+	${BUFO_CC} src/bufo.bufo -o bootstrap/bufo_windows.c --transpile-c --target x86_64-pc-windows-msvc
+	clang-format -style="{IndentWidth: 4, TabWidth: 4, ColumnLimit: 200}" -i bootstrap/bufo_windows.c
+bootstrap_linux: ${BUFO_CC}
+	${BUFO_CC} src/bufo.bufo -o bootstrap/bufo_linux.c --transpile-c --target x86_64-pc-linux-gnu
+	clang-format -style="{IndentWidth: 4, TabWidth: 4, ColumnLimit: 200}" -i bootstrap/bufo_linux.c
+bootstrap: bootstrap_windows bootstrap_linux
 
 brick:
 	./working.exe src/bufo.bufo -o $(BUFO_CC) $(EXTRA) --no-extern-comptime

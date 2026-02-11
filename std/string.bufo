@@ -124,6 +124,17 @@ func pushNumberAsHex(this: &String, num: usize) {
         pushChar(this, bfr[i]);
     }
 }
+func pushNumber(this: &String, i: f32) { pushNumber(this, i as f64); }
+func pushNumber(this: &String, num: f64) {
+    let bfr: [char; 50] = ['\0'; 50];
+    let length: usize = C::snprintf(null, 0, "%f", num);
+    assert(length < 50, "Buffer Overflow in String.pushNumber()");
+    C::snprintf(&bfr, length + 1, "%f", num);
+    for (let i: usize = 0; i < length; i = i + 1) {
+        pushChar(this, bfr[i]);
+    }
+
+}
 func pushNumber(this: &String, i: u8 ) { pushNumber(this, i as usize); }
 func pushNumber(this: &String, i: u16) { pushNumber(this, i as usize); }
 func pushNumber(this: &String, i: u32) { pushNumber(this, i as usize); }
@@ -142,7 +153,7 @@ func pushChar(this: &String, ch: char) {
     if (this.length >= this.capacity || this.capacity < 256) {
         resize(this, 2 * this.capacity);
     }
-    *(this.buffer + this.length * sizeof char) = ch;
+    this.buffer[this.length] = ch;
     this.length = this.length + 1;
 }
 func pushHex(this: &String, hex: u8) {
@@ -200,6 +211,12 @@ func toU64(this: &String) -> u64 {
         val = 10 * val + digit;
     }
     return val;
+}
+
+func replace(this: &String, what: char, with: char) {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (this.buffer[i] == what) this.buffer[i] = with;
+    }
 }
 
 func splitBy(this: &String, pred: func (char, &usize) -> bool) -> StringList {
