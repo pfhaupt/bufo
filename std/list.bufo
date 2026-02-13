@@ -155,3 +155,77 @@ func swap_remove(list: &GAF_List, index: usize) {
     list.length = list.length - 1;
 }
 
+// Helper function to swap two elements in the list
+func swap_elements(list: &GAF_List, i: usize, j: usize, swap_buffer:Any) {
+    if (i == j) return;
+    let size = list.type_size;
+    let a = list.elements as &usize + i * size;
+    let b = list.elements as &usize + j * size;
+    C::memcpy(swap_buffer, a, size);
+    C::memcpy(a, b, size);
+    C::memcpy(b, swap_buffer, size);
+}
+
+/// Insertion sort, stable, in‑loco
+/// fn_compare(a, b) returns a < b (ascending order sort)
+func sort(this: &GAF_List, fn_compare: func (Data, Data) -> bool) {
+    let size = this.type_size;
+    let temp = C::malloc(size); // temporary buffer
+    for (let i:usize = 1; i < this.length; i = i + 1) {
+        let current_ptr = this.elements as &usize + i * size;
+        C::memcpy(temp, current_ptr, size);
+        let temp_data = Data { ptr: temp, info: this.type };
+
+        let j = i;
+        while (j > 0) {
+            let prev_ptr = this.elements as &usize + (j - 1) * size;
+            let prev_data = Data { ptr: prev_ptr, info: this.type };
+            if (fn_compare(prev_data, temp_data)) {
+                break;
+            }
+            let dest = this.elements as &usize + j * size;
+            C::memcpy(dest, prev_ptr, size);
+            j = j - 1;
+        }
+        let dest = this.elements as &usize + j * size;
+        C::memcpy(dest, temp, size);
+    }
+    C::free(temp);
+}
+
+func qs_range(this: &GAF_List, low: usize, high: usize, fn_compare: func (Data, Data) -> bool, swap_buf:Any) {
+    if (low >= high) return;
+    
+    // Set the pivot as the last element in the array
+    let pivot_ptr = this.elements as &usize + high * this.type_size;
+    let pivot_data = Data { ptr: pivot_ptr, info: this.type };
+
+    //Partition
+    let i = low; 
+    for (let j = low; j < high; j = j + 1) {
+        let cur_ptr = this.elements as &usize + j * this.type_size;
+        let cur_data = Data { ptr: cur_ptr, info: this.type };
+        if (fn_compare(cur_data, pivot_data)) {
+            if (i != j) {
+                swap_elements(this, i, j, swap_buf);
+            }
+            i = i + 1;
+        }
+    }
+
+    if (i != high) {
+        swap_elements(this, i, high, swap_buf);
+    }
+
+    if (i > 0) qs_range(this, low, i - 1, fn_compare, swap_buf);
+    qs_range(this, i + 1, high, fn_compare, swap_buf);
+}
+
+/// Quick sort, not stable, in‑loco
+/// fn_compare(a, b) returns a < b (ascending order sort)
+func quick_sort(this: &GAF_List, fn_compare: func (Data, Data) -> bool) {
+    if (this.length <= 1) return;
+    let buf = C::malloc(this.type_size); // temporary buffer used for swaps
+    qs_range(this, 0, this.length - 1, fn_compare, buf);
+    C::free(buf);
+}
