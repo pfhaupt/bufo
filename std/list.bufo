@@ -103,7 +103,24 @@ func push(list: &GAF_List, elem: Data) {
     C::memcpy(list.elements as &usize + list.length * list.type_size, elem.ptr, list.type_size);
     list.length = list.length + 1;
 }
-
+func filter(this: &GAF_List, fn: func (Data) -> bool) {
+    let i: usize = 0;
+    let c: usize = 0;
+    for (i= 0; i < this.length; i = i + 1) {
+        let ret = fn(get_ref(this, i));
+        if(!ret){
+            if (i!=c){
+                C::memcpy(
+                    this.elements as &usize + c * this.type_size,
+                    this.elements as &usize + i * this.type_size,
+                    this.type_size
+                );
+            }
+            c=c+1;
+        }
+    }
+    this.length = this.length - (i-c);
+}
 func pop(list: &GAF_List) {
     pop(list, null);
 }
