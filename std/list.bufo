@@ -108,7 +108,7 @@ func filter(this: &GAF_List, fn: func (Data) -> bool) {
     let c: usize = 0;
     for (i= 0; i < this.length; i = i + 1) {
         let ret = fn(get_ref(this, i));
-        if(!ret){
+        if(ret){
             if (i!=c){
                 C::memcpy(
                     this.elements as &usize + c * this.type_size,
@@ -119,7 +119,7 @@ func filter(this: &GAF_List, fn: func (Data) -> bool) {
             c=c+1;
         }
     }
-    this.length = this.length - (i-c);
+    this.length = c;
 }
 func pop(list: &GAF_List) {
     pop(list, null);
