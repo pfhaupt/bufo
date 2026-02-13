@@ -41,6 +41,48 @@ func foreach(this: &GAF_List, fn: func (Data, Any), arg: Any) {
         fn(get_ref(this, i), arg);
     }
 }
+func map(list: &GAF_List, fn: func (Data) -> Data){
+    if (list.length == 0) return;
+    let elements: Any = null;
+    let size: usize = list.type_size;
+    
+    let ret = fn(get_ref(list, 0));
+    // check if fn returns a type different than the one stored in list
+    // if so, allocate a new array
+    // if not, i can reuse list.elements
+    if (!equals(&ret.info, &list.type)){
+        size = get_size(&ret.info);
+        elements = C::malloc(size*list.capacity);
+    }
+    else {
+        elements = list.elements; 
+    }
+    // copy the first element
+    C::memcpy(
+        elements as &usize,
+        ret.ptr,
+        size
+    );
+    
+    // iterate over the list starting from 1
+    // and apply fn to all the elements
+    for (let i: usize = 1; i < list.length; i = i + 1) {
+        ret = fn(get_ref(list, i));
+        C::memcpy(
+            elements as &usize + i*size,
+            ret.ptr ,
+            size
+        );
+    }
+    
+    // update list only if the type got changed
+    if (elements != list.elements){
+        C::free(list.elements);
+        list.type_size = size;
+        list.type = ret.info;
+        list.elements = elements;
+    }
+}
 
 func push(list: &GAF_List, elem: Data) {
     if (!equals(&list.type, &elem.info)) {
