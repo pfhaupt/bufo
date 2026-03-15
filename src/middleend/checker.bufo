@@ -1156,7 +1156,8 @@ func typeCheckFunction(this: &TypeChecker, function: &ParsedFuncDecl, scopes: &S
     if (isError(&retState)) return retState;
     let fnType = wrap(Type::Func(params, getType(&retState), FuncAttr {
         isVariadic: function.params.isVarArg,
-        isNoreturn: hasAttribute(function, ParsedAttribute::Noreturn)
+        isNoreturn: hasAttribute(function, ParsedAttribute::Noreturn),
+        isNodiscard: hasAttribute(function, ParsedAttribute::Nodiscard),
     }));
     let state = TCState::Type(fnType);
     funcLookup.fnType = state;
@@ -1318,6 +1319,16 @@ func typeCheckStmt(this: &TypeChecker, stmt: &ParsedStmt, scopes: &ScopeLookupLi
                 let loc: String = toString(&expr.span);
                 C::fprintf(stderr, "%s: %s: Unused expression value.\n", loc.buffer, WARN_STR);
                 drop(&loc);
+            }
+            if let &ExprData::Call(_call) = &expr.data {
+                if (!isNone(exprType)) {
+                    let baseType = getType(&_call.base.typeState);
+                    if (isNodiscard(baseType)) {
+                        let loc: String = toString(&expr.span);
+                        C::fprintf(stderr, "%s: %s: Ignoring return value of function marked `@nodiscard`.\n", loc.buffer, WARN_STR);
+                        drop(&loc);
+                    }
+                }
             }
             state = exprState;
         }
@@ -1995,7 +2006,7 @@ func typeCheckExprAs(this: &TypeChecker, expr: &ParsedExpr, curr: &ParsedExpr, t
         // Function as Any is allowed
         if (*flags.warnExtra) {
             let loc = toString(&curr.span);
-            let from = toString(typeType);
+            let from = toString(exprType);
             C::fprintf(stderr, "%s: %s: Casting from type %s to Any.\n",
                 loc.buffer, WARN_STR, from.buffer);
             drop(&from);

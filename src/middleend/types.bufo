@@ -427,6 +427,7 @@ func isFunction(this: &Type) -> bool {
 struct FuncAttr {
     isVariadic: bool;
     isNoreturn: bool;
+    isNodiscard: bool;
 }
 func isVariadic(this: &Type) -> bool {
     match (this) {
@@ -439,6 +440,12 @@ func isNoreturn(this: &Type) -> bool {
     match (this) {
         &Type::Func(_, _, attr) => { return attr.isNoreturn; }
         _ => { }
+    }
+    return false;
+}
+func isNodiscard(this: &Type) -> bool {
+    if let &Type::Func(_, _, attr) = this {
+        return attr.isNodiscard;
     }
     return false;
 }

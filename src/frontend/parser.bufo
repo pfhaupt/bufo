@@ -216,6 +216,8 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList, inModule: bool)
             push(attrs, ParsedAttribute::Naked);
         } else if (equals(&name.content, &_ATTR_NO_MANGLE)) {
             push(attrs, ParsedAttribute::Nomangle);
+        } else if (equals(&name.content, &_ATTR_NODISCARD)) {
+            push(attrs, ParsedAttribute::Nodiscard);
         } else {
             let loc = toString(&name.span);
             let n = toString(&name.content);

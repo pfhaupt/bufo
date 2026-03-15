@@ -128,6 +128,7 @@ comptime _ATTR_OS: SubStr = BUILD_A_KEYWORD("os");
 comptime _ATTR_NORETURN: SubStr = BUILD_A_KEYWORD("noreturn");
 comptime _ATTR_NAKED: SubStr = BUILD_A_KEYWORD("naked");
 comptime _ATTR_NO_MANGLE: SubStr = BUILD_A_KEYWORD("no_mangle");
+comptime _ATTR_NODISCARD: SubStr = BUILD_A_KEYWORD("nodiscard");
 
 union ParsedAttribute {
     Invalid,
@@ -136,6 +137,7 @@ union ParsedAttribute {
     Noreturn,
     Naked,
     Nomangle,
+    Nodiscard,
 }
 
 func equals(this: &ParsedAttribute, other: &ParsedAttribute) -> bool {
