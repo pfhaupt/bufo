@@ -1,0 +1,62 @@
+
+import "prelude.bufo";
+
+@os(WINDOWS) import "winapi/constants.bufo";
+@os(WINDOWS) import "winapi/structs.bufo";
+@os(WINDOWS) import "winapi/functions.bufo";
+@os(LINUX) import "posix/constants.bufo";
+@os(LINUX) import "posix/structs.bufo";
+@os(LINUX) import "posix/functions.bufo";
+
+struct Mutex {
+    handle: Handle;
+}
+
+struct MutexLock {
+    owner: &Mutex;
+}
+
+func init_mutex() -> Mutex {
+    @os(WINDOWS) let handle = WinAPI::CreateMutex(null, WIN_FALSE, null);
+    @os(LINUX)   let handle = pthread::mutex_init(null);
+    assert(!isNull(handle), "ERROR: Could not create Mutex!");
+
+    return Mutex {
+        handle: handle
+    };
+}
+
+func destroy_mutex(mutex: &Mutex) {
+    @os(WINDOWS) {
+        let err = WinAPI::CloseHandle(mutex.handle);
+        assert(success(err), "ERROR: Could not destroy Mutex!");
+    }
+    @os(LINUX) {
+        pthread::mutex_destroy(mutex.handle);
+    }
+}
+
+@nodiscard func lock(mutex: &Mutex) -> MutexLock {
+    @os(WINDOWS) let state = WinAPI::WaitForSingleObject(mutex.handle, INFINITE);
+    @os(LINUX) let state: i32 = pthread::mutex_lock(mutex.handle);
+    assert(state == 0, "ERROR: Could not lock Mutex!");
+
+    return MutexLock {
+        owner: mutex
+    };
+}
+func unlock(mutex: MutexLock) {
+    @os(WINDOWS) {
+        let _res = WinAPI::ReleaseMutex(mutex.owner.handle);
+        assert(success(_res), "ERROR: Could not unlock Mutex!");
+    }
+    @os(LINUX) {
+        let s = pthread::mutex_unlock(mutex.owner.handle);
+        assert(s == 0, "ERROR: Could not unlock Mutex!");
+    }
+}
+func lock(mutex: &Mutex, callback: func (Any), arg: Any) {
+    let _lock = lock(mutex);
+    callback(arg);
+    unlock(_lock);
+}

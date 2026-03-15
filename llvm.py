@@ -49,6 +49,9 @@ def enumeratePtrs(ptrs: List[str]) -> str:
 
 def assert_run(cmd: List[str]):
     proc = try_call(cmd)
+    _out = proc.stderr.decode("utf-8")
+    if len(_out) != 0:
+        print(_out)
     if proc.returncode != 0:
         print("stdout", proc.stdout.decode("utf-8"))
         print("stderr", proc.stderr.decode("utf-8"))
@@ -98,6 +101,9 @@ def compile_wrapper(llvm_path, libs):
     variant_obj = compile_file(cmds, "./wrapper/variant.cpp", "./wrapper/variant.o" if sys.platform == "win32" else "./wrapper/libvariant.o", llvm_path, libs, "/std:c++20")
     target_lib = link_file(cmds, target_obj)
     variant_lib = link_file(cmds, variant_obj)
+    if sys.platform == "linux":
+        pthread_obj = compile_file(cmds, "./wrapper/pthread1.c", "./wrapper/libpthread1.o", llvm_path, libs)
+        pthread_lib = link_file(cmds, pthread_obj)
     for cmd in cmds:
         assert_run(cmd)
     print("[INFO] Generated LLVM wrapper")

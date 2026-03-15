@@ -88,3 +88,26 @@ func fprint(fmt: &char, args: ...Data) {
     print(&o);
     drop(&o);
 }
+
+// TODO(2026-03-09): Replace assert, unreachable and todo in the prelude with
+//                   these functions
+func fassert(cond: bool, fmt: &char, args: ...Data) {
+    if (!cond) {
+        let _s = format1(fmt, args);
+        pushChar(&_s, '\0');
+        assert(false, _s.buffer);
+    }
+}
+
+@noreturn func ftodo(msg: &char, args: ...Data) {
+    let _s = format1(msg, args);
+    pushChar(&_s, '\0');
+    todo_with_msg(_s.buffer);
+}
+
+// The fun is reachable :^)
+@noreturn func funreachable(msg: &char, args: ...Data) {
+    let _s = format1(msg, args);
+    pushChar(&_s, '\0');
+    unreachable(_s.buffer);
+}

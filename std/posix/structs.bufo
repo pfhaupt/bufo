@@ -41,3 +41,13 @@ system at any time.
     __unused: [i64; 3];
 }
 
+@os(LINUX) struct pthread_t {
+    id: usize;
+}
+
+@os(LINUX) struct pthread_attr_t {
+}
+@os(LINUX) struct pthread_mutexattr_t {
+}
+@os(LINUX) struct pthread_barrierattr_t {
+}

@@ -58,4 +58,32 @@ module WinAPI {
     @extern("VirtualFree") func VirtualFree(address: Any, bytes: usize, flags: u32) -> BOOL;
     @extern("GetModuleFileNameA") func GetModuleFileNameA(hModule: Handle, lpFileName: &char, nSize: u32) -> u32;
     @extern("FormatMessageA") func FormatMessage(dwFlags: u32, lpSource: &char, dwMessageId: u32, dwLanguageId: u32, lpBuffer: &&char, nSize: u32, ...) -> u32;
+
+    @extern("CreateThread") func CreateThread(
+        lpSecurityAttributes: &SecurityAttributes,
+        dwStackSize: usize,
+        lpStartAddress: func (Any) -> i32,
+        lpParameter: Any,
+        dwCreationFlags: i32,
+        lpThreadId: &i32,
+    ) -> Handle;
+
+    @extern("CreateMutexA") func CreateMutex(
+        lpMutexAttributes: &SecurityAttributes,
+        bInitialOwner: BOOL,
+        lpName: &char,
+    ) -> Handle;
+    @extern("ReleaseMutex") func ReleaseMutex(hMutex: Handle) -> BOOL;
+
+    @extern("CreateSemaphoreA") func CreateSemaphore(
+        lpSemaphoreAttributes: &SecurityAttributes,
+        lInitialCount: i32,
+        lMaximumCount: i32,
+        lpName: &char,
+    ) -> Handle;
+    @extern("ReleaseSemaphore") func ReleaseSemaphore(hSemaphore: Handle, lReleaseCount: i32, lpPreviousCount: &i32) -> BOOL;
+
+    @extern("InitializeSynchronizationBarrier") func InitializeSynchronizationBarrier(lpBarrier: &RTL_Barrier, lTotalThreads: i32, lSpinCount: i32) -> BOOL;
+    @extern("EnterSynchronizationBarrier") func EnterSynchronizationBarrier(lpBarrier: &RTL_Barrier, dwFlags: i32) -> BOOL;
+    @extern("DeleteSynchronizationBarrier") func DeleteSynchronizationBarrier(lpBarrier: &RTL_Barrier) -> BOOL;
 }

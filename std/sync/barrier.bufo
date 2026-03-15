@@ -1,0 +1,56 @@
+
+import "prelude.bufo";
+import "libc.bufo";
+
+@os(WINDOWS) import "winapi/constants.bufo";
+@os(WINDOWS) import "winapi/structs.bufo";
+@os(WINDOWS) import "winapi/functions.bufo";
+@os(LINUX) import "posix/constants.bufo";
+@os(LINUX) import "posix/structs.bufo";
+@os(LINUX) import "posix/functions.bufo";
+
+struct Barrier {
+    // Windows => &RTL_Barrier
+    // Linux => &pthread_barrier_t
+    handle: Handle;
+}
+
+func init_barrier(threads: i32) -> Barrier {
+    @os(WINDOWS) {
+        let _barrier = C::malloc(sizeof(RTL_Barrier));
+        let _res = WinAPI::InitializeSynchronizationBarrier(_barrier, threads, -1);
+        assert(success(_res), "ERROR: Could not initialize Synchronization Barrier!");
+        return Barrier {
+            handle: Handle {
+                ptr: _barrier as usize
+            }
+        };
+    }
+    @os(LINUX) {
+        let barrier = pthread::barrier_init(null, threads as u32);
+        assert(!isNull(barrier), "ERROR: Could not initialize Synchronization Barrier");
+        return Barrier {
+            handle: barrier
+        };
+    }
+}
+
+func enter_barrier(barrier: &Barrier) {
+    @os(WINDOWS) {
+        let _res = WinAPI::EnterSynchronizationBarrier(barrier.handle.ptr as &RTL_Barrier, 0);
+    }
+    @os(LINUX) {
+        let s = pthread::barrier_wait(barrier.handle);
+    }
+}
+
+func delete_barrier(barrier: Barrier) {
+    @os(WINDOWS) {
+        let _res = WinAPI::DeleteSynchronizationBarrier(barrier.handle.ptr as &RTL_Barrier);
+        assert(success(_res), "The DeleteSynchronizationBarrier function always returns TRUE");
+        C::free(barrier.handle.ptr as &RTL_Barrier);
+    }
+    @os(LINUX) {
+        let s = pthread::barrier_destroy(barrier.handle);
+    }
+}

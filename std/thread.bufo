@@ -1,0 +1,96 @@
+
+import "libc.bufo";
+import "type_info.bufo";
+import "prelude.bufo";
+import "format.bufo";
+
+@os(WINDOWS) import "winapi/constants.bufo";
+@os(WINDOWS) import "winapi/structs.bufo";
+@os(WINDOWS) import "winapi/functions.bufo";
+@os(LINUX) import "posix/constants.bufo";
+@os(LINUX) import "posix/structs.bufo";
+@os(LINUX) import "posix/functions.bufo";
+
+struct Thread {
+    handle: Handle;
+    result: Thread_Result;
+}
+
+func is_pending(thread: &Thread) -> bool {
+    if let Thread_Result::Pending = thread.result {
+        return true;
+    }
+    return false;
+}
+
+union Thread_Result {
+    Pending,
+    Success,
+    Failure(i32),
+}
+
+union Wait_Result {
+    Timeout,
+    Done,
+}
+
+@nodiscard func spawn_thread(fn: func (Any) -> Thread_Result) -> &Thread {
+    return spawn_thread(fn, null);
+}
+@nodiscard func spawn_thread(fn: func (Any) -> Thread_Result, arg: Any) -> &Thread {
+    let thread: &Thread = C::calloc(1, sizeof(Thread));
+    thread.result = Thread_Result::Pending;
+
+    let kickoff = func (_arg: Any) -> i32 {
+        let &(fn, arg, thread) = _arg as &(func (Any) -> Thread_Result, Any, &Thread);
+        thread.result = fn(arg);
+        C::free(_arg);
+        return 0;
+    };
+    let _dummy = &(fn, arg, thread);
+    let _size = get_size(&((*_dummy) as Data).info);
+
+    @os(WINDOWS) {
+        let thread_id: i32 = 0;
+        thread.handle = WinAPI::CreateThread(null, 0, kickoff, C::memcpy(C::malloc(_size), _dummy, _size), 0, &thread_id);
+        assert(!isNull(thread.handle), "ERROR: Could not spawn thread");
+    }
+
+    @os(LINUX) {
+        let thread_id: pthread_t = blank;
+        let s = pthread::create(&thread_id, null, kickoff, C::memcpy(C::malloc(_size), _dummy, _size));
+        assert(s == 0, "ERROR: Could not spawn thread");
+        thread.handle.ptr = thread_id.id;
+    }
+
+    return thread;
+}
+
+func destroy_thread(thread: &Thread) {
+    fassert(!is_pending(thread), "ERROR: Could not destroy thread: Thread % is still running.", thread.handle.ptr);
+    @os(WINDOWS) {
+        let err = WinAPI::CloseHandle(thread.handle);
+        assert(success(err), "ERROR: Could not destroy thread");
+    }
+    @os(LINUX) {
+        // Noop
+    }
+    C::free(thread);
+}
+
+@nodiscard func wait(thread: &Thread, timeout_ms: u32) -> Wait_Result {
+    // NOTE(2026-03-09): POSIX doesn't easily allow us to wait for a given timeout interval,
+    //                   so the argument does nothing on Linux.
+    @os(WINDOWS) let state = WinAPI::WaitForSingleObject(thread.handle, timeout_ms);
+    @os(LINUX) let state = pthread::join(pthread_t { id: thread.handle.ptr }, null);
+    if (state != 0) return Wait_Result::Timeout;
+
+    assert(!is_pending(thread), "ERROR: wait signaled finished thread, but it is not done");
+    return Wait_Result::Done;
+}
+
+@nodiscard func wait(thread: &Thread) -> Wait_Result {
+    @os(WINDOWS) return wait(thread, INFINITE);
+    @os(LINUX) return wait(thread, 0);
+}
+

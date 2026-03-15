@@ -51,3 +51,29 @@ import "./structs.bufo";
         ptr: dlsym(handle.ptr as Any, symbol) as usize
     };
 }
+
+@os(LINUX) module pthread {
+    config {
+        libpath: "./wrapper",
+        static: "pthread1",
+    }
+    // NOTE(2026-03-09): To simplify `spawn_thread` we define `start_routine` to return a i32 instead
+    //                   of a void*, like POSIX says. Yes it is kinda UB, but realistically it's
+    //                   gonna be passed in the same register anyway.
+    @extern("_pthread_create") func create(thread: &pthread_t, attr: &pthread_attr_t, start_routine: func (Any) -> i32, arg: Any) -> i32;
+    @extern("_pthread_join") func join(thread: pthread_t, retval: &Any) -> i32;
+
+    @extern("_pthread_mutex_init") func mutex_init(mutexattr: &pthread_mutexattr_t) -> Handle;
+    @extern("_pthread_mutex_lock") func mutex_lock(mutex: Handle) -> i32;
+    @extern("_pthread_mutex_unlock") func mutex_unlock(mutex: Handle) -> i32;
+    @extern("_pthread_mutex_destroy") func mutex_destroy(mutex: Handle);
+
+    @extern("_pthread_sem_init") func sem_init(pshared: i32, value: i32) -> Handle;
+    @extern("_pthread_sem_wait") func sem_wait(sem: Handle) -> i32;
+    @extern("_pthread_sem_post") func sem_post(sem: Handle) -> i32;
+    @extern("_pthread_sem_destroy") func sem_destroy(sem: Handle);
+
+    @extern("_pthread_barrier_init") func barrier_init(attr: &pthread_barrierattr_t, count: u32) -> Handle;
+    @extern("_pthread_barrier_wait") func barrier_wait(barrier: Handle) -> i32;
+    @extern("_pthread_barrier_destroy") func barrier_destroy(barrier: Handle) -> i32;
+}

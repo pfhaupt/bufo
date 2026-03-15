@@ -12,6 +12,7 @@ system at any time.
 @os(WINDOWS) struct BOOL { i: i32; }
 @os(WINDOWS) func success(b: BOOL) -> bool { return b.i != 0; }
 @os(WINDOWS) func failed(b: BOOL) -> bool { return b.i == 0; }
+@os(WINDOWS) comptime WIN_FALSE = BOOL { i: 0 };
 
 @os(WINDOWS) struct Handle {
     ptr: usize;
@@ -57,4 +58,12 @@ system at any time.
 
 @os(WINDOWS) struct FileTime {
     time: usize;
+}
+
+@os(WINDOWS) struct RTL_Barrier {
+    Reserved1: i32;
+    Reserved2: i32;
+    Reserved3: [&u32; 2];
+    Reserved4: i32;
+    Reserved5: i32;
 }

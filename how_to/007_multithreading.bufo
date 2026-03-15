@@ -1,0 +1,126 @@
+
+import "prelude.bufo";
+import "format.bufo";
+
+import "thread.bufo";
+import "sync/mutex.bufo";
+import "sync/semaphore.bufo";
+import "sync/barrier.bufo";
+
+struct Counter_Mutex {
+    value: u32;
+    mutex: Mutex;
+}
+
+func increase_counter(counter: &Counter_Mutex, value: u32) {
+    let _lock = lock(&counter.mutex);
+    counter.value = counter.value + value;
+    unlock(_lock);
+}
+
+func init_counter(init_value: u32) -> Counter_Mutex {
+    return Counter_Mutex {
+        value: init_value,
+        mutex: init_mutex(),
+    };
+}
+
+func foo_mutex(arg: Any) -> Thread_Result {
+    let counter = arg as &Counter_Mutex;
+    for (let i: usize = 0; i < 100000; i = i + 1) {
+        increase_counter(counter, 1);
+    }
+    return Thread_Result::Success;
+}
+
+func showcase1() {
+    let counter: Counter_Mutex = init_counter(0);
+
+    let threads: [&Thread; 20] = blank;
+    for (let i: usize = 0; i < 20; i = i + 1) {
+        threads[i] = spawn_thread(foo_mutex, &counter);
+    }
+    for (let i: usize = 0; i < 20; i = i + 1) {
+        let _ = wait(threads[i]);
+    }
+    for (let i: usize = 0; i < 20; i = i + 1) {
+        destroy_thread(threads[i]);
+    }
+    destroy_mutex(&counter.mutex);
+
+    fprint("Counter_Mutex has a value of %\n", counter.value);
+}
+
+struct Counter_Sema {
+    value: u32;
+    semaphore: Semaphore;
+}
+
+func increase_counter(counter: &Counter_Sema, value: u32) {
+    let _lock = wait(&counter.semaphore);
+    counter.value = counter.value + value;
+    signal(_lock);
+}
+
+func init_counter(init_value: u32) -> Counter_Sema {
+    return Counter_Sema {
+        value: init_value,
+        semaphore: init_semaphore(1),
+    };
+}
+
+func foo_sema(arg: Any) -> Thread_Result {
+    let counter = arg as &Counter_Sema;
+    for (let i: usize = 0; i < 100000; i = i + 1) {
+        increase_counter(counter, 1);
+    }
+    return Thread_Result::Success;
+}
+
+func showcase2() {
+    let counter: Counter_Sema = init_counter(0);
+
+    let threads: [&Thread; 20] = blank;
+    for (let i: usize = 0; i < 20; i = i + 1) {
+        threads[i] = spawn_thread(foo_sema, &counter);
+    }
+    for (let i: usize = 0; i < 20; i = i + 1) {
+        let _ = wait(threads[i]);
+    }
+    for (let i: usize = 0; i < 20; i = i + 1) {
+        destroy_thread(threads[i]);
+    }
+    destroy_semaphore(&counter.semaphore);
+
+    fprint("Counter_Sema has a value of %\n", counter.value);
+}
+
+
+func test_barrier(arg: &Barrier) -> Thread_Result {
+    fprint("before barrier\n");
+    enter_barrier(arg);
+    fprint("after barrier\n");
+    return Thread_Result::Success;
+}
+
+func showcase3() {
+    let barrier = init_barrier(10);
+    let threads: [&Thread; 10] = blank;
+    for (let i: usize = 0; i < 10; i = i + 1) {
+        threads[i] = spawn_thread(test_barrier, &barrier);
+    }
+    for (let i: usize = 0; i < 10; i = i + 1) {
+        let _ = wait(threads[i]);
+    }
+    for (let i: usize = 0; i < 10; i = i + 1) {
+        destroy_thread(threads[i]);
+    }
+    delete_barrier(barrier);
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    showcase1();
+    showcase2();
+    showcase3();
+    return 0;
+}

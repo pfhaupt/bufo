@@ -1,0 +1,67 @@
+
+import "prelude.bufo";
+
+@os(WINDOWS) import "winapi/constants.bufo";
+@os(WINDOWS) import "winapi/structs.bufo";
+@os(WINDOWS) import "winapi/functions.bufo";
+@os(LINUX) import "posix/constants.bufo";
+@os(LINUX) import "posix/structs.bufo";
+@os(LINUX) import "posix/functions.bufo";
+
+struct Semaphore {
+    handle: Handle;
+    max_value: i32;
+}
+
+struct SemaphoreLock {
+    owner: &Semaphore;
+}
+
+func init_semaphore(max_value: i32) -> Semaphore {
+    @os(WINDOWS) let handle = WinAPI::CreateSemaphore(null, max_value, max_value, null);
+    @os(LINUX) let handle = pthread::sem_init(0, max_value);
+    assert(!isNull(handle), "ERROR: Could not create Semaphore!");
+
+    return Semaphore {
+        handle: handle,
+        max_value: max_value,
+    };
+}
+
+func destroy_semaphore(semaphore: &Semaphore) {
+    @os(WINDOWS) {
+        let err = WinAPI::CloseHandle(semaphore.handle);
+        assert(success(err), "ERROR: Could not destroy Semaphore!");
+    }
+    @os(LINUX) {
+        pthread::sem_destroy(semaphore.handle);
+    }
+}
+
+@nodiscard func wait(sema: &Semaphore) -> SemaphoreLock {
+    @os(WINDOWS) let state = WinAPI::WaitForSingleObject(sema.handle, INFINITE);
+    @os(LINUX) let state = pthread::sem_wait(sema.handle);
+    assert(state == 0, "ERROR: Could not wait on Semaphore!");
+
+    return SemaphoreLock {
+        owner: sema,
+    };
+}
+
+func signal(sema: SemaphoreLock) {
+    signal(sema, 1);
+}
+
+func signal(sema: SemaphoreLock, count: i32) {
+    @os(WINDOWS) {
+        let _res = WinAPI::ReleaseSemaphore(sema.owner.handle, count, null);
+        assert(success(_res), "ERROR: Could not signal Semaphore!");
+    }
+    @os(LINUX) {
+        let _s: i32 = 0;
+        for (let i: usize = 0; i < count as usize; i = i + 1) {
+            _s = _s + pthread::sem_post(sema.owner.handle);
+        }
+        assert(_s == 0, "ERROR: Could not signal Semaphore!");
+    }
+}
