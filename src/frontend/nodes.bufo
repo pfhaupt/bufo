@@ -130,6 +130,7 @@ comptime _ATTR_NAKED: SubStr = BUILD_A_KEYWORD("naked");
 comptime _ATTR_NO_MANGLE: SubStr = BUILD_A_KEYWORD("no_mangle");
 comptime _ATTR_NODISCARD: SubStr = BUILD_A_KEYWORD("nodiscard");
 comptime _ATTR_MANGLE: SubStr = BUILD_A_KEYWORD("mangle");
+comptime _ATTR_WASM_EXPORT: SubStr = BUILD_A_KEYWORD("wasm_export");
 
 union ParsedAttribute {
     Invalid,
@@ -140,6 +141,7 @@ union ParsedAttribute {
     Naked,
     Nomangle,
     Nodiscard,
+    Wasm_Export,
 }
 
 func equals(this: &ParsedAttribute, other: &ParsedAttribute) -> bool {

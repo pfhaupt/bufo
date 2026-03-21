@@ -221,6 +221,8 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList, inModule: bool)
             push(attrs, ParsedAttribute::Nomangle);
         } else if (equals(&name.content, &_ATTR_NODISCARD)) {
             push(attrs, ParsedAttribute::Nodiscard);
+        } else if (equals(&name.content, &_ATTR_WASM_EXPORT)) {
+            push(attrs, ParsedAttribute::Wasm_Export);
         } else {
             let loc = toString(&name.span);
             let n = toString(&name.content);

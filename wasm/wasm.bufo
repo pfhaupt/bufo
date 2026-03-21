@@ -1,6 +1,9 @@
 
 import "format.bufo";
 
+@wasm_export @mangle("foo") func bar() {
+}
+
 func main(argc: i32, argv: &&char) -> i32 {
     let a: u32 = (33 + 34);
     let b: u32 = (34 + 35);

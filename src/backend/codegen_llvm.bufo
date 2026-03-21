@@ -312,7 +312,6 @@ func generateEntryPoint(this: &LLVMCodegen) -> bool {
     assert(!hasFunction(&this.llvmModule, newSubStrOfStrLit("main")));
     let main: LLVMValue = addFunction(&this.llvmModule, newSubStrOfStrLit("main"), retFnType);
     if (equals(flags.target, &comptime newReadonlyString("WASM"))) {
-        // TODO(2026-03-15): `@wasm_export` attribute so we don't expose every single function
         let attr = createStringAttribute(&this.llvmContext, comptime newSubStrOfStrLit("wasm-export-name"), newSubStrOfStrLit("main"));
         addAttribute(&main, U32_MAX, attr);
     }
@@ -355,9 +354,10 @@ func generateLLVMFunctionHeader(this: &LLVMCodegen, irFunc: &IRFunc) {
     let llvmFuncType = generateLLVMFunctionType(this, getType(&function.typeState));
     let llvmFuncValue: LLVMValue = addFunction(&this.llvmModule, asSubStr(&irFunc.name), llvmFuncType);
     if (equals(flags.target, &comptime newReadonlyString("WASM"))) {
-        // TODO(2026-03-15): `@wasm_export` attribute so we don't expose every single function
-        let attr = createStringAttribute(&this.llvmContext, comptime newSubStrOfStrLit("wasm-export-name"), asSubStr(&irFunc.name));
-        addAttribute(&llvmFuncValue, U32_MAX, attr);
+        if (hasAttribute(function, ParsedAttribute::Wasm_Export)) {
+            let attr = createStringAttribute(&this.llvmContext, comptime newSubStrOfStrLit("wasm-export-name"), asSubStr(&irFunc.name));
+            addAttribute(&llvmFuncValue, U32_MAX, attr);
+        }
     }
     if (hasAttribute(irFunc, ParsedAttribute::Noreturn)) {
         let id = LLVM::GetEnumAttributeKindForName("noreturn", 8 /* sizeof "noreturn" */);
