@@ -12,6 +12,7 @@ func comptimeSubStr(s: &char) -> SubStr {
 }
 comptime OS_WINDOWS: SubStr = comptimeSubStr("WINDOWS");
 comptime OS_LINUX: SubStr = comptimeSubStr("LINUX");
+comptime OS_WASM: SubStr = comptimeSubStr("WASM");
 
 comptime FATAL_STR: &char = "\x1b[95m[FATAL]\x1b[0m";
 comptime ERR_STR: &char = "\x1b[91merror\x1b[0m";

@@ -62,7 +62,7 @@ func mangleFunctionName(
     while (!parent.isFile) {
         let mod = at(&modules, parent.id as usize);
         pushSubStr(&mangledName, &mod.name.content);
-        pushChar(&mangledName, '.');
+        pushChar(&mangledName, '_');
         parent = mod.parent;
     }
     pushSubStr(&mangledName, &name.content);

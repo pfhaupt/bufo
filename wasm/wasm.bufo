@@ -1,0 +1,11 @@
+
+import "format.bufo";
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let a: u32 = (33 + 34);
+    let b: u32 = (34 + 35);
+    fprint("yoooooooo hello from wasm64, 33 + 34 == %\n", a);
+    fprint("yoooooooo hello from wasm64, 34 + 35 == %\n", b);
+    return 0;
+}
+

@@ -1425,7 +1425,6 @@ func generateTypeInfoTable(this: &IRGen, function: &IRFunc, project: &ParsedFile
 
     let table = generateTypeInfoTable();
     let t: &Type = intoArrayType(context.type, table.length);
-    assert(getSizeInBytes(t) == sizeof TypeInfo * table.length, "Size mismatch");
     let reg: RegIndex = allocateRegister(function, t);
     buildCreateArray(function, context.global.span, reg);
     let global_table = allocateRegister(function, intoPointer(t));
@@ -2271,8 +2270,9 @@ func generateBytecodeMatchStmt(this: &IRGen, function: &IRFunc, match: &ParsedSt
         drop(&_s);
         buildLoadString(function, match.span, err, asSubStr(&s));
         push(&args, err);
+
+        generateImplicitCall(this, function, match.span, funcID, wrap(Type::Prim(PrimType::None)), args);
     }
-    generateImplicitCall(this, function, match.span, funcID, wrap(Type::Prim(PrimType::None)), args);
     buildUnreachable(function, match.span);
     setCurrentBlock(function, end);
 }

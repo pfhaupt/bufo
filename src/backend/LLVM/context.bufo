@@ -28,6 +28,11 @@ func initializeTargets(this: &LLVMContext) {
     assert(LLVM::_InitializeNativeAsmPrinter() == 0, "Could not initialize Targets");
     assert(LLVM::_InitializeNativeDisassembler() == 0, "Could not initialize Targets");
     assert(LLVM::_InitializeNativeTarget() == 0, "Could not initialize Targets");
+    LLVM::_InitializeAllTargetInfos();
+    LLVM::_InitializeAllTargetMCs();
+    LLVM::_InitializeAllTargets();
+    LLVM::_InitializeAllAsmPrinters();
+    LLVM::_InitializeAllAsmParsers();
 }
 
 func createTarget(this: &LLVMContext, name: &char) -> LLVMTarget {
@@ -41,6 +46,8 @@ func createTargetTriple(this: &LLVMContext, name: &char) -> &char {
         return "x86_64-pc-windows-msvc";
     } else if (equals(flags.target, &newStringFromStrLit("LINUX"))) {
         return "x86_64-unknown-linux-gnu";
+    } else if (equals(flags.target, &newStringFromStrLit("WASM"))) {
+        return "wasm64-unknown-unknown";
     } else {
         unreachable("createTargetTriple: Unknown target!");
     }
@@ -107,6 +114,11 @@ func appendBasicBlock(this: &LLVMContext, fn: LLVMValue, name: SubStr) -> LLVMBa
 func createEnumAttribute(this: &LLVMContext, id: u32, val: u64) -> LLVMAttribute {
     let attr = LLVM::CreateEnumAttribute(this.ref, id, val);
     assert(!LLVM::isNull(attr), "Could not create enum attribute in context");
+    return newLLVMAttributeFromRef(attr);
+}
+func createStringAttribute(this: &LLVMContext, k: SubStr, v: SubStr) -> LLVMAttribute {
+    let attr = LLVM::CreateStringAttribute(this.ref, k.start, k.len as u32, v.start, v.len as u32);
+    assert(!LLVM::isNull(attr), "Could not create string attribute in context");
     return newLLVMAttributeFromRef(attr);
 }
 

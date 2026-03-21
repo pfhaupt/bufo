@@ -151,7 +151,7 @@ func getMangledName(this: &Type) -> String {
             pushString(&s, &r);
             drop(&r);
             for (let i: usize = 0; i < params.length; i = i + 1) {
-                if (i != params.length - 1) pushChar(&s, '.');
+                if (i != params.length - 1) pushChar(&s, 'p');
                 let p = getMangledName(*at(&params, i));
                 pushString(&s, &p);
                 drop(&p);

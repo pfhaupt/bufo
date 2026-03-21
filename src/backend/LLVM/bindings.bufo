@@ -264,6 +264,11 @@ module LLVM {
     @extern("LLVM_InitializeNativeAsmPrinter") func _InitializeNativeAsmPrinter() -> i32;
     @extern("LLVM_InitializeNativeDisassembler") func _InitializeNativeDisassembler() -> i32;
     @extern("LLVM_InitializeNativeTarget") func _InitializeNativeTarget() -> i32;
+    @extern("LLVM_InitializeAllTargetInfos") func _InitializeAllTargetInfos();
+    @extern("LLVM_InitializeAllTargets") func _InitializeAllTargets();
+    @extern("LLVM_InitializeAllTargetMCs") func _InitializeAllTargetMCs();
+    @extern("LLVM_InitializeAllAsmPrinters") func _InitializeAllAsmPrinters();
+    @extern("LLVM_InitializeAllAsmParsers") func _InitializeAllAsmParsers();
     @extern("LLVMCreateTargetMachine") func CreateTargetMachine(T: TargetRef, Triple: &char, CPU: &char, Features: &char, Level: i32, Reloc: i32, CodeModel: i32) -> TargetMachineRef;
     @extern("LLVMCreateTargetMachineWithOptions") func CreateTargetMachineWithOptions(T: TargetRef, Triple: &char, Options: TargetMachineOptionsRef) -> TargetMachineRef;
     @extern("LLVMTargetMachineEmitToFile") func TargetMachineEmitToFile(T: TargetMachineRef, M: ModuleRef, path: &char, opts: i32, err: &LLVMString) -> i32;
@@ -293,6 +298,7 @@ module LLVM {
     @extern("LLVMVoidTypeInContext") func VoidTypeInContext(c: ContextRef) -> TypeRef;
     @extern("LLVMStructTypeInContext") func StructTypeInContext(c: ContextRef, ElementTypes: &TypeRef, ElementCount: u32, Packed: LLVMBool) -> TypeRef;
     @extern("LLVMCreateEnumAttribute") func CreateEnumAttribute(c: ContextRef, KindID: u32, Val: u64) -> AttributeRef;
+    @extern("LLVMCreateStringAttribute") func CreateStringAttribute(c: ContextRef, K: &char, KLength: u32, V: &char, VLength: u32) -> AttributeRef;
 
     // LLVMModule
     @extern("LLVMPrintModuleToString") func PrintModuleToString(M: ModuleRef) -> &char;
@@ -410,6 +416,10 @@ module LLVM {
     @extern("LLVMSetValueName") func SetValueName(Val: ValueRef, Name: &char);
     @extern("LLVMGetValueName2") func GetValueName2(Val: ValueRef, Length: &usize) -> &char;
     @extern("LLVMGetValueName") func GetValueName(Val: ValueRef) -> &char;
+
+    @extern("LLVMSetVisibility") func SetVisibility(Val: ValueRef, Vis: i32);
+    @extern("LLVMSetLinkage") func SetLinkage(Val: ValueRef, Linkage: i32);
+    @extern("LLVMSetDLLStorageClass") func SetDLLStorageClass(Val: ValueRef, StorageClass: i32);
 
     // LLVMAttribute
     @extern("LLVMGetEnumAttributeKindForName") func GetEnumAttributeKindForName(Name: &char, SLen: usize) -> u32;
@@ -647,3 +657,29 @@ comptime LLVMModuleFlagBehaviorRequire     : i32 = 2;
 comptime LLVMModuleFlagBehaviorOverride    : i32 = 3;
 comptime LLVMModuleFlagBehaviorAppend      : i32 = 4;
 comptime LLVMModuleFlagBehaviorAppendUnique: i32 = 5;
+
+comptime LLVMDefaultVisibility  : i32 = 0;  /**< The GV is visible */
+comptime LLVMHiddenVisibility   : i32 = 1;   /**< The GV is hidden */
+comptime LLVMProtectedVisibility: i32 = 2; /**< The GV is protected */
+
+comptime LLVMExternalLinkage           : i32 = 0;
+comptime LLVMAvailableExternallyLinkage: i32 = 1;
+comptime LLVMLinkOnceAnyLinkage        : i32 = 2;
+comptime LLVMLinkOnceODRLinkage        : i32 = 3;
+comptime LLVMLinkOnceODRAutoHideLinkage: i32 = 4;
+comptime LLVMWeakAnyLinkage            : i32 = 5;
+comptime LLVMWeakODRLinkage            : i32 = 6;
+comptime LLVMAppendingLinkage          : i32 = 7;
+comptime LLVMInternalLinkage           : i32 = 8;
+comptime LLVMPrivateLinkage            : i32 = 9;
+comptime LLVMDLLImportLinkage          : i32 = 10;
+comptime LLVMDLLExportLinkage          : i32 = 11;
+comptime LLVMExternalWeakLinkage       : i32 = 12;
+comptime LLVMGhostLinkage              : i32 = 13;
+comptime LLVMCommonLinkage             : i32 = 14;
+comptime LLVMLinkerPrivateLinkage      : i32 = 15;
+comptime LLVMLinkerPrivateWeakLinkage  : i32 = 16;
+
+comptime LLVMDefaultStorageClass  : i32 = 0;
+comptime LLVMDLLImportStorageClass: i32 = 1; /**< Function to be imported from DLL. */
+comptime LLVMDLLExportStorageClass: i32 = 2; /**< Function to be accessible from DLL. */

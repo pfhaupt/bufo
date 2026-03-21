@@ -205,7 +205,7 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList, inModule: bool)
             expect(this, TOKEN_PAREN_OPEN);
             let os = expect(this, TOKEN_IDENT);
             expect(this, TOKEN_PAREN_CLOSE);
-            if (!equals(&os.content, &OS_WINDOWS) && !equals(&os.content, &OS_LINUX)) {
+            if (!equals(&os.content, &OS_WINDOWS) && !equals(&os.content, &OS_LINUX) && !equals(&os.content, &OS_WASM)) {
                 C::fprintf(stderr, "%s\n", toString(&os.content).buffer);
                 todo_with_msg("Unknown os");
             }
@@ -1218,8 +1218,7 @@ func parsePrimaryExpr(this: &Parser, struct_init_allowed: bool) -> &ParsedExpr {
             needsTypeInfo = true;
             return newParsedExpr(span, ExprData::TypeInfo(typ));
         } else if (equals(&ident.content, &KEYWORD_FUNC)) {
-            // Dot to ensure that there will never be a name clash with user defined functions
-            let _name: String = newStringFromStrLit(".anon_");
+            let _name: String = newStringFromStrLit("_anon_");
             pushNumber(&_name, this.lexer.fileID);
             pushChar(&_name, '_');
             pushNumber(&_name, this.anonFnCount);

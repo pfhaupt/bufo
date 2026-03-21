@@ -311,6 +311,11 @@ func generateEntryPoint(this: &LLVMCodegen) -> bool {
     let retFnType: LLVMType = intoFunctionType(&retType, params, false);
     assert(!hasFunction(&this.llvmModule, newSubStrOfStrLit("main")));
     let main: LLVMValue = addFunction(&this.llvmModule, newSubStrOfStrLit("main"), retFnType);
+    if (equals(flags.target, &comptime newReadonlyString("WASM"))) {
+        // TODO(2026-03-15): `@wasm_export` attribute so we don't expose every single function
+        let attr = createStringAttribute(&this.llvmContext, comptime newSubStrOfStrLit("wasm-export-name"), newSubStrOfStrLit("main"));
+        addAttribute(&main, U32_MAX, attr);
+    }
     let entry: LLVMBasicBlock = appendBasicBlock(&this.llvmContext, main, newSubStrOfStrLit("entry"));
     positionAtEnd(&this.llvmBuilder, entry);
     let args: LLVMValueList = blank;
@@ -349,6 +354,11 @@ func generateLLVMFunctionHeader(this: &LLVMCodegen, irFunc: &IRFunc) {
     let function: &ParsedFuncDecl = getFuncNode(irFunc);
     let llvmFuncType = generateLLVMFunctionType(this, getType(&function.typeState));
     let llvmFuncValue: LLVMValue = addFunction(&this.llvmModule, asSubStr(&irFunc.name), llvmFuncType);
+    if (equals(flags.target, &comptime newReadonlyString("WASM"))) {
+        // TODO(2026-03-15): `@wasm_export` attribute so we don't expose every single function
+        let attr = createStringAttribute(&this.llvmContext, comptime newSubStrOfStrLit("wasm-export-name"), asSubStr(&irFunc.name));
+        addAttribute(&llvmFuncValue, U32_MAX, attr);
+    }
     if (hasAttribute(irFunc, ParsedAttribute::Noreturn)) {
         let id = LLVM::GetEnumAttributeKindForName("noreturn", 8 /* sizeof "noreturn" */);
         assert(id != 0, "Could not get noreturn attribute from LLVM");
@@ -1229,12 +1239,19 @@ func newLLVMCodegen(name: SubStr, irGen: &IRGen, interp: &IRInterp) -> LLVMCodeg
     let llvmBuilder: LLVMBuilder = createBuilder(&llvmContext);
     let llvmDIBuilder = createDIBuilder(llvmModule);
     initializeTargets(&llvmContext);
-    let target: LLVMTarget = createTarget(&llvmContext, "x86-64");
+    let target: LLVMTarget = blank;
+    if (equals(flags.target, &newStringFromStrLit("WASM"))) {
+        target = createTarget(&llvmContext, "wasm64");
+    } else {
+        target = createTarget(&llvmContext, "x86-64");
+    }
     let triple: &char = createTargetTriple(&llvmContext, "x86-64");
     let options = createTargetMachineOptions();
     // REVIEW: Where do we get an ABI-string from? Do we even need to specify one?
     // setABI(options, "???");
-    setCPU(options, "x86-64");
+    if (!equals(flags.target, &newStringFromStrLit("WASM"))) {
+        setCPU(options, "x86-64");
+    }
     // REVIEW: Why does stuff break when we specify other values for OptLevel, RelocMode, CodeModel?
     setCodeGenOptLevel(options, LLVM::CodeGenOptLevel::None);
     setRelocMode(options, LLVM::RelocMode::Default);

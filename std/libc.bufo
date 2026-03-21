@@ -12,13 +12,19 @@ module C {
         dynamic: "libc.so.6",
         libpath: "/lib/x86_64-linux-gnu/",
     }
+    @os(WASM) config {
+        static: "emcc",
+    }
     @os(WINDOWS) @extern("_fdopen") func fdopen(fd: i32, mode: &char) -> Any;
-    @os(WINDOWS) @extern("_snprintf") func snprintf(buffer: Any, size: usize, format: &char, ...) -> usize;
+    @os(WINDOWS) @extern("_snprintf") func snprintf(buffer: Any, size: usize, format: &char, ...) -> i32;
     @os(WINDOWS) @extern("_fullpath") func _fullpath(absPath: &char, relPath: &char, maxLength: i32) -> &char;
 
     @os(LINUX) @extern("fdopen") func fdopen(fd: i32, mode: &char) -> Any;
-    @os(LINUX) @extern("snprintf") func snprintf(buffer: Any, size: usize, format: &char, ...) -> usize;
+    @os(LINUX) @extern("snprintf") func snprintf(buffer: Any, size: usize, format: &char, ...) -> i32;
     @os(LINUX) @extern("realpath") func realpath(path: &char, res: &char) -> &char;
+
+    @os(WASM) @extern("fdopen") func fdopen(fd: i32, mode: &char) -> Any;
+    @os(WASM) @extern("snprintf") func snprintf(buffer: Any, size: usize, format: &char, ...) -> i32;
 
     @extern("scanf") func scanf(fmt: &char, ...) -> i32;
     // Strings
@@ -47,13 +53,13 @@ module C {
     @extern("fread") func fread(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
     @extern("fwrite") func fwrite(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
     @extern("fclose") func fclose(stream: Any) -> i32;
-    @extern("fprintf") func fprintf(stream: Any, msg: &char, ...);
+    @extern("fprintf") func fprintf(stream: Any, msg: &char, ...) -> i32;
     @extern("fflush") func fflush(stream: Any) -> i32;
 
     @extern("getenv") func getenv(name: &char) -> &char;
 
     // Console IO
-    @extern("printf") func printf(msg: &char, ...) -> usize;
+    @extern("printf") func printf(msg: &char, ...) -> i32;
     @extern("putchar") func putchar(ch: char) -> char;
     @extern("puts") func puts(s: &char) -> usize;
 

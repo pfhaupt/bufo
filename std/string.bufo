@@ -58,6 +58,10 @@ func getFileName(this: &String) -> String {
     return name;
 }
 
+@os(WASM) func getRoot(this: &String) -> String {
+    return *this;
+}
+
 @os(WINDOWS) func getRoot(this: &String) -> String {
     let c = copy(this);
     while (c.length > 0 && c.buffer[c.length - 1] != '\\') c.length = c.length - 1;
@@ -108,7 +112,7 @@ func substring(this: &String, start: usize, end: usize) -> SubStr {
 }
 func pushNumber(this: &String, num: usize) {
     let bfr: [char; 50] = ['\0'; 50];
-    let length: usize = C::snprintf(null, 0, "%llu", num);
+    let length: usize = C::snprintf(null, 0, "%llu", num) as usize;
     assert(length < 50, "Buffer Overflow in String.pushNumber()");
     C::snprintf(&bfr, length + 1, "%llu", num);
     for (let i: usize = 0; i < length; i = i + 1) {
@@ -117,7 +121,7 @@ func pushNumber(this: &String, num: usize) {
 }
 func pushNumberAsHex(this: &String, num: usize) {
     let bfr: [char; 50] = ['\0'; 50];
-    let length: usize = C::snprintf(null, 0, "0x%llX", num);
+    let length: usize = C::snprintf(null, 0, "0x%llX", num) as usize;
     assert(length < 50, "Buffer Overflow in String.pushNumberAsHex()");
     C::snprintf(&bfr, length + 1, "0x%llX", num);
     for (let i: usize = 0; i < length; i = i + 1) {
@@ -127,7 +131,7 @@ func pushNumberAsHex(this: &String, num: usize) {
 func pushNumber(this: &String, i: f32) { pushNumber(this, i as f64); }
 func pushNumber(this: &String, num: f64) {
     let bfr: [char; 50] = ['\0'; 50];
-    let length: usize = C::snprintf(null, 0, "%f", num);
+    let length: usize = C::snprintf(null, 0, "%f", num) as usize;
     assert(length < 50, "Buffer Overflow in String.pushNumber()");
     C::snprintf(&bfr, length + 1, "%f", num);
     for (let i: usize = 0; i < length; i = i + 1) {

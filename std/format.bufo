@@ -6,6 +6,11 @@ import "string.bufo";
 import "type_info.bufo";
 
 func __format_helper(out: &String, arg: Data) {
+    let next_multiple_of = func (a: usize, b: usize) -> usize {
+        assert(b != 0, "next_multiple_of: b is 0!");
+        if (a % b == 0) return a;
+        return a + (b - (a % b));
+    };
     match (arg.info) {
         TypeInfo::Struct { name, _, _, fields } => {
             if (C::strncmp(name.start, "SubStr", name.len) == 0) {
@@ -14,10 +19,12 @@ func __format_helper(out: &String, arg: Data) {
                 pushString(out, arg.ptr);
             } else {
                 pushSubStr(out, &name);
+                pushStr(out, " { ");
                 for (let i: usize = 0; i < fields.length; i = i + 1) {
                     let f = &fields.elements[i];
-                    if (i > 0) pushChar(out, ',');
+                    if (i > 0) pushStr(out, ", ");
                     pushSubStr(out, &f.name);
+                    pushStr(out, ": ");
                     let field_ptr = (arg.ptr as usize + f.offset_in_bytes) as Any;
                     __format_helper(out, Data { ptr: field_ptr, info: type_info_table[f.type] });
                 }
@@ -46,7 +53,53 @@ func __format_helper(out: &String, arg: Data) {
                 pushNumberAsHex(out, arg as usize);
             }
         }
-        _ => { unreachable("__format_helper"); }
+        TypeInfo::Union { name, size, align, variants } => {
+            pushSubStr(out, &name);
+            pushStr(out, "::");
+            let t = tag(arg.ptr) as usize;
+            assert(t < variants.length, "__format_helper: Argument has invalid Union Tag");
+            let vi = &variants.elements[t];
+            match (vi) {
+                &UnionVariantTypeInfo::Empty { name } => {
+                    pushSubStr(out, &name);
+                }
+                &UnionVariantTypeInfo::Tuple { name, fields } => {
+                    pushSubStr(out, &name);
+                    pushStr(out, "(");
+                    let offset: usize = 1; // tag
+                    for (let j: usize = 0; j < fields.length; j = j + 1) {
+                        let f = &type_info_table[fields.elements[j]];
+                        if (j > 0) pushStr(out, ", ");
+                        let field_ptr = (arg.ptr as usize + offset) as Any;
+                        __format_helper(out, Data { ptr: field_ptr, info: *f });
+                        offset = offset + get_size(f);
+                        // FIXME(2026-03-03): Alignment of Union Tuples is incorrect. Printing them
+                        //                    will always crash.
+                        if (j != fields.length - 1) {
+                            offset = next_multiple_of(offset, get_align(&type_info_table[fields.elements[j + 1]]));
+                        }
+                    }
+                    pushStr(out, ")");
+                }
+                &UnionVariantTypeInfo::Struct { name, fields } => {
+                    pushSubStr(out, &name);
+                    pushStr(out, " { ");
+                    for (let i: usize = 0; i < fields.length; i = i + 1) {
+                        let f = &fields.elements[i];
+                        if (i > 0) pushStr(out, ", ");
+                        pushSubStr(out, &f.name);
+                        let field_ptr = (arg.ptr as usize + f.offset_in_bytes) as Any;
+                        __format_helper(out, Data { ptr: field_ptr, info: type_info_table[f.type] });
+                    }
+                    pushStr(out, " }");
+                }
+                _ => { }
+            }
+        }
+        t => {
+            C::printf("tag: %llu\n", tag(&t));
+            unreachable("__format_helper");
+        }
     }
 }
 
