@@ -199,14 +199,6 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList, inModule: bool)
                 drop(&loc);
             }
             push(attrs, ParsedAttribute::Extern);
-            if (eat(this, TOKEN_PAREN_OPEN)) {
-                let loc = toString(&name.span);
-                fprint("%: %: `@extern(<name>)` has been deprecated, please use `@extern @mangle(<name>)` instead.\n", loc, WARN_STR);
-                drop(&loc);
-                let v = expect(this, TOKEN_STRING_LITERAL);
-                let end = expect(this, TOKEN_PAREN_CLOSE);
-                push(attrs, ParsedAttribute::Mangle(v));
-            }
         } else if (equals(&name.content, &_ATTR_MANGLE)) {
             expect(this, TOKEN_PAREN_OPEN);
             let v = expect(this, TOKEN_STRING_LITERAL);
@@ -393,14 +385,14 @@ func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList
         }
         if (modConfigs.length == 0) {
             let loc = toString(&mod.span);
-            C::fprintf(stderr, "%s: %s: Module contains @extern() functions, but no config was specified.\n", loc.buffer, ERR_STR);
+            C::fprintf(stderr, "%s: %s: Module contains @extern functions, but no config was specified.\n", loc.buffer, ERR_STR);
             C::fprintf(stderr, "%s: %s: The config contains important information such as linker flags and library paths.\n", loc.buffer, NOTE_STR);
             C::fprintf(stderr, "%s: %s: The config can be declared using the top level keyword `config` within the module.\n", loc.buffer, NOTE_STR);
             drop(&loc);
             syntaxError = true;
         } else if (!anyLibrary) {
             let loc = toString(&mod.span);
-            C::fprintf(stderr, "%s: %s: Module contains @extern() functions, but no library was provided in the config.\n", loc.buffer, ERR_STR);
+            C::fprintf(stderr, "%s: %s: Module contains @extern functions, but no library was provided in the config.\n", loc.buffer, ERR_STR);
             for (let i: usize = 0; i < modConfigs.length; i = i + 1) {
                 let t = at(&topLevelItems, *at(&modConfigs, i));
                 assert(t.kind == TLI_CONFIG);

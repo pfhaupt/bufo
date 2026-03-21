@@ -18,7 +18,7 @@ module WinAPI {
         dynamic: "kernel32.dll",
         libpath: "C:/Windows/System32",
     }
-    @extern("CreateProcessA") func CreateProcessA(
+    @extern @mangle("CreateProcessA") func CreateProcessA(
         lpApplicationName: &char,
         lpCommandLine: &char,
         lpProcessAttributes: &SecurityAttributes,
@@ -30,7 +30,7 @@ module WinAPI {
         lpStartupInfo: &StartupInfo,
         lpProcessInformation: &ProcessInformation
     ) -> BOOL;
-    @extern("CreateFileA") func CreateFileA(
+    @extern @mangle("CreateFileA") func CreateFileA(
         lpFileName: &char,
         dwDesiredAccess: u32,
         dwShareMode: u32,
@@ -39,27 +39,27 @@ module WinAPI {
         dwFlagsAndAttributes: u32,
         hTemplateFile: Handle,
     ) -> Handle;
-    @extern("GetFileAttributesA") func GetFileAttributesA(path: &char) -> u32;
-    @extern("GetStdHandle") func GetStdHandle(handle: u32) -> Handle;
-    @extern("CloseHandle") func CloseHandle(handle: Handle) -> BOOL;
-    @extern("WaitForSingleObject") func WaitForSingleObject(hHandle: Handle, dwMilliseconds: u32) -> u32;
-    @extern("GetExitCodeProcess") func GetExitCodeProcess(proc: Handle, exitStatus: &u32) -> BOOL;
-    @extern("GetLastError") func GetLastError() -> u32;
-    @extern("GetFileTime") func GetFileTime(
+    @extern @mangle("GetFileAttributesA") func GetFileAttributesA(path: &char) -> u32;
+    @extern @mangle("GetStdHandle") func GetStdHandle(handle: u32) -> Handle;
+    @extern @mangle("CloseHandle") func CloseHandle(handle: Handle) -> BOOL;
+    @extern @mangle("WaitForSingleObject") func WaitForSingleObject(hHandle: Handle, dwMilliseconds: u32) -> u32;
+    @extern @mangle("GetExitCodeProcess") func GetExitCodeProcess(proc: Handle, exitStatus: &u32) -> BOOL;
+    @extern @mangle("GetLastError") func GetLastError() -> u32;
+    @extern @mangle("GetFileTime") func GetFileTime(
         hFile: Handle,
         lpCreationTime: &FileTime,
         lpLastAccessTime: &FileTime,
         lpLastWriteTime: &FileTime
     ) -> BOOL;
-    @extern("LoadLibraryA") func LoadLibraryA(lpLibFileName: &char) -> Handle;
-    @extern("FreeLibrary") func FreeLibrary(hLibModule: Handle) -> BOOL;
-    @extern("GetProcAddress") func GetProcAddress(handle: Handle, name: &char) -> Handle;
-    @extern("VirtualAlloc") func VirtualAlloc(idk: Any, bytes: usize, flags: u32, pFlags: u32) -> Any;
-    @extern("VirtualFree") func VirtualFree(address: Any, bytes: usize, flags: u32) -> BOOL;
-    @extern("GetModuleFileNameA") func GetModuleFileNameA(hModule: Handle, lpFileName: &char, nSize: u32) -> u32;
-    @extern("FormatMessageA") func FormatMessage(dwFlags: u32, lpSource: &char, dwMessageId: u32, dwLanguageId: u32, lpBuffer: &&char, nSize: u32, ...) -> u32;
+    @extern @mangle("LoadLibraryA") func LoadLibraryA(lpLibFileName: &char) -> Handle;
+    @extern @mangle("FreeLibrary") func FreeLibrary(hLibModule: Handle) -> BOOL;
+    @extern @mangle("GetProcAddress") func GetProcAddress(handle: Handle, name: &char) -> Handle;
+    @extern @mangle("VirtualAlloc") func VirtualAlloc(idk: Any, bytes: usize, flags: u32, pFlags: u32) -> Any;
+    @extern @mangle("VirtualFree") func VirtualFree(address: Any, bytes: usize, flags: u32) -> BOOL;
+    @extern @mangle("GetModuleFileNameA") func GetModuleFileNameA(hModule: Handle, lpFileName: &char, nSize: u32) -> u32;
+    @extern @mangle("FormatMessageA") func FormatMessage(dwFlags: u32, lpSource: &char, dwMessageId: u32, dwLanguageId: u32, lpBuffer: &&char, nSize: u32, ...) -> u32;
 
-    @extern("CreateThread") func CreateThread(
+    @extern @mangle("CreateThread") func CreateThread(
         lpSecurityAttributes: &SecurityAttributes,
         dwStackSize: usize,
         lpStartAddress: func (Any) -> i32,
@@ -68,22 +68,22 @@ module WinAPI {
         lpThreadId: &i32,
     ) -> Handle;
 
-    @extern("CreateMutexA") func CreateMutex(
+    @extern @mangle("CreateMutexA") func CreateMutex(
         lpMutexAttributes: &SecurityAttributes,
         bInitialOwner: BOOL,
         lpName: &char,
     ) -> Handle;
-    @extern("ReleaseMutex") func ReleaseMutex(hMutex: Handle) -> BOOL;
+    @extern @mangle("ReleaseMutex") func ReleaseMutex(hMutex: Handle) -> BOOL;
 
-    @extern("CreateSemaphoreA") func CreateSemaphore(
+    @extern @mangle("CreateSemaphoreA") func CreateSemaphore(
         lpSemaphoreAttributes: &SecurityAttributes,
         lInitialCount: i32,
         lMaximumCount: i32,
         lpName: &char,
     ) -> Handle;
-    @extern("ReleaseSemaphore") func ReleaseSemaphore(hSemaphore: Handle, lReleaseCount: i32, lpPreviousCount: &i32) -> BOOL;
+    @extern @mangle("ReleaseSemaphore") func ReleaseSemaphore(hSemaphore: Handle, lReleaseCount: i32, lpPreviousCount: &i32) -> BOOL;
 
-    @extern("InitializeSynchronizationBarrier") func InitializeSynchronizationBarrier(lpBarrier: &RTL_Barrier, lTotalThreads: i32, lSpinCount: i32) -> BOOL;
-    @extern("EnterSynchronizationBarrier") func EnterSynchronizationBarrier(lpBarrier: &RTL_Barrier, dwFlags: i32) -> BOOL;
-    @extern("DeleteSynchronizationBarrier") func DeleteSynchronizationBarrier(lpBarrier: &RTL_Barrier) -> BOOL;
+    @extern @mangle("InitializeSynchronizationBarrier") func InitializeSynchronizationBarrier(lpBarrier: &RTL_Barrier, lTotalThreads: i32, lSpinCount: i32) -> BOOL;
+    @extern @mangle("EnterSynchronizationBarrier") func EnterSynchronizationBarrier(lpBarrier: &RTL_Barrier, dwFlags: i32) -> BOOL;
+    @extern @mangle("DeleteSynchronizationBarrier") func DeleteSynchronizationBarrier(lpBarrier: &RTL_Barrier) -> BOOL;
 }

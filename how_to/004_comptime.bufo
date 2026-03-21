@@ -87,20 +87,20 @@ module raylib {
         static: "User32.lib",
         linker: "/NODEFAULTLIB:libcmt",
     }
-    // using the attribute @extern() we're telling the compiler to look for a function called
+    // using the attribute @extern @mangle() we're telling the compiler to look for a function called
     // "GetColor" in the libraries mentioned in the config above
     // this means that we can now use raylib::get_color(), and it will call GetColor() under the hood.
-    @extern("GetColor") func get_color(v: u32) -> Color;
-    @extern("InitWindow") func init_window(width: i32, height: i32, title: &char);
-    @extern("WindowShouldClose") func window_should_close() -> bool;
-    @extern("BeginDrawing") func begin_drawing();
-    @extern("EndDrawing") func end_drawing();
-    @extern("ClearBackground") func clear_background(c: Color);
-    @extern("GetTime") func get_time() -> f64;
-    @extern("DrawText") func draw_text(text: &char, posX: i32, posY: i32, fontSize: i32, color: Color);
+    @extern @mangle("GetColor") func get_color(v: u32) -> Color;
+    @extern @mangle("InitWindow") func init_window(width: i32, height: i32, title: &char);
+    @extern @mangle("WindowShouldClose") func window_should_close() -> bool;
+    @extern @mangle("BeginDrawing") func begin_drawing();
+    @extern @mangle("EndDrawing") func end_drawing();
+    @extern @mangle("ClearBackground") func clear_background(c: Color);
+    @extern @mangle("GetTime") func get_time() -> f64;
+    @extern @mangle("DrawText") func draw_text(text: &char, posX: i32, posY: i32, fontSize: i32, color: Color);
     // External functions can be variadic
-    @extern("TextFormat") func text_format(fmt: &char, ...) -> &char;
-    @extern("CloseWindow") func close_window();
+    @extern @mangle("TextFormat") func text_format(fmt: &char, ...) -> &char;
+    @extern @mangle("CloseWindow") func close_window();
 
     // Of course raylib also comes with its own data structures.
     struct Color {

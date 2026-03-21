@@ -21,27 +21,27 @@ module raylib {
         static: "User32.lib",
         linker: "/NODEFAULTLIB:libcmt",
     }
-    @extern("InitWindow") func InitWindow(width: i32, height: i32, title: &char);
-    @extern("CloseWindow") func CloseWindow();
-    @extern("InitAudioDevice") func InitAudioDevice();
-    @extern("CloseAudioDevice") func CloseAudioDevice();
-    @extern("WindowShouldClose") func WindowShouldClose() -> bool;
-    @extern("BeginDrawing") func BeginDrawing();
-    @extern("EndDrawing") func EndDrawing();
-    @extern("ClearBackground") func ClearBackground(c: Color);
-    @extern("DrawRectangleV") func DrawRectangleV(pos: Vector2, size: Vector2, col: Color);
-    @extern("ColorFromHSV") func ColorFromHSV(h: f32, s: f32, v: f32) -> Color;
-    @extern("GetColor") func GetColor(val: u32) -> Color;
-    @extern("LoadImageFromScreen") func LoadImageFromScreen() -> Image;
-    @extern("ExportImage") func ExportImage(i: Image, name: &char) -> bool;
-    @extern("PlaySound") func PlaySound(sound: Sound);
-    @extern("LoadSound") func LoadSound(fileName: &char) -> Sound;
-    @extern("IsSoundValid") func IsSoundValid(sound: Sound) -> bool;
-    @extern("LoadWave") func LoadWave(fileName: &char) -> Wave;
-    @extern("LoadSoundFromWave") func LoadSoundFromWave(wave: Wave) -> Sound;
-    @extern("SetSoundVolume") func SetSoundVolume(sound: Sound, volume: f32);
-    @extern("GetTime") func GetTime() -> f64;
-    @extern("SetTargetFPS") func SetTargetFPS(fps: i32);
+    @extern @mangle("InitWindow") func InitWindow(width: i32, height: i32, title: &char);
+    @extern @mangle("CloseWindow") func CloseWindow();
+    @extern @mangle("InitAudioDevice") func InitAudioDevice();
+    @extern @mangle("CloseAudioDevice") func CloseAudioDevice();
+    @extern @mangle("WindowShouldClose") func WindowShouldClose() -> bool;
+    @extern @mangle("BeginDrawing") func BeginDrawing();
+    @extern @mangle("EndDrawing") func EndDrawing();
+    @extern @mangle("ClearBackground") func ClearBackground(c: Color);
+    @extern @mangle("DrawRectangleV") func DrawRectangleV(pos: Vector2, size: Vector2, col: Color);
+    @extern @mangle("ColorFromHSV") func ColorFromHSV(h: f32, s: f32, v: f32) -> Color;
+    @extern @mangle("GetColor") func GetColor(val: u32) -> Color;
+    @extern @mangle("LoadImageFromScreen") func LoadImageFromScreen() -> Image;
+    @extern @mangle("ExportImage") func ExportImage(i: Image, name: &char) -> bool;
+    @extern @mangle("PlaySound") func PlaySound(sound: Sound);
+    @extern @mangle("LoadSound") func LoadSound(fileName: &char) -> Sound;
+    @extern @mangle("IsSoundValid") func IsSoundValid(sound: Sound) -> bool;
+    @extern @mangle("LoadWave") func LoadWave(fileName: &char) -> Wave;
+    @extern @mangle("LoadSoundFromWave") func LoadSoundFromWave(wave: Wave) -> Sound;
+    @extern @mangle("SetSoundVolume") func SetSoundVolume(sound: Sound, volume: f32);
+    @extern @mangle("GetTime") func GetTime() -> f64;
+    @extern @mangle("SetTargetFPS") func SetTargetFPS(fps: i32);
 
     struct Color {
         r: u8;

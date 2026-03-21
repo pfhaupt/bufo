@@ -15,59 +15,59 @@ module C {
     @os(WASM) config {
         static: "emcc",
     }
-    @os(WINDOWS) @extern("_fdopen") func fdopen(fd: i32, mode: &char) -> Any;
-    @os(WINDOWS) @extern("_snprintf") func snprintf(buffer: Any, size: usize, format: &char, ...) -> i32;
-    @os(WINDOWS) @extern("_fullpath") func _fullpath(absPath: &char, relPath: &char, maxLength: i32) -> &char;
+    @os(WINDOWS) @extern @mangle("_fdopen") func fdopen(fd: i32, mode: &char) -> Any;
+    @os(WINDOWS) @extern @mangle("_snprintf") func snprintf(buffer: Any, size: usize, format: &char, ...) -> i32;
+    @os(WINDOWS) @extern @mangle("_fullpath") func _fullpath(absPath: &char, relPath: &char, maxLength: i32) -> &char;
 
-    @os(LINUX) @extern("fdopen") func fdopen(fd: i32, mode: &char) -> Any;
-    @os(LINUX) @extern("snprintf") func snprintf(buffer: Any, size: usize, format: &char, ...) -> i32;
-    @os(LINUX) @extern("realpath") func realpath(path: &char, res: &char) -> &char;
+    @os(LINUX) @extern @mangle("fdopen") func fdopen(fd: i32, mode: &char) -> Any;
+    @os(LINUX) @extern @mangle("snprintf") func snprintf(buffer: Any, size: usize, format: &char, ...) -> i32;
+    @os(LINUX) @extern @mangle("realpath") func realpath(path: &char, res: &char) -> &char;
 
-    @os(WASM) @extern("fdopen") func fdopen(fd: i32, mode: &char) -> Any;
-    @os(WASM) @extern("snprintf") func snprintf(buffer: Any, size: usize, format: &char, ...) -> i32;
+    @os(WASM) @extern @mangle("fdopen") func fdopen(fd: i32, mode: &char) -> Any;
+    @os(WASM) @extern @mangle("snprintf") func snprintf(buffer: Any, size: usize, format: &char, ...) -> i32;
 
-    @extern("scanf") func scanf(fmt: &char, ...) -> i32;
+    @extern @mangle("scanf") func scanf(fmt: &char, ...) -> i32;
     // Strings
-    @extern("strlen") func strlen(string: &char) -> usize;
-    @extern("strcmp") func strcmp(s1: &char, s2: &char) -> i32;
-    @extern("strncmp") func strncmp(s1: &char, s2: &char, n: usize) -> i32;
-    @extern("strchr") func strchr(s: &char, c: char) -> &char;
+    @extern @mangle("strlen") func strlen(string: &char) -> usize;
+    @extern @mangle("strcmp") func strcmp(s1: &char, s2: &char) -> i32;
+    @extern @mangle("strncmp") func strncmp(s1: &char, s2: &char, n: usize) -> i32;
+    @extern @mangle("strchr") func strchr(s: &char, c: char) -> &char;
 
     // Memory
-    @extern("malloc") func malloc(bytes: usize) -> Any;
-    @extern("calloc") func calloc(num: usize, size: usize) -> Any;
-    @extern("realloc") func realloc(ptr: Any, new_size: usize) -> Any;
-    @extern("free") func free(ptr: Any);
-    @extern("memcpy") func memcpy(dest: Any, src: Any, count: usize) -> Any;
-    @extern("memcmp") func memcmp(lhs: Any, rhs: Any, count: usize) -> i32;
-    @extern("memset") func memset(s: Any, b: i32, count: usize) -> Any;
+    @extern @mangle("malloc") func malloc(bytes: usize) -> Any;
+    @extern @mangle("calloc") func calloc(num: usize, size: usize) -> Any;
+    @extern @mangle("realloc") func realloc(ptr: Any, new_size: usize) -> Any;
+    @extern @mangle("free") func free(ptr: Any);
+    @extern @mangle("memcpy") func memcpy(dest: Any, src: Any, count: usize) -> Any;
+    @extern @mangle("memcmp") func memcmp(lhs: Any, rhs: Any, count: usize) -> i32;
+    @extern @mangle("memset") func memset(s: Any, b: i32, count: usize) -> Any;
 
     @os(WINDOWS) func aligned_alloc(alignment: usize, size: usize) -> Any {
         return _aligned_malloc(size, alignment);
     }
-    @os(WINDOWS) @extern("_aligned_malloc") func _aligned_malloc(size: usize, alignment: usize) -> Any;
-    @os(LINUX) @extern("aligned_alloc") func aligned_alloc(alignment: usize, size: usize) -> Any;
+    @os(WINDOWS) @extern @mangle("_aligned_malloc") func _aligned_malloc(size: usize, alignment: usize) -> Any;
+    @os(LINUX) @extern @mangle("aligned_alloc") func aligned_alloc(alignment: usize, size: usize) -> Any;
 
     // File IO
-    @extern("fopen") func fopen(filename: &char, mode: &char) -> Any;
-    @extern("fread") func fread(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
-    @extern("fwrite") func fwrite(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
-    @extern("fclose") func fclose(stream: Any) -> i32;
-    @extern("fprintf") func fprintf(stream: Any, msg: &char, ...) -> i32;
-    @extern("fflush") func fflush(stream: Any) -> i32;
+    @extern @mangle("fopen") func fopen(filename: &char, mode: &char) -> Any;
+    @extern @mangle("fread") func fread(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
+    @extern @mangle("fwrite") func fwrite(buffer: Any, size: usize, count: usize, stream: Any) -> usize;
+    @extern @mangle("fclose") func fclose(stream: Any) -> i32;
+    @extern @mangle("fprintf") func fprintf(stream: Any, msg: &char, ...) -> i32;
+    @extern @mangle("fflush") func fflush(stream: Any) -> i32;
 
-    @extern("getenv") func getenv(name: &char) -> &char;
+    @extern @mangle("getenv") func getenv(name: &char) -> &char;
 
     // Console IO
-    @extern("printf") func printf(msg: &char, ...) -> i32;
-    @extern("putchar") func putchar(ch: char) -> char;
-    @extern("puts") func puts(s: &char) -> usize;
+    @extern @mangle("printf") func printf(msg: &char, ...) -> i32;
+    @extern @mangle("putchar") func putchar(ch: char) -> char;
+    @extern @mangle("puts") func puts(s: &char) -> usize;
 
     // Process Control
-    @noreturn @extern("abort") func abort();
+    @noreturn @extern @mangle("abort") func abort();
     @noreturn func exit(code: i32) {
         C::fflush(null);
         C::_exit(code);
     }
-    @noreturn @extern("exit") func _exit(code: i32);
+    @noreturn @extern @mangle("exit") func _exit(code: i32);
 }

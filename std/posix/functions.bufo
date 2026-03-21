@@ -12,11 +12,11 @@ system at any time.
 import "../linux.bufo";
 import "./structs.bufo";
 
-@os(LINUX) @extern("stat") func stat(path: &char, Statbuf: &Stat) -> i32;
-@os(LINUX) @extern("strerror") func strerror(errno: i32) -> &char;
-@os(LINUX) @extern("fork") func fork() -> i32;
-@os(LINUX) @extern("execvp") func execvp(name: &char, args: &&char) -> i32;
-@os(LINUX) @extern("waitpid") func waitpid(pid: Handle, out: &i32, flags: i32) -> i32;
+@os(LINUX) @extern @mangle("stat") func stat(path: &char, Statbuf: &Stat) -> i32;
+@os(LINUX) @extern @mangle("strerror") func strerror(errno: i32) -> &char;
+@os(LINUX) @extern @mangle("fork") func fork() -> i32;
+@os(LINUX) @extern @mangle("execvp") func execvp(name: &char, args: &&char) -> i32;
+@os(LINUX) @extern @mangle("waitpid") func waitpid(pid: Handle, out: &i32, flags: i32) -> i32;
 @os(LINUX) func WIFSIGNALED(Status: i32) -> bool {
     return (((Status & 127) + 1) / 2) > 0;
 }
@@ -29,23 +29,23 @@ import "./structs.bufo";
 @os(LINUX) func WEXITSTATUS(Status: i32) -> i32 {
     return (Status & 65280) / 256;
 }
-@os(LINUX) @extern("strsignal") func strsignal(signal: i32) -> &char;
-@os(LINUX) @extern("__errno_location") func __errno_location() -> &i32;
-@os(LINUX) @extern("readlink") func readlink(pathname: &char, buf: &char, bufsiz: i32) -> i32;
+@os(LINUX) @extern @mangle("strsignal") func strsignal(signal: i32) -> &char;
+@os(LINUX) @extern @mangle("__errno_location") func __errno_location() -> &i32;
+@os(LINUX) @extern @mangle("readlink") func readlink(pathname: &char, buf: &char, bufsiz: i32) -> i32;
 
-@os(LINUX) @extern("mmap") func mmap(addr: Any, length: usize, prot: i32, flags: i32, fd: i32, offset: usize) -> Any;
-@os(LINUX) @extern("munmap") func munmap(addr: Any, length: usize) -> i32;
-@os(LINUX) @extern("getpagesize") func getpagesize() -> usize;
+@os(LINUX) @extern @mangle("mmap") func mmap(addr: Any, length: usize, prot: i32, flags: i32, fd: i32, offset: usize) -> Any;
+@os(LINUX) @extern @mangle("munmap") func munmap(addr: Any, length: usize) -> i32;
+@os(LINUX) @extern @mangle("getpagesize") func getpagesize() -> usize;
 
-@os(LINUX) @extern("dlopen") func dlopen(filename: &char, flags: i32) -> Any;
-@os(LINUX) @extern("dlclose") func dlclose(handle: Any) -> i32;
-@os(LINUX) @extern("dlerror") func dlerror() -> &char;
+@os(LINUX) @extern @mangle("dlopen") func dlopen(filename: &char, flags: i32) -> Any;
+@os(LINUX) @extern @mangle("dlclose") func dlclose(handle: Any) -> i32;
+@os(LINUX) @extern @mangle("dlerror") func dlerror() -> &char;
 @os(LINUX) func dlopen(filename: &char, flags: i32) -> Handle {
     return Handle {
         ptr: dlopen(filename, flags) as Any as usize
     };
 }
-@os(LINUX) @extern("dlsym") func dlsym(handle: Any, symbol: &char) -> Any;
+@os(LINUX) @extern @mangle("dlsym") func dlsym(handle: Any, symbol: &char) -> Any;
 @os(LINUX) func dlsym(handle: Handle, symbol: &char) -> Handle {
     return Handle {
         ptr: dlsym(handle.ptr as Any, symbol) as usize
@@ -60,20 +60,20 @@ import "./structs.bufo";
     // NOTE(2026-03-09): To simplify `spawn_thread` we define `start_routine` to return a i32 instead
     //                   of a void*, like POSIX says. Yes it is kinda UB, but realistically it's
     //                   gonna be passed in the same register anyway.
-    @extern("_pthread_create") func create(thread: &pthread_t, attr: &pthread_attr_t, start_routine: func (Any) -> i32, arg: Any) -> i32;
-    @extern("_pthread_join") func join(thread: pthread_t, retval: &Any) -> i32;
+    @extern @mangle("_pthread_create") func create(thread: &pthread_t, attr: &pthread_attr_t, start_routine: func (Any) -> i32, arg: Any) -> i32;
+    @extern @mangle("_pthread_join") func join(thread: pthread_t, retval: &Any) -> i32;
 
-    @extern("_pthread_mutex_init") func mutex_init(mutexattr: &pthread_mutexattr_t) -> Handle;
-    @extern("_pthread_mutex_lock") func mutex_lock(mutex: Handle) -> i32;
-    @extern("_pthread_mutex_unlock") func mutex_unlock(mutex: Handle) -> i32;
-    @extern("_pthread_mutex_destroy") func mutex_destroy(mutex: Handle);
+    @extern @mangle("_pthread_mutex_init") func mutex_init(mutexattr: &pthread_mutexattr_t) -> Handle;
+    @extern @mangle("_pthread_mutex_lock") func mutex_lock(mutex: Handle) -> i32;
+    @extern @mangle("_pthread_mutex_unlock") func mutex_unlock(mutex: Handle) -> i32;
+    @extern @mangle("_pthread_mutex_destroy") func mutex_destroy(mutex: Handle);
 
-    @extern("_pthread_sem_init") func sem_init(pshared: i32, value: i32) -> Handle;
-    @extern("_pthread_sem_wait") func sem_wait(sem: Handle) -> i32;
-    @extern("_pthread_sem_post") func sem_post(sem: Handle) -> i32;
-    @extern("_pthread_sem_destroy") func sem_destroy(sem: Handle);
+    @extern @mangle("_pthread_sem_init") func sem_init(pshared: i32, value: i32) -> Handle;
+    @extern @mangle("_pthread_sem_wait") func sem_wait(sem: Handle) -> i32;
+    @extern @mangle("_pthread_sem_post") func sem_post(sem: Handle) -> i32;
+    @extern @mangle("_pthread_sem_destroy") func sem_destroy(sem: Handle);
 
-    @extern("_pthread_barrier_init") func barrier_init(attr: &pthread_barrierattr_t, count: u32) -> Handle;
-    @extern("_pthread_barrier_wait") func barrier_wait(barrier: Handle) -> i32;
-    @extern("_pthread_barrier_destroy") func barrier_destroy(barrier: Handle) -> i32;
+    @extern @mangle("_pthread_barrier_init") func barrier_init(attr: &pthread_barrierattr_t, count: u32) -> Handle;
+    @extern @mangle("_pthread_barrier_wait") func barrier_wait(barrier: Handle) -> i32;
+    @extern @mangle("_pthread_barrier_destroy") func barrier_destroy(barrier: Handle) -> i32;
 }

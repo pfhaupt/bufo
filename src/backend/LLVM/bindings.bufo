@@ -259,221 +259,221 @@ module LLVM {
     }
 
     // LLVMTarget
-    @extern("LLVMGetTargetFromName") func GetTargetFromName(name: &char) -> TargetRef;
-    @extern("LLVM_InitializeNativeAsmParser") func _InitializeNativeAsmParser() -> i32;
-    @extern("LLVM_InitializeNativeAsmPrinter") func _InitializeNativeAsmPrinter() -> i32;
-    @extern("LLVM_InitializeNativeDisassembler") func _InitializeNativeDisassembler() -> i32;
-    @extern("LLVM_InitializeNativeTarget") func _InitializeNativeTarget() -> i32;
-    @extern("LLVM_InitializeAllTargetInfos") func _InitializeAllTargetInfos();
-    @extern("LLVM_InitializeAllTargets") func _InitializeAllTargets();
-    @extern("LLVM_InitializeAllTargetMCs") func _InitializeAllTargetMCs();
-    @extern("LLVM_InitializeAllAsmPrinters") func _InitializeAllAsmPrinters();
-    @extern("LLVM_InitializeAllAsmParsers") func _InitializeAllAsmParsers();
-    @extern("LLVMCreateTargetMachine") func CreateTargetMachine(T: TargetRef, Triple: &char, CPU: &char, Features: &char, Level: i32, Reloc: i32, CodeModel: i32) -> TargetMachineRef;
-    @extern("LLVMCreateTargetMachineWithOptions") func CreateTargetMachineWithOptions(T: TargetRef, Triple: &char, Options: TargetMachineOptionsRef) -> TargetMachineRef;
-    @extern("LLVMTargetMachineEmitToFile") func TargetMachineEmitToFile(T: TargetMachineRef, M: ModuleRef, path: &char, opts: i32, err: &LLVMString) -> i32;
-    @extern("LLVMCreateTargetDataLayout") func CreateTargetDataLayout(T: TargetMachineRef) -> TargetDataRef;
-    @extern("LLVMStoreSizeOfType") func StoreSizeOfType(T: TargetDataRef, Ty: TypeRef) -> usize;
-    @extern("LLVMABISizeOfType") func ABISizeOfType(T: TargetDataRef, Ty: TypeRef) -> usize;
-    @extern("LLVMSizeOfTypeInBits") func SizeOfTypeInBits(T: TargetDataRef, Ty: TypeRef) -> usize;
-    @extern("LLVMCopyStringRepOfTargetData") func CopyStringRepOfTargetData(T: TargetDataRef) -> &char;
+    @extern @mangle("LLVMGetTargetFromName") func GetTargetFromName(name: &char) -> TargetRef;
+    @extern @mangle("LLVM_InitializeNativeAsmParser") func _InitializeNativeAsmParser() -> i32;
+    @extern @mangle("LLVM_InitializeNativeAsmPrinter") func _InitializeNativeAsmPrinter() -> i32;
+    @extern @mangle("LLVM_InitializeNativeDisassembler") func _InitializeNativeDisassembler() -> i32;
+    @extern @mangle("LLVM_InitializeNativeTarget") func _InitializeNativeTarget() -> i32;
+    @extern @mangle("LLVM_InitializeAllTargetInfos") func _InitializeAllTargetInfos();
+    @extern @mangle("LLVM_InitializeAllTargets") func _InitializeAllTargets();
+    @extern @mangle("LLVM_InitializeAllTargetMCs") func _InitializeAllTargetMCs();
+    @extern @mangle("LLVM_InitializeAllAsmPrinters") func _InitializeAllAsmPrinters();
+    @extern @mangle("LLVM_InitializeAllAsmParsers") func _InitializeAllAsmParsers();
+    @extern @mangle("LLVMCreateTargetMachine") func CreateTargetMachine(T: TargetRef, Triple: &char, CPU: &char, Features: &char, Level: i32, Reloc: i32, CodeModel: i32) -> TargetMachineRef;
+    @extern @mangle("LLVMCreateTargetMachineWithOptions") func CreateTargetMachineWithOptions(T: TargetRef, Triple: &char, Options: TargetMachineOptionsRef) -> TargetMachineRef;
+    @extern @mangle("LLVMTargetMachineEmitToFile") func TargetMachineEmitToFile(T: TargetMachineRef, M: ModuleRef, path: &char, opts: i32, err: &LLVMString) -> i32;
+    @extern @mangle("LLVMCreateTargetDataLayout") func CreateTargetDataLayout(T: TargetMachineRef) -> TargetDataRef;
+    @extern @mangle("LLVMStoreSizeOfType") func StoreSizeOfType(T: TargetDataRef, Ty: TypeRef) -> usize;
+    @extern @mangle("LLVMABISizeOfType") func ABISizeOfType(T: TargetDataRef, Ty: TypeRef) -> usize;
+    @extern @mangle("LLVMSizeOfTypeInBits") func SizeOfTypeInBits(T: TargetDataRef, Ty: TypeRef) -> usize;
+    @extern @mangle("LLVMCopyStringRepOfTargetData") func CopyStringRepOfTargetData(T: TargetDataRef) -> &char;
 
     // LLVMTargetMachineOptions
-    @extern("LLVMCreateTargetMachineOptions") func CreateTargetMachineOptions() -> TargetMachineOptionsRef;
-    @extern("LLVMDisposeTargetMachineOptions") func DisposeTargetMachineOptions(Options: TargetMachineOptionsRef);
-    @extern("LLVMTargetMachineOptionsSetCPU") func TargetMachineOptionsSetCPU(Options: TargetMachineOptionsRef, CPU: &char);
-    @extern("LLVMTargetMachineOptionsSetFeatures") func TargetMachineOptionsSetFeatures(Options: TargetMachineOptionsRef, Features: &char);
-    @extern("LLVMTargetMachineOptionsSetABI") func TargetMachineOptionsSetABI(Options: TargetMachineOptionsRef, ABI: &char);
-    @extern("LLVMTargetMachineOptionsSetCodeGenOptLevel") func TargetMachineOptionsSetCodeGenOptLevel(Options: TargetMachineOptionsRef, Level: i32);
-    @extern("LLVMTargetMachineOptionsSetRelocMode") func TargetMachineOptionsSetRelocMode(Options: TargetMachineOptionsRef, Reloc: i32);
-    @extern("LLVMTargetMachineOptionsSetCodeModel") func TargetMachineOptionsSetCodeModel(Options: TargetMachineOptionsRef, CodeModel: i32);
+    @extern @mangle("LLVMCreateTargetMachineOptions") func CreateTargetMachineOptions() -> TargetMachineOptionsRef;
+    @extern @mangle("LLVMDisposeTargetMachineOptions") func DisposeTargetMachineOptions(Options: TargetMachineOptionsRef);
+    @extern @mangle("LLVMTargetMachineOptionsSetCPU") func TargetMachineOptionsSetCPU(Options: TargetMachineOptionsRef, CPU: &char);
+    @extern @mangle("LLVMTargetMachineOptionsSetFeatures") func TargetMachineOptionsSetFeatures(Options: TargetMachineOptionsRef, Features: &char);
+    @extern @mangle("LLVMTargetMachineOptionsSetABI") func TargetMachineOptionsSetABI(Options: TargetMachineOptionsRef, ABI: &char);
+    @extern @mangle("LLVMTargetMachineOptionsSetCodeGenOptLevel") func TargetMachineOptionsSetCodeGenOptLevel(Options: TargetMachineOptionsRef, Level: i32);
+    @extern @mangle("LLVMTargetMachineOptionsSetRelocMode") func TargetMachineOptionsSetRelocMode(Options: TargetMachineOptionsRef, Reloc: i32);
+    @extern @mangle("LLVMTargetMachineOptionsSetCodeModel") func TargetMachineOptionsSetCodeModel(Options: TargetMachineOptionsRef, CodeModel: i32);
 
     // LLVMContext
-    @extern("LLVMContextCreate") func ContextCreate() -> ContextRef;
-    @extern("LLVMContextDispose") func ContextDispose(context: ContextRef);
-    @extern("LLVMModuleCreateWithNameInContext") func ModuleCreateWithNameInContext(id: &char, C: ContextRef) -> ModuleRef;
-    @extern("LLVMIntTypeInContext") func IntTypeInContext(c: ContextRef, bits: u32) -> TypeRef;
-    @extern("LLVMFloatTypeInContext") func FloatTypeInContext(c: ContextRef) -> TypeRef;
-    @extern("LLVMDoubleTypeInContext") func DoubleTypeInContext(c: ContextRef) -> TypeRef;
-    @extern("LLVMVoidTypeInContext") func VoidTypeInContext(c: ContextRef) -> TypeRef;
-    @extern("LLVMStructTypeInContext") func StructTypeInContext(c: ContextRef, ElementTypes: &TypeRef, ElementCount: u32, Packed: LLVMBool) -> TypeRef;
-    @extern("LLVMCreateEnumAttribute") func CreateEnumAttribute(c: ContextRef, KindID: u32, Val: u64) -> AttributeRef;
-    @extern("LLVMCreateStringAttribute") func CreateStringAttribute(c: ContextRef, K: &char, KLength: u32, V: &char, VLength: u32) -> AttributeRef;
+    @extern @mangle("LLVMContextCreate") func ContextCreate() -> ContextRef;
+    @extern @mangle("LLVMContextDispose") func ContextDispose(context: ContextRef);
+    @extern @mangle("LLVMModuleCreateWithNameInContext") func ModuleCreateWithNameInContext(id: &char, C: ContextRef) -> ModuleRef;
+    @extern @mangle("LLVMIntTypeInContext") func IntTypeInContext(c: ContextRef, bits: u32) -> TypeRef;
+    @extern @mangle("LLVMFloatTypeInContext") func FloatTypeInContext(c: ContextRef) -> TypeRef;
+    @extern @mangle("LLVMDoubleTypeInContext") func DoubleTypeInContext(c: ContextRef) -> TypeRef;
+    @extern @mangle("LLVMVoidTypeInContext") func VoidTypeInContext(c: ContextRef) -> TypeRef;
+    @extern @mangle("LLVMStructTypeInContext") func StructTypeInContext(c: ContextRef, ElementTypes: &TypeRef, ElementCount: u32, Packed: LLVMBool) -> TypeRef;
+    @extern @mangle("LLVMCreateEnumAttribute") func CreateEnumAttribute(c: ContextRef, KindID: u32, Val: u64) -> AttributeRef;
+    @extern @mangle("LLVMCreateStringAttribute") func CreateStringAttribute(c: ContextRef, K: &char, KLength: u32, V: &char, VLength: u32) -> AttributeRef;
 
     // LLVMModule
-    @extern("LLVMPrintModuleToString") func PrintModuleToString(M: ModuleRef) -> &char;
-    @extern("LLVMPrintModuleToFile") func PrintModuleToFile(M: ModuleRef, Filename: &char, ErrorMessage: &LLVMString) -> LLVMBool;
-    @extern("LLVMGetNamedFunction") func GetNamedFunction(M: ModuleRef, Name: &char) -> ValueRef;
-    @extern("LLVMAddFunction") func AddFunction(M: ModuleRef, name: &char, FunctionTy: TypeRef) -> ValueRef;
-    @extern("LLVMAddGlobalInAddressSpace") func AddGlobalInAddressSpace(M: ModuleRef, Ty: TypeRef, Name: &char, AddressSpace: u32) -> ValueRef;
-    @extern("LLVMGetNamedGlobal") func GetNamedGlobal(M: ModuleRef, Name: &char) -> ValueRef;
-    @extern("LLVMVerifyModule") func VerifyModule(M: ModuleRef, mode: i32, code: &LLVMString) -> LLVMBool;
-    @extern("LLVMSetDataLayout") func SetDataLayout(M: ModuleRef, Data: &char);
-    @extern("LLVMSetTarget") func SetTarget(M: ModuleRef, Target: &char);
-    @extern("LLVMAddModuleFlag") func AddModuleFlag(M: ModuleRef, Behavior: i32, Key: &char, KeyLen: usize, Val: MetadataRef);
+    @extern @mangle("LLVMPrintModuleToString") func PrintModuleToString(M: ModuleRef) -> &char;
+    @extern @mangle("LLVMPrintModuleToFile") func PrintModuleToFile(M: ModuleRef, Filename: &char, ErrorMessage: &LLVMString) -> LLVMBool;
+    @extern @mangle("LLVMGetNamedFunction") func GetNamedFunction(M: ModuleRef, Name: &char) -> ValueRef;
+    @extern @mangle("LLVMAddFunction") func AddFunction(M: ModuleRef, name: &char, FunctionTy: TypeRef) -> ValueRef;
+    @extern @mangle("LLVMAddGlobalInAddressSpace") func AddGlobalInAddressSpace(M: ModuleRef, Ty: TypeRef, Name: &char, AddressSpace: u32) -> ValueRef;
+    @extern @mangle("LLVMGetNamedGlobal") func GetNamedGlobal(M: ModuleRef, Name: &char) -> ValueRef;
+    @extern @mangle("LLVMVerifyModule") func VerifyModule(M: ModuleRef, mode: i32, code: &LLVMString) -> LLVMBool;
+    @extern @mangle("LLVMSetDataLayout") func SetDataLayout(M: ModuleRef, Data: &char);
+    @extern @mangle("LLVMSetTarget") func SetTarget(M: ModuleRef, Target: &char);
+    @extern @mangle("LLVMAddModuleFlag") func AddModuleFlag(M: ModuleRef, Behavior: i32, Key: &char, KeyLen: usize, Val: MetadataRef);
 
     // LLVMPassBuilder
-    @extern("LLVMRunPasses") func RunPasses(M: ModuleRef, Passes: &char, TM: TargetMachineRef, Options: PassBuilderOptionsRef) -> ErrorRef;
-    @extern("LLVMRunPassesOnFunction") func RunPassesOnFunction(F: ValueRef, Passes: &char, TM: TargetMachineRef, Options: PassBuilderOptionsRef) -> ErrorRef;
-    @extern("LLVMCreatePassBuilderOptions") func CreatePassBuilderOptions() -> PassBuilderOptionsRef;
-    @extern("LLVMDisposePassBuilderOptions") func DisposePassBuilderOptions(Options: PassBuilderOptionsRef);
-    @extern("LLVMPassBuilderOptionsSetVerifyEach") func PassBuilderOptionsSetVerifyEach(Options: PassBuilderOptionsRef, VerifyEach: LLVMBool);
-    @extern("LLVMPassBuilderOptionsSetDebugLogging") func PassBuilderOptionsSetDebugLogging(Options: PassBuilderOptionsRef, DebugLogging: LLVMBool);
-    @extern("LLVMPassBuilderOptionsSetAAPipeline") func PassBuilderOptionsSetAAPipeline(Options: PassBuilderOptionsRef, AAPipeline: &char);
-    @extern("LLVMPassBuilderOptionsSetLoopInterleaving") func PassBuilderOptionsSetLoopInterleaving(Options: PassBuilderOptionsRef, LoopInterleaving: LLVMBool);
-    @extern("LLVMPassBuilderOptionsSetLoopVectorization") func PassBuilderOptionsSetLoopVectorization(Options: PassBuilderOptionsRef, LoopVectorization: LLVMBool);
-    @extern("LLVMPassBuilderOptionsSetSLPVectorization") func PassBuilderOptionsSetSLPVectorization(Options: PassBuilderOptionsRef, SLPVectorization: LLVMBool);
-    @extern("LLVMPassBuilderOptionsSetLoopUnrolling") func PassBuilderOptionsSetLoopUnrolling(Options: PassBuilderOptionsRef, LoopUnrolling: LLVMBool);
-    @extern("LLVMPassBuilderOptionsSetForgetAllSCEVInLoopUnroll") func PassBuilderOptionsSetForgetAllSCEVInLoopUnroll(Options: PassBuilderOptionsRef, ForgetAllSCEVInLoopUnroll: LLVMBool);
-    @extern("LLVMPassBuilderOptionsSetLicmMssaOptCap") func PassBuilderOptionsSetLicmMssaOptCap(Options: PassBuilderOptionsRef, LicmMssaOptCap: u32);
-    @extern("LLVMPassBuilderOptionsSetLicmMssaNoAccForPromotionCap") func PassBuilderOptionsSetLicmMssaNoAccForPromotionCap(Options: PassBuilderOptionsRef, LicmMssaNoAccForPromotionCap: u32);
-    @extern("LLVMPassBuilderOptionsSetCallGraphProfile") func PassBuilderOptionsSetCallGraphProfile(Options: PassBuilderOptionsRef, CallGraphProfile: LLVMBool);
-    @extern("LLVMPassBuilderOptionsSetMergeFunctions") func PassBuilderOptionsSetMergeFunctions(Options: PassBuilderOptionsRef, MergeFunctions: LLVMBool);
-    @extern("LLVMPassBuilderOptionsSetInlinerThreshold") func PassBuilderOptionsSetInlinerThreshold(Options: PassBuilderOptionsRef, Threshold: i32);
+    @extern @mangle("LLVMRunPasses") func RunPasses(M: ModuleRef, Passes: &char, TM: TargetMachineRef, Options: PassBuilderOptionsRef) -> ErrorRef;
+    @extern @mangle("LLVMRunPassesOnFunction") func RunPassesOnFunction(F: ValueRef, Passes: &char, TM: TargetMachineRef, Options: PassBuilderOptionsRef) -> ErrorRef;
+    @extern @mangle("LLVMCreatePassBuilderOptions") func CreatePassBuilderOptions() -> PassBuilderOptionsRef;
+    @extern @mangle("LLVMDisposePassBuilderOptions") func DisposePassBuilderOptions(Options: PassBuilderOptionsRef);
+    @extern @mangle("LLVMPassBuilderOptionsSetVerifyEach") func PassBuilderOptionsSetVerifyEach(Options: PassBuilderOptionsRef, VerifyEach: LLVMBool);
+    @extern @mangle("LLVMPassBuilderOptionsSetDebugLogging") func PassBuilderOptionsSetDebugLogging(Options: PassBuilderOptionsRef, DebugLogging: LLVMBool);
+    @extern @mangle("LLVMPassBuilderOptionsSetAAPipeline") func PassBuilderOptionsSetAAPipeline(Options: PassBuilderOptionsRef, AAPipeline: &char);
+    @extern @mangle("LLVMPassBuilderOptionsSetLoopInterleaving") func PassBuilderOptionsSetLoopInterleaving(Options: PassBuilderOptionsRef, LoopInterleaving: LLVMBool);
+    @extern @mangle("LLVMPassBuilderOptionsSetLoopVectorization") func PassBuilderOptionsSetLoopVectorization(Options: PassBuilderOptionsRef, LoopVectorization: LLVMBool);
+    @extern @mangle("LLVMPassBuilderOptionsSetSLPVectorization") func PassBuilderOptionsSetSLPVectorization(Options: PassBuilderOptionsRef, SLPVectorization: LLVMBool);
+    @extern @mangle("LLVMPassBuilderOptionsSetLoopUnrolling") func PassBuilderOptionsSetLoopUnrolling(Options: PassBuilderOptionsRef, LoopUnrolling: LLVMBool);
+    @extern @mangle("LLVMPassBuilderOptionsSetForgetAllSCEVInLoopUnroll") func PassBuilderOptionsSetForgetAllSCEVInLoopUnroll(Options: PassBuilderOptionsRef, ForgetAllSCEVInLoopUnroll: LLVMBool);
+    @extern @mangle("LLVMPassBuilderOptionsSetLicmMssaOptCap") func PassBuilderOptionsSetLicmMssaOptCap(Options: PassBuilderOptionsRef, LicmMssaOptCap: u32);
+    @extern @mangle("LLVMPassBuilderOptionsSetLicmMssaNoAccForPromotionCap") func PassBuilderOptionsSetLicmMssaNoAccForPromotionCap(Options: PassBuilderOptionsRef, LicmMssaNoAccForPromotionCap: u32);
+    @extern @mangle("LLVMPassBuilderOptionsSetCallGraphProfile") func PassBuilderOptionsSetCallGraphProfile(Options: PassBuilderOptionsRef, CallGraphProfile: LLVMBool);
+    @extern @mangle("LLVMPassBuilderOptionsSetMergeFunctions") func PassBuilderOptionsSetMergeFunctions(Options: PassBuilderOptionsRef, MergeFunctions: LLVMBool);
+    @extern @mangle("LLVMPassBuilderOptionsSetInlinerThreshold") func PassBuilderOptionsSetInlinerThreshold(Options: PassBuilderOptionsRef, Threshold: i32);
 
     // LLVMBasicBlock
-    @extern("LLVMAppendBasicBlockInContext") func AppendBasicBlockInContext(C: ContextRef, FnRef: ValueRef, name: &char) -> BasicBlockRef;
-    @extern("LLVMGetInsertBlock") func GetInsertBlock(Builder: BuilderRef) -> BasicBlockRef;
-    @extern("LLVMGetBasicBlockParent") func GetBasicBlockParent(Block: BasicBlockRef) -> ValueRef;
-    @extern("LLVMGetFirstBasicBlock") func GetFirstBasicBlock(Fn: ValueRef) -> BasicBlockRef;
-    @extern("LLVMGetLastInstruction") func GetLastInstruction(Block: BasicBlockRef) -> ValueRef;
+    @extern @mangle("LLVMAppendBasicBlockInContext") func AppendBasicBlockInContext(C: ContextRef, FnRef: ValueRef, name: &char) -> BasicBlockRef;
+    @extern @mangle("LLVMGetInsertBlock") func GetInsertBlock(Builder: BuilderRef) -> BasicBlockRef;
+    @extern @mangle("LLVMGetBasicBlockParent") func GetBasicBlockParent(Block: BasicBlockRef) -> ValueRef;
+    @extern @mangle("LLVMGetFirstBasicBlock") func GetFirstBasicBlock(Fn: ValueRef) -> BasicBlockRef;
+    @extern @mangle("LLVMGetLastInstruction") func GetLastInstruction(Block: BasicBlockRef) -> ValueRef;
 
     // LLVMBuilder
-    @extern("LLVMCreateBuilderInContext") func CreateBuilderInContext(context: ContextRef) -> BuilderRef;
-    @extern("LLVMCreateBuilder") func CreateBuilder() -> BuilderRef;
-    @extern("LLVMPositionBuilder") func PositionBuilder(Builder: BuilderRef, Block: BasicBlockRef, Instr: ValueRef);
-    @extern("LLVMPositionBuilderBeforeDbgRecords") func PositionBuilderBeforeDbgRecords(Builder: BuilderRef, Block: BasicBlockRef, Inst: ValueRef);
-    @extern("LLVMPositionBuilderBefore") func PositionBuilderBefore(Builder: BuilderRef, Instr: ValueRef);
-    @extern("LLVMPositionBuilderBeforeInstrAndDbgRecords") func PositionBuilderBeforeInstrAndDbgRecords(Builder: BuilderRef, Instr: ValueRef);
-    @extern("LLVMPositionBuilderAtEnd") func PositionBuilderAtEnd(Builder: BuilderRef, Block: BasicBlockRef);
-    @extern("LLVMGetCurrentDebugLocation2") func GetCurrentDebugLocation(Builder: BuilderRef) -> MetadataRef;
-    @extern("LLVMSetCurrentDebugLocation2") func SetCurrentDebugLocation(Builder: BuilderRef, loc: MetadataRef);
-    @extern("LLVMSetInstDebugLocation") func SetInstDebugLocation(Builder: BuilderRef, Inst: ValueRef);
+    @extern @mangle("LLVMCreateBuilderInContext") func CreateBuilderInContext(context: ContextRef) -> BuilderRef;
+    @extern @mangle("LLVMCreateBuilder") func CreateBuilder() -> BuilderRef;
+    @extern @mangle("LLVMPositionBuilder") func PositionBuilder(Builder: BuilderRef, Block: BasicBlockRef, Instr: ValueRef);
+    @extern @mangle("LLVMPositionBuilderBeforeDbgRecords") func PositionBuilderBeforeDbgRecords(Builder: BuilderRef, Block: BasicBlockRef, Inst: ValueRef);
+    @extern @mangle("LLVMPositionBuilderBefore") func PositionBuilderBefore(Builder: BuilderRef, Instr: ValueRef);
+    @extern @mangle("LLVMPositionBuilderBeforeInstrAndDbgRecords") func PositionBuilderBeforeInstrAndDbgRecords(Builder: BuilderRef, Instr: ValueRef);
+    @extern @mangle("LLVMPositionBuilderAtEnd") func PositionBuilderAtEnd(Builder: BuilderRef, Block: BasicBlockRef);
+    @extern @mangle("LLVMGetCurrentDebugLocation2") func GetCurrentDebugLocation(Builder: BuilderRef) -> MetadataRef;
+    @extern @mangle("LLVMSetCurrentDebugLocation2") func SetCurrentDebugLocation(Builder: BuilderRef, loc: MetadataRef);
+    @extern @mangle("LLVMSetInstDebugLocation") func SetInstDebugLocation(Builder: BuilderRef, Inst: ValueRef);
 
     // Instructions
-    @extern("LLVMBuildRetVoid") func BuildRetVoid(B: BuilderRef) -> ValueRef;
-    @extern("LLVMBuildRet") func BuildRet(B: BuilderRef, Value: ValueRef) -> ValueRef;
-    @extern("LLVMBuildAlloca") func BuildAlloca(B: BuilderRef, Ty: TypeRef, Name: &char) -> ValueRef;
-    @extern("LLVMBuildStore") func BuildStore(B: BuilderRef, Value: ValueRef, Ptr: ValueRef) -> ValueRef;
-    @extern("LLVMBuildInsertValue") func BuildInsertValue(B: BuilderRef, AggVal: ValueRef, EltVal: ValueRef, Index: u32, Name: &char) -> ValueRef;
-    @extern("LLVMBuildBr") func BuildBr(B: BuilderRef, Dest: BasicBlockRef) -> ValueRef;
-    @extern("LLVMBuildCondBr") func BuildCondBr(B: BuilderRef, If: ValueRef, Then: BasicBlockRef, Else: BasicBlockRef) -> ValueRef;
-    @extern("LLVMBuildLoad2") func BuildLoad2(B: BuilderRef, Ty: TypeRef, Ptr: ValueRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildAdd") func BuildAdd(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildSub") func BuildSub(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildMul") func BuildMul(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildSDiv") func BuildSDiv(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildUDiv") func BuildUDiv(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildSRem") func BuildSRem(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildURem") func BuildURem(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildFAdd") func BuildFAdd(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildFSub") func BuildFSub(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildFMul") func BuildFMul(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildFDiv") func BuildFDiv(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildFRem") func BuildFRem(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildICmp") func BuildICmp(B: BuilderRef, pred: i32, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildFCmp") func BuildFCmp(B: BuilderRef, pred: i32, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildNot") func BuildNot(B: BuilderRef, Val: ValueRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildOr") func BuildOr(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildAnd") func BuildAnd(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildXor") func BuildXor(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildPtrToInt") func BuildPtrToInt(B: BuilderRef, Ptr: ValueRef, Int: TypeRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildIntToPtr") func BuildIntToPtr(B: BuilderRef, Ptr: ValueRef, Int: TypeRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildSIToFP") func BuildSIToFP(B: BuilderRef, Val: ValueRef, DestTy: TypeRef, Name: &char) -> ValueRef;
-    @extern("LLVMBuildUIToFP") func BuildUIToFP(B: BuilderRef, Val: ValueRef, DestTy: TypeRef, Name: &char) -> ValueRef;
-    @extern("LLVMBuildFPToSI") func BuildFPToSI(B: BuilderRef, Val: ValueRef, DestTy: TypeRef, Name: &char) -> ValueRef;
-    @extern("LLVMBuildFPToUI") func BuildFPToUI(B: BuilderRef, Val: ValueRef, DestTy: TypeRef, Name: &char) -> ValueRef;
-    @extern("LLVMBuildCall2") func BuildCall2(B: BuilderRef, Ty: TypeRef, Fn: ValueRef, Args: &ValueRef, NumArgs: u32, Name: &char) -> ValueRef;
-    @extern("LLVMBuildGlobalStringPtr") func BuildGlobalStringPtr(B: BuilderRef, Str: &char, Name: &char) -> ValueRef;
-    @extern("LLVMBuildSExt") func BuildSExt(B: BuilderRef, Val: ValueRef, Typ: TypeRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildZExt") func BuildZExt(B: BuilderRef, Val: ValueRef, Typ: TypeRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildTrunc") func BuildTrunc(B: BuilderRef, Val: ValueRef, Typ: TypeRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildStructGEP2") func BuildStructGEP2(B: BuilderRef, Ty: TypeRef, Pointer: ValueRef, Idx: u32, Name: &char) -> ValueRef;
-    @extern("LLVMBuildGEP2") func BuildGEP2(B: BuilderRef, Ty: TypeRef, Pointer: ValueRef, Indices: &ValueRef, Length: u32, Name: &char) -> ValueRef;
-    @extern("LLVMBuildFPExt") func BuildFPExt(B: BuilderRef, Val: ValueRef, Typ: TypeRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildFPTrunc") func BuildFPTrunc(B: BuilderRef, Val: ValueRef, Typ: TypeRef, name: &char) -> ValueRef;
-    @extern("LLVMBuildUnreachable") func BuildUnreachable(B: BuilderRef) -> ValueRef;
-    @extern("LLVMBuildMemCpy") func BuildMemcpy(B: BuilderRef, Dst: ValueRef, DstAlign: u32, Src: ValueRef, SrcAlign: u32, Size: ValueRef) -> ValueRef;
+    @extern @mangle("LLVMBuildRetVoid") func BuildRetVoid(B: BuilderRef) -> ValueRef;
+    @extern @mangle("LLVMBuildRet") func BuildRet(B: BuilderRef, Value: ValueRef) -> ValueRef;
+    @extern @mangle("LLVMBuildAlloca") func BuildAlloca(B: BuilderRef, Ty: TypeRef, Name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildStore") func BuildStore(B: BuilderRef, Value: ValueRef, Ptr: ValueRef) -> ValueRef;
+    @extern @mangle("LLVMBuildInsertValue") func BuildInsertValue(B: BuilderRef, AggVal: ValueRef, EltVal: ValueRef, Index: u32, Name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildBr") func BuildBr(B: BuilderRef, Dest: BasicBlockRef) -> ValueRef;
+    @extern @mangle("LLVMBuildCondBr") func BuildCondBr(B: BuilderRef, If: ValueRef, Then: BasicBlockRef, Else: BasicBlockRef) -> ValueRef;
+    @extern @mangle("LLVMBuildLoad2") func BuildLoad2(B: BuilderRef, Ty: TypeRef, Ptr: ValueRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildAdd") func BuildAdd(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildSub") func BuildSub(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildMul") func BuildMul(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildSDiv") func BuildSDiv(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildUDiv") func BuildUDiv(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildSRem") func BuildSRem(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildURem") func BuildURem(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildFAdd") func BuildFAdd(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildFSub") func BuildFSub(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildFMul") func BuildFMul(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildFDiv") func BuildFDiv(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildFRem") func BuildFRem(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildICmp") func BuildICmp(B: BuilderRef, pred: i32, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildFCmp") func BuildFCmp(B: BuilderRef, pred: i32, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildNot") func BuildNot(B: BuilderRef, Val: ValueRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildOr") func BuildOr(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildAnd") func BuildAnd(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildXor") func BuildXor(B: BuilderRef, LHS: ValueRef, RHS: ValueRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildPtrToInt") func BuildPtrToInt(B: BuilderRef, Ptr: ValueRef, Int: TypeRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildIntToPtr") func BuildIntToPtr(B: BuilderRef, Ptr: ValueRef, Int: TypeRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildSIToFP") func BuildSIToFP(B: BuilderRef, Val: ValueRef, DestTy: TypeRef, Name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildUIToFP") func BuildUIToFP(B: BuilderRef, Val: ValueRef, DestTy: TypeRef, Name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildFPToSI") func BuildFPToSI(B: BuilderRef, Val: ValueRef, DestTy: TypeRef, Name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildFPToUI") func BuildFPToUI(B: BuilderRef, Val: ValueRef, DestTy: TypeRef, Name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildCall2") func BuildCall2(B: BuilderRef, Ty: TypeRef, Fn: ValueRef, Args: &ValueRef, NumArgs: u32, Name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildGlobalStringPtr") func BuildGlobalStringPtr(B: BuilderRef, Str: &char, Name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildSExt") func BuildSExt(B: BuilderRef, Val: ValueRef, Typ: TypeRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildZExt") func BuildZExt(B: BuilderRef, Val: ValueRef, Typ: TypeRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildTrunc") func BuildTrunc(B: BuilderRef, Val: ValueRef, Typ: TypeRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildStructGEP2") func BuildStructGEP2(B: BuilderRef, Ty: TypeRef, Pointer: ValueRef, Idx: u32, Name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildGEP2") func BuildGEP2(B: BuilderRef, Ty: TypeRef, Pointer: ValueRef, Indices: &ValueRef, Length: u32, Name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildFPExt") func BuildFPExt(B: BuilderRef, Val: ValueRef, Typ: TypeRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildFPTrunc") func BuildFPTrunc(B: BuilderRef, Val: ValueRef, Typ: TypeRef, name: &char) -> ValueRef;
+    @extern @mangle("LLVMBuildUnreachable") func BuildUnreachable(B: BuilderRef) -> ValueRef;
+    @extern @mangle("LLVMBuildMemCpy") func BuildMemcpy(B: BuilderRef, Dst: ValueRef, DstAlign: u32, Src: ValueRef, SrcAlign: u32, Size: ValueRef) -> ValueRef;
 
     // LLVMValue
-    @extern("LLVMTypeOf") func TypeOf(Val: ValueRef) -> TypeRef;
-    @extern("LLVMConstInt") func ConstInt(IntTy: TypeRef, N: usize, SignExtend: LLVMBool) -> ValueRef;
-    @extern("LLVMConstReal") func ConstReal(RealTy: TypeRef, F: f64) -> ValueRef;
-    @extern("LLVMConstNull") func ConstNull(Ty: TypeRef) -> ValueRef;
-    @extern("LLVMDumpValue") func DumpValue(V: ValueRef);
-    @extern("LLVMGlobalGetValueType") func GlobalGetValueType(Val: ValueRef) -> TypeRef;
-    @extern("LLVMAddAttributeAtIndex") func AddAttributeAtIndex(Val: ValueRef, index: u32, Attr: AttributeRef);
-    @extern("LLVMSetAlignment") func SetAlignment(Val: ValueRef, Bytes: u32);
-    @extern("LLVMGlobalSetMetadata") func GlobalSetMetadata(Global: ValueRef, Kind: u32, MD: MetadataRef);
-    @extern("LLVMIsAGlobalVariable") func IsAGlobalVariable(Val: ValueRef) -> ValueRef;
+    @extern @mangle("LLVMTypeOf") func TypeOf(Val: ValueRef) -> TypeRef;
+    @extern @mangle("LLVMConstInt") func ConstInt(IntTy: TypeRef, N: usize, SignExtend: LLVMBool) -> ValueRef;
+    @extern @mangle("LLVMConstReal") func ConstReal(RealTy: TypeRef, F: f64) -> ValueRef;
+    @extern @mangle("LLVMConstNull") func ConstNull(Ty: TypeRef) -> ValueRef;
+    @extern @mangle("LLVMDumpValue") func DumpValue(V: ValueRef);
+    @extern @mangle("LLVMGlobalGetValueType") func GlobalGetValueType(Val: ValueRef) -> TypeRef;
+    @extern @mangle("LLVMAddAttributeAtIndex") func AddAttributeAtIndex(Val: ValueRef, index: u32, Attr: AttributeRef);
+    @extern @mangle("LLVMSetAlignment") func SetAlignment(Val: ValueRef, Bytes: u32);
+    @extern @mangle("LLVMGlobalSetMetadata") func GlobalSetMetadata(Global: ValueRef, Kind: u32, MD: MetadataRef);
+    @extern @mangle("LLVMIsAGlobalVariable") func IsAGlobalVariable(Val: ValueRef) -> ValueRef;
 
     // LLVM Globals
-    @extern("LLVMSetInitializer") func SetInitializer(GlobalVar: ValueRef, ConstantVal: ValueRef);
-    @extern("LLVMGetInitializer") func GetInitializer(GlobalVar: ValueRef) -> ValueRef;
+    @extern @mangle("LLVMSetInitializer") func SetInitializer(GlobalVar: ValueRef, ConstantVal: ValueRef);
+    @extern @mangle("LLVMGetInitializer") func GetInitializer(GlobalVar: ValueRef) -> ValueRef;
 
-    @extern("LLVMGetParam") func GetParam(FnRef: ValueRef, index: u32) -> ValueRef;
-    @extern("LLVMSetValueName2") func SetValueName2(Val: ValueRef, Name: &char, NameLen: usize);
-    @extern("LLVMSetValueName") func SetValueName(Val: ValueRef, Name: &char);
-    @extern("LLVMGetValueName2") func GetValueName2(Val: ValueRef, Length: &usize) -> &char;
-    @extern("LLVMGetValueName") func GetValueName(Val: ValueRef) -> &char;
+    @extern @mangle("LLVMGetParam") func GetParam(FnRef: ValueRef, index: u32) -> ValueRef;
+    @extern @mangle("LLVMSetValueName2") func SetValueName2(Val: ValueRef, Name: &char, NameLen: usize);
+    @extern @mangle("LLVMSetValueName") func SetValueName(Val: ValueRef, Name: &char);
+    @extern @mangle("LLVMGetValueName2") func GetValueName2(Val: ValueRef, Length: &usize) -> &char;
+    @extern @mangle("LLVMGetValueName") func GetValueName(Val: ValueRef) -> &char;
 
-    @extern("LLVMSetVisibility") func SetVisibility(Val: ValueRef, Vis: i32);
-    @extern("LLVMSetLinkage") func SetLinkage(Val: ValueRef, Linkage: i32);
-    @extern("LLVMSetDLLStorageClass") func SetDLLStorageClass(Val: ValueRef, StorageClass: i32);
+    @extern @mangle("LLVMSetVisibility") func SetVisibility(Val: ValueRef, Vis: i32);
+    @extern @mangle("LLVMSetLinkage") func SetLinkage(Val: ValueRef, Linkage: i32);
+    @extern @mangle("LLVMSetDLLStorageClass") func SetDLLStorageClass(Val: ValueRef, StorageClass: i32);
 
     // LLVMAttribute
-    @extern("LLVMGetEnumAttributeKindForName") func GetEnumAttributeKindForName(Name: &char, SLen: usize) -> u32;
+    @extern @mangle("LLVMGetEnumAttributeKindForName") func GetEnumAttributeKindForName(Name: &char, SLen: usize) -> u32;
 
     // LLVMType
-    @extern("LLVMFunctionType") func FunctionType(ReturnType: TypeRef, ParamTypes: &TypeRef, ParamCount: u32, IsVarArg: LLVMBool) -> TypeRef;
-    @extern("LLVMPointerType") func PointerType(ElementType: TypeRef, AddressSpace: u32) -> TypeRef;
-    @extern("LLVMArrayType") func ArrayType(ElementType: TypeRef, size: u32) -> TypeRef;
-    @extern("LLVMGetParamTypes") func GetParamTypes(FunctionTy: TypeRef, Dest: &TypeRef);
-    @extern("LLVMCountParamTypes") func CountParamTypes(FunctionTy: TypeRef) -> u32;
-    @extern("LLVMGetReturnType") func GetReturnType(FunctionTy: TypeRef) -> TypeRef;
-    @extern("LLVMPrintTypeToString") func PrintTypeToString(Ty: TypeRef) -> &char;
-    @extern("LLVMGetInlineAsm") func GetInlineAsm(Ty: TypeRef, AsmString: &char, AsmStringSize: usize, Constraints: &char, ConstraintsSize: usize, HasSideEffects: LLVMBool, IsAlignStack: LLVMBool, Dialect: u32, CanThrow: LLVMBool) -> ValueRef;
-    @extern("LLVMGetTypeKind") func GetTypeKind(Ty: TypeRef) -> i32;
+    @extern @mangle("LLVMFunctionType") func FunctionType(ReturnType: TypeRef, ParamTypes: &TypeRef, ParamCount: u32, IsVarArg: LLVMBool) -> TypeRef;
+    @extern @mangle("LLVMPointerType") func PointerType(ElementType: TypeRef, AddressSpace: u32) -> TypeRef;
+    @extern @mangle("LLVMArrayType") func ArrayType(ElementType: TypeRef, size: u32) -> TypeRef;
+    @extern @mangle("LLVMGetParamTypes") func GetParamTypes(FunctionTy: TypeRef, Dest: &TypeRef);
+    @extern @mangle("LLVMCountParamTypes") func CountParamTypes(FunctionTy: TypeRef) -> u32;
+    @extern @mangle("LLVMGetReturnType") func GetReturnType(FunctionTy: TypeRef) -> TypeRef;
+    @extern @mangle("LLVMPrintTypeToString") func PrintTypeToString(Ty: TypeRef) -> &char;
+    @extern @mangle("LLVMGetInlineAsm") func GetInlineAsm(Ty: TypeRef, AsmString: &char, AsmStringSize: usize, Constraints: &char, ConstraintsSize: usize, HasSideEffects: LLVMBool, IsAlignStack: LLVMBool, Dialect: u32, CanThrow: LLVMBool) -> ValueRef;
+    @extern @mangle("LLVMGetTypeKind") func GetTypeKind(Ty: TypeRef) -> i32;
 
     // LLVMDIBuilder
-    @extern("LLVMCreateDIBuilder") func CreateDIBuilder(M: ModuleRef) -> DIBuilderRef;
-    @extern("LLVMDisposeDIBuilder") func DisposeDIBuilder(Builder: DIBuilderRef);
-    @extern("LLVMDIBuilderFinalize") func DIBuilderFinalize(Builder: DIBuilderRef);
-    @extern("LLVMDIBuilderCreateCompileUnit") func DIBuilderCreateCompileUnit(Builder: DIBuilderRef, Lang: i32, FileRef: MetadataRef,
+    @extern @mangle("LLVMCreateDIBuilder") func CreateDIBuilder(M: ModuleRef) -> DIBuilderRef;
+    @extern @mangle("LLVMDisposeDIBuilder") func DisposeDIBuilder(Builder: DIBuilderRef);
+    @extern @mangle("LLVMDIBuilderFinalize") func DIBuilderFinalize(Builder: DIBuilderRef);
+    @extern @mangle("LLVMDIBuilderCreateCompileUnit") func DIBuilderCreateCompileUnit(Builder: DIBuilderRef, Lang: i32, FileRef: MetadataRef,
     Producer: &char, ProducerLen: usize, isOptimized: LLVMBool, Flags: &char, FlagsLen: usize, RuntimeVer: u32, SplitName: &char,
     SplitNameLen: usize, Kind: i32, DWOId: u32, SplitDebugInlining: LLVMBool, DebugInfoForProfiling: LLVMBool, SysRoot: &char,
     SysRootLen: usize, SDK: &char, SDKLen: usize) -> MetadataRef;
-    @extern("LLVMDIBuilderCreateExpression") func DIBuilderCreateExpression(Builder: DIBuilderRef, Addr: &usize, Length: usize) -> MetadataRef;
-    @extern("LLVMDIBuilderCreateFile") func DIBuilderCreateFile(Builder: DIBuilderRef, Filename: &char, FilenameLen: usize, Directory: &char, DirectoryLen: usize) -> MetadataRef;
-    @extern("LLVMDIBuilderCreateFunction") func DIBuilderCreateFunction(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, LinkageName: &char, LinkageNameLen: usize, File: MetadataRef, LineNo: u32, Ty: MetadataRef, IsLocalToUnit: LLVMBool, IsDefinition: LLVMBool, ScopeLine: u32, Flags: i32, IsOptimized: LLVMBool) -> MetadataRef;
-    @extern("LLVMDIBuilderCreateDebugLocation") func DIBuilderCreateDebugLocation(Ctx: ContextRef, Line: u32, Col: u32, Scope: MetadataRef, InlinedAt: MetadataRef) -> MetadataRef;
-    @extern("LLVMDIBuilderCreateAutoVariable") func DIBuilderCreateAutoVariable(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, File: MetadataRef, LineNo: u32, Ty: MetadataRef, AlwaysPreserve: LLVMBool, Flags: i32, AlignInBits: u32) -> MetadataRef;
-    @extern("LLVMDIBuilderCreateBasicType") func DIBuilderCreateBasicType(Builder: DIBuilderRef, Name: &char, NameLen: usize, SizeInBits: u64, Encoding: u32, Flags: i32) -> MetadataRef;
-    @extern("LLVMDIBuilderCreateParameterVariable") func DIBuilderCreateParameterVariable(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, ArgNo: u32, File: MetadataRef, LineNo: u32, Ty: MetadataRef, AlwaysPreserve: LLVMBool, Flags: i32) -> MetadataRef;
-    @extern("LLVMDIBuilderCreatePointerType") func DIBuilderCreatePointerType(Builder: DIBuilderRef, PointeeTy: MetadataRef, SizeInBits: u64, AlignInBits: u32, AddressSpace: u32, Name: &char, NameLen: usize) -> MetadataRef;
-    @extern("LLVMDIBuilderCreateStructType") func DIBuilderCreateStructType(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, File: MetadataRef, LineNumber: u32, SizeInBits: u64, AlignInBits: u32, Flags: i32, DerivedFrom: MetadataRef, Elements: &MetadataRef, NumElements: u32, RunTimeLang: u32, VTableHolder: MetadataRef, UniqueId: &char, UniqueIdLen: usize) -> MetadataRef;
-    @extern("LLVMDIBuilderCreateVariantPart") func DIBuilderCreateVariantPart(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, File: MetadataRef, LineNumber: u32, SizeInBits: u64, AlignInBits: u32, Flags: i32, Discriminator: MetadataRef, Elements: &MetadataRef, NumElements: u32, Unique: &char, UniqueLen: usize) -> MetadataRef;
-    @extern("LLVMDIBuilderCreateVariantMemberType") func DIBuilderCreateVariantMemberType(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, File: MetadataRef, LineNumber: u32, SizeInBits: u64, AlignInBits: u32, OffsetInBits: u64, Discriminant: ValueRef, Flags: i32, Ty: MetadataRef) -> MetadataRef;
-    @extern("LLVMDIBuilderCreateMemberType") func DIBuilderCreateMemberType(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, File: MetadataRef, LineNumber: u32, SizeInBits: u64, AlignInBits: u32, OffsetInBits: u64, Flags: i32, Ty: MetadataRef) -> MetadataRef;
-    @extern("LLVMDIBuilderCreateSubroutineType") func DIBuilderCreateSubroutineType(Builder: DIBuilderRef, File: MetadataRef, ParameterTypes: &MetadataRef, NumParameterTypes: u32, Flags: i32) -> MetadataRef;
-    @extern("LLVMDIBuilderCreateTypedef") func DIBuilderCreateTypedef(Builder: DIBuilderRef, Type: MetadataRef, Name: &char, NameLen: usize, File: MetadataRef, LineNo: u32, Scope: MetadataRef, AlignInBits: u32) -> MetadataRef;
-    @extern("LLVMDIBuilderCreateUnionType") func DIBuilderCreateUnionType(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, File: MetadataRef, LineNumber: u32, SizeInBits: u64, AlignInBits: u32, Flags: i32, Elements: &MetadataRef, NumElements: u32, RunTimeLang: u32, UniqueId: &char, UniqueLen: usize) -> MetadataRef;
-    @extern("LLVMDIBuilderCreateArrayType") func DIBuilderCreateArrayType(Builder: DIBuilderRef, Size: u64, AlignInBits: u32, Ty: MetadataRef, Subscripts: &MetadataRef, NumSubscripts: u32) -> MetadataRef;
-    @extern("LLVMDIBuilderCreateArtificialType") func DIBuilderCreateArtificialType(Builder: DIBuilderRef, Ty: MetadataRef) -> MetadataRef;
-    @extern("LLVMDIBuilderCreateUnspecifiedType") func DIBuilderCreateUnspecifiedType(Builder: DIBuilderRef, Name: &char, NameLen: usize) -> MetadataRef;
-    @extern("LLVMDIBuilderInsertDeclareRecordAtEnd") func DIBuilderInsertDeclareRecordAtEnd(Builder: DIBuilderRef, Storage: ValueRef, VarInfo: MetadataRef, Expr: MetadataRef, DebugLoc: MetadataRef, Block: BasicBlockRef) -> DbgRecordRef;
-    @extern("LLVMDIBuilderInsertDeclareRecordBefore") func DIBuilderInsertDeclareRecordBefore(Builder: DIBuilderRef, Storage: ValueRef, VarInfo: MetadataRef, Expr: MetadataRef, DebugLoc: MetadataRef, Instr: ValueRef) -> DbgRecordRef;
-    @extern("LLVMDIBuilderCreateGlobalVariableExpression") func DIBuilderCreateGlobalVariableExpression(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, Linkage: &char, LinkLen: usize, File: MetadataRef, LineNo: u32, Ty: MetadataRef, LocalToUnit: LLVMBool, Expr: MetadataRef, Decl: MetadataRef, AlignInBits: u32) -> MetadataRef;
+    @extern @mangle("LLVMDIBuilderCreateExpression") func DIBuilderCreateExpression(Builder: DIBuilderRef, Addr: &usize, Length: usize) -> MetadataRef;
+    @extern @mangle("LLVMDIBuilderCreateFile") func DIBuilderCreateFile(Builder: DIBuilderRef, Filename: &char, FilenameLen: usize, Directory: &char, DirectoryLen: usize) -> MetadataRef;
+    @extern @mangle("LLVMDIBuilderCreateFunction") func DIBuilderCreateFunction(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, LinkageName: &char, LinkageNameLen: usize, File: MetadataRef, LineNo: u32, Ty: MetadataRef, IsLocalToUnit: LLVMBool, IsDefinition: LLVMBool, ScopeLine: u32, Flags: i32, IsOptimized: LLVMBool) -> MetadataRef;
+    @extern @mangle("LLVMDIBuilderCreateDebugLocation") func DIBuilderCreateDebugLocation(Ctx: ContextRef, Line: u32, Col: u32, Scope: MetadataRef, InlinedAt: MetadataRef) -> MetadataRef;
+    @extern @mangle("LLVMDIBuilderCreateAutoVariable") func DIBuilderCreateAutoVariable(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, File: MetadataRef, LineNo: u32, Ty: MetadataRef, AlwaysPreserve: LLVMBool, Flags: i32, AlignInBits: u32) -> MetadataRef;
+    @extern @mangle("LLVMDIBuilderCreateBasicType") func DIBuilderCreateBasicType(Builder: DIBuilderRef, Name: &char, NameLen: usize, SizeInBits: u64, Encoding: u32, Flags: i32) -> MetadataRef;
+    @extern @mangle("LLVMDIBuilderCreateParameterVariable") func DIBuilderCreateParameterVariable(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, ArgNo: u32, File: MetadataRef, LineNo: u32, Ty: MetadataRef, AlwaysPreserve: LLVMBool, Flags: i32) -> MetadataRef;
+    @extern @mangle("LLVMDIBuilderCreatePointerType") func DIBuilderCreatePointerType(Builder: DIBuilderRef, PointeeTy: MetadataRef, SizeInBits: u64, AlignInBits: u32, AddressSpace: u32, Name: &char, NameLen: usize) -> MetadataRef;
+    @extern @mangle("LLVMDIBuilderCreateStructType") func DIBuilderCreateStructType(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, File: MetadataRef, LineNumber: u32, SizeInBits: u64, AlignInBits: u32, Flags: i32, DerivedFrom: MetadataRef, Elements: &MetadataRef, NumElements: u32, RunTimeLang: u32, VTableHolder: MetadataRef, UniqueId: &char, UniqueIdLen: usize) -> MetadataRef;
+    @extern @mangle("LLVMDIBuilderCreateVariantPart") func DIBuilderCreateVariantPart(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, File: MetadataRef, LineNumber: u32, SizeInBits: u64, AlignInBits: u32, Flags: i32, Discriminator: MetadataRef, Elements: &MetadataRef, NumElements: u32, Unique: &char, UniqueLen: usize) -> MetadataRef;
+    @extern @mangle("LLVMDIBuilderCreateVariantMemberType") func DIBuilderCreateVariantMemberType(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, File: MetadataRef, LineNumber: u32, SizeInBits: u64, AlignInBits: u32, OffsetInBits: u64, Discriminant: ValueRef, Flags: i32, Ty: MetadataRef) -> MetadataRef;
+    @extern @mangle("LLVMDIBuilderCreateMemberType") func DIBuilderCreateMemberType(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, File: MetadataRef, LineNumber: u32, SizeInBits: u64, AlignInBits: u32, OffsetInBits: u64, Flags: i32, Ty: MetadataRef) -> MetadataRef;
+    @extern @mangle("LLVMDIBuilderCreateSubroutineType") func DIBuilderCreateSubroutineType(Builder: DIBuilderRef, File: MetadataRef, ParameterTypes: &MetadataRef, NumParameterTypes: u32, Flags: i32) -> MetadataRef;
+    @extern @mangle("LLVMDIBuilderCreateTypedef") func DIBuilderCreateTypedef(Builder: DIBuilderRef, Type: MetadataRef, Name: &char, NameLen: usize, File: MetadataRef, LineNo: u32, Scope: MetadataRef, AlignInBits: u32) -> MetadataRef;
+    @extern @mangle("LLVMDIBuilderCreateUnionType") func DIBuilderCreateUnionType(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, File: MetadataRef, LineNumber: u32, SizeInBits: u64, AlignInBits: u32, Flags: i32, Elements: &MetadataRef, NumElements: u32, RunTimeLang: u32, UniqueId: &char, UniqueLen: usize) -> MetadataRef;
+    @extern @mangle("LLVMDIBuilderCreateArrayType") func DIBuilderCreateArrayType(Builder: DIBuilderRef, Size: u64, AlignInBits: u32, Ty: MetadataRef, Subscripts: &MetadataRef, NumSubscripts: u32) -> MetadataRef;
+    @extern @mangle("LLVMDIBuilderCreateArtificialType") func DIBuilderCreateArtificialType(Builder: DIBuilderRef, Ty: MetadataRef) -> MetadataRef;
+    @extern @mangle("LLVMDIBuilderCreateUnspecifiedType") func DIBuilderCreateUnspecifiedType(Builder: DIBuilderRef, Name: &char, NameLen: usize) -> MetadataRef;
+    @extern @mangle("LLVMDIBuilderInsertDeclareRecordAtEnd") func DIBuilderInsertDeclareRecordAtEnd(Builder: DIBuilderRef, Storage: ValueRef, VarInfo: MetadataRef, Expr: MetadataRef, DebugLoc: MetadataRef, Block: BasicBlockRef) -> DbgRecordRef;
+    @extern @mangle("LLVMDIBuilderInsertDeclareRecordBefore") func DIBuilderInsertDeclareRecordBefore(Builder: DIBuilderRef, Storage: ValueRef, VarInfo: MetadataRef, Expr: MetadataRef, DebugLoc: MetadataRef, Instr: ValueRef) -> DbgRecordRef;
+    @extern @mangle("LLVMDIBuilderCreateGlobalVariableExpression") func DIBuilderCreateGlobalVariableExpression(Builder: DIBuilderRef, Scope: MetadataRef, Name: &char, NameLen: usize, Linkage: &char, LinkLen: usize, File: MetadataRef, LineNo: u32, Ty: MetadataRef, LocalToUnit: LLVMBool, Expr: MetadataRef, Decl: MetadataRef, AlignInBits: u32) -> MetadataRef;
 
 
     // LLVMMetadata
-    @extern("LLVMMetadataReplaceAllUsesWith") func ReplaceAllUsesWith(TempTargetMetadata: MetadataRef, Replacement: MetadataRef);
-    @extern("LLVMSetSubprogram") func SetSubprogram(Func: ValueRef, SP: MetadataRef);
-    @extern("LLVMGetSubprogram") func GetSubprogram(Func: ValueRef) -> MetadataRef;
-    @extern("LLVMTemporaryMDNode") func TemporaryMDNode(Ctx: ContextRef, Data: &MetadataRef, NumElements: usize) -> MetadataRef;
-    @extern("LLVMDisposeTemporaryMDNode") func DisposeTemporaryMDNode(TempNode: MetadataRef);
-    @extern("LLVMValueAsMetadata") func ValueAsMetadata(Val: ValueRef) -> MetadataRef;
-    @extern("LLVMGetMDKindID") func GetMDKindID(Name: &char, NameLen: u32) -> u32;
+    @extern @mangle("LLVMMetadataReplaceAllUsesWith") func ReplaceAllUsesWith(TempTargetMetadata: MetadataRef, Replacement: MetadataRef);
+    @extern @mangle("LLVMSetSubprogram") func SetSubprogram(Func: ValueRef, SP: MetadataRef);
+    @extern @mangle("LLVMGetSubprogram") func GetSubprogram(Func: ValueRef) -> MetadataRef;
+    @extern @mangle("LLVMTemporaryMDNode") func TemporaryMDNode(Ctx: ContextRef, Data: &MetadataRef, NumElements: usize) -> MetadataRef;
+    @extern @mangle("LLVMDisposeTemporaryMDNode") func DisposeTemporaryMDNode(TempNode: MetadataRef);
+    @extern @mangle("LLVMValueAsMetadata") func ValueAsMetadata(Val: ValueRef) -> MetadataRef;
+    @extern @mangle("LLVMGetMDKindID") func GetMDKindID(Name: &char, NameLen: u32) -> u32;
 }
 struct LLVMBool { val: i32; }
 func newLLVMBool(b: bool) -> LLVMBool {
