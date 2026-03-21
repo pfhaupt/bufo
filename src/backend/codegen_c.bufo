@@ -26,6 +26,10 @@ import "../backend/irgen.bufo";
 @os(LINUX) import "linux.bufo";
 @os(LINUX) import "posix/functions.bufo";
 
+// FIXME(2026-03-21): Instead of using Node and Type IDs that change any time we add single lines
+// of code, we should use our own counters that are more resistant to code changes. Otherwise we
+// get +17000,-17000 commit diffs any time we run `make bootstrap`.
+
 comptime INDENTATION_LEVEL: usize = 4;
 
 struct Var_Context {
