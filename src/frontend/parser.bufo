@@ -3,6 +3,7 @@ import "libc.bufo";
 import "substr.bufo";
 import "string.bufo";
 import "bufo.bufo";
+import "format.bufo";
 import "./lexer.bufo";
 import "./token.bufo";
 import "./nodes.bufo";
@@ -197,10 +198,20 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList, inModule: bool)
                 C::fprintf(stderr, "%s: %s: `@extern()` used outside of a module.\n", loc.buffer, WARN_STR);
                 drop(&loc);
             }
+            push(attrs, ParsedAttribute::Extern);
+            if (eat(this, TOKEN_PAREN_OPEN)) {
+                let loc = toString(&name.span);
+                fprint("%: %: `@extern(<name>)` has been deprecated, please use `@extern @mangle(<name>)` instead.\n", loc, WARN_STR);
+                drop(&loc);
+                let v = expect(this, TOKEN_STRING_LITERAL);
+                let end = expect(this, TOKEN_PAREN_CLOSE);
+                push(attrs, ParsedAttribute::Mangle(v));
+            }
+        } else if (equals(&name.content, &_ATTR_MANGLE)) {
             expect(this, TOKEN_PAREN_OPEN);
             let v = expect(this, TOKEN_STRING_LITERAL);
             let end = expect(this, TOKEN_PAREN_CLOSE);
-            push(attrs, ParsedAttribute::Extern(v));
+            push(attrs, ParsedAttribute::Mangle(v));
         } else if (equals(&name.content, &_ATTR_OS)) {
             expect(this, TOKEN_PAREN_OPEN);
             let os = expect(this, TOKEN_IDENT);

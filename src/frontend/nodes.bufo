@@ -51,7 +51,7 @@ func mangleFunctionName(
     let mangledName: String = blank;
     for (let i: usize = 0; i < attrs.length; i = i + 1) {
         let a = attrs.elements[i];
-        if let ParsedAttribute::Extern(name) = a {
+        if let ParsedAttribute::Mangle(name) = a {
             return toString(&name.content);
         }
         if let ParsedAttribute::Nomangle = a {
@@ -129,10 +129,12 @@ comptime _ATTR_NORETURN: SubStr = BUILD_A_KEYWORD("noreturn");
 comptime _ATTR_NAKED: SubStr = BUILD_A_KEYWORD("naked");
 comptime _ATTR_NO_MANGLE: SubStr = BUILD_A_KEYWORD("no_mangle");
 comptime _ATTR_NODISCARD: SubStr = BUILD_A_KEYWORD("nodiscard");
+comptime _ATTR_MANGLE: SubStr = BUILD_A_KEYWORD("mangle");
 
 union ParsedAttribute {
     Invalid,
-    Extern(Token),
+    Extern,
+    Mangle(Token),
     OS(Token),
     Noreturn,
     Naked,
