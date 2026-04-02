@@ -37,9 +37,12 @@ func main(argc: i32, argv: &&char) -> i32 {
         _ => { return 1; }
     }
     // it's all just bytes in the memory, we can massage them as we want
-    // union layout: u8 tag + [u8; N] data
-    // Foo::A is [u8; [u8; i32]], so we just skip the tags and retrieve the data with a simple cast
-    let ptr = ((&a as &u8) + 2) as &i32;
+    // union layout: u8 tag + padding + [u8; N] data
+    // Foo::A is [u8; 7 bytes pad; [u8; 3 bytes pad; i32]], so we just skip
+    // the tags and the padding and retrieve the data with a simple cast
+    let foo_align: usize = 8;
+    let bez_align: usize = 4;
+    let ptr = ((&a as &u8 + foo_align) + bez_align) as &i32;
     let val = *ptr;
     assert(val == 17);
     return 0;

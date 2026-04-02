@@ -1,8 +1,93 @@
 
 import "format.bufo";
+import "libc.bufo";
 
-@wasm_export @mangle("foo") func bar() {
+// ABGR
+struct Canvas {
+    pixels: &u32;
+    width: usize;
+    height: usize;
+    stride: usize;
 }
+
+// (width, height)
+// pixels[col][row]
+// TODO(2026-04-02): See TODO in interp.bufo
+//                   This overflows the interpreter stack, but is not a problem for WASM
+// let pixels: [[u32; 1920]; 1080] = blank;
+let pixels: [[u32; 800]; 600] = blank;
+
+func draw_rectangle(canvas: &Canvas, x: i64, y: i64, w: i64, h: i64, c: u32) {
+    for (let j: i64 = 0; j < h; j = j + 1) {
+        for (let i: i64 = 0; i < w; i = i + 1) {
+            let nx = x + i;
+            let ny = y + j;
+            if (nx < 0) continue;
+            if (ny < 0) continue;
+            if (nx as usize >= canvas.width) continue;
+            if (ny as usize >= canvas.height) continue;
+            let curr = pixels[ny as usize][nx as usize];
+            pixels[ny as usize][nx as usize] = 0xff000000 | (0xffffffff - curr);
+        }
+    }
+}
+
+let px: i64 = 400;
+let py: i64 = 400;
+let dx: i64 = 3;
+let dy: i64 = 1;
+comptime PLAYER_SIZE: i64 = 100;
+comptime HALF_PLAYER_SIZE = PLAYER_SIZE / 2;
+let frames: usize = 0;
+let average: f32 = 0;
+@wasm_export @no_mangle func render_frame(canvas: &Canvas) {
+    *canvas = Canvas {
+        pixels: &pixels[0][0],
+        width: 800,
+        height: 600,
+        stride: 800,
+    };
+    @os(WASM) let now = console::get_time();
+    for (let x: usize = 0; x < canvas.width; x = x + 1) {
+        for (let y: usize = 0; y < canvas.height; y = y + 1) {
+            let color: u32 = 0;
+            let red   = (x * 256 / canvas.width ) as u32;
+            let green = (y * 256 / canvas.height) as u32;
+            color = 0xff000000 | green * 256 | red;
+            pixels[y][x] = color;
+        }
+    }
+    draw_rectangle(canvas, px - HALF_PLAYER_SIZE, py - HALF_PLAYER_SIZE, PLAYER_SIZE, PLAYER_SIZE, 0xff000000);
+    let nx = px + dx;
+    let ny = py + dy;
+    if (nx - HALF_PLAYER_SIZE <= 0 || nx + HALF_PLAYER_SIZE >= canvas.width as i64) {
+        dx = dx * -1;
+    } else {
+        px = nx;
+    }
+    if (ny - HALF_PLAYER_SIZE <= 0 || ny + HALF_PLAYER_SIZE >= canvas.height as i64) {
+        dy = dy * -1;
+    } else {
+        py = ny;
+    }
+    frames = frames + 1;
+    average = average + console::get_time() - now;
+    if (frames % 60 == 0) {
+        let us = (average * 1000 / 60);
+        fprint("~%us per frame (% FPS)\n", us as i32, (1000000 / us) as i32);
+        average = 0;
+    }
+}
+
+@os(WASM) module console {
+    @extern @no_mangle func print_string(str: &char);
+    @extern @no_mangle func print_number(num: i32);
+    @extern @no_mangle func get_time() -> f32;
+    config {
+        static: "it's stupid that I have to specify this here even tho we don't link",
+    }
+}
+
 
 func main(argc: i32, argv: &&char) -> i32 {
     let a: u32 = (33 + 34);

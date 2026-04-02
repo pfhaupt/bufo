@@ -112,20 +112,45 @@ func substring(this: &String, start: usize, end: usize) -> SubStr {
 }
 func pushNumber(this: &String, num: usize) {
     let bfr: [char; 50] = ['\0'; 50];
-    let length: usize = C::snprintf(null, 0, "%llu", num) as usize;
-    assert(length < 50, "Buffer Overflow in String.pushNumber()");
-    C::snprintf(&bfr, length + 1, "%llu", num);
-    for (let i: usize = 0; i < length; i = i + 1) {
-        pushChar(this, bfr[i]);
+    let len: usize = 0;
+    if (num == 0) {
+        bfr[0] = '0';
+        len = 1;
+    } else {
+        while (num != 0) {
+            let digit = num % 10;
+            bfr[len] = (digit + 48) as char;
+            num = num / 10;
+            len = len + 1;
+        }
+    }
+    for (let i: usize = 0; i < len; i = i + 1) {
+        pushChar(this, bfr[len - i - 1]);
     }
 }
 func pushNumberAsHex(this: &String, num: usize) {
     let bfr: [char; 50] = ['\0'; 50];
-    let length: usize = C::snprintf(null, 0, "0x%llX", num) as usize;
-    assert(length < 50, "Buffer Overflow in String.pushNumberAsHex()");
-    C::snprintf(&bfr, length + 1, "0x%llX", num);
-    for (let i: usize = 0; i < length; i = i + 1) {
-        pushChar(this, bfr[i]);
+    let len: usize = 0;
+    if (num == 0) {
+        bfr[0] = '0';
+        len = 1;
+    } else {
+        while (num != 0) {
+            let digit = num % 16;
+            if (digit < 10) {
+                bfr[len] = (48 + digit) as char;
+            } else {
+                bfr[len] = (65 + digit - 10) as char;
+            }
+            num = num / 16;
+            len = len + 1;
+        }
+    }
+    bfr[len] = 'x';
+    bfr[len+1] = '0';
+    len = len + 2;
+    for (let i: usize = 0; i < len; i = i + 1) {
+        pushChar(this, bfr[len - i - 1]);
     }
 }
 func pushNumber(this: &String, i: f32) { pushNumber(this, i as f64); }

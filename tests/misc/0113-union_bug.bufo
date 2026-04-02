@@ -13,7 +13,7 @@ union ASTData {
 func create_function() {
     let data = ASTData::Function {
         is_generic: false,
-        stuff: 420691337
+        stuff: 420691337,
     };
     let &ASTData::Function { is_generic, stuff } = &data else {
         unreachable();

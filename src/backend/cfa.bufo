@@ -1,8 +1,94 @@
 
-import "./irgen.bufo";
 import "prelude.bufo";
+import "libc.bufo";
+import "format.bufo";
+import "string.bufo";
+
+import "./irgen.bufo";
+import "util/hashmaps.bufo";
+import "util/lists.bufo";
+import "frontend/nodes.bufo";
+import "bufo.bufo";
+
+comptime MAIN_FN      = newReadonlyString("maini32PPcri32");
+comptime REAL_MAIN_FN = newReadonlyString("__real_main");
+// When ACTUAL_MAIN_FN?
+func removeUnusedFunctions(irgen: &IRGen) -> bool {
+    let scanFunctionForUsages = func (fn: &IRFunc, isInUse: &bool, fns: &String_IRFuncHashMap) {
+        let blocks = &fn.blocks;
+        for (let i: usize = 0; i < blocks.length; i = i + 1) {
+            let block = at(blocks, i);
+            let instructions = &block.instructions;
+            for (let j: usize = 0; j < instructions.length; j = j + 1) {
+                let instr = at(instructions, j);
+                if (instr.kind == INSTR_LOAD_FUNCTION_PTR) {
+                    assert(instr.src.i < fns.capacity, "INSTR_LOAD_FUNCTION_PTR doesn't point into hashmap");
+                    isInUse[instr.src.i] = true;
+                }
+            }
+        }
+    };
+    let fns = &irgen.functions;
+    let isInUse: &bool = C::calloc(fns.capacity, sizeof bool);
+    assert(isInUse != null);
+
+    let any_removed = true;
+    let counter: usize = 0;
+    while (any_removed) {
+        // f f f f f f ... capacity count
+        for (let i: usize = 0; i < fns.capacity; i = i + 1) {
+            isInUse[i] = false;
+        }
+        // f t f f t f ... capacity count
+        //   ^main
+        //         ^real_main
+        isInUse[indexOf(fns, &MAIN_FN)] = true;
+        isInUse[indexOf(fns, &REAL_MAIN_FN)] = true;
+
+        let list = asList(fns);
+        // f t f f t f ... capacity count
+        scanFunctionForUsages(&irgen.globalScope, isInUse, fns);
+        for (let i: usize = 0; i < list.length; i = i + 1) {
+            scanFunctionForUsages(at(&list, i), isInUse, fns);
+        }
+        // f t t t t f ... capacity count
+        any_removed = false;
+        for (let i: usize = 0; i < fns.capacity; i = i + 1) {
+            let entry = getAtIndex(fns, i);
+            if (entry.set && !entry.removed && !isInUse[i]) {
+                // TODO(2026-03-24): A way to mark non-WASM functions as exported,
+                //                   so the linker can still see them even if unused
+                if (hasAttribute(&entry.value, ParsedAttribute::Wasm_Export)) {
+                    continue;
+                }
+                if (*flags.debug) fprint("[DCE] Removing unused function %\n", entry.key);
+                remove(fns, &entry.key);
+                any_removed = true;
+                counter = counter + 1;
+            }
+        }
+        drop(&list);
+    }
+    if (*flags.verbose) fprint("[INFO] Removed % unused function(s)\n", counter);
+
+    C::free(isInUse);
+    return true;
+}
+
+func hasEntrypoint(irgen: &IRGen) -> bool {
+    let fns = &irgen.functions;
+    assert(containsKey(fns, &REAL_MAIN_FN), "Could not find __real_main! But ./std/runtime.bufo should always be imported!");
+    if (!containsKey(fns, &MAIN_FN)) {
+        eprint("%: Could not find main function!\n", ERR_STR);
+        eprint("%: The compiler currently requires that the input file also defines a main function.\n", NOTE_STR);
+        eprint("%: The compiler is looking for a function with the signature `func main(argc: i32, argv: &&char) -> i32`.\n", NOTE_STR);
+        C::exit(99);
+    }
+    return true;
+}
 
 func analyzeControlFlow(irgen: &IRGen) -> bool {
-    // warning("Control Flow Analysis is not implemented yet");
+    if (!hasEntrypoint(irgen)) return false;
+    if (!removeUnusedFunctions(irgen)) return false;
     return true;
 }

@@ -1,3 +1,4 @@
+import "format.bufo";
 import "prelude.bufo";
 import "libc.bufo";
 import "string.bufo";
@@ -1524,12 +1525,11 @@ func generateRuntimeTypeInfo(this: &IRGen) -> bool {
         buildLoadInteger(function, span, tagReg, u8Type, tag(info) as usize);
         write_at_offset(function, span, elemPtr, tmp, 0, tagReg);
 
-        // TODO: The big TODO in generateBytecodeExprUnionInit will also destroy this initialization
         let name = get_name(info);
         buildLoadString(function, span, reg, name);
-        write_at_offset(function, span, elemPtr, tmp, 1, reg);
+        write_at_offset(function, span, elemPtr, tmp, 8, reg);
         buildLoadInteger(function, span, index, usizeType, name.len);
-        write_at_offset(function, span, elemPtr, tmp, 9, index);
+        write_at_offset(function, span, elemPtr, tmp, 16, index);
 
         // TODO: TypeInfo contains the same lists in various variants, we could
         //       create common wrapper functions to emit the correct IR, which would
@@ -1537,21 +1537,21 @@ func generateRuntimeTypeInfo(this: &IRGen) -> bool {
         match (info) {
             &TypeInfo::Array { _, size_in_bytes, align_in_bytes, elem, elem_count } => {
                 buildLoadInteger(function, span, index, usizeType, size_in_bytes);
-                write_at_offset(function, span, elemPtr, tmp, 17, index);
+                write_at_offset(function, span, elemPtr, tmp, 24, index);
                 buildLoadInteger(function, span, index, usizeType, align_in_bytes);
-                write_at_offset(function, span, elemPtr, tmp, 25, index);
+                write_at_offset(function, span, elemPtr, tmp, 32, index);
                 buildLoadInteger(function, span, index, usizeType, elem);
-                write_at_offset(function, span, elemPtr, tmp, 33, index);
+                write_at_offset(function, span, elemPtr, tmp, 40, index);
                 buildLoadInteger(function, span, index, usizeType, elem_count);
-                write_at_offset(function, span, elemPtr, tmp, 41, index);
+                write_at_offset(function, span, elemPtr, tmp, 48, index);
             }
             &TypeInfo::Pointer { _, underlying } => {
                 buildLoadInteger(function, span, index, usizeType, underlying);
-                write_at_offset(function, span, elemPtr, tmp, 17, index);
+                write_at_offset(function, span, elemPtr, tmp, 24, index);
             }
             &TypeInfo::Variadic { _, underlying } => {
                 buildLoadInteger(function, span, index, usizeType, underlying);
-                write_at_offset(function, span, elemPtr, tmp, 17, index);
+                write_at_offset(function, span, elemPtr, tmp, 24, index);
             }
             &TypeInfo::Function { _, args, ret } => {
                 let local_args = alloc_list(this, function, span, usizeType, args.length);
@@ -1562,13 +1562,13 @@ func generateRuntimeTypeInfo(this: &IRGen) -> bool {
                     buildLoadInteger(function, span, index, usizeType, args.elements[j]);
                     write_at_offset(function, span, fieldPtr, tmp, 0, index);
                 }
-                write_at_offset(function, span, elemPtr, tmp, 17, local_args);
+                write_at_offset(function, span, elemPtr, tmp, 24, local_args);
                 buildLoadInteger(function, span, field_index, usizeType, args.length);
-                write_at_offset(function, span, elemPtr, tmp, 25, field_index);
-                write_at_offset(function, span, elemPtr, tmp, 33, field_index);
+                write_at_offset(function, span, elemPtr, tmp, 32, field_index);
+                write_at_offset(function, span, elemPtr, tmp, 40, field_index);
 
                 buildLoadInteger(function, span, field_index, usizeType, ret);
-                write_at_offset(function, span, elemPtr, tmp, 41, field_index);
+                write_at_offset(function, span, elemPtr, tmp, 48, field_index);
             }
             &TypeInfo::Struct { _, size_in_bytes, align_in_bytes, fields } => {
                 let local_fields = alloc_list(this, function, span, fieldTypeInfo, fields.length);
@@ -1589,13 +1589,13 @@ func generateRuntimeTypeInfo(this: &IRGen) -> bool {
                 }
 
                 buildLoadInteger(function, span, field_index, usizeType, size_in_bytes);
-                write_at_offset(function, span, elemPtr, tmp, 17, field_index);
+                write_at_offset(function, span, elemPtr, tmp, 24, field_index);
                 buildLoadInteger(function, span, field_index, usizeType, align_in_bytes);
-                write_at_offset(function, span, elemPtr, tmp, 25, field_index);
-                write_at_offset(function, span, elemPtr, tmp, 33, local_fields);
+                write_at_offset(function, span, elemPtr, tmp, 32, field_index);
+                write_at_offset(function, span, elemPtr, tmp, 40, local_fields);
                 buildLoadInteger(function, span, field_index, usizeType, fields.length);
-                write_at_offset(function, span, elemPtr, tmp, 41, field_index);
-                write_at_offset(function, span, elemPtr, tmp, 49, field_index);
+                write_at_offset(function, span, elemPtr, tmp, 48, field_index);
+                write_at_offset(function, span, elemPtr, tmp, 56, field_index);
             }
             &TypeInfo::Union { _, size_in_bytes, align_in_bytes, variants } => {
                 let local_variants = alloc_list(this, function, span, unionVariantTypeInfo, variants.length);
@@ -1609,9 +1609,9 @@ func generateRuntimeTypeInfo(this: &IRGen) -> bool {
 
                     let variantName = get_name(var);
                     buildLoadString(function, span, reg, variantName);
-                    write_at_offset(function, span, variantPtr, tmp, 1, reg);
+                    write_at_offset(function, span, variantPtr, tmp, 8, reg);
                     buildLoadInteger(function, span, index, usizeType, variantName.len);
-                    write_at_offset(function, span, variantPtr, tmp, 9, index);
+                    write_at_offset(function, span, variantPtr, tmp, 16, index);
 
                     match (var) {
                         &UnionVariantTypeInfo::Empty { .. } => { },
@@ -1626,10 +1626,10 @@ func generateRuntimeTypeInfo(this: &IRGen) -> bool {
                                 write_at_offset(function, span, fieldPtr, tmp, 0, index);
                             }
 
-                            write_at_offset(function, span, variantPtr, tmp, 17, local_fields);
+                            write_at_offset(function, span, variantPtr, tmp, 24, local_fields);
                             buildLoadInteger(function, span, variant_index, usizeType, fields.length);
-                            write_at_offset(function, span, variantPtr, tmp, 25, variant_index);
-                            write_at_offset(function, span, variantPtr, tmp, 33, variant_index);
+                            write_at_offset(function, span, variantPtr, tmp, 32, variant_index);
+                            write_at_offset(function, span, variantPtr, tmp, 40, variant_index);
                         }
                         &UnionVariantTypeInfo::Struct { _, fields } => {
                             let local_fields = alloc_list(this, function, span, fieldTypeInfo, fields.length);
@@ -1649,29 +1649,29 @@ func generateRuntimeTypeInfo(this: &IRGen) -> bool {
                                 write_at_offset(function, span, fieldPtr, tmp, 24, index);
                             }
 
-                            write_at_offset(function, span, variantPtr, tmp, 17, local_fields);
+                            write_at_offset(function, span, variantPtr, tmp, 24, local_fields);
                             buildLoadInteger(function, span, variant_index, usizeType, fields.length);
-                            write_at_offset(function, span, variantPtr, tmp, 25, variant_index);
-                            write_at_offset(function, span, variantPtr, tmp, 33, variant_index);
+                            write_at_offset(function, span, variantPtr, tmp, 32, variant_index);
+                            write_at_offset(function, span, variantPtr, tmp, 40, variant_index);
                         }
                         _ => { unreachable(); }
                     }
                 }
                 buildLoadInteger(function, span, variant_index, usizeType, size_in_bytes);
-                write_at_offset(function, span, elemPtr, tmp, 17, variant_index);
+                write_at_offset(function, span, elemPtr, tmp, 24, variant_index);
                 buildLoadInteger(function, span, variant_index, usizeType, align_in_bytes);
-                write_at_offset(function, span, elemPtr, tmp, 25, variant_index);
+                write_at_offset(function, span, elemPtr, tmp, 32, variant_index);
 
-                write_at_offset(function, span, elemPtr, tmp, 33, local_variants);
+                write_at_offset(function, span, elemPtr, tmp, 40, local_variants);
                 buildLoadInteger(function, span, variant_index, usizeType, variants.length);
-                write_at_offset(function, span, elemPtr, tmp, 41, variant_index);
-                write_at_offset(function, span, elemPtr, tmp, 49, variant_index);
+                write_at_offset(function, span, elemPtr, tmp, 48, variant_index);
+                write_at_offset(function, span, elemPtr, tmp, 56, variant_index);
             }
             &TypeInfo::Primitive { _, size_in_bytes, align_in_bytes } => {
                 buildLoadInteger(function, span, index, usizeType, size_in_bytes);
-                write_at_offset(function, span, elemPtr, tmp, 17, index);
+                write_at_offset(function, span, elemPtr, tmp, 24, index);
                 buildLoadInteger(function, span, index, usizeType, align_in_bytes);
-                write_at_offset(function, span, elemPtr, tmp, 25, index);
+                write_at_offset(function, span, elemPtr, tmp, 32, index);
             }
             &TypeInfo::Tuple { _, size_in_bytes, align_in_bytes, elements } => {
                 let local_elements = alloc_list(this, function, span, usizeType, elements.length);
@@ -1684,14 +1684,14 @@ func generateRuntimeTypeInfo(this: &IRGen) -> bool {
                 }
 
                 buildLoadInteger(function, span, index, usizeType, size_in_bytes);
-                write_at_offset(function, span, elemPtr, tmp, 17, index);
+                write_at_offset(function, span, elemPtr, tmp, 24, index);
                 buildLoadInteger(function, span, index, usizeType, align_in_bytes);
-                write_at_offset(function, span, elemPtr, tmp, 25, index);
+                write_at_offset(function, span, elemPtr, tmp, 32, index);
 
-                write_at_offset(function, span, elemPtr, tmp, 33, local_elements);
+                write_at_offset(function, span, elemPtr, tmp, 40, local_elements);
                 buildLoadInteger(function, span, field_index, usizeType, elements.length);
-                write_at_offset(function, span, elemPtr, tmp, 41, field_index);
-                write_at_offset(function, span, elemPtr, tmp, 49, field_index);
+                write_at_offset(function, span, elemPtr, tmp, 48, field_index);
+                write_at_offset(function, span, elemPtr, tmp, 56, field_index);
             }
             &TypeInfo::Unknown => { }
             _ => { unreachable("generateRuntimeTypeInfo: Exhaustive handling of Type kinds"); }
@@ -1702,7 +1702,7 @@ func generateRuntimeTypeInfo(this: &IRGen) -> bool {
 
 func generateRuntimeInitialization(this: &IRGen, project: &ParsedFile) -> bool {
     this.initRuntime = IRFunc {
-        name: comptime newReadonlyString(".init_runtime"),
+        name: comptime newReadonlyString("__init_runtime"),
     };
     let scope: usize = enterScope(&this.initRuntime);
     let entry: IRBlockID = appendBlock(&this.initRuntime);
@@ -1821,22 +1821,26 @@ func generateFunctionBody(this: &IRGen, function: &IRFunc, body: &ParsedBlock, r
         let fn = getFuncNode(function);
         let isEnter = equals(&fn.name.content, &newSubStrOfStrLit("traceEnter"));
         let isLeave = equals(&fn.name.content, &newSubStrOfStrLit("traceLeave"));
-        let init = func (function: &IRFunc, fn: &ParsedFuncDecl) -> RegIndexList {
+        let init = func (function: &IRFunc, fn: &ParsedFuncDecl) -> (RegIndexList, TypeList) {
             let args = RegIndexList { };
+            let pchar = wrap(Type::Ptr(wrap(Type::Prim(PrimType::Char))));
+            let t_args: TypeList = blank;
+            push(&t_args, pchar);
             // Function name
-            let reg = allocateRegister(function, wrap(Type::Ptr(wrap(Type::Prim(PrimType::Char)))));
+            let reg = allocateRegister(function, pchar);
             let name = toString(&fn.name.content);
             buildLoadString(function, function.span, reg, asSubStr(&name));
             push(&args, reg);
-            return args;
+            return (args, t_args);
         };
         if (!isEnter && !isLeave) {
             let funcID: usize = 0;
-            let args: RegIndexList = blank;
             // traceEnter
             funcID = getFunctionByMangledName(this, "traceEnterPcrN", "trace.bufo");
-            args = init(function, fn);
-            generateImplicitCall(this, function, function.span, funcID, wrap(Type::Prim(PrimType::None)), args);
+            {
+                let (args, t_args) = init(function, fn);
+                generateImplicitCall(this, function, function.span, funcID, t_args, wrap(Type::Prim(PrimType::None)), args);
+            }
             // function body
             generateBytecodeBlock(this, function, body);
             // traceLeave
@@ -1846,12 +1850,12 @@ func generateFunctionBody(this: &IRGen, function: &IRFunc, body: &ParsedBlock, r
             let block = getCurrentBlockAsRef(function);
             if (isTerminated(block)) {
                 let term = *pop(&block.instructions);
-                args = init(function, fn);
-                generateImplicitCall(this, function, function.span, funcID, wrap(Type::Prim(PrimType::None)), args);
+                let (args, t_args) = init(function, fn);
+                generateImplicitCall(this, function, function.span, funcID, t_args, wrap(Type::Prim(PrimType::None)), args);
                 push(&block.instructions, term);
             } else {
-                args = init(function, fn);
-                generateImplicitCall(this, function, function.span, funcID, wrap(Type::Prim(PrimType::None)), args);
+                let (args, t_args) = init(function, fn);
+                generateImplicitCall(this, function, function.span, funcID, t_args, wrap(Type::Prim(PrimType::None)), args);
             }
             setCurrentBlock(function, curr);
         } else {
@@ -2256,7 +2260,10 @@ func generateBytecodeMatchStmt(this: &IRGen, function: &IRFunc, match: &ParsedSt
     let funcID = getFunctionByMangledName(this, "unreachablePcrN", "prelude.bufo");
     let args: RegIndexList = blank;
     {
-        let err: RegIndex = allocateRegister(function, wrap(Type::Prim(PrimType::Char)));
+        let pchar = wrap(Type::Ptr(wrap(Type::Prim(PrimType::Char))));
+        let t_args: TypeList = blank;
+        push(&t_args, pchar);
+        let err: RegIndex = allocateRegister(function, pchar);
         // FIXME: Don't use mangled name?
         let s: String = copy(&function.name);
         let _s: String = toString(&match.span);
@@ -2271,7 +2278,7 @@ func generateBytecodeMatchStmt(this: &IRGen, function: &IRFunc, match: &ParsedSt
         buildLoadString(function, match.span, err, asSubStr(&s));
         push(&args, err);
 
-        generateImplicitCall(this, function, match.span, funcID, wrap(Type::Prim(PrimType::None)), args);
+        generateImplicitCall(this, function, match.span, funcID, t_args, wrap(Type::Prim(PrimType::None)), args);
     }
     buildUnreachable(function, match.span);
     setCurrentBlock(function, end);
@@ -2519,11 +2526,11 @@ func generateBytecodePatternUnion(this: &IRGen, function: &IRFunc, expr: RegInde
             buildLoad(function, name.span, tagVal, tagPtr);
             buildBinaryOp(function, name.span, INSTR_INT_CMP_EQ, tagMatch, tagReg, tagVal);
             buildBinaryOp(function, name.span, INSTR_LOGICAL_AND, success, success, tagMatch);
-
-            // offset tmp by tagReg
-            let offset: usize = 1;
-            if (decl.variants.length >= 256) offset = 2;
-            buildLoadInteger(function, name.span, sizeReg, usizeType, offset);
+        }
+        {
+            // align payload
+            let alignment = getAlignmentInBytes(decl);
+            buildLoadInteger(function, name.span, sizeReg, usizeType, alignment);
             buildPtrToInt(function, name.span, tmp, tmp);
             buildBinaryOp(function, name.span, INSTR_INT_ADD, tmp, tmp, sizeReg);
             buildIntToPtr(function, name.span, tmp, tmp);
@@ -2539,7 +2546,9 @@ func generateBytecodePatternUnion(this: &IRGen, function: &IRFunc, expr: RegInde
                 let sub = generateBytecodePattern(this, function, subPtr, subSubPat, true, isComptimeVariable);
                 buildBinaryOp(function, subSubPat.span, INSTR_LOGICAL_AND, success, success, sub);
                 if (tag(&subSubPat.data) == comptime tag(&Pattern::Rest)) break;
-                if (i != subPatterns.length - 1) {
+                if (i != fields.length - 1) {
+                    let next_align = getAlignmentInBytes(getType(&fields.elements[i + 1].typeState));
+                    fieldSize = nextMultipleOf(fieldSize, next_align);
                     buildLoadInteger(function, subSubPat.span, sizeReg, usizeType, fieldSize);
                     buildPtrToInt(function, subSubPat.span, tmp, tmp);
                     buildBinaryOp(function, subSubPat.span, INSTR_INT_ADD, tmp, tmp, sizeReg);
@@ -2574,11 +2583,11 @@ func generateBytecodePatternUnion(this: &IRGen, function: &IRFunc, expr: RegInde
             buildLoad(function, name.span, tagVal, tagPtr);
             buildBinaryOp(function, name.span, INSTR_INT_CMP_EQ, tagMatch, tagReg, tagVal);
             buildBinaryOp(function, name.span, INSTR_LOGICAL_AND, success, success, tagMatch);
-
-            // offset tmp by tagReg
-            let offset: usize = 1;
-            if (decl.variants.length >= 256) offset = 2;
-            buildLoadInteger(function, name.span, sizeReg, usizeType, offset);
+        }
+        {
+            // align payload
+            let alignment = getAlignmentInBytes(decl);
+            buildLoadInteger(function, name.span, sizeReg, usizeType, alignment);
             buildPtrToInt(function, name.span, tmp, tmp);
             buildBinaryOp(function, name.span, INSTR_INT_ADD, tmp, tmp, sizeReg);
             buildIntToPtr(function, name.span, tmp, tmp);
@@ -2599,7 +2608,10 @@ func generateBytecodePatternUnion(this: &IRGen, function: &IRFunc, expr: RegInde
                 let sub = generateBytecodePattern(this, function, subExpr, subSubPat, false, isComptimeVariable);
                 buildBinaryOp(function, subSubPat.span, INSTR_LOGICAL_AND, success, success, sub);
                 if (tag(&subSubPat.data) == comptime tag(&Pattern::Rest)) break;
-                if (i != subPatterns.length - 1) {
+                if (i != fields.length - 1) {
+                    let next_align = getAlignmentInBytes(getType(&fields.elements[i + 1].typeState));
+                    fieldSize = nextMultipleOf(fieldSize, next_align);
+                    buildLoadInteger(function, subSubPat.span, sizeReg, usizeType, fieldSize);
                     buildPtrToInt(function, subSubPat.span, tmp, tmp);
                     buildBinaryOp(function, subSubPat.span, INSTR_INT_ADD, tmp, tmp, sizeReg);
                     buildIntToPtr(function, subSubPat.span, tmp, tmp);
@@ -2849,7 +2861,7 @@ func generateBytecodeExprBinary(this: &IRGen, function: &IRFunc, expr: &BinaryEx
 }
 
 func generateBytecodeExprUnionInit(this: &IRGen, function: &IRFunc, span: Span, expr: &UnionExpr, type: &Type, needsPtr: bool) -> RegIndex {
-    // union = [tag, data]
+    // union = [tag, pad, payload]
     let decl: &ParsedUnionDecl = null;
     let variant: &ParsedUnionVariant = null;
     let _tag: usize = 0;
@@ -2883,21 +2895,16 @@ func generateBytecodeExprUnionInit(this: &IRGen, function: &IRFunc, span: Span, 
         let tagReg = allocateRegister(function, tagType);
         buildLoadInteger(function, span, tagReg, tagType, _tag);
         buildStore(function, span, start, tagReg);
-
-        // offset tmp by tag
-        let offset: usize = 1;
-        if (decl.variants.length >= 256) offset = 2;
-        buildLoadInteger(function, span, sizeReg, usizeType, offset);
+    }
+    {
+        // align payload
+        let alignment = getAlignmentInBytes(decl);
+        buildLoadInteger(function, span, sizeReg, usizeType, alignment);
         buildPtrToInt(function, span, tmp, tmp);
         buildBinaryOp(function, span, INSTR_INT_ADD, tmp, tmp, sizeReg);
         buildIntToPtr(function, span, tmp, tmp);
     }
     buildMove(function, span, base, tmp);
-    // FIXME: Payload of unions should be padded to fit their alignment
-    // NOTE:  This will also break pattern matching and debug info
-    // FIXME: FIXME ABOVE IS IMPORTANT
-    // FIXME: FIXME ABOVE IS IMPORTANT
-    // FIXME: FIXME ABOVE IS IMPORTANT
     match (expr) {
         &UnionExpr::Empty => {
             // nothing to do here
@@ -2908,9 +2915,13 @@ func generateBytecodeExprUnionInit(this: &IRGen, function: &IRFunc, span: Span, 
             for (let i: usize = 0; i < tuple.args.length; i = i + 1) {
                 let field: &ParsedExpr = *at(&tuple.args, i);
                 let result: RegIndex = generateBytecodeExpr(this, function, field, true);
-                buildLoadInteger(function, field.span, sizeReg, usizeType, getSizeInBytes(getType(&field.typeState)));
+                let field_size = getSizeInBytes(getType(&field.typeState));
+                buildLoadInteger(function, field.span, sizeReg, usizeType, field_size);
                 buildMemcpy(function, field.span, result, tmp, sizeReg);
                 if (i != tuple.args.length - 1) {
+                    let next_align = getAlignmentInBytes(getType(&(*at(&tuple.args, i + 1)).typeState));
+                    field_size = nextMultipleOf(field_size, next_align);
+                    buildLoadInteger(function, field.span, sizeReg, usizeType, field_size);
                     buildPtrToInt(function, span, tmp, tmp);
                     buildBinaryOp(function, span, INSTR_INT_ADD, tmp, tmp, sizeReg);
                     buildIntToPtr(function, span, tmp, tmp);
@@ -2928,14 +2939,7 @@ func generateBytecodeExprUnionInit(this: &IRGen, function: &IRFunc, span: Span, 
                 {
                     let index: usize = getFieldIndex(variant, &name.content);
                     getFieldOffsetAndSize(variant, index, &offset, &size, false);
-                    let real_offset: usize = 0;
-                    for (let j: usize = 0; j < index; j = j + 1) {
-                        let _offset: usize = 0;
-                        let _size: usize = 0;
-                        getFieldOffsetAndSize(variant, j, &_offset, &_size, false);
-                        real_offset = real_offset + _size;
-                    }
-                    buildLoadInteger(function, field.span, offsetReg, usizeType, real_offset);
+                    buildLoadInteger(function, field.span, offsetReg, usizeType, offset);
                     buildPtrToInt(function, span, base, base);
                     buildPtrToInt(function, span, tmp, tmp);
                     buildBinaryOp(function, span, INSTR_INT_ADD, tmp, base, offsetReg);
@@ -3209,11 +3213,11 @@ func prepareReturnValue(this: &IRGen, span: Span, function: &IRFunc, base: RegIn
     return retVal;
 }
 
-func generateImplicitCall(this: &IRGen, function: &IRFunc, span: Span, funcID: usize, retType: &Type, args: RegIndexList) -> RegIndex {
+func generateImplicitCall(this: &IRGen, function: &IRFunc, span: Span, funcID: usize, t_args: TypeList, retType: &Type, args: RegIndexList) -> RegIndex {
     let reg: RegIndex = allocateRegister(function, retType);
     {
-        let ft = wrap(Type::Func(blank, retType, FuncAttr {
-            isVariadic: true // REVIEW: Why?
+        let ft = wrap(Type::Func(t_args, retType, FuncAttr {
+            isVariadic: false // REVIEW: Why?
         }));
         let dst = allocateRegister(function, ft);
         buildLoadFunctionPtr(function, span, dst, funcID);
@@ -3247,7 +3251,11 @@ func generateBytecodeExprIndexedAccess(this: &IRGen, function: &IRFunc, expr: &B
         buildCondBr(function, lhs.span, cond, panic, normal);
 
         setCurrentBlock(function, panic);
-        let err: RegIndex = allocateRegister(function, wrap(Type::Ptr(wrap(Type::Prim(PrimType::Char)))));
+        let pchar = wrap(Type::Ptr(wrap(Type::Prim(PrimType::Char))));
+        let t_args: TypeList = blank;
+        push(&t_args, pchar);
+        push(&t_args, usizeType);
+        let err: RegIndex = allocateRegister(function, pchar);
         // FIXME: Don't use mangled name?
         let s: String = copy(&function.name);
         let _s: String = toString(&lhs.span);
@@ -3262,7 +3270,7 @@ func generateBytecodeExprIndexedAccess(this: &IRGen, function: &IRFunc, expr: &B
         let args: RegIndexList = blank;
         push(&args, err);
         push(&args, rhsReg);
-        generateImplicitCall(this, function, lhs.span, funcID, wrap(Type::Prim(PrimType::None)), args);
+        generateImplicitCall(this, function, lhs.span, funcID, t_args, wrap(Type::Prim(PrimType::None)), args);
         buildUnreachable(function, lhs.span);
         setCurrentBlock(function, normal);
     }

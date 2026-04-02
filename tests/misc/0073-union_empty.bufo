@@ -11,7 +11,7 @@ func do_something(f: Empty) -> Empty {
 }
 
 func main(argc: i32, argv: &&char) -> i32 {
-    assert(sizeof Empty == 0);
+    assert(sizeof Empty == 1);
     let f: Empty = blank;
     let g = do_something(f);
     return 0;

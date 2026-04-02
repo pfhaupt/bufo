@@ -122,7 +122,7 @@ union TypeInfo {
     Struct    { name: SubStr, size_in_bytes: usize, align_in_bytes: usize, fields: FieldTypeInfoList },
     Union     { name: SubStr, size_in_bytes: usize, align_in_bytes: usize, variants: UnionVariantTypeInfoList },
     Function  { name: SubStr, args: TypeInfoList, retType: usize },
-    Tuple { name: SubStr, size_in_bytes: usize, align_in_bytes: usize, elements: TypeInfoList },
+    Tuple     { name: SubStr, size_in_bytes: usize, align_in_bytes: usize, elements: TypeInfoList },
 }
 
 func equals(ti1: &TypeInfo, ti2: &TypeInfo) -> bool {

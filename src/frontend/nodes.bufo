@@ -515,41 +515,48 @@ func getAlignmentInBytes(this: &ParsedUnionDecl) -> usize {
 func getSizeInBytes(this: &ParsedUnionDecl) -> usize {
     assert(isSuccess(&this.typeState), "Can only get size of valid unions");
     assert(this.variants.length < 65536, "getSize expects the Union tag to fit into at most two bytes");
-    let maxSize: usize = 0;
-    let maxAlign: usize = 1;
+    let tagSize: usize = 1;
+    let tagAlign: usize = 1;
+    if (this.variants.length >= 256) {
+        tagSize = 2;
+        tagAlign = 2;
+    }
+    // Get size and alignment of biggest variant
+    let payloadSize: usize = 0;
+    let payloadAlign: usize = 1;
     for (let i: usize = 0; i < this.variants.length; i = i + 1) {
         let variant = *at(&this.variants, i);
-        let size: usize = 1; // union tag
-        let align: usize = 1;
-        if (this.variants.length >= 256) {
-            size = 2;
-            align = 2;
-        }
+        let variantSize: usize = 0;
+        let variantAlign: usize = 1;
         if let (true, fields) = get_fields(variant) {
-            if (fields.length > 0) {
-                let next: &ParsedTypeNode = fields.elements[0];
-                let nextType: &Type = getType(&next.typeState);
-                size = nextMultipleOf(size, getAlignmentInBytes(nextType));
-            }
             for (let j: usize = 0; j < fields.length; j = j + 1) {
                 let field = fields.elements[j];
                 assert(isSuccess(&field.typeState), "Expected valid field type");
                 let tt: &Type = getType(&field.typeState);
-                size = size + getSizeInBytes(tt);
+                variantSize = variantSize + getSizeInBytes(tt);
                 let _a: usize = getAlignmentInBytes(tt);
-                if (_a > align) align = _a;
+                if (_a > variantAlign) variantAlign = _a;
                 if (j != fields.length - 1) {
                     let next: &ParsedTypeNode = fields.elements[j + 1];
                     let nextType: &Type = getType(&next.typeState);
-                    size = nextMultipleOf(size, getAlignmentInBytes(nextType));
+                    variantSize = nextMultipleOf(variantSize, getAlignmentInBytes(nextType));
                 }
             }
         }
-        if (size > maxSize) maxSize = size;
-        if (align > maxAlign) maxAlign = align;
+        variantSize = nextMultipleOf(variantSize, variantAlign);
+        if (variantSize > payloadSize) payloadSize = variantSize;
+        if (variantAlign > payloadAlign) payloadAlign = variantAlign;
     }
-    maxSize = nextMultipleOf(maxSize, maxAlign);
-    return maxSize;
+    let unionSize = tagSize;
+    let unionAlign = tagAlign;
+    if (payloadSize != 0) {
+        if (payloadAlign > unionAlign) unionAlign = payloadAlign;
+        // padding required between tag and payload
+        unionSize = nextMultipleOf(unionSize, payloadAlign);
+        unionSize = unionSize + payloadSize;
+    }
+    unionSize = nextMultipleOf(unionSize, unionAlign);
+    return unionSize;
 }
 
 func getID(this: &ParsedUnionDecl) -> usize {
@@ -691,10 +698,6 @@ func getFieldOffsetAndSize(this: &ParsedUnionVariant, index: usize, offset: &usi
         alignFn = getAlignmentInBits;
     }
     let o: usize = 0;
-    if (*offset != 0) {
-        let nf: &Type = getType(&fields.elements[0].typeState);
-        o = nextMultipleOf(*offset, alignFn(nf));
-    }
     for (let i: usize = 0; i < fields.length; i = i + 1) {
         let f = getType(&fields.elements[i].typeState);
         let s: usize = sizeFn(f);

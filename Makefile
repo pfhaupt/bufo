@@ -106,7 +106,11 @@ bootstrap_linux: ${BUFO_CC}
 bootstrap: bootstrap_windows bootstrap_linux
 
 brick:
-	./working.exe src/bufo.bufo -o $(BUFO_CC) $(EXTRA) --no-extern-comptime
+ifeq ($(OS),Windows_NT)
+	./bootstrap/bufo_windows.c.exe src/bufo.bufo -o $(BUFO_CC) $(EXTRA) --no-extern-comptime
+else
+	./bootstrap/bufo_linux.c.exe src/bufo.bufo -o $(BUFO_CC) $(EXTRA) --no-extern-comptime
+endif
 
 clean: clean_example clean_howto
 	rm -f *.s

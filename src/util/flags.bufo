@@ -151,7 +151,7 @@ func showHelp(stream: Any, this: &Flag) {
     } else {
         s = toString(this);
     }
-    C::fprintf(stream, "%20s: %s", s.buffer, this.descr);
+    C::fprintf(stream, "%25s: %s", s.buffer, this.descr);
     if (isMandatory(this)) {
         C::fprintf(stream, " [mandatory]");
     }

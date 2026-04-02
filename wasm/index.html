@@ -1,14 +1,55 @@
 <!doctype html>
 <html lang="en">
 <head>
+<style>
+  .terminal {
+    font-family: "SFMono-Regular", Menlo, Monaco, "Roboto Mono", "Courier New", monospace;
+    background: radial-gradient(circle at 10% 10%, rgba(0,255,150,0.04), transparent 10%),
+                linear-gradient(180deg, #081014 0%, #041018 60%, #001012 100%);
+    color: #33ff99;
+    padding: 18px;
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.02);
+    line-height: 1.45;
+    font-size: 24px;
+    max-width: 900px;
+    width: 100%;
+    margin: 12px 0;
+    overflow: auto;
+    white-space: pre; /* preserve spacing/newlines */
+    -webkit-font-smoothing: subpixel-antialiased;
+    position: relative;
+  }
+  .terminal::before {
+    content: "Console:";
+    color: #7af5b4;
+    font-weight: 600;
+  }
+  .terminal .cursor {
+    display: inline-block;
+    width: 8px;
+    height: 16px;
+    background: #33ff99;
+    margin-left: 6px;
+    vertical-align: text-bottom;
+    animation: blink 1s steps(2,start) infinite;
+    border-radius: 2px;
+    opacity: 0.95;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+</style>
+
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>WASM Experiment</title>
 </head>
 <body>
-  <div id="console"></div>
+    <div style="display:flex; gap:8px;">
+      <canvas id="canvas"></canvas>
+      <p class="terminal" id="console" style="margin: 0px"></p>
+  </div>
 
-  <script src="wasm.js" type="module"> </script>
+  <script src="main.js"> </script>
 </body>
 </html>
 

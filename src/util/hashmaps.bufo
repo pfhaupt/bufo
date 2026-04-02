@@ -4,8 +4,11 @@ import "string.bufo";
 import "./lists.bufo";
 import "../backend/irgen.bufo";
 
+// add(key)    => set = true, removed = false
+// remove(key) => set = true, removed = true
 struct String_IRFuncEntry {
     set: bool;
+    removed: bool;
     key: String;
     value: IRFunc;
 }
@@ -21,7 +24,7 @@ func asList(this: &String_IRFuncHashMap) -> IRFuncList {
     let l: IRFuncList = blank;
     for (let i: usize = 0; i < this.capacity; i = i + 1) {
         let elem: &String_IRFuncEntry = getAtIndex(this, i);
-        if (elem.set) {
+        if (elem.set && !elem.removed) {
             push(&l, elem.value);
         }
     }
@@ -87,9 +90,10 @@ func add(this: &String_IRFuncHashMap, key: String, value: IRFunc) {
     if (hash == 0) stop = this.capacity - 1;
     while (index != stop) {
         let elem: &String_IRFuncEntry = getAtIndex(this, index);
-        if (!elem.set) {
+        if (!elem.set || elem.removed) {
             *elem = String_IRFuncEntry {
                 set: true,
+                removed: false,
                 key: key,
                 value: value
             };
@@ -99,6 +103,14 @@ func add(this: &String_IRFuncHashMap, key: String, value: IRFunc) {
         index = (index + 1) % this.capacity;
     }
     unreachable("Could not insert element into HashMap");
+}
+
+func remove(this: &String_IRFuncHashMap, key: &String) {
+    assert(containsKey(this, key), "HashMap::remove: HashMap doesn't contain key");
+    let elem = getEntry(this, key);
+    assert(elem.set, "HashMap::remove: HashMap Element is not set");
+    elem.removed = true;
+    this.length = this.length - 1;
 }
 
 func get(this: &String_IRFuncHashMap, key: &String) -> &IRFunc {
@@ -115,8 +127,11 @@ func getEntry(this: &String_IRFuncHashMap, key: &String) -> &String_IRFuncEntry 
     if (hash == 0) stop = this.capacity - 1;
     while (hash != stop) {
         let elem: &String_IRFuncEntry = getAtIndex(this, hash);
-        if (!elem.set) return null;
-        if (equals(&elem.key, key)) return elem;
+        if (elem.set) {
+            if (equals(&elem.key, key)) return elem;
+        } else if (!elem.removed) {
+            return null;
+        }
         hash = (hash + 1) % this.capacity;
     }
     unreachable("Load Factor guarantees that there's always at least one unset Entry in the HashMap.");

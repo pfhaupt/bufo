@@ -8,20 +8,20 @@ union Foo {
     A,
     B,
     C { c: i32 },
-    D([i8; 7]), // pad to 8 bytes
+    D([i8; 4]),
 }
 
 func main(argc: i32, argv: &&char) -> i32 {
-    assert(sizeof Foo == 8);
+    assert(sizeof Foo == 8, "size");
     let a = Foo::A;
     let b = Foo::B;
     let c = Foo::C { c: 26985 };
-    let d = Foo::D([1, 2, 3, 4, 5, 6, 7]);
+    let d = Foo::D([1, 2, 3, 4]);
     let bytes = *(&d as &usize);
-    // d has the layout 0x706050403020103 in memory
-    if (bytes != 0x706050403020103) {
+    // d has the layout 0x0403020100000003 in memory
+    if (bytes != 0x0403020100000003) {
         // yes, this depends on the endianness of the system
-        assert(bytes == 0x0301020304050607);
+        assert(bytes == 0x0300000001020304, "bytes");
     }
     return 0;
 }

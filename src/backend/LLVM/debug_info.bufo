@@ -5,6 +5,7 @@ import "libc.bufo";
 import "substr.bufo";
 import "string.bufo";
 import "span.bufo";
+import "format.bufo";
 
 import "../../util/arena.bufo";
 import "../../util/lists.bufo";
@@ -33,6 +34,7 @@ struct DebugInfo {
 }
 
 struct LLVMDIBuilder {
+    context: LLVMContext;
     ref: LLVM::DIBuilderRef;
 }
 
@@ -40,10 +42,10 @@ struct LLVMDbgRecord {
     ref: LLVM::DbgRecordRef;
 }
 
-func createDIBuilder(mod: LLVMModule) -> LLVMDIBuilder {
+func createDIBuilder(mod: LLVMModule, ctx: LLVMContext) -> LLVMDIBuilder {
     let di = LLVM::CreateDIBuilder(mod.ref);
     assert(!LLVM::isNull(di), "Could not create DIBuilder");
-    return LLVMDIBuilder { ref: di };
+    return LLVMDIBuilder { context: ctx, ref: di };
 }
 
 func disposeDIBuilder(builder: LLVMDIBuilder) {
@@ -253,6 +255,45 @@ func createDebugInfoForStructType(builder: LLVMDIBuilder, diFile: LLVMMetadata, 
     }
     return data;
 }
+func createDebugInfoForTupleType(builder: LLVMDIBuilder, diFile: LLVMMetadata, type: &Type) -> LLVMMetadata {
+    let &Type::Tuple(fields) = type else {
+        unreachable("createDebugInfoForTupleType didn't get a tuple");
+    };
+    let unique = toString(type);
+    let elements: &LLVM::MetadataRef = C::malloc(sizeof LLVM::MetadataRef * fields.length);
+    assert(elements != null);
+
+    let field_name: String = blank;
+    let fieldOffset: usize = 0;
+    for (let i: usize = 0; i < fields.length; i = i + 1) {
+        let fieldType = *at(&fields, i);
+        let fieldDebugType = createType(builder, diFile, fieldType);
+        field_name.length = 0;
+        format(&field_name, "_%", i);
+        let fieldSize = getSizeInBits(fieldType);
+        let fieldAlign = getAlignmentInBits(fieldType);
+        elements[i] = LLVM::DIBuilderCreateMemberType(builder.ref, diFile.ref, field_name.buffer,
+                            field_name.length, diFile.ref, 0, fieldSize as u64, fieldAlign as u32,
+                            fieldOffset as u64, LLVMDIFlagZero, fieldDebugType.ref);
+        fieldOffset = fieldOffset + fieldSize;
+        if (i != fields.length - 1) {
+            let nextAlignment = getAlignmentInBits(*at(&fields, i + 1));
+            fieldOffset = nextMultipleOf(fieldOffset, nextAlignment);
+        }
+    }
+    drop(&field_name);
+
+    let _flags = LLVMDIFlagPublic;
+    let size = getSizeInBits(type);
+    let align = getAlignmentInBits(type);
+
+    let meta = LLVM::DIBuilderCreateStructType(builder.ref, diFile.ref, unique.buffer, unique.length, diFile.ref, 0, size as u64,
+        align as u32, _flags, blank, elements, fields.length as u32, 0, blank, unique.buffer, unique.length);
+    assert(!LLVM::isNull(meta), "Could not create debug info for struct type");
+    C::free(elements);
+    drop(&unique);
+    return LLVMMetadata { ref: meta };
+}
 func createDebugInfoForUnionType(builder: LLVMDIBuilder, diFile: LLVMMetadata, type: &Type, llvmContext: LLVMContext) -> LLVMMetadata {
     let data = LLVMMetadata {};
     match (type) {
@@ -292,19 +333,15 @@ func createDebugInfoForUnionType(builder: LLVMDIBuilder, diFile: LLVMMetadata, t
             let align = getAlignmentInBits(type) as u32;
             assert(maxAlign == align, "Alignment mismatch");
             assert(maxSize <= size, "Size mismatch");
-            // See FIXME in irgen.bufo UnionInit
-            // let payloadOffset = nextMultipleOf(tagSize as usize, maxAlign as usize) as u64;
-            let payloadOffset = tagSize;
+            let payloadOffset = nextMultipleOf(tagSize as usize, maxAlign as usize) as u64;
 
             let meta: LLVM::MetadataRef = blank;
             if (decl.variants.length > 0) {
-                let _payloadStr = copy(&unique);
-                pushStr(&_payloadStr, "._payload");
-                let payloadStr = copy(&unique);
-                pushStr(&payloadStr, ".payload");
-                let _payload = LLVM::DIBuilderCreateUnionType(builder.ref, diDecl.ref, _payloadStr.buffer, _payloadStr.length,
+                let unique = getFullName(decl);
+                let payloadStr = newStringFromStrLit("payload");
+                let _payload = LLVM::DIBuilderCreateUnionType(builder.ref, diDecl.ref, payloadStr.buffer, payloadStr.length,
                     diFile.ref, line as u32, maxSize, maxAlign, flags, elems, decl.variants.length as u32,
-                    0, _payloadStr.buffer, _payloadStr.length);
+                    0, unique.buffer, unique.length);
                 assert(!LLVM::isNull(_payload), "Could not create debug info for payload");
                 let payload = LLVM::DIBuilderCreateMemberType(builder.ref, diDecl.ref, payloadStr.buffer, payloadStr.length,
                     diFile.ref, line as u32, maxSize, maxAlign, payloadOffset, flags, _payload);
@@ -316,7 +353,6 @@ func createDebugInfoForUnionType(builder: LLVMDIBuilder, diFile: LLVMMetadata, t
                                 unique.buffer, unique.length);
                 assert(!LLVM::isNull(meta), "Could not create debug info for union");
                 drop(&payloadStr);
-                drop(&_payloadStr);
             } else {
                 meta = tag.ref;
             }
@@ -368,10 +404,7 @@ func createUnionVariantType(builder: LLVMDIBuilder, diFile: LLVMMetadata, decl: 
         drop(&_v);
     }
     let meta: LLVM::MetadataRef = blank;
-    let (true, fields) = get_fields(variant) else {
-        unreachable("createUnionVariantType");
-    };
-    if (fields.length > 0) {
+    if let (true, fields) = get_fields(variant) {
         let inner: &LLVM::MetadataRef = C::malloc(sizeof LLVM::MetadataRef * fields.length);
         assert(inner != null);
         for (let i: usize = 0; i < fields.length; i = i + 1) {
@@ -413,7 +446,6 @@ func createType(builder: LLVMDIBuilder, diFile: LLVMMetadata, type: &Type) -> LL
     if (!LLVM::isNull(dt.ref)) return *dt;
     let data = LLVMMetadata {};
     match (type) {
-        &Type::Prim(p) => { return *at(&debugTypes, tag(&p) as usize); }
         &Type::Unknown => {
             comptime fullName = getFullName(PrimType::None);
             let meta = LLVM::DIBuilderCreateUnspecifiedType(builder.ref, fullName.start, fullName.len);
@@ -444,6 +476,7 @@ func createType(builder: LLVMDIBuilder, diFile: LLVMMetadata, type: &Type) -> LL
             assert(!LLVM::isNull(meta), "Could not create debug info for variadic type");
             data = LLVMMetadata { ref: meta };
         }
+        &Type::Prim(p) => { return *at(&debugTypes, tag(&p) as usize); }
         &Type::Ptr(under) => {
             let pointee = createType(builder, diFile, under);
             let size: u64 = 64;
@@ -478,6 +511,7 @@ func createType(builder: LLVMDIBuilder, diFile: LLVMMetadata, type: &Type) -> LL
             // assert(!LLVM::isNull(meta), "Could not create debug info for module type");
             // data = LLVMMetadata { ref: meta };
         }
+        &Type::Tuple(_) => { return createDebugInfoForTupleType(builder, diFile, type); }
         unknown => {
             C::fprintf(stderr, "%s createType(LLVMDIBuilder): Unknown tag %hhu!\n", FATAL_STR, tag(unknown));
             C::exit(2);

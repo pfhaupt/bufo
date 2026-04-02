@@ -26,10 +26,10 @@ union Qux {
 }
 
 func main(argc: i32, argv: &&char) -> i32 {
-    assert(sizeof Foo == 1);
-    assert(sizeof Bar == 2);
-    assert(sizeof Baz == 3);
-    assert(sizeof Qux == 4);
+    assert(sizeof Foo == 1, "1");
+    assert(sizeof Bar == 2, "2");
+    assert(sizeof Baz == 3, "3");
+    assert(sizeof Qux == 4, "4");
     return 0;
 }
 

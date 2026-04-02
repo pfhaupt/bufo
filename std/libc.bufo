@@ -1,3 +1,5 @@
+import "prelude.bufo";
+
 module C {
     @os(WINDOWS) config {
         dynamic: "msvcrt.dll",
@@ -28,9 +30,21 @@ module C {
 
     @extern @mangle("scanf") func scanf(fmt: &char, ...) -> i32;
     // Strings
-    @extern @mangle("strlen") func strlen(string: &char) -> usize;
+    @mangle("strlen") func strlen(string: &char) -> usize {
+        return comptimeStrlen(string);
+    }
     @extern @mangle("strcmp") func strcmp(s1: &char, s2: &char) -> i32;
-    @extern @mangle("strncmp") func strncmp(s1: &char, s2: &char, n: usize) -> i32;
+    @os(WINDOWS) @extern @mangle("strncmp") func strncmp(s1: &char, s2: &char, n: usize) -> i32;
+    @os(LINUX) @extern @mangle("strncmp") func strncmp(s1: &char, s2: &char, n: usize) -> i32;
+    @os(WASM) func strncmp(s1: &char, s2: &char, n: usize) -> i32 {
+        if (s1 == s2) return 0;
+        for (let i: usize = 0; i < n; i = i + 1) {
+            let diff = (s1[i] as i32) - (s2[i] as i32);
+            if (diff < 0) return -diff;
+            if (diff > 0) return diff;
+        }
+        return 0;
+    }
     @extern @mangle("strchr") func strchr(s: &char, c: char) -> &char;
 
     // Memory
@@ -38,7 +52,16 @@ module C {
     @extern @mangle("calloc") func calloc(num: usize, size: usize) -> Any;
     @extern @mangle("realloc") func realloc(ptr: Any, new_size: usize) -> Any;
     @extern @mangle("free") func free(ptr: Any);
-    @extern @mangle("memcpy") func memcpy(dest: Any, src: Any, count: usize) -> Any;
+    @os(WINDOWS) @extern @mangle("memcpy") func memcpy(dest: Any, src: Any, count: usize) -> Any;
+    @os(LINUX) @extern @mangle("memcpy") func memcpy(dest: Any, src: Any, count: usize) -> Any;
+    @os(WASM) @mangle("memcpy") func memcpy(dest: Any, src: Any, count: usize) -> Any {
+        let d = dest as &u8;
+        let s = src as &u8;
+        for (let i: usize = 0; i < count; i = i + 1) {
+            d[i] = s[i];
+        }
+        return d;
+    }
     @extern @mangle("memcmp") func memcmp(lhs: Any, rhs: Any, count: usize) -> i32;
     @extern @mangle("memset") func memset(s: Any, b: i32, count: usize) -> Any;
 
@@ -61,7 +84,7 @@ module C {
     // Console IO
     @extern @mangle("printf") func printf(msg: &char, ...) -> i32;
     @extern @mangle("putchar") func putchar(ch: char) -> char;
-    @extern @mangle("puts") func puts(s: &char) -> usize;
+    @extern @mangle("puts") func puts(s: &char) -> i32;
 
     // Process Control
     @noreturn @extern @mangle("abort") func abort();

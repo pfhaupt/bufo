@@ -56,6 +56,7 @@ func last(this: &CallStack) -> &CallStackInfo {
     return at(this, this.length - 1);
 }
 
+// TODO(2026-04-02): Make this customizable
 comptime REG_STACK_SIZE: usize = 16777216;
 comptime STACK_SIZE: usize = 4194304;
 struct IRInterp {
@@ -149,7 +150,7 @@ let instrFns = [
     evaluateLoadU16,            // INSTR_LOAD_U16
     evaluateLoadI32,            // INSTR_LOAD_I32
     evaluateLoadU32,            // INSTR_LOAD_U32
-    evaluateNotImplemented,     // INSTR_LOAD_I64
+    evaluateLoadI64,            // INSTR_LOAD_I64
     evaluateLoadU64,            // INSTR_LOAD_U64
     evaluateLoadNull,           // INSTR_LOAD_NULL
     evaluateLoadF32,            // INSTR_LOAD_F32
@@ -160,7 +161,7 @@ let instrFns = [
     evaluateIntAdd,             // INSTR_INT_ADD
     evaluateIntSub,             // INSTR_INT_SUB
     evaluateIntMul,             // INSTR_INT_MUL
-    evaluateNotImplemented,     // INSTR_INT_DIV
+    evaluateIntDiv,             // INSTR_INT_DIV
     evaluateIntMod,             // INSTR_INT_MOD
     evaluateIntCmpEqAndNeq,     // INSTR_INT_CMP_EQ
     evaluateIntCmpEqAndNeq,     // INSTR_INT_CMP_NEQ
@@ -559,6 +560,17 @@ func evaluateLoadU32(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &R
     *(regStackLoc as &u32) = instr.src.i as u32;
     return reg;
 }
+func evaluateLoadI64(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    let fReg: &IRReg = getRegister(irFunc, instr.dst);
+    assert(isInteger(fReg.typ), "LoadI64 got non-int");
+    let reg: InterpReg = InterpReg {
+        offset: fReg.offset,
+        size: 8,
+    };
+    let regStackLoc: &u8 = getRegStackPointer(this, &reg);
+    *(regStackLoc as &i64) = instr.src.i as i64;
+    return reg;
+}
 func evaluateLoadU64(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let fReg: &IRReg = getRegister(irFunc, instr.dst);
     assert(isInteger(fReg.typ), "LoadU64 got non-int");
@@ -739,6 +751,42 @@ func evaluateIntMul(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
         else *(start as &u64) = *(lhsStart as &u64) * *(rhsStart as &u64);
     } else {
         unreachable("int mul with sus bitsize");
+    }
+    return dst;
+}
+func evaluateIntDiv(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+    // OPT: Specialized 8bit, 16bit, etc. variations
+    let lhs: &RegValue = at(regs, instr.src.i);
+    let rhs: &RegValue = at(regs, instr.op1.i);
+    let rLhs: InterpReg =  asInterp(lhs, "DivInt LHS");
+    let rRhs: InterpReg =  asInterp(rhs, "DivInt RHS");
+    let t1: &Type = getRegister(irFunc, instr.src).typ;
+    let signed: bool = isSignedInteger(t1);
+    let s1: usize = rLhs.size;
+    let s2: usize = rRhs.size;
+    assert(s1 == s2, "DivInt expected LHS and RHS to be the same size");
+    let dstReg: &IRReg = getRegister(irFunc, instr.dst);
+    let dst: InterpReg = InterpReg {
+        offset: dstReg.offset,
+        size: s1,
+    };
+    let start: &u8 = getRegStackPointer(this, &dst);
+    let lhsStart: &u8 = getRegStackPointer(this, &rLhs);
+    let rhsStart: &u8 = getRegStackPointer(this, &rRhs);
+    if (s1 == 1) {
+        if (signed) *(start as &i8) = *(lhsStart as &i8) / *(rhsStart as &i8);
+        else *(start as &u8) = *(lhsStart as &u8) / *(rhsStart as &u8);
+    } else if (s1 == 2) {
+        if (signed) *(start as &i16) = *(lhsStart as &i16) / *(rhsStart as &i16);
+        else *(start as &u16) = *(lhsStart as &u16) / *(rhsStart as &u16);
+    } else if (s1 == 4) {
+        if (signed) *(start as &i32) = *(lhsStart as &i32) / *(rhsStart as &i32);
+        else *(start as &u32) = *(lhsStart as &u32) / *(rhsStart as &u32);
+    } else if (s1 == 8) {
+        if (signed) *(start as &i64) = *(lhsStart as &i64) / *(rhsStart as &i64);
+        else *(start as &u64) = *(lhsStart as &u64) / *(rhsStart as &u64);
+    } else {
+        unreachable("int div with sus bitsize");
     }
     return dst;
 }

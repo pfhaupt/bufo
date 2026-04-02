@@ -474,6 +474,10 @@ module LLVM {
     @extern @mangle("LLVMDisposeTemporaryMDNode") func DisposeTemporaryMDNode(TempNode: MetadataRef);
     @extern @mangle("LLVMValueAsMetadata") func ValueAsMetadata(Val: ValueRef) -> MetadataRef;
     @extern @mangle("LLVMGetMDKindID") func GetMDKindID(Name: &char, NameLen: u32) -> u32;
+
+    // LLVMError
+    @extern @mangle("LLVMGetErrorMessage") func GetErrorMessage(Err: ErrorRef) -> &char;
+    @extern @mangle("LLVMDisposeErrorMessage") func DisposeErrorMessage(ErrMsg: &char);
 }
 struct LLVMBool { val: i32; }
 func newLLVMBool(b: bool) -> LLVMBool {

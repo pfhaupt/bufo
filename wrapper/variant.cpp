@@ -42,9 +42,9 @@ LLVMMetadataRef LLVMDIBuilderCreateVariantPart(LLVMDIBuilderRef Builder, LLVMMet
 }
 
 LLVMMetadataRef LLVMDIBuilderCreateVariantMemberType(LLVMDIBuilderRef Builder, LLVMMetadataRef Scope,
-        const char *Name, size_t NameLen, LLVMMetadataRef File, unsigned LineNumber,
-        uint64_t SizeInBits, uint32_t AlignInBits, uint64_t OffsetInBits, LLVMValueRef Discriminant,
-        LLVMDIFlags Flags, LLVMMetadataRef Ty) {
+    const char *Name, size_t NameLen, LLVMMetadataRef File, unsigned LineNumber,
+    uint64_t SizeInBits, uint32_t AlignInBits, uint64_t OffsetInBits, LLVMValueRef Discriminant,
+    LLVMDIFlags Flags, LLVMMetadataRef Ty) {
     ConstantInt *Disc = nullptr;
     if (Discriminant) {
         Disc = unwrap<ConstantInt>(Discriminant);

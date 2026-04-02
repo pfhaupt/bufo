@@ -89,7 +89,14 @@ func getGlobal(this: &LLVMModule, name: SubStr) -> LLVMValue {
 
 func runPasses(this: LLVMModule, passes: &char, target: LLVMTargetMachine, options: LLVMPassBuilderOptions) -> bool {
     assert(!LLVM::isNull(this.ref));
-    return LLVM::RunPasses(this.ref, passes, target.ref, options.ref).ptr == null;
+    let err = LLVM::RunPasses(this.ref, passes, target.ref, options.ref);
+    if (err.ptr != null) {
+        let msg = LLVM::GetErrorMessage(err);
+        C::printf("%s: %s\n", ERR_STR, msg);
+        LLVM::DisposeErrorMessage(msg);
+        return false;
+    }
+    return true;
 }
 
 func addModuleFlag(this: LLVMModule, behavior: i32, flag: SubStr, value: LLVMValue) {

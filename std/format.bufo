@@ -5,18 +5,33 @@ import "substr.bufo";
 import "string.bufo";
 import "type_info.bufo";
 
-func __format_helper(out: &String, arg: Data) {
+func __format_helper(out: &String, arg: Data, in_structure: bool) {
     let next_multiple_of = func (a: usize, b: usize) -> usize {
         assert(b != 0, "next_multiple_of: b is 0!");
         if (a % b == 0) return a;
         return a + (b - (a % b));
     };
     match (arg.info) {
+        TypeInfo::Unknown => {
+            pushStr(out, "<unknown>");
+        }
         TypeInfo::Struct { name, _, _, fields } => {
             if (C::strncmp(name.start, "SubStr", name.len) == 0) {
-                pushSubStr(out, arg.ptr);
+                if (in_structure) {
+                    pushChar(out, '"');
+                    pushSubStr(out, arg.ptr);
+                    pushChar(out, '"');
+                } else {
+                    pushSubStr(out, arg.ptr);
+                }
             } else if (C::strncmp(name.start, "String", name.len) == 0) {
-                pushString(out, arg.ptr);
+                if (in_structure) {
+                    pushChar(out, '"');
+                    pushSubStr(out, arg.ptr);
+                    pushChar(out, '"');
+                } else {
+                    pushSubStr(out, arg.ptr);
+                }
             } else {
                 pushSubStr(out, &name);
                 pushStr(out, " { ");
@@ -26,7 +41,7 @@ func __format_helper(out: &String, arg: Data) {
                     pushSubStr(out, &f.name);
                     pushStr(out, ": ");
                     let field_ptr = (arg.ptr as usize + f.offset_in_bytes) as Any;
-                    __format_helper(out, Data { ptr: field_ptr, info: type_info_table[f.type] });
+                    __format_helper(out, Data { ptr: field_ptr, info: type_info_table[f.type] }, true);
                 }
                 pushStr(out, " }");
             }
@@ -47,8 +62,17 @@ func __format_helper(out: &String, arg: Data) {
             else unreachable("__format_helper primitive");
         }
         TypeInfo::Pointer { _, underlying } => {
-            if (equals(&type_info_table[underlying], &type_info(char))) {
-                pushStr(out, arg as &char);
+            let _ch = arg as &char;
+            if (_ch == null) {
+                pushStr(out, "<null>");
+            } else if (equals(&type_info_table[underlying], &type_info(char))) {
+                if (in_structure) {
+                    pushChar(out, '"');
+                    pushStr(out, _ch);
+                    pushChar(out, '"');
+                } else {
+                    pushStr(out, _ch);
+                }
             } else {
                 pushNumberAsHex(out, arg as usize);
             }
@@ -59,6 +83,7 @@ func __format_helper(out: &String, arg: Data) {
             let t = tag(arg.ptr) as usize;
             assert(t < variants.length, "__format_helper: Argument has invalid Union Tag");
             let vi = &variants.elements[t];
+            let offset: usize = align; // tag
             match (vi) {
                 &UnionVariantTypeInfo::Empty { name } => {
                     pushSubStr(out, &name);
@@ -66,15 +91,12 @@ func __format_helper(out: &String, arg: Data) {
                 &UnionVariantTypeInfo::Tuple { name, fields } => {
                     pushSubStr(out, &name);
                     pushStr(out, "(");
-                    let offset: usize = 1; // tag
                     for (let j: usize = 0; j < fields.length; j = j + 1) {
                         let f = &type_info_table[fields.elements[j]];
                         if (j > 0) pushStr(out, ", ");
                         let field_ptr = (arg.ptr as usize + offset) as Any;
-                        __format_helper(out, Data { ptr: field_ptr, info: *f });
+                        __format_helper(out, Data { ptr: field_ptr, info: *f }, true);
                         offset = offset + get_size(f);
-                        // FIXME(2026-03-03): Alignment of Union Tuples is incorrect. Printing them
-                        //                    will always crash.
                         if (j != fields.length - 1) {
                             offset = next_multiple_of(offset, get_align(&type_info_table[fields.elements[j + 1]]));
                         }
@@ -88,16 +110,33 @@ func __format_helper(out: &String, arg: Data) {
                         let f = &fields.elements[i];
                         if (i > 0) pushStr(out, ", ");
                         pushSubStr(out, &f.name);
-                        let field_ptr = (arg.ptr as usize + f.offset_in_bytes) as Any;
-                        __format_helper(out, Data { ptr: field_ptr, info: type_info_table[f.type] });
+                        pushStr(out, ": ");
+                        let field_ptr = (arg.ptr as usize + offset + f.offset_in_bytes) as Any;
+                        __format_helper(out, Data { ptr: field_ptr, info: type_info_table[f.type] }, true);
                     }
                     pushStr(out, " }");
                 }
                 _ => { }
             }
         }
+        TypeInfo::Tuple{ name, _, _, elements } => {
+            pushStr(out, "(");
+            let offset: usize = 0;
+            for (let i: usize = 0; i < elements.length; i = i + 1) {
+                let f = &type_info_table[elements.elements[i]];
+                if (i > 0) pushStr(out, ", ");
+                let element_ptr = (arg.ptr as usize + offset) as Any;
+                __format_helper(out, Data { ptr: element_ptr, info: *f }, true);
+                if (i != elements.length - 1) {
+                    let size = get_size(f);
+                    let align = get_align(&type_info_table[elements.elements[i + 1]]);
+                    offset = offset + size;
+                    offset = next_multiple_of(offset, align);
+                }
+            }
+            pushStr(out, ")");
+        }
         t => {
-            C::printf("tag: %llu\n", tag(&t));
             unreachable("__format_helper");
         }
     }
@@ -117,7 +156,7 @@ func format(out: &String, fmt: &char, args: ...Data) {
             } else {
                 assert(arg_count < args.length, "RUNTIME ERROR: Format string received too many arguments");
                 let arg = args[arg_count];
-                __format_helper(out, arg);
+                __format_helper(out, arg, false);
                 arg_count = arg_count + 1;
             }
             escaped = false;
@@ -135,11 +174,36 @@ func format1(fmt: &char, args: ...Data) -> String {
     return s;
 }
 
+let fprint_buffer: [char; 8192] = blank;
 func fprint(fmt: &char, args: ...Data) {
-    let o: String = blank;
+    let o = String {
+        buffer: &fprint_buffer[0],
+        length: 0,
+        capacity: 8192
+    };
     format(&o, fmt, args);
-    print(&o);
-    drop(&o);
+    for (let i: usize = 0; i < o.length; i = i + 1) {
+        C::putchar(o.buffer[i]);
+    }
+    // drop(&o);
+}
+
+func _eprint(fmt: &char, args: ...Data) {
+    let o = String {
+        buffer: &fprint_buffer[0],
+        length: 0,
+        capacity: 8192
+    };
+    format(&o, fmt, args);
+    C::fprintf(stderr, "%.*s", o.length, o.buffer);
+}
+func eprint(fmt: &char, args: ...Data) {
+    // FIXME(2026-03-24): Users should be able to specify multiple
+    //                    `@os()` per function/statement to avoid
+    //                    situations like this.
+    @os(WASM) fprint(fmt, args);
+    @os(WINDOWS) _eprint(fmt, args);
+    @os(LINUX) _eprint(fmt, args);
 }
 
 // TODO(2026-03-09): Replace assert, unreachable and todo in the prelude with

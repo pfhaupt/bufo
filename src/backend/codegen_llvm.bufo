@@ -204,8 +204,13 @@ func generateExecutable(this: &LLVMCodegen, outPath: SubStr, argc: i32, argv: &&
         finalizeDIBuilder(this.llvmDIBuilder);
     }
     if (*flags.debug && *flags.emitLLVM) writeToFile(&this.llvmModule, newSubStrOfStrLit("debug_before.ll"));
-    if (!verify(&this.llvmModule)) return false;
+    if (!verify(&this.llvmModule)) {
+        writeToFile(&this.llvmModule, newSubStrOfStrLit("broken_module.ll"));
+        C::printf("[INFO] Saved broken module at broken_module.ll\n");
+        return false;
+    }
     if (*flags.opt) {
+        if (*flags.emitLLVM) writeToFile(&this.llvmModule, newSubStrOfStrLit("opt_before.ll"));
         let passOptions = createPassBuilderOptions();
         // Not sure if we need this, we just verified the module
         // setVerifyEach(passOptions, newLLVMBool(*flags.debug));
@@ -225,10 +230,19 @@ func generateExecutable(this: &LLVMCodegen, outPath: SubStr, argc: i32, argv: &&
         setMergeFunctions(passOptions, newLLVMBool(true));
         setInlinerThreshold(passOptions, 250);
         // TODO: Play with some passes to figure out a good mix of optimizations
-        if (!runPasses(this.llvmModule, "default<O3>", this.llvmTargetMachine, passOptions)) {
+        let opt_buf = newStringFromStrLit("globalopt,argpromotion,function-attrs,ipsccp,function<eager-inv>(mem2reg,dce,simplifycfg,verify),globaldce,verify");
+        if (flags.llvm_passes.length != 0) {
+            drop(&opt_buf);
+            opt_buf = *flags.llvm_passes;
+        }
+        pushChar(&opt_buf, '\0');
+        if (*flags.verbose) C::printf("[INFO] LLVM Optimization Pass Pipeline: %s\n", opt_buf.buffer);
+        if (!runPasses(this.llvmModule, opt_buf.buffer, this.llvmTargetMachine, passOptions)) {
             return false;
         }
+        drop(&opt_buf);
         disposePassBuilderOptions(passOptions);
+        if (*flags.emitLLVM) writeToFile(&this.llvmModule, newSubStrOfStrLit("opt_after.ll"));
     }
     if (*flags.debug && *flags.emitLLVM) writeToFile(&this.llvmModule, newSubStrOfStrLit("debug_after.ll"));
     let objPath: String = toString(&outPath);
@@ -319,9 +333,13 @@ func generateEntryPoint(this: &LLVMCodegen) -> bool {
     positionAtEnd(&this.llvmBuilder, entry);
     let args: LLVMValueList = blank;
     {
-        comptime rt_name = newSubStrOfStrLit(".init_runtime");
-        assert(hasFunction(&this.llvmModule, rt_name), "Could not find .init_runtime");
+        comptime rt_name = newSubStrOfStrLit("__init_runtime");
+        assert(hasFunction(&this.llvmModule, rt_name), "Could not find __init_runtime");
         let runtime_func: LLVMValue = getFunction(&this.llvmModule, rt_name);
+        if (equals(flags.target, &comptime newReadonlyString("WASM"))) {
+            let attr = createStringAttribute(&this.llvmContext, comptime newSubStrOfStrLit("wasm-export-name"), rt_name);
+            addAttribute(&runtime_func, U32_MAX, attr);
+        }
         let _retType: LLVMType = createVoidType(&this.llvmContext);
         let _params: LLVMTypeList = blank;
         let _retFnType: LLVMType = intoFunctionType(&_retType, _params, false);
@@ -1237,7 +1255,7 @@ func newLLVMCodegen(name: SubStr, irGen: &IRGen, interp: &IRInterp) -> LLVMCodeg
     let llvmContext: LLVMContext = newLLVMContext();
     let llvmModule: LLVMModule = createModuleWithName(&llvmContext, name);
     let llvmBuilder: LLVMBuilder = createBuilder(&llvmContext);
-    let llvmDIBuilder = createDIBuilder(llvmModule);
+    let llvmDIBuilder = createDIBuilder(llvmModule, llvmContext);
     initializeTargets(&llvmContext);
     let target: LLVMTarget = blank;
     if (equals(flags.target, &newStringFromStrLit("WASM"))) {
