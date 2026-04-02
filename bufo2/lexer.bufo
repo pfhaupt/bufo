@@ -28,11 +28,15 @@ union TokenData {
     KeywordIf,
     KeywordElse,
     KeywordReturn,
+    KeywordBlank,
+    KeywordNull,
 
     ParenOpen,
     ParenClose,
     CurlyOpen,
     CurlyClose,
+    SquareOpen,
+    SquareClose,
     ColonSingle,
     Comma,
     SemiColon,
@@ -40,12 +44,23 @@ union TokenData {
     AsteriskSingle,
     AmpersandSingle,
     MinusSingle,
+    PlusSingle,
     Dot,
     Bang,
     NotEqual,
     EqualSingle,
     AmpersandDouble,
     Hash,
+    At,
+    SlashSingle,
+
+    GreaterThan,
+    GreaterEqual,
+
+    PlusEqual,
+    MinusEqual,
+    AsteriskEqual,
+    SlashEqual,
 
     Arrow,
 
@@ -53,7 +68,7 @@ union TokenData {
 }
 
 func to_cstr(t: TokenData) -> &char {
-    (comptime assert(tag(&TokenData::EndOfFile) == 30, "TokenData::to_cstr: Added more tokens"));
+    (comptime assert(tag(&TokenData::EndOfFile) == 43, "TokenData::to_cstr: Added more tokens"));
     return [
         "<empty token>",
         "builtin type",
@@ -68,11 +83,15 @@ func to_cstr(t: TokenData) -> &char {
         "`if`",
         "`else`",
         "`return`",
+        "`blank`",
+        "`null`",
 
         "`(`",
         "`)`",
         "`{`",
         "`}`",
+        "`[`",
+        "`]`",
         "`:`",
         "`,`",
         "`;`",
@@ -80,12 +99,23 @@ func to_cstr(t: TokenData) -> &char {
         "`*`",
         "`&`",
         "`-`",
+        "`+`",
         "`.`",
         "`!`",
         "`!=`",
         "`=`",
         "`&&`",
         "`#`",
+        "`@`",
+        "`/`",
+
+        "`>`",
+        "`>=`",
+
+        "`+=`",
+        "`-=`",
+        "`*=`",
+        "`/=`",
 
         "`->`",
 
@@ -102,7 +132,7 @@ func get_name(t: &Token) -> SubStr {
 }
 
 func is_keyword(s: SubStr, kw: &TokenData) -> bool {
-    (comptime assert(tag(&TokenData::EndOfFile) == 30, "Lexer::is_keyword: Added more tokens"));
+    (comptime assert(tag(&TokenData::EndOfFile) == 43, "Lexer::is_keyword: Added more tokens"));
     let kws = [
         (comptime newSubStrOfStrLit("func"), TokenData::KeywordFunc),
         (comptime newSubStrOfStrLit("struct"), TokenData::KeywordStruct),
@@ -111,6 +141,8 @@ func is_keyword(s: SubStr, kw: &TokenData) -> bool {
         (comptime newSubStrOfStrLit("if"), TokenData::KeywordIf),
         (comptime newSubStrOfStrLit("else"), TokenData::KeywordElse),
         (comptime newSubStrOfStrLit("return"), TokenData::KeywordReturn),
+        (comptime newSubStrOfStrLit("blank"), TokenData::KeywordBlank),
+        (comptime newSubStrOfStrLit("null"), TokenData::KeywordNull),
     ];
     for (let i: usize = 0; i < kws.length; i = i + 1) {
         if (equals(&s, &kws[i].0)) {
@@ -122,10 +154,12 @@ func is_keyword(s: SubStr, kw: &TokenData) -> bool {
 }
 
 func is_builtin_type(s: SubStr) -> bool {
-    (comptime assert(tag(&TokenData::EndOfFile) == 30, "Lexer::is_builtin_type: Added more tokens"));
+    (comptime assert(tag(&TokenData::EndOfFile) == 43, "Lexer::is_builtin_type: Added more tokens"));
     comptime types = [
         newSubStrOfStrLit("i32"),
         newSubStrOfStrLit("usize"),
+        newSubStrOfStrLit("str"),
+        newSubStrOfStrLit("none"),
     ];
     (comptime assert(types.length == tag(&PrimType::__count) as usize, "Lexer::is_builtin_type: Added primitive type"));
     for (let i: usize = 0; i < types.length; i = i + 1) {
@@ -164,7 +198,7 @@ func __next(l: &Lexer) -> Token {
 
     let offset = l.offset_in_file;
     let i: usize = 1;
-    (comptime assert(tag(&TokenData::EndOfFile) == 30, "Lexer::__next: Added more tokens"));
+    (comptime assert(tag(&TokenData::EndOfFile) == 43, "Lexer::__next: Added more tokens"));
     if (isAlphabetic(first) || first == '_') {
         while (isAlphanumeric(l.source.start[i]) || l.source.start[i] == '_') i = i + 1;
         let kw: TokenData = TokenData::Empty;
@@ -187,6 +221,8 @@ func __next(l: &Lexer) -> Token {
             if (escaped) {
                 if (ch == '\\') {
                     pushChar(&s, '\\');
+                } else if (ch == 'n') {
+                    pushChar(&s, '\n');
                 } else {
                     message(error(new_loc(l.offset_in_file + i), "Can't escape character `%`.", ch));
                 }
@@ -210,6 +246,10 @@ func __next(l: &Lexer) -> Token {
         tkn.data = TokenData::CurlyOpen;
     } else if (first == '}') {
         tkn.data = TokenData::CurlyClose;
+    } else if (first == '[') {
+        tkn.data = TokenData::SquareOpen;
+    } else if (first == ']') {
+        tkn.data = TokenData::SquareClose;
     } else if (first == ':') {
         tkn.data = TokenData::ColonSingle;
     } else if (first == ',') {
@@ -227,9 +267,20 @@ func __next(l: &Lexer) -> Token {
         } else {
             tkn.data = TokenData::AmpersandSingle;
         }
+    } else if (first == '+') {
+        if (l.source.len > 1 && l.source.start[1] == '=') {
+            tkn.data = TokenData::PlusEqual;
+            i = 2;
+        } else {
+            tkn.data = TokenData::PlusSingle;
+        }
+    } else if (first == '.') {
     } else if (first == '-') {
         if (l.source.len > 1 && l.source.start[1] == '>') {
             tkn.data = TokenData::Arrow;
+            i = 2;
+        } else if (l.source.len > 1 && l.source.start[1] == '=') {
+            tkn.data = TokenData::MinusEqual;
             i = 2;
         } else {
             tkn.data = TokenData::MinusSingle;
@@ -245,8 +296,31 @@ func __next(l: &Lexer) -> Token {
         }
     } else if (first == '=') {
         tkn.data = TokenData::EqualSingle;
+    } else if (first == '>') {
+        if (l.source.len > 1 && l.source.start[1] == '=') {
+            tkn.data = TokenData::GreaterEqual;
+            i = 2;
+        } else {
+            tkn.data = TokenData::GreaterThan;
+        }
     } else if (first == '#') {
         tkn.data = TokenData::Hash;
+    } else if (first == '@') {
+        tkn.data = TokenData::At;
+    } else if (first == '/') {
+        if (l.source.len > 1 && l.source.start[1] == '/') {
+            while (first != '\n') {
+                advance(&l.source, 1, &l.offset_in_file);
+                first = l.source.start[0];
+            }
+            advance(&l.source, 1, &l.offset_in_file); // Linebreak
+            return __next(l);
+        } else if (l.source.len > 1 && l.source.start[1] == '=') {
+            tkn.data = TokenData::SlashEqual;
+            i = 2;
+        } else {
+            tkn.data = TokenData::SlashSingle;
+        }
     } else {
         message(error(new_loc(l.offset_in_file), "Unknown character `%`.", first));
     }

@@ -4,6 +4,7 @@ import "substr.bufo";
 import "string.bufo";
 import "type_info.bufo";
 import "list.bufo";
+import "format.bufo";
 
 import "ast.bufo";
 import "common.bufo";
@@ -14,6 +15,8 @@ import "common.bufo";
 union PrimType {
     I32,
     Usize,
+    Str,
+    None,
     __count,
 }
 
@@ -22,6 +25,8 @@ func to_string(out: &String, t: PrimType) {
     comptime names = [
         newSubStrOfStrLit("i32"),
         newSubStrOfStrLit("usize"),
+        newSubStrOfStrLit("str"),
+        newSubStrOfStrLit("none"),
     ];
     (comptime assert(names.length == tag(&PrimType::__count) as usize, "PrimType::to_string: Added primitive type"));
     pushSubStr(out, &names[_tag]);
@@ -30,6 +35,7 @@ func to_string(out: &String, t: PrimType) {
 union Type {
     Meta(&Type),
     Struct(&AST),
+    Func(GAF_List, &Type), // Params, RetType
     Prim(PrimType),
 }
 
@@ -37,6 +43,8 @@ func get_builtin_type(name: SubStr) -> &Type {
     let map = [
         (comptime newSubStrOfStrLit("i32"), Type::Prim(PrimType::I32)),
         (comptime newSubStrOfStrLit("usize"), Type::Prim(PrimType::Usize)),
+        (comptime newSubStrOfStrLit("str"), Type::Prim(PrimType::Str)),
+        (comptime newSubStrOfStrLit("none"), Type::Prim(PrimType::None)),
     ];
     assert(map.length == tag(&PrimType::__count) as usize, "get_builtin_type: Added primitive type");
     for (let i: usize = 0; i < map.length; i = i + 1) {
@@ -46,15 +54,37 @@ func get_builtin_type(name: SubStr) -> &Type {
     unreachable(); // todo terminates
 }
 
+func to_string(t: &Type) -> String {
+    let s: String = blank;
+    to_string(&s, t);
+    return s;
+}
+
 func to_string(out: &String, t: &Type) {
     to_string(out, t, false);
 }
 func to_string(out: &String, t: &Type, highlight_meta: bool) {
+    if (t == null) {
+        format(out, "(null)");
+        return;
+    }
     match (t) {
         &Type::Meta(_t) => {
             if (highlight_meta) pushStr(out, "^");
             to_string(out, _t, highlight_meta);
             if (highlight_meta) pushStr(out, "^");
+        }
+        &Type::Func(params, ret) => {
+            pushStr(out, "func (");
+            for (let i: usize = 0; i < params.length; i = i + 1) {
+                let p = get_ref(&params, i) as &Type;
+                to_string(out, p, highlight_meta);
+                if (i != params.length - 1) {
+                    pushStr(out, ", ");
+                }
+            }
+            pushStr(out, ") -> ");
+            to_string(out, ret, highlight_meta);
         }
         &Type::Struct(node) => {
             let &ASTData::Struct(struct_info) = &node.data else {
@@ -85,4 +115,28 @@ func to_string(out: &String, t: &Type, highlight_meta: bool) {
             message(todo(new_loc(0), "to_string(Type): %", tag(t)));
         }
     }
+}
+
+func is_equal_to(t1: &Type, t2: &Type) -> bool {
+    // A == A
+    if (t1 == t2) return true;
+    // A -> B
+    if (!is_convertible_to(t1, t2)) return false;
+    // B -> A
+    if (!is_convertible_to(t2, t1)) return false;
+    // A == B
+    return true;
+}
+
+func is_convertible_to(t1: &Type, t2: &Type) -> bool {
+    if (t1 == t2) return true;
+    // REVIEW(2026-03-03): Can we find a more elegant way for this?
+    match ((t1, t2)) {
+        (&Type::Prim(PrimType::I32), &Type::Prim(PrimType::I32)) => { return true; }
+        (&Type::Prim(PrimType::Usize), &Type::Prim(PrimType::Usize)) => { return true; }
+        (&Type::Struct(s1), &Type::Struct(s2)) => { return s1 == s2; }
+        (&Type::Meta(m1), &Type::Meta(m2)) => { return is_convertible_to(m1, m2); }
+        (_, _) => { }
+    }
+    return false;
 }

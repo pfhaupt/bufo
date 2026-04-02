@@ -1,44 +1,59 @@
 
 struct List($T) {
+    // Pointer to the heap
     elements: *$T;
+    // How many elements are in the list
     length: usize;
     capacity: usize;
 }
 
-func assert() {
-    comptime list_of_i32 = List(List(i32));
+// NOTE(2026-03-03): After we get the compiler to actually do things,
+//                   it should be able to infer the `@expand` because we
+//                   pass a `Code`. But this form should always work.
+func assert(cond: Code) @expand {
+    if (!#insert cond.str) {
+        print("%: error: Assertion `%` failed!\n", cond.loc, cond.str);
+        exit(1);
+    }
 }
-func assert(cond: bool) {
-}
-
-func new_list(elem: $T) -> List($T) {
-    let list: List($T);
-    push(&list, elem);
-    return list;
-}
-
-func push(list: List($T), elem: $T) {
-    assert(list.elements != null);
-}
-
-func foo(val: $T) -> string {
-    if (val == 13) return "let foo13 = 13";
-    return "let foo14 = 14";
+func assert(cond: Code, msg: string) @expand {
+    if (!#insert cond.str) {
+        print("%: error: Assertion `%` failed: %\n", cond.loc, cond.str, msg);
+        exit(1);
+    }
 }
 
-func bar() {
-    let i: i32 = 1;
-    let b = i;
+func push(list: *List($T), elem: $T) {
+    if (list.length >= list.capacity) {
+        let new_cap = list.capacity * 2;
+        if (new_cap == 0) new_cap = 16;
+        list.elements = realloc(list.elements, new_cap * sizeof(elem));
+        assert(list.elements != null, "Could not allocate List elements");
+        list.capacity = new_cap;
+    }
+    list.elements[list.length] = elem;
+    list.length += 1;
+}
+
+func push_elem() -> str {
+    return "push(&list, 123);";
+}
+
+func get_code() -> str {
+    return "{ let n = 123; n }";
 }
 
 func main() {
-    comptime list_of_i32 = List(List(i32));
-    let i: list_of_i32 = 0;
+    comptime list_of_i32 = List(i32);
+    let list: list_of_i32 = blank;
     comptime foo = "let bar = 1;";
-    comptime value1: i32 = 13;
-    comptime value2: i8 = 14;
-    #insert foo;
-    #insert "let list = new_list(i);";
-    #insert #run foo(value1);
-    #insert #run foo(value2);
+    let s = #run {
+        #insert #run get_code();
+    };
+    assert(s == 123);
+    #insert foo;                 // let bar = 1;
+    #insert "push(&list, bar);"; // push(&list, bar);
+    #insert #run push_elem();    // push(&list, 123);
+    assert(list.length == 2);    // list = [1, 123]
+    assert(list.capacity == 16);
 }

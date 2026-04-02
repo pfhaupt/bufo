@@ -4,6 +4,7 @@ import "libc.bufo";
 import "type_info.bufo";
 import "string.bufo";
 import "substr.bufo";
+import "format.bufo";
 
 import "list.bufo";
 import "hashmap.bufo";
@@ -14,6 +15,7 @@ import "lexer.bufo";
 import "ast.bufo";
 import "checker.bufo";
 import "type.bufo";
+import "lookup.bufo";
 
 struct Parse_Context {
     parent: &AST;
@@ -63,9 +65,7 @@ func parse_file(src: &String) {
             TokenData::KeywordFunc => {
                 let _name = expect(&lexer, TokenData::Ident);
                 skip_until_matching(&lexer, TokenData::ParenOpen, TokenData::ParenClose);
-                if (eat(&lexer, TokenData::Arrow)) {
-                    while (!at(&lexer, TokenData::CurlyOpen)) next(&lexer);
-                }
+                while (!at(&lexer, TokenData::CurlyOpen)) next(&lexer);
                 let end = skip_until_matching(&lexer, TokenData::CurlyOpen, TokenData::CurlyClose);
                 // func foo ( ) { } .......
                 // ^offset_in_file
@@ -127,7 +127,6 @@ func parse_struct(_context: &Parse_Context) {
     let context = *_context;
     let lexer = &context.lexer;
     let struct_node = context.parent;
-    let source = lexer.source;
     expect(lexer, TokenData::KeywordStruct);
     let _name = expect(lexer, TokenData::Ident);
     let name = get_name(&_name);
@@ -164,11 +163,47 @@ func parse_struct_body(_context: &Parse_Context) {
     struct_state.state.i = struct_state.state.i | STRUCT_STATE_PARSED_FIELDS;
 }
 
+func parse_attribute(context: &Parse_Context) -> ASTAttr {
+    expect(&context.lexer, TokenData::At);
+    let tkn = expect(&context.lexer, TokenData::Ident);
+    let TokenData::Ident { attribute } = tkn.data else {
+        unreachable("expected ident");
+    };
+    let attrs = [
+        (comptime newSubStrOfStrLit("expand"), func (context: &Parse_Context) -> ASTAttrData {
+            return ASTAttrData::Expand;
+        }),
+    ];
+    for (let i: usize = 0; i < attrs.length; i = i + 1) {
+        if (equals(&attribute, &attrs[i].0)) {
+            return ASTAttr {
+                name: attribute,
+                loc: new_loc(tkn.offset_in_file),
+                data: attrs[i].1(context),
+            };
+        }
+    }
+    message(error(new_loc(tkn.offset_in_file), "Use of unknown attribute `%`.", attribute));
+    unreachable("parse_directive"); // error terminates
+}
+
+func parse_function_attributes(context: &Parse_Context) {
+    let func_node = context.parent;
+    let attributes = new_GAF_List(type_info(ASTAttr));
+    while (!at(&context.lexer, TokenData::CurlyOpen)) {
+        let attr = parse_attribute(context);
+        if (!is_function_attribute(attr)) {
+            message(error(attr.loc, "Attribute `%` cannot be used on functions.", attr.name));
+        }
+        push(&attributes, attr);
+    }
+    func_node.attributes = attributes;
+}
+
 func parse_function_signature(_context: &Parse_Context) {
     let context = *_context;
     let lexer = &context.lexer;
     let func_node = context.parent;
-    let source = lexer.source;
     expect(lexer, TokenData::KeywordFunc);
     let _name = expect(lexer, TokenData::Ident);
     let &ASTData::Function(func_state) = &func_node.data else {
@@ -187,8 +222,15 @@ func parse_function_signature(_context: &Parse_Context) {
         if (has_generic) {
             func_state.state.i = func_state.state.i | FUNCTION_STATE_IS_GENERIC;
         }
+        func_state.return_type = return_type;
+    } else {
+        comptime name = newSubStrOfStrLit("none");
+        func_state.return_type = create_type(func_node.loc, name, get_builtin_type(name));
     }
-    if ((func_state.state.i & FUNCTION_STATE_IS_GENERIC) == 0) {
+    parse_function_attributes(&context);
+    func_state.state.i = func_state.state.i | FUNCTION_STATE_PARSED_SIGNATURE;
+
+    if ((func_state.state.i & FUNCTION_STATE_IS_GENERIC) == 0 && !has_attribute(func_node, ASTAttrData::Expand)) {
         spawn(parse_function_body, wrap(Parse_Context {
             parent: context.parent,
             lexer: *lexer,
@@ -204,22 +246,33 @@ func parse_parameter(context: &Parse_Context, func_node: &ASTData) {
     expect(&context.lexer, TokenData::ColonSingle);
     let (has_generic, type) = parse_type(context);
     if (has_generic) func_state.state.i = func_state.state.i | FUNCTION_STATE_IS_GENERIC;
+    let param = create_node(type.loc, _name);
+    param.data = ASTData::Param(type);
+    push(&func_state.params, param);
 }
 
 func parse_function_body(context: &Parse_Context) {
     let &ASTData::Function(func_state) = &context.parent.data else { unreachable(); };
+    assert(func_state.scopes.length == 0, "Function already has scopes");
+    push(&func_state.scopes, new_stack());
+
+    check_function_parameters(&func_state);
+    check_function_return_type(&func_state);
+    func_state.state.i = func_state.state.i | FUNCTION_STATE_CHECKED_SIGNATURE;
+    finalize_function_type(context.parent, &func_state);
+
     expect(&context.lexer, TokenData::CurlyOpen);
     while (!at(&context.lexer, TokenData::CurlyClose)) {
         let stmt = parse_stmt(context);
         add_stmt(context.parent, stmt);
-        if (!at(&context.lexer, TokenData::CurlyClose)) {
-            expect(&context.lexer, TokenData::SemiColon);
-        }
+
+        check_stmt(&func_state.scopes, stmt);
+
+        expect(&context.lexer, TokenData::SemiColon);
     }
     let end = expect(&context.lexer, TokenData::CurlyClose);
     expect(&context.lexer, TokenData::EndOfFile);
     func_state.state.i = func_state.state.i | FUNCTION_STATE_PARSED_BODY;
-    check_function(context.parent);
 }
 
 func parse_block(context: &Parse_Context) -> &AST {
@@ -266,12 +319,22 @@ func parse_stmt(context: &Parse_Context) -> &AST {
                 trampoline: trampoline
             });
         }
+        TokenData::KeywordReturn => {
+            next(&context.lexer);
+            if (!at(&context.lexer, TokenData::SemiColon)) {
+                let expr = parse_expr(context);
+                stmt = create_stmt(loc, blank, ASTStmt::ReturnExpr(expr));
+            } else {
+                stmt = create_stmt(loc, blank, ASTStmt::ReturnVoid);
+            }
+        }
         _ => {
             let expr = parse_expr(context);
             stmt = create_stmt(expr.loc, expr.origin, ASTStmt::Expr(expr));
         }
     }
     stmt.parent = context.parent;
+
     return stmt;
 }
 
@@ -281,7 +344,7 @@ func parse_pattern(context: &Parse_Context) -> &AST {
     let ret_pat: &AST = null;
     match (tkn.data) {
         TokenData::Ident { name } => {
-            ret_pat = create_pattern(loc, name, ASTPat::Ident(tkn));
+            ret_pat = create_pattern(loc, name, ASTPat::Ident(name));
         }
         _ => {
             message(todo(new_loc(tkn.offset_in_file), "unknown pattern"));
@@ -308,7 +371,7 @@ func parse_expr(context: &Parse_Context) -> &AST {
 union Assoc { Left, Right }
 
 func matches_unary_expr(context: &Parse_Context) -> bool {
-    (comptime assert(tag(&TokenData::EndOfFile) == 30, "Parser::matches_unary_expr: Added more tokens"));
+    (comptime assert(tag(&TokenData::EndOfFile) == 43, "Parser::matches_unary_expr: Added more tokens"));
     match (peek(&context.lexer).data) {
         TokenData::MinusSingle     => { return true; }
         TokenData::AmpersandSingle => { return true; }
@@ -321,14 +384,22 @@ func matches_unary_expr(context: &Parse_Context) -> bool {
     unreachable("matches_unary_expr");
 }
 func matches_binary_expr(context: &Parse_Context) -> bool {
-    (comptime assert(tag(&TokenData::EndOfFile) == 30, "Parser::matches_binary_expr: Added more tokens"));
+    (comptime assert(tag(&TokenData::EndOfFile) == 43, "Parser::matches_binary_expr: Added more tokens"));
     match (peek(&context.lexer).data) {
         TokenData::MinusSingle     => { return true; }
+        TokenData::PlusSingle      => { return true; }
         TokenData::AmpersandSingle => { return true; }
         TokenData::AmpersandDouble => { return true; }
         TokenData::AsteriskSingle  => { return true; }
         TokenData::NotEqual        => { return true; }
         TokenData::EqualSingle     => { return true; }
+        TokenData::GreaterThan     => { return true; }
+        TokenData::GreaterEqual    => { return true; }
+        TokenData::SlashSingle     => { return true; }
+        TokenData::PlusEqual       => { return true; }
+        TokenData::MinusEqual      => { return true; }
+        TokenData::AsteriskEqual   => { return true; }
+        TokenData::SlashEqual      => { return true; }
         _ => { return false; }
     }
     unreachable("matches_binary_expr");
@@ -396,6 +467,42 @@ func parse_primary_expr(context: &Parse_Context) -> &AST {
         TokenData::StringLiteral { origin, value } => {
             return create_expr(loc, origin, ASTExpr::StringLiteral { value: value });
         }
+        TokenData::KeywordIf => {
+            expect(&context.lexer, TokenData::ParenOpen);
+            let cond = parse_expr(context);
+            expect(&context.lexer, TokenData::ParenClose);
+            let body = parse_stmt(context);
+            if (eat(&context.lexer, TokenData::KeywordElse)) {
+                let elze = parse_stmt(context);
+                return create_expr(loc, blank, ASTExpr::IfElse(cond, body, elze));
+            } else {
+                return create_expr(loc, blank, ASTExpr::If(cond, body));
+            }
+        }
+        TokenData::KeywordBlank => {
+            return create_expr(loc, comptime newSubStrOfStrLit("blank"), ASTExpr::Blank);
+        }
+        TokenData::KeywordNull => {
+            return create_expr(loc, comptime newSubStrOfStrLit("null"), ASTExpr::Null);
+        }
+        TokenData::CurlyOpen => {
+            let block = new_GAF_List(type_info(&AST));
+            let value: &AST = null;
+            while (!at(&context.lexer, TokenData::CurlyClose)) {
+                let stmt = parse_stmt(context);
+                if (at(&context.lexer, TokenData::CurlyClose)) {
+                    value = stmt;
+                } else {
+                    expect(&context.lexer, TokenData::SemiColon);
+                    push(&block, stmt);
+                }
+            }
+            if (value != null) {
+                return create_expr(loc, blank, ASTExpr::BlockExpr(block, value));
+            } else {
+                return create_expr(loc, blank, ASTExpr::BlockVoid(block));
+            }
+        }
         t => {
             message(todo(new_loc(context.lexer.offset_in_file), "parse_primary_expr: %", to_cstr(t)));
         }
@@ -409,16 +516,44 @@ func parse_directive(context: &Parse_Context) -> &AST {
         unreachable("expected ident");
     };
     let dirs = [
+        // TODO(2026-03-03): Instead of creating temporary nodes on the fly
+        //                   and evaluating everything here, we could add
+        //                   real nodes to the AST, for example ASTData::Directive() or
+        //                   whatever and then "backpatch" the AST with the proper new nodes
+        //                   in the type checker once we have all the relevant information.
+        //                   For example, because of this temporary stuff, right now we
+        //                   couldn't infer usecases like the following:
+        //
+        //                   func foo() -> $T { return "123"; }
+        //                   #insert #run foo(); // <- Can't know that #insert wants a string,
+        //                                             #run will fail to find an overload for foo
+        //
+        //                   If we instead created proper AST nodes, things like
+        //                   infer_type_onto_expr and such could be aware of directives. This
+        //                   way, we could postpone the insertion and running until the latest
+        //                   moment, and collect everything we need on the way.
         (comptime newSubStrOfStrLit("insert"), func (context: &Parse_Context) -> &AST {
             let expr = parse_expr(context);
-            let chk_id = spawn(check_insert_expr, expr);
+            let chk_id = spawn(check_temporary_expr, expr);
             while (expr.type == null) {
                 if (!is_active(chk_id)) {
-                    message(todo(new_loc(0), "parse_insert: check_insert_expr died"));
+                    message(todo(new_loc(0), "parse_insert: check_temporary_expr died"));
                 }
                 switch();
             }
             message(todo(new_loc(0), "parse_insert: we have a type"));
+            return null;
+        }),
+        (comptime newSubStrOfStrLit("run"), func (context: &Parse_Context) -> &AST {
+            let expr = parse_expr(context);
+            let chk_id = spawn(check_temporary_expr, expr);
+            while (expr.type == null) {
+                if (!is_active(chk_id)) {
+                    message(todo(new_loc(0), "parse_run: check_temporary_expr died"));
+                }
+                switch();
+            }
+            message(todo(new_loc(0), "parse_run: we have a type"));
             return null;
         }),
     ];
@@ -427,20 +562,29 @@ func parse_directive(context: &Parse_Context) -> &AST {
             return dirs[i].1(context);
         }
     }
-    message(todo(new_loc(tkn.offset_in_file), "report error: No such directive"));
-    unreachable("parse_directive");
+    message(error(new_loc(tkn.offset_in_file), "Use of unknown directive `%`.", directive));
+    unreachable("parse_directive"); // error terminates
 }
 
 func parse_unary_expr(context: &Parse_Context) -> &AST {
     let tkn = next(&context.lexer);
-    let unary_expr: &AST = null;
+    let sub_expr: &AST = create_expr(new_loc(tkn.offset_in_file), blank, ASTExpr::Unary);
+    let un: ASTUnary = ASTUnary::Directive;
     match (tkn.data) {
-        TokenData::Hash => { return parse_directive(context); }
+        TokenData::Hash => {
+            let dir = parse_directive(context);
+            un = ASTUnary::Directive(dir);
+        }
+        TokenData::Bang => {
+            let sub = parse_expr(context);
+            un = ASTUnary::LogicalNot(sub);
+        }
         t => {
             message(todo(new_loc(tkn.offset_in_file), "parse_unary_expr: %", to_cstr(t)));
         }
     }
-    return unary_expr;
+    sub_expr.data = ASTData::Expr(ASTExpr::Unary(un));
+    return sub_expr;
 }
 
 func parse_secondary_expr(context: &Parse_Context, lhs: &AST, prec: usize, assoc: Assoc) -> &AST {
@@ -469,14 +613,18 @@ func parse_type(context: &Parse_Context) -> (bool, &AST) {
                 }
                 expect(lexer, TokenData::ParenClose);
             }
-            let strukt = ASTType::Struct{ sub_nodes: generics };
-            return (struct_has_generic, create_type(loc, name, strukt));
+            let typ = create_type(loc, name, ASTType::Ident(name, generics));
+            return (struct_has_generic, typ);
         }
         TokenData::Dollar => {
             let TokenData::Ident { name } = expect(lexer, TokenData::Ident).data else {
                 unreachable("Expect");
             };
             return (true, create_type(loc, name, ASTType::Generic));
+        }
+        TokenData::AsteriskSingle => {
+            let (has_generic, subtype) = parse_type(context);
+            return (has_generic, create_type(loc, subtype.origin, ASTType::Ptr(subtype)));
         }
         t => {
             message(error(new_loc(lexer.offset_in_file), "Expected identifier, got %.", to_cstr(t)));

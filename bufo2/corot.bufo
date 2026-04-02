@@ -156,6 +156,8 @@ func _finish_current() {
     @os(LINUX) todo_with_msg("restore_context");
 }
 
+// FIXME(2026-04-02): Dead Code Elimination removes this function because it's only called
+//                    in inline assembly, leading to linker errors :^)
 @no_mangle func switch_context(rsp: &usize, yield_value: Any, has_value: bool) {
     let id: &usize = get_ref_raw(&engine.active, engine.current);
     let context = get_context(*id);

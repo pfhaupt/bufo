@@ -39,36 +39,20 @@ union Message {
 
 func todo(loc: Loc, fmt: &char, args: ...Data) -> Message {
     comptime TODO_STR: &char = "\x1b[95mTODO\x1b[0m";
-    let s: String = newStringFromStrLit(TODO_STR);
-    pushChar(&s, ':');
-    pushChar(&s, ' ');
-    format(&s, fmt, args);
-    return Message::Todo(loc, s);
+    return Message::Todo(loc, format1("%: %", TODO_STR, format1(fmt, args)));
 }
 
 func dbg(loc: Loc, fmt: &char, args: ...Data) -> Message {
     comptime DEBUG_STR: &char = "\x1b[96mDEBUG\x1b[0m";
-    let s: String = newStringFromStrLit(DEBUG_STR);
-    pushChar(&s, ':');
-    pushChar(&s, ' ');
-    format(&s, fmt, args);
-    return Message::Debug(loc, s);
+    return Message::Debug(loc, format1("%: %", DEBUG_STR, format1(fmt, args)));
 }
 
 func note(loc: Loc, fmt: &char, args: ...Data) -> Message {
-    let s: String = newStringFromStrLit(NOTE_STR);
-    pushChar(&s, ':');
-    pushChar(&s, ' ');
-    format(&s, fmt, args);
-    return Message::Note(loc, s);
+    return Message::Note(loc, format1("%: %", NOTE_STR, format1(fmt, args)));
 }
 
 func error(loc: Loc, fmt: &char, args: ...Data) -> Message {
-    let s: String = newStringFromStrLit(ERR_STR);
-    pushChar(&s, ':');
-    pushChar(&s, ' ');
-    format(&s, fmt, args);
-    return Message::Error(loc, s);
+    return Message::Error(loc, format1("%: %", ERR_STR, format1(fmt, args)));
 }
 
 comptime PRINT_DEBUG = true;

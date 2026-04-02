@@ -9,6 +9,25 @@ import "string.bufo";
 import "ast.bufo";
 import "common.bufo";
 
+struct Scope_Info {
+    variables: GAF_HashMap; // HashMap<SubStr, &AST>
+}
+
+func new_stack() -> Scope_Info {
+    return Scope_Info {
+        variables: new_hashmap_with_substr_key(type_info(&AST)),
+    };
+}
+
+func get_variable_by_name(scopes: &GAF_List, name: SubStr) -> (&AST, bool) {
+    for (let i: usize = 0; i < scopes.length; i = i + 1) {
+        let _stack = get_ref_raw(scopes, i) as &Scope_Info;
+        let elem = get(&_stack.variables, name);
+        if (elem.ptr != null) return (elem as &AST, true);
+    }
+    return (null, false);
+}
+
 union Lookup {
     Struct(StructLookup),
     Function(FunctionLookup),
@@ -70,6 +89,12 @@ func print_global_lookup() {
         foreach(&fn_lookup.overloads, func (elem: Data, name: &SubStr) {
             let node = elem as &AST;
             message(dbg(node.loc, "Function `%` defined here.", *name));
+            let ASTData::Function(function) = node.data else {
+                unreachable("func node is not a function");
+            };
+            if ((function.state.i & FUNCTION_STATE_IS_GENERIC) != 0) {
+                message(dbg(node.loc, "  Function is generic!"));
+            }
         }, &name);
     });
 }

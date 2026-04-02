@@ -39,8 +39,22 @@ struct AST {
     parent: &AST;
     origin: SubStr;
     loc: Loc;
-    data: ASTData;
+    attributes: GAF_List; // List<ASTAttr>
     type: &Type;
+    data: ASTData;
+}
+
+func has_attribute(node: &AST, attr: ASTAttrData) -> bool {
+    let has = false;
+    foreach(&node.attributes, func (a: Data, arg: &(&bool, ASTAttrData)) {
+        let &(&has, attr) = arg;
+        if (has) return;
+        let at = a as ASTAttr;
+        if (tag(&at.data) == tag(&attr)) {
+            has = true;
+        }
+    }, &(&has, attr));
+    return has;
 }
 
 union ASTData {
@@ -50,6 +64,7 @@ union ASTData {
     Expr(ASTExpr),
     Type(ASTType),
     Pat(ASTPat),
+    Param(&AST),
 }
 
 struct ASTStruct {
@@ -68,7 +83,53 @@ func is_generic(struct_info: &ASTStruct) -> bool {
 struct ASTFunction {
     state: FunctionState;
     name: SubStr;
-    stmts: GAF_List; // List<&AST>
+    scopes: GAF_List;     // List<Scope_Info>
+    return_type: &AST;
+    params: GAF_List;     // List<&AST>
+    stmts: GAF_List;      // List<&AST>
+}
+
+func is_generic(func_info: &ASTFunction) -> bool {
+    while ((func_info.state.i & FUNCTION_STATE_PARSED_SIGNATURE) == 0) switch();
+    return (func_info.state.i & FUNCTION_STATE_IS_GENERIC) != 0;
+}
+
+func finalize_function_type(ast: &AST, state: &ASTFunction) {
+    assert(ast.type == null, "finalize_function_type: Node already has a type");
+    assert((state.state.i & FUNCTION_STATE_CHECKED_SIGNATURE) != 0, "finalize_function_type: Function signature is not type checked");
+
+    let params = new_GAF_List(type_info(&Type));
+    for (let i: usize = 0; i < state.params.length; i = i + 1) {
+        let p = get_ref(&state.params, i) as &AST;
+        assert(p.type != null, "finalize_function_type: Param type is null");
+        push(&params, p.type);
+    }
+
+    let ret_type = state.return_type.type;
+    assert(ret_type != null, "finalize_function_type: Return type is null");
+
+    ast.type = wrap(Type::Func(params, ret_type));
+}
+
+struct ASTAttr {
+    name: SubStr;
+    loc: Loc;
+    data: ASTAttrData;
+}
+func is_function_attribute(attr: ASTAttr) -> bool {
+    return is_function_attribute(attr.data);
+}
+union ASTAttrData {
+    Expand,
+    __count,
+}
+func is_function_attribute(attr: ASTAttrData) -> bool {
+    (comptime assert(tag(&ASTAttrData::__count) == 1, "is_function_attribute: Added more ASTAttrData"));
+    match (attr) {
+        ASTAttrData::Expand => { return true; }
+        _ => { }
+    }
+    return false;
 }
 
 union ASTStmt {
@@ -85,26 +146,11 @@ union ASTStmt {
         expr: &AST,       // if null: let <pat>;
         trampoline: &AST, // if null: let <pat> = <expr>;
     },
-    If(ASTIf),
-    IfElse(ASTIfElse),
 }
 
 union ASTPat {
-    Ident(Token),
+    Ident(SubStr),
     PatWithType(&AST, &AST),
-}
-
-// if (<cond>) <then>
-struct ASTIf {
-    cond: &AST;
-    then: &AST;
-}
-
-// if (<cond>) <then> else <else>
-struct ASTIfElse {
-    cond: &AST;
-    then: &AST;
-    else: &AST;
 }
 
 union ASTExpr {
@@ -113,12 +159,28 @@ union ASTExpr {
     Number { value: SubStr },
     StringLiteral { value: String },
     Call(&AST, GAF_List), // arguments = List<&AST>
+    // if (<cond>) <then>
+    If(&AST, &AST),
+    // if (<cond>) <then> else <else>
+    IfElse(&AST, &AST, &AST),
+    // BlockExpr is something like `{ let a = 12; a }` and returns a non-none value
+    BlockExpr(GAF_List, &AST), // List<&AST>
+    BlockVoid(GAF_List), // List<&AST>
+    Unary(ASTUnary),
+    Blank,
+    Null,
+}
+
+union ASTUnary {
+    Directive(&AST),
+    LogicalNot(&AST),
 }
 
 union ASTType {
     Builtin(&Type),
-    Struct { sub_nodes: GAF_List }, // List<&AST>
+    Ident(SubStr, GAF_List), // List<&AST>
     Generic,
+    Ptr(&AST),
 }
 
 func create_node(loc: Loc, origin: SubStr) -> &AST {
@@ -179,6 +241,8 @@ func create_function(loc: Loc, origin: SubStr, name: SubStr) -> &AST {
     ptr.data = ASTData::Function(ASTFunction {
         state: blank,
         name: name,
+        scopes: new_GAF_List(type_info(Scope_Info)),
+        params: new_GAF_List(type_info(&AST)),
         stmts: new_GAF_List(type_info(&AST)),
     });
     let lookup = get_functions_by_name(&global_lookup, name);
