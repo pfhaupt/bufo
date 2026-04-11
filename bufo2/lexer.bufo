@@ -4,6 +4,7 @@ import "libc.bufo";
 import "type_info.bufo";
 import "string.bufo";
 import "substr.bufo";
+import "format.bufo";
 
 import "common.bufo";
 import "corot.bufo";
@@ -366,15 +367,17 @@ func expect(l: &Lexer, tokens: ...TokenData) -> Token {
     for (let i: usize = 0; i < tokens.length; i = i + 1) {
         if (tag(&tkn.data) == tag(&tokens[i])) return tkn;
     }
-    C::fprintf(stderr, "%s:%llu: %s: Expected ", "idk where", tkn.offset_in_file, ERR_STR);
-    if (tokens.length > 1) C::fprintf(stderr, "one of ");
+    let out = String {};
+    format(&out, "Expected ");
+    if (tokens.length > 1) format(&out, "one of ");
     for (let i: usize = 0; i < tokens.length; i = i + 1) {
-        C::fprintf(stderr, "%s", to_cstr(tokens[i]));
-        if (tokens.length > 2 && i < tokens.length - 2) C::fprintf(stderr, ", ");
-        else if (i == tokens.length - 2) C::fprintf(stderr, " or ");
+        format(&out, "%", to_cstr(tokens[i]));
+        if (tokens.length > 2 && i < tokens.length - 2) format(&out, ", ");
+        else if (i == tokens.length - 2) format(&out, " or ");
     }
-    C::fprintf(stderr, ", but got %s.", to_cstr(tkn.data));
-    C::exit(1);
+    format(&out, ", but got %.", to_cstr(tkn.data));
+    message(error(new_loc(tkn.offset_in_file), "%", out));
+    unreachable(); // error terminates
 }
 
 func skip_until(l: &Lexer, token: TokenData) -> Token {

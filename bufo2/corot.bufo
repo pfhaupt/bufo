@@ -3,24 +3,40 @@ import "libc.bufo";
 import "type_info.bufo";
 import "prelude.bufo";
 import "asm.bufo";
+import "format.bufo";
 
 import "list.bufo";
 
 comptime STACK_CAPACITY: usize = 1024 * 1024;
 
+struct Corot_UUID {
+    id: usize;
+    generation: usize;
+}
+
 struct Context {
     alive: bool;
+    generation: usize;
+    waiting_for: Corot_UUID;
+    waiting_list: GAF_List; // List<Corot_UUID>
+    results: GAF_List;      // List<Corot_Result>
     rsp: &usize;
     stack_base: &usize;
-    yield_value: Any;
-    value_available: bool;
-    return_value: Any;
+}
+
+func new_context() -> Context {
+    let context = Context {
+        results: new_GAF_List(type_info(Corot_Result)),
+        waiting_list: new_GAF_List(type_info(Corot_UUID)),
+    };
+    push(&context.results, Corot_Result::Pending);
+    return context;
 }
 
 struct Corot_Engine {
     contexts: GAF_List; // List<Context>
-    active: GAF_List;   // List<usize>
-    dead: GAF_List;     // List<usize>
+    active: GAF_List;   // List<Corot_UUID>
+    dead: GAF_List;     // List<Corot_UUID>
     current: usize;
 }
 
@@ -30,81 +46,100 @@ func init_corot_engine() {
     if (engine.contexts.length > 0) return;
     engine = Corot_Engine {
         contexts: new_GAF_List(type_info(Context)),
-        active: new_GAF_List(type_info(usize)),
-        dead: new_GAF_List(type_info(usize)),
+        active: new_GAF_List(type_info(Corot_UUID)),
+        dead: new_GAF_List(type_info(Corot_UUID)),
         current: 0,
     };
-    push(&engine.contexts, Context {});
-    push(&engine.active, 0 as usize);
+    push(&engine.contexts, new_context());
+    push(&engine.active, Corot_UUID { id: 0 });
 }
 
-func get_context(id: usize) -> &Context {
-    return get_ref_raw(&engine.contexts, id);
+func get_context(cid: Corot_UUID) -> &Context {
+    return get_ref_raw(&engine.contexts, cid.id);
 }
 
-func is_active(id: usize) -> bool {
-    return get_context(id).alive;
-}
-
-func yield_value(id: usize, value: Any) {
-    let context = get_context(id);
-    context.return_value = value;
-}
-
-union Corot_State {
-    Value(Any),
-    Dead,
-}
-
-func unwrap(cs: Corot_State, msg: &char) -> Any {
-    match (cs) {
-        Corot_State::Value(v) => { return v; }
-        _ => { }
-    }
-    unreachable(msg);
-}
-func unwrap(cs: Corot_State) -> Any {
-    return unwrap(cs, "unwrap() called on invalid Corot_State");
-}
-
-func get_value(id: usize) -> Corot_State {
-    let context = get_context(id);
-    while (!context.value_available) {
-        if (!is_active(id)) return Corot_State::Dead;
-        switch();
-    }
-    context.value_available = false;
-    return Corot_State::Value(context.yield_value);
+func is_active(cid: Corot_UUID) -> bool {
+    let ctx = get_context(cid);
+    assert(cid.generation <= ctx.generation, "is_active: Stored generation is bigger than our generation");
+    if (ctx.generation != cid.generation) return false;
+    return ctx.alive;
 }
 
 func any_active() -> bool {
     return engine.active.length > 1;
 }
 
-func corot_id() -> usize {
-    return engine.current;
+func corot_id() -> Corot_UUID {
+    let id = get_ref(&engine.active, engine.current) as Corot_UUID;
+    let ctx = get_context(id);
+    return Corot_UUID { id: id.id, generation: ctx.generation };
 }
 
-@nodiscard func spawn(f: func (Any), arg: Any) -> usize {
-    let id: usize = 0;
+union Corot_Result {
+    Pending,
+    Cycle_Detected,
+    Fucking_Died,
+    Success,
+}
+@nodiscard func wait(dep: Corot_UUID) -> Corot_Result {
+    let current = corot_id();
+    let current_context = get_context(current);
+    let next_context = get_context(dep);
+
+    // Update context
+    current_context.rsp = __get_rsp();
+
+    // Store dep in current waiting_for
+    current_context.waiting_for = dep;
+
+    // Check for cycles
+    let curr = current;
+    while (curr.id != 0) {
+        let next = get_context(curr).waiting_for;
+        if (next.id == current.id) return Corot_Result::Cycle_Detected;
+        curr = next;
+    }
+
+    // Store our ID in dep waiting list
+    push(&next_context.waiting_list, current);
+    swap_remove(&engine.active, engine.current);
+
+    // Continue with the next coroutine
+    __switch(current_context);
+    // If control ever returns here, the function has been removed from the waiting list
+
+    current_context.waiting_for = blank;
+
+    return get_ref(&next_context.results, dep.generation) as Corot_Result;
+}
+func wait_or_abort(cid: Corot_UUID) {
+    let s = wait(cid);
+    if let Corot_Result::Success = s {
+        return;
+    }
+    _finish_current(s);
+}
+
+@nodiscard func spawn(f: func (Any), arg: Any) -> Corot_UUID {
+    let cid: Corot_UUID = blank;
     if (engine.dead.length > 0) {
-        pop(&engine.dead, &id);
+        pop(&engine.dead, &cid);
     } else {
-        let context = Context {
-            stack_base: C::aligned_alloc(16, STACK_CAPACITY)
-        };
+        let context = new_context();
+        context.stack_base = C::aligned_alloc(16, STACK_CAPACITY);
         assert(context.stack_base != null, "Could not allocate stack for coroutine");
         push(&engine.contexts, context);
-        id = engine.contexts.length - 1;
+        cid.id = engine.contexts.length - 1;
     }
-    let context = get_context(id);
+    let context = get_context(cid);
+
     let rsp = (context.stack_base as usize + STACK_CAPACITY) as &usize;
     assert(rsp as usize % 16 == 0, "RSP is not aligned");
     @os(WINDOWS) {
         rsp = rsp - 32; // shadow space
         let kickoff = func (f: func (Any), arg: Any) {
             f(arg);
-            _finish_current();
+            _finish_current(Corot_Result::Success);
         };
         *(rsp - 0) = kickoff as Any as usize;
         *(rsp - 8) = f as Any as usize;
@@ -114,32 +149,44 @@ func corot_id() -> usize {
     @os(LINUX) todo_with_msg("prepare stack");
     context.rsp = rsp as &usize;
     context.alive = true;
-    push(&engine.active, id);
-    return id;
+    cid.generation = context.generation = context.generation + 1;
+    push(&context.results, Corot_Result::Pending);
+    push(&engine.active, cid);
+    return cid;
 }
 
-func _finish_current() {
-    let id: &usize = get_ref_raw(&engine.active, engine.current);
-    assert(*id != 0, "_finish_current: Attempted to finish main thread");
+@noreturn func abort_coroutine() {
+    _finish_current(Corot_Result::Fucking_Died);
+}
 
-    let context = get_context(*id);
+@noreturn func _finish_current(wr: Corot_Result) {
+    let cid = get_ref(&engine.active, engine.current) as Corot_UUID;
+    assert(cid.id != 0, "_finish_current: Attempted to finish main thread");
+
+    let context = get_context(cid);
     context.alive = false;
 
-    push(&engine.dead, *id);
+    for (let i: usize = 0; i < context.waiting_list.length; i = i + 1) {
+        let w = get_ref(&context.waiting_list, i) as Corot_UUID;
+        push(&engine.active, w);
+    }
+    context.waiting_list.length = 0;
+
+    let res: &Corot_Result = get_ref_raw(&context.results, cid.generation);
+    *res = wr;
+
+    push(&engine.dead, cid);
     swap_remove(&engine.active, engine.current);
     assert(engine.active.length > 0, "_finish_current: No active coroutine to switch to");
     engine.current = engine.current % engine.active.length;
 
-    let new_id: &usize = get_ref_raw(&engine.active, engine.current);
-    let new_context = get_context(*new_id);
-    restore_context(new_context.rsp, new_context.return_value);
+    resume_context(engine.current);
 }
 
-@naked func restore_context(new_rsp: &usize, return_value: Any) {
+@naked func restore_context(new_rsp: &usize) {
     @os(WINDOWS) asm(func () -> ASMContext {
         let context = ASMContext {};
         push(&context, "mov %rcx, %rsp");
-        push(&context, "mov %rdx, %rax");
         push(&context, "pop %r15");
         push(&context, "pop %r14");
         push(&context, "pop %r13");
@@ -156,22 +203,37 @@ func _finish_current() {
     @os(LINUX) todo_with_msg("restore_context");
 }
 
-// FIXME(2026-04-02): Dead Code Elimination removes this function because it's only called
-//                    in inline assembly, leading to linker errors :^)
-@no_mangle func switch_context(rsp: &usize, yield_value: Any, has_value: bool) {
-    let id: &usize = get_ref_raw(&engine.active, engine.current);
-    let context = get_context(*id);
-    context.rsp = rsp;
-    context.yield_value = yield_value;
-    if (has_value) context.value_available = true;
-
-    engine.current = (engine.current + 1) % engine.active.length;
-    let new_id: &usize = get_ref_raw(&engine.active, engine.current);
-    let new_context = get_context(*new_id);
-    restore_context(new_context.rsp, new_context.return_value);
+func resume_context(id: usize) {
+    engine.current = id;
+    let new_id = get_ref(&engine.active, id) as Corot_UUID;
+    let new_context = get_context(new_id);
+    restore_context(new_context.rsp);
 }
 
-@naked func switch() -> Any {
+// FIXME(2026-04-02): Dead Code Elimination removes this function because it's only called
+//                    in inline assembly, leading to linker errors :^)
+@no_mangle func switch_context(old_context: &Context, rsp: &usize) {
+    old_context.rsp = rsp;
+
+    engine.current = (engine.current + 1) % engine.active.length;
+    resume_context(engine.current);
+}
+
+@naked func __get_rsp() -> &usize {
+    asm(func () -> ASMContext {
+        let context = ASMContext {};
+        push(&context, "mov %rsp, %rax");
+        push(&context, "ret");
+        return context;
+    });
+}
+
+func switch() -> Any {
+    let id = get_ref(&engine.active, engine.current) as Corot_UUID;
+    let context = get_context(id);
+    return __switch(context);
+}
+@naked func __switch(old_ctx: &Context) -> Any {
     @os(WINDOWS) asm(func () -> ASMContext {
         let context = ASMContext {};
         push(&context, "push %rcx");
@@ -184,9 +246,7 @@ func _finish_current() {
         push(&context, "push %r13");
         push(&context, "push %r14");
         push(&context, "push %r15");
-        push(&context, "mov $$0, %r8");
-        push(&context, "mov %rcx, %rdx");
-        push(&context, "mov %rsp, %rcx");
+        push(&context, "mov %rsp, %rdx");
         // FIXME(2026-04-09): DCE removes switch_context because we only call it from assembly
         comptime _ = switch_context;
         push(&context, "jmp switch_context");
@@ -194,27 +254,3 @@ func _finish_current() {
     });
     @os(LINUX) todo_with_msg("switch");
 }
-@naked func yield(val: Any) -> Any {
-    @os(WINDOWS) asm(func () -> ASMContext {
-        let context = ASMContext {};
-        push(&context, "push %rcx");
-        push(&context, "push %rdx");
-        push(&context, "push %rbx");
-        push(&context, "push %rbp");
-        push(&context, "push %rdi");
-        push(&context, "push %rsi");
-        push(&context, "push %r12");
-        push(&context, "push %r13");
-        push(&context, "push %r14");
-        push(&context, "push %r15");
-        push(&context, "mov $$1, %r8");
-        push(&context, "mov %rcx, %rdx");
-        push(&context, "mov %rsp, %rcx");
-        // FIXME(2026-04-09): DCE removes switch_context because we only call it from assembly
-        comptime _ = switch_context;
-        push(&context, "jmp switch_context");
-        return context;
-    });
-    @os(LINUX) todo_with_msg("yield");
-}
-

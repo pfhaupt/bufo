@@ -267,6 +267,7 @@ func create_struct(loc: Loc, origin: SubStr, name: SubStr) -> &AST {
     ptr.data = ASTData::Struct(ASTStruct {
         state: blank,
         name: name,
+        fields: new_GAF_List(type_info(&AST)),
         parameters: new_GAF_List(type_info(&AST)),
         monomorphized_instances: new_hashmap_with_string_key(type_info(&AST)),
     });
@@ -355,8 +356,14 @@ func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMa
             add(mapping, name, type);
         } else {
             // Mapping already contains $T, check if it matches
+            let maybe_type = maybe as &Type;
+            if (is_unknown(maybe_type)) {
+                // We have a better match now (might still be Unknown, but we don't care)
+                // Can't use `add()` here because the hash table doesn't overwrite old entries.
+                *(maybe.ptr as &&Type) = type;
+            }
             if (is_unknown(type)) return true;
-            if (!is_equal_to(maybe as &Type, type)) return false;
+            return is_equal_to(maybe_type, type);
         }
         return true;
     };
@@ -378,6 +385,10 @@ func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMa
         }
         &ASTData::Type(t) => {
             match ((t, type)) {
+                (ASTType::Builtin(bt), ty) => {
+                    if (is_unknown(ty)) return true;
+                    return is_equal_to(bt, ty);
+                }
                 (ASTType::Generic, _) => {
                     return maybe_add_mapping(mapping, ast.origin, type);
                 }
@@ -417,6 +428,9 @@ func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMa
                     }
                     return true;
                 }
+                (ASTType::Ident(_, _), _) => {
+                    return false;
+                }
                 _ => {
                     message(todo(ast.loc, "__collect_generic_type_mapping: % %", t, *type));
                 }
@@ -428,14 +442,24 @@ func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMa
     }
     unreachable("__collect_generic_type_mapping");
 }
-func collect_generic_type_mapping(fn: &AST, type: &Type) -> (GAF_HashMap, bool) {
+func collect_generic_type_mapping(fn: &AST, type: &Type) -> (GAF_HashMap, bool, bool) {
     let &ASTData::Function(func_state) = &fn.data else {
         unreachable("collect_generic_type_mapping: Expected function");
     };
 
     let mapping = new_generic_type_mapping();
     let success = __collect_generic_type_mapping(fn, type, &mapping);
-    return (mapping, success);
+    let unknown = false;
+    foreach(&mapping, func (k: Data, v: Data, arg: &(&bool, &bool)) {
+        let &(success, unknown) = arg;
+        if (!*success) return;
+        let t = v as &Type;
+        if (is_unknown(t)) {
+            *success = false;
+            *unknown = true;
+        }
+    }, &(&success, &unknown));
+    return (mapping, success, unknown);
 }
 
 func create_function(loc: Loc, origin: SubStr, name: SubStr) -> &AST {

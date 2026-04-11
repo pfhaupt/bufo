@@ -262,8 +262,18 @@ func evaluate_single(interp: &Interp, fn: &AST, instr: &Instr) -> Value {
     if let Op::Noop = instr.op {
         return Value::Noop;
     }
-    // message(dbg(instr.ast.loc, "evaluate_single %", instr.op));
+    message(dbg(instr.ast.loc, "evaluate_single %", instr.op));
     match (&instr.op) {
+        &Op::LoadParameter(dst, _) => {
+            let (reg, size) = get_register_pointer_and_size(interp, dst);
+            pop_argument(interp, instr.ast.loc, reg, size);
+            return Value::Reg(reg, size);
+        }
+        &Op::LoadI32(dst, val) => {
+            let (reg, size) = get_register_pointer_and_size(interp, dst);
+            *(reg as &i32) = val;
+            return Value::Reg(reg, size);
+        }
         &Op::LoadBool(dst, val) => {
             let (reg, size) = get_register_pointer_and_size(interp, dst);
             *(reg as &bool) = val;
@@ -280,10 +290,6 @@ func evaluate_single(interp: &Interp, fn: &AST, instr: &Instr) -> Value {
             return Value::Reg(reg_ptr, comptime get_size(PrimType::Str));
         }
         &Op::LoadFunction(dst, node) => {
-            let &ASTData::Function(func_state) = &node.data else { unreachable(); };
-            while ((func_state.state.i & FUNCTION_STATE_GENERATED_CODE) == 0) {
-                switch();
-            }
             let ptr = get_register_pointer(interp, dst);
             *(ptr as &usize) = node as usize;
             return Value::Reg(ptr, comptime get_size(&Type::Ptr));
@@ -341,6 +347,12 @@ func evaluate_single(interp: &Interp, fn: &AST, instr: &Instr) -> Value {
             let (ret, ret_size) = get_register_pointer_and_size(interp, val);
             push_argument(interp, instr.ast.loc, ret, ret_size);
             return Value::Return;
+        }
+        &Op::LoadComptimeValue(_dst, Value::Var { ptr, size }) => {
+            let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
+            message(ass(size == dst_size, instr.ast.loc, "evaluate_single: Expected ComptimeValue to have matching sizes, but got % and %.", size, dst_size));
+            C::memcpy(dst, ptr, size);
+            return Value::Reg(dst, dst_size);
         }
         _ => {
             message(todo(instr.ast.loc, "Cannot evaluate % yet", instr.op));

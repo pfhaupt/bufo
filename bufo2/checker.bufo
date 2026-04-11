@@ -81,6 +81,7 @@ func check_stmt(scopes: &GAF_List, stmt: &AST) -> &Type {
     let &ASTData::Stmt(actual_stmt) = &stmt.data else {
         unreachable("check_stmt: Node is not a statement");
     };
+    let type: &Type = wrap(Type::Prim(PrimType::None));
     let f = func (stmt: &AST, scopes: &GAF_List, pat: &AST, expr: &AST, trampoline: &AST) {
         if (expr != null) {
             let (needs_trampoline, _) = check_and_bind_pattern(scopes, pat, expr);
@@ -117,15 +118,15 @@ func check_stmt(scopes: &GAF_List, stmt: &AST) -> &Type {
                 unreachable("check_stmt: Function has unexpected type");
             };
             assert(ret_type != null, "check_stmt: Function doesn't have return type set");
-            let type = check_expr(scopes, expr);
-            if (type == null) {
-                type = infer_type_onto_expr(scopes, ret_type, expr);
-                assert(type != null, "check_stmt: Could not infer return type onto expression");
+            let etype = check_expr(scopes, expr);
+            if (etype == null) {
+                etype = infer_type_onto_expr(scopes, ret_type, expr);
+                assert(etype != null, "check_stmt: Could not infer return type onto expression");
             }
-            if (!is_equal_to(type, ret_type)) {
+            if (!is_equal_to(etype, ret_type)) {
                 let t1 = to_string(ret_type);
-                let t2 = to_string(type);
-                if (is_convertible_to(type, ret_type)) {
+                let t2 = to_string(etype);
+                if (is_convertible_to(etype, ret_type)) {
                     message(todo(stmt.loc, "Function was declared to return %, but we got %. However, the type system could allow conversion.", t1, t2));
                 } else {
                     message(error(stmt.loc, "Function was declared to return %, but we got %.", t1, t2));
@@ -144,15 +145,17 @@ func check_stmt(scopes: &GAF_List, stmt: &AST) -> &Type {
             if (!is_equal_to(_type, none)) {
                 message(warn(stmt.loc, "Unused expression."));
             }
+            type = _type;
         }
         &ASTStmt::Directive(dir) => {
-            let _type = check_directive(scopes, stmt, dir);
+            type = check_directive(scopes, stmt, dir);
         }
         _ => {
             message(todo(stmt.loc, "check_stmt: Can't check stmt % yet", stmt));
         }
     }
-    return null;
+    stmt.type = type;
+    return type;
 }
 
 func infer_type_onto_expr(scopes: &GAF_List, type: &Type, _expr: &AST) -> &Type {
@@ -269,12 +272,15 @@ func infer_type_onto_ident(scopes: &GAF_List, infer_type: &Type, ast: &AST, iden
                 }
             } else if (fl != null) {
                 assert(fl.overloads.length != 0, "infer_type_onto_ident: function overloads are empty??");
+                if (infer_type != null) {
+                    let &Type::Func(args, ret) = infer_type else {
+                        message(error(ast.loc, "Expected value of type %, but found a function named %.", to_string(infer_type), ident));
+                        unreachable(); // error terminates
+                    };
+                }
                 // Must infer correct overload
                 if (fl.overloads.length != 1) {
                     if (infer_type == null) return null;
-                    let &Type::Func(args, ret) = infer_type else {
-                        return null;
-                    };
                     message(todo(ast.loc, "infer_type_onto_ident: Infer correct overload"));
                 }
 
@@ -287,16 +293,24 @@ func infer_type_onto_ident(scopes: &GAF_List, infer_type: &Type, ast: &AST, iden
                 if (is_generic(&func_state)) {
                     if (infer_type == null) return null;
                     let &Type::Func(args, ret) = infer_type else {
-                        return null;
+                        unreachable(); // already handled a few lines above
                     };
                     // Not our candidate.
                     if (func_state.params.length != args.length) return null;
-                    let (mapping, success) = collect_generic_type_mapping(fn, infer_type);
+                    let (mapping, success, unknown) = collect_generic_type_mapping(fn, infer_type);
                     if (!success) {
-                        message(
-                            error(ast.loc, "Could not find an instantation for the function `%` that matches the type %.", func_state.name, to_string(infer_type)),
-                            note(fn.loc, "Function `%` declared here.", func_state.name)
-                        );
+                        if (unknown) {
+                            message(
+                                error(ast.loc, "Could not find an instantation for the function `%` that matches the type %.", func_state.name, to_string(infer_type)),
+                                note(fn.loc, "Function `%` declared here.", func_state.name),
+                                note(ast.loc, "An instantiation would map a generic parameter to an unknown type, which is not allowed. An explicit cast is necessary."),
+                            );
+                        } else {
+                            message(
+                                error(ast.loc, "Could not find an instantation for the function `%` that matches the type %.", func_state.name, to_string(infer_type)),
+                                note(fn.loc, "Function `%` declared here.", func_state.name)
+                            );
+                        }
                     }
                     fn = monomorphize_function_node(fn, mapping);
                 }
@@ -414,13 +428,12 @@ func check_directive(scopes: &GAF_List, parent: &AST, dir: &AST) -> &Type {
                 *res = ictx.parse_fn(pctx);
             };
             let new_fn = spawn(_tmp_fn, _tmp);
-            while (res == null) {
-                if (!is_active(new_fn)) {
-                    message(todo(dir.loc, "#insert: parser died"));
-                }
-                switch();
-            }
+            let state = wait(new_fn);
             C::free(_tmp);
+            handle_corot_result(state,
+                error(dir.loc, "Could not #insert due to a cyclic dependency on %", corot_str(new_fn)),
+                error(dir.loc, "Could not #insert: There were errors in the code we wanted to insert."));
+            assert(res != null, "#insert failed to insert new node");
 
             *parent = *res;
             return insert_context.check_fn(scopes, parent);
@@ -510,7 +523,16 @@ func check_expr(scopes: &GAF_List, _expr: &AST) -> &Type {
                     for (let i: usize = 0; i < params.length; i = i + 1) {
                         let arg = get_ref(&_args, i) as &AST;
                         let par = get_ref(&params, i) as &Type;
-                        message(todo(arg.loc, "check_expr: Type check arguments"));
+                        let atype = check_expr(scopes, arg);
+                        if (atype == null) {
+                            atype = infer_type_onto_expr(scopes, par, arg);
+                        }
+                        if (!is_equal_to(atype, par)) {
+                            if (is_convertible_to(atype, par)) {
+                                message(todo(arg.loc, "Parameter was declared to be %, but we got %. However, the type system could allow conversion.", par, atype));
+                            }
+                            message(error(arg.loc, "Expected type %, but got %.", to_string(par), to_string(atype)));
+                        }
                     }
                     type = ret;
                 }
@@ -531,6 +553,24 @@ func check_expr(scopes: &GAF_List, _expr: &AST) -> &Type {
         &ASTExpr::Null => { type = null; }
         &ASTExpr::Directive(dir) => {
             type = check_directive(scopes, _expr, dir);
+        }
+        &ASTExpr::BlockVoid(stmts) => {
+            push(scopes, new_stack());
+            for (let i: usize = 0; i < stmts.length; i = i + 1) {
+                let s = get_ref(&stmts, i) as &AST;
+                check_stmt(scopes, s);
+            }
+            pop(scopes);
+            type = wrap(Type::Prim(PrimType::None));
+        }
+        &ASTExpr::BlockExpr(stmts, value) => {
+            push(scopes, new_stack());
+            for (let i: usize = 0; i < stmts.length; i = i + 1) {
+                let s = get_ref(&stmts, i) as &AST;
+                check_stmt(scopes, s);
+            }
+            type = check_expr(scopes, value);
+            pop(scopes);
         }
         _ => {
             message(todo(_expr.loc, "check_expr: Can't check expression %", expr));

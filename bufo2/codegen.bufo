@@ -75,11 +75,11 @@ func allocate_register(code: &Code, type: &Type) -> Reg {
     return allocate_register(get_context(code), type);
 }
 func create_instr(code: &Code, orig: &AST, op: Op) -> Instr {
-    //if (code.comptime_level > 0) {
-    //    message(dbg(orig.loc, "create_instr: \x1b[92mcomptime\x1b[0m %", op));
-    //} else {
-    //    message(dbg(orig.loc, "create_instr: %", op));
-    //}
+    if (code.comptime_level > 0) {
+        message(dbg(orig.loc, "create_instr: \x1b[92mcomptime\x1b[0m %", op));
+    } else {
+        message(dbg(orig.loc, "create_instr: %", op));
+    }
     return create_instr(get_context(code), orig, op);
 }
 func create_block(code: &Code, name: String) -> Block {
@@ -196,7 +196,7 @@ func is_terminator(instr: &Instr) -> bool {
 }
 
 union Op {
-    LoadNumber(Reg, u64),
+    LoadI32(Reg, i32),
     LoadFunction(Reg, &AST),
     LoadParameter(Reg, usize),
     LoadString(Reg, String),
@@ -238,11 +238,13 @@ func codegen_function_entry(fn: &AST) {
     ct.entry = create_block(ct, comptime newReadonlyString("entry")).id;
     set_current_block(ct, ct.entry);
 
-    enumerate(&func_state.params, func (index: usize, d: Data, fn: &ASTFunction) {
-        let p = d as &AST;
-        let reg = allocate_register(&fn.code, p.type);
-        create_instr(&fn.code, p, Op::LoadParameter(reg, index));
-    }, &func_state);
+    for (let i: usize = func_state.params.length; i > 0; i = i - 1) {
+        let p = get_ref(&func_state.params, i - 1) as &AST;
+        let reg = allocate_register(&func_state.code, p.type);
+        create_instr(&func_state.code, p, Op::LoadParameter(reg, i - 1));
+        let var = allocate_variable(&func_state.code, p, p.origin);
+        create_instr(&func_state.code, p, Op::Store(var, reg));
+    }
 }
 
 func codegen_stmt(fn: &ASTFunction, stmt: &AST) {
@@ -304,10 +306,12 @@ func codegen_expr(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> (Reg, Instr)
     };
     match (&actual_expr) {
         &ASTExpr::Ident { name } => {
-            let reg = get(&get_context(&fn.code).variable_map, name);
-            if (wants_ptr) return (reg, create_instr(&fn.code, expr, Op::Noop));
+            let _var = get(&get_context(&fn.code).variable_map, name);
+            message(ass(_var.ptr != null, expr.loc, "codegen_expr: Variable % doesn't exist!", name));
+            let var = _var as Var;
+            if (wants_ptr) return (var.alloca_reg, Instr {});
             let dst = allocate_register(&fn.code, expr.type);
-            return (reg, create_instr(&fn.code, expr, Op::Load(dst, reg)));
+            return (dst, create_instr(&fn.code, expr, Op::Load(dst, var.alloca_reg)));
         }
         &ASTExpr::FnIdent { name, _fn } => {
             let &ASTData::Function(func_state) = &_fn.data else {
@@ -319,7 +323,14 @@ func codegen_expr(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> (Reg, Instr)
         &ASTExpr::Number { value } => {
             let number = toU64(&value);
             let reg = allocate_register(&fn.code, expr.type);
-            return (reg, create_instr(&fn.code, expr, Op::LoadNumber(reg, number)));
+            if let &Type::Prim(PrimType::I32) = expr.type {
+                // FIXME(2026-04-11): Move this to checker.bufo
+                if (number >= I32_MAX) {
+                    message(error(expr.loc, "Number literal % is too big for target type %.", number, to_string(expr.type)));
+                }
+                return (reg, create_instr(&fn.code, expr, Op::LoadI32(reg, number as i32)));
+            }
+            message(todo(expr.loc, "codegen_expr: Can't codegen expression %", actual_expr));
         }
         &ASTExpr::StringLiteral { value } => {
             let reg = allocate_register(&fn.code, expr.type);
@@ -349,6 +360,20 @@ func codegen_expr(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> (Reg, Instr)
         }
         &ASTExpr::Unary(unary) => {
             return codegen_unary(fn, expr, wants_ptr);
+        }
+        &ASTExpr::BlockVoid(stmts) => {
+            for (let i: usize = 0; i < stmts.length; i = i + 1) {
+                let s = get_ref(&stmts, i) as &AST;
+                codegen_stmt(fn, s);
+            }
+            return blank;
+        }
+        &ASTExpr::BlockExpr(stmts, value) => {
+            for (let i: usize = 0; i < stmts.length; i = i + 1) {
+                let s = get_ref(&stmts, i) as &AST;
+                codegen_stmt(fn, s);
+            }
+            return codegen_expr(fn, value, wants_ptr);
         }
         _ => {
             message(todo(expr.loc, "codegen_expr: Can't codegen expression %", actual_expr));

@@ -9,6 +9,8 @@ import "format.bufo";
 
 import "corot.bufo";
 
+comptime I32_MAX: u64 = 0x7fffffff;
+
 func wrap(d: Data) -> Any {
     let size = get_size(&d.info);
     let ptr = C::malloc(size);
@@ -72,9 +74,25 @@ func dbg(loc: Loc, fmt: &char, args: ...Data) -> Message {
     return Message::Debug(loc, format1("%: %", DEBUG_STR, format1(fmt, args)));
 }
 
+func handle_corot_result(s: Corot_Result, cycle: Message, error: Message) {
+    match (s) {
+        Corot_Result::Cycle_Detected => { message(cycle); }
+        Corot_Result::Fucking_Died   => { message(error); }
+        _ => {}
+    }
+}
+
+func corot_str(id: Corot_UUID) -> String {
+    return format1("[%]", id.id);
+}
+func corot_str() -> String {
+    return corot_str(corot_id());
+}
+
 comptime PRINT_DEBUG = true;
 let error_happened: bool = false;
 func message(errors: ...Message) {
+    let corot = corot_str();
     let had_error = false;
     let fatal_error = false;
     for (let i: usize = 0; i < errors.length; i = i + 1) {
@@ -89,19 +107,20 @@ func message(errors: ...Message) {
             Message::Warning(_loc, _msg) => { loc = _loc; msg = _msg; }
             Message::Note   (_loc, _msg) => { loc = _loc; msg = _msg; }
             Message::Debug  (_loc, _msg) => {
-                if (!PRINT_DEBUG) { drop(&_msg); continue; }
+                if (!PRINT_DEBUG) { return; }
                 loc = _loc; msg = _msg;
             }
             _ => { unreachable("message"); }
         }
-        C::fprintf(stderr, "%s:%llu: %.*s\n", loc.file, loc.offset, msg.length, msg.buffer);
+        fprint("% %:%: %\n", corot, loc.file, loc.offset, msg);
         drop(&msg);
     }
+    drop(&corot);
     if (fatal_error) {
-        C::exit(2);
+         C::exit(2);
     }
     if (had_error) {
         error_happened = true;
-        _finish_current();
+        abort_coroutine();
     }
 }

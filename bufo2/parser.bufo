@@ -128,13 +128,7 @@ func parse_struct_with_mapping(ast: &AST, mapping: GAF_HashMap) -> &AST {
         generic_type_mapping: mapping,
     };
     let body = spawn(parse_struct_body, wrap(context));
-    while (is_active(body)) switch();
-
-    if ((struct_state.state.i & STRUCT_STATE_PARSED_FIELDS) == 0) {
-        message(error(ast.loc, "There were errors while compiling the struct. Aborting."));
-    }
-
-    check_struct(ast);
+    wait_or_abort(body);
     return ast;
 }
 
@@ -164,11 +158,12 @@ func parse_struct(_context: &Parse_Context) {
     }
     struct_state.state.i = struct_state.state.i | STRUCT_STATE_PARSED_SIGNATURE;
     if (!is_generic(&struct_state)) {
-        let _ = spawn(parse_struct_body, wrap(Parse_Context {
+        let body = spawn(parse_struct_body, wrap(Parse_Context {
             parent: context.parent,
             lexer: *lexer,
             generic_type_mapping: blank,
         }));
+        wait_or_abort(body);
     }
 }
 
@@ -191,6 +186,8 @@ func parse_struct_body(context: &Parse_Context) {
         add_field(&struct_state, new_loc(name.offset_in_file), _name, type);
     }
     struct_state.state.i = struct_state.state.i | STRUCT_STATE_PARSED_FIELDS;
+
+    check_struct(struct_node);
 }
 
 func parse_attribute(context: &Parse_Context) -> ASTAttr {
@@ -242,26 +239,8 @@ func parse_function_with_mapping(ast: &AST, mapping: GAF_HashMap) -> &AST {
     };
     let &ASTData::Function(func_state) = &context.parent.data else { unreachable(); };
 
-    // TODO(2026-04-10): parse_function_signature only spawns parse_function_body
-    //                   which means it will die before the flag is set. Ideally
-    //                   we should have more fine control over this.
-    //                   Would be cool if AST nodes could have a list of currently
-    //                   active coroutines. That way we could definitely know when
-    //                   we're done.
-    //                   Similarly, it would be nice if we had a wait() function for
-    //                   coroutines. They would enter a list of waiting coroutines,
-    //                   which means less time wasted due to unnecessary switches,
-    //                   and at the same time build an implicit dependency graph
-    //                   which we could use in the future to detect deadlocks.
     let sig = spawn(parse_function_signature, wrap(context));
-    while (is_active(sig)) switch();
-
-    while ((func_state.state.i & FUNCTION_STATE_PARSED_BODY) == 0) {
-        switch();
-    }
-    if ((func_state.state.i & FUNCTION_STATE_PARSED_BODY) == 0) {
-        message(error(ast.loc, "There were errors while compiling the function. Aborting."));
-    }
+    wait_or_abort(sig);
 
     return ast;
 }
@@ -297,11 +276,12 @@ func parse_function_signature(_context: &Parse_Context) {
     func_state.state.i = func_state.state.i | FUNCTION_STATE_PARSED_SIGNATURE;
 
     if ((func_state.state.i & FUNCTION_STATE_IS_GENERIC) == 0 && !has_attribute(func_node, ASTAttrData::Expand)) {
-        let _ = spawn(parse_function_body, wrap(Parse_Context {
+        let body = spawn(parse_function_body, wrap(Parse_Context {
             parent: context.parent,
             lexer: *lexer,
             generic_type_mapping: context.generic_type_mapping,
         }));
+        wait_or_abort(body);
     }
 }
 
@@ -335,9 +315,6 @@ func parse_function_body(context: &Parse_Context) {
         add_stmt(context.parent, stmt);
         expect(&context.lexer, TokenData::SemiColon);
 
-        // TODO(2026-04-10): Those functions should be coroutine spawns at the end
-        //                   of each that comes before, i.e.
-        //                   parse_stmt -> check_stmt -> codegen_stmt
         check_stmt(&func_state.scopes, stmt);
 
         codegen_stmt(&func_state, stmt);
@@ -346,6 +323,8 @@ func parse_function_body(context: &Parse_Context) {
     }
     let end = expect(&context.lexer, TokenData::CurlyClose);
     expect(&context.lexer, TokenData::EndOfFile);
+    pop(&func_state.scopes);
+    assert(func_state.scopes.length == 0, "parse_function_body: Stack not empty");
     func_state.state.i = func_state.state.i | FUNCTION_STATE_PARSED_BODY;
     func_state.state.i = func_state.state.i | FUNCTION_STATE_CHECKED_BODY;
     func_state.state.i = func_state.state.i | FUNCTION_STATE_GENERATED_CODE;
@@ -353,7 +332,33 @@ func parse_function_body(context: &Parse_Context) {
 }
 
 func parse_block(context: &Parse_Context) -> &AST {
-    return null;
+    let loc = new_loc(context.lexer.offset_in_file);
+    let block = new_GAF_List(type_info(&AST));
+    let value: &AST = null;
+    while (!at(&context.lexer, TokenData::CurlyClose)) {
+        let stmt = parse_stmt(context);
+        if (at(&context.lexer, TokenData::CurlyClose)) {
+            match (&stmt.data) {
+                &ASTData::Stmt(ASTStmt::Expr(expr)) => { value = expr; }
+                &ASTData::Stmt(ASTStmt::Directive(dir)) => {
+                    value = create_expr(stmt.loc, blank, ASTExpr::Directive(dir));
+                }
+                _ => {
+                    expect(&context.lexer, TokenData::SemiColon);
+                    unreachable(); // We know that we're at a {
+                }
+            }
+        } else {
+            expect(&context.lexer, TokenData::SemiColon);
+            push(&block, stmt);
+        }
+    }
+    expect(&context.lexer, TokenData::CurlyClose);
+    if (value != null) {
+        return create_expr(loc, blank, ASTExpr::BlockExpr(block, value));
+    } else {
+        return create_expr(loc, blank, ASTExpr::BlockVoid(block));
+    }
 }
 
 func parse_stmt(context: &Parse_Context) -> &AST {
@@ -375,6 +380,7 @@ func parse_stmt(context: &Parse_Context) -> &AST {
             expr = parse_expr(context);
             end = expr.origin.start + expr.origin.len;
             if (eat(&context.lexer, TokenData::KeywordElse)) {
+                expect(&context.lexer, TokenData::CurlyOpen);
                 trampoline = parse_block(context);
                 end = trampoline.origin.start + trampoline.origin.len;
             }
@@ -597,22 +603,7 @@ func parse_primary_expr(context: &Parse_Context) -> &AST {
             return create_expr(loc, comptime newSubStrOfStrLit("null"), ASTExpr::Null);
         }
         TokenData::CurlyOpen => {
-            let block = new_GAF_List(type_info(&AST));
-            let value: &AST = null;
-            while (!at(&context.lexer, TokenData::CurlyClose)) {
-                let stmt = parse_stmt(context);
-                if (at(&context.lexer, TokenData::CurlyClose)) {
-                    value = stmt;
-                } else {
-                    expect(&context.lexer, TokenData::SemiColon);
-                    push(&block, stmt);
-                }
-            }
-            if (value != null) {
-                return create_expr(loc, blank, ASTExpr::BlockExpr(block, value));
-            } else {
-                return create_expr(loc, blank, ASTExpr::BlockVoid(block));
-            }
+            return parse_block(context);
         }
         t => {
             message(todo(new_loc(context.lexer.offset_in_file), "parse_primary_expr: %", to_cstr(t)));
@@ -628,8 +619,24 @@ func parse_directive(context: &Parse_Context) -> &AST {
     };
     let dirs = [
         (comptime newSubStrOfStrLit("insert"), func (context: &Parse_Context, dir: Token) -> &AST {
+            let old_ctx = context.insert_context;
+            if (eat(&context.lexer, TokenData::Comma)) {
+                let mod = expect(&context.lexer, TokenData::Ident);
+                let name = get_name(&mod);
+                if (equals(&name, &comptime newSubStrOfStrLit("expr"))) {
+                    context.insert_context.parse_fn = parse_expr;
+                    context.insert_context.check_fn = check_expr;
+                } else if (equals(&name, &comptime newSubStrOfStrLit("stmt"))) {
+                    context.insert_context.parse_fn = parse_stmt;
+                    context.insert_context.check_fn = check_stmt;
+                } else {
+                    message(error(new_loc(mod.offset_in_file), "Unknown #insert modifier %.", name));
+                }
+            }
             let expr = parse_expr(context);
-            return create_directive(expr.loc, Directive::Insert(expr, context.insert_context));
+            let dir = create_directive(expr.loc, Directive::Insert(expr, context.insert_context));
+            context.insert_context = old_ctx;
+            return dir;
         }),
         (comptime newSubStrOfStrLit("run"), func (context: &Parse_Context, dir: Token) -> &AST {
             let expr = parse_expr(context);

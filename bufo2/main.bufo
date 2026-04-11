@@ -57,8 +57,6 @@ func main(argc: i32, argv: &&char) -> i32 {
     // The main function only switches between scheduled coroutines
     while (any_active()) switch();
 
-    print_global_lookup();
-
     if (error_happened) {
         C::fprintf(stderr, "error: Could not compile program due to the above errors.\n");
         return 1;
