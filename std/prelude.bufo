@@ -1,5 +1,11 @@
 import "substr.bufo";
 
+func next_multiple_of(a: usize, b: usize) -> usize {
+    assert(b != 0, "next_multiple_of: b is 0!");
+    if (a % b == 0) return a;
+    return a + (b - (a % b));
+}
+
 func tag(union: Any) -> u8 {
     return *(union as &u8);
 }

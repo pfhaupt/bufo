@@ -14,17 +14,22 @@ import "lexer.bufo";
 import "type.bufo";
 import "lookup.bufo";
 import "parser.bufo";
+import "codegen.bufo";
+import "interp.bufo";
 
-comptime FUNCTION_STATE_IS_GENERIC       : u8 = 0b00001;
-comptime FUNCTION_STATE_PARSED_SIGNATURE : u8 = 0b00010;
-comptime FUNCTION_STATE_CHECKED_SIGNATURE: u8 = 0b00100;
-comptime FUNCTION_STATE_PARSED_BODY      : u8 = 0b01000;
-comptime FUNCTION_STATE_CHECKED_BODY     : u8 = 0b10000;
+comptime FUNCTION_STATE_IS_GENERIC       : u8 = 0b0000001;
+comptime FUNCTION_STATE_PARSED_SIGNATURE : u8 = 0b0000010;
+comptime FUNCTION_STATE_CHECKED_SIGNATURE: u8 = 0b0000100;
+comptime FUNCTION_STATE_PARSED_BODY      : u8 = 0b0001000;
+comptime FUNCTION_STATE_CHECKED_BODY     : u8 = 0b0010000;
+comptime FUNCTION_STATE_GENERATED_CODE   : u8 = 0b0100000;
+comptime FUNCTION_STATE_MONOMORPHIZED    : u8 = 0b1000000;
 struct FunctionState { i: u8; }
 
-comptime STRUCT_STATE_PARSED_SIGNATURE: u8 = 0b001;
-comptime STRUCT_STATE_PARSED_FIELDS   : u8 = 0b010;
-comptime STRUCT_STATE_CHECKED         : u8 = 0b100;
+comptime STRUCT_STATE_PARSED_SIGNATURE: u8 = 0b0001;
+comptime STRUCT_STATE_PARSED_FIELDS   : u8 = 0b0010;
+comptime STRUCT_STATE_CHECKED         : u8 = 0b0100;
+comptime STRUCT_STATE_MONOMORPHIZED   : u8 = 0b1000;
 struct StructState { i: u8; }
 
 func create_mapping_key(out: &String, mapping: &GAF_HashMap) {
@@ -59,12 +64,14 @@ func has_attribute(node: &AST, attr: ASTAttrData) -> bool {
 
 union ASTData {
     Struct(ASTStruct),
+    Field(SubStr, &AST),
     Function(ASTFunction),
     Stmt(ASTStmt),
     Expr(ASTExpr),
     Type(ASTType),
     Pat(ASTPat),
     Param(&AST),
+    Directive(Directive),
 }
 
 struct ASTStruct {
@@ -80,6 +87,41 @@ func is_generic(struct_info: &ASTStruct) -> bool {
     return struct_info.parameters.length != 0;
 }
 
+func get_align(struct_info: &ASTStruct) -> usize {
+    while ((struct_info.state.i & STRUCT_STATE_CHECKED) == 0) switch();
+    let align: usize = 1;
+    for (let i: usize = 0; i < struct_info.fields.length; i = i + 1) {
+        let field = get_ref(&struct_info.fields, i) as &AST;
+        assert(field.type != null, "field type is null");
+        let field_align = get_align(field.type);
+        if (field_align > align) align = field_align;
+    }
+    return align;
+}
+func get_size(struct_info: &ASTStruct) -> usize {
+    while ((struct_info.state.i & STRUCT_STATE_CHECKED) == 0) switch();
+    let align = get_align(struct_info);
+    let size: usize = 0;
+    for (let i: usize = 0; i < struct_info.fields.length; i = i + 1) {
+        let field = get_ref(&struct_info.fields, i) as &AST;
+        assert(field.type != null, "field type is null");
+        let field_size = get_size(field.type);
+        size = size + field_size;
+        if (i != struct_info.fields.length - 1) {
+            let next_field = get_ref(&struct_info.fields, i + 1) as &AST;
+            let next_align = get_size(next_field.type);
+            size = next_multiple_of(size, next_align);
+        }
+    }
+    return next_multiple_of(size, align);
+}
+
+func add_field(struct_info: &ASTStruct, loc: Loc, name: SubStr, type: &AST) {
+    let field = create_node(loc, name);
+    field.data = ASTData::Field(name, type);
+    push(&struct_info.fields, field);
+}
+
 struct ASTFunction {
     state: FunctionState;
     name: SubStr;
@@ -87,6 +129,8 @@ struct ASTFunction {
     return_type: &AST;
     params: GAF_List;     // List<&AST>
     stmts: GAF_List;      // List<&AST>
+    code: Code;
+    monomorphized_instances: GAF_HashMap; // HashMap<String, &AST>
 }
 
 func is_generic(func_info: &ASTFunction) -> bool {
@@ -133,6 +177,7 @@ func is_function_attribute(attr: ASTAttrData) -> bool {
 }
 
 union ASTStmt {
+    Directive(&AST),
     Expr(&AST),
     ReturnExpr(&AST),
     ReturnVoid,
@@ -150,12 +195,13 @@ union ASTStmt {
 
 union ASTPat {
     Ident(SubStr),
-    PatWithType(&AST, &AST),
+    PatWithType(&AST, &AST), // SubPattern, Type
 }
 
 union ASTExpr {
     BuiltinType { name: SubStr },
     Ident { name: SubStr },
+    FnIdent { name: SubStr, fn: &AST },
     Number { value: SubStr },
     StringLiteral { value: String },
     Call(&AST, GAF_List), // arguments = List<&AST>
@@ -167,19 +213,44 @@ union ASTExpr {
     BlockExpr(GAF_List, &AST), // List<&AST>
     BlockVoid(GAF_List), // List<&AST>
     Unary(ASTUnary),
+    Binary(ASTBinary),
     Blank,
     Null,
+    Directive(&AST),
+    ComptimeValue(Value),
+    As(&AST, &AST),
+}
+
+union Directive {
+    Run(&AST),
+    Insert(&AST, Insert_Context),
 }
 
 union ASTUnary {
-    Directive(&AST),
     LogicalNot(&AST),
+    AddressOf(&AST),
+}
+
+union ASTBinary {
+    Equal(&AST, &AST),
+}
+
+func binary_expr_from_op(op: Token, lhs: &AST, rhs: &AST) -> ASTExpr {
+    let bin = ASTBinary::Equal;
+    match (op.data) {
+        TokenData::EqualDouble => { bin = ASTBinary::Equal(lhs, rhs); }
+        _ => {
+            message(todo(new_loc(op.offset_in_file), "binary_expr_from_op: Unhandled token %", op.data));
+        }
+    }
+    return ASTExpr::Binary(bin);
 }
 
 union ASTType {
     Builtin(&Type),
     Ident(SubStr, GAF_List), // List<&AST>
     Generic,
+    ResolvedGeneric(&Type),
     Ptr(&AST),
 }
 
@@ -210,6 +281,40 @@ func create_struct(loc: Loc, origin: SubStr, name: SubStr) -> &AST {
     return ptr;
 }
 
+func monomorphize_function_node(ast: &AST, mapping: GAF_HashMap) -> &AST {
+    let &ASTData::Function(parent) = &ast.data else { unreachable(); };
+
+    let key: String = blank;
+    create_mapping_key(&key, &mapping);
+
+    // We've already monomorphized this mapping, we don't need to do any further work
+    let child = get(&parent.monomorphized_instances, key);
+    if (child.ptr != null) {
+        message(
+            dbg(ast.loc, "Already monomorphized function `%` with key %", parent.name, key),
+            note(child as &AST.loc, "Function defined here"));
+        drop(&key);
+        return child as &AST;
+    }
+
+    let ptr = create_node(ast.loc, ast.origin);
+    let name: String = blank;
+    format(&name, "%(%)", parent.name, key);
+    ptr.data = ASTData::Function(ASTFunction {
+        state: FunctionState { i: FUNCTION_STATE_MONOMORPHIZED },
+        name: asSubStr(&name),
+        scopes: new_GAF_List(type_info(Scope_Info)),
+        params: new_GAF_List(type_info(&AST)),
+        stmts: new_GAF_List(type_info(&AST)),
+        code: create_code(ptr),
+        monomorphized_instances: mapping,
+    });
+    add(&parent.monomorphized_instances, key, ptr);
+    parse_function_with_mapping(ptr, mapping);
+    message(dbg(ast.loc, "Monomorphized function %", name));
+    return ptr;
+}
+
 func monomorphize_struct_node(ast: &AST, mapping: GAF_HashMap) -> &AST {
     let &ASTData::Struct(parent) = &ast.data else { unreachable(); };
 
@@ -219,6 +324,9 @@ func monomorphize_struct_node(ast: &AST, mapping: GAF_HashMap) -> &AST {
     // We've already monomorphized this mapping, we don't need to do any further work
     let child = get(&parent.monomorphized_instances, key);
     if (child.ptr != null) {
+        message(
+            dbg(ast.loc, "Already monomorphized struct `%` with key %", parent.name, key),
+            note(child as &AST.loc, "Struct defined here"));
         drop(&key);
         return child as &AST;
     }
@@ -227,13 +335,107 @@ func monomorphize_struct_node(ast: &AST, mapping: GAF_HashMap) -> &AST {
     let name: String = blank;
     format(&name, "%(%)", parent.name, key);
     ptr.data = ASTData::Struct(ASTStruct {
-        state: blank,
+        state: StructState { i: STRUCT_STATE_MONOMORPHIZED },
         name: asSubStr(&name),
+        parameters: parent.parameters,
         fields: new_GAF_List(type_info(&AST)),
+        monomorphized_instances: mapping,
     });
     add(&parent.monomorphized_instances, key, ptr);
     parse_struct_with_mapping(ptr, mapping);
+    message(dbg(ast.loc, "Monomorphized struct %", name));
     return ptr;
+}
+
+func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMap) -> bool {
+    let maybe_add_mapping = func (mapping: &GAF_HashMap, name: SubStr, type: &Type) -> bool {
+        let maybe = get(mapping, name);
+        if (maybe.ptr == null) {
+            // Mapping doesn't contain $T
+            add(mapping, name, type);
+        } else {
+            // Mapping already contains $T, check if it matches
+            if (is_unknown(type)) return true;
+            if (!is_equal_to(maybe as &Type, type)) return false;
+        }
+        return true;
+    };
+    match (&ast.data) {
+        &ASTData::Function(func_state) => {
+            let &Type::Func(args, ret) = type else {
+                unreachable("__collect_generic_type_mapping: Expected function type");
+            };
+            if (args.length != func_state.params.length) return false;
+            for (let i: usize = 0; i < args.length; i = i + 1) {
+                let arg = get_ref(&args, i) as &Type;
+                let par = get_ref(&func_state.params, i) as &AST;
+                if (!__collect_generic_type_mapping(par, arg, mapping)) return false;
+            }
+            return true;
+        }
+        &ASTData::Param(p) => {
+            return __collect_generic_type_mapping(p, type, mapping);
+        }
+        &ASTData::Type(t) => {
+            match ((t, type)) {
+                (ASTType::Generic, _) => {
+                    return maybe_add_mapping(mapping, ast.origin, type);
+                }
+                (ASTType::Ptr(sub), &Type::Ptr(ptr)) => {
+                    return __collect_generic_type_mapping(sub, ptr, mapping);
+                }
+                (ASTType::Ident(id, gen), &Type::Meta(m)) => {
+                    let &Type::Struct(str) = m else {
+                        return false;
+                    };
+                    let &ASTData::Struct(struct_state) = &str.data else {
+                        unreachable("__collect_generic_type_mapping: Expected struct");
+                    };
+                    assert(struct_state.parameters.length == struct_state.monomorphized_instances.length, "Generic Mapping does not match Generic Param Count");
+                    if (gen.length != struct_state.monomorphized_instances.length) {
+                        return false;
+                    }
+                    for (let i: usize = 0; i < gen.length; i = i + 1) {
+                        /*
+                         * struct List($T);
+                         * func foo(l: List($V));
+                         * foo(List(i32));
+                         *
+                         * call_site_param => $V
+                         * struct_def_param => $T
+                         * struct_def_type => i32
+                         * add to mapping => $V => i32
+                         */
+                        let call_site_param = get_ref(&gen, i) as &AST;
+                        let struct_def_param = get_ref(&struct_state.parameters, i) as &AST;
+                        let _t = get(&struct_state.monomorphized_instances, struct_def_param.origin);
+                        if (_t.ptr == null) return false;
+                        let struct_def_type = _t as &Type;
+                        if (!maybe_add_mapping(mapping, call_site_param.origin, struct_def_type)) {
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+                _ => {
+                    message(todo(ast.loc, "__collect_generic_type_mapping: % %", t, *type));
+                }
+            }
+        }
+        _ => {
+            message(todo(ast.loc, "__collect_generic_type_mapping: %", ast));
+        }
+    }
+    unreachable("__collect_generic_type_mapping");
+}
+func collect_generic_type_mapping(fn: &AST, type: &Type) -> (GAF_HashMap, bool) {
+    let &ASTData::Function(func_state) = &fn.data else {
+        unreachable("collect_generic_type_mapping: Expected function");
+    };
+
+    let mapping = new_generic_type_mapping();
+    let success = __collect_generic_type_mapping(fn, type, &mapping);
+    return (mapping, success);
 }
 
 func create_function(loc: Loc, origin: SubStr, name: SubStr) -> &AST {
@@ -244,6 +446,8 @@ func create_function(loc: Loc, origin: SubStr, name: SubStr) -> &AST {
         scopes: new_GAF_List(type_info(Scope_Info)),
         params: new_GAF_List(type_info(&AST)),
         stmts: new_GAF_List(type_info(&AST)),
+        code: create_code(ptr),
+        monomorphized_instances: new_hashmap_with_string_key(type_info(&AST)),
     });
     let lookup = get_functions_by_name(&global_lookup, name);
     if (lookup == null) {
@@ -275,6 +479,12 @@ func create_pattern(loc: Loc, origin: SubStr, pat: ASTPat) -> &AST {
 func create_expr(loc: Loc, origin: SubStr, expr: ASTExpr) -> &AST {
     let ptr = create_node(loc, origin);
     ptr.data = ASTData::Expr(expr);
+    return ptr;
+}
+
+func create_directive(loc: Loc, dir: Directive) -> &AST {
+    let ptr = create_node(loc, blank);
+    ptr.data = ASTData::Directive(dir);
     return ptr;
 }
 

@@ -1,0 +1,396 @@
+
+import "list.bufo";
+import "prelude.bufo";
+import "substr.bufo";
+import "string.bufo";
+import "type_info.bufo";
+import "format.bufo";
+import "hashmap.bufo";
+
+import "ast.bufo";
+import "common.bufo";
+import "type.bufo";
+import "interp.bufo";
+
+struct BID { _i: usize; }
+struct Reg { _i: usize; offset: usize; size: usize; }
+
+struct Var {
+    alloca_reg: Reg;
+}
+
+struct Code {
+    owner: &AST; // Function the Code belongs to
+    runtime: Code_Context;
+    komptime: Code_Context;
+    comptime_variables: GAF_HashMap; // HashMap<String, Value>
+    comptime_level: usize;
+    comptime_interp: Interp;
+}
+func start_comptime(code: &Code) {
+    code.comptime_level = code.comptime_level + 1;
+}
+func end_comptime(code: &Code) {
+    assert(code.comptime_level > 0, "end_comptime: comptime_level is 0");
+    code.comptime_level = code.comptime_level - 1;
+}
+func get_comptime_variable(code: &Code, name: SubStr) -> (Value, bool) {
+    let _name = toString(&name);
+    let val = get_comptime_variable(code, _name);
+    drop(&_name);
+    return val;
+}
+func get_comptime_variable(code: &Code, name: String) -> (Value, bool) {
+    let val = get(&code.comptime_variables, name);
+    if (val.ptr == null) return (Value::Invalid, false);
+    return (val as Value, true);
+}
+
+func create_code(owner: &AST) -> Code {
+    return Code {
+        owner: owner,
+        runtime: create_code_context(),
+        komptime: create_code_context(),
+        comptime_variables: new_hashmap_with_string_key(type_info(Value)),
+    };
+}
+
+func get_context(code: &Code) -> &Code_Context {
+    if (code.comptime_level > 0) {
+        return &code.komptime;
+    } else {
+        return &code.runtime;
+    }
+}
+func get_current_block(code: &Code) -> &Block {
+    return get_current_block(get_context(code));
+}
+func set_current_block(code: &Code, id: BID) {
+    let cc = get_context(code);
+    let _b: &Block = get_ref_raw(&cc.blocks, id._i);
+    message(dbg(code.owner.loc, "set_current_block: %", _b.name));
+    set_current_block(cc, id);
+}
+func allocate_register(code: &Code, type: &Type) -> Reg {
+    return allocate_register(get_context(code), type);
+}
+func create_instr(code: &Code, orig: &AST, op: Op) -> Instr {
+    //if (code.comptime_level > 0) {
+    //    message(dbg(orig.loc, "create_instr: \x1b[92mcomptime\x1b[0m %", op));
+    //} else {
+    //    message(dbg(orig.loc, "create_instr: %", op));
+    //}
+    return create_instr(get_context(code), orig, op);
+}
+func create_block(code: &Code, name: String) -> Block {
+    message(dbg(code.owner.loc, "create_block: Generated %", name));
+    return create_block(get_context(code), name);
+}
+
+struct Code_Context {
+    blocks: GAF_List; // List<Block>
+    current_block: BID;
+    entry: BID;
+    return_block: BID;
+    return_register: Reg;
+    register_count: usize;
+    total_register_size: usize;
+    variable_map: GAF_HashMap; // HashMap<String, Var>
+}
+
+func reset(cc: &Code_Context) {
+    cc.register_count = 0;
+    cc.total_register_size = 0;
+    reset(&cc.variable_map);
+}
+
+func create_code_context() -> Code_Context {
+    return Code_Context {
+        blocks: new_GAF_List(type_info(Block)),
+        variable_map: new_hashmap_with_substr_key(type_info(Var)),
+    };
+}
+
+func get_current_block(code: &Code_Context) -> &Block {
+    return get_ref_raw(&code.blocks, code.current_block._i);
+}
+
+func set_current_block(code: &Code_Context, id: BID) {
+    code.current_block = id;
+}
+
+func allocate_register(cc: &Code_Context, type: &Type) -> Reg {
+    return allocate_register(cc, get_size(type));
+}
+func allocate_register(cc: &Code_Context, size: usize) -> Reg {
+    let reg = Reg { _i: cc.register_count, offset: cc.total_register_size, size: size };
+    cc.register_count = cc.register_count + 1;
+    cc.total_register_size = cc.total_register_size + size;
+    return reg;
+}
+
+func allocate_variable(code: &Code, node: &AST, name: SubStr) -> Reg {
+    let cc = get_context(code);
+    let curr = get_current_block(cc);
+    set_current_block(cc, cc.entry);
+
+    let var = allocate_register(code, wrap(Type::Ptr(node.type)));
+    create_instr(code, node, Op::Alloca(var, toString(&name)));
+    add(&cc.variable_map, name, Var {
+        alloca_reg: var
+    });
+
+    set_current_block(cc, curr.id);
+    return var;
+}
+
+struct Block {
+    id: BID;
+    name: String;
+    ir: GAF_List; // List<Instr>
+}
+
+func create_block(cc: &Code_Context) -> Block {
+    return create_block(cc, format1("bb%", cc.blocks.length));
+}
+func create_block(cc: &Code_Context, name: String) -> Block {
+    let block = Block {
+        id: BID { _i: cc.blocks.length },
+        name: name,
+        ir: new_GAF_List(type_info(Instr)),
+    };
+    push(&cc.blocks, block);
+    return block;
+}
+func is_terminated(block: &Block) -> bool {
+    if (block.ir.length == 0) return false;
+    return is_terminator(get_ref_raw(&block.ir, block.ir.length - 1));
+}
+
+struct Instr {
+    id: usize;
+    ast: &AST;
+    op: Op;
+}
+
+func create_instr(cc: &Code_Context, orig: &AST, op: Op) -> Instr {
+    let block = get_current_block(cc);
+    let instr = Instr {
+        id: block.ir.length,
+        ast: orig,
+        op: op,
+    };
+    push(&block.ir, instr);
+    return instr;
+}
+
+func is_terminator(instr: &Instr) -> bool {
+    (comptime assert(tag(&Op::__count) == 16, "is_terminator: Op was added"));
+    match (instr.op) {
+        Op::ReturnVoid => { return true; }
+        Op::Return(_)  => { return true; }
+        Op::Jump(_)    => { return true; }
+        _              => { }
+    }
+    return false;
+}
+
+union Op {
+    LoadNumber(Reg, u64),
+    LoadFunction(Reg, &AST),
+    LoadParameter(Reg, usize),
+    LoadString(Reg, String),
+    LoadBool(Reg, bool),
+    LoadBlank(Reg),
+    Alloca(Reg, String), // associate Allocas with an identifier for later use
+    Load(Reg, Reg),
+    Store(Reg, Reg),
+    Move(Reg, Reg),
+    Jump(BID),
+    ReturnVoid,
+    Return(Reg),
+    Call(Reg, Reg, GAF_List), // List<Reg> - The arguments
+    LoadComptimeValue(Reg, Value),
+    Noop,
+    __count,
+}
+
+func codegen_function_entry(fn: &AST) {
+    let &ASTData::Function(func_state) = &fn.data else {
+        unreachable("codegen_function_entry: Node is not a function");
+    };
+
+    let rt = &func_state.code.runtime;
+    rt.return_block = create_block(rt, comptime newReadonlyString("return")).id;
+    set_current_block(rt, rt.return_block);
+
+    if (is_equal_to(func_state.return_type.type, &Type::Prim(PrimType::None))) {
+        create_instr(&func_state.code, fn, Op::ReturnVoid);
+    } else {
+        rt.return_register = allocate_register(rt, func_state.return_type.type);
+        create_instr(&func_state.code, fn, Op::Return(rt.return_register));
+    }
+
+    rt.entry = create_block(rt, comptime newReadonlyString("entry")).id;
+    set_current_block(rt, rt.entry);
+
+    let ct = &func_state.code.komptime;
+    ct.entry = create_block(ct, comptime newReadonlyString("entry")).id;
+    set_current_block(ct, ct.entry);
+
+    enumerate(&func_state.params, func (index: usize, d: Data, fn: &ASTFunction) {
+        let p = d as &AST;
+        let reg = allocate_register(&fn.code, p.type);
+        create_instr(&fn.code, p, Op::LoadParameter(reg, index));
+    }, &func_state);
+}
+
+func codegen_stmt(fn: &ASTFunction, stmt: &AST) {
+    let &ASTData::Stmt(actual_stmt) = &stmt.data else {
+        unreachable("codegen_stmt: Node is not a statement");
+    };
+    let f = func (fn: &ASTFunction, stmt: &AST, pat: &AST, expr: &AST, trampoline: &AST, is_comptime: bool) {
+        if (is_comptime) start_comptime(&fn.code);
+        if (expr != null) {
+            let (ereg, _) = codegen_expr(fn, expr, false);
+            let preg = codegen_pattern(fn, pat, ereg, is_comptime);
+            if (trampoline != null) {
+                // let <pat> = <expr> else <trampoline>;
+                message(todo(stmt.loc, "codegen_stmt: Can't codegen pat-expr-trampoline yet"));
+            }
+        } else {
+            // let <pat>;
+            assert(trampoline == null);
+            message(todo(stmt.loc, "codegen_stmt: Can't codegen pat yet"));
+        }
+        if (is_comptime) end_comptime(&fn.code);
+    };
+    match (&actual_stmt) {
+        &ASTStmt::Let { pat, expr, trampoline } => {
+            assert(pat != null);
+            f(fn, stmt, pat, expr, trampoline, false);
+        }
+        &ASTStmt::Comptime { pat, expr, trampoline } => {
+            assert(expr != null, "codegen_stmt: `comptime` doesn't have expr");
+            if let &Type::Meta(_) = expr.type {
+                // `comptime foo = i32;` is not generated
+                return;
+            }
+            // Simply mark instructions as compile time. They will be evaluated next.
+            f(fn, stmt, pat, expr, trampoline, true);
+        }
+        &ASTStmt::ReturnVoid => {
+            assert(fn.code.comptime_level == 0, "Return in comptime context?");
+            create_instr(&fn.code, stmt, Op::Jump(fn.code.runtime.return_block));
+        }
+        &ASTStmt::ReturnExpr(expr) => {
+            let (register, _) = codegen_expr(fn, expr, false);
+            assert(fn.code.comptime_level == 0, "Return in comptime context?");
+            create_instr(&fn.code, stmt, Op::Move(fn.code.runtime.return_register, register));
+            create_instr(&fn.code, stmt, Op::Jump(fn.code.runtime.return_block));
+        }
+        &ASTStmt::Expr(expr) => {
+            let (reg, _) = codegen_expr(fn, expr, false);
+        }
+        _ => {
+            message(todo(stmt.loc, "codegen_stmt: Can't generate stmt yet: %", stmt.data));
+        }
+    }
+}
+
+func codegen_expr(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> (Reg, Instr) {
+    let &ASTData::Expr(actual_expr) = &expr.data else {
+        unreachable("codegen_expr: Node is not an expression");
+    };
+    match (&actual_expr) {
+        &ASTExpr::Ident { name } => {
+            let reg = get(&get_context(&fn.code).variable_map, name);
+            if (wants_ptr) return (reg, create_instr(&fn.code, expr, Op::Noop));
+            let dst = allocate_register(&fn.code, expr.type);
+            return (reg, create_instr(&fn.code, expr, Op::Load(dst, reg)));
+        }
+        &ASTExpr::FnIdent { name, _fn } => {
+            let &ASTData::Function(func_state) = &_fn.data else {
+                unreachable("codegen_expr: FnIdent does not have a function");
+            };
+            let reg = allocate_register(&fn.code, expr.type);
+            return (reg, create_instr(&fn.code, expr, Op::LoadFunction(reg, _fn)));
+        }
+        &ASTExpr::Number { value } => {
+            let number = toU64(&value);
+            let reg = allocate_register(&fn.code, expr.type);
+            return (reg, create_instr(&fn.code, expr, Op::LoadNumber(reg, number)));
+        }
+        &ASTExpr::StringLiteral { value } => {
+            let reg = allocate_register(&fn.code, expr.type);
+            return (reg, create_instr(&fn.code, expr, Op::LoadString(reg, value)));
+        }
+        &ASTExpr::Blank => {
+            let reg = allocate_register(&fn.code, expr.type);
+            return (reg, create_instr(&fn.code, expr, Op::LoadBlank(reg)));
+        }
+        &ASTExpr::Call(_base, _args) => {
+            let (reg, _) = codegen_expr(fn, _base, false);
+            let args = new_GAF_List(type_info(Reg));
+            for (let i: usize = 0; i < _args.length; i = i + 1) {
+                let arg = get_ref(&_args, i) as &AST;
+                let (areg, _) = codegen_expr(fn, arg, false);
+                push(&args, areg);
+            }
+            let ret = allocate_register(&fn.code, expr.type);
+            return (ret, create_instr(&fn.code, expr, Op::Call(ret, reg, args)));
+        }
+        &ASTExpr::Directive(dir) => {
+            message(todo(expr.loc, "codegen_expr: Can't codegen directive"));
+        }
+        &ASTExpr::ComptimeValue(val) => {
+            let ret = allocate_register(&fn.code, expr.type);
+            return (ret, create_instr(&fn.code, expr, Op::LoadComptimeValue(ret, val)));
+        }
+        &ASTExpr::Unary(unary) => {
+            return codegen_unary(fn, expr, wants_ptr);
+        }
+        _ => {
+            message(todo(expr.loc, "codegen_expr: Can't codegen expression %", actual_expr));
+        }
+    }
+    unreachable("codegen_expr");
+}
+
+func codegen_unary(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> (Reg, Instr) {
+    let &ASTData::Expr(ASTExpr::Unary(unary)) = &expr.data else {
+        unreachable("codegen_unary: Node is not a unary expression");
+    };
+    match (unary) {
+        ASTUnary::AddressOf(sub) => {
+            return codegen_expr(fn, sub, true);
+        }
+        _ => {
+            message(todo(expr.loc, "codegen_unary: Can't codegen expression %", unary));
+        }
+    }
+    unreachable("codegen_unary");
+}
+
+func codegen_pattern(fn: &ASTFunction, pat: &AST, expr: Reg, is_comptime: bool) -> Reg {
+    let &ASTData::Pat(actual_pat) = &pat.data else {
+        unreachable("codegen_pattern: Node is not a pattern");
+    };
+    match (&actual_pat) {
+        &ASTPat::Ident(ident) => {
+            let var = allocate_variable(&fn.code, pat, ident);
+            create_instr(&fn.code, pat, Op::Store(var, expr));
+
+            let succ = allocate_register(&fn.code, wrap(Type::Prim(PrimType::Bool)));
+            create_instr(&fn.code, pat, Op::LoadBool(succ, true));
+            return succ;
+        }
+        &ASTPat::PatWithType(subpat, type) => {
+            return codegen_pattern(fn, subpat, expr, is_comptime);
+        }
+        _ => {
+            message(todo(pat.loc, "codegen_pattern: Can't codegen pattern"));
+        }
+    }
+    unreachable("codegen_pattern");
+}

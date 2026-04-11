@@ -11,6 +11,10 @@ struct GAF_List {
     type_size: usize;
 }
 
+func free(this: &GAF_List) {
+    C::free(this.elements);
+}
+
 func new_GAF_List(ti: TypeInfo) -> GAF_List {
     return GAF_List {
         elements: null,
@@ -96,3 +100,11 @@ func swap_remove(list: &GAF_List, index: usize) {
     list.length = list.length - 1;
 }
 
+func index_of(list: &GAF_List, elem: Any) -> usize {
+    let start = list.elements as usize;
+    let end = start + list.length * list.type_size;
+    assert(elem as usize >= start && elem as usize < end, "GAF_List.index_of: Element is not part of the list: Out of bounds");
+    assert((elem as usize - start) % list.type_size == 0, "GAF_List.index_of: Element is not part of the list: Invalid offset");
+    let index = (elem as usize - start) / list.type_size;
+    return index;
+}

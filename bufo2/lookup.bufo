@@ -93,7 +93,11 @@ func print_global_lookup() {
                 unreachable("func node is not a function");
             };
             if ((function.state.i & FUNCTION_STATE_IS_GENERIC) != 0) {
-                message(dbg(node.loc, "  Function is generic!"));
+                foreach(&function.monomorphized_instances, func (key: Data, value: Data) {
+                    let _key = key as String;
+                    let node = value as &AST;
+                    message(dbg(node.loc, "  Monomorphized with key `%`", _key));
+                });
             }
         }, &name);
     });

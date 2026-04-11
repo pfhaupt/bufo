@@ -58,6 +58,13 @@ func new_GAF_HashMap(key: TypeInfo, value: TypeInfo, key_hash: func (Data) -> us
     };
 }
 
+func reset(this: &GAF_HashMap) {
+    for (let i: usize = 0; i < this.capacity; i = i + 1) {
+        this.set_elements[i] = false;
+    }
+    this.length = 0;
+}
+
 func asList(this: &GAF_HashMap) -> GAF_List {
     let l = new_GAF_List(this.value_type);
     foreach(this, func (k: Data, elem: Data, arg: &GAF_List) {
@@ -178,7 +185,11 @@ func add(this: &GAF_HashMap, key: Data, value: Data) {
 }
 
 func contains(this: &GAF_HashMap, key: Data) -> bool {
-    return get(this, key).ptr != null;
+    return getRaw(this, key) != null;
+}
+
+func getRaw(this: &GAF_HashMap, key: Data) -> Any {
+    return get(this, key).ptr;
 }
 
 func get(this: &GAF_HashMap, key: Data) -> Data {

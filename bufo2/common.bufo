@@ -30,11 +30,24 @@ func new_loc(offset: usize) -> Loc {
 }
 
 union Message {
+    Assert(Loc, String),
+    Fatal(Loc, String),
     Todo(Loc, String),
     Error(Loc, String),
     Warning(Loc, String),
     Note(Loc, String),
     Debug(Loc, String),
+    IgnoredAssert,
+}
+
+func ass(cond: bool, loc: Loc, fmt: &char, args: ...Data) -> Message {
+    if (cond) return Message::IgnoredAssert;
+    comptime ASSERT_STR: &char = "\x1b[95mAssertion failed!\x1b[0m";
+    return Message::Assert(loc, format1("% %", ASSERT_STR, format1(fmt, args)));
+}
+
+func fatal(loc: Loc, fmt: &char, args: ...Data) -> Message {
+    return Message::Fatal(loc, format1("% %", FATAL_STR, format1(fmt, args)));
 }
 
 func todo(loc: Loc, fmt: &char, args: ...Data) -> Message {
@@ -42,28 +55,36 @@ func todo(loc: Loc, fmt: &char, args: ...Data) -> Message {
     return Message::Todo(loc, format1("%: %", TODO_STR, format1(fmt, args)));
 }
 
-func dbg(loc: Loc, fmt: &char, args: ...Data) -> Message {
-    comptime DEBUG_STR: &char = "\x1b[96mDEBUG\x1b[0m";
-    return Message::Debug(loc, format1("%: %", DEBUG_STR, format1(fmt, args)));
+func error(loc: Loc, fmt: &char, args: ...Data) -> Message {
+    return Message::Error(loc, format1("%: %", ERR_STR, format1(fmt, args)));
+}
+
+func warn(loc: Loc, fmt: &char, args: ...Data) -> Message {
+    return Message::Warning(loc, format1("%: %", WARN_STR, format1(fmt, args)));
 }
 
 func note(loc: Loc, fmt: &char, args: ...Data) -> Message {
     return Message::Note(loc, format1("%: %", NOTE_STR, format1(fmt, args)));
 }
 
-func error(loc: Loc, fmt: &char, args: ...Data) -> Message {
-    return Message::Error(loc, format1("%: %", ERR_STR, format1(fmt, args)));
+func dbg(loc: Loc, fmt: &char, args: ...Data) -> Message {
+    comptime DEBUG_STR: &char = "\x1b[96mDEBUG\x1b[0m";
+    return Message::Debug(loc, format1("%: %", DEBUG_STR, format1(fmt, args)));
 }
 
 comptime PRINT_DEBUG = true;
 let error_happened: bool = false;
 func message(errors: ...Message) {
     let had_error = false;
+    let fatal_error = false;
     for (let i: usize = 0; i < errors.length; i = i + 1) {
         let loc: Loc = blank;
         let msg: String = blank;
         match (errors[i]) {
-            Message::Todo   (_loc, _msg) => { loc = _loc; msg = _msg; had_error = true; }
+            Message::Assert (_loc, _msg) => { loc = _loc; msg = _msg; fatal_error = true; }
+            Message::IgnoredAssert       => { continue; }
+            Message::Fatal  (_loc, _msg) => { loc = _loc; msg = _msg; fatal_error = true; }
+            Message::Todo   (_loc, _msg) => { loc = _loc; msg = _msg; fatal_error = true; }
             Message::Error  (_loc, _msg) => { loc = _loc; msg = _msg; had_error = true; }
             Message::Warning(_loc, _msg) => { loc = _loc; msg = _msg; }
             Message::Note   (_loc, _msg) => { loc = _loc; msg = _msg; }
@@ -75,6 +96,9 @@ func message(errors: ...Message) {
         }
         C::fprintf(stderr, "%s:%llu: %.*s\n", loc.file, loc.offset, msg.length, msg.buffer);
         drop(&msg);
+    }
+    if (fatal_error) {
+        C::exit(2);
     }
     if (had_error) {
         error_happened = true;

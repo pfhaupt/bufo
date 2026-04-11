@@ -16,8 +16,57 @@ union PrimType {
     I32,
     Usize,
     Str,
+    Bool,
     None,
     __count,
+}
+func get_align(t: PrimType) -> usize {
+    (comptime assert(tag(&PrimType::__count) == 5, "PrimType::get_align: Added primitive type"));
+    match (t) {
+        PrimType::Usize => { return 8; }
+        PrimType::I32 => { return 4; }
+        PrimType::Bool => { return 1; }
+        PrimType::Str => {
+            let ptr = get_align(&Type::Ptr);
+            let size = get_align(&Type::Prim(PrimType::Usize));
+            assert(size == ptr, "get_align(str)");
+            return size;
+        }
+        PrimType::None => { return 0; }
+        _ => {
+            message(todo(new_loc(0), "get_align(PrimType): %", t));
+        }
+    }
+    unreachable("get_align(PrimType)");
+}
+func get_size(t: PrimType) -> usize {
+    (comptime assert(tag(&PrimType::__count) == 5, "PrimType::get_size: Added primitive type"));
+    match (t) {
+        PrimType::Usize => { return 8; }
+        PrimType::I32 => { return 4; }
+        PrimType::Bool => { return 1; }
+        PrimType::Str => {
+            let ptr = get_size(&Type::Ptr);
+            let size = get_size(&Type::Prim(PrimType::Usize));
+            assert(size == ptr, "get_size(str)");
+            return ptr + size;
+        }
+        PrimType::None => { return 0; }
+        _ => {
+            message(todo(new_loc(0), "get_size(PrimType): %", t));
+        }
+    }
+    unreachable("get_size(PrimType)");
+}
+
+func is_number(pt: PrimType) -> bool {
+    (comptime assert(tag(&PrimType::__count) == 5, "PrimType::is_number: Added primitive type"));
+    match (pt) {
+        PrimType::I32 => { return true; }
+        PrimType::Usize => { return true; }
+        _ => { }
+    }
+    return false;
 }
 
 func to_string(out: &String, t: PrimType) {
@@ -26,6 +75,7 @@ func to_string(out: &String, t: PrimType) {
         newSubStrOfStrLit("i32"),
         newSubStrOfStrLit("usize"),
         newSubStrOfStrLit("str"),
+        newSubStrOfStrLit("bool"),
         newSubStrOfStrLit("none"),
     ];
     (comptime assert(names.length == tag(&PrimType::__count) as usize, "PrimType::to_string: Added primitive type"));
@@ -33,10 +83,13 @@ func to_string(out: &String, t: PrimType) {
 }
 
 union Type {
+    Unknown,
     Meta(&Type),
     Struct(&AST),
     Func(GAF_List, &Type), // Params, RetType
     Prim(PrimType),
+    Ptr(&Type),
+    __count,
 }
 
 func get_builtin_type(name: SubStr) -> &Type {
@@ -44,6 +97,7 @@ func get_builtin_type(name: SubStr) -> &Type {
         (comptime newSubStrOfStrLit("i32"), Type::Prim(PrimType::I32)),
         (comptime newSubStrOfStrLit("usize"), Type::Prim(PrimType::Usize)),
         (comptime newSubStrOfStrLit("str"), Type::Prim(PrimType::Str)),
+        (comptime newSubStrOfStrLit("bool"), Type::Prim(PrimType::Bool)),
         (comptime newSubStrOfStrLit("none"), Type::Prim(PrimType::None)),
     ];
     assert(map.length == tag(&PrimType::__count) as usize, "get_builtin_type: Added primitive type");
@@ -69,6 +123,7 @@ func to_string(out: &String, t: &Type, highlight_meta: bool) {
         return;
     }
     match (t) {
+        &Type::Unknown => { pushStr(out, "<unknown>"); }
         &Type::Meta(_t) => {
             if (highlight_meta) pushStr(out, "^");
             to_string(out, _t, highlight_meta);
@@ -92,7 +147,7 @@ func to_string(out: &String, t: &Type, highlight_meta: bool) {
             };
             pushSubStr(out, &struct_info.name);
             if (node.parent == null) {
-                if (struct_info.parameters.length > 0) {
+                if (((struct_info.state.i & STRUCT_STATE_MONOMORPHIZED) == 0) && struct_info.parameters.length > 0) {
                     // Generic struct, print as List($T)
                     pushChar(out, '(');
                     enumerate(&struct_info.parameters, func (index: usize, val: Data, out: &String) {
@@ -111,13 +166,76 @@ func to_string(out: &String, t: &Type, highlight_meta: bool) {
         &Type::Prim(p) => {
             to_string(out, p);
         }
+        &Type::Ptr(sub) => {
+            pushChar(out, '*');
+            to_string(out, sub);
+        }
         _ => {
-            message(todo(new_loc(0), "to_string(Type): %", tag(t)));
+            message(todo(new_loc(0), "to_string(Type): %", *t));
         }
     }
 }
 
+func get_align(t: &Type) -> usize {
+    (comptime assert(tag(&Type::__count) == 6, "Type::get_align: Added type"));
+    match (t) {
+        &Type::Unknown => { message(fatal(blank, "Attempted to get alignment of unknown type")); }
+        &Type::Prim(pt) => { return get_align(pt); }
+        &Type::Ptr(_) => { return 8; }
+        &Type::Meta(mt) => { return get_size(mt); }
+        &Type::Func(_, _) => { return get_align(&Type::Ptr); }
+        &Type::Struct(s) => {
+            let &ASTData::Struct(struct_info) = &s.data else {
+                unreachable("Type::get_size(Struct): Not a struct");
+            };
+            return get_align(&struct_info);
+        }
+        _ => {
+            message(todo(new_loc(0), "get_align(Type): %", *t));
+        }
+    }
+    unreachable("get_align(Type)");
+}
+func get_size_in_bits(t: &Type) -> usize {
+    return get_size(t) * 8;
+}
+func get_size(t: &Type) -> usize {
+    (comptime assert(tag(&Type::__count) == 6, "Type::get_size: Added type"));
+    match (t) {
+        &Type::Unknown => { message(fatal(blank, "Attempted to get size of unknown type")); }
+        &Type::Prim(pt) => { return get_size(pt); }
+        &Type::Ptr(_) => { return 8; }
+        &Type::Meta(mt) => { return get_size(mt); }
+        &Type::Func(_, _) => { return get_size(&Type::Ptr); }
+        &Type::Struct(s) => {
+            let &ASTData::Struct(struct_info) = &s.data else {
+                unreachable("Type::get_size(Struct): Not a struct");
+            };
+            return get_size(&struct_info);
+        }
+        _ => {
+            message(todo(new_loc(0), "get_size(Type): %", *t));
+        }
+    }
+    unreachable("get_size(Type)");
+}
+
+func is_unknown(t: &Type) -> bool {
+    if let &Type::Unknown = t {
+        return true;
+    }
+    return false;
+}
+
+func is_number(t: &Type) -> bool {
+    let &Type::Prim(pt) = t else {
+        return false;
+    };
+    return is_number(pt);
+}
+
 func is_equal_to(t1: &Type, t2: &Type) -> bool {
+    if (t1 == null || t2 == null) return false;
     // A == A
     if (t1 == t2) return true;
     // A -> B
@@ -132,10 +250,10 @@ func is_convertible_to(t1: &Type, t2: &Type) -> bool {
     if (t1 == t2) return true;
     // REVIEW(2026-03-03): Can we find a more elegant way for this?
     match ((t1, t2)) {
-        (&Type::Prim(PrimType::I32), &Type::Prim(PrimType::I32)) => { return true; }
-        (&Type::Prim(PrimType::Usize), &Type::Prim(PrimType::Usize)) => { return true; }
+        (&Type::Prim(pt1), &Type::Prim(pt2)) => { return tag(&pt1) == tag(&pt2); }
         (&Type::Struct(s1), &Type::Struct(s2)) => { return s1 == s2; }
         (&Type::Meta(m1), &Type::Meta(m2)) => { return is_convertible_to(m1, m2); }
+        (&Type::Ptr(p1), &Type::Ptr(p2)) => { return is_convertible_to(p1, p2); }
         (_, _) => { }
     }
     return false;

@@ -6,11 +6,6 @@ import "string.bufo";
 import "type_info.bufo";
 
 func __format_helper(out: &String, arg: Data, in_structure: bool) {
-    let next_multiple_of = func (a: usize, b: usize) -> usize {
-        assert(b != 0, "next_multiple_of: b is 0!");
-        if (a % b == 0) return a;
-        return a + (b - (a % b));
-    };
     match (arg.info) {
         TypeInfo::Unknown => {
             pushStr(out, "<unknown>");
@@ -79,9 +74,13 @@ func __format_helper(out: &String, arg: Data, in_structure: bool) {
         }
         TypeInfo::Union { name, size, align, variants } => {
             pushSubStr(out, &name);
+            if (variants.length == 0) return;
             pushStr(out, "::");
             let t = tag(arg.ptr) as usize;
-            assert(t < variants.length, "__format_helper: Argument has invalid Union Tag");
+            if (t >= variants.length) {
+                format(out, "<invalid variant tag %>", t);
+                return;
+            }
             let vi = &variants.elements[t];
             let offset: usize = align; // tag
             match (vi) {
@@ -137,7 +136,7 @@ func __format_helper(out: &String, arg: Data, in_structure: bool) {
             pushStr(out, ")");
         }
         t => {
-            unreachable("__format_helper");
+            format(out, "<not implemented tag %>", tag(&t));
         }
     }
 }

@@ -3067,6 +3067,9 @@ func tryInferTypeOntoExpr(this: &TypeChecker, expr: &ParsedExpr, type: &Type, sc
 func tryInferTypeOntoUnary(this: &TypeChecker, span: Span, unary: &UnaryExpr, type: &Type, scopes: &ScopeLookupList, checkOnly: bool) -> TCState {
     let tid = TCState::Invalid;
     match (unary) {
+        &UnaryExpr::Comptime(subExpr) => {
+            tid = tryInferTypeOntoExpr(this, subExpr, type, scopes, checkOnly);
+        }
         &UnaryExpr::Deref(subExpr) => {
             let newType: &Type = wrap(Type::Ptr(type));
             tid = tryInferTypeOntoExpr(this, subExpr, newType, scopes, checkOnly);

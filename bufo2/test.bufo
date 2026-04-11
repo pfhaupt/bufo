@@ -23,16 +23,40 @@ func assert(cond: Code, msg: string) @expand {
     }
 }
 
+func f2(elem: $T) {}
+func f3(elem: $T) {}
+func f4(elem: $T) {}
+func f5(elem: $T) {}
+func f6(elem: $T) {}
+func f7(elem: $T) {}
+func f8(elem: $T) {}
+func f9(elem: $T) {}
+func f1(elem: $T) {
+    f2(elem);
+    f3(elem);
+    f4(elem);
+    f5(elem);
+    f6(elem);
+    f7(elem);
+    f8(elem);
+    f9(elem);
+}
+
+func foo(elem: $T, list: *List($T)) {
+    f1(list);
+    f1(elem);
+}
 func push(list: *List($T), elem: $T) {
-    if (list.length >= list.capacity) {
-        let new_cap = list.capacity * 2;
-        if (new_cap == 0) new_cap = 16;
-        list.elements = realloc(list.elements, new_cap * sizeof(elem));
-        assert(list.elements != null, "Could not allocate List elements");
-        list.capacity = new_cap;
-    }
-    list.elements[list.length] = elem;
-    list.length += 1;
+    foo(elem, list);
+    // if (list.length >= list.capacity) {
+    //     let new_cap = list.capacity * 2;
+    //     if (new_cap == 0) new_cap = 16;
+    //     list.elements = realloc(list.elements, new_cap * sizeof(elem));
+    //     assert(list.elements != null, "Could not allocate List elements");
+    //     list.capacity = new_cap;
+    // }
+    // list.elements[list.length] = elem;
+    // list.length += 1;
 }
 
 func push_elem() -> str {
@@ -45,15 +69,23 @@ func get_code() -> str {
 
 func main() {
     comptime list_of_i32 = List(i32);
+    comptime list_of_str = List(str);
+    comptime list_of_list = List(list_of_str);
+    let list_str: list_of_str = blank;
+    let list_list: list_of_list = blank;
     let list: list_of_i32 = blank;
-    comptime foo = "let bar = 1;";
-    let s = #run {
-        #insert #run get_code();
-    };
-    assert(s == 123);
+    comptime foo = "let bar: i32 = 1";
+    push(&list_list, blank);
+    let s = #run get_code();
+    // REVIEW(2026-04-09): Something in the parser fucks up here
+    // let s = #run {
+    //     #insert #run get_code();
+    // v Expected `;`, but got `}`
+    // };
+    #insert "push(&list_str, s);";
     #insert foo;                 // let bar = 1;
     #insert "push(&list, bar);"; // push(&list, bar);
     #insert #run push_elem();    // push(&list, 123);
-    assert(list.length == 2);    // list = [1, 123]
-    assert(list.capacity == 16);
+    // assert(list.length == 2);    // list = [1, 123]
+    // assert(list.capacity == 16);
 }

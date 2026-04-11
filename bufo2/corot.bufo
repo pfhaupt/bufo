@@ -85,7 +85,7 @@ func corot_id() -> usize {
     return engine.current;
 }
 
-func spawn(f: func (Any), arg: Any) -> usize {
+@nodiscard func spawn(f: func (Any), arg: Any) -> usize {
     let id: usize = 0;
     if (engine.dead.length > 0) {
         pop(&engine.dead, &id);
@@ -187,6 +187,8 @@ func _finish_current() {
         push(&context, "mov $$0, %r8");
         push(&context, "mov %rcx, %rdx");
         push(&context, "mov %rsp, %rcx");
+        // FIXME(2026-04-09): DCE removes switch_context because we only call it from assembly
+        comptime _ = switch_context;
         push(&context, "jmp switch_context");
         return context;
     });
@@ -208,6 +210,8 @@ func _finish_current() {
         push(&context, "mov $$1, %r8");
         push(&context, "mov %rcx, %rdx");
         push(&context, "mov %rsp, %rcx");
+        // FIXME(2026-04-09): DCE removes switch_context because we only call it from assembly
+        comptime _ = switch_context;
         push(&context, "jmp switch_context");
         return context;
     });
