@@ -134,7 +134,8 @@ func allocate_variable(code: &Code, node: &AST, name: SubStr) -> Reg {
     let curr = get_current_block(cc);
     set_current_block(cc, cc.entry);
 
-    let var = allocate_register(code, wrap(Type::Ptr(node.type)));
+    let _ptr = create_base_type(BaseType::Ptr(node.type));
+    let var = allocate_register(code, _ptr);
     create_instr(code, node, Op::Alloca(var, toString(&name)));
     add(&cc.variable_map, name, Var {
         alloca_reg: var
@@ -224,10 +225,12 @@ func codegen_function_entry(fn: &AST) {
     rt.return_block = create_block(rt, comptime newReadonlyString("return")).id;
     set_current_block(rt, rt.return_block);
 
-    if (is_equal_to(func_state.return_type.type, &Type::Prim(PrimType::None))) {
+    let none = create_meta_type(1, PrimType::None);
+    if (is_equal_to(func_state.return_type.type, none)) {
         create_instr(&func_state.code, fn, Op::ReturnVoid);
     } else {
-        rt.return_register = allocate_register(rt, func_state.return_type.type);
+        let base_type = unwrap_meta_type(func_state.return_type.type, 1);
+        rt.return_register = allocate_register(rt, base_type);
         create_instr(&func_state.code, fn, Op::Return(rt.return_register));
     }
 
@@ -240,7 +243,8 @@ func codegen_function_entry(fn: &AST) {
 
     for (let i: usize = func_state.params.length; i > 0; i = i - 1) {
         let p = get_ref(&func_state.params, i - 1) as &AST;
-        let reg = allocate_register(&func_state.code, p.type);
+        let p_type = unwrap_meta_type(p.type, 1);
+        let reg = allocate_register(&func_state.code, p_type);
         create_instr(&func_state.code, p, Op::LoadParameter(reg, i - 1));
         let var = allocate_variable(&func_state.code, p, p.origin);
         create_instr(&func_state.code, p, Op::Store(var, reg));
@@ -274,7 +278,7 @@ func codegen_stmt(fn: &ASTFunction, stmt: &AST) {
         }
         &ASTStmt::Comptime { pat, expr, trampoline } => {
             assert(expr != null, "codegen_stmt: `comptime` doesn't have expr");
-            if let &Type::Meta(_) = expr.type {
+            if (expr.type.meta_level > 0) {
                 // `comptime foo = i32;` is not generated
                 return;
             }
@@ -323,7 +327,7 @@ func codegen_expr(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> (Reg, Instr)
         &ASTExpr::Number { value } => {
             let number = toU64(&value);
             let reg = allocate_register(&fn.code, expr.type);
-            if let &Type::Prim(PrimType::I32) = expr.type {
+            if let &BaseType::Prim(PrimType::I32) = &expr.type.base {
                 // FIXME(2026-04-11): Move this to checker.bufo
                 if (number >= I32_MAX) {
                     message(error(expr.loc, "Number literal % is too big for target type %.", number, to_string(expr.type)));
@@ -406,7 +410,8 @@ func codegen_pattern(fn: &ASTFunction, pat: &AST, expr: Reg, is_comptime: bool) 
             let var = allocate_variable(&fn.code, pat, ident);
             create_instr(&fn.code, pat, Op::Store(var, expr));
 
-            let succ = allocate_register(&fn.code, wrap(Type::Prim(PrimType::Bool)));
+            let b = create_base_type(PrimType::Bool);
+            let succ = allocate_register(&fn.code, b);
             create_instr(&fn.code, pat, Op::LoadBool(succ, true));
             return succ;
         }

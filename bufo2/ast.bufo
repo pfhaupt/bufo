@@ -36,7 +36,7 @@ func create_mapping_key(out: &String, mapping: &GAF_HashMap) {
     enumerate(mapping, func (index: usize, key: Data, value: Data, arg: &String) {
         if (index > 0) pushStr(arg, ", ");
         let type = value as &Type;
-        to_string(arg, type, true);
+        to_string(arg, type);
     }, out);
 }
 
@@ -93,7 +93,8 @@ func get_align(struct_info: &ASTStruct) -> usize {
     for (let i: usize = 0; i < struct_info.fields.length; i = i + 1) {
         let field = get_ref(&struct_info.fields, i) as &AST;
         assert(field.type != null, "field type is null");
-        let field_align = get_align(field.type);
+        let field_type = unwrap_meta_type(field.type, 1);
+        let field_align = get_align(field_type);
         if (field_align > align) align = field_align;
     }
     return align;
@@ -105,11 +106,13 @@ func get_size(struct_info: &ASTStruct) -> usize {
     for (let i: usize = 0; i < struct_info.fields.length; i = i + 1) {
         let field = get_ref(&struct_info.fields, i) as &AST;
         assert(field.type != null, "field type is null");
-        let field_size = get_size(field.type);
+        let field_type = unwrap_meta_type(field.type, 1);
+        let field_size = get_size(field_type);
         size = size + field_size;
         if (i != struct_info.fields.length - 1) {
             let next_field = get_ref(&struct_info.fields, i + 1) as &AST;
-            let next_align = get_size(next_field.type);
+            let next_field_type = unwrap_meta_type(next_field.type, 1);
+            let next_align = get_align(next_field_type);
             size = next_multiple_of(size, next_align);
         }
     }
@@ -152,7 +155,7 @@ func finalize_function_type(ast: &AST, state: &ASTFunction) {
     let ret_type = state.return_type.type;
     assert(ret_type != null, "finalize_function_type: Return type is null");
 
-    ast.type = wrap(Type::Func(params, ret_type));
+    ast.type = create_base_type(BaseType::Func(params, ret_type));
 }
 
 struct ASTAttr {
@@ -351,6 +354,7 @@ func monomorphize_struct_node(ast: &AST, mapping: GAF_HashMap) -> &AST {
 func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMap) -> bool {
     let maybe_add_mapping = func (mapping: &GAF_HashMap, name: SubStr, type: &Type) -> bool {
         let maybe = get(mapping, name);
+        type = wrap_meta_type(type, 1);
         if (maybe.ptr == null) {
             // Mapping doesn't contain $T
             add(mapping, name, type);
@@ -360,7 +364,7 @@ func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMa
             if (is_unknown(maybe_type)) {
                 // We have a better match now (might still be Unknown, but we don't care)
                 // Can't use `add()` here because the hash table doesn't overwrite old entries.
-                *(maybe.ptr as &&Type) = type;
+                maybe_type = *(maybe.ptr as &&Type) = type;
             }
             if (is_unknown(type)) return true;
             return is_equal_to(maybe_type, type);
@@ -369,7 +373,7 @@ func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMa
     };
     match (&ast.data) {
         &ASTData::Function(func_state) => {
-            let &Type::Func(args, ret) = type else {
+            let &BaseType::Func(args, ret) = &type.base else {
                 unreachable("__collect_generic_type_mapping: Expected function type");
             };
             if (args.length != func_state.params.length) return false;
@@ -392,11 +396,14 @@ func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMa
                 (ASTType::Generic, _) => {
                     return maybe_add_mapping(mapping, ast.origin, type);
                 }
-                (ASTType::Ptr(sub), &Type::Ptr(ptr)) => {
+                (ASTType::Ptr(sub), ty) => {
+                    let &BaseType::Ptr(ptr) = &ty.base else {
+                        return false;
+                    };
                     return __collect_generic_type_mapping(sub, ptr, mapping);
                 }
-                (ASTType::Ident(id, gen), &Type::Meta(m)) => {
-                    let &Type::Struct(str) = m else {
+                (ASTType::Ident(id, gen), ty) => {
+                    let BaseType::Struct(str) = ty.base else {
                         return false;
                     };
                     let &ASTData::Struct(struct_state) = &str.data else {
@@ -422,6 +429,7 @@ func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMa
                         let _t = get(&struct_state.monomorphized_instances, struct_def_param.origin);
                         if (_t.ptr == null) return false;
                         let struct_def_type = _t as &Type;
+                        struct_def_type = unwrap_meta_type(struct_def_type, 1);
                         if (!maybe_add_mapping(mapping, call_site_param.origin, struct_def_type)) {
                             return false;
                         }
@@ -450,6 +458,11 @@ func collect_generic_type_mapping(fn: &AST, type: &Type) -> (GAF_HashMap, bool, 
     let mapping = new_generic_type_mapping();
     let success = __collect_generic_type_mapping(fn, type, &mapping);
     let unknown = false;
+    foreach(&mapping, func (k: Data, v: Data) {
+        let n = k as SubStr;
+        let t = v as &Type;
+        message(dbg(blank, "  map: % => %", n, to_string(t)));
+    });
     foreach(&mapping, func (k: Data, v: Data, arg: &(&bool, &bool)) {
         let &(success, unknown) = arg;
         if (!*success) return;

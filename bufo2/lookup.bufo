@@ -8,24 +8,30 @@ import "string.bufo";
 
 import "ast.bufo";
 import "common.bufo";
+import "type.bufo";
+
+struct Variable {
+    origin: &AST;
+    type: &Type;
+}
 
 struct Scope_Info {
-    variables: GAF_HashMap; // HashMap<SubStr, &AST>
+    variables: GAF_HashMap; // HashMap<SubStr, Variable>
 }
 
 func new_stack() -> Scope_Info {
     return Scope_Info {
-        variables: new_hashmap_with_substr_key(type_info(&AST)),
+        variables: new_hashmap_with_substr_key(type_info(Variable)),
     };
 }
 
-func get_variable_by_name(scopes: &GAF_List, name: SubStr) -> (&AST, bool) {
+func get_variable_by_name(scopes: &GAF_List, name: SubStr) -> (Variable, bool) {
     for (let i: usize = 0; i < scopes.length; i = i + 1) {
         let _stack = get_ref_raw(scopes, i) as &Scope_Info;
         let elem = get(&_stack.variables, name);
-        if (elem.ptr != null) return (elem as &AST, true);
+        if (elem.ptr != null) return (elem as Variable, true);
     }
-    return (null, false);
+    return (blank, false);
 }
 
 union Lookup {

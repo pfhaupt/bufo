@@ -27,8 +27,8 @@ func get_align(t: PrimType) -> usize {
         PrimType::I32 => { return 4; }
         PrimType::Bool => { return 1; }
         PrimType::Str => {
-            let ptr = get_align(&Type::Ptr);
-            let size = get_align(&Type::Prim(PrimType::Usize));
+            let ptr = get_align(BaseType::Ptr);
+            let size = get_align(PrimType::Usize);
             assert(size == ptr, "get_align(str)");
             return size;
         }
@@ -46,8 +46,8 @@ func get_size(t: PrimType) -> usize {
         PrimType::I32 => { return 4; }
         PrimType::Bool => { return 1; }
         PrimType::Str => {
-            let ptr = get_size(&Type::Ptr);
-            let size = get_size(&Type::Prim(PrimType::Usize));
+            let ptr = get_size(BaseType::Ptr);
+            let size = get_size(PrimType::Usize);
             assert(size == ptr, "get_size(str)");
             return ptr + size;
         }
@@ -82,9 +82,8 @@ func to_string(out: &String, t: PrimType) {
     pushSubStr(out, &names[_tag]);
 }
 
-union Type {
+union BaseType {
     Unknown,
-    Meta(&Type),
     Struct(&AST),
     Func(GAF_List, &Type), // Params, RetType
     Prim(PrimType),
@@ -92,58 +91,24 @@ union Type {
     __count,
 }
 
-func get_builtin_type(name: SubStr) -> &Type {
-    let map = [
-        (comptime newSubStrOfStrLit("i32"), Type::Prim(PrimType::I32)),
-        (comptime newSubStrOfStrLit("usize"), Type::Prim(PrimType::Usize)),
-        (comptime newSubStrOfStrLit("str"), Type::Prim(PrimType::Str)),
-        (comptime newSubStrOfStrLit("bool"), Type::Prim(PrimType::Bool)),
-        (comptime newSubStrOfStrLit("none"), Type::Prim(PrimType::None)),
-    ];
-    assert(map.length == tag(&PrimType::__count) as usize, "get_builtin_type: Added primitive type");
-    for (let i: usize = 0; i < map.length; i = i + 1) {
-        if (equals(&map[i].0, &name)) return wrap(map[i].1);
-    }
-    message(todo(new_loc(0), "get_builtin_type: Unknown type name %", name));
-    unreachable(); // todo terminates
-}
-
-func to_string(t: &Type) -> String {
-    let s: String = blank;
-    to_string(&s, t);
-    return s;
-}
-
-func to_string(out: &String, t: &Type) {
-    to_string(out, t, false);
-}
-func to_string(out: &String, t: &Type, highlight_meta: bool) {
-    if (t == null) {
-        format(out, "(null)");
-        return;
-    }
-    match (t) {
-        &Type::Unknown => { pushStr(out, "<unknown>"); }
-        &Type::Meta(_t) => {
-            if (highlight_meta) pushStr(out, "^");
-            to_string(out, _t, highlight_meta);
-            if (highlight_meta) pushStr(out, "^");
-        }
-        &Type::Func(params, ret) => {
+func to_string(out: &String, bt: BaseType) {
+    match (bt) {
+        BaseType::Unknown => { pushStr(out, "<unknown>"); }
+        BaseType::Func(params, ret) => {
             pushStr(out, "func (");
             for (let i: usize = 0; i < params.length; i = i + 1) {
                 let p = get_ref(&params, i) as &Type;
-                to_string(out, p, highlight_meta);
+                to_string(out, p);
                 if (i != params.length - 1) {
                     pushStr(out, ", ");
                 }
             }
             pushStr(out, ") -> ");
-            to_string(out, ret, highlight_meta);
+            to_string(out, ret);
         }
-        &Type::Struct(node) => {
+        BaseType::Struct(node) => {
             let &ASTData::Struct(struct_info) = &node.data else {
-                unreachable("to_string(Type): Non-Struct AST");
+                unreachable("to_string(BaseType): Non-Struct AST");
             };
             pushSubStr(out, &struct_info.name);
             if (node.parent == null) {
@@ -163,72 +128,151 @@ func to_string(out: &String, t: &Type, highlight_meta: bool) {
                 }
             }
         }
-        &Type::Prim(p) => {
+        BaseType::Prim(p) => {
             to_string(out, p);
         }
-        &Type::Ptr(sub) => {
+        BaseType::Ptr(sub) => {
             pushChar(out, '*');
             to_string(out, sub);
         }
         _ => {
-            message(todo(new_loc(0), "to_string(Type): %", *t));
+            message(todo(new_loc(0), "to_string(BaseType): %", bt));
         }
     }
 }
 
-func get_align(t: &Type) -> usize {
-    (comptime assert(tag(&Type::__count) == 6, "Type::get_align: Added type"));
+func get_align(t: BaseType) -> usize {
+    (comptime assert(tag(&BaseType::__count) == 5, "BaseType::get_align: Added base type"));
     match (t) {
-        &Type::Unknown => { message(fatal(blank, "Attempted to get alignment of unknown type")); }
-        &Type::Prim(pt) => { return get_align(pt); }
-        &Type::Ptr(_) => { return 8; }
-        &Type::Meta(mt) => { return get_size(mt); }
-        &Type::Func(_, _) => { return get_align(&Type::Ptr); }
-        &Type::Struct(s) => {
-            let &ASTData::Struct(struct_info) = &s.data else {
-                unreachable("Type::get_size(Struct): Not a struct");
-            };
-            return get_align(&struct_info);
-        }
+        BaseType::Ptr(_) => { return 8; }
+        BaseType::Func(_, _) => { return get_align(BaseType::Ptr); }
+        BaseType::Prim(pt) => { return get_align(pt); }
         _ => {
-            message(todo(new_loc(0), "get_align(Type): %", *t));
+            message(todo(new_loc(0), "get_align(BaseType): %", t));
         }
     }
-    unreachable("get_align(Type)");
+    unreachable("get_align(BaseType)");
+}
+func get_size(t: BaseType) -> usize {
+    (comptime assert(tag(&BaseType::__count) == 5, "BaseType::get_size: Added base type"));
+    match (t) {
+        BaseType::Ptr(_) => { return 8; }
+        BaseType::Func(_, _) => { return get_size(BaseType::Ptr); }
+        BaseType::Prim(pt) => { return get_size(pt); }
+        BaseType::Struct(str) => {
+            let &ASTData::Struct(info) = &str.data else {
+                unreachable();
+            };
+            return get_size(&info);
+        }
+        _ => {
+            message(todo(new_loc(0), "get_size(BaseType): %", t));
+        }
+    }
+    unreachable("get_size(BaseType)");
+}
+
+/*
+ * The Type System in Bufo is split into Meta Types and Instances of them:
+ * values like "3" have a meta type i32, but similarly i32 has a meta type ^i32
+ * and so on. This allows us to treat types as expressions, which simplifies
+ * the compiler a lot and unlocks a few options.
+ * Examples:
+ * Instance => Meta Type
+ *       3  => i32^0
+ * Type { 0, BaseType::Prim(PrimType::I32) }
+ *     i32  => i32^1
+ * Type { 1, BaseType::Prim(PrimType::I32) }
+ *   ^i32   => i32^2
+ * Type { 2, BaseType::Prim(PrimType::I32) }
+ *
+ *    &3    => *^0 i32^0
+ * Type { 0, BaseType::Ptr(Type { 0, BaseType::Prim(PrimType::I32) } }
+ *  ^* ^i32 => *^1 i32^2
+ * Type { 1, BaseType::Ptr(Type { 2, BaseType::Prim(PrimType::I32) } }
+ */
+
+struct Type {
+    meta_level: usize;
+    base: BaseType;
+}
+
+func create_base_type(pt: PrimType) -> &Type {
+    return create_base_type(BaseType::Prim(pt));
+}
+func create_base_type(bt: BaseType) -> &Type {
+    return create_meta_type(0, bt);
+}
+func create_meta_type(level: usize, pt: PrimType) -> &Type {
+    return create_meta_type(level, BaseType::Prim(pt));
+}
+func create_meta_type(level: usize, bt: BaseType) -> &Type {
+    return wrap(Type { meta_level: level, base: bt });
+}
+func unwrap_meta_type(t: &Type, level: usize) -> &Type {
+    assert(t.meta_level != 0, "unwrap_meta_type: Type is not a meta type");
+    assert(level >= t.meta_level, "unwrap_meta_type: Type doesn't have enough levels");
+    return create_meta_type(t.meta_level - level, t.base);
+}
+func wrap_meta_type(t: &Type, level: usize) -> &Type {
+    return create_meta_type(t.meta_level + level, t.base);
+}
+
+func get_builtin_type(name: SubStr) -> &Type {
+    let map = [
+        (comptime newSubStrOfStrLit("i32"), BaseType::Prim(PrimType::I32)),
+        (comptime newSubStrOfStrLit("usize"), BaseType::Prim(PrimType::Usize)),
+        (comptime newSubStrOfStrLit("str"), BaseType::Prim(PrimType::Str)),
+        (comptime newSubStrOfStrLit("bool"), BaseType::Prim(PrimType::Bool)),
+        (comptime newSubStrOfStrLit("none"), BaseType::Prim(PrimType::None)),
+    ];
+    assert(map.length == tag(&PrimType::__count) as usize, "get_builtin_type: Added primitive type");
+    for (let i: usize = 0; i < map.length; i = i + 1) {
+        if (equals(&map[i].0, &name)) return wrap(Type { meta_level: 1, base: map[i].1 });    }
+    message(todo(new_loc(0), "get_builtin_type: Unknown type name %", name));
+    unreachable(); // todo terminates
+}
+
+func to_string(t: &Type) -> String {
+    let s: String = blank;
+    to_string(&s, t);
+    return s;
+}
+
+func to_string(out: &String, t: &Type) {
+    if (t == null) {
+        format(out, "(null)");
+        return;
+    }
+    for (let i: usize = 0; i < t.meta_level; i = i + 1) {
+        format(out, "^");
+    }
+    to_string(out, t.base);
+}
+
+func get_align(t: &Type) -> usize {
+    if (t.meta_level == 0) return get_align(t.base);
+    message(todo(blank, "get_align of meta type"));
+    unreachable();
 }
 func get_size_in_bits(t: &Type) -> usize {
     return get_size(t) * 8;
 }
 func get_size(t: &Type) -> usize {
-    (comptime assert(tag(&Type::__count) == 6, "Type::get_size: Added type"));
-    match (t) {
-        &Type::Unknown => { message(fatal(blank, "Attempted to get size of unknown type")); }
-        &Type::Prim(pt) => { return get_size(pt); }
-        &Type::Ptr(_) => { return 8; }
-        &Type::Meta(mt) => { return get_size(mt); }
-        &Type::Func(_, _) => { return get_size(&Type::Ptr); }
-        &Type::Struct(s) => {
-            let &ASTData::Struct(struct_info) = &s.data else {
-                unreachable("Type::get_size(Struct): Not a struct");
-            };
-            return get_size(&struct_info);
-        }
-        _ => {
-            message(todo(new_loc(0), "get_size(Type): %", *t));
-        }
-    }
-    unreachable("get_size(Type)");
+    if (t.meta_level == 0) return get_size(t.base);
+    message(todo(blank, "get_size of meta type %", t.base));
+    unreachable();
 }
 
 func is_unknown(t: &Type) -> bool {
-    if let &Type::Unknown = t {
+    if let BaseType::Unknown = t.base {
         return true;
     }
     return false;
 }
 
 func is_number(t: &Type) -> bool {
-    let &Type::Prim(pt) = t else {
+    let BaseType::Prim(pt) = t.base else {
         return false;
     };
     return is_number(pt);
@@ -248,12 +292,12 @@ func is_equal_to(t1: &Type, t2: &Type) -> bool {
 
 func is_convertible_to(t1: &Type, t2: &Type) -> bool {
     if (t1 == t2) return true;
+    if (t1.meta_level != t2.meta_level) return false;
     // REVIEW(2026-03-03): Can we find a more elegant way for this?
-    match ((t1, t2)) {
-        (&Type::Prim(pt1), &Type::Prim(pt2)) => { return tag(&pt1) == tag(&pt2); }
-        (&Type::Struct(s1), &Type::Struct(s2)) => { return s1 == s2; }
-        (&Type::Meta(m1), &Type::Meta(m2)) => { return is_convertible_to(m1, m2); }
-        (&Type::Ptr(p1), &Type::Ptr(p2)) => { return is_convertible_to(p1, p2); }
+    match ((&t1.base, &t2.base)) {
+        (&BaseType::Prim(pt1), &BaseType::Prim(pt2)) => { return tag(&pt1) == tag(&pt2); }
+        (&BaseType::Struct(s1), &BaseType::Struct(s2)) => { return s1 == s2; }
+        (&BaseType::Ptr(p1), &BaseType::Ptr(p2)) => { return is_convertible_to(p1, p2); }
         (_, _) => { }
     }
     return false;

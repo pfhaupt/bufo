@@ -30,7 +30,9 @@ func assert(cond: Code, msg: string) @expand {
 func bar(a: $T, b: $V) {
 }
 
-func fun(b: i32, a: *List($T)) {}
+func fun(b: $T, a: *List($T)) {
+    push(a, b);
+}
 
 func push(list: *List($T), elem: $T) {
     // if (list.length >= list.capacity) {
@@ -54,14 +56,18 @@ func get_code() -> str {
 
 func main() {
     comptime list_of_i32 = List(i32);
+    comptime list_of_list_of_i32 = List(List(i32));
     comptime foo = "let bar: i32 = 1";
     let list: list_of_i32 = blank;
-    let s = #run {
+    let list_of_list: list_of_list_of_i32 = blank;
+    let real_list: List(i32) = blank;
+    let s: i32 = #run {
         #insert,expr #run get_code()
     };
     bar(s, list);
     bar(list, s);
     fun(123, &list);
+    fun(real_list, &list_of_list);
     #insert "push(&list, s);";
     #insert foo;                 // let bar = 1;
     #insert "push(&list, bar);"; // push(&list, bar);

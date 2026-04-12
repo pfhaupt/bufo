@@ -572,7 +572,7 @@ func parse_primary_expr(context: &Parse_Context) -> &AST {
     match (tkn.data) {
         TokenData::BuiltinType { name } => {
             let expr = create_expr(loc, name, ASTExpr::BuiltinType { name: name });
-            expr.type = wrap(Type::Meta(get_builtin_type(name)));
+            expr.type = get_builtin_type(name);
             return expr;
         }
         TokenData::Ident { name } => {

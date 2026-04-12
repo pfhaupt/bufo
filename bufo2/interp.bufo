@@ -280,9 +280,6 @@ func evaluate_single(interp: &Interp, fn: &AST, instr: &Instr) -> Value {
             return Value::Reg(reg, size);
         }
         &Op::LoadString(dst, string) => {
-            let &Type::Prim(PrimType::Str) = instr.ast.type else {
-                funreachable("evaluate_single: LoadString expected a str, but got %", to_string(instr.ast.type));
-            };
             let reg_ptr = get_register_pointer(interp, dst);
             (comptime assert(sizeof(SubStr) == 16, "evaluate_single: SubStr assumed to be 16 bytes"));
             (comptime assert(sizeof(SubStr) == get_size(PrimType::Str), "evaluate_single: Str doesn't have same size as SubStr"));
@@ -292,7 +289,7 @@ func evaluate_single(interp: &Interp, fn: &AST, instr: &Instr) -> Value {
         &Op::LoadFunction(dst, node) => {
             let ptr = get_register_pointer(interp, dst);
             *(ptr as &usize) = node as usize;
-            return Value::Reg(ptr, comptime get_size(&Type::Ptr));
+            return Value::Reg(ptr, comptime get_size(BaseType::Ptr));
         }
         &Op::Alloca(dst, name) => {
             let reg_ptr = get_register_pointer(interp, dst);
@@ -300,7 +297,7 @@ func evaluate_single(interp: &Interp, fn: &AST, instr: &Instr) -> Value {
             let ptr = allocate_stack(interp, instr.ast.loc, size);
             *(reg_ptr as &usize) = ptr as usize;
             add(&interp.variable_map, name, Value::Var { reg: ptr, size: size });
-            return Value::Reg(reg_ptr, comptime get_size(&Type::Ptr));
+            return Value::Reg(reg_ptr, comptime get_size(BaseType::Ptr));
         }
         &Op::Load(_dst, _src) => {
             let size = get_size(instr.ast.type);
