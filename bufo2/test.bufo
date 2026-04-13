@@ -1,8 +1,4 @@
 
-struct Foo {
-    length: List(i32);
-}
-
 struct List($T) {
     // Pointer to the heap
     elements: *$T;
@@ -32,6 +28,24 @@ func bar(a: $T, b: $V) {
 
 func fun(b: $T, a: *List($T)) {
     push(a, b);
+}
+
+func urmom() {
+    let a: i32 = 0;
+    aboba(a);
+    let b = "urmom";
+    aboba(b);
+    // should fail with redeclaration
+    insert(b);
+}
+
+func insert(b: str) @expand {
+    let a: i32 = 1;
+    let c = b;
+}
+
+func aboba(a: $T) {
+    #insert "let foo: $T = a;";
 }
 
 func push(list: *List($T), elem: $T) {

@@ -76,8 +76,8 @@ func dbg(loc: Loc, fmt: &char, args: ...Data) -> Message {
 
 func handle_corot_result(s: Corot_Result, cycle: Message, error: Message) {
     match (s) {
-        Corot_Result::Cycle_Detected => { message(cycle); }
-        Corot_Result::Fucking_Died   => { message(error); }
+        Corot_Result::Cycle_Detected => { message(cycle); _finish_current(s); }
+        Corot_Result::Fucking_Died   => { message(error); _finish_current(s); }
         _ => {}
     }
 }

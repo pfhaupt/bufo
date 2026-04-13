@@ -68,7 +68,6 @@ union ASTData {
     Function(ASTFunction),
     Stmt(ASTStmt),
     Expr(ASTExpr),
-    Type(ASTType),
     Pat(ASTPat),
     Param(&AST),
     Directive(Directive),
@@ -221,6 +220,8 @@ union ASTExpr {
     Null,
     Directive(&AST),
     ComptimeValue(Value),
+    Generic,
+    ResolvedGeneric(&Type),
     As(&AST, &AST),
 }
 
@@ -232,6 +233,7 @@ union Directive {
 union ASTUnary {
     LogicalNot(&AST),
     AddressOf(&AST),
+    ValueOf(&AST),
 }
 
 union ASTBinary {
@@ -247,14 +249,6 @@ func binary_expr_from_op(op: Token, lhs: &AST, rhs: &AST) -> ASTExpr {
         }
     }
     return ASTExpr::Binary(bin);
-}
-
-union ASTType {
-    Builtin(&Type),
-    Ident(SubStr, GAF_List), // List<&AST>
-    Generic,
-    ResolvedGeneric(&Type),
-    Ptr(&AST),
 }
 
 func create_node(loc: Loc, origin: SubStr) -> &AST {
@@ -387,22 +381,23 @@ func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMa
         &ASTData::Param(p) => {
             return __collect_generic_type_mapping(p, type, mapping);
         }
-        &ASTData::Type(t) => {
-            match ((t, type)) {
-                (ASTType::Builtin(bt), ty) => {
+        &ASTData::Expr(expr) => {
+            match ((expr, type)) {
+                (ASTExpr::BuiltinType { name }, ty) => {
+                    let bt = ast.type;
                     if (is_unknown(ty)) return true;
                     return is_equal_to(bt, ty);
                 }
-                (ASTType::Generic, _) => {
+                (ASTExpr::Generic, _) => {
                     return maybe_add_mapping(mapping, ast.origin, type);
                 }
-                (ASTType::Ptr(sub), ty) => {
+                (ASTExpr::Unary(ASTUnary::ValueOf(sub)), ty) => {
                     let &BaseType::Ptr(ptr) = &ty.base else {
                         return false;
                     };
                     return __collect_generic_type_mapping(sub, ptr, mapping);
                 }
-                (ASTType::Ident(id, gen), ty) => {
+                (ASTExpr::Call(id, args), ty) => {
                     let BaseType::Struct(str) = ty.base else {
                         return false;
                     };
@@ -410,10 +405,10 @@ func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMa
                         unreachable("__collect_generic_type_mapping: Expected struct");
                     };
                     assert(struct_state.parameters.length == struct_state.monomorphized_instances.length, "Generic Mapping does not match Generic Param Count");
-                    if (gen.length != struct_state.monomorphized_instances.length) {
+                    if (args.length != struct_state.monomorphized_instances.length) {
                         return false;
                     }
-                    for (let i: usize = 0; i < gen.length; i = i + 1) {
+                    for (let i: usize = 0; i < args.length; i = i + 1) {
                         /*
                          * struct List($T);
                          * func foo(l: List($V));
@@ -424,7 +419,7 @@ func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMa
                          * struct_def_type => i32
                          * add to mapping => $V => i32
                          */
-                        let call_site_param = get_ref(&gen, i) as &AST;
+                        let call_site_param = get_ref(&args, i) as &AST;
                         let struct_def_param = get_ref(&struct_state.parameters, i) as &AST;
                         let _t = get(&struct_state.monomorphized_instances, struct_def_param.origin);
                         if (_t.ptr == null) return false;
@@ -436,11 +431,11 @@ func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMa
                     }
                     return true;
                 }
-                (ASTType::Ident(_, _), _) => {
+                (ASTExpr::Ident { _ }, _) => {
                     return false;
                 }
                 _ => {
-                    message(todo(ast.loc, "__collect_generic_type_mapping: % %", t, *type));
+                    message(todo(ast.loc, "__collect_generic_type_mapping: % %", expr, *type));
                 }
             }
         }
@@ -495,12 +490,6 @@ func create_function(loc: Loc, origin: SubStr, name: SubStr) -> &AST {
     return ptr;
 }
 
-func create_type(loc: Loc, origin: SubStr, typ: ASTType) -> &AST {
-    let ptr = create_node(loc, origin);
-    ptr.data = ASTData::Type(typ);
-    return ptr;
-}
-
 func create_stmt(loc: Loc, origin: SubStr, stmt: ASTStmt) -> &AST {
     let ptr = create_node(loc, origin);
     ptr.data = ASTData::Stmt(stmt);
@@ -523,10 +512,6 @@ func create_directive(loc: Loc, dir: Directive) -> &AST {
     let ptr = create_node(loc, blank);
     ptr.data = ASTData::Directive(dir);
     return ptr;
-}
-
-func get_builtin_type(name: SubStr) -> ASTType {
-    return ASTType::Builtin(get_builtin_type(name));
 }
 
 func add_stmt(fn: &AST, stmt: &AST) {

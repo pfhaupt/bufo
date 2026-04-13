@@ -47,13 +47,16 @@ func check_struct(node: &AST) {
         let &ASTData::Field(_name, field) = &_field.data else {
             unreachable();
         };
-        _field.type = check_type(&scopes, field);
+        let type = check_expr(&scopes, field);
+        if (type == null) message(todo(node.loc, "field type is null"));
+        if (type.meta_level == 0) message(fatal(node.loc, "field type is value: %", *type));
+        _field.type = type;
     }
     struct_state.state.i = struct_state.state.i | STRUCT_STATE_CHECKED;
 }
 
 func check_function_return_type(func_state: &ASTFunction) {
-    check_type(&func_state.scopes, func_state.return_type);
+    check_expr(&func_state.scopes, func_state.return_type);
 }
 
 func check_function_parameters(func_state: &ASTFunction) {
@@ -72,7 +75,7 @@ func check_param(scopes: &GAF_List, param: &AST) {
     if (contains(&_last.variables, param.origin)) {
         message(todo(param.loc, "check_param: Redefinition of param"));
     } else {
-        param.type = check_type(scopes, p_type);
+        param.type = check_expr(scopes, p_type);
         add(&_last.variables, param.origin, Variable {
             origin: param,
             type: unwrap_meta_type(param.type, 1),
@@ -244,7 +247,7 @@ func check_and_bind_pattern(scopes: &GAF_List, _pat: &AST, _expr: &AST) -> (bool
             result = (false, false);
         },
         &ASTPat::PatWithType(subpat, subtype) => {
-            type = check_type(scopes, subtype);
+            type = check_expr(scopes, subtype);
             type = unwrap_meta_type(type, 1);
             type = infer_type_onto_expr(scopes, type, _expr);
             assert(_expr.type != null, "check_and_bind_pattern: PatWithType: Inference failed");
@@ -336,13 +339,6 @@ func infer_type_onto_ident(scopes: &GAF_List, infer_type: &Type, ast: &AST, iden
     return type;
 }
 
-func check_identifier(scopes: &GAF_List, ast: &AST, ident: SubStr) -> &Type {
-    // Both functions share 80% code, we can combine them.
-    let type = infer_type_onto_ident(scopes, null, ast, ident);
-    if (type == null) return null;
-    message(dbg(ast.loc, "check_identifier: % has type %", ident, to_string(type)));
-    return type;
-}
 
 func convert_to_comptime_value_if_possible(scopes: &GAF_List, expr: &AST) -> (Value, bool) {
     let &ASTData::Expr(sub) = &expr.data else {
@@ -381,14 +377,21 @@ func check_directive(scopes: &GAF_List, parent: &AST, dir: &AST) -> &Type {
                 unreachable();
             };
 
-            start_comptime(&func_state.code);
             let _tmp = format1("_run_%", run_expr);
-            let var_reg = allocate_variable(&func_state.code, run_expr, asSubStr(&_tmp));
-            let (creg, _) = codegen_expr(&func_state, run_expr, false);
-            create_instr(&func_state.code, run_expr, Op::Store(var_reg, creg));
-            end_comptime(&func_state.code);
+            let cid = spawn(func (arg: &(String, &AST, &ASTFunction, &AST)) {
+                let &(_tmp, fn, func_state, run_expr) = arg;
+                start_comptime(&func_state.code);
+                let var_reg = allocate_variable(&func_state.code, run_expr, asSubStr(&_tmp));
+                let (creg, _) = codegen_expr(func_state, run_expr, false);
+                create_instr(&func_state.code, run_expr, Op::Store(var_reg, creg));
+                end_comptime(&func_state.code);
 
-            evaluate_comptime_variables(fn);
+                evaluate_comptime_variables(fn);
+            }, &(_tmp, fn, &func_state, run_expr));
+
+            handle_corot_result(wait(cid),
+                error(dir.loc, "Could not #run due to a cyclic dependency on %", corot_str(cid)),
+                note(dir.loc, "...while evaluating this #run."));
 
             let (var, true) = get_comptime_variable(&func_state.code, _tmp) else {
                 unreachable();
@@ -431,14 +434,16 @@ func check_directive(scopes: &GAF_List, parent: &AST, dir: &AST) -> &Type {
             let _tmp = wrap((&parse_context, &insert_context, &res));
             let _tmp_fn = func (arg: &(&Parse_Context, &Insert_Context, &&AST)) {
                 let &(pctx, ictx, res) = arg;
-                *res = ictx.parse_fn(pctx);
+                let (gen, _res) = ictx.parse_fn(pctx);
+                message(ass(!gen, _res.loc, "#insert-ed blob should never be generic. The mapping has already happened"));
+                *res = _res;
             };
             let new_fn = spawn(_tmp_fn, _tmp);
             let state = wait(new_fn);
             C::free(_tmp);
             handle_corot_result(state,
                 error(dir.loc, "Could not #insert due to a cyclic dependency on %", corot_str(new_fn)),
-                error(dir.loc, "Could not #insert: There were errors in the code we wanted to insert."));
+                note(dir.loc, "...while evaluating this #insert."));
             assert(res != null, "#insert failed to insert new node");
 
             *parent = *res;
@@ -465,18 +470,12 @@ func check_struct_type(scopes: &GAF_List, ast: &AST, base: &Type, args: GAF_List
         let index = mapping.length;
         let arg = get_ref(_args, index) as &AST;
         let type: &Type = null;
-        match (arg.data) {
-            ASTData::Expr(_) => {
-                type = check_expr(scopes, arg);
-                if (type == null) message(todo(arg.loc, "check_struct_type: Generic parameter wants infer???"));
-            }
-            ASTData::Type(_) => {
-                type = check_type(scopes, arg);
-            }
-            _ => {
-                message(todo(arg.loc, "check_struct_type: Unexpected AST node %", arg.data));
-            }
-        }
+        let &ASTData::Expr(_) = &arg.data else {
+            message(todo(arg.loc, "check_struct_type: Unexpected AST node %", arg.data));
+            unreachable(); // todo terminates
+        };
+        type = check_expr(scopes, arg);
+        if (type == null) message(todo(arg.loc, "check_struct_type: Generic parameter wants infer???"));
         assert(type != null, "check_struct_type: Could not get type of generic parameter");
         if (type.meta_level == 0) {
             message(todo(arg.loc, "check_struct_type: Generic parameter is not a meta-type"));
@@ -497,8 +496,14 @@ func check_expr(scopes: &GAF_List, _expr: &AST) -> &Type {
     };
     let type: &Type = null;
     match (&expr) {
+        &ASTExpr::ResolvedGeneric(gen) => {
+            type = gen;
+        }
+        &ASTExpr::BuiltinType { name } => {
+            type = get_builtin_type(name);
+        }
         &ASTExpr::Ident { name } => {
-            type = check_identifier(scopes, _expr, name);
+            type = infer_type_onto_ident(scopes, null, _expr, name);
             if (type == null) return null;
             message(dbg(_expr.loc, "check_expr: % has type %", name, to_string(type)));
             if (is_in_function(_expr)) {
@@ -596,12 +601,28 @@ func check_unary_expr(scopes: &GAF_List, expr: &AST) -> &Type {
     let type: &Type = null;
     match (&unary) {
         &ASTUnary::AddressOf(sub) => {
+            // & <sub>
             let _type = check_expr(scopes, sub);
             if (_type == null) return null;
             if (_type.meta_level != 0) {
                 message(todo(expr.loc, "&<type> doesn't make sense"));
             }
             type = create_base_type(BaseType::Ptr(_type));
+        }
+        &ASTUnary::ValueOf(sub) => {
+            // * <sub>
+            let _type = check_expr(scopes, sub);
+            if (_type == null) return null;
+            if (_type.meta_level > 0) {
+                _type = unwrap_meta_type(_type, 1);
+                type = create_meta_type(1, BaseType::Ptr(_type));
+            } else {
+                let BaseType::Ptr(sub_type) = _type.base else {
+                    message(todo(sub.loc, "check_unary_expr: Attempted to deref non-ptr"));
+                    unreachable(); // todo terminates
+                };
+                type = sub_type;
+            }
         }
         _ => {
             message(todo(expr.loc, "check_unary_expr: Can't check expression %", unary));
@@ -641,53 +662,4 @@ func check_binary_expr(scopes: &GAF_List, expr: &AST) -> &Type {
         }
     }
     return type;
-}
-
-func check_type(scopes: &GAF_List, _type: &AST) -> &Type {
-    let &ASTData::Type(type_node) = &_type.data else {
-        unreachable("check_type: Node is not a type");
-    };
-    let type: &Type = null;
-    match (&type_node) {
-        &ASTType::Builtin(bt) => {
-            type = bt; // The trivial case
-        }
-        &ASTType::ResolvedGeneric(typ) => {
-            type = typ;
-        }
-        &ASTType::Ptr(sub) => {
-            let sub_type = check_type(scopes, sub);
-            sub_type = unwrap_meta_type(sub_type, 1);
-            type = create_meta_type(1, BaseType::Ptr(sub_type));
-        }
-        &ASTType::Ident(name, nodes) => {
-            type = check_identifier(scopes, _type, name);
-            message(dbg(_type.loc, "check_type: Ident % has type %", name, to_string(type)));
-            if (nodes.length > 0) {
-                if let &BaseType::Struct(node) = &type.base {
-                    type = check_struct_type(scopes, _type, type, nodes, node);
-                } else {
-                    message(todo(_type.loc, "check_type: Can't check generic ident with type %", *type));
-                }
-            }
-        }
-        _ => {
-            message(todo(_type.loc, "check_type: Can't check type"));
-        }
-    }
-    assert(type != null, "check_type: Failed to get a type");
-    _type.type = type;
-    return type;
-}
-
-func check_temporary_expr(expr: &AST) {
-    if (expr.type != null) return;
-    let fn = get_parent_function(expr);
-
-    let &ASTData::Function(func_state) = &fn.data else {
-        unreachable("check_insert_expr: Not a function");
-    };
-    let type = check_expr(&func_state.scopes, expr);
-    assert(expr.type != null, "check_function couldn't give expression a type");
-    assert(type != null, "check_function couldn't give expression a type");
 }

@@ -118,7 +118,7 @@ func to_string(out: &String, bt: BaseType) {
                     enumerate(&struct_info.parameters, func (index: usize, val: Data, out: &String) {
                         if (index > 0) pushStr(out, ", ");
                         let _node = val as &AST;
-                        let ASTData::Type(ASTType::Generic) = _node.data else {
+                        let ASTData::Expr(ASTExpr::Generic) = _node.data else {
                             unreachable();
                         };
                         pushChar(out, '$');
@@ -228,7 +228,10 @@ func get_builtin_type(name: SubStr) -> &Type {
     ];
     assert(map.length == tag(&PrimType::__count) as usize, "get_builtin_type: Added primitive type");
     for (let i: usize = 0; i < map.length; i = i + 1) {
-        if (equals(&map[i].0, &name)) return wrap(Type { meta_level: 1, base: map[i].1 });    }
+        if (equals(&map[i].0, &name)) {
+            return create_meta_type(1, map[i].1);
+        }
+    }
     message(todo(new_loc(0), "get_builtin_type: Unknown type name %", name));
     unreachable(); // todo terminates
 }
