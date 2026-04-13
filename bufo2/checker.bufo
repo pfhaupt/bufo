@@ -18,25 +18,6 @@ import "parser.bufo";
 import "codegen.bufo";
 import "interp.bufo";
 
-func is_in_function(node: &AST) -> bool {
-    while (node != null) {
-        if let ASTData::Function { .. } = node.data {
-            return true;
-        }
-        node = node.parent;
-    }
-    return false;
-}
-func get_parent_function(node: &AST) -> &AST {
-    while (node != null) {
-        if let ASTData::Function { .. } = node.data {
-            return node;
-        }
-        node = node.parent;
-    }
-    unreachable("get_parent_function: Node is not inside a function");
-}
-
 func check_struct(node: &AST) {
     let &ASTData::Struct(struct_state) = &node.data else {
         unreachable("check_struct: Node is not a struct");
@@ -56,7 +37,12 @@ func check_struct(node: &AST) {
 }
 
 func check_function_return_type(func_state: &ASTFunction) {
-    check_expr(&func_state.scopes, func_state.return_type);
+    let ret_type = check_expr(&func_state.scopes, func_state.return_type);
+    let fn = get_parent_function(func_state.return_type);
+    let none = create_meta_type(1, PrimType::None);
+    if (has_attribute(fn, ASTAttrData::Expand) && !is_equal_to(ret_type, none)) {
+        message(error(fn.loc, "Functions marked @expand may not return values."));
+    }
 }
 
 func check_function_parameters(func_state: &ASTFunction) {
@@ -81,6 +67,47 @@ func check_param(scopes: &GAF_List, param: &AST) {
             type: unwrap_meta_type(param.type, 1),
         });
     }
+}
+
+func check_block(block: &AST, value: &AST) -> &Type {
+    // TODO(2026-04-13): Once we have stuff like #value_of() we can condense BlockExpr and
+    //                   BlockVoid into one block in the parser, so we don't have to pass
+    //                   null as value here. BlockVoid would simply have an implicit
+    //                   `#value_of(none)`.
+    let &ASTData::Expr(actual_block) = &block.data else {
+        unreachable("check_stmt: Node is not a block");
+    };
+
+    let fn = get_parent_function(block);
+    let func_state = get_func_info(fn);
+
+    let scopes = &func_state.scopes;
+    push(scopes, new_stack());
+
+    let stmts = get_statements(&actual_block);
+    for (let i: usize = 0; i < stmts.length; i = i + 1) {
+        let s = get_ref(stmts, i) as &AST;
+
+        let cid = spawn(func (arg: Any) {
+            let &(scopes, s) = arg as &(&GAF_List, &AST);
+            check_stmt(scopes, s);
+        }, &(scopes, s));
+
+        handle_corot_result(wait(cid),
+            error(s.loc, "Could not type check statement due to a cyclic dependency on %", corot_str(cid)),
+            note(s.loc, "...while type checking this statement."));
+
+        evaluate_comptime_variables(fn);
+    }
+
+    let type = create_base_type(PrimType::None);
+    if (value != null) {
+        type = check_expr(scopes, value);
+    }
+
+    pop(scopes);
+
+    return type;
 }
 
 func check_stmt(scopes: &GAF_List, stmt: &AST) -> &Type {
@@ -161,7 +188,17 @@ func check_stmt(scopes: &GAF_List, stmt: &AST) -> &Type {
             message(todo(stmt.loc, "check_stmt: Can't check stmt % yet", stmt));
         }
     }
+
     stmt.type = type;
+    let cid = spawn(func (stmt: &AST) {
+        let fn = get_parent_function(stmt);
+        let func_state = get_func_info(fn);
+        codegen_stmt(func_state, stmt);
+    }, stmt);
+    handle_corot_result(wait(cid),
+        error(stmt.loc, "Could not generate the code of this statement due to a cyclic dependency on %", corot_str(cid)),
+        note(stmt.loc, "...while generating the code for this statement."));
+
     return type;
 }
 
@@ -213,6 +250,7 @@ func infer_type_onto_expr(scopes: &GAF_List, type: &Type, _expr: &AST) -> &Type 
                     message(todo(_expr.loc, "infer_type_onto_expr: Can't infer call argument"));
                 }
             }
+            expand_function_if_necessary(_expr, _base, &_args);
         }
         _ => {
             message(todo(_expr.loc, "infer_type_onto_expr: Can't infer expression %", expr));
@@ -269,7 +307,7 @@ func infer_type_onto_ident(scopes: &GAF_List, infer_type: &Type, ast: &AST, iden
     if let (var, true) = get_variable_by_name(scopes, ident) {
         if (var.type == null) {
             message(
-                dbg(ast.loc, "Found ident, but type of variable is unknown"),
+                todo(ast.loc, "Found ident, but type of variable is unknown"),
                 dbg(var.origin.loc, "variable declared here"));
         }
         type = var.type;
@@ -295,11 +333,9 @@ func infer_type_onto_ident(scopes: &GAF_List, infer_type: &Type, ast: &AST, iden
 
                 // Only one overload, use that
                 let fn = get_ref(&fl.overloads, 0) as &AST;
-                let &ASTData::Function(func_state) = &fn.data else {
-                    unreachable("infer_type_onto_ident: Overload not a function");
-                };
+                let func_state = get_func_info(fn);
 
-                if (is_generic(&func_state)) {
+                if (is_generic(func_state)) {
                     if (infer_type == null) return null;
                     let &BaseType::Func(args, ret) = &infer_type.base else {
                         unreachable(); // already handled a few lines above
@@ -324,7 +360,16 @@ func infer_type_onto_ident(scopes: &GAF_List, infer_type: &Type, ast: &AST, iden
                     fn = monomorphize_function_node(fn, mapping);
                 }
 
-                assert(fn.type != null, "infer_type_onto_ident: Checked overload doesn't have a type");
+                // TODO(2026-04-13): We currently have no way of knowing that all coroutines that
+                //                   handle that function died here. Would be cool if AST nodes
+                //                   knew this information so we can fetch this here.
+                let sanity: usize = 0;
+                while (fn.type == null) {
+                    if (sanity == 10) message(fatal(ast.loc, "I think the function % will never get a type", func_state.name));
+                    sanity = sanity + 1;
+                    switch();
+                }
+
                 if let &ASTData::Expr(expr) = &ast.data {
                     ast.data = ASTData::Expr(ASTExpr::FnIdent { name: ident, fn: fn });
                 }
@@ -350,7 +395,7 @@ func convert_to_comptime_value_if_possible(scopes: &GAF_List, expr: &AST) -> (Va
         _ => { return (Value::Invalid, false); }
     }
 
-    let new = create_directive(expr.loc, Directive::Run(expr));
+    let new = create_directive(expr.parent, expr.loc, Directive::Run(expr));
     let _type = check_directive(scopes, expr, new);
     let &ASTData::Expr(ASTExpr::ComptimeValue(ct_value)) = &expr.data else {
         unreachable("#run failed to convert expr to ComptimeValue");
@@ -360,7 +405,7 @@ func convert_to_comptime_value_if_possible(scopes: &GAF_List, expr: &AST) -> (Va
 
 func check_directive(scopes: &GAF_List, parent: &AST, dir: &AST) -> &Type {
     let &ASTData::Directive(directive) = &dir.data else {
-        unreachable("check_expr: Node is not a directive");
+        unreachable("check_directive: Node is not a directive");
     };
     match (directive) {
         Directive::Run(run_expr) => {
@@ -368,14 +413,12 @@ func check_directive(scopes: &GAF_List, parent: &AST, dir: &AST) -> &Type {
             // We don't know what `#run <expr>` should return. Must infer.
             if (_type == null) return null;
 
-            message(dbg(dir.loc, "check_expr: #run expression has type %", to_string(_type)));
+            message(dbg(dir.loc, "check_directive: #run expression has type %", to_string(_type)));
 
             // We do know its type. We can now execute the expression and
             // replace the AST node with a new value.
             let fn = get_parent_function(run_expr);
-            let &ASTData::Function(func_state) = &fn.data else {
-                unreachable();
-            };
+            let func_state = get_func_info(fn);
 
             let _tmp = format1("_run_%", run_expr);
             let cid = spawn(func (arg: &(String, &AST, &ASTFunction, &AST)) {
@@ -387,7 +430,7 @@ func check_directive(scopes: &GAF_List, parent: &AST, dir: &AST) -> &Type {
                 end_comptime(&func_state.code);
 
                 evaluate_comptime_variables(fn);
-            }, &(_tmp, fn, &func_state, run_expr));
+            }, &(_tmp, fn, func_state, run_expr));
 
             handle_corot_result(wait(cid),
                 error(dir.loc, "Could not #run due to a cyclic dependency on %", corot_str(cid)),
@@ -419,7 +462,7 @@ func check_directive(scopes: &GAF_List, parent: &AST, dir: &AST) -> &Type {
             assert(size == 16, "Directive::Insert: Expected value to be 16 bytes");
 
             let source = *(ptr as &SubStr);
-            message(dbg(dir.loc, "check_expr: #insert-ing `%`", source));
+            message(dbg(dir.loc, "check_directive: #insert-ing `%`", source));
             let lexer = Lexer {
                 offset_in_file: dir.loc.offset,
                 source: source,
@@ -489,6 +532,145 @@ func check_struct_type(scopes: &GAF_List, ast: &AST, base: &Type, args: GAF_List
     return create_meta_type(base.meta_level, BaseType::Struct(new_node));
 }
 
+func __expand_helper(loc: Loc, parent: &AST, node: &AST, mapping: &GAF_HashMap, scopes: &GAF_List) -> &AST {
+    match (node.data) {
+        // Statements
+        ASTData::Stmt(ASTStmt::Let { pat, expr, trampoline }) => {
+            let new_pat = __expand_helper(loc, node, pat, mapping, scopes);
+            let new_expr: &AST = null;
+            if (expr != null) new_expr = __expand_helper(loc, node, expr, mapping, scopes);
+            let new_trampoline: &AST = null;
+            if (trampoline != null) new_trampoline = __expand_helper(loc, node, trampoline, mapping, scopes);
+            return create_stmt(parent, loc, node.origin, ASTStmt::Let { pat: pat, expr: expr, trampoline: trampoline });
+        }
+        // Expressions
+        ASTData::Expr(ASTExpr::BlockVoid(stmts)) => {
+            let block = new_GAF_List(type_info(&AST));
+            let bl = create_expr(parent, loc, node.origin, ASTExpr::BlockVoid);
+            push(scopes, new_stack());
+            for (let i: usize = 0; i < stmts.length; i = i + 1) {
+                let s = get_ref(&stmts, i) as &AST;
+                let new_stmt = __expand_helper(loc, bl, s, mapping, scopes);
+                push(&block, new_stmt);
+            }
+            pop(scopes);
+            bl.data = ASTData::Expr(ASTExpr::BlockVoid(block));
+            return bl;
+        }
+        ASTData::Expr(ASTExpr::BuiltinType { name }) => {
+            return create_expr(parent, loc, node.origin, ASTExpr::BuiltinType { name: name });
+        }
+        ASTData::Expr(ASTExpr::StringLiteral { value }) => {
+            return create_expr(parent, loc, node.origin, ASTExpr::StringLiteral { value: value });
+        }
+        ASTData::Expr(ASTExpr::BuiltinType { name }) => {
+            return create_expr(parent, loc, node.origin, ASTExpr::BuiltinType { name: name });
+        }
+        ASTData::Expr(ASTExpr::Ident { name }) => {
+            let last = get_ref_raw(scopes, scopes.length - 1) as &Scope_Info;
+            if (contains(&last.variables, name)) {
+                return create_expr(parent, loc, node.origin, ASTExpr::Ident { name: name });
+            } else {
+                let maybe_new = get(mapping, name);
+                if (maybe_new.ptr != null) {
+                    // Replace the old identifier in a function with its expanded argument.
+                    let new_name = maybe_new as String;
+                    message(dbg(node.loc, "#expand: Replacing % with %", name, new_name));
+                    return create_expr(parent, loc, node.origin, ASTExpr::Ident { name: asSubStr(&new_name) });
+                } else {
+                    return create_expr(parent, loc, node.origin, ASTExpr::Ident { name: name });
+                }
+            }
+        }
+        // Patterns
+        ASTData::Pat(ASTPat::PatWithType(pat, type)) => {
+            let new_pat = __expand_helper(loc, node, pat, mapping, scopes);
+            let new_type = __expand_helper(loc, node, type, mapping, scopes);
+            return create_pattern(parent, loc, node.origin, ASTPat::PatWithType(new_pat, new_type));
+        }
+        ASTData::Pat(ASTPat::Ident(name)) => {
+            if (contains(mapping, name)) {
+                message(warn(node.loc, "Variable % shadows parameter name for function that is getting #expand-ed.", name));
+            }
+            let last = get_ref_raw(scopes, scopes.length - 1) as &Scope_Info;
+            add(&last.variables, name, Variable { origin: node, type: node.type });
+            return create_pattern(parent, loc, node.origin, ASTPat::Ident(name));
+        }
+        data => {
+            message(todo(node.loc, "__expand_helper: %", data));
+        }
+    }
+    unreachable("__expand_helper");
+}
+
+func expand_function_if_necessary(expr: &AST, base: &AST, args: &GAF_List) {
+    let &ASTData::Expr(ASTExpr::FnIdent { name, fn }) = &base.data else {
+        return; // Not a function
+    };
+    if (!has_attribute(fn, ASTAttrData::Expand)) return;
+    let func_info = get_func_info(fn);
+    assert(func_info.params.length == args.length, "expand_function_if_necessary: length mismatch");
+
+    // TODO(2026-04-13): We currently have no way of knowing that all coroutines that
+    //                   handle that function died here. Would be cool if AST nodes
+    //                   knew this information so we can fetch this here.
+    let sanity: usize = 0;
+    while (func_info.block == null) {
+        if (sanity == 10) message(fatal(expr.loc, "I think the function % will never get a block", func_info.name));
+        sanity = sanity + 1;
+        switch();
+    }
+
+    let new_block = new_GAF_List(type_info(&AST));
+    let new_block_ast = create_expr(expr.parent, expr.loc, expr.origin, ASTExpr::BlockExpr); // dummy node
+
+    let mapping = new_hashmap_with_substr_key(type_info(String));
+    for (let i: usize = 0; i < args.length; i = i + 1) {
+        let arg = get_ref(args, i) as &AST;
+        let par = get_ref(&func_info.params, i) as &AST;
+        let name = par.origin;
+
+        // Create a temporary variable and assign the argument to it.
+        let new_name = format1(".expanded.%.%", name, arg);
+        let _n = asSubStr(&new_name);
+        let pat_id = create_pattern(new_block_ast, expr.loc, blank, ASTPat::Ident(_n));
+        let assign = create_stmt(new_block_ast, expr.loc, blank, ASTStmt::Let {
+            pat: pat_id,
+            expr: arg,
+            trampoline: null
+        });
+
+        message(dbg(expr.loc, "#expand: Added mapping % => %", name, new_name));
+        add(&mapping, name, new_name);
+        push(&new_block, assign);
+    }
+
+    let cid = spawn(func (arg: Any) {
+        let &(call, fn, func_info, mapping, new_block) = arg as &(&AST, &AST, &ASTFunction, &GAF_HashMap, GAF_List);
+        // NOTE(2026-04-13): As of today expansions form their own block. Any variables that are
+        //                   defined in the function body can't escape to the call site.
+        //                   Similarly, any variable you want to pass from the call site to the
+        //                   body must be passed as an argument.
+
+        message(ass(fn.type != null, call.loc, "Expected function type to be ready at this point"));
+
+        // Apply the expansion.
+        let scopes = new_GAF_List(type_info(Scope_Info));
+        let _block = __expand_helper(call.loc, call.parent, func_info.block, mapping, &scopes);
+        let block = create_stmt(call.parent, call.loc, blank, ASTStmt::Expr(_block));
+        push(&new_block, block);
+
+        // Update the call site.
+        call.data = ASTData::Expr(ASTExpr::BlockVoid(new_block));
+        call.type = null;
+        check_block(call, null);
+    }, &(expr, fn, func_info, &mapping, new_block));
+
+    handle_corot_result(wait(cid),
+        error(expr.loc, "Could not expand function due to a cyclic dependency on %", corot_str(cid)),
+        note(expr.loc, "...while expanding this function call."));
+}
+
 func check_expr(scopes: &GAF_List, _expr: &AST) -> &Type {
     if (_expr.type != null) return _expr.type;
     let &ASTData::Expr(expr) = &_expr.data else {
@@ -509,7 +691,7 @@ func check_expr(scopes: &GAF_List, _expr: &AST) -> &Type {
             if (is_in_function(_expr)) {
                 // If this identifier refers to a compile time variable, insert the value here.
                 let fn = get_parent_function(_expr);
-                let &ASTData::Function(func_state) = &fn.data else { unreachable(); };
+                let func_state = get_func_info(fn);
                 if let (var, true) = get_comptime_variable(&func_state.code, name) {
                     _expr.data = ASTData::Expr(ASTExpr::ComptimeValue(var));
                 }
@@ -555,6 +737,7 @@ func check_expr(scopes: &GAF_List, _expr: &AST) -> &Type {
                 }
                 _ => { message(todo(_expr.loc, "check_expr: Call with base type %", *base)); }
             }
+            expand_function_if_necessary(_expr, _base, &_args);
         }
         &ASTExpr::Unary(_) => {
             type = check_unary_expr(scopes, _expr);
@@ -569,22 +752,10 @@ func check_expr(scopes: &GAF_List, _expr: &AST) -> &Type {
             type = check_directive(scopes, _expr, dir);
         }
         &ASTExpr::BlockVoid(stmts) => {
-            push(scopes, new_stack());
-            for (let i: usize = 0; i < stmts.length; i = i + 1) {
-                let s = get_ref(&stmts, i) as &AST;
-                check_stmt(scopes, s);
-            }
-            pop(scopes);
-            type = create_base_type(PrimType::None);
+            type = check_block(_expr, null);
         }
         &ASTExpr::BlockExpr(stmts, value) => {
-            push(scopes, new_stack());
-            for (let i: usize = 0; i < stmts.length; i = i + 1) {
-                let s = get_ref(&stmts, i) as &AST;
-                check_stmt(scopes, s);
-            }
-            type = check_expr(scopes, value);
-            pop(scopes);
+            type = check_block(_expr, value);
         }
         _ => {
             message(todo(_expr.loc, "check_expr: Can't check expression %", expr));

@@ -62,6 +62,46 @@ func has_attribute(node: &AST, attr: ASTAttrData) -> bool {
     return has;
 }
 
+func is_in_function(node: &AST) -> bool {
+    while (node != null) {
+        if let ASTData::Function { .. } = node.data {
+            return true;
+        }
+        node = get_parent_node(node);
+    }
+    return false;
+}
+func get_parent_function(node: &AST) -> &AST {
+    while (node != null) {
+        if let ASTData::Function { .. } = node.data {
+            return node;
+        }
+        node = get_parent_node(node);
+    }
+    unreachable("get_parent_function: Node is not inside a function");
+}
+func get_parent_node(node: &AST) -> &AST {
+    let parent = node.parent;
+    message(ass(parent != null, node.loc, "Node doesn't have a parent"));
+    return parent;
+}
+
+func is_statement(node: &AST) -> bool {
+    if let ASTData::Stmt(_) = node.data {
+        return true;
+    }
+    return false;
+}
+func is_block(node: &AST) -> bool {
+    if let ASTData::Expr(ASTExpr::BlockVoid(_)) = node.data {
+        return true;
+    }
+    if let ASTData::Expr(ASTExpr::BlockExpr(_, _)) = node.data {
+        return true;
+    }
+    return false;
+}
+
 union ASTData {
     Struct(ASTStruct),
     Field(SubStr, &AST),
@@ -118,10 +158,17 @@ func get_size(struct_info: &ASTStruct) -> usize {
     return next_multiple_of(size, align);
 }
 
-func add_field(struct_info: &ASTStruct, loc: Loc, name: SubStr, type: &AST) {
-    let field = create_node(loc, name);
+func add_field(parent: &AST, struct_info: &ASTStruct, loc: Loc, name: SubStr, type: &AST) {
+    let field = create_node(parent, loc, name);
     field.data = ASTData::Field(name, type);
     push(&struct_info.fields, field);
+}
+
+func get_func_info(fn: &AST) -> &ASTFunction {
+    let &ASTData::Function(func_info) = &fn.data else {
+        unreachable("get_func_info: Node is not a function");
+    };
+    return &func_info;
 }
 
 struct ASTFunction {
@@ -130,7 +177,7 @@ struct ASTFunction {
     scopes: GAF_List;     // List<Scope_Info>
     return_type: &AST;
     params: GAF_List;     // List<&AST>
-    stmts: GAF_List;      // List<&AST>
+    block: &AST;
     code: Code;
     monomorphized_instances: GAF_HashMap; // HashMap<String, &AST>
 }
@@ -225,6 +272,16 @@ union ASTExpr {
     As(&AST, &AST),
 }
 
+func get_statements(node: &ASTExpr) -> &GAF_List {
+    if let &ASTExpr::BlockVoid(stmts) = node {
+        return &stmts;
+    }
+    if let &ASTExpr::BlockExpr(stmts, _) = node {
+        return &stmts;
+    }
+    unreachable("get_statements: Node is not a block");
+}
+
 union Directive {
     Run(&AST),
     Insert(&AST, Insert_Context),
@@ -251,16 +308,17 @@ func binary_expr_from_op(op: Token, lhs: &AST, rhs: &AST) -> ASTExpr {
     return ASTExpr::Binary(bin);
 }
 
-func create_node(loc: Loc, origin: SubStr) -> &AST {
+func create_node(parent: &AST, loc: Loc, origin: SubStr) -> &AST {
     let ptr: &AST = C::calloc(1, sizeof AST);
     assert(ptr != null, "create_node failed");
+    ptr.parent = parent;
     ptr.origin = origin;
     ptr.loc = loc;
     return ptr;
 }
 
-func create_struct(loc: Loc, origin: SubStr, name: SubStr) -> &AST {
-    let ptr = create_node(loc, origin);
+func create_struct(parent: &AST, loc: Loc, origin: SubStr, name: SubStr) -> &AST {
+    let ptr = create_node(parent, loc, origin);
     ptr.data = ASTData::Struct(ASTStruct {
         state: blank,
         name: name,
@@ -295,7 +353,7 @@ func monomorphize_function_node(ast: &AST, mapping: GAF_HashMap) -> &AST {
         return child as &AST;
     }
 
-    let ptr = create_node(ast.loc, ast.origin);
+    let ptr = create_node(null, ast.loc, ast.origin);
     let name: String = blank;
     format(&name, "%(%)", parent.name, key);
     ptr.data = ASTData::Function(ASTFunction {
@@ -303,10 +361,10 @@ func monomorphize_function_node(ast: &AST, mapping: GAF_HashMap) -> &AST {
         name: asSubStr(&name),
         scopes: new_GAF_List(type_info(Scope_Info)),
         params: new_GAF_List(type_info(&AST)),
-        stmts: new_GAF_List(type_info(&AST)),
         code: create_code(ptr),
         monomorphized_instances: mapping,
     });
+    ptr.attributes = ast.attributes;
     add(&parent.monomorphized_instances, key, ptr);
     parse_function_with_mapping(ptr, mapping);
     message(dbg(ast.loc, "Monomorphized function %", name));
@@ -329,7 +387,7 @@ func monomorphize_struct_node(ast: &AST, mapping: GAF_HashMap) -> &AST {
         return child as &AST;
     }
 
-    let ptr = create_node(ast.loc, ast.origin);
+    let ptr = create_node(null, ast.loc, ast.origin);
     let name: String = blank;
     format(&name, "%(%)", parent.name, key);
     ptr.data = ASTData::Struct(ASTStruct {
@@ -470,14 +528,13 @@ func collect_generic_type_mapping(fn: &AST, type: &Type) -> (GAF_HashMap, bool, 
     return (mapping, success, unknown);
 }
 
-func create_function(loc: Loc, origin: SubStr, name: SubStr) -> &AST {
-    let ptr = create_node(loc, origin);
+func create_function(parent: &AST, loc: Loc, origin: SubStr, name: SubStr) -> &AST {
+    let ptr = create_node(parent, loc, origin);
     ptr.data = ASTData::Function(ASTFunction {
         state: blank,
         name: name,
         scopes: new_GAF_List(type_info(Scope_Info)),
         params: new_GAF_List(type_info(&AST)),
-        stmts: new_GAF_List(type_info(&AST)),
         code: create_code(ptr),
         monomorphized_instances: new_hashmap_with_string_key(type_info(&AST)),
     });
@@ -490,33 +547,26 @@ func create_function(loc: Loc, origin: SubStr, name: SubStr) -> &AST {
     return ptr;
 }
 
-func create_stmt(loc: Loc, origin: SubStr, stmt: ASTStmt) -> &AST {
-    let ptr = create_node(loc, origin);
+func create_stmt(parent: &AST, loc: Loc, origin: SubStr, stmt: ASTStmt) -> &AST {
+    let ptr = create_node(parent, loc, origin);
     ptr.data = ASTData::Stmt(stmt);
     return ptr;
 }
 
-func create_pattern(loc: Loc, origin: SubStr, pat: ASTPat) -> &AST {
-    let ptr = create_node(loc, origin);
+func create_pattern(parent: &AST, loc: Loc, origin: SubStr, pat: ASTPat) -> &AST {
+    let ptr = create_node(parent, loc, origin);
     ptr.data = ASTData::Pat(pat);
     return ptr;
 }
 
-func create_expr(loc: Loc, origin: SubStr, expr: ASTExpr) -> &AST {
-    let ptr = create_node(loc, origin);
+func create_expr(parent: &AST, loc: Loc, origin: SubStr, expr: ASTExpr) -> &AST {
+    let ptr = create_node(parent, loc, origin);
     ptr.data = ASTData::Expr(expr);
     return ptr;
 }
 
-func create_directive(loc: Loc, dir: Directive) -> &AST {
-    let ptr = create_node(loc, blank);
+func create_directive(parent: &AST, loc: Loc, dir: Directive) -> &AST {
+    let ptr = create_node(parent, loc, blank);
     ptr.data = ASTData::Directive(dir);
     return ptr;
-}
-
-func add_stmt(fn: &AST, stmt: &AST) {
-    let &ASTData::Function(func_state) = &fn.data else {
-        unreachable("add_stmt called on non-function");
-    };
-    push(&func_state.stmts, stmt);
 }

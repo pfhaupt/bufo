@@ -205,8 +205,12 @@ func evaluate_call(interp: &Interp, fn: &AST) {
     let &ASTData::Function(func_state) = &fn.data else {
         unreachable("evaluate_call: Not a function");
     };
+
+    while ((func_state.state.i & FUNCTION_STATE_GENERATED_CODE) == 0) {
+        message(dbg(fn.loc, "evaluate_call % function not ready!", func_state.name));
+        switch();
+    }
     message(dbg(fn.loc, "evaluate_call %", func_state.name));
-    assert((func_state.state.i & FUNCTION_STATE_GENERATED_CODE) != 0, "evaluate_call: Function not ready");
 
     let rt = &func_state.code.runtime;
 

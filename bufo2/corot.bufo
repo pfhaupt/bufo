@@ -4,8 +4,9 @@ import "type_info.bufo";
 import "prelude.bufo";
 import "asm.bufo";
 import "format.bufo";
-
 import "list.bufo";
+
+import "common.bufo";
 
 comptime STACK_CAPACITY: usize = 1024 * 1024;
 
@@ -231,6 +232,7 @@ func resume_context(id: usize) {
 func switch() -> Any {
     let id = get_ref(&engine.active, engine.current) as Corot_UUID;
     let context = get_context(id);
+    message(dbg(blank, "switch() called"));
     return __switch(context);
 }
 @naked func __switch(old_ctx: &Context) -> Any {

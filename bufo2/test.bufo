@@ -35,12 +35,11 @@ func urmom() {
     aboba(a);
     let b = "urmom";
     aboba(b);
-    // should fail with redeclaration
-    insert(b);
+    insert("123");
 }
 
-func insert(b: str) @expand {
-    let a: i32 = 1;
+func insert(b: $T) @expand {
+    let a: str = "123";
     let c = b;
 }
 
