@@ -1,4 +1,8 @@
 
+struct A { b: B; }
+struct B { f: C; }
+struct C { b: A; }
+
 struct List($T) {
     // Pointer to the heap
     elements: *$T;
@@ -10,27 +14,28 @@ struct List($T) {
 // NOTE(2026-03-03): After we get the compiler to actually do things,
 //                   it should be able to infer the `@expand` because we
 //                   pass a `Code`. But this form should always work.
-func assert(cond: Code) @expand {
-    if (!#insert cond.str) {
-        print("%: error: Assertion `%` failed!\n", cond.loc, cond.str);
-        exit(1);
-    }
-}
-func assert(cond: Code, msg: string) @expand {
-    if (!#insert cond.str) {
-        print("%: error: Assertion `%` failed: %\n", cond.loc, cond.str, msg);
-        exit(1);
-    }
-}
+// func assert(cond: Code) @expand {
+//     if (!#insert cond.str) {
+//         print("%: error: Assertion `%` failed!\n", cond.loc, cond.str);
+//         exit(1);
+//     }
+// }
+// func assert(cond: Code, msg: string) @expand {
+//     if (!#insert cond.str) {
+//         print("%: error: Assertion `%` failed: %\n", cond.loc, cond.str, msg);
+//         exit(1);
+//     }
+// }
 
 func bar(a: $T, b: $V) {
+    let b: B = blank;
 }
 
 func fun(b: $T, a: *List($T)) {
     push(a, b);
 }
 
-func urmom() {
+func urmom() @expand {
     let a: i32 = 0;
     aboba(a);
     let b = "urmom";

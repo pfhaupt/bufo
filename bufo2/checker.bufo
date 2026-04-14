@@ -19,12 +19,12 @@ import "codegen.bufo";
 import "interp.bufo";
 
 func check_struct(node: &AST) {
-    let &ASTData::Struct(struct_state) = &node.data else {
+    let &ASTData::Struct(struct_info) = &node.data else {
         unreachable("check_struct: Node is not a struct");
     };
     let scopes = new_GAF_List(type_info(Scope_Info));
-    for (let i: usize = 0; i < struct_state.fields.length; i = i + 1) {
-        let _field = get_ref(&struct_state.fields, i) as &AST;
+    for (let i: usize = 0; i < struct_info.fields.length; i = i + 1) {
+        let _field = get_ref(&struct_info.fields, i) as &AST;
         let &ASTData::Field(_name, field) = &_field.data else {
             unreachable();
         };
@@ -33,7 +33,31 @@ func check_struct(node: &AST) {
         if (type.meta_level == 0) message(fatal(node.loc, "field type is value: %", *type));
         _field.type = type;
     }
-    struct_state.state.i = struct_state.state.i | STRUCT_STATE_CHECKED;
+    struct_info.state.i = struct_info.state.i | STRUCT_STATE_CHECKED;
+
+    let align: usize = 1;
+    let size: usize = 0;
+    for (let i: usize = 0; i < struct_info.fields.length; i = i + 1) {
+        let field = get_ref(&struct_info.fields, i) as &AST;
+        assert(field.type != null, "field type is null");
+        let field_type = unwrap_meta_type(field.type, 1);
+        let field_size = get_size(field_type);
+        let field_align = get_align(field_type);
+        if (field_align > align) align = field_align;
+        size = size + field_size;
+        if (i != struct_info.fields.length - 1) {
+            let next_field = get_ref(&struct_info.fields, i + 1) as &AST;
+            let next_field_type = unwrap_meta_type(next_field.type, 1);
+            let next_align = get_align(next_field_type);
+            size = next_multiple_of(size, next_align);
+        }
+    }
+    size = next_multiple_of(size, align);
+
+    struct_info.size_in_bytes = size;
+    struct_info.align_in_bytes = align;
+    unregister_monitor(&struct_info.size_in_bytes);
+    unregister_monitor(&struct_info.align_in_bytes);
 }
 
 func check_function_return_type(func_state: &ASTFunction) {
@@ -358,17 +382,16 @@ func infer_type_onto_ident(scopes: &GAF_List, infer_type: &Type, ast: &AST, iden
                         }
                     }
                     fn = monomorphize_function_node(fn, mapping);
+                    func_state = get_func_info(fn);
                 }
 
-                // TODO(2026-04-13): We currently have no way of knowing that all coroutines that
-                //                   handle that function died here. Would be cool if AST nodes
-                //                   knew this information so we can fetch this here.
-                let sanity: usize = 0;
-                while (fn.type == null) {
-                    if (sanity == 10) message(fatal(ast.loc, "I think the function % will never get a type", func_state.name));
-                    sanity = sanity + 1;
-                    switch();
-                }
+                let Corot_Result::Success = wait_for_monitor(&fn.type).1 else {
+                    message(
+                        error(ast.loc, "Could not resolve type of function. There were errors."),
+                        note(fn.loc, "Function % declared here.", func_state.name));
+                    unreachable(); // error terminates
+                };
+                assert(fn.type != null, "monitor failed");
 
                 if let &ASTData::Expr(expr) = &ast.data {
                     ast.data = ASTData::Expr(ASTExpr::FnIdent { name: ident, fn: fn });
@@ -611,15 +634,13 @@ func expand_function_if_necessary(expr: &AST, base: &AST, args: &GAF_List) {
     let func_info = get_func_info(fn);
     assert(func_info.params.length == args.length, "expand_function_if_necessary: length mismatch");
 
-    // TODO(2026-04-13): We currently have no way of knowing that all coroutines that
-    //                   handle that function died here. Would be cool if AST nodes
-    //                   knew this information so we can fetch this here.
-    let sanity: usize = 0;
-    while (func_info.block == null) {
-        if (sanity == 10) message(fatal(expr.loc, "I think the function % will never get a block", func_info.name));
-        sanity = sanity + 1;
-        switch();
-    }
+    let Corot_Result::Success = wait_for_monitor(&func_info.block).1 else {
+        message(
+            error(expr.loc, "Could not expand call to function %. There were errors.", func_info.name),
+            note(fn.loc, "Function % declared here.", func_info.name));
+        unreachable(); // error terminates
+    };
+    assert(func_info.block != null, "monitor failed");
 
     let new_block = new_GAF_List(type_info(&AST));
     let new_block_ast = create_expr(expr.parent, expr.loc, expr.origin, ASTExpr::BlockExpr); // dummy node

@@ -89,7 +89,7 @@ func corot_str() -> String {
     return corot_str(corot_id());
 }
 
-comptime PRINT_DEBUG = true;
+comptime PRINT_DEBUG = false;
 let error_happened: bool = false;
 func message(errors: ...Message) {
     let corot = corot_str();
@@ -117,6 +117,7 @@ func message(errors: ...Message) {
     }
     drop(&corot);
     if (fatal_error) {
+         had_error = true;
          C::exit(2);
     }
     if (had_error) {

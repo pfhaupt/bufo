@@ -147,6 +147,7 @@ func get_align(t: BaseType) -> usize {
         BaseType::Ptr(_) => { return 8; }
         BaseType::Func(_, _) => { return get_align(BaseType::Ptr); }
         BaseType::Prim(pt) => { return get_align(pt); }
+        BaseType::Struct(str) => { return get_align(str); }
         _ => {
             message(todo(new_loc(0), "get_align(BaseType): %", t));
         }
@@ -159,12 +160,7 @@ func get_size(t: BaseType) -> usize {
         BaseType::Ptr(_) => { return 8; }
         BaseType::Func(_, _) => { return get_size(BaseType::Ptr); }
         BaseType::Prim(pt) => { return get_size(pt); }
-        BaseType::Struct(str) => {
-            let &ASTData::Struct(info) = &str.data else {
-                unreachable();
-            };
-            return get_size(&info);
-        }
+        BaseType::Struct(str) => { return get_size(str); }
         _ => {
             message(todo(new_loc(0), "get_size(BaseType): %", t));
         }

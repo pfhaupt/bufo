@@ -15,6 +15,28 @@ struct Corot_UUID {
     generation: usize;
 }
 
+func get_context(cid: Corot_UUID) -> &Context {
+    return get_ref_raw(&engine.contexts, cid.id);
+}
+
+func get_result(cid: Corot_UUID) -> Corot_Result {
+    let ctx = get_context(cid);
+    return get_ref(&ctx.results, cid.generation) as Corot_Result;
+}
+
+func corot_id() -> Corot_UUID {
+    let id = get_ref(&engine.active, engine.current) as Corot_UUID;
+    let ctx = get_context(id);
+    return Corot_UUID { id: id.id, generation: ctx.generation };
+}
+
+func is_active(cid: Corot_UUID) -> bool {
+    let ctx = get_context(cid);
+    assert(cid.generation <= ctx.generation, "is_active: Stored generation is bigger than our generation");
+    if (ctx.generation != cid.generation) return false;
+    return ctx.alive;
+}
+
 struct Context {
     alive: bool;
     generation: usize;
@@ -34,11 +56,18 @@ func new_context() -> Context {
     return context;
 }
 
+// FIXME(2026-04-14): Using linear lookup here is not ideal.
+struct Corot_Monitor {
+    addresses: GAF_List;  // List<Any>
+    coroutines: GAF_List; // List<Corot_UUID>
+}
+
 struct Corot_Engine {
     contexts: GAF_List; // List<Context>
     active: GAF_List;   // List<Corot_UUID>
     dead: GAF_List;     // List<Corot_UUID>
     current: usize;
+    monitor: Corot_Monitor;
 }
 
 let engine: Corot_Engine = blank;
@@ -50,30 +79,50 @@ func init_corot_engine() {
         active: new_GAF_List(type_info(Corot_UUID)),
         dead: new_GAF_List(type_info(Corot_UUID)),
         current: 0,
+        monitor: Corot_Monitor {
+            addresses: new_GAF_List(type_info(Any)),
+            coroutines: new_GAF_List(type_info(Corot_UUID)),
+        },
     };
     push(&engine.contexts, new_context());
     push(&engine.active, Corot_UUID { id: 0 });
-}
-
-func get_context(cid: Corot_UUID) -> &Context {
-    return get_ref_raw(&engine.contexts, cid.id);
-}
-
-func is_active(cid: Corot_UUID) -> bool {
-    let ctx = get_context(cid);
-    assert(cid.generation <= ctx.generation, "is_active: Stored generation is bigger than our generation");
-    if (ctx.generation != cid.generation) return false;
-    return ctx.alive;
 }
 
 func any_active() -> bool {
     return engine.active.length > 1;
 }
 
-func corot_id() -> Corot_UUID {
-    let id = get_ref(&engine.active, engine.current) as Corot_UUID;
-    let ctx = get_context(id);
-    return Corot_UUID { id: id.id, generation: ctx.generation };
+func register_monitor(arg: Any) {
+    let cid = corot_id();
+    let len = engine.monitor.addresses.length;
+    push(&engine.monitor.addresses, arg);
+    push(&engine.monitor.coroutines, cid);
+    message(dbg(blank, "Registered coroutine % for address %", cid, arg));
+}
+
+func is_monitored(arg: Any) -> (bool, Corot_UUID) {
+    for (let i: usize = 0; i < engine.monitor.addresses.length; i = i + 1) {
+        let e = get_ref(&engine.monitor.addresses, i) as Any;
+        if (e == arg) {
+            let id = get_ref(&engine.monitor.coroutines, i) as Corot_UUID;
+            return (true, id);
+        }
+    }
+    return (false, blank);
+}
+
+func unregister_monitor(arg: Any) {
+    for (let i: usize = 0; i < engine.monitor.addresses.length; i = i + 1) {
+        let e = get_ref(&engine.monitor.addresses, i) as Any;
+        if (e == arg) {
+            let cid = get_ref(&engine.monitor.coroutines, i) as Corot_UUID;
+            message(dbg(blank, "Unregistered coroutine % for address %", cid, arg));
+            swap_remove(&engine.monitor.addresses, i);
+            swap_remove(&engine.monitor.coroutines, i);
+            return;
+        }
+    }
+    message(fatal(blank, "unregister_monitor: % wasn't registered", arg));
 }
 
 union Corot_Result {
@@ -82,6 +131,30 @@ union Corot_Result {
     Fucking_Died,
     Success,
 }
+
+@nodiscard func wait_for_monitor(arg: Any) -> (Corot_UUID, Corot_Result) {
+    // TODO(2026-04-14): Ideally this function shouldn't call is_monitored() three times
+    //                   and ideally it also shouldn't switch() twice. However, it works
+    //                   for now. One problem is that is_monitored() might fail because
+    //                   register_monitor() may not have been called by the other coroutine
+    //                   yet.
+    //                   In an ideal world we could also remove the current coroutine from
+    //                   the active list, and only add it back when the other coroutine
+    //                   unregistered the monitor.
+    if let (true, id) = is_monitored(arg) {
+        return (id, wait(id));
+    }
+    switch();
+    if let (true, id) = is_monitored(arg) {
+        return (id, wait(id));
+    }
+    switch();
+    if let (true, id) = is_monitored(arg) {
+        message(fatal(blank, "wait_for_monitor: monitor for % is still active", arg));
+    }
+    return (corot_id(), Corot_Result::Success);
+}
+
 @nodiscard func wait(dep: Corot_UUID) -> Corot_Result {
     let current = corot_id();
     let current_context = get_context(current);
@@ -118,6 +191,7 @@ union Corot_Result {
 
     return get_ref(&next_context.results, dep.generation) as Corot_Result;
 }
+
 func wait_or_abort(cid: Corot_UUID) {
     let s = wait(cid);
     if let Corot_Result::Success = s {
@@ -192,6 +266,15 @@ func wait_or_abort(cid: Corot_UUID) {
         push(&engine.active, w);
     }
     context.waiting_list.length = 0;
+
+    for (let _i: usize = 0; _i < engine.monitor.coroutines.length; _i = _i + 1) {
+        let i = engine.monitor.coroutines.length - _i - 1;
+        let ct = get_ref(&engine.monitor.coroutines, i) as Corot_UUID;
+        if (ct.id == cid.id && ct.generation == cid.generation) {
+            let addr = get_ref(&engine.monitor.addresses, i) as Any;
+            unregister_monitor(addr);
+        }
+    }
 
     let res: &Corot_Result = get_ref_raw(&context.results, cid.generation);
     *res = wr;
@@ -268,6 +351,7 @@ func switch() -> Any {
     message(dbg(blank, "switch() called"));
     return __switch(context);
 }
+
 @naked func __switch(old_ctx: &Context) -> Any {
     asm(func () -> ASMContext {
         let context = ASMContext {};

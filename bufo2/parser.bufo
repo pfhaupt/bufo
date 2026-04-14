@@ -167,7 +167,7 @@ func parse_struct(_context: &Parse_Context) {
         }));
         handle_corot_result(wait(cid),
             error(struct_node.loc, "Could not parse struct body due to a cyclic dependency on %", corot_str(cid)),
-            note(struct_node.loc, "...while parsing this struct body"));
+            note(struct_node.loc, "...while parsing this struct body."));
     }
 }
 
@@ -177,6 +177,10 @@ func parse_struct_body(context: &Parse_Context) {
     let &ASTData::Struct(struct_state) = &struct_node.data else {
         unreachable("parse_struct_body got non-struct AST");
     };
+
+    register_monitor(&struct_state.size_in_bytes);
+    register_monitor(&struct_state.align_in_bytes);
+
     expect(lexer, TokenData::CurlyOpen);
     while (!at(lexer, TokenData::CurlyClose)) {
         let name = expect(lexer, TokenData::Ident);
@@ -308,6 +312,9 @@ func parse_function_body(context: &Parse_Context) {
     let func_state = get_func_info(context.parent);
     assert(func_state.scopes.length == 0, "Function already has scopes");
     push(&func_state.scopes, new_stack());
+
+    register_monitor(&context.parent.type);
+    register_monitor(&func_state.block);
 
     check_function_parameters(func_state);
     check_function_return_type(func_state);

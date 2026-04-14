@@ -81,9 +81,7 @@ func get_parent_function(node: &AST) -> &AST {
     unreachable("get_parent_function: Node is not inside a function");
 }
 func get_parent_node(node: &AST) -> &AST {
-    let parent = node.parent;
-    message(ass(parent != null, node.loc, "Node doesn't have a parent"));
-    return parent;
+    return node.parent;
 }
 
 func is_statement(node: &AST) -> bool {
@@ -119,6 +117,8 @@ struct ASTStruct {
     parameters: GAF_List; // List<&AST>
     fields: GAF_List; // List<&AST>
     monomorphized_instances: GAF_HashMap; // HashMap<String, &AST>
+    size_in_bytes: usize;
+    align_in_bytes: usize;
 }
 
 func is_generic(struct_info: &ASTStruct) -> bool {
@@ -126,36 +126,22 @@ func is_generic(struct_info: &ASTStruct) -> bool {
     return struct_info.parameters.length != 0;
 }
 
-func get_align(struct_info: &ASTStruct) -> usize {
-    while ((struct_info.state.i & STRUCT_STATE_CHECKED) == 0) switch();
-    let align: usize = 1;
-    for (let i: usize = 0; i < struct_info.fields.length; i = i + 1) {
-        let field = get_ref(&struct_info.fields, i) as &AST;
-        assert(field.type != null, "field type is null");
-        let field_type = unwrap_meta_type(field.type, 1);
-        let field_align = get_align(field_type);
-        if (field_align > align) align = field_align;
-    }
-    return align;
+func get_align(node: &AST) -> usize {
+    let struct_info = get_struct_info(node);
+    let (handler, result) = wait_for_monitor(&struct_info.align_in_bytes);
+    handle_corot_result(result,
+        error(node.loc, "Could not get alignment of structure due to a cyclic dependency on %", corot_str(handler)),
+        error(node.loc, "Could not get alignment of structure. There were errors."));
+    return struct_info.align_in_bytes;
 }
-func get_size(struct_info: &ASTStruct) -> usize {
-    while ((struct_info.state.i & STRUCT_STATE_CHECKED) == 0) switch();
-    let align = get_align(struct_info);
-    let size: usize = 0;
-    for (let i: usize = 0; i < struct_info.fields.length; i = i + 1) {
-        let field = get_ref(&struct_info.fields, i) as &AST;
-        assert(field.type != null, "field type is null");
-        let field_type = unwrap_meta_type(field.type, 1);
-        let field_size = get_size(field_type);
-        size = size + field_size;
-        if (i != struct_info.fields.length - 1) {
-            let next_field = get_ref(&struct_info.fields, i + 1) as &AST;
-            let next_field_type = unwrap_meta_type(next_field.type, 1);
-            let next_align = get_align(next_field_type);
-            size = next_multiple_of(size, next_align);
-        }
-    }
-    return next_multiple_of(size, align);
+
+func get_size(node: &AST) -> usize {
+    let struct_info = get_struct_info(node);
+    let (handler, result) = wait_for_monitor(&struct_info.size_in_bytes);
+    handle_corot_result(result,
+        error(node.loc, "Could not get size of structure due to a cyclic dependency on %", corot_str(handler)),
+        error(node.loc, "Could not get size of structure. There were errors."));
+    return struct_info.size_in_bytes;
 }
 
 func add_field(parent: &AST, struct_info: &ASTStruct, loc: Loc, name: SubStr, type: &AST) {
@@ -164,6 +150,12 @@ func add_field(parent: &AST, struct_info: &ASTStruct, loc: Loc, name: SubStr, ty
     push(&struct_info.fields, field);
 }
 
+func get_struct_info(fn: &AST) -> &ASTStruct {
+    let &ASTData::Struct(struct_info) = &fn.data else {
+        unreachable("get_struct_info: Node is not a struct");
+    };
+    return &struct_info;
+}
 func get_func_info(fn: &AST) -> &ASTFunction {
     let &ASTData::Function(func_info) = &fn.data else {
         unreachable("get_func_info: Node is not a function");

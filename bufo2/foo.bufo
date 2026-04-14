@@ -1,0 +1,65 @@
+
+import "corot.bufo";
+import "format.bufo";
+
+comptime VALUE: usize = 12;
+
+func write_value(arg: Any) {
+    fprint("write_value\n");
+    let val = arg as &usize;
+    let r = (123213 * rand() as u32) % 100;
+    fprint("chance = %\n", r);
+    if (r < 50) abort_coroutine();
+    *val = VALUE;
+}
+
+func read_value(arg: Any) {
+    fprint("read_value\n");
+    let val: usize = 0;
+    let w1 = spawn(write_value, &val);
+    let Corot_Result::Success = wait(w1) else {
+        fprint("write failed!!!\n");
+        abort_coroutine();
+    };
+    fprint("value is %\n", val);
+}
+
+@extern @no_mangle func srand(n: i32);
+@extern @no_mangle func time(p: Any) -> i32;
+@extern @no_mangle func rand() -> i32;
+
+let A: Corot_UUID = blank;
+let B: Corot_UUID = blank;
+let C: Corot_UUID = blank;
+func a(arg: Any) {
+    let s = wait(B);
+    let Corot_Result::Success = s else {
+        fprint("a was not successful: %\n", s);
+        _finish_current(s);
+    };
+}
+func b(arg: Any) {
+    let s = wait(C);
+    let Corot_Result::Success = s else {
+        fprint("b was not successful: %\n", s);
+        _finish_current(s);
+    };
+}
+func c(arg: Any) {
+    let s = wait(A);
+    let Corot_Result::Success = s else {
+        fprint("c was not successful: %\n", s);
+        _finish_current(s);
+    };
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    srand(time(null));
+    init_corot_engine();
+    A = spawn(a, null);
+    B = spawn(b, null);
+    C = spawn(c, null);
+    let state = wait(A);
+    fprint("%\n", state);
+    return 0;
+}
