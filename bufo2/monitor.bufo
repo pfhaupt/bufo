@@ -1,0 +1,68 @@
+
+import "hashmap.bufo";
+import "corot.bufo";
+
+let MONITOR: GAF_HashMap = blank;
+
+func init_monitor() {
+    MONITOR = new_GAF_HashMap(
+        type_info(Any), type_info(Corot_UUID),
+        func (d: Data) -> usize {
+            return *(d.ptr as &usize);
+        },
+        func (k1: Data, k2: Data) -> bool {
+            let k1 = *(k1.ptr as &usize);
+            let k2 = *(k2.ptr as &usize);
+            return k1 == k2;
+        }
+    );
+}
+func register_monitor(arg: Any) {
+    let cid = corot_id();
+    add(&MONITOR, arg, cid);
+}
+import "format.bufo";
+
+func is_monitored(arg: Any) -> (bool, Corot_UUID) {
+    let id = get(&MONITOR, arg);
+    if (id.ptr == null) return (false, blank);
+    return (true, id as Corot_UUID);
+}
+
+func unregister_monitor(arg: Any) {
+    let idx = index_of(&MONITOR, arg);
+    MONITOR.set_elements[idx] = false;
+}
+
+func wait_for_monitor(arg: &usize) {
+    while (is_monitored(arg).0) {
+        switch();
+    }
+}
+
+func write_value(arg: &usize) {
+    register_monitor(arg);
+    for (let i: usize = 0; i < 100000; i = i + 1) switch();
+    *(arg as &usize) = 13;
+    unregister_monitor(arg);
+}
+
+func read_value(arg: &usize) {
+    wait_for_monitor(arg);
+    assert(*arg == 13, "Monitor didn't work");
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    init_monitor();
+    init_corot_engine();
+
+    let value: usize = 0;
+    let s1 = spawn(write_value, &value);
+    let s2 = spawn(read_value, &value);
+    let s3 = spawn(read_value, &value);
+    wait_or_abort(s1);
+    wait_or_abort(s2);
+    wait_or_abort(s3);
+    fprint("Success!!!\n");
+    return 0;
+}
